@@ -1,6 +1,6 @@
 .{
     .name = .chessboard,
-    .fingerprint = 0x13cab2e23b6db31f,
+    .fingerprint = 0x68a833e56a7d90f0,
     .version = "0.1.0",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
