@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>国际象棋</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div id="app">
+    <header class="chrome">
+      <span class="brand">国际象棋</span>
+      <span class="status-pill" id="status">白方走子</span>
+      <span class="meta-chip num" id="moves">0/0</span>
+      <span class="spacer"></span>
+      <div class="chrome-actions">
+        <button type="button" class="tool-btn" id="undo" disabled title="悔棋 (Z)">悔棋</button>
+        <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)">翻转</button>
+        <button type="button" class="tool-btn primary" id="btn-new" title="新局 (N)">新局</button>
+        <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (Tab)" aria-label="侧栏">☰</button>
+      </div>
+    </header>
+
+    <div class="scrim" id="scrim"></div>
+    <div class="stage">
+      <div id="board-wrap">
+        <canvas id="board" width="900" height="900" aria-label="棋盘"></canvas>
+      </div>
+    </div>
+
+    <aside class="side" id="side" aria-label="对局面板">
+      <section class="side-head">
+        <div class="vs">
+          <div class="vs-side">
+            <span class="stone white" aria-hidden="true"></span>
+            <div>
+              <div class="vs-name">
+                白
+                <span class="badge" id="white-turn" hidden>行</span>
+              </div>
+              <div class="vs-role muted" id="white-role">玩家 1</div>
+            </div>
+          </div>
+          <div class="vs-mid muted">对</div>
+          <div class="vs-side vs-right">
+            <div>
+              <div class="vs-name">
+                <span class="badge" id="black-turn" hidden>行</span>
+                黑
+              </div>
+              <div class="vs-role muted" id="black-role">玩家 2</div>
+            </div>
+            <span class="stone black" aria-hidden="true"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="side-section">
+        <h2 class="side-h">外观</h2>
+        <div class="setting-list">
+          <div class="setting-row stack">
+            <span class="setting-k">主题</span>
+            <div class="theme-row" id="theme-seg" role="group" aria-label="主题">
+              <button type="button" data-theme="wood" class="active" title="木色">木</button>
+              <button type="button" data-theme="night" title="夜色">夜</button>
+              <button type="button" data-theme="day" title="日间">日</button>
+              <button type="button" data-theme="notebook" title="纸本">纸</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-k">音效</span>
+            <button type="button" class="switch" id="opt-sound" aria-pressed="true" title="走子音效">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="side-section grow-sec">
+        <div class="side-h-row">
+          <h2 class="side-h">棋谱</h2>
+          <span class="side-h-meta num" id="replay-pos">0 / 0</span>
+        </div>
+        <div class="move-list" id="move-list" aria-label="着法列表"></div>
+        <div class="replay-bar" id="replay-seg">
+          <button type="button" id="rep-start" title="开局 (Home)">«</button>
+          <button type="button" id="rep-prev" title="上一着 (←)">‹</button>
+          <button type="button" id="rep-live" disabled title="回到最新">●</button>
+          <button type="button" id="rep-next" title="下一着 (→)">›</button>
+          <button type="button" id="rep-end" title="终局 (End)">»</button>
+        </div>
+        <div class="link-row">
+          <button type="button" class="text-link" id="pgn-copy">复制 PGN</button>
+          <button type="button" class="text-link" id="pgn-download">导出</button>
+          <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN">粘贴</button>
+          <button type="button" class="text-link" id="fen-copy" title="复制当前局面 FEN">FEN</button>
+        </div>
+        <p class="hint">粘贴 PGN 导入对局 · 升变暂默认为后</p>
+      </section>
+
+      <div class="side-foot">
+        <button type="button" class="text-link danger" id="clear-save">清除存档</button>
+        <button type="button" class="text-link" id="collapse">收起</button>
+      </div>
+    </aside>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="modal-bg" id="confirm-modal" role="dialog" aria-label="确认">
+      <div class="modal">
+        <h3 id="confirm-title">确认</h3>
+        <p id="confirm-message" class="muted" style="margin:0 0 16px;font-size:14px;line-height:1.5;color:var(--text)"></p>
+        <div class="close-row" style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="tool-btn" id="confirm-cancel">取消</button>
+          <button type="button" class="tool-btn primary" id="confirm-ok">确定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/chess.js"></script>
+  <script src="js/host.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/board.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
