@@ -159,7 +159,7 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
   const lessons = ctx.CHESS_LESSONS;
-  assert(Array.isArray(lessons) && lessons.length >= 21, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
+  assert(Array.isArray(lessons) && lessons.length >= 22, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
   const ids = new Set();
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -210,6 +210,7 @@ for (const p of ["r", "b", "n"]) {
           t.goal === "ep" ? mv.flags.includes("e") :
           t.goal === "promote" ? !!mv.promotion :
           t.goal === "capture" ? (mv.to === t.target && !!mv.captured) :
+          t.goal === "one-of" ? (Array.isArray(t.accept) && t.accept.includes(mv.san)) :
           t.goal === "draw-insufficient" ? g.insufficient_material() : false;
         if (!okByGoal) fail(tag, "solution does not satisfy goal", t.goal);
         if (t.trap) {
@@ -228,6 +229,63 @@ for (const p of ["r", "b", "n"]) {
     }
   }
   assert(bad === 0, "all lesson tasks valid");
+}
+
+// puzzles: legal positions (white to move, black not already in check),
+// m1 solutions mate, m2 first moves FORCE mate against every defense
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
+  const puzzles = ctx.CHESS_PUZZLES;
+  assert(Array.isArray(puzzles) && puzzles.length >= 18, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
+  const matingMoves = (g) => g.moves().filter((m) => {
+    g.move(m); const mate = g.in_checkmate(); g.undo(); return mate;
+  });
+  const mateNextForced = (g) => {
+    const replies = g.moves();
+    if (!replies.length) return false;
+    for (const r of replies) {
+      g.move(r);
+      const has = matingMoves(g).length > 0;
+      g.undo();
+      if (!has) return false;
+    }
+    return true;
+  };
+  const ids = new Set();
+  let bad = 0;
+  const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
+  for (const p of puzzles) {
+    if (!p.id || ids.has(p.id)) { fail("puzzle id missing/duplicate", p.id); continue; }
+    ids.add(p.id);
+    if (!p.name || !["m1", "m2"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
+    const v = new Chess().validate_fen(p.fen);
+    if (!v.valid) { fail(p.id, "invalid FEN:", v.error); continue; }
+    if (p.fen.split(" ")[1] !== "w") { fail(p.id, "not white to move"); continue; }
+    // the side NOT to move must not be in check (position would be illegal)
+    const flipped = new Chess(p.fen.replace(" w ", " b "));
+    if (flipped.in_check()) { fail(p.id, "black already in check"); continue; }
+    const g = new Chess(p.fen);
+    const mv = g.move(p.solution[0]);
+    if (!mv) { fail(p.id, "solution[0] illegal:", p.solution[0]); continue; }
+    if (mv.san !== p.solution[0]) fail(p.id, "non-canonical SAN", p.solution[0], "≠", mv.san);
+    if (p.cat === "m1") {
+      if (p.solution.length !== 1) fail(p.id, "m1 solution must be one move");
+      if (!g.in_checkmate()) fail(p.id, "m1 solution does not mate");
+    } else {
+      if (p.solution.length !== 3) { fail(p.id, "m2 solution must be three plies"); continue; }
+      if (g.in_checkmate() || g.game_over()) { fail(p.id, "m2 first move already ends the game"); continue; }
+      if (matingMoves(new Chess(p.fen)).length) fail(p.id, "m2 has a mate in one — belongs in m1");
+      if (!mateNextForced(g)) fail(p.id, "m2 first move does not force mate");
+      const rm = g.move(p.solution[1]);
+      if (!rm) { fail(p.id, "solution[1] illegal:", p.solution[1]); continue; }
+      if (rm.san !== p.solution[1]) fail(p.id, "non-canonical SAN", p.solution[1], "≠", rm.san);
+      const wm = g.move(p.solution[2]);
+      if (!wm) { fail(p.id, "solution[2] illegal:", p.solution[2]); continue; }
+      if (wm.san !== p.solution[2]) fail(p.id, "non-canonical SAN", p.solution[2], "≠", wm.san);
+      if (!g.in_checkmate()) fail(p.id, "m2 line does not end in mate");
+    }
+  }
+  assert(bad === 0, "all puzzles legal and forced");
 }
 
 if (failed) {

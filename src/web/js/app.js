@@ -52,6 +52,8 @@
   let resigned = null;
   /** learn-mode runtime; null unless mode === 'learn' */
   let learn = null;
+  /** puzzle-mode runtime; null unless mode === 'puzzle' */
+  let puzzle = null;
 
   Audio2.init(() => soundOn);
 
@@ -81,6 +83,7 @@
 
   BoardView.attach(canvas, () => {
     if (mode === "learn" && learn) return learnModel();
+    if (mode === "puzzle" && puzzle) return puzzleModel();
     const g = viewGame();
     const vh = verboseHistory();
     const last = viewIndex > 0 ? vh[viewIndex - 1] : null;
@@ -145,7 +148,7 @@
       if (typeof s.soundOn === "boolean") soundOn = s.soundOn;
       if (typeof s.flipped === "boolean") flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) themeId = s.themeId;
-      if (["ai", "pvp", "learn"].includes(s.mode)) mode = s.mode;
+      if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) mode = s.mode;
       if (["easy", "normal", "hard", "extreme"].includes(s.difficulty)) difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) humanColor = s.humanColor;
       if (["off", "3", "5", "10"].includes(s.timeControl)) timeControl = s.timeControl;
@@ -228,6 +231,7 @@
 
   async function requestHint() {
     if (mode === "learn") { learnHint(); return; }
+    if (mode === "puzzle") { showPuzzleAnswer(); return; }
     if (!window.ChessEngine) { toast("引擎不可用"); return; }
     if (!isLive()) { toast("请先回到最新一着"); return; }
     if (game.game_over() || ruleTerminated()) return;
@@ -341,7 +345,7 @@
   function renderOpening() {
     const el = document.getElementById("opening-line");
     if (!el) return;
-    const name = mode === "learn" ? null : openingFor(viewIndex);
+    const name = mode === "learn" || mode === "puzzle" ? null : openingFor(viewIndex);
     el.hidden = !name;
     el.textContent = name || "";
   }
@@ -536,6 +540,7 @@
         t.goal === "ep" ? mv.flags.includes("e") :
         t.goal === "promote" ? !!mv.promotion :
         t.goal === "capture" ? (mv.to === t.target && !!mv.captured) :
+        t.goal === "one-of" ? (Array.isArray(t.accept) && t.accept.includes(mv.san)) :
         t.goal === "draw-insufficient" ? g.insufficient_material() : false;
       if (okByGoal) {
         if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
@@ -709,6 +714,228 @@
         const mark = learnState.done[x.id] ? "✓ " : "";
         b.textContent = mark + (i + 1) + ". " + x.title;
         list.appendChild(b);
+      });
+    }
+  }
+
+  // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
+  const PUZZLE_KEY = "chess.v1.puzzles";
+  const PUZZLES = window.CHESS_PUZZLES || [];
+  const PUZZLE_CATS = [["m1", "一步杀"], ["m2", "两步杀"]];
+
+  function loadPuzzleState() {
+    try {
+      const s = JSON.parse(Host.storageGet(PUZZLE_KEY) || "null");
+      if (s && s.v === 1 && s.solved) return s;
+    } catch (_) {}
+    return { v: 1, solved: {}, cat: "m1" };
+  }
+  let puzzleState = loadPuzzleState();
+  function savePuzzleState() {
+    try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {}
+  }
+
+  function puzzlesInCat(cat) { return PUZZLES.filter((p) => p.cat === cat); }
+
+  function startPuzzleAt(cat, idx) {
+    const list = puzzlesInCat(cat);
+    if (!list.length) return;
+    idx = ((idx % list.length) + list.length) % list.length;
+    puzzleState.cat = cat;
+    savePuzzleState();
+    puzzle = { cat, idx, p: list[idx], g: new Chess(list[idx].fen), stage: 0, done: false, misses: 0, helpArrow: null, last: null };
+    selection = null;
+    sync();
+  }
+
+  function startPuzzles() {
+    const cat = ["m1", "m2"].includes(puzzleState.cat) ? puzzleState.cat : "m1";
+    const list = puzzlesInCat(cat);
+    let idx = list.findIndex((p) => !puzzleState.solved[p.id]);
+    if (idx < 0) idx = 0;
+    startPuzzleAt(cat, idx);
+  }
+  function stopPuzzles() { puzzle = null; }
+
+  function puzzleModel() {
+    const g = puzzle.g;
+    return {
+      position: g.board(),
+      flipped: false, // all puzzles are white to move
+      selected: selection ? selection.sq : null,
+      legalTargets: selection ? selection.targets : [],
+      lastMove: puzzle.last,
+      checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
+      hintMove: puzzle.helpArrow,
+      stars: [],
+    };
+  }
+
+  function matingMovesOf(g) {
+    return g.moves({ verbose: true }).filter((m) => {
+      g.move(m); const mate = g.in_checkmate(); g.undo(); return mate;
+    });
+  }
+
+  /** Black to move: every reply loses to a mate-in-1 (accepts alternate wins). */
+  function mateNextForced(g) {
+    const replies = g.moves();
+    if (!replies.length) return false;
+    for (const r of replies) {
+      g.move(r);
+      const has = matingMovesOf(g).length > 0;
+      g.undo();
+      if (!has) return false;
+    }
+    return true;
+  }
+
+  /** Black's toughest defense: leaves white the fewest mating moves. */
+  function bestDefense(g) {
+    let best = null, bestN = Infinity;
+    for (const r of g.moves()) {
+      g.move(r);
+      const n = matingMovesOf(g).length;
+      g.undo();
+      if (n < bestN) { bestN = n; best = r; }
+    }
+    return best;
+  }
+
+  function puzzleGoalText() {
+    const p = puzzle.p;
+    return p.name + " · 白先," + (p.cat === "m1" ? "一" : "两") + "步内将死";
+  }
+
+  function puzzleClick(sq) {
+    if (!puzzle || puzzle.done) return;
+    const g = puzzle.g;
+    if (g.game_over() || g.turn() !== "w") return;
+    const piece = g.get(sq);
+    if (selection && selection.targets.includes(sq)) {
+      const from = selection.sq;
+      const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
+      if (vmv && vmv.promotion) {
+        choosePromotion(g.turn()).then((p) => { if (p) puzzleMove(from, sq, p); });
+        return;
+      }
+      puzzleMove(from, sq, "q");
+      return;
+    }
+    if (piece && piece.color === "w") {
+      const targets = g.moves({ square: sq, verbose: true }).map((m) => m.to);
+      selection = targets.length ? { sq, targets } : null;
+      draw();
+      return;
+    }
+    if (selection) { selection = null; draw(); }
+  }
+
+  function puzzleMove(from, to, promotion) {
+    const g = puzzle.g;
+    const mv = g.move({ from, to, promotion });
+    if (!mv) return;
+    selection = null;
+    puzzle.helpArrow = null;
+    puzzle.last = { from: mv.from, to: mv.to };
+    Audio2.playMove(mv.color);
+    if (g.in_checkmate()) { puzzleSolved(); return; }
+    const totalMoves = puzzle.p.cat === "m1" ? 1 : 2;
+    if (puzzle.stage + 1 >= totalMoves) { puzzleWrong(); return; } // out of moves
+    // m2 midpoint: the stored line, or any alternate that still forces mate
+    const onLine = mv.san === puzzle.p.solution[puzzle.stage * 2];
+    if (!onLine && !mateNextForced(g)) { puzzleWrong(); return; }
+    puzzle.stage++;
+    const reply = onLine ? puzzle.p.solution[puzzle.stage * 2 - 1] : bestDefense(g);
+    const rm = reply ? g.move(reply) : null;
+    if (rm) {
+      puzzle.last = { from: rm.from, to: rm.to };
+      Audio2.playMove(rm.color);
+    }
+    sync();
+  }
+
+  function puzzleWrong() {
+    puzzle.g.undo();
+    puzzle.last = null;
+    puzzle.misses++;
+    toast(puzzle.misses >= 2 ? "再试试 —— 点「答案」可以看提示箭头" : "这步不能强制将死 —— 再试试");
+    sync();
+  }
+
+  /** Arrow for the correct move at the current stage. */
+  function showPuzzleAnswer() {
+    if (!puzzle || puzzle.done) return;
+    const g = puzzle.g;
+    if (g.turn() !== "w" || g.game_over()) return;
+    let from = null, to = null;
+    if (puzzle.stage === 0) {
+      const probe = new Chess(puzzle.p.fen);
+      const mv = probe.move(puzzle.p.solution[0]);
+      if (mv) { from = mv.from; to = mv.to; }
+    } else {
+      const mates = matingMovesOf(g);
+      if (mates.length) { from = mates[0].from; to = mates[0].to; }
+    }
+    if (from) {
+      puzzle.helpArrow = { from, to };
+      sync();
+    }
+  }
+
+  function puzzleSolved() {
+    puzzle.done = true;
+    selection = null;
+    Audio2.playWin();
+    if (!puzzleState.solved[puzzle.p.id]) {
+      puzzleState.solved[puzzle.p.id] = true;
+      savePuzzleState();
+    }
+    toast("✅ 解出 · " + puzzle.p.name);
+    sync();
+  }
+
+  function nextPuzzle() {
+    if (!puzzle) return;
+    const list = puzzlesInCat(puzzle.cat);
+    // prefer the next unsolved one, wrapping around
+    for (let d = 1; d <= list.length; d++) {
+      const i = (puzzle.idx + d) % list.length;
+      if (!puzzleState.solved[list[i].id]) { startPuzzleAt(puzzle.cat, i); return; }
+    }
+    startPuzzleAt(puzzle.cat, puzzle.idx + 1);
+  }
+
+  function syncPuzzleUI() {
+    const sec = document.getElementById("sec-puzzle");
+    if (!sec) return;
+    sec.hidden = mode !== "puzzle";
+    if (mode !== "puzzle" || !puzzle) return;
+    const list = puzzlesInCat(puzzle.cat);
+    const solvedAll = PUZZLES.filter((p) => puzzleState.solved[p.id]).length;
+    const prog = document.getElementById("puzzle-progress");
+    if (prog) prog.textContent = "已解 " + solvedAll + "/" + PUZZLES.length;
+    document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.cat === puzzle.cat);
+    });
+    const task = document.getElementById("puzzle-task");
+    if (task) {
+      task.textContent = puzzle.done
+        ? "✅ 解出!点「下一题」继续"
+        : "第 " + (puzzle.idx + 1) + " 题 · " + puzzleGoalText();
+    }
+    const next = document.getElementById("puzzle-next");
+    if (next) next.classList.toggle("primary", puzzle.done);
+    const listEl = document.getElementById("puzzle-list");
+    if (listEl) {
+      listEl.innerHTML = "";
+      list.forEach((p, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "lesson-item" + (i === puzzle.idx ? " current" : "");
+        b.dataset.i = String(i);
+        b.textContent = (puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + p.name;
+        listEl.appendChild(b);
       });
     }
   }
@@ -928,6 +1155,11 @@
       // task instructions where they are always visible
       return learnTaskText();
     }
+    if (mode === "puzzle") {
+      if (!puzzle) return "做题练习";
+      if (puzzle.done) return "✅ 解出 · 下一题";
+      return puzzleGoalText();
+    }
     const g = viewGame();
     if (!isLive()) return "复盘 " + viewIndex + "/" + sanHistory().length;
     if (flagFall) {
@@ -991,30 +1223,36 @@
     const h = sanHistory();
     document.getElementById("status").textContent = statusText();
     document.getElementById("moves").textContent =
-      mode === "learn" ? (learn ? (learn.li + 1) + "/" + LESSONS.length : "—") : viewIndex + "/" + h.length;
+      mode === "learn" ? (learn ? (learn.li + 1) + "/" + LESSONS.length : "—") :
+      mode === "puzzle" ? (puzzle ? "题 " + (puzzle.idx + 1) + "/" + puzzlesInCat(puzzle.cat).length : "—") :
+      viewIndex + "/" + h.length;
     document.getElementById("replay-pos").textContent = viewIndex + " / " + h.length;
     document.getElementById("rep-start").disabled = viewIndex <= 0;
     document.getElementById("rep-prev").disabled = viewIndex <= 0;
     document.getElementById("rep-next").disabled = viewIndex >= h.length;
     document.getElementById("rep-end").disabled = viewIndex >= h.length;
     document.getElementById("rep-live").disabled = isLive();
+    const modal = mode === "learn" || mode === "puzzle";
     const inDrill = mode === "learn" && learn && !learn.done && curTask().type === "drill";
-    document.getElementById("undo").disabled = mode === "learn"
+    document.getElementById("undo").disabled = modal
       ? !(inDrill && learn.g && learn.g.history().length)
       : h.length === 0 || !isLive() || ruleTerminated();
-    document.getElementById("btn-new").disabled = mode === "learn";
-    document.getElementById("btn-flip").disabled = mode === "learn";
+    document.getElementById("btn-new").disabled = modal;
+    document.getElementById("btn-flip").disabled = modal;
     const hintBtn = document.getElementById("btn-hint");
     if (hintBtn) {
-      hintBtn.disabled = mode === "learn"
-        ? !(inDrill && !learn.engineBusy && !hintPending && learn.g && !learn.g.game_over() && learn.g.turn() === "w")
+      hintBtn.disabled =
+        mode === "learn"
+          ? !(inDrill && !learn.engineBusy && !hintPending && learn.g && !learn.g.game_over() && learn.g.turn() === "w")
+        : mode === "puzzle"
+          ? !(puzzle && !puzzle.done && !puzzle.g.game_over() && puzzle.g.turn() === "w")
         : hintPending || analyzing || !isLive() || game.game_over() || ruleTerminated() ||
           (mode === "ai" && (engineThinking || game.turn() !== humanColor));
-      hintBtn.textContent = hintPending ? "思考中" : "提示";
+      hintBtn.textContent = mode === "puzzle" ? "答案" : hintPending ? "思考中" : "提示";
     }
     const resignBtn = document.getElementById("btn-resign");
     if (resignBtn) {
-      resignBtn.disabled = mode === "learn" || !isLive() || h.length === 0 ||
+      resignBtn.disabled = modal || !isLive() || h.length === 0 ||
         game.game_over() || ruleTerminated();
     }
     document.getElementById("pgn-copy").disabled = h.length === 0;
@@ -1023,10 +1261,10 @@
     const status = document.getElementById("status");
     const g = viewGame();
     const decisiveEnd = g.in_checkmate() || !!resigned || (flagFall && !timeoutIsDraw());
-    status.classList.toggle("win", mode !== "learn" && isLive() && decisiveEnd);
-    status.classList.toggle("replay", mode !== "learn" && !isLive());
+    status.classList.toggle("win", !modal && isLive() && decisiveEnd);
+    status.classList.toggle("replay", !modal && !isLive());
     const over = game.game_over() || ruleTerminated();
-    const showTurn = mode !== "learn" && isLive() && !over;
+    const showTurn = !modal && isLive() && !over;
     document.getElementById("white-turn").hidden = !(showTurn && game.turn() === "w");
     document.getElementById("black-turn").hidden = !(showTurn && game.turn() === "b");
     const rt = document.getElementById("retry-here");
@@ -1037,6 +1275,7 @@
     renderClocks();
     syncClockTimer();
     syncLearnUI();
+    syncPuzzleUI();
     syncSettingsUI();
   }
 
@@ -1069,8 +1308,9 @@
     if (clockRow) clockRow.hidden = mode !== "pvp";
     const secMoves = document.getElementById("sec-moves");
     const secStats = document.getElementById("sec-stats");
-    if (secMoves) secMoves.hidden = mode === "learn";
-    if (secStats) secStats.hidden = mode === "learn";
+    const trainer = mode === "learn" || mode === "puzzle";
+    if (secMoves) secMoves.hidden = trainer;
+    if (secStats) secStats.hidden = trainer;
     const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
     const wRole = document.getElementById("white-role");
     const bRole = document.getElementById("black-role");
@@ -1082,6 +1322,9 @@
         const drill = learn && curTask().type === "drill";
         wRole.textContent = "学员(执白)";
         bRole.textContent = drill ? "引擎陪练" : "—";
+      } else if (mode === "puzzle") {
+        wRole.textContent = "你(执白)";
+        bRole.textContent = "题目";
       } else {
         wRole.textContent = "玩家 1";
         bRole.textContent = "玩家 2";
@@ -1138,6 +1381,7 @@
 
   function onSquareClick(sq) {
     if (mode === "learn") { learnClick(sq); return; }
+    if (mode === "puzzle") { puzzleClick(sq); return; }
     if (!isLive()) { toast("请先「回到最新一着」再走子"); return; }
     if (game.game_over()) return;
     if (flagFall) { toast("已超时 · 按 N 开新局"); return; }
@@ -1461,17 +1705,21 @@
     if (!b || b.dataset.mode === mode) return;
     invalidateEngine();
     const wasLearn = mode === "learn";
+    const wasPuzzle = mode === "puzzle";
     mode = b.dataset.mode;
     // flag fall only exists in pvp; entering pvp mid-game gets fresh clocks
     flagFall = null;
     if (mode === "pvp") resetClocks();
     if (mode === "learn") startLearn();
     else if (wasLearn) stopLearn();
+    if (mode === "puzzle") startPuzzles();
+    else if (wasPuzzle) stopPuzzles();
     saveSettings();
     selection = null;
     sync();
     toast(mode === "ai" ? "人机对弈 · " + (DIFF_NAMES[difficulty] || "") :
-      mode === "pvp" ? "双人对弈" : "教学模式 · 从零学国际象棋");
+      mode === "pvp" ? "双人对弈" :
+      mode === "learn" ? "教学模式 · 从零学国际象棋" : "做题练习 · 白先将死");
     maybeEngineTurn();
   };
   document.getElementById("lesson-restart").onclick = () => {
@@ -1493,6 +1741,22 @@
   document.getElementById("lesson-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
     if (b && learn) startLesson(Number(b.dataset.i));
+  };
+  document.getElementById("puzzle-cat-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-cat]");
+    if (!b || !puzzle || b.dataset.cat === puzzle.cat) return;
+    puzzleState.cat = b.dataset.cat;
+    savePuzzleState();
+    startPuzzles();
+  };
+  document.getElementById("puzzle-retry").onclick = () => {
+    if (puzzle) { startPuzzleAt(puzzle.cat, puzzle.idx); toast("重新开始本题"); }
+  };
+  document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
+  document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
+  document.getElementById("puzzle-list").onclick = (ev) => {
+    const b = ev.target.closest("button[data-i]");
+    if (b && puzzle) startPuzzleAt(puzzle.cat, Number(b.dataset.i));
   };
   document.getElementById("clock-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-tc]");
@@ -1585,6 +1849,13 @@
       else if (k === "h") learnHint();
       return;
     }
+    if (mode === "puzzle") {
+      if (!puzzle || ev.metaKey || ev.ctrlKey) return;
+      if (k === "r") { startPuzzleAt(puzzle.cat, puzzle.idx); toast("重新开始本题"); }
+      else if (k === "n") nextPuzzle();
+      else if (k === "h") showPuzzleAnswer();
+      return;
+    }
     if (ev.key === "ArrowLeft") { ev.preventDefault(); setViewIndex(viewIndex - 1); }
     else if (ev.key === "ArrowRight") { ev.preventDefault(); setViewIndex(viewIndex + 1); }
     else if (ev.key === "Home") { ev.preventDefault(); setViewIndex(0); }
@@ -1622,6 +1893,7 @@
   // clock preset chosen but no saved clock state → fresh clocks
   if (timeControl !== "off" && !clock) resetClocks();
   if (mode === "learn") startLearn();
+  if (mode === "puzzle") startPuzzles();
   BoardView.resizeCanvas();
   renderStats();
   sync();

@@ -69,6 +69,7 @@
               <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈">人机</button>
               <button type="button" data-mode="pvp" title="双人同屏对弈">双人</button>
               <button type="button" data-mode="learn" title="从零学国际象棋:互动课程">教学</button>
+              <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀">做题</button>
             </div>
           </div>
           <div class="setting-row stack" id="row-difficulty">
@@ -133,6 +134,27 @@
           <button type="button" class="tool-btn" id="lesson-next" title="进入下一课">下一课</button>
         </div>
         <div class="lesson-list" id="lesson-list" aria-label="课程列表"></div>
+      </section>
+
+      <section class="side-section" id="sec-puzzle" hidden>
+        <div class="side-h-row">
+          <h2 class="side-h">做题</h2>
+          <span class="side-h-meta num" id="puzzle-progress">已解 0/0</span>
+        </div>
+        <div class="setting-row stack">
+          <span class="setting-k">题型</span>
+          <div class="theme-row" id="puzzle-cat-seg" role="group" aria-label="题型">
+            <button type="button" data-cat="m1" class="active" title="一步将死">一步杀</button>
+            <button type="button" data-cat="m2" title="两步将死(含引子与静着)">两步杀</button>
+          </div>
+        </div>
+        <div class="lesson-task" id="puzzle-task"></div>
+        <div class="lesson-controls">
+          <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)">重做</button>
+          <button type="button" class="tool-btn" id="puzzle-answer" title="标出当前一步的正解 (H)">答案</button>
+          <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)">下一题</button>
+        </div>
+        <div class="lesson-list" id="puzzle-list" aria-label="题目列表"></div>
       </section>
 
       <section class="side-section grow-sec" id="sec-moves">
@@ -206,6 +228,7 @@
   <script src="js/chess.js"></script>
   <script src="js/openings.js"></script>
   <script src="js/lessons.js"></script>
+  <script src="js/puzzles.js"></script>
   <script src="js/engine-src.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/host.js"></script>
