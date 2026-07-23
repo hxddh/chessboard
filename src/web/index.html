@@ -15,6 +15,7 @@
       <span class="meta-chip num" id="moves">0/0</span>
       <span class="spacer"></span>
       <div class="chrome-actions">
+        <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)">提示</button>
         <button type="button" class="tool-btn" id="undo" disabled title="悔棋 (Z)">悔棋</button>
         <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)">翻转</button>
         <button type="button" class="tool-btn primary" id="btn-new" title="新局 (N)">新局</button>
@@ -40,6 +41,7 @@
                 <span class="badge" id="white-turn" hidden>行</span>
               </div>
               <div class="vs-role muted" id="white-role">玩家 1</div>
+              <div class="vs-clock num" id="clock-w" hidden>5:00</div>
             </div>
           </div>
           <div class="vs-mid muted">对</div>
@@ -50,10 +52,12 @@
                 黑
               </div>
               <div class="vs-role muted" id="black-role">玩家 2</div>
+              <div class="vs-clock num" id="clock-b" hidden>5:00</div>
             </div>
             <span class="pmark black" aria-hidden="true">♚</span>
           </div>
         </div>
+        <div class="opening-line" id="opening-line" hidden></div>
       </section>
 
       <section class="side-section">
@@ -80,6 +84,15 @@
             <div class="theme-row" id="color-seg" role="group" aria-label="执子">
               <button type="button" data-color="w" class="active" title="执白先行">执白</button>
               <button type="button" data-color="b" title="执黑后行">执黑</button>
+            </div>
+          </div>
+          <div class="setting-row stack" id="row-clock" hidden>
+            <span class="setting-k">棋钟</span>
+            <div class="theme-row" id="clock-seg" role="group" aria-label="棋钟">
+              <button type="button" data-tc="off" class="active" title="不限时">关</button>
+              <button type="button" data-tc="3" title="每方 3 分钟">3分</button>
+              <button type="button" data-tc="5" title="每方 5 分钟">5分</button>
+              <button type="button" data-tc="10" title="每方 10 分钟">10分</button>
             </div>
           </div>
         </div>
@@ -149,6 +162,18 @@
 
     <div class="toast" id="toast"></div>
 
+    <div class="modal-bg" id="promo-modal" role="dialog" aria-label="升变">
+      <div class="modal promo-modal">
+        <h3>升变为</h3>
+        <div class="promo-row">
+          <button type="button" data-p="q" title="升变为后 (Q)"><span class="promo-glyph">♛</span>后</button>
+          <button type="button" data-p="r" title="升变为车 (R)"><span class="promo-glyph">♜</span>车</button>
+          <button type="button" data-p="b" title="升变为象 (B)"><span class="promo-glyph">♝</span>象</button>
+          <button type="button" data-p="n" title="升变为马 (N)"><span class="promo-glyph">♞</span>马</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-bg" id="confirm-modal" role="dialog" aria-label="确认">
       <div class="modal">
         <h3 id="confirm-title">确认</h3>
@@ -162,6 +187,7 @@
   </div>
 
   <script src="js/chess.js"></script>
+  <script src="js/openings.js"></script>
   <script src="js/engine-src.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/host.js"></script>

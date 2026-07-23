@@ -37,6 +37,17 @@
   let analyzeProgress = "";
   /** pgn of the last game recorded into stats (double-count guard) */
   let statsRecordedSig = null;
+  /** engine hint arrow {from,to}; cleared whenever the game mutates */
+  let hintMove = null;
+  let hintPending = false;
+  /** two-player clock preset: 'off' | minutes as string */
+  let timeControl = "off";
+  /** remaining ms per side; null when no clock */
+  let clock = null;
+  /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
+  let flagFall = null;
+  let clockTimer = null;
+  let clockTickAt = 0;
 
   Audio2.init(() => soundOn);
 
@@ -75,6 +86,7 @@
       legalTargets: selection ? selection.targets : [],
       lastMove: last ? { from: last.from, to: last.to } : null,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
+      hintMove: isLive() ? hintMove : null,
     };
   });
 
@@ -130,16 +142,21 @@
       if (["ai", "pvp"].includes(s.mode)) mode = s.mode;
       if (["easy", "normal", "hard", "extreme"].includes(s.difficulty)) difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) humanColor = s.humanColor;
+      if (["off", "3", "5", "10"].includes(s.timeControl)) timeControl = s.timeControl;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl }));
     } catch (_) {}
   }
   function saveGame() {
     try {
-      Host.storageSet(SAVE_KEY, JSON.stringify({ v: 1, pgn: game.pgn(), savedAt: Date.now() }));
+      const payload = { v: 1, pgn: game.pgn(), savedAt: Date.now() };
+      if (timeControl !== "off" && clock) {
+        payload.clock = { tc: timeControl, w: Math.round(clock.w), b: Math.round(clock.b), flag: flagFall };
+      }
+      Host.storageSet(SAVE_KEY, JSON.stringify(payload));
     } catch (_) {}
   }
   function tryLoadSave() {
@@ -150,6 +167,12 @@
       if (!s || s.v !== 1 || typeof s.pgn !== "string" || !s.pgn) return false;
       if (!game.load_pgn(s.pgn)) return false;
       viewIndex = sanHistory().length;
+      if (s.clock && ["3", "5", "10"].includes(s.clock.tc) &&
+          typeof s.clock.w === "number" && typeof s.clock.b === "number") {
+        timeControl = s.clock.tc;
+        clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
+        flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
+      }
       return sanHistory().length > 0;
     } catch (_) {
       return false;
@@ -163,6 +186,7 @@
   function invalidateEngine() {
     engineToken++;
     engineThinking = false;
+    hintMove = null;
     if (window.ChessEngine) window.ChessEngine.cancel();
   }
 
@@ -183,12 +207,132 @@
     if (played) {
       viewIndex = sanHistory().length;
       selection = null;
+      hintMove = null;
       Audio2.playMove(played.color);
       if (game.in_checkmate()) Audio2.playWin();
       saveGame();
       recordGameIfOver();
     }
     sync();
+  }
+
+  // --- engine hint: full-strength best move drawn as an arrow ---
+
+  async function requestHint() {
+    if (!window.ChessEngine) { toast("引擎不可用"); return; }
+    if (!isLive()) { toast("请先回到最新一着"); return; }
+    if (game.game_over() || flagFall) return;
+    if (mode === "ai" && (engineThinking || game.turn() !== humanColor)) return;
+    if (hintPending || analyzing) return;
+    const sig = game.fen();
+    hintPending = true;
+    sync();
+    let e = null;
+    try { e = await window.ChessEngine.analyze(sig, 400); } catch (_) {}
+    hintPending = false;
+    if (!isLive() || game.fen() !== sig) { sync(); return; }
+    if (!e || !e.best) { sync(); toast("引擎未能给出提示"); return; }
+    const from = e.best.slice(0, 2);
+    const to = e.best.slice(2, 4);
+    const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
+    hintMove = { from, to };
+    sync();
+    toast("提示 · " + (vmv ? vmv.san : from + " → " + to));
+  }
+
+  // --- two-player clock (basic: no increment; flag fall is terminal) ---
+  const TC_MINUTES = { "3": 3, "5": 5, "10": 10 };
+
+  function resetClocks() {
+    const min = TC_MINUTES[timeControl];
+    clock = min ? { w: min * 60000, b: min * 60000 } : null;
+    flagFall = null;
+    syncClockTimer();
+    renderClocks();
+  }
+
+  /** Ticking starts at the first move so nobody drains on the start screen. */
+  function clockRunning() {
+    return mode === "pvp" && !!clock && !flagFall && !game.game_over() && sanHistory().length >= 1;
+  }
+
+  function syncClockTimer() {
+    const want = clockRunning();
+    if (want && !clockTimer) {
+      clockTickAt = Date.now();
+      clockTimer = setInterval(clockTick, 200);
+    } else if (!want && clockTimer) {
+      clearInterval(clockTimer);
+      clockTimer = null;
+    }
+  }
+
+  function clockTick() {
+    if (!clockRunning()) { syncClockTimer(); return; }
+    const now = Date.now();
+    const side = game.turn();
+    clock[side] = Math.max(0, clock[side] - (now - clockTickAt));
+    clockTickAt = now;
+    if (clock[side] === 0) {
+      flagFall = side;
+      syncClockTimer();
+      Audio2.playWin();
+      saveGame();
+      sync();
+      toast(side === "w" ? "白方超时 · 黑方胜" : "黑方超时 · 白方胜");
+      return;
+    }
+    renderClocks();
+  }
+
+  function fmtClock(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+
+  function renderClocks() {
+    const wEl = document.getElementById("clock-w");
+    const bEl = document.getElementById("clock-b");
+    if (!wEl || !bEl) return;
+    const show = mode === "pvp" && timeControl !== "off" && !!clock;
+    wEl.hidden = !show;
+    bEl.hidden = !show;
+    if (!show) return;
+    const active = clockRunning() ? game.turn() : null;
+    for (const [el, side] of [[wEl, "w"], [bEl, "b"]]) {
+      el.textContent = fmtClock(clock[side]);
+      el.classList.toggle("active", active === side);
+      el.classList.toggle("low", clock[side] < 20000);
+    }
+  }
+
+  // --- opening book: deepest SAN-prefix match wins ---
+  const OPENING_BOOK = (() => {
+    const map = new Map();
+    let maxPly = 0;
+    for (const [eco, name, seq] of window.CHESS_OPENINGS || []) {
+      map.set(seq, eco + " · " + name);
+      maxPly = Math.max(maxPly, seq.split(" ").length);
+    }
+    return { map, maxPly };
+  })();
+
+  function openingFor(prefixLen) {
+    const h = sanHistory();
+    const n = Math.min(prefixLen, h.length, OPENING_BOOK.maxPly);
+    for (let i = n; i >= 1; i--) {
+      const hit = OPENING_BOOK.map.get(h.slice(0, i).join(" "));
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function renderOpening() {
+    const el = document.getElementById("opening-line");
+    if (!el) return;
+    const name = openingFor(viewIndex);
+    el.hidden = !name;
+    el.textContent = name || "";
   }
 
   // --- review analysis: full-strength eval per position → curve + move tags ---
@@ -385,6 +529,7 @@
   function statusText() {
     const g = viewGame();
     if (!isLive()) return "复盘 " + viewIndex + "/" + sanHistory().length;
+    if (flagFall) return flagFall === "w" ? "超时 · 黑方胜" : "超时 · 白方胜";
     if (engineThinking && !g.game_over()) return "引擎思考中…";
     if (g.in_checkmate()) return g.turn() === "w" ? "将死 · 黑方胜" : "将死 · 白方胜";
     if (g.in_stalemate()) return "逼和 · 和棋";
@@ -444,20 +589,30 @@
     document.getElementById("rep-next").disabled = viewIndex >= h.length;
     document.getElementById("rep-end").disabled = viewIndex >= h.length;
     document.getElementById("rep-live").disabled = isLive();
-    document.getElementById("undo").disabled = h.length === 0 || !isLive();
+    document.getElementById("undo").disabled = h.length === 0 || !isLive() || !!flagFall;
+    const hintBtn = document.getElementById("btn-hint");
+    if (hintBtn) {
+      hintBtn.disabled = hintPending || analyzing || !isLive() || game.game_over() || !!flagFall ||
+        (mode === "ai" && (engineThinking || game.turn() !== humanColor));
+      hintBtn.textContent = hintPending ? "思考中" : "提示";
+    }
     document.getElementById("pgn-copy").disabled = h.length === 0;
     document.getElementById("pgn-download").disabled = h.length === 0;
     document.getElementById("fen-copy").disabled = false;
     const status = document.getElementById("status");
     const g = viewGame();
-    status.classList.toggle("win", isLive() && g.in_checkmate());
+    status.classList.toggle("win", isLive() && (g.in_checkmate() || !!flagFall));
     status.classList.toggle("replay", !isLive());
-    document.getElementById("white-turn").hidden = !(isLive() && !game.game_over() && game.turn() === "w");
-    document.getElementById("black-turn").hidden = !(isLive() && !game.game_over() && game.turn() === "b");
+    const over = game.game_over() || !!flagFall;
+    document.getElementById("white-turn").hidden = !(isLive() && !over && game.turn() === "w");
+    document.getElementById("black-turn").hidden = !(isLive() && !over && game.turn() === "b");
     const rt = document.getElementById("retry-here");
     if (rt) rt.disabled = isLive();
     renderMoveList();
     setAnalyzeUI();
+    renderOpening();
+    renderClocks();
+    syncClockTimer();
     syncSettingsUI();
   }
 
@@ -479,10 +634,15 @@
     document.querySelectorAll("#color-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.color === humanColor);
     });
+    document.querySelectorAll("#clock-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.tc === timeControl);
+    });
     const diffRow = document.getElementById("row-difficulty");
     const colorRow = document.getElementById("row-color");
+    const clockRow = document.getElementById("row-clock");
     if (diffRow) diffRow.hidden = mode !== "ai";
     if (colorRow) colorRow.hidden = mode !== "ai";
+    if (clockRow) clockRow.hidden = mode !== "pvp";
     const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
     const wRole = document.getElementById("white-role");
     const bRole = document.getElementById("black-role");
@@ -505,25 +665,60 @@
 
   function goLive() { setViewIndex(sanHistory().length); }
 
+  const PROMO_NAMES = { q: "后", r: "车", b: "象", n: "马" };
+  const PROMO_GLYPHS = {
+    w: { q: "♕", r: "♖", b: "♗", n: "♘" },
+    b: { q: "♛", r: "♜", b: "♝", n: "♞" },
+  };
+
+  let promoResolver = null;
+  /** Modal chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel. */
+  function choosePromotion(color) {
+    const modal = document.getElementById("promo-modal");
+    if (!modal) return Promise.resolve("q");
+    modal.querySelectorAll("button[data-p]").forEach((b) => {
+      const gl = b.querySelector(".promo-glyph");
+      if (gl) gl.textContent = PROMO_GLYPHS[color][b.dataset.p];
+    });
+    modal.classList.add("show");
+    return new Promise((resolve) => { promoResolver = resolve; });
+  }
+  function finishPromotion(p) {
+    const modal = document.getElementById("promo-modal");
+    if (modal) modal.classList.remove("show");
+    if (promoResolver) { promoResolver(p); promoResolver = null; }
+  }
+
+  function playHumanMove(from, to, promotion) {
+    const mv = game.move({ from, to, promotion });
+    if (!mv) return;
+    selection = null;
+    hintMove = null;
+    viewIndex = sanHistory().length;
+    Audio2.playMove(mv.color);
+    if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
+    if (game.in_checkmate()) Audio2.playWin();
+    sync();
+    saveGame();
+    recordGameIfOver();
+    maybeEngineTurn();
+  }
+
   function onSquareClick(sq) {
     if (!isLive()) { toast("请先「回到最新一着」再走子"); return; }
     if (game.game_over()) return;
+    if (flagFall) { toast("已超时 · 按 N 开新局"); return; }
     if (mode === "ai" && game.turn() !== humanColor) return; // engine's move
     const piece = game.get(sq);
     if (selection && selection.targets.includes(sq)) {
-      // promotions always queen for now (chooser is on the roadmap)
-      const mv = game.move({ from: selection.sq, to: sq, promotion: "q" });
-      if (mv) {
-        selection = null;
-        viewIndex = sanHistory().length;
-        Audio2.playMove(mv.color);
-        if (mv.promotion) toast("已升变为后");
-        if (game.in_checkmate()) Audio2.playWin();
-        sync();
-        saveGame();
-        recordGameIfOver();
-        maybeEngineTurn();
+      const from = selection.sq;
+      const vmv = game.moves({ square: from, verbose: true }).find((m) => m.to === sq);
+      if (vmv && vmv.promotion) {
+        // cancelling keeps the selection so the player can pick another square
+        choosePromotion(game.turn()).then((p) => { if (p) playHumanMove(from, sq, p); });
+        return;
       }
+      playHumanMove(from, sq, "q");
       return;
     }
     if (piece && piece.color === game.turn()) {
@@ -536,7 +731,7 @@
   }
 
   function undo() {
-    if (!sanHistory().length) return;
+    if (!sanHistory().length || flagFall) return;
     if (!isLive()) { goLive(); return; }
     invalidateEngine();
     game.undo();
@@ -561,6 +756,7 @@
     game.reset();
     selection = null;
     viewIndex = 0;
+    resetClocks();
     sync();
     saveGame();
     toast("新局开始 · 白先");
@@ -581,6 +777,8 @@
     for (const san of h) game.move(san);
     selection = null;
     viewIndex = h.length;
+    // continuing a flagged game gets fresh clocks; otherwise time carries on
+    if (flagFall) resetClocks();
     sync();
     saveGame();
     toast("已回到第 " + keep + " 着,继续对弈");
@@ -643,6 +841,7 @@
     game.load_pgn(t, { sloppy: true });
     selection = null;
     viewIndex = sanHistory().length;
+    resetClocks();
     sync();
     saveGame();
     toast("已导入 " + sanHistory().length + " 着");
@@ -697,6 +896,7 @@
   canvas.style.cursor = "pointer";
 
   document.getElementById("undo").onclick = undo;
+  document.getElementById("btn-hint").onclick = () => { requestHint(); };
   document.getElementById("btn-new").onclick = () => { requestNewGame(); };
   document.getElementById("btn-flip").onclick = () => {
     flipped = !flipped;
@@ -763,10 +963,23 @@
     if (!b || b.dataset.mode === mode) return;
     invalidateEngine();
     mode = b.dataset.mode;
+    // flag fall only exists in pvp; entering pvp mid-game gets fresh clocks
+    flagFall = null;
+    if (mode === "pvp") resetClocks();
     saveSettings();
     sync();
     toast(mode === "ai" ? "人机对弈 · " + (DIFF_NAMES[difficulty] || "") : "双人对弈");
     maybeEngineTurn();
+  };
+  document.getElementById("clock-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-tc]");
+    if (!b || b.dataset.tc === timeControl) return;
+    timeControl = b.dataset.tc;
+    resetClocks();
+    saveSettings();
+    saveGame();
+    sync();
+    toast(timeControl === "off" ? "棋钟已关" : "棋钟 · 每方 " + timeControl + " 分钟");
   };
   document.getElementById("diff-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
@@ -802,6 +1015,7 @@
     game.reset();
     selection = null;
     viewIndex = 0;
+    resetClocks();
     sync();
     toast("存档已清除");
     maybeEngineTurn();
@@ -812,10 +1026,24 @@
   document.getElementById("confirm-cancel").onclick = () => finishConfirm(false);
   confirmModal.onclick = (ev) => { if (ev.target === confirmModal) finishConfirm(false); };
 
+  const promoModal = document.getElementById("promo-modal");
+  if (promoModal) {
+    promoModal.querySelectorAll("button[data-p]").forEach((b) => {
+      b.onclick = () => finishPromotion(b.dataset.p);
+    });
+    promoModal.onclick = (ev) => { if (ev.target === promoModal) finishPromotion(null); };
+  }
+
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
+      if (promoModal && promoModal.classList.contains("show")) { finishPromotion(null); return; }
       if (confirmModal.classList.contains("show")) { finishConfirm(false); return; }
       if (isPanelOpen()) setPanelOpen(false);
+      return;
+    }
+    if (promoModal && promoModal.classList.contains("show")) {
+      const pk = ev.key.toLowerCase();
+      if (["q", "r", "b", "n"].includes(pk)) { ev.preventDefault(); finishPromotion(pk); }
       return;
     }
     if (confirmModal.classList.contains("show")) {
@@ -830,6 +1058,7 @@
     else if (ev.key === "Tab") { ev.preventDefault(); togglePanel(); }
     else if (k === "z" && !ev.metaKey && !ev.ctrlKey) undo();
     else if (k === "n" && !ev.metaKey && !ev.ctrlKey) requestNewGame();
+    else if (k === "h" && !ev.metaKey && !ev.ctrlKey) requestHint();
     else if (k === "f" && !ev.metaKey && !ev.ctrlKey) {
       flipped = !flipped; saveSettings(); draw();
     }
@@ -856,6 +1085,8 @@
   if (resumed) toast("已恢复上次对局");
   // a resumed finished game must not be re-counted on the next live move
   if (resumed && game.game_over()) statsRecordedSig = game.pgn();
+  // clock preset chosen but no saved clock state → fresh clocks
+  if (timeControl !== "off" && !clock) resetClocks();
   BoardView.resizeCanvas();
   renderStats();
   sync();

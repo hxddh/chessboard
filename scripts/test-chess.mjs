@@ -81,6 +81,14 @@ function assert(cond, msg) {
   assert(g.get("a8").type === "q", "queen on a8");
 }
 
+// underpromotion (the in-app chooser relies on all four pieces working)
+for (const p of ["r", "b", "n"]) {
+  const g = new Chess("8/P6k/8/8/8/8/7K/8 w - - 0 1");
+  const mv = g.move({ from: "a7", to: "a8", promotion: p });
+  assert(mv !== null && mv.promotion === p, "underpromotion to " + p);
+  assert(g.get("a8").type === p, p + " on a8");
+}
+
 // stalemate
 {
   const g = new Chess("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
@@ -121,6 +129,29 @@ function assert(cond, msg) {
   g.move("e4");
   g.undo();
   assert(g.fen() === before, "undo restores start");
+}
+
+// opening book: every line must be legal, canonical SAN, unique, well-formed
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings.js"), "utf8"), ctx, { filename: "openings.js" });
+  const book = ctx.CHESS_OPENINGS;
+  assert(Array.isArray(book) && book.length > 50, "opening book loaded (" + (book ? book.length : 0) + " entries)");
+  const seen = new Set();
+  let bad = 0;
+  for (const entry of book) {
+    const [eco, name, seq] = entry;
+    if (!/^[A-E]\d\d$/.test(eco)) { bad++; console.error("FAIL: bad ECO code", eco, name); continue; }
+    if (typeof name !== "string" || !name) { bad++; console.error("FAIL: bad name for", eco); continue; }
+    if (seen.has(seq)) { bad++; console.error("FAIL: duplicate line", eco, seq); continue; }
+    seen.add(seq);
+    const g = new Chess();
+    for (const san of seq.split(" ")) {
+      const mv = g.move(san);
+      if (!mv) { bad++; console.error("FAIL: illegal move", san, "in", eco, name, "(" + seq + ")"); break; }
+      if (mv.san !== san) { bad++; console.error("FAIL: non-canonical SAN", san, "≠", mv.san, "in", eco, name); break; }
+    }
+  }
+  assert(bad === 0, "all opening lines legal, canonical and unique");
 }
 
 if (failed) {

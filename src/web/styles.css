@@ -240,6 +240,20 @@
       display: flex; align-items: center; gap: 6px;
     }
     .vs-role { font-size: 11px; margin-top: 3px; line-height: 1.3; }
+    .vs-clock {
+      margin-top: 5px;
+      font-size: 15px; font-weight: 650; line-height: 1.2;
+      color: var(--text); opacity: 0.45;
+      transition: opacity .15s, color .15s;
+    }
+    .vs-clock.active { opacity: 1; }
+    .vs-clock.low { color: #e05252; opacity: 1; }
+    .vs-clock[hidden] { display: none; }
+    .opening-line {
+      margin-top: 12px;
+      font-size: 12px; color: var(--muted); line-height: 1.45;
+    }
+    .opening-line[hidden] { display: none; }
     .side-meta {
       margin-top: 14px;
       display: flex; align-items: center; flex-wrap: wrap;
@@ -713,6 +727,27 @@
       font-family: var(--font-num); font-size: 12px;
     }
     .modal .close-row { margin-top: 16px; text-align: right; }
+
+    /* pawn promotion chooser */
+    .promo-modal { width: min(340px, calc(100vw - 32px)); }
+    .promo-row { display: flex; gap: 8px; }
+    .promo-row button {
+      flex: 1;
+      appearance: none; cursor: pointer;
+      border: 1px solid var(--card-border);
+      background: var(--btn-ghost);
+      color: var(--text);
+      border-radius: 10px; padding: 10px 0 12px;
+      font: inherit; font-size: 12px; font-weight: 500;
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      transition: border-color .15s, background .15s, transform .12s;
+    }
+    .promo-row button:hover {
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+    .promo-row button:active { transform: scale(0.96); }
+    .promo-glyph { font-size: 30px; line-height: 1; }
 
     .scrim {
       display: none; position: absolute; inset: 0; z-index: 25;

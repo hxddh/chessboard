@@ -1,11 +1,12 @@
 /**
  * Chess board canvas renderer + hit testing. Pure view: reads a model
  * function on every draw, never touches game rules.
- * Model: { position, flipped, selected, legalTargets, lastMove, checkSquare }
+ * Model: { position, flipped, selected, legalTargets, lastMove, checkSquare,
+ *          hintMove }
  *   position: chess.js .board() — [8][8] of {type,color}|null, row 0 = rank 8
  *   selected/checkSquare: square names ("e2") | null
  *   legalTargets: array of square names
- *   lastMove: {from,to} | null
+ *   lastMove/hintMove: {from,to} | null (hintMove renders as an arrow)
  * @module board
  */
 (function (global) {
@@ -21,6 +22,7 @@
   const CHECK = "rgba(220, 60, 40, 0.55)";
   const DOT = "rgba(30, 30, 30, 0.28)";
   const RING = "rgba(30, 30, 30, 0.32)";
+  const HINT = "rgba(56, 142, 78, 0.75)";
 
   let _canvas = null;
   let _model = null;
@@ -142,6 +144,32 @@
         ctx.strokeText(glyph, x, y);
         ctx.fillText(glyph, x, y);
       }
+    }
+    // engine hint arrow on top of pieces
+    if (m.hintMove) {
+      const a = screenPos(m.hintMove.from, m.flipped);
+      const b = screenPos(m.hintMove.to, m.flipped);
+      const ax = a.sc * step + step / 2, ay = a.sr * step + step / 2;
+      const bx = b.sc * step + step / 2, by = b.sr * step + step / 2;
+      const ang = Math.atan2(by - ay, bx - ax);
+      const head = step * 0.3;
+      // stop the shaft where the arrowhead begins
+      const sx = bx - Math.cos(ang) * head * 0.8;
+      const sy = by - Math.sin(ang) * head * 0.8;
+      ctx.strokeStyle = HINT;
+      ctx.fillStyle = HINT;
+      ctx.lineWidth = step * 0.13;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(ax + Math.cos(ang) * step * 0.24, ay + Math.sin(ang) * step * 0.24);
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx - Math.cos(ang - 0.45) * head, by - Math.sin(ang - 0.45) * head);
+      ctx.lineTo(bx - Math.cos(ang + 0.45) * head, by - Math.sin(ang + 0.45) * head);
+      ctx.closePath();
+      ctx.fill();
     }
     // legal-move markers on top of pieces (capture ring / empty dot)
     if (m.legalTargets && m.legalTargets.length) {
