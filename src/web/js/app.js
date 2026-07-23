@@ -21,6 +21,15 @@
   let themeId = "wood";
   /** @type {{sq:string, targets:string[]}|null} click-move selection */
   let selection = null;
+  /** @type {'ai'|'pvp'} */
+  let mode = "ai";
+  /** @type {'easy'|'normal'|'hard'|'extreme'} */
+  let difficulty = "normal";
+  /** @type {'w'|'b'} human side in AI mode */
+  let humanColor = "w";
+  let engineThinking = false;
+  /** bumped on every game mutation; stale engine replies are dropped */
+  let engineToken = 0;
 
   Audio2.init(() => soundOn);
 
@@ -111,11 +120,14 @@
       if (typeof s.soundOn === "boolean") soundOn = s.soundOn;
       if (typeof s.flipped === "boolean") flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) themeId = s.themeId;
+      if (["ai", "pvp"].includes(s.mode)) mode = s.mode;
+      if (["easy", "normal", "hard", "extreme"].includes(s.difficulty)) difficulty = s.difficulty;
+      if (["w", "b"].includes(s.humanColor)) humanColor = s.humanColor;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor }));
     } catch (_) {}
   }
   function saveGame() {
@@ -137,10 +149,45 @@
     }
   }
 
+  // --- engine (AI mode) ---
+  const DIFF_NAMES = { easy: "入门", normal: "进阶", hard: "困难", extreme: "极限" };
+
+  /** Drop any in-flight engine search; call before every game mutation. */
+  function invalidateEngine() {
+    engineToken++;
+    engineThinking = false;
+    if (window.ChessEngine) window.ChessEngine.cancel();
+  }
+
+  /** If it's the engine's turn in AI mode, think and play its reply. */
+  async function maybeEngineTurn() {
+    if (mode !== "ai" || !window.ChessEngine) return;
+    if (game.game_over() || game.turn() === humanColor) return;
+    const token = ++engineToken;
+    engineThinking = true;
+    sync();
+    let mv = null;
+    try { mv = await window.ChessEngine.bestMove(game.fen(), difficulty); }
+    catch (_) { mv = null; }
+    if (token !== engineToken) return; // game changed while thinking
+    engineThinking = false;
+    if (!mv) { sync(); toast("引擎未能走子"); return; }
+    const played = game.move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
+    if (played) {
+      viewIndex = sanHistory().length;
+      selection = null;
+      Audio2.playMove(played.color);
+      if (game.in_checkmate()) Audio2.playWin();
+      saveGame();
+    }
+    sync();
+  }
+
   // --- game flow ---
   function statusText() {
     const g = viewGame();
     if (!isLive()) return "复盘 " + viewIndex + "/" + sanHistory().length;
+    if (engineThinking && !g.game_over()) return "引擎思考中…";
     if (g.in_checkmate()) return g.turn() === "w" ? "黑方将死获胜" : "白方将死获胜";
     if (g.in_stalemate()) return "逼和 · 和棋";
     if (g.in_threefold_repetition()) return "三次重复 · 和棋";
@@ -214,6 +261,31 @@
       sb.classList.toggle("active", soundOn);
       sb.setAttribute("aria-pressed", soundOn ? "true" : "false");
     }
+    document.querySelectorAll("#mode-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.mode === mode);
+    });
+    document.querySelectorAll("#diff-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.diff === difficulty);
+    });
+    document.querySelectorAll("#color-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.color === humanColor);
+    });
+    const diffRow = document.getElementById("row-difficulty");
+    const colorRow = document.getElementById("row-color");
+    if (diffRow) diffRow.hidden = mode !== "ai";
+    if (colorRow) colorRow.hidden = mode !== "ai";
+    const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
+    const wRole = document.getElementById("white-role");
+    const bRole = document.getElementById("black-role");
+    if (wRole && bRole) {
+      if (mode === "ai") {
+        wRole.textContent = humanColor === "w" ? "玩家" : engineName;
+        bRole.textContent = humanColor === "b" ? "玩家" : engineName;
+      } else {
+        wRole.textContent = "玩家 1";
+        bRole.textContent = "玩家 2";
+      }
+    }
   }
 
   function setViewIndex(n) {
@@ -227,9 +299,10 @@
   function onSquareClick(sq) {
     if (!isLive()) { toast("请先「回到最新一手」再走子"); return; }
     if (game.game_over()) return;
+    if (mode === "ai" && game.turn() !== humanColor) return; // engine's move
     const piece = game.get(sq);
     if (selection && selection.targets.includes(sq)) {
-      // promotions always queen in v0.1 (chooser is on the roadmap)
+      // promotions always queen for now (chooser is on the roadmap)
       const mv = game.move({ from: selection.sq, to: sq, promotion: "q" });
       if (mv) {
         selection = null;
@@ -239,6 +312,7 @@
         if (game.in_checkmate()) Audio2.playWin();
         sync();
         saveGame();
+        maybeEngineTurn();
       }
       return;
     }
@@ -254,11 +328,17 @@
   function undo() {
     if (!sanHistory().length) return;
     if (!isLive()) { goLive(); return; }
+    invalidateEngine();
     game.undo();
+    // in AI mode take back the engine reply too, so it's the human's turn again
+    if (mode === "ai") {
+      while (sanHistory().length && game.turn() !== humanColor) game.undo();
+    }
     selection = null;
     viewIndex = sanHistory().length;
     sync();
     saveGame();
+    maybeEngineTurn();
   }
 
   async function requestNewGame() {
@@ -266,12 +346,15 @@
         !(await confirmNative("开始新局将清空当前对局，是否继续？", "新局", { ok: "新局", cancel: "取消" }))) {
       return;
     }
+    invalidateEngine();
+    if (window.ChessEngine) window.ChessEngine.newGame();
     game.reset();
     selection = null;
     viewIndex = 0;
     sync();
     saveGame();
     toast("新局开始 · 白先");
+    maybeEngineTurn();
   }
 
   // --- FEN / PGN I/O ---
@@ -326,12 +409,14 @@
       toast("无法解析 PGN 棋谱");
       return;
     }
+    invalidateEngine();
     game.load_pgn(t, { sloppy: true });
     selection = null;
     viewIndex = sanHistory().length;
     sync();
     saveGame();
     toast("已导入 " + sanHistory().length + " 手");
+    maybeEngineTurn();
   }
 
   async function pastePgn() {
@@ -422,6 +507,35 @@
       toast("主题：" + (names[themeId] || themeId));
     }
   };
+  document.getElementById("mode-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-mode]");
+    if (!b || b.dataset.mode === mode) return;
+    invalidateEngine();
+    mode = b.dataset.mode;
+    saveSettings();
+    sync();
+    toast(mode === "ai" ? "人机对弈 · " + (DIFF_NAMES[difficulty] || "") : "双人对弈");
+    maybeEngineTurn();
+  };
+  document.getElementById("diff-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-diff]");
+    if (!b || b.dataset.diff === difficulty) return;
+    difficulty = b.dataset.diff;
+    saveSettings();
+    sync();
+    toast("难度：" + (DIFF_NAMES[difficulty] || difficulty));
+  };
+  document.getElementById("color-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-color]");
+    if (!b || b.dataset.color === humanColor) return;
+    invalidateEngine();
+    humanColor = b.dataset.color;
+    flipped = humanColor === "b";
+    saveSettings();
+    sync();
+    toast(humanColor === "w" ? "执白 · 白方视角" : "执黑 · 黑方视角");
+    maybeEngineTurn();
+  };
   document.getElementById("opt-sound").onclick = () => {
     soundOn = !soundOn;
     saveSettings();
@@ -432,11 +546,14 @@
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative("清除自动存档并开始新局？", "清除存档", { ok: "清除", cancel: "取消" }))) return;
     try { Host.storageRemove(SAVE_KEY); } catch (_) {}
+    invalidateEngine();
+    if (window.ChessEngine) window.ChessEngine.newGame();
     game.reset();
     selection = null;
     viewIndex = 0;
     sync();
     toast("存档已清除");
+    maybeEngineTurn();
   };
 
   const confirmModal = document.getElementById("confirm-modal");
@@ -489,5 +606,9 @@
   sync();
   saveSettings();
   if (!resumed) saveGame();
+  if (mode === "ai" && window.ChessEngine) {
+    window.ChessEngine.init().catch(() => toast("引擎初始化失败"));
+    maybeEngineTurn(); // resumed save may leave the engine on move
+  }
 
 })();

@@ -14,16 +14,18 @@
 | macOS（Apple Silicon） | **Chessboard-macOS-arm64.zip** | 解压后 `open ~/Applications/Chessboard.app`；首次右键「打开」过 Gatekeeper |
 | Windows（x64） | **Chessboard-Windows-x64.zip** | 解压后运行 `Chessboard/chessboard.exe`；需 WebView2 运行时（Win10/11 一般预装） |
 
-## 怎么玩（v0.1）
+## 怎么玩（v0.2）
 
 | 操作 | 说明 |
 |------|------|
+| 人机对弈 | 默认与 **Stockfish 18** 对弈；侧栏可选难度（入门 Elo 1320 · 进阶 1700 · 困难 2200 · 极限满强度）与执子（白/黑，选黑自动翻转视角） |
+| 双人对弈 | 侧栏「模式 → 双人」同屏轮流走子 |
 | 点击走子 | 点选己方棋子 → 高亮合法落点（空格圆点 / 吃子圆环）→ 点目标格 |
 | 规则 | 完整合法性：将军/将死/逼和、王车易位、吃过路兵、升变（暂默认为后）、50 步/三次重复/子力不足和棋 |
 | 复盘 | 着法列表（SAN）点击跳转；← → / Home / End；● 回到最新 |
 | 棋谱 | 复制 / 导出 / **粘贴导入** PGN；复制当前局面 FEN |
 | 翻转 | **F** / 顶栏「翻转」切换黑白视角 |
-| 悔棋 / 新局 | **Z** / **N**（有棋时确认） |
+| 悔棋 / 新局 | **Z** / **N**（有棋时确认）；人机模式悔棋会同时收回引擎回着 |
 | 侧栏 | **Tab** 开关；主题 木/夜/日/纸 · 音效开关 |
 | 存档 | 自动保存，重开恢复 |
 
@@ -33,11 +35,18 @@
 不自研规则。`src/web/js/chess.js` 顶部注明了从 ESM 到经典脚本的机械转换（zero:// 方案下 WebView
 只验证过经典脚本加载）。
 
+## 对弈引擎
+
+[Stockfish.js](https://github.com/nmrugg/stockfish.js) 18 lite-single（GPLv3，单线程 + lite NNUE，
+约 7MB），vendored 于 `third_party/stockfish/`。zero:// 方案不能加载 worker 脚本也不能 fetch 打包
+文件，因此构建时由 `scripts/gen-engine-src.mjs` 把 loader 文本与 wasm base64 生成为
+`engine-src.js` 全局量，运行时 `engine.js` 用 Blob worker + `postMessage` 传 wasm 启动引擎——
+全程零 URL 解析。难度用 UCI `UCI_LimitStrength/UCI_Elo`（1320–3190）限强，「极限」为满强度。
+
 ## 路线
 
-- **v0.2 引擎**：Stockfish WASM（GPLv3）接入 Blob worker + `UCI_Elo` 限强分档 + 提示
 - **v0.3 玩法**：centipawn 复盘曲线 + 失着标注 + 做题练习 + 统计（沿 goban 剧本）
-- 之后：棋钟、升变选择、开局名称（ECO）
+- 之后：棋钟、升变选择、开局名称（ECO）、引擎提示
 
 ## 开发
 
@@ -49,17 +58,21 @@ cd ~/chessboard
 ```
 src/web/
   index.html · styles.css
-  js/chess.js   # 规则（vendored chess.js 0.13.4, BSD-2-Clause）
-  js/host.js    # Native / localStorage 门面
-  js/board.js   # 棋盘 Canvas 渲染 + 命中测试
-  js/audio.js   # 离线合成音效
-  js/app.js     # UI 编排
+  js/chess.js      # 规则（vendored chess.js 0.13.4, BSD-2-Clause）
+  js/engine.js     # Stockfish Blob worker 管理 + 难度分档
+  js/engine-src.js # 生成物（gitignored）：loader 文本 + wasm base64
+  js/host.js       # Native / localStorage 门面
+  js/board.js      # 棋盘 Canvas 渲染 + 命中测试
+  js/audio.js      # 离线合成音效
+  js/app.js        # UI 编排
 src/main.zig
-scripts/test-chess.mjs
+third_party/stockfish/   # Stockfish.js 18 lite-single（GPLv3）
+scripts/gen-engine-src.mjs · test-chess.mjs
 ```
 
 测试：`node scripts/test-chess.mjs`
 
 ## 许可
 
-GPLv3（见 LICENSE）。vendored chess.js 保留其 BSD-2-Clause 版权头。
+GPLv3（见 LICENSE）。vendored chess.js 保留其 BSD-2-Clause 版权头；vendored Stockfish.js
+为 GPLv3（`third_party/stockfish/COPYING.txt`）。

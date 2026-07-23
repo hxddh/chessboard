@@ -38,9 +38,12 @@ jobs:
       - name: sync frontend dist
         shell: bash
         run: |
+          node scripts/gen-engine-src.mjs
           rm -rf frontend/dist && mkdir -p frontend/dist/js
           cp src/web/index.html src/web/styles.css frontend/dist/
           cp src/web/js/*.js frontend/dist/js/
+          # engine-src must carry the full wasm payload (~9MB), not a stub
+          test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
       - name: zig build
         shell: bash
         run: zig build -Doptimize=ReleaseFast -Dplatform=windows -Dnative-sdk-path="$SDK_PATH"

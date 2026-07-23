@@ -57,6 +57,35 @@
       </section>
 
       <section class="side-section">
+        <h2 class="side-h">对局</h2>
+        <div class="setting-list">
+          <div class="setting-row stack">
+            <span class="setting-k">模式</span>
+            <div class="theme-row" id="mode-seg" role="group" aria-label="模式">
+              <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈">人机</button>
+              <button type="button" data-mode="pvp" title="双人同屏对弈">双人</button>
+            </div>
+          </div>
+          <div class="setting-row stack" id="row-difficulty">
+            <span class="setting-k">难度</span>
+            <div class="theme-row" id="diff-seg" role="group" aria-label="难度">
+              <button type="button" data-diff="easy" title="Elo 1320">入门</button>
+              <button type="button" data-diff="normal" class="active" title="Elo 1700">进阶</button>
+              <button type="button" data-diff="hard" title="Elo 2200">困难</button>
+              <button type="button" data-diff="extreme" title="Stockfish 满强度">极限</button>
+            </div>
+          </div>
+          <div class="setting-row stack" id="row-color">
+            <span class="setting-k">执子</span>
+            <div class="theme-row" id="color-seg" role="group" aria-label="执子">
+              <button type="button" data-color="w" class="active" title="执白先行">执白</button>
+              <button type="button" data-color="b" title="执黑后行">执黑</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="side-section">
         <h2 class="side-h">外观</h2>
         <div class="setting-list">
           <div class="setting-row stack">
@@ -120,6 +149,8 @@
   </div>
 
   <script src="js/chess.js"></script>
+  <script src="js/engine-src.js"></script>
+  <script src="js/engine.js"></script>
   <script src="js/host.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/board.js"></script>

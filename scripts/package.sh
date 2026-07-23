@@ -6,6 +6,9 @@ cd "$ROOT"
 
 export PATH="${HOME}/.native/toolchains/zig-0.16.0:${PATH}"
 
+echo "==> generate engine sources (Stockfish loader + wasm base64)"
+node scripts/gen-engine-src.mjs
+
 echo "==> sync frontend/dist from src/web"
 rm -rf frontend/dist
 mkdir -p frontend/dist/js
@@ -19,6 +22,9 @@ test -f frontend/dist/js/host.js
 test -f frontend/dist/js/audio.js
 test -f frontend/dist/js/board.js
 test -f frontend/dist/js/app.js
+test -f frontend/dist/js/engine.js
+# engine-src must carry the full wasm payload (~9MB), not a stub
+test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
 
 echo "==> unit tests"
 node scripts/test-chess.mjs
