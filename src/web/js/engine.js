@@ -135,15 +135,19 @@
 
   /**
    * Best move for `fen` at difficulty tier `diff`.
+   * @param maxMs optional think-time cap (clocked games) — never below 120ms.
    * @returns {Promise<{from,to,promotion|null}|null>} null when stale/failed.
    */
-  function bestMove(fen, diff) {
-    return exclusive(() => bestMoveInner(fen, diff));
+  function bestMove(fen, diff, maxMs) {
+    return exclusive(() => bestMoveInner(fen, diff, maxMs));
   }
 
-  async function bestMoveInner(fen, diff) {
+  async function bestMoveInner(fen, diff, maxMs) {
     await init();
-    const tier = TIERS[diff] || TIERS.normal;
+    const base = TIERS[diff] || TIERS.normal;
+    const tier = maxMs
+      ? { elo: base.elo, movetime: Math.max(120, Math.min(base.movetime, Math.floor(maxMs))) }
+      : base;
     const myGen = ++gen;
     // drain any stray bestmove from a cancelled search: the engine processes
     // commands in order, so its readyok arrives after that bestmove.

@@ -329,6 +329,8 @@
     .theme-row {
       display: flex; gap: 8px;
     }
+    .theme-row.wrap { flex-wrap: wrap; }
+    .theme-row.wrap button { flex: 1 1 30%; }
     .theme-row button {
       flex: 1;
       appearance: none; border: 1px solid var(--card-border);

@@ -177,7 +177,7 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
   const lessons = ctx.CHESS_LESSONS;
-  assert(Array.isArray(lessons) && lessons.length >= 24, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
+  assert(Array.isArray(lessons) && lessons.length >= 26, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
   const ids = new Set();
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -255,7 +255,7 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
   const puzzles = ctx.CHESS_PUZZLES;
-  assert(Array.isArray(puzzles) && puzzles.length >= 23, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
+  assert(Array.isArray(puzzles) && puzzles.length >= 33, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
   const matingMoves = (g) => g.moves().filter((m) => {
     g.move(m); const mate = g.in_checkmate(); g.undo(); return mate;
   });
@@ -281,13 +281,24 @@ for (const p of ["r", "b", "n"]) {
     return true;
   }
   const mateNextForced = (g) => blackForcedLost(g, 1);
+  const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+  /** one-recapture-level material swing of playing `san` (puzzles are designed
+      so deeper exchanges never matter) */
+  function swing(fen, san) {
+    const t = new Chess(fen);
+    const mv = t.move(san);
+    if (!mv) return null;
+    let gain = mv.captured ? VAL[mv.captured] : 0;
+    if (t.moves({ verbose: true }).some((m) => m.to === mv.to)) gain -= VAL[mv.piece];
+    return gain;
+  }
   const ids = new Set();
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
   for (const p of puzzles) {
     if (!p.id || ids.has(p.id)) { fail("puzzle id missing/duplicate", p.id); continue; }
     ids.add(p.id);
-    if (!p.name || !["m1", "m2", "m3"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
+    if (!p.name || !["m1", "m2", "m3", "win"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
     const v = new Chess().validate_fen(p.fen);
     if (!v.valid) { fail(p.id, "invalid FEN:", v.error); continue; }
     if (p.fen.split(" ")[1] !== "w") { fail(p.id, "not white to move"); continue; }
@@ -298,6 +309,33 @@ for (const p of ["r", "b", "n"]) {
     const mv = g.move(p.solution[0]);
     if (!mv) { fail(p.id, "solution[0] illegal:", p.solution[0]); continue; }
     if (mv.san !== p.solution[0]) fail(p.id, "non-canonical SAN", p.solution[0], "≠", mv.san);
+    if (p.cat === "win") {
+      if (typeof p.gain !== "number" || p.gain < 1) { fail(p.id, "win puzzle needs gain ≥ 1"); continue; }
+      if (p.solution.length === 1) {
+        // one-mover: the stored move must be the UNIQUE best material swing
+        const s0 = swing(p.fen, p.solution[0]);
+        if (s0 == null || s0 < p.gain) { fail(p.id, "solution swing", s0, "< gain", p.gain); continue; }
+        for (const alt of new Chess(p.fen).moves()) {
+          if (alt === p.solution[0]) continue;
+          const sa = swing(p.fen, alt);
+          if (sa != null && sa >= p.gain) fail(p.id, "not unique: " + alt + " also gains " + sa);
+        }
+      }
+      if (p.solution.length === 3) {
+        // forced two-mover: black has exactly one legal reply
+        const replies = g.moves();
+        if (replies.length !== 1) fail(p.id, "black reply not forced (" + replies.length + " moves)");
+        else if (replies[0] !== p.solution[1]) fail(p.id, "stored reply mismatch:", replies[0]);
+        const rm = g.move(p.solution[1]);
+        const wm = rm ? g.move(p.solution[2]) : null;
+        if (!rm || !wm) { fail(p.id, "two-mover line illegal"); continue; }
+        if (wm.san !== p.solution[2]) fail(p.id, "non-canonical SAN", p.solution[2]);
+        if (!wm.captured || VAL[wm.captured] < p.gain) fail(p.id, "final capture below gain");
+      } else if (p.solution.length !== 1) {
+        fail(p.id, "win solutions are 1 or 3 plies");
+      }
+      continue;
+    }
     const totalMoves = { m1: 1, m2: 2, m3: 3 }[p.cat];
     if (p.cat === "m1") {
       if (p.solution.length !== 1) fail(p.id, "m1 solution must be one move");

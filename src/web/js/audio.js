@@ -145,5 +145,25 @@
     } catch (_) {}
   }
 
-  global.ChessAudio = { init, playMove, playWin, playStar };
+  /** Neutral two-note close for draws — settles, neither rises nor falls hard. */
+  function playDraw() {
+    if (!enabled()) return;
+    try {
+      const ctx = ensureAudio();
+      [[659.25, 0], [523.25, 0.16]].forEach(([f, dt]) => {
+        const t0 = ctx.currentTime + dt;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.07, t0 + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t0); osc.stop(t0 + 0.55);
+      });
+    } catch (_) {}
+  }
+
+  global.ChessAudio = { init, playMove, playWin, playStar, playDraw };
 })(typeof window !== "undefined" ? window : globalThis);

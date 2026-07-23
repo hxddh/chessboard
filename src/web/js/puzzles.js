@@ -61,5 +61,27 @@
       fen: "8/8/2k5/7R/8/8/8/6RK w - - 0 1", solution: ["Rg6+", "Kb7", "Rh7+", "Ka8", "Rg8#"] },
     { id: "m3-ladder-m", cat: "m3", name: "双车赶王三步 III",
       fen: "8/8/6k1/R7/8/8/8/1R5K w - - 0 1", solution: ["Rb6+", "Kf7", "Ra7+", "Ke8", "Rb8#"] },
+    // —— 吃子战术 ——(gain = 至少净得的子力分;单测用一层静态交换验证唯一最优)
+    { id: "w-hangq", cat: "win", name: "白吃无根后",
+      fen: "k7/8/3q4/8/8/8/3R4/K7 w - - 0 1", solution: ["Rxd6"], gain: 9 },
+    { id: "w-forkdone", cat: "win", name: "将军捉双得车",
+      fen: "4k3/2r1b3/8/3N4/8/8/8/6K1 w - - 0 1", solution: ["Nxc7+"], gain: 5 },
+    { id: "w-pawntakes", cat: "win", name: "小兵吃大象",
+      fen: "7k/8/8/8/8/2b5/1P6/R6K w - - 0 1", solution: ["bxc3"], gain: 3 },
+    { id: "w-cornerrook", cat: "win", name: "笑纳角车",
+      fen: "r4k2/2N5/8/8/8/8/8/4K3 w - - 0 1", solution: ["Nxa8"], gain: 5 },
+    { id: "w-looseknight", cat: "win", name: "吃无根马",
+      fen: "k7/1p6/2p5/8/6n1/8/8/3Q2K1 w - - 0 1", solution: ["Qxg4"], gain: 3 },
+    { id: "w-smallbest", cat: "win", name: "小赚也别亏",
+      fen: "7k/8/6p1/1p1Q1n2/8/8/8/7K w - - 0 1", solution: ["Qxb5"], gain: 1 },
+    { id: "w-loosebishop", cat: "win", name: "车扫无根象",
+      fen: "k7/8/8/8/2b4R/8/8/K7 w - - 0 1", solution: ["Rxc4"], gain: 3 },
+    { id: "w-discovered", cat: "win", name: "闪击得后",
+      fen: "4k3/1q6/8/8/4B3/8/8/4R1K1 w - - 0 1", solution: ["Bxb7+"], gain: 9 },
+    // 两步得子:黑方应对被强制(仅一个合法着)
+    { id: "w-royalfork", cat: "win", name: "马叉王后",
+      fen: "k3q3/pp6/8/1N6/8/8/8/6K1 w - - 0 1", solution: ["Nc7+", "Kb8", "Nxe8"], gain: 9 },
+    { id: "w-royalfork2", cat: "win", name: "马叉王后 II",
+      fen: "3q3k/6pp/8/6N1/8/8/8/6K1 w - - 0 1", solution: ["Nf7+", "Kg8", "Nxd8"], gain: 9 },
   ];
 })(typeof window !== "undefined" ? window : globalThis);
