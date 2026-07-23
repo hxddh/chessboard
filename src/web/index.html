@@ -149,6 +149,7 @@
             <button type="button" data-cat="m2" title="两步将死(含引子与静着)">两步杀</button>
             <button type="button" data-cat="m3" title="三步将死(双车赶王)">三步杀</button>
             <button type="button" data-cat="win" title="吃子战术:选出净得子力最多的一吃">吃子</button>
+            <button type="button" data-cat="tac" title="战术母题:串击、闪将 —— 强制得子">战术</button>
             <button type="button" data-cat="op" title="开局练习:执白照谱走主流开局">开局</button>
           </div>
         </div>
@@ -197,6 +198,11 @@
           <button type="button" class="text-link danger" id="stats-clear" disabled>清零</button>
         </div>
         <div class="stats-body" id="stats-body"></div>
+        <div class="side-h-row" style="margin-top:14px">
+          <h2 class="side-h">成就</h2>
+          <span class="side-h-meta num" id="ach-count">0/0</span>
+        </div>
+        <div class="ach-body" id="ach-body"></div>
       </section>
 
       <div class="side-foot">
@@ -235,6 +241,7 @@
   <script src="js/openings.js"></script>
   <script src="js/lessons.js"></script>
   <script src="js/puzzles.js"></script>
+  <script src="js/achievements.js"></script>
   <script src="js/engine-src.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/host.js"></script>

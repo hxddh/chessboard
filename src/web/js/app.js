@@ -770,6 +770,7 @@
     if (!learnState.done[L.id]) {
       learnState.done[L.id] = true;
       saveLearnState();
+      checkNewAchievements();
     }
     toast("🎉 课程完成:" + L.title);
     sync();
@@ -830,10 +831,10 @@
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
   const PUZZLE_KEY = "chess.v1.puzzles";
   const PUZZLES = window.CHESS_PUZZLES || [];
-  const PUZZLE_CATS = [["m1", "一步杀"], ["m2", "两步杀"], ["m3", "三步杀"], ["win", "吃子"], ["op", "开局"]];
+  const PUZZLE_CATS = [["m1", "一步杀"], ["m2", "两步杀"], ["m3", "三步杀"], ["win", "吃子"], ["tac", "战术"], ["op", "开局"]];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
-  const SCRIPTED_CATS = { win: true, op: true };
+  const SCRIPTED_CATS = { win: true, op: true, tac: true };
 
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
   const OPENING_DRILLS = (window.CHESS_OPENINGS || [])
@@ -960,6 +961,7 @@
     const p = puzzle.p;
     if (p.cat === "op") return p.name + " · 执白照谱走完 " + Math.ceil(p.line.length / 2) + " 回合";
     if (p.cat === "win") return p.name + " · 白先,吃掉最大的战利品(净得 " + p.gain + " 分)";
+    if (p.cat === "tac") return p.name + " · " + (p.motif || "战术") + " · 白先强制得子(净得 " + p.gain + " 分)";
     const n = { m1: "一", m2: "两", m3: "三" }[p.cat] || "?";
     return p.name + " · 白先," + n + "步内将死";
   }
@@ -1000,9 +1002,11 @@
       // scripted line: exact match, opponent replies straight from the script
       const script = puzzleScript(puzzle.p);
       if (mv.san !== script[puzzle.stage]) {
-        const isWin = puzzle.p.cat === "win";
-        puzzleWrong(isWin && mv.captured ? "吃它不划算 —— 数数保护者再算算分" :
-          isWin ? "有更大的战利品等着你" : "这不是谱着");
+        const c = puzzle.p.cat;
+        puzzleWrong(
+          c === "win" ? (mv.captured ? "吃它不划算 —— 数数保护者再算算分" : "有更大的战利品等着你") :
+          c === "tac" ? (puzzle.stage === 0 ? "找" + (puzzle.p.motif || "强制手段") + " —— 先用将军逼住对方" : "抓住时机吃掉目标子") :
+          "这不是谱着");
         return;
       }
       puzzle.stage++;
@@ -1094,8 +1098,10 @@
     if (!puzzleState.solved[puzzle.p.id]) {
       puzzleState.solved[puzzle.p.id] = true;
       savePuzzleState();
+      checkNewAchievements();
     }
-    const verb = puzzle.p.cat === "op" ? "背谱完成" : puzzle.p.cat === "win" ? "得子成功" : "解出";
+    const verb = puzzle.p.cat === "op" ? "背谱完成" :
+      puzzle.p.cat === "win" || puzzle.p.cat === "tac" ? "得子成功" : "解出";
     toast("✅ " + verb + " · " + puzzle.p.name);
     sync();
   }
@@ -1318,6 +1324,7 @@
     if (s.games.length > 500) s.games = s.games.slice(-500);
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
     renderStats();
+    checkNewAchievements();
   }
 
   function renderStats() {
@@ -1353,6 +1360,90 @@
     el.appendChild(hint);
     const clearBtn = document.getElementById("stats-clear");
     if (clearBtn) clearBtn.disabled = !total;
+  }
+
+  // --- achievements: pure derivations of stats + lesson/puzzle progress ---
+  const ACH = window.CHESS_ACHIEVEMENTS || [];
+  const ACH_KEY = "chess.v1.achv";
+  function loadAchSeen() {
+    try {
+      const s = JSON.parse(Host.storageGet(ACH_KEY) || "null");
+      if (s && Array.isArray(s.seen)) return new Set(s.seen);
+    } catch (_) {}
+    return new Set();
+  }
+  let achSeen = loadAchSeen();
+
+  function achSummary() {
+    const st = loadStats();
+    let wins = 0, losses = 0, draws = 0, extremeWins = 0;
+    for (const g of st.games) {
+      if (g.result === "win") { wins++; if (g.diff === "extreme") extremeWins++; }
+      else if (g.result === "loss") losses++;
+      else draws++;
+    }
+    const solved = puzzleState.solved || {};
+    const solvedIn = (cat) => ALL_PUZZLES.filter((p) => p.cat === cat && solved[p.id]).length;
+    const countIn = (cat) => ALL_PUZZLES.filter((p) => p.cat === cat).length;
+    const mateCats = ["m1", "m2", "m3"];
+    return {
+      lessonsDone: LESSONS.filter((l) => learnState.done[l.id]).length,
+      lessonsTotal: LESSONS.length,
+      puzzleSolvedCount: ALL_PUZZLES.filter((p) => solved[p.id]).length,
+      matesSolved: mateCats.reduce((n, c) => n + solvedIn(c), 0),
+      matesTotal: mateCats.reduce((n, c) => n + countIn(c), 0),
+      tacSolved: solvedIn("tac"), tacTotal: countIn("tac"),
+      opSolved: solvedIn("op"), opTotal: countIn("op"),
+      wins, losses, draws, games: st.games.length, extremeWins,
+    };
+  }
+
+  /** [{ach, unlocked}] with the meta "completionist" resolved in a 2nd pass. */
+  function evalAch() {
+    const s = achSummary();
+    const base = ACH.filter((a) => a.id !== "completionist");
+    const baseRes = base.map((a) => ({ ach: a, unlocked: !!a.test(s) }));
+    s.otherUnlocked = baseRes.filter((r) => r.unlocked).length;
+    s.otherTotal = base.length;
+    return ACH.map((a) =>
+      a.id === "completionist" ? { ach: a, unlocked: !!a.test(s) }
+        : baseRes.find((r) => r.ach.id === a.id));
+  }
+
+  /** Toast any achievement newly unlocked since last check; persist seen set. */
+  function checkNewAchievements() {
+    const res = evalAch();
+    const fresh = res.filter((r) => r.unlocked && !achSeen.has(r.ach.id));
+    for (const r of res) if (r.unlocked) achSeen.add(r.ach.id);
+    if (fresh.length) {
+      try { Host.storageSet(ACH_KEY, JSON.stringify({ seen: Array.from(achSeen) })); } catch (_) {}
+      // one toast per unlock, staggered so several don't collide
+      fresh.forEach((r, i) => setTimeout(() => toast("🎉 成就解锁 · " + r.ach.icon + " " + r.ach.name), i * 1600));
+    }
+    renderAchievements();
+  }
+
+  function renderAchievements() {
+    const el = document.getElementById("ach-body");
+    if (!el) return;
+    const res = evalAch();
+    const got = res.filter((r) => r.unlocked).length;
+    el.innerHTML = "";
+    const head = document.getElementById("ach-count");
+    if (head) head.textContent = got + "/" + res.length;
+    for (const r of res) {
+      const b = document.createElement("div");
+      b.className = "ach-item" + (r.unlocked ? " got" : "");
+      b.title = r.ach.desc;
+      const ic = document.createElement("span");
+      ic.className = "ach-ic";
+      ic.textContent = r.unlocked ? r.ach.icon : "🔒";
+      const nm = document.createElement("span");
+      nm.className = "ach-nm";
+      nm.textContent = r.ach.name;
+      b.append(ic, nm);
+      el.appendChild(b);
+    }
   }
 
   // --- game flow ---
@@ -1726,6 +1817,7 @@
     if (s.games.length > 500) s.games = s.games.slice(-500);
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
     renderStats();
+    checkNewAchievements();
   }
 
   function recordResign() { recordOutcome("loss", "#resigned"); }
@@ -2006,6 +2098,7 @@
     if (!(await confirmNative("清零人机对局统计?", "清零统计", { ok: "清零", cancel: "取消" }))) return;
     try { Host.storageRemove(STATS_KEY); } catch (_) {}
     renderStats();
+    renderAchievements();
     toast("统计已清零");
   };
 
@@ -2234,6 +2327,7 @@
   if (mode === "puzzle") startPuzzles();
   BoardView.resizeCanvas();
   renderStats();
+  renderAchievements();
   sync();
   saveSettings();
   if (!resumed) saveGame();

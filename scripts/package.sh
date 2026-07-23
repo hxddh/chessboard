@@ -21,6 +21,7 @@ test -f frontend/dist/js/chess.js
 test -f frontend/dist/js/openings.js
 test -f frontend/dist/js/lessons.js
 test -f frontend/dist/js/puzzles.js
+test -f frontend/dist/js/achievements.js
 test -f frontend/dist/js/host.js
 test -f frontend/dist/js/audio.js
 test -f frontend/dist/js/board.js

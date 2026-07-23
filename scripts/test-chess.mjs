@@ -177,7 +177,7 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
   const lessons = ctx.CHESS_LESSONS;
-  assert(Array.isArray(lessons) && lessons.length >= 26, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
+  assert(Array.isArray(lessons) && lessons.length >= 28, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
   const ids = new Set();
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -255,7 +255,7 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
   const puzzles = ctx.CHESS_PUZZLES;
-  assert(Array.isArray(puzzles) && puzzles.length >= 33, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
+  assert(Array.isArray(puzzles) && puzzles.length >= 39, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
   const matingMoves = (g) => g.moves().filter((m) => {
     g.move(m); const mate = g.in_checkmate(); g.undo(); return mate;
   });
@@ -292,19 +292,70 @@ for (const p of ["r", "b", "n"]) {
     if (t.moves({ verbose: true }).some((m) => m.to === mv.to)) gain -= VAL[mv.piece];
     return gain;
   }
+  /** best net capture on `to` for the side to move (legal recaptures only) */
+  function bestCapture(g, to) {
+    let best = null;
+    for (const m of g.moves({ verbose: true })) {
+      if (m.to !== to || !m.captured) continue;
+      const t = new Chess(g.fen());
+      t.move(m);
+      let gain = VAL[m.captured];
+      if (t.moves({ verbose: true }).some((r) => r.to === to)) gain -= VAL[m.piece];
+      if (best == null || gain > best) best = gain;
+    }
+    return best;
+  }
   const ids = new Set();
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
   for (const p of puzzles) {
     if (!p.id || ids.has(p.id)) { fail("puzzle id missing/duplicate", p.id); continue; }
     ids.add(p.id);
-    if (!p.name || !["m1", "m2", "m3", "win"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
+    if (!p.name || !["m1", "m2", "m3", "win", "tac"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
     const v = new Chess().validate_fen(p.fen);
     if (!v.valid) { fail(p.id, "invalid FEN:", v.error); continue; }
     if (p.fen.split(" ")[1] !== "w") { fail(p.id, "not white to move"); continue; }
     // the side NOT to move must not be in check (position would be illegal)
     const flipped = new Chess(p.fen.replace(" w ", " b "));
     if (flipped.in_check()) { fail(p.id, "black already in check"); continue; }
+    // tactical motifs: force winning `target` by ≥ gain against every defense
+    if (p.cat === "tac") {
+      if (typeof p.gain !== "number" || p.gain < 1) { fail(p.id, "tac needs gain ≥ 1"); continue; }
+      if (!/^[a-h][1-8]$/.test(p.target || "")) { fail(p.id, "tac needs a target square"); continue; }
+      if (!Array.isArray(p.line) || !p.line.length) { fail(p.id, "tac needs a display line"); continue; }
+      const gt = new Chess(p.fen);
+      const fm = gt.move(p.first);
+      if (!fm) { fail(p.id, "tac first illegal:", p.first); continue; }
+      if (fm.san !== p.first || p.line[0] !== p.first) fail(p.id, "tac first/line mismatch");
+      if (p.line.length === 1) {
+        // discovered/one-move: the first move itself captures target for ≥ gain
+        if (fm.to !== p.target || !fm.captured) { fail(p.id, "1-ply tac must capture target"); continue; }
+        let net = VAL[fm.captured];
+        if (gt.moves({ verbose: true }).some((r) => r.to === p.target)) net -= VAL[fm.piece];
+        if (net < p.gain) fail(p.id, "1-ply tac net " + net + " < gain " + p.gain);
+      } else if (p.line.length === 3) {
+        // skewer/deflection: every black reply lets white capture target ≥ gain
+        if (!gt.in_check()) fail(p.id, "3-ply tac first move should check");
+        const replies = gt.moves();
+        if (!replies.length) { fail(p.id, "no black reply (should not mate here)"); continue; }
+        for (const r of replies) {
+          gt.move(r);
+          const cap = bestCapture(gt, p.target);
+          gt.undo();
+          if (cap == null || cap < p.gain) { fail(p.id, "tac refuted by " + r + " (cap " + cap + ")"); break; }
+        }
+        // the stored line must be legal and end capturing the target
+        const gl = new Chess(p.fen);
+        gl.move(p.line[0]);
+        const rr = gl.move(p.line[1]);
+        const cc = rr ? gl.move(p.line[2]) : null;
+        if (!rr || !cc) fail(p.id, "stored tac line illegal");
+        else if (cc.to !== p.target || !cc.captured) fail(p.id, "stored line does not capture target");
+      } else {
+        fail(p.id, "tac line must be 1 or 3 plies");
+      }
+      continue;
+    }
     const g = new Chess(p.fen);
     const mv = g.move(p.solution[0]);
     if (!mv) { fail(p.id, "solution[0] illegal:", p.solution[0]); continue; }
@@ -358,6 +409,40 @@ for (const p of ["r", "b", "n"]) {
     }
   }
   assert(bad === 0, "all puzzles legal and forced");
+}
+
+// achievements: well-formed, unique, each reachable from some summary, and the
+// meta "completionist" resolves from the others
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/achievements.js"), "utf8"), ctx, { filename: "achievements.js" });
+  const ach = ctx.CHESS_ACHIEVEMENTS;
+  assert(Array.isArray(ach) && ach.length >= 10, "achievements loaded (" + (ach ? ach.length : 0) + ")");
+  const ids = new Set();
+  let bad = 0;
+  const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
+  // a maxed-out summary should unlock everything, an empty one nothing (except
+  // completionist is gated on others so it also stays locked when empty)
+  const full = {
+    lessonsDone: 99, lessonsTotal: 28, puzzleSolvedCount: 99,
+    matesSolved: 23, matesTotal: 23, tacSolved: 6, tacTotal: 6,
+    opSolved: 38, opTotal: 38, wins: 99, losses: 0, draws: 0, games: 99, extremeWins: 9,
+    otherUnlocked: 11, otherTotal: 11,
+  };
+  const empty = {
+    lessonsDone: 0, lessonsTotal: 28, puzzleSolvedCount: 0,
+    matesSolved: 0, matesTotal: 23, tacSolved: 0, tacTotal: 6,
+    opSolved: 0, opTotal: 38, wins: 0, losses: 5, draws: 0, games: 5, extremeWins: 0,
+    otherUnlocked: 0, otherTotal: 11,
+  };
+  for (const a of ach) {
+    if (!a.id || ids.has(a.id)) { fail("achievement id missing/duplicate", a.id); continue; }
+    ids.add(a.id);
+    if (!a.icon || !a.name || !a.desc) fail(a.id, "missing icon/name/desc");
+    if (typeof a.test !== "function") { fail(a.id, "test not a function"); continue; }
+    if (!a.test(full)) fail(a.id, "not unlocked by a maxed summary");
+    if (a.test(empty)) fail(a.id, "unlocked by an empty summary");
+  }
+  assert(bad === 0, "all achievements well-formed and reachable");
 }
 
 if (failed) {

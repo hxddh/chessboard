@@ -83,5 +83,26 @@
       fen: "k3q3/pp6/8/1N6/8/8/8/6K1 w - - 0 1", solution: ["Nc7+", "Kb8", "Nxe8"], gain: 9 },
     { id: "w-royalfork2", cat: "win", name: "马叉王后 II",
       fen: "3q3k/6pp/8/6N1/8/8/8/6K1 w - - 0 1", solution: ["Nf7+", "Kg8", "Nxd8"], gain: 9 },
+    // —— 战术母题 ——(tac:串击 3 步、闪将 1 步;单测证明对所有防守强制得子)
+    // 串击:将军逼高价值子让位,吃其身后目标(target=身后子;check→任意应→吃)
+    { id: "t-skewer-h", cat: "tac", name: "串击得后(直线)", motif: "串击",
+      fen: "7q/8/8/7k/8/8/4K3/R7 w - - 0 1", first: "Rh1+", target: "h8", gain: 9,
+      line: ["Rh1+", "Kg6", "Rxh8"] },
+    { id: "t-skewer-a", cat: "tac", name: "串击得后(a 线)", motif: "串击",
+      fen: "q7/8/8/k7/8/8/4K3/7R w - - 0 1", first: "Ra1+", target: "a8", gain: 9,
+      line: ["Ra1+", "Kb6", "Rxa8"] },
+    { id: "t-skewer-e", cat: "tac", name: "串击得后(中路)", motif: "串击",
+      fen: "4q3/8/8/4k3/8/1K6/8/R7 w - - 0 1", first: "Re1+", target: "e8", gain: 9,
+      line: ["Re1+", "Kd6", "Rxe8"] },
+    // 闪将:移子露出身后的将军,同时移子本身吃子(单步即得子,应将无法救回)
+    { id: "t-disco-q", cat: "tac", name: "闪将捕后", motif: "闪将",
+      fen: "4k3/8/5q2/8/4N3/8/8/4R1K1 w - - 0 1", first: "Nxf6+", target: "f6", gain: 9,
+      line: ["Nxf6+"] },
+    { id: "t-disco-r", cat: "tac", name: "闪将捕车", motif: "闪将",
+      fen: "4k3/8/8/2r5/4N3/8/8/4R1K1 w - - 0 1", first: "Nxc5+", target: "c5", gain: 5,
+      line: ["Nxc5+"] },
+    { id: "t-disco-b", cat: "tac", name: "闪将捕后(象)", motif: "闪将",
+      fen: "3k4/8/8/2q5/3B4/8/8/3RK3 w - - 0 1", first: "Bxc5+", target: "c5", gain: 9,
+      line: ["Bxc5+"] },
   ];
 })(typeof window !== "undefined" ? window : globalThis);

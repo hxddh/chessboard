@@ -697,6 +697,26 @@
     .mvtag.t-bad { color: #e05252; }
 
     /* --- stats (v0.3) --- */
+    .ach-body {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+    }
+    .ach-item {
+      display: flex; align-items: center; gap: 7px;
+      padding: 7px 9px; border-radius: 9px;
+      border: 1px solid var(--card-border);
+      background: var(--btn-ghost);
+      opacity: 0.5;
+      transition: opacity .15s, border-color .15s, background .15s;
+    }
+    .ach-item.got {
+      opacity: 1;
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--card-border));
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    .ach-ic { font-size: 16px; line-height: 1; flex-shrink: 0; }
+    .ach-nm { font-size: 11.5px; color: var(--text); line-height: 1.2; }
+    .ach-item:not(.got) .ach-nm { color: var(--muted); }
+
     .stats-body { display: flex; flex-direction: column; gap: 2px; }
     .stat-row {
       display: flex;
