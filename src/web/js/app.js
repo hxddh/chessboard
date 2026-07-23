@@ -386,7 +386,7 @@
     const g = viewGame();
     if (!isLive()) return "复盘 " + viewIndex + "/" + sanHistory().length;
     if (engineThinking && !g.game_over()) return "引擎思考中…";
-    if (g.in_checkmate()) return g.turn() === "w" ? "黑方将死获胜" : "白方将死获胜";
+    if (g.in_checkmate()) return g.turn() === "w" ? "将死 · 黑方胜" : "将死 · 白方胜";
     if (g.in_stalemate()) return "逼和 · 和棋";
     if (g.in_threefold_repetition()) return "三次重复 · 和棋";
     if (g.insufficient_material()) return "子力不足 · 和棋";
@@ -506,7 +506,7 @@
   function goLive() { setViewIndex(sanHistory().length); }
 
   function onSquareClick(sq) {
-    if (!isLive()) { toast("请先「回到最新一手」再走子"); return; }
+    if (!isLive()) { toast("请先「回到最新一着」再走子"); return; }
     if (game.game_over()) return;
     if (mode === "ai" && game.turn() !== humanColor) return; // engine's move
     const piece = game.get(sq);
@@ -572,7 +572,7 @@
     if (isLive()) return;
     const keep = viewIndex;
     const drop = sanHistory().length - keep;
-    if (!(await confirmNative("从第 " + keep + " 手继续重下,其后 " + drop + " 手将被丢弃,是否继续?", "重下", { ok: "重下", cancel: "取消" }))) {
+    if (!(await confirmNative("从第 " + keep + " 着继续重下,其后 " + drop + " 着将被丢弃,是否继续?", "重下", { ok: "重下", cancel: "取消" }))) {
       return;
     }
     const h = sanHistory().slice(0, keep);
@@ -583,7 +583,7 @@
     viewIndex = h.length;
     sync();
     saveGame();
-    toast("已回到第 " + keep + " 手,继续对弈");
+    toast("已回到第 " + keep + " 着,继续对弈");
     maybeEngineTurn();
   }
 
@@ -645,7 +645,7 @@
     viewIndex = sanHistory().length;
     sync();
     saveGame();
-    toast("已导入 " + sanHistory().length + " 手");
+    toast("已导入 " + sanHistory().length + " 着");
     maybeEngineTurn();
   }
 
@@ -719,7 +719,7 @@
   document.getElementById("rep-prev").onclick = () => setViewIndex(viewIndex - 1);
   document.getElementById("rep-next").onclick = () => setViewIndex(viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
-  document.getElementById("rep-live").onclick = () => { goLive(); toast("已回到最新一手"); };
+  document.getElementById("rep-live").onclick = () => { goLive(); toast("已回到最新一着"); };
 
   document.getElementById("an-run").onclick = () => { analyzeGame(); };
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };

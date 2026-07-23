@@ -66,6 +66,7 @@ src/web/
   js/audio.js      # 离线合成音效
   js/app.js        # UI 编排
 src/main.zig
+assets/           # 应用图标(骑士标,assets/logo.svg 为源)
 third_party/stockfish/   # Stockfish.js 18 lite-single（GPLv3）
 scripts/gen-engine-src.mjs · test-chess.mjs
 ```

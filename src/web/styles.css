@@ -109,7 +109,9 @@
     .brand {
       font-weight: 650; font-size: 13px; letter-spacing: 0.06em;
       opacity: 0.92;
+      display: inline-flex; align-items: center; gap: 6px;
     }
+    .brand-mark { width: 17px; height: 17px; color: var(--accent); flex-shrink: 0; }
     .status-pill {
       font-size: 12px; font-weight: 500; color: var(--text);
       padding: 5px 11px; border-radius: 999px;
@@ -645,20 +647,13 @@
     .side-foot .text-link { color: var(--muted); font-size: 11px; padding: 8px 2px; }
     .side-foot .text-link:hover { color: var(--text); }
 
-    .stone {
-      width: 14px; height: 14px; border-radius: 50%;
-      box-shadow: 0 1px 2px rgba(0,0,0,.3); flex-shrink: 0;
+    /* side-panel side marks: king glyphs, hollow white / solid black */
+    .pmark {
+      font-size: 19px; line-height: 1; flex-shrink: 0;
+      color: var(--text); opacity: 0.9;
     }
-    .stone.black { background: radial-gradient(circle at 35% 30%, #555, #111 60%, #000); }
-    .stone.white { background: radial-gradient(circle at 35% 30%, #fff, #eee 55%, #c8c8c8); }
-    [data-theme="notebook"] .stone {
-      box-shadow: none; border-radius: 0; background: transparent !important;
-      display: grid; place-items: center; font-size: 12px; line-height: 1;
-    }
-    [data-theme="notebook"] .stone.black { color: #1e3a5f; }
-    [data-theme="notebook"] .stone.white { color: #9a3412; }
-    [data-theme="notebook"] .stone.black::after { content: "△"; }
-    [data-theme="notebook"] .stone.white::after { content: "○"; }
+    [data-theme="notebook"] .pmark.white { color: #9a3412; }
+    [data-theme="notebook"] .pmark.black { color: #1e3a5f; }
     [data-theme="day"] .tool-btn.primary,
     [data-theme="notebook"] .tool-btn.primary {
       background: linear-gradient(180deg, #6a9fd4, #3b6ea5);

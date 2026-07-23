@@ -1,5 +1,5 @@
 /**
- * Offline-synthesized game sounds (no assets): woody stone clack + win chord.
+ * Offline-synthesized game sounds (no assets): wooden piece placement + win chord.
  * App wires an isEnabled callback via init(); play calls no-op when disabled.
  * @module audio
  */
@@ -17,7 +17,7 @@
     return audioCtx;
   }
 
-  /** Cached short white-noise buffer — reused for every stone's "clack". */
+  /** Cached short white-noise buffer — reused for every piece's "tap". */
   let noiseBuf = null;
   function noiseBuffer(ctx) {
     if (noiseBuf) return noiseBuf;
@@ -32,8 +32,8 @@
     return noiseBuf;
   }
 
-  // A stone on a wooden board is a percussive click (bandpassed noise) plus a
-  // short woody body resonance — far more tactile than a bare sine beep.
+  // A felted chess piece set on a wooden board: a soft tap (bandpassed noise)
+  // plus a lower woody body resonance — deeper than a bare stone click.
   function playMove(color) {
     if (!enabled()) return;
     try {
@@ -44,7 +44,7 @@
       src.buffer = noiseBuffer(ctx);
       const bp = ctx.createBiquadFilter();
       bp.type = "bandpass";
-      bp.frequency.value = color === "b" ? 1900 : 2300;
+      bp.frequency.value = color === "b" ? 1450 : 1700;
       bp.Q.value = 0.9;
       const ng = ctx.createGain();
       ng.gain.setValueAtTime(0.22, t0);
@@ -55,8 +55,8 @@
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
       osc.type = "triangle";
-      osc.frequency.setValueAtTime(color === "b" ? 250 : 340, t0);
-      osc.frequency.exponentialRampToValueAtTime(color === "b" ? 180 : 250, t0 + 0.08);
+      osc.frequency.setValueAtTime(color === "b" ? 195 : 255, t0);
+      osc.frequency.exponentialRampToValueAtTime(color === "b" ? 145 : 190, t0 + 0.08);
       g.gain.setValueAtTime(0.0001, t0);
       g.gain.exponentialRampToValueAtTime(0.1, t0 + 0.008);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
