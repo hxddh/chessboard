@@ -119,13 +119,26 @@
           <button type="button" id="rep-next" title="下一着 (→)">›</button>
           <button type="button" id="rep-end" title="终局 (End)">»</button>
         </div>
+        <div id="eval-wrap" hidden>
+          <canvas id="eval-curve" aria-label="局势曲线" title="点击跳转到对应局面"></canvas>
+        </div>
         <div class="link-row">
-          <button type="button" class="text-link" id="pgn-copy">复制 PGN</button>
+          <button type="button" class="text-link" id="an-run" title="引擎满强度评估每一步,标注失着">分析</button>
+          <button type="button" class="text-link" id="retry-here" disabled title="回到复盘所在的一手继续下,其后着法丢弃">重下</button>
+          <button type="button" class="text-link" id="pgn-copy">PGN</button>
           <button type="button" class="text-link" id="pgn-download">导出</button>
           <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN">粘贴</button>
           <button type="button" class="text-link" id="fen-copy" title="复制当前局面 FEN">FEN</button>
         </div>
-        <p class="hint">粘贴 PGN 导入对局 · 升变暂默认为后</p>
+        <p class="hint">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
+      </section>
+
+      <section class="side-section">
+        <div class="side-h-row">
+          <h2 class="side-h">统计</h2>
+          <button type="button" class="text-link danger" id="stats-clear" disabled>清零</button>
+        </div>
+        <div class="stats-body" id="stats-body"></div>
       </section>
 
       <div class="side-foot">

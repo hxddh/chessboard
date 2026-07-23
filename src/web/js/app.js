@@ -7,6 +7,7 @@
   const SAVE_KEY = "chess.v1.save";
   const SETTINGS_KEY = "chess.v1.settings";
   const PANEL_KEY = "chess.panelOpen";
+  const STATS_KEY = "chess.v1.stats";
 
   const canvas = document.getElementById("board");
   const appEl = document.getElementById("app");
@@ -30,6 +31,12 @@
   let engineThinking = false;
   /** bumped on every game mutation; stale engine replies are dropped */
   let engineToken = 0;
+  /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
+  let analysis = null;
+  let analyzing = false;
+  let analyzeProgress = "";
+  /** pgn of the last game recorded into stats (double-count guard) */
+  let statsRecordedSig = null;
 
   Audio2.init(() => soundOn);
 
@@ -179,8 +186,199 @@
       Audio2.playMove(played.color);
       if (game.in_checkmate()) Audio2.playWin();
       saveGame();
+      recordGameIfOver();
     }
     sync();
+  }
+
+  // --- review analysis: full-strength eval per position → curve + move tags ---
+
+  /** White-perspective centipawns; mates mapped to ±(10000 − plies·10). */
+  function evalScalar(e) {
+    if (!e) return null;
+    const sign = e.turn === "w" ? 1 : -1;
+    if (e.mate != null) {
+      const mag = 10000 - Math.min(Math.abs(e.mate), 50) * 10;
+      return e.mate > 0 ? sign * mag : -sign * mag;
+    }
+    if (e.cp != null) return sign * e.cp;
+    return null;
+  }
+
+  function analysisFor() {
+    return analysis && analysis.sig === game.pgn() ? analysis : null;
+  }
+
+  async function analyzeGame() {
+    if (analyzing || !window.ChessEngine) return;
+    const h = sanHistory();
+    if (!h.length) { toast("还没有对局可分析"); return; }
+    const sig = game.pgn();
+    const g = new Chess();
+    const fens = [g.fen()];
+    for (const san of h) { g.move(san); fens.push(g.fen()); }
+    analyzing = true;
+    analyzeProgress = "0/" + fens.length;
+    setAnalyzeUI();
+    const scalars = new Array(fens.length).fill(null);
+    for (let i = 0; i < fens.length; i++) {
+      if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
+      const probe = new Chess(fens[i]);
+      if (probe.in_checkmate()) scalars[i] = probe.turn() === "w" ? -10000 : 10000;
+      else if (probe.game_over()) scalars[i] = 0;
+      else {
+        let e = null;
+        try { e = await window.ChessEngine.analyze(fens[i], 120); } catch (_) {}
+        if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
+        scalars[i] = evalScalar(e);
+      }
+      analyzeProgress = (i + 1) + "/" + fens.length;
+      setAnalyzeUI();
+    }
+    // centipawn loss from the mover's perspective (games start from startpos,
+    // so even plies are white's moves)
+    const tags = h.map((_, i) => {
+      const a = scalars[i], b = scalars[i + 1];
+      if (a == null || b == null) return null;
+      const loss = i % 2 === 0 ? a - b : b - a;
+      if (loss >= 300) return "??";
+      if (loss >= 100) return "?";
+      if (loss >= 50) return "?!";
+      return null;
+    });
+    analysis = { sig, scalars, tags };
+    analyzing = false;
+    analyzeProgress = "";
+    sync();
+    const bad = tags.filter((t) => t === "?" || t === "??").length;
+    toast(bad ? "分析完成 · " + bad + " 处失着" : "分析完成 · 没有明显失着");
+  }
+
+  function setAnalyzeUI() {
+    const btn = document.getElementById("an-run");
+    if (btn) {
+      btn.disabled = analyzing || !sanHistory().length;
+      btn.textContent = analyzing ? "分析中 " + analyzeProgress : "分析";
+    }
+    const wrap = document.getElementById("eval-wrap");
+    if (wrap) {
+      wrap.hidden = !analysisFor();
+      if (!wrap.hidden) drawEvalCurve();
+    }
+  }
+
+  function drawEvalCurve() {
+    const cv = document.getElementById("eval-curve");
+    const a = analysisFor();
+    if (!cv || !a) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
+    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
+    if (cv.width !== W) cv.width = W;
+    if (cv.height !== H) cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const n = a.scalars.length - 1;
+    const CAP = 500; // ±5 pawns fills the curve height
+    const x = (i) => (n ? (i / n) * (W - 8 * dpr) + 4 * dpr : W / 2);
+    const y = (s) => H / 2 - (Math.max(-CAP, Math.min(CAP, s)) / CAP) * (H / 2 - 4 * dpr);
+    const css = getComputedStyle(document.documentElement);
+    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
+    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    // midline
+    ctx.strokeStyle = cMuted;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = dpr;
+    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+    // eval line (skip null gaps)
+    ctx.strokeStyle = cAccent;
+    ctx.lineWidth = 1.6 * dpr;
+    ctx.beginPath();
+    let pen = false;
+    for (let i = 0; i <= n; i++) {
+      const s = a.scalars[i];
+      if (s == null) { pen = false; continue; }
+      if (pen) ctx.lineTo(x(i), y(s));
+      else { ctx.moveTo(x(i), y(s)); pen = true; }
+    }
+    ctx.stroke();
+    // blunder markers at the position after the tagged move
+    for (let i = 0; i < n; i++) {
+      const t = a.tags[i];
+      if (t !== "?" && t !== "??") continue;
+      const s = a.scalars[i + 1];
+      if (s == null) continue;
+      ctx.fillStyle = t === "??" ? "#e05252" : "#e0a03c";
+      ctx.beginPath();
+      ctx.arc(x(i + 1), y(s), 2.4 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // current view marker
+    ctx.strokeStyle = cAccent;
+    ctx.globalAlpha = 0.7;
+    ctx.lineWidth = dpr;
+    ctx.beginPath(); ctx.moveTo(x(viewIndex), 2 * dpr); ctx.lineTo(x(viewIndex), H - 2 * dpr); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- stats (AI-mode finished games) ---
+  function loadStats() {
+    try {
+      const s = JSON.parse(Host.storageGet(STATS_KEY) || "null");
+      if (s && s.v === 1 && Array.isArray(s.games)) return s;
+    } catch (_) {}
+    return { v: 1, games: [] };
+  }
+
+  /** Record an AI game the moment it finishes on a live move (not on import). */
+  function recordGameIfOver() {
+    if (mode !== "ai" || !game.game_over()) return;
+    const sig = game.pgn();
+    if (statsRecordedSig === sig) return;
+    statsRecordedSig = sig;
+    let result = "draw";
+    if (game.in_checkmate()) result = game.turn() === humanColor ? "loss" : "win";
+    const s = loadStats();
+    s.games.push({ t: Date.now(), diff: difficulty, color: humanColor, result, moves: sanHistory().length });
+    if (s.games.length > 500) s.games = s.games.slice(-500);
+    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    renderStats();
+  }
+
+  function renderStats() {
+    const el = document.getElementById("stats-body");
+    if (!el) return;
+    const s = loadStats();
+    const agg = {};
+    for (const g of s.games) {
+      const k = DIFF_NAMES[g.diff] ? g.diff : "normal";
+      const a = (agg[k] = agg[k] || { win: 0, loss: 0, draw: 0 });
+      a[g.result] = (a[g.result] || 0) + 1;
+    }
+    el.innerHTML = "";
+    let total = 0;
+    for (const k of ["easy", "normal", "hard", "extreme"]) {
+      const a = agg[k];
+      if (!a) continue;
+      total += a.win + a.loss + a.draw;
+      const row = document.createElement("div");
+      row.className = "stat-row";
+      const name = document.createElement("span");
+      name.className = "stat-k";
+      name.textContent = DIFF_NAMES[k];
+      const val = document.createElement("span");
+      val.className = "stat-v num";
+      val.textContent = a.win + "胜 " + a.loss + "负 " + a.draw + "和";
+      row.append(name, val);
+      el.appendChild(row);
+    }
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = total ? "共 " + total + " 局 · 人机完局自动记录" : "人机对局分出胜负后自动记录";
+    el.appendChild(hint);
+    const clearBtn = document.getElementById("stats-clear");
+    if (clearBtn) clearBtn.disabled = !total;
   }
 
   // --- game flow ---
@@ -209,6 +407,7 @@
       num.className = "mlnum num";
       num.textContent = (i / 2 + 1) + ".";
       row.appendChild(num);
+      const a = analysisFor();
       for (const j of [i, i + 1]) {
         if (j >= h.length) break;
         const b = document.createElement("button");
@@ -216,6 +415,13 @@
         b.dataset.i = String(j + 1);
         b.textContent = h[j];
         b.className = "mlmove" + (viewIndex === j + 1 ? " current" : "");
+        const tag = a && a.tags[j];
+        if (tag) {
+          const t = document.createElement("span");
+          t.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
+          t.textContent = tag;
+          b.appendChild(t);
+        }
         row.appendChild(b);
       }
       el.appendChild(row);
@@ -248,7 +454,10 @@
     status.classList.toggle("replay", !isLive());
     document.getElementById("white-turn").hidden = !(isLive() && !game.game_over() && game.turn() === "w");
     document.getElementById("black-turn").hidden = !(isLive() && !game.game_over() && game.turn() === "b");
+    const rt = document.getElementById("retry-here");
+    if (rt) rt.disabled = isLive();
     renderMoveList();
+    setAnalyzeUI();
     syncSettingsUI();
   }
 
@@ -312,6 +521,7 @@
         if (game.in_checkmate()) Audio2.playWin();
         sync();
         saveGame();
+        recordGameIfOver();
         maybeEngineTurn();
       }
       return;
@@ -354,6 +564,26 @@
     sync();
     saveGame();
     toast("新局开始 · 白先");
+    maybeEngineTurn();
+  }
+
+  /** Truncate the game to the replay cursor and continue playing from there. */
+  async function retryFromHere() {
+    if (isLive()) return;
+    const keep = viewIndex;
+    const drop = sanHistory().length - keep;
+    if (!(await confirmNative("从第 " + keep + " 手继续重下,其后 " + drop + " 手将被丢弃,是否继续?", "重下", { ok: "重下", cancel: "取消" }))) {
+      return;
+    }
+    const h = sanHistory().slice(0, keep);
+    invalidateEngine();
+    game.reset();
+    for (const san of h) game.move(san);
+    selection = null;
+    viewIndex = h.length;
+    sync();
+    saveGame();
+    toast("已回到第 " + keep + " 手,继续对弈");
     maybeEngineTurn();
   }
 
@@ -491,6 +721,27 @@
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
   document.getElementById("rep-live").onclick = () => { goLive(); toast("已回到最新一手"); };
 
+  document.getElementById("an-run").onclick = () => { analyzeGame(); };
+  document.getElementById("retry-here").onclick = () => { retryFromHere(); };
+  const curveEl = document.getElementById("eval-curve");
+  if (curveEl) {
+    curveEl.onclick = (ev) => {
+      const a = analysisFor();
+      if (!a) return;
+      const rect = curveEl.getBoundingClientRect();
+      const n = a.scalars.length - 1;
+      const frac = (ev.clientX - rect.left - 4) / Math.max(1, rect.width - 8);
+      setViewIndex(Math.round(Math.max(0, Math.min(1, frac)) * n));
+    };
+    curveEl.style.cursor = "pointer";
+  }
+  document.getElementById("stats-clear").onclick = async () => {
+    if (!(await confirmNative("清零人机对局统计?", "清零统计", { ok: "清零", cancel: "取消" }))) return;
+    try { Host.storageRemove(STATS_KEY); } catch (_) {}
+    renderStats();
+    toast("统计已清零");
+  };
+
   document.getElementById("fen-copy").onclick = () => copyText(viewGame().fen(), "FEN 已复制");
   document.getElementById("pgn-copy").onclick = () => {
     if (!sanHistory().length) { toast("还没有棋谱可复制"); return; }
@@ -588,6 +839,7 @@
     appEl.classList.toggle("scrim-on", isPanelOpen() && window.innerWidth < 900);
     BoardView.resizeCanvas();
     draw();
+    drawEvalCurve();
   });
   window.addEventListener("beforeunload", () => saveGame());
   window.addEventListener("pagehide", () => saveGame());
@@ -602,7 +854,10 @@
   setPanelOpen(savedPanel === "1");
   const resumed = tryLoadSave();
   if (resumed) toast("已恢复上次对局");
+  // a resumed finished game must not be re-counted on the next live move
+  if (resumed && game.game_over()) statsRecordedSig = game.pgn();
   BoardView.resizeCanvas();
+  renderStats();
   sync();
   saveSettings();
   if (!resumed) saveGame();

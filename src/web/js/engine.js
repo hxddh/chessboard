@@ -23,6 +23,14 @@
   let readyPromise = null;
   let lineHandlers = [];
   let gen = 0;
+  let chain = Promise.resolve();
+
+  /** Serialize searches on the single worker (game moves vs analysis). */
+  function exclusive(fn) {
+    const run = chain.then(fn, fn);
+    chain = run.then(() => {}, () => {});
+    return run;
+  }
 
   function workerSource(loaderText) {
     return [
@@ -129,7 +137,11 @@
    * Best move for `fen` at difficulty tier `diff`.
    * @returns {Promise<{from,to,promotion|null}|null>} null when stale/failed.
    */
-  async function bestMove(fen, diff) {
+  function bestMove(fen, diff) {
+    return exclusive(() => bestMoveInner(fen, diff));
+  }
+
+  async function bestMoveInner(fen, diff) {
     await init();
     const tier = TIERS[diff] || TIERS.normal;
     const myGen = ++gen;
@@ -159,5 +171,46 @@
     };
   }
 
-  global.ChessEngine = { init, isReady, bestMove, newGame, cancel, TIERS };
+  /**
+   * Full-strength eval of `fen` for review analysis.
+   * @returns {Promise<{cp,mate,turn,best}|null>} score in side-to-move terms
+   * (`turn` = that side); null when stale/failed.
+   */
+  function analyze(fen, movetime) {
+    return exclusive(() => analyzeInner(fen, movetime));
+  }
+
+  async function analyzeInner(fen, movetime) {
+    await init();
+    const myGen = ++gen;
+    const drain = waitFor((l) => l === "readyok", 5000);
+    send("isready");
+    await drain;
+    if (myGen !== gen) return null;
+    const ms = movetime || 120;
+    send("setoption name UCI_LimitStrength value false");
+    send("position fen " + fen);
+    let score = null; // last reported, side-to-move perspective
+    const collect = (line) => {
+      if (typeof line !== "string") return;
+      const m = line.match(/\bscore (cp|mate) (-?\d+)\b/);
+      if (m) score = { kind: m[1], val: Number(m[2]) };
+    };
+    lineHandlers.push(collect);
+    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), ms + 15000);
+    send("go movetime " + ms);
+    let line;
+    try { line = await wait; }
+    finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
+    if (myGen !== gen) return null;
+    const uci = line.split(/\s+/)[1];
+    return {
+      cp: score && score.kind === "cp" ? score.val : null,
+      mate: score && score.kind === "mate" ? score.val : null,
+      turn: fen.split(" ")[1] === "b" ? "b" : "w",
+      best: uci && uci !== "(none)" ? uci : null,
+    };
+  }
+
+  global.ChessEngine = { init, isReady, bestMove, analyze, newGame, cancel, TIERS };
 })(typeof window !== "undefined" ? window : globalThis);

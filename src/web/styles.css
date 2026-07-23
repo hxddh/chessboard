@@ -789,3 +789,31 @@
       background: color-mix(in srgb, var(--accent) 18%, transparent);
       color: var(--accent); font-weight: 700;
     }
+
+    /* --- review analysis (v0.3) --- */
+    #eval-wrap { margin: 8px 0 2px; }
+    #eval-curve {
+      display: block;
+      width: 100%;
+      height: 60px;
+      border-radius: var(--radius-sm);
+      background: var(--card);
+      border: 1px solid var(--card-border);
+    }
+    .mvtag { margin-left: 3px; font-weight: 700; font-size: 11px; }
+    .mvtag.t-soft { color: #c9b458; }
+    .mvtag.t-mid { color: #e0a03c; }
+    .mvtag.t-bad { color: #e05252; }
+
+    /* --- stats (v0.3) --- */
+    .stats-body { display: flex; flex-direction: column; gap: 2px; }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 13px;
+      padding: 3px 2px;
+    }
+    .stat-k { color: var(--muted); }
+    .stat-v { color: var(--text); font-size: 12px; }
+    .stats-body .hint { margin: 4px 0 0; }
