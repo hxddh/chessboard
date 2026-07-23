@@ -44,11 +44,15 @@
 
   let _canvas = null;
   let _model = null;
+  /** live drag ghost: {from, x, y} in canvas pixels | null */
+  let _drag = null;
 
   function attach(canvas, modelFn) {
     _canvas = canvas;
     _model = modelFn;
   }
+
+  function setDrag(d) { _drag = d; }
 
   function resizeCanvas() {
     if (!_canvas) return;
@@ -142,25 +146,28 @@
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = Math.round(step * 0.78) + "px 'Segoe UI Symbol', 'Apple Color Emoji', serif";
+    function paintPiece(piece, x, y) {
+      const glyph = GLYPHS[piece.type];
+      if (piece.color === "w") {
+        ctx.fillStyle = "#f8f8f4";
+        ctx.strokeStyle = "rgba(20,20,20,0.85)";
+      } else {
+        ctx.fillStyle = "#1d1d1b";
+        ctx.strokeStyle = "rgba(255,255,255,0.30)";
+      }
+      ctx.lineWidth = Math.max(1, step * 0.02);
+      ctx.strokeText(glyph, x, y);
+      ctx.fillText(glyph, x, y);
+    }
+    let dragPiece = null;
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = m.position[r][c];
         if (!piece) continue;
         const sq = FILES[c] + (8 - r);
+        if (_drag && _drag.from === sq) { dragPiece = piece; continue; } // ghost drawn last
         const { sr, sc } = screenPos(sq, m.flipped);
-        const x = sc * step + step / 2;
-        const y = sr * step + step * 0.54;
-        const glyph = GLYPHS[piece.type];
-        if (piece.color === "w") {
-          ctx.fillStyle = "#f8f8f4";
-          ctx.strokeStyle = "rgba(20,20,20,0.85)";
-        } else {
-          ctx.fillStyle = "#1d1d1b";
-          ctx.strokeStyle = "rgba(255,255,255,0.30)";
-        }
-        ctx.lineWidth = Math.max(1, step * 0.02);
-        ctx.strokeText(glyph, x, y);
-        ctx.fillText(glyph, x, y);
+        paintPiece(piece, sc * step + step / 2, sr * step + step * 0.54);
       }
     }
     // lesson success flash
@@ -212,6 +219,12 @@
       ctx.closePath();
       ctx.fill();
     }
+    // drag ghost follows the pointer, above everything else
+    if (_drag && dragPiece) {
+      ctx.globalAlpha = 0.9;
+      paintPiece(dragPiece, _drag.x, _drag.y);
+      ctx.globalAlpha = 1;
+    }
     // legal-move markers on top of pieces (capture ring / empty dot)
     if (m.legalTargets && m.legalTargets.length) {
       for (const sq of m.legalTargets) {
@@ -235,5 +248,5 @@
     }
   }
 
-  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt };
+  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag };
 })(typeof window !== "undefined" ? window : globalThis);

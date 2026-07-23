@@ -125,6 +125,7 @@
         <div class="side-h-row">
           <h2 class="side-h">教学</h2>
           <span class="side-h-meta num" id="learn-progress">0/0</span>
+          <button type="button" class="text-link danger" id="learn-reset" title="清空教学进度,从第一课重新开始">重置</button>
         </div>
         <div class="lesson-title" id="lesson-title"></div>
         <div class="lesson-text" id="lesson-text"></div>
@@ -146,6 +147,7 @@
           <div class="theme-row" id="puzzle-cat-seg" role="group" aria-label="题型">
             <button type="button" data-cat="m1" class="active" title="一步将死">一步杀</button>
             <button type="button" data-cat="m2" title="两步将死(含引子与静着)">两步杀</button>
+            <button type="button" data-cat="m3" title="三步将死(双车赶王)">三步杀</button>
           </div>
         </div>
         <div class="lesson-task" id="puzzle-task"></div>
@@ -172,6 +174,7 @@
         </div>
         <div id="eval-wrap" hidden>
           <canvas id="eval-curve" aria-label="局势曲线" title="点击跳转到对应局面"></canvas>
+          <div class="pv-line num" id="pv-line" hidden></div>
         </div>
         <div class="link-row">
           <button type="button" class="text-link" id="an-run" title="引擎满强度评估每一步,标注失着">分析</button>
@@ -180,6 +183,7 @@
           <button type="button" class="text-link" id="pgn-download">导出</button>
           <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN">粘贴</button>
           <button type="button" class="text-link" id="fen-copy" title="复制当前局面 FEN">FEN</button>
+          <button type="button" class="text-link" id="btn-offerdraw" disabled title="提议和棋(双人:双方确认;人机:引擎按局面判断)">提和</button>
           <button type="button" class="text-link danger" id="btn-resign" disabled title="认输并结束本局">认输</button>
         </div>
         <p class="hint">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>

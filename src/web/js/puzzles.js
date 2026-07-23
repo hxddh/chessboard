@@ -3,9 +3,11 @@
  * All positions are white to move. Solutions are canonical chess.js SAN:
  *   m1: [whiteMate]
  *   m2: [white, blackBestDefense, whiteMate]
- * scripts/test-chess.mjs proves every m1 solution mates and every m2 first
- * move FORCES mate (all black replies lose to a mate-in-1), so the runtime
- * can also accept alternate winning first moves it verifies the same way.
+ *   m3: [white, black, white, black, whiteMate]
+ * scripts/test-chess.mjs proves every m1 solution mates and every m2/m3 first
+ * move FORCES mate within the move budget (a small exhaustive solver checks
+ * all defenses), so the runtime can also accept alternate winning first moves
+ * it verifies the same way.
  * @module puzzles
  */
 (function (global) {
@@ -31,6 +33,10 @@
       fen: "k7/8/1K6/8/5B2/8/4B3/8 w - - 0 1", solution: ["Bf3#"] },
     { id: "m1-q-backrank", cat: "m1", name: "吃车底线杀",
       fen: "3r2k1/5ppp/8/8/8/8/8/3Q2K1 w - - 0 1", solution: ["Qxd8#"] },
+    { id: "m1-promo", cat: "m1", name: "升变杀",
+      fen: "7k/5P2/6K1/8/8/8/8/8 w - - 0 1", solution: ["f8=Q#"] },
+    { id: "m1-arabian", cat: "m1", name: "阿拉伯杀",
+      fen: "7k/R7/5N2/8/8/8/8/K7 w - - 0 1", solution: ["Rh7#"] },
     // —— 两步将死 ——
     { id: "m2-corner-h8", cat: "m2", name: "静着锁角",
       fen: "7k/8/8/6K1/8/8/8/1Q6 w - - 0 1", solution: ["Kg6", "Kg8", "Qb8#"] },
@@ -48,5 +54,12 @@
       fen: "r3r1k1/5ppp/8/8/8/8/4R3/4R1K1 w - - 0 1", solution: ["Rxe8+", "Rxe8", "Rxe8#"] },
     { id: "m2-q-sac", cat: "m2", name: "弃后底线杀",
       fen: "r3r1k1/5ppp/8/8/8/8/4Q3/4R1K1 w - - 0 1", solution: ["Qxe8+", "Rxe8", "Rxe8#"] },
+    // —— 三步将死 ——(求解器证明:无二步捷径,首着对所有防守强制)
+    { id: "m3-ladder-b", cat: "m3", name: "双车赶王三步",
+      fen: "8/8/1k6/7R/8/8/8/6RK w - - 0 1", solution: ["Rg6+", "Ka7", "Rh7+", "Ka8", "Rg8#"] },
+    { id: "m3-ladder-c", cat: "m3", name: "双车赶王三步 II",
+      fen: "8/8/2k5/7R/8/8/8/6RK w - - 0 1", solution: ["Rg6+", "Kb7", "Rh7+", "Ka8", "Rg8#"] },
+    { id: "m3-ladder-m", cat: "m3", name: "双车赶王三步 III",
+      fen: "8/8/6k1/R7/8/8/8/1R5K w - - 0 1", solution: ["Rb6+", "Kf7", "Ra7+", "Ke8", "Rb8#"] },
   ];
 })(typeof window !== "undefined" ? window : globalThis);

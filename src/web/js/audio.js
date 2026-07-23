@@ -34,11 +34,13 @@
 
   // A felted chess piece set on a wooden board: a soft tap (bandpassed noise)
   // plus a lower woody body resonance — deeper than a bare stone click.
-  function playMove(color) {
+  // opts: { captured, check } layer extra cues on top of the base tap.
+  function playMove(color, opts) {
     if (!enabled()) return;
     try {
       const ctx = ensureAudio();
       const t0 = ctx.currentTime;
+      const o = opts || {};
       // 1) the clack: brief bandpassed noise burst
       const src = ctx.createBufferSource();
       src.buffer = noiseBuffer(ctx);
@@ -62,6 +64,31 @@
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
       osc.connect(g); g.connect(ctx.destination);
       osc.start(t0); osc.stop(t0 + 0.13);
+      // capture: a second, heavier thunk right after — piece knocked off
+      if (o.captured) {
+        const o2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        o2.type = "triangle";
+        o2.frequency.setValueAtTime(120, t0 + 0.03);
+        o2.frequency.exponentialRampToValueAtTime(85, t0 + 0.14);
+        g2.gain.setValueAtTime(0.0001, t0 + 0.03);
+        g2.gain.exponentialRampToValueAtTime(0.14, t0 + 0.045);
+        g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+        o2.connect(g2); g2.connect(ctx.destination);
+        o2.start(t0 + 0.03); o2.stop(t0 + 0.2);
+      }
+      // check: a small alert ping on top
+      if (o.check) {
+        const o3 = ctx.createOscillator();
+        const g3 = ctx.createGain();
+        o3.type = "sine";
+        o3.frequency.value = 1567; // G6
+        g3.gain.setValueAtTime(0.0001, t0 + 0.06);
+        g3.gain.exponentialRampToValueAtTime(0.055, t0 + 0.075);
+        g3.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.3);
+        o3.connect(g3); g3.connect(ctx.destination);
+        o3.start(t0 + 0.06); o3.stop(t0 + 0.32);
+      }
     } catch (_) {}
   }
 

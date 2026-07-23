@@ -131,6 +131,24 @@ for (const p of ["r", "b", "n"]) {
   assert(g.fen() === before, "undo restores start");
 }
 
+// FEN-start PGN: load_pgn honors [SetUp]/[FEN]; pgn() preserves them;
+// replaying history from the header FEN reproduces the final position
+// (the app's replay/analysis/retry all rely on this)
+{
+  const startFen = "4k3/8/8/8/8/8/8/Q3K3 w - - 0 1";
+  const pgn = '[SetUp "1"]\n[FEN "' + startFen + '"]\n\n1. Qa8+ Kd7 2. Qb7+ Kd6';
+  const g = new Chess();
+  assert(g.load_pgn(pgn, { sloppy: true }), "FEN-start PGN loads");
+  assert(g.header().FEN === startFen && g.header().SetUp === "1", "FEN header retained");
+  const r = new Chess(startFen);
+  for (const san of g.history()) assert(r.move(san) !== null, "replay-from-header move " + san);
+  assert(r.fen() === g.fen(), "replay from header FEN reproduces the game");
+  const g2 = new Chess();
+  assert(g2.load_pgn(g.pgn()) && g2.fen() === g.fen(), "FEN-start save/restore round-trip");
+  g.reset();
+  assert(!g.header().FEN, "reset clears the FEN header for a fresh game");
+}
+
 // opening book: every line must be legal, canonical SAN, unique, well-formed
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings.js"), "utf8"), ctx, { filename: "openings.js" });
@@ -159,7 +177,7 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
   const lessons = ctx.CHESS_LESSONS;
-  assert(Array.isArray(lessons) && lessons.length >= 22, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
+  assert(Array.isArray(lessons) && lessons.length >= 24, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
   const ids = new Set();
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -211,6 +229,7 @@ for (const p of ["r", "b", "n"]) {
           t.goal === "promote" ? !!mv.promotion :
           t.goal === "capture" ? (mv.to === t.target && !!mv.captured) :
           t.goal === "one-of" ? (Array.isArray(t.accept) && t.accept.includes(mv.san)) :
+          t.goal === "safe" ? !g.moves({ verbose: true }).some((m) => m.to === mv.to) :
           t.goal === "draw-insufficient" ? g.insufficient_material() : false;
         if (!okByGoal) fail(tag, "solution does not satisfy goal", t.goal);
         if (t.trap) {
@@ -236,28 +255,39 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
   const puzzles = ctx.CHESS_PUZZLES;
-  assert(Array.isArray(puzzles) && puzzles.length >= 18, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
+  assert(Array.isArray(puzzles) && puzzles.length >= 23, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
   const matingMoves = (g) => g.moves().filter((m) => {
     g.move(m); const mate = g.in_checkmate(); g.undo(); return mate;
   });
-  const mateNextForced = (g) => {
+  function whiteHasForcedMate(g, n) {
+    for (const m of g.moves()) {
+      g.move(m);
+      const mate = g.in_checkmate();
+      const deeper = !mate && n > 1 && !g.game_over() && blackForcedLost(g, n - 1);
+      g.undo();
+      if (mate || deeper) return true;
+    }
+    return false;
+  }
+  function blackForcedLost(g, n) {
     const replies = g.moves();
     if (!replies.length) return false;
     for (const r of replies) {
       g.move(r);
-      const has = matingMoves(g).length > 0;
+      const lost = whiteHasForcedMate(g, n);
       g.undo();
-      if (!has) return false;
+      if (!lost) return false;
     }
     return true;
-  };
+  }
+  const mateNextForced = (g) => blackForcedLost(g, 1);
   const ids = new Set();
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
   for (const p of puzzles) {
     if (!p.id || ids.has(p.id)) { fail("puzzle id missing/duplicate", p.id); continue; }
     ids.add(p.id);
-    if (!p.name || !["m1", "m2"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
+    if (!p.name || !["m1", "m2", "m3"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
     const v = new Chess().validate_fen(p.fen);
     if (!v.valid) { fail(p.id, "invalid FEN:", v.error); continue; }
     if (p.fen.split(" ")[1] !== "w") { fail(p.id, "not white to move"); continue; }
@@ -268,21 +298,25 @@ for (const p of ["r", "b", "n"]) {
     const mv = g.move(p.solution[0]);
     if (!mv) { fail(p.id, "solution[0] illegal:", p.solution[0]); continue; }
     if (mv.san !== p.solution[0]) fail(p.id, "non-canonical SAN", p.solution[0], "≠", mv.san);
+    const totalMoves = { m1: 1, m2: 2, m3: 3 }[p.cat];
     if (p.cat === "m1") {
       if (p.solution.length !== 1) fail(p.id, "m1 solution must be one move");
       if (!g.in_checkmate()) fail(p.id, "m1 solution does not mate");
     } else {
-      if (p.solution.length !== 3) { fail(p.id, "m2 solution must be three plies"); continue; }
-      if (g.in_checkmate() || g.game_over()) { fail(p.id, "m2 first move already ends the game"); continue; }
-      if (matingMoves(new Chess(p.fen)).length) fail(p.id, "m2 has a mate in one — belongs in m1");
-      if (!mateNextForced(g)) fail(p.id, "m2 first move does not force mate");
-      const rm = g.move(p.solution[1]);
-      if (!rm) { fail(p.id, "solution[1] illegal:", p.solution[1]); continue; }
-      if (rm.san !== p.solution[1]) fail(p.id, "non-canonical SAN", p.solution[1], "≠", rm.san);
-      const wm = g.move(p.solution[2]);
-      if (!wm) { fail(p.id, "solution[2] illegal:", p.solution[2]); continue; }
-      if (wm.san !== p.solution[2]) fail(p.id, "non-canonical SAN", p.solution[2], "≠", wm.san);
-      if (!g.in_checkmate()) fail(p.id, "m2 line does not end in mate");
+      if (p.solution.length !== totalMoves * 2 - 1) { fail(p.id, "wrong solution length"); continue; }
+      if (g.in_checkmate() || g.game_over()) { fail(p.id, "first move already ends the game"); continue; }
+      // no shortcut: the puzzle must genuinely need its full move budget
+      if (whiteHasForcedMate(new Chess(p.fen), totalMoves - 1)) {
+        fail(p.id, "solvable in fewer moves — belongs in an easier category");
+      }
+      if (!blackForcedLost(g, totalMoves - 1)) fail(p.id, "first move does not force mate");
+      let broke = false;
+      for (let i = 1; i < p.solution.length; i++) {
+        const m = g.move(p.solution[i]);
+        if (!m) { fail(p.id, "solution[" + i + "] illegal:", p.solution[i]); broke = true; break; }
+        if (m.san !== p.solution[i]) fail(p.id, "non-canonical SAN", p.solution[i], "≠", m.san);
+      }
+      if (!broke && !g.in_checkmate()) fail(p.id, "line does not end in mate");
     }
   }
   assert(bad === 0, "all puzzles legal and forced");

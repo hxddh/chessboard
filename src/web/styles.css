@@ -676,6 +676,11 @@
 
     /* --- review analysis (v0.3) --- */
     #eval-wrap { margin: 8px 0 2px; }
+    .pv-line {
+      margin-top: 6px;
+      font-size: 11.5px; color: var(--muted); line-height: 1.45;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     #eval-curve {
       display: block;
       width: 100%;

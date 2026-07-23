@@ -50,6 +50,8 @@
   let clockTickAt = 0;
   /** side that resigned ('w'|'b') — terminal for the game, like mate */
   let resigned = null;
+  /** draw agreed (pvp: both players; ai: engine accepted the offer) */
+  let drawAgreed = false;
   /** learn-mode runtime; null unless mode === 'learn' */
   let learn = null;
   /** puzzle-mode runtime; null unless mode === 'puzzle' */
@@ -60,10 +62,33 @@
   function sanHistory() { return game.history(); }
   function isLive() { return viewIndex === sanHistory().length; }
 
+  /** Custom start FEN when the game was imported from a [SetUp]/[FEN] PGN. */
+  function startFen() {
+    const h = game.header();
+    return h && h.SetUp === "1" && h.FEN ? h.FEN : null;
+  }
+
+  /** Fresh instance at this game's starting position (default or FEN header). */
+  function baseGame() {
+    const sf = startFen();
+    return sf ? new Chess(sf) : new Chess();
+  }
+
+  /** Reset `game` itself to its starting position, keeping any FEN header. */
+  function resetGameToStart() {
+    const sf = startFen();
+    if (sf) {
+      game.load(sf);
+      game.header("SetUp", "1", "FEN", sf);
+    } else {
+      game.reset();
+    }
+  }
+
   /** chess.js instance for the currently VIEWED position (live or replay). */
   function viewGame() {
     if (isLive()) return game;
-    const g = new Chess();
+    const g = baseGame();
     const h = sanHistory();
     for (let i = 0; i < viewIndex; i++) g.move(h[i]);
     return g;
@@ -166,6 +191,7 @@
         payload.clock = { tc: timeControl, w: Math.round(clock.w), b: Math.round(clock.b), flag: flagFall };
       }
       if (resigned) payload.resigned = resigned;
+      if (drawAgreed) payload.drawAgreed = true;
       Host.storageSet(SAVE_KEY, JSON.stringify(payload));
     } catch (_) {}
   }
@@ -184,6 +210,7 @@
         flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
       }
       if (s.resigned === "w" || s.resigned === "b") resigned = s.resigned;
+      if (s.drawAgreed === true) drawAgreed = true;
       return sanHistory().length > 0;
     } catch (_) {
       return false;
@@ -204,7 +231,7 @@
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
     if (mode !== "ai" || !window.ChessEngine) return;
-    if (game.game_over() || flagFall || resigned || game.turn() === humanColor) return;
+    if (game.game_over() || ruleTerminated() || game.turn() === humanColor) return;
     const token = ++engineToken;
     engineThinking = true;
     sync();
@@ -219,7 +246,7 @@
       viewIndex = sanHistory().length;
       selection = null;
       hintMove = null;
-      Audio2.playMove(played.color);
+      Audio2.playMove(played.color, { captured: !!played.captured, check: game.in_check() });
       if (game.in_checkmate()) Audio2.playWin();
       saveGame();
       recordGameIfOver();
@@ -266,7 +293,7 @@
 
   /** Ticking starts at the first move so nobody drains on the start screen. */
   function clockRunning() {
-    return mode === "pvp" && !!clock && !flagFall && !resigned && !game.game_over() && sanHistory().length >= 1;
+    return mode === "pvp" && !!clock && !ruleTerminated() && !game.game_over() && sanHistory().length >= 1;
   }
 
   function syncClockTimer() {
@@ -333,6 +360,7 @@
   })();
 
   function openingFor(prefixLen) {
+    if (startFen()) return null; // the book only applies from the standard start
     const h = sanHistory();
     const n = Math.min(prefixLen, h.length, OPENING_BOOK.maxPly);
     for (let i = n; i >= 1; i--) {
@@ -515,7 +543,7 @@
     selection = null;
     learn.last = { from: mv.from, to: mv.to };
     learn.helpArrow = null;
-    Audio2.playMove(mv.color);
+    Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
     if (t.type === "stars") {
       if (learn.stars.has(mv.to)) {
         learn.stars.delete(mv.to);
@@ -541,6 +569,8 @@
         t.goal === "promote" ? !!mv.promotion :
         t.goal === "capture" ? (mv.to === t.target && !!mv.captured) :
         t.goal === "one-of" ? (Array.isArray(t.accept) && t.accept.includes(mv.san)) :
+        // safe: the moved piece cannot be captured by any reply
+        t.goal === "safe" ? !g.moves({ verbose: true }).some((m) => m.to === mv.to) :
         t.goal === "draw-insufficient" ? g.insufficient_material() : false;
       if (okByGoal) {
         if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
@@ -592,7 +622,7 @@
       const played = g.move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
       if (played) {
         learn.last = { from: played.from, to: played.to };
-        Audio2.playMove(played.color);
+        Audio2.playMove(played.color, { captured: !!played.captured, check: g.in_check() });
       }
     }
     if (g.game_over() && !g.in_checkmate()) {
@@ -721,7 +751,8 @@
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
   const PUZZLE_KEY = "chess.v1.puzzles";
   const PUZZLES = window.CHESS_PUZZLES || [];
-  const PUZZLE_CATS = [["m1", "一步杀"], ["m2", "两步杀"]];
+  const PUZZLE_CATS = [["m1", "一步杀"], ["m2", "两步杀"], ["m3", "三步杀"]];
+  const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
 
   function loadPuzzleState() {
     try {
@@ -749,7 +780,7 @@
   }
 
   function startPuzzles() {
-    const cat = ["m1", "m2"].includes(puzzleState.cat) ? puzzleState.cat : "m1";
+    const cat = PUZZLE_CATS.some(([c]) => c === puzzleState.cat) ? puzzleState.cat : "m1";
     const list = puzzlesInCat(cat);
     let idx = list.findIndex((p) => !puzzleState.solved[p.id]);
     if (idx < 0) idx = 0;
@@ -777,34 +808,62 @@
     });
   }
 
-  /** Black to move: every reply loses to a mate-in-1 (accepts alternate wins). */
-  function mateNextForced(g) {
+  /** White to move: some move forces mate within n white moves. */
+  function whiteHasForcedMate(g, n) {
+    for (const m of g.moves()) {
+      g.move(m);
+      const mate = g.in_checkmate();
+      const deeper = !mate && n > 1 && !g.game_over() && blackForcedLost(g, n - 1);
+      g.undo();
+      if (mate || deeper) return true;
+    }
+    return false;
+  }
+
+  /** Black to move: EVERY reply loses to a forced mate within n white moves. */
+  function blackForcedLost(g, n) {
     const replies = g.moves();
-    if (!replies.length) return false;
+    if (!replies.length) return false; // stalemate/over — black escaped
     for (const r of replies) {
       g.move(r);
-      const has = matingMovesOf(g).length > 0;
+      const lost = whiteHasForcedMate(g, n);
       g.undo();
-      if (!has) return false;
+      if (!lost) return false;
     }
     return true;
   }
 
-  /** Black's toughest defense: leaves white the fewest mating moves. */
-  function bestDefense(g) {
-    let best = null, bestN = Infinity;
+  /** A black reply that refutes the mate threat within n, or null if none. */
+  function findRefutation(g, n) {
     for (const r of g.moves()) {
       g.move(r);
-      const n = matingMovesOf(g).length;
+      const lost = whiteHasForcedMate(g, n);
       g.undo();
-      if (n < bestN) { bestN = n; best = r; }
+      if (!lost) return r;
+    }
+    return null;
+  }
+
+  /** Black's toughest defense: needs the deepest mate (ties: fewest maters). */
+  function bestDefense(g, n) {
+    let best = null, bestDepth = -1, bestMaters = Infinity;
+    for (const r of g.moves()) {
+      g.move(r);
+      let d = 1;
+      while (d < n && !whiteHasForcedMate(g, d)) d++;
+      const maters = matingMovesOf(g).length;
+      g.undo();
+      if (d > bestDepth || (d === bestDepth && maters < bestMaters)) {
+        bestDepth = d; bestMaters = maters; best = r;
+      }
     }
     return best;
   }
 
   function puzzleGoalText() {
     const p = puzzle.p;
-    return p.name + " · 白先," + (p.cat === "m1" ? "一" : "两") + "步内将死";
+    const n = { m1: "一", m2: "两", m3: "三" }[p.cat] || "?";
+    return p.name + " · 白先," + n + "步内将死";
   }
 
   function puzzleClick(sq) {
@@ -838,28 +897,41 @@
     selection = null;
     puzzle.helpArrow = null;
     puzzle.last = { from: mv.from, to: mv.to };
-    Audio2.playMove(mv.color);
+    Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
     if (g.in_checkmate()) { puzzleSolved(); return; }
-    const totalMoves = puzzle.p.cat === "m1" ? 1 : 2;
-    if (puzzle.stage + 1 >= totalMoves) { puzzleWrong(); return; } // out of moves
-    // m2 midpoint: the stored line, or any alternate that still forces mate
+    const totalMoves = PUZZLE_MOVES[puzzle.p.cat] || 1;
+    const remaining = totalMoves - (puzzle.stage + 1);
+    if (remaining <= 0) {
+      // used the last move without mating — explain what black gets to play
+      const escape = g.moves()[0];
+      puzzleWrong(escape ? "还不是将死 —— 黑方可走 " + escape : "还不是将死");
+      return;
+    }
+    // midpoint: the stored line, or any alternate that still forces mate
     const onLine = mv.san === puzzle.p.solution[puzzle.stage * 2];
-    if (!onLine && !mateNextForced(g)) { puzzleWrong(); return; }
+    if (!onLine) {
+      const refutation = findRefutation(g, remaining);
+      if (refutation) {
+        puzzleWrong("不能强制将死 —— 黑方可用 " + refutation + " 化解");
+        return;
+      }
+    }
     puzzle.stage++;
-    const reply = onLine ? puzzle.p.solution[puzzle.stage * 2 - 1] : bestDefense(g);
+    const reply = onLine ? puzzle.p.solution[puzzle.stage * 2 - 1] : bestDefense(g, remaining);
     const rm = reply ? g.move(reply) : null;
     if (rm) {
       puzzle.last = { from: rm.from, to: rm.to };
-      Audio2.playMove(rm.color);
+      Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
     }
     sync();
   }
 
-  function puzzleWrong() {
+  function puzzleWrong(reason) {
     puzzle.g.undo();
     puzzle.last = null;
     puzzle.misses++;
-    toast(puzzle.misses >= 2 ? "再试试 —— 点「答案」可以看提示箭头" : "这步不能强制将死 —— 再试试");
+    toast((reason || "这步不能强制将死") +
+      (puzzle.misses >= 2 ? " —— 点「答案」看正解" : " —— 再试试"));
     sync();
   }
 
@@ -869,13 +941,23 @@
     const g = puzzle.g;
     if (g.turn() !== "w" || g.game_over()) return;
     let from = null, to = null;
-    if (puzzle.stage === 0) {
-      const probe = new Chess(puzzle.p.fen);
-      const mv = probe.move(puzzle.p.solution[0]);
+    // on the stored line the stored move is always valid here
+    const stored = puzzle.p.solution[puzzle.stage * 2];
+    if (stored) {
+      const probe = new Chess(g.fen());
+      const mv = probe.move(stored);
       if (mv) { from = mv.from; to = mv.to; }
-    } else {
-      const mates = matingMovesOf(g);
-      if (mates.length) { from = mates[0].from; to = mates[0].to; }
+    }
+    if (!from) {
+      // off the stored line — search for any move that still forces mate
+      const remaining = (PUZZLE_MOVES[puzzle.p.cat] || 1) - puzzle.stage;
+      for (const m of g.moves({ verbose: true })) {
+        g.move(m);
+        const ok = g.in_checkmate() ||
+          (remaining > 1 && !g.game_over() && blackForcedLost(g, remaining - 1));
+        g.undo();
+        if (ok) { from = m.from; to = m.to; break; }
+      }
     }
     if (from) {
       puzzle.helpArrow = { from, to };
@@ -963,13 +1045,14 @@
     const h = sanHistory();
     if (!h.length) { toast("还没有对局可分析"); return; }
     const sig = game.pgn();
-    const g = new Chess();
+    const g = baseGame();
     const fens = [g.fen()];
     for (const san of h) { g.move(san); fens.push(g.fen()); }
     analyzing = true;
     analyzeProgress = "0/" + fens.length;
     setAnalyzeUI();
     const scalars = new Array(fens.length).fill(null);
+    const pvs = new Array(fens.length).fill(null);
     for (let i = 0; i < fens.length; i++) {
       if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
       const probe = new Chess(fens[i]);
@@ -980,22 +1063,34 @@
         try { e = await window.ChessEngine.analyze(fens[i], 120); } catch (_) {}
         if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
         scalars[i] = evalScalar(e);
+        // principal variation, converted to SAN for display
+        if (e && e.pv && e.pv.length) {
+          const pvProbe = new Chess(fens[i]);
+          const sans = [];
+          for (const uci of e.pv.slice(0, 5)) {
+            const m = pvProbe.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
+            if (!m) break;
+            sans.push(m.san);
+          }
+          if (sans.length) pvs[i] = sans.join(" ");
+        }
       }
       analyzeProgress = (i + 1) + "/" + fens.length;
       setAnalyzeUI();
     }
-    // centipawn loss from the mover's perspective (games start from startpos,
-    // so even plies are white's moves)
+    // centipawn loss from the mover's perspective — the mover of ply i is the
+    // side to move in fens[i] (FEN-start games may begin with black)
     const tags = h.map((_, i) => {
       const a = scalars[i], b = scalars[i + 1];
       if (a == null || b == null) return null;
-      const loss = i % 2 === 0 ? a - b : b - a;
+      const moverIsWhite = fens[i].split(" ")[1] === "w";
+      const loss = moverIsWhite ? a - b : b - a;
       if (loss >= 300) return "??";
       if (loss >= 100) return "?";
       if (loss >= 50) return "?!";
       return null;
     });
-    analysis = { sig, scalars, tags };
+    analysis = { sig, scalars, tags, pvs };
     analyzing = false;
     analyzeProgress = "";
     sync();
@@ -1013,6 +1108,13 @@
     if (wrap) {
       wrap.hidden = !analysisFor();
       if (!wrap.hidden) drawEvalCurve();
+    }
+    const pvEl = document.getElementById("pv-line");
+    if (pvEl) {
+      const a = analysisFor();
+      const pv = a && a.pvs ? a.pvs[viewIndex] : null;
+      pvEl.hidden = !pv;
+      pvEl.textContent = pv ? "引擎主变 · " + pv : "";
     }
   }
 
@@ -1167,6 +1269,7 @@
       return flagFall === "w" ? "超时 · 黑方胜" : "超时 · 白方胜";
     }
     if (resigned) return resigned === "w" ? "白方认输 · 黑方胜" : "黑方认输 · 白方胜";
+    if (drawAgreed) return "协议和棋 · 和棋";
     if (engineThinking && !g.game_over()) return "引擎思考中…";
     if (g.in_checkmate()) return g.turn() === "w" ? "将死 · 黑方胜" : "将死 · 白方胜";
     if (g.in_stalemate()) return "逼和 · 和棋";
@@ -1215,8 +1318,8 @@
     }
   }
 
-  /** The live game is finished by an app-level rule (flag fall / resignation). */
-  function ruleTerminated() { return !!flagFall || !!resigned; }
+  /** Live game finished by an app-level rule (flag / resignation / agreed draw). */
+  function ruleTerminated() { return !!flagFall || !!resigned || drawAgreed; }
 
   function sync() {
     draw();
@@ -1254,6 +1357,11 @@
     if (resignBtn) {
       resignBtn.disabled = modal || !isLive() || h.length === 0 ||
         game.game_over() || ruleTerminated();
+    }
+    const drawBtn = document.getElementById("btn-offerdraw");
+    if (drawBtn) {
+      drawBtn.disabled = modal || !isLive() || h.length === 0 ||
+        game.game_over() || ruleTerminated() || drawOfferPending;
     }
     document.getElementById("pgn-copy").disabled = h.length === 0;
     document.getElementById("pgn-download").disabled = h.length === 0;
@@ -1370,7 +1478,7 @@
     selection = null;
     hintMove = null;
     viewIndex = sanHistory().length;
-    Audio2.playMove(mv.color);
+    Audio2.playMove(mv.color, { captured: !!mv.captured, check: game.in_check() });
     if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
     if (game.in_checkmate()) Audio2.playWin();
     sync();
@@ -1386,6 +1494,7 @@
     if (game.game_over()) return;
     if (flagFall) { toast("已超时 · 按 N 开新局"); return; }
     if (resigned) { toast("本局已认输 · 按 N 开新局"); return; }
+    if (drawAgreed) { toast("本局已协议和棋 · 按 N 开新局"); return; }
     if (mode === "ai" && game.turn() !== humanColor) return; // engine's move
     const piece = game.get(sq);
     if (selection && selection.targets.includes(sq)) {
@@ -1436,6 +1545,7 @@
     selection = null;
     viewIndex = 0;
     resigned = null;
+    drawAgreed = false;
     resetClocks();
     sync();
     saveGame();
@@ -1453,13 +1563,14 @@
     }
     const h = sanHistory().slice(0, keep);
     invalidateEngine();
-    game.reset();
+    resetGameToStart();
     for (const san of h) game.move(san);
     selection = null;
     viewIndex = h.length;
     // continuing a finished game (flag / resignation) gets fresh clocks
     if (ruleTerminated()) resetClocks();
     resigned = null;
+    drawAgreed = false;
     sync();
     saveGame();
     toast("已回到第 " + keep + " 着,继续对弈");
@@ -1492,6 +1603,57 @@
     renderStats();
   }
 
+  // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
+  let drawOfferPending = false;
+  async function doOfferDraw() {
+    if (mode === "learn" || mode === "puzzle" || !isLive() || !sanHistory().length ||
+        game.game_over() || ruleTerminated() || drawOfferPending) return;
+    if (mode === "pvp") {
+      if (!(await confirmNative("双方都同意和棋吗?", "提和", { ok: "同意和棋", cancel: "继续下" }))) return;
+      acceptDraw();
+      return;
+    }
+    // ai mode: offer on your own turn; the engine accepts unless it is winning
+    if (engineThinking || game.turn() !== humanColor) { toast("轮到你走棋时才能提和"); return; }
+    if (sanHistory().length < 20) { toast("开局阶段引擎不接受提和"); return; }
+    if (!window.ChessEngine) { toast("引擎不可用"); return; }
+    drawOfferPending = true;
+    toast("已向引擎提和,评估中…");
+    let e = null;
+    const sig = game.fen();
+    try { e = await window.ChessEngine.analyze(sig, 300); } catch (_) {}
+    drawOfferPending = false;
+    if (game.fen() !== sig || ruleTerminated() || game.game_over()) return;
+    // e.cp is from the side to move (the human here); engine eval = -cp
+    const engineCp = e && e.cp != null ? -e.cp : e && e.mate != null ? (e.mate > 0 ? -10000 : 10000) : null;
+    if (engineCp != null && engineCp < 60) {
+      acceptDraw();
+    } else {
+      sync();
+      toast("引擎拒绝提和 —— 它觉得局面更好,继续下");
+    }
+  }
+
+  function acceptDraw() {
+    invalidateEngine();
+    drawAgreed = true;
+    if (mode === "ai") recordAgreedDraw();
+    saveGame();
+    sync();
+    toast("协议和棋 · 和棋");
+  }
+
+  function recordAgreedDraw() {
+    const sig = game.pgn() + "#drawAgreed";
+    if (statsRecordedSig === sig) return;
+    statsRecordedSig = sig;
+    const s = loadStats();
+    s.games.push({ t: Date.now(), diff: difficulty, color: humanColor, result: "draw", moves: sanHistory().length });
+    if (s.games.length > 500) s.games = s.games.slice(-500);
+    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    renderStats();
+  }
+
   // --- FEN / PGN I/O ---
   async function copyText(text, okMsg) {
     try { await Host.writeClipboard(text); toast(okMsg); }
@@ -1501,6 +1663,7 @@
   function gameResultToken() {
     if (game.in_checkmate()) return game.turn() === "w" ? "0-1" : "1-0";
     if (resigned) return resigned === "w" ? "0-1" : "1-0";
+    if (drawAgreed) return "1/2-1/2";
     if (flagFall) {
       if (timeoutIsDraw()) return "1/2-1/2";
       return flagFall === "w" ? "0-1" : "1-0";
@@ -1518,7 +1681,7 @@
     const white = mode === "ai" ? (humanColor === "w" ? "Player" : engineName) : "Player 1";
     const black = mode === "ai" ? (humanColor === "b" ? "Player" : engineName) : "Player 2";
     const result = gameResultToken();
-    const tags = [
+    const tagPairs = [
       ["Event", "Casual game"],
       ["Site", "Chessboard"],
       ["Date", d.getFullYear() + "." + p(d.getMonth() + 1) + "." + p(d.getDate())],
@@ -1526,8 +1689,13 @@
       ["White", white],
       ["Black", black],
       ["Result", result],
-    ].map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
-    return tags + "\n\n" + game.pgn() + " " + result + "\n";
+    ];
+    const sf = startFen();
+    if (sf) tagPairs.push(["SetUp", "1"], ["FEN", sf]);
+    const tags = tagPairs.map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
+    // game.pgn() may itself carry SetUp/FEN headers — keep only its movetext
+    const movetext = game.pgn().split("\n\n").pop();
+    return tags + "\n\n" + movetext + " " + result + "\n";
   }
 
   function pgnFileName() {
@@ -1581,6 +1749,7 @@
     selection = null;
     viewIndex = sanHistory().length;
     resigned = null;
+    drawAgreed = false;
     resetClocks();
     sync();
     saveGame();
@@ -1625,15 +1794,46 @@
     draw();
   }
 
-  // --- events ---
-  canvas.addEventListener("click", (ev) => {
+  // --- events: pointer-driven board (click-click AND drag-drop both work) ---
+  function canvasPoint(ev) {
     const rect = canvas.getBoundingClientRect();
-    const x = (ev.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (ev.clientY - rect.top) * (canvas.height / rect.height);
-    const sq = BoardView.cellAt(x, y);
-    if (sq) onSquareClick(sq);
+    return {
+      x: (ev.clientX - rect.left) * (canvas.width / rect.width),
+      y: (ev.clientY - rect.top) * (canvas.height / rect.height),
+    };
+  }
+  let dragging = null; // {from} armed on pressing one of our selectable pieces
+  canvas.addEventListener("pointerdown", (ev) => {
+    const p = canvasPoint(ev);
+    const sq = BoardView.cellAt(p.x, p.y);
+    if (!sq) return;
+    try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
+    onSquareClick(sq);
+    dragging = selection && selection.sq === sq ? { from: sq } : null;
+  });
+  canvas.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    const p = canvasPoint(ev);
+    BoardView.setDrag({ from: dragging.from, x: p.x, y: p.y });
+    draw();
+  });
+  canvas.addEventListener("pointerup", (ev) => {
+    const wasDrag = dragging;
+    dragging = null;
+    BoardView.setDrag(null);
+    if (!wasDrag) return;
+    const p = canvasPoint(ev);
+    const sq = BoardView.cellAt(p.x, p.y);
+    draw();
+    if (sq && sq !== wasDrag.from) onSquareClick(sq); // drop = play/reselect
+  });
+  canvas.addEventListener("pointercancel", () => {
+    dragging = null;
+    BoardView.setDrag(null);
+    draw();
   });
   canvas.style.cursor = "pointer";
+  canvas.style.touchAction = "none"; // let touch drags move pieces, not the page
 
   document.getElementById("undo").onclick = undo;
   document.getElementById("btn-hint").onclick = () => { requestHint(); };
@@ -1689,6 +1889,8 @@
   };
   const resignEl = document.getElementById("btn-resign");
   if (resignEl) resignEl.onclick = () => { doResign(); };
+  const drawEl = document.getElementById("btn-offerdraw");
+  if (drawEl) drawEl.onclick = () => { doOfferDraw(); };
   document.getElementById("pgn-download").onclick = () => { downloadPgn(); };
   document.getElementById("pgn-paste").onclick = () => { pastePgn(); };
 
@@ -1724,6 +1926,13 @@
   };
   document.getElementById("lesson-restart").onclick = () => {
     if (learn) { startLearnTask(); toast("本课重来"); }
+  };
+  document.getElementById("learn-reset").onclick = async () => {
+    if (!(await confirmNative("清空全部教学进度,从第一课重新开始?", "重置教学", { ok: "重置", cancel: "取消" }))) return;
+    learnState = { v: 1, done: {}, last: 0 };
+    saveLearnState();
+    if (learn) startLesson(0);
+    toast("教学进度已重置");
   };
   document.getElementById("lesson-next").onclick = () => {
     if (!learn) return;
@@ -1803,6 +2012,7 @@
     selection = null;
     viewIndex = 0;
     resigned = null;
+    drawAgreed = false;
     resetClocks();
     sync();
     toast("存档已清除");
@@ -1890,6 +2100,7 @@
   // a resumed finished game must not be re-counted on the next live move
   if (resumed && game.game_over()) statsRecordedSig = game.pgn();
   if (resumed && resigned) statsRecordedSig = game.pgn() + "#resigned";
+  if (resumed && drawAgreed) statsRecordedSig = game.pgn() + "#drawAgreed";
   // clock preset chosen but no saved clock state → fresh clocks
   if (timeControl !== "off" && !clock) resetClocks();
   if (mode === "learn") startLearn();

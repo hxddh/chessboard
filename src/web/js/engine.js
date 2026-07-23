@@ -191,10 +191,13 @@
     send("setoption name UCI_LimitStrength value false");
     send("position fen " + fen);
     let score = null; // last reported, side-to-move perspective
+    let pv = null; // last reported principal variation (uci moves)
     const collect = (line) => {
       if (typeof line !== "string") return;
       const m = line.match(/\bscore (cp|mate) (-?\d+)\b/);
       if (m) score = { kind: m[1], val: Number(m[2]) };
+      const pm = line.match(/\bpv\s+(.+)$/);
+      if (pm) pv = pm[1].trim().split(/\s+/);
     };
     lineHandlers.push(collect);
     const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), ms + 15000);
@@ -209,6 +212,7 @@
       mate: score && score.kind === "mate" ? score.val : null,
       turn: fen.split(" ")[1] === "b" ? "b" : "w",
       best: uci && uci !== "(none)" ? uci : null,
+      pv: pv || null,
     };
   }
 
