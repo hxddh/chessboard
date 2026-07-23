@@ -154,6 +154,80 @@ for (const p of ["r", "b", "n"]) {
   assert(bad === 0, "all opening lines legal, canonical and unique");
 }
 
+// lessons: every FEN valid, every solution legal and goal-satisfying,
+// star paths clear all stars without ever checking the decorative kings
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
+  const lessons = ctx.CHESS_LESSONS;
+  assert(Array.isArray(lessons) && lessons.length >= 16, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
+  const ids = new Set();
+  let bad = 0;
+  const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
+  for (const L of lessons) {
+    if (!L.id || ids.has(L.id)) { fail("lesson id missing/duplicate", L.id); continue; }
+    ids.add(L.id);
+    if (!L.title || !L.part || !Array.isArray(L.text) || !L.text.length) fail(L.id, "missing title/part/text");
+    if (!Array.isArray(L.tasks) || !L.tasks.length) { fail(L.id, "no tasks"); continue; }
+    for (const [ti, t] of L.tasks.entries()) {
+      const tag = L.id + "#" + ti;
+      const v = new Chess().validate_fen(t.fen);
+      if (!v.valid) { fail(tag, "invalid FEN:", v.error); continue; }
+      if (t.type === "tap") {
+        if (!Array.isArray(t.steps) || !t.steps.length) { fail(tag, "tap without steps"); continue; }
+        const g = new Chess(t.fen);
+        for (const s of t.steps) {
+          if (!s.tip || !Array.isArray(s.squares) || !s.squares.length) fail(tag, "bad tap step");
+          for (const sq of s.squares) if (!/^[a-h][1-8]$/.test(sq)) fail(tag, "bad square", sq);
+        }
+        void g;
+      } else if (t.type === "stars") {
+        let g = new Chess(t.fen);
+        const stars = new Set(t.stars);
+        if (!t.solution || t.solution.length !== t.stars.length) fail(tag, "stars/solution length mismatch");
+        for (const uci of t.solution) {
+          const mv = g.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: "q" });
+          if (!mv) { fail(tag, "illegal star move", uci); break; }
+          if (t.only && mv.piece !== t.only) fail(tag, "moved wrong piece", uci);
+          stars.delete(mv.to);
+          // the runtime hands the turn back to the student after each move
+          const f = g.fen().split(" ");
+          f[1] = "w"; f[3] = "-";
+          g = new Chess(f.join(" "));
+          if (g.in_check()) fail(tag, "star path checks a king after", uci);
+        }
+        if (stars.size) fail(tag, "solution leaves stars uncleared:", [...stars].join(","));
+      } else if (t.type === "move") {
+        const g = new Chess(t.fen);
+        const mv = g.move(t.solution[0]);
+        if (!mv) { fail(tag, "solution illegal:", t.solution[0]); continue; }
+        if (mv.san !== t.solution[0]) fail(tag, "non-canonical solution SAN", t.solution[0], "≠", mv.san);
+        const okByGoal =
+          t.goal === "any" ? true :
+          t.goal === "check" ? g.in_check() :
+          t.goal === "mate" ? g.in_checkmate() :
+          t.goal === "castle-k" ? mv.flags.includes("k") :
+          t.goal === "castle-q" ? mv.flags.includes("q") :
+          t.goal === "ep" ? mv.flags.includes("e") :
+          t.goal === "promote" ? !!mv.promotion : false;
+        if (!okByGoal) fail(tag, "solution does not satisfy goal", t.goal);
+        if (t.trap) {
+          const g2 = new Chess(t.fen);
+          const tm = g2.move(t.trap);
+          if (!tm) fail(tag, "trap move illegal:", t.trap);
+          else if (!g2.in_stalemate()) fail(tag, "trap move is not stalemate:", t.trap);
+        }
+      } else if (t.type === "drill") {
+        const g = new Chess(t.fen);
+        if (g.game_over()) fail(tag, "drill starts game-over");
+      } else {
+        fail(tag, "unknown task type", t.type);
+      }
+      if (!t.prompt) fail(tag, "missing prompt");
+    }
+  }
+  assert(bad === 0, "all lesson tasks valid");
+}
+
 if (failed) {
   console.error(failed + " test(s) failed");
   process.exit(1);

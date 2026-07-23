@@ -19,6 +19,7 @@ cp src/web/js/*.js frontend/dist/js/
 test -f frontend/dist/index.html
 test -f frontend/dist/js/chess.js
 test -f frontend/dist/js/openings.js
+test -f frontend/dist/js/lessons.js
 test -f frontend/dist/js/host.js
 test -f frontend/dist/js/audio.js
 test -f frontend/dist/js/board.js

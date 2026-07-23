@@ -68,6 +68,7 @@
             <div class="theme-row" id="mode-seg" role="group" aria-label="模式">
               <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈">人机</button>
               <button type="button" data-mode="pvp" title="双人同屏对弈">双人</button>
+              <button type="button" data-mode="learn" title="从零学国际象棋:互动课程">教学</button>
             </div>
           </div>
           <div class="setting-row stack" id="row-difficulty">
@@ -119,7 +120,22 @@
         </div>
       </section>
 
-      <section class="side-section grow-sec">
+      <section class="side-section" id="sec-learn" hidden>
+        <div class="side-h-row">
+          <h2 class="side-h">教学</h2>
+          <span class="side-h-meta num" id="learn-progress">0/0</span>
+        </div>
+        <div class="lesson-title" id="lesson-title"></div>
+        <div class="lesson-text" id="lesson-text"></div>
+        <div class="lesson-task" id="lesson-task"></div>
+        <div class="lesson-controls">
+          <button type="button" class="tool-btn" id="lesson-restart" title="重做本课任务 (R)">重来</button>
+          <button type="button" class="tool-btn" id="lesson-next" title="进入下一课">下一课</button>
+        </div>
+        <div class="lesson-list" id="lesson-list" aria-label="课程列表"></div>
+      </section>
+
+      <section class="side-section grow-sec" id="sec-moves">
         <div class="side-h-row">
           <h2 class="side-h">棋谱</h2>
           <span class="side-h-meta num" id="replay-pos">0 / 0</span>
@@ -138,15 +154,16 @@
         <div class="link-row">
           <button type="button" class="text-link" id="an-run" title="引擎满强度评估每一步,标注失着">分析</button>
           <button type="button" class="text-link" id="retry-here" disabled title="回到复盘所在的一着继续下,其后着法丢弃">重下</button>
-          <button type="button" class="text-link" id="pgn-copy">PGN</button>
+          <button type="button" class="text-link" id="pgn-copy" title="复制 PGN(含标准对局标签)">PGN</button>
           <button type="button" class="text-link" id="pgn-download">导出</button>
           <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN">粘贴</button>
           <button type="button" class="text-link" id="fen-copy" title="复制当前局面 FEN">FEN</button>
+          <button type="button" class="text-link danger" id="btn-resign" disabled title="认输并结束本局">认输</button>
         </div>
         <p class="hint">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
       </section>
 
-      <section class="side-section">
+      <section class="side-section" id="sec-stats">
         <div class="side-h-row">
           <h2 class="side-h">统计</h2>
           <button type="button" class="text-link danger" id="stats-clear" disabled>清零</button>
@@ -188,6 +205,7 @@
 
   <script src="js/chess.js"></script>
   <script src="js/openings.js"></script>
+  <script src="js/lessons.js"></script>
   <script src="js/engine-src.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/host.js"></script>

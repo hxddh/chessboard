@@ -1,0 +1,233 @@
+/**
+ * Zero-basis interactive chess curriculum — hand-authored, fully offline.
+ * scripts/test-chess.mjs replays every task's `solution` against chess.js to
+ * verify FENs load, moves are legal/canonical, goals are met, and star paths
+ * never check the decorative kings.
+ *
+ * Task types (runtime in app.js):
+ *   tap    — click squares by coordinate/piece (steps: [{tip, squares}])
+ *   stars  — move the lesson piece to clear every star square; opponent
+ *            never replies (the runtime hands the turn back)
+ *   move   — make one move satisfying `goal`:
+ *            check | any | mate | castle-k | castle-q | ep | promote
+ *   drill  — play out a basic mate against the engine (black defends)
+ * @module lessons
+ */
+(function (global) {
+  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+  global.CHESS_LESSONS = [
+    // —— 第一部分 · 认识棋盘 ——
+    {
+      id: "board", part: "认识棋盘", title: "棋盘与坐标",
+      text: [
+        "国际象棋在 8×8 共 64 格的棋盘上进行,浅色格与深色格相间。",
+        "从白方视角看:横排叫「横线」,由近到远编号 1–8;竖排叫「直线」,从左到右编号 a–h。每个格子由字母+数字定位,如 e4。",
+        "摆放棋盘时右下角必须是浅色格(h1)。",
+      ],
+      tasks: [
+        { type: "tap", fen: START, prompt: "在棋盘上找到指定坐标", steps: [
+          { tip: "点击 e4 格(e 线与第 4 横线交汇处)", squares: ["e4"] },
+          { tip: "点击 a1 格(白方左下角)", squares: ["a1"] },
+          { tip: "点击 h8 格(黑方那侧的角落)", squares: ["h8"] },
+        ] },
+      ],
+    },
+    {
+      id: "setup", part: "认识棋盘", title: "棋子·摆法·对局目标",
+      text: [
+        "每方 16 个棋子:8 兵、2 车、2 马、2 象、1 后、1 王。",
+        "底线从角向内依次是车、马、象;后站在与自己同色的格子上(白后 d1 浅格、黑后 d8 深格),王在 e 线;兵排在第二排。",
+        "对局目标:将死对方的王 —— 让它被攻击且无路可逃。",
+      ],
+      tasks: [
+        { type: "tap", fen: START, prompt: "认一认各个棋子", steps: [
+          { tip: "点击白方的后(d1,「白后站浅格」)", squares: ["d1"] },
+          { tip: "点击黑方的王(e 线上)", squares: ["e8"] },
+          { tip: "点击白方任意一个马(紧挨角上的车)", squares: ["b1", "g1"] },
+          { tip: "点击黑方任意一个象(挨着后和王)", squares: ["c8", "f8"] },
+        ] },
+      ],
+    },
+    // —— 第二部分 · 棋子走法 ——
+    {
+      id: "pawn", part: "棋子走法", title: "兵:直走斜吃",
+      text: [
+        "兵每次向前直走一格,永远不能后退。",
+        "首次移动时可以选择直进两格。",
+        "吃子方式特殊:斜前一格吃子,不能直着吃。",
+      ],
+      tasks: [
+        { type: "stars", fen: "7k/8/8/8/8/3p4/4P3/K7 w - - 0 1", only: "p",
+          prompt: "用 e2 兵:先斜吃 d3 黑兵,再一路直进到 d5(逐格吃星)",
+          stars: ["d3", "d4", "d5"], solution: ["e2d3", "d3d4", "d4d5"] },
+        { type: "stars", fen: "7k/8/8/8/8/8/P7/K7 w - - 0 1", only: "p",
+          prompt: "兵还没动过 —— 用首步特权,直接两格跳到 a4",
+          stars: ["a4"], solution: ["a2a4"] },
+      ],
+    },
+    {
+      id: "rook", part: "棋子走法", title: "车:横冲直撞",
+      text: [
+        "车沿横线或直线走任意格数,不能越子。",
+        "车是重子,残局威力巨大;它还参与「王车易位」(后面会学)。",
+      ],
+      tasks: [
+        { type: "stars", fen: "7k/8/8/8/8/8/2R5/K7 w - - 0 1", only: "r",
+          prompt: "用车沿直线吃掉全部 3 颗星",
+          stars: ["c7", "g7", "g2"], solution: ["c2c7", "c7g7", "g7g2"] },
+      ],
+    },
+    {
+      id: "bishop", part: "棋子走法", title: "象:斜线飞行",
+      text: [
+        "象沿斜线走任意格数,不能越子。",
+        "每个象一辈子只能走一种颜色的格子 —— 开局时你有一个浅格象和一个深格象。",
+      ],
+      tasks: [
+        { type: "stars", fen: "k7/8/8/8/8/8/8/2B4K w - - 0 1", only: "b",
+          prompt: "用象沿斜线吃掉 2 颗星",
+          stars: ["g5", "d8"], solution: ["c1g5", "g5d8"] },
+      ],
+    },
+    {
+      id: "knight", part: "棋子走法", title: "马:日字跳跃",
+      text: [
+        "马走「日」字:直两格再拐一格(共 8 个方向)。",
+        "马是唯一可以越过其他棋子的棋子,没有「蹩马腿」。",
+      ],
+      tasks: [
+        { type: "stars", fen: "7k/8/8/8/8/8/8/1N4K1 w - - 0 1", only: "n",
+          prompt: "用马连跳 3 颗星",
+          stars: ["c3", "d5", "f6"], solution: ["b1c3", "c3d5", "d5f6"] },
+      ],
+    },
+    {
+      id: "queen", part: "棋子走法", title: "后:全能重炮",
+      text: [
+        "后 = 车 + 象:横、竖、斜任意方向走任意格数,不能越子。",
+        "后是最强的棋子,但也因此最怕被白白换掉 —— 别过早出后。",
+      ],
+      tasks: [
+        { type: "stars", fen: "7k/8/8/8/8/8/8/K2Q4 w - - 0 1", only: "q",
+          prompt: "用后横、竖、斜三种走法各吃一颗星",
+          stars: ["d5", "g5", "g2"], solution: ["d1d5", "d5g5", "g5g2"] },
+      ],
+    },
+    {
+      id: "king", part: "棋子走法", title: "王:一步一格",
+      text: [
+        "王朝任意方向走一格。",
+        "王不能走进被对方攻击的格子(不能「送将」)—— 保护好它,它被将死对局就结束了。",
+      ],
+      tasks: [
+        { type: "stars", fen: "k7/8/8/8/8/8/4K3/8 w - - 0 1", only: "k",
+          prompt: "用王一步一步踩过 3 颗星",
+          stars: ["e3", "d4", "c5"], solution: ["e2e3", "e3d4", "d4c5"] },
+      ],
+    },
+    // —— 第三部分 · 规则与胜负 ——
+    {
+      id: "check", part: "规则与胜负", title: "将军与应将",
+      text: [
+        "攻击对方的王叫「将军」。被将军的一方必须立刻解除:走开王、用子阻挡、或吃掉攻击子。",
+        "不存在「不理会将军」—— 界面只会让你选合法的应将走法。",
+      ],
+      tasks: [
+        { type: "move", fen: "7k/8/8/8/3Q4/8/8/K7 w - - 0 1", goal: "check",
+          prompt: "用白后走一步,将军黑王(不止一种走法)",
+          retry: "这步没有攻击到黑王,再试试", solution: ["Qd8+"] },
+        { type: "move", fen: "4r2k/8/8/8/8/8/8/2B1K3 w - - 0 1", goal: "any",
+          prompt: "白王正被黑车将军!任选一种方式应将(走王 / 用象挡)",
+          solution: ["Be3"] },
+      ],
+    },
+    {
+      id: "mate", part: "规则与胜负", title: "将死:终结对局",
+      text: [
+        "被将军且无任何合法应对 = 将死,对局立即结束,将死方获胜。",
+        "最常见的杀型之一是「底线杀」:王被自己的兵挡住退路,重子在底线将军。",
+      ],
+      tasks: [
+        { type: "move", fen: "6k1/5ppp/8/8/8/8/8/4R1K1 w - - 0 1", goal: "mate",
+          prompt: "一步将死:黑王被自己的兵困在底线",
+          retry: "还不是将死,再想想底线", solution: ["Re8#"] },
+        { type: "move", fen: "7k/8/5K2/8/8/8/8/6Q1 w - - 0 1", goal: "mate",
+          prompt: "一步将死:白王已经贴近,用后完成致命一击",
+          retry: "还不是将死 —— 后要既将军又有王保护", solution: ["Qg7#"] },
+      ],
+    },
+    {
+      id: "stalemate", part: "规则与胜负", title: "逼和:大优也会和棋",
+      text: [
+        "轮到一方走棋、没被将军、却一步合法棋都没有 = 逼和,判和棋!",
+        "大占优势时最容易随手逼和,葬送胜局 —— 永远给对方王留一条「合法的活路」直到将死它。",
+      ],
+      tasks: [
+        { type: "move", fen: "k7/3Q4/1K6/8/8/8/8/8 w - - 0 1", goal: "mate", failOnStalemate: true,
+          prompt: "一步将死黑王 —— 小心!有一步看似厉害的棋会造成逼和",
+          retry: "还不是将死,再试试", solution: ["Qb7#"], trap: "Qc7" },
+      ],
+    },
+    {
+      id: "castle", part: "规则与胜负", title: "王车易位:一步走两子",
+      text: [
+        "王向车的方向横走两格,车跳到王的另一侧 —— 一步同时保王、出车。",
+        "条件:王和该车都没动过;两者之间无子;王不在将军中、不经过也不落在被攻击的格子。",
+      ],
+      tasks: [
+        { type: "move", fen: "4k3/8/8/8/8/8/8/4K2R w K - 0 1", goal: "castle-k",
+          prompt: "短易位:点击白王,再点 g1", retry: "这不是易位 —— 王要横走两格到 g1", solution: ["O-O"] },
+        { type: "move", fen: "4k3/8/8/8/8/8/8/R3K3 w Q - 0 1", goal: "castle-q",
+          prompt: "长易位:点击白王,再点 c1", retry: "这不是易位 —— 王要横走两格到 c1", solution: ["O-O-O"] },
+      ],
+    },
+    {
+      id: "enpassant", part: "规则与胜负", title: "吃过路兵",
+      text: [
+        "对方的兵刚用首步特权两格越过你兵的攻击格时,你可以在下一步立即像它只走了一格那样斜吃它 —— 这就是「吃过路兵」。",
+        "机会只有一回合,不马上吃就永久失效。",
+      ],
+      tasks: [
+        { type: "move", fen: "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 3", goal: "ep",
+          prompt: "黑兵刚从 d7 两格到 d5 —— 用 e5 兵吃过路兵(落点 d6)",
+          retry: "要斜吃到 d6 才是吃过路兵", solution: ["exd6"] },
+      ],
+    },
+    {
+      id: "promotion", part: "规则与胜负", title: "升变:小兵变后",
+      text: [
+        "兵走到对方底线必须立刻升变为后、车、象或马(不能保持是兵,也不能变王)。",
+        "绝大多数时候升后;偶尔升马可以立刻将军,或升车/象避免逼和。",
+      ],
+      tasks: [
+        { type: "move", fen: "4k3/P7/8/8/8/8/8/4K3 w - - 0 1", goal: "promote",
+          prompt: "把 a7 兵推到底线,在弹窗里选择升变(顺便会将军!)",
+          solution: ["a8=Q+"] },
+      ],
+    },
+    // —— 第四部分 · 实战杀法 ——
+    {
+      id: "drill-queen", part: "实战杀法", title: "后杀单王(引擎陪练)",
+      text: [
+        "K+Q 对单王是最基础的必胜残局:用后一圈圈压缩黑王活动空间(保持骑士距离防逼和),再把自己的王走近,最后在边线将死。",
+        "引擎会执黑全力逃跑 —— 千万小心逼和!",
+      ],
+      tasks: [
+        { type: "drill", fen: "4k3/8/8/8/8/8/8/Q3K3 w - - 0 1",
+          prompt: "用后 + 王将死黑王(逼和或超过 50 回合判失败重来)" },
+      ],
+    },
+    {
+      id: "drill-rook", part: "实战杀法", title: "车杀单王(引擎陪练)",
+      text: [
+        "K+R 对单王同样必胜,但更考验步法:用车封锁一条线把黑王逼向边线,王与王「对面」时用车将军。",
+        "完成这一课,你就掌握了最重要的两个基础残局 —— 去人机·入门开始第一局吧!",
+      ],
+      tasks: [
+        { type: "drill", fen: "4k3/8/8/8/8/8/8/R3K3 w - - 0 1",
+          prompt: "用车 + 王将死黑王(比后杀更需要耐心)" },
+      ],
+    },
+  ];
+})(typeof window !== "undefined" ? window : globalThis);

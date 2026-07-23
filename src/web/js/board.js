@@ -2,11 +2,12 @@
  * Chess board canvas renderer + hit testing. Pure view: reads a model
  * function on every draw, never touches game rules.
  * Model: { position, flipped, selected, legalTargets, lastMove, checkSquare,
- *          hintMove }
+ *          hintMove, stars }
  *   position: chess.js .board() — [8][8] of {type,color}|null, row 0 = rank 8
  *   selected/checkSquare: square names ("e2") | null
  *   legalTargets: array of square names
  *   lastMove/hintMove: {from,to} | null (hintMove renders as an arrow)
+ *   stars: array of square names — lesson goal markers (gold stars)
  * @module board
  */
 (function (global) {
@@ -23,6 +24,22 @@
   const DOT = "rgba(30, 30, 30, 0.28)";
   const RING = "rgba(30, 30, 30, 0.32)";
   const HINT = "rgba(56, 142, 78, 0.75)";
+  const STAR = "rgba(230, 170, 30, 0.95)";
+  const STAR_EDGE = "rgba(120, 80, 0, 0.5)";
+
+  /** 5-point star path centered at (cx,cy) with outer radius r. */
+  function starPath(ctx, cx, cy, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rad = i % 2 === 0 ? r : r * 0.42;
+      const x = cx + Math.cos(ang) * rad;
+      const y = cy + Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
 
   let _canvas = null;
   let _model = null;
@@ -143,6 +160,23 @@
         ctx.lineWidth = Math.max(1, step * 0.02);
         ctx.strokeText(glyph, x, y);
         ctx.fillText(glyph, x, y);
+      }
+    }
+    // lesson stars: big on empty squares, tucked in the corner on occupied ones
+    if (m.stars && m.stars.length) {
+      for (const sq of m.stars) {
+        const { sr, sc } = screenPos(sq, m.flipped);
+        const c = FILES.indexOf(sq[0]);
+        const r = 8 - Number(sq[1]);
+        const occupied = !!m.position[r][c];
+        const cx = occupied ? sc * step + step * 0.8 : sc * step + step / 2;
+        const cy = occupied ? sr * step + step * 0.2 : sr * step + step / 2;
+        starPath(ctx, cx, cy, occupied ? step * 0.16 : step * 0.3);
+        ctx.fillStyle = STAR;
+        ctx.fill();
+        ctx.strokeStyle = STAR_EDGE;
+        ctx.lineWidth = Math.max(1, step * 0.015);
+        ctx.stroke();
       }
     }
     // engine hint arrow on top of pieces
