@@ -159,7 +159,7 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
   const lessons = ctx.CHESS_LESSONS;
-  assert(Array.isArray(lessons) && lessons.length >= 16, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
+  assert(Array.isArray(lessons) && lessons.length >= 21, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
   const ids = new Set();
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -183,7 +183,7 @@ for (const p of ["r", "b", "n"]) {
       } else if (t.type === "stars") {
         let g = new Chess(t.fen);
         const stars = new Set(t.stars);
-        if (!t.solution || t.solution.length !== t.stars.length) fail(tag, "stars/solution length mismatch");
+        if (!t.solution || !t.solution.length) fail(tag, "stars task without solution");
         for (const uci of t.solution) {
           const mv = g.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: "q" });
           if (!mv) { fail(tag, "illegal star move", uci); break; }
@@ -208,7 +208,9 @@ for (const p of ["r", "b", "n"]) {
           t.goal === "castle-k" ? mv.flags.includes("k") :
           t.goal === "castle-q" ? mv.flags.includes("q") :
           t.goal === "ep" ? mv.flags.includes("e") :
-          t.goal === "promote" ? !!mv.promotion : false;
+          t.goal === "promote" ? !!mv.promotion :
+          t.goal === "capture" ? (mv.to === t.target && !!mv.captured) :
+          t.goal === "draw-insufficient" ? g.insufficient_material() : false;
         if (!okByGoal) fail(tag, "solution does not satisfy goal", t.goal);
         if (t.trap) {
           const g2 = new Chess(t.fen);

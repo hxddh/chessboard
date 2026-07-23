@@ -8,6 +8,7 @@
  *   legalTargets: array of square names
  *   lastMove/hintMove: {from,to} | null (hintMove renders as an arrow)
  *   stars: array of square names — lesson goal markers (gold stars)
+ *   flashSquare: square name | null — brief success flash (lesson feedback)
  * @module board
  */
 (function (global) {
@@ -161,6 +162,12 @@
         ctx.strokeText(glyph, x, y);
         ctx.fillText(glyph, x, y);
       }
+    }
+    // lesson success flash
+    if (m.flashSquare) {
+      const { sr, sc } = screenPos(m.flashSquare, m.flipped);
+      ctx.fillStyle = "rgba(72, 190, 100, 0.45)";
+      ctx.fillRect(sc * step, sr * step, step, step);
     }
     // lesson stars: big on empty squares, tucked in the corner on occupied ones
     if (m.stars && m.stars.length) {

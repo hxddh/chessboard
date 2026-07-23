@@ -227,8 +227,8 @@
   // --- engine hint: full-strength best move drawn as an arrow ---
 
   async function requestHint() {
+    if (mode === "learn") { learnHint(); return; }
     if (!window.ChessEngine) { toast("引擎不可用"); return; }
-    if (mode === "learn") return;
     if (!isLive()) { toast("请先回到最新一着"); return; }
     if (game.game_over() || ruleTerminated()) return;
     if (mode === "ai" && (engineThinking || game.turn() !== humanColor)) return;
@@ -374,7 +374,7 @@
     if (!LESSONS[i]) return;
     learnState.last = i;
     saveLearnState();
-    learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0 };
+    learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null };
     startLearnTask();
   }
 
@@ -387,12 +387,22 @@
     learn.last = null;
     learn.done = false;
     learn.engineBusy = false;
+    learn.misses = 0;
+    learn.helpOn = false;
+    learn.helpArrow = null;
+    learn.flash = null;
     selection = null;
     sync();
   }
 
   function learnModel() {
     const g = learn.g;
+    const t = curTask();
+    let stars = Array.from(learn.stars);
+    // stuck-help: after repeated misses, highlight the tap answer with stars
+    if (learn.helpOn && t.type === "tap" && learn.tapStep < t.steps.length) {
+      stars = t.steps[learn.tapStep].squares;
+    }
     return {
       position: g.board(),
       flipped: false, // lessons are authored from the white side
@@ -400,9 +410,36 @@
       legalTargets: selection ? selection.targets : [],
       lastMove: learn.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
-      hintMove: null,
-      stars: Array.from(learn.stars),
+      hintMove: learn.helpArrow,
+      flashSquare: learn.flash,
+      stars,
     };
+  }
+
+  /** Two misses on the same task → show the answer (stars for taps, arrow for moves). */
+  function learnRegisterMiss() {
+    learn.misses++;
+    if (learn.misses < 2 || learn.helpOn) return;
+    learn.helpOn = true;
+    const t = curTask();
+    if (t.type === "move" && t.solution && t.solution.length) {
+      try {
+        const probe = new Chess(t.fen);
+        const mv = probe.move(t.solution[0]);
+        if (mv) learn.helpArrow = { from: mv.from, to: mv.to };
+      } catch (_) {}
+    }
+    toast("已为你标出答案");
+    sync();
+  }
+
+  function learnFlash(sq) {
+    learn.flash = sq;
+    draw();
+    const token = learn.token;
+    setTimeout(() => {
+      if (learn && learn.token === token && learn.flash === sq) { learn.flash = null; draw(); }
+    }, 380);
   }
 
   function learnTaskText() {
@@ -419,11 +456,15 @@
     if (t.type === "tap") {
       if (t.steps[learn.tapStep].squares.includes(sq)) {
         learn.tapStep++;
-        Audio2.playMove("w");
+        learn.helpOn = false;
+        learn.misses = 0;
+        Audio2.playStar();
+        learnFlash(sq);
         if (learn.tapStep >= t.steps.length) learnTaskDone();
         else sync();
       } else {
         toast("不是这格 —— " + t.steps[learn.tapStep].tip);
+        learnRegisterMiss();
       }
       return;
     }
@@ -469,9 +510,14 @@
     if (!mv) return;
     selection = null;
     learn.last = { from: mv.from, to: mv.to };
+    learn.helpArrow = null;
     Audio2.playMove(mv.color);
     if (t.type === "stars") {
-      if (learn.stars.has(mv.to)) learn.stars.delete(mv.to);
+      if (learn.stars.has(mv.to)) {
+        learn.stars.delete(mv.to);
+        Audio2.playStar();
+        learnFlash(mv.to);
+      }
       if (learn.stars.size === 0) { learnTaskDone(); return; }
       // hand the turn straight back to the student — the opponent never replies
       const f = g.fen().split(" ");
@@ -488,7 +534,9 @@
         t.goal === "castle-k" ? mv.flags.includes("k") :
         t.goal === "castle-q" ? mv.flags.includes("q") :
         t.goal === "ep" ? mv.flags.includes("e") :
-        t.goal === "promote" ? !!mv.promotion : false;
+        t.goal === "promote" ? !!mv.promotion :
+        t.goal === "capture" ? (mv.to === t.target && !!mv.captured) :
+        t.goal === "draw-insufficient" ? g.insufficient_material() : false;
       if (okByGoal) {
         if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
         learnTaskDone();
@@ -502,6 +550,7 @@
       g.undo();
       learn.last = null;
       toast(t.retry || "没达成目标,再试试");
+      learnRegisterMiss();
       sync();
       return;
     }
@@ -531,7 +580,7 @@
     learn.engineBusy = true;
     sync();
     let mv = null;
-    try { mv = await window.ChessEngine.bestMove(g.fen(), "hard"); } catch (_) {}
+    try { mv = await window.ChessEngine.bestMove(g.fen(), "normal"); } catch (_) {}
     if (!learn || token !== learn.token) return;
     learn.engineBusy = false;
     if (mv) {
@@ -551,6 +600,42 @@
       learnRetryTask("大子丢了,无法将杀 —— 重来");
       return;
     }
+    sync();
+  }
+
+  /** Drill-only: take back the last white move (and the engine reply with it). */
+  function learnUndo() {
+    if (!learn || learn.done || curTask().type !== "drill") return;
+    const g = learn.g;
+    if (!g.history().length) return;
+    learn.token++; // drop any in-flight engine reply
+    learn.engineBusy = false;
+    if (window.ChessEngine) window.ChessEngine.cancel();
+    g.undo();
+    if (g.history().length && g.turn() !== "w") g.undo();
+    learn.last = null;
+    learn.helpArrow = null;
+    selection = null;
+    sync();
+  }
+
+  /** Drill-only engine hint, drawn as an arrow (full strength, brief think). */
+  async function learnHint() {
+    if (!learn || learn.done || curTask().type !== "drill" || learn.engineBusy) return;
+    if (!window.ChessEngine) { toast("引擎不可用"); return; }
+    const g = learn.g;
+    if (g.game_over() || g.turn() !== "w") return;
+    if (hintPending) return;
+    const token = learn.token;
+    const sig = g.fen();
+    hintPending = true;
+    sync();
+    let e = null;
+    try { e = await window.ChessEngine.analyze(sig, 400); } catch (_) {}
+    hintPending = false;
+    if (!learn || token !== learn.token || learn.g.fen() !== sig) { sync(); return; }
+    if (!e || !e.best) { sync(); toast("引擎未能给出提示"); return; }
+    learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
     sync();
   }
 
@@ -600,8 +685,10 @@
     if (task) task.textContent = learnTaskText();
     const next = document.getElementById("lesson-next");
     if (next) {
-      next.disabled = learn.li + 1 >= LESSONS.length;
-      next.classList.toggle("primary", learn.done && !next.disabled);
+      const isLast = learn.li + 1 >= LESSONS.length;
+      next.textContent = isLast ? "去人机·入门" : "下一课";
+      next.disabled = isLast && !learn.done;
+      next.classList.toggle("primary", learn.done);
     }
     const list = document.getElementById("lesson-list");
     if (list) {
@@ -837,7 +924,9 @@
     if (mode === "learn") {
       if (!learn) return "教学模式";
       if (learn.done) return "🎉 课程完成";
-      return "第 " + (learn.li + 1) + " 课 · " + curLesson().title;
+      // the sidebar may be closed while clicking the board — put the live
+      // task instructions where they are always visible
+      return learnTaskText();
     }
     const g = viewGame();
     if (!isLive()) return "复盘 " + viewIndex + "/" + sanHistory().length;
@@ -901,19 +990,26 @@
     draw();
     const h = sanHistory();
     document.getElementById("status").textContent = statusText();
-    document.getElementById("moves").textContent = viewIndex + "/" + h.length;
+    document.getElementById("moves").textContent =
+      mode === "learn" ? (learn ? (learn.li + 1) + "/" + LESSONS.length : "—") : viewIndex + "/" + h.length;
     document.getElementById("replay-pos").textContent = viewIndex + " / " + h.length;
     document.getElementById("rep-start").disabled = viewIndex <= 0;
     document.getElementById("rep-prev").disabled = viewIndex <= 0;
     document.getElementById("rep-next").disabled = viewIndex >= h.length;
     document.getElementById("rep-end").disabled = viewIndex >= h.length;
     document.getElementById("rep-live").disabled = isLive();
-    document.getElementById("undo").disabled = h.length === 0 || !isLive() || ruleTerminated() || mode === "learn";
+    const inDrill = mode === "learn" && learn && !learn.done && curTask().type === "drill";
+    document.getElementById("undo").disabled = mode === "learn"
+      ? !(inDrill && learn.g && learn.g.history().length)
+      : h.length === 0 || !isLive() || ruleTerminated();
     document.getElementById("btn-new").disabled = mode === "learn";
+    document.getElementById("btn-flip").disabled = mode === "learn";
     const hintBtn = document.getElementById("btn-hint");
     if (hintBtn) {
-      hintBtn.disabled = hintPending || analyzing || !isLive() || game.game_over() || ruleTerminated() ||
-        mode === "learn" || (mode === "ai" && (engineThinking || game.turn() !== humanColor));
+      hintBtn.disabled = mode === "learn"
+        ? !(inDrill && !learn.engineBusy && !hintPending && learn.g && !learn.g.game_over() && learn.g.turn() === "w")
+        : hintPending || analyzing || !isLive() || game.game_over() || ruleTerminated() ||
+          (mode === "ai" && (engineThinking || game.turn() !== humanColor));
       hintBtn.textContent = hintPending ? "思考中" : "提示";
     }
     const resignBtn = document.getElementById("btn-resign");
@@ -1069,7 +1165,8 @@
   }
 
   function undo() {
-    if (!sanHistory().length || ruleTerminated() || mode === "learn") return;
+    if (mode === "learn") { learnUndo(); return; }
+    if (!sanHistory().length || ruleTerminated()) return;
     if (!isLive()) { goLive(); return; }
     invalidateEngine();
     game.undo();
@@ -1381,7 +1478,17 @@
     if (learn) { startLearnTask(); toast("本课重来"); }
   };
   document.getElementById("lesson-next").onclick = () => {
-    if (learn && learn.li + 1 < LESSONS.length) startLesson(learn.li + 1);
+    if (!learn) return;
+    if (learn.li + 1 < LESSONS.length) { startLesson(learn.li + 1); return; }
+    // graduation: straight into a beginner AI game
+    difficulty = "easy";
+    mode = "ai";
+    stopLearn();
+    saveSettings();
+    selection = null;
+    sync();
+    toast("人机对弈 · 入门 —— 开始你的第一局!");
+    maybeEngineTurn();
   };
   document.getElementById("lesson-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
@@ -1470,9 +1577,12 @@
     const k = ev.key.toLowerCase();
     if (ev.key === "Tab") { ev.preventDefault(); togglePanel(); return; }
     if (mode === "learn") {
-      // replay / game shortcuts act on the main game — inert during lessons,
-      // except R to retry the current task
-      if (k === "r" && !ev.metaKey && !ev.ctrlKey && learn) { startLearnTask(); toast("本课重来"); }
+      // replay / game shortcuts act on the main game — inert during lessons;
+      // R retries the task, Z/H work in engine drills
+      if (!learn || ev.metaKey || ev.ctrlKey) return;
+      if (k === "r") { startLearnTask(); toast("本课重来"); }
+      else if (k === "z") learnUndo();
+      else if (k === "h") learnHint();
       return;
     }
     if (ev.key === "ArrowLeft") { ev.preventDefault(); setViewIndex(viewIndex - 1); }

@@ -118,6 +118,9 @@
       border: 1px solid var(--card-border);
       backdrop-filter: blur(8px);
       transition: color .2s var(--ease), border-color .2s var(--ease), background .2s var(--ease);
+      /* learn mode puts the full task text here — clip instead of wrapping the bar */
+      max-width: 44vw;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .status-pill.win {
       color: var(--win);

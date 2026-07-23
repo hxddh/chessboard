@@ -98,5 +98,25 @@
     } catch (_) {}
   }
 
-  global.ChessAudio = { init, playMove, playWin };
+  /** Bright two-note chime for collecting a lesson star. */
+  function playStar() {
+    if (!enabled()) return;
+    try {
+      const ctx = ensureAudio();
+      [880, 1318.5].forEach((f, i) => {
+        const t0 = ctx.currentTime + i * 0.07;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t0); osc.stop(t0 + 0.24);
+      });
+    } catch (_) {}
+  }
+
+  global.ChessAudio = { init, playMove, playWin, playStar };
 })(typeof window !== "undefined" ? window : globalThis);
