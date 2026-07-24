@@ -40,8 +40,12 @@
   /** engine hint arrow {from,to}; cleared whenever the game mutates */
   let hintMove = null;
   let hintPending = false;
-  /** two-player clock preset: 'off' | minutes as string */
+  /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
   let timeControl = "off";
+  /** blunder coach: warn after ??-level moves in AI games */
+  let coachOn = true;
+  /** pvp: flip the board to face the side to move after every move */
+  let autoFlipPvp = false;
   /** remaining ms per side; null when no clock */
   let clock = null;
   /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
@@ -52,6 +56,8 @@
   let resigned = null;
   /** draw agreed (pvp: both players; ai: engine accepted the offer) */
   let drawAgreed = false;
+  /** claimed draw: 'threefold' | 'fifty' | null — terminal once claimed */
+  let drawClaimed = null;
   /** learn-mode runtime; null unless mode === 'learn' */
   let learn = null;
   /** puzzle-mode runtime; null unless mode === 'puzzle' */
@@ -138,14 +144,20 @@
   }
 
   let confirmResolver = null;
+  /**
+   * In-app confirm. Resolves true (ok) / false (cancel), and "alt" when the
+   * optional third button (buttons.alt) was offered and chosen.
+   */
   function confirmNative(message, title, buttons) {
     const okLabel = (buttons && buttons.ok) || "确定";
     const cancelLabel = (buttons && buttons.cancel) || "取消";
+    const altLabel = buttons && buttons.alt;
     const modal = document.getElementById("confirm-modal");
     const titleEl = document.getElementById("confirm-title");
     const msgEl = document.getElementById("confirm-message");
     const okBtn = document.getElementById("confirm-ok");
     const cancelBtn = document.getElementById("confirm-cancel");
+    const altBtn = document.getElementById("confirm-alt");
     if (!modal || !okBtn || !cancelBtn) {
       try { return Promise.resolve(!!window.confirm(message)); }
       catch (_) { return Promise.resolve(true); }
@@ -154,6 +166,10 @@
     if (msgEl) msgEl.textContent = message;
     okBtn.textContent = okLabel;
     cancelBtn.textContent = cancelLabel;
+    if (altBtn) {
+      altBtn.hidden = !altLabel;
+      if (altLabel) altBtn.textContent = altLabel;
+    }
     modal.classList.add("show");
     okBtn.focus();
     return new Promise((resolve) => { confirmResolver = resolve; });
@@ -174,14 +190,16 @@
       if (typeof s.flipped === "boolean") flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) themeId = s.themeId;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) mode = s.mode;
-      if (["easy", "normal", "hard", "extreme"].includes(s.difficulty)) difficulty = s.difficulty;
+      if (["beginner", "easy", "normal", "hard", "extreme"].includes(s.difficulty)) difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) humanColor = s.humanColor;
-      if (["off", "3", "5", "10"].includes(s.timeControl)) timeControl = s.timeControl;
+      if (s.timeControl === "off" || TCS[s.timeControl]) timeControl = s.timeControl;
+      if (typeof s.coachOn === "boolean") coachOn = s.coachOn;
+      if (typeof s.autoFlipPvp === "boolean") autoFlipPvp = s.autoFlipPvp;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp }));
     } catch (_) {}
   }
   function saveGame() {
@@ -192,6 +210,7 @@
       }
       if (resigned) payload.resigned = resigned;
       if (drawAgreed) payload.drawAgreed = true;
+      if (drawClaimed) payload.drawClaimed = drawClaimed;
       Host.storageSet(SAVE_KEY, JSON.stringify(payload));
     } catch (_) {}
   }
@@ -203,7 +222,7 @@
       if (!s || s.v !== 1 || typeof s.pgn !== "string" || !s.pgn) return false;
       if (!game.load_pgn(s.pgn)) return false;
       viewIndex = sanHistory().length;
-      if (s.clock && ["3", "5", "10"].includes(s.clock.tc) &&
+      if (s.clock && TCS[s.clock.tc] &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
         timeControl = s.clock.tc;
         clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
@@ -211,6 +230,7 @@
       }
       if (s.resigned === "w" || s.resigned === "b") resigned = s.resigned;
       if (s.drawAgreed === true) drawAgreed = true;
+      if (s.drawClaimed === "threefold" || s.drawClaimed === "fifty") drawClaimed = s.drawClaimed;
       return sanHistory().length > 0;
     } catch (_) {
       return false;
@@ -218,7 +238,7 @@
   }
 
   // --- engine (AI mode) ---
-  const DIFF_NAMES = { easy: "入门", normal: "进阶", hard: "困难", extreme: "极限" };
+  const DIFF_NAMES = { beginner: "新手", easy: "入门", normal: "进阶", hard: "困难", extreme: "极限" };
 
   /** Drop any in-flight engine search; call before every game mutation. */
   function invalidateEngine() {
@@ -231,7 +251,7 @@
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
     if (mode !== "ai" || !window.ChessEngine) return;
-    if (game.game_over() || ruleTerminated() || game.turn() === humanColor) return;
+    if (appGameOver() || game.turn() === humanColor) return;
     const token = ++engineToken;
     engineThinking = true;
     sync();
@@ -249,12 +269,14 @@
       viewIndex = sanHistory().length;
       selection = null;
       hintMove = null;
+      applyIncrement(played.color);
       BoardView.animateMove(played.from, played.to);
       Audio2.playMove(played.color, { captured: !!played.captured, check: game.in_check() });
       if (game.in_checkmate()) Audio2.playWin();
-      else if (game.game_over()) Audio2.playDraw();
+      else if (naturalGameOver()) Audio2.playDraw();
       saveGame();
       recordGameIfOver();
+      coachAfterEngineReply();
     }
     sync();
   }
@@ -266,7 +288,7 @@
     if (mode === "puzzle") { showPuzzleAnswer(); return; }
     if (!window.ChessEngine) { toast("引擎不可用"); return; }
     if (!isLive()) { toast("请先回到最新一着"); return; }
-    if (game.game_over() || ruleTerminated()) return;
+    if (appGameOver()) return;
     if (mode === "ai" && (engineThinking || game.turn() !== humanColor)) return;
     if (hintPending || analyzing) return;
     const sig = game.fen();
@@ -285,21 +307,36 @@
     toast("提示 · " + (vmv ? vmv.san : from + " → " + to));
   }
 
-  // --- two-player clock (basic: no increment; flag fall is terminal) ---
-  const TC_MINUTES = { "3": 3, "5": 5, "10": 10 };
+  // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
+  /** time control id → base seconds + increment seconds credited per move */
+  const TCS = {
+    "3": { base: 180, inc: 0 }, "3+2": { base: 180, inc: 2 },
+    "5": { base: 300, inc: 0 }, "5+3": { base: 300, inc: 3 },
+    "10": { base: 600, inc: 0 },
+  };
+  const TC_IDS = Object.keys(TCS);
+  function parseTc(tc) { return TCS[tc] || null; }
 
   function resetClocks() {
-    const min = TC_MINUTES[timeControl];
-    clock = min ? { w: min * 60000, b: min * 60000 } : null;
+    const tc = parseTc(timeControl);
+    clock = tc ? { w: tc.base * 1000, b: tc.base * 1000 } : null;
     flagFall = null;
     syncClockTimer();
+    renderClocks();
+  }
+
+  /** Fischer increment: credit the mover once their move is completed. */
+  function applyIncrement(mover) {
+    const tc = parseTc(timeControl);
+    if (!clock || !tc || !tc.inc || flagFall) return;
+    clock[mover] += tc.inc * 1000;
     renderClocks();
   }
 
   /** Ticking starts at the first move so nobody drains on the start screen. */
   function clockRunning() {
     return (mode === "pvp" || mode === "ai") && !!clock &&
-      !ruleTerminated() && !game.game_over() && sanHistory().length >= 1;
+      !appGameOver() && sanHistory().length >= 1;
   }
 
   function syncClockTimer() {
@@ -696,7 +733,7 @@
     const token = learn.token;
     // drills default to the weakest tier: the sparring partner is there to
     // teach the technique, not to punish a beginner with perfect defense
-    const tier = curTask().engine || "easy";
+    const tier = curTask().engine || "beginner";
     learn.engineBusy = true;
     sync();
     let mv = null;
@@ -812,7 +849,7 @@
     const next = document.getElementById("lesson-next");
     if (next) {
       const isLast = learn.li + 1 >= LESSONS.length;
-      next.textContent = isLast ? "去人机·入门" : "下一课";
+      next.textContent = isLast ? "去人机·新手" : "下一课";
       next.disabled = isLast && !learn.done;
       next.classList.toggle("primary", learn.done);
     }
@@ -1217,8 +1254,9 @@
     return analysis && analysis.sig === game.pgn() ? analysis : null;
   }
 
-  async function analyzeGame() {
+  async function analyzeGame(movetime) {
     if (analyzing || !window.ChessEngine) return;
+    const perMove = movetime || 120;
     const h = sanHistory();
     if (!h.length) { toast("还没有对局可分析"); return; }
     const sig = game.pgn();
@@ -1237,7 +1275,7 @@
       else if (probe.game_over()) scalars[i] = 0;
       else {
         let e = null;
-        try { e = await window.ChessEngine.analyze(fens[i], 120); } catch (_) {}
+        try { e = await window.ChessEngine.analyze(fens[i], perMove); } catch (_) {}
         if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
         scalars[i] = evalScalar(e);
         // principal variation, converted to SAN for display
@@ -1281,6 +1319,8 @@
       btn.disabled = analyzing || !sanHistory().length;
       btn.textContent = analyzing ? "分析中 " + analyzeProgress : "分析";
     }
+    const deep = document.getElementById("an-deep");
+    if (deep) deep.disabled = analyzing || !sanHistory().length;
     const wrap = document.getElementById("eval-wrap");
     if (wrap) {
       wrap.hidden = !analysisFor();
@@ -1361,7 +1401,7 @@
 
   /** Record an AI game the moment it finishes on a live move (not on import). */
   function recordGameIfOver() {
-    if (mode !== "ai" || !game.game_over()) return;
+    if (mode !== "ai" || !naturalGameOver()) return;
     const sig = game.pgn();
     if (statsRecordedSig === sig) return;
     statsRecordedSig = sig;
@@ -1387,7 +1427,7 @@
     }
     el.innerHTML = "";
     let total = 0;
-    for (const k of ["easy", "normal", "hard", "extreme"]) {
+    for (const k of ["beginner", "easy", "normal", "hard", "extreme"]) {
       const a = agg[k];
       if (!a) continue;
       total += a.win + a.loss + a.draw;
@@ -1446,15 +1486,19 @@
     };
   }
 
-  /** [{ach, unlocked}] with the meta "completionist" resolved in a 2nd pass. */
+  /**
+   * [{ach, unlocked}] with the meta "completionist" resolved in a 2nd pass.
+   * Once earned, a badge stays earned (achSeen): otherwise adding lessons or
+   * puzzles in an update would silently revoke a veteran's 全部完成 badges.
+   */
   function evalAch() {
     const s = achSummary();
     const base = ACH.filter((a) => a.id !== "completionist");
-    const baseRes = base.map((a) => ({ ach: a, unlocked: !!a.test(s) }));
+    const baseRes = base.map((a) => ({ ach: a, unlocked: !!a.test(s) || achSeen.has(a.id) }));
     s.otherUnlocked = baseRes.filter((r) => r.unlocked).length;
     s.otherTotal = base.length;
     return ACH.map((a) =>
-      a.id === "completionist" ? { ach: a, unlocked: !!a.test(s) }
+      a.id === "completionist" ? { ach: a, unlocked: !!a.test(s) || achSeen.has(a.id) }
         : baseRes.find((r) => r.ach.id === a.id));
   }
 
@@ -1496,15 +1540,36 @@
 
   // --- game flow ---
 
-  /** FIDE 6.9 (simplified): lone K, K+B or K+N cannot win on the opponent's flag. */
+  /**
+   * FIDE 6.9: on a flag fall the opponent wins only if some legal sequence of
+   * moves (helpmates included) could checkmate the flagged player. Practical
+   * decision table over the opponent's material (sq colors for bishops):
+   *  - any pawn / rook / queen → can mate
+   *  - ≥2 knights → can mate (helpmate exists)
+   *  - 1 knight → can mate iff the flagged side still has any piece to serve
+   *    as a blocker (KN vs bare K cannot mate even with cooperation)
+   *  - bishops on both colors → can mate
+   *  - same-colored bishops only → can mate iff the flagged side has a piece
+   *    that can occupy a square of the OTHER color (a same-colored bishop
+   *    can't; any pawn/rook/queen/knight/other-color bishop can)
+   */
   function sideHasMatingMaterial(color) {
-    const pieces = [];
-    for (const row of game.board()) for (const p of row) {
-      if (p && p.color === color && p.type !== "k") pieces.push(p.type);
+    const mine = [], theirs = [];
+    const board = game.board();
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p || p.type === "k") continue;
+      (p.color === color ? mine : theirs).push({ type: p.type, dark: (r + c) % 2 === 1 });
     }
-    if (pieces.length === 0) return false;
-    if (pieces.length === 1 && (pieces[0] === "b" || pieces[0] === "n")) return false;
-    return true;
+    if (mine.some((p) => p.type === "p" || p.type === "r" || p.type === "q")) return true;
+    const knights = mine.filter((p) => p.type === "n").length;
+    const bishops = mine.filter((p) => p.type === "b");
+    if (knights >= 2) return true;
+    if (knights === 1) return bishops.length > 0 || theirs.length > 0;
+    if (!bishops.length) return false;
+    if (bishops.some((b) => b.dark) && bishops.some((b) => !b.dark)) return true;
+    const myColor = bishops[0].dark;
+    return theirs.some((p) => p.type !== "b" || p.dark !== myColor);
   }
 
   function timeoutIsDraw() {
@@ -1532,14 +1597,16 @@
     }
     if (resigned) return resigned === "w" ? "白方认输 · 黑方胜" : "黑方认输 · 白方胜";
     if (drawAgreed) return "协议和棋 · 和棋";
-    if (engineThinking && !g.game_over()) return "引擎思考中…";
+    if (drawClaimed) return drawClaimed === "threefold" ? "判和 · 三次重复" : "判和 · 50 回合无吃子无动兵";
+    if (engineThinking && !naturalGameOver()) return "引擎思考中…";
     if (g.in_checkmate()) return g.turn() === "w" ? "将死 · 黑方胜" : "将死 · 白方胜";
     if (g.in_stalemate()) return "逼和 · 和棋";
-    if (g.in_threefold_repetition()) return "三次重复 · 和棋";
     if (g.insufficient_material()) return "子力不足 · 和棋";
-    if (g.in_draw()) return "和棋";
+    const auto = autoDrawReason();
+    if (auto) return auto === "fivefold" ? "五次重复 · 自动判和" : "75 回合无进展 · 自动判和";
     const side = g.turn() === "w" ? "白方走子" : "黑方走子";
-    return g.in_check() ? side + " · 将军！" : side;
+    const base = g.in_check() ? side + " · 将军！" : side;
+    return claimableDrawReason() ? base + " · 可判和" : base;
   }
 
   function renderMoveList() {
@@ -1580,8 +1647,60 @@
     }
   }
 
-  /** Live game finished by an app-level rule (flag / resignation / agreed draw). */
-  function ruleTerminated() { return !!flagFall || !!resigned || drawAgreed; }
+  /** Live game finished by an app-level rule (flag / resignation / agreed or claimed draw). */
+  function ruleTerminated() { return !!flagFall || !!resigned || drawAgreed || !!drawClaimed; }
+
+  // --- FIDE draw plumbing ---
+  // chess.js's game_over() ends the game at threefold repetition and at the
+  // 50-move mark, but under FIDE those are CLAIMABLE draws (arts. 9.2/9.3);
+  // only fivefold repetition and 75 moves end the game automatically
+  // (arts. 9.6). The app therefore never consults game_over() for
+  // terminal-ness — it derives its own claimable/auto states here.
+
+  function halfmoveClock(g) { return Number((g || game).fen().split(" ")[4]) || 0; }
+
+  /** how many times the current live position has occurred (incl. start) */
+  let repMemo = { sig: null, count: 1 };
+  function repetitionCount() {
+    const h = sanHistory();
+    const sig = h.join(" ");
+    if (repMemo.sig === sig) return repMemo.count;
+    const key = (f) => f.split(" ").slice(0, 4).join(" ");
+    const g = baseGame();
+    const counts = new Map([[key(g.fen()), 1]]);
+    for (const san of h) {
+      g.move(san);
+      const k = key(g.fen());
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    repMemo = { sig, count: counts.get(key(game.fen())) || 1 };
+    return repMemo.count;
+  }
+
+  /** 'fivefold' | 'seventyfive' | null — draws that end the game by law */
+  function autoDrawReason() {
+    if (game.in_checkmate()) return null; // a mating move trumps the 75-move rule
+    if (repetitionCount() >= 5) return "fivefold";
+    if (halfmoveClock() >= 150) return "seventyfive";
+    return null;
+  }
+
+  /** 'threefold' | 'fifty' | null — draws the player may claim right now */
+  function claimableDrawReason() {
+    if (naturalGameOver()) return null;
+    if (repetitionCount() >= 3) return "threefold";
+    if (halfmoveClock() >= 100) return "fifty";
+    return null;
+  }
+
+  /** Game over by the laws of chess alone (no clocks/resignation/claims). */
+  function naturalGameOver() {
+    return game.in_checkmate() || game.in_stalemate() ||
+      game.insufficient_material() || !!autoDrawReason();
+  }
+
+  /** Every way the live game can be finished. */
+  function appGameOver() { return naturalGameOver() || ruleTerminated(); }
 
   function sync() {
     draw();
@@ -1611,19 +1730,26 @@
           ? !(inDrill && !learn.engineBusy && !hintPending && learn.g && !learn.g.game_over() && learn.g.turn() === "w")
         : mode === "puzzle"
           ? !(puzzle && !puzzle.done && !puzzle.g.game_over() && puzzle.g.turn() === "w")
-        : hintPending || analyzing || !isLive() || game.game_over() || ruleTerminated() ||
+        : hintPending || analyzing || !isLive() || appGameOver() ||
           (mode === "ai" && (engineThinking || game.turn() !== humanColor));
       hintBtn.textContent = mode === "puzzle" ? "答案" : hintPending ? "思考中" : "提示";
     }
     const resignBtn = document.getElementById("btn-resign");
     if (resignBtn) {
-      resignBtn.disabled = modal || !isLive() || h.length === 0 ||
-        game.game_over() || ruleTerminated();
+      resignBtn.disabled = modal || !isLive() || h.length === 0 || appGameOver();
     }
     const drawBtn = document.getElementById("btn-offerdraw");
     if (drawBtn) {
       drawBtn.disabled = modal || !isLive() || h.length === 0 ||
-        game.game_over() || ruleTerminated() || drawOfferPending;
+        appGameOver() || drawOfferPending;
+    }
+    const claimBtn = document.getElementById("btn-claimdraw");
+    if (claimBtn) {
+      const reason = !modal && isLive() && !appGameOver() ? claimableDrawReason() : null;
+      claimBtn.disabled = !reason;
+      claimBtn.title = reason === "threefold" ? "同一局面已第三次出现,可依规则判和"
+        : reason === "fifty" ? "已连续 50 回合无吃子无动兵,可依规则判和"
+        : "三次重复或 50 回合无进展时可判和";
     }
     document.getElementById("pgn-copy").disabled = h.length === 0;
     document.getElementById("pgn-download").disabled = h.length === 0;
@@ -1633,7 +1759,7 @@
     const decisiveEnd = g.in_checkmate() || !!resigned || (flagFall && !timeoutIsDraw());
     status.classList.toggle("win", !modal && isLive() && decisiveEnd);
     status.classList.toggle("replay", !modal && !isLive());
-    const over = game.game_over() || ruleTerminated();
+    const over = appGameOver();
     const showTurn = !modal && isLive() && !over;
     document.getElementById("white-turn").hidden = !(showTurn && game.turn() === "w");
     document.getElementById("black-turn").hidden = !(showTurn && game.turn() === "b");
@@ -1676,6 +1802,14 @@
     if (diffRow) diffRow.hidden = mode !== "ai";
     if (colorRow) colorRow.hidden = mode !== "ai";
     if (clockRow) clockRow.hidden = mode !== "pvp" && mode !== "ai";
+    const coachRow = document.getElementById("row-coach");
+    if (coachRow) coachRow.hidden = mode !== "ai";
+    const coachSwitch = document.getElementById("opt-coach");
+    if (coachSwitch) coachSwitch.setAttribute("aria-pressed", coachOn ? "true" : "false");
+    const flipRow = document.getElementById("row-autoflip");
+    if (flipRow) flipRow.hidden = mode !== "pvp";
+    const flipSwitch = document.getElementById("opt-autoflip");
+    if (flipSwitch) flipSwitch.setAttribute("aria-pressed", autoFlipPvp ? "true" : "false");
     const secMoves = document.getElementById("sec-moves");
     const secStats = document.getElementById("sec-stats");
     const trainer = mode === "learn" || mode === "puzzle";
@@ -1741,11 +1875,16 @@
     selection = null;
     hintMove = null;
     viewIndex = sanHistory().length;
+    applyIncrement(mv.color);
     BoardView.animateMove(mv.from, mv.to);
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: game.in_check() });
     if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
     if (game.in_checkmate()) Audio2.playWin();
-    else if (game.game_over()) Audio2.playDraw();
+    else if (naturalGameOver()) Audio2.playDraw();
+    if (mode === "pvp" && autoFlipPvp && isLive() && !appGameOver()) {
+      flipped = game.turn() === "b";
+    }
+    coachRemember(mv);
     sync();
     saveGame();
     recordGameIfOver();
@@ -1756,10 +1895,11 @@
     if (mode === "learn") { learnClick(sq); return; }
     if (mode === "puzzle") { puzzleClick(sq); return; }
     if (!isLive()) { toast("请先「回到最新一着」再走子"); return; }
-    if (game.game_over()) return;
+    if (naturalGameOver()) return;
     if (flagFall) { toast("已超时 · 按 N 开新局"); return; }
     if (resigned) { toast("本局已认输 · 按 N 开新局"); return; }
     if (drawAgreed) { toast("本局已协议和棋 · 按 N 开新局"); return; }
+    if (drawClaimed) { toast("本局已判和 · 按 N 开新局"); return; }
     if (mode === "ai" && game.turn() !== humanColor) return; // engine's move
     const piece = game.get(sq);
     if (selection && selection.targets.includes(sq)) {
@@ -1811,6 +1951,7 @@
     viewIndex = 0;
     resigned = null;
     drawAgreed = false;
+    drawClaimed = null;
     resetClocks();
     sync();
     saveGame();
@@ -1836,6 +1977,7 @@
     if (ruleTerminated()) resetClocks();
     resigned = null;
     drawAgreed = false;
+    drawClaimed = null;
     sync();
     saveGame();
     toast("已回到第 " + keep + " 着,继续对弈");
@@ -1844,10 +1986,18 @@
 
   // --- resignation (terminal, like mate; AI games count as a loss) ---
   async function doResign() {
-    if (mode === "learn" || !isLive() || !sanHistory().length || game.game_over() || ruleTerminated()) return;
-    const side = mode === "ai" ? humanColor : game.turn();
+    if (mode === "learn" || !isLive() || !sanHistory().length || naturalGameOver() || ruleTerminated()) return;
+    let side;
+    if (mode === "ai") {
+      side = humanColor;
+      if (!(await confirmNative((side === "w" ? "白方" : "黑方") + "认输,结束本局?", "认输", { ok: "认输", cancel: "取消" }))) return;
+    } else {
+      // pvp: either player may resign at any time (FIDE) — pick the side
+      const pick = await confirmNative("哪一方认输?", "认输", { ok: "白方认输", alt: "黑方认输", cancel: "取消" });
+      if (!pick) return;
+      side = pick === "alt" ? "b" : "w";
+    }
     const who = side === "w" ? "白方" : "黑方";
-    if (!(await confirmNative(who + "认输,结束本局?", "认输", { ok: "认输", cancel: "取消" }))) return;
     invalidateEngine();
     resigned = side;
     Audio2.playWin();
@@ -1872,11 +2022,43 @@
 
   function recordResign() { recordOutcome("loss", "#resigned"); }
 
+  // --- blunder coach (AI mode): after the engine replies, quietly evaluate
+  // the human's last move; a ??-level swing earns a "consider undoing" nudge.
+  let coachPending = null; // {before, after, san, len}
+
+  function coachRemember(mv) {
+    coachPending = null;
+    if (mode !== "ai" || !coachOn || !window.ChessEngine) return;
+    const h = sanHistory();
+    const g = baseGame();
+    for (let i = 0; i < h.length - 1; i++) g.move(h[i]);
+    coachPending = { before: g.fen(), after: game.fen(), san: mv.san, len: h.length };
+  }
+
+  async function coachAfterEngineReply() {
+    const p = coachPending;
+    coachPending = null;
+    if (!p || !coachOn || mode !== "ai" || appGameOver()) return;
+    let a = null, b = null;
+    try {
+      a = await window.ChessEngine.analyze(p.before, 120);
+      b = await window.ChessEngine.analyze(p.after, 120);
+    } catch (_) { return; }
+    const sa = evalScalar(a), sb = evalScalar(b);
+    if (sa == null || sb == null) return;
+    // the move must still be part of the live game (no undo / new game since)
+    const h = sanHistory();
+    if (h.length < p.len || h[p.len - 1] !== p.san) return;
+    const moverIsWhite = p.before.split(" ")[1] === "w";
+    const loss = moverIsWhite ? sa - sb : sb - sa;
+    if (loss >= 300) toast("⚠️ 刚才的 " + p.san + " 可能是严重失误 —— 可按 Z 悔棋重想");
+  }
+
   // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
   let drawOfferPending = false;
   async function doOfferDraw() {
     if (mode === "learn" || mode === "puzzle" || !isLive() || !sanHistory().length ||
-        game.game_over() || ruleTerminated() || drawOfferPending) return;
+        appGameOver() || drawOfferPending) return;
     if (mode === "pvp") {
       if (!(await confirmNative("双方都同意和棋吗?", "提和", { ok: "同意和棋", cancel: "继续下" }))) return;
       acceptDraw();
@@ -1892,7 +2074,7 @@
     const sig = game.fen();
     try { e = await window.ChessEngine.analyze(sig, 300); } catch (_) {}
     drawOfferPending = false;
-    if (game.fen() !== sig || ruleTerminated() || game.game_over()) return;
+    if (game.fen() !== sig || appGameOver()) return;
     // e.cp is from the side to move (the human here); engine eval = -cp
     const engineCp = e && e.cp != null ? -e.cp : e && e.mate != null ? (e.mate > 0 ? -10000 : 10000) : null;
     if (engineCp != null && engineCp < 60) {
@@ -1915,6 +2097,20 @@
 
   function recordAgreedDraw() { recordOutcome("draw", "#drawAgreed"); }
 
+  /** FIDE arts. 9.2/9.3: claim the draw at threefold repetition / 50 moves. */
+  function doClaimDraw() {
+    if (mode === "learn" || mode === "puzzle" || !isLive() || appGameOver()) return;
+    const reason = claimableDrawReason();
+    if (!reason) { toast("当前不可判和 —— 需要三次重复或 50 回合无进展"); return; }
+    invalidateEngine();
+    drawClaimed = reason;
+    Audio2.playDraw();
+    if (mode === "ai") recordOutcome("draw", "#claimed");
+    saveGame();
+    sync();
+    toast(reason === "threefold" ? "判和 · 同一局面三次重复" : "判和 · 50 回合无吃子无动兵");
+  }
+
   // --- FEN / PGN I/O ---
   async function copyText(text, okMsg) {
     try { await Host.writeClipboard(text); toast(okMsg); }
@@ -1924,18 +2120,18 @@
   function gameResultToken() {
     if (game.in_checkmate()) return game.turn() === "w" ? "0-1" : "1-0";
     if (resigned) return resigned === "w" ? "0-1" : "1-0";
-    if (drawAgreed) return "1/2-1/2";
+    if (drawAgreed || drawClaimed) return "1/2-1/2";
     if (flagFall) {
       if (timeoutIsDraw()) return "1/2-1/2";
       return flagFall === "w" ? "0-1" : "1-0";
     }
-    if (game.game_over()) return "1/2-1/2"; // stalemate + the draw rules
+    if (naturalGameOver()) return "1/2-1/2"; // stalemate + the auto draw rules
     return "*";
   }
 
   /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
   function pgnForExport() {
-    const DIFF_EN = { easy: "Easy", normal: "Normal", hard: "Hard", extreme: "Max" };
+    const DIFF_EN = { beginner: "Beginner", easy: "Easy", normal: "Normal", hard: "Hard", extreme: "Max" };
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
     const engineName = "Stockfish 18 (" + (DIFF_EN[difficulty] || difficulty) + ")";
@@ -1951,6 +2147,11 @@
       ["Black", black],
       ["Result", result],
     ];
+    const tc = parseTc(timeControl);
+    tagPairs.push(["TimeControl", tc ? tc.base + (tc.inc ? "+" + tc.inc : "") : "-"]);
+    if (result !== "*") {
+      tagPairs.push(["Termination", flagFall ? "time forfeit" : "normal"]);
+    }
     const sf = startFen();
     if (sf) tagPairs.push(["SetUp", "1"], ["FEN", sf]);
     const tags = tagPairs.map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
@@ -2019,6 +2220,7 @@
     viewIndex = sanHistory().length;
     resigned = null;
     drawAgreed = false;
+    drawClaimed = null;
     resetClocks();
     sync();
     saveGame();
@@ -2028,11 +2230,40 @@
 
   async function pastePgn() {
     try {
-      const text = await navigator.clipboard.readText();
+      // Host bridge first: the packaged WebView may not grant the page
+      // clipboard-read permission, but the native side always can.
+      const text = await Host.readClipboard();
       importPgnText(text, "剪贴板");
     } catch (_) {
       toast("无法读取剪贴板");
     }
+  }
+
+  /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
+  async function openPgnFile() {
+    if (Host.hasZero()) {
+      try {
+        const picked = await Host.openFileDialog({ title: "打开 PGN" });
+        const paths = Host.normalizePaths(picked);
+        if (!paths.length) return; // cancelled
+        const text = await Host.readTextFile(paths[0]);
+        importPgnText(text, paths[0]);
+      } catch (_) {
+        toast("无法读取文件");
+      }
+      return;
+    }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".pgn,.txt";
+    input.onchange = () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => importPgnText(String(reader.result || ""), f.name);
+      reader.readAsText(f);
+    };
+    input.click();
   }
 
   // --- panel ---
@@ -2071,6 +2302,26 @@
       y: (ev.clientY - rect.top) * (canvas.height / rect.height),
     };
   }
+  /** Would a click on `sq` pick up a piece in the current mode? (cursor hint) */
+  function grabbableAt(sq) {
+    if (mode === "learn") {
+      if (!learn || learn.done || learn.demoing) return false;
+      const t = curTask();
+      if (t.type === "tap") return false;
+      const p = learn.g.get(sq);
+      return !!p && p.color === "w" && learn.g.turn() === "w" && (!t.only || p.type === t.only);
+    }
+    if (mode === "puzzle") {
+      if (!puzzle || puzzle.done) return false;
+      const p = puzzle.g.get(sq);
+      return !!p && p.color === "w" && puzzle.g.turn() === "w";
+    }
+    if (!isLive() || appGameOver()) return false;
+    if (mode === "ai" && game.turn() !== humanColor) return false;
+    const p = game.get(sq);
+    return !!p && p.color === game.turn();
+  }
+
   let dragging = null; // {from} armed on pressing one of our selectable pieces
   canvas.addEventListener("pointerdown", (ev) => {
     const p = canvasPoint(ev);
@@ -2079,10 +2330,15 @@
     try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
     onSquareClick(sq);
     dragging = selection && selection.sq === sq ? { from: sq } : null;
+    if (dragging) canvas.style.cursor = "grabbing";
   });
   canvas.addEventListener("pointermove", (ev) => {
-    if (!dragging) return;
     const p = canvasPoint(ev);
+    if (!dragging) {
+      const sq = BoardView.cellAt(p.x, p.y);
+      canvas.style.cursor = sq && grabbableAt(sq) ? "grab" : "default";
+      return;
+    }
     BoardView.setDrag({ from: dragging.from, x: p.x, y: p.y });
     draw();
   });
@@ -2090,6 +2346,7 @@
     const wasDrag = dragging;
     dragging = null;
     BoardView.setDrag(null);
+    canvas.style.cursor = "default";
     if (!wasDrag) return;
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
@@ -2099,9 +2356,9 @@
   canvas.addEventListener("pointercancel", () => {
     dragging = null;
     BoardView.setDrag(null);
+    canvas.style.cursor = "default";
     draw();
   });
-  canvas.style.cursor = "pointer";
   canvas.style.touchAction = "none"; // let touch drags move pieces, not the page
 
   document.getElementById("undo").onclick = undo;
@@ -2130,7 +2387,8 @@
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
   document.getElementById("rep-live").onclick = () => { goLive(); toast("已回到最新一着"); };
 
-  document.getElementById("an-run").onclick = () => { analyzeGame(); };
+  document.getElementById("an-run").onclick = () => { analyzeGame(120); };
+  document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };
   const curveEl = document.getElementById("eval-curve");
   if (curveEl) {
@@ -2161,8 +2419,33 @@
   if (resignEl) resignEl.onclick = () => { doResign(); };
   const drawEl = document.getElementById("btn-offerdraw");
   if (drawEl) drawEl.onclick = () => { doOfferDraw(); };
+  const claimEl = document.getElementById("btn-claimdraw");
+  if (claimEl) claimEl.onclick = () => { doClaimDraw(); };
   document.getElementById("pgn-download").onclick = () => { downloadPgn(); };
   document.getElementById("pgn-paste").onclick = () => { pastePgn(); };
+  document.getElementById("pgn-open").onclick = () => { openPgnFile(); };
+
+  // Drop a .pgn onto the window to import it — host bridge in the packaged
+  // app, DataTransfer in browsers.
+  Host.onDropFiles(async (payload) => {
+    const paths = Host.normalizePaths(payload && payload.paths ? payload.paths : payload);
+    const p = paths.find((x) => /\.(pgn|txt)$/i.test(x)) || paths[0];
+    if (!p) return;
+    try { importPgnText(await Host.readTextFile(p), p); }
+    catch (_) { toast("无法读取文件"); }
+  });
+  window.addEventListener("dragover", (ev) => ev.preventDefault());
+  window.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (!f || !/\.(pgn|txt)$/i.test(f.name)) return;
+    const reader = new FileReader();
+    reader.onload = () => importPgnText(String(reader.result || ""), f.name);
+    reader.readAsText(f);
+  });
+
+  // Native lifecycle: flush the save when the app loses focus.
+  Host.onAppLifecycle({ deactivate: () => saveGame() });
 
   document.getElementById("theme-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-theme]");
@@ -2215,13 +2498,13 @@
     if (!learn) return;
     if (learn.li + 1 < LESSONS.length) { startLesson(learn.li + 1); return; }
     // graduation: straight into a beginner AI game
-    difficulty = "easy";
+    difficulty = "beginner";
     mode = "ai";
     stopLearn();
     saveSettings();
     selection = null;
     sync();
-    toast("人机对弈 · 入门 —— 开始你的第一局!");
+    toast("人机对弈 · 新手 —— 开始你的第一局!");
     maybeEngineTurn();
   };
   document.getElementById("lesson-list").onclick = (ev) => {
@@ -2256,7 +2539,9 @@
     saveSettings();
     saveGame();
     sync();
-    toast(timeControl === "off" ? "棋钟已关" : "棋钟 · 每方 " + timeControl + " 分钟");
+    const tcSet = parseTc(timeControl);
+    toast(!tcSet ? "棋钟已关" :
+      "棋钟 · 每方 " + tcSet.base / 60 + " 分钟" + (tcSet.inc ? ",每步 +" + tcSet.inc + " 秒" : ""));
   };
   document.getElementById("diff-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
@@ -2277,6 +2562,22 @@
     toast(humanColor === "w" ? "执白 · 白方视角" : "执黑 · 黑方视角");
     maybeEngineTurn();
   };
+  document.getElementById("opt-coach").onclick = () => {
+    coachOn = !coachOn;
+    saveSettings();
+    syncSettingsUI();
+    toast(coachOn ? "失着提醒已开 · 严重失误时会提示悔棋" : "失着提醒已关");
+  };
+  document.getElementById("opt-autoflip").onclick = () => {
+    autoFlipPvp = !autoFlipPvp;
+    if (autoFlipPvp && mode === "pvp" && isLive() && !appGameOver()) {
+      flipped = game.turn() === "b";
+      draw();
+    }
+    saveSettings();
+    syncSettingsUI();
+    toast(autoFlipPvp ? "自动翻转已开 · 棋盘跟随走子方" : "自动翻转已关");
+  };
   document.getElementById("opt-sound").onclick = () => {
     soundOn = !soundOn;
     saveSettings();
@@ -2294,6 +2595,7 @@
     viewIndex = 0;
     resigned = null;
     drawAgreed = false;
+    drawClaimed = null;
     resetClocks();
     sync();
     toast("存档已清除");
@@ -2303,6 +2605,7 @@
   const confirmModal = document.getElementById("confirm-modal");
   document.getElementById("confirm-ok").onclick = () => finishConfirm(true);
   document.getElementById("confirm-cancel").onclick = () => finishConfirm(false);
+  document.getElementById("confirm-alt").onclick = () => finishConfirm("alt");
   confirmModal.onclick = (ev) => { if (ev.target === confirmModal) finishConfirm(false); };
 
   const promoModal = document.getElementById("promo-modal");
@@ -2393,9 +2696,10 @@
   const resumed = tryLoadSave();
   if (resumed) toast("已恢复上次对局");
   // a resumed finished game must not be re-counted on the next live move
-  if (resumed && game.game_over()) statsRecordedSig = game.pgn();
+  if (resumed && naturalGameOver()) statsRecordedSig = game.pgn();
   if (resumed && resigned) statsRecordedSig = game.pgn() + "#resigned";
   if (resumed && drawAgreed) statsRecordedSig = game.pgn() + "#drawAgreed";
+  if (resumed && drawClaimed) statsRecordedSig = game.pgn() + "#claimed";
   // clock preset chosen but no saved clock state → fresh clocks
   if (timeControl !== "off" && !clock) resetClocks();
   if (mode === "learn") startLearn();
