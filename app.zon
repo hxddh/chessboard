@@ -3,7 +3,7 @@
     .name = "chessboard",
     .display_name = "国际象棋",
     .description = "Chess for macOS & Windows — Native SDK WebView + Canvas, GPLv3.",
-    .version = "1.1.0",
+    .version = "1.2.0",
     .icons = .{"assets/icon.png"},
     .platforms = .{ "macos", "windows" },
     .permissions = .{},

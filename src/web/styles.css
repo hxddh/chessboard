@@ -167,7 +167,9 @@
     .stage {
       position: absolute; inset: 0;
       display: grid; place-items: center;
-      padding: var(--stage-pad);
+      /* reserve the chrome bar's height: its translucent gradient must never
+         sit on top of the board (visible as a dark band across rank 8) */
+      padding: calc(var(--chrome-h) + var(--stage-pad)) var(--stage-pad) var(--stage-pad);
       transition: padding-right .28s var(--ease);
     }
     #app.panel-open .stage {
@@ -176,7 +178,7 @@
     #board-wrap {
       position: relative;
       --free-w: calc(100vw - 2 * var(--stage-pad));
-      --free-h: calc(100vh - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
       max-width: 100%; max-height: 100%;
@@ -187,7 +189,7 @@
     }
     #app.panel-open #board-wrap {
       --free-w: calc(100vw - var(--side-w) - 2 * var(--stage-pad));
-      --free-h: calc(100vh - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
     }
@@ -614,7 +616,7 @@
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }

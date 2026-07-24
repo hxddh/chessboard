@@ -694,10 +694,13 @@
     if (!window.ChessEngine) { toast("引擎不可用,无法陪练"); return; }
     const g = learn.g;
     const token = learn.token;
+    // drills default to the weakest tier: the sparring partner is there to
+    // teach the technique, not to punish a beginner with perfect defense
+    const tier = curTask().engine || "easy";
     learn.engineBusy = true;
     sync();
     let mv = null;
-    try { mv = await window.ChessEngine.bestMove(g.fen(), "normal"); } catch (_) {}
+    try { mv = await window.ChessEngine.bestMove(g.fen(), tier); } catch (_) {}
     if (!learn || token !== learn.token) return;
     learn.engineBusy = false;
     if (mv) {
@@ -801,6 +804,11 @@
     }
     const task = document.getElementById("lesson-task");
     if (task) task.textContent = learnTaskText();
+    const demoBtn = document.getElementById("lesson-demo");
+    if (demoBtn) {
+      const t = curTask();
+      demoBtn.disabled = learn.demoing || !t.solution || (t.type !== "stars" && t.type !== "move");
+    }
     const next = document.getElementById("lesson-next");
     if (next) {
       const isLast = learn.li + 1 >= LESSONS.length;
@@ -2189,6 +2197,13 @@
   document.getElementById("lesson-restart").onclick = () => {
     if (learn) { startLearnTask(); toast("本课重来"); }
   };
+  document.getElementById("lesson-demo").onclick = () => {
+    if (!learn || learn.demoing) return;
+    const t = curTask();
+    if (!t.solution || (t.type !== "stars" && t.type !== "move")) { toast("本任务没有演示"); return; }
+    learn.wantDemo = true;
+    startLearnTask();
+  };
   document.getElementById("learn-reset").onclick = async () => {
     if (!(await confirmNative("清空全部教学进度,从第一课重新开始?", "重置教学", { ok: "重置", cancel: "取消" }))) return;
     learnState = { v: 1, done: {}, last: 0 };
@@ -2350,6 +2365,20 @@
     draw();
     drawEvalCurve();
   });
+  // The panel toggle animates #board-wrap over 280ms; a one-shot resize at
+  // toggle time samples a mid-transition rect and leaves the backing store
+  // mismatched with the CSS size (whole board rendered scaled = blurry).
+  // Track the canvas size continuously instead.
+  if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
+  } else {
+    document.getElementById("board-wrap").addEventListener("transitionend", (ev) => {
+      if (ev.propertyName === "width" || ev.propertyName === "height") {
+        BoardView.resizeCanvas();
+        draw();
+      }
+    });
+  }
   window.addEventListener("beforeunload", () => saveGame());
   window.addEventListener("pagehide", () => saveGame());
   document.addEventListener("visibilitychange", () => {

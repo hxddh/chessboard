@@ -10,7 +10,8 @@
  *            never replies (the runtime hands the turn back)
  *   move   — make one move satisfying `goal`:
  *            check | any | mate | castle-k | castle-q | ep | promote
- *   drill  — play out a basic mate against the engine (black defends)
+ *   drill  — play out a basic mate against the engine (black defends at the
+ *            weakest tier unless the task sets `engine`)
  * @module lessons
  */
 (function (global) {
@@ -79,6 +80,12 @@
         { type: "stars", fen: "7k/8/8/8/8/8/2R5/K7 w - - 0 1", only: "r",
           prompt: "用车沿直线吃掉全部 3 颗星",
           stars: ["c7", "g7", "g2"], solution: ["c2c7", "c7g7", "g7g2"] },
+        { type: "stars", fen: "k7/8/8/8/2P5/8/8/K1R5 w - - 0 1", only: "r",
+          prompt: "自己的 c4 兵挡住了直路 —— 车不能越子,绕行:h1 → h7 → c7",
+          stars: ["h1", "h7", "c7"], solution: ["c1h1", "h1h7", "h7c7"] },
+        { type: "stars", fen: "k7/8/8/8/8/3p3p/8/K2R4 w - - 0 1", only: "r",
+          prompt: "车吃子和走路一样顺:先吃 d3 兵,再横扫 h3 兵,最后占领 h6",
+          stars: ["d3", "h3", "h6"], solution: ["d1d3", "d3h3", "h3h6"] },
       ],
     },
     {
@@ -91,6 +98,12 @@
         { type: "stars", fen: "k7/8/8/8/8/8/8/2B4K w - - 0 1", only: "b",
           prompt: "用象沿斜线吃掉 2 颗星",
           stars: ["g5", "d8"], solution: ["c1g5", "g5d8"] },
+        { type: "stars", fen: "k7/8/8/8/8/8/8/B6K w - - 0 1", only: "b",
+          prompt: "a1–h8 大斜线是象的高速路:先停 d4,冲到 h8,再折返 c3",
+          stars: ["d4", "h8", "c3"], solution: ["a1d4", "d4h8", "h8c3"] },
+        { type: "stars", fen: "k7/2p5/8/8/8/1p4p1/8/K3B3 w - - 0 1", only: "b",
+          prompt: "深格象吃深格子:先吃 g3 兵,再远程吃 c7 兵 —— b3 那个兵在浅格,这辈子都轮不到你吃",
+          stars: ["g3", "c7"], solution: ["e1g3", "g3c7"] },
       ],
     },
     {
@@ -103,6 +116,12 @@
         { type: "stars", fen: "7k/8/8/8/8/8/8/1N4K1 w - - 0 1", only: "n",
           prompt: "用马连跳 3 颗星",
           stars: ["c3", "d5", "f6"], solution: ["b1c3", "c3d5", "d5f6"] },
+        { type: "stars", fen: "k7/8/8/8/8/2PPP3/2PNP3/K1PPP3 w - - 0 1", only: "n",
+          prompt: "马被自家兵团团围住?没关系,它会跳!从包围圈里连踩 3 颗星",
+          stars: ["f3", "e5", "c4"], solution: ["d2f3", "f3e5", "e5c4"] },
+        { type: "stars", fen: "k7/8/8/8/8/8/8/K5N1 w - - 0 1", only: "n",
+          prompt: "马的路线要提前规划:两跳踩到 e5 的星(先想好中转格再动手)",
+          stars: ["e5"], solution: ["g1f3", "f3e5"] },
       ],
     },
     {
@@ -115,6 +134,12 @@
         { type: "stars", fen: "7k/8/8/8/8/8/8/K2Q4 w - - 0 1", only: "q",
           prompt: "用后横、竖、斜三种走法各吃一颗星",
           stars: ["d5", "g5", "g2"], solution: ["d1d5", "d5g5", "g5g2"] },
+        { type: "stars", fen: "7k/1p6/8/8/8/8/8/K3Q3 w - - 0 1", only: "q",
+          prompt: "后的组合拳:斜线到 b4,直线吃掉 b7 兵,再斜线插到 g2",
+          stars: ["b4", "b7", "g2"], solution: ["e1b4", "b4b7", "b7g2"] },
+        { type: "stars", fen: "7k/8/2p1p3/8/2p1p3/8/8/K3Q3 w - - 0 1", only: "q",
+          prompt: "收割练习:四颗星全在黑兵身上,按 e4 → c6 → c4 → e6 的顺序吃光",
+          stars: ["e4", "c6", "c4", "e6"], solution: ["e1e4", "e4c6", "c6c4", "c4e6"] },
       ],
     },
     {
@@ -352,7 +377,58 @@
         ] },
       ],
     },
-    // —— 第五部分 · 开局入门 ——
+    // —— 第五部分 · 杀型积木 ——
+    {
+      id: "ladder", part: "杀型积木", title: "双车阶梯杀",
+      text: [
+        "两个重子(车/后)轮流「封线 + 将军」,像爬梯子一样把对方王一排一排推到边线将死 —— 这是最容易掌握的必杀技术。",
+        "口诀:一个封住王的去路,另一个从旁边一线将军;王退一排,就再爬一档。",
+      ],
+      tasks: [
+        { type: "move", fen: "4k3/8/8/8/8/8/RR6/6K1 w - - 0 1", goal: "one-of",
+          accept: ["Ra7", "Rb7"],
+          prompt: "第一档:用任意一个车占住第 7 横线,把黑王关在底线",
+          retry: "先别急着将军 —— 用车封住第 7 横线(a7 或 b7)", solution: ["Rb7"] },
+        { type: "move", fen: "3k4/1R6/8/8/8/8/R7/6K1 w - - 0 1", goal: "mate",
+          prompt: "第二档:b7 车看住第 7 线,另一个车沿 a 线冲到底线将死!",
+          retry: "让 a2 车直冲 a8 —— 第 8 横线将军,第 7 横线已被封死", solution: ["Ra8#"] },
+      ],
+    },
+    {
+      id: "smother", part: "杀型积木", title: "闷杀:马的绝技",
+      text: [
+        "王被自己的棋子围得水泄不通时,一次将军就是将死 —— 马是唯一能「隔着子将军」的棋子,所以闷杀几乎是马的专利。",
+        "标准画面:王缩在角落,旁边全是自己人,马跳到 f7(或 f2)一锤定音。",
+      ],
+      tasks: [
+        { type: "tap", fen: "6rk/6pp/8/6N1/8/8/8/K7 w - - 0 1",
+          prompt: "先看清:黑王为什么无路可逃?", steps: [
+          { tip: "点击占住 g8 逃生格的黑车", squares: ["g8"] },
+          { tip: "点击堵住王路的 g7 兵", squares: ["g7"] },
+          { tip: "点击堵住王路的 h7 兵", squares: ["h7"] },
+        ] },
+        { type: "move", fen: "6rk/6pp/8/6N1/8/8/8/K7 w - - 0 1", goal: "mate",
+          prompt: "黑王被自己人围死了 —— 马跳进去,完成闷杀!",
+          retry: "找那个能将军 h8 王、又谁都吃不到的马位(f7)", solution: ["Nf7#"] },
+      ],
+    },
+    {
+      id: "qrladder", part: "杀型积木", title: "后车配合:绞杀边线",
+      text: [
+        "后 + 车打阶梯和双车一样,而且后封线更严密 —— 但也更容易随手逼和,记得永远给王留活路直到将死。",
+        "这三课的杀型(阶梯、闷杀、底线杀)覆盖了绝大多数实战收官画面,「做题」模式里还有成套的杀型题等你磨。",
+      ],
+      tasks: [
+        { type: "move", fen: "3k4/8/8/8/8/8/1Q5R/6K1 w - - 0 1", goal: "one-of",
+          accept: ["Qb7"],
+          prompt: "后先封第 7 横线(站 b7,离黑王一格远 —— 贴太近容易逼和)",
+          retry: "让后上 b7:整条第 7 线 + c8 都在火力之下,黑王只能在底线挪", solution: ["Qb7"] },
+        { type: "move", fen: "4k3/1Q6/8/8/8/8/7R/6K1 w - - 0 1", goal: "mate",
+          prompt: "黑王只能沿底线逃 —— 车从 h 线冲到底线,绞杀完成!",
+          retry: "Rh8 将军后,第 7 线全被后看住 —— 就是它", solution: ["Rh8#"] },
+      ],
+    },
+    // —— 第六部分 · 开局入门 ——
     {
       id: "opening", part: "开局入门", title: "开局三原则",
       text: [
@@ -370,38 +446,84 @@
           retry: "试试 e2–e4 或 d2–d4,一步抢占中心", solution: ["e4"] },
       ],
     },
-    // —— 第六部分 · 实战杀法 ——
+    {
+      id: "firstgame", part: "开局入门", title: "第一盘完整棋:学者杀",
+      text: [
+        "把开局原则串成一盘真棋 —— 顺便认识最著名的开局陷阱「学者杀」:4 步将死不设防的对手。",
+        "它靠的是双子夹击 f7(黑方王前只有王保护的软肋)。但记住:对手只要应对正确(如 g6 + Nf6),早出的后反而会被追着打 —— 所以它是用来「认识」的,不是用来依赖的。",
+      ],
+      tasks: [
+        { type: "move", fen: START, goal: "one-of", accept: ["e4"],
+          prompt: "第 1 步:王兵挺进两格,抢中心、开出后和象的通道",
+          retry: "走 e2–e4", solution: ["e4"] },
+        { type: "move", fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2",
+          goal: "one-of", accept: ["Bc4"],
+          prompt: "黑方 1…e5 跟进。第 2 步:出象到 c4,斜线直指 f7",
+          retry: "把 f1 象拉到 c4,瞄准黑方最弱的 f7 格", solution: ["Bc4"] },
+        { type: "move", fen: "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR w KQkq - 2 3",
+          goal: "one-of", accept: ["Qh5"],
+          prompt: "黑方 2…Nc6 出马。第 3 步:后上 h5 —— 同时叮住 e5 兵和 f7 格",
+          retry: "让后走到 h5,和 c4 象形成对 f7 的双重瞄准", solution: ["Qh5"] },
+        { type: "move", fen: "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4",
+          goal: "mate",
+          prompt: "黑方 3…Nf6?? 没看见威胁!第 4 步:一步终结这盘棋",
+          retry: "后吃 f7 —— 有 c4 象保护,王吃不回来", solution: ["Qxf7#"] },
+        { type: "tap", fen: START, prompt: "复盘要点:记住双方的软肋", steps: [
+          { tip: "点击黑方的软肋 f7 —— 开局阶段只有王一个保护者", squares: ["f7"] },
+          { tip: "白方同理 —— 点击 f2,守好你自己的这一格", squares: ["f2"] },
+        ] },
+      ],
+    },
+    // —— 第七部分 · 实战杀法 ——
     {
       id: "drill-pawn", part: "实战杀法", title: "王兵残局:护送升变(引擎陪练)",
       text: [
         "K+P 对单王是最常见的残局:王走在兵的**前面**开路,抢住兵前方的关键格(与对方王「对王」),小兵才推得过去。",
-        "王先行、兵慢推;升变成功即获胜 —— 小心别把对方王憋成逼和。",
+        "王先行、兵慢推;升变成功即获胜 —— 小心别把对方王憋成逼和。卡住时点顶栏「提示」看引擎推荐。",
       ],
       tasks: [
+        { type: "move", fen: "4k3/8/8/8/4K3/8/4P3/8 w - - 0 1", goal: "one-of",
+          accept: ["Kd5", "Ke5", "Kf5"],
+          prompt: "热身:第一步该动谁?王先行 —— 走到兵的前面开路(d5 / e5 / f5 都对)",
+          retry: "别急着推兵!先动王,王要走在兵前面才能抢到关键格", solution: ["Ke5"] },
         { type: "drill", fen: "4k3/8/8/8/4K3/8/4P3/8 w - - 0 1", winOn: "promote",
-          prompt: "用王开路护送 e 兵到底线升变(升变即胜;逼和或丢兵判失败重来)" },
+          prompt: "实战:用王开路护送 e 兵到底线升变(升变即胜;逼和或丢兵判失败重来)" },
       ],
     },
     {
       id: "drill-queen", part: "实战杀法", title: "后杀单王(引擎陪练)",
       text: [
-        "K+Q 对单王是最基础的必胜残局:用后一圈圈压缩黑王活动空间(让后与黑王保持一个「马步」的距离最稳,不会随手逼和),再把自己的王走近,最后在边线将死。",
-        "引擎会执黑全力逃跑 —— 千万小心逼和!",
+        "K+Q 对单王是最基础的必胜残局,三步套路:① 后保持与黑王「马步」距离,一圈圈锁死它;② 自己的王走近助攻;③ 王到位后在边线将死。",
+        "「马步」距离是防逼和的保险:后既锁住王,又永远不会贴脸没收它的最后一格。卡住时点顶栏「提示」。",
       ],
       tasks: [
+        { type: "move", fen: "4k3/8/8/8/8/8/8/Q3K3 w - - 0 1", goal: "one-of",
+          accept: ["Qf6", "Qg7"],
+          prompt: "热身①:把后走到与黑王成「日」字的格子(f6 或 g7),锁住它又不逼和",
+          retry: "找与 e8 王成马步的格子 —— f6 或 g7,别贴脸也别放跑", solution: ["Qf6"] },
+        { type: "move", fen: "k7/8/2K5/8/8/8/8/1Q6 w - - 0 1", goal: "mate",
+          prompt: "热身②:王已助攻到位 —— 一步将死(想想哪个将军格有自己王的保护)",
+          retry: "b8 和 c8 都会被王吃掉或逃出 —— 沿 b 线上到有王保护的那格", solution: ["Qb7#"] },
         { type: "drill", fen: "4k3/8/8/8/8/8/8/Q3K3 w - - 0 1",
-          prompt: "用后 + 王将死黑王(逼和或超过 50 回合判失败重来)" },
+          prompt: "实战:用后 + 王将死黑王(逼和或超过 50 回合判失败重来)" },
       ],
     },
     {
       id: "drill-rook", part: "实战杀法", title: "车杀单王(引擎陪练)",
       text: [
-        "K+R 对单王同样必胜,但更考验步法:用车封锁一条线把黑王逼向边线,王与王「对面」时用车将军。",
+        "K+R 对单王同样必胜,但更考验步法:① 车封一条线当栅栏,把黑王限制在越来越小的区域;② 自己的王走近,与黑王正面「对王」;③ 对上王的那一刻,车将军就是将死或再逼近一线。",
         "完成这一课,你就掌握了最重要的两个基础残局 —— 去人机·入门开始第一局,或到「做题」模式继续磨杀型!",
       ],
       tasks: [
+        { type: "move", fen: "4k3/8/8/8/8/8/8/R3K3 w - - 0 1", goal: "one-of",
+          accept: ["Ra7"],
+          prompt: "热身①:车上第 7 横线当栅栏,把黑王关在底线",
+          retry: "把 a1 车提到 a7 —— 整条第 7 线就是黑王翻不过的栅栏", solution: ["Ra7"] },
+        { type: "move", fen: "4k3/R7/4K3/8/8/8/8/8 w - - 0 1", goal: "mate",
+          prompt: "热身②:两王已经正面「对王」—— 车沿底线将死!",
+          retry: "王对王时黑王躲不开底线将军 —— 车冲到第 8 横线", solution: ["Ra8#"] },
         { type: "drill", fen: "4k3/8/8/8/8/8/8/R3K3 w - - 0 1",
-          prompt: "用车 + 王将死黑王(比后杀更需要耐心)" },
+          prompt: "实战:用车 + 王将死黑王(比后杀更需要耐心,记得可以用「提示」)" },
       ],
     },
   ];

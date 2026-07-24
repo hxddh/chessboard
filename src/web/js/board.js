@@ -49,9 +49,44 @@
   /** live slide animation: {from, to, start, dur} | null */
   let _anim = null;
 
+  // --- SVG piece sprites (pieces.js). Vector art decoded once per square
+  // size into offscreen canvases; the Unicode-glyph path below stays as a
+  // fallback for the frames before the images finish decoding.
+  const _imgs = {};
+  let _sprites = {};
+  let _spriteSize = 0;
+
+  function initPieceImages() {
+    const svgs = global.CHESS_PIECE_SVGS;
+    if (!svgs || typeof Image === "undefined") return;
+    for (const key of Object.keys(svgs)) {
+      const img = new Image();
+      img.onload = () => { _sprites = {}; draw(); };
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]);
+      _imgs[key] = img;
+    }
+  }
+
+  /** offscreen raster of piece `key` at `size` device pixels | null while loading */
+  function spriteFor(key, size) {
+    const img = _imgs[key];
+    if (!img || !img.complete || !img.naturalWidth) return null;
+    if (size !== _spriteSize) { _sprites = {}; _spriteSize = size; }
+    let c = _sprites[key];
+    if (!c) {
+      c = document.createElement("canvas");
+      c.width = size;
+      c.height = size;
+      c.getContext("2d").drawImage(img, 0, 0, size, size);
+      _sprites[key] = c;
+    }
+    return c;
+  }
+
   function attach(canvas, modelFn) {
     _canvas = canvas;
     _model = modelFn;
+    if (!Object.keys(_imgs).length) initPieceImages();
   }
 
   function setDrag(d) { _drag = d; }
@@ -113,11 +148,15 @@
     const ctx = _canvas.getContext("2d");
     const w = _canvas.width;
     const step = w / 8;
+    // integer cell edges: fractional fillRect boundaries land between device
+    // pixels and antialias into soft seams at some board sizes
+    const edge = (i) => Math.round(i * step);
+    const cellRect = (sr, sc) => [edge(sc), edge(sr), edge(sc + 1) - edge(sc), edge(sr + 1) - edge(sr)];
     // squares
     for (let sr = 0; sr < 8; sr++) {
       for (let sc = 0; sc < 8; sc++) {
         ctx.fillStyle = (sr + sc) % 2 === 0 ? LIGHT : DARK;
-        ctx.fillRect(sc * step, sr * step, step, step);
+        ctx.fillRect(...cellRect(sr, sc));
       }
     }
     // last-move tint
@@ -125,14 +164,14 @@
       for (const sq of [m.lastMove.from, m.lastMove.to]) {
         const { sr, sc } = screenPos(sq, m.flipped);
         ctx.fillStyle = LAST;
-        ctx.fillRect(sc * step, sr * step, step, step);
+        ctx.fillRect(...cellRect(sr, sc));
       }
     }
     // selection
     if (m.selected) {
       const { sr, sc } = screenPos(m.selected, m.flipped);
       ctx.fillStyle = SEL;
-      ctx.fillRect(sc * step, sr * step, step, step);
+      ctx.fillRect(...cellRect(sr, sc));
     }
     // check highlight (radial under the king)
     if (m.checkSquare) {
@@ -142,7 +181,7 @@
       g.addColorStop(0, CHECK);
       g.addColorStop(1, "rgba(220,60,40,0)");
       ctx.fillStyle = g;
-      ctx.fillRect(sc * step, sr * step, step, step);
+      ctx.fillRect(...cellRect(sr, sc));
     }
     // coordinates (small, inside edge squares)
     ctx.font = "500 " + Math.round(step * 0.19) + "px -apple-system, system-ui, sans-serif";
@@ -161,11 +200,17 @@
       ctx.fillText(rankChar, step * 0.08, i * step + step * 0.26);
       void fsq;
     }
-    // pieces
+    // pieces: crisp vector sprites, Unicode glyphs only while sprites decode
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = Math.round(step * 0.78) + "px 'Segoe UI Symbol', 'Apple Color Emoji', serif";
+    const spriteSize = Math.max(8, Math.round(step));
     function paintPiece(piece, x, y) {
+      const sprite = spriteFor(piece.color + piece.type, spriteSize);
+      if (sprite) {
+        ctx.drawImage(sprite, Math.round(x - spriteSize / 2), Math.round(y - spriteSize / 2));
+        return;
+      }
       const glyph = GLYPHS[piece.type];
       if (piece.color === "w") {
         ctx.fillStyle = "#f8f8f4";
@@ -175,8 +220,8 @@
         ctx.strokeStyle = "rgba(255,255,255,0.30)";
       }
       ctx.lineWidth = Math.max(1, step * 0.02);
-      ctx.strokeText(glyph, x, y);
-      ctx.fillText(glyph, x, y);
+      ctx.strokeText(glyph, x, y + step * 0.04);
+      ctx.fillText(glyph, x, y + step * 0.04);
     }
     let dragPiece = null;
     for (let r = 0; r < 8; r++) {
@@ -187,7 +232,7 @@
         if (_drag && _drag.from === sq) { dragPiece = piece; continue; } // ghost drawn last
         if (_anim && _anim.to === sq) continue; // slid piece drawn interpolated below
         const { sr, sc } = screenPos(sq, m.flipped);
-        paintPiece(piece, sc * step + step / 2, sr * step + step * 0.54);
+        paintPiece(piece, sc * step + step / 2, sr * step + step / 2);
       }
     }
     // sliding piece: interpolate from→to over the animation window
@@ -202,7 +247,7 @@
         const t = easeOut(Math.max(0, Math.min(1, (now - _anim.start) / _anim.dur)));
         const sc = a.sc + (b.sc - a.sc) * t;
         const sr = a.sr + (b.sr - a.sr) * t;
-        paintPiece(piece, sc * step + step / 2, sr * step + step * 0.54);
+        paintPiece(piece, sc * step + step / 2, sr * step + step / 2);
       } else {
         _anim = null;
       }
