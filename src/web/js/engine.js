@@ -11,8 +11,14 @@
  * @module engine
  */
 (function (global) {
-  /** difficulty id → UCI settings; elo:null = full strength */
+  /**
+   * difficulty id → UCI settings; elo:null = full strength.
+   * `skill` uses Stockfish's "Skill Level" (0–20) instead of UCI_Elo:
+   * UCI_Elo bottoms out at 1320, still far too strong for a true beginner —
+   * low skill levels deliberately pick inferior moves.
+   */
   const TIERS = {
+    beginner: { skill: 1, movetime: 400 },
     easy: { elo: 1320, movetime: 500 },
     normal: { elo: 1700, movetime: 700 },
     hard: { elo: 2200, movetime: 900 },
@@ -155,10 +161,17 @@
     send("isready");
     await drain;
     if (myGen !== gen) return null;
-    if (tier.elo != null) {
+    // UCI options are sticky on the worker — always set BOTH knobs so a
+    // beginner search never inherits full strength and vice versa.
+    if (tier.skill != null) {
+      send("setoption name UCI_LimitStrength value false");
+      send("setoption name Skill Level value " + tier.skill);
+    } else if (tier.elo != null) {
+      send("setoption name Skill Level value 20");
       send("setoption name UCI_LimitStrength value true");
       send("setoption name UCI_Elo value " + tier.elo);
     } else {
+      send("setoption name Skill Level value 20");
       send("setoption name UCI_LimitStrength value false");
     }
     send("position fen " + fen);
@@ -192,6 +205,7 @@
     await drain;
     if (myGen !== gen) return null;
     const ms = movetime || 120;
+    send("setoption name Skill Level value 20"); // may be sticky from a beginner game
     send("setoption name UCI_LimitStrength value false");
     send("position fen " + fen);
     let score = null; // last reported, side-to-move perspective

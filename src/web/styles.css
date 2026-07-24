@@ -103,6 +103,13 @@
       padding: 0 10px 0 14px;
       background: var(--chrome-bg);
       pointer-events: none;
+      transition: padding-right .28s var(--ease);
+    }
+    /* The side panel (z-index 30) covers the chrome's right edge when open —
+       shift the toolbar buttons out from under it so they stay clickable.
+       Narrow screens use the scrim overlay instead, where the panel is modal. */
+    @media (min-width: 821px) {
+      #app.panel-open .chrome { padding-right: calc(var(--side-w) + 10px); }
     }
     .chrome > * { pointer-events: auto; }
     .brand {

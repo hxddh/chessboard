@@ -67,6 +67,12 @@
       fen: "8/8/2k5/7R/8/8/8/6RK w - - 0 1", solution: ["Rg6+", "Kb7", "Rh7+", "Ka8", "Rg8#"] },
     { id: "m3-ladder-m", cat: "m3", name: "双车赶王三步 III",
       fen: "8/8/6k1/R7/8/8/8/1R5K w - - 0 1", solution: ["Rb6+", "Kf7", "Ra7+", "Ke8", "Rb8#"] },
+    { id: "m3-kq-corner", cat: "m3", name: "后王逼角三步",
+      fen: "k7/8/8/K7/8/8/8/1Q6 w - - 0 1", solution: ["Kb6", "Kb8", "Qb5", "Kc8", "Qe8#"] },
+    { id: "m3-kr-corner", cat: "m3", name: "车王逼角三步",
+      fen: "k7/8/8/K7/8/8/8/R7 w - - 0 1", solution: ["Ka6", "Kb8", "Rc1", "Ka8", "Rc8#"] },
+    { id: "m3-promo", cat: "m3", name: "升变杀三步",
+      fen: "7k/8/3P4/5K2/8/8/8/8 w - - 0 1", solution: ["Kg6", "Kg8", "d7", "Kh8", "d8=Q#"] },
     // —— 吃子战术 ——(gain = 至少净得的子力分;单测用一层静态交换验证唯一最优)
     { id: "w-hangq", cat: "win", name: "白吃无根后",
       fen: "k7/8/3q4/8/8/8/3R4/K7 w - - 0 1", solution: ["Rxd6"], gain: 9 },
@@ -130,5 +136,19 @@
     { id: "t-skewer-d", cat: "tac", name: "串击得后(d 线)", motif: "串击",
       fen: "3q4/8/8/3k4/8/8/4K3/R7 w - - 0 1", first: "Rd1+", target: "d8", gain: 9,
       line: ["Rd1+", "Kc6", "Rxd8"] },
+    // 牵制:被绝对牵制的子动弹不得 —— 加一个攻击者,下一步白吃(首着不将军)
+    { id: "t-pin-e", cat: "tac", name: "牵制围猎(e 线)", motif: "牵制",
+      fen: "4k3/8/8/4n3/8/8/1B3P2/4R1K1 w - - 0 1", first: "f4", target: "e5", gain: 3,
+      line: ["f4", "Kd7", "fxe5"] },
+    { id: "t-pin-diag", cat: "tac", name: "牵制围猎(斜线)", motif: "牵制",
+      fen: "8/3k4/2n5/1B6/3P4/8/8/6K1 w - - 0 1", first: "d5", target: "c6", gain: 3,
+      line: ["d5", "Ke7", "dxc6"] },
+    // 捉双:将军的同时叮住另一目标,对方只救得了王
+    { id: "t-fork-n", cat: "tac", name: "马叉王后", motif: "捉双",
+      fen: "2q1k3/8/8/8/4N3/8/8/6K1 w - - 0 1", first: "Nd6+", target: "c8", gain: 6,
+      line: ["Nd6+", "Kd7", "Nxc8"] },
+    { id: "t-double-q", cat: "tac", name: "后的双重攻击", motif: "捉双",
+      fen: "r5k1/8/8/8/8/8/8/3Q2K1 w - - 0 1", first: "Qd5+", target: "a8", gain: 5,
+      line: ["Qd5+", "Kg7", "Qxa8"] },
   ];
 })(typeof window !== "undefined" ? window : globalThis);

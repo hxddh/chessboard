@@ -334,8 +334,10 @@ for (const p of ["r", "b", "n"]) {
         if (gt.moves({ verbose: true }).some((r) => r.to === p.target)) net -= VAL[fm.piece];
         if (net < p.gain) fail(p.id, "1-ply tac net " + net + " < gain " + p.gain);
       } else if (p.line.length === 3) {
-        // skewer/deflection: every black reply lets white capture target ≥ gain
-        if (!gt.in_check()) fail(p.id, "3-ply tac first move should check");
+        // skewer/fork: every black reply lets white capture target ≥ gain.
+        // Pin motifs (牵制) attack an immobilized piece instead — their first
+        // move builds the attack quietly, so no check is required there.
+        if (p.motif !== "牵制" && !gt.in_check()) fail(p.id, "3-ply tac first move should check");
         const replies = gt.moves();
         if (!replies.length) { fail(p.id, "no black reply (should not mate here)"); continue; }
         for (const r of replies) {

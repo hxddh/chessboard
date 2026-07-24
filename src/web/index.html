@@ -74,7 +74,8 @@
           </div>
           <div class="setting-row stack" id="row-difficulty">
             <span class="setting-k">难度</span>
-            <div class="theme-row" id="diff-seg" role="group" aria-label="难度">
+            <div class="theme-row wrap" id="diff-seg" role="group" aria-label="难度">
+              <button type="button" data-diff="beginner" title="会主动犯错的陪练,适合教学毕业第一局">新手</button>
               <button type="button" data-diff="easy" title="Elo 1320">入门</button>
               <button type="button" data-diff="normal" class="active" title="Elo 1700">进阶</button>
               <button type="button" data-diff="hard" title="Elo 2200">困难</button>
@@ -88,13 +89,27 @@
               <button type="button" data-color="b" title="执黑后行">执黑</button>
             </div>
           </div>
+          <div class="setting-row" id="row-coach">
+            <span class="setting-k" title="走出严重失误时提示悔棋重想">失着提醒</span>
+            <button type="button" class="switch" id="opt-coach" aria-pressed="true">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+          <div class="setting-row" id="row-autoflip" hidden>
+            <span class="setting-k" title="每步走完后棋盘转向走子方">自动翻转</span>
+            <button type="button" class="switch" id="opt-autoflip" aria-pressed="false">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
           <div class="setting-row stack" id="row-clock" hidden>
             <span class="setting-k">棋钟</span>
-            <div class="theme-row" id="clock-seg" role="group" aria-label="棋钟">
+            <div class="theme-row wrap" id="clock-seg" role="group" aria-label="棋钟">
               <button type="button" data-tc="off" class="active" title="不限时">关</button>
-              <button type="button" data-tc="3" title="每方 3 分钟">3分</button>
-              <button type="button" data-tc="5" title="每方 5 分钟">5分</button>
-              <button type="button" data-tc="10" title="每方 10 分钟">10分</button>
+              <button type="button" data-tc="3" title="每方 3 分钟">3</button>
+              <button type="button" data-tc="3+2" title="每方 3 分钟,每步加 2 秒">3+2</button>
+              <button type="button" data-tc="5" title="每方 5 分钟">5</button>
+              <button type="button" data-tc="5+3" title="每方 5 分钟,每步加 3 秒">5+3</button>
+              <button type="button" data-tc="10" title="每方 10 分钟">10</button>
             </div>
           </div>
         </div>
@@ -150,7 +165,7 @@
             <button type="button" data-cat="m2" title="两步将死(含引子与静着)">两步杀</button>
             <button type="button" data-cat="m3" title="三步将死(双车赶王)">三步杀</button>
             <button type="button" data-cat="win" title="吃子战术:选出净得子力最多的一吃">吃子</button>
-            <button type="button" data-cat="tac" title="战术母题:串击、闪将 —— 强制得子">战术</button>
+            <button type="button" data-cat="tac" title="战术母题:串击/闪将/牵制/捉双 —— 强制得子">战术</button>
             <button type="button" data-cat="op" title="开局练习:执白照谱走主流开局">开局</button>
             <button type="button" data-cat="review" title="复习:重做答错或看过答案的题,做对即移出">复习</button>
           </div>
@@ -182,13 +197,16 @@
           <div class="pv-line num" id="pv-line" hidden></div>
         </div>
         <div class="link-row">
-          <button type="button" class="text-link" id="an-run" title="引擎满强度评估每一步,标注失着">分析</button>
+          <button type="button" class="text-link" id="an-run" title="快速评估每一步(120ms/步),标注失着">分析</button>
+          <button type="button" class="text-link" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢">精析</button>
           <button type="button" class="text-link" id="retry-here" disabled title="回到复盘所在的一着继续下,其后着法丢弃">重下</button>
           <button type="button" class="text-link" id="pgn-copy" title="复制 PGN(含标准对局标签)">PGN</button>
           <button type="button" class="text-link" id="pgn-download">导出</button>
           <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN">粘贴</button>
+          <button type="button" class="text-link" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)">打开</button>
           <button type="button" class="text-link" id="fen-copy" title="复制当前局面 FEN">FEN</button>
           <button type="button" class="text-link" id="btn-offerdraw" disabled title="提议和棋(双人:双方确认;人机:引擎按局面判断)">提和</button>
+          <button type="button" class="text-link" id="btn-claimdraw" disabled title="三次重复或 50 回合无进展时可判和">判和</button>
           <button type="button" class="text-link danger" id="btn-resign" disabled title="认输并结束本局">认输</button>
         </div>
         <p class="hint">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
@@ -233,6 +251,7 @@
         <p id="confirm-message" class="muted" style="margin:0 0 16px;font-size:14px;line-height:1.5;color:var(--text)"></p>
         <div class="close-row" style="display:flex;gap:8px;justify-content:flex-end">
           <button type="button" class="tool-btn" id="confirm-cancel">取消</button>
+          <button type="button" class="tool-btn" id="confirm-alt" hidden>备选</button>
           <button type="button" class="tool-btn primary" id="confirm-ok">确定</button>
         </div>
       </div>
