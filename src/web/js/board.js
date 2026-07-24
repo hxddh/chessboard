@@ -46,6 +46,8 @@
   let _model = null;
   /** live drag ghost: {from, x, y} in canvas pixels | null */
   let _drag = null;
+  /** live slide animation: {from, to, start, dur} | null */
+  let _anim = null;
 
   function attach(canvas, modelFn) {
     _canvas = canvas;
@@ -53,6 +55,23 @@
   }
 
   function setDrag(d) { _drag = d; }
+
+  const easeOut = (t) => 1 - (1 - t) * (1 - t);
+
+  /** Slide the piece now sitting on `to` in from→to over ~150ms (live moves). */
+  function animateMove(from, to) {
+    if (!_canvas || !_model || !from || !to) return;
+    _anim = { from, to, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: 150 };
+    const step = () => {
+      if (!_anim) return;
+      const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
+      if (now - _anim.start >= _anim.dur) { _anim = null; draw(); return; }
+      draw();
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  function cancelAnim() { _anim = null; }
 
   function resizeCanvas() {
     if (!_canvas) return;
@@ -166,8 +185,26 @@
         if (!piece) continue;
         const sq = FILES[c] + (8 - r);
         if (_drag && _drag.from === sq) { dragPiece = piece; continue; } // ghost drawn last
+        if (_anim && _anim.to === sq) continue; // slid piece drawn interpolated below
         const { sr, sc } = screenPos(sq, m.flipped);
         paintPiece(piece, sc * step + step / 2, sr * step + step * 0.54);
+      }
+    }
+    // sliding piece: interpolate from→to over the animation window
+    if (_anim) {
+      const c = FILES.indexOf(_anim.to[0]);
+      const r = 8 - Number(_anim.to[1]);
+      const piece = m.position[r] && m.position[r][c];
+      if (piece) {
+        const a = screenPos(_anim.from, m.flipped);
+        const b = screenPos(_anim.to, m.flipped);
+        const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
+        const t = easeOut(Math.max(0, Math.min(1, (now - _anim.start) / _anim.dur)));
+        const sc = a.sc + (b.sc - a.sc) * t;
+        const sr = a.sr + (b.sr - a.sr) * t;
+        paintPiece(piece, sc * step + step / 2, sr * step + step * 0.54);
+      } else {
+        _anim = null;
       }
     }
     // lesson success flash
@@ -248,5 +285,5 @@
     }
   }
 
-  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag };
+  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, cancelAnim };
 })(typeof window !== "undefined" ? window : globalThis);

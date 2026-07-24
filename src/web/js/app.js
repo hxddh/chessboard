@@ -249,6 +249,7 @@
       viewIndex = sanHistory().length;
       selection = null;
       hintMove = null;
+      BoardView.animateMove(played.from, played.to);
       Audio2.playMove(played.color, { captured: !!played.captured, check: game.in_check() });
       if (game.in_checkmate()) Audio2.playWin();
       else if (game.game_over()) Audio2.playDraw();
@@ -423,6 +424,7 @@
   function startLearnTask() {
     const t = curTask();
     learn.token++;
+    BoardView.cancelAnim();
     learn.g = new Chess(t.fen);
     learn.stars = new Set(t.stars || []);
     learn.tapStep = 0;
@@ -617,6 +619,7 @@
     selection = null;
     learn.last = { from: mv.from, to: mv.to };
     learn.helpArrow = null;
+    BoardView.animateMove(mv.from, mv.to);
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
     if (t.type === "stars") {
       if (learn.stars.has(mv.to)) {
@@ -831,7 +834,7 @@
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
   const PUZZLE_KEY = "chess.v1.puzzles";
   const PUZZLES = window.CHESS_PUZZLES || [];
-  const PUZZLE_CATS = [["m1", "一步杀"], ["m2", "两步杀"], ["m3", "三步杀"], ["win", "吃子"], ["tac", "战术"], ["op", "开局"]];
+  const PUZZLE_CATS = [["m1", "一步杀"], ["m2", "两步杀"], ["m3", "三步杀"], ["win", "吃子"], ["tac", "战术"], ["op", "开局"], ["review", "复习"]];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
   const SCRIPTED_CATS = { win: true, op: true, tac: true };
@@ -850,16 +853,26 @@
   function loadPuzzleState() {
     try {
       const s = JSON.parse(Host.storageGet(PUZZLE_KEY) || "null");
-      if (s && s.v === 1 && s.solved) return s;
+      if (s && s.v === 1 && s.solved) { if (!s.missed) s.missed = {}; return s; }
     } catch (_) {}
-    return { v: 1, solved: {}, cat: "m1" };
+    return { v: 1, solved: {}, missed: {}, cat: "m1" };
   }
   let puzzleState = loadPuzzleState();
   function savePuzzleState() {
     try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {}
   }
+  function markMissed(id) {
+    if (!puzzleState.missed[id]) { puzzleState.missed[id] = true; savePuzzleState(); }
+  }
+  function clearMissed(id) {
+    if (puzzleState.missed[id]) { delete puzzleState.missed[id]; savePuzzleState(); }
+  }
 
-  function puzzlesInCat(cat) { return ALL_PUZZLES.filter((p) => p.cat === cat); }
+  /** "review" is a virtual category: every puzzle currently in the missed set. */
+  function puzzlesInCat(cat) {
+    if (cat === "review") return ALL_PUZZLES.filter((p) => puzzleState.missed[p.id]);
+    return ALL_PUZZLES.filter((p) => p.cat === cat);
+  }
 
   /** the scripted line of the current puzzle (openings: line; win: solution) */
   function puzzleScript(p) { return p.line || p.solution; }
@@ -871,13 +884,16 @@
     puzzleState.cat = cat;
     savePuzzleState();
     const p = list[idx];
-    puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, helpArrow: null, last: null };
+    puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null };
     selection = null;
+    BoardView.cancelAnim();
     sync();
   }
 
   function startPuzzles() {
-    const cat = PUZZLE_CATS.some(([c]) => c === puzzleState.cat) ? puzzleState.cat : "m1";
+    let cat = PUZZLE_CATS.some(([c]) => c === puzzleState.cat) ? puzzleState.cat : "m1";
+    // don't strand the user on an empty review tab
+    if (cat === "review" && !puzzlesInCat("review").length) cat = "m1";
     const list = puzzlesInCat(cat);
     let idx = list.findIndex((p) => !puzzleState.solved[p.id]);
     if (idx < 0) idx = 0;
@@ -997,6 +1013,7 @@
     selection = null;
     puzzle.helpArrow = null;
     puzzle.last = { from: mv.from, to: mv.to };
+    BoardView.animateMove(mv.from, mv.to);
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
     if (SCRIPTED_CATS[puzzle.p.cat]) {
       // scripted line: exact match, opponent replies straight from the script
@@ -1054,6 +1071,7 @@
     puzzle.g.undo();
     puzzle.last = null;
     puzzle.misses++;
+    markMissed(puzzle.p.id); // a missed puzzle joins the review queue
     toast((reason || "这步不能强制将死") +
       (puzzle.misses >= 2 ? " —— 点「答案」看正解" : " —— 再试试"));
     sync();
@@ -1087,6 +1105,8 @@
     }
     if (from) {
       puzzle.helpArrow = { from, to };
+      puzzle.usedAnswer = true;
+      markMissed(puzzle.p.id); // relying on the answer counts as a miss
       sync();
     }
   }
@@ -1095,6 +1115,8 @@
     puzzle.done = true;
     selection = null;
     Audio2.playWin();
+    // a clean first-try solve retires the puzzle from review; a shaky one keeps it
+    if (puzzle.misses === 0 && !puzzle.usedAnswer) clearMissed(puzzle.p.id);
     if (!puzzleState.solved[puzzle.p.id]) {
       puzzleState.solved[puzzle.p.id] = true;
       savePuzzleState();
@@ -1108,7 +1130,18 @@
 
   function nextPuzzle() {
     if (!puzzle) return;
-    const list = puzzlesInCat(puzzle.cat);
+    let list = puzzlesInCat(puzzle.cat);
+    if (puzzle.cat === "review") {
+      // a clean re-solve shrinks the queue; graduate to m1 when it empties
+      if (!list.length) {
+        toast("错题都清光了 · 干得漂亮!");
+        puzzleState.cat = "m1"; savePuzzleState();
+        startPuzzles();
+        return;
+      }
+      startPuzzleAt("review", puzzle.idx % list.length);
+      return;
+    }
     // prefer the next unsolved one, wrapping around
     for (let d = 1; d <= list.length; d++) {
       const i = (puzzle.idx + d) % list.length;
@@ -1124,10 +1157,17 @@
     if (mode !== "puzzle" || !puzzle) return;
     const list = puzzlesInCat(puzzle.cat);
     const solvedAll = ALL_PUZZLES.filter((p) => puzzleState.solved[p.id]).length;
+    const missedCount = puzzlesInCat("review").length;
     const prog = document.getElementById("puzzle-progress");
-    if (prog) prog.textContent = "已解 " + solvedAll + "/" + ALL_PUZZLES.length;
+    if (prog) {
+      prog.textContent = puzzle.cat === "review"
+        ? "错题 " + missedCount + " 道"
+        : "已解 " + solvedAll + "/" + ALL_PUZZLES.length;
+    }
     document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.cat === puzzle.cat);
+      // surface how many are queued for review right on the tab
+      if (b.dataset.cat === "review") b.textContent = missedCount ? "复习·" + missedCount : "复习";
     });
     const task = document.getElementById("puzzle-task");
     if (task) {
@@ -1657,6 +1697,7 @@
   function setViewIndex(n) {
     viewIndex = Math.max(0, Math.min(n, sanHistory().length));
     selection = null;
+    BoardView.cancelAnim();
     sync();
   }
 
@@ -1692,6 +1733,7 @@
     selection = null;
     hintMove = null;
     viewIndex = sanHistory().length;
+    BoardView.animateMove(mv.from, mv.to);
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: game.in_check() });
     if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
     if (game.in_checkmate()) Audio2.playWin();
@@ -2174,6 +2216,10 @@
   document.getElementById("puzzle-cat-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-cat]");
     if (!b || !puzzle || b.dataset.cat === puzzle.cat) return;
+    if (b.dataset.cat === "review" && !puzzlesInCat("review").length) {
+      toast("还没有错题 —— 答错或看答案的题会进复习");
+      return;
+    }
     puzzleState.cat = b.dataset.cat;
     savePuzzleState();
     startPuzzles();

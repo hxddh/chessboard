@@ -255,7 +255,7 @@ for (const p of ["r", "b", "n"]) {
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
   const puzzles = ctx.CHESS_PUZZLES;
-  assert(Array.isArray(puzzles) && puzzles.length >= 39, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
+  assert(Array.isArray(puzzles) && puzzles.length >= 51, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
   const matingMoves = (g) => g.moves().filter((m) => {
     g.move(m); const mate = g.in_checkmate(); g.undo(); return mate;
   });
