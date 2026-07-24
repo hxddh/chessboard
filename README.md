@@ -55,6 +55,7 @@
 ## 路线
 
 - **后续**：题库持续扩容、更多残局 drill、多语言
+- **iOS / Android**：可行性评估见 [`docs/MOBILE-EVAL.md`](docs/MOBILE-EVAL.md)（结论：可做，先 spike，不建议作为下一正式版直接上架）
 
 ## 开发
 
