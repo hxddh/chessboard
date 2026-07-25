@@ -2528,6 +2528,7 @@
     if (flipRow) flipRow.hidden = mode !== "pvp";
     const flipSwitch = document.getElementById("opt-autoflip");
     if (flipSwitch) flipSwitch.setAttribute("aria-pressed", autoFlipPvp ? "true" : "false");
+    renderMaterial();
     const secMoves = document.getElementById("sec-moves");
     const trainer = mode === "learn" || mode === "puzzle" || !!editor;
     if (secMoves) secMoves.hidden = trainer;
@@ -3446,6 +3447,38 @@
     saveSlots(st);
     renderSlots();
     toast(t("slots.deleted") + (i + 1));
+  }
+
+  /**
+   * Captured pieces beside each name, and a `+N` on whoever is ahead.
+   *
+   * Follows the replay cursor rather than the live game: scrubbing back to
+   * "where did it go wrong" and seeing the material as it stood at that move
+   * is most of the point. In the puzzle and lesson modes the pieces on the
+   * board are a constructed exercise, not a game's remains, so it stays empty.
+   */
+  function renderMaterial() {
+    const Mat = window.ChessMaterial;
+    const wEl = document.getElementById("taken-w");
+    const bEl = document.getElementById("taken-b");
+    if (!wEl || !bEl) return;
+    const off = mode === "learn" || mode === "puzzle" || !!editor;
+    if (!Mat || off) { wEl.innerHTML = ""; bEl.innerHTML = ""; return; }
+    const shown = viewGame();
+    const promos = verboseHistory().slice(0, viewIndex)
+      .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
+    const s = Mat.summary(baseGame().board(), shown.board(), promos);
+    const svgs = window.CHESS_PIECE_SVGS || {};
+    const strip = (list, color, lead) => {
+      const frag = list.map((tp) => {
+        const svg = svgs[color + tp];
+        return svg ? '<span class="taken-p">' + svg + "</span>" : "";
+      }).join("");
+      return frag + (lead > 0 ? '<span class="taken-diff">+' + lead + "</span>" : "");
+    };
+    // White's row shows the black pieces White has taken
+    wEl.innerHTML = strip(s.w, "b", s.diff);
+    bEl.innerHTML = strip(s.b, "w", -s.diff);
   }
 
   // --- panel tabs ---

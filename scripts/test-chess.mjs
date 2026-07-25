@@ -741,6 +741,45 @@ for (const p of ["r", "b", "n"]) {
   assert(R.verdictKey(null, "w") === null, "no summary yields no verdict");
 }
 
+// material: who is up, and what each side has taken
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/material.js"), "utf8"), ctx, { filename: "material.js" });
+  const M = ctx.ChessMaterial;
+  const start = new Chess();
+  assert(M.diff(start.board()) === 0, "the start position is level");
+  assert(M.summary(start.board(), start.board(), []).w.length === 0, "nothing captured at the start");
+
+  // 1.e4 d5 2.exd5 Qxd5 3.Nc3 Qxa2 — White has taken a pawn, Black a pawn and a pawn
+  const g = new Chess();
+  for (const san of ["e4", "d5", "exd5", "Qxd5", "Nc3", "Qxa2"]) assert(g.move(san) !== null, "played " + san);
+  const s1 = M.summary(new Chess().board(), g.board(), []);
+  assert(s1.w.join("") === "p", "White has taken one pawn (" + s1.w.join("") + ")");
+  assert(s1.b.join("") === "pp", "Black has taken two pawns (" + s1.b.join("") + ")");
+  assert(s1.diff === -1, "Black is a pawn up (diff " + s1.diff + ")");
+
+  // a promotion must not be reported as a captured pawn
+  const promo = new Chess("8/P6k/8/8/8/8/7K/8 w - - 0 1");
+  const before = new Chess("8/P6k/8/8/8/8/7K/8 w - - 0 1").board();
+  promo.move({ from: "a7", to: "a8", promotion: "q" });
+  const raw = M.summary(before, promo.board(), []);
+  assert(raw.b.join("") === "p", "without the promotion list the pawn looks captured");
+  const fixed = M.summary(before, promo.board(), [{ color: "w", promotion: "q" }]);
+  assert(fixed.b.length === 0, "…and with it, nothing is reported as captured");
+  assert(fixed.diff === 9, "the new queen counts towards the lead (diff " + fixed.diff + ")");
+
+  // the difference is read off the board, so an edited starting position is fine
+  const odd = new Chess("4k3/8/8/8/8/8/8/R3K3 w - - 0 1");
+  assert(M.diff(odd.board()) === 5, "a lone rook is a five-pawn lead");
+  assert(M.summary(odd.board(), odd.board(), []).w.length === 0,
+    "a position that started that way reports no captures");
+
+  // the display order is biggest prize first
+  const mixed = new Chess("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+  const many = M.summary(new Chess().board(), mixed.board(), []);
+  assert(many.w[0] === "q" && many.w[many.w.length - 1] === "p", "captured pieces list queens first, pawns last");
+  assert(many.w.length === 15 && many.b.length === 15, "…and every missing piece is listed");
+}
+
 // opening coach: the drills used to answer every wrong move with "not the
 // book move", which is the one thing the player already knew
 {
