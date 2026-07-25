@@ -12,6 +12,19 @@
   const INACCURACY = 50, MISTAKE = 100, BLUNDER = 300;
 
   /**
+   * Move number in algebraic notation for ply `i`.
+   *
+   * A game edited to start with Black to move opens at "1…" — Black's move is
+   * still move 1, and White's reply is move 2. Counting pairs from ply 0 would
+   * put White's first move in move 1 alongside it.
+   * @param {number} i ply index, 0-based
+   * @param {"w"|"b"} firstMover side that played ply 0
+   */
+  function moveNumber(i, firstMover) {
+    return firstMover === "b" ? Math.floor((i + 1) / 2) + 1 : Math.floor(i / 2) + 1;
+  }
+
+  /**
    * @param {number[]} scalars evaluation after each ply, index 0 = start
    *   (centipawns, positive = good for White; null where unmeasured)
    * @param {string[]} history SAN moves
@@ -39,7 +52,7 @@
       else if (loss >= INACCURACY) counts[s].inaccuracy++;
       // the turning point is the single costliest move of the game, either side
       if (loss >= MISTAKE && (!worst || loss > worst.loss)) {
-        worst = { ply: i, san: history[i], loss, side: s, moveNo: Math.floor(i / 2) + 1 };
+        worst = { ply: i, san: history[i], loss, side: s, moveNo: moveNumber(i, firstMover) };
       }
     }
 
@@ -71,5 +84,5 @@
     return "rv.verdict.roomToGrow";
   }
 
-  global.ChessReview = { summarize, verdictKey, INACCURACY, MISTAKE, BLUNDER };
+  global.ChessReview = { summarize, verdictKey, moveNumber, INACCURACY, MISTAKE, BLUNDER };
 })(typeof window !== "undefined" ? window : globalThis);

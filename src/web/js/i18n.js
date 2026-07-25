@@ -21,8 +21,23 @@
   const DICT = {
     "zh-CN": {
       "lang.name": "中文",
+      // first-run onboarding (ob.*)
+      "ob.title": "先从哪里开始?",
+      "ob.newLabel": "我是新手,从零开始学",
+      "ob.newSub": "36 课互动教程:认棋盘 → 六种走法 → 吃子与战术 → 规则与杀法 → 残局",
+      "ob.knowLabel": "我会下棋,直接开局",
+      "ob.knowSub": "与 Stockfish 对弈,难度可随时在侧栏调整",
+      "ob.toLearn": "教学模式 · 从第 1 课开始",
+      "ob.toPlay": "人机对弈 · {0} —— 难度可在侧栏调整",
       // post-game review (rv.*)
       "rv.title": "对局回顾",
+      "rv.offer": "本局结束 —— 点「分析」看这盘的回顾",
+      // "what next?" line under the statistics (rec.*)
+      "rec.lessons": "教学还剩 {1} 课未完成(已完成 {0})—— 打好基础再回来对弈",
+      "rec.harder": "近几局几乎全胜 —— 可以试试「{0}」难度了",
+      "rec.easier": "近几局都输了 —— 换到「{0}」难度会更有收获",
+      "rec.review": "近几局胜少负多 —— 「做题 → 复习」还有 {0} 道错题等着你",
+      "rec.puzzles": "近几局胜少负多 —— 去「做题」练练战术眼,实战会更稳",
       "rv.opening": "开局",
       "rv.sideLine": "准确率 {0}% · 平均失分 {1} · 小失误 {2} / 失误 {3} / 严重 {4}",
       "rv.turningPoint": "关键一步:第 {0} 回合 {1} 走 {2},失分 {3} 子 —— 点此跳转",
@@ -186,6 +201,8 @@
       "ach.all-lessons.n": "规则通关", "ach.all-lessons.d": "完成全部教学课程",
       "ach.first-puzzle.n": "初试身手", "ach.first-puzzle.d": "解出第 1 道题",
       "ach.puzzle-10.n": "战术之眼", "ach.puzzle-10.d": "累计解出 10 道题",
+      "ach.puzzle-30.n": "熟能生巧", "ach.puzzle-30.d": "累计解出 30 道题",
+      "ach.puzzle-75.n": "百炼成钢", "ach.puzzle-75.d": "累计解出 75 道题",
       "ach.all-mates.n": "杀法大师", "ach.all-mates.d": "解出全部杀王题",
       "ach.all-tactics.n": "战术行家", "ach.all-tactics.d": "解出全部战术母题",
       "ach.all-openings.n": "开局博士", "ach.all-openings.d": "背完全部开局线路",
@@ -359,8 +376,23 @@
     },
     en: {
       "lang.name": "English",
+      // first-run onboarding (ob.*)
+      "ob.title": "Where would you like to start?",
+      "ob.newLabel": "I'm new — teach me from scratch",
+      "ob.newSub": "36 interactive lessons: the board \u2192 how the pieces move \u2192 captures and tactics \u2192 rules and mates \u2192 endgames",
+      "ob.knowLabel": "I can play — just start a game",
+      "ob.knowSub": "Play Stockfish; the difficulty row in the side panel changes it any time",
+      "ob.toLearn": "Lessons \u00b7 starting at lesson 1",
+      "ob.toPlay": "Playing the engine \u00b7 {0} \u2014 change the level in the side panel",
       // post-game review (rv.*)
       "rv.title": "Game review",
+      "rv.offer": "Game over — tap \u201cAnalyse\u201d for a review of how you played",
+      // "what next?" line under the statistics (rec.*)
+      "rec.lessons": "{1} lessons still to go (you have finished {0}) \u2014 finish the course, then come back to play",
+      "rec.harder": "You are winning nearly everything \u2014 time to try the \u201c{0}\u201d level",
+      "rec.easier": "You lost the last few \u2014 the \u201c{0}\u201d level will teach you more",
+      "rec.review": "More losses than wins lately \u2014 Puzzles \u2192 Review still has {0} waiting",
+      "rec.puzzles": "More losses than wins lately \u2014 sharpen your tactics in Puzzles and games get steadier",
       "rv.opening": "Opening",
       "rv.sideLine": "Accuracy {0}% · avg loss {1} · inaccuracies {2} / mistakes {3} / blunders {4}",
       "rv.turningPoint": "Turning point: move {0}, {1} played {2}, costing {3} pawns — tap to jump",
@@ -594,6 +626,8 @@
       "ach.all-lessons.n": "Rules mastered", "ach.all-lessons.d": "Finish every lesson",
       "ach.first-puzzle.n": "First solve", "ach.first-puzzle.d": "Solve your first puzzle",
       "ach.puzzle-10.n": "Tactical eye", "ach.puzzle-10.d": "Solve 10 puzzles",
+      "ach.puzzle-30.n": "Practised", "ach.puzzle-30.d": "Solve 30 puzzles",
+      "ach.puzzle-75.n": "Tempered", "ach.puzzle-75.d": "Solve 75 puzzles",
       "ach.all-mates.n": "Mating master", "ach.all-mates.d": "Solve every mating puzzle",
       "ach.all-tactics.n": "Tactician", "ach.all-tactics.d": "Solve every tactical motif",
       "ach.all-openings.n": "Opening scholar", "ach.all-openings.d": "Learn every opening line",
@@ -709,6 +743,31 @@
 
   function getLang() { return lang; }
 
+  /**
+   * Best language for someone who has never set one, from the OS/browser
+   * locale. Only consulted on a first run — a stored preference always wins,
+   * so nobody's explicit choice can be overridden by their system settings.
+   *
+   * Without this, 1.6's translation work was unreachable: the app booted in
+   * Chinese for everyone, including the first-run dialog that decides whether
+   * a newcomer sees the course at all.
+   */
+  function detectLang(nav) {
+    const src = nav || (typeof navigator !== "undefined" ? navigator : null);
+    if (!src) return FALLBACK;
+    const tags = [].concat(src.languages || [], src.language || []);
+    for (const raw of tags) {
+      const tag = String(raw || "").toLowerCase();
+      if (!tag) continue;
+      if (tag.startsWith("zh")) return "zh-CN";
+      const base = tag.split("-")[0];
+      if (DICT[base]) return base;
+      const exact = Object.keys(DICT).find((id) => id.toLowerCase() === tag);
+      if (exact) return exact;
+    }
+    return FALLBACK;
+  }
+
   function t(key) {
     const table = DICT[lang] || DICT[FALLBACK];
     if (key in table) return table[key];
@@ -754,5 +813,5 @@
     });
   }
 
-  global.ChessI18n = { t, tf, apply, setLang, getLang, available, DICT };
+  global.ChessI18n = { t, tf, apply, setLang, getLang, detectLang, available, DICT };
 })(typeof window !== "undefined" ? window : globalThis);
