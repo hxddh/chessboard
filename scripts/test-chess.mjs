@@ -249,12 +249,15 @@ for (const p of ["r", "b", "n"]) {
   }
   assert(bad === 0, "all lesson tasks valid");
 
-  // English lesson pilot: translations may cover a subset, but every entry
-  // they do provide must line up with the Chinese original — a translation
-  // that describes a different task is worse than none at all.
+  // English lessons: every lesson must be covered, and every entry must line
+  // up with the Chinese original — a translation that describes a different
+  // task is worse than none at all. 1.5 shipped a 9-lesson "pilot" while the
+  // release notes said the English UI was done; coverage is asserted now.
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons-en.js"), "utf8"), ctx, { filename: "lessons-en.js" });
   const en = ctx.CHESS_LESSONS_EN;
-  assert(en && Object.keys(en).length >= 8, "English pilot covers ≥8 lessons (" + Object.keys(en || {}).length + ")");
+  const uncovered = lessons.filter((L) => !en || !en[L.id]).map((L) => L.id);
+  for (const id of uncovered) console.error("FAIL: lesson has no English text: " + id);
+  assert(uncovered.length === 0, "all " + lessons.length + " lessons have English text");
   let badEn = 0;
   const failEn = (...m) => { badEn++; console.error("FAIL:", ...m); };
   const byId = new Map(lessons.map((L) => [L.id, L]));
@@ -274,10 +277,8 @@ for (const p of ["r", "b", "n"]) {
           const realSteps = real.steps ? real.steps.length : 0;
           if (tt.steps.length !== realSteps) failEn(id + "#" + i, "tap step count differs:", tt.steps.length, "vs", realSteps);
         }
-        if (real.retry && tt.prompt && !tt.retry) {
-          // not fatal, but a translated prompt with an untranslated retry reads oddly
-          console.log("note:", id + "#" + i, "translated prompt without retry text");
-        }
+        if (real.retry && !tt.retry) failEn(id + "#" + i, "task has a retry hint but no translation");
+        if (!tt.prompt) failEn(id + "#" + i, "task has no translated prompt");
       });
     }
     // a translation must not smuggle in chess data
@@ -285,7 +286,55 @@ for (const p of ["r", "b", "n"]) {
       if (!["part", "title", "text", "tasks"].includes(k)) failEn(id, "unexpected key in translation:", k);
     }
   }
-  assert(badEn === 0, "English lesson pilot matches the originals");
+  assert(badEn === 0, "English lessons match the originals");
+
+  // No Chinese may survive in the English lesson text itself.
+  let hanEn = 0;
+  const walk = (v, where) => {
+    if (typeof v === "string") { if (/[一-鿿]/.test(v)) { hanEn++; console.error("FAIL: Chinese in English lesson " + where + ": " + v); } return; }
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, where + "[" + i + "]"));
+    if (v && typeof v === "object") return Object.entries(v).forEach(([k, x]) => walk(x, where + "." + k));
+  };
+  walk(en, "en");
+  assert(hanEn === 0, "English lesson text contains no Chinese");
+}
+
+// English names for puzzles and openings: the app falls back to the Chinese
+// name when one is missing, so only a coverage check keeps English mode honest
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles-en.js"), "utf8"), ctx, { filename: "puzzles-en.js" });
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings.js"), "utf8"), ctx, { filename: "openings.js" });
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings-en.js"), "utf8"), ctx, { filename: "openings-en.js" });
+  const pz = ctx.CHESS_PUZZLES, pzEn = ctx.CHESS_PUZZLES_EN;
+  const op = ctx.CHESS_OPENINGS, opEn = ctx.CHESS_OPENINGS_EN;
+  const han = /[一-鿿]/;
+  let bad = 0;
+  const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
+
+  for (const p of pz) {
+    const tr = pzEn[p.id];
+    if (!tr) { fail("puzzle has no English name:", p.id); continue; }
+    if (!tr.name || han.test(tr.name)) fail("puzzle name not translated:", p.id, tr.name);
+    // a motif is shown in the goal line, so it must be translated wherever one exists
+    if (!!p.motif !== !!tr.motif) fail("puzzle motif mismatch:", p.id, p.motif, "vs", tr.motif);
+    if (tr.motif && han.test(tr.motif)) fail("puzzle motif not translated:", p.id, tr.motif);
+  }
+  for (const id of Object.keys(pzEn)) {
+    if (!pz.some((p) => p.id === id)) fail("English text for unknown puzzle:", id);
+  }
+  assert(bad === 0, "all " + pz.length + " puzzles have English names");
+
+  bad = 0;
+  const opNames = new Set(op.map((o) => o[1]));
+  for (const n of opNames) {
+    if (!opEn[n]) { fail("opening has no English name:", n); continue; }
+    if (han.test(opEn[n])) fail("opening name not translated:", n, "->", opEn[n]);
+  }
+  for (const n of Object.keys(opEn)) {
+    if (!opNames.has(n)) fail("English name for unknown opening:", n);
+  }
+  assert(bad === 0, "all " + opNames.size + " opening names have English text");
 }
 
 // puzzles: legal positions (white to move, black not already in check),
@@ -470,6 +519,23 @@ for (const p of ["r", "b", "n"]) {
   assert(F.repetitionCount(null, rookOut, Chess) === 1,
     "losing castling rights breaks the repetition");
 
+  // FIDE 9.2 compares the *available moves*, not the raw FEN. A double pawn
+  // push writes an ep target even when nobody can take there, so the same
+  // shuffle behind 1.e4 e5 must still reach threefold.
+  const pawnsFirst = ["e4", "e5", ...shuffle, ...shuffle];
+  assert(F.repetitionCount(null, pawnsFirst, Chess) === 3,
+    "a phantom ep square does not break the repetition");
+  assert(F.positionKey(new Chess("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1").fen(),
+    null, Chess).endsWith(" -"), "unusable ep right is normalised away");
+  // ...but a real one is a genuine difference and must be kept
+  const epLive = new Chess("4k3/8/8/8/3p4/8/2P5/4K3 w - - 0 1");
+  epLive.move("c4");
+  assert(F.positionKey(epLive.fen(), epLive).endsWith(" c3"), "playable ep right is preserved");
+  // pinned capturer: the ep move is not legal, so the right does not exist
+  const epPinned = new Chess("8/8/8/K2pP2q/8/8/8/7k w - d6 0 1");
+  assert(F.positionKey(epPinned.fen(), epPinned).endsWith(" -"),
+    "ep right that would expose the king is normalised away");
+
   const boardOf = (fen) => new Chess(fen).board();
   const mat = (fen, color) => F.hasMatingMaterial(boardOf(fen), color);
   assert(mat("8/8/8/8/8/8/4P3/K6k w - - 0 1", "w"), "K+P can mate");
@@ -558,6 +624,57 @@ for (const p of ["r", "b", "n"]) {
   assert(E.toFen(st).split(" ")[2] === "K", "supported castling right is kept");
 }
 
+// post-game review: the report is what the user reads instead of the raw
+// numbers, so the arithmetic behind it gets its own checks
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/review.js"), "utf8"), ctx, { filename: "review.js" });
+  const R = ctx.ChessReview;
+  assert(R.summarize(null, [], "w") === null, "no analysis yields no report");
+  assert(R.summarize([0], [], "w") === null, "a game with no moves yields no report");
+
+  // White drops 4 pawns on ply 2 (a blunder); Black plays perfectly.
+  //   scalars: start 0, after w1 0, after b1 0, after w2 -400, after b2 -400
+  const scalars = [0, 0, 0, -400, -400];
+  const history = ["e4", "e5", "Qh5", "Nc6"];
+  const s = R.summarize(scalars, history, "w");
+  assert(s.counts.w.blunder === 1, "white's 400cp drop counts as a blunder");
+  assert(s.counts.b.blunder === 0 && s.counts.b.mistake === 0, "black's moves cost nothing");
+  assert(s.worst && s.worst.san === "Qh5", "the turning point is the costliest move (" + (s.worst && s.worst.san) + ")");
+  assert(s.worst.side === "w" && s.worst.ply === 2, "turning point attributed to the right side and ply");
+  assert(s.worst.moveNo === 2, "turning point reported as move 2");
+  assert(s.acpl.w === 200 && s.acpl.b === 0, "acpl averaged per side (w=" + s.acpl.w + ", b=" + s.acpl.b + ")");
+  assert(s.acc.b === 100, "a flawless side scores 100%");
+  assert(s.acc.w < s.acc.b, "the blundering side scores lower");
+
+  // A game that starts from an edited position with Black to move: ply 0 is
+  // Black's, so the losses must not be filed under White.
+  const s2 = R.summarize([0, -400, -400], ["Qh4", "Nf3"], "b");
+  assert(s2.counts.b.blunder === 0 && s2.counts.w.blunder === 0,
+    "a swing in Black's favour is nobody's blunder");
+  const s3 = R.summarize([0, 400, 400], ["Qh4", "Nf3"], "b");
+  assert(s3.counts.b.blunder === 1 && s3.counts.w.blunder === 0,
+    "with Black moving first, Black's blunder is filed under Black");
+
+  // unmeasured plies (an aborted analysis) are skipped, never scored as perfect
+  assert(R.summarize([0, null, -400], ["e4", "Qh5"], "w") === null,
+    "an analysis with nothing measurable yields no report");
+  const s4 = R.summarize([0, -400, null, -400], ["e4", "Nf3", "Qh5"], "w");
+  assert(s4.measured === 1, "only the measurable plies are scored (" + s4.measured + ")");
+  assert(s4.counts.w.blunder === 1 && s4.acpl.b === null,
+    "a side with no measured move gets no accuracy rather than 100%");
+
+  // thresholds line up with the ?!/?/?? marks in the move list
+  const grade = (loss) => R.summarize([0, -loss], ["e4"], "w").counts.w;
+  assert(grade(49).inaccuracy === 0, "49cp is not yet an inaccuracy");
+  assert(grade(50).inaccuracy === 1, "50cp is an inaccuracy");
+  assert(grade(100).mistake === 1, "100cp is a mistake");
+  assert(grade(300).blunder === 1, "300cp is a blunder");
+
+  assert(R.verdictKey(s, "w") === "rv.verdict.oneBlunder", "one blunder gets its own verdict");
+  assert(R.verdictKey(s, "b") === "rv.verdict.excellent", "a clean game reads as excellent");
+  assert(R.verdictKey(null, "w") === null, "no summary yields no verdict");
+}
+
 // i18n: every key present in the base language must exist in the others, or
 // switching language would silently blank parts of the UI
 {
@@ -585,6 +702,7 @@ for (const p of ["r", "b", "n"]) {
   const referenced = new Set([
     ...[...html.matchAll(/data-i18n="([^"]+)"/g)].map((m) => m[1]),
     ...[...html.matchAll(/data-i18n-title="([^"]+)"/g)].map((m) => m[1]),
+    ...[...html.matchAll(/data-i18n-aria="([^"]+)"/g)].map((m) => m[1]),
   ]);
   let unknown = 0;
   for (const k of referenced) {
@@ -610,6 +728,62 @@ for (const p of ["r", "b", "n"]) {
     if (!/data-i18n-title=/.test(m[0])) { bareTitles++; console.error("FAIL: untranslatable tooltip: " + m[1]); }
   }
   assert(bareTitles === 0, "every Chinese tooltip carries data-i18n-title");
+
+  // Same rule for aria-label. An untranslated one is invisible to anyone
+  // testing by eye but is exactly what a screen-reader user hears, and v1.5
+  // shipped all 25 of them in Chinese while claiming the English UI was done.
+  const labelled = [...html.matchAll(/<[^>]*\saria-label="([^"]*)"[^>]*>/g)];
+  let bareLabels = 0;
+  for (const m of labelled) {
+    if (!han.test(m[1])) continue;
+    if (!/data-i18n-aria=/.test(m[0])) { bareLabels++; console.error("FAIL: untranslatable aria-label: " + m[1]); }
+  }
+  assert(bareLabels === 0, "every Chinese aria-label carries data-i18n-aria");
+
+  // Any element carrying visible Chinese text must be wired for translation.
+  // The promotion dialog — a modal every real game reaches — had no data-i18n
+  // at all, so the key-coverage check above could never notice it.
+  let bareText = 0;
+  for (const m of html.matchAll(/<(h3|button|span|div|p)\b([^>]*)>([^<]*[一-鿿][^<]*)</g)) {
+    const [, tag, attrs, text] = m;
+    if (/data-i18n=/.test(attrs)) continue;
+    if (/\sid="(status|moves|white-role|black-role|clock-[wb])"/.test(attrs)) continue; // written by sync()
+    bareText++;
+    console.error("FAIL: untranslatable <" + tag + "> text: " + text.trim());
+  }
+  assert(bareText === 0, "every Chinese label in index.html carries data-i18n");
+
+  // No Chinese string literal may reach the DOM from app.js. v1.5 translated
+  // the static markup and left 169 runtime literals — task prompts, puzzle
+  // feedback, every toast — so English mode stayed half Chinese where it
+  // mattered most. This is the check that would have caught it.
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  let literals = 0;
+  let inBlockComment = false;
+  appSrc.split("\n").forEach((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("/*")) inBlockComment = true;
+    if (inBlockComment) { if (trimmed.includes("*/")) inBlockComment = false; return; }
+    if (trimmed.startsWith("//") || trimmed.startsWith("*")) return;
+    for (const m of line.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)) {
+      if (!han.test(m[1])) continue;
+      literals++;
+      console.error("FAIL: app.js:" + (i + 1) + " hard-codes Chinese: " + m[1]);
+    }
+  });
+  assert(literals === 0, "app.js routes every user-visible string through t()");
+
+  // Every key app.js asks for at runtime must exist. Dynamic lookups
+  // (t("piece." + type)) are skipped — the prefixes are checked by hand.
+  let unknownRuntime = 0;
+  for (const m of appSrc.matchAll(/\btf?\("([a-zA-Z][\w.-]*)"/g)) {
+    if (m[1].endsWith(".")) continue;
+    if (!(m[1] in I.DICT["zh-CN"])) {
+      unknownRuntime++;
+      console.error("FAIL: app.js uses undefined key " + m[1]);
+    }
+  }
+  assert(unknownRuntime === 0, "every runtime key app.js requests is defined");
 
   // the editor reports failures as keys — each must resolve in every language
   const editorSrc = fs.readFileSync(path.join(root, "src/web/js/editor.js"), "utf8");

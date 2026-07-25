@@ -1,22 +1,143 @@
 /**
- * UI localisation skeleton.
+ * UI localisation.
  *
- * Scope is deliberately the app *chrome* — buttons, section headings, status
- * lines and the settings panel. The teaching content (lessons.js, puzzles.js,
- * openings.js) stays Chinese for now: translating 36 lessons of prose is a
- * content project, not a wiring one, and shipping half-translated lessons
- * would be worse than shipping none.
+ * Scope is the whole app: chrome (buttons, headings, status lines), every
+ * runtime message, and — since 1.6 — the teaching content too, which lives in
+ * its own files beside the originals (lessons-en.js, puzzles-en.js,
+ * openings-en.js) so a translation can never disagree with the chess.
  *
- * Static markup opts in with `data-i18n` (text) / `data-i18n-title` (tooltip)
- * attributes; dynamic strings call `t(key)`. Unknown keys fall back to the
- * zh-CN string, and then to the key itself, so a missing translation degrades
- * to readable text instead of blank UI.
+ * Static markup opts in with `data-i18n` (text), `data-i18n-title` (tooltip)
+ * or `data-i18n-aria` (aria-label); dynamic strings call `t(key)`, or
+ * `tf(key, vals)` when a value has to be spliced into a sentence. Unknown keys
+ * fall back to the zh-CN string, and then to the key itself, so a missing
+ * translation degrades to readable text instead of blank UI.
+ *
+ * scripts/test-chess.mjs enforces the invariants that keep this honest: key
+ * parity across languages, no Chinese left in a non-Chinese table, no Chinese
+ * literal reaching the DOM from app.js, and full coverage of the content files.
  * @module i18n
  */
 (function (global) {
   const DICT = {
     "zh-CN": {
       "lang.name": "中文",
+      // post-game review (rv.*)
+      "rv.title": "对局回顾",
+      "rv.opening": "开局",
+      "rv.sideLine": "准确率 {0}% · 平均失分 {1} · 小失误 {2} / 失误 {3} / 严重 {4}",
+      "rv.turningPoint": "关键一步:第 {0} 回合 {1} 走 {2},失分 {3} 子 —— 点此跳转",
+      "rv.jumpTip": "跳到这一步之后的局面",
+      "rv.verdict.blunders": "严重失误偏多 —— 每步先检查对方的将军、吃子和捉双",
+      "rv.verdict.oneBlunder": "只有一次严重失误 —— 找出它，下一盘就少丢一分",
+      "rv.verdict.mistakes": "失误较多 —— 落子前多算一步对方的回应",
+      "rv.verdict.excellent": "发挥出色 —— 可以挑战更高难度了",
+      "rv.verdict.solid": "下得稳健 —— 继续保持",
+      "rv.verdict.roomToGrow": "还有提升空间 —— 到「做题」练练战术眼",
+      // learn mode (lm.*) — task prompts, feedback and drill outcomes
+      "lm.demoIntro": "先看一遍演示 —— 点击棋盘可跳过",
+      "lm.yourTurn": "到你了!",
+      "lm.answerShown": "已为你标出答案",
+      "lm.demoing": "👀 演示中 —— 点击棋盘跳过,看完就轮到你",
+      "lm.taskDone": "✅ 完成!",
+      "lm.tapNext": "点「下一课」继续",
+      "lm.allDone": "全部课程完成!",
+      "lm.sparThinking": "陪练思考中…",
+      "lm.wrongSquare": "不是这格 —— {0}",
+      "lm.onlyPiece": "这一课请只用{0}",
+      "lm.stalemateFail": "逼和了!黑王没被将军又无路可走,判和 —— 重来",
+      "lm.retry": "没达成目标,再试试",
+      "lm.promoWin": "升变成功!K+Q 收官你早就会了",
+      "lm.mateDefLost": "被将死了 —— 防守失败,重来",
+      "lm.blackQueened": "黑兵升变了 —— 防守失败,重来",
+      "lm.mated": "被将死了 —— 重来",
+      "lm.stalemated": "逼和了 —— 和棋,重来",
+      "lm.drawn": "和棋了 —— 重来",
+      "lm.noEngine": "引擎不可用,无法陪练",
+      "lm.lostMaterial": "大子丢了,无法将杀 —— 重来",
+      "lm.nextSubtask": "完成!下一小题",
+      "lm.lessonDone": "🎉 课程完成:{0}",
+      "lm.toBeginnerAi": "去人机·新手",
+      "lm.restarted": "本课重来",
+      "lm.noDemo": "本任务没有演示",
+      "lm.progressReset": "教学进度已重置",
+      "lm.firstGame": "人机对弈 · 新手 —— 开始你的第一局!",
+      // puzzle mode (pz.*)
+      "pz.forcing": "强制手段",
+      "pz.goalOp": "{0} · 执白照谱走完 {1} 回合",
+      "pz.goalWin": "{0} · 白先,吃掉最大的战利品(净得 {1} 分)",
+      "pz.goalTac": "{0} · {1} · 白先强制得子(净得 {2} 分)",
+      "pz.goalMate": "{0} · 白先,{1}步内将死",
+      "pz.n.1": "一", "pz.n.2": "两", "pz.n.3": "三",
+      "pz.wrongCapture": "吃它不划算 —— 数数保护者再算算分",
+      "pz.biggerPrize": "有更大的战利品等着你",
+      "pz.findMotif": "找{0} —— 先用将军逼住对方",
+      "pz.takeTarget": "抓住时机吃掉目标子",
+      "pz.offBook": "这不是谱着",
+      "pz.notMateYetMove": "还不是将死 —— 黑方可走 {0}",
+      "pz.notMateYet": "还不是将死",
+      "pz.refuted": "不能强制将死 —— 黑方可用 {0} 化解",
+      "pz.noForcedMate": "这步不能强制将死",
+      "pz.seeAnswer": " —— 点「答案」看正解",
+      "pz.tryAgain": " —— 再试试",
+      "pz.doneOp": "背谱完成", "pz.doneWin": "得子成功", "pz.doneMate": "解出",
+      "pz.reviewEmptyDone": "错题都清光了 · 干得漂亮!",
+      "pz.missedCount": "错题 {0} 道",
+      "pz.solvedCount": "已解 {0}/{1}",
+      "pz.solvedNext": "✅ 解出!点「下一题」继续",
+      "pz.nth": "第 {0} 题",
+      "pz.idea": "思路",
+      "pz.chip": "题 {0}/{1}",
+      "pz.noMissed": "还没有错题 —— 答错或看答案的题会进复习",
+      "pz.restarted": "重新开始本题",
+      // roles shown beside the clocks
+      "role.student": "学员(执白)", "role.sparring": "引擎陪练",
+      "role.you": "你(执白)", "role.puzzle": "题目",
+      // confirm dialogs (dlg.*)
+      "dlg.newGame": "开始新局将清空当前对局，是否继续？",
+      "dlg.retryHere": "从第 {0} 着继续重下,其后 {1} 着将被丢弃,是否继续?",
+      "dlg.resign": "{0}认输,结束本局?",
+      "dlg.whoResigns": "哪一方认输?",
+      "dlg.whiteResigns": "白方认输", "dlg.blackResigns": "黑方认输",
+      "dlg.drawBoth": "双方都同意和棋吗?",
+      "dlg.drawAgree": "同意和棋", "dlg.drawPlayOn": "继续下",
+      "dlg.exportPgn": "导出 PGN", "dlg.openPgn": "打开 PGN",
+      "dlg.pickGame": "这份 PGN 含 {0} 局,选择要导入的一局",
+      "dlg.importPgn": "导入将替换当前对局，是否继续？",
+      "dlg.importPgnTitle": "导入 PGN", "dlg.import": "导入",
+      "dlg.clearStats": "清零人机对局统计?", "dlg.clearStatsTitle": "清零统计",
+      "dlg.resetLearn": "清空全部教学进度,从第一课重新开始?", "dlg.resetLearnTitle": "重置教学",
+      "dlg.clearSave": "清除自动存档并开始新局？", "dlg.clear": "清除",
+      "dlg.loadSlot": "读取存档槽将替换当前对局，是否继续？",
+      "dlg.loadSlotTitle": "读取存档槽", "dlg.loadSlotOk": "读取",
+      // misc runtime messages (mm.*)
+      "mm.flagWin": "{0}超时 · {1}胜",
+      "mm.promoted": "已升变为{0}",
+      "mm.goLiveFirst": "请先「回到最新一着」再走子",
+      "mm.backToMove": "已回到第 {0} 着,继续对弈",
+      "mm.resignWin": "{0}认输 · {1}胜",
+      "mm.blunder": "⚠️ 刚才的 {0} 可能是严重失误 —— 可按 Z 悔棋重想",
+      "mm.plies": "{0} 着",
+      "mm.moveCount.one": "{0} 回合", "mm.moveCount.other": "{0} 回合",
+      "mm.clipboard": "剪贴板",
+      "mm.positionLoaded": "已载入局面",
+      "mm.learnMode": "教学模式 · 从零学国际象棋",
+      "mm.puzzleMode": "做题练习 · 白先将死",
+      "mm.clockSet": "棋钟 · 每方 {0} 分钟",
+      "mm.clockInc": ",每步 +{0} 秒",
+      "mm.langSwitched": "语言:中文",
+      "mm.engineInitFailed": "引擎初始化失败",
+      "an.pv": "引擎主变",
+      "stats.wld": "{0}胜 {1}负 {2}和",
+      "themeName.wood": "木色", "themeName.night": "夜色",
+      "themeName.day": "日间", "themeName.notebook": "纸本",
+      "aria.boardKeys": "棋盘 · 方向键移动光标,回车选子与落子,Esc 取消选择",
+      "aria.panel": "侧栏", "aria.side": "对局面板", "aria.board": "棋盘",
+      "aria.lessonList": "课程列表", "aria.puzzleList": "题目列表", "aria.puzzleTier": "题目难度",
+      "aria.palette": "棋子", "aria.moveList": "着法列表", "aria.evalCurve": "局势曲线",
+      "aria.promo": "升变", "aria.pick": "选择", "aria.fen": "载入 FEN", "aria.confirm": "确认",
+      "promo.title": "升变为", "pick.title": "选择",
+      "pz.cat": "题型", "pz.cat.m1": "一步杀", "pz.cat.m2": "两步杀", "pz.cat.m3": "三步杀",
+      "pz.cat.win": "吃子", "pz.cat.tac": "战术", "pz.cat.op": "开局", "pz.cat.review": "复习",
       "chrome.hint": "提示", "chrome.undo": "悔棋", "chrome.flip": "翻转", "chrome.new": "新局",
       "chrome.panel": "侧栏", "chrome.answer": "答案", "chrome.thinking": "思考中",
       "side.game": "对局", "side.mode": "模式", "side.difficulty": "难度", "side.color": "执子",
@@ -162,6 +283,7 @@
       "ed.eraser": "橡皮:点格子清除棋子",
       "ed.hint": "选棋子 → 点棋盘", "ed.turn": "轮到", "ed.castling": "易位权",
       "ed.white": "白方", "ed.black": "黑方",
+      "ed.crK": "白 O-O", "ed.crQ": "白 O-O-O", "ed.crk": "黑 O-O", "ed.crq": "黑 O-O-O",
       "fen.title": "载入 FEN 局面", "fen.fromClip": "从剪贴板粘贴",
       "hint.analysis": "分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误",
       "acc.label": "准确率", "acc.loss": "失分",
@@ -237,6 +359,123 @@
     },
     en: {
       "lang.name": "English",
+      // post-game review (rv.*)
+      "rv.title": "Game review",
+      "rv.opening": "Opening",
+      "rv.sideLine": "Accuracy {0}% · avg loss {1} · inaccuracies {2} / mistakes {3} / blunders {4}",
+      "rv.turningPoint": "Turning point: move {0}, {1} played {2}, costing {3} pawns — tap to jump",
+      "rv.jumpTip": "Jump to the position after this move",
+      "rv.verdict.blunders": "Too many blunders — check every enemy check, capture and fork before you move",
+      "rv.verdict.oneBlunder": "One blunder decided it — find it, and next game costs you nothing",
+      "rv.verdict.mistakes": "Several mistakes — calculate one more of your opponent's replies before moving",
+      "rv.verdict.excellent": "Excellent play — time to try a harder level",
+      "rv.verdict.solid": "Solid play — keep it up",
+      "rv.verdict.roomToGrow": "Room to grow — head to Puzzles to sharpen your tactics",
+      // learn mode (lm.*) — task prompts, feedback and drill outcomes
+      "lm.demoIntro": "Watch the demo first — click the board to skip",
+      "lm.yourTurn": "Your turn!",
+      "lm.answerShown": "The answer is marked for you",
+      "lm.demoing": "👀 Demo running — click the board to skip; then it's your turn",
+      "lm.taskDone": "✅ Done! ",
+      "lm.tapNext": "Tap \u201cNext lesson\u201d to continue",
+      "lm.allDone": "Every lesson complete!",
+      "lm.sparThinking": "Sparring partner thinking…",
+      "lm.wrongSquare": "Not that square — {0}",
+      "lm.onlyPiece": "This lesson is for the {0} only",
+      "lm.stalemateFail": "Stalemate! The black king is not in check but has no move, so it's a draw — start over",
+      "lm.retry": "That didn't meet the goal, try again",
+      "lm.promoWin": "Promoted! You already know how to finish with K+Q",
+      "lm.mateDefLost": "Checkmated — the defence failed, start over",
+      "lm.blackQueened": "Black promoted — the defence failed, start over",
+      "lm.mated": "Checkmated — start over",
+      "lm.stalemated": "Stalemate — a draw, start over",
+      "lm.drawn": "Drawn — start over",
+      "lm.noEngine": "Engine unavailable, no sparring partner",
+      "lm.lostMaterial": "You lost the heavy piece and can no longer mate — start over",
+      "lm.nextSubtask": "Done! Next step",
+      "lm.lessonDone": "🎉 Lesson complete: {0}",
+      "lm.toBeginnerAi": "Play the Beginner engine",
+      "lm.restarted": "Lesson restarted",
+      "lm.noDemo": "This task has no demo",
+      "lm.progressReset": "Lesson progress reset",
+      "lm.firstGame": "Beginner engine — time for your first game!",
+      // puzzle mode (pz.*)
+      "pz.forcing": "a forcing line",
+      "pz.goalOp": "{0} · play the book line as White for {1} moves",
+      "pz.goalWin": "{0} · White to play, take the biggest prize (net gain {1})",
+      "pz.goalTac": "{0} · {1} · White to play, win material by force (net gain {2})",
+      "pz.goalMate": "{0} · White to play, mate in {1}",
+      "pz.n.1": "1", "pz.n.2": "2", "pz.n.3": "3",
+      "pz.wrongCapture": "That capture loses material — count the defenders and do the maths",
+      "pz.biggerPrize": "There is a bigger prize waiting",
+      "pz.findMotif": "Look for {0} — force the issue with a check first",
+      "pz.takeTarget": "Now take the piece you were aiming at",
+      "pz.offBook": "That is not the book move",
+      "pz.notMateYetMove": "Not mate yet — Black can play {0}",
+      "pz.notMateYet": "Not mate yet",
+      "pz.refuted": "That does not force mate — Black holds with {0}",
+      "pz.noForcedMate": "That move does not force mate",
+      "pz.seeAnswer": " — tap \u201cAnswer\u201d to see the solution",
+      "pz.tryAgain": " — try again",
+      "pz.doneOp": "Line complete", "pz.doneWin": "Material won", "pz.doneMate": "Solved",
+      "pz.reviewEmptyDone": "Review queue cleared · nicely done!",
+      "pz.missedCount": "{0} to review",
+      "pz.solvedCount": "Solved {0}/{1}",
+      "pz.solvedNext": "✅ Solved! Tap \u201cNext\u201d to continue",
+      "pz.nth": "Puzzle {0}",
+      "pz.idea": "Idea",
+      "pz.chip": "{0}/{1}",
+      "pz.noMissed": "Nothing to review yet — puzzles you miss or reveal land here",
+      "pz.restarted": "Puzzle restarted",
+      // roles shown beside the clocks
+      "role.student": "Student (White)", "role.sparring": "Engine sparring",
+      "role.you": "You (White)", "role.puzzle": "Puzzle",
+      // confirm dialogs (dlg.*)
+      "dlg.newGame": "Starting a new game discards the current one. Continue?",
+      "dlg.retryHere": "Resume from move {0} and discard the {1} moves after it. Continue?",
+      "dlg.resign": "{0} resigns and ends the game?",
+      "dlg.whoResigns": "Which side resigns?",
+      "dlg.whiteResigns": "White resigns", "dlg.blackResigns": "Black resigns",
+      "dlg.drawBoth": "Do both players agree to a draw?",
+      "dlg.drawAgree": "Agree to a draw", "dlg.drawPlayOn": "Play on",
+      "dlg.exportPgn": "Export PGN", "dlg.openPgn": "Open PGN",
+      "dlg.pickGame": "This PGN holds {0} games — choose the one to import",
+      "dlg.importPgn": "Importing replaces the current game. Continue?",
+      "dlg.importPgnTitle": "Import PGN", "dlg.import": "Import",
+      "dlg.clearStats": "Clear the engine-game statistics?", "dlg.clearStatsTitle": "Clear statistics",
+      "dlg.resetLearn": "Erase all lesson progress and start again from lesson 1?", "dlg.resetLearnTitle": "Reset lessons",
+      "dlg.clearSave": "Clear the autosave and start a new game?", "dlg.clear": "Clear",
+      "dlg.loadSlot": "Loading this slot replaces the current game. Continue?",
+      "dlg.loadSlotTitle": "Load save slot", "dlg.loadSlotOk": "Load",
+      // misc runtime messages (mm.*)
+      "mm.flagWin": "{0} flagged · {1} wins",
+      "mm.promoted": "Promoted to {0}",
+      "mm.goLiveFirst": "Return to the latest move before playing",
+      "mm.backToMove": "Back at move {0} — play on",
+      "mm.resignWin": "{0} resigned · {1} wins",
+      "mm.blunder": "⚠️ {0} may have been a serious mistake — press Z to take it back",
+      "mm.plies": "{0} moves",
+      "mm.moveCount.one": "{0} move", "mm.moveCount.other": "{0} moves",
+      "mm.clipboard": "clipboard",
+      "mm.positionLoaded": "Position loaded",
+      "mm.learnMode": "Lessons · learn chess from scratch",
+      "mm.puzzleMode": "Puzzles · White to play and mate",
+      "mm.clockSet": "Clock · {0} minutes each",
+      "mm.clockInc": ", +{0}s per move",
+      "mm.langSwitched": "Language: English",
+      "mm.engineInitFailed": "Engine failed to start",
+      "an.pv": "Engine main line",
+      "stats.wld": "{0}W {1}L {2}D",
+      "themeName.wood": "Wood", "themeName.night": "Night",
+      "themeName.day": "Day", "themeName.notebook": "Notebook",
+      "aria.boardKeys": "Chessboard · arrow keys move the cursor, Enter selects and plays, Esc clears the selection",
+      "aria.panel": "Side panel", "aria.side": "Game panel", "aria.board": "Chessboard",
+      "aria.lessonList": "Lesson list", "aria.puzzleList": "Puzzle list", "aria.puzzleTier": "Puzzle difficulty",
+      "aria.palette": "Pieces", "aria.moveList": "Move list", "aria.evalCurve": "Evaluation graph",
+      "aria.promo": "Promotion", "aria.pick": "Choose", "aria.fen": "Load FEN", "aria.confirm": "Confirm",
+      "promo.title": "Promote to", "pick.title": "Choose",
+      "pz.cat": "Type", "pz.cat.m1": "Mate in 1", "pz.cat.m2": "Mate in 2", "pz.cat.m3": "Mate in 3",
+      "pz.cat.win": "Win material", "pz.cat.tac": "Tactics", "pz.cat.op": "Openings", "pz.cat.review": "Review",
       "chrome.hint": "Hint", "chrome.undo": "Undo", "chrome.flip": "Flip", "chrome.new": "New",
       "chrome.panel": "Panel", "chrome.answer": "Answer", "chrome.thinking": "Thinking",
       "side.game": "Game", "side.mode": "Mode", "side.difficulty": "Level", "side.color": "Side",
@@ -381,6 +620,7 @@
       "ed.eraser": "Eraser: click a square to clear it",
       "ed.hint": "pick a piece → click the board", "ed.turn": "To move", "ed.castling": "Castling rights",
       "ed.white": "White", "ed.black": "Black",
+      "ed.crK": "White O-O", "ed.crQ": "White O-O-O", "ed.crk": "Black O-O", "ed.crq": "Black O-O-O",
       "fen.title": "Load a FEN position", "fen.fromClip": "Paste from clipboard",
       "hint.analysis": "After analysing, click the curve to jump · ?! inaccuracy · ? mistake · ?? blunder",
       "acc.label": "Accuracy", "acc.loss": "avg loss",
@@ -476,7 +716,30 @@
     return key in base ? base[key] : key;
   }
 
-  /** Apply translations to every [data-i18n] / [data-i18n-title] in `root`. */
+  /**
+   * Translate with positional substitution: `{0}`, `{1}`, … are replaced by
+   * `vals` in order. Sentences that splice in a value need this rather than
+   * string concatenation — word order is not the same in every language, and
+   * a concatenated "还不是将死 —— 黑方可走 " + move cannot be rendered as
+   * "Not mate yet — Black escapes with " + move without hard-coding it.
+   * @param {string} key
+   * @param {Array} vals
+   */
+  function tf(key, vals) {
+    const s = t(key);
+    return s.replace(/\{(\d+)\}/g, (m, i) => {
+      const v = vals && vals[Number(i)];
+      return v === undefined || v === null ? "" : String(v);
+    });
+  }
+
+  /**
+   * Apply translations to every annotated node in `root`:
+   * `data-i18n` → text, `data-i18n-title` → tooltip, `data-i18n-aria` →
+   * aria-label. The aria pass matters as much as the visible one: an
+   * untranslated aria-label is a screen-reader user hearing the wrong
+   * language, which is invisible to anyone testing by eye.
+   */
   function apply(root) {
     const scope = root || (typeof document !== "undefined" ? document : null);
     if (!scope) return;
@@ -486,7 +749,10 @@
     scope.querySelectorAll("[data-i18n-title]").forEach((el) => {
       el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
     });
+    scope.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+      el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria")));
+    });
   }
 
-  global.ChessI18n = { t, apply, setLang, getLang, available, DICT };
+  global.ChessI18n = { t, tf, apply, setLang, getLang, available, DICT };
 })(typeof window !== "undefined" ? window : globalThis);

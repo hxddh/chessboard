@@ -6,6 +6,8 @@
 
   const I18n = window.ChessI18n;
   const t = I18n ? I18n.t : (k) => k;
+  /** t() with {0}/{1} placeholders filled in — see i18n.tf */
+  const tf = I18n ? I18n.tf : (k) => k;
 
   const SAVE_KEY = "chess.v1.save";
   const SETTINGS_KEY = "chess.v1.settings";
@@ -163,8 +165,8 @@
    * optional third button (buttons.alt) was offered and chosen.
    */
   function confirmNative(message, title, buttons) {
-    const okLabel = (buttons && buttons.ok) || "确定";
-    const cancelLabel = (buttons && buttons.cancel) || "取消";
+    const okLabel = (buttons && buttons.ok) || t("act.ok");
+    const cancelLabel = (buttons && buttons.cancel) || t("act.cancel");
     const altLabel = buttons && buttons.alt;
     const modal = document.getElementById("confirm-modal");
     const titleEl = document.getElementById("confirm-title");
@@ -176,7 +178,7 @@
       try { return Promise.resolve(!!window.confirm(message)); }
       catch (_) { return Promise.resolve(true); }
     }
-    if (titleEl) titleEl.textContent = title || "确认";
+    if (titleEl) titleEl.textContent = title || t("aria.confirm");
     if (msgEl) msgEl.textContent = message;
     okBtn.textContent = okLabel;
     cancelBtn.textContent = cancelLabel;
@@ -210,11 +212,12 @@
       if (typeof s.coachOn === "boolean") coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") langId = I18n.setLang(s.langId);
+      if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) puzzleTierFilter = s.puzzleTier;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter }));
     } catch (_) {}
   }
   function saveGame() {
@@ -325,7 +328,7 @@
     const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
     hintMove = { from, to };
     sync();
-    toast("提示 · " + (vmv ? vmv.san : from + " → " + to));
+    toast(t("chrome.hint") + " · " + (vmv ? vmv.san : from + " → " + to));
   }
 
   // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
@@ -390,7 +393,7 @@
       sync();
       const who = side === "w" ? t("m.04") : t("m.05");
       toast(isDraw ? who + t("m.06") :
-        who + "超时 · " + (side === "w" ? t("m.05") : t("m.04")) + "胜");
+        tf("mm.flagWin", [who, side === "w" ? t("m.05") : t("m.04")]));
       return;
     }
     renderClocks();
@@ -422,7 +425,9 @@
     const map = new Map();
     let maxPly = 0;
     for (const [eco, name, seq] of window.CHESS_OPENINGS || []) {
-      map.set(seq, eco + " · " + name);
+      // store the parts, not the joined label: the name is localised at render
+      // time so switching language relabels the line already on screen
+      map.set(seq, [eco, name]);
       maxPly = Math.max(maxPly, seq.split(" ").length);
     }
     return { map, maxPly };
@@ -442,9 +447,9 @@
   function renderOpening() {
     const el = document.getElementById("opening-line");
     if (!el) return;
-    const name = mode === "learn" || mode === "puzzle" ? null : openingFor(viewIndex);
-    el.hidden = !name;
-    el.textContent = name || "";
+    const hit = mode === "learn" || mode === "puzzle" ? null : openingFor(viewIndex);
+    el.hidden = !hit;
+    el.textContent = hit ? hit[0] + " · " + openingName(hit[1]) : "";
   }
 
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
@@ -476,6 +481,32 @@
     };
   }
 
+  /**
+   * Localised puzzle prose. Same split as the lessons: puzzles.js owns the
+   * chess (fen, solution, gain), puzzles-en.js owns only the words, so a
+   * translation can never disagree with what the puzzle actually is.
+   */
+  function puzzleEn(p) {
+    return langId !== "zh-CN" && window.CHESS_PUZZLES_EN ? window.CHESS_PUZZLES_EN[p.id] : null;
+  }
+  function puzzleName(p) {
+    const tr = puzzleEn(p);
+    return (tr && tr.name) || p.name;
+  }
+  function puzzleMotif(p) {
+    const tr = puzzleEn(p);
+    return (tr && tr.motif) || p.motif || t("pz.forcing");
+  }
+  function puzzleIdea(p) {
+    const tr = puzzleEn(p);
+    return (tr && tr.idea) || p.idea || "";
+  }
+  /** Localised opening name, looked up by its Chinese name (the stable key). */
+  function openingName(zh) {
+    const tbl = langId !== "zh-CN" ? window.CHESS_OPENINGS_EN : null;
+    return (tbl && tbl[zh]) || zh;
+  }
+
   function loadLearnState() {
     try {
       const s = JSON.parse(Host.storageGet(LEARN_KEY) || "null");
@@ -505,11 +536,11 @@
   }
 
   function startLearnTask() {
-    const t = curTask();
+    const task = curTask();
     learn.token++;
     BoardView.cancelAnim();
-    learn.g = new Chess(t.fen);
-    learn.stars = new Set(t.stars || []);
+    learn.g = new Chess(task.fen);
+    learn.stars = new Set(task.stars || []);
     learn.tapStep = 0;
     learn.last = null;
     learn.done = false;
@@ -521,7 +552,7 @@
     learn.demoing = false;
     selection = null;
     // first visit to an unfinished lesson: show the solution once, then reset
-    if (learn.wantDemo && t.solution && (t.type === "stars" || t.type === "move")) {
+    if (learn.wantDemo && task.solution && (task.type === "stars" || task.type === "move")) {
       learn.wantDemo = false;
       runLessonDemo();
       return;
@@ -531,12 +562,12 @@
 
   /** Auto-play the task's solution as a watch-first demo; any board click skips. */
   function runLessonDemo() {
-    const t = curTask();
-    const sol = t.solution;
+    const task = curTask();
+    const sol = task.solution;
     learn.demoing = true;
     const token = learn.token;
     let i = 0;
-    toast("先看一遍演示 —— 点击棋盘可跳过");
+    toast(t("lm.demoIntro"));
     sync();
     const step = () => {
       if (!learn || learn.token !== token) return;
@@ -554,7 +585,7 @@
         : g.move(s);
       if (!mv) { endLessonDemo(); return; }
       learn.last = { from: mv.from, to: mv.to };
-      if (t.type === "stars") {
+      if (task.type === "stars") {
         if (learn.stars.has(mv.to)) learn.stars.delete(mv.to);
         // hand the turn back, exactly like real star play
         const f = g.fen().split(" ");
@@ -569,14 +600,14 @@
   }
 
   function endLessonDemo() {
-    const t = curTask();
+    const task = curTask();
     learn.demoing = false;
-    learn.g = new Chess(t.fen);
-    learn.stars = new Set(t.stars || []);
+    learn.g = new Chess(task.fen);
+    learn.stars = new Set(task.stars || []);
     learn.last = null;
     selection = null;
     sync();
-    toast("到你了!");
+    toast(t("lm.yourTurn"));
   }
 
   function skipLessonDemo() {
@@ -586,11 +617,11 @@
 
   function learnModel() {
     const g = learn.g;
-    const t = curTask();
+    const task = curTask();
     let stars = Array.from(learn.stars);
     // stuck-help: after repeated misses, highlight the tap answer with stars
-    if (learn.helpOn && t.type === "tap" && learn.tapStep < t.steps.length) {
-      stars = t.steps[learn.tapStep].squares;
+    if (learn.helpOn && task.type === "tap" && learn.tapStep < task.steps.length) {
+      stars = task.steps[learn.tapStep].squares;
     }
     return {
       position: g.board(),
@@ -611,15 +642,15 @@
     learn.misses++;
     if (learn.misses < 2 || learn.helpOn) return;
     learn.helpOn = true;
-    const t = curTask();
-    if (t.type === "move" && t.solution && t.solution.length) {
+    const task = curTask();
+    if (task.type === "move" && task.solution && task.solution.length) {
       try {
-        const probe = new Chess(t.fen);
-        const mv = probe.move(t.solution[0]);
+        const probe = new Chess(task.fen);
+        const mv = probe.move(task.solution[0]);
         if (mv) learn.helpArrow = { from: mv.from, to: mv.to };
       } catch (_) {}
     }
-    toast("已为你标出答案");
+    toast(t("lm.answerShown"));
     sync();
   }
 
@@ -633,35 +664,35 @@
   }
 
   function learnTaskText() {
-    const t = curTask();
-    if (learn.demoing) return "👀 演示中 —— 点击棋盘跳过,看完就轮到你";
-    if (learn.done) return "✅ 完成!" + (learn.li + 1 < LESSONS.length ? "点「下一课」继续" : "全部课程完成!");
+    const task = curTask();
+    if (learn.demoing) return t("lm.demoing");
+    if (learn.done) return t("lm.taskDone") + (learn.li + 1 < LESSONS.length ? t("lm.tapNext") : t("lm.allDone"));
     const tx = taskText(curLesson(), learn.ti);
-    if (t.type === "tap") return tx.step(learn.tapStep) + "(" + (learn.tapStep + 1) + "/" + t.steps.length + ")";
-    if (t.type === "drill" && learn.engineBusy) return "陪练思考中…";
-    return t.prompt;
+    if (task.type === "tap") return tx.step(learn.tapStep) + "(" + (learn.tapStep + 1) + "/" + task.steps.length + ")";
+    if (task.type === "drill" && learn.engineBusy) return t("lm.sparThinking");
+    return task.prompt;
   }
 
   function learnClick(sq) {
     if (!learn || learn.done) return;
     if (learn.demoing) { skipLessonDemo(); return; }
-    const t = curTask();
-    if (t.type === "tap") {
-      if (t.steps[learn.tapStep].squares.includes(sq)) {
+    const task = curTask();
+    if (task.type === "tap") {
+      if (task.steps[learn.tapStep].squares.includes(sq)) {
         learn.tapStep++;
         learn.helpOn = false;
         learn.misses = 0;
         Audio2.playStar();
         learnFlash(sq);
-        if (learn.tapStep >= t.steps.length) learnTaskDone();
+        if (learn.tapStep >= task.steps.length) learnTaskDone();
         else sync();
       } else {
-        toast("不是这格 —— " + t.steps[learn.tapStep].tip);
+        toast(tf("lm.wrongSquare", [task.steps[learn.tapStep].tip]));
         learnRegisterMiss();
       }
       return;
     }
-    if (t.type === "drill" && learn.engineBusy) return;
+    if (task.type === "drill" && learn.engineBusy) return;
     const g = learn.g;
     if (g.game_over()) return;
     const piece = g.get(sq);
@@ -675,14 +706,14 @@
       learnMove(from, sq, "q");
       return;
     }
-    if (piece && piece.color === "w" && g.turn() === "w" && (!t.only || piece.type === t.only)) {
+    if (piece && piece.color === "w" && g.turn() === "w" && (!task.only || piece.type === task.only)) {
       const targets = g.moves({ square: sq, verbose: true }).map((m) => m.to);
       selection = targets.length ? { sq, targets } : null;
       draw();
       return;
     }
-    if (t.only && piece && piece.color === "w" && piece.type !== t.only) {
-      toast("这一课请只用" + (PIECE_NAMES[t.only] || "指定棋子"));
+    if (task.only && piece && piece.color === "w" && piece.type !== task.only) {
+      toast(tf("lm.onlyPiece", [PIECE_NAMES[task.only]]));
       return;
     }
     if (selection) { selection = null; draw(); }
@@ -697,7 +728,7 @@
   }
 
   function learnMove(from, to, promotion) {
-    const t = curTask();
+    const task = curTask();
     const g = learn.g;
     const mv = g.move({ from, to, promotion });
     if (!mv) return;
@@ -706,7 +737,7 @@
     learn.helpArrow = null;
     BoardView.animateMove(mv.from, mv.to);
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
-    if (t.type === "stars") {
+    if (task.type === "stars") {
       if (learn.stars.has(mv.to)) {
         learn.stars.delete(mv.to);
         Audio2.playStar();
@@ -720,45 +751,46 @@
       sync();
       return;
     }
-    if (t.type === "move") {
+    if (task.type === "move") {
       const okByGoal =
-        t.goal === "any" ? true :
-        t.goal === "check" ? g.in_check() :
-        t.goal === "mate" ? g.in_checkmate() :
-        t.goal === "castle-k" ? mv.flags.includes("k") :
-        t.goal === "castle-q" ? mv.flags.includes("q") :
-        t.goal === "ep" ? mv.flags.includes("e") :
-        t.goal === "promote" ? !!mv.promotion :
-        t.goal === "capture" ? (mv.to === t.target && !!mv.captured) :
-        t.goal === "one-of" ? (Array.isArray(t.accept) && t.accept.includes(mv.san)) :
+        task.goal === "any" ? true :
+        task.goal === "check" ? g.in_check() :
+        task.goal === "mate" ? g.in_checkmate() :
+        task.goal === "castle-k" ? mv.flags.includes("k") :
+        task.goal === "castle-q" ? mv.flags.includes("q") :
+        task.goal === "ep" ? mv.flags.includes("e") :
+        task.goal === "promote" ? !!mv.promotion :
+        task.goal === "capture" ? (mv.to === task.target && !!mv.captured) :
+        task.goal === "one-of" ? (Array.isArray(task.accept) && task.accept.includes(mv.san)) :
         // safe: the moved piece cannot be captured by any reply
-        t.goal === "safe" ? !g.moves({ verbose: true }).some((m) => m.to === mv.to) :
-        t.goal === "draw-insufficient" ? g.insufficient_material() : false;
+        task.goal === "safe" ? !g.moves({ verbose: true }).some((m) => m.to === mv.to) :
+        task.goal === "draw-insufficient" ? g.insufficient_material() : false;
       if (okByGoal) {
-        if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
+        if (mv.promotion) toast(tf("mm.promoted", [PROMO_NAMES[mv.promotion]]));
         learnTaskDone();
         return;
       }
-      if (t.failOnStalemate && g.in_stalemate()) {
+      if (task.failOnStalemate && g.in_stalemate()) {
         sync();
-        learnRetryTask("逼和了!黑王没被将军又无路可走,判和 —— 重来");
+        learnRetryTask(t("lm.stalemateFail"));
         return;
       }
       g.undo();
       learn.last = null;
-      toast(t.retry || "没达成目标,再试试");
+      // the translated retry hint, not the raw Chinese one on the task
+      toast(taskText(curLesson(), learn.ti).retry || t("lm.retry"));
       learnRegisterMiss();
       sync();
       return;
     }
-    if (t.type === "drill") {
-      if (t.winOn === "promote" && mv.promotion) {
-        toast("升变成功!K+Q 收官你早就会了");
+    if (task.type === "drill") {
+      if (task.winOn === "promote" && mv.promotion) {
+        toast(t("lm.promoWin"));
         learnTaskDone();
         return;
       }
       sync();
-      const done = drillOutcome(g, t);
+      const done = drillOutcome(g, task);
       if (done === "win") { learnTaskDone(); return; }
       if (done) { learnRetryTask(done); return; }
       learnEngineReply();
@@ -773,16 +805,16 @@
    */
   function drillOutcome(g, task) {
     if (task.winOn === "draw") {
-      if (g.in_checkmate()) return "被将死了 —— 防守失败,重来";
+      if (g.in_checkmate()) return t("lm.mateDefLost");
       if (g.game_over()) return "win"; // stalemate / 50-move / insufficient
       // black queening means the defence has already collapsed
       for (const row of g.board()) for (const p of row) {
-        if (p && p.color === "b" && p.type === "q") return "黑兵升变了 —— 防守失败,重来";
+        if (p && p.color === "b" && p.type === "q") return t("lm.blackQueened");
       }
       return null;
     }
-    if (g.in_checkmate()) return g.turn() === "b" ? "win" : "被将死了 —— 重来";
-    if (g.game_over()) return g.in_stalemate() ? "逼和了 —— 和棋,重来" : "和棋了 —— 重来";
+    if (g.in_checkmate()) return g.turn() === "b" ? "win" : t("lm.mated");
+    if (g.game_over()) return g.in_stalemate() ? t("lm.stalemated") : t("lm.drawn");
     return null;
   }
 
@@ -795,7 +827,7 @@
   }
 
   async function learnEngineReply() {
-    if (!window.ChessEngine) { toast("引擎不可用,无法陪练"); return; }
+    if (!window.ChessEngine) { toast(t("lm.noEngine")); return; }
     const g = learn.g;
     const token = learn.token;
     // drills default to the weakest tier: the sparring partner is there to
@@ -814,15 +846,15 @@
         Audio2.playMove(played.color, { captured: !!played.captured, check: g.in_check() });
       }
     }
-    const t = curTask();
-    const done = drillOutcome(g, t);
+    const task = curTask();
+    const done = drillOutcome(g, task);
     if (done === "win") { sync(); learnTaskDone(); return; }
     if (done) { sync(); learnRetryTask(done); return; }
     // attacking drills need the material that makes the win possible; the
     // defensive one is *expected* to be down material, so skip the check
-    if (t.winOn !== "draw" && !learnHasHeavy(g)) {
+    if (task.winOn !== "draw" && !learnHasHeavy(g)) {
       sync();
-      learnRetryTask("大子丢了,无法将杀 —— 重来");
+      learnRetryTask(t("lm.lostMaterial"));
       return;
     }
     sync();
@@ -869,7 +901,7 @@
     selection = null;
     if (learn.ti + 1 < L.tasks.length) {
       Audio2.playMove("b");
-      toast("完成!下一小题");
+      toast(t("lm.nextSubtask"));
       learn.ti++;
       const token = ++learn.token;
       setTimeout(() => { if (learn && learn.token === token) startLearnTask(); }, 900);
@@ -883,7 +915,7 @@
       saveLearnState();
       checkNewAchievements();
     }
-    toast("🎉 课程完成:" + L.title);
+    toast(tf("lm.lessonDone", [lessonText(L).title]));
     sync();
   }
 
@@ -918,7 +950,7 @@
     const next = document.getElementById("lesson-next");
     if (next) {
       const isLast = learn.li + 1 >= LESSONS.length;
-      next.textContent = isLast ? "去人机·新手" : "下一课";
+      next.textContent = isLast ? t("lm.toBeginnerAi") : t("act.next");
       next.disabled = isLast && !learn.done;
       next.classList.toggle("primary", learn.done);
     }
@@ -949,7 +981,7 @@
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
   const PUZZLE_KEY = "chess.v1.puzzles";
   const PUZZLES = window.CHESS_PUZZLES || [];
-  const PUZZLE_CATS = [["m1", "一步杀"], ["m2", "两步杀"], ["m3", "三步杀"], ["win", "吃子"], ["tac", "战术"], ["op", "开局"], ["review", "复习"]];
+  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "op", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
   const SCRIPTED_CATS = { win: true, op: true, tac: true };
@@ -1034,7 +1066,17 @@
 
   function startPuzzleAt(cat, idx) {
     const list = puzzlesInCat(cat);
-    if (!list.length) { puzzle = null; syncPuzzleUI(); toast(t("pz.noneInTier")); return; }
+    if (!list.length) {
+      // no puzzle survives the filter: clear the board and the counters too,
+      // otherwise the previous puzzle stays on screen and the "n/N" chip keeps
+      // counting a set that is no longer being shown
+      puzzle = null;
+      selection = null;
+      BoardView.cancelAnim();
+      sync();
+      toast(t("pz.noneInTier"));
+      return;
+    }
     idx = ((idx % list.length) + list.length) % list.length;
     puzzleState.cat = cat;
     savePuzzleState();
@@ -1046,7 +1088,7 @@
   }
 
   function startPuzzles() {
-    let cat = PUZZLE_CATS.some(([c]) => c === puzzleState.cat) ? puzzleState.cat : "m1";
+    let cat = PUZZLE_CAT_IDS.includes(puzzleState.cat) ? puzzleState.cat : "m1";
     // don't strand the user on an empty review tab
     if (cat === "review" && !puzzlesInCat("review").length) cat = "m1";
     const list = puzzlesInCat(cat);
@@ -1131,11 +1173,12 @@
 
   function puzzleGoalText() {
     const p = puzzle.p;
-    if (p.cat === "op") return p.name + " · 执白照谱走完 " + Math.ceil(p.line.length / 2) + " 回合";
-    if (p.cat === "win") return p.name + " · 白先,吃掉最大的战利品(净得 " + p.gain + " 分)";
-    if (p.cat === "tac") return p.name + " · " + (p.motif || "战术") + " · 白先强制得子(净得 " + p.gain + " 分)";
-    const n = { m1: "一", m2: "两", m3: "三" }[p.cat] || "?";
-    return p.name + " · 白先," + n + "步内将死";
+    if (p.cat === "op") return tf("pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
+    if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
+    if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
+    // the count is a word in Chinese ("一步"), a numeral in English — so it
+    // goes through the dictionary rather than being interpolated raw
+    return tf("pz.goalMate", [puzzleName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
   }
 
   function puzzleClick(sq) {
@@ -1177,9 +1220,9 @@
       if (mv.san !== script[puzzle.stage]) {
         const c = puzzle.p.cat;
         puzzleWrong(
-          c === "win" ? (mv.captured ? "吃它不划算 —— 数数保护者再算算分" : "有更大的战利品等着你") :
-          c === "tac" ? (puzzle.stage === 0 ? "找" + (puzzle.p.motif || "强制手段") + " —— 先用将军逼住对方" : "抓住时机吃掉目标子") :
-          "这不是谱着");
+          c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
+          c === "tac" ? (puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(puzzle.p)]) : t("pz.takeTarget")) :
+          t("pz.offBook"));
         return;
       }
       puzzle.stage++;
@@ -1201,7 +1244,7 @@
     if (remaining <= 0) {
       // used the last move without mating — explain what black gets to play
       const escape = g.moves()[0];
-      puzzleWrong(escape ? "还不是将死 —— 黑方可走 " + escape : "还不是将死");
+      puzzleWrong(escape ? tf("pz.notMateYetMove", [escape]) : t("pz.notMateYet"));
       return;
     }
     // midpoint: the stored line, or any alternate that still forces mate
@@ -1209,7 +1252,7 @@
     if (!onLine) {
       const refutation = findRefutation(g, remaining);
       if (refutation) {
-        puzzleWrong("不能强制将死 —— 黑方可用 " + refutation + " 化解");
+        puzzleWrong(tf("pz.refuted", [refutation]));
         return;
       }
     }
@@ -1228,8 +1271,8 @@
     puzzle.last = null;
     puzzle.misses++;
     markMissed(puzzle.p.id); // a missed puzzle joins the review queue
-    toast((reason || "这步不能强制将死") +
-      (puzzle.misses >= 2 ? " —— 点「答案」看正解" : " —— 再试试"));
+    toast((reason || t("pz.noForcedMate")) +
+      (puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")));
     sync();
   }
 
@@ -1278,9 +1321,9 @@
       savePuzzleState();
       checkNewAchievements();
     }
-    const verb = puzzle.p.cat === "op" ? "背谱完成" :
-      puzzle.p.cat === "win" || puzzle.p.cat === "tac" ? "得子成功" : "解出";
-    toast("✅ " + verb + " · " + puzzle.p.name);
+    const verb = puzzle.p.cat === "op" ? t("pz.doneOp") :
+      puzzle.p.cat === "win" || puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
+    toast("✅ " + verb + " · " + puzzleName(puzzle.p));
     sync();
   }
 
@@ -1290,7 +1333,7 @@
     if (puzzle.cat === "review") {
       // a clean re-solve shrinks the queue; graduate to m1 when it empties
       if (!list.length) {
-        toast("错题都清光了 · 干得漂亮!");
+        toast(t("pz.reviewEmptyDone"));
         puzzleState.cat = "m1"; savePuzzleState();
         startPuzzles();
         return;
@@ -1317,6 +1360,12 @@
       document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
         b.classList.toggle("active", b.dataset.tier === puzzleTierFilter);
       });
+      document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.cat === puzzleState.cat);
+      });
+      const emptyProg = document.getElementById("puzzle-progress");
+      if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
+        [ALL_PUZZLES.filter((p) => puzzleState.solved[p.id]).length, ALL_PUZZLES.length]);
       const emptyTask = document.getElementById("puzzle-task");
       if (emptyTask) emptyTask.textContent = t("pz.noneInTier");
       const emptyList = document.getElementById("puzzle-list");
@@ -1329,8 +1378,8 @@
     const prog = document.getElementById("puzzle-progress");
     if (prog) {
       prog.textContent = puzzle.cat === "review"
-        ? "错题 " + missedCount + " 道"
-        : "已解 " + solvedAll + "/" + ALL_PUZZLES.length;
+        ? tf("pz.missedCount", [missedCount])
+        : tf("pz.solvedCount", [solvedAll, ALL_PUZZLES.length]);
     }
     document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.tier === puzzleTierFilter);
@@ -1338,20 +1387,20 @@
     document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.cat === puzzle.cat);
       // surface how many are queued for review right on the tab
-      if (b.dataset.cat === "review") b.textContent = missedCount ? "复习·" + missedCount : "复习";
+      if (b.dataset.cat === "review") b.textContent = t("pz.cat.review") + (missedCount ? "·" + missedCount : "");
     });
     const task = document.getElementById("puzzle-task");
     if (task) {
       task.textContent = puzzle.done
-        ? "✅ 解出!点「下一题」继续"
-        : "第 " + (puzzle.idx + 1) + " 题 · " + puzzleGoalText();
+        ? t("pz.solvedNext")
+        : tf("pz.nth", [puzzle.idx + 1]) + " · " + puzzleGoalText();
     }
     // opening drills are rote memorisation without the "why" — show the idea
     const ideaEl = document.getElementById("puzzle-idea");
     if (ideaEl) {
-      const idea = puzzle.p.idea || "";
+      const idea = puzzleIdea(puzzle.p);
       ideaEl.hidden = !idea;
-      ideaEl.textContent = idea ? "思路 · " + idea : "";
+      ideaEl.textContent = idea ? t("pz.idea") + " · " + idea : "";
     }
     const next = document.getElementById("puzzle-next");
     if (next) next.classList.toggle("primary", puzzle.done);
@@ -1363,7 +1412,7 @@
         b.type = "button";
         b.className = "lesson-item" + (i === puzzle.idx ? " current" : "");
         b.dataset.i = String(i);
-        b.textContent = (puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + p.name;
+        b.textContent = (puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p);
         listEl.appendChild(b);
       });
     }
@@ -1530,8 +1579,9 @@
       const a = analysisFor();
       const pv = a && a.pvs ? a.pvs[viewIndex] : null;
       pvEl.hidden = !pv;
-      pvEl.textContent = pv ? "引擎主变 · " + pv : "";
+      pvEl.textContent = pv ? t("an.pv") + " · " + pv : "";
     }
+    renderReview();
     const accEl = document.getElementById("acc-line");
     if (accEl) {
       const a = analysisFor();
@@ -1544,6 +1594,66 @@
             : name + " " + acc[side] + "% (" + t("acc.loss") + " " + acc[side === "w" ? "wAcpl" : "bAcpl"] + ")";
         accEl.textContent = t("acc.label") + " · " + part("w", t("vs.white")) + " · " + part("b", t("vs.black"));
       }
+    }
+  }
+
+  /**
+   * The post-game report: what the analysis actually says, in words.
+   *
+   * The eval curve already shows *where* things went wrong; this answers the
+   * questions a learner asks next — how well did I play, how many of those
+   * marks were mine, and which single move decided the game. The turning-point
+   * row jumps the replay to that move, so the answer is one click from the
+   * position that caused it.
+   */
+  function renderReview() {
+    const el = document.getElementById("review-body");
+    if (!el) return;
+    const R = window.ChessReview;
+    const a = analysisFor();
+    const sum = R && a ? R.summarize(a.scalars, sanHistory(), startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w") : null;
+    el.hidden = !sum;
+    el.innerHTML = "";
+    if (!sum) return;
+
+    const line = (cls) => { const d = document.createElement("div"); d.className = cls; el.appendChild(d); return d; };
+    const head = line("review-h");
+    head.textContent = t("rv.title");
+    const opening = openingFor(sanHistory().length);
+    if (opening) {
+      const o = line("review-row muted");
+      o.textContent = t("rv.opening") + " · " + opening[0] + " " + openingName(opening[1]);
+    }
+    for (const side of ["w", "b"]) {
+      if (sum.acc[side] == null) continue;
+      const c = sum.counts[side];
+      const row = line("review-row");
+      const who = document.createElement("span");
+      who.className = "review-k";
+      who.textContent = t(side === "w" ? "vs.white" : "vs.black");
+      const val = document.createElement("span");
+      val.className = "review-v num";
+      val.textContent = tf("rv.sideLine", [sum.acc[side], sum.acpl[side], c.inaccuracy, c.mistake, c.blunder]);
+      row.append(who, val);
+      const vk = R.verdictKey(sum, side);
+      if (vk) {
+        const note = document.createElement("div");
+        note.className = "review-note muted";
+        note.textContent = t(vk);
+        row.appendChild(note);
+      }
+    }
+    if (sum.worst) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "review-jump";
+      btn.textContent = tf("rv.turningPoint",
+        [sum.worst.moveNo, t(sum.worst.side === "w" ? "vs.white" : "vs.black"), sum.worst.san,
+         (sum.worst.loss / 100).toFixed(1)]);
+      btn.title = t("rv.jumpTip");
+      // land on the position *after* the move, so the damage is on the board
+      btn.onclick = () => setViewIndex(sum.worst.ply + 1);
+      el.appendChild(btn);
     }
   }
 
@@ -1585,11 +1695,11 @@
     ctx.stroke();
     // blunder markers at the position after the tagged move
     for (let i = 0; i < n; i++) {
-      const t = a.tags[i];
-      if (t !== "?" && t !== "??") continue;
+      const tagCh = a.tags[i];
+      if (tagCh !== "?" && tagCh !== "??") continue;
       const s = a.scalars[i + 1];
       if (s == null) continue;
-      ctx.fillStyle = t === "??" ? "#e05252" : "#e0a03c";
+      ctx.fillStyle = tagCh === "??" ? "#e05252" : "#e0a03c";
       ctx.beginPath();
       ctx.arc(x(i + 1), y(s), 2.4 * dpr, 0, Math.PI * 2);
       ctx.fill();
@@ -1655,7 +1765,7 @@
       name.textContent = DIFF_NAMES[k];
       const val = document.createElement("span");
       val.className = "stat-v num";
-      val.textContent = a.win + "胜 " + a.loss + "负 " + a.draw + "和";
+      val.textContent = tf("stats.wld", [a.win, a.loss, a.draw]);
       row.append(name, val);
       el.appendChild(row);
     }
@@ -1842,10 +1952,10 @@
         b.className = "mlmove" + (viewIndex === j + 1 ? " current" : "");
         const tag = a && a.tags[j];
         if (tag) {
-          const t = document.createElement("span");
-          t.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
-          t.textContent = tag;
-          b.appendChild(t);
+          const span = document.createElement("span");
+          span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
+          span.textContent = tag;
+          b.appendChild(span);
         }
         row.appendChild(b);
       }
@@ -1913,7 +2023,7 @@
     document.getElementById("status").textContent = statusText();
     document.getElementById("moves").textContent =
       mode === "learn" ? (learn ? (learn.li + 1) + "/" + LESSONS.length : "—") :
-      mode === "puzzle" ? (puzzle ? "题 " + (puzzle.idx + 1) + "/" + puzzlesInCat(puzzle.cat).length : "—") :
+      mode === "puzzle" ? (puzzle ? tf("pz.chip", [puzzle.idx + 1, puzzlesInCat(puzzle.cat).length]) : "—") :
       viewIndex + "/" + h.length;
     document.getElementById("replay-pos").textContent = viewIndex + " / " + h.length;
     document.getElementById("rep-start").disabled = viewIndex <= 0;
@@ -2029,11 +2139,11 @@
         bRole.textContent = humanColor === "b" ? t("vs.player") : engineName;
       } else if (mode === "learn") {
         const drill = learn && curTask().type === "drill";
-        wRole.textContent = "学员(执白)";
-        bRole.textContent = drill ? "引擎陪练" : "—";
+        wRole.textContent = t("role.student");
+        bRole.textContent = drill ? t("role.sparring") : "—";
       } else if (mode === "puzzle") {
-        wRole.textContent = "你(执白)";
-        bRole.textContent = "题目";
+        wRole.textContent = t("role.you");
+        bRole.textContent = t("role.puzzle");
       } else {
         wRole.textContent = t("vs.p1");
         bRole.textContent = t("vs.p2");
@@ -2067,7 +2177,9 @@
 
   function goLive() { setViewIndex(sanHistory().length); }
 
-  const PROMO_NAMES = { q: "后", r: "车", b: "象", n: "马" };
+  /** localised promotion piece names — read through t() so a language switch
+   * takes effect without rebuilding the table */
+  const PROMO_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
   const PROMO_GLYPHS = {
     w: { q: "♕", r: "♖", b: "♗", n: "♘" },
     b: { q: "♛", r: "♜", b: "♝", n: "♞" },
@@ -2100,7 +2212,7 @@
     applyIncrement(mv.color);
     BoardView.animateMove(mv.from, mv.to);
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: game.in_check() });
-    if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
+    if (mv.promotion) toast(tf("mm.promoted", [PROMO_NAMES[mv.promotion]]));
     if (game.in_checkmate()) Audio2.playWin();
     else if (naturalGameOver()) Audio2.playDraw();
     if (!appGameOver()) syncAutoFlip();
@@ -2115,7 +2227,7 @@
     if (editor) { editorClick(sq); return; }
     if (mode === "learn") { learnClick(sq); return; }
     if (mode === "puzzle") { puzzleClick(sq); return; }
-    if (!isLive()) { toast("请先「回到最新一着」再走子"); return; }
+    if (!isLive()) { toast(t("mm.goLiveFirst")); return; }
     if (naturalGameOver()) return;
     if (flagFall) { toast(t("m.40")); return; }
     if (resigned) { toast(t("m.41")); return; }
@@ -2164,7 +2276,7 @@
   async function requestNewGame() {
     stopEditor(t("m.55"));
     if (sanHistory().length &&
-        !(await confirmNative("开始新局将清空当前对局，是否继续？", "新局", { ok: "新局", cancel: "取消" }))) {
+        !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
     }
     invalidateEngine();
@@ -2188,7 +2300,8 @@
     if (isLive()) return;
     const keep = viewIndex;
     const drop = sanHistory().length - keep;
-    if (!(await confirmNative("从第 " + keep + " 着继续重下,其后 " + drop + " 着将被丢弃,是否继续?", "重下", { ok: "重下", cancel: "取消" }))) {
+    if (!(await confirmNative(tf("dlg.retryHere", [keep, drop]), t("act.retryHere"),
+        { ok: t("act.retryHere"), cancel: t("act.cancel") }))) {
       return;
     }
     const h = sanHistory().slice(0, keep);
@@ -2205,7 +2318,7 @@
     syncAutoFlip();
     sync();
     saveGame();
-    toast("已回到第 " + keep + " 着,继续对弈");
+    toast(tf("mm.backToMove", [keep]));
     maybeEngineTurn();
   }
 
@@ -2215,10 +2328,12 @@
     let side;
     if (mode === "ai") {
       side = humanColor;
-      if (!(await confirmNative((side === "w" ? t("m.04") : t("m.05")) + "认输,结束本局?", "认输", { ok: "认输", cancel: "取消" }))) return;
+      if (!(await confirmNative(tf("dlg.resign", [side === "w" ? t("m.04") : t("m.05")]),
+        t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel") }))) return;
     } else {
       // pvp: either player may resign at any time (FIDE) — pick the side
-      const pick = await confirmNative("哪一方认输?", "认输", { ok: "白方认输", alt: "黑方认输", cancel: "取消" });
+      const pick = await confirmNative(t("dlg.whoResigns"), t("act.resign"),
+        { ok: t("dlg.whiteResigns"), alt: t("dlg.blackResigns"), cancel: t("act.cancel") });
       if (!pick) return;
       side = pick === "alt" ? "b" : "w";
     }
@@ -2229,7 +2344,7 @@
     if (mode === "ai") recordResign();
     saveGame();
     sync();
-    toast(who + "认输 · " + (side === "w" ? t("m.05") : t("m.04")) + "胜");
+    toast(tf("mm.resignWin", [who, side === "w" ? t("m.05") : t("m.04")]));
   }
 
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
@@ -2274,9 +2389,9 @@
       // opponent to move: is there a capture that wins material outright?
       for (const m of g.moves({ verbose: true })) {
         if (!m.captured) continue;
-        const t = new Chess(afterFen);
-        t.move(m);
-        const recapture = t.moves({ verbose: true }).some((r) => r.to === m.to);
+        const probe = new Chess(afterFen);
+        probe.move(m);
+        const recapture = probe.moves({ verbose: true }).some((r) => r.to === m.to);
         const net = PIECE_VALUE[m.captured] - (recapture ? PIECE_VALUE[m.piece] : 0);
         if (net >= 2) return true;
       }
@@ -2304,7 +2419,7 @@
     if (h.length < p.len || h[p.len - 1] !== p.san) return;
     const moverIsWhite = p.before.split(" ")[1] === "w";
     const loss = moverIsWhite ? sa - sb : sb - sa;
-    if (loss >= 300) toast("⚠️ 刚才的 " + p.san + " 可能是严重失误 —— 可按 Z 悔棋重想");
+    if (loss >= 300) toast(tf("mm.blunder", [p.san]));
   }
 
   // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
@@ -2313,7 +2428,8 @@
     if (mode === "learn" || mode === "puzzle" || !isLive() || !sanHistory().length ||
         appGameOver() || drawOfferPending) return;
     if (mode === "pvp") {
-      if (!(await confirmNative("双方都同意和棋吗?", "提和", { ok: "同意和棋", cancel: "继续下" }))) return;
+      if (!(await confirmNative(t("dlg.drawBoth"), t("act.offerDraw"),
+        { ok: t("dlg.drawAgree"), cancel: t("dlg.drawPlayOn") }))) return;
       acceptDraw();
       return;
     }
@@ -2434,7 +2550,7 @@
     const name = pgnFileName();
     if (Host.hasZero()) {
       try {
-        const path = await Host.saveFileDialog({ title: "导出 PGN", defaultName: name });
+        const path = await Host.saveFileDialog({ title: t("dlg.exportPgn"), defaultName: name });
         if (path == null) { toast(t("m.09")); return; }
         await Host.writeTextFile(path, pgn);
         await Host.revealPath(path);
@@ -2487,9 +2603,17 @@
     if (pickResolver) { pickResolver(v); pickResolver = null; }
   }
 
-  async function importPgnText(text, label) {
+  /**
+   * @param {string} text PGN
+   * @param {string} label where it came from (for the toast)
+   * @param {object} [prompt] override the replace-current-game confirmation.
+   * Loading a save slot goes through the same import path, but telling the
+   * user "Import PGN — importing replaces the current game" when they clicked
+   * a save slot describes the plumbing rather than what they did.
+   */
+  async function importPgnText(text, label, prompt) {
     let text0 = (text || "").trim();
-    if (!text0) { toast(t("m.12")); return; }
+    if (!text0) { toast(t("m.12")); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
     // old behaviour) silently threw away everything before it.
     const games = window.ChessPgn ? window.ChessPgn.splitGames(text0) : [text0];
@@ -2498,21 +2622,22 @@
         const s = window.ChessPgn.summary(g);
         return {
           label: (i + 1) + ". " + s.white + " — " + s.black + "  " + s.result,
-          sub: [s.event, s.date, s.plies ? s.plies + " 着" : ""].filter(Boolean).join(" · "),
+          sub: [s.event, s.date, s.plies ? tf("mm.plies", [s.plies]) : ""].filter(Boolean).join(" · "),
         };
       });
-      const pick = await pickFromList("这份 PGN 含 " + games.length + " 局,选择要导入的一局", items);
-      if (pick == null) { toast(t("m.14")); return; }
+      const pick = await pickFromList(tf("dlg.pickGame", [games.length]), items);
+      if (pick == null) { toast(t("m.14")); return false; }
       text0 = games[pick];
     }
+    const ask = prompt || { msg: t("dlg.importPgn"), title: t("dlg.importPgnTitle"), ok: t("dlg.import") };
     if (sanHistory().length &&
-        !(await confirmNative("导入将替换当前对局，是否继续？", "导入 PGN", { ok: "导入", cancel: "取消" }))) {
-      return;
+        !(await confirmNative(ask.msg, ask.title, { ok: ask.ok, cancel: t("act.cancel") }))) {
+      return false;
     }
     const probe = new Chess();
     if (!probe.load_pgn(text0, { sloppy: true }) || !probe.history().length) {
       toast(t("m.13"));
-      return;
+      return false;
     }
     invalidateEngine();
     stopEditor();
@@ -2526,8 +2651,9 @@
     syncAutoFlip();
     sync();
     saveGame();
-    toast(t("m.62") + sanHistory().length + " 着");
+    toast(t("m.62") + moveCount(Math.ceil(sanHistory().length / 2)));
     maybeEngineTurn();
+    return true;
   }
 
   async function pastePgn() {
@@ -2535,7 +2661,7 @@
       // Host bridge first: the packaged WebView may not grant the page
       // clipboard-read permission, but the native side always can.
       const text = await Host.readClipboard();
-      importPgnText(text, "剪贴板");
+      importPgnText(text, t("mm.clipboard"));
     } catch (_) {
       toast(t("m.15"));
     }
@@ -2545,7 +2671,7 @@
   async function openPgnFile() {
     if (Host.hasZero()) {
       try {
-        const picked = await Host.openFileDialog({ title: "打开 PGN" });
+        const picked = await Host.openFileDialog({ title: t("dlg.openPgn") });
         const paths = Host.normalizePaths(picked);
         if (!paths.length) return; // cancelled
         const text = await Host.readTextFile(paths[0]);
@@ -2714,7 +2840,7 @@
     syncAutoFlip();
     sync();
     saveGame();
-    toast(note || "已载入局面");
+    toast(note || t("mm.positionLoaded"));
     maybeEngineTurn();
   }
 
@@ -2778,13 +2904,28 @@
     try { Host.storageSet(SLOTS_KEY, JSON.stringify(s)); } catch (_) {}
   }
 
+  /**
+   * A slot's one-line description, localised *at render time*.
+   *
+   * Slots store the mode and difficulty ids rather than a finished label, so a
+   * game saved in Chinese still reads as English after a language switch;
+   * `slot.label` is only the fallback for slots written before 1.6.
+   */
   function slotSummary(slot) {
     if (!slot) return t("slots.empty");
     const P = window.ChessPgn;
     const s = P ? P.summary(slot.pgn) : null;
     const when = slot.savedAt ? new Date(slot.savedAt).toLocaleString() : "";
-    const moves = s && s.plies ? Math.ceil(s.plies / 2) + t("m.63") : "";
-    return [slot.label || "", moves, when].filter(Boolean).join(" · ");
+    const moves = s && s.plies ? moveCount(Math.ceil(s.plies / 2)) : "";
+    const what = slot.mode
+      ? t(slot.mode === "ai" ? "mode.ai" : "mode.pvp") + (slot.mode === "ai" ? " · " + diffName(slot.diff) : "")
+      : slot.label || "";
+    return [what, moves, when].filter(Boolean).join(" · ");
+  }
+
+  /** "1 move" / "12 moves" — a count needs its own plural form in English. */
+  function moveCount(n) {
+    return tf(n === 1 ? "mm.moveCount.one" : "mm.moveCount.other", [n]);
   }
 
   function renderSlots() {
@@ -2841,7 +2982,8 @@
     st.slots[i] = {
       pgn: pgnForExport(),
       savedAt: Date.now(),
-      label: (mode === "ai" ? t("mode.ai") : t("mode.pvp")) + " · " + diffName(difficulty),
+      mode,
+      diff: difficulty,
     };
     saveSlots(st);
     renderSlots();
@@ -2853,8 +2995,9 @@
     const slot = st.slots[i];
     if (!slot) return;
     closeSlots();
-    await importPgnText(slot.pgn, "slot " + (i + 1));
-    toast(t("slots.loaded") + (i + 1));
+    const ok = await importPgnText(slot.pgn, t("slots.slot") + (i + 1),
+      { msg: t("dlg.loadSlot"), title: t("dlg.loadSlotTitle"), ok: t("dlg.loadSlotOk") });
+    if (ok) toast(t("slots.loaded") + (i + 1));
   }
 
   function deleteSlot(i) {
@@ -2932,10 +3075,10 @@
     if (editor) return true; // every square is paintable
     if (mode === "learn") {
       if (!learn || learn.done || learn.demoing) return false;
-      const t = curTask();
-      if (t.type === "tap") return false;
+      const task = curTask();
+      if (task.type === "tap") return false;
       const p = learn.g.get(sq);
-      return !!p && p.color === "w" && learn.g.turn() === "w" && (!t.only || p.type === t.only);
+      return !!p && p.color === "w" && learn.g.turn() === "w" && (!task.only || p.type === task.only);
     }
     if (mode === "puzzle") {
       if (!puzzle || puzzle.done) return false;
@@ -3015,7 +3158,8 @@
   const FILE_CHARS = "abcdefgh";
   canvas.setAttribute("tabindex", "0");
   canvas.setAttribute("role", "application");
-  canvas.setAttribute("aria-label", "棋盘 · 方向键移动光标,回车选子与落子,Esc 取消选择");
+  canvas.setAttribute("data-i18n-aria", "aria.boardKeys");
+  canvas.setAttribute("aria-label", t("aria.boardKeys"));
 
   function announce(msg) {
     const el = document.getElementById("board-live");
@@ -3140,7 +3284,8 @@
     curveEl.style.cursor = "pointer";
   }
   document.getElementById("stats-clear").onclick = async () => {
-    if (!(await confirmNative("清零人机对局统计?", "清零统计", { ok: "清零", cancel: "取消" }))) return;
+    if (!(await confirmNative(t("dlg.clearStats"), t("dlg.clearStatsTitle"),
+      { ok: t("act.clear"), cancel: t("act.cancel") }))) return;
     try { Host.storageRemove(STATS_KEY); } catch (_) {}
     renderStats();
     renderAchievements();
@@ -3188,8 +3333,7 @@
     const b = ev.target.closest("button[data-theme]");
     if (b) {
       applyTheme(b.dataset.theme);
-      const names = { wood: "木色", night: "夜色", day: "日间", notebook: "纸本" };
-      toast(t("m.67") + (names[themeId] || themeId));
+      toast(t("m.67") + t("themeName." + themeId));
     }
   };
   document.getElementById("mode-seg").onclick = (ev) => {
@@ -3213,25 +3357,26 @@
     sync();
     toast(mode === "ai" ? t("m.64") + (DIFF_NAMES[difficulty] || "") :
       mode === "pvp" ? t("m.65") :
-      mode === "learn" ? "教学模式 · 从零学国际象棋" : "做题练习 · 白先将死");
+      mode === "learn" ? t("mm.learnMode") : t("mm.puzzleMode"));
     maybeEngineTurn();
   };
   document.getElementById("lesson-restart").onclick = () => {
-    if (learn) { startLearnTask(); toast("本课重来"); }
+    if (learn) { startLearnTask(); toast(t("lm.restarted")); }
   };
   document.getElementById("lesson-demo").onclick = () => {
     if (!learn || learn.demoing) return;
-    const t = curTask();
-    if (!t.solution || (t.type !== "stars" && t.type !== "move")) { toast("本任务没有演示"); return; }
+    const task = curTask();
+    if (!task.solution || (task.type !== "stars" && task.type !== "move")) { toast(t("lm.noDemo")); return; }
     learn.wantDemo = true;
     startLearnTask();
   };
   document.getElementById("learn-reset").onclick = async () => {
-    if (!(await confirmNative("清空全部教学进度,从第一课重新开始?", "重置教学", { ok: "重置", cancel: "取消" }))) return;
+    if (!(await confirmNative(t("dlg.resetLearn"), t("dlg.resetLearnTitle"),
+      { ok: t("act.reset"), cancel: t("act.cancel") }))) return;
     learnState = { v: 1, done: {}, last: 0 };
     saveLearnState();
     if (learn) startLesson(0);
-    toast("教学进度已重置");
+    toast(t("lm.progressReset"));
   };
   document.getElementById("lesson-next").onclick = () => {
     if (!learn) return;
@@ -3243,7 +3388,7 @@
     saveSettings();
     selection = null;
     sync();
-    toast("人机对弈 · 新手 —— 开始你的第一局!");
+    toast(t("lm.firstGame"));
     maybeEngineTurn();
   };
   document.getElementById("lesson-list").onclick = (ev) => {
@@ -3252,9 +3397,12 @@
   };
   document.getElementById("puzzle-cat-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-cat]");
-    if (!b || !puzzle || b.dataset.cat === puzzle.cat) return;
+    // `puzzle` is null whenever the tier filter empties the current category —
+    // exactly the moment the user needs these tabs to change category, so this
+    // must not bail out on a missing puzzle
+    if (!b || (puzzle && b.dataset.cat === puzzle.cat)) return;
     if (b.dataset.cat === "review" && !puzzlesInCat("review").length) {
-      toast("还没有错题 —— 答错或看答案的题会进复习");
+      toast(t("pz.noMissed"));
       return;
     }
     puzzleState.cat = b.dataset.cat;
@@ -3265,10 +3413,11 @@
     const b = ev.target.closest("button[data-tier]");
     if (!b || b.dataset.tier === puzzleTierFilter) return;
     puzzleTierFilter = b.dataset.tier;
+    saveSettings();
     startPuzzles();
   };
   document.getElementById("puzzle-retry").onclick = () => {
-    if (puzzle) { startPuzzleAt(puzzle.cat, puzzle.idx); toast("重新开始本题"); }
+    if (puzzle) { startPuzzleAt(puzzle.cat, puzzle.idx); toast(t("pz.restarted")); }
   };
   document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
@@ -3286,7 +3435,7 @@
     sync();
     const tcSet = parseTc(timeControl);
     toast(!tcSet ? t("m.46") :
-      "棋钟 · 每方 " + tcSet.base / 60 + " 分钟" + (tcSet.inc ? ",每步 +" + tcSet.inc + " 秒" : ""));
+      tf("mm.clockSet", [tcSet.base / 60]) + (tcSet.inc ? tf("mm.clockInc", [tcSet.inc]) : ""));
   };
   document.getElementById("diff-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
@@ -3315,7 +3464,7 @@
       langId = I18n.setLang(b.dataset.lang);
       saveSettings();
       applyLanguage();
-      toast(langId === "zh-CN" ? "语言:中文(课程内容仍为中文)" : "Language: English (lesson content stays Chinese)");
+      toast(t("mm.langSwitched"));
     };
   }
   document.getElementById("opt-coach").onclick = () => {
@@ -3339,7 +3488,8 @@
     toast(soundOn ? t("m.47") : t("m.48"));
   };
   document.getElementById("clear-save").onclick = async () => {
-    if (!(await confirmNative("清除自动存档并开始新局？", "清除存档", { ok: "清除", cancel: "取消" }))) return;
+    if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
+      { ok: t("dlg.clear"), cancel: t("act.cancel") }))) return;
     try { Host.storageRemove(SAVE_KEY); } catch (_) {}
     stopEditor();
     invalidateEngine();
@@ -3419,9 +3569,9 @@
     document.getElementById("fen-load").onclick = submitFen;
     document.getElementById("fen-from-clip").onclick = async () => {
       try {
-        const t = await Host.readClipboard();
+        const clip = await Host.readClipboard();
         const input = document.getElementById("fen-input");
-        if (input) { input.value = (t || "").trim(); input.classList.remove("bad"); }
+        if (input) { input.value = (clip || "").trim(); input.classList.remove("bad"); }
         const err = document.getElementById("fen-error");
         if (err) err.textContent = "";
       } catch (_) { toast(t("m.15")); }
@@ -3501,14 +3651,14 @@
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills
       if (!learn || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { startLearnTask(); toast("本课重来"); }
+      if (k === "r") { startLearnTask(); toast(t("lm.restarted")); }
       else if (k === "z") learnUndo();
       else if (k === "h") learnHint();
       return;
     }
     if (mode === "puzzle") {
       if (!puzzle || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { startPuzzleAt(puzzle.cat, puzzle.idx); toast("重新开始本题"); }
+      if (k === "r") { startPuzzleAt(puzzle.cat, puzzle.idx); toast(t("pz.restarted")); }
       else if (k === "n") nextPuzzle();
       else if (k === "h") showPuzzleAnswer();
       return;
@@ -3577,7 +3727,7 @@
   saveSettings();
   if (!resumed) saveGame();
   if (mode === "ai" && window.ChessEngine) {
-    window.ChessEngine.init().catch(() => toast("引擎初始化失败"));
+    window.ChessEngine.init().catch(() => toast(t("mm.engineInitFailed")));
     maybeEngineTurn(); // resumed save may leave the engine on move
   }
 
