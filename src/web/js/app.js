@@ -2478,7 +2478,11 @@
     status.classList.toggle("replay", !modal && !isLive());
     // "思考中" with nothing moving reads as a hang at the higher levels, where
     // a search can run for seconds; the pill breathes while the engine works
-    status.classList.toggle("thinking", engineThinking || analyzing || !!(learn && learn.engineBusy));
+    const busy = engineThinking || analyzing || !!(learn && learn.engineBusy);
+    status.classList.toggle("thinking", busy);
+    // …and a pulse on the board itself, where the player is actually looking
+    const dot = document.getElementById("think-dot");
+    if (dot) dot.hidden = !busy;
     const over = appGameOver();
     const showTurn = !modal && isLive() && !over;
     document.getElementById("white-turn").hidden = !(showTurn && game.turn() === "w");

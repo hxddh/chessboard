@@ -143,6 +143,25 @@
     return squareAt(sr, sc, m.flipped);
   }
 
+  /**
+   * Fill the frame's coordinate gutters, reordering them when the board flips.
+   * Rebuilt only when the orientation actually changes — draw() runs on every
+   * animation frame during a move.
+   */
+  let coordFlip = null;
+  function drawCoords(flipped) {
+    if (coordFlip === !!flipped) return;
+    coordFlip = !!flipped;
+    const files = typeof document !== "undefined" && document.getElementById("coord-files");
+    const ranks = typeof document !== "undefined" && document.getElementById("coord-ranks");
+    if (!files || !ranks) return;
+    const fs = FILES.split("");
+    const rs = ["8", "7", "6", "5", "4", "3", "2", "1"];
+    const span = (t) => "<span>" + t + "</span>";
+    files.innerHTML = (coordFlip ? fs.slice().reverse() : fs).map(span).join("");
+    ranks.innerHTML = (coordFlip ? rs.slice().reverse() : rs).map(span).join("");
+  }
+
   function draw() {
     if (!_canvas || !_model) return;
     const m = _model();
@@ -184,23 +203,10 @@
       ctx.fillStyle = g;
       ctx.fillRect(...cellRect(sr, sc));
     }
-    // coordinates (small, inside edge squares)
-    ctx.font = "500 " + Math.round(step * 0.19) + "px -apple-system, system-ui, sans-serif";
-    ctx.textBaseline = "alphabetic";
-    for (let i = 0; i < 8; i++) {
-      // files along the bottom
-      const fsq = squareAt(7, i, false);
-      const fileChar = m.flipped ? FILES[7 - i] : FILES[i];
-      ctx.fillStyle = (7 + i) % 2 === 0 ? DARK : LIGHT;
-      ctx.textAlign = "right";
-      ctx.fillText(fileChar, (i + 1) * step - step * 0.08, 8 * step - step * 0.08);
-      // ranks along the left
-      const rankChar = m.flipped ? String(i + 1) : String(8 - i);
-      ctx.fillStyle = (i + 0) % 2 === 0 ? DARK : LIGHT;
-      ctx.textAlign = "left";
-      ctx.fillText(rankChar, step * 0.08, i * step + step * 0.26);
-      void fsq;
-    }
+    // Coordinates are no longer painted here: they are printed on the frame
+    // around the board (see .coords in styles.css), which is where a real
+    // board has them and where they cannot sit on top of the a1/h1 rooks.
+    drawCoords(m.flipped);
     // pieces: crisp vector sprites, Unicode glyphs only while sprites decode
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";

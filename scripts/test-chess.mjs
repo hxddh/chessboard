@@ -931,6 +931,17 @@ for (const p of ["r", "b", "n"]) {
   }
   assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
 
+  // Coordinates belong on the frame, not on a1/h1 where they were painted over
+  // the rooks. The gutters are DOM, so the canvas must not draw them any more.
+  {
+    const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(/function drawCoords\(/.test(boardSrc), "the frame gutters are filled from board.js");
+    assert(!/fillText\(\s*(fileChar|rankChar)/.test(boardSrc),
+      "no coordinate is painted inside a square any more");
+    assert(/id="coord-files"/.test(html) && /id="coord-ranks"/.test(html),
+      "both coordinate gutters exist in the markup");
+  }
+
   // Keyboard access: Tab must reach the controls, and focus must be visible.
   {
     const appSrc2 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");

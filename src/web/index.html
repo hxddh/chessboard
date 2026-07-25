@@ -27,6 +27,11 @@
     <div class="stage">
       <div id="board-wrap">
         <canvas id="board" width="900" height="900" aria-label="棋盘" data-i18n-aria="aria.board"></canvas>
+        <!-- coordinates live on the frame, not on a1/h1 where they sat on top
+             of the rooks; the board itself is left to the pieces -->
+        <div class="coords files" id="coord-files" aria-hidden="true"></div>
+        <div class="coords ranks" id="coord-ranks" aria-hidden="true"></div>
+        <div class="think-dot" id="think-dot" hidden></div>
       </div>
     </div>
     <div id="board-live" class="sr-only" aria-live="polite" role="status"></div>
