@@ -25,9 +25,38 @@
   function indexOf(sq) { return { r: 8 - Number(sq[1]), c: FILES.indexOf(sq[0]) }; }
 
   /**
+   * Squares that could legitimately be an en-passant target: the side to move
+   * must have a pawn able to capture there, and the pawn that supposedly just
+   * double-stepped must be sitting past it with an empty square behind. Any
+   * other ep square would describe a position no game could reach.
+   * @returns {string[]} candidate squares, in board order
+   */
+  function epCandidates(state) {
+    const b = state.board;
+    const at = (r, c) => (r >= 0 && r < 8 && c >= 0 && c < 8 ? b[r][c] : null);
+    const out = [];
+    // white to move captures a black pawn that jumped d7→d5: target is on rank 6
+    const [movedRow, targetRow, fromRow, victim, capturer] = state.turn === "w"
+      ? [3, 2, 1, "b", "w"] // rows: 0 = rank 8
+      : [4, 5, 6, "w", "b"];
+    for (let c = 0; c < 8; c++) {
+      const p = at(movedRow, c);
+      if (!p || p.type !== "p" || p.color !== victim) continue;
+      if (at(targetRow, c) || at(fromRow, c)) continue; // path must be clear
+      const canTake = [c - 1, c + 1].some((cc) => {
+        const q = at(movedRow, cc);
+        return q && q.type === "p" && q.color === capturer;
+      });
+      if (canTake) out.push(squareOf(targetRow, c));
+    }
+    return out;
+  }
+
+  /**
    * Board + flags → FEN. Castling rights are filtered down to the ones the
    * placement can actually support, so a hand-built position never claims a
-   * right its rooks and king do not back up.
+   * right its rooks and king do not back up; the same goes for the en-passant
+   * square.
    */
   function toFen(state) {
     const b = state.board;
@@ -54,12 +83,14 @@
     if (state.castling.Q && at("e1", "k", "w") && at("a1", "r", "w")) castling += "Q";
     if (state.castling.k && at("e8", "k", "b") && at("h8", "r", "b")) castling += "k";
     if (state.castling.q && at("e8", "k", "b") && at("a8", "r", "b")) castling += "q";
-    return rows.join("/") + " " + state.turn + " " + (castling || "-") + " - 0 1";
+    const ep = state.ep && epCandidates(state).includes(state.ep) ? state.ep : "-";
+    return rows.join("/") + " " + state.turn + " " + (castling || "-") + " " + ep + " 0 1";
   }
 
   /**
-   * @returns {string|null} a human-readable reason the position cannot be
-   * played, or null when it is fine.
+   * @returns {string|null} an i18n key naming why the position cannot be
+   * played, or null when it is fine. Keys (not text) keep this module free of
+   * any particular language.
    */
   function validate(state, ChessCtor) {
     const b = state.board;
@@ -68,19 +99,19 @@
       const p = b[r][c];
       if (!p) continue;
       if (p.type === "k") { if (p.color === "w") wk++; else bk++; }
-      if (p.type === "p" && (r === 0 || r === 7)) return "兵不能停在第 1 或第 8 横线";
+      if (p.type === "p" && (r === 0 || r === 7)) return "edErr.pawnBackRank";
     }
-    if (wk !== 1) return wk === 0 ? "白方必须有且只有一个王" : "白方有多个王";
-    if (bk !== 1) return bk === 0 ? "黑方必须有且只有一个王" : "黑方有多个王";
+    if (wk !== 1) return wk === 0 ? "edErr.noWhiteKing" : "edErr.manyWhiteKings";
+    if (bk !== 1) return bk === 0 ? "edErr.noBlackKing" : "edErr.manyBlackKings";
     const fen = toFen(state);
     const v = new ChessCtor().validate_fen(fen);
-    if (!v.valid) return v.error || "局面不合法";
+    if (!v.valid) return "edErr.invalid";
     // the side NOT to move must not be in check — that position is unreachable
     const other = state.turn === "w" ? "b" : "w";
     const probe = new ChessCtor(fen.replace(" " + state.turn + " ", " " + other + " "));
-    if (probe.in_check()) return "轮到走子的一方之外不能处于被将军状态";
+    if (probe.in_check()) return "edErr.otherInCheck";
     const g = new ChessCtor(fen);
-    if (!g.moves().length) return g.in_check() ? "该局面已经将死,无法开局" : "该局面已经逼和,无法开局";
+    if (!g.moves().length) return g.in_check() ? "edErr.alreadyMate" : "edErr.alreadyStalemate";
     return null;
   }
 
@@ -96,8 +127,9 @@
         K: rights.includes("K"), Q: rights.includes("Q"),
         k: rights.includes("k"), q: rights.includes("q"),
       },
+      ep: /^[a-h][36]$/.test(parts[3] || "") ? parts[3] : null,
     };
   }
 
-  global.ChessEditor = { emptyBoard, cloneBoard, squareOf, indexOf, toFen, validate, fromFen };
+  global.ChessEditor = { emptyBoard, cloneBoard, squareOf, indexOf, toFen, validate, fromFen, epCandidates };
 })(typeof window !== "undefined" ? window : globalThis);

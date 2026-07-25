@@ -25,6 +25,7 @@ test -f frontend/dist/js/editor.js
 test -f frontend/dist/js/i18n.js
 test -f frontend/dist/js/openings.js
 test -f frontend/dist/js/lessons.js
+test -f frontend/dist/js/lessons-en.js
 test -f frontend/dist/js/puzzles.js
 test -f frontend/dist/js/achievements.js
 test -f frontend/dist/js/host.js
