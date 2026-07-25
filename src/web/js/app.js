@@ -460,6 +460,13 @@
    * Lesson prose in the active language, falling back to the authored Chinese.
    * Only text is localised — positions, goals and solutions always come from
    * lessons.js, so a translation can never change what a lesson teaches.
+   *
+   * The teaching content exists in two languages, Chinese and English, while
+   * the interface has three: a Japanese player gets a Japanese interface and
+   * English lessons. That is a deliberate choice rather than an oversight —
+   * chess terminology in English is far more likely to be readable to them
+   * than the Chinese original, and a machine-translated course would teach
+   * worse than an honest second language.
    */
   function lessonText(lesson) {
     const tr = langId !== "zh-CN" && window.CHESS_LESSONS_EN ? window.CHESS_LESSONS_EN[lesson.id] : null;
@@ -678,7 +685,11 @@
     const tx = taskText(curLesson(), learn.ti);
     if (task.type === "tap") return tx.step(learn.tapStep) + "(" + (learn.tapStep + 1) + "/" + task.steps.length + ")";
     if (task.type === "drill" && learn.engineBusy) return t("lm.sparThinking");
-    return task.prompt;
+    // tx, not task: reading the prompt straight off the lesson showed every
+    // move/stars/drill task in Chinese to English readers — the translations
+    // were sitting in lessons-en.js unused, and only the tap tasks (which go
+    // through tx.step above) ever looked translated
+    return tx.prompt;
   }
 
   function learnClick(sq) {
@@ -695,7 +706,8 @@
         if (learn.tapStep >= task.steps.length) learnTaskDone();
         else sync();
       } else {
-        toast(tf("lm.wrongSquare", [task.steps[learn.tapStep].tip]));
+        // the localised tip, not the authored one — same reason as learnTaskText
+        toast(tf("lm.wrongSquare", [taskText(curLesson(), learn.ti).step(learn.tapStep)]));
         learnRegisterMiss();
       }
       return;
@@ -911,6 +923,11 @@
       Audio2.playMove("b");
       toast(t("lm.nextSubtask"));
       learn.ti++;
+      // startLearnTask resets the per-task cursors, but it runs 900ms later —
+      // and the board and prompt are redrawn now. A tap task followed by
+      // another tap task would spend that gap reading step[3] of a 1-step task.
+      learn.tapStep = 0;
+      learn.helpOn = false;
       const token = ++learn.token;
       setTimeout(() => { if (learn && learn.token === token) startLearnTask(); }, 900);
       sync();
@@ -2111,7 +2128,7 @@
 
   /**
    * One sentence saying what to do next, from what the player has actually
-   * done. The app has four modes, 36 lessons and 148 puzzles and, until 1.7,
+   * done. The app has four modes, 38 lessons and 145 puzzles and, until 1.7,
    * nothing anywhere that answered "so what should I play now?".
    *
    * Deliberately conservative: it only speaks when there is enough evidence

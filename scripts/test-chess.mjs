@@ -868,6 +868,8 @@ for (const p of ["r", "b", "n"]) {
   assert(det(["en-GB", "zh-CN"]) === "en", "the first understood tag wins");
   assert(det(["zh-CN"]) === "zh-CN", "zh-CN picks Chinese");
   assert(det(["zh-TW"]) === "zh-CN", "any Chinese variant picks Chinese");
+  assert(det(["ja-JP"]) === "ja", "ja-JP picks Japanese");
+  assert(det(["ja"]) === "ja", "a bare ja tag picks Japanese");
   assert(det(["fr-FR"]) === "zh-CN", "an unsupported locale falls back to the base language");
   assert(det([]) === "zh-CN", "no locale information falls back");
   assert(I.detectLang({}) === "zh-CN", "a navigator with no language fields falls back");
@@ -891,14 +893,52 @@ for (const p of ["r", "b", "n"]) {
   assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
 
   const han = /[一-鿿]/;
+  // Languages that legitimately write in Han characters — for those, "contains
+  // Han" says nothing. Everywhere else it is the signal that a key was added
+  // and the Chinese pasted straight in.
+  const HAN_OK = new Set(["ja"]);
+  // …so for a Han-writing language the test is instead "is it the *same string*
+  // as the Chinese?", with an explicit list of the few that genuinely are. The
+  // list has to be maintained by hand, which is the point: each entry is a
+  // decision someone made, not an oversight that slipped through.
+  const SHARED_WITH_ZH = {
+    ja: new Set(["act.pgnCopy", "act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
+      "learn.lessonPre", "ed.crK", "ed.crQ"]),
+  };
   let untranslated = 0;
   for (const id of langs) {
     if (id === "zh-CN") continue;
+    const shared = SHARED_WITH_ZH[id] || new Set();
     for (const [k, v] of Object.entries(I.DICT[id])) {
-      if (han.test(v)) { untranslated++; console.error("FAIL: " + id + " leaves Chinese in " + k + ": " + v); }
+      if (!HAN_OK.has(id)) {
+        if (han.test(v)) { untranslated++; console.error("FAIL: " + id + " leaves Chinese in " + k + ": " + v); }
+        continue;
+      }
+      if (v === I.DICT["zh-CN"][k] && !shared.has(k)) {
+        untranslated++;
+        console.error("FAIL: " + id + " is character-for-character the Chinese in " + k + ": " + v);
+      }
+    }
+    for (const k of shared) {
+      if (I.DICT[id][k] !== I.DICT["zh-CN"][k]) {
+        untranslated++;
+        console.error("FAIL: " + id + " no longer shares " + k + " with Chinese — drop it from the list");
+      }
     }
   }
   assert(untranslated === 0, "non-Chinese languages contain no untranslated strings");
+
+  // The first thing a newcomer reads is "N interactive lessons" — in three
+  // languages, none of which knows how many there actually are.
+  let miscounted = 0;
+  for (const id of langs) {
+    const m = /(\d+)/.exec(I.DICT[id]["ob.newSub"] || "");
+    if (!m || Number(m[1]) !== ctx.CHESS_LESSONS.length) {
+      miscounted++;
+      console.error("FAIL: " + id + " promises " + (m ? m[1] : "?") + " lessons, there are " + ctx.CHESS_LESSONS.length);
+    }
+  }
+  assert(miscounted === 0, "every language's onboarding blurb counts the lessons correctly");
 
   // Every visible Chinese tooltip in the markup must be wired for translation.
   const titled = [...html.matchAll(/<[^>]*\stitle="([^"]*)"[^>]*>/g)];
@@ -964,6 +1004,21 @@ for (const p of ["r", "b", "n"]) {
     }
   }
   assert(unknownRuntime === 0, "every runtime key app.js requests is defined");
+
+  // Lesson prose must reach the screen through taskText(), which is where the
+  // translation lookup lives. Reading `task.prompt` (or a step's `.tip`)
+  // straight off the lesson is how every move/stars/drill prompt in the course
+  // stayed Chinese in English mode from 1.6 to 1.8 — the translations were in
+  // lessons-en.js the whole time, simply never asked for.
+  const taskTextFn = /function taskText\(lesson, ti\) \{[\s\S]*?\n  \}/.exec(appSrc);
+  assert(!!taskTextFn, "found the lesson-prose accessor");
+  const outside = appSrc.replace(taskTextFn[0], "");
+  let rawProse = 0;
+  for (const m of outside.matchAll(/\btask\.(prompt|retry)\b|\.steps\[[^\]]*\]\.tip\b/g)) {
+    rawProse++;
+    console.error("FAIL: lesson prose read straight off the data: " + m[0]);
+  }
+  assert(rawProse === 0, "lesson prose always goes through the translation lookup");
 
   // Every ending marker written into a stats record must be understood by the
   // history reader. A game that ended by resignation or agreement is not over

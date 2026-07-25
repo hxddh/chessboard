@@ -388,6 +388,48 @@
           ] },
       ],
     },
+    "square": {
+      part: "Endgame basics", title: "The rule of the square: can the king catch the pawn?",
+      text: [
+        "Count how many steps the pawn needs to reach the last rank, and draw a square of that side length from the pawn towards promotion — that is the pawn's *square*.",
+        "**When it is the defender's move**, the king catches the pawn if it can step inside that square, and cannot if it can't. No counting move by move: draw the square and you know the answer.",
+        "It works for the attacker too — every step the pawn takes shrinks the square, and the enemy king may be shut out of it.",
+      ],
+      tasks: [
+        { prompt: "Draw the square first — click its three corners as prompted",
+          steps: [
+            "The pawn is on h4 and needs 4 steps to reach h8 — click the end of that road, h8",
+            "Side length 4: count four squares to the left along the 8th rank — click d8",
+            "Now back down to the pawn's rank — click d4, and the square h4–h8–d8–d4 is drawn",
+          ] },
+        { prompt: "The black king on c5 is outside the square — but it is Black to move. Click the square it should step into",
+          steps: [
+            "The left edge of the square is the d-file — one step puts the king on it (d4, d5 or d6 all work) and it runs the h-pawn down",
+          ] },
+        { prompt: "Now White to move — play the one move that shuts the black king out of the square for good",
+          retry: "Moving the king is no help, it is far too far away — push the pawn! One step shrinks the square to the e-file and the black king is locked out" },
+      ],
+    },
+    "opposition": {
+      part: "Endgame basics", title: "Opposition: whoever gives way first, loses",
+      text: [
+        "Two kings on the same line with exactly one square between them, neither able to come closer — that is the *opposition*.",
+        "What matters is this: **whoever is to move has to give way first**. Taking the opposition means handing the obligation to move to the other player.",
+        "King-and-pawn endings often turn on this one thing. Getting the king in front of the pawn is not enough — you also need the opposition, and when you cannot take it by a king move, a pawn move can waste a tempo and hand the obligation back.",
+      ],
+      tasks: [
+        { prompt: "Learn to recognise it",
+          steps: [
+            "Both kings stand on the e-file with one square between them — click that square, e6, which neither king may enter",
+          ] },
+        { prompt: "White to move — click the square the king should go to",
+          steps: [
+            "It has to be the same line as the king on e5 with exactly one square between — only e3 does that (a diagonal step is not the opposition)",
+          ] },
+        { prompt: "Your king is already in front of the pawn, but Black holds the opposition — leave the king alone and waste a tempo with the pawn, handing the move back to Black",
+          retry: "Moving the king gives up the good square in front of the pawn — you still have a pawn to move, so use it to lose a move" },
+      ],
+    },
     "drill-pawn": {
       part: "Endgame technique", title: "King and pawn: escorting a promotion (vs engine)",
       text: [
