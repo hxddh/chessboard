@@ -490,6 +490,8 @@
     return langId !== "zh-CN" && window.CHESS_PUZZLES_EN ? window.CHESS_PUZZLES_EN[p.id] : null;
   }
   function puzzleName(p) {
+    // opening drills are named by the book, not by puzzles-en.js
+    if (p.cat === "op" && p.zh) return p.eco + " " + openingName(p.zh);
     const tr = puzzleEn(p);
     return (tr && tr.name) || p.name;
   }
@@ -498,6 +500,7 @@
     return (tr && tr.motif) || p.motif || t("pz.forcing");
   }
   function puzzleIdea(p) {
+    if (p.cat === "op" && p.zh) return openingIdea(p.zh) || p.idea || "";
     const tr = puzzleEn(p);
     return (tr && tr.idea) || p.idea || "";
   }
@@ -505,6 +508,11 @@
   function openingName(zh) {
     const tbl = langId !== "zh-CN" ? window.CHESS_OPENINGS_EN : null;
     return (tbl && tbl[zh]) || zh;
+  }
+  /** …and the sentence explaining what the line is trying to do. */
+  function openingIdea(zh) {
+    const tbl = langId !== "zh-CN" ? window.CHESS_OPENING_IDEAS_EN : null;
+    return (tbl && tbl[zh]) || "";
   }
 
   function loadLearnState() {
@@ -997,6 +1005,10 @@
     .map(([eco, name, seq, idea], i) => ({
       id: "op-" + eco + "-" + i,
       cat: "op",
+      // `zh` is the key both English tables are keyed by; the displayed name is
+      // built at render time so a language switch relabels the whole drill list
+      zh: name,
+      eco,
       name: eco + " " + name,
       line: seq.split(" "),
       idea: idea || "",
@@ -1244,7 +1256,7 @@
         puzzleWrong(
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
           c === "tac" ? (puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(puzzle.p)]) : t("pz.takeTarget")) :
-          t("pz.offBook"));
+          openingWhy(g, mv, script[puzzle.stage]));
         return;
       }
       puzzle.stage++;
@@ -1286,6 +1298,27 @@
       Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
     }
     sync();
+  }
+
+  /**
+   * Say why an opening move is wrong, not merely that it is.
+   *
+   * "这不是谱着" is a fact about a line the player has not memorised yet, which
+   * is exactly what they came here to learn — it teaches nothing. The coach
+   * names the principle instead. `g` already has the move on the board, so
+   * everything before it is the drill so far.
+   */
+  function openingWhy(g, mv, bookSan) {
+    const Coach = window.ChessOpeningCoach;
+    if (!Coach || !bookSan) return t("pz.offBook");
+    let r = null;
+    try { r = Coach.critique(puzzle.p.fen || "", g.history().slice(0, -1), mv.san, bookSan, Chess); }
+    catch (_) { r = null; }
+    if (!r) return t("pz.offBook");
+    // the coach knows nothing about the dictionary, so a piece comes back as
+    // its key ("piece.n") and is turned into a word here
+    const vals = r.vals.map((v) => (typeof v === "string" && v.startsWith("piece.") ? t(v) : v));
+    return tf(r.key, vals);
   }
 
   function puzzleWrong(reason) {
@@ -1347,6 +1380,45 @@
       puzzle.p.cat === "win" || puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
     toast("✅ " + verb + " · " + puzzleName(puzzle.p));
     sync();
+  }
+
+  /**
+   * Carry a finished opening drill into a real game.
+   *
+   * Rehearsing six plies and then being handed the next drill is where the
+   * opening trainer stopped being about openings: a line is only worth
+   * knowing for the game it leads to, and that game was never reachable from
+   * here. This hands the drilled position to the engine with the moves
+   * intact, from the White side the player just rehearsed.
+   */
+  function playOnFromPuzzle() {
+    if (!puzzle || !puzzle.done || puzzle.p.cat !== "op") return;
+    const line = puzzle.g.pgn();
+    const name = puzzleName(puzzle.p);
+    if (!line.trim()) return;
+    invalidateEngine();
+    if (window.ChessEngine) window.ChessEngine.newGame();
+    stopPuzzles();
+    mode = "ai";
+    humanColor = "w"; // every opening drill is played from White's side
+    flipped = false;
+    flagFall = null;
+    resigned = null;
+    drawAgreed = false;
+    drawClaimed = null;
+    analysis = null;
+    statsRecordedSig = null;
+    game.reset();
+    game.load_pgn(line, { sloppy: true });
+    selection = null;
+    hintMove = null;
+    viewIndex = sanHistory().length;
+    resetClocks();
+    saveSettings();
+    saveGame();
+    sync();
+    toast(tf("pz.playOn", [name]));
+    maybeEngineTurn();
   }
 
   function nextPuzzle() {
@@ -1431,8 +1503,16 @@
       ideaEl.hidden = !idea;
       ideaEl.textContent = idea ? t("pz.idea") + " · " + idea : "";
     }
+    // a finished opening line offers the game it was drilled for; that is the
+    // reward, so it takes the primary emphasis from "next puzzle"
+    const canPlayOn = !!puzzle.done && puzzle.p.cat === "op";
+    const playOn = document.getElementById("puzzle-playon");
+    if (playOn) {
+      playOn.hidden = !canPlayOn;
+      playOn.classList.toggle("primary", canPlayOn);
+    }
     const next = document.getElementById("puzzle-next");
-    if (next) next.classList.toggle("primary", puzzle.done);
+    if (next) next.classList.toggle("primary", puzzle.done && !canPlayOn);
     const listEl = document.getElementById("puzzle-list");
     if (listEl) {
       listEl.innerHTML = "";
@@ -3760,6 +3840,8 @@
   };
   document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
+  const playOnEl = document.getElementById("puzzle-playon");
+  if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
   document.getElementById("puzzle-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
     if (b && puzzle) startPuzzleAt(puzzle.cat, Number(b.dataset.i));

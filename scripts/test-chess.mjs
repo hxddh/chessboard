@@ -335,6 +335,22 @@ for (const p of ["r", "b", "n"]) {
     if (!opNames.has(n)) fail("English name for unknown opening:", n);
   }
   assert(bad === 0, "all " + opNames.size + " opening names have English text");
+
+  // The drills also show the line's idea. Only lines long enough to be drilled
+  // (≥6 plies, the same filter app.js applies) ever display one, so that is
+  // exactly the set that needs translating — no more, no less.
+  bad = 0;
+  const ideaEn = ctx.CHESS_OPENING_IDEAS_EN || {};
+  const drilled = op.filter((o) => o[2].split(" ").length >= 6);
+  for (const [, name, , idea] of drilled) {
+    if (!idea) { fail("drilled opening has no idea line:", name); continue; }
+    if (!ideaEn[name]) { fail("opening idea has no English text:", name); continue; }
+    if (han.test(ideaEn[name])) fail("opening idea not translated:", name);
+  }
+  for (const n of Object.keys(ideaEn)) {
+    if (!drilled.some((o) => o[1] === n)) fail("English idea for an opening that is never drilled:", n);
+  }
+  assert(bad === 0, "all " + drilled.length + " drilled openings have an English idea");
 }
 
 // puzzles: legal positions (white to move, black not already in check),
@@ -723,6 +739,65 @@ for (const p of ["r", "b", "n"]) {
   assert(R.verdictKey(s, "w") === "rv.verdict.oneBlunder", "one blunder gets its own verdict");
   assert(R.verdictKey(s, "b") === "rv.verdict.excellent", "a clean game reads as excellent");
   assert(R.verdictKey(null, "w") === null, "no summary yields no verdict");
+}
+
+// opening coach: the drills used to answer every wrong move with "not the
+// book move", which is the one thing the player already knew
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/opening-coach.js"), "utf8"), ctx, { filename: "opening-coach.js" });
+  const OC = ctx.ChessOpeningCoach;
+  const why = (prior, played, book) => {
+    const r = OC.critique("", prior, played, book, Chess);
+    return r && r.key;
+  };
+  const ITALIAN = ["e4", "e5", "Nf3", "Nc6"];
+  const READY_TO_CASTLE = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"];
+
+  assert(why(ITALIAN, "Nh4", "Bc4") === "opc.hangs", "a piece left en prise is the first thing said");
+  const hang = OC.critique("", ITALIAN, "Nh4", "Bc4", Chess);
+  assert(hang.vals[0] === "piece.n" && hang.vals[1] === "Qxh4",
+    "…naming the piece and the refutation (" + hang.vals.join(", ") + ")");
+  assert(why(READY_TO_CASTLE, "Kf1", "O-O") === "opc.kingMove", "a king move that burns castling rights is called out");
+  assert(why(ITALIAN, "Qe2", "Bc4") === "opc.earlyQueen", "the queen out before the minor pieces is called out");
+  assert(why(["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"], "Bb3", "O-O") === "opc.samePiece",
+    "moving the same bishop twice while the king waits is called out");
+  assert(why(READY_TO_CASTLE, "a3", "O-O") === "opc.castle", "not castling when the line does is called out");
+  assert(why(["d4", "Nf6", "c4", "e6"], "a3", "Nc3") === "opc.develop", "a pawn shuffle instead of development is called out");
+  assert(why([], "h4", "e4") === "opc.centre", "ignoring the centre is called out");
+  assert(why(["e4", "e5", "Nf3", "Nc6"], "h3", "Bc4") === "opc.develop", "…and an edge pawn instead of a piece is development advice");
+
+  // A move can be perfectly good and still not be this line. Inventing a
+  // fault for 1.Nf3 or 1.d4 would teach something false.
+  assert(why([], "Nf3", "e4") === "opc.sound", "a sound developing move is not called a mistake");
+  assert(why([], "d4", "e4") === "opc.sound", "a sound central move is not called a mistake");
+
+  // Material the line was always going to shed — a gambit pawn, or here a rook
+  // already under fire that neither candidate saves — is not this move's
+  // fault. Only a loss the book move avoids gets reported.
+  const ROOK_EN_PRISE = "4k2b/8/8/8/8/8/8/R3K2R w KQ - 0 1"; // Bh8 hits the undefended a1
+  assert(OC.critique(ROOK_EN_PRISE, [], "Rf1", "Rg1", Chess).key !== "opc.hangs",
+    "material already lost before the move is not blamed on it");
+  assert(OC.critique(ROOK_EN_PRISE, [], "Rf1", "Rb1", Chess).key === "opc.hangs",
+    "…but material the book move would have saved is");
+
+  assert(OC.critique("", ITALIAN, "Nxe4", "Bc4", Chess) === null, "an illegal move yields no critique");
+  assert(OC.critique("", ["nonsense"], "e4", "d4", Chess) === null, "an unreplayable line yields no critique");
+  assert(OC.hanging("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Chess).gain === 0,
+    "nothing hangs in the start position");
+
+  // every key the coach can emit must exist in every language
+  const coachSrc = fs.readFileSync(path.join(root, "src/web/js/opening-coach.js"), "utf8");
+  const coachKeys = [...coachSrc.matchAll(/key: "(opc\.[a-zA-Z]+)"/g)].map((m) => m[1]);
+  assert(coachKeys.length >= 8, "found " + coachKeys.length + " coach messages");
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  const DICT = ctx.ChessI18n.DICT;
+  let missingCoach = 0;
+  for (const k of new Set(coachKeys)) {
+    for (const lang of Object.keys(DICT)) {
+      if (!(k in DICT[lang])) { missingCoach++; console.error("FAIL: " + lang + " is missing " + k); }
+    }
+  }
+  assert(missingCoach === 0, "every coach message is translated in every language");
 }
 
 // puzzle review scheduling: a puzzle used to graduate on the first correct
