@@ -2476,6 +2476,9 @@
     const decisiveEnd = g.in_checkmate() || !!resigned || (flagFall && !timeoutIsDraw());
     status.classList.toggle("win", !modal && isLive() && decisiveEnd);
     status.classList.toggle("replay", !modal && !isLive());
+    // "思考中" with nothing moving reads as a hang at the higher levels, where
+    // a search can run for seconds; the pill breathes while the engine works
+    status.classList.toggle("thinking", engineThinking || analyzing || !!(learn && learn.engineBusy));
     const over = appGameOver();
     const showTurn = !modal && isLive() && !over;
     document.getElementById("white-turn").hidden = !(showTurn && game.turn() === "w");
@@ -4202,7 +4205,10 @@
       return;
     }
     const k = ev.key.toLowerCase();
-    if (ev.key === "Tab") { ev.preventDefault(); togglePanel(); return; }
+    // Tab is not ours to take. Binding it to the panel meant focus could never
+    // move anywhere by keyboard — the app had a full keyboard board cursor and
+    // no way to reach any other control. The panel is on P instead.
+    if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
     if (mode === "learn") {
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills

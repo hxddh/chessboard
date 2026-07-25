@@ -931,6 +931,19 @@ for (const p of ["r", "b", "n"]) {
   }
   assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
 
+  // Keyboard access: Tab must reach the controls, and focus must be visible.
+  {
+    const appSrc2 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    // 1.8 bound Tab to the panel and called preventDefault, so focus could not
+    // move anywhere by keyboard — the board had a full keyboard cursor and no
+    // way to reach a single other control.
+    const hijack = /ev\.key === "Tab"[^\n]*preventDefault/.test(appSrc2);
+    assert(!hijack, "Tab is left to the browser for focus navigation");
+    assert(/:focus-visible\s*\{[^}]*outline:\s*2px/.test(css),
+      "a visible focus ring is defined for keyboard users");
+  }
+
   // The shipped default window must not make the board smaller than the space
   // allows. Side by side, the board is min(width - panel, height - chrome) —
   // when the first term wins, the window wastes height and the board shrinks.
