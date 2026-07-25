@@ -789,6 +789,8 @@
     .ach-pg { margin-left: auto; font-size: 10.5px; color: var(--muted); flex: none; }
     /* the "what next?" suggestion under the statistics */
     .stat-rec { margin-top: 6px; color: var(--accent); }
+    /* a settings row whose controls do not apply right now */
+    .muted-row { opacity: .45; }
 
     .mvtag { margin-left: 3px; font-weight: 700; font-size: 11px; }
     .mvtag.t-soft { color: #c9b458; }
@@ -827,3 +829,9 @@
     .stat-k { color: var(--muted); }
     .stat-v { color: var(--text); font-size: 12px; }
     .stats-body .hint { margin: 4px 0 0; }
+
+    /* game history: same row shape in the sidebar preview and the full list */
+    .hist-body { display: flex; flex-direction: column; gap: 4px; }
+    .hist-body .hint { margin: 2px 0 0; }
+    .hist-row { display: flex; gap: 6px; align-items: stretch; }
+    .hist-row .pick-item { flex: 1; min-width: 0; padding: 7px 10px; }

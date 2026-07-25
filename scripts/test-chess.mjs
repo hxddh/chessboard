@@ -335,6 +335,22 @@ for (const p of ["r", "b", "n"]) {
     if (!opNames.has(n)) fail("English name for unknown opening:", n);
   }
   assert(bad === 0, "all " + opNames.size + " opening names have English text");
+
+  // The drills also show the line's idea. Only lines long enough to be drilled
+  // (≥6 plies, the same filter app.js applies) ever display one, so that is
+  // exactly the set that needs translating — no more, no less.
+  bad = 0;
+  const ideaEn = ctx.CHESS_OPENING_IDEAS_EN || {};
+  const drilled = op.filter((o) => o[2].split(" ").length >= 6);
+  for (const [, name, , idea] of drilled) {
+    if (!idea) { fail("drilled opening has no idea line:", name); continue; }
+    if (!ideaEn[name]) { fail("opening idea has no English text:", name); continue; }
+    if (han.test(ideaEn[name])) fail("opening idea not translated:", name);
+  }
+  for (const n of Object.keys(ideaEn)) {
+    if (!drilled.some((o) => o[1] === n)) fail("English idea for an opening that is never drilled:", n);
+  }
+  assert(bad === 0, "all " + drilled.length + " drilled openings have an English idea");
 }
 
 // puzzles: legal positions (white to move, black not already in check),
@@ -725,6 +741,65 @@ for (const p of ["r", "b", "n"]) {
   assert(R.verdictKey(null, "w") === null, "no summary yields no verdict");
 }
 
+// opening coach: the drills used to answer every wrong move with "not the
+// book move", which is the one thing the player already knew
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/opening-coach.js"), "utf8"), ctx, { filename: "opening-coach.js" });
+  const OC = ctx.ChessOpeningCoach;
+  const why = (prior, played, book) => {
+    const r = OC.critique("", prior, played, book, Chess);
+    return r && r.key;
+  };
+  const ITALIAN = ["e4", "e5", "Nf3", "Nc6"];
+  const READY_TO_CASTLE = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"];
+
+  assert(why(ITALIAN, "Nh4", "Bc4") === "opc.hangs", "a piece left en prise is the first thing said");
+  const hang = OC.critique("", ITALIAN, "Nh4", "Bc4", Chess);
+  assert(hang.vals[0] === "piece.n" && hang.vals[1] === "Qxh4",
+    "…naming the piece and the refutation (" + hang.vals.join(", ") + ")");
+  assert(why(READY_TO_CASTLE, "Kf1", "O-O") === "opc.kingMove", "a king move that burns castling rights is called out");
+  assert(why(ITALIAN, "Qe2", "Bc4") === "opc.earlyQueen", "the queen out before the minor pieces is called out");
+  assert(why(["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"], "Bb3", "O-O") === "opc.samePiece",
+    "moving the same bishop twice while the king waits is called out");
+  assert(why(READY_TO_CASTLE, "a3", "O-O") === "opc.castle", "not castling when the line does is called out");
+  assert(why(["d4", "Nf6", "c4", "e6"], "a3", "Nc3") === "opc.develop", "a pawn shuffle instead of development is called out");
+  assert(why([], "h4", "e4") === "opc.centre", "ignoring the centre is called out");
+  assert(why(["e4", "e5", "Nf3", "Nc6"], "h3", "Bc4") === "opc.develop", "…and an edge pawn instead of a piece is development advice");
+
+  // A move can be perfectly good and still not be this line. Inventing a
+  // fault for 1.Nf3 or 1.d4 would teach something false.
+  assert(why([], "Nf3", "e4") === "opc.sound", "a sound developing move is not called a mistake");
+  assert(why([], "d4", "e4") === "opc.sound", "a sound central move is not called a mistake");
+
+  // Material the line was always going to shed — a gambit pawn, or here a rook
+  // already under fire that neither candidate saves — is not this move's
+  // fault. Only a loss the book move avoids gets reported.
+  const ROOK_EN_PRISE = "4k2b/8/8/8/8/8/8/R3K2R w KQ - 0 1"; // Bh8 hits the undefended a1
+  assert(OC.critique(ROOK_EN_PRISE, [], "Rf1", "Rg1", Chess).key !== "opc.hangs",
+    "material already lost before the move is not blamed on it");
+  assert(OC.critique(ROOK_EN_PRISE, [], "Rf1", "Rb1", Chess).key === "opc.hangs",
+    "…but material the book move would have saved is");
+
+  assert(OC.critique("", ITALIAN, "Nxe4", "Bc4", Chess) === null, "an illegal move yields no critique");
+  assert(OC.critique("", ["nonsense"], "e4", "d4", Chess) === null, "an unreplayable line yields no critique");
+  assert(OC.hanging("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Chess).gain === 0,
+    "nothing hangs in the start position");
+
+  // every key the coach can emit must exist in every language
+  const coachSrc = fs.readFileSync(path.join(root, "src/web/js/opening-coach.js"), "utf8");
+  const coachKeys = [...coachSrc.matchAll(/key: "(opc\.[a-zA-Z]+)"/g)].map((m) => m[1]);
+  assert(coachKeys.length >= 8, "found " + coachKeys.length + " coach messages");
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  const DICT = ctx.ChessI18n.DICT;
+  let missingCoach = 0;
+  for (const k of new Set(coachKeys)) {
+    for (const lang of Object.keys(DICT)) {
+      if (!(k in DICT[lang])) { missingCoach++; console.error("FAIL: " + lang + " is missing " + k); }
+    }
+  }
+  assert(missingCoach === 0, "every coach message is translated in every language");
+}
+
 // puzzle review scheduling: a puzzle used to graduate on the first correct
 // answer, which was usually given seconds after reading the solution
 {
@@ -793,6 +868,8 @@ for (const p of ["r", "b", "n"]) {
   assert(det(["en-GB", "zh-CN"]) === "en", "the first understood tag wins");
   assert(det(["zh-CN"]) === "zh-CN", "zh-CN picks Chinese");
   assert(det(["zh-TW"]) === "zh-CN", "any Chinese variant picks Chinese");
+  assert(det(["ja-JP"]) === "ja", "ja-JP picks Japanese");
+  assert(det(["ja"]) === "ja", "a bare ja tag picks Japanese");
   assert(det(["fr-FR"]) === "zh-CN", "an unsupported locale falls back to the base language");
   assert(det([]) === "zh-CN", "no locale information falls back");
   assert(I.detectLang({}) === "zh-CN", "a navigator with no language fields falls back");
@@ -816,14 +893,52 @@ for (const p of ["r", "b", "n"]) {
   assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
 
   const han = /[一-鿿]/;
+  // Languages that legitimately write in Han characters — for those, "contains
+  // Han" says nothing. Everywhere else it is the signal that a key was added
+  // and the Chinese pasted straight in.
+  const HAN_OK = new Set(["ja"]);
+  // …so for a Han-writing language the test is instead "is it the *same string*
+  // as the Chinese?", with an explicit list of the few that genuinely are. The
+  // list has to be maintained by hand, which is the point: each entry is a
+  // decision someone made, not an oversight that slipped through.
+  const SHARED_WITH_ZH = {
+    ja: new Set(["act.pgnCopy", "act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
+      "learn.lessonPre", "ed.crK", "ed.crQ"]),
+  };
   let untranslated = 0;
   for (const id of langs) {
     if (id === "zh-CN") continue;
+    const shared = SHARED_WITH_ZH[id] || new Set();
     for (const [k, v] of Object.entries(I.DICT[id])) {
-      if (han.test(v)) { untranslated++; console.error("FAIL: " + id + " leaves Chinese in " + k + ": " + v); }
+      if (!HAN_OK.has(id)) {
+        if (han.test(v)) { untranslated++; console.error("FAIL: " + id + " leaves Chinese in " + k + ": " + v); }
+        continue;
+      }
+      if (v === I.DICT["zh-CN"][k] && !shared.has(k)) {
+        untranslated++;
+        console.error("FAIL: " + id + " is character-for-character the Chinese in " + k + ": " + v);
+      }
+    }
+    for (const k of shared) {
+      if (I.DICT[id][k] !== I.DICT["zh-CN"][k]) {
+        untranslated++;
+        console.error("FAIL: " + id + " no longer shares " + k + " with Chinese — drop it from the list");
+      }
     }
   }
   assert(untranslated === 0, "non-Chinese languages contain no untranslated strings");
+
+  // The first thing a newcomer reads is "N interactive lessons" — in three
+  // languages, none of which knows how many there actually are.
+  let miscounted = 0;
+  for (const id of langs) {
+    const m = /(\d+)/.exec(I.DICT[id]["ob.newSub"] || "");
+    if (!m || Number(m[1]) !== ctx.CHESS_LESSONS.length) {
+      miscounted++;
+      console.error("FAIL: " + id + " promises " + (m ? m[1] : "?") + " lessons, there are " + ctx.CHESS_LESSONS.length);
+    }
+  }
+  assert(miscounted === 0, "every language's onboarding blurb counts the lessons correctly");
 
   // Every visible Chinese tooltip in the markup must be wired for translation.
   const titled = [...html.matchAll(/<[^>]*\stitle="([^"]*)"[^>]*>/g)];
@@ -889,6 +1004,47 @@ for (const p of ["r", "b", "n"]) {
     }
   }
   assert(unknownRuntime === 0, "every runtime key app.js requests is defined");
+
+  // Lesson prose must reach the screen through taskText(), which is where the
+  // translation lookup lives. Reading `task.prompt` (or a step's `.tip`)
+  // straight off the lesson is how every move/stars/drill prompt in the course
+  // stayed Chinese in English mode from 1.6 to 1.8 — the translations were in
+  // lessons-en.js the whole time, simply never asked for.
+  const taskTextFn = /function taskText\(lesson, ti\) \{[\s\S]*?\n  \}/.exec(appSrc);
+  assert(!!taskTextFn, "found the lesson-prose accessor");
+  const outside = appSrc.replace(taskTextFn[0], "");
+  let rawProse = 0;
+  for (const m of outside.matchAll(/\btask\.(prompt|retry)\b|\.steps\[[^\]]*\]\.tip\b/g)) {
+    rawProse++;
+    console.error("FAIL: lesson prose read straight off the data: " + m[0]);
+  }
+  assert(rawProse === 0, "lesson prose always goes through the translation lookup");
+
+  // Every ending marker written into a stats record must be understood by the
+  // history reader. A game that ended by resignation or agreement is not over
+  // by its moves alone, so an unhandled marker would put the position back on
+  // the board as live — and in an engine game that means Stockfish quietly
+  // playing on from a game the player finished weeks ago.
+  const markers = [...appSrc.matchAll(/recordOutcome\([^)]*"#([a-zA-Z]+)"/g)].map((m) => m[1]);
+  const restore = /function restoreEnding\(rec\) \{[\s\S]*?\n  \}/.exec(appSrc);
+  const handled = restore ? [...restore[0].matchAll(/end === "([a-zA-Z]+)"/g)].map((m) => m[1]) : [];
+  let unhandled = 0;
+  assert(markers.length >= 3 && handled.length >= 3, "found the ending markers and the history reader");
+  for (const k of new Set(markers)) {
+    if (!handled.includes(k)) { unhandled++; console.error("FAIL: history cannot restore the #" + k + " ending"); }
+  }
+  assert(unhandled === 0, "all " + new Set(markers).size + " ending markers survive a trip through the history");
+
+  // …and the marker must never be mistaken for part of the movetext. A
+  // checkmate ends in a bare "#", which the stripper has to leave alone.
+  const stripper = /historyPgn\(rec\) \{\s*return String\(rec\.sig \|\| ""\)\.replace\((\/[^/]+\/[a-z]*)/.exec(appSrc);
+  assert(!!stripper, "found the sig → PGN stripper");
+  const stripRe = new RegExp(stripper[1].slice(1, stripper[1].lastIndexOf("/")), stripper[1].slice(stripper[1].lastIndexOf("/") + 1));
+  const mate = "1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#";
+  assert(mate.replace(stripRe, "") === mate, "a checkmate's # survives the stripper");
+  for (const k of new Set(markers)) {
+    assert((mate + "#" + k).replace(stripRe, "") === mate, "the #" + k + " marker is stripped, the mate is not");
+  }
 
   // the editor reports failures as keys — each must resolve in every language
   const editorSrc = fs.readFileSync(path.join(root, "src/web/js/editor.js"), "utf8");

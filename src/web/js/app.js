@@ -460,6 +460,13 @@
    * Lesson prose in the active language, falling back to the authored Chinese.
    * Only text is localised — positions, goals and solutions always come from
    * lessons.js, so a translation can never change what a lesson teaches.
+   *
+   * The teaching content exists in two languages, Chinese and English, while
+   * the interface has three: a Japanese player gets a Japanese interface and
+   * English lessons. That is a deliberate choice rather than an oversight —
+   * chess terminology in English is far more likely to be readable to them
+   * than the Chinese original, and a machine-translated course would teach
+   * worse than an honest second language.
    */
   function lessonText(lesson) {
     const tr = langId !== "zh-CN" && window.CHESS_LESSONS_EN ? window.CHESS_LESSONS_EN[lesson.id] : null;
@@ -490,6 +497,8 @@
     return langId !== "zh-CN" && window.CHESS_PUZZLES_EN ? window.CHESS_PUZZLES_EN[p.id] : null;
   }
   function puzzleName(p) {
+    // opening drills are named by the book, not by puzzles-en.js
+    if (p.cat === "op" && p.zh) return p.eco + " " + openingName(p.zh);
     const tr = puzzleEn(p);
     return (tr && tr.name) || p.name;
   }
@@ -498,6 +507,7 @@
     return (tr && tr.motif) || p.motif || t("pz.forcing");
   }
   function puzzleIdea(p) {
+    if (p.cat === "op" && p.zh) return openingIdea(p.zh) || p.idea || "";
     const tr = puzzleEn(p);
     return (tr && tr.idea) || p.idea || "";
   }
@@ -505,6 +515,11 @@
   function openingName(zh) {
     const tbl = langId !== "zh-CN" ? window.CHESS_OPENINGS_EN : null;
     return (tbl && tbl[zh]) || zh;
+  }
+  /** …and the sentence explaining what the line is trying to do. */
+  function openingIdea(zh) {
+    const tbl = langId !== "zh-CN" ? window.CHESS_OPENING_IDEAS_EN : null;
+    return (tbl && tbl[zh]) || "";
   }
 
   function loadLearnState() {
@@ -670,7 +685,11 @@
     const tx = taskText(curLesson(), learn.ti);
     if (task.type === "tap") return tx.step(learn.tapStep) + "(" + (learn.tapStep + 1) + "/" + task.steps.length + ")";
     if (task.type === "drill" && learn.engineBusy) return t("lm.sparThinking");
-    return task.prompt;
+    // tx, not task: reading the prompt straight off the lesson showed every
+    // move/stars/drill task in Chinese to English readers — the translations
+    // were sitting in lessons-en.js unused, and only the tap tasks (which go
+    // through tx.step above) ever looked translated
+    return tx.prompt;
   }
 
   function learnClick(sq) {
@@ -687,7 +706,8 @@
         if (learn.tapStep >= task.steps.length) learnTaskDone();
         else sync();
       } else {
-        toast(tf("lm.wrongSquare", [task.steps[learn.tapStep].tip]));
+        // the localised tip, not the authored one — same reason as learnTaskText
+        toast(tf("lm.wrongSquare", [taskText(curLesson(), learn.ti).step(learn.tapStep)]));
         learnRegisterMiss();
       }
       return;
@@ -903,6 +923,11 @@
       Audio2.playMove("b");
       toast(t("lm.nextSubtask"));
       learn.ti++;
+      // startLearnTask resets the per-task cursors, but it runs 900ms later —
+      // and the board and prompt are redrawn now. A tap task followed by
+      // another tap task would spend that gap reading step[3] of a 1-step task.
+      learn.tapStep = 0;
+      learn.helpOn = false;
       const token = ++learn.token;
       setTimeout(() => { if (learn && learn.token === token) startLearnTask(); }, 900);
       sync();
@@ -951,8 +976,13 @@
     if (next) {
       const isLast = learn.li + 1 >= LESSONS.length;
       next.textContent = isLast ? t("lm.toBeginnerAi") : t("act.next");
-      next.disabled = isLast && !learn.done;
-      next.classList.toggle("primary", learn.done);
+      // `learn.done` only records whether the tasks were finished *this
+      // session*, so someone returning to a course they already completed
+      // found the graduation button greyed out — the one button the whole
+      // teaching track exists to reach. The saved progress counts too.
+      const everDone = !!learnState.done[LESSONS[learn.li].id];
+      next.disabled = isLast && !learn.done && !everDone;
+      next.classList.toggle("primary", learn.done || (isLast && everDone));
     }
     const list = document.getElementById("lesson-list");
     if (list) {
@@ -992,6 +1022,10 @@
     .map(([eco, name, seq, idea], i) => ({
       id: "op-" + eco + "-" + i,
       cat: "op",
+      // `zh` is the key both English tables are keyed by; the displayed name is
+      // built at render time so a language switch relabels the whole drill list
+      zh: name,
+      eco,
       name: eco + " " + name,
       line: seq.split(" "),
       idea: idea || "",
@@ -1070,7 +1104,11 @@
       ? Srs.order(ALL_PUZZLES.filter((p) => Srs.isDue(puzzleState.missed[p.id])).map((p) => p.id),
         puzzleState.missed).map((id) => ALL_PUZZLES.find((p) => p.id === id))
       : ALL_PUZZLES.filter((p) => p.cat === cat);
-    if (puzzleTierFilter === "all") return base;
+    // "Review" is not a difficulty band — it is exactly the set of puzzles this
+    // player got wrong. Filtering it by an automatically derived tier hides the
+    // very puzzles they asked to redo (a queue of three could show as empty),
+    // so the tier row does not apply here.
+    if (cat === "review" || puzzleTierFilter === "all") return base;
     return base.filter((p) => puzzleTier(p) === puzzleTierFilter);
   }
 
@@ -1235,7 +1273,7 @@
         puzzleWrong(
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
           c === "tac" ? (puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(puzzle.p)]) : t("pz.takeTarget")) :
-          t("pz.offBook"));
+          openingWhy(g, mv, script[puzzle.stage]));
         return;
       }
       puzzle.stage++;
@@ -1277,6 +1315,27 @@
       Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
     }
     sync();
+  }
+
+  /**
+   * Say why an opening move is wrong, not merely that it is.
+   *
+   * "这不是谱着" is a fact about a line the player has not memorised yet, which
+   * is exactly what they came here to learn — it teaches nothing. The coach
+   * names the principle instead. `g` already has the move on the board, so
+   * everything before it is the drill so far.
+   */
+  function openingWhy(g, mv, bookSan) {
+    const Coach = window.ChessOpeningCoach;
+    if (!Coach || !bookSan) return t("pz.offBook");
+    let r = null;
+    try { r = Coach.critique(puzzle.p.fen || "", g.history().slice(0, -1), mv.san, bookSan, Chess); }
+    catch (_) { r = null; }
+    if (!r) return t("pz.offBook");
+    // the coach knows nothing about the dictionary, so a piece comes back as
+    // its key ("piece.n") and is turned into a word here
+    const vals = r.vals.map((v) => (typeof v === "string" && v.startsWith("piece.") ? t(v) : v));
+    return tf(r.key, vals);
   }
 
   function puzzleWrong(reason) {
@@ -1340,6 +1399,45 @@
     sync();
   }
 
+  /**
+   * Carry a finished opening drill into a real game.
+   *
+   * Rehearsing six plies and then being handed the next drill is where the
+   * opening trainer stopped being about openings: a line is only worth
+   * knowing for the game it leads to, and that game was never reachable from
+   * here. This hands the drilled position to the engine with the moves
+   * intact, from the White side the player just rehearsed.
+   */
+  function playOnFromPuzzle() {
+    if (!puzzle || !puzzle.done || puzzle.p.cat !== "op") return;
+    const line = puzzle.g.pgn();
+    const name = puzzleName(puzzle.p);
+    if (!line.trim()) return;
+    invalidateEngine();
+    if (window.ChessEngine) window.ChessEngine.newGame();
+    stopPuzzles();
+    mode = "ai";
+    humanColor = "w"; // every opening drill is played from White's side
+    flipped = false;
+    flagFall = null;
+    resigned = null;
+    drawAgreed = false;
+    drawClaimed = null;
+    analysis = null;
+    statsRecordedSig = null;
+    game.reset();
+    game.load_pgn(line, { sloppy: true });
+    selection = null;
+    hintMove = null;
+    viewIndex = sanHistory().length;
+    resetClocks();
+    saveSettings();
+    saveGame();
+    sync();
+    toast(tf("pz.playOn", [name]));
+    maybeEngineTurn();
+  }
+
   function nextPuzzle() {
     if (!puzzle) return;
     let list = puzzlesInCat(puzzle.cat);
@@ -1372,6 +1470,7 @@
     if (!puzzle) {
       document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
         b.classList.toggle("active", b.dataset.tier === puzzleTierFilter);
+        b.disabled = false; // no puzzle loaded means we are not in review
       });
       document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
         b.classList.toggle("active", b.dataset.cat === puzzleState.cat);
@@ -1394,9 +1493,15 @@
         ? tf("pz.missedCount", [missedCount])
         : tf("pz.solvedCount", [solvedAll, ALL_PUZZLES.length]);
     }
+    // the tier row does nothing in the review queue — grey it out rather than
+    // leaving buttons that look live but change nothing
+    const inReview = puzzle.cat === "review";
     document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tier === puzzleTierFilter);
+      b.classList.toggle("active", !inReview && b.dataset.tier === puzzleTierFilter);
+      b.disabled = inReview;
     });
+    const tierRow = document.getElementById("row-puzzle-tier");
+    if (tierRow) tierRow.classList.toggle("muted-row", inReview);
     document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.cat === puzzle.cat);
       // surface how many are queued for review right on the tab
@@ -1415,8 +1520,16 @@
       ideaEl.hidden = !idea;
       ideaEl.textContent = idea ? t("pz.idea") + " · " + idea : "";
     }
+    // a finished opening line offers the game it was drilled for; that is the
+    // reward, so it takes the primary emphasis from "next puzzle"
+    const canPlayOn = !!puzzle.done && puzzle.p.cat === "op";
+    const playOn = document.getElementById("puzzle-playon");
+    if (playOn) {
+      playOn.hidden = !canPlayOn;
+      playOn.classList.toggle("primary", canPlayOn);
+    }
     const next = document.getElementById("puzzle-next");
-    if (next) next.classList.toggle("primary", puzzle.done);
+    if (next) next.classList.toggle("primary", puzzle.done && !canPlayOn);
     const listEl = document.getElementById("puzzle-list");
     if (listEl) {
       listEl.innerHTML = "";
@@ -1832,11 +1945,190 @@
     }
     const clearBtn = document.getElementById("stats-clear");
     if (clearBtn) clearBtn.disabled = !total;
+    renderHistory();
+  }
+
+  // --- game history ---
+  //
+  // Every finished engine game has been stored with its full movetext since
+  // 1.4 (the `sig` field, which also ties an analysis to the game it measured),
+  // and up to 500 of them are kept — but until 1.8 there was no way to open
+  // one. The whole feature is therefore a reader over data that was already
+  // there: pick a game, put it back on the board, and every existing tool
+  // (分析 / 回顾报告 / 导出 PGN / 存档槽) works on it unchanged.
+
+  /** how many games the sidebar shows before deferring to the full list */
+  const HIST_PREVIEW = 5;
+  /** the newest-first list the rendered rows index into */
+  let histCache = [];
+
+  function historyGames() {
+    return loadStats().games.filter((g) => g && typeof g.sig === "string" && g.sig.trim()).reverse();
+  }
+
+  /**
+   * The playable PGN of a record.
+   *
+   * `sig` doubles as the record's identity, so a game ended by an app-level
+   * rule carries a "#resigned"-style marker after the movetext. A checkmate
+   * ends in a bare "#", so stripping a trailing "#word" can never eat a move.
+   */
+  function historyPgn(rec) {
+    return String(rec.sig || "").replace(/#[a-zA-Z]+$/, "");
+  }
+
+  /** the app-level ending marker of a record, or "" for mate/stalemate */
+  function historyEnding(rec) {
+    const m = /#([a-zA-Z]+)$/.exec(String(rec.sig || ""));
+    return m ? m[1] : "";
+  }
+
+  /** "today 14:03" for recent games, a plain date for older ones */
+  function historyWhen(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    const now = new Date();
+    const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const clock2 = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (midnight(d) === midnight(now)) return t("hist.today") + " " + clock2;
+    if (midnight(d) === midnight(yesterday)) return t("hist.yesterday") + " " + clock2;
+    return d.toLocaleDateString();
+  }
+
+  /** everything is localised at render time, so a language switch relabels it */
+  function historyLabel(rec) {
+    const res = t(rec.result === "win" ? "hist.win" : rec.result === "loss" ? "hist.loss" : "hist.draw");
+    return [res, diffName(rec.diff), t(rec.color === "b" ? "hist.black" : "hist.white")].join(" · ");
+  }
+
+  function historySub(rec) {
+    const parts = [historyWhen(rec.t)];
+    if (rec.moves) parts.push(moveCount(Math.ceil(rec.moves / 2)));
+    if (typeof rec.acc === "number") parts.push(tf("hist.acc", [rec.acc]));
+    return parts.filter(Boolean).join(" · ");
+  }
+
+  function historyRow(rec, i, withPgn) {
+    const row = document.createElement("div");
+    row.className = "hist-row";
+    const load = document.createElement("button");
+    load.type = "button";
+    load.className = "pick-item";
+    load.dataset.hist = String(i);
+    load.textContent = historyLabel(rec);
+    const sub = document.createElement("span");
+    sub.className = "pick-sub";
+    sub.textContent = historySub(rec);
+    load.appendChild(sub);
+    row.appendChild(load);
+    if (withPgn) {
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "tool-btn";
+      copy.dataset.histPgn = String(i);
+      copy.textContent = t("hist.pgn");
+      row.appendChild(copy);
+    }
+    return row;
+  }
+
+  function renderHistory() {
+    histCache = historyGames();
+    const body = document.getElementById("hist-body");
+    if (body) {
+      body.innerHTML = "";
+      if (!histCache.length) {
+        const p = document.createElement("p");
+        p.className = "hint";
+        p.textContent = t("hist.empty");
+        body.appendChild(p);
+      } else {
+        histCache.slice(0, HIST_PREVIEW).forEach((rec, i) => body.appendChild(historyRow(rec, i, false)));
+      }
+    }
+    const btn = document.getElementById("hist-open");
+    if (btn) {
+      btn.hidden = !histCache.length;
+      btn.textContent = tf("hist.all", [histCache.length]);
+    }
+    const list = document.getElementById("hist-list");
+    if (list) {
+      list.innerHTML = "";
+      histCache.forEach((rec, i) => list.appendChild(historyRow(rec, i, true)));
+    }
+  }
+
+  function openHistory() {
+    renderHistory();
+    const m = document.getElementById("hist-modal");
+    if (m) m.classList.add("show");
+  }
+  function closeHistory() {
+    const m = document.getElementById("hist-modal");
+    if (m) m.classList.remove("show");
+  }
+
+  /**
+   * Put back the ending the moves alone cannot express.
+   *
+   * A resignation or an agreed draw leaves a position that is not over, and
+   * the import path clears every terminal flag — so without this, opening a
+   * resigned game from the history would hand the position to the engine and
+   * quietly carry on playing it.
+   */
+  function restoreEnding(rec) {
+    const end = historyEnding(rec);
+    if (!end) return;
+    if (end === "resigned") {
+      resigned = rec.color; // in an engine game only the human can resign
+    } else if (end === "drawAgreed") {
+      drawAgreed = true;
+    } else if (end === "claimed") {
+      // the record does not say which rule was claimed; the halfmove clock does
+      drawClaimed = Number(game.fen().split(" ")[4]) >= 100 ? "fifty" : "threefold";
+    } else if (end === "flag") {
+      const other = rec.color === "w" ? "b" : "w";
+      flagFall = rec.result === "win" ? other : rec.result === "loss" ? rec.color
+        : sideHasMatingMaterial(other) ? other : rec.color;
+      // the record does not keep the clocks; zeroing the side that ran out is
+      // enough to stop a full clock sitting next to "flag fall". With the time
+      // control since switched off there is no clock to correct.
+      if (clock) { clock[flagFall] = 0; renderClocks(); }
+      syncClockTimer();
+    }
+  }
+
+  async function loadFromHistory(i) {
+    const rec = histCache[i];
+    if (!rec) return;
+    closeHistory();
+    const ok = await importPgnText(historyPgn(rec), t("hist.title"),
+      { msg: t("dlg.loadHist"), title: t("dlg.loadHistTitle"), ok: t("dlg.loadHistOk") });
+    if (!ok) return;
+    // Restore the context the game was played in. Orientation and difficulty
+    // are what the board and the review report mean by "you", and pinning
+    // statsRecordedSig to this record lets a fresh 分析 file its accuracy back
+    // onto the very game it just measured.
+    mode = "ai";
+    if (DIFF_NAMES[rec.diff]) difficulty = rec.diff;
+    if (rec.color === "w" || rec.color === "b") { humanColor = rec.color; flipped = humanColor === "b"; }
+    statsRecordedSig = rec.sig;
+    restoreEnding(rec);
+    // the import ends by offering the position to the engine; a game that ended
+    // in resignation is not over by its moves, so call off that search now that
+    // the ending is back in place
+    invalidateEngine();
+    analysis = null;
+    saveSettings();
+    saveGame();
+    sync();
+    toast(tf("hist.loaded", [historyLabel(rec)]));
   }
 
   /**
    * One sentence saying what to do next, from what the player has actually
-   * done. The app has four modes, 36 lessons and 148 puzzles and, until 1.7,
+   * done. The app has four modes, 38 lessons and 145 puzzles and, until 1.7,
    * nothing anywhere that answered "so what should I play now?".
    *
    * Deliberately conservative: it only speaks when there is enough evidence
@@ -3565,6 +3857,8 @@
   };
   document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
+  const playOnEl = document.getElementById("puzzle-playon");
+  if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
   document.getElementById("puzzle-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
     if (b && puzzle) startPuzzleAt(puzzle.cat, Number(b.dataset.i));
@@ -3744,6 +4038,28 @@
     slotsModal.onclick = (ev) => { if (ev.target === slotsModal) closeSlots(); };
   }
 
+  const histModal = document.getElementById("hist-modal");
+  if (histModal) {
+    const openBtn = document.getElementById("hist-open");
+    if (openBtn) openBtn.onclick = openHistory;
+    document.getElementById("hist-close").onclick = closeHistory;
+    const onHistClick = (ev) => {
+      const b = ev.target.closest("button");
+      if (!b) return;
+      if (b.dataset.histPgn != null) {
+        const rec = histCache[Number(b.dataset.histPgn)];
+        if (rec) copyText(historyPgn(rec), t("hist.pgnCopied"));
+      } else if (b.dataset.hist != null) {
+        if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+        loadFromHistory(Number(b.dataset.hist));
+      }
+    };
+    document.getElementById("hist-list").onclick = onHistClick;
+    const histBody = document.getElementById("hist-body");
+    if (histBody) histBody.onclick = onHistClick;
+    histModal.onclick = (ev) => { if (ev.target === histModal) closeHistory(); };
+  }
+
   const pickModal = document.getElementById("pick-modal");
   if (pickModal) {
     document.getElementById("pick-list").onclick = (ev) => {
@@ -3772,6 +4088,7 @@
     if (ev.key === "Escape") {
       if (promoModal && promoModal.classList.contains("show")) { finishPromotion(null); return; }
       if (slotsModal && slotsModal.classList.contains("show")) { closeSlots(); return; }
+      if (histModal && histModal.classList.contains("show")) { closeHistory(); return; }
       if (pickModal && pickModal.classList.contains("show")) { finishPick(null); return; }
       if (fenModal && fenModal.classList.contains("show")) { closeFenModal(); return; }
       if (confirmModal.classList.contains("show")) { finishConfirm(false); return; }
