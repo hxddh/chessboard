@@ -22,6 +22,7 @@ test -f frontend/dist/js/pieces.js
 test -f frontend/dist/js/pgn.js
 test -f frontend/dist/js/fide.js
 test -f frontend/dist/js/review.js
+test -f frontend/dist/js/srs.js
 test -f frontend/dist/js/editor.js
 test -f frontend/dist/js/i18n.js
 test -f frontend/dist/js/openings.js

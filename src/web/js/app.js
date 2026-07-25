@@ -1045,17 +1045,30 @@
   function savePuzzleState() {
     try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {}
   }
+  const Srs = window.ChessSrs;
   function markMissed(id) {
-    if (!puzzleState.missed[id]) { puzzleState.missed[id] = true; savePuzzleState(); }
+    puzzleState.missed[id] = Srs.onMiss(puzzleState.missed[id]);
+    savePuzzleState();
   }
+  /**
+   * A clean solve advances the puzzle towards leaving the review queue — it no
+   * longer graduates on the first correct answer, which was usually given
+   * moments after reading the solution.
+   */
   function clearMissed(id) {
-    if (puzzleState.missed[id]) { delete puzzleState.missed[id]; savePuzzleState(); }
+    if (!Srs.isDue(puzzleState.missed[id])) return;
+    const next = Srs.onSolve(puzzleState.missed[id]);
+    if (next) puzzleState.missed[id] = next; else delete puzzleState.missed[id];
+    savePuzzleState();
   }
 
   /** "review" is a virtual category: every puzzle currently in the missed set. */
   function puzzlesInCat(cat) {
     const base = cat === "review"
-      ? ALL_PUZZLES.filter((p) => puzzleState.missed[p.id])
+      // least-learned first, so a puzzle just answered goes to the back of the
+      // queue instead of being asked again on the very next click
+      ? Srs.order(ALL_PUZZLES.filter((p) => Srs.isDue(puzzleState.missed[p.id])).map((p) => p.id),
+        puzzleState.missed).map((id) => ALL_PUZZLES.find((p) => p.id === id))
       : ALL_PUZZLES.filter((p) => p.cat === cat);
     if (puzzleTierFilter === "all") return base;
     return base.filter((p) => puzzleTier(p) === puzzleTierFilter);
@@ -1630,7 +1643,9 @@
       const row = line("review-row");
       const who = document.createElement("span");
       who.className = "review-k";
-      who.textContent = t(side === "w" ? "vs.white" : "vs.black");
+      // the full word, not the one-letter clock label — "W Accuracy 64%" reads
+      // like a typo in a report meant to be read as prose
+      who.textContent = t(side === "w" ? "m.04" : "m.05");
       const val = document.createElement("span");
       val.className = "review-v num";
       val.textContent = tf("rv.sideLine", [sum.acc[side], sum.acpl[side], c.inaccuracy, c.mistake, c.blunder]);
@@ -1648,7 +1663,7 @@
       btn.type = "button";
       btn.className = "review-jump";
       btn.textContent = tf("rv.turningPoint",
-        [sum.worst.moveNo, t(sum.worst.side === "w" ? "vs.white" : "vs.black"), sum.worst.san,
+        [sum.worst.moveNo, t(sum.worst.side === "w" ? "m.04" : "m.05"), sum.worst.san,
          (sum.worst.loss / 100).toFixed(1)]);
       btn.title = t("rv.jumpTip");
       // land on the position *after* the move, so the damage is on the board
@@ -1737,6 +1752,24 @@
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
     renderStats();
     checkNewAchievements();
+    offerReview();
+  }
+
+  /**
+   * Nudge towards the post-game report once a game is actually over.
+   *
+   * The review is the most useful thing the app can tell a learner, and until
+   * 1.7 it was only reachable by knowing to press "分析" afterwards — so the
+   * feature shipped in 1.6 and most players never saw it. Only a hint: running
+   * the engine over a whole game is a real wait, so it stays opt-in.
+   */
+  function offerReview() {
+    if (mode !== "ai" || !window.ChessEngine || analyzing) return;
+    if (analysisFor()) return; // already analysed — the report is on screen
+    if (sanHistory().length < 6) return; // too short to say anything useful
+    setTimeout(() => {
+      if (mode === "ai" && !analyzing && !analysisFor() && appGameOver()) toast(t("rv.offer"));
+    }, 2200);
   }
 
   function renderStats() {
@@ -1790,8 +1823,52 @@
         (withAcc.length ? t("stats.hintAcc") : t("stats.hintNoAcc"))
       : t("stats.emptyHint");
     el.appendChild(hint);
+    const rec = recommendation();
+    if (rec) {
+      const line = document.createElement("div");
+      line.className = "stat-hint stat-rec";
+      line.textContent = rec;
+      el.appendChild(line);
+    }
     const clearBtn = document.getElementById("stats-clear");
     if (clearBtn) clearBtn.disabled = !total;
+  }
+
+  /**
+   * One sentence saying what to do next, from what the player has actually
+   * done. The app has four modes, 36 lessons and 148 puzzles and, until 1.7,
+   * nothing anywhere that answered "so what should I play now?".
+   *
+   * Deliberately conservative: it only speaks when there is enough evidence
+   * (three games at one level, or a clear score), and it suggests rather than
+   * changes anything.
+   * @returns {string|null}
+   */
+  function recommendation() {
+    const st = loadStats();
+    const cur = st.games.filter((g) => g.diff === difficulty);
+    const recent = cur.slice(-6);
+    const idx = DIFF_IDS.indexOf(difficulty);
+    // an unfinished course outranks any difficulty advice
+    const done = LESSONS.filter((l) => learnState.done[l.id]).length;
+    if (done > 0 && done < LESSONS.length && st.games.length >= 2) {
+      return tf("rec.lessons", [done, LESSONS.length]);
+    }
+    if (recent.length < 3) return null;
+    const wins = recent.filter((g) => g.result === "win").length;
+    const losses = recent.filter((g) => g.result === "loss").length;
+    if (wins >= recent.length - 1 && idx + 1 < DIFF_IDS.length) {
+      return tf("rec.harder", [diffName(DIFF_IDS[idx + 1])]);
+    }
+    if (losses === recent.length && idx > 0) {
+      return tf("rec.easier", [diffName(DIFF_IDS[idx - 1])]);
+    }
+    // losing most games but not all: tactics are usually the cheapest fix
+    if (losses > wins) {
+      const missed = ALL_PUZZLES.filter((p) => window.ChessSrs.isDue(puzzleState.missed[p.id])).length;
+      return missed ? tf("rec.review", [missed]) : t("rec.puzzles");
+    }
+    return null;
   }
 
   // --- achievements: pure derivations of stats + lesson/puzzle progress ---
@@ -1841,9 +1918,12 @@
     const baseRes = base.map((a) => ({ ach: a, unlocked: !!a.test(s) || achSeen.has(a.id) }));
     s.otherUnlocked = baseRes.filter((r) => r.unlocked).length;
     s.otherTotal = base.length;
-    return ACH.map((a) =>
+    const out = ACH.map((a) =>
       a.id === "completionist" ? { ach: a, unlocked: !!a.test(s) || achSeen.has(a.id) }
         : baseRes.find((r) => r.ach.id === a.id));
+    // the badges' progress() reads the same summary the tests ran against
+    out.summary = s;
+    return out;
   }
 
   /** Toast any achievement newly unlocked since last check; persist seen set. */
@@ -1878,6 +1958,18 @@
       nm.className = "ach-nm";
       nm.textContent = r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name;
       b.append(ic, nm);
+      // "12/53" on a locked counting badge — the puzzle set nearly doubled in
+      // 1.6, so "solve every mate" silently got much longer with nothing on
+      // screen to say how far along you were
+      if (!r.unlocked && r.ach.progress) {
+        const [done, total] = r.ach.progress(res.summary);
+        if (total > 0 && done < total) {
+          const pg = document.createElement("span");
+          pg.className = "ach-pg num";
+          pg.textContent = done + "/" + total;
+          b.appendChild(pg);
+        }
+      }
       el.appendChild(b);
     }
   }
@@ -1935,15 +2027,31 @@
     if (!el) return;
     const h = sanHistory();
     el.innerHTML = "";
-    for (let i = 0; i < h.length; i += 2) {
+    // A position edited to start with Black opens at "1…", so its first row
+    // holds a single black move and White's reply belongs to move 2. Pairing
+    // from ply 0 would file them together under move 1 — and the review
+    // report's turning-point line would then disagree with this list.
+    const blackFirst = startFen() ? startFen().split(" ")[1] === "b" : false;
+    const firstMover = blackFirst ? "b" : "w";
+    const moveNo = (i) => (window.ChessReview
+      ? window.ChessReview.moveNumber(i, firstMover)
+      : Math.floor(i / 2) + 1);
+    for (let i = blackFirst ? -1 : 0; i < h.length; i += 2) {
       const row = document.createElement("div");
       row.className = "mlrow";
       const num = document.createElement("span");
       num.className = "mlnum num";
-      num.textContent = (i / 2 + 1) + ".";
+      num.textContent = moveNo(Math.max(0, i)) + ".";
       row.appendChild(num);
+      // the opening row of a black-first game shows "1. … Qh4"
+      if (i < 0) {
+        const gap = document.createElement("span");
+        gap.className = "mlmove mlgap";
+        gap.textContent = "…";
+        row.appendChild(gap);
+      }
       const a = analysisFor();
-      for (const j of [i, i + 1]) {
+      for (const j of (i < 0 ? [0] : [i, i + 1])) {
         if (j >= h.length) break;
         const b = document.createElement("button");
         b.type = "button";
@@ -2358,6 +2466,7 @@
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
     renderStats();
     checkNewAchievements();
+    offerReview(); // resignation and flag-fall end a game just as much as mate
   }
 
   function recordResign() { recordOutcome("loss", "#resigned"); }
@@ -2573,6 +2682,41 @@
 
   /** Modal list picker → index of the chosen entry, or null when cancelled. */
   let pickResolver = null;
+  /**
+   * One question, asked once, on a genuinely fresh install.
+   *
+   * Everything the app has for a beginner — the 36-lesson course, the Beginner
+   * engine that makes real mistakes on purpose — was reachable only by someone
+   * who already knew to go looking. Until 1.7 the first screen was a 1700-rated
+   * Stockfish, which is exactly the "hard to get started" complaint the whole
+   * teaching side was built to answer.
+   *
+   * Dismissing the dialog leaves the player where they already are, so this can
+   * never trap anyone: the worst case is the old behaviour.
+   */
+  async function runOnboarding() {
+    const choice = await pickFromList(t("ob.title"), [
+      { label: t("ob.newLabel"), sub: t("ob.newSub") },
+      { label: t("ob.knowLabel"), sub: t("ob.knowSub") },
+    ]);
+    if (choice == null) return; // cancelled — leave the defaults alone
+    if (choice === 0) {
+      mode = "learn";
+      startLearn();
+    } else {
+      // they can play, but "normal" is Elo 1700 — start a rung lower and let
+      // the difficulty row (now visible) speak for itself. The engine reads
+      // `difficulty` at search time, so setting it here is enough.
+      mode = "ai";
+      difficulty = "easy";
+    }
+    setPanelOpen(true);
+    saveSettings();
+    sync();
+    toast(choice === 0 ? t("ob.toLearn") : tf("ob.toPlay", [diffName(difficulty)]));
+    if (choice !== 0) maybeEngineTurn();
+  }
+
   function pickFromList(title, items) {
     const modal = document.getElementById("pick-modal");
     const list = document.getElementById("pick-list");
@@ -3702,6 +3846,14 @@
   });
 
   // --- boot ---
+  // "Have we been here before?" — asked before loadSettings writes anything,
+  // because the very first thing a new player saw was a 1700-rated Stockfish
+  // (mode "ai" + difficulty "normal" are the code defaults) with nothing at all
+  // pointing at the 36-lesson course or the Beginner tier built for them.
+  const firstRun = !Host.storageGet(SETTINGS_KEY) && !Host.storageGet(SAVE_KEY) &&
+    !Host.storageGet(LEARN_KEY) && !Host.storageGet(PUZZLE_KEY);
+  // and on a first run, start in the system language rather than always Chinese
+  if (firstRun && I18n && I18n.detectLang) langId = I18n.setLang(I18n.detectLang());
   loadSettings();
   document.documentElement.setAttribute("data-theme", themeId);
   if (I18n) { I18n.setLang(langId); I18n.apply(document); }
@@ -3730,5 +3882,6 @@
     window.ChessEngine.init().catch(() => toast(t("mm.engineInitFailed")));
     maybeEngineTurn(); // resumed save may leave the engine on move
   }
+  if (firstRun) runOnboarding();
 
 })();

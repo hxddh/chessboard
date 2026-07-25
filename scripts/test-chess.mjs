@@ -498,6 +498,56 @@ for (const p of ["r", "b", "n"]) {
     }
   }
   assert(bad === 0, "all puzzles legal and forced");
+
+  // A puzzle title is a promise about the solution, and v1.6 broke that promise
+  // at scale: eight mates titled "two rooks close the net" were answered by a
+  // KING move, because the "the named piece must be the one that moves" rule
+  // was only applied to the capture puzzles.
+  //
+  // This check is deliberately scoped to the machine-generated sets. A
+  // hand-written title is prose - "take the hanging queen" names the piece you
+  // capture, "skewer wins the queen" names the piece you win three plies later
+  // - and no lint reads that correctly. A generator, by contrast, mints titles
+  // mechanically and can mislabel fifty puzzles without anyone noticing, so its
+  // titles must name the piece that plays the key move.
+  const GENERATED = /^(m2-net|m3-hunt|w-gen|t-gen)-/;
+  const PIECE_WORDS = {
+    k: ["\u738b", "king"], q: ["\u540e", "queen"], r: ["\u8f66", "rook"],
+    b: ["\u8c61", "bishop"], n: ["\u9a6c", "knight"], p: ["\u5175", "pawn"],
+  };
+  let named = 0, generatedSeen = 0;
+  for (const p of puzzles) {
+    if (!GENERATED.test(p.id)) continue;
+    generatedSeen++;
+    const key = (p.line || p.solution || [])[0];
+    const mv = new Chess(p.fen).move(key);
+    if (!mv) continue;
+    const zh = p.name || "";
+    const enRaw = (ctx.CHESS_PUZZLES_EN[p.id] || {}).name || "";
+    const moverWords = PIECE_WORDS[mv.piece];
+    // both languages must name it — an OR here would let an English user read
+    // "discovered check wins the bishop" while a knight does the work
+    const zhOk = zh.includes(moverWords[0]);
+    const enOk = enRaw.toLowerCase().includes(moverWords[1]);
+    if (zhOk && enOk) continue;
+    named++;
+    console.error("FAIL: " + p.id + " titled \"" + zh + "\" / \"" + enRaw + "\" — " +
+      (zhOk ? "the English name" : enOk ? "the Chinese name" : "neither name") +
+      " omits the " + mv.piece + " that plays its key move " + key);
+  }
+  assert(generatedSeen > 0, "generated-title check has puzzles to check (" + generatedSeen + ")");
+  assert(named === 0, "every generated puzzle title names the piece that plays its key move");
+
+  // Variety, again scoped to the generated set. v1.6's generated block was
+  // 21/23 "K + two pieces vs a lone king" and every position looked the same.
+  // Hand-authored lone-king mates are deliberate — the Arabian mate, the
+  // two-bishop mate and the quiet-move zugzwangs are *taught* on a bare board
+  // so the pattern is unmistakable — so the rule must not touch them.
+  const genMates = puzzles.filter((p) => GENERATED.test(p.id) && ["m1", "m2", "m3"].includes(p.cat));
+  const lonelyKing = genMates.filter((p) => (p.fen.split(" ")[0].match(/[a-z]/g) || []).length <= 1);
+  assert(genMates.length > 0 && lonelyKing.length <= genMates.length * 0.35,
+    "generated mates are not all the same shape (" + lonelyKing.length + "/" + genMates.length +
+    " face a lone king)");
 }
 
 // FIDE draw arithmetic: repetition counting and the 6.9 material test decide
@@ -675,6 +725,47 @@ for (const p of ["r", "b", "n"]) {
   assert(R.verdictKey(null, "w") === null, "no summary yields no verdict");
 }
 
+// puzzle review scheduling: a puzzle used to graduate on the first correct
+// answer, which was usually given seconds after reading the solution
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/srs.js"), "utf8"), ctx, { filename: "srs.js" });
+  const S = ctx.ChessSrs;
+  assert(S.GRADUATE >= 2, "graduating takes more than one correct answer");
+  assert(!S.isDue(undefined), "an unseen puzzle is not in the queue");
+
+  // miss -> solve -> solve is the full cycle
+  let e = S.onMiss(undefined);
+  assert(S.isDue(e), "a missed puzzle enters the queue");
+  e = S.onSolve(e);
+  assert(e && S.isDue(e), "one correct answer is not enough to graduate");
+  e = S.onSolve(e);
+  assert(e === null, "the second consecutive correct answer graduates it");
+
+  // a miss part-way through resets the streak
+  let f = S.onSolve(S.onMiss(undefined));
+  assert(S.entry(f).s === 1, "streak advanced to 1");
+  f = S.onMiss(f);
+  assert(S.entry(f).s === 0, "a later miss resets the streak");
+  assert(S.entry(f).n === 3, "but the times-seen count keeps growing across misses and solves");
+
+  // 1.6 stored a bare `true`; those entries must keep working
+  assert(S.isDue(true), "a legacy boolean entry is still due");
+  assert(S.entry(true).s === 0, "a legacy entry starts at streak 0");
+  assert(S.onSolve(true) !== null, "a legacy entry does not graduate on one solve");
+
+  // solving something that was never missed is a no-op
+  assert(S.onSolve(undefined) === null, "solving an unqueued puzzle changes nothing");
+
+  // ordering puts the least-learned first, so the one just solved goes last
+  const state = { a: { s: 1, n: 3 }, b: { s: 0, n: 1 }, c: { s: 0, n: 5 } };
+  assert(S.order(["a", "b", "c"], state).join(",") === "c,b,a",
+    "queue order is least-learned first, most-seen first within a streak (" +
+    S.order(["a", "b", "c"], state).join(",") + ")");
+
+  const [done, total] = S.progress({ s: 1, n: 2 });
+  assert(done === 1 && total === S.GRADUATE, "progress reports streak against the target");
+}
+
 // i18n: every key present in the base language must exist in the others, or
 // switching language would silently blank parts of the UI
 {
@@ -692,6 +783,20 @@ for (const p of ["r", "b", "n"]) {
   assert(missing === 0, "every language covers all " + baseKeys.length + " UI keys");
   I.setLang("en");
   assert(I.t("chrome.hint") === "Hint", "lookup follows the active language");
+
+  // First-run language detection. Until 1.7 the app always booted in Chinese,
+  // so an English-locale newcomer met a Chinese first-run dialog and never saw
+  // any of the translation work. A stored preference still wins — this is only
+  // consulted when there is nothing saved at all.
+  const det = (langs) => I.detectLang({ languages: langs, language: langs[0] || "" });
+  assert(det(["en-US"]) === "en", "en-US picks English");
+  assert(det(["en-GB", "zh-CN"]) === "en", "the first understood tag wins");
+  assert(det(["zh-CN"]) === "zh-CN", "zh-CN picks Chinese");
+  assert(det(["zh-TW"]) === "zh-CN", "any Chinese variant picks Chinese");
+  assert(det(["fr-FR"]) === "zh-CN", "an unsupported locale falls back to the base language");
+  assert(det([]) === "zh-CN", "no locale information falls back");
+  assert(I.detectLang({}) === "zh-CN", "a navigator with no language fields falls back");
+  I.setLang("en");
   assert(I.t("nope.missing") === "nope.missing", "unknown keys fall back to the key itself");
   I.setLang("zh-CN");
 

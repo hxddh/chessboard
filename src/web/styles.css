@@ -743,6 +743,8 @@
       min-width: 52px; text-align: left;
     }
     .mlmove:hover { background: var(--btn-ghost); }
+    /* the "…" placeholder standing in for White's missing first move */
+    .mlgap { color: var(--muted); cursor: default; pointer-events: none; }
     .mlmove.current {
       background: color-mix(in srgb, var(--accent) 18%, transparent);
       color: var(--accent); font-weight: 700;
@@ -783,6 +785,10 @@
       cursor: pointer;
     }
     .review-jump:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
+
+    .ach-pg { margin-left: auto; font-size: 10.5px; color: var(--muted); flex: none; }
+    /* the "what next?" suggestion under the statistics */
+    .stat-rec { margin-top: 6px; color: var(--accent); }
 
     .mvtag { margin-left: 3px; font-weight: 700; font-size: 11px; }
     .mvtag.t-soft { color: #c9b458; }
