@@ -15,10 +15,10 @@
       <span class="meta-chip num" id="moves">0/0</span>
       <span class="spacer"></span>
       <div class="chrome-actions">
-        <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)">提示</button>
-        <button type="button" class="tool-btn" id="undo" disabled title="悔棋 (Z)">悔棋</button>
-        <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)">翻转</button>
-        <button type="button" class="tool-btn primary" id="btn-new" title="新局 (N)">新局</button>
+        <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n="chrome.hint">提示</button>
+        <button type="button" class="tool-btn" id="undo" disabled title="悔棋 (Z)" data-i18n="chrome.undo">悔棋</button>
+        <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)" data-i18n="chrome.flip">翻转</button>
+        <button type="button" class="tool-btn primary" id="btn-new" title="新局 (N)" data-i18n="chrome.new">新局</button>
         <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (Tab)" aria-label="侧栏">☰</button>
       </div>
     </header>
@@ -29,6 +29,7 @@
         <canvas id="board" width="900" height="900" aria-label="棋盘"></canvas>
       </div>
     </div>
+    <div id="board-live" class="sr-only" aria-live="polite" role="status"></div>
 
     <aside class="side" id="side" aria-label="对局面板">
       <section class="side-head">
@@ -37,19 +38,19 @@
             <span class="pmark white" aria-hidden="true">♔</span>
             <div>
               <div class="vs-name">
-                白
+                <span data-i18n="vs.white">白</span>
                 <span class="badge" id="white-turn" hidden>行</span>
               </div>
               <div class="vs-role muted" id="white-role">玩家 1</div>
               <div class="vs-clock num" id="clock-w" hidden>5:00</div>
             </div>
           </div>
-          <div class="vs-mid muted">对</div>
+          <div class="vs-mid muted" data-i18n="vs.versus">对</div>
           <div class="vs-side vs-right">
             <div>
               <div class="vs-name">
                 <span class="badge" id="black-turn" hidden>行</span>
-                黑
+                <span data-i18n="vs.black">黑</span>
               </div>
               <div class="vs-role muted" id="black-role">玩家 2</div>
               <div class="vs-clock num" id="clock-b" hidden>5:00</div>
@@ -61,50 +62,50 @@
       </section>
 
       <section class="side-section">
-        <h2 class="side-h">对局</h2>
+        <h2 class="side-h" data-i18n="side.game">对局</h2>
         <div class="setting-list">
           <div class="setting-row stack">
-            <span class="setting-k">模式</span>
+            <span class="setting-k" data-i18n="side.mode">模式</span>
             <div class="theme-row" id="mode-seg" role="group" aria-label="模式">
-              <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈">人机</button>
-              <button type="button" data-mode="pvp" title="双人同屏对弈">双人</button>
-              <button type="button" data-mode="learn" title="从零学国际象棋:互动课程">教学</button>
-              <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀">做题</button>
+              <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n="mode.ai">人机</button>
+              <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n="mode.pvp">双人</button>
+              <button type="button" data-mode="learn" title="从零学国际象棋:互动课程" data-i18n="mode.learn">教学</button>
+              <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀" data-i18n="mode.puzzle">做题</button>
             </div>
           </div>
           <div class="setting-row stack" id="row-difficulty">
-            <span class="setting-k">难度</span>
+            <span class="setting-k" data-i18n="side.difficulty">难度</span>
             <div class="theme-row wrap" id="diff-seg" role="group" aria-label="难度">
-              <button type="button" data-diff="beginner" title="会主动犯错的陪练,适合教学毕业第一局">新手</button>
-              <button type="button" data-diff="easy" title="Elo 1320">入门</button>
-              <button type="button" data-diff="normal" class="active" title="Elo 1700">进阶</button>
-              <button type="button" data-diff="hard" title="Elo 2200">困难</button>
-              <button type="button" data-diff="extreme" title="Stockfish 满强度">极限</button>
+              <button type="button" data-diff="beginner" title="会主动犯错的陪练,适合教学毕业第一局" data-i18n="diff.beginner">新手</button>
+              <button type="button" data-diff="easy" title="Elo 1320" data-i18n="diff.easy">入门</button>
+              <button type="button" data-diff="normal" class="active" title="Elo 1700" data-i18n="diff.normal">进阶</button>
+              <button type="button" data-diff="hard" title="Elo 2200" data-i18n="diff.hard">困难</button>
+              <button type="button" data-diff="extreme" title="Stockfish 满强度" data-i18n="diff.extreme">极限</button>
             </div>
           </div>
           <div class="setting-row stack" id="row-color">
-            <span class="setting-k">执子</span>
+            <span class="setting-k" data-i18n="side.color">执子</span>
             <div class="theme-row" id="color-seg" role="group" aria-label="执子">
-              <button type="button" data-color="w" class="active" title="执白先行">执白</button>
-              <button type="button" data-color="b" title="执黑后行">执黑</button>
+              <button type="button" data-color="w" class="active" title="执白先行" data-i18n="color.white">执白</button>
+              <button type="button" data-color="b" title="执黑后行" data-i18n="color.black">执黑</button>
             </div>
           </div>
           <div class="setting-row" id="row-coach">
-            <span class="setting-k" title="走出严重失误时提示悔棋重想">失着提醒</span>
+            <span class="setting-k" title="走出严重失误时提示悔棋重想" data-i18n="side.coach">失着提醒</span>
             <button type="button" class="switch" id="opt-coach" aria-pressed="true">
               <span class="switch-knob"></span>
             </button>
           </div>
           <div class="setting-row" id="row-autoflip" hidden>
-            <span class="setting-k" title="每步走完后棋盘转向走子方">自动翻转</span>
+            <span class="setting-k" title="每步走完后棋盘转向走子方" data-i18n="side.autoflip">自动翻转</span>
             <button type="button" class="switch" id="opt-autoflip" aria-pressed="false">
               <span class="switch-knob"></span>
             </button>
           </div>
           <div class="setting-row stack" id="row-clock" hidden>
-            <span class="setting-k">棋钟</span>
+            <span class="setting-k" data-i18n="side.clock">棋钟</span>
             <div class="theme-row wrap" id="clock-seg" role="group" aria-label="棋钟">
-              <button type="button" data-tc="off" class="active" title="不限时">关</button>
+              <button type="button" data-tc="off" class="active" title="不限时" data-i18n="clock.off">关</button>
               <button type="button" data-tc="3" title="每方 3 分钟">3</button>
               <button type="button" data-tc="3+2" title="每方 3 分钟,每步加 2 秒">3+2</button>
               <button type="button" data-tc="5" title="每方 5 分钟">5</button>
@@ -116,19 +117,23 @@
       </section>
 
       <section class="side-section">
-        <h2 class="side-h">外观</h2>
+        <h2 class="side-h" data-i18n="side.look">外观</h2>
         <div class="setting-list">
           <div class="setting-row stack">
-            <span class="setting-k">主题</span>
+            <span class="setting-k" data-i18n="side.theme">主题</span>
             <div class="theme-row" id="theme-seg" role="group" aria-label="主题">
-              <button type="button" data-theme="wood" class="active" title="木色">木</button>
-              <button type="button" data-theme="night" title="夜色">夜</button>
-              <button type="button" data-theme="day" title="日间">日</button>
-              <button type="button" data-theme="notebook" title="纸本">纸</button>
+              <button type="button" data-theme="wood" class="active" title="木色" data-i18n="theme.wood">木</button>
+              <button type="button" data-theme="night" title="夜色" data-i18n="theme.night">夜</button>
+              <button type="button" data-theme="day" title="日间" data-i18n="theme.day">日</button>
+              <button type="button" data-theme="notebook" title="纸本" data-i18n="theme.notebook">纸</button>
             </div>
           </div>
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.language">语言</span>
+            <div class="theme-row" id="lang-seg" role="group" aria-label="语言"></div>
+          </div>
           <div class="setting-row">
-            <span class="setting-k">音效</span>
+            <span class="setting-k" data-i18n="side.sound">音效</span>
             <button type="button" class="switch" id="opt-sound" aria-pressed="true" title="走子音效">
               <span class="switch-knob"></span>
             </button>
@@ -138,7 +143,7 @@
 
       <section class="side-section" id="sec-learn" hidden>
         <div class="side-h-row">
-          <h2 class="side-h">教学</h2>
+          <h2 class="side-h" data-i18n="side.learn">教学</h2>
           <span class="side-h-meta num" id="learn-progress">0/0</span>
           <button type="button" class="text-link danger" id="learn-reset" title="清空教学进度,从第一课重新开始">重置</button>
         </div>
@@ -146,8 +151,8 @@
         <div class="lesson-text" id="lesson-text"></div>
         <div class="lesson-task" id="lesson-task"></div>
         <div class="lesson-controls">
-          <button type="button" class="tool-btn" id="lesson-restart" title="重做本课任务 (R)">重来</button>
-          <button type="button" class="tool-btn" id="lesson-demo" title="重看本任务的走法演示">演示</button>
+          <button type="button" class="tool-btn" id="lesson-restart" title="重做本课任务 (R)" data-i18n="act.restart">重来</button>
+          <button type="button" class="tool-btn" id="lesson-demo" title="重看本任务的走法演示" data-i18n="act.demo">演示</button>
           <button type="button" class="tool-btn" id="lesson-next" title="进入下一课">下一课</button>
         </div>
         <div class="lesson-list" id="lesson-list" aria-label="课程列表"></div>
@@ -155,7 +160,7 @@
 
       <section class="side-section" id="sec-puzzle" hidden>
         <div class="side-h-row">
-          <h2 class="side-h">做题</h2>
+          <h2 class="side-h" data-i18n="side.puzzle">做题</h2>
           <span class="side-h-meta num" id="puzzle-progress">已解 0/0</span>
         </div>
         <div class="setting-row stack">
@@ -171,17 +176,51 @@
           </div>
         </div>
         <div class="lesson-task" id="puzzle-task"></div>
+        <p class="hint" id="puzzle-idea" hidden></p>
         <div class="lesson-controls">
-          <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)">重做</button>
+          <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)" data-i18n="act.puzzleRetry">重做</button>
           <button type="button" class="tool-btn" id="puzzle-answer" title="标出当前一步的正解 (H)">答案</button>
-          <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)">下一题</button>
+          <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)" data-i18n="act.puzzleNext">下一题</button>
         </div>
         <div class="lesson-list" id="puzzle-list" aria-label="题目列表"></div>
       </section>
 
+      <section class="side-section" id="sec-editor" hidden>
+        <div class="side-h-row">
+          <h2 class="side-h" data-i18n="side.editor">编辑局面</h2>
+          <span class="side-h-meta" id="editor-hint">选棋子 → 点棋盘</span>
+        </div>
+        <div class="palette" id="editor-palette" role="group" aria-label="棋子"></div>
+        <div class="setting-list" style="margin-top:14px">
+          <div class="setting-row stack">
+            <span class="setting-k">轮到</span>
+            <div class="theme-row" id="editor-turn" role="group" aria-label="轮到">
+              <button type="button" data-turn="w" class="active">白方</button>
+              <button type="button" data-turn="b">黑方</button>
+            </div>
+          </div>
+          <div class="setting-row stack">
+            <span class="setting-k">易位权</span>
+            <div class="theme-row wrap" id="editor-castling" role="group" aria-label="易位权">
+              <button type="button" data-cr="K">白 O-O</button>
+              <button type="button" data-cr="Q">白 O-O-O</button>
+              <button type="button" data-cr="k">黑 O-O</button>
+              <button type="button" data-cr="q">黑 O-O-O</button>
+            </div>
+          </div>
+        </div>
+        <p class="hint" id="editor-error"></p>
+        <div class="lesson-controls" style="margin-top:10px">
+          <button type="button" class="tool-btn" id="editor-clear" title="清空棋盘">清空</button>
+          <button type="button" class="tool-btn" id="editor-reset" title="回到初始局面">初始</button>
+          <button type="button" class="tool-btn" id="editor-cancel" data-i18n="act.cancel">取消</button>
+          <button type="button" class="tool-btn primary" id="editor-apply" data-i18n="act.start">开始对局</button>
+        </div>
+      </section>
+
       <section class="side-section grow-sec" id="sec-moves">
         <div class="side-h-row">
-          <h2 class="side-h">棋谱</h2>
+          <h2 class="side-h" data-i18n="side.moves">棋谱</h2>
           <span class="side-h-meta num" id="replay-pos">0 / 0</span>
         </div>
         <div class="move-list" id="move-list" aria-label="着法列表"></div>
@@ -194,40 +233,43 @@
         </div>
         <div id="eval-wrap" hidden>
           <canvas id="eval-curve" aria-label="局势曲线" title="点击跳转到对应局面"></canvas>
+          <div class="pv-line num" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级"></div>
           <div class="pv-line num" id="pv-line" hidden></div>
         </div>
         <div class="link-row">
           <button type="button" class="text-link" id="an-run" title="快速评估每一步(120ms/步),标注失着">分析</button>
-          <button type="button" class="text-link" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢">精析</button>
-          <button type="button" class="text-link" id="retry-here" disabled title="回到复盘所在的一着继续下,其后着法丢弃">重下</button>
+          <button type="button" class="text-link" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n="act.deep">精析</button>
+          <button type="button" class="text-link" id="retry-here" disabled title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n="act.retryHere">重下</button>
           <button type="button" class="text-link" id="pgn-copy" title="复制 PGN(含标准对局标签)">PGN</button>
-          <button type="button" class="text-link" id="pgn-download">导出</button>
-          <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN">粘贴</button>
-          <button type="button" class="text-link" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)">打开</button>
+          <button type="button" class="text-link" id="pgn-download" data-i18n="act.export">导出</button>
+          <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n="act.paste">粘贴</button>
+          <button type="button" class="text-link" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n="act.open">打开</button>
           <button type="button" class="text-link" id="fen-copy" title="复制当前局面 FEN">FEN</button>
+          <button type="button" class="text-link" id="fen-load-open" title="从 FEN 载入局面" data-i18n="act.loadFen">载入 FEN</button>
+          <button type="button" class="text-link" id="editor-open" title="摆出任意局面再开始对局" data-i18n="act.editor">编辑局面</button>
           <button type="button" class="text-link" id="btn-offerdraw" disabled title="提议和棋(双人:双方确认;人机:引擎按局面判断)">提和</button>
-          <button type="button" class="text-link" id="btn-claimdraw" disabled title="三次重复或 50 回合无进展时可判和">判和</button>
-          <button type="button" class="text-link danger" id="btn-resign" disabled title="认输并结束本局">认输</button>
+          <button type="button" class="text-link" id="btn-claimdraw" disabled title="三次重复或 50 回合无进展时可判和" data-i18n="act.claimDraw">判和</button>
+          <button type="button" class="text-link danger" id="btn-resign" disabled title="认输并结束本局" data-i18n="act.resign">认输</button>
         </div>
         <p class="hint">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
       </section>
 
       <section class="side-section" id="sec-stats">
         <div class="side-h-row">
-          <h2 class="side-h">统计</h2>
+          <h2 class="side-h" data-i18n="side.stats">统计</h2>
           <button type="button" class="text-link danger" id="stats-clear" disabled>清零</button>
         </div>
         <div class="stats-body" id="stats-body"></div>
         <div class="side-h-row" style="margin-top:14px">
-          <h2 class="side-h">成就</h2>
+          <h2 class="side-h" data-i18n="side.ach">成就</h2>
           <span class="side-h-meta num" id="ach-count">0/0</span>
         </div>
         <div class="ach-body" id="ach-body"></div>
       </section>
 
       <div class="side-foot">
-        <button type="button" class="text-link danger" id="clear-save">清除存档</button>
-        <button type="button" class="text-link" id="collapse">收起</button>
+        <button type="button" class="text-link danger" id="clear-save" data-i18n="act.clearSave">清除存档</button>
+        <button type="button" class="text-link" id="collapse" data-i18n="act.collapse">收起</button>
       </div>
     </aside>
 
@@ -245,6 +287,30 @@
       </div>
     </div>
 
+    <div class="modal-bg" id="pick-modal" role="dialog" aria-label="选择">
+      <div class="modal">
+        <h3 id="pick-title">选择</h3>
+        <div class="pick-list" id="pick-list"></div>
+        <div class="close-row"><button type="button" class="tool-btn" id="pick-cancel">取消</button></div>
+      </div>
+    </div>
+
+    <div class="modal-bg" id="fen-modal" role="dialog" aria-label="载入 FEN">
+      <div class="modal">
+        <h3>载入 FEN 局面</h3>
+        <input type="text" id="fen-input" class="text-input" spellcheck="false"
+               placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" />
+        <p class="hint" id="fen-error"></p>
+        <div class="close-row" style="display:flex;gap:8px;justify-content:space-between">
+          <button type="button" class="text-link" id="fen-from-clip">从剪贴板粘贴</button>
+          <span style="display:flex;gap:8px">
+            <button type="button" class="tool-btn" id="fen-cancel">取消</button>
+            <button type="button" class="tool-btn primary" id="fen-load">载入</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-bg" id="confirm-modal" role="dialog" aria-label="确认">
       <div class="modal">
         <h3 id="confirm-title">确认</h3>
@@ -258,8 +324,12 @@
     </div>
   </div>
 
+  <script src="js/i18n.js"></script>
   <script src="js/chess.js"></script>
   <script src="js/pieces.js"></script>
+  <script src="js/pgn.js"></script>
+  <script src="js/fide.js"></script>
+  <script src="js/editor.js"></script>
   <script src="js/openings.js"></script>
   <script src="js/lessons.js"></script>
   <script src="js/puzzles.js"></script>

@@ -12,13 +12,18 @@
  */
 (function (global) {
   /**
-   * difficulty id → UCI settings; elo:null = full strength.
-   * `skill` uses Stockfish's "Skill Level" (0–20) instead of UCI_Elo:
-   * UCI_Elo bottoms out at 1320, still far too strong for a true beginner —
-   * low skill levels deliberately pick inferior moves.
+   * difficulty id → search settings; elo:null = full strength.
+   *
+   * `beginner` is handicapped in this module rather than by UCI alone:
+   * UCI_Elo bottoms out at 1320 and even Skill Level 1 only reaches ~27 ACPL
+   * (measured — see scripts/test-strength.mjs), i.e. still a solid club player.
+   * A real beginner opponent needs to hang material sometimes, so the tier
+   * runs a shallow MultiPV search and samples among the candidates, often
+   * deliberately taking the worst one. Measured: ~150 ACPL with ~1 serious
+   * (≥300cp) mistake every four moves, while half its moves stay sensible.
    */
   const TIERS = {
-    beginner: { skill: 1, movetime: 400 },
+    beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.6, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },
     normal: { elo: 1700, movetime: 700 },
     hard: { elo: 2200, movetime: 900 },
@@ -148,12 +153,32 @@
     return exclusive(() => bestMoveInner(fen, diff, maxMs));
   }
 
+  function parseUci(uci) {
+    if (!uci || uci === "(none)") return null;
+    return {
+      from: uci.slice(0, 2),
+      to: uci.slice(2, 4),
+      promotion: uci.length > 4 ? uci[4] : null,
+    };
+  }
+
+  /** score of an `info` line in centipawns from the side to move */
+  function infoScore(line) {
+    const m = line.match(/\bscore (cp|mate) (-?\d+)\b/);
+    if (!m) return null;
+    const v = Number(m[2]);
+    return m[1] === "mate" ? (v > 0 ? 100000 - v : -100000 - v) : v;
+  }
+
   async function bestMoveInner(fen, diff, maxMs) {
     await init();
     const base = TIERS[diff] || TIERS.normal;
-    const tier = maxMs
-      ? { elo: base.elo, movetime: Math.max(120, Math.min(base.movetime, Math.floor(maxMs))) }
+    // Clock pressure only shortens time-based tiers; depth-based ones are
+    // already near-instant and have nothing to trim.
+    const tier = maxMs && base.movetime && !base.depth
+      ? Object.assign({}, base, { movetime: Math.max(120, Math.min(base.movetime, Math.floor(maxMs))) })
       : base;
+    const startedAt = Date.now();
     const myGen = ++gen;
     // drain any stray bestmove from a cancelled search: the engine processes
     // commands in order, so its readyok arrives after that bestmove.
@@ -161,8 +186,9 @@
     send("isready");
     await drain;
     if (myGen !== gen) return null;
-    // UCI options are sticky on the worker — always set BOTH knobs so a
-    // beginner search never inherits full strength and vice versa.
+    // UCI options are sticky on the worker — always set every knob a tier
+    // could have touched so no search inherits another tier's handicap.
+    send("setoption name MultiPV value " + (tier.multipv || 1));
     if (tier.skill != null) {
       send("setoption name UCI_LimitStrength value false");
       send("setoption name Skill Level value " + tier.skill);
@@ -175,17 +201,54 @@
       send("setoption name UCI_LimitStrength value false");
     }
     send("position fen " + fen);
-    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), tier.movetime + 15000);
-    send("go movetime " + tier.movetime);
-    const line = await wait;
-    if (myGen !== gen) return null; // game moved on (undo/new/import)
-    const uci = line.split(/\s+/)[1];
-    if (!uci || uci === "(none)") return null;
-    return {
-      from: uci.slice(0, 2),
-      to: uci.slice(2, 4),
-      promotion: uci.length > 4 ? uci[4] : null,
+    // MultiPV tiers need every candidate line, not just the final bestmove
+    const cands = new Map(); // multipv index → {uci, score}
+    const collect = (line) => {
+      if (typeof line !== "string" || !tier.multipv) return;
+      const mv = line.match(/\bmultipv (\d+)\b/);
+      const pv = line.match(/\bpv\s+([a-h][1-8][a-h][1-8][qrbn]?)/);
+      if (!mv || !pv) return;
+      cands.set(Number(mv[1]), { uci: pv[1], score: infoScore(line) });
     };
+    if (tier.multipv) lineHandlers.push(collect);
+    const budget = (tier.movetime || 2000) + 15000;
+    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), budget);
+    send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
+    let line;
+    try { line = await wait; }
+    finally { if (tier.multipv) lineHandlers = lineHandlers.filter((h) => h !== collect); }
+    if (myGen !== gen) return null; // game moved on (undo/new/import)
+    let picked = parseUci(line.split(/\s+/)[1]);
+    if (tier.multipv && cands.size > 1) picked = pickHandicapped(cands, tier) || picked;
+    // depth-limited searches return almost instantly — hold the move briefly so
+    // the opponent still reads as "thinking" instead of snapping back.
+    if (picked && tier.minMs) {
+      const left = tier.minMs - (Date.now() - startedAt);
+      if (left > 0) await new Promise((r) => setTimeout(r, left));
+      if (myGen !== gen) return null;
+    }
+    return picked;
+  }
+
+  /**
+   * Weakened move choice for handicap tiers: sample among the MultiPV
+   * candidates instead of always taking the best one. `worstBias` is the
+   * chance of deliberately playing the worst candidate found — that is what
+   * makes a beginner opponent actually lose material rather than merely
+   * play second-best moves.
+   */
+  function pickHandicapped(cands, tier) {
+    const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+    if (!list.length) return null;
+    const scored = list.filter((c) => c.score != null);
+    // never throw away a forced mate the tier already found — losing on
+    // purpose from a winning position reads as a broken engine, not a weak one
+    if (scored.length && scored[0].score >= 100000 - 50) return parseUci(list[0].uci);
+    if (tier.worstBias && Math.random() < tier.worstBias && scored.length) {
+      const worst = scored.reduce((a, b) => (b.score < a.score ? b : a));
+      return parseUci(worst.uci);
+    }
+    return parseUci(list[Math.floor(Math.random() * list.length)].uci);
   }
 
   /**
@@ -205,7 +268,9 @@
     await drain;
     if (myGen !== gen) return null;
     const ms = movetime || 120;
-    send("setoption name Skill Level value 20"); // may be sticky from a beginner game
+    // all sticky from a handicap game — analysis is always full strength
+    send("setoption name MultiPV value 1");
+    send("setoption name Skill Level value 20");
     send("setoption name UCI_LimitStrength value false");
     send("position fen " + fen);
     let score = null; // last reported, side-to-move perspective
