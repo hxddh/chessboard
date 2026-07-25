@@ -3,7 +3,7 @@
     .name = "chessboard",
     .display_name = "国际象棋",
     .description = "Chess for macOS & Windows — Native SDK WebView + Canvas, GPLv3.",
-    .version = "1.8.0",
+    .version = "1.9.0",
     .icons = .{"assets/icon.png"},
     .platforms = .{ "macos", "windows" },
     .permissions = .{},
@@ -24,7 +24,7 @@
         .{
             .label = "main",
             .title = "国际象棋",
-            .width = 960,
+            .width = 1200,
             .height = 900,
             .min_width = 520,
             .min_height = 520,

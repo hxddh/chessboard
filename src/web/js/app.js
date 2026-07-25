@@ -53,6 +53,8 @@
   let coachOn = true;
   /** pvp: flip the board to face the side to move after every move */
   let autoFlipPvp = false;
+  /** which panel tab is showing: "play" | "setup" | "record" */
+  let sideTab = "play";
   /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
   let langId = I18n ? I18n.getLang() : "zh-CN";
   /** remaining ms per side; null when no clock */
@@ -213,11 +215,12 @@
       if (typeof s.autoFlipPvp === "boolean") autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") langId = I18n.setLang(s.langId);
       if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) puzzleTierFilter = s.puzzleTier;
+      if (["play", "setup", "record"].includes(s.sideTab)) sideTab = s.sideTab;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter, sideTab }));
     } catch (_) {}
   }
   function saveGame() {
@@ -2473,6 +2476,13 @@
     const decisiveEnd = g.in_checkmate() || !!resigned || (flagFall && !timeoutIsDraw());
     status.classList.toggle("win", !modal && isLive() && decisiveEnd);
     status.classList.toggle("replay", !modal && !isLive());
+    // "思考中" with nothing moving reads as a hang at the higher levels, where
+    // a search can run for seconds; the pill breathes while the engine works
+    const busy = engineThinking || analyzing || !!(learn && learn.engineBusy);
+    status.classList.toggle("thinking", busy);
+    // …and a pulse on the board itself, where the player is actually looking
+    const dot = document.getElementById("think-dot");
+    if (dot) dot.hidden = !busy;
     const over = appGameOver();
     const showTurn = !modal && isLive() && !over;
     document.getElementById("white-turn").hidden = !(showTurn && game.turn() === "w");
@@ -2525,11 +2535,13 @@
     if (flipRow) flipRow.hidden = mode !== "pvp";
     const flipSwitch = document.getElementById("opt-autoflip");
     if (flipSwitch) flipSwitch.setAttribute("aria-pressed", autoFlipPvp ? "true" : "false");
+    renderMaterial();
     const secMoves = document.getElementById("sec-moves");
-    const secStats = document.getElementById("sec-stats");
     const trainer = mode === "learn" || mode === "puzzle" || !!editor;
     if (secMoves) secMoves.hidden = trainer;
-    if (secStats) secStats.hidden = trainer;
+    // 统计/历史/成就 used to be hidden in the trainer modes because they sat in
+    // the same scroll and got in the way. They now live behind their own tab,
+    // which nobody opens by accident — and puzzle badges are earned right there.
     const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
     const wRole = document.getElementById("white-role");
     const bRole = document.getElementById("black-role");
@@ -3444,7 +3456,63 @@
     toast(t("slots.deleted") + (i + 1));
   }
 
-  // --- panel ---
+  /**
+   * Captured pieces beside each name, and a `+N` on whoever is ahead.
+   *
+   * Follows the replay cursor rather than the live game: scrubbing back to
+   * "where did it go wrong" and seeing the material as it stood at that move
+   * is most of the point. In the puzzle and lesson modes the pieces on the
+   * board are a constructed exercise, not a game's remains, so it stays empty.
+   */
+  function renderMaterial() {
+    const Mat = window.ChessMaterial;
+    const wEl = document.getElementById("taken-w");
+    const bEl = document.getElementById("taken-b");
+    if (!wEl || !bEl) return;
+    const off = mode === "learn" || mode === "puzzle" || !!editor;
+    if (!Mat || off) { wEl.innerHTML = ""; bEl.innerHTML = ""; return; }
+    const shown = viewGame();
+    const promos = verboseHistory().slice(0, viewIndex)
+      .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
+    const s = Mat.summary(baseGame().board(), shown.board(), promos);
+    const svgs = window.CHESS_PIECE_SVGS || {};
+    const strip = (list, color, lead) => {
+      const frag = list.map((tp) => {
+        const svg = svgs[color + tp];
+        return svg ? '<span class="taken-p">' + svg + "</span>" : "";
+      }).join("");
+      return frag + (lead > 0 ? '<span class="taken-diff">+' + lead + "</span>" : "");
+    };
+    // White's row shows the black pieces White has taken
+    wEl.innerHTML = strip(s.w, "b", s.diff);
+    bEl.innerHTML = strip(s.b, "w", -s.diff);
+  }
+
+  // --- panel tabs ---
+  //
+  // Until 1.9 the panel was one 1788px scroll in a 900px window, ordered by
+  // when a setting is chosen rather than by how often it is used: theme and
+  // language sat above the fold while the move list, the replay bar and this
+  // game's own actions all started below it. Three tabs split it by what the
+  // player is doing — playing, configuring, or looking back.
+  const TABS = ["play", "setup", "record"];
+
+  function setSideTab(id, opts) {
+    const want = TABS.includes(id) ? id : "play";
+    sideTab = want;
+    for (const t of TABS) {
+      const btn = document.getElementById("tab-" + t);
+      const pane = document.getElementById("pane-" + t);
+      if (btn) btn.setAttribute("aria-selected", t === want ? "true" : "false");
+      if (pane) {
+        pane.hidden = t !== want;
+        // a pane left scrolled half-way reads as a broken tab when you return
+        if (t === want && opts && opts.top) pane.scrollTop = 0;
+      }
+    }
+    saveSettings();
+  }
+
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
   function setPanelOpen(open) {
     const want = !!open;
@@ -3682,6 +3750,37 @@
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   document.getElementById("collapse").onclick = () => setPanelOpen(false);
+  const moreBtn = document.getElementById("more-tools");
+  if (moreBtn) {
+    moreBtn.onclick = () => {
+      const row = document.getElementById("more-row");
+      if (!row) return;
+      const show = row.hidden;
+      row.hidden = !show;
+      moreBtn.setAttribute("aria-expanded", show ? "true" : "false");
+      // the key moves with the state, so a language switch re-renders the
+      // label that matches what the disclosure is actually doing
+      moreBtn.setAttribute("data-i18n", show ? "act.less" : "act.more");
+      moreBtn.textContent = t(show ? "act.less" : "act.more");
+    };
+  }
+  const tabRow = document.querySelector(".side-tabs");
+  if (tabRow) {
+    tabRow.onclick = (ev) => {
+      const b = ev.target.closest("button[data-tab]");
+      if (b) setSideTab(b.dataset.tab, { top: true });
+    };
+    // ARIA tablist keyboard contract: arrows move between tabs
+    tabRow.onkeydown = (ev) => {
+      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+      const cur = TABS.indexOf(sideTab);
+      const next = TABS[(cur + (ev.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+      ev.preventDefault();
+      setSideTab(next, { top: true });
+      const btn = document.getElementById("tab-" + next);
+      if (btn) btn.focus();
+    };
+  }
   document.getElementById("scrim").onclick = () => setPanelOpen(false);
 
   const mlEl = document.getElementById("move-list");
@@ -3787,6 +3886,9 @@
     else if (wasLearn) stopLearn();
     if (mode === "puzzle") startPuzzles();
     else if (wasPuzzle) stopPuzzles();
+    // the mode decides what the play tab holds, so show it — otherwise
+    // switching to 教学 from the settings tab looks like nothing happened
+    setSideTab("play", { top: true });
     saveSettings();
     selection = null;
     syncAutoFlip();
@@ -4107,7 +4209,10 @@
       return;
     }
     const k = ev.key.toLowerCase();
-    if (ev.key === "Tab") { ev.preventDefault(); togglePanel(); return; }
+    // Tab is not ours to take. Binding it to the panel meant focus could never
+    // move anywhere by keyboard — the app had a full keyboard board cursor and
+    // no way to reach any other control. The panel is on P instead.
+    if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
     if (mode === "learn") {
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills
@@ -4176,6 +4281,7 @@
   if (I18n) { I18n.setLang(langId); I18n.apply(document); }
   const savedPanel = Host.storageGet(PANEL_KEY);
   setPanelOpen(savedPanel === "1");
+  setSideTab(sideTab);
   const resumed = tryLoadSave();
   if (resumed) toast(t("m.25"));
   // a resumed finished game must not be re-counted on the next live move

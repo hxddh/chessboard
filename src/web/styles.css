@@ -20,7 +20,8 @@
       --side-w: 284px;
       --chrome-h: 44px;
       --stage-pad: 6px;
-      --wood-pad: 8px;
+      --wood-pad: 17px;
+      --coord-ink: rgba(48,28,12,.62);
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 16px;
@@ -42,6 +43,7 @@
       --win: #a8e6cf;
       --chrome-bg: linear-gradient(180deg, rgba(11,18,16,.9), rgba(11,18,16,.35) 75%, transparent);
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
+      --coord-ink: rgba(220,235,228,.55);
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
       --card: rgba(255,255,255,.03);
       --card-border: rgba(255,255,255,.05);
@@ -76,6 +78,7 @@
       --win: #c0392b;
       --chrome-bg: linear-gradient(180deg, rgba(247,248,251,.96), rgba(247,248,251,.45) 75%, transparent);
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
+      --coord-ink: rgba(42,49,64,.55);
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
       --card: rgba(0,0,0,.03);
       --card-border: rgba(0,0,0,.06);
@@ -200,6 +203,29 @@
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
     }
+    /* file letters under the board and rank numbers down its left edge, both
+       printed on the frame the way a real board has them */
+    .coords {
+      position: absolute; display: flex;
+      color: var(--coord-ink);
+      font-size: clamp(8px, calc(var(--wood-pad) * 0.72), 13px);
+      font-weight: 600; letter-spacing: .04em;
+      pointer-events: none; user-select: none;
+    }
+    .coords.files {
+      left: var(--wood-pad); right: var(--wood-pad); bottom: 0;
+      height: var(--wood-pad);
+      align-items: center;
+    }
+    .coords.ranks {
+      top: var(--wood-pad); bottom: var(--wood-pad); left: 0;
+      width: var(--wood-pad);
+      flex-direction: column; align-items: center;
+    }
+    .coords > span {
+      flex: 1; display: grid; place-items: center;
+    }
+
     canvas {
       display: block; width: 100%; height: 100%;
       cursor: default; border-radius: calc(var(--radius-sm) - 2px);
@@ -228,9 +254,10 @@
       transform: translateX(100%);
       transition: transform .28s var(--ease);
       box-shadow: -12px 0 40px rgba(0,0,0,.22);
-      overflow-y: auto;
-      overflow-x: hidden;
-      scrollbar-width: thin;
+      /* The panel itself no longer scrolls — the active tab's pane does, so the
+         player's identity strip and the tab row stay put while a long list
+         (145 puzzles, 500 games) scrolls underneath them. */
+      overflow: hidden;
       /* Closed: ignore pointer/hit testing so half-visible glitches can't steal clicks */
       pointer-events: none;
     }
@@ -262,6 +289,27 @@
       display: flex; align-items: center; gap: 6px;
     }
     .vs-role { font-size: 11px; margin-top: 3px; line-height: 1.3; }
+    /* captured pieces + the lead, beside each name */
+    .taken {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 1px;
+      margin-top: 4px; min-height: 0;
+    }
+    .vs-right .taken { justify-content: flex-end; }
+    .taken:empty { display: none; }
+    /* Black pieces are a black silhouette: on the dark panel they vanish, and
+       on the light themes the white ones do. A mid-tone plate derived from the
+       theme's own text colour keeps both readable in all four. */
+    .taken-p {
+      width: 15px; height: 15px; display: block;
+      padding: 1px; border-radius: 3px;
+      background: color-mix(in srgb, var(--text) 34%, var(--panel));
+    }
+    .taken-p svg { width: 100%; height: 100%; display: block; }
+    .taken-diff {
+      font-family: var(--font-num);
+      font-size: 11px; font-weight: 700; color: var(--accent);
+      margin-left: 4px;
+    }
     .vs-clock {
       margin-top: 5px;
       font-size: 15px; font-weight: 650; line-height: 1.2;
@@ -276,6 +324,47 @@
       font-size: 12px; color: var(--muted); line-height: 1.45;
     }
     .opening-line[hidden] { display: none; }
+    /* four labels in a 284px panel — "2 players" needs the tighter setting */
+    .mode-nav { margin-top: 14px; gap: 6px; }
+    .mode-nav button { font-size: 11.5px; padding: 9px 2px; line-height: 1.3; }
+
+    /* —— tabs —— */
+    .side-head, .side-tabs, .side-foot { flex-shrink: 0; }
+    .side-tabs {
+      display: flex; align-items: stretch; gap: 4px;
+      padding: 10px 0 0;
+    }
+    .side-tabs button[role="tab"] {
+      flex: 1;
+      appearance: none; border: 0; background: transparent;
+      color: var(--muted);
+      font: inherit; font-size: 12.5px; font-weight: 600;
+      padding: 10px 4px; border-radius: 9px 9px 0 0;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .side-tabs button[role="tab"]:hover { color: var(--text); }
+    .side-tabs button[role="tab"][aria-selected="true"] {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    .side-close {
+      flex: 0 0 auto;
+      width: 32px; height: 32px;
+      align-self: center;
+      font-size: 15px; line-height: 1;
+    }
+    .side-pane {
+      display: flex; flex-direction: column;
+      flex: 1; min-height: 0;
+      overflow-y: auto; overflow-x: hidden;
+      scrollbar-width: thin;
+    }
+    .side-pane[hidden] { display: none; }
+    /* the pane owns the scroll, so its first section needs no top rule */
+    .side-pane > .side-section:first-child { border-top: 0; }
 
     .side-section {
       padding: 18px 0;
@@ -346,6 +435,21 @@
       box-shadow: 0 1px 3px rgba(0,0,0,.1);
     }
 
+    /* Keyboard focus.
+       The app shipped with the UA default — outline rgb(16,16,16) on a
+       rgb(20,16,14) background, about 1.0:1, i.e. nothing. The board draws its
+       own on-canvas cursor and opts out below; everything else gets a ring in
+       the theme's accent, which every theme defines against its own panel. */
+    :focus-visible {
+      /* the accent alone is only 2.75:1 against the light "日" panel; pulling
+         it towards the theme's text colour keeps the ring above 3:1 in all
+         four, because --text is by definition the readable one on --panel */
+      outline: 2px solid color-mix(in srgb, var(--accent) 60%, var(--text));
+      outline-offset: 2px;
+    }
+    /* pointer users never see it; keyboard users always do */
+    :focus:not(:focus-visible) { outline: none; }
+
     .theme-row {
       display: flex; gap: 8px;
     }
@@ -381,6 +485,11 @@
       cursor: pointer;
       transition: background .2s var(--ease);
       flex-shrink: 0;
+    }
+    /* 44x28 is under the comfortable minimum for a finger; the visual stays,
+       the hit area grows to 48x40 */
+    .switch::after {
+      content: ""; position: absolute; inset: -6px -2px;
     }
     .switch-knob {
       position: absolute; top: 3px; left: 3px;
@@ -453,14 +562,33 @@
       appearance: none; border: 0; background: transparent;
       color: var(--accent);
       font: inherit; font-size: 12px; font-weight: 500;
-      padding: 8px 6px; cursor: pointer;
+      padding: 9px 8px; cursor: pointer;
       border-radius: 6px;
       opacity: 0.92;
     }
     .text-link:hover { opacity: 1; background: var(--btn-ghost); }
     .text-link:disabled { opacity: 0.3; cursor: default; }
+    /* A terminal action must not look like "copy PGN". Muted until it is
+       actually available, then plainly a warning. */
     .text-link.danger { color: var(--muted); }
-    .text-link.danger:hover { color: var(--win); }
+    .text-link.danger:not(:disabled) {
+      color: #e07a6a;
+      border: 1px solid color-mix(in srgb, #e07a6a 32%, transparent);
+      padding: 7px 10px;
+    }
+    .text-link.danger:not(:disabled):hover {
+      color: #fff; background: color-mix(in srgb, #e07a6a 70%, transparent);
+      border-color: transparent;
+    }
+
+    /* grouped action links */
+    .act-group { margin-top: 14px; }
+    .act-group:first-of-type { margin-top: 10px; }
+    .act-k {
+      display: block; margin-bottom: 2px;
+      font-size: 11px; color: var(--muted); opacity: 0.85;
+    }
+    #more-row { margin-top: 2px; }
     .continue-btn {
       appearance: none; width: 100%; margin-top: 10px;
       border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
@@ -531,7 +659,11 @@
       display: flex; justify-content: space-between; align-items: center;
       gap: 16px;
     }
-    .side-foot .text-link { color: var(--muted); font-size: 11px; padding: 8px 2px; }
+    /* the only control left under the comfortable 32px minimum */
+    .side-foot .text-link {
+      color: var(--muted); font-size: 11px; padding: 0 8px;
+      min-height: 34px; display: inline-flex; align-items: center;
+    }
     .side-foot .text-link:hover { color: var(--text); }
 
     /* side-panel side marks: king glyphs, hollow white / solid black */
@@ -682,7 +814,47 @@
       background: rgba(0,0,0,.32);
     }
     #app.panel-open.scrim-on .scrim { display: block; }
-    @media (max-width: 820px) {
+
+    /* Portrait windows: the panel moves to the bottom.
+       Side by side, the board is limited by whatever width the panel leaves —
+       so in a 900x1200 window it came out 604px with 540px of height sitting
+       empty above and below it. As a bottom sheet the same window gives 836px.
+       Landscape is unaffected: there the width is the plentiful axis. */
+    @media (max-aspect-ratio: 1/1) and (min-width: 560px) {
+      .side {
+        top: auto; left: 0; right: 0; bottom: 0;
+        width: auto; height: min(46vh, 430px);
+        padding: 14px 22px 16px;
+        border-left: 0; border-top: 1px solid var(--panel-border);
+        transform: translateY(100%);
+        box-shadow: 0 -12px 40px rgba(0,0,0,.22);
+      }
+      #app.panel-open .side { transform: translateY(0); }
+      #app.panel-open .stage {
+        padding-right: var(--stage-pad);
+        padding-bottom: calc(min(46vh, 430px) + var(--stage-pad));
+      }
+      #app.panel-open #board-wrap {
+        --free-w: calc(100vw - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - min(46vh, 430px) - 2 * var(--stage-pad));
+        width: min(var(--free-w), var(--free-h));
+        height: min(var(--free-w), var(--free-h));
+      }
+      /* the sheet sits beside the board, not on top of it — nothing to dim */
+      #app.panel-open.scrim-on .scrim { display: none; }
+      /* a 900px-wide row of four mode buttons is a lot of nothing between
+         labels; keep the sheet's contents at the density the panel was drawn for */
+      .side-head, .side-tabs, .side-pane, .side-foot {
+        width: 100%; max-width: 620px;
+        margin-left: auto; margin-right: auto;
+      }
+    }
+
+    /* Narrow *landscape* windows: the panel overlays the board instead of
+       squeezing it. The aspect guard keeps this from fighting the bottom-sheet
+       rule above — without it, an 800x1000 window took the sheet's position
+       and this block's sizing, and the board ran off under the sheet. */
+    @media (max-width: 820px) and (min-aspect-ratio: 1/1) {
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));

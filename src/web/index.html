@@ -19,7 +19,7 @@
         <button type="button" class="tool-btn" id="undo" disabled title="悔棋 (Z)" data-i18n-title="tip.32" data-i18n="chrome.undo">悔棋</button>
         <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)" data-i18n-title="tip.57" data-i18n="chrome.flip">翻转</button>
         <button type="button" class="tool-btn primary" id="btn-new" title="新局 (N)" data-i18n-title="tip.40" data-i18n="chrome.new">新局</button>
-        <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (Tab)" data-i18n-title="tip.14" aria-label="侧栏" data-i18n-aria="aria.panel">☰</button>
+        <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.14" aria-label="侧栏" data-i18n-aria="aria.panel">☰</button>
       </div>
     </header>
 
@@ -27,6 +27,11 @@
     <div class="stage">
       <div id="board-wrap">
         <canvas id="board" width="900" height="900" aria-label="棋盘" data-i18n-aria="aria.board"></canvas>
+        <!-- coordinates live on the frame, not on a1/h1 where they sat on top
+             of the rooks; the board itself is left to the pieces -->
+        <div class="coords files" id="coord-files" aria-hidden="true"></div>
+        <div class="coords ranks" id="coord-ranks" aria-hidden="true"></div>
+        <div class="think-dot" id="think-dot" hidden></div>
       </div>
     </div>
     <div id="board-live" class="sr-only" aria-live="polite" role="status"></div>
@@ -42,6 +47,7 @@
                 <span class="badge" id="white-turn" data-i18n="vs.turnBadge" hidden>行</span>
               </div>
               <div class="vs-role muted" id="white-role">玩家 1</div>
+              <div class="taken" id="taken-w" aria-label="白方已吃掉的子" data-i18n-aria="mat.takenW"></div>
               <div class="vs-clock num" id="clock-w" hidden>5:00</div>
             </div>
           </div>
@@ -53,26 +59,38 @@
                 <span data-i18n="vs.black">黑</span>
               </div>
               <div class="vs-role muted" id="black-role">玩家 2</div>
+              <div class="taken" id="taken-b" aria-label="黑方已吃掉的子" data-i18n-aria="mat.takenB"></div>
               <div class="vs-clock num" id="clock-b" hidden>5:00</div>
             </div>
             <span class="pmark black" aria-hidden="true">♚</span>
           </div>
         </div>
         <div class="opening-line" id="opening-line" hidden></div>
+        <!-- mode is navigation, not a setting: it decides what every other
+             control means, so it stays visible whichever tab is open -->
+        <div class="theme-row mode-nav" id="mode-seg" role="group" aria-label="模式" data-i18n-aria="side.mode">
+          <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n-title="tip.08" data-i18n="mode.ai">人机</button>
+          <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.19" data-i18n="mode.pvp">双人</button>
+          <button type="button" data-mode="learn" title="从零学国际象棋:互动课程" data-i18n-title="tip.12" data-i18n="mode.learn">教学</button>
+          <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀" data-i18n-title="tip.33" data-i18n="mode.puzzle">做题</button>
+        </div>
       </section>
 
+      <!-- Three tabs instead of one 1788px scroll: what you touch while playing
+           (moves, replay, analysis, this game's actions), what you set once
+           (level, clock, theme, language), and what you look back at
+           (statistics, history, achievements). -->
+      <div class="side-tabs" role="tablist" aria-label="面板分区" data-i18n-aria="aria.tabs">
+        <button type="button" role="tab" id="tab-play" data-tab="play" aria-selected="true" aria-controls="pane-play" data-i18n="tab.play">对局</button>
+        <button type="button" role="tab" id="tab-setup" data-tab="setup" aria-selected="false" aria-controls="pane-setup" data-i18n="tab.setup">设置</button>
+        <button type="button" role="tab" id="tab-record" data-tab="record" aria-selected="false" aria-controls="pane-record" data-i18n="tab.record">记录</button>
+        <button type="button" class="icon-btn side-close" id="collapse" title="收起侧栏 (P)" data-i18n-title="tip.collapse" aria-label="收起侧栏" data-i18n-aria="act.collapse">✕</button>
+      </div>
+
+      <div class="side-pane" id="pane-setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
       <section class="side-section">
         <h2 class="side-h" data-i18n="side.game">对局</h2>
         <div class="setting-list">
-          <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.mode">模式</span>
-            <div class="theme-row" id="mode-seg" role="group" aria-label="模式" data-i18n-aria="side.mode">
-              <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n-title="tip.08" data-i18n="mode.ai">人机</button>
-              <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.19" data-i18n="mode.pvp">双人</button>
-              <button type="button" data-mode="learn" title="从零学国际象棋:互动课程" data-i18n-title="tip.12" data-i18n="mode.learn">教学</button>
-              <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀" data-i18n-title="tip.33" data-i18n="mode.puzzle">做题</button>
-            </div>
-          </div>
           <div class="setting-row stack" id="row-difficulty">
             <span class="setting-k" data-i18n="side.difficulty">难度</span>
             <div class="theme-row wrap" id="diff-seg" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
@@ -141,6 +159,9 @@
         </div>
       </section>
 
+      </div><!-- /pane-setup -->
+
+      <div class="side-pane" id="pane-play" role="tabpanel" aria-labelledby="tab-play">
       <section class="side-section" id="sec-learn" hidden>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.learn">教学</h2>
@@ -251,25 +272,48 @@
           <div class="pv-line num" id="pv-line" hidden></div>
           <div class="review" id="review-body" hidden></div>
         </div>
-        <div class="link-row">
-          <button type="button" class="text-link" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.31">分析</button>
-          <button type="button" class="text-link" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.50" data-i18n="act.deep">精析</button>
-          <button type="button" class="text-link" id="retry-here" disabled title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.22" data-i18n="act.retryHere">重下</button>
-          <button type="button" class="text-link" id="pgn-copy" data-i18n="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.25">PGN</button>
-          <button type="button" class="text-link" id="pgn-download" data-i18n="act.export">导出</button>
-          <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n-title="tip.11" data-i18n="act.paste">粘贴</button>
-          <button type="button" class="text-link" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n-title="tip.35" data-i18n="act.open">打开</button>
-          <button type="button" class="text-link" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.26">FEN</button>
-          <button type="button" class="text-link" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.10" data-i18n="act.loadFen">载入 FEN</button>
-          <button type="button" class="text-link" id="slots-open" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots" data-i18n="act.slots">存档槽</button>
-          <button type="button" class="text-link" id="editor-open" title="摆出任意局面再开始对局" data-i18n-title="tip.39" data-i18n="act.editor">编辑局面</button>
-          <button type="button" class="text-link" id="btn-offerdraw" disabled data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.38">提和</button>
-          <button type="button" class="text-link" id="btn-claimdraw" disabled title="三次重复或 50 回合无进展时可判和" data-i18n-title="tip.02" data-i18n="act.claimDraw">判和</button>
-          <button type="button" class="text-link danger" id="btn-resign" disabled title="认输并结束本局" data-i18n-title="tip.58" data-i18n="act.resign">认输</button>
+        <!-- 14 identical text links in one wrapped block made "PGN" and
+             "认输" look like the same kind of thing. Grouped by what they act
+             on, with the four import paths behind a disclosure and the game's
+             terminal actions on their own row. -->
+        <div class="act-group">
+          <span class="act-k" data-i18n="act.groupReview">复盘</span>
+          <div class="link-row">
+            <button type="button" class="text-link" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.31">分析</button>
+            <button type="button" class="text-link" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.50" data-i18n="act.deep">精析</button>
+            <button type="button" class="text-link" id="retry-here" disabled title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.22" data-i18n="act.retryHere">重下</button>
+          </div>
+        </div>
+        <div class="act-group">
+          <span class="act-k" data-i18n="act.groupFile">棋谱与局面</span>
+          <div class="link-row">
+            <button type="button" class="text-link" id="pgn-copy" data-i18n="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.25">PGN</button>
+            <button type="button" class="text-link" id="pgn-download" data-i18n="act.export">导出</button>
+            <button type="button" class="text-link" id="slots-open" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots" data-i18n="act.slots">存档槽</button>
+            <button type="button" class="text-link" id="editor-open" title="摆出任意局面再开始对局" data-i18n-title="tip.39" data-i18n="act.editor">编辑局面</button>
+            <button type="button" class="text-link" id="more-tools" aria-expanded="false" aria-controls="more-row" data-i18n="act.more">更多</button>
+          </div>
+          <div class="link-row" id="more-row" hidden>
+            <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n-title="tip.11" data-i18n="act.paste">粘贴</button>
+            <button type="button" class="text-link" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n-title="tip.35" data-i18n="act.open">打开</button>
+            <button type="button" class="text-link" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.26">FEN</button>
+            <button type="button" class="text-link" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.10" data-i18n="act.loadFen">载入 FEN</button>
+          </div>
+        </div>
+        <div class="act-group">
+          <span class="act-k" data-i18n="act.groupGame">本局</span>
+          <div class="link-row">
+            <button type="button" class="text-link" id="btn-offerdraw" disabled data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.38">提和</button>
+            <button type="button" class="text-link" id="btn-claimdraw" disabled title="三次重复或 50 回合无进展时可判和" data-i18n-title="tip.02" data-i18n="act.claimDraw">判和</button>
+            <button type="button" class="text-link danger" id="btn-resign" disabled title="认输并结束本局" data-i18n-title="tip.58" data-i18n="act.resign">认输</button>
+          </div>
         </div>
         <p class="hint" data-i18n="hint.analysis">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
       </section>
 
+      </div><!-- /pane-play -->
+
+      <div class="side-pane" id="pane-record" role="tabpanel" aria-labelledby="tab-record" hidden>
       <section class="side-section" id="sec-stats">
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.stats">统计</h2>
@@ -290,9 +334,10 @@
         <div class="ach-body" id="ach-body"></div>
       </section>
 
+      </div><!-- /pane-record -->
+
       <div class="side-foot">
         <button type="button" class="text-link danger" id="clear-save" data-i18n="act.clearSave">清除存档</button>
-        <button type="button" class="text-link" id="collapse" data-i18n="act.collapse">收起</button>
       </div>
     </aside>
 
@@ -373,6 +418,7 @@
   <script src="js/review.js"></script>
   <script src="js/srs.js"></script>
   <script src="js/opening-coach.js"></script>
+  <script src="js/material.js"></script>
   <script src="js/editor.js"></script>
   <script src="js/openings.js"></script>
   <script src="js/openings-en.js"></script>

@@ -741,6 +741,45 @@ for (const p of ["r", "b", "n"]) {
   assert(R.verdictKey(null, "w") === null, "no summary yields no verdict");
 }
 
+// material: who is up, and what each side has taken
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/material.js"), "utf8"), ctx, { filename: "material.js" });
+  const M = ctx.ChessMaterial;
+  const start = new Chess();
+  assert(M.diff(start.board()) === 0, "the start position is level");
+  assert(M.summary(start.board(), start.board(), []).w.length === 0, "nothing captured at the start");
+
+  // 1.e4 d5 2.exd5 Qxd5 3.Nc3 Qxa2 — White has taken a pawn, Black a pawn and a pawn
+  const g = new Chess();
+  for (const san of ["e4", "d5", "exd5", "Qxd5", "Nc3", "Qxa2"]) assert(g.move(san) !== null, "played " + san);
+  const s1 = M.summary(new Chess().board(), g.board(), []);
+  assert(s1.w.join("") === "p", "White has taken one pawn (" + s1.w.join("") + ")");
+  assert(s1.b.join("") === "pp", "Black has taken two pawns (" + s1.b.join("") + ")");
+  assert(s1.diff === -1, "Black is a pawn up (diff " + s1.diff + ")");
+
+  // a promotion must not be reported as a captured pawn
+  const promo = new Chess("8/P6k/8/8/8/8/7K/8 w - - 0 1");
+  const before = new Chess("8/P6k/8/8/8/8/7K/8 w - - 0 1").board();
+  promo.move({ from: "a7", to: "a8", promotion: "q" });
+  const raw = M.summary(before, promo.board(), []);
+  assert(raw.b.join("") === "p", "without the promotion list the pawn looks captured");
+  const fixed = M.summary(before, promo.board(), [{ color: "w", promotion: "q" }]);
+  assert(fixed.b.length === 0, "…and with it, nothing is reported as captured");
+  assert(fixed.diff === 9, "the new queen counts towards the lead (diff " + fixed.diff + ")");
+
+  // the difference is read off the board, so an edited starting position is fine
+  const odd = new Chess("4k3/8/8/8/8/8/8/R3K3 w - - 0 1");
+  assert(M.diff(odd.board()) === 5, "a lone rook is a five-pawn lead");
+  assert(M.summary(odd.board(), odd.board(), []).w.length === 0,
+    "a position that started that way reports no captures");
+
+  // the display order is biggest prize first
+  const mixed = new Chess("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+  const many = M.summary(new Chess().board(), mixed.board(), []);
+  assert(many.w[0] === "q" && many.w[many.w.length - 1] === "p", "captured pieces list queens first, pawns last");
+  assert(many.w.length === 15 && many.b.length === 15, "…and every missing piece is listed");
+}
+
 // opening coach: the drills used to answer every wrong move with "not the
 // book move", which is the one thing the player already knew
 {
@@ -891,6 +930,68 @@ for (const p of ["r", "b", "n"]) {
     if (!(k in I.DICT["zh-CN"])) { unknown++; console.error("FAIL: markup uses undefined key " + k); }
   }
   assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
+
+  // Coordinates belong on the frame, not on a1/h1 where they were painted over
+  // the rooks. The gutters are DOM, so the canvas must not draw them any more.
+  {
+    const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(/function drawCoords\(/.test(boardSrc), "the frame gutters are filled from board.js");
+    assert(!/fillText\(\s*(fileChar|rankChar)/.test(boardSrc),
+      "no coordinate is painted inside a square any more");
+    assert(/id="coord-files"/.test(html) && /id="coord-ranks"/.test(html),
+      "both coordinate gutters exist in the markup");
+  }
+
+  // Keyboard access: Tab must reach the controls, and focus must be visible.
+  {
+    const appSrc2 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    // 1.8 bound Tab to the panel and called preventDefault, so focus could not
+    // move anywhere by keyboard — the board had a full keyboard cursor and no
+    // way to reach a single other control.
+    const hijack = /ev\.key === "Tab"[^\n]*preventDefault/.test(appSrc2);
+    assert(!hijack, "Tab is left to the browser for focus navigation");
+    assert(/:focus-visible\s*\{[^}]*outline:\s*2px/.test(css),
+      "a visible focus ring is defined for keyboard users");
+  }
+
+  // The shipped default window must not make the board smaller than the space
+  // allows. Side by side, the board is min(width - panel, height - chrome) —
+  // when the first term wins, the window wastes height and the board shrinks.
+  // 960x900 did exactly that: 648px of board with 252px of empty height.
+  {
+    const zon = fs.readFileSync(path.join(root, "app.zon"), "utf8");
+    const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const num = (re, src) => { const m = re.exec(src); return m ? Number(m[1]) : NaN; };
+    const w = num(/\.width = (\d+)/, zon), h = num(/\.height = (\d+)/, zon);
+    const side = num(/--side-w:\s*(\d+)px/, css), chrome = num(/--chrome-h:\s*(\d+)px/, css);
+    assert([w, h, side, chrome].every(Number.isFinite),
+      "read the default window (" + w + "x" + h + ") and the panel metrics (" + side + "/" + chrome + ")");
+    assert(w - side >= h - chrome,
+      "the default window fits the panel without shrinking the board (" +
+      (w - side) + "px of width vs " + (h - chrome) + "px of height)");
+  }
+
+  // The panel is split into three tabs. A section that ends up outside a pane
+  // is invisible in every tab — the failure mode is silent, so it gets a check.
+  const paneIds = [...html.matchAll(/<div class="side-pane" id="(pane-[a-z]+)"/g)].map((m) => m[1]);
+  assert(paneIds.length === 3, "found the three panel panes (" + paneIds.join(", ") + ")");
+  const tabControls = [...html.matchAll(/role="tab"[^>]*aria-controls="([^"]+)"/g)].map((m) => m[1]);
+  assert(tabControls.length === 3 && tabControls.every((c) => paneIds.includes(c)),
+    "every tab points at a pane that exists");
+  const aside = /<aside class="side"[\s\S]*?<\/aside>/.exec(html)[0];
+  let orphan = 0;
+  // walk the aside, tracking whether we are inside a pane when a section opens
+  let depthInPane = false;
+  for (const line of aside.split("\n")) {
+    if (/<div class="side-pane"/.test(line)) depthInPane = true;
+    else if (/<!-- \/pane-/.test(line)) depthInPane = false;
+    else if (/<section class="side-section/.test(line) && !depthInPane) {
+      orphan++;
+      console.error("FAIL: side-section outside every pane: " + line.trim().slice(0, 70));
+    }
+  }
+  assert(orphan === 0, "every panel section lives inside a tab pane");
 
   const han = /[一-鿿]/;
   // Languages that legitimately write in Han characters — for those, "contains
