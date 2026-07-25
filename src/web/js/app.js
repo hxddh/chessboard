@@ -53,6 +53,8 @@
   let coachOn = true;
   /** pvp: flip the board to face the side to move after every move */
   let autoFlipPvp = false;
+  /** which panel tab is showing: "play" | "setup" | "record" */
+  let sideTab = "play";
   /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
   let langId = I18n ? I18n.getLang() : "zh-CN";
   /** remaining ms per side; null when no clock */
@@ -213,11 +215,12 @@
       if (typeof s.autoFlipPvp === "boolean") autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") langId = I18n.setLang(s.langId);
       if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) puzzleTierFilter = s.puzzleTier;
+      if (["play", "setup", "record"].includes(s.sideTab)) sideTab = s.sideTab;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter, sideTab }));
     } catch (_) {}
   }
   function saveGame() {
@@ -2526,10 +2529,11 @@
     const flipSwitch = document.getElementById("opt-autoflip");
     if (flipSwitch) flipSwitch.setAttribute("aria-pressed", autoFlipPvp ? "true" : "false");
     const secMoves = document.getElementById("sec-moves");
-    const secStats = document.getElementById("sec-stats");
     const trainer = mode === "learn" || mode === "puzzle" || !!editor;
     if (secMoves) secMoves.hidden = trainer;
-    if (secStats) secStats.hidden = trainer;
+    // 统计/历史/成就 used to be hidden in the trainer modes because they sat in
+    // the same scroll and got in the way. They now live behind their own tab,
+    // which nobody opens by accident — and puzzle badges are earned right there.
     const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
     const wRole = document.getElementById("white-role");
     const bRole = document.getElementById("black-role");
@@ -3444,7 +3448,31 @@
     toast(t("slots.deleted") + (i + 1));
   }
 
-  // --- panel ---
+  // --- panel tabs ---
+  //
+  // Until 1.9 the panel was one 1788px scroll in a 900px window, ordered by
+  // when a setting is chosen rather than by how often it is used: theme and
+  // language sat above the fold while the move list, the replay bar and this
+  // game's own actions all started below it. Three tabs split it by what the
+  // player is doing — playing, configuring, or looking back.
+  const TABS = ["play", "setup", "record"];
+
+  function setSideTab(id, opts) {
+    const want = TABS.includes(id) ? id : "play";
+    sideTab = want;
+    for (const t of TABS) {
+      const btn = document.getElementById("tab-" + t);
+      const pane = document.getElementById("pane-" + t);
+      if (btn) btn.setAttribute("aria-selected", t === want ? "true" : "false");
+      if (pane) {
+        pane.hidden = t !== want;
+        // a pane left scrolled half-way reads as a broken tab when you return
+        if (t === want && opts && opts.top) pane.scrollTop = 0;
+      }
+    }
+    saveSettings();
+  }
+
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
   function setPanelOpen(open) {
     const want = !!open;
@@ -3682,6 +3710,23 @@
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   document.getElementById("collapse").onclick = () => setPanelOpen(false);
+  const tabRow = document.querySelector(".side-tabs");
+  if (tabRow) {
+    tabRow.onclick = (ev) => {
+      const b = ev.target.closest("button[data-tab]");
+      if (b) setSideTab(b.dataset.tab, { top: true });
+    };
+    // ARIA tablist keyboard contract: arrows move between tabs
+    tabRow.onkeydown = (ev) => {
+      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+      const cur = TABS.indexOf(sideTab);
+      const next = TABS[(cur + (ev.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+      ev.preventDefault();
+      setSideTab(next, { top: true });
+      const btn = document.getElementById("tab-" + next);
+      if (btn) btn.focus();
+    };
+  }
   document.getElementById("scrim").onclick = () => setPanelOpen(false);
 
   const mlEl = document.getElementById("move-list");
@@ -3787,6 +3832,9 @@
     else if (wasLearn) stopLearn();
     if (mode === "puzzle") startPuzzles();
     else if (wasPuzzle) stopPuzzles();
+    // the mode decides what the play tab holds, so show it — otherwise
+    // switching to 教学 from the settings tab looks like nothing happened
+    setSideTab("play", { top: true });
     saveSettings();
     selection = null;
     syncAutoFlip();
@@ -4176,6 +4224,7 @@
   if (I18n) { I18n.setLang(langId); I18n.apply(document); }
   const savedPanel = Host.storageGet(PANEL_KEY);
   setPanelOpen(savedPanel === "1");
+  setSideTab(sideTab);
   const resumed = tryLoadSave();
   if (resumed) toast(t("m.25"));
   // a resumed finished game must not be re-counted on the next live move

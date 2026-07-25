@@ -228,9 +228,10 @@
       transform: translateX(100%);
       transition: transform .28s var(--ease);
       box-shadow: -12px 0 40px rgba(0,0,0,.22);
-      overflow-y: auto;
-      overflow-x: hidden;
-      scrollbar-width: thin;
+      /* The panel itself no longer scrolls — the active tab's pane does, so the
+         player's identity strip and the tab row stay put while a long list
+         (145 puzzles, 500 games) scrolls underneath them. */
+      overflow: hidden;
       /* Closed: ignore pointer/hit testing so half-visible glitches can't steal clicks */
       pointer-events: none;
     }
@@ -276,6 +277,45 @@
       font-size: 12px; color: var(--muted); line-height: 1.45;
     }
     .opening-line[hidden] { display: none; }
+    .mode-nav { margin-top: 14px; }
+
+    /* —— tabs —— */
+    .side-head, .side-tabs, .side-foot { flex-shrink: 0; }
+    .side-tabs {
+      display: flex; align-items: stretch; gap: 4px;
+      padding: 10px 0 0;
+    }
+    .side-tabs button[role="tab"] {
+      flex: 1;
+      appearance: none; border: 0; background: transparent;
+      color: var(--muted);
+      font: inherit; font-size: 12.5px; font-weight: 600;
+      padding: 10px 4px; border-radius: 9px 9px 0 0;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .side-tabs button[role="tab"]:hover { color: var(--text); }
+    .side-tabs button[role="tab"][aria-selected="true"] {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    .side-close {
+      flex: 0 0 auto;
+      width: 32px; height: 32px;
+      align-self: center;
+      font-size: 15px; line-height: 1;
+    }
+    .side-pane {
+      display: flex; flex-direction: column;
+      flex: 1; min-height: 0;
+      overflow-y: auto; overflow-x: hidden;
+      scrollbar-width: thin;
+    }
+    .side-pane[hidden] { display: none; }
+    /* the pane owns the scroll, so its first section needs no top rule */
+    .side-pane > .side-section:first-child { border-top: 0; }
 
     .side-section {
       padding: 18px 0;

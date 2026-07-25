@@ -892,6 +892,27 @@ for (const p of ["r", "b", "n"]) {
   }
   assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
 
+  // The panel is split into three tabs. A section that ends up outside a pane
+  // is invisible in every tab — the failure mode is silent, so it gets a check.
+  const paneIds = [...html.matchAll(/<div class="side-pane" id="(pane-[a-z]+)"/g)].map((m) => m[1]);
+  assert(paneIds.length === 3, "found the three panel panes (" + paneIds.join(", ") + ")");
+  const tabControls = [...html.matchAll(/role="tab"[^>]*aria-controls="([^"]+)"/g)].map((m) => m[1]);
+  assert(tabControls.length === 3 && tabControls.every((c) => paneIds.includes(c)),
+    "every tab points at a pane that exists");
+  const aside = /<aside class="side"[\s\S]*?<\/aside>/.exec(html)[0];
+  let orphan = 0;
+  // walk the aside, tracking whether we are inside a pane when a section opens
+  let depthInPane = false;
+  for (const line of aside.split("\n")) {
+    if (/<div class="side-pane"/.test(line)) depthInPane = true;
+    else if (/<!-- \/pane-/.test(line)) depthInPane = false;
+    else if (/<section class="side-section/.test(line) && !depthInPane) {
+      orphan++;
+      console.error("FAIL: side-section outside every pane: " + line.trim().slice(0, 70));
+    }
+  }
+  assert(orphan === 0, "every panel section lives inside a tab pane");
+
   const han = /[一-鿿]/;
   // Languages that legitimately write in Han characters — for those, "contains
   // Han" says nothing. Everywhere else it is the signal that a key was added
