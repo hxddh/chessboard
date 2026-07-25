@@ -9,6 +9,7 @@
  *   lastMove/hintMove: {from,to} | null (hintMove renders as an arrow)
  *   stars: array of square names — lesson goal markers (gold stars)
  *   flashSquare: square name | null — brief success flash (lesson feedback)
+ *   cursor: square name | null — keyboard focus ring (keyboard play)
  * @module board
  */
 (function (global) {
@@ -306,6 +307,20 @@
       ctx.globalAlpha = 0.9;
       paintPiece(dragPiece, _drag.x, _drag.y);
       ctx.globalAlpha = 1;
+    }
+    // keyboard cursor: a focus ring that must stay readable on both square
+    // colours and on top of pieces, so it is drawn as a double stroke
+    if (m.cursor) {
+      const { sr, sc } = screenPos(m.cursor, m.flipped);
+      const x = edge(sc), y = edge(sr);
+      const w2 = edge(sc + 1) - x, h2 = edge(sr + 1) - y;
+      const lw = Math.max(2, step * 0.045);
+      ctx.strokeStyle = "rgba(20,20,20,0.55)";
+      ctx.lineWidth = lw * 1.8;
+      ctx.strokeRect(x + lw, y + lw, w2 - lw * 2, h2 - lw * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.lineWidth = lw;
+      ctx.strokeRect(x + lw, y + lw, w2 - lw * 2, h2 - lw * 2);
     }
     // legal-move markers on top of pieces (capture ring / empty dot)
     if (m.legalTargets && m.legalTargets.length) {

@@ -4,6 +4,9 @@
   const BoardView = window.ChessBoardView;
   const Audio2 = window.ChessAudio;
 
+  const I18n = window.ChessI18n;
+  const t = I18n ? I18n.t : (k) => k;
+
   const SAVE_KEY = "chess.v1.save";
   const SETTINGS_KEY = "chess.v1.settings";
   const PANEL_KEY = "chess.panelOpen";
@@ -34,6 +37,8 @@
   /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
   let analysis = null;
   let analyzing = false;
+  /** set by the stop button; the analysis loop bails at the next position */
+  let analyzeAbort = false;
   let analyzeProgress = "";
   /** pgn of the last game recorded into stats (double-count guard) */
   let statsRecordedSig = null;
@@ -46,6 +51,8 @@
   let coachOn = true;
   /** pvp: flip the board to face the side to move after every move */
   let autoFlipPvp = false;
+  /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
+  let langId = I18n ? I18n.getLang() : "zh-CN";
   /** remaining ms per side; null when no clock */
   let clock = null;
   /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
@@ -112,7 +119,13 @@
     return null;
   }
 
+  /** keyboard play: focused square, shown only while the board has focus */
+  let keyboardCursor = null;
+  let boardFocused = false;
+  const cursorSquare = () => (boardFocused ? keyboardCursor : null);
+
   BoardView.attach(canvas, () => {
+    if (editor) return editorModel();
     if (mode === "learn" && learn) return learnModel();
     if (mode === "puzzle" && puzzle) return puzzleModel();
     const g = viewGame();
@@ -127,6 +140,7 @@
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       hintMove: isLive() ? hintMove : null,
       stars: [],
+      cursor: cursorSquare(),
     };
   });
 
@@ -195,11 +209,12 @@
       if (s.timeControl === "off" || TCS[s.timeControl]) timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") autoFlipPvp = s.autoFlipPvp;
+      if (I18n && typeof s.langId === "string") langId = I18n.setLang(s.langId);
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId }));
     } catch (_) {}
   }
   function saveGame() {
@@ -238,7 +253,13 @@
   }
 
   // --- engine (AI mode) ---
-  const DIFF_NAMES = { beginner: "新手", easy: "入门", normal: "进阶", hard: "困难", extreme: "极限" };
+  const DIFF_IDS = ["beginner", "easy", "normal", "hard", "extreme"];
+  const diffName = (id) => t("diff." + id);
+  /** legacy alias kept for the many call sites that read it like a map */
+  const DIFF_NAMES = new Proxy({}, {
+    get: (_, k) => (DIFF_IDS.includes(k) ? diffName(k) : undefined),
+    has: (_, k) => DIFF_IDS.includes(k),
+  });
 
   /** Drop any in-flight engine search; call before every game mutation. */
   function invalidateEngine() {
@@ -556,6 +577,7 @@
       hintMove: learn.helpArrow,
       flashSquare: learn.flash,
       stars,
+      cursor: cursorSquare(),
     };
   }
 
@@ -710,13 +732,32 @@
         return;
       }
       sync();
-      if (g.in_checkmate()) { learnTaskDone(); return; }
-      if (g.game_over()) {
-        learnRetryTask(g.in_stalemate() ? "逼和了 —— 和棋,重来" : "和棋了 —— 重来");
-        return;
-      }
+      const done = drillOutcome(g, t);
+      if (done === "win") { learnTaskDone(); return; }
+      if (done) { learnRetryTask(done); return; }
       learnEngineReply();
     }
+  }
+
+  /**
+   * How a drill position stands after a move.
+   * @returns {"win"|string|null} "win", a retry message, or null to play on.
+   * Defensive drills (`winOn: "draw"`) invert the usual verdict: reaching a
+   * draw *is* the goal, and being mated is the failure.
+   */
+  function drillOutcome(g, task) {
+    if (task.winOn === "draw") {
+      if (g.in_checkmate()) return "被将死了 —— 防守失败,重来";
+      if (g.game_over()) return "win"; // stalemate / 50-move / insufficient
+      // black queening means the defence has already collapsed
+      for (const row of g.board()) for (const p of row) {
+        if (p && p.color === "b" && p.type === "q") return "黑兵升变了 —— 防守失败,重来";
+      }
+      return null;
+    }
+    if (g.in_checkmate()) return g.turn() === "b" ? "win" : "被将死了 —— 重来";
+    if (g.game_over()) return g.in_stalemate() ? "逼和了 —— 和棋,重来" : "和棋了 —— 重来";
+    return null;
   }
 
   /** White still has winning material for this drill (health check). */
@@ -747,12 +788,13 @@
         Audio2.playMove(played.color, { captured: !!played.captured, check: g.in_check() });
       }
     }
-    if (g.game_over() && !g.in_checkmate()) {
-      sync();
-      learnRetryTask(g.in_stalemate() ? "逼和了 —— 和棋,重来" : "和棋了 —— 重来");
-      return;
-    }
-    if (!learnHasHeavy(g)) {
+    const t = curTask();
+    const done = drillOutcome(g, t);
+    if (done === "win") { sync(); learnTaskDone(); return; }
+    if (done) { sync(); learnRetryTask(done); return; }
+    // attacking drills need the material that makes the win possible; the
+    // defensive one is *expected* to be down material, so skip the check
+    if (t.winOn !== "draw" && !learnHasHeavy(g)) {
       sync();
       learnRetryTask("大子丢了,无法将杀 —— 重来");
       return;
@@ -887,11 +929,12 @@
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
   const OPENING_DRILLS = (window.CHESS_OPENINGS || [])
     .filter(([, , seq]) => seq.split(" ").length >= 6)
-    .map(([eco, name, seq], i) => ({
+    .map(([eco, name, seq, idea], i) => ({
       id: "op-" + eco + "-" + i,
       cat: "op",
       name: eco + " " + name,
       line: seq.split(" "),
+      idea: idea || "",
     }));
   const ALL_PUZZLES = PUZZLES.concat(OPENING_DRILLS);
 
@@ -957,6 +1000,7 @@
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       hintMove: puzzle.helpArrow,
       stars: [],
+      cursor: cursorSquare(),
     };
   }
 
@@ -1220,6 +1264,13 @@
         ? "✅ 解出!点「下一题」继续"
         : "第 " + (puzzle.idx + 1) + " 题 · " + puzzleGoalText();
     }
+    // opening drills are rote memorisation without the "why" — show the idea
+    const ideaEl = document.getElementById("puzzle-idea");
+    if (ideaEl) {
+      const idea = puzzle.p.idea || "";
+      ideaEl.hidden = !idea;
+      ideaEl.textContent = idea ? "思路 · " + idea : "";
+    }
     const next = document.getElementById("puzzle-next");
     if (next) next.classList.toggle("primary", puzzle.done);
     const listEl = document.getElementById("puzzle-list");
@@ -1264,11 +1315,22 @@
     const fens = [g.fen()];
     for (const san of h) { g.move(san); fens.push(g.fen()); }
     analyzing = true;
+    analyzeAbort = false;
     analyzeProgress = "0/" + fens.length;
     setAnalyzeUI();
     const scalars = new Array(fens.length).fill(null);
     const pvs = new Array(fens.length).fill(null);
     for (let i = 0; i < fens.length; i++) {
+      if (analyzeAbort) {
+        analyzing = false; analyzeAbort = false; analyzeProgress = "";
+        // keep whatever was already measured — a partial curve still helps
+        if (i > 1) {
+          analysis = { sig, scalars, tags: h.map(() => null), pvs };
+          toast("已停止分析 · 保留前 " + (i - 1) + " 步结果");
+        } else toast("已停止分析");
+        sync();
+        return;
+      }
       if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
       const probe = new Chess(fens[i]);
       if (probe.in_checkmate()) scalars[i] = probe.turn() === "w" ? -10000 : 10000;
@@ -1305,19 +1367,65 @@
       if (loss >= 50) return "?!";
       return null;
     });
-    analysis = { sig, scalars, tags, pvs };
+    analysis = { sig, scalars, tags, pvs, acc: accuracyFrom(fens, scalars) };
     analyzing = false;
     analyzeProgress = "";
+    recordAccuracy();
     sync();
     const bad = tags.filter((t) => t === "?" || t === "??").length;
     toast(bad ? "分析完成 · " + bad + " 处失着" : "分析完成 · 没有明显失着");
   }
 
+  /**
+   * Per-side average centipawn loss and an accuracy score derived from it.
+   *
+   * The accuracy curve is the usual exponential decay (100% at zero loss,
+   * ~60% around 60cp average) — it is a readable summary, not an official
+   * rating, and the UI labels it as such.
+   */
+  function accuracyFrom(fens, scalars) {
+    const acc = { w: null, b: null, wAcpl: null, bAcpl: null };
+    const loss = { w: [], b: [] };
+    for (let i = 0; i + 1 < scalars.length; i++) {
+      const a = scalars[i], b = scalars[i + 1];
+      if (a == null || b == null) continue;
+      const side = fens[i].split(" ")[1] === "w" ? "w" : "b";
+      const d = side === "w" ? a - b : b - a;
+      loss[side].push(Math.max(0, Math.min(1000, d)));
+    }
+    for (const side of ["w", "b"]) {
+      if (!loss[side].length) continue;
+      const mean = loss[side].reduce((x, y) => x + y, 0) / loss[side].length;
+      acc[side === "w" ? "wAcpl" : "bAcpl"] = Math.round(mean);
+      acc[side] = Math.round(100 * Math.exp(-mean / 120));
+    }
+    return acc;
+  }
+
+  /** Attach the human's accuracy to the stats record of a finished AI game. */
+  function recordAccuracy() {
+    if (mode !== "ai" || !analysis || !analysis.acc) return;
+    if (!(naturalGameOver() || ruleTerminated())) return;
+    const mine = humanColor === "w" ? analysis.acc.w : analysis.acc.b;
+    const acpl = humanColor === "w" ? analysis.acc.wAcpl : analysis.acc.bAcpl;
+    if (mine == null) return;
+    const s = loadStats();
+    const last = s.games[s.games.length - 1];
+    if (!last || last.acc != null) return; // nothing to annotate, or already done
+    last.acc = mine;
+    last.acpl = acpl;
+    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    renderStats();
+  }
+
   function setAnalyzeUI() {
     const btn = document.getElementById("an-run");
+    // while a run is in flight the primary button becomes the stop control —
+    // a deep pass over a long game is a minute of engine time to be stuck in
     if (btn) {
-      btn.disabled = analyzing || !sanHistory().length;
-      btn.textContent = analyzing ? "分析中 " + analyzeProgress : "分析";
+      btn.disabled = !analyzing && !sanHistory().length;
+      btn.textContent = analyzing ? t("act.stop") + " " + analyzeProgress : t("act.analyze");
+      btn.title = analyzing ? "停止分析(保留已算出的部分)" : "快速评估每一步(120ms/步),标注失着";
     }
     const deep = document.getElementById("an-deep");
     if (deep) deep.disabled = analyzing || !sanHistory().length;
@@ -1332,6 +1440,18 @@
       const pv = a && a.pvs ? a.pvs[viewIndex] : null;
       pvEl.hidden = !pv;
       pvEl.textContent = pv ? "引擎主变 · " + pv : "";
+    }
+    const accEl = document.getElementById("acc-line");
+    if (accEl) {
+      const a = analysisFor();
+      const acc = a && a.acc;
+      const has = acc && (acc.w != null || acc.b != null);
+      accEl.hidden = !has;
+      if (has) {
+        const part = (side, name) =>
+          acc[side] == null ? name + " —" : name + " " + acc[side] + "%(失分 " + acc[side === "w" ? "wAcpl" : "bAcpl"] + ")";
+        accEl.textContent = "准确率 · " + part("w", "白") + " · " + part("b", "黑");
+      }
     }
   }
 
@@ -1425,6 +1545,9 @@
       const a = (agg[k] = agg[k] || { win: 0, loss: 0, draw: 0 });
       a[g.result] = (a[g.result] || 0) + 1;
     }
+    // accuracy of the most recent analysed games (only games the user analysed
+    // carry it, so this stays empty until they use 分析/精析)
+    const withAcc = s.games.filter((g) => typeof g.acc === "number");
     el.innerHTML = "";
     let total = 0;
     for (const k of ["beginner", "easy", "normal", "hard", "extreme"]) {
@@ -1442,9 +1565,25 @@
       row.append(name, val);
       el.appendChild(row);
     }
+    if (withAcc.length) {
+      const recent = withAcc.slice(-10);
+      const avg = Math.round(recent.reduce((n, g) => n + g.acc, 0) / recent.length);
+      const row = document.createElement("div");
+      row.className = "stat-row";
+      const name = document.createElement("span");
+      name.className = "stat-k";
+      name.textContent = "近 " + recent.length + " 局准确率";
+      const val = document.createElement("span");
+      val.className = "stat-v num";
+      val.textContent = avg + "% · 最近 " + recent[recent.length - 1].acc + "%";
+      row.append(name, val);
+      el.appendChild(row);
+    }
     const hint = document.createElement("p");
     hint.className = "hint";
-    hint.textContent = total ? "共 " + total + " 局 · 人机完局自动记录" : "人机对局分出胜负后自动记录";
+    hint.textContent = total
+      ? "共 " + total + " 局 · 人机完局自动记录" + (withAcc.length ? " · 准确率来自「分析」" : " · 完局后点「分析」可记录准确率")
+      : "人机对局分出胜负后自动记录";
     el.appendChild(hint);
     const clearBtn = document.getElementById("stats-clear");
     if (clearBtn) clearBtn.disabled = !total;
@@ -1540,36 +1679,9 @@
 
   // --- game flow ---
 
-  /**
-   * FIDE 6.9: on a flag fall the opponent wins only if some legal sequence of
-   * moves (helpmates included) could checkmate the flagged player. Practical
-   * decision table over the opponent's material (sq colors for bishops):
-   *  - any pawn / rook / queen → can mate
-   *  - ≥2 knights → can mate (helpmate exists)
-   *  - 1 knight → can mate iff the flagged side still has any piece to serve
-   *    as a blocker (KN vs bare K cannot mate even with cooperation)
-   *  - bishops on both colors → can mate
-   *  - same-colored bishops only → can mate iff the flagged side has a piece
-   *    that can occupy a square of the OTHER color (a same-colored bishop
-   *    can't; any pawn/rook/queen/knight/other-color bishop can)
-   */
+  /** FIDE 6.9 material test for the side that must deliver mate (see fide.js). */
   function sideHasMatingMaterial(color) {
-    const mine = [], theirs = [];
-    const board = game.board();
-    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-      const p = board[r][c];
-      if (!p || p.type === "k") continue;
-      (p.color === color ? mine : theirs).push({ type: p.type, dark: (r + c) % 2 === 1 });
-    }
-    if (mine.some((p) => p.type === "p" || p.type === "r" || p.type === "q")) return true;
-    const knights = mine.filter((p) => p.type === "n").length;
-    const bishops = mine.filter((p) => p.type === "b");
-    if (knights >= 2) return true;
-    if (knights === 1) return bishops.length > 0 || theirs.length > 0;
-    if (!bishops.length) return false;
-    if (bishops.some((b) => b.dark) && bishops.some((b) => !b.dark)) return true;
-    const myColor = bishops[0].dark;
-    return theirs.some((p) => p.type !== "b" || p.dark !== myColor);
+    return Fide.hasMatingMaterial(game.board(), color);
   }
 
   function timeoutIsDraw() {
@@ -1578,35 +1690,35 @@
 
   function statusText() {
     if (mode === "learn") {
-      if (!learn) return "教学模式";
-      if (learn.done) return "🎉 课程完成";
+      if (!learn) return t("st.learn");
+      if (learn.done) return t("st.lessonDone");
       // the sidebar may be closed while clicking the board — put the live
       // task instructions where they are always visible
       return learnTaskText();
     }
     if (mode === "puzzle") {
-      if (!puzzle) return "做题练习";
-      if (puzzle.done) return "✅ 解出 · 下一题";
+      if (!puzzle) return t("st.puzzle");
+      if (puzzle.done) return t("st.puzzleDone");
       return puzzleGoalText();
     }
     const g = viewGame();
-    if (!isLive()) return "复盘 " + viewIndex + "/" + sanHistory().length;
+    if (!isLive()) return t("st.replay") + " " + viewIndex + "/" + sanHistory().length;
     if (flagFall) {
-      if (timeoutIsDraw()) return "超时 · 和棋(对方无子力将杀)";
-      return flagFall === "w" ? "超时 · 黑方胜" : "超时 · 白方胜";
+      if (timeoutIsDraw()) return t("st.flagDraw");
+      return t(flagFall === "w" ? "st.flagWhite" : "st.flagBlack");
     }
-    if (resigned) return resigned === "w" ? "白方认输 · 黑方胜" : "黑方认输 · 白方胜";
-    if (drawAgreed) return "协议和棋 · 和棋";
-    if (drawClaimed) return drawClaimed === "threefold" ? "判和 · 三次重复" : "判和 · 50 回合无吃子无动兵";
-    if (engineThinking && !naturalGameOver()) return "引擎思考中…";
-    if (g.in_checkmate()) return g.turn() === "w" ? "将死 · 黑方胜" : "将死 · 白方胜";
-    if (g.in_stalemate()) return "逼和 · 和棋";
-    if (g.insufficient_material()) return "子力不足 · 和棋";
+    if (resigned) return t(resigned === "w" ? "st.resignWhite" : "st.resignBlack");
+    if (drawAgreed) return t("st.drawAgreed");
+    if (drawClaimed) return t(drawClaimed === "threefold" ? "st.claimThreefold" : "st.claimFifty");
+    if (engineThinking && !naturalGameOver()) return t("st.thinking");
+    if (g.in_checkmate()) return t(g.turn() === "w" ? "st.mateBlack" : "st.mateWhite");
+    if (g.in_stalemate()) return t("st.stalemate");
+    if (g.insufficient_material()) return t("st.insufficient");
     const auto = autoDrawReason();
-    if (auto) return auto === "fivefold" ? "五次重复 · 自动判和" : "75 回合无进展 · 自动判和";
-    const side = g.turn() === "w" ? "白方走子" : "黑方走子";
-    const base = g.in_check() ? side + " · 将军！" : side;
-    return claimableDrawReason() ? base + " · 可判和" : base;
+    if (auto) return t(auto === "fivefold" ? "st.autoFivefold" : "st.autoSeventyfive");
+    const side = g.turn() === "w" ? t("turn.white") : t("turn.black");
+    const base = g.in_check() ? side + " · " + t("turn.check") : side;
+    return claimableDrawReason() ? base + " · " + t("st.claimable") : base;
   }
 
   function renderMoveList() {
@@ -1657,7 +1769,9 @@
   // (arts. 9.6). The app therefore never consults game_over() for
   // terminal-ness — it derives its own claimable/auto states here.
 
-  function halfmoveClock(g) { return Number((g || game).fen().split(" ")[4]) || 0; }
+  const Fide = window.ChessFide;
+
+  function halfmoveClock(g) { return Fide.halfmoveClock((g || game).fen()); }
 
   /** how many times the current live position has occurred (incl. start) */
   let repMemo = { sig: null, count: 1 };
@@ -1665,15 +1779,7 @@
     const h = sanHistory();
     const sig = h.join(" ");
     if (repMemo.sig === sig) return repMemo.count;
-    const key = (f) => f.split(" ").slice(0, 4).join(" ");
-    const g = baseGame();
-    const counts = new Map([[key(g.fen()), 1]]);
-    for (const san of h) {
-      g.move(san);
-      const k = key(g.fen());
-      counts.set(k, (counts.get(k) || 0) + 1);
-    }
-    repMemo = { sig, count: counts.get(key(game.fen())) || 1 };
+    repMemo = { sig, count: Fide.repetitionCount(startFen(), h, Chess) };
     return repMemo.count;
   }
 
@@ -1732,7 +1838,7 @@
           ? !(puzzle && !puzzle.done && !puzzle.g.game_over() && puzzle.g.turn() === "w")
         : hintPending || analyzing || !isLive() || appGameOver() ||
           (mode === "ai" && (engineThinking || game.turn() !== humanColor));
-      hintBtn.textContent = mode === "puzzle" ? "答案" : hintPending ? "思考中" : "提示";
+      hintBtn.textContent = mode === "puzzle" ? t("chrome.answer") : hintPending ? t("chrome.thinking") : t("chrome.hint");
     }
     const resignBtn = document.getElementById("btn-resign");
     if (resignBtn) {
@@ -1772,6 +1878,7 @@
     syncClockTimer();
     syncLearnUI();
     syncPuzzleUI();
+    syncEditorUI();
     syncSettingsUI();
   }
 
@@ -1812,7 +1919,7 @@
     if (flipSwitch) flipSwitch.setAttribute("aria-pressed", autoFlipPvp ? "true" : "false");
     const secMoves = document.getElementById("sec-moves");
     const secStats = document.getElementById("sec-stats");
-    const trainer = mode === "learn" || mode === "puzzle";
+    const trainer = mode === "learn" || mode === "puzzle" || !!editor;
     if (secMoves) secMoves.hidden = trainer;
     if (secStats) secStats.hidden = trainer;
     const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
@@ -1830,16 +1937,33 @@
         wRole.textContent = "你(执白)";
         bRole.textContent = "题目";
       } else {
-        wRole.textContent = "玩家 1";
-        bRole.textContent = "玩家 2";
+        wRole.textContent = t("vs.p1");
+        bRole.textContent = t("vs.p2");
       }
     }
+  }
+
+  /**
+   * Point the board at whoever is on move (pvp auto-flip).
+   * Every path that changes whose turn it is must go through here — a move,
+   * an undo, a replay jump, a fresh game, or restoring a save — otherwise the
+   * board keeps facing the player who just moved.
+   * @returns {boolean} true when the orientation changed
+   */
+  function syncAutoFlip() {
+    if (!autoFlipPvp || mode !== "pvp") return false;
+    const want = viewGame().turn() === "b";
+    if (flipped === want) return false;
+    flipped = want;
+    saveSettings(); // otherwise a reload mid-game faces the wrong player
+    return true;
   }
 
   function setViewIndex(n) {
     viewIndex = Math.max(0, Math.min(n, sanHistory().length));
     selection = null;
     BoardView.cancelAnim();
+    syncAutoFlip();
     sync();
   }
 
@@ -1881,9 +2005,7 @@
     if (mv.promotion) toast("已升变为" + (PROMO_NAMES[mv.promotion] || "后"));
     if (game.in_checkmate()) Audio2.playWin();
     else if (naturalGameOver()) Audio2.playDraw();
-    if (mode === "pvp" && autoFlipPvp && isLive() && !appGameOver()) {
-      flipped = game.turn() === "b";
-    }
+    if (!appGameOver()) syncAutoFlip();
     coachRemember(mv);
     sync();
     saveGame();
@@ -1892,6 +2014,7 @@
   }
 
   function onSquareClick(sq) {
+    if (editor) { editorClick(sq); return; }
     if (mode === "learn") { learnClick(sq); return; }
     if (mode === "puzzle") { puzzleClick(sq); return; }
     if (!isLive()) { toast("请先「回到最新一着」再走子"); return; }
@@ -1934,6 +2057,7 @@
     }
     selection = null;
     viewIndex = sanHistory().length;
+    syncAutoFlip();
     sync();
     saveGame();
     maybeEngineTurn();
@@ -1953,6 +2077,7 @@
     drawAgreed = false;
     drawClaimed = null;
     resetClocks();
+    syncAutoFlip();
     sync();
     saveGame();
     toast("新局开始 · 白先");
@@ -1978,6 +2103,7 @@
     resigned = null;
     drawAgreed = false;
     drawClaimed = null;
+    syncAutoFlip();
     sync();
     saveGame();
     toast("已回到第 " + keep + " 着,继续对弈");
@@ -2035,10 +2161,38 @@
     coachPending = { before: g.fen(), after: game.fen(), san: mv.san, len: h.length };
   }
 
+  const PIECE_VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+
+  /**
+   * Cheap static screen for the coach: did this move plausibly lose material?
+   * Two engine searches per move is real latency on the shared worker, so only
+   * moves that hang something (or that the engine answered with a capture)
+   * are worth checking properly.
+   */
+  function coachWorthChecking(beforeFen, afterFen) {
+    try {
+      const g = new Chess(afterFen);
+      // opponent to move: is there a capture that wins material outright?
+      for (const m of g.moves({ verbose: true })) {
+        if (!m.captured) continue;
+        const t = new Chess(afterFen);
+        t.move(m);
+        const recapture = t.moves({ verbose: true }).some((r) => r.to === m.to);
+        const net = PIECE_VALUE[m.captured] - (recapture ? PIECE_VALUE[m.piece] : 0);
+        if (net >= 2) return true;
+      }
+      // ...or did the move walk into a check that was not there before?
+      return g.in_check() && !new Chess(beforeFen).in_check();
+    } catch (_) {
+      return true; // never suppress the coach because of a probe failure
+    }
+  }
+
   async function coachAfterEngineReply() {
     const p = coachPending;
     coachPending = null;
     if (!p || !coachOn || mode !== "ai" || appGameOver()) return;
+    if (!coachWorthChecking(p.before, p.after)) return;
     let a = null, b = null;
     try {
       a = await window.ChessEngine.analyze(p.before, 120);
@@ -2202,9 +2356,56 @@
     }
   }
 
+  /** Modal list picker → index of the chosen entry, or null when cancelled. */
+  let pickResolver = null;
+  function pickFromList(title, items) {
+    const modal = document.getElementById("pick-modal");
+    const list = document.getElementById("pick-list");
+    const titleEl = document.getElementById("pick-title");
+    if (!modal || !list) return Promise.resolve(items.length ? 0 : null);
+    if (titleEl) titleEl.textContent = title;
+    list.innerHTML = "";
+    items.forEach((it, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "pick-item";
+      b.dataset.i = String(i);
+      b.textContent = it.label;
+      if (it.sub) {
+        const s = document.createElement("span");
+        s.className = "pick-sub";
+        s.textContent = it.sub;
+        b.appendChild(s);
+      }
+      list.appendChild(b);
+    });
+    modal.classList.add("show");
+    return new Promise((resolve) => { pickResolver = resolve; });
+  }
+  function finishPick(v) {
+    const modal = document.getElementById("pick-modal");
+    if (modal) modal.classList.remove("show");
+    if (pickResolver) { pickResolver(v); pickResolver = null; }
+  }
+
   async function importPgnText(text, label) {
-    const t = (text || "").trim();
+    let t = (text || "").trim();
     if (!t) { toast("没有可导入的内容"); return; }
+    // A PGN file may hold a whole database — importing only the last game (the
+    // old behaviour) silently threw away everything before it.
+    const games = window.ChessPgn ? window.ChessPgn.splitGames(t) : [t];
+    if (games.length > 1) {
+      const items = games.map((g, i) => {
+        const s = window.ChessPgn.summary(g);
+        return {
+          label: (i + 1) + ". " + s.white + " — " + s.black + "  " + s.result,
+          sub: [s.event, s.date, s.plies ? s.plies + " 着" : ""].filter(Boolean).join(" · "),
+        };
+      });
+      const pick = await pickFromList("这份 PGN 含 " + games.length + " 局,选择要导入的一局", items);
+      if (pick == null) { toast("已取消导入"); return; }
+      t = games[pick];
+    }
     if (sanHistory().length &&
         !(await confirmNative("导入将替换当前对局，是否继续？", "导入 PGN", { ok: "导入", cancel: "取消" }))) {
       return;
@@ -2222,6 +2423,7 @@
     drawAgreed = false;
     drawClaimed = null;
     resetClocks();
+    syncAutoFlip();
     sync();
     saveGame();
     toast("已导入 " + sanHistory().length + " 着");
@@ -2266,6 +2468,166 @@
     input.click();
   }
 
+  // --- position editor + FEN loading ---
+  const PALETTE = [
+    ["w", "k"], ["w", "q"], ["w", "r"], ["w", "b"], ["w", "n"], ["w", "p"], ["", ""],
+    ["b", "k"], ["b", "q"], ["b", "r"], ["b", "b"], ["b", "n"], ["b", "p"], ["", ""],
+  ];
+  const PALETTE_GLYPH = {
+    wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
+    bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
+  };
+  /** editor runtime: {board, turn, castling, brush} | null */
+  let editor = null;
+
+  function editorModel() {
+    return {
+      position: editor.board,
+      flipped,
+      selected: null,
+      legalTargets: [],
+      lastMove: null,
+      checkSquare: null,
+      hintMove: null,
+      stars: [],
+      cursor: cursorSquare(),
+    };
+  }
+
+  function startEditor() {
+    const Ed = window.ChessEditor;
+    if (!Ed) { toast("编辑器不可用"); return; }
+    invalidateEngine();
+    editor = Ed.fromFen(viewGame().fen(), Chess);
+    editor.brush = { color: "w", type: "p" };
+    selection = null;
+    BoardView.cancelAnim();
+    renderEditorPalette();
+    sync();
+    toast("编辑局面 · 选一个棋子再点棋盘,点已有棋子可清除");
+  }
+
+  function stopEditor() { editor = null; }
+
+  function renderEditorPalette() {
+    const el = document.getElementById("editor-palette");
+    if (!el || !editor) return;
+    el.innerHTML = "";
+    for (const [color, type] of PALETTE) {
+      const b = document.createElement("button");
+      b.type = "button";
+      if (!color) {
+        b.dataset.erase = "1";
+        b.textContent = "✕";
+        b.title = "橡皮:点格子清除棋子";
+        b.classList.toggle("active", editor.brush.type === "");
+      } else {
+        b.dataset.color = color;
+        b.dataset.type = type;
+        b.textContent = PALETTE_GLYPH[color + type];
+        b.classList.toggle("active", editor.brush.color === color && editor.brush.type === type);
+      }
+      el.appendChild(b);
+    }
+  }
+
+  function editorClick(sq) {
+    const Ed = window.ChessEditor;
+    const { r, c } = Ed.indexOf(sq);
+    const cur = editor.board[r][c];
+    if (editor.brush.type === "") {
+      editor.board[r][c] = null;
+    } else if (cur && cur.color === editor.brush.color && cur.type === editor.brush.type) {
+      editor.board[r][c] = null; // tapping the same piece again clears the square
+    } else {
+      editor.board[r][c] = { type: editor.brush.type, color: editor.brush.color };
+    }
+    syncEditorUI();
+    draw();
+  }
+
+  function syncEditorUI() {
+    const sec = document.getElementById("sec-editor");
+    if (!sec) return;
+    sec.hidden = !editor;
+    if (!editor) return;
+    document.querySelectorAll("#editor-turn button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.turn === editor.turn);
+    });
+    document.querySelectorAll("#editor-castling button").forEach((b) => {
+      b.classList.toggle("active", !!editor.castling[b.dataset.cr]);
+    });
+    const err = document.getElementById("editor-error");
+    const reason = window.ChessEditor.validate(editor, Chess);
+    if (err) err.textContent = reason || "";
+    const apply = document.getElementById("editor-apply");
+    if (apply) apply.disabled = !!reason;
+  }
+
+  /** Load `fen` as a fresh game whose history starts from that position. */
+  function loadFenAsGame(fen, note) {
+    invalidateEngine();
+    if (window.ChessEngine) window.ChessEngine.newGame();
+    game.load(fen);
+    game.header("SetUp", "1", "FEN", fen);
+    selection = null;
+    viewIndex = 0;
+    resigned = null;
+    drawAgreed = false;
+    drawClaimed = null;
+    analysis = null;
+    statsRecordedSig = null;
+    resetClocks();
+    syncAutoFlip();
+    sync();
+    saveGame();
+    toast(note || "已载入局面");
+    maybeEngineTurn();
+  }
+
+  function applyEditor() {
+    const Ed = window.ChessEditor;
+    const reason = Ed.validate(editor, Chess);
+    if (reason) { toast(reason); return; }
+    const fen = Ed.toFen(editor);
+    stopEditor();
+    loadFenAsGame(fen, "已按编辑的局面开始对局");
+  }
+
+  const fenModal = document.getElementById("fen-modal");
+  function openFenModal() {
+    if (!fenModal) return;
+    const input = document.getElementById("fen-input");
+    const err = document.getElementById("fen-error");
+    if (input) { input.value = viewGame().fen(); input.classList.remove("bad"); }
+    if (err) err.textContent = "";
+    fenModal.classList.add("show");
+    if (input) { input.focus(); input.select(); }
+  }
+  function closeFenModal() { if (fenModal) fenModal.classList.remove("show"); }
+
+  function submitFen() {
+    const input = document.getElementById("fen-input");
+    const err = document.getElementById("fen-error");
+    const raw = (input && input.value || "").trim();
+    const show = (msg) => {
+      if (err) err.textContent = msg;
+      if (input) input.classList.add("bad");
+    };
+    if (!raw) { show("请输入 FEN"); return; }
+    const v = new Chess().validate_fen(raw);
+    if (!v.valid) { show(v.error || "FEN 不合法"); return; }
+    // chess.js accepts positions no game could reach (no kings, a side already
+    // in check while its opponent moves) — reuse the editor's stricter rules,
+    // then load the ORIGINAL fen so its en-passant square and clocks survive.
+    const reason = window.ChessEditor
+      ? window.ChessEditor.validate(window.ChessEditor.fromFen(raw, Chess), Chess)
+      : null;
+    if (reason) { show(reason); return; }
+    closeFenModal();
+    loadFenAsGame(new Chess(raw).fen(), "已载入 FEN 局面");
+  }
+
   // --- panel ---
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
   function setPanelOpen(open) {
@@ -2286,6 +2648,26 @@
   }
   function togglePanel() { setPanelOpen(!isPanelOpen()); }
 
+  /** Re-render every translated label; dynamic text comes back via sync(). */
+  function applyLanguage() {
+    if (!I18n) return;
+    I18n.apply(document);
+    document.documentElement.setAttribute("lang", langId);
+    const seg = document.getElementById("lang-seg");
+    if (seg) {
+      seg.innerHTML = "";
+      for (const l of I18n.available()) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.lang = l.id;
+        b.textContent = l.name;
+        b.classList.toggle("active", l.id === langId);
+        seg.appendChild(b);
+      }
+    }
+    sync();
+  }
+
   function applyTheme(id) {
     themeId = id;
     document.documentElement.setAttribute("data-theme", id);
@@ -2304,6 +2686,7 @@
   }
   /** Would a click on `sq` pick up a piece in the current mode? (cursor hint) */
   function grabbableAt(sq) {
+    if (editor) return true; // every square is paintable
     if (mode === "learn") {
       if (!learn || learn.done || learn.demoing) return false;
       const t = curTask();
@@ -2359,6 +2742,85 @@
     canvas.style.cursor = "default";
     draw();
   });
+
+  // --- keyboard play: the board is a real focusable control, not just a canvas ---
+  const FILE_CHARS = "abcdefgh";
+  canvas.setAttribute("tabindex", "0");
+  canvas.setAttribute("role", "application");
+  canvas.setAttribute("aria-label", "棋盘 · 方向键移动光标,回车选子与落子,Esc 取消选择");
+
+  function announce(msg) {
+    const el = document.getElementById("board-live");
+    if (el) el.textContent = msg;
+  }
+
+  /** describe a square for screen readers: "e4 · 白兵" / "e4 · 空格" */
+  function describeSquare(sq) {
+    const g = editor ? null : (mode === "learn" && learn ? learn.g : mode === "puzzle" && puzzle ? puzzle.g : viewGame());
+    let piece = null;
+    if (g) piece = g.get(sq);
+    else if (editor) {
+      const { r, c } = window.ChessEditor.indexOf(sq);
+      piece = editor.board[r][c];
+    }
+    if (!piece) return sq + " · 空格";
+    return sq + " · " + (piece.color === "w" ? "白" : "黑") + (PIECE_NAMES[piece.type] || "");
+  }
+
+  function moveCursor(df, dr) {
+    if (!keyboardCursor) keyboardCursor = flipped ? "e5" : "e4";
+    let f = FILE_CHARS.indexOf(keyboardCursor[0]);
+    let r = Number(keyboardCursor[1]);
+    // arrows follow what the player sees, so they invert with the board
+    const sign = flipped ? -1 : 1;
+    f = Math.max(0, Math.min(7, f + df * sign));
+    r = Math.max(1, Math.min(8, r + dr * sign));
+    keyboardCursor = FILE_CHARS[f] + r;
+    announce(describeSquare(keyboardCursor));
+    draw();
+  }
+
+  canvas.addEventListener("focus", () => {
+    boardFocused = true;
+    if (!keyboardCursor) keyboardCursor = flipped ? "e5" : "e4";
+    announce("棋盘已聚焦 · " + describeSquare(keyboardCursor));
+    draw();
+  });
+  canvas.addEventListener("blur", () => { boardFocused = false; draw(); });
+
+  canvas.addEventListener("keydown", (ev) => {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    // arrows/Home/End also drive replay from the window handler — while the
+    // board itself is focused they belong to the cursor, so stop them here
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
+      ev.stopPropagation();
+    }
+    switch (ev.key) {
+      case "ArrowLeft": ev.preventDefault(); moveCursor(-1, 0); return;
+      case "ArrowRight": ev.preventDefault(); moveCursor(1, 0); return;
+      case "ArrowUp": ev.preventDefault(); moveCursor(0, 1); return;
+      case "ArrowDown": ev.preventDefault(); moveCursor(0, -1); return;
+      case "Home": ev.preventDefault(); keyboardCursor = flipped ? "h1" : "a8"; announce(describeSquare(keyboardCursor)); draw(); return;
+      case "End": ev.preventDefault(); keyboardCursor = flipped ? "a8" : "h1"; announce(describeSquare(keyboardCursor)); draw(); return;
+      case "Enter":
+      case " ": {
+        ev.preventDefault();
+        if (!keyboardCursor) return;
+        const before = selection ? selection.sq : null;
+        onSquareClick(keyboardCursor);
+        if (selection && selection.sq === keyboardCursor && before !== keyboardCursor) {
+          announce("已选中 " + describeSquare(keyboardCursor) + " · " + selection.targets.length + " 个落点");
+        } else if (!selection && before) {
+          announce(statusText());
+        }
+        return;
+      }
+      case "Escape":
+        if (selection) { ev.preventDefault(); selection = null; announce("已取消选择"); draw(); }
+        return;
+      default:
+    }
+  });
   canvas.style.touchAction = "none"; // let touch drags move pieces, not the page
 
   document.getElementById("undo").onclick = undo;
@@ -2387,7 +2849,14 @@
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
   document.getElementById("rep-live").onclick = () => { goLive(); toast("已回到最新一着"); };
 
-  document.getElementById("an-run").onclick = () => { analyzeGame(120); };
+  document.getElementById("an-run").onclick = () => {
+    if (analyzing) {
+      analyzeAbort = true;
+      if (window.ChessEngine) window.ChessEngine.cancel();
+      return;
+    }
+    analyzeGame(120);
+  };
   document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };
   const curveEl = document.getElementById("eval-curve");
@@ -2471,6 +2940,7 @@
     else if (wasPuzzle) stopPuzzles();
     saveSettings();
     selection = null;
+    syncAutoFlip();
     sync();
     toast(mode === "ai" ? "人机对弈 · " + (DIFF_NAMES[difficulty] || "") :
       mode === "pvp" ? "双人对弈" :
@@ -2562,6 +3032,17 @@
     toast(humanColor === "w" ? "执白 · 白方视角" : "执黑 · 黑方视角");
     maybeEngineTurn();
   };
+  const langSeg = document.getElementById("lang-seg");
+  if (langSeg) {
+    langSeg.onclick = (ev) => {
+      const b = ev.target.closest("button[data-lang]");
+      if (!b || !I18n || b.dataset.lang === langId) return;
+      langId = I18n.setLang(b.dataset.lang);
+      saveSettings();
+      applyLanguage();
+      toast(langId === "zh-CN" ? "语言:中文(课程内容仍为中文)" : "Language: English (lesson content stays Chinese)");
+    };
+  }
   document.getElementById("opt-coach").onclick = () => {
     coachOn = !coachOn;
     saveSettings();
@@ -2570,10 +3051,7 @@
   };
   document.getElementById("opt-autoflip").onclick = () => {
     autoFlipPvp = !autoFlipPvp;
-    if (autoFlipPvp && mode === "pvp" && isLive() && !appGameOver()) {
-      flipped = game.turn() === "b";
-      draw();
-    }
+    if (syncAutoFlip()) draw();
     saveSettings();
     syncSettingsUI();
     toast(autoFlipPvp ? "自动翻转已开 · 棋盘跟随走子方" : "自动翻转已关");
@@ -2597,10 +3075,91 @@
     drawAgreed = false;
     drawClaimed = null;
     resetClocks();
+    syncAutoFlip();
     sync();
     toast("存档已清除");
     maybeEngineTurn();
   };
+
+  // --- editor + FEN wiring ---
+  document.getElementById("editor-open").onclick = () => {
+    if (mode === "learn" || mode === "puzzle") { toast("请先切换到人机或双人模式"); return; }
+    startEditor();
+  };
+  document.getElementById("fen-load-open").onclick = () => {
+    if (mode === "learn" || mode === "puzzle") { toast("请先切换到人机或双人模式"); return; }
+    openFenModal();
+  };
+  document.getElementById("editor-palette").onclick = (ev) => {
+    const b = ev.target.closest("button");
+    if (!b || !editor) return;
+    editor.brush = b.dataset.erase ? { color: "", type: "" }
+      : { color: b.dataset.color, type: b.dataset.type };
+    renderEditorPalette();
+  };
+  document.getElementById("editor-turn").onclick = (ev) => {
+    const b = ev.target.closest("button[data-turn]");
+    if (!b || !editor) return;
+    editor.turn = b.dataset.turn;
+    syncEditorUI();
+  };
+  document.getElementById("editor-castling").onclick = (ev) => {
+    const b = ev.target.closest("button[data-cr]");
+    if (!b || !editor) return;
+    editor.castling[b.dataset.cr] = !editor.castling[b.dataset.cr];
+    syncEditorUI();
+  };
+  document.getElementById("editor-clear").onclick = () => {
+    if (!editor) return;
+    editor.board = window.ChessEditor.emptyBoard();
+    editor.castling = { K: false, Q: false, k: false, q: false };
+    syncEditorUI();
+    draw();
+  };
+  document.getElementById("editor-reset").onclick = () => {
+    if (!editor) return;
+    editor = Object.assign(
+      window.ChessEditor.fromFen(new Chess().fen(), Chess),
+      { brush: editor.brush }
+    );
+    syncEditorUI();
+    draw();
+  };
+  document.getElementById("editor-cancel").onclick = () => {
+    stopEditor();
+    sync();
+    toast("已取消编辑");
+  };
+  document.getElementById("editor-apply").onclick = () => { applyEditor(); };
+
+  if (fenModal) {
+    document.getElementById("fen-cancel").onclick = closeFenModal;
+    document.getElementById("fen-load").onclick = submitFen;
+    document.getElementById("fen-from-clip").onclick = async () => {
+      try {
+        const t = await Host.readClipboard();
+        const input = document.getElementById("fen-input");
+        if (input) { input.value = (t || "").trim(); input.classList.remove("bad"); }
+        const err = document.getElementById("fen-error");
+        if (err) err.textContent = "";
+      } catch (_) { toast("无法读取剪贴板"); }
+    };
+    document.getElementById("fen-input").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); submitFen(); }
+      ev.stopPropagation(); // typing a FEN must not trigger board shortcuts
+    });
+    fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFenModal(); };
+  }
+
+  const pickModal = document.getElementById("pick-modal");
+  if (pickModal) {
+    document.getElementById("pick-list").onclick = (ev) => {
+      const b = ev.target.closest("button[data-i]");
+      if (b) finishPick(Number(b.dataset.i));
+    };
+    document.getElementById("pick-cancel").onclick = () => finishPick(null);
+    pickModal.onclick = (ev) => { if (ev.target === pickModal) finishPick(null); };
+  }
 
   const confirmModal = document.getElementById("confirm-modal");
   document.getElementById("confirm-ok").onclick = () => finishConfirm(true);
@@ -2619,6 +3178,8 @@
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
       if (promoModal && promoModal.classList.contains("show")) { finishPromotion(null); return; }
+      if (pickModal && pickModal.classList.contains("show")) { finishPick(null); return; }
+      if (fenModal && fenModal.classList.contains("show")) { closeFenModal(); return; }
       if (confirmModal.classList.contains("show")) { finishConfirm(false); return; }
       if (isPanelOpen()) setPanelOpen(false);
       return;
@@ -2691,6 +3252,7 @@
   // --- boot ---
   loadSettings();
   document.documentElement.setAttribute("data-theme", themeId);
+  if (I18n) { I18n.setLang(langId); I18n.apply(document); }
   const savedPanel = Host.storageGet(PANEL_KEY);
   setPanelOpen(savedPanel === "1");
   const resumed = tryLoadSave();
@@ -2702,11 +3264,13 @@
   if (resumed && drawClaimed) statsRecordedSig = game.pgn() + "#claimed";
   // clock preset chosen but no saved clock state → fresh clocks
   if (timeControl !== "off" && !clock) resetClocks();
+  syncAutoFlip(); // a resumed pvp game must face whoever is on move
   if (mode === "learn") startLearn();
   if (mode === "puzzle") startPuzzles();
   BoardView.resizeCanvas();
   renderStats();
   renderAchievements();
+  applyLanguage();
   sync();
   saveSettings();
   if (!resumed) saveGame();

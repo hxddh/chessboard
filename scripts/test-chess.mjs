@@ -413,6 +413,134 @@ for (const p of ["r", "b", "n"]) {
   assert(bad === 0, "all puzzles legal and forced");
 }
 
+// FIDE draw arithmetic: repetition counting and the 6.9 material test decide
+// real game results, so they get their own checks
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/fide.js"), "utf8"), ctx, { filename: "fide.js" });
+  const F = ctx.ChessFide;
+  assert(F.halfmoveClock("8/8/8/8/8/8/8/K6k w - - 37 90") === 37, "halfmove clock parsed");
+  // shuffling knights back and forth repeats the start position
+  const shuffle = ["Nf3", "Nf6", "Ng1", "Ng8"];
+  assert(F.repetitionCount(null, [], Chess) === 1, "start position seen once");
+  assert(F.repetitionCount(null, shuffle, Chess) === 2, "one cycle repeats the start twice");
+  assert(F.repetitionCount(null, [...shuffle, ...shuffle], Chess) === 3, "two cycles reach threefold");
+  assert(F.repetitionCount(null, [...shuffle, ...shuffle, ...shuffle, ...shuffle], Chess) === 5,
+    "four cycles reach fivefold");
+  // a repetition must match castling rights too: moving a rook out and back
+  // changes the rights, so the position is NOT the same as before
+  const rookOut = ["Nf3", "Nf6", "Rg1", "Rg8", "Rh1", "Rh8"];
+  assert(F.repetitionCount(null, rookOut, Chess) === 1,
+    "losing castling rights breaks the repetition");
+
+  const boardOf = (fen) => new Chess(fen).board();
+  const mat = (fen, color) => F.hasMatingMaterial(boardOf(fen), color);
+  assert(mat("8/8/8/8/8/8/4P3/K6k w - - 0 1", "w"), "K+P can mate");
+  assert(mat("8/8/8/8/8/8/8/KR5k w - - 0 1", "w"), "K+R can mate");
+  assert(!mat("8/8/8/8/8/8/8/K6k w - - 0 1", "w"), "bare king cannot mate");
+  assert(!mat("8/8/8/8/8/8/8/KB5k w - - 0 1", "w"), "K+B alone cannot mate");
+  assert(!mat("8/8/8/8/8/8/8/KN5k w - - 0 1", "w"), "K+N vs bare K cannot mate");
+  assert(mat("8/8/8/8/8/8/7p/KN5k w - - 0 1", "w"), "K+N can mate when the opponent has a blocker");
+  assert(mat("8/8/8/8/8/8/8/KNN4k w - - 0 1", "w"), "two knights can mate (helpmate exists)");
+  // c1 and f1 are opposite colours → real mating material
+  assert(mat("7k/8/8/8/8/8/8/K1B2B2 w - - 0 1", "w"), "opposite-coloured bishops can mate");
+  // c1 and a3 are both dark; a bare king can never be mated by them
+  assert(!mat("7k/8/8/8/8/B7/8/K1B5 w - - 0 1", "w"), "same-coloured bishops vs bare king cannot mate");
+  assert(mat("7k/7p/8/8/8/B7/8/K1B5 w - - 0 1", "w"), "same-coloured bishops can mate if the opponent has other material");
+}
+
+// PGN utilities: splitting a multi-game file must not lose games (importing a
+// database used to silently keep only the last one)
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/pgn.js"), "utf8"), ctx, { filename: "pgn.js" });
+  const P = ctx.ChessPgn;
+  const one = '[Event "A"]\n[White "X"]\n[Black "Y"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0\n';
+  const two = one + '\n[Event "B"]\n[White "P"]\n[Black "Q"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n';
+  assert(P.splitGames("").length === 0, "empty PGN yields no games");
+  assert(P.splitGames(one).length === 1, "single-game PGN stays one game");
+  const games = P.splitGames(two);
+  assert(games.length === 2, "two-game PGN splits into two (" + games.length + ")");
+  assert(P.tag(games[0], "White") === "X" && P.tag(games[1], "White") === "P", "each chunk keeps its own tags");
+  // bare movetext has no [Event] tag at all — must still come back importable
+  assert(P.splitGames("1. e4 e5 2. Nf3").length === 1, "tagless movetext is one game");
+  for (const g of games) {
+    const probe = new Chess();
+    assert(probe.load_pgn(g, { sloppy: true }) && probe.history().length > 0, "split chunk parses: " + P.tag(g, "Event"));
+  }
+  const s = P.summary(games[1]);
+  assert(s.white === "P" && s.black === "Q" && s.result === "0-1" && s.plies === 4,
+    "summary reads headers and counts plies (" + JSON.stringify(s) + ")");
+}
+
+// position editor: FEN generation plus the legality rules chess.js does not
+// enforce on its own (an editor must never hand the game an unplayable FEN)
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/editor.js"), "utf8"), ctx, { filename: "editor.js" });
+  const E = ctx.ChessEditor;
+  const start = E.fromFen(new Chess().fen(), Chess);
+  assert(E.toFen(start) === new Chess().fen().replace(/ \S+ \d+ \d+$/, " - 0 1"),
+    "round-trips the start position (" + E.toFen(start) + ")");
+  assert(E.validate(start, Chess) === null, "start position is playable");
+
+  const put = (state, sq, piece) => {
+    const { r, c } = E.indexOf(sq);
+    state.board[r][c] = piece;
+    return state;
+  };
+  const bare = () => ({ board: E.emptyBoard(), turn: "w", castling: { K: false, Q: false, k: false, q: false } });
+
+  let st = bare();
+  assert(/白方必须有/.test(E.validate(st, Chess) || ""), "empty board is rejected");
+  put(st, "e1", { type: "k", color: "w" });
+  assert(/黑方必须有/.test(E.validate(st, Chess) || ""), "missing black king is rejected");
+  put(st, "e8", { type: "k", color: "b" });
+  assert(E.validate(st, Chess) === null, "two lone kings are playable");
+  put(st, "d1", { type: "k", color: "w" });
+  assert(/白方有多个王/.test(E.validate(st, Chess) || ""), "second white king is rejected");
+
+  st = bare();
+  put(st, "e1", { type: "k", color: "w" });
+  put(st, "e8", { type: "k", color: "b" });
+  put(st, "a1", { type: "p", color: "w" });
+  assert(/兵不能停在/.test(E.validate(st, Chess) || ""), "pawn on the first rank is rejected");
+
+  // white to move while black is already in check is unreachable in a real game
+  st = bare();
+  put(st, "e1", { type: "k", color: "w" });
+  put(st, "e8", { type: "k", color: "b" });
+  put(st, "e7", { type: "r", color: "w" });
+  assert(/被将军/.test(E.validate(st, Chess) || ""), "side not to move in check is rejected");
+
+  // castling rights are dropped when the placement cannot support them
+  st = bare();
+  put(st, "e1", { type: "k", color: "w" });
+  put(st, "e8", { type: "k", color: "b" });
+  st.castling.K = true; // no rook on h1
+  assert(E.toFen(st).split(" ")[2] === "-", "unsupported castling right is filtered out");
+  put(st, "h1", { type: "r", color: "w" });
+  assert(E.toFen(st).split(" ")[2] === "K", "supported castling right is kept");
+}
+
+// i18n: every key present in the base language must exist in the others, or
+// switching language would silently blank parts of the UI
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  const I = ctx.ChessI18n;
+  const langs = I.available().map((l) => l.id);
+  assert(langs.includes("zh-CN") && langs.length >= 2, "at least two languages (" + langs.join(",") + ")");
+  const baseKeys = Object.keys(I.DICT["zh-CN"]);
+  let missing = 0;
+  for (const id of langs) {
+    for (const k of baseKeys) {
+      if (!(k in I.DICT[id])) { missing++; console.error("FAIL: " + id + " missing key " + k); }
+    }
+  }
+  assert(missing === 0, "every language covers all " + baseKeys.length + " UI keys");
+  I.setLang("en");
+  assert(I.t("chrome.hint") === "Hint", "lookup follows the active language");
+  assert(I.t("nope.missing") === "nope.missing", "unknown keys fall back to the key itself");
+  I.setLang("zh-CN");
+}
+
 // achievements: well-formed, unique, each reachable from some summary, and the
 // meta "completionist" resolves from the others
 {
