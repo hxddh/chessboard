@@ -3710,6 +3710,20 @@
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   document.getElementById("collapse").onclick = () => setPanelOpen(false);
+  const moreBtn = document.getElementById("more-tools");
+  if (moreBtn) {
+    moreBtn.onclick = () => {
+      const row = document.getElementById("more-row");
+      if (!row) return;
+      const show = row.hidden;
+      row.hidden = !show;
+      moreBtn.setAttribute("aria-expanded", show ? "true" : "false");
+      // the key moves with the state, so a language switch re-renders the
+      // label that matches what the disclosure is actually doing
+      moreBtn.setAttribute("data-i18n", show ? "act.less" : "act.more");
+      moreBtn.textContent = t(show ? "act.less" : "act.more");
+    };
+  }
   const tabRow = document.querySelector(".side-tabs");
   if (tabRow) {
     tabRow.onclick = (ev) => {
