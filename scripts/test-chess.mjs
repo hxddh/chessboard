@@ -248,6 +248,44 @@ for (const p of ["r", "b", "n"]) {
     }
   }
   assert(bad === 0, "all lesson tasks valid");
+
+  // English lesson pilot: translations may cover a subset, but every entry
+  // they do provide must line up with the Chinese original — a translation
+  // that describes a different task is worse than none at all.
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons-en.js"), "utf8"), ctx, { filename: "lessons-en.js" });
+  const en = ctx.CHESS_LESSONS_EN;
+  assert(en && Object.keys(en).length >= 8, "English pilot covers ≥8 lessons (" + Object.keys(en || {}).length + ")");
+  let badEn = 0;
+  const failEn = (...m) => { badEn++; console.error("FAIL:", ...m); };
+  const byId = new Map(lessons.map((L) => [L.id, L]));
+  for (const [id, tr] of Object.entries(en)) {
+    const L = byId.get(id);
+    if (!L) { failEn("translation for unknown lesson", id); continue; }
+    if (!tr.title || !tr.part) failEn(id, "translation missing title/part");
+    if (!Array.isArray(tr.text) || tr.text.length !== L.text.length) {
+      failEn(id, "text paragraph count differs:", tr.text && tr.text.length, "vs", L.text.length);
+    }
+    if (tr.tasks) {
+      if (tr.tasks.length > L.tasks.length) failEn(id, "more translated tasks than real ones");
+      tr.tasks.forEach((tt, i) => {
+        const real = L.tasks[i];
+        if (!real) return;
+        if (tt.steps) {
+          const realSteps = real.steps ? real.steps.length : 0;
+          if (tt.steps.length !== realSteps) failEn(id + "#" + i, "tap step count differs:", tt.steps.length, "vs", realSteps);
+        }
+        if (real.retry && tt.prompt && !tt.retry) {
+          // not fatal, but a translated prompt with an untranslated retry reads oddly
+          console.log("note:", id + "#" + i, "translated prompt without retry text");
+        }
+      });
+    }
+    // a translation must not smuggle in chess data
+    for (const k of Object.keys(tr)) {
+      if (!["part", "title", "text", "tasks"].includes(k)) failEn(id, "unexpected key in translation:", k);
+    }
+  }
+  assert(badEn === 0, "English lesson pilot matches the originals");
 }
 
 // puzzles: legal positions (white to move, black not already in check),
@@ -489,26 +527,26 @@ for (const p of ["r", "b", "n"]) {
   const bare = () => ({ board: E.emptyBoard(), turn: "w", castling: { K: false, Q: false, k: false, q: false } });
 
   let st = bare();
-  assert(/白方必须有/.test(E.validate(st, Chess) || ""), "empty board is rejected");
+  assert(E.validate(st, Chess) === "edErr.noWhiteKing", "empty board is rejected");
   put(st, "e1", { type: "k", color: "w" });
-  assert(/黑方必须有/.test(E.validate(st, Chess) || ""), "missing black king is rejected");
+  assert(E.validate(st, Chess) === "edErr.noBlackKing", "missing black king is rejected");
   put(st, "e8", { type: "k", color: "b" });
   assert(E.validate(st, Chess) === null, "two lone kings are playable");
   put(st, "d1", { type: "k", color: "w" });
-  assert(/白方有多个王/.test(E.validate(st, Chess) || ""), "second white king is rejected");
+  assert(E.validate(st, Chess) === "edErr.manyWhiteKings", "second white king is rejected");
 
   st = bare();
   put(st, "e1", { type: "k", color: "w" });
   put(st, "e8", { type: "k", color: "b" });
   put(st, "a1", { type: "p", color: "w" });
-  assert(/兵不能停在/.test(E.validate(st, Chess) || ""), "pawn on the first rank is rejected");
+  assert(E.validate(st, Chess) === "edErr.pawnBackRank", "pawn on the first rank is rejected");
 
   // white to move while black is already in check is unreachable in a real game
   st = bare();
   put(st, "e1", { type: "k", color: "w" });
   put(st, "e8", { type: "k", color: "b" });
   put(st, "e7", { type: "r", color: "w" });
-  assert(/被将军/.test(E.validate(st, Chess) || ""), "side not to move in check is rejected");
+  assert(E.validate(st, Chess) === "edErr.otherInCheck", "side not to move in check is rejected");
 
   // castling rights are dropped when the placement cannot support them
   st = bare();
@@ -539,6 +577,48 @@ for (const p of ["r", "b", "n"]) {
   assert(I.t("chrome.hint") === "Hint", "lookup follows the active language");
   assert(I.t("nope.missing") === "nope.missing", "unknown keys fall back to the key itself");
   I.setLang("zh-CN");
+
+  // Every key the markup references must exist, and no non-base language may
+  // leave a Chinese string behind — v1.4 shipped the data-i18n-title mechanism
+  // without ever using it, so 52 tooltips silently stayed Chinese in English.
+  const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  const referenced = new Set([
+    ...[...html.matchAll(/data-i18n="([^"]+)"/g)].map((m) => m[1]),
+    ...[...html.matchAll(/data-i18n-title="([^"]+)"/g)].map((m) => m[1]),
+  ]);
+  let unknown = 0;
+  for (const k of referenced) {
+    if (!(k in I.DICT["zh-CN"])) { unknown++; console.error("FAIL: markup uses undefined key " + k); }
+  }
+  assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
+
+  const han = /[一-鿿]/;
+  let untranslated = 0;
+  for (const id of langs) {
+    if (id === "zh-CN") continue;
+    for (const [k, v] of Object.entries(I.DICT[id])) {
+      if (han.test(v)) { untranslated++; console.error("FAIL: " + id + " leaves Chinese in " + k + ": " + v); }
+    }
+  }
+  assert(untranslated === 0, "non-Chinese languages contain no untranslated strings");
+
+  // Every visible Chinese tooltip in the markup must be wired for translation.
+  const titled = [...html.matchAll(/<[^>]*\stitle="([^"]*)"[^>]*>/g)];
+  let bareTitles = 0;
+  for (const m of titled) {
+    if (!han.test(m[1])) continue;
+    if (!/data-i18n-title=/.test(m[0])) { bareTitles++; console.error("FAIL: untranslatable tooltip: " + m[1]); }
+  }
+  assert(bareTitles === 0, "every Chinese tooltip carries data-i18n-title");
+
+  // the editor reports failures as keys — each must resolve in every language
+  const editorSrc = fs.readFileSync(path.join(root, "src/web/js/editor.js"), "utf8");
+  const edKeys = [...editorSrc.matchAll(/"(edErr\.[A-Za-z]+)"/g)].map((m) => m[1]);
+  let badEd = 0;
+  for (const k of new Set(edKeys)) {
+    if (!(k in I.DICT["zh-CN"])) { badEd++; console.error("FAIL: editor emits undefined key " + k); }
+  }
+  assert(badEd === 0, "all " + new Set(edKeys).size + " editor error keys are defined");
 }
 
 // achievements: well-formed, unique, each reachable from some summary, and the
