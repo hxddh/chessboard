@@ -931,6 +931,23 @@ for (const p of ["r", "b", "n"]) {
   }
   assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
 
+  // The shipped default window must not make the board smaller than the space
+  // allows. Side by side, the board is min(width - panel, height - chrome) —
+  // when the first term wins, the window wastes height and the board shrinks.
+  // 960x900 did exactly that: 648px of board with 252px of empty height.
+  {
+    const zon = fs.readFileSync(path.join(root, "app.zon"), "utf8");
+    const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const num = (re, src) => { const m = re.exec(src); return m ? Number(m[1]) : NaN; };
+    const w = num(/\.width = (\d+)/, zon), h = num(/\.height = (\d+)/, zon);
+    const side = num(/--side-w:\s*(\d+)px/, css), chrome = num(/--chrome-h:\s*(\d+)px/, css);
+    assert([w, h, side, chrome].every(Number.isFinite),
+      "read the default window (" + w + "x" + h + ") and the panel metrics (" + side + "/" + chrome + ")");
+    assert(w - side >= h - chrome,
+      "the default window fits the panel without shrinking the board (" +
+      (w - side) + "px of width vs " + (h - chrome) + "px of height)");
+  }
+
   // The panel is split into three tabs. A section that ends up outside a pane
   // is invisible in every tab — the failure mode is silent, so it gets a check.
   const paneIds = [...html.matchAll(/<div class="side-pane" id="(pane-[a-z]+)"/g)].map((m) => m[1]);
