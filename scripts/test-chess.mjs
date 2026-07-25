@@ -890,6 +890,32 @@ for (const p of ["r", "b", "n"]) {
   }
   assert(unknownRuntime === 0, "every runtime key app.js requests is defined");
 
+  // Every ending marker written into a stats record must be understood by the
+  // history reader. A game that ended by resignation or agreement is not over
+  // by its moves alone, so an unhandled marker would put the position back on
+  // the board as live — and in an engine game that means Stockfish quietly
+  // playing on from a game the player finished weeks ago.
+  const markers = [...appSrc.matchAll(/recordOutcome\([^)]*"#([a-zA-Z]+)"/g)].map((m) => m[1]);
+  const restore = /function restoreEnding\(rec\) \{[\s\S]*?\n  \}/.exec(appSrc);
+  const handled = restore ? [...restore[0].matchAll(/end === "([a-zA-Z]+)"/g)].map((m) => m[1]) : [];
+  let unhandled = 0;
+  assert(markers.length >= 3 && handled.length >= 3, "found the ending markers and the history reader");
+  for (const k of new Set(markers)) {
+    if (!handled.includes(k)) { unhandled++; console.error("FAIL: history cannot restore the #" + k + " ending"); }
+  }
+  assert(unhandled === 0, "all " + new Set(markers).size + " ending markers survive a trip through the history");
+
+  // …and the marker must never be mistaken for part of the movetext. A
+  // checkmate ends in a bare "#", which the stripper has to leave alone.
+  const stripper = /historyPgn\(rec\) \{\s*return String\(rec\.sig \|\| ""\)\.replace\((\/[^/]+\/[a-z]*)/.exec(appSrc);
+  assert(!!stripper, "found the sig → PGN stripper");
+  const stripRe = new RegExp(stripper[1].slice(1, stripper[1].lastIndexOf("/")), stripper[1].slice(stripper[1].lastIndexOf("/") + 1));
+  const mate = "1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#";
+  assert(mate.replace(stripRe, "") === mate, "a checkmate's # survives the stripper");
+  for (const k of new Set(markers)) {
+    assert((mate + "#" + k).replace(stripRe, "") === mate, "the #" + k + " marker is stripped, the mate is not");
+  }
+
   // the editor reports failures as keys — each must resolve in every language
   const editorSrc = fs.readFileSync(path.join(root, "src/web/js/editor.js"), "utf8");
   const edKeys = [...editorSrc.matchAll(/"(edErr\.[A-Za-z]+)"/g)].map((m) => m[1]);
