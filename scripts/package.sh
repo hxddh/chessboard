@@ -21,12 +21,15 @@ test -f frontend/dist/js/chess.js
 test -f frontend/dist/js/pieces.js
 test -f frontend/dist/js/pgn.js
 test -f frontend/dist/js/fide.js
+test -f frontend/dist/js/review.js
 test -f frontend/dist/js/editor.js
 test -f frontend/dist/js/i18n.js
 test -f frontend/dist/js/openings.js
+test -f frontend/dist/js/openings-en.js
 test -f frontend/dist/js/lessons.js
 test -f frontend/dist/js/lessons-en.js
 test -f frontend/dist/js/puzzles.js
+test -f frontend/dist/js/puzzles-en.js
 test -f frontend/dist/js/achievements.js
 test -f frontend/dist/js/host.js
 test -f frontend/dist/js/audio.js

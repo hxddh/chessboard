@@ -1,6 +1,5 @@
 /**
- * English lesson text — a pilot covering the first eight lessons (everything
- * up to "the king's no-go squares").
+ * English lesson text — the complete course, all 36 lessons.
  *
  * Only prose is translated here: titles, part names, explanatory paragraphs,
  * task prompts, retry hints and tap-step tips. Positions, goals and solutions
@@ -11,7 +10,7 @@
  * steps: [tip, ...] }] } }. Anything missing simply falls back to the Chinese
  * original, so a partial translation degrades lesson-by-lesson rather than
  * breaking the course. scripts/test-chess.mjs checks the shape matches
- * lessons.js entry for entry.
+ * lessons.js entry for entry, and that every lesson is covered.
  * @module lessons-en
  */
 (function (global) {
@@ -125,6 +124,345 @@
         "Try it: the black rook covers a whole rank and file, so the king has to go the long way round, on the side where your own pawn blocks the rook's fire.",
       ],
       tasks: [{ prompt: "Walk the king to the star on e6 — the squares the rook covers are closed to him, so go around on the right" }],
+    },
+    values: {
+      part: "Captures and value", title: "Piece value: don't trade at a loss",
+      text: [
+        "The usual counts: pawn 1 · knight/bishop 3 (the minor pieces) · rook 5 · queen 9. The king is priceless — lose him and you lose the game.",
+        "Do the arithmetic before you trade: a 3-point knight for a 5-point rook is a good deal; your queen for a rook is a disaster.",
+      ],
+      tasks: [{
+        prompt: "Get to know the pieces by their value",
+        steps: [
+          "The queen is the strongest, about 9 points — click the white queen (d1)",
+          "A rook is about 5, second strongest — click either black rook (in the corners)",
+          "Knights and bishops are both about 3, the \"minor pieces\" — click either white bishop",
+          "A pawn is only worth 1, but its promotion potential is unlimited — click the e2 pawn",
+        ],
+      }],
+    },
+    protect: {
+      part: "Captures and value", title: "Look for defenders before you take",
+      text: [
+        "Can take ≠ should take: capture a defended piece and it simply gets taken back.",
+        "The rule: before capturing, count the defenders. Taking a cheap defended piece with an expensive one is almost always a losing deal.",
+      ],
+      tasks: [{
+        prompt: "Your queen can take two pawns: b7 is defended by the rook, h5 is not — take the safe one",
+        retry: "The b7 pawn is defended by the b8 rook! Taking it trades your 9-point queen for a 1-point pawn — take the undefended one instead",
+      }],
+    },
+    defend: {
+      part: "Captures and value", title: "Rescue a piece under attack",
+      text: [
+        "After every enemy move, ask yourself: what is it threatening? Is one of my pieces attacked?",
+        "Deal with an attacked valuable piece at once: move it away, defend it, or simply capture the attacker.",
+      ],
+      tasks: [{
+        prompt: "The black rook is attacking your queen along the 5th rank! Move the queen to safety — or just take the rook",
+        retry: "That square is still covered by Black, the queen would be taken for free — think again",
+      }],
+    },
+    fork: {
+      part: "Captures and value", title: "Fork: one piece, two targets",
+      text: [
+        "One piece attacking two enemy targets at once is a fork — the opponent can only save one of them.",
+        "A fork with check is the deadliest: they must answer the check, and the second target is yours. The knight is the great forker — nothing can block its attack.",
+      ],
+      tasks: [
+        { prompt: "Jump the knight to a square that attacks the black king and the e8 rook at the same time — with check!",
+          retry: "Find the knight square that hits both the king on a8 and the rook on e8" },
+        { prompt: "The black king has stepped out of check — collect your prize: take the rook on e8",
+          retry: "Take the rook on e8, that is what the fork won you" },
+      ],
+    },
+    skewer: {
+      part: "Captures and value", title: "Skewer: force the front man aside",
+      text: [
+        "A skewer is a pin in reverse: attack the *valuable* piece in front on a line, force it to move, and take what stood behind it.",
+        "The sharpest version puts the king in front — check! The king must step aside and whatever was behind him is yours.",
+      ],
+      tasks: [
+        { prompt: "Move the rook to the h-file with check — the black king and the queen behind him are skewered",
+          retry: "Put the rook on h1 so the h-file skewers the king and the queen" },
+        { prompt: "The king has been forced aside — take the queen behind him on the h-file",
+          retry: "Take the queen on h8 along the h-file; that is what the skewer wins" },
+      ],
+    },
+    discovery: {
+      part: "Captures and value", title: "Discovered attack: move one, strike with another",
+      text: [
+        "Move a piece out of the way so the piece *behind* it on the same line opens fire — that is a discovered attack. The piece that steps aside can grab something on its way, so one move does two jobs.",
+        "The strongest form is discovered check: what you unmask is a check. The opponent has to answer it, and whatever the moving piece took stays taken.",
+      ],
+      tasks: [{
+        prompt: "The e4 knight has the e1 rook behind it, aimed at the black king — take the queen on f6 and discover the rook's check at the same time",
+        retry: "Take the queen on f6 with the knight (once it moves, the rook on the e-file gives check)",
+      }],
+    },
+    check: {
+      part: "Rules and results", title: "Check and how to answer it",
+      text: [
+        "Attacking the enemy king is check. The checked side must deal with it immediately, and there are only three ways: move the king, block the line, or capture the checking piece.",
+        "There is no \"ignoring\" a check — the board will only ever offer you legal replies.",
+      ],
+      tasks: [
+        { prompt: "Play one queen move that gives check to the black king (more than one works)",
+          retry: "That move does not attack the black king — try again" },
+        { prompt: "Your king is in check from the black rook! Answers one and two: move the king, or block with the bishop" },
+        { prompt: "Checked by the rook again! This time use answer three — capture the attacker with your rook on a8",
+          retry: "Taking the black rook on e8 ends the check for good" },
+      ],
+    },
+    pin: {
+      part: "Rules and results", title: "Pin: the piece that cannot move",
+      text: [
+        "If moving a piece would expose its own king to check, the rules forbid it from moving at all — that piece is pinned.",
+        "Click a fully pinned piece and no target squares light up. That is not a bug, it is the rules. To break a pin: move the king off the line, block the line, or capture the pinning piece.",
+      ],
+      tasks: [{
+        prompt: "First click the knight on e2 — pinned by the black rook on e4, it cannot move a single square! Instead, step the king off the e-file to break the pin",
+        retry: "The knight is still pinned — move the king off the e-file",
+      }],
+    },
+    mate: {
+      part: "Rules and results", title: "Checkmate: ending the game",
+      text: [
+        "In check with no legal answer at all = checkmate. The game ends at once and the mating side wins.",
+        "One of the most common patterns is the back-rank mate: the king is boxed in by his own pawns and a heavy piece checks along the last rank.",
+        "Want more mating practice? Go to Mode → Puzzles — mate-in-one and mate-in-two sets are waiting.",
+      ],
+      tasks: [
+        { prompt: "Mate in one: the black king is trapped on the back rank by his own pawns",
+          retry: "Not mate yet — think about the back rank" },
+        { prompt: "Mate in one: your king is already close by, finish with the queen",
+          retry: "Not mate yet — the queen must give check *and* be defended by your king" },
+      ],
+    },
+    stalemate: {
+      part: "Rules and results", title: "Stalemate: even a won game can be drawn",
+      text: [
+        "Side to move, not in check, and not one legal move available = stalemate, and the game is a draw!",
+        "Stalemate is easiest to blunder into when you are winning easily — always leave the enemy king one legal move until the moment you mate him.",
+      ],
+      tasks: [{
+        prompt: "Mate the black king in one — careful! One tempting-looking move only stalemates",
+        retry: "Not mate yet, try again",
+      }],
+    },
+    castle: {
+      part: "Rules and results", title: "Castling: two pieces in one move",
+      text: [
+        "The king steps two squares towards a rook and that rook hops to the king's other side — one move that tucks the king away and develops the rook.",
+        "Conditions: neither the king nor that rook has moved; the squares between them are empty; the king is not in check, does not pass through an attacked square, and does not land on one.",
+      ],
+      tasks: [
+        { prompt: "Short castling: click the white king, then g1", retry: "That is not castling — the king moves two squares, to g1" },
+        { prompt: "Long castling: click the white king, then c1", retry: "That is not castling — the king moves two squares, to c1" },
+      ],
+    },
+    enpassant: {
+      part: "Rules and results", title: "En passant",
+      text: [
+        "When an enemy pawn uses its first-move double step to slip past the square your pawn attacks, you may — on your very next move — take it exactly as if it had only moved one square. That is capturing en passant.",
+        "The chance lasts one move only; miss it and the right is gone for good.",
+      ],
+      tasks: [{
+        prompt: "The black pawn just went d7–d5 — take it en passant with your e5 pawn (landing on d6)",
+        retry: "Capture diagonally onto d6 — that is the en-passant capture",
+      }],
+    },
+    promotion: {
+      part: "Rules and results", title: "Promotion: a pawn becomes a queen",
+      text: [
+        "A pawn reaching the far rank must immediately become a queen, rook, bishop or knight. It cannot stay a pawn, and it cannot become a king.",
+        "Take the queen nearly every time. Occasionally a knight gives an immediate check, or a rook/bishop avoids stalemating the opponent.",
+      ],
+      tasks: [{ prompt: "Push the a7 pawn to the last rank and pick a piece in the dialog — it gives check too!" }],
+    },
+    draws: {
+      part: "Rules and results", title: "The many ways a game is drawn",
+      text: [
+        "Besides stalemate: neither side has mating material (bare kings, for instance — an automatic draw); the same position occurs three times, or 50 moves pass with no capture and no pawn move (both of these must be *claimed* — click \"Claim draw\" when it lights up; at five repetitions or 75 moves the draw becomes automatic); or both players simply agree.",
+        "One more thing: when a position is truly lost you can resign gracefully — the button is in the moves panel.",
+      ],
+      tasks: [{
+        prompt: "Take Black's last rook — bare kings means insufficient material and an automatic draw",
+        retry: "Try taking that rook first",
+      }],
+    },
+    notation: {
+      part: "Rules and results", title: "Reading a game: algebraic notation",
+      text: [
+        "Letters name the piece: K king · Q queen · R rook · B bishop · N knight. Pawns get no letter — just the destination square.",
+        "Common symbols: x capture · + check · # checkmate · O-O short castling · O-O-O long castling · =Q promotion to a queen. Learn these and the move list and replay controls all make sense.",
+      ],
+      tasks: [{
+        prompt: "Read the move, click the destination",
+        steps: [
+          "\"e4\" = a pawn goes to e4 (pawns show only the square) — click e4",
+          "\"Nf3\" = the knight jumps to f3 (N is the knight) — click f3",
+          "\"Qxd5\" = the queen captures on d5 (x means capture) — click d5",
+          "\"O-O\" = short castling, so the white king lands on… — click g1",
+        ],
+      }],
+    },
+    ladder: {
+      part: "Mating patterns", title: "The two-rook ladder mate",
+      text: [
+        "Two heavy pieces (rooks or queen) take turns cutting off a rank and checking, walking the enemy king up the board like a ladder until he is mated on the edge. It is the easiest forced mate to learn.",
+        "The recipe: one piece fences off the king's escape rank, the other checks from the next rank along. The king retreats a rank, so you climb a rung.",
+      ],
+      tasks: [
+        { prompt: "Rung one: put either rook on the 7th rank to shut the black king onto the back rank",
+          retry: "Don't rush the check — fence off the 7th rank with a rook (a7 or b7)" },
+        { prompt: "Rung two: the b7 rook holds the 7th rank, so run the other rook down the a-file to mate on the back rank!",
+          retry: "Send the a2 rook straight to a8 — check on the 8th rank, with the 7th already sealed off" },
+      ],
+    },
+    smother: {
+      part: "Mating patterns", title: "Smothered mate: the knight's specialty",
+      text: [
+        "When a king is hemmed in by his own pieces, a single check is mate. The knight is the only piece that checks *through* other pieces, so smothered mate is essentially its private trick.",
+        "The classic picture: the king wedged in the corner, his own men all around him, and a knight landing on f7 (or f2) to finish it.",
+      ],
+      tasks: [
+        { prompt: "First, see why the black king has nowhere to go",
+          steps: [
+            "Click the black rook occupying the escape square g8",
+            "Click the g7 pawn blocking the king",
+            "Click the h7 pawn blocking the king",
+          ] },
+        { prompt: "The black king is walled in by his own pieces — jump the knight in for smothered mate!",
+          retry: "Find the knight square that checks the king on h8 and cannot be captured by anything (f7)" },
+      ],
+    },
+    qrladder: {
+      part: "Mating patterns", title: "Queen and rook: mating on the edge",
+      text: [
+        "Queen plus rook climbs the ladder just like two rooks, and the queen seals ranks more tightly — but she also stalemates far more easily, so keep leaving the king a legal move until you mate him.",
+        "These three patterns (ladder, smothered, back rank) cover most practical finishes. The Puzzles mode has full sets of them to drill.",
+      ],
+      tasks: [
+        { prompt: "The queen fences the 7th rank first — put her on b7, one square away from the black king (too close invites stalemate)",
+          retry: "Play the queen to b7: the whole 7th rank plus c8 come under fire and the black king can only shuffle along the back rank" },
+        { prompt: "The black king can only run along the back rank — bring the rook down the h-file to finish it!",
+          retry: "Rh8 gives check while the queen covers the whole 7th rank — that's the move" },
+      ],
+    },
+    opening: {
+      part: "Opening basics", title: "Three opening principles",
+      text: [
+        "One: take the centre. d4/e4/d5/e5 are the key squares — the closer to the centre a piece stands, the more it controls.",
+        "Two: develop the minor pieces quickly. Knights and bishops first, don't move the same piece over and over, and don't bring the queen out early.",
+        "Three: castle early. Tuck the king into the corner and activate a rook at the same time — the castling you already learned.",
+      ],
+      tasks: [
+        { prompt: "Opening essentials",
+          steps: [
+            "Click any of the four central squares (d4 / e4 / d5 / e5)",
+            "Minor pieces come out first — click any white knight or bishop",
+          ] },
+        { prompt: "Play the most classical first move of all: push the e- or d-pawn two squares into the centre",
+          retry: "Try e2–e4 or d2–d4 — one move, and the centre is yours" },
+      ],
+    },
+    firstgame: {
+      part: "Opening basics", title: "Your first complete game: Scholar's Mate",
+      text: [
+        "Time to string the principles into a real game — and to meet the most famous opening trap of all, Scholar's Mate: four moves to checkmate an unprepared opponent.",
+        "It works by aiming two pieces at f7, the square only the black king defends. But remember: against a correct reply (g6 and Nf6) the early queen just gets chased around. This is a trap to *recognise*, not to rely on.",
+      ],
+      tasks: [
+        { prompt: "Move 1: push the king's pawn two squares — centre taken, queen and bishop unlocked", retry: "Play e2–e4" },
+        { prompt: "Black replies 1…e5. Move 2: bishop to c4, staring down the diagonal at f7",
+          retry: "Bring the f1 bishop to c4, aimed at Black's weakest square, f7" },
+        { prompt: "Black develops with 2…Nc6. Move 3: queen to h5 — hitting the e5 pawn and f7 at once",
+          retry: "Play the queen to h5 so she and the c4 bishop both aim at f7" },
+        { prompt: "Black plays 3…Nf6?? and misses the threat! Move 4: end the game in one",
+          retry: "Queen takes f7 — the c4 bishop defends her, so the king cannot take back" },
+        { prompt: "Post-mortem: remember where both sides are weak",
+          steps: [
+            "Click Black's weak square, f7 — in the opening only the king defends it",
+            "The same goes for White — click f2 and remember to look after your own",
+          ] },
+      ],
+    },
+    "drill-pawn": {
+      part: "Endgame technique", title: "King and pawn: escorting a promotion (vs engine)",
+      text: [
+        "King and pawn against a lone king is the most common endgame of all: the king walks *in front* of the pawn to clear the way, taking the key square ahead of it (opposition), and only then does the pawn get through.",
+        "King first, pawn slowly; promote and you win — just don't stalemate the enemy king. Stuck? Press Hint in the top bar to see the engine's suggestion.",
+      ],
+      tasks: [
+        { prompt: "Warm-up: who moves first? The king — step in front of the pawn to clear the way (d5, e5 or f5 all work)",
+          retry: "Don't push the pawn yet! Move the king first — it has to lead the pawn to take the key squares" },
+        { prompt: "The real thing: escort the e-pawn to the last rank with your king (promotion wins; stalemate or losing the pawn means starting over)" },
+      ],
+    },
+    "drill-queen": {
+      part: "Endgame technique", title: "Mating with the queen (vs engine)",
+      text: [
+        "King and queen against a lone king is the most basic forced win. Three steps: ① keep the queen a knight's move away from the enemy king, shrinking his box; ② walk your own king up to help; ③ once it is in place, mate on the edge.",
+        "The knight's-move distance is your stalemate insurance: the queen boxes the king in without ever taking his last square away. Stuck? Press Hint in the top bar.",
+      ],
+      tasks: [
+        { prompt: "Warm-up ①: put the queen a knight's move from the black king (f6 or g7) — boxed in, but not stalemated",
+          retry: "Find the square a knight's move from the king on e8 — f6 or g7. Not too close, but don't let him out either" },
+        { prompt: "Warm-up ②: your king is already in place — mate in one (which checking square does your king defend?)",
+          retry: "On b8 and c8 the queen is taken or the king escapes — come up the b-file to the square your king defends" },
+        { prompt: "The real thing: mate the black king with queen and king (stalemate or more than 50 moves means starting over)" },
+      ],
+    },
+    "drill-rook": {
+      part: "Endgame technique", title: "Mating with the rook (vs engine)",
+      text: [
+        "King and rook also wins by force, but the footwork matters more: ① the rook fences off a rank, shrinking the black king's area; ② your king walks up to face the enemy king head-on (the opposition); ③ the moment the kings face each other, a rook check is either mate or pushes him back one more rank.",
+        "Finish this lesson and you own the two most important basic endgames. Go start your first game against the Beginner engine (it makes real mistakes on purpose, built for exactly this), or head to Puzzles to keep drilling mates.",
+      ],
+      tasks: [
+        { prompt: "Warm-up ①: rook to the 7th rank as a fence, shutting the black king onto the back rank",
+          retry: "Lift the a1 rook to a7 — the whole 7th rank becomes a fence the black king cannot cross" },
+        { prompt: "Warm-up ②: the kings are already facing each other — mate along the back rank!",
+          retry: "With the kings facing off, the black king cannot dodge a back-rank check — run the rook to the 8th rank" },
+        { prompt: "The real thing: mate the black king with rook and king (more patient work than the queen — remember Hint is there)" },
+      ],
+    },
+    "drill-bishops": {
+      part: "Endgame technique", title: "Mating with two bishops (vs engine)",
+      text: [
+        "Two bishops control both colours and, with the king's help, drive the enemy king into a *corner* to mate him — and it must be a corner the bishops cover (one matching the colour of a bishop).",
+        "The method: stand the bishops side by side on adjacent diagonals to weave a net, with your king behind them pushing the enemy king towards the corner one square at a time.",
+      ],
+      tasks: [
+        { prompt: "Warm-up: bring a bishop to a long central diagonal and start weaving the net (either bishop, heading for the centre)",
+          retry: "Move the bishop off the corner and onto a diagonal that controls the centre" },
+        { prompt: "The real thing: drive the black king into a corner and mate with two bishops and the king (stalemate or more than 50 moves means starting over)" },
+      ],
+    },
+    "drill-lucena": {
+      part: "Endgame technique", title: "Lucena: building the bridge (vs engine)",
+      text: [
+        "The Lucena position is the key *winning* technique of rook endings: your king is stuck in front of his own pawn while the enemy rook checks endlessly from behind. The answer is to build a bridge — put your rook on the 4th rank so it can block a check — and then the king steps aside and the pawn promotes.",
+        "Three steps: ① rook to the 4th rank ahead of the pawn; ② king out from in front of the pawn; ③ when the checks come, interpose the rook halfway. That block is the bridge.",
+      ],
+      tasks: [{ prompt: "Escort the b-pawn to promotion (promoting wins; losing the pawn or drawing means starting over)" }],
+    },
+    "drill-philidor": {
+      part: "Endgame technique", title: "Philidor: holding the draw (vs engine)",
+      text: [
+        "Endgames are not only about winning — knowing how to *hold* matters just as much. The Philidor defence is the standard way to save a rook ending a pawn down: park your rook on your own 3rd rank so the enemy king cannot come forward, and the moment their pawn reaches that rank, drop the rook to the back rank and check from behind, forever.",
+        "In this lesson you are White and a pawn *down*. The goal is not to win but to hold the draw — stalemate, insufficient material or 50 moves without progress all count as success.",
+      ],
+      tasks: [{ prompt: "Hold the draw: keep the rook on the 3rd rank and the black king out (a draw is success; being mated or letting the pawn promote means starting over)" }],
+    },
+    "drill-qvr": {
+      part: "Endgame technique", title: "Queen against rook (advanced challenge)",
+      text: [
+        "King and queen against king and rook is a forced win, but one of the *hardest* basic endgames: the queen has to keep checking and forking until the rook is driven away from its king and captured, and only then comes the mate.",
+        "The trick: manoeuvre so the black king and rook stand a knight's move apart or on the same line, then win the rook with a check that forks them. This one is genuinely difficult — there is no shame in using Hint.",
+      ],
+      tasks: [{ prompt: "The real thing: win the rook with queen and king, then mate (stalemate or more than 50 moves means starting over)" }],
     },
   };
 })(typeof window !== "undefined" ? window : globalThis);

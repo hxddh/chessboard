@@ -14,9 +14,33 @@
     return Number(String(fen).split(" ")[4]) || 0;
   }
 
-  /** repetition key: FIDE compares placement, side to move and all rights */
-  function positionKey(fen) {
-    return String(fen).split(" ").slice(0, 4).join(" ");
+  /**
+   * Repetition key: FIDE compares placement, side to move and *the moves
+   * actually available* — not the raw FEN.
+   *
+   * The difference is the en-passant field. chess.js (like the FEN standard)
+   * records a target square after every double pawn push, even when no enemy
+   * pawn can take there; FIDE only counts the ep right if the capture is
+   * genuinely playable. Without this normalisation the key after 1.e4 differs
+   * from the identical position reached any other way, and ordinary repetition
+   * lines — e.g. 1.e4 e5 2.Nf3 Nf6 3.Ng1 Ng8 4.Nf3 Nf6 5.Ng1 Ng8 — never reach
+   * threefold.
+   *
+   * @param {string} fen
+   * @param {Function} [game] live chess.js position for this FEN, when the
+   * caller already has one; otherwise pass ChessCtor as `ChessCtor` to let the
+   * key build its own. With neither, a present ep square is kept as-is.
+   */
+  function positionKey(fen, game, ChessCtor) {
+    const parts = String(fen).split(" ");
+    const head = parts.slice(0, 4);
+    if (head[3] && head[3] !== "-") {
+      const g = game || (ChessCtor ? new ChessCtor(fen) : null);
+      // pin-aware by construction: an ep capture that would expose the king is
+      // not in moves(), so the right does not exist under FIDE either
+      if (g && !g.moves({ verbose: true }).some((m) => m.flags.includes("e"))) head[3] = "-";
+    }
+    return head.join(" ");
   }
 
   /**
@@ -27,13 +51,14 @@
    */
   function repetitionCount(startFen, history, ChessCtor) {
     const g = startFen ? new ChessCtor(startFen) : new ChessCtor();
-    const counts = new Map([[positionKey(g.fen()), 1]]);
+    const key = () => positionKey(g.fen(), g);
+    const counts = new Map([[key(), 1]]);
     for (const san of history) {
       if (!g.move(san)) break;
-      const k = positionKey(g.fen());
+      const k = key();
       counts.set(k, (counts.get(k) || 0) + 1);
     }
-    return counts.get(positionKey(g.fen())) || 1;
+    return counts.get(key()) || 1;
   }
 
   /**

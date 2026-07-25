@@ -398,9 +398,13 @@
       background: #fff;
     }
 
+    /* One move pair per line. This was an auto-fill grid back when each move
+       was its own cell; once the moves were wrapped in .mlrow pairs the grid
+       started packing three *rows* side by side into 64px columns, which made
+       the notation unreadable at panel width. */
     .move-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+      display: flex;
+      flex-direction: column;
       gap: 2px;
       max-height: 176px;
       overflow-y: auto;
@@ -411,21 +415,14 @@
     .move-list button {
       border: 0;
       background: transparent;
-      color: color-mix(in srgb, var(--text) 60%, transparent);
-      font-size: 11.5px;
       font-variant-numeric: tabular-nums;
-      padding: 3px 5px;
       border-radius: 6px;
       cursor: pointer;
       text-align: left;
       white-space: nowrap;
     }
-    .move-list button:hover { background: var(--btn); color: var(--text); }
-    .move-list button.cur {
-      background: color-mix(in srgb, var(--accent) 32%, transparent);
-      color: var(--text);
-      font-weight: 600;
-    }
+    /* hover and the current-move highlight live on .mlmove — the old
+       `button.cur` rule named a class the markup never had */
 
     .replay-bar {
       display: flex; gap: 6px;
@@ -766,6 +763,27 @@
       background: var(--card);
       border: 1px solid var(--card-border);
     }
+    /* --- post-game review (v1.6) --- */
+    .review {
+      margin-top: 8px; padding: 8px 10px;
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+    }
+    .review-h { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+    .review-row { font-size: 11.5px; line-height: 1.5; margin-bottom: 4px; }
+    .review-k { font-weight: 700; margin-right: 6px; }
+    .review-v { color: var(--muted); }
+    .review-note { font-size: 11px; margin-top: 1px; }
+    .review-jump {
+      display: block; width: 100%; margin-top: 6px;
+      padding: 6px 8px; text-align: left;
+      font: inherit; font-size: 11.5px; line-height: 1.45;
+      color: var(--text); background: transparent;
+      border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .review-jump:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
+
     .mvtag { margin-left: 3px; font-weight: 700; font-size: 11px; }
     .mvtag.t-soft { color: #c9b458; }
     .mvtag.t-mid { color: #e0a03c; }
