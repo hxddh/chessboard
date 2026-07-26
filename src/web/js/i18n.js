@@ -79,6 +79,7 @@
       // puzzle mode (pz.*)
       "pz.forcing": "强制手段",
       "pz.goalOp": "{0} · 执白照谱走完 {1} 回合",
+      "pz.moveUnit": "回合",
       "pz.goalWin": "{0} · 白先,吃掉最大的战利品(净得 {1} 分)",
       "pz.goalTac": "{0} · {1} · 白先强制得子(净得 {2} 分)",
       "pz.goalDef": "{0} · 黑方下一步就要将死你 —— 找出接得住的一手",
@@ -492,6 +493,7 @@
       // puzzle mode (pz.*)
       "pz.forcing": "a forcing line",
       "pz.goalOp": "{0} · play the book line as White for {1} moves",
+      "pz.moveUnit": " moves",
       "pz.goalWin": "{0} · White to play, take the biggest prize (net gain {1})",
       "pz.goalTac": "{0} · {1} · White to play, win material by force (net gain {2})",
       "pz.goalDef": "{0} · Black mates next move — find a way to stop it",
@@ -903,6 +905,7 @@
       // puzzle mode (pz.*)
       "pz.forcing": "強制手順",
       "pz.goalOp": "{0} · 白番で定跡どおりに {1} 手指す",
+      "pz.moveUnit": "手",
       "pz.goalWin": "{0} · 白番、いちばん大きな獲物を取る(差引 {1} 点)",
       "pz.goalTac": "{0} · {1} · 白番、強制的に駒得する(差引 {2} 点)",
       "pz.goalDef": "{0} · 次に黒が詰ませてきます —— 受けの一手を見つけましょう",

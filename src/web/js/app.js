@@ -1106,7 +1106,12 @@
       name: eco + " " + name,
       line: seq.split(" "),
       idea: idea || "",
-    }));
+    }))
+    // ECO order, so the list reads A→E: flank, then semi-open, then open, then
+    // queen's-pawn, then Indian. The book is authored in family order inside
+    // each letter, which put A57 next to A08 once 1.15 added the deep lines,
+    // and 109 rows in no order at all is a list nobody scrolls twice.
+    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1 : a.zh.localeCompare(b.zh, "zh")));
   const ALL_PUZZLES = PUZZLES.concat(OPENING_DRILLS);
 
   /**
@@ -1122,8 +1127,19 @@
     let score = 0;
     const line = p.line || p.solution || [];
     const plies = { m1: 1, m2: 3, m3: 5 }[p.cat] || line.length;
+    // An opening drill is not a tactic and does not belong on the tactic
+    // scale. It has no `fen`, so every term below (men on the board, quiet key
+    // move, no capture) silently never ran, leaving score = (plies-1)*1.5 + 3
+    // — which is ≥10.5 for the shortest line in the book. Measured on 1.14:
+    // all 38 drillable lines scored "hard", and the difficulty filter had
+    // therefore never done anything at all in this category. What actually
+    // makes a rote line harder is how much of it there is to remember.
+    if (p.cat === "op") {
+      const tier = plies <= 8 ? "easy" : plies <= 16 ? "mid" : "hard";
+      PUZZLE_TIER_CACHE.set(p.id, tier);
+      return tier;
+    }
     score += (plies - 1) * 1.5;                    // longer forcing lines dominate
-    if (p.cat === "op") score += 3;                // rote lines need memorising
     if (p.cat === "tac") score += 1.5;
     if (p.cat === "win" && typeof p.gain === "number" && p.gain <= 3) score += 1; // small wins hide better
     // A defence is as hard as it is narrow. Deriving the tier from the number
@@ -1642,7 +1658,10 @@
         b.type = "button";
         b.className = "lesson-item" + (i === puzzle.idx ? " current" : "");
         b.dataset.i = String(i);
-        b.textContent = (puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p);
+        // opening drills carry their length: "how much is there to remember"
+        // is the first thing anyone wants to know before starting one
+        const len = p.cat === "op" ? "  " + Math.ceil(p.line.length / 2) + t("pz.moveUnit") : "";
+        b.textContent = (puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + len;
         listEl.appendChild(b);
       });
     }

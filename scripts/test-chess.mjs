@@ -173,6 +173,43 @@ for (const p of ["r", "b", "n"]) {
     }
   }
   assert(bad === 0, "all opening lines legal, canonical and unique");
+
+  // Depth. Only lines of six plies or more become drills, and until 1.15 there
+  // were 38 of them with the longest running ten plies — five moves, which is
+  // not an opening anyone can rehearse into a game. Soundness of the lines
+  // themselves is a separate, slower check: scripts/test-openings.mjs plays
+  // each one out and asks the engine whether it ends anywhere near equal.
+  const drills = book.filter(([, , seq]) => seq.split(" ").length >= 6);
+  const deep = drills.filter(([, , seq]) => seq.split(" ").length >= 14);
+  assert(drills.length >= 100, "at least 100 lines are long enough to drill (" + drills.length + ")");
+  assert(deep.length >= 60, "at least 60 drills run 14 plies or more (" + deep.length + ")");
+  const longest = Math.max(...drills.map(([, , seq]) => seq.split(" ").length));
+  assert(longest >= 18, "the longest line runs at least 18 plies (" + longest + ")");
+
+  // Every drilled line needs its own name, because the name is the key both
+  // the English table and the idea table are looked up by — two lines sharing
+  // a name silently share one explanation.
+  const drillNames = drills.map((e) => e[1]);
+  const dupName = drillNames.find((n, i) => drillNames.indexOf(n) !== i);
+  assert(!dupName, "every drilled line has its own name" + (dupName ? " — repeated: " + dupName : ""));
+
+  // The difficulty filter has to actually split this category. It never did:
+  // an opening drill carries no FEN, so every term in the tactic scale except
+  // length silently skipped, leaving score = (plies-1)*1.5 + 3 — at least 10.5
+  // for the shortest line in the book against a "hard" threshold of 6. All 38
+  // drills in 1.14 were "hard", and nobody noticed because 38 rows fit on a
+  // screen. Mirror the rule here so a future edit cannot collapse it again.
+  const opTier = (plies) => (plies <= 8 ? "easy" : plies <= 16 ? "mid" : "hard");
+  const bands = {};
+  for (const [, , seq] of drills) {
+    const b2 = opTier(seq.split(" ").length);
+    bands[b2] = (bands[b2] || 0) + 1;
+  }
+  const src = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  assert(/cat === "op"[\s\S]{0,400}?plies <= 8 \? "easy" : plies <= 16 \? "mid" : "hard"/.test(src),
+    "opening drills get their own tier rule rather than the tactic scale");
+  assert(Object.keys(bands).length === 3 && Math.min(...Object.values(bands)) >= 15,
+    "the difficulty filter splits the drills three ways (" + JSON.stringify(bands) + ")");
 }
 
 // lessons: every FEN valid, every solution legal and goal-satisfying,
