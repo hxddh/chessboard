@@ -915,12 +915,34 @@
    silently stops covering a new animation is worse than none. `.01ms` rather
    than `0s` so animationend/transitionend listeners still fire. */
 @media (prefers-reduced-motion: reduce) {
+  /*
+   * Reduce, not remove. v1.10 flattened every transition in the file, which
+   * went further than the setting asks: of the 25 declarations here, 13 move
+   * something (the panel slides, the board resizes, the chrome reflows, the
+   * dialog flies in) and 12 only cross-fade a colour. Colour fades do not
+   * trigger vestibular symptoms, and they carry meaning — whose turn it is,
+   * which lesson is done, which puzzle is solved. Snapping those made state
+   * changes harder to follow for everyone and helped nobody.
+   *
+   * So the override is on transition-*property*, not duration: whatever a rule
+   * asked to transition, only these survive. A transform, a width, a padding
+   * simply is not in the list, so it jumps instead of travelling — and it
+   * keeps working that way for animations added later, with no list of
+   * selectors here to fall out of date.
+   */
   *, *::before, *::after {
+    transition-property: color, background-color, border-color, box-shadow,
+      opacity, fill, stroke !important;
+    /* keyframes are all-or-nothing: every @keyframes in this file moves or
+       scales something, so they stop outright */
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
     scroll-behavior: auto !important;
   }
+  /* Both of these are infinite attention-grabbers, which WCAG 2.2.2 asks to
+     stop regardless of whether the property animated is a "safe" one. The dot
+     stays put at its base opacity (.65) rather than vanishing — it is the only
+     on-board sign that the engine is working. */
   .think-dot, .status-pill.thinking { animation: none !important; }
 }
 
