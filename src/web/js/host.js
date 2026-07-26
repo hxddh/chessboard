@@ -47,10 +47,18 @@
 
   async function revealPath(path) {
     if (!hasZero() || !global.zero.os || !global.zero.os.revealPath) return;
+    if (!(await supports("reveal_path", true))) return;
     try {
       await global.zero.os.revealPath(path);
     } catch (_) {}
   }
+
+  // Deliberately NOT gated on supports(): the clipboard and the file dialogs
+  // below have real browser fallbacks, and the call sites in app.js choose
+  // between native and browser by asking hasZero(). Returning null from here
+  // because the platform said no would read as "the player cancelled" and the
+  // fallback would never run — the guard has to move to the call site first,
+  // and that is a change with a real risk for a platform nobody has hit yet.
 
   async function writeClipboard(text) {
     if (hasZero() && global.zero.clipboard && global.zero.clipboard.writeText) {
@@ -81,6 +89,72 @@
       return await navigator.clipboard.readText();
     }
     throw new Error("clipboard read unavailable");
+  }
+
+  /**
+   * Does the platform actually provide this capability?
+   *
+   * Until 1.16 every bridge call here guessed: `if (zero.os && zero.os.foo)`
+   * proves the *method* exists, which it always does — the SDK ships one API
+   * surface for every platform — and says nothing about whether the platform
+   * behind it can do the thing. The SDK has a real query for this; use it, and
+   * fall back to the old presence check only when the query itself is missing.
+   *
+   * Answers are cached: the set of things a platform can do does not change
+   * while the app is running, and these sit on the path of ordinary actions
+   * like opening a file.
+   *
+   * @param {string} feature an SDK platform-feature name, e.g. "notifications"
+   * @param {boolean} [fallback] what to assume when the query is unavailable
+   * @returns {Promise<boolean>}
+   */
+  const _features = new Map();
+  async function supports(feature, fallback) {
+    if (_features.has(feature)) return _features.get(feature);
+    let ok = !!fallback;
+    if (hasZero() && global.zero.platform && global.zero.platform.supports) {
+      try { ok = !!(await global.zero.platform.supports({ feature: feature })); }
+      catch (_) { ok = !!fallback; }
+    }
+    _features.set(feature, ok);
+    return ok;
+  }
+
+  /**
+   * Remember a document the player opened, for the Dock menu / jump list.
+   *
+   * Best-effort by design: a recent-documents list is a courtesy, and a
+   * platform that cannot offer one must not turn opening a PGN into an error.
+   *
+   * @param {string} path
+   */
+  async function addRecentDocument(path) {
+    if (!path || !hasZero() || !global.zero.os || !global.zero.os.addRecentDocument) return;
+    if (!(await supports("recent_documents", false))) return;
+    try { await global.zero.os.addRecentDocument({ path: path }); } catch (_) {}
+  }
+
+  /** Forget every remembered document — paired with clearing local data. */
+  async function clearRecentDocuments() {
+    if (!hasZero() || !global.zero.os || !global.zero.os.clearRecentDocuments) return;
+    if (!(await supports("recent_documents", false))) return;
+    try { await global.zero.os.clearRecentDocuments(); } catch (_) {}
+  }
+
+  /**
+   * A system notification, for work that finished while the app was in the
+   * background. Never for anything the player is looking at — a toast is the
+   * right answer when the window is in front.
+   *
+   * @param {{title: string, body?: string}} opts
+   * @returns {Promise<boolean>} whether it was actually shown
+   */
+  async function notify(opts) {
+    if (!opts || !opts.title) return false;
+    if (!hasZero() || !global.zero.os || !global.zero.os.showNotification) return false;
+    if (!(await supports("notifications", false))) return false;
+    try { return !!(await global.zero.os.showNotification(opts)); }
+    catch (_) { return false; }
   }
 
   function storageGet(key) {
@@ -149,6 +223,10 @@
     saveFileDialog,
     openFileDialog,
     revealPath,
+    supports,
+    addRecentDocument,
+    clearRecentDocuments,
+    notify,
     writeClipboard,
     readClipboard,
     storageGet,
