@@ -1010,6 +1010,35 @@
     sync();
   }
 
+  /**
+   * One lesson paragraph as a <p>, with `**…**` rendered bold.
+   *
+   * The course has emphasised its key sentences with `**…**` since 1.4 — the
+   * one line in each lesson a beginner should carry away. The renderer set
+   * `textContent`, so every reader saw the asterisks instead of the emphasis;
+   * 24 paragraphs in the Chinese course and 17 in the English one. Split
+   * rather than parsed, and assembled from text nodes rather than markup, so
+   * lesson prose can never become HTML.
+   * @param {string} src
+   * @returns {HTMLParagraphElement}
+   */
+  function lessonParagraph(src) {
+    const el = document.createElement("p");
+    // odd indices are the bold runs; an unpaired ** leaves its text alone
+    const parts = String(src).split("**");
+    parts.forEach((chunk, i) => {
+      if (!chunk) return;
+      if (i % 2 === 1 && i < parts.length - 1) {
+        const b = document.createElement("strong");
+        b.textContent = chunk;
+        el.appendChild(b);
+      } else {
+        el.appendChild(document.createTextNode(i % 2 === 1 ? "**" + chunk : chunk));
+      }
+    });
+    return el;
+  }
+
   function syncLearnUI() {
     const sec = document.getElementById("sec-learn");
     if (!sec) return;
@@ -1026,9 +1055,7 @@
     if (textEl) {
       textEl.innerHTML = "";
       for (const p of loc.text) {
-        const el = document.createElement("p");
-        el.textContent = p;
-        textEl.appendChild(el);
+        textEl.appendChild(lessonParagraph(p));
       }
     }
     const task = document.getElementById("lesson-task");
@@ -1077,10 +1104,10 @@
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
   const PUZZLE_KEY = "chess.v1.puzzles";
   const PUZZLES = window.CHESS_PUZZLES || [];
-  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "def", "draw", "op", "review"];
+  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
-  const SCRIPTED_CATS = { win: true, op: true, tac: true, draw: true };
+  const SCRIPTED_CATS = { win: true, op: true, tac: true, draw: true, real: true };
 
   /** A mate in one for whoever is to move in `g`, or null. */
   function mateInOne(g) {
@@ -1136,6 +1163,17 @@
     // makes a rote line harder is how much of it there is to remember.
     if (p.cat === "op") {
       const tier = plies <= 8 ? "easy" : plies <= 16 ? "mid" : "hard";
+      PUZZLE_TIER_CACHE.set(p.id, tier);
+      return tier;
+    }
+    // A real-game tactic is not on the diagram scale either: every one of them
+    // has 20+ men, so the crowding term below would land the whole category in
+    // the same band. What separates them is how loud the winning move is — a
+    // big capture announces itself, a quiet move on a full board does not.
+    if (p.cat === "real") {
+      const first = line[0] || "";
+      const loud = /[+#x]/.test(first);
+      const tier = !loud ? "hard" : p.gain >= 5 ? "easy" : p.gain >= 3 ? "mid" : "hard";
       PUZZLE_TIER_CACHE.set(p.id, tier);
       return tier;
     }
@@ -1327,6 +1365,7 @@
     if (p.cat === "op") return tf("pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
     if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
+    if (p.cat === "real") return tf("pz.goalReal", [puzzleName(p), p.men, p.gain]);
     if (p.cat === "def") return tf("pz.goalDef", [puzzleName(p)]);
     if (p.cat === "draw") return tf("pz.goalDraw", [puzzleName(p)]);
     // the count is a word in Chinese ("一步"), a numeral in English — so it
@@ -1367,6 +1406,25 @@
     puzzle.last = { from: mv.from, to: mv.to };
     BoardView.cancelAnim(); // the solver's own move — see animateReply
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
+    // A real-game tactic grades the key move and nothing else. The two plies
+    // after it are a demonstration, not a second question: in a 25-piece
+    // position the follow-up usually has several equally good moves, and
+    // marking one of them wrong would teach the opposite of the lesson. The
+    // point of this category is finding the one move that wins — once it is
+    // found, the rest is there to show what it won.
+    if (puzzle.p.cat === "real") {
+      const script = puzzleScript(puzzle.p);
+      if (mv.san !== script[0]) { puzzleWrong(t("pz.notTheMove")); return; }
+      puzzle.stage = 1;
+      for (let i = 1; i < script.length; i++) {
+        const m = g.move(script[i]);
+        if (!m) break;
+        puzzle.last = { from: m.from, to: m.to };
+        puzzle.stage = i + 1;
+      }
+      puzzleSolved();
+      return;
+    }
     if (SCRIPTED_CATS[puzzle.p.cat]) {
       // scripted line: exact match, opponent replies straight from the script
       const script = puzzleScript(puzzle.p);
@@ -1514,6 +1572,7 @@
     const verb = puzzle.p.cat === "op" ? t("pz.doneOp") :
       puzzle.p.cat === "def" ? t("pz.doneDef") :
       puzzle.p.cat === "draw" ? t("pz.doneDraw") :
+      puzzle.p.cat === "real" ? t("pz.doneReal") :
       puzzle.p.cat === "win" || puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
     toast("✅ " + verb + " · " + puzzleName(puzzle.p));
     sync();
@@ -2369,6 +2428,7 @@
       matesSolved: mateCats.reduce((n, c) => n + solvedIn(c), 0),
       matesTotal: mateCats.reduce((n, c) => n + countIn(c), 0),
       tacSolved: solvedIn("tac"), tacTotal: countIn("tac"),
+      realSolved: solvedIn("real"), realTotal: countIn("real"),
       opSolved: solvedIn("op"), opTotal: countIn("op"),
       wins, losses, draws, games: st.games.length, extremeWins,
     };
@@ -2486,7 +2546,15 @@
     if (auto) return t(auto === "fivefold" ? "st.autoFivefold" : "st.autoSeventyfive");
     const side = g.turn() === "w" ? t("turn.white") : t("turn.black");
     const base = g.in_check() ? side + " · " + t("turn.check") : side;
-    return claimableDrawReason() ? base + " · " + t("st.claimable") : base;
+    if (claimableDrawReason()) return base + " · " + t("st.claimable");
+    // The 50-move rule arrives without warning: nothing on screen changes until
+    // the move it becomes claimable, so a player grinding a rook ending has no
+    // idea they are on move 43 of it. Start counting once it is close enough to
+    // matter — early enough to change how you play, late enough not to be noise
+    // in the twenty quiet moves every game has.
+    const quiet = halfmoveClock();
+    if (quiet >= FIFTY_WARN_PLIES) return base + " · " + tf("st.quietMoves", [Math.floor(quiet / 2)]);
+    return base;
   }
 
   function renderMoveList() {
@@ -2579,6 +2647,13 @@
     if (halfmoveClock() >= 150) return "seventyfive";
     return null;
   }
+
+  /**
+   * When the status line starts counting quiet moves toward the 50-move rule.
+   * 60 plies = 30 moves: two thirds of the way, which in a rook ending is the
+   * point where "am I actually making progress" becomes the question.
+   */
+  const FIFTY_WARN_PLIES = 60;
 
   /** 'threefold' | 'fifty' | null — draws the player may claim right now */
   function claimableDrawReason() {
