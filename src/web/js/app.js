@@ -11,6 +11,19 @@
     handleTab: () => false,
   };
 
+  /**
+   * Is any dialog on screen?
+   *
+   * The game's own keys — P, N, Z, H, F, R, the replay arrows — act on the
+   * position behind the backdrop, which is never what someone reading a dialog
+   * meant. Measured on 1.11: with the shortcut sheet, the save slots or the
+   * game history open, all of P / F / N still fired, so pressing N over the
+   * history list stacked a "start a new game?" box on top of it.
+   */
+  function dialogOpen() {
+    return !!document.querySelector(".modal-bg.show");
+  }
+
   const I18n = window.ChessI18n;
   const t = I18n ? I18n.t : (k) => k;
   /** t() with {0}/{1} placeholders filled in — see i18n.tf */
@@ -1113,6 +1126,13 @@
     if (p.cat === "op") score += 3;                // rote lines need memorising
     if (p.cat === "tac") score += 1.5;
     if (p.cat === "win" && typeof p.gain === "number" && p.gain <= 3) score += 1; // small wins hide better
+    // A defence is as hard as it is narrow. Deriving the tier from the number
+    // of moves that hold — rather than from the solution's length, which is
+    // always one — is what makes the difficulty filter mean anything here:
+    // before this every defensive puzzle landed in the same middle band.
+    if (p.cat === "def" && typeof p.saves === "number") {
+      score += p.saves <= 1 ? 5 : p.saves <= 3 ? 3 : 1;
+    }
     try {
       if (p.fen) {
         const men = (p.fen.split(" ")[0].match(/[a-zA-Z]/g) || []).length;
@@ -3691,6 +3711,9 @@
   function applyTheme(id) {
     themeId = id;
     document.documentElement.setAttribute("data-theme", id);
+    // the board reads its square colours from the same variables, and caches
+    // them — the cache is only ever stale here
+    if (BoardView.invalidatePaint) BoardView.invalidatePaint();
     saveSettings();
     syncSettingsUI();
     draw();
@@ -3836,6 +3859,13 @@
 
   canvas.addEventListener("keydown", (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    // A dialog outranks the board. The promotion chooser is the case that
+    // matters: it can only be opened by a move made on the board, so the board
+    // always holds focus when it appears — and the board used to swallow the
+    // Escape that was supposed to dismiss it, which meant Escape never once
+    // worked on the one dialog every player meets. Same fault as the FEN field
+    // in 1.10; that one got fixed and this one was missed.
+    if (dialogOpen()) return;
     // arrows/Home/End also drive replay from the window handler — while the
     // board itself is focused they belong to the cursor, so stop them here
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
@@ -4450,18 +4480,26 @@
       if (ev.key === "Enter") { ev.preventDefault(); finishConfirm(true); }
       return;
     }
+    // "?" comes before the dialog guard below, because it is the one shortcut
+    // whose whole job is opening and closing a dialog — but only its own: with
+    // anything else on screen it stays out of the way like everything else.
+    if ((ev.key === "?" || (ev.key === "/" && ev.shiftKey)) && !ev.metaKey && !ev.ctrlKey) {
+      const sheetUp = keysModal && keysModal.classList.contains("show");
+      if (sheetUp || !dialogOpen()) {
+        ev.preventDefault();
+        if (sheetUp) closeKeyHelp(); else openKeyHelp();
+        return;
+      }
+    }
+    // Everything below acts on the game. A dialog is in front of the game, so
+    // none of it applies while one is open — see dialogOpen(). Escape is
+    // handled above precisely because it is the one key that does apply.
+    if (dialogOpen()) return;
     const k = ev.key.toLowerCase();
     // Tab is not ours to take. Binding it to the panel meant focus could never
     // move anywhere by keyboard — the app had a full keyboard board cursor and
     // no way to reach any other control. The panel is on P instead.
     if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
-    // "?" is the conventional key for "what are the keys?" — and it is the one
-    // shortcut a user cannot learn from the list, so it works from anywhere
-    if ((ev.key === "?" || (ev.key === "/" && ev.shiftKey)) && !ev.metaKey && !ev.ctrlKey) {
-      ev.preventDefault();
-      if (keysModal && keysModal.classList.contains("show")) closeKeyHelp(); else openKeyHelp();
-      return;
-    }
     if (mode === "learn") {
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills

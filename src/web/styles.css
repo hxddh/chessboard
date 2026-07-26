@@ -22,6 +22,19 @@
       --stage-pad: 6px;
       --wood-pad: 17px;
       --coord-ink: rgba(48,28,12,.62);
+      --danger: #e07a6a;
+      --primary-from: #f0d2a8;
+      --primary-to: #d4a574;
+      --on-primary: #2a1c10;
+      --on-accent: #1a120a;
+      --on-danger: #2a1613;
+      --sq-light: #f0d9b5;
+      --sq-dark: #b58863;
+      --sq-sel: rgba(255,210,60,.45);
+      --sq-last: rgba(155,199,0,.34);
+      --sq-check: rgba(220,60,40,.55);
+      --sq-dot: rgba(30,30,30,.28);
+      --sq-ring: rgba(30,30,30,.32);
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 16px;
@@ -44,6 +57,19 @@
       --chrome-bg: linear-gradient(180deg, rgba(11,18,16,.9), rgba(11,18,16,.35) 75%, transparent);
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
       --coord-ink: rgba(220,235,228,.55);
+      --danger: #e8705c;
+      --primary-from: #9adfb8;
+      --primary-to: #5fb287;
+      --on-primary: #07130e;
+      --on-accent: #07130e;
+      --on-danger: #0b1210;
+      --sq-light: #bed4c9;
+      --sq-dark: #66907f;
+      --sq-sel: rgba(255,224,120,.42);
+      --sq-last: rgba(125,206,160,.30);
+      --sq-check: rgba(232,90,70,.58);
+      --sq-dot: rgba(8,18,15,.34);
+      --sq-ring: rgba(8,18,15,.40);
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
       --card: rgba(255,255,255,.03);
       --card-border: rgba(255,255,255,.05);
@@ -62,6 +88,20 @@
       --chrome-bg: linear-gradient(180deg, rgba(244,240,232,.95), rgba(244,240,232,.4) 75%, transparent);
       --board-frame: linear-gradient(145deg, #f3e6d0, #e8d4b0 45%, #dfc9a0);
       --board-shadow: 0 10px 28px rgba(80,60,30,.18), inset 0 1px 0 rgba(255,255,255,.7);
+      --coord-ink: rgba(70,52,28,.62);
+      --danger: #b8382a;
+      --primary-from: #6a9fd4;
+      --primary-to: #3b6ea5;
+      --on-primary: #ffffff;
+      --on-accent: #ffffff;
+      --on-danger: #fdf6f4;
+      --sq-light: #eddcc0;
+      --sq-dark: #c39a6b;
+      --sq-sel: rgba(200,140,20,.42);
+      --sq-last: rgba(120,155,30,.32);
+      --sq-check: rgba(190,50,35,.50);
+      --sq-dot: rgba(60,45,25,.30);
+      --sq-ring: rgba(60,45,25,.36);
       --card: rgba(0,0,0,.03);
       --card-border: rgba(0,0,0,.06);
       --btn-ghost: rgba(0,0,0,.04);
@@ -79,6 +119,19 @@
       --chrome-bg: linear-gradient(180deg, rgba(247,248,251,.96), rgba(247,248,251,.45) 75%, transparent);
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
       --coord-ink: rgba(42,49,64,.55);
+      --danger: #c0392b;
+      --primary-from: #6a9fd4;
+      --primary-to: #3b6ea5;
+      --on-primary: #ffffff;
+      --on-accent: #ffffff;
+      --on-danger: #fbf3f2;
+      --sq-light: #e8ecf3;
+      --sq-dark: #98a8bd;
+      --sq-sel: rgba(70,130,190,.36);
+      --sq-last: rgba(64,124,182,.32);
+      --sq-check: rgba(192,57,43,.45);
+      --sq-dot: rgba(42,49,64,.26);
+      --sq-ring: rgba(42,49,64,.34);
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
       --card: rgba(0,0,0,.03);
       --card-border: rgba(0,0,0,.06);
@@ -103,7 +156,7 @@
       position: absolute; top: 0; left: 0; right: 0;
       height: var(--chrome-h); z-index: 20;
       display: flex; align-items: center; gap: 6px;
-      padding: 0 10px 0 14px;
+      padding: 0 8px 0 12px;
       background: var(--chrome-bg);
       pointer-events: none;
       /* instant, like the stage — the layout settles at once and only the
@@ -124,7 +177,7 @@
     .brand-mark { width: 17px; height: 17px; color: var(--accent); flex-shrink: 0; }
     .status-pill {
       font-size: 12px; font-weight: 500; color: var(--text);
-      padding: 5px 11px; border-radius: 999px;
+      padding: 4px 12px; border-radius: 999px;
       background: var(--btn-ghost);
       border: 1px solid var(--card-border);
       backdrop-filter: blur(8px);
@@ -163,13 +216,13 @@
     .icon-btn:active, .tool-btn:active { transform: scale(0.96); }
     .icon-btn {
       width: 32px; height: 32px; display: grid; place-items: center;
-      font-size: 14px; line-height: 1;
+      font-size: 15px; line-height: 1;
     }
     .tool-btn { height: 32px; padding: 0 12px; font-size: 12px; font-weight: 500; }
     .icon-btn:hover, .tool-btn:hover { background: var(--btn-hover); }
     .tool-btn.primary {
-      background: linear-gradient(180deg, #f0d2a8, #d4a574);
-      color: #2a1c10; font-weight: 600;
+      background: linear-gradient(180deg, var(--primary-from), var(--primary-to));
+      color: var(--on-primary); font-weight: 600;
       border-color: transparent;
       box-shadow: 0 1px 2px rgba(0,0,0,.12);
     }
@@ -282,7 +335,7 @@
 
     /* —— side: more air, less density —— */
     .side-head {
-      padding: 2px 0 18px;
+      padding: 2px 0 16px;
       margin-bottom: 2px;
       border-bottom: 1px solid var(--card-border);
     }
@@ -291,7 +344,7 @@
       gap: 12px;
     }
     .vs-side {
-      display: flex; align-items: center; gap: 10px; min-width: 0;
+      display: flex; align-items: center; gap: 8px; min-width: 0;
     }
     .vs-right { flex-direction: row; text-align: right; }
     .vs-right .vs-name { justify-content: flex-end; }
@@ -302,10 +355,10 @@
       font-size: 13px; font-weight: 600;
       display: flex; align-items: center; gap: 6px;
     }
-    .vs-role { font-size: 11px; margin-top: 3px; line-height: 1.3; }
+    .vs-role { font-size: 11px; margin-top: 2px; line-height: 1.3; }
     /* captured pieces + the lead, beside each name */
     .taken {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 1px;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0px;
       margin-top: 4px; min-height: 0;
     }
     .vs-right .taken { justify-content: flex-end; }
@@ -315,7 +368,7 @@
        theme's own text colour keeps both readable in all four. */
     .taken-p {
       width: 15px; height: 15px; display: block;
-      padding: 1px; border-radius: 3px;
+      padding: 0px; border-radius: 3px;
       background: color-mix(in srgb, var(--text) 34%, var(--panel));
     }
     .taken-p svg { width: 100%; height: 100%; display: block; }
@@ -325,13 +378,13 @@
       margin-left: 4px;
     }
     .vs-clock {
-      margin-top: 5px;
+      margin-top: 4px;
       font-size: 15px; font-weight: 650; line-height: 1.2;
       color: var(--text); opacity: 0.45;
       transition: opacity .15s, color .15s;
     }
     .vs-clock.active { opacity: 1; }
-    .vs-clock.low { color: #e05252; opacity: 1; }
+    .vs-clock.low { color: var(--danger); opacity: 1; }
     .vs-clock[hidden] { display: none; }
     .opening-line {
       margin-top: 12px;
@@ -339,21 +392,21 @@
     }
     .opening-line[hidden] { display: none; }
     /* four labels in a 284px panel — "2 players" needs the tighter setting */
-    .mode-nav { margin-top: 14px; gap: 6px; }
-    .mode-nav button { font-size: 11.5px; padding: 9px 2px; line-height: 1.3; }
+    .mode-nav { margin-top: 12px; gap: 6px; }
+    .mode-nav button { font-size: 12px; padding: 8px 2px; line-height: 1.3; }
 
     /* —— tabs —— */
     .side-head, .side-tabs, .side-foot { flex-shrink: 0; }
     .side-tabs {
       display: flex; align-items: stretch; gap: 4px;
-      padding: 10px 0 0;
+      padding: 8px 0 0;
     }
     .side-tabs button[role="tab"] {
       flex: 1;
       appearance: none; border: 0; background: transparent;
       color: var(--muted);
-      font: inherit; font-size: 12.5px; font-weight: 600;
-      padding: 10px 4px; border-radius: 9px 9px 0 0;
+      font: inherit; font-size: 13px; font-weight: 600;
+      padding: 8px 4px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
       cursor: pointer;
       border-bottom: 2px solid transparent;
       transition: color .15s, border-color .15s, background .15s;
@@ -381,7 +434,7 @@
     .side-pane > .side-section:first-child { border-top: 0; }
 
     .side-section {
-      padding: 18px 0;
+      padding: 16px 0;
       border-bottom: 1px solid var(--card-border);
     }
     .side-section.grow-sec {
@@ -389,7 +442,7 @@
       padding-bottom: 8px;
     }
     .side-h {
-      margin: 0 0 14px;
+      margin: 0 0 12px;
       font-size: 11px; font-weight: 600;
       letter-spacing: 0.12em; text-transform: uppercase;
       color: var(--muted);
@@ -397,22 +450,22 @@
     }
     .side-h-row {
       display: flex; align-items: baseline; justify-content: space-between;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
       gap: 12px;
     }
     .side-h-row .side-h { margin: 0; }
     .side-h-meta { font-size: 12px; color: var(--muted); }
 
-    .setting-list { display: flex; flex-direction: column; gap: 14px; }
+    .setting-list { display: flex; flex-direction: column; gap: 12px; }
     .setting-row {
       display: flex; align-items: center; justify-content: space-between;
-      gap: 14px; min-height: 36px;
+      gap: 12px; min-height: 36px;
     }
     /* author display:flex would otherwise override the [hidden] UA rule,
        leaving 思考/难度/执子 rows visible when they should be hidden */
     .setting-row[hidden] { display: none; }
     .setting-row.stack {
-      flex-direction: column; align-items: stretch; gap: 10px;
+      flex-direction: column; align-items: stretch; gap: 8px;
     }
     .setting-k {
       font-size: 13px; font-weight: 500; color: var(--text);
@@ -422,8 +475,8 @@
     /* iOS-like segmented control */
     .pill {
       display: inline-flex;
-      padding: 3px;
-      border-radius: 10px;
+      padding: 2px;
+      border-radius: var(--radius-md);
       background: var(--btn-ghost);
       border: 1px solid var(--card-border);
       gap: 0;
@@ -433,7 +486,7 @@
       appearance: none; border: 0; background: transparent;
       color: var(--muted);
       font: inherit; font-size: 12px; font-weight: 500;
-      padding: 7px 14px; border-radius: 8px;
+      padding: 6px 12px; border-radius: var(--radius-sm);
       cursor: pointer; min-width: 40px;
       transition: background .15s var(--ease), color .15s, box-shadow .15s;
     }
@@ -475,7 +528,7 @@
       background: var(--btn-ghost);
       color: var(--muted);
       font: inherit; font-size: 12px; font-weight: 500;
-      padding: 10px 0; border-radius: 10px;
+      padding: 8px 0; border-radius: var(--radius-md);
       cursor: pointer;
       transition: border-color .15s, color .15s, background .15s, transform .12s;
     }
@@ -548,7 +601,7 @@
       border: 0;
       background: transparent;
       font-variant-numeric: tabular-nums;
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
       cursor: pointer;
       text-align: left;
       white-space: nowrap;
@@ -559,7 +612,7 @@
     .replay-bar {
       display: flex; gap: 6px;
       padding: 4px;
-      border-radius: 12px;
+      border-radius: var(--radius-md);
       background: var(--btn-ghost);
       border: 1px solid var(--card-border);
     }
@@ -568,7 +621,7 @@
       appearance: none; border: 0; background: transparent;
       color: var(--text);
       font: inherit; font-size: 16px; line-height: 1;
-      padding: 10px 0; border-radius: 9px;
+      padding: 8px 0; border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background .12s;
     }
@@ -578,15 +631,15 @@
     .replay-bar button:disabled { opacity: 0.28; cursor: default; }
 
     .link-row {
-      display: flex; gap: 4px; margin-top: 14px;
+      display: flex; gap: 4px; margin-top: 12px;
       justify-content: space-between; flex-wrap: wrap;
     }
     .text-link {
       appearance: none; border: 0; background: transparent;
       color: var(--accent);
       font: inherit; font-size: 12px; font-weight: 500;
-      padding: 9px 8px; cursor: pointer;
-      border-radius: 6px;
+      padding: 8px 8px; cursor: pointer;
+      border-radius: var(--radius-sm);
       opacity: 0.92;
     }
     .text-link:hover { opacity: 1; background: var(--btn-ghost); }
@@ -595,30 +648,30 @@
        actually available, then plainly a warning. */
     .text-link.danger { color: var(--muted); }
     .text-link.danger:not(:disabled) {
-      color: #e07a6a;
-      border: 1px solid color-mix(in srgb, #e07a6a 32%, transparent);
-      padding: 7px 10px;
+      color: var(--danger);
+      border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+      padding: 6px 8px;
     }
     .text-link.danger:not(:disabled):hover {
-      color: #fff; background: color-mix(in srgb, #e07a6a 70%, transparent);
+      color: var(--on-danger); background: color-mix(in srgb, var(--danger) 78%, transparent);
       border-color: transparent;
     }
 
     /* grouped action links */
-    .act-group { margin-top: 14px; }
-    .act-group:first-of-type { margin-top: 10px; }
+    .act-group { margin-top: 12px; }
+    .act-group:first-of-type { margin-top: 8px; }
     .act-k {
       display: block; margin-bottom: 2px;
       font-size: 11px; color: var(--muted); opacity: 0.85;
     }
     #more-row { margin-top: 2px; }
     .continue-btn {
-      appearance: none; width: 100%; margin-top: 10px;
+      appearance: none; width: 100%; margin-top: 8px;
       border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
       background: color-mix(in srgb, var(--accent) 12%, transparent);
       color: var(--accent);
       font: inherit; font-size: 13px; font-weight: 600;
-      padding: 10px 12px; border-radius: 9px;
+      padding: 8px 12px; border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background .12s, border-color .12s;
     }
@@ -643,20 +696,20 @@
       font-size: 12px; color: var(--muted); line-height: 1.6;
     }
     .lesson-task {
-      margin: 10px 0 12px;
-      padding: 9px 12px;
+      margin: 8px 0 12px;
+      padding: 8px 12px;
       border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
       background: color-mix(in srgb, var(--accent) 10%, transparent);
-      border-radius: 9px;
-      font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.5;
+      border-radius: var(--radius-sm);
+      font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.5;
     }
     .lesson-controls {
-      display: flex; gap: 8px; margin-bottom: 14px;
+      display: flex; gap: 8px; margin-bottom: 12px;
     }
     .lesson-controls .tool-btn { flex: 1; }
     .lesson-part {
       margin: 12px 0 4px;
-      font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
       color: var(--muted); opacity: 0.85;
     }
     .lesson-list { display: flex; flex-direction: column; gap: 2px; }
@@ -665,7 +718,7 @@
       border: 0; background: transparent;
       color: var(--muted);
       font: inherit; font-size: 12px;
-      padding: 6px 8px; border-radius: 7px;
+      padding: 6px 8px; border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background .12s, color .12s;
     }
@@ -696,18 +749,11 @@
     }
     [data-theme="notebook"] .pmark.white { color: #9a3412; }
     [data-theme="notebook"] .pmark.black { color: #1e3a5f; }
-    [data-theme="day"] .tool-btn.primary,
-    [data-theme="notebook"] .tool-btn.primary {
-      background: linear-gradient(180deg, #6a9fd4, #3b6ea5);
-      color: #fff;
-    }
     .badge {
-      font-size: 9px; padding: 1px 5px; border-radius: 999px;
+      font-size: 11px; padding: 0px 4px; border-radius: 999px;
       background: color-mix(in srgb, var(--accent) 80%, #000);
-      color: #1a120a; font-weight: 650; letter-spacing: 0.02em;
+      color: var(--on-accent); font-weight: 650; letter-spacing: 0.02em;
     }
-    [data-theme="day"] .badge,
-    [data-theme="notebook"] .badge { color: #fff; }
     .muted { color: var(--muted); font-size: 12px; }
 
     /* legacy class hooks still used by some JS queries */
@@ -719,7 +765,7 @@
       background: color-mix(in srgb, var(--panel) 94%, #000);
       color: var(--text);
       border: 1px solid var(--panel-border);
-      padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 500;
+      padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 500;
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
       opacity: 0; pointer-events: none;
       transition: opacity .22s var(--ease), transform .22s var(--ease);
@@ -740,7 +786,7 @@
     .modal {
       width: min(380px, calc(100vw - 32px));
       background: var(--panel); border: 1px solid var(--panel-border);
-      border-radius: var(--radius-lg); padding: 18px 20px;
+      border-radius: var(--radius-lg); padding: 16px 20px;
       box-shadow: 0 24px 60px rgba(0,0,0,.4);
       animation: modal-in .22s var(--ease);
     }
@@ -765,7 +811,7 @@
       appearance: none; cursor: pointer;
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
-      border-radius: 8px; padding: 6px 0 7px;
+      border-radius: var(--radius-sm); padding: 6px 0 6px;
       font-size: 19px; line-height: 1;
       transition: border-color .12s, background .12s;
     }
@@ -775,7 +821,7 @@
       background: color-mix(in srgb, var(--accent) 18%, transparent);
     }
     #editor-error:empty { display: none; }
-    #editor-error { color: #e05252; opacity: 1; }
+    #editor-error { color: var(--danger); opacity: 1; }
 
     /* list picker (PGN game chooser) */
     .pick-list {
@@ -787,8 +833,8 @@
       appearance: none; text-align: left; cursor: pointer;
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
-      font: inherit; font-size: 12.5px; line-height: 1.45;
-      padding: 9px 11px; border-radius: 9px;
+      font: inherit; font-size: 13px; line-height: 1.45;
+      padding: 8px 12px; border-radius: var(--radius-sm);
       transition: border-color .12s, background .12s;
     }
     .pick-item:hover {
@@ -800,7 +846,7 @@
     .text-input {
       width: 100%; box-sizing: border-box;
       font: inherit; font-family: var(--font-num); font-size: 12px;
-      padding: 9px 11px; border-radius: 9px;
+      padding: 8px 12px; border-radius: var(--radius-sm);
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
       user-select: text;
@@ -809,7 +855,7 @@
       outline: none;
       border-color: color-mix(in srgb, var(--accent) 60%, var(--card-border));
     }
-    .text-input.bad { border-color: #e05252; }
+    .text-input.bad { border-color: var(--danger); }
 
     /* pawn promotion chooser */
     .promo-modal { width: min(340px, calc(100vw - 32px)); }
@@ -820,9 +866,9 @@
       border: 1px solid var(--card-border);
       background: var(--btn-ghost);
       color: var(--text);
-      border-radius: 10px; padding: 10px 0 12px;
+      border-radius: var(--radius-md); padding: 8px 0 12px;
       font: inherit; font-size: 12px; font-weight: 500;
-      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
       transition: border-color .15s, background .15s, transform .12s;
     }
     .promo-row button:hover {
@@ -847,7 +893,7 @@
       .side {
         top: auto; left: 0; right: 0; bottom: 0;
         width: auto; height: min(46vh, 430px);
-        padding: 14px 22px 16px;
+        padding: 12px 20px 16px;
         border-left: 0; border-top: 1px solid var(--panel-border);
         transform: translateY(100%);
         box-shadow: 0 -12px 40px rgba(0,0,0,.22);
@@ -965,18 +1011,18 @@
     /* --- chess move list (SAN pairs) --- */
     .mlrow {
       display: flex; align-items: center; gap: 4px;
-      padding: 1px 2px;
+      padding: 0px 2px;
     }
     .mlnum {
       width: 26px; flex: none; text-align: right;
-      font-size: 11.5px; color: var(--muted);
+      font-size: 12px; color: var(--muted);
       padding-right: 2px;
     }
     .mlmove {
       appearance: none; border: 0; background: transparent;
       color: var(--fg);
-      font: inherit; font-size: 12.5px; font-weight: 500;
-      padding: 3px 8px; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 500;
+      padding: 2px 8px; border-radius: var(--radius-sm); cursor: pointer;
       min-width: 52px; text-align: left;
     }
     .mlmove:hover { background: var(--btn-ghost); }
@@ -991,7 +1037,7 @@
     #eval-wrap { margin: 8px 0 2px; }
     .pv-line {
       margin-top: 6px;
-      font-size: 11.5px; color: var(--muted); line-height: 1.45;
+      font-size: 12px; color: var(--muted); line-height: 1.45;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     #eval-curve {
@@ -1004,43 +1050,43 @@
     }
     /* --- post-game review (v1.6) --- */
     .review {
-      margin-top: 8px; padding: 8px 10px;
+      margin-top: 8px; padding: 8px 8px;
       background: var(--card); border: 1px solid var(--card-border);
       border-radius: var(--radius-sm);
     }
     .review-h { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
-    .review-row { font-size: 11.5px; line-height: 1.5; margin-bottom: 4px; }
+    .review-row { font-size: 12px; line-height: 1.5; margin-bottom: 4px; }
     .review-k { font-weight: 700; margin-right: 6px; }
     .review-v { color: var(--muted); }
-    .review-note { font-size: 11px; margin-top: 1px; }
+    .review-note { font-size: 11px; margin-top: 0px; }
     .review-jump {
       display: block; width: 100%; margin-top: 6px;
       padding: 6px 8px; text-align: left;
-      font: inherit; font-size: 11.5px; line-height: 1.45;
+      font: inherit; font-size: 12px; line-height: 1.45;
       color: var(--text); background: transparent;
       border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
       cursor: pointer;
     }
     .review-jump:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
 
-    .ach-pg { margin-left: auto; font-size: 10.5px; color: var(--muted); flex: none; }
+    .ach-pg { margin-left: auto; font-size: 11px; color: var(--muted); flex: none; }
     /* the "what next?" suggestion under the statistics */
     .stat-rec { margin-top: 6px; color: var(--accent); }
     /* a settings row whose controls do not apply right now */
     .muted-row { opacity: .45; }
 
-    .mvtag { margin-left: 3px; font-weight: 700; font-size: 11px; }
+    .mvtag { margin-left: 2px; font-weight: 700; font-size: 11px; }
     .mvtag.t-soft { color: #c9b458; }
     .mvtag.t-mid { color: #e0a03c; }
-    .mvtag.t-bad { color: #e05252; }
+    .mvtag.t-bad { color: var(--danger); }
 
     /* --- stats (v0.3) --- */
     .ach-body {
       display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
     }
     .ach-item {
-      display: flex; align-items: center; gap: 7px;
-      padding: 7px 9px; border-radius: 9px;
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px; border-radius: var(--radius-sm);
       border: 1px solid var(--card-border);
       background: var(--btn-ghost);
       opacity: 0.5;
@@ -1052,7 +1098,7 @@
       background: color-mix(in srgb, var(--accent) 10%, transparent);
     }
     .ach-ic { font-size: 16px; line-height: 1; flex-shrink: 0; }
-    .ach-nm { font-size: 11.5px; color: var(--text); line-height: 1.2; }
+    .ach-nm { font-size: 12px; color: var(--text); line-height: 1.2; }
     .ach-item:not(.got) .ach-nm { color: var(--muted); }
 
     .stats-body { display: flex; flex-direction: column; gap: 2px; }
@@ -1061,7 +1107,7 @@
       justify-content: space-between;
       align-items: baseline;
       font-size: 13px;
-      padding: 3px 2px;
+      padding: 2px 2px;
     }
     .stat-k { color: var(--muted); }
     .stat-v { color: var(--text); font-size: 12px; }
@@ -1071,7 +1117,7 @@
     .hist-body { display: flex; flex-direction: column; gap: 4px; }
     .hist-body .hint { margin: 2px 0 0; }
     .hist-row { display: flex; gap: 6px; align-items: stretch; }
-    .hist-row .pick-item { flex: 1; min-width: 0; padding: 7px 10px; }
+    .hist-row .pick-item { flex: 1; min-width: 0; padding: 6px 8px; }
 
 /* v1.10 */
 .hist-filters {
@@ -1082,7 +1128,7 @@
 
 .key-list {
   display: grid; grid-template-columns: auto 1fr;
-  gap: 8px 14px; margin: 0 0 14px;
+  gap: 8px 12px; margin: 0 0 12px;
   align-items: baseline;
   max-height: 52vh; overflow-y: auto;
 }
@@ -1097,5 +1143,5 @@ kbd {
   background: var(--btn-ghost);
   border: 1px solid var(--card-border);
   border-bottom-width: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
