@@ -1784,6 +1784,107 @@ for (const p of ["r", "b", "n"]) {
   assert(bad === 0, "all achievements well-formed and reachable");
 }
 
+// --- the Native SDK bridge, driven against a fake host ------------------
+// There is no way to run the packaged app from here, so the next best thing is
+// to stand up a `zero` that records what it was asked and assert the shape of
+// every call: the capability query happens, it is cached, a platform that says
+// "no" is taken at its word, and every one of these is best-effort — a Dock
+// menu entry that cannot be added must never turn opening a PGN into an error.
+{
+  const load = (zero) => {
+    const c = { console, TextEncoder, TextDecoder, btoa, atob, navigator: {}, document: {} };
+    c.globalThis = c;
+    c.window = c;
+    if (zero) c.zero = zero;
+    vm.createContext(c);
+    vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8"), c, { filename: "host.js" });
+    return c.ChessHost;
+  };
+
+  // a host that supports everything, and counts what it is asked
+  const calls = [];
+  const yes = {
+    platform: { supports: (v) => { calls.push(["supports", v.feature]); return Promise.resolve(true); } },
+    os: {
+      addRecentDocument: (v) => { calls.push(["addRecent", v.path]); return Promise.resolve(true); },
+      clearRecentDocuments: () => { calls.push(["clearRecent"]); return Promise.resolve(true); },
+      showNotification: (v) => { calls.push(["notify", v.title, v.body]); return Promise.resolve(true); },
+    },
+  };
+  const H = load(yes);
+  await H.addRecentDocument("/games/spanish.pgn");
+  await H.notify({ title: "T", body: "B" });
+  await H.clearRecentDocuments();
+  assert(calls.some((c) => c[0] === "addRecent" && c[1] === "/games/spanish.pgn"),
+    "an opened PGN is offered to the recent-documents list");
+  assert(calls.some((c) => c[0] === "notify" && c[1] === "T" && c[2] === "B"),
+    "a notification carries its title and body");
+  assert(calls.some((c) => c[0] === "clearRecent"), "clearing local data clears the list too");
+  // asked once per feature, not once per call
+  await H.addRecentDocument("/games/again.pgn");
+  const probes = calls.filter((c) => c[0] === "supports" && c[1] === "recent_documents").length;
+  assert(probes === 1, "the capability query is cached (" + probes + " probe(s) for two calls)");
+
+  // a host that supports nothing: nothing is attempted, nothing throws
+  const tried = [];
+  const no = {
+    platform: { supports: () => Promise.resolve(false) },
+    os: {
+      addRecentDocument: () => { tried.push("addRecent"); return Promise.resolve(true); },
+      clearRecentDocuments: () => { tried.push("clearRecent"); return Promise.resolve(true); },
+      showNotification: () => { tried.push("notify"); return Promise.resolve(true); },
+    },
+  };
+  const H2 = load(no);
+  await H2.addRecentDocument("/x.pgn");
+  await H2.clearRecentDocuments();
+  const shown = await H2.notify({ title: "T" });
+  assert(tried.length === 0, "a platform that says no is taken at its word (" + tried.join(",") + ")");
+  assert(shown === false, "notify reports that nothing was shown");
+
+  // a host whose calls reject: still best-effort, never an exception upward
+  const H3 = load({
+    platform: { supports: () => Promise.resolve(true) },
+    os: {
+      addRecentDocument: () => Promise.reject(new Error("nope")),
+      clearRecentDocuments: () => Promise.reject(new Error("nope")),
+      showNotification: () => Promise.reject(new Error("nope")),
+    },
+  });
+  let threw = null;
+  try {
+    await H3.addRecentDocument("/x.pgn");
+    await H3.clearRecentDocuments();
+    assert((await H3.notify({ title: "T" })) === false, "a rejected notification reports false");
+  } catch (e) { threw = e.message; }
+  assert(threw === null, "a failing host never throws into the app" + (threw ? " — " + threw : ""));
+
+  // no bridge at all (a plain browser): every one of these is a no-op
+  const H4 = load(null);
+  let threw2 = null;
+  try {
+    await H4.addRecentDocument("/x.pgn");
+    await H4.clearRecentDocuments();
+    assert((await H4.notify({ title: "T" })) === false, "no bridge means no notification");
+    assert((await H4.supports("notifications", false)) === false, "no bridge falls back to the default");
+  } catch (e) { threw2 = e.message; }
+  assert(threw2 === null, "the bridge additions are safe in a plain browser" + (threw2 ? " — " + threw2 : ""));
+
+  // and the app actually calls them, at the places that matter
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  for (const [what, re] of [
+    ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*Host\.addRecentDocument\(path\);/],
+    ["the open dialog", /importPgnText\(text, paths\[0\]\);\s*\n\s*Host\.addRecentDocument\(paths\[0\]\);/],
+    ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
+    ["clearing the save", /Host\.storageRemove\(SAVE_KEY\);[\s\S]{0,220}?Host\.clearRecentDocuments\(\);/],
+  ]) assert(re.test(appSrc), "recent documents is recorded from " + what);
+  assert(/if \(!appForeground\) Host\.notify\(/.test(appSrc),
+    "the analysis notification only fires when the app is in the background");
+  assert(/activate: \(\) => \{ appForeground = true; \}/.test(appSrc)
+    && /deactivate: \(\) => \{ appForeground = false;/.test(appSrc),
+    "both lifecycle events maintain the foreground flag");
+}
+
 // --- free variables: the one lint rule that would have saved 1.12 and 1.13 ---
 // `CHECK` was read in board.js and declared nowhere, so every check threw
 // inside draw() before a single piece was painted. Two versions shipped that

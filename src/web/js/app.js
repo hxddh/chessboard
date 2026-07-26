@@ -1685,6 +1685,15 @@
     return analysis && analysis.sig === game.pgn() ? analysis : null;
   }
 
+  /**
+   * Is the app the window the player is actually looking at?
+   *
+   * The lifecycle events were already wired (1.2 uses deactivate to flush the
+   * save); this just remembers the answer, so work that finishes off-screen
+   * can say so instead of dropping a toast nobody sees.
+   */
+  let appForeground = true;
+
   async function analyzeGame(movetime) {
     if (analyzing || !window.ChessEngine) return;
     const perMove = movetime || 120;
@@ -1753,7 +1762,12 @@
     recordAccuracy();
     sync();
     const bad = tags.filter((tag) => tag === "?" || tag === "??").length;
-    toast(bad ? t("m.27") + bad + t("m.28") : t("m.26"));
+    const done = bad ? t("m.27") + bad + t("m.28") : t("m.26");
+    toast(done);
+    // A deep pass is 400ms a ply — over half a minute on a long game, which is
+    // long enough that people go and do something else. A toast behind another
+    // window is a message that was never delivered.
+    if (!appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
   }
 
   /**
@@ -3139,6 +3153,7 @@
         if (path == null) { toast(t("m.09")); return; }
         await Host.writeTextFile(path, pgn);
         await Host.revealPath(path);
+        Host.addRecentDocument(path);
         toast(t("m.10") + name);
         return;
       } catch (_) {}
@@ -3296,6 +3311,7 @@
         if (!paths.length) return; // cancelled
         const text = await Host.readTextFile(paths[0]);
         importPgnText(text, paths[0]);
+        Host.addRecentDocument(paths[0]);
       } catch (_) {
         toast(t("m.16"));
       }
@@ -4079,8 +4095,10 @@
     const paths = Host.normalizePaths(payload && payload.paths ? payload.paths : payload);
     const p = paths.find((x) => /\.(pgn|txt)$/i.test(x)) || paths[0];
     if (!p) return;
-    try { importPgnText(await Host.readTextFile(p), p); }
-    catch (_) { toast(t("m.16")); }
+    try {
+      importPgnText(await Host.readTextFile(p), p);
+      Host.addRecentDocument(p);
+    } catch (_) { toast(t("m.16")); }
   });
   window.addEventListener("dragover", (ev) => ev.preventDefault());
   window.addEventListener("drop", (ev) => {
@@ -4163,7 +4181,8 @@
     "help.keys": () => openKeyHelp(),
   };
   Host.onAppLifecycle({
-    deactivate: () => saveGame(),
+    activate: () => { appForeground = true; },
+    deactivate: () => { appForeground = false; saveGame(); },
     shortcut: (detail) => {
       let id = null;
       try {
@@ -4350,6 +4369,9 @@
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
       { ok: t("dlg.clear"), cancel: t("act.cancel") }))) return;
     try { Host.storageRemove(SAVE_KEY); } catch (_) {}
+    // the Dock / jump list is local data too: clearing the save and leaving a
+    // list of this player's PGNs sitting in the system menu is not "cleared"
+    Host.clearRecentDocuments();
     stopEditor();
     invalidateEngine();
     if (window.ChessEngine) window.ChessEngine.newGame();
