@@ -95,8 +95,35 @@
   const easeOut = (t) => 1 - (1 - t) * (1 - t);
 
   /** Slide the piece now sitting on `to` in from→to over ~150ms (live moves). */
+  /**
+   * The OS "reduce motion" setting, watched live.
+   *
+   * v1.10 honoured it in CSS and stopped there, which missed the motion people
+   * actually see: a piece gliding across the board happens dozens of times a
+   * game, a panel slide once. That glide is canvas + requestAnimationFrame, so
+   * no media query in the stylesheet can reach it — the check has to be here.
+   *
+   * Watched rather than read once: someone who turns the setting on mid-session
+   * because the motion is making them ill should not have to restart the app.
+   */
+  let _reduceMotion = false;
+  (function watchReducedMotion() {
+    try {
+      if (typeof window === "undefined" || !window.matchMedia) return;
+      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+      _reduceMotion = !!mq.matches;
+      const onChange = (ev) => { _reduceMotion = !!ev.matches; };
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else if (mq.addListener) mq.addListener(onChange); // Safari < 14
+    } catch (_) { /* no matchMedia: animate, as before */ }
+  })();
+
   function animateMove(from, to) {
     if (!_canvas || !_model || !from || !to) return;
+    // Land the piece with no glide. Deliberately no draw() here: the caller
+    // repaints from the updated model a moment later, and drawing now would
+    // paint the pre-move position for that moment.
+    if (_reduceMotion) { _anim = null; return; }
     _anim = { from, to, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: 150 };
     const step = () => {
       if (!_anim) return;

@@ -1191,17 +1191,46 @@ for (const p of ["r", "b", "n"]) {
     assert(fenGuard.test(appSrc3), "the FEN field lets Escape and Tab through");
   }
 
-  // "Reduce motion" is an accessibility setting. 1.9 honoured it with exactly
-  // one rule against 25 animated declarations.
+  // "Reduce motion" is an accessibility setting, and it says *reduce*.
+  // 1.9 honoured it with one rule against 25 animated declarations; 1.10
+  // over-corrected and flattened all 25, including twelve that only cross-fade
+  // a colour and carry state meaning. Both directions get a guard.
   {
     const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const block = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css);
     assert(block, "there is a prefers-reduced-motion block");
     assert(/\*,\s*\*::before,\s*\*::after/.test(block[1]),
       "reduced motion applies to everything, not a hand-listed subset");
-    assert(/animation-duration:[^;]*!important/.test(block[1]) &&
-      /transition-duration:[^;]*!important/.test(block[1]),
-      "reduced motion silences both animations and transitions");
+    assert(/animation-duration:[^;]*!important/.test(block[1]),
+      "reduced motion stops keyframe animations");
+    // the override is on the property list, so motion is dropped and colour
+    // survives — a blanket transition-duration would take both
+    const props = /transition-property:([^;]*)!important/.exec(block[1]);
+    assert(props, "reduced motion narrows transition-property rather than killing duration");
+    assert(!/transition-duration:[^;]*!important/.test(block[1]),
+      "colour fades keep their own duration");
+    const kept = props[1].split(",").map((p) => p.trim()).filter(Boolean);
+    for (const safe of ["color", "background-color", "border-color", "opacity"]) {
+      assert(kept.includes(safe), "colour/opacity fades survive reduced motion (" + safe + ")");
+    }
+    for (const moving of ["transform", "width", "height", "padding", "all"]) {
+      assert(!kept.includes(moving), "reduced motion drops " + moving);
+    }
+  }
+
+  // The motion a player sees most is a piece sliding across the board, and it
+  // is canvas + requestAnimationFrame — no media query in the stylesheet can
+  // reach it. 1.10 shipped honouring the setting everywhere except there.
+  {
+    const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(/matchMedia\("\(prefers-reduced-motion: reduce\)"\)/.test(boardSrc),
+      "the board animator reads the reduced-motion setting");
+    const fn = /function animateMove\([\s\S]*?\n  \}/.exec(boardSrc);
+    assert(fn, "found animateMove");
+    assert(/_reduceMotion\) \{ _anim = null; return; \}/.test(fn[1] || fn[0]),
+      "animateMove lands the piece with no glide when motion is reduced");
+    assert(/addEventListener\("change"/.test(boardSrc),
+      "the setting is watched, not read once at startup");
   }
 
   // The move list was capped at a flat 176px — seven move pairs whether the
