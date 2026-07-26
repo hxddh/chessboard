@@ -39,6 +39,18 @@
     check: ["--sq-check", "rgba(220, 60, 40, 0.55)"],
     dot: ["--sq-dot", "rgba(30, 30, 30, 0.28)"],
     ring: ["--sq-ring", "rgba(30, 30, 30, 0.32)"],
+    // 1.12 moved the squares onto variables and stopped there, so these four
+    // kept the wood theme's values on every board. They are marks *on* the
+    // squares, and a theme that repaints the squares under them but not them
+    // is the same half-done job the squares were.
+    hint: ["--sq-hint", "rgba(56, 142, 78, 0.75)"],
+    star: ["--sq-star", "rgba(230, 170, 30, 0.95)"],
+    starEdge: ["--sq-star-edge", "rgba(120, 80, 0, 0.5)"],
+    flash: ["--sq-flash", "rgba(72, 190, 100, 0.45)"],
+    // the keyboard cursor is a double stroke because it has to stay legible on
+    // both square colours *and* on top of a black or a white piece
+    cursor: ["--sq-cursor", "rgba(255, 255, 255, 0.95)"],
+    cursorEdge: ["--sq-cursor-edge", "rgba(20, 20, 20, 0.55)"],
   };
   /** resolved once per theme change, not once per square */
   let _paint = null;
@@ -56,10 +68,44 @@
     return out;
   }
   /** call when the theme changes — the next draw re-reads the variables */
-  function invalidatePaint() { _paint = null; }
-  const HINT = "rgba(56, 142, 78, 0.75)";
-  const STAR = "rgba(230, 170, 30, 0.95)";
-  const STAR_EDGE = "rgba(120, 80, 0, 0.5)";
+  function invalidatePaint() { _paint = null; _slideMs = null; }
+
+  /**
+   * How long a piece takes to slide, read from the same --dur-base the panel
+   * and the buttons use. It was 150 written here, a fourth number in a fourth
+   * place while the stylesheet ran seven of its own.
+   *
+   * @returns {number} milliseconds
+   */
+  let _slideMs = null;
+  function slideMs() {
+    if (_slideMs !== null) return _slideMs;
+    let v = "";
+    try { v = getComputedStyle(document.documentElement).getPropertyValue("--dur-base").trim(); }
+    catch (_) { v = ""; }
+    const m = /^(\.?\d*\.?\d+)(m?s)$/.exec(v);
+    _slideMs = m ? Number(m[1]) * (m[2] === "s" ? 1000 : 1) : 200;
+    return _slideMs;
+  }
+
+  /**
+   * The same colour at zero alpha — the far stop of the check gradient, which
+   * has to fade the theme's own red out rather than the one red that used to
+   * be written here.
+   *
+   * @param {string} col a CSS colour as authored in the theme variables
+   * @returns {string} the same hue, fully transparent
+   */
+  function fade(col) {
+    const m = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(col);
+    if (m) return "rgba(" + m[1] + "," + m[2] + "," + m[3] + ",0)";
+    const h = /^#([0-9a-f]{6})$/i.exec(col.trim());
+    if (h) {
+      const n = parseInt(h[1], 16);
+      return "rgba(" + (n >> 16 & 255) + "," + (n >> 8 & 255) + "," + (n & 255) + ",0)";
+    }
+    return "rgba(0,0,0,0)";
+  }
 
   /** 5-point star path centered at (cx,cy) with outer radius r. */
   function starPath(ctx, cx, cy, r) {
@@ -176,7 +222,7 @@
     // repaints from the updated model a moment later, and drawing now would
     // paint the pre-move position for that moment.
     if (_reduceMotion) { _anim = null; return; }
-    _anim = { segs, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: 150 };
+    _anim = { segs, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: slideMs() };
     const step = () => {
       if (!_anim) return;
       const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
@@ -278,8 +324,8 @@
       const { sr, sc } = screenPos(m.checkSquare, m.flipped);
       const cx = sc * step + step / 2, cy = sr * step + step / 2;
       const g = ctx.createRadialGradient(cx, cy, step * 0.1, cx, cy, step * 0.62);
-      g.addColorStop(0, CHECK);
-      g.addColorStop(1, "rgba(220,60,40,0)");
+      g.addColorStop(0, P.check);
+      g.addColorStop(1, fade(P.check));
       ctx.fillStyle = g;
       ctx.fillRect(...cellRect(sr, sc));
     }
@@ -345,7 +391,7 @@
     // lesson success flash
     if (m.flashSquare) {
       const { sr, sc } = screenPos(m.flashSquare, m.flipped);
-      ctx.fillStyle = "rgba(72, 190, 100, 0.45)";
+      ctx.fillStyle = P.flash;
       ctx.fillRect(sc * step, sr * step, step, step);
     }
     // lesson stars: big on empty squares, tucked in the corner on occupied ones
@@ -358,9 +404,9 @@
         const cx = occupied ? sc * step + step * 0.8 : sc * step + step / 2;
         const cy = occupied ? sr * step + step * 0.2 : sr * step + step / 2;
         starPath(ctx, cx, cy, occupied ? step * 0.16 : step * 0.3);
-        ctx.fillStyle = STAR;
+        ctx.fillStyle = P.star;
         ctx.fill();
-        ctx.strokeStyle = STAR_EDGE;
+        ctx.strokeStyle = P.starEdge;
         ctx.lineWidth = Math.max(1, step * 0.015);
         ctx.stroke();
       }
@@ -376,8 +422,8 @@
       // stop the shaft where the arrowhead begins
       const sx = bx - Math.cos(ang) * head * 0.8;
       const sy = by - Math.sin(ang) * head * 0.8;
-      ctx.strokeStyle = HINT;
-      ctx.fillStyle = HINT;
+      ctx.strokeStyle = P.hint;
+      ctx.fillStyle = P.hint;
       ctx.lineWidth = step * 0.13;
       ctx.lineCap = "round";
       ctx.beginPath();
@@ -404,10 +450,10 @@
       const x = edge(sc), y = edge(sr);
       const w2 = edge(sc + 1) - x, h2 = edge(sr + 1) - y;
       const lw = Math.max(2, step * 0.045);
-      ctx.strokeStyle = "rgba(20,20,20,0.55)";
+      ctx.strokeStyle = P.cursorEdge;
       ctx.lineWidth = lw * 1.8;
       ctx.strokeRect(x + lw, y + lw, w2 - lw * 2, h2 - lw * 2);
-      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.strokeStyle = P.cursor;
       ctx.lineWidth = lw;
       ctx.strokeRect(x + lw, y + lw, w2 - lw * 2, h2 - lw * 2);
     }
