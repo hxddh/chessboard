@@ -512,6 +512,11 @@ for (const p of ["r", "b", "n"]) {
       }
       if (!holds.length) fail(p.id, "no defence exists — the position is already lost");
       if (holds.length >= all.length) fail(p.id, "every move holds — nothing to find");
+      // the tier is derived from this number, so a stale one silently
+      // mis-sorts the puzzle in the difficulty filter
+      if (p.saves !== holds.length) {
+        fail(p.id, "saves is " + p.saves + " but " + holds.length + " moves actually hold");
+      }
       continue;
     }
 
@@ -718,6 +723,98 @@ for (const p of ["r", "b", "n"]) {
   assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
     "the host bridge forwards the shortcut event");
   assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");
+}
+
+// The design system. Every one of these numbers was measured on 1.11 and every
+// one of them was a symptom of the same thing: no scale, so each new rule
+// picked whatever value looked right that day. 12 font sizes including 10.5,
+// 11.5 and 12.5px; 17 distinct paddings from 1px to 22px; 10 radii while three
+// radius tokens already existed unused; 25 hard-coded hex colours outside the
+// theme blocks. None of it is a bug. All of it is why the app looked assembled
+// rather than designed.
+{
+  const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  // spacing: an 8-step scale, and nothing between the steps
+  const SPACE = new Set(["0px", "2px", "4px", "6px", "8px", "12px", "16px", "20px", "24px"]);
+  const strays = [];
+  for (const m of stripped.matchAll(/\b(padding|margin|gap|row-gap|column-gap)(?:-\w+)?\s*:\s*([^;{}]+);/g)) {
+    if (/var\(|calc/.test(m[2])) continue;
+    for (const tok of m[2].trim().split(/\s+/)) {
+      if (/^\d+(\.\d+)?px$/.test(tok) && !SPACE.has(tok)) strays.push(m[1] + ": " + tok);
+    }
+  }
+  assert(strays.length === 0,
+    "spacing stays on the 8-step scale" + (strays.length ? " — off it: " + [...new Set(strays)].slice(0, 6).join(", ") : ""));
+
+  // type: six steps, and no half pixels
+  const TYPE = new Set(["11px", "12px", "13px", "15px", "16px", "19px", "30px"]);
+  const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
+    .map((m) => m[1].trim())
+    .filter((v) => /^\d/.test(v) && !TYPE.has(v));
+  assert(badType.length === 0,
+    "type stays on the scale" + (badType.length ? " — off it: " + [...new Set(badType)].join(", ") : ""));
+
+  // radius: the tokens exist; use them
+  const OK_RADIUS = /^(var\(--radius-(sm|md|lg)\)|999px|50%|3px|var\(--radius-sm\) var\(--radius-sm\) 0 0|calc\()/;
+  const badRadius = [...stripped.matchAll(/border-radius:\s*([^;{}]+);/g)]
+    .map((m) => m[1].trim())
+    .filter((v) => !OK_RADIUS.test(v));
+  assert(badRadius.length === 0,
+    "radii come from the tokens" + (badRadius.length ? " — raw: " + [...new Set(badRadius)].join(", ") : ""));
+
+  // colour: the danger red used to be one salmon that ignored all four themes
+  // scoped past the theme blocks: that is where the literal belongs, once
+  const body = stripped.slice(stripped.indexOf("* { box-sizing"));
+  assert(!/#e0(7a6a|5252)/.test(body), "nothing outside the themes writes the danger red literally");
+  assert(!/linear-gradient\(180deg, #f0d2a8/.test(body),
+    "the primary button's colour comes from the theme too");
+  for (const theme of ["wood", "night", "day", "notebook"]) {
+    const sel = theme === "wood" ? ":root, \\[data-theme=\"wood\"\\]" : "\\[data-theme=\"" + theme + "\"\\]";
+    const blk = new RegExp(sel + "\\s*\\{([\\s\\S]*?)\\n    \\}").exec(stripped);
+    assert(blk, theme + " theme block found");
+    for (const v of ["--sq-light", "--sq-dark", "--sq-sel", "--sq-last", "--sq-check",
+                     "--sq-dot", "--sq-ring", "--coord-ink", "--danger", "--primary-from"]) {
+      assert(blk[1].includes(v + ":"), theme + " defines " + v);
+    }
+  }
+}
+
+// The board is what a player looks at essentially the whole time, and until
+// 1.11 all four themes painted it identically — the squares were constants in
+// board.js, so a theme could change the frame and nothing inside it.
+{
+  const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+  assert(/--sq-light/.test(boardSrc) && /getComputedStyle/.test(boardSrc),
+    "the board reads its colours from the theme");
+  assert(!/const LIGHT = "#/.test(boardSrc) && !/const DARK = "#/.test(boardSrc),
+    "no square colour is hard-coded in the renderer any more");
+  assert(/invalidatePaint/.test(boardSrc) &&
+    /invalidatePaint\(\)/.test(fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8")),
+    "switching theme re-reads them");
+
+  // and the pieces have to stay legible on every one of them. The cburnett
+  // vectors are pure black and white with a black outline, so what has to
+  // carry is that outline against both square colours.
+  const css2 = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+  const lum = (hex) => {
+    const n = hex.replace("#", "");
+    const ch = [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  };
+  const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  for (const theme of ["wood", "night", "day", "notebook"]) {
+    const sel = theme === "wood" ? /:root, \[data-theme="wood"\]\s*\{([\s\S]*?)\n    \}/
+      : new RegExp('\\[data-theme="' + theme + '"\\]\\s*\\{([\\s\\S]*?)\\n    \\}');
+    const blk = sel.exec(css2)[1];
+    for (const which of ["--sq-light", "--sq-dark"]) {
+      const hex = new RegExp(which + ":\\s*(#[0-9a-fA-F]{6})").exec(blk)[1];
+      const r = ratio(0, lum(hex));
+      assert(r >= 4.5, theme + " " + which + " keeps the piece outline legible (" + r.toFixed(2) + ":1)");
+    }
+  }
 }
 
 // Sparring personalities. `pick` is pure — candidates in, one of them out —

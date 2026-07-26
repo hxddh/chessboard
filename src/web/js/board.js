@@ -18,13 +18,45 @@
   // Solid glyph set for both colors — colored via fill, outlined for contrast.
   const GLYPHS = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
 
-  const LIGHT = "#f0d9b5";
-  const DARK = "#b58863";
-  const SEL = "rgba(255, 210, 60, 0.45)";
-  const LAST = "rgba(155, 199, 0, 0.34)";
-  const CHECK = "rgba(220, 60, 40, 0.55)";
-  const DOT = "rgba(30, 30, 30, 0.28)";
-  const RING = "rgba(30, 30, 30, 0.32)";
+  /**
+   * Board colours, read from the stylesheet so the board belongs to the theme.
+   *
+   * Until 1.11 these were six constants baked into this file, which meant the
+   * four themes changed the frame, the panel and the coordinate ink and left
+   * the 64 squares identical — measured: every theme painted 240,217,181 and
+   * 181,136,99. "Night" was a dark green frame around a bright tan board. The
+   * squares are what a player looks at essentially the whole time, so a theme
+   * that cannot touch them is a theme in name only.
+   *
+   * The fallbacks are the old constants: if a theme forgets a variable the
+   * board still draws, in the colours it always had.
+   */
+  const PAINT = {
+    light: ["--sq-light", "#f0d9b5"],
+    dark: ["--sq-dark", "#b58863"],
+    sel: ["--sq-sel", "rgba(255, 210, 60, 0.45)"],
+    last: ["--sq-last", "rgba(155, 199, 0, 0.34)"],
+    check: ["--sq-check", "rgba(220, 60, 40, 0.55)"],
+    dot: ["--sq-dot", "rgba(30, 30, 30, 0.28)"],
+    ring: ["--sq-ring", "rgba(30, 30, 30, 0.32)"],
+  };
+  /** resolved once per theme change, not once per square */
+  let _paint = null;
+  function paint() {
+    if (_paint) return _paint;
+    const out = {};
+    let cs = null;
+    try { cs = getComputedStyle(document.documentElement); } catch (_) { cs = null; }
+    for (const key of Object.keys(PAINT)) {
+      const [varName, fallback] = PAINT[key];
+      const v = cs ? cs.getPropertyValue(varName).trim() : "";
+      out[key] = v || fallback;
+    }
+    _paint = out;
+    return out;
+  }
+  /** call when the theme changes — the next draw re-reads the variables */
+  function invalidatePaint() { _paint = null; }
   const HINT = "rgba(56, 142, 78, 0.75)";
   const STAR = "rgba(230, 170, 30, 0.95)";
   const STAR_EDGE = "rgba(120, 80, 0, 0.5)";
@@ -212,6 +244,7 @@
   function draw() {
     if (!_canvas || !_model) return;
     const m = _model();
+    const P = paint();
     const ctx = _canvas.getContext("2d");
     const w = _canvas.width;
     const step = w / 8;
@@ -222,7 +255,7 @@
     // squares
     for (let sr = 0; sr < 8; sr++) {
       for (let sc = 0; sc < 8; sc++) {
-        ctx.fillStyle = (sr + sc) % 2 === 0 ? LIGHT : DARK;
+        ctx.fillStyle = (sr + sc) % 2 === 0 ? P.light : P.dark;
         ctx.fillRect(...cellRect(sr, sc));
       }
     }
@@ -230,14 +263,14 @@
     if (m.lastMove) {
       for (const sq of [m.lastMove.from, m.lastMove.to]) {
         const { sr, sc } = screenPos(sq, m.flipped);
-        ctx.fillStyle = LAST;
+        ctx.fillStyle = P.last;
         ctx.fillRect(...cellRect(sr, sc));
       }
     }
     // selection
     if (m.selected) {
       const { sr, sc } = screenPos(m.selected, m.flipped);
-      ctx.fillStyle = SEL;
+      ctx.fillStyle = P.sel;
       ctx.fillRect(...cellRect(sr, sc));
     }
     // check highlight (radial under the king)
@@ -389,17 +422,17 @@
         ctx.beginPath();
         if (occupied) {
           ctx.arc(cx, cy, step * 0.44, 0, Math.PI * 2);
-          ctx.strokeStyle = RING;
+          ctx.strokeStyle = P.ring;
           ctx.lineWidth = step * 0.075;
           ctx.stroke();
         } else {
           ctx.arc(cx, cy, step * 0.14, 0, Math.PI * 2);
-          ctx.fillStyle = DOT;
+          ctx.fillStyle = P.dot;
           ctx.fill();
         }
       }
     }
   }
 
-  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, cancelAnim };
+  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, cancelAnim, invalidatePaint };
 })(typeof window !== "undefined" ? window : globalThis);
