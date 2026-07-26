@@ -14,7 +14,7 @@
 | macOS（Apple Silicon） | **Chessboard-macOS-arm64.zip** | 解压后 `open ~/Applications/Chessboard.app`；首次右键「打开」过 Gatekeeper |
 | Windows（x64） | **Chessboard-Windows-x64.zip** | 解压后运行 `Chessboard/chessboard.exe`；需 WebView2 运行时（Win10/11 一般预装） |
 
-## 怎么玩（v1.13）
+## 怎么玩（v1.14）
 
 | 操作 | 说明 |
 |------|------|
@@ -116,11 +116,15 @@ src/web/
 src/main.zig
 assets/           # 应用图标(骑士标,assets/logo.svg 为源)
 third_party/stockfish/   # Stockfish.js 18 lite-single（GPLv3）
+third_party/acorn/       # acorn 8（MIT）—— 只给 scripts/ 用,不进构建产物
 scripts/gen-engine-src.mjs · test-chess.mjs · test-strength.mjs
+scripts/scope-check.mjs · test-board-e2e.mjs
 ```
 
 测试：
 - `node scripts/test-chess.mjs` —— 规则/课程/题库/开局/成就/纯函数模块（快,打包流程内置）
+- `node scripts/scope-check.mjs` —— **读了却没绑定的标识符**（test-chess 内置。1.12 把 `CHECK` 留成了自由变量,`draw()` 在画棋子之前抛出,于是每次将军棋盘上一个子都没有,这样发了两个版本）
+- `node scripts/test-board-e2e.mjs` —— 真下到将军与将死,四套主题各数一遍棋子（需 playwright + Chromium,没有就跳过）
 - `node scripts/test-strength.mjs` —— **难度档实测强度**（在 node 内直接跑 Stockfish,按满强度评估算每档平均失分;数分钟,需 `third_party/stockfish`,不进打包流程）
 
 ## 许可

@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
+import { scanAll } from "./scope-check.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -16,6 +17,8 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/chess.js"), "utf8"), ctx, { filename: "chess.js" });
 const Chess = ctx.Chess;
 
+/** shapes handed to the headless render check (scripts/test-render.mjs) */
+let boardShapes = [];
 let failed = 0;
 function assert(cond, msg) {
   if (!cond) { failed++; console.error("FAIL:", msg); }
@@ -747,6 +750,56 @@ for (const p of ["r", "b", "n"]) {
   }
   assert(strays.length === 0,
     "spacing stays on the 8-step scale" + (strays.length ? " — off it: " + [...new Set(strays)].slice(0, 6).join(", ") : ""));
+
+  // motion: three durations and one curve, the same shape the type scale and
+  // the leading scale already have. 1.13 was running seven durations and three
+  // easings across 21 transitions, plus a fourth number written in board.js.
+  {
+    const bare = [];
+    const eases = new Set();
+    const durs = new Set();
+    for (const m of stripped.matchAll(/\btransition\s*:\s*([^;{}]+);/g)) {
+      for (const v of m[1].match(/(?<![\w-])\.?\d*\.?\d+m?s/g) || []) bare.push(v);
+      for (const v of m[1].match(/var\(--dur-\w+\)/g) || []) durs.add(v);
+      for (const v of m[1].match(/(?<![\w-])(ease-in-out|ease-in|ease-out|linear|ease|cubic-bezier\([^)]*\))/g) || []) eases.add(v);
+      for (const v of m[1].match(/var\(--ease\)/g) || []) eases.add("var(--ease)");
+    }
+    assert(bare.length === 0,
+      "no transition writes a duration in place" + (bare.length ? " — " + [...new Set(bare)].join(", ") : ""));
+    assert(durs.size <= 3, "transitions use at most three duration tokens (" + [...durs].join(", ") + ")");
+    assert(eases.size === 1 && eases.has("var(--ease)"),
+      "one easing curve, everywhere (" + [...eases].join(", ") + ")");
+    const board = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(/getPropertyValue\("--dur-base"\)/.test(board),
+      "the board's slide reads --dur-base rather than a number of its own");
+    assert(!/dur:\s*\d/.test(board), "no hard-coded animation duration left in board.js");
+  }
+
+  // vertical rhythm: one control height, one label height, and gaps that are
+  // multiples of 8. Declared spacing was already on the scale before this; the
+  // *rendered* gaps were 8 / 12.5 / 39.9 / 80.8, because a block's height was
+  // whatever its text happened to occupy.
+  {
+    const heights = [...stripped.matchAll(/min-height:\s*([^;{}]+);/g)].map((m) => m[1].trim());
+    const stray = heights.filter((v) => /^\d/.test(v) && v !== "0" && v !== "0px");
+    assert(stray.length === 0,
+      "every control height comes from a token" + (stray.length ? " — off it: " + [...new Set(stray)].join(", ") : ""));
+    for (const tokName of ["--row-h", "--row-h-sm", "--label-h"])
+      assert(new RegExp(tokName + ":\\s*\\d+px").test(stripped), tokName + " is defined");
+    // the two rows that pick a view are one control, not two
+    const modeH = /\.theme-row\.mode-nav button\s*\{[^}]*min-height:\s*var\(--row-h\)/.test(stripped);
+    const tabH = /\.side-tabs button\[role="tab"\]\s*\{[^}]*min-height:\s*var\(--row-h\)/.test(stripped);
+    assert(modeH && tabH, "the mode row and the tab row are the same height token");
+  }
+
+  // the replay bar was the heaviest object in a panel of text links: a filled,
+  // bordered slab of 10800px², nine times the area of anything else in it
+  {
+    const bar = /\.replay-bar\s*\{([^}]*)\}/.exec(stripped);
+    assert(!!bar, ".replay-bar is styled");
+    assert(/background:\s*transparent/.test(bar[1]), "the replay bar carries no fill");
+    assert(!/\bborder:\s*1px/.test(bar[1]), "the replay bar is a rule, not a box");
+  }
 
   // type: six steps, and no half pixels
   const TYPE = new Set(["11px", "12px", "13px", "15px", "16px", "19px", "30px"]);
@@ -1692,6 +1745,104 @@ for (const p of ["r", "b", "n"]) {
     if (a.test(empty)) fail(a.id, "unlocked by an empty summary");
   }
   assert(bad === 0, "all achievements well-formed and reachable");
+}
+
+// --- free variables: the one lint rule that would have saved 1.12 and 1.13 ---
+// `CHECK` was read in board.js and declared nowhere, so every check threw
+// inside draw() before a single piece was painted. Two versions shipped that
+// way because the assertions above are static and the stress sweeps never
+// produced a check. scripts/scope-check.mjs closes that door for good.
+{
+  const bad = scanAll();
+  for (const b of bad) console.error("  " + b);
+  assert(bad.length === 0, "no identifier is read without being bound");
+}
+
+// --- the renderer draws every model shape without throwing ---
+// The complement to the check above: that one proves the *names* resolve, this
+// one proves the *branches* run. draw() has nine optional fields — selection,
+// legal targets, last move, check, hint arrow, stars, flash, cursor, flip —
+// and the suite had never taken most of those branches at all. A recording
+// stub for the 2D context is enough: we are not checking pixels here, only
+// that every branch executes. Pixels are checked in the browser (e2e).
+{
+  const calls = [];
+  const stubCtx = new Proxy({}, {
+    get(t, k) {
+      if (k === "createRadialGradient") return () => ({ addColorStop: (o, c) => calls.push(["stop", o, c]) });
+      if (k === "getImageData") return () => ({ data: new Uint8ClampedArray(4) });
+      if (k === "measureText") return () => ({ width: 10 });
+      if (typeof k === "string" && !(k in t)) return (...a) => calls.push([k, ...a]);
+      return t[k];
+    },
+    set(t, k, v) { t[k] = v; return true; },
+  });
+  const canvas = { width: 512, height: 512, getContext: () => stubCtx,
+    getBoundingClientRect: () => ({ width: 512, height: 512 }) };
+
+  const bctx = { console, Math, Object, Array, String, Number, JSON, Date, performance,
+    isNaN, parseInt, parseFloat };
+  bctx.globalThis = bctx;
+  bctx.window = bctx;
+  // no matchMedia and no Image: board.js must survive both (it guards for them)
+  bctx.document = {
+    documentElement: {},
+    getElementById: () => null,
+    createElement: () => canvas,
+  };
+  bctx.getComputedStyle = () => ({ getPropertyValue: () => "" });
+  bctx.requestAnimationFrame = () => 0;
+  vm.createContext(bctx);
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8"), bctx, { filename: "board.js" });
+  const View = bctx.ChessBoardView;
+  assert(!!View, "board.js loads with no DOM");
+
+  const g0 = new Chess("r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4");
+  const position = g0.board();
+  const base = () => ({ position, flipped: false, selected: null, legalTargets: [],
+    lastMove: null, checkSquare: null, hintMove: null, stars: [],
+    flashSquare: null, cursor: null });
+  const opts = {
+    flipped: [true],
+    selected: ["e4"],
+    legalTargets: [["e5", "d5"]],
+    lastMove: [{ from: "f1", to: "b5" }],
+    checkSquare: ["e8"],
+    hintMove: [{ from: "b5", to: "c6" }],
+    stars: [["d4", "e4"]],
+    flashSquare: ["d4"],
+    cursor: ["a1"],
+  };
+  const shapes = [base()];
+  for (const [k, vals] of Object.entries(opts))
+    for (const v of vals) shapes.push({ ...base(), [k]: v });
+  // every marker at once — the shape no real game reaches by accident
+  const all = base();
+  for (const [k, vals] of Object.entries(opts)) all[k] = vals[0];
+  shapes.push(all);
+
+  let drew = 0, threw = null, checkStops = 0;
+  for (const m of shapes) {
+    View.attach(canvas, () => m);
+    try { View.draw(); drew++; }
+    catch (e) { threw = threw || `${e.message} (model: ${JSON.stringify(m).slice(0, 90)}…)`; }
+  }
+  for (const c of calls) if (c[0] === "stop") checkStops++;
+  assert(threw === null, "draw() survives all " + shapes.length + " model shapes" + (threw ? " — " + threw : ""));
+  assert(drew === shapes.length, "drew " + drew + "/" + shapes.length + " shapes");
+  // the branch that shipped broken twice: prove it painted, not just that it
+  // did not throw. Two stops per check gradient, on two of the shapes.
+  assert(checkStops === 4, "the check gradient painted on both shapes that set checkSquare (" + checkStops + " stops)");
+  // and prove the marks come from the theme, not from constants in the file.
+  // paintPiece is excluded on purpose: the men are pure black and white on
+  // every board, which is both the convention and what keeps the outline
+  // contrast assertion above 4.5:1 — a theme must not touch them.
+  const src = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+  const draws = src.slice(src.indexOf("function draw("));
+  const marks = draws.slice(0, draws.indexOf("function paintPiece("))
+    + draws.slice(draws.indexOf("let dragPiece = null;"));
+  const literals = marks.match(/(?:fillStyle|strokeStyle)\s*=\s*"(?:rgba?\(|#)/g) || [];
+  assert(literals.length === 0, "every board mark is painted from a theme token (" + literals.length + " literal(s) left)");
 }
 
 if (failed) {
