@@ -756,8 +756,73 @@ for (const p of ["r", "b", "n"]) {
   assert(badType.length === 0,
     "type stays on the scale" + (badType.length ? " — off it: " + [...new Set(badType)].join(", ") : ""));
 
+  // leading: three steps, declared as tokens. 1.12 collapsed font-size and
+  // left line-height running seven values including the UA's `normal`, which
+  // differs per font — so a Chinese line and a Latin line in the same list sat
+  // at different rhythms.
+  {
+    const lhs = [...stripped.matchAll(/line-height:\s*([^;{}]+);/g)].map((m) => m[1].trim());
+    const raw = lhs.filter((v) => !/^var\(--lh-(tight|body|prose)\)$/.test(v));
+    assert(raw.length === 0,
+      "leading comes from the three tokens" + (raw.length ? " — raw: " + [...new Set(raw)].join(", ") : ""));
+    assert(/--lh-tight:/.test(stripped) && /--lh-body:/.test(stripped) && /--lh-prose:/.test(stripped),
+      "the three leading steps are declared");
+    // and body must set one, or `normal` leaks into every unstyled run
+    assert(/html, body \{[\s\S]*?line-height: var\(--lh-body\)/.test(stripped),
+      "the document has a default leading");
+  }
+
+  // weight: three, not five. 650 and 700 were doing 600's job under other names.
+  {
+    const ws = [...stripped.matchAll(/font-weight:\s*(\d+)/g)].map((m) => m[1]);
+    const bad = ws.filter((w) => !["400", "500", "600"].includes(w));
+    assert(bad.length === 0,
+      "three weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
+  }
+
+  // the action rows share one set of columns. As flex + space-between + wrap
+  // they laid out differently in every group — 3 items spread edge to edge,
+  // 4 packed tight at widths 40–64, a 5th orphaned on its own line.
+  {
+    const row = /\.link-row \{([\s\S]*?)\}/.exec(stripped);
+    assert(row, "found the action row rule");
+    assert(/display:\s*grid/.test(row[1]), "action rows are a grid");
+    assert(/grid-template-columns:\s*repeat\(3/.test(row[1]), "three fixed columns");
+    assert(!/space-between/.test(row[1]), "no space-between — that is what made every row different");
+  }
+
+  // mode and tabs are both navigation, so they get one grammar. Until 1.12
+  // they were a 12px pill row and an underlined tab row stacked together.
+  {
+    const mode = /\.theme-row\.mode-nav button \{([\s\S]*?)\n    \}/.exec(stripped);
+    assert(mode, "the mode row has its own rule");
+    assert(/border-bottom:\s*2px solid/.test(mode[1]), "mode marks selection with an underline, like the tabs");
+    assert(!/border-radius:\s*var\(--radius-md\)/.test(mode[1]), "no pill");
+  }
+
+  // the board is set into its frame: concentric radii want 16 - 17 < 0
+  {
+    const canvasRule = /\n    canvas \{([\s\S]*?)\n    \}/.exec(stripped);
+    assert(canvasRule && /border-radius:\s*0/.test(canvasRule[1]),
+      "the board's corners are square, not rounder-than-concentric");
+    assert(/#board-wrap::after/.test(stripped) && /--board-edge/.test(stripped),
+      "a hairline finishes the join between squares and frame");
+  }
+
+  // coordinates: an integer step, not a value computed from a length. The
+  // clamp() they used resolved to 12.24px with 0.4896px of tracking, which is
+  // also how they slipped past the type-scale check.
+  {
+    const co = /\.coords \{([\s\S]*?)\n    \}/.exec(stripped);
+    assert(co, "found the coordinate rule");
+    assert(!/clamp\(/.test(co[1]), "coordinates are not sized by a computed length");
+    assert(/font-size:\s*\d+px/.test(co[1]), "coordinates sit on the type scale");
+  }
+
   // radius: the tokens exist; use them
-  const OK_RADIUS = /^(var\(--radius-(sm|md|lg)\)|999px|50%|3px|var\(--radius-sm\) var\(--radius-sm\) 0 0|calc\()/;
+  // 0 is a decision, not a stray value: the board is square-cornered on
+  // purpose (concentric radii — see styles.css)
+  const OK_RADIUS = /^(0|var\(--radius-(sm|md|lg)\)|999px|50%|3px|var\(--radius-sm\) var\(--radius-sm\) 0 0|calc\()/;
   const badRadius = [...stripped.matchAll(/border-radius:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => !OK_RADIUS.test(v));

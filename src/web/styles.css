@@ -23,6 +23,7 @@
       --wood-pad: 17px;
       --coord-ink: rgba(48,28,12,.62);
       --danger: #e07a6a;
+      --board-edge: rgba(60,34,12,.30);
       --primary-from: #f0d2a8;
       --primary-to: #d4a574;
       --on-primary: #2a1c10;
@@ -41,6 +42,19 @@
       --card: rgba(255,255,255,.04);
       --card-border: rgba(255,255,255,.06);
       --btn-ghost: rgba(255,255,255,.06);
+      /* Three line-heights, and no fourth. 1.12 collapsed font-size to seven
+         steps and left leading alone: the panel was running seven values,
+         including the UA's `normal` (which differs per font, so Chinese and
+         Latin lines sat at different rhythms in the same list) and the
+         fractional 15.6 / 16.5 / 17.4px that unitless multipliers produce.
+         In a Chinese interface leading decides "does this look considered"
+         more than size does. */
+      /* three weights only: body, medium, semibold. 1.12 shipped five
+         (400/500/600/650/700) — 650 and 700 were doing 600's job under
+         different names, which is four kinds of emphasis in one panel. */
+      --lh-tight: 1.2;
+      --lh-body: 1.45;
+      --lh-prose: 1.6;
       --ease: cubic-bezier(0.22, 1, 0.36, 1);
       --font-num: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
     }
@@ -58,6 +72,7 @@
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
       --coord-ink: rgba(220,235,228,.55);
       --danger: #e8705c;
+      --board-edge: rgba(8,20,16,.34);
       --primary-from: #9adfb8;
       --primary-to: #5fb287;
       --on-primary: #07130e;
@@ -90,6 +105,7 @@
       --board-shadow: 0 10px 28px rgba(80,60,30,.18), inset 0 1px 0 rgba(255,255,255,.7);
       --coord-ink: rgba(70,52,28,.62);
       --danger: #b8382a;
+      --board-edge: rgba(90,66,36,.26);
       --primary-from: #6a9fd4;
       --primary-to: #3b6ea5;
       --on-primary: #ffffff;
@@ -120,6 +136,7 @@
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
       --coord-ink: rgba(42,49,64,.55);
       --danger: #c0392b;
+      --board-edge: rgba(42,49,64,.22);
       --primary-from: #6a9fd4;
       --primary-to: #3b6ea5;
       --on-primary: #ffffff;
@@ -145,6 +162,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
         "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
       font-feature-settings: "kern" 1;
+      line-height: var(--lh-body);
       -webkit-font-smoothing: antialiased;
       user-select: none;
       overflow: hidden;
@@ -170,7 +188,7 @@
     }
     .chrome > * { pointer-events: auto; }
     .brand {
-      font-weight: 650; font-size: 13px; letter-spacing: 0.06em;
+      font-weight: 600; font-size: 13px; letter-spacing: 0.06em;
       opacity: 0.92;
       display: inline-flex; align-items: center; gap: 6px;
     }
@@ -216,7 +234,7 @@
     .icon-btn:active, .tool-btn:active { transform: scale(0.96); }
     .icon-btn {
       width: 32px; height: 32px; display: grid; place-items: center;
-      font-size: 15px; line-height: 1;
+      font-size: 15px; line-height: var(--lh-tight);
     }
     .tool-btn { height: 32px; padding: 0 12px; font-size: 12px; font-weight: 500; }
     .icon-btn:hover, .tool-btn:hover { background: var(--btn-hover); }
@@ -272,8 +290,13 @@
     .coords {
       position: absolute; display: flex;
       color: var(--coord-ink);
-      font-size: clamp(8px, calc(var(--wood-pad) * 0.72), 13px);
-      font-weight: 600; letter-spacing: .04em;
+      /* was clamp(8px, --wood-pad * .72, 13px), which resolved to 12.24px
+         with 0.4896px of tracking — fractional because it was computed from a
+         length, which is also how it slipped past the type-scale check added
+         in 1.12. Two honest steps instead, chosen by how much frame there is
+         to print on. */
+      font-size: 11px;
+      font-weight: 600; letter-spacing: 0.5px;
       pointer-events: none; user-select: none;
     }
     .coords.files {
@@ -288,11 +311,28 @@
     }
     .coords > span {
       flex: 1; display: grid; place-items: center;
+      line-height: var(--lh-tight);
     }
+    /* a wider frame can carry the larger step */
+    @media (min-width: 1100px) { .coords { font-size: 12px; } }
 
     canvas {
       display: block; width: 100%; height: 100%;
-      cursor: default; border-radius: calc(var(--radius-sm) - 2px);
+      cursor: default;
+      /* Square, not 6px. Concentric rounded rectangles want
+         inner radius = outer radius − padding, and here that is 16 − 17 < 0.
+         A 6px corner is *rounder* than concentric, which is why the board read
+         as a tile resting on the frame rather than a panel set into it. */
+      border-radius: 0;
+    }
+    /* the hairline that finishes the join — a real board has an edge where the
+       squares stop and the frame begins */
+    #board-wrap::after {
+      content: "";
+      position: absolute;
+      inset: var(--wood-pad);
+      pointer-events: none;
+      box-shadow: inset 0 0 0 1px var(--board-edge, rgba(0,0,0,.22));
     }
     /* The grab / grabbing cursors are set inline from the board's pointer
        handlers (app.js), because whether a square is grabbable depends on the
@@ -355,7 +395,7 @@
       font-size: 13px; font-weight: 600;
       display: flex; align-items: center; gap: 6px;
     }
-    .vs-role { font-size: 11px; margin-top: 2px; line-height: 1.3; }
+    .vs-role { font-size: 11px; margin-top: 2px; line-height: var(--lh-tight); }
     /* captured pieces + the lead, beside each name */
     .taken {
       display: flex; flex-wrap: wrap; align-items: center; gap: 0px;
@@ -374,12 +414,12 @@
     .taken-p svg { width: 100%; height: 100%; display: block; }
     .taken-diff {
       font-family: var(--font-num);
-      font-size: 11px; font-weight: 700; color: var(--accent);
+      font-size: 11px; font-weight: 600; color: var(--accent);
       margin-left: 4px;
     }
     .vs-clock {
       margin-top: 4px;
-      font-size: 15px; font-weight: 650; line-height: 1.2;
+      font-size: 15px; font-weight: 600; line-height: var(--lh-tight);
       color: var(--text); opacity: 0.45;
       transition: opacity .15s, color .15s;
     }
@@ -388,12 +428,35 @@
     .vs-clock[hidden] { display: none; }
     .opening-line {
       margin-top: 12px;
-      font-size: 12px; color: var(--muted); line-height: 1.45;
+      font-size: 12px; color: var(--muted); line-height: var(--lh-body);
     }
     .opening-line[hidden] { display: none; }
     /* four labels in a 284px panel — "2 players" needs the tighter setting */
-    .mode-nav { margin-top: 12px; gap: 6px; }
-    .mode-nav button { font-size: 12px; padding: 8px 2px; line-height: 1.3; }
+    /* Mode is navigation, and so are the tabs directly beneath it — same job,
+       so the same grammar. Up to 1.12 these were two idioms stacked on each
+       other: a 12px-radius pill row 35px tall, and immediately below it a tab
+       row with an 8px top radius and a 2px underline, 36px tall. Reading the
+       panel meant learning "selected" twice in two centimetres. The pills are
+       gone; both rows now mark the current item with the same underline. */
+    .mode-nav { margin-top: 12px; gap: 4px; }
+    .theme-row.mode-nav button {
+      flex: 1;
+      background: transparent; border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      color: var(--muted);
+      font-size: 12px; padding: 8px 4px; line-height: var(--lh-tight);
+      min-height: 37px;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .theme-row.mode-nav button:hover { color: var(--text); background: var(--btn-ghost); }
+    .theme-row.mode-nav button.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    /* the tab row sits right below and must not read as a second border */
+    .mode-nav { border-bottom: 1px solid var(--card-border); }
 
     /* —— tabs —— */
     .side-head, .side-tabs, .side-foot { flex-shrink: 0; }
@@ -421,7 +484,7 @@
       flex: 0 0 auto;
       width: 32px; height: 32px;
       align-self: center;
-      font-size: 15px; line-height: 1;
+      font-size: 15px; line-height: var(--lh-tight);
     }
     .side-pane {
       display: flex; flex-direction: column;
@@ -609,6 +672,24 @@
     /* hover and the current-move highlight live on .mlmove — the old
        `button.cur` rule named a class the markup never had */
 
+    /* the empty-board card: quiet, not another panel competing with the board */
+    .idle-card {
+      margin: 4px 0 12px;
+      padding: 12px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      background: var(--card);
+      display: grid; gap: 8px;
+    }
+    .idle-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .idle-k { font-size: 11px; color: var(--muted); }
+    .idle-v { font-size: 12px; color: var(--text); font-weight: 500; }
+    .idle-rec {
+      font-size: 12px; color: var(--accent);
+      line-height: var(--lh-body);
+      padding-top: 8px;
+      border-top: 1px solid var(--card-border);
+    }
     .replay-bar {
       display: flex; gap: 6px;
       padding: 4px;
@@ -620,7 +701,7 @@
       flex: 1;
       appearance: none; border: 0; background: transparent;
       color: var(--text);
-      font: inherit; font-size: 16px; line-height: 1;
+      font: inherit; font-size: 16px; line-height: var(--lh-tight);
       padding: 8px 0; border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background .12s;
@@ -630,17 +711,33 @@
     }
     .replay-bar button:disabled { opacity: 0.28; cursor: default; }
 
+    /* One grid, three rows, one set of columns.
+       This was `flex` + `space-between` + `wrap`, which is a different layout
+       for every row depending on how many items it holds and how wide they
+       are: measured on 1.12 the three groups came out as 3 items spread edge
+       to edge (939/1039/1138), 4 items packed tight (939/994/1048/1114 at
+       widths 40–64), and a fifth item orphaned alone on its own line. Same
+       rule, three rhythms, and no common vertical line anywhere down the
+       panel — which is most of what "assembled rather than designed" means. */
     .link-row {
-      display: flex; gap: 4px; margin-top: 12px;
-      justify-content: space-between; flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px 4px; margin-top: 12px;
     }
     .text-link {
       appearance: none; border: 0; background: transparent;
       color: var(--accent);
       font: inherit; font-size: 12px; font-weight: 500;
-      padding: 8px 8px; cursor: pointer;
+      padding: 8px; cursor: pointer;
+      /* transparent, but present: the danger link has a real border, and
+         without this its row would stand 2px taller than its neighbours */
+      border: 1px solid transparent;
       border-radius: var(--radius-sm);
       opacity: 0.92;
+      /* fills its grid cell, so the hover target and the left edge both line
+         up with the column rather than with the length of the label */
+      width: 100%; text-align: left;
+      white-space: nowrap;
     }
     .text-link:hover { opacity: 1; background: var(--btn-ghost); }
     .text-link:disabled { opacity: 0.3; cursor: default; }
@@ -649,8 +746,7 @@
     .text-link.danger { color: var(--muted); }
     .text-link.danger:not(:disabled) {
       color: var(--danger);
-      border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
-      padding: 6px 8px;
+      border-color: color-mix(in srgb, var(--danger) 32%, transparent);
     }
     .text-link.danger:not(:disabled):hover {
       color: var(--on-danger); background: color-mix(in srgb, var(--danger) 78%, transparent);
@@ -682,18 +778,18 @@
     .continue-btn:disabled { opacity: 0.4; cursor: default; }
     .hint {
       margin: 12px 0 0;
-      font-size: 11px; color: var(--muted); line-height: 1.5;
+      font-size: 11px; color: var(--muted); line-height: var(--lh-body);
       opacity: 0.75;
     }
 
     /* learn mode: lesson panel */
     .lesson-title {
-      font-size: 13px; font-weight: 650; color: var(--text);
-      margin-bottom: 8px; line-height: 1.4;
+      font-size: 13px; font-weight: 600; color: var(--text);
+      margin-bottom: 8px; line-height: var(--lh-body);
     }
     .lesson-text p {
       margin: 0 0 8px;
-      font-size: 12px; color: var(--muted); line-height: 1.6;
+      font-size: 12px; color: var(--muted); line-height: var(--lh-prose);
     }
     .lesson-task {
       margin: 8px 0 12px;
@@ -701,7 +797,7 @@
       border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
       background: color-mix(in srgb, var(--accent) 10%, transparent);
       border-radius: var(--radius-sm);
-      font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.5;
+      font-size: 13px; font-weight: 600; color: var(--text); line-height: var(--lh-body);
     }
     .lesson-controls {
       display: flex; gap: 8px; margin-bottom: 12px;
@@ -744,7 +840,7 @@
 
     /* side-panel side marks: king glyphs, hollow white / solid black */
     .pmark {
-      font-size: 19px; line-height: 1; flex-shrink: 0;
+      font-size: 19px; line-height: var(--lh-tight); flex-shrink: 0;
       color: var(--text); opacity: 0.9;
     }
     [data-theme="notebook"] .pmark.white { color: #9a3412; }
@@ -752,7 +848,7 @@
     .badge {
       font-size: 11px; padding: 0px 4px; border-radius: 999px;
       background: color-mix(in srgb, var(--accent) 80%, #000);
-      color: var(--on-accent); font-weight: 650; letter-spacing: 0.02em;
+      color: var(--on-accent); font-weight: 600; letter-spacing: 0.02em;
     }
     .muted { color: var(--muted); font-size: 12px; }
 
@@ -794,7 +890,7 @@
       from { opacity: 0; transform: translateY(8px) scale(0.98); }
       to { opacity: 1; transform: none; }
     }
-    .modal h3 { margin: 0 0 12px; font-size: 16px; font-weight: 650; }
+    .modal h3 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
     .modal table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .modal td { padding: 8px 0; border-bottom: 1px solid var(--card-border); }
     .modal td:first-child {
@@ -812,7 +908,7 @@
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
       border-radius: var(--radius-sm); padding: 6px 0 6px;
-      font-size: 19px; line-height: 1;
+      font-size: 19px; line-height: var(--lh-tight);
       transition: border-color .12s, background .12s;
     }
     .palette button:hover { background: var(--btn-hover); }
@@ -833,7 +929,7 @@
       appearance: none; text-align: left; cursor: pointer;
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
-      font: inherit; font-size: 13px; line-height: 1.45;
+      font: inherit; font-size: 13px; line-height: var(--lh-body);
       padding: 8px 12px; border-radius: var(--radius-sm);
       transition: border-color .12s, background .12s;
     }
@@ -876,7 +972,7 @@
       background: color-mix(in srgb, var(--accent) 12%, transparent);
     }
     .promo-row button:active { transform: scale(0.96); }
-    .promo-glyph { font-size: 30px; line-height: 1; }
+    .promo-glyph { font-size: 30px; line-height: var(--lh-tight); }
 
     .scrim {
       display: none; position: absolute; inset: 0; z-index: 25;
@@ -1030,14 +1126,14 @@
     .mlgap { color: var(--muted); cursor: default; pointer-events: none; }
     .mlmove.current {
       background: color-mix(in srgb, var(--accent) 18%, transparent);
-      color: var(--accent); font-weight: 700;
+      color: var(--accent); font-weight: 600;
     }
 
     /* --- review analysis (v0.3) --- */
     #eval-wrap { margin: 8px 0 2px; }
     .pv-line {
       margin-top: 6px;
-      font-size: 12px; color: var(--muted); line-height: 1.45;
+      font-size: 12px; color: var(--muted); line-height: var(--lh-body);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     #eval-curve {
@@ -1054,15 +1150,15 @@
       background: var(--card); border: 1px solid var(--card-border);
       border-radius: var(--radius-sm);
     }
-    .review-h { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
-    .review-row { font-size: 12px; line-height: 1.5; margin-bottom: 4px; }
-    .review-k { font-weight: 700; margin-right: 6px; }
+    .review-h { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+    .review-row { font-size: 12px; line-height: var(--lh-body); margin-bottom: 4px; }
+    .review-k { font-weight: 600; margin-right: 6px; }
     .review-v { color: var(--muted); }
     .review-note { font-size: 11px; margin-top: 0px; }
     .review-jump {
       display: block; width: 100%; margin-top: 6px;
       padding: 6px 8px; text-align: left;
-      font: inherit; font-size: 12px; line-height: 1.45;
+      font: inherit; font-size: 12px; line-height: var(--lh-body);
       color: var(--text); background: transparent;
       border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
       cursor: pointer;
@@ -1075,7 +1171,7 @@
     /* a settings row whose controls do not apply right now */
     .muted-row { opacity: .45; }
 
-    .mvtag { margin-left: 2px; font-weight: 700; font-size: 11px; }
+    .mvtag { margin-left: 2px; font-weight: 600; font-size: 11px; }
     .mvtag.t-soft { color: #c9b458; }
     .mvtag.t-mid { color: #e0a03c; }
     .mvtag.t-bad { color: var(--danger); }
@@ -1097,8 +1193,8 @@
       border-color: color-mix(in srgb, var(--accent) 45%, var(--card-border));
       background: color-mix(in srgb, var(--accent) 10%, transparent);
     }
-    .ach-ic { font-size: 16px; line-height: 1; flex-shrink: 0; }
-    .ach-nm { font-size: 12px; color: var(--text); line-height: 1.2; }
+    .ach-ic { font-size: 16px; line-height: var(--lh-tight); flex-shrink: 0; }
+    .ach-nm { font-size: 12px; color: var(--text); line-height: var(--lh-tight); }
     .ach-item:not(.got) .ach-nm { color: var(--muted); }
 
     .stats-body { display: flex; flex-direction: column; gap: 2px; }

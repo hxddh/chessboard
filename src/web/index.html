@@ -270,6 +270,13 @@
           <span class="side-h-meta num" id="replay-pos">0 / 0</span>
         </div>
         <div class="move-list" id="move-list" aria-label="着法列表" data-i18n-aria="aria.moveList"></div>
+        <!-- The first screen of every new game used to be 39% empty: at move 0
+             the notation is one line, the curve and the review have nothing to
+             show, and the bottom of the pane was simply blank — measured 239px
+             of 619. This fills it with what the app already knows: the last
+             result, the running record, and the one suggestion the statistics
+             page was keeping to itself. -->
+        <div class="idle-card" id="idle-card" hidden></div>
         <div class="replay-bar" id="replay-seg">
           <button type="button" id="rep-start" title="开局 (Home)" data-i18n-title="tip.28">«</button>
           <button type="button" id="rep-prev" title="上一着 (←)" data-i18n-title="tip.04">‹</button>
