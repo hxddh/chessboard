@@ -56,6 +56,14 @@ pub fn build(b: *std.Build) void {
     const cef_auto_install_override = b.option(bool, "cef-auto-install", "Override app.zon CEF auto-install setting");
     const package_target = b.option(PackageTarget, "package-target", "Package target: macos, windows, linux") orelse .macos;
     const native_sdk_path = b.option([]const u8, "native-sdk-path", "Path to the Native SDK framework checkout") orelse default_native_sdk_path;
+    // Which manifest this build compiles against. app.zon is the truth for
+    // everything portable; the one thing that cannot be portable is the
+    // window close policy, because `close_policy = "hide"` is a comptime
+    // error on windows without a tray (SW_HIDE drops the taskbar entry and
+    // there is no dock-reopen), and a chess app has no business living in the
+    // tray. So macOS builds compile a derived manifest — scripts/gen-manifest.mjs
+    // writes it, this points both the runner import and `native package` at it.
+    const manifest_path = b.option([]const u8, "manifest", "Manifest to build against (default app.zon)") orelse "app.zon";
     const package_optimize_name = @tagName(package_optimize);
     const selected_platform: PlatformOption = switch (platform_option) {
         .auto => if (target.result.os.tag == .macos) .macos else if (target.result.os.tag == .linux) .linux else if (target.result.os.tag == .windows) .windows else .@"null",
@@ -99,7 +107,7 @@ pub fn build(b: *std.Build) void {
     const runner_mod = localModule(b, target, optimize, "src/runner.zig");
     runner_mod.addImport("native_sdk", native_sdk_mod);
     runner_mod.addImport("build_options", options_mod);
-    runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path("app.zon") }));
+    runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path(manifest_path) }));
 
     const app_mod = localModule(b, target, optimize, "src/main.zig");
     app_mod.addImport("native_sdk", native_sdk_mod);
@@ -135,7 +143,7 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run.step);
 
-    const dev = b.addSystemCommand(&.{ "native", "dev", "--manifest", "app.zon", "--binary" });
+    const dev = b.addSystemCommand(&.{ "native", "dev", "--manifest", manifest_path, "--binary" });
     dev.addFileArg(exe.getEmittedBin());
     addWebView2RuntimeRunFiles(b, target, dev, web_engine, web_layer, native_sdk_path);
     dev.step.dependOn(&exe.step);
@@ -153,7 +161,7 @@ pub fn build(b: *std.Build) void {
         const package_runner_mod = localModule(b, target, package_optimize, "src/runner.zig");
         package_runner_mod.addImport("native_sdk", package_sdk_mod);
         package_runner_mod.addImport("build_options", options_mod);
-        package_runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path("app.zon") }));
+        package_runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path(manifest_path) }));
         const package_app_mod = localModule(b, target, package_optimize, "src/main.zig");
         package_app_mod.addImport("native_sdk", package_sdk_mod);
         package_app_mod.addImport("runner", package_runner_mod);
@@ -176,7 +184,7 @@ pub fn build(b: *std.Build) void {
         "--target",
         @tagName(package_target),
         "--manifest",
-        "app.zon",
+        manifest_path,
         "--assets","frontend/dist",
         "--optimize",
         package_optimize_name,

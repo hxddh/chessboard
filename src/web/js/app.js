@@ -119,6 +119,9 @@
   let langId = I18n ? I18n.getLang() : "zh-CN";
   /** remaining ms per side; null when no clock */
   let clock = null;
+  /** Is the app in front of somebody? Kept by the app:activate/deactivate
+   *  lifecycle pair; the clock and the analysis notification both read it. */
+  let appForeground = true;
   /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
   let flagFall = null;
   let clockTimer = null;
@@ -422,10 +425,34 @@
     renderClocks();
   }
 
-  /** Ticking starts at the first move so nobody drains on the start screen. */
+  /**
+   * Is anyone actually in front of the board?
+   *
+   * Two signals because neither covers the other: `app:deactivate` is the
+   * native one (another app came forward, or the window was hidden), and
+   * `visibilityState` is the web one (which is all a plain browser has). Away
+   * by either measure counts as away.
+   */
+  function appAwake() {
+    if (!appForeground) return false;
+    try { return document.visibilityState !== "hidden"; } catch (_) { return true; }
+  }
+
+  /**
+   * Ticking starts at the first move so nobody drains on the start screen —
+   * and stops whenever the app is not in front of somebody.
+   *
+   * The tick charges `Date.now()` elapsed, so a backgrounded app was billing
+   * wall-clock time to a player who could not see the board: measured at 1.17,
+   * 8.4 seconds in the background cost 9 seconds of clock with nobody playing.
+   * That was reachable by switching away; from 1.18 macOS closes the window to
+   * a hidden app, which would have made it the normal case rather than the
+   * unlucky one. A local unrated game has nothing to protect here — thinking
+   * time you spend in another window is not time your opponent is waiting.
+   */
   function clockRunning() {
     return (mode === "pvp" || mode === "ai") && !!clock &&
-      !appGameOver() && sanHistory().length >= 1;
+      !appGameOver() && sanHistory().length >= 1 && appAwake();
   }
 
   function syncClockTimer() {
@@ -1749,9 +1776,11 @@
    *
    * The lifecycle events were already wired (1.2 uses deactivate to flush the
    * save); this just remembers the answer, so work that finishes off-screen
-   * can say so instead of dropping a toast nobody sees.
+   * can say so instead of dropping a toast nobody sees. Declared with the rest
+   * of the module state above — the clock reads it from `clockRunning`, far
+   * earlier in the file, and a `let` down here would sit in the temporal dead
+   * zone for everything before it.
    */
-  let appForeground = true;
 
   async function analyzeGame(movetime) {
     if (analyzing || !window.ChessEngine) return;
@@ -4256,8 +4285,8 @@
     "help.keys": () => openKeyHelp(),
   };
   Host.onAppLifecycle({
-    activate: () => { appForeground = true; },
-    deactivate: () => { appForeground = false; saveGame(); },
+    activate: () => { appForeground = true; syncClockTimer(); renderClocks(); },
+    deactivate: () => { appForeground = false; saveGame(); syncClockTimer(); },
     shortcut: (detail) => {
       let id = null;
       try {
@@ -4720,6 +4749,10 @@
   window.addEventListener("pagehide", () => saveGame());
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") saveGame();
+    // and stop/restart the clock — syncClockTimer resets clockTickAt when it
+    // restarts, so the time spent away is never charged to anybody
+    syncClockTimer();
+    renderClocks();
   });
 
   // --- boot ---
