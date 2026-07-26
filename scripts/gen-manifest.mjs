@@ -51,6 +51,12 @@ if (platform !== "macos") {
 }
 
 const src = fs.readFileSync(SRC, "utf8");
+// Match the source's line endings. A Windows checkout has app.zon in CRLF, and
+// splicing an LF line into it produced a mixed-ending manifest — which the
+// self-check caught by refusing to see the two files as differing by exactly
+// one line. Zig would not have cared; a manifest with two kinds of newline in
+// it is still wrong.
+const EOL = src.includes("\r\n") ? "\r\n" : "\n";
 
 /** Per-platform edits. Each one states what it changes and why it cannot be portable. */
 const EDITS = {
@@ -59,7 +65,7 @@ const EDITS = {
   macos: [{
     why: "关窗改为隐藏(macOS 惯例;Dock 图标点回来)",
     find: /(\{\s*\n\s*\.label = "main",)/,
-    apply: (m) => `${m}\n            .close_policy = "hide",`,
+    apply: (m) => `${m}${EOL}            .close_policy = "hide",`,
   }],
 };
 
@@ -86,8 +92,8 @@ if (platform === "macos" && out === src) {
   process.exit(1);
 }
 
-const banner = `// 由 scripts/gen-manifest.mjs 从 app.zon 生成 —— 不要手改,改 app.zon。\n` +
-  `// 这一份是 ${platform} 专用${applied.length ? ":" + applied.join("、") : "(与 app.zon 相同)"}\n`;
+const banner = `// 由 scripts/gen-manifest.mjs 从 app.zon 生成 —— 不要手改,改 app.zon。${EOL}` +
+  `// 这一份是 ${platform} 专用${applied.length ? ":" + applied.join("、") : "(与 app.zon 相同)"}${EOL}`;
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, banner + out);
 console.log(`${path.relative(ROOT, OUT)} ← app.zon` + (applied.length ? `(${applied.join("、")})` : "(无差异)"));

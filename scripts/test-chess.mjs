@@ -847,10 +847,19 @@ for (const p of ["r", "b", "n"]) {
     if (r.status === 0) {
       const mac = fs.readFileSync(out, "utf8");
       assert(/\.close_policy = "hide"/.test(mac), "the macOS manifest closes to hidden");
-      // derived, not duplicated: everything else must survive verbatim
-      const stripped = mac.replace(/^\/\/.*\n/gm, "").replace(/\s*\.close_policy = "hide",\n/, "\n");
-      assert(stripped.trim() === zon.replace(/^\/\/.*\n/gm, "").trim(),
+      // derived, not duplicated: everything else must survive verbatim.
+      // Compared with line endings normalised — a Windows checkout is CRLF,
+      // and this assertion is about content, not about newlines. (That the
+      // generator must not *mix* the two is a separate claim, below.)
+      const lf = (t) => t.replace(/\r\n/g, "\n");
+      const stripped = lf(mac).replace(/^\/\/.*\n/gm, "").replace(/\s*\.close_policy = "hide",\n/, "\n");
+      assert(stripped.trim() === lf(zon).replace(/^\/\/.*\n/gm, "").trim(),
         "the macOS manifest differs from app.zon by exactly the close policy");
+      const crlf = (mac.match(/\r\n/g) || []).length;
+      const bare = (mac.match(/(?<!\r)\n/g) || []).length;
+      assert(crlf === 0 || bare === 0,
+        "the derived manifest keeps one kind of line ending" +
+        (crlf && bare ? ` — 混了 ${crlf} 个 CRLF 和 ${bare} 个 LF` : ""));
       fs.rmSync(out, { force: true });
     }
     // and the build has to be able to point at it
