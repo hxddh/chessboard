@@ -4,6 +4,13 @@
   const BoardView = window.ChessBoardView;
   const Audio2 = window.ChessAudio;
 
+  /** Shared dialog behaviour: focus trap, focus return, aria-modal. */
+  const Dlg = window.ChessDialog || {
+    open: (el, f) => { if (el) { el.classList.add("show"); if (f) f.focus(); } },
+    close: (el) => { if (el) el.classList.remove("show"); },
+    handleTab: () => false,
+  };
+
   const I18n = window.ChessI18n;
   const t = I18n ? I18n.t : (k) => k;
   /** t() with {0}/{1} placeholders filled in — see i18n.tf */
@@ -188,13 +195,12 @@
       altBtn.hidden = !altLabel;
       if (altLabel) altBtn.textContent = altLabel;
     }
-    modal.classList.add("show");
-    okBtn.focus();
+    Dlg.open(modal, okBtn);
     return new Promise((resolve) => { confirmResolver = resolve; });
   }
   function finishConfirm(val) {
     const modal = document.getElementById("confirm-modal");
-    if (modal) modal.classList.remove("show");
+    Dlg.close(modal);
     if (confirmResolver) { confirmResolver(val); confirmResolver = null; }
   }
 
@@ -1014,10 +1020,21 @@
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
   const PUZZLE_KEY = "chess.v1.puzzles";
   const PUZZLES = window.CHESS_PUZZLES || [];
-  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "op", "review"];
+  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "def", "draw", "op", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
-  const SCRIPTED_CATS = { win: true, op: true, tac: true };
+  const SCRIPTED_CATS = { win: true, op: true, tac: true, draw: true };
+
+  /** A mate in one for whoever is to move in `g`, or null. */
+  function mateInOne(g) {
+    for (const m of g.moves()) {
+      g.move(m);
+      const done = g.in_checkmate();
+      g.undo();
+      if (done) return m;
+    }
+    return null;
+  }
 
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
   const OPENING_DRILLS = (window.CHESS_OPENINGS || [])
@@ -1230,6 +1247,8 @@
     if (p.cat === "op") return tf("pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
     if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
+    if (p.cat === "def") return tf("pz.goalDef", [puzzleName(p)]);
+    if (p.cat === "draw") return tf("pz.goalDraw", [puzzleName(p)]);
     // the count is a word in Chinese ("一步"), a numeral in English — so it
     // goes through the dictionary rather than being interpolated raw
     return tf("pz.goalMate", [puzzleName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
@@ -1276,6 +1295,7 @@
         puzzleWrong(
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
           c === "tac" ? (puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(puzzle.p)]) : t("pz.takeTarget")) :
+          c === "draw" ? t("pz.notDrawn") :
           openingWhy(g, mv, script[puzzle.stage]));
         return;
       }
@@ -1290,6 +1310,19 @@
       }
       if (puzzle.stage >= script.length) { puzzleSolved(); return; }
       sync();
+      return;
+    }
+    // Defensive puzzles are graded on the position, not on matching a script.
+    // The question they ask is "is the mate still there?" — so any move that
+    // answers no is right, exactly as it would be in a real game. Insisting on
+    // one stored move would mark a perfectly good defence wrong.
+    if (puzzle.p.cat === "def") {
+      if (!g.game_over() && mateInOne(g)) {
+        const still = mateInOne(g);
+        puzzleWrong(tf("pz.stillMate", [still]));
+        return;
+      }
+      puzzleSolved();
       return;
     }
     if (g.in_checkmate()) { puzzleSolved(); return; }
@@ -1397,6 +1430,8 @@
       checkNewAchievements();
     }
     const verb = puzzle.p.cat === "op" ? t("pz.doneOp") :
+      puzzle.p.cat === "def" ? t("pz.doneDef") :
+      puzzle.p.cat === "draw" ? t("pz.doneDraw") :
       puzzle.p.cat === "win" || puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
     toast("✅ " + verb + " · " + puzzleName(puzzle.p));
     sync();
@@ -2064,12 +2099,10 @@
 
   function openHistory() {
     renderHistory();
-    const m = document.getElementById("hist-modal");
-    if (m) m.classList.add("show");
+    Dlg.open(document.getElementById("hist-modal"));
   }
   function closeHistory() {
-    const m = document.getElementById("hist-modal");
-    if (m) m.classList.remove("show");
+    Dlg.close(document.getElementById("hist-modal"));
   }
 
   /**
@@ -2365,7 +2398,12 @@
       el.appendChild(row);
     }
     const cur = el.querySelector(".current");
-    if (cur && cur.scrollIntoView) {
+    // At the start of the game there is no current move to centre on, and the
+    // list used to stay wherever the last jump had left it — pressing Home on
+    // a long game put the board at move 0 while the notation still showed
+    // move 20. "Before the first move" is the top of the list.
+    if (!cur) el.scrollTop = 0;
+    else if (cur.scrollIntoView) {
       // scroll only within the list container
       el.scrollTop = cur.offsetTop - el.clientHeight / 2;
     }
@@ -2606,12 +2644,12 @@
       const gl = b.querySelector(".promo-glyph");
       if (gl) gl.textContent = PROMO_GLYPHS[color][b.dataset.p];
     });
-    modal.classList.add("show");
+    Dlg.open(modal, modal.querySelector('button[data-p="q"]'));
     return new Promise((resolve) => { promoResolver = resolve; });
   }
   function finishPromotion(p) {
     const modal = document.getElementById("promo-modal");
-    if (modal) modal.classList.remove("show");
+    Dlg.close(modal);
     if (promoResolver) { promoResolver(p); promoResolver = null; }
   }
 
@@ -3042,12 +3080,12 @@
       }
       list.appendChild(b);
     });
-    modal.classList.add("show");
+    Dlg.open(modal, list.querySelector(".pick-item"));
     return new Promise((resolve) => { pickResolver = resolve; });
   }
   function finishPick(v) {
     const modal = document.getElementById("pick-modal");
-    if (modal) modal.classList.remove("show");
+    Dlg.close(modal);
     if (pickResolver) { pickResolver(v); pickResolver = null; }
   }
 
@@ -3308,10 +3346,10 @@
     const err = document.getElementById("fen-error");
     if (input) { input.value = viewGame().fen(); input.classList.remove("bad"); }
     if (err) err.textContent = "";
-    fenModal.classList.add("show");
-    if (input) { input.focus(); input.select(); }
+    Dlg.open(fenModal, input);
+    if (input) input.select();
   }
-  function closeFenModal() { if (fenModal) fenModal.classList.remove("show"); }
+  function closeFenModal() { Dlg.close(fenModal); }
 
   function submitFen() {
     const input = document.getElementById("fen-input");
@@ -3416,12 +3454,10 @@
 
   function openSlots() {
     renderSlots();
-    const m = document.getElementById("slots-modal");
-    if (m) m.classList.add("show");
+    Dlg.open(document.getElementById("slots-modal"));
   }
   function closeSlots() {
-    const m = document.getElementById("slots-modal");
-    if (m) m.classList.remove("show");
+    Dlg.close(document.getElementById("slots-modal"));
   }
 
   function saveToSlot(i) {
@@ -4118,7 +4154,11 @@
     };
     document.getElementById("fen-input").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") { ev.preventDefault(); submitFen(); }
-      ev.stopPropagation(); // typing a FEN must not trigger board shortcuts
+      // Typing a FEN must not trigger board shortcuts — but Escape and Tab are
+      // not shortcuts, they are how you leave the dialog. Swallowing them here
+      // meant the one control this dialog auto-focuses was also the one place
+      // Escape could not close it from.
+      if (ev.key !== "Escape" && ev.key !== "Tab") ev.stopPropagation();
     });
     fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFenModal(); };
   }
@@ -4185,6 +4225,11 @@
     });
     promoModal.onclick = (ev) => { if (ev.target === promoModal) finishPromotion(null); };
   }
+
+  // Tab belongs to the browser everywhere except inside an open dialog, where
+  // it has to wrap instead of walking out into the page behind the backdrop.
+  // Capture phase so it applies even to controls that stop propagation.
+  window.addEventListener("keydown", (ev) => { Dlg.handleTab(ev); }, true);
 
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
