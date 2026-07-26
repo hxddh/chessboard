@@ -672,6 +672,102 @@ for (const p of ["r", "b", "n"]) {
     " face a lone king)");
 }
 
+// The keyboard reference and the native menu. 1.9 moved the panel from Tab to
+// P and nothing anywhere said so — not a tooltip, not a menu, not a help sheet.
+// These lock in both halves of the fix and, more importantly, that they agree.
+{
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const htmlK = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  const zon = fs.readFileSync(path.join(root, "app.zon"), "utf8");
+
+  assert(/id="keys-modal"/.test(htmlK), "the shortcut sheet exists");
+  const table = /const KEY_HELP = \[([\s\S]*?)\];/.exec(appSrc);
+  assert(table, "the shortcut sheet is built from a table");
+  const helpKeys = [...table[1].matchAll(/k: "(keys\.[a-z]+)"/g)].map((m) => m[1]);
+  assert(helpKeys.length >= 10, "the sheet lists the shortcuts (" + helpKeys.length + ")");
+
+  // every letter the global handler binds must appear in the sheet
+  const listed = table[1].toLowerCase();
+  for (const key of ["p", "n", "z", "h", "f"]) {
+    assert(new RegExp('"' + key + '"', "i").test(table[1]),
+      "the sheet lists the " + key.toUpperCase() + " shortcut");
+  }
+  assert(/"\?"/.test(appSrc) && /openKeyHelp/.test(appSrc),
+    "\"?\" opens the sheet — the one shortcut the sheet cannot teach");
+
+  // and every language must be able to read it
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  const dictK = ctx.ChessI18n.DICT;
+  for (const lang of Object.keys(dictK)) {
+    const missing = helpKeys.filter((k) => !(k in dictK[lang]));
+    assert(missing.length === 0,
+      lang + " translates the whole shortcut sheet" + (missing.length ? " (missing " + missing.join(", ") + ")" : ""));
+  }
+
+  // The native menu was declared-but-empty from 1.0 to 1.9: main.zig forwarded
+  // menu commands to the page and app.zon defined no menus, so on a desktop
+  // app the menu bar had nothing in it.
+  assert(/\.menus = \.\{[\s\S]*?\.command = "/.test(zon), "app.zon declares native menu items");
+  const commands = [...zon.matchAll(/\.command = "([a-z.]+)"/g)].map((m) => m[1]);
+  assert(commands.length >= 6, "the menu carries the main actions (" + commands.length + ")");
+  const handled = /const NATIVE_COMMANDS = \{([\s\S]*?)\n  \};/.exec(appSrc);
+  assert(handled, "app.js handles native menu commands");
+  const unhandled = commands.filter((c) => !handled[1].includes('"' + c + '"'));
+  assert(unhandled.length === 0,
+    "every menu item does something" + (unhandled.length ? " — dead: " + unhandled.join(", ") : ""));
+  assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
+    "the host bridge forwards the shortcut event");
+  assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");
+}
+
+// Sparring personalities. `pick` is pure — candidates in, one of them out —
+// so the whole contract is testable without ever starting the engine.
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/persona.js"), "utf8"), ctx, { filename: "persona.js" });
+  const P = ctx.ChessPersona;
+  assert(P && typeof P.pick === "function", "persona module loaded");
+  assert(P.IDS[0] === "off", "\"off\" is the first personality, i.e. the default");
+
+  // A knight on f3 with a free pawn on e5 to take, or quiet developing moves.
+  const fen = "rnbqkb1r/pppp1ppp/5n2/4p3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 1";
+  const cands = [
+    { uci: "d2d4", score: 30 },     // best, quiet
+    { uci: "f3e5", score: -60 },    // grabs the pawn, slightly worse
+    { uci: "b1c3", score: 10 },     // develops a knight
+    { uci: "f1c4", score: 5 },      // develops a bishop
+    { uci: "d1e2", score: -20 },    // early queen move
+  ];
+  assert(P.pick(fen, cands, "greedy", Chess) === "f3e5",
+    "the greedy personality takes the pawn");
+  assert(["b1c3", "f1c4"].includes(P.pick(fen, cands, "principled", Chess)),
+    "the by-the-book personality develops a piece");
+  assert(P.pick(fen, cands, "off", Chess) === null,
+    "\"off\" leaves the engine's own choice alone");
+
+  // The safety rails, which are the whole reason a personality is playable.
+  const wild = [{ uci: "d2d4", score: 30 }, { uci: "f3e5", score: -900 }];
+  assert(P.pick(fen, wild, "greedy", Chess) !== "f3e5",
+    "no personality follows a capture that is far outside its slack");
+  const mating = [{ uci: "d2d4", score: 99999 }, { uci: "f3e5", score: 10 }];
+  assert(P.pick(fen, mating, "greedy", Chess) === null,
+    "a forced mate is never traded away for a capture");
+  assert(P.pick(fen, [{ uci: "d2d4", score: 30 }], "greedy", Chess) === null,
+    "one candidate is no choice at all");
+
+  // Every personality must be reachable from the panel and named in every
+  // language — a style you cannot select is a style that does not exist.
+  const htmlP = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  const inMarkup = [...htmlP.matchAll(/data-persona="([a-z]+)"/g)].map((m) => m[1]);
+  assert(P.IDS.every((id) => inMarkup.includes(id)) && inMarkup.length === P.IDS.length,
+    "every personality has a button (" + inMarkup.join(", ") + ")");
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  const dict = ctx.ChessI18n.DICT;
+  for (const lang of Object.keys(dict)) {
+    const missing = P.IDS.filter((id) => !("persona." + id in dict[lang]));
+    assert(missing.length === 0, lang + " names every personality");
+  }
+}
+
 // FIDE draw arithmetic: repetition counting and the 6.9 material test decide
 // real game results, so they get their own checks
 {

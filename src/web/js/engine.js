@@ -149,8 +149,17 @@
    * @param maxMs optional think-time cap (clocked games) — never below 120ms.
    * @returns {Promise<{from,to,promotion|null}|null>} null when stale/failed.
    */
-  function bestMove(fen, diff, maxMs) {
-    return exclusive(() => bestMoveInner(fen, diff, maxMs));
+  /**
+   * @param {string} fen position to move from
+   * @param {string} diff difficulty tier id
+   * @param {number} [maxMs] clock pressure: shorten the search to fit
+   * @param {{id: string, Chess: Function}} [persona] sparring personality —
+   *   see persona.js. Supplying one forces a MultiPV search even on tiers
+   *   that would otherwise take the single best move, because a personality
+   *   has nothing to choose between without candidates.
+   */
+  function bestMove(fen, diff, maxMs, persona) {
+    return exclusive(() => bestMoveInner(fen, diff, maxMs, persona));
   }
 
   function parseUci(uci) {
@@ -170,9 +179,11 @@
     return m[1] === "mate" ? (v > 0 ? 100000 - v : -100000 - v) : v;
   }
 
-  async function bestMoveInner(fen, diff, maxMs) {
+  async function bestMoveInner(fen, diff, maxMs, persona) {
     await init();
-    const base = TIERS[diff] || TIERS.normal;
+    const styled = persona && persona.id && persona.id !== "off" && global.ChessPersona;
+    let base = TIERS[diff] || TIERS.normal;
+    if (styled) base = Object.assign({}, base, { multipv: Math.max(base.multipv || 0, 14) });
     // Clock pressure only shortens time-based tiers; depth-based ones are
     // already near-instant and have nothing to trim.
     const tier = maxMs && base.movetime && !base.depth
@@ -219,7 +230,19 @@
     finally { if (tier.multipv) lineHandlers = lineHandlers.filter((h) => h !== collect); }
     if (myGen !== gen) return null; // game moved on (undo/new/import)
     let picked = parseUci(line.split(/\s+/)[1]);
-    if (tier.multipv && cands.size > 1) picked = pickHandicapped(cands, tier) || picked;
+    if (tier.multipv && cands.size > 1) {
+      const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+      // strength first, then style: the tier decides how good the move is
+      // allowed to be, the personality decides which of the moves that good
+      // it actually likes
+      if (tier.worstBias) picked = pickHandicapped(cands, tier) || picked;
+      if (styled) {
+        const styledUci = global.ChessPersona.pick(fen, list, persona.id, persona.Chess);
+        if (styledUci) picked = parseUci(styledUci);
+      } else if (!tier.worstBias) {
+        picked = pickHandicapped(cands, tier) || picked;
+      }
+    }
     // depth-limited searches return almost instantly — hold the move briefly so
     // the opponent still reads as "thinking" instead of snapping back.
     if (picked && tier.minMs) {

@@ -3,7 +3,7 @@
     .name = "chessboard",
     .display_name = "国际象棋",
     .description = "Chess for macOS & Windows — Native SDK WebView + Canvas, GPLv3.",
-    .version = "1.9.0",
+    .version = "1.10.0",
     .icons = .{"assets/icon.png"},
     .platforms = .{ "macos", "windows" },
     .permissions = .{},
@@ -20,6 +20,38 @@
         },
     },
     .web_engine = "system",
+    // The events these emit reach the page as a "shortcut" window event
+    // (main.zig → host.js). The plumbing existed since 1.0 and went unused:
+    // every action lived on a bare letter key with nothing anywhere naming it,
+    // so on a desktop app the first place anyone looks — the menu bar — was
+    // empty. The in-page letters still work; these are the discoverable copy.
+    .menus = .{
+        .{
+            .title = "对局",
+            .items = .{
+                .{ .label = "新局", .command = "game.new", .key = "n", .modifiers = .{"primary"} },
+                .{ .label = "悔棋", .command = "game.undo", .key = "z", .modifiers = .{"primary"} },
+                .{ .separator = true },
+                .{ .label = "引擎提示", .command = "game.hint", .key = "h", .modifiers = .{"primary"} },
+                .{ .label = "翻转棋盘", .command = "game.flip", .key = "f", .modifiers = .{"primary"} },
+            },
+        },
+        .{
+            .title = "视图",
+            .items = .{
+                .{ .label = "侧栏", .command = "view.panel", .key = "\\", .modifiers = .{"primary"} },
+                .{ .separator = true },
+                .{ .label = "上一手", .command = "view.prev", .key = "[", .modifiers = .{"primary"} },
+                .{ .label = "下一手", .command = "view.next", .key = "]", .modifiers = .{"primary"} },
+            },
+        },
+        .{
+            .title = "帮助",
+            .items = .{
+                .{ .label = "快捷键", .command = "help.keys", .key = "/", .modifiers = .{"primary"} },
+            },
+        },
+    },
     .windows = .{
         .{
             .label = "main",

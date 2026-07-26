@@ -101,6 +101,15 @@
               <button type="button" data-diff="extreme" title="Stockfish 满强度" data-i18n-title="tip.00" data-i18n="diff.extreme">极限</button>
             </div>
           </div>
+          <div class="setting-row stack" id="row-persona">
+            <span class="setting-k" data-i18n="side.persona">陪练风格</span>
+            <div class="theme-row wrap" id="persona-seg" role="group" aria-label="陪练风格" data-i18n-aria="side.persona">
+              <button type="button" data-persona="off" class="active" title="不加风格,引擎按难度正常发挥" data-i18n-title="tip.62" data-i18n="persona.off">标准</button>
+              <button type="button" data-persona="greedy" title="见子就吃,会主动踩进你的捉双和牵制" data-i18n-title="tip.63" data-i18n="persona.greedy">贪吃子</button>
+              <button type="button" data-persona="principled" title="按开局三原则出子:抢中心、快出轻子、尽早易位" data-i18n-title="tip.64" data-i18n="persona.principled">重原则</button>
+              <button type="button" data-persona="attacker" title="子力一直往你的王那边压,练防守用" data-i18n-title="tip.65" data-i18n="persona.attacker">爱进攻</button>
+            </div>
+          </div>
           <div class="setting-row stack" id="row-color">
             <span class="setting-k" data-i18n="side.color">执子</span>
             <div class="theme-row" id="color-seg" role="group" aria-label="执子" data-i18n-aria="side.color">
@@ -377,7 +386,23 @@
     <div class="modal-bg" id="hist-modal" role="dialog" aria-label="对局历史" data-i18n-aria="hist.title">
       <div class="modal">
         <h3 data-i18n="hist.title">对局历史</h3>
+        <!-- a few hundred games with no filter is a list you scroll, not a
+             record you consult; "the ones I lost" is the reason to open it -->
+        <div class="hist-filters">
+          <div class="theme-row wrap" id="hist-result-seg" role="group" aria-label="按结果筛选" data-i18n-aria="hist.byResult">
+            <button type="button" data-hres="all" class="active" data-i18n="hist.any">全部</button>
+            <button type="button" data-hres="win" data-i18n="hist.win">胜</button>
+            <button type="button" data-hres="loss" data-i18n="hist.loss">负</button>
+            <button type="button" data-hres="draw" data-i18n="hist.draw">和</button>
+          </div>
+          <div class="theme-row wrap" id="hist-color-seg" role="group" aria-label="按执子筛选" data-i18n-aria="hist.byColor">
+            <button type="button" data-hcol="all" class="active" data-i18n="hist.any">全部</button>
+            <button type="button" data-hcol="w" data-i18n="hist.white">执白</button>
+            <button type="button" data-hcol="b" data-i18n="hist.black">执黑</button>
+          </div>
+        </div>
         <div class="pick-list" id="hist-list"></div>
+        <p class="hint" id="hist-count" hidden></p>
         <p class="hint" data-i18n="hist.hint">点一局载入棋盘复盘:可跑「分析」看回顾报告、导出 PGN、另存到存档槽</p>
         <div class="close-row"><button type="button" class="tool-btn" id="hist-close" data-i18n="act.cancel">取消</button></div>
       </div>
@@ -396,6 +421,17 @@
             <button type="button" class="tool-btn primary" id="fen-load" data-i18n="act.load">载入</button>
           </span>
         </div>
+      </div>
+    </div>
+
+    <!-- Every action in this app has lived on a bare letter key since 1.0 and
+         nothing anywhere named one. 1.9 made it worse by moving the panel off
+         Tab onto P without telling anyone. This is the list. -->
+    <div class="modal-bg" id="keys-modal" role="dialog" aria-label="快捷键" data-i18n-aria="keys.title">
+      <div class="modal">
+        <h3 data-i18n="keys.title">快捷键</h3>
+        <dl class="key-list" id="keys-list"></dl>
+        <div class="close-row"><button type="button" class="tool-btn" id="keys-close" data-i18n="act.ok">好</button></div>
       </div>
     </div>
 
@@ -431,6 +467,7 @@
   <script src="js/puzzles-en.js"></script>
   <script src="js/achievements.js"></script>
   <script src="js/engine-src.js"></script>
+  <script src="js/persona.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/host.js"></script>
   <script src="js/audio.js"></script>

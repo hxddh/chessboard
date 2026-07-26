@@ -62,6 +62,10 @@
   let autoFlipPvp = false;
   /** which panel tab is showing: "play" | "setup" | "record" */
   let sideTab = "play";
+  /** sparring personality — see persona.js; "off" is plain engine play */
+  const PERSONA_IDS = (window.ChessPersona && window.ChessPersona.IDS) ||
+    ["off", "greedy", "principled", "attacker"];
+  let personaId = "off";
   /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
   let langId = I18n ? I18n.getLang() : "zh-CN";
   /** remaining ms per side; null when no clock */
@@ -222,11 +226,12 @@
       if (I18n && typeof s.langId === "string") langId = I18n.setLang(s.langId);
       if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) puzzleTierFilter = s.puzzleTier;
       if (["play", "setup", "record"].includes(s.sideTab)) sideTab = s.sideTab;
+      if (PERSONA_IDS.includes(s.personaId)) personaId = s.personaId;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter, sideTab }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter, sideTab, personaId }));
     } catch (_) {}
   }
   function saveGame() {
@@ -292,7 +297,9 @@
     const engineSide = humanColor === "w" ? "b" : "w";
     const budget = clock && timeControl !== "off" ? Math.max(150, clock[engineSide] / 30) : null;
     let mv = null;
-    try { mv = await window.ChessEngine.bestMove(game.fen(), difficulty, budget); }
+    // the personality only ever colours a real game against the engine; the
+    // lesson drills need the engine defending honestly or the drill is a lie
+    try { mv = await window.ChessEngine.bestMove(game.fen(), difficulty, budget, { id: personaId, Chess }); }
     catch (_) { mv = null; }
     if (token !== engineToken) return; // game changed while thinking
     engineThinking = false;
@@ -2071,6 +2078,23 @@
     return row;
   }
 
+  /**
+   * Which slice of the history the modal is showing.
+   *
+   * Kept out of `histCache`: the row buttons carry their index into the full
+   * list, and re-indexing a filtered array would make "load this game" load a
+   * different one the moment a filter was on.
+   */
+  let histFilter = { result: "all", color: "all" };
+  function histMatches(rec) {
+    if (histFilter.result !== "all" && rec.result !== histFilter.result) return false;
+    if (histFilter.color !== "all") {
+      const col = rec.color === "b" ? "b" : "w";
+      if (col !== histFilter.color) return false;
+    }
+    return true;
+  }
+
   function renderHistory() {
     histCache = historyGames();
     const body = document.getElementById("hist-body");
@@ -2093,8 +2117,31 @@
     const list = document.getElementById("hist-list");
     if (list) {
       list.innerHTML = "";
-      histCache.forEach((rec, i) => list.appendChild(historyRow(rec, i, true)));
+      let shown = 0;
+      histCache.forEach((rec, i) => {
+        if (!histMatches(rec)) return;
+        shown++;
+        list.appendChild(historyRow(rec, i, true));
+      });
+      if (!shown) {
+        const p = document.createElement("p");
+        p.className = "hint";
+        p.textContent = t("hist.noneMatch");
+        list.appendChild(p);
+      }
+      const count = document.getElementById("hist-count");
+      if (count) {
+        const filtered = histFilter.result !== "all" || histFilter.color !== "all";
+        count.hidden = !filtered;
+        count.textContent = tf("hist.showing", [shown, histCache.length]);
+      }
     }
+    document.querySelectorAll("#hist-result-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.hres === histFilter.result);
+    });
+    document.querySelectorAll("#hist-color-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.hcol === histFilter.color);
+    });
   }
 
   function openHistory() {
@@ -2553,6 +2600,9 @@
     document.querySelectorAll("#diff-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.diff === difficulty);
     });
+    document.querySelectorAll("#persona-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.persona === personaId);
+    });
     document.querySelectorAll("#color-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.color === humanColor);
     });
@@ -2563,6 +2613,8 @@
     const colorRow = document.getElementById("row-color");
     const clockRow = document.getElementById("row-clock");
     if (diffRow) diffRow.hidden = mode !== "ai";
+    const personaRow = document.getElementById("row-persona");
+    if (personaRow) personaRow.hidden = mode !== "ai";
     if (colorRow) colorRow.hidden = mode !== "ai";
     if (clockRow) clockRow.hidden = mode !== "pvp" && mode !== "ai";
     const coachRow = document.getElementById("row-coach");
@@ -3898,7 +3950,87 @@
   });
 
   // Native lifecycle: flush the save when the app loses focus.
-  Host.onAppLifecycle({ deactivate: () => saveGame() });
+  /**
+   * The keyboard reference.
+   *
+   * Built from a table rather than written into the markup, because the same
+   * table is what the native menu is checked against: a shortcut that exists
+   * in one place and not the other is exactly the state 1.9 shipped in, when
+   * the panel silently moved from Tab to P.
+   */
+  const KEY_HELP = [
+    { keys: ["P"], k: "keys.panel" },
+    { keys: ["N"], k: "keys.new" },
+    { keys: ["Z"], k: "keys.undo" },
+    { keys: ["H"], k: "keys.hint" },
+    { keys: ["F"], k: "keys.flip" },
+    { keys: ["←", "→"], k: "keys.step" },
+    { keys: ["Home", "End"], k: "keys.ends" },
+    { keys: ["Tab"], k: "keys.tab" },
+    { keys: ["Esc"], k: "keys.esc" },
+    { keys: ["?"], k: "keys.help" },
+    { keys: ["Q", "R", "B", "N"], k: "keys.promo" },
+    { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board" },
+    { keys: ["R"], k: "keys.retry" },
+  ];
+  const keysModal = document.getElementById("keys-modal");
+  function renderKeyHelp() {
+    const list = document.getElementById("keys-list");
+    if (!list) return;
+    list.innerHTML = "";
+    for (const row of KEY_HELP) {
+      const dt = document.createElement("dt");
+      for (const key of row.keys) {
+        const kbd = document.createElement("kbd");
+        kbd.textContent = key;
+        dt.appendChild(kbd);
+      }
+      const dd = document.createElement("dd");
+      dd.textContent = t(row.k);
+      list.appendChild(dt);
+      list.appendChild(dd);
+    }
+  }
+  function openKeyHelp() {
+    if (!keysModal) return;
+    renderKeyHelp();
+    Dlg.open(keysModal, document.getElementById("keys-close"));
+  }
+  function closeKeyHelp() { Dlg.close(keysModal); }
+  if (keysModal) {
+    document.getElementById("keys-close").onclick = closeKeyHelp;
+    keysModal.onclick = (ev) => { if (ev.target === keysModal) closeKeyHelp(); };
+  }
+
+  /**
+   * Native menu commands (app.zon → main.zig → host.js).
+   *
+   * The menu is the desktop-shaped half of the same actions the letter keys
+   * already do; both end up here so there is one implementation and the two
+   * can never drift.
+   */
+  const NATIVE_COMMANDS = {
+    "game.new": () => requestNewGame(),
+    "game.undo": () => undo(),
+    "game.hint": () => requestHint(),
+    "game.flip": () => { flipped = !flipped; saveSettings(); draw(); },
+    "view.panel": () => togglePanel(),
+    "view.prev": () => setViewIndex(viewIndex - 1),
+    "view.next": () => setViewIndex(viewIndex + 1),
+    "help.keys": () => openKeyHelp(),
+  };
+  Host.onAppLifecycle({
+    deactivate: () => saveGame(),
+    shortcut: (detail) => {
+      let id = null;
+      try {
+        const d = typeof detail === "string" ? JSON.parse(detail) : detail;
+        id = d && (d.command || d.id);
+      } catch (_) { id = null; }
+      const run = id && NATIVE_COMMANDS[id];
+      if (run) run();
+    },
+  });
 
   document.getElementById("theme-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-theme]");
@@ -4020,6 +4152,14 @@
     saveSettings();
     sync();
     toast(t("m.66") + (DIFF_NAMES[difficulty] || difficulty));
+  };
+  document.getElementById("persona-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-persona]");
+    if (!b || b.dataset.persona === personaId) return;
+    personaId = b.dataset.persona;
+    saveSettings();
+    sync();
+    toast(t("m.personaSet") + t("persona." + personaId));
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
@@ -4185,6 +4325,20 @@
     const openBtn = document.getElementById("hist-open");
     if (openBtn) openBtn.onclick = openHistory;
     document.getElementById("hist-close").onclick = closeHistory;
+    const hres = document.getElementById("hist-result-seg");
+    if (hres) hres.onclick = (ev) => {
+      const b = ev.target.closest("button[data-hres]");
+      if (!b || b.dataset.hres === histFilter.result) return;
+      histFilter.result = b.dataset.hres;
+      renderHistory();
+    };
+    const hcol = document.getElementById("hist-color-seg");
+    if (hcol) hcol.onclick = (ev) => {
+      const b = ev.target.closest("button[data-hcol]");
+      if (!b || b.dataset.hcol === histFilter.color) return;
+      histFilter.color = b.dataset.hcol;
+      renderHistory();
+    };
     const onHistClick = (ev) => {
       const b = ev.target.closest("button");
       if (!b) return;
@@ -4239,6 +4393,7 @@
       if (pickModal && pickModal.classList.contains("show")) { finishPick(null); return; }
       if (fenModal && fenModal.classList.contains("show")) { closeFenModal(); return; }
       if (confirmModal.classList.contains("show")) { finishConfirm(false); return; }
+      if (keysModal && keysModal.classList.contains("show")) { closeKeyHelp(); return; }
       // before closing the panel — the panel holds the editor's only exit
       if (editor) { stopEditor(t("m.55")); sync(); return; }
       if (isPanelOpen()) setPanelOpen(false);
@@ -4258,6 +4413,13 @@
     // move anywhere by keyboard — the app had a full keyboard board cursor and
     // no way to reach any other control. The panel is on P instead.
     if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
+    // "?" is the conventional key for "what are the keys?" — and it is the one
+    // shortcut a user cannot learn from the list, so it works from anywhere
+    if ((ev.key === "?" || (ev.key === "/" && ev.shiftKey)) && !ev.metaKey && !ev.ctrlKey) {
+      ev.preventDefault();
+      if (keysModal && keysModal.classList.contains("show")) closeKeyHelp(); else openKeyHelp();
+      return;
+    }
     if (mode === "learn") {
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills
