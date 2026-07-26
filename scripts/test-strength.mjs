@@ -234,16 +234,32 @@ console.log("");
 const beg = stats.beginner, cas = stats.casual, easy = stats.easy, ext = stats.extreme;
 
 // The ladder has to be a ladder: each rung at least as accurate as the one
-// below. Asserted as an ordering rather than as a ratio between two noisy
-// means — the 2.5x ratio this file used through 1.18 was the flaky part, and
-// it was comparing exactly the two numbers that move most.
+// below. Two things about how this is asserted, both learned the hard way.
+//
+// It is an ordering, not the 2.5x ratio this file used through 1.18 — that
+// ratio compared exactly the two numbers that move most, and flipped a run
+// from red to green on the same commit.
+//
+// And it is a *tolerant* ordering. Seeding the sampling (above) removed one
+// source of variance, but the reference evals are `movetime`-based, so the
+// numbers still move between runs: two runs of this very commit produced
+// normal/hard of 15/15 and then 25/13. Adjacent rungs near the top sit inside
+// that noise, so an exact `>` would be the old flake wearing a new hat. The
+// tolerance is wide enough to absorb it and still narrow enough to catch what
+// this file exists for — v1.3 shipped beginner≈easy.
+const TOL_RATIO = 1.4, TOL_ABS = 12;
 const ordered = order.map((n) => stats[n]).filter(Boolean);
 const inversions = [];
 for (let i = 1; i < ordered.length; i++) {
-  if (ordered[i].acpl > ordered[i - 1].acpl) inversions.push(order[i - 1] + "→" + order[i]);
+  const above = ordered[i].acpl, below = ordered[i - 1].acpl;
+  if (above > below * TOL_RATIO + TOL_ABS) inversions.push(order[i - 1] + "(" + below + ") → " + order[i] + "(" + above + ")");
 }
 assert(inversions.length === 0,
-  "档位越高失分越低,没有倒挂" + (inversions.length ? " —— 倒挂: " + inversions.join(", ") : ""));
+  "档位越高失分越低,没有实质倒挂" + (inversions.length ? " —— 倒挂: " + inversions.join(", ") : ""));
+// The rungs that must be separable by any sane measurement: the two handicap
+// tiers against the Elo-limited one above them.
+assert(beg && easy && beg.acpl > easy.acpl * 1.5,
+  "新手档明显弱于入门档 (" + (beg && beg.acpl) + " vs " + (easy && easy.acpl) + ")");
 
 // Absolute floors and ceilings, which do not depend on two noisy numbers
 // happening to sit in a particular ratio.
