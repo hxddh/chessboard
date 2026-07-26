@@ -24,6 +24,42 @@
   const canvas = document.getElementById("board");
   const appEl = document.getElementById("app");
 
+  /**
+   * The rook's half of a castle, or null.
+   *
+   * chess.js reports castling as the king's move alone, so an animation fed
+   * `mv.from`/`mv.to` slides the king and teleports the rook — the one move
+   * that shifts two men showed only the half nobody was confused about.
+   * @param {object} mv chess.js verbose move
+   */
+  function castleRook(mv) {
+    if (!mv || !mv.flags) return null;
+    const rank = mv.color === "w" ? "1" : "8";
+    if (mv.flags.includes("k")) return { from: "h" + rank, to: "f" + rank };
+    if (mv.flags.includes("q")) return { from: "a" + rank, to: "d" + rank };
+    return null;
+  }
+
+  /**
+   * Slide a move that the player did not make.
+   *
+   * Motion on a chess board should answer exactly one question: what changed
+   * that I did not do myself? Up to 1.10 the rule was the opposite of that —
+   * every move the *player* made was animated (a dragged piece even snapped
+   * back to its origin and slid forward again, undoing the drag the player had
+   * just performed by hand), while three of the four opponent replies —
+   * lesson drills, scripted puzzle lines, mate-puzzle defences — appeared
+   * instantly on their new square. The one place it was right was the engine
+   * in a normal game.
+   *
+   * So the glide is spent only where it buys something: on the reply you did
+   * not choose and have to read off the board.
+   */
+  function animateReply(mv) {
+    if (!mv) return;
+    BoardView.animateMove(mv.from, mv.to, castleRook(mv));
+  }
+
   /** The live game — single source of truth (chess.js keeps full history). */
   const game = new Chess();
   /** Replay cursor: 0..sanHistory().length; live when === length. */
@@ -310,7 +346,7 @@
       selection = null;
       hintMove = null;
       applyIncrement(played.color);
-      BoardView.animateMove(played.from, played.to);
+      animateReply(played);
       Audio2.playMove(played.color, { captured: !!played.captured, check: game.in_check() });
       if (game.in_checkmate()) Audio2.playWin();
       else if (naturalGameOver()) Audio2.playDraw();
@@ -771,7 +807,7 @@
     selection = null;
     learn.last = { from: mv.from, to: mv.to };
     learn.helpArrow = null;
-    BoardView.animateMove(mv.from, mv.to);
+    BoardView.cancelAnim(); // the student's own move — see animateReply
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
     if (task.type === "stars") {
       if (learn.stars.has(mv.to)) {
@@ -879,6 +915,7 @@
       const played = g.move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
       if (played) {
         learn.last = { from: played.from, to: played.to };
+        animateReply(played);
         Audio2.playMove(played.color, { captured: !!played.captured, check: g.in_check() });
       }
     }
@@ -1292,7 +1329,7 @@
     selection = null;
     puzzle.helpArrow = null;
     puzzle.last = { from: mv.from, to: mv.to };
-    BoardView.animateMove(mv.from, mv.to);
+    BoardView.cancelAnim(); // the solver's own move — see animateReply
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
     if (SCRIPTED_CATS[puzzle.p.cat]) {
       // scripted line: exact match, opponent replies straight from the script
@@ -1311,6 +1348,7 @@
         const rm = g.move(script[puzzle.stage]);
         if (rm) {
           puzzle.last = { from: rm.from, to: rm.to };
+          animateReply(rm);
           Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
           puzzle.stage++;
         }
@@ -1355,6 +1393,7 @@
     const rm = reply ? g.move(reply) : null;
     if (rm) {
       puzzle.last = { from: rm.from, to: rm.to };
+      animateReply(rm);
       Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
     }
     sync();
@@ -2712,7 +2751,10 @@
     hintMove = null;
     viewIndex = sanHistory().length;
     applyIncrement(mv.color);
-    BoardView.animateMove(mv.from, mv.to);
+    // no animation: the player just clicked or dragged this piece here, and
+    // sliding it in from the square they took it off replays something they
+    // did themselves — for a drag it visibly snaps back first
+    BoardView.cancelAnim();
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: game.in_check() });
     if (mv.promotion) toast(tf("mm.promoted", [PROMO_NAMES[mv.promotion]]));
     if (game.in_checkmate()) Audio2.playWin();

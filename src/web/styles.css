@@ -106,7 +106,8 @@
       padding: 0 10px 0 14px;
       background: var(--chrome-bg);
       pointer-events: none;
-      transition: padding-right .28s var(--ease);
+      /* instant, like the stage — the layout settles at once and only the
+         panel travels */
     }
     /* The side panel (z-index 30) covers the chrome's right edge when open —
        shift the toolbar buttons out from under it so they stay clickable.
@@ -180,7 +181,9 @@
       /* reserve the chrome bar's height: its translucent gradient must never
          sit on top of the board (visible as a dark band across rank 8) */
       padding: calc(var(--chrome-h) + var(--stage-pad)) var(--stage-pad) var(--stage-pad);
-      transition: padding-right .28s var(--ease);
+      /* no transition: this is the same layout change as #board-wrap's size,
+         and animating one without the other makes the board overflow the
+         stage for the duration */
     }
     #app.panel-open .stage {
       padding-right: calc(var(--side-w) + var(--stage-pad));
@@ -195,7 +198,15 @@
       padding: var(--wood-pad); border-radius: var(--radius-lg);
       background: var(--board-frame);
       box-shadow: var(--board-shadow);
-      transition: width .28s var(--ease), height .28s var(--ease), background .25s ease, box-shadow .25s ease;
+      /* Deliberately NOT transitioning width/height. Toggling the panel can
+         change the board's size a great deal — measured across window shapes:
+         +5% at 1100x900, +20% at 1000x900, +84% at 1000x1000, where the
+         bottom sheet frees 430px of height. Watching the board grow by that
+         much over a quarter second is far worse than simply finding it bigger:
+         every piece slides and swells at once, and whatever line you were
+         calculating is gone. The panel itself still slides; the board just is.
+         Theme changes keep their fade — those move nothing. */
+      transition: background .25s ease, box-shadow .25s ease;
     }
     #app.panel-open #board-wrap {
       --free-w: calc(100vw - var(--side-w) - 2 * var(--stage-pad));
