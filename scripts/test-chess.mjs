@@ -1218,6 +1218,59 @@ for (const p of ["r", "b", "n"]) {
     }
   }
 
+  // Motion on a chess board should answer one question: what changed that I
+  // did not do myself? Up to 1.10 the rule was the opposite — every move the
+  // player made was animated (a dragged piece even snapped back to its origin
+  // and slid forward again), while three of the four opponent replies appeared
+  // instantly. These lock the direction in.
+  {
+    const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    assert(/function animateReply\(mv\)/.test(appSrc),
+      "opponent replies go through one helper");
+    // nothing may call the raw animator except that helper — a direct call is
+    // how the player's own move got animated in the first place
+    const raw = [...appSrc.matchAll(/^.*BoardView\.animateMove\(.*$/gm)].map((m) => m[0].trim());
+    assert(raw.length === 1 && /animateMove\(mv\.from, mv\.to, castleRook\(mv\)\)/.test(raw[0]),
+      "the board animator has exactly one caller, inside animateReply" +
+      (raw.length === 1 ? "" : " — extra: " + raw.join(" ;; ")));
+    // and every opponent-reply site must use it
+    const replies = (appSrc.match(/animateReply\(/g) || []).length - 1; // minus the definition
+    assert(replies >= 4,
+      "all four opponent-reply paths animate (engine game, lesson drill, " +
+      "scripted puzzle line, mate-puzzle defence) — found " + replies);
+
+    // castling moves two men; chess.js reports only the king's
+    assert(/function castleRook\(mv\)/.test(appSrc), "the rook's half of a castle is derived");
+    const rook = /function castleRook[\s\S]*?\n  \}/.exec(appSrc)[0];
+    assert(/"h" \+ rank/.test(rook) && /"f" \+ rank/.test(rook), "king-side rook h→f");
+    assert(/"a" \+ rank/.test(rook) && /"d" \+ rank/.test(rook), "queen-side rook a→d");
+
+    const boardSrc2 = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(/_anim\.segs/.test(boardSrc2), "the animator carries a list of segments, not one pair");
+  }
+
+  // Toggling the panel can change the board's size a great deal — measured
+  // across window shapes: +5% at 1100x900, +20% at 1000x900, +84% at
+  // 1000x1000. Watching the board grow by that much is worse than finding it
+  // bigger, so the size change must not be transitioned.
+  {
+    const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const wrap = /#board-wrap \{[\s\S]*?\n    \}/.exec(css);
+    assert(wrap, "found the #board-wrap rule");
+    const tr = /transition:([^;]*);/.exec(wrap[0]);
+    if (tr) {
+      for (const p2 of ["width", "height"]) {
+        assert(!new RegExp("\\b" + p2 + "\\b").test(tr[1]),
+          "the board's " + p2 + " is not animated when the panel toggles");
+      }
+    }
+    // the stage's padding is the same layout change seen from outside
+    const stage = /\n    \.stage \{[\s\S]*?\n    \}/.exec(css);
+    assert(stage && !/transition:[^;]*padding/.test(stage[0]),
+      "the stage's padding is not animated either — animating one and not the " +
+      "other makes the board overflow mid-transition");
+  }
+
   // The motion a player sees most is a piece sliding across the board, and it
   // is canvas + requestAnimationFrame — no media query in the stylesheet can
   // reach it. 1.10 shipped honouring the setting everywhere except there.

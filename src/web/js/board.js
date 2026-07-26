@@ -118,13 +118,33 @@
     } catch (_) { /* no matchMedia: animate, as before */ }
   })();
 
-  function animateMove(from, to) {
-    if (!_canvas || !_model || !from || !to) return;
-    // Land the piece with no glide. Deliberately no draw() here: the caller
+  /**
+   * Slide one or more pieces to their new squares.
+   *
+   * Castling is the reason this takes a list. It is the only move that shifts
+   * two men at once, and it is the move beginners find hardest to read (lesson
+   * 20 exists for it) — animating the king while the rook teleported showed
+   * exactly the half that needed no explaining.
+   *
+   * @param {string|Array<{from: string, to: string}>} from square, or the
+   *   whole list of segments
+   * @param {string} [to] destination, when called with two squares
+   * @param {{from: string, to: string}} [also] a second piece moving with the
+   *   first — the rook's hop in a castle
+   */
+  function animateMove(from, to, also) {
+    if (!_canvas || !_model || !from) return;
+    const segs = Array.isArray(from)
+      ? from.filter((sg) => sg && sg.from && sg.to)
+      : (to ? [{ from, to }] : []);
+    if (Array.isArray(from) && also) segs.push(also);
+    else if (also && also.from && also.to) segs.push(also);
+    if (!segs.length) return;
+    // Land the pieces with no glide. Deliberately no draw() here: the caller
     // repaints from the updated model a moment later, and drawing now would
     // paint the pre-move position for that moment.
     if (_reduceMotion) { _anim = null; return; }
-    _anim = { from, to, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: 150 };
+    _anim = { segs, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: 150 };
     const step = () => {
       if (!_anim) return;
       const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
@@ -264,27 +284,30 @@
         if (!piece) continue;
         const sq = FILES[c] + (8 - r);
         if (_drag && _drag.from === sq) { dragPiece = piece; continue; } // ghost drawn last
-        if (_anim && _anim.to === sq) continue; // slid piece drawn interpolated below
+        if (_anim && _anim.segs.some((sg) => sg.to === sq)) continue; // drawn interpolated below
         const { sr, sc } = screenPos(sq, m.flipped);
         paintPiece(piece, sc * step + step / 2, sr * step + step / 2);
       }
     }
-    // sliding piece: interpolate from→to over the animation window
+    // sliding pieces: interpolate each from→to over the animation window
     if (_anim) {
-      const c = FILES.indexOf(_anim.to[0]);
-      const r = 8 - Number(_anim.to[1]);
-      const piece = m.position[r] && m.position[r][c];
-      if (piece) {
-        const a = screenPos(_anim.from, m.flipped);
-        const b = screenPos(_anim.to, m.flipped);
-        const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
-        const t = easeOut(Math.max(0, Math.min(1, (now - _anim.start) / _anim.dur)));
+      const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
+      const t = easeOut(Math.max(0, Math.min(1, (now - _anim.start) / _anim.dur)));
+      let painted = 0;
+      for (const sg of _anim.segs) {
+        const c = FILES.indexOf(sg.to[0]);
+        const r = 8 - Number(sg.to[1]);
+        const piece = m.position[r] && m.position[r][c];
+        if (!piece) continue;
+        const a = screenPos(sg.from, m.flipped);
+        const b = screenPos(sg.to, m.flipped);
         const sc = a.sc + (b.sc - a.sc) * t;
         const sr = a.sr + (b.sr - a.sr) * t;
         paintPiece(piece, sc * step + step / 2, sr * step + step / 2);
-      } else {
-        _anim = null;
+        painted++;
       }
+      // the model moved on under us (undo, jump, new game) — drop the animation
+      if (!painted) _anim = null;
     }
     // lesson success flash
     if (m.flashSquare) {
