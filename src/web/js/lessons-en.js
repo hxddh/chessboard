@@ -543,6 +543,108 @@
           retry: "Moving the king gives up the good square in front of the pawn — you still have a pawn to move, so use it to lose a move" },
       ],
     },
+    "keysquares": {
+      part: "Endgame basics", title: "Key squares: put the king right and the pawn goes through",
+      text: [
+        "King and pawn against a lone king is not decided by how fast the pawn runs, but by **whether your king can stand on the right square**. Those squares are called *key squares*.",
+        "Once the pawn is past the 4th rank, its key squares are the three squares directly ahead of it. For a pawn on e5 they are d6, e6 and f6 — occupy any one of them and the pawn promotes, whoever is to move.",
+        "So the right way to play these endings is: **king to a key square first, push the pawn last**. Push first and follow with the king, and you usually end up drawing.",
+      ],
+      tasks: [
+        { prompt: "Where are the three key squares of the e5 pawn? Click them one by one",
+          steps: [
+            "The square directly in front of the pawn — click e6",
+            "The one to its left — click d6",
+            "The one to its right — click f6",
+          ] },
+        { prompt: "One king move reaches a key square — don't push, walk",
+          retry: "Pushing only runs the pawn into the black king. Of the three key squares d6/e6/f6, exactly one is reachable right now" },
+        { prompt: "The real thing: key square first, pawn afterwards — escort the e-pawn to the last rank" },
+      ],
+    },
+    "wrongbishop": {
+      part: "Endgame basics", title: "The wrong bishop: a whole piece up and still a draw",
+      text: [
+        "A rook's pawn (a- or h-file) plus a bishop is the most famous trap in the endgame: **if the bishop cannot control the promotion square, the defending king only has to sit in that corner and the game is drawn** — a whole extra piece wins nothing.",
+        "The reason is simple: the pawn can only promote on that one file, so the colour of the promotion square is fixed. A bishop lives on one colour forever; wrong colour means it can never touch that square, and never drive the king out of the corner.",
+        "So the first two things to check in this ending are: **what colour is the promotion square, and what colour is my bishop**. And from the defending side: head for that corner and stay there.",
+      ],
+      tasks: [
+        { prompt: "White is a bishop and a pawn up and still cannot win — look at the colour of two squares",
+          steps: [
+            "The h-pawn can only promote here — click h8, a dark square",
+            "Now the square the bishop stands on — click f1, light. A bishop never changes colour, so h8 is out of reach forever",
+          ] },
+        { prompt: "The black king is completely safe on either of two squares — click one of them",
+          steps: [
+            "h8 and g8: White can neither check it with the bishop nor drive it away (trying to means stalemate) — click h8 or g8",
+          ] },
+        { prompt: "Your turn to defend: Black has the wrong bishop plus an h-pawn — where does the white king have to go?",
+          retry: "Running to the e-file only takes you further from the corner, and the black king will squeeze you to death. **Head for h1** — Black's bishop is dark-squared and can never touch it" },
+      ],
+    },
+    "rookbehind": {
+      part: "Endgame basics", title: "Put the rook behind the passed pawn",
+      text: [
+        "Rook endings have one rule that almost never lets you down: **the rook belongs behind the passed pawn** — yours or your opponent's.",
+        "The reason is that every step the pawn takes leaves the rook behind it with exactly as many squares as before, while the rook blocking in front has fewer and fewer. **The side pushing gets stronger; the side blocking gets more and more cramped.**",
+        "So whenever there is a passer, ask: is my rook behind it? And where is theirs? That single question often decides the ending.",
+      ],
+      tasks: [
+        { prompt: "White has an a-pawn and the black rook is blocking in front of it — put the white rook where it belongs",
+          retry: "The rook wants to be *behind* the passer — same file, below the pawn" },
+        { prompt: "Both rooks are on the a-file now — click the one getting more cramped",
+          steps: [
+            "Every step the white pawn takes costs the a8 rook a square, while the a2 rook keeps its full range throughout — click a8",
+          ] },
+      ],
+    },
+    "pawntrade": {
+      part: "Endgame basics", title: "Up material, trade pieces; down material, trade pawns",
+      text: [
+        "The most useful trading rule in the endgame: **when you are ahead, trade pieces; when you are behind, trade pawns**.",
+        "Trading a pair of pieces while a pawn up makes the remaining ratio more lopsided — one extra pawn among a full army is nothing, but once it is king and pawns only, that pawn is the whole game. The side behind wants the opposite: with all pawns gone, the extra pawn cannot exist.",
+        "So a pawn up, take every trade of pieces you can get. A pawn down, hold on to your pawns and give up the rooks and bishops instead.",
+      ],
+      tasks: [
+        { prompt: "White is a c-pawn up — by the rule, the trade to make is right there",
+          retry: "The side ahead trades *pieces*. There is a pair of rooks facing each other on the e-file" },
+        { prompt: "This is the position after the trade — click the pawn that decides the game",
+          steps: [
+            "Three against three on the kingside, nobody makes progress; the extra queenside pawn has nobody watching it — click c4",
+          ] },
+      ],
+    },
+    "majority": {
+      part: "Endgame basics", title: "A pawn majority: push the unopposed one first",
+      text: [
+        "More pawns than your opponent on one wing is a *majority*. Its value is not the extra pawn as such — it is that a majority can **manufacture a passed pawn**.",
+        "There is a right way to push it: **start with the pawn that has no enemy pawn opposite it** (the *candidate*). Nothing blocks it, so it forces the enemy pawns to move and the rest of the majority can follow. Push a blocked pawn first and you jam yourself.",
+        "The same rule applies in defence: when the candidate starts running, don't rush to block it with a pawn of your own — that is usually what they wanted.",
+      ],
+      tasks: [
+        { prompt: "White has three queenside pawns against two — click the one to push first",
+          steps: [
+            "Black has pawns facing the a- and b-files; only the c-file is clear — click c2",
+          ] },
+        { prompt: "Push the candidate",
+          retry: "The one to move first is the one with **no enemy pawn opposite** — the c-pawn. The a- and b-pawns have nowhere to go yet" },
+      ],
+    },
+    "kingactive": {
+      part: "Endgame basics", title: "In the endgame the king is a fighting piece",
+      text: [
+        "In the middlegame you tuck the king away; in the endgame it is the opposite. Once enough material is off, **the king is a strong piece for both attack and defence, and leaving it at home is playing a piece short**.",
+        "Its endgame value is roughly a bishop and a bit. It escorts your own pawns, it blocks theirs, and it pushes the enemy king back a square at a time — nothing else on the board does those jobs.",
+        "So the first thought in an endgame is usually not a pawn move but: **where should my king go**. Towards the centre, towards the wing with more pawns, and into the path of their passed pawn.",
+      ],
+      tasks: [
+        { prompt: "The black pawn promotes next move and White has exactly one move that holds — everything else is mated",
+          retry: "The king has to block the promotion path. Stepping to g3, h1, h2 or h3 all abandon the f-file and the pawn goes straight through" },
+        { prompt: "King and pawn against a lone king, White to move — king first or pawn first? This one move decides it",
+          retry: "Pushing the pawn draws: the pawn runs ahead, the king can't keep up and the black king blocks it head-on. **King first** — walk it in front of the pawn to clear the way" },
+      ],
+    },
     "drill-pawn": {
       part: "Endgame technique", title: "King and pawn: escorting a promotion (vs engine)",
       text: [

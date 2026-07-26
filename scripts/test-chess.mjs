@@ -311,6 +311,47 @@ for (const p of ["r", "b", "n"]) {
     const noTask = mgLessons.filter((l) => !(l.tasks || []).length).map((l) => l.id);
     assert(noTask.length === 0,
       "every middlegame lesson has something to do" + (noTask.length ? ": " + noTask.join(", ") : ""));
+    // the endgame block is the one every beginner reaches last and needs most
+    const egLessons = lessons.filter((l) => l.part === "残局基础");
+    assert(egLessons.length >= 8,
+      "the endgame section is a section too (" + egLessons.length + " lessons)");
+  }
+
+  // Emphasis markers have to be paired. The course marks its key sentence with
+  // `**…**`; through 1.16 the renderer set textContent, so readers saw the
+  // asterisks rather than the emphasis — 24 paragraphs of it. Now that app.js
+  // renders them, an unpaired marker would print a stray `**` instead, so the
+  // data is checked here and the splitter is exercised below.
+  {
+    const strayZh = lessons.filter((l) => (l.text || []).some((p) => (p.split("**").length - 1) % 2));
+    assert(strayZh.length === 0,
+      "every ** in a lesson is closed" + (strayZh.length ? ": " + strayZh.map((l) => l.id).join(", ") : ""));
+
+    // app.js needs a DOM to load, so lift the one function out and run it
+    // against a stub — the alternative is trusting a renderer nobody checks
+    const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const fnSrc = (appSrc.match(/function lessonParagraph[\s\S]*?\n {2}\}/) || [])[0];
+    assert(!!fnSrc, "app.js still has lessonParagraph");
+    const stubDoc = {
+      createElement: (tag) => ({ tag, kids: [], textContent: "", appendChild(k) { this.kids.push(k); } }),
+      createTextNode: (text) => ({ text }),
+    };
+    const paragraph = new Function("document", "return " + fnSrc)(stubDoc);
+    const flat = (el) => el.kids.map((k) => (k.text !== undefined ? k.text : "<b>" + k.textContent + "</b>")).join("");
+    const cases = [
+      ["plain text", "plain text"],
+      ["before**middle**after", "before<b>middle</b>after"],
+      ["**lead**tail", "<b>lead</b>tail"],
+      ["**a**and**b**", "<b>a</b>and<b>b</b>"],
+      ["one ** stray marker", "one ** stray marker"],
+      ["", ""],
+    ];
+    let markBad = 0;
+    for (const [src, want] of cases) {
+      const got = flat(paragraph(src));
+      if (got !== want) { markBad++; console.error("FAIL: lessonParagraph(" + JSON.stringify(src) + ") = " + JSON.stringify(got)); }
+    }
+    assert(markBad === 0, "lessonParagraph renders ** as emphasis and leaves a stray marker alone");
   }
 
   // English lessons: every lesson must be covered, and every entry must line
@@ -480,7 +521,7 @@ for (const p of ["r", "b", "n"]) {
   for (const p of puzzles) {
     if (!p.id || ids.has(p.id)) { fail("puzzle id missing/duplicate", p.id); continue; }
     ids.add(p.id);
-    if (!p.name || !["m1", "m2", "m3", "win", "tac", "def", "draw"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
+    if (!p.name || !["m1", "m2", "m3", "win", "tac", "real", "def", "draw"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
     const v = new Chess().validate_fen(p.fen);
     if (!v.valid) { fail(p.id, "invalid FEN:", v.error); continue; }
     if (p.fen.split(" ")[1] !== "w") { fail(p.id, "not white to move"); continue; }
@@ -525,6 +566,42 @@ for (const p of ["r", "b", "n"]) {
       } else {
         fail(p.id, "tac line must be 1 or 3 plies");
       }
+      continue;
+    }
+    // Real-game tactics claim four things about the diagram, and all four are
+    // what separates them from the constructed ones: a crowded board, White
+    // not already down material (a recapture is not a tactic — that rule alone
+    // rejected 30 of the first 48 candidates), more than one capture on offer
+    // so the key move cannot be found by elimination, and a stored line whose
+    // material swing really is the advertised `gain`. That the key move is the
+    // *only* one that wins is an engine claim, checked by
+    // scripts/test-tactics.mjs rather than here.
+    if (p.cat === "real") {
+      if (typeof p.gain !== "number" || p.gain < 2) { fail(p.id, "real needs gain ≥ 2"); continue; }
+      const men = (p.fen.split(" ")[0].match(/[a-zA-Z]/g) || []).length;
+      if (men < 20) { fail(p.id, "real needs a middlegame: " + men + " men"); continue; }
+      if (men !== p.men) { fail(p.id, "real men " + p.men + " != " + men + " on the board"); continue; }
+      if (!Array.isArray(p.line) || p.line.length !== 3) { fail(p.id, "real line is 3 plies"); continue; }
+      const g0 = new Chess(p.fen);
+      const bal = (fen) => {
+        let n = 0;
+        for (const row of new Chess(fen).board()) for (const q of row) {
+          if (q) n += (q.color === "w" ? 1 : -1) * (VAL[q.type] || 0);
+        }
+        return n;
+      };
+      if (bal(p.fen) < 0) { fail(p.id, "white is already down material — this is a recapture"); continue; }
+      if (g0.moves({ verbose: true }).filter((m) => m.captured).length < 2) {
+        fail(p.id, "only one capture on the board — findable by elimination"); continue;
+      }
+      let ok = true;
+      for (const san of p.line) {
+        const mv = g0.move(san, { sloppy: false });
+        if (!mv || mv.san !== san) { fail(p.id, "real line illegal/non-canonical at " + san); ok = false; break; }
+      }
+      if (!ok) continue;
+      const swing = bal(g0.fen()) - bal(p.fen);
+      if (swing !== p.gain) fail(p.id, "real gain " + p.gain + " but the line swings " + swing);
       continue;
     }
     // Defensive puzzles claim something specific: Black is threatening mate in
@@ -1763,15 +1840,15 @@ for (const p of ["r", "b", "n"]) {
   // completionist is gated on others so it also stays locked when empty)
   const full = {
     lessonsDone: 99, lessonsTotal: 28, puzzleSolvedCount: 99,
-    matesSolved: 23, matesTotal: 23, tacSolved: 6, tacTotal: 6,
+    matesSolved: 23, matesTotal: 23, tacSolved: 6, tacTotal: 6, realSolved: 24, realTotal: 24,
     opSolved: 38, opTotal: 38, wins: 99, losses: 0, draws: 0, games: 99, extremeWins: 9,
-    otherUnlocked: 11, otherTotal: 11,
+    otherUnlocked: 12, otherTotal: 12,
   };
   const empty = {
     lessonsDone: 0, lessonsTotal: 28, puzzleSolvedCount: 0,
-    matesSolved: 0, matesTotal: 23, tacSolved: 0, tacTotal: 6,
+    matesSolved: 0, matesTotal: 23, tacSolved: 0, tacTotal: 6, realSolved: 0, realTotal: 24,
     opSolved: 0, opTotal: 38, wins: 0, losses: 5, draws: 0, games: 5, extremeWins: 0,
-    otherUnlocked: 0, otherTotal: 11,
+    otherUnlocked: 0, otherTotal: 12,
   };
   for (const a of ach) {
     if (!a.id || ids.has(a.id)) { fail("achievement id missing/duplicate", a.id); continue; }
