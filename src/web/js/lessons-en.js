@@ -388,6 +388,119 @@
           ] },
       ],
     },
+    "mg-plan": {
+      part: "Middlegame thinking", title: "The opening is over: three questions",
+      text: [
+        "You know the opening is over when the minor pieces are out, the king has castled, and nothing sits between your rooks. What follows has no slogan — only three questions.",
+        "First: is the king safe? Yours, and theirs. Second: which of my pieces is doing the least? That is the one to move next. Third: what is my opponent up to — what was their last move aiming at?",
+        "The middlegame is not about finding brilliancies. It is about giving your worst-placed piece somewhere better to stand. Brilliancies are what that adds up to.",
+      ],
+      tasks: [
+        { prompt: "White has castled. Find the pieces still sitting at home",
+          steps: [
+            "Click the White knight that has not moved off the back rank",
+            "Click the White bishop still boxed in by its own pawns",
+            "Their king is still in the centre, uncastled — click the black king",
+          ] },
+        { prompt: "The c1 bishop is White's worst piece, and the d-pawn is what blocks it — push the pawn out of its way",
+          retry: "Play d2–d3 or d2–d4 and the bishop's diagonal opens up" },
+      ],
+    },
+    "mg-openfile": {
+      part: "Middlegame thinking", title: "Open files: highways for rooks",
+      text: [
+        "A file with no pawns on it — from either side — is an open file. A rook on its own back rank does almost nothing; a rook on an open file reaches all the way into the enemy position.",
+        "So once pawns come off, the first job is usually to move a rook onto the file they left behind. Two rooks stacked on the same open file are stronger still — that is called doubling.",
+        "One sentence to keep: pawns open the road, rooks drive down it.",
+      ],
+      tasks: [
+        { prompt: "Find the open files in this position",
+          steps: [
+            "Neither side has a pawn on the c-file or the d-file — click the bottom square of either one",
+          ] },
+        { prompt: "Move a rook onto the c-file or the d-file",
+          retry: "Either rook can get there: play Rc1 or Rd1 with whichever you like" },
+      ],
+    },
+    "mg-outpost": {
+      part: "Middlegame thinking", title: "Outposts: a square they cannot chase you off",
+      text: [
+        "If your opponent has no pawns left on either neighbouring file, no pawn will ever be able to push you off that square. That is an outpost.",
+        "A knight wants it most: knights are slow, so a square where one can settle for good pays off, and a knight is the only piece that does not mind being surrounded. Bishops and rooks are happy on outposts too.",
+        "Read the pawns to find them — wherever a pawn is missing, there is a hole.",
+      ],
+      tasks: [
+        { prompt: "Black has lost both the d-pawn and the f-pawn — find the hole that leaves",
+          steps: [
+            "Click e5: the d- and f-pawns that would guard it are gone, so nothing can chase a piece away from there",
+          ] },
+        { prompt: "Put the knight on the e5 outpost",
+          retry: "The knight on f3 reaches e5 in one hop" },
+      ],
+    },
+    "mg-pawns": {
+      part: "Middlegame thinking", title: "Pawn structure: doubled, isolated, holes",
+      text: [
+        "Pawns are the only men that cannot go back, so every pawn move leaves a weakness that is permanent. Reading the pawn structure is reading where the game is headed.",
+        "Doubled pawns: two of your own on one file. The front one blocks the back one, neither moves easily, and they cannot defend each other.",
+        "An isolated pawn: no friendly pawn on either neighbouring file, so no pawn can ever defend it. A piece has to babysit it instead — and a piece tied to a pawn is a piece you no longer have.",
+      ],
+      tasks: [
+        { prompt: "Name the two weak pawn types in this position",
+          steps: [
+            "White has two pawns doubled on the c-file — click either one",
+            "Black's d5 pawn has no friendly pawn beside it — click that isolated pawn",
+            "The square in front of an isolated pawn can never be guarded by a pawn — click d4, the square a knight wants",
+          ] },
+      ],
+    },
+    "mg-passer": {
+      part: "Middlegame thinking", title: "Passed pawns: the piece that promotes itself",
+      text: [
+        "A pawn with no enemy pawn ahead of it on its own file, and none on either neighbouring file able to block its path, is a passed pawn. Walk it to the end and it becomes a queen.",
+        "A passed pawn is worth more the further it goes, and it forces the other side to leave someone behind to watch it — which is one fewer piece fighting everywhere else.",
+        "So before you trade in the middlegame, do the arithmetic: who has a passed pawn once the trade is done? Whoever does usually wins the endgame that follows.",
+      ],
+      tasks: [
+        { prompt: "Find the one passed pawn on the board",
+          steps: [
+            "Click the white pawn on c5: Black has nothing on the b-, c- or d-files, so nothing stands in its way",
+          ] },
+        { prompt: "Push the passed pawn one square",
+          retry: "Play c5–c6" },
+      ],
+    },
+    "mg-trade": {
+      part: "Middlegame thinking", title: "When to trade",
+      text: [
+        "A trade is never neutral. It always favours one side — the question is which side you are on.",
+        "When you are up material, trade pieces but not pawns: the fewer men are left, the more your extra one stands out, until it is walking around alone. When you are down material the reverse holds — keep pieces on and keep the position messy.",
+        "There is a third case: when your own pieces are tripping over each other, trade one or two off on purpose to give the rest room.",
+      ],
+      tasks: [
+        { prompt: "White is a rook up. The side with more material trades — take the queens off down the d-file",
+          retry: "The d-file is clear: play Qxd8" },
+        { prompt: "The queens are gone; keep going — put your rook on the d-file, face to face with theirs",
+          retry: "The rook on e1 goes to d1" },
+      ],
+    },
+    "mg-attack": {
+      part: "Middlegame thinking", title: "Attacking the king: gather first, charge second",
+      text: [
+        "An attack does not come from one piece trying hard. It comes from numbers, and the rule is plain: you need more pieces near their king than they have defending it.",
+        "So a real attack starts with bringing pieces over — every move adds one more, until you have more than they do. Then you strike. Attacks launched with two pieces are the ones that get punished.",
+        "Once the pawns in front of their king have moved at all (…h6, …g6), those squares are the handles to grab — and that is where the head-count matters.",
+      ],
+      tasks: [
+        { prompt: "Count how many White pieces already point at the black king",
+          steps: [
+            "Click the bishop on d3: its diagonal runs all the way to h7, right at the king's doorstep",
+            "Click the knight on f3: it can jump to g5 at any moment, the classic attacking square",
+          ] },
+        { prompt: "Two is not enough. The e-file is empty — bring the rook up and make it three",
+          retry: "The rook on f1 goes to e1" },
+      ],
+    },
     "square": {
       part: "Endgame basics", title: "The rule of the square: can the king catch the pawn?",
       text: [

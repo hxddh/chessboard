@@ -249,6 +249,30 @@ for (const p of ["r", "b", "n"]) {
   }
   assert(bad === 0, "all lesson tasks valid");
 
+  // Curriculum shape. Up to 1.9 the course jumped straight from "three opening
+  // principles" to the endgame: a student finished all 38 lessons knowing how
+  // to fork and how to mate with a rook, and had never been told what to do on
+  // move 12. The middlegame block has to stay, and it has to stay *between*
+  // those two — a section is only a bridge if it is in the middle.
+  {
+    const parts = lessons.map((l) => l.part);
+    const firstOf = (p) => parts.indexOf(p);
+    const lastOf = (p) => parts.lastIndexOf(p);
+    const MG = "中局思路";
+    assert(firstOf(MG) !== -1, "the curriculum has a middlegame section");
+    const mgLessons = lessons.filter((l) => l.part === MG);
+    assert(mgLessons.length >= 6,
+      "the middlegame section is a section, not a footnote (" + mgLessons.length + " lessons)");
+    assert(lastOf("开局入门") < firstOf(MG),
+      "the middlegame comes after the opening");
+    assert(lastOf(MG) < firstOf("残局基础"),
+      "the middlegame comes before the endgame");
+    // every middlegame lesson has to be practised, not just read
+    const noTask = mgLessons.filter((l) => !(l.tasks || []).length).map((l) => l.id);
+    assert(noTask.length === 0,
+      "every middlegame lesson has something to do" + (noTask.length ? ": " + noTask.join(", ") : ""));
+  }
+
   // English lessons: every lesson must be covered, and every entry must line
   // up with the Chinese original — a translation that describes a different
   // task is worse than none at all. 1.5 shipped a 9-lesson "pilot" while the
@@ -362,6 +386,8 @@ for (const p of ["r", "b", "n"]) {
   const matingMoves = (g) => g.moves().filter((m) => {
     g.move(m); const mate = g.in_checkmate(); g.undo(); return mate;
   });
+  /** a mate-in-one for whoever is to move, or null */
+  const mateIn1 = (g) => matingMoves(g)[0] || null;
   function whiteHasForcedMate(g, n) {
     for (const m of g.moves()) {
       g.move(m);
@@ -414,7 +440,7 @@ for (const p of ["r", "b", "n"]) {
   for (const p of puzzles) {
     if (!p.id || ids.has(p.id)) { fail("puzzle id missing/duplicate", p.id); continue; }
     ids.add(p.id);
-    if (!p.name || !["m1", "m2", "m3", "win", "tac"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
+    if (!p.name || !["m1", "m2", "m3", "win", "tac", "def", "draw"].includes(p.cat)) { fail(p.id, "bad name/cat"); continue; }
     const v = new Chess().validate_fen(p.fen);
     if (!v.valid) { fail(p.id, "invalid FEN:", v.error); continue; }
     if (p.fen.split(" ")[1] !== "w") { fail(p.id, "not white to move"); continue; }
@@ -461,6 +487,86 @@ for (const p of ["r", "b", "n"]) {
       }
       continue;
     }
+    // Defensive puzzles claim something specific: Black is threatening mate in
+    // one *right now*, and the stored answer takes that mate off the board.
+    // Both halves are checked, because a "defence" against a threat that was
+    // never there teaches the opposite of what it says on the tin. Unlike the
+    // mates, these do not have to be unique — the runtime accepts any move
+    // that holds, because in a real game any move that holds is correct — but
+    // there must be at least one move that loses, or there is nothing to find.
+    if (p.cat === "def") {
+      if (!Array.isArray(p.solution) || p.solution.length !== 1) { fail(p.id, "def solution is one move"); continue; }
+      const bl = new Chess(p.fen.replace(" w ", " b "));
+      const threat = mateIn1(bl);
+      if (!threat) { fail(p.id, "black is not actually threatening mate in 1"); continue; }
+      const gd = new Chess(p.fen);
+      const all = gd.moves();
+      const holds = all.filter((m) => {
+        gd.move(m);
+        const ok = gd.game_over() || !mateIn1(gd);
+        gd.undo();
+        return ok;
+      });
+      if (!holds.includes(p.solution[0])) {
+        fail(p.id, "solution " + p.solution[0] + " does not stop " + threat);
+      }
+      if (!holds.length) fail(p.id, "no defence exists — the position is already lost");
+      if (holds.length >= all.length) fail(p.id, "every move holds — nothing to find");
+      continue;
+    }
+
+    // Drawing puzzles: White is losing and one line holds the half point. The
+    // line has to *end* in a real draw — a stalemate, or a repetition reached
+    // by checks that Black could not sidestep.
+    if (p.cat === "draw") {
+      if (!Array.isArray(p.solution) || p.solution.length < 2) { fail(p.id, "draw needs a line"); continue; }
+      const gd = new Chess(p.fen);
+      const seen = [gd.fen().split(" ").slice(0, 4).join(" ")];
+      let broke = false, allChecks = true;
+      for (let i = 0; i < p.solution.length; i++) {
+        const m = gd.move(p.solution[i]);
+        if (!m) { fail(p.id, "draw line illegal at ply " + i + ":", p.solution[i]); broke = true; break; }
+        if (m.san !== p.solution[i]) fail(p.id, "non-canonical SAN", p.solution[i], "≠", m.san);
+        if (i % 2 === 0 && !gd.in_check()) allChecks = false;
+        // A perpetual only saves the game if Black cannot sidestep it, so
+        // every reply in that line has to be forced. A stalemate trick is the
+        // opposite kind of claim — it is bait, and bait Black is free to
+        // decline — so there the requirement is that Black *can* go wrong.
+        if (p.via === "perpetual" && i % 2 === 0 && i + 1 < p.solution.length && gd.moves().length !== 1) {
+          fail(p.id, "black has a choice at ply " + (i + 1) + " (" + gd.moves().length + " replies)");
+        }
+        if (p.via === "stalemate" && i % 2 === 0 && gd.moves().length < 3) {
+          fail(p.id, "the trap is not a trap — black has almost no choice");
+        }
+        seen.push(gd.fen().split(" ").slice(0, 4).join(" "));
+      }
+      if (broke) continue;
+      const last = seen[seen.length - 1];
+      const repeats = seen.filter((f) => f === last).length >= 2;
+      const stalemate = gd.in_stalemate();
+      if (p.via === "stalemate") {
+        if (!stalemate) fail(p.id, "line does not end in stalemate");
+        // the bait has to be worth taking, or nobody would take it
+        const bait = new Chess(p.fen);
+        bait.move(p.solution[0]);
+        const grab = bait.move(p.solution[1]);
+        if (!grab || !grab.captured) fail(p.id, "black's reply is not the capture that springs the trap");
+        // and White has to be genuinely lost, or a draw is not a save
+        const VALS = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+        let wm = 0, bm = 0;
+        for (const row of new Chess(p.fen).board()) for (const s of row || []) {
+          if (s) (s.color === "w" ? (wm += VALS[s.type]) : (bm += VALS[s.type]));
+        }
+        if (bm - wm < 4) fail(p.id, "white is not losing (deficit " + (bm - wm) + ") — nothing to save");
+      } else if (p.via === "perpetual") {
+        if (!allChecks) fail(p.id, "perpetual line contains a move that is not a check");
+        if (!repeats) fail(p.id, "perpetual line does not repeat the position");
+      } else {
+        fail(p.id, "draw puzzle needs via: stalemate | perpetual");
+      }
+      continue;
+    }
+
     const g = new Chess(p.fen);
     const mv = g.move(p.solution[0]);
     if (!mv) { fail(p.id, "solution[0] illegal:", p.solution[0]); continue; }
@@ -564,6 +670,102 @@ for (const p of ["r", "b", "n"]) {
   assert(genMates.length > 0 && lonelyKing.length <= genMates.length * 0.35,
     "generated mates are not all the same shape (" + lonelyKing.length + "/" + genMates.length +
     " face a lone king)");
+}
+
+// The keyboard reference and the native menu. 1.9 moved the panel from Tab to
+// P and nothing anywhere said so — not a tooltip, not a menu, not a help sheet.
+// These lock in both halves of the fix and, more importantly, that they agree.
+{
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const htmlK = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  const zon = fs.readFileSync(path.join(root, "app.zon"), "utf8");
+
+  assert(/id="keys-modal"/.test(htmlK), "the shortcut sheet exists");
+  const table = /const KEY_HELP = \[([\s\S]*?)\];/.exec(appSrc);
+  assert(table, "the shortcut sheet is built from a table");
+  const helpKeys = [...table[1].matchAll(/k: "(keys\.[a-z]+)"/g)].map((m) => m[1]);
+  assert(helpKeys.length >= 10, "the sheet lists the shortcuts (" + helpKeys.length + ")");
+
+  // every letter the global handler binds must appear in the sheet
+  const listed = table[1].toLowerCase();
+  for (const key of ["p", "n", "z", "h", "f"]) {
+    assert(new RegExp('"' + key + '"', "i").test(table[1]),
+      "the sheet lists the " + key.toUpperCase() + " shortcut");
+  }
+  assert(/"\?"/.test(appSrc) && /openKeyHelp/.test(appSrc),
+    "\"?\" opens the sheet — the one shortcut the sheet cannot teach");
+
+  // and every language must be able to read it
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  const dictK = ctx.ChessI18n.DICT;
+  for (const lang of Object.keys(dictK)) {
+    const missing = helpKeys.filter((k) => !(k in dictK[lang]));
+    assert(missing.length === 0,
+      lang + " translates the whole shortcut sheet" + (missing.length ? " (missing " + missing.join(", ") + ")" : ""));
+  }
+
+  // The native menu was declared-but-empty from 1.0 to 1.9: main.zig forwarded
+  // menu commands to the page and app.zon defined no menus, so on a desktop
+  // app the menu bar had nothing in it.
+  assert(/\.menus = \.\{[\s\S]*?\.command = "/.test(zon), "app.zon declares native menu items");
+  const commands = [...zon.matchAll(/\.command = "([a-z.]+)"/g)].map((m) => m[1]);
+  assert(commands.length >= 6, "the menu carries the main actions (" + commands.length + ")");
+  const handled = /const NATIVE_COMMANDS = \{([\s\S]*?)\n  \};/.exec(appSrc);
+  assert(handled, "app.js handles native menu commands");
+  const unhandled = commands.filter((c) => !handled[1].includes('"' + c + '"'));
+  assert(unhandled.length === 0,
+    "every menu item does something" + (unhandled.length ? " — dead: " + unhandled.join(", ") : ""));
+  assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
+    "the host bridge forwards the shortcut event");
+  assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");
+}
+
+// Sparring personalities. `pick` is pure — candidates in, one of them out —
+// so the whole contract is testable without ever starting the engine.
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/persona.js"), "utf8"), ctx, { filename: "persona.js" });
+  const P = ctx.ChessPersona;
+  assert(P && typeof P.pick === "function", "persona module loaded");
+  assert(P.IDS[0] === "off", "\"off\" is the first personality, i.e. the default");
+
+  // A knight on f3 with a free pawn on e5 to take, or quiet developing moves.
+  const fen = "rnbqkb1r/pppp1ppp/5n2/4p3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 1";
+  const cands = [
+    { uci: "d2d4", score: 30 },     // best, quiet
+    { uci: "f3e5", score: -60 },    // grabs the pawn, slightly worse
+    { uci: "b1c3", score: 10 },     // develops a knight
+    { uci: "f1c4", score: 5 },      // develops a bishop
+    { uci: "d1e2", score: -20 },    // early queen move
+  ];
+  assert(P.pick(fen, cands, "greedy", Chess) === "f3e5",
+    "the greedy personality takes the pawn");
+  assert(["b1c3", "f1c4"].includes(P.pick(fen, cands, "principled", Chess)),
+    "the by-the-book personality develops a piece");
+  assert(P.pick(fen, cands, "off", Chess) === null,
+    "\"off\" leaves the engine's own choice alone");
+
+  // The safety rails, which are the whole reason a personality is playable.
+  const wild = [{ uci: "d2d4", score: 30 }, { uci: "f3e5", score: -900 }];
+  assert(P.pick(fen, wild, "greedy", Chess) !== "f3e5",
+    "no personality follows a capture that is far outside its slack");
+  const mating = [{ uci: "d2d4", score: 99999 }, { uci: "f3e5", score: 10 }];
+  assert(P.pick(fen, mating, "greedy", Chess) === null,
+    "a forced mate is never traded away for a capture");
+  assert(P.pick(fen, [{ uci: "d2d4", score: 30 }], "greedy", Chess) === null,
+    "one candidate is no choice at all");
+
+  // Every personality must be reachable from the panel and named in every
+  // language — a style you cannot select is a style that does not exist.
+  const htmlP = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  const inMarkup = [...htmlP.matchAll(/data-persona="([a-z]+)"/g)].map((m) => m[1]);
+  assert(P.IDS.every((id) => inMarkup.includes(id)) && inMarkup.length === P.IDS.length,
+    "every personality has a button (" + inMarkup.join(", ") + ")");
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  const dict = ctx.ChessI18n.DICT;
+  for (const lang of Object.keys(dict)) {
+    const missing = P.IDS.filter((id) => !("persona." + id in dict[lang]));
+    assert(missing.length === 0, lang + " names every personality");
+  }
 }
 
 // FIDE draw arithmetic: repetition counting and the 6.9 material test decide
@@ -953,6 +1155,63 @@ for (const p of ["r", "b", "n"]) {
     assert(!hijack, "Tab is left to the browser for focus navigation");
     assert(/:focus-visible\s*\{[^}]*outline:\s*2px/.test(css),
       "a visible focus ring is defined for keyboard users");
+  }
+
+  // Dialogs. Freeing Tab in 1.9 made "walk out of an open dialog" reachable
+  // for the first time; on the shipped build focus left the FEN dialog after
+  // 4 presses, the slots and confirm dialogs after 1, and none of the six
+  // carried aria-modal. These guard the module that fixed it and the two
+  // call-site mistakes that caused the worst of it.
+  {
+    const dlgPath = path.join(root, "src/web/js/dialog.js");
+    assert(fs.existsSync(dlgPath), "the shared dialog module exists");
+    const dlg = fs.readFileSync(dlgPath, "utf8");
+    const appSrc3 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    assert(/aria-modal/.test(dlg), "dialog.js sets aria-modal while a dialog is open");
+    assert(/function handleTab/.test(dlg) && /shiftKey/.test(dlg),
+      "dialog.js wraps Tab in both directions");
+    assert(/handleTab\(ev\)/.test(appSrc3), "app.js installs the Tab wrap");
+
+    // Every dialog must go through the helper. A stray classList.add("show")
+    // is a dialog with no focus trap, no aria-modal and no focus return —
+    // exactly the state all six were in before 1.10. The toast is not a
+    // dialog and uses the same class, so it is the one allowed exception.
+    const strays = [...appSrc3.matchAll(/^.*classList\.(?:add|remove)\("show"\).*$/gm)]
+      .map((m) => m[0].trim())
+      .filter((line) => !/toastTimer|el\.classList/.test(line));
+    assert(strays.length === 0,
+      "every dialog opens and closes through ChessDialog" +
+      (strays.length ? " — stray: " + strays[0] : ""));
+
+    // The FEN field swallowed *every* keydown so board shortcuts would not
+    // fire while typing a position. Escape and Tab are not shortcuts; eating
+    // them made the dialog's own auto-focused control the one place it could
+    // not be dismissed from.
+    const fenGuard = /if \(ev\.key !== "Escape" && ev\.key !== "Tab"\) ev\.stopPropagation\(\);/;
+    assert(fenGuard.test(appSrc3), "the FEN field lets Escape and Tab through");
+  }
+
+  // "Reduce motion" is an accessibility setting. 1.9 honoured it with exactly
+  // one rule against 25 animated declarations.
+  {
+    const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const block = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css);
+    assert(block, "there is a prefers-reduced-motion block");
+    assert(/\*,\s*\*::before,\s*\*::after/.test(block[1]),
+      "reduced motion applies to everything, not a hand-listed subset");
+    assert(/animation-duration:[^;]*!important/.test(block[1]) &&
+      /transition-duration:[^;]*!important/.test(block[1]),
+      "reduced motion silences both animations and transitions");
+  }
+
+  // The move list was capped at a flat 176px — seven move pairs whether the
+  // window was 800px tall or 1400px.
+  {
+    const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const rule = /\.move-list \{ max-height: ([^;]+); \}/.exec(css);
+    assert(rule, "the move list has an explicit height cap");
+    assert(/100vh/.test(rule[1]) && /176px/.test(rule[1]),
+      "the cap grows with the window and floors at the old 176px (" + rule[1] + ")");
   }
 
   // The shipped default window must not make the board smaller than the space

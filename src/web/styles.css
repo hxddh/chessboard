@@ -230,6 +230,9 @@
       display: block; width: 100%; height: 100%;
       cursor: default; border-radius: calc(var(--radius-sm) - 2px);
     }
+    /* The grab / grabbing cursors are set inline from the board's pointer
+       handlers (app.js), because whether a square is grabbable depends on the
+       game state, not on anything CSS can select. */
     /* the board draws its own focus ring on-canvas (keyboard cursor), so the
        UA outline would only double it up */
     #board:focus { outline: none; }
@@ -515,11 +518,20 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
-      max-height: 176px;
       overflow-y: auto;
       padding: 2px;
       margin-bottom: 8px;
     }
+    /* The cap used to be a flat `max-height: 176px` — about seven move pairs,
+       the same seven whether the window was 800px tall or 1400px. A 26-ply
+       game showed 7 of its 12 rows on a 1400px display with room to spare.
+       It now grows with the window and floors at the old value, so this is
+       never worse than 1.9 and is better on anything tall:
+         800px window → 176px (7 rows, unchanged)
+         1100px       → 330px (all 12 rows, no scrolling)
+       The 770px subtrahend is the chrome, the vs bar, the replay controls,
+       the three action groups and their margins — measured, not guessed. */
+    .move-list { max-height: max(176px, calc(100vh - 770px)); }
     .move-list:empty { display: none; }
     .move-list button {
       border: 0;
@@ -848,6 +860,9 @@
         width: 100%; max-width: 620px;
         margin-left: auto; margin-right: auto;
       }
+      /* the sheet is at most 430px tall no matter how tall the window is, so
+         the viewport-relative move-list cap must not apply here */
+      .move-list { max-height: 176px; }
     }
 
     /* Narrow *landscape* windows: the panel overlays the board instead of
@@ -888,8 +903,25 @@
   0%, 100% { transform: scale(0.7); opacity: 0.35; }
   50% { transform: scale(1.15); opacity: 0.85; }
 }
+/* "Reduce motion" is an accessibility setting, not a preference about polish:
+   for people with vestibular disorders, sliding panels and pulsing indicators
+   can cause real nausea. Up to 1.9 this block silenced exactly one of the 25
+   transition/animation declarations in this file — the panel still slid, the
+   board still resized under it, the dialogs still flew in, the thinking pill
+   still pulsed. Everything is off now.
+
+   Blanket !important is deliberate: several of the animated rules below are
+   more specific than anything reasonable to enumerate here, and a rule that
+   silently stops covering a new animation is worse than none. `.01ms` rather
+   than `0s` so animationend/transitionend listeners still fire. */
 @media (prefers-reduced-motion: reduce) {
-  .think-dot { animation: none; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .think-dot, .status-pill.thinking { animation: none !important; }
 }
 
 .board-frame-win #board-wrap {
@@ -1007,3 +1039,30 @@
     .hist-body .hint { margin: 2px 0 0; }
     .hist-row { display: flex; gap: 6px; align-items: stretch; }
     .hist-row .pick-item { flex: 1; min-width: 0; padding: 7px 10px; }
+
+/* v1.10 */
+.hist-filters {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-bottom: 12px;
+}
+.hist-filters .theme-row { flex: 0 1 auto; }
+
+.key-list {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 8px 14px; margin: 0 0 14px;
+  align-items: baseline;
+  max-height: 52vh; overflow-y: auto;
+}
+.key-list dt { display: flex; gap: 4px; flex-wrap: wrap; }
+.key-list dd { margin: 0; font-size: 13px; color: var(--muted); }
+kbd {
+  display: inline-block;
+  min-width: 22px; padding: 2px 6px;
+  font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center; white-space: nowrap;
+  color: var(--text);
+  background: var(--btn-ghost);
+  border: 1px solid var(--card-border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+}
