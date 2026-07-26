@@ -2685,6 +2685,7 @@
     const flipSwitch = document.getElementById("opt-autoflip");
     if (flipSwitch) flipSwitch.setAttribute("aria-pressed", autoFlipPvp ? "true" : "false");
     renderMaterial();
+    renderIdleCard();
     const secMoves = document.getElementById("sec-moves");
     const trainer = mode === "learn" || mode === "puzzle" || !!editor;
     if (secMoves) secMoves.hidden = trainer;
@@ -3614,6 +3615,57 @@
    * is most of the point. In the puzzle and lesson modes the pieces on the
    * board are a constructed exercise, not a game's remains, so it stays empty.
    */
+  /**
+   * The card that stands in for an empty notation list.
+   *
+   * At move 0 the play tab had nothing to show below the replay bar — measured
+   * on 1.12, 239px of a 619px pane, which is 39% and is also the very first
+   * screen of every new game and of every new install. Nothing here is new
+   * information: the last result and the running record come out of the same
+   * statistics the record tab reads, and the suggestion is `recommendation()`,
+   * which until now only ever appeared on a tab most players never open.
+   */
+  function renderIdleCard() {
+    const el = document.getElementById("idle-card");
+    if (!el) return;
+    // only on an untouched board in a real game — lessons and puzzles have
+    // their own copy filling this space
+    const show = (mode === "ai" || mode === "pvp") && !sanHistory().length && !editor;
+    el.hidden = !show;
+    if (!show) return;
+    el.innerHTML = "";
+    const line = (k, v) => {
+      const row = document.createElement("div");
+      row.className = "idle-line";
+      const a = document.createElement("span");
+      a.className = "idle-k";
+      a.textContent = k;
+      const b = document.createElement("span");
+      b.className = "idle-v";
+      b.textContent = v;
+      row.append(a, b);
+      el.appendChild(row);
+    };
+    const st = loadStats();
+    const games = st.games || [];
+    const last = games[games.length - 1];
+    if (last) {
+      line(t("idle.last"), historyLabel(last) + " · " + historyWhen(last.t));
+      const mine = games.filter((g) => g.diff === difficulty);
+      const w = mine.filter((g) => g.result === "win").length;
+      const l = mine.filter((g) => g.result === "loss").length;
+      const d = mine.length - w - l;
+      if (mine.length) line(diffName(difficulty), tf("stats.wld", [w, l, d]));
+    } else {
+      line(t("idle.ready"), t(mode === "ai" ? "idle.vsEngine" : "idle.vsHuman"));
+    }
+    const rec = recommendation();
+    const tip = document.createElement("div");
+    tip.className = "idle-rec";
+    tip.textContent = rec || t("idle.tip");
+    el.appendChild(tip);
+  }
+
   function renderMaterial() {
     const Mat = window.ChessMaterial;
     const wEl = document.getElementById("taken-w");
