@@ -3,7 +3,7 @@
     .name = "chessboard",
     .display_name = "国际象棋",
     .description = "Chess for macOS & Windows — Native SDK WebView + Canvas, GPLv3.",
-    .version = "1.17.0",
+    .version = "1.18.0",
     .icons = .{"assets/icon.png"},
     .platforms = .{ "macos", "windows" },
     .permissions = .{},
@@ -32,7 +32,13 @@
                 .{ .label = "新局", .command = "game.new", .key = "n", .modifiers = .{"primary"} },
                 .{ .label = "悔棋", .command = "game.undo", .key = "z", .modifiers = .{"primary"} },
                 .{ .separator = true },
-                .{ .label = "引擎提示", .command = "game.hint", .key = "h", .modifiers = .{"primary"} },
+                // ⌘H is the system's "Hide <app>" — AppKit installs the app
+                // menu before the declared ones, so its key equivalent wins and
+                // this item was dead from 1.10 on: pressing it hid the app
+                // instead of giving a hint. Doubly confusing from 1.18, where
+                // closing the window also hides. The in-page bare `h` is
+                // unaffected and still the fast way to ask.
+                .{ .label = "引擎提示", .command = "game.hint", .key = "h", .modifiers = .{ "primary", "shift" } },
                 .{ .label = "翻转棋盘", .command = "game.flip", .key = "f", .modifiers = .{"primary"} },
             },
         },

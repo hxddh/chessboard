@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
+import { spawnSync } from "child_process";
 import { scanAll } from "./scope-check.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -829,6 +830,71 @@ for (const p of ["r", "b", "n"]) {
   // The native menu was declared-but-empty from 1.0 to 1.9: main.zig forwarded
   // menu commands to the page and app.zon defined no menus, so on a desktop
   // app the menu bar had nothing in it.
+  // 1.18: the per-platform manifest. `close_policy = "hide"` is what macOS
+  // wants and a *comptime error* on windows without a tray, so app.zon has to
+  // stay portable and the macOS variant is derived from it. Both halves are
+  // checked here, because getting either wrong breaks a platform build in CI
+  // rather than in anything a test would otherwise notice.
+  assert(!/close_policy/.test(zon),
+    "app.zon stays portable — close_policy belongs in the derived macOS manifest, and \"hide\" here would fail the windows build at comptime");
+  {
+    const gen = path.join(root, "scripts/gen-manifest.mjs");
+    assert(fs.existsSync(gen), "the manifest generator exists");
+    const out = path.join(root, "build", "app.macos.test.zon");
+    const r = spawnSync(process.execPath, [gen, "macos", "--out", "build/app.macos.test.zon"],
+      { cwd: root, encoding: "utf8" });
+    assert(r.status === 0, "the macOS manifest generates" + (r.status ? " — " + (r.stderr || "").trim() : ""));
+    if (r.status === 0) {
+      const mac = fs.readFileSync(out, "utf8");
+      assert(/\.close_policy = "hide"/.test(mac), "the macOS manifest closes to hidden");
+      // derived, not duplicated: everything else must survive verbatim
+      const stripped = mac.replace(/^\/\/.*\n/gm, "").replace(/\s*\.close_policy = "hide",\n/, "\n");
+      assert(stripped.trim() === zon.replace(/^\/\/.*\n/gm, "").trim(),
+        "the macOS manifest differs from app.zon by exactly the close policy");
+      fs.rmSync(out, { force: true });
+    }
+    // and the build has to be able to point at it
+    const buildZig = fs.readFileSync(path.join(root, "build.zig"), "utf8");
+    assert(/b\.option\(\[\]const u8, "manifest"/.test(buildZig), "build.zig takes -Dmanifest");
+    assert(!/root_source_file = b\.path\("app\.zon"\)/.test(buildZig),
+      "every manifest import goes through -Dmanifest, not a hardcoded app.zon");
+    const macWf = fs.readFileSync(path.join(root, ".github/workflows/build-macos.yml"), "utf8");
+    const winWf = fs.readFileSync(path.join(root, ".github/workflows/build-windows.yml"), "utf8");
+    assert(/gen-manifest\.mjs macos/.test(macWf) && /-Dmanifest=build\/app\.macos\.zon/.test(macWf),
+      "the macOS build compiles against the derived manifest");
+    assert(/--manifest build\/app\.macos\.zon/.test(macWf),
+      "and packages against it too — the exe and the bundle must agree");
+    assert(!/gen-manifest|-Dmanifest/.test(winWf),
+      "the windows build stays on app.zon, where close_policy is the default quit");
+  }
+
+  // No declared menu item may claim a key the macOS app menu already owns.
+  // AppKit installs About/Hide/Hide Others/Show All/Quit *before* the declared
+  // menus, and resolves a key equivalent by walking the tree in order — so a
+  // collision does not merely lose, it silently does the system thing instead.
+  // 引擎提示 sat on ⌘H from 1.10 to 1.17: the menu item was dead and the
+  // keystroke hid the app.
+  {
+    const RESERVED = [
+      { key: "h", mods: ["primary"], what: "系统的「隐藏应用」⌘H" },
+      { key: "h", mods: ["primary", "option"], what: "系统的「隐藏其他」⌘⌥H" },
+      { key: "q", mods: ["primary"], what: "系统的「退出」⌘Q" },
+    ];
+    const items = [...zon.matchAll(/\.key = "([^"]+)", \.modifiers = \.\{([^}]*)\}/g)].map((m) => ({
+      key: m[1],
+      mods: [...m[2].matchAll(/"([a-z]+)"/g)].map((x) => x[1]).sort(),
+    }));
+    assert(items.length >= 6, "the menu items declare their keys (" + items.length + ")");
+    const clash = [];
+    for (const it of items) {
+      for (const r of RESERVED) {
+        if (it.key === r.key && it.mods.join("+") === r.mods.slice().sort().join("+")) clash.push(r.what);
+      }
+    }
+    assert(clash.length === 0,
+      "no menu item collides with a key the macOS app menu owns" + (clash.length ? " — 撞上了 " + clash.join("、") : ""));
+  }
+
   assert(/\.menus = \.\{[\s\S]*?\.command = "/.test(zon), "app.zon declares native menu items");
   const commands = [...zon.matchAll(/\.command = "([a-z.]+)"/g)].map((m) => m[1]);
   assert(commands.length >= 6, "the menu carries the main actions (" + commands.length + ")");
@@ -1957,9 +2023,21 @@ for (const p of ["r", "b", "n"]) {
   ]) assert(re.test(appSrc), "recent documents is recorded from " + what);
   assert(/if \(!appForeground\) Host\.notify\(/.test(appSrc),
     "the analysis notification only fires when the app is in the background");
-  assert(/activate: \(\) => \{ appForeground = true; \}/.test(appSrc)
+  assert(/activate: \(\) => \{ appForeground = true;/.test(appSrc)
     && /deactivate: \(\) => \{ appForeground = false;/.test(appSrc),
     "both lifecycle events maintain the foreground flag");
+  // 1.18: and both of them have to poke the clock. The tick charges elapsed
+  // wall time, so an app that keeps running out of sight keeps billing it —
+  // measured at 1.17, 8.4s in the background cost 9s of clock. Now that
+  // closing the window on macOS hides the app rather than ending it, that is
+  // the normal path, not the unlucky one.
+  assert(/activate: \(\) => \{ appForeground = true; syncClockTimer\(\)/.test(appSrc)
+    && /deactivate: \(\) => \{ appForeground = false; saveGame\(\); syncClockTimer\(\)/.test(appSrc),
+    "both lifecycle events stop and restart the clock");
+  assert(/function clockRunning\(\)[\s\S]{0,200}?&& appAwake\(\);/.test(appSrc),
+    "the clock only runs while somebody is in front of the board");
+  assert(/function appAwake\(\)[\s\S]{0,300}?visibilityState !== "hidden"/.test(appSrc),
+    "being away counts by the web signal as well as the native one");
 }
 
 // --- free variables: the one lint rule that would have saved 1.12 and 1.13 ---

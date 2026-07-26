@@ -43,13 +43,16 @@ test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
 echo "==> unit tests"
 node scripts/test-chess.mjs
 
+echo "==> derive the macOS manifest (close_policy = hide)"
+node scripts/gen-manifest.mjs macos
+
 echo "==> zig build -Doptimize=ReleaseFast"
-zig build -Doptimize=ReleaseFast
+zig build -Doptimize=ReleaseFast -Dmanifest=build/app.macos.zon
 
 echo "==> native package"
 mkdir -p dist
 rm -rf dist/Chessboard.app
-native package --target macos --signing adhoc --output dist/Chessboard.app --binary zig-out/bin/chessboard
+native package --target macos --signing adhoc --manifest build/app.macos.zon --output dist/Chessboard.app --binary zig-out/bin/chessboard
 
 echo "==> zip + remove package .app (avoid duplicate Launchpad entry)"
 (
