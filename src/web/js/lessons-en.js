@@ -367,6 +367,125 @@
           retry: "Try e2–e4 or d2–d4 — one move, and the centre is yours" },
       ],
     },
+    "op-firstmove": {
+      part: "Opening basics", title: "The first move does three things at once",
+      text: [
+        "A game almost always starts with **e4 or d4**. Not by convention — because that one move does three things at once: it takes the centre, it opens a diagonal for the bishop, and it opens one for the queen.",
+        "Of White's 20 legal first moves, **the f1 bishop and the d1 queen have no move at all** — their own pawns box them in. Push e4 and the bishop suddenly has 5 squares and the queen 4. One move, two pieces released.",
+        "An edge pawn (a4, h4) does none of the three: it does not touch the centre, it frees nobody, and it leaves a hole next to your own king.",
+      ],
+      tasks: [
+        { prompt: "First see who is boxed in — click them",
+          steps: [
+            "White's king-side bishop is stuck behind the e2 pawn with nowhere to go — click f1",
+            "The queen is walled in by d2 and e2 the same way — click d1",
+          ] },
+        { prompt: "Play the move that takes the centre and frees both the bishop and the queen",
+          retry: "An edge pawn or a knight cannot free two pieces in one move. Push the e- or d-pawn two squares" },
+        { prompt: "e4 is played — click the far end of the diagonal the bishop just gained",
+          steps: [
+            "The f1 bishop now runs along f1–a6, and a6 is as far as it goes — click a6",
+          ] },
+      ],
+    },
+    "op-knights": {
+      part: "Opening basics", title: "Knights towards the centre, not the edge",
+      text: [
+        "\"A knight on the rim is dim\" is an old saying, and it is countable: **on an empty board a knight on f3 reaches 8 squares, one on h3 reaches 4** — exactly half.",
+        "So the opening knight moves are almost always **Nf3 and Nc3** (Nf6 and Nc6 for Black). Both are near the centre and both watch centre squares.",
+        "A knight on a3 or h3 covers half as much, does nothing about the centre, and usually has to move again — which costs another move.",
+      ],
+      tasks: [
+        { prompt: "Count the central knight first — f3 reaches 8 squares; click any three of them",
+          steps: [
+            "Towards the centre — click e5 or d4",
+            "One more — g5 or d2",
+            "And h4, e1, g1, h2 are all in range too; click one",
+          ] },
+        { prompt: "Now the edge — click one of the squares the h3 knight can reach (there are only four)",
+          steps: [
+            "From h3 it only reaches f4, g5, f2 and g1 — half of what it had on f3",
+          ] },
+        { prompt: "e4 is played — put a knight where it belongs",
+          retry: "Na3 and Nh3 sit on the rim covering half as much, and have to move again. Jump towards the centre: Nf3 or Nc3" },
+      ],
+    },
+    "op-tempo": {
+      part: "Opening basics", title: "In the opening, move each piece once",
+      text: [
+        "The opening is a race to **get your pieces out**. A move only pays if it brings a *new* piece into the game; shuffling one that is already out is running on the spot.",
+        "The usual way to lose that race is **being chased**: a piece comes out early to a square it cannot hold, and the opponent gains time attacking it. You move it, they develop. Move it three times and they are three pieces ahead.",
+        "So before a piece comes out, ask: **can it stay there?** A square it cannot hold costs you the move you spent getting there.",
+      ],
+      tasks: [
+        { prompt: "White to play — bring out a **new** piece",
+          retry: "Moving the e-pawn again, or bringing the queen out early, is not development. Put a piece that has not moved yet into the game" },
+        { prompt: "White has played e4, Nf3, Bb5 — click the piece that came out **last**",
+          steps: [
+            "The bishop on b5 was the third to arrive. Three moves, three different pieces, nothing wasted — click b5",
+          ] },
+        { prompt: "Black's turn — same idea: a new piece (and one that guards e5 is better still)",
+          retry: "Don't push another pawn or move the same piece twice. Bring out a new one — the knight to c6 also covers e5" },
+      ],
+    },
+    "op-pawnmoves": {
+      part: "Opening basics", title: "A pawn move can never be taken back",
+      text: [
+        "Of all the pieces only the pawn **cannot go backwards**. Everything else can return if it went to the wrong square; a pawn move is permanent — and the squares behind it can never be covered by it again.",
+        "So spend pawn moves carefully in the opening: usually just **one or two centre pawns**, to take the centre and let the pieces out. Every extra pawn move is one more hole you cannot fill.",
+        "The pawns in front of your king deserve the most care. After castling, f, g and h are the roof; push one carelessly and the roof leaks.",
+      ],
+      tasks: [
+        { prompt: "First, which pawns are worth moving in the opening?",
+          steps: [
+            "These two take the centre and free your pieces — click e2 or d2",
+          ] },
+        { prompt: "Black has just castled king-side — click one of the pawns that should stay where it is",
+          steps: [
+            "g6 has already moved once to fit the bishop; f7, g7 and h7 are the roof. Pushing f7 or h7 opens it up — click f7 or h7",
+          ] },
+        { prompt: "Black to play — stop pushing pawns and bring a piece out",
+          retry: "a6, h6, b6 and the like take no centre, free nothing, and leave permanent holes. Develop" },
+      ],
+    },
+    "op-castle": {
+      part: "Opening basics", title: "Don't put castling off — the centre will open",
+      text: [
+        "Centre pawns trade themselves off, and the e- and d-files open sooner or later. **Once they do, a king still on e1 or e8 is staring down the enemy rooks and queen.**",
+        "So castling is the one of the three opening jobs with a deadline: **usually inside the first ten moves**. Two or three minor pieces out, and it is time.",
+        "It cuts both ways — an opponent who keeps putting castling off is telling you where to attack: prise the centre open.",
+      ],
+      tasks: [
+        { prompt: "White has three minor pieces out and the king-side is clear — there is only one thing to do",
+          retry: "More development is fine in itself, but the king is still on e1 and the centre can open at any moment. Tuck it into the corner: castle king-side" },
+        { prompt: "White has castled; Black to move — click the square the black king is still sitting on",
+          steps: [
+            "The black king is still on e8, facing an e-file that is going to open — click e8",
+          ] },
+        { prompt: "Black's turn — do the same",
+          retry: "Black also has three minor pieces out and a clear king-side. Tuck the king into the corner" },
+      ],
+    },
+    "op-italian": {
+      part: "Opening basics", title: "Your first opening: the Italian",
+      text: [
+        "Play the three principles in a row and you have a real opening. The friendliest one to start with is the **Italian Game**: 1.e4 e5 2.Nf3 Nc6 3.Bc4.",
+        "Three moves, three jobs, nothing wasted: **e4 takes the centre and frees bishop and queen; Nf3 develops and hits e5; Bc4 develops and eyes f7** — the one square in front of Black's king that only the king defends. Black answers in kind and the game is level.",
+        "You do not have to memorise openings. Remember what each move is *for*, and you can handle whatever the opponent plays. If you do want lines, the Openings category in the puzzle trainer has 109 of them, in ECO order.",
+      ],
+      tasks: [
+        { prompt: "The Italian, move one",
+          retry: "The Italian starts with e4 — the centre, and both the bishop and the queen freed" },
+        { prompt: "Black has answered e5 — move two: develop a piece and hit that pawn",
+          retry: "Nf3: develops and attacks e5, two jobs in one move" },
+        { prompt: "Nc6 defended the pawn — move three: put the bishop on the diagonal aiming at f7",
+          retry: "Bc4 — the bishop comes out to c4 pointing at f7. That is the Italian" },
+        { prompt: "The Italian is set up — click the weak square the bishop is aiming at",
+          steps: [
+            "f7 is the only square on Black's back rank defended by the king alone, and the c4 bishop is looking straight at it — click f7",
+          ] },
+      ],
+    },
     firstgame: {
       part: "Opening basics", title: "Your first complete game: Scholar's Mate",
       text: [

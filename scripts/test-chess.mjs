@@ -316,6 +316,18 @@ for (const p of ["r", "b", "n"]) {
     const egLessons = lessons.filter((l) => l.part === "残局基础");
     assert(egLessons.length >= 8,
       "the endgame section is a section too (" + egLessons.length + " lessons)");
+    // and the opening is the one they reach FIRST after the rules. Through
+    // 1.18 it had two lessons — three principles and a trap the lesson itself
+    // says not to rely on — against 7 middlegame and 8 endgame, with the next
+    // stop being 109 ECO lines to memorise. Whatever else gets added, this
+    // section does not get to be the thin one again.
+    const opLessons = lessons.filter((l) => l.part === "开局入门");
+    assert(opLessons.length >= 8,
+      "the opening section is a section too (" + opLessons.length + " lessons)");
+    const thinnest = Math.min(...["开局入门", "中局思路", "残局基础"].map(
+      (p) => lessons.filter((l) => l.part === p).length));
+    assert(thinnest >= 7,
+      "opening, middlegame and endgame are all real sections (thinnest has " + thinnest + ")");
   }
 
   // Emphasis markers have to be paired. The course marks its key sentence with
@@ -2032,6 +2044,33 @@ for (const p of ["r", "b", "n"]) {
   ]) assert(re.test(appSrc), "recent documents is recorded from " + what);
   assert(/if \(!appForeground\) Host\.notify\(/.test(appSrc),
     "the analysis notification only fires when the app is in the background");
+  // The difficulty ladder is declared once. A hand-written second copy in
+  // loadSettings meant a tier added to DIFF_IDS would be accepted by the UI and
+  // then dropped on the next launch.
+  {
+    const ids = /const DIFF_IDS = \[([^\]]*)\]/.exec(appSrc);
+    assert(ids, "app.js declares DIFF_IDS");
+    const list = [...ids[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+    assert(list.length >= 5, "the ladder has rungs (" + list.join(", ") + ")");
+    assert(!/\["beginner", "easy", "normal", "hard", "extreme"\]/.test(appSrc),
+      "no hand-written copy of the tier list survives");
+    assert(/DIFF_IDS\.includes\(s\.difficulty\)/.test(appSrc),
+      "the saved difficulty is validated against DIFF_IDS itself");
+    const engSrc = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");
+    const missing = list.filter((id) => !new RegExp("\\n\\s*" + id + ": \\{").test(engSrc));
+    assert(missing.length === 0,
+      "every rung has engine settings" + (missing.length ? " — missing: " + missing.join(", ") : ""));
+    const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+    const noBtn = list.filter((id) => !html.includes('data-diff="' + id + '"'));
+    assert(noBtn.length === 0,
+      "every rung has a button" + (noBtn.length ? " — missing: " + noBtn.join(", ") : ""));
+    const dict = ctx.ChessI18n.DICT;
+    for (const lang of Object.keys(dict)) {
+      const gaps = list.filter((id) => !("diff." + id in dict[lang]));
+      assert(gaps.length === 0, lang + " names every rung" + (gaps.length ? " — missing " + gaps.join(", ") : ""));
+    }
+  }
+
   assert(/activate: \(\) => \{ appForeground = true;/.test(appSrc)
     && /deactivate: \(\) => \{ appForeground = false;/.test(appSrc),
     "both lifecycle events maintain the foreground flag");
