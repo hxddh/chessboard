@@ -270,7 +270,10 @@
       if (typeof s.flipped === "boolean") flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) themeId = s.themeId;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) mode = s.mode;
-      if (["beginner", "easy", "normal", "hard", "extreme"].includes(s.difficulty)) difficulty = s.difficulty;
+      // DIFF_IDS, not a second copy of it — this list was written out by hand
+      // and adding the 1.19 "casual" rung to the ladder without it here would
+      // have thrown the choice away on the next launch, silently.
+      if (DIFF_IDS.includes(s.difficulty)) difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) humanColor = s.humanColor;
       if (s.timeControl === "off" || TCS[s.timeControl]) timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") coachOn = s.coachOn;
@@ -322,7 +325,7 @@
   }
 
   // --- engine (AI mode) ---
-  const DIFF_IDS = ["beginner", "easy", "normal", "hard", "extreme"];
+  const DIFF_IDS = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
   const diffName = (id) => t("diff." + id);
   /** legacy alias kept for the many call sites that read it like a map */
   const DIFF_NAMES = new Proxy({}, {
@@ -2125,7 +2128,7 @@
     const withAcc = s.games.filter((g) => typeof g.acc === "number");
     el.innerHTML = "";
     let total = 0;
-    for (const k of ["beginner", "easy", "normal", "hard", "extreme"]) {
+    for (const k of DIFF_IDS) {
       const a = agg[k];
       if (!a) continue;
       total += a.win + a.loss + a.draw;

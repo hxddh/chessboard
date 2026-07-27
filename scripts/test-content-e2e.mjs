@@ -51,6 +51,7 @@ for (const f of ["chess.js", "lessons.js", "puzzles.js"]) {
 const Chess = data.Chess;
 const LESSONS = data.CHESS_LESSONS;
 const ENDGAME = LESSONS.filter((l) => l.part === "残局基础");
+const OPENING = LESSONS.filter((l) => l.part === "开局入门");
 const REAL = data.CHESS_PUZZLES.filter((p) => p.cat === "real");
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
@@ -139,12 +140,13 @@ const settle = async () => {
   await page.waitForTimeout(200);
 };
 
-// --- the endgame lessons --------------------------------------------------
+// --- the opening and endgame lessons --------------------------------------
 await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].find((x) => x.dataset.mode === "learn").click());
 await page.waitForTimeout(500);
 assert(ENDGAME.length >= 8, `残局基础有 ${ENDGAME.length} 课`);
+assert(OPENING.length >= 8, `开局入门有 ${OPENING.length} 课`);
 
-for (const les of ENDGAME) {
+for (const les of [...OPENING, ...ENDGAME]) {
   const opened = await page.evaluate((want) => {
     const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
     const row = rows.find((r) => (r.textContent || "").includes(want));

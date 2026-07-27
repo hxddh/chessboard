@@ -446,6 +446,166 @@
           retry: "试试 e2–e4 或 d2–d4,一步抢占中心", solution: ["e4"] },
       ],
     },
+    // 1.19:开局入门从 2 课补到 8 课。中局 7 课、残局 8 课,而开局 —— 学完
+    // 规则之后第一个撞上的阶段 —— 只有「三原则」和「学者杀」两课,下一站
+    // 直接是做题里 109 条 ECO 主变。这六课补的就是那一段:每课一条能带走
+    // 的规则,能数的地方都给了数(马在 f3 控 8 格、在 h3 只控 4 格)。
+    {
+      id: "op-firstmove", part: "开局入门", title: "第一步:一步棋同时做三件事",
+      text: [
+        "开局第一步几乎总是 **e4 或 d4**。不是因为约定俗成,而是因为这一步同时做成三件事:占住中心、给象让出斜线、给后让出斜线。",
+        "开局时白方 20 个合法着法里,**f1 象和 d1 后一个都动不了** —— 它们被自己的兵挡得死死的。推一步 e4,象立刻有 5 个格子可去,后有 4 个。一步棋放出两个大子。",
+        "推边兵(a4、h4 之类)一件也做不成:不碰中心,不给谁让路,还在自己王的旁边留了个洞。",
+      ],
+      tasks: [
+        { type: "tap", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          prompt: "先看清楚被挡住的是谁 —— 点出来",
+          steps: [
+            { tip: "白方右边这个象,前面被 e2 兵堵着,一步也走不了 —— 点 f1", squares: ["f1"] },
+            { tip: "白后也一样,被 d2 和 e2 挡在家里 —— 点 d1", squares: ["d1"] },
+          ] },
+        { type: "move", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", goal: "one-of",
+          accept: ["e4", "d4"],
+          prompt: "走一步,同时占中心 + 给象和后让路",
+          retry: "推边兵或者跳马都做不到「一步放出两个大子」。挺 e 兵或 d 兵两格试试。",
+          solution: ["e4"] },
+        { type: "tap", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          prompt: "e4 走完了 —— 点出刚刚被放出来的那条斜线上,象现在能去的最远一格",
+          steps: [
+            { tip: "f1 象现在沿 f1–a6 这条斜线出去,最远能到 a6 —— 点 a6", squares: ["a6"] },
+          ] },
+      ],
+    },
+    {
+      id: "op-knights", part: "开局入门", title: "马往中心跳,别往边上跳",
+      text: [
+        "「马在边上是废物」是句老话,而且能数出来:**空盘上,马站在 f3 能去 8 个格子,站在 h3 只能去 4 个** —— 整整少一半。",
+        "所以开局出马,几乎总是 **Nf3 和 Nc3**(黑方对应 Nf6、Nc6)。这两格既靠中心,又正好盯住中心格。",
+        "Na3、Nh3 这种边上的马,不但控制的格子少,还挡不住对方的中心,下一步往往还得再挪一次 —— 等于白走一步。",
+      ],
+      tasks: [
+        { type: "tap", fen: "7k/8/8/8/8/5N2/8/K7 w - - 0 1",
+          prompt: "先数中心的马 —— f3 的马一共能去 8 个格子,点出其中三个",
+          steps: [
+            { tip: "往中心那一边跳 —— 点 e5 或 d4", squares: ["e5", "d4"] },
+            { tip: "再点一个 —— g5 或 d2", squares: ["g5", "d2"] },
+            { tip: "还有 —— h4、e1、g1、h2 都在它的范围里,点一个", squares: ["h4", "e1", "g1", "h2"] },
+          ] },
+        { type: "tap", fen: "7k/8/8/8/8/7N/8/K7 w - - 0 1",
+          prompt: "换到边上 —— 点出 h3 马能去的格子(只有四个,点其中一个)",
+          steps: [
+            { tip: "h3 的马只够得到 f4、g5、f2、g1 这四格 —— 比 f3 少了一半", squares: ["f4", "g5", "f2", "g1"] },
+          ] },
+        { type: "move", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1", goal: "one-of",
+          accept: ["Nf3", "Nc3"],
+          prompt: "e4 已经走了 —— 把马跳到该去的地方",
+          retry: "Na3 / Nh3 都在边上,控制的格子少一半,下一步还得再挪。往中心跳:Nf3 或 Nc3。",
+          solution: ["Nf3"] },
+      ],
+    },
+    {
+      id: "op-tempo", part: "开局入门", title: "开局一个子只走一次",
+      text: [
+        "开局比的是**谁先把子力摆好**。你每走一步,只有把一个新的子带出来,才算真的赚到;把已经出来的子挪来挪去,等于原地踏步。",
+        "最常见的赔本买卖是**被追着走**:子出得太早、位置又不安全,对方一边攻你一边出子。你挪一步,他出一个子 —— 挪三次,他就多出三个子。",
+        "所以出子之前先想一句:**这一格,它待得住吗?** 待不住的位置,早出去就是白送步数。",
+      ],
+      tasks: [
+        { type: "move", fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", goal: "one-of",
+          accept: ["Nf3", "Nc3", "Bc4", "Bb5", "d4", "d3", "Be2"],
+          prompt: "轮白走 —— 带一个**新的**子出来",
+          retry: "再动一次已经走过的 e 兵、或者早早把后放出去,都不叫出子。让一个还没动过的子上场。",
+          solution: ["Nf3"] },
+        { type: "tap", fen: "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+          prompt: "白方三步走完:e4、Nf3、Bb5 —— 点出这三步里**最后一个**上场的子",
+          steps: [
+            { tip: "b5 的象是第三个出场的。三步棋、三个不同的子,一步没浪费 —— 点 b5", squares: ["b5"] },
+          ] },
+        { type: "move", fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2", goal: "one-of",
+          accept: ["Nc6", "Nf6", "d6", "Bc5", "Be7", "d5"],
+          prompt: "换黑方 —— 同样的道理,带个新子出来(顺手护住 e5 兵更好)",
+          retry: "别再推兵或者把刚走过的子挪一遍。让一个新的子上场,比如马跳 c6 顺便看住 e5。",
+          solution: ["Nc6"] },
+      ],
+    },
+    {
+      id: "op-pawnmoves", part: "开局入门", title: "兵推出去就收不回来",
+      text: [
+        "所有棋子里只有兵**不能后退**。别的子走错了还能挪回来,兵推出去就是永久的 —— 它身后留下的格子,这盘棋再也守不住了。",
+        "所以开局推兵要省着用:通常就是**中心那一两个兵**,用来占中心和给子力让路。多推一个兵,就多一个补不回来的洞。",
+        "王前面的兵尤其要小心。易位之后 f、g、h 三个兵是王的屋顶,随手推一个,屋顶就漏了。",
+      ],
+      tasks: [
+        { type: "tap", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          prompt: "先认准开局值得推的是哪两个兵",
+          steps: [
+            { tip: "占中心、给子力让路的就这两个 —— 点 e2 或 d2", squares: ["e2", "d2"] },
+          ] },
+        { type: "tap", fen: "rnbq1rk1/ppp1ppbp/3p1np1/8/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQ - 0 7",
+          prompt: "黑方刚易位到王翼 —— 点出替它挡着的那三个兵里,最不该乱动的一个",
+          steps: [
+            { tip: "g6 已经推过一格来放象了;剩下 f7、g7、h7 是王的屋顶。推 h7 或 f7 都会开口子 —— 点 f7 或 h7", squares: ["f7", "h7"] },
+          ] },
+        { type: "move", fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2", goal: "one-of",
+          accept: ["Nc6", "Nf6", "d6", "Bc5", "Be7"],
+          prompt: "轮黑走 —— 别再推兵了,出个子",
+          retry: "a6、h6、b6 这类边兵推出去既不占中心也不放子,还留下永久的洞。出子。",
+          solution: ["Nc6"] },
+      ],
+    },
+    {
+      id: "op-castle", part: "开局入门", title: "别拖易位:中路一开,王最怕待在中间",
+      text: [
+        "开局阶段中心的兵会互相吃掉,e 线和 d 线迟早会打开。**线一开,还站在 e1/e8 的王就正对着对方的车和后。**",
+        "所以易位不是「有空再说」,而是开局三件事里有明确期限的一件:**通常在头 10 步之内完成**。轻子出来两三个,就该易位了。",
+        "反过来也一样:看到对方的王迟迟不易位,就该想办法把中路撬开 —— 那是他最脆弱的地方。",
+      ],
+      tasks: [
+        { type: "move", fen: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 6 5", goal: "castle-k",
+          prompt: "白方三个轻子已经出来了,王翼也空了 —— 该做的事只有一件",
+          retry: "再出子当然也行,但王还留在 e1、中路随时会开。先把王送进角落:王翼易位。",
+          solution: ["O-O"] },
+        { type: "tap", fen: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 7 5",
+          prompt: "白方易位好了,轮黑 —— 点出黑王现在待的那一格,它还在中路",
+          steps: [
+            { tip: "黑王还在 e8,正对着将来会打开的 e 线 —— 点 e8", squares: ["e8"] },
+          ] },
+        { type: "move", fen: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 7 5", goal: "castle-k",
+          prompt: "轮到黑方了 —— 做同样的事",
+          retry: "黑方也是三个轻子出来了、王翼空了。把王送进角落。",
+          solution: ["O-O"] },
+      ],
+    },
+    {
+      id: "op-italian", part: "开局入门", title: "你的第一个开局:意大利",
+      text: [
+        "把三原则连起来走,就是一个真正的开局。最适合入门的一个叫**意大利开局**:1.e4 e5 2.Nf3 Nc6 3.Bc4。",
+        "三步棋,三件事,一步不浪费:**e4 占中心并放出象和后;Nf3 出子并攻 e5;Bc4 出子并瞄准 f7**(黑王前面唯一只有王护着的软肋)。黑方照样子应对,棋就是均势。",
+        "开局不用背。记住它每一步在干什么,遇到对方走别的,你也照三原则应付得了。想背线路的话,做题里的「开局」一档有 109 条主变,按 ECO 排好了。",
+      ],
+      tasks: [
+        { type: "move", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", goal: "one-of",
+          accept: ["e4"],
+          prompt: "意大利第一步",
+          retry: "意大利开局从 e4 开始 —— 占中心,同时放出象和后。",
+          solution: ["e4"] },
+        { type: "move", fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", goal: "one-of",
+          accept: ["Nf3"],
+          prompt: "黑方也走了 e5 —— 第二步:出一个子,顺手攻它的 e5 兵",
+          retry: "Nf3:出子 + 攻 e5,一步两件事。",
+          solution: ["Nf3"] },
+        { type: "move", fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3", goal: "one-of",
+          accept: ["Bc4"],
+          prompt: "黑方 Nc6 护住了 e5 —— 第三步:把象放到瞄准 f7 的那条斜线上",
+          retry: "Bc4 —— 象从 f1 出到 c4,正对着 f7,这就是意大利。",
+          solution: ["Bc4"] },
+        { type: "tap", fen: "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
+          prompt: "意大利摆好了 —— 点出白象正瞄着的那个软肋",
+          steps: [
+            { tip: "f7 是黑方底线上唯一只有王护着的格子,c4 的象正对着它 —— 点 f7", squares: ["f7"] },
+          ] },
+      ],
+    },
     {
       id: "firstgame", part: "开局入门", title: "第一盘完整棋:学者杀",
       text: [

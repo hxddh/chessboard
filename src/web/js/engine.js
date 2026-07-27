@@ -23,7 +23,16 @@
    * (≥300cp) mistake every four moves, while half its moves stay sensible.
    */
   const TIERS = {
-    beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.6, minMs: 350 },
+    // 1.19 re-calibration. `worstBias` was 0.6 — six moves in ten were the
+    // WORST of ten candidates — and the tier was not weak so much as
+    // self-destructive: a bot playing random legal moves that merely avoided
+    // dropping a piece to an immediate recapture scored 81% against it over 24
+    // games. Meanwhile the next rung up was Elo 1320, so a learner who beat
+    // this one had nowhere to go. Measured with scripts/test-novice.mjs, the
+    // same bot now scores 66% here and 25% on `casual`, and near nothing at
+    // 1320 — a ladder with rungs instead of a cliff.
+    beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.2, minMs: 350 },
+    casual: { skill: 0, depth: 2, multipv: 6, worstBias: 0.15, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },
     normal: { elo: 1700, movetime: 700 },
     hard: { elo: 2200, movetime: 900 },
