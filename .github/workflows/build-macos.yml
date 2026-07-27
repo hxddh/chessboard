@@ -44,6 +44,11 @@ jobs:
         # close_policy = "hide" is macOS-only: on windows it is a comptime
         # error without a tray, and app.zon has to stay portable.
         run: node scripts/gen-manifest.mjs macos
+      - name: manifest keys are actually read
+        # src/runner.zig is a fork of the SDK's app_runner and does not
+        # complain when it lags: an unread key silently takes the SDK
+        # default. That is how close_policy = "hide" shipped dead in 1.18.
+        run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
       - name: zig build
         run: zig build -Doptimize=ReleaseFast -Dmanifest=build/app.macos.zon -Dnative-sdk-path="$SDK_PATH"
       - name: package .app + zip

@@ -1,0 +1,278 @@
+/**
+ * Every key app.zon declares for a window must actually be read by the runner.
+ *
+ * Why this exists. src/runner.zig is a FORK of the SDK's own `app_runner`,
+ * taken at 0.1.0 and never resynced. A fork that lags is not loud about it:
+ * zon is a struct literal, so an unknown key parses fine and simply sits there.
+ * If nothing reads it, the option silently takes the SDK struct's default and
+ * the manifest becomes decoration.
+ *
+ * That is not hypothetical. Two live cases, both found only by hand:
+ *
+ *   .close_policy = "hide"   1.18 shipped a whole platform-specific manifest
+ *                            generator to inject it on macOS. Nothing read it.
+ *                            Closing the window quit the app for two releases.
+ *   .min_width / .min_height declared since 0.1.0. Never read. The window has
+ *                            always been resizable below its own layout floor.
+ *
+ * So: two checks, both cheap, both at build time.
+ *
+ *   1. app.zon → runner   every window/menu key the manifest declares appears
+ *                         as a string literal in src/runner.zig. This is the
+ *                         one that catches "declared but nobody reads it".
+ *   2. SDK → runner       (only when the SDK is on disk) every field of the
+ *                         SDK's WindowOptions is assigned in manifestWindow.
+ *                         This is the one that catches the fork drifting
+ *                         further behind as the SDK grows.
+ *
+ * The derived macOS manifest is checked too — generated fresh here, since a
+ * key that only exists in the generated copy is exactly the shape of the 1.18
+ * bug.
+ *
+ *   node scripts/manifest-check.mjs [--sdk /path/to/@native-sdk/cli]
+ */
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { execFileSync } from "child_process";
+import { fileURLToPath } from "url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(HERE, "..");
+const RUNNER = path.join(ROOT, "src", "runner.zig");
+
+const failures = [];
+const notes = [];
+function check(ok, message) {
+  if (!ok) failures.push(message);
+}
+
+// ---------------------------------------------------------------- zon reading
+
+/** Drop `//` comments without touching `//` inside a string literal. */
+function stripComments(src) {
+  return src
+    .split(/\r?\n/)
+    .map((line) => {
+      let out = "";
+      let inStr = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (inStr) {
+          out += c;
+          if (c === "\\") out += line[++i] ?? "";
+          else if (c === '"') inStr = false;
+          continue;
+        }
+        if (c === '"') {
+          inStr = true;
+          out += c;
+          continue;
+        }
+        if (c === "/" && line[i + 1] === "/") break;
+        out += c;
+      }
+      return out;
+    })
+    .join("\n");
+}
+
+/** Index of the `}` closing the `{` at `open`, string-aware. */
+function matchBrace(src, open) {
+  let depth = 0;
+  let inStr = false;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/** Body of `.<key> = .{ ... }` at any nesting, or null. */
+function blockBody(src, key) {
+  const at = src.indexOf(`.${key} = .{`);
+  if (at < 0) return null;
+  const open = src.indexOf("{", at + key.length + 1);
+  const close = matchBrace(src, open);
+  if (close < 0) return null;
+  return src.slice(open + 1, close);
+}
+
+/** `.name =` keys at depth 0 of `body`. */
+function keysAtTopLevel(body) {
+  const keys = [];
+  let depth = 0;
+  let inStr = false;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}") depth--;
+    else if (c === "." && depth === 0) {
+      const m = /^\.([a-z_][a-z0-9_]*)\s*=/.exec(body.slice(i));
+      if (m) keys.push(m[1]);
+    }
+  }
+  return keys;
+}
+
+/** Each `.{ ... }` entry at depth 0 of `body`. */
+function entriesAtTopLevel(body) {
+  const entries = [];
+  let depth = 0;
+  let inStr = false;
+  let start = -1;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") {
+      if (depth === 0) start = i + 1;
+      depth++;
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0 && start >= 0) entries.push(body.slice(start, i));
+    }
+  }
+  return entries;
+}
+
+// -------------------------------------------------- 1. app.zon → src/runner.zig
+
+const runnerSrc = fs.readFileSync(RUNNER, "utf8");
+
+/** Does the runner actually LOOK the key up? A `@hasField` probe, a
+ *  `windowFloat(window, "width", …)` argument — any real lookup counts.
+ *  Comments do not (a key can be discussed and still unread), and neither do
+ *  `@compileError` texts, which quote key names while teaching about them. */
+const runnerCode = stripComments(runnerSrc)
+  .split("\n")
+  .filter((line) => !line.includes("@compileError"))
+  .join("\n");
+function runnerReads(key) {
+  return runnerCode.includes(`"${key}"`);
+}
+
+// A window key the runner reads but never assigns into WindowOptions would slip
+// through the literal check, so pin the assignments too.
+function manifestWindowAssignments() {
+  const at = runnerSrc.indexOf("fn manifestWindow(");
+  if (at < 0) return null;
+  const ret = runnerSrc.indexOf("return .{", at);
+  if (ret < 0) return null;
+  const open = runnerSrc.indexOf("{", ret);
+  const close = matchBrace(runnerSrc, open);
+  if (close < 0) return null;
+  return keysAtTopLevel(runnerSrc.slice(open + 1, close));
+}
+const windowAssignments = manifestWindowAssignments();
+check(windowAssignments !== null, "读不出 src/runner.zig 的 manifestWindow —— 这个自检要跟着改");
+const assignedByRunner = new Set(windowAssignments ?? []);
+
+/** Keys the runner is not expected to read: consumed by `native package` (the
+ *  CLI reads app.zon itself for Info.plist/icons/bundling), not by the app. */
+const PACKAGER_KEYS = new Set(["x", "y"]); // positional; folded into default_frame
+
+function checkManifest(label, file) {
+  const src = stripComments(fs.readFileSync(file, "utf8"));
+
+  const windows = blockBody(src, "windows");
+  check(windows !== null, `${label}: 找不到 .windows 块`);
+  if (windows === null) return;
+
+  const entries = entriesAtTopLevel(windows);
+  check(entries.length > 0, `${label}: .windows 是空的`);
+
+  for (const [index, entry] of entries.entries()) {
+    for (const key of keysAtTopLevel(entry)) {
+      if (PACKAGER_KEYS.has(key)) continue;
+      check(
+        runnerReads(key),
+        `${label}: .windows[${index}].${key} 声明了，但 src/runner.zig 从不读它 —— ` +
+          `zon 不会报错，这个键就是摆设（1.18 的 close_policy 正是这样白写了两个版本）`,
+      );
+    }
+    notes.push(`${label}: .windows[${index}] 共 ${keysAtTopLevel(entry).length} 个键`);
+  }
+
+  const menus = blockBody(src, "menus");
+  if (menus) {
+    for (const menu of entriesAtTopLevel(menus)) {
+      const items = blockBody(menu, "items");
+      if (!items) continue;
+      for (const item of entriesAtTopLevel(items)) {
+        for (const key of keysAtTopLevel(item)) {
+          check(runnerReads(key), `${label}: 菜单项的 .${key} 声明了，但 src/runner.zig 从不读它`);
+        }
+      }
+    }
+  }
+}
+
+checkManifest("app.zon", path.join(ROOT, "app.zon"));
+
+// The derived macOS manifest exists only to inject a key. If the runner cannot
+// read that key, the whole generator is a no-op — which is precisely what 1.18
+// shipped. Generate it fresh so the check never runs against a stale copy.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "manifest-check-"));
+try {
+  const derived = path.join(tmp, "app.macos.zon");
+  execFileSync(process.execPath, [path.join(HERE, "gen-manifest.mjs"), "macos", "--out", derived], {
+    cwd: ROOT,
+    stdio: "pipe",
+  });
+  checkManifest("build/app.macos.zon（生成的）", derived);
+} catch (err) {
+  failures.push(`生成 macOS 清单失败: ${err.message}`);
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// ------------------------------------------------------ 2. SDK → src/runner.zig
+
+const sdkArg = process.argv.indexOf("--sdk");
+const sdkPath = sdkArg > 0 ? process.argv[sdkArg + 1] : process.env.SDK_PATH;
+if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))) {
+  const types = stripComments(fs.readFileSync(path.join(sdkPath, "src", "platform", "types.zig"), "utf8"));
+  const at = types.indexOf("pub const WindowOptions = struct {");
+  const body = types.slice(at, matchBrace(types, types.indexOf("{", at)) + 1);
+  const sdkFields = [...body.matchAll(/^\s{4}([a-z_][a-z0-9_]*)\s*:/gm)].map((m) => m[1]);
+  check(sdkFields.length > 0, "SDK 交叉检查: 解析 WindowOptions 失败");
+
+  for (const field of sdkFields) {
+    check(
+      assignedByRunner.has(field),
+      `SDK 交叉检查: WindowOptions.${field} 是 SDK 的窗口选项，但 src/runner.zig 的 manifestWindow 不给它赋值 —— ` +
+        `这个 fork 又落后了一格，声明了也是白声明`,
+    );
+  }
+  notes.push(`SDK 交叉检查: WindowOptions 共 ${sdkFields.length} 个字段，manifestWindow 赋值 ${assignedByRunner.size} 个`);
+} else {
+  notes.push("SDK 交叉检查: 跳过（没给 --sdk / SDK_PATH，本地没有 SDK 源码）");
+}
+
+// ------------------------------------------------------------------------ 结果
+
+for (const note of notes) console.log(`  ${note}`);
+if (failures.length) {
+  console.error("");
+  for (const failure of failures) console.error(`FAIL: ${failure}`);
+  process.exit(1);
+}
+console.log("ok: 清单里声明的每个键，runner 都真的在读");

@@ -25,6 +25,13 @@
  * can never drift. Anything else that needs to differ per platform belongs
  * here too, next to a comment saying why it cannot be portable.
  *
+ * Injecting a key is only half the job — something has to READ it. This script
+ * shipped in 1.18 next to a runner that did not, so the whole generator was a
+ * no-op for two releases and closing the window still quit the app. That is
+ * what scripts/manifest-check.mjs now guards, and it checks THIS file's output,
+ * not just app.zon: a key that exists only in the derived copy is exactly the
+ * shape that got through.
+ *
  *   node scripts/gen-manifest.mjs macos [--out build/app.macos.zon]
  */
 import fs from "fs";
