@@ -170,6 +170,11 @@ fn manifestWindow(comptime window: anytype, comptime index: usize) native_sdk.Wi
         .resizable = windowBool(window, "resizable", true),
         .restore_state = windowBool(window, "restore_state", true),
         .restore_policy = windowRestorePolicy(window),
+        .titlebar = windowTitlebarStyle(window),
+        .show = windowShowMode(window),
+        .min_width = windowMinSize(window, "min_width"),
+        .min_height = windowMinSize(window, "min_height"),
+        .close_policy = windowClosePolicy(window),
     };
 }
 
@@ -193,6 +198,74 @@ fn windowFloat(comptime window: anytype, comptime field: []const u8, comptime de
 fn windowBool(comptime window: anytype, comptime field: []const u8, comptime default_value: bool) bool {
     if (comptime @hasField(@TypeOf(window), field)) return @field(window, field);
     return default_value;
+}
+
+/// Content min-size floor the WINDOW enforces, from app.zon. 0 = no floor.
+/// A negative floor is an authoring error, not a silent clamp.
+fn windowMinSize(comptime window: anytype, comptime field: []const u8) f32 {
+    const value: f32 = comptime windowFloat(window, field, 0);
+    comptime {
+        if (!(value >= 0)) @compileError("app.zon window " ++ field ++ " must be non-negative");
+    }
+    return value;
+}
+
+fn windowTitlebarStyle(comptime window: anytype) native_sdk.WindowTitlebarStyle {
+    if (comptime !@hasField(@TypeOf(window), "titlebar")) return .standard;
+    const value = window.titlebar;
+    if (comptime std.mem.eql(u8, value, "standard")) return .standard;
+    if (comptime std.mem.eql(u8, value, "hidden_inset")) return .hidden_inset;
+    if (comptime std.mem.eql(u8, value, "hidden_inset_tall")) return .hidden_inset_tall;
+    if (comptime std.mem.eql(u8, value, "chromeless")) return .chromeless;
+    @compileError("unknown app.zon window titlebar style");
+}
+
+fn windowShowMode(comptime window: anytype) native_sdk.WindowShowMode {
+    if (comptime !@hasField(@TypeOf(window), "show")) return .immediate;
+    const value = window.show;
+    if (comptime std.mem.eql(u8, value, "immediate")) return .immediate;
+    if (comptime std.mem.eql(u8, value, "on_first_present")) return .on_first_present;
+    @compileError("unknown app.zon window show mode - supported values: \"immediate\" (the default) and \"on_first_present\"");
+}
+
+/// What the window's close affordance does, from app.zon. `.hide` is validated
+/// against the TARGET platform at comptime: a host with nothing to bring a
+/// hidden window back refuses the declaration here, at build time, rather than
+/// stranding a hidden window at runtime.
+///
+/// This mirrors the SDK's own `app_runner`. It has to be mirrored because this
+/// file IS a fork of that runner, and between 1.18 and 1.19.1 the fork's
+/// silence is what made `.close_policy = "hide"` a no-op: the manifest carried
+/// the field, zon parsed it, and nothing here ever read it — so the window kept
+/// the struct default `.quit` and closing quit the app. See
+/// scripts/manifest-check.mjs, which now fails the build on that shape.
+fn windowClosePolicy(comptime window: anytype) native_sdk.WindowClosePolicy {
+    if (comptime !@hasField(@TypeOf(window), "close_policy")) return .quit;
+    const value = window.close_policy;
+    if (comptime std.mem.eql(u8, value, "quit")) return .quit;
+    if (comptime std.mem.eql(u8, value, "hide")) {
+        if (comptime std.mem.eql(u8, build_options.platform, "linux")) {
+            @compileError("app.zon window close_policy \"hide\" is not supported on linux: the GTK host has no status item (tray), so nothing could bring the hidden window back - declare \"quit\" (the default), or scope the .hide declaration to macos/windows builds");
+        }
+        if (comptime std.mem.eql(u8, build_options.platform, "windows")) {
+            if (comptime !manifestDeclaresTrayCapability()) {
+                @compileError("app.zon window close_policy \"hide\" on windows requires the \"tray\" capability: hiding removes the taskbar entry and windows has no dock-reopen path, so only a status item (tray) could bring the hidden window back - add \"tray\" to .capabilities and install a status item, or declare \"quit\" (the default); macos needs no capability because the dock reopen path always exists");
+            }
+        }
+        return .hide;
+    }
+    @compileError("unknown app.zon window close_policy - supported values: \"quit\" (close really closes; the default) and \"hide\" (close hides the window and the app keeps running)");
+}
+
+/// Whether app.zon declares the "tray" capability — the status item `.hide`
+/// leans on where the OS has no built-in re-show affordance.
+fn manifestDeclaresTrayCapability() bool {
+    if (comptime !@hasField(@TypeOf(app_manifest), "capabilities")) return false;
+    inline for (app_manifest.capabilities) |capability| {
+        const name: []const u8 = capability;
+        if (comptime std.mem.eql(u8, name, "tray")) return true;
+    }
+    return false;
 }
 
 fn windowRestorePolicy(comptime window: anytype) native_sdk.WindowRestorePolicy {
