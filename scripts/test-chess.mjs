@@ -2524,7 +2524,12 @@ for (const lang of CONTENT_LANGS) {
   const headingVersion = /^## 怎么玩（v([\d.]+)）/m.exec(readme);
   assert(zonVersion && headingVersion, "README 怎么玩 heading and app.zon both state a version");
   if (zonVersion && headingVersion) {
-    assert(headingVersion[1] === zonVersion[1].replace(/\.0$/, "") || headingVersion[1] === zonVersion[1],
+    // Compared at major.minor. That section describes what the app does, which
+    // is what a minor bump changes and a patch bump does not — pinning the
+    // patch digit too would make every fix release edit a heading it did not
+    // change, and a rule people edit to shut up is a rule they stop reading.
+    const minor = (v) => v.split(".").slice(0, 2).join(".");
+    assert(minor(headingVersion[1]) === minor(zonVersion[1]),
       "README 怎么玩 heading tracks app.zon (README v" + headingVersion[1] + " vs " + zonVersion[1] + ")");
   }
 }
