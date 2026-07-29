@@ -234,6 +234,17 @@ fn manifestWindow(comptime window: anytype, comptime index: usize) native_sdk.Wi
         .restore_policy = windowRestorePolicy(window),
         .titlebar = windowTitlebarStyle(window),
         .show = windowShowMode(window),
+        // Added by the SDK in 0.6.2, four days after 1.19.1 caught the fork
+        // lagging on close_policy. app.zon declares none of them, so every one
+        // takes the SDK's own default — but they are wired anyway, because an
+        // unwired field is exactly how `close_policy` sat dead for two
+        // releases. The version is deliberately unpinned, so this WILL happen
+        // again; scripts/manifest-check.mjs is what turns "again" into a red
+        // build instead of a silent no-op.
+        .transparent = windowBool(window, "transparent", false),
+        .always_on_top = windowBool(window, "always_on_top", false),
+        .click_through = windowBool(window, "click_through", false),
+        .activate_on_show = windowBool(window, "activate_on_show", true),
         .min_width = windowMinSize(window, "min_width"),
         .min_height = windowMinSize(window, "min_height"),
         .close_policy = windowClosePolicy(window),
