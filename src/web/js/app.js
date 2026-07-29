@@ -552,34 +552,82 @@
   const LESSONS = window.CHESS_LESSONS || [];
 
   /**
+   * Content tables per language. Chinese is the source and lives in
+   * lessons.js / puzzles.js / openings.js; every other language gets a
+   * translation file holding words only.
+   *
+   * Through 1.20 the lookup was `langId !== "zh-CN" ? …_EN : null` — one
+   * branch, so the interface had three languages and the teaching had two,
+   * and a Japanese player read a Japanese interface wrapped around English
+   * lessons. Now each language names its own tables and the lookup walks a
+   * chain: the active language, then English as a bridge, then the Chinese
+   * original. The chain is per *field*, so a half-finished translation
+   * degrades sentence by sentence instead of dropping a whole lesson.
+   */
+  const CONTENT_TABLES = {
+    en: () => ({
+      lessons: window.CHESS_LESSONS_EN, puzzles: window.CHESS_PUZZLES_EN,
+      openings: window.CHESS_OPENINGS_EN, ideas: window.CHESS_OPENING_IDEAS_EN,
+    }),
+    ja: () => ({
+      lessons: window.CHESS_LESSONS_JA, puzzles: window.CHESS_PUZZLES_JA,
+      openings: window.CHESS_OPENINGS_JA, ideas: window.CHESS_OPENING_IDEAS_JA,
+    }),
+  };
+  /** tables to consult for `kind`, best match first (empty when reading source) */
+  function contentTables(kind) {
+    const out = [];
+    if (langId === "zh-CN") return out;
+    for (const id of [langId, "en"]) {
+      const get = CONTENT_TABLES[id];
+      const tbl = get && get()[kind];
+      if (tbl && out.indexOf(tbl) < 0) out.push(tbl);
+    }
+    return out;
+  }
+  /** first translated `field` of entry `key`, or null to use the source */
+  function contentField(kind, key, field) {
+    for (const tbl of contentTables(kind)) {
+      const entry = tbl[key];
+      if (entry && entry[field]) return entry[field];
+    }
+    return null;
+  }
+
+  /**
    * Lesson prose in the active language, falling back to the authored Chinese.
    * Only text is localised — positions, goals and solutions always come from
    * lessons.js, so a translation can never change what a lesson teaches.
-   *
-   * The teaching content exists in two languages, Chinese and English, while
-   * the interface has three: a Japanese player gets a Japanese interface and
-   * English lessons. That is a deliberate choice rather than an oversight —
-   * chess terminology in English is far more likely to be readable to them
-   * than the Chinese original, and a machine-translated course would teach
-   * worse than an honest second language.
    */
   function lessonText(lesson) {
-    const tr = langId !== "zh-CN" && window.CHESS_LESSONS_EN ? window.CHESS_LESSONS_EN[lesson.id] : null;
     return {
-      part: (tr && tr.part) || lesson.part,
-      title: (tr && tr.title) || lesson.title,
-      text: (tr && tr.text) || lesson.text,
+      part: contentField("lessons", lesson.id, "part") || lesson.part,
+      title: contentField("lessons", lesson.id, "title") || lesson.title,
+      text: contentField("lessons", lesson.id, "text") || lesson.text,
     };
   }
   /** localised prose for task `ti` of `lesson` (prompt / retry / tap tips) */
   function taskText(lesson, ti) {
     const task = lesson.tasks[ti];
-    const tr = langId !== "zh-CN" && window.CHESS_LESSONS_EN ? window.CHESS_LESSONS_EN[lesson.id] : null;
-    const tt = tr && tr.tasks && tr.tasks[ti];
+    const taskField = (field) => {
+      for (const tbl of contentTables("lessons")) {
+        const entry = tbl[lesson.id];
+        const tt = entry && entry.tasks && entry.tasks[ti];
+        if (tt && tt[field]) return tt[field];
+      }
+      return null;
+    };
     return {
-      prompt: (tt && tt.prompt) || task.prompt,
-      retry: (tt && tt.retry) || task.retry,
-      step: (i) => (tt && tt.steps && tt.steps[i]) || (task.steps && task.steps[i] && task.steps[i].tip),
+      prompt: taskField("prompt") || task.prompt,
+      retry: taskField("retry") || task.retry,
+      step: (i) => {
+        for (const tbl of contentTables("lessons")) {
+          const entry = tbl[lesson.id];
+          const tt = entry && entry.tasks && entry.tasks[ti];
+          if (tt && tt.steps && tt.steps[i]) return tt.steps[i];
+        }
+        return task.steps && task.steps[i] && task.steps[i].tip;
+      },
     };
   }
 
@@ -588,33 +636,27 @@
    * chess (fen, solution, gain), puzzles-en.js owns only the words, so a
    * translation can never disagree with what the puzzle actually is.
    */
-  function puzzleEn(p) {
-    return langId !== "zh-CN" && window.CHESS_PUZZLES_EN ? window.CHESS_PUZZLES_EN[p.id] : null;
-  }
   function puzzleName(p) {
-    // opening drills are named by the book, not by puzzles-en.js
+    // opening drills are named by the book, not by the puzzle tables
     if (p.cat === "op" && p.zh) return p.eco + " " + openingName(p.zh);
-    const tr = puzzleEn(p);
-    return (tr && tr.name) || p.name;
+    return contentField("puzzles", p.id, "name") || p.name;
   }
   function puzzleMotif(p) {
-    const tr = puzzleEn(p);
-    return (tr && tr.motif) || p.motif || t("pz.forcing");
+    return contentField("puzzles", p.id, "motif") || p.motif || t("pz.forcing");
   }
   function puzzleIdea(p) {
     if (p.cat === "op" && p.zh) return openingIdea(p.zh) || p.idea || "";
-    const tr = puzzleEn(p);
-    return (tr && tr.idea) || p.idea || "";
+    return contentField("puzzles", p.id, "idea") || p.idea || "";
   }
   /** Localised opening name, looked up by its Chinese name (the stable key). */
   function openingName(zh) {
-    const tbl = langId !== "zh-CN" ? window.CHESS_OPENINGS_EN : null;
-    return (tbl && tbl[zh]) || zh;
+    for (const tbl of contentTables("openings")) if (tbl[zh]) return tbl[zh];
+    return zh;
   }
   /** …and the sentence explaining what the line is trying to do. */
   function openingIdea(zh) {
-    const tbl = langId !== "zh-CN" ? window.CHESS_OPENING_IDEAS_EN : null;
-    return (tbl && tbl[zh]) || "";
+    for (const tbl of contentTables("ideas")) if (tbl[zh]) return tbl[zh];
+    return "";
   }
 
   function loadLearnState() {
