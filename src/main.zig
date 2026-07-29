@@ -4,7 +4,12 @@ const native_sdk = @import("native_sdk");
 
 pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 
-const allowed_origins = [_][]const u8{ "zero://app", "zero://inline", "http://127.0.0.1:5173" };
+// The trusted origins live in app.zon (.security.navigation.allowed_origins).
+// runner.manifestOrigins() reads them from there, so the bridge command
+// policies below and the webview navigation policy can never disagree — this
+// used to be a second hand-written copy sitting next to the manifest's.
+// Called where it is used rather than bound to a container-level const: the
+// runner fills a static buffer, so it is a runtime call, not a comptime one.
 
 // Empty custom menus → host default bar (View → Full Screen, Window → Zoom).
 // Game actions: chrome / sidebar / in-page shortcuts.
@@ -46,11 +51,11 @@ const App = struct {
         };
         self.policies[0] = .{
             .name = "chess.writeTextFile",
-            .origins = &allowed_origins,
+            .origins = runner.manifestOrigins(),
         };
         self.policies[1] = .{
             .name = "chess.readTextFile",
-            .origins = &allowed_origins,
+            .origins = runner.manifestOrigins(),
         };
         return .{
             .policy = .{
@@ -151,9 +156,6 @@ pub fn main(init: std.process.Init) !void {
         .js_window_api = true,
         .bridge = app_state.bridge(),
         .menus = &.{},
-        .security = .{
-            .navigation = .{ .allowed_origins = &allowed_origins },
-        },
     }, init);
 }
 

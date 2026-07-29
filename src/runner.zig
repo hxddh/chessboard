@@ -29,7 +29,12 @@ pub const RunOptions = struct {
     icon_path: []const u8 = "assets/icon.png",
     bridge: ?native_sdk.BridgeDispatcher = null,
     builtin_bridge: native_sdk.BridgePolicy = .{},
-    security: native_sdk.SecurityPolicy = .{},
+    /// Leave null to take app.zon's `.security` / `.permissions` verbatim.
+    /// Through 1.19.1 this defaulted to `.{}` and main.zig passed a
+    /// hand-written origin list, so app.zon's copy was decoration — and
+    /// `.external_links.action` was read by nobody at all (it happened to
+    /// match the SDK default, so it looked like it worked).
+    security: ?native_sdk.SecurityPolicy = null,
     js_window_api: bool = false,
     commands: ?[]const native_sdk.Command = null,
     menus: ?[]const native_sdk.Menu = null,
@@ -143,6 +148,69 @@ const ShortcutStorage = struct {
     }
 };
 
+// The `.security` / `.permissions` blocks, peeled one level at a time so each
+// step degrades to an empty tuple rather than failing to compile on a manifest
+// that omits it.
+const manifest_permissions = if (@hasField(@TypeOf(app_manifest), "permissions")) app_manifest.permissions else .{};
+const manifest_security = if (@hasField(@TypeOf(app_manifest), "security")) app_manifest.security else .{};
+const manifest_navigation = if (@hasField(@TypeOf(manifest_security), "navigation")) manifest_security.navigation else .{};
+const manifest_origins_src = if (@hasField(@TypeOf(manifest_navigation), "allowed_origins")) manifest_navigation.allowed_origins else .{};
+const manifest_external_links = if (@hasField(@TypeOf(manifest_navigation), "external_links")) manifest_navigation.external_links else .{};
+const manifest_external_urls = if (@hasField(@TypeOf(manifest_external_links), "allowed_urls")) manifest_external_links.allowed_urls else .{};
+
+// Storage for the string slices the policy hands to the runtime. Exactly the
+// shape MenuStorage/ShortcutStorage already use: an `inline for` in ordinary
+// function scope filling a buffer, then a slice of it. The first attempt at
+// this built the arrays inside a `comptime` block instead and did not compile
+// — "redundant inline keyword in comptime scope", then "function called at
+// runtime cannot return value at comptime". There was no local Zig to catch
+// that, so it cost a CI round trip; this version reuses a pattern the file
+// already proves builds.
+var security_origins: [manifest_origins_src.len][]const u8 = undefined;
+var security_permissions: [manifest_permissions.len][]const u8 = undefined;
+var security_external_urls: [manifest_external_urls.len][]const u8 = undefined;
+
+fn fillStrings(buffer: [][]const u8, comptime values: anytype) []const []const u8 {
+    inline for (values, 0..) |value, index| buffer[index] = value;
+    return buffer[0..values.len];
+}
+
+/// The navigation/permission policy declared in app.zon.
+///
+/// Until 1.20 nothing read this block: main.zig carried its own copy of the
+/// origin list, so the two could drift silently, and `.external_links.action`
+/// had no reader at all — it read "deny" and behaved that way only because
+/// `deny` is also the SDK's struct default. Changing it to
+/// `open_system_browser` would have done nothing.
+pub fn manifestSecurity() native_sdk.SecurityPolicy {
+    var policy: native_sdk.SecurityPolicy = .{};
+    policy.permissions = fillStrings(&security_permissions, manifest_permissions);
+    // An empty/absent list leaves the SDK's own default origins in place rather
+    // than locking the webview out of everything.
+    if (comptime manifest_origins_src.len > 0) {
+        policy.navigation.allowed_origins = fillStrings(&security_origins, manifest_origins_src);
+    }
+    if (comptime @hasField(@TypeOf(manifest_external_links), "action")) {
+        policy.navigation.external_links.action = externalLinkAction(manifest_external_links.action);
+    }
+    if (comptime manifest_external_urls.len > 0) {
+        policy.navigation.external_links.allowed_urls = fillStrings(&security_external_urls, manifest_external_urls);
+    }
+    return policy;
+}
+
+/// The origins app.zon trusts — also what a bridge command should scope to, so
+/// that list is not written down a second time either.
+pub fn manifestOrigins() []const []const u8 {
+    return manifestSecurity().navigation.allowed_origins;
+}
+
+fn externalLinkAction(comptime value: []const u8) native_sdk.ExternalLinkAction {
+    if (comptime std.mem.eql(u8, value, "deny")) return .deny;
+    if (comptime std.mem.eql(u8, value, "open_system_browser")) return .open_system_browser;
+    @compileError("unknown app.zon security.navigation.external_links.action — supported values: \"deny\" (the default) and \"open_system_browser\"");
+}
+
 fn manifestWindowOptions(buffers: *StateBuffers) []const native_sdk.WindowOptions {
     comptime {
         if (manifest_windows.len > native_sdk.platform.max_windows) {
@@ -172,6 +240,17 @@ fn manifestWindow(comptime window: anytype, comptime index: usize) native_sdk.Wi
         .restore_policy = windowRestorePolicy(window),
         .titlebar = windowTitlebarStyle(window),
         .show = windowShowMode(window),
+        // Added by the SDK in 0.6.2, four days after 1.19.1 caught the fork
+        // lagging on close_policy. app.zon declares none of them, so every one
+        // takes the SDK's own default — but they are wired anyway, because an
+        // unwired field is exactly how `close_policy` sat dead for two
+        // releases. The version is deliberately unpinned, so this WILL happen
+        // again; scripts/manifest-check.mjs is what turns "again" into a red
+        // build instead of a silent no-op.
+        .transparent = windowBool(window, "transparent", false),
+        .always_on_top = windowBool(window, "always_on_top", false),
+        .click_through = windowBool(window, "click_through", false),
+        .activate_on_show = windowBool(window, "activate_on_show", true),
         .min_width = windowMinSize(window, "min_width"),
         .min_height = windowMinSize(window, "min_height"),
         .close_policy = windowClosePolicy(window),
@@ -360,7 +439,7 @@ fn runNull(app: native_sdk.App, options: RunOptions, init: std.process.Init) !vo
         .log_path = if (log_setup) |setup| setup.paths.log_file else null,
         .bridge = options.bridge,
         .builtin_bridge = options.builtin_bridge,
-        .security = options.security,
+        .security = options.security orelse manifestSecurity(),
         .js_window_api = options.js_window_api,
         .web_layer = webLayerEnabled(),
         .commands = commands,
@@ -410,7 +489,7 @@ fn runMacos(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
         .log_path = if (log_setup) |setup| setup.paths.log_file else null,
         .bridge = options.bridge,
         .builtin_bridge = options.builtin_bridge,
-        .security = options.security,
+        .security = options.security orelse manifestSecurity(),
         .js_window_api = options.js_window_api,
         .web_layer = webLayerEnabled(),
         .commands = commands,
@@ -460,7 +539,7 @@ fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
         .log_path = if (log_setup) |setup| setup.paths.log_file else null,
         .bridge = options.bridge,
         .builtin_bridge = options.builtin_bridge,
-        .security = options.security,
+        .security = options.security orelse manifestSecurity(),
         .js_window_api = options.js_window_api,
         .web_layer = webLayerEnabled(),
         .commands = commands,
@@ -510,7 +589,7 @@ fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init) 
         .log_path = if (log_setup) |setup| setup.paths.log_file else null,
         .bridge = options.bridge,
         .builtin_bridge = options.builtin_bridge,
-        .security = options.security,
+        .security = options.security orelse manifestSecurity(),
         .js_window_api = options.js_window_api,
         .web_layer = webLayerEnabled(),
         .commands = commands,

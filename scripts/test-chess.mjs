@@ -273,6 +273,24 @@ for (const p of ["r", "b", "n"]) {
           t.goal === "safe" ? !g.moves({ verbose: true }).some((m) => m.to === mv.to) :
           t.goal === "draw-insufficient" ? g.insufficient_material() : false;
         if (!okByGoal) fail(tag, "solution does not satisfy goal", t.goal);
+        // The `accept` list is what a one-of task actually grades against
+        // (app.js: `task.accept.includes(mv.san)` — an exact SAN compare, no
+        // normalising). Until 1.20 only solution[0] was checked, so the REST of
+        // the list was never looked at: drill-bishops offered eleven "any of
+        // these" bishop moves of which five could never match — four squares no
+        // bishop on that colour complex can reach, plus "Bf4", which is a
+        // perfectly good move the lesson meant to allow but which the engine
+        // spells "Bf4+". A student playing it got the retry hint.
+        for (const san of t.accept || []) {
+          const g3 = new Chess(t.fen);
+          const am = g3.move(san);
+          if (!am) {
+            const alt = ["+", "#"].map((s) => san + s).find((s) => { const p = new Chess(t.fen); return !!p.move(s); });
+            fail(tag, "accept entry not playable:", san, alt ? `— the engine spells it "${alt}"` : "— no such move here");
+          } else if (am.san !== san) {
+            fail(tag, "accept entry is not canonical SAN:", san, "≠", am.san);
+          }
+        }
         if (t.trap) {
           const g2 = new Chess(t.fen);
           const tm = g2.move(t.trap);
@@ -324,10 +342,27 @@ for (const p of ["r", "b", "n"]) {
     const opLessons = lessons.filter((l) => l.part === "开局入门");
     assert(opLessons.length >= 8,
       "the opening section is a section too (" + opLessons.length + " lessons)");
-    const thinnest = Math.min(...["开局入门", "中局思路", "残局基础"].map(
-      (p) => lessons.filter((l) => l.part === p).length));
-    assert(thinnest >= 7,
-      "opening, middlegame and endgame are all real sections (thinnest has " + thinnest + ")");
+    // 1.19 set that floor for the three game-phase sections only, and the
+    // thinnest section in the whole course turned out to be the one a beginner
+    // meets FIRST: "认识棋盘" had two lessons and six sentences carrying the
+    // board, the coordinates, all sixteen men, the back-rank order, the queen's
+    // colour and the object of the game — against eight on the opening. The
+    // floor now covers every section, so no part of the course gets to be the
+    // thin one, entry included.
+    const order = [];
+    for (const p of parts) if (!order.includes(p)) order.push(p);
+    const counts = order.map((p) => [p, lessons.filter((l) => l.part === p).length]);
+    const thin = counts.filter(([, n]) => n < 7);
+    assert(thin.length === 0,
+      "every section of the course is a real section — "
+      + counts.map(([p, n]) => p + " " + n).join(", ")
+      + (thin.length ? " — too thin: " + thin.map(([p, n]) => p + " (" + n + ")").join(", ") : ""));
+    // A part name that appears, stops, and comes back would split a section in
+    // the lesson list while still counting as one here.
+    for (const p of order) {
+      const idx = lessons.map((l, i) => (l.part === p ? i : -1)).filter((i) => i >= 0);
+      assert(idx[idx.length - 1] - idx[0] === idx.length - 1, "section «" + p + "» is contiguous");
+    }
   }
 
   // Emphasis markers have to be paired. The course marks its key sentence with
@@ -2052,8 +2087,29 @@ for (const p of ["r", "b", "n"]) {
     assert(ids, "app.js declares DIFF_IDS");
     const list = [...ids[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
     assert(list.length >= 5, "the ladder has rungs (" + list.join(", ") + ")");
-    assert(!/\["beginner", "easy", "normal", "hard", "extreme"\]/.test(appSrc),
-      "no hand-written copy of the tier list survives");
+    // 1.19 wrote this as a test for one exact array literal — the copy that
+    // existed at the time. That catches the instance, not the class: `DIFF_EN`
+    // in pgnForExport is an OBJECT keyed by the same ids, it predated the
+    // "casual" rung, and it sailed straight through, exporting the raw id into
+    // a PGN tag. The rule that actually holds is: any literal that enumerates
+    // the ladder must enumerate ALL of it. A complete map stays correct when a
+    // rung is added — a partial one silently drops it.
+    // A rung shows up either as a quoted string ("beginner") or as an object
+    // key (beginner:). The first version of this check only looked for the
+    // quoted form and so still missed DIFF_EN, whose keys are bare — the guard
+    // reproduced the very blind spot it was written to close.
+    const names = (lit) => list.filter((id) =>
+      new RegExp('"' + id + '"|\\b' + id + '\\s*:').test(lit));
+    const flatLiterals = appSrc.match(/[[{][^[\]{}]*[\]}]/g) || [];
+    const partial = flatLiterals
+      .map((lit) => ({ lit, hit: names(lit) }))
+      .filter(({ hit }) => hit.length >= 3 && hit.length < list.length);
+    assert(partial.length === 0,
+      "every literal that enumerates the difficulty ladder enumerates all of it"
+      + (partial.length
+        ? " — missing " + partial.map((p) => list.filter((id) => !p.hit.includes(id)).join("/")
+          + " in `" + p.lit.replace(/\s+/g, " ").slice(0, 70) + "`").join("; ")
+        : ""));
     assert(/DIFF_IDS\.includes\(s\.difficulty\)/.test(appSrc),
       "the saved difficulty is validated against DIFF_IDS itself");
     const engSrc = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");

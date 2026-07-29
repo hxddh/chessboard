@@ -24,7 +24,7 @@
       // first-run onboarding (ob.*)
       "ob.title": "先从哪里开始?",
       "ob.newLabel": "我是新手,从零开始学",
-      "ob.newSub": "57 课互动教程:认棋盘 → 六种走法 → 吃子与战术 → 规则与杀法 → 中局思路 → 残局基础与实战",
+      "ob.newSub": "67 课互动教程:认棋盘 → 六种走法 → 吃子与战术 → 规则与杀法 → 杀型积木 → 开局入门 → 中局思路 → 残局基础与实战",
       "ob.knowLabel": "我会下棋,直接开局",
       "ob.knowSub": "与 Stockfish 对弈,难度可随时在侧栏调整",
       "ob.toLearn": "教学模式 · 从第 1 课开始",
@@ -448,7 +448,7 @@
       // first-run onboarding (ob.*)
       "ob.title": "Where would you like to start?",
       "ob.newLabel": "I'm new — teach me from scratch",
-      "ob.newSub": "57 interactive lessons: the board \u2192 how the pieces move \u2192 captures and tactics \u2192 rules and mates \u2192 middlegame thinking \u2192 endgame basics and technique",
+      "ob.newSub": "67 interactive lessons: the board \u2192 how the pieces move \u2192 captures and tactics \u2192 rules and mates \u2192 mating patterns \u2192 openings \u2192 middlegame thinking \u2192 endgame basics and technique",
       "ob.knowLabel": "I can play — just start a game",
       "ob.knowSub": "Play Stockfish; the difficulty row in the side panel changes it any time",
       "ob.toLearn": "Lessons \u00b7 starting at lesson 1",
@@ -870,7 +870,7 @@
       // first-run onboarding (ob.*)
       "ob.title": "どこから始めますか?",
       "ob.newLabel": "初めてです — 一から教えてほしい",
-      "ob.newSub": "57 の対話式レッスン:盤の見方 → 駒の動かし方 → 駒取りと戦術 → ルールとメイト → 中盤の考え方 → エンドゲームの基本と実戦",
+      "ob.newSub": "67 の対話式レッスン:盤の見方 → 駒の動かし方 → 駒取りと戦術 → ルールとメイト → メイトの型 → 序盤入門 → 中盤の考え方 → エンドゲームの基本と実戦",
       "ob.knowLabel": "指せます — すぐ対局したい",
       "ob.knowSub": "Stockfish と対局します。強さはサイドパネルでいつでも変更できます",
       "ob.toLearn": "レッスン · 第 1 課から",

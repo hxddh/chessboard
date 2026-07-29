@@ -1,5 +1,5 @@
 /**
- * English lesson text — the complete course, all 36 lessons.
+ * English lesson text — the complete course, every lesson in lessons.js.
  *
  * Only prose is translated here: titles, part names, explanatory paragraphs,
  * task prompts, retry hints and tap-step tips. Positions, goals and solutions
@@ -31,12 +31,29 @@
         ],
       }],
     },
+    squares: {
+      part: "The board", title: "Light squares and dark",
+      text: [
+        "Thirty-two squares are light and thirty-two dark, alternating along every rank and file — which means **every square on a given diagonal is the same colour**.",
+        "That is not decoration; it decides a piece's whole life. **A bishop only moves diagonally, so it stays on one colour from first move to last.** Your two bishops cover one colour each; only together do they cover the board.",
+        "It is also what makes \"the queen goes on her own colour\" easy to remember: the white queen's d1 is light, the black queen's d8 is dark.",
+      ],
+      tasks: [{
+        prompt: "Get clear on which squares are which",
+        steps: [
+          "Click a1 — White's bottom-left corner, a **dark** square",
+          "Click h1 — White's bottom-right corner, a **light** square (setting up, the near right corner must be light)",
+          "Click whichever of White's bishops stands on a dark square (c1)",
+          "Now the one on a light square (f1)",
+        ],
+      }],
+    },
     setup: {
-      part: "The board", title: "Pieces, setup and the goal",
+      part: "The board", title: "Setting the board up",
       text: [
         "Each side has 16 men: 8 pawns, 2 rooks, 2 knights, 2 bishops, 1 queen, 1 king.",
         "On the back rank, from the corner inwards: rook, knight, bishop. The queen goes on her own colour (white queen on light d1, black queen on dark d8), the king takes the e-file, and the pawns line up in front.",
-        "The goal: checkmate the enemy king — attack it so that it has no way out.",
+        "If the order will not stick, remember it as: **rooks in the corners, knights beside them, bishops next to the knights** — which leaves the middle two squares for queen and king. The queen picks her colour; the king takes what is left.",
       ],
       tasks: [{
         prompt: "Get to know the pieces",
@@ -46,6 +63,59 @@
           "Click either white knight (right next to the corner rooks)",
           "Click either black bishop (beside the king and queen)",
         ],
+      }],
+    },
+    pieces: {
+      part: "The board", title: "Six pieces, and what each is worth",
+      text: [
+        "The six pieces differ enormously in strength. Players estimate with a set of conventional **values**, counted in pawns:",
+        "**Pawn 1 · Knight 3 · Bishop 3 · Rook 5 · Queen 9.** The king has no price — lose him and the game is over, so he is never traded.",
+        "These numbers are not a rule, they are **the arithmetic of trading**: giving a knight (3) for a rook (5) is a profit; giving a rook for a knight is a loss. A whole later section, \"Captures and value\", is built on these five numbers. Learn them now.",
+      ],
+      tasks: [{
+        prompt: "Tap White's pieces in order of value, highest first",
+        steps: [
+          "Start with the most valuable: White's queen (9)",
+          "Now either white rook (5)",
+          "Now any knight or bishop (both 3)",
+          "Finally any pawn (1)",
+        ],
+      }],
+    },
+    turns: {
+      part: "The board", title: "Taking turns: White moves first",
+      text: [
+        "The two players alternate. **You move exactly one piece, and you must move** — passing is not allowed, a rule that becomes deadly serious in the endgame.",
+        "**White goes first.** One white move plus one black move makes a move pair, written \"1. e4 e5\" — the number in front is the move number.",
+        "The bar above the board says whose turn it is. When it is your opponent's turn your own pieces will not pick up; that is the rule working, not the app freezing.",
+      ],
+      tasks: [{
+        prompt: "White to move — play anything and spend the first move",
+        retry: "Click one of your pieces, then click a square it can go to",
+      }],
+    },
+    howtomove: {
+      part: "The board", title: "How to actually move a piece here",
+      text: [
+        "Either way works: **click the piece, then click the destination**, or simply **drag** it across.",
+        "Once a piece is selected the board lights up every square it can reach. Picked the wrong piece? Click somewhere else to deselect — that does not count as a move.",
+        "And if you really do play a mistake, you can take it back: **⌘Z / Ctrl+Z**. Inside a lesson a wrong move is undone for you with a hint, so experiment freely.",
+      ],
+      tasks: [{
+        prompt: "Try it: select a centre pawn or a knight and develop it (e4, d4, Nf3 or Nc3 all count)",
+        retry: "Click the piece first — its squares light up — then click one of them",
+      }],
+    },
+    goal: {
+      part: "The board", title: "Winning is checkmate, not capturing everything",
+      text: [
+        "**Capturing all the enemy pieces is not the goal, and it never happens.** There is one goal: **checkmate** the enemy king — he is under attack, and all three escapes (**move, block, capture**) are gone.",
+        "The king is never actually captured; the game ends the moment mate arrives. That is why he has no value and can never be traded.",
+        "The other ending is a **draw**: no legal move while not in check (stalemate), too little material to mate, agreement, and a few more. A draw is half a point each — and it is what the losing side is usually playing for.",
+      ],
+      tasks: [{
+        prompt: "Queen and king, mate in one — bring the queen to g7",
+        retry: "Qg7: the queen sits right against the black king with your own king behind her, so he can neither take her nor step away",
       }],
     },
     pawn: {
@@ -200,6 +270,18 @@
         retry: "Take the queen on f6 with the knight (once it moves, the rook on the e-file gives check)",
       }],
     },
+    trade: {
+      part: "Captures and value", title: "Trading: when it pays",
+      text: [
+        "A trade is: I take one of yours, you take one of mine back. Whether it pays is straight subtraction of the values — **a knight (3) for a rook (5) nets you 2**; the other way round loses 2.",
+        "One thing to watch: **being able to take is not the same as should take.** Before you capture, look once — after I take, can anything take back? If it can, both sides of the exchange go into the sum.",
+        "And a rule of thumb: **trade pieces when you are ahead, avoid trades when you are behind.** If you are a rook up, the fewer men left on the board, the more that rook decides.",
+      ],
+      tasks: [{
+        prompt: "The knight on d3 (3) can take the rook on b4 (5), and nothing can recapture — take it",
+        retry: "Nxb4: the knight hops to b4 and wins the rook, up 2. Count what defends b4 first — the answer is nothing",
+      }],
+    },
     check: {
       part: "Rules and results", title: "Check and how to answer it",
       text: [
@@ -341,13 +423,69 @@
       part: "Mating patterns", title: "Queen and rook: mating on the edge",
       text: [
         "Queen plus rook climbs the ladder just like two rooks, and the queen seals ranks more tightly — but she also stalemates far more easily, so keep leaving the king a legal move until you mate him.",
-        "These three patterns (ladder, smothered, back rank) cover most practical finishes. The Puzzles mode has full sets of them to drill.",
+        "The ladder is the model for driving a king to the edge. The next four lessons flip the problem: **the king is already on the edge or in the corner — how do you close the net in one move?**",
       ],
       tasks: [
         { prompt: "The queen fences the 7th rank first — put her on b7, one square away from the black king (too close invites stalemate)",
           retry: "Play the queen to b7: the whole 7th rank plus c8 come under fire and the black king can only shuffle along the back rank" },
         { prompt: "The black king can only run along the back rank — bring the rook down the h-file to finish it!",
           retry: "Rh8 gives check while the queen covers the whole 7th rank — that's the move" },
+      ],
+    },
+    backrank: {
+      part: "Mating patterns", title: "Back-rank mate: smothered by your own pawns",
+      text: [
+        "**The most common mate in practical play — and it usually lands while neither player is looking.** The king castles to g1/g8, the three pawns in front of him never move, and those pawns are blocking his only exit.",
+        "A rook or queen drops onto the back rank with check, and the king **cannot go up** (his own pawns) and **cannot go sideways** (the rook's line). That is mate, with nothing sacrificed.",
+        "Preventing it takes one move: **push a pawn in advance** — usually the h-pawn — to give the king an air hole. Strong players do it in quiet moments without thinking.",
+      ],
+      tasks: [
+        { prompt: "The black king is on g8 and f7/g7/h7 have never moved — take the back rank",
+          retry: "Ra8: check on the back rank. The king would love the 7th rank, but f7, g7 and h7 are occupied by his own pawns" },
+        { prompt: "Black has a rook on a7 — can it defend the back rank? Count before you move",
+          retry: "Re8: the a7 rook is on the 7th rank, cannot reach the 8th, and cannot interpose either (only f8 would block, and it cannot get there)" },
+      ],
+    },
+    qkiss: {
+      part: "Mating patterns", title: "Queen-next-to-king: get close, but bring support",
+      text: [
+        "The queen delivering check from **right beside** the enemy king is often called the kiss of death. From there she seals off the whole ring of squares around him at once.",
+        "Everything hangs on **support**: standing next to the king puts the queen inside his reach, so **another piece must defend that square** or he simply eats her and you have thrown a queen away. Here the supporting piece is the bishop on b2, eyeing the whole a1–h8 diagonal.",
+        "So the checklist has exactly two questions: **can the queen get next to him, and is that square defended?** Both yes, it is mate. Only the first, it is a blunder.",
+      ],
+      tasks: [
+        { prompt: "The bishop on b2 covers g7 — step the queen up",
+          retry: "Qg7: the queen lands beside the king, defended by the b2 bishop, and h7 and g8 are both sealed off by the queen herself" },
+        { prompt: "This time Black's own h7 pawn blocks his escape — same single move",
+          retry: "Qg7: the same long diagonal supports her, and h7 is taken by Black's own pawn" },
+      ],
+    },
+    arabian: {
+      part: "Mating patterns", title: "The Arabian mate: rook and knight",
+      text: [
+        "**Rook plus knight** is the best-matched mating pair there is, because their fields of fire do not overlap at all — the knight covers exactly what the rook cannot.",
+        "The standard shape: king in the corner, **knight two squares away** (king h8, knight f6), where that one knight covers **g8** and **h7** together. The rook then arrives on h7 with check, defended by the knight.",
+        "The mnemonic is simply: **knight first, sealing both escape squares; rook last, giving check.** Reverse the order and the rook just gets captured.",
+      ],
+      tasks: [
+        { prompt: "The f6 knight already covers g8 and h7 — bring the rook up the h-file",
+          retry: "Rh7: check, and h7 is defended by the knight on f6; g8 is in the knight's field too" },
+        { prompt: "Other corner: black king a8, knight on c6 — same shape, where does the rook go?",
+          retry: "Ra7: the c6 knight covers a7 (defending the rook) and b8 (sealing the escape) — the same picture as before" },
+      ],
+    },
+    boden: {
+      part: "Mating patterns", title: "Boden's mate: two diagonals crossing",
+      text: [
+        "**Two bishops** run on opposite colours, so their fire never overlaps — and once the two diagonals cross they weave a net the king cannot leave. This is the pay-off of \"Light squares and dark\" from the very first section.",
+        "The classic setting is after the opponent castles **queenside**: the king on c8, his own rook on d8 and pawn on d7 already blocking half his escape. One bishop checks from a6 along a6–c8; the other, from f4, covers b8 and c7 in one stroke.",
+        "The two diagonals cross, all four directions are taken, and that is Boden's mate. It is often bought with a queen sacrifice, because once the shape appears it cannot be stopped.",
+      ],
+      tasks: [
+        { prompt: "The f4 bishop already covers b8 and c7 — bring the other bishop to the a6 diagonal",
+          retry: "Ba6: check along a6–b7–c8. b8 and c7 belong to the f4 bishop, while d8 and d7 are blocked by Black's own rook and pawn" },
+        { prompt: "Same position, but the bishop starts on e2 — go to the same square",
+          retry: "Ba6: e2–d3–c4–b5–a6 is clear, and on arrival it is the same net" },
       ],
     },
     opening: {
