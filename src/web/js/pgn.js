@@ -54,5 +54,24 @@
     return { white, black, result, event, date, plies };
   }
 
-  global.ChessPgn = { splitGames, tag, summary };
+  /**
+   * The position a game starts from, when its tag pairs declare one.
+   *
+   * A PGN whose movetext is empty is still a complete PGN — `[SetUp "1"]` plus
+   * `[FEN ...]` and no moves is exactly what "edit a position, then save or
+   * export it" produces. chess.js's load_pgn rejects that shape (it insists on
+   * movetext), so every caller that trusts load_pgn alone silently dropped
+   * such a game; they ask here first instead.
+   * @param {string} text
+   * @returns {string|null} the FEN, or null when the game starts from the
+   *   standard array
+   */
+  function startFen(text) {
+    const s = String(text || "");
+    if (!/^\[SetUp\s+"1"\]/m.test(s)) return null;
+    const m = /^\[FEN\s+"([^"]+)"\]/m.exec(s);
+    return m ? m[1].trim() || null : null;
+  }
+
+  global.ChessPgn = { splitGames, tag, summary, startFen };
 })(typeof window !== "undefined" ? window : globalThis);

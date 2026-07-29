@@ -29,10 +29,31 @@
     });
   }
 
+  /**
+   * `err.name` on the rejection you get when the native side refused a file
+   * for being over its read limit. It is called out separately because "this
+   * file is too big" and "this file is not a PGN" need different words on
+   * screen, and the caller could not tell them apart while the bridge handed
+   * back the first 256 KiB of an oversized file as if that were all of it.
+   */
+  const FILE_TOO_LARGE = "FileTooLargeError";
+
+  function fileTooLargeError(limit) {
+    const e = new Error("file too large");
+    e.name = FILE_TOO_LARGE;
+    e.limit = limit || 0;
+    return e;
+  }
+
   async function readTextFile(path) {
     if (!hasZero()) throw new Error("no bridge");
-    const b64 = await global.zero.invoke("chess.readTextFile", { path: path });
-    return base64ToString(b64);
+    const r = await global.zero.invoke("chess.readTextFile", { path: path });
+    // this used to be a bare base64 string, which had nowhere to put the
+    // refusal; the old shape still reads fine.
+    if (typeof r === "string") return base64ToString(r);
+    if (!r || typeof r !== "object") throw new Error("bad read result");
+    if (r.tooLarge) throw fileTooLargeError(r.limit);
+    return base64ToString(r.b64);
   }
 
   async function saveFileDialog(options) {
@@ -220,6 +241,7 @@
     bytesToBase64,
     writeTextFile,
     readTextFile,
+    FILE_TOO_LARGE,
     saveFileDialog,
     openFileDialog,
     revealPath,

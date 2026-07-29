@@ -90,5 +90,25 @@
     return theirs.some((p) => p.type !== "b" || p.dark !== myColor);
   }
 
-  global.ChessFide = { halfmoveClock, positionKey, repetitionCount, hasMatingMaterial };
+  /**
+   * Is this position finished by the laws of chess alone?
+   *
+   * The counterpart to the app's live `naturalGameOver()`, for positions the
+   * app is not standing on — replaying an analysis, say. It exists because the
+   * obvious call, chess.js's `game_over()`, answers a different question: it
+   * ends the game at threefold and at the 50-move mark, which arts. 9.2/9.3
+   * make *claimable*, not terminal. A game legally continues through both, so
+   * treating them as finished scores live positions as dead draws.
+   *
+   * @param {object} g chess.js instance standing on the position
+   * @param {number} [reps] how many times the position has occurred in the
+   *   game so far, including this one (see repetitionCount); 1 when unknown
+   */
+  function positionFinished(g, reps) {
+    if (g.in_checkmate()) return true; // a mating move trumps the 75-move rule
+    if (g.in_stalemate() || g.insufficient_material()) return true;
+    return (reps || 1) >= 5 || halfmoveClock(g.fen()) >= 150;
+  }
+
+  global.ChessFide = { halfmoveClock, positionKey, repetitionCount, hasMatingMaterial, positionFinished };
 })(typeof window !== "undefined" ? window : globalThis);
