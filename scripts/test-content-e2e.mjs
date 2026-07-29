@@ -275,6 +275,53 @@ if (hasTab && REAL.length) {
   assert(tiers.size === 3, "难度筛选在这一档里分得开三档", [...tiers].join("/"));
 }
 
+// --- the course actually reaches the screen in every language ---------------
+// 1.21 added 1027 Japanese strings. Everything above runs in the default
+// Chinese, so without this the whole translation could be unreachable — a
+// wrong table name in app.js would leave the guards green and the screen
+// English. Switch languages for real and read the lesson off the page.
+{
+  const kana = /[぀-ヿ]/;
+  const latinWord = /[A-Za-z]{4,}/;
+  // The puzzle section above left the page in puzzle mode, so the lesson panel
+  // still held the last lesson opened — all three languages read back the same
+  // stale Chinese and two assertions failed on the test's own mistake, not the
+  // app's. Go back to learn mode first.
+  await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].find((x) => x.dataset.mode === "learn").click());
+  await page.waitForTimeout(500);
+  for (const [lang, wants] of [["ja", "kana"], ["en", "latin"], ["zh-CN", "han"]]) {
+    const switched = await page.evaluate((id) => {
+      const b = document.querySelector(`button[data-lang="${id}"]`);
+      if (!b) return false;
+      b.click();
+      return true;
+    }, lang);
+    assert(switched, `${lang}:界面上有这个语言的按钮`);
+    if (!switched) continue;
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
+      if (rows[0]) rows[0].click();
+    });
+    await page.waitForTimeout(500);
+    const shown = await page.evaluate(() => ({
+      title: document.querySelector("#lesson-title, .lesson-title")?.textContent || "",
+      body: document.getElementById("lesson-text").textContent || "",
+    }));
+    assert(shown.body.length > 20, `${lang}:第一课的课文渲染出来了`, JSON.stringify(shown).slice(0, 120));
+    if (wants === "kana") {
+      assert(kana.test(shown.body), "ja:课文里有假名,不是回退到了英文或中文", shown.body.slice(0, 80));
+    }
+    if (wants === "latin") {
+      assert(latinWord.test(shown.body), "en:课文是英文", shown.body.slice(0, 80));
+      assert(!kana.test(shown.body), "en:英文课文里不该混进假名", shown.body.slice(0, 80));
+    }
+    if (wants === "han") {
+      assert(/[一-鿿]/.test(shown.body) && !kana.test(shown.body), "zh-CN:切回中文后课文是中文", shown.body.slice(0, 80));
+    }
+  }
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

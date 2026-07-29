@@ -245,8 +245,14 @@ function checkManifest(label, file) {
 
   // Top-level sections. Some are ours, some are the packager's — the split is
   // written down here rather than left to be rediscovered.
+  // 1.20 also listed display_name / version / description here, filed under
+  // "Info.plist / bundle identity". That was wrong: the SDK's own runner passes
+  // all three into AppInfo for the about panel and dev runs, so exempting them
+  // hid three manifest keys with no reader — the very thing this file exists to
+  // find, waved through by its own allowlist. Anything that stays here has to
+  // be a key the APP genuinely never sees.
   const PACKAGER_SECTIONS = new Set([
-    "id", "name", "display_name", "description", "version", // Info.plist / bundle identity
+    "id", "name", // bundle identifier and the package basename, `native package` only
     "icons", "platforms", // iconset + target validation, `native package` only
     "frontend", // the dist to bundle; the app side reads it in src/main.zig
   ]);
@@ -289,21 +295,53 @@ try {
 
 const sdkArg = process.argv.indexOf("--sdk");
 const sdkPath = sdkArg > 0 ? process.argv[sdkArg + 1] : process.env.SDK_PATH;
-if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))) {
-  const types = stripComments(fs.readFileSync(path.join(sdkPath, "src", "platform", "types.zig"), "utf8"));
-  const at = types.indexOf("pub const WindowOptions = struct {");
-  const body = types.slice(at, matchBrace(types, types.indexOf("{", at)) + 1);
-  const sdkFields = [...body.matchAll(/^\s{4}([a-z_][a-z0-9_]*)\s*:/gm)].map((m) => m[1]);
-  check(sdkFields.length > 0, "SDK 交叉检查: 解析 WindowOptions 失败");
+/** field names of a `pub const <Name> = struct { … }` in an SDK source file */
+function sdkStructFields(file, name) {
+  const src = stripComments(fs.readFileSync(file, "utf8"));
+  const at = src.indexOf(`pub const ${name} = struct {`);
+  if (at < 0) return null;
+  const open = src.indexOf("{", at);
+  const body = src.slice(open, matchBrace(src, open) + 1);
+  return [...body.matchAll(/^\s{4}([a-z_][a-z0-9_]*)\s*:/gm)].map((m) => m[1]);
+}
+/**
+ * Every field a runner function assigns, anywhere in its body: both `.field =`
+ * inside a struct literal and `info.field =` afterwards. The first version of
+ * this looked only at the function's first `return .{ … }`, which for `appInfo`
+ * matched a *later* function entirely and reported all eleven fields missing.
+ */
+function runnerAssignments(fn) {
+  const at = runnerSrc.indexOf(fn + "(");
+  if (at < 0) return null;
+  const open = runnerSrc.indexOf("{", runnerSrc.indexOf(")", at));
+  const close = matchBrace(runnerSrc, open);
+  if (close < 0) return null;
+  const body = runnerSrc.slice(open + 1, close);
+  return [...body.matchAll(/\.([a-z_][a-z0-9_]*)\s*=[^=]/g)].map((m) => m[1]);
+}
 
-  for (const field of sdkFields) {
-    check(
-      assignedByRunner.has(field),
-      `SDK 交叉检查: WindowOptions.${field} 是 SDK 的窗口选项，但 src/runner.zig 的 manifestWindow 不给它赋值 —— ` +
-        `这个 fork 又落后了一格，声明了也是白声明`,
-    );
+if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))) {
+  const typesFile = path.join(sdkPath, "src", "platform", "types.zig");
+  // Every SDK struct this fork rebuilds by hand. 1.20 checked only
+  // WindowOptions — and AppInfo had drifted to 11 fields against the runner's
+  // 7, three of which app.zon declares. One struct was never the class.
+  const MIRRORED = [
+    { struct: "WindowOptions", file: typesFile, assigns: assignedByRunner, where: "manifestWindow" },
+    { struct: "AppInfo", file: typesFile, assigns: new Set(runnerAssignments("fn appInfo") ?? []), where: "appInfo" },
+  ];
+  for (const m of MIRRORED) {
+    const sdkFields = sdkStructFields(m.file, m.struct);
+    check(sdkFields && sdkFields.length > 0, `SDK 交叉检查: 解析 ${m.struct} 失败`);
+    if (!sdkFields) continue;
+    for (const field of sdkFields) {
+      check(
+        m.assigns.has(field),
+        `SDK 交叉检查: ${m.struct}.${field} 是 SDK 的字段，但 src/runner.zig 的 ${m.where} 不给它赋值 —— ` +
+          `这个 fork 又落后了一格，声明了也是白声明`,
+      );
+    }
+    notes.push(`SDK 交叉检查: ${m.struct} 共 ${sdkFields.length} 个字段，${m.where} 赋值 ${m.assigns.size} 个`);
   }
-  notes.push(`SDK 交叉检查: WindowOptions 共 ${sdkFields.length} 个字段，manifestWindow 赋值 ${assignedByRunner.size} 个`);
 } else {
   notes.push("SDK 交叉检查: 跳过（没给 --sdk / SDK_PATH，本地没有 SDK 源码）");
 }

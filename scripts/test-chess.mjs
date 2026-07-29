@@ -215,6 +215,48 @@ for (const p of ["r", "b", "n"]) {
 
 // lessons: every FEN valid, every solution legal and goal-satisfying,
 // star paths clear all stars without ever checking the decorative kings
+vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+// Every interface language other than the Chinese source needs content of its
+// own. Through 1.20 this was hard-coded to English, which is precisely how ja
+// ended up with a 589-key interface — not one key missing — wrapped around
+// English lessons: the guard enforced trilingual chrome and bilingual
+// teaching, and the gap it left is exactly the gap that existed.
+const CONTENT_LANGS = Object.keys(ctx.ChessI18n.DICT).filter((l) => l !== "zh-CN");
+assert(CONTENT_LANGS.length >= 2, "there is more than one content language (" + CONTENT_LANGS.join(", ") + ")");
+/** the global suffix a language's tables use: en → _EN, ja → _JA */
+const sfx = (lang) => lang.toUpperCase().replace(/-/g, "_");
+const han = /[一-鿿]/;
+const kana = /[぀-ヿ]/;
+/**
+ * "Still untranslated" reads differently per language. English must contain
+ * no Han at all. Japanese *writes* in Han, so the same test would be nonsense;
+ * there the precise signal is a string left character-for-character identical
+ * to the Chinese original.
+ *
+ * The first version of this also flagged any Han-without-kana string, on the
+ * theory that natural Japanese prose always carries some kana. It does — but
+ * short LABELS need not: "実戦 01" is perfectly good Japanese and was reported
+ * as untranslated. The per-string rule is now exact, and the kana heuristic
+ * moved to `kanaRatio` below, where it is applied to the corpus rather than to
+ * individual strings.
+ */
+const untranslated = (lang, str, source) => {
+  if (typeof str !== "string" || !str) return false;
+  if (lang === "ja") return str === source;
+  return han.test(str);
+};
+/** share of a language's strings that carry kana — a corpus-level smell test */
+function kanaRatio(root) {
+  let total = 0, withKana = 0;
+  const walk = (v) => {
+    if (typeof v === "string") { if (v.trim()) { total++; if (kana.test(v)) withKana++; } return; }
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (v && typeof v === "object") return Object.values(v).forEach(walk);
+  };
+  walk(root);
+  return total ? withKana / total : 1;
+}
+
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
   const lessons = ctx.CHESS_LESSONS;
@@ -406,11 +448,34 @@ for (const p of ["r", "b", "n"]) {
   // up with the Chinese original — a translation that describes a different
   // task is worse than none at all. 1.5 shipped a 9-lesson "pilot" while the
   // release notes said the English UI was done; coverage is asserted now.
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons-en.js"), "utf8"), ctx, { filename: "lessons-en.js" });
-  const en = ctx.CHESS_LESSONS_EN;
+// A translation file that index.html never loads is a translation nobody can
+// read. 1.21 wrote 1027 Japanese strings, passed every data check, and shipped
+// them unreachable for exactly as long as it took the browser test to open the
+// page in Japanese — the guards were all looking at the files, and no one was
+// looking at the <script> tags.
+{
+  const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  const missing = [];
+  for (const lang of CONTENT_LANGS) {
+    for (const kind of ["lessons", "puzzles", "openings"]) {
+      const tag = `js/${kind}-${lang}.js`;
+      if (!html.includes(tag)) missing.push(tag);
+    }
+  }
+  assert(missing.length === 0,
+    "index.html loads every content translation" + (missing.length ? " — missing " + missing.join(", ") : ""));
+}
+
+for (const lang of CONTENT_LANGS) {
+  const file = "src/web/js/lessons-" + lang + ".js";
+  assert(fs.existsSync(path.join(root, file)), file + " exists");
+  if (!fs.existsSync(path.join(root, file))) continue;
+  vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), ctx, { filename: "lessons-" + lang + ".js" });
+  const en = ctx["CHESS_LESSONS_" + sfx(lang)];
   const uncovered = lessons.filter((L) => !en || !en[L.id]).map((L) => L.id);
-  for (const id of uncovered) console.error("FAIL: lesson has no English text: " + id);
-  assert(uncovered.length === 0, "all " + lessons.length + " lessons have English text");
+  for (const id of uncovered) console.error("FAIL: lesson has no " + lang + " text: " + id);
+  assert(uncovered.length === 0, "all " + lessons.length + " lessons have " + lang + " text");
+  if (!en) continue;
   let badEn = 0;
   const failEn = (...m) => { badEn++; console.error("FAIL:", ...m); };
   const byId = new Map(lessons.map((L) => [L.id, L]));
@@ -439,71 +504,148 @@ for (const p of ["r", "b", "n"]) {
       if (!["part", "title", "text", "tasks"].includes(k)) failEn(id, "unexpected key in translation:", k);
     }
   }
-  assert(badEn === 0, "English lessons match the originals");
+  assert(badEn === 0, lang + " lessons match the originals");
 
-  // No Chinese may survive in the English lesson text itself.
-  let hanEn = 0;
-  const walk = (v, where) => {
-    if (typeof v === "string") { if (/[一-鿿]/.test(v)) { hanEn++; console.error("FAIL: Chinese in English lesson " + where + ": " + v); } return; }
-    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, where + "[" + i + "]"));
-    if (v && typeof v === "object") return Object.entries(v).forEach(([k, x]) => walk(x, where + "." + k));
+  // Nothing may survive untranslated — see `untranslated` for what that means
+  // in each language.
+  let leftOver = 0;
+  const walk = (v, src, where) => {
+    if (typeof v === "string") {
+      if (untranslated(lang, v, typeof src === "string" ? src : null)) {
+        leftOver++;
+        console.error("FAIL: untranslated " + lang + " lesson " + where + ": " + v);
+      }
+      return;
+    }
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, Array.isArray(src) ? src[i] : null, where + "[" + i + "]"));
+    if (v && typeof v === "object") {
+      return Object.entries(v).forEach(([k, x]) => walk(x, src && typeof src === "object" ? src[k] : null, where + "." + k));
+    }
   };
-  walk(en, "en");
-  assert(hanEn === 0, "English lesson text contains no Chinese");
+  for (const [id, tr] of Object.entries(en)) {
+    const L = byId.get(id);
+    walk(tr, L ? { part: L.part, title: L.title, text: L.text, tasks: L.tasks } : null, lang + "." + id);
+  }
+  assert(leftOver === 0, lang + " lesson text is actually translated");
+  // …and the corpus as a whole has to read like the language. Pasting the
+  // Chinese course in wholesale would pass the per-string check for any
+  // sentence that got one character changed; it could not pass this.
+  if (lang === "ja") {
+    const ratio = kanaRatio(en);
+    assert(ratio >= 0.9, "ja lessons read as Japanese (kana in " + Math.round(ratio * 100) + "% of strings)");
+    // Loose English words drifting into the prose. Chess notation, file
+    // letters and roman numerals are legitimate; ordinary words are not. I
+    // left "attacked" and "good" sitting in two Japanese sentences while
+    // writing this file, and caught them by eye — twice. Now it is checked.
+    // Tokens must keep their digits, or "Nf3" splits into "Nf" and reads as a
+    // word. Single letters are legitimate too — file names (e ファイル) and
+    // shapes (L 字).
+    const NOTATION = /^(?:[KQRBNP]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?|[A-Za-z]|I{1,3}|IV|VI{0,3}|Ctrl(?:\+Z)?|ECO)$/;
+    let latin = 0;
+    const scanLatin = (v, where) => {
+      if (typeof v === "string") {
+        for (const w of v.match(/[A-Za-z][A-Za-z0-9=+#-]*/g) || []) {
+          if (NOTATION.test(w)) continue;
+          latin++;
+          console.error("FAIL: stray English word in ja lesson " + where + ": " + w);
+        }
+        return;
+      }
+      if (Array.isArray(v)) return v.forEach((x, i) => scanLatin(x, where + "[" + i + "]"));
+      if (v && typeof v === "object") return Object.entries(v).forEach(([k, x]) => scanLatin(x, where + "." + k));
+    };
+    scanLatin(en, "ja");
+    assert(latin === 0, "ja lesson prose carries no stray English words");
+    // Latin was not the only script that leaked in: a Russian word (двух) also
+    // made it into a sentence, and the check above cannot see it. Whitelist the
+    // scripts Japanese text legitimately uses and flag anything else.
+    // Punctuation and symbols the prose legitimately uses: the multiplication
+    // sign in "8×8", the Command glyph, "≠", arrows, em dashes.
+    const JA_OK = /[　-〿぀-ヿ一-鿿＀-￯ -~‐-‧‰-⁞←-⇿①-⓿■-⛿×≠⌘–—]/;
+    let alien = 0;
+    const scanScript = (v, where) => {
+      if (typeof v === "string") {
+        for (const ch of v) {
+          if (!JA_OK.test(ch)) {
+            alien++;
+            console.error("FAIL: character outside Japanese scripts in " + where + ": " + ch + " (U+" + ch.codePointAt(0).toString(16).toUpperCase() + ")");
+          }
+        }
+        return;
+      }
+      if (Array.isArray(v)) return v.forEach((x, i) => scanScript(x, where + "[" + i + "]"));
+      if (v && typeof v === "object") return Object.entries(v).forEach(([k, x]) => scanScript(x, where + "." + k));
+    };
+    scanScript(en, "ja");
+    assert(alien === 0, "ja lesson prose uses only Japanese scripts");
+  }
+}
 }
 
 // English names for puzzles and openings: the app falls back to the Chinese
 // name when one is missing, so only a coverage check keeps English mode honest
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles-en.js"), "utf8"), ctx, { filename: "puzzles-en.js" });
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings.js"), "utf8"), ctx, { filename: "openings.js" });
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings-en.js"), "utf8"), ctx, { filename: "openings-en.js" });
-  const pz = ctx.CHESS_PUZZLES, pzEn = ctx.CHESS_PUZZLES_EN;
-  const op = ctx.CHESS_OPENINGS, opEn = ctx.CHESS_OPENINGS_EN;
-  const han = /[一-鿿]/;
+  const pz = ctx.CHESS_PUZZLES;
+  const op = ctx.CHESS_OPENINGS;
+  const opNames = new Set(op.map((o) => o[1]));
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
 
+for (const lang of CONTENT_LANGS) {
+  for (const kind of ["puzzles", "openings"]) {
+    const f = "src/web/js/" + kind + "-" + lang + ".js";
+    assert(fs.existsSync(path.join(root, f)), f + " exists");
+    if (fs.existsSync(path.join(root, f))) {
+      vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), ctx, { filename: kind + "-" + lang + ".js" });
+    }
+  }
+  const pzEn = ctx["CHESS_PUZZLES_" + sfx(lang)] || {};
+  const opEn = ctx["CHESS_OPENINGS_" + sfx(lang)] || {};
+
+  bad = 0;
   for (const p of pz) {
     const tr = pzEn[p.id];
-    if (!tr) { fail("puzzle has no English name:", p.id); continue; }
-    if (!tr.name || han.test(tr.name)) fail("puzzle name not translated:", p.id, tr.name);
+    if (!tr) { fail("puzzle has no " + lang + " name:", p.id); continue; }
+    if (!tr.name || untranslated(lang, tr.name, p.name)) fail("puzzle name not translated (" + lang + "):", p.id, tr.name);
     // a motif is shown in the goal line, so it must be translated wherever one exists
-    if (!!p.motif !== !!tr.motif) fail("puzzle motif mismatch:", p.id, p.motif, "vs", tr.motif);
-    if (tr.motif && han.test(tr.motif)) fail("puzzle motif not translated:", p.id, tr.motif);
+    if (!!p.motif !== !!tr.motif) fail("puzzle motif mismatch (" + lang + "):", p.id, p.motif, "vs", tr.motif);
+    if (tr.motif && untranslated(lang, tr.motif, p.motif)) fail("puzzle motif not translated (" + lang + "):", p.id, tr.motif);
   }
   for (const id of Object.keys(pzEn)) {
-    if (!pz.some((p) => p.id === id)) fail("English text for unknown puzzle:", id);
+    if (!pz.some((p) => p.id === id)) fail(lang + " text for unknown puzzle:", id);
   }
-  assert(bad === 0, "all " + pz.length + " puzzles have English names");
+  assert(bad === 0, "all " + pz.length + " puzzles have " + lang + " names");
 
   bad = 0;
-  const opNames = new Set(op.map((o) => o[1]));
   for (const n of opNames) {
-    if (!opEn[n]) { fail("opening has no English name:", n); continue; }
-    if (han.test(opEn[n])) fail("opening name not translated:", n, "->", opEn[n]);
+    if (!opEn[n]) { fail("opening has no " + lang + " name:", n); continue; }
+    if (untranslated(lang, opEn[n], n)) fail("opening name not translated (" + lang + "):", n, "->", opEn[n]);
   }
   for (const n of Object.keys(opEn)) {
-    if (!opNames.has(n)) fail("English name for unknown opening:", n);
+    if (!opNames.has(n)) fail(lang + " name for unknown opening:", n);
   }
-  assert(bad === 0, "all " + opNames.size + " opening names have English text");
-
-  // The drills also show the line's idea. Only lines long enough to be drilled
-  // (≥6 plies, the same filter app.js applies) ever display one, so that is
-  // exactly the set that needs translating — no more, no less.
+  assert(bad === 0, "all " + opNames.size + " opening names have " + lang + " text");
+}
+// The drills also show the line's idea. Only lines long enough to be drilled
+// (≥6 plies, the same filter app.js applies) ever display one, so that is
+// exactly the set that needs translating — no more, no less.
+for (const lang of CONTENT_LANGS) {
   bad = 0;
-  const ideaEn = ctx.CHESS_OPENING_IDEAS_EN || {};
+  const ideaEn = ctx["CHESS_OPENING_IDEAS_" + sfx(lang)] || {};
   const drilled = op.filter((o) => o[2].split(" ").length >= 6);
+  const ideaOf = new Map(drilled.map((o) => [o[1], o[3]]));
   for (const [, name, , idea] of drilled) {
     if (!idea) { fail("drilled opening has no idea line:", name); continue; }
-    if (!ideaEn[name]) { fail("opening idea has no English text:", name); continue; }
-    if (han.test(ideaEn[name])) fail("opening idea not translated:", name);
+    if (!ideaEn[name]) { fail("opening idea has no " + lang + " text:", name); continue; }
+    if (untranslated(lang, ideaEn[name], ideaOf.get(name))) fail("opening idea not translated (" + lang + "):", name);
   }
   for (const n of Object.keys(ideaEn)) {
-    if (!drilled.some((o) => o[1] === n)) fail("English idea for an opening that is never drilled:", n);
+    if (!drilled.some((o) => o[1] === n)) fail(lang + " idea for an opening that is never drilled:", n);
   }
-  assert(bad === 0, "all " + drilled.length + " drilled openings have an English idea");
+  assert(bad === 0, "all " + drilled.length + " drilled openings have a " + lang + " idea");
+}
 }
 
 // puzzles: legal positions (white to move, black not already in check),
@@ -2240,6 +2382,39 @@ for (const p of ["r", "b", "n"]) {
     + draws.slice(draws.indexOf("let dragPiece = null;"));
   const literals = marks.match(/(?:fillStyle|strokeStyle)\s*=\s*"(?:rgba?\(|#)/g) || [];
   assert(literals.length === 0, "every board mark is painted from a theme token (" + literals.length + " literal(s) left)");
+}
+
+// README quotes its own numbers, and they drift. Through 1.20 it advertised
+// "57 课" in three places (the course had 67) and both "572 个界面键" and
+// "526 条" for a dictionary of 589 — and 1.20 was a release *about* the course
+// growing, which is exactly when nobody rereads the README. Each claim below
+// is checked against the thing it describes.
+{
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  const lessons = ctx.CHESS_LESSONS.length;
+  const keys = Object.keys(ctx.ChessI18n.DICT["zh-CN"]).length;
+  const puzzles = ctx.CHESS_PUZZLES.length;
+  const openings = new Set(ctx.CHESS_OPENINGS.map((o) => o[1])).size;
+  const claims = [
+    [/零基础 (\d+) 课/, lessons, "the course size in the teaching row"],
+    [/教学课程 (\d+) 课/, lessons, "the course size in the file map"],
+    [/英文全译 (\d+) 课/, lessons, "the English course size"],
+    [/(\d+) 个界面键三语齐备/, keys, "the interface-key count"],
+    [/zh-CN \/ en \/ ja 各 (\d+) 条/, keys, "the dictionary size in the file map"],
+    [/题库 (\d+) 题/, puzzles, "the puzzle count"],
+    [/内置 \*\*(\d+) 条\*\* ECO 库/, ctx.CHESS_OPENINGS.length, "the ECO library size"],
+  ];
+  let stale = 0;
+  for (const [re, actual, what] of claims) {
+    const m = re.exec(readme);
+    if (!m) { stale++; console.error("FAIL: README no longer states " + what + " (" + re + ")"); continue; }
+    if (Number(m[1]) !== actual) {
+      stale++;
+      console.error("FAIL: README says " + m[1] + " for " + what + ", but it is " + actual);
+    }
+  }
+  void openings;
+  assert(stale === 0, "every count README quotes matches the code");
 }
 
 if (failed) {

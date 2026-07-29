@@ -43,6 +43,19 @@ pub const RunOptions = struct {
     fn appInfo(self: RunOptions, buffers: *StateBuffers) native_sdk.AppInfo {
         var info: native_sdk.AppInfo = .{
             .app_name = self.app_name,
+            // The identity fields app.zon already declares. 1.20 exempted
+            // display_name / version / description from manifest-check as
+            // "packager only", but the SDK's own runner feeds them to AppInfo
+            // for the about panel and dev runs — so the exemption was wrong and
+            // these three keys had no reader at all.
+            .display_name = manifestStringField("display_name"),
+            .version = manifestStringField("version"),
+            .description = manifestStringField("description"),
+            // Read by the Windows host to decide whether hide-on-close is even
+            // offered. Left false, a future `.capabilities = .{"tray"}` would
+            // pass the comptime close_policy check and then be refused at
+            // create — the two checks would disagree at runtime.
+            .declares_tray = manifestDeclaresTrayCapability(),
             .has_web_content = manifestHasWebContent(),
             .window_title = self.window_title,
             .bundle_id = self.bundle_id,
@@ -338,6 +351,12 @@ fn windowClosePolicy(comptime window: anytype) native_sdk.WindowClosePolicy {
 
 /// Whether app.zon declares the "tray" capability — the status item `.hide`
 /// leans on where the OS has no built-in re-show affordance.
+/// A top-level string from app.zon, or "" when the manifest omits it.
+fn manifestStringField(comptime field: []const u8) []const u8 {
+    if (comptime !@hasField(@TypeOf(app_manifest), field)) return "";
+    return @field(app_manifest, field);
+}
+
 fn manifestDeclaresTrayCapability() bool {
     if (comptime !@hasField(@TypeOf(app_manifest), "capabilities")) return false;
     inline for (app_manifest.capabilities) |capability| {
