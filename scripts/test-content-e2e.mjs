@@ -140,13 +140,24 @@ const settle = async () => {
   await page.waitForTimeout(200);
 };
 
-// --- the opening and endgame lessons --------------------------------------
+// --- every lesson in the course -------------------------------------------
+// Through 1.19 this loop ran over the opening and endgame blocks only — 16 of
+// 57 lessons. The other 41 had never been opened in a real page. Extending it
+// turned up no app defect, but it did turn up a limitation in THIS file:
+// `occupied()` reads pieces off the canvas by luminance spread, and a stars
+// lesson paints its star markers on empty squares, which read exactly like
+// pieces. So the expected set for a stars task is pieces ∪ stars-not-yet-taken.
 await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].find((x) => x.dataset.mode === "learn").click());
 await page.waitForTimeout(500);
 assert(ENDGAME.length >= 8, `残局基础有 ${ENDGAME.length} 课`);
 assert(OPENING.length >= 8, `开局入门有 ${OPENING.length} 课`);
+assert(LESSONS.length >= 60, `课程共 ${LESSONS.length} 课,这一轮全都要点开`);
 
-for (const les of [...OPENING, ...ENDGAME]) {
+/** what the canvas should show: the men on the board plus any live star marks */
+const shown = (fen, stars) =>
+  [...new Set(squaresOf(fen).split(",").filter(Boolean).concat(stars))].sort().join(",");
+
+for (const les of LESSONS) {
   const opened = await page.evaluate((want) => {
     const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
     const row = rows.find((r) => (r.textContent || "").includes(want));
@@ -174,13 +185,21 @@ for (const les of [...OPENING, ...ENDGAME]) {
   // diagram, so either reading is correct
   const allowed = [];
   les.tasks.forEach((task, k) => {
-    allowed.push([`第 ${k + 1} 题`, squaresOf(task.fen)]);
-    for (const san of task.solution || []) {
-      const g = new Chess(task.fen);
-      if (g.move(san) || g.move({ from: san.slice(0, 2), to: san.slice(2, 4), promotion: "q" })) {
-        allowed.push([`第 ${k + 1} 题演示完`, squaresOf(g.fen())]);
+    let live = task.type === "stars" ? [...(task.stars || [])] : [];
+    allowed.push([`第 ${k + 1} 题`, shown(task.fen, live)]);
+    const g = new Chess(task.fen);
+    (task.solution || []).forEach((san, s) => {
+      const mv = g.move(san)
+        || g.move({ from: san.slice(0, 2), to: san.slice(2, 4), promotion: "q" });
+      if (!mv) return;
+      live = live.filter((sq) => sq !== mv.to); // that star has been collected
+      if (task.type === "stars") {
+        // the runtime hands the turn straight back, so the demo never leaves
+        // the board on Black's move
+        const f = g.fen().split(" "); f[1] = "w"; f[3] = "-"; g.load(f.join(" "));
       }
-    }
+      allowed.push([`第 ${k + 1} 题走完第 ${s + 1} 步`, shown(g.fen(), live)]);
+    });
   });
   const hit = allowed.find(([, sqs]) => sqs === on);
   assert(!!hit, `${les.id}:棋盘上摆的是这一课的局面`, hit ? hit[0] : `实际 ${on}`);

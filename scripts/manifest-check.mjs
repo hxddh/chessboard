@@ -223,6 +223,47 @@ function checkManifest(label, file) {
       }
     }
   }
+
+  // The security block is the one that bites quietly: a policy nobody reads
+  // still *looks* enforced, and until 1.20 `.external_links.action` was exactly
+  // that — it said "deny", nothing read it, and it behaved as deny only because
+  // that is the SDK's struct default.
+  const security = blockBody(src, "security");
+  if (security) {
+    const nav = blockBody(security, "navigation");
+    check(nav !== null, `${label}: .security 里没有 .navigation`);
+    for (const key of keysAtTopLevel(nav || "")) {
+      check(runnerReads(key), `${label}: .security.navigation.${key} 声明了，但 src/runner.zig 从不读它`);
+    }
+    const ext = nav && blockBody(nav, "external_links");
+    for (const key of keysAtTopLevel(ext || "")) {
+      check(runnerReads(key),
+        `${label}: .security.navigation.external_links.${key} 声明了，但 src/runner.zig 从不读它 ——` +
+        `「和 SDK 默认值恰好一致」不算被读`);
+    }
+  }
+
+  // Top-level sections. Some are ours, some are the packager's — the split is
+  // written down here rather than left to be rediscovered.
+  const PACKAGER_SECTIONS = new Set([
+    "id", "name", "display_name", "description", "version", // Info.plist / bundle identity
+    "icons", "platforms", // iconset + target validation, `native package` only
+    "frontend", // the dist to bundle; the app side reads it in src/main.zig
+  ]);
+  // The manifest itself is one `.{ … }`, so the sections sit one level in —
+  // walking the raw file finds nothing and this loop quietly checked zero keys
+  // while still printing ok. Which is the exact failure mode this file exists
+  // to catch, so: assert it found something.
+  const rootOpen = src.indexOf("{");
+  const rootBody = rootOpen < 0 ? "" : src.slice(rootOpen + 1, matchBrace(src, rootOpen));
+  const topKeys = keysAtTopLevel(rootBody);
+  check(topKeys.length >= 5, `${label}: 只解析出 ${topKeys.length} 个顶层段,清单结构变了`);
+  notes.push(`${label}: 顶层 ${topKeys.length} 段 —— ${topKeys.join(" ")}`);
+  for (const key of topKeys) {
+    if (PACKAGER_SECTIONS.has(key)) continue;
+    check(runnerReads(key), `${label}: 顶层 .${key} 声明了，但 src/runner.zig 从不读它 —— ` +
+      `如果它本来就该由 native package 消费，把它加进 PACKAGER_SECTIONS 并写明理由`);
+  }
 }
 
 checkManifest("app.zon", path.join(ROOT, "app.zon"));

@@ -3206,7 +3206,15 @@
 
   /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
   function pgnForExport() {
-    const DIFF_EN = { beginner: "Beginner", easy: "Easy", normal: "Normal", hard: "Hard", extreme: "Max" };
+    // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
+    // object that predated the 1.19 "casual" rung and never grew one, so a
+    // casual game exported as "Stockfish 18 (casual)" — the raw id leaking into
+    // a file other programs read. The self-check now requires an entry here for
+    // every rung, so the next tier cannot slip through the same way.
+    const DIFF_EN = {
+      beginner: "Beginner", casual: "Casual", easy: "Easy",
+      normal: "Normal", hard: "Hard", extreme: "Max",
+    };
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
     const engineName = "Stockfish 18 (" + (DIFF_EN[difficulty] || difficulty) + ")";
@@ -3283,7 +3291,7 @@
   /**
    * One question, asked once, on a genuinely fresh install.
    *
-   * Everything the app has for a beginner — the 36-lesson course, the Beginner
+   * Everything the app has for a beginner — the interactive course, the Beginner
    * engine that makes real mistakes on purpose — was reachable only by someone
    * who already knew to go looking. Until 1.7 the first screen was a 1700-rated
    * Stockfish, which is exactly the "hard to get started" complaint the whole
@@ -4762,7 +4770,7 @@
   // "Have we been here before?" — asked before loadSettings writes anything,
   // because the very first thing a new player saw was a 1700-rated Stockfish
   // (mode "ai" + difficulty "normal" are the code defaults) with nothing at all
-  // pointing at the 36-lesson course or the Beginner tier built for them.
+  // pointing at the interactive course or the Beginner tier built for them.
   const firstRun = !Host.storageGet(SETTINGS_KEY) && !Host.storageGet(SAVE_KEY) &&
     !Host.storageGet(LEARN_KEY) && !Host.storageGet(PUZZLE_KEY);
   // and on a first run, start in the system language rather than always Chinese

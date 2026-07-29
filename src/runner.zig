@@ -29,7 +29,12 @@ pub const RunOptions = struct {
     icon_path: []const u8 = "assets/icon.png",
     bridge: ?native_sdk.BridgeDispatcher = null,
     builtin_bridge: native_sdk.BridgePolicy = .{},
-    security: native_sdk.SecurityPolicy = .{},
+    /// Leave null to take app.zon's `.security` / `.permissions` verbatim.
+    /// Through 1.19.1 this defaulted to `.{}` and main.zig passed a
+    /// hand-written origin list, so app.zon's copy was decoration — and
+    /// `.external_links.action` was read by nobody at all (it happened to
+    /// match the SDK default, so it looked like it worked).
+    security: ?native_sdk.SecurityPolicy = null,
     js_window_api: bool = false,
     commands: ?[]const native_sdk.Command = null,
     menus: ?[]const native_sdk.Menu = null,
@@ -142,6 +147,63 @@ const ShortcutStorage = struct {
         return self.shortcuts[0..manifest_shortcuts.len];
     }
 };
+
+/// A zon tuple of string literals as a real `[]const []const u8`. Everything
+/// is comptime, so the backing array is promoted to a static const.
+fn stringList(comptime values: anytype) []const []const u8 {
+    comptime {
+        if (values.len == 0) return &.{};
+        var out: [values.len][]const u8 = undefined;
+        inline for (values, 0..) |value, index| out[index] = value;
+        const frozen = out;
+        return &frozen;
+    }
+}
+
+/// The navigation/permission policy declared in app.zon.
+///
+/// Until 1.20 nothing read this block: main.zig carried its own copy of the
+/// origin list, so the two could drift silently, and `.external_links.action`
+/// had no reader at all — it read "deny" and behaved that way only because
+/// `deny` is also the SDK's struct default. Changing it to
+/// `open_system_browser` would have done nothing.
+pub fn manifestSecurity() native_sdk.SecurityPolicy {
+    var policy: native_sdk.SecurityPolicy = .{ .permissions = manifestPermissions() };
+    if (comptime !@hasField(@TypeOf(app_manifest), "security")) return policy;
+    const sec = app_manifest.security;
+    if (comptime !@hasField(@TypeOf(sec), "navigation")) return policy;
+    const nav = sec.navigation;
+    if (comptime @hasField(@TypeOf(nav), "allowed_origins")) {
+        policy.navigation.allowed_origins = stringList(nav.allowed_origins);
+    }
+    if (comptime @hasField(@TypeOf(nav), "external_links")) {
+        const ext = nav.external_links;
+        if (comptime @hasField(@TypeOf(ext), "action")) {
+            policy.navigation.external_links.action = externalLinkAction(ext.action);
+        }
+        if (comptime @hasField(@TypeOf(ext), "allowed_urls")) {
+            policy.navigation.external_links.allowed_urls = stringList(ext.allowed_urls);
+        }
+    }
+    return policy;
+}
+
+/// The origins app.zon trusts — also what a bridge command should scope to, so
+/// that list is not written down a second time either.
+pub fn manifestOrigins() []const []const u8 {
+    return manifestSecurity().navigation.allowed_origins;
+}
+
+fn manifestPermissions() []const []const u8 {
+    if (comptime !@hasField(@TypeOf(app_manifest), "permissions")) return &.{};
+    return stringList(app_manifest.permissions);
+}
+
+fn externalLinkAction(comptime value: []const u8) native_sdk.ExternalLinkAction {
+    if (comptime std.mem.eql(u8, value, "deny")) return .deny;
+    if (comptime std.mem.eql(u8, value, "open_system_browser")) return .open_system_browser;
+    @compileError("unknown app.zon security.navigation.external_links.action — supported values: \"deny\" (the default) and \"open_system_browser\"");
+}
 
 fn manifestWindowOptions(buffers: *StateBuffers) []const native_sdk.WindowOptions {
     comptime {
@@ -360,7 +422,7 @@ fn runNull(app: native_sdk.App, options: RunOptions, init: std.process.Init) !vo
         .log_path = if (log_setup) |setup| setup.paths.log_file else null,
         .bridge = options.bridge,
         .builtin_bridge = options.builtin_bridge,
-        .security = options.security,
+        .security = options.security orelse manifestSecurity(),
         .js_window_api = options.js_window_api,
         .web_layer = webLayerEnabled(),
         .commands = commands,
@@ -410,7 +472,7 @@ fn runMacos(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
         .log_path = if (log_setup) |setup| setup.paths.log_file else null,
         .bridge = options.bridge,
         .builtin_bridge = options.builtin_bridge,
-        .security = options.security,
+        .security = options.security orelse manifestSecurity(),
         .js_window_api = options.js_window_api,
         .web_layer = webLayerEnabled(),
         .commands = commands,
@@ -460,7 +522,7 @@ fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
         .log_path = if (log_setup) |setup| setup.paths.log_file else null,
         .bridge = options.bridge,
         .builtin_bridge = options.builtin_bridge,
-        .security = options.security,
+        .security = options.security orelse manifestSecurity(),
         .js_window_api = options.js_window_api,
         .web_layer = webLayerEnabled(),
         .commands = commands,
@@ -510,7 +572,7 @@ fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init) 
         .log_path = if (log_setup) |setup| setup.paths.log_file else null,
         .bridge = options.bridge,
         .builtin_bridge = options.builtin_bridge,
-        .security = options.security,
+        .security = options.security orelse manifestSecurity(),
         .js_window_api = options.js_window_api,
         .web_layer = webLayerEnabled(),
         .commands = commands,
