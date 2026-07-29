@@ -257,6 +257,81 @@ function kanaRatio(root) {
   return total ? withKana / total : 1;
 }
 
+// ---------------------------------------------------------- Japanese scanners
+// These were written for lessons-ja and lived inside that loop, which is why
+// openings-ja and puzzles-ja — 452 more strings, added in 1.21 — were never
+// scanned at all. They were clean when this was hoisted, which is the only
+// reason nothing was found; a corpus nobody scans stays clean by luck.
+
+/**
+ * Latin runs that are legitimate inside Japanese chess prose: SAN moves, file
+ * letters, roman numerals, a few UI keys and abbreviations. Opening ideas also
+ * chain moves with hyphens and plus signs ("d4-Nf3-Bf4-e3", "c4+e4"), so a
+ * token is legitimate when every piece of it is.
+ */
+const NOTATION = /^(?:[KQRBNP]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?|[A-Za-z]|I{1,3}|IV|VI{0,3}|Ctrl(?:\+Z)?|ECO|QGD)$/;
+const notation = (word) => word.split(/[-+]/).filter(Boolean).every((part) => NOTATION.test(part));
+
+/**
+ * Scripts Japanese text legitimately uses, plus the punctuation and symbols the
+ * prose actually carries: the multiplication sign in "8×8", the Command glyph,
+ * "≠", arrows, em dashes.
+ */
+const JA_OK = /[　-〿぀-ヿ一-鿿＀-￯ -~‐-‧‰-⁞←-⇿①-⓿■-⛿×≠⌘–—]/;
+
+/** walk every string in a nested value, reporting `path: string` positions */
+function eachString(root, where, fn) {
+  const walk = (v, p) => {
+    if (typeof v === "string") return fn(v, p);
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, p + "[" + i + "]"));
+    if (v && typeof v === "object") return Object.entries(v).forEach(([k, x]) => walk(x, p + "." + k));
+  };
+  walk(root, where);
+}
+
+/**
+ * The three corpus-level checks on a Japanese table: it reads as Japanese, no
+ * loose English drifted into the prose, and no third script leaked in.
+ *
+ * `kanaMin` is per-corpus because kana density is a property of what the table
+ * holds, not of the language. Prose is ~100%; a table of short labels is not,
+ * and puzzles-ja is 87% purely because "実戦 01"–"実戦 23" are kanji and digits.
+ * That is the same fact this file already records above `untranslated` — the
+ * threshold states it rather than being tuned until it passes.
+ */
+function checkJapanese(label, table, kanaMin, minStrings) {
+  // An empty table passes every check below — kanaRatio returns 1, and neither
+  // scan has anything to walk. That is how a renamed global would turn this
+  // into three lines of `ok` guarding nothing, so count first.
+  let strings = 0;
+  eachString(table, label, (v) => { if (v.trim()) strings++; });
+  assert(strings >= minStrings, label + ": found " + strings + " strings, expected at least " + minStrings);
+
+  const ratio = kanaRatio(table);
+  assert(ratio >= kanaMin, label + " reads as Japanese (kana in " + Math.round(ratio * 100) + "% of strings, floor " + Math.round(kanaMin * 100) + "%)");
+
+  let latin = 0;
+  eachString(table, label, (v, where) => {
+    for (const w of v.match(/[A-Za-z][A-Za-z0-9=+#-]*/g) || []) {
+      if (notation(w)) continue;
+      latin++;
+      console.error("FAIL: stray English word in " + where + ": " + w);
+    }
+  });
+  assert(latin === 0, label + " carries no stray English words");
+
+  let alien = 0;
+  eachString(table, label, (v, where) => {
+    for (const ch of v) {
+      if (JA_OK.test(ch)) continue;
+      alien++;
+      console.error("FAIL: character outside Japanese scripts in " + where + ": " + ch +
+        " (U+" + ch.codePointAt(0).toString(16).toUpperCase() + ")");
+    }
+  });
+  assert(alien === 0, label + " uses only Japanese scripts");
+}
+
 {
   vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
   const lessons = ctx.CHESS_LESSONS;
@@ -530,55 +605,12 @@ for (const lang of CONTENT_LANGS) {
   // …and the corpus as a whole has to read like the language. Pasting the
   // Chinese course in wholesale would pass the per-string check for any
   // sentence that got one character changed; it could not pass this.
-  if (lang === "ja") {
-    const ratio = kanaRatio(en);
-    assert(ratio >= 0.9, "ja lessons read as Japanese (kana in " + Math.round(ratio * 100) + "% of strings)");
-    // Loose English words drifting into the prose. Chess notation, file
-    // letters and roman numerals are legitimate; ordinary words are not. I
-    // left "attacked" and "good" sitting in two Japanese sentences while
-    // writing this file, and caught them by eye — twice. Now it is checked.
-    // Tokens must keep their digits, or "Nf3" splits into "Nf" and reads as a
-    // word. Single letters are legitimate too — file names (e ファイル) and
-    // shapes (L 字).
-    const NOTATION = /^(?:[KQRBNP]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?|[A-Za-z]|I{1,3}|IV|VI{0,3}|Ctrl(?:\+Z)?|ECO)$/;
-    let latin = 0;
-    const scanLatin = (v, where) => {
-      if (typeof v === "string") {
-        for (const w of v.match(/[A-Za-z][A-Za-z0-9=+#-]*/g) || []) {
-          if (NOTATION.test(w)) continue;
-          latin++;
-          console.error("FAIL: stray English word in ja lesson " + where + ": " + w);
-        }
-        return;
-      }
-      if (Array.isArray(v)) return v.forEach((x, i) => scanLatin(x, where + "[" + i + "]"));
-      if (v && typeof v === "object") return Object.entries(v).forEach(([k, x]) => scanLatin(x, where + "." + k));
-    };
-    scanLatin(en, "ja");
-    assert(latin === 0, "ja lesson prose carries no stray English words");
-    // Latin was not the only script that leaked in: a Russian word (двух) also
-    // made it into a sentence, and the check above cannot see it. Whitelist the
-    // scripts Japanese text legitimately uses and flag anything else.
-    // Punctuation and symbols the prose legitimately uses: the multiplication
-    // sign in "8×8", the Command glyph, "≠", arrows, em dashes.
-    const JA_OK = /[　-〿぀-ヿ一-鿿＀-￯ -~‐-‧‰-⁞←-⇿①-⓿■-⛿×≠⌘–—]/;
-    let alien = 0;
-    const scanScript = (v, where) => {
-      if (typeof v === "string") {
-        for (const ch of v) {
-          if (!JA_OK.test(ch)) {
-            alien++;
-            console.error("FAIL: character outside Japanese scripts in " + where + ": " + ch + " (U+" + ch.codePointAt(0).toString(16).toUpperCase() + ")");
-          }
-        }
-        return;
-      }
-      if (Array.isArray(v)) return v.forEach((x, i) => scanScript(x, where + "[" + i + "]"));
-      if (v && typeof v === "object") return Object.entries(v).forEach(([k, x]) => scanScript(x, where + "." + k));
-    };
-    scanScript(en, "ja");
-    assert(alien === 0, "ja lesson prose uses only Japanese scripts");
-  }
+  // Loose English words drifting into the prose (I left "attacked" and "good"
+  // sitting in two Japanese sentences while writing this file, and caught them
+  // by eye — twice), and third scripts the Latin scan cannot see (a Russian
+  // двух also made it in). Both live in checkJapanese now, shared with the
+  // opening and puzzle tables.
+  if (lang === "ja") checkJapanese("ja lesson prose", en, 0.9, 400);
 }
 }
 
@@ -645,6 +677,64 @@ for (const lang of CONTENT_LANGS) {
     if (!drilled.some((o) => o[1] === n)) fail(lang + " idea for an opening that is never drilled:", n);
   }
   assert(bad === 0, "all " + drilled.length + " drilled openings have a " + lang + " idea");
+}
+
+// …and the name has to actually describe the moves. Every check above is about
+// coverage — each name has a translation, nothing is orphaned — and coverage
+// says nothing about whether a name is TRUE of the line it sits on. C24 was
+// "中心开局·比萨普变例" from the day it was added: the moves are 1.e4 e5 2.Bc4,
+// which is the Bishop's Opening (C23 in this very file is 主教开局), while the
+// Centre Game is C21. Both translators quietly wrote "Bishop's Opening", so
+// only the Chinese reader saw a name belonging to a different opening.
+//
+// The table is written from chess fact rather than derived from the file —
+// derived rules can only ever certify that today's names agree with today's
+// names, which is exactly the check that let C24 through. Only move orders
+// where the prefix genuinely pins the family are listed: 1.e4 c5 is NOT here,
+// because 史密斯-莫拉弃兵 is legitimately its own family, and 2.Bc4 lines split
+// into 意大利/埃文斯/双马 further down. Each row states a naming fact that has
+// to hold for every line that starts that way.
+{
+  const FAMILY_BY_LINE = [
+    ["e4 e5 Bc4", "主教开局"],
+    ["e4 e5 d4", "中心对局"],
+    ["e4 e5 f4", "王翼弃兵"],
+    ["e4 e5 Nc3", "维也纳开局"],
+    ["e4 e5 Nf3 Nc6 Bb5", "西班牙开局"],
+    ["e4 e5 Nf3 Nc6 d4", "苏格兰"],
+    ["e4 e5 Nf3 d6", "菲利多尔防御"],
+    ["e4 e6", "法兰西防御"],
+    ["e4 c6", "卡罗"],
+    ["e4 Nf6", "阿廖欣防御"],
+    ["e4 d5", "斯堪的纳维亚防御"],
+    ["d4 f5", "荷兰防御"],
+    ["d4 d5 c4 c6", "斯拉夫"],
+    ["d4 Nf6 c4 e6 Nc3 Bb4", "尼姆佐-印度防御"],
+  ];
+  bad = 0;
+  for (const [line, family] of FAMILY_BY_LINE) {
+    const hits = op.filter((o) => (o[2] + " ").startsWith(line + " "));
+    // a rule matching nothing is a rule that stopped guarding anything
+    if (!hits.length) { fail("no opening starts with " + line + " — stale naming rule"); continue; }
+    for (const o of hits) {
+      if (!o[1].includes(family)) {
+        fail("opening " + o[0] + ' "' + o[1] + '" plays ' + line + ", so its name must say " + family);
+      }
+    }
+  }
+  assert(bad === 0, "every opening name describes the line it sits on (" + FAMILY_BY_LINE.length + " rules)");
+}
+
+// The same three scans lessons-ja gets. 1.21 added 452 Japanese strings across
+// these three tables and none of them were ever looked at: the scans were
+// written inside the lesson loop, so "the Japanese is checked" was true of a
+// third of the Japanese. Floors differ by corpus, not by standard — see
+// checkJapanese.
+{
+  checkJapanese("ja opening names", ctx.CHESS_OPENINGS_JA || {}, 0.95, 150);
+  checkJapanese("ja opening ideas", ctx.CHESS_OPENING_IDEAS_JA || {}, 0.95, 100);
+  // 実戦 01–23 are kanji and digits, and legitimately so
+  checkJapanese("ja puzzle names", ctx.CHESS_PUZZLES_JA || {}, 0.85, 160);
 }
 }
 
@@ -2395,13 +2485,24 @@ for (const lang of CONTENT_LANGS) {
   const keys = Object.keys(ctx.ChessI18n.DICT["zh-CN"]).length;
   const puzzles = ctx.CHESS_PUZZLES.length;
   const openings = new Set(ctx.CHESS_OPENINGS.map((o) => o[1])).size;
+  // same filter app.js uses to decide a line is long enough to drill
+  const drilledOpenings = ctx.CHESS_OPENINGS.filter((o) => o[2].split(" ").length >= 6).length;
   const claims = [
     [/零基础 (\d+) 课/, lessons, "the course size in the teaching row"],
     [/教学课程 (\d+) 课/, lessons, "the course size in the file map"],
     [/英文全译 (\d+) 课/, lessons, "the English course size"],
     [/(\d+) 个界面键三语齐备/, keys, "the interface-key count"],
     [/zh-CN \/ en \/ ja 各 (\d+) 条/, keys, "the dictionary size in the file map"],
-    [/题库 (\d+) 题/, puzzles, "the puzzle count"],
+    // Anchored to the file-map line. Unanchored, `/题库 (\d+) 题/` matched only
+    // this line anyway — the 做题 row wrote 题库(**273 题**) with no space, so
+    // the one number a reader meets first was the one number nobody checked.
+    // It was also 战术 164 + 开局线路 109 added together and labelled 题, which
+    // no count in the code equals. The row now states the two numbers it is
+    // made of, and both are checked.
+    [/js\/puzzles\.js\s+# 题库 (\d+) 题/, puzzles, "the puzzle count in the file map"],
+    [/战术题库 (\d+) 题/, puzzles, "the tactics-puzzle count in the 做题 row"],
+    [/开局线路 (\d+) 条/, drilledOpenings, "the drilled-opening count in the 做题 row"],
+    [/开局题执白照谱背 \*\*(\d+) 条\*\*主流线路/, drilledOpenings, "the drilled-opening count in the drill sentence"],
     [/内置 \*\*(\d+) 条\*\* ECO 库/, ctx.CHESS_OPENINGS.length, "the ECO library size"],
   ];
   let stale = 0;
@@ -2415,6 +2516,17 @@ for (const lang of CONTENT_LANGS) {
   }
   void openings;
   assert(stale === 0, "every count README quotes matches the code");
+
+  // The 怎么玩 heading carries a version and nothing checked it, so it sat at
+  // v1.16 through five releases. app.zon is the only place the version is real.
+  const zonVersion = /\.version\s*=\s*"([^"]+)"/.exec(
+    fs.readFileSync(path.join(root, "app.zon"), "utf8"));
+  const headingVersion = /^## 怎么玩（v([\d.]+)）/m.exec(readme);
+  assert(zonVersion && headingVersion, "README 怎么玩 heading and app.zon both state a version");
+  if (zonVersion && headingVersion) {
+    assert(headingVersion[1] === zonVersion[1].replace(/\.0$/, "") || headingVersion[1] === zonVersion[1],
+      "README 怎么玩 heading tracks app.zon (README v" + headingVersion[1] + " vs " + zonVersion[1] + ")");
+  }
 }
 
 if (failed) {

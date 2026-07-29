@@ -10,11 +10,15 @@
  *
  * So: search every position wide enough to see the runner-up, and fail any
  * puzzle where the stored key move is not alone by a clear margin. The
- * generator screened at 350ms; this re-checks at 1.8s, which is where three of
+ * generator screened at 350ms; this re-searches deeper, which is where three of
  * the first candidate set turned out to have a second solution.
  *
- * Opt-in: slow (about two seconds per puzzle) and needs the vendored engine,
- * so it is not part of package.sh. Run: node scripts/test-tactics.mjs [--ms=1800]
+ * Opt-in locally: slow (about two seconds per puzzle) and needs the vendored
+ * engine, so it is not part of package.sh. The release workflow does run it —
+ * leaving it to whoever remembered meant "CI is green" never covered this file
+ * at all.
+ * Run: node scripts/test-tactics.mjs [--depth=20] [--ms=1800]
+ * `--ms` trades reproducibility for speed; the default is the reproducible one.
  */
 import fs from "fs";
 import path from "path";
@@ -25,7 +29,17 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const require = createRequire(import.meta.url);
-const MS = Number((process.argv.find((a) => a.startsWith("--ms=")) || "").slice(5)) || 1800;
+const argOf = (flag) => Number((process.argv.find((a) => a.startsWith(flag + "=")) || "").slice(flag.length + 1));
+// Fixed depth, not fixed time — same reason as test-openings.mjs. The tightest
+// puzzle cleared the runner-up by 218cp against a 200cp bar at 1800ms, which is
+// inside the run-to-run noise of a time-limited search: a release gate that
+// flickers is a release gate people learn to re-run. `go depth 20` is
+// reproducible to the centipawn, sits where 1800ms already reached (17-21), and
+// resolves these positions harder — the tightest margin becomes 276cp.
+const MS = argOf("--ms") || 0;
+const DEPTH = argOf("--depth") || 20;
+const GO = MS ? "go movetime " + MS : "go depth " + DEPTH;
+const BUDGET = MS ? MS + "ms each" : "depth " + DEPTH + " each";
 /** how far clear of the runner-up the key move has to be, in centipawns */
 const MARGIN = 200;
 /** the runner-up must not itself be winning */
@@ -89,7 +103,7 @@ async function topMoves(fen, n) {
   };
   listeners.push(collect);
   const done = waitFor((l) => /^bestmove/.test(l), 120000);
-  send("go movetime " + MS);
+  send(GO);
   await done;
   listeners.splice(listeners.indexOf(collect), 1);
   return [...found.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => {
@@ -100,7 +114,7 @@ async function topMoves(fen, n) {
 }
 
 let bad = 0;
-console.log(`checking ${puzzles.length} real-game tactics at ${MS}ms each\n`);
+console.log(`checking ${puzzles.length} real-game tactics at ${BUDGET}\n`);
 for (const p of puzzles) {
   const top = await topMoves(p.fen, 3);
   const key = p.line[0];

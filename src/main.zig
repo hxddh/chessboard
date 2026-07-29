@@ -11,8 +11,14 @@ pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 // Called where it is used rather than bound to a container-level const: the
 // runner fills a static buffer, so it is a runtime call, not a comptime one.
 
-// Empty custom menus → host default bar (View → Full Screen, Window → Zoom).
-// Game actions: chrome / sidebar / in-page shortcuts.
+// The menu bar comes from app.zon (.menus) — runner.resolvedMenus() falls back
+// to the manifest only when this call site leaves `.menus` null, so it is left
+// unset below. It used to be `.menus = &.{}`, which reads like "no custom
+// menus" but is a non-null zero-length slice: `self.menus orelse
+// storage.fromManifest()` took the empty slice and the manifest's three menus
+// never reached the Runtime. That is why 1.10 filling app.zon changed nothing
+// visible, and why 1.18's ⌘⇧H fix landed on a wire that was never live.
+// scripts/manifest-check.mjs now fails the build if this override comes back.
 
 const App = struct {
     env_map: *std.process.Environ.Map,
@@ -155,7 +161,6 @@ pub fn main(init: std.process.Init) !void {
         .icon_path = "assets/icon.png",
         .js_window_api = true,
         .bridge = app_state.bridge(),
-        .menus = &.{},
     }, init);
 }
 

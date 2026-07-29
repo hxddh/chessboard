@@ -15,15 +15,27 @@
  *   .min_width / .min_height declared since 0.1.0. Never read. The window has
  *                            always been resizable below its own layout floor.
  *
- * So: two checks, both cheap, both at build time.
+ * So: three checks, all cheap, all at build time.
  *
  *   1. app.zon → runner   every window/menu key the manifest declares appears
  *                         as a string literal in src/runner.zig. This is the
  *                         one that catches "declared but nobody reads it".
- *   2. SDK → runner       (only when the SDK is on disk) every field of the
+ *   2. main.zig → runner  no call-site option may hand the runner an empty
+ *                         slice where null means "use the manifest". This is
+ *                         the one that catches "the runner reads it, but the
+ *                         caller already overrode it with nothing".
+ *   3. SDK → runner       (only when the SDK is on disk) every field of the
  *                         SDK's WindowOptions is assigned in manifestWindow.
  *                         This is the one that catches the fork drifting
  *                         further behind as the SDK grows.
+ *
+ * Check 2 exists because check 1 was not enough. `.menus` passed check 1 the
+ * whole time — runner.zig genuinely reads it — while src/main.zig passed
+ * `.menus = &.{}` from 0.1.0 on. In Zig that is a non-null zero-length slice,
+ * so `self.menus orelse storage.fromManifest()` never reached the manifest and
+ * the menu bar app.zon declared in 1.10 was dead in every release that claimed
+ * it. Same disease as close_policy, one link further down the chain: the
+ * manifest was read, then discarded at the call site.
  *
  * The derived macOS manifest is checked too — generated fresh here, since a
  * key that only exists in the generated copy is exactly the shape of the 1.18
@@ -291,7 +303,38 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-// ------------------------------------------------------ 2. SDK → src/runner.zig
+// --------------------------------------------- 2. src/main.zig → src/runner.zig
+
+// Every RunOptions field that defaults to null is one where null is the signal
+// to fall back — to app.zon (.security, .commands, .menus, .shortcuts) or to
+// "no such thing" (.bridge). An empty literal is never that signal, whichever
+// kind it is: `.security = .{}` was the 1.19.1 bug and `.menus = &.{}` the one
+// above. Derived from runner.zig rather than listed here, so a new
+// manifest-backed option is covered the day it is added.
+{
+  const mainSrc = stripComments(fs.readFileSync(path.join(ROOT, "src", "main.zig"), "utf8"));
+  const optsAt = runnerSrc.indexOf("pub const RunOptions = struct {");
+  const optsOpen = runnerSrc.indexOf("{", optsAt);
+  const optsBody = optsAt < 0 ? "" : runnerSrc.slice(optsOpen + 1, matchBrace(runnerSrc, optsOpen));
+  const fallbackFields = [...optsBody.matchAll(/^\s{4}([a-z_][a-z0-9_]*)\s*:\s*\?[^=\n]*=\s*null\s*,/gm)]
+    .map((m) => m[1]);
+
+  check(fallbackFields.length > 0, "main.zig 交叉检查: 没能从 RunOptions 解析出任何「null 表示回落」的字段");
+  notes.push(`main.zig 交叉检查: ${fallbackFields.length} 个字段以 null 表示回落 —— ${fallbackFields.join(" ")}`);
+
+  for (const field of fallbackFields) {
+    // `&.{}` and `.{}` both build a non-null empty value; both silently win
+    // over the manifest. Passing nothing at all is the only way to defer.
+    const empty = new RegExp(`\\.${field}\\s*=\\s*&?\\.\\{\\s*\\}`);
+    check(
+      !empty.test(mainSrc),
+      `main.zig 交叉检查: runWithOptions 传了 .${field} = &.{} —— 这是非空的零长切片，` +
+        `会盖掉 app.zon 里的 .${field}（\`orelse\` 只认 null）。要用清单就整个别传这个字段`,
+    );
+  }
+}
+
+// ------------------------------------------------------ 3. SDK → src/runner.zig
 
 const sdkArg = process.argv.indexOf("--sdk");
 const sdkPath = sdkArg > 0 ? process.argv[sdkArg + 1] : process.env.SDK_PATH;

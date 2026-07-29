@@ -15,8 +15,20 @@
  *   Scotch Gambit       −220cp — the wrong capture on move eight
  * All three were legal, canonical, and wrong.
  *
- * Opt-in: slow (a second per line) and needs the vendored engine, so it is not
- * part of package.sh. Run: node scripts/test-openings.mjs [--ms=900]
+ * Searches to a fixed DEPTH, not a fixed time. `go movetime` reaches whatever
+ * depth the machine manages in the budget, so the same line scored 111cp on one
+ * run and over 130 on the next — B06 (Modern, Austrian Attack) genuinely
+ * evaluates around +111, and ±20cp of run-to-run noise straddles the limit.
+ * That is tolerable for a check you run by hand and read; it is not tolerable
+ * for one that gates a release, where a spurious red teaches you to ignore it.
+ * `go depth 20` is reproducible — two runs agree to the centipawn — and lands
+ * near where 900ms already got to (depth 17–22, median 19).
+ *
+ * Opt-in locally: slow (about 2.8 minutes) and needs the vendored engine, so it
+ * is not part of package.sh. The release workflow does run it — leaving it to
+ * whoever remembered meant "CI is green" never covered this file at all.
+ * Run: node scripts/test-openings.mjs [--depth=20] [--ms=900]
+ * `--ms` trades reproducibility for speed; the default is the reproducible one.
  */
 import fs from "fs";
 import path from "path";
@@ -35,8 +47,15 @@ if (!fs.existsSync(enginePath) || !fs.existsSync(wasmPath)) {
   process.exit(0);
 }
 
-const argMs = Number((process.argv.find((a) => a.startsWith("--ms")) || "").split("=")[1]);
-const MS = Number.isFinite(argMs) && argMs > 0 ? argMs : 900;
+const argOf = (flag) => Number((process.argv.find((a) => a.startsWith(flag)) || "").split("=")[1]);
+const argMs = argOf("--ms");
+const argDepth = argOf("--depth");
+/** fixed time, only when asked for explicitly — it is the non-reproducible mode */
+const MS = Number.isFinite(argMs) && argMs > 0 ? argMs : 0;
+const DEPTH = Number.isFinite(argDepth) && argDepth > 0 ? argDepth : 20;
+/** what the engine is told to do, and how the run describes itself */
+const GO = MS ? "go movetime " + MS : "go depth " + DEPTH;
+const BUDGET = MS ? `每条 ${MS}ms` : `每条搜到 depth ${DEPTH}`;
 /** how far from equal a line may end and still be called book, in centipawns */
 const LIMIT = 130;
 /** shorter lines are early theory and legitimately less balanced */
@@ -95,13 +114,13 @@ async function evalFen(fen, whiteToMove) {
   const collect = (l) => { const s = scoreOf(l); if (s != null) cp = s; };
   listeners.push(collect);
   const done = waitFor((l) => /^bestmove/.test(l), 60000);
-  send("go movetime " + MS);
+  send(GO);
   await done;
   listeners.splice(listeners.indexOf(collect), 1);
   return whiteToMove ? cp : -cp;
 }
 
-console.log(`检查 ${BOOK.length} 条 ≥${MIN_PLIES} 手的开局线,每条 ${MS}ms\n`);
+console.log(`检查 ${BOOK.length} 条 ≥${MIN_PLIES} 手的开局线,${BUDGET}\n`);
 let flagged = 0;
 const cps = [];
 for (const [eco, name, seq] of BOOK) {
