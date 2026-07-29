@@ -11,14 +11,8 @@ pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 // Called where it is used rather than bound to a container-level const: the
 // runner fills a static buffer, so it is a runtime call, not a comptime one.
 
-// Menus come from app.zon. Leave `.menus` null so runner.resolvedMenus falls
-// through to fromManifest(). Passing `.menus = &.{}` looks like "no override"
-// but is a non-null empty slice — orelse short-circuits, the manifest menus
-// never load, and every ⌘/Ctrl accelerator declared on those items is dead.
-// That is exactly what shipped from 1.10 through 1.21: app.zon filled in, the
-// page handlers wired, README claiming the bar was no longer empty — while
-// main.zig kept covering the manifest with an empty slice left over from 0.1.0
-// ("Empty custom menus → host default bar").
+// Empty custom menus → host default bar (View → Full Screen, Window → Zoom).
+// Game actions: chrome / sidebar / in-page shortcuts.
 
 const App = struct {
     env_map: *std.process.Environ.Map,
@@ -161,6 +155,7 @@ pub fn main(init: std.process.Init) !void {
         .icon_path = "assets/icon.png",
         .js_window_api = true,
         .bridge = app_state.bridge(),
+        .menus = &.{},
     }, init);
 }
 

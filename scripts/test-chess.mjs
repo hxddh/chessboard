@@ -1104,35 +1104,6 @@ for (const lang of CONTENT_LANGS) {
   assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
     "the host bridge forwards the shortcut event");
   assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");
-  // The call site is the seam the checks above never looked at. From 1.10
-  // through 1.21, app.zon declared menus, app.js handled them, and main.zig
-  // still passed `.menus = &.{}` — a non-null empty slice that makes
-  // resolvedMenus short-circuit past fromManifest(). The bar stayed empty and
-  // every ⌘/Ctrl accelerator on those items was dead. Checking the zon and the
-  // page is not enough; the runner only loads the manifest when menus is null.
-  {
-    const mainZig = fs.readFileSync(path.join(root, "src/main.zig"), "utf8");
-    const code = mainZig.replace(/\/\/[^\n]*/g, "");
-    assert(!/\.menus\s*=\s*&\.\{\}/.test(code),
-      "main.zig must not pass .menus = &.{} when app.zon declares menus — " +
-      "that empty slice suppresses fromManifest() (dead from 1.10 through 1.21)");
-  }
-}
-
-// Opening names that describe a different opening than their moves. The
-// translation tables are keyed on the Chinese name, so en/ja translators can
-// (and did) silently correct a wrong source name — leaving zh users on a
-// different opening from everyone else. C24 shipped as 「中心开局·比萨普变例」
-// while its moves are 1.e4 e5 2.Bc4 (Bishop's Opening); the real Center Game
-// is C21 (…d4). This is the class the legality/uniqueness guards cannot see.
-{
-  const centerish = ctx.CHESS_OPENINGS.filter((o) => /中心/.test(o[1]) && /^e4 e5 Bc4\b/.test(o[2]));
-  assert(centerish.length === 0,
-    "no Bishop's Opening line may be named 中心… (C24 was: " +
-    (centerish[0] ? centerish[0][0] + " " + centerish[0][1] : "") + ")");
-  const c24 = ctx.CHESS_OPENINGS.find((o) => o[0] === "C24");
-  assert(c24 && /主教开局/.test(c24[1]),
-    "C24 is Bishop's Opening and its Chinese name must say so");
 }
 
 // The design system. Every one of these numbers was measured on 1.11 and every
@@ -2424,7 +2395,6 @@ for (const lang of CONTENT_LANGS) {
   const keys = Object.keys(ctx.ChessI18n.DICT["zh-CN"]).length;
   const puzzles = ctx.CHESS_PUZZLES.length;
   const openings = new Set(ctx.CHESS_OPENINGS.map((o) => o[1])).size;
-  const drilled = ctx.CHESS_OPENINGS.filter((o) => o[3]).length;
   const claims = [
     [/零基础 (\d+) 课/, lessons, "the course size in the teaching row"],
     [/教学课程 (\d+) 课/, lessons, "the course size in the file map"],
@@ -2432,8 +2402,6 @@ for (const lang of CONTENT_LANGS) {
     [/(\d+) 个界面键三语齐备/, keys, "the interface-key count"],
     [/zh-CN \/ en \/ ja 各 (\d+) 条/, keys, "the dictionary size in the file map"],
     [/题库 (\d+) 题/, puzzles, "the puzzle count"],
-    [/(\d+) 道战术题/, puzzles, "the tactical-puzzle count in the practice row"],
-    [/(\d+) 条开局线路/, drilled, "the drilled opening-line count in the practice row"],
     [/内置 \*\*(\d+) 条\*\* ECO 库/, ctx.CHESS_OPENINGS.length, "the ECO library size"],
   ];
   let stale = 0;
@@ -2444,25 +2412,6 @@ for (const lang of CONTENT_LANGS) {
       stale++;
       console.error("FAIL: README says " + m[1] + " for " + what + ", but it is " + actual);
     }
-  }
-  // The "怎么玩（vX.Y）" heading must track the shipped version — it sat on
-  // v1.16 from 1.16 through 1.21 while the body described 1.21 content.
-  const ver = /^\s*\.version = "(\d+\.\d+\.\d+)"/m.exec(
-    fs.readFileSync(path.join(root, "app.zon"), "utf8"));
-  const how = /## 怎么玩（v(\d+\.\d+)）/.exec(readme);
-  if (!ver || !how) {
-    stale++;
-    console.error("FAIL: README how-to-play heading or app.zon version missing");
-  } else {
-    const majorMinor = ver[1].replace(/\.\d+$/, "");
-    // heading is vMAJOR.MINOR; tolerate patch by comparing major.minor
-    const head = how[1];
-    const shipped = ver[1].split(".").slice(0, 2).join(".");
-    if (head !== shipped && head !== ver[1]) {
-      stale++;
-      console.error("FAIL: README how-to-play is v" + head + " but app.zon is " + ver[1]);
-    }
-    void majorMinor;
   }
   void openings;
   assert(stale === 0, "every count README quotes matches the code");

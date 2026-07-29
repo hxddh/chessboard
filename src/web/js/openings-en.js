@@ -174,7 +174,7 @@
     "斯拉夫防御·交换变例": "Slav Defence, Exchange",
     "特龙波夫斯基进攻·主变": "Trompowsky Attack, Main Line",
     "伦敦体系·对国王印度": "London System vs King's Indian",
-    "主教开局·柏林防御": "Bishop's Opening, Berlin Defence",
+    "中心开局·比萨普变例": "Bishop's Opening, Berlin Defence",
     "苏格兰弃兵": "Scotch Gambit",
     "阿廖欣防御·四兵攻击": "Alekhine's Defence, Four Pawns Attack",
     "国王印度防御·菲安凯托变例": "King's Indian, Fianchetto",
@@ -360,7 +360,7 @@
       "White develops the bishop on move two and drags Black out of every Indian-defence preparation. On move seven c4 simply offers b2: the moves Black spends collecting the pawn, White spends developing.",
     "伦敦体系·对国王印度":
       "The same London shape against the fianchetto: Bf4 takes the e5 square in advance and h3 keeps h2 free as the bishop's retreat.",
-    "主教开局·柏林防御":
+    "中心开局·比萨普变例":
       "White develops the bishop before the knight and can steer into the Italian, the Vienna or its own paths. A common way around the Petrov.",
     "苏格兰弃兵":
       "White does not recapture on d4 and develops the bishop for time instead. On move seven e5 kicks the knight and Bb5 pins the other: both sides must calculate, because one slow move here costs a piece.",
