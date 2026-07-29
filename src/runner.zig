@@ -148,16 +148,31 @@ const ShortcutStorage = struct {
     }
 };
 
-/// A zon tuple of string literals as a real `[]const []const u8`. Everything
-/// is comptime, so the backing array is promoted to a static const.
-fn stringList(comptime values: anytype) []const []const u8 {
-    comptime {
-        if (values.len == 0) return &.{};
-        var out: [values.len][]const u8 = undefined;
-        inline for (values, 0..) |value, index| out[index] = value;
-        const frozen = out;
-        return &frozen;
-    }
+// The `.security` / `.permissions` blocks, peeled one level at a time so each
+// step degrades to an empty tuple rather than failing to compile on a manifest
+// that omits it.
+const manifest_permissions = if (@hasField(@TypeOf(app_manifest), "permissions")) app_manifest.permissions else .{};
+const manifest_security = if (@hasField(@TypeOf(app_manifest), "security")) app_manifest.security else .{};
+const manifest_navigation = if (@hasField(@TypeOf(manifest_security), "navigation")) manifest_security.navigation else .{};
+const manifest_origins_src = if (@hasField(@TypeOf(manifest_navigation), "allowed_origins")) manifest_navigation.allowed_origins else .{};
+const manifest_external_links = if (@hasField(@TypeOf(manifest_navigation), "external_links")) manifest_navigation.external_links else .{};
+const manifest_external_urls = if (@hasField(@TypeOf(manifest_external_links), "allowed_urls")) manifest_external_links.allowed_urls else .{};
+
+// Storage for the string slices the policy hands to the runtime. Exactly the
+// shape MenuStorage/ShortcutStorage already use: an `inline for` in ordinary
+// function scope filling a buffer, then a slice of it. The first attempt at
+// this built the arrays inside a `comptime` block instead and did not compile
+// — "redundant inline keyword in comptime scope", then "function called at
+// runtime cannot return value at comptime". There was no local Zig to catch
+// that, so it cost a CI round trip; this version reuses a pattern the file
+// already proves builds.
+var security_origins: [manifest_origins_src.len][]const u8 = undefined;
+var security_permissions: [manifest_permissions.len][]const u8 = undefined;
+var security_external_urls: [manifest_external_urls.len][]const u8 = undefined;
+
+fn fillStrings(buffer: [][]const u8, comptime values: anytype) []const []const u8 {
+    inline for (values, 0..) |value, index| buffer[index] = value;
+    return buffer[0..values.len];
 }
 
 /// The navigation/permission policy declared in app.zon.
@@ -168,22 +183,18 @@ fn stringList(comptime values: anytype) []const []const u8 {
 /// `deny` is also the SDK's struct default. Changing it to
 /// `open_system_browser` would have done nothing.
 pub fn manifestSecurity() native_sdk.SecurityPolicy {
-    var policy: native_sdk.SecurityPolicy = .{ .permissions = manifestPermissions() };
-    if (comptime !@hasField(@TypeOf(app_manifest), "security")) return policy;
-    const sec = app_manifest.security;
-    if (comptime !@hasField(@TypeOf(sec), "navigation")) return policy;
-    const nav = sec.navigation;
-    if (comptime @hasField(@TypeOf(nav), "allowed_origins")) {
-        policy.navigation.allowed_origins = stringList(nav.allowed_origins);
+    var policy: native_sdk.SecurityPolicy = .{};
+    policy.permissions = fillStrings(&security_permissions, manifest_permissions);
+    // An empty/absent list leaves the SDK's own default origins in place rather
+    // than locking the webview out of everything.
+    if (comptime manifest_origins_src.len > 0) {
+        policy.navigation.allowed_origins = fillStrings(&security_origins, manifest_origins_src);
     }
-    if (comptime @hasField(@TypeOf(nav), "external_links")) {
-        const ext = nav.external_links;
-        if (comptime @hasField(@TypeOf(ext), "action")) {
-            policy.navigation.external_links.action = externalLinkAction(ext.action);
-        }
-        if (comptime @hasField(@TypeOf(ext), "allowed_urls")) {
-            policy.navigation.external_links.allowed_urls = stringList(ext.allowed_urls);
-        }
+    if (comptime @hasField(@TypeOf(manifest_external_links), "action")) {
+        policy.navigation.external_links.action = externalLinkAction(manifest_external_links.action);
+    }
+    if (comptime manifest_external_urls.len > 0) {
+        policy.navigation.external_links.allowed_urls = fillStrings(&security_external_urls, manifest_external_urls);
     }
     return policy;
 }
@@ -192,11 +203,6 @@ pub fn manifestSecurity() native_sdk.SecurityPolicy {
 /// that list is not written down a second time either.
 pub fn manifestOrigins() []const []const u8 {
     return manifestSecurity().navigation.allowed_origins;
-}
-
-fn manifestPermissions() []const []const u8 {
-    if (comptime !@hasField(@TypeOf(app_manifest), "permissions")) return &.{};
-    return stringList(app_manifest.permissions);
 }
 
 fn externalLinkAction(comptime value: []const u8) native_sdk.ExternalLinkAction {
