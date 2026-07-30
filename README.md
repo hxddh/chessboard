@@ -14,7 +14,7 @@
 | macOS（Apple Silicon） | **Chessboard-macOS-arm64.zip** | 解压得到 `Chessboard.app`，把它拖进「应用程序」（或 `mv Chessboard.app ~/Applications/`）再打开；首次右键「打开」过 Gatekeeper |
 | Windows（x64） | **Chessboard-Windows-x64.zip** | 解压后运行 `Chessboard/chessboard.exe`；需 WebView2 运行时（Win10/11 一般预装） |
 
-## 怎么玩（v1.22）
+## 怎么玩（v1.23）
 
 | 操作 | 说明 |
 |------|------|
