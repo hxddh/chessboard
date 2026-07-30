@@ -151,11 +151,13 @@
     "尼姆佐-印度防御·鲁宾斯坦": "Nimzo-Indian, Rubinstein",
     "后翼印度防御": "Queen's Indian Defence",
     "国王印度防御·古典变例": "King's Indian Defence, Classical",
+    "国王印度防御·萨米什变例": "King's Indian Defence, Sämisch",
     "格林菲尔德防御·交换·古典": "Grünfeld Exchange, Classical",
     "现代贝诺尼·主变": "Modern Benoni, Main Line",
     "贝科弃兵·接受": "Benko Gambit, Accepted",
     "加泰罗尼亚开局·封闭变例": "Catalan Opening, Closed",
     "荷兰防御·古典变例": "Dutch Defence, Classical",
+    "荷兰防御·石墙变例": "Dutch Defence, Stonewall",
     "英国式开局·反西西里": "English Opening, Reversed Sicilian",
     "英国式开局·对称主变": "English Symmetrical, Main Line",
     "列蒂开局·主变": "Réti Opening, Main Line",
@@ -324,6 +326,10 @@
       "White fianchettoes on g2 and lets Black take on c4, then spends a few moves winning the pawn back. By the time it comes back, the bishop is already in place.",
     "荷兰防御·古典变例":
       "Black fights for e4 with the f-pawn on move one, at the cost of a permanent draught on the e8-h5 diagonal. This is what you play when you want to attack the king.",
+    "荷兰防御·石墙变例":
+      "Black builds a wall on d5-e6-f5-c6, welds e4 shut and swings every piece at the kingside. The price is the e5 square and a light-squared bishop stuck behind its own pawns — a trade made with open eyes.",
+    "国王印度防御·萨米什变例":
+      "White props up e4 with f3 and then pushes g4-h4 straight at the king. The bluntest line in the King's Indian: each side attacks on its own wing, and whoever is a move slow gets mated.",
     "英国式开局·反西西里":
       "The Sicilian with colours reversed and an extra tempo for White. The fastest way to understand the English is to understand the Sicilian first.",
     "英国式开局·对称主变":

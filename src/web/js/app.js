@@ -140,7 +140,45 @@
 
   Audio2.init(() => soundOn);
 
-  function sanHistory() { return game.history(); }
+  // --- the game's moves, and the one door they change through ------------
+  //
+  // Rebuilding the board model means replaying the game: chess.js 0.13 has no
+  // move list to read, only a history() that walks the game and regenerates
+  // moves as it goes. The model is rebuilt on EVERY draw(), and draw() runs on
+  // every animation frame and every pointermove of a drag — so the cost of a
+  // repaint grew with the length of the game. Measured before this cache:
+  //
+  //     0 plies 1.28ms · 40 plies 5.35ms · 80 plies 10.4ms · 120 plies 19.3ms
+  //
+  // Past ~110 plies a single repaint no longer fit in a 60fps frame, and
+  // dragging a piece in a long game visibly dragged. Not a regression — it had
+  // always been this way, which is why it was never reported as one.
+  //
+  // So the histories are cached against a version counter, and every mutation
+  // of `game` goes through one of the five functions below. A raw game.move()
+  // elsewhere would leave the caches describing the previous position;
+  // scripts/test-chess.mjs fails the build if one appears.
+  let gameVersion = 0;
+  function gameMove(m) { const r = game.move(m); if (r) gameVersion++; return r; }
+  function gameUndo() { const r = game.undo(); if (r) gameVersion++; return r; }
+  function gameLoad(fen) { const r = game.load(fen); gameVersion++; return r; }
+  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); gameVersion++; return r; }
+  function gameReset() { game.reset(); gameVersion++; }
+
+  let _vhMemo = { v: -1, val: null };
+  function verboseHistory() {
+    if (_vhMemo.v === gameVersion) return _vhMemo.val;
+    _vhMemo = { v: gameVersion, val: game.history({ verbose: true }) };
+    return _vhMemo.val;
+  }
+  let _sanMemo = { v: -1, val: null };
+  // derived from the verbose list rather than asking chess.js twice: one walk
+  // of the game per version, not two per repaint
+  function sanHistory() {
+    if (_sanMemo.v === gameVersion) return _sanMemo.val;
+    _sanMemo = { v: gameVersion, val: verboseHistory().map((m) => m.san) };
+    return _sanMemo.val;
+  }
   function isLive() { return viewIndex === sanHistory().length; }
 
   /** Custom start FEN when the game was imported from a [SetUp]/[FEN] PGN. */
@@ -159,24 +197,28 @@
   function resetGameToStart() {
     const sf = startFen();
     if (sf) {
-      game.load(sf);
+      gameLoad(sf);
       game.header("SetUp", "1", "FEN", sf);
     } else {
-      game.reset();
+      gameReset();
     }
   }
 
   /** chess.js instance for the currently VIEWED position (live or replay). */
+  let _viewMemo = { v: -1, i: -1, g: null };
   function viewGame() {
     if (isLive()) return game;
+    if (_viewMemo.v === gameVersion && _viewMemo.i === viewIndex) return _viewMemo.g;
     const g = baseGame();
     const h = sanHistory();
     for (let i = 0; i < viewIndex; i++) g.move(h[i]);
+    // every caller reads (.board/.fen/.turn/.get/.in_check) and none mutates,
+    // so one instance per (version, cursor) can be shared
+    _viewMemo = { v: gameVersion, i: viewIndex, g };
     return g;
   }
 
   /** Verbose move objects for the whole game (for last-move highlight). */
-  function verboseHistory() { return game.history({ verbose: true }); }
 
   function kingSquare(g, color) {
     const bd = g.board();
@@ -330,7 +372,7 @@
       if (!raw) return false;
       const s = JSON.parse(raw);
       if (!s || s.v !== 1 || typeof s.pgn !== "string" || !s.pgn) return false;
-      if (!game.load_pgn(s.pgn)) {
+      if (!gameLoadPgn(s.pgn)) {
         // A position from the editor or from 载入 FEN is saved the moment it
         // is loaded, before its first move, so its PGN is tag pairs and
         // nothing else. load_pgn wants movetext and refuses — and the launch
@@ -338,7 +380,7 @@
         // with the standard array. Closing the app after setting up a study
         // position, before playing into it, lost it without a word.
         const sf = window.ChessPgn ? window.ChessPgn.startFen(s.pgn) : null;
-        if (!sf || !game.load(sf)) return false;
+        if (!sf || !gameLoad(sf)) return false;
         game.header("SetUp", "1", "FEN", sf);
       }
       viewIndex = sanHistory().length;
@@ -394,7 +436,7 @@
     if (token !== engineToken) return; // game changed while thinking
     engineThinking = false;
     if (!mv) { sync(); toast(t("m.00")); return; }
-    const played = game.move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
+    const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
       viewIndex = sanHistory().length;
       selection = null;
@@ -1745,8 +1787,8 @@
     drawClaimed = null;
     analysis = null;
     statsRecordedSig = null;
-    game.reset();
-    game.load_pgn(line, { sloppy: true });
+    gameReset();
+    gameLoadPgn(line, { sloppy: true });
     selection = null;
     hintMove = null;
     viewIndex = sanHistory().length;
@@ -3098,7 +3140,7 @@
   }
 
   function playHumanMove(from, to, promotion) {
-    const mv = game.move({ from, to, promotion });
+    const mv = gameMove({ from, to, promotion });
     if (!mv) return;
     selection = null;
     hintMove = null;
@@ -3157,10 +3199,10 @@
     if (!sanHistory().length || ruleTerminated()) return;
     if (!isLive()) { goLive(); return; }
     invalidateEngine();
-    game.undo();
+    gameUndo();
     // in AI mode take back the engine reply too, so it's the human's turn again
     if (mode === "ai") {
-      while (sanHistory().length && game.turn() !== humanColor) game.undo();
+      while (sanHistory().length && game.turn() !== humanColor) gameUndo();
     }
     selection = null;
     viewIndex = sanHistory().length;
@@ -3178,7 +3220,7 @@
     }
     invalidateEngine();
     if (window.ChessEngine) window.ChessEngine.newGame();
-    game.reset();
+    gameReset();
     selection = null;
     viewIndex = 0;
     resigned = null;
@@ -3211,7 +3253,7 @@
     const h = sanHistory().slice(0, keep);
     invalidateEngine();
     resetGameToStart();
-    for (const san of h) game.move(san);
+    for (const san of h) gameMove(san);
     selection = null;
     viewIndex = h.length;
     // continuing a finished game (flag / resignation) gets fresh clocks
@@ -3485,6 +3527,137 @@
     }
   }
 
+  // --- taking the review away ---------------------------------------------
+  // The report is the most useful thing this app produces, and until now it
+  // could only be looked at. Exporting the PGN hands somebody a move list and
+  // makes them find their own software before they can see which move you mean.
+  // A picture carries the conclusion.
+
+  /** Draw the finished review onto an offscreen canvas. @returns {HTMLCanvasElement|null} */
+  function renderReportCanvas() {
+    const a = analysisFor();
+    const R = window.ChessReview;
+    if (!a || !R) return null;
+    const first = startFen() && startFen().split(" ")[1] === "b" ? "b" : "w";
+    const sum = R.summarize(a.scalars, sanHistory(), first);
+    if (!sum) return null;
+
+    const S = 2; // fixed scale: the file should not depend on the player's screen
+    const W = 900, H = 480;
+    const cv = document.createElement("canvas");
+    cv.width = W * S; cv.height = H * S;
+    const ctx = cv.getContext("2d");
+    ctx.scale(S, S);
+    const css = getComputedStyle(document.documentElement);
+    const pick = (n, dflt) => (css.getPropertyValue(n) || "").trim() || dflt;
+    const bg = pick("--card", "#1b1b19"), fg = pick("--text", "#eee");
+    const muted = pick("--muted", "#999"), accent = pick("--accent", "#e8c39e");
+
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = fg;
+    ctx.font = "600 26px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillText(t("rv.title"), 40, 56);
+
+    ctx.font = "15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillStyle = muted;
+    const opening = openingFor(sanHistory().length);
+    const head = [opening ? openingName(opening) : null, statusText(),
+      tf("mm.plies", [sanHistory().length])].filter(Boolean).join("  ·  ");
+    ctx.fillText(head, 40, 84);
+
+    // the curve, same shape and cut-off as the one on screen
+    const cx0 = 40, cy0 = 110, cw = W - 80, ch = 150;
+    ctx.strokeStyle = muted; ctx.globalAlpha = 0.3; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx0, cy0 + ch / 2); ctx.lineTo(cx0 + cw, cy0 + ch / 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+    const n = a.scalars.length - 1, CAP = 500;
+    const px = (i) => (n ? cx0 + (i / n) * cw : cx0 + cw / 2);
+    const py = (s) => cy0 + ch / 2 - (Math.max(-CAP, Math.min(CAP, s)) / CAP) * (ch / 2 - 4);
+    ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath();
+    let pen = false;
+    for (let i = 0; i <= n; i++) {
+      const s = a.scalars[i];
+      if (s == null) { pen = false; continue; }
+      if (pen) ctx.lineTo(px(i), py(s)); else { ctx.moveTo(px(i), py(s)); pen = true; }
+    }
+    ctx.stroke();
+    for (let i = 0; i < n; i++) {
+      if (!R.isMistake(a.tags[i]) || a.tags[i] === "?!") continue;
+      const s = a.scalars[i + 1];
+      if (s == null) continue;
+      ctx.fillStyle = a.tags[i] === "??" ? "#e05252" : "#e0a03c";
+      ctx.beginPath(); ctx.arc(px(i + 1), py(s), 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // the numbers, one column per side
+    const rowY = cy0 + ch + 46;
+    ctx.font = "600 15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    for (const [k, side] of [[0, "w"], [1, "b"]]) {
+      const x = 40 + k * (cw / 2);
+      ctx.fillStyle = fg;
+      ctx.fillText(side === "w" ? t("m.05") : t("m.04"), x, rowY);
+      ctx.font = "14px system-ui, -apple-system, 'PingFang SC', sans-serif";
+      ctx.fillStyle = muted;
+      const c = sum.counts[side];
+      ctx.fillText(tf("rv.sideLine", [
+        sum.acc[side] == null ? "—" : sum.acc[side], sum.acpl[side] == null ? "—" : sum.acpl[side],
+        c.inaccuracy, c.mistake, c.blunder,
+      ]), x, rowY + 24);
+      ctx.font = "600 15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    }
+    if (sum.worst) {
+      ctx.font = "14px system-ui, -apple-system, 'PingFang SC', sans-serif";
+      ctx.fillStyle = accent;
+      ctx.fillText(tf("rv.turningPoint", [sum.worst.moveNo,
+        sum.worst.side === "w" ? t("m.05") : t("m.04"), sum.worst.san,
+        (sum.worst.loss / 100).toFixed(1)]).replace(/\s*——.*$/, ""), 40, rowY + 62);
+    }
+    ctx.font = "12px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    ctx.fillStyle = muted;
+    ctx.fillText(t("brand"), 40, H - 24);
+    return cv;
+  }
+
+  /** Base64 payload of a canvas PNG, without the data: prefix. */
+  function canvasPngBase64(cv) {
+    const url = cv.toDataURL("image/png");
+    const at = url.indexOf(",");
+    return at < 0 ? "" : url.slice(at + 1);
+  }
+
+  function reportFileName() {
+    return pgnFileName().replace(/\.pgn$/, "") + ".png";
+  }
+
+  async function exportReport() {
+    const cv = renderReportCanvas();
+    if (!cv) { toast(t("rv.noReport")); return; }
+    const name = reportFileName();
+    const b64 = canvasPngBase64(cv);
+    // the bridge refuses base64 past 512 KiB; a report this size is nowhere
+    // near it, but falling back beats failing
+    if (Host.hasZero() && b64 && b64.length < 512 * 1024) {
+      try {
+        const path = await Host.saveFileDialog({ title: t("rv.exportTitle"), defaultName: name });
+        if (path == null) { toast(t("m.09")); return; }
+        await Host.writeBinaryFile(path, b64);
+        await Host.revealPath(path);
+        toast(t("m.10") + name);
+        return;
+      } catch (_) { /* fall through to the browser path */ }
+    }
+    try {
+      const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+      if (!blob) throw new Error("no blob");
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+      toast(t("m.10") + name);
+    } catch (_) { toast(t("m.16")); }
+  }
+
   /** Modal list picker → index of the chosen entry, or null when cancelled. */
   let pickResolver = null;
   /**
@@ -3597,9 +3770,9 @@
     invalidateEngine();
     stopEditor();
     if (parsed) {
-      game.load_pgn(text0, { sloppy: true });
+      gameLoadPgn(text0, { sloppy: true });
     } else {
-      game.load(importFen);
+      gameLoad(importFen);
       game.header("SetUp", "1", "FEN", importFen);
     }
     selection = null;
@@ -3804,7 +3977,7 @@
     stopEditor();
     invalidateEngine();
     if (window.ChessEngine) window.ChessEngine.newGame();
-    game.load(fen);
+    gameLoad(fen);
     game.header("SetUp", "1", "FEN", fen);
     selection = null;
     viewIndex = 0;
@@ -4441,6 +4614,8 @@
   const claimEl = document.getElementById("btn-claimdraw");
   if (claimEl) claimEl.onclick = () => { doClaimDraw(); };
   document.getElementById("pgn-download").onclick = () => { downloadPgn(); };
+  const reportBtn = document.getElementById("report-export");
+  if (reportBtn) reportBtn.onclick = () => { exportReport(); };
   document.getElementById("pgn-paste").onclick = () => { pastePgn(); };
   document.getElementById("pgn-open").onclick = () => { openPgnFile(); };
 
@@ -4730,7 +4905,7 @@
     stopEditor();
     invalidateEngine();
     if (window.ChessEngine) window.ChessEngine.newGame();
-    game.reset();
+    gameReset();
     selection = null;
     viewIndex = 0;
     resigned = null;

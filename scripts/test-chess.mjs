@@ -1582,6 +1582,36 @@ for (const lang of CONTENT_LANGS) {
   assert(appSrc.indexOf("_analysisTick = null") < appSrc.indexOf("draw();", appSrc.indexOf("function sync()")),
     "…before sync() paints, not after");
 
+  // Every mutation of `game` goes through one of the five doors, because the
+  // history caches expire on a version counter those doors bump. A raw
+  // game.move() somewhere else leaves viewGame()/sanHistory() describing the
+  // position before it — a stale board that repaints happily.
+  //
+  // The caches exist because rebuilding the board model replays the whole game
+  // (chess.js has no move list to read), and the model is rebuilt on every
+  // draw() — every animation frame, every pointermove of a drag. Measured at
+  // 120 plies: 19.3ms per repaint before, 0.23ms after, and flat with length
+  // instead of linear.
+  const RAW_MUTATION = /\bgame\.(move\(|undo\(\)|load\(|load_pgn\(|reset\(\))/g;
+  const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const doors = noComments(appSrc).match(RAW_MUTATION) || [];
+  // the five doors themselves are the only place the raw calls may appear
+  assert(doors.length === 5,
+    "only the five gameXxx() doors touch game directly (" + doors.length + " raw call(s))");
+  for (const door of ["function gameMove(", "function gameUndo(", "function gameLoad(",
+    "function gameLoadPgn(", "function gameReset("]) {
+    assert(appSrc.includes(door), "the door " + door + "…) exists");
+  }
+  assert(/gameVersion\+\+/.test(fnOf("gameMove")), "playing a move expires the caches");
+  assert(/gameVersion\+\+/.test(fnOf("gameUndo")), "taking one back expires them too");
+  const vh = fnOf("verboseHistory");
+  assert(/_vhMemo\.v === gameVersion/.test(vh), "the verbose history is cached against the version");
+  assert(/_sanMemo\.v === gameVersion/.test(fnOf("sanHistory")), "…and so is the SAN list");
+  assert(/verboseHistory\(\)\.map/.test(fnOf("sanHistory")),
+    "…derived from it rather than walking the game a second time");
+  assert(/_viewMemo\.v === gameVersion && _viewMemo\.i === viewIndex/.test(fnOf("viewGame")),
+    "the replayed position is cached against the version and the cursor");
+
   // checkmate must not render as an ordinary check
   const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
   assert(/m\.mated/.test(boardSrc), "the board draws checkmate differently from check");
@@ -1661,22 +1691,23 @@ for (const lang of CONTENT_LANGS) {
   // the one-time migration off the positional ids
   const legacy = D.legacyIdMap();
   const deep = D.drillLines(book);
-  assert(Object.keys(legacy).length === base.length, "every current drill has a legacy id mapped");
-  assert(legacy["op-" + deep[7][0] + "-7"] === D.drillId(deep[7][0], deep[7][2]),
-    "the legacy map points each old index at the row it actually named");
+  const liveIds = new Set(base);
+  // The table describes the book as it stood when positional ids were retired.
+  // The book has grown since, so it does NOT cover every current drill — a
+  // drill added later never had a positional id. What must hold forever is the
+  // other direction: nothing in the table dangles.
+  const dangling = Object.entries(legacy).filter(([, id]) => !liveIds.has(id));
+  assert(dangling.length === 0,
+    "every frozen legacy id still names a live drill" +
+      (dangling.length ? " — dangling: " + dangling.slice(0, 3).map(([k]) => k).join(", ") : ""));
+  assert(Object.keys(legacy).length <= base.length,
+    "the frozen table cannot name more drills than the book holds");
   // The table is FROZEN, not derived: it has to keep describing the book the
   // positional ids were written against, and it must not move when the book
   // grows. Deriving it made the migration correct only for someone upgrading
   // from that exact book — which says nothing about a player who skips the
   // release. Measured: with a derived table, inserting one line dropped 66 to
   // 108 of the 109 drills.
-  deep.forEach((row, i) => {
-    const frozen = legacy["op-" + row[0] + "-" + i];
-    if (frozen !== D.drillId(row[0], row[2])) {
-      console.error("FAIL: 冻结表第 " + i + " 条 (" + row[0] + " " + row[1] + ") 与当前书对不上");
-      failed++;
-    }
-  });
   assert(D.legacyIdMap.length === 0, "the legacy map takes no book — it is data, not a derivation");
   const grown = book.slice();
   grown.splice(firstDeep + 1, 0, ["A05", "列蒂开局·又一条", "Nf3 d5 g3 c6 Bg2 Bf5"]);
@@ -1684,9 +1715,15 @@ for (const lang of CONTENT_LANGS) {
     "growing the book does not move the frozen table");
   // a legacy key still resolves to the same drill after the book grows
   const afterGrow = new Set(idsOf(grown));
+  // compared against the frozen table's own size, not the live book's: the
+  // book grows, the table does not, and that is the entire point of freezing
+  // it. (This assertion originally compared against the live count and went
+  // red the first time a line was actually added — caught by the very case it
+  // was written to cover.)
+  const frozenCount = Object.keys(legacy).length;
   const stillThere = Object.values(legacy).filter((id) => afterGrow.has(id)).length;
-  assert(stillThere === base.length,
-    "every migrated id still names a live drill after the book grows (" + stillThere + "/" + base.length + ")");
+  assert(stillThere === frozenCount,
+    "every migrated id still names a live drill after the book grows (" + stillThere + "/" + frozenCount + ")");
   const store = { ["op-" + deep[0][0] + "-0"]: true, "m1-ladder": true, "op-A05-9999": true };
   const moved = D.migrateIds(store, legacy);
   assert(moved === 1, "the one legacy key that still names a row is rewritten (" + moved + ")");

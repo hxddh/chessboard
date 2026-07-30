@@ -118,6 +118,34 @@ assert(Math.abs(parseFloat(start.width) - 50) < 5,
   "back at the opening the bar is near level (" + start.width + ")");
 assert(start.text !== end.text, "the bar reads the position the board is standing on, not the game's result");
 
+// --- the report can be taken away ------------------------------------------
+// A PGN hands somebody a move list; this hands them the conclusion. The button
+// is only useful once there is an analysis, and it must say so rather than
+// producing an empty picture.
+{
+  // browser path: no bridge, so it goes down the <a download> branch. Intercept
+  // the click so nothing actually downloads, and check what it was handed.
+  const shot = await page.evaluate(async () => {
+    const out = { name: null, type: null, bytes: 0 };
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      out.name = this.download;
+      return undefined; // swallow the download
+    };
+    const realCreate = URL.createObjectURL;
+    URL.createObjectURL = (blob) => { out.type = blob.type; out.bytes = blob.size; return "blob:stub"; };
+    document.getElementById("report-export").click();
+    await new Promise((r) => setTimeout(r, 700));
+    HTMLAnchorElement.prototype.click = realClick;
+    URL.createObjectURL = realCreate;
+    return out;
+  });
+  assert(/\.png$/.test(shot.name || ""), "the report exports as a .png (" + shot.name + ")");
+  assert(shot.type === "image/png", "…and it really is a PNG (" + shot.type + ")");
+  // a blank 900x480 canvas still compresses small; a drawn one does not
+  assert(shot.bytes > 3000, "…with a drawn report in it, not an empty canvas (" + shot.bytes + " bytes)");
+}
+
 assert(errs.length === 0, "no JS exception through analysis and replay — " + errs.join(" / "));
 
 await browser.close();
