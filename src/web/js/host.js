@@ -30,6 +30,21 @@
   }
 
   /**
+   * Write raw bytes, given as base64.
+   *
+   * Same bridge command as writeTextFile — the native side has always just
+   * base64-decoded and written the result, so it was binary-capable all along.
+   * Only this façade assumed text, because bytesToBase64 runs its argument
+   * through a UTF-8 encoder first, and a PNG does not survive that.
+   *
+   * @param {string} b64 base64 of the bytes to write, with no data: prefix
+   */
+  async function writeBinaryFile(path, b64) {
+    if (!hasZero()) throw new Error("no bridge");
+    await global.zero.invoke("chess.writeTextFile", { path: path, b64: b64 });
+  }
+
+  /**
    * `err.name` on the rejection you get when the native side refused a file
    * for being over its read limit. It is called out separately because "this
    * file is too big" and "this file is not a PGN" need different words on
@@ -240,6 +255,7 @@
     hasZero,
     bytesToBase64,
     writeTextFile,
+    writeBinaryFile,
     readTextFile,
     FILE_TOO_LARGE,
     saveFileDialog,
