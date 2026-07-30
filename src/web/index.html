@@ -38,7 +38,7 @@
 
     <aside class="side" id="side" aria-label="对局面板" data-i18n-aria="aria.side">
       <section class="side-head">
-        <div class="vs">
+        <div class="vs" id="vs-bar">
           <div class="vs-side">
             <span class="pmark white" aria-hidden="true">♔</span>
             <div>
@@ -84,7 +84,10 @@
         <button type="button" role="tab" id="tab-play" data-tab="play" aria-selected="true" aria-controls="pane-play" data-i18n="tab.play">对局</button>
         <button type="button" role="tab" id="tab-setup" data-tab="setup" aria-selected="false" aria-controls="pane-setup" data-i18n="tab.setup">设置</button>
         <button type="button" role="tab" id="tab-record" data-tab="record" aria-selected="false" aria-controls="pane-record" data-i18n="tab.record">记录</button>
-        <button type="button" class="icon-btn side-close" id="collapse" title="收起侧栏 (P)" data-i18n-title="tip.collapse" aria-label="收起侧栏" data-i18n-aria="act.collapse">✕</button>
+        <!-- The ✕ used to sit here, as a fourth item in a row of three tabs:
+             same height, same row, same alignment, but it closed the panel
+             instead of selecting a view. Closing already has two affordances
+             that are not disguised as tabs — the topbar ☰ and the P key. -->
       </div>
 
       <div class="side-pane" id="pane-setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
@@ -92,7 +95,10 @@
         <h2 class="side-h" data-i18n="side.game">对局</h2>
         <div class="setting-list">
           <div class="setting-row stack" id="row-difficulty">
-            <span class="setting-k" data-i18n="side.difficulty">难度</span>
+            <!-- No "难度" row label here: it would be the third heading in a
+                 column of three — 对局 → 难度 → 陪练档/棋力档 — and the two
+                 group labels already name what the buttons are. The row keeps
+                 its name for screen readers on the groups' aria-label. -->
             <!-- Two scales, not one ladder of six. The first pair are
                  hand-weakened sparring tiers (shallow MultiPV sampling); the
                  rest are Stockfish limited by UCI_Elo. Shown as one row, the
@@ -187,7 +193,7 @@
       <section class="side-section" id="sec-learn" hidden>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.learn">教学</h2>
-          <span class="side-h-meta num" id="learn-progress">0/0</span>
+          <span class="side-h-meta num" id="learn-progress" title="已完成的课数" data-i18n-title="learn.doneOf">0/0</span>
           <button type="button" class="text-link danger" id="learn-reset" data-i18n="act.reset" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.51">重置</button>
         </div>
         <div class="lesson-title" id="lesson-title"></div>

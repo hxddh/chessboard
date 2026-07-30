@@ -898,7 +898,7 @@
     if (learn.demoing) return t("lm.demoing");
     if (learn.done) return t("lm.taskDone") + (learn.li + 1 < LESSONS.length ? t("lm.tapNext") : t("lm.allDone"));
     const tx = taskText(curLesson(), learn.ti);
-    if (task.type === "tap") return tx.step(learn.tapStep) + "(" + (learn.tapStep + 1) + "/" + task.steps.length + ")";
+    if (task.type === "tap") return tx.step(learn.tapStep) + " (" + (learn.tapStep + 1) + "/" + task.steps.length + ")";
     if (task.type === "drill" && learn.engineBusy) return t("lm.sparThinking");
     // tx, not task: reading the prompt straight off the lesson showed every
     // move/stars/drill task in Chinese to English readers — the translations
@@ -1197,7 +1197,9 @@
     const L = curLesson();
     const doneCount = LESSONS.filter((x) => learnState.done[x.id]).length;
     const prog = document.getElementById("learn-progress");
-    if (prog) prog.textContent = doneCount + "/" + LESSONS.length;
+    // "完成 3/72" reads differently from the header chip's "4/72", which is
+    // where you ARE. Two bare N/72 on one screen meant two different things.
+    if (prog) prog.textContent = t("learn.donePre") + doneCount + "/" + LESSONS.length;
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
     if (title) title.textContent = t("learn.lessonPre") + (learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
@@ -1213,7 +1215,15 @@
     const demoBtn = document.getElementById("lesson-demo");
     if (demoBtn) {
       const curT = curTask();
-      demoBtn.disabled = learn.demoing || !curT.solution || (curT.type !== "stars" && curT.type !== "move");
+      // Most tasks have nothing to demonstrate. Greying the button out on
+      // those lessons said "this is unavailable" without ever saying when it
+      // would be available — for a lesson with no solution to replay, the
+      // answer is never. It is hidden there and shown where it works; the
+      // disabled state is now only "a demo is playing right now", which the
+      // moving pieces already explain.
+      const canDemo = !!curT.solution && (curT.type === "stars" || curT.type === "move");
+      demoBtn.hidden = !canDemo;
+      demoBtn.disabled = learn.demoing;
     }
     const next = document.getElementById("lesson-next");
     if (next) {
@@ -2819,8 +2829,11 @@
     if (mode === "learn") {
       if (!learn) return t("st.learn");
       if (learn.done) return t("st.lessonDone");
-      // the sidebar may be closed while clicking the board — put the live
-      // task instructions where they are always visible
+      // The task is spelled out in the panel, right next to this. Repeating it
+      // here word for word put the same sentence on screen twice and stretched
+      // the header to fit a whole instruction. It is still the fallback for a
+      // CLOSED sidebar — which is the case the duplication was protecting.
+      if (isPanelOpen()) return lessonText(curLesson()).title;
       return learnTaskText();
     }
     if (mode === "puzzle") {
@@ -3104,14 +3117,19 @@
     const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
     const wRole = document.getElementById("white-role");
     const bRole = document.getElementById("black-role");
+    // A lesson that is not a drill has no opponent. Writing "—" into the black
+    // role left an empty card at the top of the panel; the whole half is now
+    // hidden instead (see .vs.solo).
+    const solo = mode === "learn" && !(learn && curTask().type === "drill");
+    const vsBar = document.getElementById("vs-bar");
+    if (vsBar) vsBar.classList.toggle("solo", solo);
     if (wRole && bRole) {
       if (mode === "ai") {
         wRole.textContent = humanColor === "w" ? t("vs.player") : engineName;
         bRole.textContent = humanColor === "b" ? t("vs.player") : engineName;
       } else if (mode === "learn") {
-        const drill = learn && curTask().type === "drill";
         wRole.textContent = t("role.student");
-        bRole.textContent = drill ? t("role.sparring") : "—";
+        bRole.textContent = solo ? "" : t("role.sparring");
       } else if (mode === "puzzle") {
         wRole.textContent = t("role.you");
         bRole.textContent = t("role.puzzle");
@@ -4559,7 +4577,6 @@
     toast(flipped ? t("m.44") : t("m.45"));
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
-  document.getElementById("collapse").onclick = () => setPanelOpen(false);
   const moreBtn = document.getElementById("more-tools");
   if (moreBtn) {
     moreBtn.onclick = () => {
