@@ -435,6 +435,12 @@
       display: flex; align-items: center; gap: 8px; min-width: 0;
     }
     .vs-right { flex-direction: row; text-align: right; }
+    /* A lesson task with no sparring partner has no opponent, and the panel
+       used to open on "黑 / ♚ / —" anyway: a whole card whose content was an
+       em dash, sitting at the very top of the panel. When there is nobody on
+       the other side, the other side is not drawn. */
+    .vs.solo { justify-content: flex-start; }
+    .vs.solo .vs-mid, .vs.solo .vs-right { display: none; }
     .vs-right .vs-name { justify-content: flex-end; }
     .vs-mid {
       font-size: 11px; letter-spacing: 0.14em; flex-shrink: 0; opacity: 0.55;
@@ -479,7 +485,6 @@
       font-size: 12px; color: var(--muted); line-height: var(--lh-body);
     }
     .opening-line[hidden] { display: none; }
-    /* four labels in a 284px panel — "2 players" needs the tighter setting */
     /* Mode is navigation, and so are the tabs directly beneath it — same job,
        so the same grammar. Up to 1.12 these were two idioms stacked on each
        other: a 12px-radius pill row 35px tall, and immediately below it a tab
@@ -494,6 +499,11 @@
       border-radius: var(--radius-sm) var(--radius-sm) 0 0;
       color: var(--muted);
       font-size: 13px; padding: 0 4px; line-height: var(--lh-tight);
+      /* Four labels in a 284px panel. "2 players" and "レッスン" wrapped onto
+         a second line, which made one tab in the row two lines tall and put a
+         hyphenless break in the middle of a two-word label. They fit on one
+         line at this size — measured, see scripts/test-layout-e2e.mjs. */
+      white-space: nowrap;
       min-height: var(--row-h); display: flex; align-items: center;
       justify-content: center;
       transition: color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
@@ -534,19 +544,10 @@
       border-bottom-color: var(--accent);
       background: color-mix(in srgb, var(--accent) 10%, transparent);
     }
-    /* It sits inside the tab row, so it belongs to the tab row: no fill, no
-       border, the same height as the tabs beside it. As a 32px bordered box in
-       a row of 36px underlined text it was a fourth visual language in a row
-       that 1.13 had just finished reducing to one. */
-    .side-close {
-      flex: 0 0 auto;
-      width: var(--row-h); height: var(--row-h);
-      align-self: center;
-      background: transparent; border-color: transparent;
-      color: var(--muted);
-      font-size: 15px; line-height: var(--lh-tight);
-    }
-    .side-close:hover { background: var(--btn-ghost); color: var(--text); }
+    /* .side-close is gone: a ✕ the same height as the tabs, in the tab
+       row, aligned with them, reads as a fourth tab until you click it. The
+       topbar ☰ and the P key both close the panel and neither pretends to be
+       a tab. */
     .side-pane {
       display: flex; flex-direction: column;
       flex: 1; min-height: 0;
@@ -651,8 +652,18 @@
     .theme-row {
       display: flex; gap: 8px;
     }
-    .theme-row.wrap { flex-wrap: wrap; }
-    .theme-row.wrap button { flex: 1 1 30%; }
+    /* Wrapped segment rows are a grid, not a wrapping flex row.
+       With `flex: 1 1 30%` the items on the last line share that line between
+       them, so a row of four became three normal buttons and one that ran the
+       full width of the panel — and a full-width filled button is this UI's
+       word for "the primary action here". "满强度" and "爱进攻" were reading
+       as buttons you were being pushed toward, purely because 4 % 3 == 1.
+       A grid gives every line the same columns, so the last item is the same
+       size as the first. */
+    .theme-row.wrap {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+    }
     .theme-row button {
       flex: 1;
       appearance: none; border: 1px solid var(--card-border);

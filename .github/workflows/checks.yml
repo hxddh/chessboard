@@ -78,3 +78,5 @@ jobs:
         run: node scripts/test-persist-e2e.mjs
       - name: review
         run: node scripts/test-review-e2e.mjs
+      - name: panel layout
+        run: node scripts/test-layout-e2e.mjs

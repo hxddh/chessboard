@@ -73,6 +73,7 @@ jobs:
             E2E_BROWSER="$engine" node scripts/test-content-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-persist-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-review-e2e.mjs
+            E2E_BROWSER="$engine" node scripts/test-layout-e2e.mjs
             echo "::endgroup::"
           done
 
