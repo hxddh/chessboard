@@ -129,6 +129,7 @@ src/web/
   js/achievements.js # 成就徽章(纯派生自统计/教学/做题进度)
   js/fide.js       # FIDE 和棋算术:重复计数 / 6.9 将杀子力判定 / 局面是否已终局(纯函数,单测覆盖)
   js/pgn.js        # PGN 文本工具:多局切分 / 标签 / 摘要 / 起始局面(纯函数,单测覆盖)
+  js/drills.js     # 开局题身份:内容派生 id + 旧位置 id 迁移(纯函数,单测覆盖)
   js/editor.js     # 局面编辑器模型:棋盘→FEN + 可玩性校验(纯函数,单测覆盖)
   js/i18n.js       # 界面文案字典 zh-CN / en / ja 各 590 条(单测校验键完整、无漏译、
                    #   tooltip 与 aria-label 全接线、app.js 无中文字面量进 DOM)

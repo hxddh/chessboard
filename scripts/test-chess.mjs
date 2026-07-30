@@ -1532,6 +1532,74 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// Opening-drill identity. The drills are generated from the book rather than
+// authored, so their ids are computed — and a computed id that encodes WHERE a
+// row sits rather than WHAT it is turns the next content update into a silent
+// progress wipe. That is not a hypothetical: with the old positional id,
+// inserting one deep line moved 108 of 109 ids onto a different drill.
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/drills.js"), "utf8"), ctx, { filename: "drills.js" });
+  const D = ctx.ChessDrills;
+  const book = ctx.CHESS_OPENINGS;
+  const idsOf = (b) => D.drillLines(b).map((r) => D.drillId(r[0], r[2]));
+
+  const base = idsOf(book);
+  assert(base.length > 100, "the book still yields a drill list (" + base.length + ")");
+  assert(new Set(base).size === base.length, "no two drills share an id");
+
+  // THE regression: adding coverage must not touch anybody's existing ids
+  const inserted = book.slice();
+  const firstDeep = inserted.findIndex((r) => r[2].split(" ").length >= D.MIN_PLIES);
+  inserted.splice(firstDeep + 1, 0, ["A05", "列蒂开局·新变例", "Nf3 Nf6 g3 d5 Bg2 e6"]);
+  const afterInsert = new Set(idsOf(inserted));
+  const survived = base.filter((id) => afterInsert.has(id)).length;
+  assert(survived === base.length,
+    "inserting a line keeps every existing drill id (" + survived + "/" + base.length + ")");
+
+  // removing one must not shift the others either
+  const removed = book.slice();
+  removed.splice(firstDeep, 1);
+  const afterRemove = new Set(idsOf(removed));
+  const kept = base.filter((id) => afterRemove.has(id)).length;
+  assert(kept === base.length - 1,
+    "removing a line takes exactly its own id with it (" + kept + "/" + (base.length - 1) + ")");
+
+  // a name correction — C24 got one in 1.21.1 — must cost nobody their progress
+  const renamed = book.map((r) => (r[2].split(" ").length >= D.MIN_PLIES ? [r[0], r[1] + "(改名)", r[2], r[3]] : r));
+  assert(idsOf(renamed).join() === base.join(), "renaming a line keeps its id");
+  // whitespace is authored by hand and must not reach the id
+  assert(D.drillId("C24", "e4 e5  Bc4   Nf6") === D.drillId("C24", "e4 e5 Bc4 Nf6"),
+    "spacing in the book does not change an id");
+  // …but different moves are a different drill, and should be
+  assert(D.drillId("C24", "e4 e5 Bc4 Nf6") !== D.drillId("C24", "e4 e5 Bc4 Nc6"),
+    "a different line is a different drill");
+
+  // the one-time migration off the positional ids
+  const legacy = D.legacyIdMap(book);
+  assert(Object.keys(legacy).length === base.length, "every current drill has a legacy id mapped");
+  const deep = D.drillLines(book);
+  assert(legacy["op-" + deep[7][0] + "-7"] === D.drillId(deep[7][0], deep[7][2]),
+    "the legacy map points each old index at the row it actually named");
+  const store = { ["op-" + deep[0][0] + "-0"]: true, "m1-ladder": true, "op-A05-9999": true };
+  const moved = D.migrateIds(store, legacy);
+  assert(moved === 1, "the one legacy key that still names a row is rewritten (" + moved + ")");
+  assert(store[D.drillId(deep[0][0], deep[0][2])] === true, "a solved drill keeps its solve");
+  assert(store["m1-ladder"] === true, "a hand-written puzzle id is left alone");
+  assert(!("op-A05-9999" in store), "a legacy key naming a row that is gone is dropped, not kept forever");
+  // an ECO letter outside A–E was never one of ours and is not touched
+  const alien = { "op-Z99-4": true };
+  assert(D.migrateIds(alien, legacy) === 0 && alien["op-Z99-4"] === true,
+    "a key that only looks like a drill id is left alone");
+  // and it is idempotent — the launch path runs it on every load until marked
+  assert(D.migrateIds(store, legacy) === 0, "migrating twice is a no-op");
+
+  // the app must build the id from the module, not from a loop index again
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  assert(/Drills\.drillId\(/.test(appSrc), "app.js derives the drill id from drills.js");
+  assert(!/"op-"\s*\+\s*eco\s*\+\s*"-"\s*\+\s*i\b/.test(appSrc),
+    "app.js never rebuilds a drill id from its position");
+}
+
 // PGN utilities: splitting a multi-game file must not lose games (importing a
 // database used to silently keep only the last one)
 {

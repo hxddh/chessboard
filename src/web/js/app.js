@@ -1205,10 +1205,14 @@
   }
 
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
-  const OPENING_DRILLS = (window.CHESS_OPENINGS || [])
-    .filter(([, , seq]) => seq.split(" ").length >= 6)
-    .map(([eco, name, seq, idea], i) => ({
-      id: "op-" + eco + "-" + i,
+  const Drills = window.ChessDrills;
+  const OPENING_DRILLS = Drills.drillLines(window.CHESS_OPENINGS || [])
+    // The id is derived from the ECO code and the moves, NOT from the row's
+    // position — see drills.js. With a positional id, adding a single deep
+    // line to the book moved 108 of the 109 ids onto a different drill and
+    // quietly wiped everyone's opening progress and review queue.
+    .map(([eco, name, seq, idea]) => ({
+      id: Drills.drillId(eco, seq),
       cat: "op",
       // `zh` is the key both English tables are keyed by; the displayed name is
       // built at render time so a language switch relabels the whole drill list
@@ -1290,14 +1294,38 @@
   /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
   let puzzleTierFilter = "all";
 
+  /**
+   * Move a pre-1.21.3 save off the positional opening-drill ids.
+   *
+   * Runs once, marked by `idv`. It reads the book as it stands to work out
+   * which row each old index named, so it is only correct while the book is
+   * the one those indexes were written against — which is why the release
+   * carrying this migration must not also change the book.
+   */
+  function migrateDrillIds(s) {
+    if (!s || s.idv >= 2) return s;
+    const map = window.ChessDrills.legacyIdMap(window.CHESS_OPENINGS || []);
+    window.ChessDrills.migrateIds(s.solved, map);
+    window.ChessDrills.migrateIds(s.missed, map);
+    s.idv = 2;
+    return s;
+  }
+
   function loadPuzzleState() {
     try {
       const s = JSON.parse(Host.storageGet(PUZZLE_KEY) || "null");
-      if (s && s.v === 1 && s.solved) { if (!s.missed) s.missed = {}; return s; }
+      if (s && s.v === 1 && s.solved) {
+        if (!s.missed) s.missed = {};
+        return migrateDrillIds(s);
+      }
     } catch (_) {}
-    return { v: 1, solved: {}, missed: {}, cat: "m1" };
+    return { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" };
   }
   let puzzleState = loadPuzzleState();
+  // persist the rewritten ids straight away — a migration that only lives in
+  // memory runs again on every launch, and once the book does change it would
+  // then be reading positions that no longer mean what they meant
+  if (puzzleState.idv === 2) { try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {} }
   function savePuzzleState() {
     try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {}
   }

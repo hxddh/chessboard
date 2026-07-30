@@ -45,6 +45,7 @@ alert confirm prompt module exports require process
 ResizeObserver MutationObserver IntersectionObserver AbortController
 ChessBoardView ChessEngine ChessHost ChessAudio ChessPgn ChessEditor
 ChessFide ChessI18n ChessReview ChessSrs ChessOpeningCoach ChessMaterial
+ChessDrills
 ChessDialog ChessPersona ChessAchievements ChessApp Chess
 CHESS_LESSONS CHESS_LESSONS_EN CHESS_PUZZLES CHESS_PUZZLES_EN
 CHESS_OPENINGS CHESS_OPENINGS_EN CHESS_PIECE_SVGS CHESS_ACHIEVEMENTS

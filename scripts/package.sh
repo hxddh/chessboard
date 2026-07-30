@@ -25,6 +25,7 @@ test -f frontend/dist/js/review.js
 test -f frontend/dist/js/srs.js
 test -f frontend/dist/js/editor.js
 test -f frontend/dist/js/i18n.js
+test -f frontend/dist/js/drills.js
 test -f frontend/dist/js/openings.js
 test -f frontend/dist/js/openings-en.js
 test -f frontend/dist/js/lessons.js
