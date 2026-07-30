@@ -1532,6 +1532,137 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// The eval bar and the one set of mistake thresholds behind it.
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/review.js"), "utf8"), ctx, { filename: "review.js" });
+  const R = ctx.ChessReview;
+  // "nobody asked the engine" must not render as "the engine says level" —
+  // a bar that draws both at 50% is the most confident lie a review can tell
+  assert(R.evalBar(null) === null, "an unmeasured position has no bar position");
+  assert(R.evalBar(undefined) === null, "…and neither does a missing one");
+  assert(R.evalBar(0) === 0.5, "level is the middle");
+  assert(R.evalBar(600) === 1 && R.evalBar(-600) === 0, "±6 pawns fills the bar");
+  assert(R.evalBar(10000) === 1 && R.evalBar(-10000) === 0, "a mate score clamps, it does not overflow");
+  assert(R.evalBar(300) === 0.75 && R.evalBar(-300) === 0.25, "the scale is linear in between");
+  assert(R.evalBar(NaN) === null, "a NaN is unmeasured, not a full bar");
+
+  // one source for the thresholds: the move list, the curve markers and the
+  // best-move arrow all read this. It used to be four hand-written copies.
+  assert(R.markFor(0) === null && R.markFor(49) === null, "a cheap move earns no tag");
+  assert(R.markFor(R.INACCURACY) === "?!", "the inaccuracy threshold is inclusive");
+  assert(R.markFor(R.MISTAKE) === "?", "the mistake threshold is inclusive");
+  assert(R.markFor(R.BLUNDER) === "??", "the blunder threshold is inclusive");
+  assert(R.markFor(R.MISTAKE - 1) === "?!" && R.markFor(R.BLUNDER - 1) === "?", "each band stops where the next begins");
+  assert(!R.isMistake(null) && R.isMistake("?!") && R.isMistake("?") && R.isMistake("??"),
+    "isMistake covers exactly the tagged moves");
+
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const fnOf = (name) => {
+    const i = appSrc.indexOf("function " + name + "(");
+    if (i < 0) return "";
+    let depth = 0;
+    for (let k = appSrc.indexOf("{", i); k < appSrc.length; k++) {
+      if (appSrc[k] === "{") depth++;
+      else if (appSrc[k] === "}" && --depth === 0) return appSrc.slice(i, k + 1);
+    }
+    return "";
+  };
+  // the analyser must not carry a fifth copy of the numbers
+  const analyze = fnOf("analyzeGame");
+  assert(/Review\.markFor\(/.test(analyze), "the analyser tags moves through review.js");
+  assert(!/loss >= \d+/.test(analyze), "the analyser holds no thresholds of its own");
+
+  // the eval bar reads the analysis and nothing else — no engine call, which
+  // is what keeps it review-only and unable to become a live answer key
+  const bar = fnOf("drawEvalBar");
+  assert(bar.length > 0, "drawEvalBar exists");
+  assert(!/ChessEngine|analyze\(/.test(bar), "the eval bar never asks the engine anything");
+  assert(/analysisFor\(\)/.test(bar) && /a\.scalars\[viewIndex\]/.test(bar),
+    "the eval bar shows the position the board is standing on");
+  assert(/rv\.evalNone/.test(bar), "an unmeasured position says so on screen");
+
+  // the best-move arrow is derived, never stored: nothing to clear on a new
+  // game, nothing that can drift out of step with the board
+  const arrow = fnOf("bestArrowAt");
+  assert(arrow.length > 0, "bestArrowAt exists");
+  assert(/Review\.isMistake\(a\.tags\[i\]\)/.test(arrow),
+    "the arrow appears only where the move played was a mistake");
+  assert(/hintMove: isLive\(\) \? hintMove : bestArrowAt\(viewIndex\)/.test(appSrc),
+    "the arrow is replay-only — never an answer key during a live game");
+  assert(!/bestArrow\s*=/.test(appSrc), "the arrow is computed, not held in a variable");
+  // and the analysis has to actually carry the engine's choice
+  assert(/bests\[i\] = e\.best/.test(analyze), "the analyser keeps the engine's own move");
+  assert(/analysis = \{ sig, scalars, tags, pvs, bests,/.test(appSrc), "…and files it with the rest");
+}
+
+// Opening-drill identity. The drills are generated from the book rather than
+// authored, so their ids are computed — and a computed id that encodes WHERE a
+// row sits rather than WHAT it is turns the next content update into a silent
+// progress wipe. That is not a hypothetical: with the old positional id,
+// inserting one deep line moved 108 of 109 ids onto a different drill.
+{
+  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/drills.js"), "utf8"), ctx, { filename: "drills.js" });
+  const D = ctx.ChessDrills;
+  const book = ctx.CHESS_OPENINGS;
+  const idsOf = (b) => D.drillLines(b).map((r) => D.drillId(r[0], r[2]));
+
+  const base = idsOf(book);
+  assert(base.length > 100, "the book still yields a drill list (" + base.length + ")");
+  assert(new Set(base).size === base.length, "no two drills share an id");
+
+  // THE regression: adding coverage must not touch anybody's existing ids
+  const inserted = book.slice();
+  const firstDeep = inserted.findIndex((r) => r[2].split(" ").length >= D.MIN_PLIES);
+  inserted.splice(firstDeep + 1, 0, ["A05", "列蒂开局·新变例", "Nf3 Nf6 g3 d5 Bg2 e6"]);
+  const afterInsert = new Set(idsOf(inserted));
+  const survived = base.filter((id) => afterInsert.has(id)).length;
+  assert(survived === base.length,
+    "inserting a line keeps every existing drill id (" + survived + "/" + base.length + ")");
+
+  // removing one must not shift the others either
+  const removed = book.slice();
+  removed.splice(firstDeep, 1);
+  const afterRemove = new Set(idsOf(removed));
+  const kept = base.filter((id) => afterRemove.has(id)).length;
+  assert(kept === base.length - 1,
+    "removing a line takes exactly its own id with it (" + kept + "/" + (base.length - 1) + ")");
+
+  // a name correction — C24 got one in 1.21.1 — must cost nobody their progress
+  const renamed = book.map((r) => (r[2].split(" ").length >= D.MIN_PLIES ? [r[0], r[1] + "(改名)", r[2], r[3]] : r));
+  assert(idsOf(renamed).join() === base.join(), "renaming a line keeps its id");
+  // whitespace is authored by hand and must not reach the id
+  assert(D.drillId("C24", "e4 e5  Bc4   Nf6") === D.drillId("C24", "e4 e5 Bc4 Nf6"),
+    "spacing in the book does not change an id");
+  // …but different moves are a different drill, and should be
+  assert(D.drillId("C24", "e4 e5 Bc4 Nf6") !== D.drillId("C24", "e4 e5 Bc4 Nc6"),
+    "a different line is a different drill");
+
+  // the one-time migration off the positional ids
+  const legacy = D.legacyIdMap(book);
+  assert(Object.keys(legacy).length === base.length, "every current drill has a legacy id mapped");
+  const deep = D.drillLines(book);
+  assert(legacy["op-" + deep[7][0] + "-7"] === D.drillId(deep[7][0], deep[7][2]),
+    "the legacy map points each old index at the row it actually named");
+  const store = { ["op-" + deep[0][0] + "-0"]: true, "m1-ladder": true, "op-A05-9999": true };
+  const moved = D.migrateIds(store, legacy);
+  assert(moved === 1, "the one legacy key that still names a row is rewritten (" + moved + ")");
+  assert(store[D.drillId(deep[0][0], deep[0][2])] === true, "a solved drill keeps its solve");
+  assert(store["m1-ladder"] === true, "a hand-written puzzle id is left alone");
+  assert(!("op-A05-9999" in store), "a legacy key naming a row that is gone is dropped, not kept forever");
+  // an ECO letter outside A–E was never one of ours and is not touched
+  const alien = { "op-Z99-4": true };
+  assert(D.migrateIds(alien, legacy) === 0 && alien["op-Z99-4"] === true,
+    "a key that only looks like a drill id is left alone");
+  // and it is idempotent — the launch path runs it on every load until marked
+  assert(D.migrateIds(store, legacy) === 0, "migrating twice is a no-op");
+
+  // the app must build the id from the module, not from a loop index again
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  assert(/Drills\.drillId\(/.test(appSrc), "app.js derives the drill id from drills.js");
+  assert(!/"op-"\s*\+\s*eco\s*\+\s*"-"\s*\+\s*i\b/.test(appSrc),
+    "app.js never rebuilds a drill id from its position");
+}
+
 // PGN utilities: splitting a multi-game file must not lose games (importing a
 // database used to silently keep only the last one)
 {

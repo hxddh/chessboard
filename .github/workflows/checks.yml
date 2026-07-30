@@ -1,0 +1,80 @@
+name: checks
+
+# Everything that can be checked without zig or the Native SDK, on every push
+# and every PR.
+#
+# Until now the repo had no PR-time CI at all: the only workflows were the two
+# platform builds and the release. That meant the checks which do exist ran
+# either on a developer's machine or at release time — the two moments where
+# "it was already broken before I got here" is hardest to tell.
+#
+# The browser checks run twice, once per engine. The app ships no browser: on
+# Windows the page runs in WebView2, which is Chromium, and on macOS in
+# WKWebView, which is WebKit. One engine is a stand-in for half the product.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: unit tests
+        run: node scripts/test-chess.mjs
+      - name: free variables
+        run: node scripts/scope-check.mjs
+      - name: manifest keys + version agreement
+        run: node scripts/manifest-check.mjs
+
+  browser:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # chromium ≈ the Windows WebView2 engine, webkit ≈ the macOS WKWebView
+        # engine. fail-fast is off so a failure on one engine still reports the
+        # other — "does this break everywhere or only on WebKit" is the first
+        # question worth answering.
+        engine: [chromium, webkit]
+    env:
+      E2E_REQUIRED: "1"
+      E2E_BROWSER: ${{ matrix.engine }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Pinned. An unpinned install is how the same commit comes out different
+      # on different days.
+      - name: install playwright + ${{ matrix.engine }}
+        run: |
+          npm install --no-save playwright@1.49.1
+          npx --yes playwright@1.49.1 install --with-deps ${{ matrix.engine }}
+      - name: resolve the browser Playwright just installed
+        run: |
+          node -e "
+            const pw = require('playwright');
+            const p = pw['${{ matrix.engine }}'].executablePath();
+            console.log('${{ matrix.engine }} =', p);
+            require('fs').appendFileSync(process.env.GITHUB_ENV,
+              ('${{ matrix.engine }}' === 'chromium' ? 'CHROME_PATH=' : 'WEBKIT_PATH=') + p + '\n');
+          "
+      - name: board
+        run: node scripts/test-board-e2e.mjs
+      - name: clock
+        run: node scripts/test-clock-e2e.mjs
+      - name: lessons + puzzles
+        run: node scripts/test-content-e2e.mjs
+      - name: persistence
+        run: node scripts/test-persist-e2e.mjs
+      - name: review
+        run: node scripts/test-review-e2e.mjs

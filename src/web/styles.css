@@ -1234,6 +1234,30 @@
       background: var(--card);
       border: 1px solid var(--card-border);
     }
+    /* Eval bar: the curve read at one ply. White's share fills from the left,
+       so "the bar is mostly light" means what it looks like it means. An
+       unmeasured position is NOT drawn as a level bar — see ChessReview.evalBar. */
+    .eval-bar-row {
+      display: flex; align-items: center; gap: 8px; margin-top: 6px;
+    }
+    .eval-bar {
+      flex: 1; height: 10px; border-radius: 999px; overflow: hidden;
+      background: #1d1d1b; border: 1px solid var(--card-border);
+    }
+    .eval-bar-fill {
+      display: block; height: 100%; width: 50%;
+      background: #f2f2ee;
+      transition: width var(--dur-base) var(--ease);
+    }
+    .eval-bar.is-unmeasured { opacity: 0.35; }
+    .eval-bar.is-unmeasured .eval-bar-fill { width: 50%; background: var(--muted); }
+    .eval-bar-text {
+      font-size: 12px; color: var(--muted); min-width: 3.2em; text-align: right;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .eval-bar-fill { transition: none; }
+    }
+
     /* --- post-game review (v1.6) --- */
     .review {
       margin-top: 8px; padding: 8px 8px;

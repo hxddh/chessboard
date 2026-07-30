@@ -13,7 +13,8 @@
  * save is written through the actual UI, and the restart is a real reload
  * against the same localStorage.
  *
- * Needs playwright-core and a Chromium. Exits 0 with a notice when either is
+ * Needs playwright-core and a browser (see scripts/e2e-browser.mjs —
+ * E2E_BROWSER=chromium|webkit picks the engine). Exits 0 with a notice when either is
  * missing, so it can sit in the suite without becoming a hard dependency —
  * except under E2E_REQUIRED=1, where a skip is a failure. The release gate
  * sets it, so "the browser tests passed" cannot mean "they never ran":
@@ -27,29 +28,7 @@ import { fileURLToPath } from "url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
-// A missing browser is a skip locally and a failure in the release gate: these
-// checks silently exiting 0 is exactly how they managed to sit in the suite for
-// several versions without ever guarding a release.
-const REQUIRED = process.env.E2E_REQUIRED === "1";
-function skip(why) {
-  if (REQUIRED) { console.error("E2E_REQUIRED=1,但" + why); process.exit(1); }
-  console.log("跳过:" + why);
-  process.exit(0);
-}
-
-let chromium;
-for (const mod of ["playwright-core", "playwright",
-  "/opt/node22/lib/node_modules/playwright/node_modules/playwright-core/index.mjs"]) {
-  try { ({ chromium } = await import(mod)); break; } catch { /* try the next one */ }
-}
-if (!chromium) skip("没有 playwright");
-
-const CHROME = [
-  process.env.CHROME_PATH,
-  "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome",
-].find((p) => p && fs.existsSync(p));
-if (!CHROME) skip("找不到 Chromium");
+import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 const server = http.createServer((req, res) => {
@@ -72,7 +51,8 @@ const assert = (cond, msg) => {
   else { failed++; console.error("FAIL:", msg); }
 };
 
-const browser = await chromium.launch({ executablePath: CHROME });
+const browser = await launchBrowser();
+console.log("引擎:", ENGINE);
 
 /** A context that has never run the app, with the panel open on 对局. */
 async function freshContext() {

@@ -25,6 +25,7 @@ test -f frontend/dist/js/review.js
 test -f frontend/dist/js/srs.js
 test -f frontend/dist/js/editor.js
 test -f frontend/dist/js/i18n.js
+test -f frontend/dist/js/drills.js
 test -f frontend/dist/js/openings.js
 test -f frontend/dist/js/openings-en.js
 test -f frontend/dist/js/lessons.js
@@ -52,6 +53,7 @@ node scripts/test-board-e2e.mjs
 node scripts/test-clock-e2e.mjs
 node scripts/test-content-e2e.mjs
 node scripts/test-persist-e2e.mjs
+node scripts/test-review-e2e.mjs
 
 echo "==> derive the macOS manifest (close_policy = hide)"
 node scripts/gen-manifest.mjs macos
