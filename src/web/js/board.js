@@ -5,6 +5,7 @@
  *          hintMove, stars }
  *   position: chess.js .board() — [8][8] of {type,color}|null, row 0 = rank 8
  *   selected/checkSquare: square names ("e2") | null
+ *   mated: true when checkSquare is a mated king, not merely a checked one
  *   legalTargets: array of square names
  *   lastMove/hintMove: {from,to} | null (hintMove renders as an arrow)
  *   stars: array of square names — lesson goal markers (gold stars)
@@ -344,7 +345,10 @@
       ctx.fillStyle = P.sel;
       ctx.fillRect(...cellRect(sr, sc));
     }
-    // check highlight (radial under the king)
+    // Check highlight (radial under the king). Checkmate gets the same wash
+    // plus a ring: until 1.22.1 the end of the game looked exactly like being
+    // checked once, which is the wrong emphasis for the one frame a player is
+    // most likely to sit and look at.
     if (m.checkSquare) {
       const { sr, sc } = screenPos(m.checkSquare, m.flipped);
       const cx = sc * step + step / 2, cy = sr * step + step / 2;
@@ -353,6 +357,13 @@
       g.addColorStop(1, fade(P.check));
       ctx.fillStyle = g;
       ctx.fillRect(...cellRect(sr, sc));
+      if (m.mated) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, step * 0.45, 0, Math.PI * 2);
+        ctx.strokeStyle = P.check;
+        ctx.lineWidth = step * 0.055;
+        ctx.stroke();
+      }
     }
     // Coordinates are no longer painted here: they are printed on the frame
     // around the board (see .coords in styles.css), which is where a real

@@ -206,6 +206,7 @@
       legalTargets: selection ? selection.targets : [],
       lastMove: last ? { from: last.from, to: last.to } : null,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
+      mated: g.in_checkmate(),
       // Live: the hint the player asked for. Replaying an analysed game: the
       // move the engine would have played, but only where the move actually
       // played was a mistake — that is the moment the question "so what should
@@ -816,6 +817,7 @@
       legalTargets: selection ? selection.targets : [],
       lastMove: learn.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
+      mated: g.in_checkmate(),
       hintMove: learn.helpArrow,
       flashSquare: learn.flash,
       stars,
@@ -1326,7 +1328,11 @@
    */
   function migrateDrillIds(s) {
     if (!s || s.idv >= 2) return s;
-    const map = window.ChessDrills.legacyIdMap(window.CHESS_OPENINGS || []);
+    // frozen table, NOT read from the live book — see drills.js. Deriving it
+    // meant the migration was only correct for someone upgrading from the
+    // exact book it was generated against, which said nothing about a player
+    // who skips this release entirely.
+    const map = window.ChessDrills.legacyIdMap();
     window.ChessDrills.migrateIds(s.solved, map);
     window.ChessDrills.migrateIds(s.missed, map);
     s.idv = 2;
@@ -1430,6 +1436,7 @@
       legalTargets: selection ? selection.targets : [],
       lastMove: puzzle.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
+      mated: g.in_checkmate(),
       hintMove: puzzle.helpArrow,
       stars: [],
       cursor: cursorSquare(),
@@ -1874,8 +1881,29 @@
     return null;
   }
 
+  /**
+   * The analysis, if it still belongs to the game on the board.
+   *
+   * Memoised for one sync-and-paint cycle, because the check is not cheap and
+   * this sits in the render path. `analysis.sig` is a PGN, and on an 80-move
+   * game `game.pgn()` costs ~3.3ms — a fifth of a 60fps frame. 1.22 put the
+   * best-move arrow in the board model, which is rebuilt on EVERY draw()
+   * including every animation frame, so a 12-frame replay slide was spending
+   * ~40ms serialising the same PGN twelve times.
+   *
+   * The memo is exact rather than merely fast: it is dropped at the top of
+   * sync(), and sync() is what this codebase runs after every state change.
+   * Frames drawn between two syncs cannot be looking at a different game.
+   */
+  let _analysisTick = null;
   function analysisFor() {
-    return analysis && analysis.sig === game.pgn() ? analysis : null;
+    // Keyed on the analysis object too, so replacing it invalidates the memo
+    // without every one of the seven assignment sites having to remember. The
+    // sync() reset covers the other direction: the game changing underneath an
+    // unchanged analysis.
+    if (_analysisTick && _analysisTick.a === analysis) return _analysisTick.v;
+    _analysisTick = { a: analysis, v: analysis && analysis.sig === game.pgn() ? analysis : null };
+    return _analysisTick.v;
   }
 
   /**
@@ -2868,6 +2896,7 @@
   function appGameOver() { return naturalGameOver() || ruleTerminated(); }
 
   function sync() {
+    _analysisTick = null; // see analysisFor(): the memo lives exactly one cycle
     draw();
     const h = sanHistory();
     document.getElementById("status").textContent = statusText();

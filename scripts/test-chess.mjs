@@ -1567,6 +1567,27 @@ for (const lang of CONTENT_LANGS) {
     }
     return "";
   };
+  // analysisFor() sits in the render path. `analysis.sig` is a PGN, and
+  // game.pgn() costs ~3.3ms on an 80-move game — a fifth of a 60fps frame.
+  // 1.22 put the best-move arrow in the board model, which is rebuilt on every
+  // draw() including every animation frame, so a 12-frame replay slide spent
+  // ~40ms serialising the same PGN twelve times. The memo has to be exact, not
+  // just fast: dropped on every sync(), and keyed on the analysis object so
+  // that replacing it invalidates without seven assignment sites remembering.
+  const af = fnOf("analysisFor");
+  assert(/_analysisTick/.test(af), "analysisFor is memoised");
+  assert(/_analysisTick\.a === analysis/.test(af), "…and the memo notices a new analysis object");
+  const syncFn = fnOf("sync");
+  assert(/_analysisTick = null/.test(syncFn), "…and sync() drops it, so no frame can outlive a state change");
+  assert(appSrc.indexOf("_analysisTick = null") < appSrc.indexOf("draw();", appSrc.indexOf("function sync()")),
+    "…before sync() paints, not after");
+
+  // checkmate must not render as an ordinary check
+  const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+  assert(/m\.mated/.test(boardSrc), "the board draws checkmate differently from check");
+  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 3,
+    "every board model says whether the check is mate");
+
   // the analyser must not carry a fifth copy of the numbers
   const analyze = fnOf("analyzeGame");
   assert(/Review\.markFor\(/.test(analyze), "the analyser tags moves through review.js");
@@ -1638,11 +1659,34 @@ for (const lang of CONTENT_LANGS) {
     "a different line is a different drill");
 
   // the one-time migration off the positional ids
-  const legacy = D.legacyIdMap(book);
-  assert(Object.keys(legacy).length === base.length, "every current drill has a legacy id mapped");
+  const legacy = D.legacyIdMap();
   const deep = D.drillLines(book);
+  assert(Object.keys(legacy).length === base.length, "every current drill has a legacy id mapped");
   assert(legacy["op-" + deep[7][0] + "-7"] === D.drillId(deep[7][0], deep[7][2]),
     "the legacy map points each old index at the row it actually named");
+  // The table is FROZEN, not derived: it has to keep describing the book the
+  // positional ids were written against, and it must not move when the book
+  // grows. Deriving it made the migration correct only for someone upgrading
+  // from that exact book — which says nothing about a player who skips the
+  // release. Measured: with a derived table, inserting one line dropped 66 to
+  // 108 of the 109 drills.
+  deep.forEach((row, i) => {
+    const frozen = legacy["op-" + row[0] + "-" + i];
+    if (frozen !== D.drillId(row[0], row[2])) {
+      console.error("FAIL: 冻结表第 " + i + " 条 (" + row[0] + " " + row[1] + ") 与当前书对不上");
+      failed++;
+    }
+  });
+  assert(D.legacyIdMap.length === 0, "the legacy map takes no book — it is data, not a derivation");
+  const grown = book.slice();
+  grown.splice(firstDeep + 1, 0, ["A05", "列蒂开局·又一条", "Nf3 d5 g3 c6 Bg2 Bf5"]);
+  assert(JSON.stringify(D.legacyIdMap()) === JSON.stringify(legacy),
+    "growing the book does not move the frozen table");
+  // a legacy key still resolves to the same drill after the book grows
+  const afterGrow = new Set(idsOf(grown));
+  const stillThere = Object.values(legacy).filter((id) => afterGrow.has(id)).length;
+  assert(stillThere === base.length,
+    "every migrated id still names a live drill after the book grows (" + stillThere + "/" + base.length + ")");
   const store = { ["op-" + deep[0][0] + "-0"]: true, "m1-ladder": true, "op-A05-9999": true };
   const moved = D.migrateIds(store, legacy);
   assert(moved === 1, "the one legacy key that still names a row is rewritten (" + moved + ")");

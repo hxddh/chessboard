@@ -61,6 +61,20 @@ jobs:
         # default. That is how close_policy = "hide" shipped dead in 1.18.
         shell: bash
         run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
+      # src/main.zig has carried `test` blocks since 1.21.2 and nothing has ever
+      # run them — `zig build test` exists in build.zig and no workflow, and no
+      # script, called it. That includes the guard written for the JSON
+      # unescaping fix, which shipped in two releases described as guarded.
+      #
+      # It is worse than an unrun test: Zig only analyses a `test` block when
+      # building tests, so one that does not even compile leaves `zig build`
+      # perfectly green. This step is the first time these are known to work.
+      #
+      # It lives here rather than in checks.yml because the test module imports
+      # the Native SDK, which only the platform runners have.
+      - name: zig build test
+        shell: bash
+        run: zig build test -Dplatform=windows -Dnative-sdk-path="$SDK_PATH"
       - name: zig build
         shell: bash
         run: zig build -Doptimize=ReleaseFast -Dplatform=windows -Dnative-sdk-path="$SDK_PATH"

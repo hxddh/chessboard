@@ -90,6 +90,17 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
     }
 }
 
+// Buffer sizes for the two file handlers, at file scope so the tests below can
+// check the arithmetic between them. They used to be literals inside the
+// functions, which is fine until one of them moves: base64 grows a payload by
+// 4/3, so raising the read limit without raising the encode buffer turns every
+// large file into error.InvalidRequest, and raising the write cap without
+// raising the decode buffer does the same to every large save.
+const READ_MAX_BYTES: usize = 256 * 1024;
+const READ_B64_BUF: usize = 360 * 1024;
+const WRITE_B64_MAX: usize = 512 * 1024;
+const WRITE_DECODED_BUF: usize = 384 * 1024;
+
 /// Raw (still-escaped) bytes of a JSON string field, without the quotes.
 fn jsonStringFieldRaw(payload: []const u8, key: []const u8) ?[]const u8 {
     var key_buf: [96]u8 = undefined;
@@ -195,9 +206,9 @@ fn writeTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, 
     // base64 needs no unescaping — its alphabet has nothing JSON would escape
     const b64 = jsonStringFieldRaw(invocation.request.payload, "b64") orelse return error.InvalidRequest;
     if (path.len == 0) return error.InvalidRequest;
-    if (b64.len == 0 or b64.len > 512 * 1024) return error.InvalidRequest;
+    if (b64.len == 0 or b64.len > WRITE_B64_MAX) return error.InvalidRequest;
 
-    var decoded_buf: [384 * 1024]u8 = undefined;
+    var decoded_buf: [WRITE_DECODED_BUF]u8 = undefined;
     const dec = std.base64.standard.Decoder;
     const dec_len = dec.calcSizeForSlice(b64) catch return error.InvalidRequest;
     if (dec_len > decoded_buf.len) return error.InvalidRequest;
@@ -228,16 +239,15 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
     // error for the one straddling it, reported to the player as an ordinary
     // failed import. The spare byte turns "too big" into something the caller
     // can be told about.
-    const MAX_BYTES: usize = 256 * 1024;
-    var raw_buf: [MAX_BYTES + 1]u8 = undefined;
+    var raw_buf: [READ_MAX_BYTES + 1]u8 = undefined;
     const n = file.readPositionalAll(self.io, &raw_buf, 0) catch return error.HandlerFailed;
     if (n == 0) return error.InvalidRequest;
-    if (n > MAX_BYTES) {
-        return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{MAX_BYTES}) catch
+    if (n > READ_MAX_BYTES) {
+        return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{READ_MAX_BYTES}) catch
             return error.HandlerFailed;
     }
 
-    var b64_buf: [360 * 1024]u8 = undefined;
+    var b64_buf: [READ_B64_BUF]u8 = undefined;
     const enc = std.base64.standard.Encoder;
     const enc_len = enc.calcSize(n);
     if (enc_len > b64_buf.len) return error.InvalidRequest;
@@ -259,6 +269,49 @@ pub fn main(init: std.process.Init) !void {
         .js_window_api = true,
         .bridge = app_state.bridge(),
     }, init);
+}
+
+test "the file handlers' buffers fit the limits they advertise" {
+    const enc = std.base64.standard.Encoder;
+    const dec = std.base64.standard.Decoder;
+
+    // Read path: a file at exactly the limit must still encode. base64 grows a
+    // payload by 4/3, so this is the pair that breaks first if the limit moves
+    // — and it breaks by turning every large file into InvalidRequest, which
+    // reads to the player as "this file is broken" rather than "too big".
+    try std.testing.expect(enc.calcSize(READ_MAX_BYTES) <= READ_B64_BUF);
+    // the spare byte that makes truncation observable at all
+    try std.testing.expect(READ_MAX_BYTES + 1 > READ_MAX_BYTES);
+
+    // Write path: the largest base64 the handler accepts must decode into the
+    // buffer it decodes into.
+    const max_decoded = try dec.calcSizeUpperBound(WRITE_B64_MAX);
+    try std.testing.expect(max_decoded <= WRITE_DECODED_BUF);
+}
+
+test "an oversized read answers with a refusal, not a truncated file" {
+    // The handler cannot be called without an SDK Invocation and an Io, but the
+    // answer it writes is plain formatting and is exactly what host.js keys on.
+    var out: [64]u8 = undefined;
+    const refusal = try std.fmt.bufPrint(&out, "{{\"tooLarge\":true,\"limit\":{d}}}", .{READ_MAX_BYTES});
+    try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":262144}", refusal);
+}
+
+test "base64 survives the round trip the bridge puts it through" {
+    const enc = std.base64.standard.Encoder;
+    const dec = std.base64.standard.Decoder;
+    // every remainder class of 3, since that is where base64 padding differs
+    for ([_]usize{ 0, 1, 2, 3, 4, 5, 6, 1023, 1024, 1025 }) |n| {
+        var src: [1025]u8 = undefined;
+        for (src[0..n], 0..) |*b, i| b.* = @truncate(i * 31 + 7);
+        var b64: [2048]u8 = undefined;
+        const encoded = enc.encode(b64[0..enc.calcSize(n)], src[0..n]);
+        var back: [1025]u8 = undefined;
+        const dec_len = try dec.calcSizeForSlice(encoded);
+        try std.testing.expectEqual(n, dec_len);
+        try dec.decode(back[0..dec_len], encoded);
+        try std.testing.expectEqualSlices(u8, src[0..n], back[0..dec_len]);
+    }
 }
 
 test "jsonStringField unescapes what the page escaped" {
