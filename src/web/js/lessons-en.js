@@ -307,6 +307,46 @@
         retry: "The knight is still pinned — move the king off the e-file",
       }],
     },
+    deflect: {
+      part: "Tactics", title: "Deflection: send the defender away",
+      text: [
+        "A piece is often safe only because **something else is guarding it**. To win it you do not have to attack it head-on — get the guard to leave first.",
+        "The bluntest way is a check: the opponent must answer it, the guard is dragged off its post, and the thing it was watching is suddenly nobody's job.",
+      ],
+      tasks: [{ prompt: "The knight on d5 is guarded by the rook on d8. Check with Re8 — Black's rook has to take it, the d-file opens, and the knight is on its own", retry: "Ask first: what is guarding d5, and how do you force it off the d-file?" }],
+    },
+    remove: {
+      part: "Tactics", title: "Removing the defender: just take the guard",
+      text: [
+        "There are two ways to get rid of a guard: force it to move (deflection), or **capture it outright**.",
+        "Before any exchange, ask one more question: what is the piece I am taking currently guarding? Once it is gone, that thing is yours.",
+      ],
+      tasks: [{ prompt: "The rook on b8 is guarded by the knight on d7. Take the knight with the bishop — with check — and the rook is left standing alone", retry: "Do not grab the rook first — look at who is guarding it" }],
+    },
+    overload: {
+      part: "Tactics", title: "Overloading: one piece cannot do two jobs",
+      text: [
+        "A piece guarding two things at once is **overloaded**. It looks like it covers both, but force it to attend to one and the other collapses.",
+        "When an enemy piece is holding down two jobs, attack one of them — it can save that, or the other, not both.",
+      ],
+      tasks: [{ prompt: "The rook on c8 guards both the back rank and the knight on c5 — two jobs. Check with Re8 and make it deal with the back rank", retry: "Find the piece doing two jobs, then make it choose" }],
+    },
+    decoy: {
+      part: "Tactics", title: "Decoy: lure a piece to the square you want it on",
+      text: [
+        "Deflection drives a piece **away**. A decoy does the opposite — it lures a piece **towards** you, onto a square where standing there is fatal.",
+        "The usual method is a sacrifice with check: the opponent has to take, and taking puts his king exactly where your knight forks it.",
+      ],
+      tasks: [{ prompt: "Give the rook up on h8 with check — the king must take. Now it stands on h8, and the knight on f7 forks king and queen at once", retry: "Work out first: which square does the king have to be lured to for your knight to fork it and the queen?" }],
+    },
+    interfere: {
+      part: "Tactics", title: "Interference: cut the line the guard is watching along",
+      text: [
+        "A guard watches its target along a line — a rank, a file or a diagonal. **Put a piece in the middle of that line** and the sight is broken; the target is undefended.",
+        "The piece you interpose usually can be taken, so it either needs protecting, or taking it has to cost more than losing the target.",
+      ],
+      tasks: [{ prompt: "Black's rook on b8 guards the bishop on b5 down the b-file. Jump the knight into b6 to cut the line — the c5 pawn protects it, so taking it is a bad deal", retry: "Which line is the rook guarding along? Put something protected in the middle of it" }],
+    },
     mate: {
       part: "Rules and results", title: "Checkmate: ending the game",
       text: [

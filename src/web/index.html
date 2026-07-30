@@ -93,13 +93,24 @@
         <div class="setting-list">
           <div class="setting-row stack" id="row-difficulty">
             <span class="setting-k" data-i18n="side.difficulty">难度</span>
+            <!-- Two scales, not one ladder of six. The first pair are
+                 hand-weakened sparring tiers (shallow MultiPV sampling); the
+                 rest are Stockfish limited by UCI_Elo. Shown as one row, the
+                 order could not be read off the labels — which was a symptom
+                 of the two scales being merged, not of the words. The Elo
+                 values stay in the tooltips: they are an engine setting, and
+                 nothing in this app gives the player a rating to compare with. -->
+            <span class="diff-group" data-i18n="diff.groupSpar">陪练档</span>
             <div class="theme-row wrap" id="diff-seg" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
               <button type="button" data-diff="beginner" title="会主动犯错的陪练,适合教学毕业第一局" data-i18n-title="tip.13" data-i18n="diff.beginner">新手</button>
               <button type="button" data-diff="casual" title="比新手准一些,但还会犯错 —— 打赢新手之后的下一格" data-i18n-title="tip.casual" data-i18n="diff.casual">休闲</button>
-              <button type="button" data-diff="easy" title="Elo 1320" data-i18n="diff.easy">入门</button>
-              <button type="button" data-diff="normal" class="active" title="Elo 1700" data-i18n="diff.normal">进阶</button>
-              <button type="button" data-diff="hard" title="Elo 2200" data-i18n="diff.hard">困难</button>
-              <button type="button" data-diff="extreme" title="Stockfish 满强度" data-i18n-title="tip.00" data-i18n="diff.extreme">极限</button>
+            </div>
+            <span class="diff-group" data-i18n="diff.groupEngine">棋力档</span>
+            <div class="theme-row wrap" id="diff-seg-engine" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
+              <button type="button" data-diff="easy" title="Stockfish UCI_Elo 1320(该选项的下限)" data-i18n-title="tip.diffEasy" data-i18n="diff.easy">初级</button>
+              <button type="button" data-diff="normal" class="active" title="Stockfish UCI_Elo 1700" data-i18n-title="tip.diffNormal" data-i18n="diff.normal">中级</button>
+              <button type="button" data-diff="hard" title="Stockfish UCI_Elo 2200" data-i18n-title="tip.diffHard" data-i18n="diff.hard">高级</button>
+              <button type="button" data-diff="extreme" title="Stockfish 满强度" data-i18n-title="tip.00" data-i18n="diff.extreme">满强度</button>
             </div>
           </div>
           <div class="setting-row stack" id="row-persona">
@@ -110,12 +121,24 @@
               <button type="button" data-persona="principled" title="按开局三原则出子:抢中心、快出轻子、尽早易位" data-i18n-title="tip.64" data-i18n="persona.principled">重原则</button>
               <button type="button" data-persona="attacker" title="子力一直往你的王那边压,练防守用" data-i18n-title="tip.65" data-i18n="persona.attacker">爱进攻</button>
             </div>
+            <span class="setting-note" data-i18n="side.personaNote">风格叠加在难度之上 —— 换风格不改变棋力,只改变它偏爱哪种着法</span>
           </div>
           <div class="setting-row stack" id="row-color">
             <span class="setting-k" data-i18n="side.color">执子</span>
             <div class="theme-row" id="color-seg" role="group" aria-label="执子" data-i18n-aria="side.color">
               <button type="button" data-color="w" class="active" title="执白先行" data-i18n-title="tip.36" data-i18n="color.white">执白</button>
               <button type="button" data-color="b" title="执黑后行" data-i18n-title="tip.37" data-i18n="color.black">执黑</button>
+            </div>
+          </div>
+          <div class="setting-row stack" id="row-clock" hidden>
+            <span class="setting-k" data-i18n="side.clock">棋钟</span>
+            <div class="theme-row wrap" id="clock-seg" role="group" aria-label="棋钟" data-i18n-aria="side.clock">
+              <button type="button" data-tc="off" class="active" title="不限时" data-i18n-title="tip.07" data-i18n="clock.off">关</button>
+              <button type="button" data-tc="3" title="每方 3 分钟" data-i18n-title="tip.45">3</button>
+              <button type="button" data-tc="3+2" title="每方 3 分钟,每步加 2 秒" data-i18n-title="tip.46">3+2</button>
+              <button type="button" data-tc="5" title="每方 5 分钟" data-i18n-title="tip.47">5</button>
+              <button type="button" data-tc="5+3" title="每方 5 分钟,每步加 3 秒" data-i18n-title="tip.48">5+3</button>
+              <button type="button" data-tc="10" title="每方 10 分钟" data-i18n-title="tip.44">10</button>
             </div>
           </div>
           <div class="setting-row" id="row-coach">
@@ -129,17 +152,6 @@
             <button type="button" class="switch" id="opt-autoflip" aria-pressed="false">
               <span class="switch-knob"></span>
             </button>
-          </div>
-          <div class="setting-row stack" id="row-clock" hidden>
-            <span class="setting-k" data-i18n="side.clock">棋钟</span>
-            <div class="theme-row wrap" id="clock-seg" role="group" aria-label="棋钟" data-i18n-aria="side.clock">
-              <button type="button" data-tc="off" class="active" title="不限时" data-i18n-title="tip.07" data-i18n="clock.off">关</button>
-              <button type="button" data-tc="3" title="每方 3 分钟" data-i18n-title="tip.45">3</button>
-              <button type="button" data-tc="3+2" title="每方 3 分钟,每步加 2 秒" data-i18n-title="tip.46">3+2</button>
-              <button type="button" data-tc="5" title="每方 5 分钟" data-i18n-title="tip.47">5</button>
-              <button type="button" data-tc="5+3" title="每方 5 分钟,每步加 3 秒" data-i18n-title="tip.48">5+3</button>
-              <button type="button" data-tc="10" title="每方 10 分钟" data-i18n-title="tip.44">10</button>
-            </div>
           </div>
         </div>
       </section>
