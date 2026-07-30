@@ -2289,13 +2289,14 @@ for (const lang of CONTENT_LANGS) {
   // list has to be maintained by hand, which is the point: each entry is a
   // decision someone made, not an oversight that slipped through.
   const SHARED_WITH_ZH = {
-    // The four Elo-based difficulty labels are the ratings themselves. 1.24
-    // replaced 入门/进阶/困难 with the numbers because the words did not read
-    // in order — "入门" sits above "休闲" but sounds easier, so nobody could
-    // tell the sequence from the labels. A number needs no translation.
+    // The two plain Elo tooltips are a product name and a number — there is
+    // nothing in them to translate. (The labels themselves are words: 1.24
+    // briefly put the Elo values ON the buttons, which was wrong. UCI_Elo is
+    // an engine setting, its floor of 1320 is already above a real beginner,
+    // and this app never gives the player a rating to compare against.)
     ja: new Set(["act.pgnCopy", "act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
       "learn.lessonPre", "ed.crK", "ed.crQ",
-      "diff.easy", "diff.normal", "diff.hard"]),
+      "tip.diffNormal", "tip.diffHard"]),
   };
   let untranslated = 0;
   for (const id of langs) {

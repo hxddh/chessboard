@@ -3064,7 +3064,8 @@
     document.querySelectorAll("#mode-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.mode === mode);
     });
-    document.querySelectorAll("#diff-seg button").forEach((b) => {
+    // two rows now: sparring tiers and engine-strength tiers (see index.html)
+    document.querySelectorAll("#diff-seg button, #diff-seg-engine button").forEach((b) => {
       b.classList.toggle("active", b.dataset.diff === difficulty);
     });
     document.querySelectorAll("#persona-seg button").forEach((b) => {
@@ -4871,7 +4872,7 @@
     toast(!tcSet ? t("m.46") :
       tf("mm.clockSet", [tcSet.base / 60]) + (tcSet.inc ? tf("mm.clockInc", [tcSet.inc]) : ""));
   };
-  document.getElementById("diff-seg").onclick = (ev) => {
+  const onDiffClick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
     if (!b || b.dataset.diff === difficulty) return;
     difficulty = b.dataset.diff;
@@ -4879,6 +4880,9 @@
     sync();
     toast(t("m.66") + (DIFF_NAMES[difficulty] || difficulty));
   };
+  document.getElementById("diff-seg").onclick = onDiffClick;
+  const diffEngineSeg = document.getElementById("diff-seg-engine");
+  if (diffEngineSeg) diffEngineSeg.onclick = onDiffClick;
   document.getElementById("persona-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-persona]");
     if (!b || b.dataset.persona === personaId) return;

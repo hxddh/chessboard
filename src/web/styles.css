@@ -1234,6 +1234,13 @@
       background: var(--card);
       border: 1px solid var(--card-border);
     }
+    /* The difficulty row is two scales, so it is labelled as two. */
+    .diff-group {
+      display: block; margin: 6px 0 4px;
+      font-size: 11px; font-weight: 600; color: var(--muted);
+    }
+    .diff-group:first-of-type { margin-top: 0; }
+
     /* Achievement grouping (1.24): a wall of padlocks says "you have nothing";
        a group header plus the nearest one says "start here". */
     .ach-next {
