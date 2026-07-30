@@ -1234,6 +1234,25 @@
       background: var(--card);
       border: 1px solid var(--card-border);
     }
+    /* Achievement grouping (1.24): a wall of padlocks says "you have nothing";
+       a group header plus the nearest one says "start here". */
+    .ach-next {
+      margin-bottom: 8px; padding: 6px 8px;
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      font-size: 12px; line-height: var(--lh-body); color: var(--text);
+    }
+    .ach-group {
+      margin: 8px 0 4px; font-size: 11px; font-weight: 600; color: var(--muted);
+    }
+    .ach-group:first-child { margin-top: 0; }
+
+    /* A one-line note under a setting, for the thing the label cannot say. */
+    .setting-note {
+      display: block; margin-top: 4px;
+      font-size: 11px; line-height: var(--lh-body); color: var(--muted);
+    }
+
     /* Eval bar: the curve read at one ply. White's share fills from the left,
        so "the bar is mostly light" means what it looks like it means. An
        unmeasured position is NOT drawn as a level bar — see ChessReview.evalBar. */

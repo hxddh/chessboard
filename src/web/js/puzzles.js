@@ -105,6 +105,19 @@
       fen: "3q3k/6pp/8/6N1/8/8/8/6K1 w - - 0 1", solution: ["Nf7+", "Kg8", "Nxd8"], gain: 9 },
     // —— 战术母题 ——(tac:串击 3 步、闪将 1 步;单测证明对所有防守强制得子)
     // 串击:将军逼高价值子让位,吃其身后目标(target=身后子;check→任意应→吃)
+    // —— 1.24: 引离 / 消除防守者 / 过载 —— 靠调走或吃掉守家的子来得子 ——
+    { id: "t-deflect-r", cat: "tac", name: "把车引离底线", motif: "引离",
+      fen: "3r2k1/5ppp/8/3n4/8/8/5PBP/4R1K1 w - - 0 1", first: "Re8+", target: "d5", gain: 3,
+      line: ["Re8+", "Rxe8", "Bxd5"] },
+    { id: "t-remove-n", cat: "tac", name: "吃掉守马的马", motif: "消除防守者",
+      fen: "1r2k3/3n1ppp/8/8/6B1/8/5PPP/1R4K1 w - - 0 1", first: "Bxd7+", target: "b8", gain: 5,
+      line: ["Bxd7+", "Kxd7", "Rxb8"] },
+    { id: "t-remove-b", cat: "tac", name: "吃掉守车的象", motif: "消除防守者",
+      fen: "3k4/5bpp/8/4N3/8/1r6/5PPP/1R4K1 w - - 0 1", first: "Nxf7+", target: "b3", gain: 5,
+      line: ["Nxf7+", "Kd7", "Rxb3"] },
+    { id: "t-overload-r", cat: "tac", name: "逼过载的车二选一", motif: "过载",
+      fen: "2r3k1/5ppp/8/2n5/8/B7/5PPP/4R1K1 w - - 0 1", first: "Re8+", target: "c5", gain: 3,
+      line: ["Re8+", "Rxe8", "Bxc5"] },
     { id: "t-skewer-h", cat: "tac", name: "串击得后(直线)", motif: "串击",
       fen: "7q/8/8/7k/8/8/4K3/R7 w - - 0 1", first: "Rh1+", target: "h8", gain: 9,
       line: ["Rh1+", "Kg6", "Rxh8"] },

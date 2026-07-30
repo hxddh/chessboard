@@ -2289,8 +2289,13 @@ for (const lang of CONTENT_LANGS) {
   // list has to be maintained by hand, which is the point: each entry is a
   // decision someone made, not an oversight that slipped through.
   const SHARED_WITH_ZH = {
+    // The four Elo-based difficulty labels are the ratings themselves. 1.24
+    // replaced 入门/进阶/困难 with the numbers because the words did not read
+    // in order — "入门" sits above "休闲" but sounds easier, so nobody could
+    // tell the sequence from the labels. A number needs no translation.
     ja: new Set(["act.pgnCopy", "act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
-      "learn.lessonPre", "ed.crK", "ed.crQ"]),
+      "learn.lessonPre", "ed.crK", "ed.crQ",
+      "diff.easy", "diff.normal", "diff.hard"]),
   };
   let untranslated = 0;
   for (const id of langs) {

@@ -62,6 +62,10 @@
     "w-royalfork2": { name: "Knight forks king and queen II" },
     // —— tactical motifs ——
     "t-skewer-h": { name: "Skewer wins the queen (file)", motif: "skewer" },
+    "t-deflect-r": { name: "Deflect the rook off the file", motif: "deflection" },
+    "t-remove-n": { name: "Take the knight that guards the rook", motif: "removing the defender" },
+    "t-remove-b": { name: "Take the bishop that guards the rook", motif: "removing the defender" },
+    "t-overload-r": { name: "Make the overloaded rook choose", motif: "overloading" },
     "t-disco-q": { name: "Discovered check nets the queen", motif: "discovered check" },
     "t-disco-r": { name: "Discovered check nets the rook", motif: "discovered check" },
     "t-disco-b": { name: "Discovered check nets the queen (bishop)", motif: "discovered check" },

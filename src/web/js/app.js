@@ -2739,7 +2739,41 @@
     el.innerHTML = "";
     const head = document.getElementById("ach-count");
     if (head) head.textContent = got + "/" + res.length;
-    for (const r of res) {
+
+    // A new player used to open this and see fourteen padlocks in a row: no
+    // grouping, and nothing to say which one is one game away versus seventy
+    // puzzles away. Unlocked ones come first, then the locked ones ordered by
+    // how close they are, and the closest gets called out by name.
+    const frac = (r) => {
+      if (!r.ach.progress) return 0.5; // no counter: neither near nor far
+      const [done, total] = r.ach.progress(res.summary);
+      return total > 0 ? Math.min(1, done / total) : 0;
+    };
+    const unlocked = res.filter((r) => r.unlocked);
+    const locked = res.filter((r) => !r.unlocked).sort((a, b) => frac(b) - frac(a));
+    const next = locked[0];
+    if (next) {
+      const tip = document.createElement("div");
+      tip.className = "ach-next";
+      const nm = next.ach.nameKey ? t(next.ach.nameKey) : next.ach.name;
+      const desc = next.ach.descKey ? t(next.ach.descKey) : next.ach.desc;
+      tip.textContent = t("ach.next") + nm + " · " + desc;
+      el.appendChild(tip);
+    }
+    const groups = [];
+    if (unlocked.length) groups.push(["ach.got", unlocked]);
+    if (locked.length) groups.push(["ach.locked", locked]);
+    for (const [key, rows] of groups) {
+      const h = document.createElement("div");
+      h.className = "ach-group";
+      h.textContent = t(key) + " " + rows.length;
+      el.appendChild(h);
+      renderAchRows(rows, res, el);
+    }
+  }
+
+  function renderAchRows(rows, res, el) {
+    for (const r of rows) {
       const b = document.createElement("div");
       b.className = "ach-item" + (r.unlocked ? " got" : "");
       b.title = r.ach.descKey ? t(r.ach.descKey) : r.ach.desc;

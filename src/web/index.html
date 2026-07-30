@@ -110,12 +110,24 @@
               <button type="button" data-persona="principled" title="按开局三原则出子:抢中心、快出轻子、尽早易位" data-i18n-title="tip.64" data-i18n="persona.principled">重原则</button>
               <button type="button" data-persona="attacker" title="子力一直往你的王那边压,练防守用" data-i18n-title="tip.65" data-i18n="persona.attacker">爱进攻</button>
             </div>
+            <span class="setting-note" data-i18n="side.personaNote">风格叠加在难度之上 —— 换风格不改变棋力,只改变它偏爱哪种着法</span>
           </div>
           <div class="setting-row stack" id="row-color">
             <span class="setting-k" data-i18n="side.color">执子</span>
             <div class="theme-row" id="color-seg" role="group" aria-label="执子" data-i18n-aria="side.color">
               <button type="button" data-color="w" class="active" title="执白先行" data-i18n-title="tip.36" data-i18n="color.white">执白</button>
               <button type="button" data-color="b" title="执黑后行" data-i18n-title="tip.37" data-i18n="color.black">执黑</button>
+            </div>
+          </div>
+          <div class="setting-row stack" id="row-clock" hidden>
+            <span class="setting-k" data-i18n="side.clock">棋钟</span>
+            <div class="theme-row wrap" id="clock-seg" role="group" aria-label="棋钟" data-i18n-aria="side.clock">
+              <button type="button" data-tc="off" class="active" title="不限时" data-i18n-title="tip.07" data-i18n="clock.off">关</button>
+              <button type="button" data-tc="3" title="每方 3 分钟" data-i18n-title="tip.45">3</button>
+              <button type="button" data-tc="3+2" title="每方 3 分钟,每步加 2 秒" data-i18n-title="tip.46">3+2</button>
+              <button type="button" data-tc="5" title="每方 5 分钟" data-i18n-title="tip.47">5</button>
+              <button type="button" data-tc="5+3" title="每方 5 分钟,每步加 3 秒" data-i18n-title="tip.48">5+3</button>
+              <button type="button" data-tc="10" title="每方 10 分钟" data-i18n-title="tip.44">10</button>
             </div>
           </div>
           <div class="setting-row" id="row-coach">
@@ -129,17 +141,6 @@
             <button type="button" class="switch" id="opt-autoflip" aria-pressed="false">
               <span class="switch-knob"></span>
             </button>
-          </div>
-          <div class="setting-row stack" id="row-clock" hidden>
-            <span class="setting-k" data-i18n="side.clock">棋钟</span>
-            <div class="theme-row wrap" id="clock-seg" role="group" aria-label="棋钟" data-i18n-aria="side.clock">
-              <button type="button" data-tc="off" class="active" title="不限时" data-i18n-title="tip.07" data-i18n="clock.off">关</button>
-              <button type="button" data-tc="3" title="每方 3 分钟" data-i18n-title="tip.45">3</button>
-              <button type="button" data-tc="3+2" title="每方 3 分钟,每步加 2 秒" data-i18n-title="tip.46">3+2</button>
-              <button type="button" data-tc="5" title="每方 5 分钟" data-i18n-title="tip.47">5</button>
-              <button type="button" data-tc="5+3" title="每方 5 分钟,每步加 3 秒" data-i18n-title="tip.48">5+3</button>
-              <button type="button" data-tc="10" title="每方 10 分钟" data-i18n-title="tip.44">10</button>
-            </div>
           </div>
         </div>
       </section>
