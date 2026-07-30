@@ -53,6 +53,7 @@ node scripts/test-board-e2e.mjs
 node scripts/test-clock-e2e.mjs
 node scripts/test-content-e2e.mjs
 node scripts/test-persist-e2e.mjs
+node scripts/test-review-e2e.mjs
 
 echo "==> derive the macOS manifest (close_policy = hide)"
 node scripts/gen-manifest.mjs macos

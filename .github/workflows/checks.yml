@@ -76,3 +76,5 @@ jobs:
         run: node scripts/test-content-e2e.mjs
       - name: persistence
         run: node scripts/test-persist-e2e.mjs
+      - name: review
+        run: node scripts/test-review-e2e.mjs

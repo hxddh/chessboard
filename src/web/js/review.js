@@ -84,5 +84,50 @@
     return "rv.verdict.roomToGrow";
   }
 
-  global.ChessReview = { summarize, verdictKey, moveNumber, INACCURACY, MISTAKE, BLUNDER };
+  /**
+   * Where an evaluation sits on a 0..1 bar, 0 = Black winning, 1 = White.
+   *
+   * Deliberately returns null rather than 0.5 for an unmeasured position. The
+   * two mean opposite things — "the engine says this is level" and "nobody
+   * asked the engine" — and a bar that renders them identically is the most
+   * confident kind of lie a review can tell. The caller has to show the
+   * difference; making it impossible to forget is why this is not 0.5.
+   *
+   * @param {number|null} cp centipawns, positive = good for White
+   * @returns {number|null} 0..1, or null when there is nothing to show
+   */
+  function evalBar(cp) {
+    if (cp == null || !Number.isFinite(cp)) return null;
+    // ±6 pawns is already decisive; past that the bar has nothing left to say
+    // and only the mate score itself is interesting.
+    const CAP = 600;
+    return 0.5 + (Math.max(-CAP, Math.min(CAP, cp)) / CAP) * 0.5;
+  }
+
+  /**
+   * The tag a move earns for giving up `loss` centipawns, or null for a move
+   * that costs little enough to leave unremarked.
+   *
+   * Shared so the move list, the curve markers and the "you should have
+   * played" arrow can never disagree about what counts as a mistake — three
+   * copies of one threshold is how they start drifting.
+   * @returns {"?!"|"?"|"??"|null}
+   */
+  function markFor(loss) {
+    if (!Number.isFinite(loss)) return null;
+    if (loss >= BLUNDER) return "??";
+    if (loss >= MISTAKE) return "?";
+    if (loss >= INACCURACY) return "?!";
+    return null;
+  }
+
+  /** Is this a tag the player is meant to learn something from? */
+  function isMistake(tag) {
+    return tag === "?!" || tag === "?" || tag === "??";
+  }
+
+  global.ChessReview = {
+    summarize, verdictKey, moveNumber, evalBar, markFor, isMistake,
+    INACCURACY, MISTAKE, BLUNDER,
+  };
 })(typeof window !== "undefined" ? window : globalThis);

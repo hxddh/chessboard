@@ -125,6 +125,10 @@
   let _model = null;
   /** live drag ghost: {from, x, y} in canvas pixels | null */
   let _drag = null;
+  /** how much a piece grows while it is being held */
+  const LIFT = 1.12;
+  /** live rebound of a refused drop: {piece, to, x, y, start, dur} | null */
+  let _rebound = null;
   /** live slide animation: {from, to, start, dur} | null */
   let _anim = null;
 
@@ -232,7 +236,28 @@
     };
     requestAnimationFrame(step);
   }
-  function cancelAnim() { _anim = null; }
+  function cancelAnim() { _anim = null; _rebound = null; }
+
+  /**
+   * Send a refused piece home from where the pointer let it go.
+   * @param {object} piece the {type, color} being dragged
+   * @param {string} to the square it came from
+   * @param {number} x pointer position at the moment of the drop
+   * @param {number} y
+   */
+  function reboundDrag(piece, to, x, y) {
+    if (!_canvas || !_model || !piece || !to) return;
+    if (_reduceMotion) { _rebound = null; return; }
+    _rebound = { piece, to, x, y, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: slideMs() };
+    const step = () => {
+      if (!_rebound) return;
+      const now = typeof performance !== "undefined" ? performance.now() : _rebound.start + _rebound.dur;
+      if (now - _rebound.start >= _rebound.dur) { _rebound = null; draw(); return; }
+      draw();
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 
   function resizeCanvas() {
     if (!_canvas) return;
@@ -338,10 +363,19 @@
     ctx.textBaseline = "middle";
     ctx.font = Math.round(step * 0.78) + "px 'Segoe UI Symbol', 'Apple Color Emoji', serif";
     const spriteSize = Math.max(8, Math.round(step));
-    function paintPiece(piece, x, y) {
+    function paintPiece(piece, x, y, scale) {
+      const k = scale || 1;
       const sprite = spriteFor(piece.color + piece.type, spriteSize);
       if (sprite) {
-        ctx.drawImage(sprite, Math.round(x - spriteSize / 2), Math.round(y - spriteSize / 2));
+        // Scaled at draw time, NOT by asking for a bigger sprite: the sprite
+        // cache holds one size and rebuilds every piece when asked for another,
+        // so a lifted piece would rasterise all twelve on the first drag frame.
+        if (k === 1) {
+          ctx.drawImage(sprite, Math.round(x - spriteSize / 2), Math.round(y - spriteSize / 2));
+        } else {
+          const sz = spriteSize * k;
+          ctx.drawImage(sprite, Math.round(x - sz / 2), Math.round(y - sz / 2), Math.round(sz), Math.round(sz));
+        }
         return;
       }
       const glyph = GLYPHS[piece.type];
@@ -437,11 +471,30 @@
       ctx.closePath();
       ctx.fill();
     }
-    // drag ghost follows the pointer, above everything else
+    // The dragged piece follows the pointer above everything else, lifted:
+    // a shadow and a little scale, so it reads as picked UP rather than as a
+    // copy sliding under the glass.
     if (_drag && dragPiece) {
-      ctx.globalAlpha = 0.9;
-      paintPiece(dragPiece, _drag.x, _drag.y);
-      ctx.globalAlpha = 1;
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.38)";
+      ctx.shadowBlur = step * 0.14;
+      ctx.shadowOffsetY = step * 0.06;
+      paintPiece(dragPiece, _drag.x, _drag.y, LIFT);
+      ctx.restore();
+    }
+    // A piece dropped where it cannot go returns to where it came from. It
+    // used to vanish from under the pointer and reappear on its old square,
+    // which reads as a glitch rather than as "no".
+    if (_rebound) {
+      const now = typeof performance !== "undefined" ? performance.now() : _rebound.start + _rebound.dur;
+      const t = easeOut(Math.max(0, Math.min(1, (now - _rebound.start) / _rebound.dur)));
+      const { sr, sc } = screenPos(_rebound.to, m.flipped);
+      const tx = sc * step + step / 2, ty = sr * step + step / 2;
+      ctx.save();
+      ctx.globalAlpha = 1 - t * 0.25;
+      paintPiece(_rebound.piece, _rebound.x + (tx - _rebound.x) * t,
+        _rebound.y + (ty - _rebound.y) * t, LIFT - (LIFT - 1) * t);
+      ctx.restore();
     }
     // keyboard cursor: a focus ring that must stay readable on both square
     // colours and on top of pieces, so it is drawn as a double stroke
@@ -456,6 +509,20 @@
       ctx.strokeStyle = P.cursor;
       ctx.lineWidth = lw;
       ctx.strokeRect(x + lw, y + lw, w2 - lw * 2, h2 - lw * 2);
+    }
+    // The square under a dragged piece. A drop is a commitment made with the
+    // pointer somewhere over a 60-pixel square, and until now nothing said
+    // which square that was — the player found out by letting go.
+    if (_drag && _drag.over) {
+      const { sr, sc } = screenPos(_drag.over, m.flipped);
+      const cx = sc * step + step / 2, cy = sr * step + step / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, step * 0.46, 0, Math.PI * 2);
+      ctx.strokeStyle = _drag.legal ? P.ring : P.cursor;
+      ctx.globalAlpha = _drag.legal ? 0.95 : 0.3;
+      ctx.lineWidth = step * (_drag.legal ? 0.06 : 0.035);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     // legal-move markers on top of pieces (capture ring / empty dot)
     if (m.legalTargets && m.legalTargets.length) {
@@ -480,5 +547,5 @@
     }
   }
 
-  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, cancelAnim, invalidatePaint };
+  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, reboundDrag, cancelAnim, invalidatePaint };
 })(typeof window !== "undefined" ? window : globalThis);

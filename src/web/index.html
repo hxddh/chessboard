@@ -288,6 +288,14 @@
         </div>
         <div id="eval-wrap" hidden>
           <canvas id="eval-curve" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" title="点击跳转到对应局面" data-i18n-title="tip.53"></canvas>
+          <!-- The curve is the whole game; this is the one position the board
+               is standing on, in a form that needs no axis read. -->
+          <div class="eval-bar-row" id="eval-bar-row" hidden>
+            <div class="eval-bar" id="eval-bar" role="img" aria-label="当前局面形势" data-i18n-aria="aria.evalBar">
+              <span class="eval-bar-fill" id="eval-bar-fill"></span>
+            </div>
+            <span class="eval-bar-text num" id="eval-bar-text"></span>
+          </div>
           <div class="pv-line num" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级" data-i18n-title="tip.54"></div>
           <div class="pv-line num" id="pv-line" hidden></div>
           <div class="review" id="review-body" hidden></div>

@@ -1,6 +1,7 @@
 (function () {
 
   const Host = window.ChessHost;
+  const Review = window.ChessReview;
   const BoardView = window.ChessBoardView;
   const Audio2 = window.ChessAudio;
 
@@ -205,11 +206,32 @@
       legalTargets: selection ? selection.targets : [],
       lastMove: last ? { from: last.from, to: last.to } : null,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
-      hintMove: isLive() ? hintMove : null,
+      // Live: the hint the player asked for. Replaying an analysed game: the
+      // move the engine would have played, but only where the move actually
+      // played was a mistake — that is the moment the question "so what should
+      // I have done" is being asked, and drawing it everywhere else is just an
+      // arrow permanently on the board. Never during live play, where it would
+      // be an answer key rather than a review.
+      hintMove: isLive() ? hintMove : bestArrowAt(viewIndex),
       stars: [],
       cursor: cursorSquare(),
     };
   });
+
+  /**
+   * The engine's choice at the position `i` plies in, as a board arrow —
+   * derived from the analysis and the replay cursor, never stored. Nothing to
+   * clear on a new game, nothing to migrate, nothing that can fall out of step
+   * with the board because it *is* a function of the board.
+   */
+  function bestArrowAt(i) {
+    const a = analysisFor();
+    if (!a || !a.bests || !a.tags) return null;
+    if (!Review.isMistake(a.tags[i])) return null;
+    const uci = a.bests[i];
+    if (!uci || uci.length < 4) return null;
+    return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
+  }
 
   function draw() { BoardView.draw(); }
 
@@ -1882,6 +1904,9 @@
     setAnalyzeUI();
     const scalars = new Array(fens.length).fill(null);
     const pvs = new Array(fens.length).fill(null);
+    // the engine's own choice at each position, UCI — this is what the board
+    // draws an arrow for when the move actually played was a mistake
+    const bests = new Array(fens.length).fill(null);
     // Repetition count per position as the replay walks forward, so the
     // terminal test below can tell fivefold (art. 9.6, the game is over) from
     // threefold (art. 9.2, a player may claim and the game otherwise goes on).
@@ -1891,7 +1916,7 @@
         analyzing = false; analyzeAbort = false; analyzeProgress = "";
         // keep whatever was already measured — a partial curve still helps
         if (i > 1) {
-          analysis = { sig, scalars, tags: h.map(() => null), pvs };
+          analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
           toast(t("m.30") + (i - 1) + t("m.31"));
         } else toast(t("m.29"));
         sync();
@@ -1914,6 +1939,7 @@
         try { e = await window.ChessEngine.analyze(fens[i], perMove); } catch (_) {}
         if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
         scalars[i] = evalScalar(e);
+        if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
         // principal variation, converted to SAN for display
         if (e && e.pv && e.pv.length) {
           const pvProbe = new Chess(fens[i]);
@@ -1936,12 +1962,12 @@
       if (a == null || b == null) return null;
       const moverIsWhite = fens[i].split(" ")[1] === "w";
       const loss = moverIsWhite ? a - b : b - a;
-      if (loss >= 300) return "??";
-      if (loss >= 100) return "?";
-      if (loss >= 50) return "?!";
-      return null;
+      // one source for the thresholds: the move list, the curve markers and
+      // the best-move arrow all read the same call. This used to be a fourth
+      // hand-written copy of 300/100/50 sitting next to review.js's constants.
+      return Review.markFor(loss);
     });
-    analysis = { sig, scalars, tags, pvs, acc: accuracyFrom(fens, scalars) };
+    analysis = { sig, scalars, tags, pvs, bests, acc: accuracyFrom(fens, scalars) };
     analyzing = false;
     analyzeProgress = "";
     recordAccuracy();
@@ -2028,7 +2054,7 @@
     const wrap = document.getElementById("eval-wrap");
     if (wrap) {
       wrap.hidden = !analysisFor();
-      if (!wrap.hidden) drawEvalCurve();
+      if (!wrap.hidden) { drawEvalCurve(); drawEvalBar(); }
     }
     const pvEl = document.getElementById("pv-line");
     if (pvEl) {
@@ -2113,6 +2139,41 @@
       btn.onclick = () => setViewIndex(sum.worst.ply + 1);
       el.appendChild(btn);
     }
+  }
+
+  /**
+   * The eval bar for the position the board is standing on.
+   *
+   * Pure rendering of `analysis.scalars[viewIndex]` — no engine call, which is
+   * the whole reason this is review-only. During a live game `analysisFor()`
+   * is null (the signature is the PGN, and that changes every move), so the
+   * bar hides itself without needing a mode check, and there is no way for it
+   * to become an answer key while somebody is still playing.
+   */
+  function drawEvalBar() {
+    const row = document.getElementById("eval-bar-row");
+    const bar = document.getElementById("eval-bar");
+    const fill = document.getElementById("eval-bar-fill");
+    const text = document.getElementById("eval-bar-text");
+    if (!row || !bar || !fill || !text) return;
+    const a = analysisFor();
+    if (!a) { row.hidden = true; return; }
+    row.hidden = false;
+    const cp = a.scalars[viewIndex];
+    const frac = Review.evalBar(cp);
+    if (frac == null) {
+      // measured and level is not the same thing as never measured
+      bar.classList.add("is-unmeasured");
+      fill.style.width = "50%";
+      text.textContent = t("rv.evalNone");
+      return;
+    }
+    bar.classList.remove("is-unmeasured");
+    fill.style.width = (frac * 100).toFixed(1) + "%";
+    // a forced mate has no meaningful pawn count — say so instead of "+100.0"
+    text.textContent = Math.abs(cp) >= 5000
+      ? (cp > 0 ? "+#" : "−#")
+      : (cp > 0 ? "+" : cp < 0 ? "−" : "") + (Math.abs(cp) / 100).toFixed(1);
   }
 
   function drawEvalCurve() {
@@ -4128,7 +4189,12 @@
       canvas.style.cursor = sq && grabbableAt(sq) ? "grab" : "default";
       return;
     }
-    BoardView.setDrag({ from: dragging.from, x: p.x, y: p.y });
+    // tell the board which square the drop would land on, and whether the
+    // piece can actually go there — the ring under the pointer is the whole
+    // point of dragging rather than clicking twice
+    const over = BoardView.cellAt(p.x, p.y);
+    const legal = !!(over && selection && selection.targets.includes(over));
+    BoardView.setDrag({ from: dragging.from, x: p.x, y: p.y, over, legal });
     draw();
   });
   canvas.addEventListener("pointerup", (ev) => {
@@ -4140,8 +4206,15 @@
     if (!wasDrag) return;
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
+    // A drop that plays nothing sends the piece home rather than letting it
+    // blink back onto its square. Read the piece before the click, since the
+    // click is what may move it.
+    const refused = !sq || sq === wasDrag.from ||
+      !(selection && selection.targets.includes(sq));
+    const held = refused ? viewGame().get(wasDrag.from) : null;
     draw();
     if (sq && sq !== wasDrag.from) onSquareClick(sq); // drop = play/reselect
+    if (held) BoardView.reboundDrag(held, wasDrag.from, p.x, p.y);
   });
   canvas.addEventListener("pointercancel", () => {
     painting = null;
