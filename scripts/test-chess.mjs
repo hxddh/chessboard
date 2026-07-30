@@ -1501,6 +1501,35 @@ for (const lang of CONTENT_LANGS) {
   // c1 and a3 are both dark; a bare king can never be mated by them
   assert(!mat("7k/8/8/8/8/B7/8/K1B5 w - - 0 1", "w"), "same-coloured bishops vs bare king cannot mate");
   assert(mat("7k/7p/8/8/8/B7/8/K1B5 w - - 0 1", "w"), "same-coloured bishops can mate if the opponent has other material");
+
+  // positionFinished: the whole point is that it is NOT chess.js game_over().
+  // The analyser used game_over() per position and scored every claimable draw
+  // a flat 0, which flattened the eval curve mid-game and mis-tagged every
+  // move after it — while the live game, correctly, played straight on.
+  const fin = (fen, reps) => F.positionFinished(new Chess(fen), reps);
+  const rookEnd = "8/8/8/4k3/8/8/R7/4K3 w - - {h} 80";
+  const at = (h) => rookEnd.replace("{h}", String(h));
+  assert(new Chess(at(100)).game_over(), "chess.js does end the game at the 50-move mark");
+  assert(!fin(at(100), 1), "50 moves is claimable, not finished");
+  assert(!fin(at(149), 1), "149 halfmoves is still claimable");
+  assert(fin(at(150), 1), "75 moves ends the game by law");
+  assert(!fin(at(0), 3), "threefold is claimable, not finished");
+  assert(!fin(at(0), 4), "fourfold is still claimable");
+  assert(fin(at(0), 5), "fivefold ends the game by law");
+  assert(fin("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1", 1), "checkmate is finished");
+  assert(fin("7k/5Q2/5K2/8/8/8/8/8 b - - 0 1", 1), "stalemate is finished");
+  assert(fin("7k/8/6K1/8/8/8/8/8 w - - 0 1", 1), "insufficient material is finished");
+  // a mating move on the 75-move boundary is mate, not a draw
+  assert(fin("7k/5Q2/6K1/8/8/8/8/8 b - - 150 90", 1), "mate outranks the 75-move rule");
+  // and it agrees with the app's own live rule everywhere it is defined:
+  // naturalGameOver() = checkmate | stalemate | insufficient | autoDrawReason()
+  for (const [fen, reps] of [[at(0), 1], [at(100), 1], [at(150), 1], [at(0), 3], [at(0), 5]]) {
+    const g = new Chess(fen);
+    const live = g.in_checkmate() || g.in_stalemate() || g.insufficient_material() ||
+      reps >= 5 || F.halfmoveClock(g.fen()) >= 150;
+    assert(F.positionFinished(g, reps) === live,
+      "positionFinished matches the live rule at " + fen + " x" + reps);
+  }
 }
 
 // PGN utilities: splitting a multi-game file must not lose games (importing a
@@ -1524,6 +1553,27 @@ for (const lang of CONTENT_LANGS) {
   const s = P.summary(games[1]);
   assert(s.white === "P" && s.black === "Q" && s.result === "0-1" && s.plies === 4,
     "summary reads headers and counts plies (" + JSON.stringify(s) + ")");
+
+  // startFen: a game with no moves yet. This is the shape the autosave, the
+  // save slots and the exporter all produce the moment a position is set up
+  // and before it is played into — and chess.js refuses to parse it, which is
+  // how "edit a position, close the app" used to lose the position outright.
+  const POS = "8/8/4k3/8/8/4K3/4P3/8 w - - 0 1";
+  const held = new Chess(POS);
+  held.header("SetUp", "1", "FEN", POS);
+  const autosaved = held.pgn(); // literally what saveGame() writes
+  assert(!new Chess().load_pgn(autosaved), "chess.js still rejects a movetext-free PGN");
+  assert(P.startFen(autosaved) === POS, "startFen recovers the position load_pgn drops");
+  assert(P.startFen(autosaved + "*\n") === POS, "a lone result token does not hide the FEN");
+  assert(P.startFen(one) === null, "a game from the standard array declares no start FEN");
+  assert(P.startFen("") === null && P.startFen(null) === null, "no PGN, no start FEN");
+  // [FEN] without [SetUp "1"] is not a set-up game under the PGN spec
+  assert(P.startFen('[FEN "' + POS + '"]\n\n') === null, "FEN without SetUp is ignored");
+  assert(P.startFen('[SetUp "0"]\n[FEN "' + POS + '"]\n\n') === null, "SetUp 0 is ignored");
+  assert(new Chess().validate_fen(P.startFen(autosaved)).valid, "the recovered FEN is loadable");
+  // an exported set-up position must survive the round trip back in
+  const exported = '[Event "?"]\n[SetUp "1"]\n[FEN "' + POS + '"]\n\n*\n';
+  assert(P.startFen(exported) === POS, "an exported position round-trips");
 }
 
 // position editor: FEN generation plus the legality rules chess.js does not
@@ -2301,6 +2351,27 @@ for (const lang of CONTENT_LANGS) {
   } catch (e) { threw2 = e.message; }
   assert(threw2 === null, "the bridge additions are safe in a plain browser" + (threw2 ? " — " + threw2 : ""));
 
+  // readTextFile answers with an object now, because a bare base64 string had
+  // no room to say "that was not the whole file". The native side reads into a
+  // 256 KiB buffer; when a PGN library overflowed it, the first 256 KiB came
+  // back looking exactly like a complete file, so the games past the cut were
+  // gone and the one straddling it arrived as a syntax error.
+  const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
+  const readHost = (result) => load({ invoke: () => Promise.resolve(result) });
+  assert(await readHost({ b64: b64("1. e4 e5") }).readTextFile("/a.pgn") === "1. e4 e5",
+    "a complete read decodes to its text");
+  assert(await readHost(b64("1. e4 e5")).readTextFile("/a.pgn") === "1. e4 e5",
+    "the older bare-string result still decodes");
+  let big = null;
+  try { await readHost({ tooLarge: true, limit: 262144 }).readTextFile("/library.pgn"); }
+  catch (e) { big = e; }
+  assert(big !== null, "an oversized file is refused, not silently truncated");
+  assert(big && big.name === H.FILE_TOO_LARGE, "the refusal is distinguishable from a parse failure");
+  assert(big && big.limit === 262144, "the refusal carries the limit, so the message can name it");
+  let junk = null;
+  try { await readHost(null).readTextFile("/a.pgn"); } catch (e) { junk = e; }
+  assert(junk !== null, "a malformed bridge result is an error, not undefined text");
+
   // and the app actually calls them, at the places that matter
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
   for (const [what, re] of [
@@ -2374,6 +2445,68 @@ for (const lang of CONTENT_LANGS) {
     "the clock only runs while somebody is in front of the board");
   assert(/function appAwake\(\)[\s\S]{0,300}?visibilityState !== "hidden"/.test(appSrc),
     "being away counts by the web signal as well as the native one");
+}
+
+// --- state that has to be let go of, and state that has to be held on to ---
+// Three bugs of the same family, all invisible from the outside: something the
+// app remembers about "the current game" outlived the game, or something worth
+// remembering was dropped on the floor. Source-level guards, because each one
+// lives inside app.js's IIFE where a unit test cannot reach it.
+{
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const fn = (name) => {
+    const i = appSrc.indexOf("function " + name + "(");
+    if (i < 0) return "";
+    let depth = 0;
+    for (let k = appSrc.indexOf("{", i); k < appSrc.length; k++) {
+      if (appSrc[k] === "{") depth++;
+      else if (appSrc[k] === "}" && --depth === 0) return appSrc.slice(i, k + 1);
+    }
+    return "";
+  };
+
+  // The analyser must not ask chess.js whether the game is over: game_over()
+  // is true at threefold and at 50 moves, both of which this app plays on
+  // through, and every such ply was scored a flat 0.
+  // comments stripped: the line explaining why game_over() is wrong here names
+  // it, and would otherwise trip the check it exists to document
+  const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const analyze = code(fn("analyzeGame"));
+  assert(analyze.length > 0, "analyzeGame is still a named function");
+  assert(!/\.game_over\(\)/.test(analyze),
+    "the analyser never consults chess.js game_over()");
+  assert(/Fide\.positionFinished\(/.test(analyze),
+    "the analyser uses the app's own terminal rule");
+  assert(/repSeen/.test(analyze),
+    "the analyser counts repetitions itself, so it can tell fivefold from threefold");
+
+  // A PGN is not a game identity: play the same seven moves twice in a session
+  // and the second game inherited the first one's signature, which read as
+  // "already recorded" and kept it out of the stats for good.
+  for (const [where, src] of [["新局", fn("requestNewGame")], ["清除存档", appSrc]]) {
+    assert(src.length > 0, where + " is still there to check");
+  }
+  const newGame = fn("requestNewGame");
+  assert(/statsRecordedSig = null/.test(newGame), "a new game forgets the last game's signature");
+  assert(/analysis = null/.test(newGame), "a new game forgets the last game's analysis");
+  const clearSave = appSrc.slice(appSrc.indexOf('Host.storageRemove(SAVE_KEY)'));
+  assert(/statsRecordedSig = null/.test(clearSave.slice(0, 900)),
+    "clearing the save forgets the signature too");
+  // and the accuracy write-back must not hand its number to an older game that
+  // happens to have been played the same way
+  const rec = fn("recordAccuracy");
+  assert(rec.length > 0 && !/s\.games\.find\(/.test(rec),
+    "accuracy is not filed against the first same-PGN record it finds");
+
+  // A position set up but not yet played into is a real thing to keep.
+  const load = fn("tryLoadSave");
+  assert(/ChessPgn.*startFen/s.test(load), "the launch path can restore a movetext-free save");
+  assert(/sanHistory\(\)\.length > 0 \|\| !!startFen\(\)/.test(load),
+    "a custom starting position counts as something to resume");
+  assert(/!sanHistory\(\)\.length && !startFen\(\)/.test(fn("saveToSlot")),
+    "a slot accepts a set-up position with no moves yet");
+  const imp = fn("importPgnText");
+  assert(/ChessPgn.*startFen/s.test(imp), "importing accepts a position-only PGN");
 }
 
 // --- free variables: the one lint rule that would have saved 1.12 and 1.13 ---

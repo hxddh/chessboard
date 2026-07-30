@@ -11,7 +11,7 @@
 
 | 平台 | 产物 | 说明 |
 |------|------|------|
-| macOS（Apple Silicon） | **Chessboard-macOS-arm64.zip** | 解压后 `open ~/Applications/Chessboard.app`；首次右键「打开」过 Gatekeeper |
+| macOS（Apple Silicon） | **Chessboard-macOS-arm64.zip** | 解压得到 `Chessboard.app`，把它拖进「应用程序」（或 `mv Chessboard.app ~/Applications/`）再打开；首次右键「打开」过 Gatekeeper |
 | Windows（x64） | **Chessboard-Windows-x64.zip** | 解压后运行 `Chessboard/chessboard.exe`；需 WebView2 运行时（Win10/11 一般预装） |
 
 ## 怎么玩（v1.21）
@@ -47,8 +47,8 @@
 | **版面比例尺** | 字号 7 档、间距 8 档、**行高 3 档**、字重 3 种、圆角来自 token —— 侧栏 42 处文本的「字号/行高/字重」组合从 15 种收到 11 种,`normal` 行高(随字体而变,中英文在同一列表里节奏不齐)已清零;三行操作链接共用同一组列(实测左缘全部 939/1020/1101,宽高一律 77×35,此前是三种排布加一个孤悬项);模式行与页签用同一套下划线语汇、同为 37px 高(此前是胶囊 35px + 下划线 36px 两套语汇上下贴着) |
 | **开局第一屏** | 0 手时对局段不再空着 —— 显示上一局结果、当前难度战绩,以及原本只在「记录」页签出现的那句「接下来做什么」建议(实测空白从 239px/39% 降到 114px/18%) |
 | **关窗行为** | macOS 上关窗只是**收起来**,应用还在,Dock 图标点回来接着下(⌘Q 退出);Windows 关窗就是退出。这条不能写在同一份清单里 —— `close_policy` 是逐窗口字段,而 `"hide"` 在 Windows 没有托盘时是**编译期错误**(隐藏会抹掉任务栏项,Windows 没有 Dock 那条回来的路),棋类应用又不该常驻托盘。所以 `app.zon` 保持可移植,macOS 那份由 `scripts/gen-manifest.mjs` 从它派生。**这条 1.18/1.19 写了但没生效**:`src/runner.zig` 是 SDK `app_runner` 的一份分叉,它不读 `close_policy`,于是那个键被 zon 原样收下、无人过问,窗口拿的还是默认的 `quit`。1.19.1 起 runner 真的读它,并由 `scripts/manifest-check.mjs` 在两条流水线上守着:**清单里声明的每个键,runner 必须真的在读** |
-| 侧栏 | **P** 开关(或顶栏 ☰ / 面板内 ✕)；**分「对局 / 设置 / 记录」三个标签页** —— 对局段放棋谱、复盘条、曲线与回顾、本局操作,设置段放难度/执子/棋钟/主题/语言/音效,记录段放统计/对局历史/成就;模式(人机/双人/教学/做题)常驻名条下方,切换模式自动回到对局段;**主题 木/夜/日/纸 —— 连棋盘一起换**(棋盘四角改为直角并补一道内描边:同心圆角要求「内角 = 外角 − 内边距」= 16 − 17 < 0,原本 6px 比同心更圆,看着是贴在框上而不是嵌进框里)(到 1.11 为止四套主题共用同一块 lichess 棕板,只有边框在变;现在各有一套格子色、选中色、上一手色与提示点色,四套下棋子描边对格子的对比实测 5.86–17.72:1,均高于非文本图形 3:1 的下限) · **界面语言 中文/English/日本語**（589 个界面键三语齐备；**教学课文、题库与开局名称/思路三语齐备**（1.21 补上日文 1027 条：课文 67 课 · 题名 164 · 开局名 162 · 开局思路 109）；实测英文模式下各视图可见中文串数为 0）· 音效开关 |
-| 存档 | 自动保存（含棋钟余时与认输状态），重开恢复 |
+| 侧栏 | **P** 开关(或顶栏 ☰ / 面板内 ✕)；**分「对局 / 设置 / 记录」三个标签页** —— 对局段放棋谱、复盘条、曲线与回顾、本局操作,设置段放难度/执子/棋钟/主题/语言/音效,记录段放统计/对局历史/成就;模式(人机/双人/教学/做题)常驻名条下方,切换模式自动回到对局段;**主题 木/夜/日/纸 —— 连棋盘一起换**(棋盘四角改为直角并补一道内描边:同心圆角要求「内角 = 外角 − 内边距」= 16 − 17 < 0,原本 6px 比同心更圆,看着是贴在框上而不是嵌进框里)(到 1.11 为止四套主题共用同一块 lichess 棕板,只有边框在变;现在各有一套格子色、选中色、上一手色与提示点色,四套下棋子描边对格子的对比实测 5.86–17.72:1,均高于非文本图形 3:1 的下限) · **界面语言 中文/English/日本語**（590 个界面键三语齐备；**教学课文、题库与开局名称/思路三语齐备**（1.21 补上日文 1027 条：课文 67 课 · 题名 164 · 开局名 162 · 开局思路 109）；实测英文模式下各视图可见中文串数为 0）· 音效开关 |
+| 存档 | 自动保存（含棋钟余时与认输状态），重开恢复；**摆好、还没走第一步的局面同样保得住** —— 零着的存档只有 `[SetUp]/[FEN]` 头，`load_pgn` 不收这个形状，1.21.1 之前启动路径把它当「没有存档」，再用初始局面覆盖，局面就这么没了 |
 | **成就 / 统计** | 侧栏「成就」：15 枚徽章从教学/做题/对局进度自动解锁,**一经解锁永久保留**,未解锁的计数型徽章显示进度；「统计」按难度记录胜负和、分析过的对局记录**准确率**,并给出一句**「接下来做什么」**的建议(教学未完成 / 该升降难度 / 该去复习) |
 | **对局回顾** | 「分析」跑完后给出双方准确率与平均失分、小失误/失误/严重失误分布、开局名,并标出**评分变化最大的一步**——点击直接跳到该步之后的局面 |
 | **对局历史** | 侧栏「统计」下列出最近 5 局人机对局(胜负和 · 难度 · 执子 · 时间 · 回合数 · 已分析的准确率),「全部 N 局」打开完整列表(最多保留 500 局);**点一局即载入棋盘**,分析/回顾报告/导出 PGN/另存到存档槽对它原样可用,每行另有 PGN 按钮直接复制该局;**可按结果(胜/负/和)与执子(白/黑)筛选** —— 「我输过的黑棋」不必再靠翻;认输、协议和棋、判和、超时结束的对局会连**终局状态**一起复原,不会被交还给引擎接着下 |
@@ -61,7 +61,9 @@
 
 chess.js 之上,`js/fide.js` 补齐它不做的比赛规则判定：三次重复与 50 回合是**可声明**和棋（art.
 9.2/9.3）而非自动结束,五次重复 / 75 回合才自动判和（art. 9.6）；超时是否算输由「能否将杀」而非
-子力数量决定（art. 6.9）。重复计数比较的是**可走着法**而不是 FEN —— FEN 只要有兵走两格就写上吃
+子力数量决定（art. 6.9）。复盘分析对每个局面用的是**同一套判定**而不是 chess.js 的 `game_over()` ——
+后者在三次重复和 50 回合就返回 true，照它记分会把还能继续的局面一律记 0，把局势曲线拉到轴上，
+并且带偏其后每一步的失误分类与准确率。重复计数比较的是**可走着法**而不是 FEN —— FEN 只要有兵走两格就写上吃
 过路兵格,哪怕没有兵能吃,直接比字符串会把同一个局面算成两个（`1.e4 e5 2.Nf3 Nf6 3.Ng1 Ng8
 4.Nf3 Nf6 5.Ng1 Ng8` 就会漏判）,因此只有真正存在合法吃过路兵时才保留该权利。
 
@@ -89,9 +91,30 @@ chess.js 之上,`js/fide.js` 补齐它不做的比赛规则判定：三次重复
 
 ## 开发
 
+前置条件（`package.sh` 只面向 macOS，其余脚本跨平台）：
+
+| 需要 | 用来做什么 | 没有会怎样 |
+|------|-----------|-----------|
+| Node 22+ | 跑 `scripts/` 下的全部检查与代码生成 | 什么都跑不了 |
+| Zig 0.16.0 | 编译 `src/*.zig`（`package.sh` 从 `~/.native/toolchains/zig-0.16.0` 找） | 只能改前端，编译不了 |
+| Native SDK CLI（`@native-sdk/cli`） | `native package` 打出 `.app` / `.exe` | 编译得出二进制，打不出安装包 |
+| Playwright + 一个 Chromium | 四个浏览器 E2E | 各自打印「跳过」并通过；发布流水线设 `E2E_REQUIRED=1`，那里跳过即失败 |
+
 ```bash
 cd ~/chessboard
-./scripts/package.sh   # 同步 frontend → 单测 → 编译 → 打包 → 安装
+# macOS 专用:同步 frontend → 单测 → 浏览器检查 → 编译 → 打包 → 安装到 ~/Applications
+./scripts/package.sh
+
+# 不依赖 Zig / SDK 的部分,任何平台都能跑
+node scripts/test-chess.mjs        # 单测:规则、纯函数、内容、各种源码守卫
+node scripts/scope-check.mjs       # 自由变量检查
+node scripts/manifest-check.mjs    # 清单声明的键 runner 真的在读 + 版本号一致
+node scripts/test-board-e2e.mjs    # 浏览器 E2E(缺 Playwright/Chromium 则跳过)
+node scripts/test-clock-e2e.mjs
+node scripts/test-content-e2e.mjs
+node scripts/test-persist-e2e.mjs
+node scripts/test-openings.mjs     # 引擎检查,约两分钟
+node scripts/test-tactics.mjs      # 引擎检查,约两分钟
 ```
 
 ```
@@ -104,10 +127,10 @@ src/web/
   js/puzzles.js    # 题库 164 题:杀王/吃子/战术母题(求解器证明强制)/实战/防守/求和,另 109 条开局线路
                    #   单测另查:生成题标题必须点名关键着的走子方、形状不得雷同
   js/achievements.js # 成就徽章(纯派生自统计/教学/做题进度)
-  js/fide.js       # FIDE 和棋算术:重复计数 / 6.9 将杀子力判定(纯函数,单测覆盖)
-  js/pgn.js        # PGN 文本工具:多局切分 / 标签 / 摘要(纯函数,单测覆盖)
+  js/fide.js       # FIDE 和棋算术:重复计数 / 6.9 将杀子力判定 / 局面是否已终局(纯函数,单测覆盖)
+  js/pgn.js        # PGN 文本工具:多局切分 / 标签 / 摘要 / 起始局面(纯函数,单测覆盖)
   js/editor.js     # 局面编辑器模型:棋盘→FEN + 可玩性校验(纯函数,单测覆盖)
-  js/i18n.js       # 界面文案字典 zh-CN / en / ja 各 589 条(单测校验键完整、无漏译、
+  js/i18n.js       # 界面文案字典 zh-CN / en / ja 各 590 条(单测校验键完整、无漏译、
                    #   tooltip 与 aria-label 全接线、app.js 无中文字面量进 DOM)
   js/lessons-en.js # 教学课文英文全译 67 课(仅文案;局面与解法仍只来自 lessons.js)
   js/puzzles-en.js # 题名英文(仅文案;FEN/解法/得分仍只来自 puzzles.js)
@@ -128,6 +151,7 @@ third_party/stockfish/   # Stockfish.js 18 lite-single（GPLv3）
 third_party/acorn/       # acorn 8（MIT）—— 只给 scripts/ 用,不进构建产物
 scripts/gen-engine-src.mjs · test-chess.mjs · test-strength.mjs
 scripts/scope-check.mjs · test-board-e2e.mjs · test-openings.mjs
+scripts/test-persist-e2e.mjs · test-clock-e2e.mjs · test-content-e2e.mjs
 ```
 
 测试：
@@ -136,6 +160,7 @@ scripts/scope-check.mjs · test-board-e2e.mjs · test-openings.mjs
 - `node scripts/test-board-e2e.mjs` —— 真下到将军与将死,四套主题各数一遍棋子（需 playwright + Chromium,没有就跳过）
 - `node scripts/test-clock-e2e.mjs` —— **切走之后棋钟会不会空跑**（用假桥发 app:deactivate/activate,离开 6 秒后时钟必须一秒没掉。1.17 实测 8.4 秒后台掉 9 秒;第一版测试靠切标签页做背景,无头模式下页面仍报 visible,量了个寂寞还“通过”了。需 playwright + Chromium,没有就跳过）
 - `node scripts/test-content-e2e.mjs` —— **课程与实战题在页面上是不是真的能用**（真点开每一节残局课、走错一步再走对一步、做完一道实战题;1.17 靠它发现课文里的 `**重点**` 从 1.4 起一直是把星号原样印出来的。需 playwright + Chromium,没有就跳过）
+- `node scripts/test-persist-e2e.mjs` —— **重开之后还记得什么**（真从「载入 FEN」摆一个残局、不走子就重开,棋盘必须还站在那个局面上;1.21.1 之前这样会静默丢局面 —— 零着的存档只有 `[FEN]` 头,`load_pgn` 不收,启动路径当成「没有存档」,接着用初始局面把它覆盖掉。需 playwright + Chromium,没有就跳过）
 - `node scripts/test-tactics.mjs` —— **实战战术题是否只有一个解**（逐题重搜,首选必须领先次优 ≥200cp 且次优本身不占优。结构在 test-chess 里查,唯一性只有引擎能查。需 `third_party/stockfish`,不进打包流程,但 release 流水线会跑）
 - `node scripts/test-openings.mjs` —— **开局线是否成立**（把每条线走完,让 Stockfish 评终局面;合法且 canonical 不等于没抄错,1.15 靠它抓出三条自己写坏的线。需 `third_party/stockfish`,不进打包流程,但 release 流水线会跑）
 - `node scripts/test-novice.mjs` —— **手工削弱档对真·不会下的人有多强**（拿只会「不一步送子」的随机机器人对下，档位参数直接读 engine.js，不留第二份拷贝。ACPL 量不出「初学者赢不赢得了」，这个能。需 `third_party/stockfish`，不进打包流程）

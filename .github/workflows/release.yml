@@ -10,6 +10,10 @@ on:
       tag:
         description: "Release tag (e.g. v1.18.0); notes file must exist"
         required: true
+      sdk_version:
+        description: "@native-sdk/cli version both platform builds install"
+        required: false
+        default: "latest"
 
 permissions:
   contents: write
@@ -42,24 +46,96 @@ jobs:
         run: |
           node scripts/test-openings.mjs
           node scripts/test-tactics.mjs
-      - name: create release
+      # The browser checks. Every one of them is a regression that shipped: the
+      # board one is the `CHECK is not defined` that emptied the board for two
+      # releases, the persistence one is the study position that vanished on
+      # restart. They lived in the repo without guarding anything, because a
+      # runner with no Chromium made them exit 0 with a notice. E2E_REQUIRED=1
+      # turns that notice into a failure, so a green release means they ran.
+      #
+      # Playwright is pinned. An unpinned global install is how the same commit
+      # comes out different on different days.
+      - name: browser regression tests
         env:
-          GH_TOKEN: ${{ github.token }}
+          E2E_REQUIRED: "1"
+        run: |
+          npm install --no-save playwright@1.49.1
+          npx --yes playwright@1.49.1 install --with-deps chromium
+          CHROME_PATH="$(node -e "console.log(require('playwright').chromium.executablePath())")"
+          export CHROME_PATH
+          node scripts/test-board-e2e.mjs
+          node scripts/test-clock-e2e.mjs
+          node scripts/test-content-e2e.mjs
+          node scripts/test-persist-e2e.mjs
+
+      # The tag comes first and everything downstream is built FROM it.
+      #
+      # It used to be the other way round: the release was published, then the
+      # two platform builds were dispatched against $GITHUB_REF_NAME — the
+      # branch — and nobody waited for either. A build that failed left a
+      # published release with no download on it, and a push to the branch
+      # between dispatch and checkout meant the binaries were not built from
+      # the source the tag names. Both are silent.
+      - name: tag the commit under test
+        env:
           TAG: ${{ inputs.tag }}
         run: |
           notes=".github/release-notes/${TAG}.md"
           test -f "$notes" || { echo "missing $notes"; exit 1; }
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/${TAG}"
+      - name: draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
           gh release create "$TAG" \
+            --draft \
             --target "$GITHUB_SHA" \
             --title "$TAG" \
-            --notes-file "$notes"
-      - name: chain macOS build + asset upload
+            --notes-file ".github/release-notes/${TAG}.md"
+      - name: build both platforms from the tag
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
-        run: gh workflow run build-macos.yml --ref "$GITHUB_REF_NAME" -f release_tag="$TAG"
-      - name: chain Windows build + asset upload
+          SDK_VERSION: ${{ inputs.sdk_version }}
+        run: |
+          gh workflow run build-macos.yml --ref "$TAG" \
+            -f release_tag="$TAG" -f sdk_version="$SDK_VERSION"
+          gh workflow run build-windows.yml --ref "$TAG" \
+            -f release_tag="$TAG" -f sdk_version="$SDK_VERSION"
+      - name: wait for both builds to upload their assets
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
-        run: gh workflow run build-windows.yml --ref "$GITHUB_REF_NAME" -f release_tag="$TAG"
+        run: |
+          set -euo pipefail
+          # give the dispatches a moment to register as runs
+          sleep 20
+          deadline=$(( $(date +%s) + 3600 ))
+          for wf in build-macos.yml build-windows.yml; do
+            id=""
+            while [ -z "$id" ]; do
+              id=$(gh run list --workflow="$wf" --branch "$TAG" \
+                     --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+              [ -n "$id" ] && break
+              [ "$(date +%s)" -lt "$deadline" ] || { echo "no $wf run appeared for $TAG"; exit 1; }
+              sleep 15
+            done
+            echo "waiting on $wf run $id"
+            gh run watch "$id" --exit-status
+          done
+      - name: the release must actually have both downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          assets=$(gh release view "$TAG" --json assets --jq '[.assets[].name] | join(" ")')
+          echo "assets: $assets"
+          case "$assets" in *macOS-arm64.zip*) ;; *) echo "missing the macOS zip"; exit 1;; esac
+          case "$assets" in *Windows-x64.zip*) ;; *) echo "missing the Windows zip"; exit 1;; esac
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: gh release edit "$TAG" --draft=false

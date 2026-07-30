@@ -307,7 +307,17 @@
       if (!raw) return false;
       const s = JSON.parse(raw);
       if (!s || s.v !== 1 || typeof s.pgn !== "string" || !s.pgn) return false;
-      if (!game.load_pgn(s.pgn)) return false;
+      if (!game.load_pgn(s.pgn)) {
+        // A position from the editor or from 载入 FEN is saved the moment it
+        // is loaded, before its first move, so its PGN is tag pairs and
+        // nothing else. load_pgn wants movetext and refuses — and the launch
+        // path then took "no save" at face value and overwrote the position
+        // with the standard array. Closing the app after setting up a study
+        // position, before playing into it, lost it without a word.
+        const sf = window.ChessPgn ? window.ChessPgn.startFen(s.pgn) : null;
+        if (!sf || !game.load(sf)) return false;
+        game.header("SetUp", "1", "FEN", sf);
+      }
       viewIndex = sanHistory().length;
       if (s.clock && TCS[s.clock.tc] &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
@@ -318,7 +328,9 @@
       if (s.resigned === "w" || s.resigned === "b") resigned = s.resigned;
       if (s.drawAgreed === true) drawAgreed = true;
       if (s.drawClaimed === "threefold" || s.drawClaimed === "fifty") drawClaimed = s.drawClaimed;
-      return sanHistory().length > 0;
+      // a custom starting position is worth resuming on its own, with or
+      // without moves played into it
+      return sanHistory().length > 0 || !!startFen();
     } catch (_) {
       return false;
     }
@@ -1842,6 +1854,10 @@
     setAnalyzeUI();
     const scalars = new Array(fens.length).fill(null);
     const pvs = new Array(fens.length).fill(null);
+    // Repetition count per position as the replay walks forward, so the
+    // terminal test below can tell fivefold (art. 9.6, the game is over) from
+    // threefold (art. 9.2, a player may claim and the game otherwise goes on).
+    const repSeen = new Map();
     for (let i = 0; i < fens.length; i++) {
       if (analyzeAbort) {
         analyzing = false; analyzeAbort = false; analyzeProgress = "";
@@ -1855,8 +1871,16 @@
       }
       if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
       const probe = new Chess(fens[i]);
+      const repKey = Fide.positionKey(fens[i], probe);
+      const reps = (repSeen.get(repKey) || 0) + 1;
+      repSeen.set(repKey, reps);
+      // NOT probe.game_over(): chess.js ends the game at threefold and at the
+      // 50-move mark, both of which are only claimable under FIDE and which
+      // this app plays through everywhere else. Scoring those plies a flat 0
+      // dropped the curve to the axis mid-game and mis-tagged every move after
+      // it — the accuracy figure included. Same rule as naturalGameOver().
       if (probe.in_checkmate()) scalars[i] = probe.turn() === "w" ? -10000 : 10000;
-      else if (probe.game_over()) scalars[i] = 0;
+      else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
       else {
         let e = null;
         try { e = await window.ChessEngine.analyze(fens[i], perMove); } catch (_) {}
@@ -1946,8 +1970,16 @@
     const s = loadStats();
     // statsRecordedSig is the signature this game was filed under (it carries a
     // "#resigned"-style suffix for app-level endings, hence the prefix match)
-    const rec = s.games.find((g) => g.sig && (g.sig === pgn || g.sig === statsRecordedSig));
-    if (!rec || rec.acc != null) return; // not ours to annotate, or already done
+    // Walk to the LAST match, not the first: a signature is a PGN, and two
+    // games can share one. find() from the front handed this accuracy to the
+    // oldest game that happened to be played the same way, which for a short
+    // mate is a real possibility.
+    let rec = null;
+    for (const g of s.games) {
+      if (!g.sig || g.acc != null) continue; // already annotated is not ours
+      if (g.sig === pgn || g.sig === statsRecordedSig) rec = g;
+    }
+    if (!rec) return;
     rec.acc = mine;
     rec.acpl = acpl;
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
@@ -3034,6 +3066,13 @@
     resigned = null;
     drawAgreed = false;
     drawClaimed = null;
+    // Both of these key off the PGN, and a PGN does not identify a game — play
+    // the same seven moves twice in one session and the second game carried
+    // the first one's signature. It was then read as "already recorded" and
+    // never reached the stats, and the first game's analysis would have been
+    // filed against it. A new game is a new game.
+    analysis = null;
+    statsRecordedSig = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -3427,13 +3466,24 @@
       return false;
     }
     const probe = new Chess();
-    if (!probe.load_pgn(text0, { sloppy: true }) || !probe.history().length) {
+    const parsed = probe.load_pgn(text0, { sloppy: true }) && probe.history().length > 0;
+    // A game exported before its first move is legal PGN with no movetext, and
+    // it is what a save slot or an export holds for a study position. chess.js
+    // will not parse that shape, so fall back to its [SetUp]/[FEN] tags rather
+    // than call the file malformed.
+    const importFen = parsed ? null : (window.ChessPgn ? window.ChessPgn.startFen(text0) : null);
+    if (!parsed && (!importFen || !new Chess().validate_fen(importFen).valid)) {
       toast(t("m.13"));
       return false;
     }
     invalidateEngine();
     stopEditor();
-    game.load_pgn(text0, { sloppy: true });
+    if (parsed) {
+      game.load_pgn(text0, { sloppy: true });
+    } else {
+      game.load(importFen);
+      game.header("SetUp", "1", "FEN", importFen);
+    }
     selection = null;
     viewIndex = sanHistory().length;
     resigned = null;
@@ -3443,7 +3493,9 @@
     syncAutoFlip();
     sync();
     saveGame();
-    toast(t("m.62") + moveCount(Math.ceil(sanHistory().length / 2)));
+    toast(sanHistory().length
+      ? t("m.62") + moveCount(Math.ceil(sanHistory().length / 2))
+      : t("mm.positionLoaded"));
     maybeEngineTurn();
     return true;
   }
@@ -3459,6 +3511,20 @@
     }
   }
 
+  /**
+   * Toast for a failed host-side read. An oversized file gets its own words:
+   * it is the one failure the player can act on, and lumping it in with
+   * "could not open the file" is what made a truncated PGN library look like
+   * a corrupt one.
+   */
+  function toastReadFailure(err) {
+    if (err && err.name === Host.FILE_TOO_LARGE) {
+      toast(tf("mm.fileTooLarge", [Math.floor((err.limit || 0) / 1024)]));
+      return;
+    }
+    toast(t("m.16"));
+  }
+
   /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
   async function openPgnFile() {
     if (Host.hasZero()) {
@@ -3469,8 +3535,8 @@
         const text = await Host.readTextFile(paths[0]);
         importPgnText(text, paths[0]);
         Host.addRecentDocument(paths[0]);
-      } catch (_) {
-        toast(t("m.16"));
+      } catch (err) {
+        toastReadFailure(err);
       }
       return;
     }
@@ -3768,7 +3834,9 @@
   }
 
   function saveToSlot(i) {
-    if (!sanHistory().length) { toast(t("slots.nothing")); return; }
+    // a set-up position with no moves yet is exactly the thing worth parking
+    // in a slot, so "nothing to save" means neither moves nor a custom start
+    if (!sanHistory().length && !startFen()) { toast(t("slots.nothing")); return; }
     const st = loadSlots();
     st.slots[i] = {
       pgn: pgnForExport(),
@@ -4255,7 +4323,7 @@
     try {
       importPgnText(await Host.readTextFile(p), p);
       Host.addRecentDocument(p);
-    } catch (_) { toast(t("m.16")); }
+    } catch (err) { toastReadFailure(err); }
   });
   window.addEventListener("dragover", (ev) => ev.preventDefault());
   window.addEventListener("drop", (ev) => {
@@ -4538,6 +4606,8 @@
     resigned = null;
     drawAgreed = false;
     drawClaimed = null;
+    analysis = null;
+    statsRecordedSig = null;
     resetClocks();
     syncAutoFlip();
     sync();

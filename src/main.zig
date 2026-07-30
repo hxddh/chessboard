@@ -90,7 +90,8 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
     }
 }
 
-fn jsonStringField(payload: []const u8, key: []const u8) ?[]const u8 {
+/// Raw (still-escaped) bytes of a JSON string field, without the quotes.
+fn jsonStringFieldRaw(payload: []const u8, key: []const u8) ?[]const u8 {
     var key_buf: [96]u8 = undefined;
     if (key.len + 2 > key_buf.len) return null;
     const needle = std.fmt.bufPrint(&key_buf, "\"{s}\"", .{key}) catch return null;
@@ -110,11 +111,90 @@ fn jsonStringField(payload: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
+/// A JSON string field, unescaped into `out`.
+///
+/// The scan above already had to understand `\` in order to find the closing
+/// quote, but it handed back the raw slice — so every consumer received JSON
+/// source rather than the value it encodes. The only consumer is a filesystem
+/// path, and on Windows that meant `C:\\Users\\...`: each separator doubled,
+/// because the page's JSON.stringify had escaped it and nothing un-escaped it
+/// again. Some APIs shrug off a doubled separator; that is luck, not parsing.
+///
+/// Unknown escapes are rejected rather than passed through, so a malformed
+/// payload fails the request instead of reaching the filesystem half-decoded.
+fn jsonStringField(payload: []const u8, key: []const u8, out: []u8) ?[]const u8 {
+    const raw = jsonStringFieldRaw(payload, key) orelse return null;
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < raw.len) {
+        if (n >= out.len) return null;
+        const c = raw[i];
+        if (c != '\\') {
+            out[n] = c;
+            n += 1;
+            i += 1;
+            continue;
+        }
+        if (i + 1 >= raw.len) return null;
+        const esc = raw[i + 1];
+        i += 2;
+        switch (esc) {
+            '"', '\\', '/' => {
+                out[n] = esc;
+                n += 1;
+            },
+            'b' => {
+                out[n] = 0x08;
+                n += 1;
+            },
+            'f' => {
+                out[n] = 0x0C;
+                n += 1;
+            },
+            'n' => {
+                out[n] = '\n';
+                n += 1;
+            },
+            'r' => {
+                out[n] = '\r';
+                n += 1;
+            },
+            't' => {
+                out[n] = '\t';
+                n += 1;
+            },
+            'u' => {
+                // \uXXXX, surrogate pairs included — JSON.stringify emits these
+                // for anything outside the BMP and for control characters.
+                if (i + 4 > raw.len) return null;
+                var cp: u21 = std.fmt.parseInt(u16, raw[i .. i + 4], 16) catch return null;
+                i += 4;
+                if (cp >= 0xD800 and cp <= 0xDBFF) {
+                    if (i + 6 > raw.len or raw[i] != '\\' or raw[i + 1] != 'u') return null;
+                    const lo = std.fmt.parseInt(u16, raw[i + 2 .. i + 6], 16) catch return null;
+                    if (lo < 0xDC00 or lo > 0xDFFF) return null;
+                    i += 6;
+                    cp = 0x10000 + ((cp - 0xD800) << 10) + @as(u21, lo - 0xDC00);
+                } else if (cp >= 0xDC00 and cp <= 0xDFFF) {
+                    return null; // lone low surrogate
+                }
+                const len: usize = std.unicode.utf8CodepointSequenceLength(cp) catch return null;
+                if (n + len > out.len) return null;
+                n += std.unicode.utf8Encode(cp, out[n..]) catch return null;
+            },
+            else => return null,
+        }
+    }
+    return out[0..n];
+}
+
 fn writeTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
-    const path = jsonStringField(invocation.request.payload, "path") orelse return error.InvalidRequest;
-    const b64 = jsonStringField(invocation.request.payload, "b64") orelse return error.InvalidRequest;
-    if (path.len == 0 or path.len > 4096) return error.InvalidRequest;
+    var path_buf: [4096]u8 = undefined;
+    const path = jsonStringField(invocation.request.payload, "path", &path_buf) orelse return error.InvalidRequest;
+    // base64 needs no unescaping — its alphabet has nothing JSON would escape
+    const b64 = jsonStringFieldRaw(invocation.request.payload, "b64") orelse return error.InvalidRequest;
+    if (path.len == 0) return error.InvalidRequest;
     if (b64.len == 0 or b64.len > 512 * 1024) return error.InvalidRequest;
 
     var decoded_buf: [384 * 1024]u8 = undefined;
@@ -132,15 +212,30 @@ fn writeTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, 
 
 fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
-    const path = jsonStringField(invocation.request.payload, "path") orelse return error.InvalidRequest;
-    if (path.len == 0 or path.len > 4096) return error.InvalidRequest;
+    var path_buf: [4096]u8 = undefined;
+    const path = jsonStringField(invocation.request.payload, "path", &path_buf) orelse return error.InvalidRequest;
+    if (path.len == 0) return error.InvalidRequest;
 
     var file = std.Io.Dir.openFileAbsolute(self.io, path, .{}) catch return error.HandlerFailed;
     defer file.close(self.io);
 
-    var raw_buf: [256 * 1024]u8 = undefined;
+    // One byte past the limit, on purpose. readPositionalAll stops when the
+    // buffer is full and reports only how much it read, so with a buffer of
+    // exactly MAX_BYTES a file that overflows it is indistinguishable from one
+    // that fills it — and the handler returned the first 256 KiB as if it were
+    // the whole file. For the multi-game PGN libraries this app advertises
+    // that meant losing every game past the cut and handing back a syntax
+    // error for the one straddling it, reported to the player as an ordinary
+    // failed import. The spare byte turns "too big" into something the caller
+    // can be told about.
+    const MAX_BYTES: usize = 256 * 1024;
+    var raw_buf: [MAX_BYTES + 1]u8 = undefined;
     const n = file.readPositionalAll(self.io, &raw_buf, 0) catch return error.HandlerFailed;
     if (n == 0) return error.InvalidRequest;
+    if (n > MAX_BYTES) {
+        return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{MAX_BYTES}) catch
+            return error.HandlerFailed;
+    }
 
     var b64_buf: [360 * 1024]u8 = undefined;
     const enc = std.base64.standard.Encoder;
@@ -148,8 +243,10 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
     if (enc_len > b64_buf.len) return error.InvalidRequest;
     const encoded = enc.encode(b64_buf[0..enc_len], raw_buf[0..n]);
 
-    // JSON string result
-    return native_sdk.bridge.writeJsonStringValue(output, encoded);
+    // JSON object, not a bare string: the result has to be able to say whether
+    // it is the whole file. base64 never contains a character JSON escapes, so
+    // it can be quoted as-is.
+    return std.fmt.bufPrint(output, "{{\"b64\":\"{s}\"}}", .{encoded}) catch return error.HandlerFailed;
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -162,6 +259,38 @@ pub fn main(init: std.process.Init) !void {
         .js_window_api = true,
         .bridge = app_state.bridge(),
     }, init);
+}
+
+test "jsonStringField unescapes what the page escaped" {
+    var buf: [256]u8 = undefined;
+    // a Windows path: JSON.stringify doubles every separator, and the handler
+    // has to undo that before the filesystem ever sees it
+    const win = "{\"path\":\"C:\\\\Users\\\\a b\\\\game.pgn\"}";
+    try std.testing.expectEqualStrings(
+        "C:\\Users\\a b\\game.pgn",
+        jsonStringField(win, "path", &buf).?,
+    );
+    // a quote inside the value must not end the scan, and must come back bare
+    try std.testing.expectEqualStrings(
+        "he said \"hi\"",
+        jsonStringField("{\"path\":\"he said \\\"hi\\\"\"}", "path", &buf).?,
+    );
+    // \u escapes, including the surrogate pair JSON.stringify emits for
+    // anything past the BMP
+    try std.testing.expectEqualStrings(
+        "国际象棋",
+        jsonStringField("{\"path\":\"\\u56fd\\u9645\\u8c61\\u68cb\"}", "path", &buf).?,
+    );
+    try std.testing.expectEqualStrings(
+        "\u{1F600}",
+        jsonStringField("{\"path\":\"\\ud83d\\ude00\"}", "path", &buf).?,
+    );
+    // malformed input fails the request rather than reaching the filesystem
+    try std.testing.expect(jsonStringField("{\"path\":\"\\q\"}", "path", &buf) == null);
+    try std.testing.expect(jsonStringField("{\"path\":\"\\ud83d\"}", "path", &buf) == null);
+    // a value longer than the caller's buffer is refused, not truncated
+    var tiny: [3]u8 = undefined;
+    try std.testing.expect(jsonStringField("{\"path\":\"abcd\"}", "path", &tiny) == null);
 }
 
 test "production source uses frontend assets" {

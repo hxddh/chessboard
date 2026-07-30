@@ -43,6 +43,16 @@ test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
 echo "==> unit tests"
 node scripts/test-chess.mjs
 
+# The browser checks run here too when a Chromium is around. They are not
+# required locally — packaging must not need a browser download — so each one
+# prints a notice and passes when it cannot run. The release workflow sets
+# E2E_REQUIRED=1, where that notice is a failure instead.
+echo "==> browser checks (skipped when playwright/Chromium are missing)"
+node scripts/test-board-e2e.mjs
+node scripts/test-clock-e2e.mjs
+node scripts/test-content-e2e.mjs
+node scripts/test-persist-e2e.mjs
+
 echo "==> derive the macOS manifest (close_policy = hide)"
 node scripts/gen-manifest.mjs macos
 

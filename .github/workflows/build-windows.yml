@@ -12,6 +12,10 @@ on:
         description: "Existing release tag to upload the zip to (optional)"
         required: false
         default: ""
+      sdk_version:
+        description: "@native-sdk/cli version (npm dist-tag or exact version)"
+        required: false
+        default: "latest"
 
 permissions:
   contents: write
@@ -26,11 +30,18 @@ jobs:
           node-version: 22
       - name: unit tests
         run: node scripts/test-chess.mjs
+      # The SDK version is an input rather than a bare `npm install -g`, so a
+      # release can pin it and get the same toolchain twice. Whatever it
+      # resolves to is echoed into the log: an unrecorded dependency is one
+      # that cannot be blamed later.
       - name: install Native SDK CLI
         shell: bash
+        env:
+          SDK_VERSION: ${{ inputs.sdk_version || 'latest' }}
         run: |
-          npm install -g @native-sdk/cli
+          npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true
+          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
           echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
       - uses: mlugg/setup-zig@v2
         with:

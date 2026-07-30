@@ -15,7 +15,7 @@
  *   .min_width / .min_height declared since 0.1.0. Never read. The window has
  *                            always been resizable below its own layout floor.
  *
- * So: three checks, all cheap, all at build time.
+ * So: four checks, all cheap, all at build time.
  *
  *   1. app.zon → runner   every window/menu key the manifest declares appears
  *                         as a string literal in src/runner.zig. This is the
@@ -28,6 +28,10 @@
  *                         SDK's WindowOptions is assigned in manifestWindow.
  *                         This is the one that catches the fork drifting
  *                         further behind as the SDK grows.
+ *   4. version → version  app.zon and build.zig.zon agree, and no version is
+ *                         hardcoded into a generated artifact name. This is
+ *                         the one that catches a number nothing reads, which
+ *                         is the kind that goes stale for twenty releases.
  *
  * Check 2 exists because check 1 was not enough. `.menus` passed check 1 the
  * whole time — runner.zig genuinely reads it — while src/main.zig passed
@@ -387,6 +391,35 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   }
 } else {
   notes.push("SDK 交叉检查: 跳过（没给 --sdk / SDK_PATH，本地没有 SDK 源码）");
+}
+
+// ---------------------------------------------------- 4. 版本号只有一个真相
+// build.zig.zon carried .version = "0.1.0" from the first commit to 1.21, and
+// build.zig printed that same literal into the packaged artifact's filename.
+// Neither is read by the app — app.zon is the manifest the runner sees — which
+// is exactly why nobody noticed: a version that nothing depends on drifts for
+// twenty releases and only ever misleads whoever is holding the file.
+{
+  const appZon = fs.readFileSync(path.join(ROOT, "app.zon"), "utf8");
+  const buildZon = fs.readFileSync(path.join(ROOT, "build.zig.zon"), "utf8");
+  const buildZig = fs.readFileSync(path.join(ROOT, "build.zig"), "utf8");
+  const ver = (src) => (/\.version\s*=\s*"([^"]+)"/.exec(src) || [])[1] || null;
+  const appVer = ver(appZon), buildVer = ver(buildZon);
+  check(!!appVer, "版本检查: app.zon 没有 .version");
+  check(!!buildVer, "版本检查: build.zig.zon 没有 .version");
+  check(
+    appVer === buildVer,
+    `版本检查: build.zig.zon 写 ${buildVer}，app.zon 写 ${appVer} —— ` +
+      "两个版本号谁也不校验谁，放着就会一路错下去",
+  );
+  // and no hand-written version may creep back into a generated artifact name
+  const pkgLine = /zig-out\/package\/[^"]*/.exec(buildZig);
+  check(
+    !pkgLine || !/\d+\.\d+\.\d+/.test(pkgLine[0]),
+    "版本检查: build.zig 又把版本号硬编码进了打包路径 —— " +
+      "那串数字没有任何东西会跟着更新",
+  );
+  if (appVer) notes.push(`版本检查: app.zon 与 build.zig.zon 一致（${appVer}）`);
 }
 
 // ------------------------------------------------------------------------ 结果

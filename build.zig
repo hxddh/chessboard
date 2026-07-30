@@ -189,7 +189,11 @@ pub fn build(b: *std.Build) void {
         "--optimize",
         package_optimize_name,
         "--output",
-        b.fmt("zig-out/package/{s}-0.1.0-{s}-{s}{s}", .{ app_exe_name, @tagName(package_target), package_optimize_name, packageSuffix(package_target) }),
+        // No version in the name. It used to read 0.1.0 — hardcoded, never
+        // touched again, and by 1.21 it described nothing at all. A name that
+        // has to be remembered is a name that will be wrong; the tag on the
+        // release is where the version actually lives.
+        b.fmt("zig-out/package/{s}-{s}-{s}{s}", .{ app_exe_name, @tagName(package_target), package_optimize_name, packageSuffix(package_target) }),
         "--binary",
     });
     // The CLI resolves SDK-owned package inputs (the vendored WebView2

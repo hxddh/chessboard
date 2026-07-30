@@ -23,18 +23,28 @@ import { fileURLToPath } from 'url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', 'src', 'web');
 
+// A missing browser is a skip locally and a failure in the release gate: these
+// checks silently exiting 0 is exactly how they managed to sit in the suite for
+// several versions without ever guarding a release.
+const REQUIRED = process.env.E2E_REQUIRED === "1";
+function skip(why) {
+  if (REQUIRED) { console.error("E2E_REQUIRED=1,但" + why); process.exit(1); }
+  console.log("跳过:" + why);
+  process.exit(0);
+}
+
 let chromium;
 for (const mod of ['playwright-core', 'playwright',
   '/opt/node22/lib/node_modules/playwright/node_modules/playwright-core/index.mjs']) {
   try { ({ chromium } = await import(mod)); break; } catch { /* try the next one */ }
 }
-if (!chromium) { console.log('跳过:没有 playwright'); process.exit(0); }
+if (!chromium) skip("没有 playwright");
 const CHROME = [
   process.env.CHROME_PATH,
   '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome',
 ].find((p) => p && fs.existsSync(p));
-if (!CHROME) { console.log('跳过:找不到 Chromium'); process.exit(0); }
+if (!CHROME) skip("找不到 Chromium");
 const M = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };
 const sv = http.createServer((q, r) => {
   let p = q.url.split('?')[0]; if (p === '/') p = '/index.html';
