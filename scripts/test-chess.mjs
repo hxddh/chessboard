@@ -1391,6 +1391,25 @@ for (const lang of CONTENT_LANGS) {
     assert(/display:\s*grid/.test(row[1]), "action rows are a grid");
     assert(/grid-template-columns:\s*repeat\(3/.test(row[1]), "three fixed columns");
     assert(!/space-between/.test(row[1]), "no space-between — that is what made every row different");
+
+    // The same rule for wrapped segments, and for the same reason. With
+    // `flex: 1 1 30%` the items on a last line share it between them, so a
+    // row of four became three normal buttons and one running the full width
+    // of the panel — and a full-width filled button is this UI's word for
+    // "the primary action here". 满强度 and 爱进攻 read as buttons you were
+    // being pushed toward, purely because 4 % 3 == 1.
+    //
+    // This used to be checked by measuring button widths in a browser, in
+    // three languages (test-layout-e2e.mjs). A pixel assertion answers "did
+    // it come out equal this time"; the invariant is "the columns are shared",
+    // and that is a property of one declaration. P2.8.
+    const wrapRow = /\.theme-row\.wrap \{([\s\S]*?)\}/.exec(stripped);
+    assert(wrapRow, "found the wrapped-segment rule");
+    assert(/display:\s*grid/.test(wrapRow[1]), "wrapped segments are a grid");
+    assert(/grid-template-columns:\s*repeat\(auto-fit/.test(wrapRow[1]),
+      "…with shared columns, so every button is one size");
+    assert(!/flex:\s*1 1 \d+%/.test(stripped),
+      "no `flex: 1 1 N%` anywhere — that is the shape that made the fourth button a primary");
   }
 
   // mode and tabs are both navigation, so they get one grammar. Until 1.12
@@ -2784,6 +2803,72 @@ for (const lang of CONTENT_LANGS) {
   // and the v1 stats file still opens
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
+
+  // --- the stylesheet is sectioned by component, not by version ------------
+  // `/* v1.9 polish */` and `/* --- stats (v0.3) --- */` are an append log:
+  // they say when a rule arrived and nothing about what it belongs to. The
+  // history-filter rules sat under "v1.10", three hundred lines from the rest
+  // of the history.
+  {
+    const cssV = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const stamps = [...cssV.matchAll(/^\s*\/\* (?:---)? ?v\d+\.\d+/gm)].map((m) => m[0].trim());
+    for (const v of stamps) console.error("  version heading: " + v);
+    assert(stamps.length === 0,
+      "no section is named after the version that added it" +
+      (stamps.length ? " — " + stamps.length + " left" : ""));
+  }
+
+  // --- three toast tiers ---------------------------------------------------
+  // 110 toasts, one visual. "已复制 PGN" is a receipt you may ignore; "你违背
+  // 了开局原则" is the app correcting you, which in the teaching and puzzle
+  // modes is the entire product; "引擎启动失败" means a feature is gone until
+  // you restart. Same background, same size, same 2.2 seconds — after which
+  // there was no evidence the third had ever happened. 缺陷 20.
+  {
+    const tAt = appSrc.indexOf("function toast(msg, tier)");
+    const t3 = appSrc.slice(tAt, appSrc.indexOf("\n  }", tAt));
+    assert(/TOAST_MS/.test(appSrc) && /ok: 2200/.test(appSrc), "the three tiers have three lifetimes");
+    assert(/fault: 0/.test(appSrc), "…and the fault tier does not dismiss itself");
+    assert(/el\.onclick = ms \? null :/.test(t3),
+      "…so it offers a way out that is not waiting");
+    const cssT = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    for (const cls of [".toast.t-fix", ".toast.t-fault"]) {
+      assert(cssT.includes(cls), cls + " is styled apart from a receipt");
+    }
+    // and the tiers are actually used — a tier nobody passes is a tier that
+    // does not exist
+    const faults = (appSrc.match(/, "fault"\)/g) || []).length;
+    const fixes = (appSrc.match(/, "fix"\)/g) || []).length;
+    assert(faults >= 10, "the fault tier is used (" + faults + " call sites)");
+    assert(fixes >= 10, "the correction tier is used (" + fixes + " call sites)");
+  }
+
+  // --- one implementation per component, and no orphan rules ---------------
+  // The app had two segmented controls: `.theme-row`, which everything uses,
+  // and an iOS-style `.pill` with its own button sizing, its own active
+  // treatment and its own light-theme override — and no users left in the
+  // markup at all. A spare implementation cannot be kept in step with the real
+  // one, and it is where "why do these two rows of buttons not match" starts.
+  {
+    const cssC = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const htmlC = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+    const appC = appSrc;
+    // class selectors the stylesheet defines, minus state/modifier suffixes
+    const defined = new Set([...cssC.matchAll(/^\s*\.([a-z][a-z0-9-]*)/gm)].map((m) => m[1]));
+    const orphans = [];
+    for (const c of defined) {
+      // a word-boundary search of the markup and the app: classes are set as
+      // literals, as parts of a multi-class string ("mlnum num"), and as
+      // concatenations ("mvtag " + tier), so anything narrower reports rules
+      // that are very much in use
+      const used = new RegExp("\\b" + c.replace(/-/g, "\\-") + "\\b");
+      if (!used.test(htmlC) && !used.test(appC)) orphans.push(c);
+    }
+    for (const c of orphans) console.error("  no markup uses ." + c);
+    assert(orphans.length === 0,
+      "every class the stylesheet defines is worn by something" +
+      (orphans.length ? " — " + orphans.length + " orphan(s)" : " (" + defined.size + " classes)"));
+  }
 
   // --- the board's marks sit on one scale ----------------------------------
   // Ten marks carried ten geometries: three ring radii (.44 / .45 / .46) and

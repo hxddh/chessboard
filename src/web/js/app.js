@@ -90,7 +90,7 @@ import { createStore } from "./store.js";
    */
   const Persist = createPersist(Host, () => {
     showStorageFault();
-    toast(t("msg.storage.failed"));
+    toast(t("msg.storage.failed"), "fault");
   });
   // One pass over storage, before anything reads from it: migrations get to
   // see a whole profile, and no later reader has to wonder whether some other
@@ -422,13 +422,13 @@ import { createStore } from "./store.js";
   /**
    * A storage failure is permanent for the session, so its notice is too.
    *
-   * A toast would be wrong here twice over: it disappears, and it looks like
-   * every other confirmation the app shows. What has happened is that nothing
-   * is being saved any more — the one message in this app that must still be
-   * on screen a minute later. (P2.6 gives toasts three tiers, at which point
-   * this becomes the fault tier's first citizen; until then it is its own
-   * element, which is honest about the difference rather than borrowing a
-   * style that means "done".)
+   * It keeps a banner of its own even now that toasts have a fault tier
+   * (P2.6). The tier is right for "the engine did not start" — bad, dismissible,
+   * over. This one is different in kind: every later autosave will fail too, so
+   * the statement "nothing you do is being kept" stays true for the rest of the
+   * session, and a notice the user has clicked away would be a lie by the time
+   * they close the app. The toast fires as well, once, because a banner that
+   * appears silently at the top of the screen is easy not to notice.
    */
   function showStorageFault() {
     let el = document.getElementById("storage-fault");
@@ -443,13 +443,44 @@ import { createStore } from "./store.js";
     el.hidden = false;
   }
 
-  function toast(msg) {
+  /**
+   * Three tiers, because 110 toasts were saying three different kinds of thing
+   * in one voice.
+   *
+   * "已复制 PGN", "你违背了开局原则" and "引擎启动失败" shared a background, a
+   * size and a 2.2-second life. The first is a receipt you may ignore; the
+   * second is the app correcting you, which is the whole point of the teaching
+   * modes and deserves to be read; the third means a feature is gone until you
+   * restart, and 2.2 seconds later there was no evidence it had ever happened.
+   * 缺陷 20.
+   *
+   *   ok      a receipt — it happened, carry on. Short.
+   *   fix     the app is correcting you. Longer, because it is a sentence with
+   *           something to learn in it, and accented so it does not read as
+   *           another receipt.
+   *   fault   something is broken. Does NOT dismiss itself: a fault that
+   *           disappears is a fault nobody was told about. It gets a close
+   *           button instead, which is also what makes it safe to keep.
+   *
+   * @param {string} msg
+   * @param {"ok"|"fix"|"fault"} [tier]
+   */
+  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+  function toast(msg, tier) {
     const el = document.getElementById("toast");
     if (!el) return;
+    const kind = TOAST_MS[tier] === undefined ? "ok" : tier;
     el.textContent = msg;
-    el.classList.add("show");
+    el.classList.remove("t-ok", "t-fix", "t-fault");
+    el.classList.add("show", "t-" + kind);
     if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
-    store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+    store.ui.toastTimer = null;
+    const ms = TOAST_MS[kind];
+    if (ms) store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+    // a fault stays until it is dismissed, so it needs a way out that is not
+    // "wait" — clicking it anywhere will do
+    el.onclick = ms ? null : () => el.classList.remove("show");
+    el.style.cursor = ms ? "" : "pointer";
   }
 
   /**
@@ -597,7 +628,7 @@ import { createStore } from "./store.js";
     catch (_) { mv = null; }
     if (token !== store.game.engineToken) return; // game changed while thinking
     store.session.engineThinking = false;
-    if (!mv) { sync(); toast(t("msg.engine.noMove")); return; }
+    if (!mv) { sync(); toast(t("msg.engine.noMove"), "fault"); return; }
     const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
       store.game.viewIndex = sanHistory().length;
@@ -620,8 +651,8 @@ import { createStore } from "./store.js";
   async function requestHint() {
     if (store.session.mode === "learn") { learnHint(); return; }
     if (store.session.mode === "puzzle") { showPuzzleAnswer(); return; }
-    if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
-    if (!isLive()) { toast(t("msg.replay.returnToLive")); return; }
+    if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
+    if (!isLive()) { toast(t("msg.replay.returnToLive"), "fix"); return; }
     if (appGameOver()) return;
     if (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor)) return;
     if (store.session.hintPending || store.session.analyzing) return;
@@ -632,7 +663,7 @@ import { createStore } from "./store.js";
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     store.session.hintPending = false;
     if (!isLive() || game.fen() !== sig) { sync(); return; }
-    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint")); return; }
+    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint"), "fault"); return; }
     const from = e.best.slice(0, 2);
     const to = e.best.slice(2, 4);
     const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
@@ -1005,7 +1036,7 @@ import { createStore } from "./store.js";
     store.session.learn.last = null;
     store.game.selection = null;
     sync();
-    toast(t("lm.yourTurn"));
+    toast(t("lm.yourTurn"), "fix");
   }
 
   function skipLessonDemo() {
@@ -1051,7 +1082,7 @@ import { createStore } from "./store.js";
         if (mv) store.session.learn.helpArrow = { from: mv.from, to: mv.to };
       } catch (_) {}
     }
-    toast(t("lm.answerShown"));
+    toast(t("lm.answerShown"), "fix");
     sync();
   }
 
@@ -1128,7 +1159,7 @@ import { createStore } from "./store.js";
   const PIECE_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
 
   function learnRetryTask(msg) {
-    toast(msg);
+    toast(msg, "fix");
     const token = store.session.learn.token;
     setTimeout(() => { if (store.session.learn && store.session.learn.token === token) startLearnTask(); }, 1400);
   }
@@ -1184,7 +1215,8 @@ import { createStore } from "./store.js";
       g.undo();
       store.session.learn.last = null;
       // the translated retry hint, not the raw Chinese one on the task
-      toast(taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry"));
+      // a lesson retry is a correction, not a receipt
+      toast(taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry"), "fix");
       learnRegisterMiss();
       sync();
       return;
@@ -1233,7 +1265,7 @@ import { createStore } from "./store.js";
   }
 
   async function learnEngineReply() {
-    if (!ChessEngine) { toast(t("lm.noEngine")); return; }
+    if (!ChessEngine) { toast(t("lm.noEngine"), "fault"); return; }
     const g = store.session.learn.g;
     const token = store.session.learn.token;
     // drills default to the weakest tier: the sparring partner is there to
@@ -1286,7 +1318,7 @@ import { createStore } from "./store.js";
   /** Drill-only engine hint, drawn as an arrow (full strength, brief think). */
   async function learnHint() {
     if (!store.session.learn || store.session.learn.done || curTask().type !== "drill" || store.session.learn.engineBusy) return;
-    if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
+    if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
     const g = store.session.learn.g;
     if (g.game_over() || g.turn() !== "w") return;
     if (store.session.hintPending) return;
@@ -1298,7 +1330,7 @@ import { createStore } from "./store.js";
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     store.session.hintPending = false;
     if (!store.session.learn || token !== store.session.learn.token || store.session.learn.g.fen() !== sig) { sync(); return; }
-    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint")); return; }
+    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint"), "fault"); return; }
     store.session.learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
     sync();
   }
@@ -1308,7 +1340,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     if (store.session.learn.ti + 1 < L.tasks.length) {
       Audio2.playMove("b");
-      toast(t("lm.nextSubtask"));
+      toast(t("lm.nextSubtask"), "fix");
       store.session.learn.ti++;
       // startLearnTask resets the per-task cursors, but it runs 900ms later —
       // and the board and prompt are redrawn now. A tap task followed by
@@ -1885,8 +1917,10 @@ import { createStore } from "./store.js";
     store.session.puzzle.last = null;
     store.session.puzzle.misses++;
     markMissed(store.session.puzzle.p.id); // a missed puzzle joins the review queue
+    // the correction tier: this is the app telling you what you got wrong,
+    // which in the puzzle and opening modes is the entire product
     toast((reason || t("pz.noForcedMate")) +
-      (store.session.puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")));
+      (store.session.puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")), "fix");
     sync();
   }
 
@@ -2147,7 +2181,7 @@ import { createStore } from "./store.js";
     if (store.session.analyzing || !ChessEngine) return;
     const perMove = movetime || 120;
     const h = sanHistory();
-    if (!h.length) { toast(t("msg.analysis.noGame")); return; }
+    if (!h.length) { toast(t("msg.analysis.noGame"), "fix"); return; }
     const sig = game.pgn();
     const g = baseGame();
     const fens = [g.fen()];
@@ -3555,12 +3589,12 @@ import { createStore } from "./store.js";
     if (store.session.editor) { editorClick(sq); return; }
     if (store.session.mode === "learn") { learnClick(sq); return; }
     if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
-    if (!isLive()) { toast(t("mm.goLiveFirst")); return; }
+    if (!isLive()) { toast(t("mm.goLiveFirst"), "fix"); return; }
     if (naturalGameOver()) return;
-    if (store.game.flagFall) { toast(t("msg.over.flagged")); return; }
-    if (store.game.resigned) { toast(t("msg.over.resigned")); return; }
-    if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed")); return; }
-    if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed")); return; }
+    if (store.game.flagFall) { toast(t("msg.over.flagged"), "fix"); return; }
+    if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
+    if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
+    if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
     if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return; // engine's move
     const piece = game.get(sq);
     if (store.game.selection && store.game.selection.targets.includes(sq)) {
@@ -3769,9 +3803,9 @@ import { createStore } from "./store.js";
       return;
     }
     // ai mode: offer on your own turn; the engine accepts unless it is winning
-    if (store.session.engineThinking || game.turn() !== store.session.humanColor) { toast(t("msg.draw.offerOnYourTurn")); return; }
-    if (sanHistory().length < 20) { toast(t("msg.draw.offerTooEarly")); return; }
-    if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
+    if (store.session.engineThinking || game.turn() !== store.session.humanColor) { toast(t("msg.draw.offerOnYourTurn"), "fix"); return; }
+    if (sanHistory().length < 20) { toast(t("msg.draw.offerTooEarly"), "fix"); return; }
+    if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
     store.session.drawOfferPending = true;
     toast(t("msg.draw.offerSent"));
     let e = null;
@@ -3805,7 +3839,7 @@ import { createStore } from "./store.js";
   function doClaimDraw() {
     if (store.session.mode === "learn" || store.session.mode === "puzzle" || !isLive() || appGameOver()) return;
     const reason = claimableDrawReason();
-    if (!reason) { toast(t("msg.draw.claimUnavailable")); return; }
+    if (!reason) { toast(t("msg.draw.claimUnavailable"), "fix"); return; }
     invalidateEngine();
     store.game.drawClaimed = reason;
     Audio2.playDraw();
@@ -3818,7 +3852,7 @@ import { createStore } from "./store.js";
   // --- FEN / PGN I/O ---
   async function copyText(text, okMsg) {
     try { await Host.writeClipboard(text); toast(okMsg); }
-    catch (_) { toast(t("msg.copy.failed")); }
+    catch (_) { toast(t("msg.copy.failed"), "fault"); }
   }
 
   function gameResultToken() {
@@ -3888,7 +3922,7 @@ import { createStore } from "./store.js";
   }
 
   async function downloadPgn() {
-    if (!sanHistory().length) { toast(t("msg.export.noGame")); return; }
+    if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
     const pgn = pgnForExport();
     const name = pgnFileName();
     if (Host.hasZero()) {
@@ -4044,7 +4078,7 @@ import { createStore } from "./store.js";
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 2000);
       toast(t("msg.export.done") + name);
-    } catch (_) { toast(t("msg.file.readFailed")); }
+    } catch (_) { toast(t("msg.file.readFailed"), "fault"); }
   }
 
   /**
@@ -4122,7 +4156,7 @@ import { createStore } from "./store.js";
    */
   async function importPgnText(text, label, prompt) {
     let text0 = (text || "").trim();
-    if (!text0) { toast(t("msg.import.empty")); return false; }
+    if (!text0) { toast(t("msg.import.empty"), "fix"); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
     // old behaviour) silently threw away everything before it.
     const games = ChessPgn ? ChessPgn.splitGames(text0) : [text0];
@@ -4151,7 +4185,7 @@ import { createStore } from "./store.js";
     // than call the file malformed.
     const importFen = parsed ? null : (ChessPgn ? ChessPgn.startFen(text0) : null);
     if (!parsed && (!importFen || !new Chess().validate_fen(importFen).valid)) {
-      toast(t("msg.import.badPgn"));
+      toast(t("msg.import.badPgn"), "fault");
       return false;
     }
     invalidateEngine();
@@ -4185,7 +4219,7 @@ import { createStore } from "./store.js";
       const text = await Host.readClipboard();
       importPgnText(text, t("mm.clipboard"));
     } catch (_) {
-      toast(t("msg.clipboard.readFailed"));
+      toast(t("msg.clipboard.readFailed"), "fault");
     }
   }
 
@@ -4200,7 +4234,7 @@ import { createStore } from "./store.js";
       toast(tf("mm.fileTooLarge", [Math.floor((err.limit || 0) / 1024)]));
       return;
     }
-    toast(t("msg.file.readFailed"));
+    toast(t("msg.file.readFailed"), "fault");
   }
 
   /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
@@ -4259,7 +4293,7 @@ import { createStore } from "./store.js";
 
   function startEditor() {
     const Ed = ChessEditor;
-    if (!Ed) { toast(t("msg.editor.unavailable")); return; }
+    if (!Ed) { toast(t("msg.editor.unavailable"), "fault"); return; }
     invalidateEngine();
     store.session.editor = Ed.fromFen(viewGame().fen(), Chess);
     store.session.editor.brush = { color: "w", type: "p" };
@@ -4267,7 +4301,7 @@ import { createStore } from "./store.js";
     BoardView.cancelAnim();
     renderEditorPalette();
     sync();
-    toast(t("msg.editor.hint"));
+    toast(t("msg.editor.hint"), "fix");
   }
 
   /**
@@ -5005,7 +5039,7 @@ import { createStore } from "./store.js";
 
   document.getElementById("fen-copy").onclick = () => copyText(viewGame().fen(), t("msg.copy.fenDone"));
   document.getElementById("pgn-copy").onclick = () => {
-    if (!sanHistory().length) { toast(t("msg.copy.noGame")); return; }
+    if (!sanHistory().length) { toast(t("msg.copy.noGame"), "fix"); return; }
     copyText(pgnForExport(), t("msg.copy.pgnDone"));
   };
   const resignEl = document.getElementById("btn-resign");
@@ -5165,7 +5199,7 @@ import { createStore } from "./store.js";
   document.getElementById("lesson-demo").onclick = () => {
     if (!store.session.learn || store.session.learn.demoing) return;
     const task = curTask();
-    if (!task.solution || (task.type !== "stars" && task.type !== "move")) { toast(t("lm.noDemo")); return; }
+    if (!task.solution || (task.type !== "stars" && task.type !== "move")) { toast(t("lm.noDemo"), "fix"); return; }
     store.session.learn.wantDemo = true;
     startLearnTask();
   };
@@ -5329,11 +5363,11 @@ import { createStore } from "./store.js";
 
   // --- editor + FEN wiring ---
   document.getElementById("editor-open").onclick = () => {
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
+    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
     startEditor();
   };
   document.getElementById("fen-load-open").onclick = () => {
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
+    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
     openFenModal();
   };
   document.getElementById("editor-palette").onclick = (ev) => {
@@ -5394,7 +5428,7 @@ import { createStore } from "./store.js";
         if (input) { input.value = (clip || "").trim(); input.classList.remove("bad"); }
         const err = document.getElementById("fen-error");
         if (err) err.textContent = "";
-      } catch (_) { toast(t("msg.clipboard.readFailed")); }
+      } catch (_) { toast(t("msg.clipboard.readFailed"), "fault"); }
     };
     document.getElementById("fen-input").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") { ev.preventDefault(); submitFen(); }
@@ -5410,7 +5444,7 @@ import { createStore } from "./store.js";
   const slotsModal = document.getElementById("slots-modal");
   if (slotsModal) {
     document.getElementById("slots-open").onclick = () => {
-      if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
+      if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
       openSlots();
     };
     document.getElementById("slots-close").onclick = closeSlots;
@@ -5450,7 +5484,7 @@ import { createStore } from "./store.js";
         const rec = store.session.histCache[Number(b.dataset.histPgn)];
         if (rec) copyText(historyPgn(rec), t("hist.pgnCopied"));
       } else if (b.dataset.hist != null) {
-        if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
+        if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
         loadFromHistory(Number(b.dataset.hist));
       }
     };
@@ -5657,7 +5691,7 @@ import { createStore } from "./store.js";
   saveSettings();
   if (!resumed) saveGame();
   if (store.session.mode === "ai" && ChessEngine) {
-    ChessEngine.init().catch(() => toast(t("mm.engineInitFailed")));
+    ChessEngine.init().catch(() => toast(t("mm.engineInitFailed"), "fault"));
     maybeEngineTurn(); // resumed save may leave the engine on move
   }
   if (firstRun) runOnboarding();

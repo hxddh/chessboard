@@ -86,23 +86,15 @@ const LANGS = ["zh-CN", "en", "ja"];
 {
   for (const lang of LANGS) {
     const { ctx, page, errs } = await open(lang, "ai", "setup");
-    const rows = await page.evaluate(() => {
-      const out = [];
-      for (const row of document.querySelectorAll(".theme-row.wrap")) {
-        if (!row.offsetParent) continue; // hidden rows have no layout to judge
-        const w = [...row.children].map((b) => Math.round(b.getBoundingClientRect().width));
-        if (w.length > 1) out.push({ id: row.id || row.className, w });
-      }
-      return out;
-    });
-    assert(rows.length > 0, lang + ": there are wrapped rows on screen to measure");
-    for (const r of rows) {
-      const max = Math.max(...r.w), min = Math.min(...r.w);
-      // auto-fit columns are equal up to sub-pixel rounding; the old bug made
-      // one button 3x its neighbours, so 2px of slack is plenty of margin
-      assert(max - min <= 2,
-        lang + ": #" + r.id + " buttons are all one size — " + r.w.join("/"));
-    }
+    // The "are these buttons the same width" measurement moved to
+    // test-chess.mjs (P2.8): equal widths are a consequence of the wrapped
+    // segment being a grid with shared columns, and that is one declaration,
+    // checkable in milliseconds and in every language at once. What a browser
+    // is still needed for is whether the rows are *there* and whether opening
+    // the panel in this language throws.
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll(".theme-row.wrap")].filter((r) => r.offsetParent).length);
+    assert(rows > 0, lang + ": the wrapped segments are on screen (" + rows + ")");
     assert(errs.length === 0, lang + ": no JS exception — " + errs.join(" / "));
     await ctx.close();
   }

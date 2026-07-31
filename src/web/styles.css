@@ -5,6 +5,18 @@
     [hidden] { display: none !important; }
 
     /* ------------------------------------------------------------------
+       This file is sectioned by COMPONENT, not by version.
+
+       It used to carry `/* v1.9 polish */` and `/* --- stats (v0.3) --- */`
+       headings — an append log, which tells you when a rule arrived and
+       nothing about what it belongs to. Five such blocks were left; a rule
+       for the history filters sat under "v1.10" three hundred lines away
+       from the rest of the history. Where a rule lives should answer
+       "what does this style", because that is the question someone
+       editing it actually has.
+       ------------------------------------------------------------------ */
+
+    /* ------------------------------------------------------------------
        Tokens, in three layers.
 
        1 raw        literal values, per theme, named for the theme.
@@ -854,35 +866,6 @@
       flex-shrink: 0;
     }
 
-    /* iOS-like segmented control */
-    .pill {
-      display: inline-flex;
-      padding: 2px;
-      border-radius: var(--radius-md);
-      background: var(--btn-ghost);
-      border: 1px solid var(--card-border);
-      gap: 0;
-      min-width: 0;
-    }
-    .pill button {
-      appearance: none; border: 0; background: transparent;
-      color: var(--muted);
-      font: inherit; font-size: 12px; font-weight: 500;
-      padding: 6px 12px; border-radius: var(--radius-sm);
-      cursor: pointer; min-width: 40px;
-      transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), box-shadow var(--dur-quick) var(--ease);
-    }
-    .pill button:hover { color: var(--text); }
-    .pill button.active {
-      background: color-mix(in srgb, var(--panel) 88%, var(--text));
-      color: var(--text);
-      box-shadow: 0 1px 2px rgba(0,0,0,.12);
-    }
-    [data-theme="day"] .pill button.active,
-    [data-theme="notebook"] .pill button.active {
-      background: #fff;
-      box-shadow: 0 1px 3px rgba(0,0,0,.1);
-    }
 
     /* Keyboard focus.
        The app shipped with the UA default — outline rgb(16,16,16) on a
@@ -899,6 +882,22 @@
     /* pointer users never see it; keyboard users always do */
     :focus:not(:focus-visible) { outline: none; }
 
+    /* ---------------------------------------------------------------
+       segment — the one implementation.
+
+       There were two: this one, and an iOS-style `.pill` with its own
+       button sizing, its own active treatment and its own light-theme
+       override. `.pill` had no users left in the markup at all, so the
+       app had a spare segmented control that could only ever drift from
+       the real one — and the second implementation is where "why do
+       these two rows of buttons not match" comes from.
+
+       `.theme-row` is the name history left it; every segment in the app
+       is one, from the mode row to the theme picker to the puzzle
+       category filter. Modifiers: `.wrap` for a grid of more than four,
+       `.mode-nav` for the underline treatment the mode row and the tab
+       row share.
+       --------------------------------------------------------------- */
     .theme-row {
       display: flex; gap: 8px;
     }
@@ -1105,21 +1104,6 @@
       font-size: 11px; color: var(--muted); opacity: 0.85;
     }
     #more-row { margin-top: 2px; }
-    .continue-btn {
-      appearance: none; width: 100%; margin-top: 8px;
-      border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
-      background: color-mix(in srgb, var(--accent) 12%, transparent);
-      color: var(--accent);
-      font: inherit; font-size: 13px; font-weight: 600;
-      padding: 8px 12px; border-radius: var(--radius-sm);
-      cursor: pointer;
-      transition: background var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease);
-    }
-    .continue-btn:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--accent) 20%, transparent);
-      border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
-    }
-    .continue-btn:disabled { opacity: 0.4; cursor: default; }
     .hint {
       margin: 12px 0 0;
       font-size: 11px; color: var(--muted); line-height: var(--lh-body);
@@ -1196,9 +1180,6 @@
     }
     .muted { color: var(--muted); font-size: 12px; }
 
-    /* legacy class hooks still used by some JS queries */
-    .seg { display: contents; }
-    .pill, .theme-row { /* segment hosts also matched as #mode-seg etc */ }
     .toast {
       position: absolute; left: 50%; bottom: 24px; z-index: 40;
       transform: translateX(-50%) translateY(10px);
@@ -1211,6 +1192,24 @@
       transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    /* Three tiers — see toast() in app.js. Same shape, three voices:
+       a receipt, a correction, and a fault that does not leave on its own. */
+    .toast.t-fix {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--panel-border));
+      color: var(--text);
+      max-width: min(420px, calc(100% - 32px));
+      border-radius: var(--radius-md);
+      line-height: var(--lh-body);
+    }
+    .toast.t-fault {
+      background: var(--danger);
+      color: var(--on-danger);
+      border-color: transparent;
+      max-width: min(420px, calc(100% - 32px));
+      border-radius: var(--radius-md);
+      line-height: var(--lh-body);
+      pointer-events: auto;
+    }
 
     /* A storage failure is not a toast.
        A toast says "done" and then leaves; this says "nothing you do from here
@@ -1393,7 +1392,9 @@
       }
     }
   
-/* v1.9 polish */
+/* --- the thinking pulse ---------------------------------------------
+   On the status pill and on the board dot: the two places that say the
+   engine is working. Both stop under prefers-reduced-motion. */
 .status-pill.thinking {
   animation: think-pulse 1.2s var(--ease) infinite;
 }
@@ -1460,10 +1461,6 @@
   .think-dot, .status-pill.thinking { animation: none !important; }
 }
 
-.board-frame-win #board-wrap {
-  box-shadow: var(--board-shadow), 0 0 0 1px color-mix(in srgb, var(--win) 35%, transparent);
-  transition: box-shadow var(--dur-slow) var(--ease);
-}
 
     /* --- chess move list (SAN pairs) --- */
     .mlrow {
@@ -1500,7 +1497,7 @@
       color: var(--accent); font-weight: 600;
     }
 
-    /* --- review analysis (v0.3) --- */
+    /* --- review: the evaluation curve, the bar, and the accuracy line --- */
     #eval-wrap { margin: 8px 0 2px; }
     .pv-line {
       margin-top: 6px;
@@ -1565,7 +1562,7 @@
       .eval-bar-fill { transition: none; }
     }
 
-    /* --- post-game review (v1.6) --- */
+    /* --- review: the report card shown once a game is analysed --- */
     .review {
       margin-top: 8px; padding: 8px 8px;
       background: var(--card); border: 1px solid var(--card-border);
@@ -1597,7 +1594,7 @@
     .mvtag.t-mid { color: var(--judge-mid); }
     .mvtag.t-bad { color: var(--judge-bad); }
 
-    /* --- stats (v0.3) --- */
+    /* --- records: statistics, achievements, game history --- */
     .ach-body {
       display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
     }
@@ -1636,7 +1633,7 @@
     .hist-row { display: flex; gap: 6px; align-items: stretch; }
     .hist-row .pick-item { flex: 1; min-width: 0; padding: 6px 8px; }
 
-/* v1.10 */
+/* --- history filters, the shortcut sheet, and the save slots ---------- */
 .hist-filters {
   display: flex; flex-wrap: wrap; gap: 8px;
   margin-bottom: 12px;
