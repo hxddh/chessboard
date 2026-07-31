@@ -4040,6 +4040,44 @@ for (const lang of CONTENT_LANGS) {
     const minor = (v) => v.split(".").slice(0, 2).join(".");
     assert(minor(headingVersion[1]) === minor(zonVersion[1]),
       "README 怎么玩 heading tracks app.zon (README v" + headingVersion[1] + " vs " + zonVersion[1] + ")");
+
+    // …and no comment may cite a version the app has not reached. Writing
+    // "until 1.26 this did X" beside the code that changed is the most useful
+    // habit in this repo, and it is also the easiest way to end up with five
+    // files describing a release that was never cut: the work landed, the
+    // comments named the version it was going into, and app.zon stayed at
+    // 1.25.0. Same failure as the heading above, one level down.
+    //
+    // Only the phrasings the repo actually uses for a version claim are
+    // matched — a bare "1.5" is a line width, not a release.
+    {
+      const cur = zonVersion[1].split(".").slice(0, 2).map(Number);
+      const newer = (v) => {
+        const [maj, min] = v.split(".").map(Number);
+        return maj > cur[0] || (maj === cur[0] && min > cur[1]);
+      };
+      const files = [
+        ...fs.readdirSync(path.join(root, "src/web/js"))
+          .filter((n) => n.endsWith(".js") && !["bundle.js", "pieces.js", "chess.js"].includes(n))
+          .map((n) => "src/web/js/" + n),
+        ...fs.readdirSync(path.join(root, "scripts")).filter((n) => n.endsWith(".mjs")).map((n) => "scripts/" + n),
+        "README.md", "docs/design-constraints.md", "docs/refactor-plan.md",
+      ];
+      // The version may be written 1.19 or 1.19.1, and the boundary has to
+      // exclude a preceding digit or dot or "1.19.1 起" matches as "19.1".
+      const CLAIM = /(?:\b(?:[Uu]ntil|[Ss]ince|[Ii]n)\s+(?<![\d.])(\d+\.\d+(?:\.\d+)?)\b)|(?:(?<![\d.])(\d+\.\d+(?:\.\d+)?)\s*(?:之前|起|开始|把|改|加))/g;
+      const ahead = [];
+      for (const rel of files) {
+        const src = fs.readFileSync(path.join(root, rel), "utf8");
+        for (const m of src.matchAll(CLAIM)) {
+          const v = m[1] || m[2];
+          if (v && newer(v)) ahead.push(rel + " → " + v);
+        }
+      }
+      assert(ahead.length === 0,
+        "no comment claims a version newer than app.zon " + zonVersion[1] +
+        " (" + [...new Set(ahead)].slice(0, 5).join(", ") + ")");
+    }
   }
 }
 
