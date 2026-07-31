@@ -437,7 +437,10 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     if (m.flashSquare) {
       const { sr, sc } = screenPos(m.flashSquare, m.flipped);
       ctx.fillStyle = P.flash;
-      ctx.fillRect(sc * step, sr * step, step, step);
+      // through cellRect() like every other square fill — this was the one
+      // site that painted on fractional edges, so the flash could show a soft
+      // seam against its neighbours at some board sizes. Defect 10.
+      ctx.fillRect(...cellRect(sr, sc));
     }
     // lesson stars: big on empty squares, tucked in the corner on occupied ones
     if (m.stars && m.stars.length) {

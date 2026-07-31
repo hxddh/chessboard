@@ -5265,19 +5265,21 @@ import { ChessSrs } from "./srs.js";
     draw();
     drawEvalCurve();
   });
-  // The panel toggle animates #board-wrap over 280ms; a one-shot resize at
-  // toggle time samples a mid-transition rect and leaves the backing store
-  // mismatched with the CSS size (whole board rendered scaled = blurry).
-  // Track the canvas size continuously instead.
+  // Track the canvas size continuously, so the backing store never disagrees
+  // with the CSS size (a whole board rendered scaled reads as blurry).
+  //
+  // There used to be an `else` here listening for transitionend on
+  // #board-wrap's width/height, described in its own comment as the fallback
+  // for environments without ResizeObserver. Those properties are
+  // deliberately not transitioned — see the note in styles.css, the board
+  // snaps to its new size on purpose — so the event never fired and the
+  // branch was dead from the day it was written: the comment was older than
+  // the CSS it described. Defect 11. Nothing replaces it, because nothing was
+  // there: setPanelOpen() already re-samples on the next frame (the new size
+  // is final immediately, precisely because there is no transition), and the
+  // window resize handler covers the rest.
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
-  } else {
-    document.getElementById("board-wrap").addEventListener("transitionend", (ev) => {
-      if (ev.propertyName === "width" || ev.propertyName === "height") {
-        BoardView.resizeCanvas();
-        draw();
-      }
-    });
   }
   window.addEventListener("beforeunload", () => saveGame());
   window.addEventListener("pagehide", () => saveGame());

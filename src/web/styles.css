@@ -1210,7 +1210,10 @@
     }
     .mlmove {
       appearance: none; border: 0; background: transparent;
-      color: var(--fg);
+      /* --text, not --fg: there has never been a --fg token in any of the four
+         themes, so this was a colour that silently did not apply and inherited
+         the right one by luck. Defect 9. */
+      color: var(--text);
       font: inherit; font-size: 13px; font-weight: 500;
       /* the one deliberate second height: a move-list cell is a dense grid of
          SAN tokens, not a control in the stack of controls, and at --row-h the

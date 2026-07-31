@@ -1296,6 +1296,27 @@ for (const lang of CONTENT_LANGS) {
     assert(/getPropertyValue\("--dur-base"\)/.test(board),
       "the board's slide reads --dur-base rather than a number of its own");
     assert(!/dur:\s*\d/.test(board), "no hard-coded animation duration left in board.js");
+
+    // …and nothing waits for a transition the stylesheet does not declare.
+    // app.js carried a transitionend handler for #board-wrap's width/height
+    // for several versions, with a comment explaining that the panel toggle
+    // animates them over 280ms. The stylesheet says the opposite, in its own
+    // comment, and has since 1.13: the board snaps to its new size on purpose
+    // (+84% at 1000x1000 — watching that grow is worse than finding it grown).
+    // So the branch never ran. The comment was simply older than the CSS, and
+    // this repo's comments are the most valuable thing in it precisely because
+    // they record measurements — which makes a stale one expensive. Defect 11.
+    const appSrcT = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const transitioned = new Set();
+    for (const m of stripped.matchAll(/#board-wrap[^{}]*\{([^{}]*)\}/g)) {
+      for (const t of (m[1].match(/transition:\s*([^;]+);/) || [, ""])[1].split(","))
+        transitioned.add(t.trim().split(/\s+/)[0]);
+    }
+    for (const prop of ["width", "height"]) {
+      const waits = new RegExp('propertyName === "' + prop + '"').test(appSrcT);
+      assert(!waits || transitioned.has(prop),
+        "nothing waits for a #board-wrap " + prop + " transition the stylesheet never declares");
+    }
   }
 
   // vertical rhythm: one control height, one label height, and gaps that are
@@ -1423,12 +1444,10 @@ for (const lang of CONTENT_LANGS) {
   // .mlmove {color: var(--fg)} has been reading a token that does not exist
   // since it was written — 56 tokens are defined and none of them is --fg (the
   // themes call it --text) — and it looks correct only because the colour it
-  // fails to set is the colour it would have inherited anyway. Defect 9.
-  //
-  // Registered rather than tolerated, same as the colours below: --fg is the
-  // one that already shipped and P0.5 removes it. A new one fails here.
+  // fails to set is the colour it would have inherited anyway. Defect 9,
+  // fixed in P0.5 — the register below is empty and stays empty.
   {
-    const KNOWN_DANGLING = new Set(["--fg"]);
+    const KNOWN_DANGLING = new Set();
     const defined = new Set([...stripped.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
     const dangling = [...new Set([...stripped.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]))]
       .filter((v) => !defined.has(v));
@@ -1496,11 +1515,11 @@ for (const lang of CONTENT_LANGS) {
   // design-constraints.md: 每处格子平涂必须走 cellRect() 取整. A fractional
   // fillRect boundary lands between device pixels and the two squares either
   // side of it get antialiased edges — a visible seam at some board sizes,
-  // and only at some, which is why it survives being looked at. One site
-  // still bypasses it (defect 10, P0.5 removes it); registered so the count
-  // can only go down.
+  // and only at some, which is why it survives being looked at. The lesson
+  // success flash was the one site that bypassed it (defect 10, fixed in
+  // P0.5); the register is empty and stays empty.
   {
-    const KNOWN_RAW_FILLS = 1;
+    const KNOWN_RAW_FILLS = 0;
     const raw = [...boardSrc.matchAll(/ctx\.fillRect\(([^)]*)\)/g)]
       .map((m) => m[1].trim())
       .filter((a) => !a.startsWith("...cellRect("));
