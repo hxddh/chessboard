@@ -308,9 +308,13 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     if (!files || !ranks) return;
     const fs = FILES.split("");
     const rs = ["8", "7", "6", "5", "4", "3", "2", "1"];
-    const span = (t) => "<span>" + t + "</span>";
-    files.innerHTML = (coordFlip ? fs.slice().reverse() : fs).map(span).join("");
-    ranks.innerHTML = (coordFlip ? rs.slice().reverse() : rs).map(span).join("");
+    const span = (t) => {
+      const el = document.createElement("span");
+      el.textContent = t;
+      return el;
+    };
+    files.replaceChildren(...(coordFlip ? fs.slice().reverse() : fs).map(span));
+    ranks.replaceChildren(...(coordFlip ? rs.slice().reverse() : rs).map(span));
   }
 
   function draw() {

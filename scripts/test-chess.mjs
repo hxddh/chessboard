@@ -2761,6 +2761,26 @@ for (const lang of CONTENT_LANGS) {
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
 
+  // --- nothing builds the DOM by concatenating markup ----------------------
+  // P1 acceptance: `grep -c innerHTML` is 0. Most of the twenty uses were
+  // `el.innerHTML = ""`, which is a clear rather than a parse — but it is the
+  // same habit, and the two that did build markup (the captured-piece strip,
+  // the coordinate gutters) learned it from the ones that did not. The
+  // replacement is replaceChildren(), which also states the intent: this list
+  // is being replaced, not appended to.
+  {
+    const dir = path.join(root, "src/web/js");
+    const offenders = [];
+    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "bundle.js")) {
+      const src = fs.readFileSync(path.join(dir, f), "utf8");
+      const n = (src.match(/\.innerHTML\b/g) || []).length;
+      if (n) offenders.push(f + " (" + n + ")");
+    }
+    for (const o of offenders) console.error("  innerHTML in " + o);
+    assert(offenders.length === 0,
+      "no module writes the DOM through innerHTML" + (offenders.length ? " — " + offenders.join(", ") : ""));
+  }
+
   // --- storage goes through one door, and a failed write is heard ----------
   // host.js has always returned true/false from storageSet() and caught its
   // own exception. All eleven call sites in app.js dropped that value, every

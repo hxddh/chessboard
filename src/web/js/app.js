@@ -1371,7 +1371,7 @@ import { createStore } from "./store.js";
     if (title) title.textContent = t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
     const textEl = document.getElementById("lesson-text");
     if (textEl) {
-      textEl.innerHTML = "";
+      textEl.replaceChildren();
       for (const p of loc.text) {
         textEl.appendChild(lessonParagraph(p));
       }
@@ -1405,7 +1405,7 @@ import { createStore } from "./store.js";
     }
     const list = document.getElementById("lesson-list");
     if (list) {
-      list.innerHTML = "";
+      list.replaceChildren();
       let lastPart = null;
       LESSONS.forEach((x, i) => {
         const xl = lessonText(x);
@@ -2019,7 +2019,7 @@ import { createStore } from "./store.js";
       const emptyTask = document.getElementById("puzzle-task");
       if (emptyTask) emptyTask.textContent = t("pz.noneInTier");
       const emptyList = document.getElementById("puzzle-list");
-      if (emptyList) emptyList.innerHTML = "";
+      if (emptyList) emptyList.replaceChildren();
       return;
     }
     const list = puzzlesInCat(store.session.puzzle.cat);
@@ -2070,7 +2070,7 @@ import { createStore } from "./store.js";
     if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
     const listEl = document.getElementById("puzzle-list");
     if (listEl) {
-      listEl.innerHTML = "";
+      listEl.replaceChildren();
       list.forEach((p, i) => {
         const b = document.createElement("button");
         b.type = "button";
@@ -2331,7 +2331,7 @@ import { createStore } from "./store.js";
     const a = analysisFor();
     const sum = R && a ? R.summarize(a.scalars, sanHistory(), startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w") : null;
     el.hidden = !sum;
-    el.innerHTML = "";
+    el.replaceChildren();
     if (!sum) return;
 
     const line = (cls) => { const d = document.createElement("div"); d.className = cls; el.appendChild(d); return d; };
@@ -2561,7 +2561,7 @@ import { createStore } from "./store.js";
     // accuracy of the most recent analysed games (only games the user analysed
     // carry it, so this stays empty until they use 分析/精析)
     const withAcc = s.games.filter((g) => typeof g.acc === "number");
-    el.innerHTML = "";
+    el.replaceChildren();
     let total = 0;
     for (const k of DIFF_IDS) {
       const a = agg[k];
@@ -2714,7 +2714,7 @@ import { createStore } from "./store.js";
     store.session.histCache = historyGames();
     const body = document.getElementById("hist-body");
     if (body) {
-      body.innerHTML = "";
+      body.replaceChildren();
       if (!store.session.histCache.length) {
         const p = document.createElement("p");
         p.className = "hint";
@@ -2731,7 +2731,7 @@ import { createStore } from "./store.js";
     }
     const list = document.getElementById("hist-list");
     if (list) {
-      list.innerHTML = "";
+      list.replaceChildren();
       let shown = 0;
       store.session.histCache.forEach((rec, i) => {
         if (!histMatches(rec)) return;
@@ -2934,7 +2934,7 @@ import { createStore } from "./store.js";
     if (!el) return;
     const res = evalAch();
     const got = res.filter((r) => r.unlocked).length;
-    el.innerHTML = "";
+    el.replaceChildren();
     const head = document.getElementById("ach-count");
     if (head) head.textContent = got + "/" + res.length;
 
@@ -3061,7 +3061,7 @@ import { createStore } from "./store.js";
     const el = document.getElementById("move-list");
     if (!el) return;
     const h = sanHistory();
-    el.innerHTML = "";
+    el.replaceChildren();
     // A position edited to start with Black opens at "1…", so its first row
     // holds a single black move and White's reply belongs to move 2. Pairing
     // from ply 0 would file them together under move 1 — and the review
@@ -4021,7 +4021,7 @@ import { createStore } from "./store.js";
     const titleEl = document.getElementById("pick-title");
     if (!modal || !list) return Promise.resolve(items.length ? 0 : null);
     if (titleEl) titleEl.textContent = title;
-    list.innerHTML = "";
+    list.replaceChildren();
     items.forEach((it, i) => {
       const b = document.createElement("button");
       b.type = "button";
@@ -4222,7 +4222,7 @@ import { createStore } from "./store.js";
   function renderEditorPalette() {
     const el = document.getElementById("editor-palette");
     if (!el || !store.session.editor) return;
-    el.innerHTML = "";
+    el.replaceChildren();
     for (const [color, type] of PALETTE) {
       const b = document.createElement("button");
       b.type = "button";
@@ -4272,7 +4272,7 @@ import { createStore } from "./store.js";
     const cands = ChessEditor.epCandidates(store.session.editor);
     if (epRow) epRow.hidden = !cands.length;
     if (epSeg && cands.length) {
-      epSeg.innerHTML = "";
+      epSeg.replaceChildren();
       for (const sqName of [null, ...cands]) {
         const b = document.createElement("button");
         b.type = "button";
@@ -4399,7 +4399,7 @@ import { createStore } from "./store.js";
     const list = document.getElementById("slots-list");
     if (!list) return;
     const st = loadSlots();
-    list.innerHTML = "";
+    list.replaceChildren();
     for (let i = 0; i < SLOT_COUNT; i++) {
       const slot = st.slots[i];
       const row = document.createElement("div");
@@ -4501,7 +4501,7 @@ import { createStore } from "./store.js";
     const show = (store.session.mode === "ai" || store.session.mode === "pvp") && !sanHistory().length && !store.session.editor;
     el.hidden = !show;
     if (!show) return;
-    el.innerHTML = "";
+    el.replaceChildren();
     const line = (k, v) => {
       const row = document.createElement("div");
       row.className = "idle-line";
@@ -4540,22 +4540,38 @@ import { createStore } from "./store.js";
     const bEl = document.getElementById("taken-b");
     if (!wEl || !bEl) return;
     const off = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
-    if (!Mat || off) { wEl.innerHTML = ""; bEl.innerHTML = ""; return; }
+    if (!Mat || off) { wEl.replaceChildren(); bEl.replaceChildren(); return; }
     const shown = viewGame();
     const promos = verboseHistory().slice(0, store.game.viewIndex)
       .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
     const s = Mat.summary(baseGame().board(), shown.board(), promos);
     const svgs = CHESS_PIECE_SVGS || {};
-    const strip = (list, color, lead) => {
-      const frag = list.map((tp) => {
+    // Built as nodes rather than concatenated markup. The pieces are vendored
+    // SVG text and the lead is a number, so nothing here was ever hostile —
+    // but "build a string and hand it to the parser" is a habit, and the two
+    // places it mattered (the move list, the history rows) learned it here.
+    const strip = (parent, list, color, lead) => {
+      const kids = [];
+      for (const tp of list) {
         const svg = svgs[color + tp];
-        return svg ? '<span class="taken-p">' + svg + "</span>" : "";
-      }).join("");
-      return frag + (lead > 0 ? '<span class="taken-diff">+' + lead + "</span>" : "");
+        if (!svg) continue;
+        const span = document.createElement("span");
+        span.className = "taken-p";
+        // the sprite set is our own file, not input — parsed once per piece
+        span.insertAdjacentHTML("afterbegin", svg);
+        kids.push(span);
+      }
+      if (lead > 0) {
+        const d = document.createElement("span");
+        d.className = "taken-diff";
+        d.textContent = "+" + lead;
+        kids.push(d);
+      }
+      parent.replaceChildren(...kids);
     };
     // White's row shows the black pieces White has taken
-    wEl.innerHTML = strip(s.w, "b", s.diff);
-    bEl.innerHTML = strip(s.b, "w", -s.diff);
+    strip(wEl, s.w, "b", s.diff);
+    strip(bEl, s.b, "w", -s.diff);
   }
 
   // --- panel tabs ---
@@ -4609,7 +4625,7 @@ import { createStore } from "./store.js";
     document.documentElement.setAttribute("lang", store.ui.langId);
     const seg = document.getElementById("lang-seg");
     if (seg) {
-      seg.innerHTML = "";
+      seg.replaceChildren();
       for (const l of I18n.available()) {
         const b = document.createElement("button");
         b.type = "button";
@@ -4982,7 +4998,7 @@ import { createStore } from "./store.js";
   function renderKeyHelp() {
     const list = document.getElementById("keys-list");
     if (!list) return;
-    list.innerHTML = "";
+    list.replaceChildren();
     for (const row of KEY_HELP) {
       const dt = document.createElement("dt");
       for (const key of row.keys) {
