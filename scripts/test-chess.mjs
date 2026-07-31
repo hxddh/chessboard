@@ -2761,6 +2761,68 @@ for (const lang of CONTENT_LANGS) {
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
 
+  // --- keyed lists keep the nodes they can ---------------------------------
+  // The move list is rebuilt on every move, the history at up to 500 rows on
+  // every filter change. Rebuilding throws the nodes away, and with them the
+  // scroll position (put back by hand afterwards) and the focus (not put back
+  // at all — Tab to a move, let the clock tick, and focus is on <body>).
+  {
+    const el = (tag) => {
+      const n = { tagName: tag.toUpperCase(), dataset: {}, childNodes: [], children: [] };
+      n.replaceChildren = (...k) => { n.childNodes = k; n.children = k; };
+      return n;
+    };
+    const parent = el("div");
+    parent.insertBefore = (node, before) => {
+      const at = before ? parent.childNodes.indexOf(before) : parent.childNodes.length;
+      const was = parent.childNodes.indexOf(node);
+      if (was >= 0) parent.childNodes.splice(was, 1);
+      parent.childNodes.splice(at > parent.childNodes.length ? parent.childNodes.length : at, 0, node);
+      parent.children = parent.childNodes;
+    };
+    parent.removeChild = (node) => {
+      const at = parent.childNodes.indexOf(node);
+      if (at >= 0) parent.childNodes.splice(at, 1);
+      parent.children = parent.childNodes;
+    };
+    Object.defineProperty(parent, "lastChild", { get: () => parent.childNodes[parent.childNodes.length - 1] });
+
+    const ctx2 = { console, document: { createElement: el } };
+    ctx2.globalThis = ctx2; ctx2.window = ctx2;
+    vm.createContext(ctx2);
+    loadModule(ctx2, "src/web/js/keyed.js");
+    const { reconcile } = ctx2;
+
+    const build = (it) => { const n = el("div"); n.textContent = it.v; return n; };
+    const items = [{ k: "a", v: 1 }, { k: "b", v: 2 }, { k: "c", v: 3 }];
+    let n = reconcile(parent, items, (i) => i.k, (i) => i.v, build);
+    assert(n === 3 && parent.childNodes.length === 3, "a first render builds every row");
+    const before = parent.childNodes.slice();
+
+    // nothing changed
+    n = reconcile(parent, items, (i) => i.k, (i) => i.v, build);
+    assert(n === 0, "an unchanged list rebuilds nothing");
+    assert(parent.childNodes.every((node, i) => node === before[i]),
+      "…and every node is the same node it was");
+
+    // one row's content changes
+    const items2 = [{ k: "a", v: 1 }, { k: "b", v: 9 }, { k: "c", v: 3 }];
+    n = reconcile(parent, items2, (i) => i.k, (i) => i.v, build);
+    assert(n === 1, "one changed row rebuilds one row (" + n + ")");
+    assert(parent.childNodes[0] === before[0] && parent.childNodes[2] === before[2],
+      "…and leaves its neighbours alone");
+
+    // a row is removed
+    n = reconcile(parent, [items2[0], items2[2]], (i) => i.k, (i) => i.v, build);
+    assert(parent.childNodes.length === 2 && n === 0,
+      "dropping a row rebuilds nothing and shortens the list");
+    // …and reordering moves nodes rather than remaking them
+    const kept = parent.childNodes.slice();
+    n = reconcile(parent, [items2[2], items2[0]], (i) => i.k, (i) => i.v, build);
+    assert(n === 0 && parent.childNodes[0] === kept[1] && parent.childNodes[1] === kept[0],
+      "reordering moves the nodes it already has");
+  }
+
   // --- the board owns the board --------------------------------------------
   // draw() takes a model and paints it; nothing is pushed in ahead of time.
   // The drag was the exception: setDrag() handed the renderer a copy of

@@ -26,6 +26,7 @@ import { CHESS_PUZZLES } from "./puzzles.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
 import { createPersist } from "./persist.js";
+import { reconcile } from "./keyed.js";
 import { createStore } from "./store.js";
 
   /**
@@ -2737,13 +2738,18 @@ import { createStore } from "./store.js";
     }
     const list = document.getElementById("hist-list");
     if (list) {
-      list.replaceChildren();
-      let shown = 0;
-      store.session.histCache.forEach((rec, i) => {
-        if (!histMatches(rec)) return;
-        shown++;
-        list.appendChild(historyRow(rec, i, true));
-      });
+      // Up to 500 rows, re-rendered whenever a filter changes or a game ends.
+      // Keyed by the record id, so flipping "wins only" on and off keeps the
+      // rows that were already on screen — and with them the scroll position
+      // and any focus inside the list. See keyed.js.
+      const rows = store.session.histCache
+        .map((rec, i) => ({ rec, i }))
+        .filter(({ rec }) => histMatches(rec));
+      const shown = rows.length;
+      reconcile(list, rows,
+        ({ rec, i }) => rec.id || ("i" + i),
+        ({ rec }) => [rec.result, rec.diff, rec.color, rec.moves, rec.acc, rec.t].join("|"),
+        ({ rec, i }) => historyRow(rec, i, true));
       if (!shown) {
         const p = document.createElement("p");
         p.className = "hint";
@@ -3067,7 +3073,6 @@ import { createStore } from "./store.js";
     const el = document.getElementById("move-list");
     if (!el) return;
     const h = sanHistory();
-    el.replaceChildren();
     // A position edited to start with Black opens at "1…", so its first row
     // holds a single black move and White's reply belongs to move 2. Pairing
     // from ply 0 would file them together under move 1 — and the review
@@ -3077,39 +3082,60 @@ import { createStore } from "./store.js";
     const moveNo = (i) => (ChessReview
       ? ChessReview.moveNumber(i, firstMover)
       : Math.floor(i / 2) + 1);
+    const a = analysisFor();
+
+    // one entry per row: which plies it holds, and whether it opens with the
+    // "1. …" gap of a black-first game
+    const rows = [];
     for (let i = blackFirst ? -1 : 0; i < h.length; i += 2) {
-      const row = document.createElement("div");
-      row.className = "mlrow";
-      const num = document.createElement("span");
-      num.className = "mlnum num";
-      num.textContent = moveNo(Math.max(0, i)) + ".";
-      row.appendChild(num);
-      // the opening row of a black-first game shows "1. … Qh4"
-      if (i < 0) {
-        const gap = document.createElement("span");
-        gap.className = "mlmove mlgap";
-        gap.textContent = "…";
-        row.appendChild(gap);
-      }
-      const a = analysisFor();
-      for (const j of (i < 0 ? [0] : [i, i + 1])) {
-        if (j >= h.length) break;
-        const b = document.createElement("button");
-        b.type = "button";
-        b.dataset.i = String(j + 1);
-        b.textContent = h[j];
-        b.className = "mlmove" + (store.game.viewIndex === j + 1 ? " current" : "");
-        const tag = a && a.tags[j];
-        if (tag) {
-          const span = document.createElement("span");
-          span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
-          span.textContent = tag;
-          b.appendChild(span);
-        }
-        row.appendChild(b);
-      }
-      el.appendChild(row);
+      const plies = (i < 0 ? [0] : [i, i + 1]).filter((j) => j < h.length);
+      rows.push({ i, no: moveNo(Math.max(0, i)), gap: i < 0, plies });
     }
+
+    // Keyed, so a move rebuilds one row instead of the game. The signature is
+    // everything a row shows — the moves, their annotations, and which one is
+    // current — so an ordinary move dirties exactly one row (two when the
+    // cursor leaves another). See keyed.js for why this is worth doing: the
+    // scroll position and the focus are properties of the nodes, and rebuilding
+    // the list threw both away every time the clock ticked.
+    reconcile(el, rows,
+      (r) => r.i,
+      (r) => r.no + "|" + r.plies.map((j) =>
+        h[j] + "/" + ((a && a.tags[j]) || "") + "/" + (store.game.viewIndex === j + 1 ? "*" : "")).join(","),
+      (r, _idx, reuse) => {
+        const row = reuse || document.createElement("div");
+        row.className = "mlrow";
+        const kids = [];
+        const num = document.createElement("span");
+        num.className = "mlnum num";
+        num.textContent = r.no + ".";
+        kids.push(num);
+        // the opening row of a black-first game shows "1. … Qh4"
+        if (r.gap) {
+          const gap = document.createElement("span");
+          gap.className = "mlmove mlgap";
+          gap.textContent = "…";
+          kids.push(gap);
+        }
+        for (const j of r.plies) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.dataset.i = String(j + 1);
+          b.textContent = h[j];
+          b.className = "mlmove" + (store.game.viewIndex === j + 1 ? " current" : "");
+          const tag = a && a.tags[j];
+          if (tag) {
+            const span = document.createElement("span");
+            span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
+            span.textContent = tag;
+            b.appendChild(span);
+          }
+          kids.push(b);
+        }
+        row.replaceChildren(...kids);
+        return row;
+      });
+
     const cur = el.querySelector(".current");
     // At the start of the game there is no current move to centre on, and the
     // list used to stay wherever the last jump had left it — pressing Home on
