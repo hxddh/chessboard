@@ -1754,6 +1754,36 @@ for (const lang of CONTENT_LANGS) {
     }
   }
 
+  // --- sync() is three commits, not a function that knows how to draw -------
+  // It was 80 lines inline plus nine sub-syncs, called from 65 places, and
+  // every one of those places got the full rebuild — because the one thing it
+  // never knew was what had changed. The views are split by what they are
+  // about and subscribe to the slice they read; sync() now only says "some
+  // things moved".
+  {
+    const body = fnOf("sync");
+    const calls = [...body.matchAll(/\b(\w+)\(/g)].map((m) => m[1]).filter((n) => n !== "sync");
+    const notCommit = calls.filter((n) => n !== "commit");
+    for (const n of notCommit) console.error("  sync() still calls " + n + "()");
+    assert(notCommit.length === 0,
+      "sync() does nothing but commit" + (notCommit.length ? " — also calls " + [...new Set(notCommit)].join(", ") : ""));
+    for (const slice of ["game", "session", "ui"]) {
+      assert(new RegExp('store\\.commit\\("' + slice + '"').test(body), "sync() commits " + slice);
+    }
+    assert(/function wireViews\(\)/.test(appSrc), "the view wiring is in one readable block");
+    for (const view of ["renderStatusPill", "renderReplayBar", "renderGameActions"]) {
+      assert(new RegExp("function " + view + "\\(").test(appSrc), view + "() exists");
+      assert(new RegExp('store\\.subscribe\\("\\w+", ' + view + "\\)").test(appSrc), "…and is subscribed");
+    }
+    // the ids are in index.html, which is loaded once — a lookup can only ever
+    // return the same node, and sync() was doing thirty-odd per pass on a path
+    // that ran on every clock tick
+    assert(/function el\(id\) \{[\s\S]{0,200}?_nodes\.set/.test(appSrc), "getElementById is memoised behind el()");
+    for (const v of ["renderStatusPill", "renderReplayBar", "renderGameActions"]) {
+      assert(!/document\.getElementById/.test(fnOf(v)), v + "() goes through el()");
+    }
+  }
+
   // The memo used to be dropped at the top of sync(), which was correct only
   // while "sync() runs after every state change" stayed true — an invariant
   // held by hand at 65 call sites. The game commit drops it now, from inside

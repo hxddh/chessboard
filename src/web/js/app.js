@@ -3096,28 +3096,91 @@ import { createStore } from "./store.js";
   /** Every way the live game can be finished. */
   function appGameOver() { return naturalGameOver() || ruleTerminated(); }
 
-  function sync() {
-    draw();
+  // --- the views -----------------------------------------------------------
+  //
+  // Up to 1.25 all of this was one function, sync(), called from 65 places.
+  // Playing a move, switching a tab, taking a move back and the clock ticking
+  // one second all ran the same full rebuild — nine sub-syncs, thirty-odd
+  // getElementById calls (`status` looked up twice in the same pass), every
+  // list re-rendered — because the one thing sync() never knew was what had
+  // actually changed.
+  //
+  // It is split by *what a view is about*, and each half subscribes to the
+  // slice it reads. The three groups below are the whole of what sync() used
+  // to do inline; the nine sub-syncs it called are subscribed the same way.
+  //
+  // A view may read more than one slice — the game-action buttons need the
+  // position and the mode — in which case it subscribes to both and is
+  // idempotent. What it must never do is *write* one, which is what the
+  // store's re-entrancy cap is there to catch.
+
+  /**
+   * getElementById, memoised.
+   *
+   * These ids are in index.html, which is loaded once and never rewritten, so
+   * a lookup can only ever return the same node. sync() did thirty-odd of them
+   * per pass on a path that ran on every clock tick.
+   */
+  const _nodes = new Map();
+  function el(id) {
+    if (!_nodes.has(id)) _nodes.set(id, document.getElementById(id));
+    return _nodes.get(id);
+  }
+
+  /** Is a trainer or the editor standing in front of the ordinary game UI? */
+  function inModal() {
+    return store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
+  }
+
+  /** The status pill: whose move, or how it ended, or that we are replaying. */
+  function renderStatusPill() {
+    const modal = inModal();
+    const status = el("status");
+    status.textContent = statusText();
+    const g = viewGame();
+    const decisiveEnd = g.in_checkmate() || !!store.game.resigned || (store.game.flagFall && !timeoutIsDraw());
+    status.classList.toggle("win", !modal && isLive() && decisiveEnd);
+    status.classList.toggle("replay", !modal && !isLive());
+    // "思考中" with nothing moving reads as a hang at the higher levels, where
+    // a search can run for seconds; the pill breathes while the engine works
+    const busy = store.session.engineThinking || store.session.analyzing || !!(store.session.learn && store.session.learn.engineBusy);
+    status.classList.toggle("thinking", busy);
+    // …and a pulse on the board itself, where the player is actually looking
+    const dot = el("think-dot");
+    if (dot) dot.hidden = !busy;
+    const showTurn = !modal && isLive() && !appGameOver();
+    el("white-turn").hidden = !(showTurn && game.turn() === "w");
+    el("black-turn").hidden = !(showTurn && game.turn() === "b");
+  }
+
+  /** The replay bar and the move counter chip beside it. */
+  function renderReplayBar() {
     const h = sanHistory();
-    document.getElementById("status").textContent = statusText();
-    document.getElementById("moves").textContent =
+    el("moves").textContent =
       store.session.mode === "learn" ? (store.session.learn ? (store.session.learn.li + 1) + "/" + LESSONS.length : "—") :
       store.session.mode === "puzzle" ? (store.session.puzzle ? tf("pz.chip", [store.session.puzzle.idx + 1, puzzlesInCat(store.session.puzzle.cat).length]) : "—") :
       store.game.viewIndex + "/" + h.length;
-    document.getElementById("replay-pos").textContent = store.game.viewIndex + " / " + h.length;
-    document.getElementById("rep-start").disabled = store.game.viewIndex <= 0;
-    document.getElementById("rep-prev").disabled = store.game.viewIndex <= 0;
-    document.getElementById("rep-next").disabled = store.game.viewIndex >= h.length;
-    document.getElementById("rep-end").disabled = store.game.viewIndex >= h.length;
-    document.getElementById("rep-live").disabled = isLive();
-    const modal = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
+    el("replay-pos").textContent = store.game.viewIndex + " / " + h.length;
+    el("rep-start").disabled = store.game.viewIndex <= 0;
+    el("rep-prev").disabled = store.game.viewIndex <= 0;
+    el("rep-next").disabled = store.game.viewIndex >= h.length;
+    el("rep-end").disabled = store.game.viewIndex >= h.length;
+    el("rep-live").disabled = isLive();
+    const rt = el("retry-here");
+    if (rt) rt.disabled = isLive();
+  }
+
+  /** Everything you can do to the game in progress. */
+  function renderGameActions() {
+    const h = sanHistory();
+    const modal = inModal();
     const inDrill = store.session.mode === "learn" && store.session.learn && !store.session.learn.done && curTask().type === "drill";
-    document.getElementById("undo").disabled = modal
+    el("undo").disabled = modal
       ? !(inDrill && store.session.learn.g && store.session.learn.g.history().length)
       : h.length === 0 || !isLive() || ruleTerminated();
-    document.getElementById("btn-new").disabled = modal;
-    document.getElementById("btn-flip").disabled = modal;
-    const hintBtn = document.getElementById("btn-hint");
+    el("btn-new").disabled = modal;
+    el("btn-flip").disabled = modal;
+    const hintBtn = el("btn-hint");
     if (hintBtn) {
       hintBtn.disabled =
         store.session.mode === "learn"
@@ -3128,52 +3191,75 @@ import { createStore } from "./store.js";
           (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor));
       hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer") : store.session.hintPending ? t("chrome.thinking") : t("chrome.hint");
     }
-    const resignBtn = document.getElementById("btn-resign");
-    if (resignBtn) {
-      resignBtn.disabled = modal || !isLive() || h.length === 0 || appGameOver();
-    }
-    const drawBtn = document.getElementById("btn-offerdraw");
+    const resignBtn = el("btn-resign");
+    if (resignBtn) resignBtn.disabled = modal || !isLive() || h.length === 0 || appGameOver();
+    const drawBtn = el("btn-offerdraw");
     if (drawBtn) {
       drawBtn.disabled = modal || !isLive() || h.length === 0 ||
         appGameOver() || store.session.drawOfferPending;
     }
-    const claimBtn = document.getElementById("btn-claimdraw");
+    const claimBtn = el("btn-claimdraw");
     if (claimBtn) {
       const reason = !modal && isLive() && !appGameOver() ? claimableDrawReason() : null;
       claimBtn.disabled = !reason;
       claimBtn.title = t(reason === "threefold" ? "tipRun.claimThreefold"
         : reason === "fifty" ? "tipRun.claimFifty" : "tipRun.claimNone");
     }
-    document.getElementById("pgn-copy").disabled = h.length === 0;
-    document.getElementById("pgn-download").disabled = h.length === 0;
-    document.getElementById("fen-copy").disabled = false;
-    const status = document.getElementById("status");
-    const g = viewGame();
-    const decisiveEnd = g.in_checkmate() || !!store.game.resigned || (store.game.flagFall && !timeoutIsDraw());
-    status.classList.toggle("win", !modal && isLive() && decisiveEnd);
-    status.classList.toggle("replay", !modal && !isLive());
-    // "思考中" with nothing moving reads as a hang at the higher levels, where
-    // a search can run for seconds; the pill breathes while the engine works
-    const busy = store.session.engineThinking || store.session.analyzing || !!(store.session.learn && store.session.learn.engineBusy);
-    status.classList.toggle("thinking", busy);
-    // …and a pulse on the board itself, where the player is actually looking
-    const dot = document.getElementById("think-dot");
-    if (dot) dot.hidden = !busy;
-    const over = appGameOver();
-    const showTurn = !modal && isLive() && !over;
-    document.getElementById("white-turn").hidden = !(showTurn && game.turn() === "w");
-    document.getElementById("black-turn").hidden = !(showTurn && game.turn() === "b");
-    const rt = document.getElementById("retry-here");
-    if (rt) rt.disabled = isLive();
-    renderMoveList();
-    setAnalyzeUI();
-    renderOpening();
-    renderClocks();
-    syncClockTimer();
-    syncLearnUI();
-    syncPuzzleUI();
-    syncEditorUI();
-    syncSettingsUI();
+    el("pgn-copy").disabled = h.length === 0;
+    el("pgn-download").disabled = h.length === 0;
+    el("fen-copy").disabled = false;
+  }
+
+  /**
+   * Which view listens to which slice.
+   *
+   * Registered in one block so the wiring can be read at a glance rather than
+   * hunted for beside each view. Order within a slice is paint order: the
+   * board first, because it is what the player is looking at.
+   */
+  function wireViews() {
+    store.subscribe("game", draw);
+    store.subscribe("game", renderStatusPill);
+    store.subscribe("game", renderReplayBar);
+    store.subscribe("game", renderGameActions);
+    store.subscribe("game", renderMoveList);
+    store.subscribe("game", renderOpening);
+    store.subscribe("game", renderClocks);
+    store.subscribe("game", syncClockTimer);
+    store.subscribe("game", setAnalyzeUI);
+
+    // the trainers own the board while they are running, so a session change
+    // repaints it too
+    store.subscribe("session", draw);
+    store.subscribe("session", renderStatusPill);
+    store.subscribe("session", renderReplayBar);
+    store.subscribe("session", renderGameActions);
+    store.subscribe("session", setAnalyzeUI);
+    store.subscribe("session", syncLearnUI);
+    store.subscribe("session", syncPuzzleUI);
+    store.subscribe("session", syncEditorUI);
+    store.subscribe("session", syncSettingsUI);
+
+    store.subscribe("ui", syncSettingsUI);
+    store.subscribe("ui", draw);
+  }
+
+  /**
+   * Everything, in one go.
+   *
+   * The 65 call sites that used to say sync() still say it, and it still means
+   * "something changed, work out what that does to the screen". What changed
+   * is that it is no longer a *function that knows how to draw the app* — it
+   * is three commits, and the views decide for themselves whether they are
+   * concerned. Narrowing a call site to the one slice it actually touches is
+   * now a local edit rather than a rewrite; renderClocks() below is the first
+   * one done that way, because the clock ticks four times a second and had no
+   * business rebuilding the settings panel each time.
+   */
+  function sync() {
+    store.commit("game", "sync");
+    store.commit("session", "sync");
+    store.commit("ui", "sync");
   }
 
   function syncSettingsUI() {
@@ -5348,6 +5434,11 @@ import { createStore } from "./store.js";
   // because the very first thing a new player saw was a 1700-rated Stockfish
   // (mode "ai" + difficulty "normal" are the code defaults) with nothing at all
   // pointing at the interactive course or the Beginner tier built for them.
+  // Views listen from here on. Wired before any state is loaded, so the first
+  // sync() below paints a screen that already agrees with the restored game
+  // rather than one that agrees with the defaults.
+  wireViews();
+
   const firstRun = !Host.storageGet(SETTINGS_KEY) && !Host.storageGet(SAVE_KEY) &&
     !Host.storageGet(LEARN_KEY) && !Host.storageGet(PUZZLE_KEY);
   // and on a first run, start in the system language rather than always Chinese
