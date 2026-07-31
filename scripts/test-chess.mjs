@@ -1743,7 +1743,11 @@ for (const lang of CONTENT_LANGS) {
   // one thing it never knew was what had changed. P1.1 moved them into three
   // slices; this keeps them there.
   {
-    const strays = [...appSrc.matchAll(/^  let ([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
+    // `_recSeq` is not state: it is a monotonic counter that only ever feeds
+    // newRecordId(), never read, never rendered, never persisted. Putting it
+    // in a slice would say it is something the app is *about*.
+    const strays = [...appSrc.matchAll(/^  let ([A-Za-z_$][\w$]*)/gm)]
+      .map((m) => m[1]).filter((n) => n !== "_recSeq");
     for (const n of strays) console.error("  module-level let: " + n);
     assert(strays.length === 0,
       "no state is declared beside its reader" +
@@ -2088,6 +2092,44 @@ for (const lang of CONTENT_LANGS) {
   // unmeasured plies (an aborted analysis) are skipped, never scored as perfect
   assert(R.summarize([0, null, -400], ["e4", "Qh5"], "w") === null,
     "an analysis with nothing measurable yields no report");
+
+  // --- one accuracy formula, and the two side rules agree on it -------------
+  // The clamp, the mean and the exponential existed twice until 1.25 — here
+  // and as app.js accuracyFrom() — differing only in how each worked out whose
+  // move a ply was. review.js owns the arithmetic now, but the two side rules
+  // are still two: this one counts parity from the first mover, the app reads
+  // the side to move off the FEN it already has. Nothing forced them to agree,
+  // and nothing ever checked. 缺陷 6.
+  {
+    const g = new Chess();
+    const line = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "Ng5", "d5", "exd5", "Nxd5"];
+    const fens = [g.fen()];
+    for (const m of line) { g.move(m); fens.push(g.fen()); }
+    // a track with real, uneven losses on both sides
+    const scalars = [20, 10, 35, 30, 60, 55, 300, 40, 55, -120, 25];
+
+    const viaFen = R.lossesBySide(scalars, (i) => (fens[i].split(" ")[1] === "w" ? "w" : "b"));
+    const viaParity = R.lossesBySide(scalars, (i) => (i % 2 === 0 ? "w" : "b"));
+    assert(JSON.stringify(viaFen) === JSON.stringify(viaParity),
+      "the FEN side rule and the parity side rule split the same game the same way");
+
+    const summary = R.summarize(scalars, line, "w");
+    const appAcc = { w: R.accuracyOf(viaFen.w), b: R.accuracyOf(viaFen.b) };
+    assert(summary.acpl.w === appAcc.w.acpl && summary.acpl.b === appAcc.b.acpl,
+      "…and the report and the accuracy line quote the same ACPL (" +
+      summary.acpl.w + "/" + appAcc.w.acpl + ", " + summary.acpl.b + "/" + appAcc.b.acpl + ")");
+    assert(summary.acc.w === appAcc.w.acc && summary.acc.b === appAcc.b.acc,
+      "…and the same accuracy (" + summary.acc.w + "/" + appAcc.w.acc + ")");
+
+    // and app.js does not carry a second copy of the arithmetic any more
+    const appTxt = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const at = appTxt.indexOf("function accuracyFrom(");
+    const accFrom = appTxt.slice(at, appTxt.indexOf("\n  }", at));
+    assert(/Review\.lossesBySide/.test(accFrom) && /Review\.accuracyOf/.test(accFrom),
+      "app.js gets its accuracy from review.js");
+    assert(!/Math\.exp/.test(accFrom) && !/Math\.min\(1000/.test(accFrom),
+      "…and holds no clamp or curve of its own");
+  }
   const s4 = R.summarize([0, -400, null, -400], ["e4", "Nf3", "Qh5"], "w");
   assert(s4.measured === 1, "only the measurable plies are scored (" + s4.measured + ")");
   assert(s4.counts.w.blunder === 1 && s4.acpl.b === null,
@@ -2690,7 +2732,7 @@ for (const lang of CONTENT_LANGS) {
   // by its moves alone, so an unhandled marker would put the position back on
   // the board as live — and in an engine game that means Stockfish quietly
   // playing on from a game the player finished weeks ago.
-  const markers = [...appSrc.matchAll(/recordOutcome\([^)]*"#([a-zA-Z]+)"/g)].map((m) => m[1]);
+  const markers = [...appSrc.matchAll(/recordOutcome\([^)]*"([a-zA-Z]+)"\)/g)].map((m) => m[1]);
   const restore = /function restoreEnding\(rec\) \{[\s\S]*?\n  \}/.exec(appSrc);
   const handled = restore ? [...restore[0].matchAll(/end === "([a-zA-Z]+)"/g)].map((m) => m[1]) : [];
   let unhandled = 0;
@@ -2700,16 +2742,24 @@ for (const lang of CONTENT_LANGS) {
   }
   assert(unhandled === 0, "all " + new Set(markers).size + " ending markers survive a trip through the history");
 
-  // …and the marker must never be mistaken for part of the movetext. A
-  // checkmate ends in a bare "#", which the stripper has to leave alone.
-  const stripper = /historyPgn\(rec\) \{\s*return String\(rec\.sig \|\| ""\)\.replace\((\/[^/]+\/[a-z]*)/.exec(appSrc);
-  assert(!!stripper, "found the sig → PGN stripper");
-  const stripRe = new RegExp(stripper[1].slice(1, stripper[1].lastIndexOf("/")), stripper[1].slice(stripper[1].lastIndexOf("/") + 1));
-  const mate = "1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#";
-  assert(mate.replace(stripRe, "") === mate, "a checkmate's # survives the stripper");
-  for (const k of new Set(markers)) {
-    assert((mate + "#" + k).replace(stripRe, "") === mate, "the #" + k + " marker is stripped, the mate is not");
-  }
+  // …and the ending must not live inside the movetext any more. Until 1.25 a
+  // record's `sig` was the PGN with a "#resigned"-style marker glued on, so
+  // reading either one back meant a regex — safe only because a checkmate PGN
+  // happens to end in a bare "#". 缺陷 13: they are three fields now.
+  assert(/function historyPgn\(rec\) \{\s*return String\(rec\.pgn \|\| ""\);/.test(appSrc),
+    "the PGN is its own field, not a substring of the identity");
+  assert(/function historyEnding\(rec\) \{\s*return String\(rec\.ending \|\| ""\);/.test(appSrc),
+    "…and so is the ending");
+  assert(!/rec\.sig/.test(appSrc), "nothing reads the old packed signature");
+  // identity is issued, never derived from what was played
+  assert(/function newRecordId\(\)/.test(appSrc), "records get an issued id");
+  assert(/store\.game\.recordedId/.test(appSrc) && !/statsRecordedSig/.test(appSrc),
+    "the game on the board remembers which record it is, by id");
+  assert(/s\.games\.find\(\(g\) => g\.id === store\.game\.recordedId\)/.test(appSrc),
+    "accuracy is filed by id, not by walking to the last PGN that matches");
+  // and the v1 stats file still opens
+  assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
+    "a v1 stats file is migrated rather than dropped");
 
   // the editor reports failures as keys — each must resolve in every language
   const editorSrc = fs.readFileSync(path.join(root, "src/web/js/editor.js"), "utf8");
@@ -2972,21 +3022,24 @@ for (const lang of CONTENT_LANGS) {
 
   // A PGN is not a game identity: play the same seven moves twice in a session
   // and the second game inherited the first one's signature, which read as
-  // "already recorded" and kept it out of the stats for good.
+  // "already recorded" and kept it out of the stats for good. Records carry an
+  // issued id since 1.25 (缺陷 13), and the flag the game on the board holds is
+  // "which record am I", so it still has to be cleared when the game is not
+  // that game any more.
   for (const [where, src] of [["新局", fn("requestNewGame")], ["清除存档", appSrc]]) {
     assert(src.length > 0, where + " is still there to check");
   }
   const newGame = fn("requestNewGame");
-  assert(/statsRecordedSig = null/.test(newGame), "a new game forgets the last game's signature");
+  assert(/recordedId = null/.test(newGame), "a new game is not the last game's record");
   assert(/analysis = null/.test(newGame), "a new game forgets the last game's analysis");
   const clearSave = appSrc.slice(appSrc.indexOf('Host.storageRemove(SAVE_KEY)'));
-  assert(/statsRecordedSig = null/.test(clearSave.slice(0, 900)),
-    "clearing the save forgets the signature too");
+  assert(/recordedId = null/.test(clearSave.slice(0, 900)),
+    "clearing the save clears it too");
   // and the accuracy write-back must not hand its number to an older game that
   // happens to have been played the same way
   const rec = fn("recordAccuracy");
-  assert(rec.length > 0 && !/s\.games\.find\(/.test(rec),
-    "accuracy is not filed against the first same-PGN record it finds");
+  assert(rec.length > 0 && !/g\.acc != null/.test(rec),
+    "accuracy no longer needs the already-annotated heuristic — an id is exact");
 
   // A position set up but not yet played into is a real thing to keep.
   const load = fn("tryLoadSave");

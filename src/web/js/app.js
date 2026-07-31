@@ -115,6 +115,9 @@ import { createStore } from "./store.js";
     BoardView.animateMove(mv.from, mv.to, castleRook(mv));
   }
 
+  /** a game restored from the save that was already filed — see recordedId */
+  const RESTORED_AND_FILED = "restored";
+
   /** The live game — single source of truth (chess.js keeps full history). */
   const game = new Chess();
 
@@ -143,7 +146,12 @@ import { createStore } from "./store.js";
       /** bumped on every game mutation; stale engine replies are dropped */
       engineToken: 0,
       /** pgn of the last game recorded into stats (double-count guard) */
-      statsRecordedSig: null,
+      /**
+       * id of the stats record this game was filed under, or null when it has
+       * not been filed. RESTORED_AND_FILED when a finished game came back from
+       * the save file and its id is not to hand.
+       */
+      recordedId: null,
       /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
       timeControl: "off",
       /** remaining ms per side; null when no clock */
@@ -666,7 +674,7 @@ import { createStore } from "./store.js";
       const isDraw = timeoutIsDraw();
       if (isDraw) Audio2.playDraw(); else Audio2.playWin();
       if (store.session.mode === "ai") {
-        recordOutcome(isDraw ? "draw" : side === store.session.humanColor ? "loss" : "win", "#flag");
+        recordOutcome(isDraw ? "draw" : side === store.session.humanColor ? "loss" : "win", "flag");
       }
       saveGame();
       sync();
@@ -1912,7 +1920,7 @@ import { createStore } from "./store.js";
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
     store.session.analysis = null;
-    store.game.statsRecordedSig = null;
+    store.game.recordedId = null;
     gameReset();
     gameLoadPgn(line, { sloppy: true });
     store.game.selection = null;
@@ -2181,27 +2189,22 @@ import { createStore } from "./store.js";
   /**
    * Per-side average centipawn loss and an accuracy score derived from it.
    *
-   * The accuracy curve is the usual exponential decay (100% at zero loss,
-   * ~60% around 60cp average) — it is a readable summary, not an official
-   * rating, and the UI labels it as such.
+   * The arithmetic is review.js's — the clamp, the mean and the exponential
+   * lived here as well until 1.25, identical in every respect except how each
+   * copy decided whose move a ply was. review.js's own header says three
+   * copies are how they start to drift; two was not better. 缺陷 6.
+   *
+   * What stays here is only the part that is genuinely this caller's: the side
+   * rule. The analyser already holds the FEN of every position, so it reads
+   * the side to move off that instead of deriving it from the first mover and
+   * the parity of the ply. Both rules must give the same answer, and
+   * scripts/test-chess.mjs now checks that on a real game.
    */
   function accuracyFrom(fens, scalars) {
-    const acc = { w: null, b: null, wAcpl: null, bAcpl: null };
-    const loss = { w: [], b: [] };
-    for (let i = 0; i + 1 < scalars.length; i++) {
-      const a = scalars[i], b = scalars[i + 1];
-      if (a == null || b == null) continue;
-      const side = fens[i].split(" ")[1] === "w" ? "w" : "b";
-      const d = side === "w" ? a - b : b - a;
-      loss[side].push(Math.max(0, Math.min(1000, d)));
-    }
-    for (const side of ["w", "b"]) {
-      if (!loss[side].length) continue;
-      const mean = loss[side].reduce((x, y) => x + y, 0) / loss[side].length;
-      acc[side === "w" ? "wAcpl" : "bAcpl"] = Math.round(mean);
-      acc[side] = Math.round(100 * Math.exp(-mean / 120));
-    }
-    return acc;
+    const loss = Review.lossesBySide(scalars, (i) => (fens[i].split(" ")[1] === "w" ? "w" : "b"));
+    const w = Review.accuracyOf(loss.w);
+    const b = Review.accuracyOf(loss.b);
+    return { w: w.acc, b: b.acc, wAcpl: w.acpl, bAcpl: b.acpl };
   }
 
   /**
@@ -2217,19 +2220,13 @@ import { createStore } from "./store.js";
     const mine = store.session.humanColor === "w" ? store.session.analysis.acc.w : store.session.analysis.acc.b;
     const acpl = store.session.humanColor === "w" ? store.session.analysis.acc.wAcpl : store.session.analysis.acc.bAcpl;
     if (mine == null) return;
-    const pgn = game.pgn();
     const s = loadStats();
-    // statsRecordedSig is the signature this game was filed under (it carries a
-    // "#resigned"-style suffix for app-level endings, hence the prefix match)
-    // Walk to the LAST match, not the first: a signature is a PGN, and two
-    // games can share one. find() from the front handed this accuracy to the
-    // oldest game that happened to be played the same way, which for a short
-    // mate is a real possibility.
-    let rec = null;
-    for (const g of s.games) {
-      if (!g.sig || g.acc != null) continue; // already annotated is not ours
-      if (g.sig === pgn || g.sig === store.game.statsRecordedSig) rec = g;
-    }
+    // By id. Until 1.25 the key was the PGN, so two games played the same way
+    // were the same record, and this had to walk to the LAST unannotated match
+    // and hope — a heuristic covering for a missing identity. With an id there
+    // is nothing to guess: either this game was filed, or it was not.
+    const rec = store.game.recordedId
+      ? s.games.find((g) => g.id === store.game.recordedId) : null;
     if (!rec) return;
     rec.acc = mine;
     rec.acpl = acpl;
@@ -2429,26 +2426,62 @@ import { createStore } from "./store.js";
   }
 
   // --- stats (AI-mode finished games) ---
+  /**
+   * A record's identity, issued once and never derived from its content.
+   *
+   * Up to 1.25 the primary key was `game.pgn()` — with a "#resigned"-style
+   * suffix glued on for app-level endings, so one string was doing three jobs
+   * at once: identity, the playable movetext, and how the game finished. Two
+   * games played the same way collided, which for a short mate is not a remote
+   * possibility, and recordAccuracy() had to defend itself by walking to the
+   * *last* unannotated match — a heuristic standing in for an id. 缺陷 13.
+   *
+   * Wall-clock plus a counter: two games can finish in the same millisecond
+   * (importing a history record and analysing it, say), and an id that is only
+   * probably unique is the bug this replaces.
+   */
+  let _recSeq = 0;
+  function newRecordId() { return Date.now().toString(36) + "-" + (_recSeq++).toString(36); }
+
   function loadStats() {
     try {
       const s = JSON.parse(Host.storageGet(STATS_KEY) || "null");
-      if (s && s.v === 1 && Array.isArray(s.games)) return s;
+      if (s && s.v === 2 && Array.isArray(s.games)) return s;
+      // v1 → v2: split the overloaded `sig` into the three things it was.
+      // Reading it apart is safe — unlike an id remap, this derives nothing
+      // about *which* game a record is, it only unpacks what was already
+      // stored in it.
+      if (s && s.v === 1 && Array.isArray(s.games)) {
+        return {
+          v: 2,
+          games: s.games.map((g, i) => {
+            const sig = String(g.sig || "");
+            const m = /#([a-zA-Z]+)$/.exec(sig);
+            return Object.assign({}, g, {
+              id: g.id || ("v1-" + (g.t || 0).toString(36) + "-" + i.toString(36)),
+              pgn: g.pgn != null ? g.pgn : sig.replace(/#[a-zA-Z]+$/, ""),
+              ending: g.ending != null ? g.ending : (m ? m[1] : ""),
+              sig: undefined,
+            });
+          }),
+        };
+      }
     } catch (_) {}
-    return { v: 1, games: [] };
+    return { v: 2, games: [] };
   }
 
   /** Record an AI game the moment it finishes on a live move (not on import). */
   function recordGameIfOver() {
     if (store.session.mode !== "ai" || !naturalGameOver()) return;
-    const sig = game.pgn();
-    if (store.game.statsRecordedSig === sig) return;
-    store.game.statsRecordedSig = sig;
+    if (store.game.recordedId) return; // this game is already filed
     let result = "draw";
     if (game.in_checkmate()) result = game.turn() === store.session.humanColor ? "loss" : "win";
     const s = loadStats();
-    // `sig` ties the record to the exact game it came from, so a later
+    // the id ties the record to the exact game it came from, so a later
     // analysis can only annotate the game it actually measured
-    s.games.push({ t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, sig });
+    const id = newRecordId();
+    store.game.recordedId = id;
+    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending: "" });
     if (s.games.length > 500) s.games = s.games.slice(-500);
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
     renderStats();
@@ -2549,24 +2582,24 @@ import { createStore } from "./store.js";
   const HIST_PREVIEW = 5;
 
   function historyGames() {
-    return loadStats().games.filter((g) => g && typeof g.sig === "string" && g.sig.trim()).reverse();
+    return loadStats().games.filter((g) => g && typeof g.pgn === "string" && g.pgn.trim()).reverse();
   }
 
   /**
    * The playable PGN of a record.
    *
-   * `sig` doubles as the record's identity, so a game ended by an app-level
-   * rule carries a "#resigned"-style marker after the movetext. A checkmate
-   * ends in a bare "#", so stripping a trailing "#word" can never eat a move.
+   * Its own field since 1.25. It used to be `sig` with a "#resigned"-style
+   * marker stripped off the end — one string carrying the identity, the
+   * movetext and the ending at once, and only safe because a checkmate PGN
+   * ends in a bare "#" so the regex could not eat a move. 缺陷 13.
    */
   function historyPgn(rec) {
-    return String(rec.sig || "").replace(/#[a-zA-Z]+$/, "");
+    return String(rec.pgn || "");
   }
 
   /** the app-level ending marker of a record, or "" for mate/stalemate */
   function historyEnding(rec) {
-    const m = /#([a-zA-Z]+)$/.exec(String(rec.sig || ""));
-    return m ? m[1] : "";
+    return String(rec.ending || "");
   }
 
   /** "today 14:03" for recent games, a plain date for older ones */
@@ -2730,13 +2763,13 @@ import { createStore } from "./store.js";
       { msg: t("dlg.loadHist"), title: t("dlg.loadHistTitle"), ok: t("dlg.loadHistOk") });
     if (!ok) return;
     // Restore the context the game was played in. Orientation and difficulty
-    // are what the board and the review report mean by "you", and pinning
-    // statsRecordedSig to this record lets a fresh 分析 file its accuracy back
-    // onto the very game it just measured.
+    // are what the board and the review report mean by "you", and pinning the
+    // record id lets a fresh 分析 file its accuracy back onto the very game it
+    // just measured.
     store.session.mode = "ai";
     if (DIFF_NAMES[rec.diff]) store.session.difficulty = rec.diff;
     if (rec.color === "w" || rec.color === "b") { store.session.humanColor = rec.color; store.game.flipped = store.session.humanColor === "b"; }
-    store.game.statsRecordedSig = rec.sig;
+    store.game.recordedId = rec.id;
     restoreEnding(rec);
     // the import ends by offering the position to the engine; a game that ended
     // in resignation is not over by its moves, so call off that search now that
@@ -3481,7 +3514,7 @@ import { createStore } from "./store.js";
     // never reached the stats, and the first game's analysis would have been
     // filed against it. A new game is a new game.
     store.session.analysis = null;
-    store.game.statsRecordedSig = null;
+    store.game.recordedId = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -3543,12 +3576,12 @@ import { createStore } from "./store.js";
   }
 
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
-  function recordOutcome(result, suffix) {
-    const sig = game.pgn() + suffix;
-    if (store.game.statsRecordedSig === sig) return;
-    store.game.statsRecordedSig = sig;
+  function recordOutcome(result, ending) {
+    if (store.game.recordedId) return; // this game is already filed
     const s = loadStats();
-    s.games.push({ t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, sig });
+    const id = newRecordId();
+    store.game.recordedId = id;
+    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending });
     if (s.games.length > 500) s.games = s.games.slice(-500);
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
     renderStats();
@@ -3556,7 +3589,7 @@ import { createStore } from "./store.js";
     offerReview(); // resignation and flag-fall end a game just as much as mate
   }
 
-  function recordResign() { recordOutcome("loss", "#resigned"); }
+  function recordResign() { recordOutcome("loss", "resigned"); }
 
   // --- blunder coach (AI mode): after the engine replies, quietly evaluate
   // the human's last move; a ??-level swing earns a "consider undoing" nudge.
@@ -3659,7 +3692,7 @@ import { createStore } from "./store.js";
     toast(t("msg.draw.agreed"));
   }
 
-  function recordAgreedDraw() { recordOutcome("draw", "#drawAgreed"); }
+  function recordAgreedDraw() { recordOutcome("draw", "drawAgreed"); }
 
   /** FIDE arts. 9.2/9.3: claim the draw at threefold repetition / 50 moves. */
   function doClaimDraw() {
@@ -3669,7 +3702,7 @@ import { createStore } from "./store.js";
     invalidateEngine();
     store.game.drawClaimed = reason;
     Audio2.playDraw();
-    if (store.session.mode === "ai") recordOutcome("draw", "#claimed");
+    if (store.session.mode === "ai") recordOutcome("draw", "claimed");
     saveGame();
     sync();
     toast(reason === "threefold" ? t("msg.draw.claimedRepetition") : t("msg.draw.claimedFiftyMove"));
@@ -4229,7 +4262,7 @@ import { createStore } from "./store.js";
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
     store.session.analysis = null;
-    store.game.statsRecordedSig = null;
+    store.game.recordedId = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -5156,7 +5189,7 @@ import { createStore } from "./store.js";
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
     store.session.analysis = null;
-    store.game.statsRecordedSig = null;
+    store.game.recordedId = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -5452,10 +5485,16 @@ import { createStore } from "./store.js";
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
   // a resumed finished game must not be re-counted on the next live move
-  if (resumed && naturalGameOver()) store.game.statsRecordedSig = game.pgn();
-  if (resumed && store.game.resigned) store.game.statsRecordedSig = game.pgn() + "#resigned";
-  if (resumed && store.game.drawAgreed) store.game.statsRecordedSig = game.pgn() + "#drawAgreed";
-  if (resumed && store.game.drawClaimed) store.game.statsRecordedSig = game.pgn() + "#claimed";
+  // A restored game that is already over was filed when it ended; marking it
+  // recorded stops the launch path filing it a second time. The id is unknown
+  // here (it is in the stats file, not the save), and a sentinel is enough:
+  // all this flag decides is "do not record again".
+  if (resumed && naturalGameOver()) store.game.recordedId = RESTORED_AND_FILED;
+  // …and the same for the three app-level endings, which naturalGameOver()
+  // does not see: a resigned game is not over by its moves.
+  if (resumed && (store.game.resigned || store.game.drawAgreed || store.game.drawClaimed)) {
+    store.game.recordedId = RESTORED_AND_FILED;
+  }
   // clock preset chosen but no saved clock state → fresh clocks
   if (store.game.timeControl !== "off" && !store.game.clock) resetClocks();
   syncAutoFlip(); // a resumed pvp game must face whoever is on move
