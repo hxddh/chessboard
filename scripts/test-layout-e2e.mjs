@@ -137,10 +137,13 @@ const LANGS = ["zh-CN", "en", "ja"];
 // starts *above* them and a reader who knows the word "novice" will read it
 // as the weaker of the two.
 {
+  // The top rung is 不限档 / Unrated / 無制限 since P5.8: 「满强度」 promised
+  // unlimited strength and read as unlimited time, while the search is still
+  // 1.2 seconds a move like every other tier. 缺陷 31.
   const EXPECT = {
-    "zh-CN": { spar: ["新手", "休闲"], engine: ["初级", "中级", "高级", "满强度"] },
-    en: { spar: ["Gentle", "Casual"], engine: ["Novice", "Intermediate", "Advanced", "Full strength"] },
-    ja: { spar: ["やさしい", "お気軽"], engine: ["初級", "中級", "上級", "フルパワー"] },
+    "zh-CN": { spar: ["新手", "休闲"], engine: ["初级", "中级", "高级", "不限档"] },
+    en: { spar: ["Gentle", "Casual"], engine: ["Novice", "Intermediate", "Advanced", "Unrated"] },
+    ja: { spar: ["やさしい", "お気軽"], engine: ["初級", "中級", "上級", "無制限"] },
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");
@@ -267,6 +270,39 @@ for (const [when, setup] of [
   assert(bad.length === 0,
     when + ":屏幕上没有被禁用的可见控件" + (bad.length ? " —— " + bad.join(", ") : ""));
   await ctx.close();
+}
+
+// --- 3h. nothing is truncated, in any language, on any theme --------------
+// P4.7, as a gate rather than a review: after a remake, the thing that breaks
+// first is a label that fits in the language it was designed in. A clipped
+// label is detectable — scrollWidth exceeds clientWidth — so it need not be
+// looked for by eye. The status pill is exempt: it ellipsizes on purpose.
+for (const lang of LANGS) {
+  for (const theme of ["wood", "day"]) {
+    const { ctx, page } = await open(lang, "ai", "setup");
+    await page.evaluate((th) => {
+      document.documentElement.setAttribute("data-theme", th);
+      const f = document.getElementById("fold-game");
+      if (f) f.open = true;
+    }, theme);
+    await page.waitForTimeout(250);
+    const clipped = await page.evaluate(() => {
+      const out = [];
+      for (const e of document.querySelectorAll("button, .setting-k, .side-h, .act-k, .vs-role")) {
+        if (!e.offsetParent) continue;
+        if (e.id === "status" || e.closest("#status")) continue;   // ellipsizes on purpose
+        if (e.classList.contains("switch")) continue;              // a knob, not a label
+        if (e.scrollWidth > e.clientWidth + 1) {
+          out.push((e.id || e.textContent.trim().slice(0, 14)) + " " + e.scrollWidth + ">" + e.clientWidth);
+        }
+      }
+      return out;
+    });
+    for (const c of clipped) console.error("  clipped: " + c);
+    assert(clipped.length === 0,
+      lang + "/" + theme + ":没有被裁掉的标签" + (clipped.length ? " —— " + clipped.join(", ") : ""));
+    await ctx.close();
+  }
 }
 
 // --- 3g. the reading modes get a reading layout ---------------------------

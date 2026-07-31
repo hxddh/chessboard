@@ -51,6 +51,9 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     // the keyboard cursor is a double stroke because it has to stay legible on
     // both square colours *and* on top of a black or a white piece
     cursor: ["--sq-cursor", "rgba(255, 255, 255, 0.95)"],
+    // the contact shadow under a standing piece: a light board wants a
+    // different one from a dark board, so it belongs to the palette too
+    pieceShadow: ["--piece-shadow", "rgba(38, 20, 4, 0.26)"],
     cursorEdge: ["--sq-cursor-edge", "rgba(20, 20, 20, 0.55)"],
   };
   /** resolved once per theme change, not once per square */
@@ -154,18 +157,34 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     }
   }
 
-  /** offscreen raster of piece `key` at `size` device pixels | null while loading */
+  /**
+   * Offscreen raster of piece `key` at `size` device pixels, or null while the
+   * SVGs are still decoding.
+   *
+   * Two sizes are cached, not one: the board size, and that size × LIFT. A
+   * dragged piece is drawn 12% larger, and with a single cache that meant
+   * scaling a bitmap up — so the one piece the player is looking at, held
+   * under the pointer, was the only blurry thing on the board. 缺陷 18.
+   *
+   * design-constraints §2 says "只缓存一个尺寸 round(step)", because changing
+   * size re-rasterises twelve pieces. That reasoning is about *board* sizes,
+   * which change as the window does; these two are a fixed pair and the second
+   * is only ever built while something is actually being dragged.
+   */
   function spriteFor(key, size) {
     const img = _imgs[key];
     if (!img || !img.complete || !img.naturalWidth) return null;
-    if (size !== _spriteSize) { _sprites = {}; _spriteSize = size; }
-    let c = _sprites[key];
+    if (size !== _spriteSize && size !== Math.round(_spriteSize * LIFT)) {
+      _sprites = {}; _spriteSize = size;
+    }
+    const ck = key + "@" + size;
+    let c = _sprites[ck];
     if (!c) {
       c = document.createElement("canvas");
       c.width = size;
       c.height = size;
       c.getContext("2d").drawImage(img, 0, 0, size, size);
-      _sprites[key] = c;
+      _sprites[ck] = c;
     }
     return c;
   }
@@ -407,19 +426,37 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     ctx.textBaseline = "middle";
     ctx.font = Math.round(step * 0.78) + "px 'Segoe UI Symbol', 'Apple Color Emoji', serif";
     const spriteSize = Math.max(8, Math.round(step));
+    /**
+     * The shadow that says a piece is standing ON something.
+     *
+     * ctx.shadowColor appeared exactly once in this whole file, in the drag
+     * branch — so thirty-two pieces sat directly on flat colour with no
+     * contact at all, while the frame around them had a gradient, an outer
+     * shadow and an inner stroke. 缺陷 17. It is a very small ellipse: about
+     * 2% of a square offset down, 6% blurred, and faint enough that nobody
+     * will point at it — which is the difference between "a wooden board" and
+     * "two shades of brown".
+     */
+    function paintContactShadow(x, y, sz) {
+      ctx.save();
+      ctx.fillStyle = P.pieceShadow;
+      ctx.filter = "blur(" + (step * 0.06).toFixed(2) + "px)";
+      ctx.beginPath();
+      ctx.ellipse(x, y + sz * 0.33, sz * 0.30, sz * 0.09, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     function paintPiece(piece, x, y, scale) {
       const k = scale || 1;
-      const sprite = spriteFor(piece.color + piece.type, spriteSize);
+      // Rastered at the size it is drawn at. Until 1.26 the lifted piece was
+      // the board sprite scaled up 12% at draw time, which made the one piece
+      // under the pointer the only stretched bitmap on the board. 缺陷 18.
+      const sz = k === 1 ? spriteSize : Math.round(spriteSize * k);
+      const sprite = spriteFor(piece.color + piece.type, sz);
       if (sprite) {
-        // Scaled at draw time, NOT by asking for a bigger sprite: the sprite
-        // cache holds one size and rebuilds every piece when asked for another,
-        // so a lifted piece would rasterise all twelve on the first drag frame.
-        if (k === 1) {
-          ctx.drawImage(sprite, Math.round(x - spriteSize / 2), Math.round(y - spriteSize / 2));
-        } else {
-          const sz = spriteSize * k;
-          ctx.drawImage(sprite, Math.round(x - sz / 2), Math.round(y - sz / 2), Math.round(sz), Math.round(sz));
-        }
+        if (k === 1) paintContactShadow(x, y, sz); // the drag has its own, larger
+        ctx.drawImage(sprite, Math.round(x - sz / 2), Math.round(y - sz / 2));
         return;
       }
       const glyph = GLYPHS[piece.type];

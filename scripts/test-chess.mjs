@@ -1570,10 +1570,19 @@ for (const lang of CONTENT_LANGS) {
       "the raw-fill count still matches the register (" + raw.length + " vs " + KNOWN_RAW_FILLS + ")");
   }
 
-  // design-constraints.md: 棋子精灵只缓存一个尺寸 round(step) —— 换尺寸会重
-  // 栅格化 12 个子.
-  assert(/_spriteSize/.test(boardSrc) && !/_sprites\[[^\]]*\]\s*=\s*\{/.test(boardSrc),
-    "the sprite cache still holds one size");
+  // design-constraints.md said 棋子精灵只缓存一个尺寸 round(step), because
+  // changing size re-rasterises twelve pieces. That reasoning is about *board*
+  // sizes, which change with the window. P4.3 caches a second, fixed size —
+  // round(step × LIFT) — because the alternative was scaling the board sprite
+  // up 12% at draw time, which made the one piece under the pointer the only
+  // stretched bitmap on the board (缺陷 18). Two, and not a third.
+  assert(/size !== Math\.round\(_spriteSize \* LIFT\)/.test(boardSrc),
+    "the sprite cache holds the board size and the lifted size");
+  assert(!/drawImage\(sprite,[^)]*,\s*Math\.round\(sz\),\s*Math\.round\(sz\)\)/.test(boardSrc),
+    "…and nothing is scaled up at draw time any more");
+  // …and every piece stands on something
+  assert(/function paintContactShadow\(/.test(boardSrc), "pieces have a contact shadow");
+  assert(/P\.pieceShadow/.test(boardSrc), "…in a colour the board palette chooses");
   assert(/invalidatePaint/.test(boardSrc) &&
     /invalidatePaint\(\)/.test(fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8")),
     "switching theme re-reads them");
@@ -2803,6 +2812,132 @@ for (const lang of CONTENT_LANGS) {
   // and the v1 stats file still opens
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
+
+  // --- three claims the copy was making that were not true ------------------
+  {
+    // 缺陷 31: 「满强度」 promises unlimited *strength*, and reads as unlimited
+    // *time*. It only turns off UCI_LimitStrength — the search is still 1.2s a
+    // move, the same as every other tier.
+    for (const lang of ["zh-CN", "en", "ja"]) {
+      const label = I.DICT[lang]["diff.extreme"];
+      assert(!/满强度|Full strength|フルパワー/.test(label),
+        lang + " no longer calls the top tier “full strength” — " + label);
+    }
+    assert(/1\.2/.test(I.DICT["zh-CN"]["tip.diff.extreme"]),
+      "…and its tooltip says what it actually does");
+    // and the engine really does still time-limit it
+    const eng = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");
+    assert(/extreme: \{ elo: null, movetime: 1200 \}/.test(eng),
+      "…which is 1200ms, as the tooltip now says");
+
+    // 缺陷 30: "changing style does not change strength" was half a sentence.
+    // 450cp of slack is about half a piece a move.
+    for (const lang of ["zh-CN", "en", "ja"]) {
+      const note = I.DICT[lang]["side.personaNote"];
+      assert(/半个子|half a piece|半駒/.test(note),
+        lang + " says how far a style may wander — " + note);
+      assert(/杀|mate|詰み/.test(note), lang + " …and what it will not give up");
+    }
+
+    // 缺陷 22: the number is not the number online sites call "accuracy" —
+    // they compute it from win probability and get 60–75% where this gets 37%.
+    assert(I.DICT["zh-CN"]["acc.label"] !== "准确率",
+      "the metric is not called by the name that means something else");
+    for (const lang of ["zh-CN", "en", "ja"]) {
+      assert(/胜率|win probability|勝率/.test(I.DICT[lang]["tip.accuracy"]),
+        lang + " explains what the other number is");
+    }
+  }
+
+  // --- motifs are derived, and only where the position is unambiguous -------
+  // 21 of 168 carried one, all in `tac`, so "practise pins today" reached 21
+  // puzzles while the 23 real-game and 37 capture sets went unlabelled. 缺陷 28.
+  // Hand-tagging 147 positions is how labels start being wrong, so this is
+  // derived from the position the way the difficulty tier already is.
+  {
+    loadModule(ctx, "src/web/js/motif.js");
+    const M = ctx.motifOf;
+    assert(typeof M === "function", "motif.js exports a pure classifier");
+
+    // Known shapes, hand-built so the rule is checked rather than just
+    // exercised. Nf6+ from h5 hits the king on g8 and the rook on e8.
+    assert(M("4r1k1/8/8/7N/8/8/8/7K w - - 0 1", "Nf6+", ctx.Chess) === "fork",
+      "a knight hitting king and rook is a fork");
+    // a rook pinning a knight to its king along the file
+    assert(M("4k3/8/4n3/8/8/8/8/4R2K w - - 0 1", "Re4", ctx.Chess) === "pin",
+      "a rook lining up on a knight in front of its king is a pin");
+    // the same geometry with the values swapped is a skewer
+    assert(M("4q3/8/4k3/8/8/8/8/4R2K w - - 0 1", "Re4+", ctx.Chess) === "skewer",
+      "…and with the king in front it is a skewer");
+    // nothing certain reports nothing
+    assert(M("8/8/8/8/8/8/4P3/4K2k w - - 0 1", "e4", ctx.Chess) === null,
+      "a quiet pawn push is not given a motif it does not have");
+
+    // and it agrees with the labels a human already wrote
+    loadModule(ctx, "src/web/js/puzzles.js");
+    const HAND = { "闪将": "discovered", "牵制": "pin", "串击": "skewer", "捉双": "fork" };
+    let agree = 0, differ = 0;
+    for (const p of ctx.CHESS_PUZZLES) {
+      if (!p.motif || !HAND[p.motif] || !p.fen) continue;
+      const line = p.line || p.solution || [];
+      if (!line.length) continue;
+      const d = M(p.fen, line[0], ctx.Chess);
+      if (d === HAND[p.motif]) agree++;
+      else if (d) { differ++; console.error("  " + p.id + ": hand " + p.motif + ", derived " + d); }
+    }
+    // one disagreement is known and is the derivation being MORE specific:
+    // t-disco-q is a discovered check that is also a double check
+    assert(differ <= 1,
+      "the derivation agrees with the hand labels (" + agree + " agree, " + differ + " differ)");
+  }
+
+  // --- every "category × difficulty" combination is non-empty, or absent ----
+  // P5 acceptance. puzzleTier()'s dominant term is (plies − 1) × 1.5, and in
+  // the three mate categories the ply count is a written-in constant (1/3/5),
+  // contributing 0, 3 and 6 while everything else together moves the score by
+  // at most ±4.5 — never across a 3-point band. So the tier was the category
+  // under another name, seven of the eighteen combinations were empty, and
+  // picking one showed a blank list. The filter is remembered, so the next
+  // visit to that category still looked empty. 缺陷 14.
+  //
+  // Fixed as (A): the categories where difficulty is not a separate axis do
+  // not offer the filter. This asserts both halves — the ones that offer it
+  // have every band populated, and the ones that do not are declared.
+  {
+    const appTier = appSrc.slice(appSrc.indexOf("const TIER_CATS = new Set("));
+    const declared = /const TIER_CATS = new Set\(\[([^\]]*)\]\)/.exec(appTier);
+    assert(!!declared, "the categories with a real difficulty axis are declared");
+    const cats = declared[1].match(/"(\w+)"/g).map((x) => x.replace(/"/g, ""));
+    for (const m of ["m1", "m2", "m3"]) {
+      assert(!cats.includes(m), m + " does not offer a filter that repeats its own name");
+    }
+    assert(cats.includes("tac") && cats.includes("def") && cats.includes("op") && cats.includes("real"),
+      "…and the four that do keep it — " + cats.join(", "));
+    assert(/!tierApplies\(cat\)/.test(appSrc), "the filter is bypassed where it does not apply");
+    assert(/avail\(el\("row-puzzle-tier"\), /.test(appSrc),
+      "…and the row is absent rather than dead");
+  }
+
+  // --- the move list: figurine notation, one typeface -----------------------
+  // `Nf3` is English algebraic — N for Knight, a word two of this app's three
+  // languages do not use. The vector pieces are already loaded for the board.
+  // And the row mixed SF Mono 12px (the move number) with the interface sans
+  // at 13px (the move) in a three-character span. P4.4.
+  {
+    assert(/function writeSan\(node, san, color\)/.test(appSrc), "moves are written through one helper");
+    assert(/node\.setAttribute\("aria-label", san\)/.test(appSrc),
+      "…and the full SAN stays as the accessible name");
+    const at = appSrc.indexOf("function writeSan(node, san, color)");
+    const ws = appSrc.slice(at, appSrc.indexOf("\n  }", at));
+    assert(/SAN_PIECE\[san\[0\]\]/.test(ws), "only the leading piece letter becomes a piece");
+    assert(/san\.slice\(1\)/.test(ws), "…the rest of the move is text");
+    const cssM2 = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const num = /\.mlnum \{([^}]*)\}/.exec(cssM2);
+    assert(num && /font-size: 13px/.test(num[1]),
+      "the move number is the same size as the move beside it");
+    assert(num && /tabular-nums/.test(num[1]), "…and still a column of figures");
+    assert(!/\.mlnum num/.test(appSrc), "…without borrowing the mono stack for it");
+  }
 
   // --- the exported image is a file, not a screenshot of this theme --------
   // It painted on --card (a 3–4% white overlay in wood and night) with --text

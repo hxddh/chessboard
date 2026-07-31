@@ -13,6 +13,7 @@ import { CHESS_LESSONS_EN } from "./lessons-en.js";
 import { CHESS_LESSONS_JA } from "./lessons-ja.js";
 import { CHESS_LESSONS } from "./lessons.js";
 import { ChessMaterial } from "./material.js";
+import { motifOf } from "./motif.js";
 import { ChessOpeningCoach } from "./opening-coach.js";
 import { CHESS_OPENINGS_EN, CHESS_OPENING_IDEAS_EN } from "./openings-en.js";
 import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
@@ -911,8 +912,30 @@ import { createStore } from "./store.js";
     if (p.cat === "op" && p.nameId) return p.eco + " " + openingName(p.nameId);
     return contentField("puzzles", p.id, "name") || p.name;
   }
+  /**
+   * What this puzzle is teaching.
+   *
+   * Hand-written first, then derived, then the generic fallback. 21 of the 168
+   * carried a motif and all of them were in `tac`, so "practise pins today"
+   * could only reach those 21 while the real-game and capture sets are full of
+   * unlabelled ones. motif.js works the rest out from the position — and says
+   * nothing where it is not sure, because a wrong motif in a teaching app
+   * teaches the wrong thing. 缺陷 28.
+   */
+  const MOTIF_CACHE = new Map();
+  function derivedMotif(p) {
+    if (MOTIF_CACHE.has(p.id)) return MOTIF_CACHE.get(p.id);
+    const line = p.line || p.solution || [];
+    let m = null;
+    if (p.fen && line.length) { try { m = motifOf(p.fen, line[0], Chess); } catch (_) { m = null; } }
+    MOTIF_CACHE.set(p.id, m);
+    return m;
+  }
   function puzzleMotif(p) {
-    return contentField("puzzles", p.id, "motif") || p.motif || t("pz.forcing");
+    const hand = contentField("puzzles", p.id, "motif") || p.motif;
+    if (hand) return hand;
+    const d = derivedMotif(p);
+    return d ? t("motif." + d) : t("pz.forcing");
   }
   function puzzleIdea(p) {
     if (p.cat === "op" && p.nameId) return openingIdea(p.nameId) || p.idea || "";
@@ -1519,6 +1542,33 @@ import { createStore } from "./store.js";
    * @returns {"easy"|"mid"|"hard"}
    */
   const PUZZLE_TIER_CACHE = new Map();
+  /**
+   * Categories where difficulty is a real, separate axis.
+   *
+   * In the three mate categories it is not. `puzzleTier()`'s dominant term is
+   * (plies − 1) × 1.5, and for m1/m2/m3 the ply count is a written-in constant
+   * — 1, 3, 5 — contributing 0, 3 and 6 points, while every other term put
+   * together moves the score by at most ±4.5, which never crosses a 3-point
+   * band boundary. So the tier *was* the category: every mate-in-one came out
+   * easy, every mate-in-three hard, and seven of the eighteen
+   * category × difficulty combinations were empty. Picking one of those left
+   * the list blank — and the filter is remembered, so the next visit to that
+   * category looked like an empty puzzle set. 缺陷 14.
+   *
+   * The fix chosen is (A): stop offering a filter that is a second name for
+   * the category. "Mate in two" already says how hard it is. The four
+   * categories where the tier is derived from something else — the line's
+   * length for openings, how loud the key move is for real games, how many
+   * moves hold for defence, and the full score for tactics and captures —
+   * keep it.
+   *
+   * (B) — a solving-cost measure from the engine's first-choice margin —
+   * would be better and is not free: it needs an offline pass over 168
+   * puzzles and a new field in the data. It stays on the table.
+   */
+  const TIER_CATS = new Set(["tac", "win", "real", "def", "draw", "op"]);
+  function tierApplies(cat) { return TIER_CATS.has(cat); }
+
   function puzzleTier(p) {
     if (PUZZLE_TIER_CACHE.has(p.id)) return PUZZLE_TIER_CACHE.get(p.id);
     let score = 0;
@@ -1642,7 +1692,7 @@ import { createStore } from "./store.js";
     // player got wrong. Filtering it by an automatically derived tier hides the
     // very puzzles they asked to redo (a queue of three could show as empty),
     // so the tier row does not apply here.
-    if (cat === "review" || store.session.puzzleTierFilter === "all") return base;
+    if (cat === "review" || !tierApplies(cat) || store.session.puzzleTierFilter === "all") return base;
     return base.filter((p) => puzzleTier(p) === store.session.puzzleTierFilter);
   }
 
@@ -2055,6 +2105,7 @@ import { createStore } from "./store.js";
       document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
         b.classList.toggle("active", b.dataset.cat === store.session.puzzleState.cat);
       });
+      avail(el("row-puzzle-tier"), tierApplies(store.session.puzzleState.cat));
       const emptyProg = document.getElementById("puzzle-progress");
       if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
         [ALL_PUZZLES.filter((p) => store.session.puzzleState.solved[p.id]).length, ALL_PUZZLES.length]);
@@ -2074,14 +2125,17 @@ import { createStore } from "./store.js";
         : tf("pz.solvedCount", [solvedAll, ALL_PUZZLES.length]);
     }
     // the tier row does nothing in the review queue — grey it out rather than
-    // leaving buttons that look live but change nothing
-    const inReview = store.session.puzzle.cat === "review";
+    // The difficulty filter exists only where difficulty is a separate axis.
+    // In review it filters nothing (the queue is what it is), and in the three
+    // mate categories the tier is the category under another name — see
+    // tierApplies(). A filter that cannot change the list is not disabled, it
+    // is absent (P3.3).
+    const shows = tierApplies(store.session.puzzle.cat);
+    avail(el("row-puzzle-tier"), shows);
     document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
-      b.classList.toggle("active", !inReview && b.dataset.tier === store.session.puzzleTierFilter);
-      b.disabled = inReview;
+      b.classList.toggle("active", shows && b.dataset.tier === store.session.puzzleTierFilter);
+      b.disabled = false;
     });
-    const tierRow = document.getElementById("row-puzzle-tier");
-    if (tierRow) tierRow.classList.toggle("muted-row", inReview);
     document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.cat === store.session.puzzle.cat);
       // surface how many are queued for review right on the tab
@@ -2500,6 +2554,38 @@ import { createStore } from "./store.js";
     ctx.lineWidth = dpr;
     ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
     ctx.globalAlpha = 1;
+
+    // Filled in the two colours the rest of the app already uses for the two
+    // sides: above the midline in White's colour, below in Black's. The curve
+    // was one accent line, so reading "who is ahead" meant remembering that up
+    // is White — while the player cards, the captured strip and the evaluation
+    // bar all say it with black and white directly. P4.5.
+    const sideW = css.getPropertyValue("--side-white").trim() || "#f2f2ee";
+    const sideB = css.getPropertyValue("--side-black").trim() || "#1d1d1b";
+    for (const [above, fill] of [[true, sideW], [false, sideB]]) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, above ? 0 : H / 2, W, H / 2);
+      ctx.clip();
+      ctx.beginPath();
+      let open = false;
+      for (let i = 0; i <= n; i++) {
+        const sv = a.scalars[i];
+        if (sv == null) {
+          if (open) { ctx.lineTo(x(i - 1), H / 2); ctx.closePath(); open = false; }
+          continue;
+        }
+        if (!open) { ctx.moveTo(x(i), H / 2); open = true; }
+        ctx.lineTo(x(i), y(sv));
+        if (i === n) { ctx.lineTo(x(i), H / 2); ctx.closePath(); }
+      }
+      ctx.fillStyle = fill;
+      ctx.globalAlpha = 0.5;
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+
     // eval line (skip null gaps)
     ctx.strokeStyle = cAccent;
     ctx.lineWidth = 1.6 * dpr;
@@ -3165,7 +3251,7 @@ import { createStore } from "./store.js";
         row.className = "mlrow";
         const kids = [];
         const num = document.createElement("span");
-        num.className = "mlnum num";
+        num.className = "mlnum";
         num.textContent = r.no + ".";
         kids.push(num);
         // the opening row of a black-first game shows "1. … Qh4"
@@ -3179,8 +3265,14 @@ import { createStore } from "./store.js";
           const b = document.createElement("button");
           b.type = "button";
           b.dataset.i = String(j + 1);
-          b.textContent = h[j];
           b.className = "mlmove" + (store.game.viewIndex === j + 1 ? " current" : "");
+          // Figurine notation: the piece letter becomes the piece. `Nf3` is
+          // English algebraic — the N is short for Knight, which is not a word
+          // two of this app's three languages use. The vector set is already
+          // here for the board, and a figurine move list is the same notation
+          // for every reader. The full SAN stays as the accessible name, so
+          // "Nf3" is still what a screen reader says. P4.4.
+          writeSan(b, h[j], j % 2 === 0 ? "w" : "b");
           const tag = a && a.tags[j];
           if (tag) {
             const span = document.createElement("span");
@@ -3420,6 +3512,28 @@ import { createStore } from "./store.js";
       const live = [...group.querySelectorAll("button")].some((b) => !b.hidden);
       group.hidden = !live;
     }
+  }
+
+  /**
+   * Write a SAN move into `node`, with the piece letter drawn as the piece.
+   *
+   * Only the leading letter: `Nxf3+` becomes ♞xf3+, `e4` and `O-O` are
+   * untouched, and a promotion's `=Q` keeps its letter because that Q is the
+   * piece you *chose*, which is worth reading as a word.
+   */
+  const SAN_PIECE = { K: "k", Q: "q", R: "r", B: "b", N: "n" };
+  function writeSan(node, san, color) {
+    node.setAttribute("aria-label", san);
+    node.title = san;
+    const type = SAN_PIECE[san[0]];
+    const svgs = CHESS_PIECE_SVGS || {};
+    const svg = type && svgs[color + type];
+    if (!svg) { node.textContent = san; return; }
+    const fig = document.createElement("span");
+    fig.className = "mlfig";
+    fig.setAttribute("aria-hidden", "true");
+    fig.insertAdjacentHTML("afterbegin", svg);
+    node.replaceChildren(fig, document.createTextNode(san.slice(1)));
   }
 
   /** The replay bar and the move counter chip beside it. */

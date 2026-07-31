@@ -259,6 +259,8 @@
        unchanged — this only makes the pairing a *choice* rather than a fact.
        ------------------------------------------------------------------ */
     :root, [data-board="wood"] {
+      /* the ellipse under a standing piece — see board.js paintContactShadow */
+      --piece-shadow: rgba(38,20,4,.26);
       /* 3 · judgement — one scale for "how bad was that move", read by the
          stylesheet AND by the canvas (see app.js readMistakeColours). */
       --judge-soft: #c9b458;
@@ -287,6 +289,8 @@
       --sq-ring: rgba(30, 30, 30, var(--mark-soft));
     }
     [data-board="night"] {
+      /* the ellipse under a standing piece — see board.js paintContactShadow */
+      --piece-shadow: rgba(0,10,6,.34);
       --judge-soft: #d8c46a;
       --judge-mid: #eaa94a;
       --judge-bad: #e8705c;
@@ -312,6 +316,8 @@
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
     [data-board="day"] {
+      /* the ellipse under a standing piece — see board.js paintContactShadow */
+      --piece-shadow: rgba(40,36,28,.20);
       --judge-soft: #9a7b12;
       --judge-mid: #b7690c;
       --judge-bad: #c0392b;
@@ -337,6 +343,8 @@
       --sq-ring: rgba(60, 45, 25, var(--mark-soft));
     }
     [data-board="notebook"] {
+      /* the ellipse under a standing piece — see board.js paintContactShadow */
+      --piece-shadow: rgba(50,44,30,.18);
       --judge-soft: #8a6d0f;
       --judge-mid: #a85c08;
       --judge-bad: #b3372a;
@@ -618,8 +626,13 @@
          with 0.4896px of tracking — fractional because it was computed from a
          length, which is also how it slipped past the type-scale check added
          in 1.12. Two honest steps instead, chosen by how much frame there is
-         to print on. */
-      font-size: 11px;
+         to print on.
+
+         11px is the documented *floor* for these (design-constraints §3), and
+         sitting on a floor is not a decision — it is what you get when nobody
+         chooses. The frame is 17px of wood; 12px prints on it comfortably and
+         13px on a wide one. P4.6. */
+      font-size: 12px;
       font-weight: 600; letter-spacing: 0.5px;
       pointer-events: none; user-select: none;
     }
@@ -638,7 +651,7 @@
       line-height: var(--lh-tight);
     }
     /* a wider frame can carry the larger step */
-    @media (min-width: 1100px) { .coords { font-size: 12px; } }
+    @media (min-width: 1100px) { .coords { font-size: 13px; } }
 
     canvas {
       display: block; width: 100%; height: 100%;
@@ -992,6 +1005,13 @@
       cursor: pointer;
       transition: border-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
     }
+    /* A label longer than its column has to go somewhere. The grid gives every
+       segment the same width, so the widest label in the widest language sets
+       what fits — and "Intermediate" is 88px in a 75px column, one word with
+       nowhere to break. Hyphenation lets it break where the language says it
+       may; the rows are equal height regardless, because they are grid rows.
+       (P4.7 found this: the truncation sweep is a gate, not a review.) */
+    .theme-row button { overflow-wrap: break-word; hyphens: auto; }
     .theme-row button:hover { color: var(--text); }
     .theme-row button:active { transform: scale(0.97); }
     .theme-row button.active {
@@ -1527,11 +1547,22 @@
       display: flex; align-items: center; gap: 4px;
       padding: 0px 2px;
     }
+    /* One font for the row. The move number was SF Mono 12px and the move
+       beside it the interface sans at 13px — two typefaces and two sizes in a
+       three-character span. Tabular figures stay, because the numbers are a
+       column; the family and the size are the move's. P4.4. */
     .mlnum {
       width: 26px; flex: none; text-align: right;
-      font-size: 12px; color: var(--muted);
+      font-size: 13px; color: var(--muted);
+      font-variant-numeric: tabular-nums;
       padding-right: 2px;
     }
+    /* the piece, drawn at the cap height of the text beside it */
+    .mlfig {
+      display: inline-flex; width: 1.05em; height: 1.05em;
+      vertical-align: -0.16em;
+    }
+    .mlfig svg { width: 100%; height: 100%; display: block; }
     .mlmove {
       appearance: none; border: 0; background: transparent;
       /* --text, not --fg: there has never been a --fg token in any of the four
@@ -1646,8 +1677,6 @@
     .ach-pg { margin-left: auto; font-size: 11px; color: var(--muted); flex: none; }
     /* the "what next?" suggestion under the statistics */
     .stat-rec { margin-top: 6px; color: var(--accent); }
-    /* a settings row whose controls do not apply right now */
-    .muted-row { opacity: .45; }
 
     .mvtag { margin-left: 2px; font-weight: 600; font-size: 11px; }
     .mvtag.t-soft { color: var(--judge-soft); }
@@ -1684,7 +1713,12 @@
       padding: 2px 2px;
     }
     .stat-k { color: var(--muted); }
-    .stat-v { color: var(--text); font-size: 12px; }
+    /* Every number in the app is tabular — see --font-num. The clock, the
+       evaluations and the move numbers already were; the statistics, the
+       achievement counters and the history rows were not, so a column of
+       figures under 「战绩」 shifted its digits as the values changed. P4.6. */
+    .stat-v { color: var(--text); font-size: 12px; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+    .ach-pg, .hist-row { font-variant-numeric: tabular-nums; }
     .stats-body .hint { margin: 4px 0 0; }
 
     /* game history: same row shape in the sidebar preview and the full list */
