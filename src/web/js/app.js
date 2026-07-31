@@ -475,7 +475,7 @@ import { ChessSrs } from "./srs.js";
     catch (_) { mv = null; }
     if (token !== engineToken) return; // game changed while thinking
     engineThinking = false;
-    if (!mv) { sync(); toast(t("m.00")); return; }
+    if (!mv) { sync(); toast(t("msg.engine.noMove")); return; }
     const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
       viewIndex = sanHistory().length;
@@ -498,8 +498,8 @@ import { ChessSrs } from "./srs.js";
   async function requestHint() {
     if (mode === "learn") { learnHint(); return; }
     if (mode === "puzzle") { showPuzzleAnswer(); return; }
-    if (!ChessEngine) { toast(t("m.01")); return; }
-    if (!isLive()) { toast(t("m.02")); return; }
+    if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
+    if (!isLive()) { toast(t("msg.replay.returnToLive")); return; }
     if (appGameOver()) return;
     if (mode === "ai" && (engineThinking || game.turn() !== humanColor)) return;
     if (hintPending || analyzing) return;
@@ -510,7 +510,7 @@ import { ChessSrs } from "./srs.js";
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     hintPending = false;
     if (!isLive() || game.fen() !== sig) { sync(); return; }
-    if (!e || !e.best) { sync(); toast(t("m.03")); return; }
+    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint")); return; }
     const from = e.best.slice(0, 2);
     const to = e.best.slice(2, 4);
     const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
@@ -603,9 +603,9 @@ import { ChessSrs } from "./srs.js";
       }
       saveGame();
       sync();
-      const who = side === "w" ? t("m.04") : t("m.05");
-      toast(isDraw ? who + t("m.06") :
-        tf("mm.flagWin", [who, side === "w" ? t("m.05") : t("m.04")]));
+      const who = side === "w" ? t("side.white") : t("side.black");
+      toast(isDraw ? who + t("msg.clock.flagDrawNoMaterial") :
+        tf("mm.flagWin", [who, side === "w" ? t("side.black") : t("side.white")]));
       return;
     }
     renderClocks();
@@ -1155,7 +1155,7 @@ import { ChessSrs } from "./srs.js";
   /** Drill-only engine hint, drawn as an arrow (full strength, brief think). */
   async function learnHint() {
     if (!learn || learn.done || curTask().type !== "drill" || learn.engineBusy) return;
-    if (!ChessEngine) { toast(t("m.01")); return; }
+    if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
     const g = learn.g;
     if (g.game_over() || g.turn() !== "w") return;
     if (hintPending) return;
@@ -1167,7 +1167,7 @@ import { ChessSrs } from "./srs.js";
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     hintPending = false;
     if (!learn || token !== learn.token || learn.g.fen() !== sig) { sync(); return; }
-    if (!e || !e.best) { sync(); toast(t("m.03")); return; }
+    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint")); return; }
     learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
     sync();
   }
@@ -2013,7 +2013,7 @@ import { ChessSrs } from "./srs.js";
     if (analyzing || !ChessEngine) return;
     const perMove = movetime || 120;
     const h = sanHistory();
-    if (!h.length) { toast(t("m.19")); return; }
+    if (!h.length) { toast(t("msg.analysis.noGame")); return; }
     const sig = game.pgn();
     const g = baseGame();
     const fens = [g.fen()];
@@ -2037,8 +2037,8 @@ import { ChessSrs } from "./srs.js";
         // keep whatever was already measured — a partial curve still helps
         if (i > 1) {
           analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
-          toast(t("m.30") + (i - 1) + t("m.31"));
-        } else toast(t("m.29"));
+          toast(t("msg.analysis.keptPrefix") + (i - 1) + t("msg.analysis.keptSuffix"));
+        } else toast(t("msg.analysis.stopped"));
         sync();
         return;
       }
@@ -2093,7 +2093,7 @@ import { ChessSrs } from "./srs.js";
     recordAccuracy();
     sync();
     const bad = tags.filter((tag) => tag === "?" || tag === "??").length;
-    const done = bad ? t("m.27") + bad + t("m.28") : t("m.26");
+    const done = bad ? t("msg.analysis.donePrefix") + bad + t("msg.analysis.doneSuffix") : t("msg.analysis.doneClean");
     toast(done);
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
@@ -2234,7 +2234,7 @@ import { ChessSrs } from "./srs.js";
       who.className = "review-k";
       // the full word, not the one-letter clock label — "W Accuracy 64%" reads
       // like a typo in a report meant to be read as prose
-      who.textContent = t(side === "w" ? "m.04" : "m.05");
+      who.textContent = t(side === "w" ? "side.white" : "side.black");
       const val = document.createElement("span");
       val.className = "review-v num";
       val.textContent = tf("rv.sideLine", [sum.acc[side], sum.acpl[side], c.inaccuracy, c.mistake, c.blunder]);
@@ -2252,7 +2252,7 @@ import { ChessSrs } from "./srs.js";
       btn.type = "button";
       btn.className = "review-jump";
       btn.textContent = tf("rv.turningPoint",
-        [sum.worst.moveNo, t(sum.worst.side === "w" ? "m.04" : "m.05"), sum.worst.san,
+        [sum.worst.moveNo, t(sum.worst.side === "w" ? "side.white" : "side.black"), sum.worst.san,
          (sum.worst.loss / 100).toFixed(1)]);
       btn.title = t("rv.jumpTip");
       // land on the position *after* the move, so the damage is on the board
@@ -3261,10 +3261,10 @@ import { ChessSrs } from "./srs.js";
     if (mode === "puzzle") { puzzleClick(sq); return; }
     if (!isLive()) { toast(t("mm.goLiveFirst")); return; }
     if (naturalGameOver()) return;
-    if (flagFall) { toast(t("m.40")); return; }
-    if (resigned) { toast(t("m.41")); return; }
-    if (drawAgreed) { toast(t("m.42")); return; }
-    if (drawClaimed) { toast(t("m.43")); return; }
+    if (flagFall) { toast(t("msg.over.flagged")); return; }
+    if (resigned) { toast(t("msg.over.resigned")); return; }
+    if (drawAgreed) { toast(t("msg.over.drawAgreed")); return; }
+    if (drawClaimed) { toast(t("msg.over.drawClaimed")); return; }
     if (mode === "ai" && game.turn() !== humanColor) return; // engine's move
     const piece = game.get(sq);
     if (selection && selection.targets.includes(sq)) {
@@ -3306,7 +3306,7 @@ import { ChessSrs } from "./srs.js";
   }
 
   async function requestNewGame() {
-    stopEditor(t("m.55"));
+    stopEditor(t("msg.editor.exited"));
     if (sanHistory().length &&
         !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
@@ -3330,7 +3330,7 @@ import { ChessSrs } from "./srs.js";
     syncAutoFlip();
     sync();
     saveGame();
-    toast(t("m.07"));
+    toast(t("msg.game.started"));
     maybeEngineTurn();
   }
 
@@ -3367,7 +3367,7 @@ import { ChessSrs } from "./srs.js";
     let side;
     if (mode === "ai") {
       side = humanColor;
-      if (!(await confirmNative(tf("dlg.resign", [side === "w" ? t("m.04") : t("m.05")]),
+      if (!(await confirmNative(tf("dlg.resign", [side === "w" ? t("side.white") : t("side.black")]),
         t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel") }))) return;
     } else {
       // pvp: either player may resign at any time (FIDE) — pick the side
@@ -3376,14 +3376,14 @@ import { ChessSrs } from "./srs.js";
       if (!pick) return;
       side = pick === "alt" ? "b" : "w";
     }
-    const who = side === "w" ? t("m.04") : t("m.05");
+    const who = side === "w" ? t("side.white") : t("side.black");
     invalidateEngine();
     resigned = side;
     Audio2.playWin();
     if (mode === "ai") recordResign();
     saveGame();
     sync();
-    toast(tf("mm.resignWin", [who, side === "w" ? t("m.05") : t("m.04")]));
+    toast(tf("mm.resignWin", [who, side === "w" ? t("side.black") : t("side.white")]));
   }
 
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
@@ -3474,11 +3474,11 @@ import { ChessSrs } from "./srs.js";
       return;
     }
     // ai mode: offer on your own turn; the engine accepts unless it is winning
-    if (engineThinking || game.turn() !== humanColor) { toast(t("m.32")); return; }
-    if (sanHistory().length < 20) { toast(t("m.33")); return; }
-    if (!ChessEngine) { toast(t("m.01")); return; }
+    if (engineThinking || game.turn() !== humanColor) { toast(t("msg.draw.offerOnYourTurn")); return; }
+    if (sanHistory().length < 20) { toast(t("msg.draw.offerTooEarly")); return; }
+    if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
     drawOfferPending = true;
-    toast(t("m.34"));
+    toast(t("msg.draw.offerSent"));
     let e = null;
     const sig = game.fen();
     try { e = await ChessEngine.analyze(sig, 300); } catch (_) {}
@@ -3490,7 +3490,7 @@ import { ChessSrs } from "./srs.js";
       acceptDraw();
     } else {
       sync();
-      toast(t("m.35"));
+      toast(t("msg.draw.offerDeclined"));
     }
   }
 
@@ -3501,7 +3501,7 @@ import { ChessSrs } from "./srs.js";
     if (mode === "ai") recordAgreedDraw();
     saveGame();
     sync();
-    toast(t("m.36"));
+    toast(t("msg.draw.agreed"));
   }
 
   function recordAgreedDraw() { recordOutcome("draw", "#drawAgreed"); }
@@ -3510,20 +3510,20 @@ import { ChessSrs } from "./srs.js";
   function doClaimDraw() {
     if (mode === "learn" || mode === "puzzle" || !isLive() || appGameOver()) return;
     const reason = claimableDrawReason();
-    if (!reason) { toast(t("m.37")); return; }
+    if (!reason) { toast(t("msg.draw.claimUnavailable")); return; }
     invalidateEngine();
     drawClaimed = reason;
     Audio2.playDraw();
     if (mode === "ai") recordOutcome("draw", "#claimed");
     saveGame();
     sync();
-    toast(reason === "threefold" ? t("m.38") : t("m.39"));
+    toast(reason === "threefold" ? t("msg.draw.claimedRepetition") : t("msg.draw.claimedFiftyMove"));
   }
 
   // --- FEN / PGN I/O ---
   async function copyText(text, okMsg) {
     try { await Host.writeClipboard(text); toast(okMsg); }
-    catch (_) { toast(t("m.22")); }
+    catch (_) { toast(t("msg.copy.failed")); }
   }
 
   function gameResultToken() {
@@ -3593,17 +3593,17 @@ import { ChessSrs } from "./srs.js";
   }
 
   async function downloadPgn() {
-    if (!sanHistory().length) { toast(t("m.17")); return; }
+    if (!sanHistory().length) { toast(t("msg.export.noGame")); return; }
     const pgn = pgnForExport();
     const name = pgnFileName();
     if (Host.hasZero()) {
       try {
         const path = await Host.saveFileDialog({ title: t("dlg.exportPgn"), defaultName: name });
-        if (path == null) { toast(t("m.09")); return; }
+        if (path == null) { toast(t("msg.export.cancelled")); return; }
         await Host.writeTextFile(path, pgn);
         await Host.revealPath(path);
         Host.addRecentDocument(path);
-        toast(t("m.10") + name);
+        toast(t("msg.export.done") + name);
         return;
       } catch (_) {}
     }
@@ -3614,9 +3614,9 @@ import { ChessSrs } from "./srs.js";
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("m.10") + name);
+      toast(t("msg.export.done") + name);
     } catch (_) {
-      copyText(pgn, t("m.11"));
+      copyText(pgn, t("msg.export.restrictedCopied"));
     }
   }
 
@@ -3688,7 +3688,7 @@ import { ChessSrs } from "./srs.js";
     for (const [k, side] of [[0, "w"], [1, "b"]]) {
       const x = 40 + k * (cw / 2);
       ctx.fillStyle = fg;
-      ctx.fillText(side === "w" ? t("m.05") : t("m.04"), x, rowY);
+      ctx.fillText(side === "w" ? t("side.black") : t("side.white"), x, rowY);
       ctx.font = "14px system-ui, -apple-system, 'PingFang SC', sans-serif";
       ctx.fillStyle = muted;
       const c = sum.counts[side];
@@ -3702,7 +3702,7 @@ import { ChessSrs } from "./srs.js";
       ctx.font = "14px system-ui, -apple-system, 'PingFang SC', sans-serif";
       ctx.fillStyle = accent;
       ctx.fillText(tf("rv.turningPoint", [sum.worst.moveNo,
-        sum.worst.side === "w" ? t("m.05") : t("m.04"), sum.worst.san,
+        sum.worst.side === "w" ? t("side.black") : t("side.white"), sum.worst.san,
         (sum.worst.loss / 100).toFixed(1)]).replace(/\s*——.*$/, ""), 40, rowY + 62);
     }
     ctx.font = "12px system-ui, -apple-system, 'PingFang SC', sans-serif";
@@ -3732,10 +3732,10 @@ import { ChessSrs } from "./srs.js";
     if (Host.hasZero() && b64 && b64.length < 512 * 1024) {
       try {
         const path = await Host.saveFileDialog({ title: t("rv.exportTitle"), defaultName: name });
-        if (path == null) { toast(t("m.09")); return; }
+        if (path == null) { toast(t("msg.export.cancelled")); return; }
         await Host.writeBinaryFile(path, b64);
         await Host.revealPath(path);
-        toast(t("m.10") + name);
+        toast(t("msg.export.done") + name);
         return;
       } catch (_) { /* fall through to the browser path */ }
     }
@@ -3747,8 +3747,8 @@ import { ChessSrs } from "./srs.js";
       link.download = name;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 2000);
-      toast(t("m.10") + name);
-    } catch (_) { toast(t("m.16")); }
+      toast(t("msg.export.done") + name);
+    } catch (_) { toast(t("msg.file.readFailed")); }
   }
 
   /** Modal list picker → index of the chosen entry, or null when cancelled. */
@@ -3828,7 +3828,7 @@ import { ChessSrs } from "./srs.js";
    */
   async function importPgnText(text, label, prompt) {
     let text0 = (text || "").trim();
-    if (!text0) { toast(t("m.12")); return false; }
+    if (!text0) { toast(t("msg.import.empty")); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
     // old behaviour) silently threw away everything before it.
     const games = ChessPgn ? ChessPgn.splitGames(text0) : [text0];
@@ -3841,7 +3841,7 @@ import { ChessSrs } from "./srs.js";
         };
       });
       const pick = await pickFromList(tf("dlg.pickGame", [games.length]), items);
-      if (pick == null) { toast(t("m.14")); return false; }
+      if (pick == null) { toast(t("msg.import.cancelled")); return false; }
       text0 = games[pick];
     }
     const ask = prompt || { msg: t("dlg.importPgn"), title: t("dlg.importPgnTitle"), ok: t("dlg.import") };
@@ -3857,7 +3857,7 @@ import { ChessSrs } from "./srs.js";
     // than call the file malformed.
     const importFen = parsed ? null : (ChessPgn ? ChessPgn.startFen(text0) : null);
     if (!parsed && (!importFen || !new Chess().validate_fen(importFen).valid)) {
-      toast(t("m.13"));
+      toast(t("msg.import.badPgn"));
       return false;
     }
     invalidateEngine();
@@ -3878,7 +3878,7 @@ import { ChessSrs } from "./srs.js";
     sync();
     saveGame();
     toast(sanHistory().length
-      ? t("m.62") + moveCount(Math.ceil(sanHistory().length / 2))
+      ? t("msg.import.donePrefix") + moveCount(Math.ceil(sanHistory().length / 2))
       : t("mm.positionLoaded"));
     maybeEngineTurn();
     return true;
@@ -3891,7 +3891,7 @@ import { ChessSrs } from "./srs.js";
       const text = await Host.readClipboard();
       importPgnText(text, t("mm.clipboard"));
     } catch (_) {
-      toast(t("m.15"));
+      toast(t("msg.clipboard.readFailed"));
     }
   }
 
@@ -3906,7 +3906,7 @@ import { ChessSrs } from "./srs.js";
       toast(tf("mm.fileTooLarge", [Math.floor((err.limit || 0) / 1024)]));
       return;
     }
-    toast(t("m.16"));
+    toast(t("msg.file.readFailed"));
   }
 
   /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
@@ -3965,7 +3965,7 @@ import { ChessSrs } from "./srs.js";
 
   function startEditor() {
     const Ed = ChessEditor;
-    if (!Ed) { toast(t("m.58")); return; }
+    if (!Ed) { toast(t("msg.editor.unavailable")); return; }
     invalidateEngine();
     editor = Ed.fromFen(viewGame().fen(), Chess);
     editor.brush = { color: "w", type: "p" };
@@ -3973,7 +3973,7 @@ import { ChessSrs } from "./srs.js";
     BoardView.cancelAnim();
     renderEditorPalette();
     sync();
-    toast(t("m.57"));
+    toast(t("msg.editor.hint"));
   }
 
   /**
@@ -4093,7 +4093,7 @@ import { ChessSrs } from "./srs.js";
     if (reason) { toast(t(reason)); return; }
     const fen = Ed.toFen(editor);
     stopEditor();
-    loadFenAsGame(fen, t("m.54"));
+    loadFenAsGame(fen, t("msg.editor.started"));
   }
 
   const fenModal = document.getElementById("fen-modal");
@@ -4116,9 +4116,9 @@ import { ChessSrs } from "./srs.js";
       if (err) err.textContent = msg;
       if (input) input.classList.add("bad");
     };
-    if (!raw) { show(t("m.60")); return; }
+    if (!raw) { show(t("msg.fen.empty")); return; }
     const v = new Chess().validate_fen(raw);
-    if (!v.valid) { show(v.error || t("m.61")); return; }
+    if (!v.valid) { show(v.error || t("msg.fen.invalid")); return; }
     // chess.js accepts positions no game could reach (no kings, a side already
     // in check while its opponent moves) — reuse the editor's stricter rules,
     // then load the ORIGINAL fen so its en-passant square and clocks survive.
@@ -4127,7 +4127,7 @@ import { ChessSrs } from "./srs.js";
       : null;
     if (reason) { show(t(reason)); return; }
     closeFenModal();
-    loadFenAsGame(new Chess(raw).fen(), t("m.53"));
+    loadFenAsGame(new Chess(raw).fen(), t("msg.fen.loaded"));
   }
 
   // --- named save slots -------------------------------------------------
@@ -4614,7 +4614,7 @@ import { ChessSrs } from "./srs.js";
     flipped = !flipped;
     saveSettings();
     draw();
-    toast(flipped ? t("m.44") : t("m.45"));
+    toast(flipped ? t("msg.view.black") : t("msg.view.white"));
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   const moreBtn = document.getElementById("more-tools");
@@ -4661,7 +4661,7 @@ import { ChessSrs } from "./srs.js";
   document.getElementById("rep-prev").onclick = () => setViewIndex(viewIndex - 1);
   document.getElementById("rep-next").onclick = () => setViewIndex(viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
-  document.getElementById("rep-live").onclick = () => { goLive(); toast(t("m.08")); };
+  document.getElementById("rep-live").onclick = () => { goLive(); toast(t("msg.replay.atLive")); };
 
   document.getElementById("an-run").onclick = () => {
     if (analyzing) {
@@ -4691,13 +4691,13 @@ import { ChessSrs } from "./srs.js";
     try { Host.storageRemove(STATS_KEY); } catch (_) {}
     renderStats();
     renderAchievements();
-    toast(t("m.23"));
+    toast(t("msg.stats.cleared"));
   };
 
-  document.getElementById("fen-copy").onclick = () => copyText(viewGame().fen(), t("m.20"));
+  document.getElementById("fen-copy").onclick = () => copyText(viewGame().fen(), t("msg.copy.fenDone"));
   document.getElementById("pgn-copy").onclick = () => {
-    if (!sanHistory().length) { toast(t("m.18")); return; }
-    copyText(pgnForExport(), t("m.21"));
+    if (!sanHistory().length) { toast(t("msg.copy.noGame")); return; }
+    copyText(pgnForExport(), t("msg.copy.pgnDone"));
   };
   const resignEl = document.getElementById("btn-resign");
   if (resignEl) resignEl.onclick = () => { doResign(); };
@@ -4820,14 +4820,14 @@ import { ChessSrs } from "./srs.js";
     const b = ev.target.closest("button[data-theme]");
     if (b) {
       applyTheme(b.dataset.theme);
-      toast(t("m.67") + t("themeName." + themeId));
+      toast(t("msg.setting.theme") + t("themeName." + themeId));
     }
   };
   document.getElementById("mode-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-mode]");
     if (!b || b.dataset.mode === mode) return;
     invalidateEngine();
-    stopEditor(t("m.55"));
+    stopEditor(t("msg.editor.exited"));
     const wasLearn = mode === "learn";
     const wasPuzzle = mode === "puzzle";
     mode = b.dataset.mode;
@@ -4845,8 +4845,8 @@ import { ChessSrs } from "./srs.js";
     selection = null;
     syncAutoFlip();
     sync();
-    toast(mode === "ai" ? t("m.64") + (DIFF_NAMES[difficulty] || "") :
-      mode === "pvp" ? t("m.65") :
+    toast(mode === "ai" ? t("msg.mode.aiPrefix") + (DIFF_NAMES[difficulty] || "") :
+      mode === "pvp" ? t("msg.mode.pvp") :
       mode === "learn" ? t("mm.learnMode") : t("mm.puzzleMode"));
     maybeEngineTurn();
   };
@@ -4926,7 +4926,7 @@ import { ChessSrs } from "./srs.js";
     saveGame();
     sync();
     const tcSet = parseTc(timeControl);
-    toast(!tcSet ? t("m.46") :
+    toast(!tcSet ? t("msg.clock.off") :
       tf("mm.clockSet", [tcSet.base / 60]) + (tcSet.inc ? tf("mm.clockInc", [tcSet.inc]) : ""));
   };
   const onDiffClick = (ev) => {
@@ -4935,7 +4935,7 @@ import { ChessSrs } from "./srs.js";
     difficulty = b.dataset.diff;
     saveSettings();
     sync();
-    toast(t("m.66") + (DIFF_NAMES[difficulty] || difficulty));
+    toast(t("msg.setting.difficulty") + (DIFF_NAMES[difficulty] || difficulty));
   };
   document.getElementById("diff-seg").onclick = onDiffClick;
   const diffEngineSeg = document.getElementById("diff-seg-engine");
@@ -4956,7 +4956,7 @@ import { ChessSrs } from "./srs.js";
     flipped = humanColor === "b";
     saveSettings();
     sync();
-    toast(humanColor === "w" ? t("m.68") : t("m.69"));
+    toast(humanColor === "w" ? t("msg.side.whiteChosen") : t("msg.side.blackChosen"));
     maybeEngineTurn();
   };
   const langSeg = document.getElementById("lang-seg");
@@ -4974,21 +4974,21 @@ import { ChessSrs } from "./srs.js";
     coachOn = !coachOn;
     saveSettings();
     syncSettingsUI();
-    toast(coachOn ? t("m.49") : t("m.50"));
+    toast(coachOn ? t("msg.coach.on") : t("msg.coach.off"));
   };
   document.getElementById("opt-autoflip").onclick = () => {
     autoFlipPvp = !autoFlipPvp;
     if (syncAutoFlip()) draw();
     saveSettings();
     syncSettingsUI();
-    toast(autoFlipPvp ? t("m.51") : t("m.52"));
+    toast(autoFlipPvp ? t("msg.autoflip.on") : t("msg.autoflip.off"));
   };
   document.getElementById("opt-sound").onclick = () => {
     soundOn = !soundOn;
     saveSettings();
     syncSettingsUI();
     if (soundOn) Audio2.playMove("w");
-    toast(soundOn ? t("m.47") : t("m.48"));
+    toast(soundOn ? t("msg.sound.on") : t("msg.sound.off"));
   };
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
@@ -5011,17 +5011,17 @@ import { ChessSrs } from "./srs.js";
     resetClocks();
     syncAutoFlip();
     sync();
-    toast(t("m.24"));
+    toast(t("msg.save.cleared"));
     maybeEngineTurn();
   };
 
   // --- editor + FEN wiring ---
   document.getElementById("editor-open").onclick = () => {
-    if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+    if (mode === "learn" || mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
     startEditor();
   };
   document.getElementById("fen-load-open").onclick = () => {
-    if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+    if (mode === "learn" || mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
     openFenModal();
   };
   document.getElementById("editor-palette").onclick = (ev) => {
@@ -5068,7 +5068,7 @@ import { ChessSrs } from "./srs.js";
   document.getElementById("editor-cancel").onclick = () => {
     stopEditor();
     sync();
-    toast(t("m.56"));
+    toast(t("msg.editor.cancelled"));
   };
   document.getElementById("editor-apply").onclick = () => { applyEditor(); };
 
@@ -5082,7 +5082,7 @@ import { ChessSrs } from "./srs.js";
         if (input) { input.value = (clip || "").trim(); input.classList.remove("bad"); }
         const err = document.getElementById("fen-error");
         if (err) err.textContent = "";
-      } catch (_) { toast(t("m.15")); }
+      } catch (_) { toast(t("msg.clipboard.readFailed")); }
     };
     document.getElementById("fen-input").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") { ev.preventDefault(); submitFen(); }
@@ -5098,7 +5098,7 @@ import { ChessSrs } from "./srs.js";
   const slotsModal = document.getElementById("slots-modal");
   if (slotsModal) {
     document.getElementById("slots-open").onclick = () => {
-      if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+      if (mode === "learn" || mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
       openSlots();
     };
     document.getElementById("slots-close").onclick = closeSlots;
@@ -5138,7 +5138,7 @@ import { ChessSrs } from "./srs.js";
         const rec = histCache[Number(b.dataset.histPgn)];
         if (rec) copyText(historyPgn(rec), t("hist.pgnCopied"));
       } else if (b.dataset.hist != null) {
-        if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+        if (mode === "learn" || mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
         loadFromHistory(Number(b.dataset.hist));
       }
     };
@@ -5187,7 +5187,7 @@ import { ChessSrs } from "./srs.js";
       if (confirmModal.classList.contains("show")) { finishConfirm(false); return; }
       if (keysModal && keysModal.classList.contains("show")) { closeKeyHelp(); return; }
       // before closing the panel — the panel holds the editor's only exit
-      if (editor) { stopEditor(t("m.55")); sync(); return; }
+      if (editor) { stopEditor(t("msg.editor.exited")); sync(); return; }
       if (isPanelOpen()) setPanelOpen(false);
       return;
     }
@@ -5294,7 +5294,7 @@ import { ChessSrs } from "./srs.js";
   setPanelOpen(savedPanel === "1");
   setSideTab(sideTab);
   const resumed = tryLoadSave();
-  if (resumed) toast(t("m.25"));
+  if (resumed) toast(t("msg.save.restored"));
   // a resumed finished game must not be re-counted on the next live move
   if (resumed && naturalGameOver()) statsRecordedSig = game.pgn();
   if (resumed && resigned) statsRecordedSig = game.pgn() + "#resigned";

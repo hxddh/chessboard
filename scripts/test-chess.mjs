@@ -2099,6 +2099,61 @@ for (const lang of CONTENT_LANGS) {
   }
   assert(unknown === 0, "all " + referenced.size + " keys used by index.html are defined");
 
+  // --- a key may be written only once per dictionary -----------------------
+  // The parity check above asks "does every key exist in every language", and
+  // a duplicate makes that *more* true, not less — which is exactly how
+  // tip.60–tip.64 sat in all three dictionaries twice from 1.20 to 1.25. The
+  // later block won, so five controls showed another control's tooltip in all
+  // three languages: 做题·防守 said "走子音效", 陪练风格·标准 said "重做本课任务",
+  // and so on. The object literal itself cannot tell you — by the time it is
+  // an object the loser is gone — so this reads the source text.
+  {
+    const src = fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8");
+    const blocks = src.split(/\n {4}(?:"zh-CN"|en|ja): \{\n/).slice(1);
+    const dups = [];
+    blocks.forEach((blk, i) => {
+      const lang = ["zh-CN", "en", "ja"][i] || "#" + i;
+      const seen = new Set();
+      // not line-anchored: several keys share a line in places, and a
+      // duplicate hiding in the second half of one is exactly the shape that
+      // shipped — tip.60–64 sat in a five-line block right under the block
+      // they shadowed.
+      for (const m of blk.matchAll(/"([a-zA-Z][\w.-]*)":/g)) {
+        if (seen.has(m[1])) dups.push(lang + " defines " + m[1] + " twice");
+        seen.add(m[1]);
+      }
+    });
+    for (const d of dups) console.error("  " + d);
+    assert(dups.length === 0, "no key is defined twice in any dictionary");
+  }
+
+  // --- and every key that is written is read somewhere ---------------------
+  // The reverse direction of the check above. A numbered namespace could not
+  // be proofread — `tip.62` tells you nothing about which control it belongs
+  // to, so a stale key was indistinguishable from a live one and the only way
+  // to find out was to change it and look. Semantic keys make the question
+  // answerable, and this makes it answered: a key nobody reads is either dead
+  // weight or a control that lost its label.
+  {
+    const sources = ["src/web/index.html", ...fs.readdirSync(path.join(root, "src/web/js"))
+      .filter((f) => f.endsWith(".js") && f !== "bundle.js" && f !== "i18n.js")
+      .map((f) => "src/web/js/" + f)]
+      .map((f) => fs.readFileSync(path.join(root, f), "utf8")).join("\n");
+    //
+    // Some keys are only ever built, never written out: `t("themeName." + id)`,
+    // `t("piece." + type)`, `t("pz.n." + n)`. A key counts as read when its
+    // full text appears, or when any dotted prefix of it appears as a string
+    // literal — which is as close as a text scan gets to following the
+    // concatenation, and errs towards keeping a key rather than deleting a
+    // live one.
+    const prefixes = new Set([...sources.matchAll(/["']([a-zA-Z][\w.]*\.)["']/g)].map((m) => m[1]));
+    const read = (k) => sources.includes(k) ||
+      k.split(".").map((_, i, a) => a.slice(0, i + 1).join(".") + ".").some((p) => prefixes.has(p));
+    const unused = Object.keys(I.DICT["zh-CN"]).filter((k) => !read(k) && k !== "lang.name");
+    for (const k of unused) console.error("  unread key: " + k);
+    assert(unused.length === 0, "every one of the " + baseKeys.length + " keys is read by some control");
+  }
+
   // Coordinates belong on the frame, not on a1/h1 where they were painted over
   // the rooks. The gutters are DOM, so the canvas must not draw them any more.
   {
