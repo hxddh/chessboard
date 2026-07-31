@@ -125,7 +125,10 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
   let _canvas = null;
   let _model = null;
   /** live drag ghost: {from, x, y} in canvas pixels | null */
-  let _drag = null;
+  // The drag lives in the model, not in a variable here — see draw(). It used
+  // to be pushed in through setDrag(), which made the board hold a second copy
+  // of something the app already knew: `store.ui.dragging`. Two copies of one
+  // fact is one more than a renderer needs.
   /** how much a piece grows while it is being held */
   const LIFT = 1.12;
   /** live rebound of a refused drop: {piece, to, x, y, start, dur} | null */
@@ -172,8 +175,6 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     _model = modelFn;
     if (!Object.keys(_imgs).length) initPieceImages();
   }
-
-  function setDrag(d) { _drag = d; }
 
   const easeOut = (t) => 1 - (1 - t) * (1 - t);
 
@@ -320,6 +321,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
   function draw() {
     if (!_canvas || !_model) return;
     const m = _model();
+    const _drag = m.drag || null;
     const P = paint();
     const ctx = _canvas.getContext("2d");
     const w = _canvas.width;
@@ -565,4 +567,22 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     }
   }
 
-  export const ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, reboundDrag, cancelAnim, invalidatePaint };
+  /**
+   * The surface, in three groups.
+   *
+   *   paint      draw() — "here is the model, put it on screen". Everything
+   *              the board shows is in the model it reads: the position, the
+   *              selection, the legal targets, the last move, the check, the
+   *              hint arrow, the stars, the flash, the cursor, and since 1.25
+   *              the drag. Nothing is pushed in ahead of time.
+   *   lifecycle  attach() / resizeCanvas() / invalidatePaint() — the canvas
+   *              itself, its backing store, and the theme colours it caches.
+   *   effects    animateMove() / reboundDrag() / cancelAnim() — the three
+   *              things that are genuinely time, not state. An animation is
+   *              not a fact about the position; it is a thing that happens to
+   *              it, and it ends.
+   *   hit test   cellAt() — the inverse of paint, and the only reason the app
+   *              needs to know the board's geometry at all.
+   */
+  export const ChessBoardView = { draw, attach, resizeCanvas, invalidatePaint,
+    animateMove, reboundDrag, cancelAnim, cellAt };

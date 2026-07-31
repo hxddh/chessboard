@@ -395,6 +395,8 @@ import { createStore } from "./store.js";
       hintMove: isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex),
       stars: [],
       cursor: cursorSquare(),
+      // the drag is part of the picture, not a thing pushed in beforehand
+      drag: store.ui.dragging,
     };
   });
 
@@ -721,7 +723,7 @@ import { createStore } from "./store.js";
         recordOutcome(isDraw ? "draw" : side === store.session.humanColor ? "loss" : "win", "flag");
       }
       saveGame();
-      sync();
+      store.commit("game", "action");
       const who = side === "w" ? t("side.white") : t("side.black");
       toast(isDraw ? who + t("msg.clock.flagDrawNoMaterial") :
         tf("mm.flagWin", [who, side === "w" ? t("side.black") : t("side.white")]));
@@ -1030,6 +1032,8 @@ import { createStore } from "./store.js";
       flashSquare: store.session.learn.flash,
       stars,
       cursor: cursorSquare(),
+      // the drag is part of the picture, not a thing pushed in beforehand
+      drag: store.ui.dragging,
     };
   }
 
@@ -1658,6 +1662,8 @@ import { createStore } from "./store.js";
       hintMove: store.session.puzzle.helpArrow,
       stars: [],
       cursor: cursorSquare(),
+      // the drag is part of the picture, not a thing pushed in beforehand
+      drag: store.ui.dragging,
     };
   }
 
@@ -3314,6 +3320,20 @@ import { createStore } from "./store.js";
     store.subscribe("session", syncEditorUI);
     store.subscribe("session", syncSettingsUI);
 
+    // …and the two views that were living inside syncSettingsUI while reading
+    // the *game*. The captured-piece strip follows the replay cursor — it shows
+    // the material as it stood at the move you are looking at, not as it stands
+    // now — so it belongs to the game slice, and filing it under settings is
+    // exactly the mis-slotting that makes narrowing a call site dangerous:
+    // commit("game") would have moved the board and left the strip behind.
+    store.subscribe("game", renderMaterial);
+    store.subscribe("session", renderMaterial);
+    store.subscribe("game", renderIdleCard);
+    store.subscribe("session", renderIdleCard);
+
+    // the settings panel reads the game too (the clock preset is a game fact),
+    // so it hears about all three
+    store.subscribe("game", syncSettingsUI);
     store.subscribe("ui", syncSettingsUI);
     store.subscribe("ui", draw);
   }
@@ -3377,8 +3397,6 @@ import { createStore } from "./store.js";
     if (flipRow) flipRow.hidden = store.session.mode !== "pvp";
     const flipSwitch = document.getElementById("opt-autoflip");
     if (flipSwitch) flipSwitch.setAttribute("aria-pressed", store.ui.autoFlipPvp ? "true" : "false");
-    renderMaterial();
-    renderIdleCard();
     const secMoves = document.getElementById("sec-moves");
     const trainer = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
     if (secMoves) secMoves.hidden = trainer;
@@ -3432,7 +3450,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     BoardView.cancelAnim();
     syncAutoFlip();
-    sync();
+    store.commit("game", "action");
   }
 
   function goLive() { setViewIndex(sanHistory().length); }
@@ -3530,7 +3548,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     store.game.viewIndex = sanHistory().length;
     syncAutoFlip();
-    sync();
+    store.commit("game", "action");
     saveGame();
     maybeEngineTurn();
   }
@@ -3585,7 +3603,7 @@ import { createStore } from "./store.js";
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
     syncAutoFlip();
-    sync();
+    store.commit("game", "action");
     saveGame();
     toast(tf("mm.backToMove", [keep]));
     maybeEngineTurn();
@@ -3612,7 +3630,7 @@ import { createStore } from "./store.js";
     Audio2.playWin();
     if (store.session.mode === "ai") recordResign();
     saveGame();
-    sync();
+    store.commit("game", "action");
     toast(tf("mm.resignWin", [who, side === "w" ? t("side.black") : t("side.white")]));
   }
 
@@ -3729,7 +3747,7 @@ import { createStore } from "./store.js";
     Audio2.playDraw();
     if (store.session.mode === "ai") recordAgreedDraw();
     saveGame();
-    sync();
+    store.commit("game", "action");
     toast(t("msg.draw.agreed"));
   }
 
@@ -3745,7 +3763,7 @@ import { createStore } from "./store.js";
     Audio2.playDraw();
     if (store.session.mode === "ai") recordOutcome("draw", "claimed");
     saveGame();
-    sync();
+    store.commit("game", "action");
     toast(reason === "threefold" ? t("msg.draw.claimedRepetition") : t("msg.draw.claimedFiftyMove"));
   }
 
@@ -4102,7 +4120,7 @@ import { createStore } from "./store.js";
     store.game.drawClaimed = null;
     resetClocks();
     syncAutoFlip();
-    sync();
+    store.commit("game", "action");
     saveGame();
     toast(sanHistory().length
       ? t("msg.import.donePrefix") + moveCount(Math.ceil(sanHistory().length / 2))
@@ -4185,6 +4203,8 @@ import { createStore } from "./store.js";
       hintMove: null,
       stars: [],
       cursor: cursorSquare(),
+      // the drag is part of the picture, not a thing pushed in beforehand
+      drag: store.ui.dragging,
     };
   }
 
@@ -4727,14 +4747,13 @@ import { createStore } from "./store.js";
     // point of dragging rather than clicking twice
     const over = BoardView.cellAt(p.x, p.y);
     const legal = !!(over && store.game.selection && store.game.selection.targets.includes(over));
-    BoardView.setDrag({ from: store.ui.dragging.from, x: p.x, y: p.y, over, legal });
+    store.ui.dragging = { from: store.ui.dragging.from, x: p.x, y: p.y, over, legal };
     draw();
   });
   canvas.addEventListener("pointerup", (ev) => {
     store.ui.painting = null;
     const wasDrag = store.ui.dragging;
     store.ui.dragging = null;
-    BoardView.setDrag(null);
     canvas.style.cursor = "default";
     if (!wasDrag) return;
     const p = canvasPoint(ev);
@@ -4752,7 +4771,6 @@ import { createStore } from "./store.js";
   canvas.addEventListener("pointercancel", () => {
     store.ui.painting = null;
     store.ui.dragging = null;
-    BoardView.setDrag(null);
     canvas.style.cursor = "default";
     draw();
   });
@@ -5162,7 +5180,7 @@ import { createStore } from "./store.js";
     resetClocks();
     saveSettings();
     saveGame();
-    sync();
+    store.commit("game", "action");
     const tcSet = parseTc(store.game.timeControl);
     toast(!tcSet ? t("msg.clock.off") :
       tf("mm.clockSet", [tcSet.base / 60]) + (tcSet.inc ? tf("mm.clockInc", [tcSet.inc]) : ""));
@@ -5428,7 +5446,7 @@ import { createStore } from "./store.js";
       // for the top of the stack. 缺陷 19.
       if (Dlg.closeTop()) return;
       // before closing the panel — the panel holds the editor's only exit
-      if (store.session.editor) { stopEditor(t("msg.editor.exited")); sync(); return; }
+      if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return; }
       if (isPanelOpen()) setPanelOpen(false);
       return;
     }

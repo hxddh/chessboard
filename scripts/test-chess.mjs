@@ -2761,6 +2761,23 @@ for (const lang of CONTENT_LANGS) {
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
 
+  // --- the board owns the board --------------------------------------------
+  // draw() takes a model and paints it; nothing is pushed in ahead of time.
+  // The drag was the exception: setDrag() handed the renderer a copy of
+  // something the app already held in store.ui.dragging, so one fact lived in
+  // two places and only one of them was reachable from a test.
+  {
+    const b = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(!/function setDrag/.test(b), "the board has no drag setter");
+    assert(!/^\s*let _drag/m.test(b), "…and holds no drag state of its own");
+    assert(/const _drag = m\.drag \|\| null;/.test(b), "the drag comes in with the model");
+    assert(!/BoardView\.setDrag/.test(appSrc), "and nothing pushes one in");
+    // the coordinates are the board's too — painted from board.js, never by a
+    // DOM overlay the app maintains in parallel
+    assert(/function drawCoords\(/.test(b) && !/coord-files/.test(appSrc),
+      "the coordinate gutters are filled by the board, not by app.js");
+  }
+
   // --- nothing builds the DOM by concatenating markup ----------------------
   // P1 acceptance: `grep -c innerHTML` is 0. Most of the twenty uses were
   // `el.innerHTML = ""`, which is a clear rather than a parse — but it is the
@@ -3250,6 +3267,10 @@ for (const lang of CONTENT_LANGS) {
     stars: [["d4", "e4"]],
     flashSquare: ["d4"],
     cursor: ["a1"],
+    // the drag became part of the model in 1.25 (P1.6) — it used to be pushed
+    // in through setDrag(), which meant this sweep could not reach it at all
+    drag: [{ from: "e2", x: 100, y: 100, over: "e4", legal: true },
+           { from: "e2", x: 100, y: 100, over: "a8", legal: false }],
   };
   const shapes = [base()];
   for (const [k, vals] of Object.entries(opts))
