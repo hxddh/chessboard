@@ -26,22 +26,33 @@
 
 ---
 
-## ⚠ P-1 · 先回答这个问题（阻塞一切）
+## ⚠ P-1 · 先回答这个问题（阻塞一切）· **已结案**
 
-README 与 `.github/workflows/checks.yml` 指名的这些文件**不在仓库里**：
+原始判断是：README 与 `.github/workflows/checks.yml` 指名的 `scripts/*.mjs`、`src/main.zig`、
+`src/runner.zig`、`app.zon`、`build.zig`、`package.json` 都不在仓库里，CI 每次 push 都在跑不存在的文件。
 
-- `scripts/*.mjs`（15 个：单测、scope-check、manifest-check、六个 e2e、强度实测、代码生成）
-- `src/main.zig` · `src/runner.zig`（整个原生层）
-- `app.zon` · `build.zig` · `package.json`
+**核实结果：这个前提不成立。** 除 `package.json` 外全部文件都在 `main @ 8b66289` 里：
 
-`scripts/` 只有 `package.sh`。全仓库 84 个文件里 `.mjs` 数量为 **0**。`.gitignore` 只忽略 `zig-out/ .zig-cache/ frontend/dist/ dist/ build/ engine-src.js` —— 这些文件不是被忽略的，是从未提交。CI 每次 push 都在跑不存在的文件。
+| 声称缺失 | 实际 |
+|---|---|
+| `scripts/*.mjs` 15 个 | **17 个**都在（`git ls-files '*.mjs'` = 17）；`scripts/` 下另有 `package.sh` |
+| `src/main.zig` · `src/runner.zig` | 都在 |
+| `app.zon` · `build.zig` | 都在（版本 1.25.0，两处一致） |
+| `package.json` | **确实缺失** —— 唯一真实的那一条 |
 
-**在这个状态下重构，等于在没有护栏的地方动方向盘。** README 里最有说服力的那些实测数据（棋盘 +84%、新手档得分率、四主题对比度 5.86–17.72:1、侧栏 42 处文本收到 11 种组合）全部由现在不在仓库里的脚本产出。
+原文「全仓库 84 个文件里 `.mjs` 数量为 0」是对一份不完整检出的统计：实际 `git ls-files` 为 109 个文件。
 
-处理方式，二选一：
+按处理方式 **A** 结案。所做的事只有一件：补上缺失的 `package.json`，让 README 与验收标准里的
+`npm test` 真的是一条命令。脚本分三组，因为它们的代价差三个数量级：
 
-- **A** 这些文件在本地存在 → 提交进来，然后开始 P0。
-- **B** 确实已丢失 → 先按 README 的清单重建最小集（`test-chess.mjs` + `scope-check.mjs` + 一个冒烟 e2e），再开始 P0。README 那份清单本身写得足够详细，够照着重建。
+- `npm run test:static` —— 单测 + scope-check + manifest-check，秒级，无外部依赖
+- `npm run test:e2e` —— 六个浏览器 E2E，需要 Playwright（没有则各自打印「跳过」并通过）
+- `npm run test:engine` —— 开局/战术/新手档/强度实测，要跑引擎，分钟级，**不进 `npm test`**
+
+`npm test` = static + e2e，与 `.github/workflows/checks.yml` 的两个 job 一一对应。
+
+**基线核实**：改动前全部 9 个检查在本机绿（`test-chess` / `scope-check` / `manifest-check` +
+六个 E2E，Chromium）。护栏是在的，P0 可以开始。
 
 ---
 
@@ -141,7 +152,7 @@ README 与 `.github/workflows/checks.yml` 指名的这些文件**不在仓库里
 
 | 阶段 | 验收 |
 |---|---|
-| P-1 | `npm test` 与 CI 能真的跑起来 |
+| P-1 | ✅ `npm test` 与 CI 能真的跑起来 |
 | P0 | 现有全部测试绿，行为零变化（除三处零风险硬伤） |
 | P1 | 任一时刻只有需要更新的视图更新；`grep -c innerHTML` 为 0；写入失败有可见提示 |
 | P2 | 新增一种语言或一套主题不触碰任何布局规则；像素断言从测试里消失 |

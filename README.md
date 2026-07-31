@@ -106,6 +106,12 @@ cd ~/chessboard
 ./scripts/package.sh
 
 # 不依赖 Zig / SDK 的部分,任何平台都能跑
+npm test                           # = test:static + test:e2e,与 CI 的两个 job 一一对应
+npm run test:static                # 单测 + 自由变量 + 清单,秒级,无外部依赖
+npm run test:e2e                   # 六个浏览器 E2E(缺 Playwright 则逐个跳过)
+npm run test:engine                # 引擎检查:开局/战术/新手档/强度,分钟级,不在 npm test 里
+
+# 或者逐个跑
 node scripts/test-chess.mjs        # 单测:规则、纯函数、内容、各种源码守卫
 node scripts/scope-check.mjs       # 自由变量检查
 node scripts/manifest-check.mjs    # 清单声明的键 runner 真的在读 + 版本号一致
