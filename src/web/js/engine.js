@@ -48,6 +48,25 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // either came from — the script printed to a terminal and forgot. The 24
     // games named above are the *previous* calibration's, and are staying: a
     // before number is what makes an after number mean something.
+    // 1.26 measured and left alone. 缺陷 32 said the tier's strength is a
+    // function of the MultiPV candidate count, which moves with the phase.
+    // Measured over 391 positions (docs/measured.json `multipvPhase`): the
+    // count barely moves — 9.9 / 8.2 / 8.8 candidates across opening /
+    // middlegame / endgame — because there are almost always more than ten
+    // legal moves even when there are only eighteen. What does move, by four
+    // times, is how far apart the candidates are: 115 / 235 / 479cp between
+    // the best and the worst. So a uniform pick gives away four times as much
+    // per move in an endgame.
+    //
+    // Weighting the pick by that gap was then tried and measured, twice, and
+    // is NOT shipped: at spreadK 250 the novice's score rate fell 56% → 33%
+    // and 27% → 6%, and at 700 — soft enough to touch only the catastrophic
+    // tail — still 38% and 8%. That tail is load-bearing. Buying phase
+    // uniformity means raising `worstBias` back toward the 0.6 that the 1.19
+    // calibration above deliberately walked away from as self-destructive,
+    // which is a worse tier bought with a worse mechanism. The plan's own
+    // condition for making the change ("若相关性强" — if the candidate count
+    // really tracks the phase) is not met, so it is not made.
     beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.2, minMs: 350 },
     casual: { skill: 0, depth: 2, multipv: 6, worstBias: 0.15, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },
@@ -288,16 +307,45 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   function pickHandicapped(cands, tier) {
     const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
-    if (!list.length) return null;
+    const uci = pickCandidate(list, tier, Math.random);
+    return uci ? parseUci(uci) : null;
+  }
+
+  /**
+   * Which candidate a handicap tier plays — the whole rule, in one place.
+   *
+   * This existed three times: here, in scripts/test-strength.mjs and in
+   * scripts/test-novice.mjs, which is to say the two scripts that *measure*
+   * the tier each carried their own copy of the thing being measured. Now they
+   * call this, and `rng` is a parameter because the scripts need a seeded
+   * generator (a measurement has to be a fact about the code, not about the
+   * day) while the app wants Math.random.
+   *
+   * **Uniform on purpose, now that it has been measured.** The eight-in-ten
+   * case picks uniformly among the candidates, so how much it costs depends on
+   * how far apart they are — 115cp between best and worst in the opening, 479
+   * in the endgame (docs/measured.json `multipvPhase`). Weighting the pick by
+   * that gap is the obvious repair and it was tried: see the note above the
+   * `beginner` row for the two runs that say it takes the tier from a 56%
+   * opponent to a 33% one. The spread is what makes this tier weak, not an
+   * accident in how it is weak.
+   *
+   * @param {Array<{uci:string, score:number|null}>} list candidates, best first
+   * @param {object} tier   the tier row (worstBias)
+   * @param {Function} rng  () => [0,1)
+   * @returns {string|null} the chosen UCI move
+   */
+  function pickCandidate(list, tier, rng) {
+    if (!list || !list.length) return null;
     const scored = list.filter((c) => c.score != null);
     // never throw away a forced mate the tier already found — losing on
     // purpose from a winning position reads as a broken engine, not a weak one
-    if (scored.length && scored[0].score >= 100000 - 50) return parseUci(list[0].uci);
-    if (tier.worstBias && Math.random() < tier.worstBias && scored.length) {
+    if (scored.length && scored[0].score >= 100000 - 50) return list[0].uci;
+    if (tier.worstBias && rng() < tier.worstBias && scored.length) {
       const worst = scored.reduce((a, b) => (b.score < a.score ? b : a));
-      return parseUci(worst.uci);
+      return worst.uci;
     }
-    return parseUci(list[Math.floor(Math.random() * list.length)].uci);
+    return list[Math.floor(rng() * list.length)].uci;
   }
 
   /**
@@ -348,4 +396,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, isReady, bestMove, analyze, newGame, cancel, TIERS };
+  export const ChessEngine = { init, isReady, bestMove, analyze, newGame, cancel, TIERS, pickCandidate };

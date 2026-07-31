@@ -3967,6 +3967,63 @@ for (const lang of CONTENT_LANGS) {
       check("engine.js", engineFlat, /median loss (\d+)/, b.median, "the beginner median loss");
     }
     assert(off === 0, "README and engine.js quote docs/measured.json, and it describes the tiers that ship");
+
+    // P6 / 缺陷 23. The annotation cut-offs were measured against the quick
+    // scan's own noise and deliberately left where they are — which only means
+    // anything while the numbers that were measured are the numbers that ship.
+    // Move one of them and this fails until the scan is re-run, because the
+    // recorded agreement rates describe 50/100/300 and nothing else.
+    {
+      const scan = measured.scanNoise;
+      assert(!!scan && !!scan.byMovetime, "docs/measured.json holds a scan-noise run");
+      if (scan && scan.thresholds) {
+        const rv = fs.readFileSync(path.join(root, "src/web/js/review.js"), "utf8");
+        const got = /const INACCURACY = (\d+), MISTAKE = (\d+), BLUNDER = (\d+);/.exec(rv);
+        assert(!!got, "review.js still declares the three cut-offs on one line");
+        if (got) {
+          const want = [scan.thresholds.inaccuracy, scan.thresholds.mistake, scan.thresholds.blunder];
+          const have = [Number(got[1]), Number(got[2]), Number(got[3])];
+          assert(want.join("/") === have.join("/"),
+            "the cut-offs that ship are the cut-offs that were measured (" + have.join("/") +
+            " vs recorded " + want.join("/") + " — re-run scripts/test-analysis.mjs --record)");
+        }
+        // and the sweep has to have actually been run, or "no better value
+        // exists" is an opinion rather than a result
+        const sweeps = Object.values(scan.byMovetime).map((r) => Object.keys(r.sweep || {}).length);
+        assert(sweeps.length >= 2 && sweeps.every((n) => n >= 5),
+          "…and the ?! threshold was swept, not just asserted");
+        // review.js's own comment quotes this run — same rule as the tier
+        // figures: a re-record has to drag the prose with it
+        const rvSrc = fs.readFileSync(path.join(root, "src/web/js/review.js"), "utf8")
+          .replace(/\n\s*\* ?/g, " ");
+        const q = scan.byMovetime["120"];
+        check("review.js", rvSrc, /moves by a median (\d+)cp between runs/, q.jitterMedian, "the scan jitter median");
+        check("review.js", rvSrc, /(\d+)cp at the ninth percentile/, q.jitterP90, "the scan jitter p90");
+        check("review.js", rvSrc, /both runs called it (\d+)% of the time/, q.tags["?!"].agreePct, "the ?! agreement");
+        check("review.js", rvSrc, /`\?` reaches (\d+)%/, q.tags["?"].agreePct, "the ? agreement");
+        check("review.js", rvSrc, /and `\?\?` (\d+)%/, q.tags["??"].agreePct, "the ?? agreement");
+        const sweepQuote = [40, 50, 60, 70, 80, 90].map((k) => q.sweep[String(k)].agreePct).join("/");
+        const sweepSaid = /agreement wanders \(([\d/]+)\)/.exec(rvSrc);
+        assert(!!sweepSaid && sweepSaid[1] === sweepQuote,
+          "review.js quotes the recorded ?! sweep (" + (sweepSaid ? sweepSaid[1] : "—") +
+          " vs measured " + sweepQuote + ")");
+        assert(off === 0, "review.js's measured figures are the recorded ones");
+      }
+    }
+
+    // 缺陷 32. The candidate-weighting arm was measured and rejected; the tier
+    // rows must therefore not carry the knob, or the comment is describing
+    // code that is not there.
+    {
+      const mv = measured.multipvPhase;
+      assert(!!mv && !!mv.phases && !!mv.phases.endgame,
+        "docs/measured.json holds a candidate-count run that reached the endgame");
+      const rows = (engineSrc.match(/^\s*(?:beginner|casual): \{.*$/gm) || []).join("\n");
+      assert(rows.length > 0 && !/spreadK/.test(rows),
+        "the rejected weighting is not half-shipped as an unused tier option");
+      assert(!!(mv && mv.weightedSamplingTried),
+        "…and the runs that rejected it are on the record");
+    }
   }
 
   // The 怎么玩 heading carries a version and nothing checked it, so it sat at

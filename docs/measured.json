@@ -1,5 +1,78 @@
 {
   "_": "Measured figures. Written by scripts/*.mjs --record, read by README.md, src/web/js/engine.js and scripts/test-chess.mjs. Do not hand-edit: a number here that no run produced is worse than no number.",
+  "multipvPhase": {
+    "what": "新手档自己的搜索设置下,每个局面实际返回几条候选、候选之间差多少分",
+    "script": "scripts/test-analysis.mjs --record",
+    "tier": {
+      "skill": 0,
+      "depth": 2,
+      "multipv": 10,
+      "worstBias": 0.2
+    },
+    "weightedSamplingTried": {
+      "what": "把八成的均匀抽样改成按与首选的分差加权(exp(-gap/K)),量新手 bot 的得分率",
+      "script": "scripts/test-novice.mjs --tier=<id> --games=32",
+      "baselineScorePct": {
+        "beginner": 56,
+        "casual": 27
+      },
+      "runs": [
+        {
+          "spreadK": {
+            "beginner": 250,
+            "casual": 180
+          },
+          "scorePct": {
+            "beginner": 33,
+            "casual": 6
+          }
+        },
+        {
+          "spreadK": {
+            "beginner": 700,
+            "casual": 500
+          },
+          "scorePct": {
+            "beginner": 38,
+            "casual": 8
+          }
+        }
+      ],
+      "verdict": "不采用:两档都远强于既定标定,要补回来只能把 worstBias 抬回 1.19 已经否掉的 0.6 附近"
+    },
+    "phases": {
+      "opening": {
+        "positions": 120,
+        "legalMean": 34.8,
+        "candidatesMean": 9.9,
+        "candidatesMin": 3,
+        "cappedPct": 98,
+        "spreadMean": 117.9,
+        "spreadMedian": 83,
+        "worstGapMedian": 116
+      },
+      "middlegame": {
+        "positions": 49,
+        "legalMean": 29,
+        "candidatesMean": 8.2,
+        "candidatesMin": 1,
+        "cappedPct": 76,
+        "spreadMean": 2042.6,
+        "spreadMedian": 205,
+        "worstGapMedian": 243
+      },
+      "endgame": {
+        "positions": 222,
+        "legalMean": 18.6,
+        "candidatesMean": 8.8,
+        "candidatesMin": 0,
+        "cappedPct": 70,
+        "spreadMean": 1885.9,
+        "spreadMedian": 330,
+        "worstGapMedian": 478
+      }
+    }
+  },
   "noviceScore": {
     "what": "一个只会「不一步送子」的随机机器人对下削弱档,得分率 = (胜 + 和/2) / 盘数",
     "script": "scripts/test-novice.mjs --record --tier <id> --games <n>",
@@ -46,6 +119,144 @@
           "draw": 5,
           "loss": 21,
           "scorePct": 27
+        }
+      }
+    }
+  },
+  "scanNoise": {
+    "what": "同一局连跑两次快扫,比较两次的标注集合与逐点评估抖动",
+    "script": "scripts/test-analysis.mjs --record",
+    "thresholds": {
+      "inaccuracy": 50,
+      "mistake": 100,
+      "blunder": 300
+    },
+    "games": 4,
+    "byMovetime": {
+      "120": {
+        "plies": 168,
+        "jitterMedian": 10,
+        "jitterP90": 34,
+        "tags": {
+          "?!": {
+            "runA": 13,
+            "runB": 12,
+            "both": 7,
+            "agreePct": 39
+          },
+          "?": {
+            "runA": 15,
+            "runB": 15,
+            "both": 11,
+            "agreePct": 58
+          },
+          "??": {
+            "runA": 7,
+            "runB": 6,
+            "both": 6,
+            "agreePct": 86
+          }
+        },
+        "sweep": {
+          "40": {
+            "runA": 17,
+            "runB": 16,
+            "both": 11,
+            "agreePct": 50
+          },
+          "50": {
+            "runA": 13,
+            "runB": 12,
+            "both": 7,
+            "agreePct": 39
+          },
+          "60": {
+            "runA": 10,
+            "runB": 11,
+            "both": 5,
+            "agreePct": 31
+          },
+          "70": {
+            "runA": 5,
+            "runB": 6,
+            "both": 2,
+            "agreePct": 22
+          },
+          "80": {
+            "runA": 3,
+            "runB": 6,
+            "both": 2,
+            "agreePct": 29
+          },
+          "90": {
+            "runA": 2,
+            "runB": 2,
+            "both": 1,
+            "agreePct": 33
+          }
+        }
+      },
+      "400": {
+        "plies": 168,
+        "jitterMedian": 6,
+        "jitterP90": 20,
+        "tags": {
+          "?!": {
+            "runA": 13,
+            "runB": 13,
+            "both": 9,
+            "agreePct": 53
+          },
+          "?": {
+            "runA": 15,
+            "runB": 15,
+            "both": 14,
+            "agreePct": 88
+          },
+          "??": {
+            "runA": 3,
+            "runB": 4,
+            "both": 3,
+            "agreePct": 75
+          }
+        },
+        "sweep": {
+          "40": {
+            "runA": 23,
+            "runB": 20,
+            "both": 18,
+            "agreePct": 72
+          },
+          "50": {
+            "runA": 13,
+            "runB": 13,
+            "both": 9,
+            "agreePct": 53
+          },
+          "60": {
+            "runA": 11,
+            "runB": 10,
+            "both": 7,
+            "agreePct": 50
+          },
+          "70": {
+            "runA": 6,
+            "runB": 6,
+            "both": 5,
+            "agreePct": 71
+          },
+          "80": {
+            "runA": 5,
+            "runB": 3,
+            "both": 3,
+            "agreePct": 60
+          },
+          "90": {
+            "runA": 3,
+            "runB": 3,
+            "both": 2,
+            "agreePct": 50
+          }
         }
       }
     }

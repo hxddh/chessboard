@@ -7,7 +7,32 @@
  * thresholds can be read and tested on their own. The app owns rendering.
  * @module review
  */
-  /** the same cut-offs the move list annotates with ?! / ? / ?? */
+  /**
+   * The same cut-offs the move list annotates with ?! / ? / ??.
+   *
+   * **Measured, and deliberately not moved.** 缺陷 23 was right that 50cp is
+   * the same size as the quick scan's own noise: scanning four decided games
+   * twice at 120ms/position (168 plies), the evaluation of the *same* position
+   * moves by a median 10cp between runs, 34cp at the ninth percentile — and a
+   * move's loss is a difference of two of those. The consequence is measured
+   * too: of every ply either run called `?!`, both runs called it 39% of the
+   * time. `?` reaches 58% and `??` 86%.
+   *
+   * The defect proposed scaling the thresholds with movetime. Refuted — at
+   * 400ms the jitter is the same order (median 6cp, p90 20) and `?!` still
+   * only reaches 53%, so there is no movetime-dependent noise floor to track.
+   * Raising the `?!` cut is refuted too: swept over the recorded tracks at
+   * 40/50/60/70/80/90cp, agreement wanders (50/39/31/22/29/33) with no trend,
+   * because a hard cut on a noisy quantity always has about half its members
+   * sitting on the edge, wherever the edge is put.
+   *
+   * So the numbers stay, and what changed is that they are now known rather
+   * than assumed: docs/measured.json `scanNoise`, written by
+   * scripts/test-analysis.mjs --record, and scripts/test-chess.mjs fails if
+   * these three constants stop matching what that run was taken against.
+   * `?!` is already kept off the evaluation curve's mistake dots (app.js) —
+   * which turns out to have been the right instinct.
+   */
   const INACCURACY = 50, MISTAKE = 100, BLUNDER = 300;
 
   /**

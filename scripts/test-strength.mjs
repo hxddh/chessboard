@@ -164,12 +164,10 @@ async function tierMove(fen, tier) {
   try { line = await w; } finally { if (tier.multipv) listeners.splice(listeners.indexOf(collect), 1); }
   let picked = line.split(/\s+/)[1];
   if (tier.multipv && cands.size > 1) {
+    // engine.js's own rule, called rather than copied — this script used to
+    // carry its own transcription of it, which is a measurement of a copy
     const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
-    const scored = list.filter((c) => c.score != null);
-    if (scored.length && scored[0].score >= 100000 - 50) picked = list[0].uci;
-    else if (tier.worstBias && rnd() < tier.worstBias && scored.length) {
-      picked = scored.reduce((a, b) => (b.score < a.score ? b : a)).uci;
-    } else picked = list[Math.floor(rnd() * list.length)].uci;
+    picked = engCtx.ChessEngine.pickCandidate(list, tier, rnd) || picked;
   }
   return picked && picked !== "(none)" ? picked : null;
 }
