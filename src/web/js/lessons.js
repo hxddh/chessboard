@@ -40,6 +40,11 @@
           { tip: "点击 a1 格(白方左下角)", squares: ["a1"] },
           { tip: "点击 h8 格(黑方那侧的角落)", squares: ["h8"] },
         ] },
+        { type: "tap", fen: START, prompt: "再找三个 —— 这次没有角落可以蒙", steps: [
+          { tip: "点击 d5:先数到 d 线,再数到第 5 横线", squares: ["d5"] },
+          { tip: "点击 f2:白方兵排上的那一格", squares: ["f2"] },
+          { tip: "点击 b7:黑方兵排上的那一格", squares: ["b7"] },
+        ] },
       ],
     },
     {
@@ -55,6 +60,11 @@
           { tip: "点击 h1 —— 白方右下角,是**浅**格(摆盘时右下角必须是浅格)", squares: ["h1"] },
           { tip: "点击白方两个象中站深格的那个(c1)", squares: ["c1"] },
           { tip: "再点站浅格的那个(f1)", squares: ["f1"] },
+        ] },
+        { type: "tap", fen: START, prompt: "沿一条斜线走一遍,看看颜色变不变", steps: [
+          { tip: "从 a1 出发 —— 点 a1,深格", squares: ["a1"] },
+          { tip: "斜着上一格 —— 点 b2,还是深格", squares: ["b2"] },
+          { tip: "再上一格 —— 点 c3。整条斜线一个颜色,这就是象一辈子只走一种格的原因", squares: ["c3"] },
         ] },
       ],
     },
@@ -72,6 +82,11 @@
           { tip: "点击白方任意一个马(紧挨角上的车)", squares: ["b1", "g1"] },
           { tip: "点击黑方任意一个象(挨着后和王)", squares: ["c8", "f8"] },
         ] },
+        { type: "tap", fen: START, prompt: "「后先挑自己的颜色」—— 验一遍这句话", steps: [
+          { tip: "点白后 d1 —— 这是一个浅格,白后是浅色的子", squares: ["d1"] },
+          { tip: "点黑后 d8 —— 这是一个深格,黑后是深色的子。两边都对上了", squares: ["d8"] },
+          { tip: "王拿剩下那格:点白王 e1,它和白后正好错开一格,也错开一种颜色", squares: ["e1"] },
+        ] },
       ],
     },
     {
@@ -88,6 +103,11 @@
           { tip: "再点任意一个马或象(都是 3 分)", squares: ["b1", "g1", "c1", "f1"] },
           { tip: "最后点任意一个兵(1 分)", squares: ["a2", "b2", "c2", "d2", "e2", "f2", "g2", "h2"] },
         ] },
+        { type: "tap", fen: START, prompt: "反过来问:哪个子多少分", steps: [
+          { tip: "点一个值 5 分的白子 —— 车,在两个角上", squares: ["a1", "h1"] },
+          { tip: "点一个值 3 分、而且是全盘唯一能越过别的子的白子 —— 马", squares: ["b1", "g1"] },
+          { tip: "点那个不标价的白子 —— 王。它丢了棋就结束了,没得换", squares: ["e1"] },
+        ] },
       ],
     },
     {
@@ -100,6 +120,9 @@
       tasks: [
         { type: "move", fen: START, goal: "any", prompt: "轮到白方 —— 随便走一步,把先手用掉",
           retry: "点一个白子,再点它能去的格子", solution: ["e4"] },
+        { type: "move", fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+          goal: "any", prompt: "黑方也走完了(1. e4 e5)—— 第 2 回合,又轮到你",
+          retry: "轮流走:白一步、黑一步。现在这一步是你的", solution: ["Nf3"] },
       ],
     },
     {
@@ -114,6 +137,9 @@
           prompt: "试一下:选中一个中心兵或一个马,把它走出去(e4 / d4 / Nf3 / Nc3 都算)",
           retry: "先点中那个子,它能去的格子会亮起来;再点其中一格",
           solution: ["e4"] },
+        { type: "stars", fen: START, only: "n",
+          prompt: "换个子再走一次 —— 用马,把星吃掉(马能从两个兵中间跳出去)",
+          stars: ["f3"], solution: ["g1f3"] },
       ],
     },
     {
@@ -128,6 +154,10 @@
           prompt: "白后加白王,一步将死 —— 把后走到 g7",
           retry: "Qg7:后紧贴黑王,身后有白王撑着,黑王吃不掉也躲不开",
           solution: ["Qg7#"] },
+        { type: "move", fen: "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", goal: "mate",
+          prompt: "再看一个:黑王被自己的三个兵封在底线 —— 一步将死",
+          retry: "把车开到第 8 横线(Ra8)。黑王沿底线躲不开,往上走又被自己的兵堵死 —— 这叫「底线杀」",
+          solution: ["Ra8#"] },
       ],
     },
     // —— 第二部分 · 棋子走法 ——
@@ -261,6 +291,12 @@
           { tip: "马和象都约 3 分,称「轻子」—— 点击白方任意一个象", squares: ["c1", "f1"] },
           { tip: "兵只值 1 分,但升变潜力无限 —— 点击 e2 兵", squares: ["e2"] },
         ] },
+        { type: "tap", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          prompt: "算一笔账:哪些交换是赚的", steps: [
+          { tip: "点一个 3 分的白子(马或象)—— 用它去换 5 分的车,净赚 2 分", squares: ["b1", "g1", "c1", "f1"] },
+          { tip: "点一个 5 分的黑子(车)—— 那就是上一步要换到的东西", squares: ["a8", "h8"] },
+          { tip: "点黑后(9 分)—— 用 5 分的车换到它净赚 4 分,反过来就是大亏", squares: ["d8"] },
+        ] },
       ],
     },
     {
@@ -274,6 +310,11 @@
           prompt: "白后能吃到两个兵:b7 兵有车保护,h5 兵没有 —— 吃掉安全的那个",
           retry: "b7 兵有 b8 车保护!吃它会用 9 分的后换 1 分的兵,大亏 —— 吃没有保护的兵",
           solution: ["Qxh5"] },
+        { type: "move", fen: "6k1/5ppp/2p5/3n1b2/8/3Q4/5PPP/6K1 w - - 0 1",
+          goal: "capture", target: "f5",
+          prompt: "白后同时盯着 d5 的马和 f5 的象 —— 先数保护者,再动手",
+          retry: "d5 的马有 c6 兵守着,吃它是 9 分换 3 分;f5 的象没人守",
+          solution: ["Qxf5"] },
       ],
     },
     {
@@ -286,6 +327,10 @@
         { type: "move", fen: "k7/8/8/3Q3r/8/8/8/K7 w - - 0 1", goal: "safe", only: "q",
           prompt: "黑车正沿第 5 横线攻击你的后!把后移到安全的格子(或者干脆吃掉黑车)",
           retry: "那格还在黑方火力之下,后会被白吃 —— 再想想", solution: ["Qd1"] },
+        { type: "move", fen: "kb6/8/8/4R3/8/8/8/K7 w - - 0 1", goal: "safe", only: "r",
+          prompt: "这次被攻的是车:b8 的黑象沿大斜线正瞄着 e5 —— 把车挪到象够不着的格",
+          retry: "先看清楚象走的是哪条斜线(b8–c7–d6–e5),再把车挪出这条线",
+          solution: ["Re1"] },
       ],
     },
     {
@@ -330,6 +375,10 @@
         { type: "move", fen: "4k3/8/5q2/8/4N3/8/8/4R1K1 w - - 0 1", goal: "capture", target: "f6",
           prompt: "e4 的马身后是 e1 车、正对着黑王 —— 用马吃掉 f6 的后,同时露出车的闪将",
           retry: "让马去吃 f6 的后(它一挪开,e 线车就将军了)", solution: ["Nxf6+"] },
+        { type: "move", fen: "4k3/8/8/2r5/4N3/8/8/4R1K1 w - - 0 1", goal: "capture", target: "c5",
+          prompt: "换一组子再来一次:e4 的马挪开就露出 e1 车的将军 —— 挑一个「顺手」的落点,把 c5 的车吃掉",
+          retry: "马跳到 c5 吃车,同一步还露出了 e 线的将军。黑方必须先应将,这个车就拿稳了",
+          solution: ["Nxc5+"] },
       ],
     },
     {
@@ -344,6 +393,11 @@
           prompt: "d3 的马(3 分)能吃 b4 的车(5 分),而且吃完没有子能吃回来 —— 吃",
           retry: "Nxb4:马跳到 b4 吃掉车,净赚 2 分;先数一遍谁能吃回 b4,答案是没有",
           solution: ["Nxb4"] },
+        { type: "move", fen: "3r1rk1/5ppp/8/8/8/1N6/5PPP/3R2K1 w - - 0 1", goal: "one-of",
+          accept: ["Rxd8"],
+          prompt: "这次不是赚子,是课文最后那条:你多一匹马 —— 主动把一对车换掉",
+          retry: "d 线是通的,Rxd8 —— 黑方吃回来是平换,而盘上子越少,你多出来的那匹马越说了算",
+          solution: ["Rxd8"] },
       ],
     },
     // —— 第四部分 · 规则与胜负 ——
@@ -358,6 +412,11 @@
           accept: ["Re8+"],
           prompt: "d5 的黑马由 d8 的车守着。走 e8 车将军 —— 黑车只能吃掉它,d 线一松,马就没人管了",
           retry: "先想想:是谁在守 d5 的马?怎样逼它离开 d 线", solution: ["Re8+"] },
+        { type: "move", fen: "4r1k1/5ppp/8/3n4/8/8/5PBP/6K1 w - - 0 1",
+          goal: "capture", target: "d5",
+          prompt: "黑车被迫吃到 e8 去了,d 线一空 —— 收获:把那匹马吃掉",
+          retry: "谁够得着 d5?g2 的象,沿 g2–f3–e4–d5 这条斜线",
+          solution: ["Bxd5"] },
       ],
     },
     {
@@ -371,6 +430,11 @@
           accept: ["Bxd7+"],
           prompt: "b8 的黑车由 d7 的马守着。用象吃掉这匹马(还带将军)—— 车就孤零零地站在那儿了",
           retry: "别急着吃车 —— 先看谁在守它", solution: ["Bxd7+"] },
+        { type: "move", fen: "1r6/3k1ppp/8/8/8/8/5PPP/1R4K1 w - - 0 1",
+          goal: "capture", target: "b8",
+          prompt: "黑王吃回了那匹马 —— 守家的子没了,现在收车",
+          retry: "b 线是通的:Rxb8",
+          solution: ["Rxb8"] },
       ],
     },
     {
@@ -384,6 +448,11 @@
           accept: ["Re8+"],
           prompt: "c8 的黑车既守底线又守 c5 的马 —— 两份活。走 e8 车将军,逼它去管底线",
           retry: "找那个身兼两职的子,再逼它二选一", solution: ["Re8+"] },
+        { type: "move", fen: "4r1k1/5ppp/8/2n5/8/B7/5PPP/6K1 w - - 0 1",
+          goal: "capture", target: "c5",
+          prompt: "黑车去管底线了 —— 它另一份活(守 c5 的马)就塌了。收马",
+          retry: "a3 的象沿 a3–b4–c5 这条斜线正瞄着那匹马",
+          solution: ["Bxc5"] },
       ],
     },
     {
@@ -397,6 +466,11 @@
           accept: ["Rh8+"],
           prompt: "把车送到 h8 将军 —— 黑王只能吃。吃完之后王站到 h8,马从 f7 正好同时叉住王和后",
           retry: "先想好:王被骗到哪一格,你的马就能叉到它和后?", solution: ["Rh8+"] },
+        { type: "move", fen: "3q3k/5pp1/8/6N1/8/8/8/6K1 w - - 0 1", goal: "one-of",
+          accept: ["Nxf7+"],
+          prompt: "王被骗到 h8 了 —— 现在把马跳到那个同时叉住王和后的格",
+          retry: "马从 g5 跳到 f7(顺手把兵也吃了):将军,同时攻到 d8 的后",
+          solution: ["Nxf7+"] },
       ],
     },
     {
@@ -410,6 +484,11 @@
           accept: ["Nb6"],
           prompt: "b8 的黑车沿 b 线守着 b5 的象。把马跳到 b6 切断这条线 —— 马有 c5 兵保护,吃它是亏的",
           retry: "黑车是沿哪条线守着象的?在中间放一个有人保护的子", solution: ["Nb6"] },
+        { type: "move", fen: "1r4k1/5ppp/8/RbP5/8/1N6/8/6K1 w - - 0 1",
+          goal: "capture", target: "b5",
+          prompt: "马站在 b6,b 线被切断了 —— 黑车看不见自己的象了。收象",
+          retry: "a5 的车往右一格就吃到 b5 的象",
+          solution: ["Rxb5"] },
       ],
     },
     {
