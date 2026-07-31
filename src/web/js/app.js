@@ -142,7 +142,6 @@ import { createStore } from "./store.js";
       selection: null,
       /** bumped on every game mutation; stale engine replies are dropped */
       engineToken: 0,
-      gameVersion: 0,
       /** pgn of the last game recorded into stats (double-count guard) */
       statsRecordedSig: null,
       /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
@@ -161,10 +160,11 @@ import { createStore } from "./store.js";
       drawClaimed: null,
       /** how many times the current live position has occurred (incl. start) */
       repMemo: { sig: null, count: 1 },
-      _vhMemo: { v: -1, val: null },
-      _sanMemo: { v: -1, val: null },
+      /** one walk of the game per mutation; the game commit clears them */
+      _vh: null,
+      _san: null,
       /** chess.js instance for the currently VIEWED position (live or replay). */
-      _viewMemo: { v: -1, i: -1, g: null },
+      _view: null,
     },
     session: {
       /** @type {'ai'|'pvp'} */
@@ -251,27 +251,45 @@ import { createStore } from "./store.js";
   // dragging a piece in a long game visibly dragged. Not a regression — it had
   // always been this way, which is why it was never reported as one.
   //
-  // So the histories are cached against a version counter, and every mutation
-  // of `game` goes through one of the five functions below. A raw game.move()
-  // elsewhere would leave the caches describing the previous position;
-  // scripts/test-chess.mjs fails the build if one appears.
-  function gameMove(m) { const r = game.move(m); if (r) store.game.gameVersion++; return r; }
-  function gameUndo() { const r = game.undo(); if (r) store.game.gameVersion++; return r; }
-  function gameLoad(fen) { const r = game.load(fen); store.game.gameVersion++; return r; }
-  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); store.game.gameVersion++; return r; }
-  function gameReset() { game.reset(); store.game.gameVersion++; }
+  // So the histories are cached, and every mutation of `game` goes through one
+  // of the five doors below. A raw game.move() elsewhere would leave the caches
+  // describing the previous position; scripts/test-chess.mjs fails the build if
+  // one appears.
+  //
+  // The doors are the game slice's *actions*: they are the only five events
+  // that can change what is true of the chess, so they are the only five places
+  // that announce it. Up to 1.25 they instead bumped a `gameVersion` counter
+  // and each cache compared itself against it — a hand-rolled invalidation
+  // signal, which is what a store's commit already is. Same one-walk-per-
+  // mutation cost, one fewer number to keep honest.
+  function gameMove(m) { const r = game.move(m); if (r) store.commit("game", "move"); return r; }
+  function gameUndo() { const r = game.undo(); if (r) store.commit("game", "undo"); return r; }
+  function gameLoad(fen) { const r = game.load(fen); store.commit("game", "load"); return r; }
+  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); store.commit("game", "loadPgn"); return r; }
+  function gameReset() { game.reset(); store.commit("game", "reset"); }
+
+  // The caches those five doors feed. Cleared by the commit rather than
+  // compared against it: "this is stale now" is a thing the store can say, and
+  // saying it is cheaper and harder to get wrong than every reader remembering
+  // to ask.
+  store.subscribe("game", () => {
+    store.game._vh = null;
+    store.game._san = null;
+    store.game._view = null;
+    // the analysis is a session fact, but whether it still describes *this*
+    // game is a game fact — see analysisFor()
+    store.session._analysisTick = null;
+  });
 
   function verboseHistory() {
-    if (store.game._vhMemo.v === store.game.gameVersion) return store.game._vhMemo.val;
-    store.game._vhMemo = { v: store.game.gameVersion, val: game.history({ verbose: true }) };
-    return store.game._vhMemo.val;
+    if (!store.game._vh) store.game._vh = game.history({ verbose: true });
+    return store.game._vh;
   }
   // derived from the verbose list rather than asking chess.js twice: one walk
-  // of the game per version, not two per repaint
+  // of the game per mutation, not two per repaint
   function sanHistory() {
-    if (store.game._sanMemo.v === store.game.gameVersion) return store.game._sanMemo.val;
-    store.game._sanMemo = { v: store.game.gameVersion, val: verboseHistory().map((m) => m.san) };
-    return store.game._sanMemo.val;
+    if (!store.game._san) store.game._san = verboseHistory().map((m) => m.san);
+    return store.game._san;
   }
   function isLive() { return store.game.viewIndex === sanHistory().length; }
 
@@ -300,13 +318,15 @@ import { createStore } from "./store.js";
 
   function viewGame() {
     if (isLive()) return game;
-    if (store.game._viewMemo.v === store.game.gameVersion && store.game._viewMemo.i === store.game.viewIndex) return store.game._viewMemo.g;
+    // keyed on the cursor and dropped whenever the game itself moves: the two
+    // things that can make a replayed position wrong
+    if (store.game._view && store.game._view.i === store.game.viewIndex) return store.game._view.g;
     const g = baseGame();
     const h = sanHistory();
     for (let i = 0; i < store.game.viewIndex; i++) g.move(h[i]);
     // every caller reads (.board/.fen/.turn/.get/.in_check) and none mutates,
-    // so one instance per (version, cursor) can be shared
-    store.game._viewMemo = { v: store.game.gameVersion, i: store.game.viewIndex, g };
+    // so one instance per cursor position can be shared
+    store.game._view = { i: store.game.viewIndex, g };
     return g;
   }
 
@@ -2039,14 +2059,16 @@ import { createStore } from "./store.js";
    * including every animation frame, so a 12-frame replay slide was spending
    * ~40ms serialising the same PGN twelve times.
    *
-   * The memo is exact rather than merely fast: it is dropped at the top of
-   * sync(), and sync() is what this codebase runs after every state change.
-   * Frames drawn between two syncs cannot be looking at a different game.
+   * The memo is exact rather than merely fast: it is dropped whenever the game
+   * commits, so a frame can never be looking at an analysis of a different
+   * position. Up to 1.25 it was dropped at the top of sync() instead, which
+   * was correct only for as long as "sync() runs after every state change"
+   * stayed true — an invariant held by hand at 65 call sites.
    */
   function analysisFor() {
     // Keyed on the analysis object too, so replacing it invalidates the memo
     // without every one of the seven assignment sites having to remember. The
-    // sync() reset covers the other direction: the game changing underneath an
+    // game commit covers the other direction: the game changing underneath an
     // unchanged analysis.
     if (store.session._analysisTick && store.session._analysisTick.a === store.session.analysis) return store.session._analysisTick.v;
     store.session._analysisTick = { a: store.session.analysis, v: store.session.analysis && store.session.analysis.sig === game.pgn() ? store.session.analysis : null };
@@ -3075,7 +3097,6 @@ import { createStore } from "./store.js";
   function appGameOver() { return naturalGameOver() || ruleTerminated(); }
 
   function sync() {
-    store.session._analysisTick = null; // see analysisFor(): the memo lives exactly one cycle
     draw();
     const h = sanHistory();
     document.getElementById("status").textContent = statusText();

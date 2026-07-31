@@ -1754,15 +1754,17 @@ for (const lang of CONTENT_LANGS) {
     }
   }
 
-  const syncFn = fnOf("sync");
-  assert(/store\.session\._analysisTick = null/.test(syncFn), "…and sync() drops it, so no frame can outlive a state change");
-  assert(appSrc.indexOf("store.session._analysisTick = null") < appSrc.indexOf("draw();", appSrc.indexOf("function sync()")),
-    "…before sync() paints, not after");
+  // The memo used to be dropped at the top of sync(), which was correct only
+  // while "sync() runs after every state change" stayed true — an invariant
+  // held by hand at 65 call sites. The game commit drops it now, from inside
+  // the mutation rather than after somebody remembers to sync.
+  assert(/store\.subscribe\("game",[\s\S]{0,500}?store\.session\._analysisTick = null/.test(appSrc),
+    "…and the game commit drops it, so no frame can outlive a state change");
 
-  // Every mutation of `game` goes through one of the five doors, because the
-  // history caches expire on a version counter those doors bump. A raw
-  // game.move() somewhere else leaves viewGame()/sanHistory() describing the
-  // position before it — a stale board that repaints happily.
+  // Every mutation of `game` goes through one of the five doors, because those
+  // doors are what announce the change. A raw game.move() somewhere else
+  // leaves viewGame()/sanHistory() describing the position before it — a stale
+  // board that repaints happily.
   //
   // The caches exist because rebuilding the board model replays the whole game
   // (chess.js has no move list to read), and the model is rebuilt on every
@@ -1779,15 +1781,23 @@ for (const lang of CONTENT_LANGS) {
     "function gameLoadPgn(", "function gameReset("]) {
     assert(appSrc.includes(door), "the door " + door + "…) exists");
   }
-  assert(/gameVersion\+\+/.test(fnOf("gameMove")), "playing a move expires the caches");
-  assert(/gameVersion\+\+/.test(fnOf("gameUndo")), "taking one back expires them too");
+  // Each door announces itself, and the announcement is what expires the
+  // caches. Until 1.25 they bumped a `gameVersion` counter and every cache
+  // compared itself against it — a hand-rolled invalidation signal, which is
+  // exactly what a commit already is.
+  for (const door of ["gameMove", "gameUndo", "gameLoad", "gameLoadPgn", "gameReset"]) {
+    assert(/store\.commit\("game", "/.test(fnOf(door)), door + "() commits the game slice");
+  }
+  assert(!/gameVersion/.test(noComments(appSrc)), "no hand-kept version counter is left");
+  assert(/store\.subscribe\("game",[\s\S]{0,400}?_vh = null[\s\S]{0,200}?_san = null/.test(appSrc),
+    "the game commit is what expires the history caches");
   const vh = fnOf("verboseHistory");
-  assert(/_vhMemo\.v === store\.game\.gameVersion/.test(vh), "the verbose history is cached against the version");
-  assert(/_sanMemo\.v === store\.game\.gameVersion/.test(fnOf("sanHistory")), "…and so is the SAN list");
+  assert(/if \(!store\.game\._vh\)/.test(vh), "the verbose history is cached");
+  assert(/if \(!store\.game\._san\)/.test(fnOf("sanHistory")), "…and so is the SAN list");
   assert(/verboseHistory\(\)\.map/.test(fnOf("sanHistory")),
     "…derived from it rather than walking the game a second time");
-  assert(/_viewMemo\.v === store\.game\.gameVersion && store\.game\._viewMemo\.i === store\.game\.viewIndex/.test(fnOf("viewGame")),
-    "the replayed position is cached against the version and the cursor");
+  assert(/store\.game\._view && store\.game\._view\.i === store\.game\.viewIndex/.test(fnOf("viewGame")),
+    "the replayed position is cached against the cursor, and dropped when the game moves");
 
   // checkmate must not render as an ordinary check
   const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
