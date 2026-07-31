@@ -1733,11 +1733,30 @@ for (const lang of CONTENT_LANGS) {
   // just fast: dropped on every sync(), and keyed on the analysis object so
   // that replacing it invalidates without seven assignment sites remembering.
   const af = fnOf("analysisFor");
-  assert(/_analysisTick/.test(af), "analysisFor is memoised");
-  assert(/_analysisTick\.a === analysis/.test(af), "…and the memo notices a new analysis object");
+  assert(/store\.session\._analysisTick/.test(af), "analysisFor is memoised");
+  assert(/_analysisTick\.a === store\.session\.analysis/.test(af), "…and the memo notices a new analysis object");
+  // --- the state lives in the store, not in a `let` beside its reader ------
+  // 56 module-level `let`s down 5 300 lines meant "what is the state of this
+  // app" could only be answered by reading the whole file, and — worse —
+  // nothing could observe a change: every write was followed by a hand-written
+  // sync() call, and sync() had to rebuild everything precisely because the
+  // one thing it never knew was what had changed. P1.1 moved them into three
+  // slices; this keeps them there.
+  {
+    const strays = [...appSrc.matchAll(/^  let ([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
+    for (const n of strays) console.error("  module-level let: " + n);
+    assert(strays.length === 0,
+      "no state is declared beside its reader" +
+      (strays.length ? " — " + strays.length + " module-level let(s)" : " (all in the store)"));
+    assert(/const store = createStore\(\{/.test(appSrc), "…and the store is where it went");
+    for (const slice of ["game", "session", "ui"]) {
+      assert(new RegExp("\\n    " + slice + ": \\{").test(appSrc), "the " + slice + " slice exists");
+    }
+  }
+
   const syncFn = fnOf("sync");
-  assert(/_analysisTick = null/.test(syncFn), "…and sync() drops it, so no frame can outlive a state change");
-  assert(appSrc.indexOf("_analysisTick = null") < appSrc.indexOf("draw();", appSrc.indexOf("function sync()")),
+  assert(/store\.session\._analysisTick = null/.test(syncFn), "…and sync() drops it, so no frame can outlive a state change");
+  assert(appSrc.indexOf("store.session._analysisTick = null") < appSrc.indexOf("draw();", appSrc.indexOf("function sync()")),
     "…before sync() paints, not after");
 
   // Every mutation of `game` goes through one of the five doors, because the
@@ -1763,11 +1782,11 @@ for (const lang of CONTENT_LANGS) {
   assert(/gameVersion\+\+/.test(fnOf("gameMove")), "playing a move expires the caches");
   assert(/gameVersion\+\+/.test(fnOf("gameUndo")), "taking one back expires them too");
   const vh = fnOf("verboseHistory");
-  assert(/_vhMemo\.v === gameVersion/.test(vh), "the verbose history is cached against the version");
-  assert(/_sanMemo\.v === gameVersion/.test(fnOf("sanHistory")), "…and so is the SAN list");
+  assert(/_vhMemo\.v === store\.game\.gameVersion/.test(vh), "the verbose history is cached against the version");
+  assert(/_sanMemo\.v === store\.game\.gameVersion/.test(fnOf("sanHistory")), "…and so is the SAN list");
   assert(/verboseHistory\(\)\.map/.test(fnOf("sanHistory")),
     "…derived from it rather than walking the game a second time");
-  assert(/_viewMemo\.v === gameVersion && _viewMemo\.i === viewIndex/.test(fnOf("viewGame")),
+  assert(/_viewMemo\.v === store\.game\.gameVersion && store\.game\._viewMemo\.i === store\.game\.viewIndex/.test(fnOf("viewGame")),
     "the replayed position is cached against the version and the cursor");
 
   // checkmate must not render as an ordinary check
@@ -1786,7 +1805,7 @@ for (const lang of CONTENT_LANGS) {
   const bar = fnOf("drawEvalBar");
   assert(bar.length > 0, "drawEvalBar exists");
   assert(!/ChessEngine|analyze\(/.test(bar), "the eval bar never asks the engine anything");
-  assert(/analysisFor\(\)/.test(bar) && /a\.scalars\[viewIndex\]/.test(bar),
+  assert(/analysisFor\(\)/.test(bar) && /a\.scalars\[store\.game\.viewIndex\]/.test(bar),
     "the eval bar shows the position the board is standing on");
   assert(/rv\.evalNone/.test(bar), "an unmeasured position says so on screen");
 
@@ -1796,7 +1815,7 @@ for (const lang of CONTENT_LANGS) {
   assert(arrow.length > 0, "bestArrowAt exists");
   assert(/Review\.isMistake\(a\.tags\[i\]\)/.test(arrow),
     "the arrow appears only where the move played was a mistake");
-  assert(/hintMove: isLive\(\) \? hintMove : bestArrowAt\(viewIndex\)/.test(appSrc),
+  assert(/hintMove: isLive\(\) \? store\.session\.hintMove : bestArrowAt\(store\.game\.viewIndex\)/.test(appSrc),
     "the arrow is replay-only — never an answer key during a live game");
   assert(!/bestArrow\s*=/.test(appSrc), "the arrow is computed, not held in a variable");
   // and the analysis has to actually carry the engine's choice
@@ -2811,7 +2830,7 @@ for (const lang of CONTENT_LANGS) {
     ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
     ["clearing the save", /Host\.storageRemove\(SAVE_KEY\);[\s\S]{0,220}?Host\.clearRecentDocuments\(\);/],
   ]) assert(re.test(appSrc), "recent documents is recorded from " + what);
-  assert(/if \(!appForeground\) Host\.notify\(/.test(appSrc),
+  assert(/if \(!store\.ui\.appForeground\) Host\.notify\(/.test(appSrc),
     "the analysis notification only fires when the app is in the background");
   // The difficulty ladder is declared once. A hand-written second copy in
   // loadSettings meant a tier added to DIFF_IDS would be accepted by the UI and
@@ -2861,16 +2880,16 @@ for (const lang of CONTENT_LANGS) {
     }
   }
 
-  assert(/activate: \(\) => \{ appForeground = true;/.test(appSrc)
-    && /deactivate: \(\) => \{ appForeground = false;/.test(appSrc),
+  assert(/activate: \(\) => \{ store\.ui\.appForeground = true;/.test(appSrc)
+    && /deactivate: \(\) => \{ store\.ui\.appForeground = false;/.test(appSrc),
     "both lifecycle events maintain the foreground flag");
   // 1.18: and both of them have to poke the clock. The tick charges elapsed
   // wall time, so an app that keeps running out of sight keeps billing it —
   // measured at 1.17, 8.4s in the background cost 9s of clock. Now that
   // closing the window on macOS hides the app rather than ending it, that is
   // the normal path, not the unlucky one.
-  assert(/activate: \(\) => \{ appForeground = true; syncClockTimer\(\)/.test(appSrc)
-    && /deactivate: \(\) => \{ appForeground = false; saveGame\(\); syncClockTimer\(\)/.test(appSrc),
+  assert(/activate: \(\) => \{ store\.ui\.appForeground = true; syncClockTimer\(\)/.test(appSrc)
+    && /deactivate: \(\) => \{ store\.ui\.appForeground = false; saveGame\(\); syncClockTimer\(\)/.test(appSrc),
     "both lifecycle events stop and restart the clock");
   assert(/function clockRunning\(\)[\s\S]{0,200}?&& appAwake\(\);/.test(appSrc),
     "the clock only runs while somebody is in front of the board");

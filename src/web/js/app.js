@@ -25,6 +25,7 @@ import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES } from "./puzzles.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
+import { createStore } from "./store.js";
 
   /**
    * The one deliberate global: the seam the browser tests reach through.
@@ -116,69 +117,125 @@ import { ChessSrs } from "./srs.js";
 
   /** The live game — single source of truth (chess.js keeps full history). */
   const game = new Chess();
-  /** Replay cursor: 0..sanHistory().length; live when === length. */
-  let viewIndex = 0;
-  let flipped = false;
-  let soundOn = true;
-  /** @type {'wood'|'night'|'day'|'notebook'} */
-  let themeId = "wood";
-  /** @type {{sq:string, targets:string[]}|null} click-move selection */
-  let selection = null;
-  /** @type {'ai'|'pvp'} */
-  let mode = "ai";
-  /** @type {'easy'|'normal'|'hard'|'extreme'} */
-  let difficulty = "normal";
-  /** @type {'w'|'b'} human side in AI mode */
-  let humanColor = "w";
-  let engineThinking = false;
-  /** bumped on every game mutation; stale engine replies are dropped */
-  let engineToken = 0;
-  /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
-  let analysis = null;
-  let analyzing = false;
-  /** set by the stop button; the analysis loop bails at the next position */
-  let analyzeAbort = false;
-  let analyzeProgress = "";
-  /** pgn of the last game recorded into stats (double-count guard) */
-  let statsRecordedSig = null;
-  /** engine hint arrow {from,to}; cleared whenever the game mutates */
-  let hintMove = null;
-  let hintPending = false;
-  /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
-  let timeControl = "off";
-  /** blunder coach: warn after ??-level moves in AI games */
-  let coachOn = true;
-  /** pvp: flip the board to face the side to move after every move */
-  let autoFlipPvp = false;
-  /** which panel tab is showing: "play" | "setup" | "record" */
-  let sideTab = "play";
+
+  /**
+   * Everything else that changes, in one place.
+   *
+   * These were 56 module-level `let`s spread down this file. Same values, same
+   * defaults, same comments — what moved is only *where they are declared*, so
+   * that "what is the state of this app" becomes a question with an address.
+   * The three slices are described in store.js; the short version is: `game`
+   * is true of the chess, `session` is what the user is doing, `ui` is what
+   * the screen looks like.
+   *
+   * `game` the chess.js instance above and `store.game` the slice are
+   * different things, deliberately: one is the rules, the other is everything
+   * the rules do not know — where the replay cursor is, whose flag fell,
+   * whether somebody resigned.
+   */
+  const store = createStore({
+    game: {
+      /** Replay cursor: 0..sanHistory().length; live when === length. */
+      viewIndex: 0,
+      flipped: false,
+      /** @type {{sq:string, targets:string[]}|null} click-move selection */
+      selection: null,
+      /** bumped on every game mutation; stale engine replies are dropped */
+      engineToken: 0,
+      gameVersion: 0,
+      /** pgn of the last game recorded into stats (double-count guard) */
+      statsRecordedSig: null,
+      /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
+      timeControl: "off",
+      /** remaining ms per side; null when no clock */
+      clock: null,
+      /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
+      flagFall: null,
+      clockTimer: null,
+      clockTickAt: 0,
+      /** side that resigned ('w'|'b') — terminal for the game, like mate */
+      resigned: null,
+      /** draw agreed (pvp: both players; ai: engine accepted the offer) */
+      drawAgreed: false,
+      /** claimed draw: 'threefold' | 'fifty' | null — terminal once claimed */
+      drawClaimed: null,
+      /** how many times the current live position has occurred (incl. start) */
+      repMemo: { sig: null, count: 1 },
+      _vhMemo: { v: -1, val: null },
+      _sanMemo: { v: -1, val: null },
+      /** chess.js instance for the currently VIEWED position (live or replay). */
+      _viewMemo: { v: -1, i: -1, g: null },
+    },
+    session: {
+      /** @type {'ai'|'pvp'} */
+      mode: "ai",
+      /** @type {'easy'|'normal'|'hard'|'extreme'} */
+      difficulty: "normal",
+      /** @type {'w'|'b'} human side in AI mode */
+      humanColor: "w",
+      engineThinking: false,
+      /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
+      analysis: null,
+      analyzing: false,
+      /** set by the stop button; the analysis loop bails at the next position */
+      analyzeAbort: false,
+      analyzeProgress: "",
+      /** engine hint arrow {from,to}; cleared whenever the game mutates */
+      hintMove: null,
+      hintPending: false,
+      /** blunder coach: warn after ??-level moves in AI games */
+      coachOn: true,
+      personaId: "off",
+      /** learn-mode runtime; null unless mode === 'learn' */
+      learn: null,
+      /** puzzle-mode runtime; null unless mode === 'puzzle' */
+      puzzle: null,
+      learnState: null,  // filled in below, where it can first be computed
+      puzzleState: null,  // filled in below, where it can first be computed
+      /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
+      puzzleTierFilter: "all",
+      /** editor runtime: {board, turn, castling, brush} | null */
+      editor: null,
+      coachPending: null,
+      drawOfferPending: false,
+      _analysisTick: null,
+      /** the newest-first list the rendered rows index into */
+      histCache: [],
+      achSeen: null,  // filled in below, where it can first be computed
+    },
+    ui: {
+      soundOn: true,
+      /** @type {'wood'|'night'|'day'|'notebook'} */
+      themeId: "wood",
+      /** pvp: flip the board to face the side to move after every move */
+      autoFlipPvp: false,
+      /** which panel tab is showing: "play" | "setup" | "record" */
+      sideTab: "play",
+      /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
+      langId: null,  // filled in below, where it can first be computed
+      /** Is the app in front of somebody? Kept by the app:activate/deactivate
+       *  lifecycle pair; the clock and the analysis notification both read it. */
+      appForeground: true,
+      /** keyboard play: focused square, shown only while the board has focus */
+      keyboardCursor: null,
+      boardFocused: false,
+      toastTimer: null,
+      confirmResolver: null,
+      histFilter: { result: "all", color: "all" },
+      promoResolver: null,
+      /** Modal list picker → index of the chosen entry, or null when cancelled. */
+      pickResolver: null,
+      dragging: null,
+      /** editor paint stroke: the square last painted while the pointer is down */
+      painting: null,
+    },
+  });
   /** sparring personality — see persona.js; "off" is plain engine play */
   const PERSONA_IDS = (ChessPersona && ChessPersona.IDS) ||
     ["off", "greedy", "principled", "attacker"];
-  let personaId = "off";
-  /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
-  let langId = I18n ? I18n.getLang() : "zh-CN";
-  /** remaining ms per side; null when no clock */
-  let clock = null;
-  /** Is the app in front of somebody? Kept by the app:activate/deactivate
-   *  lifecycle pair; the clock and the analysis notification both read it. */
-  let appForeground = true;
-  /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
-  let flagFall = null;
-  let clockTimer = null;
-  let clockTickAt = 0;
-  /** side that resigned ('w'|'b') — terminal for the game, like mate */
-  let resigned = null;
-  /** draw agreed (pvp: both players; ai: engine accepted the offer) */
-  let drawAgreed = false;
-  /** claimed draw: 'threefold' | 'fifty' | null — terminal once claimed */
-  let drawClaimed = null;
-  /** learn-mode runtime; null unless mode === 'learn' */
-  let learn = null;
-  /** puzzle-mode runtime; null unless mode === 'puzzle' */
-  let puzzle = null;
+  store.ui.langId = I18n ? I18n.getLang() : "zh-CN";
 
-  Audio2.init(() => soundOn);
+  Audio2.init(() => store.ui.soundOn);
 
   // --- the game's moves, and the one door they change through ------------
   //
@@ -198,28 +255,25 @@ import { ChessSrs } from "./srs.js";
   // of `game` goes through one of the five functions below. A raw game.move()
   // elsewhere would leave the caches describing the previous position;
   // scripts/test-chess.mjs fails the build if one appears.
-  let gameVersion = 0;
-  function gameMove(m) { const r = game.move(m); if (r) gameVersion++; return r; }
-  function gameUndo() { const r = game.undo(); if (r) gameVersion++; return r; }
-  function gameLoad(fen) { const r = game.load(fen); gameVersion++; return r; }
-  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); gameVersion++; return r; }
-  function gameReset() { game.reset(); gameVersion++; }
+  function gameMove(m) { const r = game.move(m); if (r) store.game.gameVersion++; return r; }
+  function gameUndo() { const r = game.undo(); if (r) store.game.gameVersion++; return r; }
+  function gameLoad(fen) { const r = game.load(fen); store.game.gameVersion++; return r; }
+  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); store.game.gameVersion++; return r; }
+  function gameReset() { game.reset(); store.game.gameVersion++; }
 
-  let _vhMemo = { v: -1, val: null };
   function verboseHistory() {
-    if (_vhMemo.v === gameVersion) return _vhMemo.val;
-    _vhMemo = { v: gameVersion, val: game.history({ verbose: true }) };
-    return _vhMemo.val;
+    if (store.game._vhMemo.v === store.game.gameVersion) return store.game._vhMemo.val;
+    store.game._vhMemo = { v: store.game.gameVersion, val: game.history({ verbose: true }) };
+    return store.game._vhMemo.val;
   }
-  let _sanMemo = { v: -1, val: null };
   // derived from the verbose list rather than asking chess.js twice: one walk
   // of the game per version, not two per repaint
   function sanHistory() {
-    if (_sanMemo.v === gameVersion) return _sanMemo.val;
-    _sanMemo = { v: gameVersion, val: verboseHistory().map((m) => m.san) };
-    return _sanMemo.val;
+    if (store.game._sanMemo.v === store.game.gameVersion) return store.game._sanMemo.val;
+    store.game._sanMemo = { v: store.game.gameVersion, val: verboseHistory().map((m) => m.san) };
+    return store.game._sanMemo.val;
   }
-  function isLive() { return viewIndex === sanHistory().length; }
+  function isLive() { return store.game.viewIndex === sanHistory().length; }
 
   /** Custom start FEN when the game was imported from a [SetUp]/[FEN] PGN. */
   function startFen() {
@@ -244,17 +298,15 @@ import { ChessSrs } from "./srs.js";
     }
   }
 
-  /** chess.js instance for the currently VIEWED position (live or replay). */
-  let _viewMemo = { v: -1, i: -1, g: null };
   function viewGame() {
     if (isLive()) return game;
-    if (_viewMemo.v === gameVersion && _viewMemo.i === viewIndex) return _viewMemo.g;
+    if (store.game._viewMemo.v === store.game.gameVersion && store.game._viewMemo.i === store.game.viewIndex) return store.game._viewMemo.g;
     const g = baseGame();
     const h = sanHistory();
-    for (let i = 0; i < viewIndex; i++) g.move(h[i]);
+    for (let i = 0; i < store.game.viewIndex; i++) g.move(h[i]);
     // every caller reads (.board/.fen/.turn/.get/.in_check) and none mutates,
     // so one instance per (version, cursor) can be shared
-    _viewMemo = { v: gameVersion, i: viewIndex, g };
+    store.game._viewMemo = { v: store.game.gameVersion, i: store.game.viewIndex, g };
     return g;
   }
 
@@ -269,23 +321,20 @@ import { ChessSrs } from "./srs.js";
     return null;
   }
 
-  /** keyboard play: focused square, shown only while the board has focus */
-  let keyboardCursor = null;
-  let boardFocused = false;
-  const cursorSquare = () => (boardFocused ? keyboardCursor : null);
+  const cursorSquare = () => (store.ui.boardFocused ? store.ui.keyboardCursor : null);
 
   BoardView.attach(canvas, () => {
-    if (editor) return editorModel();
-    if (mode === "learn" && learn) return learnModel();
-    if (mode === "puzzle" && puzzle) return puzzleModel();
+    if (store.session.editor) return editorModel();
+    if (store.session.mode === "learn" && store.session.learn) return learnModel();
+    if (store.session.mode === "puzzle" && store.session.puzzle) return puzzleModel();
     const g = viewGame();
     const vh = verboseHistory();
-    const last = viewIndex > 0 ? vh[viewIndex - 1] : null;
+    const last = store.game.viewIndex > 0 ? vh[store.game.viewIndex - 1] : null;
     return {
       position: g.board(),
-      flipped,
-      selected: selection ? selection.sq : null,
-      legalTargets: selection ? selection.targets : [],
+      flipped: store.game.flipped,
+      selected: store.game.selection ? store.game.selection.sq : null,
+      legalTargets: store.game.selection ? store.game.selection.targets : [],
       lastMove: last ? { from: last.from, to: last.to } : null,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
@@ -295,7 +344,7 @@ import { ChessSrs } from "./srs.js";
       // I have done" is being asked, and drawing it everywhere else is just an
       // arrow permanently on the board. Never during live play, where it would
       // be an answer key rather than a review.
-      hintMove: isLive() ? hintMove : bestArrowAt(viewIndex),
+      hintMove: isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex),
       stars: [],
       cursor: cursorSquare(),
     };
@@ -319,17 +368,15 @@ import { ChessSrs } from "./srs.js";
   function draw() { BoardView.draw(); }
 
   // --- toast + promise-based in-app confirm ---
-  let toastTimer = null;
   function toast(msg) {
     const el = document.getElementById("toast");
     if (!el) return;
     el.textContent = msg;
     el.classList.add("show");
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+    if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
+    store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
   }
 
-  let confirmResolver = null;
   /**
    * In-app confirm. Resolves true (ok) / false (cancel), and "alt" when the
    * optional third button (buttons.alt) was offered and chosen.
@@ -357,12 +404,12 @@ import { ChessSrs } from "./srs.js";
       if (altLabel) altBtn.textContent = altLabel;
     }
     Dlg.open(modal, okBtn);
-    return new Promise((resolve) => { confirmResolver = resolve; });
+    return new Promise((resolve) => { store.ui.confirmResolver = resolve; });
   }
   function finishConfirm(val) {
     const modal = document.getElementById("confirm-modal");
     Dlg.close(modal);
-    if (confirmResolver) { confirmResolver(val); confirmResolver = null; }
+    if (store.ui.confirmResolver) { store.ui.confirmResolver(val); store.ui.confirmResolver = null; }
   }
 
   // --- settings + autosave ---
@@ -371,38 +418,38 @@ import { ChessSrs } from "./srs.js";
       const raw = Host.storageGet(SETTINGS_KEY);
       if (!raw) return;
       const s = JSON.parse(raw);
-      if (typeof s.soundOn === "boolean") soundOn = s.soundOn;
-      if (typeof s.flipped === "boolean") flipped = s.flipped;
-      if (["wood", "night", "day", "notebook"].includes(s.themeId)) themeId = s.themeId;
-      if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) mode = s.mode;
+      if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
+      if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
+      if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
+      if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
       // DIFF_IDS, not a second copy of it — this list was written out by hand
       // and adding the 1.19 "casual" rung to the ladder without it here would
       // have thrown the choice away on the next launch, silently.
-      if (DIFF_IDS.includes(s.difficulty)) difficulty = s.difficulty;
-      if (["w", "b"].includes(s.humanColor)) humanColor = s.humanColor;
-      if (s.timeControl === "off" || TCS[s.timeControl]) timeControl = s.timeControl;
-      if (typeof s.coachOn === "boolean") coachOn = s.coachOn;
-      if (typeof s.autoFlipPvp === "boolean") autoFlipPvp = s.autoFlipPvp;
-      if (I18n && typeof s.langId === "string") langId = I18n.setLang(s.langId);
-      if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) puzzleTierFilter = s.puzzleTier;
-      if (["play", "setup", "record"].includes(s.sideTab)) sideTab = s.sideTab;
-      if (PERSONA_IDS.includes(s.personaId)) personaId = s.personaId;
+      if (DIFF_IDS.includes(s.difficulty)) store.session.difficulty = s.difficulty;
+      if (["w", "b"].includes(s.humanColor)) store.session.humanColor = s.humanColor;
+      if (s.timeControl === "off" || TCS[s.timeControl]) store.game.timeControl = s.timeControl;
+      if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
+      if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
+      if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
+      if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
+      if (["play", "setup", "record"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
+      if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter, sideTab, personaId }));
+      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId }));
     } catch (_) {}
   }
   function saveGame() {
     try {
       const payload = { v: 1, pgn: game.pgn(), savedAt: Date.now() };
-      if (timeControl !== "off" && clock) {
-        payload.clock = { tc: timeControl, w: Math.round(clock.w), b: Math.round(clock.b), flag: flagFall };
+      if (store.game.timeControl !== "off" && store.game.clock) {
+        payload.clock = { tc: store.game.timeControl, w: Math.round(store.game.clock.w), b: Math.round(store.game.clock.b), flag: store.game.flagFall };
       }
-      if (resigned) payload.resigned = resigned;
-      if (drawAgreed) payload.drawAgreed = true;
-      if (drawClaimed) payload.drawClaimed = drawClaimed;
+      if (store.game.resigned) payload.resigned = store.game.resigned;
+      if (store.game.drawAgreed) payload.drawAgreed = true;
+      if (store.game.drawClaimed) payload.drawClaimed = store.game.drawClaimed;
       Host.storageSet(SAVE_KEY, JSON.stringify(payload));
     } catch (_) {}
   }
@@ -423,16 +470,16 @@ import { ChessSrs } from "./srs.js";
         if (!sf || !gameLoad(sf)) return false;
         game.header("SetUp", "1", "FEN", sf);
       }
-      viewIndex = sanHistory().length;
+      store.game.viewIndex = sanHistory().length;
       if (s.clock && TCS[s.clock.tc] &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
-        timeControl = s.clock.tc;
-        clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
-        flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
+        store.game.timeControl = s.clock.tc;
+        store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
+        store.game.flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
       }
-      if (s.resigned === "w" || s.resigned === "b") resigned = s.resigned;
-      if (s.drawAgreed === true) drawAgreed = true;
-      if (s.drawClaimed === "threefold" || s.drawClaimed === "fifty") drawClaimed = s.drawClaimed;
+      if (s.resigned === "w" || s.resigned === "b") store.game.resigned = s.resigned;
+      if (s.drawAgreed === true) store.game.drawAgreed = true;
+      if (s.drawClaimed === "threefold" || s.drawClaimed === "fifty") store.game.drawClaimed = s.drawClaimed;
       // a custom starting position is worth resuming on its own, with or
       // without moves played into it
       return sanHistory().length > 0 || !!startFen();
@@ -452,35 +499,35 @@ import { ChessSrs } from "./srs.js";
 
   /** Drop any in-flight engine search; call before every game mutation. */
   function invalidateEngine() {
-    engineToken++;
-    engineThinking = false;
-    hintMove = null;
+    store.game.engineToken++;
+    store.session.engineThinking = false;
+    store.session.hintMove = null;
     if (ChessEngine) ChessEngine.cancel();
   }
 
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
-    if (mode !== "ai" || !ChessEngine) return;
-    if (appGameOver() || game.turn() === humanColor) return;
-    const token = ++engineToken;
-    engineThinking = true;
+    if (store.session.mode !== "ai" || !ChessEngine) return;
+    if (appGameOver() || game.turn() === store.session.humanColor) return;
+    const token = ++store.game.engineToken;
+    store.session.engineThinking = true;
     sync();
     // clocked AI games: the engine budgets its think time from its clock
-    const engineSide = humanColor === "w" ? "b" : "w";
-    const budget = clock && timeControl !== "off" ? Math.max(150, clock[engineSide] / 30) : null;
+    const engineSide = store.session.humanColor === "w" ? "b" : "w";
+    const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
     let mv = null;
     // the personality only ever colours a real game against the engine; the
     // lesson drills need the engine defending honestly or the drill is a lie
-    try { mv = await ChessEngine.bestMove(game.fen(), difficulty, budget, { id: personaId, Chess }); }
+    try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess }); }
     catch (_) { mv = null; }
-    if (token !== engineToken) return; // game changed while thinking
-    engineThinking = false;
+    if (token !== store.game.engineToken) return; // game changed while thinking
+    store.session.engineThinking = false;
     if (!mv) { sync(); toast(t("msg.engine.noMove")); return; }
     const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
-      viewIndex = sanHistory().length;
-      selection = null;
-      hintMove = null;
+      store.game.viewIndex = sanHistory().length;
+      store.game.selection = null;
+      store.session.hintMove = null;
       applyIncrement(played.color);
       animateReply(played);
       Audio2.playMove(played.color, { captured: !!played.captured, check: game.in_check() });
@@ -496,25 +543,25 @@ import { ChessSrs } from "./srs.js";
   // --- engine hint: full-strength best move drawn as an arrow ---
 
   async function requestHint() {
-    if (mode === "learn") { learnHint(); return; }
-    if (mode === "puzzle") { showPuzzleAnswer(); return; }
+    if (store.session.mode === "learn") { learnHint(); return; }
+    if (store.session.mode === "puzzle") { showPuzzleAnswer(); return; }
     if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
     if (!isLive()) { toast(t("msg.replay.returnToLive")); return; }
     if (appGameOver()) return;
-    if (mode === "ai" && (engineThinking || game.turn() !== humanColor)) return;
-    if (hintPending || analyzing) return;
+    if (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor)) return;
+    if (store.session.hintPending || store.session.analyzing) return;
     const sig = game.fen();
-    hintPending = true;
+    store.session.hintPending = true;
     sync();
     let e = null;
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
-    hintPending = false;
+    store.session.hintPending = false;
     if (!isLive() || game.fen() !== sig) { sync(); return; }
     if (!e || !e.best) { sync(); toast(t("msg.engine.noHint")); return; }
     const from = e.best.slice(0, 2);
     const to = e.best.slice(2, 4);
     const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
-    hintMove = { from, to };
+    store.session.hintMove = { from, to };
     sync();
     toast(t("chrome.hint") + " · " + (vmv ? vmv.san : from + " → " + to));
   }
@@ -530,18 +577,18 @@ import { ChessSrs } from "./srs.js";
   function parseTc(tc) { return TCS[tc] || null; }
 
   function resetClocks() {
-    const tc = parseTc(timeControl);
-    clock = tc ? { w: tc.base * 1000, b: tc.base * 1000 } : null;
-    flagFall = null;
+    const tc = parseTc(store.game.timeControl);
+    store.game.clock = tc ? { w: tc.base * 1000, b: tc.base * 1000 } : null;
+    store.game.flagFall = null;
     syncClockTimer();
     renderClocks();
   }
 
   /** Fischer increment: credit the mover once their move is completed. */
   function applyIncrement(mover) {
-    const tc = parseTc(timeControl);
-    if (!clock || !tc || !tc.inc || flagFall) return;
-    clock[mover] += tc.inc * 1000;
+    const tc = parseTc(store.game.timeControl);
+    if (!store.game.clock || !tc || !tc.inc || store.game.flagFall) return;
+    store.game.clock[mover] += tc.inc * 1000;
     renderClocks();
   }
 
@@ -554,7 +601,7 @@ import { ChessSrs } from "./srs.js";
    * by either measure counts as away.
    */
   function appAwake() {
-    if (!appForeground) return false;
+    if (!store.ui.appForeground) return false;
     try { return document.visibilityState !== "hidden"; } catch (_) { return true; }
   }
 
@@ -571,18 +618,18 @@ import { ChessSrs } from "./srs.js";
    * time you spend in another window is not time your opponent is waiting.
    */
   function clockRunning() {
-    return (mode === "pvp" || mode === "ai") && !!clock &&
+    return (store.session.mode === "pvp" || store.session.mode === "ai") && !!store.game.clock &&
       !appGameOver() && sanHistory().length >= 1 && appAwake();
   }
 
   function syncClockTimer() {
     const want = clockRunning();
-    if (want && !clockTimer) {
-      clockTickAt = Date.now();
-      clockTimer = setInterval(clockTick, 200);
-    } else if (!want && clockTimer) {
-      clearInterval(clockTimer);
-      clockTimer = null;
+    if (want && !store.game.clockTimer) {
+      store.game.clockTickAt = Date.now();
+      store.game.clockTimer = setInterval(clockTick, 200);
+    } else if (!want && store.game.clockTimer) {
+      clearInterval(store.game.clockTimer);
+      store.game.clockTimer = null;
     }
   }
 
@@ -590,16 +637,16 @@ import { ChessSrs } from "./srs.js";
     if (!clockRunning()) { syncClockTimer(); return; }
     const now = Date.now();
     const side = game.turn();
-    clock[side] = Math.max(0, clock[side] - (now - clockTickAt));
-    clockTickAt = now;
-    if (clock[side] === 0) {
-      flagFall = side;
+    store.game.clock[side] = Math.max(0, store.game.clock[side] - (now - store.game.clockTickAt));
+    store.game.clockTickAt = now;
+    if (store.game.clock[side] === 0) {
+      store.game.flagFall = side;
       syncClockTimer();
       invalidateEngine();
       const isDraw = timeoutIsDraw();
       if (isDraw) Audio2.playDraw(); else Audio2.playWin();
-      if (mode === "ai") {
-        recordOutcome(isDraw ? "draw" : side === humanColor ? "loss" : "win", "#flag");
+      if (store.session.mode === "ai") {
+        recordOutcome(isDraw ? "draw" : side === store.session.humanColor ? "loss" : "win", "#flag");
       }
       saveGame();
       sync();
@@ -620,15 +667,15 @@ import { ChessSrs } from "./srs.js";
     const wEl = document.getElementById("clock-w");
     const bEl = document.getElementById("clock-b");
     if (!wEl || !bEl) return;
-    const show = (mode === "pvp" || mode === "ai") && timeControl !== "off" && !!clock;
+    const show = (store.session.mode === "pvp" || store.session.mode === "ai") && store.game.timeControl !== "off" && !!store.game.clock;
     wEl.hidden = !show;
     bEl.hidden = !show;
     if (!show) return;
     const active = clockRunning() ? game.turn() : null;
     for (const [el, side] of [[wEl, "w"], [bEl, "b"]]) {
-      el.textContent = fmtClock(clock[side]);
+      el.textContent = fmtClock(store.game.clock[side]);
       el.classList.toggle("active", active === side);
-      el.classList.toggle("low", clock[side] < 20000);
+      el.classList.toggle("low", store.game.clock[side] < 20000);
     }
   }
 
@@ -659,7 +706,7 @@ import { ChessSrs } from "./srs.js";
   function renderOpening() {
     const el = document.getElementById("opening-line");
     if (!el) return;
-    const hit = mode === "learn" || mode === "puzzle" ? null : openingFor(viewIndex);
+    const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
     el.hidden = !hit;
     el.textContent = hit ? hit[0] + " · " + openingName(hit[1]) : "";
   }
@@ -694,8 +741,8 @@ import { ChessSrs } from "./srs.js";
   /** tables to consult for `kind`, best match first (empty when reading source) */
   function contentTables(kind) {
     const out = [];
-    if (langId === "zh-CN") return out;
-    for (const id of [langId, "en"]) {
+    if (store.ui.langId === "zh-CN") return out;
+    for (const id of [store.ui.langId, "en"]) {
       const get = CONTENT_TABLES[id];
       const tbl = get && get()[kind];
       if (tbl && out.indexOf(tbl) < 0) out.push(tbl);
@@ -791,46 +838,46 @@ import { ChessSrs } from "./srs.js";
     } catch (_) {}
     return { v: 1, done: {}, last: 0 };
   }
-  let learnState = loadLearnState();
+  store.session.learnState = loadLearnState();
   function saveLearnState() {
-    try { Host.storageSet(LEARN_KEY, JSON.stringify(learnState)); } catch (_) {}
+    try { Host.storageSet(LEARN_KEY, JSON.stringify(store.session.learnState)); } catch (_) {}
   }
 
   function startLearn() {
-    startLesson(Math.max(0, Math.min(learnState.last || 0, LESSONS.length - 1)));
+    startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
   }
-  function stopLearn() { if (learn) learn.token++; learn = null; }
+  function stopLearn() { if (store.session.learn) store.session.learn.token++; store.session.learn = null; }
 
-  function curLesson() { return LESSONS[learn.li]; }
-  function curTask() { return curLesson().tasks[learn.ti]; }
+  function curLesson() { return LESSONS[store.session.learn.li]; }
+  function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
   function startLesson(i) {
     if (!LESSONS[i]) return;
-    learnState.last = i;
+    store.session.learnState.last = i;
     saveLearnState();
-    learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !learnState.done[LESSONS[i].id] };
+    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
 
   function startLearnTask() {
     const task = curTask();
-    learn.token++;
+    store.session.learn.token++;
     BoardView.cancelAnim();
-    learn.g = new Chess(task.fen);
-    learn.stars = new Set(task.stars || []);
-    learn.tapStep = 0;
-    learn.last = null;
-    learn.done = false;
-    learn.engineBusy = false;
-    learn.misses = 0;
-    learn.helpOn = false;
-    learn.helpArrow = null;
-    learn.flash = null;
-    learn.demoing = false;
-    selection = null;
+    store.session.learn.g = new Chess(task.fen);
+    store.session.learn.stars = new Set(task.stars || []);
+    store.session.learn.tapStep = 0;
+    store.session.learn.last = null;
+    store.session.learn.done = false;
+    store.session.learn.engineBusy = false;
+    store.session.learn.misses = 0;
+    store.session.learn.helpOn = false;
+    store.session.learn.helpArrow = null;
+    store.session.learn.flash = null;
+    store.session.learn.demoing = false;
+    store.game.selection = null;
     // first visit to an unfinished lesson: show the solution once, then reset
-    if (learn.wantDemo && task.solution && (task.type === "stars" || task.type === "move")) {
-      learn.wantDemo = false;
+    if (store.session.learn.wantDemo && task.solution && (task.type === "stars" || task.type === "move")) {
+      store.session.learn.wantDemo = false;
       runLessonDemo();
       return;
     }
@@ -841,33 +888,33 @@ import { ChessSrs } from "./srs.js";
   function runLessonDemo() {
     const task = curTask();
     const sol = task.solution;
-    learn.demoing = true;
-    const token = learn.token;
+    store.session.learn.demoing = true;
+    const token = store.session.learn.token;
     let i = 0;
     toast(t("lm.demoIntro"));
     sync();
     const step = () => {
-      if (!learn || learn.token !== token) return;
+      if (!store.session.learn || store.session.learn.token !== token) return;
       if (i >= sol.length) {
         setTimeout(() => {
-          if (!learn || learn.token !== token) return;
+          if (!store.session.learn || store.session.learn.token !== token) return;
           endLessonDemo();
         }, 800);
         return;
       }
       const s = sol[i++];
-      const g = learn.g;
+      const g = store.session.learn.g;
       const mv = /^[a-h][1-8][a-h][1-8]$/.test(s)
         ? g.move({ from: s.slice(0, 2), to: s.slice(2, 4), promotion: "q" })
         : g.move(s);
       if (!mv) { endLessonDemo(); return; }
-      learn.last = { from: mv.from, to: mv.to };
+      store.session.learn.last = { from: mv.from, to: mv.to };
       if (task.type === "stars") {
-        if (learn.stars.has(mv.to)) learn.stars.delete(mv.to);
+        if (store.session.learn.stars.has(mv.to)) store.session.learn.stars.delete(mv.to);
         // hand the turn back, exactly like real star play
         const f = g.fen().split(" ");
         f[1] = "w"; f[3] = "-";
-        learn.g = new Chess(f.join(" "));
+        store.session.learn.g = new Chess(f.join(" "));
       }
       Audio2.playMove("w");
       sync();
@@ -878,38 +925,38 @@ import { ChessSrs } from "./srs.js";
 
   function endLessonDemo() {
     const task = curTask();
-    learn.demoing = false;
-    learn.g = new Chess(task.fen);
-    learn.stars = new Set(task.stars || []);
-    learn.last = null;
-    selection = null;
+    store.session.learn.demoing = false;
+    store.session.learn.g = new Chess(task.fen);
+    store.session.learn.stars = new Set(task.stars || []);
+    store.session.learn.last = null;
+    store.game.selection = null;
     sync();
     toast(t("lm.yourTurn"));
   }
 
   function skipLessonDemo() {
-    learn.token++; // kill the pending demo timers
+    store.session.learn.token++; // kill the pending demo timers
     endLessonDemo();
   }
 
   function learnModel() {
-    const g = learn.g;
+    const g = store.session.learn.g;
     const task = curTask();
-    let stars = Array.from(learn.stars);
+    let stars = Array.from(store.session.learn.stars);
     // stuck-help: after repeated misses, highlight the tap answer with stars
-    if (learn.helpOn && task.type === "tap" && learn.tapStep < task.steps.length) {
-      stars = task.steps[learn.tapStep].squares;
+    if (store.session.learn.helpOn && task.type === "tap" && store.session.learn.tapStep < task.steps.length) {
+      stars = task.steps[store.session.learn.tapStep].squares;
     }
     return {
       position: g.board(),
       flipped: false, // lessons are authored from the white side
-      selected: selection ? selection.sq : null,
-      legalTargets: selection ? selection.targets : [],
-      lastMove: learn.last,
+      selected: store.game.selection ? store.game.selection.sq : null,
+      legalTargets: store.game.selection ? store.game.selection.targets : [],
+      lastMove: store.session.learn.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
-      hintMove: learn.helpArrow,
-      flashSquare: learn.flash,
+      hintMove: store.session.learn.helpArrow,
+      flashSquare: store.session.learn.flash,
       stars,
       cursor: cursorSquare(),
     };
@@ -917,15 +964,15 @@ import { ChessSrs } from "./srs.js";
 
   /** Two misses on the same task → show the answer (stars for taps, arrow for moves). */
   function learnRegisterMiss() {
-    learn.misses++;
-    if (learn.misses < 2 || learn.helpOn) return;
-    learn.helpOn = true;
+    store.session.learn.misses++;
+    if (store.session.learn.misses < 2 || store.session.learn.helpOn) return;
+    store.session.learn.helpOn = true;
     const task = curTask();
     if (task.type === "move" && task.solution && task.solution.length) {
       try {
         const probe = new Chess(task.fen);
         const mv = probe.move(task.solution[0]);
-        if (mv) learn.helpArrow = { from: mv.from, to: mv.to };
+        if (mv) store.session.learn.helpArrow = { from: mv.from, to: mv.to };
       } catch (_) {}
     }
     toast(t("lm.answerShown"));
@@ -933,21 +980,21 @@ import { ChessSrs } from "./srs.js";
   }
 
   function learnFlash(sq) {
-    learn.flash = sq;
+    store.session.learn.flash = sq;
     draw();
-    const token = learn.token;
+    const token = store.session.learn.token;
     setTimeout(() => {
-      if (learn && learn.token === token && learn.flash === sq) { learn.flash = null; draw(); }
+      if (store.session.learn && store.session.learn.token === token && store.session.learn.flash === sq) { store.session.learn.flash = null; draw(); }
     }, 380);
   }
 
   function learnTaskText() {
     const task = curTask();
-    if (learn.demoing) return t("lm.demoing");
-    if (learn.done) return t("lm.taskDone") + (learn.li + 1 < LESSONS.length ? t("lm.tapNext") : t("lm.allDone"));
-    const tx = taskText(curLesson(), learn.ti);
-    if (task.type === "tap") return tx.step(learn.tapStep) + " (" + (learn.tapStep + 1) + "/" + task.steps.length + ")";
-    if (task.type === "drill" && learn.engineBusy) return t("lm.sparThinking");
+    if (store.session.learn.demoing) return t("lm.demoing");
+    if (store.session.learn.done) return t("lm.taskDone") + (store.session.learn.li + 1 < LESSONS.length ? t("lm.tapNext") : t("lm.allDone"));
+    const tx = taskText(curLesson(), store.session.learn.ti);
+    if (task.type === "tap") return tx.step(store.session.learn.tapStep) + " (" + (store.session.learn.tapStep + 1) + "/" + task.steps.length + ")";
+    if (task.type === "drill" && store.session.learn.engineBusy) return t("lm.sparThinking");
     // tx, not task: reading the prompt straight off the lesson showed every
     // move/stars/drill task in Chinese to English readers — the translations
     // were sitting in lessons-en.js unused, and only the tap tasks (which go
@@ -956,31 +1003,31 @@ import { ChessSrs } from "./srs.js";
   }
 
   function learnClick(sq) {
-    if (!learn || learn.done) return;
-    if (learn.demoing) { skipLessonDemo(); return; }
+    if (!store.session.learn || store.session.learn.done) return;
+    if (store.session.learn.demoing) { skipLessonDemo(); return; }
     const task = curTask();
     if (task.type === "tap") {
-      if (task.steps[learn.tapStep].squares.includes(sq)) {
-        learn.tapStep++;
-        learn.helpOn = false;
-        learn.misses = 0;
+      if (task.steps[store.session.learn.tapStep].squares.includes(sq)) {
+        store.session.learn.tapStep++;
+        store.session.learn.helpOn = false;
+        store.session.learn.misses = 0;
         Audio2.playStar();
         learnFlash(sq);
-        if (learn.tapStep >= task.steps.length) learnTaskDone();
+        if (store.session.learn.tapStep >= task.steps.length) learnTaskDone();
         else sync();
       } else {
         // the localised tip, not the authored one — same reason as learnTaskText
-        toast(tf("lm.wrongSquare", [taskText(curLesson(), learn.ti).step(learn.tapStep)]));
+        toast(tf("lm.wrongSquare", [taskText(curLesson(), store.session.learn.ti).step(store.session.learn.tapStep)]));
         learnRegisterMiss();
       }
       return;
     }
-    if (task.type === "drill" && learn.engineBusy) return;
-    const g = learn.g;
+    if (task.type === "drill" && store.session.learn.engineBusy) return;
+    const g = store.session.learn.g;
     if (g.game_over()) return;
     const piece = g.get(sq);
-    if (selection && selection.targets.includes(sq)) {
-      const from = selection.sq;
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         choosePromotion(g.turn()).then((p) => { if (p) learnMove(from, sq, p); });
@@ -991,7 +1038,7 @@ import { ChessSrs } from "./srs.js";
     }
     if (piece && piece.color === "w" && g.turn() === "w" && (!task.only || piece.type === task.only)) {
       const targets = g.moves({ square: sq, verbose: true }).map((m) => m.to);
-      selection = targets.length ? { sq, targets } : null;
+      store.game.selection = targets.length ? { sq, targets } : null;
       draw();
       return;
     }
@@ -999,38 +1046,38 @@ import { ChessSrs } from "./srs.js";
       toast(tf("lm.onlyPiece", [PIECE_NAMES[task.only]]));
       return;
     }
-    if (selection) { selection = null; draw(); }
+    if (store.game.selection) { store.game.selection = null; draw(); }
   }
 
   const PIECE_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
 
   function learnRetryTask(msg) {
     toast(msg);
-    const token = learn.token;
-    setTimeout(() => { if (learn && learn.token === token) startLearnTask(); }, 1400);
+    const token = store.session.learn.token;
+    setTimeout(() => { if (store.session.learn && store.session.learn.token === token) startLearnTask(); }, 1400);
   }
 
   function learnMove(from, to, promotion) {
     const task = curTask();
-    const g = learn.g;
+    const g = store.session.learn.g;
     const mv = g.move({ from, to, promotion });
     if (!mv) return;
-    selection = null;
-    learn.last = { from: mv.from, to: mv.to };
-    learn.helpArrow = null;
+    store.game.selection = null;
+    store.session.learn.last = { from: mv.from, to: mv.to };
+    store.session.learn.helpArrow = null;
     BoardView.cancelAnim(); // the student's own move — see animateReply
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
     if (task.type === "stars") {
-      if (learn.stars.has(mv.to)) {
-        learn.stars.delete(mv.to);
+      if (store.session.learn.stars.has(mv.to)) {
+        store.session.learn.stars.delete(mv.to);
         Audio2.playStar();
         learnFlash(mv.to);
       }
-      if (learn.stars.size === 0) { learnTaskDone(); return; }
+      if (store.session.learn.stars.size === 0) { learnTaskDone(); return; }
       // hand the turn straight back to the student — the opponent never replies
       const f = g.fen().split(" ");
       f[1] = "w"; f[3] = "-";
-      learn.g = new Chess(f.join(" "));
+      store.session.learn.g = new Chess(f.join(" "));
       sync();
       return;
     }
@@ -1059,9 +1106,9 @@ import { ChessSrs } from "./srs.js";
         return;
       }
       g.undo();
-      learn.last = null;
+      store.session.learn.last = null;
       // the translated retry hint, not the raw Chinese one on the task
-      toast(taskText(curLesson(), learn.ti).retry || t("lm.retry"));
+      toast(taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry"));
       learnRegisterMiss();
       sync();
       return;
@@ -1111,21 +1158,21 @@ import { ChessSrs } from "./srs.js";
 
   async function learnEngineReply() {
     if (!ChessEngine) { toast(t("lm.noEngine")); return; }
-    const g = learn.g;
-    const token = learn.token;
+    const g = store.session.learn.g;
+    const token = store.session.learn.token;
     // drills default to the weakest tier: the sparring partner is there to
     // teach the technique, not to punish a beginner with perfect defense
     const tier = curTask().engine || "beginner";
-    learn.engineBusy = true;
+    store.session.learn.engineBusy = true;
     sync();
     let mv = null;
     try { mv = await ChessEngine.bestMove(g.fen(), tier); } catch (_) {}
-    if (!learn || token !== learn.token) return;
-    learn.engineBusy = false;
+    if (!store.session.learn || token !== store.session.learn.token) return;
+    store.session.learn.engineBusy = false;
     if (mv) {
       const played = g.move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
       if (played) {
-        learn.last = { from: played.from, to: played.to };
+        store.session.learn.last = { from: played.from, to: played.to };
         animateReply(played);
         Audio2.playMove(played.color, { captured: !!played.captured, check: g.in_check() });
       }
@@ -1146,61 +1193,61 @@ import { ChessSrs } from "./srs.js";
 
   /** Drill-only: take back the last white move (and the engine reply with it). */
   function learnUndo() {
-    if (!learn || learn.done || curTask().type !== "drill") return;
-    const g = learn.g;
+    if (!store.session.learn || store.session.learn.done || curTask().type !== "drill") return;
+    const g = store.session.learn.g;
     if (!g.history().length) return;
-    learn.token++; // drop any in-flight engine reply
-    learn.engineBusy = false;
+    store.session.learn.token++; // drop any in-flight engine reply
+    store.session.learn.engineBusy = false;
     if (ChessEngine) ChessEngine.cancel();
     g.undo();
     if (g.history().length && g.turn() !== "w") g.undo();
-    learn.last = null;
-    learn.helpArrow = null;
-    selection = null;
+    store.session.learn.last = null;
+    store.session.learn.helpArrow = null;
+    store.game.selection = null;
     sync();
   }
 
   /** Drill-only engine hint, drawn as an arrow (full strength, brief think). */
   async function learnHint() {
-    if (!learn || learn.done || curTask().type !== "drill" || learn.engineBusy) return;
+    if (!store.session.learn || store.session.learn.done || curTask().type !== "drill" || store.session.learn.engineBusy) return;
     if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
-    const g = learn.g;
+    const g = store.session.learn.g;
     if (g.game_over() || g.turn() !== "w") return;
-    if (hintPending) return;
-    const token = learn.token;
+    if (store.session.hintPending) return;
+    const token = store.session.learn.token;
     const sig = g.fen();
-    hintPending = true;
+    store.session.hintPending = true;
     sync();
     let e = null;
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
-    hintPending = false;
-    if (!learn || token !== learn.token || learn.g.fen() !== sig) { sync(); return; }
+    store.session.hintPending = false;
+    if (!store.session.learn || token !== store.session.learn.token || store.session.learn.g.fen() !== sig) { sync(); return; }
     if (!e || !e.best) { sync(); toast(t("msg.engine.noHint")); return; }
-    learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
+    store.session.learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
     sync();
   }
 
   function learnTaskDone() {
     const L = curLesson();
-    selection = null;
-    if (learn.ti + 1 < L.tasks.length) {
+    store.game.selection = null;
+    if (store.session.learn.ti + 1 < L.tasks.length) {
       Audio2.playMove("b");
       toast(t("lm.nextSubtask"));
-      learn.ti++;
+      store.session.learn.ti++;
       // startLearnTask resets the per-task cursors, but it runs 900ms later —
       // and the board and prompt are redrawn now. A tap task followed by
       // another tap task would spend that gap reading step[3] of a 1-step task.
-      learn.tapStep = 0;
-      learn.helpOn = false;
-      const token = ++learn.token;
-      setTimeout(() => { if (learn && learn.token === token) startLearnTask(); }, 900);
+      store.session.learn.tapStep = 0;
+      store.session.learn.helpOn = false;
+      const token = ++store.session.learn.token;
+      setTimeout(() => { if (store.session.learn && store.session.learn.token === token) startLearnTask(); }, 900);
       sync();
       return;
     }
-    learn.done = true;
+    store.session.learn.done = true;
     Audio2.playWin();
-    if (!learnState.done[L.id]) {
-      learnState.done[L.id] = true;
+    if (!store.session.learnState.done[L.id]) {
+      store.session.learnState.done[L.id] = true;
       saveLearnState();
       checkNewAchievements();
     }
@@ -1240,17 +1287,17 @@ import { ChessSrs } from "./srs.js";
   function syncLearnUI() {
     const sec = document.getElementById("sec-learn");
     if (!sec) return;
-    sec.hidden = mode !== "learn";
-    if (mode !== "learn" || !learn) return;
+    sec.hidden = store.session.mode !== "learn";
+    if (store.session.mode !== "learn" || !store.session.learn) return;
     const L = curLesson();
-    const doneCount = LESSONS.filter((x) => learnState.done[x.id]).length;
+    const doneCount = LESSONS.filter((x) => store.session.learnState.done[x.id]).length;
     const prog = document.getElementById("learn-progress");
     // "完成 3/72" reads differently from the header chip's "4/72", which is
     // where you ARE. Two bare N/72 on one screen meant two different things.
     if (prog) prog.textContent = t("learn.donePre") + doneCount + "/" + LESSONS.length;
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
-    if (title) title.textContent = t("learn.lessonPre") + (learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
+    if (title) title.textContent = t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
     const textEl = document.getElementById("lesson-text");
     if (textEl) {
       textEl.innerHTML = "";
@@ -1271,19 +1318,19 @@ import { ChessSrs } from "./srs.js";
       // moving pieces already explain.
       const canDemo = !!curT.solution && (curT.type === "stars" || curT.type === "move");
       demoBtn.hidden = !canDemo;
-      demoBtn.disabled = learn.demoing;
+      demoBtn.disabled = store.session.learn.demoing;
     }
     const next = document.getElementById("lesson-next");
     if (next) {
-      const isLast = learn.li + 1 >= LESSONS.length;
+      const isLast = store.session.learn.li + 1 >= LESSONS.length;
       next.textContent = isLast ? t("lm.toBeginnerAi") : t("act.next");
       // `learn.done` only records whether the tasks were finished *this
       // session*, so someone returning to a course they already completed
       // found the graduation button greyed out — the one button the whole
       // teaching track exists to reach. The saved progress counts too.
-      const everDone = !!learnState.done[LESSONS[learn.li].id];
-      next.disabled = isLast && !learn.done && !everDone;
-      next.classList.toggle("primary", learn.done || (isLast && everDone));
+      const everDone = !!store.session.learnState.done[LESSONS[store.session.learn.li].id];
+      next.disabled = isLast && !store.session.learn.done && !everDone;
+      next.classList.toggle("primary", store.session.learn.done || (isLast && everDone));
     }
     const list = document.getElementById("lesson-list");
     if (list) {
@@ -1300,9 +1347,9 @@ import { ChessSrs } from "./srs.js";
         }
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "lesson-item" + (i === learn.li ? " current" : "");
+        b.className = "lesson-item" + (i === store.session.learn.li ? " current" : "");
         b.dataset.i = String(i);
-        const mark = learnState.done[x.id] ? "✓ " : "";
+        const mark = store.session.learnState.done[x.id] ? "✓ " : "";
         b.textContent = mark + (i + 1) + ". " + xl.title;
         list.appendChild(b);
       });
@@ -1418,8 +1465,6 @@ import { ChessSrs } from "./srs.js";
     PUZZLE_TIER_CACHE.set(p.id, tier);
     return tier;
   }
-  /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
-  let puzzleTierFilter = "all";
 
   /**
    * Move a pre-1.21.3 save off the positional opening-drill ids.
@@ -1452,17 +1497,17 @@ import { ChessSrs } from "./srs.js";
     } catch (_) {}
     return { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" };
   }
-  let puzzleState = loadPuzzleState();
+  store.session.puzzleState = loadPuzzleState();
   // persist the rewritten ids straight away — a migration that only lives in
   // memory runs again on every launch, and once the book does change it would
   // then be reading positions that no longer mean what they meant
-  if (puzzleState.idv === 2) { try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {} }
+  if (store.session.puzzleState.idv === 2) { try { Host.storageSet(PUZZLE_KEY, JSON.stringify(store.session.puzzleState)); } catch (_) {} }
   function savePuzzleState() {
-    try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {}
+    try { Host.storageSet(PUZZLE_KEY, JSON.stringify(store.session.puzzleState)); } catch (_) {}
   }
   const Srs = ChessSrs;
   function markMissed(id) {
-    puzzleState.missed[id] = Srs.onMiss(puzzleState.missed[id]);
+    store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id]);
     savePuzzleState();
   }
   /**
@@ -1471,9 +1516,9 @@ import { ChessSrs } from "./srs.js";
    * moments after reading the solution.
    */
   function clearMissed(id) {
-    if (!Srs.isDue(puzzleState.missed[id])) return;
-    const next = Srs.onSolve(puzzleState.missed[id]);
-    if (next) puzzleState.missed[id] = next; else delete puzzleState.missed[id];
+    if (!Srs.isDue(store.session.puzzleState.missed[id])) return;
+    const next = Srs.onSolve(store.session.puzzleState.missed[id]);
+    if (next) store.session.puzzleState.missed[id] = next; else delete store.session.puzzleState.missed[id];
     savePuzzleState();
   }
 
@@ -1482,15 +1527,15 @@ import { ChessSrs } from "./srs.js";
     const base = cat === "review"
       // least-learned first, so a puzzle just answered goes to the back of the
       // queue instead of being asked again on the very next click
-      ? Srs.order(ALL_PUZZLES.filter((p) => Srs.isDue(puzzleState.missed[p.id])).map((p) => p.id),
-        puzzleState.missed).map((id) => ALL_PUZZLES.find((p) => p.id === id))
+      ? Srs.order(ALL_PUZZLES.filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).map((p) => p.id),
+        store.session.puzzleState.missed).map((id) => ALL_PUZZLES.find((p) => p.id === id))
       : ALL_PUZZLES.filter((p) => p.cat === cat);
     // "Review" is not a difficulty band — it is exactly the set of puzzles this
     // player got wrong. Filtering it by an automatically derived tier hides the
     // very puzzles they asked to redo (a queue of three could show as empty),
     // so the tier row does not apply here.
-    if (cat === "review" || puzzleTierFilter === "all") return base;
-    return base.filter((p) => puzzleTier(p) === puzzleTierFilter);
+    if (cat === "review" || store.session.puzzleTierFilter === "all") return base;
+    return base.filter((p) => puzzleTier(p) === store.session.puzzleTierFilter);
   }
 
   /** the scripted line of the current puzzle (openings: line; win: solution) */
@@ -1502,45 +1547,45 @@ import { ChessSrs } from "./srs.js";
       // no puzzle survives the filter: clear the board and the counters too,
       // otherwise the previous puzzle stays on screen and the "n/N" chip keeps
       // counting a set that is no longer being shown
-      puzzle = null;
-      selection = null;
+      store.session.puzzle = null;
+      store.game.selection = null;
       BoardView.cancelAnim();
       sync();
       toast(t("pz.noneInTier"));
       return;
     }
     idx = ((idx % list.length) + list.length) % list.length;
-    puzzleState.cat = cat;
+    store.session.puzzleState.cat = cat;
     savePuzzleState();
     const p = list[idx];
-    puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null };
-    selection = null;
+    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null };
+    store.game.selection = null;
     BoardView.cancelAnim();
     sync();
   }
 
   function startPuzzles() {
-    let cat = PUZZLE_CAT_IDS.includes(puzzleState.cat) ? puzzleState.cat : "m1";
+    let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) ? store.session.puzzleState.cat : "m1";
     // don't strand the user on an empty review tab
     if (cat === "review" && !puzzlesInCat("review").length) cat = "m1";
     const list = puzzlesInCat(cat);
-    let idx = list.findIndex((p) => !puzzleState.solved[p.id]);
+    let idx = list.findIndex((p) => !store.session.puzzleState.solved[p.id]);
     if (idx < 0) idx = 0;
     startPuzzleAt(cat, idx);
   }
-  function stopPuzzles() { puzzle = null; }
+  function stopPuzzles() { store.session.puzzle = null; }
 
   function puzzleModel() {
-    const g = puzzle.g;
+    const g = store.session.puzzle.g;
     return {
       position: g.board(),
       flipped: false, // all puzzles are white to move
-      selected: selection ? selection.sq : null,
-      legalTargets: selection ? selection.targets : [],
-      lastMove: puzzle.last,
+      selected: store.game.selection ? store.game.selection.sq : null,
+      legalTargets: store.game.selection ? store.game.selection.targets : [],
+      lastMove: store.session.puzzle.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
-      hintMove: puzzle.helpArrow,
+      hintMove: store.session.puzzle.helpArrow,
       stars: [],
       cursor: cursorSquare(),
     };
@@ -1605,7 +1650,7 @@ import { ChessSrs } from "./srs.js";
   }
 
   function puzzleGoalText() {
-    const p = puzzle.p;
+    const p = store.session.puzzle.p;
     if (p.cat === "op") return tf("pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
     if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
@@ -1618,12 +1663,12 @@ import { ChessSrs } from "./srs.js";
   }
 
   function puzzleClick(sq) {
-    if (!puzzle || puzzle.done) return;
-    const g = puzzle.g;
+    if (!store.session.puzzle || store.session.puzzle.done) return;
+    const g = store.session.puzzle.g;
     if (g.game_over() || g.turn() !== "w") return;
     const piece = g.get(sq);
-    if (selection && selection.targets.includes(sq)) {
-      const from = selection.sq;
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         choosePromotion(g.turn()).then((p) => { if (p) puzzleMove(from, sq, p); });
@@ -1634,20 +1679,20 @@ import { ChessSrs } from "./srs.js";
     }
     if (piece && piece.color === "w") {
       const targets = g.moves({ square: sq, verbose: true }).map((m) => m.to);
-      selection = targets.length ? { sq, targets } : null;
+      store.game.selection = targets.length ? { sq, targets } : null;
       draw();
       return;
     }
-    if (selection) { selection = null; draw(); }
+    if (store.game.selection) { store.game.selection = null; draw(); }
   }
 
   function puzzleMove(from, to, promotion) {
-    const g = puzzle.g;
+    const g = store.session.puzzle.g;
     const mv = g.move({ from, to, promotion });
     if (!mv) return;
-    selection = null;
-    puzzle.helpArrow = null;
-    puzzle.last = { from: mv.from, to: mv.to };
+    store.game.selection = null;
+    store.session.puzzle.helpArrow = null;
+    store.session.puzzle.last = { from: mv.from, to: mv.to };
     BoardView.cancelAnim(); // the solver's own move — see animateReply
     Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
     // A real-game tactic grades the key move and nothing else. The two plies
@@ -1656,42 +1701,42 @@ import { ChessSrs } from "./srs.js";
     // marking one of them wrong would teach the opposite of the lesson. The
     // point of this category is finding the one move that wins — once it is
     // found, the rest is there to show what it won.
-    if (puzzle.p.cat === "real") {
-      const script = puzzleScript(puzzle.p);
+    if (store.session.puzzle.p.cat === "real") {
+      const script = puzzleScript(store.session.puzzle.p);
       if (mv.san !== script[0]) { puzzleWrong(t("pz.notTheMove")); return; }
-      puzzle.stage = 1;
+      store.session.puzzle.stage = 1;
       for (let i = 1; i < script.length; i++) {
         const m = g.move(script[i]);
         if (!m) break;
-        puzzle.last = { from: m.from, to: m.to };
-        puzzle.stage = i + 1;
+        store.session.puzzle.last = { from: m.from, to: m.to };
+        store.session.puzzle.stage = i + 1;
       }
       puzzleSolved();
       return;
     }
-    if (SCRIPTED_CATS[puzzle.p.cat]) {
+    if (SCRIPTED_CATS[store.session.puzzle.p.cat]) {
       // scripted line: exact match, opponent replies straight from the script
-      const script = puzzleScript(puzzle.p);
-      if (mv.san !== script[puzzle.stage]) {
-        const c = puzzle.p.cat;
+      const script = puzzleScript(store.session.puzzle.p);
+      if (mv.san !== script[store.session.puzzle.stage]) {
+        const c = store.session.puzzle.p.cat;
         puzzleWrong(
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
-          c === "tac" ? (puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(puzzle.p)]) : t("pz.takeTarget")) :
+          c === "tac" ? (store.session.puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(store.session.puzzle.p)]) : t("pz.takeTarget")) :
           c === "draw" ? t("pz.notDrawn") :
-          openingWhy(g, mv, script[puzzle.stage]));
+          openingWhy(g, mv, script[store.session.puzzle.stage]));
         return;
       }
-      puzzle.stage++;
-      if (puzzle.stage < script.length) {
-        const rm = g.move(script[puzzle.stage]);
+      store.session.puzzle.stage++;
+      if (store.session.puzzle.stage < script.length) {
+        const rm = g.move(script[store.session.puzzle.stage]);
         if (rm) {
-          puzzle.last = { from: rm.from, to: rm.to };
+          store.session.puzzle.last = { from: rm.from, to: rm.to };
           animateReply(rm);
           Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
-          puzzle.stage++;
+          store.session.puzzle.stage++;
         }
       }
-      if (puzzle.stage >= script.length) { puzzleSolved(); return; }
+      if (store.session.puzzle.stage >= script.length) { puzzleSolved(); return; }
       sync();
       return;
     }
@@ -1699,7 +1744,7 @@ import { ChessSrs } from "./srs.js";
     // The question they ask is "is the mate still there?" — so any move that
     // answers no is right, exactly as it would be in a real game. Insisting on
     // one stored move would mark a perfectly good defence wrong.
-    if (puzzle.p.cat === "def") {
+    if (store.session.puzzle.p.cat === "def") {
       if (!g.game_over() && mateInOne(g)) {
         const still = mateInOne(g);
         puzzleWrong(tf("pz.stillMate", [still]));
@@ -1709,8 +1754,8 @@ import { ChessSrs } from "./srs.js";
       return;
     }
     if (g.in_checkmate()) { puzzleSolved(); return; }
-    const totalMoves = PUZZLE_MOVES[puzzle.p.cat] || 1;
-    const remaining = totalMoves - (puzzle.stage + 1);
+    const totalMoves = PUZZLE_MOVES[store.session.puzzle.p.cat] || 1;
+    const remaining = totalMoves - (store.session.puzzle.stage + 1);
     if (remaining <= 0) {
       // used the last move without mating — explain what black gets to play
       const escape = g.moves()[0];
@@ -1718,7 +1763,7 @@ import { ChessSrs } from "./srs.js";
       return;
     }
     // midpoint: the stored line, or any alternate that still forces mate
-    const onLine = mv.san === puzzle.p.solution[puzzle.stage * 2];
+    const onLine = mv.san === store.session.puzzle.p.solution[store.session.puzzle.stage * 2];
     if (!onLine) {
       const refutation = findRefutation(g, remaining);
       if (refutation) {
@@ -1726,11 +1771,11 @@ import { ChessSrs } from "./srs.js";
         return;
       }
     }
-    puzzle.stage++;
-    const reply = onLine ? puzzle.p.solution[puzzle.stage * 2 - 1] : bestDefense(g, remaining);
+    store.session.puzzle.stage++;
+    const reply = onLine ? store.session.puzzle.p.solution[store.session.puzzle.stage * 2 - 1] : bestDefense(g, remaining);
     const rm = reply ? g.move(reply) : null;
     if (rm) {
-      puzzle.last = { from: rm.from, to: rm.to };
+      store.session.puzzle.last = { from: rm.from, to: rm.to };
       animateReply(rm);
       Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
     }
@@ -1749,7 +1794,7 @@ import { ChessSrs } from "./srs.js";
     const Coach = ChessOpeningCoach;
     if (!Coach || !bookSan) return t("pz.offBook");
     let r = null;
-    try { r = Coach.critique(puzzle.p.fen || "", g.history().slice(0, -1), mv.san, bookSan, Chess); }
+    try { r = Coach.critique(store.session.puzzle.p.fen || "", g.history().slice(0, -1), mv.san, bookSan, Chess); }
     catch (_) { r = null; }
     if (!r) return t("pz.offBook");
     // the coach knows nothing about the dictionary, so a piece comes back as
@@ -1759,25 +1804,25 @@ import { ChessSrs } from "./srs.js";
   }
 
   function puzzleWrong(reason) {
-    puzzle.g.undo();
-    puzzle.last = null;
-    puzzle.misses++;
-    markMissed(puzzle.p.id); // a missed puzzle joins the review queue
+    store.session.puzzle.g.undo();
+    store.session.puzzle.last = null;
+    store.session.puzzle.misses++;
+    markMissed(store.session.puzzle.p.id); // a missed puzzle joins the review queue
     toast((reason || t("pz.noForcedMate")) +
-      (puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")));
+      (store.session.puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")));
     sync();
   }
 
   /** Arrow for the correct move at the current stage. */
   function showPuzzleAnswer() {
-    if (!puzzle || puzzle.done) return;
-    const g = puzzle.g;
+    if (!store.session.puzzle || store.session.puzzle.done) return;
+    const g = store.session.puzzle.g;
     if (g.turn() !== "w" || g.game_over()) return;
     let from = null, to = null;
     // on the stored line the stored move is always valid here
-    const stored = SCRIPTED_CATS[puzzle.p.cat]
-      ? puzzleScript(puzzle.p)[puzzle.stage]
-      : puzzle.p.solution[puzzle.stage * 2];
+    const stored = SCRIPTED_CATS[store.session.puzzle.p.cat]
+      ? puzzleScript(store.session.puzzle.p)[store.session.puzzle.stage]
+      : store.session.puzzle.p.solution[store.session.puzzle.stage * 2];
     if (stored) {
       const probe = new Chess(g.fen());
       const mv = probe.move(stored);
@@ -1785,7 +1830,7 @@ import { ChessSrs } from "./srs.js";
     }
     if (!from) {
       // off the stored line — search for any move that still forces mate
-      const remaining = (PUZZLE_MOVES[puzzle.p.cat] || 1) - puzzle.stage;
+      const remaining = (PUZZLE_MOVES[store.session.puzzle.p.cat] || 1) - store.session.puzzle.stage;
       for (const m of g.moves({ verbose: true })) {
         g.move(m);
         const ok = g.in_checkmate() ||
@@ -1795,30 +1840,30 @@ import { ChessSrs } from "./srs.js";
       }
     }
     if (from) {
-      puzzle.helpArrow = { from, to };
-      puzzle.usedAnswer = true;
-      markMissed(puzzle.p.id); // relying on the answer counts as a miss
+      store.session.puzzle.helpArrow = { from, to };
+      store.session.puzzle.usedAnswer = true;
+      markMissed(store.session.puzzle.p.id); // relying on the answer counts as a miss
       sync();
     }
   }
 
   function puzzleSolved() {
-    puzzle.done = true;
-    selection = null;
+    store.session.puzzle.done = true;
+    store.game.selection = null;
     Audio2.playWin();
     // a clean first-try solve retires the puzzle from review; a shaky one keeps it
-    if (puzzle.misses === 0 && !puzzle.usedAnswer) clearMissed(puzzle.p.id);
-    if (!puzzleState.solved[puzzle.p.id]) {
-      puzzleState.solved[puzzle.p.id] = true;
+    if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(store.session.puzzle.p.id);
+    if (!store.session.puzzleState.solved[store.session.puzzle.p.id]) {
+      store.session.puzzleState.solved[store.session.puzzle.p.id] = true;
       savePuzzleState();
       checkNewAchievements();
     }
-    const verb = puzzle.p.cat === "op" ? t("pz.doneOp") :
-      puzzle.p.cat === "def" ? t("pz.doneDef") :
-      puzzle.p.cat === "draw" ? t("pz.doneDraw") :
-      puzzle.p.cat === "real" ? t("pz.doneReal") :
-      puzzle.p.cat === "win" || puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
-    toast("✅ " + verb + " · " + puzzleName(puzzle.p));
+    const verb = store.session.puzzle.p.cat === "op" ? t("pz.doneOp") :
+      store.session.puzzle.p.cat === "def" ? t("pz.doneDef") :
+      store.session.puzzle.p.cat === "draw" ? t("pz.doneDraw") :
+      store.session.puzzle.p.cat === "real" ? t("pz.doneReal") :
+      store.session.puzzle.p.cat === "win" || store.session.puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
+    toast("✅ " + verb + " · " + puzzleName(store.session.puzzle.p));
     sync();
   }
 
@@ -1832,27 +1877,27 @@ import { ChessSrs } from "./srs.js";
    * intact, from the White side the player just rehearsed.
    */
   function playOnFromPuzzle() {
-    if (!puzzle || !puzzle.done || puzzle.p.cat !== "op") return;
-    const line = puzzle.g.pgn();
-    const name = puzzleName(puzzle.p);
+    if (!store.session.puzzle || !store.session.puzzle.done || store.session.puzzle.p.cat !== "op") return;
+    const line = store.session.puzzle.g.pgn();
+    const name = puzzleName(store.session.puzzle.p);
     if (!line.trim()) return;
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
     stopPuzzles();
-    mode = "ai";
-    humanColor = "w"; // every opening drill is played from White's side
-    flipped = false;
-    flagFall = null;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
-    analysis = null;
-    statsRecordedSig = null;
+    store.session.mode = "ai";
+    store.session.humanColor = "w"; // every opening drill is played from White's side
+    store.game.flipped = false;
+    store.game.flagFall = null;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
+    store.session.analysis = null;
+    store.game.statsRecordedSig = null;
     gameReset();
     gameLoadPgn(line, { sloppy: true });
-    selection = null;
-    hintMove = null;
-    viewIndex = sanHistory().length;
+    store.game.selection = null;
+    store.session.hintMove = null;
+    store.game.viewIndex = sanHistory().length;
     resetClocks();
     saveSettings();
     saveGame();
@@ -1862,109 +1907,109 @@ import { ChessSrs } from "./srs.js";
   }
 
   function nextPuzzle() {
-    if (!puzzle) return;
-    let list = puzzlesInCat(puzzle.cat);
-    if (puzzle.cat === "review") {
+    if (!store.session.puzzle) return;
+    let list = puzzlesInCat(store.session.puzzle.cat);
+    if (store.session.puzzle.cat === "review") {
       // a clean re-solve shrinks the queue; graduate to m1 when it empties
       if (!list.length) {
         toast(t("pz.reviewEmptyDone"));
-        puzzleState.cat = "m1"; savePuzzleState();
+        store.session.puzzleState.cat = "m1"; savePuzzleState();
         startPuzzles();
         return;
       }
-      startPuzzleAt("review", puzzle.idx % list.length);
+      startPuzzleAt("review", store.session.puzzle.idx % list.length);
       return;
     }
     // prefer the next unsolved one, wrapping around
     for (let d = 1; d <= list.length; d++) {
-      const i = (puzzle.idx + d) % list.length;
-      if (!puzzleState.solved[list[i].id]) { startPuzzleAt(puzzle.cat, i); return; }
+      const i = (store.session.puzzle.idx + d) % list.length;
+      if (!store.session.puzzleState.solved[list[i].id]) { startPuzzleAt(store.session.puzzle.cat, i); return; }
     }
-    startPuzzleAt(puzzle.cat, puzzle.idx + 1);
+    startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx + 1);
   }
 
   function syncPuzzleUI() {
     const sec = document.getElementById("sec-puzzle");
     if (!sec) return;
-    sec.hidden = mode !== "puzzle";
-    if (mode !== "puzzle") return;
+    sec.hidden = store.session.mode !== "puzzle";
+    if (store.session.mode !== "puzzle") return;
     // an empty difficulty filter leaves no puzzle loaded — keep the filter row
     // usable so the user can pick their way back out
-    if (!puzzle) {
+    if (!store.session.puzzle) {
       document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
-        b.classList.toggle("active", b.dataset.tier === puzzleTierFilter);
+        b.classList.toggle("active", b.dataset.tier === store.session.puzzleTierFilter);
         b.disabled = false; // no puzzle loaded means we are not in review
       });
       document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
-        b.classList.toggle("active", b.dataset.cat === puzzleState.cat);
+        b.classList.toggle("active", b.dataset.cat === store.session.puzzleState.cat);
       });
       const emptyProg = document.getElementById("puzzle-progress");
       if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
-        [ALL_PUZZLES.filter((p) => puzzleState.solved[p.id]).length, ALL_PUZZLES.length]);
+        [ALL_PUZZLES.filter((p) => store.session.puzzleState.solved[p.id]).length, ALL_PUZZLES.length]);
       const emptyTask = document.getElementById("puzzle-task");
       if (emptyTask) emptyTask.textContent = t("pz.noneInTier");
       const emptyList = document.getElementById("puzzle-list");
       if (emptyList) emptyList.innerHTML = "";
       return;
     }
-    const list = puzzlesInCat(puzzle.cat);
-    const solvedAll = ALL_PUZZLES.filter((p) => puzzleState.solved[p.id]).length;
+    const list = puzzlesInCat(store.session.puzzle.cat);
+    const solvedAll = ALL_PUZZLES.filter((p) => store.session.puzzleState.solved[p.id]).length;
     const missedCount = puzzlesInCat("review").length;
     const prog = document.getElementById("puzzle-progress");
     if (prog) {
-      prog.textContent = puzzle.cat === "review"
+      prog.textContent = store.session.puzzle.cat === "review"
         ? tf("pz.missedCount", [missedCount])
         : tf("pz.solvedCount", [solvedAll, ALL_PUZZLES.length]);
     }
     // the tier row does nothing in the review queue — grey it out rather than
     // leaving buttons that look live but change nothing
-    const inReview = puzzle.cat === "review";
+    const inReview = store.session.puzzle.cat === "review";
     document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
-      b.classList.toggle("active", !inReview && b.dataset.tier === puzzleTierFilter);
+      b.classList.toggle("active", !inReview && b.dataset.tier === store.session.puzzleTierFilter);
       b.disabled = inReview;
     });
     const tierRow = document.getElementById("row-puzzle-tier");
     if (tierRow) tierRow.classList.toggle("muted-row", inReview);
     document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.cat === puzzle.cat);
+      b.classList.toggle("active", b.dataset.cat === store.session.puzzle.cat);
       // surface how many are queued for review right on the tab
       if (b.dataset.cat === "review") b.textContent = t("pz.cat.review") + (missedCount ? "·" + missedCount : "");
     });
     const task = document.getElementById("puzzle-task");
     if (task) {
-      task.textContent = puzzle.done
+      task.textContent = store.session.puzzle.done
         ? t("pz.solvedNext")
-        : tf("pz.nth", [puzzle.idx + 1]) + " · " + puzzleGoalText();
+        : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText();
     }
     // opening drills are rote memorisation without the "why" — show the idea
     const ideaEl = document.getElementById("puzzle-idea");
     if (ideaEl) {
-      const idea = puzzleIdea(puzzle.p);
+      const idea = puzzleIdea(store.session.puzzle.p);
       ideaEl.hidden = !idea;
       ideaEl.textContent = idea ? t("pz.idea") + " · " + idea : "";
     }
     // a finished opening line offers the game it was drilled for; that is the
     // reward, so it takes the primary emphasis from "next puzzle"
-    const canPlayOn = !!puzzle.done && puzzle.p.cat === "op";
+    const canPlayOn = !!store.session.puzzle.done && store.session.puzzle.p.cat === "op";
     const playOn = document.getElementById("puzzle-playon");
     if (playOn) {
       playOn.hidden = !canPlayOn;
       playOn.classList.toggle("primary", canPlayOn);
     }
     const next = document.getElementById("puzzle-next");
-    if (next) next.classList.toggle("primary", puzzle.done && !canPlayOn);
+    if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
     const listEl = document.getElementById("puzzle-list");
     if (listEl) {
       listEl.innerHTML = "";
       list.forEach((p, i) => {
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "lesson-item" + (i === puzzle.idx ? " current" : "");
+        b.className = "lesson-item" + (i === store.session.puzzle.idx ? " current" : "");
         b.dataset.i = String(i);
         // opening drills carry their length: "how much is there to remember"
         // is the first thing anyone wants to know before starting one
         const len = p.cat === "op" ? "  " + Math.ceil(p.line.length / 2) + t("pz.moveUnit") : "";
-        b.textContent = (puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + len;
+        b.textContent = (store.session.puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + len;
         listEl.appendChild(b);
       });
     }
@@ -1998,15 +2043,14 @@ import { ChessSrs } from "./srs.js";
    * sync(), and sync() is what this codebase runs after every state change.
    * Frames drawn between two syncs cannot be looking at a different game.
    */
-  let _analysisTick = null;
   function analysisFor() {
     // Keyed on the analysis object too, so replacing it invalidates the memo
     // without every one of the seven assignment sites having to remember. The
     // sync() reset covers the other direction: the game changing underneath an
     // unchanged analysis.
-    if (_analysisTick && _analysisTick.a === analysis) return _analysisTick.v;
-    _analysisTick = { a: analysis, v: analysis && analysis.sig === game.pgn() ? analysis : null };
-    return _analysisTick.v;
+    if (store.session._analysisTick && store.session._analysisTick.a === store.session.analysis) return store.session._analysisTick.v;
+    store.session._analysisTick = { a: store.session.analysis, v: store.session.analysis && store.session.analysis.sig === game.pgn() ? store.session.analysis : null };
+    return store.session._analysisTick.v;
   }
 
   /**
@@ -2021,7 +2065,7 @@ import { ChessSrs } from "./srs.js";
    */
 
   async function analyzeGame(movetime) {
-    if (analyzing || !ChessEngine) return;
+    if (store.session.analyzing || !ChessEngine) return;
     const perMove = movetime || 120;
     const h = sanHistory();
     if (!h.length) { toast(t("msg.analysis.noGame")); return; }
@@ -2029,9 +2073,9 @@ import { ChessSrs } from "./srs.js";
     const g = baseGame();
     const fens = [g.fen()];
     for (const san of h) { g.move(san); fens.push(g.fen()); }
-    analyzing = true;
-    analyzeAbort = false;
-    analyzeProgress = "0/" + fens.length;
+    store.session.analyzing = true;
+    store.session.analyzeAbort = false;
+    store.session.analyzeProgress = "0/" + fens.length;
     setAnalyzeUI();
     const scalars = new Array(fens.length).fill(null);
     const pvs = new Array(fens.length).fill(null);
@@ -2043,17 +2087,17 @@ import { ChessSrs } from "./srs.js";
     // threefold (art. 9.2, a player may claim and the game otherwise goes on).
     const repSeen = new Map();
     for (let i = 0; i < fens.length; i++) {
-      if (analyzeAbort) {
-        analyzing = false; analyzeAbort = false; analyzeProgress = "";
+      if (store.session.analyzeAbort) {
+        store.session.analyzing = false; store.session.analyzeAbort = false; store.session.analyzeProgress = "";
         // keep whatever was already measured — a partial curve still helps
         if (i > 1) {
-          analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
+          store.session.analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
           toast(t("msg.analysis.keptPrefix") + (i - 1) + t("msg.analysis.keptSuffix"));
         } else toast(t("msg.analysis.stopped"));
         sync();
         return;
       }
-      if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
+      if (game.pgn() !== sig) { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
       const probe = new Chess(fens[i]);
       const repKey = Fide.positionKey(fens[i], probe);
       const reps = (repSeen.get(repKey) || 0) + 1;
@@ -2068,7 +2112,7 @@ import { ChessSrs } from "./srs.js";
       else {
         let e = null;
         try { e = await ChessEngine.analyze(fens[i], perMove); } catch (_) {}
-        if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
+        if (game.pgn() !== sig) { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
         scalars[i] = evalScalar(e);
         if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
         // principal variation, converted to SAN for display
@@ -2083,7 +2127,7 @@ import { ChessSrs } from "./srs.js";
           if (sans.length) pvs[i] = sans.join(" ");
         }
       }
-      analyzeProgress = (i + 1) + "/" + fens.length;
+      store.session.analyzeProgress = (i + 1) + "/" + fens.length;
       setAnalyzeUI();
     }
     // centipawn loss from the mover's perspective — the mover of ply i is the
@@ -2098,9 +2142,9 @@ import { ChessSrs } from "./srs.js";
       // hand-written copy of 300/100/50 sitting next to review.js's constants.
       return Review.markFor(loss);
     });
-    analysis = { sig, scalars, tags, pvs, bests, acc: accuracyFrom(fens, scalars) };
-    analyzing = false;
-    analyzeProgress = "";
+    store.session.analysis = { sig, scalars, tags, pvs, bests, acc: accuracyFrom(fens, scalars) };
+    store.session.analyzing = false;
+    store.session.analyzeProgress = "";
     recordAccuracy();
     sync();
     const bad = tags.filter((tag) => tag === "?" || tag === "??").length;
@@ -2109,7 +2153,7 @@ import { ChessSrs } from "./srs.js";
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
     // window is a message that was never delivered.
-    if (!appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
+    if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
   }
 
   /**
@@ -2146,10 +2190,10 @@ import { ChessSrs } from "./srs.js";
    * onto an unrelated game the user really did play.
    */
   function recordAccuracy() {
-    if (mode !== "ai" || !analysis || !analysis.acc) return;
+    if (store.session.mode !== "ai" || !store.session.analysis || !store.session.analysis.acc) return;
     if (!(naturalGameOver() || ruleTerminated())) return;
-    const mine = humanColor === "w" ? analysis.acc.w : analysis.acc.b;
-    const acpl = humanColor === "w" ? analysis.acc.wAcpl : analysis.acc.bAcpl;
+    const mine = store.session.humanColor === "w" ? store.session.analysis.acc.w : store.session.analysis.acc.b;
+    const acpl = store.session.humanColor === "w" ? store.session.analysis.acc.wAcpl : store.session.analysis.acc.bAcpl;
     if (mine == null) return;
     const pgn = game.pgn();
     const s = loadStats();
@@ -2162,7 +2206,7 @@ import { ChessSrs } from "./srs.js";
     let rec = null;
     for (const g of s.games) {
       if (!g.sig || g.acc != null) continue; // already annotated is not ours
-      if (g.sig === pgn || g.sig === statsRecordedSig) rec = g;
+      if (g.sig === pgn || g.sig === store.game.statsRecordedSig) rec = g;
     }
     if (!rec) return;
     rec.acc = mine;
@@ -2176,12 +2220,12 @@ import { ChessSrs } from "./srs.js";
     // while a run is in flight the primary button becomes the stop control —
     // a deep pass over a long game is a minute of engine time to be stuck in
     if (btn) {
-      btn.disabled = !analyzing && !sanHistory().length;
-      btn.textContent = analyzing ? t("act.stop") + " " + analyzeProgress : t("act.analyze");
-      btn.title = t(analyzing ? "tipRun.stop" : "tipRun.analyze");
+      btn.disabled = !store.session.analyzing && !sanHistory().length;
+      btn.textContent = store.session.analyzing ? t("act.stop") + " " + store.session.analyzeProgress : t("act.analyze");
+      btn.title = t(store.session.analyzing ? "tipRun.stop" : "tipRun.analyze");
     }
     const deep = document.getElementById("an-deep");
-    if (deep) deep.disabled = analyzing || !sanHistory().length;
+    if (deep) deep.disabled = store.session.analyzing || !sanHistory().length;
     const wrap = document.getElementById("eval-wrap");
     if (wrap) {
       wrap.hidden = !analysisFor();
@@ -2190,7 +2234,7 @@ import { ChessSrs } from "./srs.js";
     const pvEl = document.getElementById("pv-line");
     if (pvEl) {
       const a = analysisFor();
-      const pv = a && a.pvs ? a.pvs[viewIndex] : null;
+      const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
       pvEl.hidden = !pv;
       pvEl.textContent = pv ? t("an.pv") + " · " + pv : "";
     }
@@ -2290,7 +2334,7 @@ import { ChessSrs } from "./srs.js";
     const a = analysisFor();
     if (!a) { row.hidden = true; return; }
     row.hidden = false;
-    const cp = a.scalars[viewIndex];
+    const cp = a.scalars[store.game.viewIndex];
     const frac = Review.evalBar(cp);
     if (frac == null) {
       // measured and level is not the same thing as never measured
@@ -2358,7 +2402,7 @@ import { ChessSrs } from "./srs.js";
     ctx.strokeStyle = cAccent;
     ctx.globalAlpha = 0.7;
     ctx.lineWidth = dpr;
-    ctx.beginPath(); ctx.moveTo(x(viewIndex), 2 * dpr); ctx.lineTo(x(viewIndex), H - 2 * dpr); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x(store.game.viewIndex), 2 * dpr); ctx.lineTo(x(store.game.viewIndex), H - 2 * dpr); ctx.stroke();
     ctx.globalAlpha = 1;
   }
 
@@ -2373,16 +2417,16 @@ import { ChessSrs } from "./srs.js";
 
   /** Record an AI game the moment it finishes on a live move (not on import). */
   function recordGameIfOver() {
-    if (mode !== "ai" || !naturalGameOver()) return;
+    if (store.session.mode !== "ai" || !naturalGameOver()) return;
     const sig = game.pgn();
-    if (statsRecordedSig === sig) return;
-    statsRecordedSig = sig;
+    if (store.game.statsRecordedSig === sig) return;
+    store.game.statsRecordedSig = sig;
     let result = "draw";
-    if (game.in_checkmate()) result = game.turn() === humanColor ? "loss" : "win";
+    if (game.in_checkmate()) result = game.turn() === store.session.humanColor ? "loss" : "win";
     const s = loadStats();
     // `sig` ties the record to the exact game it came from, so a later
     // analysis can only annotate the game it actually measured
-    s.games.push({ t: Date.now(), diff: difficulty, color: humanColor, result, moves: sanHistory().length, sig });
+    s.games.push({ t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, sig });
     if (s.games.length > 500) s.games = s.games.slice(-500);
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
     renderStats();
@@ -2399,11 +2443,11 @@ import { ChessSrs } from "./srs.js";
    * the engine over a whole game is a real wait, so it stays opt-in.
    */
   function offerReview() {
-    if (mode !== "ai" || !ChessEngine || analyzing) return;
+    if (store.session.mode !== "ai" || !ChessEngine || store.session.analyzing) return;
     if (analysisFor()) return; // already analysed — the report is on screen
     if (sanHistory().length < 6) return; // too short to say anything useful
     setTimeout(() => {
-      if (mode === "ai" && !analyzing && !analysisFor() && appGameOver()) toast(t("rv.offer"));
+      if (store.session.mode === "ai" && !store.session.analyzing && !analysisFor() && appGameOver()) toast(t("rv.offer"));
     }, 2200);
   }
 
@@ -2481,8 +2525,6 @@ import { ChessSrs } from "./srs.js";
 
   /** how many games the sidebar shows before deferring to the full list */
   const HIST_PREVIEW = 5;
-  /** the newest-first list the rendered rows index into */
-  let histCache = [];
 
   function historyGames() {
     return loadStats().games.filter((g) => g && typeof g.sig === "string" && g.sig.trim()).reverse();
@@ -2562,40 +2604,39 @@ import { ChessSrs } from "./srs.js";
    * list, and re-indexing a filtered array would make "load this game" load a
    * different one the moment a filter was on.
    */
-  let histFilter = { result: "all", color: "all" };
   function histMatches(rec) {
-    if (histFilter.result !== "all" && rec.result !== histFilter.result) return false;
-    if (histFilter.color !== "all") {
+    if (store.ui.histFilter.result !== "all" && rec.result !== store.ui.histFilter.result) return false;
+    if (store.ui.histFilter.color !== "all") {
       const col = rec.color === "b" ? "b" : "w";
-      if (col !== histFilter.color) return false;
+      if (col !== store.ui.histFilter.color) return false;
     }
     return true;
   }
 
   function renderHistory() {
-    histCache = historyGames();
+    store.session.histCache = historyGames();
     const body = document.getElementById("hist-body");
     if (body) {
       body.innerHTML = "";
-      if (!histCache.length) {
+      if (!store.session.histCache.length) {
         const p = document.createElement("p");
         p.className = "hint";
         p.textContent = t("hist.empty");
         body.appendChild(p);
       } else {
-        histCache.slice(0, HIST_PREVIEW).forEach((rec, i) => body.appendChild(historyRow(rec, i, false)));
+        store.session.histCache.slice(0, HIST_PREVIEW).forEach((rec, i) => body.appendChild(historyRow(rec, i, false)));
       }
     }
     const btn = document.getElementById("hist-open");
     if (btn) {
-      btn.hidden = !histCache.length;
-      btn.textContent = tf("hist.all", [histCache.length]);
+      btn.hidden = !store.session.histCache.length;
+      btn.textContent = tf("hist.all", [store.session.histCache.length]);
     }
     const list = document.getElementById("hist-list");
     if (list) {
       list.innerHTML = "";
       let shown = 0;
-      histCache.forEach((rec, i) => {
+      store.session.histCache.forEach((rec, i) => {
         if (!histMatches(rec)) return;
         shown++;
         list.appendChild(historyRow(rec, i, true));
@@ -2608,16 +2649,16 @@ import { ChessSrs } from "./srs.js";
       }
       const count = document.getElementById("hist-count");
       if (count) {
-        const filtered = histFilter.result !== "all" || histFilter.color !== "all";
+        const filtered = store.ui.histFilter.result !== "all" || store.ui.histFilter.color !== "all";
         count.hidden = !filtered;
-        count.textContent = tf("hist.showing", [shown, histCache.length]);
+        count.textContent = tf("hist.showing", [shown, store.session.histCache.length]);
       }
     }
     document.querySelectorAll("#hist-result-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.hres === histFilter.result);
+      b.classList.toggle("active", b.dataset.hres === store.ui.histFilter.result);
     });
     document.querySelectorAll("#hist-color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.hcol === histFilter.color);
+      b.classList.toggle("active", b.dataset.hcol === store.ui.histFilter.color);
     });
   }
 
@@ -2641,26 +2682,26 @@ import { ChessSrs } from "./srs.js";
     const end = historyEnding(rec);
     if (!end) return;
     if (end === "resigned") {
-      resigned = rec.color; // in an engine game only the human can resign
+      store.game.resigned = rec.color; // in an engine game only the human can resign
     } else if (end === "drawAgreed") {
-      drawAgreed = true;
+      store.game.drawAgreed = true;
     } else if (end === "claimed") {
       // the record does not say which rule was claimed; the halfmove clock does
-      drawClaimed = Number(game.fen().split(" ")[4]) >= 100 ? "fifty" : "threefold";
+      store.game.drawClaimed = Number(game.fen().split(" ")[4]) >= 100 ? "fifty" : "threefold";
     } else if (end === "flag") {
       const other = rec.color === "w" ? "b" : "w";
-      flagFall = rec.result === "win" ? other : rec.result === "loss" ? rec.color
+      store.game.flagFall = rec.result === "win" ? other : rec.result === "loss" ? rec.color
         : sideHasMatingMaterial(other) ? other : rec.color;
       // the record does not keep the clocks; zeroing the side that ran out is
       // enough to stop a full clock sitting next to "flag fall". With the time
       // control since switched off there is no clock to correct.
-      if (clock) { clock[flagFall] = 0; renderClocks(); }
+      if (store.game.clock) { store.game.clock[store.game.flagFall] = 0; renderClocks(); }
       syncClockTimer();
     }
   }
 
   async function loadFromHistory(i) {
-    const rec = histCache[i];
+    const rec = store.session.histCache[i];
     if (!rec) return;
     closeHistory();
     const ok = await importPgnText(historyPgn(rec), t("hist.title"),
@@ -2670,16 +2711,16 @@ import { ChessSrs } from "./srs.js";
     // are what the board and the review report mean by "you", and pinning
     // statsRecordedSig to this record lets a fresh 分析 file its accuracy back
     // onto the very game it just measured.
-    mode = "ai";
-    if (DIFF_NAMES[rec.diff]) difficulty = rec.diff;
-    if (rec.color === "w" || rec.color === "b") { humanColor = rec.color; flipped = humanColor === "b"; }
-    statsRecordedSig = rec.sig;
+    store.session.mode = "ai";
+    if (DIFF_NAMES[rec.diff]) store.session.difficulty = rec.diff;
+    if (rec.color === "w" || rec.color === "b") { store.session.humanColor = rec.color; store.game.flipped = store.session.humanColor === "b"; }
+    store.game.statsRecordedSig = rec.sig;
     restoreEnding(rec);
     // the import ends by offering the position to the engine; a game that ended
     // in resignation is not over by its moves, so call off that search now that
     // the ending is back in place
     invalidateEngine();
-    analysis = null;
+    store.session.analysis = null;
     saveSettings();
     saveGame();
     sync();
@@ -2698,11 +2739,11 @@ import { ChessSrs } from "./srs.js";
    */
   function recommendation() {
     const st = loadStats();
-    const cur = st.games.filter((g) => g.diff === difficulty);
+    const cur = st.games.filter((g) => g.diff === store.session.difficulty);
     const recent = cur.slice(-6);
-    const idx = DIFF_IDS.indexOf(difficulty);
+    const idx = DIFF_IDS.indexOf(store.session.difficulty);
     // an unfinished course outranks any difficulty advice
-    const done = LESSONS.filter((l) => learnState.done[l.id]).length;
+    const done = LESSONS.filter((l) => store.session.learnState.done[l.id]).length;
     if (done > 0 && done < LESSONS.length && st.games.length >= 2) {
       return tf("rec.lessons", [done, LESSONS.length]);
     }
@@ -2717,7 +2758,7 @@ import { ChessSrs } from "./srs.js";
     }
     // losing most games but not all: tactics are usually the cheapest fix
     if (losses > wins) {
-      const missed = ALL_PUZZLES.filter((p) => ChessSrs.isDue(puzzleState.missed[p.id])).length;
+      const missed = ALL_PUZZLES.filter((p) => ChessSrs.isDue(store.session.puzzleState.missed[p.id])).length;
       return missed ? tf("rec.review", [missed]) : t("rec.puzzles");
     }
     return null;
@@ -2733,7 +2774,7 @@ import { ChessSrs } from "./srs.js";
     } catch (_) {}
     return new Set();
   }
-  let achSeen = loadAchSeen();
+  store.session.achSeen = loadAchSeen();
 
   function achSummary() {
     const st = loadStats();
@@ -2743,12 +2784,12 @@ import { ChessSrs } from "./srs.js";
       else if (g.result === "loss") losses++;
       else draws++;
     }
-    const solved = puzzleState.solved || {};
+    const solved = store.session.puzzleState.solved || {};
     const solvedIn = (cat) => ALL_PUZZLES.filter((p) => p.cat === cat && solved[p.id]).length;
     const countIn = (cat) => ALL_PUZZLES.filter((p) => p.cat === cat).length;
     const mateCats = ["m1", "m2", "m3"];
     return {
-      lessonsDone: LESSONS.filter((l) => learnState.done[l.id]).length,
+      lessonsDone: LESSONS.filter((l) => store.session.learnState.done[l.id]).length,
       lessonsTotal: LESSONS.length,
       puzzleSolvedCount: ALL_PUZZLES.filter((p) => solved[p.id]).length,
       matesSolved: mateCats.reduce((n, c) => n + solvedIn(c), 0),
@@ -2768,11 +2809,11 @@ import { ChessSrs } from "./srs.js";
   function evalAch() {
     const s = achSummary();
     const base = ACH.filter((a) => a.id !== "completionist");
-    const baseRes = base.map((a) => ({ ach: a, unlocked: !!a.test(s) || achSeen.has(a.id) }));
+    const baseRes = base.map((a) => ({ ach: a, unlocked: !!a.test(s) || store.session.achSeen.has(a.id) }));
     s.otherUnlocked = baseRes.filter((r) => r.unlocked).length;
     s.otherTotal = base.length;
     const out = ACH.map((a) =>
-      a.id === "completionist" ? { ach: a, unlocked: !!a.test(s) || achSeen.has(a.id) }
+      a.id === "completionist" ? { ach: a, unlocked: !!a.test(s) || store.session.achSeen.has(a.id) }
         : baseRes.find((r) => r.ach.id === a.id));
     // the badges' progress() reads the same summary the tests ran against
     out.summary = s;
@@ -2782,10 +2823,10 @@ import { ChessSrs } from "./srs.js";
   /** Toast any achievement newly unlocked since last check; persist seen set. */
   function checkNewAchievements() {
     const res = evalAch();
-    const fresh = res.filter((r) => r.unlocked && !achSeen.has(r.ach.id));
-    for (const r of res) if (r.unlocked) achSeen.add(r.ach.id);
+    const fresh = res.filter((r) => r.unlocked && !store.session.achSeen.has(r.ach.id));
+    for (const r of res) if (r.unlocked) store.session.achSeen.add(r.ach.id);
     if (fresh.length) {
-      try { Host.storageSet(ACH_KEY, JSON.stringify({ seen: Array.from(achSeen) })); } catch (_) {}
+      try { Host.storageSet(ACH_KEY, JSON.stringify({ seen: Array.from(store.session.achSeen) })); } catch (_) {}
       // one toast per unlock, staggered so several don't collide
       fresh.forEach((r, i) => setTimeout(() => toast("🎉 " + t("ach.unlocked") + " · " + r.ach.icon + " " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
     }
@@ -2869,17 +2910,17 @@ import { ChessSrs } from "./srs.js";
   }
 
   function timeoutIsDraw() {
-    return flagFall && !sideHasMatingMaterial(flagFall === "w" ? "b" : "w");
+    return store.game.flagFall && !sideHasMatingMaterial(store.game.flagFall === "w" ? "b" : "w");
   }
 
   function statusText() {
-    if (editor) {
-      const reason = ChessEditor.validate(editor, Chess);
+    if (store.session.editor) {
+      const reason = ChessEditor.validate(store.session.editor, Chess);
       return t("st.editing") + " · " + (reason ? t(reason) : t("st.editingReady"));
     }
-    if (mode === "learn") {
-      if (!learn) return t("st.learn");
-      if (learn.done) return t("st.lessonDone");
+    if (store.session.mode === "learn") {
+      if (!store.session.learn) return t("st.learn");
+      if (store.session.learn.done) return t("st.lessonDone");
       // The task is spelled out in the panel, right next to this. Repeating it
       // here word for word put the same sentence on screen twice and stretched
       // the header to fit a whole instruction. It is still the fallback for a
@@ -2887,21 +2928,21 @@ import { ChessSrs } from "./srs.js";
       if (isPanelOpen()) return lessonText(curLesson()).title;
       return learnTaskText();
     }
-    if (mode === "puzzle") {
-      if (!puzzle) return t("st.puzzle");
-      if (puzzle.done) return t("st.puzzleDone");
+    if (store.session.mode === "puzzle") {
+      if (!store.session.puzzle) return t("st.puzzle");
+      if (store.session.puzzle.done) return t("st.puzzleDone");
       return puzzleGoalText();
     }
     const g = viewGame();
-    if (!isLive()) return t("st.replay") + " " + viewIndex + "/" + sanHistory().length;
-    if (flagFall) {
+    if (!isLive()) return t("st.replay") + " " + store.game.viewIndex + "/" + sanHistory().length;
+    if (store.game.flagFall) {
       if (timeoutIsDraw()) return t("st.flagDraw");
-      return t(flagFall === "w" ? "st.flagWhite" : "st.flagBlack");
+      return t(store.game.flagFall === "w" ? "st.flagWhite" : "st.flagBlack");
     }
-    if (resigned) return t(resigned === "w" ? "st.resignWhite" : "st.resignBlack");
-    if (drawAgreed) return t("st.drawAgreed");
-    if (drawClaimed) return t(drawClaimed === "threefold" ? "st.claimThreefold" : "st.claimFifty");
-    if (engineThinking && !naturalGameOver()) return t("st.thinking");
+    if (store.game.resigned) return t(store.game.resigned === "w" ? "st.resignWhite" : "st.resignBlack");
+    if (store.game.drawAgreed) return t("st.drawAgreed");
+    if (store.game.drawClaimed) return t(store.game.drawClaimed === "threefold" ? "st.claimThreefold" : "st.claimFifty");
+    if (store.session.engineThinking && !naturalGameOver()) return t("st.thinking");
     if (g.in_checkmate()) return t(g.turn() === "w" ? "st.mateBlack" : "st.mateWhite");
     if (g.in_stalemate()) return t("st.stalemate");
     if (g.insufficient_material()) return t("st.insufficient");
@@ -2955,7 +2996,7 @@ import { ChessSrs } from "./srs.js";
         b.type = "button";
         b.dataset.i = String(j + 1);
         b.textContent = h[j];
-        b.className = "mlmove" + (viewIndex === j + 1 ? " current" : "");
+        b.className = "mlmove" + (store.game.viewIndex === j + 1 ? " current" : "");
         const tag = a && a.tags[j];
         if (tag) {
           const span = document.createElement("span");
@@ -2980,7 +3021,7 @@ import { ChessSrs } from "./srs.js";
   }
 
   /** Live game finished by an app-level rule (flag / resignation / agreed or claimed draw). */
-  function ruleTerminated() { return !!flagFall || !!resigned || drawAgreed || !!drawClaimed; }
+  function ruleTerminated() { return !!store.game.flagFall || !!store.game.resigned || store.game.drawAgreed || !!store.game.drawClaimed; }
 
   // --- FIDE draw plumbing ---
   // chess.js's game_over() ends the game at threefold repetition and at the
@@ -2993,14 +3034,12 @@ import { ChessSrs } from "./srs.js";
 
   function halfmoveClock(g) { return Fide.halfmoveClock((g || game).fen()); }
 
-  /** how many times the current live position has occurred (incl. start) */
-  let repMemo = { sig: null, count: 1 };
   function repetitionCount() {
     const h = sanHistory();
     const sig = h.join(" ");
-    if (repMemo.sig === sig) return repMemo.count;
-    repMemo = { sig, count: Fide.repetitionCount(startFen(), h, Chess) };
-    return repMemo.count;
+    if (store.game.repMemo.sig === sig) return store.game.repMemo.count;
+    store.game.repMemo = { sig, count: Fide.repetitionCount(startFen(), h, Chess) };
+    return store.game.repMemo.count;
   }
 
   /** 'fivefold' | 'seventyfive' | null — draws that end the game by law */
@@ -3036,37 +3075,37 @@ import { ChessSrs } from "./srs.js";
   function appGameOver() { return naturalGameOver() || ruleTerminated(); }
 
   function sync() {
-    _analysisTick = null; // see analysisFor(): the memo lives exactly one cycle
+    store.session._analysisTick = null; // see analysisFor(): the memo lives exactly one cycle
     draw();
     const h = sanHistory();
     document.getElementById("status").textContent = statusText();
     document.getElementById("moves").textContent =
-      mode === "learn" ? (learn ? (learn.li + 1) + "/" + LESSONS.length : "—") :
-      mode === "puzzle" ? (puzzle ? tf("pz.chip", [puzzle.idx + 1, puzzlesInCat(puzzle.cat).length]) : "—") :
-      viewIndex + "/" + h.length;
-    document.getElementById("replay-pos").textContent = viewIndex + " / " + h.length;
-    document.getElementById("rep-start").disabled = viewIndex <= 0;
-    document.getElementById("rep-prev").disabled = viewIndex <= 0;
-    document.getElementById("rep-next").disabled = viewIndex >= h.length;
-    document.getElementById("rep-end").disabled = viewIndex >= h.length;
+      store.session.mode === "learn" ? (store.session.learn ? (store.session.learn.li + 1) + "/" + LESSONS.length : "—") :
+      store.session.mode === "puzzle" ? (store.session.puzzle ? tf("pz.chip", [store.session.puzzle.idx + 1, puzzlesInCat(store.session.puzzle.cat).length]) : "—") :
+      store.game.viewIndex + "/" + h.length;
+    document.getElementById("replay-pos").textContent = store.game.viewIndex + " / " + h.length;
+    document.getElementById("rep-start").disabled = store.game.viewIndex <= 0;
+    document.getElementById("rep-prev").disabled = store.game.viewIndex <= 0;
+    document.getElementById("rep-next").disabled = store.game.viewIndex >= h.length;
+    document.getElementById("rep-end").disabled = store.game.viewIndex >= h.length;
     document.getElementById("rep-live").disabled = isLive();
-    const modal = mode === "learn" || mode === "puzzle" || !!editor;
-    const inDrill = mode === "learn" && learn && !learn.done && curTask().type === "drill";
+    const modal = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
+    const inDrill = store.session.mode === "learn" && store.session.learn && !store.session.learn.done && curTask().type === "drill";
     document.getElementById("undo").disabled = modal
-      ? !(inDrill && learn.g && learn.g.history().length)
+      ? !(inDrill && store.session.learn.g && store.session.learn.g.history().length)
       : h.length === 0 || !isLive() || ruleTerminated();
     document.getElementById("btn-new").disabled = modal;
     document.getElementById("btn-flip").disabled = modal;
     const hintBtn = document.getElementById("btn-hint");
     if (hintBtn) {
       hintBtn.disabled =
-        mode === "learn"
-          ? !(inDrill && !learn.engineBusy && !hintPending && learn.g && !learn.g.game_over() && learn.g.turn() === "w")
-        : mode === "puzzle"
-          ? !(puzzle && !puzzle.done && !puzzle.g.game_over() && puzzle.g.turn() === "w")
-        : !!editor || hintPending || analyzing || !isLive() || appGameOver() ||
-          (mode === "ai" && (engineThinking || game.turn() !== humanColor));
-      hintBtn.textContent = mode === "puzzle" ? t("chrome.answer") : hintPending ? t("chrome.thinking") : t("chrome.hint");
+        store.session.mode === "learn"
+          ? !(inDrill && !store.session.learn.engineBusy && !store.session.hintPending && store.session.learn.g && !store.session.learn.g.game_over() && store.session.learn.g.turn() === "w")
+        : store.session.mode === "puzzle"
+          ? !(store.session.puzzle && !store.session.puzzle.done && !store.session.puzzle.g.game_over() && store.session.puzzle.g.turn() === "w")
+        : !!store.session.editor || store.session.hintPending || store.session.analyzing || !isLive() || appGameOver() ||
+          (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor));
+      hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer") : store.session.hintPending ? t("chrome.thinking") : t("chrome.hint");
     }
     const resignBtn = document.getElementById("btn-resign");
     if (resignBtn) {
@@ -3075,7 +3114,7 @@ import { ChessSrs } from "./srs.js";
     const drawBtn = document.getElementById("btn-offerdraw");
     if (drawBtn) {
       drawBtn.disabled = modal || !isLive() || h.length === 0 ||
-        appGameOver() || drawOfferPending;
+        appGameOver() || store.session.drawOfferPending;
     }
     const claimBtn = document.getElementById("btn-claimdraw");
     if (claimBtn) {
@@ -3089,12 +3128,12 @@ import { ChessSrs } from "./srs.js";
     document.getElementById("fen-copy").disabled = false;
     const status = document.getElementById("status");
     const g = viewGame();
-    const decisiveEnd = g.in_checkmate() || !!resigned || (flagFall && !timeoutIsDraw());
+    const decisiveEnd = g.in_checkmate() || !!store.game.resigned || (store.game.flagFall && !timeoutIsDraw());
     status.classList.toggle("win", !modal && isLive() && decisiveEnd);
     status.classList.toggle("replay", !modal && !isLive());
     // "思考中" with nothing moving reads as a hang at the higher levels, where
     // a search can run for seconds; the pill breathes while the engine works
-    const busy = engineThinking || analyzing || !!(learn && learn.engineBusy);
+    const busy = store.session.engineThinking || store.session.analyzing || !!(store.session.learn && store.session.learn.engineBusy);
     status.classList.toggle("thinking", busy);
     // …and a pulse on the board itself, where the player is actually looking
     const dot = document.getElementById("think-dot");
@@ -3118,70 +3157,70 @@ import { ChessSrs } from "./srs.js";
 
   function syncSettingsUI() {
     document.querySelectorAll("#theme-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.theme === themeId);
+      b.classList.toggle("active", b.dataset.theme === store.ui.themeId);
     });
     const sb = document.getElementById("opt-sound");
     if (sb) {
-      sb.classList.toggle("active", soundOn);
-      sb.setAttribute("aria-pressed", soundOn ? "true" : "false");
+      sb.classList.toggle("active", store.ui.soundOn);
+      sb.setAttribute("aria-pressed", store.ui.soundOn ? "true" : "false");
     }
     document.querySelectorAll("#mode-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.mode === mode);
+      b.classList.toggle("active", b.dataset.mode === store.session.mode);
     });
     // two rows now: sparring tiers and engine-strength tiers (see index.html)
     document.querySelectorAll("#diff-seg button, #diff-seg-engine button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.diff === difficulty);
+      b.classList.toggle("active", b.dataset.diff === store.session.difficulty);
     });
     document.querySelectorAll("#persona-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.persona === personaId);
+      b.classList.toggle("active", b.dataset.persona === store.session.personaId);
     });
     document.querySelectorAll("#color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.color === humanColor);
+      b.classList.toggle("active", b.dataset.color === store.session.humanColor);
     });
     document.querySelectorAll("#clock-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tc === timeControl);
+      b.classList.toggle("active", b.dataset.tc === store.game.timeControl);
     });
     const diffRow = document.getElementById("row-difficulty");
     const colorRow = document.getElementById("row-color");
     const clockRow = document.getElementById("row-clock");
-    if (diffRow) diffRow.hidden = mode !== "ai";
+    if (diffRow) diffRow.hidden = store.session.mode !== "ai";
     const personaRow = document.getElementById("row-persona");
-    if (personaRow) personaRow.hidden = mode !== "ai";
-    if (colorRow) colorRow.hidden = mode !== "ai";
-    if (clockRow) clockRow.hidden = mode !== "pvp" && mode !== "ai";
+    if (personaRow) personaRow.hidden = store.session.mode !== "ai";
+    if (colorRow) colorRow.hidden = store.session.mode !== "ai";
+    if (clockRow) clockRow.hidden = store.session.mode !== "pvp" && store.session.mode !== "ai";
     const coachRow = document.getElementById("row-coach");
-    if (coachRow) coachRow.hidden = mode !== "ai";
+    if (coachRow) coachRow.hidden = store.session.mode !== "ai";
     const coachSwitch = document.getElementById("opt-coach");
-    if (coachSwitch) coachSwitch.setAttribute("aria-pressed", coachOn ? "true" : "false");
+    if (coachSwitch) coachSwitch.setAttribute("aria-pressed", store.session.coachOn ? "true" : "false");
     const flipRow = document.getElementById("row-autoflip");
-    if (flipRow) flipRow.hidden = mode !== "pvp";
+    if (flipRow) flipRow.hidden = store.session.mode !== "pvp";
     const flipSwitch = document.getElementById("opt-autoflip");
-    if (flipSwitch) flipSwitch.setAttribute("aria-pressed", autoFlipPvp ? "true" : "false");
+    if (flipSwitch) flipSwitch.setAttribute("aria-pressed", store.ui.autoFlipPvp ? "true" : "false");
     renderMaterial();
     renderIdleCard();
     const secMoves = document.getElementById("sec-moves");
-    const trainer = mode === "learn" || mode === "puzzle" || !!editor;
+    const trainer = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
     if (secMoves) secMoves.hidden = trainer;
     // 统计/历史/成就 used to be hidden in the trainer modes because they sat in
     // the same scroll and got in the way. They now live behind their own tab,
     // which nobody opens by accident — and puzzle badges are earned right there.
-    const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
+    const engineName = "Stockfish · " + (DIFF_NAMES[store.session.difficulty] || store.session.difficulty);
     const wRole = document.getElementById("white-role");
     const bRole = document.getElementById("black-role");
     // A lesson that is not a drill has no opponent. Writing "—" into the black
     // role left an empty card at the top of the panel; the whole half is now
     // hidden instead (see .vs.solo).
-    const solo = mode === "learn" && !(learn && curTask().type === "drill");
+    const solo = store.session.mode === "learn" && !(store.session.learn && curTask().type === "drill");
     const vsBar = document.getElementById("vs-bar");
     if (vsBar) vsBar.classList.toggle("solo", solo);
     if (wRole && bRole) {
-      if (mode === "ai") {
-        wRole.textContent = humanColor === "w" ? t("vs.player") : engineName;
-        bRole.textContent = humanColor === "b" ? t("vs.player") : engineName;
-      } else if (mode === "learn") {
+      if (store.session.mode === "ai") {
+        wRole.textContent = store.session.humanColor === "w" ? t("vs.player") : engineName;
+        bRole.textContent = store.session.humanColor === "b" ? t("vs.player") : engineName;
+      } else if (store.session.mode === "learn") {
         wRole.textContent = t("role.student");
         bRole.textContent = solo ? "" : t("role.sparring");
-      } else if (mode === "puzzle") {
+      } else if (store.session.mode === "puzzle") {
         wRole.textContent = t("role.you");
         bRole.textContent = t("role.puzzle");
       } else {
@@ -3199,17 +3238,17 @@ import { ChessSrs } from "./srs.js";
    * @returns {boolean} true when the orientation changed
    */
   function syncAutoFlip() {
-    if (!autoFlipPvp || mode !== "pvp") return false;
+    if (!store.ui.autoFlipPvp || store.session.mode !== "pvp") return false;
     const want = viewGame().turn() === "b";
-    if (flipped === want) return false;
-    flipped = want;
+    if (store.game.flipped === want) return false;
+    store.game.flipped = want;
     saveSettings(); // otherwise a reload mid-game faces the wrong player
     return true;
   }
 
   function setViewIndex(n) {
-    viewIndex = Math.max(0, Math.min(n, sanHistory().length));
-    selection = null;
+    store.game.viewIndex = Math.max(0, Math.min(n, sanHistory().length));
+    store.game.selection = null;
     BoardView.cancelAnim();
     syncAutoFlip();
     sync();
@@ -3225,7 +3264,6 @@ import { ChessSrs } from "./srs.js";
     b: { q: "♛", r: "♜", b: "♝", n: "♞" },
   };
 
-  let promoResolver = null;
   /** Modal chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel. */
   function choosePromotion(color) {
     const modal = document.getElementById("promo-modal");
@@ -3235,20 +3273,20 @@ import { ChessSrs } from "./srs.js";
       if (gl) gl.textContent = PROMO_GLYPHS[color][b.dataset.p];
     });
     Dlg.open(modal, modal.querySelector('button[data-p="q"]'));
-    return new Promise((resolve) => { promoResolver = resolve; });
+    return new Promise((resolve) => { store.ui.promoResolver = resolve; });
   }
   function finishPromotion(p) {
     const modal = document.getElementById("promo-modal");
     Dlg.close(modal);
-    if (promoResolver) { promoResolver(p); promoResolver = null; }
+    if (store.ui.promoResolver) { store.ui.promoResolver(p); store.ui.promoResolver = null; }
   }
 
   function playHumanMove(from, to, promotion) {
     const mv = gameMove({ from, to, promotion });
     if (!mv) return;
-    selection = null;
-    hintMove = null;
-    viewIndex = sanHistory().length;
+    store.game.selection = null;
+    store.session.hintMove = null;
+    store.game.viewIndex = sanHistory().length;
     applyIncrement(mv.color);
     // no animation: the player just clicked or dragged this piece here, and
     // sliding it in from the square they took it off replays something they
@@ -3267,19 +3305,19 @@ import { ChessSrs } from "./srs.js";
   }
 
   function onSquareClick(sq) {
-    if (editor) { editorClick(sq); return; }
-    if (mode === "learn") { learnClick(sq); return; }
-    if (mode === "puzzle") { puzzleClick(sq); return; }
+    if (store.session.editor) { editorClick(sq); return; }
+    if (store.session.mode === "learn") { learnClick(sq); return; }
+    if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
     if (!isLive()) { toast(t("mm.goLiveFirst")); return; }
     if (naturalGameOver()) return;
-    if (flagFall) { toast(t("msg.over.flagged")); return; }
-    if (resigned) { toast(t("msg.over.resigned")); return; }
-    if (drawAgreed) { toast(t("msg.over.drawAgreed")); return; }
-    if (drawClaimed) { toast(t("msg.over.drawClaimed")); return; }
-    if (mode === "ai" && game.turn() !== humanColor) return; // engine's move
+    if (store.game.flagFall) { toast(t("msg.over.flagged")); return; }
+    if (store.game.resigned) { toast(t("msg.over.resigned")); return; }
+    if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed")); return; }
+    if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed")); return; }
+    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return; // engine's move
     const piece = game.get(sq);
-    if (selection && selection.targets.includes(sq)) {
-      const from = selection.sq;
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
       const vmv = game.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         // cancelling keeps the selection so the player can pick another square
@@ -3291,25 +3329,25 @@ import { ChessSrs } from "./srs.js";
     }
     if (piece && piece.color === game.turn()) {
       const targets = game.moves({ square: sq, verbose: true }).map((m) => m.to);
-      selection = targets.length ? { sq, targets } : null;
+      store.game.selection = targets.length ? { sq, targets } : null;
       draw();
       return;
     }
-    if (selection) { selection = null; draw(); }
+    if (store.game.selection) { store.game.selection = null; draw(); }
   }
 
   function undo() {
-    if (mode === "learn") { learnUndo(); return; }
+    if (store.session.mode === "learn") { learnUndo(); return; }
     if (!sanHistory().length || ruleTerminated()) return;
     if (!isLive()) { goLive(); return; }
     invalidateEngine();
     gameUndo();
     // in AI mode take back the engine reply too, so it's the human's turn again
-    if (mode === "ai") {
-      while (sanHistory().length && game.turn() !== humanColor) gameUndo();
+    if (store.session.mode === "ai") {
+      while (sanHistory().length && game.turn() !== store.session.humanColor) gameUndo();
     }
-    selection = null;
-    viewIndex = sanHistory().length;
+    store.game.selection = null;
+    store.game.viewIndex = sanHistory().length;
     syncAutoFlip();
     sync();
     saveGame();
@@ -3325,18 +3363,18 @@ import { ChessSrs } from "./srs.js";
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
     gameReset();
-    selection = null;
-    viewIndex = 0;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
+    store.game.selection = null;
+    store.game.viewIndex = 0;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
     // Both of these key off the PGN, and a PGN does not identify a game — play
     // the same seven moves twice in one session and the second game carried
     // the first one's signature. It was then read as "already recorded" and
     // never reached the stats, and the first game's analysis would have been
     // filed against it. A new game is a new game.
-    analysis = null;
-    statsRecordedSig = null;
+    store.session.analysis = null;
+    store.game.statsRecordedSig = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -3348,7 +3386,7 @@ import { ChessSrs } from "./srs.js";
   /** Truncate the game to the replay cursor and continue playing from there. */
   async function retryFromHere() {
     if (isLive()) return;
-    const keep = viewIndex;
+    const keep = store.game.viewIndex;
     const drop = sanHistory().length - keep;
     if (!(await confirmNative(tf("dlg.retryHere", [keep, drop]), t("act.retryHere"),
         { ok: t("act.retryHere"), cancel: t("act.cancel") }))) {
@@ -3358,13 +3396,13 @@ import { ChessSrs } from "./srs.js";
     invalidateEngine();
     resetGameToStart();
     for (const san of h) gameMove(san);
-    selection = null;
-    viewIndex = h.length;
+    store.game.selection = null;
+    store.game.viewIndex = h.length;
     // continuing a finished game (flag / resignation) gets fresh clocks
     if (ruleTerminated()) resetClocks();
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
     syncAutoFlip();
     sync();
     saveGame();
@@ -3374,10 +3412,10 @@ import { ChessSrs } from "./srs.js";
 
   // --- resignation (terminal, like mate; AI games count as a loss) ---
   async function doResign() {
-    if (mode === "learn" || !isLive() || !sanHistory().length || naturalGameOver() || ruleTerminated()) return;
+    if (store.session.mode === "learn" || !isLive() || !sanHistory().length || naturalGameOver() || ruleTerminated()) return;
     let side;
-    if (mode === "ai") {
-      side = humanColor;
+    if (store.session.mode === "ai") {
+      side = store.session.humanColor;
       if (!(await confirmNative(tf("dlg.resign", [side === "w" ? t("side.white") : t("side.black")]),
         t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel") }))) return;
     } else {
@@ -3389,9 +3427,9 @@ import { ChessSrs } from "./srs.js";
     }
     const who = side === "w" ? t("side.white") : t("side.black");
     invalidateEngine();
-    resigned = side;
+    store.game.resigned = side;
     Audio2.playWin();
-    if (mode === "ai") recordResign();
+    if (store.session.mode === "ai") recordResign();
     saveGame();
     sync();
     toast(tf("mm.resignWin", [who, side === "w" ? t("side.black") : t("side.white")]));
@@ -3400,10 +3438,10 @@ import { ChessSrs } from "./srs.js";
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
   function recordOutcome(result, suffix) {
     const sig = game.pgn() + suffix;
-    if (statsRecordedSig === sig) return;
-    statsRecordedSig = sig;
+    if (store.game.statsRecordedSig === sig) return;
+    store.game.statsRecordedSig = sig;
     const s = loadStats();
-    s.games.push({ t: Date.now(), diff: difficulty, color: humanColor, result, moves: sanHistory().length, sig });
+    s.games.push({ t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, sig });
     if (s.games.length > 500) s.games = s.games.slice(-500);
     try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
     renderStats();
@@ -3415,15 +3453,15 @@ import { ChessSrs } from "./srs.js";
 
   // --- blunder coach (AI mode): after the engine replies, quietly evaluate
   // the human's last move; a ??-level swing earns a "consider undoing" nudge.
-  let coachPending = null; // {before, after, san, len}
+// {before, after, san, len}
 
   function coachRemember(mv) {
-    coachPending = null;
-    if (mode !== "ai" || !coachOn || !ChessEngine) return;
+    store.session.coachPending = null;
+    if (store.session.mode !== "ai" || !store.session.coachOn || !ChessEngine) return;
     const h = sanHistory();
     const g = baseGame();
     for (let i = 0; i < h.length - 1; i++) g.move(h[i]);
-    coachPending = { before: g.fen(), after: game.fen(), san: mv.san, len: h.length };
+    store.session.coachPending = { before: g.fen(), after: game.fen(), san: mv.san, len: h.length };
   }
 
   const PIECE_VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
@@ -3454,9 +3492,9 @@ import { ChessSrs } from "./srs.js";
   }
 
   async function coachAfterEngineReply() {
-    const p = coachPending;
-    coachPending = null;
-    if (!p || !coachOn || mode !== "ai" || appGameOver()) return;
+    const p = store.session.coachPending;
+    store.session.coachPending = null;
+    if (!p || !store.session.coachOn || store.session.mode !== "ai" || appGameOver()) return;
     if (!coachWorthChecking(p.before, p.after)) return;
     let a = null, b = null;
     try {
@@ -3474,26 +3512,25 @@ import { ChessSrs } from "./srs.js";
   }
 
   // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
-  let drawOfferPending = false;
   async function doOfferDraw() {
-    if (mode === "learn" || mode === "puzzle" || !isLive() || !sanHistory().length ||
-        appGameOver() || drawOfferPending) return;
-    if (mode === "pvp") {
+    if (store.session.mode === "learn" || store.session.mode === "puzzle" || !isLive() || !sanHistory().length ||
+        appGameOver() || store.session.drawOfferPending) return;
+    if (store.session.mode === "pvp") {
       if (!(await confirmNative(t("dlg.drawBoth"), t("act.offerDraw"),
         { ok: t("dlg.drawAgree"), cancel: t("dlg.drawPlayOn") }))) return;
       acceptDraw();
       return;
     }
     // ai mode: offer on your own turn; the engine accepts unless it is winning
-    if (engineThinking || game.turn() !== humanColor) { toast(t("msg.draw.offerOnYourTurn")); return; }
+    if (store.session.engineThinking || game.turn() !== store.session.humanColor) { toast(t("msg.draw.offerOnYourTurn")); return; }
     if (sanHistory().length < 20) { toast(t("msg.draw.offerTooEarly")); return; }
     if (!ChessEngine) { toast(t("msg.engine.unavailable")); return; }
-    drawOfferPending = true;
+    store.session.drawOfferPending = true;
     toast(t("msg.draw.offerSent"));
     let e = null;
     const sig = game.fen();
     try { e = await ChessEngine.analyze(sig, 300); } catch (_) {}
-    drawOfferPending = false;
+    store.session.drawOfferPending = false;
     if (game.fen() !== sig || appGameOver()) return;
     // e.cp is from the side to move (the human here); engine eval = -cp
     const engineCp = e && e.cp != null ? -e.cp : e && e.mate != null ? (e.mate > 0 ? -10000 : 10000) : null;
@@ -3507,9 +3544,9 @@ import { ChessSrs } from "./srs.js";
 
   function acceptDraw() {
     invalidateEngine();
-    drawAgreed = true;
+    store.game.drawAgreed = true;
     Audio2.playDraw();
-    if (mode === "ai") recordAgreedDraw();
+    if (store.session.mode === "ai") recordAgreedDraw();
     saveGame();
     sync();
     toast(t("msg.draw.agreed"));
@@ -3519,13 +3556,13 @@ import { ChessSrs } from "./srs.js";
 
   /** FIDE arts. 9.2/9.3: claim the draw at threefold repetition / 50 moves. */
   function doClaimDraw() {
-    if (mode === "learn" || mode === "puzzle" || !isLive() || appGameOver()) return;
+    if (store.session.mode === "learn" || store.session.mode === "puzzle" || !isLive() || appGameOver()) return;
     const reason = claimableDrawReason();
     if (!reason) { toast(t("msg.draw.claimUnavailable")); return; }
     invalidateEngine();
-    drawClaimed = reason;
+    store.game.drawClaimed = reason;
     Audio2.playDraw();
-    if (mode === "ai") recordOutcome("draw", "#claimed");
+    if (store.session.mode === "ai") recordOutcome("draw", "#claimed");
     saveGame();
     sync();
     toast(reason === "threefold" ? t("msg.draw.claimedRepetition") : t("msg.draw.claimedFiftyMove"));
@@ -3539,11 +3576,11 @@ import { ChessSrs } from "./srs.js";
 
   function gameResultToken() {
     if (game.in_checkmate()) return game.turn() === "w" ? "0-1" : "1-0";
-    if (resigned) return resigned === "w" ? "0-1" : "1-0";
-    if (drawAgreed || drawClaimed) return "1/2-1/2";
-    if (flagFall) {
+    if (store.game.resigned) return store.game.resigned === "w" ? "0-1" : "1-0";
+    if (store.game.drawAgreed || store.game.drawClaimed) return "1/2-1/2";
+    if (store.game.flagFall) {
       if (timeoutIsDraw()) return "1/2-1/2";
-      return flagFall === "w" ? "0-1" : "1-0";
+      return store.game.flagFall === "w" ? "0-1" : "1-0";
     }
     if (naturalGameOver()) return "1/2-1/2"; // stalemate + the auto draw rules
     return "*";
@@ -3562,9 +3599,9 @@ import { ChessSrs } from "./srs.js";
     };
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    const engineName = "Stockfish 18 (" + (DIFF_EN[difficulty] || difficulty) + ")";
-    const white = mode === "ai" ? (humanColor === "w" ? "Player" : engineName) : "Player 1";
-    const black = mode === "ai" ? (humanColor === "b" ? "Player" : engineName) : "Player 2";
+    const engineName = "Stockfish 18 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
+    const white = store.session.mode === "ai" ? (store.session.humanColor === "w" ? "Player" : engineName) : "Player 1";
+    const black = store.session.mode === "ai" ? (store.session.humanColor === "b" ? "Player" : engineName) : "Player 2";
     const result = gameResultToken();
     const tagPairs = [
       ["Event", "Casual game"],
@@ -3575,10 +3612,10 @@ import { ChessSrs } from "./srs.js";
       ["Black", black],
       ["Result", result],
     ];
-    const tc = parseTc(timeControl);
+    const tc = parseTc(store.game.timeControl);
     tagPairs.push(["TimeControl", tc ? tc.base + (tc.inc ? "+" + tc.inc : "") : "-"]);
     if (result !== "*") {
-      tagPairs.push(["Termination", flagFall ? "time forfeit" : "normal"]);
+      tagPairs.push(["Termination", store.game.flagFall ? "time forfeit" : "normal"]);
     }
     const sf = startFen();
     if (sf) tagPairs.push(["SetUp", "1"], ["FEN", sf]);
@@ -3762,8 +3799,6 @@ import { ChessSrs } from "./srs.js";
     } catch (_) { toast(t("msg.file.readFailed")); }
   }
 
-  /** Modal list picker → index of the chosen entry, or null when cancelled. */
-  let pickResolver = null;
   /**
    * One question, asked once, on a genuinely fresh install.
    *
@@ -3783,19 +3818,19 @@ import { ChessSrs } from "./srs.js";
     ]);
     if (choice == null) return; // cancelled — leave the defaults alone
     if (choice === 0) {
-      mode = "learn";
+      store.session.mode = "learn";
       startLearn();
     } else {
       // they can play, but "normal" is Elo 1700 — start a rung lower and let
       // the difficulty row (now visible) speak for itself. The engine reads
       // `difficulty` at search time, so setting it here is enough.
-      mode = "ai";
-      difficulty = "easy";
+      store.session.mode = "ai";
+      store.session.difficulty = "easy";
     }
     setPanelOpen(true);
     saveSettings();
     sync();
-    toast(choice === 0 ? t("ob.toLearn") : tf("ob.toPlay", [diffName(difficulty)]));
+    toast(choice === 0 ? t("ob.toLearn") : tf("ob.toPlay", [diffName(store.session.difficulty)]));
     if (choice !== 0) maybeEngineTurn();
   }
 
@@ -3821,12 +3856,12 @@ import { ChessSrs } from "./srs.js";
       list.appendChild(b);
     });
     Dlg.open(modal, list.querySelector(".pick-item"));
-    return new Promise((resolve) => { pickResolver = resolve; });
+    return new Promise((resolve) => { store.ui.pickResolver = resolve; });
   }
   function finishPick(v) {
     const modal = document.getElementById("pick-modal");
     Dlg.close(modal);
-    if (pickResolver) { pickResolver(v); pickResolver = null; }
+    if (store.ui.pickResolver) { store.ui.pickResolver(v); store.ui.pickResolver = null; }
   }
 
   /**
@@ -3879,11 +3914,11 @@ import { ChessSrs } from "./srs.js";
       gameLoad(importFen);
       game.header("SetUp", "1", "FEN", importFen);
     }
-    selection = null;
-    viewIndex = sanHistory().length;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
+    store.game.selection = null;
+    store.game.viewIndex = sanHistory().length;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -3957,13 +3992,11 @@ import { ChessSrs } from "./srs.js";
     wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
     bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
   };
-  /** editor runtime: {board, turn, castling, brush} | null */
-  let editor = null;
 
   function editorModel() {
     return {
-      position: editor.board,
-      flipped,
+      position: store.session.editor.board,
+      flipped: store.game.flipped,
       selected: null,
       legalTargets: [],
       lastMove: null,
@@ -3978,9 +4011,9 @@ import { ChessSrs } from "./srs.js";
     const Ed = ChessEditor;
     if (!Ed) { toast(t("msg.editor.unavailable")); return; }
     invalidateEngine();
-    editor = Ed.fromFen(viewGame().fen(), Chess);
-    editor.brush = { color: "w", type: "p" };
-    selection = null;
+    store.session.editor = Ed.fromFen(viewGame().fen(), Chess);
+    store.session.editor.brush = { color: "w", type: "p" };
+    store.game.selection = null;
     BoardView.cancelAnim();
     renderEditorPalette();
     sync();
@@ -3999,15 +4032,15 @@ import { ChessSrs } from "./srs.js";
    * @returns {boolean} true when an open editor was closed
    */
   function stopEditor(note) {
-    if (!editor) return false;
-    editor = null;
+    if (!store.session.editor) return false;
+    store.session.editor = null;
     if (note) toast(note);
     return true;
   }
 
   function renderEditorPalette() {
     const el = document.getElementById("editor-palette");
-    if (!el || !editor) return;
+    if (!el || !store.session.editor) return;
     el.innerHTML = "";
     for (const [color, type] of PALETTE) {
       const b = document.createElement("button");
@@ -4016,12 +4049,12 @@ import { ChessSrs } from "./srs.js";
         b.dataset.erase = "1";
         b.textContent = "✕";
         b.title = t("ed.eraser");
-        b.classList.toggle("active", editor.brush.type === "");
+        b.classList.toggle("active", store.session.editor.brush.type === "");
       } else {
         b.dataset.color = color;
         b.dataset.type = type;
         b.textContent = PALETTE_GLYPH[color + type];
-        b.classList.toggle("active", editor.brush.color === color && editor.brush.type === type);
+        b.classList.toggle("active", store.session.editor.brush.color === color && store.session.editor.brush.type === type);
       }
       el.appendChild(b);
     }
@@ -4030,13 +4063,13 @@ import { ChessSrs } from "./srs.js";
   function editorClick(sq) {
     const Ed = ChessEditor;
     const { r, c } = Ed.indexOf(sq);
-    const cur = editor.board[r][c];
-    if (editor.brush.type === "") {
-      editor.board[r][c] = null;
-    } else if (cur && cur.color === editor.brush.color && cur.type === editor.brush.type) {
-      editor.board[r][c] = null; // tapping the same piece again clears the square
+    const cur = store.session.editor.board[r][c];
+    if (store.session.editor.brush.type === "") {
+      store.session.editor.board[r][c] = null;
+    } else if (cur && cur.color === store.session.editor.brush.color && cur.type === store.session.editor.brush.type) {
+      store.session.editor.board[r][c] = null; // tapping the same piece again clears the square
     } else {
-      editor.board[r][c] = { type: editor.brush.type, color: editor.brush.color };
+      store.session.editor.board[r][c] = { type: store.session.editor.brush.type, color: store.session.editor.brush.color };
     }
     syncEditorUI();
     draw();
@@ -4045,17 +4078,17 @@ import { ChessSrs } from "./srs.js";
   function syncEditorUI() {
     const sec = document.getElementById("sec-editor");
     if (!sec) return;
-    sec.hidden = !editor;
-    if (!editor) return;
+    sec.hidden = !store.session.editor;
+    if (!store.session.editor) return;
     document.querySelectorAll("#editor-turn button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.turn === editor.turn);
+      b.classList.toggle("active", b.dataset.turn === store.session.editor.turn);
     });
     document.querySelectorAll("#editor-castling button").forEach((b) => {
-      b.classList.toggle("active", !!editor.castling[b.dataset.cr]);
+      b.classList.toggle("active", !!store.session.editor.castling[b.dataset.cr]);
     });
     const epRow = document.getElementById("row-ed-ep");
     const epSeg = document.getElementById("editor-ep");
-    const cands = ChessEditor.epCandidates(editor);
+    const cands = ChessEditor.epCandidates(store.session.editor);
     if (epRow) epRow.hidden = !cands.length;
     if (epSeg && cands.length) {
       epSeg.innerHTML = "";
@@ -4064,13 +4097,13 @@ import { ChessSrs } from "./srs.js";
         b.type = "button";
         b.dataset.ep = sqName || "";
         b.textContent = sqName || t("ed.epNone");
-        b.classList.toggle("active", (editor.ep || null) === sqName);
+        b.classList.toggle("active", (store.session.editor.ep || null) === sqName);
         epSeg.appendChild(b);
       }
     }
-    if (!cands.length && editor.ep) editor.ep = null;
+    if (!cands.length && store.session.editor.ep) store.session.editor.ep = null;
     const err = document.getElementById("editor-error");
-    const reason = ChessEditor.validate(editor, Chess);
+    const reason = ChessEditor.validate(store.session.editor, Chess);
     if (err) err.textContent = reason ? t(reason) : "";
     const apply = document.getElementById("editor-apply");
     if (apply) apply.disabled = !!reason;
@@ -4083,13 +4116,13 @@ import { ChessSrs } from "./srs.js";
     if (ChessEngine) ChessEngine.newGame();
     gameLoad(fen);
     game.header("SetUp", "1", "FEN", fen);
-    selection = null;
-    viewIndex = 0;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
-    analysis = null;
-    statsRecordedSig = null;
+    store.game.selection = null;
+    store.game.viewIndex = 0;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
+    store.session.analysis = null;
+    store.game.statsRecordedSig = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -4100,9 +4133,9 @@ import { ChessSrs } from "./srs.js";
 
   function applyEditor() {
     const Ed = ChessEditor;
-    const reason = Ed.validate(editor, Chess);
+    const reason = Ed.validate(store.session.editor, Chess);
     if (reason) { toast(t(reason)); return; }
-    const fen = Ed.toFen(editor);
+    const fen = Ed.toFen(store.session.editor);
     stopEditor();
     loadFenAsGame(fen, t("msg.editor.started"));
   }
@@ -4236,8 +4269,8 @@ import { ChessSrs } from "./srs.js";
     st.slots[i] = {
       pgn: pgnForExport(),
       savedAt: Date.now(),
-      mode,
-      diff: difficulty,
+      mode: store.session.mode,
+      diff: store.session.difficulty,
     };
     saveSlots(st);
     renderSlots();
@@ -4285,7 +4318,7 @@ import { ChessSrs } from "./srs.js";
     if (!el) return;
     // only on an untouched board in a real game — lessons and puzzles have
     // their own copy filling this space
-    const show = (mode === "ai" || mode === "pvp") && !sanHistory().length && !editor;
+    const show = (store.session.mode === "ai" || store.session.mode === "pvp") && !sanHistory().length && !store.session.editor;
     el.hidden = !show;
     if (!show) return;
     el.innerHTML = "";
@@ -4306,13 +4339,13 @@ import { ChessSrs } from "./srs.js";
     const last = games[games.length - 1];
     if (last) {
       line(t("idle.last"), historyLabel(last) + " · " + historyWhen(last.t));
-      const mine = games.filter((g) => g.diff === difficulty);
+      const mine = games.filter((g) => g.diff === store.session.difficulty);
       const w = mine.filter((g) => g.result === "win").length;
       const l = mine.filter((g) => g.result === "loss").length;
       const d = mine.length - w - l;
-      if (mine.length) line(diffName(difficulty), tf("stats.wld", [w, l, d]));
+      if (mine.length) line(diffName(store.session.difficulty), tf("stats.wld", [w, l, d]));
     } else {
-      line(t("idle.ready"), t(mode === "ai" ? "idle.vsEngine" : "idle.vsHuman"));
+      line(t("idle.ready"), t(store.session.mode === "ai" ? "idle.vsEngine" : "idle.vsHuman"));
     }
     const rec = recommendation();
     const tip = document.createElement("div");
@@ -4326,10 +4359,10 @@ import { ChessSrs } from "./srs.js";
     const wEl = document.getElementById("taken-w");
     const bEl = document.getElementById("taken-b");
     if (!wEl || !bEl) return;
-    const off = mode === "learn" || mode === "puzzle" || !!editor;
+    const off = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
     if (!Mat || off) { wEl.innerHTML = ""; bEl.innerHTML = ""; return; }
     const shown = viewGame();
-    const promos = verboseHistory().slice(0, viewIndex)
+    const promos = verboseHistory().slice(0, store.game.viewIndex)
       .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
     const s = Mat.summary(baseGame().board(), shown.board(), promos);
     const svgs = CHESS_PIECE_SVGS || {};
@@ -4356,7 +4389,7 @@ import { ChessSrs } from "./srs.js";
 
   function setSideTab(id, opts) {
     const want = TABS.includes(id) ? id : "play";
-    sideTab = want;
+    store.ui.sideTab = want;
     for (const t of TABS) {
       const btn = document.getElementById("tab-" + t);
       const pane = document.getElementById("pane-" + t);
@@ -4393,7 +4426,7 @@ import { ChessSrs } from "./srs.js";
   function applyLanguage() {
     if (!I18n) return;
     I18n.apply(document);
-    document.documentElement.setAttribute("lang", langId);
+    document.documentElement.setAttribute("lang", store.ui.langId);
     const seg = document.getElementById("lang-seg");
     if (seg) {
       seg.innerHTML = "";
@@ -4402,7 +4435,7 @@ import { ChessSrs } from "./srs.js";
         b.type = "button";
         b.dataset.lang = l.id;
         b.textContent = l.name;
-        b.classList.toggle("active", l.id === langId);
+        b.classList.toggle("active", l.id === store.ui.langId);
         seg.appendChild(b);
       }
     }
@@ -4411,12 +4444,12 @@ import { ChessSrs } from "./srs.js";
     // previous language until the next game finishes
     renderStats();
     renderAchievements();
-    if (editor) renderEditorPalette();
+    if (store.session.editor) renderEditorPalette();
     sync();
   }
 
   function applyTheme(id) {
-    themeId = id;
+    store.ui.themeId = id;
     document.documentElement.setAttribute("data-theme", id);
     // the board reads its square colours from the same variables, and caches
     // them — the cache is only ever stale here
@@ -4436,38 +4469,36 @@ import { ChessSrs } from "./srs.js";
   }
   /** Would a click on `sq` pick up a piece in the current mode? (cursor hint) */
   function grabbableAt(sq) {
-    if (editor) return true; // every square is paintable
-    if (mode === "learn") {
-      if (!learn || learn.done || learn.demoing) return false;
+    if (store.session.editor) return true; // every square is paintable
+    if (store.session.mode === "learn") {
+      if (!store.session.learn || store.session.learn.done || store.session.learn.demoing) return false;
       const task = curTask();
       if (task.type === "tap") return false;
-      const p = learn.g.get(sq);
-      return !!p && p.color === "w" && learn.g.turn() === "w" && (!task.only || p.type === task.only);
+      const p = store.session.learn.g.get(sq);
+      return !!p && p.color === "w" && store.session.learn.g.turn() === "w" && (!task.only || p.type === task.only);
     }
-    if (mode === "puzzle") {
-      if (!puzzle || puzzle.done) return false;
-      const p = puzzle.g.get(sq);
-      return !!p && p.color === "w" && puzzle.g.turn() === "w";
+    if (store.session.mode === "puzzle") {
+      if (!store.session.puzzle || store.session.puzzle.done) return false;
+      const p = store.session.puzzle.g.get(sq);
+      return !!p && p.color === "w" && store.session.puzzle.g.turn() === "w";
     }
     if (!isLive() || appGameOver()) return false;
-    if (mode === "ai" && game.turn() !== humanColor) return false;
+    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return false;
     const p = game.get(sq);
     return !!p && p.color === game.turn();
   }
 
-  let dragging = null; // {from} armed on pressing one of our selectable pieces
-  /** editor paint stroke: the square last painted while the pointer is down */
-  let painting = null;
+// {from} armed on pressing one of our selectable pieces
 
   // right-click clears a square in the editor (no need to switch to the eraser)
   canvas.addEventListener("contextmenu", (ev) => {
-    if (!editor) return;
+    if (!store.session.editor) return;
     ev.preventDefault();
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
     if (!sq) return;
     const { r, c } = ChessEditor.indexOf(sq);
-    editor.board[r][c] = null;
+    store.session.editor.board[r][c] = null;
     syncEditorUI();
     draw();
   });
@@ -4479,18 +4510,18 @@ import { ChessSrs } from "./srs.js";
     onSquareClick(sq);
     // in the editor a press starts a paint stroke: placing 16 pawns one click
     // at a time is exactly the kind of tedium an editor should absorb
-    if (editor) { painting = sq; return; }
-    dragging = selection && selection.sq === sq ? { from: sq } : null;
-    if (dragging) canvas.style.cursor = "grabbing";
+    if (store.session.editor) { store.ui.painting = sq; return; }
+    store.ui.dragging = store.game.selection && store.game.selection.sq === sq ? { from: sq } : null;
+    if (store.ui.dragging) canvas.style.cursor = "grabbing";
   });
   canvas.addEventListener("pointermove", (ev) => {
     const p = canvasPoint(ev);
-    if (painting) {
+    if (store.ui.painting) {
       const sq = BoardView.cellAt(p.x, p.y);
-      if (sq && sq !== painting) { painting = sq; editorClick(sq); }
+      if (sq && sq !== store.ui.painting) { store.ui.painting = sq; editorClick(sq); }
       return;
     }
-    if (!dragging) {
+    if (!store.ui.dragging) {
       const sq = BoardView.cellAt(p.x, p.y);
       canvas.style.cursor = sq && grabbableAt(sq) ? "grab" : "default";
       return;
@@ -4499,14 +4530,14 @@ import { ChessSrs } from "./srs.js";
     // piece can actually go there — the ring under the pointer is the whole
     // point of dragging rather than clicking twice
     const over = BoardView.cellAt(p.x, p.y);
-    const legal = !!(over && selection && selection.targets.includes(over));
-    BoardView.setDrag({ from: dragging.from, x: p.x, y: p.y, over, legal });
+    const legal = !!(over && store.game.selection && store.game.selection.targets.includes(over));
+    BoardView.setDrag({ from: store.ui.dragging.from, x: p.x, y: p.y, over, legal });
     draw();
   });
   canvas.addEventListener("pointerup", (ev) => {
-    painting = null;
-    const wasDrag = dragging;
-    dragging = null;
+    store.ui.painting = null;
+    const wasDrag = store.ui.dragging;
+    store.ui.dragging = null;
     BoardView.setDrag(null);
     canvas.style.cursor = "default";
     if (!wasDrag) return;
@@ -4516,15 +4547,15 @@ import { ChessSrs } from "./srs.js";
     // blink back onto its square. Read the piece before the click, since the
     // click is what may move it.
     const refused = !sq || sq === wasDrag.from ||
-      !(selection && selection.targets.includes(sq));
+      !(store.game.selection && store.game.selection.targets.includes(sq));
     const held = refused ? viewGame().get(wasDrag.from) : null;
     draw();
     if (sq && sq !== wasDrag.from) onSquareClick(sq); // drop = play/reselect
     if (held) BoardView.reboundDrag(held, wasDrag.from, p.x, p.y);
   });
   canvas.addEventListener("pointercancel", () => {
-    painting = null;
-    dragging = null;
+    store.ui.painting = null;
+    store.ui.dragging = null;
     BoardView.setDrag(null);
     canvas.style.cursor = "default";
     draw();
@@ -4544,37 +4575,37 @@ import { ChessSrs } from "./srs.js";
 
   /** describe a square for screen readers: "e4 · 白兵" / "e4 · 空格" */
   function describeSquare(sq) {
-    const g = editor ? null : (mode === "learn" && learn ? learn.g : mode === "puzzle" && puzzle ? puzzle.g : viewGame());
+    const g = store.session.editor ? null : (store.session.mode === "learn" && store.session.learn ? store.session.learn.g : store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g : viewGame());
     let piece = null;
     if (g) piece = g.get(sq);
-    else if (editor) {
+    else if (store.session.editor) {
       const { r, c } = ChessEditor.indexOf(sq);
-      piece = editor.board[r][c];
+      piece = store.session.editor.board[r][c];
     }
     if (!piece) return sq + " · " + t("live.empty");
     return sq + " · " + t(piece.color === "w" ? "vs.white" : "vs.black") + t("piece." + piece.type);
   }
 
   function moveCursor(df, dr) {
-    if (!keyboardCursor) keyboardCursor = flipped ? "e5" : "e4";
-    let f = FILE_CHARS.indexOf(keyboardCursor[0]);
-    let r = Number(keyboardCursor[1]);
+    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
+    let f = FILE_CHARS.indexOf(store.ui.keyboardCursor[0]);
+    let r = Number(store.ui.keyboardCursor[1]);
     // arrows follow what the player sees, so they invert with the board
-    const sign = flipped ? -1 : 1;
+    const sign = store.game.flipped ? -1 : 1;
     f = Math.max(0, Math.min(7, f + df * sign));
     r = Math.max(1, Math.min(8, r + dr * sign));
-    keyboardCursor = FILE_CHARS[f] + r;
-    announce(describeSquare(keyboardCursor));
+    store.ui.keyboardCursor = FILE_CHARS[f] + r;
+    announce(describeSquare(store.ui.keyboardCursor));
     draw();
   }
 
   canvas.addEventListener("focus", () => {
-    boardFocused = true;
-    if (!keyboardCursor) keyboardCursor = flipped ? "e5" : "e4";
-    announce(t("live.focused") + " · " + describeSquare(keyboardCursor));
+    store.ui.boardFocused = true;
+    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
+    announce(t("live.focused") + " · " + describeSquare(store.ui.keyboardCursor));
     draw();
   });
-  canvas.addEventListener("blur", () => { boardFocused = false; draw(); });
+  canvas.addEventListener("blur", () => { store.ui.boardFocused = false; draw(); });
 
   canvas.addEventListener("keydown", (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
@@ -4595,23 +4626,23 @@ import { ChessSrs } from "./srs.js";
       case "ArrowRight": ev.preventDefault(); moveCursor(1, 0); return;
       case "ArrowUp": ev.preventDefault(); moveCursor(0, 1); return;
       case "ArrowDown": ev.preventDefault(); moveCursor(0, -1); return;
-      case "Home": ev.preventDefault(); keyboardCursor = flipped ? "h1" : "a8"; announce(describeSquare(keyboardCursor)); draw(); return;
-      case "End": ev.preventDefault(); keyboardCursor = flipped ? "a8" : "h1"; announce(describeSquare(keyboardCursor)); draw(); return;
+      case "Home": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "h1" : "a8"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
+      case "End": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "a8" : "h1"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
       case "Enter":
       case " ": {
         ev.preventDefault();
-        if (!keyboardCursor) return;
-        const before = selection ? selection.sq : null;
-        onSquareClick(keyboardCursor);
-        if (selection && selection.sq === keyboardCursor && before !== keyboardCursor) {
-          announce(t("live.selected") + " " + describeSquare(keyboardCursor) + " · " + selection.targets.length + " " + t("live.targets"));
-        } else if (!selection && before) {
+        if (!store.ui.keyboardCursor) return;
+        const before = store.game.selection ? store.game.selection.sq : null;
+        onSquareClick(store.ui.keyboardCursor);
+        if (store.game.selection && store.game.selection.sq === store.ui.keyboardCursor && before !== store.ui.keyboardCursor) {
+          announce(t("live.selected") + " " + describeSquare(store.ui.keyboardCursor) + " · " + store.game.selection.targets.length + " " + t("live.targets"));
+        } else if (!store.game.selection && before) {
           announce(statusText());
         }
         return;
       }
       case "Escape":
-        if (selection) { ev.preventDefault(); selection = null; announce(t("live.cleared")); draw(); }
+        if (store.game.selection) { ev.preventDefault(); store.game.selection = null; announce(t("live.cleared")); draw(); }
         return;
       default:
     }
@@ -4622,10 +4653,10 @@ import { ChessSrs } from "./srs.js";
   document.getElementById("btn-hint").onclick = () => { requestHint(); };
   document.getElementById("btn-new").onclick = () => { requestNewGame(); };
   document.getElementById("btn-flip").onclick = () => {
-    flipped = !flipped;
+    store.game.flipped = !store.game.flipped;
     saveSettings();
     draw();
-    toast(flipped ? t("msg.view.black") : t("msg.view.white"));
+    toast(store.game.flipped ? t("msg.view.black") : t("msg.view.white"));
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   const moreBtn = document.getElementById("more-tools");
@@ -4651,7 +4682,7 @@ import { ChessSrs } from "./srs.js";
     // ARIA tablist keyboard contract: arrows move between tabs
     tabRow.onkeydown = (ev) => {
       if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
-      const cur = TABS.indexOf(sideTab);
+      const cur = TABS.indexOf(store.ui.sideTab);
       const next = TABS[(cur + (ev.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
       ev.preventDefault();
       setSideTab(next, { top: true });
@@ -4669,14 +4700,14 @@ import { ChessSrs } from "./srs.js";
     };
   }
   document.getElementById("rep-start").onclick = () => setViewIndex(0);
-  document.getElementById("rep-prev").onclick = () => setViewIndex(viewIndex - 1);
-  document.getElementById("rep-next").onclick = () => setViewIndex(viewIndex + 1);
+  document.getElementById("rep-prev").onclick = () => setViewIndex(store.game.viewIndex - 1);
+  document.getElementById("rep-next").onclick = () => setViewIndex(store.game.viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
   document.getElementById("rep-live").onclick = () => { goLive(); toast(t("msg.replay.atLive")); };
 
   document.getElementById("an-run").onclick = () => {
-    if (analyzing) {
-      analyzeAbort = true;
+    if (store.session.analyzing) {
+      store.session.analyzeAbort = true;
       if (ChessEngine) ChessEngine.cancel();
       return;
     }
@@ -4807,15 +4838,15 @@ import { ChessSrs } from "./srs.js";
     "game.new": () => requestNewGame(),
     "game.undo": () => undo(),
     "game.hint": () => requestHint(),
-    "game.flip": () => { flipped = !flipped; saveSettings(); draw(); },
+    "game.flip": () => { store.game.flipped = !store.game.flipped; saveSettings(); draw(); },
     "view.panel": () => togglePanel(),
-    "view.prev": () => setViewIndex(viewIndex - 1),
-    "view.next": () => setViewIndex(viewIndex + 1),
+    "view.prev": () => setViewIndex(store.game.viewIndex - 1),
+    "view.next": () => setViewIndex(store.game.viewIndex + 1),
     "help.keys": () => openKeyHelp(),
   };
   Host.onAppLifecycle({
-    activate: () => { appForeground = true; syncClockTimer(); renderClocks(); },
-    deactivate: () => { appForeground = false; saveGame(); syncClockTimer(); },
+    activate: () => { store.ui.appForeground = true; syncClockTimer(); renderClocks(); },
+    deactivate: () => { store.ui.appForeground = false; saveGame(); syncClockTimer(); },
     shortcut: (detail) => {
       let id = null;
       try {
@@ -4831,94 +4862,94 @@ import { ChessSrs } from "./srs.js";
     const b = ev.target.closest("button[data-theme]");
     if (b) {
       applyTheme(b.dataset.theme);
-      toast(t("msg.setting.theme") + t("themeName." + themeId));
+      toast(t("msg.setting.theme") + t("themeName." + store.ui.themeId));
     }
   };
   document.getElementById("mode-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-mode]");
-    if (!b || b.dataset.mode === mode) return;
+    if (!b || b.dataset.mode === store.session.mode) return;
     invalidateEngine();
     stopEditor(t("msg.editor.exited"));
-    const wasLearn = mode === "learn";
-    const wasPuzzle = mode === "puzzle";
-    mode = b.dataset.mode;
+    const wasLearn = store.session.mode === "learn";
+    const wasPuzzle = store.session.mode === "puzzle";
+    store.session.mode = b.dataset.mode;
     // entering a clocked mode mid-game gets fresh clocks
-    flagFall = null;
-    if (mode === "pvp" || mode === "ai") resetClocks();
-    if (mode === "learn") startLearn();
+    store.game.flagFall = null;
+    if (store.session.mode === "pvp" || store.session.mode === "ai") resetClocks();
+    if (store.session.mode === "learn") startLearn();
     else if (wasLearn) stopLearn();
-    if (mode === "puzzle") startPuzzles();
+    if (store.session.mode === "puzzle") startPuzzles();
     else if (wasPuzzle) stopPuzzles();
     // the mode decides what the play tab holds, so show it — otherwise
     // switching to 教学 from the settings tab looks like nothing happened
     setSideTab("play", { top: true });
     saveSettings();
-    selection = null;
+    store.game.selection = null;
     syncAutoFlip();
     sync();
-    toast(mode === "ai" ? t("msg.mode.aiPrefix") + (DIFF_NAMES[difficulty] || "") :
-      mode === "pvp" ? t("msg.mode.pvp") :
-      mode === "learn" ? t("mm.learnMode") : t("mm.puzzleMode"));
+    toast(store.session.mode === "ai" ? t("msg.mode.aiPrefix") + (DIFF_NAMES[store.session.difficulty] || "") :
+      store.session.mode === "pvp" ? t("msg.mode.pvp") :
+      store.session.mode === "learn" ? t("mm.learnMode") : t("mm.puzzleMode"));
     maybeEngineTurn();
   };
   document.getElementById("lesson-restart").onclick = () => {
-    if (learn) { startLearnTask(); toast(t("lm.restarted")); }
+    if (store.session.learn) { startLearnTask(); toast(t("lm.restarted")); }
   };
   document.getElementById("lesson-demo").onclick = () => {
-    if (!learn || learn.demoing) return;
+    if (!store.session.learn || store.session.learn.demoing) return;
     const task = curTask();
     if (!task.solution || (task.type !== "stars" && task.type !== "move")) { toast(t("lm.noDemo")); return; }
-    learn.wantDemo = true;
+    store.session.learn.wantDemo = true;
     startLearnTask();
   };
   document.getElementById("learn-reset").onclick = async () => {
     if (!(await confirmNative(t("dlg.resetLearn"), t("dlg.resetLearnTitle"),
       { ok: t("act.reset"), cancel: t("act.cancel") }))) return;
-    learnState = { v: 1, done: {}, last: 0 };
+    store.session.learnState = { v: 1, done: {}, last: 0 };
     saveLearnState();
-    if (learn) startLesson(0);
+    if (store.session.learn) startLesson(0);
     toast(t("lm.progressReset"));
   };
   document.getElementById("lesson-next").onclick = () => {
-    if (!learn) return;
-    if (learn.li + 1 < LESSONS.length) { startLesson(learn.li + 1); return; }
+    if (!store.session.learn) return;
+    if (store.session.learn.li + 1 < LESSONS.length) { startLesson(store.session.learn.li + 1); return; }
     // graduation: straight into a beginner AI game
-    difficulty = "beginner";
-    mode = "ai";
+    store.session.difficulty = "beginner";
+    store.session.mode = "ai";
     stopLearn();
     saveSettings();
-    selection = null;
+    store.game.selection = null;
     sync();
     toast(t("lm.firstGame"));
     maybeEngineTurn();
   };
   document.getElementById("lesson-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
-    if (b && learn) startLesson(Number(b.dataset.i));
+    if (b && store.session.learn) startLesson(Number(b.dataset.i));
   };
   document.getElementById("puzzle-cat-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-cat]");
     // `puzzle` is null whenever the tier filter empties the current category —
     // exactly the moment the user needs these tabs to change category, so this
     // must not bail out on a missing puzzle
-    if (!b || (puzzle && b.dataset.cat === puzzle.cat)) return;
+    if (!b || (store.session.puzzle && b.dataset.cat === store.session.puzzle.cat)) return;
     if (b.dataset.cat === "review" && !puzzlesInCat("review").length) {
       toast(t("pz.noMissed"));
       return;
     }
-    puzzleState.cat = b.dataset.cat;
+    store.session.puzzleState.cat = b.dataset.cat;
     savePuzzleState();
     startPuzzles();
   };
   document.getElementById("puzzle-tier-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-tier]");
-    if (!b || b.dataset.tier === puzzleTierFilter) return;
-    puzzleTierFilter = b.dataset.tier;
+    if (!b || b.dataset.tier === store.session.puzzleTierFilter) return;
+    store.session.puzzleTierFilter = b.dataset.tier;
     saveSettings();
     startPuzzles();
   };
   document.getElementById("puzzle-retry").onclick = () => {
-    if (puzzle) { startPuzzleAt(puzzle.cat, puzzle.idx); toast(t("pz.restarted")); }
+    if (store.session.puzzle) { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
   };
   document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
@@ -4926,80 +4957,80 @@ import { ChessSrs } from "./srs.js";
   if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
   document.getElementById("puzzle-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
-    if (b && puzzle) startPuzzleAt(puzzle.cat, Number(b.dataset.i));
+    if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));
   };
   document.getElementById("clock-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-tc]");
-    if (!b || b.dataset.tc === timeControl) return;
-    timeControl = b.dataset.tc;
+    if (!b || b.dataset.tc === store.game.timeControl) return;
+    store.game.timeControl = b.dataset.tc;
     resetClocks();
     saveSettings();
     saveGame();
     sync();
-    const tcSet = parseTc(timeControl);
+    const tcSet = parseTc(store.game.timeControl);
     toast(!tcSet ? t("msg.clock.off") :
       tf("mm.clockSet", [tcSet.base / 60]) + (tcSet.inc ? tf("mm.clockInc", [tcSet.inc]) : ""));
   };
   const onDiffClick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
-    if (!b || b.dataset.diff === difficulty) return;
-    difficulty = b.dataset.diff;
+    if (!b || b.dataset.diff === store.session.difficulty) return;
+    store.session.difficulty = b.dataset.diff;
     saveSettings();
     sync();
-    toast(t("msg.setting.difficulty") + (DIFF_NAMES[difficulty] || difficulty));
+    toast(t("msg.setting.difficulty") + (DIFF_NAMES[store.session.difficulty] || store.session.difficulty));
   };
   document.getElementById("diff-seg").onclick = onDiffClick;
   const diffEngineSeg = document.getElementById("diff-seg-engine");
   if (diffEngineSeg) diffEngineSeg.onclick = onDiffClick;
   document.getElementById("persona-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-persona]");
-    if (!b || b.dataset.persona === personaId) return;
-    personaId = b.dataset.persona;
+    if (!b || b.dataset.persona === store.session.personaId) return;
+    store.session.personaId = b.dataset.persona;
     saveSettings();
     sync();
-    toast(t("m.personaSet") + t("persona." + personaId));
+    toast(t("m.personaSet") + t("persona." + store.session.personaId));
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
-    if (!b || b.dataset.color === humanColor) return;
+    if (!b || b.dataset.color === store.session.humanColor) return;
     invalidateEngine();
-    humanColor = b.dataset.color;
-    flipped = humanColor === "b";
+    store.session.humanColor = b.dataset.color;
+    store.game.flipped = store.session.humanColor === "b";
     saveSettings();
     sync();
-    toast(humanColor === "w" ? t("msg.side.whiteChosen") : t("msg.side.blackChosen"));
+    toast(store.session.humanColor === "w" ? t("msg.side.whiteChosen") : t("msg.side.blackChosen"));
     maybeEngineTurn();
   };
   const langSeg = document.getElementById("lang-seg");
   if (langSeg) {
     langSeg.onclick = (ev) => {
       const b = ev.target.closest("button[data-lang]");
-      if (!b || !I18n || b.dataset.lang === langId) return;
-      langId = I18n.setLang(b.dataset.lang);
+      if (!b || !I18n || b.dataset.lang === store.ui.langId) return;
+      store.ui.langId = I18n.setLang(b.dataset.lang);
       saveSettings();
       applyLanguage();
       toast(t("mm.langSwitched"));
     };
   }
   document.getElementById("opt-coach").onclick = () => {
-    coachOn = !coachOn;
+    store.session.coachOn = !store.session.coachOn;
     saveSettings();
     syncSettingsUI();
-    toast(coachOn ? t("msg.coach.on") : t("msg.coach.off"));
+    toast(store.session.coachOn ? t("msg.coach.on") : t("msg.coach.off"));
   };
   document.getElementById("opt-autoflip").onclick = () => {
-    autoFlipPvp = !autoFlipPvp;
+    store.ui.autoFlipPvp = !store.ui.autoFlipPvp;
     if (syncAutoFlip()) draw();
     saveSettings();
     syncSettingsUI();
-    toast(autoFlipPvp ? t("msg.autoflip.on") : t("msg.autoflip.off"));
+    toast(store.ui.autoFlipPvp ? t("msg.autoflip.on") : t("msg.autoflip.off"));
   };
   document.getElementById("opt-sound").onclick = () => {
-    soundOn = !soundOn;
+    store.ui.soundOn = !store.ui.soundOn;
     saveSettings();
     syncSettingsUI();
-    if (soundOn) Audio2.playMove("w");
-    toast(soundOn ? t("msg.sound.on") : t("msg.sound.off"));
+    if (store.ui.soundOn) Audio2.playMove("w");
+    toast(store.ui.soundOn ? t("msg.sound.on") : t("msg.sound.off"));
   };
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
@@ -5012,13 +5043,13 @@ import { ChessSrs } from "./srs.js";
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
     gameReset();
-    selection = null;
-    viewIndex = 0;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
-    analysis = null;
-    statsRecordedSig = null;
+    store.game.selection = null;
+    store.game.viewIndex = 0;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
+    store.session.analysis = null;
+    store.game.statsRecordedSig = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -5028,50 +5059,50 @@ import { ChessSrs } from "./srs.js";
 
   // --- editor + FEN wiring ---
   document.getElementById("editor-open").onclick = () => {
-    if (mode === "learn" || mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
+    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
     startEditor();
   };
   document.getElementById("fen-load-open").onclick = () => {
-    if (mode === "learn" || mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
+    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
     openFenModal();
   };
   document.getElementById("editor-palette").onclick = (ev) => {
     const b = ev.target.closest("button");
-    if (!b || !editor) return;
-    editor.brush = b.dataset.erase ? { color: "", type: "" }
+    if (!b || !store.session.editor) return;
+    store.session.editor.brush = b.dataset.erase ? { color: "", type: "" }
       : { color: b.dataset.color, type: b.dataset.type };
     renderEditorPalette();
   };
   document.getElementById("editor-turn").onclick = (ev) => {
     const b = ev.target.closest("button[data-turn]");
-    if (!b || !editor) return;
-    editor.turn = b.dataset.turn;
+    if (!b || !store.session.editor) return;
+    store.session.editor.turn = b.dataset.turn;
     syncEditorUI();
   };
   document.getElementById("editor-ep").onclick = (ev) => {
     const b = ev.target.closest("button[data-ep]");
-    if (!b || !editor) return;
-    editor.ep = b.dataset.ep || null;
+    if (!b || !store.session.editor) return;
+    store.session.editor.ep = b.dataset.ep || null;
     syncEditorUI();
   };
   document.getElementById("editor-castling").onclick = (ev) => {
     const b = ev.target.closest("button[data-cr]");
-    if (!b || !editor) return;
-    editor.castling[b.dataset.cr] = !editor.castling[b.dataset.cr];
+    if (!b || !store.session.editor) return;
+    store.session.editor.castling[b.dataset.cr] = !store.session.editor.castling[b.dataset.cr];
     syncEditorUI();
   };
   document.getElementById("editor-clear").onclick = () => {
-    if (!editor) return;
-    editor.board = ChessEditor.emptyBoard();
-    editor.castling = { K: false, Q: false, k: false, q: false };
+    if (!store.session.editor) return;
+    store.session.editor.board = ChessEditor.emptyBoard();
+    store.session.editor.castling = { K: false, Q: false, k: false, q: false };
     syncEditorUI();
     draw();
   };
   document.getElementById("editor-reset").onclick = () => {
-    if (!editor) return;
-    editor = Object.assign(
+    if (!store.session.editor) return;
+    store.session.editor = Object.assign(
       ChessEditor.fromFen(new Chess().fen(), Chess),
-      { brush: editor.brush }
+      { brush: store.session.editor.brush }
     );
     syncEditorUI();
     draw();
@@ -5109,7 +5140,7 @@ import { ChessSrs } from "./srs.js";
   const slotsModal = document.getElementById("slots-modal");
   if (slotsModal) {
     document.getElementById("slots-open").onclick = () => {
-      if (mode === "learn" || mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
+      if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
       openSlots();
     };
     document.getElementById("slots-close").onclick = closeSlots;
@@ -5131,25 +5162,25 @@ import { ChessSrs } from "./srs.js";
     const hres = document.getElementById("hist-result-seg");
     if (hres) hres.onclick = (ev) => {
       const b = ev.target.closest("button[data-hres]");
-      if (!b || b.dataset.hres === histFilter.result) return;
-      histFilter.result = b.dataset.hres;
+      if (!b || b.dataset.hres === store.ui.histFilter.result) return;
+      store.ui.histFilter.result = b.dataset.hres;
       renderHistory();
     };
     const hcol = document.getElementById("hist-color-seg");
     if (hcol) hcol.onclick = (ev) => {
       const b = ev.target.closest("button[data-hcol]");
-      if (!b || b.dataset.hcol === histFilter.color) return;
-      histFilter.color = b.dataset.hcol;
+      if (!b || b.dataset.hcol === store.ui.histFilter.color) return;
+      store.ui.histFilter.color = b.dataset.hcol;
       renderHistory();
     };
     const onHistClick = (ev) => {
       const b = ev.target.closest("button");
       if (!b) return;
       if (b.dataset.histPgn != null) {
-        const rec = histCache[Number(b.dataset.histPgn)];
+        const rec = store.session.histCache[Number(b.dataset.histPgn)];
         if (rec) copyText(historyPgn(rec), t("hist.pgnCopied"));
       } else if (b.dataset.hist != null) {
-        if (mode === "learn" || mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
+        if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay")); return; }
         loadFromHistory(Number(b.dataset.hist));
       }
     };
@@ -5198,7 +5229,7 @@ import { ChessSrs } from "./srs.js";
       if (confirmModal.classList.contains("show")) { finishConfirm(false); return; }
       if (keysModal && keysModal.classList.contains("show")) { closeKeyHelp(); return; }
       // before closing the panel — the panel holds the editor's only exit
-      if (editor) { stopEditor(t("msg.editor.exited")); sync(); return; }
+      if (store.session.editor) { stopEditor(t("msg.editor.exited")); sync(); return; }
       if (isPanelOpen()) setPanelOpen(false);
       return;
     }
@@ -5231,31 +5262,31 @@ import { ChessSrs } from "./srs.js";
     // move anywhere by keyboard — the app had a full keyboard board cursor and
     // no way to reach any other control. The panel is on P instead.
     if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
-    if (mode === "learn") {
+    if (store.session.mode === "learn") {
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills
-      if (!learn || ev.metaKey || ev.ctrlKey) return;
+      if (!store.session.learn || ev.metaKey || ev.ctrlKey) return;
       if (k === "r") { startLearnTask(); toast(t("lm.restarted")); }
       else if (k === "z") learnUndo();
       else if (k === "h") learnHint();
       return;
     }
-    if (mode === "puzzle") {
-      if (!puzzle || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { startPuzzleAt(puzzle.cat, puzzle.idx); toast(t("pz.restarted")); }
+    if (store.session.mode === "puzzle") {
+      if (!store.session.puzzle || ev.metaKey || ev.ctrlKey) return;
+      if (k === "r") { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
       else if (k === "n") nextPuzzle();
       else if (k === "h") showPuzzleAnswer();
       return;
     }
-    if (ev.key === "ArrowLeft") { ev.preventDefault(); setViewIndex(viewIndex - 1); }
-    else if (ev.key === "ArrowRight") { ev.preventDefault(); setViewIndex(viewIndex + 1); }
+    if (ev.key === "ArrowLeft") { ev.preventDefault(); setViewIndex(store.game.viewIndex - 1); }
+    else if (ev.key === "ArrowRight") { ev.preventDefault(); setViewIndex(store.game.viewIndex + 1); }
     else if (ev.key === "Home") { ev.preventDefault(); setViewIndex(0); }
     else if (ev.key === "End") { ev.preventDefault(); setViewIndex(sanHistory().length); }
     else if (k === "z" && !ev.metaKey && !ev.ctrlKey) undo();
     else if (k === "n" && !ev.metaKey && !ev.ctrlKey) requestNewGame();
     else if (k === "h" && !ev.metaKey && !ev.ctrlKey) requestHint();
     else if (k === "f" && !ev.metaKey && !ev.ctrlKey) {
-      flipped = !flipped; saveSettings(); draw();
+      store.game.flipped = !store.game.flipped; saveSettings(); draw();
     }
   });
 
@@ -5299,25 +5330,25 @@ import { ChessSrs } from "./srs.js";
   const firstRun = !Host.storageGet(SETTINGS_KEY) && !Host.storageGet(SAVE_KEY) &&
     !Host.storageGet(LEARN_KEY) && !Host.storageGet(PUZZLE_KEY);
   // and on a first run, start in the system language rather than always Chinese
-  if (firstRun && I18n && I18n.detectLang) langId = I18n.setLang(I18n.detectLang());
+  if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
-  document.documentElement.setAttribute("data-theme", themeId);
-  if (I18n) { I18n.setLang(langId); I18n.apply(document); }
+  document.documentElement.setAttribute("data-theme", store.ui.themeId);
+  if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
   const savedPanel = Host.storageGet(PANEL_KEY);
   setPanelOpen(savedPanel === "1");
-  setSideTab(sideTab);
+  setSideTab(store.ui.sideTab);
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
   // a resumed finished game must not be re-counted on the next live move
-  if (resumed && naturalGameOver()) statsRecordedSig = game.pgn();
-  if (resumed && resigned) statsRecordedSig = game.pgn() + "#resigned";
-  if (resumed && drawAgreed) statsRecordedSig = game.pgn() + "#drawAgreed";
-  if (resumed && drawClaimed) statsRecordedSig = game.pgn() + "#claimed";
+  if (resumed && naturalGameOver()) store.game.statsRecordedSig = game.pgn();
+  if (resumed && store.game.resigned) store.game.statsRecordedSig = game.pgn() + "#resigned";
+  if (resumed && store.game.drawAgreed) store.game.statsRecordedSig = game.pgn() + "#drawAgreed";
+  if (resumed && store.game.drawClaimed) store.game.statsRecordedSig = game.pgn() + "#claimed";
   // clock preset chosen but no saved clock state → fresh clocks
-  if (timeControl !== "off" && !clock) resetClocks();
+  if (store.game.timeControl !== "off" && !store.game.clock) resetClocks();
   syncAutoFlip(); // a resumed pvp game must face whoever is on move
-  if (mode === "learn") startLearn();
-  if (mode === "puzzle") startPuzzles();
+  if (store.session.mode === "learn") startLearn();
+  if (store.session.mode === "puzzle") startPuzzles();
   BoardView.resizeCanvas();
   renderStats();
   renderAchievements();
@@ -5325,7 +5356,7 @@ import { ChessSrs } from "./srs.js";
   sync();
   saveSettings();
   if (!resumed) saveGame();
-  if (mode === "ai" && ChessEngine) {
+  if (store.session.mode === "ai" && ChessEngine) {
     ChessEngine.init().catch(() => toast(t("mm.engineInitFailed")));
     maybeEngineTurn(); // resumed save may leave the engine on move
   }
