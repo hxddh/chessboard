@@ -176,6 +176,33 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     if (!Object.keys(_imgs).length) initPieceImages();
   }
 
+  /**
+   * The mark scale: two radii, three stroke weights.
+   *
+   * Ten marks used to carry ten geometries — three ring radii (.44 / .45 /
+   * .46) and seven stroke weights (.015 .02 .035 .045 .055 .06 .075). The
+   * visible cost: the drag ring (.46 / .06) sat on the legal-target ring
+   * (.44 / .075) as two almost-concentric circles of different thickness,
+   * which reads as a rendering fault rather than as two marks. 缺陷 16.
+   *
+   * Every mark now picks a step instead of inventing one. Fractions of the
+   * square, so they hold at any board size.
+   */
+  const MARK = {
+    /** a ring drawn around a square — one radius, whatever it means */
+    ring: 0.45,
+    /** the dot inside a legal-target ring on an occupied square */
+    dot: 0.14,
+    /** hairline: an outline whose job is contrast, not weight */
+    hair: 0.02,
+    /** the ordinary mark weight */
+    line: 0.045,
+    /** the one the eye should go to first */
+    bold: 0.075,
+    /** the hint arrow's shaft — a body, not a stroke round something else */
+    arrow: 0.13,
+  };
+
   const easeOut = (t) => 1 - (1 - t) * (1 - t);
 
   /** Slide the piece now sitting on `to` in from→to over ~150ms (live moves). */
@@ -365,9 +392,9 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
       ctx.fillRect(...cellRect(sr, sc));
       if (m.mated) {
         ctx.beginPath();
-        ctx.arc(cx, cy, step * 0.45, 0, Math.PI * 2);
+        ctx.arc(cx, cy, step * MARK.ring, 0, Math.PI * 2);
         ctx.strokeStyle = P.check;
-        ctx.lineWidth = step * 0.055;
+        ctx.lineWidth = step * MARK.line;
         ctx.stroke();
       }
     }
@@ -403,7 +430,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
         ctx.fillStyle = "#1d1d1b";
         ctx.strokeStyle = "rgba(255,255,255,0.30)";
       }
-      ctx.lineWidth = Math.max(1, step * 0.02);
+      ctx.lineWidth = Math.max(1, step * MARK.hair);
       ctx.strokeText(glyph, x, y + step * 0.04);
       ctx.fillText(glyph, x, y + step * 0.04);
     }
@@ -461,7 +488,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
         ctx.fillStyle = P.star;
         ctx.fill();
         ctx.strokeStyle = P.starEdge;
-        ctx.lineWidth = Math.max(1, step * 0.015);
+        ctx.lineWidth = Math.max(1, step * MARK.hair);
         ctx.stroke();
       }
     }
@@ -478,7 +505,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
       const sy = by - Math.sin(ang) * head * 0.8;
       ctx.strokeStyle = P.hint;
       ctx.fillStyle = P.hint;
-      ctx.lineWidth = step * 0.13;
+      ctx.lineWidth = step * MARK.arrow;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(ax + Math.cos(ang) * step * 0.24, ay + Math.sin(ang) * step * 0.24);
@@ -522,7 +549,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
       const { sr, sc } = screenPos(m.cursor, m.flipped);
       const x = edge(sc), y = edge(sr);
       const w2 = edge(sc + 1) - x, h2 = edge(sr + 1) - y;
-      const lw = Math.max(2, step * 0.045);
+      const lw = Math.max(2, step * MARK.line);
       ctx.strokeStyle = P.cursorEdge;
       ctx.lineWidth = lw * 1.8;
       ctx.strokeRect(x + lw, y + lw, w2 - lw * 2, h2 - lw * 2);
@@ -537,10 +564,10 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
       const { sr, sc } = screenPos(_drag.over, m.flipped);
       const cx = sc * step + step / 2, cy = sr * step + step / 2;
       ctx.beginPath();
-      ctx.arc(cx, cy, step * 0.46, 0, Math.PI * 2);
+      ctx.arc(cx, cy, step * MARK.ring, 0, Math.PI * 2);
       ctx.strokeStyle = _drag.legal ? P.ring : P.cursor;
       ctx.globalAlpha = _drag.legal ? 0.95 : 0.3;
-      ctx.lineWidth = step * (_drag.legal ? 0.06 : 0.035);
+      ctx.lineWidth = step * (_drag.legal ? MARK.bold : MARK.hair);
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
@@ -554,12 +581,12 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
         const cx = sc * step + step / 2, cy = sr * step + step / 2;
         ctx.beginPath();
         if (occupied) {
-          ctx.arc(cx, cy, step * 0.44, 0, Math.PI * 2);
+          ctx.arc(cx, cy, step * MARK.ring, 0, Math.PI * 2);
           ctx.strokeStyle = P.ring;
-          ctx.lineWidth = step * 0.075;
+          ctx.lineWidth = step * MARK.bold;
           ctx.stroke();
         } else {
-          ctx.arc(cx, cy, step * 0.14, 0, Math.PI * 2);
+          ctx.arc(cx, cy, step * MARK.dot, 0, Math.PI * 2);
           ctx.fillStyle = P.dot;
           ctx.fill();
         }

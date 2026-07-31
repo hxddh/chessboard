@@ -2785,6 +2785,48 @@ for (const lang of CONTENT_LANGS) {
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
 
+  // --- the board's marks sit on one scale ----------------------------------
+  // Ten marks carried ten geometries: three ring radii (.44 / .45 / .46) and
+  // seven stroke weights. The visible cost was the drag ring sitting on the
+  // legal-target ring as two almost-concentric circles of different thickness,
+  // which reads as a rendering fault. 缺陷 16. And the four boards' mark
+  // strengths were eleven independent numbers times four — per-board tuning is
+  // right, eleven free variables is not. 缺陷 15.
+  {
+    const b = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(/const MARK = \{/.test(b), "the mark scale is declared");
+    const strokes = [...b.matchAll(/lineWidth = (?:Math\.max\([\d.]+, )?step \* ([^;)]+)/g)].map((m) => m[1].trim());
+    const off = strokes.filter((v) => !/MARK\.(hair|line|bold|arrow)/.test(v) && !/_drag\.legal/.test(v));
+    for (const v of off) console.error("  stroke off the scale: step * " + v);
+    assert(off.length === 0, "every mark stroke picks a step (" + strokes.length + " strokes)");
+    const radii = [...b.matchAll(/ctx\.arc\([^,]+, [^,]+, step \* ([^,]+),/g)].map((m) => m[1].trim());
+    const rOff = radii.filter((v) => !/MARK\.(ring|dot)/.test(v));
+    for (const v of rOff) console.error("  radius off the scale: step * " + v);
+    assert(rOff.length === 0, "…and every ring picks one of the two radii (" + radii.length + " rings)");
+
+    // and the four boards tune strength by choosing a step, not a number
+    const cssM = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    // Each board colour is declared exactly four times — once per board — and
+    // nowhere else. A stray later declaration at the same specificity silently
+    // wins for every board: 1.25 briefly carried a duplicated :root block
+    // after the palettes, which repainted night, day and notebook with wood's
+    // squares. Nothing failed — the browser checks count pieces, and the
+    // contrast check reads the palette blocks rather than the cascade.
+    for (const v of ["--sq-light", "--sq-dark", "--sq-sel", "--sq-check", "--coord-ink", "--board-frame"]) {
+      const n = (cssM.match(new RegExp("\\n *" + v + ":", "g")) || []).length;
+      assert(n === 4, v + " is declared once per board and nowhere else (" + n + ")");
+    }
+    for (const step of ["--mark-strong", "--mark-mid", "--mark-soft"]) {
+      assert(new RegExp(step + ":").test(cssM), step + " is declared once");
+    }
+    // the fourth component specifically — the first three are the colour
+    const loose = [...cssM.matchAll(/(--sq-(?:sel|last|check|hint|star|flash|dot|ring)): rgba\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]/g)]
+      .map((m) => m[1]);
+    for (const v of new Set(loose)) console.error("  free alpha: " + v);
+    assert(loose.length === 0,
+      "no board writes a mark strength of its own" + (loose.length ? " — " + loose.length : ""));
+  }
+
   // --- the Japanese interface gets Japanese type ---------------------------
   // The base stack's three CJK faces are all Simplified Chinese, including
   // "Hiragino Sans GB" — GB as in 国标, which is Hiragino's SC cut and not its

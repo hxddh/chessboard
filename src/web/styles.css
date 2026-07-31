@@ -262,17 +262,17 @@
       --board-edge: rgba(60,34,12,.30);
       --sq-light: #f0d9b5;
       --sq-dark: #b58863;
-      --sq-sel: rgba(201,204,0,.26);
-      --sq-last: rgba(64,153,23,.30);
-      --sq-check: rgba(220,60,40,.55);
-      --sq-hint: rgba(25,128,78,.62);
-      --sq-star: rgba(255,219,38,.76);
-      --sq-star-edge: rgba(120,80,0,.5);
-      --sq-flash: rgba(0,115,36,.42);
+      --sq-sel: rgba(201, 204, 0, var(--mark-soft));
+      --sq-last: rgba(64, 153, 23, var(--mark-soft));
+      --sq-check: rgba(220, 60, 40, var(--mark-mid));
+      --sq-hint: rgba(25, 128, 78, var(--mark-mid));
+      --sq-star: rgba(255, 219, 38, var(--mark-strong));
+      --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
+      --sq-flash: rgba(0, 115, 36, var(--mark-mid));
       --sq-cursor: rgba(255,255,255,.95);
       --sq-cursor-edge: rgba(20,20,20,.55);
-      --sq-dot: rgba(30,30,30,.28);
-      --sq-ring: rgba(30,30,30,.32);
+      --sq-dot: rgba(30, 30, 30, var(--mark-soft));
+      --sq-ring: rgba(30, 30, 30, var(--mark-soft));
     }
     [data-board="night"] {
       --judge-soft: #d8c46a;
@@ -286,17 +286,17 @@
       --board-edge: rgba(8,20,16,.34);
       --sq-light: #bed4c9;
       --sq-dark: #66907f;
-      --sq-sel: rgba(230,117,11,.28);
-      --sq-last: rgba(13,255,69,.18);
-      --sq-check: rgba(232,90,70,.58);
-      --sq-hint: rgba(13,130,255,.48);
-      --sq-star: rgba(217,144,0,.62);
-      --sq-star-edge: rgba(60,38,0,.55);
-      --sq-flash: rgba(64,255,198,.54);
+      --sq-sel: rgba(230, 117, 11, var(--mark-soft));
+      --sq-last: rgba(13, 255, 69, var(--mark-soft));
+      --sq-check: rgba(232, 90, 70, var(--mark-mid));
+      --sq-hint: rgba(13, 130, 255, var(--mark-mid));
+      --sq-star: rgba(217, 144, 0, var(--mark-strong));
+      --sq-star-edge: rgba(60, 38, 0, var(--mark-mid));
+      --sq-flash: rgba(64, 255, 198, var(--mark-mid));
       --sq-cursor: rgba(255,255,255,.95);
       --sq-cursor-edge: rgba(6,16,12,.60);
-      --sq-dot: rgba(8,18,15,.34);
-      --sq-ring: rgba(8,18,15,.40);
+      --sq-dot: rgba(8, 18, 15, var(--mark-soft));
+      --sq-ring: rgba(8, 18, 15, var(--mark-soft));
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
     [data-board="day"] {
@@ -312,17 +312,17 @@
       --board-edge: rgba(90,66,36,.26);
       --sq-light: #eddcc0;
       --sq-dark: #c39a6b;
-      --sq-sel: rgba(255,221,25,.28);
-      --sq-last: rgba(156,255,64,.24);
-      --sq-check: rgba(190,50,35,.50);
-      --sq-hint: rgba(0,115,59,.56);
-      --sq-star: rgba(255,227,89,1);
-      --sq-star-edge: rgba(120,80,0,.5);
-      --sq-flash: rgba(0,115,54,.44);
+      --sq-sel: rgba(255, 221, 25, var(--mark-soft));
+      --sq-last: rgba(156, 255, 64, var(--mark-soft));
+      --sq-check: rgba(190, 50, 35, var(--mark-mid));
+      --sq-hint: rgba(0, 115, 59, var(--mark-mid));
+      --sq-star: rgba(255, 227, 89, var(--mark-strong));
+      --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
+      --sq-flash: rgba(0, 115, 54, var(--mark-mid));
       --sq-cursor: rgba(255,255,255,.95);
       --sq-cursor-edge: rgba(40,28,12,.55);
-      --sq-dot: rgba(60,45,25,.30);
-      --sq-ring: rgba(60,45,25,.36);
+      --sq-dot: rgba(60, 45, 25, var(--mark-soft));
+      --sq-ring: rgba(60, 45, 25, var(--mark-soft));
     }
     [data-board="notebook"] {
       --judge-soft: #8a6d0f;
@@ -336,18 +336,44 @@
       --board-edge: rgba(42,49,64,.22);
       --sq-light: #e8ecf3;
       --sq-dark: #98a8bd;
-      --sq-sel: rgba(217,90,0,.26);
-      --sq-last: rgba(13,69,255,.20);
-      --sq-check: rgba(192,57,43,.45);
-      --sq-hint: rgba(0,166,52,.42);
-      --sq-star: rgba(166,110,0,.64);
-      --sq-star-edge: rgba(60,40,0,.5);
-      --sq-flash: rgba(10,191,94,.36);
+      --sq-sel: rgba(217, 90, 0, var(--mark-soft));
+      --sq-last: rgba(13, 69, 255, var(--mark-soft));
+      --sq-check: rgba(192, 57, 43, var(--mark-mid));
+      --sq-hint: rgba(0, 166, 52, var(--mark-mid));
+      --sq-star: rgba(166, 110, 0, var(--mark-strong));
+      --sq-star-edge: rgba(60, 40, 0, var(--mark-mid));
+      --sq-flash: rgba(10, 191, 94, var(--mark-mid));
       --sq-cursor: rgba(255,255,255,.95);
       --sq-cursor-edge: rgba(28,33,44,.58);
-      --sq-dot: rgba(42,49,64,.26);
-      --sq-ring: rgba(42,49,64,.34);
+      --sq-dot: rgba(42, 49, 64, var(--mark-soft));
+      --sq-ring: rgba(42, 49, 64, var(--mark-soft));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
+    }
+
+    /* Board mark strength — one scale, three steps, all four boards.
+
+       The four palettes were each tuned by eye and drifted apart: the target
+       star ran .76 / .62 / .64 / 1.0, the last-move tint .30 / .18 / .24 / .20,
+       the check .55 / .58 / .50 / .45. Per-board tuning is right — a mark on
+       a dark board is not the same mark on a light one — but it should be a
+       choice between two or three steps on one scale, not eleven independent
+       numbers times four. 缺陷 15.
+
+       strong  "go here"              — the lesson target star, and nothing
+                                        else: it is the one mark the whole
+                                        screen is asking you to act on
+       mid     "the board is telling
+                you something"        — check, hint arrow square, success flash
+       soft    "context"              — selection, last move, legal-target dot
+                                        and ring: present, not shouting
+
+       The keyboard cursor keeps its own .95: it is a focus ring, and it has to
+       carry on all four square colours and on both piece colours. That is an
+       accessibility floor, not a strength. */
+    :root {
+      --mark-strong: .72;
+      --mark-mid: .52;
+      --mark-soft: .28;
     }
 
     /* Scales that are not a theme's business: they are the same in all four.
@@ -357,33 +383,9 @@
       --chrome-h: 44px;
       --stage-pad: 6px;
       --wood-pad: 17px;
-      --coord-ink: rgba(48,28,12,.62);
-      --danger: #e07a6a;
-      --board-edge: rgba(60,34,12,.30);
-      --primary-from: #f0d2a8;
-      --primary-to: #d4a574;
-      --on-primary: #2a1c10;
-      --on-accent: #1a120a;
-      --on-danger: #2a1613;
-      --sq-light: #f0d9b5;
-      --sq-dark: #b58863;
-      --sq-sel: rgba(201,204,0,.26);
-      --sq-last: rgba(64,153,23,.30);
-      --sq-check: rgba(220,60,40,.55);
-      --sq-hint: rgba(25,128,78,.62);
-      --sq-star: rgba(255,219,38,.76);
-      --sq-star-edge: rgba(120,80,0,.5);
-      --sq-flash: rgba(0,115,36,.42);
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(20,20,20,.55);
-      --sq-dot: rgba(30,30,30,.28);
-      --sq-ring: rgba(30,30,30,.32);
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 16px;
-      --card: rgba(255,255,255,.04);
-      --card-border: rgba(255,255,255,.06);
-      --btn-ghost: rgba(255,255,255,.06);
       /* Three line-heights, and no fourth. 1.12 collapsed font-size to seven
          steps and left leading alone: the panel was running seven values,
          including the UA's `normal` (which differs per font, so Chinese and
