@@ -26,6 +26,12 @@
  * @module e2e-browser
  */
 import fs from "fs";
+import { buildIfStale } from "./bundle.mjs";
+
+// index.html loads one generated script, so every E2E has to build before it
+// serves. Doing it here rather than in each of the six keeps "the page the
+// test sees" and "the page the app ships" the same artifact by construction.
+await buildIfStale();
 
 export const ENGINE = (process.env.E2E_BROWSER || "chromium").toLowerCase();
 

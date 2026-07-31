@@ -9,35 +9,25 @@ export PATH="${HOME}/.native/toolchains/zig-0.16.0:${PATH}"
 echo "==> generate engine sources (Stockfish loader + wasm base64)"
 node scripts/gen-engine-src.mjs
 
+echo "==> bundle the ES modules into one classic script"
+node scripts/bundle.mjs
+
 echo "==> sync frontend/dist from src/web"
 rm -rf frontend/dist
 mkdir -p frontend/dist/js
 cp src/web/index.html frontend/dist/
 cp src/web/styles.css frontend/dist/
-cp src/web/js/*.js frontend/dist/js/
-# sanity: required files
+# Only the two generated scripts ship. index.html loads exactly these; the 28
+# module sources are inputs to the bundle, not part of the product, and copying
+# them would put a second (unloaded, drifting) copy of the app in the .app.
+cp src/web/js/bundle.js frontend/dist/js/
+cp src/web/js/engine-src.js frontend/dist/js/
+# sanity: what index.html asks for is what is there
 test -f frontend/dist/index.html
-test -f frontend/dist/js/chess.js
-test -f frontend/dist/js/pieces.js
-test -f frontend/dist/js/pgn.js
-test -f frontend/dist/js/fide.js
-test -f frontend/dist/js/review.js
-test -f frontend/dist/js/srs.js
-test -f frontend/dist/js/editor.js
-test -f frontend/dist/js/i18n.js
-test -f frontend/dist/js/drills.js
-test -f frontend/dist/js/openings.js
-test -f frontend/dist/js/openings-en.js
-test -f frontend/dist/js/lessons.js
-test -f frontend/dist/js/lessons-en.js
-test -f frontend/dist/js/puzzles.js
-test -f frontend/dist/js/puzzles-en.js
-test -f frontend/dist/js/achievements.js
-test -f frontend/dist/js/host.js
-test -f frontend/dist/js/audio.js
-test -f frontend/dist/js/board.js
-test -f frontend/dist/js/app.js
-test -f frontend/dist/js/engine.js
+test -f frontend/dist/styles.css
+test -f frontend/dist/js/bundle.js
+# the bundle must be the whole app, not an early-exit stub
+test "$(wc -c < frontend/dist/js/bundle.js)" -gt 400000
 # engine-src must carry the full wasm payload (~9MB), not a stub
 test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
 

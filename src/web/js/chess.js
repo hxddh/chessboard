@@ -1,7 +1,9 @@
-/* Vendored chess.js 0.13.4 (BSD-2-Clause, (c) Jeff Hlywa) — converted from
- * ESM to a classic script for the zero:// scheme: export keywords stripped,
- * IIFE-wrapped, Chess attached to the global. No logic changes. */
-(function (global) {
+/* Vendored chess.js 0.13.4 (BSD-2-Clause, (c) Jeff Hlywa). No logic changes.
+ *
+ * 1.6–1.25 carried it as a classic script (export keywords stripped, the body
+ * IIFE-wrapped, `Chess` attached to the global) because zero:// only loads
+ * classic scripts. That is the bundler's job now, so the file is back to
+ * being a module and the upstream diff is smaller: one `export` at the end. */
 /*
  * Copyright (c) 2022, Jeff Hlywa (jhlywa@gmail.com)
  * All rights reserved.
@@ -1994,5 +1996,4 @@ const Chess = function (fen) {
   }
 }
 
-  global.Chess = Chess;
-})(typeof window !== 'undefined' ? window : globalThis);
+  export { Chess };

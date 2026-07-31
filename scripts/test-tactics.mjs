@@ -25,6 +25,7 @@ import path from "path";
 import vm from "vm";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import { compileModuleSync } from "./bundle.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -50,7 +51,7 @@ ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
 for (const f of ["chess.js", "puzzles.js"]) {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js", f), "utf8"), ctx, { filename: f });
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js", f)), ctx, { filename: "module" });
 }
 const Chess = ctx.Chess;
 const puzzles = (ctx.CHESS_PUZZLES || []).filter((p) => p.cat === "real");

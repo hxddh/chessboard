@@ -96,6 +96,7 @@ chess.js 之上,`js/fide.js` 补齐它不做的比赛规则判定：三次重复
 | 需要 | 用来做什么 | 没有会怎样 |
 |------|-----------|-----------|
 | Node 22+ | 跑 `scripts/` 下的全部检查与代码生成 | 什么都跑不了 |
+| `npm ci`（唯一依赖:esbuild） | 把 `src/web/js` 的 ES 模块打成 `js/bundle.js` | 页面加载不出来:index.html 只加载这一个脚本 |
 | Zig 0.16.0 | 编译 `src/*.zig`（`package.sh` 从 `~/.native/toolchains/zig-0.16.0` 找） | 只能改前端，编译不了 |
 | Native SDK CLI（`@native-sdk/cli`） | `native package` 打出 `.app` / `.exe` | 编译得出二进制，打不出安装包 |
 | Playwright + Chromium / WebKit | 六个浏览器 E2E（两个引擎各跑一遍）| 各自打印「跳过」并通过；发布流水线设 `E2E_REQUIRED=1`，那里跳过即失败 |
@@ -107,13 +108,13 @@ cd ~/chessboard
 
 # 不依赖 Zig / SDK 的部分,任何平台都能跑
 npm test                           # = test:static + test:e2e,与 CI 的两个 job 一一对应
-npm run test:static                # 单测 + 自由变量 + 清单,秒级,无外部依赖
+npm run build                      # 打包:28 个 ES 模块 → js/bundle.js(生成物,不进 git)
+npm run test:static                # 单测 + 清单,秒级(测试自己会按需构建)
 npm run test:e2e                   # 六个浏览器 E2E(缺 Playwright 则逐个跳过)
 npm run test:engine                # 引擎检查:开局/战术/新手档/强度,分钟级,不在 npm test 里
 
 # 或者逐个跑
 node scripts/test-chess.mjs        # 单测:规则、纯函数、内容、各种源码守卫
-node scripts/scope-check.mjs       # 自由变量检查
 node scripts/manifest-check.mjs    # 清单声明的键 runner 真的在读 + 版本号一致
 node scripts/test-board-e2e.mjs    # 浏览器 E2E(缺 Playwright/Chromium 则跳过)
 node scripts/test-clock-e2e.mjs
@@ -158,19 +159,20 @@ src/web/
   js/host.js       # Native / localStorage 门面
   js/board.js      # 棋盘 Canvas 渲染 + 命中测试
   js/audio.js      # 离线合成音效
-  js/app.js        # UI 编排
+  js/app.js        # UI 编排(bundle 的入口:import 图从这里出发)
+  js/bundle.js     # 生成物（gitignored）：以上 28 个 ES 模块打成的单个经典脚本,
+                   #   index.html 只加载它和 engine-src.js
 src/main.zig
 assets/           # 应用图标(骑士标,assets/logo.svg 为源)
 third_party/stockfish/   # Stockfish.js 18 lite-single（GPLv3）
-third_party/acorn/       # acorn 8（MIT）—— 只给 scripts/ 用,不进构建产物
-scripts/gen-engine-src.mjs · test-chess.mjs · test-strength.mjs
-scripts/scope-check.mjs · test-board-e2e.mjs · test-openings.mjs
+scripts/bundle.mjs · gen-engine-src.mjs · test-chess.mjs · test-strength.mjs
+scripts/test-board-e2e.mjs · test-openings.mjs · test-tactics.mjs
 scripts/test-persist-e2e.mjs · test-clock-e2e.mjs · test-content-e2e.mjs
 ```
 
 测试：
 - `node scripts/test-chess.mjs` —— 规则/课程/题库/开局/成就/纯函数模块（快,打包流程内置）
-- `node scripts/scope-check.mjs` —— **读了却没绑定的标识符**（test-chess 内置。1.12 把 `CHECK` 留成了自由变量,`draw()` 在画棋子之前抛出,于是每次将军棋盘上一个子都没有,这样发了两个版本）
+- `node scripts/bundle.mjs --check` —— **模块图解不解得开**（test-chess 内置）。1.25 之前这条规则由 `scripts/scope-check.mjs` 承担:它扫出「被读取但在任何作用域里都没有绑定」的标识符,因为那时 28 个文件都挂在 `window` 上,加载次序就是依赖图,而这份契约只写在 index.html 的 `<script>` 顺序里。1.12 把 `CHECK` 留成自由变量,`draw()` 在画棋子之前抛出,每次将军棋盘上一个子都没有,这样发了两个版本。现在源码是 ES 模块、产物是一个经典脚本,解不开的名字直接是构建失败 —— 同一条规则,由发布产物本身来执行
 - `node scripts/test-board-e2e.mjs` —— 真下到将军与将死,四套主题各数一遍棋子（需 playwright + Chromium,没有就跳过）
 - `node scripts/test-clock-e2e.mjs` —— **切走之后棋钟会不会空跑**（用假桥发 app:deactivate/activate,离开 6 秒后时钟必须一秒没掉。1.17 实测 8.4 秒后台掉 9 秒;第一版测试靠切标签页做背景,无头模式下页面仍报 visible,量了个寂寞还“通过”了。需 playwright + Chromium,没有就跳过）
 - `node scripts/test-content-e2e.mjs` —— **课程与实战题在页面上是不是真的能用**（真点开每一节残局课、走错一步再走对一步、做完一道实战题;1.17 靠它发现课文里的 `**重点**` 从 1.4 起一直是把星号原样印出来的。需 playwright + Chromium,没有就跳过）

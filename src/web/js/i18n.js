@@ -17,7 +17,6 @@
  * literal reaching the DOM from app.js, and full coverage of the content files.
  * @module i18n
  */
-(function (global) {
   const DICT = {
     "zh-CN": {
       "lang.name": "中文",
@@ -1400,5 +1399,4 @@
     });
   }
 
-  global.ChessI18n = { t, tf, apply, setLang, getLang, detectLang, available, DICT };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessI18n = { t, tf, apply, setLang, getLang, detectLang, available, DICT };

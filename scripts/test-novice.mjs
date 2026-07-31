@@ -29,10 +29,11 @@
 //             recapture; that is about as much as a raw beginner sees
 import fs from 'fs'; import path from 'path'; import vm from 'vm';
 import { createRequire } from 'module';
+import { compileModuleSync } from "./bundle.mjs";
 const require = createRequire(import.meta.url);
 const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const ctx = { console }; ctx.globalThis = ctx; ctx.window = ctx; vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/web/js/chess.js'), 'utf8'), ctx, { filename: 'chess.js' });
+vm.runInContext(compileModuleSync(path.join(ROOT, 'src/web/js/chess.js')), ctx, { filename: "module" });
 const Chess = ctx.Chess;
 
 const L = [];

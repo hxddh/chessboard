@@ -13,7 +13,7 @@
  *   cursor: square name | null — keyboard focus ring (keyboard play)
  * @module board
  */
-(function (global) {
+import { CHESS_PIECE_SVGS } from "./pieces.js";
   const FILES = "abcdefgh";
 
   // Solid glyph set for both colors — colored via fill, outlined for contrast.
@@ -141,7 +141,7 @@
   let _spriteSize = 0;
 
   function initPieceImages() {
-    const svgs = global.CHESS_PIECE_SVGS;
+    const svgs = CHESS_PIECE_SVGS;
     if (!svgs || typeof Image === "undefined") return;
     for (const key of Object.keys(svgs)) {
       const img = new Image();
@@ -558,5 +558,4 @@
     }
   }
 
-  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, reboundDrag, cancelAnim, invalidatePaint };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, reboundDrag, cancelAnim, invalidatePaint };

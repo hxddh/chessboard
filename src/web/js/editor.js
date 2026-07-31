@@ -8,7 +8,6 @@
  * what makes an editable position playable.
  * @module editor
  */
-(function (global) {
   const FILES = "abcdefgh";
 
   /** empty 8x8 board, row 0 = rank 8 (same shape as chess.js .board()) */
@@ -131,5 +130,4 @@
     };
   }
 
-  global.ChessEditor = { emptyBoard, cloneBoard, squareOf, indexOf, toFen, validate, fromFen, epCandidates };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessEditor = { emptyBoard, cloneBoard, squareOf, indexOf, toFen, validate, fromFen, epCandidates };

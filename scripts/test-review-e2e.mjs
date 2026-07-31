@@ -92,8 +92,10 @@ assert((await bar()).rowHidden, "still no bar with the game just finished and no
 // --- a scripted engine, so the bar's numbers are known ---------------------
 await page.evaluate(() => {
   let i = 0;
-  window.ChessEngine.isReady = () => true;
-  window.ChessEngine.analyze = async (fen) => {
+  // window.__chess is the app's declared test seam (see app.js) — the modules
+  // stopped being globals in 1.25, so the hook says so out loud now.
+  window.__chess.engine.isReady = () => true;
+  window.__chess.engine.analyze = async (fen) => {
     const turn = fen.split(" ")[1];
     // level for the opening, then decisively White — the swing makes a tagged
     // move, which is what the best-move arrow keys off

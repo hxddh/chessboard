@@ -11,8 +11,7 @@
  * ことを検査する。
  * @module puzzles-ja
  */
-(function (global) {
-  global.CHESS_PUZZLES_JA = {
+  export const CHESS_PUZZLES_JA = {
     "m1-backrank-r": { name: "バックランク・メイト" },
     "m1-q-knight": { name: "クイーンとナイトのメイト" },
     "m1-smother": { name: "スマザード・メイト" },
@@ -182,4 +181,3 @@
     "dr-a8-knight": { name: "上の角のステイルメイト：ナイトを捨てる" },
     "dr-h8-rook": { name: "右上の角のステイルメイト：ルークを捨てる" },
   };
-})(typeof window !== "undefined" ? window : globalThis);

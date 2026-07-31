@@ -5,8 +5,7 @@
  * The deepest matching prefix wins, so variation entries shadow their parents.
  * @module openings
  */
-(function (global) {
-  global.CHESS_OPENINGS = [
+  export const CHESS_OPENINGS = [
     // A — flank openings
     ["A00", "波兰开局（索科尔斯基）", "b4"],
     ["A00", "格罗布开局", "g4"],
@@ -317,4 +316,3 @@
     ["E97", "国王印度防御·古典变例", "d4 Nf6 c4 g6 Nc3 Bg7 e4 d6 Nf3 O-O Be2 e5 O-O Nc6 d5 Ne7 Nd2 a5",
       "中心一锁,两边就分头推兵:白方 c4-c5 冲后翼,黑方 ...f5-f4-g5 冲白方的王。棋盘上少有这么泾渭分明的对攻。"],
   ];
-})(typeof window !== "undefined" ? window : globalThis);

@@ -7,15 +7,31 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
-import { scanAll } from "./scope-check.mjs";
+import { compileModuleSync } from "./bundle.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
+
+/**
+ * Run one app module inside a vm context, exports landing as globals.
+ *
+ * Up to 1.25 this was `vm.runInContext(readFileSync(f))` at 26 call sites: the
+ * files were IIFEs writing to `global`, so running one *was* loading it, and
+ * the test had to know the load order (openings.js before the openings tests,
+ * pieces.js before board.js). They are ES modules now, so this compiles them —
+ * imports and all — and publishes the exports the way the old wrapper did.
+ * The order is the bundler's to work out; the call sites just name what they
+ * want.
+ */
+function loadModule(context, rel) {
+  const abs = path.isAbsolute(rel) ? rel : path.join(root, rel);
+  vm.runInContext(compileModuleSync(abs), context, { filename: path.basename(abs) });
+}
 const ctx = { console, Date, performance };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/chess.js"), "utf8"), ctx, { filename: "chess.js" });
+loadModule(ctx, "src/web/js/chess.js");
 const Chess = ctx.Chess;
 
 /** shapes handed to the headless render check (scripts/test-render.mjs) */
@@ -155,7 +171,7 @@ for (const p of ["r", "b", "n"]) {
 
 // opening book: every line must be legal, canonical SAN, unique, well-formed
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings.js"), "utf8"), ctx, { filename: "openings.js" });
+  loadModule(ctx, "src/web/js/openings.js");
   const book = ctx.CHESS_OPENINGS;
   assert(Array.isArray(book) && book.length > 50, "opening book loaded (" + (book ? book.length : 0) + " entries)");
   const seen = new Set();
@@ -215,7 +231,7 @@ for (const p of ["r", "b", "n"]) {
 
 // lessons: every FEN valid, every solution legal and goal-satisfying,
 // star paths clear all stars without ever checking the decorative kings
-vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+loadModule(ctx, "src/web/js/i18n.js");
 // Every interface language other than the Chinese source needs content of its
 // own. Through 1.20 this was hard-coded to English, which is precisely how ja
 // ended up with a 589-key interface — not one key missing — wrapped around
@@ -333,7 +349,7 @@ function checkJapanese(label, table, kanaMin, minStrings) {
 }
 
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/lessons.js"), "utf8"), ctx, { filename: "lessons.js" });
+  loadModule(ctx, "src/web/js/lessons.js");
   const lessons = ctx.CHESS_LESSONS;
   assert(Array.isArray(lessons) && lessons.length >= 28, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
   const ids = new Set();
@@ -528,24 +544,29 @@ function checkJapanese(label, table, kanaMin, minStrings) {
 // them unreachable for exactly as long as it took the browser test to open the
 // page in Japanese — the guards were all looking at the files, and no one was
 // looking at the <script> tags.
+//
+// index.html no longer names the files — it loads one bundle — so the question
+// moved with them: not "is there a <script> tag" but "does the bundle contain
+// this translation". Reachability is now a property of the import graph, which
+// is what it should have been all along.
 {
-  const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  const bundled = compileModuleSync(path.join(root, "src/web/js/app.js"));
   const missing = [];
   for (const lang of CONTENT_LANGS) {
     for (const kind of ["lessons", "puzzles", "openings"]) {
-      const tag = `js/${kind}-${lang}.js`;
-      if (!html.includes(tag)) missing.push(tag);
+      const name = `CHESS_${kind.toUpperCase()}_${sfx(lang)}`;
+      if (!bundled.includes(name)) missing.push(`${kind}-${lang}.js`);
     }
   }
   assert(missing.length === 0,
-    "index.html loads every content translation" + (missing.length ? " — missing " + missing.join(", ") : ""));
+    "the bundle contains every content translation" + (missing.length ? " — missing " + missing.join(", ") : ""));
 }
 
 for (const lang of CONTENT_LANGS) {
   const file = "src/web/js/lessons-" + lang + ".js";
   assert(fs.existsSync(path.join(root, file)), file + " exists");
   if (!fs.existsSync(path.join(root, file))) continue;
-  vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), ctx, { filename: "lessons-" + lang + ".js" });
+  loadModule(ctx, file);
   const en = ctx["CHESS_LESSONS_" + sfx(lang)];
   const uncovered = lessons.filter((L) => !en || !en[L.id]).map((L) => L.id);
   for (const id of uncovered) console.error("FAIL: lesson has no " + lang + " text: " + id);
@@ -617,8 +638,8 @@ for (const lang of CONTENT_LANGS) {
 // English names for puzzles and openings: the app falls back to the Chinese
 // name when one is missing, so only a coverage check keeps English mode honest
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings.js"), "utf8"), ctx, { filename: "openings.js" });
+  loadModule(ctx, "src/web/js/puzzles.js");
+  loadModule(ctx, "src/web/js/openings.js");
   const pz = ctx.CHESS_PUZZLES;
   const op = ctx.CHESS_OPENINGS;
   const opNames = new Set(op.map((o) => o[1]));
@@ -630,7 +651,7 @@ for (const lang of CONTENT_LANGS) {
     const f = "src/web/js/" + kind + "-" + lang + ".js";
     assert(fs.existsSync(path.join(root, f)), f + " exists");
     if (fs.existsSync(path.join(root, f))) {
-      vm.runInContext(fs.readFileSync(path.join(root, f), "utf8"), ctx, { filename: kind + "-" + lang + ".js" });
+      loadModule(ctx, f);
     }
   }
   const pzEn = ctx["CHESS_PUZZLES_" + sfx(lang)] || {};
@@ -741,7 +762,7 @@ for (const lang of CONTENT_LANGS) {
 // puzzles: legal positions (white to move, black not already in check),
 // m1 solutions mate, m2 first moves FORCE mate against every defense
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/puzzles.js"), "utf8"), ctx, { filename: "puzzles.js" });
+  loadModule(ctx, "src/web/js/puzzles.js");
   const puzzles = ctx.CHESS_PUZZLES;
   assert(Array.isArray(puzzles) && puzzles.length >= 51, "puzzles loaded (" + (puzzles ? puzzles.length : 0) + ")");
   const matingMoves = (g) => g.moves().filter((m) => {
@@ -1098,7 +1119,7 @@ for (const lang of CONTENT_LANGS) {
     "\"?\" opens the sheet — the one shortcut the sheet cannot teach");
 
   // and every language must be able to read it
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  loadModule(ctx, "src/web/js/i18n.js");
   const dictK = ctx.ChessI18n.DICT;
   for (const lang of Object.keys(dictK)) {
     const missing = helpKeys.filter((k) => !(k in dictK[lang]));
@@ -1406,7 +1427,7 @@ for (const lang of CONTENT_LANGS) {
 // Sparring personalities. `pick` is pure — candidates in, one of them out —
 // so the whole contract is testable without ever starting the engine.
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/persona.js"), "utf8"), ctx, { filename: "persona.js" });
+  loadModule(ctx, "src/web/js/persona.js");
   const P = ctx.ChessPersona;
   assert(P && typeof P.pick === "function", "persona module loaded");
   assert(P.IDS[0] === "off", "\"off\" is the first personality, i.e. the default");
@@ -1443,7 +1464,7 @@ for (const lang of CONTENT_LANGS) {
   const inMarkup = [...htmlP.matchAll(/data-persona="([a-z]+)"/g)].map((m) => m[1]);
   assert(P.IDS.every((id) => inMarkup.includes(id)) && inMarkup.length === P.IDS.length,
     "every personality has a button (" + inMarkup.join(", ") + ")");
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  loadModule(ctx, "src/web/js/i18n.js");
   const dict = ctx.ChessI18n.DICT;
   for (const lang of Object.keys(dict)) {
     const missing = P.IDS.filter((id) => !("persona." + id in dict[lang]));
@@ -1454,7 +1475,7 @@ for (const lang of CONTENT_LANGS) {
 // FIDE draw arithmetic: repetition counting and the 6.9 material test decide
 // real game results, so they get their own checks
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/fide.js"), "utf8"), ctx, { filename: "fide.js" });
+  loadModule(ctx, "src/web/js/fide.js");
   const F = ctx.ChessFide;
   assert(F.halfmoveClock("8/8/8/8/8/8/8/K6k w - - 37 90") === 37, "halfmove clock parsed");
   // shuffling knights back and forth repeats the start position
@@ -1534,7 +1555,7 @@ for (const lang of CONTENT_LANGS) {
 
 // The eval bar and the one set of mistake thresholds behind it.
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/review.js"), "utf8"), ctx, { filename: "review.js" });
+  loadModule(ctx, "src/web/js/review.js");
   const R = ctx.ChessReview;
   // "nobody asked the engine" must not render as "the engine says level" —
   // a bar that draws both at 50% is the most confident lie a review can tell
@@ -1652,7 +1673,7 @@ for (const lang of CONTENT_LANGS) {
 // progress wipe. That is not a hypothetical: with the old positional id,
 // inserting one deep line moved 108 of 109 ids onto a different drill.
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/drills.js"), "utf8"), ctx, { filename: "drills.js" });
+  loadModule(ctx, "src/web/js/drills.js");
   const D = ctx.ChessDrills;
   const book = ctx.CHESS_OPENINGS;
   const idsOf = (b) => D.drillLines(b).map((r) => D.drillId(r[0], r[2]));
@@ -1747,7 +1768,7 @@ for (const lang of CONTENT_LANGS) {
 // PGN utilities: splitting a multi-game file must not lose games (importing a
 // database used to silently keep only the last one)
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/pgn.js"), "utf8"), ctx, { filename: "pgn.js" });
+  loadModule(ctx, "src/web/js/pgn.js");
   const P = ctx.ChessPgn;
   const one = '[Event "A"]\n[White "X"]\n[Black "Y"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0\n';
   const two = one + '\n[Event "B"]\n[White "P"]\n[Black "Q"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n';
@@ -1791,7 +1812,7 @@ for (const lang of CONTENT_LANGS) {
 // position editor: FEN generation plus the legality rules chess.js does not
 // enforce on its own (an editor must never hand the game an unplayable FEN)
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/editor.js"), "utf8"), ctx, { filename: "editor.js" });
+  loadModule(ctx, "src/web/js/editor.js");
   const E = ctx.ChessEditor;
   const start = E.fromFen(new Chess().fen(), Chess);
   assert(E.toFen(start) === new Chess().fen().replace(/ \S+ \d+ \d+$/, " - 0 1"),
@@ -1840,7 +1861,7 @@ for (const lang of CONTENT_LANGS) {
 // post-game review: the report is what the user reads instead of the raw
 // numbers, so the arithmetic behind it gets its own checks
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/review.js"), "utf8"), ctx, { filename: "review.js" });
+  loadModule(ctx, "src/web/js/review.js");
   const R = ctx.ChessReview;
   assert(R.summarize(null, [], "w") === null, "no analysis yields no report");
   assert(R.summarize([0], [], "w") === null, "a game with no moves yields no report");
@@ -1890,7 +1911,7 @@ for (const lang of CONTENT_LANGS) {
 
 // material: who is up, and what each side has taken
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/material.js"), "utf8"), ctx, { filename: "material.js" });
+  loadModule(ctx, "src/web/js/material.js");
   const M = ctx.ChessMaterial;
   const start = new Chess();
   assert(M.diff(start.board()) === 0, "the start position is level");
@@ -1930,7 +1951,7 @@ for (const lang of CONTENT_LANGS) {
 // opening coach: the drills used to answer every wrong move with "not the
 // book move", which is the one thing the player already knew
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/opening-coach.js"), "utf8"), ctx, { filename: "opening-coach.js" });
+  loadModule(ctx, "src/web/js/opening-coach.js");
   const OC = ctx.ChessOpeningCoach;
   const why = (prior, played, book) => {
     const r = OC.critique("", prior, played, book, Chess);
@@ -1975,7 +1996,7 @@ for (const lang of CONTENT_LANGS) {
   const coachSrc = fs.readFileSync(path.join(root, "src/web/js/opening-coach.js"), "utf8");
   const coachKeys = [...coachSrc.matchAll(/key: "(opc\.[a-zA-Z]+)"/g)].map((m) => m[1]);
   assert(coachKeys.length >= 8, "found " + coachKeys.length + " coach messages");
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  loadModule(ctx, "src/web/js/i18n.js");
   const DICT = ctx.ChessI18n.DICT;
   let missingCoach = 0;
   for (const k of new Set(coachKeys)) {
@@ -1989,7 +2010,7 @@ for (const lang of CONTENT_LANGS) {
 // puzzle review scheduling: a puzzle used to graduate on the first correct
 // answer, which was usually given seconds after reading the solution
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/srs.js"), "utf8"), ctx, { filename: "srs.js" });
+  loadModule(ctx, "src/web/js/srs.js");
   const S = ctx.ChessSrs;
   assert(S.GRADUATE >= 2, "graduating takes more than one correct answer");
   assert(!S.isDue(undefined), "an unseen puzzle is not in the queue");
@@ -2030,7 +2051,7 @@ for (const lang of CONTENT_LANGS) {
 // i18n: every key present in the base language must exist in the others, or
 // switching language would silently blank parts of the UI
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8"), ctx, { filename: "i18n.js" });
+  loadModule(ctx, "src/web/js/i18n.js");
   const I = ctx.ChessI18n;
   const langs = I.available().map((l) => l.id);
   assert(langs.includes("zh-CN") && langs.length >= 2, "at least two languages (" + langs.join(",") + ")");
@@ -2452,7 +2473,7 @@ for (const lang of CONTENT_LANGS) {
 // achievements: well-formed, unique, each reachable from some summary, and the
 // meta "completionist" resolves from the others
 {
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/achievements.js"), "utf8"), ctx, { filename: "achievements.js" });
+  loadModule(ctx, "src/web/js/achievements.js");
   const ach = ctx.CHESS_ACHIEVEMENTS;
   assert(Array.isArray(ach) && ach.length >= 10, "achievements loaded (" + (ach ? ach.length : 0) + ")");
   const ids = new Set();
@@ -2496,7 +2517,7 @@ for (const lang of CONTENT_LANGS) {
     c.window = c;
     if (zero) c.zero = zero;
     vm.createContext(c);
-    vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8"), c, { filename: "host.js" });
+    loadModule(c, "src/web/js/host.js");
     return c.ChessHost;
   };
 
@@ -2731,11 +2752,50 @@ for (const lang of CONTENT_LANGS) {
 // `CHECK` was read in board.js and declared nowhere, so every check threw
 // inside draw() before a single piece was painted. Two versions shipped that
 // way because the assertions above are static and the stress sweeps never
-// produced a check. scripts/scope-check.mjs closes that door for good.
+// produced a check.
+//
+// scripts/scope-check.mjs used to close that door by walking every file and
+// reporting identifiers read but never bound — the check a module system does
+// for free. The files are ES modules now: an unresolved name is either an
+// import that does not exist (a build error, below) or a genuine global. So
+// the rule survives as "the bundle builds", which is stricter — scope-check
+// could only see the names, the bundler has to actually resolve them.
 {
-  const bad = scanAll();
-  for (const b of bad) console.error("  " + b);
-  assert(bad.length === 0, "no identifier is read without being bound");
+  let err = null;
+  try { compileModuleSync(path.join(root, "src/web/js/app.js")); }
+  catch (e) { err = e; }
+  if (err) console.error("  " + (err.message || err));
+  assert(!err, "no identifier is read without being bound (the bundle resolves)");
+}
+
+// --- the other half of that rule: a name that is imported is not also read
+// off the global object.
+//
+// The 1.25 conversion left two of these behind. board.js kept
+// `global.CHESS_PIECE_SVGS` and engine.js kept `global.ChessPersona` while both
+// files had just grown a real `import` for the same name — so the import was
+// live and the read was `undefined`, and neither the unit tests nor the six
+// browser checks noticed, because both call sites degrade quietly (glyph
+// fallback for the pieces, the plain engine move for the sparring style).
+// A silent fallback is the worst shape for this bug: nothing throws, the
+// product just gets a little worse. The bundle resolving cannot catch it —
+// `global.X` resolves fine, it is simply the wrong X.
+{
+  const bad = [];
+  const dir = path.join(root, "src/web/js");
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "bundle.js")) {
+    const src = fs.readFileSync(path.join(dir, f), "utf8");
+    const imported = new Set();
+    for (const m of src.matchAll(/^import \{([^}]+)\} from/gm)) {
+      for (const n of m[1].split(",")) imported.add(n.trim());
+    }
+    if (!imported.size) continue;
+    for (const m of src.matchAll(/\b(?:global|window|globalThis)\.([A-Za-z_$][A-Za-z0-9_$]*)/g)) {
+      if (imported.has(m[1])) bad.push(`${f}: reads global.${m[1]}, but imports ${m[1]}`);
+    }
+  }
+  for (const b of new Set(bad)) console.error("  " + b);
+  assert(bad.length === 0, "no module reads a name off the global that it also imports");
 }
 
 // --- the renderer draws every model shape without throwing ---
@@ -2773,7 +2833,7 @@ for (const lang of CONTENT_LANGS) {
   bctx.getComputedStyle = () => ({ getPropertyValue: () => "" });
   bctx.requestAnimationFrame = () => 0;
   vm.createContext(bctx);
-  vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8"), bctx, { filename: "board.js" });
+  loadModule(bctx, "src/web/js/board.js");
   const View = bctx.ChessBoardView;
   assert(!!View, "board.js loads with no DOM");
 

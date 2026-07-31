@@ -14,10 +14,9 @@
  *            weakest tier unless the task sets `engine`)
  * @module lessons
  */
-(function (global) {
   const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-  global.CHESS_LESSONS = [
+  export const CHESS_LESSONS = [
     // —— 第一部分 · 认识棋盘 ——
     {
       id: "board", part: "认识棋盘", title: "棋盘与坐标",
@@ -1296,4 +1295,3 @@
       ],
     },
   ];
-})(typeof window !== "undefined" ? window : globalThis);

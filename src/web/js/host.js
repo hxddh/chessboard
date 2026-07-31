@@ -1,7 +1,9 @@
 /**
  * Host port: Native SDK bridge + localStorage (no game rules).
  */
-(function (global) {
+// `global` here means the real global object: `zero` is injected by the
+// Native SDK WebView, so it can only ever be read from there.
+const global = typeof window !== "undefined" ? window : globalThis;
   function hasZero() {
     return typeof global.zero === "object" && global.zero != null;
   }
@@ -251,7 +253,7 @@
       .filter(Boolean);
   }
 
-  global.ChessHost = {
+  export const ChessHost = {
     hasZero,
     bytesToBase64,
     writeTextFile,
@@ -274,4 +276,3 @@
     onAppLifecycle,
     normalizePaths,
   };
-})(typeof window !== "undefined" ? window : globalThis);

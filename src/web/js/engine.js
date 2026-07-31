@@ -10,7 +10,12 @@
  *    then inject wasmBinary directly — zero URL resolution anywhere.
  * @module engine
  */
-(function (global) {
+import { ChessPersona } from "./persona.js";
+// `global` here means the real global object, and exactly two names on it:
+// CHESS_SF_LOADER and CHESS_SF_WASM_B64, written by the separate classic
+// script scripts/gen-engine-src.mjs generates. Everything else this module
+// needs is imported.
+const global = typeof window !== "undefined" ? window : globalThis;
   /**
    * difficulty id → search settings; elo:null = full strength.
    *
@@ -190,7 +195,7 @@
 
   async function bestMoveInner(fen, diff, maxMs, persona) {
     await init();
-    const styled = persona && persona.id && persona.id !== "off" && global.ChessPersona;
+    const styled = persona && persona.id && persona.id !== "off" && ChessPersona;
     let base = TIERS[diff] || TIERS.normal;
     if (styled) base = Object.assign({}, base, { multipv: Math.max(base.multipv || 0, 14) });
     // Clock pressure only shortens time-based tiers; depth-based ones are
@@ -246,7 +251,7 @@
       // it actually likes
       if (tier.worstBias) picked = pickHandicapped(cands, tier) || picked;
       if (styled) {
-        const styledUci = global.ChessPersona.pick(fen, list, persona.id, persona.Chess);
+        const styledUci = ChessPersona.pick(fen, list, persona.id, persona.Chess);
         if (styledUci) picked = parseUci(styledUci);
       } else if (!tier.worstBias) {
         picked = pickHandicapped(cands, tier) || picked;
@@ -331,5 +336,4 @@
     };
   }
 
-  global.ChessEngine = { init, isReady, bestMove, analyze, newGame, cancel, TIERS };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessEngine = { init, isReady, bestMove, analyze, newGame, cancel, TIERS };

@@ -13,8 +13,7 @@
  * lessons.js entry for entry, and that every lesson is covered.
  * @module lessons-en
  */
-(function (global) {
-  global.CHESS_LESSONS_EN = {
+  export const CHESS_LESSONS_EN = {
     board: {
       part: "The board", title: "Squares and coordinates",
       text: [
@@ -1019,4 +1018,3 @@
       tasks: [{ prompt: "The real thing: win the rook with queen and king, then mate (stalemate or more than 50 moves means starting over)" }],
     },
   };
-})(typeof window !== "undefined" ? window : globalThis);

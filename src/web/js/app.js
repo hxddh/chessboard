@@ -1,12 +1,52 @@
-(function () {
+import { CHESS_ACHIEVEMENTS } from "./achievements.js";
+import { ChessAudio } from "./audio.js";
+import { ChessBoardView } from "./board.js";
+import { Chess } from "./chess.js";
+import { ChessDialog } from "./dialog.js";
+import { ChessDrills } from "./drills.js";
+import { ChessEditor } from "./editor.js";
+import { ChessEngine } from "./engine.js";
+import { ChessFide } from "./fide.js";
+import { ChessHost } from "./host.js";
+import { ChessI18n } from "./i18n.js";
+import { CHESS_LESSONS_EN } from "./lessons-en.js";
+import { CHESS_LESSONS_JA } from "./lessons-ja.js";
+import { CHESS_LESSONS } from "./lessons.js";
+import { ChessMaterial } from "./material.js";
+import { ChessOpeningCoach } from "./opening-coach.js";
+import { CHESS_OPENINGS_EN, CHESS_OPENING_IDEAS_EN } from "./openings-en.js";
+import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
+import { CHESS_OPENINGS } from "./openings.js";
+import { ChessPersona } from "./persona.js";
+import { ChessPgn } from "./pgn.js";
+import { CHESS_PIECE_SVGS } from "./pieces.js";
+import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
+import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
+import { CHESS_PUZZLES } from "./puzzles.js";
+import { ChessReview } from "./review.js";
+import { ChessSrs } from "./srs.js";
 
-  const Host = window.ChessHost;
-  const Review = window.ChessReview;
-  const BoardView = window.ChessBoardView;
-  const Audio2 = window.ChessAudio;
+  /**
+   * The one deliberate global: the seam the browser tests reach through.
+   *
+   * Until 1.25 all 29 modules were on `window`, so a test could reach any of
+   * them and nobody had to say which ones were fair game. They are bundled
+   * now and nothing is reachable by default — which is the point, and which
+   * also took away the hook `test-review-e2e.mjs` uses to hand the app a
+   * scripted engine (a real search would make the evaluation-bar numbers
+   * unrepeatable). So the hook is declared instead of assumed: one name, one
+   * purpose, and the modules on it are the object identities the app itself
+   * holds, so patching a method here is patching the app's engine.
+   */
+  window.__chess = { engine: ChessEngine };
+
+  const Host = ChessHost;
+  const Review = ChessReview;
+  const BoardView = ChessBoardView;
+  const Audio2 = ChessAudio;
 
   /** Shared dialog behaviour: focus trap, focus return, aria-modal. */
-  const Dlg = window.ChessDialog || {
+  const Dlg = ChessDialog || {
     open: (el, f) => { if (el) { el.classList.add("show"); if (f) f.focus(); } },
     close: (el) => { if (el) el.classList.remove("show"); },
     handleTab: () => false,
@@ -25,7 +65,7 @@
     return !!document.querySelector(".modal-bg.show");
   }
 
-  const I18n = window.ChessI18n;
+  const I18n = ChessI18n;
   const t = I18n ? I18n.t : (k) => k;
   /** t() with {0}/{1} placeholders filled in — see i18n.tf */
   const tf = I18n ? I18n.tf : (k) => k;
@@ -113,7 +153,7 @@
   /** which panel tab is showing: "play" | "setup" | "record" */
   let sideTab = "play";
   /** sparring personality — see persona.js; "off" is plain engine play */
-  const PERSONA_IDS = (window.ChessPersona && window.ChessPersona.IDS) ||
+  const PERSONA_IDS = (ChessPersona && ChessPersona.IDS) ||
     ["off", "greedy", "principled", "attacker"];
   let personaId = "off";
   /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
@@ -379,7 +419,7 @@
         // path then took "no save" at face value and overwrote the position
         // with the standard array. Closing the app after setting up a study
         // position, before playing into it, lost it without a word.
-        const sf = window.ChessPgn ? window.ChessPgn.startFen(s.pgn) : null;
+        const sf = ChessPgn ? ChessPgn.startFen(s.pgn) : null;
         if (!sf || !gameLoad(sf)) return false;
         game.header("SetUp", "1", "FEN", sf);
       }
@@ -415,12 +455,12 @@
     engineToken++;
     engineThinking = false;
     hintMove = null;
-    if (window.ChessEngine) window.ChessEngine.cancel();
+    if (ChessEngine) ChessEngine.cancel();
   }
 
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
-    if (mode !== "ai" || !window.ChessEngine) return;
+    if (mode !== "ai" || !ChessEngine) return;
     if (appGameOver() || game.turn() === humanColor) return;
     const token = ++engineToken;
     engineThinking = true;
@@ -431,7 +471,7 @@
     let mv = null;
     // the personality only ever colours a real game against the engine; the
     // lesson drills need the engine defending honestly or the drill is a lie
-    try { mv = await window.ChessEngine.bestMove(game.fen(), difficulty, budget, { id: personaId, Chess }); }
+    try { mv = await ChessEngine.bestMove(game.fen(), difficulty, budget, { id: personaId, Chess }); }
     catch (_) { mv = null; }
     if (token !== engineToken) return; // game changed while thinking
     engineThinking = false;
@@ -458,7 +498,7 @@
   async function requestHint() {
     if (mode === "learn") { learnHint(); return; }
     if (mode === "puzzle") { showPuzzleAnswer(); return; }
-    if (!window.ChessEngine) { toast(t("m.01")); return; }
+    if (!ChessEngine) { toast(t("m.01")); return; }
     if (!isLive()) { toast(t("m.02")); return; }
     if (appGameOver()) return;
     if (mode === "ai" && (engineThinking || game.turn() !== humanColor)) return;
@@ -467,7 +507,7 @@
     hintPending = true;
     sync();
     let e = null;
-    try { e = await window.ChessEngine.analyze(sig, 400); } catch (_) {}
+    try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     hintPending = false;
     if (!isLive() || game.fen() !== sig) { sync(); return; }
     if (!e || !e.best) { sync(); toast(t("m.03")); return; }
@@ -596,7 +636,7 @@
   const OPENING_BOOK = (() => {
     const map = new Map();
     let maxPly = 0;
-    for (const [eco, name, seq] of window.CHESS_OPENINGS || []) {
+    for (const [eco, name, seq] of CHESS_OPENINGS || []) {
       // store the parts, not the joined label: the name is localised at render
       // time so switching language relabels the line already on screen
       map.set(seq, [eco, name]);
@@ -626,7 +666,7 @@
 
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
   const LEARN_KEY = "chess.v1.learn";
-  const LESSONS = window.CHESS_LESSONS || [];
+  const LESSONS = CHESS_LESSONS || [];
 
   /**
    * Content tables per language. Chinese is the source and lives in
@@ -643,12 +683,12 @@
    */
   const CONTENT_TABLES = {
     en: () => ({
-      lessons: window.CHESS_LESSONS_EN, puzzles: window.CHESS_PUZZLES_EN,
-      openings: window.CHESS_OPENINGS_EN, ideas: window.CHESS_OPENING_IDEAS_EN,
+      lessons: CHESS_LESSONS_EN, puzzles: CHESS_PUZZLES_EN,
+      openings: CHESS_OPENINGS_EN, ideas: CHESS_OPENING_IDEAS_EN,
     }),
     ja: () => ({
-      lessons: window.CHESS_LESSONS_JA, puzzles: window.CHESS_PUZZLES_JA,
-      openings: window.CHESS_OPENINGS_JA, ideas: window.CHESS_OPENING_IDEAS_JA,
+      lessons: CHESS_LESSONS_JA, puzzles: CHESS_PUZZLES_JA,
+      openings: CHESS_OPENINGS_JA, ideas: CHESS_OPENING_IDEAS_JA,
     }),
   };
   /** tables to consult for `kind`, best match first (empty when reading source) */
@@ -1062,7 +1102,7 @@
   }
 
   async function learnEngineReply() {
-    if (!window.ChessEngine) { toast(t("lm.noEngine")); return; }
+    if (!ChessEngine) { toast(t("lm.noEngine")); return; }
     const g = learn.g;
     const token = learn.token;
     // drills default to the weakest tier: the sparring partner is there to
@@ -1071,7 +1111,7 @@
     learn.engineBusy = true;
     sync();
     let mv = null;
-    try { mv = await window.ChessEngine.bestMove(g.fen(), tier); } catch (_) {}
+    try { mv = await ChessEngine.bestMove(g.fen(), tier); } catch (_) {}
     if (!learn || token !== learn.token) return;
     learn.engineBusy = false;
     if (mv) {
@@ -1103,7 +1143,7 @@
     if (!g.history().length) return;
     learn.token++; // drop any in-flight engine reply
     learn.engineBusy = false;
-    if (window.ChessEngine) window.ChessEngine.cancel();
+    if (ChessEngine) ChessEngine.cancel();
     g.undo();
     if (g.history().length && g.turn() !== "w") g.undo();
     learn.last = null;
@@ -1115,7 +1155,7 @@
   /** Drill-only engine hint, drawn as an arrow (full strength, brief think). */
   async function learnHint() {
     if (!learn || learn.done || curTask().type !== "drill" || learn.engineBusy) return;
-    if (!window.ChessEngine) { toast(t("m.01")); return; }
+    if (!ChessEngine) { toast(t("m.01")); return; }
     const g = learn.g;
     if (g.game_over() || g.turn() !== "w") return;
     if (hintPending) return;
@@ -1124,7 +1164,7 @@
     hintPending = true;
     sync();
     let e = null;
-    try { e = await window.ChessEngine.analyze(sig, 400); } catch (_) {}
+    try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     hintPending = false;
     if (!learn || token !== learn.token || learn.g.fen() !== sig) { sync(); return; }
     if (!e || !e.best) { sync(); toast(t("m.03")); return; }
@@ -1263,7 +1303,7 @@
 
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
   const PUZZLE_KEY = "chess.v1.puzzles";
-  const PUZZLES = window.CHESS_PUZZLES || [];
+  const PUZZLES = CHESS_PUZZLES || [];
   const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
@@ -1281,8 +1321,8 @@
   }
 
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
-  const Drills = window.ChessDrills;
-  const OPENING_DRILLS = Drills.drillLines(window.CHESS_OPENINGS || [])
+  const Drills = ChessDrills;
+  const OPENING_DRILLS = Drills.drillLines(CHESS_OPENINGS || [])
     // The id is derived from the ECO code and the moves, NOT from the row's
     // position — see drills.js. With a positional id, adding a single deep
     // line to the book moved 108 of the 109 ids onto a different drill and
@@ -1384,9 +1424,9 @@
     // meant the migration was only correct for someone upgrading from the
     // exact book it was generated against, which said nothing about a player
     // who skips this release entirely.
-    const map = window.ChessDrills.legacyIdMap();
-    window.ChessDrills.migrateIds(s.solved, map);
-    window.ChessDrills.migrateIds(s.missed, map);
+    const map = ChessDrills.legacyIdMap();
+    ChessDrills.migrateIds(s.solved, map);
+    ChessDrills.migrateIds(s.missed, map);
     s.idv = 2;
     return s;
   }
@@ -1409,7 +1449,7 @@
   function savePuzzleState() {
     try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {}
   }
-  const Srs = window.ChessSrs;
+  const Srs = ChessSrs;
   function markMissed(id) {
     puzzleState.missed[id] = Srs.onMiss(puzzleState.missed[id]);
     savePuzzleState();
@@ -1695,7 +1735,7 @@
    * everything before it is the drill so far.
    */
   function openingWhy(g, mv, bookSan) {
-    const Coach = window.ChessOpeningCoach;
+    const Coach = ChessOpeningCoach;
     if (!Coach || !bookSan) return t("pz.offBook");
     let r = null;
     try { r = Coach.critique(puzzle.p.fen || "", g.history().slice(0, -1), mv.san, bookSan, Chess); }
@@ -1786,7 +1826,7 @@
     const name = puzzleName(puzzle.p);
     if (!line.trim()) return;
     invalidateEngine();
-    if (window.ChessEngine) window.ChessEngine.newGame();
+    if (ChessEngine) ChessEngine.newGame();
     stopPuzzles();
     mode = "ai";
     humanColor = "w"; // every opening drill is played from White's side
@@ -1970,7 +2010,7 @@
    */
 
   async function analyzeGame(movetime) {
-    if (analyzing || !window.ChessEngine) return;
+    if (analyzing || !ChessEngine) return;
     const perMove = movetime || 120;
     const h = sanHistory();
     if (!h.length) { toast(t("m.19")); return; }
@@ -2016,7 +2056,7 @@
       else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
       else {
         let e = null;
-        try { e = await window.ChessEngine.analyze(fens[i], perMove); } catch (_) {}
+        try { e = await ChessEngine.analyze(fens[i], perMove); } catch (_) {}
         if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
         scalars[i] = evalScalar(e);
         if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
@@ -2171,7 +2211,7 @@
   function renderReview() {
     const el = document.getElementById("review-body");
     if (!el) return;
-    const R = window.ChessReview;
+    const R = ChessReview;
     const a = analysisFor();
     const sum = R && a ? R.summarize(a.scalars, sanHistory(), startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w") : null;
     el.hidden = !sum;
@@ -2348,7 +2388,7 @@
    * the engine over a whole game is a real wait, so it stays opt-in.
    */
   function offerReview() {
-    if (mode !== "ai" || !window.ChessEngine || analyzing) return;
+    if (mode !== "ai" || !ChessEngine || analyzing) return;
     if (analysisFor()) return; // already analysed — the report is on screen
     if (sanHistory().length < 6) return; // too short to say anything useful
     setTimeout(() => {
@@ -2666,14 +2706,14 @@
     }
     // losing most games but not all: tactics are usually the cheapest fix
     if (losses > wins) {
-      const missed = ALL_PUZZLES.filter((p) => window.ChessSrs.isDue(puzzleState.missed[p.id])).length;
+      const missed = ALL_PUZZLES.filter((p) => ChessSrs.isDue(puzzleState.missed[p.id])).length;
       return missed ? tf("rec.review", [missed]) : t("rec.puzzles");
     }
     return null;
   }
 
   // --- achievements: pure derivations of stats + lesson/puzzle progress ---
-  const ACH = window.CHESS_ACHIEVEMENTS || [];
+  const ACH = CHESS_ACHIEVEMENTS || [];
   const ACH_KEY = "chess.v1.achv";
   function loadAchSeen() {
     try {
@@ -2823,7 +2863,7 @@
 
   function statusText() {
     if (editor) {
-      const reason = window.ChessEditor.validate(editor, Chess);
+      const reason = ChessEditor.validate(editor, Chess);
       return t("st.editing") + " · " + (reason ? t(reason) : t("st.editingReady"));
     }
     if (mode === "learn") {
@@ -2880,8 +2920,8 @@
     // report's turning-point line would then disagree with this list.
     const blackFirst = startFen() ? startFen().split(" ")[1] === "b" : false;
     const firstMover = blackFirst ? "b" : "w";
-    const moveNo = (i) => (window.ChessReview
-      ? window.ChessReview.moveNumber(i, firstMover)
+    const moveNo = (i) => (ChessReview
+      ? ChessReview.moveNumber(i, firstMover)
       : Math.floor(i / 2) + 1);
     for (let i = blackFirst ? -1 : 0; i < h.length; i += 2) {
       const row = document.createElement("div");
@@ -2938,7 +2978,7 @@
   // (arts. 9.6). The app therefore never consults game_over() for
   // terminal-ness — it derives its own claimable/auto states here.
 
-  const Fide = window.ChessFide;
+  const Fide = ChessFide;
 
   function halfmoveClock(g) { return Fide.halfmoveClock((g || game).fen()); }
 
@@ -3272,7 +3312,7 @@
       return;
     }
     invalidateEngine();
-    if (window.ChessEngine) window.ChessEngine.newGame();
+    if (ChessEngine) ChessEngine.newGame();
     gameReset();
     selection = null;
     viewIndex = 0;
@@ -3368,7 +3408,7 @@
 
   function coachRemember(mv) {
     coachPending = null;
-    if (mode !== "ai" || !coachOn || !window.ChessEngine) return;
+    if (mode !== "ai" || !coachOn || !ChessEngine) return;
     const h = sanHistory();
     const g = baseGame();
     for (let i = 0; i < h.length - 1; i++) g.move(h[i]);
@@ -3409,8 +3449,8 @@
     if (!coachWorthChecking(p.before, p.after)) return;
     let a = null, b = null;
     try {
-      a = await window.ChessEngine.analyze(p.before, 120);
-      b = await window.ChessEngine.analyze(p.after, 120);
+      a = await ChessEngine.analyze(p.before, 120);
+      b = await ChessEngine.analyze(p.after, 120);
     } catch (_) { return; }
     const sa = evalScalar(a), sb = evalScalar(b);
     if (sa == null || sb == null) return;
@@ -3436,12 +3476,12 @@
     // ai mode: offer on your own turn; the engine accepts unless it is winning
     if (engineThinking || game.turn() !== humanColor) { toast(t("m.32")); return; }
     if (sanHistory().length < 20) { toast(t("m.33")); return; }
-    if (!window.ChessEngine) { toast(t("m.01")); return; }
+    if (!ChessEngine) { toast(t("m.01")); return; }
     drawOfferPending = true;
     toast(t("m.34"));
     let e = null;
     const sig = game.fen();
-    try { e = await window.ChessEngine.analyze(sig, 300); } catch (_) {}
+    try { e = await ChessEngine.analyze(sig, 300); } catch (_) {}
     drawOfferPending = false;
     if (game.fen() !== sig || appGameOver()) return;
     // e.cp is from the side to move (the human here); engine eval = -cp
@@ -3589,7 +3629,7 @@
   /** Draw the finished review onto an offscreen canvas. @returns {HTMLCanvasElement|null} */
   function renderReportCanvas() {
     const a = analysisFor();
-    const R = window.ChessReview;
+    const R = ChessReview;
     if (!a || !R) return null;
     const first = startFen() && startFen().split(" ")[1] === "b" ? "b" : "w";
     const sum = R.summarize(a.scalars, sanHistory(), first);
@@ -3791,10 +3831,10 @@
     if (!text0) { toast(t("m.12")); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
     // old behaviour) silently threw away everything before it.
-    const games = window.ChessPgn ? window.ChessPgn.splitGames(text0) : [text0];
+    const games = ChessPgn ? ChessPgn.splitGames(text0) : [text0];
     if (games.length > 1) {
       const items = games.map((g, i) => {
-        const s = window.ChessPgn.summary(g);
+        const s = ChessPgn.summary(g);
         return {
           label: (i + 1) + ". " + s.white + " — " + s.black + "  " + s.result,
           sub: [s.event, s.date, s.plies ? tf("mm.plies", [s.plies]) : ""].filter(Boolean).join(" · "),
@@ -3815,7 +3855,7 @@
     // it is what a save slot or an export holds for a study position. chess.js
     // will not parse that shape, so fall back to its [SetUp]/[FEN] tags rather
     // than call the file malformed.
-    const importFen = parsed ? null : (window.ChessPgn ? window.ChessPgn.startFen(text0) : null);
+    const importFen = parsed ? null : (ChessPgn ? ChessPgn.startFen(text0) : null);
     if (!parsed && (!importFen || !new Chess().validate_fen(importFen).valid)) {
       toast(t("m.13"));
       return false;
@@ -3924,7 +3964,7 @@
   }
 
   function startEditor() {
-    const Ed = window.ChessEditor;
+    const Ed = ChessEditor;
     if (!Ed) { toast(t("m.58")); return; }
     invalidateEngine();
     editor = Ed.fromFen(viewGame().fen(), Chess);
@@ -3977,7 +4017,7 @@
   }
 
   function editorClick(sq) {
-    const Ed = window.ChessEditor;
+    const Ed = ChessEditor;
     const { r, c } = Ed.indexOf(sq);
     const cur = editor.board[r][c];
     if (editor.brush.type === "") {
@@ -4004,7 +4044,7 @@
     });
     const epRow = document.getElementById("row-ed-ep");
     const epSeg = document.getElementById("editor-ep");
-    const cands = window.ChessEditor.epCandidates(editor);
+    const cands = ChessEditor.epCandidates(editor);
     if (epRow) epRow.hidden = !cands.length;
     if (epSeg && cands.length) {
       epSeg.innerHTML = "";
@@ -4019,7 +4059,7 @@
     }
     if (!cands.length && editor.ep) editor.ep = null;
     const err = document.getElementById("editor-error");
-    const reason = window.ChessEditor.validate(editor, Chess);
+    const reason = ChessEditor.validate(editor, Chess);
     if (err) err.textContent = reason ? t(reason) : "";
     const apply = document.getElementById("editor-apply");
     if (apply) apply.disabled = !!reason;
@@ -4029,7 +4069,7 @@
   function loadFenAsGame(fen, note) {
     stopEditor();
     invalidateEngine();
-    if (window.ChessEngine) window.ChessEngine.newGame();
+    if (ChessEngine) ChessEngine.newGame();
     gameLoad(fen);
     game.header("SetUp", "1", "FEN", fen);
     selection = null;
@@ -4048,7 +4088,7 @@
   }
 
   function applyEditor() {
-    const Ed = window.ChessEditor;
+    const Ed = ChessEditor;
     const reason = Ed.validate(editor, Chess);
     if (reason) { toast(t(reason)); return; }
     const fen = Ed.toFen(editor);
@@ -4082,8 +4122,8 @@
     // chess.js accepts positions no game could reach (no kings, a side already
     // in check while its opponent moves) — reuse the editor's stricter rules,
     // then load the ORIGINAL fen so its en-passant square and clocks survive.
-    const reason = window.ChessEditor
-      ? window.ChessEditor.validate(window.ChessEditor.fromFen(raw, Chess), Chess)
+    const reason = ChessEditor
+      ? ChessEditor.validate(ChessEditor.fromFen(raw, Chess), Chess)
       : null;
     if (reason) { show(t(reason)); return; }
     closeFenModal();
@@ -4116,7 +4156,7 @@
    */
   function slotSummary(slot) {
     if (!slot) return t("slots.empty");
-    const P = window.ChessPgn;
+    const P = ChessPgn;
     const s = P ? P.summary(slot.pgn) : null;
     const when = slot.savedAt ? new Date(slot.savedAt).toLocaleString() : "";
     const moves = s && s.plies ? moveCount(Math.ceil(s.plies / 2)) : "";
@@ -4271,7 +4311,7 @@
   }
 
   function renderMaterial() {
-    const Mat = window.ChessMaterial;
+    const Mat = ChessMaterial;
     const wEl = document.getElementById("taken-w");
     const bEl = document.getElementById("taken-b");
     if (!wEl || !bEl) return;
@@ -4281,7 +4321,7 @@
     const promos = verboseHistory().slice(0, viewIndex)
       .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
     const s = Mat.summary(baseGame().board(), shown.board(), promos);
-    const svgs = window.CHESS_PIECE_SVGS || {};
+    const svgs = CHESS_PIECE_SVGS || {};
     const strip = (list, color, lead) => {
       const frag = list.map((tp) => {
         const svg = svgs[color + tp];
@@ -4415,7 +4455,7 @@
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
     if (!sq) return;
-    const { r, c } = window.ChessEditor.indexOf(sq);
+    const { r, c } = ChessEditor.indexOf(sq);
     editor.board[r][c] = null;
     syncEditorUI();
     draw();
@@ -4497,7 +4537,7 @@
     let piece = null;
     if (g) piece = g.get(sq);
     else if (editor) {
-      const { r, c } = window.ChessEditor.indexOf(sq);
+      const { r, c } = ChessEditor.indexOf(sq);
       piece = editor.board[r][c];
     }
     if (!piece) return sq + " · " + t("live.empty");
@@ -4626,7 +4666,7 @@
   document.getElementById("an-run").onclick = () => {
     if (analyzing) {
       analyzeAbort = true;
-      if (window.ChessEngine) window.ChessEngine.cancel();
+      if (ChessEngine) ChessEngine.cancel();
       return;
     }
     analyzeGame(120);
@@ -4959,7 +4999,7 @@
     Host.clearRecentDocuments();
     stopEditor();
     invalidateEngine();
-    if (window.ChessEngine) window.ChessEngine.newGame();
+    if (ChessEngine) ChessEngine.newGame();
     gameReset();
     selection = null;
     viewIndex = 0;
@@ -5011,7 +5051,7 @@
   };
   document.getElementById("editor-clear").onclick = () => {
     if (!editor) return;
-    editor.board = window.ChessEditor.emptyBoard();
+    editor.board = ChessEditor.emptyBoard();
     editor.castling = { K: false, Q: false, k: false, q: false };
     syncEditorUI();
     draw();
@@ -5019,7 +5059,7 @@
   document.getElementById("editor-reset").onclick = () => {
     if (!editor) return;
     editor = Object.assign(
-      window.ChessEditor.fromFen(new Chess().fen(), Chess),
+      ChessEditor.fromFen(new Chess().fen(), Chess),
       { brush: editor.brush }
     );
     syncEditorUI();
@@ -5272,10 +5312,9 @@
   sync();
   saveSettings();
   if (!resumed) saveGame();
-  if (mode === "ai" && window.ChessEngine) {
-    window.ChessEngine.init().catch(() => toast(t("mm.engineInitFailed")));
+  if (mode === "ai" && ChessEngine) {
+    ChessEngine.init().catch(() => toast(t("mm.engineInitFailed")));
     maybeEngineTurn(); // resumed save may leave the engine on move
   }
   if (firstRun) runOnboarding();
 
-})();

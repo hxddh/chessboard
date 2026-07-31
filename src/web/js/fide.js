@@ -8,7 +8,6 @@
  * here so the rules can be read and tested apart from the UI.
  * @module fide
  */
-(function (global) {
   /** halfmove clock of a FEN (plies since the last capture or pawn move) */
   function halfmoveClock(fen) {
     return Number(String(fen).split(" ")[4]) || 0;
@@ -110,5 +109,4 @@
     return (reps || 1) >= 5 || halfmoveClock(g.fen()) >= 150;
   }
 
-  global.ChessFide = { halfmoveClock, positionKey, repetitionCount, hasMatingMaterial, positionFinished };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessFide = { halfmoveClock, positionKey, repetitionCount, hasMatingMaterial, positionFinished };

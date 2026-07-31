@@ -21,7 +21,6 @@
  * changes the id, which is right: those are different drills to memorise.
  * @module drills
  */
-(function (global) {
   /** a line has to be this long before it is worth drilling */
   const MIN_PLIES = 6;
 
@@ -148,5 +147,4 @@
     return n;
   }
 
-  global.ChessDrills = { MIN_PLIES, hash36, drillId, drillLines, legacyIdMap, migrateIds };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessDrills = { MIN_PLIES, hash36, drillId, drillLines, legacyIdMap, migrateIds };

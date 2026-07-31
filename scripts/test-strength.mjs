@@ -27,6 +27,7 @@ import path from "path";
 import vm from "vm";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import { compileModuleSync } from "./bundle.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -52,7 +53,7 @@ const ctx = { console, Date, performance };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/chess.js"), "utf8"), ctx, { filename: "chess.js" });
+vm.runInContext(compileModuleSync(path.join(root, "src/web/js/chess.js")), ctx, { filename: "module" });
 const Chess = ctx.Chess;
 
 // tier table, read straight from the app so the test cannot drift from it
@@ -60,7 +61,7 @@ const engCtx = { console };
 engCtx.globalThis = engCtx;
 engCtx.window = engCtx;
 vm.createContext(engCtx);
-vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8"), engCtx, { filename: "engine.js" });
+vm.runInContext(compileModuleSync(path.join(root, "src/web/js/engine.js")), engCtx, { filename: "module" });
 const TIERS = engCtx.ChessEngine.TIERS;
 
 const argSamples = Number((process.argv.find((a) => a.startsWith("--samples")) || "").split("=")[1]);

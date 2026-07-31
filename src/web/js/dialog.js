@@ -24,7 +24,6 @@
  * because the answer depends on which dialogs are stacked.
  * @module dialog
  */
-(function (global) {
   const FOCUSABLE = [
     "a[href]", "button:not([disabled])", "input:not([disabled])",
     "select:not([disabled])", "textarea:not([disabled])",
@@ -105,5 +104,4 @@
     return false;
   }
 
-  global.ChessDialog = { open, close, handleTab, focusables, topmost, FOCUSABLE };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessDialog = { open, close, handleTab, focusables, topmost, FOCUSABLE };

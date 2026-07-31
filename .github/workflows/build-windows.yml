@@ -28,6 +28,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # esbuild, and nothing else. It bundles the ES modules under src/web/js
+      # into the one classic script zero:// can load; `npm ci` rather than
+      # `npm install` so the same commit gets the same bundler.
+      - name: install build deps
+        run: npm ci
       - name: unit tests
         run: node scripts/test-chess.mjs
       # The SDK version is an input rather than a bare `npm install -g`, so a
@@ -50,9 +55,13 @@ jobs:
         shell: bash
         run: |
           node scripts/gen-engine-src.mjs
+          node scripts/bundle.mjs
           rm -rf frontend/dist && mkdir -p frontend/dist/js
           cp src/web/index.html src/web/styles.css frontend/dist/
-          cp src/web/js/*.js frontend/dist/js/
+          # only the two generated scripts ship — index.html loads exactly
+          # these, and the module sources are build inputs, not product
+          cp src/web/js/bundle.js src/web/js/engine-src.js frontend/dist/js/
+          test "$(wc -c < frontend/dist/js/bundle.js)" -gt 400000
           # engine-src must carry the full wasm payload (~9MB), not a stub
           test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
       - name: manifest keys are actually read

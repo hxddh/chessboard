@@ -7,7 +7,6 @@
  * thresholds can be read and tested on their own. The app owns rendering.
  * @module review
  */
-(function (global) {
   /** the same cut-offs the move list annotates with ?! / ? / ?? */
   const INACCURACY = 50, MISTAKE = 100, BLUNDER = 300;
 
@@ -126,8 +125,7 @@
     return tag === "?!" || tag === "?" || tag === "??";
   }
 
-  global.ChessReview = {
+  export const ChessReview = {
     summarize, verdictKey, moveNumber, evalBar, markFor, isMistake,
     INACCURACY, MISTAKE, BLUNDER,
   };
-})(typeof window !== "undefined" ? window : globalThis);

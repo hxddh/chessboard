@@ -13,8 +13,7 @@
  * すること、全レッスンが揃っていることを検査する。
  * @module lessons-ja
  */
-(function (global) {
-  global.CHESS_LESSONS_JA = {
+  export const CHESS_LESSONS_JA = {
     board: {
       part: "盤を知る", title: "盤とマスの呼び名",
       text: [
@@ -1034,4 +1033,3 @@
       ],
     },
   };
-})(typeof window !== "undefined" ? window : globalThis);

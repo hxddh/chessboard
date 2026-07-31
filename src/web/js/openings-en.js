@@ -10,8 +10,7 @@
  * entry here and that nothing here is orphaned.
  * @module openings-en
  */
-(function (global) {
-  global.CHESS_OPENINGS_EN = {
+  export const CHESS_OPENINGS_EN = {
     // A — flank openings
     "波兰开局（索科尔斯基）": "Polish (Sokolsky) Opening",
     "格罗布开局": "Grob's Attack",
@@ -192,7 +191,7 @@
    * the 38 lines long enough to be drilled carry an idea, so only those need an
    * entry; scripts/test-chess.mjs checks that set exactly.
    */
-  global.CHESS_OPENING_IDEAS_EN = {
+  export const CHESS_OPENING_IDEAS_EN = {
     "沃尔加-贝科弃兵": "Black gives up the b-pawn to rip open the a- and b-files, then leans on the queenside forever with two rooks and the bishop — a pawn for lasting pressure.",
     "现代贝诺尼": "Black accepts less space in return for the ...e6 break against White's pawn chain, with ...b5 to follow on the queenside.",
     "阿廖欣防御·现代变例": "Black invites the knight to be chased, luring White's pawns too far forward, then turns round and attacks the overextended chain.",
@@ -379,4 +378,3 @@
     "法兰西防御·交换·对称变例":
       "The most symmetrical French: both sides have the same shape. To win you must break the balance yourself, and that move always costs something.",
 };
-})(typeof window !== "undefined" ? window : globalThis);

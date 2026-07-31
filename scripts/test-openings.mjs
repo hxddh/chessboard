@@ -35,6 +35,7 @@ import path from "path";
 import vm from "vm";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import { compileModuleSync } from "./bundle.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -65,8 +66,8 @@ const ctx = { console, Date, performance };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/chess.js"), "utf8"), ctx, { filename: "chess.js" });
-vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/openings.js"), "utf8"), ctx, { filename: "openings.js" });
+vm.runInContext(compileModuleSync(path.join(root, "src/web/js/chess.js")), ctx, { filename: "module" });
+vm.runInContext(compileModuleSync(path.join(root, "src/web/js/openings.js")), ctx, { filename: "module" });
 const Chess = ctx.Chess;
 const BOOK = ctx.CHESS_OPENINGS.filter(([, , seq]) => seq.split(" ").length >= MIN_PLIES);
 

@@ -5,8 +5,7 @@
  * scripts/test-chess.mjs checks every badge is well-formed and reachable.
  * @module achievements
  */
-(function (global) {
-  global.CHESS_ACHIEVEMENTS = [
+  export const CHESS_ACHIEVEMENTS = [
     { id: "first-lesson", nameKey: "ach.first-lesson.n", descKey: "ach.first-lesson.d", icon: "🎓", name: "初学乍练", desc: "完成第 1 课",
       test: (s) => s.lessonsDone >= 1 },
     { id: "all-lessons", nameKey: "ach.all-lessons.n", descKey: "ach.all-lessons.d", icon: "📚", name: "规则通关", desc: "完成全部教学课程",
@@ -44,4 +43,3 @@
       test: (s) => s.otherUnlocked >= s.otherTotal && s.otherTotal > 0,
       progress: (s) => [s.otherUnlocked, s.otherTotal] },
   ];
-})(typeof window !== "undefined" ? window : globalThis);

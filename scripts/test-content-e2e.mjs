@@ -31,13 +31,14 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { compileModuleSync } from "./bundle.mjs";
 
 // the same data the page will load, so the test knows the right answers
 const data = { console };
 data.globalThis = data; data.window = data;
 vm.createContext(data);
 for (const f of ["chess.js", "lessons.js", "puzzles.js"]) {
-  vm.runInContext(fs.readFileSync(path.join(ROOT, "js", f), "utf8"), data, { filename: f });
+  vm.runInContext(compileModuleSync(path.join(ROOT, "js", f)), data, { filename: "module" });
 }
 const Chess = data.Chess;
 const LESSONS = data.CHESS_LESSONS;

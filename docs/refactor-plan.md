@@ -46,6 +46,7 @@
 `npm test` 真的是一条命令。脚本分三组，因为它们的代价差三个数量级：
 
 - `npm run test:static` —— 单测 + scope-check + manifest-check，秒级，无外部依赖
+  （P0 之后 scope-check 退役，见下）
 - `npm run test:e2e` —— 六个浏览器 E2E，需要 Playwright（没有则各自打印「跳过」并通过）
 - `npm run test:engine` —— 开局/战术/新手档/强度实测，要跑引擎，分钟级，**不进 `npm test`**
 

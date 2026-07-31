@@ -3,7 +3,6 @@
  * App wires an isEnabled callback via init(); play calls no-op when disabled.
  * @module audio
  */
-(function (global) {
   let audioCtx = null;
   let enabled = () => true;
 
@@ -165,5 +164,4 @@
     } catch (_) {}
   }
 
-  global.ChessAudio = { init, playMove, playWin, playStar, playDraw };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessAudio = { init, playMove, playWin, playStar, playDraw };
