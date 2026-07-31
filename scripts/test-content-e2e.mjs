@@ -198,9 +198,55 @@ for (const les of LESSONS) {
   assert(!!hit, `${les.id}:棋盘上摆的是这一课的局面`, hit ? hit[0] : `实际 ${on}`);
 }
 
+// 缺陷 24: the course teaches a motif once and the puzzle set holds 21 more of
+// the same, with nothing joining them. The button has to appear where there is
+// somewhere to go, land on a puzzle of that motif, and not exist where there is
+// not — a greyed-out button here would be the P3 rule broken again.
+{
+  const withP = LESSONS.find((l) => l.practice === "捉双");
+  const without = LESSONS.find((l) => !l.practice && l.part === "吃子与价值");
+  const open = async (title) => {
+    await page.evaluate((want) => {
+      const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
+      rows.find((r) => (r.textContent || "").includes(want))?.click();
+    }, title);
+    await page.waitForTimeout(400);
+  };
+  const btn = () => page.evaluate(() => {
+    const b = document.getElementById("lesson-practice");
+    return { hidden: !!b.hidden, disabled: !!b.disabled, text: b.textContent || "" };
+  });
+
+  await open(without.title);
+  const off = await btn();
+  assert(off.hidden, `${without.id}:没有配套题目就不显示按钮`, JSON.stringify(off));
+
+  await open(withP.title);
+  const on2 = await btn();
+  assert(!on2.hidden && !on2.disabled && /\d/.test(on2.text),
+    `${withP.id}:有配套题目就显示按钮,并报出题数`, JSON.stringify(on2));
+
+  await page.evaluate(() => document.getElementById("lesson-practice").click());
+  await page.waitForTimeout(700);
+  const landed = await page.evaluate(() => ({
+    mode: document.getElementById("app").getAttribute("data-mode"),
+    goal: document.getElementById("puzzle-task").textContent || "",
+  }));
+  assert(landed.mode === "puzzle" && landed.goal.includes(withP.practice),
+    `${withP.id}:按下去落在同一母题的题目上`, JSON.stringify(landed));
+
+  // back to the course for the checks that follow
+  await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].find((x) => x.dataset.mode === "learn").click());
+  await page.waitForTimeout(500);
+}
+
 // a wrong move on a one-answer task is refused, with that task's own hint
 {
-  const les = LESSONS.find((l) => l.id === "kingactive");
+  // whichever lesson opens on a single-answer move task — naming one by id
+  // meant that adding a task to the front of that lesson silently retargeted
+  // this check at a task it was never written for
+  const les = LESSONS.find((l) => l.tasks[0].type === "move" && l.tasks[0].goal === "one-of"
+    && l.tasks[0].retry && (l.tasks[0].accept || []).length === 1);
   if (les) {
     await page.evaluate((want) => {
       const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];

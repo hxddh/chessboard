@@ -1463,6 +1463,19 @@ import { createStore } from "./store.js";
       demoBtn.hidden = !canDemo;
       demoBtn.disabled = store.session.learn.demoing;
     }
+    const practice = document.getElementById("lesson-practice");
+    if (practice) {
+      // Shown only where the course has somewhere to send you. A lesson with
+      // no matching puzzles offers no button at all rather than a dead one —
+      // 缺陷 24 was the missing link, not a missing affordance for it.
+      const rest = practiceLeft(L);
+      practice.hidden = !rest.total;
+      practice.disabled = false;
+      if (rest.total) {
+        practice.textContent = tf("act.practice", [rest.left || rest.total]);
+        practice.classList.toggle("primary", store.session.learn.done && rest.left > 0);
+      }
+    }
     const next = document.getElementById("lesson-next");
     if (next) {
       const isLast = store.session.learn.li + 1 >= LESSONS.length;
@@ -1689,6 +1702,23 @@ import { createStore } from "./store.js";
     const next = Srs.onSolve(store.session.puzzleState.missed[id]);
     if (next) store.session.puzzleState.missed[id] = next; else delete store.session.puzzleState.missed[id];
     savePuzzleState();
+  }
+
+  /**
+   * The `tac` puzzles that continue a lesson, and how many are still unsolved.
+   *
+   * Matched on the lesson's `practice` motif rather than a hand-written list
+   * of puzzle ids: a list would have to be edited every time a puzzle is added
+   * to the set, and the one nobody edits is the one that silently stops
+   * covering the new puzzles. 缺陷 24.
+   * @param {object} L a lesson
+   * @returns {{all: object[], total: number, left: number}}
+   */
+  function practiceLeft(L) {
+    const all = L && L.practice
+      ? ALL_PUZZLES.filter((p) => p.cat === "tac" && p.motif === L.practice)
+      : [];
+    return { all, total: all.length, left: all.filter((p) => !store.session.puzzleState.solved[p.id]).length };
   }
 
   /** "review" is a virtual category: every puzzle currently in the missed set. */
@@ -5589,6 +5619,31 @@ import { createStore } from "./store.js";
     sync();
     toast(t("lm.firstGame"));
     maybeEngineTurn();
+  };
+  document.getElementById("lesson-practice").onclick = () => {
+    if (!store.session.learn) return;
+    const L = LESSONS[store.session.learn.li];
+    const rest = practiceLeft(L);
+    if (!rest.total) return;
+    const want = rest.all.find((p) => !store.session.puzzleState.solved[p.id]) || rest.all[0];
+    // The tier row is a filter over the whole category, so a "hard" filter can
+    // hide the very puzzle this button promised. Arriving somewhere other than
+    // where the button said is worse than losing a filter setting.
+    if (store.session.puzzleTierFilter !== "all") {
+      store.session.puzzleTierFilter = "all";
+      toast(t("pz.tierCleared"), "fix");
+    }
+    invalidateEngine();
+    stopLearn();
+    store.session.mode = "puzzle";
+    store.session.puzzleState.cat = "tac";
+    const list = puzzlesInCat("tac");
+    startPuzzleAt("tac", Math.max(0, list.findIndex((p) => p.id === want.id)));
+    setSideTab("play", { top: true });
+    saveSettings();
+    syncAutoFlip();
+    sync();
+    toast(tf("pz.fromLesson", [puzzleMotif(want)]));
   };
   document.getElementById("lesson-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");

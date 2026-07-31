@@ -2069,6 +2069,42 @@ for (const lang of CONTENT_LANGS) {
     "app.js names no technique itself — it prints whatever the position derives");
 }
 
+// The course meets a tactical motif once and moves on, while the puzzle set
+// holds 21 more `tac` puzzles on those same motifs that nothing ever pointed
+// at. 缺陷 24. The link is a motif string on both sides rather than a list of
+// puzzle ids, so this checks it from both ends: a lesson that points nowhere,
+// and a puzzle nothing points at, are the two ways it can rot.
+{
+  const lessons = ctx.CHESS_LESSONS;
+  const tac = ctx.CHESS_PUZZLES.filter((p) => p.cat === "tac");
+  assert(tac.length === 21, "the tac set is still 21 puzzles (" + tac.length + ")");
+  const taught = lessons.filter((L) => L.practice);
+  assert(taught.length >= 7, "at least seven lessons continue into the puzzle set (" + taught.length + ")");
+  for (const L of taught) {
+    const n = tac.filter((p) => p.motif === L.practice).length;
+    assert(n > 0, "lesson " + L.id + " points at puzzles that exist (" + L.practice + ")");
+  }
+  // and nothing is stranded: every tac puzzle is reachable from some lesson
+  const claimed = new Set(taught.map((L) => L.practice));
+  const orphan = tac.filter((p) => !claimed.has(p.motif));
+  assert(orphan.length === 0,
+    "every tac puzzle is reachable from a lesson (" + orphan.map((p) => p.id + "/" + p.motif).join(", ") + ")");
+
+  // the runtime must match on the motif, not on a list that stops covering new
+  // puzzles the moment one is added
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  assert(/p\.cat === "tac" && p\.motif === L\.practice/.test(appSrc),
+    "app.js finds the practice puzzles by motif");
+  assert(/id="lesson-practice"/.test(fs.readFileSync(path.join(root, "src/web/index.html"), "utf8")),
+    "the lesson view has somewhere to press");
+  // a lesson with no puzzles must offer no button rather than a dead one — the
+  // whole P3 rule about visible disabled controls applies here too
+  assert(/practice\.hidden = !rest\.total/.test(appSrc),
+    "a lesson with no matching puzzles hides the button instead of disabling it");
+  assert(/store\.session\.puzzleTierFilter = "all"/.test(appSrc),
+    "the jump clears a tier filter that would hide the puzzle it promised");
+}
+
 // PGN utilities: splitting a multi-game file must not lose games (importing a
 // database used to silently keep only the last one)
 {

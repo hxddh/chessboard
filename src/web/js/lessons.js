@@ -12,6 +12,15 @@
  *            check | any | mate | castle-k | castle-q | ep | promote
  *   drill  — play out a basic mate against the engine (black defends at the
  *            weakest tier unless the task sets `engine`)
+ *
+ * A lesson may also carry `practice`: the motif whose puzzles continue it.
+ * 「吃子与价值」 teaches eight tactical motifs and gives each exactly one
+ * exercise, while the puzzle set's `tac` category holds 21 more of the very
+ * same motifs that the course never mentions — a beginner who has just met
+ * the fork has nowhere to go but the next lesson. 缺陷 24. The value is the
+ * puzzle's own `motif` string, matched at runtime rather than listed here as
+ * ids: scripts/test-chess.mjs checks both directions, so a motif renamed on
+ * one side and not the other fails the build instead of quietly unlinking.
  * @module lessons
  */
   const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -280,7 +289,7 @@
       ],
     },
     {
-      id: "fork", part: "吃子与价值", title: "捉双:一子攻两个",
+      id: "fork", part: "吃子与价值", title: "捉双:一子攻两个", practice: "捉双",
       text: [
         "一个子同时攻击对方两个目标,叫「捉双」—— 对方只救得了一个。",
         "带将军的捉双最凶:对方必须先应将,另一个目标就归你了。马是捉双大师(它的攻击别人挡不住)。",
@@ -296,7 +305,7 @@
       ],
     },
     {
-      id: "skewer", part: "吃子与价值", title: "串击:逼开前面吃后面",
+      id: "skewer", part: "吃子与价值", title: "串击:逼开前面吃后面", practice: "串击",
       text: [
         "串击是牵制的反面:攻击一条线上**前面**的高价值子,逼它让开,再吃它**身后**的子。",
         "最狠的是「王在前」的串击 —— 将军!王必须让位,身后的子就归你了。",
@@ -312,7 +321,7 @@
       ],
     },
     {
-      id: "discovery", part: "吃子与价值", title: "闪击:挪一子,露一击",
+      id: "discovery", part: "吃子与价值", title: "闪击:挪一子,露一击", practice: "闪将",
       text: [
         "一个子挪开,让它**身后**同线的子发起攻击,叫「闪击」。挪开的子还能顺手吃子或占位 —— 一步两用。",
         "最强的是「闪将」:挪子露出的是**将军**。对方只能应将,挪开的子抢到的东西保不住了。",
@@ -339,7 +348,7 @@
     },
     // —— 第四部分 · 规则与胜负 ——
     {
-      id: "deflect", part: "吃子与价值", title: "引离:把守家的子调走",
+      id: "deflect", part: "吃子与价值", title: "引离:把守家的子调走", practice: "引离",
       text: [
         "一个子之所以安全,常常是因为**有别的子在守它**。想吃它,不一定要正面强攻 —— 先想办法把守它的那个子**调走**。",
         "最干脆的调法是将军:对方必须应将,守家的子被迫离开岗位,你要吃的东西就没人管了。",
@@ -352,7 +361,7 @@
       ],
     },
     {
-      id: "remove", part: "吃子与价值", title: "消除防守者:直接把守家的子吃掉",
+      id: "remove", part: "吃子与价值", title: "消除防守者:直接把守家的子吃掉", practice: "消除防守者",
       text: [
         "调走守家的子有两种办法:逼它走开(引离),或者**干脆吃掉它**。",
         "换子的时候多问一句:我吃掉的这个子,正在守着什么?它一消失,那样东西就归你了。",
@@ -365,7 +374,7 @@
       ],
     },
     {
-      id: "overload", part: "吃子与价值", title: "过载:一个子干不了两份活",
+      id: "overload", part: "吃子与价值", title: "过载:一个子干不了两份活", practice: "过载",
       text: [
         "一个子同时守两样东西,叫「过载」。它看上去两边都顾得上,其实**只要逼它顾一边,另一边就塌了**。",
         "看到对方某个子身兼两职,就去攻它守着的其中一样 —— 它救得了这个,救不了那个。",
@@ -422,7 +431,7 @@
       ],
     },
     {
-      id: "pin", part: "规则与胜负", title: "牵制:动不了的子",
+      id: "pin", part: "规则与胜负", title: "牵制:动不了的子", practice: "牵制",
       text: [
         "如果一个子走开会让自己的王暴露在将军之下,规则禁止它移动 —— 这个子被「牵制」了。",
         "被完全牵制的子点击后不会亮出任何落点 —— 不是出了故障,是规则不允许。破解:走开王离开牵制线、挡住牵制线,或吃掉牵制子。",
