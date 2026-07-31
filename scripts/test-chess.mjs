@@ -1331,6 +1331,11 @@ for (const lang of CONTENT_LANGS) {
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
   assert(badType.length === 0,
     "type stays on the scale" + (badType.length ? " — off it: " + [...new Set(badType)].join(", ") : ""));
+  // design-constraints.md: 字号 7 档、行高 3 档、时长 3 档 —— 不要新增档位.
+  // The membership sets above are the scale, so widening one is how a step
+  // gets added: this makes that edit fail here rather than pass quietly.
+  assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
+  assert(SPACE.size === 9, "the spacing scale still has nine steps (" + SPACE.size + ")");
 
   // leading: three steps, declared as tokens. 1.12 collapsed font-size and
   // left line-height running seven values including the UA's `normal`, which
@@ -1411,6 +1416,62 @@ for (const lang of CONTENT_LANGS) {
   assert(!/#e0(7a6a|5252)/.test(body), "nothing outside the themes writes the danger red literally");
   assert(!/linear-gradient\(180deg, #f0d2a8/.test(body),
     "the primary button's colour comes from the theme too");
+  // --- every var() names a token that exists -------------------------------
+  // The rule design-constraints.md states as "格子颜色归主题 token, canvas 去读"
+  // generalised: a token reference that resolves to nothing is not a
+  // compile error in CSS, it is a property that silently does not apply. So
+  // .mlmove {color: var(--fg)} has been reading a token that does not exist
+  // since it was written — 56 tokens are defined and none of them is --fg (the
+  // themes call it --text) — and it looks correct only because the colour it
+  // fails to set is the colour it would have inherited anyway. Defect 9.
+  //
+  // Registered rather than tolerated, same as the colours below: --fg is the
+  // one that already shipped and P0.5 removes it. A new one fails here.
+  {
+    const KNOWN_DANGLING = new Set(["--fg"]);
+    const defined = new Set([...stripped.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+    const dangling = [...new Set([...stripped.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]))]
+      .filter((v) => !defined.has(v));
+    const fresh = dangling.filter((v) => !KNOWN_DANGLING.has(v));
+    for (const v of fresh) console.error("  var(" + v + ") names no token");
+    assert(fresh.length === 0,
+      "no new var() names a missing token" + (fresh.length ? " — " + fresh.join(", ") : ""));
+    const gone = [...KNOWN_DANGLING].filter((v) => !dangling.includes(v));
+    assert(gone.length === 0,
+      "the register lists no dangling token that is already fixed" +
+      (gone.length ? " — drop " + gone.join(", ") : ""));
+  }
+
+  // --- no new bare colour outside the theme blocks --------------------------
+  // A colour written in place is a colour that cannot answer "what does this
+  // look like in the other three themes". The ones below are the ones that
+  // already shipped, listed rather than tolerated: this is the register P2
+  // empties (defect 8 is the last four — the eval bar disappears entirely on
+  // the two light themes, and the blunder marks are one pair of golds for all
+  // four). Anything not on this list fails, so the count only goes down.
+  {
+    const KNOWN = new Map([
+      ["#fff", "two white paper fills (notebook theme's own surface)"],
+      ["#000", "two color-mix() darkening steps, not a paint colour"],
+      ["#9a3412", "notebook promotion mark, white side"],
+      ["#1e3a5f", "notebook promotion mark, black side"],
+      ["#4a90d9", "var(--accent) fallback, never reached"],
+      ["#1d1d1b", "defect 8: eval bar, Black — invisible on day/notebook"],
+      ["#f2f2ee", "defect 8: eval bar, White — invisible on day/notebook"],
+      ["#c9b458", "defect 8: ?! mark — one gold for all four themes"],
+      ["#e0a03c", "defect 8: ? mark — likewise"],
+    ]);
+    const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
+    const fresh = [...found].filter((c) => !KNOWN.has(c));
+    for (const c of fresh) console.error("  new bare colour outside the themes: " + c);
+    assert(fresh.length === 0,
+      "no colour is written in place that was not already there" +
+      (fresh.length ? " — " + fresh.join(", ") : " (" + found.size + " known, all registered)"));
+    const gone = [...KNOWN.keys()].filter((c) => !found.has(c));
+    assert(gone.length === 0,
+      "the register lists no colour that is already gone" + (gone.length ? " — drop " + gone.join(", ") : ""));
+  }
+
   for (const theme of ["wood", "night", "day", "notebook"]) {
     const sel = theme === "wood" ? ":root, \\[data-theme=\"wood\"\\]" : "\\[data-theme=\"" + theme + "\"\\]";
     const blk = new RegExp(sel + "\\s*\\{([\\s\\S]*?)\\n    \\}").exec(stripped);
@@ -1431,6 +1492,29 @@ for (const lang of CONTENT_LANGS) {
     "the board reads its colours from the theme");
   assert(!/const LIGHT = "#/.test(boardSrc) && !/const DARK = "#/.test(boardSrc),
     "no square colour is hard-coded in the renderer any more");
+
+  // design-constraints.md: 每处格子平涂必须走 cellRect() 取整. A fractional
+  // fillRect boundary lands between device pixels and the two squares either
+  // side of it get antialiased edges — a visible seam at some board sizes,
+  // and only at some, which is why it survives being looked at. One site
+  // still bypasses it (defect 10, P0.5 removes it); registered so the count
+  // can only go down.
+  {
+    const KNOWN_RAW_FILLS = 1;
+    const raw = [...boardSrc.matchAll(/ctx\.fillRect\(([^)]*)\)/g)]
+      .map((m) => m[1].trim())
+      .filter((a) => !a.startsWith("...cellRect("));
+    for (const a of raw) console.error("  fillRect(" + a + ") does not go through cellRect()");
+    assert(raw.length <= KNOWN_RAW_FILLS,
+      "every square fill goes through cellRect() (" + raw.length + " raw, " + KNOWN_RAW_FILLS + " registered)");
+    assert(raw.length === KNOWN_RAW_FILLS,
+      "the raw-fill count still matches the register (" + raw.length + " vs " + KNOWN_RAW_FILLS + ")");
+  }
+
+  // design-constraints.md: 棋子精灵只缓存一个尺寸 round(step) —— 换尺寸会重
+  // 栅格化 12 个子.
+  assert(/_spriteSize/.test(boardSrc) && !/_sprites\[[^\]]*\]\s*=\s*\{/.test(boardSrc),
+    "the sprite cache still holds one size");
   assert(/invalidatePaint/.test(boardSrc) &&
     /invalidatePaint\(\)/.test(fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8")),
     "switching theme re-reads them");

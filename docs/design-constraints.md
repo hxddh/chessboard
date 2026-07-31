@@ -4,6 +4,29 @@
 
 代码基线：`main @ 8b66289b5171`。
 
+## 哪些条已经由构建期检查看着（P0.4）
+
+「必须先说明理由」只有在违背它会被发现时才成立。以下几条已经不靠自律，
+`scripts/test-chess.mjs` 每次 `npm test` 都在查（下面每条括号里是断言的名字）：
+
+| 约束 | 检查 |
+|---|---|
+| 字号 7 档、行高 3 档、时长 3 档、圆角 token 化，**不要新增档位** | 值必须落在刻度上，且**刻度本身的档数**也被断言 —— 想加一档，得改测试里的那个数字，改动看得见（`the type scale still has seven steps`） |
+| 一条缓动曲线 | `one easing curve, everywhere` |
+| 格子颜色归主题 token，canvas 去读 | 四套主题各自必须定义 10 个 `--sq-*` / `--danger` / `--primary-from`；board.js 不得写死格子色 |
+| **每处格子平涂必须走 `cellRect()` 取整** | `every square fill goes through cellRect()`。目前登记着 1 处例外（缺陷 10），登记数只减不增 |
+| 棋子精灵只缓存一个尺寸 | `the sprite cache still holds one size` |
+| 动画时长统一读 `--dur-base`，canvas 也读它 | board.js 必须 `getPropertyValue("--dur-base")`，且不得留下写死的毫秒数 |
+| **每个 `var()` 都得指向真实存在的 token** | `no new var() names a missing token`。目前登记着 `--fg`（缺陷 9） |
+| **主题块以外不得新增裸色值** | `no colour is written in place that was not already there`。9 个已上线的写在册子里，其中 4 个是缺陷 8 —— 册子只减不增，P2 负责清空 |
+| 内容翻译表按 id 取，不以文案为键 | `no content translation table is keyed by prose` |
+| 一个 i18n 键在一份字典里只能写一次 | `no key is defined twice in any dictionary`（缺陷 4 就是这条缺席的产物） |
+| 每个 i18n 键都得有控件在读 | `every one of the N keys is read by some control` |
+
+**登记册（register）这个做法**：几条检查带一份「已上线的例外」清单，断言的是
+「不得新增，且册子里的每一条都还在」。后半句同样重要 —— 修好一条却忘了从册子里
+划掉，测试会提醒你划掉它。册子因此既是护栏也是待办清单。
+
 ---
 
 ## 1 · 动效
