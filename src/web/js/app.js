@@ -16,7 +16,7 @@ import { ChessMaterial } from "./material.js";
 import { ChessOpeningCoach } from "./opening-coach.js";
 import { CHESS_OPENINGS_EN, CHESS_OPENING_IDEAS_EN } from "./openings-en.js";
 import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
-import { CHESS_OPENINGS } from "./openings.js";
+import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 import { ChessPersona } from "./persona.js";
 import { ChessPgn } from "./pgn.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
@@ -636,10 +636,10 @@ import { ChessSrs } from "./srs.js";
   const OPENING_BOOK = (() => {
     const map = new Map();
     let maxPly = 0;
-    for (const [eco, name, seq] of CHESS_OPENINGS || []) {
+    for (const [eco, nameId, seq] of CHESS_OPENINGS || []) {
       // store the parts, not the joined label: the name is localised at render
       // time so switching language relabels the line already on screen
-      map.set(seq, [eco, name]);
+      map.set(seq, [eco, nameId]);
       maxPly = Math.max(maxPly, seq.split(" ").length);
     }
     return { map, maxPly };
@@ -755,24 +755,32 @@ import { ChessSrs } from "./srs.js";
    */
   function puzzleName(p) {
     // opening drills are named by the book, not by the puzzle tables
-    if (p.cat === "op" && p.zh) return p.eco + " " + openingName(p.zh);
+    if (p.cat === "op" && p.nameId) return p.eco + " " + openingName(p.nameId);
     return contentField("puzzles", p.id, "name") || p.name;
   }
   function puzzleMotif(p) {
     return contentField("puzzles", p.id, "motif") || p.motif || t("pz.forcing");
   }
   function puzzleIdea(p) {
-    if (p.cat === "op" && p.zh) return openingIdea(p.zh) || p.idea || "";
+    if (p.cat === "op" && p.nameId) return openingIdea(p.nameId) || p.idea || "";
     return contentField("puzzles", p.id, "idea") || p.idea || "";
   }
-  /** Localised opening name, looked up by its Chinese name (the stable key). */
-  function openingName(zh) {
-    for (const tbl of contentTables("openings")) if (tbl[zh]) return tbl[zh];
-    return zh;
+  /**
+   * Localised opening name, looked up by the line's id.
+   *
+   * Up to 1.25 the lookup key was the Chinese name itself, in every table. So
+   * renaming one opening in openings.js silently unkeyed both translations at
+   * once and every language quietly fell back to the Chinese string — a
+   * content edit with no failing test and no visible symptom until someone
+   * opened the app in English. The id makes a rename a rename.
+   */
+  function openingName(id) {
+    for (const tbl of contentTables("openings")) if (tbl[id]) return tbl[id];
+    return CHESS_OPENING_NAMES[id] || id;
   }
   /** …and the sentence explaining what the line is trying to do. */
-  function openingIdea(zh) {
-    for (const tbl of contentTables("ideas")) if (tbl[zh]) return tbl[zh];
+  function openingIdea(id) {
+    for (const tbl of contentTables("ideas")) if (tbl[id]) return tbl[id];
     return "";
   }
 
@@ -1327,14 +1335,14 @@ import { ChessSrs } from "./srs.js";
     // position — see drills.js. With a positional id, adding a single deep
     // line to the book moved 108 of the 109 ids onto a different drill and
     // quietly wiped everyone's opening progress and review queue.
-    .map(([eco, name, seq, idea]) => ({
+    .map(([eco, nameId, seq, idea]) => ({
       id: Drills.drillId(eco, seq),
       cat: "op",
-      // `zh` is the key both English tables are keyed by; the displayed name is
-      // built at render time so a language switch relabels the whole drill list
-      zh: name,
+      // `nameId` keys all three name tables; the displayed name is built at
+      // render time so a language switch relabels the whole drill list
+      nameId,
       eco,
-      name: eco + " " + name,
+      name: eco + " " + (CHESS_OPENING_NAMES[nameId] || nameId),
       line: seq.split(" "),
       idea: idea || "",
     }))
@@ -1342,7 +1350,10 @@ import { ChessSrs } from "./srs.js";
     // queen's-pawn, then Indian. The book is authored in family order inside
     // each letter, which put A57 next to A08 once 1.15 added the deep lines,
     // and 109 rows in no order at all is a list nobody scrolls twice.
-    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1 : a.zh.localeCompare(b.zh, "zh")));
+    // sorted by the Chinese name, not the displayed one: the list order must
+    // not shuffle when the interface language changes
+    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1
+      : (CHESS_OPENING_NAMES[a.nameId] || "").localeCompare(CHESS_OPENING_NAMES[b.nameId] || "", "zh")));
   const ALL_PUZZLES = PUZZLES.concat(OPENING_DRILLS);
 
   /**

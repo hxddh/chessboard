@@ -672,9 +672,16 @@ for (const lang of CONTENT_LANGS) {
   assert(bad === 0, "all " + pz.length + " puzzles have " + lang + " names");
 
   bad = 0;
+  // ids since 1.25, so the "did anyone actually translate this" comparison has
+  // to reach for the Chinese name rather than the key
+  const opZh = ctx.CHESS_OPENING_NAMES;
   for (const n of opNames) {
+    if (!opZh[n]) { fail("opening id has no Chinese name:", n); continue; }
     if (!opEn[n]) { fail("opening has no " + lang + " name:", n); continue; }
-    if (untranslated(lang, opEn[n], n)) fail("opening name not translated (" + lang + "):", n, "->", opEn[n]);
+    if (untranslated(lang, opEn[n], opZh[n])) fail("opening name not translated (" + lang + "):", opZh[n], "->", opEn[n]);
+  }
+  for (const n of Object.keys(opZh)) {
+    if (!opNames.has(n)) fail("Chinese name for unknown opening id:", n);
   }
   for (const n of Object.keys(opEn)) {
     if (!opNames.has(n)) fail(lang + " name for unknown opening:", n);
@@ -698,6 +705,30 @@ for (const lang of CONTENT_LANGS) {
     if (!drilled.some((o) => o[1] === n)) fail(lang + " idea for an opening that is never drilled:", n);
   }
   assert(bad === 0, "all " + drilled.length + " drilled openings have a " + lang + " idea");
+}
+
+// --- a translation table is keyed by an id, never by prose ------------------
+// openings-en.js and openings-ja.js were both keyed by the Chinese name until
+// 1.25, which made every opening name two things at once: the copy shown to a
+// Chinese reader, and the join key for two other languages. Editing it as copy
+// silently unkeyed both translations, and the failure mode was invisible —
+// openingName() falls back to its argument, so all three languages quietly
+// showed the Chinese string and nothing failed. Lessons and puzzles were
+// already id-keyed; this makes the rule the same everywhere.
+{
+  const cjk = /[\u3040-\u30ff\u4e00-\u9fff]/;
+  const proseKeys = [];
+  for (const lang of CONTENT_LANGS) {
+    for (const name of ["CHESS_LESSONS_", "CHESS_PUZZLES_", "CHESS_OPENINGS_", "CHESS_OPENING_IDEAS_"]) {
+      const tbl = ctx[name + sfx(lang)];
+      if (!tbl) continue;
+      for (const k of Object.keys(tbl)) if (cjk.test(k)) proseKeys.push(name + sfx(lang) + "[" + k + "]");
+    }
+  }
+  for (const k of proseKeys.slice(0, 10)) console.error("  " + k);
+  assert(proseKeys.length === 0,
+    "no content translation table is keyed by prose" +
+    (proseKeys.length ? " — " + proseKeys.length + " such keys" : ""));
 }
 
 // …and the name has to actually describe the moves. Every check above is about
@@ -738,8 +769,11 @@ for (const lang of CONTENT_LANGS) {
     // a rule matching nothing is a rule that stopped guarding anything
     if (!hits.length) { fail("no opening starts with " + line + " — stale naming rule"); continue; }
     for (const o of hits) {
-      if (!o[1].includes(family)) {
-        fail("opening " + o[0] + ' "' + o[1] + '" plays ' + line + ", so its name must say " + family);
+      // o[1] is the line id as of 1.25; the Chinese name this rule is about
+      // now lives in CHESS_OPENING_NAMES beside it
+      const zhName = ctx.CHESS_OPENING_NAMES[o[1]];
+      if (!zhName || !zhName.includes(family)) {
+        fail("opening " + o[0] + ' "' + zhName + '" plays ' + line + ", so its name must say " + family);
       }
     }
   }
