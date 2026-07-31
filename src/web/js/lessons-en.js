@@ -811,10 +811,7 @@
             "Side length 4: count four squares to the left along the 8th rank — click d8",
             "Now back down to the pawn's rank — click d4, and the square h4–h8–d8–d4 is drawn",
           ] },
-        { prompt: "The black king on c5 is outside the square — but it is Black to move. Click the square it should step into",
-          steps: [
-            "The left edge of the square is the d-file — one step puts the king on it (d4, d5 or d6 all work) and it runs the h-pawn down",
-          ] },
+        { prompt: "The same fact from the other side: the black pawn on h5 needs 4 steps to reach h1, and your king stands on d5, the corner of its square — walk down the diagonal and count: also 4" },
         { prompt: "Now White to move — play the one move that shuts the black king out of the square for good",
           retry: "Moving the king is no help, it is far too far away — push the pawn! One step shrinks the square to the e-file and the black king is locked out" },
       ],
@@ -847,12 +844,7 @@
         "So the right way to play these endings is: **king to a key square first, push the pawn last**. Push first and follow with the king, and you usually end up drawing.",
       ],
       tasks: [
-        { prompt: "Where are the three key squares of the e5 pawn? Click them one by one",
-          steps: [
-            "The square directly in front of the pawn — click e6",
-            "The one to its left — click d6",
-            "The one to its right — click f6",
-          ] },
+        { prompt: "The key squares of the e5 pawn are the three directly ahead of it — walk the king across d6, e6 and f6: standing on any one of them promotes the pawn" },
         { prompt: "One king move reaches a key square — don't push, walk",
           retry: "Pushing only runs the pawn into the black king. Of the three key squares d6/e6/f6, exactly one is reachable right now" },
         { prompt: "The real thing: key square first, pawn afterwards — escort the e-pawn to the last rank" },
@@ -935,6 +927,7 @@
         "So the first thought in an endgame is usually not a pawn move but: **where should my king go**. Towards the centre, towards the wing with more pawns, and into the path of their passed pawn.",
       ],
       tasks: [
+        { prompt: "Walk the lesson's first sentence: the king leaves the corner on h1 and reaches the centre on e4 in three — in an endgame that is often move one" },
         { prompt: "The black pawn promotes next move and White has exactly one move that holds — everything else is mated",
           retry: "The king has to block the promotion path. Stepping to g3, h1, h2 or h3 all abandon the f-file and the pawn goes straight through" },
         { prompt: "King and pawn against a lone king, White to move — king first or pawn first? This one move decides it",
