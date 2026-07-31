@@ -80,6 +80,10 @@ chess.js 之上,`js/fide.js` 补齐它不做的比赛规则判定：三次重复
 
 强度不用 ACPL 背书 —— ACPL 说不清「初学者赢不赢得了」。`scripts/test-novice.mjs` 直接对下：
 一个只会「不一步送子」的随机机器人，32 盘对新手得分率 **56%**、对休闲 **27%**、对入门（1320）几乎为零。
+（这三个数与下面各档的平均失分都来自 [`docs/measured.json`](docs/measured.json)，由
+`node scripts/test-novice.mjs --record` / `test-strength.mjs --record` 写入；单测校验本文与
+`engine.js` 的注释引用的是同一份数,不是各自记着的一份。1.25 之前正是各记各的：
+README 记 56%/27%（32 盘），engine.js 注释记 66%/25% 且没写盘数。）
 1.18 之前新手档 `worstBias` 是 0.6（六成的着法是十个候选里最差的那个），同一个机器人打出 **81%** ——
 那不叫弱，叫自己送；而它上面一格就是 1320，没有中间地带。`scripts/test-strength.mjs` 另按满强度评估
 量每档的平均失分。抽样走固定种子，但参照评估是按时间搜的，所以**它逐位复现不了**——
@@ -181,7 +185,7 @@ node scripts/test-review-e2e.mjs` —— **重开之后还记得什么**（真�
 - `node scripts/test-layout-e2e.mjs` —— **侧栏的版式**（从真实盒模型上量:换行分段控件里每个按钮一样宽（`flex: 1 1 30%` 会让最后一行自己分掉整行,四个按钮里的第四个就长成整块主按钮）、四个模式页签在三种语言下都是一行高不裁字、六个难度标签互不重复、标签行里只有页签、没有陪练的教学课不画对手卡。这些是只有排完版的页面能回答的问题,也正是凭印象最容易答错的那一类。需 playwright,没有就跳过）
 - `node scripts/test-tactics.mjs` —— **实战战术题是否只有一个解**（逐题重搜,首选必须领先次优 ≥200cp 且次优本身不占优。结构在 test-chess 里查,唯一性只有引擎能查。需 `third_party/stockfish`,不进打包流程,但 release 流水线会跑）
 - `node scripts/test-openings.mjs` —— **开局线是否成立**（把每条线走完,让 Stockfish 评终局面;合法且 canonical 不等于没抄错,1.15 靠它抓出三条自己写坏的线。需 `third_party/stockfish`,不进打包流程,但 release 流水线会跑）
-- `node scripts/test-novice.mjs` —— **手工削弱档对真·不会下的人有多强**（拿只会「不一步送子」的随机机器人对下，档位参数直接读 engine.js，不留第二份拷贝。ACPL 量不出「初学者赢不赢得了」，这个能。需 `third_party/stockfish`，不进打包流程）
+- `node scripts/test-novice.mjs` —— **手工削弱档对真·不会下的人有多强**（拿只会「不一步送子」的随机机器人对下，档位参数直接读 engine.js，不留第二份拷贝。ACPL 量不出「初学者赢不赢得了」，这个能。加 `--record` 把结果写进 `docs/measured.json`，README 与 engine.js 的注释都从那里引用，不各记一份。需 `third_party/stockfish`，不进打包流程）
 - `node scripts/test-strength.mjs` —— **难度档实测强度**（在 node 内直接跑 Stockfish,按满强度评估算每档平均失分;数分钟,需 `third_party/stockfish`,不进打包流程）
 
 ## 许可

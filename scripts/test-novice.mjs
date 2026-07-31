@@ -30,6 +30,7 @@
 import fs from 'fs'; import path from 'path'; import vm from 'vm';
 import { createRequire } from 'module';
 import { compileModuleSync } from "./bundle.mjs";
+import { record, RECORDING } from "./measurements.mjs";
 const require = createRequire(import.meta.url);
 const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const ctx = { console }; ctx.globalThis = ctx; ctx.window = ctx; vm.createContext(ctx);
@@ -153,6 +154,7 @@ async function playGame(careful, noviceIsWhite) {
 }
 
 const N = Number(arg('games', process.env.GAMES || 20));
+const measured = {};
 for (const careful of (process.env.ONLY_CAREFUL ? [true] : [false, true])) {
   const label = careful ? '不一步送子的随机手' : '纯随机手';
   const tally = { win: 0, draw: 0, loss: 0 };
@@ -161,7 +163,21 @@ for (const careful of (process.env.ONLY_CAREFUL ? [true] : [false, true])) {
     tally[r]++;
     process.stdout.write(`\r  ${label}: ${i + 1}/${N}  胜${tally.win} 和${tally.draw} 负${tally.loss}   `);
   }
-  const score = ((tally.win + tally.draw / 2) / N * 100).toFixed(0);
+  const score = Number(((tally.win + tally.draw / 2) / N * 100).toFixed(0));
   console.log(`\n  ${label} 对 ${TIER_NAME} 档 ${N} 盘: 胜 ${tally.win} · 和 ${tally.draw} · 负 ${tally.loss}  → 得分率 ${score}%`);
+  measured[careful ? 'careful' : 'random'] = { games: N, ...tally, scorePct: score };
+}
+
+// --record writes docs/measured.json, which README and engine.js quote. The
+// tier settings go in beside the result: a score rate is only meaningful next
+// to the parameters that produced it, and `worstBias` 0.6 vs 0.2 is exactly
+// the pair of runs that got mixed up before this file existed.
+if (RECORDING) {
+  const prev = (await import('./measurements.mjs')).read().noviceScore || { tiers: {} };
+  record('noviceScore', {
+    what: '一个只会「不一步送子」的随机机器人对下削弱档,得分率 = (胜 + 和/2) / 盘数',
+    script: 'scripts/test-novice.mjs --record --tier <id> --games <n>',
+    tiers: { ...(prev.tiers || {}), [TIER_NAME]: { settings: TIER, ...measured } },
+  });
 }
 process.exit(0);

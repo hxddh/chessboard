@@ -3120,6 +3120,69 @@ for (const lang of CONTENT_LANGS) {
   void openings;
   assert(stale === 0, "every count README quotes matches the code");
 
+  // --- and every measured figure it quotes matches the run that produced it -
+  // Defect 12: the handicap tiers' score rate lived in two places and agreed
+  // in neither. README said 56% / 27% over 32 games; engine.js's comment said
+  // 66% / 25% with no game count (the 24 games it names are the *previous*
+  // calibration, worstBias 0.6). The script that produces the number printed
+  // it and forgot. docs/measured.json is now where a run lands, and this is
+  // what stops prose from drifting off it again.
+  {
+    const measured = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8"));
+    // comment prose wraps, and a `// ` at the start of the next line sits in
+    // the middle of a sentence — flatten it so a phrase can be matched at all
+    const engineSrc = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");
+    const engineFlat = engineSrc.replace(/\n\s*\/\/ ?/g, " ");
+    const nov = measured.noviceScore && measured.noviceScore.tiers;
+    let off = 0;
+    const check = (where, text, re, actual, what) => {
+      const m = re.exec(text);
+      if (!m) { off++; console.error("FAIL: " + where + " no longer states " + what); return; }
+      if (Number(m[1]) !== actual) {
+        off++;
+        console.error("FAIL: " + where + " says " + m[1] + " for " + what + ", measured is " + actual);
+      }
+    };
+    assert(!!nov && !!nov.beginner && !!nov.casual,
+      "docs/measured.json holds a novice-score run for both handicap tiers");
+    if (nov && nov.beginner && nov.casual) {
+      // the `careful` bot is the one both texts quote — a bot that only avoids
+      // dropping a piece to an immediate recapture, i.e. about what a raw
+      // beginner sees
+      check("README", readme, /32 盘对新手得分率 \*\*(\d+)%\*\*/, nov.beginner.careful.scorePct, "the beginner score rate");
+      check("README", readme, /对休闲 \*\*(\d+)%\*\*/, nov.casual.careful.scorePct, "the casual score rate");
+      check("engine.js", engineFlat, /now scores (\d+)% here/, nov.beginner.careful.scorePct, "the beginner score rate");
+      check("engine.js", engineFlat, /and (\d+)% on `casual`/, nov.casual.careful.scorePct, "the casual score rate");
+      // anchored past the `casual` clause: the *other* "24 games" in this
+      // comment is the previous calibration's, and it is meant to stay
+      check("engine.js", engineFlat, /on `casual` over (\d+) games/, nov.beginner.careful.games, "the game count");
+      check("README", readme, /机器人，(\d+) 盘对新手/, nov.beginner.careful.games, "the game count");
+      // the settings the run used must still be the settings that ship, or the
+      // figure describes a tier that no longer exists
+      for (const [tier, rec] of [["beginner", nov.beginner], ["casual", nov.casual]]) {
+        const row = new RegExp("\\n\\s*" + tier + ": \\{([^}]*)\\}").exec(engineSrc);
+        for (const [k, v] of Object.entries(rec.settings || {})) {
+          const got = new RegExp(k + ":\\s*([\\d.]+)").exec(row ? row[1] : "");
+          if (!got || Number(got[1]) !== v) {
+            off++;
+            console.error("FAIL: " + tier + "." + k + " is " + (got && got[1]) +
+              " but the recorded run used " + v + " — re-record");
+          }
+        }
+      }
+    }
+    // the ACPL side of the same rule
+    const acpl = measured.tierAcpl && measured.tierAcpl.tiers;
+    assert(!!acpl && !!acpl.beginner, "docs/measured.json holds an ACPL run");
+    if (acpl && acpl.beginner) {
+      const b = acpl.beginner;
+      check("engine.js", engineFlat, /Measured: (\d+) ACPL/, b.acpl, "the beginner ACPL");
+      check("engine.js", engineFlat, /mistake in (\d+)% of moves/, Math.round((b.serious / b.n) * 100), "the beginner blunder rate");
+      check("engine.js", engineFlat, /median loss (\d+)/, b.median, "the beginner median loss");
+    }
+    assert(off === 0, "README and engine.js quote docs/measured.json, and it describes the tiers that ship");
+  }
+
   // The 怎么玩 heading carries a version and nothing checked it, so it sat at
   // v1.16 through five releases. app.zon is the only place the version is real.
   const zonVersion = /\.version\s*=\s*"([^"]+)"/.exec(

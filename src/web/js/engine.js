@@ -24,8 +24,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * (measured — see scripts/test-strength.mjs), i.e. still a solid club player.
    * A real beginner opponent needs to hang material sometimes, so the tier
    * runs a shallow MultiPV search and samples among the candidates, often
-   * deliberately taking the worst one. Measured: ~150 ACPL with ~1 serious
-   * (≥300cp) mistake every four moves, while half its moves stay sensible.
+   * deliberately taking the worst one. Measured: 106 ACPL, a serious (≥300cp)
+   * mistake in 14% of moves, median loss 42 — so half its moves stay sensible.
+   *
+   * Figures from docs/measured.json (scripts/test-strength.mjs --record);
+   * test-chess.mjs fails if this comment stops agreeing with the file.
    */
   const TIERS = {
     // 1.19 re-calibration. `worstBias` was 0.6 — six moves in ten were the
@@ -33,9 +36,18 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // self-destructive: a bot playing random legal moves that merely avoided
     // dropping a piece to an immediate recapture scored 81% against it over 24
     // games. Meanwhile the next rung up was Elo 1320, so a learner who beat
-    // this one had nowhere to go. Measured with scripts/test-novice.mjs, the
-    // same bot now scores 66% here and 25% on `casual`, and near nothing at
-    // 1320 — a ladder with rungs instead of a cliff.
+    // this one had nowhere to go. The same bot now scores 56% here and 27% on
+    // `casual` over 32 games, and near nothing at 1320 — a ladder with rungs
+    // instead of a cliff.
+    //
+    // Those two numbers are docs/measured.json's, not this comment's: run
+    // `node scripts/test-novice.mjs --record` to change them, and
+    // test-chess.mjs fails if this comment and README stop agreeing with the
+    // file. Until 1.25 this comment said 66% / 25% with no game count while
+    // README said 56% / 27% over 32, and there was no way to tell which run
+    // either came from — the script printed to a terminal and forgot. The 24
+    // games named above are the *previous* calibration's, and are staying: a
+    // before number is what makes an after number mean something.
     beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.2, minMs: 350 },
     casual: { skill: 0, depth: 2, multipv: 6, worstBias: 0.15, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },

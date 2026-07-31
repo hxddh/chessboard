@@ -1,0 +1,97 @@
+{
+  "_": "Measured figures. Written by scripts/*.mjs --record, read by README.md, src/web/js/engine.js and scripts/test-chess.mjs. Do not hand-edit: a number here that no run produced is worse than no number.",
+  "noviceScore": {
+    "what": "一个只会「不一步送子」的随机机器人对下削弱档,得分率 = (胜 + 和/2) / 盘数",
+    "script": "scripts/test-novice.mjs --record --tier <id> --games <n>",
+    "tiers": {
+      "beginner": {
+        "settings": {
+          "skill": 0,
+          "depth": 2,
+          "multipv": 10,
+          "worstBias": 0.2
+        },
+        "random": {
+          "games": 32,
+          "win": 0,
+          "draw": 0,
+          "loss": 32,
+          "scorePct": 0
+        },
+        "careful": {
+          "games": 32,
+          "win": 13,
+          "draw": 10,
+          "loss": 9,
+          "scorePct": 56
+        }
+      },
+      "casual": {
+        "settings": {
+          "skill": 0,
+          "depth": 2,
+          "multipv": 6,
+          "worstBias": 0.15
+        },
+        "random": {
+          "games": 32,
+          "win": 0,
+          "draw": 1,
+          "loss": 31,
+          "scorePct": 2
+        },
+        "careful": {
+          "games": 32,
+          "win": 6,
+          "draw": 5,
+          "loss": 21,
+          "scorePct": 27
+        }
+      }
+    }
+  },
+  "tierAcpl": {
+    "what": "每档在 7 个尖锐局面各走 8 次,按满强度评估算平均失分(厘兵)",
+    "script": "scripts/test-strength.mjs --record",
+    "positions": 7,
+    "samplesPerPosition": 8,
+    "tiers": {
+      "beginner": {
+        "n": 56,
+        "acpl": 106,
+        "median": 42,
+        "serious": 8
+      },
+      "casual": {
+        "n": 56,
+        "acpl": 92,
+        "median": 43,
+        "serious": 6
+      },
+      "easy": {
+        "n": 56,
+        "acpl": 38,
+        "median": 8,
+        "serious": 2
+      },
+      "normal": {
+        "n": 56,
+        "acpl": 17,
+        "median": 4,
+        "serious": 0
+      },
+      "hard": {
+        "n": 56,
+        "acpl": 12,
+        "median": 6,
+        "serious": 0
+      },
+      "extreme": {
+        "n": 56,
+        "acpl": 3,
+        "median": 1,
+        "serious": 0
+      }
+    }
+  }
+}

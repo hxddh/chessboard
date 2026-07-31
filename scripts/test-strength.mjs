@@ -28,6 +28,7 @@ import vm from "vm";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import { compileModuleSync } from "./bundle.mjs";
+import { record, RECORDING } from "./measurements.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -225,6 +226,18 @@ for (const name of order) {
     "  中位=" + String(s.median).padStart(4) +
     "  ≥300cp 大失误=" + String(s.serious).padStart(2) + "/" + s.n
   );
+}
+
+// --record writes docs/measured.json; README and engine.js quote it from there
+// rather than each keeping their own copy of the number. Defect 12.
+if (RECORDING) {
+  record('tierAcpl', {
+    what: '每档在 ' + FENS.length + ' 个尖锐局面各走 ' + SAMPLES + ' 次,按满强度评估算平均失分(厘兵)',
+    script: 'scripts/test-strength.mjs --record',
+    positions: FENS.length,
+    samplesPerPosition: SAMPLES,
+    tiers: Object.fromEntries(order.filter((n) => stats[n]).map((n) => [n, stats[n]])),
+  });
 }
 
 let failed = 0;
