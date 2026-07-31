@@ -2257,6 +2257,27 @@ import { createStore } from "./store.js";
   }
 
   /**
+   * The judgement colours, from the same tokens the stylesheet reads.
+   *
+   * The eval curve painted `?` and `??` markers as two hard-coded hexes while
+   * the move list's `?!` `?` `??` annotations used two *different* hard-coded
+   * hexes plus --danger — three copies of one idea, none of which any theme
+   * could reach. 缺陷 8. Now there is one scale (--judge-soft / -mid / -bad),
+   * each board palette answers for it, and the canvas asks the document for
+   * the same value the CSS uses. Read per call: a theme change is exactly when
+   * these move, and this runs once per repaint of a chart, not per frame.
+   */
+  function judgeColours() {
+    const css = getComputedStyle(document.documentElement);
+    const pick = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
+    return {
+      soft: pick("--judge-soft", "#c9b458"),
+      mid: pick("--judge-mid", "#e0a03c"),
+      bad: pick("--judge-bad", "#e05252"),
+    };
+  }
+
+  /**
    * Attach the human's accuracy to the stats record of the game just analysed.
    *
    * Matched by the record's stored `sig`, never by "the most recent record":
@@ -2437,6 +2458,7 @@ import { createStore } from "./store.js";
     const css = getComputedStyle(document.documentElement);
     const cMuted = css.getPropertyValue("--muted").trim() || "#999";
     const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const JC = judgeColours();
     // midline
     ctx.strokeStyle = cMuted;
     ctx.globalAlpha = 0.35;
@@ -2461,7 +2483,7 @@ import { createStore } from "./store.js";
       if (tagCh !== "?" && tagCh !== "??") continue;
       const s = a.scalars[i + 1];
       if (s == null) continue;
-      ctx.fillStyle = tagCh === "??" ? "#e05252" : "#e0a03c";
+      ctx.fillStyle = tagCh === "??" ? JC.bad : JC.mid;
       ctx.beginPath();
       ctx.arc(x(i + 1), y(s), 2.4 * dpr, 0, Math.PI * 2);
       ctx.fill();
@@ -3937,6 +3959,7 @@ import { createStore } from "./store.js";
     ctx.beginPath(); ctx.moveTo(cx0, cy0 + ch / 2); ctx.lineTo(cx0 + cw, cy0 + ch / 2); ctx.stroke();
     ctx.globalAlpha = 1;
     const n = a.scalars.length - 1, CAP = 500;
+    const JC = judgeColours();
     const px = (i) => (n ? cx0 + (i / n) * cw : cx0 + cw / 2);
     const py = (s) => cy0 + ch / 2 - (Math.max(-CAP, Math.min(CAP, s)) / CAP) * (ch / 2 - 4);
     ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath();
@@ -3951,7 +3974,7 @@ import { createStore } from "./store.js";
       if (!R.isMistake(a.tags[i]) || a.tags[i] === "?!") continue;
       const s = a.scalars[i + 1];
       if (s == null) continue;
-      ctx.fillStyle = a.tags[i] === "??" ? "#e05252" : "#e0a03c";
+      ctx.fillStyle = a.tags[i] === "??" ? JC.bad : JC.mid;
       ctx.beginPath(); ctx.arc(px(i + 1), py(s), 3.5, 0, Math.PI * 2); ctx.fill();
     }
 
@@ -4693,6 +4716,10 @@ import { createStore } from "./store.js";
   function applyTheme(id) {
     store.ui.themeId = id;
     document.documentElement.setAttribute("data-theme", id);
+    // The board palette is its own axis since 1.25 (styles.css, [data-board]).
+    // Setting it to the theme's id keeps the pairing exactly as it was — what
+    // changed is that it is now a pairing rather than one thing.
+    document.documentElement.setAttribute("data-board", id);
     // the board reads its square colours from the same variables, and caches
     // them — the cache is only ever stale here
     if (BoardView.invalidatePaint) BoardView.invalidatePaint();
@@ -5599,6 +5626,7 @@ import { createStore } from "./store.js";
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
   document.documentElement.setAttribute("data-theme", store.ui.themeId);
+  document.documentElement.setAttribute("data-board", store.ui.themeId);
   if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");

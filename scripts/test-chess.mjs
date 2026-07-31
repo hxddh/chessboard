@@ -1465,9 +1465,8 @@ for (const lang of CONTENT_LANGS) {
   // A colour written in place is a colour that cannot answer "what does this
   // look like in the other three themes". The ones below are the ones that
   // already shipped, listed rather than tolerated: this is the register P2
-  // empties (defect 8 is the last four — the eval bar disappears entirely on
-  // the two light themes, and the blunder marks are one pair of golds for all
-  // four). Anything not on this list fails, so the count only goes down.
+  // empties. Defect 8 — the eval bar's two hard-coded sides and the two
+  // hard-coded blunder golds — was the last four, and left in P2.3. Anything not on this list fails, so the count only goes down.
   {
     const KNOWN = new Map([
       ["#fff", "two white paper fills (notebook theme's own surface)"],
@@ -1475,10 +1474,6 @@ for (const lang of CONTENT_LANGS) {
       ["#9a3412", "notebook promotion mark, white side"],
       ["#1e3a5f", "notebook promotion mark, black side"],
       ["#4a90d9", "var(--accent) fallback, never reached"],
-      ["#1d1d1b", "defect 8: eval bar, Black — invisible on day/notebook"],
-      ["#f2f2ee", "defect 8: eval bar, White — invisible on day/notebook"],
-      ["#c9b458", "defect 8: ?! mark — one gold for all four themes"],
-      ["#e0a03c", "defect 8: ? mark — likewise"],
     ]);
     const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
     const fresh = [...found].filter((c) => !KNOWN.has(c));
@@ -1491,14 +1486,40 @@ for (const lang of CONTENT_LANGS) {
       "the register lists no colour that is already gone" + (gone.length ? " — drop " + gone.join(", ") : ""));
   }
 
+  // A theme answers for the interface; a board palette answers for the board.
+  // They were one block until 1.25, which is why every theme restated thirteen
+  // square colours and neither could move without the other.
   for (const theme of ["wood", "night", "day", "notebook"]) {
     const sel = theme === "wood" ? ":root, \\[data-theme=\"wood\"\\]" : "\\[data-theme=\"" + theme + "\"\\]";
     const blk = new RegExp(sel + "\\s*\\{([\\s\\S]*?)\\n    \\}").exec(stripped);
     assert(blk, theme + " theme block found");
-    for (const v of ["--sq-light", "--sq-dark", "--sq-sel", "--sq-last", "--sq-check",
-                     "--sq-dot", "--sq-ring", "--coord-ink", "--danger", "--primary-from"]) {
-      assert(blk[1].includes(v + ":"), theme + " defines " + v);
+    // layer 2, the whole of what a theme declares
+    for (const v of ["--surface", "--surface-raised", "--ink", "--ink-muted",
+                     "--accent", "--danger", "--control", "--line", "--primary-from"]) {
+      assert(blk[1].includes(v + ":"), theme + " declares the " + v + " role");
     }
+    // …and nothing from layer 3: a theme that names a component variable is a
+    // theme that has to be edited when a component is added
+    for (const v of ["--panel:", "--btn:", "--card:", "--text:"]) {
+      assert(!blk[1].includes("\n      " + v), theme + " does not restate " + v.slice(0, -1));
+    }
+    // …nor any square colour
+    assert(!/--sq-/.test(blk[1]), theme + " leaves the board to the board palette");
+  }
+  for (const board of ["wood", "night", "day", "notebook"]) {
+    const sel = board === "wood" ? ":root, \\[data-board=\"wood\"\\]" : "\\[data-board=\"" + board + "\"\\]";
+    const blk = new RegExp(sel + "\\s*\\{([\\s\\S]*?)\\n    \\}").exec(stripped);
+    assert(blk, board + " board palette found");
+    for (const v of ["--sq-light", "--sq-dark", "--sq-sel", "--sq-last", "--sq-check",
+                     "--sq-dot", "--sq-ring", "--coord-ink", "--board-frame"]) {
+      assert(blk[1].includes(v + ":"), board + " board defines " + v);
+    }
+  }
+  // layer 3 is declared once, for all four
+  {
+    const comp = /\n    :root \{([\s\S]*?)\n    \}/.exec(stripped.slice(stripped.indexOf('[data-theme="notebook"]')));
+    assert(comp && /--panel: var\(--surface-raised\)/.test(comp[1]),
+      "component variables are declared once, in terms of the roles");
   }
 }
 
@@ -1549,9 +1570,12 @@ for (const lang of CONTENT_LANGS) {
     return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
   };
   const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  // the square colours moved to the board palettes in 1.25 — the question is
+  // still "can you see a black outline on this square", which is a property of
+  // the board, not of the interface around it
   for (const theme of ["wood", "night", "day", "notebook"]) {
-    const sel = theme === "wood" ? /:root, \[data-theme="wood"\]\s*\{([\s\S]*?)\n    \}/
-      : new RegExp('\\[data-theme="' + theme + '"\\]\\s*\\{([\\s\\S]*?)\\n    \\}');
+    const sel = theme === "wood" ? /:root, \[data-board="wood"\]\s*\{([\s\S]*?)\n    \}/
+      : new RegExp('\\[data-board="' + theme + '"\\]\\s*\\{([\\s\\S]*?)\\n    \\}');
     const blk = sel.exec(css2)[1];
     for (const which of ["--sq-light", "--sq-dark"]) {
       const hex = new RegExp(which + ":\\s*(#[0-9a-fA-F]{6})").exec(blk)[1];
@@ -2760,6 +2784,54 @@ for (const lang of CONTENT_LANGS) {
   // and the v1 stats file still opens
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
+
+  // --- the Japanese interface gets Japanese type ---------------------------
+  // The base stack's three CJK faces are all Simplified Chinese, including
+  // "Hiragino Sans GB" — GB as in 国标, which is Hiragino's SC cut and not its
+  // Japanese one. So Japanese kanji have been drawn in Chinese forms since
+  // 1.21. applyLanguage() sets documentElement.lang correctly and always has;
+  // the stylesheet simply had no :lang() rule to hang off it. 缺陷 7.
+  {
+    const cssL = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const ja = /html:lang\(ja\)[\s\S]*?\{([\s\S]*?)\}/.exec(cssL);
+    assert(!!ja, "there is a :lang(ja) rule");
+    assert(/Hiragino Kaku Gothic ProN|Hiragino Sans"|Yu Gothic|Noto Sans JP/.test(ja[1]),
+      "…and it names Japanese faces");
+    assert(!/Hiragino Sans GB|PingFang SC|Microsoft YaHei/.test(ja[1]),
+      "…and none of the Simplified-Chinese ones");
+    // controls inherit nothing from body on any engine — a font stack that
+    // stops at <body> leaves every button in the wrong typeface
+    for (const el of ["input", "button"]) {
+      assert(new RegExp("html:lang\\(ja\\) " + el).test(cssL),
+        "the Japanese stack reaches <" + el + "> too");
+    }
+    assert(/documentElement\.setAttribute\("lang", store\.ui\.langId\)/.test(appSrc),
+      "…and lang is set on the document for it to match");
+  }
+
+  // --- one judgement scale, read by the stylesheet and by the canvas -------
+  // The eval curve painted `?`/`??` with two hard-coded hexes; the move-list
+  // annotations used two *different* hard-coded hexes plus --danger; and the
+  // eval bar drew White and Black as #f2f2ee on #1d1d1b, which on the two
+  // light themes is a white bar on a near-white card — the bar disappeared
+  // entirely. Three copies of one idea, none reachable by a theme. 缺陷 8.
+  {
+    const cssJ = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    for (const v of ["--judge-soft", "--judge-mid", "--judge-bad", "--side-white", "--side-black"]) {
+      const n = (cssJ.match(new RegExp(v + ":", "g")) || []).length;
+      assert(n === 4, "all four board palettes answer for " + v + " (" + n + ")");
+    }
+    assert(/\.mvtag\.t-soft \{ color: var\(--judge-soft\)/.test(cssJ), "the move list reads the scale");
+    assert(/background: var\(--side-black\)/.test(cssJ) && /background: var\(--side-white\)/.test(cssJ),
+      "the eval bar reads the two sides");
+    assert(/function judgeColours\(\)/.test(appSrc), "the canvas reads the same tokens");
+    // the only literals left are the fallbacks inside that one accessor, for
+    // a document that has not applied a stylesheet yet
+    const at = appSrc.indexOf("function judgeColours()");
+    const elsewhere = appSrc.slice(0, at) + appSrc.slice(appSrc.indexOf("\n  }", at));
+    assert(!/#e05252|#e0a03c|#c9b458/.test(elsewhere),
+      "…and no drawing code holds a copy of them");
+  }
 
   // --- keyed lists keep the nodes they can ---------------------------------
   // The move list is rebuilt on every move, the history at up to 500 rows on

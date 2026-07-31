@@ -4,19 +4,355 @@
        [hidden] → display:none, leaving "hidden" elements visible. */
     [hidden] { display: none !important; }
 
+    /* ------------------------------------------------------------------
+       Tokens, in three layers.
+
+       1 raw        literal values, per theme, named for the theme.
+       2 semantic   what a colour is FOR — surface / ink / accent / danger /
+                    control / line. A theme declares this layer and nothing
+                    else, so "what does a new theme have to answer" is a list
+                    of nineteen questions rather than a diff against another
+                    theme.
+       3 component  what a widget reads — --bg, --panel, --btn, --card…
+                    Declared ONCE, below, in terms of layer 2. Before 1.25 this
+                    layer *was* the theme: every theme restated all of it, so a
+                    new one meant copying thirty-six values and hoping, and a
+                    new component variable meant editing four blocks.
+
+       The board palette is separate — see [data-board] further down. It used
+       to be thirteen of the values every theme had to restate, which made
+       "change the board" and "change the interface" the same edit in both
+       directions.
+       ------------------------------------------------------------------ */
     :root, [data-theme="wood"] {
-      --bg: #14100e;
-      --panel: #241c18;
-      --panel-border: #3a2f28;
-      --text: #f3e9dc;
-      --muted: #b8a48c;
-      --accent: #e8c39e;
-      --btn: #3d322a;
-      --btn-hover: #4a3d33;
-      --win: #ffe08a;
-      --chrome-bg: linear-gradient(180deg, rgba(20,16,14,.88), rgba(20,16,14,.4) 75%, transparent);
+      /* 1 · raw values — literals, named for the theme they belong to.
+         Nothing outside this block names one. */
+      --wood-bg: #14100e;
+      --wood-panel: #241c18;
+      --wood-panel-border: #3a2f28;
+      --wood-text: #f3e9dc;
+      --wood-muted: #b8a48c;
+      --wood-accent: #e8c39e;
+      --wood-btn: #3d322a;
+      --wood-btn-hover: #4a3d33;
+      --wood-win: #ffe08a;
+      --wood-chrome-bg: linear-gradient(180deg, rgba(20,16,14,.88), rgba(20,16,14,.4) 75%, transparent);
+      --wood-danger: #e07a6a;
+      --wood-primary-from: #f0d2a8;
+      --wood-primary-to: #d4a574;
+      --wood-on-primary: #2a1c10;
+      --wood-on-accent: #1a120a;
+      --wood-on-danger: #2a1613;
+      --wood-card: rgba(255,255,255,.04);
+      --wood-card-border: rgba(255,255,255,.06);
+      --wood-btn-ghost: rgba(255,255,255,.06);
+
+      /* 2 · semantic roles — what the colour is FOR. This is the whole
+         of what a theme declares, and the whole of what a new theme has
+         to answer. */
+      --surface: var(--wood-bg);
+      --surface-raised: var(--wood-panel);
+      --line: var(--wood-panel-border);
+      --ink: var(--wood-text);
+      --ink-muted: var(--wood-muted);
+      --accent: var(--wood-accent);
+      --control: var(--wood-btn);
+      --control-hover: var(--wood-btn-hover);
+      --success: var(--wood-win);
+      --veil: var(--wood-chrome-bg);
+      --danger: var(--wood-danger);
+      --primary-from: var(--wood-primary-from);
+      --primary-to: var(--wood-primary-to);
+      --on-primary: var(--wood-on-primary);
+      --on-accent: var(--wood-on-accent);
+      --on-danger: var(--wood-on-danger);
+      --card-fill: var(--wood-card);
+      --card-line: var(--wood-card-border);
+      --control-ghost: var(--wood-btn-ghost);
+    }
+    [data-theme="night"] {
+      /* 1 · raw values — literals, named for the theme they belong to.
+         Nothing outside this block names one. */
+      --night-bg: #0b1210;
+      --night-panel: #121a18;
+      --night-panel-border: #24332e;
+      --night-text: #dce8e3;
+      --night-muted: #8aa399;
+      --night-accent: #7dcea0;
+      --night-btn: #1c2a25;
+      --night-btn-hover: #2a3d36;
+      --night-win: #a8e6cf;
+      --night-chrome-bg: linear-gradient(180deg, rgba(11,18,16,.9), rgba(11,18,16,.35) 75%, transparent);
+      --night-danger: #e8705c;
+      --night-primary-from: #9adfb8;
+      --night-primary-to: #5fb287;
+      --night-on-primary: #07130e;
+      --night-on-accent: #07130e;
+      --night-on-danger: #0b1210;
+      --night-card: rgba(255,255,255,.03);
+      --night-card-border: rgba(255,255,255,.05);
+      --night-btn-ghost: rgba(255,255,255,.05);
+
+      /* 2 · semantic roles — what the colour is FOR. This is the whole
+         of what a theme declares, and the whole of what a new theme has
+         to answer. */
+      --surface: var(--night-bg);
+      --surface-raised: var(--night-panel);
+      --line: var(--night-panel-border);
+      --ink: var(--night-text);
+      --ink-muted: var(--night-muted);
+      --accent: var(--night-accent);
+      --control: var(--night-btn);
+      --control-hover: var(--night-btn-hover);
+      --success: var(--night-win);
+      --veil: var(--night-chrome-bg);
+      --danger: var(--night-danger);
+      --primary-from: var(--night-primary-from);
+      --primary-to: var(--night-primary-to);
+      --on-primary: var(--night-on-primary);
+      --on-accent: var(--night-on-accent);
+      --on-danger: var(--night-on-danger);
+      --card-fill: var(--night-card);
+      --card-line: var(--night-card-border);
+      --control-ghost: var(--night-btn-ghost);
+    }
+    [data-theme="day"] {
+      /* 1 · raw values — literals, named for the theme they belong to.
+         Nothing outside this block names one. */
+      --day-bg: #e8e4dc;
+      --day-panel: #f4f0e8;
+      --day-panel-border: #d4cdc0;
+      --day-text: #2c261e;
+      --day-muted: #7a7164;
+      --day-accent: #b8894a;
+      --day-btn: #e0d9cc;
+      --day-btn-hover: #d2c9b8;
+      --day-win: #a65d2e;
+      --day-chrome-bg: linear-gradient(180deg, rgba(244,240,232,.95), rgba(244,240,232,.4) 75%, transparent);
+      --day-danger: #b8382a;
+      --day-primary-from: #6a9fd4;
+      --day-primary-to: #3b6ea5;
+      --day-on-primary: #ffffff;
+      --day-on-accent: #ffffff;
+      --day-on-danger: #fdf6f4;
+      --day-card: rgba(0,0,0,.03);
+      --day-card-border: rgba(0,0,0,.06);
+      --day-btn-ghost: rgba(0,0,0,.04);
+
+      /* 2 · semantic roles — what the colour is FOR. This is the whole
+         of what a theme declares, and the whole of what a new theme has
+         to answer. */
+      --surface: var(--day-bg);
+      --surface-raised: var(--day-panel);
+      --line: var(--day-panel-border);
+      --ink: var(--day-text);
+      --ink-muted: var(--day-muted);
+      --accent: var(--day-accent);
+      --control: var(--day-btn);
+      --control-hover: var(--day-btn-hover);
+      --success: var(--day-win);
+      --veil: var(--day-chrome-bg);
+      --danger: var(--day-danger);
+      --primary-from: var(--day-primary-from);
+      --primary-to: var(--day-primary-to);
+      --on-primary: var(--day-on-primary);
+      --on-accent: var(--day-on-accent);
+      --on-danger: var(--day-on-danger);
+      --card-fill: var(--day-card);
+      --card-line: var(--day-card-border);
+      --control-ghost: var(--day-btn-ghost);
+    }
+    [data-theme="notebook"] {
+      /* 1 · raw values — literals, named for the theme they belong to.
+         Nothing outside this block names one. */
+      --notebook-bg: #e6eaf0;
+      --notebook-panel: #f7f8fb;
+      --notebook-panel-border: #c5cdd8;
+      --notebook-text: #2a3140;
+      --notebook-muted: #6b7585;
+      --notebook-accent: #3b6ea5;
+      --notebook-btn: #e8ecf2;
+      --notebook-btn-hover: #dce2eb;
+      --notebook-win: #c0392b;
+      --notebook-chrome-bg: linear-gradient(180deg, rgba(247,248,251,.96), rgba(247,248,251,.45) 75%, transparent);
+      --notebook-danger: #c0392b;
+      --notebook-primary-from: #6a9fd4;
+      --notebook-primary-to: #3b6ea5;
+      --notebook-on-primary: #ffffff;
+      --notebook-on-accent: #ffffff;
+      --notebook-on-danger: #fbf3f2;
+      --notebook-card: rgba(0,0,0,.03);
+      --notebook-card-border: rgba(0,0,0,.06);
+      --notebook-btn-ghost: rgba(0,0,0,.04);
+
+      /* 2 · semantic roles — what the colour is FOR. This is the whole
+         of what a theme declares, and the whole of what a new theme has
+         to answer. */
+      --surface: var(--notebook-bg);
+      --surface-raised: var(--notebook-panel);
+      --line: var(--notebook-panel-border);
+      --ink: var(--notebook-text);
+      --ink-muted: var(--notebook-muted);
+      --accent: var(--notebook-accent);
+      --control: var(--notebook-btn);
+      --control-hover: var(--notebook-btn-hover);
+      --success: var(--notebook-win);
+      --veil: var(--notebook-chrome-bg);
+      --danger: var(--notebook-danger);
+      --primary-from: var(--notebook-primary-from);
+      --primary-to: var(--notebook-primary-to);
+      --on-primary: var(--notebook-on-primary);
+      --on-accent: var(--notebook-on-accent);
+      --on-danger: var(--notebook-on-danger);
+      --card-fill: var(--notebook-card);
+      --card-line: var(--notebook-card-border);
+      --control-ghost: var(--notebook-btn-ghost);
+    }
+
+    /* 3 · component variables — the names the rules below actually use.
+       One declaration each, for all four themes. */
+    :root {
+      --bg: var(--surface);
+      --panel: var(--surface-raised);
+      --panel-border: var(--line);
+      --text: var(--ink);
+      --muted: var(--ink-muted);
+      --accent: var(--accent);
+      --win: var(--success);
+      --btn: var(--control);
+      --btn-hover: var(--control-hover);
+      --btn-ghost: var(--control-ghost);
+      --card: var(--card-fill);
+      --card-border: var(--card-line);
+      --chrome-bg: var(--veil);
+      --primary-from: var(--primary-from);
+      --primary-to: var(--primary-to);
+      --danger: var(--danger);
+      --on-primary: var(--on-primary);
+      --on-accent: var(--on-accent);
+      --on-danger: var(--on-danger);
+    }
+
+    /* ------------------------------------------------------------------
+       Board palette — selected by [data-board], not by [data-theme].
+
+       Thirteen square colours plus the frame, its shadow, its edge and the
+       coordinate ink used to sit inside each theme block, so the four themes
+       restated them and neither could move without the other. They are a
+       palette in their own right: the board is what a player looks at for the
+       whole game, and "I want the paper interface with the wooden board" is a
+       reasonable thing to want.
+
+       app.js sets data-board to the theme's own id, so the default pairing is
+       unchanged — this only makes the pairing a *choice* rather than a fact.
+       ------------------------------------------------------------------ */
+    :root, [data-board="wood"] {
+      /* 3 · judgement — one scale for "how bad was that move", read by the
+         stylesheet AND by the canvas (see app.js readMistakeColours). */
+      --judge-soft: #c9b458;
+      --judge-mid: #e0a03c;
+      --judge-bad: #e05252;
+      /* the two sides, for anything that draws White against Black */
+      --side-white: #f2f2ee;
+      --side-black: #1d1d1b;
+
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
       --board-shadow: 0 10px 36px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22);
+      --coord-ink: rgba(48,28,12,.62);
+      --board-edge: rgba(60,34,12,.30);
+      --sq-light: #f0d9b5;
+      --sq-dark: #b58863;
+      --sq-sel: rgba(201,204,0,.26);
+      --sq-last: rgba(64,153,23,.30);
+      --sq-check: rgba(220,60,40,.55);
+      --sq-hint: rgba(25,128,78,.62);
+      --sq-star: rgba(255,219,38,.76);
+      --sq-star-edge: rgba(120,80,0,.5);
+      --sq-flash: rgba(0,115,36,.42);
+      --sq-cursor: rgba(255,255,255,.95);
+      --sq-cursor-edge: rgba(20,20,20,.55);
+      --sq-dot: rgba(30,30,30,.28);
+      --sq-ring: rgba(30,30,30,.32);
+    }
+    [data-board="night"] {
+      --judge-soft: #d8c46a;
+      --judge-mid: #eaa94a;
+      --judge-bad: #e8705c;
+      --side-white: #dfeae4;
+      --side-black: #0e1613;
+
+      --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
+      --coord-ink: rgba(220,235,228,.55);
+      --board-edge: rgba(8,20,16,.34);
+      --sq-light: #bed4c9;
+      --sq-dark: #66907f;
+      --sq-sel: rgba(230,117,11,.28);
+      --sq-last: rgba(13,255,69,.18);
+      --sq-check: rgba(232,90,70,.58);
+      --sq-hint: rgba(13,130,255,.48);
+      --sq-star: rgba(217,144,0,.62);
+      --sq-star-edge: rgba(60,38,0,.55);
+      --sq-flash: rgba(64,255,198,.54);
+      --sq-cursor: rgba(255,255,255,.95);
+      --sq-cursor-edge: rgba(6,16,12,.60);
+      --sq-dot: rgba(8,18,15,.34);
+      --sq-ring: rgba(8,18,15,.40);
+      --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+    }
+    [data-board="day"] {
+      --judge-soft: #9a7b12;
+      --judge-mid: #b7690c;
+      --judge-bad: #c0392b;
+      --side-white: #fbfbf8;
+      --side-black: #23231f;
+
+      --board-frame: linear-gradient(145deg, #f3e6d0, #e8d4b0 45%, #dfc9a0);
+      --board-shadow: 0 10px 28px rgba(80,60,30,.18), inset 0 1px 0 rgba(255,255,255,.7);
+      --coord-ink: rgba(70,52,28,.62);
+      --board-edge: rgba(90,66,36,.26);
+      --sq-light: #eddcc0;
+      --sq-dark: #c39a6b;
+      --sq-sel: rgba(255,221,25,.28);
+      --sq-last: rgba(156,255,64,.24);
+      --sq-check: rgba(190,50,35,.50);
+      --sq-hint: rgba(0,115,59,.56);
+      --sq-star: rgba(255,227,89,1);
+      --sq-star-edge: rgba(120,80,0,.5);
+      --sq-flash: rgba(0,115,54,.44);
+      --sq-cursor: rgba(255,255,255,.95);
+      --sq-cursor-edge: rgba(40,28,12,.55);
+      --sq-dot: rgba(60,45,25,.30);
+      --sq-ring: rgba(60,45,25,.36);
+    }
+    [data-board="notebook"] {
+      --judge-soft: #8a6d0f;
+      --judge-mid: #a85c08;
+      --judge-bad: #b3372a;
+      --side-white: #fdfdfa;
+      --side-black: #26261f;
+
+      --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
+      --coord-ink: rgba(42,49,64,.55);
+      --board-edge: rgba(42,49,64,.22);
+      --sq-light: #e8ecf3;
+      --sq-dark: #98a8bd;
+      --sq-sel: rgba(217,90,0,.26);
+      --sq-last: rgba(13,69,255,.20);
+      --sq-check: rgba(192,57,43,.45);
+      --sq-hint: rgba(0,166,52,.42);
+      --sq-star: rgba(166,110,0,.64);
+      --sq-star-edge: rgba(60,40,0,.5);
+      --sq-flash: rgba(10,191,94,.36);
+      --sq-cursor: rgba(255,255,255,.95);
+      --sq-cursor-edge: rgba(28,33,44,.58);
+      --sq-dot: rgba(42,49,64,.26);
+      --sq-ring: rgba(42,49,64,.34);
+      --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
+    }
+
+    /* Scales that are not a theme's business: they are the same in all four.
+       Sizes, radii, leading, motion, and the row heights the panel is built on. */
+    :root {
       --side-w: 284px;
       --chrome-h: 44px;
       --stage-pad: 6px;
@@ -85,120 +421,6 @@
       --label-h: 16px;
       --font-num: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
     }
-    [data-theme="night"] {
-      --bg: #0b1210;
-      --panel: #121a18;
-      --panel-border: #24332e;
-      --text: #dce8e3;
-      --muted: #8aa399;
-      --accent: #7dcea0;
-      --btn: #1c2a25;
-      --btn-hover: #2a3d36;
-      --win: #a8e6cf;
-      --chrome-bg: linear-gradient(180deg, rgba(11,18,16,.9), rgba(11,18,16,.35) 75%, transparent);
-      --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
-      --coord-ink: rgba(220,235,228,.55);
-      --danger: #e8705c;
-      --board-edge: rgba(8,20,16,.34);
-      --primary-from: #9adfb8;
-      --primary-to: #5fb287;
-      --on-primary: #07130e;
-      --on-accent: #07130e;
-      --on-danger: #0b1210;
-      --sq-light: #bed4c9;
-      --sq-dark: #66907f;
-      --sq-sel: rgba(230,117,11,.28);
-      --sq-last: rgba(13,255,69,.18);
-      --sq-check: rgba(232,90,70,.58);
-      --sq-hint: rgba(13,130,255,.48);
-      --sq-star: rgba(217,144,0,.62);
-      --sq-star-edge: rgba(60,38,0,.55);
-      --sq-flash: rgba(64,255,198,.54);
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(6,16,12,.60);
-      --sq-dot: rgba(8,18,15,.34);
-      --sq-ring: rgba(8,18,15,.40);
-      --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
-      --card: rgba(255,255,255,.03);
-      --card-border: rgba(255,255,255,.05);
-      --btn-ghost: rgba(255,255,255,.05);
-    }
-    [data-theme="day"] {
-      --bg: #e8e4dc;
-      --panel: #f4f0e8;
-      --panel-border: #d4cdc0;
-      --text: #2c261e;
-      --muted: #7a7164;
-      --accent: #b8894a;
-      --btn: #e0d9cc;
-      --btn-hover: #d2c9b8;
-      --win: #a65d2e;
-      --chrome-bg: linear-gradient(180deg, rgba(244,240,232,.95), rgba(244,240,232,.4) 75%, transparent);
-      --board-frame: linear-gradient(145deg, #f3e6d0, #e8d4b0 45%, #dfc9a0);
-      --board-shadow: 0 10px 28px rgba(80,60,30,.18), inset 0 1px 0 rgba(255,255,255,.7);
-      --coord-ink: rgba(70,52,28,.62);
-      --danger: #b8382a;
-      --board-edge: rgba(90,66,36,.26);
-      --primary-from: #6a9fd4;
-      --primary-to: #3b6ea5;
-      --on-primary: #ffffff;
-      --on-accent: #ffffff;
-      --on-danger: #fdf6f4;
-      --sq-light: #eddcc0;
-      --sq-dark: #c39a6b;
-      --sq-sel: rgba(255,221,25,.28);
-      --sq-last: rgba(156,255,64,.24);
-      --sq-check: rgba(190,50,35,.50);
-      --sq-hint: rgba(0,115,59,.56);
-      --sq-star: rgba(255,227,89,1);
-      --sq-star-edge: rgba(120,80,0,.5);
-      --sq-flash: rgba(0,115,54,.44);
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(40,28,12,.55);
-      --sq-dot: rgba(60,45,25,.30);
-      --sq-ring: rgba(60,45,25,.36);
-      --card: rgba(0,0,0,.03);
-      --card-border: rgba(0,0,0,.06);
-      --btn-ghost: rgba(0,0,0,.04);
-    }
-    [data-theme="notebook"] {
-      --bg: #e6eaf0;
-      --panel: #f7f8fb;
-      --panel-border: #c5cdd8;
-      --text: #2a3140;
-      --muted: #6b7585;
-      --accent: #3b6ea5;
-      --btn: #e8ecf2;
-      --btn-hover: #dce2eb;
-      --win: #c0392b;
-      --chrome-bg: linear-gradient(180deg, rgba(247,248,251,.96), rgba(247,248,251,.45) 75%, transparent);
-      --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
-      --coord-ink: rgba(42,49,64,.55);
-      --danger: #c0392b;
-      --board-edge: rgba(42,49,64,.22);
-      --primary-from: #6a9fd4;
-      --primary-to: #3b6ea5;
-      --on-primary: #ffffff;
-      --on-accent: #ffffff;
-      --on-danger: #fbf3f2;
-      --sq-light: #e8ecf3;
-      --sq-dark: #98a8bd;
-      --sq-sel: rgba(217,90,0,.26);
-      --sq-last: rgba(13,69,255,.20);
-      --sq-check: rgba(192,57,43,.45);
-      --sq-hint: rgba(0,166,52,.42);
-      --sq-star: rgba(166,110,0,.64);
-      --sq-star-edge: rgba(60,40,0,.5);
-      --sq-flash: rgba(10,191,94,.36);
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(28,33,44,.58);
-      --sq-dot: rgba(42,49,64,.26);
-      --sq-ring: rgba(42,49,64,.34);
-      --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
-      --card: rgba(0,0,0,.03);
-      --card-border: rgba(0,0,0,.06);
-      --btn-ghost: rgba(0,0,0,.04);
-    }
     * { box-sizing: border-box; }
     html, body {
       margin: 0; height: 100%;
@@ -212,6 +434,32 @@
       user-select: none;
       overflow: hidden;
     }
+    /* Japanese.
+       The stack above is a Simplified-Chinese stack. Every CJK face in it is:
+       PingFang SC is SC, Microsoft YaHei is SC, and "Hiragino Sans GB" — GB as
+       in 国标 — is Hiragino's *Simplified Chinese* cut, not its Japanese one,
+       which is the trap in that name. So the Japanese interface has been
+       rendering its kanji in Chinese forms since 1.21: 直 直, 今 今, 骨 骨 —
+       different enough that a Japanese reader sees a foreign typeface, close
+       enough that nobody filed it. 缺陷 7.
+
+       applyLanguage() has always set documentElement.lang correctly, so the
+       hook was already there and nothing was hanging off it — the whole
+       stylesheet had not one :lang() or [lang] rule.
+
+       Leading too: Japanese sets denser than the Latin default and needs the
+       same body leading the rest of the app uses, not the font's own. */
+    html:lang(ja) body,
+    html:lang(ja) input,
+    html:lang(ja) button,
+    html:lang(ja) textarea,
+    html:lang(ja) select {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic Medium", "Yu Gothic",
+        "Noto Sans JP", "Meiryo", system-ui, sans-serif;
+    }
+    html:lang(ja) body { line-height: var(--lh-body); }
+
     #app { position: relative; height: 100%; width: 100%; overflow: hidden; }
     .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
 
@@ -1299,11 +1547,11 @@
     }
     .eval-bar {
       flex: 1; height: 10px; border-radius: 999px; overflow: hidden;
-      background: #1d1d1b; border: 1px solid var(--card-border);
+      background: var(--side-black); border: 1px solid var(--card-border);
     }
     .eval-bar-fill {
       display: block; height: 100%; width: 50%;
-      background: #f2f2ee;
+      background: var(--side-white);
       transition: width var(--dur-base) var(--ease);
     }
     .eval-bar.is-unmeasured { opacity: 0.35; }
@@ -1343,9 +1591,9 @@
     .muted-row { opacity: .45; }
 
     .mvtag { margin-left: 2px; font-weight: 600; font-size: 11px; }
-    .mvtag.t-soft { color: #c9b458; }
-    .mvtag.t-mid { color: #e0a03c; }
-    .mvtag.t-bad { color: var(--danger); }
+    .mvtag.t-soft { color: var(--judge-soft); }
+    .mvtag.t-mid { color: var(--judge-mid); }
+    .mvtag.t-bad { color: var(--judge-bad); }
 
     /* --- stats (v0.3) --- */
     .ach-body {
