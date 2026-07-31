@@ -2804,6 +2804,72 @@ for (const lang of CONTENT_LANGS) {
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
 
+  // --- the exported image is a file, not a screenshot of this theme --------
+  // It painted on --card (a 3–4% white overlay in wood and night) with --text
+  // on top, so exporting from either produced near-white text on near-white
+  // and dropping it into a white document produced a blank rectangle. 缺陷 2.
+  // The turning-point line ended "—— 点此跳转", removed by a regex that only
+  // worked on the full-width dash, so the English build printed "tap to jump"
+  // into the image. 缺陷 5. And nine fillText calls, no measureText, no
+  // wrapping: over-long text left the canvas rather than ellipsizing. 缺陷 21.
+  {
+    const at = appSrc.indexOf("function renderReportCanvas()");
+    const rep = appSrc.slice(at, appSrc.indexOf("\n  }\n", at));
+    assert(/REPORT_INK/.test(rep) && !/pick\("--card"/.test(rep),
+      "the export has its own opaque palette, not the theme's");
+    assert(/const REPORT_INK = \{[^}]*bg: "#/.test(appSrc), "…and it is a literal, on purpose");
+    assert(/rv\.turningPointPlain/.test(rep), "the turning point uses the plain key");
+    assert(!/replace\(\/\\s\*——/.test(rep), "…and no regex trims the screen's tail off it");
+    for (const lang of ["zh-CN", "en", "ja"]) {
+      assert("rv.turningPointPlain" in I.DICT[lang], lang + " has the plain turning-point line");
+      assert(!/点此跳转|tap to jump|タップで移動/.test(I.DICT[lang]["rv.turningPointPlain"]),
+        lang + "'s plain line says nothing about tapping");
+    }
+    assert(/measureText/.test(rep), "text is measured before it is drawn");
+    assert(/function text\(str, x, y, maxW/.test(rep), "…through one wrapping helper");
+    const raw = (rep.match(/ctx\.fillText\(/g) || []).length;
+    assert(raw <= 4, "…and almost nothing writes unmeasured (" + raw + " raw fillText)");
+    // one font stack, and it is the app's
+    const fonts = new Set([...rep.matchAll(/ctx\.font = "([^"]*)"/g)].map((m) => m[1]));
+    assert(fonts.size === 0, "no font string is written in place (" + [...fonts].join(" | ") + ")");
+    assert(/const REPORT_FONT = /.test(appSrc), "…there is one stack for the image");
+  }
+
+  // --- the ending sound is decided by who won ------------------------------
+  // Every ending asked "is the game over" rather than "who won", so being
+  // checkmated played the victory fanfare, losing on time played it, and
+  // *resigning* played it. Resigning to Stockfish sounded like an
+  // achievement. 缺陷 1.
+  {
+    const aud = fs.readFileSync(path.join(root, "src/web/js/audio.js"), "utf8");
+    assert(/function playLoss\(\)/.test(aud), "there is a sound for losing");
+    assert(/playRefused|playLift|playCastle|playPromote/.test(aud),
+      "…and for the refusal, the lift, the castle and the promotion");
+    // one master node, so four voices in the same 200ms cannot sum into a click
+    const audCode = aud.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const direct = (audCode.match(/connect\(ctx\.destination\)/g) || []).length;
+    assert(direct === 1, "every voice goes through the master node (" + direct + " direct)");
+    assert(/createDynamicsCompressor/.test(aud), "…which is what stops a pile-up clipping");
+    assert(/function wobble\(/.test(audCode) && !/Math\.random/.test(audCode),
+      "repeated moves are not identical, and not random either");
+
+    // and app.js decides by winner, in one place
+    assert(/function playEnding\(winner\)/.test(appSrc), "one place decides the ending sound");
+    const outsideEnding = appSrc.slice(0, appSrc.indexOf("function playEnding(winner)")) +
+      appSrc.slice(appSrc.indexOf("\n  }", appSrc.indexOf("function playEnding(winner)")));
+    const wins = (outsideEnding.match(/Audio2\.playWin\(\)/g) || []).length;
+    // the two that remain are the student finishing a lesson and solving a
+    // puzzle — those really are wins, and have no loser
+    assert(wins === 2, "nothing else reaches for the fanfare directly (" + wins + ")");
+    const endAt = appSrc.indexOf("function playEnding(winner)");
+    const ending = appSrc.slice(endAt, appSrc.indexOf("\n  }", endAt));
+    assert(/playLoss\(\)/.test(ending), "…and it can play the losing one");
+    // resignation specifically: the case that was most obviously wrong
+    const res = appSrc.indexOf("store.game.resigned = side;");
+    assert(/playEnding\(side === "w" \? "b" : "w"\)/.test(appSrc.slice(res, res + 300)),
+      "resigning plays the sound for the side that did not resign");
+  }
+
   // --- the stylesheet is sectioned by component, not by version ------------
   // `/* v1.9 polish */` and `/* --- stats (v0.3) --- */` are an append log:
   // they say when a rule arrived and nothing about what it belongs to. The

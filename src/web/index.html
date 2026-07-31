@@ -110,8 +110,20 @@
       </div>
 
       <div class="side-pane" id="pane-setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
+      <!-- Summary first, controls on request.
+           Eighteen equal-weight buttons stood open here permanently — six
+           difficulties, four sparring styles, two colours, six clocks — which
+           is a wall of choices in front of someone who mostly wants to know
+           what the current ones are. 满强度 and 爱进攻 wrapped onto a second
+           line in a 64px grid column and pushed the row height out on top of
+           that. The summary answers the common question in one line; the
+           buttons are one click away for the rarer one. P3.2. -->
       <section class="side-section">
-        <h2 class="side-h" data-i18n="side.game">对局</h2>
+        <details class="setting-fold" id="fold-game">
+          <summary class="setting-summary">
+            <span class="side-h" data-i18n="side.game">对局</span>
+            <span class="setting-sum" id="game-summary"></span>
+          </summary>
         <div class="setting-list">
           <div class="setting-row stack" id="row-difficulty">
             <!-- No "难度" row label here: it would be the third heading in a
@@ -179,6 +191,26 @@
             </button>
           </div>
         </div>
+        </details>
+      </section>
+
+      <!-- Every irreversible action, in one place, with one naming pattern.
+           They used to be four: 「清除存档」 pinned in red at the foot of the
+           panel, 「重置」 in the lesson header, 「清零」 in the statistics
+           header, 「认输」 in the game group — four unrecoverable actions,
+           four locations, three different words for "destroy", all of them
+           permanent furniture sitting a stray click away while you play.
+           Resign stayed with the game (it is a move, not a deletion) and is
+           only present while a game is running; the three that delete data
+           live here, behind one heading, off the screen you play on. -->
+      <section class="side-section">
+        <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
+        <div class="link-row">
+          <button type="button" class="text-link danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
+          <button type="button" class="text-link danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
+          <button type="button" class="text-link danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
+        </div>
+        <p class="hint" data-i18n="hint.danger">三项都不可撤销,各自会再问一次。</p>
       </section>
 
       <section class="side-section">
@@ -213,7 +245,6 @@
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.learn">教学</h2>
           <span class="side-h-meta num" id="learn-progress" title="已完成的课数" data-i18n-title="learn.doneOf">0/0</span>
-          <button type="button" class="text-link danger" id="learn-reset" data-i18n="act.reset" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">重置</button>
         </div>
         <div class="lesson-title" id="lesson-title"></div>
         <div class="lesson-text" id="lesson-text"></div>
@@ -223,7 +254,10 @@
           <button type="button" class="tool-btn" id="lesson-demo" title="重看本任务的走法演示" data-i18n-title="tip.lesson.demo" data-i18n="act.demo">演示</button>
           <button type="button" class="tool-btn" id="lesson-next" data-i18n="act.next" title="进入下一课" data-i18n-title="tip.lesson.next">下一课</button>
         </div>
-        <div class="lesson-list" id="lesson-list" aria-label="课程列表" data-i18n-aria="aria.lessonList"></div>
+        <details class="reading-index">
+          <summary class="setting-summary"><span class="side-h" data-i18n="side.contents">目录</span></summary>
+          <div class="lesson-list" id="lesson-list" aria-label="课程列表" data-i18n-aria="aria.lessonList"></div>
+        </details>
       </section>
 
       <section class="side-section" id="sec-puzzle" hidden>
@@ -263,7 +297,10 @@
           <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)" data-i18n-title="tip.puzzle.next" data-i18n="act.puzzleNext">下一题</button>
           <button type="button" class="tool-btn" id="puzzle-playon" hidden title="从这个开局局面接着与引擎对弈" data-i18n-title="tip.playOn" data-i18n="act.playOn">接实战</button>
         </div>
-        <div class="lesson-list" id="puzzle-list" aria-label="题目列表" data-i18n-aria="aria.puzzleList"></div>
+        <details class="reading-index">
+          <summary class="setting-summary"><span class="side-h" data-i18n="side.puzzleList">题目列表</span></summary>
+          <div class="lesson-list" id="puzzle-list" aria-label="题目列表" data-i18n-aria="aria.puzzleList"></div>
+        </details>
       </section>
 
       <section class="side-section" id="sec-editor" hidden>
@@ -384,7 +421,6 @@
       <section class="side-section" id="sec-stats">
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.stats">统计</h2>
-          <button type="button" class="text-link danger" id="stats-clear" data-i18n="act.clear">清零</button>
         </div>
         <div class="stats-body" id="stats-body"></div>
         <div class="side-h-row" style="margin-top:14px">
@@ -403,9 +439,6 @@
 
       </div><!-- /pane-record -->
 
-      <div class="side-foot">
-        <button type="button" class="text-link danger" id="clear-save" data-i18n="act.clearSave">清除存档</button>
-      </div>
     </aside>
 
     <div class="toast" id="toast"></div>

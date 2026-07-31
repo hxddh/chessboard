@@ -636,9 +636,9 @@ import { createStore } from "./store.js";
       store.session.hintMove = null;
       applyIncrement(played.color);
       animateReply(played);
-      Audio2.playMove(played.color, { captured: !!played.captured, check: game.in_check() });
-      if (game.in_checkmate()) Audio2.playWin();
-      else if (naturalGameOver()) Audio2.playDraw();
+      moveSound(played, game);
+      if (game.in_checkmate()) playEnding(game.turn() === "w" ? "b" : "w");
+      else if (naturalGameOver()) playEnding(null);
       saveGame();
       recordGameIfOver();
       coachAfterEngineReply();
@@ -750,7 +750,8 @@ import { createStore } from "./store.js";
       syncClockTimer();
       invalidateEngine();
       const isDraw = timeoutIsDraw();
-      if (isDraw) Audio2.playDraw(); else Audio2.playWin();
+      // the side whose flag fell lost; a draw only when the other side cannot mate
+      playEnding(isDraw ? null : (side === "w" ? "b" : "w"));
       if (store.session.mode === "ai") {
         recordOutcome(isDraw ? "draw" : side === store.session.humanColor ? "loss" : "win", "flag");
       }
@@ -1173,7 +1174,7 @@ import { createStore } from "./store.js";
     store.session.learn.last = { from: mv.from, to: mv.to };
     store.session.learn.helpArrow = null;
     BoardView.cancelAnim(); // the student's own move — see animateReply
-    Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
+    moveSound(mv, g);
     if (task.type === "stars") {
       if (store.session.learn.stars.has(mv.to)) {
         store.session.learn.stars.delete(mv.to);
@@ -1282,7 +1283,7 @@ import { createStore } from "./store.js";
       if (played) {
         store.session.learn.last = { from: played.from, to: played.to };
         animateReply(played);
-        Audio2.playMove(played.color, { captured: !!played.captured, check: g.in_check() });
+        moveSound(played, g);
       }
     }
     const task = curTask();
@@ -1803,7 +1804,7 @@ import { createStore } from "./store.js";
     store.session.puzzle.helpArrow = null;
     store.session.puzzle.last = { from: mv.from, to: mv.to };
     BoardView.cancelAnim(); // the solver's own move — see animateReply
-    Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
+    moveSound(mv, g);
     // A real-game tactic grades the key move and nothing else. The two plies
     // after it are a demonstration, not a second question: in a 25-piece
     // position the follow-up usually has several equally good moves, and
@@ -1841,7 +1842,7 @@ import { createStore } from "./store.js";
         if (rm) {
           store.session.puzzle.last = { from: rm.from, to: rm.to };
           animateReply(rm);
-          Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
+          moveSound(rm, g);
           store.session.puzzle.stage++;
         }
       }
@@ -1886,7 +1887,7 @@ import { createStore } from "./store.js";
     if (rm) {
       store.session.puzzle.last = { from: rm.from, to: rm.to };
       animateReply(rm);
-      Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
+      moveSound(rm, g);
     }
     sync();
   }
@@ -3340,6 +3341,42 @@ import { createStore } from "./store.js";
     if (diff) matEl.textContent = (diff > 0 ? "+" : "−") + Math.abs(diff);
   }
 
+  /**
+   * The sound one move makes.
+   *
+   * Castling and promotion are not ordinary placements: castling moves two
+   * pieces (the one move on the board that does, and the hardest to follow),
+   * and promotion turns a pawn into something heavier. Both used to make the
+   * same tap as pushing a pawn one square.
+   */
+  function moveSound(mv, g) {
+    if (!mv) return;
+    const check = g.in_check();
+    if (mv.flags && /[kq]/.test(mv.flags)) { Audio2.playCastle(mv.color); return; }
+    if (mv.promotion) { Audio2.playPromote(mv.color); return; }
+    Audio2.playMove(mv.color, { captured: !!mv.captured, check });
+  }
+
+  /**
+   * The sound a finished game makes, decided by WHO WON.
+   *
+   * Until 1.26 the question asked at every ending was "is the game over" —
+   * checkmate played the victory fanfare, flag-fall played it, and
+   * *resigning* played it. Being checkmated by Stockfish and resigning to it
+   * both sounded like you had won something. 缺陷 1.
+   *
+   * @param {"w"|"b"|null} winner  null for a draw
+   */
+  function playEnding(winner) {
+    if (!winner) { Audio2.playDraw(); return; }
+    // Two players at one board: somebody in the room won, so it is a win. In
+    // an engine game and in the trainers there is a "you", and it is the human.
+    const mine = store.session.mode === "ai" ? store.session.humanColor
+      : store.session.mode === "pvp" ? winner
+      : "w"; // learn and puzzle: the student always plays White
+    if (winner === mine) Audio2.playWin(); else Audio2.playLoss();
+  }
+
   /** The status pill: whose move, or how it ended, or that we are replaying. */
   function renderStatusPill() {
     const modal = inModal();
@@ -3574,6 +3611,27 @@ import { createStore } from "./store.js";
     if (flipRow) flipRow.hidden = store.session.mode !== "pvp";
     const flipSwitch = document.getElementById("opt-autoflip");
     if (flipSwitch) flipSwitch.setAttribute("aria-pressed", store.ui.autoFlipPvp ? "true" : "false");
+    // The one line that answers "what am I set to" without opening anything.
+    // Only the rows that apply in this mode are in it — a summary that lists a
+    // clock in lesson mode is a summary of a different app.
+    const sum = el("game-summary");
+    if (sum) {
+      const parts = [];
+      if (store.session.mode === "ai") {
+        parts.push(DIFF_NAMES[store.session.difficulty] || store.session.difficulty);
+        if (store.session.personaId !== "off") parts.push(t("persona." + store.session.personaId));
+        parts.push(t(store.session.humanColor === "w" ? "color.white" : "color.black"));
+      }
+      if (store.session.mode === "ai" || store.session.mode === "pvp") {
+        parts.push(store.game.timeControl === "off" ? t("clock.off") : store.game.timeControl);
+      }
+      sum.textContent = parts.join(" · ");
+    }
+    // the reading modes get a wider column — see styles.css [data-mode]
+    appEl.setAttribute("data-mode", store.session.mode);
+    const foldGame = el("fold-game");
+    if (foldGame) foldGame.hidden = store.session.mode === "learn" || store.session.mode === "puzzle";
+
     const secMoves = document.getElementById("sec-moves");
     const trainer = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
     if (secMoves) secMoves.hidden = trainer;
@@ -3668,10 +3726,10 @@ import { createStore } from "./store.js";
     // sliding it in from the square they took it off replays something they
     // did themselves — for a drag it visibly snaps back first
     BoardView.cancelAnim();
-    Audio2.playMove(mv.color, { captured: !!mv.captured, check: game.in_check() });
+    moveSound(mv, game);
     if (mv.promotion) toast(tf("mm.promoted", [PROMO_NAMES[mv.promotion]]));
-    if (game.in_checkmate()) Audio2.playWin();
-    else if (naturalGameOver()) Audio2.playDraw();
+    if (game.in_checkmate()) playEnding(game.turn() === "w" ? "b" : "w");
+    else if (naturalGameOver()) playEnding(null);
     if (!appGameOver()) syncAutoFlip();
     coachRemember(mv);
     sync();
@@ -3804,7 +3862,8 @@ import { createStore } from "./store.js";
     const who = side === "w" ? t("side.white") : t("side.black");
     invalidateEngine();
     store.game.resigned = side;
-    Audio2.playWin();
+    // resigning is losing, whatever the previous six years of this file said
+    playEnding(side === "w" ? "b" : "w");
     if (store.session.mode === "ai") recordResign();
     saveGame();
     store.commit("game", "action");
@@ -4051,6 +4110,43 @@ import { createStore } from "./store.js";
   // A picture carries the conclusion.
 
   /** Draw the finished review onto an offscreen canvas. @returns {HTMLCanvasElement|null} */
+  /**
+   * The exported review image.
+   *
+   * Three things this is not allowed to be, each of which it was:
+   *
+   * **Theme-coloured.** It used to paint on `--card` — a 3–4% white overlay in
+   * the wood and night themes — with `--text` on top. Exported from either, the
+   * PNG is near-white text on near-white, and dropping it into any document
+   * with a white background produced a blank rectangle. An exported file leaves
+   * the app; it cannot inherit the app's assumptions about what is behind it.
+   * So the palette here is opaque, fixed, and the same from all four themes.
+   * 缺陷 2.
+   *
+   * **Written for the screen.** The turning-point line ended "—— 点此跳转",
+   * true of the panel and nonsense in a file, and it was removed by a regex
+   * that only worked because Chinese and Japanese use a full-width dash: the
+   * English build shipped "tap to jump" printed on the image. Two keys now, no
+   * regex. 缺陷 5.
+   *
+   * **Unmeasured.** Nine fillText calls, no measureText, no wrapping, on a
+   * fixed 820px canvas. The Japanese side line runs about a third longer than
+   * the Chinese one, and over-long text did not ellipsize — it left the canvas
+   * and was gone. 缺陷 21.
+   */
+  const REPORT_FONT = "system-ui, -apple-system, 'Helvetica Neue', 'PingFang SC', 'Hiragino Kaku Gothic ProN', sans-serif";
+  /**
+   * Fixed, opaque, and nothing to do with the interface theme.
+   *
+   * Light, because a shared image lands on a white page far more often than a
+   * dark one, and because these values can then be checked for contrast once
+   * rather than four times.
+   */
+  const REPORT_INK = {
+    bg: "#fbfaf7", fg: "#1b1a17", muted: "#6b675e",
+    accent: "#8a5a1e", line: "#d9d4c8",
+  };
+
   function renderReportCanvas() {
     const a = analysisFor();
     const R = ChessReview;
@@ -4060,77 +4156,124 @@ import { createStore } from "./store.js";
     if (!sum) return null;
 
     const S = 2; // fixed scale: the file should not depend on the player's screen
-    const W = 900, H = 480;
+    const W = 900, H = 520;
     const cv = document.createElement("canvas");
     cv.width = W * S; cv.height = H * S;
     const ctx = cv.getContext("2d");
     ctx.scale(S, S);
-    const css = getComputedStyle(document.documentElement);
-    const pick = (n, dflt) => (css.getPropertyValue(n) || "").trim() || dflt;
-    const bg = pick("--card", "#1b1b19"), fg = pick("--text", "#eee");
-    const muted = pick("--muted", "#999"), accent = pick("--accent", "#e8c39e");
+    const { bg, fg, muted, accent, line } = REPORT_INK;
+    const font = (spec) => { ctx.font = spec + " " + REPORT_FONT; };
+
+    /**
+     * Draw text that is guaranteed to be inside the image.
+     *
+     * Wraps at `maxW` and, if it still does not fit in `maxLines`, ends the
+     * last line with an ellipsis. Returns the y after the last line, so the
+     * caller can lay out what comes next instead of assuming a height.
+     */
+    function text(str, x, y, maxW, maxLines, lh) {
+      const words = String(str).split(/(\s+)/);
+      const lines = [];
+      let cur = "";
+      for (const w of words) {
+        const next = cur + w;
+        // CJK has no spaces to break on, so fall back to breaking per character
+        if (ctx.measureText(next).width <= maxW || !cur) { cur = next; continue; }
+        lines.push(cur.trimEnd());
+        cur = w.trimStart();
+      }
+      if (cur) lines.push(cur.trimEnd());
+      const out = [];
+      for (const l of lines) {
+        if (ctx.measureText(l).width <= maxW) { out.push(l); continue; }
+        let piece = "";
+        for (const ch of l) {
+          if (ctx.measureText(piece + ch).width > maxW) { out.push(piece); piece = ch; }
+          else piece += ch;
+        }
+        if (piece) out.push(piece);
+      }
+      const shown = out.slice(0, maxLines || out.length);
+      if (out.length > shown.length && shown.length) {
+        let last = shown[shown.length - 1];
+        while (last && ctx.measureText(last + "…").width > maxW) last = last.slice(0, -1);
+        shown[shown.length - 1] = last + "…";
+      }
+      shown.forEach((l, i) => ctx.fillText(l, x, y + i * (lh || 20)));
+      return y + shown.length * (lh || 20);
+    }
 
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = fg;
-    ctx.font = "600 26px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    font("600 26px");
     ctx.fillText(t("rv.title"), 40, 56);
 
-    ctx.font = "15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    font("15px");
     ctx.fillStyle = muted;
     const opening = openingFor(sanHistory().length);
-    const head = [opening ? openingName(opening) : null, statusText(),
+    const head = [opening ? openingName(opening[1]) : null, statusText(),
       tf("mm.plies", [sanHistory().length])].filter(Boolean).join("  ·  ");
-    ctx.fillText(head, 40, 84);
+    text(head, 40, 84, W - 80, 2, 20);
+
+    // one line of context: which level, which colour, when
+    font("13px");
+    const when = new Date().toISOString().slice(0, 10);
+    const ctxLine = [DIFF_NAMES[store.session.difficulty] || store.session.difficulty,
+      t(store.session.humanColor === "w" ? "color.white" : "color.black"), when]
+      .filter(Boolean).join("  ·  ");
+    ctx.fillStyle = muted;
+    text(ctxLine, 40, 106, W - 80, 1, 18);
 
     // the curve, same shape and cut-off as the one on screen
-    const cx0 = 40, cy0 = 110, cw = W - 80, ch = 150;
-    ctx.strokeStyle = muted; ctx.globalAlpha = 0.3; ctx.lineWidth = 1;
+    const cx0 = 40, cy0 = 130, cw = W - 80, ch = 150;
+    ctx.strokeStyle = line; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cx0, cy0 + ch / 2); ctx.lineTo(cx0 + cw, cy0 + ch / 2); ctx.stroke();
-    ctx.globalAlpha = 1;
     const n = a.scalars.length - 1, CAP = 500;
     const JC = judgeColours();
     const px = (i) => (n ? cx0 + (i / n) * cw : cx0 + cw / 2);
-    const py = (s) => cy0 + ch / 2 - (Math.max(-CAP, Math.min(CAP, s)) / CAP) * (ch / 2 - 4);
+    const py = (sv) => cy0 + ch / 2 - (Math.max(-CAP, Math.min(CAP, sv)) / CAP) * (ch / 2 - 4);
     ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath();
     let pen = false;
     for (let i = 0; i <= n; i++) {
-      const s = a.scalars[i];
-      if (s == null) { pen = false; continue; }
-      if (pen) ctx.lineTo(px(i), py(s)); else { ctx.moveTo(px(i), py(s)); pen = true; }
+      const sv = a.scalars[i];
+      if (sv == null) { pen = false; continue; }
+      if (pen) ctx.lineTo(px(i), py(sv)); else { ctx.moveTo(px(i), py(sv)); pen = true; }
     }
     ctx.stroke();
     for (let i = 0; i < n; i++) {
       if (!R.isMistake(a.tags[i]) || a.tags[i] === "?!") continue;
-      const s = a.scalars[i + 1];
-      if (s == null) continue;
+      const sv = a.scalars[i + 1];
+      if (sv == null) continue;
       ctx.fillStyle = a.tags[i] === "??" ? JC.bad : JC.mid;
-      ctx.beginPath(); ctx.arc(px(i + 1), py(s), 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px(i + 1), py(sv), 3.5, 0, Math.PI * 2); ctx.fill();
     }
 
-    // the numbers, one column per side
+    // the numbers, one column per side — each column measured, so the longer
+    // Japanese line wraps inside its column instead of into the other one
     const rowY = cy0 + ch + 46;
-    ctx.font = "600 15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    const colW = cw / 2 - 20;
     for (const [k, side] of [[0, "w"], [1, "b"]]) {
       const x = 40 + k * (cw / 2);
       ctx.fillStyle = fg;
+      font("600 15px");
       ctx.fillText(side === "w" ? t("side.black") : t("side.white"), x, rowY);
-      ctx.font = "14px system-ui, -apple-system, 'PingFang SC', sans-serif";
+      font("14px");
       ctx.fillStyle = muted;
       const c = sum.counts[side];
-      ctx.fillText(tf("rv.sideLine", [
+      text(tf("rv.sideLine", [
         sum.acc[side] == null ? "—" : sum.acc[side], sum.acpl[side] == null ? "—" : sum.acpl[side],
         c.inaccuracy, c.mistake, c.blunder,
-      ]), x, rowY + 24);
-      ctx.font = "600 15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+      ]), x, rowY + 24, colW, 3, 19);
     }
     if (sum.worst) {
-      ctx.font = "14px system-ui, -apple-system, 'PingFang SC', sans-serif";
+      font("14px");
       ctx.fillStyle = accent;
-      ctx.fillText(tf("rv.turningPoint", [sum.worst.moveNo,
+      // the Plain key, not the panel's line with its "tap to jump" tail
+      text(tf("rv.turningPointPlain", [sum.worst.moveNo,
         sum.worst.side === "w" ? t("side.black") : t("side.white"), sum.worst.san,
-        (sum.worst.loss / 100).toFixed(1)]).replace(/\s*——.*$/, ""), 40, rowY + 62);
+        (sum.worst.loss / 100).toFixed(1)]), 40, rowY + 100, cw, 2, 20);
     }
-    ctx.font = "12px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    font("12px");
     ctx.fillStyle = muted;
     ctx.fillText(t("brand"), 40, H - 24);
     return cv;
@@ -4931,6 +5074,7 @@ import { createStore } from "./store.js";
     // point of dragging rather than clicking twice
     const over = BoardView.cellAt(p.x, p.y);
     const legal = !!(over && store.game.selection && store.game.selection.targets.includes(over));
+    if (!store.ui.dragging.x) Audio2.playLift(); // the first move of a drag
     store.ui.dragging = { from: store.ui.dragging.from, x: p.x, y: p.y, over, legal };
     draw();
   });
@@ -4950,7 +5094,7 @@ import { createStore } from "./store.js";
     const held = refused ? viewGame().get(wasDrag.from) : null;
     draw();
     if (sq && sq !== wasDrag.from) onSquareClick(sq); // drop = play/reselect
-    if (held) BoardView.reboundDrag(held, wasDrag.from, p.x, p.y);
+    if (held) { Audio2.playRefused(); BoardView.reboundDrag(held, wasDrag.from, p.x, p.y); }
   });
   canvas.addEventListener("pointercancel", () => {
     store.ui.painting = null;

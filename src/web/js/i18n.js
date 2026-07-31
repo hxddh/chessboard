@@ -31,6 +31,12 @@
  */
   const DICT = {
     "zh-CN": {
+      "side.contents": "目录",
+      "side.puzzleList": "题目列表",
+      "side.danger": "清除数据",
+      "act.clearLearn": "清除教学进度",
+      "act.clearStats": "清除统计与历史",
+      "hint.danger": "三项都不可撤销,各自会再问一次。",
       "msg.storage.failed": "保存失败 —— 本机存储写不进去。这一局之后的进度、统计与成就都不会被记住,重开会回到上次成功保存的状态。",
       "lang.name": "中文",
       // first-run onboarding (ob.*)
@@ -53,6 +59,7 @@
       "rv.opening": "开局",
       "rv.sideLine": "准确率 {0}% · 平均失分 {1} · 小失误 {2} / 失误 {3} / 严重 {4}",
       "rv.turningPoint": "关键一步:第 {0} 回合 {1} 走 {2},失分 {3} 子 —— 点此跳转",
+      "rv.turningPointPlain": "关键一步:第 {0} 回合 {1} 走 {2},失分 {3} 子",
       "rv.jumpTip": "跳到这一步之后的局面",
       "rv.verdict.blunders": "严重失误偏多 —— 每步先检查对方的将军、吃子和捉双",
       "rv.verdict.oneBlunder": "只有一次严重失误 —— 找出它，下一盘就少丢一分",
@@ -463,6 +470,12 @@
       "tip.lesson.demo": "重看本任务的走法演示",
     },
     en: {
+      "side.contents": "Contents",
+      "side.puzzleList": "Puzzles",
+      "side.danger": "Clear data",
+      "act.clearLearn": "Clear lesson progress",
+      "act.clearStats": "Clear statistics and history",
+      "hint.danger": "All three are irreversible; each asks once more.",
       "msg.storage.failed": "Save failed — this device is refusing to write. Nothing from here on is being kept: progress, statistics and achievements will be back to the last successful save when you reopen the app.",
       "lang.name": "English",
       // first-run onboarding (ob.*)
@@ -485,6 +498,7 @@
       "rv.opening": "Opening",
       "rv.sideLine": "Accuracy {0}% · avg loss {1} · inaccuracies {2} / mistakes {3} / blunders {4}",
       "rv.turningPoint": "Turning point: move {0}, {1} played {2}, costing {3} pawns — tap to jump",
+      "rv.turningPointPlain": "Turning point: move {0}, {1} played {2}, costing {3} pawns",
       "rv.jumpTip": "Jump to the position after this move",
       "rv.verdict.blunders": "Too many blunders — check every enemy check, capture and fork before you move",
       "rv.verdict.oneBlunder": "One blunder decided it — find it, and next game costs you nothing",
@@ -893,6 +907,12 @@
       "tip.lesson.demo": "Watch the solution demo again",
     },
     ja: {
+      "side.contents": "目次",
+      "side.puzzleList": "問題一覧",
+      "side.danger": "データの消去",
+      "act.clearLearn": "レッスンの進捗を消去",
+      "act.clearStats": "成績と対局履歴を消去",
+      "hint.danger": "いずれも取り消せません。実行前にもう一度確認します。",
       "msg.storage.failed": "保存に失敗しました —— この端末に書き込めません。これ以降の進捗・統計・実績は記録されず、次に開いたときは最後に保存できた状態に戻ります。",
       "lang.name": "日本語",
       // first-run onboarding (ob.*)
@@ -915,6 +935,7 @@
       "rv.opening": "オープニング",
       "rv.sideLine": "正確度 {0}% · 平均損失 {1} · 軽い緩手 {2} / 悪手 {3} / 大悪手 {4}",
       "rv.turningPoint": "分岐点:第 {0} 手目、{1} の {2}、損失 {3} ポーン —— タップで移動",
+      "rv.turningPointPlain": "分岐点:第 {0} 手目、{1} の {2}、損失 {3} ポーン",
       "rv.jumpTip": "この手のあとの局面へ移動",
       "rv.verdict.blunders": "大悪手が多すぎます —— 指す前に相手のチェック・駒取り・フォークを必ず確認しましょう",
       "rv.verdict.oneBlunder": "大悪手は 1 回だけ —— それを見つければ次局は落とさずに済みます",

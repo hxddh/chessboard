@@ -92,8 +92,13 @@ const LANGS = ["zh-CN", "en", "ja"];
     // checkable in milliseconds and in every language at once. What a browser
     // is still needed for is whether the rows are *there* and whether opening
     // the panel in this language throws.
-    const rows = await page.evaluate(() =>
-      [...document.querySelectorAll(".theme-row.wrap")].filter((r) => r.offsetParent).length);
+    // the game settings fold shut by default since P3.2 — open it, that is
+    // where the wrapped segments live
+    const rows = await page.evaluate(() => {
+      const f = document.getElementById("fold-game");
+      if (f) f.open = true;
+      return [...document.querySelectorAll(".theme-row.wrap")].filter((r) => r.offsetParent).length;
+    });
     assert(rows > 0, lang + ": the wrapped segments are on screen (" + rows + ")");
     assert(errs.length === 0, lang + ": no JS exception — " + errs.join(" / "));
     await ctx.close();
@@ -261,6 +266,88 @@ for (const [when, setup] of [
   for (const b of bad) console.error("  visible but disabled: " + b);
   assert(bad.length === 0,
     when + ":屏幕上没有被禁用的可见控件" + (bad.length ? " —— " + bad.join(", ") : ""));
+  await ctx.close();
+}
+
+// --- 3g. the reading modes get a reading layout ---------------------------
+// 72 lessons of prose in a 284px panel wrapped at about twenty characters a
+// line, with the text, the task, three controls and the entire table of
+// contents stacked in that one column. P3.5.
+{
+  const { ctx, page } = await open("zh-CN", "learn", "play");
+  await page.waitForTimeout(400);
+  const st = await page.evaluate(() => {
+    const side = document.getElementById("side");
+    const idx = document.querySelector("#sec-learn .reading-index");
+    return {
+      mode: document.getElementById("app").getAttribute("data-mode"),
+      width: Math.round(side.getBoundingClientRect().width),
+      indexFolded: idx ? !idx.open : null,
+      indexItemsVisible: idx ? [...idx.querySelectorAll("button, .lesson-row")].filter((b) => b.offsetParent).length : -1,
+      taskOwnSurface: !!document.querySelector("#lesson-task"),
+    };
+  });
+  assert(st.mode === "learn", "the app says which mode it is in, so the layout can follow");
+  assert(st.width >= 340, "the reading column is wider than the playing one (" + st.width + "px)");
+  assert(st.indexFolded, "the table of contents is folded away by default");
+  assert(st.indexItemsVisible === 0,
+    "…so 72 lessons are not stacked under the one you are reading (" + st.indexItemsVisible + ")");
+  assert(st.taskOwnSurface, "the task sits on its own surface, apart from the prose");
+  await ctx.close();
+}
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const w = await page.evaluate(() => Math.round(document.getElementById("side").getBoundingClientRect().width));
+  assert(w <= 300, "…and the playing layout is exactly where it was (" + w + "px)");
+  await ctx.close();
+}
+
+// --- 3f. settings read as a summary, and open on request ------------------
+// Eighteen equal-weight buttons stood open permanently — six difficulties,
+// four sparring styles, two colours, six clocks — in front of someone who
+// mostly wants to know what the current ones are. P3.2.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  const st = await page.evaluate(() => {
+    const f = document.getElementById("fold-game");
+    const shut = { open: f.open, text: document.getElementById("game-summary").textContent,
+      visibleButtons: [...f.querySelectorAll("button")].filter((b) => b.offsetParent).length };
+    f.open = true;
+    return { shut, openButtons: [...f.querySelectorAll("button")].filter((b) => b.offsetParent).length };
+  });
+  assert(!st.shut.open, "the game settings start folded");
+  assert(st.shut.visibleButtons === 0, "…so none of the buttons is on screen (" + st.shut.visibleButtons + ")");
+  assert(st.openButtons >= 14, "…and they are all there when you open it (" + st.openButtons + ")");
+  // the summary has to actually say the four things
+  const parts = st.shut.text.split(" · ").filter(Boolean);
+  assert(parts.length >= 3,
+    "the summary reads the current settings in one line — “" + st.shut.text + "”");
+  await ctx.close();
+}
+
+// --- 3e. destructive actions are in one place, off the playing screen -----
+// Four unrecoverable actions in four locations under three different words for
+// "destroy" — 清除存档 pinned in red at the foot of the panel, 重置 in the
+// lesson header, 清零 in the statistics header, 认输 in the game group — all of
+// them permanent furniture a stray click away while you play. P3.7.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const found = await page.evaluate(() => {
+    const danger = [...document.querySelectorAll(".text-link.danger, .danger")]
+      .filter((b) => b.tagName === "BUTTON");
+    return {
+      onPlayTab: danger.filter((b) => b.closest("#pane-play") && b.offsetParent).map((b) => b.id),
+      inFoot: document.querySelectorAll(".side-foot").length,
+      grouped: [...document.querySelectorAll("#pane-setup .text-link.danger")].map((b) => b.id).sort(),
+    };
+  });
+  assert(found.inFoot === 0, "nothing irreversible is pinned to the foot of the panel");
+  assert(JSON.stringify(found.grouped) === JSON.stringify(["clear-save", "learn-reset", "stats-clear"]),
+    "the three data deletions live together under one heading — " + found.grouped.join(", "));
+  // resign is the exception, and it is a move rather than a deletion: it stays
+  // with the game, and P3.3 already made it present only while one is running
+  assert(found.onPlayTab.every((id) => id === "btn-resign"),
+    "the play tab carries no deletion — " + found.onPlayTab.join(", "));
   await ctx.close();
 }
 

@@ -800,7 +800,7 @@
     .mode-nav { border-bottom: 1px solid var(--card-border); }
 
     /* —— tabs —— */
-    .side-head, .side-tabs, .side-foot { flex-shrink: 0; }
+    .side-head, .side-tabs { flex-shrink: 0; }
     .side-tabs {
       display: flex; align-items: stretch; gap: 4px;
       padding: 8px 0 0;
@@ -871,6 +871,55 @@
     .side-h-meta { font-size: 12px; color: var(--muted); }
 
     .setting-list { display: flex; flex-direction: column; gap: 12px; }
+    /* --- reading modes get a wider column and a foldable index ------------
+       72 lessons of prose in a 284px panel wrapped at about twenty characters
+       a line, with the text, the task, three controls and the whole table of
+       contents stacked in that one column. Learning chess from nothing is the
+       thing this product is proudest of and it was reading it through a slot.
+
+       284px is documented as the floor for THREE layers of navigation
+       (design-constraints §4). P3.1 took one of those layers out to the
+       chrome, so the floor moved with it. Widening only in the reading modes
+       keeps the playing layout exactly where it was. */
+    #app[data-mode="learn"], #app[data-mode="puzzle"] { --side-w: 380px; }
+
+    .reading-index > summary {
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer; list-style: none;
+      min-height: var(--row-h);
+    }
+    .reading-index > summary::-webkit-details-marker { display: none; }
+    .reading-index > summary::after {
+      content: "›"; margin-left: auto; color: var(--muted);
+      transition: transform var(--dur-quick) var(--ease);
+    }
+    .reading-index[open] > summary::after { transform: rotate(90deg); }
+    .reading-index:not([open]) > *:not(summary) { display: none; }
+
+    /* --- a settings group that opens on request -------------------------- */
+    .setting-fold > summary {
+      display: flex; align-items: baseline; gap: 8px;
+      cursor: pointer; list-style: none;
+      min-height: var(--row-h);
+      border-radius: var(--radius-sm);
+    }
+    .setting-fold > summary::-webkit-details-marker { display: none; }
+    .setting-fold > summary::after {
+      content: "›"; margin-left: auto; color: var(--muted);
+      transition: transform var(--dur-quick) var(--ease);
+    }
+    .setting-fold[open] > summary::after { transform: rotate(90deg); }
+    .setting-fold > summary:hover { background: var(--btn-ghost); }
+    /* Explicit, for the same reason `[hidden]` needs !important here: the
+       author `display` on .setting-list wins over the closed <details>'s own
+       hiding, so a folded group would still be laid out — visible buttons in
+       a group that reads as shut. */
+    .setting-fold:not([open]) > *:not(summary) { display: none; }
+    .setting-sum {
+      font-size: 12px; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
     .setting-row {
       display: flex; align-items: center; justify-content: space-between;
       gap: 12px; min-height: var(--row-h);
@@ -1139,6 +1188,9 @@
       margin: 0 0 8px;
       font-size: 12px; color: var(--muted); line-height: var(--lh-prose);
     }
+    /* The task is not another paragraph: it is the thing to DO, and it sits
+       on its own surface so the eye can find it without reading the lesson
+       again. */
     .lesson-task {
       margin: 8px 0 12px;
       padding: 8px 12px;
@@ -1172,19 +1224,7 @@
       color: var(--text); font-weight: 600;
     }
 
-    .side-foot {
-      margin-top: auto;
-      padding-top: 16px;
-      border-top: 1px solid var(--card-border);
-      display: flex; justify-content: space-between; align-items: center;
-      gap: 16px;
-    }
     /* the only control left under the comfortable 32px minimum */
-    .side-foot .text-link {
-      color: var(--muted); font-size: 11px; padding: 0 8px;
-      min-height: var(--row-h); display: inline-flex; align-items: center;
-    }
-    .side-foot .text-link:hover { color: var(--text); }
 
     /* side-panel side marks: king glyphs, hollow white / solid black */
     .pmark {
@@ -1389,7 +1429,7 @@
       #app.panel-open.scrim-on .scrim { display: none; }
       /* a 900px-wide row of four mode buttons is a lot of nothing between
          labels; keep the sheet's contents at the density the panel was drawn for */
-      .side-head, .side-tabs, .side-pane, .side-foot {
+      .side-head, .side-tabs, .side-pane {
         width: 100%; max-width: 620px;
         margin-left: auto; margin-right: auto;
       }
