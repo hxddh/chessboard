@@ -494,12 +494,25 @@
       #app.panel-open .chrome { padding-right: calc(var(--side-w) + 10px); }
     }
     .chrome > * { pointer-events: auto; }
-    .brand {
-      font-weight: 600; font-size: 13px; letter-spacing: 0.06em;
-      opacity: 0.92;
-      display: inline-flex; align-items: center; gap: 6px;
+    /* --- the spine: the game, with the panel shut ------------------------ */
+    .spine {
+      position: absolute; left: 50%; bottom: 6px; z-index: 15;
+      transform: translateX(-50%);
+      display: flex; align-items: center; gap: 12px;
+      max-width: calc(100% - 24px);
+      padding: 4px 12px; border-radius: 999px;
+      background: var(--btn-ghost);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(8px);
+      font-size: 12px; color: var(--muted);
+      line-height: var(--lh-tight);
+      pointer-events: none;
+      white-space: nowrap;
     }
-    .brand-mark { width: 17px; height: 17px; color: var(--accent); flex-shrink: 0; }
+    .spine[hidden] { display: none; }
+    .spine-turn { color: var(--text); font-weight: 500; }
+    .spine-mat { color: var(--accent); }
+
     .status-pill {
       font-size: 12px; font-weight: 500; color: var(--text);
       padding: 4px 12px; border-radius: 999px;
@@ -507,8 +520,12 @@
       border: 1px solid var(--card-border);
       backdrop-filter: blur(8px);
       transition: color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), background var(--dur-base) var(--ease);
-      /* learn mode puts the full task text here — clip instead of wrapping the bar */
-      max-width: 44vw;
+      /* One short phrase — "白方走子", "将死 · 白方胜". It used to carry the
+         whole lesson task when the panel was shut, clipped at 44vw with an
+         ellipsis: a chip that gets truncated is a chip holding a sentence that
+         belongs somewhere else. The task went back to its task card, and the
+         panel-shut case is the spine's job now. */
+      max-width: 30vw;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .status-pill.win {
@@ -754,8 +771,11 @@
        panel meant learning "selected" twice in two centimetres. The pills are
        gone; both rows now mark the current item with the same underline. */
     .mode-nav { margin-top: 12px; gap: 4px; }
+    /* In the chrome since 1.26, so it sizes to its labels rather than
+       stretching across a 284px panel. */
+    .theme-row.mode-nav { flex: 0 0 auto; gap: 2px; }
     .theme-row.mode-nav button {
-      flex: 1;
+      flex: 0 0 auto; padding: 0 12px;
       background: transparent; border: 0;
       border-bottom: 2px solid transparent;
       border-radius: var(--radius-sm) var(--radius-sm) 0 0;

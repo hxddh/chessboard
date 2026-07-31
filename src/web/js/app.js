@@ -3085,12 +3085,13 @@ import { createStore } from "./store.js";
     if (store.session.mode === "learn") {
       if (!store.session.learn) return t("st.learn");
       if (store.session.learn.done) return t("st.lessonDone");
-      // The task is spelled out in the panel, right next to this. Repeating it
-      // here word for word put the same sentence on screen twice and stretched
-      // the header to fit a whole instruction. It is still the fallback for a
-      // CLOSED sidebar — which is the case the duplication was protecting.
-      if (isPanelOpen()) return lessonText(curLesson()).title;
-      return learnTaskText();
+      // The lesson name, open panel or shut. The full task text used to appear
+      // here when the panel was closed — a whole instruction in a chip, clipped
+      // at 44vw with an ellipsis. A chip that gets truncated is a chip holding
+      // a sentence that belongs somewhere else: the task is spelled out on its
+      // task card, and what the closed panel needed was not this sentence but
+      // the game itself, which is what the spine shows now.
+      return lessonText(curLesson()).title;
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
@@ -3294,6 +3295,51 @@ import { createStore } from "./store.js";
     return store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
   }
 
+  /**
+   * The spine — the game, readable with the panel shut.
+   *
+   * Whose move, the clock, the last move, the material difference. Closing the
+   * panel used to take all four away and leave the board on a plain colour,
+   * which is the state a small window plays in permanently.
+   */
+  function renderSpine() {
+    const bar = el("spine");
+    if (!bar) return;
+    // with the panel open every one of these is on screen already, in more
+    // detail — a second copy would be the duplication rule broken twice
+    if (isPanelOpen() || inModal()) { bar.hidden = true; return; }
+    bar.hidden = false;
+    const g = viewGame();
+    el("spine-turn").textContent = statusText();
+
+    const clockEl = el("spine-clock");
+    const showClock = store.game.timeControl !== "off" && !!store.game.clock;
+    clockEl.hidden = !showClock;
+    if (showClock) {
+      clockEl.textContent = fmtClock(store.game.clock.w) + " · " + fmtClock(store.game.clock.b);
+    }
+
+    const lastEl = el("spine-last");
+    const h = sanHistory();
+    const at = store.game.viewIndex;
+    lastEl.hidden = at <= 0;
+    if (at > 0) {
+      const no = ChessReview ? ChessReview.moveNumber(at - 1, "w") : Math.ceil(at / 2);
+      lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
+    }
+
+    const matEl = el("spine-mat");
+    const Mat = ChessMaterial;
+    let diff = 0;
+    if (Mat) {
+      const promos = verboseHistory().slice(0, at)
+        .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
+      diff = Mat.summary(baseGame().board(), g.board(), promos).diff;
+    }
+    matEl.hidden = !diff;
+    if (diff) matEl.textContent = (diff > 0 ? "+" : "−") + Math.abs(diff);
+  }
+
   /** The status pill: whose move, or how it ended, or that we are replaying. */
   function renderStatusPill() {
     const modal = inModal();
@@ -3315,6 +3361,30 @@ import { createStore } from "./store.js";
     el("black-turn").hidden = !(showTurn && game.turn() === "b");
   }
 
+  /**
+   * Availability, expressed as presence.
+   *
+   * `disabled` is a promise the interface is not keeping: the control takes up
+   * the layout, names an action, and does nothing. At 0 moves fourteen visible
+   * controls were disabled at once — take back, the five replay keys, resume,
+   * PGN, export, offer draw, claim draw, resign, analyse, deep-analyse — which
+   * is most of the panel telling you about things you cannot do yet. P3.3.
+   *
+   * So: a control that does not apply is not there. The exception is a control
+   * that is *momentarily* busy rather than inapplicable — those get a label
+   * change, not a vanishing act, because a button that disappears while you
+   * are reaching for it is worse than one that greys.
+   */
+  function avail(node, ok) { if (node) node.hidden = !ok; }
+
+  /** Hide a group whose whole row went away, so no empty heading is left. */
+  function collapseEmptyGroups() {
+    for (const group of document.querySelectorAll(".act-group")) {
+      const live = [...group.querySelectorAll("button")].some((b) => !b.hidden);
+      group.hidden = !live;
+    }
+  }
+
   /** The replay bar and the move counter chip beside it. */
   function renderReplayBar() {
     const h = sanHistory();
@@ -3323,13 +3393,19 @@ import { createStore } from "./store.js";
       store.session.mode === "puzzle" ? (store.session.puzzle ? tf("pz.chip", [store.session.puzzle.idx + 1, puzzlesInCat(store.session.puzzle.cat).length]) : "—") :
       store.game.viewIndex + "/" + h.length;
     el("replay-pos").textContent = store.game.viewIndex + " / " + h.length;
-    el("rep-start").disabled = store.game.viewIndex <= 0;
-    el("rep-prev").disabled = store.game.viewIndex <= 0;
-    el("rep-next").disabled = store.game.viewIndex >= h.length;
-    el("rep-end").disabled = store.game.viewIndex >= h.length;
-    el("rep-live").disabled = isLive();
-    const rt = el("retry-here");
-    if (rt) rt.disabled = isLive();
+    // Nothing played yet is nothing to replay: the whole transport goes.
+    avail(el("replay-seg"), h.length > 0);
+    const back = store.game.viewIndex > 0;
+    const fwd = store.game.viewIndex < h.length;
+    avail(el("rep-start"), back);
+    avail(el("rep-prev"), back);
+    avail(el("rep-next"), fwd);
+    avail(el("rep-end"), fwd);
+    avail(el("rep-live"), !isLive());
+    // "resume from here" is a replay action, and it only exists off the live
+    // position — where it used to sit greyed out with a tooltip explaining
+    // that it only exists off the live position
+    avail(el("retry-here"), !isLive());
   }
 
   /** Everything you can do to the game in progress. */
@@ -3337,39 +3413,55 @@ import { createStore } from "./store.js";
     const h = sanHistory();
     const modal = inModal();
     const inDrill = store.session.mode === "learn" && store.session.learn && !store.session.learn.done && curTask().type === "drill";
-    el("undo").disabled = modal
-      ? !(inDrill && store.session.learn.g && store.session.learn.g.history().length)
-      : h.length === 0 || !isLive() || ruleTerminated();
-    el("btn-new").disabled = modal;
-    el("btn-flip").disabled = modal;
+    const over = appGameOver();
+
+    // Take back: in a drill it is the drill's own history; otherwise it needs
+    // a move to take back, the live position, and a game still running.
+    avail(el("undo"), modal
+      ? !!(inDrill && store.session.learn.g && store.session.learn.g.history().length)
+      : h.length > 0 && isLive() && !ruleTerminated());
+    avail(el("btn-new"), !modal);
+    avail(el("btn-flip"), !modal);
+
+    // Hint is the one control that stays put while it is busy: it is in the
+    // chrome, under the pointer, and it says what it is doing.
     const hintBtn = el("btn-hint");
     if (hintBtn) {
-      hintBtn.disabled =
+      const canHint =
         store.session.mode === "learn"
-          ? !(inDrill && !store.session.learn.engineBusy && !store.session.hintPending && store.session.learn.g && !store.session.learn.g.game_over() && store.session.learn.g.turn() === "w")
+          ? !!(inDrill && store.session.learn.g && !store.session.learn.g.game_over() && store.session.learn.g.turn() === "w")
         : store.session.mode === "puzzle"
-          ? !(store.session.puzzle && !store.session.puzzle.done && !store.session.puzzle.g.game_over() && store.session.puzzle.g.turn() === "w")
-        : !!store.session.editor || store.session.hintPending || store.session.analyzing || !isLive() || appGameOver() ||
-          (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor));
-      hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer") : store.session.hintPending ? t("chrome.thinking") : t("chrome.hint");
+          ? !!(store.session.puzzle && !store.session.puzzle.done && !store.session.puzzle.g.game_over() && store.session.puzzle.g.turn() === "w")
+        : !store.session.editor && isLive() && !over &&
+          !(store.session.mode === "ai" && game.turn() !== store.session.humanColor);
+      avail(hintBtn, canHint);
+      const busy = store.session.hintPending || store.session.analyzing ||
+        !!(store.session.learn && store.session.learn.engineBusy) || store.session.engineThinking;
+      hintBtn.disabled = false;
+      hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer")
+        : busy ? t("chrome.thinking") : t("chrome.hint");
+      hintBtn.classList.toggle("busy", busy);
     }
-    const resignBtn = el("btn-resign");
-    if (resignBtn) resignBtn.disabled = modal || !isLive() || h.length === 0 || appGameOver();
-    const drawBtn = el("btn-offerdraw");
-    if (drawBtn) {
-      drawBtn.disabled = modal || !isLive() || h.length === 0 ||
-        appGameOver() || store.session.drawOfferPending;
-    }
+
+    const live = !modal && isLive() && h.length > 0 && !over;
+    avail(el("btn-resign"), live);
+    avail(el("btn-offerdraw"), live && !store.session.drawOfferPending);
+    // Claim: it exists exactly when a rule says it may be claimed. It used to
+    // sit greyed with a tooltip explaining which rule would have to hold.
+    const reason = live ? claimableDrawReason() : null;
     const claimBtn = el("btn-claimdraw");
-    if (claimBtn) {
-      const reason = !modal && isLive() && !appGameOver() ? claimableDrawReason() : null;
-      claimBtn.disabled = !reason;
-      claimBtn.title = t(reason === "threefold" ? "tipRun.claimThreefold"
-        : reason === "fifty" ? "tipRun.claimFifty" : "tipRun.claimNone");
+    avail(claimBtn, !!reason);
+    if (claimBtn && reason) {
+      claimBtn.title = t(reason === "threefold" ? "tipRun.claimThreefold" : "tipRun.claimFifty");
     }
-    el("pgn-copy").disabled = h.length === 0;
-    el("pgn-download").disabled = h.length === 0;
-    el("fen-copy").disabled = false;
+
+    // A game with no moves has no PGN to copy, export or analyse.
+    const hasGame = h.length > 0;
+    avail(el("pgn-copy"), hasGame);
+    avail(el("pgn-download"), hasGame);
+    avail(el("an-run"), hasGame || store.session.analyzing);
+    avail(el("an-deep"), hasGame && !store.session.analyzing);
+    collapseEmptyGroups();
   }
 
   /**
@@ -3415,6 +3507,9 @@ import { createStore } from "./store.js";
 
     // the settings panel reads the game too (the clock preset is a game fact),
     // so it hears about all three
+    store.subscribe("game", renderSpine);
+    store.subscribe("session", renderSpine);
+    store.subscribe("ui", renderSpine);
     store.subscribe("game", syncSettingsUI);
     store.subscribe("ui", syncSettingsUI);
     store.subscribe("ui", draw);
@@ -4717,6 +4812,8 @@ import { createStore } from "./store.js";
         if (side.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur();
       }
     }
+    // the spine and the status pill both read "is the panel open"
+    store.commit("ui", "panel");
     requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); });
   }
   function togglePanel() { setPanelOpen(!isPanelOpen()); }

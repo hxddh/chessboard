@@ -10,13 +10,28 @@
 
   <div id="app">
     <header class="chrome">
-      <span class="brand"><svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" d="M 36 78 L 72 78 C 72 70 71 63 68 55 C 74 48 76 40 74 32 C 73 26.5 70 21.5 64 18.6 L 66.2 10.2 C 66.6 8.2 64.2 7.2 62.9 8.8 L 56.8 15.2 C 55.4 14.8 54 15.2 53.6 16.6 L 52.5 20 C 46 22 40 26.5 35.5 32.5 C 30.5 39 27.5 47 27 54 C 26.8 56.5 28 58.5 30.3 59.3 L 38 62 C 40.5 62.8 43 62 44.6 60 L 49 54.5 C 50 53.3 51.7 53.6 52.3 55 C 52.8 56.2 52.4 57.4 51.4 58.4 L 43 66.5 C 39 70.3 36.5 73.5 36 78 Z"/></svg><span data-i18n="brand">国际象棋</span></span>
+      <!-- Mode is an application-level switch: it decides what every other
+           control on screen means, which makes it navigation, not a setting.
+           It lived inside the panel until 1.26, under the player cards and
+           directly above the tab row — two rows deliberately sharing one
+           underline vocabulary, one meaning "change product" and one "change
+           view". Sharing the vocabulary solved "learn the selected state
+           twice"; the cost was two rows that look identical and are not. -->
+      <div class="theme-row mode-nav" id="mode-seg" role="group" aria-label="模式" data-i18n-aria="side.mode">
+        <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n-title="tip.mode.ai" data-i18n="mode.ai">人机</button>
+        <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.mode.pvp" data-i18n="mode.pvp">双人</button>
+        <button type="button" data-mode="learn" title="从零学国际象棋:互动课程" data-i18n-title="tip.mode.learn" data-i18n="mode.learn">教学</button>
+        <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀" data-i18n-title="tip.mode.puzzle" data-i18n="mode.puzzle">做题</button>
+      </div>
+      <!-- One job: whose move it is, or how the game ended. The wordmark and
+           the unlabelled 14/14 counter are gone — this is a desktop app with a
+           title bar, and a move counter is a position inside a game, which is
+           panel information. -->
       <span class="status-pill" id="status">白方走子</span>
-      <span class="meta-chip num" id="moves">0/0</span>
       <span class="spacer"></span>
       <div class="chrome-actions">
         <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint" data-i18n="chrome.hint">提示</button>
-        <button type="button" class="tool-btn" id="undo" disabled title="悔棋 (Z)" data-i18n-title="tip.undo" data-i18n="chrome.undo">悔棋</button>
+        <button type="button" class="tool-btn" id="undo" title="悔棋 (Z)" data-i18n-title="tip.undo" data-i18n="chrome.undo">悔棋</button>
         <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="chrome.flip">翻转</button>
         <button type="button" class="tool-btn primary" id="btn-new" title="新局 (N)" data-i18n-title="tip.newGame" data-i18n="chrome.new">新局</button>
         <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel">☰</button>
@@ -33,6 +48,18 @@
         <div class="coords ranks" id="coord-ranks" aria-hidden="true"></div>
         <div class="think-dot" id="think-dot" hidden></div>
       </div>
+    </div>
+    <!-- The spine: what stays readable with the panel shut.
+         Closing the panel used to take the whole game with it — whose move,
+         the clocks, the last move, the material difference — and leave the
+         board on a plain colour. That is the state people play in on a small
+         window, and it was the state with the least information in it. Four
+         facts, one row, under the board. -->
+    <div class="spine" id="spine" hidden>
+      <span class="spine-turn" id="spine-turn"></span>
+      <span class="spine-clock num" id="spine-clock" hidden></span>
+      <span class="spine-last num" id="spine-last" hidden></span>
+      <span class="spine-mat" id="spine-mat" hidden></span>
     </div>
     <div id="board-live" class="sr-only" aria-live="polite" role="status"></div>
 
@@ -66,14 +93,6 @@
           </div>
         </div>
         <div class="opening-line" id="opening-line" hidden></div>
-        <!-- mode is navigation, not a setting: it decides what every other
-             control means, so it stays visible whichever tab is open -->
-        <div class="theme-row mode-nav" id="mode-seg" role="group" aria-label="模式" data-i18n-aria="side.mode">
-          <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n-title="tip.mode.ai" data-i18n="mode.ai">人机</button>
-          <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.mode.pvp" data-i18n="mode.pvp">双人</button>
-          <button type="button" data-mode="learn" title="从零学国际象棋:互动课程" data-i18n-title="tip.mode.learn" data-i18n="mode.learn">教学</button>
-          <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀" data-i18n-title="tip.mode.puzzle" data-i18n="mode.puzzle">做题</button>
-        </div>
       </section>
 
       <!-- Three tabs instead of one 1788px scroll: what you touch while playing
@@ -298,9 +317,10 @@
              page was keeping to itself. -->
         <div class="idle-card" id="idle-card" hidden></div>
         <div class="replay-bar" id="replay-seg">
+          <span class="meta-chip num" id="moves">0/0</span>
           <button type="button" id="rep-start" title="开局 (Home)" data-i18n-title="tip.replay.start">«</button>
           <button type="button" id="rep-prev" title="上一着 (←)" data-i18n-title="tip.replay.prev">‹</button>
-          <button type="button" id="rep-live" disabled title="回到最新" data-i18n-title="tip.replay.live">●</button>
+          <button type="button" id="rep-live" title="回到最新" data-i18n-title="tip.replay.live">●</button>
           <button type="button" id="rep-next" title="下一着 (→)" data-i18n-title="tip.replay.next">›</button>
           <button type="button" id="rep-end" title="终局 (End)" data-i18n-title="tip.replay.end">»</button>
         </div>
@@ -327,7 +347,7 @@
           <div class="link-row">
             <button type="button" class="text-link" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
             <button type="button" class="text-link" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
-            <button type="button" class="text-link" id="retry-here" disabled title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
+            <button type="button" class="text-link" id="retry-here" title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
           </div>
         </div>
         <div class="act-group">
@@ -350,9 +370,9 @@
         <div class="act-group">
           <span class="act-k" data-i18n="act.groupGame">本局</span>
           <div class="link-row">
-            <button type="button" class="text-link" id="btn-offerdraw" disabled data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.offerDraw">提和</button>
-            <button type="button" class="text-link" id="btn-claimdraw" disabled title="三次重复或 50 回合无进展时可判和" data-i18n-title="tip.claimDraw" data-i18n="act.claimDraw">判和</button>
-            <button type="button" class="text-link danger" id="btn-resign" disabled title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
+            <button type="button" class="text-link" id="btn-offerdraw" data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.offerDraw">提和</button>
+            <button type="button" class="text-link" id="btn-claimdraw" title="三次重复或 50 回合无进展时可判和" data-i18n-title="tip.claimDraw" data-i18n="act.claimDraw">判和</button>
+            <button type="button" class="text-link danger" id="btn-resign" title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
           </div>
         </div>
         <p class="hint" data-i18n="hint.analysis">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
@@ -364,7 +384,7 @@
       <section class="side-section" id="sec-stats">
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.stats">统计</h2>
-          <button type="button" class="text-link danger" id="stats-clear" disabled data-i18n="act.clear">清零</button>
+          <button type="button" class="text-link danger" id="stats-clear" data-i18n="act.clear">清零</button>
         </div>
         <div class="stats-body" id="stats-body"></div>
         <div class="side-h-row" style="margin-top:14px">
