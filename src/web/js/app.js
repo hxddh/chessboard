@@ -1266,17 +1266,28 @@ import { createStore } from "./store.js";
    * draw *is* the goal, and being mated is the failure.
    */
   function drillOutcome(g, task) {
+    // What happened, then what to do about it: the outcome names the result and
+    // `drillAdvice()` reads the technique that was missing off the position.
+    // Where it has nothing certain to say the plain outcome stands alone. 缺陷 26.
+    const say = (key, goal, how) => {
+      const tip = ChessDrills.drillAdvice(g, goal, how);
+      return tip ? t(key) + t("lm.tipSep") + t(tip) : t(key);
+    };
     if (task.winOn === "draw") {
-      if (g.in_checkmate()) return t("lm.mateDefLost");
+      if (g.in_checkmate()) return say("lm.mateDefLost", "draw", "mated");
       if (g.game_over()) return "win"; // stalemate / 50-move / insufficient
       // black queening means the defence has already collapsed
       for (const row of g.board()) for (const p of row) {
-        if (p && p.color === "b" && p.type === "q") return t("lm.blackQueened");
+        if (p && p.color === "b" && p.type === "q") return say("lm.blackQueened", "draw", "queened");
       }
       return null;
     }
-    if (g.in_checkmate()) return g.turn() === "b" ? "win" : t("lm.mated");
-    if (g.game_over()) return g.in_stalemate() ? t("lm.stalemated") : t("lm.drawn");
+    if (g.in_checkmate()) return g.turn() === "b" ? "win" : say("lm.mated", "win", "mated");
+    if (g.game_over()) {
+      return g.in_stalemate()
+        ? say("lm.stalemated", "win", "stalemate")
+        : say("lm.drawn", "win", "draw");
+    }
     return null;
   }
 

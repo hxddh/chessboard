@@ -2017,6 +2017,58 @@ for (const lang of CONTENT_LANGS) {
     "app.js never rebuilds a drill id from its position");
 }
 
+// A failed drill has to teach the technique, not just name the result. Every
+// one of the six failure lines used to describe what happened — "被将死了 ——
+// 重来" — while the opening drills say which principle you broke, which is the
+// feedback design the rest of the app is measured against. 缺陷 26.
+{
+  const D = ctx.ChessDrills;
+  const G = (fen) => new Chess(fen);
+  const adv = (fen, goal, how) => D.drillAdvice(G(fen), goal, how);
+
+  // the advice is read off the position: same failure, different board,
+  // different technique — which is the whole point of deriving it
+  assert(adv("8/8/8/8/8/6k1/6p1/6K1 w - - 0 1", "draw", "queened") === "lmTip.philidor",
+    "a defence that let the pawn through is told the Philidor method");
+  assert(adv("7k/8/8/8/8/8/8/6QK w - - 0 1", "win", "stalemate") === "lmTip.stalemate",
+    "a stalemated mating drill is told to leave a square or check");
+  // queen up, own king still at home, enemy king in the far corner
+  assert(adv("7k/8/8/8/8/8/8/K5Q1 w - - 0 1", "win", "draw") === "lmTip.bringKing",
+    "a drawn heavy-piece drill with a distant king is told to bring the king up");
+  // kings together, defender still in the middle
+  assert(adv("8/8/8/3k4/3K4/8/8/7Q w - - 0 1", "win", "draw") === "lmTip.driveToEdge",
+    "…and one with a central defender is told to drive it to the edge");
+  assert(adv("7k/8/8/8/8/8/P7/K7 w - - 0 1", "win", "draw") === "lmTip.escortPawn",
+    "a drawn pawn drill with the king left behind is told to escort the pawn");
+  assert(adv("7k/8/8/8/8/8/8/6QK b - - 0 1", "win", "mated") === "lmTip.ownKing",
+    "being mated a queen up is told to look at its own king");
+  // and where nothing is certain it says nothing rather than guessing
+  assert(adv("7k/8/8/8/8/8/8/K7 w - - 0 1", "draw", "mated") === null,
+    "no rule matched means no advice, not a guess");
+
+  // every key it can return has to exist in all three languages
+  const advSrc = fs.readFileSync(path.join(root, "src/web/js/drills.js"), "utf8");
+  const body = advSrc.slice(advSrc.indexOf("function drillAdvice"));
+  const keys = [...new Set((body.match(/"lmTip\.[A-Za-z]+"/g) || []).map((k) => k.slice(1, -1)))];
+  assert(keys.length === 7, "drillAdvice offers seven techniques (" + keys.length + ")");
+  loadModule(ctx, "src/web/js/i18n.js");
+  const dicts = ctx.ChessI18n.DICT;
+  for (const lang of ["zh-CN", "en", "ja"]) {
+    for (const k of keys.concat("lm.tipSep")) {
+      assert(dicts[lang] && dicts[lang][k], k + " is written in " + lang);
+    }
+  }
+
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  // the wiring: the outcome line must actually carry the advice, and the
+  // wording must live in the dictionary rather than being pasted into app.js
+  assert(/ChessDrills\.drillAdvice\(/.test(appSrc), "drillOutcome asks drills.js for the technique");
+  assert(/t\(key\) \+ t\("lm\.tipSep"\) \+ t\(tip\)/.test(appSrc),
+    "the joining punctuation is translated too, not hard-coded");
+  assert(!/lmTip\./.test(appSrc.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "")),
+    "app.js names no technique itself — it prints whatever the position derives");
+}
+
 // PGN utilities: splitting a multi-game file must not lose games (importing a
 // database used to silently keep only the last one)
 {
@@ -2660,9 +2712,12 @@ for (const lang of CONTENT_LANGS) {
     // briefly put the Elo values ON the buttons, which was wrong. UCI_Elo is
     // an engine setting, its floor of 1320 is already above a real beginner,
     // and this app never gives the player a rating to compare against.)
+    // `lm.tipSep` is the punctuation between a drill's outcome and the
+    // technique it teaches. Japanese and Chinese both end a sentence with 。 —
+    // it is translated, and the translation is the same mark.
     ja: new Set(["act.pgnCopy", "act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
       "learn.lessonPre", "ed.crK", "ed.crQ",
-      "tip.diffNormal", "tip.diffHard"]),
+      "tip.diffNormal", "tip.diffHard", "lm.tipSep"]),
   };
   let untranslated = 0;
   for (const id of langs) {

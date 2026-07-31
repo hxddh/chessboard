@@ -147,4 +147,66 @@
     return n;
   }
 
-  export const ChessDrills = { MIN_PLIES, hash36, drillId, drillLines, legacyIdMap, migrateIds };
+
+  /**
+   * Why the drill went wrong, in terms of the technique — not the result.
+   *
+   * The eight drill tasks shared six failure lines, every one of them from
+   * `drillOutcome()` and every one describing what happened: "被将死了 ——
+   * 重来", "逼和了 —— 和棋,重来". None mentioned a technique. The opening
+   * drills, meanwhile, say which principle you broke, and README calls that
+   * the best feedback design in the app. 缺陷 26.
+   *
+   * Every rule here is a fact read off the position, and each is the standard
+   * technique for the situation it names — nothing is inferred about intent
+   * and nothing is guessed. Where the position does not match a rule the
+   * answer is null and the plain outcome stands.
+   *
+   * Pure: a position in, an i18n key out. The caller does the wording.
+   *
+   * @param {object} g       chess.js instance at the failed position
+   * @param {"win"|"draw"} goal  what the drill was asking for
+   * @param {string} how     "stalemate" | "draw" | "mated" | "queened"
+   * @returns {string|null}  an i18n key
+   */
+  function drillAdvice(g, goal, how) {
+    let heavy = 0, pawns = 0;
+    const sq = {};
+    const b = g.board();
+    for (let r = 0; r < 8; r++) {
+      for (let f = 0; f < 8; f++) {
+        const p = b[r][f];
+        if (!p) continue;
+        if (p.type === "k") sq[p.color] = { f, r: 7 - r };
+        if (p.color === "w" && (p.type === "q" || p.type === "r")) heavy++;
+        if (p.color === "w" && p.type === "p") pawns++;
+      }
+    }
+    if (!sq.w || !sq.b) return null;
+    const kingGap = Math.max(Math.abs(sq.w.f - sq.b.f), Math.abs(sq.w.r - sq.b.r));
+    const defenderCentral = sq.b.f >= 2 && sq.b.f <= 5 && sq.b.r >= 2 && sq.b.r <= 5;
+
+    if (goal === "draw") {
+      // the defensive drills: the pawn got through
+      if (how === "queened") return "lmTip.philidor";
+      return null;
+    }
+    // Stalemate is the mating drill's signature mistake, and it has one cause:
+    // every square taken away without a check being given.
+    if (how === "stalemate") return "lmTip.stalemate";
+    // A draw by the fifty-move rule or by running the pieces down means the
+    // method was never applied. Which half is missing is readable: a king that
+    // never came up, or a defender still in the middle.
+    if (how === "draw") {
+      if (heavy && kingGap > 3) return "lmTip.bringKing";
+      if (heavy && defenderCentral) return "lmTip.driveToEdge";
+      if (pawns && kingGap > 2) return "lmTip.escortPawn";
+      return "lmTip.method";
+    }
+    // Being mated while a queen or a rook up means the attacker's own king
+    // walked into it.
+    if (how === "mated" && heavy) return "lmTip.ownKing";
+    return null;
+  }
+
+  export const ChessDrills = { MIN_PLIES, hash36, drillId, drillLines, legacyIdMap, migrateIds, drillAdvice };
