@@ -2761,6 +2761,40 @@ for (const lang of CONTENT_LANGS) {
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
 
+  // --- Escape closes the topmost dialog, and the list exists once -----------
+  // It was seven `classList.contains("show")` tests in a fixed hand-written
+  // order, plus the same seven again inside dialogOpen(). An eighth dialog
+  // meant editing two places; a wrong order reported nothing. 缺陷 19.
+  {
+    const esc = /if \(ev\.key === "Escape"\) \{[\s\S]*?\n    \}/.exec(appSrc);
+    assert(!!esc, "found the Escape handler");
+    // comments only; the point is that no *code* tests a dialog by hand
+    const code = esc[0].replace(/\/\/.*$/gm, "");
+    const chain = (code.match(/classList\.contains\("show"\)/g) || []).length;
+    assert(chain === 0, "Escape tests no dialog by hand (" + chain + " left)");
+    assert(/Dlg\.closeTop\(\)/.test(esc[0]), "…it asks for the top of the stack");
+    // dialogOpen() is one answer from one place
+    assert(/function dialogOpen\(\) \{\s*return Dlg\.anyOpen\(\);/.test(appSrc),
+      "\"is a dialog open\" is answered by the module that opens them");
+    // every dialog says how it closes, once, where it is built
+    const wire = /function wireDialogs\(\) \{[\s\S]*?\n  \}/.exec(appSrc);
+    assert(!!wire, "the closers are registered in one block");
+    const registered = (wire[0].match(/Dlg\.register\(/g) || []).length;
+    // the seven that exist today; the assertion is that the count matches the
+    // markup, so an eighth dialog cannot be added without registering it
+    const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+    const modals = (html.match(/class="modal-bg/g) || []).length;
+    assert(registered === modals,
+      "every one of the " + modals + " dialogs is registered (" + registered + " registered)");
+    // and the stack is open-order, not document order: a confirmation raised
+    // from inside the slot list has to win regardless of the markup
+    const dlg = fs.readFileSync(path.join(root, "src/web/js/dialog.js"), "utf8");
+    assert(/stack\.push\(el\)/.test(dlg) && /stack\.indexOf\(el\)/.test(dlg),
+      "dialog.js keeps an open-order stack");
+    assert(/for \(let i = stack\.length - 1; i >= 0; i--\)/.test(dlg),
+      "…and reads it from the top down");
+  }
+
   // the editor reports failures as keys — each must resolve in every language
   const editorSrc = fs.readFileSync(path.join(root, "src/web/js/editor.js"), "utf8");
   const edKeys = [...editorSrc.matchAll(/"(edErr\.[A-Za-z]+)"/g)].map((m) => m[1]);

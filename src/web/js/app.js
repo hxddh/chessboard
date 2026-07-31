@@ -61,9 +61,13 @@ import { createStore } from "./store.js";
    * meant. Measured on 1.11: with the shortcut sheet, the save slots or the
    * game history open, all of P / F / N still fired, so pressing N over the
    * history list stacked a "start a new game?" box on top of it.
+   *
+   * dialog.js answers it, because dialog.js is what opens them. This used to
+   * be its own DOM query — a second copy of a list that also existed as a
+   * seven-branch if-chain in the Escape handler. 缺陷 19.
    */
   function dialogOpen() {
-    return !!document.querySelector(".modal-bg.show");
+    return Dlg.anyOpen();
   }
 
   const I18n = ChessI18n;
@@ -5361,13 +5365,13 @@ import { createStore } from "./store.js";
 
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      if (promoModal && promoModal.classList.contains("show")) { finishPromotion(null); return; }
-      if (slotsModal && slotsModal.classList.contains("show")) { closeSlots(); return; }
-      if (histModal && histModal.classList.contains("show")) { closeHistory(); return; }
-      if (pickModal && pickModal.classList.contains("show")) { finishPick(null); return; }
-      if (fenModal && fenModal.classList.contains("show")) { closeFenModal(); return; }
-      if (confirmModal.classList.contains("show")) { finishConfirm(false); return; }
-      if (keysModal && keysModal.classList.contains("show")) { closeKeyHelp(); return; }
+      // The topmost dialog, whichever it is. This was seven
+      // `classList.contains("show")` tests in a fixed order, with the same
+      // seven listed again in dialogOpen(): adding an eighth meant editing two
+      // places, and ordering them wrong failed silently. Each dialog now says
+      // how it closes when it is built (see wireDialogs()), and Escape asks
+      // for the top of the stack. 缺陷 19.
+      if (Dlg.closeTop()) return;
       // before closing the panel — the panel holds the editor's only exit
       if (store.session.editor) { stopEditor(t("msg.editor.exited")); sync(); return; }
       if (isPanelOpen()) setPanelOpen(false);
@@ -5467,6 +5471,24 @@ import { createStore } from "./store.js";
   // because the very first thing a new player saw was a 1700-rated Stockfish
   // (mode "ai" + difficulty "normal" are the code defaults) with nothing at all
   // pointing at the interactive course or the Beginner tier built for them.
+  /**
+   * How each dialog is dismissed.
+   *
+   * One line per dialog, next to the other one-block-of-wiring in this file.
+   * Escape reads this; nothing else has to know the list, and nothing has to
+   * keep it in an order.
+   */
+  function wireDialogs() {
+    Dlg.register(promoModal, () => finishPromotion(null));
+    Dlg.register(document.getElementById("slots-modal"), closeSlots);
+    Dlg.register(document.getElementById("hist-modal"), closeHistory);
+    Dlg.register(pickModal, () => finishPick(null));
+    Dlg.register(fenModal, closeFenModal);
+    Dlg.register(confirmModal, () => finishConfirm(false));
+    Dlg.register(keysModal, closeKeyHelp);
+  }
+  wireDialogs();
+
   // Views listen from here on. Wired before any state is loaded, so the first
   // sync() below paints a screen that already agrees with the restored game
   // rather than one that agrees with the defaults.
