@@ -1621,16 +1621,23 @@ import { createStore } from "./store.js";
       PUZZLE_TIER_CACHE.set(p.id, tier);
       return tier;
     }
+    // A defence is as hard as it is narrow — and that is the ONLY thing that
+    // varies across this category. Every defensive puzzle is one move long, so
+    // the ply term is 0 for all of them, and they all share the same middlegame
+    // shape: 9–14 men, a quiet key move, usually no capture. Those constants
+    // added ~3.5 to every single one, which put the whole category above the
+    // "easy" line no matter how wide the defence was — `def × 简单` was an
+    // empty list, and the P5 acceptance rule says an empty combination must
+    // not be offered. So `saves` decides it outright, the same way an opening
+    // drill is scored on its length alone rather than on the tactic scale.
+    if (p.cat === "def" && typeof p.saves === "number") {
+      const tier = p.saves >= 4 ? "easy" : p.saves >= 2 ? "mid" : "hard";
+      PUZZLE_TIER_CACHE.set(p.id, tier);
+      return tier;
+    }
     score += (plies - 1) * 1.5;                    // longer forcing lines dominate
     if (p.cat === "tac") score += 1.5;
     if (p.cat === "win" && typeof p.gain === "number" && p.gain <= 3) score += 1; // small wins hide better
-    // A defence is as hard as it is narrow. Deriving the tier from the number
-    // of moves that hold — rather than from the solution's length, which is
-    // always one — is what makes the difficulty filter mean anything here:
-    // before this every defensive puzzle landed in the same middle band.
-    if (p.cat === "def" && typeof p.saves === "number") {
-      score += p.saves <= 1 ? 5 : p.saves <= 3 ? 3 : 1;
-    }
     try {
       if (p.fen) {
         const men = (p.fen.split(" ")[0].match(/[a-zA-Z]/g) || []).length;

@@ -269,6 +269,41 @@ for (const les of LESSONS) {
   }
 }
 
+// P5 的验收条件:每个「题型 × 难度」组合非空,或该维度不出现。缺陷 14 的
+// 症状是七个组合为空 —— 选中之后列表一片空白,而筛选是记住的,下次再来
+// 还是空的。断言两半:提供筛选的四类每一档都有题,不提供的三类根本没有
+// 这一行,而不是有一行按了没用。
+await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].find((x) => x.dataset.mode === "puzzle").click());
+await page.waitForTimeout(400);
+{
+  const pick = async (cat, tier) => page.evaluate(([c, t]) => {
+    const cb = [...document.querySelectorAll("#puzzle-cat-seg button")].find((b) => b.dataset.cat === c);
+    if (!cb) return { ok: false };
+    cb.click();
+    const row = document.getElementById("row-puzzle-tier");
+    const shown = !row.hidden && getComputedStyle(row).display !== "none";
+    const tb = [...document.querySelectorAll("#puzzle-tier-seg button")].find((b) => b.dataset.tier === t);
+    if (tb) tb.click();
+    return { ok: true, shown, n: document.getElementById("puzzle-list").children.length };
+  }, [cat, tier]);
+
+  for (const cat of ["tac", "real", "def", "op"]) {
+    for (const tier of ["easy", "mid", "hard"]) {
+      const r = await pick(cat, tier);
+      await page.waitForTimeout(150);
+      assert(r.ok && r.shown && r.n > 0, `${cat} × ${tier}:这一档有题(${r.n})`);
+    }
+  }
+  // reset, then the three mate categories must not offer the axis at all
+  await pick("tac", "all");
+  for (const cat of ["m1", "m2", "m3"]) {
+    const r = await pick(cat, "all");
+    await page.waitForTimeout(150);
+    assert(r.ok && !r.shown, `${cat}:不提供难度筛选这一行`);
+  }
+  await pick("tac", "all");
+}
+
 // --- the real-game tactics ------------------------------------------------
 await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].find((x) => x.dataset.mode === "puzzle").click());
 await page.waitForTimeout(400);
