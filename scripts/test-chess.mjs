@@ -583,7 +583,13 @@ for (const lang of CONTENT_LANGS) {
       failEn(id, "text paragraph count differs:", tr.text && tr.text.length, "vs", L.text.length);
     }
     if (tr.tasks) {
-      if (tr.tasks.length > L.tasks.length) failEn(id, "more translated tasks than real ones");
+      // Fewer translated tasks than real ones used to pass silently, which is
+      // how a task added to the Chinese course ships showing Chinese prose to
+      // an English reader — the overlay is indexed, so the extra task simply
+      // has no entry. The count has to match exactly.
+      if (tr.tasks.length !== L.tasks.length) {
+        failEn(id, "task count differs:", tr.tasks.length, "vs", L.tasks.length);
+      }
       tr.tasks.forEach((tt, i) => {
         const real = L.tasks[i];
         if (!real) return;

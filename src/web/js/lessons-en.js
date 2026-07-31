@@ -290,7 +290,8 @@
       tasks: [
         { prompt: "Play one queen move that gives check to the black king (more than one works)",
           retry: "That move does not attack the black king — try again" },
-        { prompt: "Your king is in check from the black rook! Answers one and two: move the king, or block with the bishop" },
+        { prompt: "Your king is in check from the black rook! Answers one and two: move the king, or block with the bishop",
+          retry: "In check there are only three roads: move the king (d1/d2/f1/f2), block on the e-file with the bishop (Be3), or capture the attacker. The board will not let you play anything else" },
         { prompt: "Checked by the rook again! This time use answer three — capture the attacker with your rook on a8",
           retry: "Taking the black rook on e8 ends the check for good" },
       ],
@@ -399,7 +400,8 @@
         "A pawn reaching the far rank must immediately become a queen, rook, bishop or knight. It cannot stay a pawn, and it cannot become a king.",
         "Take the queen nearly every time. Occasionally a knight gives an immediate check, or a rook/bishop avoids stalemating the opponent.",
       ],
-      tasks: [{ prompt: "Push the a7 pawn to the last rank and pick a piece in the dialog — it gives check too!" }],
+      tasks: [{ prompt: "Push the a7 pawn to the last rank and pick a piece in the dialog — it gives check too!",
+        retry: "This lesson wants the promotion itself — play a7–a8 and choose a piece in the dialog. A king move does not count" }],
     },
     draws: {
       part: "Rules and results", title: "The many ways a game is drawn",
@@ -730,8 +732,8 @@
           steps: [
             "Click e5: the d- and f-pawns that would guard it are gone, so nothing can chase a piece away from there",
           ] },
-        { prompt: "Put the knight on the e5 outpost",
-          retry: "The knight on f3 reaches e5 in one hop" },
+        { prompt: "Put a knight on the e5 outpost — either one reaches it, take your pick",
+          retry: "The knights on d3 and f3 each reach e5 in one hop" },
       ],
     },
     "mg-pawns": {
@@ -748,6 +750,8 @@
             "Black's d5 pawn has no friendly pawn beside it — click that isolated pawn",
             "The square in front of an isolated pawn can never be guarded by a pawn — click d4, the square a knight wants",
           ] },
+        { prompt: "Now use it — against an isolated pawn there are two roads: occupy the hole in front of it, or walk up and challenge it. Play one",
+          retry: "Two roads: Nd4 parks the knight on the square no pawn can ever guard, or c3–c4 challenges the isolani head-on" },
       ],
     },
     "mg-passer": {
@@ -762,8 +766,8 @@
           steps: [
             "Click the white pawn on c5: Black has nothing on the b-, c- or d-files, so nothing stands in its way",
           ] },
-        { prompt: "Push the passed pawn one square",
-          retry: "Play c5–c6" },
+        { prompt: "Make this passed pawn stronger — push it, or walk the king over to clear its road. Both are right",
+          retry: "Play c5–c6, or bring the king towards the c-pawn (Kf1)" },
       ],
     },
     "mg-trade": {
@@ -776,8 +780,8 @@
       tasks: [
         { prompt: "White is a rook up. The side with more material trades — take the queens off down the d-file",
           retry: "The d-file is clear: play Qxd8" },
-        { prompt: "The queens are gone; keep going — put your rook on the d-file, face to face with theirs",
-          retry: "The rook on e1 goes to d1" },
+        { prompt: "The queens are gone; keep going — face their rook down the d-file, or check down the e-file and force the swap",
+          retry: "Two roads: the rook on e1 goes to d1, or Re8+ makes the black rook take" },
       ],
     },
     "mg-attack": {
@@ -793,8 +797,8 @@
             "Click the bishop on d3: its diagonal runs all the way to h7, right at the king's doorstep",
             "Click the knight on f3: it can jump to g5 at any moment, the classic attacking square",
           ] },
-        { prompt: "Two is not enough. The e-file is empty — bring the rook up and make it three",
-          retry: "The rook on f1 goes to e1" },
+        { prompt: "Two is not enough — add one more piece pointing at the black king. Rook, knight or queen, any of them",
+          retry: "Add an attacker: Re1 puts the rook on the empty e-file, Ng5 is the knight square the lesson named, or Qe2 / Qe1 / Qd2 brings the queen out" },
       ],
     },
     "square": {
