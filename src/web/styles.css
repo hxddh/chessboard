@@ -962,6 +962,23 @@
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* A storage failure is not a toast.
+       A toast says "done" and then leaves; this says "nothing you do from here
+       is being kept", which is the one message in this app that has to still
+       be on screen a minute later. So: no fade, no timeout, danger colours,
+       and it sits at the top where a banner belongs rather than at the bottom
+       where confirmations do. 缺陷 3. */
+    .storage-fault {
+      position: absolute; left: 50%; top: 8px; z-index: 60;
+      transform: translateX(-50%);
+      max-width: min(560px, calc(100% - 32px));
+      background: var(--danger); color: var(--on-danger, #fff);
+      border-radius: var(--radius-md);
+      padding: 8px 16px; font-size: 13px; font-weight: 500;
+      line-height: var(--lh-body);
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+
     .modal-bg {
       display: none; position: absolute; inset: 0; z-index: 50;
       background: rgba(0,0,0,.45); place-items: center;

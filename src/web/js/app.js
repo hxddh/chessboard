@@ -25,6 +25,7 @@ import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES } from "./puzzles.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
+import { createPersist } from "./persist.js";
 import { createStore } from "./store.js";
 
   /**
@@ -75,10 +76,25 @@ import { createStore } from "./store.js";
   /** t() with {0}/{1} placeholders filled in — see i18n.tf */
   const tf = I18n ? I18n.tf : (k) => k;
 
-  const SAVE_KEY = "chess.v1.save";
-  const SETTINGS_KEY = "chess.v1.settings";
-  const PANEL_KEY = "chess.panelOpen";
-  const STATS_KEY = "chess.v1.stats";
+  /**
+   * Stored state, behind one door. See persist.js.
+   *
+   * The failure hook is the point of it: host.js has always returned
+   * true/false from storageSet(), and all eleven call sites here dropped that
+   * value inside an empty catch. A full quota therefore looked exactly like a
+   * successful save — the app kept showing lesson progress, puzzle progress,
+   * statistics and achievements all session, and lost the lot at the next
+   * launch. 缺陷 3. It says so now, once, and keeps saying it: the pill is not
+   * a toast because a toast that has gone is a warning nobody got.
+   */
+  const Persist = createPersist(Host, () => {
+    showStorageFault();
+    toast(t("msg.storage.failed"));
+  });
+  // One pass over storage, before anything reads from it: migrations get to
+  // see a whole profile, and no later reader has to wonder whether some other
+  // key moved under it.
+  Persist.load();
 
   const canvas = document.getElementById("board");
   const appEl = document.getElementById("app");
@@ -400,6 +416,30 @@ import { createStore } from "./store.js";
   function draw() { BoardView.draw(); }
 
   // --- toast + promise-based in-app confirm ---
+  /**
+   * A storage failure is permanent for the session, so its notice is too.
+   *
+   * A toast would be wrong here twice over: it disappears, and it looks like
+   * every other confirmation the app shows. What has happened is that nothing
+   * is being saved any more — the one message in this app that must still be
+   * on screen a minute later. (P2.6 gives toasts three tiers, at which point
+   * this becomes the fault tier's first citizen; until then it is its own
+   * element, which is honest about the difference rather than borrowing a
+   * style that means "done".)
+   */
+  function showStorageFault() {
+    let el = document.getElementById("storage-fault");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "storage-fault";
+      el.className = "storage-fault";
+      el.setAttribute("role", "alert");
+      document.body.appendChild(el);
+    }
+    el.textContent = t("msg.storage.failed");
+    el.hidden = false;
+  }
+
   function toast(msg) {
     const el = document.getElementById("toast");
     if (!el) return;
@@ -447,7 +487,7 @@ import { createStore } from "./store.js";
   // --- settings + autosave ---
   function loadSettings() {
     try {
-      const raw = Host.storageGet(SETTINGS_KEY);
+      const raw = Persist.get("settings");
       if (!raw) return;
       const s = JSON.parse(raw);
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
@@ -470,7 +510,7 @@ import { createStore } from "./store.js";
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId }));
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId }));
     } catch (_) {}
   }
   function saveGame() {
@@ -482,12 +522,12 @@ import { createStore } from "./store.js";
       if (store.game.resigned) payload.resigned = store.game.resigned;
       if (store.game.drawAgreed) payload.drawAgreed = true;
       if (store.game.drawClaimed) payload.drawClaimed = store.game.drawClaimed;
-      Host.storageSet(SAVE_KEY, JSON.stringify(payload));
+      Persist.setJson("save", payload);
     } catch (_) {}
   }
   function tryLoadSave() {
     try {
-      const raw = Host.storageGet(SAVE_KEY);
+      const raw = Persist.get("save");
       if (!raw) return false;
       const s = JSON.parse(raw);
       if (!s || s.v !== 1 || typeof s.pgn !== "string" || !s.pgn) return false;
@@ -744,7 +784,6 @@ import { createStore } from "./store.js";
   }
 
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
-  const LEARN_KEY = "chess.v1.learn";
   const LESSONS = CHESS_LESSONS || [];
 
   /**
@@ -865,14 +904,14 @@ import { createStore } from "./store.js";
 
   function loadLearnState() {
     try {
-      const s = JSON.parse(Host.storageGet(LEARN_KEY) || "null");
+      const s = JSON.parse(Persist.get("learn") || "null");
       if (s && s.v === 1 && s.done) return s;
     } catch (_) {}
     return { v: 1, done: {}, last: 0 };
   }
   store.session.learnState = loadLearnState();
   function saveLearnState() {
-    try { Host.storageSet(LEARN_KEY, JSON.stringify(store.session.learnState)); } catch (_) {}
+    Persist.setJson("learn", store.session.learnState);
   }
 
   function startLearn() {
@@ -1389,7 +1428,6 @@ import { createStore } from "./store.js";
   }
 
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
-  const PUZZLE_KEY = "chess.v1.puzzles";
   const PUZZLES = CHESS_PUZZLES || [];
   const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
@@ -1521,7 +1559,7 @@ import { createStore } from "./store.js";
 
   function loadPuzzleState() {
     try {
-      const s = JSON.parse(Host.storageGet(PUZZLE_KEY) || "null");
+      const s = JSON.parse(Persist.get("puzzles") || "null");
       if (s && s.v === 1 && s.solved) {
         if (!s.missed) s.missed = {};
         return migrateDrillIds(s);
@@ -1533,9 +1571,9 @@ import { createStore } from "./store.js";
   // persist the rewritten ids straight away — a migration that only lives in
   // memory runs again on every launch, and once the book does change it would
   // then be reading positions that no longer mean what they meant
-  if (store.session.puzzleState.idv === 2) { try { Host.storageSet(PUZZLE_KEY, JSON.stringify(store.session.puzzleState)); } catch (_) {} }
+  if (store.session.puzzleState.idv === 2) { Persist.setJson("puzzles", store.session.puzzleState); }
   function savePuzzleState() {
-    try { Host.storageSet(PUZZLE_KEY, JSON.stringify(store.session.puzzleState)); } catch (_) {}
+    Persist.setJson("puzzles", store.session.puzzleState);
   }
   const Srs = ChessSrs;
   function markMissed(id) {
@@ -2234,7 +2272,7 @@ import { createStore } from "./store.js";
     if (!rec) return;
     rec.acc = mine;
     rec.acpl = acpl;
-    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    Persist.setJson("stats", s);
     renderStats();
   }
 
@@ -2449,7 +2487,7 @@ import { createStore } from "./store.js";
 
   function loadStats() {
     try {
-      const s = JSON.parse(Host.storageGet(STATS_KEY) || "null");
+      const s = JSON.parse(Persist.get("stats") || "null");
       if (s && s.v === 2 && Array.isArray(s.games)) return s;
       // v1 → v2: split the overloaded `sig` into the three things it was.
       // Reading it apart is safe — unlike an id remap, this derives nothing
@@ -2487,7 +2525,7 @@ import { createStore } from "./store.js";
     store.game.recordedId = id;
     s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending: "" });
     if (s.games.length > 500) s.games = s.games.slice(-500);
-    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    Persist.setJson("stats", s);
     renderStats();
     checkNewAchievements();
     offerReview();
@@ -2825,10 +2863,9 @@ import { createStore } from "./store.js";
 
   // --- achievements: pure derivations of stats + lesson/puzzle progress ---
   const ACH = CHESS_ACHIEVEMENTS || [];
-  const ACH_KEY = "chess.v1.achv";
   function loadAchSeen() {
     try {
-      const s = JSON.parse(Host.storageGet(ACH_KEY) || "null");
+      const s = JSON.parse(Persist.get("achievements") || "null");
       if (s && Array.isArray(s.seen)) return new Set(s.seen);
     } catch (_) {}
     return new Set();
@@ -2885,7 +2922,7 @@ import { createStore } from "./store.js";
     const fresh = res.filter((r) => r.unlocked && !store.session.achSeen.has(r.ach.id));
     for (const r of res) if (r.unlocked) store.session.achSeen.add(r.ach.id);
     if (fresh.length) {
-      try { Host.storageSet(ACH_KEY, JSON.stringify({ seen: Array.from(store.session.achSeen) })); } catch (_) {}
+      Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
       // one toast per unlock, staggered so several don't collide
       fresh.forEach((r, i) => setTimeout(() => toast("🎉 " + t("ach.unlocked") + " · " + r.ach.icon + " " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
     }
@@ -3587,7 +3624,7 @@ import { createStore } from "./store.js";
     store.game.recordedId = id;
     s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending });
     if (s.games.length > 500) s.games = s.games.slice(-500);
-    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    Persist.setJson("stats", s);
     renderStats();
     checkNewAchievements();
     offerReview(); // resignation and flag-fall end a game just as much as mate
@@ -4321,18 +4358,17 @@ import { createStore } from "./store.js";
   // --- named save slots -------------------------------------------------
   // The autosave holds exactly one game, so studying a second position meant
   // losing the first. Slots are explicit, user-named storage on top of it.
-  const SLOTS_KEY = "chess.v1.slots";
   const SLOT_COUNT = 5;
 
   function loadSlots() {
     try {
-      const s = JSON.parse(Host.storageGet(SLOTS_KEY) || "null");
+      const s = JSON.parse(Persist.get("slots") || "null");
       if (s && Array.isArray(s.slots)) return s;
     } catch (_) {}
     return { v: 1, slots: new Array(SLOT_COUNT).fill(null) };
   }
   function saveSlots(s) {
-    try { Host.storageSet(SLOTS_KEY, JSON.stringify(s)); } catch (_) {}
+    Persist.setJson("slots", s);
   }
 
   /**
@@ -4552,7 +4588,7 @@ import { createStore } from "./store.js";
     const want = !!open;
     appEl.classList.toggle("panel-open", want);
     appEl.classList.toggle("scrim-on", want && window.innerWidth < 900);
-    try { Host.storageSet(PANEL_KEY, want ? "1" : "0"); } catch (_) {}
+    Persist.set("panelOpen", want ? "1" : "0");
     const side = document.getElementById("side");
     if (side) {
       if (want) { side.removeAttribute("inert"); side.setAttribute("aria-hidden", "false"); }
@@ -4874,7 +4910,7 @@ import { createStore } from "./store.js";
   document.getElementById("stats-clear").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearStats"), t("dlg.clearStatsTitle"),
       { ok: t("act.clear"), cancel: t("act.cancel") }))) return;
-    try { Host.storageRemove(STATS_KEY); } catch (_) {}
+    Persist.remove("stats");
     renderStats();
     renderAchievements();
     toast(t("msg.stats.cleared"));
@@ -5179,7 +5215,10 @@ import { createStore } from "./store.js";
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
       { ok: t("dlg.clear"), cancel: t("act.cancel") }))) return;
-    try { Host.storageRemove(SAVE_KEY); } catch (_) {}
+    // Everything this app stored, from persist.js's key list — not the one key
+    // this button used to remove and not the eight somebody had to remember.
+    // 缺陷 33.
+    Persist.clearAll();
     // the Dock / jump list is local data too: clearing the save and leaving a
     // list of this player's PGNs sitting in the system menu is not "cleared"
     Host.clearRecentDocuments();
@@ -5494,14 +5533,14 @@ import { createStore } from "./store.js";
   // rather than one that agrees with the defaults.
   wireViews();
 
-  const firstRun = !Host.storageGet(SETTINGS_KEY) && !Host.storageGet(SAVE_KEY) &&
-    !Host.storageGet(LEARN_KEY) && !Host.storageGet(PUZZLE_KEY);
+  const firstRun = !Persist.get("settings") && !Persist.get("save") &&
+    !Persist.get("learn") && !Persist.get("puzzles");
   // and on a first run, start in the system language rather than always Chinese
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
   document.documentElement.setAttribute("data-theme", store.ui.themeId);
   if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
-  const savedPanel = Host.storageGet(PANEL_KEY);
+  const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
   setSideTab(store.ui.sideTab);
   const resumed = tryLoadSave();

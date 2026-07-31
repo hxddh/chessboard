@@ -31,6 +31,7 @@
  */
   const DICT = {
     "zh-CN": {
+      "msg.storage.failed": "保存失败 —— 本机存储写不进去。这一局之后的进度、统计与成就都不会被记住,重开会回到上次成功保存的状态。",
       "lang.name": "中文",
       // first-run onboarding (ob.*)
       "ob.title": "先从哪里开始?",
@@ -463,6 +464,7 @@
       "tip.lesson.demo": "重看本任务的走法演示",
     },
     en: {
+      "msg.storage.failed": "Save failed — this device is refusing to write. Nothing from here on is being kept: progress, statistics and achievements will be back to the last successful save when you reopen the app.",
       "lang.name": "English",
       // first-run onboarding (ob.*)
       "ob.title": "Where would you like to start?",
@@ -893,6 +895,7 @@
       "tip.lesson.demo": "Watch the solution demo again",
     },
     ja: {
+      "msg.storage.failed": "保存に失敗しました —— この端末に書き込めません。これ以降の進捗・統計・実績は記録されず、次に開いたときは最後に保存できた状態に戻ります。",
       "lang.name": "日本語",
       // first-run onboarding (ob.*)
       "ob.title": "どこから始めますか?",

@@ -2761,6 +2761,46 @@ for (const lang of CONTENT_LANGS) {
   assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
     "a v1 stats file is migrated rather than dropped");
 
+  // --- storage goes through one door, and a failed write is heard ----------
+  // host.js has always returned true/false from storageSet() and caught its
+  // own exception. All eleven call sites in app.js dropped that value, every
+  // one inside an empty `catch (_) {}` — so a full or blocked quota looked
+  // exactly like a save. The app kept showing lesson progress, puzzle
+  // progress, statistics and achievements for the rest of the session and lost
+  // all of it at the next launch. 缺陷 3. And eight keys with three separate
+  // version conventions had no single entry point, so "clear my data" was a
+  // list somebody maintained by hand. 缺陷 33.
+  {
+    const direct = (appSrc.match(/Host\.storage(Set|Get|Remove)\(/g) || []).length;
+    assert(direct === 0,
+      "app.js does not touch storage directly (" + direct + " call(s) left)");
+    const empties = (appSrc.match(/storage\w*\([^)]*\)[^;]*;\s*\}\s*catch \(_\) \{\}/g) || []).length;
+    assert(empties === 0, "no storage call is left inside an empty catch");
+
+    const per = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
+    assert(/const ok = host\.storageSet\(key, value\)/.test(per) && /if \(ok\)/.test(per),
+      "persist.js reads the value host.js returns");
+    assert(/onWriteFailure/.test(per), "…and a failure is announced");
+    assert(/function clearAll\(\)[\s\S]{0,200}?for \(const name of Object\.keys\(KEYS\)\)/.test(per),
+      "clearing is derived from the key list, not typed out again");
+    assert(/export const SCHEMA = \d+/.test(per) && /MIGRATIONS/.test(per),
+      "there is one schema version, and a place for migrations to queue");
+    // every key the app owns is in the list — a key added elsewhere would be
+    // written but never cleared
+    const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
+    assert(keys.length === 8, "all eight keys are declared in one place (" + keys.length + ")");
+    for (const k of keys) {
+      assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
+    }
+    // the failure notice must not be a toast: a toast leaves, and this is the
+    // one message that has to still be there a minute later
+    assert(/function showStorageFault\(\)/.test(appSrc), "a storage failure gets its own notice");
+    const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const rule = /\.storage-fault \{([^}]*)\}/.exec(css);
+    assert(!!rule, ".storage-fault is styled");
+    assert(!/transition|opacity/.test(rule[1]), "…and does not fade away like a confirmation");
+  }
+
   // --- Escape closes the topmost dialog, and the list exists once -----------
   // It was seven `classList.contains("show")` tests in a fixed hand-written
   // order, plus the same seven again inside dialogOpen(). An eighth dialog
@@ -2952,7 +2992,7 @@ for (const lang of CONTENT_LANGS) {
     ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*Host\.addRecentDocument\(path\);/],
     ["the open dialog", /importPgnText\(text, paths\[0\]\);\s*\n\s*Host\.addRecentDocument\(paths\[0\]\);/],
     ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
-    ["clearing the save", /Host\.storageRemove\(SAVE_KEY\);[\s\S]{0,220}?Host\.clearRecentDocuments\(\);/],
+    ["clearing the save", /Persist\.clearAll\(\);[\s\S]{0,320}?Host\.clearRecentDocuments\(\);/],
   ]) assert(re.test(appSrc), "recent documents is recorded from " + what);
   assert(/if \(!store\.ui\.appForeground\) Host\.notify\(/.test(appSrc),
     "the analysis notification only fires when the app is in the background");
@@ -3066,7 +3106,7 @@ for (const lang of CONTENT_LANGS) {
   const newGame = fn("requestNewGame");
   assert(/recordedId = null/.test(newGame), "a new game is not the last game's record");
   assert(/analysis = null/.test(newGame), "a new game forgets the last game's analysis");
-  const clearSave = appSrc.slice(appSrc.indexOf('Host.storageRemove(SAVE_KEY)'));
+  const clearSave = appSrc.slice(appSrc.indexOf('Persist.clearAll()'));
   assert(/recordedId = null/.test(clearSave.slice(0, 900)),
     "clearing the save clears it too");
   // and the accuracy write-back must not hand its number to an older game that
