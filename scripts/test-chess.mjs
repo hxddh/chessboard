@@ -3915,10 +3915,34 @@ for (const lang of CONTENT_LANGS) {
   // what stops prose from drifting off it again.
   {
     const measured = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8"));
-    // comment prose wraps, and a `// ` at the start of the next line sits in
-    // the middle of a sentence — flatten it so a phrase can be matched at all
-    const engineSrc = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");
-    const engineFlat = engineSrc.replace(/\n\s*\/\/ ?/g, " ");
+    // Comment prose wraps, and a `// ` at the start of the next line sits in
+    // the middle of a sentence — flatten it so a phrase can be matched at all.
+    //
+    // `\r` goes first, and that is not defensive tidying. A Windows runner
+    // checks out with CRLF, so flattening `…27% on\r\n    // \`casual\`…` leaves
+    // the \r sitting mid-sentence where the break was, and every quoted phrase
+    // that happens to span a line break stops matching. It cost the 2.0
+    // release: ubuntu green, macOS green, Windows red on five assertions, and
+    // the failure arrived after the tag had already been pushed. Read normalised
+    // and the text is the same text on every platform.
+    const normalise = (t) => t.replace(/\r\n/g, "\n");
+    const readSrc = (rel) => normalise(fs.readFileSync(path.join(root, rel), "utf8"));
+    const flattenSlashes = (t) => t.replace(/\n\s*\/\/ ?/g, " ");
+    const engineSrc = readSrc("src/web/js/engine.js");
+    const engineFlat = flattenSlashes(engineSrc);
+    // The regression itself, reproduced on whatever platform this is running
+    // on: flatten a CRLF copy of the same file and it must come out as the
+    // same text. Asserting "engineFlat has no \r" would pass trivially on a
+    // LF checkout — which is precisely how the bug reached a release runner
+    // with ubuntu and macOS green.
+    {
+      // Run the real path — normalise() then the real flatten — over a CRLF
+      // copy. Drop the normalisation and this differs, on any platform.
+      const asCrlf = engineSrc.replace(/\n/g, "\r\n");
+      assert(flattenSlashes(normalise(asCrlf)) === engineFlat,
+        "the measured-figure checks read the same text on a CRLF checkout as on a LF one");
+    }
+
     const nov = measured.noviceScore && measured.noviceScore.tiers;
     let off = 0;
     const check = (where, text, re, actual, what) => {
@@ -3994,8 +4018,11 @@ for (const lang of CONTENT_LANGS) {
           "…and the ?! threshold was swept, not just asserted");
         // review.js's own comment quotes this run — same rule as the tier
         // figures: a re-record has to drag the prose with it
-        const rvSrc = fs.readFileSync(path.join(root, "src/web/js/review.js"), "utf8")
-          .replace(/\n\s*\* ?/g, " ");
+        const flattenStars = (t) => t.replace(/\n\s*\* ?/g, " ");
+        const rvRaw = readSrc("src/web/js/review.js");
+        const rvSrc = flattenStars(rvRaw);
+        assert(flattenStars(normalise(rvRaw.replace(/\n/g, "\r\n"))) === rvSrc,
+          "…and so do review.js's");
         const q = scan.byMovetime["120"];
         check("review.js", rvSrc, /moves by a median (\d+)cp between runs/, q.jitterMedian, "the scan jitter median");
         check("review.js", rvSrc, /(\d+)cp at the ninth percentile/, q.jitterP90, "the scan jitter p90");
