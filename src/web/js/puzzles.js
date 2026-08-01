@@ -10,8 +10,7 @@
  * it verifies the same way.
  * @module puzzles
  */
-(function (global) {
-  global.CHESS_PUZZLES = [
+  export const CHESS_PUZZLES = [
     // —— 一步将死 ——
     { id: "m1-backrank-r", cat: "m1", name: "底线杀",
       fen: "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", solution: ["Ra8#"] },
@@ -423,4 +422,3 @@
     { id: "dr-h8-rook", cat: "draw", via: "stalemate", name: "右上角逼和:送车",
       fen: "7K/R7/6k1/8/8/8/q7/8 w - - 0 1", solution: ["Rf7", "Qxf7"] },
   ];
-})(typeof window !== "undefined" ? window : globalThis);

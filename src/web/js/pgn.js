@@ -4,7 +4,6 @@
  * own; scripts/test-chess.mjs exercises them directly.
  * @module pgn
  */
-(function (global) {
   /**
    * Split a PGN file into individual games.
    *
@@ -73,5 +72,4 @@
     return m ? m[1].trim() || null : null;
   }
 
-  global.ChessPgn = { splitGames, tag, summary, startFen };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessPgn = { splitGames, tag, summary, startFen };

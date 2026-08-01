@@ -10,7 +10,12 @@
  *    then inject wasmBinary directly — zero URL resolution anywhere.
  * @module engine
  */
-(function (global) {
+import { ChessPersona } from "./persona.js";
+// `global` here means the real global object, and exactly two names on it:
+// CHESS_SF_LOADER and CHESS_SF_WASM_B64, written by the separate classic
+// script scripts/gen-engine-src.mjs generates. Everything else this module
+// needs is imported.
+const global = typeof window !== "undefined" ? window : globalThis;
   /**
    * difficulty id → search settings; elo:null = full strength.
    *
@@ -19,8 +24,11 @@
    * (measured — see scripts/test-strength.mjs), i.e. still a solid club player.
    * A real beginner opponent needs to hang material sometimes, so the tier
    * runs a shallow MultiPV search and samples among the candidates, often
-   * deliberately taking the worst one. Measured: ~150 ACPL with ~1 serious
-   * (≥300cp) mistake every four moves, while half its moves stay sensible.
+   * deliberately taking the worst one. Measured: 106 ACPL, a serious (≥300cp)
+   * mistake in 14% of moves, median loss 42 — so half its moves stay sensible.
+   *
+   * Figures from docs/measured.json (scripts/test-strength.mjs --record);
+   * test-chess.mjs fails if this comment stops agreeing with the file.
    */
   const TIERS = {
     // 1.19 re-calibration. `worstBias` was 0.6 — six moves in ten were the
@@ -28,9 +36,37 @@
     // self-destructive: a bot playing random legal moves that merely avoided
     // dropping a piece to an immediate recapture scored 81% against it over 24
     // games. Meanwhile the next rung up was Elo 1320, so a learner who beat
-    // this one had nowhere to go. Measured with scripts/test-novice.mjs, the
-    // same bot now scores 66% here and 25% on `casual`, and near nothing at
-    // 1320 — a ladder with rungs instead of a cliff.
+    // this one had nowhere to go. The same bot now scores 56% here and 27% on
+    // `casual` over 32 games, and near nothing at 1320 — a ladder with rungs
+    // instead of a cliff.
+    //
+    // Those two numbers are docs/measured.json's, not this comment's: run
+    // `node scripts/test-novice.mjs --record` to change them, and
+    // test-chess.mjs fails if this comment and README stop agreeing with the
+    // file. Until 1.25 this comment said 66% / 25% with no game count while
+    // README said 56% / 27% over 32, and there was no way to tell which run
+    // either came from — the script printed to a terminal and forgot. The 24
+    // games named above are the *previous* calibration's, and are staying: a
+    // before number is what makes an after number mean something.
+    // 2.0 measured and left alone. 缺陷 32 said the tier's strength is a
+    // function of the MultiPV candidate count, which moves with the phase.
+    // Measured over 391 positions (docs/measured.json `multipvPhase`): the
+    // count barely moves — 9.9 / 8.2 / 8.8 candidates across opening /
+    // middlegame / endgame — because there are almost always more than ten
+    // legal moves even when there are only eighteen. What does move, by four
+    // times, is how far apart the candidates are: 115 / 235 / 479cp between
+    // the best and the worst. So a uniform pick gives away four times as much
+    // per move in an endgame.
+    //
+    // Weighting the pick by that gap was then tried and measured, twice, and
+    // is NOT shipped: at spreadK 250 the novice's score rate fell 56% → 33%
+    // and 27% → 6%, and at 700 — soft enough to touch only the catastrophic
+    // tail — still 38% and 8%. That tail is load-bearing. Buying phase
+    // uniformity means raising `worstBias` back toward the 0.6 that the 1.19
+    // calibration above deliberately walked away from as self-destructive,
+    // which is a worse tier bought with a worse mechanism. The plan's own
+    // condition for making the change ("若相关性强" — if the candidate count
+    // really tracks the phase) is not met, so it is not made.
     beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.2, minMs: 350 },
     casual: { skill: 0, depth: 2, multipv: 6, worstBias: 0.15, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },
@@ -190,7 +226,7 @@
 
   async function bestMoveInner(fen, diff, maxMs, persona) {
     await init();
-    const styled = persona && persona.id && persona.id !== "off" && global.ChessPersona;
+    const styled = persona && persona.id && persona.id !== "off" && ChessPersona;
     let base = TIERS[diff] || TIERS.normal;
     if (styled) base = Object.assign({}, base, { multipv: Math.max(base.multipv || 0, 14) });
     // Clock pressure only shortens time-based tiers; depth-based ones are
@@ -246,7 +282,7 @@
       // it actually likes
       if (tier.worstBias) picked = pickHandicapped(cands, tier) || picked;
       if (styled) {
-        const styledUci = global.ChessPersona.pick(fen, list, persona.id, persona.Chess);
+        const styledUci = ChessPersona.pick(fen, list, persona.id, persona.Chess);
         if (styledUci) picked = parseUci(styledUci);
       } else if (!tier.worstBias) {
         picked = pickHandicapped(cands, tier) || picked;
@@ -271,16 +307,45 @@
    */
   function pickHandicapped(cands, tier) {
     const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
-    if (!list.length) return null;
+    const uci = pickCandidate(list, tier, Math.random);
+    return uci ? parseUci(uci) : null;
+  }
+
+  /**
+   * Which candidate a handicap tier plays — the whole rule, in one place.
+   *
+   * This existed three times: here, in scripts/test-strength.mjs and in
+   * scripts/test-novice.mjs, which is to say the two scripts that *measure*
+   * the tier each carried their own copy of the thing being measured. Now they
+   * call this, and `rng` is a parameter because the scripts need a seeded
+   * generator (a measurement has to be a fact about the code, not about the
+   * day) while the app wants Math.random.
+   *
+   * **Uniform on purpose, now that it has been measured.** The eight-in-ten
+   * case picks uniformly among the candidates, so how much it costs depends on
+   * how far apart they are — 115cp between best and worst in the opening, 479
+   * in the endgame (docs/measured.json `multipvPhase`). Weighting the pick by
+   * that gap is the obvious repair and it was tried: see the note above the
+   * `beginner` row for the two runs that say it takes the tier from a 56%
+   * opponent to a 33% one. The spread is what makes this tier weak, not an
+   * accident in how it is weak.
+   *
+   * @param {Array<{uci:string, score:number|null}>} list candidates, best first
+   * @param {object} tier   the tier row (worstBias)
+   * @param {Function} rng  () => [0,1)
+   * @returns {string|null} the chosen UCI move
+   */
+  function pickCandidate(list, tier, rng) {
+    if (!list || !list.length) return null;
     const scored = list.filter((c) => c.score != null);
     // never throw away a forced mate the tier already found — losing on
     // purpose from a winning position reads as a broken engine, not a weak one
-    if (scored.length && scored[0].score >= 100000 - 50) return parseUci(list[0].uci);
-    if (tier.worstBias && Math.random() < tier.worstBias && scored.length) {
+    if (scored.length && scored[0].score >= 100000 - 50) return list[0].uci;
+    if (tier.worstBias && rng() < tier.worstBias && scored.length) {
       const worst = scored.reduce((a, b) => (b.score < a.score ? b : a));
-      return parseUci(worst.uci);
+      return worst.uci;
     }
-    return parseUci(list[Math.floor(Math.random() * list.length)].uci);
+    return list[Math.floor(rng() * list.length)].uci;
   }
 
   /**
@@ -331,5 +396,4 @@
     };
   }
 
-  global.ChessEngine = { init, isReady, bestMove, analyze, newGame, cancel, TIERS };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessEngine = { init, isReady, bestMove, analyze, newGame, cancel, TIERS, pickCandidate };

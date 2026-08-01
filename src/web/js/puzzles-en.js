@@ -11,8 +11,7 @@
  * entry names an id that does not exist.
  * @module puzzles-en
  */
-(function (global) {
-  global.CHESS_PUZZLES_EN = {
+  export const CHESS_PUZZLES_EN = {
     // —— mate in one ——
     "m1-backrank-r": { name: "Back-rank mate" },
     "m1-q-knight": { name: "Queen and knight mate" },
@@ -195,4 +194,3 @@
     "dr-a8-knight": { name: "Stalemate in the top corner: give up the knight" },
     "dr-h8-rook": { name: "Stalemate in the far corner: give up the rook" },
   };
-})(typeof window !== "undefined" ? window : globalThis);

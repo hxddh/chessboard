@@ -24,7 +24,6 @@
  * because the answer depends on which dialogs are stacked.
  * @module dialog
  */
-(function (global) {
   const FOCUSABLE = [
     "a[href]", "button:not([disabled])", "input:not([disabled])",
     "select:not([disabled])", "textarea:not([disabled])",
@@ -33,6 +32,65 @@
 
   /** dialog element → the element that had focus when it opened */
   const openers = new WeakMap();
+
+  /**
+   * Dialogs that are currently on screen, oldest first.
+   *
+   * Open order, not document order. Escape closes the topmost, and "topmost"
+   * has to mean "the one you opened last" — a confirmation raised from inside
+   * the save-slot list sits above it no matter which of the two the markup
+   * happens to declare first.
+   *
+   * Until 1.25 there was no stack: app.js tried seven
+   * `classList.contains("show")` checks in a fixed hand-written order, and
+   * dialogOpen() carried a second copy of the same list. Adding an eighth
+   * dialog meant editing two places, and getting the order wrong reported
+   * nothing at all. 缺陷 19. (README records 1.11, where the missing guard let
+   * P/F/N through to the game behind three different modals, 9 times out of 9.)
+   */
+  const stack = [];
+
+  /** dialog element → how to dismiss it (usually more than el.classList) */
+  const closers = new WeakMap();
+
+  /**
+   * Say how a dialog is dismissed.
+   *
+   * Registered once, beside the dialog's own open/close pair, rather than
+   * listed again in a key handler. Most of these do more than hide a node —
+   * a promotion resolves its promise with null, a picker cancels its import —
+   * which is exactly why the key handler should not be the one deciding.
+   */
+  function register(el, onClose) {
+    if (el) closers.set(el, onClose);
+  }
+
+  /** The dialog Escape should close, or null when none is open. */
+  function top() {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].classList.contains("show")) return stack[i];
+    }
+    // opened some other way — fall back to document order rather than claiming
+    // nothing is open, which is the answer that lets keys through to the game
+    return topmost(document);
+  }
+
+  /** Is anything on screen? The single answer to that question. */
+  function anyOpen() { return !!top(); }
+
+  /**
+   * Dismiss the topmost dialog. Returns false when there was none.
+   *
+   * The whole of Escape's dialog handling: no order to maintain, no list to
+   * keep in step, and an eighth dialog is registered rather than inserted.
+   */
+  function closeTop() {
+    const el = top();
+    if (!el) return false;
+    const fn = closers.get(el);
+    if (fn) fn(); else close(el);
+    return true;
+  }
 
   /** Tabbable descendants, in document order, skipping anything not rendered. */
   function focusables(el) {
@@ -62,6 +120,9 @@
     if (active && active !== document.body) openers.set(el, active);
     el.setAttribute("aria-modal", "true");
     el.classList.add("show");
+    const at = stack.indexOf(el);
+    if (at >= 0) stack.splice(at, 1);
+    stack.push(el);
     const target = initial || focusables(el)[0];
     if (target) target.focus();
   }
@@ -70,6 +131,8 @@
   function close(el) {
     if (!el) return;
     const wasInside = el.contains(document.activeElement);
+    const at = stack.indexOf(el);
+    if (at >= 0) stack.splice(at, 1);
     el.classList.remove("show");
     el.removeAttribute("aria-modal");
     const back = openers.get(el);
@@ -105,5 +168,5 @@
     return false;
   }
 
-  global.ChessDialog = { open, close, handleTab, focusables, topmost, FOCUSABLE };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessDialog = { open, close, handleTab, focusables, topmost, FOCUSABLE,
+    register, top, anyOpen, closeTop };

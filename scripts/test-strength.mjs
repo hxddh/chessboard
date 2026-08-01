@@ -27,6 +27,8 @@ import path from "path";
 import vm from "vm";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import { compileModuleSync } from "./bundle.mjs";
+import { record, RECORDING } from "./measurements.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -52,7 +54,7 @@ const ctx = { console, Date, performance };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/chess.js"), "utf8"), ctx, { filename: "chess.js" });
+vm.runInContext(compileModuleSync(path.join(root, "src/web/js/chess.js")), ctx, { filename: "module" });
 const Chess = ctx.Chess;
 
 // tier table, read straight from the app so the test cannot drift from it
@@ -60,7 +62,7 @@ const engCtx = { console };
 engCtx.globalThis = engCtx;
 engCtx.window = engCtx;
 vm.createContext(engCtx);
-vm.runInContext(fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8"), engCtx, { filename: "engine.js" });
+vm.runInContext(compileModuleSync(path.join(root, "src/web/js/engine.js")), engCtx, { filename: "module" });
 const TIERS = engCtx.ChessEngine.TIERS;
 
 const argSamples = Number((process.argv.find((a) => a.startsWith("--samples")) || "").split("=")[1]);
@@ -162,12 +164,10 @@ async function tierMove(fen, tier) {
   try { line = await w; } finally { if (tier.multipv) listeners.splice(listeners.indexOf(collect), 1); }
   let picked = line.split(/\s+/)[1];
   if (tier.multipv && cands.size > 1) {
+    // engine.js's own rule, called rather than copied — this script used to
+    // carry its own transcription of it, which is a measurement of a copy
     const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
-    const scored = list.filter((c) => c.score != null);
-    if (scored.length && scored[0].score >= 100000 - 50) picked = list[0].uci;
-    else if (tier.worstBias && rnd() < tier.worstBias && scored.length) {
-      picked = scored.reduce((a, b) => (b.score < a.score ? b : a)).uci;
-    } else picked = list[Math.floor(rnd() * list.length)].uci;
+    picked = engCtx.ChessEngine.pickCandidate(list, tier, rnd) || picked;
   }
   return picked && picked !== "(none)" ? picked : null;
 }
@@ -224,6 +224,18 @@ for (const name of order) {
     "  中位=" + String(s.median).padStart(4) +
     "  ≥300cp 大失误=" + String(s.serious).padStart(2) + "/" + s.n
   );
+}
+
+// --record writes docs/measured.json; README and engine.js quote it from there
+// rather than each keeping their own copy of the number. Defect 12.
+if (RECORDING) {
+  record('tierAcpl', {
+    what: '每档在 ' + FENS.length + ' 个尖锐局面各走 ' + SAMPLES + ' 次,按满强度评估算平均失分(厘兵)',
+    script: 'scripts/test-strength.mjs --record',
+    positions: FENS.length,
+    samplesPerPosition: SAMPLES,
+    tiers: Object.fromEntries(order.filter((n) => stats[n]).map((n) => [n, stats[n]])),
+  });
 }
 
 let failed = 0;

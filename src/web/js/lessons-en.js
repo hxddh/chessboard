@@ -13,8 +13,7 @@
  * lessons.js entry for entry, and that every lesson is covered.
  * @module lessons-en
  */
-(function (global) {
-  global.CHESS_LESSONS_EN = {
+  export const CHESS_LESSONS_EN = {
     board: {
       part: "The board", title: "Squares and coordinates",
       text: [
@@ -29,7 +28,14 @@
           "Click a1 (White's bottom-left corner)",
           "Click h8 (the far corner on Black's side)",
         ],
-      }],
+      },
+        { prompt: "Three more — no corners to guess from this time",
+          steps: [
+            "Click d5: count across to the d-file, then up to the 5th rank",
+            "Click f2: one of White's pawn squares",
+            "Click b7: one of Black's pawn squares",
+          ] },
+      ],
     },
     squares: {
       part: "The board", title: "Light squares and dark",
@@ -46,7 +52,14 @@
           "Click whichever of White's bishops stands on a dark square (c1)",
           "Now the one on a light square (f1)",
         ],
-      }],
+      },
+        { prompt: "Walk along one diagonal and watch the colour",
+          steps: [
+            "Start at a1 — click it, a dark square",
+            "One step diagonally — click b2, dark again",
+            "One more — click c3. The whole diagonal is one colour, which is why a bishop spends its life on one",
+          ] },
+      ],
     },
     setup: {
       part: "The board", title: "Setting the board up",
@@ -63,7 +76,14 @@
           "Click either white knight (right next to the corner rooks)",
           "Click either black bishop (beside the king and queen)",
         ],
-      }],
+      },
+        { prompt: "\"The queen takes her own colour\" — check the claim",
+          steps: [
+            "Click the white queen on d1 — a light square, and she is the light-squared side's queen",
+            "Click the black queen on d8 — a dark square. Both match",
+            "The king takes what is left: click the white king on e1, one file across from his queen and one colour away",
+          ] },
+      ],
     },
     pieces: {
       part: "The board", title: "Six pieces, and what each is worth",
@@ -80,7 +100,14 @@
           "Now any knight or bishop (both 3)",
           "Finally any pawn (1)",
         ],
-      }],
+      },
+        { prompt: "Now the other way round: which piece is worth what",
+          steps: [
+            "Click a white piece worth 5 — a rook, in either corner",
+            "Click a white piece worth 3 that is also the only piece on the board able to jump over others — a knight",
+            "Click the piece with no price on it — the king. Lose him and the game is over, so there is no trading him",
+          ] },
+      ],
     },
     turns: {
       part: "The board", title: "Taking turns: White moves first",
@@ -92,7 +119,10 @@
       tasks: [{
         prompt: "White to move — play anything and spend the first move",
         retry: "Click one of your pieces, then click a square it can go to",
-      }],
+      },
+        { prompt: "Black has answered (1. e4 e5) — move two, and it is your turn again",
+          retry: "Turn about: White one move, Black one move. This one is yours" },
+      ],
     },
     howtomove: {
       part: "The board", title: "How to actually move a piece here",
@@ -104,7 +134,9 @@
       tasks: [{
         prompt: "Try it: select a centre pawn or a knight and develop it (e4, d4, Nf3 or Nc3 all count)",
         retry: "Click the piece first — its squares light up — then click one of them",
-      }],
+      },
+        { prompt: "Do it once more with a different piece — take the star with a knight (it hops out between the pawns)" },
+      ],
     },
     goal: {
       part: "The board", title: "Winning is checkmate, not capturing everything",
@@ -116,7 +148,10 @@
       tasks: [{
         prompt: "Queen and king, mate in one — bring the queen to g7",
         retry: "Qg7: the queen sits right against the black king with your own king behind her, so he can neither take her nor step away",
-      }],
+      },
+        { prompt: "One more: the black king is shut in by his own three pawns — mate in one",
+          retry: "Swing the rook to the 8th rank (Ra8). The king cannot run along the back rank and his own pawns block the way up — this is the back-rank mate" },
+      ],
     },
     pawn: {
       part: "How the pieces move", title: "Pawn: forward to move, diagonal to take",
@@ -209,7 +244,14 @@
           "Knights and bishops are both about 3, the \"minor pieces\" — click either white bishop",
           "A pawn is only worth 1, but its promotion potential is unlimited — click the e2 pawn",
         ],
-      }],
+      },
+        { prompt: "Do the arithmetic: which trades come out ahead",
+          steps: [
+            "Click a white piece worth 3 (knight or bishop) — trading it for a rook nets 2",
+            "Click a black piece worth 5 (a rook) — that is what the last one was trading for",
+            "Click the black queen (9) — a rook for her nets 4, and the other way round is a disaster",
+          ] },
+      ],
     },
     protect: {
       part: "Captures and value", title: "Look for defenders before you take",
@@ -220,7 +262,10 @@
       tasks: [{
         prompt: "Your queen can take two pawns: b7 is defended by the rook, h5 is not — take the safe one",
         retry: "The b7 pawn is defended by the b8 rook! Taking it trades your 9-point queen for a 1-point pawn — take the undefended one instead",
-      }],
+      },
+        { prompt: "The queen eyes both the knight on d5 and the bishop on f5 — count the defenders before you take",
+          retry: "The d5 knight is held by the c6 pawn, so taking it is 9 for 3. The f5 bishop is guarded by nobody" },
+      ],
     },
     defend: {
       part: "Captures and value", title: "Rescue a piece under attack",
@@ -231,7 +276,10 @@
       tasks: [{
         prompt: "The black rook is attacking your queen along the 5th rank! Move the queen to safety — or just take the rook",
         retry: "That square is still covered by Black, the queen would be taken for free — think again",
-      }],
+      },
+        { prompt: "This time it is the rook: the bishop on b8 is aiming down the long diagonal at e5 — move the rook where the bishop cannot reach",
+          retry: "Work out which diagonal the bishop runs on (b8–c7–d6–e5) and take the rook off it" },
+      ],
     },
     fork: {
       part: "Captures and value", title: "Fork: one piece, two targets",
@@ -268,7 +316,10 @@
       tasks: [{
         prompt: "The e4 knight has the e1 rook behind it, aimed at the black king — take the queen on f6 and discover the rook's check at the same time",
         retry: "Take the queen on f6 with the knight (once it moves, the rook on the e-file gives check)",
-      }],
+      },
+        { prompt: "Same idea, different pieces: the knight on e4 unmasks the rook on e1 the moment it moves — pick the landing square that also takes the rook on c5",
+          retry: "The knight takes on c5 and, in the same move, opens the check down the e-file. Black has to answer the check, so the rook stays won" },
+      ],
     },
     trade: {
       part: "Captures and value", title: "Trading: when it pays",
@@ -280,7 +331,10 @@
       tasks: [{
         prompt: "The knight on d3 (3) can take the rook on b4 (5), and nothing can recapture — take it",
         retry: "Nxb4: the knight hops to b4 and wins the rook, up 2. Count what defends b4 first — the answer is nothing",
-      }],
+      },
+        { prompt: "Not a win this time but the lesson's last line: you are a knight up — trade a pair of rooks off",
+          retry: "The d-file is clear: Rxd8. Black recaptures and it is an even swap — and with fewer pieces left, your extra knight counts for more" },
+      ],
     },
     check: {
       part: "Rules and results", title: "Check and how to answer it",
@@ -291,7 +345,8 @@
       tasks: [
         { prompt: "Play one queen move that gives check to the black king (more than one works)",
           retry: "That move does not attack the black king — try again" },
-        { prompt: "Your king is in check from the black rook! Answers one and two: move the king, or block with the bishop" },
+        { prompt: "Your king is in check from the black rook! Answers one and two: move the king, or block with the bishop",
+          retry: "In check there are only three roads: move the king (d1/d2/f1/f2), block on the e-file with the bishop (Be3), or capture the attacker. The board will not let you play anything else" },
         { prompt: "Checked by the rook again! This time use answer three — capture the attacker with your rook on a8",
           retry: "Taking the black rook on e8 ends the check for good" },
       ],
@@ -313,7 +368,10 @@
         "A piece is often safe only because **something else is guarding it**. To win it you do not have to attack it head-on — get the guard to leave first.",
         "The bluntest way is a check: the opponent must answer it, the guard is dragged off its post, and the thing it was watching is suddenly nobody's job.",
       ],
-      tasks: [{ prompt: "The knight on d5 is guarded by the rook on d8. Check with Re8 — Black's rook has to take it, the d-file opens, and the knight is on its own", retry: "Ask first: what is guarding d5, and how do you force it off the d-file?" }],
+      tasks: [{ prompt: "The knight on d5 is guarded by the rook on d8. Check with Re8 — Black's rook has to take it, the d-file opens, and the knight is on its own", retry: "Ask first: what is guarding d5, and how do you force it off the d-file?" },
+        { prompt: "The black rook has been dragged to e8 and the d-file is empty — collect the knight",
+          retry: "Who reaches d5? The bishop on g2, along g2–f3–e4–d5" },
+      ],
     },
     remove: {
       part: "Tactics", title: "Removing the defender: just take the guard",
@@ -321,7 +379,10 @@
         "There are two ways to get rid of a guard: force it to move (deflection), or **capture it outright**.",
         "Before any exchange, ask one more question: what is the piece I am taking currently guarding? Once it is gone, that thing is yours.",
       ],
-      tasks: [{ prompt: "The rook on b8 is guarded by the knight on d7. Take the knight with the bishop — with check — and the rook is left standing alone", retry: "Do not grab the rook first — look at who is guarding it" }],
+      tasks: [{ prompt: "The rook on b8 is guarded by the knight on d7. Take the knight with the bishop — with check — and the rook is left standing alone", retry: "Do not grab the rook first — look at who is guarding it" },
+        { prompt: "The king has recaptured the knight — the guard is gone, so take the rook",
+          retry: "The b-file is clear: Rxb8" },
+      ],
     },
     overload: {
       part: "Tactics", title: "Overloading: one piece cannot do two jobs",
@@ -329,7 +390,10 @@
         "A piece guarding two things at once is **overloaded**. It looks like it covers both, but force it to attend to one and the other collapses.",
         "When an enemy piece is holding down two jobs, attack one of them — it can save that, or the other, not both.",
       ],
-      tasks: [{ prompt: "The rook on c8 guards both the back rank and the knight on c5 — two jobs. Check with Re8 and make it deal with the back rank", retry: "Find the piece doing two jobs, then make it choose" }],
+      tasks: [{ prompt: "The rook on c8 guards both the back rank and the knight on c5 — two jobs. Check with Re8 and make it deal with the back rank", retry: "Find the piece doing two jobs, then make it choose" },
+        { prompt: "The rook went to mind the back rank — its other job, guarding the knight on c5, has collapsed. Take it",
+          retry: "The bishop on a3 looks straight down a3–b4–c5 at that knight" },
+      ],
     },
     decoy: {
       part: "Tactics", title: "Decoy: lure a piece to the square you want it on",
@@ -337,7 +401,10 @@
         "Deflection drives a piece **away**. A decoy does the opposite — it lures a piece **towards** you, onto a square where standing there is fatal.",
         "The usual method is a sacrifice with check: the opponent has to take, and taking puts his king exactly where your knight forks it.",
       ],
-      tasks: [{ prompt: "Give the rook up on h8 with check — the king must take. Now it stands on h8, and the knight on f7 forks king and queen at once", retry: "Work out first: which square does the king have to be lured to for your knight to fork it and the queen?" }],
+      tasks: [{ prompt: "Give the rook up on h8 with check — the king must take. Now it stands on h8, and the knight on f7 forks king and queen at once", retry: "Work out first: which square does the king have to be lured to for your knight to fork it and the queen?" },
+        { prompt: "The king has been lured to h8 — now hop the knight to the square that forks king and queen",
+          retry: "The knight goes from g5 to f7, taking the pawn on the way: check, and the queen on d8 attacked at the same time" },
+      ],
     },
     interfere: {
       part: "Tactics", title: "Interference: cut the line the guard is watching along",
@@ -345,7 +412,10 @@
         "A guard watches its target along a line — a rank, a file or a diagonal. **Put a piece in the middle of that line** and the sight is broken; the target is undefended.",
         "The piece you interpose usually can be taken, so it either needs protecting, or taking it has to cost more than losing the target.",
       ],
-      tasks: [{ prompt: "Black's rook on b8 guards the bishop on b5 down the b-file. Jump the knight into b6 to cut the line — the c5 pawn protects it, so taking it is a bad deal", retry: "Which line is the rook guarding along? Put something protected in the middle of it" }],
+      tasks: [{ prompt: "Black's rook on b8 guards the bishop on b5 down the b-file. Jump the knight into b6 to cut the line — the c5 pawn protects it, so taking it is a bad deal", retry: "Which line is the rook guarding along? Put something protected in the middle of it" },
+        { prompt: "The knight stands on b6 and the b-file is cut — the rook can no longer see its bishop. Collect it",
+          retry: "The rook on a5 steps one square right and takes the bishop on b5" },
+      ],
     },
     mate: {
       part: "Rules and results", title: "Checkmate: ending the game",
@@ -400,7 +470,8 @@
         "A pawn reaching the far rank must immediately become a queen, rook, bishop or knight. It cannot stay a pawn, and it cannot become a king.",
         "Take the queen nearly every time. Occasionally a knight gives an immediate check, or a rook/bishop avoids stalemating the opponent.",
       ],
-      tasks: [{ prompt: "Push the a7 pawn to the last rank and pick a piece in the dialog — it gives check too!" }],
+      tasks: [{ prompt: "Push the a7 pawn to the last rank and pick a piece in the dialog — it gives check too!",
+        retry: "This lesson wants the promotion itself — play a7–a8 and choose a piece in the dialog. A king move does not count" }],
     },
     draws: {
       part: "Rules and results", title: "The many ways a game is drawn",
@@ -731,8 +802,8 @@
           steps: [
             "Click e5: the d- and f-pawns that would guard it are gone, so nothing can chase a piece away from there",
           ] },
-        { prompt: "Put the knight on the e5 outpost",
-          retry: "The knight on f3 reaches e5 in one hop" },
+        { prompt: "Put a knight on the e5 outpost — either one reaches it, take your pick",
+          retry: "The knights on d3 and f3 each reach e5 in one hop" },
       ],
     },
     "mg-pawns": {
@@ -749,6 +820,8 @@
             "Black's d5 pawn has no friendly pawn beside it — click that isolated pawn",
             "The square in front of an isolated pawn can never be guarded by a pawn — click d4, the square a knight wants",
           ] },
+        { prompt: "Now use it — against an isolated pawn there are two roads: occupy the hole in front of it, or walk up and challenge it. Play one",
+          retry: "Two roads: Nd4 parks the knight on the square no pawn can ever guard, or c3–c4 challenges the isolani head-on" },
       ],
     },
     "mg-passer": {
@@ -763,8 +836,8 @@
           steps: [
             "Click the white pawn on c5: Black has nothing on the b-, c- or d-files, so nothing stands in its way",
           ] },
-        { prompt: "Push the passed pawn one square",
-          retry: "Play c5–c6" },
+        { prompt: "Make this passed pawn stronger — push it, or walk the king over to clear its road. Both are right",
+          retry: "Play c5–c6, or bring the king towards the c-pawn (Kf1)" },
       ],
     },
     "mg-trade": {
@@ -777,8 +850,8 @@
       tasks: [
         { prompt: "White is a rook up. The side with more material trades — take the queens off down the d-file",
           retry: "The d-file is clear: play Qxd8" },
-        { prompt: "The queens are gone; keep going — put your rook on the d-file, face to face with theirs",
-          retry: "The rook on e1 goes to d1" },
+        { prompt: "The queens are gone; keep going — face their rook down the d-file, or check down the e-file and force the swap",
+          retry: "Two roads: the rook on e1 goes to d1, or Re8+ makes the black rook take" },
       ],
     },
     "mg-attack": {
@@ -794,8 +867,8 @@
             "Click the bishop on d3: its diagonal runs all the way to h7, right at the king's doorstep",
             "Click the knight on f3: it can jump to g5 at any moment, the classic attacking square",
           ] },
-        { prompt: "Two is not enough. The e-file is empty — bring the rook up and make it three",
-          retry: "The rook on f1 goes to e1" },
+        { prompt: "Two is not enough — add one more piece pointing at the black king. Rook, knight or queen, any of them",
+          retry: "Add an attacker: Re1 puts the rook on the empty e-file, Ng5 is the knight square the lesson named, or Qe2 / Qe1 / Qd2 brings the queen out" },
       ],
     },
     "square": {
@@ -812,10 +885,7 @@
             "Side length 4: count four squares to the left along the 8th rank — click d8",
             "Now back down to the pawn's rank — click d4, and the square h4–h8–d8–d4 is drawn",
           ] },
-        { prompt: "The black king on c5 is outside the square — but it is Black to move. Click the square it should step into",
-          steps: [
-            "The left edge of the square is the d-file — one step puts the king on it (d4, d5 or d6 all work) and it runs the h-pawn down",
-          ] },
+        { prompt: "The same fact from the other side: the black pawn on h5 needs 4 steps to reach h1, and your king stands on d5, the corner of its square — walk down the diagonal and count: also 4" },
         { prompt: "Now White to move — play the one move that shuts the black king out of the square for good",
           retry: "Moving the king is no help, it is far too far away — push the pawn! One step shrinks the square to the e-file and the black king is locked out" },
       ],
@@ -848,12 +918,7 @@
         "So the right way to play these endings is: **king to a key square first, push the pawn last**. Push first and follow with the king, and you usually end up drawing.",
       ],
       tasks: [
-        { prompt: "Where are the three key squares of the e5 pawn? Click them one by one",
-          steps: [
-            "The square directly in front of the pawn — click e6",
-            "The one to its left — click d6",
-            "The one to its right — click f6",
-          ] },
+        { prompt: "The key squares of the e5 pawn are the three directly ahead of it — walk the king across d6, e6 and f6: standing on any one of them promotes the pawn" },
         { prompt: "One king move reaches a key square — don't push, walk",
           retry: "Pushing only runs the pawn into the black king. Of the three key squares d6/e6/f6, exactly one is reachable right now" },
         { prompt: "The real thing: key square first, pawn afterwards — escort the e-pawn to the last rank" },
@@ -936,6 +1001,7 @@
         "So the first thought in an endgame is usually not a pawn move but: **where should my king go**. Towards the centre, towards the wing with more pawns, and into the path of their passed pawn.",
       ],
       tasks: [
+        { prompt: "Walk the lesson's first sentence: the king leaves the corner on h1 and reaches the centre on e4 in three — in an endgame that is often move one" },
         { prompt: "The black pawn promotes next move and White has exactly one move that holds — everything else is mated",
           retry: "The king has to block the promotion path. Stepping to g3, h1, h2 or h3 all abandon the f-file and the pawn goes straight through" },
         { prompt: "King and pawn against a lone king, White to move — king first or pawn first? This one move decides it",
@@ -1019,4 +1085,3 @@
       tasks: [{ prompt: "The real thing: win the rook with queen and king, then mate (stalemate or more than 50 moves means starting over)" }],
     },
   };
-})(typeof window !== "undefined" ? window : globalThis);

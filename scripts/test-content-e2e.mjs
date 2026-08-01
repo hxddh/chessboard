@@ -31,13 +31,14 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { compileModuleSync } from "./bundle.mjs";
 
 // the same data the page will load, so the test knows the right answers
 const data = { console };
 data.globalThis = data; data.window = data;
 vm.createContext(data);
 for (const f of ["chess.js", "lessons.js", "puzzles.js"]) {
-  vm.runInContext(fs.readFileSync(path.join(ROOT, "js", f), "utf8"), data, { filename: f });
+  vm.runInContext(compileModuleSync(path.join(ROOT, "js", f)), data, { filename: "module" });
 }
 const Chess = data.Chess;
 const LESSONS = data.CHESS_LESSONS;
@@ -197,9 +198,55 @@ for (const les of LESSONS) {
   assert(!!hit, `${les.id}:棋盘上摆的是这一课的局面`, hit ? hit[0] : `实际 ${on}`);
 }
 
+// 缺陷 24: the course teaches a motif once and the puzzle set holds 21 more of
+// the same, with nothing joining them. The button has to appear where there is
+// somewhere to go, land on a puzzle of that motif, and not exist where there is
+// not — a greyed-out button here would be the P3 rule broken again.
+{
+  const withP = LESSONS.find((l) => l.practice === "捉双");
+  const without = LESSONS.find((l) => !l.practice && l.part === "吃子与价值");
+  const open = async (title) => {
+    await page.evaluate((want) => {
+      const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
+      rows.find((r) => (r.textContent || "").includes(want))?.click();
+    }, title);
+    await page.waitForTimeout(400);
+  };
+  const btn = () => page.evaluate(() => {
+    const b = document.getElementById("lesson-practice");
+    return { hidden: !!b.hidden, disabled: !!b.disabled, text: b.textContent || "" };
+  });
+
+  await open(without.title);
+  const off = await btn();
+  assert(off.hidden, `${without.id}:没有配套题目就不显示按钮`, JSON.stringify(off));
+
+  await open(withP.title);
+  const on2 = await btn();
+  assert(!on2.hidden && !on2.disabled && /\d/.test(on2.text),
+    `${withP.id}:有配套题目就显示按钮,并报出题数`, JSON.stringify(on2));
+
+  await page.evaluate(() => document.getElementById("lesson-practice").click());
+  await page.waitForTimeout(700);
+  const landed = await page.evaluate(() => ({
+    mode: document.getElementById("app").getAttribute("data-mode"),
+    goal: document.getElementById("puzzle-task").textContent || "",
+  }));
+  assert(landed.mode === "puzzle" && landed.goal.includes(withP.practice),
+    `${withP.id}:按下去落在同一母题的题目上`, JSON.stringify(landed));
+
+  // back to the course for the checks that follow
+  await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].find((x) => x.dataset.mode === "learn").click());
+  await page.waitForTimeout(500);
+}
+
 // a wrong move on a one-answer task is refused, with that task's own hint
 {
-  const les = LESSONS.find((l) => l.id === "kingactive");
+  // whichever lesson opens on a single-answer move task — naming one by id
+  // meant that adding a task to the front of that lesson silently retargeted
+  // this check at a task it was never written for
+  const les = LESSONS.find((l) => l.tasks[0].type === "move" && l.tasks[0].goal === "one-of"
+    && l.tasks[0].retry && (l.tasks[0].accept || []).length === 1);
   if (les) {
     await page.evaluate((want) => {
       const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
@@ -220,6 +267,41 @@ for (const les of LESSONS) {
     const advanced = await page.evaluate(() => document.getElementById("lesson-task").textContent);
     assert(!advanced.includes(les.tasks[0].prompt), "走对之后进到下一题", advanced.slice(0, 40));
   }
+}
+
+// P5 的验收条件:每个「题型 × 难度」组合非空,或该维度不出现。缺陷 14 的
+// 症状是七个组合为空 —— 选中之后列表一片空白,而筛选是记住的,下次再来
+// 还是空的。断言两半:提供筛选的四类每一档都有题,不提供的三类根本没有
+// 这一行,而不是有一行按了没用。
+await page.evaluate(() => [...document.querySelectorAll("[data-mode]")].find((x) => x.dataset.mode === "puzzle").click());
+await page.waitForTimeout(400);
+{
+  const pick = async (cat, tier) => page.evaluate(([c, t]) => {
+    const cb = [...document.querySelectorAll("#puzzle-cat-seg button")].find((b) => b.dataset.cat === c);
+    if (!cb) return { ok: false };
+    cb.click();
+    const row = document.getElementById("row-puzzle-tier");
+    const shown = !row.hidden && getComputedStyle(row).display !== "none";
+    const tb = [...document.querySelectorAll("#puzzle-tier-seg button")].find((b) => b.dataset.tier === t);
+    if (tb) tb.click();
+    return { ok: true, shown, n: document.getElementById("puzzle-list").children.length };
+  }, [cat, tier]);
+
+  for (const cat of ["tac", "real", "def", "op"]) {
+    for (const tier of ["easy", "mid", "hard"]) {
+      const r = await pick(cat, tier);
+      await page.waitForTimeout(150);
+      assert(r.ok && r.shown && r.n > 0, `${cat} × ${tier}:这一档有题(${r.n})`);
+    }
+  }
+  // reset, then the three mate categories must not offer the axis at all
+  await pick("tac", "all");
+  for (const cat of ["m1", "m2", "m3"]) {
+    const r = await pick(cat, "all");
+    await page.waitForTimeout(150);
+    assert(r.ok && !r.shown, `${cat}:不提供难度筛选这一行`);
+  }
+  await pick("tac", "all");
 }
 
 // --- the real-game tactics ------------------------------------------------

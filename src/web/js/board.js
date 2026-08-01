@@ -13,7 +13,7 @@
  *   cursor: square name | null — keyboard focus ring (keyboard play)
  * @module board
  */
-(function (global) {
+import { CHESS_PIECE_SVGS } from "./pieces.js";
   const FILES = "abcdefgh";
 
   // Solid glyph set for both colors — colored via fill, outlined for contrast.
@@ -51,6 +51,9 @@
     // the keyboard cursor is a double stroke because it has to stay legible on
     // both square colours *and* on top of a black or a white piece
     cursor: ["--sq-cursor", "rgba(255, 255, 255, 0.95)"],
+    // the contact shadow under a standing piece: a light board wants a
+    // different one from a dark board, so it belongs to the palette too
+    pieceShadow: ["--piece-shadow", "rgba(38, 20, 4, 0.26)"],
     cursorEdge: ["--sq-cursor-edge", "rgba(20, 20, 20, 0.55)"],
   };
   /** resolved once per theme change, not once per square */
@@ -125,7 +128,10 @@
   let _canvas = null;
   let _model = null;
   /** live drag ghost: {from, x, y} in canvas pixels | null */
-  let _drag = null;
+  // The drag lives in the model, not in a variable here — see draw(). It used
+  // to be pushed in through setDrag(), which made the board hold a second copy
+  // of something the app already knew: `store.ui.dragging`. Two copies of one
+  // fact is one more than a renderer needs.
   /** how much a piece grows while it is being held */
   const LIFT = 1.12;
   /** live rebound of a refused drop: {piece, to, x, y, start, dur} | null */
@@ -141,7 +147,7 @@
   let _spriteSize = 0;
 
   function initPieceImages() {
-    const svgs = global.CHESS_PIECE_SVGS;
+    const svgs = CHESS_PIECE_SVGS;
     if (!svgs || typeof Image === "undefined") return;
     for (const key of Object.keys(svgs)) {
       const img = new Image();
@@ -151,18 +157,34 @@
     }
   }
 
-  /** offscreen raster of piece `key` at `size` device pixels | null while loading */
+  /**
+   * Offscreen raster of piece `key` at `size` device pixels, or null while the
+   * SVGs are still decoding.
+   *
+   * Two sizes are cached, not one: the board size, and that size × LIFT. A
+   * dragged piece is drawn 12% larger, and with a single cache that meant
+   * scaling a bitmap up — so the one piece the player is looking at, held
+   * under the pointer, was the only blurry thing on the board. 缺陷 18.
+   *
+   * design-constraints §2 says "只缓存一个尺寸 round(step)", because changing
+   * size re-rasterises twelve pieces. That reasoning is about *board* sizes,
+   * which change as the window does; these two are a fixed pair and the second
+   * is only ever built while something is actually being dragged.
+   */
   function spriteFor(key, size) {
     const img = _imgs[key];
     if (!img || !img.complete || !img.naturalWidth) return null;
-    if (size !== _spriteSize) { _sprites = {}; _spriteSize = size; }
-    let c = _sprites[key];
+    if (size !== _spriteSize && size !== Math.round(_spriteSize * LIFT)) {
+      _sprites = {}; _spriteSize = size;
+    }
+    const ck = key + "@" + size;
+    let c = _sprites[ck];
     if (!c) {
       c = document.createElement("canvas");
       c.width = size;
       c.height = size;
       c.getContext("2d").drawImage(img, 0, 0, size, size);
-      _sprites[key] = c;
+      _sprites[ck] = c;
     }
     return c;
   }
@@ -173,7 +195,32 @@
     if (!Object.keys(_imgs).length) initPieceImages();
   }
 
-  function setDrag(d) { _drag = d; }
+  /**
+   * The mark scale: two radii, three stroke weights.
+   *
+   * Ten marks used to carry ten geometries — three ring radii (.44 / .45 /
+   * .46) and seven stroke weights (.015 .02 .035 .045 .055 .06 .075). The
+   * visible cost: the drag ring (.46 / .06) sat on the legal-target ring
+   * (.44 / .075) as two almost-concentric circles of different thickness,
+   * which reads as a rendering fault rather than as two marks. 缺陷 16.
+   *
+   * Every mark now picks a step instead of inventing one. Fractions of the
+   * square, so they hold at any board size.
+   */
+  const MARK = {
+    /** a ring drawn around a square — one radius, whatever it means */
+    ring: 0.45,
+    /** the dot inside a legal-target ring on an occupied square */
+    dot: 0.14,
+    /** hairline: an outline whose job is contrast, not weight */
+    hair: 0.02,
+    /** the ordinary mark weight */
+    line: 0.045,
+    /** the one the eye should go to first */
+    bold: 0.075,
+    /** the hint arrow's shaft — a body, not a stroke round something else */
+    arrow: 0.13,
+  };
 
   const easeOut = (t) => 1 - (1 - t) * (1 - t);
 
@@ -308,14 +355,19 @@
     if (!files || !ranks) return;
     const fs = FILES.split("");
     const rs = ["8", "7", "6", "5", "4", "3", "2", "1"];
-    const span = (t) => "<span>" + t + "</span>";
-    files.innerHTML = (coordFlip ? fs.slice().reverse() : fs).map(span).join("");
-    ranks.innerHTML = (coordFlip ? rs.slice().reverse() : rs).map(span).join("");
+    const span = (t) => {
+      const el = document.createElement("span");
+      el.textContent = t;
+      return el;
+    };
+    files.replaceChildren(...(coordFlip ? fs.slice().reverse() : fs).map(span));
+    ranks.replaceChildren(...(coordFlip ? rs.slice().reverse() : rs).map(span));
   }
 
   function draw() {
     if (!_canvas || !_model) return;
     const m = _model();
+    const _drag = m.drag || null;
     const P = paint();
     const ctx = _canvas.getContext("2d");
     const w = _canvas.width;
@@ -359,9 +411,9 @@
       ctx.fillRect(...cellRect(sr, sc));
       if (m.mated) {
         ctx.beginPath();
-        ctx.arc(cx, cy, step * 0.45, 0, Math.PI * 2);
+        ctx.arc(cx, cy, step * MARK.ring, 0, Math.PI * 2);
         ctx.strokeStyle = P.check;
-        ctx.lineWidth = step * 0.055;
+        ctx.lineWidth = step * MARK.line;
         ctx.stroke();
       }
     }
@@ -374,19 +426,37 @@
     ctx.textBaseline = "middle";
     ctx.font = Math.round(step * 0.78) + "px 'Segoe UI Symbol', 'Apple Color Emoji', serif";
     const spriteSize = Math.max(8, Math.round(step));
+    /**
+     * The shadow that says a piece is standing ON something.
+     *
+     * ctx.shadowColor appeared exactly once in this whole file, in the drag
+     * branch — so thirty-two pieces sat directly on flat colour with no
+     * contact at all, while the frame around them had a gradient, an outer
+     * shadow and an inner stroke. 缺陷 17. It is a very small ellipse: about
+     * 2% of a square offset down, 6% blurred, and faint enough that nobody
+     * will point at it — which is the difference between "a wooden board" and
+     * "two shades of brown".
+     */
+    function paintContactShadow(x, y, sz) {
+      ctx.save();
+      ctx.fillStyle = P.pieceShadow;
+      ctx.filter = "blur(" + (step * 0.06).toFixed(2) + "px)";
+      ctx.beginPath();
+      ctx.ellipse(x, y + sz * 0.33, sz * 0.30, sz * 0.09, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     function paintPiece(piece, x, y, scale) {
       const k = scale || 1;
-      const sprite = spriteFor(piece.color + piece.type, spriteSize);
+      // Rastered at the size it is drawn at. Until 2.0 the lifted piece was
+      // the board sprite scaled up 12% at draw time, which made the one piece
+      // under the pointer the only stretched bitmap on the board. 缺陷 18.
+      const sz = k === 1 ? spriteSize : Math.round(spriteSize * k);
+      const sprite = spriteFor(piece.color + piece.type, sz);
       if (sprite) {
-        // Scaled at draw time, NOT by asking for a bigger sprite: the sprite
-        // cache holds one size and rebuilds every piece when asked for another,
-        // so a lifted piece would rasterise all twelve on the first drag frame.
-        if (k === 1) {
-          ctx.drawImage(sprite, Math.round(x - spriteSize / 2), Math.round(y - spriteSize / 2));
-        } else {
-          const sz = spriteSize * k;
-          ctx.drawImage(sprite, Math.round(x - sz / 2), Math.round(y - sz / 2), Math.round(sz), Math.round(sz));
-        }
+        if (k === 1) paintContactShadow(x, y, sz); // the drag has its own, larger
+        ctx.drawImage(sprite, Math.round(x - sz / 2), Math.round(y - sz / 2));
         return;
       }
       const glyph = GLYPHS[piece.type];
@@ -397,7 +467,7 @@
         ctx.fillStyle = "#1d1d1b";
         ctx.strokeStyle = "rgba(255,255,255,0.30)";
       }
-      ctx.lineWidth = Math.max(1, step * 0.02);
+      ctx.lineWidth = Math.max(1, step * MARK.hair);
       ctx.strokeText(glyph, x, y + step * 0.04);
       ctx.fillText(glyph, x, y + step * 0.04);
     }
@@ -437,7 +507,10 @@
     if (m.flashSquare) {
       const { sr, sc } = screenPos(m.flashSquare, m.flipped);
       ctx.fillStyle = P.flash;
-      ctx.fillRect(sc * step, sr * step, step, step);
+      // through cellRect() like every other square fill — this was the one
+      // site that painted on fractional edges, so the flash could show a soft
+      // seam against its neighbours at some board sizes. Defect 10.
+      ctx.fillRect(...cellRect(sr, sc));
     }
     // lesson stars: big on empty squares, tucked in the corner on occupied ones
     if (m.stars && m.stars.length) {
@@ -452,7 +525,7 @@
         ctx.fillStyle = P.star;
         ctx.fill();
         ctx.strokeStyle = P.starEdge;
-        ctx.lineWidth = Math.max(1, step * 0.015);
+        ctx.lineWidth = Math.max(1, step * MARK.hair);
         ctx.stroke();
       }
     }
@@ -469,7 +542,7 @@
       const sy = by - Math.sin(ang) * head * 0.8;
       ctx.strokeStyle = P.hint;
       ctx.fillStyle = P.hint;
-      ctx.lineWidth = step * 0.13;
+      ctx.lineWidth = step * MARK.arrow;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(ax + Math.cos(ang) * step * 0.24, ay + Math.sin(ang) * step * 0.24);
@@ -513,7 +586,7 @@
       const { sr, sc } = screenPos(m.cursor, m.flipped);
       const x = edge(sc), y = edge(sr);
       const w2 = edge(sc + 1) - x, h2 = edge(sr + 1) - y;
-      const lw = Math.max(2, step * 0.045);
+      const lw = Math.max(2, step * MARK.line);
       ctx.strokeStyle = P.cursorEdge;
       ctx.lineWidth = lw * 1.8;
       ctx.strokeRect(x + lw, y + lw, w2 - lw * 2, h2 - lw * 2);
@@ -528,10 +601,10 @@
       const { sr, sc } = screenPos(_drag.over, m.flipped);
       const cx = sc * step + step / 2, cy = sr * step + step / 2;
       ctx.beginPath();
-      ctx.arc(cx, cy, step * 0.46, 0, Math.PI * 2);
+      ctx.arc(cx, cy, step * MARK.ring, 0, Math.PI * 2);
       ctx.strokeStyle = _drag.legal ? P.ring : P.cursor;
       ctx.globalAlpha = _drag.legal ? 0.95 : 0.3;
-      ctx.lineWidth = step * (_drag.legal ? 0.06 : 0.035);
+      ctx.lineWidth = step * (_drag.legal ? MARK.bold : MARK.hair);
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
@@ -545,12 +618,12 @@
         const cx = sc * step + step / 2, cy = sr * step + step / 2;
         ctx.beginPath();
         if (occupied) {
-          ctx.arc(cx, cy, step * 0.44, 0, Math.PI * 2);
+          ctx.arc(cx, cy, step * MARK.ring, 0, Math.PI * 2);
           ctx.strokeStyle = P.ring;
-          ctx.lineWidth = step * 0.075;
+          ctx.lineWidth = step * MARK.bold;
           ctx.stroke();
         } else {
-          ctx.arc(cx, cy, step * 0.14, 0, Math.PI * 2);
+          ctx.arc(cx, cy, step * MARK.dot, 0, Math.PI * 2);
           ctx.fillStyle = P.dot;
           ctx.fill();
         }
@@ -558,5 +631,22 @@
     }
   }
 
-  global.ChessBoardView = { attach, draw, resizeCanvas, cellAt, setDrag, animateMove, reboundDrag, cancelAnim, invalidatePaint };
-})(typeof window !== "undefined" ? window : globalThis);
+  /**
+   * The surface, in three groups.
+   *
+   *   paint      draw() — "here is the model, put it on screen". Everything
+   *              the board shows is in the model it reads: the position, the
+   *              selection, the legal targets, the last move, the check, the
+   *              hint arrow, the stars, the flash, the cursor, and since 1.25
+   *              the drag. Nothing is pushed in ahead of time.
+   *   lifecycle  attach() / resizeCanvas() / invalidatePaint() — the canvas
+   *              itself, its backing store, and the theme colours it caches.
+   *   effects    animateMove() / reboundDrag() / cancelAnim() — the three
+   *              things that are genuinely time, not state. An animation is
+   *              not a fact about the position; it is a thing that happens to
+   *              it, and it ends.
+   *   hit test   cellAt() — the inverse of paint, and the only reason the app
+   *              needs to know the board's geometry at all.
+   */
+  export const ChessBoardView = { draw, attach, resizeCanvas, invalidatePaint,
+    animateMove, reboundDrag, cancelAnim, cellAt };

@@ -1,12 +1,56 @@
-(function () {
+import { CHESS_ACHIEVEMENTS } from "./achievements.js";
+import { ChessAudio } from "./audio.js";
+import { ChessBoardView } from "./board.js";
+import { Chess } from "./chess.js";
+import { ChessDialog } from "./dialog.js";
+import { ChessDrills } from "./drills.js";
+import { ChessEditor } from "./editor.js";
+import { ChessEngine } from "./engine.js";
+import { ChessFide } from "./fide.js";
+import { ChessHost } from "./host.js";
+import { ChessI18n } from "./i18n.js";
+import { CHESS_LESSONS_EN } from "./lessons-en.js";
+import { CHESS_LESSONS_JA } from "./lessons-ja.js";
+import { CHESS_LESSONS } from "./lessons.js";
+import { ChessMaterial } from "./material.js";
+import { motifOf } from "./motif.js";
+import { ChessOpeningCoach } from "./opening-coach.js";
+import { CHESS_OPENINGS_EN, CHESS_OPENING_IDEAS_EN } from "./openings-en.js";
+import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
+import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
+import { ChessPersona } from "./persona.js";
+import { ChessPgn } from "./pgn.js";
+import { CHESS_PIECE_SVGS } from "./pieces.js";
+import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
+import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
+import { CHESS_PUZZLES } from "./puzzles.js";
+import { ChessReview } from "./review.js";
+import { ChessSrs } from "./srs.js";
+import { createPersist } from "./persist.js";
+import { reconcile } from "./keyed.js";
+import { createStore } from "./store.js";
 
-  const Host = window.ChessHost;
-  const Review = window.ChessReview;
-  const BoardView = window.ChessBoardView;
-  const Audio2 = window.ChessAudio;
+  /**
+   * The one deliberate global: the seam the browser tests reach through.
+   *
+   * Until 1.25 all 29 modules were on `window`, so a test could reach any of
+   * them and nobody had to say which ones were fair game. They are bundled
+   * now and nothing is reachable by default — which is the point, and which
+   * also took away the hook `test-review-e2e.mjs` uses to hand the app a
+   * scripted engine (a real search would make the evaluation-bar numbers
+   * unrepeatable). So the hook is declared instead of assumed: one name, one
+   * purpose, and the modules on it are the object identities the app itself
+   * holds, so patching a method here is patching the app's engine.
+   */
+  window.__chess = { engine: ChessEngine };
+
+  const Host = ChessHost;
+  const Review = ChessReview;
+  const BoardView = ChessBoardView;
+  const Audio2 = ChessAudio;
 
   /** Shared dialog behaviour: focus trap, focus return, aria-modal. */
-  const Dlg = window.ChessDialog || {
+  const Dlg = ChessDialog || {
     open: (el, f) => { if (el) { el.classList.add("show"); if (f) f.focus(); } },
     close: (el) => { if (el) el.classList.remove("show"); },
     handleTab: () => false,
@@ -20,20 +64,39 @@
    * meant. Measured on 1.11: with the shortcut sheet, the save slots or the
    * game history open, all of P / F / N still fired, so pressing N over the
    * history list stacked a "start a new game?" box on top of it.
+   *
+   * dialog.js answers it, because dialog.js is what opens them. This used to
+   * be its own DOM query — a second copy of a list that also existed as a
+   * seven-branch if-chain in the Escape handler. 缺陷 19.
    */
   function dialogOpen() {
-    return !!document.querySelector(".modal-bg.show");
+    return Dlg.anyOpen();
   }
 
-  const I18n = window.ChessI18n;
+  const I18n = ChessI18n;
   const t = I18n ? I18n.t : (k) => k;
   /** t() with {0}/{1} placeholders filled in — see i18n.tf */
   const tf = I18n ? I18n.tf : (k) => k;
 
-  const SAVE_KEY = "chess.v1.save";
-  const SETTINGS_KEY = "chess.v1.settings";
-  const PANEL_KEY = "chess.panelOpen";
-  const STATS_KEY = "chess.v1.stats";
+  /**
+   * Stored state, behind one door. See persist.js.
+   *
+   * The failure hook is the point of it: host.js has always returned
+   * true/false from storageSet(), and all eleven call sites here dropped that
+   * value inside an empty catch. A full quota therefore looked exactly like a
+   * successful save — the app kept showing lesson progress, puzzle progress,
+   * statistics and achievements all session, and lost the lot at the next
+   * launch. 缺陷 3. It says so now, once, and keeps saying it: the pill is not
+   * a toast because a toast that has gone is a warning nobody got.
+   */
+  const Persist = createPersist(Host, () => {
+    showStorageFault();
+    toast(t("msg.storage.failed"), "fault");
+  });
+  // One pass over storage, before anything reads from it: migrations get to
+  // see a whole profile, and no later reader has to wonder whether some other
+  // key moved under it.
+  Persist.load();
 
   const canvas = document.getElementById("board");
   const appEl = document.getElementById("app");
@@ -74,71 +137,135 @@
     BoardView.animateMove(mv.from, mv.to, castleRook(mv));
   }
 
+  /** a game restored from the save that was already filed — see recordedId */
+  const RESTORED_AND_FILED = "restored";
+
   /** The live game — single source of truth (chess.js keeps full history). */
   const game = new Chess();
-  /** Replay cursor: 0..sanHistory().length; live when === length. */
-  let viewIndex = 0;
-  let flipped = false;
-  let soundOn = true;
-  /** @type {'wood'|'night'|'day'|'notebook'} */
-  let themeId = "wood";
-  /** @type {{sq:string, targets:string[]}|null} click-move selection */
-  let selection = null;
-  /** @type {'ai'|'pvp'} */
-  let mode = "ai";
-  /** @type {'easy'|'normal'|'hard'|'extreme'} */
-  let difficulty = "normal";
-  /** @type {'w'|'b'} human side in AI mode */
-  let humanColor = "w";
-  let engineThinking = false;
-  /** bumped on every game mutation; stale engine replies are dropped */
-  let engineToken = 0;
-  /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
-  let analysis = null;
-  let analyzing = false;
-  /** set by the stop button; the analysis loop bails at the next position */
-  let analyzeAbort = false;
-  let analyzeProgress = "";
-  /** pgn of the last game recorded into stats (double-count guard) */
-  let statsRecordedSig = null;
-  /** engine hint arrow {from,to}; cleared whenever the game mutates */
-  let hintMove = null;
-  let hintPending = false;
-  /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
-  let timeControl = "off";
-  /** blunder coach: warn after ??-level moves in AI games */
-  let coachOn = true;
-  /** pvp: flip the board to face the side to move after every move */
-  let autoFlipPvp = false;
-  /** which panel tab is showing: "play" | "setup" | "record" */
-  let sideTab = "play";
-  /** sparring personality — see persona.js; "off" is plain engine play */
-  const PERSONA_IDS = (window.ChessPersona && window.ChessPersona.IDS) ||
-    ["off", "greedy", "principled", "attacker"];
-  let personaId = "off";
-  /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
-  let langId = I18n ? I18n.getLang() : "zh-CN";
-  /** remaining ms per side; null when no clock */
-  let clock = null;
-  /** Is the app in front of somebody? Kept by the app:activate/deactivate
-   *  lifecycle pair; the clock and the analysis notification both read it. */
-  let appForeground = true;
-  /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
-  let flagFall = null;
-  let clockTimer = null;
-  let clockTickAt = 0;
-  /** side that resigned ('w'|'b') — terminal for the game, like mate */
-  let resigned = null;
-  /** draw agreed (pvp: both players; ai: engine accepted the offer) */
-  let drawAgreed = false;
-  /** claimed draw: 'threefold' | 'fifty' | null — terminal once claimed */
-  let drawClaimed = null;
-  /** learn-mode runtime; null unless mode === 'learn' */
-  let learn = null;
-  /** puzzle-mode runtime; null unless mode === 'puzzle' */
-  let puzzle = null;
 
-  Audio2.init(() => soundOn);
+  /**
+   * Everything else that changes, in one place.
+   *
+   * These were 56 module-level `let`s spread down this file. Same values, same
+   * defaults, same comments — what moved is only *where they are declared*, so
+   * that "what is the state of this app" becomes a question with an address.
+   * The three slices are described in store.js; the short version is: `game`
+   * is true of the chess, `session` is what the user is doing, `ui` is what
+   * the screen looks like.
+   *
+   * `game` the chess.js instance above and `store.game` the slice are
+   * different things, deliberately: one is the rules, the other is everything
+   * the rules do not know — where the replay cursor is, whose flag fell,
+   * whether somebody resigned.
+   */
+  const store = createStore({
+    game: {
+      /** Replay cursor: 0..sanHistory().length; live when === length. */
+      viewIndex: 0,
+      flipped: false,
+      /** @type {{sq:string, targets:string[]}|null} click-move selection */
+      selection: null,
+      /** bumped on every game mutation; stale engine replies are dropped */
+      engineToken: 0,
+      /** pgn of the last game recorded into stats (double-count guard) */
+      /**
+       * id of the stats record this game was filed under, or null when it has
+       * not been filed. RESTORED_AND_FILED when a finished game came back from
+       * the save file and its id is not to hand.
+       */
+      recordedId: null,
+      /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
+      timeControl: "off",
+      /** remaining ms per side; null when no clock */
+      clock: null,
+      /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
+      flagFall: null,
+      clockTimer: null,
+      clockTickAt: 0,
+      /** side that resigned ('w'|'b') — terminal for the game, like mate */
+      resigned: null,
+      /** draw agreed (pvp: both players; ai: engine accepted the offer) */
+      drawAgreed: false,
+      /** claimed draw: 'threefold' | 'fifty' | null — terminal once claimed */
+      drawClaimed: null,
+      /** how many times the current live position has occurred (incl. start) */
+      repMemo: { sig: null, count: 1 },
+      /** one walk of the game per mutation; the game commit clears them */
+      _vh: null,
+      _san: null,
+      /** chess.js instance for the currently VIEWED position (live or replay). */
+      _view: null,
+    },
+    session: {
+      /** @type {'ai'|'pvp'} */
+      mode: "ai",
+      /** @type {'easy'|'normal'|'hard'|'extreme'} */
+      difficulty: "normal",
+      /** @type {'w'|'b'} human side in AI mode */
+      humanColor: "w",
+      engineThinking: false,
+      /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
+      analysis: null,
+      analyzing: false,
+      /** set by the stop button; the analysis loop bails at the next position */
+      analyzeAbort: false,
+      analyzeProgress: "",
+      /** engine hint arrow {from,to}; cleared whenever the game mutates */
+      hintMove: null,
+      hintPending: false,
+      /** blunder coach: warn after ??-level moves in AI games */
+      coachOn: true,
+      personaId: "off",
+      /** learn-mode runtime; null unless mode === 'learn' */
+      learn: null,
+      /** puzzle-mode runtime; null unless mode === 'puzzle' */
+      puzzle: null,
+      learnState: null,  // filled in below, where it can first be computed
+      puzzleState: null,  // filled in below, where it can first be computed
+      /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
+      puzzleTierFilter: "all",
+      /** editor runtime: {board, turn, castling, brush} | null */
+      editor: null,
+      coachPending: null,
+      drawOfferPending: false,
+      _analysisTick: null,
+      /** the newest-first list the rendered rows index into */
+      histCache: [],
+      achSeen: null,  // filled in below, where it can first be computed
+    },
+    ui: {
+      soundOn: true,
+      /** @type {'wood'|'night'|'day'|'notebook'} */
+      themeId: "wood",
+      /** pvp: flip the board to face the side to move after every move */
+      autoFlipPvp: false,
+      /** which panel tab is showing: "play" | "setup" | "record" */
+      sideTab: "play",
+      /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
+      langId: null,  // filled in below, where it can first be computed
+      /** Is the app in front of somebody? Kept by the app:activate/deactivate
+       *  lifecycle pair; the clock and the analysis notification both read it. */
+      appForeground: true,
+      /** keyboard play: focused square, shown only while the board has focus */
+      keyboardCursor: null,
+      boardFocused: false,
+      toastTimer: null,
+      confirmResolver: null,
+      histFilter: { result: "all", color: "all" },
+      promoResolver: null,
+      /** Modal list picker → index of the chosen entry, or null when cancelled. */
+      pickResolver: null,
+      dragging: null,
+      /** editor paint stroke: the square last painted while the pointer is down */
+      painting: null,
+    },
+  });
+  /** sparring personality — see persona.js; "off" is plain engine play */
+  const PERSONA_IDS = (ChessPersona && ChessPersona.IDS) ||
+    ["off", "greedy", "principled", "attacker"];
+  store.ui.langId = I18n ? I18n.getLang() : "zh-CN";
+
+  Audio2.init(() => store.ui.soundOn);
 
   // --- the game's moves, and the one door they change through ------------
   //
@@ -154,32 +281,47 @@
   // dragging a piece in a long game visibly dragged. Not a regression — it had
   // always been this way, which is why it was never reported as one.
   //
-  // So the histories are cached against a version counter, and every mutation
-  // of `game` goes through one of the five functions below. A raw game.move()
-  // elsewhere would leave the caches describing the previous position;
-  // scripts/test-chess.mjs fails the build if one appears.
-  let gameVersion = 0;
-  function gameMove(m) { const r = game.move(m); if (r) gameVersion++; return r; }
-  function gameUndo() { const r = game.undo(); if (r) gameVersion++; return r; }
-  function gameLoad(fen) { const r = game.load(fen); gameVersion++; return r; }
-  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); gameVersion++; return r; }
-  function gameReset() { game.reset(); gameVersion++; }
+  // So the histories are cached, and every mutation of `game` goes through one
+  // of the five doors below. A raw game.move() elsewhere would leave the caches
+  // describing the previous position; scripts/test-chess.mjs fails the build if
+  // one appears.
+  //
+  // The doors are the game slice's *actions*: they are the only five events
+  // that can change what is true of the chess, so they are the only five places
+  // that announce it. Up to 1.25 they instead bumped a `gameVersion` counter
+  // and each cache compared itself against it — a hand-rolled invalidation
+  // signal, which is what a store's commit already is. Same one-walk-per-
+  // mutation cost, one fewer number to keep honest.
+  function gameMove(m) { const r = game.move(m); if (r) store.commit("game", "move"); return r; }
+  function gameUndo() { const r = game.undo(); if (r) store.commit("game", "undo"); return r; }
+  function gameLoad(fen) { const r = game.load(fen); store.commit("game", "load"); return r; }
+  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); store.commit("game", "loadPgn"); return r; }
+  function gameReset() { game.reset(); store.commit("game", "reset"); }
 
-  let _vhMemo = { v: -1, val: null };
+  // The caches those five doors feed. Cleared by the commit rather than
+  // compared against it: "this is stale now" is a thing the store can say, and
+  // saying it is cheaper and harder to get wrong than every reader remembering
+  // to ask.
+  store.subscribe("game", () => {
+    store.game._vh = null;
+    store.game._san = null;
+    store.game._view = null;
+    // the analysis is a session fact, but whether it still describes *this*
+    // game is a game fact — see analysisFor()
+    store.session._analysisTick = null;
+  });
+
   function verboseHistory() {
-    if (_vhMemo.v === gameVersion) return _vhMemo.val;
-    _vhMemo = { v: gameVersion, val: game.history({ verbose: true }) };
-    return _vhMemo.val;
+    if (!store.game._vh) store.game._vh = game.history({ verbose: true });
+    return store.game._vh;
   }
-  let _sanMemo = { v: -1, val: null };
   // derived from the verbose list rather than asking chess.js twice: one walk
-  // of the game per version, not two per repaint
+  // of the game per mutation, not two per repaint
   function sanHistory() {
-    if (_sanMemo.v === gameVersion) return _sanMemo.val;
-    _sanMemo = { v: gameVersion, val: verboseHistory().map((m) => m.san) };
-    return _sanMemo.val;
+    if (!store.game._san) store.game._san = verboseHistory().map((m) => m.san);
+    return store.game._san;
   }
-  function isLive() { return viewIndex === sanHistory().length; }
+  function isLive() { return store.game.viewIndex === sanHistory().length; }
 
   /** Custom start FEN when the game was imported from a [SetUp]/[FEN] PGN. */
   function startFen() {
@@ -204,17 +346,17 @@
     }
   }
 
-  /** chess.js instance for the currently VIEWED position (live or replay). */
-  let _viewMemo = { v: -1, i: -1, g: null };
   function viewGame() {
     if (isLive()) return game;
-    if (_viewMemo.v === gameVersion && _viewMemo.i === viewIndex) return _viewMemo.g;
+    // keyed on the cursor and dropped whenever the game itself moves: the two
+    // things that can make a replayed position wrong
+    if (store.game._view && store.game._view.i === store.game.viewIndex) return store.game._view.g;
     const g = baseGame();
     const h = sanHistory();
-    for (let i = 0; i < viewIndex; i++) g.move(h[i]);
+    for (let i = 0; i < store.game.viewIndex; i++) g.move(h[i]);
     // every caller reads (.board/.fen/.turn/.get/.in_check) and none mutates,
-    // so one instance per (version, cursor) can be shared
-    _viewMemo = { v: gameVersion, i: viewIndex, g };
+    // so one instance per cursor position can be shared
+    store.game._view = { i: store.game.viewIndex, g };
     return g;
   }
 
@@ -229,23 +371,20 @@
     return null;
   }
 
-  /** keyboard play: focused square, shown only while the board has focus */
-  let keyboardCursor = null;
-  let boardFocused = false;
-  const cursorSquare = () => (boardFocused ? keyboardCursor : null);
+  const cursorSquare = () => (store.ui.boardFocused ? store.ui.keyboardCursor : null);
 
   BoardView.attach(canvas, () => {
-    if (editor) return editorModel();
-    if (mode === "learn" && learn) return learnModel();
-    if (mode === "puzzle" && puzzle) return puzzleModel();
+    if (store.session.editor) return editorModel();
+    if (store.session.mode === "learn" && store.session.learn) return learnModel();
+    if (store.session.mode === "puzzle" && store.session.puzzle) return puzzleModel();
     const g = viewGame();
     const vh = verboseHistory();
-    const last = viewIndex > 0 ? vh[viewIndex - 1] : null;
+    const last = store.game.viewIndex > 0 ? vh[store.game.viewIndex - 1] : null;
     return {
       position: g.board(),
-      flipped,
-      selected: selection ? selection.sq : null,
-      legalTargets: selection ? selection.targets : [],
+      flipped: store.game.flipped,
+      selected: store.game.selection ? store.game.selection.sq : null,
+      legalTargets: store.game.selection ? store.game.selection.targets : [],
       lastMove: last ? { from: last.from, to: last.to } : null,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
@@ -255,9 +394,11 @@
       // I have done" is being asked, and drawing it everywhere else is just an
       // arrow permanently on the board. Never during live play, where it would
       // be an answer key rather than a review.
-      hintMove: isLive() ? hintMove : bestArrowAt(viewIndex),
+      hintMove: isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex),
       stars: [],
       cursor: cursorSquare(),
+      // the drag is part of the picture, not a thing pushed in beforehand
+      drag: store.ui.dragging,
     };
   });
 
@@ -279,17 +420,70 @@
   function draw() { BoardView.draw(); }
 
   // --- toast + promise-based in-app confirm ---
-  let toastTimer = null;
-  function toast(msg) {
-    const el = document.getElementById("toast");
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.add("show");
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+  /**
+   * A storage failure is permanent for the session, so its notice is too.
+   *
+   * It keeps a banner of its own even now that toasts have a fault tier
+   * (P2.6). The tier is right for "the engine did not start" — bad, dismissible,
+   * over. This one is different in kind: every later autosave will fail too, so
+   * the statement "nothing you do is being kept" stays true for the rest of the
+   * session, and a notice the user has clicked away would be a lie by the time
+   * they close the app. The toast fires as well, once, because a banner that
+   * appears silently at the top of the screen is easy not to notice.
+   */
+  function showStorageFault() {
+    let el = document.getElementById("storage-fault");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "storage-fault";
+      el.className = "storage-fault";
+      el.setAttribute("role", "alert");
+      document.body.appendChild(el);
+    }
+    el.textContent = t("msg.storage.failed");
+    el.hidden = false;
   }
 
-  let confirmResolver = null;
+  /**
+   * Three tiers, because 110 toasts were saying three different kinds of thing
+   * in one voice.
+   *
+   * "已复制 PGN", "你违背了开局原则" and "引擎启动失败" shared a background, a
+   * size and a 2.2-second life. The first is a receipt you may ignore; the
+   * second is the app correcting you, which is the whole point of the teaching
+   * modes and deserves to be read; the third means a feature is gone until you
+   * restart, and 2.2 seconds later there was no evidence it had ever happened.
+   * 缺陷 20.
+   *
+   *   ok      a receipt — it happened, carry on. Short.
+   *   fix     the app is correcting you. Longer, because it is a sentence with
+   *           something to learn in it, and accented so it does not read as
+   *           another receipt.
+   *   fault   something is broken. Does NOT dismiss itself: a fault that
+   *           disappears is a fault nobody was told about. It gets a close
+   *           button instead, which is also what makes it safe to keep.
+   *
+   * @param {string} msg
+   * @param {"ok"|"fix"|"fault"} [tier]
+   */
+  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+  function toast(msg, tier) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    const kind = TOAST_MS[tier] === undefined ? "ok" : tier;
+    el.textContent = msg;
+    el.classList.remove("t-ok", "t-fix", "t-fault");
+    el.classList.add("show", "t-" + kind);
+    if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
+    store.ui.toastTimer = null;
+    const ms = TOAST_MS[kind];
+    if (ms) store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+    // a fault stays until it is dismissed, so it needs a way out that is not
+    // "wait" — clicking it anywhere will do
+    el.onclick = ms ? null : () => el.classList.remove("show");
+    el.style.cursor = ms ? "" : "pointer";
+  }
+
   /**
    * In-app confirm. Resolves true (ok) / false (cancel), and "alt" when the
    * optional third button (buttons.alt) was offered and chosen.
@@ -317,58 +511,58 @@
       if (altLabel) altBtn.textContent = altLabel;
     }
     Dlg.open(modal, okBtn);
-    return new Promise((resolve) => { confirmResolver = resolve; });
+    return new Promise((resolve) => { store.ui.confirmResolver = resolve; });
   }
   function finishConfirm(val) {
     const modal = document.getElementById("confirm-modal");
     Dlg.close(modal);
-    if (confirmResolver) { confirmResolver(val); confirmResolver = null; }
+    if (store.ui.confirmResolver) { store.ui.confirmResolver(val); store.ui.confirmResolver = null; }
   }
 
   // --- settings + autosave ---
   function loadSettings() {
     try {
-      const raw = Host.storageGet(SETTINGS_KEY);
+      const raw = Persist.get("settings");
       if (!raw) return;
       const s = JSON.parse(raw);
-      if (typeof s.soundOn === "boolean") soundOn = s.soundOn;
-      if (typeof s.flipped === "boolean") flipped = s.flipped;
-      if (["wood", "night", "day", "notebook"].includes(s.themeId)) themeId = s.themeId;
-      if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) mode = s.mode;
+      if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
+      if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
+      if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
+      if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
       // DIFF_IDS, not a second copy of it — this list was written out by hand
       // and adding the 1.19 "casual" rung to the ladder without it here would
       // have thrown the choice away on the next launch, silently.
-      if (DIFF_IDS.includes(s.difficulty)) difficulty = s.difficulty;
-      if (["w", "b"].includes(s.humanColor)) humanColor = s.humanColor;
-      if (s.timeControl === "off" || TCS[s.timeControl]) timeControl = s.timeControl;
-      if (typeof s.coachOn === "boolean") coachOn = s.coachOn;
-      if (typeof s.autoFlipPvp === "boolean") autoFlipPvp = s.autoFlipPvp;
-      if (I18n && typeof s.langId === "string") langId = I18n.setLang(s.langId);
-      if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) puzzleTierFilter = s.puzzleTier;
-      if (["play", "setup", "record"].includes(s.sideTab)) sideTab = s.sideTab;
-      if (PERSONA_IDS.includes(s.personaId)) personaId = s.personaId;
+      if (DIFF_IDS.includes(s.difficulty)) store.session.difficulty = s.difficulty;
+      if (["w", "b"].includes(s.humanColor)) store.session.humanColor = s.humanColor;
+      if (s.timeControl === "off" || TCS[s.timeControl]) store.game.timeControl = s.timeControl;
+      if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
+      if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
+      if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
+      if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
+      if (["play", "setup", "record"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
+      if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
     } catch (_) {}
   }
   function saveSettings() {
     try {
-      Host.storageSet(SETTINGS_KEY, JSON.stringify({ soundOn, flipped, themeId, mode, difficulty, humanColor, timeControl, coachOn, autoFlipPvp, langId, puzzleTier: puzzleTierFilter, sideTab, personaId }));
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId }));
     } catch (_) {}
   }
   function saveGame() {
     try {
       const payload = { v: 1, pgn: game.pgn(), savedAt: Date.now() };
-      if (timeControl !== "off" && clock) {
-        payload.clock = { tc: timeControl, w: Math.round(clock.w), b: Math.round(clock.b), flag: flagFall };
+      if (store.game.timeControl !== "off" && store.game.clock) {
+        payload.clock = { tc: store.game.timeControl, w: Math.round(store.game.clock.w), b: Math.round(store.game.clock.b), flag: store.game.flagFall };
       }
-      if (resigned) payload.resigned = resigned;
-      if (drawAgreed) payload.drawAgreed = true;
-      if (drawClaimed) payload.drawClaimed = drawClaimed;
-      Host.storageSet(SAVE_KEY, JSON.stringify(payload));
+      if (store.game.resigned) payload.resigned = store.game.resigned;
+      if (store.game.drawAgreed) payload.drawAgreed = true;
+      if (store.game.drawClaimed) payload.drawClaimed = store.game.drawClaimed;
+      Persist.setJson("save", payload);
     } catch (_) {}
   }
   function tryLoadSave() {
     try {
-      const raw = Host.storageGet(SAVE_KEY);
+      const raw = Persist.get("save");
       if (!raw) return false;
       const s = JSON.parse(raw);
       if (!s || s.v !== 1 || typeof s.pgn !== "string" || !s.pgn) return false;
@@ -379,20 +573,20 @@
         // path then took "no save" at face value and overwrote the position
         // with the standard array. Closing the app after setting up a study
         // position, before playing into it, lost it without a word.
-        const sf = window.ChessPgn ? window.ChessPgn.startFen(s.pgn) : null;
+        const sf = ChessPgn ? ChessPgn.startFen(s.pgn) : null;
         if (!sf || !gameLoad(sf)) return false;
         game.header("SetUp", "1", "FEN", sf);
       }
-      viewIndex = sanHistory().length;
+      store.game.viewIndex = sanHistory().length;
       if (s.clock && TCS[s.clock.tc] &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
-        timeControl = s.clock.tc;
-        clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
-        flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
+        store.game.timeControl = s.clock.tc;
+        store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
+        store.game.flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
       }
-      if (s.resigned === "w" || s.resigned === "b") resigned = s.resigned;
-      if (s.drawAgreed === true) drawAgreed = true;
-      if (s.drawClaimed === "threefold" || s.drawClaimed === "fifty") drawClaimed = s.drawClaimed;
+      if (s.resigned === "w" || s.resigned === "b") store.game.resigned = s.resigned;
+      if (s.drawAgreed === true) store.game.drawAgreed = true;
+      if (s.drawClaimed === "threefold" || s.drawClaimed === "fifty") store.game.drawClaimed = s.drawClaimed;
       // a custom starting position is worth resuming on its own, with or
       // without moves played into it
       return sanHistory().length > 0 || !!startFen();
@@ -412,40 +606,40 @@
 
   /** Drop any in-flight engine search; call before every game mutation. */
   function invalidateEngine() {
-    engineToken++;
-    engineThinking = false;
-    hintMove = null;
-    if (window.ChessEngine) window.ChessEngine.cancel();
+    store.game.engineToken++;
+    store.session.engineThinking = false;
+    store.session.hintMove = null;
+    if (ChessEngine) ChessEngine.cancel();
   }
 
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
-    if (mode !== "ai" || !window.ChessEngine) return;
-    if (appGameOver() || game.turn() === humanColor) return;
-    const token = ++engineToken;
-    engineThinking = true;
+    if (store.session.mode !== "ai" || !ChessEngine) return;
+    if (appGameOver() || game.turn() === store.session.humanColor) return;
+    const token = ++store.game.engineToken;
+    store.session.engineThinking = true;
     sync();
     // clocked AI games: the engine budgets its think time from its clock
-    const engineSide = humanColor === "w" ? "b" : "w";
-    const budget = clock && timeControl !== "off" ? Math.max(150, clock[engineSide] / 30) : null;
+    const engineSide = store.session.humanColor === "w" ? "b" : "w";
+    const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
     let mv = null;
     // the personality only ever colours a real game against the engine; the
     // lesson drills need the engine defending honestly or the drill is a lie
-    try { mv = await window.ChessEngine.bestMove(game.fen(), difficulty, budget, { id: personaId, Chess }); }
+    try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess }); }
     catch (_) { mv = null; }
-    if (token !== engineToken) return; // game changed while thinking
-    engineThinking = false;
-    if (!mv) { sync(); toast(t("m.00")); return; }
+    if (token !== store.game.engineToken) return; // game changed while thinking
+    store.session.engineThinking = false;
+    if (!mv) { sync(); toast(t("msg.engine.noMove"), "fault"); return; }
     const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
-      viewIndex = sanHistory().length;
-      selection = null;
-      hintMove = null;
+      store.game.viewIndex = sanHistory().length;
+      store.game.selection = null;
+      store.session.hintMove = null;
       applyIncrement(played.color);
       animateReply(played);
-      Audio2.playMove(played.color, { captured: !!played.captured, check: game.in_check() });
-      if (game.in_checkmate()) Audio2.playWin();
-      else if (naturalGameOver()) Audio2.playDraw();
+      moveSound(played, game);
+      if (game.in_checkmate()) playEnding(game.turn() === "w" ? "b" : "w");
+      else if (naturalGameOver()) playEnding(null);
       saveGame();
       recordGameIfOver();
       coachAfterEngineReply();
@@ -456,25 +650,25 @@
   // --- engine hint: full-strength best move drawn as an arrow ---
 
   async function requestHint() {
-    if (mode === "learn") { learnHint(); return; }
-    if (mode === "puzzle") { showPuzzleAnswer(); return; }
-    if (!window.ChessEngine) { toast(t("m.01")); return; }
-    if (!isLive()) { toast(t("m.02")); return; }
+    if (store.session.mode === "learn") { learnHint(); return; }
+    if (store.session.mode === "puzzle") { showPuzzleAnswer(); return; }
+    if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
+    if (!isLive()) { toast(t("msg.replay.returnToLive"), "fix"); return; }
     if (appGameOver()) return;
-    if (mode === "ai" && (engineThinking || game.turn() !== humanColor)) return;
-    if (hintPending || analyzing) return;
+    if (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor)) return;
+    if (store.session.hintPending || store.session.analyzing) return;
     const sig = game.fen();
-    hintPending = true;
+    store.session.hintPending = true;
     sync();
     let e = null;
-    try { e = await window.ChessEngine.analyze(sig, 400); } catch (_) {}
-    hintPending = false;
+    try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
+    store.session.hintPending = false;
     if (!isLive() || game.fen() !== sig) { sync(); return; }
-    if (!e || !e.best) { sync(); toast(t("m.03")); return; }
+    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint"), "fault"); return; }
     const from = e.best.slice(0, 2);
     const to = e.best.slice(2, 4);
     const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
-    hintMove = { from, to };
+    store.session.hintMove = { from, to };
     sync();
     toast(t("chrome.hint") + " · " + (vmv ? vmv.san : from + " → " + to));
   }
@@ -490,18 +684,18 @@
   function parseTc(tc) { return TCS[tc] || null; }
 
   function resetClocks() {
-    const tc = parseTc(timeControl);
-    clock = tc ? { w: tc.base * 1000, b: tc.base * 1000 } : null;
-    flagFall = null;
+    const tc = parseTc(store.game.timeControl);
+    store.game.clock = tc ? { w: tc.base * 1000, b: tc.base * 1000 } : null;
+    store.game.flagFall = null;
     syncClockTimer();
     renderClocks();
   }
 
   /** Fischer increment: credit the mover once their move is completed. */
   function applyIncrement(mover) {
-    const tc = parseTc(timeControl);
-    if (!clock || !tc || !tc.inc || flagFall) return;
-    clock[mover] += tc.inc * 1000;
+    const tc = parseTc(store.game.timeControl);
+    if (!store.game.clock || !tc || !tc.inc || store.game.flagFall) return;
+    store.game.clock[mover] += tc.inc * 1000;
     renderClocks();
   }
 
@@ -514,7 +708,7 @@
    * by either measure counts as away.
    */
   function appAwake() {
-    if (!appForeground) return false;
+    if (!store.ui.appForeground) return false;
     try { return document.visibilityState !== "hidden"; } catch (_) { return true; }
   }
 
@@ -531,18 +725,18 @@
    * time you spend in another window is not time your opponent is waiting.
    */
   function clockRunning() {
-    return (mode === "pvp" || mode === "ai") && !!clock &&
+    return (store.session.mode === "pvp" || store.session.mode === "ai") && !!store.game.clock &&
       !appGameOver() && sanHistory().length >= 1 && appAwake();
   }
 
   function syncClockTimer() {
     const want = clockRunning();
-    if (want && !clockTimer) {
-      clockTickAt = Date.now();
-      clockTimer = setInterval(clockTick, 200);
-    } else if (!want && clockTimer) {
-      clearInterval(clockTimer);
-      clockTimer = null;
+    if (want && !store.game.clockTimer) {
+      store.game.clockTickAt = Date.now();
+      store.game.clockTimer = setInterval(clockTick, 200);
+    } else if (!want && store.game.clockTimer) {
+      clearInterval(store.game.clockTimer);
+      store.game.clockTimer = null;
     }
   }
 
@@ -550,22 +744,23 @@
     if (!clockRunning()) { syncClockTimer(); return; }
     const now = Date.now();
     const side = game.turn();
-    clock[side] = Math.max(0, clock[side] - (now - clockTickAt));
-    clockTickAt = now;
-    if (clock[side] === 0) {
-      flagFall = side;
+    store.game.clock[side] = Math.max(0, store.game.clock[side] - (now - store.game.clockTickAt));
+    store.game.clockTickAt = now;
+    if (store.game.clock[side] === 0) {
+      store.game.flagFall = side;
       syncClockTimer();
       invalidateEngine();
       const isDraw = timeoutIsDraw();
-      if (isDraw) Audio2.playDraw(); else Audio2.playWin();
-      if (mode === "ai") {
-        recordOutcome(isDraw ? "draw" : side === humanColor ? "loss" : "win", "#flag");
+      // the side whose flag fell lost; a draw only when the other side cannot mate
+      playEnding(isDraw ? null : (side === "w" ? "b" : "w"));
+      if (store.session.mode === "ai") {
+        recordOutcome(isDraw ? "draw" : side === store.session.humanColor ? "loss" : "win", "flag");
       }
       saveGame();
-      sync();
-      const who = side === "w" ? t("m.04") : t("m.05");
-      toast(isDraw ? who + t("m.06") :
-        tf("mm.flagWin", [who, side === "w" ? t("m.05") : t("m.04")]));
+      store.commit("game", "action");
+      const who = side === "w" ? t("side.white") : t("side.black");
+      toast(isDraw ? who + t("msg.clock.flagDrawNoMaterial") :
+        tf("mm.flagWin", [who, side === "w" ? t("side.black") : t("side.white")]));
       return;
     }
     renderClocks();
@@ -580,15 +775,15 @@
     const wEl = document.getElementById("clock-w");
     const bEl = document.getElementById("clock-b");
     if (!wEl || !bEl) return;
-    const show = (mode === "pvp" || mode === "ai") && timeControl !== "off" && !!clock;
+    const show = (store.session.mode === "pvp" || store.session.mode === "ai") && store.game.timeControl !== "off" && !!store.game.clock;
     wEl.hidden = !show;
     bEl.hidden = !show;
     if (!show) return;
     const active = clockRunning() ? game.turn() : null;
     for (const [el, side] of [[wEl, "w"], [bEl, "b"]]) {
-      el.textContent = fmtClock(clock[side]);
+      el.textContent = fmtClock(store.game.clock[side]);
       el.classList.toggle("active", active === side);
-      el.classList.toggle("low", clock[side] < 20000);
+      el.classList.toggle("low", store.game.clock[side] < 20000);
     }
   }
 
@@ -596,10 +791,10 @@
   const OPENING_BOOK = (() => {
     const map = new Map();
     let maxPly = 0;
-    for (const [eco, name, seq] of window.CHESS_OPENINGS || []) {
+    for (const [eco, nameId, seq] of CHESS_OPENINGS || []) {
       // store the parts, not the joined label: the name is localised at render
       // time so switching language relabels the line already on screen
-      map.set(seq, [eco, name]);
+      map.set(seq, [eco, nameId]);
       maxPly = Math.max(maxPly, seq.split(" ").length);
     }
     return { map, maxPly };
@@ -619,14 +814,13 @@
   function renderOpening() {
     const el = document.getElementById("opening-line");
     if (!el) return;
-    const hit = mode === "learn" || mode === "puzzle" ? null : openingFor(viewIndex);
+    const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
     el.hidden = !hit;
     el.textContent = hit ? hit[0] + " · " + openingName(hit[1]) : "";
   }
 
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
-  const LEARN_KEY = "chess.v1.learn";
-  const LESSONS = window.CHESS_LESSONS || [];
+  const LESSONS = CHESS_LESSONS || [];
 
   /**
    * Content tables per language. Chinese is the source and lives in
@@ -643,19 +837,19 @@
    */
   const CONTENT_TABLES = {
     en: () => ({
-      lessons: window.CHESS_LESSONS_EN, puzzles: window.CHESS_PUZZLES_EN,
-      openings: window.CHESS_OPENINGS_EN, ideas: window.CHESS_OPENING_IDEAS_EN,
+      lessons: CHESS_LESSONS_EN, puzzles: CHESS_PUZZLES_EN,
+      openings: CHESS_OPENINGS_EN, ideas: CHESS_OPENING_IDEAS_EN,
     }),
     ja: () => ({
-      lessons: window.CHESS_LESSONS_JA, puzzles: window.CHESS_PUZZLES_JA,
-      openings: window.CHESS_OPENINGS_JA, ideas: window.CHESS_OPENING_IDEAS_JA,
+      lessons: CHESS_LESSONS_JA, puzzles: CHESS_PUZZLES_JA,
+      openings: CHESS_OPENINGS_JA, ideas: CHESS_OPENING_IDEAS_JA,
     }),
   };
   /** tables to consult for `kind`, best match first (empty when reading source) */
   function contentTables(kind) {
     const out = [];
-    if (langId === "zh-CN") return out;
-    for (const id of [langId, "en"]) {
+    if (store.ui.langId === "zh-CN") return out;
+    for (const id of [store.ui.langId, "en"]) {
       const get = CONTENT_TABLES[id];
       const tbl = get && get()[kind];
       if (tbl && out.indexOf(tbl) < 0) out.push(tbl);
@@ -715,74 +909,104 @@
    */
   function puzzleName(p) {
     // opening drills are named by the book, not by the puzzle tables
-    if (p.cat === "op" && p.zh) return p.eco + " " + openingName(p.zh);
+    if (p.cat === "op" && p.nameId) return p.eco + " " + openingName(p.nameId);
     return contentField("puzzles", p.id, "name") || p.name;
   }
+  /**
+   * What this puzzle is teaching.
+   *
+   * Hand-written first, then derived, then the generic fallback. 21 of the 168
+   * carried a motif and all of them were in `tac`, so "practise pins today"
+   * could only reach those 21 while the real-game and capture sets are full of
+   * unlabelled ones. motif.js works the rest out from the position — and says
+   * nothing where it is not sure, because a wrong motif in a teaching app
+   * teaches the wrong thing. 缺陷 28.
+   */
+  const MOTIF_CACHE = new Map();
+  function derivedMotif(p) {
+    if (MOTIF_CACHE.has(p.id)) return MOTIF_CACHE.get(p.id);
+    const line = p.line || p.solution || [];
+    let m = null;
+    if (p.fen && line.length) { try { m = motifOf(p.fen, line[0], Chess); } catch (_) { m = null; } }
+    MOTIF_CACHE.set(p.id, m);
+    return m;
+  }
   function puzzleMotif(p) {
-    return contentField("puzzles", p.id, "motif") || p.motif || t("pz.forcing");
+    const hand = contentField("puzzles", p.id, "motif") || p.motif;
+    if (hand) return hand;
+    const d = derivedMotif(p);
+    return d ? t("motif." + d) : t("pz.forcing");
   }
   function puzzleIdea(p) {
-    if (p.cat === "op" && p.zh) return openingIdea(p.zh) || p.idea || "";
+    if (p.cat === "op" && p.nameId) return openingIdea(p.nameId) || p.idea || "";
     return contentField("puzzles", p.id, "idea") || p.idea || "";
   }
-  /** Localised opening name, looked up by its Chinese name (the stable key). */
-  function openingName(zh) {
-    for (const tbl of contentTables("openings")) if (tbl[zh]) return tbl[zh];
-    return zh;
+  /**
+   * Localised opening name, looked up by the line's id.
+   *
+   * Up to 1.25 the lookup key was the Chinese name itself, in every table. So
+   * renaming one opening in openings.js silently unkeyed both translations at
+   * once and every language quietly fell back to the Chinese string — a
+   * content edit with no failing test and no visible symptom until someone
+   * opened the app in English. The id makes a rename a rename.
+   */
+  function openingName(id) {
+    for (const tbl of contentTables("openings")) if (tbl[id]) return tbl[id];
+    return CHESS_OPENING_NAMES[id] || id;
   }
   /** …and the sentence explaining what the line is trying to do. */
-  function openingIdea(zh) {
-    for (const tbl of contentTables("ideas")) if (tbl[zh]) return tbl[zh];
+  function openingIdea(id) {
+    for (const tbl of contentTables("ideas")) if (tbl[id]) return tbl[id];
     return "";
   }
 
   function loadLearnState() {
     try {
-      const s = JSON.parse(Host.storageGet(LEARN_KEY) || "null");
+      const s = JSON.parse(Persist.get("learn") || "null");
       if (s && s.v === 1 && s.done) return s;
     } catch (_) {}
     return { v: 1, done: {}, last: 0 };
   }
-  let learnState = loadLearnState();
+  store.session.learnState = loadLearnState();
   function saveLearnState() {
-    try { Host.storageSet(LEARN_KEY, JSON.stringify(learnState)); } catch (_) {}
+    Persist.setJson("learn", store.session.learnState);
   }
 
   function startLearn() {
-    startLesson(Math.max(0, Math.min(learnState.last || 0, LESSONS.length - 1)));
+    startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
   }
-  function stopLearn() { if (learn) learn.token++; learn = null; }
+  function stopLearn() { if (store.session.learn) store.session.learn.token++; store.session.learn = null; }
 
-  function curLesson() { return LESSONS[learn.li]; }
-  function curTask() { return curLesson().tasks[learn.ti]; }
+  function curLesson() { return LESSONS[store.session.learn.li]; }
+  function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
   function startLesson(i) {
     if (!LESSONS[i]) return;
-    learnState.last = i;
+    store.session.learnState.last = i;
     saveLearnState();
-    learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !learnState.done[LESSONS[i].id] };
+    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
 
   function startLearnTask() {
     const task = curTask();
-    learn.token++;
+    store.session.learn.token++;
     BoardView.cancelAnim();
-    learn.g = new Chess(task.fen);
-    learn.stars = new Set(task.stars || []);
-    learn.tapStep = 0;
-    learn.last = null;
-    learn.done = false;
-    learn.engineBusy = false;
-    learn.misses = 0;
-    learn.helpOn = false;
-    learn.helpArrow = null;
-    learn.flash = null;
-    learn.demoing = false;
-    selection = null;
+    store.session.learn.g = new Chess(task.fen);
+    store.session.learn.stars = new Set(task.stars || []);
+    store.session.learn.tapStep = 0;
+    store.session.learn.last = null;
+    store.session.learn.done = false;
+    store.session.learn.engineBusy = false;
+    store.session.learn.misses = 0;
+    store.session.learn.helpOn = false;
+    store.session.learn.helpArrow = null;
+    store.session.learn.flash = null;
+    store.session.learn.demoing = false;
+    store.game.selection = null;
     // first visit to an unfinished lesson: show the solution once, then reset
-    if (learn.wantDemo && task.solution && (task.type === "stars" || task.type === "move")) {
-      learn.wantDemo = false;
+    if (store.session.learn.wantDemo && task.solution && (task.type === "stars" || task.type === "move")) {
+      store.session.learn.wantDemo = false;
       runLessonDemo();
       return;
     }
@@ -793,33 +1017,33 @@
   function runLessonDemo() {
     const task = curTask();
     const sol = task.solution;
-    learn.demoing = true;
-    const token = learn.token;
+    store.session.learn.demoing = true;
+    const token = store.session.learn.token;
     let i = 0;
     toast(t("lm.demoIntro"));
     sync();
     const step = () => {
-      if (!learn || learn.token !== token) return;
+      if (!store.session.learn || store.session.learn.token !== token) return;
       if (i >= sol.length) {
         setTimeout(() => {
-          if (!learn || learn.token !== token) return;
+          if (!store.session.learn || store.session.learn.token !== token) return;
           endLessonDemo();
         }, 800);
         return;
       }
       const s = sol[i++];
-      const g = learn.g;
+      const g = store.session.learn.g;
       const mv = /^[a-h][1-8][a-h][1-8]$/.test(s)
         ? g.move({ from: s.slice(0, 2), to: s.slice(2, 4), promotion: "q" })
         : g.move(s);
       if (!mv) { endLessonDemo(); return; }
-      learn.last = { from: mv.from, to: mv.to };
+      store.session.learn.last = { from: mv.from, to: mv.to };
       if (task.type === "stars") {
-        if (learn.stars.has(mv.to)) learn.stars.delete(mv.to);
+        if (store.session.learn.stars.has(mv.to)) store.session.learn.stars.delete(mv.to);
         // hand the turn back, exactly like real star play
         const f = g.fen().split(" ");
         f[1] = "w"; f[3] = "-";
-        learn.g = new Chess(f.join(" "));
+        store.session.learn.g = new Chess(f.join(" "));
       }
       Audio2.playMove("w");
       sync();
@@ -830,76 +1054,78 @@
 
   function endLessonDemo() {
     const task = curTask();
-    learn.demoing = false;
-    learn.g = new Chess(task.fen);
-    learn.stars = new Set(task.stars || []);
-    learn.last = null;
-    selection = null;
+    store.session.learn.demoing = false;
+    store.session.learn.g = new Chess(task.fen);
+    store.session.learn.stars = new Set(task.stars || []);
+    store.session.learn.last = null;
+    store.game.selection = null;
     sync();
-    toast(t("lm.yourTurn"));
+    toast(t("lm.yourTurn"), "fix");
   }
 
   function skipLessonDemo() {
-    learn.token++; // kill the pending demo timers
+    store.session.learn.token++; // kill the pending demo timers
     endLessonDemo();
   }
 
   function learnModel() {
-    const g = learn.g;
+    const g = store.session.learn.g;
     const task = curTask();
-    let stars = Array.from(learn.stars);
+    let stars = Array.from(store.session.learn.stars);
     // stuck-help: after repeated misses, highlight the tap answer with stars
-    if (learn.helpOn && task.type === "tap" && learn.tapStep < task.steps.length) {
-      stars = task.steps[learn.tapStep].squares;
+    if (store.session.learn.helpOn && task.type === "tap" && store.session.learn.tapStep < task.steps.length) {
+      stars = task.steps[store.session.learn.tapStep].squares;
     }
     return {
       position: g.board(),
       flipped: false, // lessons are authored from the white side
-      selected: selection ? selection.sq : null,
-      legalTargets: selection ? selection.targets : [],
-      lastMove: learn.last,
+      selected: store.game.selection ? store.game.selection.sq : null,
+      legalTargets: store.game.selection ? store.game.selection.targets : [],
+      lastMove: store.session.learn.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
-      hintMove: learn.helpArrow,
-      flashSquare: learn.flash,
+      hintMove: store.session.learn.helpArrow,
+      flashSquare: store.session.learn.flash,
       stars,
       cursor: cursorSquare(),
+      // the drag is part of the picture, not a thing pushed in beforehand
+      drag: store.ui.dragging,
     };
   }
 
   /** Two misses on the same task → show the answer (stars for taps, arrow for moves). */
   function learnRegisterMiss() {
-    learn.misses++;
-    if (learn.misses < 2 || learn.helpOn) return;
-    learn.helpOn = true;
+    store.session.learn.misses++;
+    if (store.session.learn.misses < 2 || store.session.learn.helpOn) return;
+    store.session.learn.helpOn = true;
     const task = curTask();
     if (task.type === "move" && task.solution && task.solution.length) {
       try {
         const probe = new Chess(task.fen);
         const mv = probe.move(task.solution[0]);
-        if (mv) learn.helpArrow = { from: mv.from, to: mv.to };
+        if (mv) store.session.learn.helpArrow = { from: mv.from, to: mv.to };
       } catch (_) {}
     }
-    toast(t("lm.answerShown"));
+    toast(t("lm.answerShown"), "fix");
     sync();
   }
 
   function learnFlash(sq) {
-    learn.flash = sq;
+    store.session.learn.flash = sq;
     draw();
-    const token = learn.token;
+    const token = store.session.learn.token;
     setTimeout(() => {
-      if (learn && learn.token === token && learn.flash === sq) { learn.flash = null; draw(); }
+      if (store.session.learn && store.session.learn.token === token && store.session.learn.flash === sq) { store.session.learn.flash = null; draw(); }
     }, 380);
   }
 
   function learnTaskText() {
     const task = curTask();
-    if (learn.demoing) return t("lm.demoing");
-    if (learn.done) return t("lm.taskDone") + (learn.li + 1 < LESSONS.length ? t("lm.tapNext") : t("lm.allDone"));
-    const tx = taskText(curLesson(), learn.ti);
-    if (task.type === "tap") return tx.step(learn.tapStep) + " (" + (learn.tapStep + 1) + "/" + task.steps.length + ")";
-    if (task.type === "drill" && learn.engineBusy) return t("lm.sparThinking");
+    if (store.session.learn.demoing) return t("lm.demoing");
+    if (store.session.learn.done) return t("lm.taskDone") + (store.session.learn.li + 1 < LESSONS.length ? t("lm.tapNext") : t("lm.allDone"));
+    const tx = taskText(curLesson(), store.session.learn.ti);
+    if (task.type === "tap") return tx.step(store.session.learn.tapStep) + " (" + (store.session.learn.tapStep + 1) + "/" + task.steps.length + ")";
+    if (task.type === "drill" && store.session.learn.engineBusy) return t("lm.sparThinking");
     // tx, not task: reading the prompt straight off the lesson showed every
     // move/stars/drill task in Chinese to English readers — the translations
     // were sitting in lessons-en.js unused, and only the tap tasks (which go
@@ -908,31 +1134,31 @@
   }
 
   function learnClick(sq) {
-    if (!learn || learn.done) return;
-    if (learn.demoing) { skipLessonDemo(); return; }
+    if (!store.session.learn || store.session.learn.done) return;
+    if (store.session.learn.demoing) { skipLessonDemo(); return; }
     const task = curTask();
     if (task.type === "tap") {
-      if (task.steps[learn.tapStep].squares.includes(sq)) {
-        learn.tapStep++;
-        learn.helpOn = false;
-        learn.misses = 0;
+      if (task.steps[store.session.learn.tapStep].squares.includes(sq)) {
+        store.session.learn.tapStep++;
+        store.session.learn.helpOn = false;
+        store.session.learn.misses = 0;
         Audio2.playStar();
         learnFlash(sq);
-        if (learn.tapStep >= task.steps.length) learnTaskDone();
+        if (store.session.learn.tapStep >= task.steps.length) learnTaskDone();
         else sync();
       } else {
         // the localised tip, not the authored one — same reason as learnTaskText
-        toast(tf("lm.wrongSquare", [taskText(curLesson(), learn.ti).step(learn.tapStep)]));
+        toast(tf("lm.wrongSquare", [taskText(curLesson(), store.session.learn.ti).step(store.session.learn.tapStep)]));
         learnRegisterMiss();
       }
       return;
     }
-    if (task.type === "drill" && learn.engineBusy) return;
-    const g = learn.g;
+    if (task.type === "drill" && store.session.learn.engineBusy) return;
+    const g = store.session.learn.g;
     if (g.game_over()) return;
     const piece = g.get(sq);
-    if (selection && selection.targets.includes(sq)) {
-      const from = selection.sq;
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         choosePromotion(g.turn()).then((p) => { if (p) learnMove(from, sq, p); });
@@ -943,7 +1169,7 @@
     }
     if (piece && piece.color === "w" && g.turn() === "w" && (!task.only || piece.type === task.only)) {
       const targets = g.moves({ square: sq, verbose: true }).map((m) => m.to);
-      selection = targets.length ? { sq, targets } : null;
+      store.game.selection = targets.length ? { sq, targets } : null;
       draw();
       return;
     }
@@ -951,38 +1177,38 @@
       toast(tf("lm.onlyPiece", [PIECE_NAMES[task.only]]));
       return;
     }
-    if (selection) { selection = null; draw(); }
+    if (store.game.selection) { store.game.selection = null; draw(); }
   }
 
   const PIECE_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
 
   function learnRetryTask(msg) {
-    toast(msg);
-    const token = learn.token;
-    setTimeout(() => { if (learn && learn.token === token) startLearnTask(); }, 1400);
+    toast(msg, "fix");
+    const token = store.session.learn.token;
+    setTimeout(() => { if (store.session.learn && store.session.learn.token === token) startLearnTask(); }, 1400);
   }
 
   function learnMove(from, to, promotion) {
     const task = curTask();
-    const g = learn.g;
+    const g = store.session.learn.g;
     const mv = g.move({ from, to, promotion });
     if (!mv) return;
-    selection = null;
-    learn.last = { from: mv.from, to: mv.to };
-    learn.helpArrow = null;
+    store.game.selection = null;
+    store.session.learn.last = { from: mv.from, to: mv.to };
+    store.session.learn.helpArrow = null;
     BoardView.cancelAnim(); // the student's own move — see animateReply
-    Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
+    moveSound(mv, g);
     if (task.type === "stars") {
-      if (learn.stars.has(mv.to)) {
-        learn.stars.delete(mv.to);
+      if (store.session.learn.stars.has(mv.to)) {
+        store.session.learn.stars.delete(mv.to);
         Audio2.playStar();
         learnFlash(mv.to);
       }
-      if (learn.stars.size === 0) { learnTaskDone(); return; }
+      if (store.session.learn.stars.size === 0) { learnTaskDone(); return; }
       // hand the turn straight back to the student — the opponent never replies
       const f = g.fen().split(" ");
       f[1] = "w"; f[3] = "-";
-      learn.g = new Chess(f.join(" "));
+      store.session.learn.g = new Chess(f.join(" "));
       sync();
       return;
     }
@@ -1011,9 +1237,10 @@
         return;
       }
       g.undo();
-      learn.last = null;
+      store.session.learn.last = null;
       // the translated retry hint, not the raw Chinese one on the task
-      toast(taskText(curLesson(), learn.ti).retry || t("lm.retry"));
+      // a lesson retry is a correction, not a receipt
+      toast(taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry"), "fix");
       learnRegisterMiss();
       sync();
       return;
@@ -1039,17 +1266,28 @@
    * draw *is* the goal, and being mated is the failure.
    */
   function drillOutcome(g, task) {
+    // What happened, then what to do about it: the outcome names the result and
+    // `drillAdvice()` reads the technique that was missing off the position.
+    // Where it has nothing certain to say the plain outcome stands alone. 缺陷 26.
+    const say = (key, goal, how) => {
+      const tip = ChessDrills.drillAdvice(g, goal, how);
+      return tip ? t(key) + t("lm.tipSep") + t(tip) : t(key);
+    };
     if (task.winOn === "draw") {
-      if (g.in_checkmate()) return t("lm.mateDefLost");
+      if (g.in_checkmate()) return say("lm.mateDefLost", "draw", "mated");
       if (g.game_over()) return "win"; // stalemate / 50-move / insufficient
       // black queening means the defence has already collapsed
       for (const row of g.board()) for (const p of row) {
-        if (p && p.color === "b" && p.type === "q") return t("lm.blackQueened");
+        if (p && p.color === "b" && p.type === "q") return say("lm.blackQueened", "draw", "queened");
       }
       return null;
     }
-    if (g.in_checkmate()) return g.turn() === "b" ? "win" : t("lm.mated");
-    if (g.game_over()) return g.in_stalemate() ? t("lm.stalemated") : t("lm.drawn");
+    if (g.in_checkmate()) return g.turn() === "b" ? "win" : say("lm.mated", "win", "mated");
+    if (g.game_over()) {
+      return g.in_stalemate()
+        ? say("lm.stalemated", "win", "stalemate")
+        : say("lm.drawn", "win", "draw");
+    }
     return null;
   }
 
@@ -1062,24 +1300,24 @@
   }
 
   async function learnEngineReply() {
-    if (!window.ChessEngine) { toast(t("lm.noEngine")); return; }
-    const g = learn.g;
-    const token = learn.token;
+    if (!ChessEngine) { toast(t("lm.noEngine"), "fault"); return; }
+    const g = store.session.learn.g;
+    const token = store.session.learn.token;
     // drills default to the weakest tier: the sparring partner is there to
     // teach the technique, not to punish a beginner with perfect defense
     const tier = curTask().engine || "beginner";
-    learn.engineBusy = true;
+    store.session.learn.engineBusy = true;
     sync();
     let mv = null;
-    try { mv = await window.ChessEngine.bestMove(g.fen(), tier); } catch (_) {}
-    if (!learn || token !== learn.token) return;
-    learn.engineBusy = false;
+    try { mv = await ChessEngine.bestMove(g.fen(), tier); } catch (_) {}
+    if (!store.session.learn || token !== store.session.learn.token) return;
+    store.session.learn.engineBusy = false;
     if (mv) {
       const played = g.move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
       if (played) {
-        learn.last = { from: played.from, to: played.to };
+        store.session.learn.last = { from: played.from, to: played.to };
         animateReply(played);
-        Audio2.playMove(played.color, { captured: !!played.captured, check: g.in_check() });
+        moveSound(played, g);
       }
     }
     const task = curTask();
@@ -1098,61 +1336,61 @@
 
   /** Drill-only: take back the last white move (and the engine reply with it). */
   function learnUndo() {
-    if (!learn || learn.done || curTask().type !== "drill") return;
-    const g = learn.g;
+    if (!store.session.learn || store.session.learn.done || curTask().type !== "drill") return;
+    const g = store.session.learn.g;
     if (!g.history().length) return;
-    learn.token++; // drop any in-flight engine reply
-    learn.engineBusy = false;
-    if (window.ChessEngine) window.ChessEngine.cancel();
+    store.session.learn.token++; // drop any in-flight engine reply
+    store.session.learn.engineBusy = false;
+    if (ChessEngine) ChessEngine.cancel();
     g.undo();
     if (g.history().length && g.turn() !== "w") g.undo();
-    learn.last = null;
-    learn.helpArrow = null;
-    selection = null;
+    store.session.learn.last = null;
+    store.session.learn.helpArrow = null;
+    store.game.selection = null;
     sync();
   }
 
   /** Drill-only engine hint, drawn as an arrow (full strength, brief think). */
   async function learnHint() {
-    if (!learn || learn.done || curTask().type !== "drill" || learn.engineBusy) return;
-    if (!window.ChessEngine) { toast(t("m.01")); return; }
-    const g = learn.g;
+    if (!store.session.learn || store.session.learn.done || curTask().type !== "drill" || store.session.learn.engineBusy) return;
+    if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
+    const g = store.session.learn.g;
     if (g.game_over() || g.turn() !== "w") return;
-    if (hintPending) return;
-    const token = learn.token;
+    if (store.session.hintPending) return;
+    const token = store.session.learn.token;
     const sig = g.fen();
-    hintPending = true;
+    store.session.hintPending = true;
     sync();
     let e = null;
-    try { e = await window.ChessEngine.analyze(sig, 400); } catch (_) {}
-    hintPending = false;
-    if (!learn || token !== learn.token || learn.g.fen() !== sig) { sync(); return; }
-    if (!e || !e.best) { sync(); toast(t("m.03")); return; }
-    learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
+    try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
+    store.session.hintPending = false;
+    if (!store.session.learn || token !== store.session.learn.token || store.session.learn.g.fen() !== sig) { sync(); return; }
+    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint"), "fault"); return; }
+    store.session.learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
     sync();
   }
 
   function learnTaskDone() {
     const L = curLesson();
-    selection = null;
-    if (learn.ti + 1 < L.tasks.length) {
+    store.game.selection = null;
+    if (store.session.learn.ti + 1 < L.tasks.length) {
       Audio2.playMove("b");
-      toast(t("lm.nextSubtask"));
-      learn.ti++;
+      toast(t("lm.nextSubtask"), "fix");
+      store.session.learn.ti++;
       // startLearnTask resets the per-task cursors, but it runs 900ms later —
       // and the board and prompt are redrawn now. A tap task followed by
       // another tap task would spend that gap reading step[3] of a 1-step task.
-      learn.tapStep = 0;
-      learn.helpOn = false;
-      const token = ++learn.token;
-      setTimeout(() => { if (learn && learn.token === token) startLearnTask(); }, 900);
+      store.session.learn.tapStep = 0;
+      store.session.learn.helpOn = false;
+      const token = ++store.session.learn.token;
+      setTimeout(() => { if (store.session.learn && store.session.learn.token === token) startLearnTask(); }, 900);
       sync();
       return;
     }
-    learn.done = true;
+    store.session.learn.done = true;
     Audio2.playWin();
-    if (!learnState.done[L.id]) {
-      learnState.done[L.id] = true;
+    if (!store.session.learnState.done[L.id]) {
+      store.session.learnState.done[L.id] = true;
       saveLearnState();
       checkNewAchievements();
     }
@@ -1192,20 +1430,20 @@
   function syncLearnUI() {
     const sec = document.getElementById("sec-learn");
     if (!sec) return;
-    sec.hidden = mode !== "learn";
-    if (mode !== "learn" || !learn) return;
+    sec.hidden = store.session.mode !== "learn";
+    if (store.session.mode !== "learn" || !store.session.learn) return;
     const L = curLesson();
-    const doneCount = LESSONS.filter((x) => learnState.done[x.id]).length;
+    const doneCount = LESSONS.filter((x) => store.session.learnState.done[x.id]).length;
     const prog = document.getElementById("learn-progress");
     // "完成 3/72" reads differently from the header chip's "4/72", which is
     // where you ARE. Two bare N/72 on one screen meant two different things.
     if (prog) prog.textContent = t("learn.donePre") + doneCount + "/" + LESSONS.length;
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
-    if (title) title.textContent = t("learn.lessonPre") + (learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
+    if (title) title.textContent = t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
     const textEl = document.getElementById("lesson-text");
     if (textEl) {
-      textEl.innerHTML = "";
+      textEl.replaceChildren();
       for (const p of loc.text) {
         textEl.appendChild(lessonParagraph(p));
       }
@@ -1223,23 +1461,36 @@
       // moving pieces already explain.
       const canDemo = !!curT.solution && (curT.type === "stars" || curT.type === "move");
       demoBtn.hidden = !canDemo;
-      demoBtn.disabled = learn.demoing;
+      demoBtn.disabled = store.session.learn.demoing;
+    }
+    const practice = document.getElementById("lesson-practice");
+    if (practice) {
+      // Shown only where the course has somewhere to send you. A lesson with
+      // no matching puzzles offers no button at all rather than a dead one —
+      // 缺陷 24 was the missing link, not a missing affordance for it.
+      const rest = practiceLeft(L);
+      practice.hidden = !rest.total;
+      practice.disabled = false;
+      if (rest.total) {
+        practice.textContent = tf("act.practice", [rest.left || rest.total]);
+        practice.classList.toggle("primary", store.session.learn.done && rest.left > 0);
+      }
     }
     const next = document.getElementById("lesson-next");
     if (next) {
-      const isLast = learn.li + 1 >= LESSONS.length;
+      const isLast = store.session.learn.li + 1 >= LESSONS.length;
       next.textContent = isLast ? t("lm.toBeginnerAi") : t("act.next");
       // `learn.done` only records whether the tasks were finished *this
       // session*, so someone returning to a course they already completed
       // found the graduation button greyed out — the one button the whole
       // teaching track exists to reach. The saved progress counts too.
-      const everDone = !!learnState.done[LESSONS[learn.li].id];
-      next.disabled = isLast && !learn.done && !everDone;
-      next.classList.toggle("primary", learn.done || (isLast && everDone));
+      const everDone = !!store.session.learnState.done[LESSONS[store.session.learn.li].id];
+      next.disabled = isLast && !store.session.learn.done && !everDone;
+      next.classList.toggle("primary", store.session.learn.done || (isLast && everDone));
     }
     const list = document.getElementById("lesson-list");
     if (list) {
-      list.innerHTML = "";
+      list.replaceChildren();
       let lastPart = null;
       LESSONS.forEach((x, i) => {
         const xl = lessonText(x);
@@ -1252,9 +1503,9 @@
         }
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "lesson-item" + (i === learn.li ? " current" : "");
+        b.className = "lesson-item" + (i === store.session.learn.li ? " current" : "");
         b.dataset.i = String(i);
-        const mark = learnState.done[x.id] ? "✓ " : "";
+        const mark = store.session.learnState.done[x.id] ? "✓ " : "";
         b.textContent = mark + (i + 1) + ". " + xl.title;
         list.appendChild(b);
       });
@@ -1262,8 +1513,7 @@
   }
 
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
-  const PUZZLE_KEY = "chess.v1.puzzles";
-  const PUZZLES = window.CHESS_PUZZLES || [];
+  const PUZZLES = CHESS_PUZZLES || [];
   const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
@@ -1281,20 +1531,20 @@
   }
 
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
-  const Drills = window.ChessDrills;
-  const OPENING_DRILLS = Drills.drillLines(window.CHESS_OPENINGS || [])
+  const Drills = ChessDrills;
+  const OPENING_DRILLS = Drills.drillLines(CHESS_OPENINGS || [])
     // The id is derived from the ECO code and the moves, NOT from the row's
     // position — see drills.js. With a positional id, adding a single deep
     // line to the book moved 108 of the 109 ids onto a different drill and
     // quietly wiped everyone's opening progress and review queue.
-    .map(([eco, name, seq, idea]) => ({
+    .map(([eco, nameId, seq, idea]) => ({
       id: Drills.drillId(eco, seq),
       cat: "op",
-      // `zh` is the key both English tables are keyed by; the displayed name is
-      // built at render time so a language switch relabels the whole drill list
-      zh: name,
+      // `nameId` keys all three name tables; the displayed name is built at
+      // render time so a language switch relabels the whole drill list
+      nameId,
       eco,
-      name: eco + " " + name,
+      name: eco + " " + (CHESS_OPENING_NAMES[nameId] || nameId),
       line: seq.split(" "),
       idea: idea || "",
     }))
@@ -1302,7 +1552,10 @@
     // queen's-pawn, then Indian. The book is authored in family order inside
     // each letter, which put A57 next to A08 once 1.15 added the deep lines,
     // and 109 rows in no order at all is a list nobody scrolls twice.
-    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1 : a.zh.localeCompare(b.zh, "zh")));
+    // sorted by the Chinese name, not the displayed one: the list order must
+    // not shuffle when the interface language changes
+    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1
+      : (CHESS_OPENING_NAMES[a.nameId] || "").localeCompare(CHESS_OPENING_NAMES[b.nameId] || "", "zh")));
   const ALL_PUZZLES = PUZZLES.concat(OPENING_DRILLS);
 
   /**
@@ -1313,6 +1566,33 @@
    * @returns {"easy"|"mid"|"hard"}
    */
   const PUZZLE_TIER_CACHE = new Map();
+  /**
+   * Categories where difficulty is a real, separate axis.
+   *
+   * In the three mate categories it is not. `puzzleTier()`'s dominant term is
+   * (plies − 1) × 1.5, and for m1/m2/m3 the ply count is a written-in constant
+   * — 1, 3, 5 — contributing 0, 3 and 6 points, while every other term put
+   * together moves the score by at most ±4.5, which never crosses a 3-point
+   * band boundary. So the tier *was* the category: every mate-in-one came out
+   * easy, every mate-in-three hard, and seven of the eighteen
+   * category × difficulty combinations were empty. Picking one of those left
+   * the list blank — and the filter is remembered, so the next visit to that
+   * category looked like an empty puzzle set. 缺陷 14.
+   *
+   * The fix chosen is (A): stop offering a filter that is a second name for
+   * the category. "Mate in two" already says how hard it is. The four
+   * categories where the tier is derived from something else — the line's
+   * length for openings, how loud the key move is for real games, how many
+   * moves hold for defence, and the full score for tactics and captures —
+   * keep it.
+   *
+   * (B) — a solving-cost measure from the engine's first-choice margin —
+   * would be better and is not free: it needs an offline pass over 168
+   * puzzles and a new field in the data. It stays on the table.
+   */
+  const TIER_CATS = new Set(["tac", "win", "real", "def", "draw", "op"]);
+  function tierApplies(cat) { return TIER_CATS.has(cat); }
+
   function puzzleTier(p) {
     if (PUZZLE_TIER_CACHE.has(p.id)) return PUZZLE_TIER_CACHE.get(p.id);
     let score = 0;
@@ -1341,16 +1621,23 @@
       PUZZLE_TIER_CACHE.set(p.id, tier);
       return tier;
     }
+    // A defence is as hard as it is narrow — and that is the ONLY thing that
+    // varies across this category. Every defensive puzzle is one move long, so
+    // the ply term is 0 for all of them, and they all share the same middlegame
+    // shape: 9–14 men, a quiet key move, usually no capture. Those constants
+    // added ~3.5 to every single one, which put the whole category above the
+    // "easy" line no matter how wide the defence was — `def × 简单` was an
+    // empty list, and the P5 acceptance rule says an empty combination must
+    // not be offered. So `saves` decides it outright, the same way an opening
+    // drill is scored on its length alone rather than on the tactic scale.
+    if (p.cat === "def" && typeof p.saves === "number") {
+      const tier = p.saves >= 4 ? "easy" : p.saves >= 2 ? "mid" : "hard";
+      PUZZLE_TIER_CACHE.set(p.id, tier);
+      return tier;
+    }
     score += (plies - 1) * 1.5;                    // longer forcing lines dominate
     if (p.cat === "tac") score += 1.5;
     if (p.cat === "win" && typeof p.gain === "number" && p.gain <= 3) score += 1; // small wins hide better
-    // A defence is as hard as it is narrow. Deriving the tier from the number
-    // of moves that hold — rather than from the solution's length, which is
-    // always one — is what makes the difficulty filter mean anything here:
-    // before this every defensive puzzle landed in the same middle band.
-    if (p.cat === "def" && typeof p.saves === "number") {
-      score += p.saves <= 1 ? 5 : p.saves <= 3 ? 3 : 1;
-    }
     try {
       if (p.fen) {
         const men = (p.fen.split(" ")[0].match(/[a-zA-Z]/g) || []).length;
@@ -1367,8 +1654,6 @@
     PUZZLE_TIER_CACHE.set(p.id, tier);
     return tier;
   }
-  /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
-  let puzzleTierFilter = "all";
 
   /**
    * Move a pre-1.21.3 save off the positional opening-drill ids.
@@ -1384,16 +1669,16 @@
     // meant the migration was only correct for someone upgrading from the
     // exact book it was generated against, which said nothing about a player
     // who skips this release entirely.
-    const map = window.ChessDrills.legacyIdMap();
-    window.ChessDrills.migrateIds(s.solved, map);
-    window.ChessDrills.migrateIds(s.missed, map);
+    const map = ChessDrills.legacyIdMap();
+    ChessDrills.migrateIds(s.solved, map);
+    ChessDrills.migrateIds(s.missed, map);
     s.idv = 2;
     return s;
   }
 
   function loadPuzzleState() {
     try {
-      const s = JSON.parse(Host.storageGet(PUZZLE_KEY) || "null");
+      const s = JSON.parse(Persist.get("puzzles") || "null");
       if (s && s.v === 1 && s.solved) {
         if (!s.missed) s.missed = {};
         return migrateDrillIds(s);
@@ -1401,17 +1686,17 @@
     } catch (_) {}
     return { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" };
   }
-  let puzzleState = loadPuzzleState();
+  store.session.puzzleState = loadPuzzleState();
   // persist the rewritten ids straight away — a migration that only lives in
   // memory runs again on every launch, and once the book does change it would
   // then be reading positions that no longer mean what they meant
-  if (puzzleState.idv === 2) { try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {} }
+  if (store.session.puzzleState.idv === 2) { Persist.setJson("puzzles", store.session.puzzleState); }
   function savePuzzleState() {
-    try { Host.storageSet(PUZZLE_KEY, JSON.stringify(puzzleState)); } catch (_) {}
+    Persist.setJson("puzzles", store.session.puzzleState);
   }
-  const Srs = window.ChessSrs;
+  const Srs = ChessSrs;
   function markMissed(id) {
-    puzzleState.missed[id] = Srs.onMiss(puzzleState.missed[id]);
+    store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id]);
     savePuzzleState();
   }
   /**
@@ -1420,10 +1705,27 @@
    * moments after reading the solution.
    */
   function clearMissed(id) {
-    if (!Srs.isDue(puzzleState.missed[id])) return;
-    const next = Srs.onSolve(puzzleState.missed[id]);
-    if (next) puzzleState.missed[id] = next; else delete puzzleState.missed[id];
+    if (!Srs.isDue(store.session.puzzleState.missed[id])) return;
+    const next = Srs.onSolve(store.session.puzzleState.missed[id]);
+    if (next) store.session.puzzleState.missed[id] = next; else delete store.session.puzzleState.missed[id];
     savePuzzleState();
+  }
+
+  /**
+   * The `tac` puzzles that continue a lesson, and how many are still unsolved.
+   *
+   * Matched on the lesson's `practice` motif rather than a hand-written list
+   * of puzzle ids: a list would have to be edited every time a puzzle is added
+   * to the set, and the one nobody edits is the one that silently stops
+   * covering the new puzzles. 缺陷 24.
+   * @param {object} L a lesson
+   * @returns {{all: object[], total: number, left: number}}
+   */
+  function practiceLeft(L) {
+    const all = L && L.practice
+      ? ALL_PUZZLES.filter((p) => p.cat === "tac" && p.motif === L.practice)
+      : [];
+    return { all, total: all.length, left: all.filter((p) => !store.session.puzzleState.solved[p.id]).length };
   }
 
   /** "review" is a virtual category: every puzzle currently in the missed set. */
@@ -1431,15 +1733,15 @@
     const base = cat === "review"
       // least-learned first, so a puzzle just answered goes to the back of the
       // queue instead of being asked again on the very next click
-      ? Srs.order(ALL_PUZZLES.filter((p) => Srs.isDue(puzzleState.missed[p.id])).map((p) => p.id),
-        puzzleState.missed).map((id) => ALL_PUZZLES.find((p) => p.id === id))
+      ? Srs.order(ALL_PUZZLES.filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).map((p) => p.id),
+        store.session.puzzleState.missed).map((id) => ALL_PUZZLES.find((p) => p.id === id))
       : ALL_PUZZLES.filter((p) => p.cat === cat);
     // "Review" is not a difficulty band — it is exactly the set of puzzles this
     // player got wrong. Filtering it by an automatically derived tier hides the
     // very puzzles they asked to redo (a queue of three could show as empty),
     // so the tier row does not apply here.
-    if (cat === "review" || puzzleTierFilter === "all") return base;
-    return base.filter((p) => puzzleTier(p) === puzzleTierFilter);
+    if (cat === "review" || !tierApplies(cat) || store.session.puzzleTierFilter === "all") return base;
+    return base.filter((p) => puzzleTier(p) === store.session.puzzleTierFilter);
   }
 
   /** the scripted line of the current puzzle (openings: line; win: solution) */
@@ -1451,47 +1753,49 @@
       // no puzzle survives the filter: clear the board and the counters too,
       // otherwise the previous puzzle stays on screen and the "n/N" chip keeps
       // counting a set that is no longer being shown
-      puzzle = null;
-      selection = null;
+      store.session.puzzle = null;
+      store.game.selection = null;
       BoardView.cancelAnim();
       sync();
       toast(t("pz.noneInTier"));
       return;
     }
     idx = ((idx % list.length) + list.length) % list.length;
-    puzzleState.cat = cat;
+    store.session.puzzleState.cat = cat;
     savePuzzleState();
     const p = list[idx];
-    puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null };
-    selection = null;
+    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null };
+    store.game.selection = null;
     BoardView.cancelAnim();
     sync();
   }
 
   function startPuzzles() {
-    let cat = PUZZLE_CAT_IDS.includes(puzzleState.cat) ? puzzleState.cat : "m1";
+    let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) ? store.session.puzzleState.cat : "m1";
     // don't strand the user on an empty review tab
     if (cat === "review" && !puzzlesInCat("review").length) cat = "m1";
     const list = puzzlesInCat(cat);
-    let idx = list.findIndex((p) => !puzzleState.solved[p.id]);
+    let idx = list.findIndex((p) => !store.session.puzzleState.solved[p.id]);
     if (idx < 0) idx = 0;
     startPuzzleAt(cat, idx);
   }
-  function stopPuzzles() { puzzle = null; }
+  function stopPuzzles() { store.session.puzzle = null; }
 
   function puzzleModel() {
-    const g = puzzle.g;
+    const g = store.session.puzzle.g;
     return {
       position: g.board(),
       flipped: false, // all puzzles are white to move
-      selected: selection ? selection.sq : null,
-      legalTargets: selection ? selection.targets : [],
-      lastMove: puzzle.last,
+      selected: store.game.selection ? store.game.selection.sq : null,
+      legalTargets: store.game.selection ? store.game.selection.targets : [],
+      lastMove: store.session.puzzle.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
-      hintMove: puzzle.helpArrow,
+      hintMove: store.session.puzzle.helpArrow,
       stars: [],
       cursor: cursorSquare(),
+      // the drag is part of the picture, not a thing pushed in beforehand
+      drag: store.ui.dragging,
     };
   }
 
@@ -1554,7 +1858,7 @@
   }
 
   function puzzleGoalText() {
-    const p = puzzle.p;
+    const p = store.session.puzzle.p;
     if (p.cat === "op") return tf("pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
     if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
@@ -1567,12 +1871,12 @@
   }
 
   function puzzleClick(sq) {
-    if (!puzzle || puzzle.done) return;
-    const g = puzzle.g;
+    if (!store.session.puzzle || store.session.puzzle.done) return;
+    const g = store.session.puzzle.g;
     if (g.game_over() || g.turn() !== "w") return;
     const piece = g.get(sq);
-    if (selection && selection.targets.includes(sq)) {
-      const from = selection.sq;
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         choosePromotion(g.turn()).then((p) => { if (p) puzzleMove(from, sq, p); });
@@ -1583,64 +1887,64 @@
     }
     if (piece && piece.color === "w") {
       const targets = g.moves({ square: sq, verbose: true }).map((m) => m.to);
-      selection = targets.length ? { sq, targets } : null;
+      store.game.selection = targets.length ? { sq, targets } : null;
       draw();
       return;
     }
-    if (selection) { selection = null; draw(); }
+    if (store.game.selection) { store.game.selection = null; draw(); }
   }
 
   function puzzleMove(from, to, promotion) {
-    const g = puzzle.g;
+    const g = store.session.puzzle.g;
     const mv = g.move({ from, to, promotion });
     if (!mv) return;
-    selection = null;
-    puzzle.helpArrow = null;
-    puzzle.last = { from: mv.from, to: mv.to };
+    store.game.selection = null;
+    store.session.puzzle.helpArrow = null;
+    store.session.puzzle.last = { from: mv.from, to: mv.to };
     BoardView.cancelAnim(); // the solver's own move — see animateReply
-    Audio2.playMove(mv.color, { captured: !!mv.captured, check: g.in_check() });
+    moveSound(mv, g);
     // A real-game tactic grades the key move and nothing else. The two plies
     // after it are a demonstration, not a second question: in a 25-piece
     // position the follow-up usually has several equally good moves, and
     // marking one of them wrong would teach the opposite of the lesson. The
     // point of this category is finding the one move that wins — once it is
     // found, the rest is there to show what it won.
-    if (puzzle.p.cat === "real") {
-      const script = puzzleScript(puzzle.p);
+    if (store.session.puzzle.p.cat === "real") {
+      const script = puzzleScript(store.session.puzzle.p);
       if (mv.san !== script[0]) { puzzleWrong(t("pz.notTheMove")); return; }
-      puzzle.stage = 1;
+      store.session.puzzle.stage = 1;
       for (let i = 1; i < script.length; i++) {
         const m = g.move(script[i]);
         if (!m) break;
-        puzzle.last = { from: m.from, to: m.to };
-        puzzle.stage = i + 1;
+        store.session.puzzle.last = { from: m.from, to: m.to };
+        store.session.puzzle.stage = i + 1;
       }
       puzzleSolved();
       return;
     }
-    if (SCRIPTED_CATS[puzzle.p.cat]) {
+    if (SCRIPTED_CATS[store.session.puzzle.p.cat]) {
       // scripted line: exact match, opponent replies straight from the script
-      const script = puzzleScript(puzzle.p);
-      if (mv.san !== script[puzzle.stage]) {
-        const c = puzzle.p.cat;
+      const script = puzzleScript(store.session.puzzle.p);
+      if (mv.san !== script[store.session.puzzle.stage]) {
+        const c = store.session.puzzle.p.cat;
         puzzleWrong(
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
-          c === "tac" ? (puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(puzzle.p)]) : t("pz.takeTarget")) :
+          c === "tac" ? (store.session.puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(store.session.puzzle.p)]) : t("pz.takeTarget")) :
           c === "draw" ? t("pz.notDrawn") :
-          openingWhy(g, mv, script[puzzle.stage]));
+          openingWhy(g, mv, script[store.session.puzzle.stage]));
         return;
       }
-      puzzle.stage++;
-      if (puzzle.stage < script.length) {
-        const rm = g.move(script[puzzle.stage]);
+      store.session.puzzle.stage++;
+      if (store.session.puzzle.stage < script.length) {
+        const rm = g.move(script[store.session.puzzle.stage]);
         if (rm) {
-          puzzle.last = { from: rm.from, to: rm.to };
+          store.session.puzzle.last = { from: rm.from, to: rm.to };
           animateReply(rm);
-          Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
-          puzzle.stage++;
+          moveSound(rm, g);
+          store.session.puzzle.stage++;
         }
       }
-      if (puzzle.stage >= script.length) { puzzleSolved(); return; }
+      if (store.session.puzzle.stage >= script.length) { puzzleSolved(); return; }
       sync();
       return;
     }
@@ -1648,7 +1952,7 @@
     // The question they ask is "is the mate still there?" — so any move that
     // answers no is right, exactly as it would be in a real game. Insisting on
     // one stored move would mark a perfectly good defence wrong.
-    if (puzzle.p.cat === "def") {
+    if (store.session.puzzle.p.cat === "def") {
       if (!g.game_over() && mateInOne(g)) {
         const still = mateInOne(g);
         puzzleWrong(tf("pz.stillMate", [still]));
@@ -1658,8 +1962,8 @@
       return;
     }
     if (g.in_checkmate()) { puzzleSolved(); return; }
-    const totalMoves = PUZZLE_MOVES[puzzle.p.cat] || 1;
-    const remaining = totalMoves - (puzzle.stage + 1);
+    const totalMoves = PUZZLE_MOVES[store.session.puzzle.p.cat] || 1;
+    const remaining = totalMoves - (store.session.puzzle.stage + 1);
     if (remaining <= 0) {
       // used the last move without mating — explain what black gets to play
       const escape = g.moves()[0];
@@ -1667,7 +1971,7 @@
       return;
     }
     // midpoint: the stored line, or any alternate that still forces mate
-    const onLine = mv.san === puzzle.p.solution[puzzle.stage * 2];
+    const onLine = mv.san === store.session.puzzle.p.solution[store.session.puzzle.stage * 2];
     if (!onLine) {
       const refutation = findRefutation(g, remaining);
       if (refutation) {
@@ -1675,13 +1979,13 @@
         return;
       }
     }
-    puzzle.stage++;
-    const reply = onLine ? puzzle.p.solution[puzzle.stage * 2 - 1] : bestDefense(g, remaining);
+    store.session.puzzle.stage++;
+    const reply = onLine ? store.session.puzzle.p.solution[store.session.puzzle.stage * 2 - 1] : bestDefense(g, remaining);
     const rm = reply ? g.move(reply) : null;
     if (rm) {
-      puzzle.last = { from: rm.from, to: rm.to };
+      store.session.puzzle.last = { from: rm.from, to: rm.to };
       animateReply(rm);
-      Audio2.playMove(rm.color, { captured: !!rm.captured, check: g.in_check() });
+      moveSound(rm, g);
     }
     sync();
   }
@@ -1695,10 +1999,10 @@
    * everything before it is the drill so far.
    */
   function openingWhy(g, mv, bookSan) {
-    const Coach = window.ChessOpeningCoach;
+    const Coach = ChessOpeningCoach;
     if (!Coach || !bookSan) return t("pz.offBook");
     let r = null;
-    try { r = Coach.critique(puzzle.p.fen || "", g.history().slice(0, -1), mv.san, bookSan, Chess); }
+    try { r = Coach.critique(store.session.puzzle.p.fen || "", g.history().slice(0, -1), mv.san, bookSan, Chess); }
     catch (_) { r = null; }
     if (!r) return t("pz.offBook");
     // the coach knows nothing about the dictionary, so a piece comes back as
@@ -1708,25 +2012,27 @@
   }
 
   function puzzleWrong(reason) {
-    puzzle.g.undo();
-    puzzle.last = null;
-    puzzle.misses++;
-    markMissed(puzzle.p.id); // a missed puzzle joins the review queue
+    store.session.puzzle.g.undo();
+    store.session.puzzle.last = null;
+    store.session.puzzle.misses++;
+    markMissed(store.session.puzzle.p.id); // a missed puzzle joins the review queue
+    // the correction tier: this is the app telling you what you got wrong,
+    // which in the puzzle and opening modes is the entire product
     toast((reason || t("pz.noForcedMate")) +
-      (puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")));
+      (store.session.puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")), "fix");
     sync();
   }
 
   /** Arrow for the correct move at the current stage. */
   function showPuzzleAnswer() {
-    if (!puzzle || puzzle.done) return;
-    const g = puzzle.g;
+    if (!store.session.puzzle || store.session.puzzle.done) return;
+    const g = store.session.puzzle.g;
     if (g.turn() !== "w" || g.game_over()) return;
     let from = null, to = null;
     // on the stored line the stored move is always valid here
-    const stored = SCRIPTED_CATS[puzzle.p.cat]
-      ? puzzleScript(puzzle.p)[puzzle.stage]
-      : puzzle.p.solution[puzzle.stage * 2];
+    const stored = SCRIPTED_CATS[store.session.puzzle.p.cat]
+      ? puzzleScript(store.session.puzzle.p)[store.session.puzzle.stage]
+      : store.session.puzzle.p.solution[store.session.puzzle.stage * 2];
     if (stored) {
       const probe = new Chess(g.fen());
       const mv = probe.move(stored);
@@ -1734,7 +2040,7 @@
     }
     if (!from) {
       // off the stored line — search for any move that still forces mate
-      const remaining = (PUZZLE_MOVES[puzzle.p.cat] || 1) - puzzle.stage;
+      const remaining = (PUZZLE_MOVES[store.session.puzzle.p.cat] || 1) - store.session.puzzle.stage;
       for (const m of g.moves({ verbose: true })) {
         g.move(m);
         const ok = g.in_checkmate() ||
@@ -1744,30 +2050,30 @@
       }
     }
     if (from) {
-      puzzle.helpArrow = { from, to };
-      puzzle.usedAnswer = true;
-      markMissed(puzzle.p.id); // relying on the answer counts as a miss
+      store.session.puzzle.helpArrow = { from, to };
+      store.session.puzzle.usedAnswer = true;
+      markMissed(store.session.puzzle.p.id); // relying on the answer counts as a miss
       sync();
     }
   }
 
   function puzzleSolved() {
-    puzzle.done = true;
-    selection = null;
+    store.session.puzzle.done = true;
+    store.game.selection = null;
     Audio2.playWin();
     // a clean first-try solve retires the puzzle from review; a shaky one keeps it
-    if (puzzle.misses === 0 && !puzzle.usedAnswer) clearMissed(puzzle.p.id);
-    if (!puzzleState.solved[puzzle.p.id]) {
-      puzzleState.solved[puzzle.p.id] = true;
+    if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(store.session.puzzle.p.id);
+    if (!store.session.puzzleState.solved[store.session.puzzle.p.id]) {
+      store.session.puzzleState.solved[store.session.puzzle.p.id] = true;
       savePuzzleState();
       checkNewAchievements();
     }
-    const verb = puzzle.p.cat === "op" ? t("pz.doneOp") :
-      puzzle.p.cat === "def" ? t("pz.doneDef") :
-      puzzle.p.cat === "draw" ? t("pz.doneDraw") :
-      puzzle.p.cat === "real" ? t("pz.doneReal") :
-      puzzle.p.cat === "win" || puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
-    toast("✅ " + verb + " · " + puzzleName(puzzle.p));
+    const verb = store.session.puzzle.p.cat === "op" ? t("pz.doneOp") :
+      store.session.puzzle.p.cat === "def" ? t("pz.doneDef") :
+      store.session.puzzle.p.cat === "draw" ? t("pz.doneDraw") :
+      store.session.puzzle.p.cat === "real" ? t("pz.doneReal") :
+      store.session.puzzle.p.cat === "win" || store.session.puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
+    toast("✅ " + verb + " · " + puzzleName(store.session.puzzle.p));
     sync();
   }
 
@@ -1781,27 +2087,27 @@
    * intact, from the White side the player just rehearsed.
    */
   function playOnFromPuzzle() {
-    if (!puzzle || !puzzle.done || puzzle.p.cat !== "op") return;
-    const line = puzzle.g.pgn();
-    const name = puzzleName(puzzle.p);
+    if (!store.session.puzzle || !store.session.puzzle.done || store.session.puzzle.p.cat !== "op") return;
+    const line = store.session.puzzle.g.pgn();
+    const name = puzzleName(store.session.puzzle.p);
     if (!line.trim()) return;
     invalidateEngine();
-    if (window.ChessEngine) window.ChessEngine.newGame();
+    if (ChessEngine) ChessEngine.newGame();
     stopPuzzles();
-    mode = "ai";
-    humanColor = "w"; // every opening drill is played from White's side
-    flipped = false;
-    flagFall = null;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
-    analysis = null;
-    statsRecordedSig = null;
+    store.session.mode = "ai";
+    store.session.humanColor = "w"; // every opening drill is played from White's side
+    store.game.flipped = false;
+    store.game.flagFall = null;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
+    store.session.analysis = null;
+    store.game.recordedId = null;
     gameReset();
     gameLoadPgn(line, { sloppy: true });
-    selection = null;
-    hintMove = null;
-    viewIndex = sanHistory().length;
+    store.game.selection = null;
+    store.session.hintMove = null;
+    store.game.viewIndex = sanHistory().length;
     resetClocks();
     saveSettings();
     saveGame();
@@ -1811,109 +2117,113 @@
   }
 
   function nextPuzzle() {
-    if (!puzzle) return;
-    let list = puzzlesInCat(puzzle.cat);
-    if (puzzle.cat === "review") {
+    if (!store.session.puzzle) return;
+    let list = puzzlesInCat(store.session.puzzle.cat);
+    if (store.session.puzzle.cat === "review") {
       // a clean re-solve shrinks the queue; graduate to m1 when it empties
       if (!list.length) {
         toast(t("pz.reviewEmptyDone"));
-        puzzleState.cat = "m1"; savePuzzleState();
+        store.session.puzzleState.cat = "m1"; savePuzzleState();
         startPuzzles();
         return;
       }
-      startPuzzleAt("review", puzzle.idx % list.length);
+      startPuzzleAt("review", store.session.puzzle.idx % list.length);
       return;
     }
     // prefer the next unsolved one, wrapping around
     for (let d = 1; d <= list.length; d++) {
-      const i = (puzzle.idx + d) % list.length;
-      if (!puzzleState.solved[list[i].id]) { startPuzzleAt(puzzle.cat, i); return; }
+      const i = (store.session.puzzle.idx + d) % list.length;
+      if (!store.session.puzzleState.solved[list[i].id]) { startPuzzleAt(store.session.puzzle.cat, i); return; }
     }
-    startPuzzleAt(puzzle.cat, puzzle.idx + 1);
+    startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx + 1);
   }
 
   function syncPuzzleUI() {
     const sec = document.getElementById("sec-puzzle");
     if (!sec) return;
-    sec.hidden = mode !== "puzzle";
-    if (mode !== "puzzle") return;
+    sec.hidden = store.session.mode !== "puzzle";
+    if (store.session.mode !== "puzzle") return;
     // an empty difficulty filter leaves no puzzle loaded — keep the filter row
     // usable so the user can pick their way back out
-    if (!puzzle) {
+    if (!store.session.puzzle) {
       document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
-        b.classList.toggle("active", b.dataset.tier === puzzleTierFilter);
+        b.classList.toggle("active", b.dataset.tier === store.session.puzzleTierFilter);
         b.disabled = false; // no puzzle loaded means we are not in review
       });
       document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
-        b.classList.toggle("active", b.dataset.cat === puzzleState.cat);
+        b.classList.toggle("active", b.dataset.cat === store.session.puzzleState.cat);
       });
+      avail(el("row-puzzle-tier"), tierApplies(store.session.puzzleState.cat));
       const emptyProg = document.getElementById("puzzle-progress");
       if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
-        [ALL_PUZZLES.filter((p) => puzzleState.solved[p.id]).length, ALL_PUZZLES.length]);
+        [ALL_PUZZLES.filter((p) => store.session.puzzleState.solved[p.id]).length, ALL_PUZZLES.length]);
       const emptyTask = document.getElementById("puzzle-task");
       if (emptyTask) emptyTask.textContent = t("pz.noneInTier");
       const emptyList = document.getElementById("puzzle-list");
-      if (emptyList) emptyList.innerHTML = "";
+      if (emptyList) emptyList.replaceChildren();
       return;
     }
-    const list = puzzlesInCat(puzzle.cat);
-    const solvedAll = ALL_PUZZLES.filter((p) => puzzleState.solved[p.id]).length;
+    const list = puzzlesInCat(store.session.puzzle.cat);
+    const solvedAll = ALL_PUZZLES.filter((p) => store.session.puzzleState.solved[p.id]).length;
     const missedCount = puzzlesInCat("review").length;
     const prog = document.getElementById("puzzle-progress");
     if (prog) {
-      prog.textContent = puzzle.cat === "review"
+      prog.textContent = store.session.puzzle.cat === "review"
         ? tf("pz.missedCount", [missedCount])
         : tf("pz.solvedCount", [solvedAll, ALL_PUZZLES.length]);
     }
     // the tier row does nothing in the review queue — grey it out rather than
-    // leaving buttons that look live but change nothing
-    const inReview = puzzle.cat === "review";
+    // The difficulty filter exists only where difficulty is a separate axis.
+    // In review it filters nothing (the queue is what it is), and in the three
+    // mate categories the tier is the category under another name — see
+    // tierApplies(). A filter that cannot change the list is not disabled, it
+    // is absent (P3.3).
+    const shows = tierApplies(store.session.puzzle.cat);
+    avail(el("row-puzzle-tier"), shows);
     document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
-      b.classList.toggle("active", !inReview && b.dataset.tier === puzzleTierFilter);
-      b.disabled = inReview;
+      b.classList.toggle("active", shows && b.dataset.tier === store.session.puzzleTierFilter);
+      b.disabled = false;
     });
-    const tierRow = document.getElementById("row-puzzle-tier");
-    if (tierRow) tierRow.classList.toggle("muted-row", inReview);
     document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.cat === puzzle.cat);
+      b.classList.toggle("active", b.dataset.cat === store.session.puzzle.cat);
       // surface how many are queued for review right on the tab
       if (b.dataset.cat === "review") b.textContent = t("pz.cat.review") + (missedCount ? "·" + missedCount : "");
     });
     const task = document.getElementById("puzzle-task");
     if (task) {
-      task.textContent = puzzle.done
+      task.textContent = store.session.puzzle.done
         ? t("pz.solvedNext")
-        : tf("pz.nth", [puzzle.idx + 1]) + " · " + puzzleGoalText();
+        : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText();
     }
     // opening drills are rote memorisation without the "why" — show the idea
     const ideaEl = document.getElementById("puzzle-idea");
     if (ideaEl) {
-      const idea = puzzleIdea(puzzle.p);
+      const idea = puzzleIdea(store.session.puzzle.p);
       ideaEl.hidden = !idea;
       ideaEl.textContent = idea ? t("pz.idea") + " · " + idea : "";
     }
     // a finished opening line offers the game it was drilled for; that is the
     // reward, so it takes the primary emphasis from "next puzzle"
-    const canPlayOn = !!puzzle.done && puzzle.p.cat === "op";
+    const canPlayOn = !!store.session.puzzle.done && store.session.puzzle.p.cat === "op";
     const playOn = document.getElementById("puzzle-playon");
     if (playOn) {
       playOn.hidden = !canPlayOn;
       playOn.classList.toggle("primary", canPlayOn);
     }
     const next = document.getElementById("puzzle-next");
-    if (next) next.classList.toggle("primary", puzzle.done && !canPlayOn);
+    if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
     const listEl = document.getElementById("puzzle-list");
     if (listEl) {
-      listEl.innerHTML = "";
+      listEl.replaceChildren();
       list.forEach((p, i) => {
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "lesson-item" + (i === puzzle.idx ? " current" : "");
+        b.className = "lesson-item" + (i === store.session.puzzle.idx ? " current" : "");
         b.dataset.i = String(i);
         // opening drills carry their length: "how much is there to remember"
         // is the first thing anyone wants to know before starting one
         const len = p.cat === "op" ? "  " + Math.ceil(p.line.length / 2) + t("pz.moveUnit") : "";
-        b.textContent = (puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + len;
+        b.textContent = (store.session.puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + len;
         listEl.appendChild(b);
       });
     }
@@ -1943,19 +2253,20 @@
    * including every animation frame, so a 12-frame replay slide was spending
    * ~40ms serialising the same PGN twelve times.
    *
-   * The memo is exact rather than merely fast: it is dropped at the top of
-   * sync(), and sync() is what this codebase runs after every state change.
-   * Frames drawn between two syncs cannot be looking at a different game.
+   * The memo is exact rather than merely fast: it is dropped whenever the game
+   * commits, so a frame can never be looking at an analysis of a different
+   * position. Up to 1.25 it was dropped at the top of sync() instead, which
+   * was correct only for as long as "sync() runs after every state change"
+   * stayed true — an invariant held by hand at 65 call sites.
    */
-  let _analysisTick = null;
   function analysisFor() {
     // Keyed on the analysis object too, so replacing it invalidates the memo
     // without every one of the seven assignment sites having to remember. The
-    // sync() reset covers the other direction: the game changing underneath an
+    // game commit covers the other direction: the game changing underneath an
     // unchanged analysis.
-    if (_analysisTick && _analysisTick.a === analysis) return _analysisTick.v;
-    _analysisTick = { a: analysis, v: analysis && analysis.sig === game.pgn() ? analysis : null };
-    return _analysisTick.v;
+    if (store.session._analysisTick && store.session._analysisTick.a === store.session.analysis) return store.session._analysisTick.v;
+    store.session._analysisTick = { a: store.session.analysis, v: store.session.analysis && store.session.analysis.sig === game.pgn() ? store.session.analysis : null };
+    return store.session._analysisTick.v;
   }
 
   /**
@@ -1970,17 +2281,17 @@
    */
 
   async function analyzeGame(movetime) {
-    if (analyzing || !window.ChessEngine) return;
+    if (store.session.analyzing || !ChessEngine) return;
     const perMove = movetime || 120;
     const h = sanHistory();
-    if (!h.length) { toast(t("m.19")); return; }
+    if (!h.length) { toast(t("msg.analysis.noGame"), "fix"); return; }
     const sig = game.pgn();
     const g = baseGame();
     const fens = [g.fen()];
     for (const san of h) { g.move(san); fens.push(g.fen()); }
-    analyzing = true;
-    analyzeAbort = false;
-    analyzeProgress = "0/" + fens.length;
+    store.session.analyzing = true;
+    store.session.analyzeAbort = false;
+    store.session.analyzeProgress = "0/" + fens.length;
     setAnalyzeUI();
     const scalars = new Array(fens.length).fill(null);
     const pvs = new Array(fens.length).fill(null);
@@ -1992,17 +2303,17 @@
     // threefold (art. 9.2, a player may claim and the game otherwise goes on).
     const repSeen = new Map();
     for (let i = 0; i < fens.length; i++) {
-      if (analyzeAbort) {
-        analyzing = false; analyzeAbort = false; analyzeProgress = "";
+      if (store.session.analyzeAbort) {
+        store.session.analyzing = false; store.session.analyzeAbort = false; store.session.analyzeProgress = "";
         // keep whatever was already measured — a partial curve still helps
         if (i > 1) {
-          analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
-          toast(t("m.30") + (i - 1) + t("m.31"));
-        } else toast(t("m.29"));
+          store.session.analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
+          toast(t("msg.analysis.keptPrefix") + (i - 1) + t("msg.analysis.keptSuffix"));
+        } else toast(t("msg.analysis.stopped"));
         sync();
         return;
       }
-      if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
+      if (game.pgn() !== sig) { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
       const probe = new Chess(fens[i]);
       const repKey = Fide.positionKey(fens[i], probe);
       const reps = (repSeen.get(repKey) || 0) + 1;
@@ -2016,8 +2327,8 @@
       else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
       else {
         let e = null;
-        try { e = await window.ChessEngine.analyze(fens[i], perMove); } catch (_) {}
-        if (game.pgn() !== sig) { analyzing = false; analyzeProgress = ""; setAnalyzeUI(); return; }
+        try { e = await ChessEngine.analyze(fens[i], perMove); } catch (_) {}
+        if (game.pgn() !== sig) { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
         scalars[i] = evalScalar(e);
         if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
         // principal variation, converted to SAN for display
@@ -2032,7 +2343,7 @@
           if (sans.length) pvs[i] = sans.join(" ");
         }
       }
-      analyzeProgress = (i + 1) + "/" + fens.length;
+      store.session.analyzeProgress = (i + 1) + "/" + fens.length;
       setAnalyzeUI();
     }
     // centipawn loss from the mover's perspective — the mover of ply i is the
@@ -2047,44 +2358,60 @@
       // hand-written copy of 300/100/50 sitting next to review.js's constants.
       return Review.markFor(loss);
     });
-    analysis = { sig, scalars, tags, pvs, bests, acc: accuracyFrom(fens, scalars) };
-    analyzing = false;
-    analyzeProgress = "";
+    store.session.analysis = { sig, scalars, tags, pvs, bests, acc: accuracyFrom(fens, scalars) };
+    store.session.analyzing = false;
+    store.session.analyzeProgress = "";
     recordAccuracy();
     sync();
     const bad = tags.filter((tag) => tag === "?" || tag === "??").length;
-    const done = bad ? t("m.27") + bad + t("m.28") : t("m.26");
+    const done = bad ? t("msg.analysis.donePrefix") + bad + t("msg.analysis.doneSuffix") : t("msg.analysis.doneClean");
     toast(done);
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
     // window is a message that was never delivered.
-    if (!appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
+    if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
   }
 
   /**
    * Per-side average centipawn loss and an accuracy score derived from it.
    *
-   * The accuracy curve is the usual exponential decay (100% at zero loss,
-   * ~60% around 60cp average) — it is a readable summary, not an official
-   * rating, and the UI labels it as such.
+   * The arithmetic is review.js's — the clamp, the mean and the exponential
+   * lived here as well until 1.25, identical in every respect except how each
+   * copy decided whose move a ply was. review.js's own header says three
+   * copies are how they start to drift; two was not better. 缺陷 6.
+   *
+   * What stays here is only the part that is genuinely this caller's: the side
+   * rule. The analyser already holds the FEN of every position, so it reads
+   * the side to move off that instead of deriving it from the first mover and
+   * the parity of the ply. Both rules must give the same answer, and
+   * scripts/test-chess.mjs now checks that on a real game.
    */
   function accuracyFrom(fens, scalars) {
-    const acc = { w: null, b: null, wAcpl: null, bAcpl: null };
-    const loss = { w: [], b: [] };
-    for (let i = 0; i + 1 < scalars.length; i++) {
-      const a = scalars[i], b = scalars[i + 1];
-      if (a == null || b == null) continue;
-      const side = fens[i].split(" ")[1] === "w" ? "w" : "b";
-      const d = side === "w" ? a - b : b - a;
-      loss[side].push(Math.max(0, Math.min(1000, d)));
-    }
-    for (const side of ["w", "b"]) {
-      if (!loss[side].length) continue;
-      const mean = loss[side].reduce((x, y) => x + y, 0) / loss[side].length;
-      acc[side === "w" ? "wAcpl" : "bAcpl"] = Math.round(mean);
-      acc[side] = Math.round(100 * Math.exp(-mean / 120));
-    }
-    return acc;
+    const loss = Review.lossesBySide(scalars, (i) => (fens[i].split(" ")[1] === "w" ? "w" : "b"));
+    const w = Review.accuracyOf(loss.w);
+    const b = Review.accuracyOf(loss.b);
+    return { w: w.acc, b: b.acc, wAcpl: w.acpl, bAcpl: b.acpl };
+  }
+
+  /**
+   * The judgement colours, from the same tokens the stylesheet reads.
+   *
+   * The eval curve painted `?` and `??` markers as two hard-coded hexes while
+   * the move list's `?!` `?` `??` annotations used two *different* hard-coded
+   * hexes plus --danger — three copies of one idea, none of which any theme
+   * could reach. 缺陷 8. Now there is one scale (--judge-soft / -mid / -bad),
+   * each board palette answers for it, and the canvas asks the document for
+   * the same value the CSS uses. Read per call: a theme change is exactly when
+   * these move, and this runs once per repaint of a chart, not per frame.
+   */
+  function judgeColours() {
+    const css = getComputedStyle(document.documentElement);
+    const pick = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
+    return {
+      soft: pick("--judge-soft", "#c9b458"),
+      mid: pick("--judge-mid", "#e0a03c"),
+      bad: pick("--judge-bad", "#e05252"),
+    };
   }
 
   /**
@@ -2095,28 +2422,22 @@
    * onto an unrelated game the user really did play.
    */
   function recordAccuracy() {
-    if (mode !== "ai" || !analysis || !analysis.acc) return;
+    if (store.session.mode !== "ai" || !store.session.analysis || !store.session.analysis.acc) return;
     if (!(naturalGameOver() || ruleTerminated())) return;
-    const mine = humanColor === "w" ? analysis.acc.w : analysis.acc.b;
-    const acpl = humanColor === "w" ? analysis.acc.wAcpl : analysis.acc.bAcpl;
+    const mine = store.session.humanColor === "w" ? store.session.analysis.acc.w : store.session.analysis.acc.b;
+    const acpl = store.session.humanColor === "w" ? store.session.analysis.acc.wAcpl : store.session.analysis.acc.bAcpl;
     if (mine == null) return;
-    const pgn = game.pgn();
     const s = loadStats();
-    // statsRecordedSig is the signature this game was filed under (it carries a
-    // "#resigned"-style suffix for app-level endings, hence the prefix match)
-    // Walk to the LAST match, not the first: a signature is a PGN, and two
-    // games can share one. find() from the front handed this accuracy to the
-    // oldest game that happened to be played the same way, which for a short
-    // mate is a real possibility.
-    let rec = null;
-    for (const g of s.games) {
-      if (!g.sig || g.acc != null) continue; // already annotated is not ours
-      if (g.sig === pgn || g.sig === statsRecordedSig) rec = g;
-    }
+    // By id. Until 1.25 the key was the PGN, so two games played the same way
+    // were the same record, and this had to walk to the LAST unannotated match
+    // and hope — a heuristic covering for a missing identity. With an id there
+    // is nothing to guess: either this game was filed, or it was not.
+    const rec = store.game.recordedId
+      ? s.games.find((g) => g.id === store.game.recordedId) : null;
     if (!rec) return;
     rec.acc = mine;
     rec.acpl = acpl;
-    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    Persist.setJson("stats", s);
     renderStats();
   }
 
@@ -2125,12 +2446,12 @@
     // while a run is in flight the primary button becomes the stop control —
     // a deep pass over a long game is a minute of engine time to be stuck in
     if (btn) {
-      btn.disabled = !analyzing && !sanHistory().length;
-      btn.textContent = analyzing ? t("act.stop") + " " + analyzeProgress : t("act.analyze");
-      btn.title = t(analyzing ? "tipRun.stop" : "tipRun.analyze");
+      btn.disabled = !store.session.analyzing && !sanHistory().length;
+      btn.textContent = store.session.analyzing ? t("act.stop") + " " + store.session.analyzeProgress : t("act.analyze");
+      btn.title = t(store.session.analyzing ? "tipRun.stop" : "tipRun.analyze");
     }
     const deep = document.getElementById("an-deep");
-    if (deep) deep.disabled = analyzing || !sanHistory().length;
+    if (deep) deep.disabled = store.session.analyzing || !sanHistory().length;
     const wrap = document.getElementById("eval-wrap");
     if (wrap) {
       wrap.hidden = !analysisFor();
@@ -2139,7 +2460,7 @@
     const pvEl = document.getElementById("pv-line");
     if (pvEl) {
       const a = analysisFor();
-      const pv = a && a.pvs ? a.pvs[viewIndex] : null;
+      const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
       pvEl.hidden = !pv;
       pvEl.textContent = pv ? t("an.pv") + " · " + pv : "";
     }
@@ -2171,11 +2492,11 @@
   function renderReview() {
     const el = document.getElementById("review-body");
     if (!el) return;
-    const R = window.ChessReview;
+    const R = ChessReview;
     const a = analysisFor();
     const sum = R && a ? R.summarize(a.scalars, sanHistory(), startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w") : null;
     el.hidden = !sum;
-    el.innerHTML = "";
+    el.replaceChildren();
     if (!sum) return;
 
     const line = (cls) => { const d = document.createElement("div"); d.className = cls; el.appendChild(d); return d; };
@@ -2194,7 +2515,7 @@
       who.className = "review-k";
       // the full word, not the one-letter clock label — "W Accuracy 64%" reads
       // like a typo in a report meant to be read as prose
-      who.textContent = t(side === "w" ? "m.04" : "m.05");
+      who.textContent = t(side === "w" ? "side.white" : "side.black");
       const val = document.createElement("span");
       val.className = "review-v num";
       val.textContent = tf("rv.sideLine", [sum.acc[side], sum.acpl[side], c.inaccuracy, c.mistake, c.blunder]);
@@ -2212,7 +2533,7 @@
       btn.type = "button";
       btn.className = "review-jump";
       btn.textContent = tf("rv.turningPoint",
-        [sum.worst.moveNo, t(sum.worst.side === "w" ? "m.04" : "m.05"), sum.worst.san,
+        [sum.worst.moveNo, t(sum.worst.side === "w" ? "side.white" : "side.black"), sum.worst.san,
          (sum.worst.loss / 100).toFixed(1)]);
       btn.title = t("rv.jumpTip");
       // land on the position *after* the move, so the damage is on the board
@@ -2239,7 +2560,7 @@
     const a = analysisFor();
     if (!a) { row.hidden = true; return; }
     row.hidden = false;
-    const cp = a.scalars[viewIndex];
+    const cp = a.scalars[store.game.viewIndex];
     const frac = Review.evalBar(cp);
     if (frac == null) {
       // measured and level is not the same thing as never measured
@@ -2274,12 +2595,45 @@
     const css = getComputedStyle(document.documentElement);
     const cMuted = css.getPropertyValue("--muted").trim() || "#999";
     const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const JC = judgeColours();
     // midline
     ctx.strokeStyle = cMuted;
     ctx.globalAlpha = 0.35;
     ctx.lineWidth = dpr;
     ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
     ctx.globalAlpha = 1;
+
+    // Filled in the two colours the rest of the app already uses for the two
+    // sides: above the midline in White's colour, below in Black's. The curve
+    // was one accent line, so reading "who is ahead" meant remembering that up
+    // is White — while the player cards, the captured strip and the evaluation
+    // bar all say it with black and white directly. P4.5.
+    const sideW = css.getPropertyValue("--side-white").trim() || "#f2f2ee";
+    const sideB = css.getPropertyValue("--side-black").trim() || "#1d1d1b";
+    for (const [above, fill] of [[true, sideW], [false, sideB]]) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, above ? 0 : H / 2, W, H / 2);
+      ctx.clip();
+      ctx.beginPath();
+      let open = false;
+      for (let i = 0; i <= n; i++) {
+        const sv = a.scalars[i];
+        if (sv == null) {
+          if (open) { ctx.lineTo(x(i - 1), H / 2); ctx.closePath(); open = false; }
+          continue;
+        }
+        if (!open) { ctx.moveTo(x(i), H / 2); open = true; }
+        ctx.lineTo(x(i), y(sv));
+        if (i === n) { ctx.lineTo(x(i), H / 2); ctx.closePath(); }
+      }
+      ctx.fillStyle = fill;
+      ctx.globalAlpha = 0.5;
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+
     // eval line (skip null gaps)
     ctx.strokeStyle = cAccent;
     ctx.lineWidth = 1.6 * dpr;
@@ -2298,7 +2652,7 @@
       if (tagCh !== "?" && tagCh !== "??") continue;
       const s = a.scalars[i + 1];
       if (s == null) continue;
-      ctx.fillStyle = tagCh === "??" ? "#e05252" : "#e0a03c";
+      ctx.fillStyle = tagCh === "??" ? JC.bad : JC.mid;
       ctx.beginPath();
       ctx.arc(x(i + 1), y(s), 2.4 * dpr, 0, Math.PI * 2);
       ctx.fill();
@@ -2307,33 +2661,69 @@
     ctx.strokeStyle = cAccent;
     ctx.globalAlpha = 0.7;
     ctx.lineWidth = dpr;
-    ctx.beginPath(); ctx.moveTo(x(viewIndex), 2 * dpr); ctx.lineTo(x(viewIndex), H - 2 * dpr); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x(store.game.viewIndex), 2 * dpr); ctx.lineTo(x(store.game.viewIndex), H - 2 * dpr); ctx.stroke();
     ctx.globalAlpha = 1;
   }
 
   // --- stats (AI-mode finished games) ---
+  /**
+   * A record's identity, issued once and never derived from its content.
+   *
+   * Up to 1.25 the primary key was `game.pgn()` — with a "#resigned"-style
+   * suffix glued on for app-level endings, so one string was doing three jobs
+   * at once: identity, the playable movetext, and how the game finished. Two
+   * games played the same way collided, which for a short mate is not a remote
+   * possibility, and recordAccuracy() had to defend itself by walking to the
+   * *last* unannotated match — a heuristic standing in for an id. 缺陷 13.
+   *
+   * Wall-clock plus a counter: two games can finish in the same millisecond
+   * (importing a history record and analysing it, say), and an id that is only
+   * probably unique is the bug this replaces.
+   */
+  let _recSeq = 0;
+  function newRecordId() { return Date.now().toString(36) + "-" + (_recSeq++).toString(36); }
+
   function loadStats() {
     try {
-      const s = JSON.parse(Host.storageGet(STATS_KEY) || "null");
-      if (s && s.v === 1 && Array.isArray(s.games)) return s;
+      const s = JSON.parse(Persist.get("stats") || "null");
+      if (s && s.v === 2 && Array.isArray(s.games)) return s;
+      // v1 → v2: split the overloaded `sig` into the three things it was.
+      // Reading it apart is safe — unlike an id remap, this derives nothing
+      // about *which* game a record is, it only unpacks what was already
+      // stored in it.
+      if (s && s.v === 1 && Array.isArray(s.games)) {
+        return {
+          v: 2,
+          games: s.games.map((g, i) => {
+            const sig = String(g.sig || "");
+            const m = /#([a-zA-Z]+)$/.exec(sig);
+            return Object.assign({}, g, {
+              id: g.id || ("v1-" + (g.t || 0).toString(36) + "-" + i.toString(36)),
+              pgn: g.pgn != null ? g.pgn : sig.replace(/#[a-zA-Z]+$/, ""),
+              ending: g.ending != null ? g.ending : (m ? m[1] : ""),
+              sig: undefined,
+            });
+          }),
+        };
+      }
     } catch (_) {}
-    return { v: 1, games: [] };
+    return { v: 2, games: [] };
   }
 
   /** Record an AI game the moment it finishes on a live move (not on import). */
   function recordGameIfOver() {
-    if (mode !== "ai" || !naturalGameOver()) return;
-    const sig = game.pgn();
-    if (statsRecordedSig === sig) return;
-    statsRecordedSig = sig;
+    if (store.session.mode !== "ai" || !naturalGameOver()) return;
+    if (store.game.recordedId) return; // this game is already filed
     let result = "draw";
-    if (game.in_checkmate()) result = game.turn() === humanColor ? "loss" : "win";
+    if (game.in_checkmate()) result = game.turn() === store.session.humanColor ? "loss" : "win";
     const s = loadStats();
-    // `sig` ties the record to the exact game it came from, so a later
+    // the id ties the record to the exact game it came from, so a later
     // analysis can only annotate the game it actually measured
-    s.games.push({ t: Date.now(), diff: difficulty, color: humanColor, result, moves: sanHistory().length, sig });
+    const id = newRecordId();
+    store.game.recordedId = id;
+    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending: "" });
     if (s.games.length > 500) s.games = s.games.slice(-500);
-    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    Persist.setJson("stats", s);
     renderStats();
     checkNewAchievements();
     offerReview();
@@ -2348,11 +2738,11 @@
    * the engine over a whole game is a real wait, so it stays opt-in.
    */
   function offerReview() {
-    if (mode !== "ai" || !window.ChessEngine || analyzing) return;
+    if (store.session.mode !== "ai" || !ChessEngine || store.session.analyzing) return;
     if (analysisFor()) return; // already analysed — the report is on screen
     if (sanHistory().length < 6) return; // too short to say anything useful
     setTimeout(() => {
-      if (mode === "ai" && !analyzing && !analysisFor() && appGameOver()) toast(t("rv.offer"));
+      if (store.session.mode === "ai" && !store.session.analyzing && !analysisFor() && appGameOver()) toast(t("rv.offer"));
     }, 2200);
   }
 
@@ -2369,7 +2759,7 @@
     // accuracy of the most recent analysed games (only games the user analysed
     // carry it, so this stays empty until they use 分析/精析)
     const withAcc = s.games.filter((g) => typeof g.acc === "number");
-    el.innerHTML = "";
+    el.replaceChildren();
     let total = 0;
     for (const k of DIFF_IDS) {
       const a = agg[k];
@@ -2430,28 +2820,26 @@
 
   /** how many games the sidebar shows before deferring to the full list */
   const HIST_PREVIEW = 5;
-  /** the newest-first list the rendered rows index into */
-  let histCache = [];
 
   function historyGames() {
-    return loadStats().games.filter((g) => g && typeof g.sig === "string" && g.sig.trim()).reverse();
+    return loadStats().games.filter((g) => g && typeof g.pgn === "string" && g.pgn.trim()).reverse();
   }
 
   /**
    * The playable PGN of a record.
    *
-   * `sig` doubles as the record's identity, so a game ended by an app-level
-   * rule carries a "#resigned"-style marker after the movetext. A checkmate
-   * ends in a bare "#", so stripping a trailing "#word" can never eat a move.
+   * Its own field since 1.25. It used to be `sig` with a "#resigned"-style
+   * marker stripped off the end — one string carrying the identity, the
+   * movetext and the ending at once, and only safe because a checkmate PGN
+   * ends in a bare "#" so the regex could not eat a move. 缺陷 13.
    */
   function historyPgn(rec) {
-    return String(rec.sig || "").replace(/#[a-zA-Z]+$/, "");
+    return String(rec.pgn || "");
   }
 
   /** the app-level ending marker of a record, or "" for mate/stalemate */
   function historyEnding(rec) {
-    const m = /#([a-zA-Z]+)$/.exec(String(rec.sig || ""));
-    return m ? m[1] : "";
+    return String(rec.ending || "");
   }
 
   /** "today 14:03" for recent games, a plain date for older ones */
@@ -2511,44 +2899,48 @@
    * list, and re-indexing a filtered array would make "load this game" load a
    * different one the moment a filter was on.
    */
-  let histFilter = { result: "all", color: "all" };
   function histMatches(rec) {
-    if (histFilter.result !== "all" && rec.result !== histFilter.result) return false;
-    if (histFilter.color !== "all") {
+    if (store.ui.histFilter.result !== "all" && rec.result !== store.ui.histFilter.result) return false;
+    if (store.ui.histFilter.color !== "all") {
       const col = rec.color === "b" ? "b" : "w";
-      if (col !== histFilter.color) return false;
+      if (col !== store.ui.histFilter.color) return false;
     }
     return true;
   }
 
   function renderHistory() {
-    histCache = historyGames();
+    store.session.histCache = historyGames();
     const body = document.getElementById("hist-body");
     if (body) {
-      body.innerHTML = "";
-      if (!histCache.length) {
+      body.replaceChildren();
+      if (!store.session.histCache.length) {
         const p = document.createElement("p");
         p.className = "hint";
         p.textContent = t("hist.empty");
         body.appendChild(p);
       } else {
-        histCache.slice(0, HIST_PREVIEW).forEach((rec, i) => body.appendChild(historyRow(rec, i, false)));
+        store.session.histCache.slice(0, HIST_PREVIEW).forEach((rec, i) => body.appendChild(historyRow(rec, i, false)));
       }
     }
     const btn = document.getElementById("hist-open");
     if (btn) {
-      btn.hidden = !histCache.length;
-      btn.textContent = tf("hist.all", [histCache.length]);
+      btn.hidden = !store.session.histCache.length;
+      btn.textContent = tf("hist.all", [store.session.histCache.length]);
     }
     const list = document.getElementById("hist-list");
     if (list) {
-      list.innerHTML = "";
-      let shown = 0;
-      histCache.forEach((rec, i) => {
-        if (!histMatches(rec)) return;
-        shown++;
-        list.appendChild(historyRow(rec, i, true));
-      });
+      // Up to 500 rows, re-rendered whenever a filter changes or a game ends.
+      // Keyed by the record id, so flipping "wins only" on and off keeps the
+      // rows that were already on screen — and with them the scroll position
+      // and any focus inside the list. See keyed.js.
+      const rows = store.session.histCache
+        .map((rec, i) => ({ rec, i }))
+        .filter(({ rec }) => histMatches(rec));
+      const shown = rows.length;
+      reconcile(list, rows,
+        ({ rec, i }) => rec.id || ("i" + i),
+        ({ rec }) => [rec.result, rec.diff, rec.color, rec.moves, rec.acc, rec.t].join("|"),
+        ({ rec, i }) => historyRow(rec, i, true));
       if (!shown) {
         const p = document.createElement("p");
         p.className = "hint";
@@ -2557,16 +2949,16 @@
       }
       const count = document.getElementById("hist-count");
       if (count) {
-        const filtered = histFilter.result !== "all" || histFilter.color !== "all";
+        const filtered = store.ui.histFilter.result !== "all" || store.ui.histFilter.color !== "all";
         count.hidden = !filtered;
-        count.textContent = tf("hist.showing", [shown, histCache.length]);
+        count.textContent = tf("hist.showing", [shown, store.session.histCache.length]);
       }
     }
     document.querySelectorAll("#hist-result-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.hres === histFilter.result);
+      b.classList.toggle("active", b.dataset.hres === store.ui.histFilter.result);
     });
     document.querySelectorAll("#hist-color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.hcol === histFilter.color);
+      b.classList.toggle("active", b.dataset.hcol === store.ui.histFilter.color);
     });
   }
 
@@ -2590,45 +2982,45 @@
     const end = historyEnding(rec);
     if (!end) return;
     if (end === "resigned") {
-      resigned = rec.color; // in an engine game only the human can resign
+      store.game.resigned = rec.color; // in an engine game only the human can resign
     } else if (end === "drawAgreed") {
-      drawAgreed = true;
+      store.game.drawAgreed = true;
     } else if (end === "claimed") {
       // the record does not say which rule was claimed; the halfmove clock does
-      drawClaimed = Number(game.fen().split(" ")[4]) >= 100 ? "fifty" : "threefold";
+      store.game.drawClaimed = Number(game.fen().split(" ")[4]) >= 100 ? "fifty" : "threefold";
     } else if (end === "flag") {
       const other = rec.color === "w" ? "b" : "w";
-      flagFall = rec.result === "win" ? other : rec.result === "loss" ? rec.color
+      store.game.flagFall = rec.result === "win" ? other : rec.result === "loss" ? rec.color
         : sideHasMatingMaterial(other) ? other : rec.color;
       // the record does not keep the clocks; zeroing the side that ran out is
       // enough to stop a full clock sitting next to "flag fall". With the time
       // control since switched off there is no clock to correct.
-      if (clock) { clock[flagFall] = 0; renderClocks(); }
+      if (store.game.clock) { store.game.clock[store.game.flagFall] = 0; renderClocks(); }
       syncClockTimer();
     }
   }
 
   async function loadFromHistory(i) {
-    const rec = histCache[i];
+    const rec = store.session.histCache[i];
     if (!rec) return;
     closeHistory();
     const ok = await importPgnText(historyPgn(rec), t("hist.title"),
       { msg: t("dlg.loadHist"), title: t("dlg.loadHistTitle"), ok: t("dlg.loadHistOk") });
     if (!ok) return;
     // Restore the context the game was played in. Orientation and difficulty
-    // are what the board and the review report mean by "you", and pinning
-    // statsRecordedSig to this record lets a fresh 分析 file its accuracy back
-    // onto the very game it just measured.
-    mode = "ai";
-    if (DIFF_NAMES[rec.diff]) difficulty = rec.diff;
-    if (rec.color === "w" || rec.color === "b") { humanColor = rec.color; flipped = humanColor === "b"; }
-    statsRecordedSig = rec.sig;
+    // are what the board and the review report mean by "you", and pinning the
+    // record id lets a fresh 分析 file its accuracy back onto the very game it
+    // just measured.
+    store.session.mode = "ai";
+    if (DIFF_NAMES[rec.diff]) store.session.difficulty = rec.diff;
+    if (rec.color === "w" || rec.color === "b") { store.session.humanColor = rec.color; store.game.flipped = store.session.humanColor === "b"; }
+    store.game.recordedId = rec.id;
     restoreEnding(rec);
     // the import ends by offering the position to the engine; a game that ended
     // in resignation is not over by its moves, so call off that search now that
     // the ending is back in place
     invalidateEngine();
-    analysis = null;
+    store.session.analysis = null;
     saveSettings();
     saveGame();
     sync();
@@ -2647,11 +3039,11 @@
    */
   function recommendation() {
     const st = loadStats();
-    const cur = st.games.filter((g) => g.diff === difficulty);
+    const cur = st.games.filter((g) => g.diff === store.session.difficulty);
     const recent = cur.slice(-6);
-    const idx = DIFF_IDS.indexOf(difficulty);
+    const idx = DIFF_IDS.indexOf(store.session.difficulty);
     // an unfinished course outranks any difficulty advice
-    const done = LESSONS.filter((l) => learnState.done[l.id]).length;
+    const done = LESSONS.filter((l) => store.session.learnState.done[l.id]).length;
     if (done > 0 && done < LESSONS.length && st.games.length >= 2) {
       return tf("rec.lessons", [done, LESSONS.length]);
     }
@@ -2666,23 +3058,22 @@
     }
     // losing most games but not all: tactics are usually the cheapest fix
     if (losses > wins) {
-      const missed = ALL_PUZZLES.filter((p) => window.ChessSrs.isDue(puzzleState.missed[p.id])).length;
+      const missed = ALL_PUZZLES.filter((p) => ChessSrs.isDue(store.session.puzzleState.missed[p.id])).length;
       return missed ? tf("rec.review", [missed]) : t("rec.puzzles");
     }
     return null;
   }
 
   // --- achievements: pure derivations of stats + lesson/puzzle progress ---
-  const ACH = window.CHESS_ACHIEVEMENTS || [];
-  const ACH_KEY = "chess.v1.achv";
+  const ACH = CHESS_ACHIEVEMENTS || [];
   function loadAchSeen() {
     try {
-      const s = JSON.parse(Host.storageGet(ACH_KEY) || "null");
+      const s = JSON.parse(Persist.get("achievements") || "null");
       if (s && Array.isArray(s.seen)) return new Set(s.seen);
     } catch (_) {}
     return new Set();
   }
-  let achSeen = loadAchSeen();
+  store.session.achSeen = loadAchSeen();
 
   function achSummary() {
     const st = loadStats();
@@ -2692,12 +3083,12 @@
       else if (g.result === "loss") losses++;
       else draws++;
     }
-    const solved = puzzleState.solved || {};
+    const solved = store.session.puzzleState.solved || {};
     const solvedIn = (cat) => ALL_PUZZLES.filter((p) => p.cat === cat && solved[p.id]).length;
     const countIn = (cat) => ALL_PUZZLES.filter((p) => p.cat === cat).length;
     const mateCats = ["m1", "m2", "m3"];
     return {
-      lessonsDone: LESSONS.filter((l) => learnState.done[l.id]).length,
+      lessonsDone: LESSONS.filter((l) => store.session.learnState.done[l.id]).length,
       lessonsTotal: LESSONS.length,
       puzzleSolvedCount: ALL_PUZZLES.filter((p) => solved[p.id]).length,
       matesSolved: mateCats.reduce((n, c) => n + solvedIn(c), 0),
@@ -2717,11 +3108,11 @@
   function evalAch() {
     const s = achSummary();
     const base = ACH.filter((a) => a.id !== "completionist");
-    const baseRes = base.map((a) => ({ ach: a, unlocked: !!a.test(s) || achSeen.has(a.id) }));
+    const baseRes = base.map((a) => ({ ach: a, unlocked: !!a.test(s) || store.session.achSeen.has(a.id) }));
     s.otherUnlocked = baseRes.filter((r) => r.unlocked).length;
     s.otherTotal = base.length;
     const out = ACH.map((a) =>
-      a.id === "completionist" ? { ach: a, unlocked: !!a.test(s) || achSeen.has(a.id) }
+      a.id === "completionist" ? { ach: a, unlocked: !!a.test(s) || store.session.achSeen.has(a.id) }
         : baseRes.find((r) => r.ach.id === a.id));
     // the badges' progress() reads the same summary the tests ran against
     out.summary = s;
@@ -2731,10 +3122,10 @@
   /** Toast any achievement newly unlocked since last check; persist seen set. */
   function checkNewAchievements() {
     const res = evalAch();
-    const fresh = res.filter((r) => r.unlocked && !achSeen.has(r.ach.id));
-    for (const r of res) if (r.unlocked) achSeen.add(r.ach.id);
+    const fresh = res.filter((r) => r.unlocked && !store.session.achSeen.has(r.ach.id));
+    for (const r of res) if (r.unlocked) store.session.achSeen.add(r.ach.id);
     if (fresh.length) {
-      try { Host.storageSet(ACH_KEY, JSON.stringify({ seen: Array.from(achSeen) })); } catch (_) {}
+      Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
       // one toast per unlock, staggered so several don't collide
       fresh.forEach((r, i) => setTimeout(() => toast("🎉 " + t("ach.unlocked") + " · " + r.ach.icon + " " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
     }
@@ -2746,7 +3137,7 @@
     if (!el) return;
     const res = evalAch();
     const got = res.filter((r) => r.unlocked).length;
-    el.innerHTML = "";
+    el.replaceChildren();
     const head = document.getElementById("ach-count");
     if (head) head.textContent = got + "/" + res.length;
 
@@ -2818,39 +3209,40 @@
   }
 
   function timeoutIsDraw() {
-    return flagFall && !sideHasMatingMaterial(flagFall === "w" ? "b" : "w");
+    return store.game.flagFall && !sideHasMatingMaterial(store.game.flagFall === "w" ? "b" : "w");
   }
 
   function statusText() {
-    if (editor) {
-      const reason = window.ChessEditor.validate(editor, Chess);
+    if (store.session.editor) {
+      const reason = ChessEditor.validate(store.session.editor, Chess);
       return t("st.editing") + " · " + (reason ? t(reason) : t("st.editingReady"));
     }
-    if (mode === "learn") {
-      if (!learn) return t("st.learn");
-      if (learn.done) return t("st.lessonDone");
-      // The task is spelled out in the panel, right next to this. Repeating it
-      // here word for word put the same sentence on screen twice and stretched
-      // the header to fit a whole instruction. It is still the fallback for a
-      // CLOSED sidebar — which is the case the duplication was protecting.
-      if (isPanelOpen()) return lessonText(curLesson()).title;
-      return learnTaskText();
+    if (store.session.mode === "learn") {
+      if (!store.session.learn) return t("st.learn");
+      if (store.session.learn.done) return t("st.lessonDone");
+      // The lesson name, open panel or shut. The full task text used to appear
+      // here when the panel was closed — a whole instruction in a chip, clipped
+      // at 44vw with an ellipsis. A chip that gets truncated is a chip holding
+      // a sentence that belongs somewhere else: the task is spelled out on its
+      // task card, and what the closed panel needed was not this sentence but
+      // the game itself, which is what the spine shows now.
+      return lessonText(curLesson()).title;
     }
-    if (mode === "puzzle") {
-      if (!puzzle) return t("st.puzzle");
-      if (puzzle.done) return t("st.puzzleDone");
+    if (store.session.mode === "puzzle") {
+      if (!store.session.puzzle) return t("st.puzzle");
+      if (store.session.puzzle.done) return t("st.puzzleDone");
       return puzzleGoalText();
     }
     const g = viewGame();
-    if (!isLive()) return t("st.replay") + " " + viewIndex + "/" + sanHistory().length;
-    if (flagFall) {
+    if (!isLive()) return t("st.replay") + " " + store.game.viewIndex + "/" + sanHistory().length;
+    if (store.game.flagFall) {
       if (timeoutIsDraw()) return t("st.flagDraw");
-      return t(flagFall === "w" ? "st.flagWhite" : "st.flagBlack");
+      return t(store.game.flagFall === "w" ? "st.flagWhite" : "st.flagBlack");
     }
-    if (resigned) return t(resigned === "w" ? "st.resignWhite" : "st.resignBlack");
-    if (drawAgreed) return t("st.drawAgreed");
-    if (drawClaimed) return t(drawClaimed === "threefold" ? "st.claimThreefold" : "st.claimFifty");
-    if (engineThinking && !naturalGameOver()) return t("st.thinking");
+    if (store.game.resigned) return t(store.game.resigned === "w" ? "st.resignWhite" : "st.resignBlack");
+    if (store.game.drawAgreed) return t("st.drawAgreed");
+    if (store.game.drawClaimed) return t(store.game.drawClaimed === "threefold" ? "st.claimThreefold" : "st.claimFifty");
+    if (store.session.engineThinking && !naturalGameOver()) return t("st.thinking");
     if (g.in_checkmate()) return t(g.turn() === "w" ? "st.mateBlack" : "st.mateWhite");
     if (g.in_stalemate()) return t("st.stalemate");
     if (g.insufficient_material()) return t("st.insufficient");
@@ -2873,49 +3265,75 @@
     const el = document.getElementById("move-list");
     if (!el) return;
     const h = sanHistory();
-    el.innerHTML = "";
     // A position edited to start with Black opens at "1…", so its first row
     // holds a single black move and White's reply belongs to move 2. Pairing
     // from ply 0 would file them together under move 1 — and the review
     // report's turning-point line would then disagree with this list.
     const blackFirst = startFen() ? startFen().split(" ")[1] === "b" : false;
     const firstMover = blackFirst ? "b" : "w";
-    const moveNo = (i) => (window.ChessReview
-      ? window.ChessReview.moveNumber(i, firstMover)
+    const moveNo = (i) => (ChessReview
+      ? ChessReview.moveNumber(i, firstMover)
       : Math.floor(i / 2) + 1);
+    const a = analysisFor();
+
+    // one entry per row: which plies it holds, and whether it opens with the
+    // "1. …" gap of a black-first game
+    const rows = [];
     for (let i = blackFirst ? -1 : 0; i < h.length; i += 2) {
-      const row = document.createElement("div");
-      row.className = "mlrow";
-      const num = document.createElement("span");
-      num.className = "mlnum num";
-      num.textContent = moveNo(Math.max(0, i)) + ".";
-      row.appendChild(num);
-      // the opening row of a black-first game shows "1. … Qh4"
-      if (i < 0) {
-        const gap = document.createElement("span");
-        gap.className = "mlmove mlgap";
-        gap.textContent = "…";
-        row.appendChild(gap);
-      }
-      const a = analysisFor();
-      for (const j of (i < 0 ? [0] : [i, i + 1])) {
-        if (j >= h.length) break;
-        const b = document.createElement("button");
-        b.type = "button";
-        b.dataset.i = String(j + 1);
-        b.textContent = h[j];
-        b.className = "mlmove" + (viewIndex === j + 1 ? " current" : "");
-        const tag = a && a.tags[j];
-        if (tag) {
-          const span = document.createElement("span");
-          span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
-          span.textContent = tag;
-          b.appendChild(span);
-        }
-        row.appendChild(b);
-      }
-      el.appendChild(row);
+      const plies = (i < 0 ? [0] : [i, i + 1]).filter((j) => j < h.length);
+      rows.push({ i, no: moveNo(Math.max(0, i)), gap: i < 0, plies });
     }
+
+    // Keyed, so a move rebuilds one row instead of the game. The signature is
+    // everything a row shows — the moves, their annotations, and which one is
+    // current — so an ordinary move dirties exactly one row (two when the
+    // cursor leaves another). See keyed.js for why this is worth doing: the
+    // scroll position and the focus are properties of the nodes, and rebuilding
+    // the list threw both away every time the clock ticked.
+    reconcile(el, rows,
+      (r) => r.i,
+      (r) => r.no + "|" + r.plies.map((j) =>
+        h[j] + "/" + ((a && a.tags[j]) || "") + "/" + (store.game.viewIndex === j + 1 ? "*" : "")).join(","),
+      (r, _idx, reuse) => {
+        const row = reuse || document.createElement("div");
+        row.className = "mlrow";
+        const kids = [];
+        const num = document.createElement("span");
+        num.className = "mlnum";
+        num.textContent = r.no + ".";
+        kids.push(num);
+        // the opening row of a black-first game shows "1. … Qh4"
+        if (r.gap) {
+          const gap = document.createElement("span");
+          gap.className = "mlmove mlgap";
+          gap.textContent = "…";
+          kids.push(gap);
+        }
+        for (const j of r.plies) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.dataset.i = String(j + 1);
+          b.className = "mlmove" + (store.game.viewIndex === j + 1 ? " current" : "");
+          // Figurine notation: the piece letter becomes the piece. `Nf3` is
+          // English algebraic — the N is short for Knight, which is not a word
+          // two of this app's three languages use. The vector set is already
+          // here for the board, and a figurine move list is the same notation
+          // for every reader. The full SAN stays as the accessible name, so
+          // "Nf3" is still what a screen reader says. P4.4.
+          writeSan(b, h[j], j % 2 === 0 ? "w" : "b");
+          const tag = a && a.tags[j];
+          if (tag) {
+            const span = document.createElement("span");
+            span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
+            span.textContent = tag;
+            b.appendChild(span);
+          }
+          kids.push(b);
+        }
+        row.replaceChildren(...kids);
+        return row;
+      });
+
     const cur = el.querySelector(".current");
     // At the start of the game there is no current move to centre on, and the
     // list used to stay wherever the last jump had left it — pressing Home on
@@ -2929,7 +3347,7 @@
   }
 
   /** Live game finished by an app-level rule (flag / resignation / agreed or claimed draw). */
-  function ruleTerminated() { return !!flagFall || !!resigned || drawAgreed || !!drawClaimed; }
+  function ruleTerminated() { return !!store.game.flagFall || !!store.game.resigned || store.game.drawAgreed || !!store.game.drawClaimed; }
 
   // --- FIDE draw plumbing ---
   // chess.js's game_over() ends the game at threefold repetition and at the
@@ -2938,18 +3356,16 @@
   // (arts. 9.6). The app therefore never consults game_over() for
   // terminal-ness — it derives its own claimable/auto states here.
 
-  const Fide = window.ChessFide;
+  const Fide = ChessFide;
 
   function halfmoveClock(g) { return Fide.halfmoveClock((g || game).fen()); }
 
-  /** how many times the current live position has occurred (incl. start) */
-  let repMemo = { sig: null, count: 1 };
   function repetitionCount() {
     const h = sanHistory();
     const sig = h.join(" ");
-    if (repMemo.sig === sig) return repMemo.count;
-    repMemo = { sig, count: Fide.repetitionCount(startFen(), h, Chess) };
-    return repMemo.count;
+    if (store.game.repMemo.sig === sig) return store.game.repMemo.count;
+    store.game.repMemo = { sig, count: Fide.repetitionCount(startFen(), h, Chess) };
+    return store.game.repMemo.count;
   }
 
   /** 'fivefold' | 'seventyfive' | null — draws that end the game by law */
@@ -2984,153 +3400,423 @@
   /** Every way the live game can be finished. */
   function appGameOver() { return naturalGameOver() || ruleTerminated(); }
 
-  function sync() {
-    _analysisTick = null; // see analysisFor(): the memo lives exactly one cycle
-    draw();
-    const h = sanHistory();
-    document.getElementById("status").textContent = statusText();
-    document.getElementById("moves").textContent =
-      mode === "learn" ? (learn ? (learn.li + 1) + "/" + LESSONS.length : "—") :
-      mode === "puzzle" ? (puzzle ? tf("pz.chip", [puzzle.idx + 1, puzzlesInCat(puzzle.cat).length]) : "—") :
-      viewIndex + "/" + h.length;
-    document.getElementById("replay-pos").textContent = viewIndex + " / " + h.length;
-    document.getElementById("rep-start").disabled = viewIndex <= 0;
-    document.getElementById("rep-prev").disabled = viewIndex <= 0;
-    document.getElementById("rep-next").disabled = viewIndex >= h.length;
-    document.getElementById("rep-end").disabled = viewIndex >= h.length;
-    document.getElementById("rep-live").disabled = isLive();
-    const modal = mode === "learn" || mode === "puzzle" || !!editor;
-    const inDrill = mode === "learn" && learn && !learn.done && curTask().type === "drill";
-    document.getElementById("undo").disabled = modal
-      ? !(inDrill && learn.g && learn.g.history().length)
-      : h.length === 0 || !isLive() || ruleTerminated();
-    document.getElementById("btn-new").disabled = modal;
-    document.getElementById("btn-flip").disabled = modal;
-    const hintBtn = document.getElementById("btn-hint");
-    if (hintBtn) {
-      hintBtn.disabled =
-        mode === "learn"
-          ? !(inDrill && !learn.engineBusy && !hintPending && learn.g && !learn.g.game_over() && learn.g.turn() === "w")
-        : mode === "puzzle"
-          ? !(puzzle && !puzzle.done && !puzzle.g.game_over() && puzzle.g.turn() === "w")
-        : !!editor || hintPending || analyzing || !isLive() || appGameOver() ||
-          (mode === "ai" && (engineThinking || game.turn() !== humanColor));
-      hintBtn.textContent = mode === "puzzle" ? t("chrome.answer") : hintPending ? t("chrome.thinking") : t("chrome.hint");
-    }
-    const resignBtn = document.getElementById("btn-resign");
-    if (resignBtn) {
-      resignBtn.disabled = modal || !isLive() || h.length === 0 || appGameOver();
-    }
-    const drawBtn = document.getElementById("btn-offerdraw");
-    if (drawBtn) {
-      drawBtn.disabled = modal || !isLive() || h.length === 0 ||
-        appGameOver() || drawOfferPending;
-    }
-    const claimBtn = document.getElementById("btn-claimdraw");
-    if (claimBtn) {
-      const reason = !modal && isLive() && !appGameOver() ? claimableDrawReason() : null;
-      claimBtn.disabled = !reason;
-      claimBtn.title = t(reason === "threefold" ? "tipRun.claimThreefold"
-        : reason === "fifty" ? "tipRun.claimFifty" : "tipRun.claimNone");
-    }
-    document.getElementById("pgn-copy").disabled = h.length === 0;
-    document.getElementById("pgn-download").disabled = h.length === 0;
-    document.getElementById("fen-copy").disabled = false;
-    const status = document.getElementById("status");
+  // --- the views -----------------------------------------------------------
+  //
+  // Up to 1.25 all of this was one function, sync(), called from 65 places.
+  // Playing a move, switching a tab, taking a move back and the clock ticking
+  // one second all ran the same full rebuild — nine sub-syncs, thirty-odd
+  // getElementById calls (`status` looked up twice in the same pass), every
+  // list re-rendered — because the one thing sync() never knew was what had
+  // actually changed.
+  //
+  // It is split by *what a view is about*, and each half subscribes to the
+  // slice it reads. The three groups below are the whole of what sync() used
+  // to do inline; the nine sub-syncs it called are subscribed the same way.
+  //
+  // A view may read more than one slice — the game-action buttons need the
+  // position and the mode — in which case it subscribes to both and is
+  // idempotent. What it must never do is *write* one, which is what the
+  // store's re-entrancy cap is there to catch.
+
+  /**
+   * getElementById, memoised.
+   *
+   * These ids are in index.html, which is loaded once and never rewritten, so
+   * a lookup can only ever return the same node. sync() did thirty-odd of them
+   * per pass on a path that ran on every clock tick.
+   */
+  const _nodes = new Map();
+  function el(id) {
+    if (!_nodes.has(id)) _nodes.set(id, document.getElementById(id));
+    return _nodes.get(id);
+  }
+
+  /** Is a trainer or the editor standing in front of the ordinary game UI? */
+  function inModal() {
+    return store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
+  }
+
+  /**
+   * The spine — the game, readable with the panel shut.
+   *
+   * Whose move, the clock, the last move, the material difference. Closing the
+   * panel used to take all four away and leave the board on a plain colour,
+   * which is the state a small window plays in permanently.
+   */
+  function renderSpine() {
+    const bar = el("spine");
+    if (!bar) return;
+    // with the panel open every one of these is on screen already, in more
+    // detail — a second copy would be the duplication rule broken twice
+    if (isPanelOpen() || inModal()) { bar.hidden = true; return; }
+    bar.hidden = false;
     const g = viewGame();
-    const decisiveEnd = g.in_checkmate() || !!resigned || (flagFall && !timeoutIsDraw());
+    el("spine-turn").textContent = statusText();
+
+    const clockEl = el("spine-clock");
+    const showClock = store.game.timeControl !== "off" && !!store.game.clock;
+    clockEl.hidden = !showClock;
+    if (showClock) {
+      clockEl.textContent = fmtClock(store.game.clock.w) + " · " + fmtClock(store.game.clock.b);
+    }
+
+    const lastEl = el("spine-last");
+    const h = sanHistory();
+    const at = store.game.viewIndex;
+    lastEl.hidden = at <= 0;
+    if (at > 0) {
+      const no = ChessReview ? ChessReview.moveNumber(at - 1, "w") : Math.ceil(at / 2);
+      lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
+    }
+
+    const matEl = el("spine-mat");
+    const Mat = ChessMaterial;
+    let diff = 0;
+    if (Mat) {
+      const promos = verboseHistory().slice(0, at)
+        .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
+      diff = Mat.summary(baseGame().board(), g.board(), promos).diff;
+    }
+    matEl.hidden = !diff;
+    if (diff) matEl.textContent = (diff > 0 ? "+" : "−") + Math.abs(diff);
+  }
+
+  /**
+   * The sound one move makes.
+   *
+   * Castling and promotion are not ordinary placements: castling moves two
+   * pieces (the one move on the board that does, and the hardest to follow),
+   * and promotion turns a pawn into something heavier. Both used to make the
+   * same tap as pushing a pawn one square.
+   */
+  function moveSound(mv, g) {
+    if (!mv) return;
+    const check = g.in_check();
+    if (mv.flags && /[kq]/.test(mv.flags)) { Audio2.playCastle(mv.color); return; }
+    if (mv.promotion) { Audio2.playPromote(mv.color); return; }
+    Audio2.playMove(mv.color, { captured: !!mv.captured, check });
+  }
+
+  /**
+   * The sound a finished game makes, decided by WHO WON.
+   *
+   * Until 2.0 the question asked at every ending was "is the game over" —
+   * checkmate played the victory fanfare, flag-fall played it, and
+   * *resigning* played it. Being checkmated by Stockfish and resigning to it
+   * both sounded like you had won something. 缺陷 1.
+   *
+   * @param {"w"|"b"|null} winner  null for a draw
+   */
+  function playEnding(winner) {
+    if (!winner) { Audio2.playDraw(); return; }
+    // Two players at one board: somebody in the room won, so it is a win. In
+    // an engine game and in the trainers there is a "you", and it is the human.
+    const mine = store.session.mode === "ai" ? store.session.humanColor
+      : store.session.mode === "pvp" ? winner
+      : "w"; // learn and puzzle: the student always plays White
+    if (winner === mine) Audio2.playWin(); else Audio2.playLoss();
+  }
+
+  /** The status pill: whose move, or how it ended, or that we are replaying. */
+  function renderStatusPill() {
+    const modal = inModal();
+    const status = el("status");
+    status.textContent = statusText();
+    const g = viewGame();
+    const decisiveEnd = g.in_checkmate() || !!store.game.resigned || (store.game.flagFall && !timeoutIsDraw());
     status.classList.toggle("win", !modal && isLive() && decisiveEnd);
     status.classList.toggle("replay", !modal && !isLive());
     // "思考中" with nothing moving reads as a hang at the higher levels, where
     // a search can run for seconds; the pill breathes while the engine works
-    const busy = engineThinking || analyzing || !!(learn && learn.engineBusy);
+    const busy = store.session.engineThinking || store.session.analyzing || !!(store.session.learn && store.session.learn.engineBusy);
     status.classList.toggle("thinking", busy);
     // …and a pulse on the board itself, where the player is actually looking
-    const dot = document.getElementById("think-dot");
+    const dot = el("think-dot");
     if (dot) dot.hidden = !busy;
+    const showTurn = !modal && isLive() && !appGameOver();
+    el("white-turn").hidden = !(showTurn && game.turn() === "w");
+    el("black-turn").hidden = !(showTurn && game.turn() === "b");
+  }
+
+  /**
+   * Availability, expressed as presence.
+   *
+   * `disabled` is a promise the interface is not keeping: the control takes up
+   * the layout, names an action, and does nothing. At 0 moves fourteen visible
+   * controls were disabled at once — take back, the five replay keys, resume,
+   * PGN, export, offer draw, claim draw, resign, analyse, deep-analyse — which
+   * is most of the panel telling you about things you cannot do yet. P3.3.
+   *
+   * So: a control that does not apply is not there. The exception is a control
+   * that is *momentarily* busy rather than inapplicable — those get a label
+   * change, not a vanishing act, because a button that disappears while you
+   * are reaching for it is worse than one that greys.
+   */
+  function avail(node, ok) { if (node) node.hidden = !ok; }
+
+  /** Hide a group whose whole row went away, so no empty heading is left. */
+  function collapseEmptyGroups() {
+    for (const group of document.querySelectorAll(".act-group")) {
+      const live = [...group.querySelectorAll("button")].some((b) => !b.hidden);
+      group.hidden = !live;
+    }
+  }
+
+  /**
+   * Write a SAN move into `node`, with the piece letter drawn as the piece.
+   *
+   * Only the leading letter: `Nxf3+` becomes ♞xf3+, `e4` and `O-O` are
+   * untouched, and a promotion's `=Q` keeps its letter because that Q is the
+   * piece you *chose*, which is worth reading as a word.
+   */
+  const SAN_PIECE = { K: "k", Q: "q", R: "r", B: "b", N: "n" };
+  function writeSan(node, san, color) {
+    node.setAttribute("aria-label", san);
+    node.title = san;
+    const type = SAN_PIECE[san[0]];
+    const svgs = CHESS_PIECE_SVGS || {};
+    const svg = type && svgs[color + type];
+    if (!svg) { node.textContent = san; return; }
+    const fig = document.createElement("span");
+    fig.className = "mlfig";
+    fig.setAttribute("aria-hidden", "true");
+    fig.insertAdjacentHTML("afterbegin", svg);
+    node.replaceChildren(fig, document.createTextNode(san.slice(1)));
+  }
+
+  /** The replay bar and the move counter chip beside it. */
+  function renderReplayBar() {
+    const h = sanHistory();
+    el("moves").textContent =
+      store.session.mode === "learn" ? (store.session.learn ? (store.session.learn.li + 1) + "/" + LESSONS.length : "—") :
+      store.session.mode === "puzzle" ? (store.session.puzzle ? tf("pz.chip", [store.session.puzzle.idx + 1, puzzlesInCat(store.session.puzzle.cat).length]) : "—") :
+      store.game.viewIndex + "/" + h.length;
+    el("replay-pos").textContent = store.game.viewIndex + " / " + h.length;
+    // Nothing played yet is nothing to replay: the whole transport goes.
+    avail(el("replay-seg"), h.length > 0);
+    const back = store.game.viewIndex > 0;
+    const fwd = store.game.viewIndex < h.length;
+    avail(el("rep-start"), back);
+    avail(el("rep-prev"), back);
+    avail(el("rep-next"), fwd);
+    avail(el("rep-end"), fwd);
+    avail(el("rep-live"), !isLive());
+    // "resume from here" is a replay action, and it only exists off the live
+    // position — where it used to sit greyed out with a tooltip explaining
+    // that it only exists off the live position
+    avail(el("retry-here"), !isLive());
+  }
+
+  /** Everything you can do to the game in progress. */
+  function renderGameActions() {
+    const h = sanHistory();
+    const modal = inModal();
+    const inDrill = store.session.mode === "learn" && store.session.learn && !store.session.learn.done && curTask().type === "drill";
     const over = appGameOver();
-    const showTurn = !modal && isLive() && !over;
-    document.getElementById("white-turn").hidden = !(showTurn && game.turn() === "w");
-    document.getElementById("black-turn").hidden = !(showTurn && game.turn() === "b");
-    const rt = document.getElementById("retry-here");
-    if (rt) rt.disabled = isLive();
-    renderMoveList();
-    setAnalyzeUI();
-    renderOpening();
-    renderClocks();
-    syncClockTimer();
-    syncLearnUI();
-    syncPuzzleUI();
-    syncEditorUI();
-    syncSettingsUI();
+
+    // Take back: in a drill it is the drill's own history; otherwise it needs
+    // a move to take back, the live position, and a game still running.
+    avail(el("undo"), modal
+      ? !!(inDrill && store.session.learn.g && store.session.learn.g.history().length)
+      : h.length > 0 && isLive() && !ruleTerminated());
+    avail(el("btn-new"), !modal);
+    avail(el("btn-flip"), !modal);
+
+    // Hint is the one control that stays put while it is busy: it is in the
+    // chrome, under the pointer, and it says what it is doing.
+    const hintBtn = el("btn-hint");
+    if (hintBtn) {
+      const canHint =
+        store.session.mode === "learn"
+          ? !!(inDrill && store.session.learn.g && !store.session.learn.g.game_over() && store.session.learn.g.turn() === "w")
+        : store.session.mode === "puzzle"
+          ? !!(store.session.puzzle && !store.session.puzzle.done && !store.session.puzzle.g.game_over() && store.session.puzzle.g.turn() === "w")
+        : !store.session.editor && isLive() && !over &&
+          !(store.session.mode === "ai" && game.turn() !== store.session.humanColor);
+      avail(hintBtn, canHint);
+      const busy = store.session.hintPending || store.session.analyzing ||
+        !!(store.session.learn && store.session.learn.engineBusy) || store.session.engineThinking;
+      hintBtn.disabled = false;
+      hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer")
+        : busy ? t("chrome.thinking") : t("chrome.hint");
+      hintBtn.classList.toggle("busy", busy);
+    }
+
+    const live = !modal && isLive() && h.length > 0 && !over;
+    avail(el("btn-resign"), live);
+    avail(el("btn-offerdraw"), live && !store.session.drawOfferPending);
+    // Claim: it exists exactly when a rule says it may be claimed. It used to
+    // sit greyed with a tooltip explaining which rule would have to hold.
+    const reason = live ? claimableDrawReason() : null;
+    const claimBtn = el("btn-claimdraw");
+    avail(claimBtn, !!reason);
+    if (claimBtn && reason) {
+      claimBtn.title = t(reason === "threefold" ? "tipRun.claimThreefold" : "tipRun.claimFifty");
+    }
+
+    // A game with no moves has no PGN to copy, export or analyse.
+    const hasGame = h.length > 0;
+    avail(el("pgn-copy"), hasGame);
+    avail(el("pgn-download"), hasGame);
+    avail(el("an-run"), hasGame || store.session.analyzing);
+    avail(el("an-deep"), hasGame && !store.session.analyzing);
+    collapseEmptyGroups();
+  }
+
+  /**
+   * Which view listens to which slice.
+   *
+   * Registered in one block so the wiring can be read at a glance rather than
+   * hunted for beside each view. Order within a slice is paint order: the
+   * board first, because it is what the player is looking at.
+   */
+  function wireViews() {
+    store.subscribe("game", draw);
+    store.subscribe("game", renderStatusPill);
+    store.subscribe("game", renderReplayBar);
+    store.subscribe("game", renderGameActions);
+    store.subscribe("game", renderMoveList);
+    store.subscribe("game", renderOpening);
+    store.subscribe("game", renderClocks);
+    store.subscribe("game", syncClockTimer);
+    store.subscribe("game", setAnalyzeUI);
+
+    // the trainers own the board while they are running, so a session change
+    // repaints it too
+    store.subscribe("session", draw);
+    store.subscribe("session", renderStatusPill);
+    store.subscribe("session", renderReplayBar);
+    store.subscribe("session", renderGameActions);
+    store.subscribe("session", setAnalyzeUI);
+    store.subscribe("session", syncLearnUI);
+    store.subscribe("session", syncPuzzleUI);
+    store.subscribe("session", syncEditorUI);
+    store.subscribe("session", syncSettingsUI);
+
+    // …and the two views that were living inside syncSettingsUI while reading
+    // the *game*. The captured-piece strip follows the replay cursor — it shows
+    // the material as it stood at the move you are looking at, not as it stands
+    // now — so it belongs to the game slice, and filing it under settings is
+    // exactly the mis-slotting that makes narrowing a call site dangerous:
+    // commit("game") would have moved the board and left the strip behind.
+    store.subscribe("game", renderMaterial);
+    store.subscribe("session", renderMaterial);
+    store.subscribe("game", renderIdleCard);
+    store.subscribe("session", renderIdleCard);
+
+    // the settings panel reads the game too (the clock preset is a game fact),
+    // so it hears about all three
+    store.subscribe("game", renderSpine);
+    store.subscribe("session", renderSpine);
+    store.subscribe("ui", renderSpine);
+    store.subscribe("game", syncSettingsUI);
+    store.subscribe("ui", syncSettingsUI);
+    store.subscribe("ui", draw);
+  }
+
+  /**
+   * Everything, in one go.
+   *
+   * The 65 call sites that used to say sync() still say it, and it still means
+   * "something changed, work out what that does to the screen". What changed
+   * is that it is no longer a *function that knows how to draw the app* — it
+   * is three commits, and the views decide for themselves whether they are
+   * concerned. Narrowing a call site to the one slice it actually touches is
+   * now a local edit rather than a rewrite; renderClocks() below is the first
+   * one done that way, because the clock ticks four times a second and had no
+   * business rebuilding the settings panel each time.
+   */
+  function sync() {
+    store.commit("game", "sync");
+    store.commit("session", "sync");
+    store.commit("ui", "sync");
   }
 
   function syncSettingsUI() {
     document.querySelectorAll("#theme-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.theme === themeId);
+      b.classList.toggle("active", b.dataset.theme === store.ui.themeId);
     });
     const sb = document.getElementById("opt-sound");
     if (sb) {
-      sb.classList.toggle("active", soundOn);
-      sb.setAttribute("aria-pressed", soundOn ? "true" : "false");
+      sb.classList.toggle("active", store.ui.soundOn);
+      sb.setAttribute("aria-pressed", store.ui.soundOn ? "true" : "false");
     }
     document.querySelectorAll("#mode-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.mode === mode);
+      b.classList.toggle("active", b.dataset.mode === store.session.mode);
     });
     // two rows now: sparring tiers and engine-strength tiers (see index.html)
     document.querySelectorAll("#diff-seg button, #diff-seg-engine button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.diff === difficulty);
+      b.classList.toggle("active", b.dataset.diff === store.session.difficulty);
     });
     document.querySelectorAll("#persona-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.persona === personaId);
+      b.classList.toggle("active", b.dataset.persona === store.session.personaId);
     });
     document.querySelectorAll("#color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.color === humanColor);
+      b.classList.toggle("active", b.dataset.color === store.session.humanColor);
     });
     document.querySelectorAll("#clock-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tc === timeControl);
+      b.classList.toggle("active", b.dataset.tc === store.game.timeControl);
     });
     const diffRow = document.getElementById("row-difficulty");
     const colorRow = document.getElementById("row-color");
     const clockRow = document.getElementById("row-clock");
-    if (diffRow) diffRow.hidden = mode !== "ai";
+    if (diffRow) diffRow.hidden = store.session.mode !== "ai";
     const personaRow = document.getElementById("row-persona");
-    if (personaRow) personaRow.hidden = mode !== "ai";
-    if (colorRow) colorRow.hidden = mode !== "ai";
-    if (clockRow) clockRow.hidden = mode !== "pvp" && mode !== "ai";
+    if (personaRow) personaRow.hidden = store.session.mode !== "ai";
+    if (colorRow) colorRow.hidden = store.session.mode !== "ai";
+    if (clockRow) clockRow.hidden = store.session.mode !== "pvp" && store.session.mode !== "ai";
     const coachRow = document.getElementById("row-coach");
-    if (coachRow) coachRow.hidden = mode !== "ai";
+    if (coachRow) coachRow.hidden = store.session.mode !== "ai";
     const coachSwitch = document.getElementById("opt-coach");
-    if (coachSwitch) coachSwitch.setAttribute("aria-pressed", coachOn ? "true" : "false");
+    if (coachSwitch) coachSwitch.setAttribute("aria-pressed", store.session.coachOn ? "true" : "false");
     const flipRow = document.getElementById("row-autoflip");
-    if (flipRow) flipRow.hidden = mode !== "pvp";
+    if (flipRow) flipRow.hidden = store.session.mode !== "pvp";
     const flipSwitch = document.getElementById("opt-autoflip");
-    if (flipSwitch) flipSwitch.setAttribute("aria-pressed", autoFlipPvp ? "true" : "false");
-    renderMaterial();
-    renderIdleCard();
+    if (flipSwitch) flipSwitch.setAttribute("aria-pressed", store.ui.autoFlipPvp ? "true" : "false");
+    // The one line that answers "what am I set to" without opening anything.
+    // Only the rows that apply in this mode are in it — a summary that lists a
+    // clock in lesson mode is a summary of a different app.
+    const sum = el("game-summary");
+    if (sum) {
+      const parts = [];
+      if (store.session.mode === "ai") {
+        parts.push(DIFF_NAMES[store.session.difficulty] || store.session.difficulty);
+        if (store.session.personaId !== "off") parts.push(t("persona." + store.session.personaId));
+        parts.push(t(store.session.humanColor === "w" ? "color.white" : "color.black"));
+      }
+      if (store.session.mode === "ai" || store.session.mode === "pvp") {
+        parts.push(store.game.timeControl === "off" ? t("clock.off") : store.game.timeControl);
+      }
+      sum.textContent = parts.join(" · ");
+    }
+    // the reading modes get a wider column — see styles.css [data-mode]
+    appEl.setAttribute("data-mode", store.session.mode);
+    const foldGame = el("fold-game");
+    if (foldGame) foldGame.hidden = store.session.mode === "learn" || store.session.mode === "puzzle";
+
     const secMoves = document.getElementById("sec-moves");
-    const trainer = mode === "learn" || mode === "puzzle" || !!editor;
+    const trainer = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
     if (secMoves) secMoves.hidden = trainer;
     // 统计/历史/成就 used to be hidden in the trainer modes because they sat in
     // the same scroll and got in the way. They now live behind their own tab,
     // which nobody opens by accident — and puzzle badges are earned right there.
-    const engineName = "Stockfish · " + (DIFF_NAMES[difficulty] || difficulty);
+    const engineName = "Stockfish · " + (DIFF_NAMES[store.session.difficulty] || store.session.difficulty);
     const wRole = document.getElementById("white-role");
     const bRole = document.getElementById("black-role");
     // A lesson that is not a drill has no opponent. Writing "—" into the black
     // role left an empty card at the top of the panel; the whole half is now
     // hidden instead (see .vs.solo).
-    const solo = mode === "learn" && !(learn && curTask().type === "drill");
+    const solo = store.session.mode === "learn" && !(store.session.learn && curTask().type === "drill");
     const vsBar = document.getElementById("vs-bar");
     if (vsBar) vsBar.classList.toggle("solo", solo);
     if (wRole && bRole) {
-      if (mode === "ai") {
-        wRole.textContent = humanColor === "w" ? t("vs.player") : engineName;
-        bRole.textContent = humanColor === "b" ? t("vs.player") : engineName;
-      } else if (mode === "learn") {
+      if (store.session.mode === "ai") {
+        wRole.textContent = store.session.humanColor === "w" ? t("vs.player") : engineName;
+        bRole.textContent = store.session.humanColor === "b" ? t("vs.player") : engineName;
+      } else if (store.session.mode === "learn") {
         wRole.textContent = t("role.student");
         bRole.textContent = solo ? "" : t("role.sparring");
-      } else if (mode === "puzzle") {
+      } else if (store.session.mode === "puzzle") {
         wRole.textContent = t("role.you");
         bRole.textContent = t("role.puzzle");
       } else {
@@ -3148,20 +3834,20 @@
    * @returns {boolean} true when the orientation changed
    */
   function syncAutoFlip() {
-    if (!autoFlipPvp || mode !== "pvp") return false;
+    if (!store.ui.autoFlipPvp || store.session.mode !== "pvp") return false;
     const want = viewGame().turn() === "b";
-    if (flipped === want) return false;
-    flipped = want;
+    if (store.game.flipped === want) return false;
+    store.game.flipped = want;
     saveSettings(); // otherwise a reload mid-game faces the wrong player
     return true;
   }
 
   function setViewIndex(n) {
-    viewIndex = Math.max(0, Math.min(n, sanHistory().length));
-    selection = null;
+    store.game.viewIndex = Math.max(0, Math.min(n, sanHistory().length));
+    store.game.selection = null;
     BoardView.cancelAnim();
     syncAutoFlip();
-    sync();
+    store.commit("game", "action");
   }
 
   function goLive() { setViewIndex(sanHistory().length); }
@@ -3174,7 +3860,6 @@
     b: { q: "♛", r: "♜", b: "♝", n: "♞" },
   };
 
-  let promoResolver = null;
   /** Modal chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel. */
   function choosePromotion(color) {
     const modal = document.getElementById("promo-modal");
@@ -3184,29 +3869,29 @@
       if (gl) gl.textContent = PROMO_GLYPHS[color][b.dataset.p];
     });
     Dlg.open(modal, modal.querySelector('button[data-p="q"]'));
-    return new Promise((resolve) => { promoResolver = resolve; });
+    return new Promise((resolve) => { store.ui.promoResolver = resolve; });
   }
   function finishPromotion(p) {
     const modal = document.getElementById("promo-modal");
     Dlg.close(modal);
-    if (promoResolver) { promoResolver(p); promoResolver = null; }
+    if (store.ui.promoResolver) { store.ui.promoResolver(p); store.ui.promoResolver = null; }
   }
 
   function playHumanMove(from, to, promotion) {
     const mv = gameMove({ from, to, promotion });
     if (!mv) return;
-    selection = null;
-    hintMove = null;
-    viewIndex = sanHistory().length;
+    store.game.selection = null;
+    store.session.hintMove = null;
+    store.game.viewIndex = sanHistory().length;
     applyIncrement(mv.color);
     // no animation: the player just clicked or dragged this piece here, and
     // sliding it in from the square they took it off replays something they
     // did themselves — for a drag it visibly snaps back first
     BoardView.cancelAnim();
-    Audio2.playMove(mv.color, { captured: !!mv.captured, check: game.in_check() });
+    moveSound(mv, game);
     if (mv.promotion) toast(tf("mm.promoted", [PROMO_NAMES[mv.promotion]]));
-    if (game.in_checkmate()) Audio2.playWin();
-    else if (naturalGameOver()) Audio2.playDraw();
+    if (game.in_checkmate()) playEnding(game.turn() === "w" ? "b" : "w");
+    else if (naturalGameOver()) playEnding(null);
     if (!appGameOver()) syncAutoFlip();
     coachRemember(mv);
     sync();
@@ -3216,19 +3901,19 @@
   }
 
   function onSquareClick(sq) {
-    if (editor) { editorClick(sq); return; }
-    if (mode === "learn") { learnClick(sq); return; }
-    if (mode === "puzzle") { puzzleClick(sq); return; }
-    if (!isLive()) { toast(t("mm.goLiveFirst")); return; }
+    if (store.session.editor) { editorClick(sq); return; }
+    if (store.session.mode === "learn") { learnClick(sq); return; }
+    if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
+    if (!isLive()) { toast(t("mm.goLiveFirst"), "fix"); return; }
     if (naturalGameOver()) return;
-    if (flagFall) { toast(t("m.40")); return; }
-    if (resigned) { toast(t("m.41")); return; }
-    if (drawAgreed) { toast(t("m.42")); return; }
-    if (drawClaimed) { toast(t("m.43")); return; }
-    if (mode === "ai" && game.turn() !== humanColor) return; // engine's move
+    if (store.game.flagFall) { toast(t("msg.over.flagged"), "fix"); return; }
+    if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
+    if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
+    if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
+    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return; // engine's move
     const piece = game.get(sq);
-    if (selection && selection.targets.includes(sq)) {
-      const from = selection.sq;
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
       const vmv = game.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         // cancelling keeps the selection so the player can pick another square
@@ -3240,64 +3925,64 @@
     }
     if (piece && piece.color === game.turn()) {
       const targets = game.moves({ square: sq, verbose: true }).map((m) => m.to);
-      selection = targets.length ? { sq, targets } : null;
+      store.game.selection = targets.length ? { sq, targets } : null;
       draw();
       return;
     }
-    if (selection) { selection = null; draw(); }
+    if (store.game.selection) { store.game.selection = null; draw(); }
   }
 
   function undo() {
-    if (mode === "learn") { learnUndo(); return; }
+    if (store.session.mode === "learn") { learnUndo(); return; }
     if (!sanHistory().length || ruleTerminated()) return;
     if (!isLive()) { goLive(); return; }
     invalidateEngine();
     gameUndo();
     // in AI mode take back the engine reply too, so it's the human's turn again
-    if (mode === "ai") {
-      while (sanHistory().length && game.turn() !== humanColor) gameUndo();
+    if (store.session.mode === "ai") {
+      while (sanHistory().length && game.turn() !== store.session.humanColor) gameUndo();
     }
-    selection = null;
-    viewIndex = sanHistory().length;
+    store.game.selection = null;
+    store.game.viewIndex = sanHistory().length;
     syncAutoFlip();
-    sync();
+    store.commit("game", "action");
     saveGame();
     maybeEngineTurn();
   }
 
   async function requestNewGame() {
-    stopEditor(t("m.55"));
+    stopEditor(t("msg.editor.exited"));
     if (sanHistory().length &&
         !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
     }
     invalidateEngine();
-    if (window.ChessEngine) window.ChessEngine.newGame();
+    if (ChessEngine) ChessEngine.newGame();
     gameReset();
-    selection = null;
-    viewIndex = 0;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
+    store.game.selection = null;
+    store.game.viewIndex = 0;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
     // Both of these key off the PGN, and a PGN does not identify a game — play
     // the same seven moves twice in one session and the second game carried
     // the first one's signature. It was then read as "already recorded" and
     // never reached the stats, and the first game's analysis would have been
     // filed against it. A new game is a new game.
-    analysis = null;
-    statsRecordedSig = null;
+    store.session.analysis = null;
+    store.game.recordedId = null;
     resetClocks();
     syncAutoFlip();
     sync();
     saveGame();
-    toast(t("m.07"));
+    toast(t("msg.game.started"));
     maybeEngineTurn();
   }
 
   /** Truncate the game to the replay cursor and continue playing from there. */
   async function retryFromHere() {
     if (isLive()) return;
-    const keep = viewIndex;
+    const keep = store.game.viewIndex;
     const drop = sanHistory().length - keep;
     if (!(await confirmNative(tf("dlg.retryHere", [keep, drop]), t("act.retryHere"),
         { ok: t("act.retryHere"), cancel: t("act.cancel") }))) {
@@ -3307,15 +3992,15 @@
     invalidateEngine();
     resetGameToStart();
     for (const san of h) gameMove(san);
-    selection = null;
-    viewIndex = h.length;
+    store.game.selection = null;
+    store.game.viewIndex = h.length;
     // continuing a finished game (flag / resignation) gets fresh clocks
     if (ruleTerminated()) resetClocks();
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
     syncAutoFlip();
-    sync();
+    store.commit("game", "action");
     saveGame();
     toast(tf("mm.backToMove", [keep]));
     maybeEngineTurn();
@@ -3323,11 +4008,11 @@
 
   // --- resignation (terminal, like mate; AI games count as a loss) ---
   async function doResign() {
-    if (mode === "learn" || !isLive() || !sanHistory().length || naturalGameOver() || ruleTerminated()) return;
+    if (store.session.mode === "learn" || !isLive() || !sanHistory().length || naturalGameOver() || ruleTerminated()) return;
     let side;
-    if (mode === "ai") {
-      side = humanColor;
-      if (!(await confirmNative(tf("dlg.resign", [side === "w" ? t("m.04") : t("m.05")]),
+    if (store.session.mode === "ai") {
+      side = store.session.humanColor;
+      if (!(await confirmNative(tf("dlg.resign", [side === "w" ? t("side.white") : t("side.black")]),
         t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel") }))) return;
     } else {
       // pvp: either player may resign at any time (FIDE) — pick the side
@@ -3336,43 +4021,44 @@
       if (!pick) return;
       side = pick === "alt" ? "b" : "w";
     }
-    const who = side === "w" ? t("m.04") : t("m.05");
+    const who = side === "w" ? t("side.white") : t("side.black");
     invalidateEngine();
-    resigned = side;
-    Audio2.playWin();
-    if (mode === "ai") recordResign();
+    store.game.resigned = side;
+    // resigning is losing, whatever the previous six years of this file said
+    playEnding(side === "w" ? "b" : "w");
+    if (store.session.mode === "ai") recordResign();
     saveGame();
-    sync();
-    toast(tf("mm.resignWin", [who, side === "w" ? t("m.05") : t("m.04")]));
+    store.commit("game", "action");
+    toast(tf("mm.resignWin", [who, side === "w" ? t("side.black") : t("side.white")]));
   }
 
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
-  function recordOutcome(result, suffix) {
-    const sig = game.pgn() + suffix;
-    if (statsRecordedSig === sig) return;
-    statsRecordedSig = sig;
+  function recordOutcome(result, ending) {
+    if (store.game.recordedId) return; // this game is already filed
     const s = loadStats();
-    s.games.push({ t: Date.now(), diff: difficulty, color: humanColor, result, moves: sanHistory().length, sig });
+    const id = newRecordId();
+    store.game.recordedId = id;
+    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending });
     if (s.games.length > 500) s.games = s.games.slice(-500);
-    try { Host.storageSet(STATS_KEY, JSON.stringify(s)); } catch (_) {}
+    Persist.setJson("stats", s);
     renderStats();
     checkNewAchievements();
     offerReview(); // resignation and flag-fall end a game just as much as mate
   }
 
-  function recordResign() { recordOutcome("loss", "#resigned"); }
+  function recordResign() { recordOutcome("loss", "resigned"); }
 
   // --- blunder coach (AI mode): after the engine replies, quietly evaluate
   // the human's last move; a ??-level swing earns a "consider undoing" nudge.
-  let coachPending = null; // {before, after, san, len}
+// {before, after, san, len}
 
   function coachRemember(mv) {
-    coachPending = null;
-    if (mode !== "ai" || !coachOn || !window.ChessEngine) return;
+    store.session.coachPending = null;
+    if (store.session.mode !== "ai" || !store.session.coachOn || !ChessEngine) return;
     const h = sanHistory();
     const g = baseGame();
     for (let i = 0; i < h.length - 1; i++) g.move(h[i]);
-    coachPending = { before: g.fen(), after: game.fen(), san: mv.san, len: h.length };
+    store.session.coachPending = { before: g.fen(), after: game.fen(), san: mv.san, len: h.length };
   }
 
   const PIECE_VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
@@ -3403,14 +4089,14 @@
   }
 
   async function coachAfterEngineReply() {
-    const p = coachPending;
-    coachPending = null;
-    if (!p || !coachOn || mode !== "ai" || appGameOver()) return;
+    const p = store.session.coachPending;
+    store.session.coachPending = null;
+    if (!p || !store.session.coachOn || store.session.mode !== "ai" || appGameOver()) return;
     if (!coachWorthChecking(p.before, p.after)) return;
     let a = null, b = null;
     try {
-      a = await window.ChessEngine.analyze(p.before, 120);
-      b = await window.ChessEngine.analyze(p.after, 120);
+      a = await ChessEngine.analyze(p.before, 120);
+      b = await ChessEngine.analyze(p.after, 120);
     } catch (_) { return; }
     const sa = evalScalar(a), sb = evalScalar(b);
     if (sa == null || sb == null) return;
@@ -3423,26 +4109,25 @@
   }
 
   // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
-  let drawOfferPending = false;
   async function doOfferDraw() {
-    if (mode === "learn" || mode === "puzzle" || !isLive() || !sanHistory().length ||
-        appGameOver() || drawOfferPending) return;
-    if (mode === "pvp") {
+    if (store.session.mode === "learn" || store.session.mode === "puzzle" || !isLive() || !sanHistory().length ||
+        appGameOver() || store.session.drawOfferPending) return;
+    if (store.session.mode === "pvp") {
       if (!(await confirmNative(t("dlg.drawBoth"), t("act.offerDraw"),
         { ok: t("dlg.drawAgree"), cancel: t("dlg.drawPlayOn") }))) return;
       acceptDraw();
       return;
     }
     // ai mode: offer on your own turn; the engine accepts unless it is winning
-    if (engineThinking || game.turn() !== humanColor) { toast(t("m.32")); return; }
-    if (sanHistory().length < 20) { toast(t("m.33")); return; }
-    if (!window.ChessEngine) { toast(t("m.01")); return; }
-    drawOfferPending = true;
-    toast(t("m.34"));
+    if (store.session.engineThinking || game.turn() !== store.session.humanColor) { toast(t("msg.draw.offerOnYourTurn"), "fix"); return; }
+    if (sanHistory().length < 20) { toast(t("msg.draw.offerTooEarly"), "fix"); return; }
+    if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
+    store.session.drawOfferPending = true;
+    toast(t("msg.draw.offerSent"));
     let e = null;
     const sig = game.fen();
-    try { e = await window.ChessEngine.analyze(sig, 300); } catch (_) {}
-    drawOfferPending = false;
+    try { e = await ChessEngine.analyze(sig, 300); } catch (_) {}
+    store.session.drawOfferPending = false;
     if (game.fen() !== sig || appGameOver()) return;
     // e.cp is from the side to move (the human here); engine eval = -cp
     const engineCp = e && e.cp != null ? -e.cp : e && e.mate != null ? (e.mate > 0 ? -10000 : 10000) : null;
@@ -3450,49 +4135,49 @@
       acceptDraw();
     } else {
       sync();
-      toast(t("m.35"));
+      toast(t("msg.draw.offerDeclined"));
     }
   }
 
   function acceptDraw() {
     invalidateEngine();
-    drawAgreed = true;
+    store.game.drawAgreed = true;
     Audio2.playDraw();
-    if (mode === "ai") recordAgreedDraw();
+    if (store.session.mode === "ai") recordAgreedDraw();
     saveGame();
-    sync();
-    toast(t("m.36"));
+    store.commit("game", "action");
+    toast(t("msg.draw.agreed"));
   }
 
-  function recordAgreedDraw() { recordOutcome("draw", "#drawAgreed"); }
+  function recordAgreedDraw() { recordOutcome("draw", "drawAgreed"); }
 
   /** FIDE arts. 9.2/9.3: claim the draw at threefold repetition / 50 moves. */
   function doClaimDraw() {
-    if (mode === "learn" || mode === "puzzle" || !isLive() || appGameOver()) return;
+    if (store.session.mode === "learn" || store.session.mode === "puzzle" || !isLive() || appGameOver()) return;
     const reason = claimableDrawReason();
-    if (!reason) { toast(t("m.37")); return; }
+    if (!reason) { toast(t("msg.draw.claimUnavailable"), "fix"); return; }
     invalidateEngine();
-    drawClaimed = reason;
+    store.game.drawClaimed = reason;
     Audio2.playDraw();
-    if (mode === "ai") recordOutcome("draw", "#claimed");
+    if (store.session.mode === "ai") recordOutcome("draw", "claimed");
     saveGame();
-    sync();
-    toast(reason === "threefold" ? t("m.38") : t("m.39"));
+    store.commit("game", "action");
+    toast(reason === "threefold" ? t("msg.draw.claimedRepetition") : t("msg.draw.claimedFiftyMove"));
   }
 
   // --- FEN / PGN I/O ---
   async function copyText(text, okMsg) {
     try { await Host.writeClipboard(text); toast(okMsg); }
-    catch (_) { toast(t("m.22")); }
+    catch (_) { toast(t("msg.copy.failed"), "fault"); }
   }
 
   function gameResultToken() {
     if (game.in_checkmate()) return game.turn() === "w" ? "0-1" : "1-0";
-    if (resigned) return resigned === "w" ? "0-1" : "1-0";
-    if (drawAgreed || drawClaimed) return "1/2-1/2";
-    if (flagFall) {
+    if (store.game.resigned) return store.game.resigned === "w" ? "0-1" : "1-0";
+    if (store.game.drawAgreed || store.game.drawClaimed) return "1/2-1/2";
+    if (store.game.flagFall) {
       if (timeoutIsDraw()) return "1/2-1/2";
-      return flagFall === "w" ? "0-1" : "1-0";
+      return store.game.flagFall === "w" ? "0-1" : "1-0";
     }
     if (naturalGameOver()) return "1/2-1/2"; // stalemate + the auto draw rules
     return "*";
@@ -3511,9 +4196,9 @@
     };
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    const engineName = "Stockfish 18 (" + (DIFF_EN[difficulty] || difficulty) + ")";
-    const white = mode === "ai" ? (humanColor === "w" ? "Player" : engineName) : "Player 1";
-    const black = mode === "ai" ? (humanColor === "b" ? "Player" : engineName) : "Player 2";
+    const engineName = "Stockfish 18 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
+    const white = store.session.mode === "ai" ? (store.session.humanColor === "w" ? "Player" : engineName) : "Player 1";
+    const black = store.session.mode === "ai" ? (store.session.humanColor === "b" ? "Player" : engineName) : "Player 2";
     const result = gameResultToken();
     const tagPairs = [
       ["Event", "Casual game"],
@@ -3524,10 +4209,10 @@
       ["Black", black],
       ["Result", result],
     ];
-    const tc = parseTc(timeControl);
+    const tc = parseTc(store.game.timeControl);
     tagPairs.push(["TimeControl", tc ? tc.base + (tc.inc ? "+" + tc.inc : "") : "-"]);
     if (result !== "*") {
-      tagPairs.push(["Termination", flagFall ? "time forfeit" : "normal"]);
+      tagPairs.push(["Termination", store.game.flagFall ? "time forfeit" : "normal"]);
     }
     const sf = startFen();
     if (sf) tagPairs.push(["SetUp", "1"], ["FEN", sf]);
@@ -3553,17 +4238,17 @@
   }
 
   async function downloadPgn() {
-    if (!sanHistory().length) { toast(t("m.17")); return; }
+    if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
     const pgn = pgnForExport();
     const name = pgnFileName();
     if (Host.hasZero()) {
       try {
         const path = await Host.saveFileDialog({ title: t("dlg.exportPgn"), defaultName: name });
-        if (path == null) { toast(t("m.09")); return; }
+        if (path == null) { toast(t("msg.export.cancelled")); return; }
         await Host.writeTextFile(path, pgn);
         await Host.revealPath(path);
         Host.addRecentDocument(path);
-        toast(t("m.10") + name);
+        toast(t("msg.export.done") + name);
         return;
       } catch (_) {}
     }
@@ -3574,9 +4259,9 @@
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("m.10") + name);
+      toast(t("msg.export.done") + name);
     } catch (_) {
-      copyText(pgn, t("m.11"));
+      copyText(pgn, t("msg.export.restrictedCopied"));
     }
   }
 
@@ -3587,85 +4272,170 @@
   // A picture carries the conclusion.
 
   /** Draw the finished review onto an offscreen canvas. @returns {HTMLCanvasElement|null} */
+  /**
+   * The exported review image.
+   *
+   * Three things this is not allowed to be, each of which it was:
+   *
+   * **Theme-coloured.** It used to paint on `--card` — a 3–4% white overlay in
+   * the wood and night themes — with `--text` on top. Exported from either, the
+   * PNG is near-white text on near-white, and dropping it into any document
+   * with a white background produced a blank rectangle. An exported file leaves
+   * the app; it cannot inherit the app's assumptions about what is behind it.
+   * So the palette here is opaque, fixed, and the same from all four themes.
+   * 缺陷 2.
+   *
+   * **Written for the screen.** The turning-point line ended "—— 点此跳转",
+   * true of the panel and nonsense in a file, and it was removed by a regex
+   * that only worked because Chinese and Japanese use a full-width dash: the
+   * English build shipped "tap to jump" printed on the image. Two keys now, no
+   * regex. 缺陷 5.
+   *
+   * **Unmeasured.** Nine fillText calls, no measureText, no wrapping, on a
+   * fixed 820px canvas. The Japanese side line runs about a third longer than
+   * the Chinese one, and over-long text did not ellipsize — it left the canvas
+   * and was gone. 缺陷 21.
+   */
+  const REPORT_FONT = "system-ui, -apple-system, 'Helvetica Neue', 'PingFang SC', 'Hiragino Kaku Gothic ProN', sans-serif";
+  /**
+   * Fixed, opaque, and nothing to do with the interface theme.
+   *
+   * Light, because a shared image lands on a white page far more often than a
+   * dark one, and because these values can then be checked for contrast once
+   * rather than four times.
+   */
+  const REPORT_INK = {
+    bg: "#fbfaf7", fg: "#1b1a17", muted: "#6b675e",
+    accent: "#8a5a1e", line: "#d9d4c8",
+  };
+
   function renderReportCanvas() {
     const a = analysisFor();
-    const R = window.ChessReview;
+    const R = ChessReview;
     if (!a || !R) return null;
     const first = startFen() && startFen().split(" ")[1] === "b" ? "b" : "w";
     const sum = R.summarize(a.scalars, sanHistory(), first);
     if (!sum) return null;
 
     const S = 2; // fixed scale: the file should not depend on the player's screen
-    const W = 900, H = 480;
+    const W = 900, H = 520;
     const cv = document.createElement("canvas");
     cv.width = W * S; cv.height = H * S;
     const ctx = cv.getContext("2d");
     ctx.scale(S, S);
-    const css = getComputedStyle(document.documentElement);
-    const pick = (n, dflt) => (css.getPropertyValue(n) || "").trim() || dflt;
-    const bg = pick("--card", "#1b1b19"), fg = pick("--text", "#eee");
-    const muted = pick("--muted", "#999"), accent = pick("--accent", "#e8c39e");
+    const { bg, fg, muted, accent, line } = REPORT_INK;
+    const font = (spec) => { ctx.font = spec + " " + REPORT_FONT; };
+
+    /**
+     * Draw text that is guaranteed to be inside the image.
+     *
+     * Wraps at `maxW` and, if it still does not fit in `maxLines`, ends the
+     * last line with an ellipsis. Returns the y after the last line, so the
+     * caller can lay out what comes next instead of assuming a height.
+     */
+    function text(str, x, y, maxW, maxLines, lh) {
+      const words = String(str).split(/(\s+)/);
+      const lines = [];
+      let cur = "";
+      for (const w of words) {
+        const next = cur + w;
+        // CJK has no spaces to break on, so fall back to breaking per character
+        if (ctx.measureText(next).width <= maxW || !cur) { cur = next; continue; }
+        lines.push(cur.trimEnd());
+        cur = w.trimStart();
+      }
+      if (cur) lines.push(cur.trimEnd());
+      const out = [];
+      for (const l of lines) {
+        if (ctx.measureText(l).width <= maxW) { out.push(l); continue; }
+        let piece = "";
+        for (const ch of l) {
+          if (ctx.measureText(piece + ch).width > maxW) { out.push(piece); piece = ch; }
+          else piece += ch;
+        }
+        if (piece) out.push(piece);
+      }
+      const shown = out.slice(0, maxLines || out.length);
+      if (out.length > shown.length && shown.length) {
+        let last = shown[shown.length - 1];
+        while (last && ctx.measureText(last + "…").width > maxW) last = last.slice(0, -1);
+        shown[shown.length - 1] = last + "…";
+      }
+      shown.forEach((l, i) => ctx.fillText(l, x, y + i * (lh || 20)));
+      return y + shown.length * (lh || 20);
+    }
 
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = fg;
-    ctx.font = "600 26px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    font("600 26px");
     ctx.fillText(t("rv.title"), 40, 56);
 
-    ctx.font = "15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    font("15px");
     ctx.fillStyle = muted;
     const opening = openingFor(sanHistory().length);
-    const head = [opening ? openingName(opening) : null, statusText(),
+    const head = [opening ? openingName(opening[1]) : null, statusText(),
       tf("mm.plies", [sanHistory().length])].filter(Boolean).join("  ·  ");
-    ctx.fillText(head, 40, 84);
+    text(head, 40, 84, W - 80, 2, 20);
+
+    // one line of context: which level, which colour, when
+    font("13px");
+    const when = new Date().toISOString().slice(0, 10);
+    const ctxLine = [DIFF_NAMES[store.session.difficulty] || store.session.difficulty,
+      t(store.session.humanColor === "w" ? "color.white" : "color.black"), when]
+      .filter(Boolean).join("  ·  ");
+    ctx.fillStyle = muted;
+    text(ctxLine, 40, 106, W - 80, 1, 18);
 
     // the curve, same shape and cut-off as the one on screen
-    const cx0 = 40, cy0 = 110, cw = W - 80, ch = 150;
-    ctx.strokeStyle = muted; ctx.globalAlpha = 0.3; ctx.lineWidth = 1;
+    const cx0 = 40, cy0 = 130, cw = W - 80, ch = 150;
+    ctx.strokeStyle = line; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cx0, cy0 + ch / 2); ctx.lineTo(cx0 + cw, cy0 + ch / 2); ctx.stroke();
-    ctx.globalAlpha = 1;
     const n = a.scalars.length - 1, CAP = 500;
+    const JC = judgeColours();
     const px = (i) => (n ? cx0 + (i / n) * cw : cx0 + cw / 2);
-    const py = (s) => cy0 + ch / 2 - (Math.max(-CAP, Math.min(CAP, s)) / CAP) * (ch / 2 - 4);
+    const py = (sv) => cy0 + ch / 2 - (Math.max(-CAP, Math.min(CAP, sv)) / CAP) * (ch / 2 - 4);
     ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath();
     let pen = false;
     for (let i = 0; i <= n; i++) {
-      const s = a.scalars[i];
-      if (s == null) { pen = false; continue; }
-      if (pen) ctx.lineTo(px(i), py(s)); else { ctx.moveTo(px(i), py(s)); pen = true; }
+      const sv = a.scalars[i];
+      if (sv == null) { pen = false; continue; }
+      if (pen) ctx.lineTo(px(i), py(sv)); else { ctx.moveTo(px(i), py(sv)); pen = true; }
     }
     ctx.stroke();
     for (let i = 0; i < n; i++) {
       if (!R.isMistake(a.tags[i]) || a.tags[i] === "?!") continue;
-      const s = a.scalars[i + 1];
-      if (s == null) continue;
-      ctx.fillStyle = a.tags[i] === "??" ? "#e05252" : "#e0a03c";
-      ctx.beginPath(); ctx.arc(px(i + 1), py(s), 3.5, 0, Math.PI * 2); ctx.fill();
+      const sv = a.scalars[i + 1];
+      if (sv == null) continue;
+      ctx.fillStyle = a.tags[i] === "??" ? JC.bad : JC.mid;
+      ctx.beginPath(); ctx.arc(px(i + 1), py(sv), 3.5, 0, Math.PI * 2); ctx.fill();
     }
 
-    // the numbers, one column per side
+    // the numbers, one column per side — each column measured, so the longer
+    // Japanese line wraps inside its column instead of into the other one
     const rowY = cy0 + ch + 46;
-    ctx.font = "600 15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    const colW = cw / 2 - 20;
     for (const [k, side] of [[0, "w"], [1, "b"]]) {
       const x = 40 + k * (cw / 2);
       ctx.fillStyle = fg;
-      ctx.fillText(side === "w" ? t("m.05") : t("m.04"), x, rowY);
-      ctx.font = "14px system-ui, -apple-system, 'PingFang SC', sans-serif";
+      font("600 15px");
+      ctx.fillText(side === "w" ? t("side.black") : t("side.white"), x, rowY);
+      font("14px");
       ctx.fillStyle = muted;
       const c = sum.counts[side];
-      ctx.fillText(tf("rv.sideLine", [
+      text(tf("rv.sideLine", [
         sum.acc[side] == null ? "—" : sum.acc[side], sum.acpl[side] == null ? "—" : sum.acpl[side],
         c.inaccuracy, c.mistake, c.blunder,
-      ]), x, rowY + 24);
-      ctx.font = "600 15px system-ui, -apple-system, 'PingFang SC', sans-serif";
+      ]), x, rowY + 24, colW, 3, 19);
     }
     if (sum.worst) {
-      ctx.font = "14px system-ui, -apple-system, 'PingFang SC', sans-serif";
+      font("14px");
       ctx.fillStyle = accent;
-      ctx.fillText(tf("rv.turningPoint", [sum.worst.moveNo,
-        sum.worst.side === "w" ? t("m.05") : t("m.04"), sum.worst.san,
-        (sum.worst.loss / 100).toFixed(1)]).replace(/\s*——.*$/, ""), 40, rowY + 62);
+      // the Plain key, not the panel's line with its "tap to jump" tail
+      text(tf("rv.turningPointPlain", [sum.worst.moveNo,
+        sum.worst.side === "w" ? t("side.black") : t("side.white"), sum.worst.san,
+        (sum.worst.loss / 100).toFixed(1)]), 40, rowY + 100, cw, 2, 20);
     }
-    ctx.font = "12px system-ui, -apple-system, 'PingFang SC', sans-serif";
+    font("12px");
     ctx.fillStyle = muted;
     ctx.fillText(t("brand"), 40, H - 24);
     return cv;
@@ -3692,10 +4462,10 @@
     if (Host.hasZero() && b64 && b64.length < 512 * 1024) {
       try {
         const path = await Host.saveFileDialog({ title: t("rv.exportTitle"), defaultName: name });
-        if (path == null) { toast(t("m.09")); return; }
+        if (path == null) { toast(t("msg.export.cancelled")); return; }
         await Host.writeBinaryFile(path, b64);
         await Host.revealPath(path);
-        toast(t("m.10") + name);
+        toast(t("msg.export.done") + name);
         return;
       } catch (_) { /* fall through to the browser path */ }
     }
@@ -3707,12 +4477,10 @@
       link.download = name;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 2000);
-      toast(t("m.10") + name);
-    } catch (_) { toast(t("m.16")); }
+      toast(t("msg.export.done") + name);
+    } catch (_) { toast(t("msg.file.readFailed"), "fault"); }
   }
 
-  /** Modal list picker → index of the chosen entry, or null when cancelled. */
-  let pickResolver = null;
   /**
    * One question, asked once, on a genuinely fresh install.
    *
@@ -3732,19 +4500,19 @@
     ]);
     if (choice == null) return; // cancelled — leave the defaults alone
     if (choice === 0) {
-      mode = "learn";
+      store.session.mode = "learn";
       startLearn();
     } else {
       // they can play, but "normal" is Elo 1700 — start a rung lower and let
       // the difficulty row (now visible) speak for itself. The engine reads
       // `difficulty` at search time, so setting it here is enough.
-      mode = "ai";
-      difficulty = "easy";
+      store.session.mode = "ai";
+      store.session.difficulty = "easy";
     }
     setPanelOpen(true);
     saveSettings();
     sync();
-    toast(choice === 0 ? t("ob.toLearn") : tf("ob.toPlay", [diffName(difficulty)]));
+    toast(choice === 0 ? t("ob.toLearn") : tf("ob.toPlay", [diffName(store.session.difficulty)]));
     if (choice !== 0) maybeEngineTurn();
   }
 
@@ -3754,7 +4522,7 @@
     const titleEl = document.getElementById("pick-title");
     if (!modal || !list) return Promise.resolve(items.length ? 0 : null);
     if (titleEl) titleEl.textContent = title;
-    list.innerHTML = "";
+    list.replaceChildren();
     items.forEach((it, i) => {
       const b = document.createElement("button");
       b.type = "button";
@@ -3770,12 +4538,12 @@
       list.appendChild(b);
     });
     Dlg.open(modal, list.querySelector(".pick-item"));
-    return new Promise((resolve) => { pickResolver = resolve; });
+    return new Promise((resolve) => { store.ui.pickResolver = resolve; });
   }
   function finishPick(v) {
     const modal = document.getElementById("pick-modal");
     Dlg.close(modal);
-    if (pickResolver) { pickResolver(v); pickResolver = null; }
+    if (store.ui.pickResolver) { store.ui.pickResolver(v); store.ui.pickResolver = null; }
   }
 
   /**
@@ -3788,20 +4556,20 @@
    */
   async function importPgnText(text, label, prompt) {
     let text0 = (text || "").trim();
-    if (!text0) { toast(t("m.12")); return false; }
+    if (!text0) { toast(t("msg.import.empty"), "fix"); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
     // old behaviour) silently threw away everything before it.
-    const games = window.ChessPgn ? window.ChessPgn.splitGames(text0) : [text0];
+    const games = ChessPgn ? ChessPgn.splitGames(text0) : [text0];
     if (games.length > 1) {
       const items = games.map((g, i) => {
-        const s = window.ChessPgn.summary(g);
+        const s = ChessPgn.summary(g);
         return {
           label: (i + 1) + ". " + s.white + " — " + s.black + "  " + s.result,
           sub: [s.event, s.date, s.plies ? tf("mm.plies", [s.plies]) : ""].filter(Boolean).join(" · "),
         };
       });
       const pick = await pickFromList(tf("dlg.pickGame", [games.length]), items);
-      if (pick == null) { toast(t("m.14")); return false; }
+      if (pick == null) { toast(t("msg.import.cancelled")); return false; }
       text0 = games[pick];
     }
     const ask = prompt || { msg: t("dlg.importPgn"), title: t("dlg.importPgnTitle"), ok: t("dlg.import") };
@@ -3815,9 +4583,9 @@
     // it is what a save slot or an export holds for a study position. chess.js
     // will not parse that shape, so fall back to its [SetUp]/[FEN] tags rather
     // than call the file malformed.
-    const importFen = parsed ? null : (window.ChessPgn ? window.ChessPgn.startFen(text0) : null);
+    const importFen = parsed ? null : (ChessPgn ? ChessPgn.startFen(text0) : null);
     if (!parsed && (!importFen || !new Chess().validate_fen(importFen).valid)) {
-      toast(t("m.13"));
+      toast(t("msg.import.badPgn"), "fault");
       return false;
     }
     invalidateEngine();
@@ -3828,17 +4596,17 @@
       gameLoad(importFen);
       game.header("SetUp", "1", "FEN", importFen);
     }
-    selection = null;
-    viewIndex = sanHistory().length;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
+    store.game.selection = null;
+    store.game.viewIndex = sanHistory().length;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
     resetClocks();
     syncAutoFlip();
-    sync();
+    store.commit("game", "action");
     saveGame();
     toast(sanHistory().length
-      ? t("m.62") + moveCount(Math.ceil(sanHistory().length / 2))
+      ? t("msg.import.donePrefix") + moveCount(Math.ceil(sanHistory().length / 2))
       : t("mm.positionLoaded"));
     maybeEngineTurn();
     return true;
@@ -3851,7 +4619,7 @@
       const text = await Host.readClipboard();
       importPgnText(text, t("mm.clipboard"));
     } catch (_) {
-      toast(t("m.15"));
+      toast(t("msg.clipboard.readFailed"), "fault");
     }
   }
 
@@ -3866,7 +4634,7 @@
       toast(tf("mm.fileTooLarge", [Math.floor((err.limit || 0) / 1024)]));
       return;
     }
-    toast(t("m.16"));
+    toast(t("msg.file.readFailed"), "fault");
   }
 
   /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
@@ -3906,13 +4674,11 @@
     wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
     bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
   };
-  /** editor runtime: {board, turn, castling, brush} | null */
-  let editor = null;
 
   function editorModel() {
     return {
-      position: editor.board,
-      flipped,
+      position: store.session.editor.board,
+      flipped: store.game.flipped,
       selected: null,
       legalTargets: [],
       lastMove: null,
@@ -3920,20 +4686,22 @@
       hintMove: null,
       stars: [],
       cursor: cursorSquare(),
+      // the drag is part of the picture, not a thing pushed in beforehand
+      drag: store.ui.dragging,
     };
   }
 
   function startEditor() {
-    const Ed = window.ChessEditor;
-    if (!Ed) { toast(t("m.58")); return; }
+    const Ed = ChessEditor;
+    if (!Ed) { toast(t("msg.editor.unavailable"), "fault"); return; }
     invalidateEngine();
-    editor = Ed.fromFen(viewGame().fen(), Chess);
-    editor.brush = { color: "w", type: "p" };
-    selection = null;
+    store.session.editor = Ed.fromFen(viewGame().fen(), Chess);
+    store.session.editor.brush = { color: "w", type: "p" };
+    store.game.selection = null;
     BoardView.cancelAnim();
     renderEditorPalette();
     sync();
-    toast(t("m.57"));
+    toast(t("msg.editor.hint"), "fix");
   }
 
   /**
@@ -3948,16 +4716,16 @@
    * @returns {boolean} true when an open editor was closed
    */
   function stopEditor(note) {
-    if (!editor) return false;
-    editor = null;
+    if (!store.session.editor) return false;
+    store.session.editor = null;
     if (note) toast(note);
     return true;
   }
 
   function renderEditorPalette() {
     const el = document.getElementById("editor-palette");
-    if (!el || !editor) return;
-    el.innerHTML = "";
+    if (!el || !store.session.editor) return;
+    el.replaceChildren();
     for (const [color, type] of PALETTE) {
       const b = document.createElement("button");
       b.type = "button";
@@ -3965,27 +4733,27 @@
         b.dataset.erase = "1";
         b.textContent = "✕";
         b.title = t("ed.eraser");
-        b.classList.toggle("active", editor.brush.type === "");
+        b.classList.toggle("active", store.session.editor.brush.type === "");
       } else {
         b.dataset.color = color;
         b.dataset.type = type;
         b.textContent = PALETTE_GLYPH[color + type];
-        b.classList.toggle("active", editor.brush.color === color && editor.brush.type === type);
+        b.classList.toggle("active", store.session.editor.brush.color === color && store.session.editor.brush.type === type);
       }
       el.appendChild(b);
     }
   }
 
   function editorClick(sq) {
-    const Ed = window.ChessEditor;
+    const Ed = ChessEditor;
     const { r, c } = Ed.indexOf(sq);
-    const cur = editor.board[r][c];
-    if (editor.brush.type === "") {
-      editor.board[r][c] = null;
-    } else if (cur && cur.color === editor.brush.color && cur.type === editor.brush.type) {
-      editor.board[r][c] = null; // tapping the same piece again clears the square
+    const cur = store.session.editor.board[r][c];
+    if (store.session.editor.brush.type === "") {
+      store.session.editor.board[r][c] = null;
+    } else if (cur && cur.color === store.session.editor.brush.color && cur.type === store.session.editor.brush.type) {
+      store.session.editor.board[r][c] = null; // tapping the same piece again clears the square
     } else {
-      editor.board[r][c] = { type: editor.brush.type, color: editor.brush.color };
+      store.session.editor.board[r][c] = { type: store.session.editor.brush.type, color: store.session.editor.brush.color };
     }
     syncEditorUI();
     draw();
@@ -3994,32 +4762,32 @@
   function syncEditorUI() {
     const sec = document.getElementById("sec-editor");
     if (!sec) return;
-    sec.hidden = !editor;
-    if (!editor) return;
+    sec.hidden = !store.session.editor;
+    if (!store.session.editor) return;
     document.querySelectorAll("#editor-turn button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.turn === editor.turn);
+      b.classList.toggle("active", b.dataset.turn === store.session.editor.turn);
     });
     document.querySelectorAll("#editor-castling button").forEach((b) => {
-      b.classList.toggle("active", !!editor.castling[b.dataset.cr]);
+      b.classList.toggle("active", !!store.session.editor.castling[b.dataset.cr]);
     });
     const epRow = document.getElementById("row-ed-ep");
     const epSeg = document.getElementById("editor-ep");
-    const cands = window.ChessEditor.epCandidates(editor);
+    const cands = ChessEditor.epCandidates(store.session.editor);
     if (epRow) epRow.hidden = !cands.length;
     if (epSeg && cands.length) {
-      epSeg.innerHTML = "";
+      epSeg.replaceChildren();
       for (const sqName of [null, ...cands]) {
         const b = document.createElement("button");
         b.type = "button";
         b.dataset.ep = sqName || "";
         b.textContent = sqName || t("ed.epNone");
-        b.classList.toggle("active", (editor.ep || null) === sqName);
+        b.classList.toggle("active", (store.session.editor.ep || null) === sqName);
         epSeg.appendChild(b);
       }
     }
-    if (!cands.length && editor.ep) editor.ep = null;
+    if (!cands.length && store.session.editor.ep) store.session.editor.ep = null;
     const err = document.getElementById("editor-error");
-    const reason = window.ChessEditor.validate(editor, Chess);
+    const reason = ChessEditor.validate(store.session.editor, Chess);
     if (err) err.textContent = reason ? t(reason) : "";
     const apply = document.getElementById("editor-apply");
     if (apply) apply.disabled = !!reason;
@@ -4029,16 +4797,16 @@
   function loadFenAsGame(fen, note) {
     stopEditor();
     invalidateEngine();
-    if (window.ChessEngine) window.ChessEngine.newGame();
+    if (ChessEngine) ChessEngine.newGame();
     gameLoad(fen);
     game.header("SetUp", "1", "FEN", fen);
-    selection = null;
-    viewIndex = 0;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
-    analysis = null;
-    statsRecordedSig = null;
+    store.game.selection = null;
+    store.game.viewIndex = 0;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
+    store.session.analysis = null;
+    store.game.recordedId = null;
     resetClocks();
     syncAutoFlip();
     sync();
@@ -4048,12 +4816,12 @@
   }
 
   function applyEditor() {
-    const Ed = window.ChessEditor;
-    const reason = Ed.validate(editor, Chess);
+    const Ed = ChessEditor;
+    const reason = Ed.validate(store.session.editor, Chess);
     if (reason) { toast(t(reason)); return; }
-    const fen = Ed.toFen(editor);
+    const fen = Ed.toFen(store.session.editor);
     stopEditor();
-    loadFenAsGame(fen, t("m.54"));
+    loadFenAsGame(fen, t("msg.editor.started"));
   }
 
   const fenModal = document.getElementById("fen-modal");
@@ -4076,35 +4844,34 @@
       if (err) err.textContent = msg;
       if (input) input.classList.add("bad");
     };
-    if (!raw) { show(t("m.60")); return; }
+    if (!raw) { show(t("msg.fen.empty")); return; }
     const v = new Chess().validate_fen(raw);
-    if (!v.valid) { show(v.error || t("m.61")); return; }
+    if (!v.valid) { show(v.error || t("msg.fen.invalid")); return; }
     // chess.js accepts positions no game could reach (no kings, a side already
     // in check while its opponent moves) — reuse the editor's stricter rules,
     // then load the ORIGINAL fen so its en-passant square and clocks survive.
-    const reason = window.ChessEditor
-      ? window.ChessEditor.validate(window.ChessEditor.fromFen(raw, Chess), Chess)
+    const reason = ChessEditor
+      ? ChessEditor.validate(ChessEditor.fromFen(raw, Chess), Chess)
       : null;
     if (reason) { show(t(reason)); return; }
     closeFenModal();
-    loadFenAsGame(new Chess(raw).fen(), t("m.53"));
+    loadFenAsGame(new Chess(raw).fen(), t("msg.fen.loaded"));
   }
 
   // --- named save slots -------------------------------------------------
   // The autosave holds exactly one game, so studying a second position meant
   // losing the first. Slots are explicit, user-named storage on top of it.
-  const SLOTS_KEY = "chess.v1.slots";
   const SLOT_COUNT = 5;
 
   function loadSlots() {
     try {
-      const s = JSON.parse(Host.storageGet(SLOTS_KEY) || "null");
+      const s = JSON.parse(Persist.get("slots") || "null");
       if (s && Array.isArray(s.slots)) return s;
     } catch (_) {}
     return { v: 1, slots: new Array(SLOT_COUNT).fill(null) };
   }
   function saveSlots(s) {
-    try { Host.storageSet(SLOTS_KEY, JSON.stringify(s)); } catch (_) {}
+    Persist.setJson("slots", s);
   }
 
   /**
@@ -4116,7 +4883,7 @@
    */
   function slotSummary(slot) {
     if (!slot) return t("slots.empty");
-    const P = window.ChessPgn;
+    const P = ChessPgn;
     const s = P ? P.summary(slot.pgn) : null;
     const when = slot.savedAt ? new Date(slot.savedAt).toLocaleString() : "";
     const moves = s && s.plies ? moveCount(Math.ceil(s.plies / 2)) : "";
@@ -4135,7 +4902,7 @@
     const list = document.getElementById("slots-list");
     if (!list) return;
     const st = loadSlots();
-    list.innerHTML = "";
+    list.replaceChildren();
     for (let i = 0; i < SLOT_COUNT; i++) {
       const slot = st.slots[i];
       const row = document.createElement("div");
@@ -4185,8 +4952,8 @@
     st.slots[i] = {
       pgn: pgnForExport(),
       savedAt: Date.now(),
-      mode,
-      diff: difficulty,
+      mode: store.session.mode,
+      diff: store.session.difficulty,
     };
     saveSlots(st);
     renderSlots();
@@ -4234,10 +5001,10 @@
     if (!el) return;
     // only on an untouched board in a real game — lessons and puzzles have
     // their own copy filling this space
-    const show = (mode === "ai" || mode === "pvp") && !sanHistory().length && !editor;
+    const show = (store.session.mode === "ai" || store.session.mode === "pvp") && !sanHistory().length && !store.session.editor;
     el.hidden = !show;
     if (!show) return;
-    el.innerHTML = "";
+    el.replaceChildren();
     const line = (k, v) => {
       const row = document.createElement("div");
       row.className = "idle-line";
@@ -4255,13 +5022,13 @@
     const last = games[games.length - 1];
     if (last) {
       line(t("idle.last"), historyLabel(last) + " · " + historyWhen(last.t));
-      const mine = games.filter((g) => g.diff === difficulty);
+      const mine = games.filter((g) => g.diff === store.session.difficulty);
       const w = mine.filter((g) => g.result === "win").length;
       const l = mine.filter((g) => g.result === "loss").length;
       const d = mine.length - w - l;
-      if (mine.length) line(diffName(difficulty), tf("stats.wld", [w, l, d]));
+      if (mine.length) line(diffName(store.session.difficulty), tf("stats.wld", [w, l, d]));
     } else {
-      line(t("idle.ready"), t(mode === "ai" ? "idle.vsEngine" : "idle.vsHuman"));
+      line(t("idle.ready"), t(store.session.mode === "ai" ? "idle.vsEngine" : "idle.vsHuman"));
     }
     const rec = recommendation();
     const tip = document.createElement("div");
@@ -4271,27 +5038,43 @@
   }
 
   function renderMaterial() {
-    const Mat = window.ChessMaterial;
+    const Mat = ChessMaterial;
     const wEl = document.getElementById("taken-w");
     const bEl = document.getElementById("taken-b");
     if (!wEl || !bEl) return;
-    const off = mode === "learn" || mode === "puzzle" || !!editor;
-    if (!Mat || off) { wEl.innerHTML = ""; bEl.innerHTML = ""; return; }
+    const off = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
+    if (!Mat || off) { wEl.replaceChildren(); bEl.replaceChildren(); return; }
     const shown = viewGame();
-    const promos = verboseHistory().slice(0, viewIndex)
+    const promos = verboseHistory().slice(0, store.game.viewIndex)
       .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
     const s = Mat.summary(baseGame().board(), shown.board(), promos);
-    const svgs = window.CHESS_PIECE_SVGS || {};
-    const strip = (list, color, lead) => {
-      const frag = list.map((tp) => {
+    const svgs = CHESS_PIECE_SVGS || {};
+    // Built as nodes rather than concatenated markup. The pieces are vendored
+    // SVG text and the lead is a number, so nothing here was ever hostile —
+    // but "build a string and hand it to the parser" is a habit, and the two
+    // places it mattered (the move list, the history rows) learned it here.
+    const strip = (parent, list, color, lead) => {
+      const kids = [];
+      for (const tp of list) {
         const svg = svgs[color + tp];
-        return svg ? '<span class="taken-p">' + svg + "</span>" : "";
-      }).join("");
-      return frag + (lead > 0 ? '<span class="taken-diff">+' + lead + "</span>" : "");
+        if (!svg) continue;
+        const span = document.createElement("span");
+        span.className = "taken-p";
+        // the sprite set is our own file, not input — parsed once per piece
+        span.insertAdjacentHTML("afterbegin", svg);
+        kids.push(span);
+      }
+      if (lead > 0) {
+        const d = document.createElement("span");
+        d.className = "taken-diff";
+        d.textContent = "+" + lead;
+        kids.push(d);
+      }
+      parent.replaceChildren(...kids);
     };
     // White's row shows the black pieces White has taken
-    wEl.innerHTML = strip(s.w, "b", s.diff);
-    bEl.innerHTML = strip(s.b, "w", -s.diff);
+    strip(wEl, s.w, "b", s.diff);
+    strip(bEl, s.b, "w", -s.diff);
   }
 
   // --- panel tabs ---
@@ -4305,7 +5088,7 @@
 
   function setSideTab(id, opts) {
     const want = TABS.includes(id) ? id : "play";
-    sideTab = want;
+    store.ui.sideTab = want;
     for (const t of TABS) {
       const btn = document.getElementById("tab-" + t);
       const pane = document.getElementById("pane-" + t);
@@ -4324,7 +5107,7 @@
     const want = !!open;
     appEl.classList.toggle("panel-open", want);
     appEl.classList.toggle("scrim-on", want && window.innerWidth < 900);
-    try { Host.storageSet(PANEL_KEY, want ? "1" : "0"); } catch (_) {}
+    Persist.set("panelOpen", want ? "1" : "0");
     const side = document.getElementById("side");
     if (side) {
       if (want) { side.removeAttribute("inert"); side.setAttribute("aria-hidden", "false"); }
@@ -4334,6 +5117,8 @@
         if (side.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur();
       }
     }
+    // the spine and the status pill both read "is the panel open"
+    store.commit("ui", "panel");
     requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); });
   }
   function togglePanel() { setPanelOpen(!isPanelOpen()); }
@@ -4342,16 +5127,16 @@
   function applyLanguage() {
     if (!I18n) return;
     I18n.apply(document);
-    document.documentElement.setAttribute("lang", langId);
+    document.documentElement.setAttribute("lang", store.ui.langId);
     const seg = document.getElementById("lang-seg");
     if (seg) {
-      seg.innerHTML = "";
+      seg.replaceChildren();
       for (const l of I18n.available()) {
         const b = document.createElement("button");
         b.type = "button";
         b.dataset.lang = l.id;
         b.textContent = l.name;
-        b.classList.toggle("active", l.id === langId);
+        b.classList.toggle("active", l.id === store.ui.langId);
         seg.appendChild(b);
       }
     }
@@ -4360,13 +5145,17 @@
     // previous language until the next game finishes
     renderStats();
     renderAchievements();
-    if (editor) renderEditorPalette();
+    if (store.session.editor) renderEditorPalette();
     sync();
   }
 
   function applyTheme(id) {
-    themeId = id;
+    store.ui.themeId = id;
     document.documentElement.setAttribute("data-theme", id);
+    // The board palette is its own axis since 1.25 (styles.css, [data-board]).
+    // Setting it to the theme's id keeps the pairing exactly as it was — what
+    // changed is that it is now a pairing rather than one thing.
+    document.documentElement.setAttribute("data-board", id);
     // the board reads its square colours from the same variables, and caches
     // them — the cache is only ever stale here
     if (BoardView.invalidatePaint) BoardView.invalidatePaint();
@@ -4385,38 +5174,36 @@
   }
   /** Would a click on `sq` pick up a piece in the current mode? (cursor hint) */
   function grabbableAt(sq) {
-    if (editor) return true; // every square is paintable
-    if (mode === "learn") {
-      if (!learn || learn.done || learn.demoing) return false;
+    if (store.session.editor) return true; // every square is paintable
+    if (store.session.mode === "learn") {
+      if (!store.session.learn || store.session.learn.done || store.session.learn.demoing) return false;
       const task = curTask();
       if (task.type === "tap") return false;
-      const p = learn.g.get(sq);
-      return !!p && p.color === "w" && learn.g.turn() === "w" && (!task.only || p.type === task.only);
+      const p = store.session.learn.g.get(sq);
+      return !!p && p.color === "w" && store.session.learn.g.turn() === "w" && (!task.only || p.type === task.only);
     }
-    if (mode === "puzzle") {
-      if (!puzzle || puzzle.done) return false;
-      const p = puzzle.g.get(sq);
-      return !!p && p.color === "w" && puzzle.g.turn() === "w";
+    if (store.session.mode === "puzzle") {
+      if (!store.session.puzzle || store.session.puzzle.done) return false;
+      const p = store.session.puzzle.g.get(sq);
+      return !!p && p.color === "w" && store.session.puzzle.g.turn() === "w";
     }
     if (!isLive() || appGameOver()) return false;
-    if (mode === "ai" && game.turn() !== humanColor) return false;
+    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return false;
     const p = game.get(sq);
     return !!p && p.color === game.turn();
   }
 
-  let dragging = null; // {from} armed on pressing one of our selectable pieces
-  /** editor paint stroke: the square last painted while the pointer is down */
-  let painting = null;
+// {from} armed on pressing one of our selectable pieces
 
   // right-click clears a square in the editor (no need to switch to the eraser)
   canvas.addEventListener("contextmenu", (ev) => {
-    if (!editor) return;
+    if (!store.session.editor) return;
     ev.preventDefault();
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
     if (!sq) return;
-    const { r, c } = window.ChessEditor.indexOf(sq);
-    editor.board[r][c] = null;
+    const { r, c } = ChessEditor.indexOf(sq);
+    store.session.editor.board[r][c] = null;
     syncEditorUI();
     draw();
   });
@@ -4428,18 +5215,18 @@
     onSquareClick(sq);
     // in the editor a press starts a paint stroke: placing 16 pawns one click
     // at a time is exactly the kind of tedium an editor should absorb
-    if (editor) { painting = sq; return; }
-    dragging = selection && selection.sq === sq ? { from: sq } : null;
-    if (dragging) canvas.style.cursor = "grabbing";
+    if (store.session.editor) { store.ui.painting = sq; return; }
+    store.ui.dragging = store.game.selection && store.game.selection.sq === sq ? { from: sq } : null;
+    if (store.ui.dragging) canvas.style.cursor = "grabbing";
   });
   canvas.addEventListener("pointermove", (ev) => {
     const p = canvasPoint(ev);
-    if (painting) {
+    if (store.ui.painting) {
       const sq = BoardView.cellAt(p.x, p.y);
-      if (sq && sq !== painting) { painting = sq; editorClick(sq); }
+      if (sq && sq !== store.ui.painting) { store.ui.painting = sq; editorClick(sq); }
       return;
     }
-    if (!dragging) {
+    if (!store.ui.dragging) {
       const sq = BoardView.cellAt(p.x, p.y);
       canvas.style.cursor = sq && grabbableAt(sq) ? "grab" : "default";
       return;
@@ -4448,15 +5235,15 @@
     // piece can actually go there — the ring under the pointer is the whole
     // point of dragging rather than clicking twice
     const over = BoardView.cellAt(p.x, p.y);
-    const legal = !!(over && selection && selection.targets.includes(over));
-    BoardView.setDrag({ from: dragging.from, x: p.x, y: p.y, over, legal });
+    const legal = !!(over && store.game.selection && store.game.selection.targets.includes(over));
+    if (!store.ui.dragging.x) Audio2.playLift(); // the first move of a drag
+    store.ui.dragging = { from: store.ui.dragging.from, x: p.x, y: p.y, over, legal };
     draw();
   });
   canvas.addEventListener("pointerup", (ev) => {
-    painting = null;
-    const wasDrag = dragging;
-    dragging = null;
-    BoardView.setDrag(null);
+    store.ui.painting = null;
+    const wasDrag = store.ui.dragging;
+    store.ui.dragging = null;
     canvas.style.cursor = "default";
     if (!wasDrag) return;
     const p = canvasPoint(ev);
@@ -4465,16 +5252,15 @@
     // blink back onto its square. Read the piece before the click, since the
     // click is what may move it.
     const refused = !sq || sq === wasDrag.from ||
-      !(selection && selection.targets.includes(sq));
+      !(store.game.selection && store.game.selection.targets.includes(sq));
     const held = refused ? viewGame().get(wasDrag.from) : null;
     draw();
     if (sq && sq !== wasDrag.from) onSquareClick(sq); // drop = play/reselect
-    if (held) BoardView.reboundDrag(held, wasDrag.from, p.x, p.y);
+    if (held) { Audio2.playRefused(); BoardView.reboundDrag(held, wasDrag.from, p.x, p.y); }
   });
   canvas.addEventListener("pointercancel", () => {
-    painting = null;
-    dragging = null;
-    BoardView.setDrag(null);
+    store.ui.painting = null;
+    store.ui.dragging = null;
     canvas.style.cursor = "default";
     draw();
   });
@@ -4493,37 +5279,37 @@
 
   /** describe a square for screen readers: "e4 · 白兵" / "e4 · 空格" */
   function describeSquare(sq) {
-    const g = editor ? null : (mode === "learn" && learn ? learn.g : mode === "puzzle" && puzzle ? puzzle.g : viewGame());
+    const g = store.session.editor ? null : (store.session.mode === "learn" && store.session.learn ? store.session.learn.g : store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g : viewGame());
     let piece = null;
     if (g) piece = g.get(sq);
-    else if (editor) {
-      const { r, c } = window.ChessEditor.indexOf(sq);
-      piece = editor.board[r][c];
+    else if (store.session.editor) {
+      const { r, c } = ChessEditor.indexOf(sq);
+      piece = store.session.editor.board[r][c];
     }
     if (!piece) return sq + " · " + t("live.empty");
     return sq + " · " + t(piece.color === "w" ? "vs.white" : "vs.black") + t("piece." + piece.type);
   }
 
   function moveCursor(df, dr) {
-    if (!keyboardCursor) keyboardCursor = flipped ? "e5" : "e4";
-    let f = FILE_CHARS.indexOf(keyboardCursor[0]);
-    let r = Number(keyboardCursor[1]);
+    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
+    let f = FILE_CHARS.indexOf(store.ui.keyboardCursor[0]);
+    let r = Number(store.ui.keyboardCursor[1]);
     // arrows follow what the player sees, so they invert with the board
-    const sign = flipped ? -1 : 1;
+    const sign = store.game.flipped ? -1 : 1;
     f = Math.max(0, Math.min(7, f + df * sign));
     r = Math.max(1, Math.min(8, r + dr * sign));
-    keyboardCursor = FILE_CHARS[f] + r;
-    announce(describeSquare(keyboardCursor));
+    store.ui.keyboardCursor = FILE_CHARS[f] + r;
+    announce(describeSquare(store.ui.keyboardCursor));
     draw();
   }
 
   canvas.addEventListener("focus", () => {
-    boardFocused = true;
-    if (!keyboardCursor) keyboardCursor = flipped ? "e5" : "e4";
-    announce(t("live.focused") + " · " + describeSquare(keyboardCursor));
+    store.ui.boardFocused = true;
+    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
+    announce(t("live.focused") + " · " + describeSquare(store.ui.keyboardCursor));
     draw();
   });
-  canvas.addEventListener("blur", () => { boardFocused = false; draw(); });
+  canvas.addEventListener("blur", () => { store.ui.boardFocused = false; draw(); });
 
   canvas.addEventListener("keydown", (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
@@ -4544,23 +5330,23 @@
       case "ArrowRight": ev.preventDefault(); moveCursor(1, 0); return;
       case "ArrowUp": ev.preventDefault(); moveCursor(0, 1); return;
       case "ArrowDown": ev.preventDefault(); moveCursor(0, -1); return;
-      case "Home": ev.preventDefault(); keyboardCursor = flipped ? "h1" : "a8"; announce(describeSquare(keyboardCursor)); draw(); return;
-      case "End": ev.preventDefault(); keyboardCursor = flipped ? "a8" : "h1"; announce(describeSquare(keyboardCursor)); draw(); return;
+      case "Home": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "h1" : "a8"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
+      case "End": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "a8" : "h1"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
       case "Enter":
       case " ": {
         ev.preventDefault();
-        if (!keyboardCursor) return;
-        const before = selection ? selection.sq : null;
-        onSquareClick(keyboardCursor);
-        if (selection && selection.sq === keyboardCursor && before !== keyboardCursor) {
-          announce(t("live.selected") + " " + describeSquare(keyboardCursor) + " · " + selection.targets.length + " " + t("live.targets"));
-        } else if (!selection && before) {
+        if (!store.ui.keyboardCursor) return;
+        const before = store.game.selection ? store.game.selection.sq : null;
+        onSquareClick(store.ui.keyboardCursor);
+        if (store.game.selection && store.game.selection.sq === store.ui.keyboardCursor && before !== store.ui.keyboardCursor) {
+          announce(t("live.selected") + " " + describeSquare(store.ui.keyboardCursor) + " · " + store.game.selection.targets.length + " " + t("live.targets"));
+        } else if (!store.game.selection && before) {
           announce(statusText());
         }
         return;
       }
       case "Escape":
-        if (selection) { ev.preventDefault(); selection = null; announce(t("live.cleared")); draw(); }
+        if (store.game.selection) { ev.preventDefault(); store.game.selection = null; announce(t("live.cleared")); draw(); }
         return;
       default:
     }
@@ -4571,10 +5357,10 @@
   document.getElementById("btn-hint").onclick = () => { requestHint(); };
   document.getElementById("btn-new").onclick = () => { requestNewGame(); };
   document.getElementById("btn-flip").onclick = () => {
-    flipped = !flipped;
+    store.game.flipped = !store.game.flipped;
     saveSettings();
     draw();
-    toast(flipped ? t("m.44") : t("m.45"));
+    toast(store.game.flipped ? t("msg.view.black") : t("msg.view.white"));
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   const moreBtn = document.getElementById("more-tools");
@@ -4600,7 +5386,7 @@
     // ARIA tablist keyboard contract: arrows move between tabs
     tabRow.onkeydown = (ev) => {
       if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
-      const cur = TABS.indexOf(sideTab);
+      const cur = TABS.indexOf(store.ui.sideTab);
       const next = TABS[(cur + (ev.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
       ev.preventDefault();
       setSideTab(next, { top: true });
@@ -4618,15 +5404,15 @@
     };
   }
   document.getElementById("rep-start").onclick = () => setViewIndex(0);
-  document.getElementById("rep-prev").onclick = () => setViewIndex(viewIndex - 1);
-  document.getElementById("rep-next").onclick = () => setViewIndex(viewIndex + 1);
+  document.getElementById("rep-prev").onclick = () => setViewIndex(store.game.viewIndex - 1);
+  document.getElementById("rep-next").onclick = () => setViewIndex(store.game.viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
-  document.getElementById("rep-live").onclick = () => { goLive(); toast(t("m.08")); };
+  document.getElementById("rep-live").onclick = () => { goLive(); toast(t("msg.replay.atLive")); };
 
   document.getElementById("an-run").onclick = () => {
-    if (analyzing) {
-      analyzeAbort = true;
-      if (window.ChessEngine) window.ChessEngine.cancel();
+    if (store.session.analyzing) {
+      store.session.analyzeAbort = true;
+      if (ChessEngine) ChessEngine.cancel();
       return;
     }
     analyzeGame(120);
@@ -4648,16 +5434,16 @@
   document.getElementById("stats-clear").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearStats"), t("dlg.clearStatsTitle"),
       { ok: t("act.clear"), cancel: t("act.cancel") }))) return;
-    try { Host.storageRemove(STATS_KEY); } catch (_) {}
+    Persist.remove("stats");
     renderStats();
     renderAchievements();
-    toast(t("m.23"));
+    toast(t("msg.stats.cleared"));
   };
 
-  document.getElementById("fen-copy").onclick = () => copyText(viewGame().fen(), t("m.20"));
+  document.getElementById("fen-copy").onclick = () => copyText(viewGame().fen(), t("msg.copy.fenDone"));
   document.getElementById("pgn-copy").onclick = () => {
-    if (!sanHistory().length) { toast(t("m.18")); return; }
-    copyText(pgnForExport(), t("m.21"));
+    if (!sanHistory().length) { toast(t("msg.copy.noGame"), "fix"); return; }
+    copyText(pgnForExport(), t("msg.copy.pgnDone"));
   };
   const resignEl = document.getElementById("btn-resign");
   if (resignEl) resignEl.onclick = () => { doResign(); };
@@ -4720,7 +5506,7 @@
   function renderKeyHelp() {
     const list = document.getElementById("keys-list");
     if (!list) return;
-    list.innerHTML = "";
+    list.replaceChildren();
     for (const row of KEY_HELP) {
       const dt = document.createElement("dt");
       for (const key of row.keys) {
@@ -4756,15 +5542,15 @@
     "game.new": () => requestNewGame(),
     "game.undo": () => undo(),
     "game.hint": () => requestHint(),
-    "game.flip": () => { flipped = !flipped; saveSettings(); draw(); },
+    "game.flip": () => { store.game.flipped = !store.game.flipped; saveSettings(); draw(); },
     "view.panel": () => togglePanel(),
-    "view.prev": () => setViewIndex(viewIndex - 1),
-    "view.next": () => setViewIndex(viewIndex + 1),
+    "view.prev": () => setViewIndex(store.game.viewIndex - 1),
+    "view.next": () => setViewIndex(store.game.viewIndex + 1),
     "help.keys": () => openKeyHelp(),
   };
   Host.onAppLifecycle({
-    activate: () => { appForeground = true; syncClockTimer(); renderClocks(); },
-    deactivate: () => { appForeground = false; saveGame(); syncClockTimer(); },
+    activate: () => { store.ui.appForeground = true; syncClockTimer(); renderClocks(); },
+    deactivate: () => { store.ui.appForeground = false; saveGame(); syncClockTimer(); },
     shortcut: (detail) => {
       let id = null;
       try {
@@ -4780,94 +5566,119 @@
     const b = ev.target.closest("button[data-theme]");
     if (b) {
       applyTheme(b.dataset.theme);
-      toast(t("m.67") + t("themeName." + themeId));
+      toast(t("msg.setting.theme") + t("themeName." + store.ui.themeId));
     }
   };
   document.getElementById("mode-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-mode]");
-    if (!b || b.dataset.mode === mode) return;
+    if (!b || b.dataset.mode === store.session.mode) return;
     invalidateEngine();
-    stopEditor(t("m.55"));
-    const wasLearn = mode === "learn";
-    const wasPuzzle = mode === "puzzle";
-    mode = b.dataset.mode;
+    stopEditor(t("msg.editor.exited"));
+    const wasLearn = store.session.mode === "learn";
+    const wasPuzzle = store.session.mode === "puzzle";
+    store.session.mode = b.dataset.mode;
     // entering a clocked mode mid-game gets fresh clocks
-    flagFall = null;
-    if (mode === "pvp" || mode === "ai") resetClocks();
-    if (mode === "learn") startLearn();
+    store.game.flagFall = null;
+    if (store.session.mode === "pvp" || store.session.mode === "ai") resetClocks();
+    if (store.session.mode === "learn") startLearn();
     else if (wasLearn) stopLearn();
-    if (mode === "puzzle") startPuzzles();
+    if (store.session.mode === "puzzle") startPuzzles();
     else if (wasPuzzle) stopPuzzles();
     // the mode decides what the play tab holds, so show it — otherwise
     // switching to 教学 from the settings tab looks like nothing happened
     setSideTab("play", { top: true });
     saveSettings();
-    selection = null;
+    store.game.selection = null;
     syncAutoFlip();
     sync();
-    toast(mode === "ai" ? t("m.64") + (DIFF_NAMES[difficulty] || "") :
-      mode === "pvp" ? t("m.65") :
-      mode === "learn" ? t("mm.learnMode") : t("mm.puzzleMode"));
+    toast(store.session.mode === "ai" ? t("msg.mode.aiPrefix") + (DIFF_NAMES[store.session.difficulty] || "") :
+      store.session.mode === "pvp" ? t("msg.mode.pvp") :
+      store.session.mode === "learn" ? t("mm.learnMode") : t("mm.puzzleMode"));
     maybeEngineTurn();
   };
   document.getElementById("lesson-restart").onclick = () => {
-    if (learn) { startLearnTask(); toast(t("lm.restarted")); }
+    if (store.session.learn) { startLearnTask(); toast(t("lm.restarted")); }
   };
   document.getElementById("lesson-demo").onclick = () => {
-    if (!learn || learn.demoing) return;
+    if (!store.session.learn || store.session.learn.demoing) return;
     const task = curTask();
-    if (!task.solution || (task.type !== "stars" && task.type !== "move")) { toast(t("lm.noDemo")); return; }
-    learn.wantDemo = true;
+    if (!task.solution || (task.type !== "stars" && task.type !== "move")) { toast(t("lm.noDemo"), "fix"); return; }
+    store.session.learn.wantDemo = true;
     startLearnTask();
   };
   document.getElementById("learn-reset").onclick = async () => {
     if (!(await confirmNative(t("dlg.resetLearn"), t("dlg.resetLearnTitle"),
       { ok: t("act.reset"), cancel: t("act.cancel") }))) return;
-    learnState = { v: 1, done: {}, last: 0 };
+    store.session.learnState = { v: 1, done: {}, last: 0 };
     saveLearnState();
-    if (learn) startLesson(0);
+    if (store.session.learn) startLesson(0);
     toast(t("lm.progressReset"));
   };
   document.getElementById("lesson-next").onclick = () => {
-    if (!learn) return;
-    if (learn.li + 1 < LESSONS.length) { startLesson(learn.li + 1); return; }
+    if (!store.session.learn) return;
+    if (store.session.learn.li + 1 < LESSONS.length) { startLesson(store.session.learn.li + 1); return; }
     // graduation: straight into a beginner AI game
-    difficulty = "beginner";
-    mode = "ai";
+    store.session.difficulty = "beginner";
+    store.session.mode = "ai";
     stopLearn();
     saveSettings();
-    selection = null;
+    store.game.selection = null;
     sync();
     toast(t("lm.firstGame"));
     maybeEngineTurn();
   };
+  document.getElementById("lesson-practice").onclick = () => {
+    if (!store.session.learn) return;
+    const L = LESSONS[store.session.learn.li];
+    const rest = practiceLeft(L);
+    if (!rest.total) return;
+    const want = rest.all.find((p) => !store.session.puzzleState.solved[p.id]) || rest.all[0];
+    // The tier row is a filter over the whole category, so a "hard" filter can
+    // hide the very puzzle this button promised. Arriving somewhere other than
+    // where the button said is worse than losing a filter setting.
+    if (store.session.puzzleTierFilter !== "all") {
+      store.session.puzzleTierFilter = "all";
+      toast(t("pz.tierCleared"), "fix");
+    }
+    invalidateEngine();
+    stopLearn();
+    store.session.mode = "puzzle";
+    store.session.puzzleState.cat = "tac";
+    const list = puzzlesInCat("tac");
+    startPuzzleAt("tac", Math.max(0, list.findIndex((p) => p.id === want.id)));
+    setSideTab("play", { top: true });
+    saveSettings();
+    syncAutoFlip();
+    sync();
+    toast(tf("pz.fromLesson", [puzzleMotif(want)]));
+  };
   document.getElementById("lesson-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
-    if (b && learn) startLesson(Number(b.dataset.i));
+    if (b && store.session.learn) startLesson(Number(b.dataset.i));
   };
   document.getElementById("puzzle-cat-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-cat]");
     // `puzzle` is null whenever the tier filter empties the current category —
     // exactly the moment the user needs these tabs to change category, so this
     // must not bail out on a missing puzzle
-    if (!b || (puzzle && b.dataset.cat === puzzle.cat)) return;
+    if (!b || (store.session.puzzle && b.dataset.cat === store.session.puzzle.cat)) return;
     if (b.dataset.cat === "review" && !puzzlesInCat("review").length) {
       toast(t("pz.noMissed"));
       return;
     }
-    puzzleState.cat = b.dataset.cat;
+    store.session.puzzleState.cat = b.dataset.cat;
     savePuzzleState();
     startPuzzles();
   };
   document.getElementById("puzzle-tier-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-tier]");
-    if (!b || b.dataset.tier === puzzleTierFilter) return;
-    puzzleTierFilter = b.dataset.tier;
+    if (!b || b.dataset.tier === store.session.puzzleTierFilter) return;
+    store.session.puzzleTierFilter = b.dataset.tier;
     saveSettings();
     startPuzzles();
   };
   document.getElementById("puzzle-retry").onclick = () => {
-    if (puzzle) { startPuzzleAt(puzzle.cat, puzzle.idx); toast(t("pz.restarted")); }
+    if (store.session.puzzle) { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
   };
   document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
@@ -4875,152 +5686,155 @@
   if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
   document.getElementById("puzzle-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
-    if (b && puzzle) startPuzzleAt(puzzle.cat, Number(b.dataset.i));
+    if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));
   };
   document.getElementById("clock-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-tc]");
-    if (!b || b.dataset.tc === timeControl) return;
-    timeControl = b.dataset.tc;
+    if (!b || b.dataset.tc === store.game.timeControl) return;
+    store.game.timeControl = b.dataset.tc;
     resetClocks();
     saveSettings();
     saveGame();
-    sync();
-    const tcSet = parseTc(timeControl);
-    toast(!tcSet ? t("m.46") :
+    store.commit("game", "action");
+    const tcSet = parseTc(store.game.timeControl);
+    toast(!tcSet ? t("msg.clock.off") :
       tf("mm.clockSet", [tcSet.base / 60]) + (tcSet.inc ? tf("mm.clockInc", [tcSet.inc]) : ""));
   };
   const onDiffClick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
-    if (!b || b.dataset.diff === difficulty) return;
-    difficulty = b.dataset.diff;
+    if (!b || b.dataset.diff === store.session.difficulty) return;
+    store.session.difficulty = b.dataset.diff;
     saveSettings();
     sync();
-    toast(t("m.66") + (DIFF_NAMES[difficulty] || difficulty));
+    toast(t("msg.setting.difficulty") + (DIFF_NAMES[store.session.difficulty] || store.session.difficulty));
   };
   document.getElementById("diff-seg").onclick = onDiffClick;
   const diffEngineSeg = document.getElementById("diff-seg-engine");
   if (diffEngineSeg) diffEngineSeg.onclick = onDiffClick;
   document.getElementById("persona-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-persona]");
-    if (!b || b.dataset.persona === personaId) return;
-    personaId = b.dataset.persona;
+    if (!b || b.dataset.persona === store.session.personaId) return;
+    store.session.personaId = b.dataset.persona;
     saveSettings();
     sync();
-    toast(t("m.personaSet") + t("persona." + personaId));
+    toast(t("m.personaSet") + t("persona." + store.session.personaId));
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
-    if (!b || b.dataset.color === humanColor) return;
+    if (!b || b.dataset.color === store.session.humanColor) return;
     invalidateEngine();
-    humanColor = b.dataset.color;
-    flipped = humanColor === "b";
+    store.session.humanColor = b.dataset.color;
+    store.game.flipped = store.session.humanColor === "b";
     saveSettings();
     sync();
-    toast(humanColor === "w" ? t("m.68") : t("m.69"));
+    toast(store.session.humanColor === "w" ? t("msg.side.whiteChosen") : t("msg.side.blackChosen"));
     maybeEngineTurn();
   };
   const langSeg = document.getElementById("lang-seg");
   if (langSeg) {
     langSeg.onclick = (ev) => {
       const b = ev.target.closest("button[data-lang]");
-      if (!b || !I18n || b.dataset.lang === langId) return;
-      langId = I18n.setLang(b.dataset.lang);
+      if (!b || !I18n || b.dataset.lang === store.ui.langId) return;
+      store.ui.langId = I18n.setLang(b.dataset.lang);
       saveSettings();
       applyLanguage();
       toast(t("mm.langSwitched"));
     };
   }
   document.getElementById("opt-coach").onclick = () => {
-    coachOn = !coachOn;
+    store.session.coachOn = !store.session.coachOn;
     saveSettings();
     syncSettingsUI();
-    toast(coachOn ? t("m.49") : t("m.50"));
+    toast(store.session.coachOn ? t("msg.coach.on") : t("msg.coach.off"));
   };
   document.getElementById("opt-autoflip").onclick = () => {
-    autoFlipPvp = !autoFlipPvp;
+    store.ui.autoFlipPvp = !store.ui.autoFlipPvp;
     if (syncAutoFlip()) draw();
     saveSettings();
     syncSettingsUI();
-    toast(autoFlipPvp ? t("m.51") : t("m.52"));
+    toast(store.ui.autoFlipPvp ? t("msg.autoflip.on") : t("msg.autoflip.off"));
   };
   document.getElementById("opt-sound").onclick = () => {
-    soundOn = !soundOn;
+    store.ui.soundOn = !store.ui.soundOn;
     saveSettings();
     syncSettingsUI();
-    if (soundOn) Audio2.playMove("w");
-    toast(soundOn ? t("m.47") : t("m.48"));
+    if (store.ui.soundOn) Audio2.playMove("w");
+    toast(store.ui.soundOn ? t("msg.sound.on") : t("msg.sound.off"));
   };
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
       { ok: t("dlg.clear"), cancel: t("act.cancel") }))) return;
-    try { Host.storageRemove(SAVE_KEY); } catch (_) {}
+    // Everything this app stored, from persist.js's key list — not the one key
+    // this button used to remove and not the eight somebody had to remember.
+    // 缺陷 33.
+    Persist.clearAll();
     // the Dock / jump list is local data too: clearing the save and leaving a
     // list of this player's PGNs sitting in the system menu is not "cleared"
     Host.clearRecentDocuments();
     stopEditor();
     invalidateEngine();
-    if (window.ChessEngine) window.ChessEngine.newGame();
+    if (ChessEngine) ChessEngine.newGame();
     gameReset();
-    selection = null;
-    viewIndex = 0;
-    resigned = null;
-    drawAgreed = false;
-    drawClaimed = null;
-    analysis = null;
-    statsRecordedSig = null;
+    store.game.selection = null;
+    store.game.viewIndex = 0;
+    store.game.resigned = null;
+    store.game.drawAgreed = false;
+    store.game.drawClaimed = null;
+    store.session.analysis = null;
+    store.game.recordedId = null;
     resetClocks();
     syncAutoFlip();
     sync();
-    toast(t("m.24"));
+    toast(t("msg.save.cleared"));
     maybeEngineTurn();
   };
 
   // --- editor + FEN wiring ---
   document.getElementById("editor-open").onclick = () => {
-    if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
     startEditor();
   };
   document.getElementById("fen-load-open").onclick = () => {
-    if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
     openFenModal();
   };
   document.getElementById("editor-palette").onclick = (ev) => {
     const b = ev.target.closest("button");
-    if (!b || !editor) return;
-    editor.brush = b.dataset.erase ? { color: "", type: "" }
+    if (!b || !store.session.editor) return;
+    store.session.editor.brush = b.dataset.erase ? { color: "", type: "" }
       : { color: b.dataset.color, type: b.dataset.type };
     renderEditorPalette();
   };
   document.getElementById("editor-turn").onclick = (ev) => {
     const b = ev.target.closest("button[data-turn]");
-    if (!b || !editor) return;
-    editor.turn = b.dataset.turn;
+    if (!b || !store.session.editor) return;
+    store.session.editor.turn = b.dataset.turn;
     syncEditorUI();
   };
   document.getElementById("editor-ep").onclick = (ev) => {
     const b = ev.target.closest("button[data-ep]");
-    if (!b || !editor) return;
-    editor.ep = b.dataset.ep || null;
+    if (!b || !store.session.editor) return;
+    store.session.editor.ep = b.dataset.ep || null;
     syncEditorUI();
   };
   document.getElementById("editor-castling").onclick = (ev) => {
     const b = ev.target.closest("button[data-cr]");
-    if (!b || !editor) return;
-    editor.castling[b.dataset.cr] = !editor.castling[b.dataset.cr];
+    if (!b || !store.session.editor) return;
+    store.session.editor.castling[b.dataset.cr] = !store.session.editor.castling[b.dataset.cr];
     syncEditorUI();
   };
   document.getElementById("editor-clear").onclick = () => {
-    if (!editor) return;
-    editor.board = window.ChessEditor.emptyBoard();
-    editor.castling = { K: false, Q: false, k: false, q: false };
+    if (!store.session.editor) return;
+    store.session.editor.board = ChessEditor.emptyBoard();
+    store.session.editor.castling = { K: false, Q: false, k: false, q: false };
     syncEditorUI();
     draw();
   };
   document.getElementById("editor-reset").onclick = () => {
-    if (!editor) return;
-    editor = Object.assign(
-      window.ChessEditor.fromFen(new Chess().fen(), Chess),
-      { brush: editor.brush }
+    if (!store.session.editor) return;
+    store.session.editor = Object.assign(
+      ChessEditor.fromFen(new Chess().fen(), Chess),
+      { brush: store.session.editor.brush }
     );
     syncEditorUI();
     draw();
@@ -5028,7 +5842,7 @@
   document.getElementById("editor-cancel").onclick = () => {
     stopEditor();
     sync();
-    toast(t("m.56"));
+    toast(t("msg.editor.cancelled"));
   };
   document.getElementById("editor-apply").onclick = () => { applyEditor(); };
 
@@ -5042,7 +5856,7 @@
         if (input) { input.value = (clip || "").trim(); input.classList.remove("bad"); }
         const err = document.getElementById("fen-error");
         if (err) err.textContent = "";
-      } catch (_) { toast(t("m.15")); }
+      } catch (_) { toast(t("msg.clipboard.readFailed"), "fault"); }
     };
     document.getElementById("fen-input").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") { ev.preventDefault(); submitFen(); }
@@ -5058,7 +5872,7 @@
   const slotsModal = document.getElementById("slots-modal");
   if (slotsModal) {
     document.getElementById("slots-open").onclick = () => {
-      if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+      if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
       openSlots();
     };
     document.getElementById("slots-close").onclick = closeSlots;
@@ -5080,25 +5894,25 @@
     const hres = document.getElementById("hist-result-seg");
     if (hres) hres.onclick = (ev) => {
       const b = ev.target.closest("button[data-hres]");
-      if (!b || b.dataset.hres === histFilter.result) return;
-      histFilter.result = b.dataset.hres;
+      if (!b || b.dataset.hres === store.ui.histFilter.result) return;
+      store.ui.histFilter.result = b.dataset.hres;
       renderHistory();
     };
     const hcol = document.getElementById("hist-color-seg");
     if (hcol) hcol.onclick = (ev) => {
       const b = ev.target.closest("button[data-hcol]");
-      if (!b || b.dataset.hcol === histFilter.color) return;
-      histFilter.color = b.dataset.hcol;
+      if (!b || b.dataset.hcol === store.ui.histFilter.color) return;
+      store.ui.histFilter.color = b.dataset.hcol;
       renderHistory();
     };
     const onHistClick = (ev) => {
       const b = ev.target.closest("button");
       if (!b) return;
       if (b.dataset.histPgn != null) {
-        const rec = histCache[Number(b.dataset.histPgn)];
+        const rec = store.session.histCache[Number(b.dataset.histPgn)];
         if (rec) copyText(historyPgn(rec), t("hist.pgnCopied"));
       } else if (b.dataset.hist != null) {
-        if (mode === "learn" || mode === "puzzle") { toast(t("m.59")); return; }
+        if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
         loadFromHistory(Number(b.dataset.hist));
       }
     };
@@ -5139,15 +5953,15 @@
 
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      if (promoModal && promoModal.classList.contains("show")) { finishPromotion(null); return; }
-      if (slotsModal && slotsModal.classList.contains("show")) { closeSlots(); return; }
-      if (histModal && histModal.classList.contains("show")) { closeHistory(); return; }
-      if (pickModal && pickModal.classList.contains("show")) { finishPick(null); return; }
-      if (fenModal && fenModal.classList.contains("show")) { closeFenModal(); return; }
-      if (confirmModal.classList.contains("show")) { finishConfirm(false); return; }
-      if (keysModal && keysModal.classList.contains("show")) { closeKeyHelp(); return; }
+      // The topmost dialog, whichever it is. This was seven
+      // `classList.contains("show")` tests in a fixed order, with the same
+      // seven listed again in dialogOpen(): adding an eighth meant editing two
+      // places, and ordering them wrong failed silently. Each dialog now says
+      // how it closes when it is built (see wireDialogs()), and Escape asks
+      // for the top of the stack. 缺陷 19.
+      if (Dlg.closeTop()) return;
       // before closing the panel — the panel holds the editor's only exit
-      if (editor) { stopEditor(t("m.55")); sync(); return; }
+      if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return; }
       if (isPanelOpen()) setPanelOpen(false);
       return;
     }
@@ -5180,31 +5994,31 @@
     // move anywhere by keyboard — the app had a full keyboard board cursor and
     // no way to reach any other control. The panel is on P instead.
     if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
-    if (mode === "learn") {
+    if (store.session.mode === "learn") {
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills
-      if (!learn || ev.metaKey || ev.ctrlKey) return;
+      if (!store.session.learn || ev.metaKey || ev.ctrlKey) return;
       if (k === "r") { startLearnTask(); toast(t("lm.restarted")); }
       else if (k === "z") learnUndo();
       else if (k === "h") learnHint();
       return;
     }
-    if (mode === "puzzle") {
-      if (!puzzle || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { startPuzzleAt(puzzle.cat, puzzle.idx); toast(t("pz.restarted")); }
+    if (store.session.mode === "puzzle") {
+      if (!store.session.puzzle || ev.metaKey || ev.ctrlKey) return;
+      if (k === "r") { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
       else if (k === "n") nextPuzzle();
       else if (k === "h") showPuzzleAnswer();
       return;
     }
-    if (ev.key === "ArrowLeft") { ev.preventDefault(); setViewIndex(viewIndex - 1); }
-    else if (ev.key === "ArrowRight") { ev.preventDefault(); setViewIndex(viewIndex + 1); }
+    if (ev.key === "ArrowLeft") { ev.preventDefault(); setViewIndex(store.game.viewIndex - 1); }
+    else if (ev.key === "ArrowRight") { ev.preventDefault(); setViewIndex(store.game.viewIndex + 1); }
     else if (ev.key === "Home") { ev.preventDefault(); setViewIndex(0); }
     else if (ev.key === "End") { ev.preventDefault(); setViewIndex(sanHistory().length); }
     else if (k === "z" && !ev.metaKey && !ev.ctrlKey) undo();
     else if (k === "n" && !ev.metaKey && !ev.ctrlKey) requestNewGame();
     else if (k === "h" && !ev.metaKey && !ev.ctrlKey) requestHint();
     else if (k === "f" && !ev.metaKey && !ev.ctrlKey) {
-      flipped = !flipped; saveSettings(); draw();
+      store.game.flipped = !store.game.flipped; saveSettings(); draw();
     }
   });
 
@@ -5214,19 +6028,21 @@
     draw();
     drawEvalCurve();
   });
-  // The panel toggle animates #board-wrap over 280ms; a one-shot resize at
-  // toggle time samples a mid-transition rect and leaves the backing store
-  // mismatched with the CSS size (whole board rendered scaled = blurry).
-  // Track the canvas size continuously instead.
+  // Track the canvas size continuously, so the backing store never disagrees
+  // with the CSS size (a whole board rendered scaled reads as blurry).
+  //
+  // There used to be an `else` here listening for transitionend on
+  // #board-wrap's width/height, described in its own comment as the fallback
+  // for environments without ResizeObserver. Those properties are
+  // deliberately not transitioned — see the note in styles.css, the board
+  // snaps to its new size on purpose — so the event never fired and the
+  // branch was dead from the day it was written: the comment was older than
+  // the CSS it described. Defect 11. Nothing replaces it, because nothing was
+  // there: setPanelOpen() already re-samples on the next frame (the new size
+  // is final immediately, precisely because there is no transition), and the
+  // window resize handler covers the rest.
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
-  } else {
-    document.getElementById("board-wrap").addEventListener("transitionend", (ev) => {
-      if (ev.propertyName === "width" || ev.propertyName === "height") {
-        BoardView.resizeCanvas();
-        draw();
-      }
-    });
   }
   window.addEventListener("beforeunload", () => saveGame());
   window.addEventListener("pagehide", () => saveGame());
@@ -5243,28 +6059,58 @@
   // because the very first thing a new player saw was a 1700-rated Stockfish
   // (mode "ai" + difficulty "normal" are the code defaults) with nothing at all
   // pointing at the interactive course or the Beginner tier built for them.
-  const firstRun = !Host.storageGet(SETTINGS_KEY) && !Host.storageGet(SAVE_KEY) &&
-    !Host.storageGet(LEARN_KEY) && !Host.storageGet(PUZZLE_KEY);
+  /**
+   * How each dialog is dismissed.
+   *
+   * One line per dialog, next to the other one-block-of-wiring in this file.
+   * Escape reads this; nothing else has to know the list, and nothing has to
+   * keep it in an order.
+   */
+  function wireDialogs() {
+    Dlg.register(promoModal, () => finishPromotion(null));
+    Dlg.register(document.getElementById("slots-modal"), closeSlots);
+    Dlg.register(document.getElementById("hist-modal"), closeHistory);
+    Dlg.register(pickModal, () => finishPick(null));
+    Dlg.register(fenModal, closeFenModal);
+    Dlg.register(confirmModal, () => finishConfirm(false));
+    Dlg.register(keysModal, closeKeyHelp);
+  }
+  wireDialogs();
+
+  // Views listen from here on. Wired before any state is loaded, so the first
+  // sync() below paints a screen that already agrees with the restored game
+  // rather than one that agrees with the defaults.
+  wireViews();
+
+  const firstRun = !Persist.get("settings") && !Persist.get("save") &&
+    !Persist.get("learn") && !Persist.get("puzzles");
   // and on a first run, start in the system language rather than always Chinese
-  if (firstRun && I18n && I18n.detectLang) langId = I18n.setLang(I18n.detectLang());
+  if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
-  document.documentElement.setAttribute("data-theme", themeId);
-  if (I18n) { I18n.setLang(langId); I18n.apply(document); }
-  const savedPanel = Host.storageGet(PANEL_KEY);
+  document.documentElement.setAttribute("data-theme", store.ui.themeId);
+  document.documentElement.setAttribute("data-board", store.ui.themeId);
+  if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
+  const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
-  setSideTab(sideTab);
+  setSideTab(store.ui.sideTab);
   const resumed = tryLoadSave();
-  if (resumed) toast(t("m.25"));
+  if (resumed) toast(t("msg.save.restored"));
   // a resumed finished game must not be re-counted on the next live move
-  if (resumed && naturalGameOver()) statsRecordedSig = game.pgn();
-  if (resumed && resigned) statsRecordedSig = game.pgn() + "#resigned";
-  if (resumed && drawAgreed) statsRecordedSig = game.pgn() + "#drawAgreed";
-  if (resumed && drawClaimed) statsRecordedSig = game.pgn() + "#claimed";
+  // A restored game that is already over was filed when it ended; marking it
+  // recorded stops the launch path filing it a second time. The id is unknown
+  // here (it is in the stats file, not the save), and a sentinel is enough:
+  // all this flag decides is "do not record again".
+  if (resumed && naturalGameOver()) store.game.recordedId = RESTORED_AND_FILED;
+  // …and the same for the three app-level endings, which naturalGameOver()
+  // does not see: a resigned game is not over by its moves.
+  if (resumed && (store.game.resigned || store.game.drawAgreed || store.game.drawClaimed)) {
+    store.game.recordedId = RESTORED_AND_FILED;
+  }
   // clock preset chosen but no saved clock state → fresh clocks
-  if (timeControl !== "off" && !clock) resetClocks();
+  if (store.game.timeControl !== "off" && !store.game.clock) resetClocks();
   syncAutoFlip(); // a resumed pvp game must face whoever is on move
-  if (mode === "learn") startLearn();
-  if (mode === "puzzle") startPuzzles();
+  if (store.session.mode === "learn") startLearn();
+  if (store.session.mode === "puzzle") startPuzzles();
   BoardView.resizeCanvas();
   renderStats();
   renderAchievements();
@@ -5272,10 +6118,9 @@
   sync();
   saveSettings();
   if (!resumed) saveGame();
-  if (mode === "ai" && window.ChessEngine) {
-    window.ChessEngine.init().catch(() => toast(t("mm.engineInitFailed")));
+  if (store.session.mode === "ai" && ChessEngine) {
+    ChessEngine.init().catch(() => toast(t("mm.engineInitFailed"), "fault"));
     maybeEngineTurn(); // resumed save may leave the engine on move
   }
   if (firstRun) runOnboarding();
 
-})();

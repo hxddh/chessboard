@@ -86,23 +86,20 @@ const LANGS = ["zh-CN", "en", "ja"];
 {
   for (const lang of LANGS) {
     const { ctx, page, errs } = await open(lang, "ai", "setup");
+    // The "are these buttons the same width" measurement moved to
+    // test-chess.mjs (P2.8): equal widths are a consequence of the wrapped
+    // segment being a grid with shared columns, and that is one declaration,
+    // checkable in milliseconds and in every language at once. What a browser
+    // is still needed for is whether the rows are *there* and whether opening
+    // the panel in this language throws.
+    // the game settings fold shut by default since P3.2 — open it, that is
+    // where the wrapped segments live
     const rows = await page.evaluate(() => {
-      const out = [];
-      for (const row of document.querySelectorAll(".theme-row.wrap")) {
-        if (!row.offsetParent) continue; // hidden rows have no layout to judge
-        const w = [...row.children].map((b) => Math.round(b.getBoundingClientRect().width));
-        if (w.length > 1) out.push({ id: row.id || row.className, w });
-      }
-      return out;
+      const f = document.getElementById("fold-game");
+      if (f) f.open = true;
+      return [...document.querySelectorAll(".theme-row.wrap")].filter((r) => r.offsetParent).length;
     });
-    assert(rows.length > 0, lang + ": there are wrapped rows on screen to measure");
-    for (const r of rows) {
-      const max = Math.max(...r.w), min = Math.min(...r.w);
-      // auto-fit columns are equal up to sub-pixel rounding; the old bug made
-      // one button 3x its neighbours, so 2px of slack is plenty of margin
-      assert(max - min <= 2,
-        lang + ": #" + r.id + " buttons are all one size — " + r.w.join("/"));
-    }
+    assert(rows > 0, lang + ": the wrapped segments are on screen (" + rows + ")");
     assert(errs.length === 0, lang + ": no JS exception — " + errs.join(" / "));
     await ctx.close();
   }
@@ -140,10 +137,13 @@ const LANGS = ["zh-CN", "en", "ja"];
 // starts *above* them and a reader who knows the word "novice" will read it
 // as the weaker of the two.
 {
+  // The top rung is 不限档 / Unrated / 無制限 since P5.8: 「满强度」 promised
+  // unlimited strength and read as unlimited time, while the search is still
+  // 1.2 seconds a move like every other tier. 缺陷 31.
   const EXPECT = {
-    "zh-CN": { spar: ["新手", "休闲"], engine: ["初级", "中级", "高级", "满强度"] },
-    en: { spar: ["Gentle", "Casual"], engine: ["Novice", "Intermediate", "Advanced", "Full strength"] },
-    ja: { spar: ["やさしい", "お気軽"], engine: ["初級", "中級", "上級", "フルパワー"] },
+    "zh-CN": { spar: ["新手", "休闲"], engine: ["初级", "中级", "高级", "不限档"] },
+    en: { spar: ["Gentle", "Casual"], engine: ["Novice", "Intermediate", "Advanced", "Unrated"] },
+    ja: { spar: ["やさしい", "お気軽"], engine: ["初級", "中級", "上級", "無制限"] },
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");
@@ -165,6 +165,226 @@ const LANGS = ["zh-CN", "en", "ja"];
       lang + ": the engine ladder is the reviewed one — " + labels.engine.join(" / "));
     await ctx.close();
   }
+}
+
+// --- 3b. navigation is two layers, not three ------------------------------
+// The panel used to stack three: the mode row, the tab row, and the section
+// headings inside a pane. The first two deliberately shared one underline
+// vocabulary — which solved "learn the selected state twice" and left two rows
+// that look identical, one meaning "change product" and one "change view".
+// Mode is an application-level switch now (P3.1), so it sits in the chrome and
+// the panel has one navigation row.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const where = await page.evaluate(() => {
+    const seg = document.getElementById("mode-seg");
+    return {
+      inChrome: !!(seg && seg.closest(".chrome")),
+      inPanel: !!(seg && seg.closest(".side")),
+      navRowsInPanel: document.querySelectorAll(".side .mode-nav, .side .side-tabs").length,
+    };
+  });
+  assert(where.inChrome, "the mode switch is application-level, in the chrome");
+  assert(!where.inPanel, "…and not in the panel any more");
+  assert(where.navRowsInPanel === 1,
+    "the panel has one navigation row, not two (" + where.navRowsInPanel + ")");
+
+  // …and the chrome carries one meaning per element: mode, whose move, the
+  // actions for right now, the panel toggle. The wordmark and the unlabelled
+  // move counter are gone.
+  const chrome = await page.evaluate(() => ({
+    brand: document.querySelectorAll(".chrome .brand").length,
+    counter: document.querySelectorAll(".chrome #moves").length,
+    pill: (document.getElementById("status") || {}).textContent || "",
+  }));
+  assert(chrome.brand === 0, "the wordmark is gone from the chrome");
+  assert(chrome.counter === 0, "…and so is the unlabelled move counter");
+  assert(chrome.pill.length <= 16,
+    "the status pill holds a phrase, not a sentence (" + chrome.pill.length + " chars: " + chrome.pill + ")");
+  await ctx.close();
+}
+
+// --- 3c. the spine: the game is still readable with the panel shut ---------
+// Closing the panel used to take whose-move, the clocks, the last move and the
+// material difference with it, and leave the board on a plain colour — which is
+// the state a small window plays in permanently. P3.6.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const shut = await page.evaluate(async () => {
+    document.getElementById("toggle-panel").click();
+    await new Promise((r) => setTimeout(r, 300));
+    const s = document.getElementById("spine");
+    return { hidden: s.hidden, turn: document.getElementById("spine-turn").textContent };
+  });
+  assert(!shut.hidden, "the spine appears when the panel closes");
+  assert(shut.turn.trim().length > 0, "…and says whose move it is — " + shut.turn);
+  const open2 = await page.evaluate(async () => {
+    document.getElementById("toggle-panel").click();
+    await new Promise((r) => setTimeout(r, 300));
+    return document.getElementById("spine").hidden;
+  });
+  assert(open2, "…and stands down when the panel is back: the panel says it all in more detail");
+  await ctx.close();
+}
+
+// --- 3d. no visible control is disabled -----------------------------------
+// P3's acceptance criterion, and P3.3's whole content. At 0 moves twelve
+// visible controls were explicitly disabled — take back, the five replay keys,
+// resume-from-here, copy PGN, export, offer draw, claim draw, resign, plus
+// analyse and deep-analyse. A disabled control is a promise the interface is
+// not keeping: it occupies the layout, it names an action, and it does
+// nothing. Grouping actions by tense means the ones that cannot apply are not
+// there at all.
+//
+// Confirmation buttons are the stated exception — a destructive action asking
+// "are you sure" may hold its confirm until the box is read.
+for (const [when, setup] of [
+  ["开局前", async () => {}],
+  ["进行中", async (page) => {
+    // two plies, played through the board like a person would
+    for (const sq of ["e2", "e4", "e7", "e5"]) {
+      const c = await page.evaluate((s2) => {
+        const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+        const f = s2.charCodeAt(0) - 97, rk = 8 - Number(s2[1]);
+        return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+      }, sq);
+      await page.mouse.click(c.x, c.y);
+      await page.waitForTimeout(120);
+    }
+  }],
+]) {
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  await setup(page);
+  await page.waitForTimeout(400);
+  const bad = await page.evaluate(() => {
+    const out = [];
+    for (const b of document.querySelectorAll("button, input, select")) {
+      if (!b.disabled) continue;
+      if (!b.offsetParent && getComputedStyle(b).position !== "fixed") continue; // not rendered
+      if (b.closest(".modal-bg")) continue;                                      // a dialog's own controls
+      out.push(b.id || b.textContent.trim().slice(0, 12) || b.className);
+    }
+    return out;
+  });
+  for (const b of bad) console.error("  visible but disabled: " + b);
+  assert(bad.length === 0,
+    when + ":屏幕上没有被禁用的可见控件" + (bad.length ? " —— " + bad.join(", ") : ""));
+  await ctx.close();
+}
+
+// --- 3h. nothing is truncated, in any language, on any theme --------------
+// P4.7, as a gate rather than a review: after a remake, the thing that breaks
+// first is a label that fits in the language it was designed in. A clipped
+// label is detectable — scrollWidth exceeds clientWidth — so it need not be
+// looked for by eye. The status pill is exempt: it ellipsizes on purpose.
+for (const lang of LANGS) {
+  for (const theme of ["wood", "day"]) {
+    const { ctx, page } = await open(lang, "ai", "setup");
+    await page.evaluate((th) => {
+      document.documentElement.setAttribute("data-theme", th);
+      const f = document.getElementById("fold-game");
+      if (f) f.open = true;
+    }, theme);
+    await page.waitForTimeout(250);
+    const clipped = await page.evaluate(() => {
+      const out = [];
+      for (const e of document.querySelectorAll("button, .setting-k, .side-h, .act-k, .vs-role")) {
+        if (!e.offsetParent) continue;
+        if (e.id === "status" || e.closest("#status")) continue;   // ellipsizes on purpose
+        if (e.classList.contains("switch")) continue;              // a knob, not a label
+        if (e.scrollWidth > e.clientWidth + 1) {
+          out.push((e.id || e.textContent.trim().slice(0, 14)) + " " + e.scrollWidth + ">" + e.clientWidth);
+        }
+      }
+      return out;
+    });
+    for (const c of clipped) console.error("  clipped: " + c);
+    assert(clipped.length === 0,
+      lang + "/" + theme + ":没有被裁掉的标签" + (clipped.length ? " —— " + clipped.join(", ") : ""));
+    await ctx.close();
+  }
+}
+
+// --- 3g. the reading modes get a reading layout ---------------------------
+// 72 lessons of prose in a 284px panel wrapped at about twenty characters a
+// line, with the text, the task, three controls and the entire table of
+// contents stacked in that one column. P3.5.
+{
+  const { ctx, page } = await open("zh-CN", "learn", "play");
+  await page.waitForTimeout(400);
+  const st = await page.evaluate(() => {
+    const side = document.getElementById("side");
+    const idx = document.querySelector("#sec-learn .reading-index");
+    return {
+      mode: document.getElementById("app").getAttribute("data-mode"),
+      width: Math.round(side.getBoundingClientRect().width),
+      indexFolded: idx ? !idx.open : null,
+      indexItemsVisible: idx ? [...idx.querySelectorAll("button, .lesson-row")].filter((b) => b.offsetParent).length : -1,
+      taskOwnSurface: !!document.querySelector("#lesson-task"),
+    };
+  });
+  assert(st.mode === "learn", "the app says which mode it is in, so the layout can follow");
+  assert(st.width >= 340, "the reading column is wider than the playing one (" + st.width + "px)");
+  assert(st.indexFolded, "the table of contents is folded away by default");
+  assert(st.indexItemsVisible === 0,
+    "…so 72 lessons are not stacked under the one you are reading (" + st.indexItemsVisible + ")");
+  assert(st.taskOwnSurface, "the task sits on its own surface, apart from the prose");
+  await ctx.close();
+}
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const w = await page.evaluate(() => Math.round(document.getElementById("side").getBoundingClientRect().width));
+  assert(w <= 300, "…and the playing layout is exactly where it was (" + w + "px)");
+  await ctx.close();
+}
+
+// --- 3f. settings read as a summary, and open on request ------------------
+// Eighteen equal-weight buttons stood open permanently — six difficulties,
+// four sparring styles, two colours, six clocks — in front of someone who
+// mostly wants to know what the current ones are. P3.2.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  const st = await page.evaluate(() => {
+    const f = document.getElementById("fold-game");
+    const shut = { open: f.open, text: document.getElementById("game-summary").textContent,
+      visibleButtons: [...f.querySelectorAll("button")].filter((b) => b.offsetParent).length };
+    f.open = true;
+    return { shut, openButtons: [...f.querySelectorAll("button")].filter((b) => b.offsetParent).length };
+  });
+  assert(!st.shut.open, "the game settings start folded");
+  assert(st.shut.visibleButtons === 0, "…so none of the buttons is on screen (" + st.shut.visibleButtons + ")");
+  assert(st.openButtons >= 14, "…and they are all there when you open it (" + st.openButtons + ")");
+  // the summary has to actually say the four things
+  const parts = st.shut.text.split(" · ").filter(Boolean);
+  assert(parts.length >= 3,
+    "the summary reads the current settings in one line — “" + st.shut.text + "”");
+  await ctx.close();
+}
+
+// --- 3e. destructive actions are in one place, off the playing screen -----
+// Four unrecoverable actions in four locations under three different words for
+// "destroy" — 清除存档 pinned in red at the foot of the panel, 重置 in the
+// lesson header, 清零 in the statistics header, 认输 in the game group — all of
+// them permanent furniture a stray click away while you play. P3.7.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const found = await page.evaluate(() => {
+    const danger = [...document.querySelectorAll(".text-link.danger, .danger")]
+      .filter((b) => b.tagName === "BUTTON");
+    return {
+      onPlayTab: danger.filter((b) => b.closest("#pane-play") && b.offsetParent).map((b) => b.id),
+      inFoot: document.querySelectorAll(".side-foot").length,
+      grouped: [...document.querySelectorAll("#pane-setup .text-link.danger")].map((b) => b.id).sort(),
+    };
+  });
+  assert(found.inFoot === 0, "nothing irreversible is pinned to the foot of the panel");
+  assert(JSON.stringify(found.grouped) === JSON.stringify(["clear-save", "learn-reset", "stats-clear"]),
+    "the three data deletions live together under one heading — " + found.grouped.join(", "));
+  // resign is the exception, and it is a move rather than a deletion: it stays
+  // with the game, and P3.3 already made it present only while one is running
+  assert(found.onPlayTab.every((id) => id === "btn-resign"),
+    "the play tab carries no deletion — " + found.onPlayTab.join(", "));
+  await ctx.close();
 }
 
 // --- 4. the tab row holds tabs only ---------------------------------------

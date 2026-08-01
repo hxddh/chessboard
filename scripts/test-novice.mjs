@@ -29,10 +29,12 @@
 //             recapture; that is about as much as a raw beginner sees
 import fs from 'fs'; import path from 'path'; import vm from 'vm';
 import { createRequire } from 'module';
+import { compileModuleSync } from "./bundle.mjs";
+import { record, RECORDING } from "./measurements.mjs";
 const require = createRequire(import.meta.url);
 const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const ctx = { console }; ctx.globalThis = ctx; ctx.window = ctx; vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/web/js/chess.js'), 'utf8'), ctx, { filename: 'chess.js' });
+vm.runInContext(compileModuleSync(path.join(ROOT, 'src/web/js/chess.js')), ctx, { filename: "module" });
 const Chess = ctx.Chess;
 
 const L = [];
@@ -58,15 +60,17 @@ const arg = (name, dflt) => {
   const hit = process.argv.find((a) => a.startsWith('--' + name + '='));
   return hit ? hit.slice(name.length + 3) : dflt;
 };
-// the tier definition is engine.js's, not a copy — a re-calibration there has
-// to show up here rather than being quietly measured against stale numbers
-const eng = fs.readFileSync(path.join(ROOT, 'src/web/js/engine.js'), 'utf8');
+// The tier definition AND the rule that picks among its candidates are
+// engine.js's, not a copy: the tier row used to be scraped out of the source
+// text with a regex and the sampling re-typed below, so this script measured
+// its own transcription of the thing it was measuring.
+const engCtx = { console }; engCtx.globalThis = engCtx; engCtx.window = engCtx; vm.createContext(engCtx);
+vm.runInContext(compileModuleSync(path.join(ROOT, 'src/web/js/engine.js')), engCtx, { filename: "module" });
 const TIER_NAME = arg('tier', 'beginner');
-const row = new RegExp('\\n\\s*' + TIER_NAME + ': \\{([^}]*)\\}').exec(eng);
-if (!row) { console.error('engine.js 里没有 ' + TIER_NAME + ' 这一档'); process.exit(1); }
-const num = (k, d) => { const m = new RegExp(k + ':\\s*([\\d.]+)').exec(row[1]); return m ? Number(m[1]) : d; };
-const TIER = { skill: num('skill', 0), depth: num('depth', 2), multipv: num('multipv', 10), worstBias: num('worstBias', 0) };
-if (num('elo', 0)) { console.log(TIER_NAME + ' 是按 Elo 限强的档位,这个脚本只量手工削弱的档'); process.exit(0); }
+const TIER = engCtx.ChessEngine.TIERS[TIER_NAME];
+if (!TIER) { console.error('engine.js 里没有 ' + TIER_NAME + ' 这一档'); process.exit(1); }
+const pickCandidate = engCtx.ChessEngine.pickCandidate;
+if (TIER.elo != null) { console.log(TIER_NAME + ' 是按 Elo 限强的档位,这个脚本只量手工削弱的档'); process.exit(0); }
 console.log(TIER_NAME + ' 档参数(读自 engine.js):', JSON.stringify(TIER));
 let configured = false;
 async function beginnerMove(fen) {
@@ -95,12 +99,7 @@ async function beginnerMove(fen) {
   L.splice(L.indexOf(collect), 1);
   const list = [...lines.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
   if (!list.length) { const u = bm.split(/\s+/)[1]; return u && u !== '(none)' ? u : null; }
-  const scored = list.filter((c) => c.score != null);
-  if (scored.length && scored[0].score >= 1e5 - 50) return list[0].uci;   // keep a found mate
-  if (TIER.worstBias && rnd() < TIER.worstBias && scored.length) {
-    return scored.reduce((a, b) => (b.score < a.score ? b : a)).uci;
-  }
-  return list[Math.floor(rnd() * list.length)].uci;
+  return pickCandidate(list, TIER, rnd) || list[0].uci;
 }
 
 const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
@@ -152,6 +151,7 @@ async function playGame(careful, noviceIsWhite) {
 }
 
 const N = Number(arg('games', process.env.GAMES || 20));
+const measured = {};
 for (const careful of (process.env.ONLY_CAREFUL ? [true] : [false, true])) {
   const label = careful ? '不一步送子的随机手' : '纯随机手';
   const tally = { win: 0, draw: 0, loss: 0 };
@@ -160,7 +160,21 @@ for (const careful of (process.env.ONLY_CAREFUL ? [true] : [false, true])) {
     tally[r]++;
     process.stdout.write(`\r  ${label}: ${i + 1}/${N}  胜${tally.win} 和${tally.draw} 负${tally.loss}   `);
   }
-  const score = ((tally.win + tally.draw / 2) / N * 100).toFixed(0);
+  const score = Number(((tally.win + tally.draw / 2) / N * 100).toFixed(0));
   console.log(`\n  ${label} 对 ${TIER_NAME} 档 ${N} 盘: 胜 ${tally.win} · 和 ${tally.draw} · 负 ${tally.loss}  → 得分率 ${score}%`);
+  measured[careful ? 'careful' : 'random'] = { games: N, ...tally, scorePct: score };
+}
+
+// --record writes docs/measured.json, which README and engine.js quote. The
+// tier settings go in beside the result: a score rate is only meaningful next
+// to the parameters that produced it, and `worstBias` 0.6 vs 0.2 is exactly
+// the pair of runs that got mixed up before this file existed.
+if (RECORDING) {
+  const prev = (await import('./measurements.mjs')).read().noviceScore || { tiers: {} };
+  record('noviceScore', {
+    what: '一个只会「不一步送子」的随机机器人对下削弱档,得分率 = (胜 + 和/2) / 盘数',
+    script: 'scripts/test-novice.mjs --record --tier <id> --games <n>',
+    tiers: { ...(prev.tiers || {}), [TIER_NAME]: { settings: TIER, ...measured } },
+  });
 }
 process.exit(0);

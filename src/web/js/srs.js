@@ -17,7 +17,6 @@
  * during a long session.
  * @module srs
  */
-(function (global) {
   /** consecutive clean solves needed before a puzzle leaves the review queue */
   const GRADUATE = 2;
 
@@ -77,5 +76,4 @@
     return e ? [e.s, GRADUATE] : [GRADUATE, GRADUATE];
   }
 
-  global.ChessSrs = { GRADUATE, entry, onMiss, onSolve, isDue, order, progress };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessSrs = { GRADUATE, entry, onMiss, onSolve, isDue, order, progress };

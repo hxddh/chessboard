@@ -1,0 +1,22 @@
+{
+  "name": "chessboard",
+  "version": "1.25.0",
+  "private": true,
+  "description": "国际象棋 Chessboard — Native SDK WebView + Canvas 的检查与代码生成脚本",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/bundle.mjs",
+    "test": "npm run test:static && npm run test:e2e",
+    "test:static": "node scripts/test-chess.mjs && node scripts/manifest-check.mjs",
+    "test:e2e": "node scripts/test-board-e2e.mjs && node scripts/test-clock-e2e.mjs && node scripts/test-content-e2e.mjs && node scripts/test-persist-e2e.mjs && node scripts/test-review-e2e.mjs && node scripts/test-layout-e2e.mjs",
+    "test:engine": "node scripts/test-openings.mjs && node scripts/test-tactics.mjs && node scripts/test-novice.mjs && node scripts/test-strength.mjs && node scripts/test-analysis.mjs",
+    "gen:engine": "node scripts/gen-engine-src.mjs",
+    "gen:manifest": "node scripts/gen-manifest.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

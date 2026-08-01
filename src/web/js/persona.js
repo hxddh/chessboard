@@ -36,7 +36,6 @@
  * learned. Forced mates are never traded away — see `pick`.
  * @module persona
  */
-(function (global) {
   const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
   /**
@@ -159,5 +158,4 @@
     return bestMove;
   }
 
-  global.ChessPersona = { IDS, SLACK, pick, score };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessPersona = { IDS, SLACK, pick, score };

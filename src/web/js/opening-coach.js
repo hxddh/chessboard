@@ -21,7 +21,6 @@
  * drills run without the engine.
  * @module opening-coach
  */
-(function (global) {
   const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
   const CENTRE = { d4: 1, e4: 1, d5: 1, e5: 1 };
   const MINOR = { n: 1, b: 1 };
@@ -151,5 +150,4 @@
     return { key: "opc.generic", vals: [] };
   }
 
-  global.ChessOpeningCoach = { critique, hanging, VALUE };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessOpeningCoach = { critique, hanging, VALUE };

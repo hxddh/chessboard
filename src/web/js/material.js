@@ -17,7 +17,6 @@
  *   promotions played so far are folded into the expected counts first.
  * @module material
  */
-(function (global) {
   /** classical piece values, in pawns; the king is not counted */
   const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
   /** display order: biggest prize first */
@@ -71,5 +70,4 @@
     return { w: taken("b"), b: taken("w"), diff: diff(now) };
   }
 
-  global.ChessMaterial = { VALUE, ORDER, count, diff, summary };
-})(typeof window !== "undefined" ? window : globalThis);
+  export const ChessMaterial = { VALUE, ORDER, count, diff, summary };
