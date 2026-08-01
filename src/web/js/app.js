@@ -467,20 +467,54 @@ import { createStore } from "./store.js";
    * @param {"ok"|"fix"|"fault"} [tier]
    */
   const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+  function dismissToast() {
+    const el = document.getElementById("toast");
+    if (!el) return false;
+    if (!el.classList.contains("show")) return false;
+    el.classList.remove("show");
+    if (store.ui.toastTimer) { clearTimeout(store.ui.toastTimer); store.ui.toastTimer = null; }
+    return true;
+  }
+
   function toast(msg, tier) {
     const el = document.getElementById("toast");
     if (!el) return;
     const kind = TOAST_MS[tier] === undefined ? "ok" : tier;
-    el.textContent = msg;
+    const ms = TOAST_MS[kind];
+    // The live region has to be told how loudly to speak *before* the text
+    // lands in it. Until 2.1.1 it was told nothing at all: no role, no
+    // aria-live, on the element that carries all 110 of this app's messages —
+    // including 「引擎启动失败」. The board beside it has had a live region
+    // since the keyboard move work, and the storage banner sets role=alert
+    // explicitly; only the tier in between was silent.
+    el.setAttribute("role", ms ? "status" : "alert");
+    el.setAttribute("aria-live", ms ? "polite" : "assertive");
+    el.replaceChildren();
+    const text = document.createElement("span");
+    text.textContent = msg;
+    el.appendChild(text);
+    // A fault does not leave on its own, which is right — a fault that
+    // disappears is a fault nobody was told about. What was wrong is the way
+    // out: the docblock above says it "gets a close button", and it never had
+    // one. It had a click handler on a div that is not focusable, so the only
+    // exit was a mouse landing somewhere the pointer shape was the only hint
+    // about — and Esc, which closes every other transient thing in this app,
+    // did nothing. Meanwhile it sits over the board's back rank.
+    if (!ms) {
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "toast-close";
+      close.textContent = "✕";
+      close.setAttribute("aria-label", t("act.close"));
+      close.onclick = dismissToast;
+      el.appendChild(close);
+    }
     el.classList.remove("t-ok", "t-fix", "t-fault");
     el.classList.add("show", "t-" + kind);
     if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
     store.ui.toastTimer = null;
-    const ms = TOAST_MS[kind];
     if (ms) store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), ms);
-    // a fault stays until it is dismissed, so it needs a way out that is not
-    // "wait" — clicking it anywhere will do
-    el.onclick = ms ? null : () => el.classList.remove("show");
+    el.onclick = ms ? null : dismissToast;
     el.style.cursor = ms ? "" : "pointer";
   }
 
@@ -6043,6 +6077,9 @@ import { createStore } from "./store.js";
       // how it closes when it is built (see wireDialogs()), and Escape asks
       // for the top of the stack. 缺陷 19.
       if (Dlg.closeTop()) return;
+      // a fault toast is the only other thing on screen that stays until it is
+      // told to go, and Escape is what this app means by "make it go"
+      if (dismissToast()) return;
       // before closing the panel — the panel holds the editor's only exit
       if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return; }
       if (isPanelOpen()) setPanelOpen(false);

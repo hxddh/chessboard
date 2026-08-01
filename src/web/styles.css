@@ -1348,6 +1348,17 @@
       transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    /* the message and its exit sit on one line; only the fault tier has an exit */
+    .toast { display: flex; align-items: center; gap: 8px; }
+    .toast-close {
+      appearance: none; border: 0; background: transparent;
+      color: inherit; font: inherit; font-size: 12px; line-height: var(--lh-tight);
+      width: 20px; height: 20px; flex: none;
+      display: grid; place-items: center;
+      border-radius: 999px; cursor: pointer; opacity: 0.75;
+      transition: opacity var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
+    }
+    .toast-close:hover { opacity: 1; background: rgba(255,255,255,.18); }
     /* Three tiers — see toast() in app.js. Same shape, three voices:
        a receipt, a correction, and a fault that does not leave on its own. */
     .toast.t-fix {

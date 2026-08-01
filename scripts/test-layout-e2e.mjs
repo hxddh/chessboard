@@ -903,6 +903,92 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   await ctx.close();
 }
 
+// --- 3t. the message strip speaks, and the one that stays can be sent away -
+// #toast carries all 110 of this app's messages, including 「引擎启动失败」,
+// and had no role and no aria-live — while the board beside it has had a live
+// region since the keyboard work and the storage banner sets role=alert
+// explicitly. And the fault tier, the one that deliberately does not leave on
+// its own, had no way out but a mouse landing on a div: not focusable, no ✕
+// (the docblock said there was one), and Escape — which closes everything else
+// transient in this app — did nothing, while it sat over the board's back rank.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  // the stubbed engine makes 提示 fail, which is a real fault through the real
+  // code path rather than a synthetic one
+  await page.click("#btn-hint").catch(() => {});
+  await page.waitForTimeout(900);
+  const t = await page.evaluate(() => {
+    const el = document.getElementById("toast");
+    const close = el.querySelector(".toast-close");
+    if (close) close.focus();
+    return {
+      shown: el.classList.contains("show"),
+      fault: el.classList.contains("t-fault"),
+      role: el.getAttribute("role"),
+      live: el.getAttribute("aria-live"),
+      hasClose: !!close,
+      closeNamed: !!(close && (close.getAttribute("aria-label") || "").trim()),
+      closeFocused: !!close && document.activeElement === close,
+    };
+  });
+  assert(t.shown && t.fault, "a failed hint raises a fault toast — " + JSON.stringify(t));
+  assert(t.role === "alert" && t.live === "assertive",
+    "…that a screen reader is told about (" + t.role + "/" + t.live + ")");
+  assert(t.hasClose && t.closeNamed && t.closeFocused,
+    "…with a close control that is focusable and named");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  assert(await page.evaluate(() => !document.getElementById("toast").classList.contains("show")),
+    "…and Escape sends it away, like everything else transient here");
+  // the receipt tier is polite, not assertive: it must not interrupt
+  const ok = await page.evaluate(async () => {
+    document.getElementById("theme-seg") || 0;
+    document.getElementById("tab-setup").click();
+    await new Promise((r) => setTimeout(r, 300));
+    document.querySelector('#theme-seg button[data-theme="night"]').click();
+    await new Promise((r) => setTimeout(r, 300));
+    const el = document.getElementById("toast");
+    return { role: el.getAttribute("role"), live: el.getAttribute("aria-live"),
+             close: !!el.querySelector(".toast-close") };
+  });
+  assert(ok.role === "status" && ok.live === "polite",
+    "a receipt is announced politely (" + ok.role + "/" + ok.live + ")");
+  assert(!ok.close, "…and carries no close control, because it leaves on its own");
+  await ctx.close();
+}
+
+// --- 3u. a list of facts is a list, not six of one and one of another ------
+// The six difficulty rows and the accuracy row are one list and read as one.
+// In English the accuracy row wrapped both its halves and stood 42px against
+// the others' 23 — 「Accuracy, last 10 games」 against 「69% · latest 78%」 in
+// a 239px row. Chinese and Japanese never showed it.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "record");
+    await page.evaluate(() => {
+      const games = [], diffs = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+      for (let i = 0; i < 20; i++) games.push({ id: "g" + i, t: Date.now() - i * 864e5,
+        diff: diffs[i % 6], color: i % 2 ? "w" : "b", result: ["win", "loss", "draw"][i % 3],
+        moves: 8 + i * 4, pgn: '[Event "?"]\n\n1. e4 e5 1/2-1/2', ending: "", acc: 40 + i * 2, acpl: 120 - i * 4 });
+      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+    });
+    await page.reload();
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll(".stat-row")].filter((e) => e.offsetParent).map((e) => ({
+        h: Math.round(e.getBoundingClientRect().height),
+        k: (e.querySelector(".stat-k") || {}).textContent || "",
+      })));
+    assert(rows.length >= 6, lang + ": the statistics are on screen (" + rows.length + " rows)");
+    const heights = [...new Set(rows.map((r) => r.h))];
+    assert(heights.length === 1,
+      lang + ": every row in the list is the same height (" + heights.join(", ") + ") — tallest is 「" +
+      (rows.find((r) => r.h === Math.max(...heights)) || {}).k + "」");
+    await ctx.close();
+  }
+}
+
 // --- 3r. the settings page reads as one page ------------------------------
 // Four groups, and the order is the argument: what you are doing, how this game
 // is set, what the app looks like, and — last, always last — the three things
