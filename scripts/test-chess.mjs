@@ -4068,6 +4068,25 @@ for (const lang of CONTENT_LANGS) {
     assert(minor(headingVersion[1]) === minor(zonVersion[1]),
       "README 怎么玩 heading tracks app.zon (README v" + headingVersion[1] + " vs " + zonVersion[1] + ")");
 
+    // "Am I being run directly?" must not be answered by string-pasting
+    // `file://` onto argv[1]. On Windows argv[1] is `D:\\a\\…\\x.mjs` while
+    // import.meta.url is `file:///D:/a/…/x.mjs`, so the comparison is false and
+    // the main block silently does not run — no output, no error, exit 0.
+    // scripts/bundle.mjs had it, and the Windows release build therefore
+    // produced no bundle.js and failed three commands later on `cp`, with a
+    // message that named the wrong thing. Both this and the CRLF bug above
+    // shipped green on ubuntu and macOS.
+    {
+      const bad = [];
+      for (const n of fs.readdirSync(path.join(root, "scripts"))) {
+        if (!n.endsWith(".mjs")) continue;
+        const src = fs.readFileSync(path.join(root, "scripts", n), "utf8");
+        if (/file:\/\/\$\{\s*process\.argv\[1\]\s*\}/.test(src)) bad.push("scripts/" + n);
+      }
+      assert(bad.length === 0,
+        "no script decides \"run directly?\" by pasting file:// onto argv[1] (" + bad.join(", ") + ")");
+    }
+
     // The release workflow does `test -f .github/release-notes/<tag>.md` and
     // stops if it is missing — after tagging, and only when someone runs it.
     // Every version this repo has shipped has a notes file; the check for
