@@ -449,7 +449,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
 
     function paintPiece(piece, x, y, scale) {
       const k = scale || 1;
-      // Rastered at the size it is drawn at. Until 1.26 the lifted piece was
+      // Rastered at the size it is drawn at. Until 2.0 the lifted piece was
       // the board sprite scaled up 12% at draw time, which made the one piece
       // under the pointer the only stretched bitmap on the board. 缺陷 18.
       const sz = k === 1 ? spriteSize : Math.round(spriteSize * k);

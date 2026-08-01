@@ -3500,7 +3500,7 @@ import { createStore } from "./store.js";
   /**
    * The sound a finished game makes, decided by WHO WON.
    *
-   * Until 1.26 the question asked at every ending was "is the game over" —
+   * Until 2.0 the question asked at every ending was "is the game over" —
    * checkmate played the victory fanfare, flag-fall played it, and
    * *resigning* played it. Being checkmated by Stockfish and resigning to it
    * both sounded like you had won something. 缺陷 1.

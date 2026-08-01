@@ -4041,12 +4041,34 @@ for (const lang of CONTENT_LANGS) {
     assert(minor(headingVersion[1]) === minor(zonVersion[1]),
       "README 怎么玩 heading tracks app.zon (README v" + headingVersion[1] + " vs " + zonVersion[1] + ")");
 
+    // The defect list's own tally has to match its own marks. It claims
+    // "33 条缺陷已修 31 条" in the header and then marks each entry ✅ or
+    // strikes it through, which is two statements of the same fact written in
+    // two places — exactly the shape that goes stale (缺陷 12 was a number
+    // retyped in three files). Counted rather than trusted.
+    {
+      const dc = fs.readFileSync(path.join(root, "docs/design-constraints.md"), "utf8");
+      const fixed = (dc.match(/^\d+\. ✅ /gm) || []).length;
+      const kept = (dc.match(/^\d+\. ~~/gm) || []).length;
+      const said = /下面 (\d+) 条缺陷已修 (\d+) 条/.exec(dc);
+      assert(!!said, "design-constraints.md states its own tally");
+      if (said) {
+        assert(Number(said[2]) === fixed,
+          "…and the ✅ marks match it (" + fixed + " marked vs " + said[2] + " claimed)");
+        assert(Number(said[1]) === fixed + kept,
+          "…and every defect is either marked fixed or struck through (" +
+          (fixed + kept) + " accounted for, " + said[1] + " claimed)");
+      }
+    }
+
     // …and no comment may cite a version the app has not reached. Writing
-    // "until 1.26 this did X" beside the code that changed is the most useful
-    // habit in this repo, and it is also the easiest way to end up with five
-    // files describing a release that was never cut: the work landed, the
-    // comments named the version it was going into, and app.zon stayed at
-    // 1.25.0. Same failure as the heading above, one level down.
+    // "until 1.19 this did X" beside the code that changed is the most useful
+    // habit in this repo, and it is also the easiest way to describe a release
+    // that was never cut: during the P-1→P6 work seven files came to say
+    // "until 1.26" while app.zon sat at 1.25.0, and the release then went out
+    // as 2.0 — so 1.26 named nothing, twice over. Same failure as the heading
+    // above, one level down, and the reason a version bump now has to drag
+    // every claim about it along.
     //
     // Only the phrasings the repo actually uses for a version claim are
     // matched — a bare "1.5" is a line width, not a release.

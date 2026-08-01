@@ -48,7 +48,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // either came from — the script printed to a terminal and forgot. The 24
     // games named above are the *previous* calibration's, and are staying: a
     // before number is what makes an after number mean something.
-    // 1.26 measured and left alone. 缺陷 32 said the tier's strength is a
+    // 2.0 measured and left alone. 缺陷 32 said the tier's strength is a
     // function of the MultiPV candidate count, which moves with the phase.
     // Measured over 391 positions (docs/measured.json `multipvPhase`): the
     // count barely moves — 9.9 / 8.2 / 8.8 candidates across opening /

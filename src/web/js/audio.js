@@ -13,7 +13,7 @@
  * is five. Peaks add, and the result is a click, which is the one artefact
  * that makes a synthesised sound feel cheap.
  *
- * **A little variation.** Until 1.26 every move by the same colour was
+ * **A little variation.** Until 2.0 every move by the same colour was
  * byte-identical, which no physical object is: the same piece on the same
  * square twice does not make the same sound. ±3% detune and ±10% level is
  * enough to stop the ear from noticing it is a recording, and small enough
@@ -225,7 +225,7 @@
    * Losing.
    *
    * A falling minor third, short, and quiet — the opposite shape to playWin's
-   * rising arpeggio and about half its level. Until 1.26 there was no such
+   * rising arpeggio and about half its level. Until 2.0 there was no such
    * sound: being checkmated, losing on time and *resigning* all played the
    * victory fanfare, because the dispatch asked "did the game end" rather than
    * "who won". 缺陷 1.

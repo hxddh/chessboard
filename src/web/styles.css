@@ -784,7 +784,7 @@
        panel meant learning "selected" twice in two centimetres. The pills are
        gone; both rows now mark the current item with the same underline. */
     .mode-nav { margin-top: 12px; gap: 4px; }
-    /* In the chrome since 1.26, so it sizes to its labels rather than
+    /* In the chrome since 2.0, so it sizes to its labels rather than
        stretching across a 284px panel. */
     .theme-row.mode-nav { flex: 0 0 auto; gap: 2px; }
     .theme-row.mode-nav button {
