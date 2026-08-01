@@ -3609,20 +3609,23 @@ import { createStore } from "./store.js";
   /** The replay bar and the move counter chip beside it. */
   function renderReplayBar() {
     const h = sanHistory();
-    el("moves").textContent =
-      store.session.mode === "learn" ? (store.session.learn ? (store.session.learn.li + 1) + "/" + LESSONS.length : "—") :
-      store.session.mode === "puzzle" ? (store.session.puzzle ? tf("pz.chip", [store.session.puzzle.idx + 1, puzzlesInCat(store.session.puzzle.cat).length]) : "—") :
-      store.game.viewIndex + "/" + h.length;
     el("replay-pos").textContent = store.game.viewIndex + " / " + h.length;
     // Nothing played yet is nothing to replay: the whole transport goes.
     avail(el("replay-seg"), h.length > 0);
     const back = store.game.viewIndex > 0;
     const fwd = store.game.viewIndex < h.length;
-    avail(el("rep-start"), back);
-    avail(el("rep-prev"), back);
-    avail(el("rep-next"), fwd);
-    avail(el("rep-end"), fwd);
-    avail(el("rep-live"), !isLive());
+    // Slots, not `avail`. These five are one control — «  ‹  ●  ›  » — and
+    // their positions relative to each other are what they mean. Measured on
+    // 2.1.1: at the live position only « and ‹ are available, so `flex: 1`
+    // gave them 97px each; press ‹ once and all five appear, every key snaps
+    // to 37px and ‹ jumps 61px to the left, out from under the pointer that
+    // was about to press it again. Same family as the chrome's take-back and
+    // hint trading places, third instance.
+    slot(el("rep-start"), back);
+    slot(el("rep-prev"), back);
+    slot(el("rep-next"), fwd);
+    slot(el("rep-end"), fwd);
+    slot(el("rep-live"), !isLive());
     // "resume from here" is a replay action, and it only exists off the live
     // position — where it used to sit greyed out with a tooltip explaining
     // that it only exists off the live position
@@ -4276,6 +4279,25 @@ import { createStore } from "./store.js";
       p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + ".pgn";
   }
 
+  /**
+   * What to say after a file has been written.
+   *
+   * 「已导出 report.png」 was a file name for a file the app had just put
+   * somewhere the player never saw. It was fine only while `revealPath`
+   * worked, and `revealPath` is best-effort: no `os.revealPath` on this build,
+   * or a throw, and it returned quietly. So when the folder did not open, the
+   * app had reported success and said nothing about where.
+   *
+   * The folder opened → the name is enough, you are looking at it.
+   * It did not → the path is the answer to "where did it go", and it goes in
+   * the longer toast tier because it is a sentence to read rather than a
+   * receipt to ignore.
+   */
+  function savedToast(name, path, revealed) {
+    if (revealed) toast(t("msg.export.done") + name);
+    else toast(t("msg.export.doneAt") + path, "fix");
+  }
+
   async function downloadPgn() {
     if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
     const pgn = pgnForExport();
@@ -4285,9 +4307,9 @@ import { createStore } from "./store.js";
         const path = await Host.saveFileDialog({ title: t("dlg.exportPgn"), defaultName: name });
         if (path == null) { toast(t("msg.export.cancelled")); return; }
         await Host.writeTextFile(path, pgn);
-        await Host.revealPath(path);
+        const revealed = await Host.revealPath(path);
         Host.addRecentDocument(path);
-        toast(t("msg.export.done") + name);
+        savedToast(name, path, revealed);
         return;
       } catch (_) {}
     }
@@ -4298,7 +4320,7 @@ import { createStore } from "./store.js";
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("msg.export.done") + name);
+      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
     } catch (_) {
       copyText(pgn, t("msg.export.restrictedCopied"));
     }
@@ -4503,8 +4525,8 @@ import { createStore } from "./store.js";
         const path = await Host.saveFileDialog({ title: t("rv.exportTitle"), defaultName: name });
         if (path == null) { toast(t("msg.export.cancelled")); return; }
         await Host.writeBinaryFile(path, b64);
-        await Host.revealPath(path);
-        toast(t("msg.export.done") + name);
+        const revealed = await Host.revealPath(path);
+        savedToast(name, path, revealed);
         return;
       } catch (_) { /* fall through to the browser path */ }
     }
@@ -4516,7 +4538,7 @@ import { createStore } from "./store.js";
       link.download = name;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 2000);
-      toast(t("msg.export.done") + name);
+      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
     } catch (_) { toast(t("msg.file.readFailed"), "fault"); }
   }
 
@@ -4686,10 +4708,13 @@ import { createStore } from "./store.js";
         const text = await Host.readTextFile(paths[0]);
         importPgnText(text, paths[0]);
         Host.addRecentDocument(paths[0]);
+        return;
       } catch (err) {
-        toastReadFailure(err);
+        // "there is no file dialog on this build" is not a read failure — it
+        // is the reason to use the browser's own picker, which is sitting
+        // right below. Anything else really did fail to read.
+        if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
       }
-      return;
     }
     const input = document.createElement("input");
     input.type = "file";

@@ -578,11 +578,6 @@
     .status-pill.replay {
       color: var(--muted);
     }
-    .meta-chip {
-      font-size: 11px; color: var(--muted);
-      padding: 4px 8px; border-radius: 999px;
-      background: transparent;
-    }
     .spacer { flex: 1; }
     .chrome-actions { display: flex; align-items: center; gap: 6px; }
     .icon-btn, .tool-btn {
@@ -621,7 +616,8 @@
            the six labels in the three languages, measured: Thinking at 78. */
     .chrome .tool-btn { height: var(--chrome-ctl-h); min-width: 80px; }
     .chrome .icon-btn { width: var(--chrome-ctl-h); height: var(--chrome-ctl-h); }
-    .chrome-actions .slot-empty { visibility: hidden; }
+    .chrome-actions .slot-empty,
+    .replay-bar .slot-empty { visibility: hidden; }
     .icon-btn:hover, .tool-btn:hover { background: var(--btn-hover); }
     .tool-btn.primary {
       background: linear-gradient(180deg, var(--primary-from), var(--primary-to));
@@ -1169,7 +1165,12 @@
        it outweighed the move list. Now it is a hairline under the moves it
        scrubs, and the buttons carry themselves. */
     .replay-bar {
-      display: flex; gap: 4px;
+      /* Five equal columns, always — not five flex items sharing whatever is
+         available. See renderReplayBar(): the keys come and go with the replay
+         position, and under `flex: 1` two visible keys took 97px each while
+         five took 37px. A transport row whose keys resize by a factor of three
+         as you use it is not one control. */
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
       padding: 4px 0 0;
       border-top: 1px solid var(--card-border);
       background: transparent;

@@ -217,6 +217,72 @@ const PLACEMENT = STUDY.split(" ")[0];
   await ctx.close();
 }
 
+// --- exporting a file, under every shape the bridge comes in --------------
+// The reported symptom was "I exported the report and cannot find the image".
+// Two causes, both of which the app reported as success or as the player's own
+// doing:
+//   · no `zero.dialogs.saveFile` — the helper answered `null`, which is also
+//     how the SDK says Cancel, so the app said 「已取消导出」, wrote nothing,
+//     and never reached the browser fallback that was sitting right there.
+//   · no `zero.os.revealPath` — the write succeeded, the folder never opened,
+//     and the toast named the file and not the place.
+// The rule this pins: pressing export either produces a file or says why, and
+// when nothing opens to show you, the toast carries the path.
+{
+  const SHAPES = [
+    { id: "无 zero", zero: false, dialogs: false, reveal: false },
+    { id: "有 zero 无 dialogs", zero: true, dialogs: false, reveal: false },
+    { id: "有 dialogs 无 revealPath", zero: true, dialogs: true, reveal: false },
+    { id: "桥接齐全", zero: true, dialogs: true, reveal: true },
+  ];
+  for (const shape of SHAPES) {
+    const ctx = await browser.newContext({ acceptDownloads: true });
+    await ctx.addInitScript((sh) => {
+      window.__wrote = [];
+      // a fresh profile opens on the first-run picker, which sits over the
+      // panel; and the export links live on the play tab with the panel open
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      if (!sh.zero) return;
+      const z = {
+        invoke: (cmd, args) => { window.__wrote.push(args && args.path); return Promise.resolve({}); },
+        on: () => () => {},
+        platform: { supports: () => Promise.resolve(true) },
+        os: {},
+      };
+      if (sh.dialogs) z.dialogs = { saveFile: (o) => Promise.resolve("/tmp/exported/" + o.defaultName) };
+      if (sh.reveal) z.os.revealPath = () => Promise.resolve();
+      window.zero = z;
+    }, shape);
+    const { page } = await open(ctx);
+    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+    for (const sq of ["e2", "e4", "e7", "e5"]) {
+      const pt = await page.evaluate((sqr) => {
+        const c = document.getElementById("board"), r = c.getBoundingClientRect();
+        return { x: r.left + (sqr.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+                 y: r.top + (8 - Number(sqr[1]) + 0.5) * (r.height / 8) };
+      }, sq);
+      await page.mouse.click(pt.x, pt.y);
+    }
+    await page.waitForTimeout(400);
+    let downloaded = null;
+    page.on("download", (d) => { downloaded = d.suggestedFilename(); });
+    await page.click("#pgn-download");
+    await page.waitForTimeout(900);
+    const said = await page.evaluate(() => document.getElementById("toast").textContent.trim());
+    const wrote = await page.evaluate(() => window.__wrote || []);
+    const landed = !!downloaded || wrote.length > 0;
+    assert(landed, shape.id + ": 导出真的产生了一个文件 — 提示是「" + said + "」");
+    assert(!/取消|Cancel|中止/.test(said),
+      shape.id + ": 没有把「这个版本没有文件对话框」说成玩家取消 — 「" + said + "」");
+    if (shape.zero && shape.dialogs && !shape.reveal)
+      assert(said.includes("/tmp/exported/"),
+        shape.id + ": 文件夹没打开时,提示里得有路径 — 「" + said + "」");
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

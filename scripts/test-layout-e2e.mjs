@@ -853,6 +853,56 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   }
 }
 
+// --- 3s. the transport keys are one control -------------------------------
+// «  ‹  ●  ›  »  — five keys whose positions relative to each other are what
+// they mean, and which come and go with the replay position. Under `flex: 1`
+// that meant two visible keys took 97px each and five took 37: press ‹ once at
+// the live position and every key snapped to a third of its width while ‹
+// itself jumped 61px left, out from under the pointer about to press it again.
+// Third instance of the family, after the chrome's take-back/hint trade.
+{
+  const { ctx, page } = await open("zh-CN", "pvp", "play");
+  const bar = () => page.evaluate(() =>
+    [...document.querySelectorAll("#replay-seg button")].map((b) => ({
+      id: b.id,
+      l: Math.round(b.getBoundingClientRect().left),
+      w: Math.round(b.getBoundingClientRect().width),
+      shown: getComputedStyle(b).visibility === "visible",
+    })));
+  const clickSquares = async (list) => {
+    for (const sq of list) {
+      const pt = await page.evaluate((s) => {
+        const c = document.getElementById("board"), r = c.getBoundingClientRect();
+        return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+                 y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
+      }, sq);
+      await page.mouse.click(pt.x, pt.y);
+      await page.waitForTimeout(220);
+    }
+  };
+  await clickSquares(["e2", "e4", "e7", "e5"]);
+  const atLive = await bar();
+  await page.click("#rep-prev");
+  await page.waitForTimeout(400);
+  const backOne = await bar();
+  assert(atLive.length === 5 && backOne.length === 5, "five transport keys");
+  const widths = [...new Set(atLive.concat(backOne).map((b) => b.w))];
+  assert(widths.length === 1,
+    "every transport key is the same width in every state (" + widths.join(", ") + ")");
+  const moved = backOne.filter((b) => {
+    const before = atLive.find((x) => x.id === b.id);
+    return before && Math.abs(before.l - b.l) > 1;
+  });
+  assert(moved.length === 0,
+    "…and stepping back moves none of them (" + moved.map((m) => m.id).join(", ") + ")");
+  assert(atLive.filter((b) => b.shown).length < 5 && backOne.every((b) => b.shown),
+    "…while still only offering the ones that lead somewhere");
+  // one number, one place: the chip that repeated the 棋谱 heading's count is gone
+  const counters = await page.evaluate(() => document.querySelectorAll("#replay-seg #moves").length);
+  assert(counters === 0, "the replay bar does not repeat the move counter above it");
+  await ctx.close();
+}
+
 // --- 3r. the settings page reads as one page ------------------------------
 // Four groups, and the order is the argument: what you are doing, how this game
 // is set, what the app looks like, and — last, always last — the three things
