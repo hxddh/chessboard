@@ -305,6 +305,75 @@ for (const lang of LANGS) {
   }
 }
 
+// --- 3i. nothing in the panel is cut off by the panel's edge --------------
+// Measured, not guessed: on the code before this check, the three deletion
+// buttons came to 90 + 102 + 66 plus gaps = 266px inside a 240px pane, and the
+// last 26px — the tail of 清除全部存档 — was clipped by the pane. 3h above did
+// not see it, and could not: it asks each label whether *it* scrolls, and a
+// <button> with overflow: visible whose text runs past its box reports a
+// scrollWidth clamped to its own padding box. The overflow is only visible on
+// the ancestor that clips, and that ancestor is a scroller.
+//
+// So the question asked here is the one the eye asks: does anything stick out
+// past the right edge of the panel. Element right edges, not scrollWidth —
+// which also means the two things that deliberately paint outside their boxes
+// are silent by construction rather than by exception, because both are
+// pseudo-elements and neither is in the DOM: the switch's ::after hit target
+// (inset -6px -2px) and the disclosure ›, which is rotated 90° when open.
+for (const tab of ["play", "setup", "record"]) {
+  const { ctx, page } = await open("zh-CN", "ai", tab);
+  await page.evaluate(() => {
+    for (const d of document.querySelectorAll("#side details")) d.open = true;
+  });
+  await page.waitForTimeout(300);
+  const out = await page.evaluate(() => {
+    const side = document.getElementById("side");
+    const edge = side.getBoundingClientRect().right;
+    const res = [];
+    for (const e of side.querySelectorAll("*")) {
+      if (!e.offsetParent) continue;
+      const r = e.getBoundingClientRect();
+      if (r.width === 0) continue;
+      if (r.right > edge + 1) {
+        res.push((e.id || e.className || e.tagName) + " right=" + Math.round(r.right) +
+          " panel=" + Math.round(edge));
+      }
+    }
+    return res;
+  });
+  for (const o of out) console.error("  past the panel edge: " + o);
+  assert(out.length === 0,
+    tab + " 标签页:没有控件被面板边缘裁掉" + (out.length ? " —— " + out.join(", ") : ""));
+  await ctx.close();
+}
+
+// --- 3j. no disabled control is on screen, in any tab ----------------------
+// 3d asks this of the play tab at two moments in a game. The dimmed action
+// links that prompted this were in the *setup* tab, where 3d never looked:
+// `offsetParent` is null for anything in a pane that is not showing, so a
+// check that only ever opens one tab cannot see the other two.
+for (const tab of ["play", "setup", "record"]) {
+  const { ctx, page } = await open("zh-CN", "ai", tab);
+  await page.evaluate(() => {
+    for (const d of document.querySelectorAll("#side details")) d.open = true;
+  });
+  await page.waitForTimeout(300);
+  const bad = await page.evaluate(() => {
+    const out = [];
+    for (const b of document.querySelectorAll("#side button, #side input, #side select")) {
+      if (!b.disabled) continue;
+      if (!b.offsetParent && getComputedStyle(b).position !== "fixed") continue;
+      if (b.closest(".modal-bg")) continue;
+      out.push(b.id || b.textContent.trim().slice(0, 12) || b.className);
+    }
+    return out;
+  });
+  for (const b of bad) console.error("  visible but disabled: " + b);
+  assert(bad.length === 0,
+    tab + " 标签页:侧栏里没有被禁用的可见控件" + (bad.length ? " —— " + bad.join(", ") : ""));
+  await ctx.close();
+}
+
 // --- 3g. the reading modes get a reading layout ---------------------------
 // 72 lessons of prose in a 284px panel wrapped at about twenty characters a
 // line, with the text, the task, three controls and the entire table of

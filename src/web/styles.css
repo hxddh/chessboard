@@ -1133,18 +1133,24 @@
     }
     .replay-bar button:disabled { opacity: 0.28; cursor: default; }
 
-    /* One grid, three rows, one set of columns.
-       This was `flex` + `space-between` + `wrap`, which is a different layout
-       for every row depending on how many items it holds and how wide they
-       are: measured on 1.12 the three groups came out as 3 items spread edge
-       to edge (939/1039/1138), 4 items packed tight (939/994/1048/1114 at
-       widths 40–64), and a fifth item orphaned alone on its own line. Same
-       rule, three rhythms, and no common vertical line anywhere down the
-       panel — which is most of what "assembled rather than designed" means. */
+    /* Content-sized, wrapping, shrinkable.
+       The history here is a pendulum, so both ends are written down. It began
+       as `flex` + `space-between` + `wrap`, which gave a different layout to
+       every row depending on how many items it held: measured on 1.12, 3 items
+       spread edge to edge (939/1039/1138), 4 packed tight (939/994/1048/1114
+       at widths 40–64), a fifth orphaned on its own line. That was replaced by
+       three equal columns, which fixed the rhythm and broke the labels: a
+       1fr column is the same width whatever is in it, so 清除全部存档 was cut
+       to 清除有 while PGN sat in a column twice the width of its word.
+       An equal column is only the right answer when the contents are equal.
+       These are labels of 2 to 6 characters in three languages, so the column
+       cannot be decided in advance — the item is sized by its content and the
+       row wraps when it runs out of width. `space-between` is still refused:
+       that is what made each row a different rhythm, and `gap` is not it. */
     .link-row {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 0 4px; margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px; margin-top: 8px;
     }
     .text-link {
       appearance: none; border: 0; background: transparent;
@@ -1156,28 +1162,41 @@
       min-height: var(--row-h);
       display: flex; align-items: center;
       padding: 0 8px; cursor: pointer;
-      /* transparent, but present: the danger link has a real border, and
-         without this its row would stand 2px taller than its neighbours */
-      border: 1px solid transparent;
+      /* No control in this row is outlined any more, so nothing here needs a
+         ring reserved for it — one border declaration, one value, for every
+         one of them. */
+      border: 0;
       border-radius: var(--radius-sm);
       opacity: 0.92;
-      /* fills its grid cell, so the hover target and the left edge both line
-         up with the column rather than with the length of the label */
-      width: 100%; text-align: left; justify-content: flex-start;
-      white-space: nowrap;
+      /* Sized by its label, and allowed to shrink below it. `width: 100%`
+         plus `white-space: nowrap` was the pair that cut the long labels:
+         the box was pinned to a column narrower than its text and the text
+         was forbidden to wrap, so it simply ran out of the box and was
+         clipped by the panel. `min-width: 0` lets a label that cannot fit
+         wrap inside its own button instead — the same information, one line
+         taller, rather than a word cut in half. */
+      text-align: left; justify-content: flex-start;
+      min-width: 0;
     }
     .text-link:hover { opacity: 1; background: var(--btn-ghost); }
-    .text-link:disabled { opacity: 0.3; cursor: default; }
-    /* A terminal action must not look like "copy PGN". Muted until it is
-       actually available, then plainly a warning. */
+    /* Not dimmed — gone. `opacity: 0.3` leaves a hole in the row that still
+       occupies its width and still names an action it will not perform, which
+       is the thing P3 set out to remove ("任一时刻可见的禁用控件数为 0").
+       Dimming is what that criterion rejects, not a milder form of obeying
+       it. The row is a wrapping flex line, so the remaining items close up. */
+    .text-link:disabled { display: none; }
+    /* A terminal action must not look like "copy PGN" — but it carries that
+       meaning in its colour, not in a box drawn around it. The border made
+       认输 the only outlined control on a row it shares with 提和 and 判和:
+       one item in three wearing a different visual weight, which reads as
+       "this one is a different kind of control" rather than "this one is
+       dangerous". Colour says the second thing on its own, and says it in
+       every row — including the deletion row, where all three are danger and
+       the boxes therefore said nothing at all. */
     .text-link.danger { color: var(--muted); }
-    .text-link.danger:not(:disabled) {
-      color: var(--danger);
-      border-color: color-mix(in srgb, var(--danger) 32%, transparent);
-    }
+    .text-link.danger:not(:disabled) { color: var(--danger); }
     .text-link.danger:not(:disabled):hover {
       color: var(--on-danger); background: color-mix(in srgb, var(--danger) 78%, transparent);
-      border-color: transparent;
     }
 
     /* grouped action links */

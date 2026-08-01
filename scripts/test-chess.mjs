@@ -1388,15 +1388,47 @@ for (const lang of CONTENT_LANGS) {
       "three weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
   }
 
-  // the action rows share one set of columns. As flex + space-between + wrap
-  // they laid out differently in every group — 3 items spread edge to edge,
-  // 4 packed tight at widths 40–64, a 5th orphaned on its own line.
+  // The action rows, and the two ways this has been got wrong. As
+  // flex + space-between + wrap they laid out differently in every group —
+  // 3 items spread edge to edge, 4 packed tight at widths 40–64, a 5th
+  // orphaned on its own line. As three equal columns the rhythm was fixed and
+  // the labels broke instead: a 1fr column is the same width whatever is in
+  // it, so 清除全部存档 was cut to 清除有 while PGN sat in a column twice the
+  // width of its word. What is guarded now is the middle: sized by content,
+  // wrapping, shrinkable — and still no space-between, which is the thing
+  // that made each row its own rhythm.
   {
     const row = /\.link-row \{([\s\S]*?)\}/.exec(stripped);
     assert(row, "found the action row rule");
-    assert(/display:\s*grid/.test(row[1]), "action rows are a grid");
-    assert(/grid-template-columns:\s*repeat\(3/.test(row[1]), "three fixed columns");
+    assert(/display:\s*flex/.test(row[1]) && /flex-wrap:\s*wrap/.test(row[1]),
+      "action rows wrap rather than forcing a column count");
+    assert(!/grid-template-columns/.test(row[1]),
+      "no fixed column count — an equal column is only right when the contents are equal");
     assert(!/space-between/.test(row[1]), "no space-between — that is what made every row different");
+
+    // the pair that did the clipping: a box pinned to a column narrower than
+    // its text, and text forbidden to wrap out of it
+    const link = /\.text-link \{([\s\S]*?)\}/.exec(stripped);
+    assert(link, "found the action link rule");
+    assert(!/white-space:\s*nowrap/.test(link[1]),
+      "a label too long for its row wraps rather than being cut");
+    assert(!/width:\s*100%/.test(link[1]), "…and is sized by its content, not by its column");
+
+    // P3's acceptance criterion, at the level of the rule rather than the
+    // screen: dimming a control that cannot be used is not a milder way of
+    // obeying "no visible disabled controls", it is the thing being rejected
+    const off = /\.text-link:disabled \{([^}]*)\}/.exec(stripped);
+    assert(off && /display:\s*none/.test(off[1]),
+      "a disabled action link is not rendered at all");
+    assert(off && !/opacity/.test(off[1]), "…not dimmed into a hole in the row");
+
+    // one row, one visual weight: the danger link says what it is in colour,
+    // not by being the only outlined control among its neighbours
+    const dz = stripped.slice(stripped.indexOf(".text-link.danger"));
+    const dRule = /\.text-link\.danger:not\(:disabled\) \{([^}]*)\}/.exec(dz);
+    assert(dRule, "found the danger link rule");
+    assert(!/border/.test(dRule[1]),
+      "the danger link carries no border its row-mates lack");
 
     // The same rule for wrapped segments, and for the same reason. With
     // `flex: 1 1 30%` the items on a last line share it between them, so a
