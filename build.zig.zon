@@ -1,7 +1,7 @@
 .{
     .name = .chessboard,
     .fingerprint = 0x68a833e56a7d90f0,
-    .version = "2.1.0",
+    .version = "2.1.1",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
     .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "frontend", "app.zon", "README.md" },

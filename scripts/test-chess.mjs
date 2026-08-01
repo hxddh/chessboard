@@ -1483,6 +1483,68 @@ for (const lang of CONTENT_LANGS) {
       "the mode segment is styled by the same rule as every other segment (" + (seg ? seg[1] : "missing") + ")");
   }
 
+  // The settings page, read top to bottom. Three claims that are about the
+  // order and the naming rather than about any one control, so they are
+  // cheapest to make against the markup.
+  {
+    const markup = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+    const pane = markup.slice(markup.indexOf('id="pane-setup"'), markup.indexOf("/pane-setup"));
+    const i18nSrc = fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8");
+    const headings = [...pane.matchAll(/data-i18n="(side\.[a-z]+)"[^>]*>/g)]
+      .map((m) => m[1]).filter((k) => ["side.mode", "side.game", "side.look", "side.danger"].includes(k));
+    // 2.1 had the three irreversible deletions in the middle of the page, and
+    // they were the only red on it. A destructive group goes last.
+    assert(headings[headings.length - 1] === "side.danger",
+      "the deletions are the last group on the settings page (" + headings.join(" → ") + ")");
+    assert(headings[0] === "side.mode",
+      "…and mode is the first, because it decides what the rest of the page holds");
+
+    // The heading is a promise about what is inside. 「外观」 held the language
+    // and the sound, neither of which is an appearance.
+    for (const [lang, want] of [["zh-CN", "界面"], ["en", "Interface"], ["ja", "インターフェース"]])
+      assert(new RegExp('"side\\.look":\\s*"' + want + '"').test(i18nSrc),
+        lang + ": the group that holds theme, orientation, language and sound is named for all four (" + want + ")");
+
+    // A hint that counts the controls above it is a hint that goes wrong the
+    // first time one of them is not rendered — and 「清除统计与历史」 is not,
+    // until there is a game to clear. Measured: the line said three, the page
+    // showed two.
+    for (const m of i18nSrc.matchAll(/"hint\.danger":\s*"([^"]*)"/g))
+      assert(!/三|three|3|２|二/i.test(m[1]),
+        "the deletion hint does not name a count — «" + m[1] + "»");
+  }
+
+  // One implementation of which way round the board faces.
+  //
+  // Three doors lead to it: the settings segment, the F key and the native
+  // View menu. The comment over NATIVE_COMMANDS says both halves "end up here
+  // so there is one implementation and the two can never drift" — and they had
+  // drifted, in exactly this action: the button announced the new view in a
+  // toast, the key and the menu changed it in silence.
+  {
+    const app = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const writes = [...app.matchAll(/store\.game\.flipped\s*=(?!=)/g)].length;
+    // the assignments that remain are: the initial state, two authored-view
+    // resets (lesson, puzzle), the loaded-record restore, the editor reset,
+    // and setFlipped itself
+    assert(/function setFlipped\(/.test(app), "setFlipped is the one place the view turns");
+    for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/,
+                          /k === "f"[^\n]*setFlipped\(/,
+                          /"game\.flip":\s*\(\)\s*=>\s*setFlipped\(/])
+      assert(caller.test(app), "…and it is what the three doors call — " + caller.source.slice(0, 26));
+    assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
+  }
+
+  // Every group heading in the panel is a heading. Three of them were a
+  // <span class="side-h"> because they live inside a <summary> — same size,
+  // same weight, same colour, and invisible to anything navigating by heading.
+  {
+    const markup = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+    const spans = [...markup.matchAll(/<span class="side-h"[^>]*>([^<]*)</g)].map((m) => m[1]);
+    assert(spans.length === 0,
+      "no group heading is a <span> (" + spans.join(", ") + ")");
+  }
+
   // the board is set into its frame: concentric radii want 16 - 17 < 0
   {
     const canvasRule = /\n    canvas \{([\s\S]*?)\n    \}/.exec(stripped);
