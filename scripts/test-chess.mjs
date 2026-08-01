@@ -4041,6 +4041,24 @@ for (const lang of CONTENT_LANGS) {
     assert(minor(headingVersion[1]) === minor(zonVersion[1]),
       "README 怎么玩 heading tracks app.zon (README v" + headingVersion[1] + " vs " + zonVersion[1] + ")");
 
+    // The release workflow does `test -f .github/release-notes/<tag>.md` and
+    // stops if it is missing — after tagging, and only when someone runs it.
+    // Every version this repo has shipped has a notes file; the check for
+    // whether the current one does should not wait for release day.
+    {
+      const notes = path.join(root, ".github/release-notes/v" + zonVersion[1] + ".md");
+      assert(fs.existsSync(notes),
+        "the version in app.zon has release notes (.github/release-notes/v" + zonVersion[1] + ".md)");
+      if (fs.existsSync(notes)) {
+        const text = fs.readFileSync(notes, "utf8");
+        // the heading names the version, so a copied file cannot ship describing another one
+        const head = /^## 国际象棋 v([\d.]+)/m.exec(text);
+        const minorOf = (v) => v.split(".").slice(0, 2).join(".");
+        assert(!!head && minorOf(head[1]) === minorOf(zonVersion[1]),
+          "…and its heading names that version (" + (head ? head[1] : "—") + " vs " + zonVersion[1] + ")");
+      }
+    }
+
     // The defect list's own tally has to match its own marks. It claims
     // "33 条缺陷已修 31 条" in the header and then marks each entry ✅ or
     // strikes it through, which is two statements of the same fact written in
