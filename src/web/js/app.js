@@ -3220,13 +3220,17 @@ import { createStore } from "./store.js";
     if (store.session.mode === "learn") {
       if (!store.session.learn) return t("st.learn");
       if (store.session.learn.done) return t("st.lessonDone");
-      // The lesson name, open panel or shut. The full task text used to appear
-      // here when the panel was closed — a whole instruction in a chip, clipped
-      // at 44vw with an ellipsis. A chip that gets truncated is a chip holding
-      // a sentence that belongs somewhere else: the task is spelled out on its
-      // task card, and what the closed panel needed was not this sentence but
-      // the game itself, which is what the spine shows now.
-      return lessonText(curLesson()).title;
+      // Where the lesson is, not what it is called. The full task text used to
+      // appear here when the panel was closed — a whole instruction in a chip,
+      // clipped at 44vw with an ellipsis. A chip that gets truncated is a chip
+      // holding a sentence that belongs somewhere else, so the task went back
+      // to its task card; the *title* stayed, and kept doing the same thing.
+      // Measured against all 216 titles in the three languages: 61 of them are
+      // ellipsised at an 820px window and one still is at 1400px, the longest
+      // wanting 463px of a 418px chip. The title is already spelled out on the
+      // lesson card two centimetres away, in full, in a box that wraps. What
+      // the chip can say without lying is which lesson you are in.
+      return t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
@@ -3554,6 +3558,24 @@ import { createStore } from "./store.js";
    */
   function avail(node, ok) { if (node) node.hidden = !ok; }
 
+  /**
+   * The same thing for the two buttons in the chrome, with the box kept.
+   *
+   * That group is right-aligned and both of its buttons come and go — take
+   * back needs a move to take back, hint needs it to be your turn — so
+   * removing one from the layout re-maps the positions of the others. On the
+   * shipped build they did not just shift, they traded places: after 1.e4 hint
+   * left (not your move) and take back appeared in the exact pixels hint had
+   * been occupying. Click where you just clicked and you take the move back.
+   *
+   * `visibility` keeps the slot and still removes the button from the tab
+   * order and from hit testing, so P3's "nothing visible that cannot be used"
+   * holds — that rule is about controls which look available and are not, and
+   * an empty space does not look like a control. The panel keeps `hidden`,
+   * where a row that goes away should genuinely stop taking up space.
+   */
+  function slot(node, ok) { if (node) node.classList.toggle("slot-empty", !ok); }
+
   /** Hide a group whose whole row went away, so no empty heading is left. */
   function collapseEmptyGroups() {
     for (const group of document.querySelectorAll(".act-group")) {
@@ -3616,7 +3638,7 @@ import { createStore } from "./store.js";
 
     // Take back: in a drill it is the drill's own history; otherwise it needs
     // a move to take back, the live position, and a game still running.
-    avail(el("undo"), modal
+    slot(el("undo"), modal
       ? !!(inDrill && store.session.learn.g && store.session.learn.g.history().length)
       : h.length > 0 && isLive() && !ruleTerminated());
     avail(el("btn-new"), !modal);
@@ -3633,7 +3655,7 @@ import { createStore } from "./store.js";
           ? !!(store.session.puzzle && !store.session.puzzle.done && !store.session.puzzle.g.game_over() && store.session.puzzle.g.turn() === "w")
         : !store.session.editor && isLive() && !over &&
           !(store.session.mode === "ai" && game.turn() !== store.session.humanColor);
-      avail(hintBtn, canHint);
+      slot(hintBtn, canHint);
       const busy = store.session.hintPending || store.session.analyzing ||
         !!(store.session.learn && store.session.learn.engineBusy) || store.session.engineThinking;
       hintBtn.disabled = false;

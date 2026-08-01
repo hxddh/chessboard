@@ -110,22 +110,35 @@ const LANGS = ["zh-CN", "en", "ja"];
   }
 }
 
-// --- 2. mode tabs are one line tall in every language ----------------------
+// --- 2. the mode segment reads as one control in every language ------------
+// It is a `.theme-row.wrap` on the settings page now, the same control the
+// difficulty, the persona and the theme use. Same requirement as any segment:
+// every button the same size, no label clipped, nothing past the panel edge.
 {
   for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "play");
-    const tabs = await page.evaluate(() => [...document.querySelectorAll("#mode-seg button")].map((b) => ({
-      text: b.textContent.trim(),
-      h: Math.round(b.getBoundingClientRect().height),
-      // scrollWidth > clientWidth is the label running out of its box
-      over: b.scrollWidth - b.clientWidth,
-    })));
-    assert(tabs.length === 4, lang + ": four mode tabs");
-    const rowH = await page.evaluate(() =>
-      parseInt(getComputedStyle(document.documentElement).getPropertyValue("--row-h"), 10));
-    for (const t of tabs) {
-      assert(t.h <= rowH + 1, lang + ": “" + t.text + "” is one row tall (" + t.h + " ≤ " + rowH + ")");
-      assert(t.over <= 0, lang + ": “" + t.text + "” fits its tab without clipping (over by " + t.over + ")");
+    const { ctx, page } = await open(lang, "ai", "setup");
+    const seg = await page.evaluate(() => {
+      const el = document.getElementById("mode-seg");
+      const pane = el.closest(".side-pane").getBoundingClientRect();
+      return {
+        buttons: [...el.querySelectorAll("button")].map((b) => ({
+          text: b.textContent.trim(),
+          h: Math.round(b.getBoundingClientRect().height),
+          // scrollWidth > clientWidth is the label running out of its box
+          over: b.scrollWidth - b.clientWidth,
+          pastPane: Math.round(b.getBoundingClientRect().right - pane.right),
+        })),
+        visible: !!el.offsetParent,
+      };
+    });
+    assert(seg.visible, lang + ": the mode segment is on the settings page");
+    assert(seg.buttons.length === 4, lang + ": four modes");
+    const heights = [...new Set(seg.buttons.map((b) => b.h))];
+    assert(heights.length === 1,
+      lang + ": every mode is the same height (" + heights.join(", ") + ")");
+    for (const b of seg.buttons) {
+      assert(b.over <= 0, lang + ": “" + b.text + "” fits its button (over by " + b.over + ")");
+      assert(b.pastPane <= 1, lang + ": “" + b.text + "” stays inside the panel (past by " + b.pastPane + ")");
     }
     await ctx.close();
   }
@@ -172,13 +185,14 @@ const LANGS = ["zh-CN", "en", "ja"];
   }
 }
 
-// --- 3b. navigation is two layers, not three ------------------------------
-// The panel used to stack three: the mode row, the tab row, and the section
-// headings inside a pane. The first two deliberately shared one underline
-// vocabulary — which solved "learn the selected state twice" and left two rows
-// that look identical, one meaning "change product" and one "change view".
-// Mode is an application-level switch now (P3.1), so it sits in the chrome and
-// the panel has one navigation row.
+// --- 3b. the bar over the board holds the move, and nothing else -----------
+// Those 44px were permanently reserved above a board that is height-bound in
+// every window this ships in, so they came off the board's edge: 5.2% of it at
+// 1400x900, 8.7% at 640x560. What they held was three things on three clocks —
+// a mode switch used once a session, a status that changes every ply, and
+// tools used mid-move — in three heights and two baselines, because nothing in
+// the row shared a unit. It is 32px now, and it holds one sentence and the two
+// actions that belong to the move being made.
 {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const where = await page.evaluate(() => {
@@ -187,26 +201,128 @@ const LANGS = ["zh-CN", "en", "ja"];
       inChrome: !!(seg && seg.closest(".chrome")),
       inPanel: !!(seg && seg.closest(".side")),
       navRowsInPanel: document.querySelectorAll(".side .mode-nav, .side .side-tabs").length,
+      onSetupPane: !!(seg && seg.closest("#pane-setup")),
     };
   });
-  assert(where.inChrome, "the mode switch is application-level, in the chrome");
-  assert(!where.inPanel, "…and not in the panel any more");
+  assert(!where.inChrome, "the mode switch is off the bar over the board");
+  assert(where.inPanel && where.onSetupPane, "…and on the settings page");
   assert(where.navRowsInPanel === 1,
-    "the panel has one navigation row, not two (" + where.navRowsInPanel + ")");
+    "the panel still has one navigation row, not two (" + where.navRowsInPanel + ")");
 
-  // …and the chrome carries one meaning per element: mode, whose move, the
-  // actions for right now, the panel toggle. The wordmark and the unlabelled
-  // move counter are gone.
+  // …and the chrome carries one meaning per element: whose move, the two
+  // actions for the move being made, the panel toggle. The wordmark and the
+  // unlabelled move counter went in 2.0; mode, flip and new game went here.
   const chrome = await page.evaluate(() => ({
     brand: document.querySelectorAll(".chrome .brand").length,
     counter: document.querySelectorAll(".chrome #moves").length,
     pill: (document.getElementById("status") || {}).textContent || "",
+    ids: [...document.querySelectorAll(".chrome button")].map((b) => b.id),
+    // the one filled button in the app was "new game", over the board
+    primaries: document.querySelectorAll(".chrome .primary").length,
   }));
   assert(chrome.brand === 0, "the wordmark is gone from the chrome");
   assert(chrome.counter === 0, "…and so is the unlabelled move counter");
   assert(chrome.pill.length <= 16,
     "the status pill holds a phrase, not a sentence (" + chrome.pill.length + " chars: " + chrome.pill + ")");
+  assert(JSON.stringify(chrome.ids) === JSON.stringify(["undo", "btn-hint", "toggle-panel"]),
+    "the bar is take-back, hint, panel — in that order (" + chrome.ids.join(", ") + ")");
+  assert(chrome.primaries === 0,
+    "nothing over the board is styled as the action to take");
+
+  // Undo is absent until there is a move to take back, and this group is
+  // right-aligned, so whatever appears pushes only what is to its left. With
+  // undo in the middle it pushed 提示 56px sideways and landed in the pixels
+  // 提示 had just left — two clicks in one place, help then take-back.
+  const shift = await page.evaluate(async () => {
+    const at = () => [...document.querySelectorAll(".chrome button")]
+      .map((b) => ({ id: b.id, l: Math.round(b.getBoundingClientRect().left),
+                     shown: getComputedStyle(b).visibility === "visible" }));
+    const before = at();
+    const cv = document.getElementById("board");
+    const r = cv.getBoundingClientRect(), s = r.width / 8;
+    const click = (c, rw) => {
+      for (const type of ["pointerdown", "pointerup", "click"])
+        cv.dispatchEvent(new MouseEvent(type,
+          { clientX: r.left + (c + 0.5) * s, clientY: r.top + (rw + 0.5) * s, bubbles: true }));
+    };
+    click(4, 6); await new Promise((z) => setTimeout(z, 150));
+    click(4, 4); await new Promise((z) => setTimeout(z, 500));
+    return { before, after: at() };
+  });
+  const moved = shift.after.filter((a) => {
+    const b = shift.before.find((x) => x.id === a.id);
+    return b && Math.abs(b.l - a.l) > 1;
+  });
+  const undoBefore = shift.before.find((b) => b.id === "undo");
+  const undoAfter = shift.after.find((b) => b.id === "undo");
+  assert(undoBefore && !undoBefore.shown, "take-back is not shown with nothing to take back");
+  assert(undoAfter && undoAfter.shown, "…and is shown once there is");
+  assert(moved.length === 0,
+    "…without moving anything in the bar, itself included (moved: " +
+    moved.map((m) => m.id).join(", ") + ")");
+  // it is the trade that is dangerous: after 1.e4 it is the engine's move, so
+  // hint goes away in the same repaint that take-back arrives
+  const hintBefore = shift.before.find((b) => b.id === "btn-hint");
+  const hintAfter = shift.after.find((b) => b.id === "btn-hint");
+  assert(hintBefore.shown && !hintAfter.shown,
+    "hint leaves in the same repaint — after 1.e4 it is the engine's move");
+  assert(hintAfter.l === hintBefore.l && undoAfter.l !== hintBefore.l,
+    "…keeping its own slot rather than handing it to take-back (hint " +
+    hintBefore.l + "→" + hintAfter.l + ", take-back at " + undoAfter.l + ")");
+  // a slot nobody can use is a slot nobody can tab into
+  const reach = await page.evaluate(() =>
+    [...document.querySelectorAll(".chrome button")]
+      .filter((b) => getComputedStyle(b).visibility !== "visible")
+      .every((b) => b.offsetParent === null || !b.checkVisibility({ visibilityProperty: true })));
+  assert(reach, "an empty slot is not reachable by keyboard");
   await ctx.close();
+}
+
+// --- 3b2. one height, one baseline ----------------------------------------
+// The alignment this bar could never reach: 36 / 32 / 27.4px and baselines
+// 26.5 / 25.3, because the mode row sized from --row-h, the buttons were a
+// literal 32 and the pill was 4px of padding around whatever the text
+// measured. It is also 12px from the left edge and 8px from the right.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play");
+    const bar = await page.evaluate(async () => {
+      // shut the panel: with it open the right inset is the panel's width plus
+      // the gap, so the two sides are only comparable here
+      document.getElementById("toggle-panel").click();
+      await new Promise((z) => setTimeout(z, 400));
+      const ch = document.querySelector(".chrome");
+      const cr = ch.getBoundingClientRect();
+      const items = [document.querySelector(".status-pill"),
+                     ...document.querySelectorAll(".chrome button")]
+        .filter((e) => e && e.getBoundingClientRect().width > 0);
+      const cs = getComputedStyle(ch);
+      return {
+        chrome: { t: cr.top, b: cr.bottom },
+        padL: parseFloat(cs.paddingLeft), padR: parseFloat(cs.paddingRight),
+        items: items.map((e) => {
+          const b = e.getBoundingClientRect();
+          return { id: e.id || e.className, h: Math.round(b.height * 10) / 10,
+                   mid: Math.round((b.top + b.bottom) / 2 * 10) / 10,
+                   past: Math.round((b.bottom - cr.bottom) * 10) / 10 };
+        }),
+      };
+    });
+    const heights = [...new Set(bar.items.map((i) => i.h))];
+    const mids = [...new Set(bar.items.map((i) => i.mid))];
+    assert(heights.length === 1,
+      lang + ": everything in the bar is one height (" + heights.join(", ") + ")");
+    assert(mids.length === 1,
+      lang + ": …on one centre line (" + mids.join(", ") + ")");
+    const barMid = Math.round((bar.chrome.t + bar.chrome.b) / 2 * 10) / 10;
+    assert(Math.abs(mids[0] - barMid) <= 0.5,
+      lang + ": …which is the bar's own (" + mids[0] + " vs " + barMid + ")");
+    for (const i of bar.items)
+      assert(i.past <= 0, lang + ": " + i.id + " stays inside the bar (past by " + i.past + ")");
+    assert(bar.padL === bar.padR,
+      lang + ": the bar's insets match (" + bar.padL + " / " + bar.padR + ")");
+    await ctx.close();
+  }
 }
 
 // --- 3c. the spine: the game is still readable with the panel shut ---------
