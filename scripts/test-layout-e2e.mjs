@@ -60,13 +60,18 @@ console.log("引擎:", ENGINE);
  * The settings key is written before the page runs, which is how the app
  * itself restores them — nothing here clicks through the onboarding.
  */
-async function open(lang, mode, tab) {
+async function open(lang, mode, tab, theme = "wood") {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
-  await ctx.addInitScript(([l, m, tb]) => {
+  // The theme is chosen at load. Setting data-theme on a page already living in
+  // another one leaves a mixture — the theme blocks and the component block
+  // have equal specificity, so which wins depends on source order, not on the
+  // attribute — and a measurement taken then reads one theme's ink on another
+  // theme's paper.
+  await ctx.addInitScript(([l, m, tb, th]) => {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: m, langId: l, sideTab: tb, soundOn: false, themeId: "wood" }));
+      mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th }));
     localStorage.setItem("chess.panelOpen", "1");
-  }, [lang, mode, tab]);
+  }, [lang, mode, tab, theme]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -371,6 +376,155 @@ for (const tab of ["play", "setup", "record"]) {
   for (const b of bad) console.error("  visible but disabled: " + b);
   assert(bad.length === 0,
     tab + " 标签页:侧栏里没有被禁用的可见控件" + (bad.length ? " —— " + bad.join(", ") : ""));
+  await ctx.close();
+}
+
+// --- 3k. every design token resolves, in every theme -----------------------
+// The two worst defects in 2.0.0 were both invisible to a source-text check
+// and both trivially visible here.
+//
+// One: a comment carrying the words `/* v1.9 polish */` closed itself early —
+// CSS comments do not nest — and the parser's recovery swallowed the whole
+// `:root, [data-theme="wood"]` block, i.e. every raw value and every semantic
+// role of the DEFAULT theme. 271 rules parsed instead of 272; the panel
+// rendered white with black text.
+//
+// Two: seven component variables were written `--accent: var(--accent)`. A
+// custom property that references itself is invalid at computed-value time, so
+// --accent, --danger, --primary-* and the three --on-* resolved to nothing in
+// all four themes. The active tab's underline fell back to currentColor and
+// the deletion links were not red.
+//
+// The unit suite has "every var() names a token that exists" — and it passed
+// both times, because both tokens do exist in the text. Existing is not
+// resolving. Only a browser can tell the difference.
+{
+  const TOKENS = ["--bg","--panel","--panel-border","--text","--muted","--accent","--win",
+    "--btn","--btn-hover","--btn-ghost","--card","--card-border",
+    "--primary-from","--primary-to","--danger","--on-primary","--on-accent","--on-danger"];
+  for (const theme of ["wood","night","day","notebook"]) {
+    const { ctx, page } = await open("zh-CN", "ai", "setup", theme);
+    const empty = await page.evaluate((names) => {
+      const cs = getComputedStyle(document.documentElement);
+      return names.filter((n) => !cs.getPropertyValue(n).trim());
+    }, TOKENS);
+    for (const e of empty) console.error("  unresolved in " + theme + ": " + e);
+    assert(empty.length === 0,
+      theme + ":每个设计 token 都解析得出值" + (empty.length ? " —— 空的:" + empty.join(", ") : ""));
+    await ctx.close();
+  }
+  // …and the stylesheet parsed whole: a swallowed block is a missing rule
+  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  const sel = await page.evaluate(() => {
+    const sh = [...document.styleSheets].find((s2) => (s2.href || "").includes("styles.css"));
+    return [...sh.cssRules].map((r) => r.selectorText || "").filter(Boolean);
+  });
+  for (const want of [":root, [data-theme=\"wood\"]", "[data-theme=\"night\"]",
+                      "[data-theme=\"day\"]", "[data-theme=\"notebook\"]"]) {
+    assert(sel.includes(want), "样式表完整解析:" + want + " 这一块在");
+  }
+  await ctx.close();
+}
+
+// --- 3l. keyboard focus is visible ----------------------------------------
+// The ring is color-mix(… var(--accent) …), so when --accent died the whole
+// `outline` declaration went with it — and `outline-offset: 2px` from the same
+// rule still applied, which is how you could tell the rule was matching and
+// only that one line was being dropped. The comment above that rule exists
+// because the app once shipped with the UA default at about 1.0:1. It was
+// back to nothing.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  const bad = [];
+  for (let i = 0; i < 14; i++) {
+    await page.keyboard.press("Tab");
+    await page.waitForTimeout(50);
+    const r = await page.evaluate(() => {
+      const e = document.activeElement;
+      if (!e || e === document.body) return null;
+      if (e.id === "board") return null;              // draws its own on-canvas cursor
+      const cs = getComputedStyle(e);
+      const ring = (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) ||
+                   cs.boxShadow !== "none" ||
+                   e.matches(".text-input");           // inputs mark focus on the border
+      return ring ? null : (e.id || e.className || e.tagName);
+    });
+    if (r) bad.push(r);
+  }
+  assert(bad.length === 0,
+    "键盘 Tab 到的每个控件都有可见焦点环" + (bad.length ? " —— 没有的:" + [...new Set(bad)].join(", ") : ""));
+  await ctx.close();
+}
+
+// --- 3m. body text clears WCAG AA, in every theme --------------------------
+// The board's own contrast has been measured since 1.11 and is quoted in the
+// README; the interface text never was. 2.0.0 ran --day-muted at 3.79:1 and
+// --notebook-muted at 3.86:1 against their own backgrounds — below the 4.5 an
+// AA body text needs — across the mode row, the panel tabs, the player roles
+// and every group label. wood and night cleared it.
+//
+// Two things this had to get right before it could be trusted, both of which
+// it got wrong first. A fresh page per theme, not `setAttribute` on a page
+// already loaded in another one: the theme blocks and the component block have
+// equal specificity, so flipping the attribute mid-life leaves a mixture and
+// the measurement reads one theme's ink on another theme's paper. And colours
+// resolved through a canvas rather than by parsing the computed string:
+// color-mix() computes to `color(srgb 0.72 0.61 0.49)`, whose components are
+// 0–1, and reading those as 0–255 makes every mixed background look black —
+// which is what briefly "found" a 1.13:1 badge that is really 7:1.
+for (const theme of ["wood", "night", "day", "notebook"]) {
+  const { ctx, page } = await open("zh-CN", "ai", "setup", theme);
+  await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
+  await page.waitForTimeout(250);
+  const low = await page.evaluate(() => {
+    const cv = document.createElement("canvas"); cv.width = cv.height = 1;
+    const g2 = cv.getContext("2d", { willReadFrequently: true });
+    const rgba = (css) => { g2.clearRect(0, 0, 1, 1); g2.fillStyle = "#000"; g2.fillStyle = css;
+      g2.fillRect(0, 0, 1, 1); return [...g2.getImageData(0, 0, 1, 1).data]; };
+    const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const L = ([r, g3, b]) => 0.2126 * lin(r) + 0.7152 * lin(g3) + 0.0722 * lin(b);
+    const bgOf = (e) => { let n = e; while (n) { const cs = getComputedStyle(n);
+      if (cs.backgroundImage !== "none") return null;   // a gradient has no one colour
+      const c = rgba(cs.backgroundColor); if (c[3] > 242) return c.slice(0, 3); n = n.parentElement; }
+      return [255, 255, 255]; };
+    const out = [];
+    for (const e of document.querySelectorAll("#side *, .chrome *")) {
+      if (!e.offsetParent) continue;
+      if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+      const cs = getComputedStyle(e);
+      const fg = rgba(cs.color); if (fg[3] < 242) continue;
+      if (parseFloat(cs.opacity) < 0.95) continue;
+      const bg = bgOf(e); if (!bg) continue;
+      const l1 = L(fg.slice(0, 3)), l2 = L(bg);
+      const cr = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      const size = parseFloat(cs.fontSize);
+      const big = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700);
+      if (cr < (big ? 3 : 4.5)) out.push((e.id || e.className || e.tagName) + " " + cr.toFixed(2));
+    }
+    return [...new Set(out)];
+  });
+  for (const l of low.slice(0, 6)) console.error("  low contrast in " + theme + ": " + l);
+  assert(low.length === 0,
+    theme + ":界面文字都达到 WCAG AA" + (low.length ? " —— " + low.length + " 处:" + low.slice(0, 3).join(", ") : ""));
+  await ctx.close();
+}
+
+// --- 3n. every control has an accessible name -----------------------------
+// 2.0.0's 失着提醒 and 自动翻转 switches had none: a screen reader announced
+// "button, pressed" and nothing else. The sound switch beside them had a
+// title, so the row read differently to a sighted user and to a blind one.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
+  await page.waitForTimeout(250);
+  const anon = await page.evaluate(() =>
+    [...document.querySelectorAll("button, input, select, [role=tab]")]
+      .filter((e) => e.offsetParent)
+      .filter((e) => !(e.getAttribute("aria-label") || e.textContent.trim() ||
+                       e.title || e.getAttribute("aria-labelledby")))
+      .map((e) => e.id || e.className || e.tagName));
+  assert(anon.length === 0,
+    "每个可见控件都有可读的名称" + (anon.length ? " —— 没有的:" + anon.join(", ") : ""));
   await ctx.close();
 }
 

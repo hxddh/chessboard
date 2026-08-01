@@ -7,8 +7,8 @@
     /* ------------------------------------------------------------------
        This file is sectioned by COMPONENT, not by version.
 
-       It used to carry `/* v1.9 polish */` and `/* --- stats (v0.3) --- */`
-       headings — an append log, which tells you when a rule arrived and
+       It used to carry version headings — one read "v1.9 polish", another
+       "stats (v0.3)". They were an append log — an append log, which tells you when a rule arrived and
        nothing about what it belongs to. Five such blocks were left; a rule
        for the history filters sat under "v1.10" three hundred lines away
        from the rest of the history. Where a rule lives should answer
@@ -135,7 +135,11 @@
       --day-panel: #f4f0e8;
       --day-panel-border: #d4cdc0;
       --day-text: #2c261e;
-      --day-muted: #7a7164;
+      /* 4.53:1 on --day-bg and 5.05:1 on --day-panel. It was #7a7164, which is
+         3.79:1 on the background — below AA for body text, and this is the one
+         theme where it failed: wood/night/notebook all clear 4.5. Measured, and
+         guarded in scripts/test-layout-e2e.mjs. */
+      --day-muted: #6d6559;
       --day-accent: #b8894a;
       --day-btn: #e0d9cc;
       --day-btn-hover: #d2c9b8;
@@ -181,7 +185,10 @@
       --notebook-panel: #f7f8fb;
       --notebook-panel-border: #c5cdd8;
       --notebook-text: #2a3140;
-      --notebook-muted: #6b7585;
+      /* 4.52:1 on --notebook-bg, 5.14:1 on --notebook-panel. It was #6b7585 =
+         3.86:1, below AA for body text — the same miss as 日's --day-muted,
+         and found the same way. */
+      --notebook-muted: #616a79;
       --notebook-accent: #3b6ea5;
       --notebook-btn: #e8ecf2;
       --notebook-btn-hover: #dce2eb;
@@ -222,14 +229,26 @@
     }
 
     /* 3 · component variables — the names the rules below actually use.
-       One declaration each, for all four themes. */
+       One declaration each, for all four themes.
+
+       Only the names that CHANGE between layer 2 and layer 3 belong here.
+       Seven did not: --accent, --danger, --primary-from, --primary-to and the
+       three --on-* are already the names a theme declares, so mapping them
+       produced `--accent: var(--accent)`. A custom property that references
+       itself is invalid at computed-value time — it does not fall back to the
+       theme's value, it resolves to nothing — and because this block has the
+       same specificity as the theme blocks and comes after them, the nothing
+       won. Measured on 2.0.0: --accent and --danger computed empty in all four
+       themes, so the active tab's underline was currentColor instead of the
+       accent and 「清除全部存档」 was ordinary text instead of red. The focus
+       ring went with them: it is color-mix(… var(--accent) …), and an invalid
+       substitution drops the whole outline declaration. */
     :root {
       --bg: var(--surface);
       --panel: var(--surface-raised);
       --panel-border: var(--line);
       --text: var(--ink);
       --muted: var(--ink-muted);
-      --accent: var(--accent);
       --win: var(--success);
       --btn: var(--control);
       --btn-hover: var(--control-hover);
@@ -237,12 +256,6 @@
       --card: var(--card-fill);
       --card-border: var(--card-line);
       --chrome-bg: var(--veil);
-      --primary-from: var(--primary-from);
-      --primary-to: var(--primary-to);
-      --danger: var(--danger);
-      --on-primary: var(--on-primary);
-      --on-accent: var(--on-accent);
-      --on-danger: var(--on-danger);
     }
 
     /* ------------------------------------------------------------------
@@ -994,6 +1007,13 @@
     .theme-row.wrap {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+      /* Every row of the control is the same height. Four buttons in three
+         columns leaves one alone on a second row, and 2.0.0 measured that row
+         at 33px against the first row's 51px — the first row had been
+         stretched by "Intermediate" wrapping to two lines. A segmented control
+         with one segment shorter than its neighbours reads as broken rather
+         than as wrapped; 1fr rows make the wrap look deliberate. */
+      grid-auto-rows: 1fr;
     }
     .theme-row button {
       flex: 1;
@@ -1703,8 +1723,15 @@
     .mvtag.t-bad { color: var(--judge-bad); }
 
     /* --- records: statistics, achievements, game history --- */
+    /* `minmax(0, 1fr)`, not `1fr`: the default minimum of a grid track is
+       min-content, and a flex item's default min-width is its content too, so
+       two cards whose names do not fit simply widened the columns and pushed
+       the row out of the panel. Measured on 2.0.0 in English: the two columns
+       came out 158 + 134 + 6 = 299px inside a 240px panel and the right-hand
+       column was clipped 37px past the edge. Chinese names are short enough to
+       hide it. Same shape as the .link-row bug, one component along. */
     .ach-body {
-      display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
     }
     .ach-item {
       display: flex; align-items: center; gap: 6px;
@@ -1720,7 +1747,12 @@
       background: color-mix(in srgb, var(--accent) 10%, transparent);
     }
     .ach-ic { font-size: 16px; line-height: var(--lh-tight); flex-shrink: 0; }
-    .ach-nm { font-size: 12px; color: var(--text); line-height: var(--lh-tight); }
+    .ach-nm {
+      font-size: 12px; color: var(--text); line-height: var(--lh-tight);
+      /* the card may be narrower than the name; the name wraps rather than
+         widening the card past its column */
+      min-width: 0; overflow-wrap: anywhere;
+    }
     .ach-item:not(.got) .ach-nm { color: var(--muted); }
 
     .stats-body { display: flex; flex-direction: column; gap: 2px; }
