@@ -90,14 +90,42 @@ jobs:
       # published release with no download on it, and a push to the branch
       # between dispatch and checkout meant the binaries were not built from
       # the source the tag names. Both are silent.
+      #
+      # And it has to be retryable. Everything after this point can fail — the
+      # platform builds run afterwards — and until 2.0 a failure there left a
+      # tag and a draft behind that made every later attempt die at
+      # `gh release create` with "release already exists". The 2.0.0 release hit
+      # exactly that: the Windows build failed on a CRLF-only test bug, and the
+      # only way forward was to delete a tag and a draft by hand. A release
+      # process that cannot be retried is one that gets finished by hand, which
+      # is the opposite of what it is for.
+      #
+      # Retrying is allowed only while nothing has been published: a draft for
+      # this tag is deleted, a *published* release for it stops the run.
       - name: tag the commit under test
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: |
+          set -euo pipefail
           notes=".github/release-notes/${TAG}.md"
           test -f "$notes" || { echo "missing $notes"; exit 1; }
-          git tag "$TAG" "$GITHUB_SHA"
-          git push origin "refs/tags/${TAG}"
+          # one page, not --paginate: with --paginate the --jq runs per page and
+          # emits one line each, so a two-page repo answers a yes/no question
+          # with two lines. 100 is well above this repo's release count.
+          rels=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100")
+          published=$(printf '%s' "$rels" | jq -r "[.[] | select(.tag_name==\"${TAG}\") | select(.draft==false)] | .[0].id // empty")
+          if [ -n "$published" ]; then
+            echo "${TAG} is already published — refusing to retag it"
+            exit 1
+          fi
+          draft=$(printf '%s' "$rels" | jq -r "[.[] | select(.tag_name==\"${TAG}\") | select(.draft==true)] | .[0].id // empty")
+          if [ -n "$draft" ]; then
+            echo "deleting the draft ${TAG} left by a failed attempt (release $draft)"
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${draft}"
+          fi
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/${TAG}"
       - name: draft the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -114,6 +142,10 @@ jobs:
           TAG: ${{ inputs.tag }}
           SDK_VERSION: ${{ inputs.sdk_version }}
         run: |
+          set -euo pipefail
+          # recorded before the dispatch so the wait below can tell this
+          # attempt's runs from a previous attempt's
+          echo "DISPATCHED_AT=$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
           gh workflow run build-macos.yml --ref "$TAG" \
             -f release_tag="$TAG" -f sdk_version="$SDK_VERSION"
           gh workflow run build-windows.yml --ref "$TAG" \
@@ -122,6 +154,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
+          DISPATCHED_AT: ${{ env.DISPATCHED_AT }}
         run: |
           set -euo pipefail
           # give the dispatches a moment to register as runs
@@ -130,8 +163,14 @@ jobs:
           for wf in build-macos.yml build-windows.yml; do
             id=""
             while [ -z "$id" ]; do
-              id=$(gh run list --workflow="$wf" --branch "$TAG" \
-                     --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+              # Only runs newer than this attempt's dispatch. On a retry the tag
+              # already carries the previous attempt's runs, and "the most
+              # recent run for this tag" can still be one of those in the
+              # seconds before the new one registers — which would make the
+              # retry watch the very run that failed last time and fail again.
+              id=$(gh run list --workflow="$wf" --branch "$TAG" --limit 30 \
+                     --json databaseId,createdAt \
+                     --jq "[.[] | select(.createdAt >= \"${DISPATCHED_AT}\")] | .[0].databaseId // empty")
               [ -n "$id" ] && break
               [ "$(date +%s)" -lt "$deadline" ] || { echo "no $wf run appeared for $TAG"; exit 1; }
               sleep 15
