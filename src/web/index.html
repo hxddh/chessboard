@@ -9,20 +9,25 @@
 <body>
 
   <div id="app">
+    <!-- The bar is 44px of permanently reserved height directly above a board
+         that is height-bound in every window this app runs in, so those pixels
+         come out of the board's *edge*: measured, 5.2% of it at 1400x900 and
+         8.7% at 640x560 — 11% to 18% of its area. What they bought was three
+         things on three different clocks: a mode switch used once a session, a
+         status that changes every ply, and tools used mid-move. Three update
+         rates, three visual languages, three heights (36 / 27.4 / 32) and two
+         baselines in one 44px strip — the row could not be aligned because
+         nothing in it shared a unit.
+         Now it holds one sentence and the two actions that belong to the move
+         being made. Everything else went to the panel, which is where the app
+         already keeps things you decide rather than things you do:
+           模式  → 设置页, as a segment like every other setting
+           翻转  → 设置页 · 外观, next to the theme
+           新局  → 对局页 · 本局, next to 提和 / 判和 / 认输
+         All five chrome actions had keyboard shortcuts already (H Z F N P);
+         what moved lost a duplicate button, not its only route. ☰ stays: with
+         the panel shut it is the only pointer path back to any of this. -->
     <header class="chrome">
-      <!-- Mode is an application-level switch: it decides what every other
-           control on screen means, which makes it navigation, not a setting.
-           It lived inside the panel until 2.0, under the player cards and
-           directly above the tab row — two rows deliberately sharing one
-           underline vocabulary, one meaning "change product" and one "change
-           view". Sharing the vocabulary solved "learn the selected state
-           twice"; the cost was two rows that look identical and are not. -->
-      <div class="theme-row mode-nav" id="mode-seg" role="group" aria-label="模式" data-i18n-aria="side.mode">
-        <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n-title="tip.mode.ai" data-i18n="mode.ai">人机</button>
-        <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.mode.pvp" data-i18n="mode.pvp">双人</button>
-        <button type="button" data-mode="learn" title="从零学国际象棋:互动课程" data-i18n-title="tip.mode.learn" data-i18n="mode.learn">教学</button>
-        <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀" data-i18n-title="tip.mode.puzzle" data-i18n="mode.puzzle">做题</button>
-      </div>
       <!-- One job: whose move it is, or how the game ended. The wordmark and
            the unlabelled 14/14 counter are gone — this is a desktop app with a
            title bar, and a move counter is a position inside a game, which is
@@ -30,10 +35,16 @@
       <span class="status-pill" id="status">白方走子</span>
       <span class="spacer"></span>
       <div class="chrome-actions">
-        <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint" data-i18n="chrome.hint">提示</button>
+        <!-- Undo before hint, and the order matters: undo is absent until
+             there is a move to take back (P3 — a disabled control is not shown
+             at all), and this group is right-aligned, so whatever appears
+             pushes only what is to its left. With undo in the middle, making
+             the first move slid 提示 56px to the left and dropped 悔棋 into the
+             exact pixels 提示 had just vacated — click twice in one place and
+             the second click took back the move you had just been offered help
+             with. At the head of the group it has nothing to push. -->
         <button type="button" class="tool-btn" id="undo" title="悔棋 (Z)" data-i18n-title="tip.undo" data-i18n="chrome.undo">悔棋</button>
-        <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="chrome.flip">翻转</button>
-        <button type="button" class="tool-btn primary" id="btn-new" title="新局 (N)" data-i18n-title="tip.newGame" data-i18n="chrome.new">新局</button>
+        <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint" data-i18n="chrome.hint">提示</button>
         <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel">☰</button>
       </div>
     </header>
@@ -110,6 +121,26 @@
       </div>
 
       <div class="side-pane" id="pane-setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
+      <!-- Mode decides what every other control on screen means, which is why
+           it spent 2.0 in the chrome: an application-level switch, not a
+           setting. That was right about what it *is* and wrong about what it
+           costs — it is changed once or twice a session, and it was holding the
+           top-left corner, the first tab stop and four of the chrome's nine
+           controls for the whole time it was not being used.
+           It is the first thing on the settings page instead, which is the one
+           screen you are not on while playing. It reads as a segment here, the
+           same control the difficulty, the persona and the theme use; the
+           underline vocabulary it shared with the tab row is gone with it, and
+           so is the pair of identical-looking rows that vocabulary created. -->
+      <section class="side-section" id="sec-mode">
+        <h2 class="side-h" data-i18n="side.mode">模式</h2>
+        <div class="theme-row wrap" id="mode-seg" role="group" aria-label="模式" data-i18n-aria="side.mode">
+          <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n-title="tip.mode.ai" data-i18n="mode.ai">人机</button>
+          <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.mode.pvp" data-i18n="mode.pvp">双人</button>
+          <button type="button" data-mode="learn" title="从零学国际象棋:互动课程" data-i18n-title="tip.mode.learn" data-i18n="mode.learn">教学</button>
+          <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀" data-i18n-title="tip.mode.puzzle" data-i18n="mode.puzzle">做题</button>
+        </div>
+      </section>
       <!-- Summary first, controls on request.
            Eighteen equal-weight buttons stood open here permanently — six
            difficulties, four sparring styles, two colours, six clocks — which
@@ -228,6 +259,15 @@
           <div class="setting-row stack">
             <span class="setting-k" data-i18n="side.language">语言</span>
             <div class="theme-row" id="lang-seg" role="group" aria-label="语言" data-i18n-aria="side.language"></div>
+          </div>
+          <!-- Which way round the board is drawn is a property of the view,
+               like the theme, so it lives with the theme rather than in the
+               chrome — where it was one of four buttons over the board and one
+               of the three that are not about the move being made. F still
+               does it without opening anything. -->
+          <div class="setting-row" id="row-flip">
+            <span class="setting-k" data-i18n="side.orientation">棋盘方向</span>
+            <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="chrome.flip">翻转</button>
           </div>
           <div class="setting-row">
             <span class="setting-k" data-i18n="side.sound">音效</span>
@@ -410,6 +450,11 @@
           <div class="link-row">
             <button type="button" class="text-link" id="btn-offerdraw" data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.offerDraw">提和</button>
             <button type="button" class="text-link" id="btn-claimdraw" title="三次重复或 50 回合无进展时可判和" data-i18n-title="tip.claimDraw" data-i18n="act.claimDraw">判和</button>
+            <!-- Was the only gradient-filled button in the app, sitting over
+                 the board — this UI's word for "the thing to press here" spent
+                 on the one action you never want mid-game. It is a way for this
+                 game to end, so it stands with the other three. -->
+            <button type="button" class="text-link" id="btn-new" title="新局 (N)" data-i18n-title="tip.newGame" data-i18n="chrome.new">新局</button>
             <button type="button" class="text-link danger" id="btn-resign" title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
           </div>
         </div>

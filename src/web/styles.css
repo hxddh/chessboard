@@ -413,7 +413,16 @@
        Sizes, radii, leading, motion, and the row heights the panel is built on. */
     :root {
       --side-w: 284px;
-      --chrome-h: 44px;
+      /* 44px until the bar was cut to a status and two actions. Every pixel
+         here is taken off the board's edge, not off slack: the board is
+         height-bound in every window this ships in and is already fitted to
+         within 6px of the space the bar leaves. */
+      --chrome-h: 32px;
+      /* One height for everything in the chrome, so the status and the tools
+         share a box and a baseline. The bar used to hold three heights
+         (36 / 32 / 27.4) and two baselines (26.5 / 25.3), which is what
+         "not quite aligned" looks like when the parts have no common unit. */
+      --chrome-ctl-h: 28px;
       --stage-pad: 6px;
       --wood-pad: 17px;
       --radius-sm: 8px;
@@ -502,7 +511,9 @@
       position: absolute; top: 0; left: 0; right: 0;
       height: var(--chrome-h); z-index: 20;
       display: flex; align-items: center; gap: 6px;
-      padding: 0 8px 0 12px;
+      /* symmetric: it was 12 left / 8 right, which put the first control and
+         the last one at different distances from their own edges */
+      padding: 0 8px;
       background: var(--chrome-bg);
       pointer-events: none;
       /* instant, like the stage — the layout settles at once and only the
@@ -512,7 +523,7 @@
        shift the toolbar buttons out from under it so they stay clickable.
        Narrow screens use the scrim overlay instead, where the panel is modal. */
     @media (min-width: 821px) {
-      #app.panel-open .chrome { padding-right: calc(var(--side-w) + 10px); }
+      #app.panel-open .chrome { padding-right: calc(var(--side-w) + 8px); }
     }
     .chrome > * { pointer-events: auto; }
     /* --- the spine: the game, with the panel shut ------------------------ */
@@ -536,7 +547,12 @@
 
     .status-pill {
       font-size: 12px; font-weight: 500; color: var(--text);
-      padding: 4px 12px; border-radius: 999px;
+      /* an explicit box rather than 4px of padding around whatever the text
+         happened to measure — that gave 27.4px next to the buttons' 32 and
+         put its baseline 1.2px off theirs */
+      height: var(--chrome-ctl-h);
+      display: inline-flex; align-items: center;
+      padding: 0 12px; border-radius: 999px;
       background: var(--btn-ghost);
       border: 1px solid var(--card-border);
       backdrop-filter: blur(8px);
@@ -582,6 +598,30 @@
       font-size: 15px; line-height: var(--lh-tight);
     }
     .tool-btn { height: 32px; padding: 0 12px; font-size: 12px; font-weight: 500; }
+    /* The chrome's own size. Scoped, because .tool-btn is also the panel's
+       button and the panel is not on a 32px bar.
+
+       Two fixed slots, and both halves of "fixed" are load-bearing. This group
+       is right-aligned, so anything that changes its contents re-maps every
+       position in it, and both of these buttons come and go: take-back is
+       absent until there is a move to take back, hint is absent while it is
+       the engine's move. Measured on the shipped build, they did not merely
+       shift — they *traded places*: after 1.e4 the hint button vanished (not
+       your move) and take-back appeared in the exact 50 pixels hint had
+       occupied a moment earlier. Click twice where you clicked once and the
+       second click takes back the move.
+         - `visibility` rather than `display` for the unavailable one, so the
+           slot is held. It is not visible and not tabbable, so P3's "no
+           visible control that cannot be used" still holds — that rule is
+           about controls that look available and are not, and an empty space
+           does not look like anything.
+         - a floor on the width, because the hint button relabels itself
+           (提示 / 思考中 / 答案 · Hint / Thinking / Answer) and a button that
+           changes width drags its neighbour along. 80px clears the widest of
+           the six labels in the three languages, measured: Thinking at 78. */
+    .chrome .tool-btn { height: var(--chrome-ctl-h); min-width: 80px; }
+    .chrome .icon-btn { width: var(--chrome-ctl-h); height: var(--chrome-ctl-h); }
+    .chrome-actions .slot-empty { visibility: hidden; }
     .icon-btn:hover, .tool-btn:hover { background: var(--btn-hover); }
     .tool-btn.primary {
       background: linear-gradient(180deg, var(--primary-from), var(--primary-to));
@@ -790,40 +830,16 @@
       font-size: 12px; color: var(--muted); line-height: var(--lh-body);
     }
     .opening-line[hidden] { display: none; }
-    /* Mode is navigation, and so are the tabs directly beneath it — same job,
-       so the same grammar. Up to 1.12 these were two idioms stacked on each
-       other: a 12px-radius pill row 35px tall, and immediately below it a tab
-       row with an 8px top radius and a 2px underline, 36px tall. Reading the
-       panel meant learning "selected" twice in two centimetres. The pills are
-       gone; both rows now mark the current item with the same underline. */
-    .mode-nav { margin-top: 12px; gap: 4px; }
-    /* In the chrome since 2.0, so it sizes to its labels rather than
-       stretching across a 284px panel. */
-    .theme-row.mode-nav { flex: 0 0 auto; gap: 2px; }
-    .theme-row.mode-nav button {
-      flex: 0 0 auto; padding: 0 12px;
-      background: transparent; border: 0;
-      border-bottom: 2px solid transparent;
-      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-      color: var(--muted);
-      font-size: 13px; padding: 0 4px; line-height: var(--lh-tight);
-      /* Four labels in a 284px panel. "2 players" and "レッスン" wrapped onto
-         a second line, which made one tab in the row two lines tall and put a
-         hyphenless break in the middle of a two-word label. They fit on one
-         line at this size — measured, see scripts/test-layout-e2e.mjs. */
-      white-space: nowrap;
-      min-height: var(--row-h); display: flex; align-items: center;
-      justify-content: center;
-      transition: color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
-    }
-    .theme-row.mode-nav button:hover { color: var(--text); background: var(--btn-ghost); }
-    .theme-row.mode-nav button.active {
-      color: var(--text);
-      border-bottom-color: var(--accent);
-      background: color-mix(in srgb, var(--accent) 10%, transparent);
-    }
-    /* the tab row sits right below and must not read as a second border */
-    .mode-nav { border-bottom: 1px solid var(--card-border); }
+    /* Mode used to be a nav row with its own idiom — an underline it shared
+       with the tab row, a `margin-top: 12px` from its life inside the panel,
+       and a group border drawn for a tab row that stopped sitting beneath it
+       when 2.0 moved the row into the chrome. In the chrome that margin
+       pushed the whole group 6px below the bar's centre line and 2.5px past
+       its bottom edge, where the border and the active underline stacked into
+       a 3px two-colour rule painted outside the bar. All of it is gone with
+       the row: mode is a `.theme-row.wrap` segment on the settings page now,
+       styled by the same rule as the difficulty, the persona and the theme,
+       and the panel is back to one navigation row. */
 
     /* —— tabs —— */
     .side-head, .side-tabs { flex-shrink: 0; }
@@ -989,9 +1005,11 @@
 
        `.theme-row` is the name history left it; every segment in the app
        is one, from the mode row to the theme picker to the puzzle
-       category filter. Modifiers: `.wrap` for a grid of more than four,
-       `.mode-nav` for the underline treatment the mode row and the tab
-       row share.
+       category filter. One modifier: `.wrap`, a grid for more than four.
+       There was a second — `.mode-nav`, an underline treatment for the one
+       segment that was also navigation — and carrying a whole second idiom
+       for a single row is what let that row drift 6px out of line without
+       anything else in the file noticing.
        --------------------------------------------------------------- */
     .theme-row {
       display: flex; gap: 8px;

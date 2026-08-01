@@ -1336,10 +1336,27 @@ for (const lang of CONTENT_LANGS) {
       "every control height comes from a token" + (stray.length ? " — off it: " + [...new Set(stray)].join(", ") : ""));
     for (const tokName of ["--row-h", "--row-h-sm", "--label-h"])
       assert(new RegExp(tokName + ":\\s*\\d+px").test(stripped), tokName + " is defined");
-    // the two rows that pick a view are one control, not two
-    const modeH = /\.theme-row\.mode-nav button\s*\{[^}]*min-height:\s*var\(--row-h\)/.test(stripped);
     const tabH = /\.side-tabs button\[role="tab"\]\s*\{[^}]*min-height:\s*var\(--row-h\)/.test(stripped);
-    assert(modeH && tabH, "the mode row and the tab row are the same height token");
+    assert(tabH, "the tab row's height comes from --row-h");
+  }
+
+  // The chrome is one strip, so everything standing in it is one height and one
+  // baseline. It used to run three (36 / 32 / 27.4) and two baselines, because
+  // the mode row sized itself from --row-h, the buttons were a literal 32, and
+  // the status pill had no height at all — it was 4px of padding around
+  // whatever the text measured. Nothing in the bar shared a unit, which is why
+  // it could not be aligned, only nudged.
+  {
+    assert(/--chrome-ctl-h:\s*\d+px/.test(stripped), "the chrome has one control-height token");
+    for (const sel of [/\.chrome \.tool-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
+                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
+                       /\.status-pill \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
+      assert(sel.test(stripped), "…and every control in it is that height — " + sel.source.slice(0, 22));
+    const chrome = /\n    \.chrome \{([\s\S]*?)\n    \}/.exec(stripped);
+    assert(chrome, ".chrome is styled");
+    const pad = /padding:\s*([^;]+);/.exec(chrome[1]);
+    assert(pad && pad[1].trim().split(/\s+/).length === 2,
+      "the bar's left and right insets are the same (" + (pad ? pad[1].trim() : "?") + ")");
   }
 
   // the replay bar was the heaviest object in a panel of text links: a filled,
@@ -1450,13 +1467,20 @@ for (const lang of CONTENT_LANGS) {
       "no `flex: 1 1 N%` anywhere — that is the shape that made the fourth button a primary");
   }
 
-  // mode and tabs are both navigation, so they get one grammar. Until 1.12
-  // they were a 12px pill row and an underlined tab row stacked together.
+  // The segment has one implementation and one modifier. `.mode-nav` was a
+  // second idiom kept alive for a single row — an underline, a panel-era
+  // `margin-top: 12px` and a group border drawn for a tab row that was no
+  // longer underneath it. It rode 6px below the chrome's centre line and 2.5px
+  // past its bottom edge for a whole release, and no rule in this file could
+  // notice, because it was the only user of every declaration it carried.
+  // Mode is a plain `.theme-row.wrap` segment on the settings page now.
   {
-    const mode = /\.theme-row\.mode-nav button \{([\s\S]*?)\n    \}/.exec(stripped);
-    assert(mode, "the mode row has its own rule");
-    assert(/border-bottom:\s*2px solid/.test(mode[1]), "mode marks selection with an underline, like the tabs");
-    assert(!/border-radius:\s*var\(--radius-md\)/.test(mode[1]), "no pill");
+    const markup = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+    assert(!/mode-nav/.test(stripped), "no `.mode-nav` idiom is left in the stylesheet");
+    assert(!/class="[^"]*mode-nav/.test(markup), "…and nothing in the markup asks for one");
+    const seg = /<div class="([^"]*)" id="mode-seg"/.exec(markup);
+    assert(seg && /\btheme-row\b/.test(seg[1]) && /\bwrap\b/.test(seg[1]),
+      "the mode segment is styled by the same rule as every other segment (" + (seg ? seg[1] : "missing") + ")");
   }
 
   // the board is set into its frame: concentric radii want 16 - 17 < 0
