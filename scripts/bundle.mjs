@@ -141,7 +141,16 @@ function requireEsbuildSync() {
   return _esbuild;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run directly, or imported? `file://` + argv[1] answers that on posix and
+// silently answers "imported" on Windows, where argv[1] is `D:\\a\\…\\bundle.mjs`
+// and import.meta.url is `file:///D:/a/…/bundle.mjs`. The block below then
+// never runs: no bundle written, nothing printed, exit 0. That is exactly how
+// the 2.0.0 release failed — the Windows build's next line was
+// `cp src/web/js/bundle.js`, and the only symptom was "No such file or
+// directory" three commands later. Compare real paths instead.
+const runDirectly = !!process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (runDirectly) {
   const text = await build();
   console.log(`bundle.js: ${(text.length / 1024).toFixed(1)} KB`);
   if (process.argv.includes("--check")) {
