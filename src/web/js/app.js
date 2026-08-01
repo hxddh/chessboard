@@ -3641,8 +3641,13 @@ import { createStore } from "./store.js";
     slot(el("undo"), modal
       ? !!(inDrill && store.session.learn.g && store.session.learn.g.history().length)
       : h.length > 0 && isLive() && !ruleTerminated());
-    avail(el("btn-new"), !modal);
-    avail(el("btn-flip"), !modal);
+    // A new game needs a game to replace. At move 0 on the standard start
+    // there is nothing for it to do, and it was the only surviving member of
+    // the 「本局」 group — a heading over a single item, promising a group of
+    // actions on this game while this game had not begun. Same test the resume
+    // check uses: moves played, or a position someone set up on purpose.
+    avail(el("btn-new"), !modal && (h.length > 0 || !!startFen()));
+
 
     // Hint is the one control that stays put while it is busy: it is in the
     // chrome, under the pointer, and it says what it is doing.
@@ -3776,6 +3781,9 @@ import { createStore } from "./store.js";
     document.querySelectorAll("#color-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.color === store.session.humanColor);
     });
+    document.querySelectorAll("#orient-seg button").forEach((b) => {
+      b.classList.toggle("active", (b.dataset.orient === "b") === !!store.game.flipped);
+    });
     document.querySelectorAll("#clock-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.tc === store.game.timeControl);
     });
@@ -3813,8 +3821,17 @@ import { createStore } from "./store.js";
     }
     // the reading modes get a wider column — see styles.css [data-mode]
     appEl.setAttribute("data-mode", store.session.mode);
+    // The whole section, not just the fold inside it. Hiding the <details>
+    // alone left the <section> standing: 33px of nothing with the group's
+    // dividing rule still drawn under it, which on the settings page of the
+    // two teaching modes read as a group that had failed to load.
     const foldGame = el("fold-game");
-    if (foldGame) foldGame.hidden = store.session.mode === "learn" || store.session.mode === "puzzle";
+    const teaching = store.session.mode === "learn" || store.session.mode === "puzzle";
+    if (foldGame) {
+      foldGame.hidden = teaching;
+      const sec = foldGame.closest("section");
+      if (sec) sec.hidden = teaching;
+    }
 
     const secMoves = document.getElementById("sec-moves");
     const trainer = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
@@ -5375,14 +5392,33 @@ import { createStore } from "./store.js";
   });
   canvas.style.touchAction = "none"; // let touch drags move pieces, not the page
 
+  /**
+   * Which way round the board is drawn.
+   *
+   * Three things ask for this — the settings segment, the F key and the native
+   * View menu — and until 2.1.1 all three carried their own copy of
+   * `flipped = !flipped; saveSettings(); draw()`. The comment over
+   * NATIVE_COMMANDS says both halves "end up here so there is one
+   * implementation and the two can never drift"; they had already drifted, in
+   * the one action with three doors: the button announced the new view in a
+   * toast and the other two changed it in silence.
+   */
+  function setFlipped(v) {
+    const want = !!v;
+    if (store.game.flipped === want) return;
+    store.game.flipped = want;
+    saveSettings();
+    draw();
+    sync();
+    toast(want ? t("msg.view.black") : t("msg.view.white"));
+  }
+
   document.getElementById("undo").onclick = undo;
   document.getElementById("btn-hint").onclick = () => { requestHint(); };
   document.getElementById("btn-new").onclick = () => { requestNewGame(); };
-  document.getElementById("btn-flip").onclick = () => {
-    store.game.flipped = !store.game.flipped;
-    saveSettings();
-    draw();
-    toast(store.game.flipped ? t("msg.view.black") : t("msg.view.white"));
+  document.getElementById("orient-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-orient]");
+    if (b) setFlipped(b.dataset.orient === "b");
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   const moreBtn = document.getElementById("more-tools");
@@ -5564,7 +5600,7 @@ import { createStore } from "./store.js";
     "game.new": () => requestNewGame(),
     "game.undo": () => undo(),
     "game.hint": () => requestHint(),
-    "game.flip": () => { store.game.flipped = !store.game.flipped; saveSettings(); draw(); },
+    "game.flip": () => setFlipped(!store.game.flipped),
     "view.panel": () => togglePanel(),
     "view.prev": () => setViewIndex(store.game.viewIndex - 1),
     "view.next": () => setViewIndex(store.game.viewIndex + 1),
@@ -6039,9 +6075,7 @@ import { createStore } from "./store.js";
     else if (k === "z" && !ev.metaKey && !ev.ctrlKey) undo();
     else if (k === "n" && !ev.metaKey && !ev.ctrlKey) requestNewGame();
     else if (k === "h" && !ev.metaKey && !ev.ctrlKey) requestHint();
-    else if (k === "f" && !ev.metaKey && !ev.ctrlKey) {
-      store.game.flipped = !store.game.flipped; saveSettings(); draw();
-    }
+    else if (k === "f" && !ev.metaKey && !ev.ctrlKey) setFlipped(!store.game.flipped);
   });
 
   window.addEventListener("resize", () => {

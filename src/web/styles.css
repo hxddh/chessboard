@@ -1033,6 +1033,24 @@
          than as wrapped; 1fr rows make the wrap look deliberate. */
       grid-auto-rows: 1fr;
     }
+    /* …but equal height only made the orphan tidy. `auto-fit` with a 64px
+       minimum resolves to three columns in a 284px panel whatever the control
+       holds, so every four-item segment — the mode row, the engine ladder, the
+       sparring styles — laid out 3 + 1: three peers and one on a line of its
+       own. A segmented control is one control; a segment sitting alone under
+       three others reads as a different kind of thing, which is the same
+       mistake the 2.0 `flex: 1 1 30%` bug made in a different way.
+       Meanwhile the theme row, also four items but a plain flex `.theme-row`,
+       sat four-across two centimetres below. Same count, two shapes, one
+       screen.
+       So the column count comes from the item count, not from the width:
+       two, three and four all divide their own row exactly, and five or more
+       fall back to three because a five-across segment is 55px per label.
+       Four goes to 2×2 rather than 4×1 — "Intermediate" needs 88px and a
+       four-column panel column is 65. */
+    .theme-row.wrap:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .theme-row.wrap:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .theme-row.wrap:has(> :nth-child(4):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .theme-row button {
       flex: 1;
       appearance: none; border: 1px solid var(--card-border);
@@ -1669,6 +1687,13 @@
 
     /* Achievement grouping (1.24): a wall of padlocks says "you have nothing";
        a group header plus the nearest one says "start here". */
+    /* The suggestion and the two group headings are children of the same grid
+       as the badges, so each of them was taking one cell of a two-column row
+       and leaving the other half empty — the panel opened on a bordered card
+       beside a blank, then "还差一点 15" beside another blank. They are not
+       badges; they are the rows the badges are filed under, and a row spans
+       its table. */
+    .ach-next, .ach-group { grid-column: 1 / -1; }
     .ach-next {
       margin-bottom: 8px; padding: 6px 8px;
       background: var(--card); border: 1px solid var(--card-border);
@@ -1753,6 +1778,9 @@
     }
     .ach-item {
       display: flex; align-items: center; gap: 6px;
+      /* so the counter can drop to a second line rather than squeeze the name
+         into breaking mid-word — see .ach-nm */
+      flex-wrap: wrap;
       padding: 6px 8px; border-radius: var(--radius-sm);
       border: 1px solid var(--card-border);
       background: var(--btn-ghost);
@@ -1767,9 +1795,18 @@
     .ach-ic { font-size: 16px; line-height: var(--lh-tight); flex-shrink: 0; }
     .ach-nm {
       font-size: 12px; color: var(--text); line-height: var(--lh-tight);
-      /* the card may be narrower than the name; the name wraps rather than
-         widening the card past its column */
-      min-width: 0; overflow-wrap: anywhere;
+      /* `overflow-wrap: anywhere` was added in 2.0.1 to stop the name pushing
+         its card past the panel edge. It stopped the overflow by breaking the
+         word instead: nine of the fifteen badges read 规则通/关, 熟能生/巧,
+         杀法大/师 — a four-character name split after the third. That is not a
+         narrower failure than the overflow, it is the same failure with the
+         evidence hidden.
+         What was actually short of room is the row, not the name: the icon,
+         the name and a 0/111 counter share ~114px, and only the badges that
+         carry a counter wrapped. So the counter gets out of the way — it drops
+         under the name when both cannot fit — and the name breaks only where a
+         language says it may. */
+      min-width: 0;
     }
     .ach-item:not(.got) .ach-nm { color: var(--muted); }
 

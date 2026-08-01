@@ -152,7 +152,7 @@
       <section class="side-section">
         <details class="setting-fold" id="fold-game">
           <summary class="setting-summary">
-            <span class="side-h" data-i18n="side.game">对局</span>
+            <h2 class="side-h" data-i18n="side.game">对局</h2>
             <span class="setting-sum" id="game-summary"></span>
           </summary>
         <div class="setting-list">
@@ -225,27 +225,18 @@
         </details>
       </section>
 
-      <!-- Every irreversible action, in one place, with one naming pattern.
-           They used to be four: 「清除存档」 pinned in red at the foot of the
-           panel, 「重置」 in the lesson header, 「清零」 in the statistics
-           header, 「认输」 in the game group — four unrecoverable actions,
-           four locations, three different words for "destroy", all of them
-           permanent furniture sitting a stray click away while you play.
-           Resign stayed with the game (it is a move, not a deletion) and is
-           only present while a game is running; the three that delete data
-           live here, behind one heading, off the screen you play on. -->
-      <section class="side-section">
-        <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
-        <div class="link-row">
-          <button type="button" class="text-link danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
-          <button type="button" class="text-link danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
-          <button type="button" class="text-link danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
-        </div>
-        <p class="hint" data-i18n="hint.danger">三项都不可撤销,各自会再问一次。</p>
-      </section>
 
+      <!-- Was 「外观」 until 2.1.1, holding the theme, the language, the board
+           orientation and the sound. Two of those four are not appearance: a
+           language is what the app says, a sound is not seen at all. The
+           heading is what the group is, so the group is 「界面」 and the order
+           inside it goes from the most visible to the least: the two that
+           change what the board looks like, then the words, then the sound.
+           (Orientation spent 2.1 between the language and the sound, which put
+           the greatest distance in the group between it and the theme — the
+           one setting it belongs with.) -->
       <section class="side-section">
-        <h2 class="side-h" data-i18n="side.look">外观</h2>
+        <h2 class="side-h" data-i18n="side.look">界面</h2>
         <div class="setting-list">
           <div class="setting-row stack">
             <span class="setting-k" data-i18n="side.theme">主题</span>
@@ -256,18 +247,28 @@
               <button type="button" data-theme="notebook" title="纸本" data-i18n-title="tip.theme.notebook" data-i18n="theme.notebook">纸</button>
             </div>
           </div>
-          <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.language">语言</span>
-            <div class="theme-row" id="lang-seg" role="group" aria-label="语言" data-i18n-aria="side.language"></div>
-          </div>
           <!-- Which way round the board is drawn is a property of the view,
-               like the theme, so it lives with the theme rather than in the
+               like the theme, so it sits next to the theme rather than in the
                chrome — where it was one of four buttons over the board and one
                of the three that are not about the move being made. F still
                does it without opening anything. -->
-          <div class="setting-row" id="row-flip">
+          <div class="setting-row stack" id="row-flip">
             <span class="setting-k" data-i18n="side.orientation">棋盘方向</span>
-            <button type="button" class="tool-btn" id="btn-flip" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="chrome.flip">翻转</button>
+            <!-- A state, not a verb. Every other row on this page shows what it
+                 is currently set to — the theme, the language, the sound — and
+                 this one showed a button labelled 「翻转」, which says what will
+                 happen if you press it and nothing about which way the board is
+                 facing now. Two segments, the same shape as 执子 two groups up,
+                 and the answer is readable without pressing anything. F still
+                 toggles. -->
+            <div class="theme-row" id="orient-seg" role="group" aria-label="棋盘方向" data-i18n-aria="side.orientation">
+              <button type="button" data-orient="w" class="active" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="msg.view.white">白方视角</button>
+              <button type="button" data-orient="b" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="msg.view.black">黑方视角</button>
+            </div>
+          </div>
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.language">语言</span>
+            <div class="theme-row" id="lang-seg" role="group" aria-label="语言" data-i18n-aria="side.language"></div>
           </div>
           <div class="setting-row">
             <span class="setting-k" data-i18n="side.sound">音效</span>
@@ -276,6 +277,31 @@
             </button>
           </div>
         </div>
+      </section>
+
+      <!-- Every irreversible action, in one place, with one naming pattern.
+           They used to be four: 「清除存档」 pinned in red at the foot of the
+           panel, 「重置」 in the lesson header, 「清零」 in the statistics
+           header, 「认输」 in the game group — four unrecoverable actions,
+           four locations, three different words for "destroy", all of them
+           permanent furniture sitting a stray click away while you play.
+           Resign stayed with the game (it is a move, not a deletion) and is
+           only present while a game is running; the three that delete data
+           live here, behind one heading, off the screen you play on.
+
+           And last on that screen. Until 2.1 this sat in the middle of the
+           settings page — three irreversible deletions, and the only red on
+           the page, wedged between the two groups you actually come here to
+           adjust. A destructive group belongs at the end of the thing it is
+           the end of. -->
+      <section class="side-section">
+        <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
+        <div class="link-row">
+          <button type="button" class="text-link danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
+          <button type="button" class="text-link danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
+          <button type="button" class="text-link danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
+        </div>
+        <p class="hint" data-i18n="hint.danger">三项都不可撤销,各自会再问一次。</p>
       </section>
 
       </div><!-- /pane-setup -->
@@ -296,7 +322,7 @@
           <button type="button" class="tool-btn" id="lesson-next" data-i18n="act.next" title="进入下一课" data-i18n-title="tip.lesson.next">下一课</button>
         </div>
         <details class="reading-index">
-          <summary class="setting-summary"><span class="side-h" data-i18n="side.contents">目录</span></summary>
+          <summary class="setting-summary"><h2 class="side-h" data-i18n="side.contents">目录</h2></summary>
           <div class="lesson-list" id="lesson-list" aria-label="课程列表" data-i18n-aria="aria.lessonList"></div>
         </details>
       </section>
@@ -339,7 +365,7 @@
           <button type="button" class="tool-btn" id="puzzle-playon" hidden title="从这个开局局面接着与引擎对弈" data-i18n-title="tip.playOn" data-i18n="act.playOn">接实战</button>
         </div>
         <details class="reading-index">
-          <summary class="setting-summary"><span class="side-h" data-i18n="side.puzzleList">题目列表</span></summary>
+          <summary class="setting-summary"><h2 class="side-h" data-i18n="side.puzzleList">题目列表</h2></summary>
           <div class="lesson-list" id="puzzle-list" aria-label="题目列表" data-i18n-aria="aria.puzzleList"></div>
         </details>
       </section>

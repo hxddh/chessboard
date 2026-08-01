@@ -726,6 +726,154 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   await ctx.close();
 }
 
+// --- 3o. a segmented control has no orphan segment ------------------------
+// `auto-fit` with a 64px floor resolves to three columns in a 284px panel
+// whatever the control holds, so every four-item segment laid out 3 + 1 — the
+// mode row, the engine ladder, the sparring styles — while the theme row, also
+// four items but a plain flex `.theme-row`, sat four-across two centimetres
+// below. A segment alone on a line reads as a different kind of thing.
+// 2.0.0 met this family once already and made the two rows equal *height*,
+// which tidied the orphan without removing it.
+{
+  for (const lang of LANGS) {
+    for (const mode of ["ai", "pvp", "learn", "puzzle"]) {
+      const { ctx, page } = await open(lang, mode, "setup");
+      const rows = await page.evaluate(() => {
+        const f = document.getElementById("fold-game");
+        if (f) f.open = true;
+        const out = [];
+        for (const g of document.querySelectorAll(".theme-row")) {
+          if (!g.offsetParent) continue;
+          const bs = [...g.querySelectorAll("button")];
+          if (bs.length < 2) continue;
+          const lines = new Map();
+          for (const b of bs) {
+            const t = Math.round(b.getBoundingClientRect().top);
+            lines.set(t, (lines.get(t) || 0) + 1);
+          }
+          out.push({ id: g.id || g.className, n: bs.length,
+                     lines: [...lines.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]) });
+        }
+        return out;
+      });
+      assert(rows.length > 0, lang + "/" + mode + ": segments are on screen");
+      for (const g of rows)
+        assert(g.lines.length === 1 || g.lines[g.lines.length - 1] > 1,
+          lang + "/" + mode + ": " + g.id + " has no segment alone on the last line (" +
+          g.n + " → " + g.lines.join("+") + ")");
+      await ctx.close();
+    }
+  }
+}
+
+// --- 3p. a group that has nothing to show is not on screen ----------------
+// Hiding the <details> and leaving its <section> standing left 33px of nothing
+// with the group's dividing rule still under it, on the settings page of both
+// teaching modes — which reads as a group that failed to load. Same shape as
+// the 「本局」 heading standing over a single 「新局」 at move 0.
+{
+  for (const mode of ["ai", "pvp", "learn", "puzzle"]) {
+    for (const tab of ["play", "setup", "record"]) {
+      const { ctx, page } = await open("zh-CN", mode, tab);
+      const empties = await page.evaluate(() => {
+        const pane = document.querySelector(".side-pane:not([hidden])");
+        const out = [];
+        for (const g of pane.querySelectorAll("section, .act-group")) {
+          if (!g.offsetParent) continue;
+          // a group folded shut is showing exactly what it means to show: its
+          // heading, its summary line, and the arrow that opens it
+          if (g.querySelector("details:not([open])")) continue;
+          const heading = g.querySelector(".side-h, .act-k");
+          const items = [...g.querySelectorAll("button, input, a")]
+            .filter((e) => e.offsetParent && getComputedStyle(e).visibility === "visible");
+          if (!heading) continue;
+          if (items.length <= 1 && !g.querySelector(".stats-body, .hist-body, .ach-body, .move-list, .lesson-text"))
+            out.push({ h: heading.textContent.trim(), n: items.length,
+                       items: items.map((e) => e.textContent.trim().slice(0, 8)) });
+        }
+        return out;
+      });
+      for (const e of empties)
+        assert(false, mode + "/" + tab + ": 「" + e.h + "」 is a heading over " +
+          (e.n ? "a single item (" + e.items.join(",") + ")" : "nothing"));
+      assert(empties.length === 0, mode + "/" + tab + ": every group on screen has a group in it");
+      await ctx.close();
+    }
+  }
+}
+
+// --- 3q. the achievement grid is a grid of achievements -------------------
+// The suggestion card and the two group headings were children of the same
+// two-column grid as the badges, so each took one cell and left the other half
+// blank — the panel opened on a bordered card beside a gap. And the names:
+// 2.0.1 stopped them overflowing with `overflow-wrap: anywhere`, which stopped
+// the overflow by breaking the word instead — nine of fifteen read 规则通/关,
+// 熟能生/巧, 杀法大/师.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "record");
+    const r = await page.evaluate(() => {
+      const body = document.getElementById("ach-body");
+      const br = body.getBoundingClientRect();
+      const full = [...body.querySelectorAll(".ach-next, .ach-group")].map((e) => {
+        const b = e.getBoundingClientRect();
+        return { c: e.className, spans: Math.round(b.width) >= Math.round(br.width) - 1 };
+      });
+      // A name may wrap when it is genuinely wider than the space it has —
+      // "Consistent winner" is two words and 17 characters in a 130px cell.
+      // What it may not do is wrap while it would have fitted, which is what
+      // was happening: the 0/111 counter sat on the same line and squeezed it
+      // until `overflow-wrap: anywhere` broke 规则通/关 rather than the row
+      // giving way. Measure the name on one line and compare with the room.
+      const wrapped = [...body.querySelectorAll(".ach-nm")].map((n) => {
+        const lh = parseFloat(getComputedStyle(n).lineHeight);
+        const lines = Math.round(n.getBoundingClientRect().height / lh);
+        if (lines <= 1) return null;
+        const probe = n.cloneNode(true);
+        probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
+        n.parentElement.appendChild(probe);
+        const need = probe.getBoundingClientRect().width;
+        probe.remove();
+        const room = n.parentElement.getBoundingClientRect().width -
+          [...n.parentElement.children].filter((e) => e !== n)
+            .reduce((a, e) => a + e.getBoundingClientRect().width + 6, 0) - 16;
+        return need <= room ? { t: n.textContent.trim(), lines, need: Math.round(need), room: Math.round(room) } : null;
+      }).filter(Boolean);
+      const over = [...body.querySelectorAll(".ach-item")]
+        .map((e) => Math.round(e.getBoundingClientRect().right - br.right)).filter((x) => x > 1);
+      return { full, wrapped, over };
+    });
+    for (const f of r.full)
+      assert(f.spans, lang + ": ." + f.c.split(" ")[0] + " spans the grid rather than taking one badge's cell");
+    assert(r.wrapped.length === 0,
+      lang + ": no achievement name is broken while its row had the room — " +
+      r.wrapped.map((w) => w.t + " (" + w.need + "px into " + w.room + ")").join(", "));
+    assert(r.over.length === 0, lang + ": no badge runs past the grid (" + r.over.join(", ") + ")");
+    await ctx.close();
+  }
+}
+
+// --- 3r. the settings page reads as one page ------------------------------
+// Four groups, and the order is the argument: what you are doing, how this game
+// is set, what the app looks like, and — last, always last — the three things
+// that delete data. 2.1 had the deletions in the middle, the only red on the
+// page, between the two groups you actually come here to adjust.
+{
+  for (const mode of ["ai", "learn"]) {
+    const { ctx, page } = await open("zh-CN", mode, "setup");
+    const secs = await page.evaluate(() =>
+      [...document.querySelectorAll("#pane-setup > section")]
+        .filter((s) => s.offsetParent)
+        .map((s) => (s.querySelector(".side-h") || {}).textContent || "?"));
+    assert(secs[0] === "模式", mode + ": mode comes first — " + secs.join(" → "));
+    assert(secs[secs.length - 1] === "清除数据",
+      mode + ": the deletions come last — " + secs.join(" → "));
+    assert(secs.includes("对局") === (mode === "ai"),
+      mode + ": the game group is present exactly when there is a game to set — " + secs.join(" → "));
+    await ctx.close();
+  }
+}
+
 // --- 4. the tab row holds tabs only ---------------------------------------
 {
   const { ctx, page } = await open("zh-CN", "ai", "play");
