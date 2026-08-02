@@ -148,6 +148,48 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   assert(shot.bytes > 3000, "…with a drawn report in it, not an empty canvas (" + shot.bytes + " bytes)");
 }
 
+// --- the report is a list of numbers, laid out as one -----------------------
+// Each side's figures were one sentence carrying five values — 「精准度 100% ·
+// 平均失分 0 · 小失误 0 / 失误 0 / 严重 0」 — which in a 239px panel wrapped to
+// three lines in Chinese and five in English, breaking after the separators so
+// that 「/」 and 「·」 ended the lines. Directly above it, the statistics
+// section lays out the same kind of content (named quantities) as one row
+// each, label left and value right. Now the report is made of those rows, and
+// the exported picture draws the same three from the same helper — splitting
+// them for the panel alone would have left the picture describing the same
+// five numbers in different words, which is how every other pair in this app
+// has drifted.
+{
+  const r = await page.evaluate(() => {
+    const body = document.getElementById("review-body");
+    const blocks = [...body.querySelectorAll(".review-row")].filter((e) => e.querySelector(".stat-row"));
+    return blocks.map((b) => ({
+      who: (b.querySelector(".review-k") || {}).textContent || "",
+      rows: [...b.querySelectorAll(".stat-row")].map((r) => ({
+        h: Math.round(r.getBoundingClientRect().height),
+        k: (r.querySelector(".stat-k") || {}).textContent || "",
+        v: (r.querySelector(".stat-v") || {}).textContent || "",
+        fits: (() => {
+          const kk = r.querySelector(".stat-k"), vv = r.querySelector(".stat-v");
+          if (!kk || !vv) return false;
+          return kk.getBoundingClientRect().right <= vv.getBoundingClientRect().left + 1;
+        })(),
+      })),
+    }));
+  });
+  assert(r.length === 2, "the report has a block per side (" + r.length + ")");
+  for (const b of r) {
+    assert(b.rows.length === 3, b.who + ": three numbers, three rows (" + b.rows.length + ")");
+    const hs = [...new Set(b.rows.map((x) => x.h))];
+    assert(hs.length === 1, b.who + ": every row is the same height (" + hs.join(", ") + ")");
+    for (const row of b.rows) {
+      assert(row.fits, b.who + " 「" + row.k + "」: the label ends before the value starts");
+      assert(row.h < 30, b.who + " 「" + row.k + "」: on one line (" + row.h + "px)");
+      assert(row.v.trim() !== "", b.who + " 「" + row.k + "」: has a value");
+    }
+  }
+}
+
 assert(errs.length === 0, "no JS exception through analysis and replay — " + errs.join(" / "));
 
 await browser.close();

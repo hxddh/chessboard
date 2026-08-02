@@ -60,8 +60,13 @@ console.log("引擎:", ENGINE);
  * The settings key is written before the page runs, which is how the app
  * itself restores them — nothing here clicks through the onboarding.
  */
-async function open(lang, mode, tab, theme = "wood") {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
+// Every measurement in this file was taken at one window size until 2.1.2 —
+// 1400x900, sometimes 1200 or 1280 — while app.zon lets the window go down to
+// 520x520. A panel column is 239px at 1400 and the whole layout argument rests
+// on numbers like that, so "it fits" was only ever established at the widest
+// end. `viewport` lets a section re-run at the narrow end; see 4c.
+async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, height: 900 }) {
+  const ctx = await browser.newContext({ viewport, locale: lang });
   // The theme is chosen at load. Setting data-theme on a page already living in
   // another one leaves a mixture — the theme blocks and the component block
   // have equal specificity, so which wins depends on source order, not on the
@@ -1355,6 +1360,85 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
         s.id + " (" + lang + "): no filter label breaks out of its button" +
         (s.spill.length ? " — " + s.spill.join(", ") : ""));
     }
+    await ctx.close();
+  }
+}
+
+// --- 4b. the spine gets its own strip, like the bar at the other end -------
+// The chrome bar's height is held out of the board so its gradient never sits
+// on rank 8 — the comment on `.stage` says exactly that. The spine is the same
+// case at the bottom: a 24px pill pinned 6px off the floor, over a board
+// fitted to within 6px of what it is given. Nothing was held out for it.
+// Measured with the panel shut, before the fix: the pill ran 490–514 while the
+// a–h letters ran 498–513 at 520x520, and 870–894 against 878–893 at
+// 1400x900 — the last 7px of rank 1 and the whole file row, at every size,
+// with the pill's own text lying across c–f.
+{
+  for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
+    const { ctx, page } = await open("zh-CN", "ai", "play", "wood", { width: w, height: h });
+    await page.keyboard.press("p");          // shut the panel: the spine's whole reason to exist
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => {
+      const app = document.getElementById("app");
+      const wrap = document.getElementById("board-wrap").getBoundingClientRect();
+      const sp = document.getElementById("spine");
+      const sr = sp && !sp.hidden ? sp.getBoundingClientRect() : null;
+      return { shut: !app.classList.contains("panel-open"),
+               wrapBottom: Math.round(wrap.bottom), board: Math.round(wrap.width),
+               spine: sr ? { top: Math.round(sr.top), bottom: Math.round(sr.bottom) } : null,
+               vh: innerHeight };
+    });
+    assert(r.shut, w + "x" + h + ": the panel is shut");
+    assert(r.spine, w + "x" + h + ": …and the spine is what is left of the game");
+    assert(r.spine.top >= r.wrapBottom - 1,
+      w + "x" + h + ": the spine starts below the board, not on it (spine " +
+      r.spine.top + ", board ends " + r.wrapBottom + ")");
+    assert(r.spine.bottom <= r.vh,
+      w + "x" + h + ": …and ends inside the window (" + r.spine.bottom + " of " + r.vh + ")");
+    await ctx.close();
+  }
+  // and with the panel open the strip is not held: nothing is drawn there, and
+  // a board that changed size when the spine appeared would be the defect the
+  // chrome's two fixed slots exist to prevent, one axis over
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const tok = await page.evaluate(() =>
+    getComputedStyle(document.getElementById("app")).getPropertyValue("--spine-h").trim());
+  assert(tok === "0px", "with the panel open nothing is reserved for the spine (" + tok + ")");
+  await ctx.close();
+}
+
+// --- 4c. the smallest window the app allows ------------------------------
+// app.zon sets min_width/min_height to 520 and every assertion in this file was
+// written at 1400x900. docs/manual-check.md D5 ("缩到某个尺寸就不再变小，布局
+// 不塌") is the only thing that ever covered the other end, and nobody has run
+// it. These are the same questions the wide checks ask, asked at 520.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play", "wood", { width: 520, height: 520 });
+    const r = await page.evaluate(() => {
+      const de = document.documentElement;
+      const past = [...document.querySelectorAll("body *")]
+        .filter((e) => e.offsetParent && e.getBoundingClientRect().right > innerWidth + 1)
+        .map((e) => ((e.textContent || "").trim().slice(0, 14) || e.tagName) +
+                    " +" + Math.round(e.getBoundingClientRect().right - innerWidth));
+      const spilled = [...document.querySelectorAll("button")]
+        .filter((b) => b.offsetParent && b.scrollHeight > b.clientHeight + 1)
+        .map((b) => b.textContent.trim().slice(0, 14));
+      const wrap = document.getElementById("board-wrap").getBoundingClientRect();
+      return { hScroll: de.scrollWidth > de.clientWidth + 1,
+               past: past.slice(0, 5), spilled: [...new Set(spilled)].slice(0, 5),
+               board: Math.round(wrap.width),
+               boardIn: wrap.bottom <= innerHeight + 1 && wrap.right <= innerWidth + 1 };
+    });
+    assert(!r.hScroll, lang + " @520: the page does not scroll sideways");
+    assert(r.past.length === 0,
+      lang + " @520: nothing is drawn past the window edge" +
+      (r.past.length ? " — " + r.past.join(", ") : ""));
+    assert(r.spilled.length === 0,
+      lang + " @520: no label breaks out of its button" +
+      (r.spilled.length ? " — " + r.spilled.join(", ") : ""));
+    assert(r.boardIn && r.board > 300,
+      lang + " @520: the board is whole and still the biggest thing on screen (" + r.board + "px)");
     await ctx.close();
   }
 }
