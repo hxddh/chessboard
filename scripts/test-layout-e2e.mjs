@@ -989,6 +989,47 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   }
 }
 
+// --- 3v. a dialog is called what it says it is ----------------------------
+// Every dialog carried its title twice — an aria-label on the box and a
+// visible <h3>, from two different i18n keys — and two of the pairs had
+// drifted apart (「升变」/「升变为」, 「载入 FEN」/「载入 FEN 局面」). The
+// confirm dialog was not merely drifted: its heading is written fresh for each
+// question, while its aria-label was the fixed word 「确认」. Ask to delete
+// every save and the screen said 「清除存档」 while a screen reader said
+// 「确认」 — the most consequential dialog in the app, announced as nothing in
+// particular.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  const dialogs = await page.evaluate(() =>
+    [...document.querySelectorAll(".modal-bg")].map((d) => {
+      const by = d.getAttribute("aria-labelledby");
+      const target = by ? document.getElementById(by) : null;
+      const h = d.querySelector("h3");
+      return { id: d.id, by, label: d.getAttribute("aria-label"),
+               pointsAtHeading: !!target && target === h,
+               name: target ? target.textContent.trim() : null,
+               heading: h ? h.textContent.trim() : null };
+    }));
+  assert(dialogs.length >= 7, "the dialogs are in the markup (" + dialogs.length + ")");
+  for (const d of dialogs) {
+    assert(!d.label, d.id + ": carries no second copy of its title as an aria-label");
+    assert(d.pointsAtHeading, d.id + ": is named by the heading you can see (" + d.by + ")");
+    assert(d.name && d.name === d.heading, d.id + ": 「" + d.name + "」 = 「" + d.heading + "」");
+  }
+  // and the one whose heading changes: what it is called must change with it
+  const asked = await page.evaluate(async () => {
+    document.getElementById("clear-save").click();
+    await new Promise((r) => setTimeout(r, 500));
+    const d = document.getElementById("confirm-modal");
+    const by = document.getElementById(d.getAttribute("aria-labelledby"));
+    return { open: d.classList.contains("show"), name: by ? by.textContent.trim() : null };
+  });
+  assert(asked.open, "asking to delete every save opens the confirm dialog");
+  assert(asked.name && asked.name !== "确认",
+    "…and it is announced by what it is asking, not by the word 「确认」 — 「" + asked.name + "」");
+  await ctx.close();
+}
+
 // --- 3r. the settings page reads as one page ------------------------------
 // Four groups, and the order is the argument: what you are doing, how this game
 // is set, what the app looks like, and — last, always last — the three things

@@ -1425,6 +1425,19 @@
       font-family: var(--font-num); font-size: 12px;
     }
     .modal .close-row { margin-top: 16px; text-align: right; }
+    /* Two variants, both of which were inline `style=` on the element until
+       2.1.2 — invisible to the checks that hold the rest of this file to the
+       spacing, type and leading scales. `.split` puts a secondary action on the
+       far left (FEN's 「从剪贴板粘贴」); `.end` is a row of two or three that
+       all belong on the right. */
+    .modal .close-row.split { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+    .modal .close-row.end { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal .btn-pair { display: flex; gap: 8px; }
+    /* the sentence you read before agreeing to something irreversible */
+    .confirm-msg {
+      margin: 0 0 16px;
+      font-size: 15px; line-height: var(--lh-body); color: var(--text);
+    }
 
     /* position editor: piece palette */
     .palette {

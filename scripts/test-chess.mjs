@@ -2938,7 +2938,11 @@ for (const lang of CONTENT_LANGS) {
   // The promotion dialog — a modal every real game reaches — had no data-i18n
   // at all, so the key-coverage check above could never notice it.
   let bareText = 0;
-  for (const m of html.matchAll(/<(h3|button|span|div|p)\b([^>]*)>([^<]*[一-鿿][^<]*)</g)) {
+  // Comments are not markup. This scan used to run over them too, so writing
+  // 「a visible <h3> against 「升变为」」 in a note about why a heading changed
+  // reported the note as an untranslated heading.
+  const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, "");
+  for (const m of htmlNoComments.matchAll(/<(h3|button|span|div|p)\b([^>]*)>([^<]*[一-鿿][^<]*)</g)) {
     const [, tag, attrs, text] = m;
     if (/data-i18n=/.test(attrs)) continue;
     if (/\sid="(status|moves|white-role|black-role|clock-[wb])"/.test(attrs)) continue; // written by sync()
