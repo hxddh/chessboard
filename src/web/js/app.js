@@ -5052,16 +5052,35 @@ import { createStore } from "./store.js";
    * game saved in Chinese still reads as English after a language switch;
    * `slot.label` is only the fallback for slots written before 1.6.
    */
-  function slotSummary(slot) {
+  /**
+   * A slot in two lines, the same shape the game-history rows use: what kind
+   * of game it is on the first, how long and when on the second.
+   *
+   * All four facts used to share the second line — 「Engine · Unrated · 3
+   * moves · 8/2/2026, 8:59:30 AM」 — and in English it did not fit: 249px of
+   * text into 228, so the two filled slots stood 71px and 87px against the
+   * three empty ones' 55. Five identical things in three heights, in a dialog
+   * whose whole job is to let you compare them.
+   *
+   * The timestamp is short-form too. A bare toLocaleString() carries seconds
+   * in English; the history dialog next door shows a clock to the minute, and
+   * a save does not need the second it was written.
+   */
+  function slotWhat(slot) {
+    if (!slot) return "";
+    if (!slot.mode) return slot.label || "";
+    return t(slot.mode === "ai" ? "mode.ai" : "mode.pvp") +
+      (slot.mode === "ai" ? " · " + diffName(slot.diff) : "");
+  }
+  function slotWhen(slot) {
     if (!slot) return t("slots.empty");
     const P = ChessPgn;
     const s = P ? P.summary(slot.pgn) : null;
-    const when = slot.savedAt ? new Date(slot.savedAt).toLocaleString() : "";
+    const when = slot.savedAt
+      ? new Date(slot.savedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })
+      : "";
     const moves = s && s.plies ? moveCount(Math.ceil(s.plies / 2)) : "";
-    const what = slot.mode
-      ? t(slot.mode === "ai" ? "mode.ai" : "mode.pvp") + (slot.mode === "ai" ? " · " + diffName(slot.diff) : "")
-      : slot.label || "";
-    return [what, moves, when].filter(Boolean).join(" · ");
+    return [moves, when].filter(Boolean).join(" · ");
   }
 
   /** "1 move" / "12 moves" — a count needs its own plural form in English. */
@@ -5077,17 +5096,20 @@ import { createStore } from "./store.js";
     for (let i = 0; i < SLOT_COUNT; i++) {
       const slot = st.slots[i];
       const row = document.createElement("div");
-      row.style.cssText = "display:flex;gap:6px;align-items:stretch";
+      // the same row the history list is built from, by class rather than by
+      // two inline styles restating it — `style.cssText` is a blind spot the
+      // stylesheet's guards cannot reach, which is where 2.1.2's off-scale
+      // values were found hiding in the markup
+      row.className = "pick-row";
       const load = document.createElement("button");
       load.type = "button";
       load.className = "pick-item";
-      load.style.flex = "1";
       load.dataset.load = String(i);
       load.disabled = !slot;
-      load.textContent = t("slots.slot") + (i + 1);
+      load.textContent = [t("slots.slot") + (i + 1), slotWhat(slot)].filter(Boolean).join(" · ");
       const sub = document.createElement("span");
       sub.className = "pick-sub";
-      sub.textContent = slotSummary(slot);
+      sub.textContent = slotWhen(slot);
       load.appendChild(sub);
       const save = document.createElement("button");
       save.type = "button";
