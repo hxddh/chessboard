@@ -79,6 +79,23 @@ import { createStore } from "./store.js";
   const tf = I18n ? I18n.tf : (k) => k;
 
   /**
+   * The name of a side, and the name of the other one.
+   *
+   * Eight places wrote this out as `side === "w" ? t("side.white") :
+   * t("side.black")`, six of them naming the side and two deliberately naming
+   * its opponent ("White wins on time against Black"), and the two forms are
+   * one character apart. The exported review image had both of its inverted:
+   * the column of White's accuracy, mistakes and blunders was headed 黑方, and
+   * the turning point named the wrong player as the one who played it — while
+   * the same report in the panel, four hundred lines away, named them right.
+   * A picture you hand to someone else, with the two players swapped.
+   * One implementation each, so the two forms cannot be confused for each
+   * other by eye. Guarded in test-chess.mjs.
+   */
+  const sideName = (s) => t(s === "w" ? "side.white" : "side.black");
+  const otherSideName = (s) => t(s === "w" ? "side.black" : "side.white");
+
+  /**
    * Stored state, behind one door. See persist.js.
    *
    * The failure hook is the point of it: host.js has always returned
@@ -792,9 +809,9 @@ import { createStore } from "./store.js";
       }
       saveGame();
       store.commit("game", "action");
-      const who = side === "w" ? t("side.white") : t("side.black");
+      const who = sideName(side);
       toast(isDraw ? who + t("msg.clock.flagDrawNoMaterial") :
-        tf("mm.flagWin", [who, side === "w" ? t("side.black") : t("side.white")]));
+        tf("mm.flagWin", [who, otherSideName(side)]));
       return;
     }
     renderClocks();
@@ -2549,7 +2566,7 @@ import { createStore } from "./store.js";
       who.className = "review-k";
       // the full word, not the one-letter clock label — "W Accuracy 64%" reads
       // like a typo in a report meant to be read as prose
-      who.textContent = t(side === "w" ? "side.white" : "side.black");
+      who.textContent = sideName(side);
       const val = document.createElement("span");
       val.className = "review-v num";
       val.textContent = tf("rv.sideLine", [sum.acc[side], sum.acpl[side], c.inaccuracy, c.mistake, c.blunder]);
@@ -2567,7 +2584,7 @@ import { createStore } from "./store.js";
       btn.type = "button";
       btn.className = "review-jump";
       btn.textContent = tf("rv.turningPoint",
-        [sum.worst.moveNo, t(sum.worst.side === "w" ? "side.white" : "side.black"), sum.worst.san,
+        [sum.worst.moveNo, sideName(sum.worst.side), sum.worst.san,
          (sum.worst.loss / 100).toFixed(1)]);
       btn.title = t("rv.jumpTip");
       // land on the position *after* the move, so the damage is on the board
@@ -4088,7 +4105,7 @@ import { createStore } from "./store.js";
     let side;
     if (store.session.mode === "ai") {
       side = store.session.humanColor;
-      if (!(await confirmNative(tf("dlg.resign", [side === "w" ? t("side.white") : t("side.black")]),
+      if (!(await confirmNative(tf("dlg.resign", [sideName(side)]),
         t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel") }))) return;
     } else {
       // pvp: either player may resign at any time (FIDE) — pick the side
@@ -4097,7 +4114,7 @@ import { createStore } from "./store.js";
       if (!pick) return;
       side = pick === "alt" ? "b" : "w";
     }
-    const who = side === "w" ? t("side.white") : t("side.black");
+    const who = sideName(side);
     invalidateEngine();
     store.game.resigned = side;
     // resigning is losing, whatever the previous six years of this file said
@@ -4105,7 +4122,7 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") recordResign();
     saveGame();
     store.commit("game", "action");
-    toast(tf("mm.resignWin", [who, side === "w" ? t("side.black") : t("side.white")]));
+    toast(tf("mm.resignWin", [who, otherSideName(side)]));
   }
 
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
@@ -4513,7 +4530,7 @@ import { createStore } from "./store.js";
       const x = 40 + k * (cw / 2);
       ctx.fillStyle = fg;
       font("600 15px");
-      ctx.fillText(side === "w" ? t("side.black") : t("side.white"), x, rowY);
+      ctx.fillText(sideName(side), x, rowY);
       font("14px");
       ctx.fillStyle = muted;
       const c = sum.counts[side];
@@ -4527,7 +4544,7 @@ import { createStore } from "./store.js";
       ctx.fillStyle = accent;
       // the Plain key, not the panel's line with its "tap to jump" tail
       text(tf("rv.turningPointPlain", [sum.worst.moveNo,
-        sum.worst.side === "w" ? t("side.black") : t("side.white"), sum.worst.san,
+        sideName(sum.worst.side), sum.worst.san,
         (sum.worst.loss / 100).toFixed(1)]), 40, rowY + 100, cw, 2, 20);
     }
     font("12px");

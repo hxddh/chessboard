@@ -1040,6 +1040,26 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     return { open: d.classList.contains("show"), name: by ? by.textContent.trim() : null };
   });
   assert(asked.open, "asking to delete every save opens the confirm dialog");
+  // …and every dialog is still a card. Widening one of them, I split the
+  // `.modal` rule to add the modifier and left the background, the border, the
+  // padding and the shadow behind in the modifier — so the six that are not
+  // wide became bare text over the board. Nothing in this file noticed: every
+  // check here reads geometry or names, and none of them asks whether the box
+  // is a box. The save-slot dialog lost 34px of height and that was the only
+  // trace.
+  const boxes = await page.evaluate(() =>
+    [...document.querySelectorAll(".modal-bg > .modal")].map((m) => {
+      const cs = getComputedStyle(m);
+      return { id: m.parentElement.id, bg: cs.backgroundColor,
+               pad: parseFloat(cs.paddingTop), border: parseFloat(cs.borderTopWidth),
+               w: Math.round(m.getBoundingClientRect().width) };
+    }));
+  for (const b of boxes) {
+    assert(!/rgba\(0, 0, 0, 0\)|transparent/.test(b.bg),
+      b.id + ": is drawn on something, not straight onto the board (" + b.bg + ")");
+    assert(b.pad >= 12, b.id + ": keeps its padding (" + b.pad + ")");
+    assert(b.border > 0, b.id + ": keeps its border (" + b.border + ")");
+  }
   assert(asked.name && asked.name !== "确认",
     "…and it is announced by what it is asking, not by the word 「确认」 — 「" + asked.name + "」");
   await ctx.close();
@@ -1268,6 +1288,73 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     // and the four that work everywhere are always there
     for (const k of ["P", "Tab", "Esc", "?"])
       assert(rows.some((r) => r.keys.split("/").includes(k)), mode + ": " + k + " is listed");
+    await ctx.close();
+  }
+}
+
+// --- 4a. the game list is a list, and its filters are labelled -------------
+// Two defects in the dialog you open to find an old game.
+// The rows: 「date · N moves · X% accuracy」 on one line, in a 380px box that
+// left the line 262px. English needs 263 for a game played yesterday, because
+// the relative form 「yesterday 12:55 AM」 is longer than the absolute
+// 「7/31/2026」 that older games get — one pixel, and 12 of 40 rows stood 67px
+// against the other 28 at 51. The box is what was wrong: this is the only
+// dialog holding a scrolling list of sentences, and it was the width of the
+// ones holding a single question.
+// The filters: two segments side by side at `flex: 0 1 auto`, whose auto basis
+// is the content width of a grid of `minmax(0, 1fr)` columns — zero. They
+// never grew. Measured in Chinese: four result buttons sharing 60px and three
+// colour buttons 94px inside a 418px row, and at 26px a column 「执白」 wrapped
+// to three lines, so the colour filter stood 79px beside a 35px result filter.
+// Stacked, full width, and each one now carries as a visible label the string
+// that was only ever its aria-label — two 「全部」 buttons above each other,
+// both active, with nothing on screen saying what either row filtered.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "record");
+    await page.evaluate(() => {
+      const games = [], diffs = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+      for (let i = 0; i < 40; i++) games.push({ id: "g" + i, t: Date.now() - i * 36e5,
+        diff: diffs[i % 6], color: i % 2 ? "w" : "b", result: ["win", "loss", "draw"][i % 3],
+        moves: 8 + i * 3, pgn: '[Event "?"]\n\n1. e4 e5 1/2-1/2', ending: "", acc: 40 + i, acpl: 120 - i * 2 });
+      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+    });
+    await page.reload();
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+    await page.click("#hist-open", { timeout: 2500 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("#hist-modal .hist-row")].filter((e) => e.offsetParent);
+      const segs = [...document.querySelectorAll(".hist-filters .theme-row")].map((seg) => {
+        const by = seg.getAttribute("aria-labelledby");
+        const label = by ? document.getElementById(by) : null;
+        const bs = [...seg.querySelectorAll("button")];
+        return { id: seg.id, label: label && label.offsetParent ? label.textContent.trim() : null,
+                 stray: seg.getAttribute("aria-label"),
+                 heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+                 widths: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().width)))],
+                 spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent.trim()) };
+      });
+      return { n: rows.length,
+               rowH: [...new Set(rows.map((e) => Math.round(e.getBoundingClientRect().height)))],
+               segs };
+    });
+    assert(r.n >= 20, lang + ": the history dialog is showing the games (" + r.n + ")");
+    assert(r.rowH.length === 1,
+      lang + ": every game in the list is the same height (" + r.rowH.join(", ") + ")");
+    assert(r.segs.length === 2, lang + ": both filters are there (" + r.segs.length + ")");
+    for (const s of r.segs) {
+      assert(s.label, s.id + " (" + lang + "): carries a label you can see, not only one you can hear");
+      assert(!s.stray, s.id + " (" + lang + "): and not a second copy of it as an aria-label");
+      assert(s.heights.length === 1 && s.heights[0] < 40,
+        s.id + " (" + lang + "): every segment is one line tall (" + s.heights.join(", ") + ")");
+      assert(s.widths.length === 1,
+        s.id + " (" + lang + "): every segment is the same width (" + s.widths.join(", ") + ")");
+      assert(s.spill.length === 0,
+        s.id + " (" + lang + "): no filter label breaks out of its button" +
+        (s.spill.length ? " — " + s.spill.join(", ") : ""));
+    }
     await ctx.close();
   }
 }

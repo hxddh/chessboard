@@ -1463,6 +1463,14 @@
       box-shadow: 0 24px 60px rgba(0,0,0,.4);
       animation: modal-in .22s var(--ease);
     }
+    /* One dialog holds a scrolling list of sentences rather than a single
+       question, and 380px was the width of the ones that hold a question. A
+       history row reads 「date · N moves · X% accuracy」 on one line, and in
+       English a game played yesterday needs 263px of the 262 the row had —
+       the relative form 「yesterday 12:55 AM」 is longer than the 「7/31/2026」
+       an older game gets, so 12 of 40 rows stood 67px against the rest at 51.
+       One pixel. At 460 the line has 342 and the worst case has 79 to spare. */
+    .modal.wide { width: min(460px, calc(100vw - 32px)); }
     @keyframes modal-in {
       from { opacity: 0; transform: translateY(8px) scale(0.98); }
       to { opacity: 1; transform: none; }
@@ -1922,11 +1930,28 @@
     .hist-row .pick-item { flex: 1; min-width: 0; padding: 6px 8px; }
 
 /* --- history filters, the shortcut sheet, and the save slots ---------- */
+/* Two filters, stacked, each filling the dialog.
+
+   They used to sit side by side as `flex: 0 1 auto`, and a flex item's auto
+   basis is its content width — but the content is a grid of `minmax(0, 1fr)`
+   columns, whose min-content is zero. So the segments never grew: measured in
+   Chinese, the four result buttons shared 60px and the three colour buttons
+   94px, inside a row 418px wide with 264px of it empty. At 26px a column,
+   「执白」 wrapped to three lines and the colour filter stood 79px tall beside
+   a 35px result filter — two halves of one control, one more than twice the
+   height of the other, in the dialog you open to find a game.
+
+   Stacked and full width they are the shape they always were: a segmented
+   control per question, every segment the same size, the way the theme picker
+   and the mode row already are. Plain `.theme-row` rather than `.wrap`,
+   because `.wrap`'s column count is tuned for a 284px panel — four items go
+   2×2 there, which in a 460px dialog would be four buttons in half the room
+   for no reason. */
 .hist-filters {
-  display: flex; flex-wrap: wrap; gap: 8px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px; align-items: center;
   margin-bottom: 12px;
 }
-.hist-filters .theme-row { flex: 0 1 auto; }
 
 .key-list {
   display: grid; grid-template-columns: auto 1fr;

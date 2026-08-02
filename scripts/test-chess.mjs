@@ -1535,6 +1535,35 @@ for (const lang of CONTENT_LANGS) {
     assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
   }
 
+  // Naming a side, and naming the other one, are one character apart when
+  // written out — and eight places wrote them out. The exported review image
+  // had both of its inverted: the column holding White's accuracy, mistakes
+  // and blunders was headed 黑方, and the turning point named the wrong player
+  // as the one who played it, while the identical report in the panel named
+  // them right. A picture you hand to somebody else, with the two players
+  // swapped, in the one part of this app whose whole purpose is to be handed
+  // to somebody else. Nobody had run docs/manual-check.md F6.
+  {
+    const app = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    assert(/const sideName = \(s\) => t\(s === "w" \? "side\.white" : "side\.black"\);/.test(app),
+      "sideName is the one place a side is named");
+    assert(/const otherSideName = \(s\) => t\(s === "w" \? "side\.black" : "side\.white"\);/.test(app),
+      "…and otherSideName the one place its opponent is");
+    // no third spelling anywhere else in the file. Comments are not code: the
+    // paragraph above sideName quotes the shape it replaced, and a scan that
+    // reads comments reports the explanation as the defect — the same way the
+    // Chinese-label scan once reported a note about a heading as a heading.
+    const code = app.replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+    const inline = code.split("\n")
+      .filter((l) => /\?[^\n]*"side\.(white|black)"/.test(l))
+      .filter((l) => !/const (sideName|otherSideName) = /.test(l))
+      .map((l) => l.trim());
+    for (const x of inline) console.error("FAIL: a side named by hand: " + x);
+    assert(inline.length === 0,
+      "every side is named through one of the two, so the two cannot be swapped by eye");
+  }
+
   // Every group heading in the panel is a heading. Three of them were a
   // <span class="side-h"> because they live inside a <summary> — same size,
   // same weight, same colour, and invisible to anything navigating by heading.

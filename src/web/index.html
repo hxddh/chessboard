@@ -559,18 +559,20 @@
     </div>
 
     <div class="modal-bg" id="hist-modal" role="dialog" aria-labelledby="hist-modal-title">
-      <div class="modal">
+      <div class="modal wide">
         <h3 id="hist-modal-title" data-i18n="hist.title">对局历史</h3>
         <!-- a few hundred games with no filter is a list you scroll, not a
              record you consult; "the ones I lost" is the reason to open it -->
         <div class="hist-filters">
-          <div class="theme-row wrap" id="hist-result-seg" role="group" aria-label="按结果筛选" data-i18n-aria="hist.byResult">
+          <span class="setting-k" id="hist-result-k" data-i18n="hist.byResult">按结果筛选</span>
+          <div class="theme-row" id="hist-result-seg" role="group" aria-labelledby="hist-result-k">
             <button type="button" data-hres="all" class="active" data-i18n="hist.any">全部</button>
             <button type="button" data-hres="win" data-i18n="hist.win">胜</button>
             <button type="button" data-hres="loss" data-i18n="hist.loss">负</button>
             <button type="button" data-hres="draw" data-i18n="hist.draw">和</button>
           </div>
-          <div class="theme-row wrap" id="hist-color-seg" role="group" aria-label="按执子筛选" data-i18n-aria="hist.byColor">
+          <span class="setting-k" id="hist-color-k" data-i18n="hist.byColor">按执子筛选</span>
+          <div class="theme-row" id="hist-color-seg" role="group" aria-labelledby="hist-color-k">
             <button type="button" data-hcol="all" class="active" data-i18n="hist.any">全部</button>
             <button type="button" data-hcol="w" data-i18n="hist.white">执白</button>
             <button type="button" data-hcol="b" data-i18n="hist.black">执黑</button>
