@@ -841,7 +841,10 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       }).filter(Boolean);
       const over = [...body.querySelectorAll(".ach-item")]
         .map((e) => Math.round(e.getBoundingClientRect().right - br.right)).filter((x) => x > 1);
-      return { full, wrapped, over };
+      const badges = [...body.querySelectorAll(".ach-item")].map((e) => ({
+        t: (e.querySelector(".ach-nm") || {}).textContent || "",
+        h: Math.round(e.getBoundingClientRect().height) }));
+      return { full, wrapped, over, badges, cols: getComputedStyle(body).gridTemplateColumns.split(" ").length };
     });
     for (const f of r.full)
       assert(f.spans, lang + ": ." + f.c.split(" ")[0] + " spans the grid rather than taking one badge's cell");
@@ -849,6 +852,18 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       lang + ": no achievement name is broken while its row had the room — " +
       r.wrapped.map((w) => w.t + " (" + w.need + "px into " + w.room + ")").join(", "));
     assert(r.over.length === 0, lang + ": no badge runs past the grid (" + r.over.join(", ") + ")");
+    // Fifteen badges are a list, and a list has one row height. In two columns
+    // each row took its own: a name that wrapped, or a counter that dropped to
+    // a second line, raised that row and left its neighbours alone. Measured on
+    // the shipped build — Chinese 33 and 55, English 33/54/55/76/90, Japanese
+    // 33/54/55/68/76. One column at the full panel width fits every name in
+    // every language on one line with the counter beside it, which is the same
+    // row the statistics directly above it are already made of.
+    const heights = [...new Set(r.badges.map((b) => b.h))];
+    assert(r.cols === 1, lang + ": the badges are one list, not two columns (" + r.cols + ")");
+    assert(heights.length === 1,
+      lang + ": every badge is the same height (" + heights.join(", ") + ") — tallest is 「" +
+      (r.badges.find((b) => b.h === Math.max(...heights)) || {}).t + "」");
     await ctx.close();
   }
 }

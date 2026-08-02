@@ -1847,9 +1847,22 @@
        the row out of the panel. Measured on 2.0.0 in English: the two columns
        came out 158 + 134 + 6 = 299px inside a 240px panel and the right-hand
        column was clipped 37px past the edge. Chinese names are short enough to
-       hide it. Same shape as the .link-row bug, one component along. */
+       hide it. Same shape as the .link-row bug, one component along.
+
+       Then one column, because two was never wide enough to hold what a badge
+       is. A badge is a name and how far along it is; in a half-panel cell the
+       name wrapped, or the counter dropped below it, and each row took its own
+       height as a result. Measured on the shipped build: Chinese came out 33
+       and 55, English 33 / 54 / 55 / 76 / 90, Japanese 33 / 54 / 55 / 68 / 76
+       — fifteen items of one kind in a grid whose rows were five different
+       shapes, and 圆满 alone among the eleven counting badges kept its counter
+       inline because its name happened to be short enough. At the full panel
+       width every name in all three languages sits on one line with the
+       counter beside it: fifteen rows, one height, and the same row the
+       statistics immediately above are already made of. The English column,
+       the worst case, got shorter doing it (673px → 647px). */
     .ach-body {
-      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+      display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px;
     }
     .ach-item {
       display: flex; align-items: center; gap: 6px;
