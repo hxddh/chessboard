@@ -907,6 +907,13 @@
     }
     .side-h-row .side-h { margin: 0; height: auto; }
     .side-h-meta { font-size: 12px; color: var(--muted); }
+    /* A section that holds more than one heading — statistics, which stacks
+       统计 / 对局历史 / 成就 — needs air above every heading but its first.
+       This was three `style="margin-top:14px"` attributes in the markup, and
+       14 is not a step on the spacing scale; nor was the editor's 10. Inline
+       styles are the one place the token guards cannot look, which is exactly
+       why the two values that drifted off the scale drifted there. */
+    .side-section > .side-h-row:not(:first-child) { margin-top: 16px; }
 
     .setting-list { display: flex; flex-direction: column; gap: 12px; }
     /* --- reading modes get a wider column and a foldable index ------------
@@ -1047,6 +1054,19 @@
     .theme-row.wrap:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .theme-row.wrap:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .theme-row.wrap:has(> :nth-child(4):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* "five or more fall back to three" was the paragraph above's claim, and
+       the file did not implement it: `auto-fit` with a 64px minimum resolves
+       to four columns in a 335px panel, not three, because 4×64 + 3×8 still
+       fits. The one segment with more than four items is the puzzle type
+       filter, and at four columns every English label wrapped — 「Win
+       material」 needs 79px in a 78px cell, and `grid-auto-rows: 1fr` then
+       raised all ten buttons to that cell's height, so one label a pixel too
+       wide made the whole control half again as tall. At three columns the
+       cell is 106px and every label in all three languages sits on one line;
+       ten buttons over four short rows are shorter than ten over three tall
+       ones. The count decides the columns here as it does above — width was
+       never what this control was reacting to. */
+    .theme-row.wrap:has(> :nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .theme-row button {
       flex: 1;
       appearance: none; border: 1px solid var(--card-border);
@@ -1299,6 +1319,36 @@
       display: flex; gap: 8px; margin-bottom: 12px;
     }
     .lesson-controls .tool-btn { flex: 1; }
+    /* Two and three buttons fit across; four do not, and `flex: 1` cannot
+       save them. A `.tool-btn` carries 24px of horizontal padding and will
+       not shrink below its longest word, so four of them in the editor's
+       239px row demanded 271px in English — the primary action ran past the
+       panel's edge — and in the other two languages they held the row width
+       only by wrapping their labels inside a pill fixed at 32px tall. The
+       text then spilled out of the button it belonged to: 「开始对局」 as two
+       stacked lines, 「キャンセル」 as three, its last character hanging below
+       the border. Measured on the shipped build, all three languages.
+       Four goes to 2×2 for the same reason `.theme-row.wrap` does — a
+       quarter of a panel column is narrower than the words we put in it —
+       and the split falls where the meaning already splits: the two board
+       utilities on the first line, cancel and commit on the second.
+
+       An explicit class, not `:has(> :nth-child(4):last-child)` like the
+       segments above. `:nth-child` counts children, and the lesson and puzzle
+       rows each hold four buttons of which only two or three are ever shown —
+       they hide the rest with `display: none`. Keyed on the child count, both
+       of those rows became grids too, and the puzzle row's three visible
+       buttons laid out 2 + 1: an orphan on its own line, the exact defect the
+       segment rules above exist to prevent. How many buttons a row shows is
+       not a property of the markup, so it cannot be a CSS selector. The
+       editor's four are always all four. */
+    .lesson-controls.quad {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    /* The editor's two gaps, off the markup and onto the scale (was 14 and 10
+       inline). */
+    #sec-editor .setting-list { margin-top: 16px; }
+    #sec-editor .lesson-controls { margin-top: 12px; }
     .lesson-part {
       margin: 12px 0 4px;
       font-size: 11px; font-weight: 600; letter-spacing: 0.1em;

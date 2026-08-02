@@ -4923,12 +4923,24 @@ import { createStore } from "./store.js";
   }
 
   const fenModal = document.getElementById("fen-modal");
+  /** The FEN field's one way of saying no. The red ring is what you see, the
+      sentence under it is the reason, and aria-invalid is what a screen reader
+      is told; all three were set by hand at three call sites, which is three
+      chances to set two of them. Pass nothing to clear all three. */
+  function setFenError(msg) {
+    const input = document.getElementById("fen-input");
+    const err = document.getElementById("fen-error");
+    if (err) err.textContent = msg || "";
+    if (input) {
+      input.classList.toggle("bad", !!msg);
+      input.setAttribute("aria-invalid", msg ? "true" : "false");
+    }
+  }
   function openFenModal() {
     if (!fenModal) return;
     const input = document.getElementById("fen-input");
-    const err = document.getElementById("fen-error");
-    if (input) { input.value = viewGame().fen(); input.classList.remove("bad"); }
-    if (err) err.textContent = "";
+    if (input) input.value = viewGame().fen();
+    setFenError("");
     Dlg.open(fenModal, input);
     if (input) input.select();
   }
@@ -4936,12 +4948,8 @@ import { createStore } from "./store.js";
 
   function submitFen() {
     const input = document.getElementById("fen-input");
-    const err = document.getElementById("fen-error");
     const raw = (input && input.value || "").trim();
-    const show = (msg) => {
-      if (err) err.textContent = msg;
-      if (input) input.classList.add("bad");
-    };
+    const show = setFenError;
     if (!raw) { show(t("msg.fen.empty")); return; }
     const v = new Chess().validate_fen(raw);
     if (!v.valid) { show(v.error || t("msg.fen.invalid")); return; }
@@ -5604,27 +5612,42 @@ import { createStore } from "./store.js";
    * in one place and not the other is exactly the state 1.9 shipped in, when
    * the panel silently moved from Tab to P.
    */
+  /* Which shortcuts exist is a property of the mode you are in. The keydown
+     handler has said so from the start — learn and puzzle return early, before
+     the replay keys, N, and F are ever reached — but this list did not, and it
+     is the only place the app tells you what the keyboard does. In 做题 it
+     offered 「Z 悔棋」, 「F 翻转棋盘」 and 「← → 上一手 / 下一手」, none of
+     which do anything there, and it named N 「新局」 when in that mode N is
+     the next puzzle. Three keys do different jobs in different modes — N, H
+     and R — so the row carries the mode it belongs to and the wording for that
+     mode, and the sheet is rendered fresh each time it opens. */
+  const ANY = ["ai", "pvp", "learn", "puzzle"];
+  const PLAY = ["ai", "pvp"];
   const KEY_HELP = [
-    { keys: ["P"], k: "keys.panel" },
-    { keys: ["N"], k: "keys.new" },
-    { keys: ["Z"], k: "keys.undo" },
-    { keys: ["H"], k: "keys.hint" },
-    { keys: ["F"], k: "keys.flip" },
-    { keys: ["←", "→"], k: "keys.step" },
-    { keys: ["Home", "End"], k: "keys.ends" },
-    { keys: ["Tab"], k: "keys.tab" },
-    { keys: ["Esc"], k: "keys.esc" },
-    { keys: ["?"], k: "keys.help" },
-    { keys: ["Q", "R", "B", "N"], k: "keys.promo" },
-    { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board" },
-    { keys: ["R"], k: "keys.retry" },
+    { keys: ["P"], k: "keys.panel", in: ANY },
+    { keys: ["N"], k: "keys.new", in: PLAY },
+    { keys: ["N"], k: "keys.next", in: ["puzzle"] },
+    { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },
+    { keys: ["Z"], k: "keys.undo", in: ["ai", "pvp", "learn"] },
+    { keys: ["H"], k: "keys.hint", in: PLAY },
+    { keys: ["H"], k: "keys.lessonHint", in: ["learn"] },
+    { keys: ["H"], k: "keys.answer", in: ["puzzle"] },
+    { keys: ["F"], k: "keys.flip", in: PLAY },
+    { keys: ["←", "→"], k: "keys.step", in: PLAY },
+    { keys: ["Home", "End"], k: "keys.ends", in: PLAY },
+    { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board", in: ANY },
+    { keys: ["Q", "R", "B", "N"], k: "keys.promo", in: ANY },
+    { keys: ["Tab"], k: "keys.tab", in: ANY },
+    { keys: ["Esc"], k: "keys.esc", in: ANY },
+    { keys: ["?"], k: "keys.help", in: ANY },
   ];
   const keysModal = document.getElementById("keys-modal");
   function renderKeyHelp() {
     const list = document.getElementById("keys-list");
     if (!list) return;
     list.replaceChildren();
-    for (const row of KEY_HELP) {
+    const mode = store.session.mode;
+    for (const row of KEY_HELP.filter((r) => r.in.includes(mode))) {
       const dt = document.createElement("dt");
       for (const key of row.keys) {
         const kbd = document.createElement("kbd");
@@ -5970,9 +5993,8 @@ import { createStore } from "./store.js";
       try {
         const clip = await Host.readClipboard();
         const input = document.getElementById("fen-input");
-        if (input) { input.value = (clip || "").trim(); input.classList.remove("bad"); }
-        const err = document.getElementById("fen-error");
-        if (err) err.textContent = "";
+        if (input) input.value = (clip || "").trim();
+        setFenError("");
       } catch (_) { toast(t("msg.clipboard.readFailed"), "fault"); }
     };
     document.getElementById("fen-input").addEventListener("keydown", (ev) => {

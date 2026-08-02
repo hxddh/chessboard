@@ -2951,6 +2951,20 @@ for (const lang of CONTENT_LANGS) {
   }
   assert(bareText === 0, "every Chinese label in index.html carries data-i18n");
 
+  // No inline style attribute in the markup. Every token guard in this file
+  // reads styles.css; none of them can see a `style=` attribute, and that is
+  // where the values that drifted off the scales went. The confirm dialog's
+  // message was the only typography in the app off the seven-step type scale
+  // (14px) and off the three leading tokens (1.5), and four `margin-top`s were
+  // 14 and 10 against a spacing scale that has neither. Both were invisible for
+  // as long as they were inline. Closing the hole is worth more than the four
+  // rules it costs.
+  const inlineStyles = [...htmlNoComments.matchAll(/<(\w+)[^>]*\sstyle="([^"]*)"/g)]
+    .map((m) => "<" + m[1] + " style=\"" + m[2] + "\"");
+  for (const s of inlineStyles) console.error("FAIL: inline style: " + s);
+  assert(inlineStyles.length === 0,
+    "no inline style attribute in index.html — the one place the token guards cannot look");
+
   // No Chinese string literal may reach the DOM from app.js. v1.5 translated
   // the static markup and left 169 runtime literals — task prompts, puzzle
   // feedback, every toast — so English mode stayed half Chinese where it

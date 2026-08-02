@@ -376,7 +376,7 @@
           <span class="side-h-meta" id="editor-hint" data-i18n="ed.hint">选棋子 → 点棋盘</span>
         </div>
         <div class="palette" id="editor-palette" role="group" aria-label="棋子" data-i18n-aria="aria.palette"></div>
-        <div class="setting-list" style="margin-top:14px">
+        <div class="setting-list">
           <div class="setting-row stack">
             <span class="setting-k" data-i18n="ed.turn">轮到</span>
             <div class="theme-row" id="editor-turn" role="group" aria-label="轮到" data-i18n-aria="ed.turn">
@@ -398,10 +398,10 @@
             </div>
           </div>
         </div>
-        <p class="hint" id="editor-error"></p>
-        <div class="lesson-controls" style="margin-top:10px">
-          <button type="button" class="tool-btn" id="editor-clear" data-i18n="act.clear" title="清空棋盘" data-i18n-title="tip.editor.clear">清空</button>
-          <button type="button" class="tool-btn" id="editor-reset" data-i18n="act.reset" title="回到初始局面" data-i18n-title="tip.editor.reset">初始</button>
+        <p class="hint" id="editor-error" role="status" aria-live="polite"></p>
+        <div class="lesson-controls quad">
+          <button type="button" class="tool-btn" id="editor-clear" data-i18n="ed.clear" title="清空棋盘" data-i18n-title="tip.editor.clear">清空棋盘</button>
+          <button type="button" class="tool-btn" id="editor-reset" data-i18n="ed.reset" title="回到初始局面" data-i18n-title="tip.editor.reset">初始局面</button>
           <button type="button" class="tool-btn" id="editor-cancel" data-i18n="act.cancel">取消</button>
           <button type="button" class="tool-btn primary" id="editor-apply" data-i18n="act.start">开始对局</button>
         </div>
@@ -500,14 +500,14 @@
           <h2 class="side-h" data-i18n="side.stats">统计</h2>
         </div>
         <div class="stats-body" id="stats-body"></div>
-        <div class="side-h-row" style="margin-top:14px">
+        <div class="side-h-row">
           <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
           <!-- label is "全部 N 局": renderHistory() fills in both the count and
                the language, so the markup deliberately carries no text -->
           <button type="button" class="text-link" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
         </div>
         <div class="hist-body" id="hist-body"></div>
-        <div class="side-h-row" style="margin-top:14px">
+        <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.ach">成就</h2>
           <span class="side-h-meta num" id="ach-count">0/0</span>
         </div>
@@ -587,8 +587,9 @@
       <div class="modal">
         <h3 id="fen-title" data-i18n="fen.title">载入 FEN 局面</h3>
         <input type="text" id="fen-input" class="text-input" spellcheck="false"
+               aria-describedby="fen-error" aria-invalid="false"
                placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" />
-        <p class="hint" id="fen-error"></p>
+        <p class="hint" id="fen-error" role="status" aria-live="polite"></p>
         <div class="close-row split">
           <button type="button" class="text-link" id="fen-from-clip" data-i18n="fen.fromClip">从剪贴板粘贴</button>
           <span class="btn-pair">

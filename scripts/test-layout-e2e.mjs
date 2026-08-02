@@ -1100,6 +1100,162 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     "演示 is never shown permanently greyed out — hidden=" + state.hidden + " disabled=" + state.disabled);
   await ctx.close();
 }
+// --- 3w. a label stays inside the control it names -------------------------
+// `.tool-btn` is 32px tall and does not wrap; four of them at `flex: 1` in the
+// editor's 239px row could not shrink below their own padding plus their
+// longest word, so the labels wrapped inside a box that had no room for a
+// second line and the text came out through the border. Measured on the
+// shipped build: 「开始对局」 as two stacked lines in Chinese, 「Start game」
+// with the button itself 32px past the panel's edge in English, and in
+// Japanese 「キャンセル」 as three lines with its last character hanging below
+// the pill. scrollHeight against clientHeight catches the whole class — any
+// control anywhere whose text needs more room than the control has — which is
+// why this is not written against the editor.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play");
+    await page.click("#editor-open", { timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const spilled = await page.evaluate(() =>
+      [...document.querySelectorAll("button")]
+        .filter((b) => b.offsetParent && b.scrollHeight > b.clientHeight + 1)
+        .map((b) => b.textContent.trim() + " (" + b.scrollHeight + " needs " +
+          b.clientHeight + " has, in #" + (b.closest("[id]") || {}).id + ")"));
+    assert(spilled.length === 0,
+      lang + ": every label fits inside its own button" +
+      (spilled.length ? " — " + spilled.join("; ") : ""));
+    // …and the row itself stays inside the panel it lives in
+    const past = await page.evaluate(() => {
+      const row = document.querySelector("#sec-editor .lesson-controls");
+      if (!row) return null;
+      const r = row.getBoundingClientRect();
+      return [...row.querySelectorAll("button")]
+        .filter((b) => b.getBoundingClientRect().right > r.right + 1)
+        .map((b) => b.textContent.trim());
+    });
+    assert(past && past.length === 0,
+      lang + ": no editor button reaches past the row" +
+      (past && past.length ? " — " + past.join(", ") : ""));
+    await ctx.close();
+  }
+}
+
+// --- 3x. a segment of ten is still one control -----------------------------
+// The puzzle type filter is the only segment in the app with more than four
+// items, and it was the one the `.theme-row.wrap` comment claimed to have
+// handled: "five or more fall back to three". It did not — `auto-fit` with a
+// 64px floor resolves to four columns in a 335px panel — and at four columns
+// 「Win material」 needed 79px in a 78px cell. One label one pixel too wide,
+// and `grid-auto-rows: 1fr` passed its wrapped height to all ten buttons: the
+// whole control half again as tall, in English only.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "puzzle", "play");
+    const seg = await page.evaluate(() => {
+      const g = document.getElementById("puzzle-cat-seg");
+      const bs = [...g.querySelectorAll("button")];
+      const one = bs.map((b) => {
+        const c = b.cloneNode(true);
+        c.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
+        g.appendChild(c);
+        const need = Math.ceil(c.getBoundingClientRect().width);
+        c.remove();
+        return { t: b.textContent.trim(), need, w: Math.round(b.getBoundingClientRect().width) };
+      });
+      return { cols: getComputedStyle(g).gridTemplateColumns.split(" ").length,
+               heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+               tight: one.filter((x) => x.need > x.w) };
+    });
+    assert(seg.cols === 3, lang + ": ten items lay out three across (" + seg.cols + ")");
+    assert(seg.heights.length === 1 && seg.heights[0] < 40,
+      lang + ": every type is one line tall (" + seg.heights.join(", ") + ")");
+    assert(seg.tight.length === 0,
+      lang + ": no type name is wider than its cell" +
+      (seg.tight.length ? " — " + seg.tight.map((x) => "「" + x.t + "」 " + x.need + " in " + x.w).join(", ") : ""));
+    await ctx.close();
+  }
+}
+
+// --- 3y. a refusal is heard, not only seen ---------------------------------
+// Two places tell you why the app will not do what you asked, and both wrote
+// into a plain <p>: the editor's reason the position is illegal (which is also
+// the reason 「开始对局」 is greyed out) and the FEN dialog's reason the string
+// was rejected. Text arriving in an element that is not a live region is text
+// a screen reader never mentions — the same defect the toast had, in the two
+// spots where the app is saying no. The FEN field also went red without ever
+// being marked invalid, so the ring was the whole message.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const attrs = await page.evaluate(() => {
+    const g = (id) => {
+      const e = document.getElementById(id);
+      return e && { role: e.getAttribute("role"), live: e.getAttribute("aria-live") };
+    };
+    return { ed: g("editor-error"), fen: g("fen-error"),
+             describedBy: document.getElementById("fen-input").getAttribute("aria-describedby") };
+  });
+  for (const [id, a] of [["editor-error", attrs.ed], ["fen-error", attrs.fen]]) {
+    assert(a && a.role === "status" && a.live === "polite",
+      id + " is a live region before anything is written into it (" +
+      (a ? a.role + "/" + a.live : "missing") + ")");
+  }
+  assert(attrs.describedBy === "fen-error", "the FEN field points at its own reason");
+  // and a rejected FEN really marks the field invalid
+  const bad = await page.evaluate(async () => {
+    document.getElementById("fen-load-open").click();
+    await new Promise((r) => setTimeout(r, 400));
+    const input = document.getElementById("fen-input");
+    input.value = "not a fen";
+    document.getElementById("fen-load").click();
+    await new Promise((r) => setTimeout(r, 300));
+    return { invalid: input.getAttribute("aria-invalid"), red: input.classList.contains("bad"),
+             why: document.getElementById("fen-error").textContent.trim() };
+  });
+  assert(bad.red && bad.why, "a rejected FEN turns the field red and says why — 「" + bad.why + "」");
+  assert(bad.invalid === "true", "…and the field is marked invalid, not only coloured (" + bad.invalid + ")");
+  await ctx.close();
+}
+
+// --- 3z. the shortcut sheet describes the mode you are in ------------------
+// The keydown handler has always been partitioned by mode — learn and puzzle
+// return before the replay keys, N and F are reached — and the sheet was one
+// flat list of thirteen rows shown identically everywhere. In 做题 it offered
+// 「Z 悔棋」, 「F 翻转棋盘」 and the two replay rows, none of which do anything
+// there, and it called N 「新局」 when in that mode N is the next puzzle. The
+// only screen that tells you what the keyboard does was wrong in two of the
+// app's four modes.
+{
+  const expect = {
+    ai:     { has: ["新局", "悔棋", "翻转棋盘"], hasnt: ["下一题", "看答案", "重做当前这题"] },
+    learn:  { has: ["重做当前这题", "悔棋", "本课提示"], hasnt: ["新局", "翻转棋盘", "下一题"] },
+    puzzle: { has: ["下一题", "看答案", "重做当前这题"], hasnt: ["新局", "悔棋", "翻转棋盘"] },
+  };
+  for (const mode of Object.keys(expect)) {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    // the sheet has no button — 「?」 and the native Help menu are its two doors
+    await page.keyboard.press("Shift+Slash");
+    await page.waitForTimeout(400);
+    const rows = await page.evaluate(async () => {
+      const l = document.getElementById("keys-list");
+      const out = [];
+      for (let i = 0; i < l.children.length; i += 2)
+        out.push({ keys: [...l.children[i].querySelectorAll("kbd")].map((k) => k.textContent).join("/"),
+                   what: l.children[i + 1].textContent.trim() });
+      return out;
+    });
+    assert(rows.length > 0, mode + ": the shortcut sheet has rows (" + rows.length + ")");
+    const text = rows.map((r) => r.what);
+    for (const want of expect[mode].has)
+      assert(text.includes(want), mode + ": the sheet lists 「" + want + "」");
+    for (const no of expect[mode].hasnt)
+      assert(!text.includes(no),
+        mode + ": the sheet does not offer 「" + no + "」, which does nothing here");
+    // and the four that work everywhere are always there
+    for (const k of ["P", "Tab", "Esc", "?"])
+      assert(rows.some((r) => r.keys.split("/").includes(k)), mode + ": " + k + " is listed");
+    await ctx.close();
+  }
+}
 
 await browser.close();
 server.close();
