@@ -2998,6 +2998,39 @@ for (const lang of CONTENT_LANGS) {
   assert(inlineStyles.length === 0,
     "no inline style attribute in index.html — the one place the token guards cannot look");
 
+  // The same hole, one level down: a style set from JavaScript. The save-slot
+  // rows were built with `row.style.cssText = "display:flex;gap:6px;..."` and
+  // `load.style.flex = "1"` — the history row's CSS restated inline, where no
+  // guard here could compare them. What is left is runtime state, which is
+  // what an inline style is legitimately for: four cursors, the eval bar's
+  // computed fill width, and touch-action. Layout constants belong in the
+  // stylesheet with everything that checks them.
+  const LAYOUT_PROPS = /\.style\.(cssText|flex|display|padding|margin|gap|fontSize|font|lineHeight|gridTemplate\w*|borderRadius|alignItems|justifyContent)\b\s*=/;
+  const appJs = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const jsInline = appJs.split("\n")
+    .map((l, i) => [i + 1, l])
+    .filter(([, l]) => LAYOUT_PROPS.test(l) && !/^\s*(\/\/|\*)/.test(l));
+  for (const [n, l] of jsInline) console.error("FAIL: layout written inline at app.js:" + n + " — " + l.trim());
+  assert(jsInline.length === 0,
+    "no layout constant is set from JavaScript — the stylesheet is where the guards can see it");
+
+  // A dialog that holds a list gets the wide box. Three of them do — the game
+  // history, the save slots and the multi-game PGN picker — and each was found
+  // separately: 2.1.2 widened the history and did not go looking for the other
+  // two, so both kept wrapping their rows for another two versions. Structural
+  // rather than three names, so a fourth list cannot repeat it.
+  const listDialogs = [...htmlNoComments.matchAll(
+    /<div class="modal-bg" id="([^"]+)"[\s\S]*?<div class="(modal[^"]*)">([\s\S]*?)<\/div>\s*<\/div>/g)];
+  let narrowLists = 0;
+  for (const [, id, cls, body] of listDialogs) {
+    if (!/class="pick-list"/.test(body)) continue;
+    if (/\bwide\b/.test(cls)) continue;
+    narrowLists++;
+    console.error("FAIL: " + id + " holds a list of sentences in the narrow box");
+  }
+  assert(narrowLists === 0,
+    "every dialog holding a list gets the wide box, not only the one that was noticed first");
+
   // No Chinese string literal may reach the DOM from app.js. v1.5 translated
   // the static markup and left 169 runtime literals — task prompts, puzzle
   // feedback, every toast — so English mode stayed half Chinese where it

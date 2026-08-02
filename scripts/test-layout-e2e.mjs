@@ -1443,6 +1443,145 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   }
 }
 
+// --- 4d. a lesson button holds its own label ------------------------------
+// The same defect as the editor's action row, in the teaching track, left
+// there when 2.1.2 fixed the editor. `.tool-btn` is 32px tall and does not
+// wrap, so a label that needs two lines came out through the bottom of the
+// pill. Measured on the shipped 2.1.3, every lesson offering all four buttons
+// leaked in all three languages — 「接着练 2 题」 as 「接着练 2 / 题」 with
+// 「题」 hanging under the border, 「Practise (2)」 and 「Next lesson」 both in
+// English, 「続けて2問」 and 「次のレッスン」 in Japanese. Lesson 72 leaks with
+// only two buttons: 「Play the Beginner engine」, the one button the whole
+// teaching track exists to reach.
+// Not the editor's fix — that row overflowed sideways and needed 2×2. This one
+// fits across; what it did not fit was the label inside the box.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "learn", "play");
+    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item").length);
+    assert(n > 60, lang + ": the course is loaded (" + n + " lessons)");
+    // the lessons that show all four, plus the last one — its label is the
+    // longest in the file and it appears in a two-button row
+    const probes = [17, 19, 21, n - 1];
+    for (const i of probes) {
+      const r = await page.evaluate(async (i) => {
+        const it = document.querySelectorAll("#lesson-list .lesson-item")[i];
+        if (it) it.click();
+        await new Promise((r) => setTimeout(r, 150));
+        const row = document.querySelector("#sec-learn .lesson-controls");
+        const bs = [...row.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        const rr = row.getBoundingClientRect();
+        return { n: bs.length, labels: bs.map((b) => b.textContent.trim()),
+                 heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+                 spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1)
+                   .map((b) => b.textContent.trim() + " (" + b.scrollHeight + ">" + b.clientHeight + ")"),
+                 past: bs.filter((b) => b.getBoundingClientRect().right > rr.right + 1)
+                   .map((b) => b.textContent.trim()) };
+      }, i);
+      const at = lang + " lesson " + (i + 1) + " (" + r.n + " buttons)";
+      assert(r.spill.length === 0,
+        at + ": every label stays inside its button" +
+        (r.spill.length ? " — " + r.spill.join("; ") : ""));
+      assert(r.past.length === 0,
+        at + ": and no button reaches past the row" +
+        (r.past.length ? " — " + r.past.join(", ") : ""));
+      assert(r.heights.length === 1,
+        at + ": the row is one control, one height (" + r.heights.join(", ") + ")");
+    }
+    await ctx.close();
+  }
+}
+
+// --- 4e. five save slots are five of the same thing -----------------------
+// All four facts shared the second line — 「Engine · Unrated · 3 moves ·
+// 8/2/2026, 8:59:30 AM」 — and in English that is 249px of text in 228, so the
+// two filled slots stood 71px and 87px against the three empty ones' 55. Five
+// identical things in three heights, in the dialog whose whole job is letting
+// you compare them. Now the row is the shape the history list already uses:
+// what kind of game on the first line, how long and when on the second — and
+// the dialog is the wide one, because this is the second list of sentences in
+// the app and 2.1.2 only widened the first.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play");
+    await page.evaluate(() => {
+      const mk = (d) => ({ pgn: '[Event "?"]\n[Result "*"]\n\n1. d4 d5 2. c4 e6 3. Nc3 Nf6 *',
+                           savedAt: Date.now() - 1e7, mode: "ai", diff: d });
+      localStorage.setItem("chess.v1.slots",
+        JSON.stringify({ v: 1, slots: [mk("extreme"), mk("beginner"), null, null, null] }));
+    });
+    await page.reload();
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+    await page.click("#slots-open", { timeout: 2500 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("#slots-list > *")].filter((e) => e.offsetParent);
+      const box = document.querySelector("#slots-modal .modal");
+      return { n: rows.length,
+               wide: box.classList.contains("wide"),
+               heights: [...new Set(rows.map((e) => Math.round(e.getBoundingClientRect().height)))],
+               inline: rows.filter((e) => e.getAttribute("style")).length,
+               spill: rows.filter((e) => e.scrollHeight > e.clientHeight + 1)
+                 .map((e) => (e.textContent || "").trim().slice(0, 24)) };
+    });
+    assert(r.n === 5, lang + ": five slots (" + r.n + ")");
+    assert(r.wide, lang + ": the slot list gets the wide box, like the other list of sentences");
+    assert(r.heights.length === 1,
+      lang + ": a filled slot is the same height as an empty one (" + r.heights.join(", ") + ")");
+    assert(r.inline === 0, lang + ": the row is built from a class, not an inline style");
+    assert(r.spill.length === 0,
+      lang + ": nothing overflows a slot row" + (r.spill.length ? " — " + r.spill.join(", ") : ""));
+    await ctx.close();
+  }
+}
+
+// --- 4f. the game picker is the third list, found the same way ------------
+// A PGN file may hold a database, and the picker lists what is in it: one row
+// per game, 「N. White — Black  result」 over 「event · date · plies」. Real
+// games vary in name and event length, so the rows varied with them — measured
+// on a four-game file, 55px and 71px in all three languages. The same shape as
+// the history rows and the save slots, in the same 380px box, found two
+// versions after the first one was fixed. Guarded structurally in
+// test-chess.mjs as well: any dialog holding a `.pick-list` gets the wide box.
+{
+  const GAMES = [
+    ["Linares Super Tournament 1994", "Kasparov, Garry", "Karpov, Anatoly", "1-0"],
+    ["Ch", "Li, Y", "Wu, X", "1/2-1/2"],
+    ["World Championship Match, Game 6", "Nepomniachtchi, Ian", "Carlsen, Magnus", "0-1"],
+    ["Op", "Ivanov, A", "Petrov, B", "1-0"],
+  ];
+  const PGN = GAMES.map(([ev, w, b, r], i) =>
+    '[Event "' + ev + '"]\n[Site "Somewhere"]\n[Date "199' + i + '.02.1' + i + '"]\n' +
+    '[White "' + w + '"]\n[Black "' + b + '"]\n[Result "' + r + '"]\n\n' +
+    '1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 ' + r).join("\n\n");
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play");
+    const opened = await page.evaluate(async (pgn) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([pgn], "games.pgn", { type: "application/x-chess-pgn" }));
+      document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: dt }));
+      await new Promise((r) => setTimeout(r, 900));
+      return document.getElementById("pick-modal").classList.contains("show");
+    }, PGN);
+    assert(opened, lang + ": a four-game PGN opens the picker");
+    const r = await page.evaluate(() => {
+      const box = document.querySelector("#pick-modal .modal");
+      const rows = [...document.querySelectorAll("#pick-list .pick-item")];
+      return { wide: box.classList.contains("wide"), n: rows.length,
+               heights: [...new Set(rows.map((e) => Math.round(e.getBoundingClientRect().height)))],
+               tallest: (rows.find((e) => e.getBoundingClientRect().height ===
+                 Math.max(...rows.map((x) => x.getBoundingClientRect().height))) || {}).textContent };
+    });
+    assert(r.n === 4, lang + ": all four games are listed (" + r.n + ")");
+    assert(r.wide, lang + ": the picker gets the wide box");
+    assert(r.heights.length === 1,
+      lang + ": every game in the list is the same height (" + r.heights.join(", ") + ") — tallest is 「" +
+      (r.tallest || "").trim().replace(/\s+/g, " ").slice(0, 40) + "」");
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

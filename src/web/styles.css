@@ -1335,6 +1335,27 @@
       display: flex; gap: 8px; margin-bottom: 12px;
     }
     .lesson-controls .tool-btn { flex: 1; }
+    /* A label that needs two lines gets two lines, and the row grows with it.
+       `.tool-btn` is 32px tall and does not wrap, which is right on the chrome
+       bar where the labels are one word and the height is the bar's. In the
+       lesson row it meant the text came out through the bottom of the pill:
+       measured on the shipped 2.1.3, every lesson that offers all four buttons
+       leaked in all three languages — 「接着练 2 题」 wrapping to 「接着练 2 /
+       题」 with 「题」 hanging under the border, 「Practise (2)」 and 「Next
+       lesson」 both leaking in English, 「続けて2問」 and 「次のレッスン」 in
+       Japanese. Lesson 72 leaks with only two buttons: 「Play the Beginner
+       engine」, the one button the whole teaching track exists to reach.
+
+       Not the editor's fix. That row overflowed *sideways* — four buttons
+       demanding 271px of a 239px row — and needed 2×2. This row fits across;
+       what it does not fit is the label inside the box. `align-items` is
+       stretch by default, so one two-line label makes every button in the row
+       two lines tall: the row stays one control, in any language, at any of
+       the two, three or four buttons a lesson may show. */
+    .lesson-controls .tool-btn {
+      height: auto; min-height: var(--chrome-ctl-h);
+      padding: 6px 12px; line-height: var(--lh-tight);
+    }
     /* Two and three buttons fit across; four do not, and `flex: 1` cannot
        save them. A `.tool-btn` carries 24px of horizontal padding and will
        not shrink below its longest word, so four of them in the editor's
@@ -1479,13 +1500,23 @@
       box-shadow: 0 24px 60px rgba(0,0,0,.4);
       animation: modal-in .22s var(--ease);
     }
-    /* One dialog holds a scrolling list of sentences rather than a single
-       question, and 380px was the width of the ones that hold a question. A
-       history row reads 「date · N moves · X% accuracy」 on one line, and in
-       English a game played yesterday needs 263px of the 262 the row had —
-       the relative form 「yesterday 12:55 AM」 is longer than the 「7/31/2026」
-       an older game gets, so 12 of 40 rows stood 67px against the rest at 51.
-       One pixel. At 460 the line has 342 and the worst case has 79 to spare. */
+    /* Three dialogs hold a scrolling list of sentences rather than a single
+       question, and 380px was the width of the ones that hold a question.
+       Each was found separately, which is the lesson: 2.1.2 widened the game
+       history and left the other two at 380 without looking for them.
+
+         history  a row reads 「date · N moves · X% accuracy」 on one line, and
+                  in English a game played yesterday needs 263px of the 262 it
+                  had — 「yesterday 12:55 AM」 is longer than the 「7/31/2026」
+                  an older game gets — so 12 of 40 rows stood 67px to the
+                  rest's 51. One pixel.
+         slots    four facts on the second line, 249px into 228 in English:
+                  the two filled slots 71px and 87px, the three empty ones 55.
+         picker   a PGN database's games vary in name and event length, so the
+                  rows varied with them: 55 and 71 in all three languages,
+                   measured on a four-game file.
+
+       At 460 the line has 342 and the worst case measured has 79 to spare. */
     .modal.wide { width: min(460px, calc(100vw - 32px)); }
     @keyframes modal-in {
       from { opacity: 0; transform: translateY(8px) scale(0.98); }
@@ -1944,8 +1975,11 @@
     /* game history: same row shape in the sidebar preview and the full list */
     .hist-body { display: flex; flex-direction: column; gap: 4px; }
     .hist-body .hint { margin: 2px 0 0; }
-    .hist-row { display: flex; gap: 6px; align-items: stretch; }
-    .hist-row .pick-item { flex: 1; min-width: 0; padding: 6px 8px; }
+    /* One row shape for both lists of saved games — the history and the save
+       slots. The slots built theirs from two inline styles saying the same
+       thing, which is a copy the stylesheet cannot see. */
+    .hist-row, .pick-row { display: flex; gap: 6px; align-items: stretch; }
+    .hist-row .pick-item, .pick-row .pick-item { flex: 1; min-width: 0; padding: 6px 8px; }
 
 /* --- history filters, the shortcut sheet, and the save slots ---------- */
 /* Two filters, stacked, each filling the dialog.

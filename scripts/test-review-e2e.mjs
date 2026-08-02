@@ -190,6 +190,74 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   }
 }
 
+// --- the move list, with annotations on it ---------------------------------
+// The notation had no layout coverage at all: it is the one panel surface that
+// carries per-move state (a 「?」 or 「??」 hung off a move, and the box around
+// the move the board is standing on) and nothing measured what that does to
+// the rows. Re-analysed here with an eval that really loses centipawns on a
+// White move, because a flat curve produces no tags and a test that renders
+// none is not testing the annotated case.
+{
+  await page.evaluate(() => {
+    let i = 0;
+    // White-relative evals; the engine reports from the side to move, so flip
+    // for Black. 300 → -400 across ply 2 is a 700cp loss by White: 「??」.
+    const W = [20, 20, 300, -400, -380, -390, -1200, -1210];
+    window.__chess.engine.analyze = async (fen) => {
+      const turn = fen.split(" ")[1];
+      const w = W[Math.min(i++, W.length - 1)];
+      return { cp: turn === "w" ? w : -w, mate: null, turn, best: "d1h5", pv: ["d1h5"] };
+    };
+  });
+  await page.click("#an-run");
+  await page.waitForTimeout(2500);
+  // to the latest move: at ply 0 there is deliberately no current cell (the
+  // list scrolls to the top instead), so "which move is boxed" is only a
+  // question once the cursor is on one
+  await page.click("#rep-end");
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    const list = document.querySelector(".move-list");
+    const lr = list.getBoundingClientRect();
+    const rows = [...list.querySelectorAll(".mlrow")].filter((e) => e.offsetParent);
+    const cells = [...list.querySelectorAll(".mlmove")];
+    return {
+      rows: rows.length,
+      heights: [...new Set(rows.map((e) => Math.round(e.getBoundingClientRect().height)))],
+      tags: [...list.querySelectorAll(".mvtag")].map((t) => t.textContent.trim()),
+      current: list.querySelectorAll(".mlmove.current").length,
+      clipped: cells.filter((c) => c.scrollWidth > c.clientWidth + 1).map((c) => c.textContent.trim()),
+      past: cells.filter((c) => c.getBoundingClientRect().right > lr.right + 1).map((c) => c.textContent.trim()),
+      unnamed: cells.filter((c) => !(c.getAttribute("aria-label") || "").trim()).length,
+      names: cells.map((c) => c.getAttribute("aria-label")),
+    };
+  });
+  assert(r.rows >= 3, "the notation has rows (" + r.rows + ")");
+  assert(r.tags.length > 0, "a lost position is marked on the move that lost it (" + r.tags.join(" ") + ")");
+  assert(r.heights.length === 1,
+    "an annotated row is the same height as a plain one (" + r.heights.join(", ") + ")");
+  assert(r.current === 1, "exactly one move is boxed at the latest position (" + r.current + ")");
+  // …and it moves with the cursor rather than staying where it was
+  const back = await page.evaluate(async () => {
+    document.getElementById("rep-prev").click();
+    await new Promise((r) => setTimeout(r, 300));
+    const cur = document.querySelector(".move-list .mlmove.current");
+    return { n: document.querySelectorAll(".move-list .mlmove.current").length,
+             name: cur ? cur.getAttribute("aria-label") : null };
+  });
+  assert(back.n === 1 && back.name && back.name !== r.names[r.names.length - 1],
+    "stepping back moves the box with it (now 「" + back.name + "」)");
+  assert(r.clipped.length === 0,
+    "no move is cut off inside its own cell" + (r.clipped.length ? " — " + r.clipped.join(", ") : ""));
+  assert(r.past.length === 0,
+    "no move reaches past the list" + (r.past.length ? " — " + r.past.join(", ") : ""));
+  // the moves are drawn as figurines, so the piece is not in the text: the
+  // accessible name is the only place the full SAN survives
+  assert(r.unnamed === 0, "every move keeps its full SAN as its accessible name");
+  assert(/^[KQRBN]/.test(r.names[2] || ""),
+    "…including the piece letter the figurine replaces (" + r.names[2] + ")");
+}
+
 assert(errs.length === 0, "no JS exception through analysis and replay — " + errs.join(" / "));
 
 await browser.close();
