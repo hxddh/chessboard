@@ -1536,6 +1536,52 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   }
 }
 
+// --- 4f. the game picker is the third list, found the same way ------------
+// A PGN file may hold a database, and the picker lists what is in it: one row
+// per game, 「N. White — Black  result」 over 「event · date · plies」. Real
+// games vary in name and event length, so the rows varied with them — measured
+// on a four-game file, 55px and 71px in all three languages. The same shape as
+// the history rows and the save slots, in the same 380px box, found two
+// versions after the first one was fixed. Guarded structurally in
+// test-chess.mjs as well: any dialog holding a `.pick-list` gets the wide box.
+{
+  const GAMES = [
+    ["Linares Super Tournament 1994", "Kasparov, Garry", "Karpov, Anatoly", "1-0"],
+    ["Ch", "Li, Y", "Wu, X", "1/2-1/2"],
+    ["World Championship Match, Game 6", "Nepomniachtchi, Ian", "Carlsen, Magnus", "0-1"],
+    ["Op", "Ivanov, A", "Petrov, B", "1-0"],
+  ];
+  const PGN = GAMES.map(([ev, w, b, r], i) =>
+    '[Event "' + ev + '"]\n[Site "Somewhere"]\n[Date "199' + i + '.02.1' + i + '"]\n' +
+    '[White "' + w + '"]\n[Black "' + b + '"]\n[Result "' + r + '"]\n\n' +
+    '1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 ' + r).join("\n\n");
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play");
+    const opened = await page.evaluate(async (pgn) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([pgn], "games.pgn", { type: "application/x-chess-pgn" }));
+      document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: dt }));
+      await new Promise((r) => setTimeout(r, 900));
+      return document.getElementById("pick-modal").classList.contains("show");
+    }, PGN);
+    assert(opened, lang + ": a four-game PGN opens the picker");
+    const r = await page.evaluate(() => {
+      const box = document.querySelector("#pick-modal .modal");
+      const rows = [...document.querySelectorAll("#pick-list .pick-item")];
+      return { wide: box.classList.contains("wide"), n: rows.length,
+               heights: [...new Set(rows.map((e) => Math.round(e.getBoundingClientRect().height)))],
+               tallest: (rows.find((e) => e.getBoundingClientRect().height ===
+                 Math.max(...rows.map((x) => x.getBoundingClientRect().height))) || {}).textContent };
+    });
+    assert(r.n === 4, lang + ": all four games are listed (" + r.n + ")");
+    assert(r.wide, lang + ": the picker gets the wide box");
+    assert(r.heights.length === 1,
+      lang + ": every game in the list is the same height (" + r.heights.join(", ") + ") — tallest is 「" +
+      (r.tallest || "").trim().replace(/\s+/g, " ").slice(0, 40) + "」");
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

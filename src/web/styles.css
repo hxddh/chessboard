@@ -1500,13 +1500,23 @@
       box-shadow: 0 24px 60px rgba(0,0,0,.4);
       animation: modal-in .22s var(--ease);
     }
-    /* One dialog holds a scrolling list of sentences rather than a single
-       question, and 380px was the width of the ones that hold a question. A
-       history row reads 「date · N moves · X% accuracy」 on one line, and in
-       English a game played yesterday needs 263px of the 262 the row had —
-       the relative form 「yesterday 12:55 AM」 is longer than the 「7/31/2026」
-       an older game gets, so 12 of 40 rows stood 67px against the rest at 51.
-       One pixel. At 460 the line has 342 and the worst case has 79 to spare. */
+    /* Three dialogs hold a scrolling list of sentences rather than a single
+       question, and 380px was the width of the ones that hold a question.
+       Each was found separately, which is the lesson: 2.1.2 widened the game
+       history and left the other two at 380 without looking for them.
+
+         history  a row reads 「date · N moves · X% accuracy」 on one line, and
+                  in English a game played yesterday needs 263px of the 262 it
+                  had — 「yesterday 12:55 AM」 is longer than the 「7/31/2026」
+                  an older game gets — so 12 of 40 rows stood 67px to the
+                  rest's 51. One pixel.
+         slots    four facts on the second line, 249px into 228 in English:
+                  the two filled slots 71px and 87px, the three empty ones 55.
+         picker   a PGN database's games vary in name and event length, so the
+                  rows varied with them: 55 and 71 in all three languages,
+                   measured on a four-game file.
+
+       At 460 the line has 342 and the worst case measured has 79 to spare. */
     .modal.wide { width: min(460px, calc(100vw - 32px)); }
     @keyframes modal-in {
       from { opacity: 0; transform: translateY(8px) scale(0.98); }
