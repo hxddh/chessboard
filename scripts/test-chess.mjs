@@ -2904,8 +2904,12 @@ for (const lang of CONTENT_LANGS) {
     // `lm.tipSep` is the punctuation between a drill's outcome and the
     // technique it teaches. Japanese and Chinese both end a sentence with 。 —
     // it is translated, and the translation is the same mark.
+    // `rv.marks` is 「?! · ? · ??」 — the move marks themselves, which are the
+    // same three symbols in every chess-playing language. They label the row
+    // whose value is 「3 · 2 · 1」, term lining up with term; spelling them out
+    // as words is what the row is getting away from.
     ja: new Set(["act.pgnCopy", "act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
-      "learn.lessonPre", "ed.crK", "ed.crQ",
+      "learn.lessonPre", "ed.crK", "ed.crQ", "rv.marks",
       "tip.diffNormal", "tip.diffHard", "lm.tipSep"]),
   };
   let untranslated = 0;

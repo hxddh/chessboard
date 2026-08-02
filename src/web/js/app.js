@@ -2540,6 +2540,30 @@ import { createStore } from "./store.js";
    * row jumps the replay to that move, so the answer is one click from the
    * position that caused it.
    */
+  /**
+   * One side's numbers, as [label, value] pairs — the single source both the
+   * panel and the exported picture read.
+   *
+   * They used to share `rv.sideLine`, one key packing all five values into a
+   * sentence. Splitting it for the panel alone would have left the picture
+   * describing the same five numbers with different words, which is how the
+   * two copies of every dialog title drifted, and how the picture came to name
+   * the wrong player in the first place.
+   *
+   * The third row's label is the app's own move marks rather than three long
+   * words: 「?! · ? · ??」 against 「3 · 2 · 1」, label and value lining up
+   * term for term, and the legend for them sits in the same panel.
+   */
+  function sideRows(sum, side) {
+    const c = sum.counts[side];
+    const n = (x) => (x == null ? "—" : String(x));
+    return [
+      [t("rv.acc"), sum.acc[side] == null ? "—" : sum.acc[side] + "%"],
+      [t("rv.acpl"), n(sum.acpl[side])],
+      [t("rv.marks"), [c.inaccuracy, c.mistake, c.blunder].join(" · ")],
+    ];
+  }
+
   function renderReview() {
     const el = document.getElementById("review-body");
     if (!el) return;
@@ -2560,17 +2584,32 @@ import { createStore } from "./store.js";
     }
     for (const side of ["w", "b"]) {
       if (sum.acc[side] == null) continue;
-      const c = sum.counts[side];
       const row = line("review-row");
-      const who = document.createElement("span");
+      const who = document.createElement("div");
       who.className = "review-k";
       // the full word, not the one-letter clock label — "W Accuracy 64%" reads
       // like a typo in a report meant to be read as prose
       who.textContent = sideName(side);
-      const val = document.createElement("span");
-      val.className = "review-v num";
-      val.textContent = tf("rv.sideLine", [sum.acc[side], sum.acpl[side], c.inaccuracy, c.mistake, c.blunder]);
-      row.append(who, val);
+      row.appendChild(who);
+      // One row per number, label left and value right — the same row the
+      // statistics directly above this report are already made of. It was one
+      // sentence carrying five values (「精准度 100% · 平均失分 0 · 小失误 0 /
+      // 失误 0 / 严重 0」), which in a 239px panel wrapped to three lines in
+      // Chinese and five in English, breaking after the separators so that
+      // 「/」 and 「·」 ended the lines. A report of named quantities laid out
+      // as prose, directly under the same quantities laid out as a list.
+      for (const [k, v] of sideRows(sum, side)) {
+        const r = document.createElement("div");
+        r.className = "stat-row";
+        const kk = document.createElement("span");
+        kk.className = "stat-k";
+        kk.textContent = k;
+        const vv = document.createElement("span");
+        vv.className = "stat-v num";
+        vv.textContent = v;
+        r.append(kk, vv);
+        row.appendChild(r);
+      }
       const vk = R.verdictKey(sum, side);
       if (vk) {
         const note = document.createElement("div");
@@ -4531,13 +4570,22 @@ import { createStore } from "./store.js";
       ctx.fillStyle = fg;
       font("600 15px");
       ctx.fillText(sideName(side), x, rowY);
+      // the same three rows the panel shows, from the same helper: label at the
+      // column's left edge, value at its right, so the two columns read as one
+      // table rather than two paragraphs
       font("14px");
-      ctx.fillStyle = muted;
-      const c = sum.counts[side];
-      text(tf("rv.sideLine", [
-        sum.acc[side] == null ? "—" : sum.acc[side], sum.acpl[side] == null ? "—" : sum.acpl[side],
-        c.inaccuracy, c.mistake, c.blunder,
-      ]), x, rowY + 24, colW, 3, 19);
+      sideRows(sum, side).forEach(([label, value], i) => {
+        const y = rowY + 24 + i * 22;
+        // both halves through text(): it is the only thing here that measures
+        // before it draws, and a label that outgrew its half would otherwise
+        // run in under the number
+        ctx.textAlign = "right";
+        ctx.fillStyle = fg;
+        text(value, x + colW, y, colW * 0.45, 1, 22);
+        ctx.textAlign = "left";
+        ctx.fillStyle = muted;
+        text(label, x, y, colW * 0.5, 1, 22);
+      });
     }
     if (sum.worst) {
       font("14px");
@@ -4545,7 +4593,7 @@ import { createStore } from "./store.js";
       // the Plain key, not the panel's line with its "tap to jump" tail
       text(tf("rv.turningPointPlain", [sum.worst.moveNo,
         sideName(sum.worst.side), sum.worst.san,
-        (sum.worst.loss / 100).toFixed(1)]), 40, rowY + 100, cw, 2, 20);
+        (sum.worst.loss / 100).toFixed(1)]), 40, rowY + 112, cw, 2, 20);
     }
     font("12px");
     ctx.fillStyle = muted;

@@ -423,6 +423,20 @@
          (36 / 32 / 27.4) and two baselines (26.5 / 25.3), which is what
          "not quite aligned" looks like when the parts have no common unit. */
       --chrome-ctl-h: 28px;
+      /* The bottom half of the same reservation. The chrome bar's height is
+         held out of the board at the top — the comment above says why, and
+         the spine is the identical case at the other end: a 24px pill, pinned
+         6px off the bottom, over a board fitted to within 6px of the space it
+         is given. Nothing was held out for it, so it landed on the board's own
+         file letters. Measured, panel shut: the spine ran 490–514 while a–h
+         ran 498–513 at 520×520, and 870–894 against 878–893 at 1400×900 —
+         the same collision at every window size, with the pill's text sitting
+         across c–f.
+         Reserved whenever the panel is shut, not whenever the spine is drawn:
+         the spine comes and goes with the state of the game, and tying the
+         board's size to it would resize the board mid-game — the defect the
+         chrome bar's own two fixed slots exist to prevent, one axis over. */
+      --spine-h: 0px;
       --stage-pad: 6px;
       --wood-pad: 17px;
       --radius-sm: 8px;
@@ -632,7 +646,7 @@
       display: grid; place-items: center;
       /* reserve the chrome bar's height: its translucent gradient must never
          sit on top of the board (visible as a dark band across rank 8) */
-      padding: calc(var(--chrome-h) + var(--stage-pad)) var(--stage-pad) var(--stage-pad);
+      padding: calc(var(--chrome-h) + var(--stage-pad)) var(--stage-pad) calc(var(--spine-h) + var(--stage-pad));
       /* no transition: this is the same layout change as #board-wrap's size,
          and animating one without the other makes the board overflow the
          stage for the duration */
@@ -640,10 +654,12 @@
     #app.panel-open .stage {
       padding-right: calc(var(--side-w) + var(--stage-pad));
     }
+    /* the spine only exists with the panel shut, so that is when its strip is held */
+    #app:not(.panel-open) { --spine-h: 30px; }
     #board-wrap {
       position: relative;
       --free-w: calc(100vw - 2 * var(--stage-pad));
-      --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - var(--spine-h) - 2 * var(--stage-pad));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
       max-width: 100%; max-height: 100%;
@@ -662,7 +678,7 @@
     }
     #app.panel-open #board-wrap {
       --free-w: calc(100vw - var(--side-w) - 2 * var(--stage-pad));
-      --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - var(--spine-h) - 2 * var(--stage-pad));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
     }
@@ -1599,7 +1615,7 @@
       }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - min(46vh, 430px) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--spine-h) - min(46vh, 430px) - 2 * var(--stage-pad));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
@@ -1624,7 +1640,7 @@
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--spine-h) - 2 * var(--stage-pad));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
@@ -1826,8 +1842,10 @@
     }
     .review-h { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
     .review-row { font-size: 12px; line-height: var(--lh-body); margin-bottom: 4px; }
-    .review-k { font-weight: 600; margin-right: 6px; }
-    .review-v { color: var(--muted); }
+    /* the side's name, over its three rows rather than in front of one line */
+    .review-k { font-weight: 600; margin-bottom: 2px; }
+    .review-row + .review-row { margin-top: 8px; }
+    .review .stat-row { font-size: 12px; padding: 2px 0; }
     .review-note { font-size: 11px; margin-top: 0px; }
     .review-jump {
       display: block; width: 100%; margin-top: 6px;
