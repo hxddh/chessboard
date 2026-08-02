@@ -73,22 +73,55 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return base64ToString(r.b64);
   }
 
+  /**
+   * `err.name` for "this build has no file dialogs at all".
+   *
+   * Both dialog helpers used to answer `null` for that, and `null` is also how
+   * the SDK says "the player pressed Cancel". Every call site read it the
+   * second way, so on a build without `zero.dialogs` exporting a PGN said
+   * 「已取消导出」 — no file, no error, and the blame on the player — while
+   * 「打开」 did nothing at all, silently, with no toast and no fallback. The
+   * comment further down says exactly this about `supports()`; the missing-API
+   * case reaches the same place by a different road.
+   *
+   * Now it throws, which is what the call sites already handle: their catch
+   * takes the browser path.
+   */
+  const NO_FILE_DIALOG = "NoFileDialogError";
+
+  function noFileDialogError() {
+    const e = new Error("file dialogs unavailable");
+    e.name = NO_FILE_DIALOG;
+    return e;
+  }
+
   async function saveFileDialog(options) {
-    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.saveFile) return null;
+    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.saveFile) throw noFileDialogError();
     return global.zero.dialogs.saveFile(options || {});
   }
 
   async function openFileDialog(options) {
-    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.openFile) return null;
+    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.openFile) throw noFileDialogError();
     return global.zero.dialogs.openFile(options || {});
   }
 
+  /**
+   * Show the saved file in the OS file manager.
+   *
+   * Returns whether that actually happened. It used to return nothing and
+   * swallow every failure, and the caller then said 「已导出 report.png」 —
+   * a file name and no path, for a file the app had just put somewhere the
+   * player never saw. When the folder does not open, the path is the only
+   * thing left that answers "where did it go", so the caller needs to know.
+   * @returns {Promise<boolean>}
+   */
   async function revealPath(path) {
-    if (!hasZero() || !global.zero.os || !global.zero.os.revealPath) return;
-    if (!(await supports("reveal_path", true))) return;
+    if (!hasZero() || !global.zero.os || !global.zero.os.revealPath) return false;
+    if (!(await supports("reveal_path", true))) return false;
     try {
       await global.zero.os.revealPath(path);
-    } catch (_) {}
+      return true;
+    } catch (_) { return false; }
   }
 
   // Deliberately NOT gated on supports(): the clipboard and the file dialogs
@@ -260,6 +293,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     writeBinaryFile,
     readTextFile,
     FILE_TOO_LARGE,
+    NO_FILE_DIALOG,
     saveFileDialog,
     openFileDialog,
     revealPath,

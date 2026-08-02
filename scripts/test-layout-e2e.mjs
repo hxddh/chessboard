@@ -841,7 +841,10 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       }).filter(Boolean);
       const over = [...body.querySelectorAll(".ach-item")]
         .map((e) => Math.round(e.getBoundingClientRect().right - br.right)).filter((x) => x > 1);
-      return { full, wrapped, over };
+      const badges = [...body.querySelectorAll(".ach-item")].map((e) => ({
+        t: (e.querySelector(".ach-nm") || {}).textContent || "",
+        h: Math.round(e.getBoundingClientRect().height) }));
+      return { full, wrapped, over, badges, cols: getComputedStyle(body).gridTemplateColumns.split(" ").length };
     });
     for (const f of r.full)
       assert(f.spans, lang + ": ." + f.c.split(" ")[0] + " spans the grid rather than taking one badge's cell");
@@ -849,8 +852,217 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       lang + ": no achievement name is broken while its row had the room — " +
       r.wrapped.map((w) => w.t + " (" + w.need + "px into " + w.room + ")").join(", "));
     assert(r.over.length === 0, lang + ": no badge runs past the grid (" + r.over.join(", ") + ")");
+    // Fifteen badges are a list, and a list has one row height. In two columns
+    // each row took its own: a name that wrapped, or a counter that dropped to
+    // a second line, raised that row and left its neighbours alone. Measured on
+    // the shipped build — Chinese 33 and 55, English 33/54/55/76/90, Japanese
+    // 33/54/55/68/76. One column at the full panel width fits every name in
+    // every language on one line with the counter beside it, which is the same
+    // row the statistics directly above it are already made of.
+    const heights = [...new Set(r.badges.map((b) => b.h))];
+    assert(r.cols === 1, lang + ": the badges are one list, not two columns (" + r.cols + ")");
+    assert(heights.length === 1,
+      lang + ": every badge is the same height (" + heights.join(", ") + ") — tallest is 「" +
+      (r.badges.find((b) => b.h === Math.max(...heights)) || {}).t + "」");
     await ctx.close();
   }
+}
+
+// --- 3s. the transport keys are one control -------------------------------
+// «  ‹  ●  ›  »  — five keys whose positions relative to each other are what
+// they mean, and which come and go with the replay position. Under `flex: 1`
+// that meant two visible keys took 97px each and five took 37: press ‹ once at
+// the live position and every key snapped to a third of its width while ‹
+// itself jumped 61px left, out from under the pointer about to press it again.
+// Third instance of the family, after the chrome's take-back/hint trade.
+{
+  const { ctx, page } = await open("zh-CN", "pvp", "play");
+  const bar = () => page.evaluate(() =>
+    [...document.querySelectorAll("#replay-seg button")].map((b) => ({
+      id: b.id,
+      l: Math.round(b.getBoundingClientRect().left),
+      w: Math.round(b.getBoundingClientRect().width),
+      shown: getComputedStyle(b).visibility === "visible",
+    })));
+  const clickSquares = async (list) => {
+    for (const sq of list) {
+      const pt = await page.evaluate((s) => {
+        const c = document.getElementById("board"), r = c.getBoundingClientRect();
+        return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+                 y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
+      }, sq);
+      await page.mouse.click(pt.x, pt.y);
+      await page.waitForTimeout(220);
+    }
+  };
+  await clickSquares(["e2", "e4", "e7", "e5"]);
+  const atLive = await bar();
+  await page.click("#rep-prev");
+  await page.waitForTimeout(400);
+  const backOne = await bar();
+  assert(atLive.length === 5 && backOne.length === 5, "five transport keys");
+  const widths = [...new Set(atLive.concat(backOne).map((b) => b.w))];
+  assert(widths.length === 1,
+    "every transport key is the same width in every state (" + widths.join(", ") + ")");
+  const moved = backOne.filter((b) => {
+    const before = atLive.find((x) => x.id === b.id);
+    return before && Math.abs(before.l - b.l) > 1;
+  });
+  assert(moved.length === 0,
+    "…and stepping back moves none of them (" + moved.map((m) => m.id).join(", ") + ")");
+  assert(atLive.filter((b) => b.shown).length < 5 && backOne.every((b) => b.shown),
+    "…while still only offering the ones that lead somewhere");
+  // one number, one place: the chip that repeated the 棋谱 heading's count is gone
+  const counters = await page.evaluate(() => document.querySelectorAll("#replay-seg #moves").length);
+  assert(counters === 0, "the replay bar does not repeat the move counter above it");
+  await ctx.close();
+}
+
+// --- 3t. the message strip speaks, and the one that stays can be sent away -
+// #toast carries all 110 of this app's messages, including 「引擎启动失败」,
+// and had no role and no aria-live — while the board beside it has had a live
+// region since the keyboard work and the storage banner sets role=alert
+// explicitly. And the fault tier, the one that deliberately does not leave on
+// its own, had no way out but a mouse landing on a div: not focusable, no ✕
+// (the docblock said there was one), and Escape — which closes everything else
+// transient in this app — did nothing, while it sat over the board's back rank.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  // the stubbed engine makes 提示 fail, which is a real fault through the real
+  // code path rather than a synthetic one
+  await page.click("#btn-hint").catch(() => {});
+  await page.waitForTimeout(900);
+  const t = await page.evaluate(() => {
+    const el = document.getElementById("toast");
+    const close = el.querySelector(".toast-close");
+    if (close) close.focus();
+    return {
+      shown: el.classList.contains("show"),
+      fault: el.classList.contains("t-fault"),
+      role: el.getAttribute("role"),
+      live: el.getAttribute("aria-live"),
+      hasClose: !!close,
+      closeNamed: !!(close && (close.getAttribute("aria-label") || "").trim()),
+      closeFocused: !!close && document.activeElement === close,
+    };
+  });
+  assert(t.shown && t.fault, "a failed hint raises a fault toast — " + JSON.stringify(t));
+  assert(t.role === "alert" && t.live === "assertive",
+    "…that a screen reader is told about (" + t.role + "/" + t.live + ")");
+  assert(t.hasClose && t.closeNamed && t.closeFocused,
+    "…with a close control that is focusable and named");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  assert(await page.evaluate(() => !document.getElementById("toast").classList.contains("show")),
+    "…and Escape sends it away, like everything else transient here");
+  // the receipt tier is polite, not assertive: it must not interrupt
+  const ok = await page.evaluate(async () => {
+    document.getElementById("theme-seg") || 0;
+    document.getElementById("tab-setup").click();
+    await new Promise((r) => setTimeout(r, 300));
+    document.querySelector('#theme-seg button[data-theme="night"]').click();
+    await new Promise((r) => setTimeout(r, 300));
+    const el = document.getElementById("toast");
+    return { role: el.getAttribute("role"), live: el.getAttribute("aria-live"),
+             close: !!el.querySelector(".toast-close") };
+  });
+  assert(ok.role === "status" && ok.live === "polite",
+    "a receipt is announced politely (" + ok.role + "/" + ok.live + ")");
+  assert(!ok.close, "…and carries no close control, because it leaves on its own");
+  await ctx.close();
+}
+
+// --- 3u. a list of facts is a list, not six of one and one of another ------
+// The six difficulty rows and the accuracy row are one list and read as one.
+// In English the accuracy row wrapped both its halves and stood 42px against
+// the others' 23 — 「Accuracy, last 10 games」 against 「69% · latest 78%」 in
+// a 239px row. Chinese and Japanese never showed it.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "record");
+    await page.evaluate(() => {
+      const games = [], diffs = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+      for (let i = 0; i < 20; i++) games.push({ id: "g" + i, t: Date.now() - i * 864e5,
+        diff: diffs[i % 6], color: i % 2 ? "w" : "b", result: ["win", "loss", "draw"][i % 3],
+        moves: 8 + i * 4, pgn: '[Event "?"]\n\n1. e4 e5 1/2-1/2', ending: "", acc: 40 + i * 2, acpl: 120 - i * 4 });
+      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+    });
+    await page.reload();
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll(".stat-row")].filter((e) => e.offsetParent).map((e) => ({
+        h: Math.round(e.getBoundingClientRect().height),
+        k: (e.querySelector(".stat-k") || {}).textContent || "",
+      })));
+    assert(rows.length >= 6, lang + ": the statistics are on screen (" + rows.length + " rows)");
+    const heights = [...new Set(rows.map((r) => r.h))];
+    assert(heights.length === 1,
+      lang + ": every row in the list is the same height (" + heights.join(", ") + ") — tallest is 「" +
+      (rows.find((r) => r.h === Math.max(...heights)) || {}).k + "」");
+    await ctx.close();
+  }
+}
+
+// --- 3v. a dialog is called what it says it is ----------------------------
+// Every dialog carried its title twice — an aria-label on the box and a
+// visible <h3>, from two different i18n keys — and two of the pairs had
+// drifted apart (「升变」/「升变为」, 「载入 FEN」/「载入 FEN 局面」). The
+// confirm dialog was not merely drifted: its heading is written fresh for each
+// question, while its aria-label was the fixed word 「确认」. Ask to delete
+// every save and the screen said 「清除存档」 while a screen reader said
+// 「确认」 — the most consequential dialog in the app, announced as nothing in
+// particular.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  const dialogs = await page.evaluate(() =>
+    [...document.querySelectorAll(".modal-bg")].map((d) => {
+      const by = d.getAttribute("aria-labelledby");
+      const target = by ? document.getElementById(by) : null;
+      const h = d.querySelector("h3");
+      return { id: d.id, by, label: d.getAttribute("aria-label"),
+               pointsAtHeading: !!target && target === h,
+               name: target ? target.textContent.trim() : null,
+               heading: h ? h.textContent.trim() : null };
+    }));
+  assert(dialogs.length >= 7, "the dialogs are in the markup (" + dialogs.length + ")");
+  for (const d of dialogs) {
+    assert(!d.label, d.id + ": carries no second copy of its title as an aria-label");
+    assert(d.pointsAtHeading, d.id + ": is named by the heading you can see (" + d.by + ")");
+    assert(d.name && d.name === d.heading, d.id + ": 「" + d.name + "」 = 「" + d.heading + "」");
+  }
+  // and the one whose heading changes: what it is called must change with it
+  const asked = await page.evaluate(async () => {
+    document.getElementById("clear-save").click();
+    await new Promise((r) => setTimeout(r, 500));
+    const d = document.getElementById("confirm-modal");
+    const by = document.getElementById(d.getAttribute("aria-labelledby"));
+    return { open: d.classList.contains("show"), name: by ? by.textContent.trim() : null };
+  });
+  assert(asked.open, "asking to delete every save opens the confirm dialog");
+  // …and every dialog is still a card. Widening one of them, I split the
+  // `.modal` rule to add the modifier and left the background, the border, the
+  // padding and the shadow behind in the modifier — so the six that are not
+  // wide became bare text over the board. Nothing in this file noticed: every
+  // check here reads geometry or names, and none of them asks whether the box
+  // is a box. The save-slot dialog lost 34px of height and that was the only
+  // trace.
+  const boxes = await page.evaluate(() =>
+    [...document.querySelectorAll(".modal-bg > .modal")].map((m) => {
+      const cs = getComputedStyle(m);
+      return { id: m.parentElement.id, bg: cs.backgroundColor,
+               pad: parseFloat(cs.paddingTop), border: parseFloat(cs.borderTopWidth),
+               w: Math.round(m.getBoundingClientRect().width) };
+    }));
+  for (const b of boxes) {
+    assert(!/rgba\(0, 0, 0, 0\)|transparent/.test(b.bg),
+      b.id + ": is drawn on something, not straight onto the board (" + b.bg + ")");
+    assert(b.pad >= 12, b.id + ": keeps its padding (" + b.pad + ")");
+    assert(b.border > 0, b.id + ": keeps its border (" + b.border + ")");
+  }
+  assert(asked.name && asked.name !== "确认",
+    "…and it is announced by what it is asking, not by the word 「确认」 — 「" + asked.name + "」");
+  await ctx.close();
 }
 
 // --- 3r. the settings page reads as one page ------------------------------
@@ -922,6 +1134,229 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   assert(!(state.hidden === false && state.disabled === true),
     "演示 is never shown permanently greyed out — hidden=" + state.hidden + " disabled=" + state.disabled);
   await ctx.close();
+}
+// --- 3w. a label stays inside the control it names -------------------------
+// `.tool-btn` is 32px tall and does not wrap; four of them at `flex: 1` in the
+// editor's 239px row could not shrink below their own padding plus their
+// longest word, so the labels wrapped inside a box that had no room for a
+// second line and the text came out through the border. Measured on the
+// shipped build: 「开始对局」 as two stacked lines in Chinese, 「Start game」
+// with the button itself 32px past the panel's edge in English, and in
+// Japanese 「キャンセル」 as three lines with its last character hanging below
+// the pill. scrollHeight against clientHeight catches the whole class — any
+// control anywhere whose text needs more room than the control has — which is
+// why this is not written against the editor.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play");
+    await page.click("#editor-open", { timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const spilled = await page.evaluate(() =>
+      [...document.querySelectorAll("button")]
+        .filter((b) => b.offsetParent && b.scrollHeight > b.clientHeight + 1)
+        .map((b) => b.textContent.trim() + " (" + b.scrollHeight + " needs " +
+          b.clientHeight + " has, in #" + (b.closest("[id]") || {}).id + ")"));
+    assert(spilled.length === 0,
+      lang + ": every label fits inside its own button" +
+      (spilled.length ? " — " + spilled.join("; ") : ""));
+    // …and the row itself stays inside the panel it lives in
+    const past = await page.evaluate(() => {
+      const row = document.querySelector("#sec-editor .lesson-controls");
+      if (!row) return null;
+      const r = row.getBoundingClientRect();
+      return [...row.querySelectorAll("button")]
+        .filter((b) => b.getBoundingClientRect().right > r.right + 1)
+        .map((b) => b.textContent.trim());
+    });
+    assert(past && past.length === 0,
+      lang + ": no editor button reaches past the row" +
+      (past && past.length ? " — " + past.join(", ") : ""));
+    await ctx.close();
+  }
+}
+
+// --- 3x. a segment of ten is still one control -----------------------------
+// The puzzle type filter is the only segment in the app with more than four
+// items, and it was the one the `.theme-row.wrap` comment claimed to have
+// handled: "five or more fall back to three". It did not — `auto-fit` with a
+// 64px floor resolves to four columns in a 335px panel — and at four columns
+// 「Win material」 needed 79px in a 78px cell. One label one pixel too wide,
+// and `grid-auto-rows: 1fr` passed its wrapped height to all ten buttons: the
+// whole control half again as tall, in English only.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "puzzle", "play");
+    const seg = await page.evaluate(() => {
+      const g = document.getElementById("puzzle-cat-seg");
+      const bs = [...g.querySelectorAll("button")];
+      const one = bs.map((b) => {
+        const c = b.cloneNode(true);
+        c.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
+        g.appendChild(c);
+        const need = Math.ceil(c.getBoundingClientRect().width);
+        c.remove();
+        return { t: b.textContent.trim(), need, w: Math.round(b.getBoundingClientRect().width) };
+      });
+      return { cols: getComputedStyle(g).gridTemplateColumns.split(" ").length,
+               heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+               tight: one.filter((x) => x.need > x.w) };
+    });
+    assert(seg.cols === 3, lang + ": ten items lay out three across (" + seg.cols + ")");
+    assert(seg.heights.length === 1 && seg.heights[0] < 40,
+      lang + ": every type is one line tall (" + seg.heights.join(", ") + ")");
+    assert(seg.tight.length === 0,
+      lang + ": no type name is wider than its cell" +
+      (seg.tight.length ? " — " + seg.tight.map((x) => "「" + x.t + "」 " + x.need + " in " + x.w).join(", ") : ""));
+    await ctx.close();
+  }
+}
+
+// --- 3y. a refusal is heard, not only seen ---------------------------------
+// Two places tell you why the app will not do what you asked, and both wrote
+// into a plain <p>: the editor's reason the position is illegal (which is also
+// the reason 「开始对局」 is greyed out) and the FEN dialog's reason the string
+// was rejected. Text arriving in an element that is not a live region is text
+// a screen reader never mentions — the same defect the toast had, in the two
+// spots where the app is saying no. The FEN field also went red without ever
+// being marked invalid, so the ring was the whole message.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const attrs = await page.evaluate(() => {
+    const g = (id) => {
+      const e = document.getElementById(id);
+      return e && { role: e.getAttribute("role"), live: e.getAttribute("aria-live") };
+    };
+    return { ed: g("editor-error"), fen: g("fen-error"),
+             describedBy: document.getElementById("fen-input").getAttribute("aria-describedby") };
+  });
+  for (const [id, a] of [["editor-error", attrs.ed], ["fen-error", attrs.fen]]) {
+    assert(a && a.role === "status" && a.live === "polite",
+      id + " is a live region before anything is written into it (" +
+      (a ? a.role + "/" + a.live : "missing") + ")");
+  }
+  assert(attrs.describedBy === "fen-error", "the FEN field points at its own reason");
+  // and a rejected FEN really marks the field invalid
+  const bad = await page.evaluate(async () => {
+    document.getElementById("fen-load-open").click();
+    await new Promise((r) => setTimeout(r, 400));
+    const input = document.getElementById("fen-input");
+    input.value = "not a fen";
+    document.getElementById("fen-load").click();
+    await new Promise((r) => setTimeout(r, 300));
+    return { invalid: input.getAttribute("aria-invalid"), red: input.classList.contains("bad"),
+             why: document.getElementById("fen-error").textContent.trim() };
+  });
+  assert(bad.red && bad.why, "a rejected FEN turns the field red and says why — 「" + bad.why + "」");
+  assert(bad.invalid === "true", "…and the field is marked invalid, not only coloured (" + bad.invalid + ")");
+  await ctx.close();
+}
+
+// --- 3z. the shortcut sheet describes the mode you are in ------------------
+// The keydown handler has always been partitioned by mode — learn and puzzle
+// return before the replay keys, N and F are reached — and the sheet was one
+// flat list of thirteen rows shown identically everywhere. In 做题 it offered
+// 「Z 悔棋」, 「F 翻转棋盘」 and the two replay rows, none of which do anything
+// there, and it called N 「新局」 when in that mode N is the next puzzle. The
+// only screen that tells you what the keyboard does was wrong in two of the
+// app's four modes.
+{
+  const expect = {
+    ai:     { has: ["新局", "悔棋", "翻转棋盘"], hasnt: ["下一题", "看答案", "重做当前这题"] },
+    learn:  { has: ["重做当前这题", "悔棋", "本课提示"], hasnt: ["新局", "翻转棋盘", "下一题"] },
+    puzzle: { has: ["下一题", "看答案", "重做当前这题"], hasnt: ["新局", "悔棋", "翻转棋盘"] },
+  };
+  for (const mode of Object.keys(expect)) {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    // the sheet has no button — 「?」 and the native Help menu are its two doors
+    await page.keyboard.press("Shift+Slash");
+    await page.waitForTimeout(400);
+    const rows = await page.evaluate(async () => {
+      const l = document.getElementById("keys-list");
+      const out = [];
+      for (let i = 0; i < l.children.length; i += 2)
+        out.push({ keys: [...l.children[i].querySelectorAll("kbd")].map((k) => k.textContent).join("/"),
+                   what: l.children[i + 1].textContent.trim() });
+      return out;
+    });
+    assert(rows.length > 0, mode + ": the shortcut sheet has rows (" + rows.length + ")");
+    const text = rows.map((r) => r.what);
+    for (const want of expect[mode].has)
+      assert(text.includes(want), mode + ": the sheet lists 「" + want + "」");
+    for (const no of expect[mode].hasnt)
+      assert(!text.includes(no),
+        mode + ": the sheet does not offer 「" + no + "」, which does nothing here");
+    // and the four that work everywhere are always there
+    for (const k of ["P", "Tab", "Esc", "?"])
+      assert(rows.some((r) => r.keys.split("/").includes(k)), mode + ": " + k + " is listed");
+    await ctx.close();
+  }
+}
+
+// --- 4a. the game list is a list, and its filters are labelled -------------
+// Two defects in the dialog you open to find an old game.
+// The rows: 「date · N moves · X% accuracy」 on one line, in a 380px box that
+// left the line 262px. English needs 263 for a game played yesterday, because
+// the relative form 「yesterday 12:55 AM」 is longer than the absolute
+// 「7/31/2026」 that older games get — one pixel, and 12 of 40 rows stood 67px
+// against the other 28 at 51. The box is what was wrong: this is the only
+// dialog holding a scrolling list of sentences, and it was the width of the
+// ones holding a single question.
+// The filters: two segments side by side at `flex: 0 1 auto`, whose auto basis
+// is the content width of a grid of `minmax(0, 1fr)` columns — zero. They
+// never grew. Measured in Chinese: four result buttons sharing 60px and three
+// colour buttons 94px inside a 418px row, and at 26px a column 「执白」 wrapped
+// to three lines, so the colour filter stood 79px beside a 35px result filter.
+// Stacked, full width, and each one now carries as a visible label the string
+// that was only ever its aria-label — two 「全部」 buttons above each other,
+// both active, with nothing on screen saying what either row filtered.
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "record");
+    await page.evaluate(() => {
+      const games = [], diffs = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+      for (let i = 0; i < 40; i++) games.push({ id: "g" + i, t: Date.now() - i * 36e5,
+        diff: diffs[i % 6], color: i % 2 ? "w" : "b", result: ["win", "loss", "draw"][i % 3],
+        moves: 8 + i * 3, pgn: '[Event "?"]\n\n1. e4 e5 1/2-1/2', ending: "", acc: 40 + i, acpl: 120 - i * 2 });
+      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+    });
+    await page.reload();
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+    await page.click("#hist-open", { timeout: 2500 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("#hist-modal .hist-row")].filter((e) => e.offsetParent);
+      const segs = [...document.querySelectorAll(".hist-filters .theme-row")].map((seg) => {
+        const by = seg.getAttribute("aria-labelledby");
+        const label = by ? document.getElementById(by) : null;
+        const bs = [...seg.querySelectorAll("button")];
+        return { id: seg.id, label: label && label.offsetParent ? label.textContent.trim() : null,
+                 stray: seg.getAttribute("aria-label"),
+                 heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+                 widths: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().width)))],
+                 spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent.trim()) };
+      });
+      return { n: rows.length,
+               rowH: [...new Set(rows.map((e) => Math.round(e.getBoundingClientRect().height)))],
+               segs };
+    });
+    assert(r.n >= 20, lang + ": the history dialog is showing the games (" + r.n + ")");
+    assert(r.rowH.length === 1,
+      lang + ": every game in the list is the same height (" + r.rowH.join(", ") + ")");
+    assert(r.segs.length === 2, lang + ": both filters are there (" + r.segs.length + ")");
+    for (const s of r.segs) {
+      assert(s.label, s.id + " (" + lang + "): carries a label you can see, not only one you can hear");
+      assert(!s.stray, s.id + " (" + lang + "): and not a second copy of it as an aria-label");
+      assert(s.heights.length === 1 && s.heights[0] < 40,
+        s.id + " (" + lang + "): every segment is one line tall (" + s.heights.join(", ") + ")");
+      assert(s.widths.length === 1,
+        s.id + " (" + lang + "): every segment is the same width (" + s.widths.join(", ") + ")");
+      assert(s.spill.length === 0,
+        s.id + " (" + lang + "): no filter label breaks out of its button" +
+        (s.spill.length ? " — " + s.spill.join(", ") : ""));
+    }
+    await ctx.close();
+  }
 }
 
 await browser.close();

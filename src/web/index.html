@@ -376,7 +376,7 @@
           <span class="side-h-meta" id="editor-hint" data-i18n="ed.hint">选棋子 → 点棋盘</span>
         </div>
         <div class="palette" id="editor-palette" role="group" aria-label="棋子" data-i18n-aria="aria.palette"></div>
-        <div class="setting-list" style="margin-top:14px">
+        <div class="setting-list">
           <div class="setting-row stack">
             <span class="setting-k" data-i18n="ed.turn">轮到</span>
             <div class="theme-row" id="editor-turn" role="group" aria-label="轮到" data-i18n-aria="ed.turn">
@@ -398,10 +398,10 @@
             </div>
           </div>
         </div>
-        <p class="hint" id="editor-error"></p>
-        <div class="lesson-controls" style="margin-top:10px">
-          <button type="button" class="tool-btn" id="editor-clear" data-i18n="act.clear" title="清空棋盘" data-i18n-title="tip.editor.clear">清空</button>
-          <button type="button" class="tool-btn" id="editor-reset" data-i18n="act.reset" title="回到初始局面" data-i18n-title="tip.editor.reset">初始</button>
+        <p class="hint" id="editor-error" role="status" aria-live="polite"></p>
+        <div class="lesson-controls quad">
+          <button type="button" class="tool-btn" id="editor-clear" data-i18n="ed.clear" title="清空棋盘" data-i18n-title="tip.editor.clear">清空棋盘</button>
+          <button type="button" class="tool-btn" id="editor-reset" data-i18n="ed.reset" title="回到初始局面" data-i18n-title="tip.editor.reset">初始局面</button>
           <button type="button" class="tool-btn" id="editor-cancel" data-i18n="act.cancel">取消</button>
           <button type="button" class="tool-btn primary" id="editor-apply" data-i18n="act.start">开始对局</button>
         </div>
@@ -420,8 +420,13 @@
              result, the running record, and the one suggestion the statistics
              page was keeping to itself. -->
         <div class="idle-card" id="idle-card" hidden></div>
+        <!-- The counter that used to sit at the head of this row said the same
+             thing as the 「2 / 2」 in the 棋谱 heading two centimetres above it,
+             in a different format (2/2 against 2 / 2), and its other two
+             branches — lesson number, puzzle number — could never be seen,
+             because the whole 棋谱 section is hidden in those two modes. One
+             number, one place. -->
         <div class="replay-bar" id="replay-seg">
-          <span class="meta-chip num" id="moves">0/0</span>
           <button type="button" id="rep-start" title="开局 (Home)" data-i18n-title="tip.replay.start">«</button>
           <button type="button" id="rep-prev" title="上一着 (←)" data-i18n-title="tip.replay.prev">‹</button>
           <button type="button" id="rep-live" title="回到最新" data-i18n-title="tip.replay.live">●</button>
@@ -495,14 +500,14 @@
           <h2 class="side-h" data-i18n="side.stats">统计</h2>
         </div>
         <div class="stats-body" id="stats-body"></div>
-        <div class="side-h-row" style="margin-top:14px">
+        <div class="side-h-row">
           <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
           <!-- label is "全部 N 局": renderHistory() fills in both the count and
                the language, so the markup deliberately carries no text -->
           <button type="button" class="text-link" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
         </div>
         <div class="hist-body" id="hist-body"></div>
-        <div class="side-h-row" style="margin-top:14px">
+        <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.ach">成就</h2>
           <span class="side-h-meta num" id="ach-count">0/0</span>
         </div>
@@ -515,9 +520,17 @@
 
     <div class="toast" id="toast"></div>
 
-    <div class="modal-bg" id="promo-modal" role="dialog" aria-label="升变" data-i18n-aria="aria.promo">
+    <!-- The name a screen reader reads out is the title on the screen. Every
+         dialog here used to carry the title twice: an aria-label on the box and
+         a visible <h3>, from two different i18n keys. Two of them had drifted —
+         「升变」 against 「升变为」, 「载入 FEN」 against 「载入 FEN 局面」 — and
+         the confirm dialog was worse than drifted: its heading is written fresh
+         for every question it asks, while its aria-label was the fixed word
+         「确认」. Delete your entire save and the screen said 「清除存档」 while
+         a screen reader said 「确认」. -->
+    <div class="modal-bg" id="promo-modal" role="dialog" aria-labelledby="promo-title">
       <div class="modal promo-modal">
-        <h3 data-i18n="promo.title">升变为</h3>
+        <h3 id="promo-title" data-i18n="promo.title">升变为</h3>
         <div class="promo-row">
           <button type="button" data-p="q" title="升变为后 (Q)" data-i18n-title="tip.promote.q"><span class="promo-glyph">♛</span><span data-i18n="piece.q">后</span></button>
           <button type="button" data-p="r" title="升变为车 (R)" data-i18n-title="tip.promote.r"><span class="promo-glyph">♜</span><span data-i18n="piece.r">车</span></button>
@@ -527,7 +540,7 @@
       </div>
     </div>
 
-    <div class="modal-bg" id="pick-modal" role="dialog" aria-label="选择" data-i18n-aria="aria.pick">
+    <div class="modal-bg" id="pick-modal" role="dialog" aria-labelledby="pick-title">
       <div class="modal">
         <h3 id="pick-title" data-i18n="pick.title">选择</h3>
         <div class="pick-list" id="pick-list"></div>
@@ -535,28 +548,31 @@
       </div>
     </div>
 
-    <div class="modal-bg" id="slots-modal" role="dialog" aria-label="存档槽" data-i18n-aria="slots.title">
+    <div class="modal-bg" id="slots-modal" role="dialog" aria-labelledby="slots-title">
       <div class="modal">
-        <h3 data-i18n="slots.title">存档槽</h3>
+        <h3 id="slots-title" data-i18n="slots.title">存档槽</h3>
         <div class="pick-list" id="slots-list"></div>
         <p class="hint" data-i18n="slots.hint">点存档槽读取,或用「保存到此槽」写入当前对局</p>
-        <div class="close-row"><button type="button" class="tool-btn" id="slots-close" data-i18n="act.cancel">取消</button></div>
+        <!-- 「取消」 undoes something. These three only close the list they opened. -->
+        <div class="close-row"><button type="button" class="tool-btn" id="slots-close" data-i18n="act.close">关闭</button></div>
       </div>
     </div>
 
-    <div class="modal-bg" id="hist-modal" role="dialog" aria-label="对局历史" data-i18n-aria="hist.title">
-      <div class="modal">
-        <h3 data-i18n="hist.title">对局历史</h3>
+    <div class="modal-bg" id="hist-modal" role="dialog" aria-labelledby="hist-modal-title">
+      <div class="modal wide">
+        <h3 id="hist-modal-title" data-i18n="hist.title">对局历史</h3>
         <!-- a few hundred games with no filter is a list you scroll, not a
              record you consult; "the ones I lost" is the reason to open it -->
         <div class="hist-filters">
-          <div class="theme-row wrap" id="hist-result-seg" role="group" aria-label="按结果筛选" data-i18n-aria="hist.byResult">
+          <span class="setting-k" id="hist-result-k" data-i18n="hist.byResult">按结果筛选</span>
+          <div class="theme-row" id="hist-result-seg" role="group" aria-labelledby="hist-result-k">
             <button type="button" data-hres="all" class="active" data-i18n="hist.any">全部</button>
             <button type="button" data-hres="win" data-i18n="hist.win">胜</button>
             <button type="button" data-hres="loss" data-i18n="hist.loss">负</button>
             <button type="button" data-hres="draw" data-i18n="hist.draw">和</button>
           </div>
-          <div class="theme-row wrap" id="hist-color-seg" role="group" aria-label="按执子筛选" data-i18n-aria="hist.byColor">
+          <span class="setting-k" id="hist-color-k" data-i18n="hist.byColor">按执子筛选</span>
+          <div class="theme-row" id="hist-color-seg" role="group" aria-labelledby="hist-color-k">
             <button type="button" data-hcol="all" class="active" data-i18n="hist.any">全部</button>
             <button type="button" data-hcol="w" data-i18n="hist.white">执白</button>
             <button type="button" data-hcol="b" data-i18n="hist.black">执黑</button>
@@ -565,19 +581,20 @@
         <div class="pick-list" id="hist-list"></div>
         <p class="hint" id="hist-count" hidden></p>
         <p class="hint" data-i18n="hist.hint">点一局载入棋盘复盘:可跑「分析」看回顾报告、导出 PGN、另存到存档槽</p>
-        <div class="close-row"><button type="button" class="tool-btn" id="hist-close" data-i18n="act.cancel">取消</button></div>
+        <div class="close-row"><button type="button" class="tool-btn" id="hist-close" data-i18n="act.close">关闭</button></div>
       </div>
     </div>
 
-    <div class="modal-bg" id="fen-modal" role="dialog" aria-label="载入 FEN" data-i18n-aria="aria.fen">
+    <div class="modal-bg" id="fen-modal" role="dialog" aria-labelledby="fen-title">
       <div class="modal">
-        <h3 data-i18n="fen.title">载入 FEN 局面</h3>
+        <h3 id="fen-title" data-i18n="fen.title">载入 FEN 局面</h3>
         <input type="text" id="fen-input" class="text-input" spellcheck="false"
+               aria-describedby="fen-error" aria-invalid="false"
                placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" />
-        <p class="hint" id="fen-error"></p>
-        <div class="close-row" style="display:flex;gap:8px;justify-content:space-between">
+        <p class="hint" id="fen-error" role="status" aria-live="polite"></p>
+        <div class="close-row split">
           <button type="button" class="text-link" id="fen-from-clip" data-i18n="fen.fromClip">从剪贴板粘贴</button>
-          <span style="display:flex;gap:8px">
+          <span class="btn-pair">
             <button type="button" class="tool-btn" id="fen-cancel" data-i18n="act.cancel">取消</button>
             <button type="button" class="tool-btn primary" id="fen-load" data-i18n="act.load">载入</button>
           </span>
@@ -588,19 +605,24 @@
     <!-- Every action in this app has lived on a bare letter key since 1.0 and
          nothing anywhere named one. 1.9 made it worse by moving the panel off
          Tab onto P without telling anyone. This is the list. -->
-    <div class="modal-bg" id="keys-modal" role="dialog" aria-label="快捷键" data-i18n-aria="keys.title">
+    <div class="modal-bg" id="keys-modal" role="dialog" aria-labelledby="keys-modal-title">
       <div class="modal">
-        <h3 data-i18n="keys.title">快捷键</h3>
+        <h3 id="keys-modal-title" data-i18n="keys.title">快捷键</h3>
         <dl class="key-list" id="keys-list"></dl>
-        <div class="close-row"><button type="button" class="tool-btn" id="keys-close" data-i18n="act.ok">好</button></div>
+        <div class="close-row"><button type="button" class="tool-btn" id="keys-close" data-i18n="act.close">关闭</button></div>
       </div>
     </div>
 
-    <div class="modal-bg" id="confirm-modal" role="dialog" aria-label="确认" data-i18n-aria="aria.confirm">
+    <div class="modal-bg" id="confirm-modal" role="dialog" aria-labelledby="confirm-title">
       <div class="modal">
         <h3 id="confirm-title" data-i18n="aria.confirm">确认</h3>
-        <p id="confirm-message" class="muted" style="margin:0 0 16px;font-size:14px;line-height:1.5;color:var(--text)"></p>
-        <div class="close-row" style="display:flex;gap:8px;justify-content:flex-end">
+        <!-- The sentence you read before deleting your data was the one piece of
+             typography in this app that was not on the scale: 14px against a
+             seven-step ruler of 11/12/13/15/16/19/30, and a 1.5 leading against
+             three tokens — both written inline, where the checks that hold the
+             rest of the file to those scales cannot see them. -->
+        <p id="confirm-message" class="confirm-msg"></p>
+        <div class="close-row end">
           <button type="button" class="tool-btn" id="confirm-cancel" data-i18n="act.cancel">取消</button>
           <button type="button" class="tool-btn" id="confirm-alt" hidden></button>
           <button type="button" class="tool-btn primary" id="confirm-ok" data-i18n="act.ok">确定</button>

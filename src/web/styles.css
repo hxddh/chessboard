@@ -578,11 +578,6 @@
     .status-pill.replay {
       color: var(--muted);
     }
-    .meta-chip {
-      font-size: 11px; color: var(--muted);
-      padding: 4px 8px; border-radius: 999px;
-      background: transparent;
-    }
     .spacer { flex: 1; }
     .chrome-actions { display: flex; align-items: center; gap: 6px; }
     .icon-btn, .tool-btn {
@@ -621,7 +616,8 @@
            the six labels in the three languages, measured: Thinking at 78. */
     .chrome .tool-btn { height: var(--chrome-ctl-h); min-width: 80px; }
     .chrome .icon-btn { width: var(--chrome-ctl-h); height: var(--chrome-ctl-h); }
-    .chrome-actions .slot-empty { visibility: hidden; }
+    .chrome-actions .slot-empty,
+    .replay-bar .slot-empty { visibility: hidden; }
     .icon-btn:hover, .tool-btn:hover { background: var(--btn-hover); }
     .tool-btn.primary {
       background: linear-gradient(180deg, var(--primary-from), var(--primary-to));
@@ -911,6 +907,13 @@
     }
     .side-h-row .side-h { margin: 0; height: auto; }
     .side-h-meta { font-size: 12px; color: var(--muted); }
+    /* A section that holds more than one heading — statistics, which stacks
+       统计 / 对局历史 / 成就 — needs air above every heading but its first.
+       This was three `style="margin-top:14px"` attributes in the markup, and
+       14 is not a step on the spacing scale; nor was the editor's 10. Inline
+       styles are the one place the token guards cannot look, which is exactly
+       why the two values that drifted off the scale drifted there. */
+    .side-section > .side-h-row:not(:first-child) { margin-top: 16px; }
 
     .setting-list { display: flex; flex-direction: column; gap: 12px; }
     /* --- reading modes get a wider column and a foldable index ------------
@@ -1051,6 +1054,19 @@
     .theme-row.wrap:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .theme-row.wrap:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .theme-row.wrap:has(> :nth-child(4):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* "five or more fall back to three" was the paragraph above's claim, and
+       the file did not implement it: `auto-fit` with a 64px minimum resolves
+       to four columns in a 335px panel, not three, because 4×64 + 3×8 still
+       fits. The one segment with more than four items is the puzzle type
+       filter, and at four columns every English label wrapped — 「Win
+       material」 needs 79px in a 78px cell, and `grid-auto-rows: 1fr` then
+       raised all ten buttons to that cell's height, so one label a pixel too
+       wide made the whole control half again as tall. At three columns the
+       cell is 106px and every label in all three languages sits on one line;
+       ten buttons over four short rows are shorter than ten over three tall
+       ones. The count decides the columns here as it does above — width was
+       never what this control was reacting to. */
+    .theme-row.wrap:has(> :nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .theme-row button {
       flex: 1;
       appearance: none; border: 1px solid var(--card-border);
@@ -1169,7 +1185,12 @@
        it outweighed the move list. Now it is a hairline under the moves it
        scrubs, and the buttons carry themselves. */
     .replay-bar {
-      display: flex; gap: 4px;
+      /* Five equal columns, always — not five flex items sharing whatever is
+         available. See renderReplayBar(): the keys come and go with the replay
+         position, and under `flex: 1` two visible keys took 97px each while
+         five took 37px. A transport row whose keys resize by a factor of three
+         as you use it is not one control. */
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
       padding: 4px 0 0;
       border-top: 1px solid var(--card-border);
       background: transparent;
@@ -1298,6 +1319,36 @@
       display: flex; gap: 8px; margin-bottom: 12px;
     }
     .lesson-controls .tool-btn { flex: 1; }
+    /* Two and three buttons fit across; four do not, and `flex: 1` cannot
+       save them. A `.tool-btn` carries 24px of horizontal padding and will
+       not shrink below its longest word, so four of them in the editor's
+       239px row demanded 271px in English — the primary action ran past the
+       panel's edge — and in the other two languages they held the row width
+       only by wrapping their labels inside a pill fixed at 32px tall. The
+       text then spilled out of the button it belonged to: 「开始对局」 as two
+       stacked lines, 「キャンセル」 as three, its last character hanging below
+       the border. Measured on the shipped build, all three languages.
+       Four goes to 2×2 for the same reason `.theme-row.wrap` does — a
+       quarter of a panel column is narrower than the words we put in it —
+       and the split falls where the meaning already splits: the two board
+       utilities on the first line, cancel and commit on the second.
+
+       An explicit class, not `:has(> :nth-child(4):last-child)` like the
+       segments above. `:nth-child` counts children, and the lesson and puzzle
+       rows each hold four buttons of which only two or three are ever shown —
+       they hide the rest with `display: none`. Keyed on the child count, both
+       of those rows became grids too, and the puzzle row's three visible
+       buttons laid out 2 + 1: an orphan on its own line, the exact defect the
+       segment rules above exist to prevent. How many buttons a row shows is
+       not a property of the markup, so it cannot be a CSS selector. The
+       editor's four are always all four. */
+    .lesson-controls.quad {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    /* The editor's two gaps, off the markup and onto the scale (was 14 and 10
+       inline). */
+    #sec-editor .setting-list { margin-top: 16px; }
+    #sec-editor .lesson-controls { margin-top: 12px; }
     .lesson-part {
       margin: 12px 0 4px;
       font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
@@ -1347,6 +1398,17 @@
       transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    /* the message and its exit sit on one line; only the fault tier has an exit */
+    .toast { display: flex; align-items: center; gap: 8px; }
+    .toast-close {
+      appearance: none; border: 0; background: transparent;
+      color: inherit; font: inherit; font-size: 12px; line-height: var(--lh-tight);
+      width: 20px; height: 20px; flex: none;
+      display: grid; place-items: center;
+      border-radius: 999px; cursor: pointer; opacity: 0.75;
+      transition: opacity var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
+    }
+    .toast-close:hover { opacity: 1; background: rgba(255,255,255,.18); }
     /* Three tiers — see toast() in app.js. Same shape, three voices:
        a receipt, a correction, and a fault that does not leave on its own. */
     .toast.t-fix {
@@ -1401,6 +1463,14 @@
       box-shadow: 0 24px 60px rgba(0,0,0,.4);
       animation: modal-in .22s var(--ease);
     }
+    /* One dialog holds a scrolling list of sentences rather than a single
+       question, and 380px was the width of the ones that hold a question. A
+       history row reads 「date · N moves · X% accuracy」 on one line, and in
+       English a game played yesterday needs 263px of the 262 the row had —
+       the relative form 「yesterday 12:55 AM」 is longer than the 「7/31/2026」
+       an older game gets, so 12 of 40 rows stood 67px against the rest at 51.
+       One pixel. At 460 the line has 342 and the worst case has 79 to spare. */
+    .modal.wide { width: min(460px, calc(100vw - 32px)); }
     @keyframes modal-in {
       from { opacity: 0; transform: translateY(8px) scale(0.98); }
       to { opacity: 1; transform: none; }
@@ -1413,6 +1483,19 @@
       font-family: var(--font-num); font-size: 12px;
     }
     .modal .close-row { margin-top: 16px; text-align: right; }
+    /* Two variants, both of which were inline `style=` on the element until
+       2.1.2 — invisible to the checks that hold the rest of this file to the
+       spacing, type and leading scales. `.split` puts a secondary action on the
+       far left (FEN's 「从剪贴板粘贴」); `.end` is a row of two or three that
+       all belong on the right. */
+    .modal .close-row.split { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+    .modal .close-row.end { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal .btn-pair { display: flex; gap: 8px; }
+    /* the sentence you read before agreeing to something irreversible */
+    .confirm-msg {
+      margin: 0 0 16px;
+      font-size: 15px; line-height: var(--lh-body); color: var(--text);
+    }
 
     /* position editor: piece palette */
     .palette {
@@ -1772,9 +1855,22 @@
        the row out of the panel. Measured on 2.0.0 in English: the two columns
        came out 158 + 134 + 6 = 299px inside a 240px panel and the right-hand
        column was clipped 37px past the edge. Chinese names are short enough to
-       hide it. Same shape as the .link-row bug, one component along. */
+       hide it. Same shape as the .link-row bug, one component along.
+
+       Then one column, because two was never wide enough to hold what a badge
+       is. A badge is a name and how far along it is; in a half-panel cell the
+       name wrapped, or the counter dropped below it, and each row took its own
+       height as a result. Measured on the shipped build: Chinese came out 33
+       and 55, English 33 / 54 / 55 / 76 / 90, Japanese 33 / 54 / 55 / 68 / 76
+       — fifteen items of one kind in a grid whose rows were five different
+       shapes, and 圆满 alone among the eleven counting badges kept its counter
+       inline because its name happened to be short enough. At the full panel
+       width every name in all three languages sits on one line with the
+       counter beside it: fifteen rows, one height, and the same row the
+       statistics immediately above are already made of. The English column,
+       the worst case, got shorter doing it (673px → 647px). */
     .ach-body {
-      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+      display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px;
     }
     .ach-item {
       display: flex; align-items: center; gap: 6px;
@@ -1834,11 +1930,28 @@
     .hist-row .pick-item { flex: 1; min-width: 0; padding: 6px 8px; }
 
 /* --- history filters, the shortcut sheet, and the save slots ---------- */
+/* Two filters, stacked, each filling the dialog.
+
+   They used to sit side by side as `flex: 0 1 auto`, and a flex item's auto
+   basis is its content width — but the content is a grid of `minmax(0, 1fr)`
+   columns, whose min-content is zero. So the segments never grew: measured in
+   Chinese, the four result buttons shared 60px and the three colour buttons
+   94px, inside a row 418px wide with 264px of it empty. At 26px a column,
+   「执白」 wrapped to three lines and the colour filter stood 79px tall beside
+   a 35px result filter — two halves of one control, one more than twice the
+   height of the other, in the dialog you open to find a game.
+
+   Stacked and full width they are the shape they always were: a segmented
+   control per question, every segment the same size, the way the theme picker
+   and the mode row already are. Plain `.theme-row` rather than `.wrap`,
+   because `.wrap`'s column count is tuned for a 284px panel — four items go
+   2×2 there, which in a 460px dialog would be four buttons in half the room
+   for no reason. */
 .hist-filters {
-  display: flex; flex-wrap: wrap; gap: 8px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px; align-items: center;
   margin-bottom: 12px;
 }
-.hist-filters .theme-row { flex: 0 1 auto; }
 
 .key-list {
   display: grid; grid-template-columns: auto 1fr;

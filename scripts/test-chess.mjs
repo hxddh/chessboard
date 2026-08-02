@@ -1535,6 +1535,35 @@ for (const lang of CONTENT_LANGS) {
     assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
   }
 
+  // Naming a side, and naming the other one, are one character apart when
+  // written out — and eight places wrote them out. The exported review image
+  // had both of its inverted: the column holding White's accuracy, mistakes
+  // and blunders was headed 黑方, and the turning point named the wrong player
+  // as the one who played it, while the identical report in the panel named
+  // them right. A picture you hand to somebody else, with the two players
+  // swapped, in the one part of this app whose whole purpose is to be handed
+  // to somebody else. Nobody had run docs/manual-check.md F6.
+  {
+    const app = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    assert(/const sideName = \(s\) => t\(s === "w" \? "side\.white" : "side\.black"\);/.test(app),
+      "sideName is the one place a side is named");
+    assert(/const otherSideName = \(s\) => t\(s === "w" \? "side\.black" : "side\.white"\);/.test(app),
+      "…and otherSideName the one place its opponent is");
+    // no third spelling anywhere else in the file. Comments are not code: the
+    // paragraph above sideName quotes the shape it replaced, and a scan that
+    // reads comments reports the explanation as the defect — the same way the
+    // Chinese-label scan once reported a note about a heading as a heading.
+    const code = app.replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+    const inline = code.split("\n")
+      .filter((l) => /\?[^\n]*"side\.(white|black)"/.test(l))
+      .filter((l) => !/const (sideName|otherSideName) = /.test(l))
+      .map((l) => l.trim());
+    for (const x of inline) console.error("FAIL: a side named by hand: " + x);
+    assert(inline.length === 0,
+      "every side is named through one of the two, so the two cannot be swapped by eye");
+  }
+
   // Every group heading in the panel is a heading. Three of them were a
   // <span class="side-h"> because they live inside a <summary> — same size,
   // same weight, same colour, and invisible to anything navigating by heading.
@@ -2938,7 +2967,11 @@ for (const lang of CONTENT_LANGS) {
   // The promotion dialog — a modal every real game reaches — had no data-i18n
   // at all, so the key-coverage check above could never notice it.
   let bareText = 0;
-  for (const m of html.matchAll(/<(h3|button|span|div|p)\b([^>]*)>([^<]*[一-鿿][^<]*)</g)) {
+  // Comments are not markup. This scan used to run over them too, so writing
+  // 「a visible <h3> against 「升变为」」 in a note about why a heading changed
+  // reported the note as an untranslated heading.
+  const htmlNoComments = html.replace(/<!--[\s\S]*?-->/g, "");
+  for (const m of htmlNoComments.matchAll(/<(h3|button|span|div|p)\b([^>]*)>([^<]*[一-鿿][^<]*)</g)) {
     const [, tag, attrs, text] = m;
     if (/data-i18n=/.test(attrs)) continue;
     if (/\sid="(status|moves|white-role|black-role|clock-[wb])"/.test(attrs)) continue; // written by sync()
@@ -2946,6 +2979,20 @@ for (const lang of CONTENT_LANGS) {
     console.error("FAIL: untranslatable <" + tag + "> text: " + text.trim());
   }
   assert(bareText === 0, "every Chinese label in index.html carries data-i18n");
+
+  // No inline style attribute in the markup. Every token guard in this file
+  // reads styles.css; none of them can see a `style=` attribute, and that is
+  // where the values that drifted off the scales went. The confirm dialog's
+  // message was the only typography in the app off the seven-step type scale
+  // (14px) and off the three leading tokens (1.5), and four `margin-top`s were
+  // 14 and 10 against a spacing scale that has neither. Both were invisible for
+  // as long as they were inline. Closing the hole is worth more than the four
+  // rules it costs.
+  const inlineStyles = [...htmlNoComments.matchAll(/<(\w+)[^>]*\sstyle="([^"]*)"/g)]
+    .map((m) => "<" + m[1] + " style=\"" + m[2] + "\"");
+  for (const s of inlineStyles) console.error("FAIL: inline style: " + s);
+  assert(inlineStyles.length === 0,
+    "no inline style attribute in index.html — the one place the token guards cannot look");
 
   // No Chinese string literal may reach the DOM from app.js. v1.5 translated
   // the static markup and left 169 runtime literals — task prompts, puzzle

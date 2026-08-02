@@ -79,6 +79,23 @@ import { createStore } from "./store.js";
   const tf = I18n ? I18n.tf : (k) => k;
 
   /**
+   * The name of a side, and the name of the other one.
+   *
+   * Eight places wrote this out as `side === "w" ? t("side.white") :
+   * t("side.black")`, six of them naming the side and two deliberately naming
+   * its opponent ("White wins on time against Black"), and the two forms are
+   * one character apart. The exported review image had both of its inverted:
+   * the column of White's accuracy, mistakes and blunders was headed 黑方, and
+   * the turning point named the wrong player as the one who played it — while
+   * the same report in the panel, four hundred lines away, named them right.
+   * A picture you hand to someone else, with the two players swapped.
+   * One implementation each, so the two forms cannot be confused for each
+   * other by eye. Guarded in test-chess.mjs.
+   */
+  const sideName = (s) => t(s === "w" ? "side.white" : "side.black");
+  const otherSideName = (s) => t(s === "w" ? "side.black" : "side.white");
+
+  /**
    * Stored state, behind one door. See persist.js.
    *
    * The failure hook is the point of it: host.js has always returned
@@ -467,20 +484,54 @@ import { createStore } from "./store.js";
    * @param {"ok"|"fix"|"fault"} [tier]
    */
   const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+  function dismissToast() {
+    const el = document.getElementById("toast");
+    if (!el) return false;
+    if (!el.classList.contains("show")) return false;
+    el.classList.remove("show");
+    if (store.ui.toastTimer) { clearTimeout(store.ui.toastTimer); store.ui.toastTimer = null; }
+    return true;
+  }
+
   function toast(msg, tier) {
     const el = document.getElementById("toast");
     if (!el) return;
     const kind = TOAST_MS[tier] === undefined ? "ok" : tier;
-    el.textContent = msg;
+    const ms = TOAST_MS[kind];
+    // The live region has to be told how loudly to speak *before* the text
+    // lands in it. Until 2.1.1 it was told nothing at all: no role, no
+    // aria-live, on the element that carries all 110 of this app's messages —
+    // including 「引擎启动失败」. The board beside it has had a live region
+    // since the keyboard move work, and the storage banner sets role=alert
+    // explicitly; only the tier in between was silent.
+    el.setAttribute("role", ms ? "status" : "alert");
+    el.setAttribute("aria-live", ms ? "polite" : "assertive");
+    el.replaceChildren();
+    const text = document.createElement("span");
+    text.textContent = msg;
+    el.appendChild(text);
+    // A fault does not leave on its own, which is right — a fault that
+    // disappears is a fault nobody was told about. What was wrong is the way
+    // out: the docblock above says it "gets a close button", and it never had
+    // one. It had a click handler on a div that is not focusable, so the only
+    // exit was a mouse landing somewhere the pointer shape was the only hint
+    // about — and Esc, which closes every other transient thing in this app,
+    // did nothing. Meanwhile it sits over the board's back rank.
+    if (!ms) {
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "toast-close";
+      close.textContent = "✕";
+      close.setAttribute("aria-label", t("act.close"));
+      close.onclick = dismissToast;
+      el.appendChild(close);
+    }
     el.classList.remove("t-ok", "t-fix", "t-fault");
     el.classList.add("show", "t-" + kind);
     if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
     store.ui.toastTimer = null;
-    const ms = TOAST_MS[kind];
     if (ms) store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), ms);
-    // a fault stays until it is dismissed, so it needs a way out that is not
-    // "wait" — clicking it anywhere will do
-    el.onclick = ms ? null : () => el.classList.remove("show");
+    el.onclick = ms ? null : dismissToast;
     el.style.cursor = ms ? "" : "pointer";
   }
 
@@ -758,9 +809,9 @@ import { createStore } from "./store.js";
       }
       saveGame();
       store.commit("game", "action");
-      const who = side === "w" ? t("side.white") : t("side.black");
+      const who = sideName(side);
       toast(isDraw ? who + t("msg.clock.flagDrawNoMaterial") :
-        tf("mm.flagWin", [who, side === "w" ? t("side.black") : t("side.white")]));
+        tf("mm.flagWin", [who, otherSideName(side)]));
       return;
     }
     renderClocks();
@@ -2515,7 +2566,7 @@ import { createStore } from "./store.js";
       who.className = "review-k";
       // the full word, not the one-letter clock label — "W Accuracy 64%" reads
       // like a typo in a report meant to be read as prose
-      who.textContent = t(side === "w" ? "side.white" : "side.black");
+      who.textContent = sideName(side);
       const val = document.createElement("span");
       val.className = "review-v num";
       val.textContent = tf("rv.sideLine", [sum.acc[side], sum.acpl[side], c.inaccuracy, c.mistake, c.blunder]);
@@ -2533,7 +2584,7 @@ import { createStore } from "./store.js";
       btn.type = "button";
       btn.className = "review-jump";
       btn.textContent = tf("rv.turningPoint",
-        [sum.worst.moveNo, t(sum.worst.side === "w" ? "side.white" : "side.black"), sum.worst.san,
+        [sum.worst.moveNo, sideName(sum.worst.side), sum.worst.san,
          (sum.worst.loss / 100).toFixed(1)]);
       btn.title = t("rv.jumpTip");
       // land on the position *after* the move, so the damage is on the board
@@ -3609,20 +3660,23 @@ import { createStore } from "./store.js";
   /** The replay bar and the move counter chip beside it. */
   function renderReplayBar() {
     const h = sanHistory();
-    el("moves").textContent =
-      store.session.mode === "learn" ? (store.session.learn ? (store.session.learn.li + 1) + "/" + LESSONS.length : "—") :
-      store.session.mode === "puzzle" ? (store.session.puzzle ? tf("pz.chip", [store.session.puzzle.idx + 1, puzzlesInCat(store.session.puzzle.cat).length]) : "—") :
-      store.game.viewIndex + "/" + h.length;
     el("replay-pos").textContent = store.game.viewIndex + " / " + h.length;
     // Nothing played yet is nothing to replay: the whole transport goes.
     avail(el("replay-seg"), h.length > 0);
     const back = store.game.viewIndex > 0;
     const fwd = store.game.viewIndex < h.length;
-    avail(el("rep-start"), back);
-    avail(el("rep-prev"), back);
-    avail(el("rep-next"), fwd);
-    avail(el("rep-end"), fwd);
-    avail(el("rep-live"), !isLive());
+    // Slots, not `avail`. These five are one control — «  ‹  ●  ›  » — and
+    // their positions relative to each other are what they mean. Measured on
+    // 2.1.1: at the live position only « and ‹ are available, so `flex: 1`
+    // gave them 97px each; press ‹ once and all five appear, every key snaps
+    // to 37px and ‹ jumps 61px to the left, out from under the pointer that
+    // was about to press it again. Same family as the chrome's take-back and
+    // hint trading places, third instance.
+    slot(el("rep-start"), back);
+    slot(el("rep-prev"), back);
+    slot(el("rep-next"), fwd);
+    slot(el("rep-end"), fwd);
+    slot(el("rep-live"), !isLive());
     // "resume from here" is a replay action, and it only exists off the live
     // position — where it used to sit greyed out with a tooltip explaining
     // that it only exists off the live position
@@ -4051,7 +4105,7 @@ import { createStore } from "./store.js";
     let side;
     if (store.session.mode === "ai") {
       side = store.session.humanColor;
-      if (!(await confirmNative(tf("dlg.resign", [side === "w" ? t("side.white") : t("side.black")]),
+      if (!(await confirmNative(tf("dlg.resign", [sideName(side)]),
         t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel") }))) return;
     } else {
       // pvp: either player may resign at any time (FIDE) — pick the side
@@ -4060,7 +4114,7 @@ import { createStore } from "./store.js";
       if (!pick) return;
       side = pick === "alt" ? "b" : "w";
     }
-    const who = side === "w" ? t("side.white") : t("side.black");
+    const who = sideName(side);
     invalidateEngine();
     store.game.resigned = side;
     // resigning is losing, whatever the previous six years of this file said
@@ -4068,7 +4122,7 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") recordResign();
     saveGame();
     store.commit("game", "action");
-    toast(tf("mm.resignWin", [who, side === "w" ? t("side.black") : t("side.white")]));
+    toast(tf("mm.resignWin", [who, otherSideName(side)]));
   }
 
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
@@ -4276,6 +4330,25 @@ import { createStore } from "./store.js";
       p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + ".pgn";
   }
 
+  /**
+   * What to say after a file has been written.
+   *
+   * 「已导出 report.png」 was a file name for a file the app had just put
+   * somewhere the player never saw. It was fine only while `revealPath`
+   * worked, and `revealPath` is best-effort: no `os.revealPath` on this build,
+   * or a throw, and it returned quietly. So when the folder did not open, the
+   * app had reported success and said nothing about where.
+   *
+   * The folder opened → the name is enough, you are looking at it.
+   * It did not → the path is the answer to "where did it go", and it goes in
+   * the longer toast tier because it is a sentence to read rather than a
+   * receipt to ignore.
+   */
+  function savedToast(name, path, revealed) {
+    if (revealed) toast(t("msg.export.done") + name);
+    else toast(t("msg.export.doneAt") + path, "fix");
+  }
+
   async function downloadPgn() {
     if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
     const pgn = pgnForExport();
@@ -4285,9 +4358,9 @@ import { createStore } from "./store.js";
         const path = await Host.saveFileDialog({ title: t("dlg.exportPgn"), defaultName: name });
         if (path == null) { toast(t("msg.export.cancelled")); return; }
         await Host.writeTextFile(path, pgn);
-        await Host.revealPath(path);
+        const revealed = await Host.revealPath(path);
         Host.addRecentDocument(path);
-        toast(t("msg.export.done") + name);
+        savedToast(name, path, revealed);
         return;
       } catch (_) {}
     }
@@ -4298,7 +4371,7 @@ import { createStore } from "./store.js";
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("msg.export.done") + name);
+      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
     } catch (_) {
       copyText(pgn, t("msg.export.restrictedCopied"));
     }
@@ -4457,7 +4530,7 @@ import { createStore } from "./store.js";
       const x = 40 + k * (cw / 2);
       ctx.fillStyle = fg;
       font("600 15px");
-      ctx.fillText(side === "w" ? t("side.black") : t("side.white"), x, rowY);
+      ctx.fillText(sideName(side), x, rowY);
       font("14px");
       ctx.fillStyle = muted;
       const c = sum.counts[side];
@@ -4471,7 +4544,7 @@ import { createStore } from "./store.js";
       ctx.fillStyle = accent;
       // the Plain key, not the panel's line with its "tap to jump" tail
       text(tf("rv.turningPointPlain", [sum.worst.moveNo,
-        sum.worst.side === "w" ? t("side.black") : t("side.white"), sum.worst.san,
+        sideName(sum.worst.side), sum.worst.san,
         (sum.worst.loss / 100).toFixed(1)]), 40, rowY + 100, cw, 2, 20);
     }
     font("12px");
@@ -4503,8 +4576,8 @@ import { createStore } from "./store.js";
         const path = await Host.saveFileDialog({ title: t("rv.exportTitle"), defaultName: name });
         if (path == null) { toast(t("msg.export.cancelled")); return; }
         await Host.writeBinaryFile(path, b64);
-        await Host.revealPath(path);
-        toast(t("msg.export.done") + name);
+        const revealed = await Host.revealPath(path);
+        savedToast(name, path, revealed);
         return;
       } catch (_) { /* fall through to the browser path */ }
     }
@@ -4516,7 +4589,7 @@ import { createStore } from "./store.js";
       link.download = name;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 2000);
-      toast(t("msg.export.done") + name);
+      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
     } catch (_) { toast(t("msg.file.readFailed"), "fault"); }
   }
 
@@ -4686,10 +4759,13 @@ import { createStore } from "./store.js";
         const text = await Host.readTextFile(paths[0]);
         importPgnText(text, paths[0]);
         Host.addRecentDocument(paths[0]);
+        return;
       } catch (err) {
-        toastReadFailure(err);
+        // "there is no file dialog on this build" is not a read failure — it
+        // is the reason to use the browser's own picker, which is sitting
+        // right below. Anything else really did fail to read.
+        if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
       }
-      return;
     }
     const input = document.createElement("input");
     input.type = "file";
@@ -4864,12 +4940,24 @@ import { createStore } from "./store.js";
   }
 
   const fenModal = document.getElementById("fen-modal");
+  /** The FEN field's one way of saying no. The red ring is what you see, the
+      sentence under it is the reason, and aria-invalid is what a screen reader
+      is told; all three were set by hand at three call sites, which is three
+      chances to set two of them. Pass nothing to clear all three. */
+  function setFenError(msg) {
+    const input = document.getElementById("fen-input");
+    const err = document.getElementById("fen-error");
+    if (err) err.textContent = msg || "";
+    if (input) {
+      input.classList.toggle("bad", !!msg);
+      input.setAttribute("aria-invalid", msg ? "true" : "false");
+    }
+  }
   function openFenModal() {
     if (!fenModal) return;
     const input = document.getElementById("fen-input");
-    const err = document.getElementById("fen-error");
-    if (input) { input.value = viewGame().fen(); input.classList.remove("bad"); }
-    if (err) err.textContent = "";
+    if (input) input.value = viewGame().fen();
+    setFenError("");
     Dlg.open(fenModal, input);
     if (input) input.select();
   }
@@ -4877,12 +4965,8 @@ import { createStore } from "./store.js";
 
   function submitFen() {
     const input = document.getElementById("fen-input");
-    const err = document.getElementById("fen-error");
     const raw = (input && input.value || "").trim();
-    const show = (msg) => {
-      if (err) err.textContent = msg;
-      if (input) input.classList.add("bad");
-    };
+    const show = setFenError;
     if (!raw) { show(t("msg.fen.empty")); return; }
     const v = new Chess().validate_fen(raw);
     if (!v.valid) { show(v.error || t("msg.fen.invalid")); return; }
@@ -5545,27 +5629,42 @@ import { createStore } from "./store.js";
    * in one place and not the other is exactly the state 1.9 shipped in, when
    * the panel silently moved from Tab to P.
    */
+  /* Which shortcuts exist is a property of the mode you are in. The keydown
+     handler has said so from the start — learn and puzzle return early, before
+     the replay keys, N, and F are ever reached — but this list did not, and it
+     is the only place the app tells you what the keyboard does. In 做题 it
+     offered 「Z 悔棋」, 「F 翻转棋盘」 and 「← → 上一手 / 下一手」, none of
+     which do anything there, and it named N 「新局」 when in that mode N is
+     the next puzzle. Three keys do different jobs in different modes — N, H
+     and R — so the row carries the mode it belongs to and the wording for that
+     mode, and the sheet is rendered fresh each time it opens. */
+  const ANY = ["ai", "pvp", "learn", "puzzle"];
+  const PLAY = ["ai", "pvp"];
   const KEY_HELP = [
-    { keys: ["P"], k: "keys.panel" },
-    { keys: ["N"], k: "keys.new" },
-    { keys: ["Z"], k: "keys.undo" },
-    { keys: ["H"], k: "keys.hint" },
-    { keys: ["F"], k: "keys.flip" },
-    { keys: ["←", "→"], k: "keys.step" },
-    { keys: ["Home", "End"], k: "keys.ends" },
-    { keys: ["Tab"], k: "keys.tab" },
-    { keys: ["Esc"], k: "keys.esc" },
-    { keys: ["?"], k: "keys.help" },
-    { keys: ["Q", "R", "B", "N"], k: "keys.promo" },
-    { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board" },
-    { keys: ["R"], k: "keys.retry" },
+    { keys: ["P"], k: "keys.panel", in: ANY },
+    { keys: ["N"], k: "keys.new", in: PLAY },
+    { keys: ["N"], k: "keys.next", in: ["puzzle"] },
+    { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },
+    { keys: ["Z"], k: "keys.undo", in: ["ai", "pvp", "learn"] },
+    { keys: ["H"], k: "keys.hint", in: PLAY },
+    { keys: ["H"], k: "keys.lessonHint", in: ["learn"] },
+    { keys: ["H"], k: "keys.answer", in: ["puzzle"] },
+    { keys: ["F"], k: "keys.flip", in: PLAY },
+    { keys: ["←", "→"], k: "keys.step", in: PLAY },
+    { keys: ["Home", "End"], k: "keys.ends", in: PLAY },
+    { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board", in: ANY },
+    { keys: ["Q", "R", "B", "N"], k: "keys.promo", in: ANY },
+    { keys: ["Tab"], k: "keys.tab", in: ANY },
+    { keys: ["Esc"], k: "keys.esc", in: ANY },
+    { keys: ["?"], k: "keys.help", in: ANY },
   ];
   const keysModal = document.getElementById("keys-modal");
   function renderKeyHelp() {
     const list = document.getElementById("keys-list");
     if (!list) return;
     list.replaceChildren();
-    for (const row of KEY_HELP) {
+    const mode = store.session.mode;
+    for (const row of KEY_HELP.filter((r) => r.in.includes(mode))) {
       const dt = document.createElement("dt");
       for (const key of row.keys) {
         const kbd = document.createElement("kbd");
@@ -5911,9 +6010,8 @@ import { createStore } from "./store.js";
       try {
         const clip = await Host.readClipboard();
         const input = document.getElementById("fen-input");
-        if (input) { input.value = (clip || "").trim(); input.classList.remove("bad"); }
-        const err = document.getElementById("fen-error");
-        if (err) err.textContent = "";
+        if (input) input.value = (clip || "").trim();
+        setFenError("");
       } catch (_) { toast(t("msg.clipboard.readFailed"), "fault"); }
     };
     document.getElementById("fen-input").addEventListener("keydown", (ev) => {
@@ -6018,6 +6116,9 @@ import { createStore } from "./store.js";
       // how it closes when it is built (see wireDialogs()), and Escape asks
       // for the top of the stack. 缺陷 19.
       if (Dlg.closeTop()) return;
+      // a fault toast is the only other thing on screen that stays until it is
+      // told to go, and Escape is what this app means by "make it go"
+      if (dismissToast()) return;
       // before closing the panel — the panel holds the editor's only exit
       if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return; }
       if (isPanelOpen()) setPanelOpen(false);
