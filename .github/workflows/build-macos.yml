@@ -39,7 +39,8 @@ jobs:
       # that cannot be blamed later.
       - name: install Native SDK CLI
         env:
-          SDK_VERSION: ${{ inputs.sdk_version || 'latest' }}
+          # see release.yml's sdk_version input for why this is not 'latest'
+          SDK_VERSION: ${{ inputs.sdk_version || '0.7.1' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true

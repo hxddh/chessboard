@@ -11,9 +11,18 @@ on:
         description: "Release tag (e.g. v1.18.0); notes file must exist"
         required: true
       sdk_version:
+        # Pinned, not "latest". 2.1.5's release run died here: 0.8.0 shipped a
+        # Windows regression — webview2_host.cpp references
+        # createWindowsGpuRenderer(), which is defined nowhere it links against,
+        # so `zig build test` failed with an undefined symbol inside the SDK's
+        # own C++. v2.1.4 had built the identical repo an hour earlier on 0.7.1.
+        # Everything else this gate depends on is pinned (playwright 1.49.1,
+        # zig 0.16.0); the SDK was the one thing that could change underneath a
+        # release without anyone changing anything. Raise it deliberately, with
+        # a run that proves both platforms still build.
         description: "@native-sdk/cli version both platform builds install"
         required: false
-        default: "latest"
+        default: "0.7.1"
 
 permissions:
   contents: write
