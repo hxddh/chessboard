@@ -1727,21 +1727,32 @@ import { createStore } from "./store.js";
     return s;
   }
 
+  /** @returns {{state: object, migrated: boolean}} — `migrated` says the ids
+      were actually rewritten, which is a different thing from "this profile
+      is on the current id version", and the difference is the whole bug */
   function loadPuzzleState() {
     try {
       const s = JSON.parse(Persist.get("puzzles") || "null");
       if (s && s.v === 1 && s.solved) {
         if (!s.missed) s.missed = {};
-        return migrateDrillIds(s);
+        const was = s.idv;
+        const out = migrateDrillIds(s);
+        return { state: out, migrated: out.idv !== was };
       }
     } catch (_) {}
-    return { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" };
+    return { state: { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" }, migrated: false };
   }
-  store.session.puzzleState = loadPuzzleState();
+  const loadedPuzzles = loadPuzzleState();
+  store.session.puzzleState = loadedPuzzles.state;
   // persist the rewritten ids straight away — a migration that only lives in
   // memory runs again on every launch, and once the book does change it would
-  // then be reading positions that no longer mean what they meant
-  if (store.session.puzzleState.idv === 2) { Persist.setJson("puzzles", store.session.puzzleState); }
+  // then be reading positions that no longer mean what they meant.
+  //
+  // Only when ids actually moved. The test was `idv === 2`, which is equally
+  // true of the default this function returns for a profile that has never been
+  // touched — so a brand-new user got an empty puzzle record written at import
+  // time, and that write is what made `firstRun` false for everybody.
+  if (loadedPuzzles.migrated) { Persist.setJson("puzzles", store.session.puzzleState); }
   function savePuzzleState() {
     Persist.setJson("puzzles", store.session.puzzleState);
   }
@@ -6309,8 +6320,11 @@ import { createStore } from "./store.js";
   // rather than one that agrees with the defaults.
   wireViews();
 
-  const firstRun = !Persist.get("settings") && !Persist.get("save") &&
-    !Persist.get("learn") && !Persist.get("puzzles");
+  // Asked of the snapshot persist took before anything wrote, not of four keys
+  // read here. Read here it was false for everybody: the puzzle store writes an
+  // empty record at import time, four thousand lines above this, and that write
+  // lands in the same bag these reads came out of. See persist.js.
+  const firstRun = Persist.wasEmpty();
   // and on a first run, start in the system language rather than always Chinese
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();

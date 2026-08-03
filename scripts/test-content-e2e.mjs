@@ -73,7 +73,6 @@ await ctx.addInitScript(() => {
   localStorage.setItem("chess.v1.settings", JSON.stringify({
     mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
   localStorage.setItem("chess.panelOpen", "1");
-  localStorage.setItem("chess.onboarded", "1");
 });
 const page = await ctx.newPage();
 const errs = [];
