@@ -40,7 +40,7 @@ const c = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: '
 await c.addInitScript(() => {
   localStorage.setItem('chess.v1.settings', JSON.stringify({
     mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: '3' }));
-  localStorage.setItem('chess.panelOpen', '1'); localStorage.setItem('chess.onboarded', '1');
+  localStorage.setItem('chess.panelOpen', '1');
   const listeners = {};
   window.zero = {
     invoke: () => Promise.resolve(true),

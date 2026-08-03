@@ -58,7 +58,6 @@ async function play(theme, line) {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
       mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: th }));
     localStorage.setItem("chess.panelOpen", "1");
-    localStorage.setItem("chess.onboarded", "1");
   }, theme);
   const page = await ctx.newPage();
   const errs = [];

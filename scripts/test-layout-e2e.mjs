@@ -1582,6 +1582,55 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   }
 }
 
+// --- 4g. the first launch, which nothing here had ever exercised -----------
+// Every context in this file seeds localStorage before the page loads, so the
+// one path every new user takes — cold start — was untested by construction.
+// It was also broken: `firstRun` was computed by reading four keys at the end
+// of init, and the puzzle store writes an empty record at import time, into the
+// same bag those reads come out of. So it was false for everybody, and it gates
+// two things — the first-run guide, and `detectLang()`.
+// Measured on the shipped 2.1.4 with clean storage: en-US, ja-JP, zh-CN and
+// de-DE all came up in Chinese, and the guide never appeared. Both of those are
+// what docs/manual-check.md A3 names as the failure, and A3 has never been run.
+{
+  // de-DE is here on purpose: an unsupported locale falls back to Chinese by
+  // design (test-chess pins fr-FR → zh-CN), so it proves the fallback still
+  // works rather than that everything is Chinese again.
+  for (const [locale, lang, tab] of [
+    ["en-US", "en", "Play"], ["ja-JP", "ja", "対局"],
+    ["zh-CN", "zh-CN", "对局"], ["de-DE", "zh-CN", "对局"],
+  ]) {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale });
+    const page = await ctx.newPage();          // nothing seeded: a new install
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => ({
+      shown: document.getElementById("pick-modal").classList.contains("show"),
+      items: document.querySelectorAll("#pick-list .pick-item").length,
+      firstTab: (document.getElementById("tab-play") || {}).textContent,
+      stored: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").langId,
+    }));
+    assert(r.shown, locale + ": a new install opens the guide");
+    assert(r.items === 2, locale + ": …with both ways in (" + r.items + ")");
+    assert(r.stored === lang, locale + ": the app starts in the system's language (" + r.stored + ")");
+    assert((r.firstTab || "").trim() === tab,
+      locale + ": …and the interface is in it — 「" + (r.firstTab || "").trim() + "」");
+    // choosing an answer closes it, and it does not come back
+    const after = await page.evaluate(async () => {
+      document.querySelector("#pick-list .pick-item").click();
+      await new Promise((r) => setTimeout(r, 600));
+      return document.getElementById("pick-modal").classList.contains("show");
+    });
+    assert(!after, locale + ": answering it closes it");
+    await page.reload();
+    await page.waitForTimeout(1100);
+    const again = await page.evaluate(() =>
+      document.getElementById("pick-modal").classList.contains("show"));
+    assert(!again, locale + ": and the second launch is not a first launch");
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

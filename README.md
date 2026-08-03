@@ -14,6 +14,20 @@
 | macOS（Apple Silicon） | **Chessboard-macOS-arm64.zip** | 解压得到 `Chessboard.app`，把它拖进「应用程序」（或 `mv Chessboard.app ~/Applications/`）再打开；首次右键「打开」过 Gatekeeper |
 | Windows（x64） | **Chessboard-Windows-x64.zip** | 解压后运行 `Chessboard/chessboard.exe`；需 WebView2 运行时（Win10/11 一般预装） |
 
+## 2.1.5 改了什么
+
+一处。它比前四个版本加起来都重，而且不是版式问题：**全新用户拿到的一直是中文界面，而首次运行的引导从来没出现过。**
+
+干净存储、只改系统语言，实测已发布的 2.1.4：en-US、ja-JP、zh-CN、de-DE 四种系统语言，界面四次都是中文，引导一次都没出现。这两条正是 `docs/manual-check.md` A3 写着的失败样子——「引导不出现，或语言固定成中文」，而 A3 从来没有人跑过。
+
+**根因**：`loadPuzzleState()` 为空档案返回的默认值带着 `idv: 2`，而模块初始化里那句 `if (idv === 2) Persist.setJson("puzzles", …)` 因此对全新用户也成立，写进一条空的做题记录。四千行之后，`firstRun` 靠回头读四个键来判断，而 `Persist.set` 会同时更新那份内存快照 —— 于是 `firstRun` 对每一个装过这个应用的人都是 false。它同时管着引导和 `detectLang()`。（`detectLang` 本身有八条单测，全部正确；函数没问题，只是永远不会被调用。）
+
+**修法两半**：只在 id 真的动过时才落盘（`loadPuzzleState` 现在返回 `{state, migrated}`）；以及结构性的那一半 —— `firstRun = Persist.wasEmpty()`，问的是 `load()` 在任何迁移和写入之前记下的快照。只修第一半不够：那样 bug 只是被移走，下一个在 import 时写存储的模块会把它带回来 —— 实测也证明了，只还原第一半时冷启动守卫仍然全绿。
+
+**更值得记的一句**：上一版扫了 36 个状态，但每个套件都先往 localStorage 塞种子，所以冷启动这条路按构造就没被测过。而且三个套件写着 `chess.onboarded` —— 一个早已不在 `KEYS` 里、应用根本不读的键。测试以为自己在跳过引导，真正让引导不出现的是这个 bug。三行都删了，并新增守卫禁止套件塞应用不拥有的键。
+
+`test-layout-e2e` 397 → **425**，新增冷启动一节（四种系统语言 × 四项断言）；反向验证时报出的正是线上那两条症状。
+
 ## 2.1.4 改了什么
 
 三处修复，两处「查过、是好的」。方法变了：不再按界面区域走，而是拿着已经修过的形状去找它的其他实例 —— 三处里有两处是这样找出来的。

@@ -68,6 +68,31 @@ export const MIGRATIONS = [
 export function createPersist(host, onWriteFailure) {
   let bag = null;
   let broken = null;   // {key} of the first write that failed
+  /**
+   * Was this profile empty the first time anyone looked?
+   *
+   * Recorded inside load(), from the snapshot taken before a single write has
+   * happened, because "is this a new user" is a question about the storage the
+   * app *found* — not about the storage it has since written to.
+   *
+   * app.js used to answer it by reading four keys at the end of its init:
+   *
+   *   const firstRun = !get("settings") && !get("save") &&
+   *     !get("learn") && !get("puzzles");
+   *
+   * and by then the puzzle store had already written an empty record of its
+   * own, four thousand lines earlier. `set()` updates this bag, so that read
+   * came back non-null and `firstRun` was false for every user who ever
+   * installed the app. It gated two things: the first-run guide, and
+   * `detectLang()`. Measured on the shipped 2.1.4, with clean storage, on four
+   * system languages — en-US, ja-JP, zh-CN, de-DE — the interface came up in
+   * Chinese all four times and the guide never appeared. Both of those are
+   * what docs/manual-check.md A3 names as the failure.
+   *
+   * A snapshot cannot be broken by what any later module does at import time,
+   * which the four reads could and did.
+   */
+  let foundEmpty = null;
 
   /**
    * Read every key, once.
@@ -79,6 +104,11 @@ export function createPersist(host, onWriteFailure) {
   function load() {
     bag = {};
     for (const [name, key] of Object.entries(KEYS)) bag[name] = host.storageGet(key);
+    // before any migration, and long before anything writes: the profile as
+    // it was found. panelOpen is excluded — it is a window preference, not
+    // evidence that somebody has played.
+    foundEmpty = Object.entries(bag)
+      .every(([name, v]) => name === "panelOpen" || v == null);
     const at = Number(host.storageGet(SCHEMA_KEY) || 0) || 0;
     if (at < SCHEMA) {
       for (const m of MIGRATIONS) if (m.to > at) bag = m.up(bag) || bag;
@@ -93,6 +123,12 @@ export function createPersist(host, onWriteFailure) {
   function get(name) {
     if (!bag) load();
     return bag[name];
+  }
+
+  /** True when nothing of this app's was in storage at startup. */
+  function wasEmpty() {
+    if (!bag) load();
+    return foundEmpty;
   }
 
   /**
@@ -140,5 +176,5 @@ export function createPersist(host, onWriteFailure) {
   /** Has a write failed in this session? Then what is on screen is not saved. */
   function isBroken() { return !!broken; }
 
-  return { load, get, set, setJson, remove, clearAll, isBroken, KEYS, SCHEMA };
+  return { load, get, set, setJson, remove, clearAll, isBroken, wasEmpty, KEYS, SCHEMA };
 }

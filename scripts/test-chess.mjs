@@ -3031,6 +3031,49 @@ for (const lang of CONTENT_LANGS) {
   assert(narrowLists === 0,
     "every dialog holding a list gets the wide box, not only the one that was noticed first");
 
+  // "Is this a new user" is asked of the snapshot persist took before anything
+  // wrote, not of four keys read at the end of init. Read there it was false
+  // for every user the app ever had: the puzzle store writes an empty record at
+  // import time and that write lands in the same bag the reads come out of, so
+  // the first-run guide never opened and detectLang() was never called —
+  // measured on the shipped 2.1.4, four system languages, Chinese every time.
+  {
+    assert(/const firstRun = Persist\.wasEmpty\(\);/.test(appJs),
+      "firstRun comes from the snapshot, not from reading keys back");
+    assert(!/const firstRun = !Persist\.get/.test(appJs),
+      "…and not from the four reads that the app's own init had already invalidated");
+    const persistSrc = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
+    assert(/foundEmpty = Object\.entries\(bag\)/.test(persistSrc),
+      "…which persist records inside load(), before any migration or write");
+    // and the write that broke it only happens when ids actually moved
+    assert(/if \(loadedPuzzles\.migrated\)/.test(appJs),
+      "the puzzle record is written back only when a migration rewrote it");
+    assert(!/if \(store\.session\.puzzleState\.idv === 2\) \{ Persist\.setJson/.test(appJs),
+      "…not whenever the profile happens to be on the current id version");
+  }
+
+  // No suite may seed a storage key this app does not own. Three of them set
+  // `chess.onboarded` — a key that left KEYS long ago and nothing has read
+  // since — so they looked like they were suppressing the first-run guide while
+  // the real reason it never appeared was the bug above. A test that suppresses
+  // something by accident is a test that cannot notice it is broken.
+  {
+    // the key list, read from the module that owns it
+    const keySrc = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
+    const known = new Set([...keySrc.matchAll(/^\s+\w+: "(chess\.[^"]+)",/gm)].map((m) => m[1])
+      .concat("chess.schema"));
+    let stray = 0;
+    for (const f of fs.readdirSync(path.join(root, "scripts")).filter((n) => /^test-.*\.mjs$/.test(n))) {
+      const src = fs.readFileSync(path.join(root, "scripts", f), "utf8");
+      for (const m of src.matchAll(/localStorage\.setItem\(\s*["']([^"']+)["']/g)) {
+        if (known.has(m[1])) continue;
+        stray++;
+        console.error("FAIL: " + f + " seeds an unknown key: " + m[1]);
+      }
+    }
+    assert(stray === 0, "no suite seeds a storage key the app does not own");
+  }
+
   // No Chinese string literal may reach the DOM from app.js. v1.5 translated
   // the static markup and left 169 runtime literals — task prompts, puzzle
   // feedback, every toast — so English mode stayed half Chinese where it
