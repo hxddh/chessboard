@@ -4948,9 +4948,23 @@ import { createStore } from "./store.js";
    * @param {string} [note] toast to show when the editor was actually open
    * @returns {boolean} true when an open editor was closed
    */
+  /**
+   * Leave the editor — and take its panel with you.
+   *
+   * Clearing the state was the whole of this function, and re-drawing was left
+   * to whoever called it. Every caller that went through a button did commit
+   * and redraw; the Escape branch did too, but a commit does not run
+   * syncEditorUI(), which is the only thing that hides the section. So Escape
+   * said 「已退出编辑局面」 while the entire editor panel stayed on screen —
+   * dead furniture, its buttons no longer doing anything, over a board that
+   * had already gone back to being a game. Measured on 2.1.6, against the
+   * cancel button, which did it right. Leaving is one thing; it belongs here.
+   */
   function stopEditor(note) {
     if (!store.session.editor) return false;
     store.session.editor = null;
+    syncEditorUI();
+    draw();
     if (note) toast(note);
     return true;
   }
@@ -5590,8 +5604,20 @@ import { createStore } from "./store.js";
     // in 1.10; that one got fixed and this one was missed.
     if (dialogOpen()) return;
     // arrows/Home/End also drive replay from the window handler — while the
-    // board itself is focused they belong to the cursor, so stop them here
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
+    // board itself is focused they belong to the cursor, so stop them here.
+    //
+    // Escape is the exception, and it is the same fault as the dialog above,
+    // one layer out: the board took every Escape and did something with it
+    // only when a piece was selected. Everything else Escape is for — the
+    // fault toast that does not leave on its own, the editor's exit, closing
+    // the panel — lives on the window handler and could not be reached, and
+    // the board is exactly where focus sits the moment you touch a piece.
+    // Measured on 2.1.6: with the board focused, three Escapes in a row left
+    // the toast up and the editor open. So it is ours only when there is
+    // something here to cancel.
+    const escIsOurs = ev.key !== "Escape" || !!store.game.selection;
+    if (escIsOurs &&
+        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
       ev.stopPropagation();
     }
     switch (ev.key) {
