@@ -132,6 +132,72 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   assert(r.plies === 7, `着法表记满 7 手(实际 ${r.plies})`);
 }
 
+// --- 引擎走不动的时候，这局棋不该就此卡死 ---------------------------------
+// 实测已发布的 2.1.5：人机对局里引擎一次给不出着法，这局就永远停在引擎那一
+// 边 —— 人走不了（不是他的回合），没有任何东西会重试，而面板给出的三条路
+// 全是毁掉这局：悔棋、新局、认输。提示条说出了问题，然后就没有然后了。
+// 现在失败先自动重来一次（引擎掉一次多半是 worker 没了，再问一次不要钱），
+// 两次都不成才报出来，并且报的时候带上「重试」。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false,
+      themeId: "wood", humanColor: "w" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  let asked = 0;
+  await page.evaluate(() => {
+    window.__asked = 0;
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.bestMove = async () => { window.__asked++; throw new Error("engine down"); };
+  });
+  const sq = async (name) => {
+    const c = await page.evaluate((s) => {
+      const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, name);
+    await page.mouse.click(c.x, c.y);
+  };
+  await sq("e2"); await sq("e4");
+  // 等这件事发生，而不是猜它多久发生：先自动重来一次，两次都不成才报出来，
+  // 固定睡一觉的写法会在慢一点的机器上量到中间态
+  await page.waitForFunction(
+    () => !!document.querySelector(".toast.show .toast-action"), null,
+    { timeout: 8000 }).catch(() => {});
+  const down = await page.evaluate(() => ({
+    asked: window.__asked,
+    plies: document.querySelectorAll(".move-list .mlmove").length,
+    action: (document.querySelector(".toast.show .toast-action") || {}).textContent,
+    isButton: (document.querySelector(".toast.show .toast-action") || {}).tagName,
+  }));
+  assert(down.asked >= 2, `一次失败之后会自己再问一遍引擎(问了 ${down.asked} 次)`);
+  assert(down.plies === 1, "两次都失败时,棋盘停在人走过的那一手");
+  assert(down.action && down.action.trim() === "重试",
+    `提示条带着出路,而不只是问题(「${(down.action || "").trim()}」)`);
+  assert(down.isButton === "BUTTON", "…而且那是个真的按钮,能用键盘按到");
+  // 引擎恢复之后按下去,这局接着走
+  await page.evaluate(() => {
+    window.__chess.engine.bestMove = async () => ({ from: "e7", to: "e5" });
+  });
+  // 按不到就按不到 —— 让后面两条以断言的形式报出来,而不是让整个套件死在
+  // 一次 30 秒的点击超时上
+  await page.click(".toast.show .toast-action", { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(1200);
+  const back = await page.evaluate(() => ({
+    plies: document.querySelectorAll(".move-list .mlmove").length,
+    status: (document.getElementById("status") || {}).textContent,
+  }));
+  assert(back.plies === 2, `按下重试,引擎补上了那一手(着法数 ${back.plies})`);
+  assert(/白方/.test(back.status || ""), `…轮次回到人这边(状态"${back.status}")`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

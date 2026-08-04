@@ -493,7 +493,15 @@ import { createStore } from "./store.js";
     return true;
   }
 
-  function toast(msg, tier) {
+  /**
+   * @param {string} msg
+   * @param {string} [tier]
+   * @param {{label: string, onClick: () => void}} [action] a way forward, for
+   *   the faults where naming the problem is not enough — see the engine's
+   *   failure to move, which otherwise leaves the game stopped on its turn
+   *   with nothing but destructive exits offered.
+   */
+  function toast(msg, tier, action) {
     const el = document.getElementById("toast");
     if (!el) return;
     const kind = TOAST_MS[tier] === undefined ? "ok" : tier;
@@ -518,6 +526,16 @@ import { createStore } from "./store.js";
     // about — and Esc, which closes every other transient thing in this app,
     // did nothing. Meanwhile it sits over the board's back rank.
     if (!ms) {
+      // The way forward comes before the way out: a fault the app knows how to
+      // retry should offer that, not just a ✕.
+      if (action && action.label) {
+        const act = document.createElement("button");
+        act.type = "button";
+        act.className = "toast-action";
+        act.textContent = action.label;
+        act.onclick = () => { dismissToast(); action.onClick(); };
+        el.appendChild(act);
+      }
       const close = document.createElement("button");
       close.type = "button";
       close.className = "toast-close";
@@ -674,13 +692,30 @@ import { createStore } from "./store.js";
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
     const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
     let mv = null;
-    // the personality only ever colours a real game against the engine; the
-    // lesson drills need the engine defending honestly or the drill is a lie
-    try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess }); }
-    catch (_) { mv = null; }
-    if (token !== store.game.engineToken) return; // game changed while thinking
+    // Twice, because an engine that fails once has usually just lost its
+    // worker, and the second ask is free. Measured on the shipped 2.1.5: one
+    // failure left the game stopped on the engine's turn forever — the human
+    // could not move, nothing retried, and the three exits the panel offered
+    // were take back your move, start a new game, and resign. The toast named
+    // the problem and stopped there.
+    for (let attempt = 0; attempt < 2 && !mv; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 250));
+      // the personality only ever colours a real game against the engine; the
+      // lesson drills need the engine defending honestly or the drill is a lie
+      try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess }); }
+      catch (_) { mv = null; }
+      if (token !== store.game.engineToken) return; // game changed while thinking
+    }
     store.session.engineThinking = false;
-    if (!mv) { sync(); toast(t("msg.engine.noMove"), "fault"); return; }
+    if (!mv) {
+      sync();
+      // maybeEngineTurn() is its own guard: if the player has since taken the
+      // move back, started a new game or the game has ended, it returns without
+      // doing anything, so this stays safe however long the toast sits there.
+      toast(t("msg.engine.noMove"), "fault",
+        { label: t("act.retry"), onClick: () => maybeEngineTurn() });
+      return;
+    }
     const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
       store.game.viewIndex = sanHistory().length;

@@ -1446,6 +1446,19 @@
       transition: opacity var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
     .toast-close:hover { opacity: 1; background: rgba(255,255,255,.18); }
+    /* The way forward, where the app has one. Reads as a control rather than
+       as part of the sentence — a fault that can be retried should not make
+       you guess that the word is clickable. */
+    .toast-action {
+      appearance: none; background: transparent;
+      border: 1px solid currentColor;
+      color: inherit; font: inherit; font-size: 12px; font-weight: 500;
+      line-height: var(--lh-tight);
+      padding: 2px 8px; border-radius: 999px;
+      flex: none; cursor: pointer; opacity: 0.85;
+      transition: opacity var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
+    }
+    .toast-action:hover { opacity: 1; background: rgba(255,255,255,.14); }
     /* Three tiers — see toast() in app.js. Same shape, three voices:
        a receipt, a correction, and a fault that does not leave on its own. */
     .toast.t-fix {
