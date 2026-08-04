@@ -421,6 +421,189 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- 用键盘下棋,以及它说了什么 ---------------------------------------------
+// 棋盘是个 role="application" 的可聚焦控件:方向键移光标、回车选中和落子、
+// Esc 取消、Home/End 跳到角上,每一步还往 #board-live 里写一句话给读屏软件。
+// 这套东西一条都没有被驱动过 —— 七套浏览器测试里唯一一次 keyboard.press
+// 是按 f 翻转棋盘。它本身是好的（这一节量的就是「好」长什么样），但它没有
+// 守卫,而 2.1.6 那两个 Esc 缺陷就住在这条路上。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  const said = () => page.evaluate(() => (document.getElementById("board-live") || {}).textContent);
+  const key = async (k, ms = 160) => { await page.keyboard.press(k); await page.waitForTimeout(ms); };
+  const read = () => page.evaluate(READ_BOARD);
+
+  await page.focus("#board");
+  await page.waitForTimeout(200);
+  assert(/棋盘已聚焦/.test(await said()), `聚焦棋盘时,读屏那一行说它被聚焦了(「${await said()}」)`);
+  await key("ArrowDown"); await key("ArrowDown");
+  assert((await said()).includes("e2") && (await said()).includes("白兵"),
+    `光标停在哪一格,它就报哪一格上站着谁(「${await said()}」)`);
+  const beforeSel = await read();
+  await key("Enter", 220);
+  const picked = await said();
+  assert(/已选中/.test(picked) && picked.includes("2"),
+    `回车拿起棋子,并报出有几个落点(「${picked}」)`);
+  const sel = await read();
+  const dots = SQUARES.filter((q) => beforeSel[q].ink === EMPTY && sel[q].ink !== EMPTY);
+  assert(JSON.stringify(dots.sort()) === '["e3","e4"]',
+    `…画布上亮起来的也正是那两格(${JSON.stringify(dots)})`);
+  await key("Escape", 220);
+  assert(/已取消/.test(await said()), `Esc 取消选择,并且说出来了(「${await said()}」)`);
+  const off = await read();
+  assert(SQUARES.every((q) => off[q].ink === beforeSel[q].ink), "…画布上的记号也跟着收回");
+  assert(await page.evaluate(() => document.getElementById("app").classList.contains("panel-open")),
+    "…而且没有顺手把侧栏关掉:有选中时 Esc 是棋盘的");
+
+  await key("Enter", 220);           // 重新选中 e2
+  await key("ArrowUp"); await key("ArrowUp");
+  await key("Enter", 600);           // 落到 e4
+  const played = await read();
+  assert(played.e2.ink === EMPTY && ham(played.e4.ink, beforeSel.e2.ink) <= SAME,
+    "键盘走出来的棋,画布上和手走的是一回事(e2 空了,e4 上是那枚兵)");
+  assert(await page.evaluate(() => document.querySelectorAll(".move-list .mlmove").length) === 1,
+    "…着法表也记下了这一手");
+  await key("Home", 220);
+  assert((await said()).includes("a8"), `Home 跳到 a8(「${await said()}」)`);
+  await key("End", 220);
+  assert((await said()).includes("h1"), `End 跳到 h1(「${await said()}」)`);
+  assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 棋盘拿着焦点的时候,Esc 还是不是「让它消失」的意思 ----------------------
+// 实测已发布的 2.1.6:不是。canvas 的 keydown 把每一个 Escape 都吞掉,而只在
+// 有选中时才真的做事 —— 于是提示条、编辑器出口、收面板这三层全部够不着,
+// 偏偏棋盘就是你一碰棋子焦点就在的地方。同一个错误在 1.10 的 FEN 输入框、
+// 后来的升变对话框上各修过一次,这是它的第三处。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  await page.evaluate(() => {
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.bestMove = async () => { throw new Error("engine down"); };
+  });
+  const at = (s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); }
+  await page.waitForFunction(() => !!document.querySelector(".toast.show .toast-action"), null,
+    { timeout: 8000 }).catch(() => {});
+  const up = await page.evaluate(() => ({
+    toast: !!document.querySelector(".toast.show"),
+    focused: document.activeElement && document.activeElement.id,
+  }));
+  assert(up.toast && up.focused === "board",
+    `引擎报错的提示条挂在那里,而焦点在棋盘上(提示条=${up.toast},焦点=${up.focused})`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  assert(!(await page.evaluate(() => !!document.querySelector(".toast.show"))),
+    "按 Esc,它就走了 —— 哪怕焦点在棋盘上");
+  await ctx.close();
+}
+
+// --- 局面编辑器:第一次真的用它摆一个局面 ------------------------------------
+// editor.js 的纯函数(棋盘→FEN、能不能开局)有单测,而这块面板此前只被版式套
+// 件「看过」:没有人放过一枚子、刷过一笔、读过那句不合法的理由,也没有人从
+// 三个出口里走出来过。三个出口正是 2.1.6 里 Esc 那个缺陷的现场。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  const at = (s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  const tap = async (s) => { const p = await at(s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); };
+  const brush = (c, t) => page.click(`#editor-palette button[data-color="${c}"][data-type="${t}"]`);
+  const why = () => page.evaluate(() => (document.getElementById("editor-error") || {}).textContent);
+  const open = () => page.evaluate(() => !(document.getElementById("sec-editor") || {}).hidden);
+  const read = () => page.evaluate(READ_BOARD);
+
+  await page.click("#editor-open");
+  await page.waitForTimeout(400);
+  assert(await open(), "编辑器打开了");
+  await page.click("#editor-clear");
+  await page.waitForTimeout(250);
+  assert(/白方.*王/.test(await why()), `空棋盘上,它说得出缺什么(「${await why()}」)`);
+  assert(!(await page.isEnabled("#editor-apply")), "…而且开始不了这局棋");
+  await brush("w", "k"); await tap("e1");
+  assert(/黑方.*王/.test(await why()), `放了白王,它接着说下一件缺的(「${await why()}」)`);
+  await brush("b", "k"); await tap("e8");
+  assert((await why()) === "", `两个王都在,它就不说话了(「${await why()}」)`);
+  assert(await page.isEnabled("#editor-apply"), "…开始对局也亮了");
+
+  // 拖着刷一排兵:编辑器里按住拖过去是一笔,不是四次点击
+  await brush("w", "p");
+  const a2 = await at("a2"), d2 = await at("d2");
+  await page.mouse.move(a2.x, a2.y); await page.mouse.down();
+  await page.mouse.move(d2.x, d2.y, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const painted = await read();
+  // e4 again holds the keyboard focus ring, not a piece: placing men means
+  // clicking the board, and clicking the board focuses it
+  const men = SQUARES.filter((q) => q !== "e4" && painted[q].ink !== EMPTY);
+  assert(men.length === 6 && ["a2", "b2", "c2", "d2"].every((q) => painted[q].ink !== EMPTY),
+    `拖着刷过去是一笔四个兵(盘上共 ${men.length} 个子:${JSON.stringify(men)})`);
+
+  // 三个出口,一个一个走
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);  // 先关掉进入时的提示条
+  await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+  assert(!(await open()), "Esc 退出编辑器,面板跟着收起(2.1.6 之前它会留在屏幕上)");
+  await page.click("#editor-open"); await page.waitForTimeout(400);
+  await page.click("#editor-cancel"); await page.waitForTimeout(400);
+  assert(!(await open()), "「取消」退出,面板收起");
+  await page.click("#editor-open"); await page.waitForTimeout(400);
+  await page.click("#editor-clear"); await page.waitForTimeout(200);
+  await brush("w", "k"); await tap("e1");
+  await brush("b", "k"); await tap("e8");
+  // and something to play with: two bare kings is dead drawn the moment it
+  // starts, and the status pill would say so instead of whose move it is
+  await brush("w", "q"); await tap("d1");
+  await page.click("#editor-apply"); await page.waitForTimeout(600);
+  assert(!(await open()), "「开始对局」退出,面板收起");
+  const started = await page.evaluate(() => ({
+    status: (document.getElementById("status") || {}).textContent,
+    plies: document.querySelectorAll(".move-list .mlmove").length,
+  }));
+  assert(/白方走子/.test(started.status) && started.plies === 0,
+    `…而且真的从摆好的这个局面重新开始(状态「${started.status}」,着法 ${started.plies})`);
+  assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }
