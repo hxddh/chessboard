@@ -83,6 +83,7 @@ jobs:
             path="$(node -e "console.log(require('playwright')['$engine'].executablePath())")"
             if [ "$engine" = chromium ]; then export CHROME_PATH="$path"; else export WEBKIT_PATH="$path"; fi
             E2E_BROWSER="$engine" node scripts/test-board-e2e.mjs
+            E2E_BROWSER="$engine" node scripts/test-audio-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-clock-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-content-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-persist-e2e.mjs

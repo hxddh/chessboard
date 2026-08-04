@@ -3368,7 +3368,11 @@ for (const lang of CONTENT_LANGS) {
   // you restart. Same background, same size, same 2.2 seconds — after which
   // there was no evidence the third had ever happened. 缺陷 20.
   {
-    const tAt = appSrc.indexOf("function toast(msg, tier)");
+    // by the opening paren, not the whole parameter list: the signature grew a
+    // third parameter (a fault that can be retried carries the retry), and a
+    // slice keyed to the old one silently matched nothing — this whole block
+    // then asserted against an empty string and passed
+    const tAt = appSrc.indexOf("function toast(msg, tier");
     const t3 = appSrc.slice(tAt, appSrc.indexOf("\n  }", tAt));
     assert(/TOAST_MS/.test(appSrc) && /ok: 2200/.test(appSrc), "the three tiers have three lifetimes");
     assert(/fault: 0/.test(appSrc), "…and the fault tier does not dismiss itself");
