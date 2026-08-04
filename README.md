@@ -236,6 +236,7 @@ npm run test:engine                # 引擎检查:开局/战术/新手档/强度
 node scripts/test-chess.mjs        # 单测:规则、纯函数、内容、各种源码守卫
 node scripts/manifest-check.mjs    # 清单声明的键 runner 真的在读 + 版本号一致
 node scripts/test-board-e2e.mjs    # 浏览器 E2E(缺 Playwright/Chromium 则跳过)
+node scripts/test-audio-e2e.mjs
 node scripts/test-clock-e2e.mjs
 node scripts/test-content-e2e.mjs
 node scripts/test-persist-e2e.mjs
@@ -287,12 +288,14 @@ third_party/stockfish/   # Stockfish.js 18 lite-single（GPLv3）
 scripts/bundle.mjs · gen-engine-src.mjs · test-chess.mjs · test-strength.mjs
 scripts/test-board-e2e.mjs · test-openings.mjs · test-tactics.mjs
 scripts/test-persist-e2e.mjs · test-clock-e2e.mjs · test-content-e2e.mjs
+scripts/test-audio-e2e.mjs
 ```
 
 测试：
 - `node scripts/test-chess.mjs` —— 规则/课程/题库/开局/成就/纯函数模块（快,打包流程内置）
 - `node scripts/bundle.mjs --check` —— **模块图解不解得开**（test-chess 内置）。1.25 之前这条规则由 `scripts/scope-check.mjs` 承担:它扫出「被读取但在任何作用域里都没有绑定」的标识符,因为那时 28 个文件都挂在 `window` 上,加载次序就是依赖图,而这份契约只写在 index.html 的 `<script>` 顺序里。1.12 把 `CHECK` 留成自由变量,`draw()` 在画棋子之前抛出,每次将军棋盘上一个子都没有,这样发了两个版本。现在源码是 ES 模块、产物是一个经典脚本,解不开的名字直接是构建失败 —— 同一条规则,由发布产物本身来执行
 - `node scripts/test-board-e2e.mjs` —— 真下到将军与将死,四套主题各数一遍棋子（需 playwright + Chromium,没有就跳过）
+- `node scripts/test-audio-e2e.mjs` —— **哪一件事发出哪一种声音**（在真页面上探 Web Audio:每个 `createOscillator` / `createBufferSource` 记下它拿到的频率,再按频率还原成「拿起 / 落子 / 吃子 / 将军 / 王车易位 / 升变 / 拒绝 / 胜利 / 失败 / 和棋」。此前所有浏览器套件都把 `soundOn` 关着开页面 —— 一个会响的测试很烦人,静音是最省事的办法 —— 于是整条音频路径从来没有被执行过:分胜负的那张表没有,一步棋听起来是什么样没有,连开关本身也没有。按频率而不是按调用栈认声音,是因为发布流水线在 WebKit 上也跑一遍,而没人在这台机器上验得了 WebKit 的栈格式。需 playwright,没有就跳过）
 - `node scripts/test-clock-e2e.mjs` —— **切走之后棋钟会不会空跑**（用假桥发 app:deactivate/activate,离开 6 秒后时钟必须一秒没掉。1.17 实测 8.4 秒后台掉 9 秒;第一版测试靠切标签页做背景,无头模式下页面仍报 visible,量了个寂寞还“通过”了。需 playwright + Chromium,没有就跳过）
 - `node scripts/test-content-e2e.mjs` —— **课程与实战题在页面上是不是真的能用**（真点开每一节残局课、走错一步再走对一步、做完一道实战题;1.17 靠它发现课文里的 `**重点**` 从 1.4 起一直是把星号原样印出来的。需 playwright + Chromium,没有就跳过）
 - `node scripts/test-persist-e2e.mjs

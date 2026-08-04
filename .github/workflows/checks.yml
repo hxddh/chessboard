@@ -82,6 +82,8 @@ jobs:
           "
       - name: board
         run: node scripts/test-board-e2e.mjs
+      - name: sound
+        run: node scripts/test-audio-e2e.mjs
       - name: clock
         run: node scripts/test-clock-e2e.mjs
       - name: lessons + puzzles

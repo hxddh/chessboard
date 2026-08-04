@@ -1254,16 +1254,14 @@ import { createStore } from "./store.js";
       return;
     }
     if (piece && piece.color === "w" && g.turn() === "w" && (!task.only || piece.type === task.only)) {
-      const targets = g.moves({ square: sq, verbose: true }).map((m) => m.to);
-      store.game.selection = targets.length ? { sq, targets } : null;
-      draw();
+      selectSquare(sq, g.moves({ square: sq, verbose: true }).map((m) => m.to));
       return;
     }
     if (task.only && piece && piece.color === "w" && piece.type !== task.only) {
       toast(tf("lm.onlyPiece", [PIECE_NAMES[task.only]]));
       return;
     }
-    if (store.game.selection) { store.game.selection = null; draw(); }
+    clearSelection();
   }
 
   const PIECE_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
@@ -1983,12 +1981,10 @@ import { createStore } from "./store.js";
       return;
     }
     if (piece && piece.color === "w") {
-      const targets = g.moves({ square: sq, verbose: true }).map((m) => m.to);
-      store.game.selection = targets.length ? { sq, targets } : null;
-      draw();
+      selectSquare(sq, g.moves({ square: sq, verbose: true }).map((m) => m.to));
       return;
     }
-    if (store.game.selection) { store.game.selection = null; draw(); }
+    clearSelection();
   }
 
   function puzzleMove(from, to, promotion) {
@@ -3638,6 +3634,36 @@ import { createStore } from "./store.js";
   }
 
   /**
+   * Picking a piece up, and being told you cannot put it there.
+   *
+   * Both of these are one line of state plus a draw() in three click handlers
+   * (play, lesson, puzzle), and until now neither made a sound in any of them.
+   * What *did* make a sound was the pointerup that follows a click-to-select,
+   * because it reads as "dropped on the square it came from" — so clicking a
+   * piece up played playRefused, the thud that means *no*, while clicking a
+   * square the piece cannot reach played nothing at all. Measured, both ways
+   * round, in test-audio-e2e. The two voices were exactly swapped.
+   *
+   * @param {string} sq
+   * @param {string[]} targets  where that piece may go — empty means it is
+   *   pinned or blocked, which is a refusal and not a lift
+   */
+  function selectSquare(sq, targets) {
+    store.game.selection = targets.length ? { sq, targets } : null;
+    if (store.game.selection) Audio2.playLift();
+    else Audio2.playRefused();
+    draw();
+  }
+
+  /** A square the held piece could not go to — the piece goes back down. */
+  function clearSelection() {
+    if (!store.game.selection) return;
+    store.game.selection = null;
+    Audio2.playRefused();
+    draw();
+  }
+
+  /**
    * The sound a finished game makes, decided by WHO WON.
    *
    * Until 2.0 the question asked at every ending was "is the game over" —
@@ -4102,12 +4128,10 @@ import { createStore } from "./store.js";
       return;
     }
     if (piece && piece.color === game.turn()) {
-      const targets = game.moves({ square: sq, verbose: true }).map((m) => m.to);
-      store.game.selection = targets.length ? { sq, targets } : null;
-      draw();
+      selectSquare(sq, game.moves({ square: sq, verbose: true }).map((m) => m.to));
       return;
     }
-    if (store.game.selection) { store.game.selection = null; draw(); }
+    clearSelection();
   }
 
   function undo() {
@@ -5475,7 +5499,6 @@ import { createStore } from "./store.js";
     // point of dragging rather than clicking twice
     const over = BoardView.cellAt(p.x, p.y);
     const legal = !!(over && store.game.selection && store.game.selection.targets.includes(over));
-    if (!store.ui.dragging.x) Audio2.playLift(); // the first move of a drag
     store.ui.dragging = { from: store.ui.dragging.from, x: p.x, y: p.y, over, legal };
     draw();
   });
@@ -5494,8 +5517,15 @@ import { createStore } from "./store.js";
       !(store.game.selection && store.game.selection.targets.includes(sq));
     const held = refused ? viewGame().get(wasDrag.from) : null;
     draw();
+    // Every other outcome of a drop routes through onSquareClick, which now
+    // says out loud what it did — placed, picked up, or refused. What it never
+    // sees is a drop back onto the square the piece came from: no click, no
+    // sound, and the piece visibly flies home. That one is ours, and only
+    // after a real drag — a plain click-to-select lands here too, and a piece
+    // being picked up is not a piece being refused.
     if (sq && sq !== wasDrag.from) onSquareClick(sq); // drop = play/reselect
-    if (held) { Audio2.playRefused(); BoardView.reboundDrag(held, wasDrag.from, p.x, p.y); }
+    else if (held && wasDrag.x) Audio2.playRefused();
+    if (held) BoardView.reboundDrag(held, wasDrag.from, p.x, p.y);
   });
   canvas.addEventListener("pointercancel", () => {
     store.ui.painting = null;
