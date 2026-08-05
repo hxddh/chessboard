@@ -283,6 +283,162 @@ const PLACEMENT = STUDY.split(" ")[0];
   }
 }
 
+// --- 一局下完之后,它记下了什么 ---------------------------------------------
+// 记录页签(统计 / 对局历史 / 成就)此前只被版式套件「看过」:没有任何测试把
+// 一局棋下到底,再回头看那三样有没有变。这条路坏掉是静默的 —— 战绩悄悄不
+// 记了,没有任何提示条会说。手工驱动过一遍,是好的;这一节把它钉住。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", humanColor: "w", difficulty: "beginner",
+      langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const { page, errs } = await open(ctx);
+  // 一个照本宣科的引擎:这一节要的是「下完之后」,不是引擎的判断
+  await page.evaluate(() => {
+    window.__chess.engine.isReady = () => true;
+    const rs = [{ from: "e7", to: "e5" }, { from: "b8", to: "c6" }, { from: "g8", to: "f6" }];
+    let i = 0;
+    window.__chess.engine.bestMove = async () => rs[i++] || null;
+  });
+  const at = (sq) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const mv = async (a, b) => {
+    for (const sq of [a, b]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(170); }
+    await page.waitForTimeout(480);
+  };
+  // 学者将杀:人赢
+  await mv("e2", "e4"); await mv("f1", "c4"); await mv("d1", "h5"); await mv("h5", "f7");
+  await page.waitForTimeout(900);
+  // 两条提示条会前后脚出现:解锁的成就,和「本局结束 —— 去分析」。取哪一条
+  // 都是抽签,所以记下这段时间里出现过的全部,而不是某一刻屏幕上的那一条。
+  const toasts = await page.evaluate(() => new Promise((done) => {
+    const seen = new Set();
+    const el = document.getElementById("toast");
+    const grab = () => { const s = (el.textContent || "").trim(); if (s) seen.add(s); };
+    grab();
+    const iv = setInterval(grab, 100);
+    setTimeout(() => { clearInterval(iv); done([...seen]); }, 2500);
+  }));
+  const status = await page.evaluate(() => (document.getElementById("status") || {}).textContent);
+  assert(/将死/.test(status), `下到将死(状态「${status}」)`);
+  assert(toasts.some((x) => /成就/.test(x)),
+    `…而且当场报出了解锁的成就(这段时间里的提示条:${JSON.stringify(toasts.map((x) => x.slice(0, 14)))})`);
+
+  const saved = await page.evaluate(() => {
+    const raw = localStorage.getItem("chess.v1.stats");
+    return raw ? (JSON.parse(raw).games || []) : [];
+  });
+  assert(saved.length === 1 && saved[0].result === "win" && saved[0].diff === "beginner" &&
+    saved[0].moves === 7 && saved[0].color === "w",
+    `存下来的是这一局:胜、新手、执白、7 着(${JSON.stringify(saved.map((g) => [g.result, g.diff, g.moves]))})`);
+  assert(typeof saved[0].pgn === "string" && /Qxf7#|xf7#/.test(saved[0].pgn),
+    "…连棋谱一起存了(末手是将杀的那一手)");
+
+  await page.keyboard.press("Escape");   // 复盘邀请挡在前面
+  await page.waitForTimeout(300);
+  await page.click('.side-tabs button[data-tab="record"]');
+  await page.waitForTimeout(500);
+  const stats = await page.evaluate(() =>
+    (document.getElementById("sec-stats") || {}).textContent.replace(/\s+/g, " "));
+  assert(/1\s*胜/.test(stats) && /0\s*负/.test(stats), `统计段记到了这一胜(「${stats.slice(0, 40)}」)`);
+  // the key is chess.v1.achv — persist.js KEYS, not the name the section has
+  const ach = await page.evaluate(() => {
+    const raw = localStorage.getItem("chess.v1.achv");
+    if (!raw) return 0;
+    const got = JSON.parse(raw);
+    return Array.isArray(got) ? got.length : Object.keys(got).filter((k) => k !== "v").length;
+  });
+  assert(ach >= 1, `成就真的落了盘(解锁 ${ach} 个)`);
+
+  await page.click("#hist-open");
+  await page.waitForTimeout(500);
+  const rows = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#hist-list .hist-row")).map((r) => r.textContent.replace(/\s+/g, " ").trim()));
+  assert(rows.length === 1 && /胜/.test(rows[0]) && /新手/.test(rows[0]),
+    `对局历史里就是这一行(「${(rows[0] || "").slice(0, 40)}」)`);
+  assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 把别处的棋谱喂进来 -----------------------------------------------------
+// pgn.js 的纯函数有单测(切分、标签、摘要、起始局面),而这条唯一能把外部数据
+// 送进这个应用的路 —— 选局窗、覆盖前的确认、坏输入的下场 —— 一次都没被驱动
+// 过。用剪贴板走「粘贴棋谱」,因为那是不依赖原生桥就能走通的那一半。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN",
+    permissions: ["clipboard-read", "clipboard-write"] });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const { page, errs } = await open(ctx);
+  const clip = (text) => page.evaluate((x) => navigator.clipboard.writeText(x), text);
+  const answerIfAsked = async () => {
+    if (await page.isVisible("#confirm-modal.show").catch(() => false)) {
+      await page.click("#confirm-ok"); await page.waitForTimeout(600);
+      return true;
+    }
+    return false;
+  };
+  const paste = async () => {
+    if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+    await page.click("#pgn-paste");
+    await page.waitForTimeout(700);
+  };
+  const seen = () => page.evaluate(() => ({
+    plies: document.querySelectorAll(".move-list .mlmove").length,
+    picker: !!document.querySelector("#pick-modal.show"),
+    toast: ((document.querySelector(".toast.show") || {}).textContent || "").trim(),
+  }));
+
+  await clip('[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0\n');
+  await paste();
+  const one = await seen();
+  assert(one.plies === 6 && !one.picker, `一局的棋谱直接进来了(${one.plies} 着)`);
+
+  const game = (w, b, r, mv) => `[Event "E"]\n[White "${w}"]\n[Black "${b}"]\n[Result "${r}"]\n\n${mv}\n`;
+  await clip([game("甲", "乙", "1-0", "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0"),
+    game("Carlsen", "Nakamura", "0-1", "1. d4 d5 2. c4 e6 0-1"),
+    game("丙", "丁", "1/2-1/2", "1. Nf3 Nf6 1/2-1/2")].join("\n"));
+  await paste();
+  const many = await seen();
+  assert(many.picker, "三局的棋谱先问你要哪一局");
+  const rows = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#pick-modal .pick-list button")).map((r) => r.textContent.replace(/\s+/g, " ").trim()));
+  assert(rows.length === 3 && /甲/.test(rows[0]) && /Carlsen/.test(rows[1]) && /1\/2/.test(rows[2]),
+    `…三行都在,而且写着谁对谁、什么结果(${JSON.stringify(rows.map((r) => r.slice(0, 18)))})`);
+  await page.click("#pick-modal .pick-list button");
+  await page.waitForTimeout(600);
+  assert(await answerIfAsked(), "选中一局之后,它先问「导入将替换当前对局」");
+  const picked = await seen();
+  assert(picked.plies === 7, `…答应了才换,而且换成的正是选的那一局(7 着,实际 ${picked.plies})`);
+  const last = await page.evaluate(() => {
+    const b = document.querySelectorAll(".move-list .mlmove");
+    return b.length ? (b[b.length - 1].getAttribute("aria-label") || b[b.length - 1].textContent).trim() : "";
+  });
+  assert(/f7#/.test(last), `…末手是那一记将杀(「${last}」)`);
+
+  for (const [what, text] of [["一句话", "这不是棋谱，只是一句话。"],
+    ["走法非法的棋谱", '[Event "X"]\n\n1. e4 e5 2. Nf3 Nf6 3. Ke2 Ke7 4. Qxq9 1-0\n']]) {
+    const before = (await seen()).plies;
+    await clip(text);
+    await paste();
+    await answerIfAsked();
+    const after = await seen();
+    assert(/无法解析|PGN/.test(after.toast) && after.plies === before,
+      `喂它${what}:说得出「读不懂」,而且没动现在这局(「${after.toast.slice(0, 16)}」,${before} → ${after.plies} 着)`);
+  }
+  assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

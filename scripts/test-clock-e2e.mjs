@@ -82,10 +82,18 @@ const chk = (ok, msg, extra) => { console.log((ok ? 'ok   ' : 'BUG  ') + msg + (
 
 await mv('e2', 'e4');                       // starts the clock, Black now on move
 await pg.waitForTimeout(1200);
-const before = await clockSecs();
-console.log('切走前:', before.join(' / '));
-
+// The baseline is taken AFTER the app has been told it is away, not before.
+// Read it first and the measurement includes everything that happens between
+// the readout and the deactivate actually being handled — two evaluate
+// round-trips — and that time is time the app is still in front of somebody,
+// so the clock is supposed to run. Under load that gap reached 3 seconds and
+// this assertion reported the app as billing in the background when it was
+// not. Measuring from after the handler asks the stricter question anyway:
+// while away, does the clock move at all?
 await pg.evaluate(() => window.__fire('app:deactivate', {}));
+await pg.waitForTimeout(400);                 // let the handler stop the timer
+const before = await clockSecs();
+console.log('切走(且已处理)之后:', before.join(' / '));
 const away0 = Date.now();
 await new Promise((r) => setTimeout(r, 6000));
 const during = await clockSecs();
@@ -96,7 +104,7 @@ const away = ((Date.now() - away0) / 1000).toFixed(1);
 
 console.log(`离开 ${away} 秒期间读数:`, during.join(' / '));
 console.log('回来之后:', after.join(' / '));
-const lost = Math.max(...before.map((v, i) => v - (after[i] ?? v)));
+const lost = Math.max(...before.map((v, i) => v - (during[i] ?? v)));
 chk(lost <= 1, `离开 ${away} 秒,时钟最多只掉 1 秒`, `实际掉了 ${lost} 秒`);
 
 // and it must start again once we are back
@@ -104,6 +112,71 @@ await pg.waitForTimeout(2500);
 const running = await clockSecs();
 const moved = Math.max(...after.map((v, i) => v - (running[i] ?? v)));
 chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${moved} 秒`);
+
+// --- 加秒、旗落,以及旗落之后 ------------------------------------------------
+// 这个套件此前只回答一个问题:切走之后时钟会不会空跑。棋钟自己的实战面 ——
+// 走一步加不加秒、时间真的走光了会怎样、走光之后还能不能继续走 —— 一条都没
+// 有被驱动过,因为「等三分钟」在测试里是不可接受的成本。
+//
+// 那就把应用看到的时间调快:棋钟是按 Date.now() 的差值扣的,把 Date.now 加速
+// 40 倍,3 分钟的钟 4.5 秒就走完。加速的是「应用读到的现在」,不是 setTimeout,
+// 所以点击、渲染、动画都按真实速度走,只有计时被压缩 —— 量的还是同一段代码。
+{
+  const c2 = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
+  await c2.addInitScript(() => {
+    const t0 = Date.now(), real = Date.now;
+    Date.now = () => t0 + (real() - t0) * 40;
+    localStorage.setItem('chess.v1.settings', JSON.stringify({
+      mode: 'pvp', langId: 'zh-CN', sideTab: 'setup', soundOn: false, themeId: 'wood' }));
+    localStorage.setItem('chess.panelOpen', '1');
+  });
+  const p2 = await c2.newPage();
+  const errs2 = []; p2.on('pageerror', (e) => errs2.push(e.message));
+  await p2.goto(`http://127.0.0.1:${PORT}/`); await p2.waitForTimeout(900);
+  await p2.click('#pick-cancel').catch(() => {});
+  // 棋钟那一行在「对局」那段折叠里
+  await p2.click('#fold-game > summary'); await p2.waitForTimeout(300);
+  await p2.click('#clock-seg button[data-tc="3+2"]'); await p2.waitForTimeout(400);
+
+  const secs2 = () => p2.evaluate(() => {
+    const to = (t) => { const m = /^(\d+):(\d\d)$/.exec(t.trim()); return m ? +m[1] * 60 + +m[2] : null; };
+    return [...document.querySelectorAll('#clock-w, #clock-b, .clock-val, .clock')]
+      .map((x) => to(x.textContent)).filter((v) => v !== null);
+  });
+  const sq2 = async (x) => p2.evaluate((n) => {
+    const cv = document.getElementById('board'), r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - +n[1], z = r.width / 8;
+    return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+  }, x);
+  const mv2 = async (a, z) => {
+    for (const s2 of [a, z]) { const q = await sq2(s2); await p2.mouse.click(q.x, q.y); await p2.waitForTimeout(120); }
+    await p2.waitForTimeout(250);
+  };
+  const start = await secs2();
+  chk(start.length === 2 && start.every((v) => v === 180), '3+2:两边各三分钟', JSON.stringify(start));
+  await mv2('e2', 'e4');
+  const afterMove = await secs2();
+  chk(afterMove[0] > 180, '走一步棋,走子方加了两秒(3+2 的 +2 真的加上了)', `白方 ${afterMove[0]} 秒`);
+  await mv2('e7', 'e5');
+
+  // 现在轮白,让它的时间在加速下走光(3 分钟 ÷ 40 ≈ 4.6 秒)
+  let flagged = null;
+  for (let i = 0; i < 15 && !flagged; i++) {
+    await p2.waitForTimeout(1000);
+    const st = await p2.evaluate(() => (document.getElementById('status') || {}).textContent || '');
+    if (/超时/.test(st)) flagged = st;
+  }
+  chk(!!flagged, '时间走光了,这局就结束了', flagged || '(等了 15 秒还没结束)');
+  chk(/黑方胜/.test(flagged || ''), '…而且输的是旗落的那一方(白方)', flagged || '');
+  const zero = await secs2();
+  chk(zero[0] === 0, '…走光的那一边停在 0:00,不会走成负数', JSON.stringify(zero));
+  const before2 = await p2.evaluate(() => document.querySelectorAll('.move-list .mlmove').length);
+  await mv2('g1', 'f3');
+  const after2 = await p2.evaluate(() => document.querySelectorAll('.move-list .mlmove').length);
+  chk(before2 === after2, '…棋盘冻住了,旗落之后走不动了', `${before2} → ${after2} 着`);
+  if (errs2.length) errs.push(...errs2);
+  await c2.close();
+}
 
 console.log('\nJS 异常:', errs.length ? errs : '无');
 console.log(bad ? `\n${bad} 项不对` : '\n全部通过');
