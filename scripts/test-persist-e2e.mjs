@@ -296,6 +296,13 @@ const PLACEMENT = STUDY.split(" ")[0];
     localStorage.setItem("chess.panelOpen", "1");
   });
   const { page, errs } = await open(ctx);
+  await page.evaluate(() => {
+    window.__toasts = [];
+    const el = document.getElementById("toast");
+    const note = () => { const s = (el.textContent || "").trim(); if (s && window.__toasts[window.__toasts.length - 1] !== s) window.__toasts.push(s); };
+    new MutationObserver(note).observe(el, { childList: true, subtree: true, characterData: true });
+    note();
+  });
   // 一个照本宣科的引擎:这一节要的是「下完之后」,不是引擎的判断
   await page.evaluate(() => {
     window.__chess.engine.isReady = () => true;
@@ -315,16 +322,10 @@ const PLACEMENT = STUDY.split(" ")[0];
   // 学者将杀:人赢
   await mv("e2", "e4"); await mv("f1", "c4"); await mv("d1", "h5"); await mv("h5", "f7");
   await page.waitForTimeout(900);
-  // 两条提示条会前后脚出现:解锁的成就,和「本局结束 —— 去分析」。取哪一条
-  // 都是抽签,所以记下这段时间里出现过的全部,而不是某一刻屏幕上的那一条。
-  const toasts = await page.evaluate(() => new Promise((done) => {
-    const seen = new Set();
-    const el = document.getElementById("toast");
-    const grab = () => { const s = (el.textContent || "").trim(); if (s) seen.add(s); };
-    grab();
-    const iv = setInterval(grab, 100);
-    setTimeout(() => { clearInterval(iv); done([...seen]); }, 2500);
-  }));
+  // 记下从头到尾出现过的每一条提示条。终局会前后脚冒出两条 —— 解锁的成就,
+  // 和「本局结束 —— 去分析」,后者顶掉前者 —— 所以「某一刻屏幕上那一条」是
+  // 抽签;第一版在这里抽输过一次。盯着元素变,而不是隔一会儿看一眼。
+  const toasts = await page.evaluate(() => window.__toasts || []);
   const status = await page.evaluate(() => (document.getElementById("status") || {}).textContent);
   assert(/将死/.test(status), `下到将死(状态「${status}」)`);
   assert(toasts.some((x) => /成就/.test(x)),
@@ -371,15 +372,36 @@ const PLACEMENT = STUDY.split(" ")[0];
 // 送进这个应用的路 —— 选局窗、覆盖前的确认、坏输入的下场 —— 一次都没被驱动
 // 过。用剪贴板走「粘贴棋谱」,因为那是不依赖原生桥就能走通的那一半。
 {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN",
-    permissions: ["clipboard-read", "clipboard-write"] });
+  // A fake native bridge holds the clipboard, not the browser's. Two reasons,
+  // and the second one is why this had to be rewritten: Host.readClipboard
+  // asks zero.clipboard first and only falls back to navigator.clipboard, so
+  // the bridge IS the path the packaged app takes; and `permissions:
+  // ["clipboard-read"]` is a Chromium-only idea — WebKit answers
+  // `Unknown permission: clipboard-write` and the whole suite dies before its
+  // first assertion. The release gate runs both engines, so a section that
+  // only stands up on one of them is a section that does not stand up.
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
       mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
+    window.__clip = "";
+    window.zero = {
+      invoke: () => Promise.resolve(true),
+      on: () => () => {},
+      off: () => {},
+      platform: { supports: () => Promise.resolve(true) },
+      os: { addRecentDocument: () => Promise.resolve(true), clearRecentDocuments: () => Promise.resolve(true),
+        showNotification: () => Promise.resolve(true), revealPath: () => Promise.resolve(true) },
+      clipboard: {
+        readText: () => Promise.resolve(window.__clip),
+        writeText: (t) => { window.__clip = String(t); return Promise.resolve(true); },
+      },
+      dialogs: { openFile: () => Promise.resolve(null), saveFile: () => Promise.resolve(null) },
+    };
   });
   const { page, errs } = await open(ctx);
-  const clip = (text) => page.evaluate((x) => navigator.clipboard.writeText(x), text);
+  const clip = (text) => page.evaluate((x) => { window.__clip = x; }, text);
   const answerIfAsked = async () => {
     if (await page.isVisible("#confirm-modal.show").catch(() => false)) {
       await page.click("#confirm-ok"); await page.waitForTimeout(600);
