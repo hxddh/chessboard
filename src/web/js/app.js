@@ -3852,7 +3852,36 @@ import { createStore } from "./store.js";
     avail(el("pgn-download"), hasGame);
     avail(el("an-run"), hasGame || store.session.analyzing);
     avail(el("an-deep"), hasGame && !store.session.analyzing);
+    setPrimaryAction();
     collapseEmptyGroups();
+  }
+
+  /**
+   * The one filled action, and when there is none.
+   *
+   * Every action in this panel used to carry the same weight, so a screen of
+   * sixteen of them said nothing about which one you were meant to press —
+   * 认输 read exactly as loudly as PGN. A filled control is this UI's word
+   * for "press this"; the word is worth having only if it is spent on one
+   * thing at a time, so this function is the single place that spends it.
+   *
+   * It is spent on 分析, and only in the moment the app itself already asks
+   * for it: the game is over and nobody has analysed it yet — which is what
+   * the empty review section has been saying in prose since 2.1
+   * ("完局后点「分析」可记录精准度"). While a game is running there is no
+   * one thing to press in this panel, and the honest rendering of that is no
+   * filled button at all.
+   */
+  function setPrimaryAction() {
+    const over = isLive() && appGameOver();
+    const wants = over && !analysisFor() && !store.session.analyzing ? "an-run" : null;
+    for (const b of document.querySelectorAll(".act-btn.primary")) {
+      if (b.id !== wants) b.classList.remove("primary");
+    }
+    if (wants) {
+      const b = el(wants);
+      if (b) b.classList.add("primary");
+    }
   }
 
   /**

@@ -713,12 +713,12 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const found = await page.evaluate(() => {
-    const danger = [...document.querySelectorAll(".text-link.danger, .danger")]
+    const danger = [...document.querySelectorAll(".act-btn.danger, .danger")]
       .filter((b) => b.tagName === "BUTTON");
     return {
       onPlayTab: danger.filter((b) => b.closest("#pane-play") && b.offsetParent).map((b) => b.id),
       inFoot: document.querySelectorAll(".side-foot").length,
-      grouped: [...document.querySelectorAll("#pane-setup .text-link.danger")].map((b) => b.id).sort(),
+      grouped: [...document.querySelectorAll("#pane-setup .act-btn.danger")].map((b) => b.id).sort(),
     };
   });
   assert(found.inFoot === 0, "nothing irreversible is pinned to the foot of the panel");
@@ -1629,6 +1629,70 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     assert(!again, locale + ": and the second launch is not a first launch");
     await ctx.close();
   }
+}
+
+// --- 2.2:面板只说一种控件语言,而且同屏只有一个主按钮 ----------------------
+// 2.1.9 实测:设置页用的是有边框的分段控件,对局页用的是 12px 无边框无填充的
+// 文本链接 —— 同一块面板两种语言,而对局页恰恰是主屏。同时十六个动作一样重,
+// 「认输」和「PGN」看起来同样可点。这一节量的就是这两件事。
+for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"], ["ja", "ai", "setup"]]) {
+  const { ctx, page } = await open(lang, mode, tab);
+  const shape = await page.evaluate(() => {
+    const vis = (e) => { const b = e.getBoundingClientRect();
+      return e.offsetParent !== null && b.width > 0 && b.height > 0; };
+    const btns = [...document.querySelectorAll("#side .act-btn, #side .theme-row button")].filter(vis);
+    const kind = (e) => { const s = getComputedStyle(e);
+      return [s.fontSize, s.fontWeight, s.borderStyle, Math.round(e.getBoundingClientRect().height)].join("|"); };
+    const kinds = {};
+    for (const b of btns) (kinds[kind(b)] ||= []).push(b.id || b.textContent.trim().slice(0, 6));
+    return {
+      n: btns.length,
+      heights: [...new Set(btns.map((b) => Math.round(b.getBoundingClientRect().height)))].sort((a, c) => a - c),
+      sizes: [...new Set(btns.map((b) => getComputedStyle(b).fontSize))],
+      borderless: btns.filter((b) => getComputedStyle(b).borderStyle === "none").map((b) => b.id),
+      primaries: [...document.querySelectorAll("#side .act-btn.primary")].filter(vis).map((b) => b.id),
+      kinds: Object.entries(kinds).map(([k, v]) => k + " ← " + v.join(",")),
+    };
+  });
+  // 数量本身不是这一节要断言的东西:没有棋谱时 PGN/导出/分析/精析 是「不渲染」
+  // 而不是「置灰」(见 .act-btn:disabled)，所以 0 手时对局页只剩四个。这条只是
+  // 确认下面几条真的量到了东西。
+  assert(shape.n >= 3, `${lang}/${tab}: 面板里数得到动作按钮(${shape.n} 个:${JSON.stringify(shape.kinds)})`);
+  assert(shape.borderless.length === 0,
+    `${lang}/${tab}: 没有一个动作是无边框的文本链接(${JSON.stringify(shape.borderless)})`);
+  assert(shape.sizes.length === 1, `${lang}/${tab}: 所有动作一个字号(${shape.sizes.join(" ")})`);
+  assert(shape.heights.length <= 2,
+    `${lang}/${tab}: 高度最多两种(一行的和折行的),实际 ${JSON.stringify(shape.heights)}`);
+  assert(shape.primaries.length <= 1,
+    `${lang}/${tab}: 同屏最多一个主按钮(${JSON.stringify(shape.primaries)})`);
+  await ctx.close();
+}
+
+// 主按钮什么时候出现:这局下完、而且还没分析过 —— 正是空复盘段一直用散文写着
+// 的那句话（「完局后点『分析』可记录精准度」）。对局进行中没有「唯一该点的
+// 那一个」,那就一个都不填。
+{
+  const { ctx, page } = await open("zh-CN", "pvp", "play");
+  const at = (sq) => page.evaluate((s) => {
+    const c = document.getElementById("board"); const r = c.getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const primaries = () => page.evaluate(() =>
+    [...document.querySelectorAll("#side .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
+  const play = async (a, b) => {
+    for (const sq of [a, b]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(140); }
+    await page.waitForTimeout(320);
+  };
+  assert((await primaries()).length === 0, "开局:没有任何动作被填成主按钮");
+  await play("f2", "f3"); await play("e7", "e5");
+  assert((await primaries()).length === 0, "对局进行中:仍然没有");
+  await play("g2", "g4"); await play("d8", "h4");   // 愚人将杀
+  await page.waitForTimeout(600);
+  const after = await primaries();
+  assert(JSON.stringify(after) === '["an-run"]',
+    `这局下完了,「分析」成为唯一的主按钮(实际 ${JSON.stringify(after)})`);
+  await ctx.close();
 }
 
 await browser.close();

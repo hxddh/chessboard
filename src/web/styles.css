@@ -1083,7 +1083,18 @@
        ones. The count decides the columns here as it does above — width was
        never what this control was reacting to. */
     .theme-row.wrap:has(> :nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .theme-row button {
+    /* ONE control family, declared once.
+     *
+     * Until 2.2 the panel spoke two languages. 设置 used this — a bordered
+     * ghost box, 36px, 12px/500. 对局 used .text-link: 12px, no border, no
+     * fill, accent-coloured text. Sixteen actions in the tab you actually
+     * play in were rendered as fine print, while the tab you visit twice
+     * looked like an application. Measured on 2.1.9: three button styles and
+     * six size/weight combinations on one screen.
+     *
+     * So the two selectors share one block. They cannot drift apart again
+     * without someone editing this line and seeing both names on it. */
+    .theme-row button, .act-btn {
       flex: 1;
       appearance: none; border: 1px solid var(--card-border);
       background: var(--btn-ghost);
@@ -1099,9 +1110,9 @@
        nowhere to break. Hyphenation lets it break where the language says it
        may; the rows are equal height regardless, because they are grid rows.
        (P4.7 found this: the truncation sweep is a gate, not a review.) */
-    .theme-row button { overflow-wrap: break-word; hyphens: auto; }
-    .theme-row button:hover { color: var(--text); }
-    .theme-row button:active { transform: scale(0.97); }
+    .theme-row button, .act-btn { overflow-wrap: break-word; hyphens: auto; }
+    .theme-row button:hover, .act-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--card-border)); }
+    .theme-row button:active, .act-btn:active { transform: scale(0.97); }
     .theme-row button.active {
       color: var(--text);
       border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
@@ -1240,56 +1251,65 @@
        cannot be decided in advance — the item is sized by its content and the
        row wraps when it runs out of width. `space-between` is still refused:
        that is what made each row a different rhythm, and `gap` is not it. */
+    /* Same grid as a wrapped segment row, and for the same reason: a wrapping
+       flex row lets the last line share itself between however many items
+       landed there, so one action ends up twice the width of its neighbours
+       and reads as the primary one by accident. The count decides the
+       columns — see .theme-row.wrap above, whose rules apply here too. */
     .link-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px; margin-top: 8px;
+      display: grid;
+      /* Laid out by the actions that are actually there — NOT by counting
+         children. The segment rows above may count theirs because every
+         segment is always shown; these actions come and go with the position
+         (判和 only when a draw is claimable, 重下 only while replaying), and
+         `:has(> :nth-child(4):last-child)` counts CHILDREN, `display: none`
+         ones included. The first cut of 2.2 did exactly that: with 判和
+         hidden, the four-child rule still chose two columns and left 认输 —
+         the one action nobody should press by accident — alone on a row of
+         its own, which reads as emphasis. A display:none child is not a grid
+         item at all, so a track-sized grid sees only what is on screen.
+         70px so a 236px content column resolves to three tracks, a narrower
+         one to two.
+
+         auto-FILL, not auto-fit, and the one letter is load-bearing: auto-fit
+         collapses the empty tracks, so a row down to its last visible action
+         (本局 after the game ends is just 新局) hands that button the whole
+         panel width — and a full-width control is the other half of this UI's
+         vocabulary for "press this", competing with the filled .primary right
+         above it. auto-fill keeps the tracks, so a lone action stays one
+         action wide. */
+      grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+      grid-auto-rows: 1fr;
+      gap: 6px; margin-top: 8px;
     }
-    .text-link {
-      appearance: none; border: 0; background: transparent;
-      color: var(--accent);
-      font: inherit; font-size: 12px; font-weight: 500;
-      /* one height for every control in the panel. Measured on 1.13 the
-         sidebar ran five: 35px (16 links), 37px (7 tabs), 23px (6 move-list
-         cells), 32px (the close button) and one stray 34px. */
-      min-height: var(--row-h);
-      display: flex; align-items: center;
-      padding: 0 8px; cursor: pointer;
-      /* No control in this row is outlined any more, so nothing here needs a
-         ring reserved for it — one border declaration, one value, for every
-         one of them. */
-      border: 0;
-      border-radius: var(--radius-sm);
-      opacity: 0.92;
-      /* Sized by its label, and allowed to shrink below it. `width: 100%`
-         plus `white-space: nowrap` was the pair that cut the long labels:
-         the box was pinned to a column narrower than its text and the text
-         was forbidden to wrap, so it simply ran out of the box and was
-         clipped by the panel. `min-width: 0` lets a label that cannot fit
-         wrap inside its own button instead — the same information, one line
-         taller, rather than a word cut in half. */
-      text-align: left; justify-content: flex-start;
-      min-width: 0;
+    /* The three weights this family has, and nothing else.
+     *
+     *   default   — a thing you can do
+     *   .primary  — the thing to do here, filled. AT MOST ONE on screen;
+     *               syncActions() in app.js owns that rule and there is a
+     *               guard for it in test-layout-e2e. Until 2.2 nothing was
+     *               primary anywhere in the panel, so sixteen actions of
+     *               wildly different consequence all looked equally optional
+     *               — 认输 carried the same weight as PGN.
+     *   .danger   — colour, not a different shape. The box is the same box:
+     *               an outline around one item in a row of four says "this is
+     *               a different kind of control", which is not what 认输 is.
+     */
+    .act-btn.primary {
+      color: var(--on-accent);
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 600;
     }
-    .text-link:hover { opacity: 1; background: var(--btn-ghost); }
+    .act-btn.primary:hover { background: color-mix(in srgb, var(--accent) 86%, #fff); border-color: transparent; }
     /* Not dimmed — gone. `opacity: 0.3` leaves a hole in the row that still
        occupies its width and still names an action it will not perform, which
-       is the thing P3 set out to remove ("任一时刻可见的禁用控件数为 0").
-       Dimming is what that criterion rejects, not a milder form of obeying
-       it. The row is a wrapping flex line, so the remaining items close up. */
-    .text-link:disabled { display: none; }
-    /* A terminal action must not look like "copy PGN" — but it carries that
-       meaning in its colour, not in a box drawn around it. The border made
-       认输 the only outlined control on a row it shares with 提和 and 判和:
-       one item in three wearing a different visual weight, which reads as
-       "this one is a different kind of control" rather than "this one is
-       dangerous". Colour says the second thing on its own, and says it in
-       every row — including the deletion row, where all three are danger and
-       the boxes therefore said nothing at all. */
-    .text-link.danger { color: var(--muted); }
-    .text-link.danger:not(:disabled) { color: var(--danger); }
-    .text-link.danger:not(:disabled):hover {
+       is the thing P3 set out to remove ("任一时刻可见的禁用控件数为 0"). */
+    .act-btn:disabled { display: none; }
+    .act-btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, var(--card-border)); }
+    .act-btn.danger:hover {
       color: var(--on-danger); background: color-mix(in srgb, var(--danger) 78%, transparent);
+      border-color: transparent;
     }
 
     /* grouped action links */
