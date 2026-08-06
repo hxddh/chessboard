@@ -389,6 +389,41 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
     }
     notes.push(`SDK 交叉检查: ${m.struct} 共 ${sdkFields.length} 个字段，${m.where} 赋值 ${m.assigns.size} 个`);
   }
+  // --- build.zig 也是一份手抄件 -----------------------------------------
+  //
+  // 上面查的是 src/runner.zig 落后没有。build.zig 是同一件事的另一半:它是
+  // SDK 自己的 build/app.zig 的手抄件,而手抄件不会告诉你原件多了一页。
+  //
+  // 这不是假设。0.8.0 往 Windows 加了 src/platform/windows/gpu_surface_renderer.cpp
+  // 并让 webview2_host.cpp 调它,我们的清单里没有这个文件 —— 于是链接器报
+  // undefined symbol: createWindowsGpuRenderer()。当时的结论写的是「0.8.0 带
+  // 进来一个 Windows 回归」,还据此把 SDK 钉回 0.7.1、写进了三个 workflow 和
+  // 两份发布说明。回归是我们自己的:少抄了一页。d2d1/dwrite 两个库同理。
+  //
+  // 所以:SDK 编的每个平台源文件、链接的每个系统库,我们都得有。反过来不查 ——
+  // 我们可以为自己的理由多编一个文件,但不能少。
+  const appZig = path.join(sdkPath, "build", "app.zig");
+  if (fs.existsSync(appZig)) {
+    const sdkBuild = fs.readFileSync(appZig, "utf8");
+    const ourBuild = fs.readFileSync(path.join(ROOT, "build.zig"), "utf8");
+    const pick = (src, re) => new Set([...src.matchAll(re)].map((m) => m[1]));
+    const sdkSrc = pick(sdkBuild, /dep\.path\("(src\/platform\/[^"]+)"/g);
+    const ourSrc = pick(ourBuild, /nativeSdkPath\(b, native_sdk_path, "(src\/platform\/[^"]+)"/g);
+    for (const f of sdkSrc) {
+      check(ourSrc.has(f),
+        `SDK 交叉检查: SDK 的 build/app.zig 编译 ${f},build.zig 没有 —— ` +
+        `手抄的源文件清单又落后了一页(上一次这样,Windows 链接器报的是 undefined symbol)`);
+    }
+    const sdkLib = pick(sdkBuild, /linkSystemLibrary\("([a-z0-9+_]+)"/g);
+    const ourLib = pick(ourBuild, /linkSystemLibrary\("([a-z0-9+_]+)"/g);
+    for (const l of sdkLib) {
+      check(ourLib.has(l),
+        `SDK 交叉检查: SDK 链接系统库 ${l},build.zig 不链接 —— 同一份手抄件的另一半`);
+    }
+    notes.push(`SDK 交叉检查: 平台源文件 ${sdkSrc.size} 个、系统库 ${sdkLib.size} 个,build.zig 全都有`);
+  } else {
+    notes.push("SDK 交叉检查: 找不到 build/app.zig，源文件清单这一项跳过");
+  }
 } else {
   notes.push("SDK 交叉检查: 跳过（没给 --sdk / SDK_PATH，本地没有 SDK 源码）");
 }

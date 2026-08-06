@@ -14,6 +14,16 @@
 | macOS（Apple Silicon） | **Chessboard-macOS-arm64.zip** | 解压得到 `Chessboard.app`，把它拖进「应用程序」（或 `mv Chessboard.app ~/Applications/`）再打开；首次右键「打开」过 Gatekeeper |
 | Windows（x64） | **Chessboard-Windows-x64.zip** | 解压后运行 `Chessboard/chessboard.exe`；需 WebView2 运行时（Win10/11 一般预装） |
 
+## 2.1.9 改了什么
+
+一处更正，一处升级，一条守卫。**应用本身没有任何改动。**
+
+**更正**：2.1.5 发布失败时我写的「0.8.0 带进来一个 Windows 回归」是错的。拆开三个包对着看：0.7.1 里根本没有 `gpu_surface_renderer.cpp` 这个文件；0.8.0 新增了它并让 `webview2_host.cpp` 调它；0.8.1 与 0.8.0 的 Windows 源码逐字节相同。而本仓库的 `build.zig` 是 SDK 自己 `build/app.zig` 的一份**手抄件**，只编译 `webview2_host.cpp` 和 `cef_host.cpp` —— 上游加了一页，手抄件不知道。`undefined symbol: createWindowsGpuRenderer()` 是这件事的必然结果，不是上游坏了。
+
+**升级**：照着原件抄齐（三处 Windows 分支都加上那个源文件，补上 `d2d1` 与 `dwrite`），补完之后平台源文件 7 个、系统库 19 个与 SDK 一字不差；三处钉子 0.7.1 → **0.8.1**。老实说换来了什么：0.7.1 → 0.8.1 的 JS API 只多了 GPU surface 后端（`direct2d`/`software`），这个 WebView 应用用不上 —— 换来的是不再落后，以及那条守卫。验证不是推理：分支上手动派发两个平台构建、`sdk_version: 0.8.1`，Windows 与 macOS 的 `zig build test` / `zig build` / 打包全部通过。
+
+**守卫**：加在 `manifest-check` 里（它本来就是为「这个 fork 落后没有」存在的，两个平台构建都带 `--sdk` 跑它）—— SDK 的 `build/app.zig` 编译的每个平台源文件、链接的每个系统库，`build.zig` 都必须有；反过来不查。反向验证：把这次加的文件和 `d2d1` 拿掉，两条都红。
+
 ## 2.1.8 改了什么
 
 **没有修任何缺陷 —— 这一轮没找到。** 四条从来没被任何测试驱动过的路各手工驱动了一遍，全部正确；其中三条现在钉住了。把这句写在最前面，是因为它和「修了三个」一样是结论。
@@ -66,7 +76,7 @@
 
 `test-layout-e2e` 397 → **425**，新增冷启动一节（四种系统语言 × 四项断言）；反向验证时报出的正是线上那两条症状。
 
-顺带把 Native SDK 的版本钉住了：这一版第一次发布没能出去，Windows 的 `zig build test` 在 SDK 自己的 C++ 里报 `undefined symbol: createWindowsGpuRenderer()`——`@native-sdk/cli` 从 0.7.1（v2.1.4 用的）跳到 `latest` 解析出的 0.8.0，带进来一个 Windows 回归。发布卡在「必须真的有两个下载」那一步，那一步做对了。门禁依赖的其他东西全是钉死的（playwright 1.49.1、zig 0.16.0），只有 SDK 是唯一能在没人改动的情况下从底下换掉的，现在三个 workflow 都钉在 0.7.1。
+顺带把 Native SDK 的版本钉住了：这一版第一次发布没能出去，Windows 的 `zig build test` 在 SDK 自己的 C++ 里报 `undefined symbol: createWindowsGpuRenderer()`——`@native-sdk/cli` 从 0.7.1（v2.1.4 用的）跳到 `latest` 解析出的 0.8.0，带进来一个 Windows 回归。发布卡在「必须真的有两个下载」那一步，那一步做对了。门禁依赖的其他东西全是钉死的（playwright 1.49.1、zig 0.16.0），只有 SDK 是唯一能在没人改动的情况下从底下换掉的，现在三个 workflow 都钉在 0.7.1。**（2.1.9 更正：这段话把原因说反了 —— 不是 0.8.0 带进来回归，是我们的 `build.zig` 少抄了 SDK 新增的一个源文件。详见 2.1.9。）**
 
 ## 2.1.4 改了什么
 
