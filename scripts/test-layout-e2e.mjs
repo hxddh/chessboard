@@ -630,6 +630,62 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   await ctx.close();
 }
 
+// --- 3m2. the theme reaches the shell, not just the board -----------------
+// Through 2.1.9 a theme changed the board and left the app the same colour.
+// Measured then, in RGB distance over the painted surfaces:
+//
+//              --panel            --bg
+//   木 ↔ 夜      21                13
+//   日 ↔ 本      21                13
+//
+// 21 in a 442-long space. 木's shell was #14100e / #241c18 — 5% and 8%
+// lightness, six and twelve points of red over blue — beside a board painted
+// #f0d9b5 / #b58863: not a wooden interface, a black one with a wooden picture
+// in it, and near enough to 夜's that switching between them changed only the
+// squares. The light pair had the same defect at the other end.
+//
+// Two statements, and they are different statements. Distance says the four
+// shells are four; warmth says each shell is made of the same material as its
+// own board — sign(r−b) of the panel agrees with sign(r−b) of the board's dark
+// square, by at least 8, which 本's old #f7f8fb (−4) did not clear.
+//
+// Not asserted here: contrast. 3m already measures it per theme against the
+// painted surface, so moving a surface is checked there — and did fail there
+// first: warming 本's panel cost 次要 text 0.75 of its ratio (5.14 → 4.39) and
+// 「清除全部存档」 0.2 of its own, both of which had to be paid back in the ink
+// before this section could be written.
+{
+  const surf = {};
+  for (const theme of ["wood", "night", "day", "notebook"]) {
+    const { ctx, page } = await open("zh-CN", "ai", "play", theme);
+    surf[theme] = await page.evaluate(() => {
+      const cv = document.createElement("canvas"); cv.width = cv.height = 1;
+      const g2 = cv.getContext("2d", { willReadFrequently: true });
+      const rgba = (css) => { g2.clearRect(0, 0, 1, 1); g2.fillStyle = "#000"; g2.fillStyle = css;
+        g2.fillRect(0, 0, 1, 1); return [...g2.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+      const v = (n) => rgba(getComputedStyle(document.documentElement).getPropertyValue(n));
+      return { panel: v("--panel"), bg: v("--bg"), sqDark: v("--sq-dark") };
+    });
+    await ctx.close();
+  }
+  const dist = (a, b) => Math.round(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+  const names = Object.keys(surf);
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const a = names[i], b = names[j];
+      const dp = dist(surf[a].panel, surf[b].panel), db = dist(surf[a].bg, surf[b].bg);
+      assert(dp >= 25, a + " 和 " + b + " 的面板是两种颜色(相距 " + dp + ")");
+      assert(db >= 22, "……应用底也是(相距 " + db + ")");
+    }
+  }
+  for (const t of names) {
+    const warm = surf[t].panel[0] - surf[t].panel[2];
+    const boardWarm = surf[t].sqDark[0] - surf[t].sqDark[2];
+    assert(Math.sign(warm) === Math.sign(boardWarm) && Math.abs(warm) >= 8,
+      t + ":外壳和自己的棋盘是同一种材质(面板 r−b " + warm + ",深格 " + boardWarm + ")");
+  }
+}
+
 // --- 3n. every control has an accessible name -----------------------------
 // 2.0.0's 失着提醒 and 自动翻转 switches had none: a screen reader announced
 // "button, pressed" and nothing else. The sound switch beside them had a

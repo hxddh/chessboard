@@ -39,16 +39,28 @@
     :root, [data-theme="wood"] {
       /* 1 · raw values — literals, named for the theme they belong to.
          Nothing outside this block names one. */
-      --wood-bg: #14100e;
-      --wood-panel: #241c18;
-      --wood-panel-border: #3a2f28;
+      /* Measured on 2.1.9: --wood-bg was #14100e and --wood-panel #241c18 —
+         5% and 8% lightness, 6 and 12 points of red-over-blue. Beside a board
+         painted #f0d9b5 / #b58863 that is not a wooden interface, it is a
+         black one with a wooden picture in it; sampled against 夜's #0b1210 /
+         #121a18 the two shells were 13 points apart in a 255-point space, so
+         switching theme changed the board and left the app the same colour.
+         The panel was never mis-wired — it reads --panel, and --panel resolved
+         to exactly the value written here. The value was the defect.
+         Now: walnut, dark enough to sit under the board without competing and
+         warm enough to be recognisably the same material. 正文 lands 12.4:1 on
+         the panel and 次要 6.1:1 (was 8.9 and 4.4 — the muted text is the one
+         that gained, because the surface it sits on moved toward it). */
+      --wood-bg: #241a12;
+      --wood-panel: #33261c;
+      --wood-panel-border: #4a3729;
       --wood-text: #f3e9dc;
-      --wood-muted: #b8a48c;
+      --wood-muted: #c3b099;
       --wood-accent: #e8c39e;
-      --wood-btn: #3d322a;
-      --wood-btn-hover: #4a3d33;
+      --wood-btn: #4a3829;
+      --wood-btn-hover: #5a4534;
       --wood-win: #ffe08a;
-      --wood-chrome-bg: linear-gradient(180deg, rgba(20,16,14,.88), rgba(20,16,14,.4) 75%, transparent);
+      --wood-chrome-bg: linear-gradient(180deg, rgba(36,26,18,.88), rgba(36,26,18,.4) 75%, transparent);
       --wood-danger: #e07a6a;
       --wood-primary-from: #f0d2a8;
       --wood-primary-to: #d4a574;
@@ -131,9 +143,14 @@
     [data-theme="day"] {
       /* 1 · raw values — literals, named for the theme they belong to.
          Nothing outside this block names one. */
-      --day-bg: #e8e4dc;
-      --day-panel: #f4f0e8;
-      --day-panel-border: #d4cdc0;
+      /* warmed the same way and for the same reason as 木's, but by hue only:
+         these two were #e8e4dc / #f4f0e8 against 本's #e6eaf0 / #f7f8fb — 21
+         apart in RGB, near enough that the light pair had the same problem the
+         dark pair had. Lightness is held where it was, because 次要 text is
+         within a tenth of AA on this surface and the fix must not spend that. */
+      --day-bg: #ebe3d3;
+      --day-panel: #f7f1e0;
+      --day-panel-border: #d8cdb8;
       --day-text: #2c261e;
       /* 4.53:1 on --day-bg and 5.05:1 on --day-panel. It was #7a7164, which is
          3.79:1 on the background — below AA for body text, and this is the one
@@ -144,7 +161,7 @@
       --day-btn: #e0d9cc;
       --day-btn-hover: #d2c9b8;
       --day-win: #a65d2e;
-      --day-chrome-bg: linear-gradient(180deg, rgba(244,240,232,.95), rgba(244,240,232,.4) 75%, transparent);
+      --day-chrome-bg: linear-gradient(180deg, rgba(247,241,224,.95), rgba(247,241,224,.4) 75%, transparent);
       --day-danger: #b8382a;
       --day-primary-from: #6a9fd4;
       --day-primary-to: #3b6ea5;
@@ -181,20 +198,20 @@
     [data-theme="notebook"] {
       /* 1 · raw values — literals, named for the theme they belong to.
          Nothing outside this block names one. */
-      --notebook-bg: #e6eaf0;
-      --notebook-panel: #f7f8fb;
-      --notebook-panel-border: #c5cdd8;
+      --notebook-bg: #e0e7f2;
+      --notebook-panel: #f4f7fe;
+      --notebook-panel-border: #bfcbdd;
       --notebook-text: #2a3140;
       /* 4.52:1 on --notebook-bg, 5.14:1 on --notebook-panel. It was #6b7585 =
          3.86:1, below AA for body text — the same miss as 日's --day-muted,
          and found the same way. */
-      --notebook-muted: #616a79;
+      --notebook-muted: #5b6474;
       --notebook-accent: #3b6ea5;
       --notebook-btn: #e8ecf2;
       --notebook-btn-hover: #dce2eb;
-      --notebook-win: #c0392b;
-      --notebook-chrome-bg: linear-gradient(180deg, rgba(247,248,251,.96), rgba(247,248,251,.45) 75%, transparent);
-      --notebook-danger: #c0392b;
+      --notebook-win: #b0301f;
+      --notebook-chrome-bg: linear-gradient(180deg, rgba(244,247,254,.96), rgba(244,247,254,.45) 75%, transparent);
+      --notebook-danger: #b0301f;
       --notebook-primary-from: #6a9fd4;
       --notebook-primary-to: #3b6ea5;
       --notebook-on-primary: #ffffff;
