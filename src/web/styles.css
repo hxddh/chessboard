@@ -97,16 +97,22 @@
     [data-theme="night"] {
       /* 1 · raw values — literals, named for the theme they belong to.
          Nothing outside this block names one. */
-      --night-bg: #0b1210;
-      --night-panel: #121a18;
-      --night-panel-border: #24332e;
+      /* Same edit as 木's, one theme over and much smaller: 夜 is meant to be
+         dark, so what it was short of was not light but colour. #0b1210 /
+         #121a18 carried 7 and 8 points between their brightest and dimmest
+         channel — a grey with a rumour of green — under a board whose dark
+         squares are #66907f, 42 points of it. Now 10 and 12: still the darkest
+         of the four shells, and recognisably the same teal as the board. */
+      --night-bg: #08120f;
+      --night-panel: #111d1a;
+      --night-panel-border: #21332c;
       --night-text: #dce8e3;
       --night-muted: #8aa399;
       --night-accent: #7dcea0;
       --night-btn: #1c2a25;
       --night-btn-hover: #2a3d36;
       --night-win: #a8e6cf;
-      --night-chrome-bg: linear-gradient(180deg, rgba(11,18,16,.9), rgba(11,18,16,.35) 75%, transparent);
+      --night-chrome-bg: linear-gradient(180deg, rgba(8,18,15,.9), rgba(8,18,15,.35) 75%, transparent);
       --night-danger: #e8705c;
       --night-primary-from: #9adfb8;
       --night-primary-to: #5fb287;
@@ -440,20 +446,6 @@
          (36 / 32 / 27.4) and two baselines (26.5 / 25.3), which is what
          "not quite aligned" looks like when the parts have no common unit. */
       --chrome-ctl-h: 28px;
-      /* The bottom half of the same reservation. The chrome bar's height is
-         held out of the board at the top — the comment above says why, and
-         the spine is the identical case at the other end: a 24px pill, pinned
-         6px off the bottom, over a board fitted to within 6px of the space it
-         is given. Nothing was held out for it, so it landed on the board's own
-         file letters. Measured, panel shut: the spine ran 490–514 while a–h
-         ran 498–513 at 520×520, and 870–894 against 878–893 at 1400×900 —
-         the same collision at every window size, with the pill's text sitting
-         across c–f.
-         Reserved whenever the panel is shut, not whenever the spine is drawn:
-         the spine comes and goes with the state of the game, and tying the
-         board's size to it would resize the board mid-game — the defect the
-         chrome bar's own two fixed slots exist to prevent, one axis over. */
-      --spine-h: 0px;
       --stage-pad: 6px;
       --wood-pad: 17px;
       --radius-sm: 8px;
@@ -557,24 +549,6 @@
       #app.panel-open .chrome { padding-right: calc(var(--side-w) + 8px); }
     }
     .chrome > * { pointer-events: auto; }
-    /* --- the spine: the game, with the panel shut ------------------------ */
-    .spine {
-      position: absolute; left: 50%; bottom: 6px; z-index: 15;
-      transform: translateX(-50%);
-      display: flex; align-items: center; gap: 12px;
-      max-width: calc(100% - 24px);
-      padding: 4px 12px; border-radius: 999px;
-      background: var(--btn-ghost);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(8px);
-      font-size: 12px; color: var(--muted);
-      line-height: var(--lh-tight);
-      pointer-events: none;
-      white-space: nowrap;
-    }
-    .spine[hidden] { display: none; }
-    .spine-turn { color: var(--text); font-weight: 500; }
-    .spine-mat { color: var(--accent); }
 
     .status-pill {
       font-size: 12px; font-weight: 500; color: var(--text);
@@ -592,7 +566,7 @@
          whole lesson task when the panel was shut, clipped at 44vw with an
          ellipsis: a chip that gets truncated is a chip holding a sentence that
          belongs somewhere else. The task went back to its task card, and the
-         panel-shut case is the spine's job now. */
+         panel-shut case belongs to the match bar beside it now. */
       max-width: 30vw;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
@@ -609,7 +583,6 @@
     .status-pill.replay {
       color: var(--muted);
     }
-    .spacer { flex: 1; }
     .chrome-actions { display: flex; align-items: center; gap: 6px; }
     .icon-btn, .tool-btn {
       appearance: none; border: 0; border-radius: var(--radius-sm);
@@ -663,7 +636,7 @@
       display: grid; place-items: center;
       /* reserve the chrome bar's height: its translucent gradient must never
          sit on top of the board (visible as a dark band across rank 8) */
-      padding: calc(var(--chrome-h) + var(--stage-pad)) var(--stage-pad) calc(var(--spine-h) + var(--stage-pad));
+      padding: calc(var(--chrome-h) + var(--stage-pad)) var(--stage-pad) var(--stage-pad);
       /* no transition: this is the same layout change as #board-wrap's size,
          and animating one without the other makes the board overflow the
          stage for the duration */
@@ -671,12 +644,10 @@
     #app.panel-open .stage {
       padding-right: calc(var(--side-w) + var(--stage-pad));
     }
-    /* the spine only exists with the panel shut, so that is when its strip is held */
-    #app:not(.panel-open) { --spine-h: 30px; }
     #board-wrap {
       position: relative;
       --free-w: calc(100vw - 2 * var(--stage-pad));
-      --free-h: calc(100vh - var(--chrome-h) - var(--spine-h) - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
       max-width: 100%; max-height: 100%;
@@ -695,7 +666,7 @@
     }
     #app.panel-open #board-wrap {
       --free-w: calc(100vw - var(--side-w) - 2 * var(--stage-pad));
-      --free-h: calc(100vh - var(--chrome-h) - var(--spine-h) - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
     }
@@ -792,50 +763,63 @@
       pointer-events: auto;
     }
 
-    /* —— side: more air, less density —— */
-    .side-head {
-      /* 8 above the rule and 8 below it (.side-tabs pads to match), so the two
-         selector rows sit a chosen distance apart rather than the 16 + 2 + 1px
-         that measured 19 and belonged to nobody */
-      padding: 0 0 8px;
-      margin-bottom: 0;
-      border-bottom: 1px solid var(--card-border);
-    }
+    /* —— the match bar: the game, in the strip above the board ——————————
+       It lived at the top of the panel until 2.2 — four rows deep, in the
+       narrowest column on screen, and gone the moment the panel closed. Here
+       it is one row in a bar that was already reserved, always drawn, and
+       centred over the board. `flex: 1` between the status pill and the tools
+       is what centres it: the pill and the tool group are not the same width,
+       so the bar's own middle is not the window's, and `justify-content:
+       center` on a stretched box puts the middle *of the row* over the middle
+       of the space it is given, which is what the eye reads against the board.
+
+       Three densities, one component. Everything in it is optional except the
+       two colours and the two clocks, and each piece leaves at the width where
+       the row would otherwise start to squeeze the board's own strip. */
     .vs {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 12px;
+      flex: 1; min-width: 0;
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      font-size: 12px; line-height: var(--lh-tight);
+      white-space: nowrap;
     }
     .vs-side {
-      display: flex; align-items: center; gap: 8px; min-width: 0;
+      display: flex; align-items: center; gap: 6px; min-width: 0;
     }
-    .vs-right { flex-direction: row; text-align: right; }
-    /* A lesson task with no sparring partner has no opponent, and the panel
-       used to open on "黑 / ♚ / —" anyway: a whole card whose content was an
-       em dash, sitting at the very top of the panel. When there is nobody on
-       the other side, the other side is not drawn. */
-    .vs.solo { justify-content: flex-start; }
+    /* A lesson task has no sparring partner, and the bar used to open on
+       "黑 / ♚ / —" anyway: a whole half whose content was an em dash. When
+       there is nobody on the other side, the other side is not drawn. */
     .vs.solo .vs-mid, .vs.solo .vs-right { display: none; }
-    .vs-right .vs-name { justify-content: flex-end; }
     .vs-mid {
-      font-size: 11px; letter-spacing: 0.14em; flex-shrink: 0; opacity: 0.55;
-    }
-    .vs-name {
-      font-size: 13px; font-weight: 600;
       display: flex; align-items: center; gap: 6px;
+      flex-shrink: 0; min-width: 0;
     }
-    .vs-role { font-size: 11px; margin-top: 2px; line-height: var(--lh-tight); }
+    .vs-versus { font-size: 11px; letter-spacing: 0.14em; opacity: 0.55; }
+    .vs-versus[hidden], .vs-last[hidden] { display: none; }
+    .vs-last {
+      font-size: 12px; color: var(--text); font-weight: 500;
+      padding: 0 8px; height: 20px; border-radius: 999px;
+      display: inline-flex; align-items: center;
+      background: var(--btn-ghost);
+      border: 1px solid var(--card-border);
+    }
+    .vs-name { font-size: 13px; font-weight: 600; }
+    .vs-role {
+      font-size: 11px;
+      /* the one thing here that can be arbitrarily long — a persona name in
+         three languages — so it is the one thing allowed to end in an
+         ellipsis rather than push the clock off the row */
+      max-width: 14vw; overflow: hidden; text-overflow: ellipsis;
+    }
     /* captured pieces + the lead, beside each name */
     .taken {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 0px;
-      margin-top: 4px; min-height: 0;
+      display: flex; align-items: center; gap: 0px; min-height: 0;
     }
-    .vs-right .taken { justify-content: flex-end; }
     .taken:empty { display: none; }
-    /* Black pieces are a black silhouette: on the dark panel they vanish, and
-       on the light themes the white ones do. A mid-tone plate derived from the
+    /* Black pieces are a black silhouette: on the dark themes they vanish, and
+       on the light ones the white ones do. A mid-tone plate derived from the
        theme's own text colour keeps both readable in all four. */
     .taken-p {
-      width: 15px; height: 15px; display: block;
+      width: 14px; height: 14px; display: block;
       padding: 0px; border-radius: 3px;
       background: color-mix(in srgb, var(--text) 34%, var(--panel));
     }
@@ -846,7 +830,6 @@
       margin-left: 4px;
     }
     .vs-clock {
-      margin-top: 4px;
       font-size: 15px; font-weight: 600; line-height: var(--lh-tight);
       color: var(--text); opacity: 0.45;
       transition: opacity var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
@@ -854,6 +837,25 @@
     .vs-clock.active { opacity: 1; }
     .vs-clock.low { color: var(--danger); opacity: 1; }
     .vs-clock[hidden] { display: none; }
+    /* Density 2: the personas go first. They are the longest run of text in
+       the row and the least urgent — you chose the opponent, you know who it
+       is. Measured at 900x700 with the panel open, the bar has 300px of usable
+       middle and the names alone want 180 of it. */
+    @media (max-width: 1099px) { .vs-role { display: none; } }
+    /* Density 3: at the narrow end the row is two colours, two clocks and
+       whose move it is. 520px is the smallest window app.zon allows. */
+    @media (max-width: 820px) {
+      .vs { gap: 6px; }
+      .taken, .vs-mid { display: none; }
+      /* 820 is also the width below which the chrome stops making room for the
+         panel (see the min-width: 821 rule above it): the panel overlays the
+         bar instead. The tools have been behind it since 2.0 — they are pinned
+         right, so the panel covers them whole — but the match bar is centred,
+         so it came out sliced down the middle by the panel's own edge, half a
+         name on one side of it. A modal panel is the interface while it is
+         open; the bar under it is not drawn. */
+      #app.panel-open .vs { display: none; }
+    }
     .opening-line {
       margin-top: 12px;
       font-size: 12px; color: var(--muted); line-height: var(--lh-body);
@@ -871,7 +873,7 @@
        and the panel is back to one navigation row. */
 
     /* —— tabs —— */
-    .side-head, .side-tabs { flex-shrink: 0; }
+    .side-tabs { flex-shrink: 0; }
     .side-tabs {
       display: flex; align-items: stretch; gap: 4px;
       padding: 8px 0 0;
@@ -987,6 +989,9 @@
       transition: transform var(--dur-quick) var(--ease);
     }
     .setting-fold[open] > summary::after { transform: rotate(90deg); }
+    /* the ›→⌄ chevron had a transition and the row it sits in did not, so the
+       arrow eased while the background it eased over snapped */
+    .setting-fold > summary { transition: background var(--dur-quick) var(--ease); }
     .setting-fold > summary:hover { background: var(--btn-ghost); }
     /* Explicit, for the same reason `[hidden]` needs !important here: the
        author `display` on .setting-list wins over the closed <details>'s own
@@ -1696,7 +1701,7 @@
       }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - var(--spine-h) - min(46vh, 430px) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - min(46vh, 430px) - 2 * var(--stage-pad));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
@@ -1704,7 +1709,7 @@
       #app.panel-open.scrim-on .scrim { display: none; }
       /* a 900px-wide row of four mode buttons is a lot of nothing between
          labels; keep the sheet's contents at the density the panel was drawn for */
-      .side-head, .side-tabs, .side-pane {
+      .side-tabs, .side-pane {
         width: 100%; max-width: 620px;
         margin-left: auto; margin-right: auto;
       }
@@ -1721,12 +1726,39 @@
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - var(--spine-h) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
     }
   
+/* --- the two state changes that had nothing at all -------------------
+   Measured across the three tabs: of every clickable thing in this app —
+   buttons, tabs, lesson rows, history rows, badges, move rows — exactly one
+   had no transition on it (the settings fold's own summary row, fixed where
+   it is declared). Hover and press were never the gap.
+
+   What jumped were the two changes that swap a *block* rather than restyle an
+   element, because neither is a property that can be transitioned: switching
+   tabs toggles `hidden` on a pane, and opening a settings group toggles
+   `[open]` on a <details>. Both replace a screenful in one frame.
+
+   A keyframe covers what a transition cannot: the arriving content fades up
+   4px over --dur-base. What it does NOT do is animate the *height* of the box
+   it arrives in — the panel below an opening group still reflows in one frame.
+   Doing that properly needs ::details-content with interpolate-size, which
+   Chromium has and which this repo cannot check on WebKit (there is no WebKit
+   binary outside the release gate), so it is not written on a guess. */
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.side-pane:not([hidden]),
+.setting-fold[open] > *:not(summary),
+.reading-index[open] > *:not(summary) {
+  animation: reveal-in var(--dur-base) var(--ease);
+}
+
 /* --- the thinking pulse ---------------------------------------------
    On the status pill and on the board dot: the two places that say the
    engine is working. Both stop under prefers-reduced-motion. */
@@ -1968,6 +2000,37 @@
        counter beside it: fifteen rows, one height, and the same row the
        statistics immediately above are already made of. The English column,
        the worst case, got shorter doing it (673px → 647px). */
+    /* The records page before there is anything to record. See
+       renderRecordEntry() for what stood here and why it stopped. */
+    .rec-entry {
+      margin-bottom: 16px; padding: 12px;
+      border: 1px solid var(--card-border); border-radius: var(--radius-md);
+      background: var(--card);
+    }
+    .rec-entry[hidden] { display: none; }
+    .rec-lead {
+      margin: 0 0 12px;
+      font-size: 12px; line-height: var(--lh-body); color: var(--muted);
+    }
+    .rec-doors { display: flex; flex-direction: column; gap: 6px; }
+    .rec-door {
+      appearance: none; text-align: left; width: 100%;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px; border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border);
+      background: var(--btn-ghost);
+      color: var(--text); font: inherit; cursor: pointer;
+      transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
+    }
+    .rec-door:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--card-border)); background: var(--btn-hover); }
+    .rec-door:active { transform: scale(0.98); }
+    .rec-door-ic { font-size: 16px; line-height: var(--lh-tight); flex-shrink: 0; }
+    .rec-door-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .rec-door-k { font-size: 13px; font-weight: 600; line-height: var(--lh-tight); }
+    .rec-door-v { font-size: 11px; color: var(--muted); line-height: var(--lh-tight); }
+    /* the fold at the end of the locked list — an .act-btn like every other
+       action in the panel, just not stretched across the column */
+    .ach-more { margin-top: 6px; flex: none; justify-self: start; padding: 8px 12px; }
     .ach-body {
       display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px;
     }

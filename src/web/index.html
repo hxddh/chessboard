@@ -33,7 +33,45 @@
            title bar, and a move counter is a position inside a game, which is
            panel information. -->
       <span class="status-pill" id="status">白方走子</span>
-      <span class="spacer"></span>
+      <!-- The match, in the bar it was already paying 32px a session for.
+           Measured at 1280x820 with the panel open: the board is 822px wide
+           and the panel 284, and the strip above the board held one pill, two
+           buttons and 640px of nothing. Meanwhile the two players, the two
+           clocks and the captured pieces were stacked four rows deep at the
+           top of the narrowest column on screen, and vanished with it every
+           time the panel closed — which is what a small window plays in
+           permanently, and is what the spine at the bottom edge existed to
+           patch. One row, over the board, always there: the spine is gone and
+           so is the 30px strip it reserved under the board.
+           Left to right it reads as the game does — 白, whose move, who they
+           are, their clock, what they have taken — and mirrors around the
+           middle, which holds the last move (or 对, before there is one). -->
+      <div class="vs" id="vs-bar">
+        <div class="vs-side">
+          <span class="pmark white" aria-hidden="true">♔</span>
+          <span class="vs-name" data-i18n="vs.white">白</span>
+          <span class="badge" id="white-turn" data-i18n="vs.turnBadge" hidden>行</span>
+          <span class="vs-role muted" id="white-role">玩家 1</span>
+          <span class="taken" id="taken-w" aria-label="白方已吃掉的子" data-i18n-aria="mat.takenW"></span>
+          <span class="vs-clock num" id="clock-w" hidden>5:00</span>
+        </div>
+        <div class="vs-mid">
+          <!-- One slot, one meaning: what is between the two of them. Before
+               the first move that is nothing, and 对 says so; after it, the
+               move just played, which is the fact the panel-shut window used
+               to lose. Never both. -->
+          <span class="vs-versus muted" id="vs-versus" data-i18n="vs.versus">对</span>
+          <span class="vs-last num" id="vs-last" hidden></span>
+        </div>
+        <div class="vs-side vs-right">
+          <span class="vs-clock num" id="clock-b" hidden>5:00</span>
+          <span class="taken" id="taken-b" aria-label="黑方已吃掉的子" data-i18n-aria="mat.takenB"></span>
+          <span class="vs-role muted" id="black-role">玩家 2</span>
+          <span class="badge" id="black-turn" data-i18n="vs.turnBadge" hidden>行</span>
+          <span class="vs-name" data-i18n="vs.black">黑</span>
+          <span class="pmark black" aria-hidden="true">♚</span>
+        </div>
+      </div>
       <div class="chrome-actions">
         <!-- Undo before hint, and the order matters: undo is absent until
              there is a move to take back (P3 — a disabled control is not shown
@@ -60,52 +98,14 @@
         <div class="think-dot" id="think-dot" hidden></div>
       </div>
     </div>
-    <!-- The spine: what stays readable with the panel shut.
-         Closing the panel used to take the whole game with it — whose move,
-         the clocks, the last move, the material difference — and leave the
-         board on a plain colour. That is the state people play in on a small
-         window, and it was the state with the least information in it. Four
-         facts, one row, under the board. -->
-    <div class="spine" id="spine" hidden>
-      <span class="spine-turn" id="spine-turn"></span>
-      <span class="spine-clock num" id="spine-clock" hidden></span>
-      <span class="spine-last num" id="spine-last" hidden></span>
-      <span class="spine-mat" id="spine-mat" hidden></span>
-    </div>
+    <!-- The spine used to live here: whose move, the clocks, the last move and
+         the material difference, in a pill under the board, drawn only when
+         the panel was shut. Everything it said the top bar now says all the
+         time, so it was a second component for one job — and it cost the board
+         30px of height in exactly the windows that had the least. -->
     <div id="board-live" class="sr-only" aria-live="polite" role="status"></div>
 
     <aside class="side" id="side" aria-label="对局面板" data-i18n-aria="aria.side">
-      <section class="side-head">
-        <div class="vs" id="vs-bar">
-          <div class="vs-side">
-            <span class="pmark white" aria-hidden="true">♔</span>
-            <div>
-              <div class="vs-name">
-                <span data-i18n="vs.white">白</span>
-                <span class="badge" id="white-turn" data-i18n="vs.turnBadge" hidden>行</span>
-              </div>
-              <div class="vs-role muted" id="white-role">玩家 1</div>
-              <div class="taken" id="taken-w" aria-label="白方已吃掉的子" data-i18n-aria="mat.takenW"></div>
-              <div class="vs-clock num" id="clock-w" hidden>5:00</div>
-            </div>
-          </div>
-          <div class="vs-mid muted" data-i18n="vs.versus">对</div>
-          <div class="vs-side vs-right">
-            <div>
-              <div class="vs-name">
-                <span class="badge" id="black-turn" data-i18n="vs.turnBadge" hidden>行</span>
-                <span data-i18n="vs.black">黑</span>
-              </div>
-              <div class="vs-role muted" id="black-role">玩家 2</div>
-              <div class="taken" id="taken-b" aria-label="黑方已吃掉的子" data-i18n-aria="mat.takenB"></div>
-              <div class="vs-clock num" id="clock-b" hidden>5:00</div>
-            </div>
-            <span class="pmark black" aria-hidden="true">♚</span>
-          </div>
-        </div>
-        <div class="opening-line" id="opening-line" hidden></div>
-      </section>
-
       <!-- Three tabs instead of one 1788px scroll: what you touch while playing
            (moves, replay, analysis, this game's actions), what you set once
            (level, clock, theme, language), and what you look back at
@@ -307,6 +307,14 @@
       </div><!-- /pane-setup -->
 
       <div class="side-pane" id="pane-play" role="tabpanel" aria-labelledby="tab-play">
+      <!-- The opening name is the only thing left of the old .side-head, and
+           it is not a header: it is a fact about the game in progress, so it
+           sits at the top of the 对局 page with the rest of them. The vs bar
+           that used to stand above it is in the top bar now, and the panel
+           starts on its tab row — 60px of the narrowest column on screen,
+           returned to its content. -->
+      <div class="opening-line" id="opening-line" hidden></div>
+
       <section class="side-section" id="sec-learn" hidden>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.learn">教学</h2>
@@ -495,6 +503,20 @@
       </div><!-- /pane-play -->
 
       <div class="side-pane" id="pane-record" role="tabpanel" aria-labelledby="tab-record" hidden>
+      <!-- What a new install used to open on: two grey sentences saying
+           nothing has happened yet, and fifteen 🔒 rows. Fifteen locks is not
+           an empty state, it is a wall with the score already 0/15 on it — and
+           the three sections under it are all "come back later" in three
+           different wordings.
+           This card is what stands there instead until the first thing is
+           recorded: what the page will hold, and three doors, each with the
+           badge it opens on it. The rows are built by renderRecordEntry() so
+           the badge names come from the achievement table rather than being
+           written out a second time in three languages. -->
+      <div class="rec-entry" id="record-empty" hidden>
+        <p class="rec-lead" data-i18n="rec.emptyLead">这一页记的是你下过的棋:战绩、每局的棋谱、十五个成就。现在还空着 —— 下面三件事,每件都开一个头。</p>
+        <div class="rec-doors" id="record-doors"></div>
+      </div>
       <section class="side-section" id="sec-stats">
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.stats">统计</h2>

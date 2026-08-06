@@ -249,6 +249,9 @@ import { createStore } from "./store.js";
       /** the newest-first list the rendered rows index into */
       histCache: [],
       achSeen: null,  // filled in below, where it can first be computed
+      /** 记录页:锁着的成就是全展开还是只留最近的三个。不落盘 —— 这是一种
+       *  看法,不是一项设置。 */
+      achAll: false,
     },
     ui: {
       soundOn: true,
@@ -3262,6 +3265,7 @@ import { createStore } from "./store.js";
       fresh.forEach((r, i) => setTimeout(() => toast("🎉 " + t("ach.unlocked") + " · " + r.ach.icon + " " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
     }
     renderAchievements();
+    renderRecordEntry();
   }
 
   function renderAchievements() {
@@ -3294,14 +3298,92 @@ import { createStore } from "./store.js";
       el.appendChild(tip);
     }
     const groups = [];
-    if (unlocked.length) groups.push(["ach.got", unlocked]);
-    if (locked.length) groups.push(["ach.locked", locked]);
-    for (const [key, rows] of groups) {
+    if (unlocked.length) groups.push(["ach.got", unlocked, false]);
+    // The locked group is the long one and it only ever gets longer at the far
+    // end: on a new install it is all fifteen, sorted by how close they are, so
+    // rows four to fifteen are a list of things that are not close. Three, and
+    // the rest behind a count you can press. The 展开 state is session-only —
+    // it is a way of looking at the list, not a setting.
+    if (locked.length) groups.push(["ach.locked", locked, true]);
+    for (const [key, rows, foldable] of groups) {
       const h = document.createElement("div");
       h.className = "ach-group";
       h.textContent = t(key) + " " + rows.length;
       el.appendChild(h);
-      renderAchRows(rows, res, el);
+      const fold = foldable && rows.length > ACH_FOLD_AT && !store.session.achAll;
+      renderAchRows(fold ? rows.slice(0, ACH_FOLD_AT) : rows, res, el);
+      if (foldable && rows.length > ACH_FOLD_AT) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "act-btn ach-more";
+        more.id = "ach-more";
+        more.textContent = fold ? tf("ach.more", [rows.length - ACH_FOLD_AT]) : t("ach.less");
+        more.onclick = () => { store.session.achAll = !store.session.achAll; renderAchievements(); };
+        el.appendChild(more);
+      }
+    }
+  }
+
+  /** How many locked badges stand open before the rest fold away. */
+  const ACH_FOLD_AT = 3;
+
+  /**
+   * The records page, before there is anything to record.
+   *
+   * It used to open on two sentences saying nothing had happened yet and
+   * fifteen padlocks — a wall with 0/15 written on it. Three doors instead,
+   * each labelled with the badge behind it, and each one *pressing the real
+   * control*: the mode row on the settings page. Going through
+   * `#mode-seg` rather than setting `store.session.mode` here is deliberate —
+   * that handler stops the engine, leaves the editor, resets the clocks,
+   * switches to the 对局 tab and says what happened, and a second copy of that
+   * list is a second copy that can drift.
+   */
+  const REC_DOORS = [
+    { mode: "learn", label: "rec.goLearn", ach: "first-lesson", win: false },
+    { mode: "puzzle", label: "rec.goPuzzle", ach: "first-puzzle", win: false },
+    { mode: "ai", label: "rec.goPlay", ach: "first-win", win: true },
+  ];
+
+  function renderRecordEntry() {
+    const box = document.getElementById("record-empty");
+    const doors = document.getElementById("record-doors");
+    if (!box || !doors) return;
+    const stats = loadStats();
+    const res = evalAch();
+    const fresh = !stats.games.length && !res.some((r) => r.unlocked);
+    box.hidden = !fresh;
+    if (!fresh) return;
+    doors.replaceChildren();
+    for (const d of REC_DOORS) {
+      const a = ACH.find((x) => x.id === d.ach);
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "rec-door";
+      b.dataset.mode = d.mode;
+      const ic = document.createElement("span");
+      ic.className = "rec-door-ic";
+      ic.textContent = a ? a.icon : "·";
+      const txt = document.createElement("span");
+      txt.className = "rec-door-t";
+      const k = document.createElement("span");
+      k.className = "rec-door-k";
+      k.textContent = t(d.label);
+      const v = document.createElement("span");
+      v.className = "rec-door-v";
+      const nm = a ? (a.nameKey ? t(a.nameKey) : a.name) : "";
+      v.textContent = tf(d.win ? "rec.winUnlocks" : "rec.unlocks", [nm]);
+      txt.append(k, v);
+      b.append(ic, txt);
+      b.onclick = () => {
+        const seg = document.querySelector('#mode-seg button[data-mode="' + d.mode + '"]');
+        // already in that mode: the mode row's handler returns early on
+        // purpose, so there is nothing for it to do and the door still has to
+        // land somewhere — the board, with the panel showing 对局
+        if (!seg || d.mode === store.session.mode) { setSideTab("play", { top: true }); return; }
+        seg.click();
+      };
+      doors.appendChild(b);
     }
   }
 
@@ -3573,48 +3655,29 @@ import { createStore } from "./store.js";
   }
 
   /**
-   * The spine — the game, readable with the panel shut.
+   * The middle of the match bar: what is between the two players.
    *
-   * Whose move, the clock, the last move, the material difference. Closing the
-   * panel used to take all four away and leave the board on a plain colour,
-   * which is the state a small window plays in permanently.
+   * Before the first move that is nothing, and 对 says so; from then on it is
+   * the move just played. Never both — one slot, one meaning.
+   *
+   * This is the last of the four facts the spine used to carry under the board
+   * with the panel shut. The other three moved with it: whose move is the
+   * status pill, the clocks are the two `.vs-clock`s, and the material lead is
+   * `.taken-diff`, beside the pieces it is counted from — which is a more
+   * precise place for it than a lone number at the far end of a pill.
    */
-  function renderSpine() {
-    const bar = el("spine");
-    if (!bar) return;
-    // with the panel open every one of these is on screen already, in more
-    // detail — a second copy would be the duplication rule broken twice
-    if (isPanelOpen() || inModal()) { bar.hidden = true; return; }
-    bar.hidden = false;
-    const g = viewGame();
-    el("spine-turn").textContent = statusText();
-
-    const clockEl = el("spine-clock");
-    const showClock = store.game.timeControl !== "off" && !!store.game.clock;
-    clockEl.hidden = !showClock;
-    if (showClock) {
-      clockEl.textContent = fmtClock(store.game.clock.w) + " · " + fmtClock(store.game.clock.b);
-    }
-
-    const lastEl = el("spine-last");
+  function renderMatchLast() {
+    const lastEl = el("vs-last");
+    const versusEl = el("vs-versus");
+    if (!lastEl || !versusEl) return;
     const h = sanHistory();
     const at = store.game.viewIndex;
-    lastEl.hidden = at <= 0;
-    if (at > 0) {
-      const no = ChessReview ? ChessReview.moveNumber(at - 1, "w") : Math.ceil(at / 2);
-      lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
-    }
-
-    const matEl = el("spine-mat");
-    const Mat = ChessMaterial;
-    let diff = 0;
-    if (Mat) {
-      const promos = verboseHistory().slice(0, at)
-        .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
-      diff = Mat.summary(baseGame().board(), g.board(), promos).diff;
-    }
-    matEl.hidden = !diff;
-    if (diff) matEl.textContent = (diff > 0 ? "+" : "−") + Math.abs(diff);
+    const show = at > 0 && !inModal();
+    lastEl.hidden = !show;
+    versusEl.hidden = show;
+    if (!show) return;
+    const no = ChessReview ? ChessReview.moveNumber(at - 1, "w") : Math.ceil(at / 2);
+    lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
   }
 
   /**
@@ -3927,9 +3990,8 @@ import { createStore } from "./store.js";
 
     // the settings panel reads the game too (the clock preset is a game fact),
     // so it hears about all three
-    store.subscribe("game", renderSpine);
-    store.subscribe("session", renderSpine);
-    store.subscribe("ui", renderSpine);
+    store.subscribe("game", renderMatchLast);
+    store.subscribe("session", renderMatchLast);
     store.subscribe("game", syncSettingsUI);
     store.subscribe("ui", syncSettingsUI);
     store.subscribe("ui", draw);
@@ -5423,7 +5485,7 @@ import { createStore } from "./store.js";
         if (side.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur();
       }
     }
-    // the spine and the status pill both read "is the panel open"
+    // the status pill and the chrome's own padding both read "is the panel open"
     store.commit("ui", "panel");
     requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); });
   }
@@ -5451,6 +5513,7 @@ import { createStore } from "./store.js";
     // previous language until the next game finishes
     renderStats();
     renderAchievements();
+    renderRecordEntry();
     if (store.session.editor) renderEditorPalette();
     sync();
   }
@@ -5780,6 +5843,7 @@ import { createStore } from "./store.js";
     Persist.remove("stats");
     renderStats();
     renderAchievements();
+    renderRecordEntry();
     toast(t("msg.stats.cleared"));
   };
 
@@ -6475,6 +6539,7 @@ import { createStore } from "./store.js";
   BoardView.resizeCanvas();
   renderStats();
   renderAchievements();
+  renderRecordEntry();
   applyLanguage();
   sync();
   saveSettings();
