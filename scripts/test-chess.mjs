@@ -1417,35 +1417,51 @@ for (const lang of CONTENT_LANGS) {
   {
     const row = /\.link-row \{([\s\S]*?)\}/.exec(stripped);
     assert(row, "found the action row rule");
-    assert(/display:\s*flex/.test(row[1]) && /flex-wrap:\s*wrap/.test(row[1]),
-      "action rows wrap rather than forcing a column count");
-    assert(!/grid-template-columns/.test(row[1]),
-      "no fixed column count — an equal column is only right when the contents are equal");
+    // 2.2 turned this row into the same count-decided grid the segment rows
+    // use. The rule it replaced said "wrap, never fix a column count", and
+    // that was right for a row of text links of different widths — it is the
+    // wrong rule for a row of boxes, where a wrapping flex line lets whatever
+    // landed on the last line share it and come out double width. A box twice
+    // its neighbours' width is this UI's word for "the primary action", and
+    // that word now belongs to .primary alone.
+    assert(/display:\s*grid/.test(row[1]), "action rows are a grid, so every action is the same width");
+    assert(/auto-fill/.test(row[1]),
+      "…laid out by the actions that are actually there, not by counting children " +
+      "(判和/重下 come and go, and a display:none child still counts in :has(:nth-child))");
+    assert(!/auto-fit/.test(row[1]),
+      "…and auto-FILL, so the last action left in a row keeps one action's width " +
+      "instead of stretching across the panel and competing with the filled one");
+    assert(/grid-auto-rows:\s*1fr/.test(row[1]), "…and every row of it is the same height");
     assert(!/space-between/.test(row[1]), "no space-between — that is what made every row different");
 
-    // the pair that did the clipping: a box pinned to a column narrower than
-    // its text, and text forbidden to wrap out of it
-    const link = /\.text-link \{([\s\S]*?)\}/.exec(stripped);
-    assert(link, "found the action link rule");
-    assert(!/white-space:\s*nowrap/.test(link[1]),
-      "a label too long for its row wraps rather than being cut");
-    assert(!/width:\s*100%/.test(link[1]), "…and is sized by its content, not by its column");
+    // ONE control family. The segment buttons and the action buttons share a
+    // single declaration block; if someone splits them again, this fails.
+    assert(/\.theme-row button,\s*\.act-btn \{/.test(stripped),
+      "the segment control and the action button are declared together, not twice");
+    const box = /\.theme-row button,\s*\.act-btn \{([\s\S]*?)\}/.exec(stripped);
+    assert(box && /border:\s*1px solid/.test(box[1]), "…and that family has a box");
+    assert(box && !/white-space:\s*nowrap/.test(box[1]),
+      "a label too long for its cell wraps rather than being cut");
 
     // P3's acceptance criterion, at the level of the rule rather than the
     // screen: dimming a control that cannot be used is not a milder way of
     // obeying "no visible disabled controls", it is the thing being rejected
-    const off = /\.text-link:disabled \{([^}]*)\}/.exec(stripped);
+    const off = /\.act-btn:disabled \{([^}]*)\}/.exec(stripped);
     assert(off && /display:\s*none/.test(off[1]),
-      "a disabled action link is not rendered at all");
+      "a disabled action is not rendered at all");
     assert(off && !/opacity/.test(off[1]), "…not dimmed into a hole in the row");
 
-    // one row, one visual weight: the danger link says what it is in colour,
-    // not by being the only outlined control among its neighbours
-    const dz = stripped.slice(stripped.indexOf(".text-link.danger"));
-    const dRule = /\.text-link\.danger:not\(:disabled\) \{([^}]*)\}/.exec(dz);
-    assert(dRule, "found the danger link rule");
-    assert(!/border/.test(dRule[1]),
-      "the danger link carries no border its row-mates lack");
+    // one row, one shape: danger is a colour, not a different control. Now
+    // that every neighbour is a box too, the box is no longer what marks it.
+    const dRule = /\.act-btn\.danger \{([^}]*)\}/.exec(stripped);
+    assert(dRule, "found the danger rule");
+    assert(/color:\s*var\(--danger\)/.test(dRule[1]), "danger says it in colour");
+
+    // At most one filled action exists as a rule at all — the count is a
+    // runtime property (see test-layout-e2e), but the weight must be declared
+    // exactly once so there is only one way to spell "the thing to press".
+    assert((stripped.match(/\.act-btn\.primary \{/g) || []).length === 1,
+      "there is exactly one declaration of the primary weight");
 
     // The same rule for wrapped segments, and for the same reason. With
     // `flex: 1 1 30%` the items on a last line share it between them, so a

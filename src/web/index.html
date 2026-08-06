@@ -33,7 +33,45 @@
            title bar, and a move counter is a position inside a game, which is
            panel information. -->
       <span class="status-pill" id="status">白方走子</span>
-      <span class="spacer"></span>
+      <!-- The match, in the bar it was already paying 32px a session for.
+           Measured at 1280x820 with the panel open: the board is 822px wide
+           and the panel 284, and the strip above the board held one pill, two
+           buttons and 640px of nothing. Meanwhile the two players, the two
+           clocks and the captured pieces were stacked four rows deep at the
+           top of the narrowest column on screen, and vanished with it every
+           time the panel closed — which is what a small window plays in
+           permanently, and is what the spine at the bottom edge existed to
+           patch. One row, over the board, always there: the spine is gone and
+           so is the 30px strip it reserved under the board.
+           Left to right it reads as the game does — 白, whose move, who they
+           are, their clock, what they have taken — and mirrors around the
+           middle, which holds the last move (or 对, before there is one). -->
+      <div class="vs" id="vs-bar">
+        <div class="vs-side">
+          <span class="pmark white" aria-hidden="true">♔</span>
+          <span class="vs-name" data-i18n="vs.white">白</span>
+          <span class="badge" id="white-turn" data-i18n="vs.turnBadge" hidden>行</span>
+          <span class="vs-role muted" id="white-role">玩家 1</span>
+          <span class="taken" id="taken-w" aria-label="白方已吃掉的子" data-i18n-aria="mat.takenW"></span>
+          <span class="vs-clock num" id="clock-w" hidden>5:00</span>
+        </div>
+        <div class="vs-mid">
+          <!-- One slot, one meaning: what is between the two of them. Before
+               the first move that is nothing, and 对 says so; after it, the
+               move just played, which is the fact the panel-shut window used
+               to lose. Never both. -->
+          <span class="vs-versus muted" id="vs-versus" data-i18n="vs.versus">对</span>
+          <span class="vs-last num" id="vs-last" hidden></span>
+        </div>
+        <div class="vs-side vs-right">
+          <span class="vs-clock num" id="clock-b" hidden>5:00</span>
+          <span class="taken" id="taken-b" aria-label="黑方已吃掉的子" data-i18n-aria="mat.takenB"></span>
+          <span class="vs-role muted" id="black-role">玩家 2</span>
+          <span class="badge" id="black-turn" data-i18n="vs.turnBadge" hidden>行</span>
+          <span class="vs-name" data-i18n="vs.black">黑</span>
+          <span class="pmark black" aria-hidden="true">♚</span>
+        </div>
+      </div>
       <div class="chrome-actions">
         <!-- Undo before hint, and the order matters: undo is absent until
              there is a move to take back (P3 — a disabled control is not shown
@@ -60,52 +98,14 @@
         <div class="think-dot" id="think-dot" hidden></div>
       </div>
     </div>
-    <!-- The spine: what stays readable with the panel shut.
-         Closing the panel used to take the whole game with it — whose move,
-         the clocks, the last move, the material difference — and leave the
-         board on a plain colour. That is the state people play in on a small
-         window, and it was the state with the least information in it. Four
-         facts, one row, under the board. -->
-    <div class="spine" id="spine" hidden>
-      <span class="spine-turn" id="spine-turn"></span>
-      <span class="spine-clock num" id="spine-clock" hidden></span>
-      <span class="spine-last num" id="spine-last" hidden></span>
-      <span class="spine-mat" id="spine-mat" hidden></span>
-    </div>
+    <!-- The spine used to live here: whose move, the clocks, the last move and
+         the material difference, in a pill under the board, drawn only when
+         the panel was shut. Everything it said the top bar now says all the
+         time, so it was a second component for one job — and it cost the board
+         30px of height in exactly the windows that had the least. -->
     <div id="board-live" class="sr-only" aria-live="polite" role="status"></div>
 
     <aside class="side" id="side" aria-label="对局面板" data-i18n-aria="aria.side">
-      <section class="side-head">
-        <div class="vs" id="vs-bar">
-          <div class="vs-side">
-            <span class="pmark white" aria-hidden="true">♔</span>
-            <div>
-              <div class="vs-name">
-                <span data-i18n="vs.white">白</span>
-                <span class="badge" id="white-turn" data-i18n="vs.turnBadge" hidden>行</span>
-              </div>
-              <div class="vs-role muted" id="white-role">玩家 1</div>
-              <div class="taken" id="taken-w" aria-label="白方已吃掉的子" data-i18n-aria="mat.takenW"></div>
-              <div class="vs-clock num" id="clock-w" hidden>5:00</div>
-            </div>
-          </div>
-          <div class="vs-mid muted" data-i18n="vs.versus">对</div>
-          <div class="vs-side vs-right">
-            <div>
-              <div class="vs-name">
-                <span class="badge" id="black-turn" data-i18n="vs.turnBadge" hidden>行</span>
-                <span data-i18n="vs.black">黑</span>
-              </div>
-              <div class="vs-role muted" id="black-role">玩家 2</div>
-              <div class="taken" id="taken-b" aria-label="黑方已吃掉的子" data-i18n-aria="mat.takenB"></div>
-              <div class="vs-clock num" id="clock-b" hidden>5:00</div>
-            </div>
-            <span class="pmark black" aria-hidden="true">♚</span>
-          </div>
-        </div>
-        <div class="opening-line" id="opening-line" hidden></div>
-      </section>
-
       <!-- Three tabs instead of one 1788px scroll: what you touch while playing
            (moves, replay, analysis, this game's actions), what you set once
            (level, clock, theme, language), and what you look back at
@@ -297,9 +297,9 @@
       <section class="side-section">
         <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
         <div class="link-row">
-          <button type="button" class="text-link danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
-          <button type="button" class="text-link danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
-          <button type="button" class="text-link danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
+          <button type="button" class="act-btn danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
+          <button type="button" class="act-btn danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
+          <button type="button" class="act-btn danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
         </div>
         <p class="hint" data-i18n="hint.danger">三项都不可撤销,各自会再问一次。</p>
       </section>
@@ -307,6 +307,14 @@
       </div><!-- /pane-setup -->
 
       <div class="side-pane" id="pane-play" role="tabpanel" aria-labelledby="tab-play">
+      <!-- The opening name is the only thing left of the old .side-head, and
+           it is not a header: it is a fact about the game in progress, so it
+           sits at the top of the 对局 page with the rest of them. The vs bar
+           that used to stand above it is in the top bar now, and the panel
+           starts on its tab row — 60px of the narrowest column on screen,
+           returned to its content. -->
+      <div class="opening-line" id="opening-line" hidden></div>
+
       <section class="side-section" id="sec-learn" hidden>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.learn">教学</h2>
@@ -454,39 +462,39 @@
         <div class="act-group">
           <span class="act-k" data-i18n="act.groupReview">复盘</span>
           <div class="link-row">
-            <button type="button" class="text-link" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
-            <button type="button" class="text-link" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
-            <button type="button" class="text-link" id="retry-here" title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
+            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
+            <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
+            <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
           </div>
         </div>
         <div class="act-group">
           <span class="act-k" data-i18n="act.groupFile">棋谱与局面</span>
           <div class="link-row">
-            <button type="button" class="text-link" id="pgn-copy" data-i18n="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy">PGN</button>
-            <button type="button" class="text-link" id="pgn-download" data-i18n="act.export">导出</button>
-            <button type="button" class="text-link" id="report-export" title="把复盘结论存成一张图" data-i18n-title="tip.reportExport" data-i18n="act.reportExport">导出复盘图</button>
-            <button type="button" class="text-link" id="slots-open" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots" data-i18n="act.slots">存档槽</button>
-            <button type="button" class="text-link" id="editor-open" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open" data-i18n="act.editor">编辑局面</button>
-            <button type="button" class="text-link" id="more-tools" aria-expanded="false" aria-controls="more-row" data-i18n="act.more">更多</button>
+            <button type="button" class="act-btn" id="pgn-copy" data-i18n="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy">PGN</button>
+            <button type="button" class="act-btn" id="pgn-download" data-i18n="act.export">导出</button>
+            <button type="button" class="act-btn" id="report-export" title="把复盘结论存成一张图" data-i18n-title="tip.reportExport" data-i18n="act.reportExport">导出复盘图</button>
+            <button type="button" class="act-btn" id="slots-open" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots" data-i18n="act.slots">存档槽</button>
+            <button type="button" class="act-btn" id="editor-open" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open" data-i18n="act.editor">编辑局面</button>
+            <button type="button" class="act-btn" id="more-tools" aria-expanded="false" aria-controls="more-row" data-i18n="act.more">更多</button>
           </div>
           <div class="link-row" id="more-row" hidden>
-            <button type="button" class="text-link" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n-title="tip.pgn.paste" data-i18n="act.paste">粘贴</button>
-            <button type="button" class="text-link" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n-title="tip.pgn.open" data-i18n="act.open">打开</button>
-            <button type="button" class="text-link" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.fen.copy">FEN</button>
-            <button type="button" class="text-link" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.fen.load" data-i18n="act.loadFen">载入 FEN</button>
+            <button type="button" class="act-btn" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n-title="tip.pgn.paste" data-i18n="act.paste">粘贴</button>
+            <button type="button" class="act-btn" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n-title="tip.pgn.open" data-i18n="act.open">打开</button>
+            <button type="button" class="act-btn" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.fen.copy">FEN</button>
+            <button type="button" class="act-btn" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.fen.load" data-i18n="act.loadFen">载入 FEN</button>
           </div>
         </div>
         <div class="act-group">
           <span class="act-k" data-i18n="act.groupGame">本局</span>
           <div class="link-row">
-            <button type="button" class="text-link" id="btn-offerdraw" data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.offerDraw">提和</button>
-            <button type="button" class="text-link" id="btn-claimdraw" title="三次重复或 50 回合无进展时可判和" data-i18n-title="tip.claimDraw" data-i18n="act.claimDraw">判和</button>
+            <button type="button" class="act-btn" id="btn-offerdraw" data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.offerDraw">提和</button>
+            <button type="button" class="act-btn" id="btn-claimdraw" title="三次重复或 50 回合无进展时可判和" data-i18n-title="tip.claimDraw" data-i18n="act.claimDraw">判和</button>
             <!-- Was the only gradient-filled button in the app, sitting over
                  the board — this UI's word for "the thing to press here" spent
                  on the one action you never want mid-game. It is a way for this
                  game to end, so it stands with the other three. -->
-            <button type="button" class="text-link" id="btn-new" title="新局 (N)" data-i18n-title="tip.newGame" data-i18n="chrome.new">新局</button>
-            <button type="button" class="text-link danger" id="btn-resign" title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
+            <button type="button" class="act-btn" id="btn-new" title="新局 (N)" data-i18n-title="tip.newGame" data-i18n="chrome.new">新局</button>
+            <button type="button" class="act-btn danger" id="btn-resign" title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
           </div>
         </div>
         <p class="hint" data-i18n="hint.analysis">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
@@ -495,6 +503,20 @@
       </div><!-- /pane-play -->
 
       <div class="side-pane" id="pane-record" role="tabpanel" aria-labelledby="tab-record" hidden>
+      <!-- What a new install used to open on: two grey sentences saying
+           nothing has happened yet, and fifteen 🔒 rows. Fifteen locks is not
+           an empty state, it is a wall with the score already 0/15 on it — and
+           the three sections under it are all "come back later" in three
+           different wordings.
+           This card is what stands there instead until the first thing is
+           recorded: what the page will hold, and three doors, each with the
+           badge it opens on it. The rows are built by renderRecordEntry() so
+           the badge names come from the achievement table rather than being
+           written out a second time in three languages. -->
+      <div class="rec-entry" id="record-empty" hidden>
+        <p class="rec-lead" data-i18n="rec.emptyLead">这一页记的是你下过的棋:战绩、每局的棋谱、十五个成就。现在还空着 —— 下面三件事,每件都开一个头。</p>
+        <div class="rec-doors" id="record-doors"></div>
+      </div>
       <section class="side-section" id="sec-stats">
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.stats">统计</h2>
@@ -504,7 +526,7 @@
           <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
           <!-- label is "全部 N 局": renderHistory() fills in both the count and
                the language, so the markup deliberately carries no text -->
-          <button type="button" class="text-link" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
+          <button type="button" class="act-btn" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
         </div>
         <div class="hist-body" id="hist-body"></div>
         <div class="side-h-row">
@@ -593,7 +615,7 @@
                placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" />
         <p class="hint" id="fen-error" role="status" aria-live="polite"></p>
         <div class="close-row split">
-          <button type="button" class="text-link" id="fen-from-clip" data-i18n="fen.fromClip">从剪贴板粘贴</button>
+          <button type="button" class="act-btn" id="fen-from-clip" data-i18n="fen.fromClip">从剪贴板粘贴</button>
           <span class="btn-pair">
             <button type="button" class="tool-btn" id="fen-cancel" data-i18n="act.cancel">取消</button>
             <button type="button" class="tool-btn primary" id="fen-load" data-i18n="act.load">载入</button>
