@@ -516,6 +516,183 @@ for (const [when, setup] of [
   await ctx.close();
 }
 
+// --- 3d2. no visible control is dead --------------------------------------
+// 3d asks whether a control is `disabled`. That is the honest half of the
+// question: a control can also be enabled, drawn, and do nothing at all — and
+// that failure is *worse*, because the disabled one at least looks unavailable.
+//
+// This is how 「答案」 was found. In 做题, once the puzzle is solved,
+// showPuzzleAnswer() returns immediately (`done`), but nobody stopped drawing
+// the button: pressing it changed the canvas by exactly 0 pixels and produced
+// no toast. Measured across seven states — 做题 solved / unsolved, 人机 at move
+// 0 / after two plies, 教学 lesson 1, 设置, 记录 — it was the only one, which
+// is why it is worth a guard rather than a habit: the rule already held
+// everywhere else and had one hole.
+//
+// Method: press every visible control, each in a FRESH page, and see whether
+// anything moved — the DOM under #app, the canvas, localStorage, or the toast.
+// A fresh page per control because clicking is not free of consequence and the
+// order would otherwise decide the answer.
+//
+// Three exclusions, each a real one rather than a convenience:
+//   · `visibility: hidden` slot-holders — the chrome and the replay bar hold
+//     their geometry with invisible buttons on purpose (see .slot-empty), and
+//     `offsetParent` is non-null for those. Reading them as visible is what
+//     the first version of this did, and it reported 悔棋 and three transport
+//     keys as dead.
+//   · the tab you are already on — selecting the view you are looking at is
+//     not a promise to change anything.
+//   · anything that needs the engine (提示): the vendored engine does not
+//     initialise in a headless page, so a dead 提示 here would be a fact about
+//     the harness, not about the app.
+{
+  const STATES = [
+    ["做题·解出后", { mode: "puzzle", tab: "play" }, async (page, sqClick) => {
+      await sqClick("a1"); await sqClick("a8");   // Ra8# — puzzle 1 is m1-backrank-r
+      await page.waitForTimeout(1200);
+    }],
+    ["双人·设置页", { mode: "pvp", tab: "setup" }, async (page) => {
+      await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
+      await page.waitForTimeout(300);
+    }],
+  ];
+  const ENGINE_BOUND = ["btn-hint"];
+  for (const [label, cfg, prep] of STATES) {
+    const fresh = async () => {
+      const { ctx, page } = await open("zh-CN", cfg.mode, cfg.tab);
+      const sqClick = async (sqr) => {
+        const pt = await page.evaluate((x) => {
+          const c = document.getElementById("board"), r = c.getBoundingClientRect();
+          return { x: r.left + (x.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+                   y: r.top + (8 - Number(x[1]) + 0.5) * (r.height / 8) };
+        }, sqr);
+        await page.mouse.click(pt.x, pt.y);
+        await page.waitForTimeout(240);
+      };
+      await prep(page, sqClick);
+      await page.waitForTimeout(300);
+      return { ctx, page };
+    };
+    const snapshot = (page) => page.evaluate(() => {
+      const hash = (str) => { let h = 7; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; return h; };
+      const c = document.getElementById("board");
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let ch = 7; for (let i = 0; i < d.length; i += 401) ch = (ch * 31 + d[i]) | 0;
+      const store = Object.keys(localStorage).sort().map((k) => k + "=" + localStorage.getItem(k)).join("\u0000");
+      const toast = document.getElementById("toast");
+      return [hash(document.getElementById("app").innerHTML), ch, hash(store), toast ? toast.textContent.trim() : ""].join("/");
+    });
+
+    // Wait for silence first, and wait for it properly. The toast lives inside
+    // #app and only loses its `show` class when it expires, so a snapshot taken
+    // while one is still on screen differs from the next one no matter what the
+    // button did — a false *negative*, because it makes every control look
+    // alive. Two versions of this section got that wrong before this one: the
+    // first took the snapshot straight after the setup, and the second waited
+    // for two equal samples 400ms apart, which converges happily in the middle
+    // of a toast that is about to expire. Solving a puzzle raises two of them,
+    // 1.6s apart, so the quiet has to be longer than that gap to be quiet.
+    const QUIET_MS = 2000;
+    const quiet = async (page) => {
+      let since = 0;
+      for (let i = 0; i < 40; i++) {
+        const showing = await page.evaluate(() => {
+          const t = document.getElementById("toast");
+          return !!t && t.classList.contains("show");
+        });
+        since = showing ? 0 : since + 300;
+        if (since >= QUIET_MS) return;
+        await page.waitForTimeout(300);
+      }
+    };
+    const { ctx: c0, page: p0 } = await fresh();
+    const ids = await p0.evaluate(() => [...document.querySelectorAll("#side button[id], .chrome button[id]")]
+      .filter((b) => b.offsetParent && !b.disabled && getComputedStyle(b).visibility === "visible")
+      .filter((b) => b.getAttribute("aria-selected") !== "true")
+      .map((b) => b.id));
+    await c0.close();
+    assert(ids.length >= 4, label + ":这个状态下数得到可以按的控件(" + ids.length + " 个)");
+
+    const dead = [];
+    for (const id of ids) {
+      if (ENGINE_BOUND.includes(id)) continue;
+      const { ctx, page } = await fresh();
+      // focus the button first: clicking it would otherwise also blur the
+      // canvas, and erasing the keyboard cursor is a canvas change worth
+      // exactly 3384 pixels that has nothing to do with the button
+      await page.evaluate((i) => document.getElementById(i).focus(), id);
+      await page.waitForTimeout(200);
+      await quiet(page);
+      const before = await snapshot(page);
+      await page.click("#" + id, { timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(800);
+      if (await snapshot(page) === before) dead.push(id);
+      await ctx.close();
+    }
+    assert(dead.length === 0,
+      label + ":每个画出来的控件按下去都真的做了点什么" + (dead.length ? " —— 什么也没做的:" + dead.join(", ") : ""));
+  }
+}
+
+// --- 3d3. 自动翻转 turns the board for the player, not for the reviewer ----
+// The switch says 「每步走完后棋盘转向走子方」 — after a move is *played*. But
+// syncAutoFlip() was called from setViewIndex() as well, so every ‹ and › in a
+// pvp game swapped the board end for end: measured on a three-ply game, 黑 →
+// 黑 → 黑 became 黑 → 白 → 黑 stepping back, which is 100% of the steps,
+// because the sides alternate. Reviewing a 40-move game meant eighty flips —
+// and eighty writes of the settings file, because the flip saves itself so a
+// reload mid-game faces the right player.
+//
+// Both halves are asserted, because the fix must not cost the feature: while
+// the game is live the board still turns after every move, and ● still brings
+// it back to whoever is on move.
+{
+  // through the switch itself, which is also a control no test had ever pressed
+  const { ctx, page } = await open("zh-CN", "pvp", "setup");
+  await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
+  await page.waitForTimeout(250);
+  await page.click("#opt-autoflip");
+  await page.waitForTimeout(300);
+  assert(await page.evaluate(() => document.getElementById("opt-autoflip").getAttribute("aria-pressed")) === "true",
+    "自动翻转:开关按下去真的开了");
+  await page.click("#tab-play");
+  await page.waitForTimeout(300);
+  const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
+    .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const play = async (sqr) => {
+    const flipped = (await view()) === "b";
+    const pt = await page.evaluate(([x, fl]) => {
+      const c = document.getElementById("board"), r = c.getBoundingClientRect();
+      let f = x.charCodeAt(0) - 97, rk = 8 - Number(x[1]);
+      if (fl) { f = 7 - f; rk = 7 - rk; }
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, [sqr, flipped]);
+    await page.mouse.click(pt.x, pt.y);
+    await page.waitForTimeout(260);
+  };
+  await play("e2"); await play("e4");
+  assert(await view() === "b", "自动翻转:白走完一手,棋盘转向黑方");
+  await play("e7"); await play("e5");
+  assert(await view() === "w", "……黑走完一手,再转回来");
+  await play("g1"); await play("f3");
+  assert(await view() === "b", "……白再走一手,又转过去(实战期间照常翻)");
+
+  const writes = await page.evaluate(() => {
+    let n = 0; const orig = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (...a) { n++; return orig.apply(this, a); };
+    window.__writes = () => n; return 0;
+  });
+  await page.click("#rep-prev"); await page.waitForTimeout(400);
+  assert(await view() === "b", "复盘退一手,棋盘不动 —— 复盘不是对局");
+  await page.click("#rep-prev"); await page.waitForTimeout(400);
+  assert(await view() === "b", "……再退一手,还是不动");
+  assert(await page.evaluate(() => window.__writes()) === 0,
+    "……而且这两步没有写设置(此前每翻一次就存一次盘)");
+  await page.click("#rep-live"); await page.waitForTimeout(500);
+  assert(await view() === "b", "按 ● 回到实战位置,棋盘仍朝着该走子的一方");
+  await ctx.close();
+}
+
 // --- 3h. nothing is truncated, in any language, on any theme --------------
 // P4.7, as a gate rather than a review: after a remake, the thing that breaks
 // first is a label that fits in the language it was designed in. A clipped

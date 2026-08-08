@@ -2306,6 +2306,15 @@ import { createStore } from "./store.js";
       playOn.hidden = !canPlayOn;
       playOn.classList.toggle("primary", canPlayOn);
     }
+    // 「答案」 asks the app to draw the right move for the stage you are on.
+    // Once the puzzle is solved there is no stage left, and showPuzzleAnswer()
+    // says so itself — it returns on `done`. It just kept being drawn: press
+    // it after solving and the canvas changed by exactly 0 pixels and no toast
+    // appeared. That is the promise P3 exists to stop the interface making,
+    // and the button beside it (接实战) has been keeping it since it was
+    // written. Same treatment.
+    const answer = document.getElementById("puzzle-answer");
+    if (answer) answer.hidden = !!store.session.puzzle.done;
     const next = document.getElementById("puzzle-next");
     if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
     const listEl = document.getElementById("puzzle-list");
@@ -4130,6 +4139,17 @@ import { createStore } from "./store.js";
    */
   function syncAutoFlip() {
     if (!store.ui.autoFlipPvp || store.session.mode !== "pvp") return false;
+    // Only where the game actually is. The setting says 「每步走完后棋盘转向
+    // 走子方」 — after a move is *played* — and reviewing is not playing:
+    // nobody is sitting on the other side of the table waiting for the board
+    // to be turned round. setViewIndex() called this unconditionally, so every
+    // ‹ and › swapped the whole board end for end. Measured on a two-ply pvp
+    // game: 白 → 黑 → 白 stepping back, which is 100% of the steps, because
+    // the sides alternate. Reviewing a 40-move game meant eighty flips — and
+    // eighty writes of the settings file, since this saves whenever it turns.
+    // ● (回到最新) goes through setViewIndex too, so returning to the live
+    // position still faces whoever is on move.
+    if (!isLive()) return false;
     const want = viewGame().turn() === "b";
     if (store.game.flipped === want) return false;
     store.game.flipped = want;
