@@ -482,9 +482,28 @@ for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
 //
 // Confirmation buttons are the stated exception — a destructive action asking
 // "are you sure" may hold its confirm until the box is read.
-for (const [when, setup] of [
-  ["开局前", async () => {}],
-  ["进行中", async (page) => {
+//
+// Four modes, not one. This section spent seven versions looking only at 人机,
+// and the lesson row only exists in 教学 — so 「去人机·新手」 on lesson 72 sat
+// there greyed at opacity .35 the whole time, which is the exact shape of the
+// thing this section was written to forbid. Found by asking the same question
+// in all four modes; it was the only one in eight states.
+for (const [when, mode, setup] of [
+  ["人机·开局前", "ai", async () => {}],
+  ["双人·开局前", "pvp", async () => {}],
+  ["做题·第 1 题", "puzzle", async () => {}],
+  ["教学·第 1 课", "learn", async () => {}],
+  // The last lesson, reached the way anyone would reach it — from the list —
+  // without having finished it. 「去人机·新手」 is graduation, so it is right
+  // that it is not offered here; being *drawn* and not offered is the defect.
+  ["教学·最后一课(没做过)", "learn", async (page) => {
+    await page.evaluate(() => {
+      const items = [...document.querySelectorAll("#lesson-list .lesson-item")];
+      items[items.length - 1].click();
+    });
+    await page.waitForTimeout(800);
+  }],
+  ["人机·进行中", "ai", async (page) => {
     // two plies, played through the board like a person would
     for (const sq of ["e2", "e4", "e7", "e5"]) {
       const c = await page.evaluate((s2) => {
@@ -497,7 +516,7 @@ for (const [when, setup] of [
     }
   }],
 ]) {
-  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const { ctx, page } = await open("zh-CN", mode, "play");
   await setup(page);
   await page.waitForTimeout(400);
   const bad = await page.evaluate(() => {

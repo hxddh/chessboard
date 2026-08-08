@@ -29,6 +29,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+// the app's own rules engine, for reading an export back the way a reader would
+import { Chess } from "../src/web/js/chess.js";
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 const server = http.createServer((req, res) => {
@@ -457,6 +459,154 @@ const PLACEMENT = STUDY.split(" ")[0];
     assert(/无法解析|PGN/.test(after.toast) && after.plies === before,
       `喂它${what}:说得出「读不懂」,而且没动现在这局(「${after.toast.slice(0, 16)}」,${before} → ${after.plies} 着)`);
   }
+  assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 6. the way out: 复制棋谱 / FEN, and whether they can be read back ------
+//
+// Every other section here is about data coming IN — a FEN loaded, a save
+// restored, a PGN pasted. This is the only way data leaves the app, and until
+// now nothing drove it: 复制棋谱 and FEN were two of the twenty-three controls
+// that no test had ever pressed. An export nobody reads back is a claim, and a
+// wrong one is silent — you find out in the other program, later.
+//
+// So the check is a round trip through the same chess.js the app ships: the
+// copied movetext must replay to the same position the app says it is in, and
+// the copied FEN must be that position written out.
+//
+// The clipboard is the fake native bridge again, for the reasons section 5
+// gives: it is the path the packaged app takes, and `permissions:
+// ["clipboard-read"]` is Chromium-only.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", timeControl: "3+2" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__writes = [];
+    window.zero = {
+      invoke: () => Promise.resolve(true), on: () => () => {}, off: () => {},
+      platform: { supports: () => Promise.resolve(false) },
+      clipboard: {
+        readText: () => Promise.resolve(""),
+        writeText: (t) => { window.__writes.push(String(t)); return Promise.resolve(true); },
+      },
+    };
+  });
+  const { page, errs } = await open(ctx);
+  const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
+    .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const play = async (sqr) => {
+    const flipped = (await view()) === "b";
+    const pt = await page.evaluate(([x, fl]) => {
+      const c = document.getElementById("board"), r = c.getBoundingClientRect();
+      let f = x.charCodeAt(0) - 97, rk = 8 - Number(x[1]);
+      if (fl) { f = 7 - f; rk = 7 - rk; }
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, [sqr, flipped]);
+    await page.mouse.click(pt.x, pt.y);
+    await page.waitForTimeout(220);
+  };
+  // A game worth exporting: a castle and a capture, not four quiet pawn moves.
+  const SQUARES = ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6", "f1", "c4",
+    "f8", "c5", "e1", "g1", "g8", "f6", "f3", "e5", "c6", "e5"];
+  for (const sq of SQUARES) await play(sq);
+  await page.waitForTimeout(400);
+  const PLAYED = "e4 e5 Nf3 Nc6 Bc4 Bc5 O-O Nf6 Nxe5 Nxe5";
+
+  await page.click("#pgn-copy");
+  await page.waitForTimeout(500);
+  if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) {
+    await page.click("#more-tools");
+    await page.waitForTimeout(300);
+  }
+  await page.click("#fen-copy");
+  await page.waitForTimeout(500);
+  const writes = await page.evaluate(() => window.__writes.slice());
+  assert(writes.length === 2, `两次复制各交给桥一次(${writes.length})`);
+  const pgn = writes[0] || "", fen = writes[1] || "";
+
+  // Read it back the way a reader would — with the same rules engine, outside
+  // the app. This is the half that catches a movetext that is merely
+  // plausible: it has to replay, and it has to land where the app says it is.
+  const g = new Chess();
+  const parsed = g.load_pgn(pgn);
+  assert(parsed, "复制出去的棋谱,拿另一份引擎读得回来");
+  assert(g.history().join(" ") === PLAYED, `……而且是刚才下的那十着(「${g.history().join(" ")}」)`);
+  assert(g.fen() === fen, `……回放到的局面,正是「FEN」复制出去的那一个\n    棋谱回放 ${g.fen()}\n    FEN 复制 ${fen}`);
+
+  // …and the other half: hand it back to the app itself, which is what
+  // carrying a game between two copies of this app actually does.
+  await page.evaluate((text) => { window.__clip = text; window.zero.clipboard.readText = () => Promise.resolve(text); }, pgn);
+  if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+  await page.click("#pgn-paste");
+  await page.waitForTimeout(800);
+  if (await page.isVisible("#confirm-modal.show").catch(() => false)) {
+    await page.click("#confirm-ok"); await page.waitForTimeout(600);
+  }
+  const backIn = await shownFen(page);
+  assert(backIn === fen, `……应用自己也读得回来,落在同一个局面\n    导入后 ${backIn}\n    导出时 ${fen}`);
+  // the tags a reader needs, and the clock among them
+  for (const tag of ["Event", "Site", "Date", "White", "Black", "Result", "TimeControl"]) {
+    assert(new RegExp('\\[' + tag + ' "').test(pgn), `棋谱带着 [${tag}] 标签`);
+  }
+  assert(/\[TimeControl "180\+2"\]/.test(pgn), "……而且棋钟写的是这局真的用的 3+2(180+2)");
+  assert(/1\. e4 e5/.test(pgn) && /O-O/.test(pgn) && /Nxe5/.test(pgn),
+    "……走子文本里易位和吃子都在");
+  assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 7. 协议和棋 survives the restart ---------------------------------------
+// 「提和」 was another control no test had pressed. A finished game whose
+// ending is not saved comes back as a game still in progress — the same shape
+// as the 1.21.1 defect where a zero-move study position came back as the
+// standard array. resigned and drawClaimed ride in the same payload field.
+{
+  const ctx = await freshContext();
+  const { page, errs } = await open(ctx);
+  const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
+    .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const play = async (sqr) => {
+    const flipped = (await view()) === "b";
+    const pt = await page.evaluate(([x, fl]) => {
+      const c = document.getElementById("board"), r = c.getBoundingClientRect();
+      let f = x.charCodeAt(0) - 97, rk = 8 - Number(x[1]);
+      if (fl) { f = 7 - f; rk = 7 - rk; }
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, [sqr, flipped]);
+    await page.mouse.click(pt.x, pt.y);
+    await page.waitForTimeout(220);
+  };
+  for (const sq of ["e2", "e4", "e7", "e5"]) await play(sq);
+  await page.waitForTimeout(300);
+  await page.click("#btn-offerdraw");
+  await page.waitForTimeout(600);
+  const asked = await page.evaluate(() => (document.getElementById("confirm-message") || {}).textContent || "");
+  assert(/和棋/.test(asked), `双人提和会先问一句(「${asked.slice(0, 20)}」)`);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(800);
+  const ended = await page.evaluate(() => ({
+    status: document.getElementById("status").textContent.trim(),
+    save: JSON.parse(localStorage.getItem("chess.v1.save") || "null"),
+  }));
+  assert(/和棋/.test(ended.status), `答应之后这局就是和棋(「${ended.status}」)`);
+  assert(ended.save && ended.save.drawAgreed === true, "……而且存档里记着它是协议和的");
+
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await page.click("#pick-cancel").catch(() => {});
+  const back = await page.evaluate(() => ({
+    status: document.getElementById("status").textContent.trim(),
+    rows: [...document.querySelectorAll(".mlrow")].length,
+  }));
+  assert(/和棋/.test(back.status), `重开之后它还是和棋,不是「白方走子」(「${back.status}」)`);
+  const before = back.rows;
+  await play("g1"); await play("f3");
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => [...document.querySelectorAll(".mlrow")].length);
+  assert(after === before, `……棋盘也是冻住的,不能接着下(${before} → ${after} 行)`);
   assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }

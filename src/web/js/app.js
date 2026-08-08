@@ -1572,7 +1572,16 @@ import { createStore } from "./store.js";
       // found the graduation button greyed out — the one button the whole
       // teaching track exists to reach. The saved progress counts too.
       const everDone = !!store.session.learnState.done[LESSONS[store.session.learn.li].id];
-      next.disabled = isLast && !store.session.learn.done && !everDone;
+      // Not drawn rather than greyed. The gate itself is right — 「去人机·
+      // 新手」 is graduation, and graduating out of the last lesson before
+      // finishing it is not a thing to offer — but P3 says an action that does
+      // not apply is absent, not disabled, and this was the app's last greyed
+      // control: measured across eight states (人机 对局/设置/记录, 双人, 教学
+      // 第 1 课, 教学 第 72 课, 做题 未解/已解) it was the only one, and only
+      // because 3d has always looked at 人机 and the lesson row only exists in
+      // 教学. Openly disabled for so long precisely because nothing looked.
+      next.hidden = isLast && !store.session.learn.done && !everDone;
+      next.disabled = false;
       next.classList.toggle("primary", store.session.learn.done || (isLast && everDone));
     }
     const list = document.getElementById("lesson-list");
