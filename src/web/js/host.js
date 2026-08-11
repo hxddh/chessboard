@@ -192,6 +192,34 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
+   * The platform's own alert.
+   *
+   * Only worth reaching for where the in-page box is genuinely not enough:
+   * something irreversible. A `.modal-bg` is a div — it can be scrolled past,
+   * it shares the window with the thing it is asking about, and it looks like
+   * the rest of the app, which is exactly wrong for the one question whose
+   * answer cannot be taken back. A system alert is the platform's word for
+   * "stop and read this", and it is the same word every other app uses.
+   *
+   * Returns "primary" / "secondary" / "tertiary", or null when this build has
+   * no such dialog — null means *fall back*, not "cancelled". Getting that
+   * wrong would turn a missing capability into a silently ignored button.
+   *
+   * @param {{style?: string, title?: string, message?: string,
+   *          primaryButton?: string, secondaryButton?: string,
+   *          tertiaryButton?: string}} opts
+   * @returns {Promise<string|null>}
+   */
+  async function showMessage(opts) {
+    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.showMessage) return null;
+    if (!(await supports("dialogs", false))) return null;
+    try {
+      const answer = await global.zero.dialogs.showMessage(opts || {});
+      return typeof answer === "string" ? answer : null;
+    } catch (_) { return null; }
+  }
+
+  /**
    * Remember a document the player opened, for the Dock menu / jump list.
    *
    * Best-effort by design: a recent-documents list is a courtesy, and a
@@ -296,6 +324,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     NO_FILE_DIALOG,
     saveFileDialog,
     openFileDialog,
+    showMessage,
     revealPath,
     supports,
     addRecentDocument,

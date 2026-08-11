@@ -559,11 +559,37 @@ import { createStore } from "./store.js";
   /**
    * In-app confirm. Resolves true (ok) / false (cancel), and "alt" when the
    * optional third button (buttons.alt) was offered and chosen.
+   *
+   * `buttons.danger` sends the question to the platform's own alert instead,
+   * when this build has one. Three questions carry it — 清除全部存档,
+   * 清除统计与历史, 重置课程进度 — and they are the three whose answer cannot
+   * be taken back: no undo, no autosave behind them, nothing to restore from.
+   * Everything else stays in the page, because a system alert for 「提和?」
+   * would be the platform shouting about an ordinary move.
+   *
+   * A build with no such dialog falls through to the same box as before. The
+   * fallback is not an error path — every platform feature here is optional
+   * by construction, and `Host.showMessage` answering null is how it says so.
    */
-  function confirmNative(message, title, buttons) {
+  async function confirmNative(message, title, buttons) {
     const okLabel = (buttons && buttons.ok) || t("act.ok");
     const cancelLabel = (buttons && buttons.cancel) || t("act.cancel");
     const altLabel = buttons && buttons.alt;
+    if (buttons && buttons.danger) {
+      const answer = await Host.showMessage({
+        style: "critical",
+        title: title || t("aria.confirm"),
+        message: title || t("aria.confirm"),
+        informativeText: message,
+        primaryButton: okLabel,
+        secondaryButton: cancelLabel,
+        tertiaryButton: altLabel || undefined,
+      });
+      if (answer === "primary") return true;
+      if (answer === "tertiary") return altLabel ? "alt" : false;
+      if (answer === "secondary") return false;
+      // null: no native dialog on this build — ask in the page instead
+    }
     const modal = document.getElementById("confirm-modal");
     const titleEl = document.getElementById("confirm-title");
     const msgEl = document.getElementById("confirm-message");
@@ -5868,7 +5894,7 @@ import { createStore } from "./store.js";
   }
   document.getElementById("stats-clear").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearStats"), t("dlg.clearStatsTitle"),
-      { ok: t("act.clear"), cancel: t("act.cancel") }))) return;
+      { ok: t("act.clear"), cancel: t("act.cancel"), danger: true }))) return;
     Persist.remove("stats");
     renderStats();
     renderAchievements();
@@ -5934,24 +5960,81 @@ import { createStore } from "./store.js";
      mode, and the sheet is rendered fresh each time it opens. */
   const ANY = ["ai", "pvp", "learn", "puzzle"];
   const PLAY = ["ai", "pvp"];
+  /* `cmd` is the app.zon menu command that does this row's job in this row's
+     modes. It carries two things at once, and that is the point:
+
+       — the sheet draws the accelerator next to the letter, so the eight
+         shortcuts the menu bar has always offered stop being invisible to the
+         one screen whose title is 「快捷键」;
+       — and the native command is gated by it. Which door you came through
+         must not change what the app does, and it did: measured on 2.2.2,
+         ⌘N from inside 做题 put 「开始新局将清空当前对局」 over the puzzle
+         and threw the game away on OK, while the letter N there is 下一题 and
+         never touches it. ⌘F flipped a lesson board that F leaves alone, and
+         flipped it through an open dialog, where every letter key stops.
+
+     So the modes live in one table and both doors read it. A command with no
+     row for the current mode does not run — the same answer its letter gives. */
   const KEY_HELP = [
-    { keys: ["P"], k: "keys.panel", in: ANY },
-    { keys: ["N"], k: "keys.new", in: PLAY },
+    { keys: ["P"], k: "keys.panel", in: ANY, cmd: ["view.panel"] },
+    { keys: ["N"], k: "keys.new", in: PLAY, cmd: ["game.new"] },
     { keys: ["N"], k: "keys.next", in: ["puzzle"] },
     { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },
-    { keys: ["Z"], k: "keys.undo", in: ["ai", "pvp", "learn"] },
-    { keys: ["H"], k: "keys.hint", in: PLAY },
-    { keys: ["H"], k: "keys.lessonHint", in: ["learn"] },
-    { keys: ["H"], k: "keys.answer", in: ["puzzle"] },
-    { keys: ["F"], k: "keys.flip", in: PLAY },
-    { keys: ["←", "→"], k: "keys.step", in: PLAY },
+    { keys: ["Z"], k: "keys.undo", in: ["ai", "pvp", "learn"], cmd: ["game.undo"] },
+    { keys: ["H"], k: "keys.hint", in: PLAY, cmd: ["game.hint"] },
+    { keys: ["H"], k: "keys.lessonHint", in: ["learn"], cmd: ["game.hint"] },
+    { keys: ["H"], k: "keys.answer", in: ["puzzle"], cmd: ["game.hint"] },
+    { keys: ["F"], k: "keys.flip", in: PLAY, cmd: ["game.flip"] },
+    { keys: ["←", "→"], k: "keys.step", in: PLAY, cmd: ["view.prev", "view.next"] },
     { keys: ["Home", "End"], k: "keys.ends", in: PLAY },
     { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board", in: ANY },
     { keys: ["Q", "R", "B", "N"], k: "keys.promo", in: ANY },
     { keys: ["Tab"], k: "keys.tab", in: ANY },
     { keys: ["Esc"], k: "keys.esc", in: ANY },
-    { keys: ["?"], k: "keys.help", in: ANY },
+    { keys: ["?"], k: "keys.help", in: ANY, cmd: ["help.keys"] },
   ];
+
+  /**
+   * The accelerators app.zon declares, spelled for a reader.
+   *
+   * A copy, because the page cannot read app.zon — so `scripts/test-chess.mjs`
+   * holds the two to being the same list in both directions: an accelerator
+   * here that the manifest does not declare, or a menu item there that never
+   * reaches this table, fails the build. That check is the whole reason a
+   * second copy is allowed to exist at all.
+   *
+   * ⌘ or Ctrl is not a preference: "primary" IS ⌘ on macOS and Ctrl on
+   * Windows, and the app ships on both, so the sheet has to say which machine
+   * it is on.
+   */
+  const MAC = /mac|iphone|ipad/i.test((navigator.platform || "") + " " + (navigator.userAgent || ""));
+  const MOD = MAC ? { primary: "⌘", shift: "⇧" } : { primary: "Ctrl+", shift: "Shift+" };
+  const MENU_ACCEL = {
+    "game.new": { key: "N", mods: ["primary"] },
+    "game.undo": { key: "Z", mods: ["primary"] },
+    "game.hint": { key: "H", mods: ["primary", "shift"] },
+    "game.flip": { key: "F", mods: ["primary"] },
+    "view.panel": { key: "\\", mods: ["primary"] },
+    "view.prev": { key: "[", mods: ["primary"] },
+    "view.next": { key: "]", mods: ["primary"] },
+    "help.keys": { key: "/", mods: ["primary"] },
+  };
+  const accelText = (id) => {
+    const a = MENU_ACCEL[id];
+    if (!a) return "";
+    return (a.mods.includes("primary") ? MOD.primary : "") +
+           (a.mods.includes("shift") ? MOD.shift : "") + a.key;
+  };
+
+  /** Which modes a native command is the right answer in — read off KEY_HELP. */
+  function commandModes(id) {
+    const modes = new Set();
+    for (const row of KEY_HELP) {
+      if (row.cmd && row.cmd.includes(id)) for (const m of row.in) modes.add(m);
+    }
+    return modes;
+  }
+
   const keysModal = document.getElementById("keys-modal");
   function renderKeyHelp() {
     const list = document.getElementById("keys-list");
@@ -5963,6 +6046,17 @@ import { createStore } from "./store.js";
       for (const key of row.keys) {
         const kbd = document.createElement("kbd");
         kbd.textContent = key;
+        dt.appendChild(kbd);
+      }
+      // …and the menu's way of saying the same thing. Same action, same row:
+      // the accelerator is not a different shortcut, it is the one the menu
+      // bar has been offering since 1.10 to a sheet that never mentioned it.
+      for (const id of row.cmd || []) {
+        const text = accelText(id);
+        if (!text) continue;
+        const kbd = document.createElement("kbd");
+        kbd.className = "accel";
+        kbd.textContent = text;
         dt.appendChild(kbd);
       }
       const dd = document.createElement("dd");
@@ -5988,6 +6082,22 @@ import { createStore } from "./store.js";
    * The menu is the desktop-shaped half of the same actions the letter keys
    * already do; both end up here so there is one implementation and the two
    * can never drift.
+   *
+   * That paragraph was true of the *actions* and false of everything around
+   * them. The keydown handler gates on two things before it reaches any of
+   * these — a dialog in front of the game, and the mode you are in — and this
+   * map was called straight from the shortcut event, past both. Measured:
+   *
+   *   ⌘N  in 做题 / 教学   asked 「开始新局将清空当前对局」 over the trainer
+   *                        and deleted the main game on OK. The letter N is
+   *                        下一题 there and never touches it.
+   *   ⌘F  in 做题 / 教学   flipped an authored board. F does nothing there.
+   *   ⌘F  with the 快捷键 sheet open — flipped the board behind it. Every
+   *                        letter key stops at `if (dialogOpen()) return`.
+   *
+   * A shortcut you reach from the menu bar being able to throw away a game
+   * that the same shortcut on the keyboard refuses to touch is not a
+   * difference between two doors; it is one door that is wrong.
    */
   const NATIVE_COMMANDS = {
     "game.new": () => requestNewGame(),
@@ -5999,6 +6109,24 @@ import { createStore } from "./store.js";
     "view.next": () => setViewIndex(store.game.viewIndex + 1),
     "help.keys": () => openKeyHelp(),
   };
+  /**
+   * The gate the letter keys pass through, in front of the menu as well.
+   *
+   * `help.keys` is the one command that is *about* a dialog rather than
+   * behind one, so it mirrors what "?" does: it closes the sheet when the
+   * sheet is what is up, and stays out of the way of anything else.
+   */
+  function runNativeCommand(id) {
+    if (!NATIVE_COMMANDS[id]) return;
+    if (id === "help.keys") {
+      if (keysModal && keysModal.classList.contains("show")) closeKeyHelp();
+      else if (!dialogOpen()) openKeyHelp();
+      return;
+    }
+    if (dialogOpen()) return;
+    if (!commandModes(id).has(store.session.mode)) return;
+    NATIVE_COMMANDS[id]();
+  }
   Host.onAppLifecycle({
     activate: () => { store.ui.appForeground = true; syncClockTimer(); renderClocks(); },
     deactivate: () => { store.ui.appForeground = false; saveGame(); syncClockTimer(); },
@@ -6008,8 +6136,7 @@ import { createStore } from "./store.js";
         const d = typeof detail === "string" ? JSON.parse(detail) : detail;
         id = d && (d.command || d.id);
       } catch (_) { id = null; }
-      const run = id && NATIVE_COMMANDS[id];
-      if (run) run();
+      if (id) runNativeCommand(id);
     },
   });
 
@@ -6059,7 +6186,7 @@ import { createStore } from "./store.js";
   };
   document.getElementById("learn-reset").onclick = async () => {
     if (!(await confirmNative(t("dlg.resetLearn"), t("dlg.resetLearnTitle"),
-      { ok: t("act.reset"), cancel: t("act.cancel") }))) return;
+      { ok: t("act.reset"), cancel: t("act.cancel"), danger: true }))) return;
     store.session.learnState = { v: 1, done: {}, last: 0 };
     saveLearnState();
     if (store.session.learn) startLesson(0);
@@ -6214,7 +6341,7 @@ import { createStore } from "./store.js";
   };
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
-      { ok: t("dlg.clear"), cancel: t("act.cancel") }))) return;
+      { ok: t("dlg.clear"), cancel: t("act.cancel"), danger: true }))) return;
     // Everything this app stored, from persist.js's key list — not the one key
     // this button used to remove and not the eight somebody had to remember.
     // 缺陷 33.

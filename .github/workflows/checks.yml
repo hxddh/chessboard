@@ -67,10 +67,21 @@ jobs:
         run: npm ci
       # Pinned. An unpinned install is how the same commit comes out different
       # on different days.
+      #
+      # Pinned is not the same as frozen, and for eight months it was: the pin
+      # sat at 1.49.1 while the engines moved on. That is fine for Chromium —
+      # WebView2 on a Windows machine updates itself and is roughly current
+      # either way — and it is not fine for WebKit, which is the *whole* macOS
+      # half of this gate. WKWebView is whatever the player's macOS ships, and
+      # 1.49.1's WebKit is nearly two years behind that. A regression that
+      # appears in the WebKit a real user has and not in the one this gate
+      # runs is invisible here, which is the one failure mode a two-engine
+      # gate exists to prevent. 1.62.1 is the current release; the pin should
+      # be walked forward like this deliberately, not left to rot.
       - name: install playwright + ${{ matrix.engine }}
         run: |
-          npm install --no-save playwright@1.49.1
-          npx --yes playwright@1.49.1 install --with-deps ${{ matrix.engine }}
+          npm install --no-save playwright@1.62.1
+          npx --yes playwright@1.62.1 install --with-deps ${{ matrix.engine }}
       - name: resolve the browser Playwright just installed
         run: |
           node -e "
