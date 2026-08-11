@@ -1255,6 +1255,63 @@ for (const lang of CONTENT_LANGS) {
   assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
     "the host bridge forwards the shortcut event");
   assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");
+
+  // The shortcut sheet is the only screen that tells anyone what the keyboard
+  // does, and for eight releases it did not mention a single one of the eight
+  // accelerators the menu bar was offering. It does now, from MENU_ACCEL —
+  // which is a *copy* of app.zon, because the page cannot read app.zon. So
+  // hold the copy to the original in both directions: an accelerator the
+  // manifest never declared is a lie printed on the help screen, and a menu
+  // item missing from the table is a shortcut the help screen still hides.
+  {
+    const DISPLAY = { n: "N", z: "Z", h: "H", f: "F", "\\\\": "\\", "[": "[", "]": "]", "/": "/" };
+    const declared = new Map();
+    for (const m of zon.matchAll(/\.command = "([a-z.]+)", \.key = "([^"]+)", \.modifiers = \.\{([^}]*)\}/g)) {
+      declared.set(m[1], {
+        key: DISPLAY[m[2]] || m[2].toUpperCase(),
+        mods: [...m[3].matchAll(/"([a-z]+)"/g)].map((x) => x[1]).sort().join("+"),
+      });
+    }
+    assert(declared.size === commands.length,
+      "every menu item declares a key (" + declared.size + "/" + commands.length + ")");
+    const table = /const MENU_ACCEL = \{([\s\S]*?)\n  \};/.exec(appSrc);
+    assert(table, "app.js carries the accelerator table the sheet prints");
+    const listed = new Map();
+    for (const m of table[1].matchAll(/"([a-z.]+)": \{ key: "([^"]+)", mods: \[([^\]]*)\] \}/g)) {
+      listed.set(m[1], {
+        key: m[2].replace(/\\\\/g, "\\"),
+        mods: [...m[3].matchAll(/"([a-z]+)"/g)].map((x) => x[1]).sort().join("+"),
+      });
+    }
+    const wrong = [];
+    for (const [id, want] of declared) {
+      const got = listed.get(id);
+      if (!got) wrong.push(id + ": 表里没有");
+      else if (got.key !== want.key || got.mods !== want.mods)
+        wrong.push(id + ": app.zon 是 " + want.mods + "+" + want.key + "，表里写的是 " + got.mods + "+" + got.key);
+    }
+    for (const id of listed.keys()) if (!declared.has(id)) wrong.push(id + ": 表里有，app.zon 里没有");
+    assert(wrong.length === 0,
+      "the sheet's accelerators are app.zon's, exactly" + (wrong.length ? " — " + wrong.join("；") : ""));
+
+    // …and the sheet has to actually print them: a table nothing reads is the
+    // 1.18 close_policy shape all over again.
+    assert(/kbd\.className = "accel"/.test(appSrc), "renderKeyHelp draws the accelerator");
+    assert(/kbd\.accel\s*\{/.test(fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8")),
+      "…and it is styled");
+
+    // Both doors, one gate. Every command the menu can fire has to be reachable
+    // from KEY_HELP, because KEY_HELP is what says which modes it applies in —
+    // a command with no row would be gated to nothing and silently dead.
+    const help = /const KEY_HELP = \[([\s\S]*?)\n  \];/.exec(appSrc);
+    assert(help, "app.js carries the key sheet table");
+    const ungated = [...declared.keys()].filter((c) => !help[1].includes('"' + c + '"'));
+    assert(ungated.length === 0,
+      "every menu command has a row saying which modes it belongs to" +
+      (ungated.length ? " — 没有: " + ungated.join(", ") : ""));
+    assert(/if \(dialogOpen\(\)\) return;\n\s*if \(!commandModes\(id\)\.has\(store\.session\.mode\)\) return;/.test(appSrc),
+      "the native command passes the dialog gate and the mode gate before it runs");
+  }
 }
 
 // The design system. Every one of these numbers was measured on 1.11 and every

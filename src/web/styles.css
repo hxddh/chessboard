@@ -2137,3 +2137,12 @@ kbd {
   border-bottom-width: 2px;
   border-radius: var(--radius-sm);
 }
+/* The menu bar's way of saying the same thing, on the same row. Quieter than
+   the letter, because the letter is the shorter way and the one this app has
+   always taught first — but present, which for eight releases it was not. */
+kbd.accel {
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+  border-bottom-width: 1px;
+}

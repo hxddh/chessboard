@@ -20,7 +20,7 @@ on:
         # upstream, not upstream breaking. Fixed in build.zig (the file plus
         # d2d1/dwrite, matching the SDK's own list), so the pin now moves to
         # 0.8.1. It stays a pin because everything else this gate depends on
-        # is pinned too (playwright 1.49.1, zig 0.16.0): the SDK was the one
+        # is pinned too (playwright 1.62.1, zig 0.16.0): the SDK was the one
         # dependency that could change under a release with nobody changing
         # anything. Raise it deliberately, with a run that proves both
         # platforms still build.
@@ -80,8 +80,8 @@ jobs:
         env:
           E2E_REQUIRED: "1"
         run: |
-          npm install --no-save playwright@1.49.1
-          npx --yes playwright@1.49.1 install --with-deps chromium webkit
+          npm install --no-save playwright@1.62.1
+          npx --yes playwright@1.62.1 install --with-deps chromium webkit
           for engine in chromium webkit; do
             echo "::group::$engine"
             path="$(node -e "console.log(require('playwright')['$engine'].executablePath())")"

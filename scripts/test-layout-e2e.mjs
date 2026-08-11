@@ -2167,6 +2167,226 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
   await ctx.close();
 }
 
+// --- 4h. the native menu obeys the gates the keyboard obeys ---------------
+//
+// The menu bar is the other half of the same shortcuts, and it was reaching
+// the actions past both gates the letter keys stop at. Measured on 2.2.2, in
+// this harness, with the bridge faked far enough that host.js believes it:
+//
+//   ⌘N inside 做题 / 教学  →  「开始新局将清空当前对局」 over the trainer,
+//                             and the main game gone on OK. N there is 下一题.
+//   ⌘F inside 做题 / 教学  →  an authored board flipped. F there does nothing.
+//   ⌘F with a dialog up    →  the board behind it flipped.
+//
+// Every case below is one of those, plus the other direction — the commands
+// still have to work where they always did, or "fixing" this would just be
+// taking the menu away.
+{
+  /* The SDK injects `zero`; nothing in a headless page does. host.js only
+     asks whether it is an object, and the one thing this section needs from
+     it is the shortcut handler the app registers through `zero.on`. */
+  const openBridged = async (mode) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript((m) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: m, langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      window.__handlers = {};
+      window.zero = {
+        on: (n, cb) => { (window.__handlers[n] = window.__handlers[n] || []).push(cb); return () => {}; },
+        invoke: async () => ({}),
+        platform: { supports: async () => false },
+      };
+      window.__fire = (command) => {
+        for (const cb of window.__handlers.shortcut || []) cb({ command, id: command, windowId: 1 });
+      };
+    }, mode);
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+    return { ctx, page };
+  };
+  const fire = async (page, cmd) => { await page.evaluate((c) => window.__fire(c), cmd); await page.waitForTimeout(450); };
+  const orient = (page) => page.evaluate(() =>
+    [...document.querySelectorAll("#orient-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const rows = (page) => page.evaluate(() => document.querySelectorAll(".mlrow").length);
+  const confirmUp = (page) => page.evaluate(() => {
+    const m = document.getElementById("confirm-modal");
+    return !!m && m.classList.contains("show");
+  });
+  const at = (page, sq) => page.evaluate((x) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    return { x: r.left + (x.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(x[1]) + 0.5) * (r.height / 8) };
+  }, sq);
+  const play = async (page, a, b) => {
+    for (const sq of [a, b]) { const p = await at(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); }
+    await page.waitForTimeout(280);
+  };
+  const toSetup = async (page, mode) => {
+    await page.click("#tab-setup"); await page.waitForTimeout(250);
+    await page.click(`#mode-seg button[data-mode="${mode}"]`); await page.waitForTimeout(800);
+    await page.click("#tab-play"); await page.waitForTimeout(250);
+  };
+
+  // 1. a game in progress, then into a trainer: the menu must not be able to
+  //    reach back and delete it.
+  for (const trainer of ["puzzle", "learn"]) {
+    const { ctx, page } = await openBridged("pvp");
+    await play(page, "e2", "e4"); await play(page, "e7", "e5");
+    const before = await rows(page);
+    assert(before > 0, `${trainer}:先在双人下出 ${before} 行着法`);
+    await toSetup(page, trainer);
+    await fire(page, "game.new");
+    assert(!(await confirmUp(page)), `${trainer}:菜单「新局」没有在训练界面上弹确认框`);
+    await toSetup(page, "pvp");
+    assert((await rows(page)) === before, `${trainer}:主对局的 ${before} 行着法还在`);
+    await ctx.close();
+  }
+
+  // 2. an authored board does not turn round because the menu said so
+  for (const trainer of ["puzzle", "learn"]) {
+    const { ctx, page } = await openBridged(trainer);
+    const before = await orient(page);
+    await fire(page, "game.flip");
+    assert((await orient(page)) === before, `${trainer}:菜单「翻转棋盘」没有翻动课程/题目摆好的方向(${before})`);
+    await ctx.close();
+  }
+
+  // 3. a dialog is in front of the game — for the menu too
+  {
+    const { ctx, page } = await openBridged("ai");
+    await page.keyboard.press("?");
+    await page.waitForTimeout(400);
+    const up = await page.evaluate(() => [...document.querySelectorAll(".modal-bg.show")].map((d) => d.id).join(","));
+    assert(up === "keys-modal", `快捷键表打开了(${up})`);
+    const before = await orient(page);
+    await fire(page, "game.flip");
+    assert((await orient(page)) === before, "对话框开着时,菜单「翻转棋盘」和 F 一样什么也不做");
+    // …and the one command that is about a dialog still closes its own
+    await fire(page, "help.keys");
+    assert(!(await page.evaluate(() => document.getElementById("keys-modal").classList.contains("show"))),
+      "菜单「快捷键」关掉的是它自己那张表");
+    await ctx.close();
+  }
+
+  // 4. the other direction: where the keys work, the menu still works
+  {
+    const { ctx, page } = await openBridged("ai");
+    const before = await orient(page);
+    await fire(page, "game.flip");
+    assert((await orient(page)) !== before, "人机对局里,菜单「翻转棋盘」照常翻");
+    await fire(page, "view.panel");
+    assert(!(await page.evaluate(() => document.getElementById("app").classList.contains("panel-open"))),
+      "……「侧栏」照常开合");
+    await fire(page, "help.keys");
+    assert(await page.evaluate(() => document.getElementById("keys-modal").classList.contains("show")),
+      "……「快捷键」照常打开");
+    await ctx.close();
+  }
+
+  // 5. and the sheet finally says the menu exists
+  {
+    const { ctx, page } = await openBridged("ai");
+    await page.keyboard.press("?");
+    await page.waitForTimeout(400);
+    const accels = await page.evaluate(() =>
+      [...document.querySelectorAll("#keys-list kbd.accel")].map((k) => k.textContent));
+    assert(accels.length >= 7,
+      `人机模式的快捷键表列出了菜单的快捷键(${accels.length} 个:${accels.join(" ")})`);
+    // "primary" IS ⌘ on macOS and Ctrl on Windows; the sheet has to name the
+    // one this machine has, not pick one and hope.
+    const mod = accels[0] && accels[0].startsWith("⌘") ? "⌘" : "Ctrl+";
+    assert(accels.every((a) => a.startsWith(mod)),
+      `……而且用的是这台机器上的那个修饰键(${mod})`);
+    // 引擎提示 is the only one with two modifiers — ⌘H is the system's
+    // 「隐藏应用」, which is why it is ⌘⇧H — so the sheet must spell both.
+    assert(accels.includes(mod === "⌘" ? "⌘⇧H" : "Ctrl+Shift+H"),
+      `……「引擎提示」的两个修饰键都写出来了(${accels.join(" ")})`);
+    await ctx.close();
+  }
+}
+
+// --- 4i. the three irreversible questions are asked by the platform -------
+//
+// 「清除全部存档」 wipes every key this app has ever written, and it asked
+// with a div. A `.modal-bg` shares the window with the thing it is asking
+// about and is styled like the rest of the app — which is the one place that
+// is wrong, because this is the only question in the app whose answer cannot
+// be taken back. The SDK has had `dialogs.showMessage` since 0.4 and nothing
+// here had ever called it.
+//
+// Three properties, and the third is the one that matters: a build WITHOUT a
+// native dialog must still be able to ask. `Host.showMessage` returning null
+// means "no such dialog here", and reading that as "the player said no" would
+// turn a missing capability into a dead button.
+{
+  const openDialogBridge = async (answer, supported) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(([a, sup]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "ai", langId: "zh-CN", sideTab: "setup", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 1, games: 3 }));
+      window.__asked = [];
+      window.zero = {
+        on: () => () => {}, invoke: async () => ({}),
+        platform: { supports: async (v) => (v && (v.feature || v.name) === "dialogs" ? sup : false) },
+        dialogs: {
+          showMessage: async (opts) => { window.__asked.push(opts); return a; },
+        },
+      };
+    }, [answer, supported]);
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+    // the deletions live behind their own fold
+    await page.evaluate(() => { for (const d of document.querySelectorAll("#side details")) d.open = true; });
+    await page.waitForTimeout(200);
+    return { ctx, page };
+  };
+  const asked = (page) => page.evaluate(() => window.__asked);
+  const inPageUp = (page) => page.evaluate(() =>
+    !!document.getElementById("confirm-modal").classList.contains("show"));
+  const saved = (page) => page.evaluate(() => localStorage.getItem("chess.v1.stats"));
+
+  // 1. it asks the platform, with the right shape, and takes "no" for an answer
+  {
+    const { ctx, page } = await openDialogBridge("secondary", true);
+    await page.click("#clear-save");
+    await page.waitForTimeout(500);
+    const calls = await asked(page);
+    assert(calls.length === 1, `「清除全部存档」问的是系统对话框(${calls.length} 次)`);
+    assert(calls[0] && calls[0].style === "critical", `……而且是 critical 的那种(${calls[0] && calls[0].style})`);
+    assert(!!(calls[0] && calls[0].primaryButton && calls[0].secondaryButton),
+      `……两个按钮都带着自己的文案(${calls[0] && calls[0].primaryButton}/${calls[0] && calls[0].secondaryButton})`);
+    assert(!(await inPageUp(page)), "……页内那个框没有跟着一起弹");
+    assert((await saved(page)) !== null, "……答「取消」,存档一个字都没动");
+    await ctx.close();
+  }
+
+  // 2. and takes "yes" for one
+  {
+    const { ctx, page } = await openDialogBridge("primary", true);
+    await page.click("#clear-save");
+    await page.waitForTimeout(900);
+    assert((await saved(page)) === null, "答「清除」,存档真的没了");
+    await ctx.close();
+  }
+
+  // 3. a build with no native dialog still asks — in the page, as before
+  {
+    const { ctx, page } = await openDialogBridge("primary", false);
+    await page.click("#clear-save");
+    await page.waitForTimeout(500);
+    assert((await asked(page)).length === 0, "平台说自己没有对话框时,不去调它");
+    assert(await inPageUp(page), "……改用页内那个框问");
+    assert((await saved(page)) !== null, "……而且在得到回答之前什么也没删");
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
