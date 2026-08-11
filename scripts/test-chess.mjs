@@ -1309,8 +1309,23 @@ for (const lang of CONTENT_LANGS) {
     assert(ungated.length === 0,
       "every menu command has a row saying which modes it belongs to" +
       (ungated.length ? " — 没有: " + ungated.join(", ") : ""));
-    assert(/if \(dialogOpen\(\)\) return;\n\s*if \(!commandModes\(id\)\.has\(store\.session\.mode\)\) return;/.test(appSrc),
-      "the native command passes the dialog gate and the mode gate before it runs");
+    // Two lines, in this order — and the break between them is written `\s*`
+    // rather than `\n` on purpose. A `\n` here passes on a LF checkout and
+    // fails on a Windows one, where the file really does contain `\r\n`. That
+    // is not hypothetical: this assertion shipped exactly that way in v2.3.0
+    // and the release run died on it — every ubuntu and macOS job green, the
+    // Windows build the only thing in the world that saw it, and it saw it
+    // *after* the tag and the draft release already existed. Same shape as
+    // the 2.0.0 CRLF-only test bug.
+    //
+    // So the check runs twice: against this checkout, and against a CRLF copy
+    // of it. A regex that can only read one of the two now fails on whatever
+    // platform you are on, rather than on the one platform you are not.
+    const gated = (src) =>
+      /if \(dialogOpen\(\)\) return;\s*if \(!commandModes\(id\)\.has\(store\.session\.mode\)\) return;/.test(src);
+    assert(gated(appSrc) && gated(appSrc.replace(/\r?\n/g, "\r\n")),
+      "the native command passes the dialog gate and the mode gate before it runs" +
+      " —— 在 LF 与 CRLF 两种检出下都读得到");
   }
 }
 
