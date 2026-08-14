@@ -22,8 +22,8 @@ jobs:
   build:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # esbuild, and nothing else. It bundles the ES modules under src/web/js
@@ -91,7 +91,7 @@ jobs:
           native package --target macos --signing adhoc --manifest build/app.macos.zon --output dist/Chessboard.app --binary zig-out/bin/chessboard
           ditto -c -k --sequesterRsrc --keepParent dist/Chessboard.app dist/Chessboard-macOS-arm64.zip
           ls -lh dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Chessboard-macOS-arm64
           path: dist/Chessboard-macOS-arm64.zip

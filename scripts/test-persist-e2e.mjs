@@ -611,6 +611,104 @@ const PLACEMENT = STUDY.split(" ")[0];
   await ctx.close();
 }
 
+// --- 8. 数据进来的另外两扇门:文件对话框,和 FEN 的剪贴板粘贴 -----------------
+// 「粘贴棋谱」在上面走过了;还有两扇门从没被驱动过。「打开」是真机清单里
+// 两桩旧案的案发地 —— 256 KiB 截断和 Windows 路径的 \\ —— 它们都发生在
+// openFile → readTextFile 这一段桥上,而这段桥从没在测试里走通过一次。
+// 「从剪贴板粘贴」是 FEN 对话框里唯一碰桥的按钮。
+{
+  const PGN_TEXT = '[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 *\n';
+  const FEN_AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+  const openBridged = async (o) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(([opts, pgn]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      window.__calls = [];
+      window.zero = {
+        on: () => () => {}, off: () => {},
+        platform: { supports: () => Promise.resolve(false) },
+        dialogs: { openFile: async () => { window.__calls.push("openFile"); return opts.pick; } },
+        clipboard: {
+          readText: async () => { if (opts.clipFail) throw new Error("nope"); return opts.clip || ""; },
+          writeText: async () => true,
+        },
+        invoke: async (cmd) => {
+          window.__calls.push(cmd);
+          if (cmd === "chess.readTextFile") {
+            const bytes = new TextEncoder().encode(pgn);
+            let bin = ""; for (const b of bytes) bin += String.fromCharCode(b);
+            return { b64: btoa(bin) };
+          }
+          return {};
+        },
+      };
+    }, [o, PGN_TEXT]);
+    const { page, errs } = await open(ctx);
+    return { ctx, page, errs };
+  };
+  const rows = (page) => page.evaluate(() => document.querySelectorAll(".mlrow").length);
+  const moreOpen = async (page) => {
+    if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  };
+
+  // 打开:选了文件 → 桥上走 openFile 然后 readTextFile → 对局被换成文件里的
+  {
+    const { ctx, page, errs } = await openBridged({ pick: ["/tmp/game.pgn"] });
+    await moreOpen(page);
+    await page.click("#pgn-open");
+    await page.waitForTimeout(700);
+    assert((await rows(page)) === 2, "「打开」把文件里的两回合棋谱装了进来");
+    const calls = await page.evaluate(() => window.__calls);
+    assert(calls.join("→") === "openFile→chess.readTextFile",
+      `……走的是文件对话框 → 桥上读文件这一条,别无他路(${calls.join("→")})`);
+    assert(await page.evaluate(() => document.getElementById("status").textContent.trim()) === "白方走子",
+      "……装完轮到白方(1.e4 e5 2.Nf3 Nc6 之后)");
+    assert(errs.length === 0, `打开:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+  // 打开:取消 → 什么都不发生。null 是「用户改主意了」,不是错误,更不是空文件
+  {
+    const { ctx, page } = await openBridged({ pick: null });
+    const fenBefore = await shownFen(page);
+    await moreOpen(page);
+    await page.click("#pgn-open");
+    await page.waitForTimeout(500);
+    assert((await shownFen(page)) === fenBefore, "「打开」后取消:局面一个字都没动");
+    await ctx.close();
+  }
+  // 从剪贴板粘贴:填进输入框(去掉首尾空白),载入后真的站在那个局面上
+  {
+    const { ctx, page } = await openBridged({ clip: "  " + FEN_AFTER_E4 + "  " });
+    await moreOpen(page);
+    await page.click("#fen-load-open");
+    await page.click("#fen-from-clip");
+    await page.waitForTimeout(400);
+    assert((await page.inputValue("#fen-input")) === FEN_AFTER_E4,
+      "「从剪贴板粘贴」把剪贴板里的 FEN 填进输入框,首尾空白已去掉");
+    await page.click("#fen-load");
+    await page.waitForTimeout(500);
+    assert(/黑方/.test(await page.evaluate(() => document.getElementById("status").textContent.trim())),
+      "……载入之后轮到黑方,正是那个 FEN 说的");
+    await ctx.close();
+  }
+  // 从剪贴板粘贴:桥抛异常 → 有一条故障提示,而不是安静地什么都不做
+  {
+    const { ctx, page } = await openBridged({ clipFail: true });
+    await moreOpen(page);
+    await page.click("#fen-load-open");
+    await page.click("#fen-from-clip");
+    await page.waitForTimeout(400);
+    const toast = await page.evaluate(() => {
+      const t = document.getElementById("toast");
+      return t && t.classList.contains("show") ? t.textContent.trim() : "";
+    });
+    assert(/剪贴板/.test(toast), `……读不到剪贴板时它说了出来(「${toast}」)`);
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
