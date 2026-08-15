@@ -2667,6 +2667,98 @@ for (const lang of CONTENT_LANGS) {
   assert(done === 1 && total === S.GRADUATE, "progress reports streak against the target");
 }
 
+// 为你出一题: the picker's three rungs, each firing only when its condition is
+// really true — the reason the interface says out loud must never be a guess
+{
+  loadModule(ctx, "src/web/js/srs.js");
+  loadModule(ctx, "src/web/js/picker.js");
+  const S = ctx.ChessSrs;
+  const P = ctx.ChessPicker;
+  const BOOK = [
+    { id: "a1", cat: "m1" }, { id: "a2", cat: "m1" },
+    { id: "b1", cat: "win" }, { id: "b2", cat: "win" }, { id: "b3", cat: "win" },
+    { id: "c1", cat: "def" }, { id: "c2", cat: "def" },
+  ];
+  const fresh = () => ({ v: 1, solved: {}, missed: {}, cat: "m1" });
+
+  // rung 1: anything due beats everything else, and the queue's own order picks
+  {
+    const st = fresh();
+    st.missed.b2 = { s: 0, n: 2 };
+    st.missed.c1 = { s: 1, n: 1 };
+    const r = P.pickNext(st, BOOK, S);
+    assert(r.kind === "review" && r.due === 2, "the queue outranks every recommendation (" + r.kind + ", 欠 " + r.due + ")");
+    assert(r.id === "b2", "…and the least-learned one comes first (" + r.id + ")");
+  }
+  // rung 2: a weakness needs MIN_ATTEMPTS answers AND at least one miss
+  {
+    const st = fresh();
+    for (let i = 0; i < P.MIN_ATTEMPTS; i++) P.recordAnswer(st, "def", true);
+    P.recordAnswer(st, "win", false);
+    const r = P.pickNext(st, BOOK, S);
+    assert(r.kind === "weak" && r.cat === "def", "the worst lifetime miss rate wins (" + r.cat + ")");
+    assert(r.id === "c1", "…serving that category's first unsolved puzzle");
+    // below the attempt floor the same misses are noise, not a verdict
+    const st2 = fresh();
+    for (let i = 0; i < P.MIN_ATTEMPTS - 1; i++) P.recordAnswer(st2, "def", true);
+    assert(P.pickNext(st2, BOOK, S).kind === "explore",
+      P.MIN_ATTEMPTS - 1 + " 次作答还不够下「你最弱」的结论 — falls through to explore");
+    // …and a category with many answers but zero misses is never "weak"
+    const st3 = fresh();
+    for (let i = 0; i < 5; i++) P.recordAnswer(st3, "win", false);
+    assert(P.pickNext(st3, BOOK, S).kind === "explore", "all-solves history is strength, not weakness");
+  }
+  // a weak category with nothing left to serve falls out of the running
+  {
+    const st = fresh();
+    for (let i = 0; i < 4; i++) P.recordAnswer(st, "def", true);
+    st.solved.c1 = true; st.solved.c2 = true;
+    const r = P.pickNext(st, BOOK, S);
+    assert(r.kind !== "weak" || r.cat !== "def", "a fully-solved category cannot be recommended (" + r.kind + ")");
+  }
+  // rung 3: no usable history → least-covered category, first unsolved
+  {
+    const st = fresh();
+    st.solved.a1 = true; st.solved.a2 = true; st.solved.b1 = true;
+    const r = P.pickNext(st, BOOK, S);
+    assert(r.kind === "explore" && r.cat === "def" && r.id === "c1",
+      "with no history it widens coverage: least-touched category first (" + r.cat + ")");
+  }
+  // rung 4: a fully solved book says so instead of inventing a pick
+  {
+    const st = fresh();
+    for (const p of BOOK) st.solved[p.id] = true;
+    assert(P.pickNext(st, BOOK, S).kind === "done", "an exhausted book is reported, not papered over");
+  }
+  // the tally survives what the queue forgets: graduation deletes the entry,
+  // the lifetime record keeps the miss — this is the whole reason it exists
+  {
+    const st = fresh();
+    st.missed.c1 = S.onMiss(undefined); P.recordAnswer(st, "def", true);
+    let e = S.onSolve(st.missed.c1); e = S.onSolve(e);
+    assert(e === null, "the puzzle graduates out of the queue");
+    delete st.missed.c1;
+    assert(P.catTally(st, "def").miss === 1, "…but the tally still remembers the miss");
+  }
+  // the two write points in app.js actually feed the tally — a picker whose
+  // memory nobody writes would quietly degrade into the explore rung forever
+  {
+    const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const missBody = /function markMissed\(id\) \{([\s\S]*?)\n  \}/.exec(appSrc);
+    assert(missBody && missBody[1].includes("Picker.recordAnswer") && missBody[1].includes("true"),
+      "markMissed writes the miss into the lifetime tally");
+    assert(/misses === 0 && !store\.session\.puzzle\.usedAnswer[\s\S]{0,200}Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false\)/.test(appSrc),
+      "a clean first solve writes the solve — and only a clean one");
+  }
+
+  // recordAnswer tolerates the states written before it existed
+  {
+    const st = { v: 1, solved: {}, missed: {} };  // no tally field at all
+    P.recordAnswer(st, "m1", false);
+    assert(st.tally.m1.solve === 1 && st.tally.m1.miss === 0, "a pre-2.4 state grows the tally in place");
+  }
+}
+
 // i18n: every key present in the base language must exist in the others, or
 // switching language would silently blank parts of the UI
 {

@@ -26,6 +26,7 @@ import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES } from "./puzzles.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
+import { ChessPicker } from "./picker.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
 import { createStore } from "./store.js";
@@ -1828,8 +1829,13 @@ import { createStore } from "./store.js";
     Persist.setJson("puzzles", store.session.puzzleState);
   }
   const Srs = ChessSrs;
+  const Picker = ChessPicker;
   function markMissed(id) {
     store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id]);
+    // …and into the lifetime tally, which unlike the queue survives
+    // graduation — it is the memory 为你出一题 reads (see picker.js)
+    const p = ALL_PUZZLES.find((x) => x.id === id);
+    if (p) Picker.recordAnswer(store.session.puzzleState, p.cat, true);
     savePuzzleState();
   }
   /**
@@ -2196,6 +2202,12 @@ import { createStore } from "./store.js";
     if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(store.session.puzzle.p.id);
     if (!store.session.puzzleState.solved[store.session.puzzle.p.id]) {
       store.session.puzzleState.solved[store.session.puzzle.p.id] = true;
+      // a clean first solve counts into the lifetime tally; a solve after
+      // misses already counted those misses — counting the solve too would
+      // let one shaky puzzle wash its own signal out
+      if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) {
+        Picker.recordAnswer(store.session.puzzleState, store.session.puzzle.p.cat, false);
+      }
       savePuzzleState();
       checkNewAchievements();
     }
@@ -6269,6 +6281,22 @@ import { createStore } from "./store.js";
   };
   document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
+  document.getElementById("puzzle-smart").onclick = () => {
+    const pick = Picker.pickNext(store.session.puzzleState, ALL_PUZZLES, Srs);
+    if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
+    store.session.puzzleState.cat = pick.cat;
+    savePuzzleState();
+    // the recommendation must be able to serve what it picked: the tier
+    // filter is a per-category browse tool, and a pick filtered out by it
+    // would land on "这一档没有题" — the interface contradicting itself
+    store.session.puzzleTierFilter = "all";
+    const list = puzzlesInCat(pick.cat);
+    const idx = Math.max(0, list.findIndex((p) => p.id === pick.id));
+    startPuzzleAt(pick.cat, idx);
+    toast(pick.kind === "review" ? tf("pz.smart.review", [pick.due]) :
+          pick.kind === "weak" ? tf("pz.smart.weak", [t("pz.cat." + pick.cat)]) :
+          tf("pz.smart.explore", [t("pz.cat." + pick.cat)]));
+  };
   const playOnEl = document.getElementById("puzzle-playon");
   if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
   document.getElementById("puzzle-list").onclick = (ev) => {
