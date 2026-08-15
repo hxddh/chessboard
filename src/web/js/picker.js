@@ -17,9 +17,10 @@
  *   1. review  — the queue is not empty. Unfinished business beats novelty,
  *                and the queue's own order (least-learned first) picks the id.
  *   2. weak    — some category has enough history (≥ MIN_ATTEMPTS answers)
- *                and a miss rate above the others. Serve its first unsolved
- *                puzzle in book order — predictable within the category,
- *                adaptive across them.
+ *                and a miss rate above the others. Serve its easiest unsolved
+ *                puzzle (caller-supplied tier, book order within a tier): a
+ *                player who is missing in this category should climb from the
+ *                bottom, not be handed its hardest member first.
  *   3. explore — not enough history anywhere: serve the category the player
  *                has touched least (lowest solved fraction). A recommender
  *                with no data should widen coverage, not fake confidence.
@@ -53,15 +54,35 @@ function recordAnswer(state, cat, missed) {
 }
 
 /**
+ * The category this history condemns, by the one rule everybody shares.
+ *
+ * Exported because two surfaces speak about weakness — the 为你出一题 toast
+ * and the record page's 做题战绩 marker — and two copies of this loop is how
+ * they would eventually name two different categories in the same breath.
+ */
+function weakest(state, cats) {
+  let weak = null;
+  for (const c of cats) {
+    const t = catTally(state, c);
+    if (t.attempts < MIN_ATTEMPTS || t.miss === 0) continue;
+    const rate = t.miss / t.attempts;
+    if (!weak || rate > weak.rate) weak = { cat: c, rate, attempts: t.attempts };
+  }
+  return weak;
+}
+
+/**
  * Decide the next puzzle.
  *
  * @param {object} state puzzleState: { solved, missed, tally? }
  * @param {object[]} all the whole book, each { id, cat, ... }
  * @param {object} srs the ChessSrs module (isDue / order)
+ * @param {function} [tierOf] puzzle → "easy" | "mid" | "hard", for the weak
+ *        rung's easy-first climb; without it every rung stays in book order
  * @returns {{kind: "review"|"weak"|"explore"|"done", cat?: string, id?: string,
  *            due?: number, rate?: number, attempts?: number}}
  */
-function pickNext(state, all, srs) {
+function pickNext(state, all, srs, tierOf) {
   // 1. the queue
   const due = all.filter((p) => srs.isDue(state.missed[p.id]));
   if (due.length) {
@@ -78,15 +99,22 @@ function pickNext(state, all, srs) {
   const firstUnsolved = (c) => all.find((p) => p.cat === c && !state.solved[p.id]).id;
 
   // 2. a real weakness: enough answers, and misses among them
-  let weak = null;
-  for (const c of open) {
-    const t = catTally(state, c);
-    if (t.attempts < MIN_ATTEMPTS || t.miss === 0) continue;
-    const rate = t.miss / t.attempts;
-    if (!weak || rate > weak.rate) weak = { cat: c, rate, attempts: t.attempts };
-  }
+  const weak = weakest(state, open);
   if (weak) {
-    return { kind: "weak", cat: weak.cat, id: firstUnsolved(weak.cat),
+    // easiest first: this is the one rung that has just told the player they
+    // are struggling here, and the wrong next move is the category's hardest
+    // member. Stable within a tier — book order — so it stays predictable.
+    let id = firstUnsolved(weak.cat);
+    if (tierOf) {
+      const rank = { easy: 0, mid: 1, hard: 2 };
+      let best = Infinity;
+      for (const p of all) {
+        if (p.cat !== weak.cat || state.solved[p.id]) continue;
+        const r = rank[tierOf(p)] ?? 1;
+        if (r < best) { best = r; id = p.id; }
+      }
+    }
+    return { kind: "weak", cat: weak.cat, id,
              rate: weak.rate, attempts: weak.attempts };
   }
 
@@ -100,4 +128,4 @@ function pickNext(state, all, srs) {
   return { kind: "explore", cat: pick, id: firstUnsolved(pick) };
 }
 
-export const ChessPicker = { MIN_ATTEMPTS, pickNext, recordAnswer, catTally };
+export const ChessPicker = { MIN_ATTEMPTS, pickNext, recordAnswer, catTally, weakest };
