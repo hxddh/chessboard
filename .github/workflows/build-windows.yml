@@ -24,8 +24,8 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # esbuild, and nothing else. It bundles the ES modules under src/web/js
@@ -101,7 +101,7 @@ jobs:
           $src = if (Test-Path 'dist/Chessboard') { 'dist/Chessboard' } else { 'zig-out/bin/chessboard.exe' }
           Compress-Archive -Path $src -DestinationPath 'dist/Chessboard-Windows-x64.zip' -Force
           Get-ChildItem dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Chessboard-Windows-x64
           path: dist/Chessboard-Windows-x64.zip

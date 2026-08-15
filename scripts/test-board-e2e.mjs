@@ -604,6 +604,84 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- 双人认输的三键问句,和从复盘中间重下 -----------------------------------
+// confirm-alt 是全应用唯一的第三颗确认键,只在这一个问句里出现;它和
+// retry-here 一样,此前从没被任何测试指名道姓地按过。三键问句按错一颗就是
+// 把胜负判给错的一方;重下按错就是把后半盘棋丢给错的人 —— 都是一次点击
+// 定生死的地方,值得逐颗按一遍。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  const at = (s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  const tap = async (s) => { const p = await at(s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); };
+  const mv = async (a, b) => { await tap(a); await tap(b); await page.waitForTimeout(260); };
+  const status = () => page.evaluate(() => document.getElementById("status").textContent.trim());
+  const rows = () => page.evaluate(() => document.querySelectorAll(".mlrow").length);
+
+  await mv("e2", "e4"); await mv("e7", "e5");
+  await mv("g1", "f3"); await mv("b8", "c6");
+
+  // 三键问句:双人模式里「认输」得先问是谁认输
+  await page.click("#btn-resign");
+  await page.waitForTimeout(350);
+  const btns = await page.evaluate(() => ({
+    ok: document.getElementById("confirm-ok").textContent,
+    alt: document.getElementById("confirm-alt").textContent,
+    altShown: !document.getElementById("confirm-alt").hidden,
+  }));
+  assert(btns.altShown && btns.ok === "白方认输" && btns.alt === "黑方认输",
+    `三键问句把两种认输各给了一颗键(${btns.ok} / ${btns.alt})`);
+  // 第一颗按「取消」:改主意不该动任何东西
+  await page.click("#confirm-cancel");
+  await page.waitForTimeout(250);
+  assert(/白方走子/.test(await status()), "按「取消」:这局照下,轮到白方");
+  // 再问一次,这次按第三颗:黑方认输 → 白方胜
+  await page.click("#btn-resign");
+  await page.waitForTimeout(250);
+  await page.click("#confirm-alt");
+  await page.waitForTimeout(400);
+  assert(/黑方认输.*白方胜/.test(await status()), `第三颗键把胜负判给了对的一方(「${await status()}」)`);
+  const afterResign = await rows();
+  await mv("f1", "c4");
+  assert((await rows()) === afterResign, "认输之后棋盘冻住,走不动");
+
+  // 从复盘中间重下:先用界面上的那对箭头(不是键盘)退回去
+  await page.click("#rep-start"); await page.waitForTimeout(200);
+  await page.click("#rep-next"); await page.waitForTimeout(200);
+  await page.click("#rep-next"); await page.waitForTimeout(200);
+  const lit = await page.evaluate(() => {
+    const c = document.querySelector(".mlmove.current");
+    return c ? c.textContent.trim() : "";
+  });
+  assert(lit === "e5", `复盘箭头真的在走(高亮着法「${lit}」)`);
+  await page.click("#retry-here");
+  await page.waitForTimeout(300);
+  const ask = await page.evaluate(() => document.getElementById("confirm-message").textContent.trim());
+  assert(/2 着/.test(ask) && /丢弃/.test(ask), `重下先说清代价(「${ask}」)`);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(400);
+  assert((await rows()) === 1 && /白方走子/.test(await status()),
+    "确认后着法真的截断到 1.e4 e5,认输的结局一并撤销,白方接着走");
+  await mv("d2", "d4");
+  assert((await rows()) === 2, "……而且真的能接着下");
+  assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }
