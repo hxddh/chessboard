@@ -340,6 +340,14 @@
           <h2 class="side-h" data-i18n="side.puzzle">做题</h2>
           <span class="side-h-meta num" id="puzzle-progress">0/0</span>
         </div>
+        <!-- The book's one opinion. Everything else on this pane is the player
+             choosing; this is the app answering "what should I do next" from
+             what it actually knows — the review queue, then the category with
+             the worst lifetime miss rate, then the least-touched one — and the
+             toast says which of those it was. picker.js holds the rungs. -->
+        <div class="link-row">
+          <button type="button" class="act-btn" id="puzzle-smart" title="按你的复习欠账和错误率挑下一题" data-i18n-title="tip.puzzle.smart" data-i18n="pz.smart">为你出一题</button>
+        </div>
         <div class="setting-row stack">
           <span class="setting-k" data-i18n="pz.cat">题型</span>
           <div class="theme-row wrap" id="puzzle-cat-seg" role="group" aria-label="题型" data-i18n-aria="pz.cat">

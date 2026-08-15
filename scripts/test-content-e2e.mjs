@@ -395,6 +395,61 @@ if (hasTab && REAL.length) {
   }
 }
 
+// --- 为你出一题:三级阶梯在真页面上各走一级 ---------------------------------
+// picker.js 的纯函数有单测;这里按的是真按钮 —— 读到的存档、跳到的题、说出
+// 的理由,三样都得对得上。每一级用「只有这一级的条件为真」的存档进门,所以
+// toast 说的理由不可能靠巧合对。
+{
+  const openWith = async (puzzles) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript((pz) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      if (pz) localStorage.setItem("chess.v1.puzzles", JSON.stringify(pz));
+    }, puzzles);
+    const page = await ctx.newPage();
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1000);
+    return { ctx, page };
+  };
+  const smart = async (page) => {
+    await page.click("#puzzle-smart");
+    await page.waitForTimeout(500);
+    return page.evaluate(() => ({
+      toast: document.getElementById("toast").textContent.trim(),
+      cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat,
+      task: (document.getElementById("puzzle-task") || {}).textContent || "",
+    }));
+  };
+
+  // 复习级:欠着一题,推荐必须先还债
+  {
+    const { ctx, page } = await openWith({ v: 1, idv: 2, solved: {}, missed: { "w-hangq": { s: 0, n: 1 } }, cat: "m1" });
+    const r = await smart(page);
+    assert(r.cat === "review" && /先清复习/.test(r.toast), "欠着复习时,按钮把人带进复习队列", r.toast);
+    assert(/还欠 1 题/.test(r.toast), "……而且说清了欠几题", r.toast);
+    await ctx.close();
+  }
+  // 弱项级:def 三次全错的存档,推荐落在防守
+  {
+    const { ctx, page } = await openWith({ v: 1, idv: 2, solved: {}, missed: {}, cat: "m1",
+      tally: { def: { miss: 3, solve: 0 }, m1: { miss: 0, solve: 4 } } });
+    const r = await smart(page);
+    assert(r.cat === "def" && /防守.*错得最多/.test(r.toast), "错误率最高的类别被点名(防守)", r.toast);
+    await ctx.close();
+  }
+  // 探索级:没有任何历史,推荐去覆盖最少的类别,并说明是探索
+  {
+    const { ctx, page } = await openWith(null);
+    const r = await smart(page);
+    assert(/没怎么练过/.test(r.toast), "没有数据时说的是「去没练过的地方」,不是假装知道弱项", r.toast);
+    assert(r.cat && r.cat !== "review", "……并真的切到了一个具体类别(" + r.cat + ")");
+    await ctx.close();
+  }
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();
