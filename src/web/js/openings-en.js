@@ -123,6 +123,10 @@
     "kings-gambit-kieseritzky": "King's Gambit, Kieseritzky",
     "vienna-gambit": "Vienna Gambit",
     "four-knights-game-main": "Four Knights Game",
+    "four-knights-scotch": "Four Knights, Scotch Variation",
+    "vienna-game-mieses": "Vienna Game, Mieses Variation",
+    "caro-kann-exchange-main": "Caro-Kann, Exchange Main Line",
+    "bogo-indian-defence": "Bogo-Indian Defence",
     "philidor-defence-classical": "Philidor Defence, Classical",
     "scandinavian-defence-main-line": "Scandinavian Defence, Main Line",
     "alekhines-defence-modern-main-line": "Alekhine's Defence, Modern Main Line",
@@ -191,7 +195,7 @@
    *
    * Same key as the names above — the Chinese name in openings.js — and the
    * same rule: openings.js owns the moves, this file owns only the words. Only
-   * the 38 lines long enough to be drilled carry an idea, so only those need an
+   * every line long enough to be drilled carries an idea, so only those need an
    * entry; scripts/test-chess.mjs checks that set exactly.
    */
   export const CHESS_OPENING_IDEAS_EN = {
@@ -258,6 +262,14 @@
       "The sane version of the King's Gambit: develop the knight first, then push f4. Black's ...d5 is the one correct answer.",
     "four-knights-game-main":
       "All four knights come out and the position stays symmetrical and quiet. What it teaches is the order itself: develop, castle, then look for a plan.",
+    "four-knights-scotch":
+      "The lowest-memory White choice in the Four Knights: d4 trades the centre open, and Black gets the d5 pawn along with its isolating tendencies. Both sides know exactly what they are playing for.",
+    "vienna-game-mieses":
+      "White does not fight for d5; after Black trades the knight, the g2 bishop and the half-open b-file become the long-term story. Quiet, but every move is laying middlegame groundwork.",
+    "caro-kann-exchange-main":
+      "The whole Exchange Variation is about b7: Bd3 plus Qb3 forces Black's queen to babysit c8 while White finishes developing first. The structure is symmetrical — the tempo is the entire asset.",
+    "bogo-indian-defence":
+      "Check once to lure the bishop to d2, then trade it off at leisure: Black gives up the bishop pair for an e5-d6 fortress that White finds very hard to break open.",
     "philidor-defence-classical":
       "Black defends e5 with a pawn rather than a knight: cramped but solid. The square to watch is f7, where White's bishop and rook are both looking.",
     "scandinavian-defence-main-line":
