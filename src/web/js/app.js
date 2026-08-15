@@ -3806,7 +3806,16 @@ import { createStore } from "./store.js";
     // …and a pulse on the board itself, where the player is actually looking
     const dot = el("think-dot");
     if (dot) dot.hidden = !busy;
-    const showTurn = !modal && isLive() && !appGameOver();
+    /* Whose move it is gets said once per place that needs it, not three
+       times across the bar. The status pill always says it. In a clocked game
+       the running clock's brightness marks the side as well, right next to
+       the name — so the 行 badge would be a third telling, and one more thing
+       hopping sides every half-move in peripheral vision. It earns its place
+       only in unclocked games, where the pill is the sole teller and the
+       badge is the one mark that sits *beside the side it names*. */
+    const clocksShown = (store.session.mode === "pvp" || store.session.mode === "ai") &&
+      store.game.timeControl !== "off" && !!store.game.clock;
+    const showTurn = !modal && isLive() && !appGameOver() && !clocksShown;
     el("white-turn").hidden = !(showTurn && game.turn() === "w");
     el("black-turn").hidden = !(showTurn && game.turn() === "b");
   }

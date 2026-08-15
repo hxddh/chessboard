@@ -2387,6 +2387,88 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
   }
 }
 
+// --- 4j. 顶栏的墨序跟着信息的价值走,不跟着它的新鲜度走 ---------------------
+//
+// 对着一帧实局评估过:「2．e4」曾是整条栏对比度最高的文字 —— 白色数字加
+// 药丸底 —— 而它是栏里最短命也最冗余的事实,棋盘上两个高亮格正说着同一件
+// 事。每半着变一次内容的东西穿着最响的墨,就是余光里的规律性脉冲。它的两
+// 个真正职责(复盘时指认第几着、窄窗无面板时替补棋盘高亮)都只要求它在,
+// 不要求它响。轮次同理:状态药丸永远在说,计时局里走表那侧的钟又亮着,
+// 「行」徽章只在不计时的对局里才是第二个不多余的说法。
+{
+  const openTc = async (tc) => {
+    const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 }, locale: "zh-CN" });
+    await ctx.addInitScript((t) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", timeControl: t }));
+      localStorage.setItem("chess.panelOpen", "0");
+    }, tc);
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+    const mv = async (sq) => {
+      const pt = await page.evaluate((s) => {
+        const r = document.getElementById("board").getBoundingClientRect();
+        return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+                 y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
+      }, sq);
+      await page.mouse.click(pt.x, pt.y);
+      await page.waitForTimeout(180);
+    };
+    await mv("e2"); await mv("e4");
+    await page.waitForTimeout(300);
+    return { ctx, page };
+  };
+
+  // 不计时:上一手素装,轮次由药丸和轮方旁边的「行」说 —— 各说一次
+  {
+    const { ctx, page } = await openTc("off");
+    const m = await page.evaluate(() => {
+      const lum = (c) => {
+        const v = c.match(/[\d.]+/g).map(Number);
+        const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+        return 0.2126 * f(v[0]) + 0.7152 * f(v[1]) + 0.0722 * f(v[2]);
+      };
+      const bg = lum(getComputedStyle(document.body).backgroundColor);
+      const ratio = (el) => {
+        const l = lum(getComputedStyle(el).color);
+        return (Math.max(l, bg) + 0.05) / (Math.min(l, bg) + 0.05);
+      };
+      const last = document.getElementById("vs-last");
+      const cs = getComputedStyle(last);
+      return {
+        lastText: last.textContent.trim(),
+        plateless: cs.backgroundColor === "rgba(0, 0, 0, 0)" && cs.borderStyle === "none",
+        sameInkAsRole: cs.color === getComputedStyle(document.getElementById("white-role")).color,
+        lastVsStatus: ratio(last) < ratio(document.getElementById("status")),
+        badgeW: !document.getElementById("white-turn").hidden,
+        badgeB: !document.getElementById("black-turn").hidden,
+        clocksHidden: document.getElementById("clock-w").hidden && document.getElementById("clock-b").hidden,
+      };
+    });
+    assert(m.lastText === "1. e4", "上一手在中间槽里(" + m.lastText + ")");
+    assert(m.plateless, "……但不再是药丸:无底、无框");
+    assert(m.sameInkAsRole, "……墨色和「玩家 1」同级 —— 最短命的事实穿最素的衣");
+    assert(m.lastVsStatus, "……于是状态药丸重新成为栏里最响的文字 —— 它说的才是棋盘没说的事");
+    assert(m.clocksHidden && !m.badgeW && m.badgeB, "不计时局:钟不画,「行」只亮在轮到的那一方旁");
+    await ctx.close();
+  }
+  // 计时局:钟的亮暗已经在说轮次,徽章退场 —— 每个事实只有一个说法在动
+  {
+    const { ctx, page } = await openTc("3+2");
+    const m = await page.evaluate(() => ({
+      clocksShown: !document.getElementById("clock-w").hidden && !document.getElementById("clock-b").hidden,
+      badgesGone: document.getElementById("white-turn").hidden && document.getElementById("black-turn").hidden,
+      activeIsBlack: document.getElementById("clock-b").classList.contains("active") &&
+        !document.getElementById("clock-w").classList.contains("active"),
+    }));
+    assert(m.clocksShown && m.badgesGone, "计时局:钟在,「行」退场 —— 轮次不再被说第三遍");
+    assert(m.activeIsBlack, "……走表的那侧钟亮着,正是轮到的黑方");
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
