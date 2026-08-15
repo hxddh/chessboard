@@ -450,6 +450,52 @@ if (hasTab && REAL.length) {
   }
 }
 
+// --- 做题战绩:推荐的记忆终于看得见,而且两张嘴说同一个类别 ------------------
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx2.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "puzzle", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "m1",
+      tally: { def: { miss: 3, solve: 0 }, m1: { miss: 0, solve: 4 } } }));
+  });
+  const pg = await ctx2.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1000);
+  const tally = await pg.evaluate(() => ({
+    headShown: !document.getElementById("puzzle-tally-head").hidden,
+    rows: [...document.querySelectorAll("#puzzle-tally-body .stat-row")].map((r) => r.textContent.trim()),
+  }));
+  assert(tally.headShown && tally.rows.length === 2, "有作答记录的两个类别各占一行,其余不画", tally.rows.join(" | "));
+  assert(/防守.*错得最多/.test(tally.rows[0]), "错误率最高的一行排最前并带标记", tally.rows[0]);
+  assert(/失手 3/.test(tally.rows[0]) && /解出 4/.test(tally.rows[1]), "数字就是存档里的数字", tally.rows.join(" | "));
+  // the same page, the other mouth: the toast must name the same category
+  await pg.evaluate(() => document.querySelector('#side [data-tab="play"]').click());
+  await pg.waitForTimeout(300);
+  await pg.click("#puzzle-smart");
+  await pg.waitForTimeout(500);
+  const toast2 = await pg.evaluate(() => document.getElementById("toast").textContent.trim());
+  assert(/防守.*错得最多/.test(toast2), "推荐 toast 与记录页标的是同一个类别", toast2);
+  await ctx2.close();
+}
+// 空 tally:整节不出现
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx2.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await ctx2.newPage();
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1000);
+  assert(await pg.evaluate(() => document.getElementById("puzzle-tally-head").hidden),
+    "没有任何作答记录时,「做题战绩」整节不画");
+  await ctx2.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

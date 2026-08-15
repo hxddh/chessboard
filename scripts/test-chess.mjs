@@ -2238,10 +2238,17 @@ for (const lang of CONTENT_LANGS) {
   const stillThere = Object.values(legacy).filter((id) => afterGrow.has(id)).length;
   assert(stillThere === frozenCount,
     "every migrated id still names a live drill after the book grows (" + stillThere + "/" + frozenCount + ")");
-  const store = { ["op-" + deep[0][0] + "-0"]: true, "m1-ladder": true, "op-A05-9999": true };
+  // Sampled from the frozen table itself, not from deep[0]: the old
+  // construction assumed the book's first deep line predates the freeze, and
+  // the first line actually added in FRONT of it (A01, 2.5.0) turned that
+  // assumption into a red — of the instrument, not the product. Any frozen
+  // entry whose target is still alive makes the same claim without the
+  // assumption.
+  const [aliveKey, aliveId] = Object.entries(legacy).find(([, id]) => afterGrow.has(id));
+  const store = { [aliveKey]: true, "m1-ladder": true, "op-A05-9999": true };
   const moved = D.migrateIds(store, legacy);
   assert(moved === 1, "the one legacy key that still names a row is rewritten (" + moved + ")");
-  assert(store[D.drillId(deep[0][0], deep[0][2])] === true, "a solved drill keeps its solve");
+  assert(store[aliveId] === true, "a solved drill keeps its solve");
   assert(store["m1-ladder"] === true, "a hand-written puzzle id is left alone");
   assert(!("op-A05-9999" in store), "a legacy key naming a row that is gone is dropped, not kept forever");
   // an ECO letter outside A–E was never one of ours and is not touched
@@ -2749,6 +2756,32 @@ for (const lang of CONTENT_LANGS) {
       "markMissed writes the miss into the lifetime tally");
     assert(/misses === 0 && !store\.session\.puzzle\.usedAnswer[\s\S]{0,200}Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false\)/.test(appSrc),
       "a clean first solve writes the solve — and only a clean one");
+  }
+
+  // the weak rung climbs from the bottom: told "you struggle here", the next
+  // move must not be the category's hardest member
+  {
+    const st = fresh();
+    for (let i = 0; i < P.MIN_ATTEMPTS; i++) P.recordAnswer(st, "win", true);
+    const tierOf = (p) => ({ b1: "hard", b2: "mid", b3: "easy" })[p.id];
+    const r = P.pickNext(st, BOOK, S, tierOf);
+    assert(r.kind === "weak" && r.id === "b3", "弱项类内先端最容易的一道(" + r.id + ")");
+    // without tierOf the book order stands — the parameter is opt-in
+    assert(P.pickNext(st, BOOK, S).id === "b1", "不带 tierOf 时仍是册序");
+  }
+  // weakest() is exported because two surfaces speak about weakness — the
+  // toast and the record page marker — and they must read one rule
+  {
+    const st = fresh();
+    for (let i = 0; i < 4; i++) P.recordAnswer(st, "def", true);
+    P.recordAnswer(st, "win", false);
+    const w = P.weakest(st, ["m1", "win", "def"]);
+    assert(w && w.cat === "def", "weakest() 独立可调,答案与选题一致");
+    const appSrc2 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    assert(/renderPuzzleTally[\s\S]{0,900}Picker\.weakest\(/.test(appSrc2),
+      "记录页的「错得最多」标记读的是同一个 Picker.weakest");
+    assert(/puzzle-review-nudge[\s\S]{0,400}store\.session\.puzzle\.done && owed > 0/.test(appSrc2),
+      "解后复习提示只在「做完了且队列欠着」时画 — 不适用则不画");
   }
 
   // recordAnswer tolerates the states written before it existed

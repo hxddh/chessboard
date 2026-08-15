@@ -2362,6 +2362,14 @@ import { createStore } from "./store.js";
     // written. Same treatment.
     const answer = document.getElementById("puzzle-answer");
     if (answer) answer.hidden = !!store.session.puzzle.done;
+    // the after-solve review nudge: the queue's size is the whole message
+    const nudge = document.getElementById("puzzle-review-nudge");
+    if (nudge) {
+      const owed = ALL_PUZZLES.filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).length;
+      const show = !!store.session.puzzle.done && owed > 0 && store.session.puzzle.cat !== "review";
+      nudge.hidden = !show;
+      if (show) nudge.textContent = tf("pz.smart.review", [owed]);
+    }
     const next = document.getElementById("puzzle-next");
     if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
     const listEl = document.getElementById("puzzle-list");
@@ -2937,6 +2945,40 @@ import { createStore } from "./store.js";
     }, 2200);
   }
 
+  /** 做题战绩 — the tally the picker reads, drawn for the player. */
+  function renderPuzzleTally() {
+    const head = document.getElementById("puzzle-tally-head");
+    const body = document.getElementById("puzzle-tally-body");
+    if (!head || !body) return;
+    const st = store.session.puzzleState;
+    const cats = [];
+    for (const p of ALL_PUZZLES) if (!cats.includes(p.cat)) cats.push(p.cat);
+    const rows = cats
+      .map((c) => Object.assign({ cat: c }, Picker.catTally(st, c)))
+      .filter((r) => r.attempts > 0);
+    head.hidden = body.hidden = !rows.length;
+    if (!rows.length) return;
+    // worst first, so the marker sits on top; the marker itself comes from
+    // Picker.weakest — the same rule the recommendation toast speaks from,
+    // so the two surfaces can never name different categories
+    rows.sort((a, b) => b.miss / b.attempts - a.miss / a.attempts || b.attempts - a.attempts);
+    const weak = Picker.weakest(st, cats);
+    body.replaceChildren();
+    for (const r of rows) {
+      const row = document.createElement("div");
+      row.className = "stat-row";
+      const name = document.createElement("span");
+      name.className = "stat-k";
+      name.textContent = t("pz.cat." + r.cat) +
+        (weak && weak.cat === r.cat ? " · " + t("rec.weakMark") : "");
+      const val = document.createElement("span");
+      val.className = "stat-v num";
+      val.textContent = tf("rec.tally", [r.solve, r.miss]);
+      row.append(name, val);
+      body.appendChild(row);
+    }
+  }
+
   function renderStats() {
     const el = document.getElementById("stats-body");
     if (!el) return;
@@ -2988,6 +3030,7 @@ import { createStore } from "./store.js";
         (withAcc.length ? t("stats.hintAcc") : t("stats.hintNoAcc"))
       : t("stats.emptyHint");
     el.appendChild(hint);
+    renderPuzzleTally();
     const rec = recommendation();
     if (rec) {
       const line = document.createElement("div");
@@ -6281,8 +6324,10 @@ import { createStore } from "./store.js";
   };
   document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
+  document.getElementById("puzzle-review-nudge").onclick = () =>
+    document.getElementById("puzzle-smart").click();
   document.getElementById("puzzle-smart").onclick = () => {
-    const pick = Picker.pickNext(store.session.puzzleState, ALL_PUZZLES, Srs);
+    const pick = Picker.pickNext(store.session.puzzleState, ALL_PUZZLES, Srs, puzzleTier);
     if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
     store.session.puzzleState.cat = pick.cat;
     savePuzzleState();

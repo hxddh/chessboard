@@ -124,6 +124,10 @@
     "vienna-gambit": "Vienna Gambit",
     "four-knights-game-main": "Four Knights Game",
     "four-knights-scotch": "Four Knights, Scotch Variation",
+    "nimzo-larsen-main": "Nimzo-Larsen Attack, Main Line",
+    "torre-attack": "Torre Attack",
+    "scandinavian-defence-qd6": "Scandinavian, Modern ...Qd6",
+    "london-jobava": "Jobava London System",
     "vienna-game-mieses": "Vienna Game, Mieses Variation",
     "caro-kann-exchange-main": "Caro-Kann, Exchange Main Line",
     "bogo-indian-defence": "Bogo-Indian Defence",
@@ -264,6 +268,14 @@
       "All four knights come out and the position stays symmetrical and quiet. What it teaches is the order itself: develop, castle, then look for a plan.",
     "four-knights-scotch":
       "The lowest-memory White choice in the Four Knights: d4 trades the centre open, and Black gets the d5 pawn along with its isolating tendencies. Both sides know exactly what they are playing for.",
+    "nimzo-larsen-main":
+      "The b2 bishop takes its seat first; how to strike the centre is decided later, pushing every committal decision onto the opponent. No move order to memorise \u2014 a setup, which is exactly why it is cheap to learn.",
+    "torre-attack":
+      "Bg5 pins a look at the knight, then c3+e3 builds a frame that is almost impossible to knock over. Same family as the London: structure over memory.",
+    "scandinavian-defence-qd6":
+      "The queen retreats to d6, not a5: it watches e5, can slide to c7, and leaves room for the ...c6/...e6 Caro-Kann-style fortress. The modern Scandinavian's standard answer.",
+    "london-jobava":
+      "The London bishop paired with Nc3: blocking the c-pawn has a price, and what it buys is direct violence \u2014 Nb5 jumps and f3-g4 storms. The sharpest member of the London family.",
     "vienna-game-mieses":
       "White does not fight for d5; after Black trades the knight, the g2 bishop and the half-open b-file become the long-term story. Quiet, but every move is laying middlegame groundwork.",
     "caro-kann-exchange-main":

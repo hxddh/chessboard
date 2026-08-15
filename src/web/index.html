@@ -380,6 +380,14 @@
           <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)" data-i18n-title="tip.puzzle.next" data-i18n="act.puzzleNext">下一题</button>
           <button type="button" class="tool-btn" id="puzzle-playon" hidden title="从这个开局局面接着与引擎对弈" data-i18n-title="tip.playOn" data-i18n="act.playOn">接实战</button>
         </div>
+        <!-- Drawn only after a solve, and only while the review queue is not
+             empty: the one moment the player is choosing what to do next, and
+             the one fact worth interrupting with. Clicking it IS 为你出一题 —
+             same handler, same words — never an automatic jump: a
+             recommendation is invited, it does not grab the wheel. -->
+        <div class="link-row">
+          <button type="button" class="act-btn" id="puzzle-review-nudge" hidden></button>
+        </div>
         <details class="reading-index">
           <summary class="setting-summary"><h2 class="side-h" data-i18n="side.puzzleList">题目列表</h2></summary>
           <div class="lesson-list" id="puzzle-list" aria-label="题目列表" data-i18n-aria="aria.puzzleList"></div>
@@ -530,6 +538,15 @@
           <h2 class="side-h" data-i18n="side.stats">统计</h2>
         </div>
         <div class="stats-body" id="stats-body"></div>
+        <!-- The memory 为你出一题 reads, finally visible. Rows exist only for
+             categories with answered puzzles (P3 — no record, no row), and the
+             "most missed" marker comes from the same Picker.weakest() the
+             recommendation toast uses, so the two can never name different
+             categories. -->
+        <div class="side-h-row" id="puzzle-tally-head" hidden>
+          <h2 class="side-h" data-i18n="side.puzzleTally">做题战绩</h2>
+        </div>
+        <div class="stats-body" id="puzzle-tally-body" hidden></div>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
           <!-- label is "全部 N 局": renderHistory() fills in both the count and
