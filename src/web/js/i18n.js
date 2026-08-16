@@ -111,6 +111,7 @@
       // puzzle mode (pz.*)
       "pz.forcing": "强制手段",
       "pz.goalOp": "{0} · 执白照谱走完 {1} 回合",
+      "pz.goalOpB": "{0} · 执黑照谱应完 {1} 回合",
       "pz.moveUnit": "回合",
       "ntf.analysisDone": "分析完成",
       "st.quietMoves": "{0} 回合无进展",
@@ -148,7 +149,7 @@
       "pz.restarted": "重新开始本题",
       // roles shown beside the clocks
       "role.student": "学员(执白)", "role.sparring": "引擎陪练",
-      "role.you": "你(执白)", "role.puzzle": "题目",
+      "role.you": "你(执白)", "role.youB": "你(执黑)", "role.puzzle": "题目",
       // confirm dialogs (dlg.*)
       "dlg.newGame": "开始新局将清空当前对局，是否继续？",
       "dlg.retryHere": "从第 {0} 着继续重下,其后 {1} 着将被丢弃,是否继续?",
@@ -213,6 +214,9 @@
       "side.puzzleTally": "做题战绩",
       "rec.tally": "解出 {0} · 失手 {1}",
       "rec.weakMark": "错得最多",
+      "pz.side": "执方",
+      "tip.opSide.w": "执白照谱走,黑方谱着自动应出",
+      "tip.opSide.b": "执黑照谱应,白方谱着自动走出",
       "chrome.hint": "提示", "chrome.undo": "悔棋", "chrome.new": "新局",
       "chrome.answer": "答案", "chrome.thinking": "思考中",
       "side.game": "对局", "side.mode": "模式", "side.difficulty": "难度", "side.color": "执子",
@@ -459,7 +463,7 @@
       "tip.fen.copy": "复制当前局面 FEN",
       "tip.theme.night": "夜色",
       "tip.replay.start": "开局 (Home)",
-      "tip.cat.op": "开局练习:执白照谱走主流开局",
+      "tip.cat.op": "开局练习:照谱走主流开局,执白执黑都能练",
       "tip.hint": "引擎提示 (H)",
       "tip.analysis.run": "快速评估每一步(120ms/步),标注失着",
       "tip.undo": "悔棋 (Z)",
@@ -584,6 +588,7 @@
       // puzzle mode (pz.*)
       "pz.forcing": "a forcing line",
       "pz.goalOp": "{0} · play the book line as White for {1} moves",
+      "pz.goalOpB": "{0} · answer the book line as Black for {1} moves",
       "pz.moveUnit": " moves",
       "ntf.analysisDone": "Analysis complete",
       "st.quietMoves": "{0} moves without progress",
@@ -621,7 +626,7 @@
       "pz.restarted": "Puzzle restarted",
       // roles shown beside the clocks
       "role.student": "Student (White)", "role.sparring": "Engine sparring",
-      "role.you": "You (White)", "role.puzzle": "Puzzle",
+      "role.you": "You (White)", "role.youB": "You (Black)", "role.puzzle": "Puzzle",
       // confirm dialogs (dlg.*)
       "dlg.newGame": "Starting a new game discards the current one. Continue?",
       "dlg.retryHere": "Resume from move {0} and discard the {1} moves after it. Continue?",
@@ -686,6 +691,9 @@
       "side.puzzleTally": "Puzzle record",
       "rec.tally": "{0} solved \u00b7 {1} missed",
       "rec.weakMark": "most missed",
+      "pz.side": "Side",
+      "tip.opSide.w": "Drill the line as White; Black's book replies play themselves",
+      "tip.opSide.b": "Drill the line as Black; White's book moves play themselves",
       "chrome.hint": "Hint", "chrome.undo": "Undo", "chrome.new": "New",
       "chrome.answer": "Answer", "chrome.thinking": "Thinking",
       "side.game": "Game", "side.mode": "Mode", "side.difficulty": "Level", "side.color": "Side",
@@ -930,7 +938,7 @@
       "tip.fen.copy": "Copy the current position as FEN",
       "tip.theme.night": "Night",
       "tip.replay.start": "Start of game (Home)",
-      "tip.cat.op": "Opening drills: play mainline openings as White",
+      "tip.cat.op": "Opening drills: play mainline openings from either side",
       "tip.hint": "Engine hint (H)",
       "tip.analysis.run": "Quick pass over every move (120ms each), flagging mistakes",
       "tip.undo": "Undo (Z)",
@@ -1055,6 +1063,7 @@
       // puzzle mode (pz.*)
       "pz.forcing": "強制手順",
       "pz.goalOp": "{0} · 白番で定跡どおりに {1} 手指す",
+      "pz.goalOpB": "{0} · 黒番で定跡どおりに {1} 手応じる",
       "pz.moveUnit": "手",
       "ntf.analysisDone": "解析が完了しました",
       "st.quietMoves": "{0} 手 進展なし",
@@ -1092,7 +1101,7 @@
       "pz.restarted": "この問題をやり直します",
       // roles shown beside the clocks
       "role.student": "受講者(白)", "role.sparring": "エンジン練習相手",
-      "role.you": "あなた(白)", "role.puzzle": "問題",
+      "role.you": "あなた(白)", "role.youB": "あなた(黒)", "role.puzzle": "問題",
       // confirm dialogs (dlg.*)
       "dlg.newGame": "新規対局を始めると現在の対局は破棄されます。続けますか?",
       "dlg.retryHere": "第 {0} 手から指し直し、以降の {1} 手を破棄します。続けますか?",
@@ -1157,6 +1166,9 @@
       "side.puzzleTally": "問題の戦績",
       "rec.tally": "正解 {0} \u00b7 ミス {1}",
       "rec.weakMark": "最もミスが多い",
+      "pz.side": "手番",
+      "tip.opSide.w": "白番で定跡を指し、黒の定跡手は自動で応じられます",
+      "tip.opSide.b": "黒番で定跡に応じ、白の定跡手は自動で指されます",
       "chrome.hint": "ヒント", "chrome.undo": "待った", "chrome.new": "新規",
       "chrome.answer": "答え", "chrome.thinking": "考え中",
       "side.game": "対局", "side.mode": "モード", "side.difficulty": "強さ", "side.color": "手番",
@@ -1401,7 +1413,7 @@
       "tip.fen.copy": "現在の局面を FEN でコピー",
       "tip.theme.night": "ナイト",
       "tip.replay.start": "開始局面 (Home)",
-      "tip.cat.op": "オープニング練習:白番で主要な定跡をなぞります",
+      "tip.cat.op": "オープニング練習:白番でも黒番でも定跡をなぞれます",
       "tip.hint": "エンジンのヒント (H)",
       "tip.analysis.run": "全手を高速に評価(1 手 120ms)し、悪手を印付けします",
       "tip.undo": "待った (Z)",

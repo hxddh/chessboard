@@ -1024,8 +1024,11 @@ import { createStore } from "./store.js";
    * translation can never disagree with what the puzzle actually is.
    */
   function puzzleName(p) {
-    // opening drills are named by the book, not by the puzzle tables
-    if (p.cat === "op" && p.nameId) return p.eco + " " + openingName(p.nameId);
+    // opening drills are named by the book, not by the puzzle tables; the
+    // black sibling carries its chair in the name so toasts and history rows
+    // never leave "which side was that" to memory
+    if (p.cat === "op" && p.nameId)
+      return p.eco + " " + openingName(p.nameId) + (p.side === "b" ? " · " + t("color.black") : "");
     return contentField("puzzles", p.id, "name") || p.name;
   }
   /**
@@ -1679,7 +1682,17 @@ import { createStore } from "./store.js";
     // not shuffle when the interface language changes
     .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1
       : (CHESS_OPENING_NAMES[a.nameId] || "").localeCompare(CHESS_OPENING_NAMES[b.nameId] || "", "zh")));
-  const ALL_PUZZLES = PUZZLES.concat(OPENING_DRILLS);
+  /**
+   * The same 119 lines, played from the other chair. Nearly half the book is
+   * a Black defence — Caro-Kann, French, the whole Sicilian family — and
+   * until 2.6 the trainer only let you stand on White's side of them, being
+   * shown Black's answers instead of giving them. A sibling puzzle per line,
+   * not a runtime mode: as plain puzzles they ride every existing rail —
+   * solved/missed keys, the review queue, the picker, tiers — with no special
+   * cases. `:b` ids are new keys, so nobody's White progress moves.
+   */
+  const OPENING_DRILLS_B = OPENING_DRILLS.map((d) => Object.assign({}, d, { id: d.id + ":b", side: "b" }));
+  const ALL_PUZZLES = PUZZLES.concat(OPENING_DRILLS, OPENING_DRILLS_B);
 
   /**
    * Rough difficulty tier for a puzzle, derived rather than hand-tagged so it
@@ -1874,6 +1887,8 @@ import { createStore } from "./store.js";
       // queue instead of being asked again on the very next click
       ? Srs.order(ALL_PUZZLES.filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).map((p) => p.id),
         store.session.puzzleState.missed).map((id) => ALL_PUZZLES.find((p) => p.id === id))
+      // the op list shows one chair at a time — the side segment picks which
+      : cat === "op" ? ALL_PUZZLES.filter((p) => p.cat === "op" && (p.side === "b") === (store.session.puzzleState.opSide === "b"))
       : ALL_PUZZLES.filter((p) => p.cat === cat);
     // "Review" is not a difficulty band — it is exactly the set of puzzles this
     // player got wrong. Filtering it by an automatically derived tier hides the
@@ -1904,6 +1919,14 @@ import { createStore } from "./store.js";
     savePuzzleState();
     const p = list[idx];
     store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null };
+    // playing Black: the app opens with White's book move, you answer
+    if (p.cat === "op" && p.side === "b") {
+      const first = store.session.puzzle.g.move(p.line[0]);
+      if (first) {
+        store.session.puzzle.stage = 1;
+        store.session.puzzle.last = { from: first.from, to: first.to };
+      }
+    }
     store.game.selection = null;
     BoardView.cancelAnim();
     sync();
@@ -1924,7 +1947,7 @@ import { createStore } from "./store.js";
     const g = store.session.puzzle.g;
     return {
       position: g.board(),
-      flipped: false, // all puzzles are white to move
+      flipped: store.session.puzzle.p.side === "b", // face the chair you sit in
       selected: store.game.selection ? store.game.selection.sq : null,
       legalTargets: store.game.selection ? store.game.selection.targets : [],
       lastMove: store.session.puzzle.last,
@@ -1998,7 +2021,7 @@ import { createStore } from "./store.js";
 
   function puzzleGoalText() {
     const p = store.session.puzzle.p;
-    if (p.cat === "op") return tf("pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
+    if (p.cat === "op") return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
     if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
     if (p.cat === "real") return tf("pz.goalReal", [puzzleName(p), p.men, p.gain]);
@@ -2009,10 +2032,15 @@ import { createStore } from "./store.js";
     return tf("pz.goalMate", [puzzleName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
   }
 
+  /** The chair the solver sits in: white everywhere except black op drills. */
+  function puzzleHumanSide() {
+    return store.session.puzzle && store.session.puzzle.p.side === "b" ? "b" : "w";
+  }
+
   function puzzleClick(sq) {
     if (!store.session.puzzle || store.session.puzzle.done) return;
     const g = store.session.puzzle.g;
-    if (g.game_over() || g.turn() !== "w") return;
+    if (g.game_over() || g.turn() !== puzzleHumanSide()) return;
     const piece = g.get(sq);
     if (store.game.selection && store.game.selection.targets.includes(sq)) {
       const from = store.game.selection.sq;
@@ -2024,7 +2052,7 @@ import { createStore } from "./store.js";
       puzzleMove(from, sq, "q");
       return;
     }
-    if (piece && piece.color === "w") {
+    if (piece && piece.color === puzzleHumanSide()) {
       selectSquare(sq, g.moves({ square: sq, verbose: true }).map((m) => m.to));
       return;
     }
@@ -2164,7 +2192,7 @@ import { createStore } from "./store.js";
   function showPuzzleAnswer() {
     if (!store.session.puzzle || store.session.puzzle.done) return;
     const g = store.session.puzzle.g;
-    if (g.turn() !== "w" || g.game_over()) return;
+    if (g.turn() !== puzzleHumanSide() || g.game_over()) return;
     let from = null, to = null;
     // on the stored line the stored move is always valid here
     const stored = SCRIPTED_CATS[store.session.puzzle.p.cat]
@@ -2238,8 +2266,8 @@ import { createStore } from "./store.js";
     if (ChessEngine) ChessEngine.newGame();
     stopPuzzles();
     store.session.mode = "ai";
-    store.session.humanColor = "w"; // every opening drill is played from White's side
-    store.game.flipped = false;
+    store.session.humanColor = store.session.puzzle.p.side === "b" ? "b" : "w";
+    store.game.flipped = store.session.puzzle.p.side === "b";
     store.game.flagFall = null;
     store.game.resigned = null;
     store.game.drawAgreed = false;
@@ -2281,6 +2309,15 @@ import { createStore } from "./store.js";
     startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx + 1);
   }
 
+  /** The 执白/执黑 row exists only where there are two chairs: the op list. */
+  function syncOpSideSeg(cat) {
+    avail(el("row-op-side"), cat === "op");
+    const side = store.session.puzzleState.opSide === "b" ? "b" : "w";
+    document.querySelectorAll("#op-side-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.side === side);
+    });
+  }
+
   function syncPuzzleUI() {
     const sec = document.getElementById("sec-puzzle");
     if (!sec) return;
@@ -2297,6 +2334,7 @@ import { createStore } from "./store.js";
         b.classList.toggle("active", b.dataset.cat === store.session.puzzleState.cat);
       });
       avail(el("row-puzzle-tier"), tierApplies(store.session.puzzleState.cat));
+      syncOpSideSeg(store.session.puzzleState.cat);
       const emptyProg = document.getElementById("puzzle-progress");
       if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
         [ALL_PUZZLES.filter((p) => store.session.puzzleState.solved[p.id]).length, ALL_PUZZLES.length]);
@@ -2323,6 +2361,7 @@ import { createStore } from "./store.js";
     // is absent (P3.3).
     const shows = tierApplies(store.session.puzzle.cat);
     avail(el("row-puzzle-tier"), shows);
+    syncOpSideSeg(store.session.puzzle.cat);
     document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
       b.classList.toggle("active", shows && b.dataset.tier === store.session.puzzleTierFilter);
       b.disabled = false;
@@ -3329,7 +3368,10 @@ import { createStore } from "./store.js";
       matesTotal: mateCats.reduce((n, c) => n + countIn(c), 0),
       tacSolved: solvedIn("tac"), tacTotal: countIn("tac"),
       realSolved: solvedIn("real"), realTotal: countIn("real"),
-      opSolved: solvedIn("op"), opTotal: countIn("op"),
+      // White-side only, on purpose: the badge predates the Black-side drills
+      // and its meaning must not silently double for everyone who earned it
+      opSolved: ALL_PUZZLES.filter((p) => p.cat === "op" && p.side !== "b" && store.session.puzzleState.solved[p.id]).length,
+      opTotal: ALL_PUZZLES.filter((p) => p.cat === "op" && p.side !== "b").length,
       wins, losses, draws, games: st.games.length, extremeWins,
     };
   }
@@ -3993,7 +4035,7 @@ import { createStore } from "./store.js";
         store.session.mode === "learn"
           ? !!(inDrill && store.session.learn.g && !store.session.learn.g.game_over() && store.session.learn.g.turn() === "w")
         : store.session.mode === "puzzle"
-          ? !!(store.session.puzzle && !store.session.puzzle.done && !store.session.puzzle.g.game_over() && store.session.puzzle.g.turn() === "w")
+          ? !!(store.session.puzzle && !store.session.puzzle.done && !store.session.puzzle.g.game_over() && store.session.puzzle.g.turn() === puzzleHumanSide())
         : !store.session.editor && isLive() && !over &&
           !(store.session.mode === "ai" && game.turn() !== store.session.humanColor);
       slot(hintBtn, canHint);
@@ -4220,8 +4262,10 @@ import { createStore } from "./store.js";
         wRole.textContent = t("role.student");
         bRole.textContent = solo ? "" : t("role.sparring");
       } else if (store.session.mode === "puzzle") {
-        wRole.textContent = t("role.you");
-        bRole.textContent = t("role.puzzle");
+        // black drills swap the chairs: the book plays White, you answer
+        const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
+        wRole.textContent = asBlack ? t("role.puzzle") : t("role.you");
+        bRole.textContent = asBlack ? t("role.youB") : t("role.puzzle");
       } else {
         wRole.textContent = t("vs.p1");
         bRole.textContent = t("vs.p2");
@@ -6312,6 +6356,15 @@ import { createStore } from "./store.js";
     savePuzzleState();
     startPuzzles();
   };
+  document.getElementById("op-side-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-side]");
+    const cur = store.session.puzzleState.opSide === "b" ? "b" : "w";
+    if (!b || b.dataset.side === cur) return;
+    store.session.puzzleState.opSide = b.dataset.side;
+    savePuzzleState();
+    // land on this chair's first unsolved line, same as entering the mode
+    startPuzzles();
+  };
   document.getElementById("puzzle-tier-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-tier]");
     if (!b || b.dataset.tier === store.session.puzzleTierFilter) return;
@@ -6330,6 +6383,11 @@ import { createStore } from "./store.js";
     const pick = Picker.pickNext(store.session.puzzleState, ALL_PUZZLES, Srs, puzzleTier);
     if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
     store.session.puzzleState.cat = pick.cat;
+    // same contract for the side segment: if the picker chose an opening line
+    // from the chair not currently shown, switch chairs so the pick is servable
+    const picked = ALL_PUZZLES.find((p) => p.id === pick.id);
+    if (picked && picked.cat === "op" && pick.cat === "op")
+      store.session.puzzleState.opSide = picked.side === "b" ? "b" : "w";
     savePuzzleState();
     // the recommendation must be able to serve what it picked: the tier
     // filter is a per-category browse tool, and a pick filtered out by it

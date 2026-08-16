@@ -2792,6 +2792,49 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// 执黑背谱: every opening line gets a Black sibling that rides the existing
+// rails (solved keys, review queue, picker) under a new `:b` id, and every
+// place that assumed "the solver is White" now reads the puzzle's side.
+{
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  // the sibling set: same lines, `:b` ids (so nobody's White progress moves),
+  // and both sets are in the one book every rail iterates
+  assert(/OPENING_DRILLS_B = OPENING_DRILLS\.map\(\(d\) => Object\.assign\(\{\}, d, \{ id: d\.id \+ ":b", side: "b" \}\)\)/.test(appSrc),
+    "the Black set is the White set under `:b` ids, nothing re-transcribed");
+  assert(/ALL_PUZZLES = PUZZLES\.concat\(OPENING_DRILLS, OPENING_DRILLS_B\)/.test(appSrc),
+    "both chairs are in the book every rail iterates");
+  // one chair shown at a time, picked by the side segment
+  assert(/cat === "op" \? ALL_PUZZLES\.filter\(\(p\) => p\.cat === "op" && \(p\.side === "b"\) === \(store\.session\.puzzleState\.opSide === "b"\)\)/.test(appSrc),
+    "the op list shows the chair the side segment picked");
+  // playing Black: the app opens with White's book move before you answer
+  assert(/p\.cat === "op" && p\.side === "b"[\s\S]{0,200}g\.move\(p\.line\[0\]\)[\s\S]{0,200}stage = 1/.test(appSrc),
+    "a Black drill opens with White's first book move already played");
+  // the board faces the chair you sit in
+  assert(/flipped: store\.session\.puzzle\.p\.side === "b"/.test(appSrc),
+    "puzzleModel flips the board for Black drills");
+  // input, answer arrow and the hint slot all ask the same question
+  assert(/function puzzleHumanSide\(\)/.test(appSrc) &&
+    /function puzzleClick\(sq\) \{[\s\S]{0,200}g\.turn\(\) !== puzzleHumanSide\(\)/.test(appSrc) &&
+    /piece\.color === puzzleHumanSide\(\)/.test(appSrc) &&
+    /function showPuzzleAnswer\(\) \{[\s\S]{0,200}g\.turn\(\) !== puzzleHumanSide\(\)/.test(appSrc),
+    "clicks, selection and the answer arrow all read the solver's chair from the puzzle");
+  // 接实战 keeps the chair
+  assert(/humanColor = store\.session\.puzzle\.p\.side === "b" \? "b" : "w"/.test(appSrc),
+    "接实战 seats you on the side you drilled");
+  // the badge kept its meaning: op achievements count the White set only
+  assert(/opSolved[\s\S]{0,120}p\.side !== "b"/.test(appSrc) || /side !== "b"[\s\S]{0,240}opSolved/.test(appSrc),
+    "achievement totals still mean the White book — doubling them silently would cheapen earned badges");
+  // 为你出一题 can serve a pick from the hidden chair
+  assert(/picked\.cat === "op"[\s\S]{0,120}opSide = picked\.side === "b" \? "b" : "w"/.test(appSrc),
+    "the recommender switches chairs so its pick is always servable");
+  // the side row is drawn only where there are two chairs (P3: absent, not greyed)
+  assert(/function syncOpSideSeg\(cat\) \{[\s\S]{0,120}avail\(el\("row-op-side"\), cat === "op"\)/.test(appSrc),
+    "the 执白/执黑 row exists only in the opening category");
+  const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  assert(/id="op-side-seg"[\s\S]{0,400}data-side="w"[\s\S]{0,400}data-side="b"/.test(html),
+    "the side segment offers exactly the two chairs");
+}
+
 // i18n: every key present in the base language must exist in the others, or
 // switching language would silently blank parts of the UI
 {
