@@ -496,6 +496,112 @@ if (hasTab && REAL.length) {
   await ctx2.close();
 }
 
+// --- 执黑背谱:同一条谱换把椅子 ---------------------------------------------
+// 静态守卫盯的是源码形状;这里验的是真棋盘上的三件事:执黑时棋盘翻转且白方
+// 谱着已经走出、应错被退回并有教练说法、整条线应完只写 `:b` 键 —— 白方进度
+// 一格不动。第一条线的期望着法由测试自己从 ECO 书推出,和应用同一来源。
+{
+  for (const f of ["openings.js", "drills.js"]) {
+    vm.runInContext(compileModuleSync(path.join(ROOT, "js", f)), data, { filename: "module" });
+  }
+  const rows = data.ChessDrills.drillLines(data.CHESS_OPENINGS)
+    .map(([eco, nameId, seq]) => ({ eco, nameId, seq, line: seq.split(" ") }))
+    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1
+      : (data.CHESS_OPENING_NAMES[a.nameId] || "").localeCompare(data.CHESS_OPENING_NAMES[b.nameId] || "", "zh")));
+  const first = rows[0];
+  const firstId = data.ChessDrills.drillId(first.eco, first.seq);
+  // the canvas reader labels cells as if unflipped, so on a flipped board a
+  // real square shows up under its point-mirrored name
+  const mirror = (sqs) => sqs.split(",").map((s) =>
+    "abcdefgh"[7 - (s.charCodeAt(0) - 97)] + (9 - +s[1])).sort().join(",");
+
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx2.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
+  });
+  const pg = await ctx2.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1000);
+
+  const occ = () => pg.evaluate(() => {
+    const c = document.getElementById("board"); const g = c.getContext("2d");
+    const step = c.width / 8; const on = [];
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const x = Math.round(f * step + step * 0.2), y = Math.round(r * step + step * 0.2);
+      const w = Math.max(4, Math.round(step * 0.6));
+      const d = g.getImageData(x, y, w, w).data;
+      let lo = 255, hi = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        if (l < lo) lo = l; if (l > hi) hi = l;
+      }
+      if (hi - lo > 60) on.push("abcdefgh"[f] + (8 - r));
+    }
+    return on.sort().join(",");
+  });
+  const tapB = async (s) => { // black chair: the board is flipped
+    const p = await pg.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1];
+      const co = 7 - f, ro = 7 - rk, z = r.width / 8;
+      return { x: r.left + (co + .5) * z, y: r.top + (ro + .5) * z };
+    }, s);
+    await pg.mouse.click(p.x, p.y);
+    await pg.waitForTimeout(240);
+  };
+  const moveB = async (a, b) => { await tapB(a); await tapB(b); await pg.waitForTimeout(420); };
+
+  // the side row exists in the op category, White in front
+  const seg = await pg.evaluate(() => {
+    const row = document.getElementById("row-op-side");
+    return { shown: !!row && !row.hidden,
+      active: document.querySelector("#op-side-seg button.active")?.dataset.side };
+  });
+  assert(seg.shown && seg.active === "w", "开局类有「执方」一行,默认执白", JSON.stringify(seg));
+
+  // sit down on Black's side: board flips and White's book move is already out
+  await pg.click('#op-side-seg button[data-side="b"]');
+  await pg.waitForTimeout(600);
+  const g2 = new Chess(); g2.move(first.line[0]);
+  assert(await occ() === mirror(squaresOf(g2.fen())),
+    "执黑开题:棋盘翻转,白方第一着已经走出", `期望镜像 ${first.line[0]}`);
+  const taskB = await pg.evaluate(() => document.getElementById("puzzle-task").textContent || "");
+  assert(/执黑/.test(taskB), "题面写明这是执黑练习", taskB.trim());
+
+  // a wrong reply is taken back, with the coach naming why
+  const wrong = g2.moves({ verbose: true }).find((m) => m.san !== first.line[1]);
+  await moveB(wrong.from, wrong.to);
+  assert(await occ() === mirror(squaresOf(g2.fen())), "应错被退回,棋盘不留痕");
+  const why = await pg.evaluate(() => document.getElementById("toast").textContent.trim());
+  assert(why.length > 4, "应错有教练的说法,不是无声拒绝", why);
+
+  // answer the whole line: each Black book move, White's reply plays itself
+  for (let i = 1; i < first.line.length; i += 2) {
+    const m = g2.moves({ verbose: true }).find((x) => x.san === first.line[i]);
+    await moveB(m.from, m.to);
+    g2.move(first.line[i]);
+    if (i + 1 < first.line.length) g2.move(first.line[i + 1]);
+  }
+  await pg.waitForTimeout(600);
+  const after = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  assert(!!after.solved[firstId + ":b"], "应完整条线,解出记在 `:b` 键上");
+  assert(!after.solved[firstId], "……白方那把椅子的进度一格没动");
+
+  // back on White's side: no pre-played move, and the row is op-only (P3)
+  await pg.click('#op-side-seg button[data-side="w"]');
+  await pg.waitForTimeout(600);
+  assert(await occ() === squaresOf(new Chess().fen()), "切回执白:初始局面,没有预走的着");
+  await pg.evaluate(() => [...document.querySelectorAll("#puzzle-cat-seg button")].find((b) => b.dataset.cat === "m1").click());
+  await pg.waitForTimeout(400);
+  assert(await pg.evaluate(() => document.getElementById("row-op-side").hidden),
+    "别的题型里「执方」这一行不存在");
+  await ctx2.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

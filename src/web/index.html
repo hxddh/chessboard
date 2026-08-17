@@ -359,8 +359,18 @@
             <button type="button" data-cat="real" title="实战战术:20 子以上的中局,只有一步能得子" data-i18n-title="tip.real" data-i18n="pz.cat.real">实战</button>
             <button type="button" data-cat="def" title="防守:黑方下一步就要将死,找出接得住的一手" data-i18n-title="tip.cat.def" data-i18n="pz.cat.def">防守</button>
             <button type="button" data-cat="draw" title="求和:已经必败,逼成僵局或长将保住半分" data-i18n-title="tip.cat.draw" data-i18n="pz.cat.draw">求和</button>
-            <button type="button" data-cat="op" title="开局练习:执白照谱走主流开局" data-i18n-title="tip.cat.op" data-i18n="pz.cat.op">开局</button>
+            <button type="button" data-cat="op" title="开局练习:照谱走主流开局,执白执黑都能练" data-i18n-title="tip.cat.op" data-i18n="pz.cat.op">开局</button>
             <button type="button" data-cat="review" title="复习:重做答错或看过答案的题,做对即移出" data-i18n-title="tip.cat.review" data-i18n="pz.cat.review">复习</button>
+          </div>
+        </div>
+        <!-- Which chair you drill from. Only the opening category has two
+             chairs (every other puzzle is a position, not a repertoire), so
+             the row exists only there — an absent control, not a greyed one. -->
+        <div class="setting-row stack" id="row-op-side">
+          <span class="setting-k" data-i18n="pz.side">执方</span>
+          <div class="theme-row wrap" id="op-side-seg" role="group" aria-label="执方" data-i18n-aria="pz.side">
+            <button type="button" data-side="w" class="active" title="执白照谱走,黑方谱着自动应出" data-i18n-title="tip.opSide.w" data-i18n="color.white">执白</button>
+            <button type="button" data-side="b" title="执黑照谱应,白方谱着自动走出" data-i18n-title="tip.opSide.b" data-i18n="color.black">执黑</button>
           </div>
         </div>
         <div class="setting-row stack" id="row-puzzle-tier">
