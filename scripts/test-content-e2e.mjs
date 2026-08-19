@@ -602,6 +602,122 @@ if (hasTab && REAL.length) {
   await ctx2.close();
 }
 
+// --- 错题自炼:自己的失着变成题,在真页面上走一遍 ----------------------------
+// 挖题函数是纯的,单测直接喂分析数组;这里验的是「已入库的错题」在界面上的
+// 全部承诺:没有错题时标签不存在(P3),有则出现;题面写明实战走了什么、亏了
+// 多少;重蹈覆辙和一般走错各有各的说法;做对写 solved、做错进复习队列;执黑
+// 的错题棋盘翻转 —— 全部骑在现成轨道上。
+{
+  // a real position pair so every move in the drill is a legal chess fact
+  const gW = new Chess(); // start: "played e4 (??), engine wanted Nf3" — synthetic but legal
+  const wFen = gW.fen();
+  gW.move("e4");
+  const bFen = gW.fen(); // black to move after 1.e4: "played e5, engine wanted c5"
+  const MINES_FIXTURE = [
+    { id: "mine:t1", cat: "mine", fen: wFen, solution: ["Nf3"], played: "e4", loss: 350, ply: 4, t: 1700000000000 },
+    { id: "mine:t2", cat: "mine", fen: bFen, solution: ["c5"], played: "e5", loss: 210, ply: 5, t: 1700000000000, side: "b" },
+  ];
+
+  // no mines: the tab must not exist (P3 — absent, not greyed)
+  {
+    const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx2.addInitScript(() => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+    });
+    const pg = await ctx2.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(900);
+    assert(await pg.evaluate(() => document.querySelector('#puzzle-cat-seg button[data-cat="mine"]').hidden),
+      "没有错题时,「错题」标签不存在");
+    await ctx2.close();
+  }
+
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx2.addInitScript((mines) => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: mines }));
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "mine" }));
+  }, MINES_FIXTURE);
+  const pg = await ctx2.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+
+  const tapAt = async (s, flipped) => {
+    const p = await pg.evaluate(([x, fl]) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1];
+      const co = fl ? 7 - f : f, ro = fl ? 7 - rk : rk, z = r.width / 8;
+      return { x: r.left + (co + .5) * z, y: r.top + (ro + .5) * z };
+    }, [s, !!flipped]);
+    await pg.mouse.click(p.x, p.y);
+    await pg.waitForTimeout(240);
+  };
+  const mv2 = async (a, b, fl) => { await tapAt(a, fl); await tapAt(b, fl); await pg.waitForTimeout(360); };
+  const toastText = () => pg.evaluate(() => document.getElementById("toast").textContent.trim());
+
+  // the tab exists, the first drill is served, and the goal names the sin
+  const seg = await pg.evaluate(() => {
+    const b = document.querySelector('#puzzle-cat-seg button[data-cat="mine"]');
+    return { hidden: b.hidden, active: b.classList.contains("active") };
+  });
+  assert(!seg.hidden && seg.active, "有错题时「错题」标签出现且被选中", JSON.stringify(seg));
+  const goal = await pg.evaluate(() => document.getElementById("puzzle-task").textContent || "");
+  assert(/e4/.test(goal) && /更强/.test(goal) && /3\.5/.test(goal),
+    "题面写明实战走了 e4、当时亏 3.5 分", goal.trim());
+  const listNames = await pg.evaluate(() => {
+    document.querySelector("details.reading-index").open = true;
+    return document.getElementById("puzzle-list").textContent;
+  });
+  assert(/错题 11-1[45] · 第 3 手/.test(listNames), "题名是日期加手数,不是编造的棋名", listNames.slice(0, 60));
+
+  // repeating the game's move gets its own message; another wrong move the generic one
+  await mv2("e2", "e4");
+  assert(/实战里丢分的那一手/.test(await toastText()), "重蹈覆辙被单独点名", await toastText());
+  await mv2("d2", "d4");
+  assert(/更强的一手/.test(await toastText()), "一般走错说的是「引擎另有更强一手」", await toastText());
+  // …and both wrongs queued it for review
+  let st = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  assert(!!st.missed["mine:t1"], "走错的错题进了复习队列");
+
+  // the right move solves it and says so in the mine voice
+  await mv2("g1", "f3");
+  assert(/找回了这一手/.test(await toastText()), "做对的话音是「找回了这一手」", await toastText());
+  st = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  assert(st.solved["mine:t1"] === true, "解出写进 solved,和普通题同一条轨");
+
+  // the black drill flips the board — same rails as the black opening drills
+  await pg.click("#puzzle-next");
+  await pg.waitForTimeout(500);
+  const occ2 = await pg.evaluate(() => {
+    const c = document.getElementById("board"); const g = c.getContext("2d");
+    const step = c.width / 8; const on = [];
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const x = Math.round(f * step + step * 0.2), y = Math.round(r * step + step * 0.2);
+      const w = Math.max(4, Math.round(step * 0.6));
+      const d = g.getImageData(x, y, w, w).data;
+      let lo = 255, hi = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        if (l < lo) lo = l; if (l > hi) hi = l;
+      }
+      if (hi - lo > 60) on.push("abcdefgh"[f] + (8 - r));
+    }
+    return on.sort().join(",");
+  });
+  const mirror = (sqs) => sqs.split(",").map((s) =>
+    "abcdefgh"[7 - (s.charCodeAt(0) - 97)] + (9 - +s[1])).sort().join(",");
+  assert(occ2 === mirror(squaresOf(bFen)), "执黑的错题棋盘翻转,局面就是失着前那一刻");
+  await mv2("c7", "c5", true);
+  assert(/找回了这一手/.test(await toastText()), "执黑错题照样能解", await toastText());
+  await ctx2.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

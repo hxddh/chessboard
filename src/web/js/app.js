@@ -14,6 +14,7 @@ import { CHESS_LESSONS_JA } from "./lessons-ja.js";
 import { CHESS_LESSONS } from "./lessons.js";
 import { ChessMaterial } from "./material.js";
 import { motifOf } from "./motif.js";
+import { ChessMistakes } from "./mistakes.js";
 import { ChessOpeningCoach } from "./opening-coach.js";
 import { CHESS_OPENINGS_EN, CHESS_OPENING_IDEAS_EN } from "./openings-en.js";
 import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
@@ -240,6 +241,8 @@ import { createStore } from "./store.js";
       puzzle: null,
       learnState: null,  // filled in below, where it can first be computed
       puzzleState: null,  // filled in below, where it can first be computed
+      /** 错题自炼 — the personal book (mistakes.js); filled in below */
+      mines: [],
       /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
       puzzleTierFilter: "all",
       /** editor runtime: {board, turn, castling, brush} | null */
@@ -1029,6 +1032,11 @@ import { createStore } from "./store.js";
     // never leave "which side was that" to memory
     if (p.cat === "op" && p.nameId)
       return p.eco + " " + openingName(p.nameId) + (p.side === "b" ? " · " + t("color.black") : "");
+    if (p.cat === "mine") {
+      const d = new Date(p.t || 0);
+      const mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0");
+      return tf("pz.mineName", [mm + "-" + dd, Math.floor((p.ply || 0) / 2) + 1]);
+    }
     return contentField("puzzles", p.id, "name") || p.name;
   }
   /**
@@ -1640,10 +1648,10 @@ import { createStore } from "./store.js";
 
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
   const PUZZLES = CHESS_PUZZLES || [];
-  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "review"];
+  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "mine", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
-  const SCRIPTED_CATS = { win: true, op: true, tac: true, draw: true, real: true };
+  const SCRIPTED_CATS = { win: true, op: true, tac: true, draw: true, real: true, mine: true };
 
   /** A mate in one for whoever is to move in `g`, or null. */
   function mateInOne(g) {
@@ -1693,6 +1701,28 @@ import { createStore } from "./store.js";
    */
   const OPENING_DRILLS_B = OPENING_DRILLS.map((d) => Object.assign({}, d, { id: d.id + ":b", side: "b" }));
   const ALL_PUZZLES = PUZZLES.concat(OPENING_DRILLS, OPENING_DRILLS_B);
+  /**
+   * 错题自炼 — the personal book, mined from this player's own analysed
+   * games (mistakes.js). Dynamic where ALL_PUZZLES is frozen, so the two are
+   * kept apart and joined per read: bookNow() is the whole book *right now*,
+   * and it is what every rail that serves puzzles reads — the review queue,
+   * the picker, the progress counts. The achievements deliberately keep
+   * reading ALL_PUZZLES: badge totals must not drift with a set that grows
+   * and retires on its own.
+   */
+  const Mistakes = ChessMistakes;
+  function loadMines() {
+    try {
+      const s = JSON.parse(Persist.get("mines") || "null");
+      if (s && s.v === 1 && Array.isArray(s.list)) {
+        return s.list.filter((m) => m && m.id && m.fen && Array.isArray(m.solution) && m.solution.length && m.cat === "mine");
+      }
+    } catch (_) {}
+    return [];
+  }
+  store.session.mines = loadMines();
+  function saveMines() { Persist.setJson("mines", { v: 1, list: store.session.mines }); }
+  function bookNow() { return store.session.mines.length ? ALL_PUZZLES.concat(store.session.mines) : ALL_PUZZLES; }
 
   /**
    * Rough difficulty tier for a puzzle, derived rather than hand-tagged so it
@@ -1847,7 +1877,7 @@ import { createStore } from "./store.js";
     store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id]);
     // …and into the lifetime tally, which unlike the queue survives
     // graduation — it is the memory 为你出一题 reads (see picker.js)
-    const p = ALL_PUZZLES.find((x) => x.id === id);
+    const p = bookNow().find((x) => x.id === id);
     if (p) Picker.recordAnswer(store.session.puzzleState, p.cat, true);
     savePuzzleState();
   }
@@ -1885,10 +1915,11 @@ import { createStore } from "./store.js";
     const base = cat === "review"
       // least-learned first, so a puzzle just answered goes to the back of the
       // queue instead of being asked again on the very next click
-      ? Srs.order(ALL_PUZZLES.filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).map((p) => p.id),
-        store.session.puzzleState.missed).map((id) => ALL_PUZZLES.find((p) => p.id === id))
+      ? Srs.order(bookNow().filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).map((p) => p.id),
+        store.session.puzzleState.missed).map((id) => bookNow().find((p) => p.id === id))
       // the op list shows one chair at a time — the side segment picks which
       : cat === "op" ? ALL_PUZZLES.filter((p) => p.cat === "op" && (p.side === "b") === (store.session.puzzleState.opSide === "b"))
+      : cat === "mine" ? store.session.mines.slice()
       : ALL_PUZZLES.filter((p) => p.cat === cat);
     // "Review" is not a difficulty band — it is exactly the set of puzzles this
     // player got wrong. Filtering it by an automatically derived tier hides the
@@ -1934,8 +1965,9 @@ import { createStore } from "./store.js";
 
   function startPuzzles() {
     let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) ? store.session.puzzleState.cat : "m1";
-    // don't strand the user on an empty review tab
-    if (cat === "review" && !puzzlesInCat("review").length) cat = "m1";
+    // don't strand the user on an empty review tab — or an emptied personal
+    // book, which retires drills on its own (mistakes.js cap)
+    if ((cat === "review" || cat === "mine") && !puzzlesInCat(cat).length) cat = "m1";
     const list = puzzlesInCat(cat);
     let idx = list.findIndex((p) => !store.session.puzzleState.solved[p.id]);
     if (idx < 0) idx = 0;
@@ -2021,6 +2053,10 @@ import { createStore } from "./store.js";
 
   function puzzleGoalText() {
     const p = store.session.puzzle.p;
+    if (p.cat === "mine") {
+      const cost = p.loss != null ? " · " + tf("pz.mineCost", [(p.loss / 100).toFixed(1)]) : "";
+      return tf("pz.goalMine", [p.played]) + cost;
+    }
     if (p.cat === "op") return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
     if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
@@ -2096,6 +2132,7 @@ import { createStore } from "./store.js";
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
           c === "tac" ? (store.session.puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(store.session.puzzle.p)]) : t("pz.takeTarget")) :
           c === "draw" ? t("pz.notDrawn") :
+          c === "mine" ? (mv.san === store.session.puzzle.p.played ? t("pz.mine.repeat") : t("pz.mine.stronger")) :
           openingWhy(g, mv, script[store.session.puzzle.stage]));
         return;
       }
@@ -2239,7 +2276,8 @@ import { createStore } from "./store.js";
       savePuzzleState();
       checkNewAchievements();
     }
-    const verb = store.session.puzzle.p.cat === "op" ? t("pz.doneOp") :
+    const verb = store.session.puzzle.p.cat === "mine" ? t("pz.doneMine") :
+      store.session.puzzle.p.cat === "op" ? t("pz.doneOp") :
       store.session.puzzle.p.cat === "def" ? t("pz.doneDef") :
       store.session.puzzle.p.cat === "draw" ? t("pz.doneDraw") :
       store.session.puzzle.p.cat === "real" ? t("pz.doneReal") :
@@ -2332,12 +2370,13 @@ import { createStore } from "./store.js";
       });
       document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
         b.classList.toggle("active", b.dataset.cat === store.session.puzzleState.cat);
+        if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;
       });
       avail(el("row-puzzle-tier"), tierApplies(store.session.puzzleState.cat));
       syncOpSideSeg(store.session.puzzleState.cat);
       const emptyProg = document.getElementById("puzzle-progress");
       if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
-        [ALL_PUZZLES.filter((p) => store.session.puzzleState.solved[p.id]).length, ALL_PUZZLES.length]);
+        [bookNow().filter((p) => store.session.puzzleState.solved[p.id]).length, bookNow().length]);
       const emptyTask = document.getElementById("puzzle-task");
       if (emptyTask) emptyTask.textContent = t("pz.noneInTier");
       const emptyList = document.getElementById("puzzle-list");
@@ -2345,13 +2384,13 @@ import { createStore } from "./store.js";
       return;
     }
     const list = puzzlesInCat(store.session.puzzle.cat);
-    const solvedAll = ALL_PUZZLES.filter((p) => store.session.puzzleState.solved[p.id]).length;
+    const solvedAll = bookNow().filter((p) => store.session.puzzleState.solved[p.id]).length;
     const missedCount = puzzlesInCat("review").length;
     const prog = document.getElementById("puzzle-progress");
     if (prog) {
       prog.textContent = store.session.puzzle.cat === "review"
         ? tf("pz.missedCount", [missedCount])
-        : tf("pz.solvedCount", [solvedAll, ALL_PUZZLES.length]);
+        : tf("pz.solvedCount", [solvedAll, bookNow().length]);
     }
     // the tier row does nothing in the review queue — grey it out rather than
     // The difficulty filter exists only where difficulty is a separate axis.
@@ -2370,6 +2409,7 @@ import { createStore } from "./store.js";
       b.classList.toggle("active", b.dataset.cat === store.session.puzzle.cat);
       // surface how many are queued for review right on the tab
       if (b.dataset.cat === "review") b.textContent = t("pz.cat.review") + (missedCount ? "·" + missedCount : "");
+      if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;
     });
     const task = document.getElementById("puzzle-task");
     if (task) {
@@ -2404,7 +2444,7 @@ import { createStore } from "./store.js";
     // the after-solve review nudge: the queue's size is the whole message
     const nudge = document.getElementById("puzzle-review-nudge");
     if (nudge) {
-      const owed = ALL_PUZZLES.filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).length;
+      const owed = bookNow().filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).length;
       const show = !!store.session.puzzle.done && owed > 0 && store.session.puzzle.cat !== "review";
       nudge.hidden = !show;
       if (show) nudge.textContent = tf("pz.smart.review", [owed]);
@@ -2561,9 +2601,31 @@ import { createStore } from "./store.js";
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
     recordAccuracy();
+    // 错题自炼: the pass just judged every move — bank the player's ?? plies
+    // as drills before the judgement scrolls away. Only in games where one
+    // side is this player (ai mode); a pvp or imported game has no "you".
+    let mined = 0;
+    if (store.session.mode === "ai") {
+      const cands = Mistakes.candidatesFrom({ fens, sans: h, tags, bests, scalars }, store.session.humanColor, Chess);
+      const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
+      const r = Mistakes.addMines(store.session.mines, cands, Date.now(), solvedIds);
+      if (r.added || r.dropped.length) {
+        store.session.mines = r.list;
+        saveMines();
+        // retired drills take their queue entries with them — an orphan id in
+        // missed would owe a review nothing can serve
+        for (const id of r.dropped) {
+          delete store.session.puzzleState.solved[id];
+          delete store.session.puzzleState.missed[id];
+        }
+        if (r.dropped.length) savePuzzleState();
+        mined = r.added;
+      }
+    }
     sync();
     const bad = tags.filter((tag) => tag === "?" || tag === "??").length;
-    const done = bad ? t("msg.analysis.donePrefix") + bad + t("msg.analysis.doneSuffix") : t("msg.analysis.doneClean");
+    let done = bad ? t("msg.analysis.donePrefix") + bad + t("msg.analysis.doneSuffix") : t("msg.analysis.doneClean");
+    if (mined) done += " · " + tf("msg.mined", [mined]);
     toast(done);
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
@@ -2991,7 +3053,9 @@ import { createStore } from "./store.js";
     if (!head || !body) return;
     const st = store.session.puzzleState;
     const cats = [];
-    for (const p of ALL_PUZZLES) if (!cats.includes(p.cat)) cats.push(p.cat);
+    for (const p of bookNow()) if (!cats.includes(p.cat)) cats.push(p.cat);
+    // the tally outlives the list: a retired personal book keeps its row
+    for (const k of Object.keys(st.tally || {})) if (!cats.includes(k)) cats.push(k);
     const rows = cats
       .map((c) => Object.assign({ cat: c }, Picker.catTally(st, c)))
       .filter((r) => r.attempts > 0);
@@ -3331,7 +3395,7 @@ import { createStore } from "./store.js";
     }
     // losing most games but not all: tactics are usually the cheapest fix
     if (losses > wins) {
-      const missed = ALL_PUZZLES.filter((p) => ChessSrs.isDue(store.session.puzzleState.missed[p.id])).length;
+      const missed = bookNow().filter((p) => ChessSrs.isDue(store.session.puzzleState.missed[p.id])).length;
       return missed ? tf("rec.review", [missed]) : t("rec.puzzles");
     }
     return null;
@@ -6380,12 +6444,12 @@ import { createStore } from "./store.js";
   document.getElementById("puzzle-review-nudge").onclick = () =>
     document.getElementById("puzzle-smart").click();
   document.getElementById("puzzle-smart").onclick = () => {
-    const pick = Picker.pickNext(store.session.puzzleState, ALL_PUZZLES, Srs, puzzleTier);
+    const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier);
     if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
     store.session.puzzleState.cat = pick.cat;
     // same contract for the side segment: if the picker chose an opening line
     // from the chair not currently shown, switch chairs so the pick is servable
-    const picked = ALL_PUZZLES.find((p) => p.id === pick.id);
+    const picked = bookNow().find((p) => p.id === pick.id);
     if (picked && picked.cat === "op" && pick.cat === "op")
       store.session.puzzleState.opSide = picked.side === "b" ? "b" : "w";
     savePuzzleState();
