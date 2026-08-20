@@ -1661,7 +1661,10 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     const { ctx, page } = await open(lang, "puzzle", "play");
     const seg = await page.evaluate(() => {
       const g = document.getElementById("puzzle-cat-seg");
-      const bs = [...g.querySelectorAll("button")];
+      // drawn buttons only: the 错题 tab exists in the DOM but is hidden until
+      // the personal book holds drills (P3) — a control that is not drawn has
+      // no height, and this section's claim is about the drawn layout
+      const bs = [...g.querySelectorAll("button")].filter((b) => !b.hidden);
       const one = bs.map((b) => {
         const c = b.cloneNode(true);
         c.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
@@ -1679,6 +1682,44 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       lang + ": every type is one line tall (" + seg.heights.join(", ") + ")");
     assert(seg.tight.length === 0,
       lang + ": no type name is wider than its cell" +
+      (seg.tight.length ? " — " + seg.tight.map((x) => "「" + x.t + "」 " + x.need + " in " + x.w).join(", ") : ""));
+    await ctx.close();
+  }
+  // …and when the personal book holds drills the 错题 tab is drawn: eleven
+  // items must still be one line each, in the widest language too
+  for (const lang of LANGS) {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
+    await ctx.addInitScript(([l]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "puzzle", langId: l, sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: [{
+        id: "mine:t1", cat: "mine", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        solution: ["Nf3"], played: "e4", loss: 350, ply: 0, t: 1700000000000 }] }));
+      localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "mine" }));
+    }, [lang]);
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    const seg = await page.evaluate(() => {
+      const g = document.getElementById("puzzle-cat-seg");
+      const bs = [...g.querySelectorAll("button")].filter((b) => !b.hidden);
+      const one = bs.map((b) => {
+        const c = b.cloneNode(true);
+        c.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
+        g.appendChild(c);
+        const need = Math.ceil(c.getBoundingClientRect().width);
+        c.remove();
+        return { t: b.textContent.trim(), need, w: Math.round(b.getBoundingClientRect().width) };
+      });
+      return { n: bs.length,
+               heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+               tight: one.filter((x) => x.need > x.w) };
+    });
+    assert(seg.n === 11 && seg.heights.length === 1 && seg.heights[0] < 40,
+      lang + ": with the personal book drawn, eleven types are still one line tall (" + seg.heights.join(", ") + ")");
+    assert(seg.tight.length === 0,
+      lang + ": the 错题 label fits its cell" +
       (seg.tight.length ? " — " + seg.tight.map((x) => "「" + x.t + "」 " + x.need + " in " + x.w).join(", ") : ""));
     await ctx.close();
   }

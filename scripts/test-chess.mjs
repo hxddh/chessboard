@@ -2778,7 +2778,7 @@ for (const lang of CONTENT_LANGS) {
     const w = P.weakest(st, ["m1", "win", "def"]);
     assert(w && w.cat === "def", "weakest() 独立可调,答案与选题一致");
     const appSrc2 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
-    assert(/renderPuzzleTally[\s\S]{0,900}Picker\.weakest\(/.test(appSrc2),
+    assert(/renderPuzzleTally[\s\S]{0,1200}Picker\.weakest\(/.test(appSrc2),
       "记录页的「错得最多」标记读的是同一个 Picker.weakest");
     assert(/puzzle-review-nudge[\s\S]{0,400}store\.session\.puzzle\.done && owed > 0/.test(appSrc2),
       "解后复习提示只在「做完了且队列欠着」时画 — 不适用则不画");
@@ -2833,6 +2833,89 @@ for (const lang of CONTENT_LANGS) {
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
   assert(/id="op-side-seg"[\s\S]{0,400}data-side="w"[\s\S]{0,400}data-side="b"/.test(html),
     "the side segment offers exactly the two chairs");
+}
+
+// 错题自炼: the review pass's own judgement becomes the player's personal
+// book. The miner is pure (analysis arrays in, drills out) so it is tested
+// directly; the wiring — who may write the book, who reads it, and who is
+// forbidden from reading it — is held by source guards.
+{
+  loadModule(ctx, "src/web/js/mistakes.js");
+  const M = ctx.ChessMistakes;
+  const C = ctx.Chess;
+  // a real two-ply game so every fen/san/best is a legal chess fact
+  const g = new C();
+  const fens = [g.fen()];
+  const sans = ["e4", "e5"];
+  for (const m of sans) { g.move(m); fens.push(g.fen()); }
+  const base = { fens, sans, tags: ["??", "??"], bests: ["g1f3", "g8f6"], scalars: [30, -370, 20] };
+
+  // only the asked-for side is mined, and the answer is the engine's move in SAN
+  const w = M.candidatesFrom(base, "w", C);
+  assert(w.length === 1 && w[0].solution[0] === "Nf3" && w[0].played === "e4",
+    "a White ?? becomes a drill whose answer is the engine's move");
+  assert(w[0].loss === 400, "the cost is the same arithmetic the tag came from (" + w[0].loss + ")");
+  assert(w[0].side === undefined && w[0].cat === "mine" && w[0].fen === fens[0],
+    "the drill is an ordinary puzzle at the position the mistake was played from");
+  const b = M.candidatesFrom(base, "b", C);
+  assert(b.length === 1 && b[0].solution[0] === "Nf6" && b[0].side === "b" && b[0].loss === 390,
+    "a Black ?? flips the sign and carries side:\"b\" — the black-drill rails do the rest");
+
+  // what is NOT mined: ? plies, plies without a stored best, best === played
+  assert(M.candidatesFrom({ ...base, tags: ["?", "??"] }, "w", C).length === 0,
+    "a ? is not a lesson — only ?? plies are banked");
+  assert(M.candidatesFrom({ ...base, bests: [null, "g8f6"] }, "w", C).length === 0,
+    "a judgement without a stored answer is not a drill");
+  assert(M.candidatesFrom({ ...base, bests: ["e2e4", "g8f6"] }, "w", C).length === 0,
+    "best === played can happen on a lost position — nothing to teach, skip");
+
+  // the id is the position and the sin, not the game — re-analysis dedups
+  assert(M.mineId(fens[0], "e4") === M.mineId(fens[0], "e4") &&
+         M.mineId(fens[0], "e4") !== M.mineId(fens[0], "d4"),
+    "ids are stable per (position, played) and distinct across moves");
+  {
+    const once = M.addMines([], w, 1000, new Set());
+    const twice = M.addMines(once.list, w, 2000, new Set());
+    assert(once.added === 1 && twice.added === 0 && twice.list.length === 1,
+      "re-analysing the same game banks nothing twice");
+  }
+  // the cap retires solved drills first, then the oldest, and reports what left
+  {
+    const many = [];
+    for (let i = 0; i < M.MAX_MINES; i++) many.push({ id: "mine:x" + i, cat: "mine", fen: "f", solution: ["a"], t: i });
+    const r = M.addMines(many, [{ id: "mine:new", cat: "mine", fen: "f2", solution: ["b"] }], 9999,
+      new Set(["mine:x5"]));
+    assert(r.list.length === M.MAX_MINES && r.dropped.length === 1 && r.dropped[0] === "mine:x5",
+      "over the cap, a solved drill retires before any unsolved one");
+    const r2 = M.addMines(r.list, [{ id: "mine:new2", cat: "mine", fen: "f3", solution: ["c"] }], 10000, new Set());
+    assert(r2.dropped[0] === "mine:x0", "with nothing solved, the oldest retires");
+  }
+
+  // --- the wiring ---------------------------------------------------------
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  // the book every serving rail reads is the live one…
+  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier\)/.test(appSrc),
+    "为你出一题 reads the live book — a mined drill can be recommended");
+  assert(/\? Srs\.order\(bookNow\(\)\.filter\(\(p\) => Srs\.isDue/.test(appSrc),
+    "the review queue reads the live book — a missed drill comes back due");
+  // …and the achievements deliberately do not
+  const achBlock = /const solvedIn[\s\S]{0,1400}opTotal:[^\n]*\n/.exec(appSrc);
+  assert(achBlock && !achBlock[0].includes("bookNow") && achBlock[0].includes("ALL_PUZZLES"),
+    "achievement totals stay on the frozen book — badges must not drift with a set that retires itself");
+  // mining happens where the judgement is born, for the player's side only
+  assert(/if \(store\.session\.mode === "ai"\) \{[\s\S]{0,200}Mistakes\.candidatesFrom\(\{ fens, sans: h, tags, bests, scalars \}, store\.session\.humanColor, Chess\)/.test(appSrc),
+    "analyzeGame banks the human side's ?? plies, and only in games with a human side");
+  assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
+    "a retired drill takes its solved/missed entries with it — no orphan reviews owed");
+  // the tab exists exactly while the book does (P3), and the cat is real
+  assert(/if \(b\.dataset\.cat === "mine"\) b\.hidden = !store\.session\.mines\.length;/.test(appSrc),
+    "the 错题 tab is drawn only while the personal book holds drills");
+  assert(/"op", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
+    "mine is a real category on the scripted-grading rail");
+  assert(/\(cat === "review" \|\| cat === "mine"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
+    "an emptied personal book does not strand the player");
+  const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  assert(/data-cat="mine" hidden/.test(html), "…and the button starts hidden until the book says otherwise");
 }
 
 // i18n: every key present in the base language must exist in the others, or
@@ -3889,7 +3972,7 @@ for (const lang of CONTENT_LANGS) {
     // every key the app owns is in the list — a key added elsewhere would be
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
-    assert(keys.length === 8, "all eight keys are declared in one place (" + keys.length + ")");
+    assert(keys.length === 9, "all nine keys are declared in one place (" + keys.length + ")");
     for (const k of keys) {
       assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
     }

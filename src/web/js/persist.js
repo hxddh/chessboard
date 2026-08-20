@@ -29,6 +29,7 @@ export const KEYS = {
   stats: "chess.v1.stats",
   learn: "chess.v1.learn",
   puzzles: "chess.v1.puzzles",
+  mines: "chess.v1.mines",
   achievements: "chess.v1.achv",
   slots: "chess.v1.slots",
   panelOpen: "chess.panelOpen",
