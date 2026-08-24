@@ -2918,6 +2918,113 @@ for (const lang of CONTENT_LANGS) {
   assert(/data-cat="mine" hidden/.test(html), "…and the button starts hidden until the book says otherwise");
 }
 
+// 进步档案: totals cannot show change, so answers are ALSO banked into ISO
+// weeks — alongside, never instead of, the lifetime tally. Pure module, so
+// the clock is an argument and history is whatever the test says it is.
+{
+  loadModule(ctx, "src/web/js/progress.js");
+  const P = ctx.ChessProgress;
+  const D = (s) => new Date(s + "T12:00:00").getTime();
+  // ISO week facts, checked against the calendar, not the implementation
+  assert(P.weekKey(D("2026-01-01")) === "2026-W01", "2026-01-01 (Thursday) is 2026-W01");
+  assert(P.weekKey(D("2026-01-04")) === "2026-W01" && P.weekKey(D("2026-01-05")) === "2026-W02",
+    "the ISO week turns on Monday, not Sunday");
+  assert(P.weekKey(D("2027-01-01")) === "2026-W53", "2027-01-01 (Friday) still belongs to 2026-W53");
+  {
+    const g = P.emptyRecord();
+    P.recordAnswer(g, "def", true, D("2026-08-10"));
+    P.recordAnswer(g, "def", false, D("2026-08-12"));
+    P.recordAnswer(g, "def", false, D("2026-08-18"));
+    const rows = P.weekOverWeek(g, D("2026-08-19"));
+    const def = rows.find((r) => r.cat === "def");
+    assert(def && def.prev === 0.5 && def.now === 0, "本周对上周:错误率各算各的周");
+    // buckets are additive history — the lifetime tally is not consulted
+    P.recordMined(g, 3, D("2026-08-18"));
+    P.recordRedeemed(g, D("2026-08-18"));
+    const wk = g.weeks[P.weekKey(D("2026-08-18"))];
+    assert(wk.mined === 3 && wk.red === 1, "收进与找回也各记各的周");
+  }
+  {
+    const g = P.emptyRecord();
+    for (let i = 0; i < P.MAX_WEEKS + 8; i++) P.recordAnswer(g, "m1", false, D("2025-01-06") + i * 7 * 86400000);
+    assert(Object.keys(g.weeks).length === P.MAX_WEEKS, "半年之外的周被剪掉 — 档案不是仓库");
+  }
+  {
+    const g = P.emptyRecord();
+    const today = D("2026-08-20");
+    P.recordSession(g, today - 2 * 86400000);
+    P.recordSession(g, today - 86400000);
+    assert(P.streak(g, today) === 2, "昨天收尾的连击今天读仍算数(不惩罚先看后练)");
+    P.recordSession(g, today);
+    assert(P.streak(g, today) === 3, "今天练完接上");
+    const g2 = P.emptyRecord();
+    P.recordSession(g2, today - 3 * 86400000);
+    assert(P.streak(g2, today) === 0, "隔了两天,连击归零 — 不粉饰");
+  }
+  assert(P.accSeries([{ t: 3, acc: 90 }, { t: 1, acc: 80 }, { t: 2 }], 10).map((x) => x.acc).join(",") === "80,90",
+    "准确率序列只取分析过的局,按时间排");
+  assert(P.coerce({ v: 9 }).weeks && P.coerce(null).days, "看不懂的存档回退为空档案,不炸");
+}
+
+// 今天的训练: the planner reads every signal the app already had, together,
+// in a fixed and explainable order — and a step exists only while its source
+// has something to serve (P3 in time).
+{
+  loadModule(ctx, "src/web/js/planner.js");
+  const PL = ctx.ChessPlanner;
+  const full = PL.plan({ owed: 5, mineUnsolved: 4, weakCat: "def", lessonNext: 3, opUnsolved: true, playedToday: false });
+  assert(full.steps.map((x) => x.kind).join(",") === "review,mine,weak,lesson,game",
+    "满信号:欠账→错题→弱项→前进→对局,课程在时开局线让位");
+  assert(full.steps[0].n === PL.DOSE.review && full.steps[1].n === 2 && full.steps[2].cat === "def",
+    "剂量封顶,弱项带着它的类别");
+  const lean = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, lessonNext: -1, opUnsolved: true, playedToday: true });
+  assert(lean.steps.map((x) => x.kind).join(",") === "op", "没欠账、课上完、今天下过棋:只剩背谱");
+  assert(PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, lessonNext: -1, opUnsolved: false, playedToday: true }).steps.length === 0,
+    "什么都不缺时,课表是空的 — 不硬凑");
+  assert(PL.plan({ owed: 0, mineUnsolved: 2, weakCat: "mine", lessonNext: -1, opUnsolved: false, playedToday: true })
+    .steps.map((x) => x.kind).join(",") === "mine",
+    "弱项恰好是错题类时不重复排 — 一个想法不算两步");
+  // completion is counter deltas, so quitting mid-step costs nothing
+  const before = PL.snap({ owed: 3, byCat: { def: 10, mine: 2 }, lessonsDone: 1, opSolved: 5, games: 7 });
+  const after = (o) => PL.snap(Object.assign({ owed: 3, byCat: { def: 10, mine: 2 }, lessonsDone: 1, opSolved: 5, games: 7 }, o));
+  assert(PL.stepDone({ kind: "review", n: 3 }, before, after({ owed: 0 })),
+    "复习队列自己清空也算完成 — SRS 毕业不是没练");
+  // one clean solve does not graduate (SRS wants two), so owed barely moves
+  // during honest work: the dose counts answers, not graduations
+  assert(PL.stepDone({ kind: "review", n: 3 }, before, after({ owed: 3, byCat: { def: 12, mine: 3 } })),
+    "答满剂量就算完成 — 欠账数不动是 SRS 的事,不是没练");
+  assert(!PL.stepDone({ kind: "review", n: 3 }, before, after({ owed: 1, byCat: { def: 11, mine: 2 } })),
+    "只答了一题欠着三题的剂量,还没完");
+  assert(PL.stepDone({ kind: "weak", cat: "def", n: 2 }, before, after({ byCat: { def: 12, mine: 2 } })),
+    "弱项按类内答题数记,不问对错 — 练了就是练了");
+  assert(PL.stepDone({ kind: "mine", n: 2 }, before, after({ byCat: { def: 10, mine: 4 } })), "错题同理");
+  assert(PL.stepDone({ kind: "lesson", i: 1 }, before, after({ lessonsDone: 2 })), "课以完成数记");
+  assert(PL.stepDone({ kind: "game" }, before, after({ games: 8 })), "对局以入档记");
+  assert(!PL.stepDone({ kind: "game" }, before, after({})), "没下就是没下");
+}
+
+// --- the wiring: who writes the buckets, who reads the plan ---------------
+{
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  assert(/Picker\.recordAnswer\(store\.session\.puzzleState, p\.cat, true\);[\s\S]{0,200}Progress\.recordAnswer\(store\.session\.progress, p\.cat, true, Date\.now\(\)\)/.test(appSrc),
+    "每次失手同时写进周桶 — 记忆与总账同一落笔点");
+  assert(/Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false\);\s*Progress\.recordAnswer\(store\.session\.progress, store\.session\.puzzle\.p\.cat, false, Date\.now\(\)\)/.test(appSrc),
+    "干净解出同样双写");
+  assert(/p\.cat === "mine"\) Progress\.recordRedeemed/.test(appSrc),
+    "错题干净解出记一次「找回」");
+  assert(/Progress\.recordMined\(store\.session\.progress, r\.added/.test(appSrc),
+    "挖进的错题记进当周");
+  assert(/store\.subscribe\("session", syncDailyUI\);\s*store\.subscribe\("game", syncDailyUI\)/.test(appSrc),
+    "课表在 session 与 game 两个切片上都会醒 — 对局一步也是进度");
+  assert(/renderPuzzleTally\(\);\s*renderTrends\(\)/.test(appSrc),
+    "记录页画完战绩画进步");
+  assert(/function dailyJump\(step\) \{[\s\S]{0,400}#mode-seg button\[data-mode=/.test(appSrc),
+    "跳步走的是模式段自己的点击路径,不是旁路");
+  const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  assert(/id="daily-btn"/.test(html) && /id="trend-head" hidden/.test(html) && /id="trend-acc" hidden/.test(html),
+    "训练入口在,进步区默认不画,有数据才出现(P3)");
+}
+
 // i18n: every key present in the base language must exist in the others, or
 // switching language would silently blank parts of the UI
 {
@@ -3972,7 +4079,7 @@ for (const lang of CONTENT_LANGS) {
     // every key the app owns is in the list — a key added elsewhere would be
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
-    assert(keys.length === 9, "all nine keys are declared in one place (" + keys.length + ")");
+    assert(keys.length === 10, "all ten keys are declared in one place (" + keys.length + ")");
     for (const k of keys) {
       assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
     }

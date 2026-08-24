@@ -315,6 +315,16 @@
            returned to its content. -->
       <div class="opening-line" id="opening-line" hidden></div>
 
+      <!-- 今天的训练 — the coach's plan for one sitting (planner.js). One
+           button, every mode: it reads the review debt, the personal book,
+           the tally, the course and today's games together, and walks the
+           steps as they are earned. An invitation, never an autopilot: it
+           jumps only when clicked, exactly like 为你出一题. -->
+      <div class="link-row" id="daily-row">
+        <button type="button" class="act-btn" id="daily-btn" title="按复习欠账、错题、弱项和课程进度排出这一节练习" data-i18n-title="tip.daily" data-i18n="daily.btn">今天的训练</button>
+        <span class="side-h-meta" id="daily-note" hidden></span>
+      </div>
+
       <section class="side-section" id="sec-learn" hidden>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.learn">教学</h2>
@@ -560,6 +570,16 @@
           <h2 class="side-h" data-i18n="side.puzzleTally">做题战绩</h2>
         </div>
         <div class="stats-body" id="puzzle-tally-body" hidden></div>
+        <!-- 进步 — change over time, not totals (progress.js). The accuracy
+             sparkline reads what stats.games already stores; the weekly rows
+             read buckets that start filling at 4.0 — no history is invented.
+             Every element exists only when it has data to show (P3). -->
+        <div class="side-h-row" id="trend-head" hidden>
+          <h2 class="side-h" data-i18n="side.trend">进步</h2>
+          <span class="side-h-meta num" id="trend-streak" hidden></span>
+        </div>
+        <canvas id="trend-acc" hidden aria-label="准确率走势" data-i18n-aria="aria.trendAcc" title="最近分析过的对局的准确率,按时间排列" data-i18n-title="tip.trendAcc"></canvas>
+        <div class="stats-body" id="trend-body" hidden></div>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
           <!-- label is "全部 N 局": renderHistory() fills in both the count and
