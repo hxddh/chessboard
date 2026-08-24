@@ -30,6 +30,7 @@ export const KEYS = {
   learn: "chess.v1.learn",
   puzzles: "chess.v1.puzzles",
   mines: "chess.v1.mines",
+  progress: "chess.v1.progress",
   achievements: "chess.v1.achv",
   slots: "chess.v1.slots",
   panelOpen: "chess.panelOpen",

@@ -2152,3 +2152,14 @@ kbd.accel {
   border-style: dashed;
   border-bottom-width: 1px;
 }
+
+/* 进步 — the accuracy sparkline on the record page. Same dress as the eval
+   curve: a card, not a chrome element, because it is content you read. */
+#trend-acc {
+  display: block;
+  width: 100%;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  border: 1px solid var(--card-border);
+}

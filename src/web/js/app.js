@@ -15,6 +15,8 @@ import { CHESS_LESSONS } from "./lessons.js";
 import { ChessMaterial } from "./material.js";
 import { motifOf } from "./motif.js";
 import { ChessMistakes } from "./mistakes.js";
+import { ChessProgress } from "./progress.js";
+import { ChessPlanner } from "./planner.js";
 import { ChessOpeningCoach } from "./opening-coach.js";
 import { CHESS_OPENINGS_EN, CHESS_OPENING_IDEAS_EN } from "./openings-en.js";
 import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
@@ -243,6 +245,10 @@ import { createStore } from "./store.js";
       puzzleState: null,  // filled in below, where it can first be computed
       /** 错题自炼 — the personal book (mistakes.js); filled in below */
       mines: [],
+      /** 进步档案 — weekly buckets + practice days (progress.js); filled in below */
+      progress: null,
+      /** 今天的训练 — the active sitting {steps, i, before}, or null (planner.js) */
+      daily: null,
       /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
       puzzleTierFilter: "all",
       /** editor runtime: {board, turn, castling, brush} | null */
@@ -1722,6 +1728,12 @@ import { createStore } from "./store.js";
   }
   store.session.mines = loadMines();
   function saveMines() { Persist.setJson("mines", { v: 1, list: store.session.mines }); }
+  const Progress = ChessProgress;
+  const Planner = ChessPlanner;
+  store.session.progress = Progress.coerce((() => {
+    try { return JSON.parse(Persist.get("progress") || "null"); } catch (_) { return null; }
+  })());
+  function saveProgress() { Persist.setJson("progress", store.session.progress); }
   function bookNow() { return store.session.mines.length ? ALL_PUZZLES.concat(store.session.mines) : ALL_PUZZLES; }
 
   /**
@@ -1879,6 +1891,8 @@ import { createStore } from "./store.js";
     // graduation — it is the memory 为你出一题 reads (see picker.js)
     const p = bookNow().find((x) => x.id === id);
     if (p) Picker.recordAnswer(store.session.puzzleState, p.cat, true);
+    // …and into this week's bucket — the tally is the total, this is the change
+    if (p) { Progress.recordAnswer(store.session.progress, p.cat, true, Date.now()); saveProgress(); }
     savePuzzleState();
   }
   /**
@@ -2272,6 +2286,10 @@ import { createStore } from "./store.js";
       // let one shaky puzzle wash its own signal out
       if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) {
         Picker.recordAnswer(store.session.puzzleState, store.session.puzzle.p.cat, false);
+        Progress.recordAnswer(store.session.progress, store.session.puzzle.p.cat, false, Date.now());
+        // a personal drill solved clean: the mistake is redeemed, and the week remembers
+        if (store.session.puzzle.p.cat === "mine") Progress.recordRedeemed(store.session.progress, Date.now());
+        saveProgress();
       }
       savePuzzleState();
       checkNewAchievements();
@@ -2620,6 +2638,7 @@ import { createStore } from "./store.js";
         }
         if (r.dropped.length) savePuzzleState();
         mined = r.added;
+        if (r.added) { Progress.recordMined(store.session.progress, r.added, Date.now()); saveProgress(); }
       }
     }
     sync();
@@ -3082,6 +3101,204 @@ import { createStore } from "./store.js";
     }
   }
 
+  /** The counters the planner judges completion on (planner.js snap/stepDone). */
+  function dailySnapSrc() {
+    const st = store.session.puzzleState;
+    const byCat = {};
+    for (const [c, tl] of Object.entries(st.tally || {})) byCat[c] = (tl.miss || 0) + (tl.solve || 0);
+    return {
+      owed: bookNow().filter((p) => Srs.isDue(st.missed[p.id])).length,
+      byCat,
+      lessonsDone: Object.keys(store.session.learnState.done || {}).length,
+      opSolved: ALL_PUZZLES.filter((p) => p.cat === "op" && st.solved[p.id]).length,
+      // stats parse deferred: only the game step reads it, and snap() copies
+      games: loadStats().games.length,
+    };
+  }
+
+  /** What the coach can see today — every signal already existed. */
+  function dailySignals() {
+    const st = store.session.puzzleState;
+    const w = Picker.weakest(st, Object.keys(st.tally || {}));
+    const today = Progress.dayKey(Date.now());
+    return {
+      owed: bookNow().filter((p) => Srs.isDue(st.missed[p.id])).length,
+      mineUnsolved: store.session.mines.filter((m) => !st.solved[m.id]).length,
+      weakCat: w ? w.cat : null,
+      lessonNext: LESSONS.findIndex((L) => !store.session.learnState.done[L.id]),
+      opUnsolved: ALL_PUZZLES.some((p) => p.cat === "op" && !st.solved[p.id]),
+      playedToday: loadStats().games.some((g) => Progress.dayKey(g.t) === today),
+    };
+  }
+
+  function dailyStepLabel(step) {
+    if (step.kind === "review") return tf("daily.review", [step.n]);
+    if (step.kind === "mine") return tf("daily.mine", [step.n]);
+    if (step.kind === "weak") return tf("daily.weak", [t("pz.cat." + step.cat)]);
+    if (step.kind === "lesson") return t("daily.lesson");
+    if (step.kind === "op") return t("daily.op");
+    return t("daily.game");
+  }
+
+  /**
+   * 今天的训练 — advance earned steps, then dress the button.
+   *
+   * Steps are judged on counter deltas (planner.js), so this is safe to run
+   * on every session/game commit: nothing here mutates the sources it reads,
+   * and an inactive sitting costs one streak lookup.
+   */
+  function syncDailyUI() {
+    const btn = document.getElementById("daily-btn");
+    const note = document.getElementById("daily-note");
+    if (!btn || !note) return;
+    const d = store.session.daily;
+    if (!d) {
+      btn.textContent = t("daily.btn");
+      const run = Progress.streak(store.session.progress, Date.now());
+      note.hidden = run < 2;
+      if (run >= 2) note.textContent = tf("daily.streak", [run]);
+      return;
+    }
+    let after = Planner.snap(dailySnapSrc());
+    while (d.i < d.steps.length && Planner.stepDone(d.steps[d.i], d.before, after)) {
+      d.i++;
+      d.before = after;
+      after = Planner.snap(dailySnapSrc());
+    }
+    if (d.i >= d.steps.length) {
+      store.session.daily = null;
+      Progress.recordSession(store.session.progress, Date.now());
+      saveProgress();
+      const run = Progress.streak(store.session.progress, Date.now());
+      toast(t("daily.done") + (run >= 2 ? " · " + tf("daily.streak", [run]) : ""));
+      btn.textContent = t("daily.btn");
+      note.hidden = run < 2;
+      if (run >= 2) note.textContent = tf("daily.streak", [run]);
+      return;
+    }
+    btn.textContent = tf("daily.of", [d.i + 1, d.steps.length]) + " · " + dailyStepLabel(d.steps[d.i]);
+    note.hidden = true;
+  }
+
+  /** Take the player to where the current step happens. Invited, not automatic. */
+  function dailyJump(step) {
+    const modeBtn = (m) => document.querySelector('#mode-seg button[data-mode="' + m + '"]');
+    if (step.kind === "lesson") {
+      store.session.learnState.last = step.i;
+      saveLearnState();
+      if (store.session.mode !== "learn") modeBtn("learn").click();
+      else { startLesson(step.i); setSideTab("play", { top: true }); sync(); }
+      return;
+    }
+    if (step.kind === "game") {
+      if (store.session.mode !== "ai") modeBtn("ai").click();
+      else setSideTab("play", { top: true });
+      return;
+    }
+    // the puzzle steps: pick the category, then enter (or re-enter) the mode
+    const cat = step.kind === "weak" ? step.cat : step.kind;
+    store.session.puzzleState.cat = cat;
+    savePuzzleState();
+    // same contract as 为你出一题: a browse filter must not hide the plan
+    store.session.puzzleTierFilter = "all";
+    if (store.session.mode !== "puzzle") modeBtn("puzzle").click();
+    else { startPuzzles(); setSideTab("play", { top: true }); saveSettings(); sync(); }
+  }
+
+  /**
+   * 进步 — change over time, on the record page (progress.js).
+   * Everything here draws only when it has data (P3): the sparkline needs
+   * two analysed games, the rows need a week with answers in it.
+   */
+  function renderTrends() {
+    const head = document.getElementById("trend-head");
+    const body = document.getElementById("trend-body");
+    const cv = document.getElementById("trend-acc");
+    const streakEl = document.getElementById("trend-streak");
+    if (!head || !body || !cv) return;
+    const prog = store.session.progress;
+    const series = Progress.accSeries(loadStats().games, 30);
+    const rows = Progress.weekOverWeek(prog, Date.now())
+      .filter((r) => r.now != null || r.prev != null)
+      .sort((a, b) => (b.now ?? b.prev) - (a.now ?? a.prev));
+    const wk = prog.weeks[Progress.weekKey(Date.now())];
+    const showCurve = series.length >= 2;
+    const showRows = rows.length > 0 || !!wk;
+    head.hidden = !(showCurve || showRows);
+    cv.hidden = !showCurve;
+    body.hidden = !showRows;
+    const run = Progress.streak(prog, Date.now());
+    if (streakEl) {
+      streakEl.hidden = run < 2;
+      if (run >= 2) streakEl.textContent = tf("daily.streak", [run]);
+    }
+    if (showRows) {
+      body.replaceChildren();
+      for (const r of rows) {
+        const row = document.createElement("div");
+        row.className = "stat-row";
+        const name = document.createElement("span");
+        name.className = "stat-k";
+        name.textContent = t("pz.cat." + r.cat);
+        const val = document.createElement("span");
+        val.className = "stat-v num";
+        const pc = (x) => Math.round(x * 100) + "%";
+        val.textContent = r.now != null && r.prev != null ? tf("trend.row", [pc(r.now), pc(r.prev)])
+          : r.now != null ? tf("trend.rowNew", [pc(r.now)])
+          : tf("trend.rowPrev", [pc(r.prev)]);
+        row.append(name, val);
+        body.appendChild(row);
+      }
+      if (wk && (wk.mined || wk.red)) {
+        const row = document.createElement("div");
+        row.className = "stat-row";
+        const name = document.createElement("span");
+        name.className = "stat-k";
+        name.textContent = t("pz.cat.mine");
+        const val = document.createElement("span");
+        val.className = "stat-v num";
+        val.textContent = tf("trend.mines", [wk.mined, wk.red]);
+        row.append(name, val);
+        body.appendChild(row);
+      }
+    }
+    if (showCurve) drawAccTrend(cv, series);
+  }
+
+  /** The accuracy sparkline — the eval curve's dress, the record's data. */
+  function drawAccTrend(cv, series) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
+    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
+    if (cv.width !== W) cv.width = W;
+    if (cv.height !== H) cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement);
+    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
+    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const n = series.length - 1;
+    const pad = 4 * dpr;
+    // 50–100%: the honest floor for a metric that rarely dips below it, and
+    // a fixed scale so two visits to this page are comparable
+    const x = (i) => (n ? (i / n) * (W - 2 * pad) + pad : W / 2);
+    const y = (a) => H - pad - (Math.max(50, Math.min(100, a)) - 50) / 50 * (H - 2 * pad);
+    ctx.strokeStyle = cMuted;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = dpr;
+    ctx.beginPath(); ctx.moveTo(0, y(75)); ctx.lineTo(W, y(75)); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = cAccent;
+    ctx.lineWidth = 1.6 * dpr;
+    ctx.beginPath();
+    series.forEach((g, i) => { if (i) ctx.lineTo(x(i), y(g.acc)); else ctx.moveTo(x(i), y(g.acc)); });
+    ctx.stroke();
+    ctx.fillStyle = cAccent;
+    series.forEach((g, i) => {
+      ctx.beginPath(); ctx.arc(x(i), y(g.acc), 1.8 * dpr, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+
   function renderStats() {
     const el = document.getElementById("stats-body");
     if (!el) return;
@@ -3134,6 +3351,7 @@ import { createStore } from "./store.js";
       : t("stats.emptyHint");
     el.appendChild(hint);
     renderPuzzleTally();
+    renderTrends();
     const rec = recommendation();
     if (rec) {
       const line = document.createElement("div");
@@ -4189,6 +4407,8 @@ import { createStore } from "./store.js";
     store.subscribe("session", syncLearnUI);
     store.subscribe("session", syncPuzzleUI);
     store.subscribe("session", syncEditorUI);
+    store.subscribe("session", syncDailyUI);
+    store.subscribe("game", syncDailyUI);
     store.subscribe("session", syncSettingsUI);
 
     // …and the two views that were living inside syncSettingsUI while reading
@@ -6443,6 +6663,16 @@ import { createStore } from "./store.js";
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
   document.getElementById("puzzle-review-nudge").onclick = () =>
     document.getElementById("puzzle-smart").click();
+  document.getElementById("daily-btn").onclick = () => {
+    if (!store.session.daily) {
+      const p = Planner.plan(dailySignals());
+      if (!p.steps.length) { toast(t("daily.rest")); return; }
+      store.session.daily = { steps: p.steps, i: 0, before: Planner.snap(dailySnapSrc()) };
+      toast(tf("daily.begin", [p.steps.length]));
+    }
+    dailyJump(store.session.daily.steps[store.session.daily.i]);
+    sync();
+  };
   document.getElementById("puzzle-smart").onclick = () => {
     const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier);
     if (pick.kind === "done") { toast(t("pz.smart.done")); return; }

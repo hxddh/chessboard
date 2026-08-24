@@ -718,6 +718,105 @@ if (hasTab && REAL.length) {
   await ctx2.close();
 }
 
+// --- 今天的训练 + 进步:教练排课在真页面上走一步,进步区按数据显隐 ----------
+{
+  // A. 有欠账的存档:课表第一步是清复习,真解掉那题后课表自己前进
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx2.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: { "w-hangq": { s: 0, n: 1 } }, cat: "m1" }));
+  });
+  const pg = await ctx2.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel").catch(() => {});
+
+  const btnText = () => pg.evaluate(() => document.getElementById("daily-btn").textContent.trim());
+  assert(await btnText() === "今天的训练", "开工前按钮只是一句邀请,不报进度");
+  await pg.click("#daily-btn");
+  await pg.waitForTimeout(700);
+  const step1 = await btnText();
+  assert(/第 1\/\d 步 · 先清复习 1 题/.test(step1), "第一步永远是欠账", step1);
+  const st1 = await pg.evaluate(() => ({
+    mode: JSON.parse(localStorage.getItem("chess.v1.settings")).mode,
+    cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat,
+  }));
+  assert(st1.mode === "puzzle" && st1.cat === "review", "点它真的把人带到复习队列", JSON.stringify(st1));
+  // solve the one owed puzzle (w-hangq: Rxd6) — the queue empties, the plan advances
+  const tapP = async (s) => {
+    const p = await pg.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1], z = r.width / 8;
+      return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+    }, s);
+    await pg.mouse.click(p.x, p.y);
+    await pg.waitForTimeout(240);
+  };
+  await tapP("d2"); await tapP("d6");
+  await pg.waitForTimeout(600);
+  const step2 = await btnText();
+  assert(/第 2\/\d 步/.test(step2), "清完欠账,课表自己走到第二步", step2);
+  await ctx2.close();
+
+  // B. 进步区:没有数据整节不画;种入两周的档案就出现,数字如实
+  const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx3.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg3 = await ctx3.newPage();
+  await pg3.goto(`http://127.0.0.1:${PORT}/`);
+  await pg3.waitForTimeout(900);
+  assert(await pg3.evaluate(() => document.getElementById("trend-head").hidden),
+    "没有任何进步数据时,「进步」整节不存在(P3)");
+  await ctx3.close();
+
+  const ctx4 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx4.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    // two ISO weeks of defence answers around "now", plus mined/redeemed this week
+    const now = Date.now(), W = 7 * 86400000;
+    const wk = (t) => { // the app's own weekKey algorithm, restated for the seed
+      const d = new Date(t);
+      const th = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7) + 3);
+      const j4 = new Date(th.getFullYear(), 0, 4);
+      const n = 1 + Math.round(((th - j4) / 86400000 - 3 + ((j4.getDay() + 6) % 7)) / 7);
+      return th.getFullYear() + "-W" + String(n).padStart(2, "0");
+    };
+    const weeks = {};
+    weeks[wk(now - W)] = { cats: { def: { m: 2, s: 2 } }, mined: 0, red: 0 };
+    weeks[wk(now)] = { cats: { def: { m: 0, s: 3 } }, mined: 3, red: 1 };
+    localStorage.setItem("chess.v1.progress", JSON.stringify({ v: 1, weeks, days: {} }));
+    // three analysed games for the sparkline
+    localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games: [
+      { id: "g1", t: now - 3 * W, diff: "normal", color: "w", result: "loss", moves: 40, pgn: "1. e4 e5", acc: 62 },
+      { id: "g2", t: now - W, diff: "normal", color: "w", result: "win", moves: 40, pgn: "1. e4 e5", acc: 71 },
+      { id: "g3", t: now, diff: "normal", color: "w", result: "win", moves: 40, pgn: "1. e4 e5", acc: 78 },
+    ] }));
+  });
+  const pg4 = await ctx4.newPage();
+  pg4.on("pageerror", (e) => errs.push(e.message));
+  await pg4.goto(`http://127.0.0.1:${PORT}/`);
+  await pg4.waitForTimeout(900);
+  const trend = await pg4.evaluate(() => ({
+    head: !document.getElementById("trend-head").hidden,
+    curve: !document.getElementById("trend-acc").hidden,
+    rows: [...document.querySelectorAll("#trend-body .stat-row")].map((r) => r.textContent.trim()),
+  }));
+  assert(trend.head && trend.curve, "有数据时「进步」节与准确率走势都画出来了", JSON.stringify(trend));
+  assert(trend.rows.some((r) => /防守/.test(r) && /本周 0%/.test(r) && /上周 50%/.test(r)),
+    "防守一行:本周 0% 对上周 50% — 数字就是档案里的数字", trend.rows.join(" | "));
+  assert(trend.rows.some((r) => /错题/.test(r) && /收 3/.test(r) && /找回 1/.test(r)),
+    "错题一行:本周收 3 · 找回 1", trend.rows.join(" | "));
+  await ctx4.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();
