@@ -286,6 +286,10 @@ import { createStore } from "./store.js";
       /** Modal list picker → index of the chosen entry, or null when cancelled. */
       pickResolver: null,
       dragging: null,
+      /** 摸得到的复盘 — the position under the pointer (move-list row or PV
+          chip being hovered): {position, last, check} or null. Transient by
+          construction: set on hover, cleared on leave, never persisted. */
+      preview: null,
       /** editor paint stroke: the square last painted while the pointer is down */
       painting: null,
     },
@@ -390,6 +394,35 @@ import { createStore } from "./store.js";
     return g;
   }
 
+  /** The game replayed to ply n — the hover path's viewGame(), uncached
+      because the pointer sweeps many indices and none is the cursor. */
+  function gameAt(n) {
+    const g = baseGame();
+    const h = sanHistory();
+    for (let i = 0; i < n; i++) g.move(h[i]);
+    return g;
+  }
+
+  /** Hold (or release, with null) the position shown under the pointer.
+      Repaints the canvas directly: a hover must not run the whole sync. */
+  function setBoardPreview(p) {
+    if (!store.ui.preview && !p) return;
+    store.ui.preview = p;
+    BoardView.draw();
+  }
+
+  /** Preview the position n plies in, as the move list is hovered. */
+  function previewAt(n) {
+    const g = gameAt(n);
+    const vh = verboseHistory();
+    const last = n > 0 ? vh[n - 1] : null;
+    setBoardPreview({
+      position: g.board(),
+      last: last ? { from: last.from, to: last.to } : null,
+      check: g.in_check() ? kingSquare(g, g.turn()) : null,
+    });
+  }
+
   /** Verbose move objects for the whole game (for last-move highlight). */
 
   function kingSquare(g, color) {
@@ -407,6 +440,17 @@ import { createStore } from "./store.js";
     if (store.session.editor) return editorModel();
     if (store.session.mode === "learn" && store.session.learn) return learnModel();
     if (store.session.mode === "puzzle" && store.session.puzzle) return puzzleModel();
+    // the position under the pointer wins while it is held — reading is
+    // touching now, and the committed cursor comes back the moment you let go
+    if (store.ui.preview && !store.ui.dragging) {
+      const p = store.ui.preview;
+      return {
+        position: p.position, flipped: store.game.flipped,
+        selected: null, legalTargets: [],
+        lastMove: p.last, checkSquare: p.check, mated: false,
+        hintMove: null, stars: [], cursor: null, drag: null,
+      };
+    }
     const g = viewGame();
     const vh = verboseHistory();
     const last = store.game.viewIndex > 0 ? vh[store.game.viewIndex - 1] : null;
@@ -2742,7 +2786,24 @@ import { createStore } from "./store.js";
       const a = analysisFor();
       const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
       pvEl.hidden = !pv;
-      pvEl.textContent = pv ? t("an.pv") + " · " + pv : "";
+      pvEl.replaceChildren();
+      if (pv) {
+        // the line used to be prose; each move is now a chip the pointer can
+        // rest on — the board plays the line that far while it does
+        const lab = document.createElement("span");
+        lab.className = "pv-label";
+        lab.textContent = t("an.pv");
+        pvEl.appendChild(lab);
+        const start = viewGame().turn();
+        pv.split(" ").forEach((san, k) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "pv-chip";
+          b.dataset.k = String(k);
+          writeSan(b, san, k % 2 === 0 ? start : (start === "w" ? "b" : "w"));
+          pvEl.appendChild(b);
+        });
+      }
     }
     renderReview();
     const accEl = document.getElementById("acc-line");
@@ -2858,7 +2919,40 @@ import { createStore } from "./store.js";
       // land on the position *after* the move, so the damage is on the board
       btn.onclick = () => setViewIndex(sum.worst.ply + 1);
       el.appendChild(btn);
+      // …and one press away from never repeating it: the same drill the
+      // automatic miner would make, banked by hand. Any game qualifies here —
+      // the "games with a you" gate is the auto-miner's, not this button's:
+      // pressing it IS the claim "this mistake is mine to fix".
+      const bestUci = a && a.bests ? a.bests[sum.worst.ply] : null;
+      if (bestUci) {
+        const bank = document.createElement("button");
+        bank.type = "button";
+        bank.className = "review-bank";
+        bank.textContent = t("rv.bank");
+        bank.title = t("rv.bankTip");
+        bank.onclick = () => bankWorst(sum.worst, bestUci);
+        el.appendChild(bank);
+      }
     }
+  }
+
+  /** Bank the review's turning point into the personal book, by hand. */
+  function bankWorst(worst, bestUci) {
+    const fen = gameAt(worst.ply).fen();
+    const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess);
+    if (!cand) { toast(t("rv.bankNone"), "fix"); return; }
+    if (store.session.mines.some((m) => m.id === cand.id)) { toast(t("rv.bankDup")); return; }
+    const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
+    const r = Mistakes.addMines(store.session.mines, [cand], Date.now(), solvedIds);
+    store.session.mines = r.list;
+    saveMines();
+    for (const id of r.dropped) {
+      delete store.session.puzzleState.solved[id];
+      delete store.session.puzzleState.missed[id];
+    }
+    if (r.dropped.length) savePuzzleState();
+    sync();
+    toast(tf("rv.banked", [cand.solution[0]]));
   }
 
   /**
@@ -6255,6 +6349,40 @@ import { createStore } from "./store.js";
       const b = ev.target.closest("button[data-i]");
       if (b) setViewIndex(Number(b.dataset.i));
     };
+    // reading is touching: sweep the list and the board follows; leave and
+    // the committed position comes straight back. Never while dragging a
+    // piece — the hand on the board outranks the hand on the list.
+    mlEl.addEventListener("mouseover", (ev) => {
+      const b = ev.target.closest("button[data-i]");
+      if (!b || store.ui.dragging) return;
+      previewAt(Number(b.dataset.i));
+    });
+    mlEl.addEventListener("mouseleave", () => setBoardPreview(null));
+  }
+  const pvLineEl = document.getElementById("pv-line");
+  if (pvLineEl) {
+    pvLineEl.addEventListener("mouseover", (ev) => {
+      const b = ev.target.closest("button.pv-chip");
+      if (!b || store.ui.dragging) return;
+      const a = analysisFor();
+      const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
+      if (!pv) return;
+      // play the line up to and including the hovered chip, off the board's
+      // own position — a preview, never a commit: these moves were not played
+      const g = new Chess(viewGame().fen());
+      let last = null;
+      const sans = pv.split(" ");
+      for (let i = 0; i <= Number(b.dataset.k) && i < sans.length; i++) {
+        const m = g.move(sans[i]);
+        if (!m) break;
+        last = { from: m.from, to: m.to };
+      }
+      setBoardPreview({
+        position: g.board(), last,
+        check: g.in_check() ? kingSquare(g, g.turn()) : null,
+      });
+    });
+    pvLineEl.addEventListener("mouseleave", () => setBoardPreview(null));
   }
   document.getElementById("rep-start").onclick = () => setViewIndex(0);
   document.getElementById("rep-prev").onclick = () => setViewIndex(store.game.viewIndex - 1);
@@ -6274,7 +6402,7 @@ import { createStore } from "./store.js";
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };
   const curveEl = document.getElementById("eval-curve");
   if (curveEl) {
-    curveEl.onclick = (ev) => {
+    const jumpOnCurve = (ev) => {
       const a = analysisFor();
       if (!a) return;
       const rect = curveEl.getBoundingClientRect();
@@ -6282,6 +6410,15 @@ import { createStore } from "./store.js";
       const frac = (ev.clientX - rect.left - 4) / Math.max(1, rect.width - 8);
       setViewIndex(Math.round(Math.max(0, Math.min(1, frac)) * n));
     };
+    curveEl.onclick = jumpOnCurve;
+    // the time machine: hold the curve and drag — the board scrubs with the
+    // pointer, every position on the way is really committed (same call the
+    // click makes), and letting go simply stops
+    curveEl.onpointerdown = (ev) => {
+      curveEl.setPointerCapture(ev.pointerId);
+      jumpOnCurve(ev);
+    };
+    curveEl.onpointermove = (ev) => { if (ev.buttons & 1) jumpOnCurve(ev); };
     curveEl.style.cursor = "pointer";
   }
   document.getElementById("stats-clear").onclick = async () => {

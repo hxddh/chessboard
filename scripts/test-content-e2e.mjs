@@ -817,6 +817,70 @@ if (hasTab && REAL.length) {
   await ctx4.close();
 }
 
+// --- 摸得到的复盘:悬停着法,棋盘跟着;移开,回到原位 -------------------------
+// 曲线拖拽与 PV 悬停需要分析数据(无头起不了引擎,由源码守卫+单测盯);着法
+// 列表的悬停预览只要有棋谱就能验:双人局走两步,悬停第一步 —— 棋盘显示第一
+// 步后的局面而光标一格没动;移开 —— 棋盘立刻回到第二步后。
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx2.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", autoFlipPvp: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await ctx2.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel").catch(() => {});
+
+  const tap2 = async (s) => {
+    const p = await pg.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1], z = r.width / 8;
+      return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+    }, s);
+    await pg.mouse.click(p.x, p.y);
+    await pg.waitForTimeout(220);
+  };
+  const occ2 = () => pg.evaluate(() => {
+    const c = document.getElementById("board"); const g = c.getContext("2d");
+    const step = c.width / 8; const on = [];
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const x = Math.round(f * step + step * 0.2), y = Math.round(r * step + step * 0.2);
+      const w = Math.max(4, Math.round(step * 0.6));
+      const d = g.getImageData(x, y, w, w).data;
+      let lo = 255, hi = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        if (l < lo) lo = l; if (l > hi) hi = l;
+      }
+      if (hi - lo > 60) on.push("abcdefgh"[f] + (8 - r));
+    }
+    return on.sort().join(",");
+  });
+
+  await tap2("e2"); await tap2("e4");
+  await tap2("e7"); await tap2("e5");
+  const g2 = new Chess(); g2.move("e4");
+  const afterOne = squaresOf(g2.fen());
+  g2.move("e5");
+  const afterTwo = squaresOf(g2.fen());
+  assert(await occ2() === afterTwo, "双人局走了 1. e4 e5,棋盘停在第二步后");
+
+  await pg.hover('#move-list button[data-i="1"]');
+  await pg.waitForTimeout(250);
+  assert(await occ2() === afterOne, "悬停第一步:棋盘显示那一步之后的局面");
+  const cur = await pg.evaluate(() =>
+    document.querySelector("#move-list .current")?.dataset.i || "");
+  assert(cur === "2", "……而落子光标一格没动(current 仍在第 2 步)", cur);
+
+  await pg.mouse.move(40, 40);
+  await pg.waitForTimeout(250);
+  assert(await occ2() === afterTwo, "移开指针:棋盘立刻回到落子处,不留预览");
+  await ctx2.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

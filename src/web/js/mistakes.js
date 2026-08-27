@@ -66,30 +66,46 @@ function candidatesFrom(a, side, Chess) {
     if (a.tags[i] !== "??") continue;
     const fen = a.fens[i];
     if (!fen || fen.split(" ")[1] !== side) continue;
-    const uci = a.bests[i];
-    if (typeof uci !== "string" || uci.length < 4) continue;
-    const g = new Chess(fen);
-    const best = g.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
-    if (!best || best.san === a.sans[i]) continue;
     // centipawn cost of the played move, from the mover's side — the same
     // arithmetic the tag was computed from
     const sA = a.scalars ? a.scalars[i] : null;
     const sB = a.scalars ? a.scalars[i + 1] : null;
     const loss = sA != null && sB != null ? Math.round(side === "w" ? sA - sB : sB - sA) : null;
-    out.push({
-      id: mineId(fen, a.sans[i]),
-      cat: "mine",
-      fen,
-      solution: [best.san],
-      played: a.sans[i],
-      loss,
-      ply: i,
-      // black-to-move drills flip the board and gate input exactly like the
-      // black opening drills — the rails read `side`, nothing else needed
-      side: side === "b" ? "b" : undefined,
-    });
+    const d = drillFrom(fen, a.sans[i], a.bests[i], loss, i, Chess);
+    if (d) out.push(d);
   }
   return out;
+}
+
+/**
+ * One drill from one judged ply — the single rule both mining paths share.
+ *
+ * The automatic pass (candidatesFrom) and the review page's hand-bank button
+ * must mint identical drills for identical mistakes, ids included: two rules
+ * would eventually let a hand-banked drill duplicate an auto-mined one under
+ * a different id, and the whole dedup story rests on the id being a function
+ * of (position, played move) alone.
+ *
+ * Returns null when there is nothing to teach: no stored best, an illegal
+ * best (stale analysis on a different game), or best === played.
+ */
+function drillFrom(fen, played, bestUci, loss, ply, Chess) {
+  if (!fen || typeof bestUci !== "string" || bestUci.length < 4) return null;
+  const g = new Chess(fen);
+  const best = g.move({ from: bestUci.slice(0, 2), to: bestUci.slice(2, 4), promotion: bestUci[4] || "q" });
+  if (!best || best.san === played) return null;
+  return {
+    id: mineId(fen, played),
+    cat: "mine",
+    fen,
+    solution: [best.san],
+    played,
+    loss: Number.isFinite(loss) ? Math.round(loss) : null,
+    ply,
+    // black-to-move drills flip the board and gate input exactly like the
+    // black opening drills — the rails read `side`, nothing else needed
+    side: fen.split(" ")[1] === "b" ? "b" : undefined,
+  };
 }
 
 /**
@@ -131,4 +147,4 @@ function addMines(list, cands, now, solvedIds) {
   return { list: next, added: fresh.length, dropped };
 }
 
-export const ChessMistakes = { MAX_MINES, mineId, candidatesFrom, addMines };
+export const ChessMistakes = { MAX_MINES, mineId, candidatesFrom, drillFrom, addMines };

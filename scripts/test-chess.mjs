@@ -2918,6 +2918,74 @@ for (const lang of CONTENT_LANGS) {
   assert(/data-cat="mine" hidden/.test(html), "…and the button starts hidden until the book says otherwise");
 }
 
+// 摸得到的复盘: hovering the move list or a PV chip puts that position on the
+// board; the curve can be scrubbed; the turning point can be banked by hand.
+// The one pure piece — drillFrom — is tested directly; everything that wires
+// a pointer to the board is held by source guards.
+{
+  loadModule(ctx, "src/web/js/mistakes.js");
+  const M = ctx.ChessMistakes;
+  const C = ctx.Chess;
+  const g = new C();
+  const fen = g.fen();
+
+  // one rule, two callers: the hand-banked drill IS the auto-mined drill
+  const hand = M.drillFrom(fen, "e4", "g1f3", 412.4, 0, C);
+  assert(hand && hand.solution[0] === "Nf3" && hand.loss === 412 && hand.ply === 0,
+    "drillFrom mints a drill from one judged ply (answer in SAN, loss rounded)");
+  const auto = M.candidatesFrom({ fens: [fen, new C(fen).move("e4") && "x"], sans: ["e4"],
+    tags: ["??"], bests: ["g1f3"], scalars: [30, -370] }, "w", C)[0];
+  assert(auto && auto.id === hand.id && auto.solution[0] === hand.solution[0],
+    "auto-mined and hand-banked drills for the same mistake share one id — dedup rests on this");
+  // …and that id is a function of (position, played move) ONLY. Sharing one
+  // code path made the assertion above tautological; this one is not: a drill
+  // keyed on the answer would re-mint the same mistake whenever a deeper pass
+  // changed the engine's preference.
+  assert(hand.id === M.mineId(fen, "e4"),
+    "the id is derived from the position and the sin, never from the answer");
+  assert(M.drillFrom(fen, "e4", "e2e4", 100, 0, C) === null,
+    "best === played teaches nothing, and mints nothing");
+  assert(M.drillFrom(fen, "e4", null, 100, 0, C) === null, "no stored best, no drill");
+  {
+    const gb = new C(); gb.move("e4");
+    const d = M.drillFrom(gb.fen(), "e5", "c7c5", 90, 1, C);
+    assert(d && d.side === "b" && d.solution[0] === "c5",
+      "a black-to-move ply carries side:\"b\" — the flipped-board rails read it");
+  }
+
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  // the preview: held under the pointer, never over a drag, and the trainer
+  // modes return before it so it can only ever replace the plain game view
+  const modelFn = /BoardView\.attach\(canvas[\s\S]{0,700}store\.ui\.preview && !store\.ui\.dragging/.exec(appSrc);
+  assert(modelFn && modelFn[0].includes('editorModel()') && modelFn[0].includes('puzzleModel()'),
+    "the preview branch sits after the trainer returns and yields to a drag");
+  assert(/function setBoardPreview\(p\) \{[\s\S]{0,200}BoardView\.draw\(\);/.test(appSrc) &&
+         !/function setBoardPreview\(p\) \{[\s\S]{0,200}sync\(\)/.test(appSrc),
+    "holding a preview repaints the canvas only — a hover must not run the whole sync");
+  // the move list: enter previews, leave releases
+  assert(/mlEl\.addEventListener\("mouseover"[\s\S]{0,200}previewAt\(Number\(b\.dataset\.i\)\)/.test(appSrc),
+    "hovering a move-list row previews that ply");
+  assert(/mlEl\.addEventListener\("mouseleave", \(\) => setBoardPreview\(null\)\)/.test(appSrc),
+    "leaving the list releases the board back to the committed cursor");
+  // the curve: click and scrub are the same jump
+  assert(/curveEl\.onclick = jumpOnCurve/.test(appSrc) &&
+         /curveEl\.onpointerdown[\s\S]{0,120}setPointerCapture[\s\S]{0,80}jumpOnCurve\(ev\)/.test(appSrc) &&
+         /curveEl\.onpointermove = \(ev\) => \{ if \(ev\.buttons & 1\) jumpOnCurve\(ev\); \}/.test(appSrc),
+    "the curve scrubs with the pointer through the same call the click makes");
+  // PV chips: built from the stored line, previewed off the board's position
+  assert(/b\.className = "pv-chip"/.test(appSrc) &&
+         /closest\("button\.pv-chip"\)[\s\S]{0,400}new Chess\(viewGame\(\)\.fen\(\)\)/.test(appSrc),
+    "PV chips preview the line off the current position — these moves are never committed");
+  assert(/pvLineEl\.addEventListener\("mouseleave", \(\) => setBoardPreview\(null\)\)/.test(appSrc),
+    "leaving the PV releases the board too");
+  // the bank button: only where the analysis stored an answer, via the shared rule
+  assert(/const bestUci = a && a\.bests \? a\.bests\[sum\.worst\.ply\] : null;\s*if \(bestUci\) \{/.test(appSrc),
+    "拿去练 is drawn only when the analysis holds an answer for the turning point (P3)");
+  assert(/function bankWorst\(worst, bestUci\) \{[\s\S]{0,300}Mistakes\.drillFrom\(/.test(appSrc) &&
+         /bankWorst\(worst, bestUci\) \{[\s\S]{0,900}Mistakes\.addMines\(/.test(appSrc),
+    "the hand bank goes through the same drillFrom + addMines the miner uses");
+}
+
 // 进步档案: totals cannot show change, so answers are ALSO banked into ISO
 // weeks — alongside, never instead of, the lifetime tally. Pure module, so
 // the clock is an argument and history is whatever the test says it is.
