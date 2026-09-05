@@ -454,7 +454,22 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
     "版本检查: build.zig 又把版本号硬编码进了打包路径 —— " +
       "那串数字没有任何东西会跟着更新",
   );
-  if (appVer) notes.push(`版本检查: app.zon 与 build.zig.zon 一致（${appVer}）`);
+  // 5.1: package.json and its lock said 1.25.0 while app.zon said 5.0.0 — the
+  // one version a `git clone && npm ci` reads first was twenty releases stale
+  // (audit F8). Three files, one number.
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+  const lock = JSON.parse(fs.readFileSync(path.join(ROOT, "package-lock.json"), "utf8"));
+  check(pkg.version === appVer, `版本检查: package.json 写 ${pkg.version}，app.zon 写 ${appVer}`);
+  check(lock.version === appVer && lock.packages && lock.packages[""] && lock.packages[""].version === appVer,
+    `版本检查: package-lock.json 写 ${lock.version}，app.zon 写 ${appVer}`);
+  // and the lock must let every platform this app is built on install it: the
+  // 5.0.0 lock carried only the linux-x64 esbuild binary, so `npm ci` on a Mac
+  // or a Windows machine failed on the first command in the README
+  const esb = (lock.packages["node_modules/esbuild"] || {}).optionalDependencies || {};
+  const missing = Object.keys(esb).filter((k) => !lock.packages["node_modules/" + k]);
+  check(missing.length === 0,
+    `版本检查: package-lock.json 缺少 esbuild 的平台包 ${missing.join(", ")} —— 只有生成它的那台机器装得起来`);
+  if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json 一致（${appVer}）`);
 }
 
 // ------------------------------------------------------------------------ 结果

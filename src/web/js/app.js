@@ -17,6 +17,8 @@ import { motifOf } from "./motif.js";
 import { ChessMistakes } from "./mistakes.js";
 import { ChessProgress } from "./progress.js";
 import { ChessPlanner } from "./planner.js";
+import { ChessLearning } from "./learning.js";
+import { ChessPreview } from "./preview.js";
 import { ChessOpeningCoach } from "./opening-coach.js";
 import { CHESS_OPENINGS_EN, CHESS_OPENING_IDEAS_EN } from "./openings-en.js";
 import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
@@ -227,6 +229,9 @@ import { createStore } from "./store.js";
       engineThinking: false,
       /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
       analysis: null,
+      /** the engine failed to start — analysis and hints are not offered, and
+          the review group says why in place (5.1) */
+      engineDown: false,
       analyzing: false,
       /** set by the stop button; the analysis loop bails at the next position */
       analyzeAbort: false,
@@ -290,6 +295,9 @@ import { createStore } from "./store.js";
           chip being hovered): {position, last, check} or null. Transient by
           construction: set on hover, cleared on leave, never persisted. */
       preview: null,
+      /** Enter on a PV chip keeps the line on the board after focus moves on;
+          Esc or any navigation lets go. Never persisted. */
+      previewPinned: false,
       /** editor paint stroke: the square last painted while the pointer is down */
       painting: null,
     },
@@ -371,6 +379,8 @@ import { createStore } from "./store.js";
 
   /** Reset `game` itself to its starting position, keeping any FEN header. */
   function resetGameToStart() {
+    // whatever was being previewed belonged to the game that just ended
+    if (store.ui.preview) clearPreview();
     const sf = startFen();
     if (sf) {
       gameLoad(sf);
@@ -404,35 +414,81 @@ import { createStore } from "./store.js";
   }
 
   /** Hold (or release, with null) the position shown under the pointer.
-      Repaints the canvas directly: a hover must not run the whole sync. */
+      Repaints the canvas directly: a hover must not run the whole sync.
+
+      5.1: a preview is owned by whatever is holding it — the pointer over a
+      move-list row or a PV chip, keyboard focus on a chip, or an explicit pin
+      (Enter on a chip). It is released by the owner leaving AND by every
+      explicit change of what the board is meant to show: setViewIndex, a new
+      game, a mode switch, the panel closing. Until 5.0.0 only mouseleave
+      released it, so ← / → while the pointer rested on a row changed the
+      cursor, the notation and the engine line and left the board on the
+      hovered position (audit F1). The badge over the board says out loud
+      when what is drawn is not the committed position. */
   function setBoardPreview(p) {
     if (!store.ui.preview && !p) return;
+    if (!p && store.ui.previewPinned) return; // a pin outlives the pointer
     store.ui.preview = p;
+    renderPreviewBadge();
     BoardView.draw();
+  }
+
+  /** Every explicit navigation or state change goes through here: the board
+      shows what the cursor says again, whatever the pointer is resting on. */
+  function clearPreview() {
+    store.ui.previewPinned = false;
+    setBoardPreview(null);
+  }
+
+  /** Subscribed to the game and session slices: a preview nobody is holding
+      any more does not survive a commit. */
+  function releaseOrphanPreview() {
+    if (store.ui.preview && !previewStillHeld()) clearPreview();
+  }
+
+  /** Is anything still holding the preview? Called on every sync so a preview
+      whose owner has gone (a re-rendered list, a hidden panel) cannot outlive
+      it. Never creates one — only the owners do. */
+  function previewStillHeld() {
+    if (!store.ui.preview) return true;
+    if (store.ui.previewPinned) return true;
+    const ml = document.getElementById("move-list");
+    const pv = document.getElementById("pv-line");
+    const ae = document.activeElement;
+    const held = (el) => !!el && !el.hidden && el.offsetParent !== null &&
+      (el.matches(":hover") || (ae && el.contains(ae) && ae.matches("button")));
+    return held(ml) || held(pv);
+  }
+
+  function renderPreviewBadge() {
+    const el = document.getElementById("preview-badge");
+    if (!el) return;
+    const p = store.ui.preview;
+    el.hidden = !p;
+    if (!p) return;
+    let text = p.kind === "pv" ? t("board.previewPv") : tf("board.previewPly", [p.ply]);
+    if (store.ui.previewPinned) text += " · " + t("board.previewEsc");
+    el.textContent = text;
   }
 
   /** Preview the position n plies in, as the move list is hovered. */
   function previewAt(n) {
-    const g = gameAt(n);
     const vh = verboseHistory();
-    const last = n > 0 ? vh[n - 1] : null;
-    setBoardPreview({
-      position: g.board(),
-      last: last ? { from: last.from, to: last.to } : null,
-      check: g.in_check() ? kingSquare(g, g.turn()) : null,
-    });
+    setBoardPreview(ChessPreview.plyPreview(gameAt(n), n > 0 ? vh[n - 1] : null, n));
   }
 
-  /** Verbose move objects for the whole game (for last-move highlight). */
-
-  function kingSquare(g, color) {
-    const bd = g.board();
-    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-      const p = bd[r][c];
-      if (p && p.type === "k" && p.color === color) return "abcdefgh"[c] + (8 - r);
-    }
-    return null;
+  /** Preview the engine line up to and including chip k, off the board's own
+      position — a preview, never a commit: these moves were not played. */
+  function previewPvChip(k) {
+    const a = analysisFor();
+    const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
+    const p = ChessPreview.pvPreview(Chess, viewGame().fen(), pv, k);
+    if (!p) return false;
+    setBoardPreview(p);
+    return true;
   }
+
+  const kingSquare = ChessPreview.kingSquare;
 
   const cursorSquare = () => (store.ui.boardFocused ? store.ui.keyboardCursor : null);
 
@@ -517,6 +573,44 @@ import { createStore } from "./store.js";
     el.textContent = t("msg.storage.failed");
     el.hidden = false;
   }
+
+  /**
+   * 5.1: an uncaught exception used to be silence — the handler died, the
+   * button did nothing, and nothing anywhere said so. Every such error now
+   * lands here: the banner says the app hit a fault and that the game was
+   * saved, and offers the diagnostic text for copying. Same banner family as
+   * the storage fault, because it is the same kind of statement: something
+   * about this session is broken and stays broken until a restart.
+   */
+  function showAppFault(err) {
+    const detail = err && (err.stack || err.message) ? String(err.stack || err.message) : String(err);
+    try { saveGame(); } catch (_) { /* the save may be what failed */ }
+    let el = document.getElementById("app-fault");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "app-fault";
+      el.className = "storage-fault app-fault";
+      el.setAttribute("role", "alert");
+      document.body.appendChild(el);
+    }
+    el.replaceChildren();
+    const text = document.createElement("span");
+    text.textContent = t("msg.fault.happened");
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "toast-action";
+    copy.textContent = t("msg.fault.copy");
+    copy.onclick = () => copyText(detail.slice(0, 4000), t("msg.fault.copied"));
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-action";
+    close.textContent = t("act.close");
+    close.onclick = () => { el.hidden = true; };
+    el.append(text, copy, close);
+    el.hidden = false;
+  }
+  window.addEventListener("error", (ev) => { if (ev && ev.error) showAppFault(ev.error); });
+  window.addEventListener("unhandledrejection", (ev) => { showAppFault(ev && ev.reason); });
 
   /**
    * Three tiers, because 110 toasts were saying three different kinds of thing
@@ -2153,7 +2247,54 @@ import { createStore } from "./store.js";
     clearSelection();
   }
 
+  /**
+   * 5.1: the personal drill asks "what should I have played" and until now
+   * accepted exactly one string — the engine's first choice at the budget of
+   * the pass that minted it. Any other sound move was "weaker" (audit F3).
+   * Now a different move is checked against the stored answer at the same
+   * budget: costs less than a mistake, it is accepted and remembered.
+   */
+  async function verifyMineAlt(mv) {
+    const pz = store.session.puzzle;
+    const p = pz.p;
+    const g = pz.g;
+    if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) return null;
+    const budget = (p.rev && p.rev.budget) || 120;
+    const side = p.fen.split(" ")[1];
+    const afterAlt = g.fen();
+    const probe = new Chess(p.fen);
+    if (!probe.move(p.solution[0])) return null;
+    const afterBest = probe.fen();
+    pz.verifying = true;
+    sync();
+    let eBest = null, eAlt = null;
+    try {
+      eBest = await ChessEngine.analyze(afterBest, budget);
+      eAlt = await ChessEngine.analyze(afterAlt, budget);
+    } catch (_) {}
+    pz.verifying = false;
+    if (store.session.puzzle !== pz || pz.done) return null;
+    const cpBest = evalScalar(eBest), cpAlt = evalScalar(eAlt);
+    if (cpBest == null || cpAlt == null) return null;
+    const v = Mistakes.judgeAlt(cpBest, cpAlt, side, Review.MISTAKE);
+    if (v.ok) {
+      p.alts = Array.isArray(p.alts) ? p.alts : [];
+      if (!p.alts.includes(mv.san)) { p.alts.push(mv.san); saveMines(); }
+    }
+    return v;
+  }
+
+  /** Why the stored answer is the answer — from the numbers the pass kept. */
+  function mineWhy(p) {
+    const rest = typeof p.pv === "string" ? p.pv.split(" ").slice(1, 4).join(" ") : "";
+    const loss = p.loss != null ? (p.loss / 100).toFixed(1) : null;
+    let why = loss != null ? tf("pz.mine.whyLoss", [p.played, loss]) : "";
+    if (rest) why += (why ? " " : "") + tf("pz.mine.whyLine", [p.solution[0], rest]);
+    return why;
+  }
+
   function puzzleMove(from, to, promotion) {
+    if (store.session.puzzle.verifying) return; // the engine is still judging the last move
     const g = store.session.puzzle.g;
     const mv = g.move({ from, to, promotion });
     if (!mv) return;
@@ -2179,6 +2320,20 @@ import { createStore } from "./store.js";
         store.session.puzzle.stage = i + 1;
       }
       puzzleSolved();
+      return;
+    }
+    if (store.session.puzzle.p.cat === "mine" && store.session.puzzle.stage === 0 &&
+        mv.san !== store.session.puzzle.p.solution[0]) {
+      const p = store.session.puzzle.p;
+      if (Mistakes.isAccepted(p, mv.san)) { puzzleSolved(); return; }
+      if (mv.san === p.played) { puzzleWrong(t("pz.mine.repeat") + " —— " + mineWhy(p)); return; }
+      verifyMineAlt(mv).then((v) => {
+        if (store.session.puzzle !== undefined && store.session.puzzle && store.session.puzzle.p === p) {
+          if (v && v.ok) { toast(tf("pz.mine.alsoFine", [mv.san, (v.loss / 100).toFixed(1)])); puzzleSolved(); return; }
+          const cost = v ? " —— " + tf("pz.mine.altCost", [(v.loss / 100).toFixed(1)]) : "";
+          puzzleWrong(t("pz.mine.stronger") + cost);
+        }
+      });
       return;
     }
     if (SCRIPTED_CATS[store.session.puzzle.p.cat]) {
@@ -2344,7 +2499,8 @@ import { createStore } from "./store.js";
       store.session.puzzle.p.cat === "draw" ? t("pz.doneDraw") :
       store.session.puzzle.p.cat === "real" ? t("pz.doneReal") :
       store.session.puzzle.p.cat === "win" || store.session.puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
-    toast("✅ " + verb + " · " + puzzleName(store.session.puzzle.p));
+    const why = store.session.puzzle.p.cat === "mine" ? mineWhy(store.session.puzzle.p) : "";
+    toast("✅ " + verb + " · " + puzzleName(store.session.puzzle.p) + (why ? " · " + why : ""));
     sync();
   }
 
@@ -2659,29 +2815,38 @@ import { createStore } from "./store.js";
       // hand-written copy of 300/100/50 sitting next to review.js's constants.
       return Review.markFor(loss);
     });
-    store.session.analysis = { sig, scalars, tags, pvs, bests, acc: accuracyFrom(fens, scalars) };
+    store.session.analysis = { sig, scalars, tags, pvs, bests, budget: perMove, acc: accuracyFrom(fens, scalars) };
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
     recordAccuracy();
     // 错题自炼: the pass just judged every move — bank the player's ?? plies
     // as drills before the judgement scrolls away. Only in games where one
     // side is this player (ai mode); a pvp or imported game has no "you".
-    let mined = 0;
+    let mined = 0, revised = 0, withdrawn = 0;
     if (store.session.mode === "ai") {
-      const cands = Mistakes.candidatesFrom({ fens, sans: h, tags, bests, scalars }, store.session.humanColor, Chess);
+      const rev = { budget: perMove, src: "auto" };
+      const pass = { fens, sans: h, tags, bests, scalars, pvs };
+      const cands = Mistakes.candidatesFrom(pass, store.session.humanColor, Chess, rev);
       const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
-      const r = Mistakes.addMines(store.session.mines, cands, Date.now(), solvedIds);
-      if (r.added || r.dropped.length) {
+      // 5.1: a deeper pass first corrects what the book already says about
+      // this game — a changed answer, a ?? that did not survive the depth —
+      // and only then adds what is new (audit F2)
+      const rv = Mistakes.reviseMines(store.session.mines, cands, pass, store.session.humanColor, rev);
+      const r = Mistakes.addMines(rv.list, cands, Date.now(), solvedIds);
+      const dropped = rv.retired.concat(r.dropped);
+      if (r.added || dropped.length || rv.updated.length) {
         store.session.mines = r.list;
         saveMines();
         // retired drills take their queue entries with them — an orphan id in
         // missed would owe a review nothing can serve
-        for (const id of r.dropped) {
+        for (const id of dropped) {
           delete store.session.puzzleState.solved[id];
           delete store.session.puzzleState.missed[id];
         }
-        if (r.dropped.length) savePuzzleState();
+        if (dropped.length) savePuzzleState();
         mined = r.added;
+        revised = rv.updated.length;
+        withdrawn = rv.retired.length;
         if (r.added) { Progress.recordMined(store.session.progress, r.added, Date.now()); saveProgress(); }
       }
     }
@@ -2689,6 +2854,8 @@ import { createStore } from "./store.js";
     const bad = tags.filter((tag) => tag === "?" || tag === "??").length;
     let done = bad ? t("msg.analysis.donePrefix") + bad + t("msg.analysis.doneSuffix") : t("msg.analysis.doneClean");
     if (mined) done += " · " + tf("msg.mined", [mined]);
+    if (revised) done += " · " + tf("msg.minesRevised", [revised]);
+    if (withdrawn) done += " · " + tf("msg.minesWithdrawn", [withdrawn]);
     toast(done);
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
@@ -2779,8 +2946,20 @@ import { createStore } from "./store.js";
     const wrap = document.getElementById("eval-wrap");
     if (wrap) {
       wrap.hidden = !analysisFor();
+      // the curve needs a game to draw: below the sample floor it is an empty
+      // box with a flat line in it (audit, 5.1 work package C)
+      const cv = document.getElementById("eval-curve");
+      if (cv) {
+        const a = analysisFor();
+        const sum = a && Review ? Review.summarize(a.scalars, sanHistory(), startFen() && startFen().split(" ")[1] === "b" ? "b" : "w") : null;
+        cv.hidden = !Review.longEnough(sum);
+      }
       if (!wrap.hidden) { drawEvalCurve(); drawEvalBar(); }
     }
+    // the export and the mark legend describe a report — none, and they do
+    // not stand there promising one (audit F7)
+    avail(document.getElementById("report-export"), !!analysisFor());
+    avail(document.getElementById("analysis-legend"), !!analysisFor());
     const pvEl = document.getElementById("pv-line");
     if (pvEl) {
       const a = analysisFor();
@@ -2813,9 +2992,10 @@ import { createStore } from "./store.js";
       const has = acc && (acc.w != null || acc.b != null);
       accEl.hidden = !has;
       if (has) {
-        const part = (side, name) =>
-          acc[side] == null ? name + " —"
-            : name + " " + acc[side] + "% (" + t("acc.loss") + " " + acc[side === "w" ? "wAcpl" : "bAcpl"] + ")";
+        // the average loss lives in the report card below; this line was
+        // carrying both figures for both sides and truncating in every
+        // language at the default window (audit F6)
+        const part = (side, name) => name + " " + (acc[side] == null ? "—" : acc[side] + "%");
         accEl.textContent = t("acc.label") + " · " + part("w", t("vs.white")) + " · " + part("b", t("vs.black"));
       }
     }
@@ -2900,11 +3080,16 @@ import { createStore } from "./store.js";
         r.append(kk, vv);
         row.appendChild(r);
       }
-      const vk = R.verdictKey(sum, side);
+      let vk = R.verdictKey(sum, side);
+      // 「挑战更高难度」 is advice to the player about the engine's level; the
+      // other side of an ai game, and both sides of a pvp or imported game,
+      // get the judgement without the advice
+      const isPlayer = store.session.mode === "ai" && side === store.session.humanColor;
+      if (vk === "rv.verdict.excellent" && !isPlayer) vk = "rv.verdict.excellentPlain";
       if (vk) {
         const note = document.createElement("div");
         note.className = "review-note muted";
-        note.textContent = t(vk);
+        note.textContent = vk === "rv.verdict.tooShort" ? tf(vk, [sum.judged[side]]) : t(vk);
         row.appendChild(note);
       }
     }
@@ -2939,7 +3124,10 @@ import { createStore } from "./store.js";
   /** Bank the review's turning point into the personal book, by hand. */
   function bankWorst(worst, bestUci) {
     const fen = gameAt(worst.ply).fen();
-    const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess);
+    const a = analysisFor();
+    const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess,
+      { budget: (a && a.budget) || 120, src: "hand" });
+    if (cand && a && a.pvs && typeof a.pvs[worst.ply] === "string") cand.pv = a.pvs[worst.ply];
     if (!cand) { toast(t("rv.bankNone"), "fix"); return; }
     if (store.session.mines.some((m) => m.id === cand.id)) { toast(t("rv.bankDup")); return; }
     const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
@@ -2975,6 +3163,16 @@ import { createStore } from "./store.js";
     row.hidden = false;
     const cp = a.scalars[store.game.viewIndex];
     const frac = Review.evalBar(cp);
+    // the curve is a slider for the keyboard: ← / → (the global replay keys)
+    // move it, and this is what a screen reader says at each stop
+    const cv = document.getElementById("eval-curve");
+    if (cv) {
+      cv.setAttribute("aria-valuemin", "0");
+      cv.setAttribute("aria-valuemax", String(a.scalars.length - 1));
+      cv.setAttribute("aria-valuenow", String(store.game.viewIndex));
+      cv.setAttribute("aria-valuetext", tf("curve.at", [store.game.viewIndex]) +
+        " · " + (frac == null ? t("rv.evalNone") : evalText(cp)));
+    }
     if (frac == null) {
       // measured and level is not the same thing as never measured
       bar.classList.add("is-unmeasured");
@@ -2984,8 +3182,12 @@ import { createStore } from "./store.js";
     }
     bar.classList.remove("is-unmeasured");
     fill.style.width = (frac * 100).toFixed(1) + "%";
-    // a forced mate has no meaningful pawn count — say so instead of "+100.0"
-    text.textContent = Math.abs(cp) >= 5000
+    text.textContent = evalText(cp);
+  }
+
+  /** "+0.4", "−1.2", or "+#" — a forced mate has no meaningful pawn count. */
+  function evalText(cp) {
+    return Math.abs(cp) >= 5000
       ? (cp > 0 ? "+#" : "−#")
       : (cp > 0 ? "+" : cp < 0 ? "−" : "") + (Math.abs(cp) / 100).toFixed(1);
   }
@@ -3241,6 +3443,27 @@ import { createStore } from "./store.js";
    * on every session/game commit: nothing here mutates the sources it reads,
    * and an inactive sitting costs one streak lookup.
    */
+  /** The plan as a list under the button: each step, and why it is there.
+      planner.js has always chosen in a fixed, explainable order; until 5.1
+      nothing on screen explained it (audit, work package C). */
+  function renderDailyPlan(steps, current) {
+    const ol = document.getElementById("daily-plan");
+    if (!ol) return;
+    ol.replaceChildren();
+    ol.hidden = !steps.length;
+    steps.forEach((step, i) => {
+      const li = document.createElement("li");
+      li.className = "daily-step" + (i < current ? " done" : i === current ? " current" : "");
+      const what = document.createElement("span");
+      what.textContent = dailyStepLabel(step);
+      const why = document.createElement("span");
+      why.className = "daily-why";
+      why.textContent = t("daily.why." + step.kind);
+      li.append(what, why);
+      ol.appendChild(li);
+    });
+  }
+
   function syncDailyUI() {
     const btn = document.getElementById("daily-btn");
     const note = document.getElementById("daily-note");
@@ -3251,6 +3474,7 @@ import { createStore } from "./store.js";
       const run = Progress.streak(store.session.progress, Date.now());
       note.hidden = run < 2;
       if (run >= 2) note.textContent = tf("daily.streak", [run]);
+      renderDailyPlan(Planner.plan(dailySignals()).steps, -1);
       return;
     }
     let after = Planner.snap(dailySnapSrc());
@@ -3272,6 +3496,7 @@ import { createStore } from "./store.js";
     }
     btn.textContent = tf("daily.of", [d.i + 1, d.steps.length]) + " · " + dailyStepLabel(d.steps[d.i]);
     note.hidden = true;
+    renderDailyPlan(d.steps, d.i);
   }
 
   /** Take the player to where the current step happens. Invited, not automatic. */
@@ -4330,7 +4555,9 @@ import { createStore } from "./store.js";
   /** Hide a group whose whole row went away, so no empty heading is left. */
   function collapseEmptyGroups() {
     for (const group of document.querySelectorAll(".act-group")) {
-      const live = [...group.querySelectorAll("button")].some((b) => !b.hidden);
+      // a status line (the engine being down) keeps its group on screen even
+      // when it has taken every button with it
+      const live = [...group.querySelectorAll("button, [role=\"status\"]")].some((b) => !b.hidden);
       group.hidden = !live;
     }
   }
@@ -4416,7 +4643,8 @@ import { createStore } from "./store.js";
           !(store.session.mode === "ai" && game.turn() !== store.session.humanColor);
       slot(hintBtn, canHint);
       const busy = store.session.hintPending || store.session.analyzing ||
-        !!(store.session.learn && store.session.learn.engineBusy) || store.session.engineThinking;
+        !!(store.session.learn && store.session.learn.engineBusy) || store.session.engineThinking ||
+        !!(store.session.puzzle && store.session.puzzle.verifying);
       hintBtn.disabled = false;
       hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer")
         : busy ? t("chrome.thinking") : t("chrome.hint");
@@ -4439,8 +4667,20 @@ import { createStore } from "./store.js";
     const hasGame = h.length > 0;
     avail(el("pgn-copy"), hasGame);
     avail(el("pgn-download"), hasGame);
-    avail(el("an-run"), hasGame || store.session.analyzing);
-    avail(el("an-deep"), hasGame && !store.session.analyzing);
+    // …and with no engine there is nothing to analyse it with: the state is
+    // written where the buttons were, instead of a toast that has gone by the
+    // time anyone wonders where 分析 went (5.1, work package E)
+    const engineDown = !ChessEngine || !!store.session.engineDown;
+    avail(el("an-run"), !engineDown && (hasGame || store.session.analyzing));
+    avail(el("an-deep"), !engineDown && hasGame && !store.session.analyzing);
+    // …said exactly where 分析 would have stood: once there is a game to
+    // analyse. An empty board has nothing for the engine to do yet, and a
+    // heading over one line of apology is still a heading over nothing.
+    const eng = el("engine-state");
+    if (eng) {
+      eng.hidden = !(engineDown && hasGame);
+      if (!eng.hidden) eng.textContent = t("mm.engineInitFailed");
+    }
     setPrimaryAction();
     collapseEmptyGroups();
   }
@@ -4481,6 +4721,8 @@ import { createStore } from "./store.js";
    * board first, because it is what the player is looking at.
    */
   function wireViews() {
+    store.subscribe("game", releaseOrphanPreview);
+    store.subscribe("session", releaseOrphanPreview);
     store.subscribe("game", draw);
     store.subscribe("game", renderStatusPill);
     store.subscribe("game", renderReplayBar);
@@ -4555,6 +4797,13 @@ import { createStore } from "./store.js";
     document.querySelectorAll("#mode-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.mode === store.session.mode);
     });
+    // the first tab holds the lesson or the puzzle in those modes, so it says
+    // so — 「对局」 over a lesson read as a page that had not changed
+    const playTab = document.getElementById("tab-play");
+    if (playTab) {
+      playTab.textContent = store.session.mode === "learn" ? t("mode.learn")
+        : store.session.mode === "puzzle" ? t("mode.puzzle") : t("tab.play");
+    }
     // two rows now: sparring tiers and engine-strength tiers (see index.html)
     document.querySelectorAll("#diff-seg button, #diff-seg-engine button").forEach((b) => {
       b.classList.toggle("active", b.dataset.diff === store.session.difficulty);
@@ -4681,6 +4930,8 @@ import { createStore } from "./store.js";
   function setViewIndex(n) {
     store.game.viewIndex = Math.max(0, Math.min(n, sanHistory().length));
     store.game.selection = null;
+    // explicit navigation takes the board back from whatever was previewing
+    clearPreview();
     BoardView.cancelAnim();
     syncAutoFlip();
     store.commit("game", "action");
@@ -4809,7 +5060,6 @@ import { createStore } from "./store.js";
     syncAutoFlip();
     sync();
     saveGame();
-    toast(t("msg.game.started"));
     maybeEngineTurn();
   }
 
@@ -5356,11 +5606,14 @@ import { createStore } from "./store.js";
    * never trap anyone: the worst case is the old behaviour.
    */
   async function runOnboarding() {
+    // 5.1: the first door is marked as the one to take, and the third way out
+    // says where it leads — 「取消」 on a first-run question left nobody knowing
+    // which mode they had landed in (audit, work package E). It lands where
+    // 「我会下棋」 lands, with nothing said: the board is the answer.
     const choice = await pickFromList(t("ob.title"), [
-      { label: t("ob.newLabel"), sub: t("ob.newSub") },
+      { label: t("ob.newLabel"), sub: t("ob.newSub"), tag: t("ob.recommended") },
       { label: t("ob.knowLabel"), sub: t("ob.knowSub") },
-    ]);
-    if (choice == null) return; // cancelled — leave the defaults alone
+    ], { cancelLabel: t("ob.later") });
     if (choice === 0) {
       store.session.mode = "learn";
       startLearn();
@@ -5374,16 +5627,17 @@ import { createStore } from "./store.js";
     setPanelOpen(true);
     saveSettings();
     sync();
-    toast(choice === 0 ? t("ob.toLearn") : tf("ob.toPlay", [diffName(store.session.difficulty)]));
     if (choice !== 0) maybeEngineTurn();
   }
 
-  function pickFromList(title, items) {
+  function pickFromList(title, items, opts) {
     const modal = document.getElementById("pick-modal");
     const list = document.getElementById("pick-list");
     const titleEl = document.getElementById("pick-title");
     if (!modal || !list) return Promise.resolve(items.length ? 0 : null);
     if (titleEl) titleEl.textContent = title;
+    const cancel = document.getElementById("pick-cancel");
+    if (cancel) cancel.textContent = (opts && opts.cancelLabel) || t("act.cancel");
     list.replaceChildren();
     items.forEach((it, i) => {
       const b = document.createElement("button");
@@ -5391,6 +5645,12 @@ import { createStore } from "./store.js";
       b.className = "pick-item";
       b.dataset.i = String(i);
       b.textContent = it.label;
+      if (it.tag) {
+        const tag = document.createElement("span");
+        tag.className = "pick-tag";
+        tag.textContent = it.tag;
+        b.appendChild(tag);
+      }
       if (it.sub) {
         const s = document.createElement("span");
         s.className = "pick-sub";
@@ -5937,7 +6197,12 @@ import { createStore } from "./store.js";
       const d = mine.length - w - l;
       if (mine.length) line(diffName(store.session.difficulty), tf("stats.wld", [w, l, d]));
     } else {
-      line(t("idle.ready"), t(store.session.mode === "ai" ? "idle.vsEngine" : "idle.vsHuman"));
+      // one sentence, not a left-aligned label against a right-aligned bold
+      // value pretending to be a statistic (audit, work package E)
+      const ready = document.createElement("div");
+      ready.className = "idle-v";
+      ready.textContent = t("idle.ready") + " · " + t(store.session.mode === "ai" ? "idle.vsEngine" : "idle.vsHuman");
+      el.appendChild(ready);
     }
     const rec = recommendation();
     const tip = document.createElement("div");
@@ -6014,6 +6279,8 @@ import { createStore } from "./store.js";
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
   function setPanelOpen(open) {
     const want = !!open;
+    // the panel holds every preview owner; closing it releases the board
+    if (!want && store.ui.preview) clearPreview();
     appEl.classList.toggle("panel-open", want);
     appEl.classList.toggle("scrim-on", want && window.innerWidth < 900);
     Persist.set("panelOpen", want ? "1" : "0");
@@ -6354,41 +6621,53 @@ import { createStore } from "./store.js";
     // piece — the hand on the board outranks the hand on the list.
     mlEl.addEventListener("mouseover", (ev) => {
       const b = ev.target.closest("button[data-i]");
-      if (!b || store.ui.dragging) return;
+      if (!b || store.ui.dragging || store.ui.previewPinned) return;
       previewAt(Number(b.dataset.i));
     });
     mlEl.addEventListener("mouseleave", () => setBoardPreview(null));
   }
   const pvLineEl = document.getElementById("pv-line");
   if (pvLineEl) {
+    // The pointer resting on a chip and keyboard focus on a chip are the same
+    // gesture: both show the line that far. Until 5.0.0 only the pointer did —
+    // the chips were focusable and Enter did nothing (audit F4).
+    const chipOf = (ev) => ev.target.closest("button.pv-chip");
     pvLineEl.addEventListener("mouseover", (ev) => {
-      const b = ev.target.closest("button.pv-chip");
-      if (!b || store.ui.dragging) return;
-      const a = analysisFor();
-      const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
-      if (!pv) return;
-      // play the line up to and including the hovered chip, off the board's
-      // own position — a preview, never a commit: these moves were not played
-      const g = new Chess(viewGame().fen());
-      let last = null;
-      const sans = pv.split(" ");
-      for (let i = 0; i <= Number(b.dataset.k) && i < sans.length; i++) {
-        const m = g.move(sans[i]);
-        if (!m) break;
-        last = { from: m.from, to: m.to };
-      }
-      setBoardPreview({
-        position: g.board(), last,
-        check: g.in_check() ? kingSquare(g, g.turn()) : null,
-      });
+      const b = chipOf(ev);
+      if (!b || store.ui.dragging || store.ui.previewPinned) return;
+      previewPvChip(Number(b.dataset.k));
     });
     pvLineEl.addEventListener("mouseleave", () => setBoardPreview(null));
+    pvLineEl.addEventListener("focusin", (ev) => {
+      const b = chipOf(ev);
+      if (!b || store.ui.dragging || store.ui.previewPinned) return;
+      previewPvChip(Number(b.dataset.k));
+    });
+    pvLineEl.addEventListener("focusout", (ev) => {
+      if (ev.relatedTarget && pvLineEl.contains(ev.relatedTarget)) return;
+      setBoardPreview(null);
+    });
+    // Enter / Space pin the line on the board so focus can move on (to the
+    // notation, to the report) while the position stays; Esc — the global
+    // handler — or any navigation lets go. A click does the same as Enter.
+    const pin = (b) => {
+      if (!previewPvChip(Number(b.dataset.k))) return;
+      store.ui.previewPinned = true;
+      renderPreviewBadge();
+      announce(t("board.previewPv") + " · " + t("board.previewEsc"));
+    };
+    pvLineEl.addEventListener("click", (ev) => { const b = chipOf(ev); if (b) pin(b); });
+    pvLineEl.addEventListener("keydown", (ev) => {
+      const b = chipOf(ev);
+      if (!b) return;
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pin(b); }
+    });
   }
   document.getElementById("rep-start").onclick = () => setViewIndex(0);
   document.getElementById("rep-prev").onclick = () => setViewIndex(store.game.viewIndex - 1);
   document.getElementById("rep-next").onclick = () => setViewIndex(store.game.viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
-  document.getElementById("rep-live").onclick = () => { goLive(); toast(t("msg.replay.atLive")); };
+  document.getElementById("rep-live").onclick = () => { goLive(); };
 
   document.getElementById("an-run").onclick = () => {
     if (store.session.analyzing) {
@@ -6673,13 +6952,13 @@ import { createStore } from "./store.js";
     const b = ev.target.closest("button[data-theme]");
     if (b) {
       applyTheme(b.dataset.theme);
-      toast(t("msg.setting.theme") + t("themeName." + store.ui.themeId));
     }
   };
   document.getElementById("mode-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-mode]");
     if (!b || b.dataset.mode === store.session.mode) return;
     invalidateEngine();
+    clearPreview();
     stopEditor(t("msg.editor.exited"));
     const wasLearn = store.session.mode === "learn";
     const wasPuzzle = store.session.mode === "puzzle";
@@ -6698,9 +6977,6 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     syncAutoFlip();
     sync();
-    toast(store.session.mode === "ai" ? t("msg.mode.aiPrefix") + (DIFF_NAMES[store.session.difficulty] || "") :
-      store.session.mode === "pvp" ? t("msg.mode.pvp") :
-      store.session.mode === "learn" ? t("mm.learnMode") : t("mm.puzzleMode"));
     maybeEngineTurn();
   };
   document.getElementById("lesson-restart").onclick = () => {
@@ -6846,8 +7122,6 @@ import { createStore } from "./store.js";
     saveGame();
     store.commit("game", "action");
     const tcSet = parseTc(store.game.timeControl);
-    toast(!tcSet ? t("msg.clock.off") :
-      tf("mm.clockSet", [tcSet.base / 60]) + (tcSet.inc ? tf("mm.clockInc", [tcSet.inc]) : ""));
   };
   const onDiffClick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
@@ -6855,7 +7129,6 @@ import { createStore } from "./store.js";
     store.session.difficulty = b.dataset.diff;
     saveSettings();
     sync();
-    toast(t("msg.setting.difficulty") + (DIFF_NAMES[store.session.difficulty] || store.session.difficulty));
   };
   document.getElementById("diff-seg").onclick = onDiffClick;
   const diffEngineSeg = document.getElementById("diff-seg-engine");
@@ -6866,7 +7139,6 @@ import { createStore } from "./store.js";
     store.session.personaId = b.dataset.persona;
     saveSettings();
     sync();
-    toast(t("m.personaSet") + t("persona." + store.session.personaId));
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
@@ -6887,7 +7159,6 @@ import { createStore } from "./store.js";
       store.ui.langId = I18n.setLang(b.dataset.lang);
       saveSettings();
       applyLanguage();
-      toast(t("mm.langSwitched"));
     };
   }
   document.getElementById("opt-coach").onclick = () => {
@@ -6910,6 +7181,97 @@ import { createStore } from "./store.js";
     if (store.ui.soundOn) Audio2.playMove("w");
     toast(store.ui.soundOn ? t("msg.sound.on") : t("msg.sound.off"));
   };
+  // --- learning data: out as one file, back in as a merge (learning.js) ---
+  const Learning = ChessLearning;
+  function learningBag() {
+    const bag = {};
+    for (const k of Learning.LEARNING_KEYS) bag[k] = Persist.get(k);
+    return bag;
+  }
+  function learningFileName() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return "chessboard-learning-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
+  }
+  async function exportLearning() {
+    const doc = Learning.pack(learningBag(), Date.now());
+    const text = JSON.stringify(doc, null, 2);
+    const name = learningFileName();
+    if (Host.hasZero()) {
+      try {
+        const path = await Host.saveFileDialog({ title: t("dlg.exportLearning"), defaultName: name });
+        if (path == null) { toast(t("msg.export.cancelled")); return; }
+        await Host.writeTextFile(path, text);
+        const revealed = await Host.revealPath(path);
+        savedToast(name, path, revealed);
+        return;
+      } catch (_) {}
+    }
+    try {
+      const blob = new Blob([text], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
+    } catch (_) {
+      copyText(text, t("msg.export.restrictedCopied"));
+    }
+  }
+  /** Merge a learning file into this machine's data and rebuild the views. */
+  async function importLearningText(text) {
+    let doc = null;
+    try { doc = JSON.parse(text); } catch (_) { doc = null; }
+    if (!Learning.isLearningDoc(doc)) { toast(t("msg.learning.badFile"), "fix"); return; }
+    const merged = Learning.merge(learningBag(), doc, Mistakes.MAX_MINES);
+    for (const [k, v] of Object.entries(merged)) Persist.setJson(k, v);
+    // the in-memory copies re-read what was just written — the same loaders
+    // startup uses, so an imported book is served exactly like a saved one
+    if (merged.mines) store.session.mines = loadMines();
+    if (merged.learn) store.session.learnState = loadLearnState();
+    if (merged.puzzles) store.session.puzzleState = loadPuzzleState().state;
+    if (merged.progress) store.session.progress = Progress.coerce(JSON.parse(Persist.get("progress") || "null"));
+    if (merged.achievements) {
+      try { store.session.achSeen = new Set((JSON.parse(Persist.get("achievements") || "null") || {}).seen || []); } catch (_) {}
+    }
+    renderStats();
+    sync();
+    toast(tf("msg.learning.imported", [store.session.mines.length]));
+  }
+  async function importLearning() {
+    // the question comes before the file picker: what a merge means is worth
+    // reading before choosing a file, and a picker that opens with nothing
+    // said first is a control that appears to do nothing
+    if (!(await confirmNative(t("dlg.importLearning"), t("act.learningImport"),
+      { ok: t("act.learningImport"), cancel: t("act.cancel") }))) return;
+    if (Host.hasZero()) {
+      try {
+        const picked = await Host.openFileDialog({ title: t("dlg.importLearning") });
+        const paths = Host.normalizePaths(picked);
+        if (!paths.length) return;
+        const text = await Host.readTextFile(paths[0]);
+        await importLearningText(text);
+        return;
+      } catch (err) {
+        if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
+      }
+    }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => importLearningText(String(reader.result || ""));
+      reader.readAsText(f);
+    };
+    input.click();
+  }
+  document.getElementById("learning-export").onclick = () => { exportLearning(); };
+  document.getElementById("learning-import").onclick = () => { importLearning(); };
+
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
       { ok: t("dlg.clear"), cancel: t("act.cancel"), danger: true }))) return;
@@ -7111,6 +7473,8 @@ import { createStore } from "./store.js";
       // a fault toast is the only other thing on screen that stays until it is
       // told to go, and Escape is what this app means by "make it go"
       if (dismissToast()) return;
+      // a pinned engine line is the same kind of thing: shown until dismissed
+      if (store.ui.preview) { clearPreview(); return; }
       // before closing the panel — the panel holds the editor's only exit
       if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return; }
       if (isPanelOpen()) setPanelOpen(false);
@@ -7272,7 +7636,7 @@ import { createStore } from "./store.js";
   saveSettings();
   if (!resumed) saveGame();
   if (store.session.mode === "ai" && ChessEngine) {
-    ChessEngine.init().catch(() => toast(t("mm.engineInitFailed"), "fault"));
+    ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
     maybeEngineTurn(); // resumed save may leave the engine on move
   }
   if (firstRun) runOnboarding();

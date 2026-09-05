@@ -22,7 +22,16 @@ permissions:
 
 jobs:
   static:
-    runs-on: ubuntu-latest
+    # Three platforms, not one. The 5.0.0 lockfile installed only on the Linux
+    # runner that generated it — the README's first command failed on every
+    # Mac and Windows checkout, and CI was green because CI was that runner.
+    # The unit tests themselves are platform-independent; what this matrix
+    # proves is that a clean checkout installs where the app is actually built.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

@@ -57,9 +57,10 @@ function mineId(fen, played) {
  *        move, tags[i] its judgement, bests[i] the engine's UCI choice there
  * @param {"w"|"b"} side whose mistakes to mine
  * @param {Function} Chess for UCI → SAN in the candidate's position
+ * @param {object} [rev] the revision this analysis is — see drillFrom
  * @returns {object[]} drill objects, without timestamps (the caller stamps)
  */
-function candidatesFrom(a, side, Chess) {
+function candidatesFrom(a, side, Chess, rev) {
   const out = [];
   if (!a || !a.fens || !a.sans || !a.tags || !a.bests) return out;
   for (let i = 0; i < a.sans.length; i++) {
@@ -71,8 +72,12 @@ function candidatesFrom(a, side, Chess) {
     const sA = a.scalars ? a.scalars[i] : null;
     const sB = a.scalars ? a.scalars[i + 1] : null;
     const loss = sA != null && sB != null ? Math.round(side === "w" ? sA - sB : sB - sA) : null;
-    const d = drillFrom(fen, a.sans[i], a.bests[i], loss, i, Chess);
-    if (d) out.push(d);
+    const d = drillFrom(fen, a.sans[i], a.bests[i], loss, i, Chess, rev);
+    if (d) {
+      // the engine's continuation after the answer, for the explanation
+      if (a.pvs && typeof a.pvs[i] === "string") d.pv = a.pvs[i];
+      out.push(d);
+    }
   }
   return out;
 }
@@ -88,8 +93,15 @@ function candidatesFrom(a, side, Chess) {
  *
  * Returns null when there is nothing to teach: no stored best, an illegal
  * best (stale analysis on a different game), or best === played.
+ *
+ * `rev` — since 5.1 — records which analysis said so: `{ budget, src }`,
+ * budget being the per-move search time in ms and src "auto" or "hand". A
+ * drill's identity is (position, sin); its ANSWER is a judgement made at a
+ * search budget, and a deeper pass may change it or withdraw the ?? entirely.
+ * Until 5.1 addMines skipped every known id, so the quick pass's answer was
+ * the answer for ever and a later 精析 could not correct it (audit F2).
  */
-function drillFrom(fen, played, bestUci, loss, ply, Chess) {
+function drillFrom(fen, played, bestUci, loss, ply, Chess, rev) {
   if (!fen || typeof bestUci !== "string" || bestUci.length < 4) return null;
   const g = new Chess(fen);
   const best = g.move({ from: bestUci.slice(0, 2), to: bestUci.slice(2, 4), promotion: bestUci[4] || "q" });
@@ -102,6 +114,7 @@ function drillFrom(fen, played, bestUci, loss, ply, Chess) {
     played,
     loss: Number.isFinite(loss) ? Math.round(loss) : null,
     ply,
+    rev: rev ? { budget: Number(rev.budget) || 0, src: rev.src || "auto" } : undefined,
     // black-to-move drills flip the board and gate input exactly like the
     // black opening drills — the rails read `side`, nothing else needed
     side: fen.split(" ")[1] === "b" ? "b" : undefined,
@@ -147,4 +160,71 @@ function addMines(list, cands, now, solvedIds) {
   return { list: next, added: fresh.length, dropped };
 }
 
-export const ChessMistakes = { MAX_MINES, mineId, candidatesFrom, drillFrom, addMines };
+/**
+ * Let a fresh analysis revise the drills it already covers.
+ *
+ * Two things a deeper pass can say about a position that is already in the
+ * book: "the best move is different (or costs a different amount)", and "this
+ * was never a serious mistake". Both are only believed from a pass at least
+ * as deep as the one that minted the drill — a quick pass never overrules a
+ * deep one. Progress on a revised drill is kept: the position and the sin are
+ * the same lesson, only the answer sheet changed. A withdrawn drill is
+ * returned in `retired` so the caller can clear its queue entries.
+ *
+ * @param {object[]} list the personal book
+ * @param {object[]} cands candidatesFrom() of the new pass — the ?? plies
+ * @param {object} a the pass's arrays {fens, sans, tags}, for the plies it
+ *        judged NOT to be ??
+ * @param {"w"|"b"} side the side the pass mined
+ * @param {object} rev {budget, src} of the new pass
+ * @returns {{list: object[], updated: string[], retired: string[]}}
+ */
+function reviseMines(list, cands, a, side, rev) {
+  const budget = rev ? Number(rev.budget) || 0 : 0;
+  const deepEnough = (m) => !m.rev || budget >= (Number(m.rev.budget) || 0);
+  const byId = new Map(list.map((m) => [m.id, m]));
+  const updated = [], retired = [];
+  for (const c of cands) {
+    const m = byId.get(c.id);
+    if (!m || !deepEnough(m)) continue;
+    const changed = m.solution[0] !== c.solution[0] || m.loss !== c.loss;
+    if (!changed) continue;
+    m.solution = [c.solution[0]];
+    m.loss = c.loss;
+    m.pv = c.pv;
+    m.alts = [];  // an alternative accepted against the old answer is re-judged
+    m.rev = { budget, src: m.rev ? m.rev.src : "auto" };
+    updated.push(m.id);
+  }
+  if (a && a.fens && a.sans && a.tags) {
+    for (let i = 0; i < a.sans.length; i++) {
+      if (!a.fens[i] || a.fens[i].split(" ")[1] !== side) continue;
+      if (a.tags[i] == null || a.tags[i] === "??") continue;
+      const m = byId.get(mineId(a.fens[i], a.sans[i]));
+      if (m && deepEnough(m)) retired.push(m.id);
+    }
+  }
+  const gone = new Set(retired);
+  return { list: gone.size ? list.filter((m) => !gone.has(m.id)) : list, updated, retired };
+}
+
+/** Is `san` an answer this drill accepts — the stored best, or an alternative
+    the engine has since confirmed costs nothing serious? */
+function isAccepted(m, san) {
+  return !!m && (m.solution.includes(san) || (Array.isArray(m.alts) && m.alts.includes(san)));
+}
+
+/**
+ * Judge a move the player offered instead of the stored answer, from the two
+ * evaluations (white's view, centipawns) after the stored best and after the
+ * offered move, at the same budget. Accepted when it costs less than a
+ * mistake against the best: the drill asks for a move that does not lose the
+ * position, not for the engine's exact preference (audit F3).
+ * @returns {{ok: boolean, loss: number}} loss ≥ 0, from the mover's side
+ */
+function judgeAlt(cpAfterBest, cpAfterAlt, side, mistake) {
+  const loss = Math.max(0, Math.round(side === "w" ? cpAfterBest - cpAfterAlt : cpAfterAlt - cpAfterBest));
+  return { ok: loss < mistake, loss };
+}
+
+export const ChessMistakes = { MAX_MINES, mineId, candidatesFrom, drillFrom, addMines, reviseMines, isAccepted, judgeAlt };
