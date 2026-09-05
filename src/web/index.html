@@ -416,6 +416,11 @@
           </div>
         </div>
         <div class="lesson-task" id="puzzle-task"></div>
+        <!-- 5.2: once a personal drill is solved (or its answer shown), the
+             engine's continuation stands here as chips — 题面, the answer, the
+             next few moves. Click one and the board walks the line that far.
+             A real position change, not a preview: the trainer owns the board. -->
+        <div class="pv-line num" id="puzzle-line" hidden></div>
         <p class="hint" id="puzzle-idea" hidden></p>
         <div class="lesson-controls">
           <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)" data-i18n-title="tip.puzzle.retry" data-i18n="act.puzzleRetry">重做</button>

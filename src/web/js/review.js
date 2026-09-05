@@ -44,8 +44,16 @@
    * accuracy, so 1.e4 e5 earned both sides 「可以挑战更高难度了」 (audit F5).
    * The same floor decides whether the evaluation curve is drawn: below it the
    * curve is an empty box with a flat line in it.
+   *
+   * 5.1 wrote 10 here unmeasured. 5.2 measured it (scripts/test-mines.mjs,
+   * docs/measured.json → verdictFloor): on the four fixture games the
+   * accuracy after the first N own moves differs from the whole-game figure
+   * by 23 points at N=5, 15 at N=10, 10 at N=15 and 2 at N=20 — and those
+   * games are 17–25 moves long, so N=20 is nearly the whole game. Fifteen is
+   * the smallest floor at which the verdict is usually within a grade of the
+   * final one; ten still swings by a grade and a half.
    */
-  const MIN_JUDGED = 10;
+  const MIN_JUDGED = 15;
 
   /**
    * How much a move cost the side that played it, in centipawns.

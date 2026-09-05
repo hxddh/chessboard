@@ -2740,6 +2740,26 @@ for (const lang of CONTENT_LANGS) {
     const r = P.pickNext(st, BOOK, S);
     assert(r.kind !== "weak" || r.cat !== "def", "a fully-solved category cannot be recommended (" + r.kind + ")");
   }
+  // 5.2 · rung 2a: a motif the player keeps missing outranks a weak shelf
+  {
+    const MOTIF = { a1: null, a2: null, b1: "fork", b2: "pin", b3: "fork", c1: null, c2: null };
+    const motifOf = (p) => MOTIF[p.id];
+    const st = fresh();
+    for (let i = 0; i < P.MIN_ATTEMPTS; i++) P.recordAnswer(st, "win", true, "fork");
+    P.recordAnswer(st, "def", true);   // one miss on def: below the floor, noise
+    assert(P.motifTally(st, "fork").miss === P.MIN_ATTEMPTS && P.catTally(st, "win").miss === P.MIN_ATTEMPTS,
+      "an answer lands in the shelf tally and the motif tally at once");
+    assert(P.weakestMotif(st, ["fork", "pin"]).motif === "fork", "the worst motif rate wins by the same rule");
+    const r = P.pickNext(st, BOOK, S, null, motifOf);
+    assert(r.kind === "motif" && r.motif === "fork" && r.id === "b1",
+      "a weak motif is served with an unsolved puzzle about it (" + r.kind + "/" + r.id + ")");
+    const withMine = BOOK.concat([{ id: "m1", cat: "mine" }]);
+    const r2 = P.pickNext(st, withMine, S, null, (p) => (p.id === "m1" ? "fork" : MOTIF[p.id]));
+    assert(r2.id === "m1", "…and the player's own drill about it comes before a canned one");
+    st.solved.b1 = true; st.solved.b3 = true;
+    assert(P.pickNext(st, BOOK, S, null, motifOf).kind !== "motif", "a motif with nothing left to serve falls out");
+    assert(P.pickNext(st, BOOK, S).kind !== "motif", "without a motif reader the rung does not exist");
+  }
   // rung 3: no usable history → least-covered category, first unsolved
   {
     const st = fresh();
@@ -2771,7 +2791,7 @@ for (const lang of CONTENT_LANGS) {
     const missBody = /function markMissed\(id\) \{([\s\S]*?)\n  \}/.exec(appSrc);
     assert(missBody && missBody[1].includes("Picker.recordAnswer") && missBody[1].includes("true"),
       "markMissed writes the miss into the lifetime tally");
-    assert(/misses === 0 && !store\.session\.puzzle\.usedAnswer[\s\S]{0,200}Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false\)/.test(appSrc),
+    assert(/misses === 0 && !store\.session\.puzzle\.usedAnswer[\s\S]{0,200}Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false, motifKeyOf\(store\.session\.puzzle\.p\)\)/.test(appSrc),
       "a clean first solve writes the solve — and only a clean one");
   }
 
@@ -2979,7 +2999,7 @@ for (const lang of CONTENT_LANGS) {
   // --- the wiring ---------------------------------------------------------
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
   // the book every serving rail reads is the live one…
-  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier\)/.test(appSrc),
+  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier, motifKeyOf\)/.test(appSrc),
     "为你出一题 reads the live book — a mined drill can be recommended");
   assert(/\? Srs\.order\(bookNow\(\)\.filter\(\(p\) => Srs\.isDue/.test(appSrc),
     "the review queue reads the live book — a missed drill comes back due");
@@ -3174,6 +3194,16 @@ for (const lang of CONTENT_LANGS) {
   assert(PL.plan({ owed: 0, mineUnsolved: 2, weakCat: "mine", lessonNext: -1, opUnsolved: false, playedToday: true })
     .steps.map((x) => x.kind).join(",") === "mine",
     "弱项恰好是错题类时不重复排 — 一个想法不算两步");
+  // 5.2: a weak motif replaces the weak shelf — one statement about weakness
+  const motifPlan = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: "tac", weakMotif: "fork", lessonNext: -1, opUnsolved: false, playedToday: true });
+  assert(motifPlan.steps.map((x) => x.kind).join(",") === "motif" && motifPlan.steps[0].motif === "fork",
+    "母题弱项取代题型弱项，不并列");
+  {
+    const b = PL.snap({ owed: 0, byCat: {}, byMotif: { fork: 3 }, lessonsDone: 0, opSolved: 0, games: 0 });
+    const a2 = PL.snap({ owed: 0, byCat: {}, byMotif: { fork: 5 }, lessonsDone: 0, opSolved: 0, games: 0 });
+    assert(PL.stepDone({ kind: "motif", motif: "fork", n: 2 }, b, a2) && !PL.stepDone({ kind: "motif", motif: "pin", n: 2 }, b, a2),
+      "母题步按该母题的答题数记");
+  }
   // completion is counter deltas, so quitting mid-step costs nothing
   const before = PL.snap({ owed: 3, byCat: { def: 10, mine: 2 }, lessonsDone: 1, opSolved: 5, games: 7 });
   const after = (o) => PL.snap(Object.assign({ owed: 3, byCat: { def: 10, mine: 2 }, lessonsDone: 1, opSolved: 5, games: 7 }, o));
@@ -3196,9 +3226,9 @@ for (const lang of CONTENT_LANGS) {
 // --- the wiring: who writes the buckets, who reads the plan ---------------
 {
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
-  assert(/Picker\.recordAnswer\(store\.session\.puzzleState, p\.cat, true\);[\s\S]{0,200}Progress\.recordAnswer\(store\.session\.progress, p\.cat, true, Date\.now\(\)\)/.test(appSrc),
+  assert(/Picker\.recordAnswer\(store\.session\.puzzleState, p\.cat, true, motifKeyOf\(p\)\);[\s\S]{0,200}Progress\.recordAnswer\(store\.session\.progress, p\.cat, true, Date\.now\(\)\)/.test(appSrc),
     "每次失手同时写进周桶 — 记忆与总账同一落笔点");
-  assert(/Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false\);\s*Progress\.recordAnswer\(store\.session\.progress, store\.session\.puzzle\.p\.cat, false, Date\.now\(\)\)/.test(appSrc),
+  assert(/Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false, motifKeyOf\(store\.session\.puzzle\.p\)\);\s*Progress\.recordAnswer\(store\.session\.progress, store\.session\.puzzle\.p\.cat, false, Date\.now\(\)\)/.test(appSrc),
     "干净解出同样双写");
   assert(/p\.cat === "mine"\) Progress\.recordRedeemed/.test(appSrc),
     "错题干净解出记一次「找回」");

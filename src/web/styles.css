@@ -51,6 +51,14 @@
          warm enough to be recognisably the same material. 正文 lands 12.4:1 on
          the panel and 次要 6.1:1 (was 8.9 and 4.4 — the muted text is the one
          that gained, because the surface it sits on moved toward it). */
+      /* 5.2 · the theme index. Each theme's two square colours, named for
+         the theme, so the 主题 segment can show all four swatches at once
+         whichever theme is live. Raw values live here with the others; the
+         segment reads them by name and nothing else does. */
+      --sw-wood-a: #f0d9b5; --sw-wood-b: #b58863;
+      --sw-night-a: #bed4c9; --sw-night-b: #66907f;
+      --sw-day-a: #eddcc0; --sw-day-b: #c39a6b;
+      --sw-notebook-a: #e8ecf3; --sw-notebook-b: #98a8bd;
       --wood-bg: #241a12;
       --wood-panel: #33261c;
       --wood-panel-border: #4a3729;
@@ -1947,6 +1955,18 @@
       transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
     .pv-chip:hover { border-color: var(--line); background: var(--btn-ghost); }
+    .pv-chip.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    #puzzle-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; margin: -4px 0 12px; overflow: visible; }
+    /* the 主题 segment shows what it names: two squares of each board */
+    #theme-seg button::before {
+      content: ""; display: inline-block; width: 10px; height: 10px;
+      margin-right: 6px; vertical-align: -1px; border-radius: 3px;
+      border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
+    }
+    #theme-seg button[data-theme="wood"]::before { background: linear-gradient(135deg, var(--sw-wood-a) 50%, var(--sw-wood-b) 50%); }
+    #theme-seg button[data-theme="night"]::before { background: linear-gradient(135deg, var(--sw-night-a) 50%, var(--sw-night-b) 50%); }
+    #theme-seg button[data-theme="day"]::before { background: linear-gradient(135deg, var(--sw-day-a) 50%, var(--sw-day-b) 50%); }
+    #theme-seg button[data-theme="notebook"]::before { background: linear-gradient(135deg, var(--sw-notebook-a) 50%, var(--sw-notebook-b) 50%); }
     /* 拿去练 — the turning point's second half: same quiet dashed voice as
        the jump row above it, because they are two verbs on one fact. */
     .review-bank {
