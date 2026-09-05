@@ -5438,15 +5438,21 @@ import { createStore } from "./store.js";
   }
 
   /**
-   * 5.2.1: what a text export does when the native dialog is not there.
+   * 5.2.1: what a text export does when the native dialog REFUSED.
    *
-   * It used to fall through to the browser path — an `<a download>` click —
-   * which a WKWebView performs by doing nothing, after which the toast said
-   * 「已导出 … 在下载文件夹里」 about a file that did not exist. Inside the
-   * shell the honest fallback is the clipboard, and the toast says that.
+   * Two failures look alike from the catch block and mean opposite things.
+   * No dialog API at all (Host.NO_FILE_DIALOG) is a build without dialogs —
+   * a browser, or a test standing in for one — and the browser download path
+   * is the right fallback. A dialog API that is there and rejected the call
+   * is the shell saying no (5.0.0–5.2.0: permission_denied from an unlisted
+   * builtin command), and inside the shell an `<a download>` click does
+   * nothing — after which the toast said 「已导出 … 在下载文件夹里」 about a
+   * file that did not exist. For that case the honest fallback is the
+   * clipboard, and the toast says so.
+   * @returns {boolean} true when the clipboard took it and nothing else should run
    */
-  async function exportTextFallback(text) {
-    if (!Host.hasZero()) return false;
+  async function exportTextFallback(err, text) {
+    if (!Host.hasZero() || !err || err.name === Host.NO_FILE_DIALOG) return false;
     await copyText(text, t("msg.export.bridgeCopied"));
     return true;
   }
@@ -5464,8 +5470,7 @@ import { createStore } from "./store.js";
         Host.addRecentDocument(path);
         savedToast(name, path, revealed);
         return;
-      } catch (_) {}
-      if (await exportTextFallback(pgn)) return;
+      } catch (err) { if (await exportTextFallback(err, pgn)) return; }
     }
     try {
       const blob = new Blob([pgn], { type: "application/x-chess-pgn" });
@@ -5691,13 +5696,13 @@ import { createStore } from "./store.js";
         const revealed = await Host.revealPath(path);
         savedToast(name, path, revealed);
         return;
-      } catch (_) { /* no dialog in the shell — said below, not papered over */ }
-    }
-    if (Host.hasZero()) {
-      // a picture has no clipboard fallback worth the name, and the browser
-      // path below does nothing inside a WKWebView (5.2.1)
-      toast(t("msg.export.bridgeFailed"), "fault");
-      return;
+      } catch (err) {
+        // the dialog exists and refused (5.2.1): a picture has no clipboard
+        // fallback worth the name, and the browser path below does nothing
+        // inside a WKWebView — say it was not saved. No dialog API at all is
+        // a browser, and the browser path is right.
+        if (err && err.name !== Host.NO_FILE_DIALOG) { toast(t("msg.export.bridgeFailed"), "fault"); return; }
+      }
     }
     try {
       const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
@@ -7328,8 +7333,7 @@ import { createStore } from "./store.js";
         const revealed = await Host.revealPath(path);
         savedToast(name, path, revealed);
         return;
-      } catch (_) {}
-      if (await exportTextFallback(text)) return;
+      } catch (err) { if (await exportTextFallback(err, text)) return; }
     }
     try {
       const blob = new Blob([text], { type: "application/json" });
