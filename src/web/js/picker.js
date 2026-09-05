@@ -34,23 +34,51 @@
 /** History below this many answers in a category is noise, not a weakness. */
 const MIN_ATTEMPTS = 3;
 
-/** The lifetime record for one category, however sparse. */
-function catTally(state, cat) {
-  const t = (state.tally || {})[cat];
+/** One record from one tally, however sparse. */
+function tallyOf(table, key) {
+  const t = (table || {})[key];
   const miss = t && Number.isFinite(t.miss) ? t.miss : 0;
   const solve = t && Number.isFinite(t.solve) ? t.solve : 0;
   return { miss, solve, attempts: miss + solve };
 }
 
+/** The lifetime record for one category, however sparse. */
+function catTally(state, cat) { return tallyOf(state.tally, cat); }
+
+/** The lifetime record for one motif (fork, pin, …) — 5.2. */
+function motifTally(state, motif) { return tallyOf(state.mtally, motif); }
+
 /**
  * Record an answer into the lifetime tally. Returns the same state object,
  * mutated — matching how the rest of puzzleState is updated in place.
+ *
+ * 5.2: an answer also lands in the motif tally when the puzzle has a motif.
+ * The category says which shelf the puzzle came from; the motif says what
+ * the position was about — and "keeps missing forks" is a finer, more
+ * actionable fact than "weak at 战术", which is a shelf.
  */
-function recordAnswer(state, cat, missed) {
+function recordAnswer(state, cat, missed, motif) {
   if (!state.tally) state.tally = {};
   if (!state.tally[cat]) state.tally[cat] = { miss: 0, solve: 0 };
   state.tally[cat][missed ? "miss" : "solve"]++;
+  if (motif) {
+    if (!state.mtally) state.mtally = {};
+    if (!state.mtally[motif]) state.mtally[motif] = { miss: 0, solve: 0 };
+    state.mtally[motif][missed ? "miss" : "solve"]++;
+  }
   return state;
+}
+
+/** The one rule: enough answers, some misses, the worst rate wins. */
+function worstOf(table, keys) {
+  let weak = null;
+  for (const k of keys) {
+    const t = tallyOf(table, k);
+    if (t.attempts < MIN_ATTEMPTS || t.miss === 0) continue;
+    const rate = t.miss / t.attempts;
+    if (!weak || rate > weak.rate) weak = { key: k, rate, attempts: t.attempts };
+  }
+  return weak;
 }
 
 /**
@@ -61,14 +89,14 @@ function recordAnswer(state, cat, missed) {
  * they would eventually name two different categories in the same breath.
  */
 function weakest(state, cats) {
-  let weak = null;
-  for (const c of cats) {
-    const t = catTally(state, c);
-    if (t.attempts < MIN_ATTEMPTS || t.miss === 0) continue;
-    const rate = t.miss / t.attempts;
-    if (!weak || rate > weak.rate) weak = { cat: c, rate, attempts: t.attempts };
-  }
-  return weak;
+  const w = worstOf(state.tally, cats);
+  return w ? { cat: w.key, rate: w.rate, attempts: w.attempts } : null;
+}
+
+/** The motif this history condemns — same rule, the other tally (5.2). */
+function weakestMotif(state, motifs) {
+  const w = worstOf(state.mtally, motifs);
+  return w ? { motif: w.key, rate: w.rate, attempts: w.attempts } : null;
 }
 
 /**
@@ -79,10 +107,12 @@ function weakest(state, cats) {
  * @param {object} srs the ChessSrs module (isDue / order)
  * @param {function} [tierOf] puzzle → "easy" | "mid" | "hard", for the weak
  *        rung's easy-first climb; without it every rung stays in book order
- * @returns {{kind: "review"|"weak"|"explore"|"done", cat?: string, id?: string,
- *            due?: number, rate?: number, attempts?: number}}
+ * @param {function} [motifOf] puzzle → motif key or null; with it, a motif
+ *        the player keeps missing outranks a weak shelf (5.2)
+ * @returns {{kind: "review"|"motif"|"weak"|"explore"|"done", cat?: string,
+ *            id?: string, motif?: string, due?: number, rate?: number, attempts?: number}}
  */
-function pickNext(state, all, srs, tierOf) {
+function pickNext(state, all, srs, tierOf, motifOf) {
   // 1. the queue
   const due = all.filter((p) => srs.isDue(state.missed[p.id]));
   if (due.length) {
@@ -97,6 +127,18 @@ function pickNext(state, all, srs, tierOf) {
   if (!open.length) return { kind: "done" };
 
   const firstUnsolved = (c) => all.find((p) => p.cat === c && !state.solved[p.id]).id;
+
+  // 2a. a motif the player keeps missing, with an unsolved puzzle about it
+  // anywhere in the book — the personal book first, because a position this
+  // player actually lost to that motif beats a canned one about it
+  if (motifOf) {
+    const wm = weakestMotif(state, Object.keys(state.mtally || {}));
+    if (wm) {
+      const about = all.filter((p) => !state.solved[p.id] && motifOf(p) === wm.motif);
+      const pick = about.find((p) => p.cat === "mine") || about[0];
+      if (pick) return { kind: "motif", cat: pick.cat, id: pick.id, motif: wm.motif, rate: wm.rate, attempts: wm.attempts };
+    }
+  }
 
   // 2. a real weakness: enough answers, and misses among them
   const weak = weakest(state, open);
@@ -128,4 +170,4 @@ function pickNext(state, all, srs, tierOf) {
   return { kind: "explore", cat: pick, id: firstUnsolved(pick) };
 }
 
-export const ChessPicker = { MIN_ATTEMPTS, pickNext, recordAnswer, catTally, weakest };
+export const ChessPicker = { MIN_ATTEMPTS, pickNext, recordAnswer, catTally, motifTally, weakest, weakestMotif };

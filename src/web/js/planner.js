@@ -38,6 +38,7 @@ const DOSE = { review: 3, mine: 2, weak: 2 };
  *   owed: number,          // review queue length
  *   mineUnsolved: number,  // unsolved personal drills
  *   weakCat: string|null,  // Picker.weakest().cat, if any
+ *   weakMotif: string|null,// Picker.weakestMotif().motif, if any (5.2)
  *   lessonNext: number,    // index of first unfinished lesson, or -1
  *   opUnsolved: boolean,   // any unsolved opening line (either chair)
  *   playedToday: boolean,  // a game was recorded today
@@ -51,7 +52,11 @@ function plan(sig) {
   // the weak step repeats what review/mine already cover only when the weak
   // category is a real third thing — a session of three copies of one idea
   // is one idea, not a session
-  if (sig.weakCat && sig.weakCat !== "mine") steps.push({ kind: "weak", cat: sig.weakCat, n: DOSE.weak });
+  // 5.2: a motif the player keeps missing is the sharper statement of the
+  // same weakness — it replaces the shelf step rather than joining it, so
+  // the sitting still says one thing about weakness
+  if (sig.weakMotif) steps.push({ kind: "motif", motif: sig.weakMotif, n: DOSE.weak });
+  else if (sig.weakCat && sig.weakCat !== "mine") steps.push({ kind: "weak", cat: sig.weakCat, n: DOSE.weak });
   if (sig.lessonNext >= 0) steps.push({ kind: "lesson", i: sig.lessonNext });
   else if (sig.opUnsolved) steps.push({ kind: "op" });
   if (!sig.playedToday) steps.push({ kind: "game" });
@@ -66,6 +71,7 @@ function plan(sig) {
  * @param {object} src {
  *   owed: number,               // review queue length
  *   byCat: {cat: attempts},     // lifetime tally attempts per category
+ *   byMotif: {motif: attempts}, // lifetime motif tally attempts (5.2)
  *   lessonsDone: number,
  *   opSolved: number,           // solved opening drills, both chairs
  *   games: number,              // recorded games
@@ -75,6 +81,7 @@ function snap(src) {
   return {
     owed: src.owed,
     byCat: Object.assign({}, src.byCat || {}),
+    byMotif: Object.assign({}, src.byMotif || {}),
     lessonsDone: src.lessonsDone,
     opSolved: src.opSolved,
     games: src.games,
@@ -101,6 +108,7 @@ function stepDone(step, before, after) {
     case "review": return after.owed === 0 || dall(after) - dall(before) >= step.n;
     case "mine": return dcat("mine") >= step.n;
     case "weak": return dcat(step.cat) >= step.n;
+    case "motif": return ((after.byMotif || {})[step.motif] || 0) - ((before.byMotif || {})[step.motif] || 0) >= step.n;
     case "lesson": return after.lessonsDone > before.lessonsDone;
     case "op": return after.opSolved > before.opSolved;
     case "game": return after.games > before.games;

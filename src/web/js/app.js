@@ -1202,6 +1202,17 @@ import { createStore } from "./store.js";
     MOTIF_CACHE.set(p.id, m);
     return m;
   }
+  /** The motif KEY (fork, pin, …) of a puzzle, or null — the join key the
+      motif tally, the planner and 为你出一题 share (5.2). A personal drill is
+      read live: its answer can change under revision, and the cache is by id. */
+  function motifKeyOf(p) {
+    if (!p) return null;
+    if (p.cat === "mine") {
+      try { return p.fen && p.solution && p.solution[0] ? motifOf(p.fen, p.solution[0], Chess) : null; } catch (_) { return null; }
+    }
+    if (p.cat !== "tac" && p.cat !== "real" && p.cat !== "win") return null;
+    return derivedMotif(p);
+  }
   function puzzleMotif(p) {
     const hand = contentField("puzzles", p.id, "motif") || p.motif;
     if (hand) return hand;
@@ -2028,7 +2039,7 @@ import { createStore } from "./store.js";
     // …and into the lifetime tally, which unlike the queue survives
     // graduation — it is the memory 为你出一题 reads (see picker.js)
     const p = bookNow().find((x) => x.id === id);
-    if (p) Picker.recordAnswer(store.session.puzzleState, p.cat, true);
+    if (p) Picker.recordAnswer(store.session.puzzleState, p.cat, true, motifKeyOf(p));
     // …and into this week's bucket — the tally is the total, this is the change
     if (p) { Progress.recordAnswer(store.session.progress, p.cat, true, Date.now()); saveProgress(); }
     savePuzzleState();
@@ -2484,7 +2495,7 @@ import { createStore } from "./store.js";
       // misses already counted those misses — counting the solve too would
       // let one shaky puzzle wash its own signal out
       if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) {
-        Picker.recordAnswer(store.session.puzzleState, store.session.puzzle.p.cat, false);
+        Picker.recordAnswer(store.session.puzzleState, store.session.puzzle.p.cat, false, motifKeyOf(store.session.puzzle.p));
         Progress.recordAnswer(store.session.progress, store.session.puzzle.p.cat, false, Date.now());
         // a personal drill solved clean: the mistake is redeemed, and the week remembers
         if (store.session.puzzle.p.cat === "mine") Progress.recordRedeemed(store.session.progress, Date.now());
@@ -2500,6 +2511,7 @@ import { createStore } from "./store.js";
       store.session.puzzle.p.cat === "real" ? t("pz.doneReal") :
       store.session.puzzle.p.cat === "win" || store.session.puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
     const why = store.session.puzzle.p.cat === "mine" ? mineWhy(store.session.puzzle.p) : "";
+    if (store.session.puzzle.p.cat === "mine") store.session.puzzle.lineAt = 0;
     toast("✅ " + verb + " · " + puzzleName(store.session.puzzle.p) + (why ? " · " + why : ""));
     sync();
   }
@@ -2574,6 +2586,68 @@ import { createStore } from "./store.js";
     });
   }
 
+  /**
+   * 5.2: the engine's line under a solved personal drill, as chips — the
+   * same chips the review's 引擎主变 uses, but here a click WALKS the puzzle
+   * board to that move, because the trainer owns the board and a preview
+   * would yield to it. 题面 comes first and takes the board back.
+   */
+  function puzzleLineSans(p) {
+    if (!p || p.cat !== "mine" || !p.solution || !p.solution[0]) return [];
+    const pv = typeof p.pv === "string" ? p.pv.split(" ").filter(Boolean) : [];
+    const line = pv.length && pv[0] === p.solution[0] ? pv : [p.solution[0]].concat(pv.slice(0, 4));
+    // only as far as the position actually allows — a revised answer may
+    // have orphaned an older continuation
+    const g = new Chess(p.fen);
+    const ok = [];
+    for (const san of line.slice(0, 6)) { if (!g.move(san)) break; ok.push(san); }
+    return ok;
+  }
+  function walkPuzzleLine(k) {
+    const pz = store.session.puzzle;
+    if (!pz || !pz.done) return;
+    const sans = puzzleLineSans(pz.p);
+    const g = new Chess(pz.p.fen);
+    let last = null;
+    for (let i = 0; i <= k && i < sans.length; i++) {
+      const m = g.move(sans[i]);
+      if (!m) break;
+      last = { from: m.from, to: m.to };
+    }
+    pz.g = g;
+    pz.last = last;
+    pz.lineAt = k;
+    store.game.selection = null;
+    BoardView.cancelAnim();
+    sync();
+  }
+  function renderPuzzleLine() {
+    const el = document.getElementById("puzzle-line");
+    if (!el) return;
+    const pz = store.session.puzzle;
+    const sans = pz && pz.done ? puzzleLineSans(pz.p) : [];
+    el.hidden = !sans.length;
+    el.replaceChildren();
+    if (!sans.length) return;
+    const lab = document.createElement("span");
+    lab.className = "pv-label";
+    lab.textContent = t("pz.line");
+    el.appendChild(lab);
+    const at = Number.isInteger(pz.lineAt) ? pz.lineAt : sans.length - 1;
+    const start = pz.p.fen.split(" ")[1] === "b" ? "b" : "w";
+    const chip = (text, k, color) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "pv-chip" + (k === at ? " active" : "");
+      b.dataset.k = String(k);
+      if (color) writeSan(b, text, color); else b.textContent = text;
+      b.onclick = () => walkPuzzleLine(k);
+      el.appendChild(b);
+    };
+    chip(t("pz.lineStart"), -1, null);
+    sans.forEach((san, k) => chip(san, k, k % 2 === 0 ? start : (start === "w" ? "b" : "w")));
+  }
+
   function syncPuzzleUI() {
     const sec = document.getElementById("sec-puzzle");
     if (!sec) return;
@@ -2635,6 +2709,7 @@ import { createStore } from "./store.js";
         ? t("pz.solvedNext")
         : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText();
     }
+    renderPuzzleLine();
     // opening drills are rote memorisation without the "why" — show the idea
     const ideaEl = document.getElementById("puzzle-idea");
     if (ideaEl) {
@@ -3402,9 +3477,11 @@ import { createStore } from "./store.js";
     const st = store.session.puzzleState;
     const byCat = {};
     for (const [c, tl] of Object.entries(st.tally || {})) byCat[c] = (tl.miss || 0) + (tl.solve || 0);
+    const byMotif = {};
+    for (const [m, tl] of Object.entries(st.mtally || {})) byMotif[m] = (tl.miss || 0) + (tl.solve || 0);
     return {
       owed: bookNow().filter((p) => Srs.isDue(st.missed[p.id])).length,
-      byCat,
+      byCat, byMotif,
       lessonsDone: Object.keys(store.session.learnState.done || {}).length,
       opSolved: ALL_PUZZLES.filter((p) => p.cat === "op" && st.solved[p.id]).length,
       // stats parse deferred: only the game step reads it, and snap() copies
@@ -3421,6 +3498,7 @@ import { createStore } from "./store.js";
       owed: bookNow().filter((p) => Srs.isDue(st.missed[p.id])).length,
       mineUnsolved: store.session.mines.filter((m) => !st.solved[m.id]).length,
       weakCat: w ? w.cat : null,
+      weakMotif: (Picker.weakestMotif(st, Object.keys(st.mtally || {})) || {}).motif || null,
       lessonNext: LESSONS.findIndex((L) => !store.session.learnState.done[L.id]),
       opUnsolved: ALL_PUZZLES.some((p) => p.cat === "op" && !st.solved[p.id]),
       playedToday: loadStats().games.some((g) => Progress.dayKey(g.t) === today),
@@ -3431,6 +3509,7 @@ import { createStore } from "./store.js";
     if (step.kind === "review") return tf("daily.review", [step.n]);
     if (step.kind === "mine") return tf("daily.mine", [step.n]);
     if (step.kind === "weak") return tf("daily.weak", [t("pz.cat." + step.cat)]);
+    if (step.kind === "motif") return tf("daily.motif", [t("motif." + step.motif)]);
     if (step.kind === "lesson") return t("daily.lesson");
     if (step.kind === "op") return t("daily.op");
     return t("daily.game");
@@ -3512,6 +3591,24 @@ import { createStore } from "./store.js";
     if (step.kind === "game") {
       if (store.session.mode !== "ai") modeBtn("ai").click();
       else setSideTab("play", { top: true });
+      return;
+    }
+    // 5.2: a motif step lands on a puzzle ABOUT that motif — the player's own
+    // drill if one is unsolved, else the first canned one — wherever it shelves
+    if (step.kind === "motif") {
+      const about = bookNow().filter((p) => !store.session.puzzleState.solved[p.id] && motifKeyOf(p) === step.motif);
+      const pick = about.find((p) => p.cat === "mine") || about[0];
+      if (!pick) { toast(t("daily.motifDone")); return; }
+      store.session.puzzleState.cat = pick.cat;
+      savePuzzleState();
+      store.session.puzzleTierFilter = "all";
+      const go = () => {
+        const list = puzzlesInCat(pick.cat);
+        startPuzzleAt(pick.cat, Math.max(0, list.findIndex((p) => p.id === pick.id)));
+        setSideTab("play", { top: true });
+      };
+      if (store.session.mode !== "puzzle") { modeBtn("puzzle").click(); go(); }
+      else { go(); saveSettings(); sync(); }
       return;
     }
     // the puzzle steps: pick the category, then enter (or re-enter) the mode
@@ -7087,7 +7184,7 @@ import { createStore } from "./store.js";
     sync();
   };
   document.getElementById("puzzle-smart").onclick = () => {
-    const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier);
+    const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf);
     if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
     store.session.puzzleState.cat = pick.cat;
     // same contract for the side segment: if the picker chose an opening line
@@ -7104,6 +7201,7 @@ import { createStore } from "./store.js";
     const idx = Math.max(0, list.findIndex((p) => p.id === pick.id));
     startPuzzleAt(pick.cat, idx);
     toast(pick.kind === "review" ? tf("pz.smart.review", [pick.due]) :
+          pick.kind === "motif" ? tf("pz.smart.motif", [t("motif." + pick.motif)]) :
           pick.kind === "weak" ? tf("pz.smart.weak", [t("pz.cat." + pick.cat)]) :
           tf("pz.smart.explore", [t("pz.cat." + pick.cat)]));
   };

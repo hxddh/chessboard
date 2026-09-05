@@ -171,6 +171,11 @@ function addMines(list, cands, now, solvedIds) {
  * the same lesson, only the answer sheet changed. A withdrawn drill is
  * returned in `retired` so the caller can clear its queue entries.
  *
+ * Measured in 5.2 (scripts/test-mines.mjs → docs/measured.json
+ * mineRevision): of the ?? the 120ms pass minted on the fixture games, the
+ * 400ms pass withdrew 40% and changed the best move on a third of the rest.
+ * A book that could not be revised would be wrong about most of its entries.
+ *
  * @param {object[]} list the personal book
  * @param {object[]} cands candidatesFrom() of the new pass — the ?? plies
  * @param {object} a the pass's arrays {fens, sans, tags}, for the plies it
@@ -220,6 +225,12 @@ function isAccepted(m, san) {
  * offered move, at the same budget. Accepted when it costs less than a
  * mistake against the best: the drill asks for a move that does not lose the
  * position, not for the engine's exact preference (audit F3).
+ *
+ * Measured in 5.2 (scripts/test-mines.mjs → docs/measured.json
+ * mineAlternatives): at the fixture games' ?? positions the second-best move
+ * sits a median 116cp behind the best, and 40% of positions have at least
+ * one move within 100cp. So the rule fires on a real minority of drills and
+ * never opens the floodgates — the threshold stays at Review.MISTAKE.
  * @returns {{ok: boolean, loss: number}} loss ≥ 0, from the mover's side
  */
 function judgeAlt(cpAfterBest, cpAfterAlt, side, mistake) {
