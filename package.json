@@ -1,6 +1,6 @@
 {
   "name": "chessboard",
-  "version": "5.2.0",
+  "version": "5.2.1",
   "private": true,
   "description": "国际象棋 Chessboard — Native SDK WebView + Canvas 的检查与代码生成脚本",
   "license": "GPL-3.0-or-later",

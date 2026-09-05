@@ -472,6 +472,31 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json 一致（${appVer}）`);
 }
 
+// ------------------------------------------------ 5. host.js ↔ main.zig 内建桥
+// SDK 0.8 起，对话框 / 系统 / 剪贴板这些内建命令没有隐含权限：不在 main.zig 的
+// builtin_bridge 策略里的一律拒绝，而 host.js 把拒绝读成「这一构建没有对话框」
+// 走浏览器回退。5.0.0 → 5.2.0 三个版本里没有一次原生文件对话框真的弹出来过，
+// 而 CI 全绿 —— 因为没有任何检查把页面调用的命令和 zig 侧放行的命令对到一起。
+// 这里对：页面用到的每个 `zero.X.Y` 必须在 main.zig 放行，放行的也必须被用到。
+{
+  const hostSrc = fs.readFileSync(path.join(ROOT, "src/web/js/host.js"), "utf8");
+  const mainSrc = fs.readFileSync(path.join(ROOT, "src/main.zig"), "utf8");
+  const NS = { dialogs: "dialog", os: "os", clipboard: "clipboard", platform: "platform" };
+  const used = new Set();
+  for (const m of hostSrc.matchAll(/global\.zero\.([a-zA-Z]+)\.([a-zA-Z]+)\(/g)) {
+    if (m[1] === "on" || m[1] === "off") continue;
+    const ns = NS[m[1]];
+    if (ns) used.add("native-sdk." + ns + "." + m[2]);
+  }
+  const block = /const BUILTIN_COMMANDS = \[_\]\[\]const u8\{([\s\S]*?)\};/.exec(mainSrc);
+  check(!!block, "内建桥: main.zig 里有 BUILTIN_COMMANDS 列表");
+  const granted = new Set(block ? [...block[1].matchAll(/"([a-z.-]+)"/gi)].map((m) => m[1]) : []);
+  for (const u of used) check(granted.has(u), `内建桥: host.js 调用了 ${u}，但 main.zig 没有放行 —— 原生构建里它会静默走浏览器回退`);
+  for (const g of granted) check(used.has(g), `内建桥: main.zig 放行了 ${g}，但页面从不调用它`);
+  check(/\.builtin_bridge = app_state\.builtinBridge\(\)/.test(mainSrc), "内建桥: 策略真的传给了 runner（.builtin_bridge）");
+  notes.push(`内建桥: host.js 调用 ${used.size} 个 SDK 命令，main.zig 放行 ${granted.size} 个，一致`);
+}
+
 // ------------------------------------------------------------------------ 结果
 
 for (const note of notes) console.log(`  ${note}`);
