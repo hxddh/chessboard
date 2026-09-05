@@ -5691,7 +5691,13 @@ import { createStore } from "./store.js";
         const revealed = await Host.revealPath(path);
         savedToast(name, path, revealed);
         return;
-      } catch (_) { /* fall through to the browser path */ }
+      } catch (_) { /* no dialog in the shell — said below, not papered over */ }
+    }
+    if (Host.hasZero()) {
+      // a picture has no clipboard fallback worth the name, and the browser
+      // path below does nothing inside a WKWebView (5.2.1)
+      toast(t("msg.export.bridgeFailed"), "fault");
+      return;
     }
     try {
       const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
