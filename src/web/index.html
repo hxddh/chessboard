@@ -96,6 +96,10 @@
         <div class="coords files" id="coord-files" aria-hidden="true"></div>
         <div class="coords ranks" id="coord-ranks" aria-hidden="true"></div>
         <div class="think-dot" id="think-dot" hidden></div>
+        <!-- Says when the board is not showing the committed position: a
+             hovered move, a focused or pinned engine line. Without it the
+             drawn position and the cursor could disagree in silence. -->
+        <div class="preview-badge num" id="preview-badge" role="status" aria-live="polite" hidden></div>
       </div>
     </div>
     <!-- The spine used to live here: whose move, the clocks, the last move and
@@ -294,6 +298,17 @@
            the page, wedged between the two groups you actually come here to
            adjust. A destructive group belongs at the end of the thing it is
            the end of. -->
+      <!-- 5.1: the learning data — the personal book, the review queue, the
+           lesson progress, the record — has a way out and a way back in. It
+           is the one content in the app nobody can download again, and it
+           used to live behind two buttons that could only delete it. -->
+      <section class="side-section" id="sec-learning">
+        <h2 class="side-h" data-i18n="side.learning">学习数据</h2>
+        <div class="link-row">
+          <button type="button" class="act-btn" id="learning-export" data-i18n="act.learningExport" title="把错题本、复习队列、课程进度和战绩存成一个文件" data-i18n-title="tip.learning.export">导出</button>
+          <button type="button" class="act-btn" id="learning-import" data-i18n="act.learningImport" title="从导出的文件合并回来，不会覆盖本机已有的进度" data-i18n-title="tip.learning.import">导入</button>
+        </div>
+      </section>
       <section class="side-section">
         <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
         <div class="link-row">
@@ -301,7 +316,6 @@
           <button type="button" class="act-btn danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
           <button type="button" class="act-btn danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
         </div>
-        <p class="hint" data-i18n="hint.danger">三项都不可撤销,各自会再问一次。</p>
       </section>
 
       </div><!-- /pane-setup -->
@@ -320,9 +334,15 @@
            the tally, the course and today's games together, and walks the
            steps as they are earned. An invitation, never an autopilot: it
            jumps only when clicked, exactly like 为你出一题. -->
-      <div class="link-row" id="daily-row">
+      <!-- 5.1: the plan is shown, not only offered. Each step names the signal
+           it came from (a debt, your own blunder, the weakest category, the
+           next lesson), so the coach's order is readable before it is followed
+           — planner.js always had the order; nothing displayed it. The button
+           spans the column: it is the one entrance shared by every mode. -->
+      <div class="daily" id="daily-row">
         <button type="button" class="act-btn" id="daily-btn" title="按复习欠账、错题、弱项和课程进度排出这一节练习" data-i18n-title="tip.daily" data-i18n="daily.btn">今天的训练</button>
         <span class="side-h-meta" id="daily-note" hidden></span>
+        <ol class="daily-plan num" id="daily-plan" aria-label="这一节的步骤" data-i18n-aria="daily.planAria" hidden></ol>
       </div>
 
       <section class="side-section" id="sec-learn" hidden>
@@ -480,8 +500,25 @@
           <button type="button" id="rep-next" title="下一着 (→)" data-i18n-title="tip.replay.next">›</button>
           <button type="button" id="rep-end" title="终局 (End)" data-i18n-title="tip.replay.end">»</button>
         </div>
+        <!-- 5.1: the actions stand above what they produce. At the default
+             1200×900 window the curve, the bar, the line and the report pushed
+             分析 / 精析 below the fold — the one thing to press on this page
+             needed a scroll to reach (audit F6). The engine line below them is
+             the app's own state, not a control: shown in place, not toasted. -->
+        <div class="act-group" id="review-actions">
+          <span class="act-k" data-i18n="act.groupReview">复盘</span>
+          <div class="link-row">
+            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
+            <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
+            <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
+          </div>
+          <p class="hint" id="engine-state" role="status" hidden></p>
+        </div>
         <div id="eval-wrap" hidden>
-          <canvas id="eval-curve" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" title="点击跳转到对应局面" data-i18n-title="tip.evalCurve"></canvas>
+          <!-- Focusable and a slider: the pointer already scrubs it, and the
+               global ← / → / Home / End replay keys move it once it has focus,
+               so the keyboard gets the same time machine (5.1, work package D). -->
+          <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" title="点击跳转到对应局面" data-i18n-title="tip.evalCurve"></canvas>
           <!-- The curve is the whole game; this is the one position the board
                is standing on, in a form that needs no axis read. -->
           <div class="eval-bar-row" id="eval-bar-row" hidden>
@@ -498,14 +535,6 @@
              "认输" look like the same kind of thing. Grouped by what they act
              on, with the four import paths behind a disclosure and the game's
              terminal actions on their own row. -->
-        <div class="act-group">
-          <span class="act-k" data-i18n="act.groupReview">复盘</span>
-          <div class="link-row">
-            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
-            <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
-            <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
-          </div>
-        </div>
         <div class="act-group">
           <span class="act-k" data-i18n="act.groupFile">棋谱与局面</span>
           <div class="link-row">
@@ -536,7 +565,7 @@
             <button type="button" class="act-btn danger" id="btn-resign" title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
           </div>
         </div>
-        <p class="hint" data-i18n="hint.analysis">分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
+        <p class="hint" id="analysis-legend" data-i18n="hint.analysis" hidden>分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
       </section>
 
       </div><!-- /pane-play -->

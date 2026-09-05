@@ -36,6 +36,18 @@
   const INACCURACY = 50, MISTAKE = 100, BLUNDER = 300;
 
   /**
+   * How many of a side's own moves have to be measured before the report is
+   * allowed to say anything about how that side *plays* — as opposed to what
+   * happened in this fragment. Ten own moves is the length of a book opening:
+   * two players who recite 1.e4 e5 2.Nf3 Nc6 both score 99% and neither has
+   * shown anything yet. Until 5.0.0 verdictKey read only the counts and the
+   * accuracy, so 1.e4 e5 earned both sides 「可以挑战更高难度了」 (audit F5).
+   * The same floor decides whether the evaluation curve is drawn: below it the
+   * curve is an empty box with a flat line in it.
+   */
+  const MIN_JUDGED = 10;
+
+  /**
    * How much a move cost the side that played it, in centipawns.
    *
    * Always measured from the mover's point of view, and clamped: an eval track
@@ -148,7 +160,8 @@
     }
     const measured = losses.w.length + losses.b.length;
     if (!measured) return null;
-    return { acpl, acc, counts, worst, measured, plies: history.length };
+    const judged = { w: losses.w.length, b: losses.b.length };
+    return { acpl, acc, counts, worst, measured, judged, plies: history.length };
   }
 
   /**
@@ -157,7 +170,12 @@
    */
   function verdictKey(summary, side) {
     if (!summary || !summary.acc || summary.acc[side] == null) return null;
+    // a fragment is described as a fragment — the blunder lines below are
+    // about moves that were actually made and still apply; the three
+    // "how you play" lines need a sample
     const c = summary.counts[side];
+    const enough = !summary.judged || summary.judged[side] >= MIN_JUDGED;
+    if (!enough && c.blunder === 0 && c.mistake < 3) return "rv.verdict.tooShort";
     if (c.blunder >= 3) return "rv.verdict.blunders";
     if (c.blunder >= 1) return "rv.verdict.oneBlunder";
     if (c.mistake >= 3) return "rv.verdict.mistakes";
@@ -203,13 +221,18 @@
     return null;
   }
 
+  /** Is the game long enough for the curve and the verdicts to mean anything? */
+  function longEnough(summary) {
+    return !!summary && summary.measured >= MIN_JUDGED * 2;
+  }
+
   /** Is this a tag the player is meant to learn something from? */
   function isMistake(tag) {
     return tag === "?!" || tag === "?" || tag === "??";
   }
 
   export const ChessReview = {
-    summarize, verdictKey, moveNumber, evalBar, markFor, isMistake,
+    summarize, verdictKey, longEnough, moveNumber, evalBar, markFor, isMistake,
     lossOf, accuracyOf, lossesBySide,
-    INACCURACY, MISTAKE, BLUNDER,
+    INACCURACY, MISTAKE, BLUNDER, MIN_JUDGED,
   };

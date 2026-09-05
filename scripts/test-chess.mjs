@@ -2531,8 +2531,25 @@ for (const lang of CONTENT_LANGS) {
   assert(grade(300).blunder === 1, "300cp is a blunder");
 
   assert(R.verdictKey(s, "w") === "rv.verdict.oneBlunder", "one blunder gets its own verdict");
-  assert(R.verdictKey(s, "b") === "rv.verdict.excellent", "a clean game reads as excellent");
+  // s is a fragment (fewer than MIN_JUDGED own moves): a side that made a
+  // blunder is told about the blunder, a side that made none is told the
+  // sample is too short — not that it plays excellently (audit F5)
+  assert(R.verdictKey(s, "b") === "rv.verdict.tooShort", "a clean fragment is a fragment, not excellence");
   assert(R.verdictKey(null, "w") === null, "no summary yields no verdict");
+  {
+    // twenty own moves each, all clean: now it is a game and the verdict may speak
+    const n = R.MIN_JUDGED * 2 * 2;
+    const flat = new Array(n + 1).fill(0);
+    const moves = new Array(n).fill("e4");
+    const long = R.summarize(flat, moves, "w");
+    assert(long.judged.w === R.MIN_JUDGED * 2 && long.judged.b === R.MIN_JUDGED * 2,
+      "summarize counts the judged moves per side");
+    assert(R.verdictKey(long, "b") === "rv.verdict.excellent", "a clean full game reads as excellent");
+    assert(R.longEnough(long) && !R.longEnough(s), "the curve floor is the same sample floor");
+    const two = R.summarize([0, 10, 0], ["e4", "e5"], "w");
+    assert(R.verdictKey(two, "w") === "rv.verdict.tooShort" && R.verdictKey(two, "b") === "rv.verdict.tooShort",
+      "1.e4 e5 earns nobody a level-up");
+  }
 }
 
 // material: who is up, and what each side has taken
@@ -2890,6 +2907,74 @@ for (const lang of CONTENT_LANGS) {
     const r2 = M.addMines(r.list, [{ id: "mine:new2", cat: "mine", fen: "f3", solution: ["c"] }], 10000, new Set());
     assert(r2.dropped[0] === "mine:x0", "with nothing solved, the oldest retires");
   }
+  // --- 5.1: a deeper pass may correct or withdraw what a quick pass banked --
+  {
+    const g = new C(); const fen = g.fen();
+    const quick = M.drillFrom(fen, "e4", "g1f3", 310, 0, C, { budget: 120, src: "auto" });
+    const book = M.addMines([], [quick], 1000, new Set()).list;
+    assert(book[0].rev && book[0].rev.budget === 120, "a drill remembers the budget that minted it");
+    // the deep pass prefers d4 and finds the loss smaller
+    const deep = M.drillFrom(fen, "e4", "d2d4", 150, 0, C, { budget: 400, src: "auto" });
+    const rv = M.reviseMines(book, [deep], null, "w", { budget: 400 });
+    assert(rv.updated.length === 1 && rv.list[0].solution[0] === "d4" && rv.list[0].loss === 150 &&
+           rv.list[0].rev.budget === 400 && rv.list[0].id === quick.id && rv.list[0].t === 1000,
+      "a deeper pass corrects the answer in place — same id, same arrival, new answer sheet");
+    // …and a shallower pass may not
+    const shallow = M.drillFrom(fen, "e4", "c2c4", 90, 0, C, { budget: 60, src: "auto" });
+    const rv2 = M.reviseMines(rv.list, [shallow], null, "w", { budget: 60 });
+    assert(rv2.updated.length === 0 && rv2.list[0].solution[0] === "d4", "a quick pass never overrules a deep one");
+    // the same game re-analysed deeper, and e4 is no longer a ??: the drill goes
+    const rv3 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 400 });
+    assert(rv3.retired.length === 1 && rv3.list.length === 0, "a ?? that does not survive the depth is withdrawn");
+    // and the same at a shallower depth is not believed
+    const rv4 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 120 });
+    assert(rv4.retired.length === 0, "…but only from a pass at least as deep");
+    // alternatives: accepted when they cost less than a mistake against the best
+    assert(M.judgeAlt(50, 20, "w", 100).ok && M.judgeAlt(50, 20, "w", 100).loss === 30, "a move 30cp short of the best is accepted");
+    assert(!M.judgeAlt(50, -80, "w", 100).ok, "a move 130cp short is not");
+    assert(M.judgeAlt(-50, -20, "b", 100).loss === 30 && M.judgeAlt(-50, 80, "b", 100).ok === false &&
+           M.judgeAlt(-50, -80, "b", 100).loss === 0,
+      "the loss is read from the mover's side for Black too");
+    const m = Object.assign({}, deep, { alts: ["c4"] });
+    assert(M.isAccepted(m, "d4") && M.isAccepted(m, "c4") && !M.isAccepted(m, "e4"),
+      "the stored best and a confirmed alternative are both answers; the sin is not");
+  }
+  // --- 5.1: learning data travels, and importing twice changes nothing ------
+  {
+    loadModule(ctx, "src/web/js/learning.js");
+    const L = ctx.ChessLearning;
+    const bag = {
+      learn: JSON.stringify({ v: 1, done: { l1: true }, last: 3 }),
+      puzzles: JSON.stringify({ v: 1, idv: 2, solved: { a: true }, missed: { b: { streak: 1 } }, tally: { m1: 4 } }),
+      mines: JSON.stringify({ v: 1, list: [{ id: "mine:1", cat: "mine", fen: "f", solution: ["a"], t: 1, rev: { budget: 120 } }] }),
+      progress: null, achievements: JSON.stringify({ seen: ["first"] }),
+      stats: JSON.stringify({ v: 2, games: [{ id: "g1", t: 10 }] }),
+    };
+    const doc = L.pack(bag, 5);
+    assert(L.isLearningDoc(doc) && Object.keys(doc.data).length === 5 && !("progress" in doc.data),
+      "pack writes every stored learning key and skips the empty ones");
+    assert(!L.isLearningDoc({ kind: "pgn" }) && !L.isLearningDoc(null), "a foreign file is refused");
+    const other = {
+      kind: doc.kind, v: 1, exportedAt: 6, data: {
+        learn: { v: 1, done: { l2: true }, last: 1 },
+        puzzles: { v: 1, solved: { c: true }, missed: { b: { streak: 2 } }, tally: { m1: 2, m2: 9 } },
+        mines: { v: 1, list: [{ id: "mine:1", cat: "mine", fen: "f", solution: ["z"], t: 1, rev: { budget: 400 } },
+                             { id: "mine:2", cat: "mine", fen: "f2", solution: ["b"], t: 2 }] },
+        achievements: { seen: ["second"] },
+        stats: { v: 2, games: [{ id: "g2", t: 20 }] },
+      } };
+    const m1 = L.merge(bag, other, 50);
+    assert(m1.learn.done.l1 && m1.learn.done.l2 && m1.learn.last === 3, "lessons done are unioned, the bookmark keeps the further one");
+    assert(m1.puzzles.solved.a && m1.puzzles.solved.c && m1.puzzles.missed.b.streak === 2 &&
+           m1.puzzles.tally.m1 === 4 && m1.puzzles.tally.m2 === 9,
+      "solves union, the review entry further along wins, counters take the max and never the sum");
+    assert(m1.mines.list.length === 2 && m1.mines.list.find((x) => x.id === "mine:1").solution[0] === "z",
+      "the book unions by id and the deeper analysis wins a clash");
+    assert(m1.stats.games.length === 2 && m1.achievements.seen.length === 2, "games and badges are unioned");
+    const bag2 = {}; for (const k of Object.keys(m1)) bag2[k] = JSON.stringify(m1[k]);
+    const m2 = L.merge(bag2, other, 50);
+    assert(JSON.stringify(m2) === JSON.stringify(m1), "importing the same file again is a no-op");
+  }
 
   // --- the wiring ---------------------------------------------------------
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
@@ -2903,8 +2988,16 @@ for (const lang of CONTENT_LANGS) {
   assert(achBlock && !achBlock[0].includes("bookNow") && achBlock[0].includes("ALL_PUZZLES"),
     "achievement totals stay on the frozen book — badges must not drift with a set that retires itself");
   // mining happens where the judgement is born, for the player's side only
-  assert(/if \(store\.session\.mode === "ai"\) \{[\s\S]{0,200}Mistakes\.candidatesFrom\(\{ fens, sans: h, tags, bests, scalars \}, store\.session\.humanColor, Chess\)/.test(appSrc),
+  assert(/if \(store\.session\.mode === "ai"\) \{[\s\S]{0,400}Mistakes\.candidatesFrom\(pass, store\.session\.humanColor, Chess, rev\)/.test(appSrc) &&
+         /const pass = \{ fens, sans: h, tags, bests, scalars, pvs \}/.test(appSrc),
     "analyzeGame banks the human side's ?? plies, and only in games with a human side");
+  // 5.1: …after letting the pass revise what the book already says about this
+  // game — corrected answers and withdrawn ?? — through the same module
+  assert(/Mistakes\.reviseMines\(store\.session\.mines, cands, pass, store\.session\.humanColor, rev\)/.test(appSrc) &&
+         /Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(appSrc),
+    "a deeper pass revises the book before extending it (audit F2)");
+  assert(/Mistakes\.isAccepted\(p, mv\.san\)/.test(appSrc) && /Mistakes\.judgeAlt\(cpBest, cpAlt, side, Review\.MISTAKE\)/.test(appSrc),
+    "a personal drill accepts a verified alternative, not only the stored string (audit F3)");
   assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
     "a retired drill takes its solved/missed entries with it — no orphan reviews owed");
   // the tab exists exactly while the book does (P3), and the cat is real
@@ -2973,9 +3066,38 @@ for (const lang of CONTENT_LANGS) {
          /curveEl\.onpointermove = \(ev\) => \{ if \(ev\.buttons & 1\) jumpOnCurve\(ev\); \}/.test(appSrc),
     "the curve scrubs with the pointer through the same call the click makes");
   // PV chips: built from the stored line, previewed off the board's position
+  // 5.1 moved the line-walk into previewPvChip() so hover, focus and Enter
+  // share it; the property is the same — the walk starts from the board's own
+  // position, on a scratch game, never on `game`.
+  {
+    loadModule(ctx, "src/web/js/preview.js");
+    const P = ctx.ChessPreview;
+    const g0 = new C();
+    const pv = P.pvPreview(C, g0.fen(), "e4 e5 Nf3", 1);
+    assert(pv && pv.kind === "pv" && pv.last.to === "e5" && pv.position[4][4].color === "w" && pv.position[3][4].color === "b",
+      "pvPreview walks the line k+1 moves deep on a scratch game and reports the last move");
+    assert(P.pvPreview(C, g0.fen(), "e4 Zz9 Nf3", 2).last.to === "e4", "…and stops at the first move the position refuses");
+    assert(P.pvPreview(C, g0.fen(), null, 0) === null, "no line, no preview");
+    const g1 = new C(); g1.move("f3"); g1.move("e5"); g1.move("g4"); const qh4 = g1.move("Qh4");
+    const ply = P.plyPreview(g1, qh4, 4);
+    assert(ply.kind === "ply" && ply.ply === 4 && ply.check === "e1" && ply.last.from === "d8",
+      "plyPreview marks the checked king and the move that reached the position");
+  }
   assert(/b\.className = "pv-chip"/.test(appSrc) &&
-         /closest\("button\.pv-chip"\)[\s\S]{0,400}new Chess\(viewGame\(\)\.fen\(\)\)/.test(appSrc),
+         /ChessPreview\.pvPreview\(Chess, viewGame\(\)\.fen\(\), pv, k\)/.test(appSrc) &&
+         /closest\("button\.pv-chip"\)/.test(appSrc) &&
+         /previewPvChip\(Number\(b\.dataset\.k\)\)/.test(appSrc),
     "PV chips preview the line off the current position — these moves are never committed");
+  // …and the keyboard reaches the same line: focus previews, Enter/Space pin,
+  // and every explicit navigation lets go (audit F1/F4, 5.1 work packages A/D)
+  assert(/pvLineEl\.addEventListener\("focusin"/.test(appSrc) &&
+         /pvLineEl\.addEventListener\("keydown"[\s\S]{0,300}ev\.key === "Enter" \|\| ev\.key === " "/.test(appSrc),
+    "PV chips answer focus and Enter/Space, not only the pointer");
+  assert(/function setViewIndex\(n\) \{[\s\S]{0,200}clearPreview\(\)/.test(appSrc),
+    "explicit navigation releases any preview — the board can never disagree with the cursor");
+  assert(/store\.subscribe\("game", releaseOrphanPreview\)/.test(appSrc) &&
+         /store\.subscribe\("session", releaseOrphanPreview\)/.test(appSrc),
+    "a preview nobody holds any more is released on the next commit");
   assert(/pvLineEl\.addEventListener\("mouseleave", \(\) => setBoardPreview\(null\)\)/.test(appSrc),
     "leaving the PV releases the board too");
   // the bank button: only where the analysis stored an answer, via the shared rule
@@ -4624,6 +4746,17 @@ for (const lang of CONTENT_LANGS) {
     + draws.slice(draws.indexOf("let dragPiece = null;"));
   const literals = marks.match(/(?:fillStyle|strokeStyle)\s*=\s*"(?:rgba?\(|#)/g) || [];
   assert(literals.length === 0, "every board mark is painted from a theme token (" + literals.length + " literal(s) left)");
+}
+
+// 5.1: the Chinese and Japanese copy uses full-width punctuation. One pass of
+// scripts/cjk-punct.mjs --fix converted 826 strings; this keeps the next
+// string honest without anyone having to remember the rule.
+{
+  const { scan } = await import("./cjk-punct.mjs");
+  const hits = scan(false);
+  for (const h of hits.slice(0, 12)) console.error("  半角标点: " + h.file + ":" + h.line + " 「" + h.from.slice(0, 40) + "」");
+  assert(hits.length === 0, "every Chinese and Japanese string uses full-width punctuation" +
+    (hits.length ? " (" + hits.length + " to fix: node scripts/cjk-punct.mjs --fix)" : ""));
 }
 
 // README quotes its own numbers, and they drift. Through 1.20 it advertised

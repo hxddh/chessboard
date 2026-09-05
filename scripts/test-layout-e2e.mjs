@@ -1428,12 +1428,12 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   await page.waitForTimeout(300);
   assert(await page.evaluate(() => !document.getElementById("toast").classList.contains("show")),
     "…and Escape sends it away, like everything else transient here");
-  // the receipt tier is polite, not assertive: it must not interrupt
+  // the receipt tier is polite, not assertive: it must not interrupt.
+  // 5.1: switching the theme no longer raises a toast (the panel repaints, and
+  // that is the receipt), so the sample receipt is 今天的训练 — 「这一节共 N
+  // 步」 or 「没有欠账」, either one an ok-tier message.
   const ok = await page.evaluate(async () => {
-    document.getElementById("theme-seg") || 0;
-    document.getElementById("tab-setup").click();
-    await new Promise((r) => setTimeout(r, 300));
-    document.querySelector('#theme-seg button[data-theme="night"]').click();
+    document.getElementById("daily-btn").click();
     await new Promise((r) => setTimeout(r, 300));
     const el = document.getElementById("toast");
     return { role: el.getAttribute("role"), live: el.getAttribute("aria-live"),

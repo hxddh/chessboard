@@ -1039,6 +1039,10 @@
     }
     /* pointer users never see it; keyboard users always do */
     :focus:not(:focus-visible) { outline: none; }
+    /* Inside a scrolling or clipped container the 2px offset ring falls
+       outside the box and is cut off — on 5.0.0 a focused PV chip showed half
+       a ring (audit, work package D). These rings are drawn inward instead. */
+    .move-list button:focus-visible, .pv-chip:focus-visible, #eval-curve:focus-visible { outline-offset: -2px; }
 
     /* ---------------------------------------------------------------
        segment — the one implementation.
@@ -1343,15 +1347,32 @@
     /* grouped action links */
     .act-group { margin-top: 16px; }
     .act-group:first-of-type { margin-top: 8px; }
-    .act-k {
+    .act-k, .review-h {
       /* same pinned label box as .side-h — these are the same kind of thing,
          and before this one was a 2px-margin inline span and the other a
          12px-margin block, which is most of why the group spacings came out
-         at 39.9px rather than at any number anyone chose */
+         at 39.9px rather than at any number anyone chose.
+         5.1: and the same voice. The panel had three heading styles — 棋谱 in
+         small caps, 棋谱与局面 in plain 11px, 对局回顾 in 12px bold — for one
+         kind of thing (audit, work package E). One rule, three selectors. */
       display: flex; align-items: center;
       height: var(--label-h); margin-bottom: 8px;
-      font-size: 11px; color: var(--muted); opacity: 0.85;
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--muted); opacity: 0.9;
     }
+    /* 今天的训练: one entrance for every mode, the width of the column, with
+       the plan it will walk written under it. */
+    .daily { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .daily-plan {
+      list-style: none; margin: 0; padding: 0 2px;
+      display: flex; flex-direction: column; gap: 2px;
+      font-size: 12px; color: var(--muted); line-height: var(--lh-body);
+    }
+    .daily-step { display: flex; justify-content: space-between; gap: 8px; }
+    .daily-step.done { opacity: 0.55; text-decoration: line-through; }
+    .daily-step.current { color: var(--text); font-weight: 600; }
+    .daily-why { font-size: 11px; opacity: 0.85; text-align: right; }
     #more-row { margin-top: 2px; }
     .hint {
       margin: 12px 0 0;
@@ -1543,6 +1564,9 @@
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
     }
 
+    .app-fault { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .app-fault .toast-action { color: inherit; border-color: color-mix(in srgb, currentColor 45%, transparent); }
+
     .modal-bg {
       display: none; position: absolute; inset: 0; z-index: 50;
       background: rgba(0,0,0,.45); place-items: center;
@@ -1644,6 +1668,13 @@
       background: color-mix(in srgb, var(--accent) 12%, transparent);
     }
     .pick-sub { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+    /* 「推荐」 on the door a newcomer should take: a word, not a second button weight */
+    .pick-tag {
+      display: inline-block; margin-left: 8px; padding: 0 6px;
+      font-size: 11px; font-weight: 600; line-height: var(--lh-body);
+      color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+      border-radius: var(--radius-sm); vertical-align: 1px;
+    }
 
     .text-input {
       width: 100%; box-sizing: border-box;
@@ -1785,6 +1816,20 @@
   background: var(--accent, #4a90d9);
   opacity: 0.65;
   animation: think-dot-pulse 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+/* 5.1: the board says when it is not showing the committed position — a
+   hovered move, a focused or pinned engine line. Same corner as the thinking
+   dot, same ink family as the coordinates; never a control. */
+.preview-badge {
+  position: absolute;
+  left: calc(var(--wood-pad) + 8px);
+  top: calc(var(--wood-pad) + 8px);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px; line-height: var(--lh-body); font-weight: 600;
+  color: var(--on-accent); background: var(--accent);
+  opacity: 0.92;
   pointer-events: none;
 }
 @keyframes think-dot-pulse {
@@ -1984,7 +2029,6 @@
       background: var(--card); border: 1px solid var(--card-border);
       border-radius: var(--radius-sm);
     }
-    .review-h { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
     .review-row { font-size: 12px; line-height: var(--lh-body); margin-bottom: 4px; }
     /* the side's name, over its three rows rather than in front of one line */
     .review-k { font-weight: 600; margin-bottom: 2px; }
