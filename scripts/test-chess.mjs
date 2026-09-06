@@ -1255,6 +1255,18 @@ for (const lang of CONTENT_LANGS) {
   assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
     "the host bridge forwards the shortcut event");
   assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");
+  // 5.2.1: Escape is a declared shortcut, because the AppKit shell never
+  // delivered the raw key to the page — and the page runs the same routine
+  // from either door, dialog gates included
+  assert(/\.shortcuts = \.\{[\s\S]*?\.id = "view\.escape", \.key = "escape"/.test(zon),
+    "app.zon declares Escape as the view.escape shortcut");
+  assert(/"view\.escape": \(\) => escapeKey\(\)/.test(appSrc) &&
+         /if \(id === "view\.escape"\) \{ escapeKey\(\); return; \}/.test(appSrc),
+    "the shortcut runs escapeKey() before the dialog and mode gates");
+  assert(/if \(ev\.key === "Escape"\) \{ escapeKey\(\); return; \}/.test(appSrc),
+    "…and the window's own Escape runs the same routine");
+  assert(/function escapeKey\(\) \{[\s\S]{0,1400}Dlg\.closeTop\(\)[\s\S]{0,600}clearPreview\(\)[\s\S]{0,400}setPanelOpen\(false\)/.test(appSrc),
+    "escapeKey closes the top dialog, releases a pinned preview and shuts the panel, in that order");
 
   // The shortcut sheet is the only screen that tells anyone what the keyboard
   // does, and for eight releases it did not mention a single one of the eight
@@ -4317,7 +4329,9 @@ for (const lang of CONTENT_LANGS) {
   // order, plus the same seven again inside dialogOpen(). An eighth dialog
   // meant editing two places; a wrong order reported nothing. 缺陷 19.
   {
-    const esc = /if \(ev\.key === "Escape"\) \{[\s\S]*?\n    \}/.exec(appSrc);
+    // 5.2.1: the handler is escapeKey(), reached from the key and from the
+    // native shortcut alike
+    const esc = /function escapeKey\(\) \{[\s\S]*?\n  \}/.exec(appSrc);
     assert(!!esc, "found the Escape handler");
     // comments only; the point is that no *code* tests a dialog by hand
     const code = esc[0].replace(/\/\/.*$/gm, "");

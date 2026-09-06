@@ -5437,6 +5437,26 @@ import { createStore } from "./store.js";
     else toast(t("msg.export.doneAt") + path, "fix");
   }
 
+  /**
+   * 5.2.1: what a text export does when the native dialog REFUSED.
+   *
+   * Two failures look alike from the catch block and mean opposite things.
+   * No dialog API at all (Host.NO_FILE_DIALOG) is a build without dialogs —
+   * a browser, or a test standing in for one — and the browser download path
+   * is the right fallback. A dialog API that is there and rejected the call
+   * is the shell saying no (5.0.0–5.2.0: permission_denied from an unlisted
+   * builtin command), and inside the shell an `<a download>` click does
+   * nothing — after which the toast said 「已导出 … 在下载文件夹里」 about a
+   * file that did not exist. For that case the honest fallback is the
+   * clipboard, and the toast says so.
+   * @returns {boolean} true when the clipboard took it and nothing else should run
+   */
+  async function exportTextFallback(err, text) {
+    if (!Host.hasZero() || !err || err.name === Host.NO_FILE_DIALOG) return false;
+    await copyText(text, t("msg.export.bridgeCopied"));
+    return true;
+  }
+
   async function downloadPgn() {
     if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
     const pgn = pgnForExport();
@@ -5450,7 +5470,7 @@ import { createStore } from "./store.js";
         Host.addRecentDocument(path);
         savedToast(name, path, revealed);
         return;
-      } catch (_) {}
+      } catch (err) { if (await exportTextFallback(err, pgn)) return; }
     }
     try {
       const blob = new Blob([pgn], { type: "application/x-chess-pgn" });
@@ -5676,7 +5696,13 @@ import { createStore } from "./store.js";
         const revealed = await Host.revealPath(path);
         savedToast(name, path, revealed);
         return;
-      } catch (_) { /* fall through to the browser path */ }
+      } catch (err) {
+        // the dialog exists and refused (5.2.1): a picture has no clipboard
+        // fallback worth the name, and the browser path below does nothing
+        // inside a WKWebView — say it was not saved. No dialog API at all is
+        // a browser, and the browser path is right.
+        if (err && err.name !== Host.NO_FILE_DIALOG) { toast(t("msg.export.bridgeFailed"), "fault"); return; }
+      }
     }
     try {
       const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
@@ -6638,7 +6664,7 @@ import { createStore } from "./store.js";
         return;
       }
       case "Escape":
-        if (store.game.selection) { ev.preventDefault(); store.game.selection = null; announce(t("live.cleared")); draw(); }
+        if (store.game.selection) { ev.preventDefault(); escapeKey(); }
         return;
       default:
     }
@@ -6895,7 +6921,7 @@ import { createStore } from "./store.js";
     { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board", in: ANY },
     { keys: ["Q", "R", "B", "N"], k: "keys.promo", in: ANY },
     { keys: ["Tab"], k: "keys.tab", in: ANY },
-    { keys: ["Esc"], k: "keys.esc", in: ANY },
+    { keys: ["Esc"], k: "keys.esc", in: ANY, cmd: ["view.escape"] },
     { keys: ["?"], k: "keys.help", in: ANY, cmd: ["help.keys"] },
   ];
 
@@ -7012,6 +7038,7 @@ import { createStore } from "./store.js";
     "view.panel": () => togglePanel(),
     "view.prev": () => setViewIndex(store.game.viewIndex - 1),
     "view.next": () => setViewIndex(store.game.viewIndex + 1),
+    "view.escape": () => escapeKey(),
     "help.keys": () => openKeyHelp(),
   };
   /**
@@ -7023,6 +7050,9 @@ import { createStore } from "./store.js";
    */
   function runNativeCommand(id) {
     if (!NATIVE_COMMANDS[id]) return;
+    // Escape is the key that applies WITH a dialog open — it is how dialogs
+    // close — so it passes neither gate below
+    if (id === "view.escape") { escapeKey(); return; }
     if (id === "help.keys") {
       if (keysModal && keysModal.classList.contains("show")) closeKeyHelp();
       else if (!dialogOpen()) openKeyHelp();
@@ -7303,7 +7333,7 @@ import { createStore } from "./store.js";
         const revealed = await Host.revealPath(path);
         savedToast(name, path, revealed);
         return;
-      } catch (_) {}
+      } catch (err) { if (await exportTextFallback(err, text)) return; }
     }
     try {
       const blob = new Blob([text], { type: "application/json" });
@@ -7559,25 +7589,39 @@ import { createStore } from "./store.js";
   // Capture phase so it applies even to controls that stop propagation.
   window.addEventListener("keydown", (ev) => { Dlg.handleTab(ev); }, true);
 
-  window.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") {
-      // The topmost dialog, whichever it is. This was seven
-      // `classList.contains("show")` tests in a fixed order, with the same
-      // seven listed again in dialogOpen(): adding an eighth meant editing two
-      // places, and ordering them wrong failed silently. Each dialog now says
-      // how it closes when it is built (see wireDialogs()), and Escape asks
-      // for the top of the stack. 缺陷 19.
-      if (Dlg.closeTop()) return;
-      // a fault toast is the only other thing on screen that stays until it is
-      // told to go, and Escape is what this app means by "make it go"
-      if (dismissToast()) return;
-      // a pinned engine line is the same kind of thing: shown until dismissed
-      if (store.ui.preview) { clearPreview(); return; }
-      // before closing the panel — the panel holds the editor's only exit
-      if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return; }
-      if (isPanelOpen()) setPanelOpen(false);
-      return;
+  /**
+   * Everything Escape means here, in the order it means it. One routine, two
+   * doors: the window's keydown (browsers, and the tests) and the native
+   * shortcut event `view.escape` (the macOS shell — see app.zon .shortcuts,
+   * 5.2.1). The board's own Escape used to live in the canvas handler and
+   * stop propagation; it is the first branch here so the native door reaches
+   * it too.
+   */
+  function escapeKey() {
+    // a selected piece is the most local thing there is to cancel
+    if (store.game.selection && store.ui.boardFocused) {
+      store.game.selection = null; announce(t("live.cleared")); draw(); return true;
     }
+    // The topmost dialog, whichever it is. This was seven
+    // `classList.contains("show")` tests in a fixed order, with the same
+    // seven listed again in dialogOpen(): adding an eighth meant editing two
+    // places, and ordering them wrong failed silently. Each dialog now says
+    // how it closes when it is built (see wireDialogs()), and Escape asks
+    // for the top of the stack. 缺陷 19.
+    if (Dlg.closeTop()) return true;
+    // a fault toast is the only other thing on screen that stays until it is
+    // told to go, and Escape is what this app means by "make it go"
+    if (dismissToast()) return true;
+    // a pinned engine line is the same kind of thing: shown until dismissed
+    if (store.ui.preview) { clearPreview(); return true; }
+    // before closing the panel — the panel holds the editor's only exit
+    if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return true; }
+    if (isPanelOpen()) { setPanelOpen(false); return true; }
+    return false;
+  }
+
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") { escapeKey(); return; }
     if (promoModal && promoModal.classList.contains("show")) {
       const pk = ev.key.toLowerCase();
       if (["q", "r", "b", "n"].includes(pk)) { ev.preventDefault(); finishPromotion(pk); }

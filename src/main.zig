@@ -20,11 +20,41 @@ pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 // visible, and why 1.18's ⌘⇧H fix landed on a wire that was never live.
 // scripts/manifest-check.mjs now fails the build if this override comes back.
 
+/// The SDK's own bridge commands this page calls (host.js: `zero.dialogs.*`,
+/// `zero.os.*`, `zero.clipboard.*`, `zero.platform.supports`).
+///
+/// Since SDK 0.8 these are refused unless the app hands the runtime an
+/// explicit builtin-bridge policy: `allowsBuiltinBridgeCommand` gives the
+/// dialog / os / clipboard families no implicit permission, so with the
+/// default empty policy every one of them answered `permission_denied` — and
+/// host.js, which reads a rejection as "this build has no dialogs", took the
+/// browser path. 5.0.0 moved the pin from 0.7.1 to 0.8.1 and shipped two
+/// versions in which no native file dialog, native confirm, notification,
+/// recent-documents entry or clipboard write ever happened. The 2026-09-06
+/// walkthrough of 5.2.0 caught it (docs/manual-check.md).
+///
+/// scripts/manifest-check.mjs holds this list to host.js: every `zero.X.Y`
+/// the page calls has to be granted here, and nothing is granted that the
+/// page does not call.
+const BUILTIN_COMMANDS = [_][]const u8{
+    "native-sdk.platform.supports",
+    "native-sdk.dialog.openFile",
+    "native-sdk.dialog.saveFile",
+    "native-sdk.dialog.showMessage",
+    "native-sdk.os.revealPath",
+    "native-sdk.os.addRecentDocument",
+    "native-sdk.os.clearRecentDocuments",
+    "native-sdk.os.showNotification",
+    "native-sdk.clipboard.readText",
+    "native-sdk.clipboard.writeText",
+};
+
 const App = struct {
     env_map: *std.process.Environ.Map,
     io: std.Io,
     handlers: [2]native_sdk.BridgeHandler = undefined,
     policies: [2]native_sdk.BridgeCommandPolicy = undefined,
+    builtin_policies: [BUILTIN_COMMANDS.len]native_sdk.BridgeCommandPolicy = undefined,
 
     fn app(self: *@This()) native_sdk.App {
         return .{
@@ -69,6 +99,21 @@ const App = struct {
                 .commands = self.policies[0..],
             },
             .registry = .{ .handlers = self.handlers[0..] },
+        };
+    }
+
+    /// Same origins as the app's own commands — the manifest's, so the two
+    /// policies and the navigation policy can never disagree.
+    fn builtinBridge(self: *@This()) native_sdk.BridgePolicy {
+        for (BUILTIN_COMMANDS, 0..) |name, index| {
+            self.builtin_policies[index] = .{
+                .name = name,
+                .origins = runner.manifestOrigins(),
+            };
+        }
+        return .{
+            .enabled = true,
+            .commands = self.builtin_policies[0..],
         };
     }
 };
@@ -268,7 +313,18 @@ pub fn main(init: std.process.Init) !void {
         .icon_path = "assets/icon.png",
         .js_window_api = true,
         .bridge = app_state.bridge(),
+        .builtin_bridge = app_state.builtinBridge(),
     }, init);
+}
+
+test "the builtin bridge grants exactly the SDK commands the page calls" {
+    // the list is what host.js reaches for; a name with a typo is a feature
+    // that silently falls back to the browser path, which is the 5.0–5.2 bug
+    for (BUILTIN_COMMANDS) |name| {
+        try std.testing.expect(std.mem.startsWith(u8, name, "native-sdk."));
+        try std.testing.expect(std.mem.indexOfScalar(u8, name[11..], '.') != null);
+    }
+    try std.testing.expectEqual(@as(usize, 10), BUILTIN_COMMANDS.len);
 }
 
 test "the file handlers' buffers fit the limits they advertise" {

@@ -3,7 +3,7 @@
     .name = "chessboard",
     .display_name = "国际象棋",
     .description = "Chess for macOS & Windows — Native SDK WebView + Canvas, GPLv3.",
-    .version = "5.2.0",
+    .version = "5.2.1",
     .icons = .{"assets/icon.png"},
     .platforms = .{ "macos", "windows" },
     .permissions = .{},
@@ -57,6 +57,17 @@
                 .{ .label = "快捷键", .command = "help.keys", .key = "/", .modifiers = .{"primary"} },
             },
         },
+    },
+    // Escape, as a declared shortcut. The AppKit host installs a key-down
+    // monitor for declared shortcuts and lets everything else through to the
+    // WebView — and on the shipped 5.2.0 Escape never reached the page: a
+    // pinned engine line stayed pinned, a dialog stayed open, while → and P
+    // worked (docs/manual-check.md, 2026-09-06). Declaring it turns the key
+    // into a shortcut event the page already subscribes to (host.js →
+    // runNativeCommand), which is a path that demonstrably works. The in-page
+    // handler stays for the browser. `.id` is the command name the page runs.
+    .shortcuts = .{
+        .{ .id = "view.escape", .key = "escape" },
     },
     .windows = .{
         .{
