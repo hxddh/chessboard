@@ -1971,7 +1971,10 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "learn", "play");
-    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item").length);
+    // 6.0: the list ends with the ten classic games (data-c), which are read,
+    // not answered — no button row. The probes stay on the lessons proper, and
+    // the last of those is still the one with the graduation button.
+    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c])").length);
     assert(n > 60, lang + ": the course is loaded (" + n + " lessons)");
     // the lessons that show all four, plus the last one — its label is the
     // longest in the file and it appears in a two-button row
