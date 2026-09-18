@@ -4753,7 +4753,15 @@ import { createStore } from "./store.js";
     const el = document.getElementById("move-list");
     if (!el) return;
     const tree = store.game.tree;
-    const main = ChessTree.mainline(tree);
+    // The rows are the line `game` stands on while that line is the mainline
+    // or a prefix of it — after 重下 the moves cut off the line are still the
+    // tree's first children, and they show as a variation after the cut
+    // until the next move played takes their place (Q2.3). Off the mainline
+    // the rows are the tree's, and the line is found among the variations.
+    const onMain = onMainline();
+    const main = onMain
+      ? store.game.line.slice(1).map((id) => ChessTree.nodeAt(tree, id)).filter(Boolean)
+      : ChessTree.mainline(tree);
     // A position edited to start with Black opens at "1…", so its first row
     // holds a single black move and White's reply belongs to move 2. Pairing
     // from ply 0 would file them together under move 1 — and the review
@@ -4803,6 +4811,10 @@ import { createStore } from "./store.js";
       prev = n;
     });
     flush();
+    // the continuation the line was cut from, as a variation of nothing yet
+    if (onMain && prev.children.length) {
+      items.push({ kind: "var", key: "t" + prev.id, sig: lineSig(prev, prev.children[0]), parent: prev, alts: [prev.children[0]] });
+    }
     for (const it of items) {
       if (it.kind === "row") it.sig = it.no + "|" + (it.gap ? "…" : "") + "|" + it.nodes.map(nodeSig).join(",");
     }

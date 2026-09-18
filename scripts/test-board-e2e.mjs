@@ -106,7 +106,9 @@ async function play(theme, line) {
     }
     const pill = document.querySelector(".status-pill");
     return { pieces, status: pill ? pill.textContent.trim() : "",
-      plies: document.querySelectorAll(".move-list button").length };
+      // the moves, not every button: the current move now carries a
+      // 「…」 menu handle beside it (v6-plan Q2.1)
+      plies: document.querySelectorAll(".move-list .mlmove").length };
   });
   await ctx.close();
   return { ...seen, errs };
@@ -671,7 +673,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.click("#retry-here");
   await page.waitForTimeout(300);
   const ask = await page.evaluate(() => document.getElementById("confirm-message").textContent.trim());
-  assert(/2 着/.test(ask) && /丢弃/.test(ask), `重下先说清代价(「${ask}」)`);
+  // 6.0: the moves after the cut are kept as a variation, not dropped (v6-plan Q2.3)
+  assert(/2 着/.test(ask) && /变着/.test(ask), `重下先说清代价(「${ask}」)`);
   await page.click("#confirm-ok");
   await page.waitForTimeout(400);
   assert((await rows()) === 1 && /白方走子/.test(await status()),
