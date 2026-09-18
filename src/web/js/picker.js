@@ -112,7 +112,7 @@ function weakestMotif(state, motifs) {
  * @returns {{kind: "review"|"motif"|"weak"|"explore"|"done", cat?: string,
  *            id?: string, motif?: string, due?: number, rate?: number, attempts?: number}}
  */
-function pickNext(state, all, srs, tierOf, motifOf) {
+function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range) {
   // 1. the queue
   const due = all.filter((p) => srs.isDue(state.missed[p.id]));
   if (due.length) {
@@ -138,6 +138,23 @@ function pickNext(state, all, srs, tierOf, motifOf) {
       const pick = about.find((p) => p.cat === "mine") || about[0];
       if (pick) return { kind: "motif", cat: pick.cat, id: pick.id, motif: wm.motif, rate: wm.rate, attempts: wm.attempts };
     }
+  }
+
+  // 2b. 6.0: a puzzle at the player's level — rated, unsolved, inside the
+  // Glicko range (rating.js pickRange). Comes after the motif rung because a
+  // known blind spot outranks a well-fitted stranger, and before the weakness
+  // rung because "your level" is a finer signal than "your worst category".
+  if (ratingOf && range) {
+    const fit = all.filter((p) => !state.solved[p.id] && p.cat !== "mine" && p.cat !== "op");
+    let pick = null, best = Infinity;
+    for (const p of fit) {
+      const r = ratingOf(p);
+      if (r == null || r < range.lo || r > range.hi) continue;
+      // nearest to the middle of the band, stable in book order
+      const d = Math.abs(r - (range.lo + range.hi) / 2);
+      if (d < best) { best = d; pick = p; }
+    }
+    if (pick) return { kind: "rated", cat: pick.cat, id: pick.id, rating: ratingOf(pick) };
   }
 
   // 2. a real weakness: enough answers, and misses among them

@@ -5,6 +5,11 @@ import { Chess } from "./chess.js";
 import { ChessDialog } from "./dialog.js";
 import { ChessDrills } from "./drills.js";
 import { ChessEco } from "./eco-lookup.js";
+import { ChessRating } from "./rating.js";
+import { ChessOpeningTree } from "./opening-tree.js";
+import { CHESS_CLASSICS } from "./classics.js";
+import { CHESS_CLASSICS_EN } from "./classics-en.js";
+import { CHESS_CLASSICS_JA } from "./classics-ja.js";
 import { ChessEditor } from "./editor.js";
 import { ChessEngine } from "./engine.js";
 import { ChessFide } from "./fide.js";
@@ -255,6 +260,8 @@ import { createStore } from "./store.js";
       engineThinking: false,
       /** 6.0 (v6-plan Q2.8): the move queued while the engine thinks, {from,to} */
       premove: null,
+      /** 6.0 (v6-plan Q3.5): the classic game being read — {ci}, in learn mode with no lesson */
+      study: null,
       /** 6.0 (v6-plan Q2.6): continuous analysis — on/off, and the running search */
       liveOn: false,
       live: null,
@@ -599,7 +606,7 @@ import { createStore } from "./store.js";
    */
   function canBranchHere() {
     if (inModal()) return false;
-    if (store.session.mode === "pvp") return true;
+    if (store.session.mode === "pvp" || store.session.study) return true;
     return appGameOver() || store.game.imported;
   }
 
@@ -1341,7 +1348,7 @@ import { createStore } from "./store.js";
   // --- engine hint: full-strength best move drawn as an arrow ---
 
   async function requestHint() {
-    if (store.session.mode === "learn") { learnHint(); return; }
+    if (store.session.mode === "learn" && store.session.learn) { learnHint(); return; }
     if (store.session.mode === "puzzle") { showPuzzleAnswer(); return; }
     if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
     if (!isLive()) { toast(t("msg.replay.returnToLive"), "fix"); return; }
@@ -1526,11 +1533,11 @@ import { createStore } from "./store.js";
   const CONTENT_TABLES = {
     en: () => ({
       lessons: CHESS_LESSONS_EN, puzzles: CHESS_PUZZLES_EN,
-      openings: CHESS_OPENINGS_EN, ideas: CHESS_OPENING_IDEAS_EN,
+      openings: CHESS_OPENINGS_EN, ideas: CHESS_OPENING_IDEAS_EN, classics: CHESS_CLASSICS_EN,
     }),
     ja: () => ({
       lessons: CHESS_LESSONS_JA, puzzles: CHESS_PUZZLES_JA,
-      openings: CHESS_OPENINGS_JA, ideas: CHESS_OPENING_IDEAS_JA,
+      openings: CHESS_OPENINGS_JA, ideas: CHESS_OPENING_IDEAS_JA, classics: CHESS_CLASSICS_JA,
     }),
   };
   /** tables to consult for `kind`, best match first (empty when reading source) */
@@ -1679,13 +1686,89 @@ import { createStore } from "./store.js";
   function startLearn() {
     startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
   }
-  function stopLearn() { if (store.session.learn) store.session.learn.token++; store.session.learn = null; }
+  function stopLearn() { if (store.session.learn) store.session.learn.token++; store.session.learn = null; store.session.study = null; }
+
+  // --- 6.0: reading a classic game (v6-plan Q3.5) ----------------------------
+  // A study is learn mode with no lesson: the main board holds the game, the
+  // lesson pane holds the note for the move on the board, and every replay and
+  // variation tool works as in a finished game. Nothing is graded.
+  const CLASSICS = CHESS_CLASSICS || [];
+  function classicText(c) {
+    return {
+      white: contentField("classics", c.id, "white") || c.white,
+      black: contentField("classics", c.id, "black") || c.black,
+      event: contentField("classics", c.id, "event") || c.event,
+      note: (ply) => {
+        const notes = contentField("classics", c.id, "notes");
+        if (notes && notes[ply]) return notes[ply];
+        const n = (c.notes || []).find((x) => x.ply === ply);
+        return n ? n.text : null;
+      },
+    };
+  }
+  function startClassic(i) {
+    const c = CLASSICS[i];
+    if (!c) return;
+    stopLearn();
+    invalidateEngine();
+    clearPreview();
+    store.session.study = { ci: i };
+    const text = '[Event "' + c.event.replace(/"/g, "'") + '"]\n[White "' + c.white.replace(/"/g, "'") + '"]\n[Black "' + c.black.replace(/"/g, "'") + '"]\n[Date "' + c.year + '.??.??"]\n[Result "' + c.result + '"]\n\n' + c.pgn + " " + c.result + "\n";
+    if (!gameLoadPgn(text, { sloppy: true })) { toast(t("msg.import.badPgn"), "fault"); return; }
+    // the notes ride the tree as comments, so they show in the move list and
+    // travel with an export (Q2.1)
+    const tx = classicText(c);
+    for (const n of c.notes || []) {
+      const id = store.game.line[n.ply];
+      if (id != null && store.game.tree) ChessTree.setComment(store.game.tree, id, tx.note(n.ply) || n.text);
+    }
+    store.game.resigned = null; store.game.drawAgreed = false; store.game.drawClaimed = null;
+    adoptHeaderResult();
+    store.game.imported = true;
+    store.game.selection = null;
+    store.game.viewIndex = 0;
+    resetClocks();
+    setSideTab("play", { top: true });
+    store.commit("game", "action");
+    sync();
+  }
+  function syncStudyUI() {
+    const st = store.session.study;
+    if (store.session.mode !== "learn" || !st) return;
+    const c = CLASSICS[st.ci];
+    if (!c) return;
+    const tx = classicText(c);
+    const title = document.getElementById("lesson-title");
+    const body = document.getElementById("lesson-text");
+    const task = document.getElementById("lesson-task");
+    const prog = document.getElementById("learn-progress");
+    if (prog) prog.textContent = t("study.head");
+    if (title) title.textContent = tx.white + " – " + tx.black + " · " + c.year;
+    if (body) {
+      body.replaceChildren();
+      const at = store.game.viewIndex;
+      const p = document.createElement("p");
+      if (at === 0) p.textContent = tf("study.intro", [tx.event, c.year, c.eco, c.result]);
+      else {
+        const note = tx.note(at);
+        p.textContent = tf("study.of", [at]) + " · " + (sanHistory()[at - 1] || "") + (note ? " —— " + note : " " + t("study.noNote"));
+      }
+      body.appendChild(p);
+    }
+    if (task) { task.hidden = true; task.replaceChildren(); }
+    for (const id of ["lesson-restart", "lesson-demo", "lesson-practice", "lesson-next"]) {
+      const b = document.getElementById(id);
+      if (b) b.hidden = true;
+    }
+    document.querySelectorAll("#lesson-list button[data-c]").forEach((b) => b.classList.toggle("current", Number(b.dataset.c) === st.ci));
+  }
 
   function curLesson() { return LESSONS[store.session.learn.li]; }
   function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
   function startLesson(i) {
     if (!LESSONS[i]) return;
+    store.session.study = null;
     store.session.learnState.last = i;
     saveLearnState();
     store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
@@ -2220,6 +2303,22 @@ import { createStore } from "./store.js";
         b.textContent = mark + (i + 1) + ". " + xl.title;
         list.appendChild(b);
       });
+      // 6.0: the annotated classics, after the course (v6-plan Q3.5)
+      if (CLASSICS.length) {
+        const h = document.createElement("div");
+        h.className = "lesson-part";
+        h.textContent = t("study.part");
+        list.appendChild(h);
+        CLASSICS.forEach((c, i) => {
+          const tx = classicText(c);
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "lesson-item";
+          b.dataset.c = String(i);
+          b.textContent = tx.white + " – " + tx.black + " · " + c.year;
+          list.appendChild(b);
+        });
+      }
     }
   }
 
@@ -2240,6 +2339,14 @@ import { createStore } from "./store.js";
     }
     return null;
   }
+
+  /**
+   * 6.0 (v6-plan Q3.4): the same 195 lines as one tree. The trainer's opponent
+   * picks its reply among the book's children, weighted by how many lines run
+   * through each, so the same drill does not always go the same way; a drill
+   * is complete at any leaf.
+   */
+  const OPENING_TREE = ChessOpeningTree.buildTree(CHESS_OPENINGS || []);
 
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
   const Drills = ChessDrills;
@@ -2450,8 +2557,55 @@ import { createStore } from "./store.js";
   }
   const Srs = ChessSrs;
   const Picker = ChessPicker;
+  /** reviews served per day before the rest is pushed to tomorrow (Q3.3) */
+  const REVIEW_CAP = 20;
+  /** how many reviews are owed right now — the count every plan reads */
+  function owedNow() { return Srs.dueCount(store.session.puzzleState.missed, Date.now()); }
+
+  // --- 6.0: ratings (v6-plan Q3.1) -------------------------------------------
+  // One Glicko-2 rating for the player, one per puzzle, both moved by the FIRST
+  // answer to a puzzle only — a solve after a miss has already been counted as
+  // the miss. Hand-written puzzles start from their derived tier, so the first
+  // few answers already say something; the lichess import carries its own.
+  function playerRating() {
+    const st = store.session.puzzleState;
+    if (!st.rating) st.rating = ChessRating.newRating();
+    return st.rating;
+  }
+  function puzzleRating(p) {
+    const st = store.session.puzzleState;
+    if (!st.pr) st.pr = {};
+    if (st.pr[p.id]) return st.pr[p.id];
+    if (Number.isFinite(p.rating)) return { r: p.rating, rd: 150, vol: 0.06 };
+    const tier = p.cat === "mine" ? "mid" : puzzleTier(p);
+    const base = tier === "easy" ? 1200 : tier === "hard" ? 1800 : 1500;
+    const bump = p.cat === "m3" ? 100 : p.cat === "m1" ? -100 : 0;
+    return { r: base + bump, rd: 200, vol: 0.06 };
+  }
+  function puzzleRatingOf(p) { return Math.round(puzzleRating(p).r); }
+  function ratePuzzleOnce(id, score) {
+    const pz = store.session.puzzle;
+    if (!pz || pz.p.id !== id || pz.rated) return;
+    if (store.session.puzzleState.solved[id]) return; // not a first attempt
+    pz.rated = true;
+    const st = store.session.puzzleState;
+    const r = ChessRating.rate1v1(playerRating(), puzzleRating(pz.p), score);
+    st.rating = r.player;
+    if (!st.pr) st.pr = {};
+    st.pr[id] = r.puzzle;
+    if (!Array.isArray(st.rhist)) st.rhist = [];
+    st.rhist.push({ t: Date.now(), r: Math.round(r.player.r) });
+    while (st.rhist.length > 60) st.rhist.shift();
+  }
+  /** "1523" or "1523 ±180" while the deviation is still wide */
+  function ratingLabel() {
+    const r = playerRating();
+    return Math.round(r.r) + (r.rd > 100 ? " " + tf("rec.ratingRd", [Math.round(r.rd)]) : "");
+  }
   function markMissed(id) {
-    store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id]);
+    store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
+    // 6.0 (v6-plan Q3.1): the first answer to a puzzle moves both ratings
+    ratePuzzleOnce(id, 0);
     // …and into the lifetime tally, which unlike the queue survives
     // graduation — it is the memory 为你出一题 reads (see picker.js)
     const p = bookNow().find((x) => x.id === id);
@@ -2467,7 +2621,7 @@ import { createStore } from "./store.js";
    */
   function clearMissed(id) {
     if (!Srs.isDue(store.session.puzzleState.missed[id])) return;
-    const next = Srs.onSolve(store.session.puzzleState.missed[id]);
+    const next = Srs.onSolve(store.session.puzzleState.missed[id], Date.now());
     if (next) store.session.puzzleState.missed[id] = next; else delete store.session.puzzleState.missed[id];
     savePuzzleState();
   }
@@ -2492,10 +2646,11 @@ import { createStore } from "./store.js";
   /** "review" is a virtual category: every puzzle currently in the missed set. */
   function puzzlesInCat(cat) {
     const base = cat === "review"
-      // least-learned first, so a puzzle just answered goes to the back of the
-      // queue instead of being asked again on the very next click
-      ? Srs.order(bookNow().filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).map((p) => p.id),
-        store.session.puzzleState.missed).map((id) => bookNow().find((p) => p.id === id))
+      // 6.0 (v6-plan Q3.3): what is due today, most overdue first, at most a
+      // day's dose — the rest is scheduled forward by dueQueue() itself so a
+      // fortnight away does not arrive as one afternoon
+      ? Srs.dueQueue(store.session.puzzleState.missed, Date.now(), REVIEW_CAP)
+        .map((id) => bookNow().find((p) => p.id === id)).filter(Boolean)
       // the op list shows one chair at a time — the side segment picks which
       : cat === "op" ? ALL_PUZZLES.filter((p) => p.cat === "op" && (p.side === "b") === (store.session.puzzleState.opSide === "b"))
       : cat === "mine" ? store.session.mines.slice()
@@ -2509,7 +2664,63 @@ import { createStore } from "./store.js";
   }
 
   /** the scripted line of the current puzzle (openings: line; win: solution) */
-  function puzzleScript(p) { return p.line || p.solution; }
+  function puzzleScript(p) {
+    // an opening drill in progress reads its script off the tree: the path so
+    // far, then the book's main continuation — the stored line may already
+    // have been left by a weighted reply
+    const pz = store.session.puzzle;
+    if (p.cat === "op" && pz && pz.p === p && Array.isArray(pz.opPath)) {
+      const kid = ChessOpeningTree.childrenAt(OPENING_TREE, pz.opPath)[0];
+      return kid ? pz.opPath.concat(kid.san) : pz.opPath.slice();
+    }
+    return p.line || p.solution;
+  }
+  /**
+   * An opening drill's move, judged against the tree rather than one line.
+   * @returns {boolean} true when this call handled the move entirely
+   */
+  function opTreeMove(g, mv) {
+    const pz = store.session.puzzle;
+    const path = g.history();
+    const before = path.slice(0, -1);
+    const kids = ChessOpeningTree.childrenAt(OPENING_TREE, before);
+    if (!kids.length) { puzzleSolved(); return true; } // already at a leaf
+    if (!kids.some((k) => k.san === mv.san)) {
+      // explain against the book move the player was rehearsing when it is
+      // one of the options here, else the main one
+      const book = kids.some((k) => k.san === pz.p.line[before.length]) ? pz.p.line[before.length] : kids[0].san;
+      puzzleWrong(openingWhy(g, mv, book));
+      return true;
+    }
+    pz.stage++;
+    pz.opPath = path.slice();
+    let after = ChessOpeningTree.childrenAt(OPENING_TREE, path);
+    if (after.length) {
+      const reply = ChessOpeningTree.weightedPick(OPENING_TREE, path) || after[0].san;
+      const rm = g.move(reply);
+      if (rm) {
+        pz.last = { from: rm.from, to: rm.to };
+        animateReply(rm);
+        moveSound(rm, g);
+        pz.stage++;
+        pz.opPath = g.history();
+        after = ChessOpeningTree.childrenAt(OPENING_TREE, pz.opPath);
+      }
+    }
+    if (!after.length) {
+      // the leaf reached is a line of its own: mark it learnt too, in the
+      // chair it was played from
+      const leaf = ChessOpeningTree.nodeAt(OPENING_TREE, pz.opPath);
+      for (const ln of (leaf && leaf.lines) || []) {
+        const id = Drills.drillId(ln.eco, ln.sans.join(" ")) + (pz.p.side === "b" ? ":b" : "");
+        if (id !== pz.p.id && !store.session.puzzleState.solved[id]) store.session.puzzleState.solved[id] = true;
+      }
+      puzzleSolved();
+      return true;
+    }
+    sync();
+    return true;
+  }
 
   function startPuzzleAt(cat, idx) {
     const list = puzzlesInCat(cat);
@@ -2528,13 +2739,14 @@ import { createStore } from "./store.js";
     store.session.puzzleState.cat = cat;
     savePuzzleState();
     const p = list[idx];
-    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null };
+    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: p.cat === "op" ? [] : null };
     // playing Black: the app opens with White's book move, you answer
     if (p.cat === "op" && p.side === "b") {
       const first = store.session.puzzle.g.move(p.line[0]);
       if (first) {
         store.session.puzzle.stage = 1;
         store.session.puzzle.last = { from: first.from, to: first.to };
+        store.session.puzzle.opPath = [first.san];
       }
     }
     store.game.selection = null;
@@ -2763,6 +2975,7 @@ import { createStore } from "./store.js";
       });
       return;
     }
+    if (store.session.puzzle.p.cat === "op") { opTreeMove(g, mv); return; }
     if (SCRIPTED_CATS[store.session.puzzle.p.cat]) {
       // scripted line: exact match, opponent replies straight from the script
       const script = puzzleScript(store.session.puzzle.p);
@@ -2906,6 +3119,7 @@ import { createStore } from "./store.js";
     // a clean first-try solve retires the puzzle from review; a shaky one keeps it
     if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(store.session.puzzle.p.id);
     if (!store.session.puzzleState.solved[store.session.puzzle.p.id]) {
+      if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) ratePuzzleOnce(store.session.puzzle.p.id, 1);
       store.session.puzzleState.solved[store.session.puzzle.p.id] = true;
       // a clean first solve counts into the lifetime tally; a solve after
       // misses already counted those misses — counting the solve too would
@@ -3123,7 +3337,8 @@ import { createStore } from "./store.js";
     if (task) {
       task.textContent = store.session.puzzle.done
         ? t("pz.solvedNext")
-        : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText();
+        : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText()
+          + (store.session.puzzle.p.cat !== "op" ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
     }
     renderPuzzleLine();
     // opening drills are rote memorisation without the "why" — show the idea
@@ -3153,7 +3368,7 @@ import { createStore } from "./store.js";
     // the after-solve review nudge: the queue's size is the whole message
     const nudge = document.getElementById("puzzle-review-nudge");
     if (nudge) {
-      const owed = bookNow().filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).length;
+      const owed = owedNow();
       const show = !!store.session.puzzle.done && owed > 0 && store.session.puzzle.cat !== "review";
       nudge.hidden = !show;
       if (show) nudge.textContent = tf("pz.smart.review", [owed]);
@@ -4016,12 +4231,31 @@ import { createStore } from "./store.js";
       .map((c) => Object.assign({ cat: c }, Picker.catTally(st, c)))
       .filter((r) => r.attempts > 0);
     head.hidden = body.hidden = !rows.length;
+
     if (!rows.length) return;
     // worst first, so the marker sits on top; the marker itself comes from
     // Picker.weakest — the same rule the recommendation toast speaks from,
     // so the two surfaces can never name different categories
     rows.sort((a, b) => b.miss / b.attempts - a.miss / a.attempts || b.attempts - a.attempts);
     const weak = Picker.weakest(st, cats);
+    // 6.0: the rating, once a first answer has moved it, its trend, and the
+    // review debt with tomorrow's share (v6-plan Q3.1 / Q3.3)
+    const meta = document.getElementById("rating-meta");
+    const rcv = document.getElementById("trend-rating");
+    const hist = Array.isArray(st.rhist) ? st.rhist : [];
+    if (meta) {
+      const owed = owedNow();
+      const tomorrow = Math.max(0, Srs.dueCount(st.missed, Date.now() + 86400000) - owed);
+      const parts = [];
+      if (hist.length) parts.push(t("rec.rating") + " " + ratingLabel());
+      if (owed || tomorrow) parts.push(tf("rec.due", [owed, tomorrow]));
+      meta.hidden = !parts.length;
+      if (parts.length) { meta.textContent = parts.join(" · "); head.hidden = false; }
+    }
+    if (rcv) {
+      rcv.hidden = hist.length < 2;
+      if (hist.length >= 2) drawRatingTrend(rcv, hist.map((h) => h.r));
+    }
     body.replaceChildren();
     for (const r of rows) {
       const row = document.createElement("div");
@@ -4046,7 +4280,7 @@ import { createStore } from "./store.js";
     const byMotif = {};
     for (const [m, tl] of Object.entries(st.mtally || {})) byMotif[m] = (tl.miss || 0) + (tl.solve || 0);
     return {
-      owed: bookNow().filter((p) => Srs.isDue(st.missed[p.id])).length,
+      owed: owedNow(),
       byCat, byMotif,
       lessonsDone: Object.keys(store.session.learnState.done || {}).length,
       opSolved: ALL_PUZZLES.filter((p) => p.cat === "op" && st.solved[p.id]).length,
@@ -4061,7 +4295,7 @@ import { createStore } from "./store.js";
     const w = Picker.weakest(st, Object.keys(st.tally || {}));
     const today = Progress.dayKey(Date.now());
     return {
-      owed: bookNow().filter((p) => Srs.isDue(st.missed[p.id])).length,
+      owed: owedNow(),
       mineUnsolved: store.session.mines.filter((m) => !st.solved[m.id]).length,
       weakCat: w ? w.cat : null,
       weakMotif: (Picker.weakestMotif(st, Object.keys(st.mtally || {})) || {}).motif || null,
@@ -4245,6 +4479,40 @@ import { createStore } from "./store.js";
       }
     }
     if (showCurve) drawAccTrend(cv, series);
+  }
+
+  /** The rating sparkline: the accuracy one's dress, on the rating's own scale. */
+  function drawRatingTrend(cv, ys) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
+    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
+    if (cv.width !== W) cv.width = W;
+    if (cv.height !== H) cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement);
+    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
+    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const n = ys.length - 1;
+    const pad = 4 * dpr;
+    // a window around the data, rounded to hundreds, so a flat run is a
+    // visibly flat line and a climb is a visible climb
+    const lo = Math.floor((Math.min(...ys) - 50) / 100) * 100;
+    const hi = Math.ceil((Math.max(...ys) + 50) / 100) * 100;
+    const x = (i) => (n ? (i / n) * (W - 2 * pad) + pad : W / 2);
+    const y = (v) => H - pad - (v - lo) / Math.max(1, hi - lo) * (H - 2 * pad);
+    ctx.strokeStyle = cMuted;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = dpr;
+    ctx.beginPath(); ctx.moveTo(pad, y(ys[0])); ctx.lineTo(W - pad, y(ys[0])); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = cAccent;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath();
+    ys.forEach((v, i) => { if (i) ctx.lineTo(x(i), y(v)); else ctx.moveTo(x(i), y(v)); });
+    ctx.stroke();
+    ctx.fillStyle = cAccent;
+    ctx.beginPath(); ctx.arc(x(n), y(ys[n]), 1.8 * dpr, 0, Math.PI * 2); ctx.fill();
   }
 
   /** The accuracy sparkline — the eval curve's dress, the record's data. */
@@ -4595,7 +4863,7 @@ import { createStore } from "./store.js";
     }
     // losing most games but not all: tactics are usually the cheapest fix
     if (losses > wins) {
-      const missed = bookNow().filter((p) => ChessSrs.isDue(store.session.puzzleState.missed[p.id])).length;
+      const missed = owedNow();
       return missed ? tf("rec.review", [missed]) : t("rec.puzzles");
     }
     return null;
@@ -4834,6 +5102,7 @@ import { createStore } from "./store.js";
       return t("st.editing") + " · " + (reason ? t(reason) : t("st.editingReady"));
     }
     if (store.session.mode === "learn") {
+      if (store.session.study) return t("study.head");
       if (!store.session.learn) return t("st.learn");
       if (store.session.learn.done) return t("st.lessonDone");
       // Where the lesson is, not what it is called. The full task text used to
@@ -5552,6 +5821,8 @@ import { createStore } from "./store.js";
     store.subscribe("session", syncLiveAnalysis);
     store.subscribe("ui", syncLiveAnalysis);
     store.subscribe("session", syncLearnUI);
+    store.subscribe("session", syncStudyUI);
+    store.subscribe("game", syncStudyUI);
     store.subscribe("session", syncPuzzleUI);
     store.subscribe("session", syncEditorUI);
     store.subscribe("session", syncDailyUI);
@@ -5868,7 +6139,7 @@ import { createStore } from "./store.js";
 
   function onSquareClick(sq) {
     if (store.session.editor) { editorClick(sq); return; }
-    if (store.session.mode === "learn") { learnClick(sq); return; }
+    if (store.session.mode === "learn" && store.session.learn) { learnClick(sq); return; }
     if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
     // a plain click on an empty square, holding nothing, wipes the arrows and
     // circles drawn on this position — Escape does not (v6-plan Q2.4)
@@ -5915,7 +6186,7 @@ import { createStore } from "./store.js";
   }
 
   function undo() {
-    if (store.session.mode === "learn") { learnUndo(); return; }
+    if (store.session.mode === "learn" && store.session.learn) { learnUndo(); return; }
     if (!sanHistory().length || ruleTerminated()) return;
     if (!isLive()) { goLive(); return; }
     invalidateEngine();
@@ -8235,7 +8506,9 @@ import { createStore } from "./store.js";
   };
   document.getElementById("lesson-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
-    if (b && store.session.learn) startLesson(Number(b.dataset.i));
+    if (b && (store.session.learn || store.session.study)) startLesson(Number(b.dataset.i));
+    const cb = ev.target.closest("button[data-c]");
+    if (cb) startClassic(Number(cb.dataset.c));
   };
   document.getElementById("puzzle-cat-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-cat]");
@@ -8285,7 +8558,8 @@ import { createStore } from "./store.js";
     sync();
   };
   document.getElementById("puzzle-smart").onclick = () => {
-    const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf);
+    const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf,
+      puzzleRatingOf, ChessRating.pickRange(playerRating()));
     if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
     store.session.puzzleState.cat = pick.cat;
     // same contract for the side segment: if the picker chose an opening line
@@ -8302,6 +8576,7 @@ import { createStore } from "./store.js";
     const idx = Math.max(0, list.findIndex((p) => p.id === pick.id));
     startPuzzleAt(pick.cat, idx);
     toast(pick.kind === "review" ? tf("pz.smart.review", [pick.due]) :
+          pick.kind === "rated" ? tf("pz.smart.rated", [pick.rating]) :
           pick.kind === "motif" ? tf("pz.smart.motif", [t("motif." + pick.motif)]) :
           pick.kind === "weak" ? tf("pz.smart.weak", [t("pz.cat." + pick.cat)]) :
           tf("pz.smart.explore", [t("pz.cat." + pick.cat)]));
@@ -8871,7 +9146,7 @@ import { createStore } from "./store.js";
     // move anywhere by keyboard — the app had a full keyboard board cursor and
     // no way to reach any other control. The panel is on P instead.
     if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
-    if (store.session.mode === "learn") {
+    if (store.session.mode === "learn" && !store.session.study) {
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills
       if (!store.session.learn || ev.metaKey || ev.ctrlKey) return;

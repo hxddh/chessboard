@@ -677,7 +677,11 @@
              categories. -->
         <div class="side-h-row" id="puzzle-tally-head" hidden>
           <h2 class="side-h" data-i18n="side.puzzleTally">做题战绩</h2>
+          <span class="side-h-meta num" id="rating-meta" hidden></span>
         </div>
+        <!-- 6.0 (v6-plan Q3.1): the number that can go up. Drawn only once a
+             first attempt has moved it, like everything else on this page. -->
+        <canvas id="trend-rating" hidden aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
         <div class="stats-body" id="puzzle-tally-body" hidden></div>
         <!-- 进步 — change over time, not totals (progress.js). The accuracy
              sparkline reads what stats.games already stores; the weekly rows

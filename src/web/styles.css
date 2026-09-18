@@ -2358,7 +2358,7 @@ kbd.accel {
 
 /* 进步 — the accuracy sparkline on the record page. Same dress as the eval
    curve: a card, not a chrome element, because it is content you read. */
-#trend-acc {
+#trend-acc, #trend-rating {
   display: block;
   width: 100%;
   height: 56px;

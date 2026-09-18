@@ -3081,9 +3081,11 @@ for (const lang of CONTENT_LANGS) {
   // --- the wiring ---------------------------------------------------------
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
   // the book every serving rail reads is the live one…
-  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier, motifKeyOf\)/.test(appSrc),
+  // 6.0: two more arguments — the rating of a puzzle and the player's band
+  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier, motifKeyOf,\s*puzzleRatingOf/.test(appSrc),
     "为你出一题 reads the live book — a mined drill can be recommended");
-  assert(/\? Srs\.order\(bookNow\(\)\.filter\(\(p\) => Srs\.isDue/.test(appSrc),
+  // 6.0: the queue is what is due today (srs.js dueQueue), each id looked up in the live book
+  assert(/\? Srs\.dueQueue\(store\.session\.puzzleState\.missed[\s\S]{0,160}bookNow\(\)\.find/.test(appSrc),
     "the review queue reads the live book — a missed drill comes back due");
   // …and the achievements deliberately do not
   const achBlock = /const solvedIn[\s\S]{0,1400}opTotal:[^\n]*\n/.exec(appSrc);
