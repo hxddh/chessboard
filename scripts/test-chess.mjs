@@ -5179,6 +5179,103 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// --- 6.0: the native mirror and recovery (v6-plan Q1.1), on a fake host
+{
+  const { createPersist, KEYS } = await import("../src/web/js/persist.js");
+  const mem = () => {
+    const m = new Map();
+    return {
+      m,
+      storageGet: (k) => (m.has(k) ? m.get(k) : null),
+      storageSet: (k, v) => { m.set(k, String(v)); return true; },
+      storageRemove: (k) => { m.delete(k); },
+      hasZero: () => true,
+    };
+  };
+  // a host with a file: writes land in `file`, reads come back from it
+  const withFile = (initial) => {
+    const h = mem();
+    h.file = initial;
+    h.writes = 0;
+    h.appdataRead = async () => h.file;
+    h.appdataWrite = async (t) => { h.file = t; h.writes++; return true; };
+    return h;
+  };
+  const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 1. a write reaches the file, once, whole
+  {
+    const h = withFile(null);
+    const P = createPersist(h, () => {});
+    P.load();
+    P.set("settings", "{\"a\":1}");
+    P.set("learn", "{\"b\":2}");
+    await tick(600);
+    const doc = JSON.parse(h.file);
+    assert(h.writes === 1 && doc.keys.settings === "{\"a\":1}" && doc.keys.learn === "{\"b\":2}",
+      "two writes in a burst become one whole-profile mirror write (" + h.writes + ")");
+    assert(doc.app === "chessboard" && typeof doc.writtenAt === "number", "…stamped as ours");
+  }
+  // 2. empty cache + a file = the file is restored
+  {
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000,
+      keys: { stats: "{\"v\":2,\"games\":[]}", learn: "{\"v\":1}" } }));
+    const P = createPersist(h, () => {});
+    P.load();
+    assert(P.wasEmpty(), "the cache was empty");
+    const r = await P.recover();
+    assert(r === "restored", "recover() takes the file when the cache is empty (" + r + ")");
+    assert(P.get("stats") === "{\"v\":2,\"games\":[]}" && h.m.get(KEYS.learn) === "{\"v\":1}",
+      "…and every key in the file is back in storage");
+  }
+  // 3. a live cache newer than the file keeps the cache, and re-mirrors it
+  {
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000, keys: { learn: "old" } }));
+    h.m.set(KEYS.learn, "new"); h.m.set("chess.writtenAt", "9000");
+    const P = createPersist(h, () => {});
+    P.load();
+    const r = await P.recover();
+    assert(r === "kept" && P.get("learn") === "new", "a newer cache is kept over an older file (" + r + ")");
+    await tick(600);
+    assert(JSON.parse(h.file).keys.learn === "new", "…and the file is brought up to date");
+  }
+  // 4. a cache older than the file yields to it (data written on another launch that this cache missed)
+  {
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys: { learn: "file" } }));
+    h.m.set(KEYS.learn, "cache"); h.m.set("chess.writtenAt", "5000");
+    const P = createPersist(h, () => {});
+    P.load();
+    const r = await P.recover();
+    assert(r === "restored" && P.get("learn") === "file", "an older cache yields to the file (" + r + ")");
+  }
+  // 5. export / restore round-trip and the failure latch
+  {
+    const h = withFile(null);
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    P.set("slots", "{\"v\":1}");
+    const doc = P.exportAll();
+    assert(doc.keys.slots === "{\"v\":1}" && P.isProfileDoc(doc), "exportAll() is a profile document");
+    P.clearAll();
+    assert(P.get("slots") == null, "clearAll() empties the cache");
+    P.restoreAll(doc);
+    assert(P.get("slots") === "{\"v\":1}", "restoreAll() brings it back");
+    h.appdataWrite = async () => { throw new Error("disk full"); };
+    P.set("slots", "x");
+    await tick(600);
+    assert(failed && failed.key === "appdata", "a refused mirror write latches the failure like a refused cache write");
+  }
+  // 6. no bridge at all: nothing mirrors, nothing fails, recover() says none
+  {
+    const h = mem();
+    const P = createPersist(h, () => { throw new Error("must not be called"); });
+    P.load();
+    P.set("learn", "x");
+    assert(await P.recover() === "none", "a browser has no file and no error");
+  }
+}
+
 // --- 6.0: the register of source-text assertions in this file.
 //
 // This file holds a great many `/…/.test(appSrc)` checks: they lock the

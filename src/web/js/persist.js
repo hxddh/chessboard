@@ -41,6 +41,8 @@ export const KEYS = {
 
 /** Where the profile's schema version lives — the one number, not eight. */
 export const SCHEMA_KEY = "chess.schema";
+/** When the cache last changed — what recover() compares against the file. */
+export const STAMP_KEY = "chess.writtenAt";
 
 /**
  * The current schema version, and how to get here from each earlier one.
@@ -149,12 +151,100 @@ export function createPersist(host, onWriteFailure) {
     if (!key) throw new Error("unknown storage key: " + name);
     const ok = host.storageSet(key, value);
     if (!bag) bag = {};
-    if (ok) { bag[name] = value; return true; }
-    if (!broken) {
-      broken = { key: name };
-      try { onWriteFailure && onWriteFailure(broken); } catch (_) { /* never mask the write failure */ }
-    }
+    if (ok) { bag[name] = value; host.storageSet(STAMP_KEY, String(Date.now())); scheduleMirror(); return true; }
+    fail(name);
     return false;
+  }
+
+  function fail(name) {
+    if (broken) return;
+    broken = { key: name };
+    try { onWriteFailure && onWriteFailure(broken); } catch (_) { /* never mask the write failure */ }
+  }
+
+  // ------------------------------------------------------------------------
+  // 6.0: the native mirror (v6-plan Q1.1).
+  //
+  // localStorage is the WebView's, not ours: its path is decided by the
+  // engine, it is cleared by "remove website data", it has a quota, and a
+  // change of app id or scheme leaves it behind. The profile is therefore
+  // also written — whole, as one JSON document — to a file the shell owns in
+  // the user's application-data directory (host.appdataWrite, atomic with a
+  // .bak). localStorage stays the synchronous cache the app boots from; the
+  // file is what survives. The two are reconciled once, at startup, by
+  // recover(): when the cache is empty or older than the file, the file wins
+  // and the page reloads onto it — the one moment the async read is allowed
+  // to change what the app is standing on.
+  // ------------------------------------------------------------------------
+  const MIRROR_DELAY = 400; // ms; every autosave in a burst becomes one write
+  let mirrorTimer = null;
+  let mirrorEnabled = typeof host.appdataWrite === "function";
+  function mirrorDoc() {
+    const keys = {};
+    for (const name of Object.keys(KEYS)) if (bag && bag[name] != null) keys[name] = bag[name];
+    return { app: "chessboard", schema: SCHEMA, writtenAt: Date.now(), keys };
+  }
+  function scheduleMirror() {
+    if (!mirrorEnabled) return;
+    if (mirrorTimer) clearTimeout(mirrorTimer);
+    mirrorTimer = setTimeout(flushMirror, MIRROR_DELAY);
+  }
+  /** Write the whole profile to the native file now. @returns {Promise<boolean>} */
+  async function flushMirror() {
+    mirrorTimer = null;
+    if (!mirrorEnabled) return false;
+    try {
+      const ok = await host.appdataWrite(JSON.stringify(mirrorDoc()));
+      if (ok === false) fail("appdata");
+      return ok !== false;
+    } catch (_) {
+      // an absent bridge (a browser, a test) is not a failure of the profile;
+      // a bridge that is there and refuses is
+      if (host.hasZero && host.hasZero()) fail("appdata");
+      else mirrorEnabled = false;
+      return false;
+    }
+  }
+  /** Is a document one of ours, in a shape we can restore from? */
+  function isProfileDoc(doc) {
+    return !!doc && doc.app === "chessboard" && doc.keys && typeof doc.keys === "object";
+  }
+  /**
+   * Adopt the native file when it knows more than the cache does.
+   * @returns {Promise<"kept"|"restored"|"none">} "restored" means storage
+   *   was rewritten from the file and the caller should reload the page
+   */
+  async function recover() {
+    if (typeof host.appdataRead !== "function") return "none";
+    let text = null;
+    try { text = await host.appdataRead(); } catch (_) { return "none"; }
+    if (!text) { if (bag && !foundEmpty) scheduleMirror(); return "none"; }
+    let doc = null;
+    try { doc = JSON.parse(text); } catch (_) { return "none"; }
+    if (!isProfileDoc(doc)) return "none";
+    const cacheAt = Number(host.storageGet(STAMP_KEY) || 0) || 0;
+    const fileAt = Number(doc.writtenAt) || 0;
+    // the cache wins whenever it has anything and is not provably older: a
+    // file must not undo what the player did in a session the file missed
+    if (!foundEmpty && (!cacheAt || fileAt <= cacheAt)) { scheduleMirror(); return "kept"; }
+    restoreAll(doc);
+    return "restored";
+  }
+
+  /** Every key, as one document — the whole profile, for export. */
+  function exportAll() { return mirrorDoc(); }
+  /** Replace storage with a document from exportAll() / the mirror. */
+  function restoreAll(doc) {
+    if (!isProfileDoc(doc)) throw new Error("not a chessboard profile");
+    for (const name of Object.keys(KEYS)) {
+      const v = doc.keys[name];
+      if (typeof v === "string") host.storageSet(KEYS[name], v);
+      else host.storageRemove(KEYS[name]);
+    }
+    host.storageSet(SCHEMA_KEY, String(doc.schema || SCHEMA));
+    host.storageSet(STAMP_KEY, String(Number(doc.writtenAt) || Date.now()));
+    bag = null;
+    load();
   }
 
   /** JSON in one step, since every caller but panelOpen was doing it. */
@@ -176,6 +266,8 @@ export function createPersist(host, onWriteFailure) {
   function clearAll() {
     for (const name of Object.keys(KEYS)) remove(name);
     host.storageRemove(SCHEMA_KEY);
+    host.storageRemove(STAMP_KEY);
+    scheduleMirror();
   }
 
   /** Has a write failed in this session? Then what is on screen is not saved. */
@@ -226,5 +318,6 @@ export function createPersist(host, onWriteFailure) {
   /** Names of the keys that failed to read this session, in order. */
   function corruptKeys() { return corrupt.slice(); }
 
-  return { load, get, read, set, setJson, remove, clearAll, isBroken, wasEmpty, corruptKeys, KEYS, SCHEMA };
+  return { load, get, read, set, setJson, remove, clearAll, isBroken, wasEmpty, corruptKeys,
+    recover, flushMirror, exportAll, restoreAll, isProfileDoc, KEYS, SCHEMA };
 }
