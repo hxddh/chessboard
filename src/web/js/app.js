@@ -8569,8 +8569,11 @@ import { createStore } from "./store.js";
     sync();
   };
   document.getElementById("puzzle-smart").onclick = () => {
+    // the rating rung only once a first answer has moved the rating — a fresh
+    // profile is still sent exploring
+    const rated = Array.isArray(store.session.puzzleState.rhist) && store.session.puzzleState.rhist.length > 0;
     const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf,
-      puzzleRatingOf, ChessRating.pickRange(playerRating()));
+      puzzleRatingOf, rated ? ChessRating.pickRange(playerRating()) : null);
     if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
     store.session.puzzleState.cat = pick.cat;
     // same contract for the side segment: if the picker chose an opening line

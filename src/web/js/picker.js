@@ -140,23 +140,6 @@ function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range) {
     }
   }
 
-  // 2b. 6.0: a puzzle at the player's level — rated, unsolved, inside the
-  // Glicko range (rating.js pickRange). Comes after the motif rung because a
-  // known blind spot outranks a well-fitted stranger, and before the weakness
-  // rung because "your level" is a finer signal than "your worst category".
-  if (ratingOf && range) {
-    const fit = all.filter((p) => !state.solved[p.id] && p.cat !== "mine" && p.cat !== "op");
-    let pick = null, best = Infinity;
-    for (const p of fit) {
-      const r = ratingOf(p);
-      if (r == null || r < range.lo || r > range.hi) continue;
-      // nearest to the middle of the band, stable in book order
-      const d = Math.abs(r - (range.lo + range.hi) / 2);
-      if (d < best) { best = d; pick = p; }
-    }
-    if (pick) return { kind: "rated", cat: pick.cat, id: pick.id, rating: ratingOf(pick) };
-  }
-
   // 2. a real weakness: enough answers, and misses among them
   const weak = weakest(state, open);
   if (weak) {
@@ -175,6 +158,24 @@ function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range) {
     }
     return { kind: "weak", cat: weak.cat, id,
              rate: weak.rate, attempts: weak.attempts };
+  }
+
+  // 2b. 6.0: a puzzle at the player's level — rated, unsolved, inside the
+  // Glicko range (rating.js pickRange). After the weakness rung: a category
+  // the player keeps missing is a sharper signal than a well-fitted stranger,
+  // and before exploration, which is what is left when nothing else is known.
+  // The caller passes a range only once the rating has actually moved.
+  if (ratingOf && range) {
+    const fit = all.filter((p) => !state.solved[p.id] && p.cat !== "mine" && p.cat !== "op");
+    let pick = null, best = Infinity;
+    for (const p of fit) {
+      const r = ratingOf(p);
+      if (r == null || r < range.lo || r > range.hi) continue;
+      // nearest to the middle of the band, stable in book order
+      const d = Math.abs(r - (range.lo + range.hi) / 2);
+      if (d < best) { best = d; pick = p; }
+    }
+    if (pick) return { kind: "rated", cat: pick.cat, id: pick.id, rating: ratingOf(pick) };
   }
 
   // 3. no usable history: the least-covered category
