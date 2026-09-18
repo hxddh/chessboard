@@ -197,3 +197,32 @@ Q2 改树都会大面积撞上。登记册「只减不增、退一补一」是�
 - 键盘走子 + `#board-live`、七个对话框焦点陷阱、reduced-motion 只停位移动画
 - 设计约束登记册（裸色值 / token 刻度 / 键唯一 / 每键有人读）
 - 文档纪律：每个数字有出处，每条约束有理由，每个缺陷保留原文
+
+---
+
+## 7 · 落地记录（6.0.0）
+
+按 §2 的编号逐条对账。「完成」指代码在、测试在；「部分」写明差在哪。
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| Q0.1–Q0.5 | 完成 | D1–D12 全修；perft 五组与规则边界进 `test-chess.mjs`；zig 作业进 `checks.yml`（已绿）；登记册 161 → 124 只减不增；release 跑全量 `test:engine` |
+| Q1.1 存储 | 完成 | `persist.js` 镜像到 `chess.appdataWrite`（原子写带 .bak），`recover()` 以更新的一方为准；全部数据导出导入；隔离键与启动横幅 |
+| Q1.2 桥收紧 | 完成 | `chess.issuePath` 签发表；点文件与系统目录拒绝；CSP；发布构建剔除 dev origin |
+| Q1.3 引擎 | 完成 | `engine-src.js` 由 engine.js 首次需要时注入；超时 stop、两次 terminate 重建；评估缓存；Hash / MultiPV / infinite |
+| Q1.4 sync() | 完成 | `commitAll` 一次通知（draw() 每次一遍）；只写单切片的 24 处改 `store.commit(切片)`，其余 32 处确实同时写 game 与 session，保留全量 |
+| Q1.5 签名分发 | **未做** | Developer ID / notarization / Authenticode / msix 都要证书（用户决定暂不做）；启动查更新与 dmg 产物已做 |
+| Q1.6 壳层三语 | 完成 | 菜单与标题随语言（重启生效）、关于面板、LICENSE 与 Stockfish COPYING 进产物；棋子素材署名写在关于面板 |
+| Q1.7 app.js 拆分 | **部分** | `report.js`（报告导出图）与 `persist.js`（档案键形状、stats 迁移）已拆；`io.js / a11y.js / native-commands.js` 未拆，app.js 9.1k 行，未达 < 4000 —— 剩余三块与 124 条源码守卫强耦合，留到 6.1 随守卫退役一起做 |
+| Q2.1–Q2.4 | 完成 | `game-tree.js` + `pgn-parser.js`，26 份语料往返；变着 / 升主线 / 删 / 注释 / NAG；箭头圈进出 `[%cal]/[%csl]`；PV 存变着、试走回主线 |
+| Q2.5 胜率差 | 完成 | `?!` 重合率 32% → 67%（`measured.json` `winPctNoise`），阈值 5 / 10 / 20 |
+| Q2.6 多线 | 完成 | MultiPV 1–5、持续分析、Hash；Threads 不暴露（lite 单线程构建） |
+| Q2.7 开局识别 | 完成 | `eco.js` 3810 局面按 `positionKey` 查表 |
+| Q2.8 | 完成 | 预走、盲棋、坐标开关、音量 |
+| Q3.1 评级 | 完成 | Glicko-2，168 题初始评级按推导难度；选题按 ±150（有评级记录后启用） |
+| Q3.2 题库管线 | **部分** | `import-puzzles.mjs` + `puzzle-gate.mjs` 管线完成并有样本测试；本机不可达 `database.lichess.org`，**未实际抽样入库**，「每母题 ≥ 100 题」的验收未达 |
+| Q3.3 SRS | 完成 | 到期日 1 → 3 → 7 → 21 天，每日上限 20，离线多日按上限分摊 |
+| Q3.4 开局树 | 完成 | `opening-tree.js`，对手按分支权重随机变着 |
+| Q3.5 课程 | 完成 | 中级 24 课三语（24 个局面经 Stockfish 复核）；10 局名局读棋 |
+| Q3.6 可访问性 | 完成 | rem 三档、跟随系统、高对比 / 强制色、`Intl.PluralRules` 与 `Intl.DateTimeFormat` |
+
