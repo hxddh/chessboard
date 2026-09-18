@@ -37,6 +37,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
 import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES } from "./puzzles.js";
+import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
 import { ChessPicker } from "./picker.js";
@@ -1156,7 +1157,7 @@ import { createStore } from "./store.js";
   // --- settings + autosave ---
   function loadSettings() {
     {
-      const s = Persist.read("settings", (v) => (v && typeof v === "object" ? v : null)).value;
+      const s = Persist.read("settings").value;
       if (!s) return;
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
@@ -1247,7 +1248,7 @@ import { createStore } from "./store.js";
 
   function tryLoadSave() {
     {
-      const s = Persist.read("save", (v) => (v && v.v === 1 && typeof v.pgn === "string" && v.pgn ? v : null)).value;
+      const s = Persist.read("save").value;
       if (!s) return false;
       if (!gameLoadPgn(s.pgn)) {
         // A position from the editor or from 载入 FEN is saved the moment it
@@ -1304,7 +1305,7 @@ import { createStore } from "./store.js";
     // one worker: a running infinite search must let go before the game move
     await stopLiveAnalysis();
     if (token !== store.game.engineToken) return;
-    sync();
+    store.commit("session", "sync");
     // clocked AI games: the engine budgets its think time from its clock
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
     const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
@@ -1325,7 +1326,7 @@ import { createStore } from "./store.js";
     }
     store.session.engineThinking = false;
     if (!mv) {
-      sync();
+      store.commit("session", "sync");
       // maybeEngineTurn() is its own guard: if the player has since taken the
       // move back, started a new game or the game has ended, it returns without
       // doing anything, so this stays safe however long the toast sits there.
@@ -1364,7 +1365,7 @@ import { createStore } from "./store.js";
     const sig = game.fen();
     store.session.hintPending = true;
     await stopLiveAnalysis();
-    sync();
+    store.commit("session", "sync");
     let e = null;
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     store.session.hintPending = false;
@@ -1374,7 +1375,7 @@ import { createStore } from "./store.js";
     const to = e.best.slice(2, 4);
     const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
     store.session.hintMove = { from, to };
-    sync();
+    store.commit("session", "sync");
     toast(t("chrome.hint") + " · " + (vmv ? vmv.san : from + " → " + to));
   }
 
@@ -1681,7 +1682,7 @@ import { createStore } from "./store.js";
   }
 
   function loadLearnState() {
-    const s = Persist.read("learn", (v) => (v && v.v === 1 && v.done ? v : null)).value;
+    const s = Persist.read("learn").value;
     return s || { v: 1, done: {}, last: 0 };
   }
   store.session.learnState = loadLearnState();
@@ -1814,7 +1815,7 @@ import { createStore } from "./store.js";
     const token = store.session.learn.token;
     let i = 0;
     toast(t("lm.demoIntro"));
-    sync();
+    store.commit("session", "sync");
     const step = () => {
       if (!store.session.learn || store.session.learn.token !== token) return;
       if (i >= sol.length) {
@@ -1900,7 +1901,7 @@ import { createStore } from "./store.js";
       } catch (_) {}
     }
     toast(t("lm.answerShown"), "fix");
-    sync();
+    store.commit("session", "sync");
   }
 
   function learnFlash(sq) {
@@ -2098,7 +2099,7 @@ import { createStore } from "./store.js";
     // teach the technique, not to punish a beginner with perfect defense
     const tier = curTask().engine || "beginner";
     store.session.learn.engineBusy = true;
-    sync();
+    store.commit("session", "sync");
     let mv = null;
     try { mv = await ChessEngine.bestMove(g.fen(), tier); } catch (_) {}
     if (!store.session.learn || token !== store.session.learn.token) return;
@@ -2118,11 +2119,11 @@ import { createStore } from "./store.js";
     // attacking drills need the material that makes the win possible; the
     // defensive one is *expected* to be down material, so skip the check
     if (task.winOn !== "draw" && !learnHasHeavy(g)) {
-      sync();
+      store.commit("session", "sync");
       learnRetryTask(t("lm.lostMaterial"));
       return;
     }
-    sync();
+    store.commit("session", "sync");
   }
 
   /** Drill-only: take back the last white move (and the engine reply with it). */
@@ -2151,14 +2152,14 @@ import { createStore } from "./store.js";
     const token = store.session.learn.token;
     const sig = g.fen();
     store.session.hintPending = true;
-    sync();
+    store.commit("session", "sync");
     let e = null;
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     store.session.hintPending = false;
     if (!store.session.learn || token !== store.session.learn.token || store.session.learn.g.fen() !== sig) { sync(); return; }
     if (!e || !e.best) { sync(); toast(t("msg.engine.noHint"), "fault"); return; }
     store.session.learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
-    sync();
+    store.commit("session", "sync");
   }
 
   function learnTaskDone() {
@@ -2402,7 +2403,7 @@ import { createStore } from "./store.js";
    */
   const Mistakes = ChessMistakes;
   function loadMines() {
-    const s = Persist.read("mines", (v) => (v && v.v === 1 && Array.isArray(v.list) ? v : null)).value;
+    const s = Persist.read("mines").value;
     if (!s) return [];
     return s.list.filter((m) => m && m.id && m.fen && Array.isArray(m.solution) && m.solution.length && m.cat === "mine");
   }
@@ -2411,7 +2412,7 @@ import { createStore } from "./store.js";
   const Progress = ChessProgress;
   const Planner = ChessPlanner;
   store.session.progress = Progress.coerce((() => {
-    return Persist.read("progress", (v) => (v && typeof v === "object" ? v : null)).value;
+    return Persist.read("progress").value;
   })());
   function saveProgress() { Persist.setJson("progress", store.session.progress); }
   function bookNow() { return store.session.mines.length ? ALL_PUZZLES.concat(store.session.mines) : ALL_PUZZLES; }
@@ -2538,7 +2539,7 @@ import { createStore } from "./store.js";
       were actually rewritten, which is a different thing from "this profile
       is on the current id version", and the difference is the whole bug */
   function loadPuzzleState() {
-    const s = Persist.read("puzzles", (v) => (v && v.v === 1 && v.solved ? v : null)).value;
+    const s = Persist.read("puzzles").value;
     if (s) {
       if (!s.missed) s.missed = {};
       const was = s.idv;
@@ -3081,7 +3082,7 @@ import { createStore } from "./store.js";
     // which in the puzzle and opening modes is the entire product
     toast((reason || t("pz.noForcedMate")) +
       (store.session.puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")), "fix");
-    sync();
+    store.commit("session", "sync");
   }
 
   /** Arrow for the correct move at the current stage. */
@@ -3114,7 +3115,7 @@ import { createStore } from "./store.js";
       store.session.puzzle.helpArrow = { from, to };
       store.session.puzzle.usedAnswer = true;
       markMissed(store.session.puzzle.p.id); // relying on the answer counts as a miss
-      sync();
+      store.commit("session", "sync");
     }
   }
 
@@ -3255,7 +3256,7 @@ import { createStore } from "./store.js";
     pz.lineAt = k;
     store.game.selection = null;
     BoardView.cancelAnim();
-    sync();
+    store.commit("game", "sync");
   }
   function renderPuzzleLine() {
     const el = document.getElementById("puzzle-line");
@@ -3987,7 +3988,7 @@ import { createStore } from "./store.js";
       delete store.session.puzzleState.missed[id];
     }
     if (r.dropped.length) savePuzzleState();
-    sync();
+    store.commit("session", "sync");
     toast(tf("rv.banked", [cand.solution[0]]));
   }
 
@@ -4161,30 +4162,9 @@ import { createStore } from "./store.js";
     return statsCache.v;
   }
   function readStats() {
-    const s = Persist.read("stats", (v) => (v && (v.v === 2 || v.v === 1) && Array.isArray(v.games) ? v : null)).value;
-    {
-      if (s && s.v === 2 && Array.isArray(s.games)) return s;
-      // v1 → v2: split the overloaded `sig` into the three things it was.
-      // Reading it apart is safe — unlike an id remap, this derives nothing
-      // about *which* game a record is, it only unpacks what was already
-      // stored in it.
-      if (s && s.v === 1 && Array.isArray(s.games)) {
-        return {
-          v: 2,
-          games: s.games.map((g, i) => {
-            const sig = String(g.sig || "");
-            const m = /#([a-zA-Z]+)$/.exec(sig);
-            return Object.assign({}, g, {
-              id: g.id || ("v1-" + (g.t || 0).toString(36) + "-" + i.toString(36)),
-              pgn: g.pgn != null ? g.pgn : sig.replace(/#[a-zA-Z]+$/, ""),
-              ending: g.ending != null ? g.ending : (m ? m[1] : ""),
-              sig: undefined,
-            });
-          }),
-        };
-      }
-    }
-    return { v: 2, games: [] };
+    // the v1 → v2 unpacking of `sig` happens in persist.js, with the shape
+    const s = Persist.read("stats").value;
+    return s && s.v === 2 && Array.isArray(s.games) ? s : { v: 2, games: [] };
   }
 
   /** Record an AI game the moment it finishes on a live move (not on import). */
@@ -4879,7 +4859,7 @@ import { createStore } from "./store.js";
   // --- achievements: pure derivations of stats + lesson/puzzle progress ---
   const ACH = CHESS_ACHIEVEMENTS || [];
   function loadAchSeen() {
-    const s = Persist.read("achievements", (v) => (v && Array.isArray(v.seen) ? v : null)).value;
+    const s = Persist.read("achievements").value;
     return new Set(s ? s.seen : []);
   }
   store.session.achSeen = loadAchSeen();
@@ -6397,7 +6377,7 @@ import { createStore } from "./store.js";
     if (engineCp != null && engineCp < 60) {
       acceptDraw();
     } else {
-      sync();
+      store.commit("session", "sync");
       toast(t("msg.draw.offerDeclined"));
     }
   }
@@ -6616,184 +6596,10 @@ import { createStore } from "./store.js";
   // A picture carries the conclusion.
 
   /** Draw the finished review onto an offscreen canvas. @returns {HTMLCanvasElement|null} */
-  /**
-   * The exported review image.
-   *
-   * Three things this is not allowed to be, each of which it was:
-   *
-   * **Theme-coloured.** It used to paint on `--card` — a 3–4% white overlay in
-   * the wood and night themes — with `--text` on top. Exported from either, the
-   * PNG is near-white text on near-white, and dropping it into any document
-   * with a white background produced a blank rectangle. An exported file leaves
-   * the app; it cannot inherit the app's assumptions about what is behind it.
-   * So the palette here is opaque, fixed, and the same from all four themes.
-   * 缺陷 2.
-   *
-   * **Written for the screen.** The turning-point line ended "—— 点此跳转",
-   * true of the panel and nonsense in a file, and it was removed by a regex
-   * that only worked because Chinese and Japanese use a full-width dash: the
-   * English build shipped "tap to jump" printed on the image. Two keys now, no
-   * regex. 缺陷 5.
-   *
-   * **Unmeasured.** Nine fillText calls, no measureText, no wrapping, on a
-   * fixed 820px canvas. The Japanese side line runs about a third longer than
-   * the Chinese one, and over-long text did not ellipsize — it left the canvas
-   * and was gone. 缺陷 21.
-   */
-  const REPORT_FONT = "system-ui, -apple-system, 'Helvetica Neue', 'PingFang SC', 'Hiragino Kaku Gothic ProN', sans-serif";
-  /**
-   * Fixed, opaque, and nothing to do with the interface theme.
-   *
-   * Light, because a shared image lands on a white page far more often than a
-   * dark one, and because these values can then be checked for contrast once
-   * rather than four times.
-   */
-  const REPORT_INK = {
-    bg: "#fbfaf7", fg: "#1b1a17", muted: "#6b675e",
-    accent: "#8a5a1e", line: "#d9d4c8",
-  };
-
+  // the report image lives in report.js; it reads the app through this bag
   function renderReportCanvas() {
-    const a = analysisFor();
-    const R = ChessReview;
-    if (!a || !R) return null;
-    const first = startFen() && startFen().split(" ")[1] === "b" ? "b" : "w";
-    const sum = R.summarizeWinPct(a.scalars, sanHistory(), first);
-    const cp = R.summarize(a.scalars, sanHistory(), first);
-    if (!sum || !cp) return null;
-    sum.acpl = cp.acpl;
-
-    const S = 2; // fixed scale: the file should not depend on the player's screen
-    const W = 900, H = 520;
-    const cv = document.createElement("canvas");
-    cv.width = W * S; cv.height = H * S;
-    const ctx = cv.getContext("2d");
-    ctx.scale(S, S);
-    const { bg, fg, muted, accent, line } = REPORT_INK;
-    const font = (spec) => { ctx.font = spec + " " + REPORT_FONT; };
-
-    /**
-     * Draw text that is guaranteed to be inside the image.
-     *
-     * Wraps at `maxW` and, if it still does not fit in `maxLines`, ends the
-     * last line with an ellipsis. Returns the y after the last line, so the
-     * caller can lay out what comes next instead of assuming a height.
-     */
-    function text(str, x, y, maxW, maxLines, lh) {
-      const words = String(str).split(/(\s+)/);
-      const lines = [];
-      let cur = "";
-      for (const w of words) {
-        const next = cur + w;
-        // CJK has no spaces to break on, so fall back to breaking per character
-        if (ctx.measureText(next).width <= maxW || !cur) { cur = next; continue; }
-        lines.push(cur.trimEnd());
-        cur = w.trimStart();
-      }
-      if (cur) lines.push(cur.trimEnd());
-      const out = [];
-      for (const l of lines) {
-        if (ctx.measureText(l).width <= maxW) { out.push(l); continue; }
-        let piece = "";
-        for (const ch of l) {
-          if (ctx.measureText(piece + ch).width > maxW) { out.push(piece); piece = ch; }
-          else piece += ch;
-        }
-        if (piece) out.push(piece);
-      }
-      const shown = out.slice(0, maxLines || out.length);
-      if (out.length > shown.length && shown.length) {
-        let last = shown[shown.length - 1];
-        while (last && ctx.measureText(last + "…").width > maxW) last = last.slice(0, -1);
-        shown[shown.length - 1] = last + "…";
-      }
-      shown.forEach((l, i) => ctx.fillText(l, x, y + i * (lh || 20)));
-      return y + shown.length * (lh || 20);
-    }
-
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = fg;
-    font("600 26px");
-    ctx.fillText(t("rv.title"), 40, 56);
-
-    font("15px");
-    ctx.fillStyle = muted;
-    const opening = openingFor(sanHistory().length);
-    const head = [opening ? opening[1] : null, statusText(),
-      tf("mm.plies", [sanHistory().length])].filter(Boolean).join("  ·  ");
-    text(head, 40, 84, W - 80, 2, 20);
-
-    // one line of context: which level, which colour, when
-    font("13px");
-    const when = new Date().toISOString().slice(0, 10);
-    const ctxLine = [DIFF_NAMES[store.session.difficulty] || store.session.difficulty,
-      t(store.session.humanColor === "w" ? "color.white" : "color.black"), when]
-      .filter(Boolean).join("  ·  ");
-    ctx.fillStyle = muted;
-    text(ctxLine, 40, 106, W - 80, 1, 18);
-
-    // the curve, same shape and cut-off as the one on screen
-    const cx0 = 40, cy0 = 130, cw = W - 80, ch = 150;
-    ctx.strokeStyle = line; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx0, cy0 + ch / 2); ctx.lineTo(cx0 + cw, cy0 + ch / 2); ctx.stroke();
-    const n = a.scalars.length - 1, CAP = 500;
-    const JC = judgeColours();
-    const px = (i) => (n ? cx0 + (i / n) * cw : cx0 + cw / 2);
-    const py = (sv) => cy0 + ch / 2 - (Math.max(-CAP, Math.min(CAP, sv)) / CAP) * (ch / 2 - 4);
-    ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath();
-    let pen = false;
-    for (let i = 0; i <= n; i++) {
-      const sv = a.scalars[i];
-      if (sv == null) { pen = false; continue; }
-      if (pen) ctx.lineTo(px(i), py(sv)); else { ctx.moveTo(px(i), py(sv)); pen = true; }
-    }
-    ctx.stroke();
-    for (let i = 0; i < n; i++) {
-      if (!R.isMistake(a.tags[i]) || a.tags[i] === "?!") continue;
-      const sv = a.scalars[i + 1];
-      if (sv == null) continue;
-      ctx.fillStyle = a.tags[i] === "??" ? JC.bad : JC.mid;
-      ctx.beginPath(); ctx.arc(px(i + 1), py(sv), 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-
-    // the numbers, one column per side — each column measured, so the longer
-    // Japanese line wraps inside its column instead of into the other one
-    const rowY = cy0 + ch + 46;
-    const colW = cw / 2 - 20;
-    for (const [k, side] of [[0, "w"], [1, "b"]]) {
-      const x = 40 + k * (cw / 2);
-      ctx.fillStyle = fg;
-      font("600 15px");
-      ctx.fillText(sideName(side), x, rowY);
-      // the same three rows the panel shows, from the same helper: label at the
-      // column's left edge, value at its right, so the two columns read as one
-      // table rather than two paragraphs
-      font("14px");
-      sideRows(sum, side).forEach(([label, value], i) => {
-        const y = rowY + 24 + i * 22;
-        // both halves through text(): it is the only thing here that measures
-        // before it draws, and a label that outgrew its half would otherwise
-        // run in under the number
-        ctx.textAlign = "right";
-        ctx.fillStyle = fg;
-        text(value, x + colW, y, colW * 0.45, 1, 22);
-        ctx.textAlign = "left";
-        ctx.fillStyle = muted;
-        text(label, x, y, colW * 0.5, 1, 22);
-      });
-    }
-    if (sum.worst) {
-      font("14px");
-      ctx.fillStyle = accent;
-      // the Plain key, not the panel's line with its "tap to jump" tail
-      text(tf("rv.turningPointPlain", [sum.worst.moveNo,
-        sideName(sum.worst.side), sum.worst.san,
-        Math.round(sum.worst.drop)]), 40, rowY + 112, cw, 2, 20);
-    }
-    font("12px");
-    ctx.fillStyle = muted;
-    ctx.fillText(t("brand"), 40, H - 24);
-    return cv;
+    return ChessReport.render({ t, tf, sideName, statusText, openingFor, sanHistory, startFen,
+      analysisFor, judgeColours, sideRows, DIFF_NAMES, store, ChessReview });
   }
 
   /** Base64 payload of a canvas PNG, without the data: prefix. */
@@ -6875,7 +6681,7 @@ import { createStore } from "./store.js";
     }
     setPanelOpen(true);
     saveSettings();
-    sync();
+    store.commit("session", "sync");
     if (choice !== 0) maybeEngineTurn();
   }
 
@@ -7278,7 +7084,7 @@ import { createStore } from "./store.js";
   const SLOT_COUNT = 5;
 
   function loadSlots() {
-    const s = Persist.read("slots", (v) => (v && Array.isArray(v.slots) ? v : null)).value;
+    const s = Persist.read("slots").value;
     return s || { v: 1, slots: new Array(SLOT_COUNT).fill(null) };
   }
   function saveSlots(s) {
@@ -7865,7 +7671,7 @@ import { createStore } from "./store.js";
     store.game.flipped = want;
     saveSettings();
     draw();
-    sync();
+    store.commit("game", "sync");
     toast(want ? t("msg.view.black") : t("msg.view.white"));
   }
 
@@ -8150,7 +7956,7 @@ import { createStore } from "./store.js";
     if (store.session.liveOn && ChessEngine && !ChessEngine.isReady()) {
       ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
     }
-    sync();
+    store.commit("session", "sync");
   };
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };
   const curveEl = document.getElementById("eval-curve");
@@ -8566,7 +8372,7 @@ import { createStore } from "./store.js";
       toast(tf("daily.begin", [p.steps.length]));
     }
     dailyJump(store.session.daily.steps[store.session.daily.i]);
-    sync();
+    store.commit("session", "sync");
   };
   document.getElementById("puzzle-smart").onclick = () => {
     // the rating rung only once a first answer has moved the rating — a fresh
@@ -8616,7 +8422,7 @@ import { createStore } from "./store.js";
     if (!b || b.dataset.diff === store.session.difficulty) return;
     store.session.difficulty = b.dataset.diff;
     saveSettings();
-    sync();
+    store.commit("session", "sync");
   };
   document.getElementById("diff-seg").onclick = onDiffClick;
   const diffEngineSeg = document.getElementById("diff-seg-engine");
@@ -8626,7 +8432,7 @@ import { createStore } from "./store.js";
     if (!b || b.dataset.persona === store.session.personaId) return;
     store.session.personaId = b.dataset.persona;
     saveSettings();
-    sync();
+    store.commit("session", "sync");
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
@@ -8776,7 +8582,7 @@ import { createStore } from "./store.js";
     if (merged.achievements) store.session.achSeen = loadAchSeen();
     if (merged.stats) statsCache.v = null;
     renderStats();
-    sync();
+    store.commit("session", "sync");
     toast(tf("msg.learning.imported", [store.session.mines.length]));
   }
   async function importLearning() {

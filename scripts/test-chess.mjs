@@ -3904,9 +3904,13 @@ for (const lang of CONTENT_LANGS) {
     "the game on the board remembers which record it is, by id");
   assert(/s\.games\.find\(\(g\) => g\.id === store\.game\.recordedId\)/.test(appSrc),
     "accuracy is filed by id, not by walking to the last PGN that matches");
-  // and the v1 stats file still opens
-  assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
-    "a v1 stats file is migrated rather than dropped");
+  // and the v1 stats file still opens — the unpacking moved to persist.js with
+  // the key's shape (v6-plan Q1.7), where a unit test below exercises it
+  {
+    const per = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
+    assert(/stats: \(v\) => \(v && \(v\.v === 2 \|\| v\.v === 1\)[^\n]*migrateStats\(v\)/.test(per),
+      "a v1 stats file is migrated rather than dropped");
+  }
 
   // --- three claims the copy was making that were not true ------------------
   {
@@ -4043,11 +4047,13 @@ for (const lang of CONTENT_LANGS) {
   // into the image. 缺陷 5. And nine fillText calls, no measureText, no
   // wrapping: over-long text left the canvas rather than ellipsizing. 缺陷 21.
   {
-    const at = appSrc.indexOf("function renderReportCanvas()");
-    const rep = appSrc.slice(at, appSrc.indexOf("\n  }\n", at));
+    // 6.0: the image moved to report.js with its palette and font stack
+    const repSrc = fs.readFileSync(path.join(root, "src/web/js/report.js"), "utf8");
+    const at = repSrc.indexOf("function render(d)");
+    const rep = repSrc.slice(at, repSrc.indexOf("\n  }\n", at));
     assert(/REPORT_INK/.test(rep) && !/pick\("--card"/.test(rep),
       "the export has its own opaque palette, not the theme's");
-    assert(/const REPORT_INK = \{[^}]*bg: "#/.test(appSrc), "…and it is a literal, on purpose");
+    assert(/const REPORT_INK = \{[^}]*bg: "#/.test(repSrc), "…and it is a literal, on purpose");
     assert(/rv\.turningPointPlain/.test(rep), "the turning point uses the plain key");
     assert(!/replace\(\/\\s\*——/.test(rep), "…and no regex trims the screen's tail off it");
     for (const lang of ["zh-CN", "en", "ja"]) {
@@ -4062,7 +4068,8 @@ for (const lang of CONTENT_LANGS) {
     // one font stack, and it is the app's
     const fonts = new Set([...rep.matchAll(/ctx\.font = "([^"]*)"/g)].map((m) => m[1]));
     assert(fonts.size === 0, "no font string is written in place (" + [...fonts].join(" | ") + ")");
-    assert(/const REPORT_FONT = /.test(appSrc), "…there is one stack for the image");
+    assert(/const REPORT_FONT = /.test(repSrc), "…there is one stack for the image");
+    assert(/ChessReport\.render\(\{/.test(appSrc), "…and app.js only hands it what it reads");
   }
 
   // --- the ending sound is decided by who won ------------------------------
@@ -5292,7 +5299,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 126;
+  const REGISTERED = 124;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }

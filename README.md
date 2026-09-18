@@ -198,6 +198,7 @@ src/web/
   js/puzzles-en.js # 题名英文(仅文案;FEN/解法/得分仍只来自 puzzles.js)
   js/openings-en.js# 开局名与开局思路英文(以中文名为键;ECO 与着法序列仍只来自 openings.js)
   js/review.js     # 对局回顾:准确率/失误分布/关键一步(纯函数,单测覆盖)
+  js/report.js     # 复盘报告导出图(调色板与字体栈随它;只读 app 递来的数据)
   js/srs.js        # 错题间隔重复:连续两次干净解出才毕业(纯函数,单测覆盖)
   js/material.js   # 子力差与已吃子清单(差值只看现局面,清单折算升变;纯函数,单测覆盖)
   js/opening-coach.js # 开局题走错时讲原因:比对谱着,由具体到抽象给出违背的原则(纯函数,单测覆盖)

@@ -297,7 +297,47 @@ export function createPersist(host, onWriteFailure) {
    * @returns {{value: any, state: "fresh"|"ok"|"corrupt"}}
    */
   let corrupt = [];
+  /**
+   * What each profile key is expected to hold. These used to be written inline
+   * at ten call sites in app.js (v6-plan Q1.7); a key's shape is a fact about
+   * the stored data, so it is kept here, next to the code that reads it, and
+   * `read(name)` without an `accept` uses it.
+   */
+  const ACCEPT = {
+    settings: (v) => (v && typeof v === "object" ? v : null),
+    save: (v) => (v && v.v === 1 && typeof v.pgn === "string" && v.pgn ? v : null),
+    learn: (v) => (v && v.v === 1 && v.done ? v : null),
+    mines: (v) => (v && v.v === 1 && Array.isArray(v.list) ? v : null),
+    progress: (v) => (v && typeof v === "object" ? v : null),
+    puzzles: (v) => (v && v.v === 1 && v.solved ? v : null),
+    stats: (v) => (v && (v.v === 2 || v.v === 1) && Array.isArray(v.games) ? migrateStats(v) : null),
+    achievements: (v) => (v && Array.isArray(v.seen) ? v : null),
+    slots: (v) => (v && Array.isArray(v.slots) ? v : null),
+  };
+  /**
+   * stats v1 → v2: split the overloaded `sig` into the three things it was.
+   * Reading it apart is safe — unlike an id remap, this derives nothing about
+   * *which* game a record is, it only unpacks what was already stored in it.
+   */
+  function migrateStats(s) {
+    if (s.v === 2) return s;
+    return {
+      v: 2,
+      games: s.games.map((g, i) => {
+        const sig = String(g.sig || "");
+        const m = /#([a-zA-Z]+)$/.exec(sig);
+        return Object.assign({}, g, {
+          id: g.id || ("v1-" + (g.t || 0).toString(36) + "-" + i.toString(36)),
+          pgn: g.pgn != null ? g.pgn : sig.replace(/#[a-zA-Z]+$/, ""),
+          ending: g.ending != null ? g.ending : (m ? m[1] : ""),
+          sig: undefined,
+        });
+      }),
+    };
+  }
   function read(name, accept) {
+    if (!accept) accept = ACCEPT[name];
+    if (typeof accept !== "function") throw new Error("read: no shape known for " + name);
     const raw = get(name);
     if (raw == null || raw === "") return { value: null, state: "fresh" };
     let parsed;
@@ -327,5 +367,5 @@ export function createPersist(host, onWriteFailure) {
   function corruptKeys() { return corrupt.slice(); }
 
   return { load, get, read, set, setJson, remove, clearAll, isBroken, wasEmpty, corruptKeys,
-    recover, flushMirror, exportAll, restoreAll, isProfileDoc, KEYS, SCHEMA };
+    recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, ACCEPT, KEYS, SCHEMA };
 }
