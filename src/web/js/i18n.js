@@ -63,7 +63,7 @@
       // first-run onboarding (ob.*)
       "ob.title": "先从哪里开始？",
       "ob.newLabel": "我是新手，从零开始学",
-      "ob.newSub": "72 课互动教程，从认棋盘到残局，每课一个任务",
+      "ob.newSub": "96 课互动教程，从认棋盘到中级战术与残局，每课一个任务",
       "ob.knowLabel": "我会下棋，直接开局",
       "ob.knowSub": "与 Stockfish 对弈，难度可随时在侧栏调整",
       "ob.later": "先看看棋盘", "ob.recommended": "推荐",
@@ -604,7 +604,7 @@
       // first-run onboarding (ob.*)
       "ob.title": "Where would you like to start?",
       "ob.newLabel": "I'm new — teach me from scratch",
-      "ob.newSub": "72 interactive lessons, from the board to the endgame, one task each",
+      "ob.newSub": "96 interactive lessons, from the board to intermediate tactics and endgames, one task each",
       "ob.knowLabel": "I can play — just start a game",
       "ob.knowSub": "Play Stockfish; the difficulty row in the side panel changes it any time",
       "ob.later": "Just show me the board", "ob.recommended": "Recommended",
@@ -1143,7 +1143,7 @@
       // first-run onboarding (ob.*)
       "ob.title": "どこから始めますか？",
       "ob.newLabel": "初めてです — 一から教えてほしい",
-      "ob.newSub": "72 のインタラクティブなレッスン。盤の見方から終盤まで、各課にひとつの課題",
+      "ob.newSub": "96 のインタラクティブなレッスン。盤の見方から中級の戦術と終盤まで、各課にひとつの課題",
       "ob.knowLabel": "指せます — すぐ対局したい",
       "ob.knowSub": "Stockfish と対局します。強さはサイドパネルでいつでも変更できます",
       "ob.later": "まず盤を見る", "ob.recommended": "おすすめ",

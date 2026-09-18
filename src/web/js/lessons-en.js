@@ -1084,4 +1084,354 @@
       ],
       tasks: [{ prompt: "The real thing: win the rook with queen and king, then mate (stalemate or more than 50 moves means starting over)" }],
     },
+    // —— Intermediate · Tactical combinations ——
+    "tc-zwischenzug": {
+      part: "Combinations", title: "Zwischenzug: check first, recapture later",
+      text: [
+        "Your opponent has just taken a piece and your instinct is to **take straight back**. Sometimes, though, you can slip in a move they *must* answer first — usually a check — before recapturing. That move is a **zwischenzug**, an in-between move.",
+        "Here the black bishop has just landed on f3, and your bishop on c4 is attacked by the b5-pawn. Recapture at once with gxf3 and Black replies bxc4, taking your bishop. Play Bxf7+ first: the bishop is lost anyway, so cash it in for a pawn **plus a check** — Black must deal with the king, and you take on f3 at leisure.",
+        "Rule of thumb: **after a capture, do not recapture on reflex — look for a check first**.",
+      ],
+      tasks: [{ prompt: "First find two things: which piece just captured, and which of yours is about to be lost", steps: [
+          "Click f3, where the black bishop landed — it just took your pawn, and you can recapture with gxf3 at any time",
+          "Click your bishop on c4 — it is attacked by the b5-pawn and will be lost next move",
+        ] },
+        { prompt: "Do not recapture on f3 yet — give check with the bishop you cannot save",
+          retry: "The c4-bishop is lost either way, so let it give check on the way out: Bxf7+" },
+      ],
+    },
+    "tc-smother": {
+      part: "Combinations", title: "Smothered mate in practice: corner the king, then shut the door",
+      text: [
+        "You met the shape of the smothered mate in the mating-pattern lessons. In a real game it rarely comes ready-made — usually you first **drive the king into the corner with checks**, then let the opponent's own pieces block the exits.",
+        "Here the black king already sits on h8, boxed in by the rook on g8 and the pawns on g7 and h7. That is exactly the shape a knight loves: one move, Nf7, and there is nowhere to go.",
+        "The signal to look for: **a king in the corner surrounded by its own men**. When you see it, look for a knight.",
+      ],
+      tasks: [{ prompt: "Find the three pieces that smother the black king in its corner", steps: [
+          "Click g8 — the black rook takes the king's only square along the rank",
+          "Click g7 and h7 — the two pawns seal the front",
+        ] },
+        { prompt: "Mate in one", retry: "From g5, which square lets the knight give check to h8?" },
+      ],
+    },
+    "tc-decoy": {
+      part: "Combinations", title: "Decoy plus fork: lure the king first",
+      text: [
+        "A fork only works if both targets stand a knight's move away. Target not there? **Invite it over**.",
+        "Here the black king is on g8, the queen on d8 and your knight on e5 — from f7 it would hit h8 and d8 at once. So first Rh8+! The king can only take the rook (f8 is covered by the a3-bishop), and once it stands on h8, Nxf7+ forks king and queen.",
+        "A rook for a queen and a pawn: that is a **decoy sacrifice** — the piece you give up delivers the enemy king to the forking square.",
+      ],
+      tasks: [{ prompt: "First find the forking square", steps: [
+          "Click f7 — a knight there attacks h8 and d8 at the same time",
+          "Click h8 — the black king is not there yet; you have to invite it",
+        ] },
+        { prompt: "Use the rook to drag the black king to h8",
+          retry: "Send the rook to h8 with check — the king has no choice but to take it" },
+      ],
+    },
+    "tc-clearance": {
+      part: "Combinations", title: "Clearance: your own piece is in your own way",
+      text: [
+        "Your rook is on d1, the enemy rook on d8, and between them stands **your own knight**. The job is not to trade rooks but to move the knight off the d-file **with check**.",
+        "Nf6+ or Ne7+: the knight leaves the file and gives check at the same time, so Black has to answer the check — there is no time to save the rook on d8. Next move, Rxd8.",
+        "The point of a clearance move: the move that steps aside **must carry a threat of its own**, or the opponent simply has time to react.",
+      ],
+      tasks: [{ prompt: "Find the piece in the way and the target it hides", steps: [
+          "Click the knight on d5 — it stands between your rook and theirs",
+          "Click the black rook on d8 — the moment the knight steps aside, it faces your rook",
+        ] },
+        { prompt: "Move the knight off the d-file with check", retry: "The knight has two checking squares — f6 or e7, either will do" },
+      ],
+    },
+    "tc-skewer": {
+      part: "Combinations", title: "Skewer in practice: king in front, queen behind",
+      text: [
+        "A skewer attacks the bigger piece in front, forces it to move and then takes what stood behind it. The strongest version has **the king in front**: the king must answer the check, and nobody is left to look after the piece behind.",
+        "The black king on e5 and the black queen on e8 stand on the same file. Put your rook on the e-file with check — the king steps away and the queen is yours.",
+        "How to find skewers: **check whether the enemy king and queen share a line**, then see whether one of your pieces can reach it.",
+      ],
+      tasks: [{ prompt: "Find the two targets on the same line", steps: [
+          "Click the black king on e5",
+          "Click the black queen on e8 — on the same e-file as the king",
+        ] },
+        { prompt: "Skewer king and queen with the rook", retry: "Rook to the e-file: Re1+" },
+      ],
+    },
+    "tc-interference": {
+      part: "Combinations", title: "Interference in practice: cut the defender's line of sight",
+      text: [
+        "The black queen on b7 guards g7 from a distance, and your queen is already on h6 — all that is missing is to **cut** the 7th rank.",
+        "Any move by the d5-knight is a discovered check (the c4-bishop looks at g8). Jump to e7 or c7 and the knight lands right between b7 and g7: the king can only retreat to h8, and Qxg7 is mate — the black queen is on the wrong side of the knight. Nf6+ works too: the knight supports h7 and Qxh7 is mate.",
+        "The essence of interference: **find the defender's line and put a piece on it**, ideally with check.",
+      ],
+      tasks: [{ prompt: "Find the defender and the square it guards", steps: [
+          "Click the black queen on b7 — it guards g7 along the 7th rank",
+          "Click g7 — you want to mate here; all you need is to block the queen's view",
+        ] },
+        { prompt: "Give a discovered check with the knight and cut the 7th rank at the same time",
+          retry: "A knight on the 7th rank (e7 or c7) blocks the black queen — or f6, supporting h7" },
+      ],
+    },
+    "tc-overload": {
+      part: "Combinations", title: "Overloading in practice: trade off one job, collect the other",
+      text: [
+        "The black queen on d7 guards both the rook on e8 and the knight on d5. **One piece cannot do two jobs**: trade it off at one post and it cannot cover the other.",
+        "Rxe8+ forces the queen to recapture — and the moment it stands on e8, the knight on d5 is unguarded: Qxd5.",
+        "Overloads are always solved in the same order: **of the two guarded targets, hit the one that comes with check first**, then collect the other.",
+      ],
+      tasks: [{ prompt: "Find the overloaded piece and the two things it guards", steps: [
+          "Click the black queen on d7 — one piece minding two posts",
+          "Click the two things it guards: the rook on e8 and the knight on d5",
+        ] },
+        { prompt: "Trade on e8 first, dragging the queen away from its post on d5",
+          retry: "Rxe8+ — the queen has to recapture, and d5 is left alone" },
+      ],
+    },
+    "tc-backrank": {
+      part: "Combinations", title: "Back rank plus promotion: the rook goes first",
+      text: [
+        "Your pawn has reached c7, and the promotion square c8 is watched by the black rook. Promote now and it is simply captured — but you have a rook.",
+        "Rd8+! The black rook must take (the king has no square), and then cxd8=Q+ — the pawn captures the rook and promotes, with check. A rook for a rook and a queen.",
+        "Before promoting, ask: **who guards the promotion square, and can a check swap that guard out first?**",
+      ],
+      tasks: [{ prompt: "Find the pawn about to promote and the guard in its way", steps: [
+          "Click the pawn on c7 — one step from promotion",
+          "Click the black rook on c8 — it guards the promotion square",
+        ] },
+        { prompt: "Give check with the rook and force the black rook off c8",
+          retry: "Rd8+ — the black rook takes, and your pawn takes back and promotes" },
+      ],
+    },
+    // —— Intermediate · Essential endgames ——
+    "eg-cutoff": {
+      part: "Essential endgames", title: "Cutting off: keep the king away from your pawn",
+      text: [
+        "The first lesson of rook endings is not pushing the pawn, it is **locking the enemy king out**. Lay the rook across a rank and the king can never cross it.",
+        "Here the black king is on e8. Once your rook reaches h7, the whole 7th rank is yours — the king is stuck on the back rank while your king and pawn walk up the board.",
+        "Remember: **cut off first, push later**. The further away the cut, the more helpless the king.",
+      ],
+      tasks: [{ prompt: "First see who has to be locked out", steps: [
+          "Click the black king on e8 — it wants to come and blockade your pawn",
+          "Click h7 — with the rook here, the 7th rank becomes a wall the black king cannot pass",
+        ] },
+        { prompt: "Cut off the 7th rank with the rook", retry: "Rook to h7" },
+      ],
+    },
+    "eg-qvp": {
+      part: "Essential endgames", title: "Queen against a 7th-rank pawn: check until the king blocks its own pawn",
+      text: [
+        "The enemy pawn is on the 7th rank. The queen wins it with a rhythm: **keep checking until the black king is forced to stand in front of its own pawn** (e1) — for that one move the pawn cannot advance, and your king steps closer.",
+        "Then repeat: check, force the king in front of the pawn, bring your king one step nearer — until your king arrives and the pawn falls.",
+        "Start now: any move that checks the king on d2 is a fine first step.",
+      ],
+      tasks: [{ prompt: "First look at the pawn and its promotion square", steps: [
+          "Click the black pawn on e2 — one step from promoting",
+          "Click e1 — you want to force the black king onto this square, blocking its own pawn",
+        ] },
+        { prompt: "Check with the queen and start driving the king",
+          retry: "From b8, which squares check the king on d2? b2, b4, d6 and f4 all work" },
+      ],
+    },
+    "eg-nvrp": {
+      part: "Essential endgames", title: "Knight against a rook's pawn: hiding in the corner holds",
+      text: [
+        "A lone knight against a lone rook's pawn — can the knight hold? It can, but it takes one odd-looking move.",
+        "The black king on b2 is about to chase the knight off b3 and promote on a1. Na1! The knight jumps into the promotion square: if the king takes it (Kxa1), your king plays Kc2 and Black has **no legal move** — stalemate. If the king does not take, the knight simply stays put.",
+        "In the endgame, stop thinking only about saving pieces — **a piece that turns the position into stalemate is worth more than a piece that survives**.",
+      ],
+      tasks: [{ prompt: "First see where the pawn is going", steps: [
+          "Click a1 — the pawn's promotion square, and the square your knight is heading for",
+          "Click the knight on b3 — the black king is about to chase it away",
+        ] },
+        { prompt: "The only move that holds the draw",
+          retry: "Jump the knight into a1 — being captured does not matter, that is stalemate" },
+      ],
+    },
+    "eg-rook7": {
+      part: "Essential endgames", title: "Rook on the 7th: win pawns, trap the king",
+      text: [
+        "One of the best squares for a rook in the endgame is **the enemy's 7th rank**: that is usually where a row of unmoved pawns sits, and the enemy king is pinned to the back rank.",
+        "After Rd7 the b7-pawn is within reach and the black king is shut in on the 8th rank. To defend, Black has to pull a rook back into a passive guard post.",
+        "When you see an open file, ask first: **can I go down it to the 7th rank?**",
+      ],
+      tasks: [{ prompt: "First look at what sits on the 7th rank", steps: [
+          "Click b7 — the first target once the rook reaches the 7th rank",
+          "Click d7 — the rook's destination",
+        ] },
+        { prompt: "Put the rook on the 7th rank", retry: "Down the open d-file to d7" },
+      ],
+    },
+    "eg-kingact": {
+      part: "Essential endgames", title: "The king comes out: in the endgame it is a fighting piece",
+      text: [
+        "In the middlegame the king hides; in the endgame it **marches to the front**. With the queens and rooks gone, the king is the strongest attacking unit on the board.",
+        "In this pawn ending both sides have the same pawns, and the winner is **whoever gets the king to the centre first**. The first step is to bring the king out of g1, heading for e3 and d4.",
+        "Rule of thumb: **once the heavy pieces are traded, the king walks to the middle**.",
+      ],
+      tasks: [{ prompt: "See the starting point and the destination", steps: [
+          "Click the white king on g1 — still hiding in the corner",
+          "Click d4 — the central square the king is heading for, within reach of both wings",
+        ] },
+        { prompt: "Take the king's first step towards the centre", retry: "Kf2 is the most direct (Kf1 counts too)" },
+      ],
+    },
+    "eg-bvn": {
+      part: "Essential endgames", title: "Bishop against knight: the bishop can trap a knight from far away",
+      text: [
+        "On an open board with pawns on both wings, **the bishop is stronger than the knight**: one bishop move covers a whole long diagonal, while the knight needs several moves to switch wings.",
+        "Better still, a bishop can **trap** a knight. The black knight on h8 has only two exits, g6 and f7 — and they lie on the same diagonal. One move, Bh5, seals both. Then your king walks over and picks it up.",
+        "When an enemy knight sits on the rim, count its exits, then check **whether one bishop can watch all of them at once**.",
+      ],
+      tasks: [{ prompt: "First count the knight's exits", steps: [
+          "Click the black knight on h8",
+          "Click its only two exits, g6 and f7 — note that they share a diagonal",
+        ] },
+        { prompt: "Seal both exits with one bishop move", retry: "Which square looks at both g6 and f7? h5" },
+      ],
+    },
+    "eg-rvminor": {
+      part: "Essential endgames", title: "Rook against knight: the further from its king, the more danger",
+      text: [
+        "Rook against knight is normally a draw — **as long as the knight stays beside its own king**. Once it is driven into a far corner, rook and king together can trap it.",
+        "The black knight on a1 has only two exits, b3 and c2. Rb2! The rook covers b3 down the b-file and c2 along the 2nd rank — the knight cannot move at all and falls next move.",
+        "Defending with a knight: **never let it stray from the king**. Attacking with a rook: **trap first, capture second**.",
+      ],
+      tasks: [{ prompt: "First count the knight's exits", steps: [
+          "Click the black knight on a1 — far too far from its own king",
+          "Click its two exits, b3 and c2",
+        ] },
+        { prompt: "Seal both exits with one rook move",
+          retry: "Which square covers both b3 and c2? b2 — b3 down the file, c2 along the rank" },
+      ],
+    },
+    "eg-queen": {
+      part: "Essential endgames", title: "Queen endings: check, and pick up a pawn on the way",
+      text: [
+        "The most practical technique in queen endings is **the check that wins a pawn**: give check, and as the king steps aside the queen takes an unguarded pawn on the way. The opponent never gets a move of their own.",
+        "Black's pawns on a7 and h7 are both unguarded. Qh5+ or Qa4+ — the king steps away, and next move a pawn falls.",
+        "Finding moves in queen endings: **look for a check first, then see what the queen can collect afterwards**.",
+      ],
+      tasks: [{ prompt: "Find the unguarded pawns", steps: [
+          "Click the black pawn on h7",
+          "Click the black pawn on a7 — neither is defended",
+        ] },
+        { prompt: "Give check, and have the queen eye a pawn at the same time",
+          retry: "Qh5+ eyes h7, Qa4+ eyes a7 — either will do" },
+      ],
+    },
+    // —— Intermediate · Pawn structure and plans ——
+    "ps-iqp": {
+      part: "Pawn structures", title: "The isolated pawn: break through or be besieged",
+      text: [
+        "The d4-pawn has no friendly pawn on either neighbouring file — it is **isolated**. It cannot be defended by a pawn, but in exchange it buys space and active pieces.",
+        "The side with the isolated pawn has exactly one plan: **break through before it is blockaded**. d4–d5! Open files and diagonals and let every piece come alive.",
+        "The other side's plan is the opposite: occupy d5 firmly (a knight in front of the pawn), then besiege it slowly.",
+      ],
+      tasks: [{ prompt: "First identify the isolated pawn and its breakthrough square", steps: [
+          "Click d4 — no friendly pawn on either side: this is the isolated pawn",
+          "Click d5 — its breakthrough square; a black knight here would blockade the pawn for good",
+        ] },
+        { prompt: "Break through while d5 is still free", retry: "Push the pawn: d5" },
+      ],
+    },
+    "ps-hanging": {
+      part: "Pawn structures", title: "Hanging pawns: c4 and d4 side by side",
+      text: [
+        "The pawns on c4 and d4 stand side by side with no friendly pawns on either flank — these are **hanging pawns**. Together they control a whole row of squares, b5, c5, d5 and e5, and they are strong.",
+        "Their weakness is **being forced to move**: the moment one advances, holes appear. So the active side picks the moment and advances before the opponent's pressure builds: d5! and the position opens.",
+        "Facing hanging pawns, pile pieces on them and force them to move; owning them, **advance while your pieces are active**.",
+      ],
+      tasks: [{ prompt: "First identify the hanging pawns", steps: [
+          "Click the two pawns standing side by side: c4 and d4",
+          "Click d5 — the breakthrough square",
+        ] },
+        { prompt: "Your pieces are active — advance now", retry: "d5 — opening the b2-bishop and the e-file" },
+      ],
+    },
+    "ps-doubled": {
+      part: "Pawn structures", title: "Doubled pawns: two pawns, one job",
+      text: [
+        "The pawns on c6 and c7 stand on the same file — **doubled pawns**. The front one blocks the back one, and the back one cannot defend the front — two pawns doing the work of one, and the rear pawn (c7) can never be protected by a pawn.",
+        "Black is a pawn up, but your rook can run down the d-file to the 7th rank: Rd7 lands right on top of c7.",
+        "When counting pawns, **discount the doubled and the isolated ones**.",
+      ],
+      tasks: [{ prompt: "First identify the doubled pawns", steps: [
+          "Click the two stacked black pawns, c6 and c7",
+          "Click d7 — from here the rook leans on the rear pawn",
+        ] },
+        { prompt: "Rook to the 7th rank, eyeing c7", retry: "Rd7" },
+      ],
+    },
+    "ps-minority": {
+      part: "Pawn structures", title: "The minority attack: two pawns against three",
+      text: [
+        "On the queenside you have only the a- and b-pawns, while Black has a, b and c — and yet it is you who attacks. This is the **minority attack**. The aim is not to win a pawn but to **create a weakness**.",
+        "Push b4–b5! After the exchange Black is left with either an isolated pawn on c6 or a backward one — and your rook and knight have work for the whole middlegame.",
+        "This plan comes up in almost every game with the Carlsbad structure; it is worth memorising.",
+      ],
+      tasks: [{ prompt: "First identify the attacking pawn and its target", steps: [
+          "Click b4 — the spearhead of the minority",
+          "Click c6 — after the exchange it becomes isolated or backward",
+        ] },
+        { prompt: "Launch the minority attack", retry: "b5 — make c6 declare itself" },
+      ],
+    },
+    "ps-chain": {
+      part: "Pawn structures", title: "The pawn chain: attack its base",
+      text: [
+        "Black's pawns on e5 and d6 form a diagonal **pawn chain**: e5 is held by d6, d6 by c7. The strongest point of the chain is its head (e5); the weakest is its **base**.",
+        "So do not bang your head against the head — lever the base: c4–c5 attacks d6. Once d6 gives, the whole chain sags.",
+        "Planning against a pawn chain comes down to one question: **which pawn is the base, and which of my pawns can touch it?**",
+      ],
+      tasks: [{ prompt: "First identify the chain and its base", steps: [
+          "Click the head of the chain, e5 — leave it alone",
+          "Click the base, d6 — this is what you lever",
+        ] },
+        { prompt: "Lever the base with a pawn (c5 straight away, or b4 to prepare it)",
+          retry: "c5 hits d6 — or b4 to prepare it" },
+      ],
+    },
+    "ps-bishops": {
+      part: "Pawn structures", title: "Good bishop, bad bishop: trade off their good one",
+      text: [
+        "Bishops move diagonally, so **a bishop on the same colour as its own pawns is a bad bishop** — blocked by its own men. Black's bishop on c8 sits behind the light-squared pawns on d5 and e6 and can barely move.",
+        "The bishop on e7 is Black's **good bishop**: it runs on the dark squares and points at your d4 and e5. Your bishop on g5 happens to be a dark-squared bishop too — Bxe7 trades it off, leaving Black with only the bad bishop walled in by its own pawns.",
+        "The exchange principle: **trade off their good piece, leave them the bad one**.",
+      ],
+      tasks: [{ prompt: "First tell the good bishop from the bad one", steps: [
+          "Click c8 — Black's bad bishop, shut in by the pawns on d5 and e6",
+          "Click e7 — Black's good bishop, the one you want to exchange",
+        ] },
+        { prompt: "Trade off Black's good bishop", retry: "Bxe7" },
+      ],
+    },
+    "ps-space": {
+      part: "Pawn structures", title: "A space advantage: do not rush to exchange",
+      text: [
+        "The pawns on c4 and e4 clamp down on d5, and Black's pieces are squeezed into the back three ranks — that is a **space advantage** (this structure is called the Maróczy bind).",
+        "What the side with more space fears most is **exchanges**: the fewer pieces, the less cramped the opponent feels. So Nxc6 works against you; the right idea is to retreat the knight to c2 or b3, or to shore up e4 with f3, and keep the bind.",
+        "With more space, remember: **keep the pieces on and squeeze slowly**.",
+      ],
+      tasks: [{ prompt: "First identify the bind", steps: [
+          "Click c4 and e4 — the two pawns together seal d5",
+          "Click d5 — the freeing push Black wants most, and cannot make",
+        ] },
+        { prompt: "Keep the bind: do not trade the knight — retreat it or reinforce the centre",
+          retry: "Nc2 or Nb3 to retreat, or f3 to support e4 — not Nxc6" },
+      ],
+    },
+    "ps-break": {
+      part: "Pawn structures", title: "The pawn break: knock away the opponent's strongpoint",
+      text: [
+        "Black's pawn on e5 is the **strongpoint** of the whole position: the d6-bishop stands on it, and the centre leans on it.",
+        "You cannot take it (fxe5 only lets the d6-bishop recapture and come alive), but you can **strike beside it**: f4–f5! shuts in Black's bishop and queen and turns e5 into a lonely target.",
+        "A pawn break is not always about winning a pawn — often it is about **changing the picture**: swapping into a pawn structure that suits you.",
+      ],
+      tasks: [{ prompt: "First identify the opponent's strongpoint", steps: [
+          "Click e5 — the strongpoint of Black's position",
+          "Click f5 — where your pawn is going",
+        ] },
+        { prompt: "Strike beside it: push the f-pawn", retry: "f5 — do not take e5, leave it stranded" },
+      ],
+    },
   };

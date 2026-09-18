@@ -1139,7 +1139,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   assert(st.width >= 340, "the reading column is wider than the playing one (" + st.width + "px)");
   assert(st.indexFolded, "the table of contents is folded away by default");
   assert(st.indexItemsVisible === 0,
-    "…so 72 lessons are not stacked under the one you are reading (" + st.indexItemsVisible + ")");
+    "…so 96 lessons are not stacked under the one you are reading (" + st.indexItemsVisible + ")");
   assert(st.taskOwnSurface, "the task sits on its own surface, apart from the prose");
   await ctx.close();
 }
