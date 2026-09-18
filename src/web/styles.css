@@ -2320,6 +2320,16 @@
   max-height: 52vh; overflow-y: auto;
 }
 .key-list dt { display: flex; gap: 4px; flex-wrap: wrap; }
+/* 6.0: the About sheet reuses the shortcut sheet's two-column list; its
+   values are paths and licence lines, which must be allowed to wrap */
+.about-list dd { margin: 0; overflow-wrap: anywhere; font-size: 12px; line-height: var(--lh-body); }
+.about-list dt { font-size: 12px; color: var(--muted); }
+.link-btn {
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  color: var(--primary-from); text-decoration: underline; font: inherit;
+}
+/* 6.0: the volume slider — one control, the theme's accent, no third look */
+.range { width: 120px; accent-color: var(--primary-from); }
 .key-list dd { margin: 0; font-size: 13px; color: var(--muted); }
 kbd {
   display: inline-block;

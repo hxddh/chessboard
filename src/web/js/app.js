@@ -296,6 +296,12 @@ import { createStore } from "./store.js";
     },
     ui: {
       soundOn: true,
+      /** 6.0 (v6-plan Q2.8 / Q2.6): the level, the frame labels, the men, the engine knobs */
+      volume: 100,
+      coordsOn: true,
+      blindfold: false,
+      hash: 32,
+      multipv: 1,
       /** @type {'wood'|'night'|'day'|'notebook'} */
       themeId: "wood",
       /** pvp: flip the board to face the side to move after every move */
@@ -834,6 +840,7 @@ import { createStore } from "./store.js";
         selected: null, legalTargets: [],
         lastMove: p.last, checkSquare: p.check, mated: false,
         hintMove: null, stars: [], cursor: null, drag: null,
+        coords: store.ui.coordsOn, blind: store.ui.blindfold,
       };
     }
     const g = viewGame();
@@ -860,6 +867,8 @@ import { createStore } from "./store.js";
       cursor: cursorSquare(),
       // the drag is part of the picture, not a thing pushed in beforehand
       drag: store.ui.dragging,
+      coords: store.ui.coordsOn,
+      blind: store.ui.blindfold,
     };
   });
 
@@ -1130,6 +1139,11 @@ import { createStore } from "./store.js";
       const s = Persist.read("settings", (v) => (v && typeof v === "object" ? v : null)).value;
       if (!s) return;
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
+      if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
+      if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
+      if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
+      if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
+      if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
@@ -1149,7 +1163,8 @@ import { createStore } from "./store.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId }));
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv }));
     } catch (_) {}
   }
   function saveGame() {
@@ -5458,6 +5473,20 @@ import { createStore } from "./store.js";
       sb.classList.toggle("active", store.ui.soundOn);
       sb.setAttribute("aria-pressed", store.ui.soundOn ? "true" : "false");
     }
+    const sw = (id, on) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      b.classList.toggle("active", !!on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    };
+    sw("opt-coords", store.ui.coordsOn);
+    sw("opt-blind", store.ui.blindfold);
+    const vol = document.getElementById("opt-volume");
+    if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
+    const rowVol = document.getElementById("row-volume");
+    if (rowVol) rowVol.hidden = !store.ui.soundOn;
+    document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
+    document.querySelectorAll("#multipv-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.multipv) === store.ui.multipv));
     document.querySelectorAll("#mode-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.mode === store.session.mode);
     });
@@ -7075,6 +7104,7 @@ import { createStore } from "./store.js";
     if (!I18n) return;
     I18n.apply(document);
     document.documentElement.setAttribute("lang", store.ui.langId);
+    document.title = t("app.title");
     const seg = document.getElementById("lang-seg");
     if (seg) {
       seg.replaceChildren();
@@ -8137,6 +8167,11 @@ import { createStore } from "./store.js";
       store.ui.langId = I18n.setLang(b.dataset.lang);
       saveSettings();
       applyLanguage();
+      // the native menu is built at launch from a per-language table; the
+      // shell records the choice and applies it on the next start (Q1.6)
+      Host.setMenuLanguage(store.ui.langId.split("-")[0]).then((r) => {
+        if (r && r.restartRequired) toast(t("msg.menuLang.restart"));
+      }).catch(() => {});
     };
   }
   document.getElementById("opt-coach").onclick = () => {
@@ -8158,6 +8193,48 @@ import { createStore } from "./store.js";
     syncSettingsUI();
     if (store.ui.soundOn) Audio2.playMove("w");
     toast(store.ui.soundOn ? t("msg.sound.on") : t("msg.sound.off"));
+  };
+  // 6.0 (v6-plan Q2.8): volume, coordinates, blindfold
+  Audio2.setVolume(store.ui.volume / 100);
+  const volEl = document.getElementById("opt-volume");
+  if (volEl) {
+    volEl.oninput = () => {
+      store.ui.volume = Math.max(0, Math.min(100, Number(volEl.value) || 0));
+      Audio2.setVolume(store.ui.volume / 100);
+    };
+    // one save and one sample per release of the slider, not one per pixel
+    volEl.onchange = () => { saveSettings(); if (store.ui.soundOn) Audio2.playMove("w"); };
+  }
+  document.getElementById("opt-coords").onclick = () => {
+    store.ui.coordsOn = !store.ui.coordsOn;
+    saveSettings();
+    syncSettingsUI();
+    draw();
+  };
+  document.getElementById("opt-blind").onclick = () => {
+    store.ui.blindfold = !store.ui.blindfold;
+    saveSettings();
+    syncSettingsUI();
+    draw();
+    toast(store.ui.blindfold ? t("msg.blind.on") : t("msg.blind.off"));
+  };
+  // 6.0 (v6-plan Q2.6): the engine knobs
+  if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash });
+  document.getElementById("hash-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-hash]");
+    if (!b) return;
+    store.ui.hash = Number(b.dataset.hash);
+    if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash });
+    saveSettings();
+    syncSettingsUI();
+  };
+  document.getElementById("multipv-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-multipv]");
+    if (!b) return;
+    store.ui.multipv = Number(b.dataset.multipv);
+    saveSettings();
+    syncSettingsUI();
+    setAnalyzeUI();
   };
   // --- learning data: out as one file, back in as a merge (learning.js) ---
   const Learning = ChessLearning;
@@ -8227,6 +8304,115 @@ import { createStore } from "./store.js";
   document.getElementById("learning-export").onclick = () => { exportLearning(); };
   document.getElementById("learning-import").onclick = () => { importLearning(); };
 
+  // --- 6.0: the whole profile, out and back in (v6-plan Q1.1) --------------
+  // The learning export is a merge of the things nobody can download again.
+  // This is a copy of everything — the current game, the slots, the settings,
+  // the record — for moving to another machine or for keeping. Import is a
+  // replacement, and says so before the picker opens.
+  function allDataFileName() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return "chessboard-all-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
+  }
+  async function exportAllData() {
+    saveGame();
+    saveSettings();
+    await exportText(allDataFileName(), JSON.stringify(Persist.exportAll(), null, 2), "application/json", t("dlg.exportAll"));
+  }
+  async function importAllDataText(text) {
+    let doc = null;
+    try { doc = JSON.parse(text); } catch (_) { doc = null; }
+    if (!Persist.isProfileDoc(doc)) { toast(t("msg.allData.badFile"), "fix"); return; }
+    Persist.restoreAll(doc);
+    await Persist.flushMirror();
+    toast(t("msg.allData.imported"));
+    // every module holds a copy of what it read at startup; a reload is the
+    // one way to make all of them read the new profile
+    setTimeout(() => location.reload(), 900);
+  }
+  async function importAllData() {
+    if (!(await confirmNative(t("dlg.importAll"), t("act.allImport"),
+      { ok: t("act.allImport"), cancel: t("act.cancel"), danger: true }))) return;
+    if (Host.hasZero()) {
+      try {
+        const picked = await Host.openFileDialog({ title: t("dlg.importAll") });
+        const paths = Host.normalizePaths(picked);
+        if (!paths.length) return;
+        const text = await Host.readTextFile(paths[0]);
+        await importAllDataText(text);
+        return;
+      } catch (err) {
+        if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
+      }
+    }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => importAllDataText(String(reader.result || ""));
+      reader.readAsText(f);
+    };
+    input.click();
+  }
+  document.getElementById("alldata-export").onclick = () => { exportAllData(); };
+  document.getElementById("alldata-import").onclick = () => { importAllData(); };
+
+  // --- 6.0: about (v6-plan Q1.6) ---------------------------------------------
+  /** The version the bundle was built from; empty when run unbundled. */
+  const APP_VERSION = typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "";
+  const aboutModal = document.getElementById("about-modal");
+  /**
+   * A link the shell will not follow: app.zon denies external navigation on
+   * purpose (a chess app has no business opening the browser on its own), so
+   * the URL goes to the clipboard and the toast says so.
+   */
+  function offerLink(url) { copyText(url, t("msg.link.copied")); }
+  async function openAbout() {
+    if (!aboutModal) return;
+    document.getElementById("about-version").textContent = APP_VERSION || "—";
+    document.getElementById("about-license").textContent = t("about.licenseText");
+    document.getElementById("about-credits").textContent = t("about.creditsText");
+    document.getElementById("about-update").textContent = "";
+    const dataEl = document.getElementById("about-data");
+    dataEl.textContent = t("about.dataUnknown");
+    Dlg.open(aboutModal, document.getElementById("about-close"));
+    try {
+      const p = await Host.appdataPath();
+      if (p) dataEl.textContent = p;
+    } catch (_) { /* the default line already says there is no file */ }
+  }
+  /** "v6.0.0" vs "6.0.1": numeric, segment by segment. */
+  function newerVersion(tag, mine) {
+    const num = (v) => String(v || "").replace(/^v/, "").split(".").map((x) => parseInt(x, 10) || 0);
+    const a = num(tag), b = num(mine);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    }
+    return false;
+  }
+  async function checkUpdate() {
+    const out = document.getElementById("about-update");
+    if (!out) return;
+    out.textContent = "…";
+    let r = null;
+    try { r = await Host.checkUpdate(); } catch (_) { r = null; }
+    if (!r || r.error || !r.tag) { out.textContent = t("msg.update.failed"); return; }
+    if (newerVersion(r.tag, APP_VERSION)) {
+      out.textContent = tf("msg.update.available", [r.tag]);
+      offerLink(r.url || "https://github.com/hxddh/chessboard/releases/latest");
+    } else out.textContent = t("msg.update.latest");
+  }
+  if (aboutModal) {
+    document.getElementById("about-open").onclick = () => { if (!dialogOpen()) openAbout(); };
+    document.getElementById("about-close").onclick = () => Dlg.close(aboutModal);
+    document.getElementById("about-check").onclick = () => { checkUpdate(); };
+    document.getElementById("about-source").onclick = (ev) => offerLink(ev.currentTarget.dataset.url);
+    aboutModal.onclick = (ev) => { if (ev.target === aboutModal) Dlg.close(aboutModal); };
+  }
+
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
       { ok: t("dlg.clear"), cancel: t("act.cancel"), danger: true }))) return;
@@ -8234,6 +8420,8 @@ import { createStore } from "./store.js";
     // this button used to remove and not the eight somebody had to remember.
     // 缺陷 33.
     Persist.clearAll();
+    // …and the native mirror file, now, not on the next autosave (v6-plan Q1.1)
+    Persist.flushMirror();
     // the Dock / jump list is local data too: clearing the save and leaving a
     // list of this player's PGNs sitting in the system menu is not "cleared"
     Host.clearRecentDocuments();
@@ -8570,6 +8758,7 @@ import { createStore } from "./store.js";
     Dlg.register(confirmModal, () => finishConfirm(false));
     Dlg.register(keysModal, closeKeyHelp);
     Dlg.register(noteModal, closeNoteModal);
+    Dlg.register(aboutModal, () => Dlg.close(aboutModal));
   }
   wireDialogs();
 
@@ -8625,6 +8814,15 @@ import { createStore } from "./store.js";
   // was nothing to say. A record that failed to parse is reported once, here,
   // instead of passing for a fresh install (v6-plan D2).
   if (Persist.corruptKeys().length) showCorruptFault(Persist.corruptKeys());
+  // 6.0 (v6-plan Q1.1): the native file knows more than the cache when the
+  // cache is empty or older — then the file wins and the page starts again on
+  // it. This is the one moment an async read may change what the app stands
+  // on, and it announces itself.
+  Persist.recover().then((r) => {
+    if (r !== "restored") return;
+    toast(t("msg.profile.restored"), "fault");
+    setTimeout(() => location.reload(), 1200);
+  }).catch(() => {});
   if (store.session.mode === "ai" && ChessEngine) {
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)

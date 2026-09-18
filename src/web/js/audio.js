@@ -53,12 +53,26 @@
     comp.attack.value = 0.004;
     comp.release.value = 0.12;
     const g = ctx.createGain();
-    g.gain.value = 0.9;
+    g.gain.value = 0.9 * volume;
     comp.connect(g);
     g.connect(ctx.destination);   // the only node that touches the output
     master = comp;
+    masterGain = g;
     return master;
   }
+
+  /**
+   * 6.0: one volume for everything (v6-plan Q2.8). The compressor above keeps
+   * the peaks in line; this is the player's own level under it, 0–1, applied
+   * to the single node every voice runs through.
+   */
+  let masterGain = null;
+  let volume = 1;
+  function setVolume(v) {
+    volume = Math.max(0, Math.min(1, Number(v) || 0));
+    if (masterGain) masterGain.gain.value = 0.9 * volume;
+  }
+  function getVolume() { return volume; }
 
   /**
    * A small deterministic wobble, so repeated moves are not identical.
@@ -352,4 +366,4 @@
   }
 
   export const ChessAudio = { init, playMove, playWin, playLoss, playStar, playDraw,
-    playRefused, playLift, playCastle, playPromote };
+    playRefused, playLift, playCastle, playPromote, setVolume, getVolume };

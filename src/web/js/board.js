@@ -357,12 +357,16 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
    * animation frame during a move.
    */
   let coordFlip = null;
-  function drawCoords(flipped) {
-    if (coordFlip === !!flipped) return;
-    coordFlip = !!flipped;
+  function drawCoords(flipped, on) {
+    // 6.0: the gutters can be emptied (v6-plan Q2.8) — `null` marks "nothing
+    // drawn" so switching back on repaints for the current orientation
+    const key = on === false ? "off" : !!flipped;
+    if (coordFlip === key) return;
+    coordFlip = key;
     const files = typeof document !== "undefined" && document.getElementById("coord-files");
     const ranks = typeof document !== "undefined" && document.getElementById("coord-ranks");
     if (!files || !ranks) return;
+    if (on === false) { files.replaceChildren(); ranks.replaceChildren(); return; }
     const fs = FILES.split("");
     const rs = ["8", "7", "6", "5", "4", "3", "2", "1"];
     const span = (t) => {
@@ -430,7 +434,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     // Coordinates are no longer painted here: they are printed on the frame
     // around the board (see .coords in styles.css), which is where a real
     // board has them and where they cannot sit on top of the a1/h1 rooks.
-    drawCoords(m.flipped);
+    drawCoords(m.flipped, m.coords !== false);
     // pieces: crisp vector sprites, Unicode glyphs only while sprites decode
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -458,6 +462,9 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     }
 
     function paintPiece(piece, x, y, scale) {
+      // 6.0 blindfold (v6-plan Q2.8): the marks, the cursor and the drag still
+      // draw — only the men are withheld, which is the whole exercise
+      if (m.blind) return;
       const k = scale || 1;
       // Rastered at the size it is drawn at. Until 2.0 the lifted piece was
       // the board sprite scaled up 12% at draw time, which made the one piece

@@ -290,6 +290,50 @@
               <span class="switch-knob"></span>
             </button>
           </div>
+          <!-- 6.0 (v6-plan Q2.8): the level under the switch, the coordinates
+               on the frame, and the board with its men withheld. -->
+          <div class="setting-row" id="row-volume">
+            <span class="setting-k" data-i18n="side.volume">音量</span>
+            <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
+          </div>
+          <div class="setting-row">
+            <span class="setting-k" data-i18n="side.coords">坐标</span>
+            <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘边框上标出 a–h 与 1–8" data-i18n-title="tip.coords">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-k" data-i18n="side.blindfold">盲棋</span>
+            <button type="button" class="switch" id="opt-blind" aria-pressed="false" title="不画棋子，只画标记 —— 靠记忆下" data-i18n-title="tip.blindfold">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6.0 (v6-plan Q2.6): the two engine knobs a player may reasonably
+           turn on a single-threaded lite build. -->
+      <section class="side-section" id="sec-engine">
+        <h2 class="side-h" data-i18n="side.engine">引擎</h2>
+        <div class="setting-list">
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.hash">置换表</span>
+            <div class="theme-row" id="hash-seg" role="group" aria-label="置换表" data-i18n-aria="side.hash" title="引擎的置换表大小（MB）" data-i18n-title="tip.hash">
+              <button type="button" data-hash="16">16</button>
+              <button type="button" data-hash="32" class="active">32</button>
+              <button type="button" data-hash="64">64</button>
+              <button type="button" data-hash="128">128</button>
+            </div>
+          </div>
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.multipv">分析线数</span>
+            <div class="theme-row" id="multipv-seg" role="group" aria-label="分析线数" data-i18n-aria="side.multipv" title="复盘与持续分析同时给出几条变化" data-i18n-title="tip.multipv">
+              <button type="button" data-multipv="1" class="active">1</button>
+              <button type="button" data-multipv="2">2</button>
+              <button type="button" data-multipv="3">3</button>
+              <button type="button" data-multipv="5">5</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -317,6 +361,17 @@
         <div class="link-row">
           <button type="button" class="act-btn" id="learning-export" data-i18n="act.learningExport" title="把错题本、复习队列、课程进度和战绩存成一个文件" data-i18n-title="tip.learning.export">导出</button>
           <button type="button" class="act-btn" id="learning-import" data-i18n="act.learningImport" title="从导出的文件合并回来，不会覆盖本机已有的进度" data-i18n-title="tip.learning.import">导入</button>
+        </div>
+      </section>
+      <!-- 6.0 (v6-plan Q1.1): the whole profile — every key, including the
+           current game, the slots, the settings and the record — as one file.
+           The learning export above is a merge; this one is a copy. -->
+      <section class="side-section" id="sec-alldata">
+        <h2 class="side-h" data-i18n="side.allData">全部数据</h2>
+        <div class="link-row">
+          <button type="button" class="act-btn" id="alldata-export" data-i18n="act.allExport" title="把本机全部数据（对局、存档槽、设置、战绩、学习数据）存成一个文件" data-i18n-title="tip.allData.export">导出</button>
+          <button type="button" class="act-btn" id="alldata-import" data-i18n="act.allImport" title="用导出的文件整个替换本机数据" data-i18n-title="tip.allData.import">导入</button>
+          <button type="button" class="act-btn" id="about-open" data-i18n="act.about" title="版本、许可与致谢" data-i18n-title="tip.about">关于</button>
         </div>
       </section>
       <section class="side-section">
@@ -735,6 +790,27 @@
     <!-- Every action in this app has lived on a bare letter key since 1.0 and
          nothing anywhere named one. 1.9 made it worse by moving the panel off
          Tab onto P without telling anyone. This is the list. -->
+    <!-- 6.0 (v6-plan Q1.6): what this is, what it is made of, where the data
+         lives, and whether there is a newer one. GPLv3 §5(d) wants the notice
+         reachable from the program itself, not only from the repository. -->
+    <div class="modal-bg" id="about-modal" role="dialog" aria-labelledby="about-title">
+      <div class="modal">
+        <h3 id="about-title" data-i18n="about.title">关于</h3>
+        <dl class="key-list about-list">
+          <dt data-i18n="about.version">版本</dt><dd class="num" id="about-version"></dd>
+          <dt data-i18n="about.license">许可</dt><dd id="about-license"></dd>
+          <dt data-i18n="about.source">源码</dt><dd><button type="button" class="link-btn" id="about-source" data-url="https://github.com/hxddh/chessboard">github.com/hxddh/chessboard</button></dd>
+          <dt data-i18n="about.credits">致谢</dt><dd id="about-credits"></dd>
+          <dt data-i18n="about.dataPath">数据位置</dt><dd class="num" id="about-data"></dd>
+        </dl>
+        <p class="hint" id="about-update" role="status"></p>
+        <div class="close-row">
+          <button type="button" class="tool-btn" id="about-check" data-i18n="act.checkUpdate">检查更新</button>
+          <button type="button" class="tool-btn" id="about-close" data-i18n="act.close">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-bg" id="keys-modal" role="dialog" aria-labelledby="keys-modal-title">
       <div class="modal">
         <h3 id="keys-modal-title" data-i18n="keys.title">快捷键</h3>
