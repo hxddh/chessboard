@@ -8,6 +8,7 @@ import { ChessEco } from "./eco-lookup.js";
 import { ChessEditor } from "./editor.js";
 import { ChessEngine } from "./engine.js";
 import { ChessFide } from "./fide.js";
+import { ChessTree } from "./game-tree.js";
 import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
 import { CHESS_LESSONS_EN } from "./lessons-en.js";
@@ -26,6 +27,7 @@ import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 import { ChessPersona } from "./persona.js";
 import { ChessPgn } from "./pgn.js";
+import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
 import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
@@ -194,6 +196,21 @@ import { createStore } from "./store.js";
     game: {
       /** Replay cursor: 0..sanHistory().length; live when === length. */
       viewIndex: 0,
+      /**
+       * The game as a tree (game-tree.js) and the line `game` is standing on
+       * (v6-plan Q2.1). `line` is node ids root → leaf, so `line[viewIndex]`
+       * is the node under the cursor and `line.length === sanHistory().length
+       * + 1` always; the five doors below keep both in step with chess.js.
+       */
+      tree: ChessTree.createTree(),
+      line: [0],
+      /** the doors keep the tree in step — off while switchLine() replays a
+          path the tree already holds; `_batch` > 0 holds their commits */
+      _treeSync: true,
+      _batch: 0,
+      /** the game came in from a file, the clipboard or the history — the
+          engine is not playing it, so replaying into it opens variations */
+      imported: false,
       flipped: false,
       /** @type {{sq:string, targets:string[]}|null} click-move selection */
       selection: null,
@@ -309,6 +326,15 @@ import { createStore } from "./store.js";
       previewPinned: false,
       /** editor paint stroke: the square last painted while the pointer is down */
       painting: null,
+      /** right-button drag in progress: {from, over, color} — an arrow or a
+          circle being drawn, not yet on the node (v6-plan Q2.4) */
+      shaping: null,
+      /** the pinned engine line's moves, so 「从这里试走」 can write them down */
+      previewPv: null,
+      /** node id the move context menu is open for, or null */
+      moveMenu: null,
+      /** node id the comment dialog is editing, or null */
+      noteFor: null,
     },
   });
   /** sparring personality — see persona.js; "off" is plain engine play */
@@ -343,11 +369,285 @@ import { createStore } from "./store.js";
   // and each cache compared itself against it — a hand-rolled invalidation
   // signal, which is what a store's commit already is. Same one-walk-per-
   // mutation cost, one fewer number to keep honest.
-  function gameMove(m) { const r = game.move(m); if (r) store.commit("game", "move"); return r; }
-  function gameUndo() { const r = game.undo(); if (r) store.commit("game", "undo"); return r; }
-  function gameLoad(fen) { const r = game.load(fen); store.commit("game", "load"); return r; }
-  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); store.commit("game", "loadPgn"); return r; }
-  function gameReset() { game.reset(); store.commit("game", "reset"); }
+  //
+  // 6.0 (v6-plan Q2.1): the doors also keep the game tree in step. `game` is
+  // the *current line* of `store.game.tree`, so a move through gameMove lands
+  // on the tree at the line's leaf, an undo steps the line back, and a load
+  // starts a new tree. `_treeSync` is dropped only by switchLine(), which is
+  // replaying a path the tree already holds; `_batch` lets it replay a line
+  // through the doors and announce once, not once per ply.
+  function gameMove(m) {
+    const r = game.move(m);
+    if (r) {
+      if (store.game._treeSync) treeFollow(r);
+      if (!store.game._batch) store.commit("game", "move");
+    }
+    return r;
+  }
+  function gameUndo() {
+    const r = game.undo();
+    if (r) {
+      if (store.game._treeSync) treeStepBack();
+      if (!store.game._batch) store.commit("game", "undo");
+    }
+    return r;
+  }
+  function gameLoad(fen) {
+    const r = game.load(fen);
+    if (r && store.game._treeSync) treeRestart(game.fen());
+    if (!store.game._batch) store.commit("game", "load");
+    return r;
+  }
+  function gameLoadPgn(pgn, opts) {
+    // the parser first: it keeps variations, comments, NAGs and shapes that
+    // chess.js's load_pgn throws away, and reads the shapes it refuses
+    // (v6-plan §1.2). chess.js stays the fallback for text the parser cannot
+    // place — and the judge of every move either way.
+    let tree = null;
+    try {
+      const parsed = ChessPgnParser.parsePgn(pgn).games[0];
+      if (parsed) tree = ChessTree.fromPgnGame(parsed);
+    } catch (_) { tree = null; }
+    let r;
+    if (tree) {
+      r = loadTreeMainline(tree);
+    } else {
+      r = game.load_pgn(pgn, opts);
+      if (r && store.game._treeSync) treeRebuild();
+    }
+    if (!store.game._batch) store.commit("game", "loadPgn");
+    return r;
+  }
+  function gameReset() {
+    game.reset();
+    if (store.game._treeSync) treeRestart(null);
+    if (!store.game._batch) store.commit("game", "reset");
+  }
+
+  // --- the tree beside the game --------------------------------------------
+
+  /** id of the node the replay cursor stands on */
+  function curNodeId() { return store.game.line[store.game.viewIndex]; }
+  function curNode() { return ChessTree.nodeAt(store.game.tree, curNodeId()); }
+  function lineLeafId() { return store.game.line[store.game.line.length - 1]; }
+
+  /** A fresh tree at `fen` (null: the standard array); the line is its root. */
+  function treeRestart(fen) {
+    try { store.game.tree = ChessTree.createTree(fen); }
+    catch (_) { store.game.tree = ChessTree.createTree(); }
+    store.game.line = [0];
+  }
+
+  /**
+   * The tree, rebuilt from what chess.js holds — the lossless path failed or
+   * the two went out of step. Loses variations, never the game.
+   */
+  function treeRebuild() {
+    const sf = startFen();
+    treeRestart(sf);
+    let id = 0;
+    for (const mv of game.history({ verbose: true })) {
+      const child = ChessTree.addMove(store.game.tree, id, { from: mv.from, to: mv.to, promotion: mv.promotion });
+      store.game.line.push(child.id);
+      id = child.id;
+    }
+  }
+
+  /**
+   * A move just made at the leaf of the line. It is the live game, so it
+   * becomes the mainline at its branch point: after 重下 the moves that were
+   * played from here before stay in the tree as a variation, which is the
+   * whole difference from the old truncate (v6-plan Q2.3).
+   */
+  function treeFollow(mv) {
+    const leaf = ChessTree.nodeAt(store.game.tree, lineLeafId());
+    if (!leaf) { treeRebuild(); return; }
+    let child;
+    try {
+      child = ChessTree.addMove(store.game.tree, leaf.id, { from: mv.from, to: mv.to, promotion: mv.promotion });
+    } catch (_) { treeRebuild(); return; }
+    ChessTree.promote(store.game.tree, child.id);
+    store.game.line.push(child.id);
+  }
+
+  /**
+   * A take-back. The node goes with it unless something hangs off it — a
+   * variation kept from a 重下 is not what a take-back means to remove.
+   */
+  function treeStepBack() {
+    if (store.game.line.length < 2) { treeRebuild(); return; }
+    const id = store.game.line.pop();
+    const node = ChessTree.nodeAt(store.game.tree, id);
+    if (node && !node.children.length) {
+      try { ChessTree.deleteNode(store.game.tree, id); } catch (_) { /* already gone */ }
+    }
+  }
+
+  /** chess.js headers as pairs, for the tree's PGN and for restoring them. */
+  function headerPairs() {
+    const h = game.header() || {};
+    return Object.keys(h).map((k) => [k, String(h[k])]);
+  }
+  function restoreHeaders(pairs) {
+    const flat = [];
+    for (const [k, v] of pairs) flat.push(k, v);
+    if (flat.length) game.header(...flat);
+  }
+
+  /**
+   * Adopt `tree` and stand `game` on its mainline. Through the doors with
+   * the tree sync off — the tree is already the truth here — and batched,
+   * so the listeners hear one commit from the caller, not one per ply.
+   * @returns {boolean} false when the start position will not load
+   */
+  function loadTreeMainline(tree) {
+    const mainline = ChessTree.mainline(tree);
+    store.game.tree = tree;
+    store.game._treeSync = false;
+    store.game._batch++;
+    let ok;
+    try {
+      ok = gameLoad(tree.startFen);
+      if (ok) for (const n of mainline) gameMove(n.san);
+    } finally { store.game._batch--; store.game._treeSync = true; }
+    if (!ok) { treeRebuild(); return false; }
+    store.game.line = [0].concat(mainline.map((n) => n.id));
+    if (tree.startFen !== ChessTree.START_FEN) game.header("SetUp", "1", "FEN", tree.startFen);
+    return true;
+  }
+
+  /** Node ids root → leaf of the line through `id`, following the mainline after it. */
+  function lineThrough(id) {
+    const ids = [0].concat(ChessTree.pathTo(store.game.tree, id).map((n) => n.id));
+    let n = ChessTree.nodeAt(store.game.tree, id);
+    while (n && n.children[0]) { n = n.children[0]; ids.push(n.id); }
+    return ids;
+  }
+
+  /** Is the line the tree's mainline (or a prefix of it)? */
+  function onMainline() {
+    const main = ChessTree.mainline(store.game.tree).map((n) => n.id);
+    return store.game.line.slice(1).every((id, i) => main[i] === id);
+  }
+
+  /**
+   * Make `ids` the current line: `game` is replayed along it, headers kept.
+   * Whatever the engine was thinking about was the old line. One commit.
+   */
+  function switchLine(ids) {
+    const nodes = ids.map((id) => ChessTree.nodeAt(store.game.tree, id));
+    if (nodes.some((n) => !n)) return false;
+    const headers = headerPairs();
+    invalidateEngine();
+    if (store.ui.preview) clearPreview();
+    store.game._treeSync = false;
+    store.game._batch++;
+    let ok;
+    try {
+      ok = gameLoad(store.game.tree.startFen);
+      if (ok) for (const n of nodes.slice(1)) gameMove(n.san);
+    } finally { store.game._batch--; store.game._treeSync = true; }
+    restoreHeaders(headers);
+    if (!ok) { treeRebuild(); store.commit("game", "line"); return false; }
+    store.game.line = ids.slice();
+    store.game.selection = null;
+    store.game.viewIndex = Math.min(store.game.viewIndex, ids.length - 1);
+    store.commit("game", "line");
+    return true;
+  }
+
+  /** Put the cursor on node `id`, switching line when it is not on this one. */
+  function goToNode(id) {
+    const k = store.game.line.indexOf(id);
+    if (k >= 0) { setViewIndex(k); return; }
+    const ids = lineThrough(id);
+    if (!switchLine(ids)) return;
+    setViewIndex(ids.indexOf(id));
+    saveGame();
+  }
+
+  /** 「回主线」: back onto the tree's mainline, at the same depth. */
+  function backToMain() {
+    const depth = store.game.viewIndex;
+    const ids = lineThrough(0);
+    if (!switchLine(ids)) return;
+    setViewIndex(Math.min(depth, ids.length - 1));
+    saveGame();
+    maybeEngineTurn();
+  }
+
+  /**
+   * May a move made off the live position open a variation? Two players at
+   * one board, a finished game and an imported one are all analysis boards;
+   * a live engine game is not — the engine is still playing it, and a move
+   * into its past would be a second game (v6-plan Q2.3).
+   */
+  function canBranchHere() {
+    if (inModal()) return false;
+    if (store.session.mode === "pvp") return true;
+    return appGameOver() || store.game.imported;
+  }
+
+  /**
+   * A move made while replaying: a variation at the cursor (or the child
+   * that already is that move), and the line follows it.
+   */
+  function playVariationMove(from, to, promotion) {
+    const at = curNode();
+    if (!at) return null;
+    let child;
+    try { child = ChessTree.addMove(store.game.tree, at.id, { from, to, promotion }); }
+    catch (_) { return null; }
+    const ids = store.game.line.slice(0, store.game.viewIndex + 1).concat(child.id);
+    if (!switchLine(ids)) return null;
+    store.game.viewIndex = ids.length - 1;
+    BoardView.cancelAnim();
+    const probe = new Chess(at.fen);
+    moveSound(probe.move({ from, to, promotion: promotion || undefined }), probe);
+    store.commit("game", "action");
+    announce(ChessReview.moveNumber(ids.length - 2, "w") + ((ids.length - 1) % 2 ? ". " : "… ") + child.san);
+    saveGame();
+    return child;
+  }
+
+  /** The current node's arrows and circles (v6-plan Q2.4). */
+  function nodeShapes() {
+    const n = curNode();
+    return n && n.shapes ? n.shapes : { arrows: [], circles: [] };
+  }
+  function hasNodeShapes() {
+    const s = nodeShapes();
+    return !!(s.arrows.length || s.circles.length);
+  }
+  function setNodeShapes(shapes) {
+    const n = curNode();
+    if (!n) return;
+    ChessTree.setShapes(store.game.tree, n.id, shapes);
+    store.commit("game", "shapes");
+    saveGame();
+  }
+  /** Same shape, same colour: off. Same shape, another colour: recoloured. */
+  function toggleArrow(from, to, color) {
+    const s = nodeShapes();
+    const same = s.arrows.find((a) => a.from === from && a.to === to);
+    const arrows = s.arrows.filter((a) => !(a.from === from && a.to === to));
+    if (!same || same.color !== color) arrows.push({ from, to, color });
+    setNodeShapes({ arrows, circles: s.circles });
+  }
+  function toggleCircle(sq, color) {
+    const s = nodeShapes();
+    const same = s.circles.find((c) => c.sq === sq);
+    const circles = s.circles.filter((c) => c.sq !== sq);
+    if (!same || same.color !== color) circles.push({ sq, color });
+    setNodeShapes({ arrows: s.arrows, circles });
+  }
+  /** lichess letters: G default, Shift R, Alt B, Shift+Alt Y */
+  function shapeColor(ev) {
+    if (ev.shiftKey && ev.altKey) return "Y";
+    if (ev.shiftKey) return "R";
+    if (ev.altKey) return "B";
+    return "G";
+  }
 
   // The caches those five doors feed. Cleared by the commit rather than
   // compared against it: "this is stale now" is a thing the store can say, and
@@ -446,6 +746,7 @@ import { createStore } from "./store.js";
       shows what the cursor says again, whatever the pointer is resting on. */
   function clearPreview() {
     store.ui.previewPinned = false;
+    store.ui.previewPv = null;
     setBoardPreview(null);
   }
 
@@ -474,16 +775,31 @@ import { createStore } from "./store.js";
     if (!el) return;
     const p = store.ui.preview;
     el.hidden = !p;
-    if (!p) return;
+    if (!p) { const tryBtn = document.getElementById("preview-try"); if (tryBtn) tryBtn.hidden = true; return; }
     let text = p.kind === "pv" ? t("board.previewPv") : tf("board.previewPly", [p.ply]);
     if (store.ui.previewPinned) text += " · " + t("board.previewEsc");
     el.textContent = text;
+    // a pinned engine line can be written down from here (Q2.3)
+    const tryBtn = document.getElementById("preview-try");
+    if (tryBtn) tryBtn.hidden = !(store.ui.previewPinned && p.kind === "pv" && Array.isArray(store.ui.previewPv) && !inModal());
   }
 
-  /** Preview the position n plies in, as the move list is hovered. */
+  /** Preview the position n plies into the *mainline*, as a mainline row is
+      hovered — the tree's, not `game`'s, which may be standing on a
+      variation at the time. */
   function previewAt(n) {
-    const vh = verboseHistory();
-    setBoardPreview(ChessPreview.plyPreview(gameAt(n), n > 0 ? vh[n - 1] : null, n));
+    const main = ChessTree.mainline(store.game.tree);
+    const node = n > 0 ? main[n - 1] : store.game.tree.root;
+    if (node) previewNode(node.id);
+  }
+
+  /** Preview the position of any node — a variation's as readily as the
+      mainline's, straight off the fen the tree holds. */
+  function previewNode(id) {
+    const node = ChessTree.nodeAt(store.game.tree, id);
+    if (!node) return;
+    const depth = ChessTree.pathTo(store.game.tree, id).length;
+    setBoardPreview(ChessPreview.plyPreview(new Chess(node.fen), node.from ? { from: node.from, to: node.to } : null, depth));
   }
 
   /** Preview the engine line up to and including chip k, off the board's own
@@ -534,12 +850,23 @@ import { createStore } from "./store.js";
       // arrow permanently on the board. Never during live play, where it would
       // be an answer key rather than a review.
       hintMove: isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex),
+      // the node's own arrows and circles, plus the one being drawn
+      shapes: shapesToDraw(),
       stars: [],
       cursor: cursorSquare(),
       // the drag is part of the picture, not a thing pushed in beforehand
       drag: store.ui.dragging,
     };
   });
+
+  /** What the board draws of the annotations: the node's shapes and the draft. */
+  function shapesToDraw() {
+    const s = nodeShapes();
+    const d = store.ui.shaping;
+    if (!d || !d.over) return s;
+    if (d.over === d.from) return { arrows: s.arrows, circles: s.circles.concat({ sq: d.from, color: d.color }) };
+    return { arrows: s.arrows.concat({ from: d.from, to: d.over, color: d.color }), circles: s.circles };
+  }
 
   /**
    * The engine's choice at the position `i` plies in, as a board arrow —
@@ -823,7 +1150,13 @@ import { createStore } from "./store.js";
   }
   function saveGame() {
     try {
-      const payload = { v: 1, pgn: game.pgn(), savedAt: Date.now() };
+      // the PGN is the mainline, whatever line the cursor is on: it is what
+      // a save written before 6.0 held, and the tree beside it carries the
+      // rest — variations, comments, shapes and the line itself (Q2.1)
+      const payload = { v: 1, pgn: mainlinePgn(), savedAt: Date.now() };
+      payload.tree = ChessTree.serialize(store.game.tree);
+      payload.line = store.game.line.slice();
+      if (store.game.imported) payload.imported = true;
       if (store.game.timeControl !== "off" && store.game.clock) {
         payload.clock = { tc: store.game.timeControl, w: Math.round(store.game.clock.w), b: Math.round(store.game.clock.b), flag: store.game.flagFall };
       }
@@ -833,6 +1166,43 @@ import { createStore } from "./store.js";
       Persist.setJson("save", payload);
     } catch (_) {}
   }
+  /**
+   * The mainline as chess.js-readable PGN: tag pairs and bare moves, no
+   * variations or comments. `game.pgn()` would be the *current line*, which
+   * after a click into a variation is not the game.
+   */
+  function mainlinePgn() {
+    const tree = store.game.tree;
+    const pairs = headerPairs();
+    if (!tree) return game.pgn();
+    const strip = (n) => ({ san: n.san, from: n.from, to: n.to, promotion: n.promotion, fen: n.fen, comment: null, nags: [], shapes: { arrows: [], circles: [] }, children: n.children[0] ? [strip(n.children[0])] : [] });
+    const has = (k) => pairs.some(([n]) => n === k);
+    if (tree.startFen !== ChessTree.START_FEN && !has("FEN")) pairs.push(["SetUp", "1"], ["FEN", tree.startFen]);
+    const r = pairs.find(([k]) => k === "Result");
+    return ChessPgnParser.serializePgn({ headers: pairs, root: strip(tree.root), result: r ? r[1] : "*" });
+  }
+
+  /**
+   * The tree of a save, if it has one and it still describes this game. A
+   * save from before 6.0 has none, and the tree the load just built from
+   * its PGN is the whole of what it knew.
+   */
+  function restoreTree(s) {
+    if (s.imported === true) store.game.imported = true;
+    if (typeof s.tree !== "string") return;
+    let tree;
+    try { tree = ChessTree.deserialize(s.tree); } catch (_) { return; }
+    if (tree.startFen !== store.game.tree.startFen) return;
+    if (ChessTree.mainlineSans(tree).join(" ") !== sanHistory().join(" ")) return;
+    store.game.tree = tree;
+    store.game.line = [0].concat(ChessTree.mainline(tree).map((n) => n.id));
+    const line = Array.isArray(s.line) ? s.line.map(Number) : null;
+    if (line && line[0] === 0 && line.length > 1 && line.every((id) => ChessTree.nodeAt(tree, id))) {
+      const ok = line.every((id, i) => i === 0 || (ChessTree.parentOf(tree, id) || {}).id === line[i - 1]);
+      if (ok && switchLine(line)) store.game.viewIndex = line.length - 1;
+    }
+  }
+
   function tryLoadSave() {
     {
       const s = Persist.read("save", (v) => (v && v.v === 1 && typeof v.pgn === "string" && v.pgn ? v : null)).value;
@@ -849,6 +1219,7 @@ import { createStore } from "./store.js";
         game.header("SetUp", "1", "FEN", sf);
       }
       store.game.viewIndex = sanHistory().length;
+      restoreTree(s);
       if (s.clock && TCS[s.clock.tc] &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
         store.game.timeControl = s.clock.tc;
@@ -3074,6 +3445,17 @@ import { createStore } from "./store.js";
           writeSan(b, san, k % 2 === 0 ? start : (start === "w" ? "b" : "w"));
           pvEl.appendChild(b);
         });
+        // …and the line can be kept: written into the tree as a variation
+        // at this position (Q2.3)
+        if (!inModal()) {
+          const save = document.createElement("button");
+          save.type = "button";
+          save.className = "pv-act";
+          save.textContent = t("an.pvSave");
+          save.title = t("tip.pvSave");
+          save.onclick = () => { savePvAsVariation(pv.split(" ")); };
+          pvEl.appendChild(save);
+        }
       }
     }
     renderReview();
@@ -4351,77 +4733,211 @@ import { createStore } from "./store.js";
     return base;
   }
 
+  /** NAG number → the glyph a reader expects; anything else stays `$n`. */
+  const NAG_GLYPH = { 1: "!", 2: "?", 3: "!!", 4: "??", 5: "!?", 6: "?!" };
+  function nagText(nags) { return (nags || []).map((n) => NAG_GLYPH[n] || ("$" + n)).join(""); }
+
+  /**
+   * The notation, from the tree (v6-plan Q2.1). Lichess's shape: the
+   * mainline in move-pair rows, and where a move has alternatives the row
+   * is cut and the alternatives follow it indented, in parentheses, nested
+   * as deep as they go. A comment cuts the row the same way. Every move in
+   * every line is a button that puts the cursor on it — switching line when
+   * it has to (goToNode).
+   */
   function renderMoveList() {
     const el = document.getElementById("move-list");
     if (!el) return;
-    const h = sanHistory();
+    const tree = store.game.tree;
+    const main = ChessTree.mainline(tree);
     // A position edited to start with Black opens at "1…", so its first row
     // holds a single black move and White's reply belongs to move 2. Pairing
     // from ply 0 would file them together under move 1 — and the review
     // report's turning-point line would then disagree with this list.
-    const blackFirst = startFen() ? startFen().split(" ")[1] === "b" : false;
-    const firstMover = blackFirst ? "b" : "w";
-    const moveNo = (i) => (ChessReview
-      ? ChessReview.moveNumber(i, firstMover)
-      : Math.floor(i / 2) + 1);
+    const firstMover = tree.startFen.split(" ")[1] === "b" ? "b" : "w";
+    const moveNo = (i) => ChessReview.moveNumber(i, firstMover);
+    const curId = curNodeId();
+    // the analysis describes the line `game` stands on: its tags belong to
+    // those nodes, on the mainline or off it
     const a = analysisFor();
+    const tagOf = new Map();
+    if (a && a.tags) store.game.line.forEach((id, k) => { if (k > 0 && a.tags[k - 1]) tagOf.set(id, a.tags[k - 1]); });
+    const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (tagOf.get(n.id) || "") + "/" + (n.id === curId ? "*" : "");
+    // a variation's signature is the whole of what it shows, nested included
+    const lineSig = (parent, first) => {
+      let out = "";
+      let prev = parent;
+      let node = first;
+      while (node) {
+        out += nodeSig(node) + (node.comment ? "{" + node.comment + "}" : "");
+        if (node === prev.children[0]) for (const alt of prev.children.slice(1)) out += "(" + lineSig(prev, alt) + ")";
+        prev = node;
+        node = node.children[0] || null;
+      }
+      return out;
+    };
 
-    // one entry per row: which plies it holds, and whether it opens with the
-    // "1. …" gap of a black-first game
-    const rows = [];
-    for (let i = blackFirst ? -1 : 0; i < h.length; i += 2) {
-      const plies = (i < 0 ? [0] : [i, i + 1]).filter((j) => j < h.length);
-      rows.push({ i, no: moveNo(Math.max(0, i)), gap: i < 0, plies });
+    // one entry per top-level block: a row of plies, a comment, or the
+    // alternatives to a mainline move
+    const items = [];
+    if (tree.root.comment) items.push({ kind: "comment", key: "c0", sig: tree.root.comment, text: tree.root.comment });
+    let row = null;
+    const flush = () => { if (row) { items.push(row); row = null; } };
+    let prev = tree.root;
+    main.forEach((n, i) => {
+      const white = prev.fen.split(" ")[1] === "w";
+      if (!row || white) { flush(); row = { kind: "row", key: "r" + n.id, no: moveNo(i), gap: !white, nodes: [], plies: [] }; }
+      row.nodes.push(n);
+      row.plies.push(i);
+      const alts = prev.children.slice(1);
+      if (n.comment || alts.length) {
+        flush();
+        if (n.comment) items.push({ kind: "comment", key: "c" + n.id, sig: n.comment, text: n.comment });
+        if (alts.length) items.push({ kind: "var", key: "v" + prev.id, sig: alts.map((alt) => lineSig(prev, alt)).join("|"), parent: prev, alts });
+      }
+      prev = n;
+    });
+    flush();
+    for (const it of items) {
+      if (it.kind === "row") it.sig = it.no + "|" + (it.gap ? "…" : "") + "|" + it.nodes.map(nodeSig).join(",");
     }
 
-    // Keyed, so a move rebuilds one row instead of the game. The signature is
-    // everything a row shows — the moves, their annotations, and which one is
-    // current — so an ordinary move dirties exactly one row (two when the
-    // cursor leaves another). See keyed.js for why this is worth doing: the
-    // scroll position and the focus are properties of the nodes, and rebuilding
-    // the list threw both away every time the clock ticked.
-    reconcile(el, rows,
-      (r) => r.i,
-      (r) => r.no + "|" + r.plies.map((j) =>
-        h[j] + "/" + ((a && a.tags[j]) || "") + "/" + (store.game.viewIndex === j + 1 ? "*" : "")).join(","),
-      (r, _idx, reuse) => {
-        const row = reuse || document.createElement("div");
-        row.className = "mlrow";
+    // the move itself, in any line: figurine, NAG glyphs, the review's tag
+    const moveButton = (n, cls) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.node = String(n.id);
+      b.className = cls + (n.id === curId ? " current" : "");
+      // Figurine notation: the piece letter becomes the piece. `Nf3` is
+      // English algebraic — the N is short for Knight, which is not a word
+      // two of this app's three languages use. The vector set is already
+      // here for the board, and a figurine move list is the same notation
+      // for every reader. The full SAN stays as the accessible name, so
+      // "Nf3" is still what a screen reader says. P4.4.
+      writeSan(b, n.san, moverOf(n));
+      const glyphs = nagText(n.nags);
+      if (glyphs) {
+        b.appendChild(document.createTextNode(glyphs));
+        b.setAttribute("aria-label", n.san + glyphs);
+      }
+      const tag = tagOf.get(n.id);
+      if (tag) {
+        const span = document.createElement("span");
+        span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
+        span.textContent = tag;
+        b.appendChild(span);
+      }
+      return b;
+    };
+    // the menu handle rides beside the current move only: one on screen,
+    // one Tab past the move it acts on
+    const menuButton = (n) => {
+      const m = document.createElement("button");
+      m.type = "button";
+      m.className = "mlmenu";
+      m.dataset.node = String(n.id);
+      m.dataset.menu = "1";
+      m.textContent = "…";
+      m.setAttribute("aria-label", t("ml.menu"));
+      m.title = t("ml.menu");
+      return m;
+    };
+    const commentNode = (text, cls) => {
+      const c = document.createElement("span");
+      c.className = cls;
+      c.textContent = text;
+      return c;
+    };
+    // a variation from `first`, with its own alternatives nested after the
+    // move they replace — the same walk pgn-parser's emitLine makes
+    const renderLine = (box, parent, first, numbered) => {
+      let prev = parent;
+      let node = first;
+      let force = numbered;
+      let depth = ChessTree.pathTo(tree, first.id).length - 1;
+      while (node) {
+        const white = prev.fen.split(" ")[1] === "w";
+        if (white || force) {
+          const num = document.createElement("span");
+          num.className = "mlvnum";
+          num.textContent = moveNo(depth) + (white ? "." : "…");
+          box.appendChild(num);
+        }
+        box.appendChild(moveButton(node, "mlv"));
+        if (node.id === curId) box.appendChild(menuButton(node));
+        force = false;
+        if (node.comment) { box.appendChild(commentNode(node.comment, "mlvcomment")); force = true; }
+        if (node === prev.children[0]) {
+          for (const alt of prev.children.slice(1)) {
+            const nest = document.createElement("span");
+            nest.className = "mlvnest";
+            nest.appendChild(document.createTextNode("("));
+            renderLine(nest, prev, alt, true);
+            nest.appendChild(document.createTextNode(")"));
+            box.appendChild(nest);
+            force = true;
+          }
+        }
+        prev = node;
+        node = node.children[0] || null;
+        depth++;
+      }
+    };
+
+    // Keyed, so a move rebuilds one block instead of the game. The signature
+    // is everything a block shows — the moves, their annotations, and which
+    // one is current — so an ordinary move dirties exactly one row (two when
+    // the cursor leaves another). See keyed.js for why this is worth doing:
+    // the scroll position and the focus are properties of the nodes, and
+    // rebuilding the list threw both away every time the clock ticked.
+    reconcile(el, items,
+      (it) => it.key,
+      (it) => it.kind + "|" + it.sig,
+      (it, _idx, reuse) => {
+        if (it.kind === "comment") {
+          const c = reuse && reuse.classList.contains("mlcomment") ? reuse : document.createElement("div");
+          c.className = "mlcomment";
+          c.textContent = it.text;
+          return c;
+        }
+        if (it.kind === "var") {
+          const v = reuse && reuse.classList.contains("mlvar") ? reuse : document.createElement("div");
+          v.className = "mlvar";
+          v.replaceChildren();
+          for (const alt of it.alts) {
+            const line = document.createElement("div");
+            line.className = "mlvline";
+            line.appendChild(document.createTextNode("("));
+            renderLine(line, it.parent, alt, true);
+            line.appendChild(document.createTextNode(")"));
+            v.appendChild(line);
+          }
+          return v;
+        }
+        const rowEl = reuse && reuse.classList.contains("mlrow") ? reuse : document.createElement("div");
+        rowEl.className = "mlrow";
         const kids = [];
         const num = document.createElement("span");
         num.className = "mlnum";
-        num.textContent = r.no + ".";
+        num.textContent = it.no + ".";
         kids.push(num);
-        // the opening row of a black-first game shows "1. … Qh4"
-        if (r.gap) {
+        // a row that opens on a black move shows "1. … Qh4"
+        if (it.gap) {
           const gap = document.createElement("span");
           gap.className = "mlmove mlgap";
           gap.textContent = "…";
           kids.push(gap);
         }
-        for (const j of r.plies) {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.dataset.i = String(j + 1);
-          b.className = "mlmove" + (store.game.viewIndex === j + 1 ? " current" : "");
-          // Figurine notation: the piece letter becomes the piece. `Nf3` is
-          // English algebraic — the N is short for Knight, which is not a word
-          // two of this app's three languages use. The vector set is already
-          // here for the board, and a figurine move list is the same notation
-          // for every reader. The full SAN stays as the accessible name, so
-          // "Nf3" is still what a screen reader says. P4.4.
-          writeSan(b, h[j], j % 2 === 0 ? "w" : "b");
-          const tag = a && a.tags[j];
-          if (tag) {
-            const span = document.createElement("span");
-            span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
-            span.textContent = tag;
-            b.appendChild(span);
-          }
+        it.nodes.forEach((n, k) => {
+          const b = moveButton(n, "mlmove");
+          // the ply on the mainline, for the hover preview and the tests
+          b.dataset.i = String(it.plies[k] + 1);
           kids.push(b);
-        }
-        row.replaceChildren(...kids);
-        return row;
+          if (n.id === curId) kids.push(menuButton(n));
+        });
+        rowEl.replaceChildren(...kids);
+        return rowEl;
       });
 
     const cur = el.querySelector(".current");
@@ -4738,6 +5254,8 @@ import { createStore } from "./store.js";
     // position — where it used to sit greyed out with a tooltip explaining
     // that it only exists off the live position
     avail(el("retry-here"), !isLive());
+    // 「回主线」 exists exactly while the line is a variation (Q2.3)
+    avail(el("line-row"), !inModal() && h.length > 0 && !onMainline());
   }
 
   /** Everything you can do to the game in progress. */
@@ -5128,27 +5646,40 @@ import { createStore } from "./store.js";
     if (store.session.editor) { editorClick(sq); return; }
     if (store.session.mode === "learn") { learnClick(sq); return; }
     if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
-    if (!isLive()) { toast(t("mm.goLiveFirst"), "fix"); return; }
-    if (naturalGameOver()) return;
-    if (store.game.flagFall) { toast(t("msg.over.flagged"), "fix"); return; }
-    if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
-    if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
-    if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
-    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return; // engine's move
-    const piece = game.get(sq);
-    if (store.game.selection && store.game.selection.targets.includes(sq)) {
-      const from = store.game.selection.sq;
-      const vmv = game.moves({ square: from, verbose: true }).find((m) => m.to === sq);
-      if (vmv && vmv.promotion) {
-        // cancelling keeps the selection so the player can pick another square
-        choosePromotion(game.turn()).then((p) => { if (p) playHumanMove(from, sq, p); });
-        return;
-      }
-      playHumanMove(from, sq, "q");
+    // a plain click on an empty square, holding nothing, wipes the arrows and
+    // circles drawn on this position — Escape does not (v6-plan Q2.4)
+    if (!store.game.selection && !viewGame().get(sq) && hasNodeShapes()) {
+      setNodeShapes({ arrows: [], circles: [] });
       return;
     }
-    if (piece && piece.color === game.turn()) {
-      selectSquare(sq, game.moves({ square: sq, verbose: true }).map((m) => m.to));
+    // Off the live position a move is a variation, wherever variations may
+    // be opened (Q2.3); in a live engine game the replay stays read-only.
+    const branching = !isLive();
+    if (branching && !canBranchHere()) { toast(t("mm.goLiveFirst"), "fix"); return; }
+    if (!branching) {
+      if (naturalGameOver()) return;
+      if (store.game.flagFall) { toast(t("msg.over.flagged"), "fix"); return; }
+      if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
+      if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
+      if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
+      if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return; // engine's move
+    }
+    const g = branching ? viewGame() : game;
+    const play = branching ? playVariationMove : playHumanMove;
+    const piece = g.get(sq);
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
+      const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
+      if (vmv && vmv.promotion) {
+        // cancelling keeps the selection so the player can pick another square
+        choosePromotion(g.turn()).then((p) => { if (p) play(from, sq, p); });
+        return;
+      }
+      play(from, sq, "q");
+      return;
+    }
+    if (piece && piece.color === g.turn()) {
+      selectSquare(sq, g.moves({ square: sq, verbose: true }).map((m) => m.to));
       return;
     }
     clearSelection();
@@ -5183,6 +5714,7 @@ import { createStore } from "./store.js";
     gameReset();
     store.game.selection = null;
     store.game.viewIndex = 0;
+    store.game.imported = false;
     store.game.resigned = null;
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
@@ -5209,12 +5741,13 @@ import { createStore } from "./store.js";
         { ok: t("act.retryHere"), cancel: t("act.cancel") }))) {
       return;
     }
-    const h = sanHistory().slice(0, keep);
-    invalidateEngine();
-    resetGameToStart();
-    for (const san of h) gameMove(san);
+    // the line is cut at the cursor, not the tree: what was played from here
+    // stays as a variation, and the next move played becomes the mainline at
+    // this node (treeFollow) — 重下 keeps the game it replaces (Q2.3)
+    if (store.ui.preview) clearPreview();
+    if (!switchLine(store.game.line.slice(0, keep + 1))) return;
     store.game.selection = null;
-    store.game.viewIndex = h.length;
+    store.game.viewIndex = keep;
     // continuing a finished game (flag / resignation) gets fresh clocks
     if (ruleTerminated()) resetClocks();
     store.game.resigned = null;
@@ -5412,17 +5945,18 @@ import { createStore } from "./store.js";
     else if (r === "1/2-1/2") store.game.drawAgreed = true;
   }
 
+  // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
+  // object that predated the 1.19 "casual" rung and never grew one, so a
+  // casual game exported as "Stockfish 18 (casual)" — the raw id leaking into
+  // a file other programs read. The self-check now requires an entry here for
+  // every rung, so the next tier cannot slip through the same way.
+  const DIFF_EN = {
+    beginner: "Beginner", casual: "Casual", easy: "Easy",
+    normal: "Normal", hard: "Hard", extreme: "Max",
+  };
+
   /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
   function pgnForExport() {
-    // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
-    // object that predated the 1.19 "casual" rung and never grew one, so a
-    // casual game exported as "Stockfish 18 (casual)" — the raw id leaking into
-    // a file other programs read. The self-check now requires an entry here for
-    // every rung, so the next tier cannot slip through the same way.
-    const DIFF_EN = {
-      beginner: "Beginner", casual: "Casual", easy: "Easy",
-      normal: "Normal", hard: "Hard", extreme: "Max",
-    };
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
     const engineName = "Stockfish 18 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
@@ -5445,6 +5979,10 @@ import { createStore } from "./store.js";
     }
     const sf = startFen();
     if (sf) tagPairs.push(["SetUp", "1"], ["FEN", sf]);
+    // the tree writes the file: variations, comments, NAGs and shapes go out
+    // as they came in, and the result token once (v6-plan Q2.2). The chess.js
+    // path below is the fallback for a tree that fell out of step.
+    if (treeInStep()) return ChessPgnParser.serializePgn(ChessTree.toPgnGame(store.game.tree, tagPairs));
     const tags = tagPairs.map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
     // game.pgn() may itself carry SetUp/FEN headers — keep only its movetext,
     // wrapped to the PGN-recommended 80 columns
@@ -5461,6 +5999,20 @@ import { createStore } from "./store.js";
     }
     if (line) lines.push(line);
     return tags + "\n\n" + lines.join("\n") + "\n";
+  }
+
+  /** Does the tree still hold the line chess.js is standing on? */
+  function treeInStep() {
+    const tree = store.game.tree;
+    if (!tree || tree.startFen !== baseGame().fen()) return false;
+    const line = store.game.line;
+    const h = sanHistory();
+    if (line.length !== h.length + 1) return false;
+    for (let i = 0; i < h.length; i++) {
+      const n = ChessTree.nodeAt(tree, line[i + 1]);
+      if (!n || n.san !== h[i]) return false;
+    }
+    return true;
   }
 
   function pgnFileName() {
@@ -5869,7 +6421,9 @@ import { createStore } from "./store.js";
     if (!text0) { toast(t("msg.import.empty"), "fix"); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
     // old behaviour) silently threw away everything before it.
-    const games = ChessPgn.splitGames(text0);
+    let games;
+    try { games = ChessPgnParser.splitGames(text0); }
+    catch (_) { games = ChessPgn.splitGames(text0); }
     if (games.length > 1) {
       const items = games.map((g, i) => {
         const s = ChessPgn.summary(g);
@@ -5887,8 +6441,17 @@ import { createStore } from "./store.js";
         !(await confirmNative(ask.msg, ask.title, { ok: ask.ok, cancel: t("act.cancel") }))) {
       return false;
     }
-    const probe = new Chess();
-    const parsed = probe.load_pgn(text0, { sloppy: true }) && probe.history().length > 0;
+    // the parser is the reader now (v6-plan Q2.2); chess.js's load_pgn only
+    // gets a look at text the parser cannot place
+    let parsed = false;
+    try {
+      const g = ChessPgnParser.parsePgn(text0).games[0];
+      parsed = !!g && g.root.children.length > 0;
+    } catch (_) { parsed = false; }
+    if (!parsed) {
+      const probe = new Chess();
+      parsed = probe.load_pgn(text0, { sloppy: true }) && probe.history().length > 0;
+    }
     // A game exported before its first move is legal PGN with no movetext, and
     // it is what a save slot or an export holds for a study position. chess.js
     // will not parse that shape, so fall back to its [SetUp]/[FEN] tags rather
@@ -5908,6 +6471,7 @@ import { createStore } from "./store.js";
     }
     store.game.selection = null;
     store.game.viewIndex = sanHistory().length;
+    store.game.imported = true;
     store.game.resigned = null;
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
@@ -6134,6 +6698,7 @@ import { createStore } from "./store.js";
     game.header("SetUp", "1", "FEN", fen);
     store.game.selection = null;
     store.game.viewIndex = 0;
+    store.game.imported = false; // a set-up position is a new live game
     store.game.resigned = null;
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
@@ -6554,7 +7119,14 @@ import { createStore } from "./store.js";
       const p = store.session.puzzle.g.get(sq);
       return !!p && p.color === "w" && store.session.puzzle.g.turn() === "w";
     }
-    if (!isLive() || appGameOver()) return false;
+    if (!isLive()) {
+      // replaying: a piece can be picked up wherever a variation may open
+      if (!canBranchHere()) return false;
+      const g = viewGame();
+      const p = g.get(sq);
+      return !!p && p.color === g.turn();
+    }
+    if (appGameOver()) return false;
     if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return false;
     const p = game.get(sq);
     return !!p && p.color === game.turn();
@@ -6564,8 +7136,10 @@ import { createStore } from "./store.js";
 
   // right-click clears a square in the editor (no need to switch to the eraser)
   canvas.addEventListener("contextmenu", (ev) => {
-    if (!store.session.editor) return;
+    // the right button draws on the board (Q2.4) or clears an editor square;
+    // the browser's own menu never belongs here
     ev.preventDefault();
+    if (!store.session.editor) return;
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
     if (!sq) return;
@@ -6578,6 +7152,17 @@ import { createStore } from "./store.js";
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
     if (!sq) return;
+    // Right button: an arrow (drag) or a circle (click) on this position,
+    // lichess's gesture with lichess's colours — Shift red, Alt blue, both
+    // yellow, plain green. Only on the game board: the editor's right click
+    // clears a square, and the trainers annotate nothing (Q2.4).
+    if (ev.button === 2) {
+      if (inModal()) return;
+      try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
+      store.ui.shaping = { from: sq, over: sq, color: shapeColor(ev) };
+      return;
+    }
+    if (ev.button !== 0) return;
     try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
     onSquareClick(sq);
     // in the editor a press starts a paint stroke: placing 16 pawns one click
@@ -6588,6 +7173,11 @@ import { createStore } from "./store.js";
   });
   canvas.addEventListener("pointermove", (ev) => {
     const p = canvasPoint(ev);
+    if (store.ui.shaping) {
+      const sq = BoardView.cellAt(p.x, p.y);
+      if (sq && sq !== store.ui.shaping.over) { store.ui.shaping.over = sq; draw(); }
+      return;
+    }
     if (store.ui.painting) {
       const sq = BoardView.cellAt(p.x, p.y);
       if (sq && sq !== store.ui.painting) { store.ui.painting = sq; editorClick(sq); }
@@ -6608,6 +7198,15 @@ import { createStore } from "./store.js";
   });
   canvas.addEventListener("pointerup", (ev) => {
     store.ui.painting = null;
+    if (store.ui.shaping) {
+      const d = store.ui.shaping;
+      store.ui.shaping = null;
+      const p = canvasPoint(ev);
+      const sq = BoardView.cellAt(p.x, p.y) || d.over;
+      if (!sq || sq === d.from) toggleCircle(d.from, d.color);
+      else toggleArrow(d.from, sq, d.color);
+      return;
+    }
     const wasDrag = store.ui.dragging;
     store.ui.dragging = null;
     canvas.style.cursor = "default";
@@ -6633,6 +7232,7 @@ import { createStore } from "./store.js";
   });
   canvas.addEventListener("pointercancel", () => {
     store.ui.painting = null;
+    store.ui.shaping = null;
     store.ui.dragging = null;
     canvas.style.cursor = "default";
     draw();
@@ -6803,18 +7403,176 @@ import { createStore } from "./store.js";
   const mlEl = document.getElementById("move-list");
   if (mlEl) {
     mlEl.onclick = (ev) => {
-      const b = ev.target.closest("button[data-i]");
-      if (b) setViewIndex(Number(b.dataset.i));
+      const b = ev.target.closest("button[data-node]");
+      if (!b) return;
+      if (b.dataset.menu) { openMoveMenu(Number(b.dataset.node), b); return; }
+      goToNode(Number(b.dataset.node));
     };
+    // the right button opens the same menu on any move (Q2.1)
+    mlEl.addEventListener("contextmenu", (ev) => {
+      const b = ev.target.closest("button[data-node]");
+      if (!b) return;
+      ev.preventDefault();
+      openMoveMenu(Number(b.dataset.node), b, ev.clientX, ev.clientY);
+    });
     // reading is touching: sweep the list and the board follows; leave and
     // the committed position comes straight back. Never while dragging a
     // piece — the hand on the board outranks the hand on the list.
     mlEl.addEventListener("mouseover", (ev) => {
-      const b = ev.target.closest("button[data-i]");
+      const b = ev.target.closest("button[data-node]");
       if (!b || store.ui.dragging || store.ui.previewPinned) return;
-      previewAt(Number(b.dataset.i));
+      if (b.dataset.i) previewAt(Number(b.dataset.i));
+      else previewNode(Number(b.dataset.node)); // a variation move, by its node
     });
     mlEl.addEventListener("mouseleave", () => setBoardPreview(null));
+  }
+
+  // --- the move menu: promote, delete, annotate (v6-plan Q2.1) -------------
+  const moveMenuEl = document.getElementById("move-menu");
+  function isMainlineNode(id) {
+    const path = ChessTree.pathTo(store.game.tree, id);
+    let parent = store.game.tree.root;
+    for (const n of path) { if (parent.children[0] !== n) return false; parent = n; }
+    return true;
+  }
+  function openMoveMenu(id, anchor, x, y) {
+    if (!moveMenuEl || !ChessTree.nodeAt(store.game.tree, id)) return;
+    store.ui.moveMenu = id;
+    // already the mainline: nothing to promote, and a menu item that does
+    // nothing is a control that looks available and is not
+    avail(document.getElementById("mm-promote"), !isMainlineNode(id));
+    moveMenuEl.hidden = false;
+    // beside the pointer when it came from one, under the handle otherwise;
+    // clamped so it never opens off the window
+    const r = anchor.getBoundingClientRect();
+    const left = x != null ? x : r.left;
+    const top = y != null ? y : r.bottom + 2;
+    const mw = moveMenuEl.offsetWidth || 160;
+    const mh = moveMenuEl.offsetHeight || 100;
+    moveMenuEl.style.left = Math.max(4, Math.min(left, window.innerWidth - mw - 4)) + "px";
+    moveMenuEl.style.top = Math.max(4, Math.min(top, window.innerHeight - mh - 4)) + "px";
+    const first = moveMenuEl.querySelector("button:not([hidden])");
+    if (first) first.focus();
+  }
+  function closeMoveMenu() {
+    if (!moveMenuEl || moveMenuEl.hidden) return false;
+    const inside = moveMenuEl.contains(document.activeElement);
+    moveMenuEl.hidden = true;
+    store.ui.moveMenu = null;
+    if (inside) {
+      const back = document.querySelector("#move-list .mlmenu") || document.querySelector("#move-list .current");
+      if (back) back.focus();
+    }
+    return true;
+  }
+  if (moveMenuEl) {
+    // the menu is a popover, not a dialog: a press anywhere else dismisses it
+    document.addEventListener("pointerdown", (ev) => {
+      if (!moveMenuEl.hidden && !moveMenuEl.contains(ev.target)) closeMoveMenu();
+    }, true);
+    moveMenuEl.addEventListener("keydown", (ev) => {
+      const items = [...moveMenuEl.querySelectorAll("button:not([hidden])")];
+      const k = items.indexOf(document.activeElement);
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        const next = items[(k + (ev.key === "ArrowDown" ? 1 : items.length - 1)) % items.length];
+        if (next) next.focus();
+      } else if (ev.key === "Tab") {
+        // a popover has no focus trap; leaving it closes it
+        closeMoveMenu();
+      }
+    });
+    document.getElementById("mm-promote").onclick = () => {
+      const id = store.ui.moveMenu;
+      closeMoveMenu();
+      if (id == null) return;
+      ChessTree.promoteToMain(store.game.tree, id);
+      store.commit("game", "promote");
+      saveGame();
+      toast(t("msg.variation.promoted"));
+    };
+    document.getElementById("mm-delete").onclick = async () => {
+      const id = store.ui.moveMenu;
+      closeMoveMenu();
+      const node = id != null ? ChessTree.nodeAt(store.game.tree, id) : null;
+      if (!node || node.id === 0) return;
+      if (!(await confirmNative(tf("dlg.deleteBranch", [node.san]), t("ml.delete"),
+        { ok: t("ml.delete"), cancel: t("act.cancel") }))) return;
+      const parent = ChessTree.deleteNode(store.game.tree, id);
+      if (store.game.line.includes(id)) {
+        // the cursor stood on the deleted line: back to where it forked
+        const ids = lineThrough(parent.id);
+        const depth = ids.indexOf(parent.id);
+        if (switchLine(ids)) store.game.viewIndex = Math.min(depth, ids.length - 1);
+        store.commit("game", "action");
+      } else {
+        store.commit("game", "delete");
+      }
+      saveGame();
+      toast(t("msg.variation.deleted"));
+    };
+    document.getElementById("mm-note").onclick = () => {
+      const id = store.ui.moveMenu;
+      closeMoveMenu();
+      if (id != null) openNoteModal(id);
+    };
+  }
+
+  // --- the comment dialog --------------------------------------------------
+  const noteModal = document.getElementById("note-modal");
+  function openNoteModal(id) {
+    const node = ChessTree.nodeAt(store.game.tree, id);
+    if (!noteModal || !node) return;
+    store.ui.noteFor = id;
+    const input = document.getElementById("note-input");
+    input.value = node.comment || "";
+    const title = document.getElementById("note-title");
+    title.textContent = node.san ? tf("note.titleFor", [node.san]) : t("note.title");
+    Dlg.open(noteModal, input);
+  }
+  function closeNoteModal() { store.ui.noteFor = null; Dlg.close(noteModal); }
+  function submitNote() {
+    const id = store.ui.noteFor;
+    const input = document.getElementById("note-input");
+    const text = input ? input.value : "";
+    closeNoteModal();
+    if (id == null || !ChessTree.nodeAt(store.game.tree, id)) return;
+    ChessTree.setComment(store.game.tree, id, text);
+    store.commit("game", "comment");
+    saveGame();
+  }
+  if (noteModal) {
+    document.getElementById("note-save").onclick = submitNote;
+    document.getElementById("note-cancel").onclick = closeNoteModal;
+    // Ctrl/⌘+Enter saves from inside the textarea, where Enter is a newline
+    document.getElementById("note-input").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); submitNote(); }
+    });
+  }
+
+  /**
+   * An engine line written into the tree (v6-plan Q2.3): each move a node
+   * under the one before, from the cursor. `upTo` caps the depth (a pinned
+   * preview writes what it showed); the cursor lands on the first move for
+   * a saved line and on the last for a preview.
+   */
+  function savePvAsVariation(sans, upTo, landOnLast) {
+    if (inModal() || !Array.isArray(sans) || !sans.length) return false;
+    const at = curNode();
+    if (!at) return false;
+    let node = at;
+    let first = null;
+    try {
+      for (const san of sans.slice(0, upTo == null ? sans.length : upTo)) {
+        node = ChessTree.addMove(store.game.tree, node.id, san);
+        if (!first) first = node;
+      }
+    } catch (_) { /* a stale line: keep what did play */ }
+    if (!first) { toast(t("msg.variation.stale"), "fix"); return false; }
+    clearPreview();
+    goToNode(landOnLast ? node.id : first.id);
+    toast(t("msg.variation.saved"));
+    return true;
   }
   const pvLineEl = document.getElementById("pv-line");
   if (pvLineEl) {
@@ -6841,7 +7599,11 @@ import { createStore } from "./store.js";
     // notation, to the report) while the position stays; Esc — the global
     // handler — or any navigation lets go. A click does the same as Enter.
     const pin = (b) => {
-      if (!previewPvChip(Number(b.dataset.k))) return;
+      const k = Number(b.dataset.k);
+      if (!previewPvChip(k)) return;
+      const a = analysisFor();
+      const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
+      store.ui.previewPv = pv ? pv.split(" ").slice(0, k + 1) : null;
       store.ui.previewPinned = true;
       renderPreviewBadge();
       announce(t("board.previewPv") + " · " + t("board.previewEsc"));
@@ -6853,11 +7615,16 @@ import { createStore } from "./store.js";
       if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pin(b); }
     });
   }
+  document.getElementById("preview-try").onclick = () => {
+    const sans = store.ui.previewPv;
+    if (sans) savePvAsVariation(sans, sans.length, true);
+  };
   document.getElementById("rep-start").onclick = () => setViewIndex(0);
   document.getElementById("rep-prev").onclick = () => setViewIndex(store.game.viewIndex - 1);
   document.getElementById("rep-next").onclick = () => setViewIndex(store.game.viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
   document.getElementById("rep-live").onclick = () => { goLive(); };
+  document.getElementById("back-main").onclick = () => { backToMain(); };
 
   document.getElementById("an-run").onclick = () => {
     if (store.session.analyzing) {
@@ -7642,6 +8409,8 @@ import { createStore } from "./store.js";
    * it too.
    */
   function escapeKey() {
+    // the move menu is the smallest thing on screen that Escape can close
+    if (closeMoveMenu()) return true;
     // a selected piece is the most local thing there is to cancel
     if (store.game.selection && store.ui.boardFocused) {
       store.game.selection = null; announce(t("live.cleared")); draw(); return true;
@@ -7784,6 +8553,7 @@ import { createStore } from "./store.js";
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(confirmModal, () => finishConfirm(false));
     Dlg.register(keysModal, closeKeyHelp);
+    Dlg.register(noteModal, closeNoteModal);
   }
   wireDialogs();
 
@@ -7808,9 +8578,6 @@ import { createStore } from "./store.js";
   setSideTab(store.ui.sideTab);
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
-  // every reader has run by now; a record that failed to parse is reported
-  // once, here, instead of passing for a fresh install (v6-plan D2)
-  if (Persist.corruptKeys().length) showCorruptFault(Persist.corruptKeys());
   // a resumed finished game must not be re-counted on the next live move
   // A restored game that is already over was filed when it ended; marking it
   // recorded stops the launch path filing it a second time. The id is unknown
@@ -7835,6 +8602,13 @@ import { createStore } from "./store.js";
   sync();
   saveSettings();
   if (!resumed) saveGame();
+  // Every reader has run by now — including the lazy ones: loadStats() is
+  // cached and first runs inside renderStats() above, so a check placed
+  // right after tryLoadSave() ran before the stats record had been read and
+  // a corrupt one was quarantined after the banner had already decided there
+  // was nothing to say. A record that failed to parse is reported once, here,
+  // instead of passing for a fresh install (v6-plan D2).
+  if (Persist.corruptKeys().length) showCorruptFault(Persist.corruptKeys());
   if (store.session.mode === "ai" && ChessEngine) {
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)

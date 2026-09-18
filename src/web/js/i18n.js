@@ -163,7 +163,7 @@
       "role.you": "你（执白）", "role.youB": "你（执黑）", "role.puzzle": "题目",
       // confirm dialogs (dlg.*)
       "dlg.newGame": "开始新局将清空当前对局，是否继续？",
-      "dlg.retryHere": "从第 {0} 着继续重下，其后 {1} 着将被丢弃，是否继续？",
+      "dlg.retryHere": "从第 {0} 着继续重下，其后 {1} 着留作变着，是否继续？",
       "dlg.resign": "{0}认输，结束本局？",
       "dlg.whoResigns": "哪一方认输？",
       "dlg.whiteResigns": "白方认输", "dlg.blackResigns": "黑方认输",
@@ -194,6 +194,15 @@
       "mm.positionLoaded": "已载入局面",
       "mm.engineInitFailed": "引擎初始化失败",
       "an.pv": "引擎主变",
+      // 6.0 analysis board: the game tree, variations, shapes (v6-plan Q2.1–Q2.4)
+      "act.backMain": "回主线", "tip.backMain": "回到本局主线，光标停在同一深度",
+      "act.tryHere": "从这里试走", "act.save": "保存",
+      "an.pvSave": "存为变着", "tip.pvSave": "把这条引擎变化写进棋谱，作为当前局面的变着",
+      "ml.menu": "着法操作", "ml.promote": "升为主线", "ml.delete": "删除分支", "ml.editNote": "编辑注释",
+      "dlg.deleteBranch": "删除从 {0} 起的这条分支及其后的所有着法？",
+      "note.title": "注释", "note.titleFor": "注释 · {0}", "note.placeholder": "写下这一着的想法…",
+      "msg.variation.promoted": "已升为主线", "msg.variation.deleted": "已删除分支",
+      "msg.variation.saved": "已存为变着", "msg.variation.stale": "这条变化在当前局面走不通",
       "board.previewPly": "预览 · 第 {0} 着", "board.previewPv": "预览 · 引擎变化", "board.previewEsc": "Esc 返回实战",
       "curve.at": "第 {0} 着",
       "stats.wld": "{0}胜 {1}负 {2}和",
@@ -494,7 +503,7 @@
       "tip.mode.pvp": "双人同屏对弈",
       "tip.cat.win": "吃子战术：选出净得子力最多的一吃",
       "tip.editor.reset": "回到初始局面",
-      "tip.retryHere": "回到复盘所在的一着继续下，其后着法丢弃",
+      "tip.retryHere": "回到复盘所在的一着继续下，其后着法留作变着",
       "tip.replay.live": "回到最新",
       "tip.cat.review": "复习：重做答错或看过答案的题，做对即移出",
       "tip.pgn.copy": "复制 PGN（含标准对局标签）",
@@ -678,7 +687,7 @@
       "role.you": "You (White)", "role.youB": "You (Black)", "role.puzzle": "Puzzle",
       // confirm dialogs (dlg.*)
       "dlg.newGame": "Starting a new game discards the current one. Continue?",
-      "dlg.retryHere": "Resume from move {0} and discard the {1} moves after it. Continue?",
+      "dlg.retryHere": "Resume from move {0}; the {1} moves after it stay as a variation. Continue?",
       "dlg.resign": "{0} resigns and ends the game?",
       "dlg.whoResigns": "Which side resigns?",
       "dlg.whiteResigns": "White resigns", "dlg.blackResigns": "Black resigns",
@@ -709,6 +718,15 @@
       "mm.positionLoaded": "Position loaded",
       "mm.engineInitFailed": "Engine failed to start",
       "an.pv": "Engine main line",
+      // 6.0 analysis board: the game tree, variations, shapes (v6-plan Q2.1–Q2.4)
+      "act.backMain": "Main line", "tip.backMain": "Back to the game's main line, at the same depth",
+      "act.tryHere": "Try from here", "act.save": "Save",
+      "an.pvSave": "Save as variation", "tip.pvSave": "Write this engine line into the notation as a variation at this position",
+      "ml.menu": "Move actions", "ml.promote": "Promote to main line", "ml.delete": "Delete branch", "ml.editNote": "Edit comment",
+      "dlg.deleteBranch": "Delete the branch from {0} and every move after it?",
+      "note.title": "Comment", "note.titleFor": "Comment · {0}", "note.placeholder": "What is the idea behind this move?",
+      "msg.variation.promoted": "Promoted to main line", "msg.variation.deleted": "Branch deleted",
+      "msg.variation.saved": "Saved as a variation", "msg.variation.stale": "That line does not play from this position",
       "board.previewPly": "Preview · ply {0}", "board.previewPv": "Preview · engine line", "board.previewEsc": "Esc returns to the game",
       "curve.at": "Ply {0}",
       "stats.wld": "{0}W {1}L {2}D",
@@ -1007,7 +1025,7 @@
       "tip.mode.pvp": "Two players on one screen",
       "tip.cat.win": "Captures: find the one that wins the most material",
       "tip.editor.reset": "Back to the starting position",
-      "tip.retryHere": "Resume from the replay position; later moves are discarded",
+      "tip.retryHere": "Resume from the replay position; later moves are kept as a variation",
       "tip.replay.live": "Back to the latest move",
       "tip.cat.review": "Review: retry missed puzzles; a clean solve retires them",
       "tip.pgn.copy": "Copy PGN (with the standard tag roster)",
@@ -1191,7 +1209,7 @@
       "role.you": "あなた（白）", "role.youB": "あなた（黒）", "role.puzzle": "問題",
       // confirm dialogs (dlg.*)
       "dlg.newGame": "新規対局を始めると現在の対局は破棄されます。続けますか？",
-      "dlg.retryHere": "第 {0} 手から指し直し、以降の {1} 手を破棄します。続けますか？",
+      "dlg.retryHere": "第 {0} 手から指し直し、以降の {1} 手は変化手順として残します。続けますか？",
       "dlg.resign": "{0}が投了して対局を終えますか？",
       "dlg.whoResigns": "どちらが投了しますか？",
       "dlg.whiteResigns": "白が投了", "dlg.blackResigns": "黒が投了",
@@ -1222,6 +1240,15 @@
       "mm.positionLoaded": "局面を読み込みました",
       "mm.engineInitFailed": "エンジンの起動に失敗しました",
       "an.pv": "エンジンの読み筋",
+      // 6.0 analysis board: the game tree, variations, shapes (v6-plan Q2.1–Q2.4)
+      "act.backMain": "本譜へ", "tip.backMain": "この対局の本譜に戻ります。カーソルは同じ深さに留まります",
+      "act.tryHere": "ここから試す", "act.save": "保存する",
+      "an.pvSave": "変化として保存", "tip.pvSave": "このエンジンの読み筋を、現在の局面の変化手順として棋譜に書き込みます",
+      "ml.menu": "手の操作", "ml.promote": "本譜にする", "ml.delete": "分岐を削除", "ml.editNote": "コメントを編集",
+      "dlg.deleteBranch": "{0} からの分岐と、それ以降のすべての手を削除しますか？",
+      "note.title": "コメント", "note.titleFor": "コメント · {0}", "note.placeholder": "この手の狙いを書き留めます…",
+      "msg.variation.promoted": "本譜にしました", "msg.variation.deleted": "分岐を削除しました",
+      "msg.variation.saved": "変化として保存しました", "msg.variation.stale": "この読み筋は現在の局面では指せません",
       "board.previewPly": "プレビュー · {0} 手目", "board.previewPv": "プレビュー · エンジンの読み筋", "board.previewEsc": "Esc で対局に戻る",
       "curve.at": "{0} 手目",
       "stats.wld": "{0}勝 {1}敗 {2}分",
@@ -1520,7 +1547,7 @@
       "tip.mode.pvp": "1 台の画面で 2 人対局",
       "tip.cat.win": "駒取り：いちばん得をする一手を見つけます",
       "tip.editor.reset": "開始局面へ",
-      "tip.retryHere": "検討中の局面から指し直します。以降の手は破棄されます",
+      "tip.retryHere": "検討中の局面から指し直します。以降の手は変化手順として残ります",
       "tip.replay.live": "最新の手へ戻ります",
       "tip.cat.review": "復習：間違えた問題を解き直し、きれいに解ければ外れます",
       "tip.pgn.copy": "PGN をコピー（標準タグ付き）",
@@ -1654,6 +1681,10 @@
     });
     scope.querySelectorAll("[data-i18n-aria]").forEach((el) => {
       el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria")));
+    });
+    // 6.0: the comment box is the first field with a placeholder worth translating
+    scope.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+      el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
     });
   }
 

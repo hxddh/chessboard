@@ -331,6 +331,11 @@
       --sq-cursor-edge: rgba(20,20,20,.55);
       --sq-dot: rgba(30, 30, 30, var(--mark-soft));
       --sq-ring: rgba(30, 30, 30, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
     }
     [data-board="night"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -357,6 +362,11 @@
       --sq-cursor-edge: rgba(6,16,12,.60);
       --sq-dot: rgba(8, 18, 15, var(--mark-soft));
       --sq-ring: rgba(8, 18, 15, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
     [data-board="day"] {
@@ -385,6 +395,11 @@
       --sq-cursor-edge: rgba(40,28,12,.55);
       --sq-dot: rgba(60, 45, 25, var(--mark-soft));
       --sq-ring: rgba(60, 45, 25, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
     }
     [data-board="notebook"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -411,6 +426,11 @@
       --sq-cursor-edge: rgba(28,33,44,.58);
       --sq-dot: rgba(42, 49, 64, var(--mark-soft));
       --sq-ring: rgba(42, 49, 64, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
     }
 
@@ -1842,6 +1862,17 @@
   opacity: 0.92;
   pointer-events: none;
 }
+/* under the badge, the one thing a pinned line can be turned into (Q2.3) */
+.preview-try {
+  position: absolute;
+  left: calc(var(--wood-pad) + 8px);
+  top: calc(var(--wood-pad) + 34px);
+  appearance: none; border: 1px solid var(--accent); cursor: pointer;
+  padding: 2px 8px; border-radius: var(--radius-sm);
+  font: inherit; font-size: 11px; line-height: var(--lh-body); font-weight: 600;
+  color: var(--accent); background: var(--panel);
+}
+.preview-try:hover { color: var(--on-accent); background: var(--accent); }
 @keyframes think-dot-pulse {
   0%, 100% { transform: scale(0.7); opacity: 0.35; }
   50% { transform: scale(1.15); opacity: 0.85; }
@@ -1935,6 +1966,63 @@
       background: color-mix(in srgb, var(--accent) 18%, transparent);
       color: var(--accent); font-weight: 600;
     }
+    /* --- the tree in the notation (v6-plan Q2.1) ---
+       A variation is a paragraph, not a row: indented under the move it
+       replaces, one size down and in the muted ink, parentheses nested as
+       deep as the line goes. A comment is the same paragraph without the
+       parentheses. The mainline row stays exactly what it was. */
+    .mlvar, .mlcomment {
+      margin: 0 0 0 24px;
+      padding: 0 4px;
+      font-size: 12px; line-height: var(--lh-body); color: var(--muted);
+      white-space: normal; overflow-wrap: anywhere;
+    }
+    .mlvline + .mlvline { margin-top: 2px; }
+    .mlvnum { font-variant-numeric: tabular-nums; margin: 0 2px; }
+    .mlvnest { margin-left: 2px; }
+    .mlvcomment { margin: 0 2px; font-style: italic; }
+    .mlv {
+      appearance: none; border: 0; background: transparent;
+      color: var(--text);
+      font: inherit; font-size: 12px; font-weight: 500;
+      padding: 0 4px; min-height: var(--row-h-sm); line-height: var(--lh-body);
+      display: inline-flex; align-items: center;
+      border-radius: var(--radius-sm); cursor: pointer;
+      white-space: nowrap;
+    }
+    .mlv:hover { background: var(--btn-ghost); }
+    .mlv.current {
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+      color: var(--accent); font-weight: 600;
+    }
+    /* the menu handle beside the current move: as quiet as a move number */
+    .mlmenu {
+      appearance: none; border: 0; background: transparent;
+      color: var(--muted); font: inherit; font-size: 12px; font-weight: 600;
+      padding: 0 4px; min-height: var(--row-h-sm); border-radius: var(--radius-sm); cursor: pointer;
+      flex: none;
+    }
+    .mlmenu:hover { background: var(--btn-ghost); color: var(--text); }
+    .move-menu {
+      position: fixed; z-index: 55;
+      display: grid; gap: 2px; min-width: 140px;
+      padding: 4px;
+      background: var(--panel); border: 1px solid var(--panel-border);
+      border-radius: var(--radius-md);
+      box-shadow: 0 12px 32px rgba(0,0,0,.35);
+    }
+    .move-menu button {
+      appearance: none; border: 0; background: transparent;
+      color: var(--text); font: inherit; font-size: 12px; font-weight: 500;
+      text-align: left; padding: 0 12px; height: var(--row-h);
+      border-radius: var(--radius-sm); cursor: pointer;
+    }
+    .move-menu button:hover, .move-menu button:focus-visible { background: var(--btn-ghost); }
+    .replay-line { margin-top: 6px; }
+    .note-input {
+      width: 100%; resize: vertical;
+      font: inherit; font-size: 13px; line-height: var(--lh-body);
+    }
 
     /* --- review: the evaluation curve, the bar, and the accuracy line --- */
     #eval-wrap { margin: 8px 0 2px; }
@@ -1958,6 +2046,16 @@
     }
     .pv-chip:hover { border-color: var(--line); background: var(--btn-ghost); }
     .pv-chip.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    /* the one action among the chips: kept apart from them by its border,
+       so it does not read as a move (v6-plan Q2.3) */
+    .pv-act {
+      font: inherit; font-size: 11px; line-height: var(--lh-tight); font-weight: 600;
+      color: var(--muted); background: transparent;
+      border: 1px solid var(--line); border-radius: var(--radius-sm);
+      padding: 2px 8px; margin-left: 4px; cursor: pointer;
+      transition: color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease);
+    }
+    .pv-act:hover { color: var(--text); border-color: var(--accent); }
     #puzzle-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; margin: -4px 0 12px; overflow: visible; }
     /* the 主题 segment shows what it names: two squares of each board */
     #theme-seg button::before {
