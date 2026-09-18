@@ -107,14 +107,21 @@ jobs:
           # the licences made it into the bundle next to index.html
           test -f "$(find dist/Chessboard.app -path '*/licenses/LICENSE.txt' | head -n1)"
           ditto -c -k --sequesterRsrc --keepParent dist/Chessboard.app dist/Chessboard-macOS-arm64.zip
+          # 6.0: a disk image beside the zip — the shape Mac users expect to
+          # drag into Applications. Unsigned like the zip (v6-plan Q1.5 minus
+          # the Developer ID part, which is out of scope for this release);
+          # the Gatekeeper right-click-open dance is the same for both.
+          hdiutil create -volname Chessboard -srcfolder dist/Chessboard.app -ov -format UDZO dist/Chessboard-macOS-arm64.dmg
           ls -lh dist
       - uses: actions/upload-artifact@v7
         with:
           name: Chessboard-macOS-arm64
-          path: dist/Chessboard-macOS-arm64.zip
+          path: |
+            dist/Chessboard-macOS-arm64.zip
+            dist/Chessboard-macOS-arm64.dmg
       - name: upload to release
         if: ${{ inputs.release_tag != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
-        run: gh release upload "$TAG" dist/Chessboard-macOS-arm64.zip --clobber
+        run: gh release upload "$TAG" dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg --clobber
