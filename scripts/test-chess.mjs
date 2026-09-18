@@ -1522,7 +1522,9 @@ for (const lang of CONTENT_LANGS) {
   }
 
   // type: six steps, and no half pixels
-  const TYPE = new Set(["11px", "12px", "13px", "15px", "16px", "19px", "30px"]);
+  // 6.0: the same seven steps, in rem (16px root) so the text-size setting
+  // scales the whole sheet together (v6-plan Q3.6)
+  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.9375rem", "1rem", "1.1875rem", "1.875rem"]);
   const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
@@ -1759,7 +1761,8 @@ for (const lang of CONTENT_LANGS) {
     const co = /\.coords \{([\s\S]*?)\n    \}/.exec(stripped);
     assert(co, "found the coordinate rule");
     assert(!/clamp\(/.test(co[1]), "coordinates are not sized by a computed length");
-    assert(/font-size:\s*\d+px/.test(co[1]), "coordinates sit on the type scale");
+    // 6.0: the scale is in rem now (see TYPE above); a step is still a step
+    assert(/font-size:\s*[\d.]+rem/.test(co[1]), "coordinates sit on the type scale");
   }
 
   // radius: the tokens exist; use them
@@ -4025,7 +4028,7 @@ for (const lang of CONTENT_LANGS) {
     assert(/san\.slice\(1\)/.test(ws), "…the rest of the move is text");
     const cssM2 = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const num = /\.mlnum \{([^}]*)\}/.exec(cssM2);
-    assert(num && /font-size: 13px/.test(num[1]),
+    assert(num && /font-size: 0\.8125rem/.test(num[1]),
       "the move number is the same size as the move beside it");
     assert(num && /tabular-nums/.test(num[1]), "…and still a column of figures");
     assert(!/\.mlnum num/.test(appSrc), "…without borrowing the mono stack for it");

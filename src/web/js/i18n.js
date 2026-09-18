@@ -289,6 +289,7 @@
       "chrome.answer": "答案", "chrome.thinking": "思考中",
       "side.game": "对局", "side.mode": "模式", "side.difficulty": "难度", "side.color": "执子",
       "side.clock": "棋钟", "side.look": "界面", "side.theme": "主题", "side.sound": "音效",
+      "side.followSystem": "跟随系统深浅", "tip.followSystem": "系统切到深色时用「夜」，浅色时用「日」", "side.textSize": "字号", "text.s": "小", "text.m": "标准", "text.l": "大", "tip.textSize": "整个界面的文字大小",
       "side.coach": "失着提醒", "side.autoflip": "自动翻转", "side.language": "语言",
       "side.orientation": "棋盘方向",
       "side.moves": "棋谱", "side.stats": "统计", "side.ach": "成就",
@@ -611,7 +612,7 @@
       "rv.title": "Game review",
       "rv.offer": "Game over — tap \u201cAnalyse\u201d for a review of how you played",
       // "what next?" line under the statistics (rec.*)
-      "rec.lessons": "{1} lessons still to go (you have finished {0}) \u2014 finish the course, then come back to play",
+      "rec.lessons": "{1:lesson|lessons} still to go (you have finished {0}) \u2014 finish the course, then come back to play",
       "rec.harder": "You are winning nearly everything \u2014 time to try the \u201c{0}\u201d level",
       "rec.easier": "You lost the last few \u2014 the \u201c{0}\u201d level will teach you more",
       "rec.review": "More losses than wins lately \u2014 Puzzles \u2192 Review still has {0} waiting",
@@ -632,7 +633,7 @@
       "rv.verdict.excellent": "Excellent play — time to try a harder level",
       "rv.verdict.solid": "Solid play — keep it up",
       "rv.verdict.roomToGrow": "Room to grow — head to Puzzles to sharpen your tactics",
-      "rv.verdict.tooShort": "Only {0} moves analysed — too few to judge overall play",
+      "rv.verdict.tooShort": "Only {0:move|moves} analysed — too few to judge overall play",
       "rv.verdict.excellentPlain": "Excellent play",
       // learn mode (lm.*) — task prompts, feedback and drill outcomes
       "lm.demoIntro": "Watch the demo first — click the board to skip",
@@ -676,7 +677,7 @@
       "pz.goalOpB": "{0} · answer the book line as Black for {1} moves",
       "pz.moveUnit": " moves",
       "ntf.analysisDone": "Analysis complete",
-      "st.quietMoves": "{0} moves without progress",
+      "st.quietMoves": "{0:move|moves} without progress",
       "pz.goalWin": "{0} · White to play, take the biggest prize (net gain {1})",
       "pz.goalTac": "{0} · {1} · White to play, win material by force (net gain {2})",
       "pz.goalReal": "{0} · {1} men on the board, White to play — exactly one move wins material (net gain {2})",
@@ -721,7 +722,7 @@
       "dlg.drawBoth": "Do both players agree to a draw?",
       "dlg.drawAgree": "Agree to a draw", "dlg.drawPlayOn": "Play on",
       "dlg.exportPgn": "Export PGN", "dlg.openPgn": "Open PGN",
-      "dlg.pickGame": "This PGN holds {0} games — choose the one to import",
+      "dlg.pickGame": "This PGN holds {0:game|games} — choose the one to import",
       "dlg.importPgn": "Importing replaces the current game. Continue?",
       "dlg.importPgnTitle": "Import PGN", "dlg.import": "Import",
       "dlg.clearStats": "Clear the engine-game statistics? This deletes the game history too.", "dlg.clearStatsTitle": "Clear statistics",
@@ -736,7 +737,7 @@
       "mm.backToMove": "Back at move {0} — play on",
       "mm.resignWin": "{0} resigned · {1} wins",
       "mm.blunder": "⚠️ {0} may have been a serious mistake — press Z to take it back",
-      "mm.plies": "{0} moves",
+      "mm.plies": "{0:move|moves}",
       "mm.fileTooLarge": "Over the {0} KB read limit — split the library up and import the parts",
       "act.reportExport": "Export report", "tip.reportExport": "Save the review as a picture",
       "rv.exportTitle": "Export review report", "rv.noReport": "Analyse the game first — there is no report to export yet",
@@ -779,12 +780,12 @@
       "pz.mine.whyLoss": "In the game, {0} cost about {1} pawns.", "pz.mine.whyLine": "After {0} the line runs roughly {1}.",
       "pz.mine.alsoFine": "{0} works too — only {1} pawns short of the best move", "pz.mine.altCost": "{0} pawns worse than the best move",
       "pz.doneMine": "Redeemed",
-      "msg.mined": "{0} mistake(s) banked as drills",
-      "msg.minesRevised": "{0} drill answers corrected", "msg.minesWithdrawn": "{0} drills withdrawn — no longer blunders at this depth",
+      "msg.mined": "{0:mistake|mistakes} banked as drills",
+      "msg.minesRevised": "{0:drill answer|drill answers} corrected", "msg.minesWithdrawn": "{0:drill|drills} withdrawn — no longer blunders at this depth",
       "daily.btn": "Today's training",
       "tip.daily": "One sitting, planned from your review debt, mistakes, weak spots and course progress",
       "daily.of": "Step {0}/{1}",
-      "daily.review": "Clear {0} reviews first",
+      "daily.review": "Clear {0:review|reviews} first",
       "daily.mine": "{0} of your own mistakes",
       "daily.weak": "Two in your weak spot ({0})",
       "daily.motif": "Two on the motif ({0})", "daily.motifDone": "Every puzzle on that motif is solved — pick something else",
@@ -829,6 +830,7 @@
       "chrome.answer": "Answer", "chrome.thinking": "Thinking",
       "side.game": "Game", "side.mode": "Mode", "side.difficulty": "Level", "side.color": "Side",
       "side.clock": "Clock", "side.look": "Interface", "side.theme": "Theme", "side.sound": "Sound",
+      "side.followSystem": "Follow system light/dark", "tip.followSystem": "Night when the system goes dark, Day when it goes light", "side.textSize": "Text size", "text.s": "Small", "text.m": "Standard", "text.l": "Large", "tip.textSize": "Text size across the whole interface",
       "side.coach": "Blunder alerts", "side.autoflip": "Auto-flip", "side.language": "Language",
       "side.orientation": "Board orientation",
       "side.moves": "Moves", "side.stats": "Stats", "side.ach": "Achievements",
@@ -902,7 +904,7 @@
       "msg.save.restored": "Previous game restored",
       "msg.analysis.doneClean": "Analysis complete \u00b7 no clear mistakes",
       "msg.analysis.donePrefix": "Analysis complete \u00b7 ",
-      "msg.analysis.doneSuffix": " mistake(s)",
+      "msg.analysis.doneSuffix": " flagged",
       "msg.analysis.stopped": "Analysis stopped",
       "msg.analysis.keptPrefix": "Analysis stopped \u00b7 kept the first ",
       "msg.analysis.keptSuffix": " plies",
@@ -991,7 +993,7 @@
       "mat.takenW": "Pieces White has captured", "mat.takenB": "Pieces Black has captured",
       "tab.play": "Play", "tab.setup": "Setup", "tab.record": "Record",
       "aria.tabs": "Panel sections",
-      "hist.title": "Game history", "hist.all": "All {0} games", "hist.open": "Browse every recorded game",
+      "hist.title": "Game history", "hist.all": "All {0:game|games}", "hist.open": "Browse every recorded game",
       "hist.empty": "No finished engine games yet",
       "hist.hint": "Click a game to load it on the board — then Analyse for the review, export the PGN, or store it in a slot",
       "hist.win": "Win", "hist.loss": "Loss", "hist.draw": "Draw",
@@ -1008,7 +1010,7 @@
       "keys.board": "With the board focused: arrows move the cursor, Enter picks up and puts down",
       "keys.retry": "Restart this one",
       "keys.next": "Next puzzle", "keys.lessonHint": "Hint for this lesson", "keys.answer": "Show the answer",
-      "hist.noneMatch": "No games match", "hist.showing": "{0} of {1} games",
+      "hist.noneMatch": "No games match", "hist.showing": "{0} of {1:game|games}",
       "hist.acc": "{0}% accuracy", "hist.today": "today", "hist.yesterday": "yesterday",
       "hist.loaded": "Loaded from history · {0}",
       "hist.pgn": "PGN", "hist.pgnCopied": "PGN of that game copied",
@@ -1367,6 +1369,7 @@
       "chrome.answer": "答え", "chrome.thinking": "考え中",
       "side.game": "対局", "side.mode": "モード", "side.difficulty": "強さ", "side.color": "手番",
       "side.clock": "時計", "side.look": "インターフェース", "side.theme": "テーマ", "side.sound": "サウンド",
+      "side.followSystem": "システムの明暗に追従", "tip.followSystem": "システムがダークなら「夜」、ライトなら「日」", "side.textSize": "文字サイズ", "text.s": "小さめ", "text.m": "標準", "text.l": "大きめ", "tip.textSize": "インターフェース全体の文字の大きさ",
       "side.coach": "悪手の警告", "side.autoflip": "自動反転", "side.language": "言語",
       "side.orientation": "盤の向き",
       "side.moves": "棋譜", "side.stats": "成績", "side.ach": "実績",
@@ -1703,12 +1706,34 @@
    * @param {string} key
    * @param {Array} vals
    */
+  /**
+   * t() with values spliced in. `{0}` is the value; `{0:move|moves}` is the
+   * value followed by the word for its count — the branch is chosen with
+   * Intl.PluralRules for the current language (6.0, v6-plan Q3.6), so
+   * English stops saying "1 moves" while Chinese and Japanese, which do not
+   * inflect, simply never use the form.
+   */
+  const pluralRules = {};
+  function pluralOf(n) {
+    try {
+      if (!pluralRules[lang]) pluralRules[lang] = new Intl.PluralRules(lang);
+      return pluralRules[lang].select(Number(n));
+    } catch (_) { return Number(n) === 1 ? "one" : "other"; }
+  }
   function tf(key, vals) {
     const s = t(key);
-    return s.replace(/\{(\d+)\}/g, (m, i) => {
+    return s.replace(/\{(\d+)(?::([^|}]*)\|([^}]*))?\}/g, (m, i, one, other) => {
       const v = vals && vals[Number(i)];
-      return v === undefined || v === null ? "" : String(v);
+      const text = v === undefined || v === null ? "" : String(v);
+      if (one === undefined) return text;
+      return text + " " + (pluralOf(v) === "one" ? one : other);
     });
+  }
+
+  /** A date or time in the app's language, not the system's (6.0). */
+  function fmtDate(ts, opts) {
+    try { return new Date(ts).toLocaleString(lang, opts || { dateStyle: "short" }); }
+    catch (_) { return new Date(ts).toLocaleString(); }
   }
 
   /**
@@ -1736,4 +1761,4 @@
     });
   }
 
-  export const ChessI18n = { t, tf, apply, setLang, getLang, detectLang, available, DICT };
+  export const ChessI18n = { t, tf, fmtDate, apply, setLang, getLang, detectLang, available, DICT };

@@ -314,6 +314,9 @@ import { createStore } from "./store.js";
       blindfold: false,
       hash: 32,
       multipv: 1,
+      /** 6.0 (v6-plan Q3.6): the theme follows the system's light/dark; the text size step */
+      followSystem: false,
+      textSize: "m",
       /** @type {'wood'|'night'|'day'|'notebook'} */
       themeId: "wood",
       /** pvp: flip the board to face the side to move after every move */
@@ -1161,6 +1164,8 @@ import { createStore } from "./store.js";
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
+      if (typeof s.followSystem === "boolean") store.ui.followSystem = s.followSystem;
+      if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
@@ -1181,7 +1186,8 @@ import { createStore } from "./store.js";
   function saveSettings() {
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv }));
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
+        followSystem: store.ui.followSystem, textSize: store.ui.textSize }));
     } catch (_) {}
   }
   function saveGame() {
@@ -4654,10 +4660,11 @@ import { createStore } from "./store.js";
     const now = new Date();
     const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    const clock2 = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // in the interface language, not the system's (v6-plan Q3.6)
+    const clock2 = I18n.fmtDate(d, { hour: "2-digit", minute: "2-digit" });
     if (midnight(d) === midnight(now)) return t("hist.today") + " " + clock2;
     if (midnight(d) === midnight(yesterday)) return t("hist.yesterday") + " " + clock2;
-    return d.toLocaleDateString();
+    return I18n.fmtDate(d, { dateStyle: "short" });
   }
 
   /** everything is localised at render time, so a language switch relabels it */
@@ -5884,6 +5891,8 @@ import { createStore } from "./store.js";
     };
     sw("opt-coords", store.ui.coordsOn);
     sw("opt-blind", store.ui.blindfold);
+    sw("opt-follow", store.ui.followSystem);
+    document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
     const vol = document.getElementById("opt-volume");
     if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
     const rowVol = document.getElementById("row-volume");
@@ -7308,7 +7317,7 @@ import { createStore } from "./store.js";
     const P = ChessPgn;
     const s = P ? P.summary(slot.pgn) : null;
     const when = slot.savedAt
-      ? new Date(slot.savedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })
+      ? I18n.fmtDate(slot.savedAt, { dateStyle: "short", timeStyle: "short" })
       : "";
     const moves = s && s.plies ? moveCount(Math.ceil(s.plies / 2)) : "";
     return [moves, when].filter(Boolean).join(" · ");
@@ -8420,6 +8429,8 @@ import { createStore } from "./store.js";
   document.getElementById("theme-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-theme]");
     if (b) {
+      // choosing a theme by hand is the answer to "follow the system?"
+      store.ui.followSystem = false;
       applyTheme(b.dataset.theme);
     }
   };
@@ -8671,6 +8682,34 @@ import { createStore } from "./store.js";
     // one save and one sample per release of the slider, not one per pixel
     volEl.onchange = () => { saveSettings(); if (store.ui.soundOn) Audio2.playMove("w"); };
   }
+  // 6.0 (v6-plan Q3.6): the theme follows the system's scheme while the
+  // switch is on — night for dark, day for light — and reacts live
+  const schemeMq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function applySystemScheme() {
+    if (!store.ui.followSystem || !schemeMq) return;
+    const want = schemeMq.matches ? "night" : "day";
+    if (store.ui.themeId !== want) applyTheme(want);
+  }
+  if (schemeMq && schemeMq.addEventListener) schemeMq.addEventListener("change", applySystemScheme);
+  document.getElementById("opt-follow").onclick = () => {
+    store.ui.followSystem = !store.ui.followSystem;
+    saveSettings();
+    syncSettingsUI();
+    applySystemScheme();
+  };
+  function applyTextSize() {
+    document.documentElement.setAttribute("data-text", store.ui.textSize);
+    // the board is sized from its container, which the type size can move
+    requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); drawEvalCurve(); });
+  }
+  document.getElementById("text-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-text]");
+    if (!b) return;
+    store.ui.textSize = b.dataset.text;
+    saveSettings();
+    syncSettingsUI();
+    applyTextSize();
+  };
   document.getElementById("opt-coords").onclick = () => {
     store.ui.coordsOn = !store.ui.coordsOn;
     saveSettings();
@@ -9242,6 +9281,8 @@ import { createStore } from "./store.js";
   // and on a first run, start in the system language rather than always Chinese
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
+  document.documentElement.setAttribute("data-text", store.ui.textSize);
+  if (store.ui.followSystem && schemeMq) store.ui.themeId = schemeMq.matches ? "night" : "day";
   document.documentElement.setAttribute("data-theme", store.ui.themeId);
   document.documentElement.setAttribute("data-board", store.ui.themeId);
   if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
