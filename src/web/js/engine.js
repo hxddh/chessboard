@@ -76,6 +76,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   };
 
   let worker = null;
+  let wasmBytes = null; // decoded once, handed to every worker this session builds
   let readyPromise = null;
   let lineHandlers = [];
   let gen = 0;
@@ -181,10 +182,40 @@ const global = typeof window !== "undefined" ? window : globalThis;
     });
   }
 
+  /**
+   * 6.0: the engine sources arrive when the engine is first wanted.
+   *
+   * index.html used to load engine-src.js — 9.7 MB of base64 in a string
+   * literal — with a blocking <script> before the app itself, so the first
+   * paint waited on parsing a payload the first paint does not use. The tag is
+   * now injected here, on demand. zero:// cannot fetch() a packaged file but
+   * it can load a classic script, which is the same road index.html takes.
+   * The string is dropped from the window once decoded: the worker owns the
+   * bytes from then on and nothing else needs 9.7 MB of text around.
+   */
+  let sourcesPromise = null;
+  function loadSources() {
+    if (global.CHESS_SF_LOADER && global.CHESS_SF_WASM_B64) return Promise.resolve();
+    if (sourcesPromise) return sourcesPromise;
+    sourcesPromise = new Promise((resolve, reject) => {
+      const doc = global.document;
+      if (!doc || !doc.head) { reject(new Error("engine sources missing")); return; }
+      const el = doc.createElement("script");
+      el.src = "js/engine-src.js";
+      el.async = true;
+      el.onload = () => resolve();
+      el.onerror = () => reject(new Error("engine sources failed to load"));
+      doc.head.appendChild(el);
+    });
+    sourcesPromise.catch(() => { sourcesPromise = null; });
+    return sourcesPromise;
+  }
+
   /** Boot the engine (idempotent). Resolves when UCI handshake completes. */
   function init() {
     if (readyPromise) return readyPromise;
     readyPromise = (async () => {
+      await loadSources();
       const loaderText = global.CHESS_SF_LOADER;
       const wasmB64 = global.CHESS_SF_WASM_B64;
       if (!loaderText || !wasmB64) throw new Error("engine sources missing");
@@ -195,7 +226,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
       // this the init promise waited out its 30 s and the worker lingered
       worker.onerror = () => teardown();
       const readyWait = waitFor((l) => l === "__sf_ready__", 30000);
-      worker.postMessage({ type: "init", wasm: b64ToBuffer(wasmB64) });
+      // the buffer is transferred, not copied: the worker is its only reader.
+      // A rebuilt worker (teardown after a hang) needs the bytes again, so
+      // they are kept once decoded, but the base64 text is not.
+      if (!wasmBytes) wasmBytes = b64ToBuffer(wasmB64);
+      const payload = wasmBytes.slice(0);
+      worker.postMessage({ type: "init", wasm: payload }, [payload]);
+      global.CHESS_SF_WASM_B64 = "";
       await readyWait;
       const uciWait = waitFor((l) => l === "uciok", 10000);
       send("uci");
@@ -384,15 +421,94 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
-   * Full-strength eval of `fen` for review analysis.
-   * @returns {Promise<{cp,mate,turn,best}|null>} score in side-to-move terms
-   * (`turn` = that side); null when stale/failed.
+   * 6.0: the knobs a player may turn. Hash is the one that matters on a
+   * single-threaded lite build; Threads stays at 1 because this wasm has no
+   * SharedArrayBuffer to run more on. Applied before every full-strength
+   * search, like every other sticky option.
    */
-  function analyze(fen, movetime) {
-    return exclusive(() => analyzeInner(fen, movetime));
+  const options = { hash: 32 };
+  function setOptions(o) {
+    if (o && Number.isFinite(o.hash)) options.hash = Math.max(1, Math.min(512, Math.round(o.hash)));
+    return { ...options };
+  }
+  function getOptions() { return { ...options }; }
+
+  /**
+   * 6.0: evaluations already paid for.
+   *
+   * The coach, the hint and the review each searched the same position again
+   * from nothing (v6-plan §1.2). A result is keyed by the position — FEN
+   * without the move counters, which do not change what the engine sees — and
+   * is served again to anyone asking for no more than the budget that
+   * produced it. Bounded and LRU: a long session must not keep every position
+   * it ever looked at.
+   */
+  const EVAL_CACHE_MAX = 512;
+  const evalCache = new Map();
+  function cacheKey(fen, multipv) {
+    const f = fen.split(" ");
+    return f.slice(0, 4).join(" ") + "|" + (multipv || 1);
+  }
+  function cachedEval(fen, movetime, multipv) {
+    const k = cacheKey(fen, multipv);
+    const hit = evalCache.get(k);
+    if (!hit || hit.movetime < (movetime || 120)) return null;
+    evalCache.delete(k); evalCache.set(k, hit); // refresh recency
+    return hit.result;
+  }
+  function rememberEval(fen, movetime, multipv, result) {
+    if (!result) return;
+    const k = cacheKey(fen, multipv);
+    evalCache.delete(k);
+    evalCache.set(k, { movetime: movetime || 120, result });
+    while (evalCache.size > EVAL_CACHE_MAX) evalCache.delete(evalCache.keys().next().value);
   }
 
-  async function analyzeInner(fen, movetime) {
+  /**
+   * Full-strength eval of `fen` for review analysis.
+   * @param {object} [opts] `{multipv}` asks for that many lines (1–5); the
+   *   result then also carries `lines: [{pv, cp, mate}]`, best first
+   * @returns {Promise<{cp,mate,turn,best,pv,lines}|null>} score in
+   *   side-to-move terms (`turn` = that side); null when stale/failed.
+   */
+  function analyze(fen, movetime, opts) {
+    const multipv = opts && opts.multipv ? Math.max(1, Math.min(5, opts.multipv | 0)) : 1;
+    const hit = cachedEval(fen, movetime, multipv);
+    if (hit) return Promise.resolve(hit);
+    return exclusive(() => analyzeInner(fen, movetime, multipv)).then((r) => {
+      rememberEval(fen, movetime, multipv, r);
+      return r;
+    });
+  }
+
+  /** Parse one `info` line into what the review keeps of it. */
+  function readInfo(line, into) {
+    const mv = line.match(/\bmultipv (\d+)\b/);
+    const idx = mv ? Number(mv[1]) : 1;
+    const m = line.match(/\bscore (cp|mate) (-?\d+)\b/);
+    const pm = line.match(/\bpv\s+(.+)$/);
+    const dm = line.match(/\bdepth (\d+)\b/);
+    if (!m && !pm) return;
+    const slot = into.get(idx) || { cp: null, mate: null, pv: null, depth: 0 };
+    if (m) { slot.cp = m[1] === "cp" ? Number(m[2]) : null; slot.mate = m[1] === "mate" ? Number(m[2]) : null; }
+    if (pm) slot.pv = pm[1].trim().split(/\s+/);
+    if (dm) slot.depth = Number(dm[1]);
+    into.set(idx, slot);
+  }
+
+  function fullStrengthOptions(multipv) {
+    // all sticky from a handicap game — analysis is always full strength
+    send("setoption name MultiPV value " + (multipv || 1));
+    send("setoption name Skill Level value 20");
+    send("setoption name UCI_LimitStrength value false");
+    send("setoption name Hash value " + options.hash);
+  }
+
+  function linesOf(slots) {
+    return [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+  }
+
+  async function analyzeInner(fen, movetime, multipv) {
     await init();
     const myGen = ++gen;
     const drain = waitFor((l) => l === "readyok", 5000);
@@ -400,20 +516,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
     await drain;
     if (myGen !== gen) return null;
     const ms = movetime || 120;
-    // all sticky from a handicap game — analysis is always full strength
-    send("setoption name MultiPV value 1");
-    send("setoption name Skill Level value 20");
-    send("setoption name UCI_LimitStrength value false");
+    fullStrengthOptions(multipv);
     send("position fen " + fen);
-    let score = null; // last reported, side-to-move perspective
-    let pv = null; // last reported principal variation (uci moves)
-    const collect = (line) => {
-      if (typeof line !== "string") return;
-      const m = line.match(/\bscore (cp|mate) (-?\d+)\b/);
-      if (m) score = { kind: m[1], val: Number(m[2]) };
-      const pm = line.match(/\bpv\s+(.+)$/);
-      if (pm) pv = pm[1].trim().split(/\s+/);
-    };
+    const slots = new Map();
+    const collect = (line) => { if (typeof line === "string") readInfo(line, slots); };
     lineHandlers.push(collect);
     const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), ms + 15000);
     send("go movetime " + ms);
@@ -422,13 +528,62 @@ const global = typeof window !== "undefined" ? window : globalThis;
     finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
     if (myGen !== gen) return null;
     const uci = line.split(/\s+/)[1];
+    const lines = linesOf(slots);
+    const top = lines[0] || { cp: null, mate: null, pv: null };
     return {
-      cp: score && score.kind === "cp" ? score.val : null,
-      mate: score && score.kind === "mate" ? score.val : null,
+      cp: top.cp,
+      mate: top.mate,
       turn: fen.split(" ")[1] === "b" ? "b" : "w",
       best: uci && uci !== "(none)" ? uci : null,
-      pv: pv || null,
+      pv: top.pv || null,
+      lines,
     };
   }
 
-  export const ChessEngine = { init, isReady, bestMove, analyze, newGame, cancel, TIERS, pickCandidate };
+  /**
+   * 6.0: continuous analysis — `go infinite` on one position, reporting every
+   * improvement until told to stop.
+   *
+   * Holds the exclusive lock for as long as it runs, so a game move queued
+   * behind it waits; the caller is expected to stop it before the game
+   * resumes. Returns the stop function; `onUpdate` receives
+   * `{depth, lines: [{pv, cp, mate, depth}], turn}` on each new info line.
+   */
+  function analyzeInfinite(fen, opts, onUpdate) {
+    const multipv = opts && opts.multipv ? Math.max(1, Math.min(5, opts.multipv | 0)) : 1;
+    let stopped = false;
+    let release = null;
+    const done = new Promise((r) => { release = r; });
+    exclusive(async () => {
+      if (stopped) return;
+      await init();
+      const myGen = ++gen;
+      const drain = waitFor((l) => l === "readyok", 5000);
+      send("isready");
+      await drain;
+      if (myGen !== gen || stopped) return;
+      fullStrengthOptions(multipv);
+      send("position fen " + fen);
+      const slots = new Map();
+      const turn = fen.split(" ")[1] === "b" ? "b" : "w";
+      const collect = (line) => {
+        if (typeof line !== "string" || !/^info\b/.test(line)) return;
+        readInfo(line, slots);
+        const lines = linesOf(slots);
+        if (lines.length && onUpdate) onUpdate({ depth: lines[0].depth, lines, turn });
+      };
+      lineHandlers.push(collect);
+      const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), 24 * 3600 * 1000);
+      send("go infinite");
+      try { await wait; } catch (_) { /* stopped or torn down */ }
+      finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
+    }).then(release, release);
+    return function stop() {
+      if (stopped) return done;
+      stopped = true;
+      if (worker) send("stop");
+      return done;
+    };
+  }
+
+  export const ChessEngine = { init, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate };

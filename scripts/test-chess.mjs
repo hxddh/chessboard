@@ -2215,7 +2215,8 @@ for (const lang of CONTENT_LANGS) {
 
   // the analyser must not carry a fifth copy of the numbers
   const analyze = fnOf("analyzeGame");
-  assert(/Review\.markFor\(/.test(analyze), "the analyser tags moves through review.js");
+  // 6.0: by win-percentage drop (v6-plan Q2.5), still through review.js
+  assert(/Review\.classifyByWinPct\(Review\.winPctDrop\(/.test(analyze), "the analyser tags moves through review.js");
   assert(!/loss >= \d+/.test(analyze), "the analyser holds no thresholds of its own");
 
   // the eval bar reads the analysis and nothing else — no engine call, which

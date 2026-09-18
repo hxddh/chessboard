@@ -4,6 +4,7 @@ import { ChessBoardView } from "./board.js";
 import { Chess } from "./chess.js";
 import { ChessDialog } from "./dialog.js";
 import { ChessDrills } from "./drills.js";
+import { ChessEco } from "./eco-lookup.js";
 import { ChessEditor } from "./editor.js";
 import { ChessEngine } from "./engine.js";
 import { ChessFide } from "./fide.js";
@@ -1070,28 +1071,24 @@ import { createStore } from "./store.js";
     }
   }
 
-  // --- opening book: deepest SAN-prefix match wins ---
-  const OPENING_BOOK = (() => {
-    const map = new Map();
-    let maxPly = 0;
-    for (const [eco, nameId, seq] of CHESS_OPENINGS || []) {
-      // store the parts, not the joined label: the name is localised at render
-      // time so switching language relabels the line already on screen
-      map.set(seq, [eco, nameId]);
-      maxPly = Math.max(maxPly, seq.split(" ").length);
-    }
-    return { map, maxPly };
-  })();
-
+  /**
+   * The opening the game is in, as `[eco, localisedName]`.
+   *
+   * 6.0: by position, not by move prefix. The 195-line book above still names
+   * the lines the trainer teaches, but recognising a game is a different job:
+   * a transposition, or a game that starts from a FEN, has no prefix to match
+   * and used to show no opening at all (v6-plan Q2.7). eco-lookup.js keys the
+   * full lichess ECO table by position, so the deepest known position along
+   * the first `prefixLen` plies decides, whatever order the moves came in.
+   */
   function openingFor(prefixLen) {
-    if (startFen()) return null; // the book only applies from the standard start
     const h = sanHistory();
-    const n = Math.min(prefixLen, h.length, OPENING_BOOK.maxPly);
-    for (let i = n; i >= 1; i--) {
-      const hit = OPENING_BOOK.map.get(h.slice(0, i).join(" "));
-      if (hit) return hit;
-    }
-    return null;
+    const n = Math.max(0, Math.min(prefixLen, h.length));
+    const sf = startFen();
+    if (!n && !sf) return null;
+    const hit = ChessEco.openingForGame(h.slice(0, n), sf || undefined);
+    if (!hit) return null;
+    return [hit.eco, ChessEco.localName(hit, store.ui.langId)];
   }
 
   function renderOpening() {
@@ -1099,7 +1096,7 @@ import { createStore } from "./store.js";
     if (!el) return;
     const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
     el.hidden = !hit;
-    el.textContent = hit ? hit[0] + " · " + openingName(hit[1]) : "";
+    el.textContent = hit ? hit[0] + " · " + hit[1] : "";
   }
 
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
@@ -2894,12 +2891,15 @@ import { createStore } from "./store.js";
     const tags = h.map((_, i) => {
       const a = scalars[i], b = scalars[i + 1];
       if (a == null || b == null) return null;
-      const moverIsWhite = fens[i].split(" ")[1] === "w";
-      const loss = moverIsWhite ? a - b : b - a;
-      // one source for the thresholds: the move list, the curve markers and
-      // the best-move arrow all read the same call. This used to be a fourth
-      // hand-written copy of 300/100/50 sitting next to review.js's constants.
-      return Review.markFor(loss);
+      const mover = fens[i].split(" ")[1] === "w" ? "w" : "b";
+      // 6.0: marks by win-percentage drop, not centipawns. Measured on the
+      // same four games (docs/measured.json winPctNoise): two 120 ms scans
+      // agree on ?! 67 % of the time against 32 % for the centipawn cut-off,
+      // because a centipawn is worth much less at +5 than at 0 and the
+      // win-percentage curve already knows that. One source for the
+      // thresholds: the move list, the curve markers and the arrow all read
+      // the same call (v6-plan Q2.5).
+      return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
     });
     store.session.analysis = { sig, scalars, tags, pvs, bests, budget: perMove, acc: accuracyFrom(fens, scalars) };
     store.session.analyzing = false;
@@ -2967,7 +2967,11 @@ import { createStore } from "./store.js";
     const loss = Review.lossesBySide(scalars, (i) => (fens[i].split(" ")[1] === "w" ? "w" : "b"));
     const w = Review.accuracyOf(loss.w);
     const b = Review.accuracyOf(loss.b);
-    return { w: w.acc, b: b.acc, wAcpl: w.acpl, bAcpl: b.acpl };
+    // 6.0: the accuracy figure is the win-percentage one — the same measure
+    // the online platforms report, so the number is finally comparable
+    // (缺陷 22); the average loss stays in centipawns, which is what it is
+    const wp = Review.summarizeWinPct(scalars, sanHistory(), fens[0].split(" ")[1] === "b" ? "b" : "w");
+    return { w: wp ? wp.acc.w : w.acc, b: wp ? wp.acc.b : b.acc, wAcpl: w.acpl, bAcpl: b.acpl };
   }
 
   /**
@@ -3125,7 +3129,12 @@ import { createStore } from "./store.js";
     if (!el) return;
     const R = ChessReview;
     const a = analysisFor();
-    const sum = R && a ? R.summarize(a.scalars, sanHistory(), startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w") : null;
+    const firstMover = startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w";
+    const cp = R && a ? R.summarize(a.scalars, sanHistory(), firstMover) : null;
+    // the report reads the win-percentage summary; the average loss (a
+    // centipawn figure) is the one row still taken from the centipawn one
+    const sum = R && a ? R.summarizeWinPct(a.scalars, sanHistory(), firstMover) : null;
+    if (sum && cp) sum.acpl = cp.acpl;
     el.hidden = !sum;
     el.replaceChildren();
     if (!sum) return;
@@ -3136,7 +3145,7 @@ import { createStore } from "./store.js";
     const opening = openingFor(sanHistory().length);
     if (opening) {
       const o = line("review-row muted");
-      o.textContent = t("rv.opening") + " · " + opening[0] + " " + openingName(opening[1]);
+      o.textContent = t("rv.opening") + " · " + opening[0] + " " + opening[1];
     }
     for (const side of ["w", "b"]) {
       if (sum.acc[side] == null) continue;
@@ -3185,7 +3194,7 @@ import { createStore } from "./store.js";
       btn.className = "review-jump";
       btn.textContent = tf("rv.turningPoint",
         [sum.worst.moveNo, sideName(sum.worst.side), sum.worst.san,
-         (sum.worst.loss / 100).toFixed(1)]);
+         Math.round(sum.worst.drop)]);
       btn.title = t("rv.jumpTip");
       // land on the position *after* the move, so the damage is on the board
       btn.onclick = () => setViewIndex(sum.worst.ply + 1);
@@ -5586,8 +5595,10 @@ import { createStore } from "./store.js";
     const R = ChessReview;
     if (!a || !R) return null;
     const first = startFen() && startFen().split(" ")[1] === "b" ? "b" : "w";
-    const sum = R.summarize(a.scalars, sanHistory(), first);
-    if (!sum) return null;
+    const sum = R.summarizeWinPct(a.scalars, sanHistory(), first);
+    const cp = R.summarize(a.scalars, sanHistory(), first);
+    if (!sum || !cp) return null;
+    sum.acpl = cp.acpl;
 
     const S = 2; // fixed scale: the file should not depend on the player's screen
     const W = 900, H = 520;
@@ -5645,7 +5656,7 @@ import { createStore } from "./store.js";
     font("15px");
     ctx.fillStyle = muted;
     const opening = openingFor(sanHistory().length);
-    const head = [opening ? openingName(opening[1]) : null, statusText(),
+    const head = [opening ? opening[1] : null, statusText(),
       tf("mm.plies", [sanHistory().length])].filter(Boolean).join("  ·  ");
     text(head, 40, 84, W - 80, 2, 20);
 
@@ -5714,7 +5725,7 @@ import { createStore } from "./store.js";
       // the Plain key, not the panel's line with its "tap to jump" tail
       text(tf("rv.turningPointPlain", [sum.worst.moveNo,
         sideName(sum.worst.side), sum.worst.san,
-        (sum.worst.loss / 100).toFixed(1)]), 40, rowY + 112, cw, 2, 20);
+        Math.round(sum.worst.drop)]), 40, rowY + 112, cw, 2, 20);
     }
     font("12px");
     ctx.fillStyle = muted;
@@ -7823,8 +7834,12 @@ import { createStore } from "./store.js";
   saveSettings();
   if (!resumed) saveGame();
   if (store.session.mode === "ai" && ChessEngine) {
-    ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
-    maybeEngineTurn(); // resumed save may leave the engine on move
+    // after the first paint, not before it: the engine sources are 9.7 MB of
+    // text and the board does not need them to appear (v6-plan Q1.3)
+    requestAnimationFrame(() => setTimeout(() => {
+      ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
+      maybeEngineTurn(); // resumed save may leave the engine on move
+    }, 0));
   }
   if (firstRun) runOnboarding();
 
