@@ -30,6 +30,11 @@ test -f frontend/dist/js/bundle.js
 test "$(wc -c < frontend/dist/js/bundle.js)" -gt 400000
 # engine-src must carry the full wasm payload (~9MB), not a stub
 test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
+# GPLv3 §4: the product carries its licence, and Stockfish's, next to
+# index.html. (scripts/sync-dist.mjs, which `zig build` uses, does the same.)
+mkdir -p frontend/dist/licenses
+cp LICENSE frontend/dist/licenses/LICENSE.txt
+cp third_party/stockfish/COPYING.txt frontend/dist/licenses/stockfish-COPYING.txt
 
 echo "==> unit tests"
 node scripts/test-chess.mjs
@@ -55,6 +60,9 @@ echo "==> native package"
 mkdir -p dist
 rm -rf dist/Chessboard.app
 native package --target macos --signing adhoc --manifest build/app.macos.zon --output dist/Chessboard.app --binary zig-out/bin/chessboard
+
+echo "==> declare the .pgn document type (Info.plist) and re-sign"
+scripts/add-pgn-doctype.sh dist/Chessboard.app
 
 echo "==> zip + remove package .app (avoid duplicate Launchpad entry)"
 (

@@ -47,23 +47,24 @@ jobs:
         run: npm ci
       - name: unit tests
         run: node scripts/test-chess.mjs
-      # The engine-backed content checks. Both are opt-in locally (about four
-      # minutes together) and were therefore run by hand, which meant the
-      # properties they prove — no drilled opening line is a transcription
-      # error, no "only one move wins" puzzle has a second solution — were
-      # guarded by whoever remembered. A release is exactly the moment nobody
-      # should be relying on remembering. They are platform-independent, so
-      # they run here rather than in both platform builds. Each skips itself
-      # with exit 0 if the vendored engine is missing.
+      # The engine-backed checks — all five of `npm run test:engine`, not just
+      # openings + tactics (6.0 Q0.5: novice / strength / analysis were in no
+      # workflow at all). They are opt-in locally (minutes) and were therefore
+      # run by hand, which meant the properties they prove — no drilled opening
+      # line is a transcription error, no "only one move wins" puzzle has a
+      # second solution, the novice levels really are weaker — were guarded by
+      # whoever remembered. A release is exactly the moment nobody should be
+      # relying on remembering. They are platform-independent, so they run
+      # here rather than in both platform builds. Each skips itself with exit
+      # 0 if the vendored engine is missing.
       #
-      # Both search to a fixed depth rather than a fixed time. Gating on a
-      # time-limited search would have been a flaky gate: the closest opening
-      # line and the closest puzzle each sat within ~20cp of their limit, which
-      # is inside the run-to-run spread. See the header of either script.
-      - name: content soundness (engine)
-        run: |
-          node scripts/test-openings.mjs
-          node scripts/test-tactics.mjs
+      # The soundness checks search to a fixed depth rather than a fixed time.
+      # Gating on a time-limited search would have been a flaky gate: the
+      # closest opening line and the closest puzzle each sat within ~20cp of
+      # their limit, which is inside the run-to-run spread. See the header of
+      # either script.
+      - name: engine checks (openings, tactics, novice, strength, analysis)
+        run: npm run test:engine
       # The browser checks. Every one of them is a regression that shipped: the
       # board one is the `CHECK is not defined` that emptied the board for two
       # releases, the persistence one is the study position that vanished on

@@ -63,6 +63,12 @@ pub const RunOptions = struct {
         };
         const windows = manifestWindowOptions(buffers);
         if (windows.len > 0) {
+            // Q1.6: the call site's window_title is the launch-language title
+            // (main.zig windowTitleFor); app.zon's own `.title` is the Chinese
+            // one, so for Chinese this is a no-op and for en/ja it is the only
+            // way the title follows the UI language — the Runtime has no
+            // title setter this fork can reach after init.
+            if (self.window_title.len > 0) buffers.restored_windows[0].title = self.window_title;
             info.main_window = windows[0];
             info.windows = windows;
         }
@@ -104,11 +110,14 @@ const CommandStorage = struct {
     }
 };
 
-const MenuStorage = struct {
+/// pub since 6.0: main.zig builds a localized copy of these for a non-Chinese
+/// launch language (Q1.6) and its test holds the translation table to the
+/// manifest, so the storage and the builder have to be reachable from there.
+pub const MenuStorage = struct {
     menus: [native_sdk.platform.max_menus]native_sdk.Menu = undefined,
     items: [native_sdk.platform.max_menu_items]native_sdk.MenuItem = undefined,
 
-    fn fromManifest(self: *MenuStorage) []const native_sdk.Menu {
+    pub fn fromManifest(self: *MenuStorage) []const native_sdk.Menu {
         comptime {
             if (manifest_menus.len > native_sdk.platform.max_menus) {
                 @compileError("app.zon defines too many menus");
@@ -188,6 +197,44 @@ fn fillStrings(buffer: [][]const u8, comptime values: anytype) []const []const u
     return buffer[0..values.len];
 }
 
+// The dev-server origin (v6-plan D6).
+//
+// app.zon is the DEV manifest: its allowed_origins carries
+// `http://127.0.0.1:5173` so `native dev` can serve the page live, and until
+// this change every release trusted that origin too — with every bridge
+// command granted to it. The filter lives here, in the binary, and not in
+// gen-manifest.mjs: the derived macOS manifest has to stay app.zon plus
+// exactly the close policy (scripts/test-chess.mjs pins that, and it is what
+// keeps "derived, not duplicated" honest), Windows compiles app.zon directly,
+// and a filter in the exe holds for whichever manifest a build was pointed
+// at. `-Ddev-origins` (build.zig) keeps them; its default is on for Debug —
+// the edit loop — and off for every release-shaped exe, which is what the
+// package step and both build workflows produce. scripts/manifest-check.mjs
+// holds this wiring in place.
+fn isDevOrigin(comptime origin: []const u8) bool {
+    return std.mem.startsWith(u8, origin, "http://");
+}
+
+fn devOriginsKept() bool {
+    if (comptime !@hasDecl(build_options, "dev_origins")) return false;
+    return build_options.dev_origins;
+}
+
+/// The manifest's origins, minus the http:// ones unless this is a dev build.
+fn fillOrigins(buffer: [][]const u8, comptime values: anytype) []const []const u8 {
+    var count: usize = 0;
+    inline for (values) |value| {
+        if (comptime !isDevOrigin(value)) {
+            buffer[count] = value;
+            count += 1;
+        } else if (devOriginsKept()) {
+            buffer[count] = value;
+            count += 1;
+        }
+    }
+    return buffer[0..count];
+}
+
 /// The navigation/permission policy declared in app.zon.
 ///
 /// Until 1.20 nothing read this block: main.zig carried its own copy of the
@@ -201,7 +248,7 @@ pub fn manifestSecurity() native_sdk.SecurityPolicy {
     // An empty/absent list leaves the SDK's own default origins in place rather
     // than locking the webview out of everything.
     if (comptime manifest_origins_src.len > 0) {
-        policy.navigation.allowed_origins = fillStrings(&security_origins, manifest_origins_src);
+        policy.navigation.allowed_origins = fillOrigins(&security_origins, manifest_origins_src);
     }
     if (comptime @hasField(@TypeOf(manifest_external_links), "action")) {
         policy.navigation.external_links.action = externalLinkAction(manifest_external_links.action);
