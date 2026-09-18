@@ -1,0 +1,11 @@
+[Event "CRLF line endings"]
+[Site "?"]
+[Date "2024.02.05"]
+[Round "?"]
+[White "Windows"]
+[Black "Notepad"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 {Ruy Lopez
+on two lines} a6
+4. Bxc6 dxc6 5. O-O f6 1-0

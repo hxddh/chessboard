@@ -1,0 +1,10 @@
+[Event "Arrows and circles"]
+[Site "https://lichess.org/study/xyz"]
+[Date "2024.02.09"]
+[Round "?"]
+[White "Study"]
+[Black "Chapter 1"]
+[Result "*"]
+[Annotator "https://lichess.org/@/someone"]
+
+{ [%csl Gd4,Ge4] The two central squares. } 1. e4 { [%cal Ge4d5,Rd1h5] control the centre, watch h5 } 1... c5 { [%csl Rd4][%cal Bc5d4,Bd7d6] } 2. Nf3 { [%cal Gf3d4] } 2... d6 3. d4 cxd4 4. Nxd4 { [%csl Yd4] } *

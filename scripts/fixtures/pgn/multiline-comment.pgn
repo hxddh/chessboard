@@ -1,0 +1,11 @@
+[Event "Multi-line comment"]
+[Site "?"]
+[Date "2024.02.10"]
+[Round "?"]
+[White "Long"]
+[Black "Winded"]
+[Result "*"]
+
+1. e4 {This comment
+spans three
+lines, and has  double  spaces.} e5 2. Nf3 {short} Nc6 *
