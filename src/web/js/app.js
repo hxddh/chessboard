@@ -404,13 +404,17 @@ import { createStore } from "./store.js";
     // (v6-plan §1.2). chess.js stays the fallback for text the parser cannot
     // place — and the judge of every move either way.
     let tree = null;
+    let headers = [];
     try {
       const parsed = ChessPgnParser.parsePgn(pgn).games[0];
-      if (parsed) tree = ChessTree.fromPgnGame(parsed);
+      if (parsed) { tree = ChessTree.fromPgnGame(parsed); headers = parsed.headers; }
     } catch (_) { tree = null; }
     let r;
     if (tree) {
       r = loadTreeMainline(tree);
+      // the file's tags ride along, as load_pgn's did: [Result] becomes the
+      // ending (adoptHeaderResult), [FEN] the start (startFen)
+      if (r) restoreHeaders(headers);
     } else {
       r = game.load_pgn(pgn, opts);
       if (r && store.game._treeSync) treeRebuild();
