@@ -3492,7 +3492,12 @@ import { createStore } from "./store.js";
     if (btn) {
       btn.classList.toggle("active", store.session.liveOn);
       btn.setAttribute("aria-pressed", store.session.liveOn ? "true" : "false");
-      avail(btn, !!ChessEngine && !store.session.engineDown && (store.session.mode === "ai" || store.session.mode === "pvp"));
+      // like 分析: it stands above a game, not above an empty board — and the
+      // group is re-collapsed here because this runs after renderGameActions
+      // and is the last thing to change a button in it (layout e2e 4b)
+      avail(btn, !!ChessEngine && !store.session.engineDown && sanHistory().length > 0 &&
+        (store.session.mode === "ai" || store.session.mode === "pvp"));
+      collapseEmptyGroups();
     }
     if (!liveAllowed()) {
       stopLiveAnalysis();
