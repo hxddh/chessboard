@@ -424,8 +424,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
       if (r.ok) return true;
       if (r.tooLarge) throw fileTooLargeError(r.limit);
       if (r.error === "no_appdata_dir") return null;
+      if (typeof r.error === "string") throw new Error("appdata write failed: " + r.error);
     }
-    throw new Error("appdata write failed");
+    // any other answer is a shell that does not know the command (an older
+    // build, a test double): no mirror, and not a failure of the profile
+    return null;
   }
 
   /** @returns {Promise<string|null>} where chessboard.json lives, for About */

@@ -660,8 +660,10 @@ const PLACEMENT = STUDY.split(" ")[0];
     await page.click("#pgn-open");
     await page.waitForTimeout(700);
     assert((await rows(page)) === 2, "「打开」把文件里的两回合棋谱装了进来");
-    const calls = await page.evaluate(() => window.__calls);
-    assert(calls.join("→") === "openFile→chess.readTextFile",
+    // 6.0: the profile mirror writes on its own clock and the dialog's path
+    // is issued before it is read — neither is a second road into the file
+    const calls = (await page.evaluate(() => window.__calls)).filter((c) => c !== "chess.appdataWrite" && c !== "chess.appdataRead");
+    assert(calls.join("→") === "openFile→chess.issuePath→chess.readTextFile",
       `……走的是文件对话框 → 桥上读文件这一条,别无他路(${calls.join("→")})`);
     assert(await page.evaluate(() => document.getElementById("status").textContent.trim()) === "白方走子",
       "……装完轮到白方(1.e4 e5 2.Nf3 Nc6 之后)");
@@ -760,7 +762,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   {
     const { ctx, page, errs } = await bridged({ corruptStats: true });
     const banner = await page.evaluate(() => {
-      const el = document.getElementById("storage-fault");
+      const el = document.getElementById("profile-fault");
       return el && !el.hidden ? el.textContent : "";
     });
     assert(/stats/.test(banner), `坏掉的记录有横幅,并点名是哪一份(「${banner.slice(0, 40)}」)`);
@@ -796,6 +798,9 @@ const PLACEMENT = STUDY.split(" ")[0];
     await page.waitForTimeout(900);
     const said = () => page.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
     assert(/e5/.test(await said()), `引擎应着之后 #board-live 念出了那一着(「${await said()}」)`);
+    // the arrows move the keyboard cursor while the board has focus — replay
+    // navigation is what they do everywhere else
+    await page.evaluate(() => { if (document.activeElement) document.activeElement.blur(); });
     await page.keyboard.press("ArrowLeft");
     await page.waitForTimeout(200);
     assert(/e4/.test(await said()), `← 之后念出了停在哪一着之后(「${await said()}」)`);

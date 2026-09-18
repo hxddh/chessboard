@@ -1572,6 +1572,8 @@
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
     }
 
+    /* 6.0: a second banner (the set-aside record) stacks under the first */
+    .storage-fault ~ .storage-fault { top: 56px; }
     .app-fault { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .app-fault .toast-action { color: inherit; border-color: color-mix(in srgb, currentColor 45%, transparent); }
 

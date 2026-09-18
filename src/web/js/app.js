@@ -588,10 +588,12 @@ import { createStore } from "./store.js";
    * says which record was set aside, and that the copy is kept (v6-plan D2).
    */
   function showCorruptFault(names) {
-    let el = document.getElementById("storage-fault");
+    // its own element: a write failure later in the session must not paint
+    // over the one message that says where the old data went
+    let el = document.getElementById("profile-fault");
     if (!el) {
       el = document.createElement("div");
-      el.id = "storage-fault";
+      el.id = "profile-fault";
       el.className = "storage-fault";
       el.setAttribute("role", "alert");
       document.body.appendChild(el);

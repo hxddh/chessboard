@@ -195,6 +195,9 @@ export function createPersist(host, onWriteFailure) {
     if (!mirrorEnabled) return false;
     try {
       const ok = await host.appdataWrite(JSON.stringify(mirrorDoc()));
+      // null: the shell has no such file (no data dir, an older build) —
+      // the mirror simply does not exist here, which is not a failed write
+      if (ok == null) { mirrorEnabled = false; return false; }
       if (ok === false) fail("appdata");
       return ok !== false;
     } catch (_) {
@@ -217,7 +220,12 @@ export function createPersist(host, onWriteFailure) {
   async function recover() {
     if (typeof host.appdataRead !== "function") return "none";
     let text = null;
-    try { text = await host.appdataRead(); } catch (_) { return "none"; }
+    // host.js answers {text} | {missing:true} | null; a plain string is also
+    // accepted so a test host can be a one-liner
+    try {
+      const r = await host.appdataRead();
+      text = typeof r === "string" ? r : (r && typeof r.text === "string" ? r.text : null);
+    } catch (_) { return "none"; }
     if (!text) { if (bag && !foundEmpty) scheduleMirror(); return "none"; }
     let doc = null;
     try { doc = JSON.parse(text); } catch (_) { return "none"; }
