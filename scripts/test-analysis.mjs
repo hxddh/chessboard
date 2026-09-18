@@ -12,6 +12,13 @@
  *   scanning the same games twice and comparing the tag sets**, at the quick
  *   scan's 120ms and at the deep pass's 400ms.
  *
+ *   v6-plan Q2.5 — the same question for the win-percentage classification
+ *   (review.js winPct / classifyByWinPct, cut-offs 5 / 10 / 20 points). It
+ *   costs no extra engine time: the same two eval tracks are re-tagged the
+ *   second way, and `winPctNoise` is written next to `scanNoise` with the
+ *   same method so the two can be read side by side. The plan's acceptance
+ *   is `?!` two-pass agreement ≥ 60% at 120ms; whatever comes out is recorded.
+ *
  *   缺陷 32 — the beginner tier is `{skill:0, depth:2, multipv:10,
  *   worstBias:0.2}`: two times in ten it plays the worst candidate, and the
  *   other eight it picks uniformly among however many candidates came back.
@@ -21,9 +28,11 @@
  *   with the score spread across those lines — because if the count is flat
  *   and the spread is not, the sampling is what needs weighting, not the count.
  *
- * A measurement, not a pass/fail test: it prints a table and, with --record,
+ * A measurement more than a test: it prints a table and, with --record,
  * writes docs/measured.json so prose can quote it instead of restating it.
- * Nothing here decides on its own that a threshold should move.
+ * Nothing here decides on its own that a threshold should move. The few
+ * assertions are about the measurement's own sanity (both passes covered
+ * every position, a rate is a rate, the sweep was taken), not its verdict.
  *
  * Runs Stockfish directly in node, mirroring the UCI sequence in
  * src/web/js/engine.js — same caveat as test-strength.mjs: it catches option
@@ -212,6 +221,37 @@ function agreementAt(pairs, lo, hi) {
 }
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+let failed = 0;
+function assert(cond, msg) {
+  if (cond) console.log("ok   " + msg);
+  else { failed++; console.error("FAIL " + msg); }
+}
+
+/** The win-percentage drop of each ply of one eval track — classifyByWinPct()'s input. */
+function dropsOf(scalars) {
+  const out = [];
+  for (let i = 1; i < scalars.length; i++) {
+    const side = i % 2 === 1 ? "w" : "b";
+    const a = scalars[i - 1], b = scalars[i];
+    out.push(a == null || b == null ? null : Review.winPctDrop(a, b, side));
+  }
+  return out;
+}
+
+/** Jaccard agreement of two tag tracks, per tag. */
+function tagAgreement(tA, tB, keys) {
+  const agree = {};
+  for (const k of keys) {
+    let a = 0, b = 0, both = 0;
+    for (let i = 0; i < tA.length; i++) {
+      if (tA[i] === k) a++;
+      if (tB[i] === k) b++;
+      if (tA[i] === k && tB[i] === k) both++;
+    }
+    agree[k] = { a, b, both };
+  }
+  return agree;
+}
 const quantile = (xs, q) => {
   if (!xs.length) return 0;
   const s = xs.slice().sort((a, b) => a - b);
@@ -225,17 +265,32 @@ const scanOut = { what: "同一局连跑两次快扫,比较两次的标注集合
   script: "scripts/test-analysis.mjs --record",
   thresholds: { inaccuracy: Review.INACCURACY, mistake: Review.MISTAKE, blunder: Review.BLUNDER },
   games: GAMES.length, byMovetime: {} };
+const wpOut = { what: "同一两遍快扫的评估轨迹,改按胜率降幅分类(review.js classifyByWinPct),比较两次的标注集合",
+  script: "scripts/test-analysis.mjs --record",
+  thresholds: { inaccuracy: Review.WIN_INACCURACY, mistake: Review.WIN_MISTAKE, blunder: Review.WIN_BLUNDER },
+  games: GAMES.length, byMovetime: {} };
+const TAGS = ["?!", "?", "??"];
 
 for (const ms of MOVETIMES) {
   const jitter = [];
   const agree = { "?!": { a: 0, b: 0, both: 0 }, "?": { a: 0, b: 0, both: 0 }, "??": { a: 0, b: 0, both: 0 } };
-  const lossPairs = [];
-  let plies = 0;
+  const wpAgree = { "?!": { a: 0, b: 0, both: 0 }, "?": { a: 0, b: 0, both: 0 }, "??": { a: 0, b: 0, both: 0 } };
+  const lossPairs = [], dropPairs = [];
+  let plies = 0, wpPlies = 0;
   for (const game of GAMES) {
     const fens = fensOf(game.san);
     const runA = [], runB = [];
     for (const fen of fens) runA.push(await scan(fen, ms));
     for (const fen of fens) runB.push(await scan(fen, ms));
+    assert(runA.length === fens.length && runB.length === fens.length,
+      `${ms}ms · ${game.name.split(",")[0]}: both passes scored every one of the ${fens.length} positions`);
+    {
+      const wA = dropsOf(runA).map(Review.classifyByWinPct), wB = dropsOf(runB).map(Review.classifyByWinPct);
+      dropPairs.push([dropsOf(runA), dropsOf(runB)]);
+      wpPlies += wA.length;
+      const g = tagAgreement(wA, wB, TAGS);
+      for (const k of TAGS) { wpAgree[k].a += g[k].a; wpAgree[k].b += g[k].b; wpAgree[k].both += g[k].both; }
+    }
     for (let i = 0; i < fens.length; i++) {
       // mate scores are ±10000-ish and would swamp a centipawn jitter figure
       if (runA[i] == null || runB[i] == null) continue;
@@ -274,6 +329,39 @@ for (const ms of MOVETIMES) {
     row.sweep[String(cut)] = r;
     console.log(`    ${String(cut).padStart(3)}cp  两次各 ${String(r.runA).padStart(2)}/${String(r.runB).padStart(2)} 处 · 重合 ${String(r.both).padStart(2)} · ${r.agreePct}%`);
   }
+
+  // The same tracks, tagged by win-percentage drop. agreeRate is the 0..1
+  // form of agreePct, so a reader of the JSON can take either.
+  // cpSameRun repeats the centipawn figures of *these* two passes, so the
+  // side-by-side is within one run — scanNoise may have been recorded on
+  // another day and another machine.
+  const wpRow = { plies: wpPlies, tags: {}, cpSameRun: row.tags, sweep: {} };
+  assert(wpPlies === plies, `${ms}ms · win% tagged the same ${plies} plies the centipawn pass did`);
+  for (const [k, v] of Object.entries(wpAgree)) {
+    const union = v.a + v.b - v.both;
+    wpRow.tags[k] = { runA: v.a, runB: v.b, both: v.both, agreePct: pct(v.both, union),
+      agreeRate: union ? Math.round((v.both / union) * 1000) / 1000 : 0 };
+    assert(wpRow.tags[k].agreeRate >= 0 && wpRow.tags[k].agreeRate <= 1, `${ms}ms · ${k} win% agreement is a rate (${wpRow.tags[k].agreeRate})`);
+  }
+  console.log(`\n--- Q2.5 · 同一轨迹按胜率差分类 ${ms}ms(?! ${Review.WIN_INACCURACY} / ? ${Review.WIN_MISTAKE} / ?? ${Review.WIN_BLUNDER} 个百分点)---`);
+  for (const [k, v] of Object.entries(wpRow.tags)) {
+    const cpv = row.tags[k];
+    console.log(`  ${k.padEnd(2)}  第一次 ${String(v.runA).padStart(2)} 处 · 第二次 ${String(v.runB).padStart(2)} 处 · 两次都标 ${String(v.both).padStart(2)} 处 · 重合率 ${v.agreePct}%(厘兵 ${cpv.agreePct}%)`);
+  }
+  // `band` moves only the ?! floor (upper edge stays at the next cut-off, as
+  // the centipawn sweep does; at 10 the ?! band is gone and the row reads the
+  // ? band). `atLeast` counts every move flagged at all from `cut` up — the
+  // question a player asking "is this move marked or not" is really asking.
+  console.log("  ?! 门槛扫描(胜率百分点 → 重合率):");
+  for (const cut of [3, 5, 7, 10]) {
+    const hi = cut < Review.WIN_MISTAKE ? Review.WIN_MISTAKE : Review.WIN_BLUNDER;
+    const band = agreementAt(dropPairs, cut, hi), atLeast = agreementAt(dropPairs, cut, Infinity);
+    wpRow.sweep[String(cut)] = { band: { hi, ...band }, atLeast };
+    console.log(`    ${String(cut).padStart(3)} 点  区间 [${cut},${hi}) 两次各 ${String(band.runA).padStart(2)}/${String(band.runB).padStart(2)} · 重合 ${band.agreePct}% · 及以上 两次各 ${String(atLeast.runA).padStart(2)}/${String(atLeast.runB).padStart(2)} · 重合 ${atLeast.agreePct}%`);
+  }
+  assert(["3", "5", "7", "10"].every((c) => wpRow.sweep[c] && Number.isFinite(wpRow.sweep[c].band.agreePct)),
+    `${ms}ms · the 3/5/7/10-point sweep was taken`);
+  wpOut.byMovetime[String(ms)] = wpRow;
 }
 
 // =========================================================================
@@ -396,8 +484,10 @@ for (const ph of ["opening", "middlegame", "endgame"]) {
 
 if (RECORDING) {
   record("scanNoise", scanOut);
+  record("winPctNoise", wpOut);
   record("multipvPhase", mvOut);
 } else {
   console.log("\n（只打印,没写入。加 --record 才写 docs/measured.json）");
 }
+if (failed) { console.error(failed + " check(s) failed"); process.exit(1); }
 process.exit(0);

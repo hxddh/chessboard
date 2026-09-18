@@ -229,6 +229,119 @@
     return null;
   }
 
+  /**
+   * The same evaluation as a win percentage for White, 0–100.
+   *
+   * lichess's mapping: 50 + 50 · (2 / (1 + e^(−0.00368208·cp)) − 1). It is
+   * steep near zero and flat past ±5 pawns, which is the whole point of
+   * classifying by it instead of by centipawns (v6-plan Q2.5): a 50cp swing
+   * in a level position is a real change of fortune, the same 50cp at +900
+   * is noise the engine would not bother to distinguish. Mate scores map to
+   * the ends.
+   *
+   * `opts.ply` is accepted for a later model that needs it (Stockfish's WDL
+   * depends on the move number) and unused by this one, so the callers do
+   * not change when the model does.
+   *
+   * @param {number|null} cp centipawns, positive = good for White
+   * @param {{ply?: number}} [opts]
+   * @returns {number|null} 0..100, null when unmeasured
+   */
+  function winPct(cp, opts) { // opts reserved, see above
+    if (cp == null || !Number.isFinite(cp)) return null;
+    if (cp >= 9000) return 100;
+    if (cp <= -9000) return 0;
+    return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+  }
+
+  /**
+   * Win-percentage points a move gave away, from the mover's side, ≥ 0.
+   * @param {number} before evaluation before the move (cp, White's view)
+   * @param {number} after  evaluation after it
+   * @param {"w"|"b"} side  who played it
+   */
+  function winPctDrop(before, after, side) {
+    const a = winPct(before), b = winPct(after);
+    if (a == null || b == null) return null;
+    return Math.max(0, side === "w" ? a - b : b - a);
+  }
+
+  /**
+   * Cut-offs in win-percentage points, alongside — not instead of — the
+   * centipawn ones. The three constants above stay: they are measured, and
+   * `?!` at 50cp is what the move list prints today. These are the starting
+   * values from the plan, and the same rule applies to them: scanNoise's
+   * method, re-run as `winPctNoise` in docs/measured.json, decides whether
+   * they can be trusted before anything renders them.
+   */
+  const WIN_INACCURACY = 5, WIN_MISTAKE = 10, WIN_BLUNDER = 20;
+
+  /** markFor(), on a win-percentage drop. */
+  function classifyByWinPct(drop) {
+    if (!Number.isFinite(drop)) return null;
+    if (drop >= WIN_BLUNDER) return "??";
+    if (drop >= WIN_MISTAKE) return "?";
+    if (drop >= WIN_INACCURACY) return "?!";
+    return null;
+  }
+
+  /**
+   * One move's accuracy from the win percentage before and after it, both
+   * from the mover's side. lichess: 103.1668 · e^(−0.04354·drop) − 3.1669,
+   * clamped to 0–100; a move that loses nothing is 100.
+   * @param {number} before mover's win % before the move
+   * @param {number} after  mover's win % after it
+   */
+  function accuracyFromWinPct(before, after) {
+    if (before == null || after == null) return null;
+    if (after >= before) return 100;
+    const raw = 103.1668 * Math.exp(-0.04354 * (before - after)) - 3.1669;
+    return Math.max(0, Math.min(100, raw));
+  }
+
+  /**
+   * summarize(), with the win-percentage measures: `acc` is the plain mean of
+   * per-move accuracies (lichess also weights by volatility; not done here),
+   * `drop` the mean points given away, `counts` and `worst` use the
+   * win-percentage cut-offs. Same shape and the same side rule, so a caller
+   * can swap one for the other.
+   * @returns {object|null}
+   */
+  function summarizeWinPct(scalars, history, firstMover) {
+    if (!scalars || scalars.length < 2 || !history || !history.length) return null;
+    const side = (i) => ((i % 2 === 0) === (firstMover !== "b") ? "w" : "b");
+    const drops = { w: [], b: [] }, accs = { w: [], b: [] };
+    const counts = { w: { inaccuracy: 0, mistake: 0, blunder: 0 }, b: { inaccuracy: 0, mistake: 0, blunder: 0 } };
+    let worst = null;
+    for (let i = 0; i < history.length; i++) {
+      const before = scalars[i], after = scalars[i + 1];
+      if (before == null || after == null) continue;
+      const s = side(i);
+      const drop = winPctDrop(before, after, s);
+      const wb = winPct(before), wa = winPct(after);
+      drops[s].push(drop);
+      accs[s].push(s === "w" ? accuracyFromWinPct(wb, wa) : accuracyFromWinPct(100 - wb, 100 - wa));
+      const tag = classifyByWinPct(drop);
+      if (tag === "??") counts[s].blunder++;
+      else if (tag === "?") counts[s].mistake++;
+      else if (tag === "?!") counts[s].inaccuracy++;
+      if (drop >= WIN_MISTAKE && (!worst || drop > worst.drop)) {
+        worst = { ply: i, san: history[i], drop, side: s, moveNo: moveNumber(i, firstMover) };
+      }
+    }
+    const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+    const acc = {}, drop = {};
+    for (const s of ["w", "b"]) {
+      const a = mean(accs[s]), d = mean(drops[s]);
+      acc[s] = a == null ? null : Math.round(a);
+      drop[s] = d == null ? null : Math.round(d * 10) / 10;
+    }
+    const measured = drops.w.length + drops.b.length;
+    if (!measured) return null;
+    const judged = { w: drops.w.length, b: drops.b.length };
+    return { acc, drop, counts, worst, measured, judged, plies: history.length };
+  }
+
   /** Is the game long enough for the curve and the verdicts to mean anything? */
   function longEnough(summary) {
     return !!summary && summary.measured >= MIN_JUDGED * 2;
@@ -243,4 +356,6 @@
     summarize, verdictKey, longEnough, moveNumber, evalBar, markFor, isMistake,
     lossOf, accuracyOf, lossesBySide,
     INACCURACY, MISTAKE, BLUNDER, MIN_JUDGED,
+    winPct, winPctDrop, classifyByWinPct, accuracyFromWinPct, summarizeWinPct,
+    WIN_INACCURACY, WIN_MISTAKE, WIN_BLUNDER,
   };
