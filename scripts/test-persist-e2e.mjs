@@ -709,6 +709,104 @@ const PLACEMENT = STUDY.split(" ")[0];
   }
 }
 
+// --- 9. 6.0 的三条行为断言(v6-plan D1 / D2 / D5) -------------------------------
+// 每条都曾只有源码正则在守;这里是它们各自的第一条真页面测试。
+{
+  const bridged = async (init) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript((extra) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      if (extra.corruptStats) localStorage.setItem("chess.v1.stats", "{not json");
+      window.__writes = [];
+      window.zero = {
+        on: () => () => {}, off: () => {},
+        platform: { supports: () => Promise.resolve(false) },
+        clipboard: {
+          readText: async () => extra.clip || "",
+          writeText: async (t) => { window.__writes.push(String(t)); return true; },
+        },
+        invoke: async () => ({}),
+      };
+    }, init);
+    const { page, errs } = await open(ctx);
+    return { ctx, page, errs };
+  };
+  const moreOpen = async (page) => {
+    if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  };
+
+  // D1:一局没有将死却写着 1-0 的棋谱,导出时结果记号只有一个,而且还是 1-0
+  {
+    const { ctx, page, errs } = await bridged({ clip: '[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0\n' });
+    await moreOpen(page);
+    await page.click("#pgn-paste");
+    await page.waitForTimeout(700);
+    if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }
+    await moreOpen(page);
+    await page.click("#pgn-copy");
+    await page.waitForTimeout(300);
+    const out = await page.evaluate(() => window.__writes[window.__writes.length - 1] || "");
+    const body = out.split("\n\n").pop() || "";
+    const tokens = body.match(/(?:^|\s)(1-0|0-1|1\/2-1\/2|\*)(?=\s|$)/g) || [];
+    assert(tokens.length === 1, `导出的着法文本里只有一个结果记号(${JSON.stringify(tokens)})`);
+    assert(/\[Result "1-0"\]/.test(out) && /1-0\s*$/.test(body.trim()), "……而且是文件里说的那个 1-0,不是 *");
+    assert(errs.length === 0, "D1:全程没有页面异常");
+    await ctx.close();
+  }
+
+  // D2:一份读不出来的 stats,启动时横幅说了出来,原值被搁置而不是被覆盖
+  {
+    const { ctx, page, errs } = await bridged({ corruptStats: true });
+    const banner = await page.evaluate(() => {
+      const el = document.getElementById("storage-fault");
+      return el && !el.hidden ? el.textContent : "";
+    });
+    assert(/stats/.test(banner), `坏掉的记录有横幅,并点名是哪一份(「${banner.slice(0, 40)}」)`);
+    const q = await page.evaluate(() => localStorage.getItem("chess.v1.quarantine") || "");
+    assert(/\{not json/.test(q), "……原值原样进了隔离区");
+    // 走一步,让 stats 有机会被重写;隔离区里的那份还在
+    await page.evaluate(() => { window.__chess.engine.isReady = () => true; });
+    const q2 = await page.evaluate(() => localStorage.getItem("chess.v1.quarantine") || "");
+    assert(/\{not json/.test(q2), "……之后也没有被清掉");
+    assert(errs.length === 0, "D2:全程没有页面异常");
+    await ctx.close();
+  }
+
+  // D5:对手的应着与复盘导航,读屏软件听得到着法
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", difficulty: "easy", humanColor: "w" }));
+      localStorage.setItem("chess.panelOpen", "1");
+    });
+    const { page, errs } = await open(ctx);
+    await page.evaluate(() => {
+      window.__chess.engine.isReady = () => true;
+      window.__chess.engine.bestMove = async () => ({ from: "e7", to: "e5" });
+    });
+    const at = (sq) => page.evaluate((n) => {
+      const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+      const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, sq);
+    for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(170); }
+    await page.waitForTimeout(900);
+    const said = () => page.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
+    assert(/e5/.test(await said()), `引擎应着之后 #board-live 念出了那一着(「${await said()}」)`);
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForTimeout(200);
+    assert(/e4/.test(await said()), `← 之后念出了停在哪一着之后(「${await said()}」)`);
+    await page.keyboard.press("Home");
+    await page.waitForTimeout(200);
+    assert(/开局/.test(await said()), `Home 之后说回到开局(「${await said()}」)`);
+    assert(errs.length === 0, "D5:全程没有页面异常");
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

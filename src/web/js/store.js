@@ -67,6 +67,27 @@ export function createStore(initial) {
     finally { depth--; }
   }
 
+  /**
+   * Announce that several slices moved, telling each listener once.
+   *
+   * sync() used to be three commits in a row, and a view subscribed to all
+   * three — draw(), the settings panel — ran three times for one change
+   * (v6-plan §1.2). The union of the listener sets is walked instead, in the
+   * order the slices are named, so a view still hears about it exactly once.
+   */
+  function commitAll(names, why) {
+    const seen = new Set();
+    for (const name of names) {
+      const set = listeners[name];
+      if (!set) throw new Error("commit to unknown slice: " + name);
+      for (const fn of set) seen.add(fn);
+    }
+    if (depth > 8) throw new Error("commit loop (" + why + ")");
+    depth++;
+    try { for (const fn of seen) fn(null, why); }
+    finally { depth--; }
+  }
+
   /** Listen to one slice. Returns the unsubscribe. */
   function subscribe(name, fn) {
     if (!listeners[name]) throw new Error("subscribe to unknown slice: " + name);
@@ -85,9 +106,9 @@ export function createStore(initial) {
   // not `store.slices.game.viewIndex`. A read of the state is the most common
   // thing this module is asked for and it should not cost a word.
   for (const name of Object.keys(slices)) {
-    if (name === "commit" || name === "subscribe" || name === "snapshot") {
+    if (name === "commit" || name === "commitAll" || name === "subscribe" || name === "snapshot") {
       throw new Error("slice name collides with a store method: " + name);
     }
   }
-  return { ...slices, commit, subscribe, snapshot };
+  return { ...slices, commit, commitAll, subscribe, snapshot };
 }

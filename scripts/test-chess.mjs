@@ -133,6 +133,75 @@ for (const p of ["r", "b", "n"]) {
   assert(g2.fen() === g.fen(), "PGN round-trip FEN match");
 }
 
+// --- 6.0: perft — the rules engine is vendored, so its move generator is
+// trusted; this is the one gate that would catch a bad vendor bump. Node
+// counts are the published ones (chessprogramming.org/Perft_Results).
+{
+  function perft(g, d) {
+    if (d === 0) return 1;
+    let n = 0;
+    for (const m of g.moves({ verbose: true })) { g.move(m); n += perft(g, d - 1); g.undo(); }
+    return n;
+  }
+  const CASES = [
+    ["start", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 3, 8902],
+    ["kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 2, 2039],
+    ["position 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 3, 2812],
+    ["position 4", "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1", 2, 264],
+    ["position 5", "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8", 2, 1486],
+  ];
+  for (const [name, fen, depth, want] of CASES) {
+    const got = perft(new Chess(fen), depth);
+    assert(got === want, `perft ${name} depth ${depth} = ${want} (got ${got})`);
+  }
+}
+
+// --- 6.0: rule edges the app's own tests never covered
+{
+  // a pinned pawn may not capture en passant when that exposes its king
+  const g = new Chess("8/8/8/2k5/3Pp3/8/8/4K2R b K d3 0 1");
+  // …but here the pin is along the e-file: black king e8? use a diagonal pin
+  const pinned = new Chess("4k3/8/8/8/1b1Pp3/8/8/3K4 b - d3 0 1");
+  assert(pinned.moves().some((m) => m === "exd3"), "e.p. is legal when nothing is pinned through it");
+  const pinnedRank = new Chess("8/8/8/8/k2Pp2R/8/8/4K3 b - d3 0 1");
+  assert(!pinnedRank.moves().some((m) => m === "exd3"),
+    "e.p. is illegal when both pawns leave a rank pin on the king (the classic horizontal case)");
+  assert(g.moves().some((m) => m === "exd3"), "e.p. with a rook on the other file is fine");
+  // castling through check is illegal; castling out of check is illegal
+  const through = new Chess("4k3/8/8/8/8/8/5r2/4K2R w K - 0 1");
+  assert(!through.moves().includes("O-O"), "cannot castle through an attacked square (f1)");
+  const outOf = new Chess("4k3/8/8/8/8/8/4r3/4K2R w K - 0 1");
+  assert(!outOf.moves().includes("O-O"), "cannot castle out of check");
+  // a promotion that captures the rook takes the castling right with it
+  const cap = new Chess("r3k3/1P6/8/8/8/8/8/4K3 w q - 0 1");
+  cap.move({ from: "b7", to: "a8", promotion: "q" });
+  assert(cap.fen().split(" ")[2] === "-", "capturing the a8 rook by promotion clears black's queenside right");
+  // insufficient material: same-coloured bishops draw, opposite-coloured do not
+  // c8 and f1 are both light squares; c8 and c1 are not
+  assert(new Chess("2b1k3/8/8/8/8/8/8/4KB2 w - - 0 1").insufficient_material(),
+    "KB vs KB on the same colour is insufficient");
+  assert(!new Chess("2b1k3/8/8/8/8/8/8/2B1K3 w - - 0 1").insufficient_material(),
+    "KB vs KB on opposite colours is not (a mate exists)");
+  assert(!new Chess("4k3/8/8/8/8/8/8/1NN1K3 w - - 0 1").insufficient_material(),
+    "KNN vs K is not insufficient by chess.js (FIDE 5.2.2: a helpmate exists)");
+}
+
+// --- 6.0: the exporter owns the result token (v6-plan D1)
+{
+  const { ChessPgn } = await import("../src/web/js/pgn.js");
+  assert(ChessPgn.stripResult("1. e4 e5 2. Nf3 1-0") === "1. e4 e5 2. Nf3", "a trailing 1-0 is stripped");
+  assert(ChessPgn.stripResult("1. e4 e5 *") === "1. e4 e5", "a trailing * is stripped");
+  assert(ChessPgn.stripResult("1. e4 e5 1/2-1/2\n") === "1. e4 e5", "a trailing draw token is stripped");
+  assert(ChessPgn.stripResult("1. e4 e5") === "1. e4 e5", "nothing to strip leaves the text alone");
+  const g = new Chess();
+  g.load_pgn('[Event "x"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0', { sloppy: true });
+  const body = ChessPgn.stripResult(g.pgn().split("\n\n").pop());
+  assert(!/1-0/.test(body), "chess.js's own trailing result is gone from the movetext");
+  assert(/function pgnForExport\(\) \{[\s\S]{0,2200}ChessPgn\.stripResult\(game\.pgn\(\)/.test(
+    fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8")),
+    "…and the exporter strips it before appending its own");
+}
+
 // FEN round-trip after moves
 {
   const g = new Chess();
@@ -2072,13 +2141,13 @@ for (const lang of CONTENT_LANGS) {
   {
     const body = fnOf("sync");
     const calls = [...body.matchAll(/\b(\w+)\(/g)].map((m) => m[1]).filter((n) => n !== "sync");
-    const notCommit = calls.filter((n) => n !== "commit");
+    // 6.0: one commitAll() instead of three commits — a view that hears about
+    // every slice is told once (draw() ran three times per sync() before)
+    const notCommit = calls.filter((n) => n !== "commit" && n !== "commitAll");
     for (const n of notCommit) console.error("  sync() still calls " + n + "()");
     assert(notCommit.length === 0,
       "sync() does nothing but commit" + (notCommit.length ? " — also calls " + [...new Set(notCommit)].join(", ") : ""));
-    for (const slice of ["game", "session", "ui"]) {
-      assert(new RegExp('store\\.commit\\("' + slice + '"').test(body), "sync() commits " + slice);
-    }
+    assert(/store\.commitAll\(\["game", "session", "ui"\]/.test(body), "sync() commits game, session and ui in one pass");
     assert(/function wireViews\(\)/.test(appSrc), "the view wiring is in one readable block");
     for (const view of ["renderStatusPill", "renderReplayBar", "renderGameActions"]) {
       assert(new RegExp("function " + view + "\\(").test(appSrc), view + "() exists");
@@ -4311,7 +4380,8 @@ for (const lang of CONTENT_LANGS) {
     // every key the app owns is in the list — a key added elsewhere would be
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
-    assert(keys.length === 10, "all ten keys are declared in one place (" + keys.length + ")");
+    // 6.0 added the quarantine key (v6-plan D2)
+    assert(keys.length === 11, "all eleven keys are declared in one place (" + keys.length + ")");
     for (const k of keys) {
       assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
     }
@@ -4514,7 +4584,8 @@ for (const lang of CONTENT_LANGS) {
   // and the app actually calls them, at the places that matter
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
   for (const [what, re] of [
-    ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*Host\.addRecentDocument\(path\);/],
+    // 6.0: one exportText() serves PGN and the learning file; only a PGN is a document
+    ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*if \(recent\) Host\.addRecentDocument\(path\);/],
     ["the open dialog", /importPgnText\(text, paths\[0\]\);\s*\n\s*Host\.addRecentDocument\(paths\[0\]\);/],
     ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
     ["clearing the save", /Persist\.clearAll\(\);[\s\S]{0,320}?Host\.clearRecentDocuments\(\);/],
@@ -5105,6 +5176,22 @@ for (const lang of CONTENT_LANGS) {
         " (" + [...new Set(ahead)].slice(0, 5).join(", ") + ")");
     }
   }
+}
+
+// --- 6.0: the register of source-text assertions in this file.
+//
+// This file holds a great many `/…/.test(appSrc)` checks: they lock the
+// *shape* of app.js, not its behaviour, which makes them the largest single
+// obstacle to moving code and the largest source of false confidence
+// (v6-plan §1.2). They retire one at a time, each replaced by a behavioural
+// test; the number may only go down. Bump it down when you retire one, never
+// up. Same register discipline as the colour and token registers above.
+{
+  const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
+  const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
+  const REGISTERED = 126;
+  assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
+  assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }
 
 if (failed) {

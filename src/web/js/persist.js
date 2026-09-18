@@ -34,6 +34,9 @@ export const KEYS = {
   achievements: "chess.v1.achv",
   slots: "chess.v1.slots",
   panelOpen: "chess.panelOpen",
+  // 6.0: where a value that failed to parse is kept, instead of being thrown
+  // away and overwritten by the next autosave (v6-plan D2)
+  quarantine: "chess.v1.quarantine",
 };
 
 /** Where the profile's schema version lives — the one number, not eight. */
@@ -178,5 +181,50 @@ export function createPersist(host, onWriteFailure) {
   /** Has a write failed in this session? Then what is on screen is not saved. */
   function isBroken() { return !!broken; }
 
-  return { load, get, set, setJson, remove, clearAll, isBroken, wasEmpty, KEYS, SCHEMA };
+  /**
+   * Read a key and vouch for its shape, or say what went wrong.
+   *
+   * Every reader in app.js used to be `try { JSON.parse(...) } catch (_) {}`
+   * followed by a fresh default — so a corrupt value looked exactly like a new
+   * install, and the next autosave wrote the fresh default over whatever the
+   * corrupt value still contained. A read that fails is now told apart from a
+   * read that finds nothing, the raw value is moved to the quarantine key so
+   * nothing overwrites it, and the app is told once so it can say so.
+   *
+   * @param {string} name        key name
+   * @param {(parsed: any) => any} accept returns the usable value, or null/
+   *   undefined when the parsed JSON is not the shape this key holds
+   * @returns {{value: any, state: "fresh"|"ok"|"corrupt"}}
+   */
+  let corrupt = [];
+  function read(name, accept) {
+    const raw = get(name);
+    if (raw == null || raw === "") return { value: null, state: "fresh" };
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (_) { parsed = undefined; }
+    let value = null;
+    if (parsed !== undefined) {
+      try { value = accept(parsed); } catch (_) { value = null; }
+    }
+    if (value != null) return { value, state: "ok" };
+    quarantine(name, raw);
+    return { value: null, state: "corrupt" };
+  }
+
+  /** Keep a value that could not be read, so a later version (or the user) can. */
+  function quarantine(name, raw) {
+    let list = [];
+    try { list = JSON.parse(get("quarantine") || "[]"); } catch (_) { list = []; }
+    if (!Array.isArray(list)) list = [];
+    list.push({ name, raw, at: Date.now() });
+    // bounded: a profile that keeps failing must not grow without limit
+    while (list.length > 8) list.shift();
+    set("quarantine", JSON.stringify(list));
+    corrupt.push(name);
+  }
+
+  /** Names of the keys that failed to read this session, in order. */
+  function corruptKeys() { return corrupt.slice(); }
+
+  return { load, get, read, set, setJson, remove, clearAll, isBroken, wasEmpty, corruptKeys, KEYS, SCHEMA };
 }

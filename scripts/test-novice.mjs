@@ -177,4 +177,18 @@ if (RECORDING) {
     tiers: { ...(prev.tiers || {}), [TIER_NAME]: { settings: TIER, ...measured } },
   });
 }
-process.exit(0);
+// 6.0: the run asserts, not only prints. The bands are the measured figures
+// (docs/measured.json noviceScore: beginner 56 %, casual 27 %) with room for
+// the sampling noise a 32-game run has: a tier that drifts past them has
+// changed strength, and the change should be seen.
+{
+  const BANDS = { beginner: [35, 75], casual: [10, 50] };
+  const band = BANDS[TIER_NAME];
+  for (const [label, m] of Object.entries(measured)) {
+    if (!band) continue;
+    const ok = m.scorePct >= band[0] && m.scorePct <= band[1];
+    console.log((ok ? "ok" : "FAIL") + `: ${label} 机器人对 ${TIER_NAME} 得分率 ${m.scorePct}% 落在 ${band[0]}–${band[1]}% 内`);
+    if (!ok) process.exitCode = 1;
+  }
+}
+process.exit(process.exitCode || 0);

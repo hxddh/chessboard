@@ -56,11 +56,7 @@ import { createStore } from "./store.js";
   const Audio2 = ChessAudio;
 
   /** Shared dialog behaviour: focus trap, focus return, aria-modal. */
-  const Dlg = ChessDialog || {
-    open: (el, f) => { if (el) { el.classList.add("show"); if (f) f.focus(); } },
-    close: (el) => { if (el) el.classList.remove("show"); },
-    handleTab: () => false,
-  };
+  const Dlg = ChessDialog;
 
   /**
    * Is any dialog on screen?
@@ -80,9 +76,9 @@ import { createStore } from "./store.js";
   }
 
   const I18n = ChessI18n;
-  const t = I18n ? I18n.t : (k) => k;
+  const t = I18n.t;
   /** t() with {0}/{1} placeholders filled in — see i18n.tf */
-  const tf = I18n ? I18n.tf : (k) => k;
+  const tf = I18n.tf;
 
   /**
    * The name of a side, and the name of the other one.
@@ -158,6 +154,18 @@ import { createStore } from "./store.js";
   function animateReply(mv) {
     if (!mv) return;
     BoardView.animateMove(mv.from, mv.to, castleRook(mv));
+    // the reply is the one move the player did not make, so it is the one a
+    // screen reader must say (v6-plan D5); the SAN is read from the history
+    // rather than from `mv`, which is a from/to pair without a name
+    announceLastMove();
+  }
+
+  /** "12… Nf6" in the live region — what just happened on the board. */
+  function announceLastMove() {
+    const h = sanHistory();
+    const at = h.length;
+    if (!at) return;
+    announce(ChessReview.moveNumber(at - 1, "w") + (at % 2 ? ". " : "… ") + h[at - 1]);
   }
 
   /** a game restored from the save that was already filed — see recordedId */
@@ -305,7 +313,7 @@ import { createStore } from "./store.js";
   /** sparring personality — see persona.js; "off" is plain engine play */
   const PERSONA_IDS = (ChessPersona && ChessPersona.IDS) ||
     ["off", "greedy", "principled", "attacker"];
-  store.ui.langId = I18n ? I18n.getLang() : "zh-CN";
+  store.ui.langId = I18n.getLang();
 
   Audio2.init(() => store.ui.soundOn);
 
@@ -575,6 +583,23 @@ import { createStore } from "./store.js";
   }
 
   /**
+   * 6.0: a value that could not be read is not a new install. The banner
+   * says which record was set aside, and that the copy is kept (v6-plan D2).
+   */
+  function showCorruptFault(names) {
+    let el = document.getElementById("storage-fault");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "storage-fault";
+      el.className = "storage-fault";
+      el.setAttribute("role", "alert");
+      document.body.appendChild(el);
+    }
+    el.textContent = tf("msg.storage.corrupt", [names.join(", ")]);
+    el.hidden = false;
+  }
+
+  /**
    * 5.1: an uncaught exception used to be silence — the handler died, the
    * button did nothing, and nothing anywhere said so. Every such error now
    * lands here: the banner says the app hit a fault and that the game was
@@ -767,10 +792,9 @@ import { createStore } from "./store.js";
 
   // --- settings + autosave ---
   function loadSettings() {
-    try {
-      const raw = Persist.get("settings");
-      if (!raw) return;
-      const s = JSON.parse(raw);
+    {
+      const s = Persist.read("settings", (v) => (v && typeof v === "object" ? v : null)).value;
+      if (!s) return;
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
@@ -787,7 +811,7 @@ import { createStore } from "./store.js";
       if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
       if (["play", "setup", "record"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
       if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
-    } catch (_) {}
+    }
   }
   function saveSettings() {
     try {
@@ -807,11 +831,9 @@ import { createStore } from "./store.js";
     } catch (_) {}
   }
   function tryLoadSave() {
-    try {
-      const raw = Persist.get("save");
-      if (!raw) return false;
-      const s = JSON.parse(raw);
-      if (!s || s.v !== 1 || typeof s.pgn !== "string" || !s.pgn) return false;
+    {
+      const s = Persist.read("save", (v) => (v && v.v === 1 && typeof v.pgn === "string" && v.pgn ? v : null)).value;
+      if (!s) return false;
       if (!gameLoadPgn(s.pgn)) {
         // A position from the editor or from 载入 FEN is saved the moment it
         // is loaded, before its first move, so its PGN is tag pairs and
@@ -819,7 +841,7 @@ import { createStore } from "./store.js";
         // path then took "no save" at face value and overwrote the position
         // with the standard array. Closing the app after setting up a study
         // position, before playing into it, lost it without a word.
-        const sf = ChessPgn ? ChessPgn.startFen(s.pgn) : null;
+        const sf = ChessPgn.startFen(s.pgn);
         if (!sf || !gameLoad(sf)) return false;
         game.header("SetUp", "1", "FEN", sf);
       }
@@ -836,8 +858,6 @@ import { createStore } from "./store.js";
       // a custom starting position is worth resuming on its own, with or
       // without moves played into it
       return sanHistory().length > 0 || !!startFen();
-    } catch (_) {
-      return false;
     }
   }
 
@@ -1243,11 +1263,8 @@ import { createStore } from "./store.js";
   }
 
   function loadLearnState() {
-    try {
-      const s = JSON.parse(Persist.get("learn") || "null");
-      if (s && s.v === 1 && s.done) return s;
-    } catch (_) {}
-    return { v: 1, done: {}, last: 0 };
+    const s = Persist.read("learn", (v) => (v && v.v === 1 && v.done ? v : null)).value;
+    return s || { v: 1, done: {}, last: 0 };
   }
   store.session.learnState = loadLearnState();
   function saveLearnState() {
@@ -1867,20 +1884,16 @@ import { createStore } from "./store.js";
    */
   const Mistakes = ChessMistakes;
   function loadMines() {
-    try {
-      const s = JSON.parse(Persist.get("mines") || "null");
-      if (s && s.v === 1 && Array.isArray(s.list)) {
-        return s.list.filter((m) => m && m.id && m.fen && Array.isArray(m.solution) && m.solution.length && m.cat === "mine");
-      }
-    } catch (_) {}
-    return [];
+    const s = Persist.read("mines", (v) => (v && v.v === 1 && Array.isArray(v.list) ? v : null)).value;
+    if (!s) return [];
+    return s.list.filter((m) => m && m.id && m.fen && Array.isArray(m.solution) && m.solution.length && m.cat === "mine");
   }
   store.session.mines = loadMines();
   function saveMines() { Persist.setJson("mines", { v: 1, list: store.session.mines }); }
   const Progress = ChessProgress;
   const Planner = ChessPlanner;
   store.session.progress = Progress.coerce((() => {
-    try { return JSON.parse(Persist.get("progress") || "null"); } catch (_) { return null; }
+    return Persist.read("progress", (v) => (v && typeof v === "object" ? v : null)).value;
   })());
   function saveProgress() { Persist.setJson("progress", store.session.progress); }
   function bookNow() { return store.session.mines.length ? ALL_PUZZLES.concat(store.session.mines) : ALL_PUZZLES; }
@@ -2007,15 +2020,13 @@ import { createStore } from "./store.js";
       were actually rewritten, which is a different thing from "this profile
       is on the current id version", and the difference is the whole bug */
   function loadPuzzleState() {
-    try {
-      const s = JSON.parse(Persist.get("puzzles") || "null");
-      if (s && s.v === 1 && s.solved) {
-        if (!s.missed) s.missed = {};
-        const was = s.idv;
-        const out = migrateDrillIds(s);
-        return { state: out, migrated: out.idv !== was };
-      }
-    } catch (_) {}
+    const s = Persist.read("puzzles", (v) => (v && v.v === 1 && v.solved ? v : null)).value;
+    if (s) {
+      if (!s.missed) s.missed = {};
+      const was = s.idv;
+      const out = migrateDrillIds(s);
+      return { state: out, migrated: out.idv !== was };
+    }
     return { state: { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" }, migrated: false };
   }
   const loadedPuzzles = loadPuzzleState();
@@ -3003,7 +3014,7 @@ import { createStore } from "./store.js";
     if (!rec) return;
     rec.acc = mine;
     rec.acpl = acpl;
-    Persist.setJson("stats", s);
+    saveStats(s);
     renderStats();
   }
 
@@ -3373,9 +3384,23 @@ import { createStore } from "./store.js";
   let _recSeq = 0;
   function newRecordId() { return Date.now().toString(36) + "-" + (_recSeq++).toString(36); }
 
+  /**
+   * The stats record, parsed once.
+   *
+   * 6.0: this used to re-parse the whole blob — up to 500 games, each with its
+   * PGN — on every call, and one renderStats() called it five or six times
+   * down its chain (v6-plan D11). Every writer goes through saveStats(), so
+   * the cache can never hold a value that storage does not.
+   */
+  const statsCache = { v: null };
+  function saveStats(s) { statsCache.v = s; Persist.setJson("stats", s); }
   function loadStats() {
-    try {
-      const s = JSON.parse(Persist.get("stats") || "null");
+    if (!statsCache.v) statsCache.v = readStats();
+    return statsCache.v;
+  }
+  function readStats() {
+    const s = Persist.read("stats", (v) => (v && (v.v === 2 || v.v === 1) && Array.isArray(v.games) ? v : null)).value;
+    {
       if (s && s.v === 2 && Array.isArray(s.games)) return s;
       // v1 → v2: split the overloaded `sig` into the three things it was.
       // Reading it apart is safe — unlike an id remap, this derives nothing
@@ -3396,7 +3421,7 @@ import { createStore } from "./store.js";
           }),
         };
       }
-    } catch (_) {}
+    }
     return { v: 2, games: [] };
   }
 
@@ -3413,7 +3438,7 @@ import { createStore } from "./store.js";
     store.game.recordedId = id;
     s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending: "" });
     if (s.games.length > 500) s.games = s.games.slice(-500);
-    Persist.setJson("stats", s);
+    saveStats(s);
     renderStats();
     checkNewAchievements();
     offerReview();
@@ -4038,11 +4063,8 @@ import { createStore } from "./store.js";
   // --- achievements: pure derivations of stats + lesson/puzzle progress ---
   const ACH = CHESS_ACHIEVEMENTS || [];
   function loadAchSeen() {
-    try {
-      const s = JSON.parse(Persist.get("achievements") || "null");
-      if (s && Array.isArray(s.seen)) return new Set(s.seen);
-    } catch (_) {}
-    return new Set();
+    const s = Persist.read("achievements", (v) => (v && Array.isArray(v.seen) ? v : null)).value;
+    return new Set(s ? s.seen : []);
   }
   store.session.achSeen = loadAchSeen();
 
@@ -4515,7 +4537,7 @@ import { createStore } from "./store.js";
     lastEl.hidden = !show;
     versusEl.hidden = show;
     if (!show) return;
-    const no = ChessReview ? ChessReview.moveNumber(at - 1, "w") : Math.ceil(at / 2);
+    const no = ChessReview.moveNumber(at - 1, "w");
     lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
   }
 
@@ -4877,9 +4899,9 @@ import { createStore } from "./store.js";
    * business rebuilding the settings panel each time.
    */
   function sync() {
-    store.commit("game", "sync");
-    store.commit("session", "sync");
-    store.commit("ui", "sync");
+    // one pass over the union of the three listener sets: a view that hears
+    // about game and session and ui is told once, not three times (6.0)
+    store.commitAll(["game", "session", "ui"], "sync");
   }
 
   function syncSettingsUI() {
@@ -5024,14 +5046,21 @@ import { createStore } from "./store.js";
     return true;
   }
 
+  // explicit navigation takes the board back from whatever was previewing
   function setViewIndex(n) {
+    const was = store.game.viewIndex;
     store.game.viewIndex = Math.max(0, Math.min(n, sanHistory().length));
     store.game.selection = null;
-    // explicit navigation takes the board back from whatever was previewing
     clearPreview();
     BoardView.cancelAnim();
     syncAutoFlip();
     store.commit("game", "action");
+    // replay navigation says which move it stopped after; the start says so
+    // in words, since there is no move to name (v6-plan D5)
+    if (store.game.viewIndex !== was) {
+      const at = store.game.viewIndex;
+      announce(at === 0 ? t("live.start") : ChessReview.moveNumber(at - 1, "w") + (at % 2 ? ". " : "… ") + sanHistory()[at - 1]);
+    }
   }
 
   function goLive() { setViewIndex(sanHistory().length); }
@@ -5221,7 +5250,7 @@ import { createStore } from "./store.js";
     store.game.recordedId = id;
     s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending });
     if (s.games.length > 500) s.games = s.games.slice(-500);
-    Persist.setJson("stats", s);
+    saveStats(s);
     renderStats();
     checkNewAchievements();
     offerReview(); // resignation and flag-fall end a game just as much as mate
@@ -5364,6 +5393,14 @@ import { createStore } from "./store.js";
     return "*";
   }
 
+  /** Read the [Result] tag of the loaded game into the terminal flags. */
+  function adoptHeaderResult() {
+    const r = (game.header() || {}).Result;
+    if (!r || r === "*" || naturalGameOver()) return;
+    if (r === "1-0" || r === "0-1") store.game.resigned = r === "1-0" ? "b" : "w";
+    else if (r === "1/2-1/2") store.game.drawAgreed = true;
+  }
+
   /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
   function pgnForExport() {
     // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
@@ -5400,7 +5437,11 @@ import { createStore } from "./store.js";
     const tags = tagPairs.map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
     // game.pgn() may itself carry SetUp/FEN headers — keep only its movetext,
     // wrapped to the PGN-recommended 80 columns
-    const tokens = (game.pgn().split("\n\n").pop() + " " + result).split(/\s+/).filter(Boolean);
+    // chess.js already ends the movetext with the result token when the
+    // header carries one (an imported game does) — strip it, so the token is
+    // written exactly once, and by us (v6-plan D1)
+    const movetext = ChessPgn.stripResult(game.pgn().split("\n\n").pop());
+    const tokens = (movetext + " " + result).split(/\s+/).filter(Boolean);
     const lines = [];
     let line = "";
     for (const tk of tokens) {
@@ -5453,27 +5494,33 @@ import { createStore } from "./store.js";
    */
   async function exportTextFallback(err, text) {
     if (!Host.hasZero() || !err || err.name === Host.NO_FILE_DIALOG) return false;
-    await copyText(text, t("msg.export.bridgeCopied"));
+    // the shell refusing a write because the file is too big is not the same
+    // failure as the shell having no dialog, and said so wrongly before this fix
+    const tooBig = err.name === Host.FILE_TOO_LARGE || /InvalidRequest|too ?large/i.test(String(err && err.message));
+    await copyText(text, t(tooBig ? "msg.export.tooLargeCopied" : "msg.export.bridgeCopied"));
     return true;
   }
 
-  async function downloadPgn() {
-    if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
-    const pgn = pgnForExport();
-    const name = pgnFileName();
+  /**
+   * 6.0: one text export, not two copies of it (v6-plan D9). The native
+   * dialog first, the browser download second, the clipboard last — the three
+   * fallbacks were written out twice, once for PGN and once for the learning
+   * file, and differed only in MIME type and title.
+   */
+  async function exportText(name, text, mime, title, recent) {
     if (Host.hasZero()) {
       try {
-        const path = await Host.saveFileDialog({ title: t("dlg.exportPgn"), defaultName: name });
+        const path = await Host.saveFileDialog({ title, defaultName: name });
         if (path == null) { toast(t("msg.export.cancelled")); return; }
-        await Host.writeTextFile(path, pgn);
+        await Host.writeTextFile(path, text);
         const revealed = await Host.revealPath(path);
-        Host.addRecentDocument(path);
+        if (recent) Host.addRecentDocument(path);
         savedToast(name, path, revealed);
         return;
-      } catch (err) { if (await exportTextFallback(err, pgn)) return; }
+      } catch (err) { if (await exportTextFallback(err, text)) return; }
     }
     try {
-      const blob = new Blob([pgn], { type: "application/x-chess-pgn" });
+      const blob = new Blob([text], { type: mime });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = name;
@@ -5481,8 +5528,13 @@ import { createStore } from "./store.js";
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
     } catch (_) {
-      copyText(pgn, t("msg.export.restrictedCopied"));
+      copyText(text, t("msg.export.restrictedCopied"));
     }
+  }
+
+  async function downloadPgn() {
+    if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
+    await exportText(pgnFileName(), pgnForExport(), "application/x-chess-pgn", t("dlg.exportPgn"), true);
   }
 
   // --- taking the review away ---------------------------------------------
@@ -5804,7 +5856,7 @@ import { createStore } from "./store.js";
     if (!text0) { toast(t("msg.import.empty"), "fix"); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
     // old behaviour) silently threw away everything before it.
-    const games = ChessPgn ? ChessPgn.splitGames(text0) : [text0];
+    const games = ChessPgn.splitGames(text0);
     if (games.length > 1) {
       const items = games.map((g, i) => {
         const s = ChessPgn.summary(g);
@@ -5828,7 +5880,7 @@ import { createStore } from "./store.js";
     // it is what a save slot or an export holds for a study position. chess.js
     // will not parse that shape, so fall back to its [SetUp]/[FEN] tags rather
     // than call the file malformed.
-    const importFen = parsed ? null : (ChessPgn ? ChessPgn.startFen(text0) : null);
+    const importFen = parsed ? null : ChessPgn.startFen(text0);
     if (!parsed && (!importFen || !new Chess().validate_fen(importFen).valid)) {
       toast(t("msg.import.badPgn"), "fault");
       return false;
@@ -5846,6 +5898,11 @@ import { createStore } from "./store.js";
     store.game.resigned = null;
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
+    // the file's [Result] survives the import as a terminal state: a decisive
+    // result that the board does not explain is a resignation, a draw that
+    // the rules do not explain is an agreed one. Before 6.0 the result was
+    // dropped and the export wrote `*` under a game the file called 1-0.
+    adoptHeaderResult();
     resetClocks();
     syncAutoFlip();
     store.commit("game", "action");
@@ -6134,11 +6191,8 @@ import { createStore } from "./store.js";
   const SLOT_COUNT = 5;
 
   function loadSlots() {
-    try {
-      const s = JSON.parse(Persist.get("slots") || "null");
-      if (s && Array.isArray(s.slots)) return s;
-    } catch (_) {}
-    return { v: 1, slots: new Array(SLOT_COUNT).fill(null) };
+    const s = Persist.read("slots", (v) => (v && Array.isArray(v.slots) ? v : null)).value;
+    return s || { v: 1, slots: new Array(SLOT_COUNT).fill(null) };
   }
   function saveSlots(s) {
     Persist.setJson("slots", s);
@@ -7323,29 +7377,7 @@ import { createStore } from "./store.js";
   }
   async function exportLearning() {
     const doc = Learning.pack(learningBag(), Date.now());
-    const text = JSON.stringify(doc, null, 2);
-    const name = learningFileName();
-    if (Host.hasZero()) {
-      try {
-        const path = await Host.saveFileDialog({ title: t("dlg.exportLearning"), defaultName: name });
-        if (path == null) { toast(t("msg.export.cancelled")); return; }
-        await Host.writeTextFile(path, text);
-        const revealed = await Host.revealPath(path);
-        savedToast(name, path, revealed);
-        return;
-      } catch (err) { if (await exportTextFallback(err, text)) return; }
-    }
-    try {
-      const blob = new Blob([text], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
-    } catch (_) {
-      copyText(text, t("msg.export.restrictedCopied"));
-    }
+    await exportText(learningFileName(), JSON.stringify(doc, null, 2), "application/json", t("dlg.exportLearning"));
   }
   /** Merge a learning file into this machine's data and rebuild the views. */
   async function importLearningText(text) {
@@ -7359,10 +7391,9 @@ import { createStore } from "./store.js";
     if (merged.mines) store.session.mines = loadMines();
     if (merged.learn) store.session.learnState = loadLearnState();
     if (merged.puzzles) store.session.puzzleState = loadPuzzleState().state;
-    if (merged.progress) store.session.progress = Progress.coerce(JSON.parse(Persist.get("progress") || "null"));
-    if (merged.achievements) {
-      try { store.session.achSeen = new Set((JSON.parse(Persist.get("achievements") || "null") || {}).seen || []); } catch (_) {}
-    }
+    if (merged.progress) store.session.progress = Progress.coerce(Persist.read("progress", (v) => v).value);
+    if (merged.achievements) store.session.achSeen = loadAchSeen();
+    if (merged.stats) statsCache.v = null;
     renderStats();
     sync();
     toast(tf("msg.learning.imported", [store.session.mines.length]));
@@ -7620,6 +7651,13 @@ import { createStore } from "./store.js";
     return false;
   }
 
+  /** Is this element one that turns keystrokes into text? */
+  function isEditable(el) {
+    if (!el || el === document.body) return false;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
+  }
+
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") { escapeKey(); return; }
     if (promoModal && promoModal.classList.contains("show")) {
@@ -7646,6 +7684,10 @@ import { createStore } from "./store.js";
     // none of it applies while one is open — see dialogOpen(). Escape is
     // handled above precisely because it is the one key that does apply.
     if (dialogOpen()) return;
+    // a letter typed into any text field is text, not a shortcut — the FEN
+    // box used to be the only field and guarded itself; the guard belongs
+    // here so the next field cannot forget it (v6-plan D8)
+    if (isEditable(ev.target)) return;
     const k = ev.key.toLowerCase();
     // Tab is not ours to take. Binding it to the panel meant focus could never
     // move anywhere by keyboard — the app had a full keyboard board cursor and
@@ -7753,6 +7795,9 @@ import { createStore } from "./store.js";
   setSideTab(store.ui.sideTab);
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
+  // every reader has run by now; a record that failed to parse is reported
+  // once, here, instead of passing for a fresh install (v6-plan D2)
+  if (Persist.corruptKeys().length) showCorruptFault(Persist.corruptKeys());
   // a resumed finished game must not be re-counted on the next live move
   // A restored game that is already over was filed when it ended; marking it
   // recorded stops the launch path filing it a second time. The id is unknown

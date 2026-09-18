@@ -135,15 +135,44 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (worker) worker.postMessage(cmd);
   }
 
+  /**
+   * 6.0: a timeout is a symptom, not a verdict. Before 6.0 waitFor() only
+   * rejected, and the worker it left behind kept whatever search had hung —
+   * the next `isready` then queued behind it, timed out too, and the engine
+   * was dead for the rest of the session with isReady() still saying true.
+   * Now the first timeout tells the search to stop; a second timeout in a row
+   * is taken as a wedged worker, which is terminated so the next init()
+   * builds a fresh one.
+   */
+  let strikes = 0;
+  let booted = false; // uciok seen on the current worker
+  function onTimeout() {
+    strikes++;
+    if (strikes >= 2) { teardown(); return; }
+    send("stop");
+  }
+  function onProgress() { strikes = 0; }
+  function teardown() {
+    booted = false;
+    if (worker) { try { worker.terminate(); } catch (_) { /* already gone */ } }
+    worker = null;
+    readyPromise = null;
+    lineHandlers = [];
+    strikes = 0;
+    gen++;
+  }
+
   function waitFor(pred, timeoutMs) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         lineHandlers = lineHandlers.filter((h) => h !== handler);
+        onTimeout();
         reject(new Error("engine timeout"));
       }, timeoutMs || 20000);
       function handler(line) {
         if (pred(line)) {
           clearTimeout(timer);
+          onProgress();
           lineHandlers = lineHandlers.filter((h) => h !== handler);
           resolve(line);
         }
@@ -162,20 +191,26 @@ const global = typeof window !== "undefined" ? window : globalThis;
       const blobUrl = URL.createObjectURL(new Blob([workerSource(loaderText)], { type: "text/javascript" }));
       worker = new Worker(blobUrl);
       worker.onmessage = (ev) => onLine(ev.data);
+      // a worker that throws inside the wasm never sends __sf_ready__; without
+      // this the init promise waited out its 30 s and the worker lingered
+      worker.onerror = () => teardown();
       const readyWait = waitFor((l) => l === "__sf_ready__", 30000);
       worker.postMessage({ type: "init", wasm: b64ToBuffer(wasmB64) });
       await readyWait;
       const uciWait = waitFor((l) => l === "uciok", 10000);
       send("uci");
       await uciWait;
+      booted = true;
       return true;
     })();
-    readyPromise.catch(() => { readyPromise = null; });
+    // a failed boot leaves no worker behind: isReady() used to keep answering
+    // true after init() rejected, because only the promise was cleared
+    readyPromise.catch(() => teardown());
     return readyPromise;
   }
 
   function isReady() {
-    return !!worker;
+    return !!worker && booted;
   }
 
   /** Abandon any in-flight search results (game changed under it). */

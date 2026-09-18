@@ -3,6 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- 6.0: the page holds a bridge that can write files, so it must not be
+       able to run anything it did not ship with. Scripts and styles come
+       only from the app's own origin; the engine runs in a blob worker; the
+       piece sprites are data: SVGs. No inline script, no remote origin. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; worker-src blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>国际象棋</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
