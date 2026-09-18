@@ -2037,6 +2037,10 @@
        appearing under the cursor, not a row of buttons shouting. */
     #pv-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; }
     .pv-label { margin-right: 2px; }
+    /* 6.0: the other engine lines sit under the principal one as read-only
+       rows; a chip that cannot be previewed is a span, not a button */
+    .pv-alt-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; margin-top: 4px; }
+    .pv-chip.pv-alt { cursor: default; opacity: .8; }
     .pv-chip {
       font: inherit; font-size: 12px; line-height: var(--lh-tight);
       color: var(--text); background: transparent;

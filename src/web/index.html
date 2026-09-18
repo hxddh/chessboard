@@ -587,8 +587,12 @@
             <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
             <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
             <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法留作变着" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
+            <button type="button" class="act-btn" id="an-live" aria-pressed="false" title="引擎持续分析棋盘上的局面，跟随复盘游标" data-i18n-title="tip.live" data-i18n="act.live">持续分析</button>
           </div>
           <p class="hint" id="engine-state" role="status" hidden></p>
+          <!-- 6.0 (v6-plan Q2.6): the running analysis of the position on the
+               board — depth, and one row per line with its win chance. -->
+          <div class="pv-line num" id="live-line" hidden></div>
         </div>
         <div id="eval-wrap" hidden>
           <!-- Focusable and a slider: the pointer already scrubs it, and the

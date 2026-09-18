@@ -253,6 +253,11 @@ import { createStore } from "./store.js";
       /** @type {'w'|'b'} human side in AI mode */
       humanColor: "w",
       engineThinking: false,
+      /** 6.0 (v6-plan Q2.8): the move queued while the engine thinks, {from,to} */
+      premove: null,
+      /** 6.0 (v6-plan Q2.6): continuous analysis — on/off, and the running search */
+      liveOn: false,
+      live: null,
       /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
       analysis: null,
       /** the engine failed to start — analysis and hints are not offered, and
@@ -874,7 +879,12 @@ import { createStore } from "./store.js";
 
   /** What the board draws of the annotations: the node's shapes and the draft. */
   function shapesToDraw() {
-    const s = nodeShapes();
+    let s = nodeShapes();
+    // the queued premove is drawn as a yellow arrow — the one colour the
+    // player's own annotations use least
+    if (store.session.premove && isLive()) {
+      s = { arrows: s.arrows.concat({ from: store.session.premove.from, to: store.session.premove.to, color: "Y" }), circles: s.circles };
+    }
     const d = store.ui.shaping;
     if (!d || !d.over) return s;
     if (d.over === d.from) return { arrows: s.arrows, circles: s.circles.concat({ sq: d.from, color: d.color }) };
@@ -1268,6 +1278,7 @@ import { createStore } from "./store.js";
     store.game.engineToken++;
     store.session.engineThinking = false;
     store.session.hintMove = null;
+    store.session.premove = null;
     if (ChessEngine) ChessEngine.cancel();
   }
 
@@ -1277,6 +1288,9 @@ import { createStore } from "./store.js";
     if (appGameOver() || game.turn() === store.session.humanColor) return;
     const token = ++store.game.engineToken;
     store.session.engineThinking = true;
+    // one worker: a running infinite search must let go before the game move
+    await stopLiveAnalysis();
+    if (token !== store.game.engineToken) return;
     sync();
     // clocked AI games: the engine budgets its think time from its clock
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
@@ -1319,6 +1333,7 @@ import { createStore } from "./store.js";
       saveGame();
       recordGameIfOver();
       coachAfterEngineReply();
+      runPremove();
     }
     sync();
   }
@@ -1335,6 +1350,7 @@ import { createStore } from "./store.js";
     if (store.session.hintPending || store.session.analyzing) return;
     const sig = game.fen();
     store.session.hintPending = true;
+    await stopLiveAnalysis();
     sync();
     let e = null;
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
@@ -3212,8 +3228,97 @@ import { createStore } from "./store.js";
    * zone for everything before it.
    */
 
+  /** UCI moves → SAN from `fen`, at most `max` of them; stops at the first illegal. */
+  function sansOf(fen, ucis, max) {
+    const out = [];
+    if (!Array.isArray(ucis)) return out;
+    const g = new Chess(fen);
+    for (const u of ucis.slice(0, max || 8)) {
+      const m = g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || "q" });
+      if (!m) break;
+      out.push(m.san);
+    }
+    return out;
+  }
+  /** "胜率 62%" for a line scored from `turn`'s side. */
+  function winLabel(l, turn) {
+    const cp = l.mate != null ? (l.mate > 0 ? 100000 : -100000) : l.cp;
+    if (cp == null) return "";
+    // the panel reads from White's side, like the curve
+    const white = turn === "w" ? cp : -cp;
+    return t("an.win") + " " + Math.round(Review.winPct(white)) + "%";
+  }
+
+  // --- 6.0: continuous analysis (v6-plan Q2.6) -------------------------------
+  // `go infinite` on whatever position the board shows, re-armed on every
+  // cursor or line change, stopped whenever the one worker is needed for a
+  // game move or a review pass. A toggle, not a mode: it follows the replay.
+  function liveAllowed() {
+    return store.session.liveOn && ChessEngine && !store.session.engineDown &&
+      (store.session.mode === "ai" || store.session.mode === "pvp") &&
+      !store.session.editor && !store.session.analyzing && !store.session.engineThinking;
+  }
+  function stopLiveAnalysis() {
+    const l = store.session.live;
+    store.session.live = null;
+    if (!l) return Promise.resolve();
+    return l.stop();
+  }
+  function syncLiveAnalysis() {
+    const el = document.getElementById("live-line");
+    const btn = document.getElementById("an-live");
+    if (btn) {
+      btn.classList.toggle("active", store.session.liveOn);
+      btn.setAttribute("aria-pressed", store.session.liveOn ? "true" : "false");
+      avail(btn, !!ChessEngine && !store.session.engineDown && (store.session.mode === "ai" || store.session.mode === "pvp"));
+    }
+    if (!liveAllowed()) {
+      stopLiveAnalysis();
+      if (el && !store.session.liveOn) { el.hidden = true; el.replaceChildren(); }
+      return;
+    }
+    const fen = viewGame().fen();
+    if (store.session.live && store.session.live.fen === fen && store.session.live.multipv === store.ui.multipv) return;
+    stopLiveAnalysis();
+    const rec = { fen, multipv: store.ui.multipv, info: null, raf: 0, stop: null };
+    rec.stop = ChessEngine.analyzeInfinite(fen, { multipv: store.ui.multipv }, (info) => {
+      if (store.session.live !== rec) return;
+      rec.info = info;
+      if (!rec.raf) rec.raf = requestAnimationFrame(() => { rec.raf = 0; renderLiveAnalysis(rec); });
+    });
+    store.session.live = rec;
+    if (el) { el.hidden = false; el.replaceChildren(); }
+  }
+  function renderLiveAnalysis(rec) {
+    const el = document.getElementById("live-line");
+    if (!el || store.session.live !== rec || !rec.info) return;
+    el.hidden = false;
+    el.replaceChildren();
+    const turn = rec.info.turn;
+    const head = document.createElement("span");
+    head.className = "pv-label";
+    head.textContent = t("act.live") + " · " + t("an.depth") + " " + (rec.info.depth || 0);
+    el.appendChild(head);
+    rec.info.lines.forEach((l, n) => {
+      const row = document.createElement("div");
+      row.className = "pv-alt-row";
+      const lab = document.createElement("span");
+      lab.className = "pv-label";
+      lab.textContent = (rec.info.lines.length > 1 ? tf("an.line", [n + 1]) + " · " : "") + winLabel(l, turn);
+      row.appendChild(lab);
+      sansOf(rec.fen, l.pv, 8).forEach((san, k) => {
+        const sp = document.createElement("span");
+        sp.className = "pv-chip pv-alt";
+        writeSan(sp, san, k % 2 === 0 ? turn : (turn === "w" ? "b" : "w"));
+        row.appendChild(sp);
+      });
+      el.appendChild(row);
+    });
+  }
+
   async function analyzeGame(movetime) {
     if (store.session.analyzing || !ChessEngine) return;
+    await stopLiveAnalysis();
     const perMove = movetime || 120;
     const h = sanHistory();
     if (!h.length) { toast(t("msg.analysis.noGame"), "fix"); return; }
@@ -3227,6 +3332,7 @@ import { createStore } from "./store.js";
     setAnalyzeUI();
     const scalars = new Array(fens.length).fill(null);
     const pvs = new Array(fens.length).fill(null);
+    const linesAt = new Array(fens.length).fill(null);
     // the engine's own choice at each position, UCI — this is what the board
     // draws an arrow for when the move actually played was a mistake
     const bests = new Array(fens.length).fill(null);
@@ -3259,9 +3365,12 @@ import { createStore } from "./store.js";
       else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
       else {
         let e = null;
-        try { e = await ChessEngine.analyze(fens[i], perMove); } catch (_) {}
+        try { e = await ChessEngine.analyze(fens[i], perMove, { multipv: store.ui.multipv }); } catch (_) {}
         if (game.pgn() !== sig) { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
         scalars[i] = evalScalar(e);
+        // every line the engine gave, in SAN, with its score — the panel
+        // shows them under the principal one (v6-plan Q2.6)
+        if (e && Array.isArray(e.lines) && e.lines.length > 1) linesAt[i] = e.lines.map((l) => ({ cp: l.cp, mate: l.mate, pv: sansOf(fens[i], l.pv, 6) }));
         if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
         // principal variation, converted to SAN for display
         if (e && e.pv && e.pv.length) {
@@ -3293,7 +3402,7 @@ import { createStore } from "./store.js";
       // the same call (v6-plan Q2.5).
       return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
     });
-    store.session.analysis = { sig, scalars, tags, pvs, bests, budget: perMove, acc: accuracyFrom(fens, scalars) };
+    store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, budget: perMove, acc: accuracyFrom(fens, scalars) };
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
     recordAccuracy();
@@ -3464,6 +3573,26 @@ import { createStore } from "./store.js";
           writeSan(b, san, k % 2 === 0 ? start : (start === "w" ? "b" : "w"));
           pvEl.appendChild(b);
         });
+        // the other lines the review asked for, each with its win chance;
+        // read-only rows (no preview) so the chip handlers stay one line's
+        const extra = a.linesAt && a.linesAt[store.game.viewIndex];
+        if (extra && extra.length > 1) {
+          extra.slice(1).forEach((l, n) => {
+            const row = document.createElement("div");
+            row.className = "pv-alt-row";
+            const lab = document.createElement("span");
+            lab.className = "pv-label";
+            lab.textContent = tf("an.line", [n + 2]) + " · " + winLabel(l, viewGame().turn());
+            row.appendChild(lab);
+            l.pv.forEach((san, k) => {
+              const sp = document.createElement("span");
+              sp.className = "pv-chip pv-alt";
+              writeSan(sp, san, k % 2 === 0 ? start : (start === "w" ? "b" : "w"));
+              row.appendChild(sp);
+            });
+            pvEl.appendChild(row);
+          });
+        }
         // …and the line can be kept: written into the tree as a variation
         // at this position (Q2.3)
         if (!inModal()) {
@@ -5419,6 +5548,9 @@ import { createStore } from "./store.js";
     store.subscribe("session", renderReplayBar);
     store.subscribe("session", renderGameActions);
     store.subscribe("session", setAnalyzeUI);
+    store.subscribe("game", syncLiveAnalysis);
+    store.subscribe("session", syncLiveAnalysis);
+    store.subscribe("ui", syncLiveAnalysis);
     store.subscribe("session", syncLearnUI);
     store.subscribe("session", syncPuzzleUI);
     store.subscribe("session", syncEditorUI);
@@ -5687,6 +5819,53 @@ import { createStore } from "./store.js";
     maybeEngineTurn();
   }
 
+  /**
+   * Where this piece could go if it were our turn: the position with the side
+   * to move flipped. Pseudo-legal on purpose — the real test happens when the
+   * engine has replied and the move is actually played or dropped.
+   */
+  function premoveTargets(sq) {
+    const f = game.fen().split(" ");
+    f[1] = store.session.humanColor;
+    f[3] = "-";
+    let g;
+    try { g = new Chess(f.join(" ")); } catch (_) { return []; }
+    if (!g.get(sq)) return [];
+    return g.moves({ square: sq, verbose: true }).map((m) => m.to);
+  }
+  function premoveClick(sq) {
+    const mine = game.get(sq);
+    if (store.game.selection && store.game.selection.premove && store.game.selection.targets.includes(sq)) {
+      store.session.premove = { from: store.game.selection.sq, to: sq };
+      store.game.selection = null;
+      toast(tf("msg.premove.set", [store.session.premove.from + "→" + sq]));
+      draw();
+      return;
+    }
+    if (mine && mine.color === store.session.humanColor) {
+      const targets = premoveTargets(sq);
+      selectSquare(sq, targets);
+      if (store.game.selection) store.game.selection.premove = true;
+      return;
+    }
+    store.session.premove = null;
+    clearSelection();
+  }
+  /** After the engine's reply: play the queued move if it is still legal. */
+  function runPremove() {
+    const pm = store.session.premove;
+    store.session.premove = null;
+    if (!pm || appGameOver() || !isLive() || game.turn() !== store.session.humanColor) return;
+    const legal = game.moves({ verbose: true }).find((m) => m.from === pm.from && m.to === pm.to);
+    if (!legal) { toast(t("msg.premove.dropped"), "fix"); draw(); return; }
+    // on the next frame, so the reply is seen landing before the answer
+    requestAnimationFrame(() => {
+      if (!isLive() || game.turn() !== store.session.humanColor) return;
+      const still = game.moves({ verbose: true }).find((m) => m.from === pm.from && m.to === pm.to);
+      if (still) playHumanMove(pm.from, pm.to, "q");
+    });
+  }
+
   function onSquareClick(sq) {
     if (store.session.editor) { editorClick(sq); return; }
     if (store.session.mode === "learn") { learnClick(sq); return; }
@@ -5707,7 +5886,12 @@ import { createStore } from "./store.js";
       if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
       if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
       if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
-      if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return; // engine's move
+      if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) {
+        // engine's move: a click now is a premove, played the instant the
+        // reply lands if it is still legal then (v6-plan Q2.8)
+        if (store.session.engineThinking) premoveClick(sq);
+        return;
+      }
     }
     const g = branching ? viewGame() : game;
     const play = branching ? playVariationMove : playHumanMove;
@@ -7681,6 +7865,13 @@ import { createStore } from "./store.js";
     analyzeGame(120);
   };
   document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
+  document.getElementById("an-live").onclick = () => {
+    store.session.liveOn = !store.session.liveOn;
+    if (store.session.liveOn && ChessEngine && !ChessEngine.isReady()) {
+      ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
+    }
+    sync();
+  };
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };
   const curveEl = document.getElementById("eval-curve");
   if (curveEl) {
@@ -8615,6 +8806,7 @@ import { createStore } from "./store.js";
   function escapeKey() {
     // the move menu is the smallest thing on screen that Escape can close
     if (closeMoveMenu()) return true;
+    if (store.session.premove) { store.session.premove = null; draw(); return true; }
     // a selected piece is the most local thing there is to cancel
     if (store.game.selection && store.ui.boardFocused) {
       store.game.selection = null; announce(t("live.cleared")); draw(); return true;
