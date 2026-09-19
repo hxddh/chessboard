@@ -309,6 +309,8 @@ export async function main(argv) {
       let kept = 0;
       for (const r of rows) { const c = await classify(r, opt); if (c) { all.push(c); kept++; } else if (opt.debug) rejected.push(r); }
       console.error(`game ${gi + 1}/${opt.games}: ${rows.length} candidates, ${kept} pass the gate (${all.length} total, ${Math.round((Date.now() - t0) / 1000)}s)`);
+      // checkpoint after every game: a batch that is stopped early still counts
+      fs.writeFileSync(opt.rows, JSON.stringify(all));
     }
     fs.writeFileSync(opt.rows, JSON.stringify(all));
     if (opt.debug) fs.writeFileSync(opt.rows + ".rejected.json", JSON.stringify(rejected));
