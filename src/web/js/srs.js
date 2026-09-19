@@ -104,9 +104,19 @@
    * True when this puzzle still owes the queue some correct answers — the
    * count axis. An entry past GRADUATE is on the retention ladder, not owed.
    */
-  function isDue(v) {
+  function isDue(v, now) {
     const e = entry(v);
-    return !!e && e.s < GRADUATE;
+    if (!e || e.s >= GRADUATE) return false;
+    // with a clock: a puzzle scheduled for tomorrow is not served today, even
+    // though it still owes a solve (6.0 review: the smart pick read only the
+    // count axis and re-served a once-solved puzzle at once)
+    return !(Number.isFinite(now) && e.due > now);
+  }
+
+  /** True when the entry exists and its date has come — either axis. */
+  function dueBy(v, now) {
+    const e = entry(v);
+    return !!e && e.due <= now;
   }
 
   /**
@@ -172,4 +182,4 @@
     return today;
   }
 
-  export const ChessSrs = { GRADUATE, LADDER, DAY, entry, onMiss, onSolve, isDue, order, progress, dueCount, dueQueue };
+  export const ChessSrs = { GRADUATE, LADDER, DAY, entry, onMiss, onSolve, isDue, dueBy, order, progress, dueCount, dueQueue };

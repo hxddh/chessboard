@@ -182,7 +182,13 @@ export function createPersist(host, onWriteFailure) {
   function mirrorDoc() {
     const keys = {};
     for (const name of Object.keys(KEYS)) if (bag && bag[name] != null) keys[name] = bag[name];
-    return { app: "chessboard", schema: SCHEMA, writtenAt: Date.now(), keys };
+    // the same revision stamp the cache carries (set() wrote it before
+    // scheduling this): a mirror stamped a few hundred ms later than the
+    // cache would read as "the file knows more" on the next launch, and
+    // recover() would rewrite storage and reload after every ordinary session
+    let at = Number(host.storageGet(STAMP_KEY) || 0) || 0;
+    if (!at) { at = Date.now(); host.storageSet(STAMP_KEY, String(at)); }
+    return { app: "chessboard", schema: SCHEMA, writtenAt: at, keys };
   }
   function scheduleMirror() {
     if (!mirrorEnabled) return;

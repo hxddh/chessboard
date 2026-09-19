@@ -2798,6 +2798,15 @@ for (const lang of CONTENT_LANGS) {
     const r = P.pickNext(st, BOOK, S);
     assert(r.kind === "review" && r.due === 2, "the queue outranks every recommendation (" + r.kind + ", 欠 " + r.due + ")");
     assert(r.id === "b2", "…and the least-learned one comes first (" + r.id + ")");
+    // 6.0 review: a puzzle solved once today is owed by count but scheduled
+    // for tomorrow — the smart pick must not serve it again at once
+    const st4 = fresh();
+    const T = 1_700_000_000_000;
+    st4.missed.b2 = S.onSolve(S.onMiss(undefined, T), T);
+    assert(P.pickNext(st4, BOOK, S, undefined, undefined, undefined, null, T + 1000).kind !== "review",
+      "a puzzle due tomorrow is not served today by the smart pick");
+    assert(P.pickNext(st4, BOOK, S, undefined, undefined, undefined, null, T + S.DAY + 1).kind === "review",
+      "…and is served once its day has come");
   }
   // rung 2: a weakness needs MIN_ATTEMPTS answers AND at least one miss
   {
@@ -5227,6 +5236,14 @@ for (const lang of CONTENT_LANGS) {
     assert(h.writes === 1 && doc.keys.settings === "{\"a\":1}" && doc.keys.learn === "{\"b\":2}",
       "two writes in a burst become one whole-profile mirror write (" + h.writes + ")");
     assert(doc.app === "chessboard" && typeof doc.writtenAt === "number", "…stamped as ours");
+    // 6.0 review: the mirror used to take its own Date.now() ~400ms after the
+    // cache stamp, so every next launch read "file newer than cache" and
+    // restored + reloaded a profile that was already in sync
+    assert(String(doc.writtenAt) === h.m.get("chess.writtenAt"),
+      "…with the cache's own revision stamp, not a later one (" + doc.writtenAt + " vs " + h.m.get("chess.writtenAt") + ")");
+    const P2 = createPersist(h, () => {});
+    P2.load();
+    assert((await P2.recover()) === "kept", "…so a synchronized profile is kept on the next launch, not restored");
   }
   // 2. empty cache + a file = the file is restored
   {

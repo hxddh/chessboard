@@ -2637,7 +2637,11 @@ import { createStore } from "./store.js";
    * moments after reading the solution.
    */
   function clearMissed(id) {
-    if (!Srs.isDue(store.session.puzzleState.missed[id])) return;
+    // owed by count, or served by date from the retention ladder — either way
+    // a clean solve advances it; a retention entry solved early (from its own
+    // category, before its date) is left where it is
+    const cur = store.session.puzzleState.missed[id];
+    if (!Srs.isDue(cur) && !Srs.dueBy(cur, Date.now())) return;
     const next = Srs.onSolve(store.session.puzzleState.missed[id], Date.now());
     if (next) store.session.puzzleState.missed[id] = next; else delete store.session.puzzleState.missed[id];
     savePuzzleState();
@@ -3904,6 +3908,9 @@ import { createStore } from "./store.js";
     // centipawn figure) is the one row still taken from the centipawn one
     const sum = R && a ? R.summarizeWinPct(a.scalars, sanHistory(), firstMover) : null;
     if (sum && cp) sum.acpl = cp.acpl;
+    // the turning point is chosen by win-percentage drop, but the drill it
+    // banks records what the move cost in centipawns (bankWorst → drillFrom)
+    if (sum && sum.worst) sum.worst.loss = R.lossAt(a.scalars, sum.worst.ply, sum.worst.side);
     el.hidden = !sum;
     el.replaceChildren();
     if (!sum) return;

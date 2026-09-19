@@ -438,7 +438,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *
    * The coach, the hint and the review each searched the same position again
    * from nothing (v6-plan §1.2). A result is keyed by the position — FEN
-   * without the move counters, which do not change what the engine sees — and
+   * without the fullmove number, which does not change what the engine sees
+   * (the halfmove clock stays: it feeds the fifty-move rule, so the same
+   * board at clock 0 and at clock 99 are different positions) — and
    * is served again to anyone asking for no more than the budget that
    * produced it. Bounded and LRU: a long session must not keep every position
    * it ever looked at.
@@ -447,7 +449,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   const evalCache = new Map();
   function cacheKey(fen, multipv) {
     const f = fen.split(" ");
-    return f.slice(0, 4).join(" ") + "|" + (multipv || 1);
+    return f.slice(0, 5).join(" ") + "|" + (multipv || 1);
   }
   function cachedEval(fen, movetime, multipv) {
     const k = cacheKey(fen, multipv);

@@ -138,6 +138,12 @@
    *   since a game can start from an edited position
    * @returns {object|null} null when nothing measurable was analysed
    */
+  /** centipawn loss of the move at ply `i`, or null where a scalar is missing */
+  function lossAt(scalars, i, side) {
+    if (!scalars || scalars[i] == null || scalars[i + 1] == null) return null;
+    return lossOf(scalars[i], scalars[i + 1], side);
+  }
+
   function summarize(scalars, history, firstMover) {
     if (!scalars || scalars.length < 2 || !history || !history.length) return null;
     const side = (i) => ((i % 2 === 0) === (firstMover !== "b") ? "w" : "b");
@@ -353,7 +359,7 @@
   }
 
   export const ChessReview = {
-    summarize, verdictKey, longEnough, moveNumber, evalBar, markFor, isMistake,
+    summarize, lossAt, verdictKey, longEnough, moveNumber, evalBar, markFor, isMistake,
     lossOf, accuracyOf, lossesBySide,
     INACCURACY, MISTAKE, BLUNDER, MIN_JUDGED,
     winPct, winPctDrop, classifyByWinPct, accuracyFromWinPct, summarizeWinPct,

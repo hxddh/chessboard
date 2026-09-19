@@ -112,9 +112,10 @@ function weakestMotif(state, motifs) {
  * @returns {{kind: "review"|"motif"|"weak"|"explore"|"done", cat?: string,
  *            id?: string, motif?: string, due?: number, rate?: number, attempts?: number}}
  */
-function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range) {
-  // 1. the queue
-  const due = all.filter((p) => srs.isDue(state.missed[p.id]));
+function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range, now = Date.now()) {
+  // 1. the queue — owed by count AND due by date (an entry scheduled for
+  // tomorrow waits for tomorrow)
+  const due = all.filter((p) => srs.isDue(state.missed[p.id], now));
   if (due.length) {
     const first = srs.order(due.map((p) => p.id), state.missed)[0];
     return { kind: "review", cat: "review", id: first, due: due.length };
