@@ -181,10 +181,21 @@ if (RECORDING) {
 // (docs/measured.json noviceScore: beginner 56 %, casual 27 %) with room for
 // the sampling noise a 32-game run has: a tier that drifts past them has
 // changed strength, and the change should be seen.
+//
+// Two bots, two bands. The measured figures are the CAREFUL bot's (beginner
+// 56 %, casual 27 %): that is the bot the README describes and the one the
+// tier was calibrated against. The pure-random bot is recorded at 0 % / 2 %
+// — a mover that hangs its queen loses to any engine, and its band says only
+// that: the release gate first applied the careful band to both and failed
+// v6.0.0 on a 0 % that measured.json had always said.
 {
-  const BANDS = { beginner: [35, 75], casual: [10, 50] };
-  const band = BANDS[TIER_NAME];
+  const BANDS = {
+    beginner: { careful: [35, 75], random: [0, 15] },
+    casual: { careful: [10, 50], random: [0, 15] },
+  };
+  const bands = BANDS[TIER_NAME];
   for (const [label, m] of Object.entries(measured)) {
+    const band = bands && bands[label];
     if (!band) continue;
     const ok = m.scorePct >= band[0] && m.scorePct <= band[1];
     console.log((ok ? "ok" : "FAIL") + `: ${label} 机器人对 ${TIER_NAME} 得分率 ${m.scorePct}% 落在 ${band[0]}–${band[1]}% 内`);
