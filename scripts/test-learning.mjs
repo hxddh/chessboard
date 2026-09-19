@@ -333,7 +333,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 {
   const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
   const mined = mctx.MINED_PUZZLES;
-  assert(Array.isArray(mined) && mined.length >= 17, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  assert(Array.isArray(mined) && mined.length >= 787, "mined set loaded (" + (mined ? mined.length : 0) + ")");
   const ids = new Set(), fens = new Set(ctx.CHESS_PUZZLES.map((p) => p.fen));
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -350,9 +350,14 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
     if (p.motif && !["fork", "pin", "skewer", "discovered", "double"].includes(p.motif)) fail(p.id, "unknown motif", p.motif);
   }
   assert(bad === 0, "every mined puzzle passes its category's gate and carries provenance");
-  const byCat = {};
-  for (const p of mined) byCat[p.cat] = (byCat[p.cat] || 0) + 1;
-  console.log("mined by category:", JSON.stringify(byCat));
+  const byCat = {}, byMotif = {};
+  for (const p of mined) { byCat[p.cat] = (byCat[p.cat] || 0) + 1; if (p.motif) byMotif[p.motif] = (byMotif[p.motif] || 0) + 1; }
+  console.log("mined by category:", JSON.stringify(byCat), "motifs:", JSON.stringify(byMotif));
+  // the shipped floors per category and motif — a regeneration may only raise them
+  const FLOOR = { m1: 24, m2: 19, m3: 25, tac: 419, win: 300 };
+  const MOTIF_FLOOR = { fork: 94, pin: 82, skewer: 39, discovered: 8, double: 6 };
+  for (const [c, n] of Object.entries(FLOOR)) assert((byCat[c] || 0) >= n, "mined " + c + " ≥ " + n + " (" + (byCat[c] || 0) + ")");
+  for (const [m, n] of Object.entries(MOTIF_FLOOR)) assert((byMotif[m] || 0) >= n, "mined motif " + m + " ≥ " + n + " (" + (byMotif[m] || 0) + ")");
 }
 
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
