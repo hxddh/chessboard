@@ -133,6 +133,75 @@ for (const p of ["r", "b", "n"]) {
   assert(g2.fen() === g.fen(), "PGN round-trip FEN match");
 }
 
+// --- 6.0: perft — the rules engine is vendored, so its move generator is
+// trusted; this is the one gate that would catch a bad vendor bump. Node
+// counts are the published ones (chessprogramming.org/Perft_Results).
+{
+  function perft(g, d) {
+    if (d === 0) return 1;
+    let n = 0;
+    for (const m of g.moves({ verbose: true })) { g.move(m); n += perft(g, d - 1); g.undo(); }
+    return n;
+  }
+  const CASES = [
+    ["start", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 3, 8902],
+    ["kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 2, 2039],
+    ["position 3", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 3, 2812],
+    ["position 4", "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1", 2, 264],
+    ["position 5", "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8", 2, 1486],
+  ];
+  for (const [name, fen, depth, want] of CASES) {
+    const got = perft(new Chess(fen), depth);
+    assert(got === want, `perft ${name} depth ${depth} = ${want} (got ${got})`);
+  }
+}
+
+// --- 6.0: rule edges the app's own tests never covered
+{
+  // a pinned pawn may not capture en passant when that exposes its king
+  const g = new Chess("8/8/8/2k5/3Pp3/8/8/4K2R b K d3 0 1");
+  // …but here the pin is along the e-file: black king e8? use a diagonal pin
+  const pinned = new Chess("4k3/8/8/8/1b1Pp3/8/8/3K4 b - d3 0 1");
+  assert(pinned.moves().some((m) => m === "exd3"), "e.p. is legal when nothing is pinned through it");
+  const pinnedRank = new Chess("8/8/8/8/k2Pp2R/8/8/4K3 b - d3 0 1");
+  assert(!pinnedRank.moves().some((m) => m === "exd3"),
+    "e.p. is illegal when both pawns leave a rank pin on the king (the classic horizontal case)");
+  assert(g.moves().some((m) => m === "exd3"), "e.p. with a rook on the other file is fine");
+  // castling through check is illegal; castling out of check is illegal
+  const through = new Chess("4k3/8/8/8/8/8/5r2/4K2R w K - 0 1");
+  assert(!through.moves().includes("O-O"), "cannot castle through an attacked square (f1)");
+  const outOf = new Chess("4k3/8/8/8/8/8/4r3/4K2R w K - 0 1");
+  assert(!outOf.moves().includes("O-O"), "cannot castle out of check");
+  // a promotion that captures the rook takes the castling right with it
+  const cap = new Chess("r3k3/1P6/8/8/8/8/8/4K3 w q - 0 1");
+  cap.move({ from: "b7", to: "a8", promotion: "q" });
+  assert(cap.fen().split(" ")[2] === "-", "capturing the a8 rook by promotion clears black's queenside right");
+  // insufficient material: same-coloured bishops draw, opposite-coloured do not
+  // c8 and f1 are both light squares; c8 and c1 are not
+  assert(new Chess("2b1k3/8/8/8/8/8/8/4KB2 w - - 0 1").insufficient_material(),
+    "KB vs KB on the same colour is insufficient");
+  assert(!new Chess("2b1k3/8/8/8/8/8/8/2B1K3 w - - 0 1").insufficient_material(),
+    "KB vs KB on opposite colours is not (a mate exists)");
+  assert(!new Chess("4k3/8/8/8/8/8/8/1NN1K3 w - - 0 1").insufficient_material(),
+    "KNN vs K is not insufficient by chess.js (FIDE 5.2.2: a helpmate exists)");
+}
+
+// --- 6.0: the exporter owns the result token (v6-plan D1)
+{
+  const { ChessPgn } = await import("../src/web/js/pgn.js");
+  assert(ChessPgn.stripResult("1. e4 e5 2. Nf3 1-0") === "1. e4 e5 2. Nf3", "a trailing 1-0 is stripped");
+  assert(ChessPgn.stripResult("1. e4 e5 *") === "1. e4 e5", "a trailing * is stripped");
+  assert(ChessPgn.stripResult("1. e4 e5 1/2-1/2\n") === "1. e4 e5", "a trailing draw token is stripped");
+  assert(ChessPgn.stripResult("1. e4 e5") === "1. e4 e5", "nothing to strip leaves the text alone");
+  const g = new Chess();
+  g.load_pgn('[Event "x"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0', { sloppy: true });
+  const body = ChessPgn.stripResult(g.pgn().split("\n\n").pop());
+  assert(!/1-0/.test(body), "chess.js's own trailing result is gone from the movetext");
+  assert(/function pgnForExport\(\) \{[\s\S]{0,2200}ChessPgn\.stripResult\(game\.pgn\(\)/.test(
+    fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8")),
+    "…and the exporter strips it before appending its own");
+}
+
 // FEN round-trip after moves
 {
   const g = new Chess();
@@ -1453,7 +1522,9 @@ for (const lang of CONTENT_LANGS) {
   }
 
   // type: six steps, and no half pixels
-  const TYPE = new Set(["11px", "12px", "13px", "15px", "16px", "19px", "30px"]);
+  // 6.0: the same seven steps, in rem (16px root) so the text-size setting
+  // scales the whole sheet together (v6-plan Q3.6)
+  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.9375rem", "1rem", "1.1875rem", "1.875rem"]);
   const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
@@ -1690,7 +1761,8 @@ for (const lang of CONTENT_LANGS) {
     const co = /\.coords \{([\s\S]*?)\n    \}/.exec(stripped);
     assert(co, "found the coordinate rule");
     assert(!/clamp\(/.test(co[1]), "coordinates are not sized by a computed length");
-    assert(/font-size:\s*\d+px/.test(co[1]), "coordinates sit on the type scale");
+    // 6.0: the scale is in rem now (see TYPE above); a step is still a step
+    assert(/font-size:\s*[\d.]+rem/.test(co[1]), "coordinates sit on the type scale");
   }
 
   // radius: the tokens exist; use them
@@ -2072,13 +2144,13 @@ for (const lang of CONTENT_LANGS) {
   {
     const body = fnOf("sync");
     const calls = [...body.matchAll(/\b(\w+)\(/g)].map((m) => m[1]).filter((n) => n !== "sync");
-    const notCommit = calls.filter((n) => n !== "commit");
+    // 6.0: one commitAll() instead of three commits — a view that hears about
+    // every slice is told once (draw() ran three times per sync() before)
+    const notCommit = calls.filter((n) => n !== "commit" && n !== "commitAll");
     for (const n of notCommit) console.error("  sync() still calls " + n + "()");
     assert(notCommit.length === 0,
       "sync() does nothing but commit" + (notCommit.length ? " — also calls " + [...new Set(notCommit)].join(", ") : ""));
-    for (const slice of ["game", "session", "ui"]) {
-      assert(new RegExp('store\\.commit\\("' + slice + '"').test(body), "sync() commits " + slice);
-    }
+    assert(/store\.commitAll\(\["game", "session", "ui"\]/.test(body), "sync() commits game, session and ui in one pass");
     assert(/function wireViews\(\)/.test(appSrc), "the view wiring is in one readable block");
     for (const view of ["renderStatusPill", "renderReplayBar", "renderGameActions"]) {
       assert(new RegExp("function " + view + "\\(").test(appSrc), view + "() exists");
@@ -2146,7 +2218,8 @@ for (const lang of CONTENT_LANGS) {
 
   // the analyser must not carry a fifth copy of the numbers
   const analyze = fnOf("analyzeGame");
-  assert(/Review\.markFor\(/.test(analyze), "the analyser tags moves through review.js");
+  // 6.0: by win-percentage drop (v6-plan Q2.5), still through review.js
+  assert(/Review\.classifyByWinPct\(Review\.winPctDrop\(/.test(analyze), "the analyser tags moves through review.js");
   assert(!/loss >= \d+/.test(analyze), "the analyser holds no thresholds of its own");
 
   // the eval bar reads the analysis and nothing else — no engine call, which
@@ -2725,6 +2798,15 @@ for (const lang of CONTENT_LANGS) {
     const r = P.pickNext(st, BOOK, S);
     assert(r.kind === "review" && r.due === 2, "the queue outranks every recommendation (" + r.kind + ", 欠 " + r.due + ")");
     assert(r.id === "b2", "…and the least-learned one comes first (" + r.id + ")");
+    // 6.0 review: a puzzle solved once today is owed by count but scheduled
+    // for tomorrow — the smart pick must not serve it again at once
+    const st4 = fresh();
+    const T = 1_700_000_000_000;
+    st4.missed.b2 = S.onSolve(S.onMiss(undefined, T), T);
+    assert(P.pickNext(st4, BOOK, S, undefined, undefined, undefined, null, T + 1000).kind !== "review",
+      "a puzzle due tomorrow is not served today by the smart pick");
+    assert(P.pickNext(st4, BOOK, S, undefined, undefined, undefined, null, T + S.DAY + 1).kind === "review",
+      "…and is served once its day has come");
   }
   // rung 2: a weakness needs MIN_ATTEMPTS answers AND at least one miss
   {
@@ -3011,9 +3093,11 @@ for (const lang of CONTENT_LANGS) {
   // --- the wiring ---------------------------------------------------------
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
   // the book every serving rail reads is the live one…
-  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier, motifKeyOf\)/.test(appSrc),
+  // 6.0: two more arguments — the rating of a puzzle and the player's band
+  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier, motifKeyOf,\s*puzzleRatingOf/.test(appSrc),
     "为你出一题 reads the live book — a mined drill can be recommended");
-  assert(/\? Srs\.order\(bookNow\(\)\.filter\(\(p\) => Srs\.isDue/.test(appSrc),
+  // 6.0: the queue is what is due today (srs.js dueQueue), each id looked up in the live book
+  assert(/\? Srs\.dueQueue\(store\.session\.puzzleState\.missed[\s\S]{0,160}bookNow\(\)\.find/.test(appSrc),
     "the review queue reads the live book — a missed drill comes back due");
   // …and the achievements deliberately do not
   const achBlock = /const solvedIn[\s\S]{0,1400}opTotal:[^\n]*\n/.exec(appSrc);
@@ -3829,9 +3913,13 @@ for (const lang of CONTENT_LANGS) {
     "the game on the board remembers which record it is, by id");
   assert(/s\.games\.find\(\(g\) => g\.id === store\.game\.recordedId\)/.test(appSrc),
     "accuracy is filed by id, not by walking to the last PGN that matches");
-  // and the v1 stats file still opens
-  assert(/if \(s && s\.v === 1 && Array\.isArray\(s\.games\)\)/.test(appSrc),
-    "a v1 stats file is migrated rather than dropped");
+  // and the v1 stats file still opens — the unpacking moved to persist.js with
+  // the key's shape (v6-plan Q1.7), where a unit test below exercises it
+  {
+    const per = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
+    assert(/stats: \(v\) => \(v && \(v\.v === 2 \|\| v\.v === 1\)[^\n]*migrateStats\(v\)/.test(per),
+      "a v1 stats file is migrated rather than dropped");
+  }
 
   // --- three claims the copy was making that were not true ------------------
   {
@@ -3953,7 +4041,7 @@ for (const lang of CONTENT_LANGS) {
     assert(/san\.slice\(1\)/.test(ws), "…the rest of the move is text");
     const cssM2 = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const num = /\.mlnum \{([^}]*)\}/.exec(cssM2);
-    assert(num && /font-size: 13px/.test(num[1]),
+    assert(num && /font-size: 0\.8125rem/.test(num[1]),
       "the move number is the same size as the move beside it");
     assert(num && /tabular-nums/.test(num[1]), "…and still a column of figures");
     assert(!/\.mlnum num/.test(appSrc), "…without borrowing the mono stack for it");
@@ -3968,11 +4056,13 @@ for (const lang of CONTENT_LANGS) {
   // into the image. 缺陷 5. And nine fillText calls, no measureText, no
   // wrapping: over-long text left the canvas rather than ellipsizing. 缺陷 21.
   {
-    const at = appSrc.indexOf("function renderReportCanvas()");
-    const rep = appSrc.slice(at, appSrc.indexOf("\n  }\n", at));
+    // 6.0: the image moved to report.js with its palette and font stack
+    const repSrc = fs.readFileSync(path.join(root, "src/web/js/report.js"), "utf8");
+    const at = repSrc.indexOf("function render(d)");
+    const rep = repSrc.slice(at, repSrc.indexOf("\n  }\n", at));
     assert(/REPORT_INK/.test(rep) && !/pick\("--card"/.test(rep),
       "the export has its own opaque palette, not the theme's");
-    assert(/const REPORT_INK = \{[^}]*bg: "#/.test(appSrc), "…and it is a literal, on purpose");
+    assert(/const REPORT_INK = \{[^}]*bg: "#/.test(repSrc), "…and it is a literal, on purpose");
     assert(/rv\.turningPointPlain/.test(rep), "the turning point uses the plain key");
     assert(!/replace\(\/\\s\*——/.test(rep), "…and no regex trims the screen's tail off it");
     for (const lang of ["zh-CN", "en", "ja"]) {
@@ -3987,7 +4077,8 @@ for (const lang of CONTENT_LANGS) {
     // one font stack, and it is the app's
     const fonts = new Set([...rep.matchAll(/ctx\.font = "([^"]*)"/g)].map((m) => m[1]));
     assert(fonts.size === 0, "no font string is written in place (" + [...fonts].join(" | ") + ")");
-    assert(/const REPORT_FONT = /.test(appSrc), "…there is one stack for the image");
+    assert(/const REPORT_FONT = /.test(repSrc), "…there is one stack for the image");
+    assert(/ChessReport\.render\(\{/.test(appSrc), "…and app.js only hands it what it reads");
   }
 
   // --- the ending sound is decided by who won ------------------------------
@@ -4311,7 +4402,8 @@ for (const lang of CONTENT_LANGS) {
     // every key the app owns is in the list — a key added elsewhere would be
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
-    assert(keys.length === 10, "all ten keys are declared in one place (" + keys.length + ")");
+    // 6.0 added the quarantine key (v6-plan D2)
+    assert(keys.length === 11, "all eleven keys are declared in one place (" + keys.length + ")");
     for (const k of keys) {
       assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
     }
@@ -4514,7 +4606,8 @@ for (const lang of CONTENT_LANGS) {
   // and the app actually calls them, at the places that matter
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
   for (const [what, re] of [
-    ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*Host\.addRecentDocument\(path\);/],
+    // 6.0: one exportText() serves PGN and the learning file; only a PGN is a document
+    ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*if \(recent\) Host\.addRecentDocument\(path\);/],
     ["the open dialog", /importPgnText\(text, paths\[0\]\);\s*\n\s*Host\.addRecentDocument\(paths\[0\]\);/],
     ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
     ["clearing the save", /Persist\.clearAll\(\);[\s\S]{0,320}?Host\.clearRecentDocuments\(\);/],
@@ -5105,6 +5198,127 @@ for (const lang of CONTENT_LANGS) {
         " (" + [...new Set(ahead)].slice(0, 5).join(", ") + ")");
     }
   }
+}
+
+// --- 6.0: the native mirror and recovery (v6-plan Q1.1), on a fake host
+{
+  const { createPersist, KEYS } = await import("../src/web/js/persist.js");
+  const mem = () => {
+    const m = new Map();
+    return {
+      m,
+      storageGet: (k) => (m.has(k) ? m.get(k) : null),
+      storageSet: (k, v) => { m.set(k, String(v)); return true; },
+      storageRemove: (k) => { m.delete(k); },
+      hasZero: () => true,
+    };
+  };
+  // a host with a file: writes land in `file`, reads come back from it
+  const withFile = (initial) => {
+    const h = mem();
+    h.file = initial;
+    h.writes = 0;
+    h.appdataRead = async () => h.file;
+    h.appdataWrite = async (t) => { h.file = t; h.writes++; return true; };
+    return h;
+  };
+  const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 1. a write reaches the file, once, whole
+  {
+    const h = withFile(null);
+    const P = createPersist(h, () => {});
+    P.load();
+    P.set("settings", "{\"a\":1}");
+    P.set("learn", "{\"b\":2}");
+    await tick(600);
+    const doc = JSON.parse(h.file);
+    assert(h.writes === 1 && doc.keys.settings === "{\"a\":1}" && doc.keys.learn === "{\"b\":2}",
+      "two writes in a burst become one whole-profile mirror write (" + h.writes + ")");
+    assert(doc.app === "chessboard" && typeof doc.writtenAt === "number", "…stamped as ours");
+    // 6.0 review: the mirror used to take its own Date.now() ~400ms after the
+    // cache stamp, so every next launch read "file newer than cache" and
+    // restored + reloaded a profile that was already in sync
+    assert(String(doc.writtenAt) === h.m.get("chess.writtenAt"),
+      "…with the cache's own revision stamp, not a later one (" + doc.writtenAt + " vs " + h.m.get("chess.writtenAt") + ")");
+    const P2 = createPersist(h, () => {});
+    P2.load();
+    assert((await P2.recover()) === "kept", "…so a synchronized profile is kept on the next launch, not restored");
+  }
+  // 2. empty cache + a file = the file is restored
+  {
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000,
+      keys: { stats: "{\"v\":2,\"games\":[]}", learn: "{\"v\":1}" } }));
+    const P = createPersist(h, () => {});
+    P.load();
+    assert(P.wasEmpty(), "the cache was empty");
+    const r = await P.recover();
+    assert(r === "restored", "recover() takes the file when the cache is empty (" + r + ")");
+    assert(P.get("stats") === "{\"v\":2,\"games\":[]}" && h.m.get(KEYS.learn) === "{\"v\":1}",
+      "…and every key in the file is back in storage");
+  }
+  // 3. a live cache newer than the file keeps the cache, and re-mirrors it
+  {
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000, keys: { learn: "old" } }));
+    h.m.set(KEYS.learn, "new"); h.m.set("chess.writtenAt", "9000");
+    const P = createPersist(h, () => {});
+    P.load();
+    const r = await P.recover();
+    assert(r === "kept" && P.get("learn") === "new", "a newer cache is kept over an older file (" + r + ")");
+    await tick(600);
+    assert(JSON.parse(h.file).keys.learn === "new", "…and the file is brought up to date");
+  }
+  // 4. a cache older than the file yields to it (data written on another launch that this cache missed)
+  {
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys: { learn: "file" } }));
+    h.m.set(KEYS.learn, "cache"); h.m.set("chess.writtenAt", "5000");
+    const P = createPersist(h, () => {});
+    P.load();
+    const r = await P.recover();
+    assert(r === "restored" && P.get("learn") === "file", "an older cache yields to the file (" + r + ")");
+  }
+  // 5. export / restore round-trip and the failure latch
+  {
+    const h = withFile(null);
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    P.set("slots", "{\"v\":1}");
+    const doc = P.exportAll();
+    assert(doc.keys.slots === "{\"v\":1}" && P.isProfileDoc(doc), "exportAll() is a profile document");
+    P.clearAll();
+    assert(P.get("slots") == null, "clearAll() empties the cache");
+    P.restoreAll(doc);
+    assert(P.get("slots") === "{\"v\":1}", "restoreAll() brings it back");
+    h.appdataWrite = async () => { throw new Error("disk full"); };
+    P.set("slots", "x");
+    await tick(600);
+    assert(failed && failed.key === "appdata", "a refused mirror write latches the failure like a refused cache write");
+  }
+  // 6. no bridge at all: nothing mirrors, nothing fails, recover() says none
+  {
+    const h = mem();
+    const P = createPersist(h, () => { throw new Error("must not be called"); });
+    P.load();
+    P.set("learn", "x");
+    assert(await P.recover() === "none", "a browser has no file and no error");
+  }
+}
+
+// --- 6.0: the register of source-text assertions in this file.
+//
+// This file holds a great many `/…/.test(appSrc)` checks: they lock the
+// *shape* of app.js, not its behaviour, which makes them the largest single
+// obstacle to moving code and the largest source of false confidence
+// (v6-plan §1.2). They retire one at a time, each replaced by a behavioural
+// test; the number may only go down. Bump it down when you retire one, never
+// up. Same register discipline as the colour and token registers above.
+{
+  const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
+  const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
+  const REGISTERED = 124;
+  assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
+  assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }
 
 if (failed) {

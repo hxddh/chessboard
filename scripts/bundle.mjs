@@ -62,12 +62,21 @@ async function loadEsbuild() {
  * than these, but naming a floor keeps a future syntax feature from silently
  * becoming a runtime error on the older of the two.
  */
+/** The app's version, from package.json — the About panel reads it (6.0). */
+function versionDefine() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    return { __CHESS_VERSION__: JSON.stringify(String(pkg.version || "")) };
+  } catch (_) { return { __CHESS_VERSION__: JSON.stringify("") }; }
+}
+
 export async function build({ write = true } = {}) {
   const esbuild = await loadEsbuild();
   const r = await esbuild.build({
     entryPoints: [ENTRY],
     bundle: true,
     format: "iife",
+    define: versionDefine(),
     target: ["chrome100", "safari15"],
     charset: "utf8",
     legalComments: "inline",
@@ -119,6 +128,7 @@ export function compileModuleSync(abs) {
     bundle: true,
     format: "iife",
     globalName: "__mod",
+    define: versionDefine(),
     target: ["chrome100", "safari15"],
     charset: "utf8",
     write: false,

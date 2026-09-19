@@ -4,9 +4,16 @@ import { ChessBoardView } from "./board.js";
 import { Chess } from "./chess.js";
 import { ChessDialog } from "./dialog.js";
 import { ChessDrills } from "./drills.js";
+import { ChessEco } from "./eco-lookup.js";
+import { ChessRating } from "./rating.js";
+import { ChessOpeningTree } from "./opening-tree.js";
+import { CHESS_CLASSICS } from "./classics.js";
+import { CHESS_CLASSICS_EN } from "./classics-en.js";
+import { CHESS_CLASSICS_JA } from "./classics-ja.js";
 import { ChessEditor } from "./editor.js";
 import { ChessEngine } from "./engine.js";
 import { ChessFide } from "./fide.js";
+import { ChessTree } from "./game-tree.js";
 import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
 import { CHESS_LESSONS_EN } from "./lessons-en.js";
@@ -25,10 +32,13 @@ import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 import { ChessPersona } from "./persona.js";
 import { ChessPgn } from "./pgn.js";
+import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
 import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES } from "./puzzles.js";
+import { MINED_PUZZLES } from "./puzzles-mined.js";
+import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
 import { ChessPicker } from "./picker.js";
@@ -56,11 +66,7 @@ import { createStore } from "./store.js";
   const Audio2 = ChessAudio;
 
   /** Shared dialog behaviour: focus trap, focus return, aria-modal. */
-  const Dlg = ChessDialog || {
-    open: (el, f) => { if (el) { el.classList.add("show"); if (f) f.focus(); } },
-    close: (el) => { if (el) el.classList.remove("show"); },
-    handleTab: () => false,
-  };
+  const Dlg = ChessDialog;
 
   /**
    * Is any dialog on screen?
@@ -80,9 +86,9 @@ import { createStore } from "./store.js";
   }
 
   const I18n = ChessI18n;
-  const t = I18n ? I18n.t : (k) => k;
+  const t = I18n.t;
   /** t() with {0}/{1} placeholders filled in — see i18n.tf */
-  const tf = I18n ? I18n.tf : (k) => k;
+  const tf = I18n.tf;
 
   /**
    * The name of a side, and the name of the other one.
@@ -158,6 +164,18 @@ import { createStore } from "./store.js";
   function animateReply(mv) {
     if (!mv) return;
     BoardView.animateMove(mv.from, mv.to, castleRook(mv));
+    // the reply is the one move the player did not make, so it is the one a
+    // screen reader must say (v6-plan D5); the SAN is read from the history
+    // rather than from `mv`, which is a from/to pair without a name
+    announceLastMove();
+  }
+
+  /** "12… Nf6" in the live region — what just happened on the board. */
+  function announceLastMove() {
+    const h = sanHistory();
+    const at = h.length;
+    if (!at) return;
+    announce(ChessReview.moveNumber(at - 1, "w") + (at % 2 ? ". " : "… ") + h[at - 1]);
   }
 
   /** a game restored from the save that was already filed — see recordedId */
@@ -185,6 +203,21 @@ import { createStore } from "./store.js";
     game: {
       /** Replay cursor: 0..sanHistory().length; live when === length. */
       viewIndex: 0,
+      /**
+       * The game as a tree (game-tree.js) and the line `game` is standing on
+       * (v6-plan Q2.1). `line` is node ids root → leaf, so `line[viewIndex]`
+       * is the node under the cursor and `line.length === sanHistory().length
+       * + 1` always; the five doors below keep both in step with chess.js.
+       */
+      tree: ChessTree.createTree(),
+      line: [0],
+      /** the doors keep the tree in step — off while switchLine() replays a
+          path the tree already holds; `_batch` > 0 holds their commits */
+      _treeSync: true,
+      _batch: 0,
+      /** the game came in from a file, the clipboard or the history — the
+          engine is not playing it, so replaying into it opens variations */
+      imported: false,
       flipped: false,
       /** @type {{sq:string, targets:string[]}|null} click-move selection */
       selection: null,
@@ -227,6 +260,13 @@ import { createStore } from "./store.js";
       /** @type {'w'|'b'} human side in AI mode */
       humanColor: "w",
       engineThinking: false,
+      /** 6.0 (v6-plan Q2.8): the move queued while the engine thinks, {from,to} */
+      premove: null,
+      /** 6.0 (v6-plan Q3.5): the classic game being read — {ci}, in learn mode with no lesson */
+      study: null,
+      /** 6.0 (v6-plan Q2.6): continuous analysis — on/off, and the running search */
+      liveOn: false,
+      live: null,
       /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
       analysis: null,
       /** the engine failed to start — analysis and hints are not offered, and
@@ -270,6 +310,15 @@ import { createStore } from "./store.js";
     },
     ui: {
       soundOn: true,
+      /** 6.0 (v6-plan Q2.8 / Q2.6): the level, the frame labels, the men, the engine knobs */
+      volume: 100,
+      coordsOn: true,
+      blindfold: false,
+      hash: 32,
+      multipv: 1,
+      /** 6.0 (v6-plan Q3.6): the theme follows the system's light/dark; the text size step */
+      followSystem: false,
+      textSize: "m",
       /** @type {'wood'|'night'|'day'|'notebook'} */
       themeId: "wood",
       /** pvp: flip the board to face the side to move after every move */
@@ -300,12 +349,21 @@ import { createStore } from "./store.js";
       previewPinned: false,
       /** editor paint stroke: the square last painted while the pointer is down */
       painting: null,
+      /** right-button drag in progress: {from, over, color} — an arrow or a
+          circle being drawn, not yet on the node (v6-plan Q2.4) */
+      shaping: null,
+      /** the pinned engine line's moves, so 「从这里试走」 can write them down */
+      previewPv: null,
+      /** node id the move context menu is open for, or null */
+      moveMenu: null,
+      /** node id the comment dialog is editing, or null */
+      noteFor: null,
     },
   });
   /** sparring personality — see persona.js; "off" is plain engine play */
   const PERSONA_IDS = (ChessPersona && ChessPersona.IDS) ||
     ["off", "greedy", "principled", "attacker"];
-  store.ui.langId = I18n ? I18n.getLang() : "zh-CN";
+  store.ui.langId = I18n.getLang();
 
   Audio2.init(() => store.ui.soundOn);
 
@@ -334,11 +392,289 @@ import { createStore } from "./store.js";
   // and each cache compared itself against it — a hand-rolled invalidation
   // signal, which is what a store's commit already is. Same one-walk-per-
   // mutation cost, one fewer number to keep honest.
-  function gameMove(m) { const r = game.move(m); if (r) store.commit("game", "move"); return r; }
-  function gameUndo() { const r = game.undo(); if (r) store.commit("game", "undo"); return r; }
-  function gameLoad(fen) { const r = game.load(fen); store.commit("game", "load"); return r; }
-  function gameLoadPgn(pgn, opts) { const r = game.load_pgn(pgn, opts); store.commit("game", "loadPgn"); return r; }
-  function gameReset() { game.reset(); store.commit("game", "reset"); }
+  //
+  // 6.0 (v6-plan Q2.1): the doors also keep the game tree in step. `game` is
+  // the *current line* of `store.game.tree`, so a move through gameMove lands
+  // on the tree at the line's leaf, an undo steps the line back, and a load
+  // starts a new tree. `_treeSync` is dropped only by switchLine(), which is
+  // replaying a path the tree already holds; `_batch` lets it replay a line
+  // through the doors and announce once, not once per ply.
+  function gameMove(m) {
+    const r = game.move(m);
+    if (r) {
+      if (store.game._treeSync) treeFollow(r);
+      if (!store.game._batch) store.commit("game", "move");
+    }
+    return r;
+  }
+  function gameUndo() {
+    const r = game.undo();
+    if (r) {
+      if (store.game._treeSync) treeStepBack();
+      if (!store.game._batch) store.commit("game", "undo");
+    }
+    return r;
+  }
+  function gameLoad(fen) {
+    const r = game.load(fen);
+    if (r && store.game._treeSync) treeRestart(game.fen());
+    if (!store.game._batch) store.commit("game", "load");
+    return r;
+  }
+  function gameLoadPgn(pgn, opts) {
+    // the parser first: it keeps variations, comments, NAGs and shapes that
+    // chess.js's load_pgn throws away, and reads the shapes it refuses
+    // (v6-plan §1.2). chess.js stays the fallback for text the parser cannot
+    // place — and the judge of every move either way.
+    let tree = null;
+    let headers = [];
+    try {
+      const parsed = ChessPgnParser.parsePgn(pgn).games[0];
+      if (parsed) { tree = ChessTree.fromPgnGame(parsed); headers = parsed.headers; }
+    } catch (_) { tree = null; }
+    let r;
+    if (tree) {
+      r = loadTreeMainline(tree);
+      // the file's tags ride along, as load_pgn's did: [Result] becomes the
+      // ending (adoptHeaderResult), [FEN] the start (startFen)
+      if (r) restoreHeaders(headers);
+    } else {
+      r = game.load_pgn(pgn, opts);
+      if (r && store.game._treeSync) treeRebuild();
+    }
+    if (!store.game._batch) store.commit("game", "loadPgn");
+    return r;
+  }
+  function gameReset() {
+    game.reset();
+    if (store.game._treeSync) treeRestart(null);
+    if (!store.game._batch) store.commit("game", "reset");
+  }
+
+  // --- the tree beside the game --------------------------------------------
+
+  /** id of the node the replay cursor stands on */
+  function curNodeId() { return store.game.line[store.game.viewIndex]; }
+  function curNode() { return ChessTree.nodeAt(store.game.tree, curNodeId()); }
+  function lineLeafId() { return store.game.line[store.game.line.length - 1]; }
+
+  /** A fresh tree at `fen` (null: the standard array); the line is its root. */
+  function treeRestart(fen) {
+    try { store.game.tree = ChessTree.createTree(fen); }
+    catch (_) { store.game.tree = ChessTree.createTree(); }
+    store.game.line = [0];
+  }
+
+  /**
+   * The tree, rebuilt from what chess.js holds — the lossless path failed or
+   * the two went out of step. Loses variations, never the game.
+   */
+  function treeRebuild() {
+    const sf = startFen();
+    treeRestart(sf);
+    let id = 0;
+    for (const mv of game.history({ verbose: true })) {
+      const child = ChessTree.addMove(store.game.tree, id, { from: mv.from, to: mv.to, promotion: mv.promotion });
+      store.game.line.push(child.id);
+      id = child.id;
+    }
+  }
+
+  /**
+   * A move just made at the leaf of the line. It is the live game, so it
+   * becomes the mainline at its branch point: after 重下 the moves that were
+   * played from here before stay in the tree as a variation, which is the
+   * whole difference from the old truncate (v6-plan Q2.3).
+   */
+  function treeFollow(mv) {
+    const leaf = ChessTree.nodeAt(store.game.tree, lineLeafId());
+    if (!leaf) { treeRebuild(); return; }
+    let child;
+    try {
+      child = ChessTree.addMove(store.game.tree, leaf.id, { from: mv.from, to: mv.to, promotion: mv.promotion });
+    } catch (_) { treeRebuild(); return; }
+    ChessTree.promote(store.game.tree, child.id);
+    store.game.line.push(child.id);
+  }
+
+  /**
+   * A take-back. The node goes with it unless something hangs off it — a
+   * variation kept from a 重下 is not what a take-back means to remove.
+   */
+  function treeStepBack() {
+    if (store.game.line.length < 2) { treeRebuild(); return; }
+    const id = store.game.line.pop();
+    const node = ChessTree.nodeAt(store.game.tree, id);
+    if (node && !node.children.length) {
+      try { ChessTree.deleteNode(store.game.tree, id); } catch (_) { /* already gone */ }
+    }
+  }
+
+  /** chess.js headers as pairs, for the tree's PGN and for restoring them. */
+  function headerPairs() {
+    const h = game.header() || {};
+    return Object.keys(h).map((k) => [k, String(h[k])]);
+  }
+  function restoreHeaders(pairs) {
+    const flat = [];
+    for (const [k, v] of pairs) flat.push(k, v);
+    if (flat.length) game.header(...flat);
+  }
+
+  /**
+   * Adopt `tree` and stand `game` on its mainline. Through the doors with
+   * the tree sync off — the tree is already the truth here — and batched,
+   * so the listeners hear one commit from the caller, not one per ply.
+   * @returns {boolean} false when the start position will not load
+   */
+  function loadTreeMainline(tree) {
+    const mainline = ChessTree.mainline(tree);
+    store.game.tree = tree;
+    store.game._treeSync = false;
+    store.game._batch++;
+    let ok;
+    try {
+      ok = gameLoad(tree.startFen);
+      if (ok) for (const n of mainline) gameMove(n.san);
+    } finally { store.game._batch--; store.game._treeSync = true; }
+    if (!ok) { treeRebuild(); return false; }
+    store.game.line = [0].concat(mainline.map((n) => n.id));
+    if (tree.startFen !== ChessTree.START_FEN) game.header("SetUp", "1", "FEN", tree.startFen);
+    return true;
+  }
+
+  /** Node ids root → leaf of the line through `id`, following the mainline after it. */
+  function lineThrough(id) {
+    const ids = [0].concat(ChessTree.pathTo(store.game.tree, id).map((n) => n.id));
+    let n = ChessTree.nodeAt(store.game.tree, id);
+    while (n && n.children[0]) { n = n.children[0]; ids.push(n.id); }
+    return ids;
+  }
+
+  /** Is the line the tree's mainline (or a prefix of it)? */
+  function onMainline() {
+    const main = ChessTree.mainline(store.game.tree).map((n) => n.id);
+    return store.game.line.slice(1).every((id, i) => main[i] === id);
+  }
+
+  /**
+   * Make `ids` the current line: `game` is replayed along it, headers kept.
+   * Whatever the engine was thinking about was the old line. One commit.
+   */
+  function switchLine(ids) {
+    const nodes = ids.map((id) => ChessTree.nodeAt(store.game.tree, id));
+    if (nodes.some((n) => !n)) return false;
+    const headers = headerPairs();
+    invalidateEngine();
+    if (store.ui.preview) clearPreview();
+    store.game._treeSync = false;
+    store.game._batch++;
+    let ok;
+    try {
+      ok = gameLoad(store.game.tree.startFen);
+      if (ok) for (const n of nodes.slice(1)) gameMove(n.san);
+    } finally { store.game._batch--; store.game._treeSync = true; }
+    restoreHeaders(headers);
+    if (!ok) { treeRebuild(); store.commit("game", "line"); return false; }
+    store.game.line = ids.slice();
+    store.game.selection = null;
+    store.game.viewIndex = Math.min(store.game.viewIndex, ids.length - 1);
+    store.commit("game", "line");
+    return true;
+  }
+
+  /** Put the cursor on node `id`, switching line when it is not on this one. */
+  function goToNode(id) {
+    const k = store.game.line.indexOf(id);
+    if (k >= 0) { setViewIndex(k); return; }
+    const ids = lineThrough(id);
+    if (!switchLine(ids)) return;
+    setViewIndex(ids.indexOf(id));
+    saveGame();
+  }
+
+  /** 「回主线」: back onto the tree's mainline, at the same depth. */
+  function backToMain() {
+    const depth = store.game.viewIndex;
+    const ids = lineThrough(0);
+    if (!switchLine(ids)) return;
+    setViewIndex(Math.min(depth, ids.length - 1));
+    saveGame();
+    maybeEngineTurn();
+  }
+
+  /**
+   * May a move made off the live position open a variation? Two players at
+   * one board, a finished game and an imported one are all analysis boards;
+   * a live engine game is not — the engine is still playing it, and a move
+   * into its past would be a second game (v6-plan Q2.3).
+   */
+  function canBranchHere() {
+    if (inModal()) return false;
+    if (store.session.mode === "pvp" || store.session.study) return true;
+    return appGameOver() || store.game.imported;
+  }
+
+  /**
+   * A move made while replaying: a variation at the cursor (or the child
+   * that already is that move), and the line follows it.
+   */
+  function playVariationMove(from, to, promotion) {
+    const at = curNode();
+    if (!at) return null;
+    let child;
+    try { child = ChessTree.addMove(store.game.tree, at.id, { from, to, promotion }); }
+    catch (_) { return null; }
+    const ids = store.game.line.slice(0, store.game.viewIndex + 1).concat(child.id);
+    if (!switchLine(ids)) return null;
+    store.game.viewIndex = ids.length - 1;
+    BoardView.cancelAnim();
+    const probe = new Chess(at.fen);
+    moveSound(probe.move({ from, to, promotion: promotion || undefined }), probe);
+    store.commit("game", "action");
+    announce(ChessReview.moveNumber(ids.length - 2, "w") + ((ids.length - 1) % 2 ? ". " : "… ") + child.san);
+    saveGame();
+    return child;
+  }
+
+  /** The current node's arrows and circles (v6-plan Q2.4). */
+  function nodeShapes() {
+    const n = curNode();
+    return n && n.shapes ? n.shapes : { arrows: [], circles: [] };
+  }
+  function hasNodeShapes() {
+    const s = nodeShapes();
+    return !!(s.arrows.length || s.circles.length);
+  }
+  function setNodeShapes(shapes) {
+    const n = curNode();
+    if (!n) return;
+    ChessTree.setShapes(store.game.tree, n.id, shapes);
+    store.commit("game", "shapes");
+    saveGame();
+  }
+  /** Same shape, same colour: off. Same shape, another colour: recoloured. */
+  function toggleArrow(from, to, color) {
+    const s = nodeShapes();
+    const same = s.arrows.find((a) => a.from === from && a.to === to);
+    const arrows = s.arrows.filter((a) => !(a.from === from && a.to === to));
+    if (!same || same.color !== color) arrows.push({ from, to, color });
+    setNodeShapes({ arrows, circles: s.circles });
+  }
+  function toggleCircle(sq, color) {
+    const s = nodeShapes();
+    const same = s.circles.find((c) => c.sq === sq);
+    const circles = s.circles.filter((c) => c.sq !== sq);
+    if (!same || same.color !== color) circles.push({ sq, color });
+    setNodeShapes({ arrows: s.arrows, circles });
+  }
+  /** lichess letters: G default, Shift R, Alt B, Shift+Alt Y */
+  function shapeColor(ev) {
+    if (ev.shiftKey && ev.altKey) return "Y";
+    if (ev.shiftKey) return "R";
+    if (ev.altKey) return "B";
+    return "G";
+  }
 
   // The caches those five doors feed. Cleared by the commit rather than
   // compared against it: "this is stale now" is a thing the store can say, and
@@ -437,6 +773,7 @@ import { createStore } from "./store.js";
       shows what the cursor says again, whatever the pointer is resting on. */
   function clearPreview() {
     store.ui.previewPinned = false;
+    store.ui.previewPv = null;
     setBoardPreview(null);
   }
 
@@ -465,16 +802,31 @@ import { createStore } from "./store.js";
     if (!el) return;
     const p = store.ui.preview;
     el.hidden = !p;
-    if (!p) return;
+    if (!p) { const tryBtn = document.getElementById("preview-try"); if (tryBtn) tryBtn.hidden = true; return; }
     let text = p.kind === "pv" ? t("board.previewPv") : tf("board.previewPly", [p.ply]);
     if (store.ui.previewPinned) text += " · " + t("board.previewEsc");
     el.textContent = text;
+    // a pinned engine line can be written down from here (Q2.3)
+    const tryBtn = document.getElementById("preview-try");
+    if (tryBtn) tryBtn.hidden = !(store.ui.previewPinned && p.kind === "pv" && Array.isArray(store.ui.previewPv) && !inModal());
   }
 
-  /** Preview the position n plies in, as the move list is hovered. */
+  /** Preview the position n plies into the *mainline*, as a mainline row is
+      hovered — the tree's, not `game`'s, which may be standing on a
+      variation at the time. */
   function previewAt(n) {
-    const vh = verboseHistory();
-    setBoardPreview(ChessPreview.plyPreview(gameAt(n), n > 0 ? vh[n - 1] : null, n));
+    const main = ChessTree.mainline(store.game.tree);
+    const node = n > 0 ? main[n - 1] : store.game.tree.root;
+    if (node) previewNode(node.id);
+  }
+
+  /** Preview the position of any node — a variation's as readily as the
+      mainline's, straight off the fen the tree holds. */
+  function previewNode(id) {
+    const node = ChessTree.nodeAt(store.game.tree, id);
+    if (!node) return;
+    const depth = ChessTree.pathTo(store.game.tree, id).length;
+    setBoardPreview(ChessPreview.plyPreview(new Chess(node.fen), node.from ? { from: node.from, to: node.to } : null, depth));
   }
 
   /** Preview the engine line up to and including chip k, off the board's own
@@ -505,6 +857,7 @@ import { createStore } from "./store.js";
         selected: null, legalTargets: [],
         lastMove: p.last, checkSquare: p.check, mated: false,
         hintMove: null, stars: [], cursor: null, drag: null,
+        coords: store.ui.coordsOn, blind: store.ui.blindfold,
       };
     }
     const g = viewGame();
@@ -525,12 +878,30 @@ import { createStore } from "./store.js";
       // arrow permanently on the board. Never during live play, where it would
       // be an answer key rather than a review.
       hintMove: isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex),
+      // the node's own arrows and circles, plus the one being drawn
+      shapes: shapesToDraw(),
       stars: [],
       cursor: cursorSquare(),
       // the drag is part of the picture, not a thing pushed in beforehand
       drag: store.ui.dragging,
+      coords: store.ui.coordsOn,
+      blind: store.ui.blindfold,
     };
   });
+
+  /** What the board draws of the annotations: the node's shapes and the draft. */
+  function shapesToDraw() {
+    let s = nodeShapes();
+    // the queued premove is drawn as a yellow arrow — the one colour the
+    // player's own annotations use least
+    if (store.session.premove && isLive()) {
+      s = { arrows: s.arrows.concat({ from: store.session.premove.from, to: store.session.premove.to, color: "Y" }), circles: s.circles };
+    }
+    const d = store.ui.shaping;
+    if (!d || !d.over) return s;
+    if (d.over === d.from) return { arrows: s.arrows, circles: s.circles.concat({ sq: d.from, color: d.color }) };
+    return { arrows: s.arrows.concat({ from: d.from, to: d.over, color: d.color }), circles: s.circles };
+  }
 
   /**
    * The engine's choice at the position `i` plies in, as a board arrow —
@@ -571,6 +942,25 @@ import { createStore } from "./store.js";
       document.body.appendChild(el);
     }
     el.textContent = t("msg.storage.failed");
+    el.hidden = false;
+  }
+
+  /**
+   * 6.0: a value that could not be read is not a new install. The banner
+   * says which record was set aside, and that the copy is kept (v6-plan D2).
+   */
+  function showCorruptFault(names) {
+    // its own element: a write failure later in the session must not paint
+    // over the one message that says where the old data went
+    let el = document.getElementById("profile-fault");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "profile-fault";
+      el.className = "storage-fault";
+      el.setAttribute("role", "alert");
+      document.body.appendChild(el);
+    }
+    el.textContent = tf("msg.storage.corrupt", [names.join(", ")]);
     el.hidden = false;
   }
 
@@ -767,11 +1157,17 @@ import { createStore } from "./store.js";
 
   // --- settings + autosave ---
   function loadSettings() {
-    try {
-      const raw = Persist.get("settings");
-      if (!raw) return;
-      const s = JSON.parse(raw);
+    {
+      const s = Persist.read("settings").value;
+      if (!s) return;
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
+      if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
+      if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
+      if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
+      if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
+      if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
+      if (typeof s.followSystem === "boolean") store.ui.followSystem = s.followSystem;
+      if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
@@ -787,16 +1183,24 @@ import { createStore } from "./store.js";
       if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
       if (["play", "setup", "record"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
       if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
-    } catch (_) {}
+    }
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId }));
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
+        followSystem: store.ui.followSystem, textSize: store.ui.textSize }));
     } catch (_) {}
   }
   function saveGame() {
     try {
-      const payload = { v: 1, pgn: game.pgn(), savedAt: Date.now() };
+      // the PGN is the mainline, whatever line the cursor is on: it is what
+      // a save written before 6.0 held, and the tree beside it carries the
+      // rest — variations, comments, shapes and the line itself (Q2.1)
+      const payload = { v: 1, pgn: mainlinePgn(), savedAt: Date.now() };
+      payload.tree = ChessTree.serialize(store.game.tree);
+      payload.line = store.game.line.slice();
+      if (store.game.imported) payload.imported = true;
       if (store.game.timeControl !== "off" && store.game.clock) {
         payload.clock = { tc: store.game.timeControl, w: Math.round(store.game.clock.w), b: Math.round(store.game.clock.b), flag: store.game.flagFall };
       }
@@ -806,12 +1210,47 @@ import { createStore } from "./store.js";
       Persist.setJson("save", payload);
     } catch (_) {}
   }
+  /**
+   * The mainline as chess.js-readable PGN: tag pairs and bare moves, no
+   * variations or comments. `game.pgn()` would be the *current line*, which
+   * after a click into a variation is not the game.
+   */
+  function mainlinePgn() {
+    const tree = store.game.tree;
+    const pairs = headerPairs();
+    if (!tree) return game.pgn();
+    const strip = (n) => ({ san: n.san, from: n.from, to: n.to, promotion: n.promotion, fen: n.fen, comment: null, nags: [], shapes: { arrows: [], circles: [] }, children: n.children[0] ? [strip(n.children[0])] : [] });
+    const has = (k) => pairs.some(([n]) => n === k);
+    if (tree.startFen !== ChessTree.START_FEN && !has("FEN")) pairs.push(["SetUp", "1"], ["FEN", tree.startFen]);
+    const r = pairs.find(([k]) => k === "Result");
+    return ChessPgnParser.serializePgn({ headers: pairs, root: strip(tree.root), result: r ? r[1] : "*" });
+  }
+
+  /**
+   * The tree of a save, if it has one and it still describes this game. A
+   * save from before 6.0 has none, and the tree the load just built from
+   * its PGN is the whole of what it knew.
+   */
+  function restoreTree(s) {
+    if (s.imported === true) store.game.imported = true;
+    if (typeof s.tree !== "string") return;
+    let tree;
+    try { tree = ChessTree.deserialize(s.tree); } catch (_) { return; }
+    if (tree.startFen !== store.game.tree.startFen) return;
+    if (ChessTree.mainlineSans(tree).join(" ") !== sanHistory().join(" ")) return;
+    store.game.tree = tree;
+    store.game.line = [0].concat(ChessTree.mainline(tree).map((n) => n.id));
+    const line = Array.isArray(s.line) ? s.line.map(Number) : null;
+    if (line && line[0] === 0 && line.length > 1 && line.every((id) => ChessTree.nodeAt(tree, id))) {
+      const ok = line.every((id, i) => i === 0 || (ChessTree.parentOf(tree, id) || {}).id === line[i - 1]);
+      if (ok && switchLine(line)) store.game.viewIndex = line.length - 1;
+    }
+  }
+
   function tryLoadSave() {
-    try {
-      const raw = Persist.get("save");
-      if (!raw) return false;
-      const s = JSON.parse(raw);
-      if (!s || s.v !== 1 || typeof s.pgn !== "string" || !s.pgn) return false;
+    {
+      const s = Persist.read("save").value;
+      if (!s) return false;
       if (!gameLoadPgn(s.pgn)) {
         // A position from the editor or from 载入 FEN is saved the moment it
         // is loaded, before its first move, so its PGN is tag pairs and
@@ -819,11 +1258,12 @@ import { createStore } from "./store.js";
         // path then took "no save" at face value and overwrote the position
         // with the standard array. Closing the app after setting up a study
         // position, before playing into it, lost it without a word.
-        const sf = ChessPgn ? ChessPgn.startFen(s.pgn) : null;
+        const sf = ChessPgn.startFen(s.pgn);
         if (!sf || !gameLoad(sf)) return false;
         game.header("SetUp", "1", "FEN", sf);
       }
       store.game.viewIndex = sanHistory().length;
+      restoreTree(s);
       if (s.clock && TCS[s.clock.tc] &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
         store.game.timeControl = s.clock.tc;
@@ -836,8 +1276,6 @@ import { createStore } from "./store.js";
       // a custom starting position is worth resuming on its own, with or
       // without moves played into it
       return sanHistory().length > 0 || !!startFen();
-    } catch (_) {
-      return false;
     }
   }
 
@@ -855,6 +1293,7 @@ import { createStore } from "./store.js";
     store.game.engineToken++;
     store.session.engineThinking = false;
     store.session.hintMove = null;
+    store.session.premove = null;
     if (ChessEngine) ChessEngine.cancel();
   }
 
@@ -864,7 +1303,10 @@ import { createStore } from "./store.js";
     if (appGameOver() || game.turn() === store.session.humanColor) return;
     const token = ++store.game.engineToken;
     store.session.engineThinking = true;
-    sync();
+    // one worker: a running infinite search must let go before the game move
+    await stopLiveAnalysis();
+    if (token !== store.game.engineToken) return;
+    store.commit("session", "sync");
     // clocked AI games: the engine budgets its think time from its clock
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
     const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
@@ -885,7 +1327,7 @@ import { createStore } from "./store.js";
     }
     store.session.engineThinking = false;
     if (!mv) {
-      sync();
+      store.commit("session", "sync");
       // maybeEngineTurn() is its own guard: if the player has since taken the
       // move back, started a new game or the game has ended, it returns without
       // doing anything, so this stays safe however long the toast sits there.
@@ -906,6 +1348,7 @@ import { createStore } from "./store.js";
       saveGame();
       recordGameIfOver();
       coachAfterEngineReply();
+      runPremove();
     }
     sync();
   }
@@ -913,7 +1356,7 @@ import { createStore } from "./store.js";
   // --- engine hint: full-strength best move drawn as an arrow ---
 
   async function requestHint() {
-    if (store.session.mode === "learn") { learnHint(); return; }
+    if (store.session.mode === "learn" && store.session.learn) { learnHint(); return; }
     if (store.session.mode === "puzzle") { showPuzzleAnswer(); return; }
     if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
     if (!isLive()) { toast(t("msg.replay.returnToLive"), "fix"); return; }
@@ -922,7 +1365,8 @@ import { createStore } from "./store.js";
     if (store.session.hintPending || store.session.analyzing) return;
     const sig = game.fen();
     store.session.hintPending = true;
-    sync();
+    await stopLiveAnalysis();
+    store.commit("session", "sync");
     let e = null;
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     store.session.hintPending = false;
@@ -932,7 +1376,7 @@ import { createStore } from "./store.js";
     const to = e.best.slice(2, 4);
     const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
     store.session.hintMove = { from, to };
-    sync();
+    store.commit("session", "sync");
     toast(t("chrome.hint") + " · " + (vmv ? vmv.san : from + " → " + to));
   }
 
@@ -1050,28 +1494,24 @@ import { createStore } from "./store.js";
     }
   }
 
-  // --- opening book: deepest SAN-prefix match wins ---
-  const OPENING_BOOK = (() => {
-    const map = new Map();
-    let maxPly = 0;
-    for (const [eco, nameId, seq] of CHESS_OPENINGS || []) {
-      // store the parts, not the joined label: the name is localised at render
-      // time so switching language relabels the line already on screen
-      map.set(seq, [eco, nameId]);
-      maxPly = Math.max(maxPly, seq.split(" ").length);
-    }
-    return { map, maxPly };
-  })();
-
+  /**
+   * The opening the game is in, as `[eco, localisedName]`.
+   *
+   * 6.0: by position, not by move prefix. The 195-line book above still names
+   * the lines the trainer teaches, but recognising a game is a different job:
+   * a transposition, or a game that starts from a FEN, has no prefix to match
+   * and used to show no opening at all (v6-plan Q2.7). eco-lookup.js keys the
+   * full lichess ECO table by position, so the deepest known position along
+   * the first `prefixLen` plies decides, whatever order the moves came in.
+   */
   function openingFor(prefixLen) {
-    if (startFen()) return null; // the book only applies from the standard start
     const h = sanHistory();
-    const n = Math.min(prefixLen, h.length, OPENING_BOOK.maxPly);
-    for (let i = n; i >= 1; i--) {
-      const hit = OPENING_BOOK.map.get(h.slice(0, i).join(" "));
-      if (hit) return hit;
-    }
-    return null;
+    const n = Math.max(0, Math.min(prefixLen, h.length));
+    const sf = startFen();
+    if (!n && !sf) return null;
+    const hit = ChessEco.openingForGame(h.slice(0, n), sf || undefined);
+    if (!hit) return null;
+    return [hit.eco, ChessEco.localName(hit, store.ui.langId)];
   }
 
   function renderOpening() {
@@ -1079,7 +1519,7 @@ import { createStore } from "./store.js";
     if (!el) return;
     const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
     el.hidden = !hit;
-    el.textContent = hit ? hit[0] + " · " + openingName(hit[1]) : "";
+    el.textContent = hit ? hit[0] + " · " + hit[1] : "";
   }
 
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
@@ -1101,11 +1541,11 @@ import { createStore } from "./store.js";
   const CONTENT_TABLES = {
     en: () => ({
       lessons: CHESS_LESSONS_EN, puzzles: CHESS_PUZZLES_EN,
-      openings: CHESS_OPENINGS_EN, ideas: CHESS_OPENING_IDEAS_EN,
+      openings: CHESS_OPENINGS_EN, ideas: CHESS_OPENING_IDEAS_EN, classics: CHESS_CLASSICS_EN,
     }),
     ja: () => ({
       lessons: CHESS_LESSONS_JA, puzzles: CHESS_PUZZLES_JA,
-      openings: CHESS_OPENINGS_JA, ideas: CHESS_OPENING_IDEAS_JA,
+      openings: CHESS_OPENINGS_JA, ideas: CHESS_OPENING_IDEAS_JA, classics: CHESS_CLASSICS_JA,
     }),
   };
   /** tables to consult for `kind`, best match first (empty when reading source) */
@@ -1181,6 +1621,7 @@ import { createStore } from "./store.js";
       const mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0");
       return tf("pz.mineName", [mm + "-" + dd, Math.floor((p.ply || 0) / 2) + 1]);
     }
+    if (p.src === "mined") return t("pz.cat." + p.cat) + " #" + (MINED_ORDINAL.get(p.id) || "");
     return contentField("puzzles", p.id, "name") || p.name;
   }
   /**
@@ -1243,11 +1684,8 @@ import { createStore } from "./store.js";
   }
 
   function loadLearnState() {
-    try {
-      const s = JSON.parse(Persist.get("learn") || "null");
-      if (s && s.v === 1 && s.done) return s;
-    } catch (_) {}
-    return { v: 1, done: {}, last: 0 };
+    const s = Persist.read("learn").value;
+    return s || { v: 1, done: {}, last: 0 };
   }
   store.session.learnState = loadLearnState();
   function saveLearnState() {
@@ -1257,13 +1695,89 @@ import { createStore } from "./store.js";
   function startLearn() {
     startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
   }
-  function stopLearn() { if (store.session.learn) store.session.learn.token++; store.session.learn = null; }
+  function stopLearn() { if (store.session.learn) store.session.learn.token++; store.session.learn = null; store.session.study = null; }
+
+  // --- 6.0: reading a classic game (v6-plan Q3.5) ----------------------------
+  // A study is learn mode with no lesson: the main board holds the game, the
+  // lesson pane holds the note for the move on the board, and every replay and
+  // variation tool works as in a finished game. Nothing is graded.
+  const CLASSICS = CHESS_CLASSICS || [];
+  function classicText(c) {
+    return {
+      white: contentField("classics", c.id, "white") || c.white,
+      black: contentField("classics", c.id, "black") || c.black,
+      event: contentField("classics", c.id, "event") || c.event,
+      note: (ply) => {
+        const notes = contentField("classics", c.id, "notes");
+        if (notes && notes[ply]) return notes[ply];
+        const n = (c.notes || []).find((x) => x.ply === ply);
+        return n ? n.text : null;
+      },
+    };
+  }
+  function startClassic(i) {
+    const c = CLASSICS[i];
+    if (!c) return;
+    stopLearn();
+    invalidateEngine();
+    clearPreview();
+    store.session.study = { ci: i };
+    const text = '[Event "' + c.event.replace(/"/g, "'") + '"]\n[White "' + c.white.replace(/"/g, "'") + '"]\n[Black "' + c.black.replace(/"/g, "'") + '"]\n[Date "' + c.year + '.??.??"]\n[Result "' + c.result + '"]\n\n' + c.pgn + " " + c.result + "\n";
+    if (!gameLoadPgn(text, { sloppy: true })) { toast(t("msg.import.badPgn"), "fault"); return; }
+    // the notes ride the tree as comments, so they show in the move list and
+    // travel with an export (Q2.1)
+    const tx = classicText(c);
+    for (const n of c.notes || []) {
+      const id = store.game.line[n.ply];
+      if (id != null && store.game.tree) ChessTree.setComment(store.game.tree, id, tx.note(n.ply) || n.text);
+    }
+    store.game.resigned = null; store.game.drawAgreed = false; store.game.drawClaimed = null;
+    adoptHeaderResult();
+    store.game.imported = true;
+    store.game.selection = null;
+    store.game.viewIndex = 0;
+    resetClocks();
+    setSideTab("play", { top: true });
+    store.commit("game", "action");
+    sync();
+  }
+  function syncStudyUI() {
+    const st = store.session.study;
+    if (store.session.mode !== "learn" || !st) return;
+    const c = CLASSICS[st.ci];
+    if (!c) return;
+    const tx = classicText(c);
+    const title = document.getElementById("lesson-title");
+    const body = document.getElementById("lesson-text");
+    const task = document.getElementById("lesson-task");
+    const prog = document.getElementById("learn-progress");
+    if (prog) prog.textContent = t("study.head");
+    if (title) title.textContent = tx.white + " – " + tx.black + " · " + c.year;
+    if (body) {
+      body.replaceChildren();
+      const at = store.game.viewIndex;
+      const p = document.createElement("p");
+      if (at === 0) p.textContent = tf("study.intro", [tx.event, c.year, c.eco, c.result]);
+      else {
+        const note = tx.note(at);
+        p.textContent = tf("study.of", [at]) + " · " + (sanHistory()[at - 1] || "") + (note ? " —— " + note : " " + t("study.noNote"));
+      }
+      body.appendChild(p);
+    }
+    if (task) { task.hidden = true; task.replaceChildren(); }
+    for (const id of ["lesson-restart", "lesson-demo", "lesson-practice", "lesson-next"]) {
+      const b = document.getElementById(id);
+      if (b) b.hidden = true;
+    }
+    document.querySelectorAll("#lesson-list button[data-c]").forEach((b) => b.classList.toggle("current", Number(b.dataset.c) === st.ci));
+  }
 
   function curLesson() { return LESSONS[store.session.learn.li]; }
   function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
   function startLesson(i) {
     if (!LESSONS[i]) return;
+    store.session.study = null;
     store.session.learnState.last = i;
     saveLearnState();
     store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
@@ -1303,7 +1817,7 @@ import { createStore } from "./store.js";
     const token = store.session.learn.token;
     let i = 0;
     toast(t("lm.demoIntro"));
-    sync();
+    store.commit("session", "sync");
     const step = () => {
       if (!store.session.learn || store.session.learn.token !== token) return;
       if (i >= sol.length) {
@@ -1389,7 +1903,7 @@ import { createStore } from "./store.js";
       } catch (_) {}
     }
     toast(t("lm.answerShown"), "fix");
-    sync();
+    store.commit("session", "sync");
   }
 
   function learnFlash(sq) {
@@ -1587,7 +2101,7 @@ import { createStore } from "./store.js";
     // teach the technique, not to punish a beginner with perfect defense
     const tier = curTask().engine || "beginner";
     store.session.learn.engineBusy = true;
-    sync();
+    store.commit("session", "sync");
     let mv = null;
     try { mv = await ChessEngine.bestMove(g.fen(), tier); } catch (_) {}
     if (!store.session.learn || token !== store.session.learn.token) return;
@@ -1607,11 +2121,11 @@ import { createStore } from "./store.js";
     // attacking drills need the material that makes the win possible; the
     // defensive one is *expected* to be down material, so skip the check
     if (task.winOn !== "draw" && !learnHasHeavy(g)) {
-      sync();
+      store.commit("session", "sync");
       learnRetryTask(t("lm.lostMaterial"));
       return;
     }
-    sync();
+    store.commit("session", "sync");
   }
 
   /** Drill-only: take back the last white move (and the engine reply with it). */
@@ -1640,14 +2154,14 @@ import { createStore } from "./store.js";
     const token = store.session.learn.token;
     const sig = g.fen();
     store.session.hintPending = true;
-    sync();
+    store.commit("session", "sync");
     let e = null;
     try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
     store.session.hintPending = false;
     if (!store.session.learn || token !== store.session.learn.token || store.session.learn.g.fen() !== sig) { sync(); return; }
     if (!e || !e.best) { sync(); toast(t("msg.engine.noHint"), "fault"); return; }
     store.session.learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
-    sync();
+    store.commit("session", "sync");
   }
 
   function learnTaskDone() {
@@ -1798,11 +2312,35 @@ import { createStore } from "./store.js";
         b.textContent = mark + (i + 1) + ". " + xl.title;
         list.appendChild(b);
       });
+      // 6.0: the annotated classics, after the course (v6-plan Q3.5)
+      if (CLASSICS.length) {
+        const h = document.createElement("div");
+        h.className = "lesson-part";
+        h.textContent = t("study.part");
+        list.appendChild(h);
+        CLASSICS.forEach((c, i) => {
+          const tx = classicText(c);
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "lesson-item";
+          b.dataset.c = String(i);
+          b.textContent = tx.white + " – " + tx.black + " · " + c.year;
+          list.appendChild(b);
+        });
+      }
     }
   }
 
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
-  const PUZZLES = CHESS_PUZZLES || [];
+  // the hand-written book plus the engine-mined set (scripts/mine-puzzles.mjs):
+  // same categories, same gate, named by category and number rather than by
+  // a translated title (v6-plan Q3.2)
+  const PUZZLES = (CHESS_PUZZLES || []).concat(MINED_PUZZLES || []);
+  const MINED_ORDINAL = new Map();
+  {
+    const perCat = {};
+    for (const p of MINED_PUZZLES || []) { perCat[p.cat] = (perCat[p.cat] || 0) + 1; MINED_ORDINAL.set(p.id, perCat[p.cat]); }
+  }
   const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "mine", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
@@ -1818,6 +2356,14 @@ import { createStore } from "./store.js";
     }
     return null;
   }
+
+  /**
+   * 6.0 (v6-plan Q3.4): the same 195 lines as one tree. The trainer's opponent
+   * picks its reply among the book's children, weighted by how many lines run
+   * through each, so the same drill does not always go the same way; a drill
+   * is complete at any leaf.
+   */
+  const OPENING_TREE = ChessOpeningTree.buildTree(CHESS_OPENINGS || []);
 
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
   const Drills = ChessDrills;
@@ -1867,20 +2413,16 @@ import { createStore } from "./store.js";
    */
   const Mistakes = ChessMistakes;
   function loadMines() {
-    try {
-      const s = JSON.parse(Persist.get("mines") || "null");
-      if (s && s.v === 1 && Array.isArray(s.list)) {
-        return s.list.filter((m) => m && m.id && m.fen && Array.isArray(m.solution) && m.solution.length && m.cat === "mine");
-      }
-    } catch (_) {}
-    return [];
+    const s = Persist.read("mines").value;
+    if (!s) return [];
+    return s.list.filter((m) => m && m.id && m.fen && Array.isArray(m.solution) && m.solution.length && m.cat === "mine");
   }
   store.session.mines = loadMines();
   function saveMines() { Persist.setJson("mines", { v: 1, list: store.session.mines }); }
   const Progress = ChessProgress;
   const Planner = ChessPlanner;
   store.session.progress = Progress.coerce((() => {
-    try { return JSON.parse(Persist.get("progress") || "null"); } catch (_) { return null; }
+    return Persist.read("progress").value;
   })());
   function saveProgress() { Persist.setJson("progress", store.session.progress); }
   function bookNow() { return store.session.mines.length ? ALL_PUZZLES.concat(store.session.mines) : ALL_PUZZLES; }
@@ -2007,15 +2549,13 @@ import { createStore } from "./store.js";
       were actually rewritten, which is a different thing from "this profile
       is on the current id version", and the difference is the whole bug */
   function loadPuzzleState() {
-    try {
-      const s = JSON.parse(Persist.get("puzzles") || "null");
-      if (s && s.v === 1 && s.solved) {
-        if (!s.missed) s.missed = {};
-        const was = s.idv;
-        const out = migrateDrillIds(s);
-        return { state: out, migrated: out.idv !== was };
-      }
-    } catch (_) {}
+    const s = Persist.read("puzzles").value;
+    if (s) {
+      if (!s.missed) s.missed = {};
+      const was = s.idv;
+      const out = migrateDrillIds(s);
+      return { state: out, migrated: out.idv !== was };
+    }
     return { state: { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" }, migrated: false };
   }
   const loadedPuzzles = loadPuzzleState();
@@ -2034,8 +2574,55 @@ import { createStore } from "./store.js";
   }
   const Srs = ChessSrs;
   const Picker = ChessPicker;
+  /** reviews served per day before the rest is pushed to tomorrow (Q3.3) */
+  const REVIEW_CAP = 20;
+  /** how many reviews are owed right now — the count every plan reads */
+  function owedNow() { return Srs.dueCount(store.session.puzzleState.missed, Date.now()); }
+
+  // --- 6.0: ratings (v6-plan Q3.1) -------------------------------------------
+  // One Glicko-2 rating for the player, one per puzzle, both moved by the FIRST
+  // answer to a puzzle only — a solve after a miss has already been counted as
+  // the miss. Hand-written puzzles start from their derived tier, so the first
+  // few answers already say something; the lichess import carries its own.
+  function playerRating() {
+    const st = store.session.puzzleState;
+    if (!st.rating) st.rating = ChessRating.newRating();
+    return st.rating;
+  }
+  function puzzleRating(p) {
+    const st = store.session.puzzleState;
+    if (!st.pr) st.pr = {};
+    if (st.pr[p.id]) return st.pr[p.id];
+    if (Number.isFinite(p.rating)) return { r: p.rating, rd: 150, vol: 0.06 };
+    const tier = p.cat === "mine" ? "mid" : puzzleTier(p);
+    const base = tier === "easy" ? 1200 : tier === "hard" ? 1800 : 1500;
+    const bump = p.cat === "m3" ? 100 : p.cat === "m1" ? -100 : 0;
+    return { r: base + bump, rd: 200, vol: 0.06 };
+  }
+  function puzzleRatingOf(p) { return Math.round(puzzleRating(p).r); }
+  function ratePuzzleOnce(id, score) {
+    const pz = store.session.puzzle;
+    if (!pz || pz.p.id !== id || pz.rated) return;
+    if (store.session.puzzleState.solved[id]) return; // not a first attempt
+    pz.rated = true;
+    const st = store.session.puzzleState;
+    const r = ChessRating.rate1v1(playerRating(), puzzleRating(pz.p), score);
+    st.rating = r.player;
+    if (!st.pr) st.pr = {};
+    st.pr[id] = r.puzzle;
+    if (!Array.isArray(st.rhist)) st.rhist = [];
+    st.rhist.push({ t: Date.now(), r: Math.round(r.player.r) });
+    while (st.rhist.length > 60) st.rhist.shift();
+  }
+  /** "1523" or "1523 ±180" while the deviation is still wide */
+  function ratingLabel() {
+    const r = playerRating();
+    return Math.round(r.r) + (r.rd > 100 ? " " + tf("rec.ratingRd", [Math.round(r.rd)]) : "");
+  }
   function markMissed(id) {
-    store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id]);
+    store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
+    // 6.0 (v6-plan Q3.1): the first answer to a puzzle moves both ratings
+    ratePuzzleOnce(id, 0);
     // …and into the lifetime tally, which unlike the queue survives
     // graduation — it is the memory 为你出一题 reads (see picker.js)
     const p = bookNow().find((x) => x.id === id);
@@ -2050,8 +2637,12 @@ import { createStore } from "./store.js";
    * moments after reading the solution.
    */
   function clearMissed(id) {
-    if (!Srs.isDue(store.session.puzzleState.missed[id])) return;
-    const next = Srs.onSolve(store.session.puzzleState.missed[id]);
+    // owed by count, or served by date from the retention ladder — either way
+    // a clean solve advances it; a retention entry solved early (from its own
+    // category, before its date) is left where it is
+    const cur = store.session.puzzleState.missed[id];
+    if (!Srs.isDue(cur) && !Srs.dueBy(cur, Date.now())) return;
+    const next = Srs.onSolve(store.session.puzzleState.missed[id], Date.now());
     if (next) store.session.puzzleState.missed[id] = next; else delete store.session.puzzleState.missed[id];
     savePuzzleState();
   }
@@ -2076,10 +2667,11 @@ import { createStore } from "./store.js";
   /** "review" is a virtual category: every puzzle currently in the missed set. */
   function puzzlesInCat(cat) {
     const base = cat === "review"
-      // least-learned first, so a puzzle just answered goes to the back of the
-      // queue instead of being asked again on the very next click
-      ? Srs.order(bookNow().filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).map((p) => p.id),
-        store.session.puzzleState.missed).map((id) => bookNow().find((p) => p.id === id))
+      // 6.0 (v6-plan Q3.3): what is due today, most overdue first, at most a
+      // day's dose — the rest is scheduled forward by dueQueue() itself so a
+      // fortnight away does not arrive as one afternoon
+      ? Srs.dueQueue(store.session.puzzleState.missed, Date.now(), REVIEW_CAP)
+        .map((id) => bookNow().find((p) => p.id === id)).filter(Boolean)
       // the op list shows one chair at a time — the side segment picks which
       : cat === "op" ? ALL_PUZZLES.filter((p) => p.cat === "op" && (p.side === "b") === (store.session.puzzleState.opSide === "b"))
       : cat === "mine" ? store.session.mines.slice()
@@ -2093,7 +2685,63 @@ import { createStore } from "./store.js";
   }
 
   /** the scripted line of the current puzzle (openings: line; win: solution) */
-  function puzzleScript(p) { return p.line || p.solution; }
+  function puzzleScript(p) {
+    // an opening drill in progress reads its script off the tree: the path so
+    // far, then the book's main continuation — the stored line may already
+    // have been left by a weighted reply
+    const pz = store.session.puzzle;
+    if (p.cat === "op" && pz && pz.p === p && Array.isArray(pz.opPath)) {
+      const kid = ChessOpeningTree.childrenAt(OPENING_TREE, pz.opPath)[0];
+      return kid ? pz.opPath.concat(kid.san) : pz.opPath.slice();
+    }
+    return p.line || p.solution;
+  }
+  /**
+   * An opening drill's move, judged against the tree rather than one line.
+   * @returns {boolean} true when this call handled the move entirely
+   */
+  function opTreeMove(g, mv) {
+    const pz = store.session.puzzle;
+    const path = g.history();
+    const before = path.slice(0, -1);
+    const kids = ChessOpeningTree.childrenAt(OPENING_TREE, before);
+    if (!kids.length) { puzzleSolved(); return true; } // already at a leaf
+    if (!kids.some((k) => k.san === mv.san)) {
+      // explain against the book move the player was rehearsing when it is
+      // one of the options here, else the main one
+      const book = kids.some((k) => k.san === pz.p.line[before.length]) ? pz.p.line[before.length] : kids[0].san;
+      puzzleWrong(openingWhy(g, mv, book));
+      return true;
+    }
+    pz.stage++;
+    pz.opPath = path.slice();
+    let after = ChessOpeningTree.childrenAt(OPENING_TREE, path);
+    if (after.length) {
+      const reply = ChessOpeningTree.weightedPick(OPENING_TREE, path) || after[0].san;
+      const rm = g.move(reply);
+      if (rm) {
+        pz.last = { from: rm.from, to: rm.to };
+        animateReply(rm);
+        moveSound(rm, g);
+        pz.stage++;
+        pz.opPath = g.history();
+        after = ChessOpeningTree.childrenAt(OPENING_TREE, pz.opPath);
+      }
+    }
+    if (!after.length) {
+      // the leaf reached is a line of its own: mark it learnt too, in the
+      // chair it was played from
+      const leaf = ChessOpeningTree.nodeAt(OPENING_TREE, pz.opPath);
+      for (const ln of (leaf && leaf.lines) || []) {
+        const id = Drills.drillId(ln.eco, ln.sans.join(" ")) + (pz.p.side === "b" ? ":b" : "");
+        if (id !== pz.p.id && !store.session.puzzleState.solved[id]) store.session.puzzleState.solved[id] = true;
+      }
+      puzzleSolved();
+      return true;
+    }
+    sync();
+    return true;
+  }
 
   function startPuzzleAt(cat, idx) {
     const list = puzzlesInCat(cat);
@@ -2112,13 +2760,14 @@ import { createStore } from "./store.js";
     store.session.puzzleState.cat = cat;
     savePuzzleState();
     const p = list[idx];
-    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null };
+    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: p.cat === "op" ? [] : null };
     // playing Black: the app opens with White's book move, you answer
     if (p.cat === "op" && p.side === "b") {
       const first = store.session.puzzle.g.move(p.line[0]);
       if (first) {
         store.session.puzzle.stage = 1;
         store.session.puzzle.last = { from: first.from, to: first.to };
+        store.session.puzzle.opPath = [first.san];
       }
     }
     store.game.selection = null;
@@ -2347,6 +2996,7 @@ import { createStore } from "./store.js";
       });
       return;
     }
+    if (store.session.puzzle.p.cat === "op") { opTreeMove(g, mv); return; }
     if (SCRIPTED_CATS[store.session.puzzle.p.cat]) {
       // scripted line: exact match, opponent replies straight from the script
       const script = puzzleScript(store.session.puzzle.p);
@@ -2446,7 +3096,7 @@ import { createStore } from "./store.js";
     // which in the puzzle and opening modes is the entire product
     toast((reason || t("pz.noForcedMate")) +
       (store.session.puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")), "fix");
-    sync();
+    store.commit("session", "sync");
   }
 
   /** Arrow for the correct move at the current stage. */
@@ -2479,7 +3129,7 @@ import { createStore } from "./store.js";
       store.session.puzzle.helpArrow = { from, to };
       store.session.puzzle.usedAnswer = true;
       markMissed(store.session.puzzle.p.id); // relying on the answer counts as a miss
-      sync();
+      store.commit("session", "sync");
     }
   }
 
@@ -2490,6 +3140,7 @@ import { createStore } from "./store.js";
     // a clean first-try solve retires the puzzle from review; a shaky one keeps it
     if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(store.session.puzzle.p.id);
     if (!store.session.puzzleState.solved[store.session.puzzle.p.id]) {
+      if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) ratePuzzleOnce(store.session.puzzle.p.id, 1);
       store.session.puzzleState.solved[store.session.puzzle.p.id] = true;
       // a clean first solve counts into the lifetime tally; a solve after
       // misses already counted those misses — counting the solve too would
@@ -2619,7 +3270,7 @@ import { createStore } from "./store.js";
     pz.lineAt = k;
     store.game.selection = null;
     BoardView.cancelAnim();
-    sync();
+    store.commit("game", "sync");
   }
   function renderPuzzleLine() {
     const el = document.getElementById("puzzle-line");
@@ -2707,7 +3358,8 @@ import { createStore } from "./store.js";
     if (task) {
       task.textContent = store.session.puzzle.done
         ? t("pz.solvedNext")
-        : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText();
+        : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText()
+          + (store.session.puzzle.p.cat !== "op" ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
     }
     renderPuzzleLine();
     // opening drills are rote memorisation without the "why" — show the idea
@@ -2737,7 +3389,7 @@ import { createStore } from "./store.js";
     // the after-solve review nudge: the queue's size is the whole message
     const nudge = document.getElementById("puzzle-review-nudge");
     if (nudge) {
-      const owed = bookNow().filter((p) => Srs.isDue(store.session.puzzleState.missed[p.id])).length;
+      const owed = owedNow();
       const show = !!store.session.puzzle.done && owed > 0 && store.session.puzzle.cat !== "review";
       nudge.hidden = !show;
       if (show) nudge.textContent = tf("pz.smart.review", [owed]);
@@ -2812,8 +3464,102 @@ import { createStore } from "./store.js";
    * zone for everything before it.
    */
 
+  /** UCI moves → SAN from `fen`, at most `max` of them; stops at the first illegal. */
+  function sansOf(fen, ucis, max) {
+    const out = [];
+    if (!Array.isArray(ucis)) return out;
+    const g = new Chess(fen);
+    for (const u of ucis.slice(0, max || 8)) {
+      const m = g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || "q" });
+      if (!m) break;
+      out.push(m.san);
+    }
+    return out;
+  }
+  /** "胜率 62%" for a line scored from `turn`'s side. */
+  function winLabel(l, turn) {
+    const cp = l.mate != null ? (l.mate > 0 ? 100000 : -100000) : l.cp;
+    if (cp == null) return "";
+    // the panel reads from White's side, like the curve
+    const white = turn === "w" ? cp : -cp;
+    return t("an.win") + " " + Math.round(Review.winPct(white)) + "%";
+  }
+
+  // --- 6.0: continuous analysis (v6-plan Q2.6) -------------------------------
+  // `go infinite` on whatever position the board shows, re-armed on every
+  // cursor or line change, stopped whenever the one worker is needed for a
+  // game move or a review pass. A toggle, not a mode: it follows the replay.
+  function liveAllowed() {
+    return store.session.liveOn && ChessEngine && !store.session.engineDown &&
+      (store.session.mode === "ai" || store.session.mode === "pvp") &&
+      !store.session.editor && !store.session.analyzing && !store.session.engineThinking;
+  }
+  function stopLiveAnalysis() {
+    const l = store.session.live;
+    store.session.live = null;
+    if (!l) return Promise.resolve();
+    return l.stop();
+  }
+  function syncLiveAnalysis() {
+    const el = document.getElementById("live-line");
+    const btn = document.getElementById("an-live");
+    if (btn) {
+      btn.classList.toggle("active", store.session.liveOn);
+      btn.setAttribute("aria-pressed", store.session.liveOn ? "true" : "false");
+      // like 分析: it stands above a game, not above an empty board — and the
+      // group is re-collapsed here because this runs after renderGameActions
+      // and is the last thing to change a button in it (layout e2e 4b)
+      avail(btn, !!ChessEngine && !store.session.engineDown && sanHistory().length > 0 &&
+        (store.session.mode === "ai" || store.session.mode === "pvp"));
+      collapseEmptyGroups();
+    }
+    if (!liveAllowed()) {
+      stopLiveAnalysis();
+      if (el && !store.session.liveOn) { el.hidden = true; el.replaceChildren(); }
+      return;
+    }
+    const fen = viewGame().fen();
+    if (store.session.live && store.session.live.fen === fen && store.session.live.multipv === store.ui.multipv) return;
+    stopLiveAnalysis();
+    const rec = { fen, multipv: store.ui.multipv, info: null, raf: 0, stop: null };
+    rec.stop = ChessEngine.analyzeInfinite(fen, { multipv: store.ui.multipv }, (info) => {
+      if (store.session.live !== rec) return;
+      rec.info = info;
+      if (!rec.raf) rec.raf = requestAnimationFrame(() => { rec.raf = 0; renderLiveAnalysis(rec); });
+    });
+    store.session.live = rec;
+    if (el) { el.hidden = false; el.replaceChildren(); }
+  }
+  function renderLiveAnalysis(rec) {
+    const el = document.getElementById("live-line");
+    if (!el || store.session.live !== rec || !rec.info) return;
+    el.hidden = false;
+    el.replaceChildren();
+    const turn = rec.info.turn;
+    const head = document.createElement("span");
+    head.className = "pv-label";
+    head.textContent = t("act.live") + " · " + t("an.depth") + " " + (rec.info.depth || 0);
+    el.appendChild(head);
+    rec.info.lines.forEach((l, n) => {
+      const row = document.createElement("div");
+      row.className = "pv-alt-row";
+      const lab = document.createElement("span");
+      lab.className = "pv-label";
+      lab.textContent = (rec.info.lines.length > 1 ? tf("an.line", [n + 1]) + " · " : "") + winLabel(l, turn);
+      row.appendChild(lab);
+      sansOf(rec.fen, l.pv, 8).forEach((san, k) => {
+        const sp = document.createElement("span");
+        sp.className = "pv-chip pv-alt";
+        writeSan(sp, san, k % 2 === 0 ? turn : (turn === "w" ? "b" : "w"));
+        row.appendChild(sp);
+      });
+      el.appendChild(row);
+    });
+  }
+
   async function analyzeGame(movetime) {
     if (store.session.analyzing || !ChessEngine) return;
+    await stopLiveAnalysis();
     const perMove = movetime || 120;
     const h = sanHistory();
     if (!h.length) { toast(t("msg.analysis.noGame"), "fix"); return; }
@@ -2827,6 +3573,7 @@ import { createStore } from "./store.js";
     setAnalyzeUI();
     const scalars = new Array(fens.length).fill(null);
     const pvs = new Array(fens.length).fill(null);
+    const linesAt = new Array(fens.length).fill(null);
     // the engine's own choice at each position, UCI — this is what the board
     // draws an arrow for when the move actually played was a mistake
     const bests = new Array(fens.length).fill(null);
@@ -2859,9 +3606,12 @@ import { createStore } from "./store.js";
       else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
       else {
         let e = null;
-        try { e = await ChessEngine.analyze(fens[i], perMove); } catch (_) {}
+        try { e = await ChessEngine.analyze(fens[i], perMove, { multipv: store.ui.multipv }); } catch (_) {}
         if (game.pgn() !== sig) { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
         scalars[i] = evalScalar(e);
+        // every line the engine gave, in SAN, with its score — the panel
+        // shows them under the principal one (v6-plan Q2.6)
+        if (e && Array.isArray(e.lines) && e.lines.length > 1) linesAt[i] = e.lines.map((l) => ({ cp: l.cp, mate: l.mate, pv: sansOf(fens[i], l.pv, 6) }));
         if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
         // principal variation, converted to SAN for display
         if (e && e.pv && e.pv.length) {
@@ -2883,14 +3633,17 @@ import { createStore } from "./store.js";
     const tags = h.map((_, i) => {
       const a = scalars[i], b = scalars[i + 1];
       if (a == null || b == null) return null;
-      const moverIsWhite = fens[i].split(" ")[1] === "w";
-      const loss = moverIsWhite ? a - b : b - a;
-      // one source for the thresholds: the move list, the curve markers and
-      // the best-move arrow all read the same call. This used to be a fourth
-      // hand-written copy of 300/100/50 sitting next to review.js's constants.
-      return Review.markFor(loss);
+      const mover = fens[i].split(" ")[1] === "w" ? "w" : "b";
+      // 6.0: marks by win-percentage drop, not centipawns. Measured on the
+      // same four games (docs/measured.json winPctNoise): two 120 ms scans
+      // agree on ?! 67 % of the time against 32 % for the centipawn cut-off,
+      // because a centipawn is worth much less at +5 than at 0 and the
+      // win-percentage curve already knows that. One source for the
+      // thresholds: the move list, the curve markers and the arrow all read
+      // the same call (v6-plan Q2.5).
+      return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
     });
-    store.session.analysis = { sig, scalars, tags, pvs, bests, budget: perMove, acc: accuracyFrom(fens, scalars) };
+    store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, budget: perMove, acc: accuracyFrom(fens, scalars) };
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
     recordAccuracy();
@@ -2956,7 +3709,11 @@ import { createStore } from "./store.js";
     const loss = Review.lossesBySide(scalars, (i) => (fens[i].split(" ")[1] === "w" ? "w" : "b"));
     const w = Review.accuracyOf(loss.w);
     const b = Review.accuracyOf(loss.b);
-    return { w: w.acc, b: b.acc, wAcpl: w.acpl, bAcpl: b.acpl };
+    // 6.0: the accuracy figure is the win-percentage one — the same measure
+    // the online platforms report, so the number is finally comparable
+    // (缺陷 22); the average loss stays in centipawns, which is what it is
+    const wp = Review.summarizeWinPct(scalars, sanHistory(), fens[0].split(" ")[1] === "b" ? "b" : "w");
+    return { w: wp ? wp.acc.w : w.acc, b: wp ? wp.acc.b : b.acc, wAcpl: w.acpl, bAcpl: b.acpl };
   }
 
   /**
@@ -3003,7 +3760,7 @@ import { createStore } from "./store.js";
     if (!rec) return;
     rec.acc = mine;
     rec.acpl = acpl;
-    Persist.setJson("stats", s);
+    saveStats(s);
     renderStats();
   }
 
@@ -3057,6 +3814,37 @@ import { createStore } from "./store.js";
           writeSan(b, san, k % 2 === 0 ? start : (start === "w" ? "b" : "w"));
           pvEl.appendChild(b);
         });
+        // the other lines the review asked for, each with its win chance;
+        // read-only rows (no preview) so the chip handlers stay one line's
+        const extra = a.linesAt && a.linesAt[store.game.viewIndex];
+        if (extra && extra.length > 1) {
+          extra.slice(1).forEach((l, n) => {
+            const row = document.createElement("div");
+            row.className = "pv-alt-row";
+            const lab = document.createElement("span");
+            lab.className = "pv-label";
+            lab.textContent = tf("an.line", [n + 2]) + " · " + winLabel(l, viewGame().turn());
+            row.appendChild(lab);
+            l.pv.forEach((san, k) => {
+              const sp = document.createElement("span");
+              sp.className = "pv-chip pv-alt";
+              writeSan(sp, san, k % 2 === 0 ? start : (start === "w" ? "b" : "w"));
+              row.appendChild(sp);
+            });
+            pvEl.appendChild(row);
+          });
+        }
+        // …and the line can be kept: written into the tree as a variation
+        // at this position (Q2.3)
+        if (!inModal()) {
+          const save = document.createElement("button");
+          save.type = "button";
+          save.className = "pv-act";
+          save.textContent = t("an.pvSave");
+          save.title = t("tip.pvSave");
+          save.onclick = () => { savePvAsVariation(pv.split(" ")); };
+          pvEl.appendChild(save);
+        }
       }
     }
     renderReview();
@@ -3114,7 +3902,15 @@ import { createStore } from "./store.js";
     if (!el) return;
     const R = ChessReview;
     const a = analysisFor();
-    const sum = R && a ? R.summarize(a.scalars, sanHistory(), startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w") : null;
+    const firstMover = startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w";
+    const cp = R && a ? R.summarize(a.scalars, sanHistory(), firstMover) : null;
+    // the report reads the win-percentage summary; the average loss (a
+    // centipawn figure) is the one row still taken from the centipawn one
+    const sum = R && a ? R.summarizeWinPct(a.scalars, sanHistory(), firstMover) : null;
+    if (sum && cp) sum.acpl = cp.acpl;
+    // the turning point is chosen by win-percentage drop, but the drill it
+    // banks records what the move cost in centipawns (bankWorst → drillFrom)
+    if (sum && sum.worst) sum.worst.loss = R.lossAt(a.scalars, sum.worst.ply, sum.worst.side);
     el.hidden = !sum;
     el.replaceChildren();
     if (!sum) return;
@@ -3125,7 +3921,7 @@ import { createStore } from "./store.js";
     const opening = openingFor(sanHistory().length);
     if (opening) {
       const o = line("review-row muted");
-      o.textContent = t("rv.opening") + " · " + opening[0] + " " + openingName(opening[1]);
+      o.textContent = t("rv.opening") + " · " + opening[0] + " " + opening[1];
     }
     for (const side of ["w", "b"]) {
       if (sum.acc[side] == null) continue;
@@ -3174,7 +3970,7 @@ import { createStore } from "./store.js";
       btn.className = "review-jump";
       btn.textContent = tf("rv.turningPoint",
         [sum.worst.moveNo, sideName(sum.worst.side), sum.worst.san,
-         (sum.worst.loss / 100).toFixed(1)]);
+         Math.round(sum.worst.drop)]);
       btn.title = t("rv.jumpTip");
       // land on the position *after* the move, so the damage is on the board
       btn.onclick = () => setViewIndex(sum.worst.ply + 1);
@@ -3214,7 +4010,7 @@ import { createStore } from "./store.js";
       delete store.session.puzzleState.missed[id];
     }
     if (r.dropped.length) savePuzzleState();
-    sync();
+    store.commit("session", "sync");
     toast(tf("rv.banked", [cand.solution[0]]));
   }
 
@@ -3373,31 +4169,24 @@ import { createStore } from "./store.js";
   let _recSeq = 0;
   function newRecordId() { return Date.now().toString(36) + "-" + (_recSeq++).toString(36); }
 
+  /**
+   * The stats record, parsed once.
+   *
+   * 6.0: this used to re-parse the whole blob — up to 500 games, each with its
+   * PGN — on every call, and one renderStats() called it five or six times
+   * down its chain (v6-plan D11). Every writer goes through saveStats(), so
+   * the cache can never hold a value that storage does not.
+   */
+  const statsCache = { v: null };
+  function saveStats(s) { statsCache.v = s; Persist.setJson("stats", s); }
   function loadStats() {
-    try {
-      const s = JSON.parse(Persist.get("stats") || "null");
-      if (s && s.v === 2 && Array.isArray(s.games)) return s;
-      // v1 → v2: split the overloaded `sig` into the three things it was.
-      // Reading it apart is safe — unlike an id remap, this derives nothing
-      // about *which* game a record is, it only unpacks what was already
-      // stored in it.
-      if (s && s.v === 1 && Array.isArray(s.games)) {
-        return {
-          v: 2,
-          games: s.games.map((g, i) => {
-            const sig = String(g.sig || "");
-            const m = /#([a-zA-Z]+)$/.exec(sig);
-            return Object.assign({}, g, {
-              id: g.id || ("v1-" + (g.t || 0).toString(36) + "-" + i.toString(36)),
-              pgn: g.pgn != null ? g.pgn : sig.replace(/#[a-zA-Z]+$/, ""),
-              ending: g.ending != null ? g.ending : (m ? m[1] : ""),
-              sig: undefined,
-            });
-          }),
-        };
-      }
-    } catch (_) {}
-    return { v: 2, games: [] };
+    if (!statsCache.v) statsCache.v = readStats();
+    return statsCache.v;
+  }
+  function readStats() {
+    // the v1 → v2 unpacking of `sig` happens in persist.js, with the shape
+    const s = Persist.read("stats").value;
+    return s && s.v === 2 && Array.isArray(s.games) ? s : { v: 2, games: [] };
   }
 
   /** Record an AI game the moment it finishes on a live move (not on import). */
@@ -3413,7 +4202,7 @@ import { createStore } from "./store.js";
     store.game.recordedId = id;
     s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending: "" });
     if (s.games.length > 500) s.games = s.games.slice(-500);
-    Persist.setJson("stats", s);
+    saveStats(s);
     renderStats();
     checkNewAchievements();
     offerReview();
@@ -3450,12 +4239,31 @@ import { createStore } from "./store.js";
       .map((c) => Object.assign({ cat: c }, Picker.catTally(st, c)))
       .filter((r) => r.attempts > 0);
     head.hidden = body.hidden = !rows.length;
+
     if (!rows.length) return;
     // worst first, so the marker sits on top; the marker itself comes from
     // Picker.weakest — the same rule the recommendation toast speaks from,
     // so the two surfaces can never name different categories
     rows.sort((a, b) => b.miss / b.attempts - a.miss / a.attempts || b.attempts - a.attempts);
     const weak = Picker.weakest(st, cats);
+    // 6.0: the rating, once a first answer has moved it, its trend, and the
+    // review debt with tomorrow's share (v6-plan Q3.1 / Q3.3)
+    const meta = document.getElementById("rating-meta");
+    const rcv = document.getElementById("trend-rating");
+    const hist = Array.isArray(st.rhist) ? st.rhist : [];
+    if (meta) {
+      const owed = owedNow();
+      const tomorrow = Math.max(0, Srs.dueCount(st.missed, Date.now() + 86400000) - owed);
+      const parts = [];
+      if (hist.length) parts.push(t("rec.rating") + " " + ratingLabel());
+      if (owed || tomorrow) parts.push(tf("rec.due", [owed, tomorrow]));
+      meta.hidden = !parts.length;
+      if (parts.length) { meta.textContent = parts.join(" · "); head.hidden = false; }
+    }
+    if (rcv) {
+      rcv.hidden = hist.length < 2;
+      if (hist.length >= 2) drawRatingTrend(rcv, hist.map((h) => h.r));
+    }
     body.replaceChildren();
     for (const r of rows) {
       const row = document.createElement("div");
@@ -3480,7 +4288,7 @@ import { createStore } from "./store.js";
     const byMotif = {};
     for (const [m, tl] of Object.entries(st.mtally || {})) byMotif[m] = (tl.miss || 0) + (tl.solve || 0);
     return {
-      owed: bookNow().filter((p) => Srs.isDue(st.missed[p.id])).length,
+      owed: owedNow(),
       byCat, byMotif,
       lessonsDone: Object.keys(store.session.learnState.done || {}).length,
       opSolved: ALL_PUZZLES.filter((p) => p.cat === "op" && st.solved[p.id]).length,
@@ -3495,7 +4303,7 @@ import { createStore } from "./store.js";
     const w = Picker.weakest(st, Object.keys(st.tally || {}));
     const today = Progress.dayKey(Date.now());
     return {
-      owed: bookNow().filter((p) => Srs.isDue(st.missed[p.id])).length,
+      owed: owedNow(),
       mineUnsolved: store.session.mines.filter((m) => !st.solved[m.id]).length,
       weakCat: w ? w.cat : null,
       weakMotif: (Picker.weakestMotif(st, Object.keys(st.mtally || {})) || {}).motif || null,
@@ -3681,6 +4489,40 @@ import { createStore } from "./store.js";
     if (showCurve) drawAccTrend(cv, series);
   }
 
+  /** The rating sparkline: the accuracy one's dress, on the rating's own scale. */
+  function drawRatingTrend(cv, ys) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
+    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
+    if (cv.width !== W) cv.width = W;
+    if (cv.height !== H) cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement);
+    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
+    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const n = ys.length - 1;
+    const pad = 4 * dpr;
+    // a window around the data, rounded to hundreds, so a flat run is a
+    // visibly flat line and a climb is a visible climb
+    const lo = Math.floor((Math.min(...ys) - 50) / 100) * 100;
+    const hi = Math.ceil((Math.max(...ys) + 50) / 100) * 100;
+    const x = (i) => (n ? (i / n) * (W - 2 * pad) + pad : W / 2);
+    const y = (v) => H - pad - (v - lo) / Math.max(1, hi - lo) * (H - 2 * pad);
+    ctx.strokeStyle = cMuted;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = dpr;
+    ctx.beginPath(); ctx.moveTo(pad, y(ys[0])); ctx.lineTo(W - pad, y(ys[0])); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = cAccent;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath();
+    ys.forEach((v, i) => { if (i) ctx.lineTo(x(i), y(v)); else ctx.moveTo(x(i), y(v)); });
+    ctx.stroke();
+    ctx.fillStyle = cAccent;
+    ctx.beginPath(); ctx.arc(x(n), y(ys[n]), 1.8 * dpr, 0, Math.PI * 2); ctx.fill();
+  }
+
   /** The accuracy sparkline — the eval curve's dress, the record's data. */
   function drawAccTrend(cv, series) {
     const dpr = window.devicePixelRatio || 1;
@@ -3820,10 +4662,11 @@ import { createStore } from "./store.js";
     const now = new Date();
     const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    const clock2 = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // in the interface language, not the system's (v6-plan Q3.6)
+    const clock2 = I18n.fmtDate(d, { hour: "2-digit", minute: "2-digit" });
     if (midnight(d) === midnight(now)) return t("hist.today") + " " + clock2;
     if (midnight(d) === midnight(yesterday)) return t("hist.yesterday") + " " + clock2;
-    return d.toLocaleDateString();
+    return I18n.fmtDate(d, { dateStyle: "short" });
   }
 
   /** everything is localised at render time, so a language switch relabels it */
@@ -4029,7 +4872,7 @@ import { createStore } from "./store.js";
     }
     // losing most games but not all: tactics are usually the cheapest fix
     if (losses > wins) {
-      const missed = bookNow().filter((p) => ChessSrs.isDue(store.session.puzzleState.missed[p.id])).length;
+      const missed = owedNow();
       return missed ? tf("rec.review", [missed]) : t("rec.puzzles");
     }
     return null;
@@ -4038,11 +4881,8 @@ import { createStore } from "./store.js";
   // --- achievements: pure derivations of stats + lesson/puzzle progress ---
   const ACH = CHESS_ACHIEVEMENTS || [];
   function loadAchSeen() {
-    try {
-      const s = JSON.parse(Persist.get("achievements") || "null");
-      if (s && Array.isArray(s.seen)) return new Set(s.seen);
-    } catch (_) {}
-    return new Set();
+    const s = Persist.read("achievements").value;
+    return new Set(s ? s.seen : []);
   }
   store.session.achSeen = loadAchSeen();
 
@@ -4271,6 +5111,7 @@ import { createStore } from "./store.js";
       return t("st.editing") + " · " + (reason ? t(reason) : t("st.editingReady"));
     }
     if (store.session.mode === "learn") {
+      if (store.session.study) return t("study.head");
       if (!store.session.learn) return t("st.learn");
       if (store.session.learn.done) return t("st.lessonDone");
       // Where the lesson is, not what it is called. The full task text used to
@@ -4318,77 +5159,223 @@ import { createStore } from "./store.js";
     return base;
   }
 
+  /** NAG number → the glyph a reader expects; anything else stays `$n`. */
+  const NAG_GLYPH = { 1: "!", 2: "?", 3: "!!", 4: "??", 5: "!?", 6: "?!" };
+  function nagText(nags) { return (nags || []).map((n) => NAG_GLYPH[n] || ("$" + n)).join(""); }
+
+  /**
+   * The notation, from the tree (v6-plan Q2.1). Lichess's shape: the
+   * mainline in move-pair rows, and where a move has alternatives the row
+   * is cut and the alternatives follow it indented, in parentheses, nested
+   * as deep as they go. A comment cuts the row the same way. Every move in
+   * every line is a button that puts the cursor on it — switching line when
+   * it has to (goToNode).
+   */
   function renderMoveList() {
     const el = document.getElementById("move-list");
     if (!el) return;
-    const h = sanHistory();
+    const tree = store.game.tree;
+    // The rows are the line `game` stands on while that line is the mainline
+    // or a prefix of it — after 重下 the moves cut off the line are still the
+    // tree's first children, and they show as a variation after the cut
+    // until the next move played takes their place (Q2.3). Off the mainline
+    // the rows are the tree's, and the line is found among the variations.
+    const onMain = onMainline();
+    const main = onMain
+      ? store.game.line.slice(1).map((id) => ChessTree.nodeAt(tree, id)).filter(Boolean)
+      : ChessTree.mainline(tree);
     // A position edited to start with Black opens at "1…", so its first row
     // holds a single black move and White's reply belongs to move 2. Pairing
     // from ply 0 would file them together under move 1 — and the review
     // report's turning-point line would then disagree with this list.
-    const blackFirst = startFen() ? startFen().split(" ")[1] === "b" : false;
-    const firstMover = blackFirst ? "b" : "w";
-    const moveNo = (i) => (ChessReview
-      ? ChessReview.moveNumber(i, firstMover)
-      : Math.floor(i / 2) + 1);
+    const firstMover = tree.startFen.split(" ")[1] === "b" ? "b" : "w";
+    const moveNo = (i) => ChessReview.moveNumber(i, firstMover);
+    const curId = curNodeId();
+    // the analysis describes the line `game` stands on: its tags belong to
+    // those nodes, on the mainline or off it
     const a = analysisFor();
+    const tagOf = new Map();
+    if (a && a.tags) store.game.line.forEach((id, k) => { if (k > 0 && a.tags[k - 1]) tagOf.set(id, a.tags[k - 1]); });
+    const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (tagOf.get(n.id) || "") + "/" + (n.id === curId ? "*" : "");
+    // a variation's signature is the whole of what it shows, nested included
+    const lineSig = (parent, first) => {
+      let out = "";
+      let prev = parent;
+      let node = first;
+      while (node) {
+        out += nodeSig(node) + (node.comment ? "{" + node.comment + "}" : "");
+        if (node === prev.children[0]) for (const alt of prev.children.slice(1)) out += "(" + lineSig(prev, alt) + ")";
+        prev = node;
+        node = node.children[0] || null;
+      }
+      return out;
+    };
 
-    // one entry per row: which plies it holds, and whether it opens with the
-    // "1. …" gap of a black-first game
-    const rows = [];
-    for (let i = blackFirst ? -1 : 0; i < h.length; i += 2) {
-      const plies = (i < 0 ? [0] : [i, i + 1]).filter((j) => j < h.length);
-      rows.push({ i, no: moveNo(Math.max(0, i)), gap: i < 0, plies });
+    // one entry per top-level block: a row of plies, a comment, or the
+    // alternatives to a mainline move
+    const items = [];
+    if (tree.root.comment) items.push({ kind: "comment", key: "c0", sig: tree.root.comment, text: tree.root.comment });
+    let row = null;
+    const flush = () => { if (row) { items.push(row); row = null; } };
+    let prev = tree.root;
+    main.forEach((n, i) => {
+      const white = prev.fen.split(" ")[1] === "w";
+      if (!row || white) { flush(); row = { kind: "row", key: "r" + n.id, no: moveNo(i), gap: !white, nodes: [], plies: [] }; }
+      row.nodes.push(n);
+      row.plies.push(i);
+      const alts = prev.children.slice(1);
+      if (n.comment || alts.length) {
+        flush();
+        if (n.comment) items.push({ kind: "comment", key: "c" + n.id, sig: n.comment, text: n.comment });
+        if (alts.length) items.push({ kind: "var", key: "v" + prev.id, sig: alts.map((alt) => lineSig(prev, alt)).join("|"), parent: prev, alts });
+      }
+      prev = n;
+    });
+    flush();
+    // the continuation the line was cut from, as a variation of nothing yet
+    if (onMain && prev.children.length) {
+      items.push({ kind: "var", key: "t" + prev.id, sig: lineSig(prev, prev.children[0]), parent: prev, alts: [prev.children[0]] });
+    }
+    for (const it of items) {
+      if (it.kind === "row") it.sig = it.no + "|" + (it.gap ? "…" : "") + "|" + it.nodes.map(nodeSig).join(",");
     }
 
-    // Keyed, so a move rebuilds one row instead of the game. The signature is
-    // everything a row shows — the moves, their annotations, and which one is
-    // current — so an ordinary move dirties exactly one row (two when the
-    // cursor leaves another). See keyed.js for why this is worth doing: the
-    // scroll position and the focus are properties of the nodes, and rebuilding
-    // the list threw both away every time the clock ticked.
-    reconcile(el, rows,
-      (r) => r.i,
-      (r) => r.no + "|" + r.plies.map((j) =>
-        h[j] + "/" + ((a && a.tags[j]) || "") + "/" + (store.game.viewIndex === j + 1 ? "*" : "")).join(","),
-      (r, _idx, reuse) => {
-        const row = reuse || document.createElement("div");
-        row.className = "mlrow";
+    // the move itself, in any line: figurine, NAG glyphs, the review's tag
+    const moveButton = (n, cls) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.node = String(n.id);
+      b.className = cls + (n.id === curId ? " current" : "");
+      // Figurine notation: the piece letter becomes the piece. `Nf3` is
+      // English algebraic — the N is short for Knight, which is not a word
+      // two of this app's three languages use. The vector set is already
+      // here for the board, and a figurine move list is the same notation
+      // for every reader. The full SAN stays as the accessible name, so
+      // "Nf3" is still what a screen reader says. P4.4.
+      writeSan(b, n.san, moverOf(n));
+      const glyphs = nagText(n.nags);
+      if (glyphs) {
+        b.appendChild(document.createTextNode(glyphs));
+        b.setAttribute("aria-label", n.san + glyphs);
+      }
+      const tag = tagOf.get(n.id);
+      if (tag) {
+        const span = document.createElement("span");
+        span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
+        span.textContent = tag;
+        b.appendChild(span);
+      }
+      return b;
+    };
+    // the menu handle rides beside the current move only: one on screen,
+    // one Tab past the move it acts on
+    const menuButton = (n) => {
+      const m = document.createElement("button");
+      m.type = "button";
+      m.className = "mlmenu";
+      m.dataset.node = String(n.id);
+      m.dataset.menu = "1";
+      m.textContent = "…";
+      m.setAttribute("aria-label", t("ml.menu"));
+      m.title = t("ml.menu");
+      return m;
+    };
+    const commentNode = (text, cls) => {
+      const c = document.createElement("span");
+      c.className = cls;
+      c.textContent = text;
+      return c;
+    };
+    // a variation from `first`, with its own alternatives nested after the
+    // move they replace — the same walk pgn-parser's emitLine makes
+    const renderLine = (box, parent, first, numbered) => {
+      let prev = parent;
+      let node = first;
+      let force = numbered;
+      let depth = ChessTree.pathTo(tree, first.id).length - 1;
+      while (node) {
+        const white = prev.fen.split(" ")[1] === "w";
+        if (white || force) {
+          const num = document.createElement("span");
+          num.className = "mlvnum";
+          num.textContent = moveNo(depth) + (white ? "." : "…");
+          box.appendChild(num);
+        }
+        box.appendChild(moveButton(node, "mlv"));
+        if (node.id === curId) box.appendChild(menuButton(node));
+        force = false;
+        if (node.comment) { box.appendChild(commentNode(node.comment, "mlvcomment")); force = true; }
+        if (node === prev.children[0]) {
+          for (const alt of prev.children.slice(1)) {
+            const nest = document.createElement("span");
+            nest.className = "mlvnest";
+            nest.appendChild(document.createTextNode("("));
+            renderLine(nest, prev, alt, true);
+            nest.appendChild(document.createTextNode(")"));
+            box.appendChild(nest);
+            force = true;
+          }
+        }
+        prev = node;
+        node = node.children[0] || null;
+        depth++;
+      }
+    };
+
+    // Keyed, so a move rebuilds one block instead of the game. The signature
+    // is everything a block shows — the moves, their annotations, and which
+    // one is current — so an ordinary move dirties exactly one row (two when
+    // the cursor leaves another). See keyed.js for why this is worth doing:
+    // the scroll position and the focus are properties of the nodes, and
+    // rebuilding the list threw both away every time the clock ticked.
+    reconcile(el, items,
+      (it) => it.key,
+      (it) => it.kind + "|" + it.sig,
+      (it, _idx, reuse) => {
+        if (it.kind === "comment") {
+          const c = reuse && reuse.classList.contains("mlcomment") ? reuse : document.createElement("div");
+          c.className = "mlcomment";
+          c.textContent = it.text;
+          return c;
+        }
+        if (it.kind === "var") {
+          const v = reuse && reuse.classList.contains("mlvar") ? reuse : document.createElement("div");
+          v.className = "mlvar";
+          v.replaceChildren();
+          for (const alt of it.alts) {
+            const line = document.createElement("div");
+            line.className = "mlvline";
+            line.appendChild(document.createTextNode("("));
+            renderLine(line, it.parent, alt, true);
+            line.appendChild(document.createTextNode(")"));
+            v.appendChild(line);
+          }
+          return v;
+        }
+        const rowEl = reuse && reuse.classList.contains("mlrow") ? reuse : document.createElement("div");
+        rowEl.className = "mlrow";
         const kids = [];
         const num = document.createElement("span");
         num.className = "mlnum";
-        num.textContent = r.no + ".";
+        num.textContent = it.no + ".";
         kids.push(num);
-        // the opening row of a black-first game shows "1. … Qh4"
-        if (r.gap) {
+        // a row that opens on a black move shows "1. … Qh4"
+        if (it.gap) {
           const gap = document.createElement("span");
           gap.className = "mlmove mlgap";
           gap.textContent = "…";
           kids.push(gap);
         }
-        for (const j of r.plies) {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.dataset.i = String(j + 1);
-          b.className = "mlmove" + (store.game.viewIndex === j + 1 ? " current" : "");
-          // Figurine notation: the piece letter becomes the piece. `Nf3` is
-          // English algebraic — the N is short for Knight, which is not a word
-          // two of this app's three languages use. The vector set is already
-          // here for the board, and a figurine move list is the same notation
-          // for every reader. The full SAN stays as the accessible name, so
-          // "Nf3" is still what a screen reader says. P4.4.
-          writeSan(b, h[j], j % 2 === 0 ? "w" : "b");
-          const tag = a && a.tags[j];
-          if (tag) {
-            const span = document.createElement("span");
-            span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
-            span.textContent = tag;
-            b.appendChild(span);
-          }
+        it.nodes.forEach((n, k) => {
+          const b = moveButton(n, "mlmove");
+          // the ply on the mainline, for the hover preview and the tests
+          b.dataset.i = String(it.plies[k] + 1);
           kids.push(b);
-        }
-        row.replaceChildren(...kids);
-        return row;
+          if (n.id === curId) kids.push(menuButton(n));
+        });
+        rowEl.replaceChildren(...kids);
+        return rowEl;
       });
 
     const cur = el.querySelector(".current");
@@ -4515,7 +5502,7 @@ import { createStore } from "./store.js";
     lastEl.hidden = !show;
     versusEl.hidden = show;
     if (!show) return;
-    const no = ChessReview ? ChessReview.moveNumber(at - 1, "w") : Math.ceil(at / 2);
+    const no = ChessReview.moveNumber(at - 1, "w");
     lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
   }
 
@@ -4705,6 +5692,8 @@ import { createStore } from "./store.js";
     // position — where it used to sit greyed out with a tooltip explaining
     // that it only exists off the live position
     avail(el("retry-here"), !isLive());
+    // 「回主线」 exists exactly while the line is a variation (Q2.3)
+    avail(el("line-row"), !inModal() && h.length > 0 && !onMainline());
   }
 
   /** Everything you can do to the game in progress. */
@@ -4837,7 +5826,12 @@ import { createStore } from "./store.js";
     store.subscribe("session", renderReplayBar);
     store.subscribe("session", renderGameActions);
     store.subscribe("session", setAnalyzeUI);
+    store.subscribe("game", syncLiveAnalysis);
+    store.subscribe("session", syncLiveAnalysis);
+    store.subscribe("ui", syncLiveAnalysis);
     store.subscribe("session", syncLearnUI);
+    store.subscribe("session", syncStudyUI);
+    store.subscribe("game", syncStudyUI);
     store.subscribe("session", syncPuzzleUI);
     store.subscribe("session", syncEditorUI);
     store.subscribe("session", syncDailyUI);
@@ -4877,9 +5871,9 @@ import { createStore } from "./store.js";
    * business rebuilding the settings panel each time.
    */
   function sync() {
-    store.commit("game", "sync");
-    store.commit("session", "sync");
-    store.commit("ui", "sync");
+    // one pass over the union of the three listener sets: a view that hears
+    // about game and session and ui is told once, not three times (6.0)
+    store.commitAll(["game", "session", "ui"], "sync");
   }
 
   function syncSettingsUI() {
@@ -4891,6 +5885,22 @@ import { createStore } from "./store.js";
       sb.classList.toggle("active", store.ui.soundOn);
       sb.setAttribute("aria-pressed", store.ui.soundOn ? "true" : "false");
     }
+    const sw = (id, on) => {
+      const b = document.getElementById(id);
+      if (!b) return;
+      b.classList.toggle("active", !!on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    };
+    sw("opt-coords", store.ui.coordsOn);
+    sw("opt-blind", store.ui.blindfold);
+    sw("opt-follow", store.ui.followSystem);
+    document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
+    const vol = document.getElementById("opt-volume");
+    if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
+    const rowVol = document.getElementById("row-volume");
+    if (rowVol) rowVol.hidden = !store.ui.soundOn;
+    document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
+    document.querySelectorAll("#multipv-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.multipv) === store.ui.multipv));
     document.querySelectorAll("#mode-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.mode === store.session.mode);
     });
@@ -5024,14 +6034,21 @@ import { createStore } from "./store.js";
     return true;
   }
 
+  // explicit navigation takes the board back from whatever was previewing
   function setViewIndex(n) {
+    const was = store.game.viewIndex;
     store.game.viewIndex = Math.max(0, Math.min(n, sanHistory().length));
     store.game.selection = null;
-    // explicit navigation takes the board back from whatever was previewing
     clearPreview();
     BoardView.cancelAnim();
     syncAutoFlip();
     store.commit("game", "action");
+    // replay navigation says which move it stopped after; the start says so
+    // in words, since there is no move to name (v6-plan D5)
+    if (store.game.viewIndex !== was) {
+      const at = store.game.viewIndex;
+      announce(at === 0 ? t("live.start") : ChessReview.moveNumber(at - 1, "w") + (at % 2 ? ". " : "… ") + sanHistory()[at - 1]);
+    }
   }
 
   function goLive() { setViewIndex(sanHistory().length); }
@@ -5084,38 +6101,103 @@ import { createStore } from "./store.js";
     maybeEngineTurn();
   }
 
-  function onSquareClick(sq) {
-    if (store.session.editor) { editorClick(sq); return; }
-    if (store.session.mode === "learn") { learnClick(sq); return; }
-    if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
-    if (!isLive()) { toast(t("mm.goLiveFirst"), "fix"); return; }
-    if (naturalGameOver()) return;
-    if (store.game.flagFall) { toast(t("msg.over.flagged"), "fix"); return; }
-    if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
-    if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
-    if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
-    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return; // engine's move
-    const piece = game.get(sq);
-    if (store.game.selection && store.game.selection.targets.includes(sq)) {
-      const from = store.game.selection.sq;
-      const vmv = game.moves({ square: from, verbose: true }).find((m) => m.to === sq);
-      if (vmv && vmv.promotion) {
-        // cancelling keeps the selection so the player can pick another square
-        choosePromotion(game.turn()).then((p) => { if (p) playHumanMove(from, sq, p); });
-        return;
-      }
-      playHumanMove(from, sq, "q");
+  /**
+   * Where this piece could go if it were our turn: the position with the side
+   * to move flipped. Pseudo-legal on purpose — the real test happens when the
+   * engine has replied and the move is actually played or dropped.
+   */
+  function premoveTargets(sq) {
+    const f = game.fen().split(" ");
+    f[1] = store.session.humanColor;
+    f[3] = "-";
+    let g;
+    try { g = new Chess(f.join(" ")); } catch (_) { return []; }
+    if (!g.get(sq)) return [];
+    return g.moves({ square: sq, verbose: true }).map((m) => m.to);
+  }
+  function premoveClick(sq) {
+    const mine = game.get(sq);
+    if (store.game.selection && store.game.selection.premove && store.game.selection.targets.includes(sq)) {
+      store.session.premove = { from: store.game.selection.sq, to: sq };
+      store.game.selection = null;
+      toast(tf("msg.premove.set", [store.session.premove.from + "→" + sq]));
+      draw();
       return;
     }
-    if (piece && piece.color === game.turn()) {
-      selectSquare(sq, game.moves({ square: sq, verbose: true }).map((m) => m.to));
+    if (mine && mine.color === store.session.humanColor) {
+      const targets = premoveTargets(sq);
+      selectSquare(sq, targets);
+      if (store.game.selection) store.game.selection.premove = true;
+      return;
+    }
+    store.session.premove = null;
+    clearSelection();
+  }
+  /** After the engine's reply: play the queued move if it is still legal. */
+  function runPremove() {
+    const pm = store.session.premove;
+    store.session.premove = null;
+    if (!pm || appGameOver() || !isLive() || game.turn() !== store.session.humanColor) return;
+    const legal = game.moves({ verbose: true }).find((m) => m.from === pm.from && m.to === pm.to);
+    if (!legal) { toast(t("msg.premove.dropped"), "fix"); draw(); return; }
+    // on the next frame, so the reply is seen landing before the answer
+    requestAnimationFrame(() => {
+      if (!isLive() || game.turn() !== store.session.humanColor) return;
+      const still = game.moves({ verbose: true }).find((m) => m.from === pm.from && m.to === pm.to);
+      if (still) playHumanMove(pm.from, pm.to, "q");
+    });
+  }
+
+  function onSquareClick(sq) {
+    if (store.session.editor) { editorClick(sq); return; }
+    if (store.session.mode === "learn" && store.session.learn) { learnClick(sq); return; }
+    if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
+    // a plain click on an empty square, holding nothing, wipes the arrows and
+    // circles drawn on this position — Escape does not (v6-plan Q2.4)
+    if (!store.game.selection && !viewGame().get(sq) && hasNodeShapes()) {
+      setNodeShapes({ arrows: [], circles: [] });
+      return;
+    }
+    // Off the live position a move is a variation, wherever variations may
+    // be opened (Q2.3); in a live engine game the replay stays read-only.
+    const branching = !isLive();
+    if (branching && !canBranchHere()) { toast(t("mm.goLiveFirst"), "fix"); return; }
+    if (!branching) {
+      if (naturalGameOver()) return;
+      if (store.game.flagFall) { toast(t("msg.over.flagged"), "fix"); return; }
+      if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
+      if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
+      if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
+      if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) {
+        // engine's move: a click now is a premove, played the instant the
+        // reply lands if it is still legal then (v6-plan Q2.8)
+        if (store.session.engineThinking) premoveClick(sq);
+        return;
+      }
+    }
+    const g = branching ? viewGame() : game;
+    const play = branching ? playVariationMove : playHumanMove;
+    const piece = g.get(sq);
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
+      const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
+      if (vmv && vmv.promotion) {
+        // cancelling keeps the selection so the player can pick another square
+        choosePromotion(g.turn()).then((p) => { if (p) play(from, sq, p); });
+        return;
+      }
+      play(from, sq, "q");
+      return;
+    }
+    if (piece && piece.color === g.turn()) {
+      selectSquare(sq, g.moves({ square: sq, verbose: true }).map((m) => m.to));
       return;
     }
     clearSelection();
   }
 
   function undo() {
-    if (store.session.mode === "learn") { learnUndo(); return; }
+    if (store.session.mode === "learn" && store.session.learn) { learnUndo(); return; }
     if (!sanHistory().length || ruleTerminated()) return;
     if (!isLive()) { goLive(); return; }
     invalidateEngine();
@@ -5143,6 +6225,7 @@ import { createStore } from "./store.js";
     gameReset();
     store.game.selection = null;
     store.game.viewIndex = 0;
+    store.game.imported = false;
     store.game.resigned = null;
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
@@ -5169,12 +6252,13 @@ import { createStore } from "./store.js";
         { ok: t("act.retryHere"), cancel: t("act.cancel") }))) {
       return;
     }
-    const h = sanHistory().slice(0, keep);
-    invalidateEngine();
-    resetGameToStart();
-    for (const san of h) gameMove(san);
+    // the line is cut at the cursor, not the tree: what was played from here
+    // stays as a variation, and the next move played becomes the mainline at
+    // this node (treeFollow) — 重下 keeps the game it replaces (Q2.3)
+    if (store.ui.preview) clearPreview();
+    if (!switchLine(store.game.line.slice(0, keep + 1))) return;
     store.game.selection = null;
-    store.game.viewIndex = h.length;
+    store.game.viewIndex = keep;
     // continuing a finished game (flag / resignation) gets fresh clocks
     if (ruleTerminated()) resetClocks();
     store.game.resigned = null;
@@ -5221,7 +6305,7 @@ import { createStore } from "./store.js";
     store.game.recordedId = id;
     s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending });
     if (s.games.length > 500) s.games = s.games.slice(-500);
-    Persist.setJson("stats", s);
+    saveStats(s);
     renderStats();
     checkNewAchievements();
     offerReview(); // resignation and flag-fall end a game just as much as mate
@@ -5315,7 +6399,7 @@ import { createStore } from "./store.js";
     if (engineCp != null && engineCp < 60) {
       acceptDraw();
     } else {
-      sync();
+      store.commit("session", "sync");
       toast(t("msg.draw.offerDeclined"));
     }
   }
@@ -5364,17 +6448,26 @@ import { createStore } from "./store.js";
     return "*";
   }
 
+  /** Read the [Result] tag of the loaded game into the terminal flags. */
+  function adoptHeaderResult() {
+    const r = (game.header() || {}).Result;
+    if (!r || r === "*" || naturalGameOver()) return;
+    if (r === "1-0" || r === "0-1") store.game.resigned = r === "1-0" ? "b" : "w";
+    else if (r === "1/2-1/2") store.game.drawAgreed = true;
+  }
+
+  // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
+  // object that predated the 1.19 "casual" rung and never grew one, so a
+  // casual game exported as "Stockfish 18 (casual)" — the raw id leaking into
+  // a file other programs read. The self-check now requires an entry here for
+  // every rung, so the next tier cannot slip through the same way.
+  const DIFF_EN = {
+    beginner: "Beginner", casual: "Casual", easy: "Easy",
+    normal: "Normal", hard: "Hard", extreme: "Max",
+  };
+
   /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
   function pgnForExport() {
-    // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
-    // object that predated the 1.19 "casual" rung and never grew one, so a
-    // casual game exported as "Stockfish 18 (casual)" — the raw id leaking into
-    // a file other programs read. The self-check now requires an entry here for
-    // every rung, so the next tier cannot slip through the same way.
-    const DIFF_EN = {
-      beginner: "Beginner", casual: "Casual", easy: "Easy",
-      normal: "Normal", hard: "Hard", extreme: "Max",
-    };
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
     const engineName = "Stockfish 18 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
@@ -5397,10 +6490,18 @@ import { createStore } from "./store.js";
     }
     const sf = startFen();
     if (sf) tagPairs.push(["SetUp", "1"], ["FEN", sf]);
+    // the tree writes the file: variations, comments, NAGs and shapes go out
+    // as they came in, and the result token once (v6-plan Q2.2). The chess.js
+    // path below is the fallback for a tree that fell out of step.
+    if (treeInStep()) return ChessPgnParser.serializePgn(ChessTree.toPgnGame(store.game.tree, tagPairs));
     const tags = tagPairs.map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
     // game.pgn() may itself carry SetUp/FEN headers — keep only its movetext,
     // wrapped to the PGN-recommended 80 columns
-    const tokens = (game.pgn().split("\n\n").pop() + " " + result).split(/\s+/).filter(Boolean);
+    // chess.js already ends the movetext with the result token when the
+    // header carries one (an imported game does) — strip it, so the token is
+    // written exactly once, and by us (v6-plan D1)
+    const movetext = ChessPgn.stripResult(game.pgn().split("\n\n").pop());
+    const tokens = (movetext + " " + result).split(/\s+/).filter(Boolean);
     const lines = [];
     let line = "";
     for (const tk of tokens) {
@@ -5409,6 +6510,20 @@ import { createStore } from "./store.js";
     }
     if (line) lines.push(line);
     return tags + "\n\n" + lines.join("\n") + "\n";
+  }
+
+  /** Does the tree still hold the line chess.js is standing on? */
+  function treeInStep() {
+    const tree = store.game.tree;
+    if (!tree || tree.startFen !== baseGame().fen()) return false;
+    const line = store.game.line;
+    const h = sanHistory();
+    if (line.length !== h.length + 1) return false;
+    for (let i = 0; i < h.length; i++) {
+      const n = ChessTree.nodeAt(tree, line[i + 1]);
+      if (!n || n.san !== h[i]) return false;
+    }
+    return true;
   }
 
   function pgnFileName() {
@@ -5453,27 +6568,33 @@ import { createStore } from "./store.js";
    */
   async function exportTextFallback(err, text) {
     if (!Host.hasZero() || !err || err.name === Host.NO_FILE_DIALOG) return false;
-    await copyText(text, t("msg.export.bridgeCopied"));
+    // the shell refusing a write because the file is too big is not the same
+    // failure as the shell having no dialog, and said so wrongly before this fix
+    const tooBig = err.name === Host.FILE_TOO_LARGE || /InvalidRequest|too ?large/i.test(String(err && err.message));
+    await copyText(text, t(tooBig ? "msg.export.tooLargeCopied" : "msg.export.bridgeCopied"));
     return true;
   }
 
-  async function downloadPgn() {
-    if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
-    const pgn = pgnForExport();
-    const name = pgnFileName();
+  /**
+   * 6.0: one text export, not two copies of it (v6-plan D9). The native
+   * dialog first, the browser download second, the clipboard last — the three
+   * fallbacks were written out twice, once for PGN and once for the learning
+   * file, and differed only in MIME type and title.
+   */
+  async function exportText(name, text, mime, title, recent) {
     if (Host.hasZero()) {
       try {
-        const path = await Host.saveFileDialog({ title: t("dlg.exportPgn"), defaultName: name });
+        const path = await Host.saveFileDialog({ title, defaultName: name });
         if (path == null) { toast(t("msg.export.cancelled")); return; }
-        await Host.writeTextFile(path, pgn);
+        await Host.writeTextFile(path, text);
         const revealed = await Host.revealPath(path);
-        Host.addRecentDocument(path);
+        if (recent) Host.addRecentDocument(path);
         savedToast(name, path, revealed);
         return;
-      } catch (err) { if (await exportTextFallback(err, pgn)) return; }
+      } catch (err) { if (await exportTextFallback(err, text)) return; }
     }
     try {
-      const blob = new Blob([pgn], { type: "application/x-chess-pgn" });
+      const blob = new Blob([text], { type: mime });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = name;
@@ -5481,8 +6602,13 @@ import { createStore } from "./store.js";
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
     } catch (_) {
-      copyText(pgn, t("msg.export.restrictedCopied"));
+      copyText(text, t("msg.export.restrictedCopied"));
     }
+  }
+
+  async function downloadPgn() {
+    if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
+    await exportText(pgnFileName(), pgnForExport(), "application/x-chess-pgn", t("dlg.exportPgn"), true);
   }
 
   // --- taking the review away ---------------------------------------------
@@ -5492,182 +6618,10 @@ import { createStore } from "./store.js";
   // A picture carries the conclusion.
 
   /** Draw the finished review onto an offscreen canvas. @returns {HTMLCanvasElement|null} */
-  /**
-   * The exported review image.
-   *
-   * Three things this is not allowed to be, each of which it was:
-   *
-   * **Theme-coloured.** It used to paint on `--card` — a 3–4% white overlay in
-   * the wood and night themes — with `--text` on top. Exported from either, the
-   * PNG is near-white text on near-white, and dropping it into any document
-   * with a white background produced a blank rectangle. An exported file leaves
-   * the app; it cannot inherit the app's assumptions about what is behind it.
-   * So the palette here is opaque, fixed, and the same from all four themes.
-   * 缺陷 2.
-   *
-   * **Written for the screen.** The turning-point line ended "—— 点此跳转",
-   * true of the panel and nonsense in a file, and it was removed by a regex
-   * that only worked because Chinese and Japanese use a full-width dash: the
-   * English build shipped "tap to jump" printed on the image. Two keys now, no
-   * regex. 缺陷 5.
-   *
-   * **Unmeasured.** Nine fillText calls, no measureText, no wrapping, on a
-   * fixed 820px canvas. The Japanese side line runs about a third longer than
-   * the Chinese one, and over-long text did not ellipsize — it left the canvas
-   * and was gone. 缺陷 21.
-   */
-  const REPORT_FONT = "system-ui, -apple-system, 'Helvetica Neue', 'PingFang SC', 'Hiragino Kaku Gothic ProN', sans-serif";
-  /**
-   * Fixed, opaque, and nothing to do with the interface theme.
-   *
-   * Light, because a shared image lands on a white page far more often than a
-   * dark one, and because these values can then be checked for contrast once
-   * rather than four times.
-   */
-  const REPORT_INK = {
-    bg: "#fbfaf7", fg: "#1b1a17", muted: "#6b675e",
-    accent: "#8a5a1e", line: "#d9d4c8",
-  };
-
+  // the report image lives in report.js; it reads the app through this bag
   function renderReportCanvas() {
-    const a = analysisFor();
-    const R = ChessReview;
-    if (!a || !R) return null;
-    const first = startFen() && startFen().split(" ")[1] === "b" ? "b" : "w";
-    const sum = R.summarize(a.scalars, sanHistory(), first);
-    if (!sum) return null;
-
-    const S = 2; // fixed scale: the file should not depend on the player's screen
-    const W = 900, H = 520;
-    const cv = document.createElement("canvas");
-    cv.width = W * S; cv.height = H * S;
-    const ctx = cv.getContext("2d");
-    ctx.scale(S, S);
-    const { bg, fg, muted, accent, line } = REPORT_INK;
-    const font = (spec) => { ctx.font = spec + " " + REPORT_FONT; };
-
-    /**
-     * Draw text that is guaranteed to be inside the image.
-     *
-     * Wraps at `maxW` and, if it still does not fit in `maxLines`, ends the
-     * last line with an ellipsis. Returns the y after the last line, so the
-     * caller can lay out what comes next instead of assuming a height.
-     */
-    function text(str, x, y, maxW, maxLines, lh) {
-      const words = String(str).split(/(\s+)/);
-      const lines = [];
-      let cur = "";
-      for (const w of words) {
-        const next = cur + w;
-        // CJK has no spaces to break on, so fall back to breaking per character
-        if (ctx.measureText(next).width <= maxW || !cur) { cur = next; continue; }
-        lines.push(cur.trimEnd());
-        cur = w.trimStart();
-      }
-      if (cur) lines.push(cur.trimEnd());
-      const out = [];
-      for (const l of lines) {
-        if (ctx.measureText(l).width <= maxW) { out.push(l); continue; }
-        let piece = "";
-        for (const ch of l) {
-          if (ctx.measureText(piece + ch).width > maxW) { out.push(piece); piece = ch; }
-          else piece += ch;
-        }
-        if (piece) out.push(piece);
-      }
-      const shown = out.slice(0, maxLines || out.length);
-      if (out.length > shown.length && shown.length) {
-        let last = shown[shown.length - 1];
-        while (last && ctx.measureText(last + "…").width > maxW) last = last.slice(0, -1);
-        shown[shown.length - 1] = last + "…";
-      }
-      shown.forEach((l, i) => ctx.fillText(l, x, y + i * (lh || 20)));
-      return y + shown.length * (lh || 20);
-    }
-
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = fg;
-    font("600 26px");
-    ctx.fillText(t("rv.title"), 40, 56);
-
-    font("15px");
-    ctx.fillStyle = muted;
-    const opening = openingFor(sanHistory().length);
-    const head = [opening ? openingName(opening[1]) : null, statusText(),
-      tf("mm.plies", [sanHistory().length])].filter(Boolean).join("  ·  ");
-    text(head, 40, 84, W - 80, 2, 20);
-
-    // one line of context: which level, which colour, when
-    font("13px");
-    const when = new Date().toISOString().slice(0, 10);
-    const ctxLine = [DIFF_NAMES[store.session.difficulty] || store.session.difficulty,
-      t(store.session.humanColor === "w" ? "color.white" : "color.black"), when]
-      .filter(Boolean).join("  ·  ");
-    ctx.fillStyle = muted;
-    text(ctxLine, 40, 106, W - 80, 1, 18);
-
-    // the curve, same shape and cut-off as the one on screen
-    const cx0 = 40, cy0 = 130, cw = W - 80, ch = 150;
-    ctx.strokeStyle = line; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx0, cy0 + ch / 2); ctx.lineTo(cx0 + cw, cy0 + ch / 2); ctx.stroke();
-    const n = a.scalars.length - 1, CAP = 500;
-    const JC = judgeColours();
-    const px = (i) => (n ? cx0 + (i / n) * cw : cx0 + cw / 2);
-    const py = (sv) => cy0 + ch / 2 - (Math.max(-CAP, Math.min(CAP, sv)) / CAP) * (ch / 2 - 4);
-    ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath();
-    let pen = false;
-    for (let i = 0; i <= n; i++) {
-      const sv = a.scalars[i];
-      if (sv == null) { pen = false; continue; }
-      if (pen) ctx.lineTo(px(i), py(sv)); else { ctx.moveTo(px(i), py(sv)); pen = true; }
-    }
-    ctx.stroke();
-    for (let i = 0; i < n; i++) {
-      if (!R.isMistake(a.tags[i]) || a.tags[i] === "?!") continue;
-      const sv = a.scalars[i + 1];
-      if (sv == null) continue;
-      ctx.fillStyle = a.tags[i] === "??" ? JC.bad : JC.mid;
-      ctx.beginPath(); ctx.arc(px(i + 1), py(sv), 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-
-    // the numbers, one column per side — each column measured, so the longer
-    // Japanese line wraps inside its column instead of into the other one
-    const rowY = cy0 + ch + 46;
-    const colW = cw / 2 - 20;
-    for (const [k, side] of [[0, "w"], [1, "b"]]) {
-      const x = 40 + k * (cw / 2);
-      ctx.fillStyle = fg;
-      font("600 15px");
-      ctx.fillText(sideName(side), x, rowY);
-      // the same three rows the panel shows, from the same helper: label at the
-      // column's left edge, value at its right, so the two columns read as one
-      // table rather than two paragraphs
-      font("14px");
-      sideRows(sum, side).forEach(([label, value], i) => {
-        const y = rowY + 24 + i * 22;
-        // both halves through text(): it is the only thing here that measures
-        // before it draws, and a label that outgrew its half would otherwise
-        // run in under the number
-        ctx.textAlign = "right";
-        ctx.fillStyle = fg;
-        text(value, x + colW, y, colW * 0.45, 1, 22);
-        ctx.textAlign = "left";
-        ctx.fillStyle = muted;
-        text(label, x, y, colW * 0.5, 1, 22);
-      });
-    }
-    if (sum.worst) {
-      font("14px");
-      ctx.fillStyle = accent;
-      // the Plain key, not the panel's line with its "tap to jump" tail
-      text(tf("rv.turningPointPlain", [sum.worst.moveNo,
-        sideName(sum.worst.side), sum.worst.san,
-        (sum.worst.loss / 100).toFixed(1)]), 40, rowY + 112, cw, 2, 20);
-    }
-    font("12px");
-    ctx.fillStyle = muted;
-    ctx.fillText(t("brand"), 40, H - 24);
-    return cv;
+    return ChessReport.render({ t, tf, sideName, statusText, openingFor, sanHistory, startFen,
+      analysisFor, judgeColours, sideRows, DIFF_NAMES, store, ChessReview });
   }
 
   /** Base64 payload of a canvas PNG, without the data: prefix. */
@@ -5749,7 +6703,7 @@ import { createStore } from "./store.js";
     }
     setPanelOpen(true);
     saveSettings();
-    sync();
+    store.commit("session", "sync");
     if (choice !== 0) maybeEngineTurn();
   }
 
@@ -5804,7 +6758,9 @@ import { createStore } from "./store.js";
     if (!text0) { toast(t("msg.import.empty"), "fix"); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
     // old behaviour) silently threw away everything before it.
-    const games = ChessPgn ? ChessPgn.splitGames(text0) : [text0];
+    let games;
+    try { games = ChessPgnParser.splitGames(text0); }
+    catch (_) { games = ChessPgn.splitGames(text0); }
     if (games.length > 1) {
       const items = games.map((g, i) => {
         const s = ChessPgn.summary(g);
@@ -5822,13 +6778,22 @@ import { createStore } from "./store.js";
         !(await confirmNative(ask.msg, ask.title, { ok: ask.ok, cancel: t("act.cancel") }))) {
       return false;
     }
-    const probe = new Chess();
-    const parsed = probe.load_pgn(text0, { sloppy: true }) && probe.history().length > 0;
+    // the parser is the reader now (v6-plan Q2.2); chess.js's load_pgn only
+    // gets a look at text the parser cannot place
+    let parsed = false;
+    try {
+      const g = ChessPgnParser.parsePgn(text0).games[0];
+      parsed = !!g && g.root.children.length > 0;
+    } catch (_) { parsed = false; }
+    if (!parsed) {
+      const probe = new Chess();
+      parsed = probe.load_pgn(text0, { sloppy: true }) && probe.history().length > 0;
+    }
     // A game exported before its first move is legal PGN with no movetext, and
     // it is what a save slot or an export holds for a study position. chess.js
     // will not parse that shape, so fall back to its [SetUp]/[FEN] tags rather
     // than call the file malformed.
-    const importFen = parsed ? null : (ChessPgn ? ChessPgn.startFen(text0) : null);
+    const importFen = parsed ? null : ChessPgn.startFen(text0);
     if (!parsed && (!importFen || !new Chess().validate_fen(importFen).valid)) {
       toast(t("msg.import.badPgn"), "fault");
       return false;
@@ -5843,9 +6808,15 @@ import { createStore } from "./store.js";
     }
     store.game.selection = null;
     store.game.viewIndex = sanHistory().length;
+    store.game.imported = true;
     store.game.resigned = null;
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
+    // the file's [Result] survives the import as a terminal state: a decisive
+    // result that the board does not explain is a resignation, a draw that
+    // the rules do not explain is an agreed one. Before 6.0 the result was
+    // dropped and the export wrote `*` under a game the file called 1-0.
+    adoptHeaderResult();
     resetClocks();
     syncAutoFlip();
     store.commit("game", "action");
@@ -6064,6 +7035,7 @@ import { createStore } from "./store.js";
     game.header("SetUp", "1", "FEN", fen);
     store.game.selection = null;
     store.game.viewIndex = 0;
+    store.game.imported = false; // a set-up position is a new live game
     store.game.resigned = null;
     store.game.drawAgreed = false;
     store.game.drawClaimed = null;
@@ -6134,11 +7106,8 @@ import { createStore } from "./store.js";
   const SLOT_COUNT = 5;
 
   function loadSlots() {
-    try {
-      const s = JSON.parse(Persist.get("slots") || "null");
-      if (s && Array.isArray(s.slots)) return s;
-    } catch (_) {}
-    return { v: 1, slots: new Array(SLOT_COUNT).fill(null) };
+    const s = Persist.read("slots").value;
+    return s || { v: 1, slots: new Array(SLOT_COUNT).fill(null) };
   }
   function saveSlots(s) {
     Persist.setJson("slots", s);
@@ -6176,7 +7145,7 @@ import { createStore } from "./store.js";
     const P = ChessPgn;
     const s = P ? P.summary(slot.pgn) : null;
     const when = slot.savedAt
-      ? new Date(slot.savedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })
+      ? I18n.fmtDate(slot.savedAt, { dateStyle: "short", timeStyle: "short" })
       : "";
     const moves = s && s.plies ? moveCount(Math.ceil(s.plies / 2)) : "";
     return [moves, when].filter(Boolean).join(" · ");
@@ -6427,6 +7396,7 @@ import { createStore } from "./store.js";
     if (!I18n) return;
     I18n.apply(document);
     document.documentElement.setAttribute("lang", store.ui.langId);
+    document.title = t("app.title");
     const seg = document.getElementById("lang-seg");
     if (seg) {
       seg.replaceChildren();
@@ -6487,7 +7457,14 @@ import { createStore } from "./store.js";
       const p = store.session.puzzle.g.get(sq);
       return !!p && p.color === "w" && store.session.puzzle.g.turn() === "w";
     }
-    if (!isLive() || appGameOver()) return false;
+    if (!isLive()) {
+      // replaying: a piece can be picked up wherever a variation may open
+      if (!canBranchHere()) return false;
+      const g = viewGame();
+      const p = g.get(sq);
+      return !!p && p.color === g.turn();
+    }
+    if (appGameOver()) return false;
     if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return false;
     const p = game.get(sq);
     return !!p && p.color === game.turn();
@@ -6497,8 +7474,10 @@ import { createStore } from "./store.js";
 
   // right-click clears a square in the editor (no need to switch to the eraser)
   canvas.addEventListener("contextmenu", (ev) => {
-    if (!store.session.editor) return;
+    // the right button draws on the board (Q2.4) or clears an editor square;
+    // the browser's own menu never belongs here
     ev.preventDefault();
+    if (!store.session.editor) return;
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
     if (!sq) return;
@@ -6511,6 +7490,17 @@ import { createStore } from "./store.js";
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
     if (!sq) return;
+    // Right button: an arrow (drag) or a circle (click) on this position,
+    // lichess's gesture with lichess's colours — Shift red, Alt blue, both
+    // yellow, plain green. Only on the game board: the editor's right click
+    // clears a square, and the trainers annotate nothing (Q2.4).
+    if (ev.button === 2) {
+      if (inModal()) return;
+      try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
+      store.ui.shaping = { from: sq, over: sq, color: shapeColor(ev) };
+      return;
+    }
+    if (ev.button !== 0) return;
     try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
     onSquareClick(sq);
     // in the editor a press starts a paint stroke: placing 16 pawns one click
@@ -6521,6 +7511,11 @@ import { createStore } from "./store.js";
   });
   canvas.addEventListener("pointermove", (ev) => {
     const p = canvasPoint(ev);
+    if (store.ui.shaping) {
+      const sq = BoardView.cellAt(p.x, p.y);
+      if (sq && sq !== store.ui.shaping.over) { store.ui.shaping.over = sq; draw(); }
+      return;
+    }
     if (store.ui.painting) {
       const sq = BoardView.cellAt(p.x, p.y);
       if (sq && sq !== store.ui.painting) { store.ui.painting = sq; editorClick(sq); }
@@ -6541,6 +7536,15 @@ import { createStore } from "./store.js";
   });
   canvas.addEventListener("pointerup", (ev) => {
     store.ui.painting = null;
+    if (store.ui.shaping) {
+      const d = store.ui.shaping;
+      store.ui.shaping = null;
+      const p = canvasPoint(ev);
+      const sq = BoardView.cellAt(p.x, p.y) || d.over;
+      if (!sq || sq === d.from) toggleCircle(d.from, d.color);
+      else toggleArrow(d.from, sq, d.color);
+      return;
+    }
     const wasDrag = store.ui.dragging;
     store.ui.dragging = null;
     canvas.style.cursor = "default";
@@ -6566,6 +7570,7 @@ import { createStore } from "./store.js";
   });
   canvas.addEventListener("pointercancel", () => {
     store.ui.painting = null;
+    store.ui.shaping = null;
     store.ui.dragging = null;
     canvas.style.cursor = "default";
     draw();
@@ -6688,7 +7693,7 @@ import { createStore } from "./store.js";
     store.game.flipped = want;
     saveSettings();
     draw();
-    sync();
+    store.commit("game", "sync");
     toast(want ? t("msg.view.black") : t("msg.view.white"));
   }
 
@@ -6736,18 +7741,176 @@ import { createStore } from "./store.js";
   const mlEl = document.getElementById("move-list");
   if (mlEl) {
     mlEl.onclick = (ev) => {
-      const b = ev.target.closest("button[data-i]");
-      if (b) setViewIndex(Number(b.dataset.i));
+      const b = ev.target.closest("button[data-node]");
+      if (!b) return;
+      if (b.dataset.menu) { openMoveMenu(Number(b.dataset.node), b); return; }
+      goToNode(Number(b.dataset.node));
     };
+    // the right button opens the same menu on any move (Q2.1)
+    mlEl.addEventListener("contextmenu", (ev) => {
+      const b = ev.target.closest("button[data-node]");
+      if (!b) return;
+      ev.preventDefault();
+      openMoveMenu(Number(b.dataset.node), b, ev.clientX, ev.clientY);
+    });
     // reading is touching: sweep the list and the board follows; leave and
     // the committed position comes straight back. Never while dragging a
     // piece — the hand on the board outranks the hand on the list.
     mlEl.addEventListener("mouseover", (ev) => {
-      const b = ev.target.closest("button[data-i]");
+      const b = ev.target.closest("button[data-node]");
       if (!b || store.ui.dragging || store.ui.previewPinned) return;
-      previewAt(Number(b.dataset.i));
+      if (b.dataset.i) previewAt(Number(b.dataset.i));
+      else previewNode(Number(b.dataset.node)); // a variation move, by its node
     });
     mlEl.addEventListener("mouseleave", () => setBoardPreview(null));
+  }
+
+  // --- the move menu: promote, delete, annotate (v6-plan Q2.1) -------------
+  const moveMenuEl = document.getElementById("move-menu");
+  function isMainlineNode(id) {
+    const path = ChessTree.pathTo(store.game.tree, id);
+    let parent = store.game.tree.root;
+    for (const n of path) { if (parent.children[0] !== n) return false; parent = n; }
+    return true;
+  }
+  function openMoveMenu(id, anchor, x, y) {
+    if (!moveMenuEl || !ChessTree.nodeAt(store.game.tree, id)) return;
+    store.ui.moveMenu = id;
+    // already the mainline: nothing to promote, and a menu item that does
+    // nothing is a control that looks available and is not
+    avail(document.getElementById("mm-promote"), !isMainlineNode(id));
+    moveMenuEl.hidden = false;
+    // beside the pointer when it came from one, under the handle otherwise;
+    // clamped so it never opens off the window
+    const r = anchor.getBoundingClientRect();
+    const left = x != null ? x : r.left;
+    const top = y != null ? y : r.bottom + 2;
+    const mw = moveMenuEl.offsetWidth || 160;
+    const mh = moveMenuEl.offsetHeight || 100;
+    moveMenuEl.style.left = Math.max(4, Math.min(left, window.innerWidth - mw - 4)) + "px";
+    moveMenuEl.style.top = Math.max(4, Math.min(top, window.innerHeight - mh - 4)) + "px";
+    const first = moveMenuEl.querySelector("button:not([hidden])");
+    if (first) first.focus();
+  }
+  function closeMoveMenu() {
+    if (!moveMenuEl || moveMenuEl.hidden) return false;
+    const inside = moveMenuEl.contains(document.activeElement);
+    moveMenuEl.hidden = true;
+    store.ui.moveMenu = null;
+    if (inside) {
+      const back = document.querySelector("#move-list .mlmenu") || document.querySelector("#move-list .current");
+      if (back) back.focus();
+    }
+    return true;
+  }
+  if (moveMenuEl) {
+    // the menu is a popover, not a dialog: a press anywhere else dismisses it
+    document.addEventListener("pointerdown", (ev) => {
+      if (!moveMenuEl.hidden && !moveMenuEl.contains(ev.target)) closeMoveMenu();
+    }, true);
+    moveMenuEl.addEventListener("keydown", (ev) => {
+      const items = [...moveMenuEl.querySelectorAll("button:not([hidden])")];
+      const k = items.indexOf(document.activeElement);
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        const next = items[(k + (ev.key === "ArrowDown" ? 1 : items.length - 1)) % items.length];
+        if (next) next.focus();
+      } else if (ev.key === "Tab") {
+        // a popover has no focus trap; leaving it closes it
+        closeMoveMenu();
+      }
+    });
+    document.getElementById("mm-promote").onclick = () => {
+      const id = store.ui.moveMenu;
+      closeMoveMenu();
+      if (id == null) return;
+      ChessTree.promoteToMain(store.game.tree, id);
+      store.commit("game", "promote");
+      saveGame();
+      toast(t("msg.variation.promoted"));
+    };
+    document.getElementById("mm-delete").onclick = async () => {
+      const id = store.ui.moveMenu;
+      closeMoveMenu();
+      const node = id != null ? ChessTree.nodeAt(store.game.tree, id) : null;
+      if (!node || node.id === 0) return;
+      if (!(await confirmNative(tf("dlg.deleteBranch", [node.san]), t("ml.delete"),
+        { ok: t("ml.delete"), cancel: t("act.cancel") }))) return;
+      const parent = ChessTree.deleteNode(store.game.tree, id);
+      if (store.game.line.includes(id)) {
+        // the cursor stood on the deleted line: back to where it forked
+        const ids = lineThrough(parent.id);
+        const depth = ids.indexOf(parent.id);
+        if (switchLine(ids)) store.game.viewIndex = Math.min(depth, ids.length - 1);
+        store.commit("game", "action");
+      } else {
+        store.commit("game", "delete");
+      }
+      saveGame();
+      toast(t("msg.variation.deleted"));
+    };
+    document.getElementById("mm-note").onclick = () => {
+      const id = store.ui.moveMenu;
+      closeMoveMenu();
+      if (id != null) openNoteModal(id);
+    };
+  }
+
+  // --- the comment dialog --------------------------------------------------
+  const noteModal = document.getElementById("note-modal");
+  function openNoteModal(id) {
+    const node = ChessTree.nodeAt(store.game.tree, id);
+    if (!noteModal || !node) return;
+    store.ui.noteFor = id;
+    const input = document.getElementById("note-input");
+    input.value = node.comment || "";
+    const title = document.getElementById("note-title");
+    title.textContent = node.san ? tf("note.titleFor", [node.san]) : t("note.title");
+    Dlg.open(noteModal, input);
+  }
+  function closeNoteModal() { store.ui.noteFor = null; Dlg.close(noteModal); }
+  function submitNote() {
+    const id = store.ui.noteFor;
+    const input = document.getElementById("note-input");
+    const text = input ? input.value : "";
+    closeNoteModal();
+    if (id == null || !ChessTree.nodeAt(store.game.tree, id)) return;
+    ChessTree.setComment(store.game.tree, id, text);
+    store.commit("game", "comment");
+    saveGame();
+  }
+  if (noteModal) {
+    document.getElementById("note-save").onclick = submitNote;
+    document.getElementById("note-cancel").onclick = closeNoteModal;
+    // Ctrl/⌘+Enter saves from inside the textarea, where Enter is a newline
+    document.getElementById("note-input").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); submitNote(); }
+    });
+  }
+
+  /**
+   * An engine line written into the tree (v6-plan Q2.3): each move a node
+   * under the one before, from the cursor. `upTo` caps the depth (a pinned
+   * preview writes what it showed); the cursor lands on the first move for
+   * a saved line and on the last for a preview.
+   */
+  function savePvAsVariation(sans, upTo, landOnLast) {
+    if (inModal() || !Array.isArray(sans) || !sans.length) return false;
+    const at = curNode();
+    if (!at) return false;
+    let node = at;
+    let first = null;
+    try {
+      for (const san of sans.slice(0, upTo == null ? sans.length : upTo)) {
+        node = ChessTree.addMove(store.game.tree, node.id, san);
+        if (!first) first = node;
+      }
+    } catch (_) { /* a stale line: keep what did play */ }
+    if (!first) { toast(t("msg.variation.stale"), "fix"); return false; }
+    clearPreview();
+    goToNode(landOnLast ? node.id : first.id);
+    toast(t("msg.variation.saved"));
+    return true;
   }
   const pvLineEl = document.getElementById("pv-line");
   if (pvLineEl) {
@@ -6774,7 +7937,11 @@ import { createStore } from "./store.js";
     // notation, to the report) while the position stays; Esc — the global
     // handler — or any navigation lets go. A click does the same as Enter.
     const pin = (b) => {
-      if (!previewPvChip(Number(b.dataset.k))) return;
+      const k = Number(b.dataset.k);
+      if (!previewPvChip(k)) return;
+      const a = analysisFor();
+      const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
+      store.ui.previewPv = pv ? pv.split(" ").slice(0, k + 1) : null;
       store.ui.previewPinned = true;
       renderPreviewBadge();
       announce(t("board.previewPv") + " · " + t("board.previewEsc"));
@@ -6786,11 +7953,16 @@ import { createStore } from "./store.js";
       if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pin(b); }
     });
   }
+  document.getElementById("preview-try").onclick = () => {
+    const sans = store.ui.previewPv;
+    if (sans) savePvAsVariation(sans, sans.length, true);
+  };
   document.getElementById("rep-start").onclick = () => setViewIndex(0);
   document.getElementById("rep-prev").onclick = () => setViewIndex(store.game.viewIndex - 1);
   document.getElementById("rep-next").onclick = () => setViewIndex(store.game.viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
   document.getElementById("rep-live").onclick = () => { goLive(); };
+  document.getElementById("back-main").onclick = () => { backToMain(); };
 
   document.getElementById("an-run").onclick = () => {
     if (store.session.analyzing) {
@@ -6801,6 +7973,13 @@ import { createStore } from "./store.js";
     analyzeGame(120);
   };
   document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
+  document.getElementById("an-live").onclick = () => {
+    store.session.liveOn = !store.session.liveOn;
+    if (store.session.liveOn && ChessEngine && !ChessEngine.isReady()) {
+      ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
+    }
+    store.commit("session", "sync");
+  };
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };
   const curveEl = document.getElementById("eval-curve");
   if (curveEl) {
@@ -7078,6 +8257,8 @@ import { createStore } from "./store.js";
   document.getElementById("theme-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-theme]");
     if (b) {
+      // choosing a theme by hand is the answer to "follow the system?"
+      store.ui.followSystem = false;
       applyTheme(b.dataset.theme);
     }
   };
@@ -7164,7 +8345,9 @@ import { createStore } from "./store.js";
   };
   document.getElementById("lesson-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
-    if (b && store.session.learn) startLesson(Number(b.dataset.i));
+    if (b && (store.session.learn || store.session.study)) startLesson(Number(b.dataset.i));
+    const cb = ev.target.closest("button[data-c]");
+    if (cb) startClassic(Number(cb.dataset.c));
   };
   document.getElementById("puzzle-cat-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-cat]");
@@ -7211,10 +8394,14 @@ import { createStore } from "./store.js";
       toast(tf("daily.begin", [p.steps.length]));
     }
     dailyJump(store.session.daily.steps[store.session.daily.i]);
-    sync();
+    store.commit("session", "sync");
   };
   document.getElementById("puzzle-smart").onclick = () => {
-    const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf);
+    // the rating rung only once a first answer has moved the rating — a fresh
+    // profile is still sent exploring
+    const rated = Array.isArray(store.session.puzzleState.rhist) && store.session.puzzleState.rhist.length > 0;
+    const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf,
+      puzzleRatingOf, rated ? ChessRating.pickRange(playerRating()) : null);
     if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
     store.session.puzzleState.cat = pick.cat;
     // same contract for the side segment: if the picker chose an opening line
@@ -7231,6 +8418,7 @@ import { createStore } from "./store.js";
     const idx = Math.max(0, list.findIndex((p) => p.id === pick.id));
     startPuzzleAt(pick.cat, idx);
     toast(pick.kind === "review" ? tf("pz.smart.review", [pick.due]) :
+          pick.kind === "rated" ? tf("pz.smart.rated", [pick.rating]) :
           pick.kind === "motif" ? tf("pz.smart.motif", [t("motif." + pick.motif)]) :
           pick.kind === "weak" ? tf("pz.smart.weak", [t("pz.cat." + pick.cat)]) :
           tf("pz.smart.explore", [t("pz.cat." + pick.cat)]));
@@ -7256,7 +8444,7 @@ import { createStore } from "./store.js";
     if (!b || b.dataset.diff === store.session.difficulty) return;
     store.session.difficulty = b.dataset.diff;
     saveSettings();
-    sync();
+    store.commit("session", "sync");
   };
   document.getElementById("diff-seg").onclick = onDiffClick;
   const diffEngineSeg = document.getElementById("diff-seg-engine");
@@ -7266,7 +8454,7 @@ import { createStore } from "./store.js";
     if (!b || b.dataset.persona === store.session.personaId) return;
     store.session.personaId = b.dataset.persona;
     saveSettings();
-    sync();
+    store.commit("session", "sync");
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
@@ -7287,6 +8475,11 @@ import { createStore } from "./store.js";
       store.ui.langId = I18n.setLang(b.dataset.lang);
       saveSettings();
       applyLanguage();
+      // the native menu is built at launch from a per-language table; the
+      // shell records the choice and applies it on the next start (Q1.6)
+      Host.setMenuLanguage(store.ui.langId.split("-")[0]).then((r) => {
+        if (r && r.restartRequired) toast(t("msg.menuLang.restart"));
+      }).catch(() => {});
     };
   }
   document.getElementById("opt-coach").onclick = () => {
@@ -7309,6 +8502,76 @@ import { createStore } from "./store.js";
     if (store.ui.soundOn) Audio2.playMove("w");
     toast(store.ui.soundOn ? t("msg.sound.on") : t("msg.sound.off"));
   };
+  // 6.0 (v6-plan Q2.8): volume, coordinates, blindfold
+  Audio2.setVolume(store.ui.volume / 100);
+  const volEl = document.getElementById("opt-volume");
+  if (volEl) {
+    volEl.oninput = () => {
+      store.ui.volume = Math.max(0, Math.min(100, Number(volEl.value) || 0));
+      Audio2.setVolume(store.ui.volume / 100);
+    };
+    // one save and one sample per release of the slider, not one per pixel
+    volEl.onchange = () => { saveSettings(); if (store.ui.soundOn) Audio2.playMove("w"); };
+  }
+  // 6.0 (v6-plan Q3.6): the theme follows the system's scheme while the
+  // switch is on — night for dark, day for light — and reacts live
+  const schemeMq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function applySystemScheme() {
+    if (!store.ui.followSystem || !schemeMq) return;
+    const want = schemeMq.matches ? "night" : "day";
+    if (store.ui.themeId !== want) applyTheme(want);
+  }
+  if (schemeMq && schemeMq.addEventListener) schemeMq.addEventListener("change", applySystemScheme);
+  document.getElementById("opt-follow").onclick = () => {
+    store.ui.followSystem = !store.ui.followSystem;
+    saveSettings();
+    syncSettingsUI();
+    applySystemScheme();
+  };
+  function applyTextSize() {
+    document.documentElement.setAttribute("data-text", store.ui.textSize);
+    // the board is sized from its container, which the type size can move
+    requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); drawEvalCurve(); });
+  }
+  document.getElementById("text-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-text]");
+    if (!b) return;
+    store.ui.textSize = b.dataset.text;
+    saveSettings();
+    syncSettingsUI();
+    applyTextSize();
+  };
+  document.getElementById("opt-coords").onclick = () => {
+    store.ui.coordsOn = !store.ui.coordsOn;
+    saveSettings();
+    syncSettingsUI();
+    draw();
+  };
+  document.getElementById("opt-blind").onclick = () => {
+    store.ui.blindfold = !store.ui.blindfold;
+    saveSettings();
+    syncSettingsUI();
+    draw();
+    toast(store.ui.blindfold ? t("msg.blind.on") : t("msg.blind.off"));
+  };
+  // 6.0 (v6-plan Q2.6): the engine knobs
+  if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash });
+  document.getElementById("hash-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-hash]");
+    if (!b) return;
+    store.ui.hash = Number(b.dataset.hash);
+    if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash });
+    saveSettings();
+    syncSettingsUI();
+  };
+  document.getElementById("multipv-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-multipv]");
+    if (!b) return;
+    store.ui.multipv = Number(b.dataset.multipv);
+    saveSettings();
+    syncSettingsUI();
+    setAnalyzeUI();
+  };
   // --- learning data: out as one file, back in as a merge (learning.js) ---
   const Learning = ChessLearning;
   function learningBag() {
@@ -7323,29 +8586,7 @@ import { createStore } from "./store.js";
   }
   async function exportLearning() {
     const doc = Learning.pack(learningBag(), Date.now());
-    const text = JSON.stringify(doc, null, 2);
-    const name = learningFileName();
-    if (Host.hasZero()) {
-      try {
-        const path = await Host.saveFileDialog({ title: t("dlg.exportLearning"), defaultName: name });
-        if (path == null) { toast(t("msg.export.cancelled")); return; }
-        await Host.writeTextFile(path, text);
-        const revealed = await Host.revealPath(path);
-        savedToast(name, path, revealed);
-        return;
-      } catch (err) { if (await exportTextFallback(err, text)) return; }
-    }
-    try {
-      const blob = new Blob([text], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
-    } catch (_) {
-      copyText(text, t("msg.export.restrictedCopied"));
-    }
+    await exportText(learningFileName(), JSON.stringify(doc, null, 2), "application/json", t("dlg.exportLearning"));
   }
   /** Merge a learning file into this machine's data and rebuild the views. */
   async function importLearningText(text) {
@@ -7359,12 +8600,11 @@ import { createStore } from "./store.js";
     if (merged.mines) store.session.mines = loadMines();
     if (merged.learn) store.session.learnState = loadLearnState();
     if (merged.puzzles) store.session.puzzleState = loadPuzzleState().state;
-    if (merged.progress) store.session.progress = Progress.coerce(JSON.parse(Persist.get("progress") || "null"));
-    if (merged.achievements) {
-      try { store.session.achSeen = new Set((JSON.parse(Persist.get("achievements") || "null") || {}).seen || []); } catch (_) {}
-    }
+    if (merged.progress) store.session.progress = Progress.coerce(Persist.read("progress", (v) => v).value);
+    if (merged.achievements) store.session.achSeen = loadAchSeen();
+    if (merged.stats) statsCache.v = null;
     renderStats();
-    sync();
+    store.commit("session", "sync");
     toast(tf("msg.learning.imported", [store.session.mines.length]));
   }
   async function importLearning() {
@@ -7400,6 +8640,115 @@ import { createStore } from "./store.js";
   document.getElementById("learning-export").onclick = () => { exportLearning(); };
   document.getElementById("learning-import").onclick = () => { importLearning(); };
 
+  // --- 6.0: the whole profile, out and back in (v6-plan Q1.1) --------------
+  // The learning export is a merge of the things nobody can download again.
+  // This is a copy of everything — the current game, the slots, the settings,
+  // the record — for moving to another machine or for keeping. Import is a
+  // replacement, and says so before the picker opens.
+  function allDataFileName() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return "chessboard-all-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
+  }
+  async function exportAllData() {
+    saveGame();
+    saveSettings();
+    await exportText(allDataFileName(), JSON.stringify(Persist.exportAll(), null, 2), "application/json", t("dlg.exportAll"));
+  }
+  async function importAllDataText(text) {
+    let doc = null;
+    try { doc = JSON.parse(text); } catch (_) { doc = null; }
+    if (!Persist.isProfileDoc(doc)) { toast(t("msg.allData.badFile"), "fix"); return; }
+    Persist.restoreAll(doc);
+    await Persist.flushMirror();
+    toast(t("msg.allData.imported"));
+    // every module holds a copy of what it read at startup; a reload is the
+    // one way to make all of them read the new profile
+    setTimeout(() => location.reload(), 900);
+  }
+  async function importAllData() {
+    if (!(await confirmNative(t("dlg.importAll"), t("act.allImport"),
+      { ok: t("act.allImport"), cancel: t("act.cancel"), danger: true }))) return;
+    if (Host.hasZero()) {
+      try {
+        const picked = await Host.openFileDialog({ title: t("dlg.importAll") });
+        const paths = Host.normalizePaths(picked);
+        if (!paths.length) return;
+        const text = await Host.readTextFile(paths[0]);
+        await importAllDataText(text);
+        return;
+      } catch (err) {
+        if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
+      }
+    }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => importAllDataText(String(reader.result || ""));
+      reader.readAsText(f);
+    };
+    input.click();
+  }
+  document.getElementById("alldata-export").onclick = () => { exportAllData(); };
+  document.getElementById("alldata-import").onclick = () => { importAllData(); };
+
+  // --- 6.0: about (v6-plan Q1.6) ---------------------------------------------
+  /** The version the bundle was built from; empty when run unbundled. */
+  const APP_VERSION = typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "";
+  const aboutModal = document.getElementById("about-modal");
+  /**
+   * A link the shell will not follow: app.zon denies external navigation on
+   * purpose (a chess app has no business opening the browser on its own), so
+   * the URL goes to the clipboard and the toast says so.
+   */
+  function offerLink(url) { copyText(url, t("msg.link.copied")); }
+  async function openAbout() {
+    if (!aboutModal) return;
+    document.getElementById("about-version").textContent = APP_VERSION || "—";
+    document.getElementById("about-license").textContent = t("about.licenseText");
+    document.getElementById("about-credits").textContent = t("about.creditsText");
+    document.getElementById("about-update").textContent = "";
+    const dataEl = document.getElementById("about-data");
+    dataEl.textContent = t("about.dataUnknown");
+    Dlg.open(aboutModal, document.getElementById("about-close"));
+    try {
+      const p = await Host.appdataPath();
+      if (p) dataEl.textContent = p;
+    } catch (_) { /* the default line already says there is no file */ }
+  }
+  /** "v6.0.0" vs "6.0.1": numeric, segment by segment. */
+  function newerVersion(tag, mine) {
+    const num = (v) => String(v || "").replace(/^v/, "").split(".").map((x) => parseInt(x, 10) || 0);
+    const a = num(tag), b = num(mine);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    }
+    return false;
+  }
+  async function checkUpdate() {
+    const out = document.getElementById("about-update");
+    if (!out) return;
+    out.textContent = "…";
+    let r = null;
+    try { r = await Host.checkUpdate(); } catch (_) { r = null; }
+    if (!r || r.error || !r.tag) { out.textContent = t("msg.update.failed"); return; }
+    if (newerVersion(r.tag, APP_VERSION)) {
+      out.textContent = tf("msg.update.available", [r.tag]);
+      offerLink(r.url || "https://github.com/hxddh/chessboard/releases/latest");
+    } else out.textContent = t("msg.update.latest");
+  }
+  if (aboutModal) {
+    document.getElementById("about-open").onclick = () => { if (!dialogOpen()) openAbout(); };
+    document.getElementById("about-close").onclick = () => Dlg.close(aboutModal);
+    document.getElementById("about-check").onclick = () => { checkUpdate(); };
+    document.getElementById("about-source").onclick = (ev) => offerLink(ev.currentTarget.dataset.url);
+    aboutModal.onclick = (ev) => { if (ev.target === aboutModal) Dlg.close(aboutModal); };
+  }
+
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
       { ok: t("dlg.clear"), cancel: t("act.cancel"), danger: true }))) return;
@@ -7407,6 +8756,8 @@ import { createStore } from "./store.js";
     // this button used to remove and not the eight somebody had to remember.
     // 缺陷 33.
     Persist.clearAll();
+    // …and the native mirror file, now, not on the next autosave (v6-plan Q1.1)
+    Persist.flushMirror();
     // the Dock / jump list is local data too: clearing the save and leaving a
     // list of this player's PGNs sitting in the system menu is not "cleared"
     Host.clearRecentDocuments();
@@ -7598,6 +8949,9 @@ import { createStore } from "./store.js";
    * it too.
    */
   function escapeKey() {
+    // the move menu is the smallest thing on screen that Escape can close
+    if (closeMoveMenu()) return true;
+    if (store.session.premove) { store.session.premove = null; draw(); return true; }
     // a selected piece is the most local thing there is to cancel
     if (store.game.selection && store.ui.boardFocused) {
       store.game.selection = null; announce(t("live.cleared")); draw(); return true;
@@ -7618,6 +8972,13 @@ import { createStore } from "./store.js";
     if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return true; }
     if (isPanelOpen()) { setPanelOpen(false); return true; }
     return false;
+  }
+
+  /** Is this element one that turns keystrokes into text? */
+  function isEditable(el) {
+    if (!el || el === document.body) return false;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
   }
 
   window.addEventListener("keydown", (ev) => {
@@ -7646,12 +9007,16 @@ import { createStore } from "./store.js";
     // none of it applies while one is open — see dialogOpen(). Escape is
     // handled above precisely because it is the one key that does apply.
     if (dialogOpen()) return;
+    // a letter typed into any text field is text, not a shortcut — the FEN
+    // box used to be the only field and guarded itself; the guard belongs
+    // here so the next field cannot forget it (v6-plan D8)
+    if (isEditable(ev.target)) return;
     const k = ev.key.toLowerCase();
     // Tab is not ours to take. Binding it to the panel meant focus could never
     // move anywhere by keyboard — the app had a full keyboard board cursor and
     // no way to reach any other control. The panel is on P instead.
     if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
-    if (store.session.mode === "learn") {
+    if (store.session.mode === "learn" && !store.session.study) {
       // replay / game shortcuts act on the main game — inert during lessons;
       // R retries the task, Z/H work in engine drills
       if (!store.session.learn || ev.metaKey || ev.ctrlKey) return;
@@ -7729,6 +9094,8 @@ import { createStore } from "./store.js";
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(confirmModal, () => finishConfirm(false));
     Dlg.register(keysModal, closeKeyHelp);
+    Dlg.register(noteModal, closeNoteModal);
+    Dlg.register(aboutModal, () => Dlg.close(aboutModal));
   }
   wireDialogs();
 
@@ -7745,6 +9112,8 @@ import { createStore } from "./store.js";
   // and on a first run, start in the system language rather than always Chinese
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
+  document.documentElement.setAttribute("data-text", store.ui.textSize);
+  if (store.ui.followSystem && schemeMq) store.ui.themeId = schemeMq.matches ? "night" : "day";
   document.documentElement.setAttribute("data-theme", store.ui.themeId);
   document.documentElement.setAttribute("data-board", store.ui.themeId);
   if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
@@ -7777,9 +9146,29 @@ import { createStore } from "./store.js";
   sync();
   saveSettings();
   if (!resumed) saveGame();
+  // Every reader has run by now — including the lazy ones: loadStats() is
+  // cached and first runs inside renderStats() above, so a check placed
+  // right after tryLoadSave() ran before the stats record had been read and
+  // a corrupt one was quarantined after the banner had already decided there
+  // was nothing to say. A record that failed to parse is reported once, here,
+  // instead of passing for a fresh install (v6-plan D2).
+  if (Persist.corruptKeys().length) showCorruptFault(Persist.corruptKeys());
+  // 6.0 (v6-plan Q1.1): the native file knows more than the cache when the
+  // cache is empty or older — then the file wins and the page starts again on
+  // it. This is the one moment an async read may change what the app stands
+  // on, and it announces itself.
+  Persist.recover().then((r) => {
+    if (r !== "restored") return;
+    toast(t("msg.profile.restored"), "fault");
+    setTimeout(() => location.reload(), 1200);
+  }).catch(() => {});
   if (store.session.mode === "ai" && ChessEngine) {
-    ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
-    maybeEngineTurn(); // resumed save may leave the engine on move
+    // after the first paint, not before it: the engine sources are 9.7 MB of
+    // text and the board does not need them to appear (v6-plan Q1.3)
+    requestAnimationFrame(() => setTimeout(() => {
+      ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
+      maybeEngineTurn(); // resumed save may leave the engine on move
+    }, 0));
   }
   if (firstRun) runOnboarding();
 

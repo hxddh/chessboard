@@ -363,5 +363,233 @@
         "accDiffMax": 5
       }
     }
+  },
+  "winPctNoise": {
+    "what": "同一两遍快扫的评估轨迹,改按胜率降幅分类(review.js classifyByWinPct),比较两次的标注集合",
+    "script": "scripts/test-analysis.mjs --record",
+    "thresholds": {
+      "inaccuracy": 5,
+      "mistake": 10,
+      "blunder": 20
+    },
+    "games": 4,
+    "byMovetime": {
+      "120": {
+        "plies": 168,
+        "tags": {
+          "?!": {
+            "runA": 11,
+            "runB": 14,
+            "both": 10,
+            "agreePct": 67,
+            "agreeRate": 0.667
+          },
+          "?": {
+            "runA": 10,
+            "runB": 5,
+            "both": 4,
+            "agreePct": 36,
+            "agreeRate": 0.364
+          },
+          "??": {
+            "runA": 7,
+            "runB": 5,
+            "both": 5,
+            "agreePct": 71,
+            "agreeRate": 0.714
+          }
+        },
+        "cpSameRun": {
+          "?!": {
+            "runA": 12,
+            "runB": 13,
+            "both": 6,
+            "agreePct": 32
+          },
+          "?": {
+            "runA": 14,
+            "runB": 13,
+            "both": 9,
+            "agreePct": 50
+          },
+          "??": {
+            "runA": 7,
+            "runB": 4,
+            "both": 4,
+            "agreePct": 57
+          }
+        },
+        "sweep": {
+          "3": {
+            "band": {
+              "hi": 10,
+              "runA": 22,
+              "runB": 27,
+              "both": 17,
+              "agreePct": 53
+            },
+            "atLeast": {
+              "runA": 39,
+              "runB": 37,
+              "both": 31,
+              "agreePct": 69
+            }
+          },
+          "5": {
+            "band": {
+              "hi": 10,
+              "runA": 11,
+              "runB": 14,
+              "both": 10,
+              "agreePct": 67
+            },
+            "atLeast": {
+              "runA": 28,
+              "runB": 24,
+              "both": 23,
+              "agreePct": 79
+            }
+          },
+          "7": {
+            "band": {
+              "hi": 10,
+              "runA": 8,
+              "runB": 9,
+              "both": 6,
+              "agreePct": 55
+            },
+            "atLeast": {
+              "runA": 25,
+              "runB": 19,
+              "both": 18,
+              "agreePct": 69
+            }
+          },
+          "10": {
+            "band": {
+              "hi": 20,
+              "runA": 10,
+              "runB": 5,
+              "both": 4,
+              "agreePct": 36
+            },
+            "atLeast": {
+              "runA": 17,
+              "runB": 10,
+              "both": 10,
+              "agreePct": 59
+            }
+          }
+        }
+      },
+      "400": {
+        "plies": 168,
+        "tags": {
+          "?!": {
+            "runA": 16,
+            "runB": 18,
+            "both": 11,
+            "agreePct": 48,
+            "agreeRate": 0.478
+          },
+          "?": {
+            "runA": 6,
+            "runB": 5,
+            "both": 3,
+            "agreePct": 38,
+            "agreeRate": 0.375
+          },
+          "??": {
+            "runA": 5,
+            "runB": 6,
+            "both": 5,
+            "agreePct": 83,
+            "agreeRate": 0.833
+          }
+        },
+        "cpSameRun": {
+          "?!": {
+            "runA": 15,
+            "runB": 17,
+            "both": 9,
+            "agreePct": 39
+          },
+          "?": {
+            "runA": 15,
+            "runB": 14,
+            "both": 11,
+            "agreePct": 61
+          },
+          "??": {
+            "runA": 5,
+            "runB": 4,
+            "both": 3,
+            "agreePct": 50
+          }
+        },
+        "sweep": {
+          "3": {
+            "band": {
+              "hi": 10,
+              "runA": 32,
+              "runB": 29,
+              "both": 25,
+              "agreePct": 69
+            },
+            "atLeast": {
+              "runA": 43,
+              "runB": 40,
+              "both": 38,
+              "agreePct": 84
+            }
+          },
+          "5": {
+            "band": {
+              "hi": 10,
+              "runA": 16,
+              "runB": 18,
+              "both": 11,
+              "agreePct": 48
+            },
+            "atLeast": {
+              "runA": 27,
+              "runB": 29,
+              "both": 24,
+              "agreePct": 75
+            }
+          },
+          "7": {
+            "band": {
+              "hi": 10,
+              "runA": 11,
+              "runB": 7,
+              "both": 6,
+              "agreePct": 50
+            },
+            "atLeast": {
+              "runA": 22,
+              "runB": 18,
+              "both": 18,
+              "agreePct": 82
+            }
+          },
+          "10": {
+            "band": {
+              "hi": 20,
+              "runA": 6,
+              "runB": 5,
+              "both": 3,
+              "agreePct": 38
+            },
+            "atLeast": {
+              "runA": 11,
+              "runB": 11,
+              "both": 9,
+              "agreePct": 69
+            }
+          }
+        }
+      }
+    }
   }
 }

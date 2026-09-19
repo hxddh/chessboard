@@ -1,0 +1,11 @@
+[Event "Promotion and underpromotion"]
+[Site "?"]
+[Date "2024.02.13"]
+[Round "?"]
+[White "Pawn"]
+[Black "Race"]
+[Result "1-0"]
+[SetUp "1"]
+[FEN "8/1P2k3/8/8/8/8/4K1p1/8 w - - 0 1"]
+
+1. b8=Q g1=N+ (1... g1=B 2. Qb4+ Kd7 3. Kf1) 2. Kf1 Kf6 3. Qf4+ Ke7 4. Kxg1 1-0

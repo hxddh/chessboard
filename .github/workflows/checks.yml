@@ -1,7 +1,7 @@
 name: checks
 
-# Everything that can be checked without zig or the Native SDK, on every push
-# and every PR.
+# Everything that can be checked on every push and every PR — and, since 6.0,
+# the one thing that needs zig and the Native SDK too (the `zig` job below).
 #
 # Until now the repo had no PR-time CI at all: the only workflows were the two
 # platform builds and the release. That meant the checks which do exist ran
@@ -114,3 +114,42 @@ jobs:
         run: node scripts/test-review-e2e.mjs
       - name: panel layout
         run: node scripts/test-layout-e2e.mjs
+
+  # src/main.zig and src/runner.zig, compiled and their tests run, on every
+  # push — not only at release time. Until 6.0 the Zig side had no PR-time
+  # CI at all, and 5.0–5.2 shipped three versions with dead file dialogs and
+  # a dead Escape key from exactly that blind spot (v6-plan §1.2, Q0.2).
+  #
+  # Same toolchain as build-macos.yml: the SDK from npm (public registry, no
+  # token — the platform builds install it the same way), zig 0.16.0 from
+  # mlugg/setup-zig. `zig build` alone installs the exe and never packages;
+  # frontend/dist is not needed for either step.
+  zig:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: install build deps
+        run: npm ci
+      - name: install Native SDK CLI
+        env:
+          # the same pin the platform builds and release.yml carry
+          SDK_VERSION: "0.8.1"
+        run: |
+          npm install -g "@native-sdk/cli@${SDK_VERSION}"
+          native --version || true
+          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
+          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: derive the macOS manifest
+        run: node scripts/gen-manifest.mjs macos
+      - name: manifest keys are actually read (with the SDK on disk)
+        run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
+      - name: zig build test
+        run: zig build test -Dmanifest=build/app.macos.zon -Dnative-sdk-path="$SDK_PATH"
+      - name: zig build
+        run: zig build -Dmanifest=build/app.macos.zon -Dnative-sdk-path="$SDK_PATH"

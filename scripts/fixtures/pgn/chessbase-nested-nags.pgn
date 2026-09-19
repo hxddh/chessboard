@@ -1,0 +1,17 @@
+[Event "Club Championship"]
+[Site "Berlin GER"]
+[Date "2018.03.10"]
+[Round "1"]
+[White "Editor, Erika"]
+[Black "Reader, Rolf"]
+[Result "1/2-1/2"]
+[ECO "B90"]
+[Annotator "Editor, Erika"]
+[PlyCount "16"]
+[EventDate "2018.03.10"]
+[SourceDate "2018.03.11"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 $5 {The Najdorf.} (5... Nc6
+6. Bg5 (6. Bc4 e6 7. Bb3 $14) 6... e6 7. Qd2 $14 {Richter-Rauzer.}) (5... g6 $6
+6. Be3 Bg7 7. f3 $16) 6. Be3 (6. Bg5 e6 7. f4 $132 (7. Qf3 $5 Nbd7 8. O-O-O)) 6...
+e5 $1 7. Nb3 Be6 8. f3 $10 $11 1/2-1/2

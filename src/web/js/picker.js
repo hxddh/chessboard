@@ -112,9 +112,10 @@ function weakestMotif(state, motifs) {
  * @returns {{kind: "review"|"motif"|"weak"|"explore"|"done", cat?: string,
  *            id?: string, motif?: string, due?: number, rate?: number, attempts?: number}}
  */
-function pickNext(state, all, srs, tierOf, motifOf) {
-  // 1. the queue
-  const due = all.filter((p) => srs.isDue(state.missed[p.id]));
+function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range, now = Date.now()) {
+  // 1. the queue — owed by count AND due by date (an entry scheduled for
+  // tomorrow waits for tomorrow)
+  const due = all.filter((p) => srs.isDue(state.missed[p.id], now));
   if (due.length) {
     const first = srs.order(due.map((p) => p.id), state.missed)[0];
     return { kind: "review", cat: "review", id: first, due: due.length };
@@ -158,6 +159,24 @@ function pickNext(state, all, srs, tierOf, motifOf) {
     }
     return { kind: "weak", cat: weak.cat, id,
              rate: weak.rate, attempts: weak.attempts };
+  }
+
+  // 2b. 6.0: a puzzle at the player's level — rated, unsolved, inside the
+  // Glicko range (rating.js pickRange). After the weakness rung: a category
+  // the player keeps missing is a sharper signal than a well-fitted stranger,
+  // and before exploration, which is what is left when nothing else is known.
+  // The caller passes a range only once the rating has actually moved.
+  if (ratingOf && range) {
+    const fit = all.filter((p) => !state.solved[p.id] && p.cat !== "mine" && p.cat !== "op");
+    let pick = null, best = Infinity;
+    for (const p of fit) {
+      const r = ratingOf(p);
+      if (r == null || r < range.lo || r > range.hi) continue;
+      // nearest to the middle of the band, stable in book order
+      const d = Math.abs(r - (range.lo + range.hi) / 2);
+      if (d < best) { best = d; pick = p; }
+    }
+    if (pick) return { kind: "rated", cat: pick.cat, id: pick.id, rating: ratingOf(pick) };
   }
 
   // 3. no usable history: the least-covered category

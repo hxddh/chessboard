@@ -5,6 +5,19 @@
  * @module pgn
  */
   /**
+   * Movetext without its trailing result token.
+   *
+   * chess.js's pgn() appends the result when the header has one, and the
+   * exporter appends its own: an imported `… 1-0` came back out as `… 1-0 *`
+   * (v6-plan D1). The exporter owns the token, so the movetext must not.
+   * @param {string} movetext
+   * @returns {string}
+   */
+  function stripResult(movetext) {
+    return String(movetext || "").replace(/\s*(?:1-0|0-1|1\/2-1\/2|\*)\s*$/, "");
+  }
+
+  /**
    * Split a PGN file into individual games.
    *
    * A `[Event ...]` tag always opens a game, so every occurrence at the start
@@ -72,4 +85,4 @@
     return m ? m[1].trim() || null : null;
   }
 
-  export const ChessPgn = { splitGames, tag, summary, startFen };
+  export const ChessPgn = { splitGames, tag, summary, startFen, stripResult };

@@ -11,9 +11,14 @@ on:
         required: false
         default: ""
       sdk_version:
+        # Pinned, like release.yml's input of the same name (see the comment
+        # there). D7: this used to default to "latest", and the `|| '0.8.1'`
+        # below only catches an EMPTY string — so every hand-dispatched build
+        # got whatever npm had that day, while the step's comment claimed the
+        # opposite. The fallback stays for a caller that passes "".
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
-        default: "latest"
+        default: "0.8.1"
 
 permissions:
   contents: write
@@ -61,9 +66,16 @@ jobs:
           test "$(wc -c < frontend/dist/js/bundle.js)" -gt 400000
           # engine-src must carry the full wasm payload (~9MB), not a stub
           test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
+          # GPLv3 §4: the product carries its licence, and Stockfish's
+          mkdir -p frontend/dist/licenses
+          cp LICENSE frontend/dist/licenses/LICENSE.txt
+          cp third_party/stockfish/COPYING.txt frontend/dist/licenses/stockfish-COPYING.txt
       - name: derive the macOS manifest
         # close_policy = "hide" is macOS-only: on windows it is a comptime
-        # error without a tray, and app.zon has to stay portable.
+        # error without a tray, and app.zon has to stay portable. (The dev-
+        # server origin app.zon lists is dropped by src/runner.zig in every
+        # non-Debug exe — D6 — not by this step: the derived manifest stays
+        # app.zon plus exactly the close policy.)
         run: node scripts/gen-manifest.mjs macos
       - name: manifest keys are actually read
         # src/runner.zig is a fork of the SDK's app_runner and does not
@@ -89,15 +101,27 @@ jobs:
         run: |
           mkdir -p dist
           native package --target macos --signing adhoc --manifest build/app.macos.zon --output dist/Chessboard.app --binary zig-out/bin/chessboard
+          # .pgn document type (Info.plist) — a plist edit after packaging,
+          # re-signed adhoc; see the script for why it is not an app.zon key
+          scripts/add-pgn-doctype.sh dist/Chessboard.app
+          # the licences made it into the bundle next to index.html
+          test -f "$(find dist/Chessboard.app -path '*/licenses/LICENSE.txt' | head -n1)"
           ditto -c -k --sequesterRsrc --keepParent dist/Chessboard.app dist/Chessboard-macOS-arm64.zip
+          # 6.0: a disk image beside the zip — the shape Mac users expect to
+          # drag into Applications. Unsigned like the zip (v6-plan Q1.5 minus
+          # the Developer ID part, which is out of scope for this release);
+          # the Gatekeeper right-click-open dance is the same for both.
+          hdiutil create -volname Chessboard -srcfolder dist/Chessboard.app -ov -format UDZO dist/Chessboard-macOS-arm64.dmg
           ls -lh dist
       - uses: actions/upload-artifact@v7
         with:
           name: Chessboard-macOS-arm64
-          path: dist/Chessboard-macOS-arm64.zip
+          path: |
+            dist/Chessboard-macOS-arm64.zip
+            dist/Chessboard-macOS-arm64.dmg
       - name: upload to release
         if: ${{ inputs.release_tag != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
-        run: gh release upload "$TAG" dist/Chessboard-macOS-arm64.zip --clobber
+        run: gh release upload "$TAG" dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg --clobber

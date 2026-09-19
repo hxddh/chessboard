@@ -64,6 +64,12 @@ pub fn build(b: *std.Build) void {
     // tray. So macOS builds compile a derived manifest — scripts/gen-manifest.mjs
     // writes it, this points both the runner import and `native package` at it.
     const manifest_path = b.option([]const u8, "manifest", "Manifest to build against (default app.zon)") orelse "app.zon";
+    // D6: app.zon lists the dev server (http://127.0.0.1:5173) among its
+    // trusted origins so `native dev` works. src/runner.zig drops every
+    // http:// origin unless this is set; unset, it follows the exe's role —
+    // on for the Debug edit loop, off for anything release-shaped — so the
+    // package step and the build workflows (ReleaseFast) never trust it.
+    const dev_origins_request = b.option(bool, "dev-origins", "Trust app.zon's http:// dev-server origins (default: Debug builds only)");
     const package_optimize_name = @tagName(package_optimize);
     const selected_platform: PlatformOption = switch (platform_option) {
         .auto => if (target.result.os.tag == .macos) .macos else if (target.result.os.tag == .linux) .linux else if (target.result.os.tag == .windows) .windows else .@"null",
@@ -88,21 +94,23 @@ pub fn build(b: *std.Build) void {
     const web_layer = resolveWebLayer(app_config, web_engine, web_layer_override);
 
     const native_sdk_mod = nativeSdkModule(b, target, optimize, native_sdk_path);
-    const options = b.addOptions();
-    options.addOption([]const u8, "platform", switch (selected_platform) {
-        .auto => unreachable,
-        .@"null" => "null",
-        .macos => "macos",
-        .linux => "linux",
-        .windows => "windows",
-    });
-    options.addOption([]const u8, "trace", @tagName(trace_option));
-    options.addOption([]const u8, "web_engine", @tagName(web_engine));
-    options.addOption(bool, "debug_overlay", debug_overlay);
-    options.addOption(bool, "automation", automation_enabled);
-    options.addOption(bool, "js_bridge", js_bridge_enabled);
-    options.addOption(bool, "web_layer", web_layer);
-    const options_mod = options.createModule();
+    const build_opts: BuildOptionValues = .{
+        .platform = switch (selected_platform) {
+            .auto => unreachable,
+            .@"null" => "null",
+            .macos => "macos",
+            .linux => "linux",
+            .windows => "windows",
+        },
+        .trace = @tagName(trace_option),
+        .web_engine = @tagName(web_engine),
+        .debug_overlay = debug_overlay,
+        .automation = automation_enabled,
+        .js_bridge = js_bridge_enabled,
+        .web_layer = web_layer,
+        .dev_origins = dev_origins_request orelse (optimize == .Debug),
+    };
+    const options_mod = buildOptionsModule(b, build_opts);
 
     const runner_mod = localModule(b, target, optimize, "src/runner.zig");
     runner_mod.addImport("native_sdk", native_sdk_mod);
@@ -127,13 +135,15 @@ pub fn build(b: *std.Build) void {
     linkPlatform(b, target, app_mod, exe, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);
     b.installArtifact(exe);
 
-    const frontend_install = b.addSystemCommand(&.{ "npm", "install", "--prefix", "frontend" });
-    const frontend_install_step = b.step("frontend-install", "Install frontend dependencies");
-    frontend_install_step.dependOn(&frontend_install.step);
-
-    const frontend_build = b.addSystemCommand(&.{ "npm", "--prefix", "frontend", "run", "build" });
-    frontend_build.step.dependOn(&frontend_install.step);
-    const frontend_step = b.step("frontend-build", "Build the frontend");
+    // The web side has no npm project of its own (D12: `frontend/` never
+    // existed — these steps were `npm --prefix frontend` from the template
+    // and made `zig build run/dev/package` fail locally for twenty releases).
+    // frontend/dist is a plain copy of src/web, produced by one script that
+    // does exactly what scripts/package.sh and the two build workflows do:
+    // generate engine-src.js, bundle the ES modules, copy index.html +
+    // styles.css + js/bundle.js + js/engine-src.js, add licenses/.
+    const frontend_build = b.addSystemCommand(&.{ "node", "scripts/sync-dist.mjs" });
+    const frontend_step = b.step("frontend-build", "Sync frontend/dist from src/web (node scripts/sync-dist.mjs)");
     frontend_step.dependOn(&frontend_build.step);
 
     const run = b.addRunArtifact(exe);
@@ -147,7 +157,7 @@ pub fn build(b: *std.Build) void {
     dev.addFileArg(exe.getEmittedBin());
     addWebView2RuntimeRunFiles(b, target, dev, web_engine, web_layer, native_sdk_path);
     dev.step.dependOn(&exe.step);
-    dev.step.dependOn(&frontend_install.step);
+    dev.step.dependOn(&frontend_build.step);
     const dev_step = b.step("dev", "Run the frontend dev server and native shell");
     dev_step.dependOn(&dev.step);
 
@@ -160,7 +170,12 @@ pub fn build(b: *std.Build) void {
         const package_sdk_mod = nativeSdkModule(b, target, package_optimize, native_sdk_path);
         const package_runner_mod = localModule(b, target, package_optimize, "src/runner.zig");
         package_runner_mod.addImport("native_sdk", package_sdk_mod);
-        package_runner_mod.addImport("build_options", options_mod);
+        // Its own options module: same values, but dev_origins follows THIS
+        // exe's role, so a `zig build package` from a Debug edit loop still
+        // wraps an exe that trusts no dev server.
+        var package_opts = build_opts;
+        package_opts.dev_origins = dev_origins_request orelse (package_optimize == .Debug);
+        package_runner_mod.addImport("build_options", buildOptionsModule(b, package_opts));
         package_runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path(manifest_path) }));
         const package_app_mod = localModule(b, target, package_optimize, "src/main.zig");
         package_app_mod.addImport("native_sdk", package_sdk_mod);
@@ -219,6 +234,32 @@ pub fn build(b: *std.Build) void {
     const tests = b.addTest(.{ .root_module = app_mod });
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+}
+
+/// Everything src/runner.zig reads from `build_options`, in one place so the
+/// dev exe and the package exe get the same list with one field varied.
+const BuildOptionValues = struct {
+    platform: []const u8,
+    trace: []const u8,
+    web_engine: []const u8,
+    debug_overlay: bool,
+    automation: bool,
+    js_bridge: bool,
+    web_layer: bool,
+    dev_origins: bool,
+};
+
+fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Module {
+    const options = b.addOptions();
+    options.addOption([]const u8, "platform", values.platform);
+    options.addOption([]const u8, "trace", values.trace);
+    options.addOption([]const u8, "web_engine", values.web_engine);
+    options.addOption(bool, "debug_overlay", values.debug_overlay);
+    options.addOption(bool, "automation", values.automation);
+    options.addOption(bool, "js_bridge", values.js_bridge);
+    options.addOption(bool, "web_layer", values.web_layer);
+    options.addOption(bool, "dev_origins", values.dev_origins);
+    return options.createModule();
 }
 
 // Resolve the optimize mode for one exe role (mirrors the Native SDK

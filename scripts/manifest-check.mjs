@@ -307,6 +307,28 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+// --------------------------------------------- 1b. 开发 origin 不进发布产物（D6）
+// app.zon 是开发清单:allowed_origins 里有 http://127.0.0.1:5173,`native dev`
+// 才能从本机端口加载页面。发布产物不能信任它 —— 而剔除不在 gen-manifest.mjs
+// 里(派生清单必须与 app.zon 只差 close_policy,test-chess.mjs 钉着),在
+// src/runner.zig 的 fillOrigins 里:非 dev 构建按 "http://" 前缀过滤,
+// build.zig 的 -Ddev-origins 默认只在 Debug 打开。这里对的是这条线没断:
+// 清单里真的有个 http origin(否则过滤器在守一个空位)、runner 真的过滤、
+// build.zig 真的把开关传进去且默认跟着 optimize 走。
+{
+  const appZonSrc = stripComments(fs.readFileSync(path.join(ROOT, "app.zon"), "utf8"));
+  const buildZig = stripComments(fs.readFileSync(path.join(ROOT, "build.zig"), "utf8"));
+  check(/"http:\/\/127\.0\.0\.1:\d+"/.test(appZonSrc), "开发 origin: app.zon 里应保留 http://127.0.0.1 的开发 origin(它是开发清单)");
+  check(/fn isDevOrigin\([\s\S]*?startsWith\(u8, origin, "http:\/\/"\)/.test(runnerCode), "开发 origin: src/runner.zig 没有按 http:// 前缀识别开发 origin(isDevOrigin)");
+  check(/allowed_origins = fillOrigins\(/.test(runnerCode), "开发 origin: manifestSecurity 没走 fillOrigins —— http origin 原样进了发布二进制");
+  check(/build_options\.dev_origins/.test(runnerCode), "开发 origin: runner 不读 build_options.dev_origins,开关是摆设");
+  check(/b\.option\(bool, "dev-origins"/.test(buildZig), "开发 origin: build.zig 没有 -Ddev-origins");
+  check(/addOption\(bool, "dev_origins"/.test(buildZig), "开发 origin: build.zig 没把 dev_origins 写进 build_options");
+  check(/dev_origins_request orelse \(optimize == \.Debug\)/.test(buildZig) && /dev_origins_request orelse \(package_optimize == \.Debug\)/.test(buildZig),
+    "开发 origin: -Ddev-origins 的默认值要跟着两个 exe 各自的 optimize 走(Debug 开,其余关)");
+  notes.push("开发 origin: app.zon 有、runner 过滤、build.zig 默认只在 Debug 放行");
+}
+
 // --------------------------------------------- 2. src/main.zig → src/runner.zig
 
 // Every RunOptions field that defaults to null is one where null is the signal
@@ -495,6 +517,32 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   for (const g of granted) check(used.has(g), `内建桥: main.zig 放行了 ${g}，但页面从不调用它`);
   check(/\.builtin_bridge = app_state\.builtinBridge\(\)/.test(mainSrc), "内建桥: 策略真的传给了 runner（.builtin_bridge）");
   notes.push(`内建桥: host.js 调用 ${used.size} 个 SDK 命令，main.zig 放行 ${granted.size} 个，一致`);
+}
+
+// ------------------------------------------------ 6. host.js ↔ main.zig 应用桥
+// 同一个病的另一半。main.zig 自己的 `chess.*` 命令由一张表(APP_COMMANDS)
+// 同时喂给 handler 注册表和 origin 策略,页面用 `zero.invoke("chess.X")`
+// 调它们。这里对:页面调的每个 chess.X 在表里,表里的每个 chess.X 页面真的调。
+// 少一个是「原生构建里静默走回退」,多一个是没人读的死代码。
+{
+  const hostSrc = fs.readFileSync(path.join(ROOT, "src/web/js/host.js"), "utf8");
+  const mainSrc = fs.readFileSync(path.join(ROOT, "src/main.zig"), "utf8");
+  const used = new Set([...hostSrc.matchAll(/zero\.invoke\(\s*"(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]));
+  const block = /const APP_COMMANDS = \[_\]AppCommand\{([\s\S]*?)\n\};/.exec(mainSrc);
+  check(!!block, "应用桥: main.zig 里有 APP_COMMANDS 表");
+  const registered = new Set(block ? [...block[1].matchAll(/\.name = "(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]) : []);
+  for (const u of used) check(registered.has(u), `应用桥: host.js 调用了 ${u},但 main.zig 的 APP_COMMANDS 没有它 —— 原生构建里它会被拒绝`);
+  for (const r of registered) check(used.has(r), `应用桥: main.zig 注册了 ${r},但页面从不调用它`);
+  // and the table really is what the runner gets — a handler with no policy
+  // is refused by the SDK, so both come from the one loop
+  check(/self\.handlers\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(mainSrc) && /self\.policies\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(mainSrc),
+    "应用桥: handler 与 policy 都从 APP_COMMANDS 同一个循环里来");
+  // Q1.2: the two file commands consult the issued-path table
+  for (const fn of ["writeTextFile", "readTextFile"]) {
+    const body = new RegExp(`fn ${fn}\\([\\s\\S]*?\\n\\}`).exec(mainSrc);
+    check(!!body && /self\.issued\.contains\(path\)/.test(body[0]), `应用桥: ${fn} 没有查签发路径表(issued.contains)—— 任意绝对路径又能读写了`);
+  }
+  notes.push(`应用桥: host.js 调用 ${used.size} 个 chess.* 命令,main.zig 注册 ${registered.size} 个,一致`);
 }
 
 // ------------------------------------------------------------------------ 结果

@@ -23,6 +23,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { Chess } from "../src/web/js/chess.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -259,6 +260,148 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
 }
 
 assert(errs.length === 0, "no JS exception through analysis and replay — " + errs.join(" / "));
+
+// --- 6.0: the analysis board — the game as a tree (v6-plan Q2.1–Q2.4) ------
+// A PGN with a variation, a comment and a [%cal] arrow goes in through the
+// clipboard (the fake native bridge, for the reasons test-persist-e2e §7
+// gives), and the notation has to show all three: the variation indented
+// under the move it replaces, the comment as text, the arrow on the board
+// and back out again in the export. Then the tree is *edited* the way a
+// player would: click into the variation, promote it, play a move at a
+// replay position, draw an arrow — and the export carries every one.
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx2.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__clip = "";
+    window.zero = {
+      invoke: () => Promise.resolve(true), on: () => () => {}, off: () => {},
+      platform: { supports: () => Promise.resolve(false) },
+      clipboard: {
+        readText: () => Promise.resolve(window.__clip),
+        writeText: (t) => { window.__clip = String(t); return Promise.resolve(true); },
+      },
+    };
+  });
+  const pg = await ctx2.newPage();
+  const errs2 = [];
+  pg.on("pageerror", (e) => errs2.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel").catch(() => {});
+
+  const moreOpen = async () => {
+    if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await pg.waitForTimeout(250); }
+  };
+  const answerIfAsked = async () => {
+    if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(600); }
+  };
+  const paste = async (text) => {
+    await pg.evaluate((x) => { window.__clip = x; }, text);
+    await moreOpen();
+    await pg.click("#pgn-paste");
+    await pg.waitForTimeout(700);
+    await answerIfAsked();
+  };
+  /** the position the app says it is on — the FEN dialog opens pre-filled with it */
+  const shownFen = async () => {
+    await moreOpen();
+    await pg.click("#fen-load-open");
+    const v = await pg.inputValue("#fen-input");
+    await pg.click("#fen-cancel");
+    await pg.waitForTimeout(150);
+    return v;
+  };
+  const at = (sq) => pg.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const notation = () => pg.evaluate(() => ({
+    main: [...document.querySelectorAll("#move-list .mlmove:not(.mlgap)")].map((b) => b.getAttribute("aria-label")),
+    vars: [...document.querySelectorAll("#move-list .mlv")].map((b) => b.getAttribute("aria-label")),
+    varComments: [...document.querySelectorAll("#move-list .mlvcomment")].map((c) => c.textContent),
+    comments: [...document.querySelectorAll("#move-list .mlcomment")].map((c) => c.textContent),
+    lineRow: !document.getElementById("line-row").hidden,
+  }));
+  const fenAfter = (...sans) => { const g = new Chess(); for (const m of sans) g.move(m); return g.fen(); };
+
+  const PGN = '[Event "Tree"]\n[Site "?"]\n[Date "2026.09.18"]\n[Round "-"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n' +
+    '1. e4 e5 2. Nf3 (2. Bc4 {the bishop first} Nf6 3. d3) 2... Nc6 {[%cal Gb1c3] a comment} *\n';
+  await paste(PGN);
+  let n = await notation();
+  assert(n.main.join(" ") === "e4 e5 Nf3 Nc6", "the mainline is the mainline (" + n.main.join(" ") + ")");
+  assert(n.vars.join(" ") === "Bc4 Nf6 d3", "the variation is shown under the move it replaces (" + n.vars.join(" ") + ")");
+  assert(n.varComments.some((c) => /the bishop first/.test(c)), "…with its comment as text beside the move");
+  assert(n.comments.some((c) => /a comment/.test(c)) && !n.comments.some((c) => /%cal/.test(c)),
+    "the mainline comment is shown, and the [%cal] command is not part of the prose (" + n.comments.join(" | ") + ")");
+  assert(!n.lineRow, "on the mainline there is no 「回主线」");
+
+  // click into the variation: the board goes there, and the line is now a variation
+  await pg.click('#move-list .mlv[aria-label="Bc4"]');
+  await pg.waitForTimeout(300);
+  assert((await shownFen()) === fenAfter("e4", "e5", "Bc4"), "clicking a variation move puts the board on that position");
+  n = await notation();
+  assert(n.lineRow, "…and 「回主线」 appears, because the line is a variation");
+  assert(n.vars.filter((v) => v === "Bc4").length === 1 &&
+    (await pg.evaluate(() => (document.querySelector("#move-list .mlv.current") || {}).getAttribute("aria-label"))) === "Bc4",
+    "the current move is boxed inside the variation");
+
+  // promote it through the menu: the right button on the move
+  await pg.click('#move-list .mlv[aria-label="Bc4"]', { button: "right" });
+  await pg.waitForTimeout(200);
+  assert(await pg.isVisible("#move-menu"), "the right button opens the move menu");
+  await pg.click("#mm-promote");
+  await pg.waitForTimeout(300);
+  n = await notation();
+  assert(n.main.join(" ") === "e4 e5 Bc4 Nf6 d3", "promoted: the variation is the mainline now (" + n.main.join(" ") + ")");
+  assert(n.vars.join(" ") === "Nf3 Nc6", "…and the old mainline is the variation (" + n.vars.join(" ") + ")");
+  assert(!n.lineRow, "…so the line is the mainline again and 「回主线」 goes");
+
+  // a move at a replay position in a two-player game opens a variation
+  await pg.click('#move-list .mlmove[data-i="1"]');
+  await pg.waitForTimeout(300);
+  for (const sq of ["c7", "c5"]) { const p = await at(sq); await pg.mouse.click(p.x, p.y); await pg.waitForTimeout(220); }
+  await pg.waitForTimeout(300);
+  n = await notation();
+  assert(n.vars.includes("c5"), "a move played while replaying became a variation (" + n.vars.join(" ") + ")");
+  assert(n.main.join(" ") === "e4 e5 Bc4 Nf6 d3", "…and the mainline was not truncated");
+  assert((await shownFen()) === fenAfter("e4", "c5"), "…and the board followed it");
+  assert(n.lineRow, "…on a variation, so 「回主线」 is back");
+
+  // an arrow on this position: right-button drag
+  const g1 = await at("g1"), f3 = await at("f3");
+  await pg.mouse.move(g1.x, g1.y);
+  await pg.mouse.down({ button: "right" });
+  await pg.mouse.move(f3.x, f3.y, { steps: 4 });
+  await pg.mouse.up({ button: "right" });
+  await pg.waitForTimeout(200);
+
+  // export: everything above is in the file, and the result token once
+  await pg.click("#pgn-copy");
+  await pg.waitForTimeout(400);
+  const out = await pg.evaluate(() => window.__clip);
+  const body = out.split("\n\n").pop() || "";
+  assert(/\(/.test(body), "the export carries a variation");
+  assert(/\{/.test(body), "…a comment");
+  assert(/\[%cal Gb1c3\]/.test(body), "…the imported arrow");
+  assert(/\[%cal Gg1f3\]/.test(body), "…and the one just drawn (" + (body.match(/\[%cal[^\]]*\]/g) || []).join(" ") + ")");
+  const tokens = body.match(/(?:^|\s)(1-0|0-1|1\/2-1\/2|\*)(?=\s|$)/g) || [];
+  assert(tokens.length === 1, "the result token appears exactly once (" + JSON.stringify(tokens) + ")");
+  // the variation played at move 1 hangs after 1... e5, before 2. Bc4
+  assert(/^1\. e4 e5 \( 1\.\.\. c5/.test(body) && /2\. Bc4 \{/.test(body) && /Nf6 3\. d3/.test(body),
+    "…and the movetext is the promoted mainline with the new variation after the move it replaces (" + body.split("\n")[0] + ")");
+
+  // …and it comes back in whole: the round trip through the app itself
+  await paste(out);
+  const again = await notation();
+  assert(again.main.join(" ") === "e4 e5 Bc4 Nf6 d3" && again.vars.join(" ") === n.vars.join(" "),
+    "re-importing the export gives the same tree (" + again.main.join(" ") + " / " + again.vars.join(" ") + ")");
+  assert(errs2.length === 0, "no JS exception through the tree edits — " + errs2.join(" / "));
+  await ctx2.close();
+}
 
 await browser.close();
 server.close();

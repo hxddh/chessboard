@@ -3,6 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- 6.0: the page holds a bridge that can write files, so it must not be
+       able to run anything it did not ship with. Scripts and styles come
+       only from the app's own origin; the engine runs in a blob worker; the
+       piece sprites are data: SVGs. No inline script, no remote origin. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; worker-src blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>国际象棋</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -100,6 +105,11 @@
              hovered move, a focused or pinned engine line. Without it the
              drawn position and the cursor could disagree in silence. -->
         <div class="preview-badge num" id="preview-badge" role="status" aria-live="polite" hidden></div>
+        <!-- 6.0: a pinned engine line can be written into the game as a
+             variation from here (v6-plan Q2.3). A sibling of the badge, not a
+             child: the badge is a live region, and a button inside one is
+             read out as a status change. -->
+        <button type="button" class="preview-try" id="preview-try" data-i18n="act.tryHere" hidden>从这里试走</button>
       </div>
     </div>
     <!-- The spine used to live here: whose move, the clocks, the last move and
@@ -251,6 +261,20 @@
               <button type="button" data-theme="notebook" title="纸本" data-i18n-title="tip.theme.notebook" data-i18n="theme.notebook">纸</button>
             </div>
           </div>
+          <div class="setting-row">
+            <span class="setting-k" data-i18n="side.followSystem">跟随系统深浅</span>
+            <button type="button" class="switch" id="opt-follow" aria-pressed="false" title="系统切到深色时用「夜」，浅色时用「日」" data-i18n-title="tip.followSystem">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.textSize">字号</span>
+            <div class="theme-row" id="text-seg" role="group" aria-label="字号" data-i18n-aria="side.textSize" title="整个界面的文字大小" data-i18n-title="tip.textSize">
+              <button type="button" data-text="s" data-i18n="text.s">小</button>
+              <button type="button" data-text="m" class="active" data-i18n="text.m">标准</button>
+              <button type="button" data-text="l" data-i18n="text.l">大</button>
+            </div>
+          </div>
           <!-- Which way round the board is drawn is a property of the view,
                like the theme, so it sits next to the theme rather than in the
                chrome — where it was one of four buttons over the board and one
@@ -280,6 +304,50 @@
               <span class="switch-knob"></span>
             </button>
           </div>
+          <!-- 6.0 (v6-plan Q2.8): the level under the switch, the coordinates
+               on the frame, and the board with its men withheld. -->
+          <div class="setting-row" id="row-volume">
+            <span class="setting-k" data-i18n="side.volume">音量</span>
+            <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
+          </div>
+          <div class="setting-row">
+            <span class="setting-k" data-i18n="side.coords">坐标</span>
+            <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘边框上标出 a–h 与 1–8" data-i18n-title="tip.coords">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-k" data-i18n="side.blindfold">盲棋</span>
+            <button type="button" class="switch" id="opt-blind" aria-pressed="false" title="不画棋子，只画标记 —— 靠记忆下" data-i18n-title="tip.blindfold">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6.0 (v6-plan Q2.6): the two engine knobs a player may reasonably
+           turn on a single-threaded lite build. -->
+      <section class="side-section" id="sec-engine">
+        <h2 class="side-h" data-i18n="side.engine">引擎</h2>
+        <div class="setting-list">
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.hash">置换表</span>
+            <div class="theme-row" id="hash-seg" role="group" aria-label="置换表" data-i18n-aria="side.hash" title="引擎的置换表大小（MB）" data-i18n-title="tip.hash">
+              <button type="button" data-hash="16">16</button>
+              <button type="button" data-hash="32" class="active">32</button>
+              <button type="button" data-hash="64">64</button>
+              <button type="button" data-hash="128">128</button>
+            </div>
+          </div>
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.multipv">分析线数</span>
+            <div class="theme-row" id="multipv-seg" role="group" aria-label="分析线数" data-i18n-aria="side.multipv" title="复盘与持续分析同时给出几条变化" data-i18n-title="tip.multipv">
+              <button type="button" data-multipv="1" class="active">1</button>
+              <button type="button" data-multipv="2">2</button>
+              <button type="button" data-multipv="3">3</button>
+              <button type="button" data-multipv="5">5</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -307,6 +375,17 @@
         <div class="link-row">
           <button type="button" class="act-btn" id="learning-export" data-i18n="act.learningExport" title="把错题本、复习队列、课程进度和战绩存成一个文件" data-i18n-title="tip.learning.export">导出</button>
           <button type="button" class="act-btn" id="learning-import" data-i18n="act.learningImport" title="从导出的文件合并回来，不会覆盖本机已有的进度" data-i18n-title="tip.learning.import">导入</button>
+        </div>
+      </section>
+      <!-- 6.0 (v6-plan Q1.1): the whole profile — every key, including the
+           current game, the slots, the settings and the record — as one file.
+           The learning export above is a merge; this one is a copy. -->
+      <section class="side-section" id="sec-alldata">
+        <h2 class="side-h" data-i18n="side.allData">全部数据</h2>
+        <div class="link-row">
+          <button type="button" class="act-btn" id="alldata-export" data-i18n="act.allExport" title="把本机全部数据（对局、存档槽、设置、战绩、学习数据）存成一个文件" data-i18n-title="tip.allData.export">导出</button>
+          <button type="button" class="act-btn" id="alldata-import" data-i18n="act.allImport" title="用导出的文件整个替换本机数据" data-i18n-title="tip.allData.import">导入</button>
+          <button type="button" class="act-btn" id="about-open" data-i18n="act.about" title="版本、许可与致谢" data-i18n-title="tip.about">关于</button>
         </div>
       </section>
       <section class="side-section">
@@ -505,6 +584,12 @@
           <button type="button" id="rep-next" title="下一着 (→)" data-i18n-title="tip.replay.next">›</button>
           <button type="button" id="rep-end" title="终局 (End)" data-i18n-title="tip.replay.end">»</button>
         </div>
+        <!-- 6.0: the line the notation is following is a variation. Shown
+             only then — on the mainline there is nothing to go back to
+             (v6-plan Q2.3). -->
+        <div class="link-row replay-line" id="line-row" hidden>
+          <button type="button" class="act-btn" id="back-main" data-i18n="act.backMain" title="回到本局主线，光标停在同一深度" data-i18n-title="tip.backMain">回主线</button>
+        </div>
         <!-- 5.1: the actions stand above what they produce. At the default
              1200×900 window the curve, the bar, the line and the report pushed
              分析 / 精析 below the fold — the one thing to press on this page
@@ -515,9 +600,13 @@
           <div class="link-row">
             <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
             <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
-            <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法丢弃" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
+            <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法留作变着" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
+            <button type="button" class="act-btn" id="an-live" aria-pressed="false" title="引擎持续分析棋盘上的局面，跟随复盘游标" data-i18n-title="tip.live" data-i18n="act.live">持续分析</button>
           </div>
           <p class="hint" id="engine-state" role="status" hidden></p>
+          <!-- 6.0 (v6-plan Q2.6): the running analysis of the position on the
+               board — depth, and one row per line with its win chance. -->
+          <div class="pv-line num" id="live-line" hidden></div>
         </div>
         <div id="eval-wrap" hidden>
           <!-- Focusable and a slider: the pointer already scrubs it, and the
@@ -602,7 +691,11 @@
              categories. -->
         <div class="side-h-row" id="puzzle-tally-head" hidden>
           <h2 class="side-h" data-i18n="side.puzzleTally">做题战绩</h2>
+          <span class="side-h-meta num" id="rating-meta" hidden></span>
         </div>
+        <!-- 6.0 (v6-plan Q3.1): the number that can go up. Drawn only once a
+             first attempt has moved it, like everything else on this page. -->
+        <canvas id="trend-rating" hidden aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
         <div class="stats-body" id="puzzle-tally-body" hidden></div>
         <!-- 进步 — change over time, not totals (progress.js). The accuracy
              sparkline reads what stats.games already stores; the weekly rows
@@ -719,12 +812,57 @@
     <!-- Every action in this app has lived on a bare letter key since 1.0 and
          nothing anywhere named one. 1.9 made it worse by moving the panel off
          Tab onto P without telling anyone. This is the list. -->
+    <!-- 6.0 (v6-plan Q1.6): what this is, what it is made of, where the data
+         lives, and whether there is a newer one. GPLv3 §5(d) wants the notice
+         reachable from the program itself, not only from the repository. -->
+    <div class="modal-bg" id="about-modal" role="dialog" aria-labelledby="about-title">
+      <div class="modal">
+        <h3 id="about-title" data-i18n="about.title">关于</h3>
+        <dl class="key-list about-list">
+          <dt data-i18n="about.version">版本</dt><dd class="num" id="about-version"></dd>
+          <dt data-i18n="about.license">许可</dt><dd id="about-license"></dd>
+          <dt data-i18n="about.source">源码</dt><dd><button type="button" class="link-btn" id="about-source" data-url="https://github.com/hxddh/chessboard">github.com/hxddh/chessboard</button></dd>
+          <dt data-i18n="about.credits">致谢</dt><dd id="about-credits"></dd>
+          <dt data-i18n="about.dataPath">数据位置</dt><dd class="num" id="about-data"></dd>
+        </dl>
+        <p class="hint" id="about-update" role="status"></p>
+        <div class="close-row">
+          <button type="button" class="tool-btn" id="about-check" data-i18n="act.checkUpdate">检查更新</button>
+          <button type="button" class="tool-btn" id="about-close" data-i18n="act.close">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-bg" id="keys-modal" role="dialog" aria-labelledby="keys-modal-title">
       <div class="modal">
         <h3 id="keys-modal-title" data-i18n="keys.title">快捷键</h3>
         <dl class="key-list" id="keys-list"></dl>
         <div class="close-row"><button type="button" class="tool-btn" id="keys-close" data-i18n="act.close">关闭</button></div>
       </div>
+    </div>
+
+    <!-- 6.0: a move's comment (v6-plan Q2.1). Opened from the move menu;
+         the textarea keeps newlines only until the save, where they become
+         spaces — PGN comments re-wrap on export. -->
+    <div class="modal-bg" id="note-modal" role="dialog" aria-labelledby="note-title">
+      <div class="modal">
+        <h3 id="note-title" data-i18n="note.title">注释</h3>
+        <textarea id="note-input" class="text-input note-input" rows="4" spellcheck="false"
+                  aria-labelledby="note-title" data-i18n-placeholder="note.placeholder" placeholder="写下这一着的想法…"></textarea>
+        <div class="close-row end">
+          <button type="button" class="tool-btn" id="note-cancel" data-i18n="act.cancel">取消</button>
+          <button type="button" class="tool-btn primary" id="note-save" data-i18n="act.save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6.0: the move menu — right-click on any move, or the 「…」 handle
+         beside the current one (v6-plan Q2.1). A popover, not a dialog: it
+         closes on Escape, on Tab out and on a press anywhere else. -->
+    <div class="move-menu" id="move-menu" role="menu" aria-label="着法操作" data-i18n-aria="ml.menu" hidden>
+      <button type="button" role="menuitem" id="mm-promote" data-i18n="ml.promote">升为主线</button>
+      <button type="button" role="menuitem" id="mm-delete" data-i18n="ml.delete">删除分支</button>
+      <button type="button" role="menuitem" id="mm-note" data-i18n="ml.editNote">编辑注释</button>
     </div>
 
     <div class="modal-bg" id="confirm-modal" role="dialog" aria-labelledby="confirm-title">
@@ -745,18 +883,20 @@
     </div>
   </div>
 
-  <!-- Two classic scripts, in this order.
-
-       engine-src.js is generated by scripts/gen-engine-src.mjs: the Stockfish
-       loader text plus the wasm as base64, both as globals. It stays a
-       separate file because it is 7 MB of vendored build output — bundling it
-       would mean rebuilding it on every source change.
+  <!-- One classic script.
 
        bundle.js is generated by scripts/bundle.mjs from the ES modules under
        js/. zero:// cannot load an ES module, so the modules are a source-level
-       fact and the product gets one script. Neither file is in git; both are
-       built by package.sh, by the E2E servers and by the unit tests. -->
-  <script src="js/engine-src.js"></script>
+       fact and the product gets one script.
+
+       engine-src.js — the Stockfish loader text plus the wasm as base64, both
+       as globals, generated by scripts/gen-engine-src.mjs — is no longer
+       loaded here. Until 6.0 it stood above bundle.js as a blocking tag, so
+       the first paint waited on parsing 9.7 MB of text it did not use.
+       engine.js injects the tag itself the first time the engine is wanted.
+       It stays a separate file because it is 7 MB of vendored build output.
+       Neither file is in git; both are built by package.sh, by the E2E
+       servers and by the unit tests. -->
   <script src="js/bundle.js"></script>
 </body>
 </html>

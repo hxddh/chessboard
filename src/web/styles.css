@@ -274,6 +274,13 @@
        accent and 「清除全部存档」 was ordinary text instead of red. The focus
        ring went with them: it is color-mix(… var(--accent) …), and an invalid
        substitution drops the whole outline declaration. */
+    /* 6.0 (v6-plan Q3.6): every font-size in this sheet is in rem, so the
+       whole type scale follows one root size. Three steps, chosen in
+       Settings; the default is the size everything was designed at. */
+    html { --root-size: 16px; font-size: var(--root-size); }
+    html[data-text="s"] { --root-size: 15px; }
+    html[data-text="l"] { --root-size: 18px; }
+
     :root {
       --bg: var(--surface);
       --panel: var(--surface-raised);
@@ -331,6 +338,11 @@
       --sq-cursor-edge: rgba(20,20,20,.55);
       --sq-dot: rgba(30, 30, 30, var(--mark-soft));
       --sq-ring: rgba(30, 30, 30, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
     }
     [data-board="night"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -357,6 +369,11 @@
       --sq-cursor-edge: rgba(6,16,12,.60);
       --sq-dot: rgba(8, 18, 15, var(--mark-soft));
       --sq-ring: rgba(8, 18, 15, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
     [data-board="day"] {
@@ -385,6 +402,11 @@
       --sq-cursor-edge: rgba(40,28,12,.55);
       --sq-dot: rgba(60, 45, 25, var(--mark-soft));
       --sq-ring: rgba(60, 45, 25, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
     }
     [data-board="notebook"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -411,6 +433,11 @@
       --sq-cursor-edge: rgba(28,33,44,.58);
       --sq-dot: rgba(42, 49, 64, var(--mark-soft));
       --sq-ring: rgba(42, 49, 64, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
     }
 
@@ -559,7 +586,7 @@
     .chrome > * { pointer-events: auto; }
 
     .status-pill {
-      font-size: 12px; font-weight: 500; color: var(--text);
+      font-size: 0.75rem; font-weight: 500; color: var(--text);
       /* an explicit box rather than 4px of padding around whatever the text
          happened to measure — that gave 27.4px next to the buttons' 32 and
          put its baseline 1.2px off theirs */
@@ -602,9 +629,9 @@
     .icon-btn:active, .tool-btn:active { transform: scale(0.96); }
     .icon-btn {
       width: 32px; height: 32px; display: grid; place-items: center;
-      font-size: 15px; line-height: var(--lh-tight);
+      font-size: 0.9375rem; line-height: var(--lh-tight);
     }
-    .tool-btn { height: 32px; padding: 0 12px; font-size: 12px; font-weight: 500; }
+    .tool-btn { height: 32px; padding: 0 12px; font-size: 0.75rem; font-weight: 500; }
     /* The chrome's own size. Scoped, because .tool-btn is also the panel's
        button and the panel is not on a 32px bar.
 
@@ -693,7 +720,7 @@
          sitting on a floor is not a decision — it is what you get when nobody
          chooses. The frame is 17px of wood; 12px prints on it comfortably and
          13px on a wide one. P4.6. */
-      font-size: 12px;
+      font-size: 0.75rem;
       font-weight: 600; letter-spacing: 0.5px;
       pointer-events: none; user-select: none;
     }
@@ -712,7 +739,7 @@
       line-height: var(--lh-tight);
     }
     /* a wider frame can carry the larger step */
-    @media (min-width: 1100px) { .coords { font-size: 13px; } }
+    @media (min-width: 1100px) { .coords { font-size: 0.8125rem; } }
 
     canvas {
       display: block; width: 100%; height: 100%;
@@ -787,7 +814,7 @@
     .vs {
       flex: 1; min-width: 0;
       display: flex; align-items: center; justify-content: center; gap: 12px;
-      font-size: 12px; line-height: var(--lh-tight);
+      font-size: 0.75rem; line-height: var(--lh-tight);
       white-space: nowrap;
     }
     .vs-side {
@@ -801,7 +828,7 @@
       display: flex; align-items: center; gap: 6px;
       flex-shrink: 0; min-width: 0;
     }
-    .vs-versus { font-size: 11px; letter-spacing: 0.14em; opacity: 0.55; }
+    .vs-versus { font-size: 0.6875rem; letter-spacing: 0.14em; opacity: 0.55; }
     .vs-versus[hidden], .vs-last[hidden] { display: none; }
     /* The last move, dressed like the personas, on purpose. It used to be a
        pill — bright numerals on a plate — which made the shortest-lived and
@@ -813,12 +840,12 @@
        replay, standing in for the board highlight in a panel-shut narrow
        window — need it present, not loud. */
     .vs-last {
-      font-size: 12px; font-weight: 500;
+      font-size: 0.75rem; font-weight: 500;
       color: var(--muted);
     }
-    .vs-name { font-size: 13px; font-weight: 600; }
+    .vs-name { font-size: 0.8125rem; font-weight: 600; }
     .vs-role {
-      font-size: 11px;
+      font-size: 0.6875rem;
       /* the one thing here that can be arbitrarily long — a persona name in
          three languages — so it is the one thing allowed to end in an
          ellipsis rather than push the clock off the row */
@@ -840,11 +867,11 @@
     .taken-p svg { width: 100%; height: 100%; display: block; }
     .taken-diff {
       font-family: var(--font-num);
-      font-size: 11px; font-weight: 600; color: var(--accent);
+      font-size: 0.6875rem; font-weight: 600; color: var(--accent);
       margin-left: 4px;
     }
     .vs-clock {
-      font-size: 15px; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.9375rem; font-weight: 600; line-height: var(--lh-tight);
       color: var(--text); opacity: 0.45;
       transition: opacity var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
     }
@@ -872,7 +899,7 @@
     }
     .opening-line {
       margin-top: 12px;
-      font-size: 12px; color: var(--muted); line-height: var(--lh-body);
+      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
     }
     .opening-line[hidden] { display: none; }
     /* Mode used to be a nav row with its own idiom — an underline it shared
@@ -896,7 +923,7 @@
       flex: 1;
       appearance: none; border: 0; background: transparent;
       color: var(--muted);
-      font: inherit; font-size: 13px; font-weight: 600;
+      font: inherit; font-size: 0.8125rem; font-weight: 600;
       /* same box as the mode row above it: they select a view, they sit one on
          top of the other, and until now one was 37px tall at weight 600 and the
          other 35 at 12px/500 */
@@ -943,7 +970,7 @@
       margin: 0 0 8px;
       height: var(--label-h);
       display: flex; align-items: center;
-      font-size: 11px; font-weight: 600;
+      font-size: 0.6875rem; font-weight: 600;
       letter-spacing: 0.12em; text-transform: uppercase;
       color: var(--muted);
       opacity: 0.9;
@@ -955,7 +982,7 @@
       gap: 12px;
     }
     .side-h-row .side-h { margin: 0; height: auto; }
-    .side-h-meta { font-size: 12px; color: var(--muted); }
+    .side-h-meta { font-size: 0.75rem; color: var(--muted); }
     /* A section that holds more than one heading — statistics, which stacks
        统计 / 对局历史 / 成就 — needs air above every heading but its first.
        This was three `style="margin-top:14px"` attributes in the markup, and
@@ -1013,7 +1040,7 @@
        a group that reads as shut. */
     .setting-fold:not([open]) > *:not(summary) { display: none; }
     .setting-sum {
-      font-size: 12px; color: var(--muted);
+      font-size: 0.75rem; color: var(--muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
@@ -1028,7 +1055,7 @@
       flex-direction: column; align-items: stretch; gap: 8px;
     }
     .setting-k {
-      font-size: 13px; font-weight: 500; color: var(--text);
+      font-size: 0.8125rem; font-weight: 500; color: var(--text);
       flex-shrink: 0;
     }
 
@@ -1139,7 +1166,7 @@
       appearance: none; border: 1px solid var(--card-border);
       background: var(--btn-ghost);
       color: var(--muted);
-      font: inherit; font-size: 12px; font-weight: 500;
+      font: inherit; font-size: 0.75rem; font-weight: 500;
       padding: 8px 0; border-radius: var(--radius-md);
       cursor: pointer;
       transition: border-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
@@ -1238,10 +1265,10 @@
       display: grid; gap: 8px;
     }
     .idle-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .idle-k { font-size: 11px; color: var(--muted); }
-    .idle-v { font-size: 12px; color: var(--text); font-weight: 500; }
+    .idle-k { font-size: 0.6875rem; color: var(--muted); }
+    .idle-v { font-size: 0.75rem; color: var(--text); font-weight: 500; }
     .idle-rec {
-      font-size: 12px; color: var(--accent);
+      font-size: 0.75rem; color: var(--accent);
       line-height: var(--lh-body);
       padding-top: 8px;
       border-top: 1px solid var(--card-border);
@@ -1266,7 +1293,7 @@
       flex: 1;
       appearance: none; border: 0; background: transparent;
       color: var(--muted);
-      font: inherit; font-size: 15px; line-height: var(--lh-tight);
+      font: inherit; font-size: 0.9375rem; line-height: var(--lh-tight);
       min-height: var(--row-h); padding: 0; border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background var(--dur-quick) var(--ease);
@@ -1365,7 +1392,7 @@
          kind of thing (audit, work package E). One rule, three selectors. */
       display: flex; align-items: center;
       height: var(--label-h); margin-bottom: 8px;
-      font-size: 11px; font-weight: 600;
+      font-size: 0.6875rem; font-weight: 600;
       letter-spacing: 0.12em; text-transform: uppercase;
       color: var(--muted); opacity: 0.9;
     }
@@ -1375,27 +1402,27 @@
     .daily-plan {
       list-style: none; margin: 0; padding: 0 2px;
       display: flex; flex-direction: column; gap: 2px;
-      font-size: 12px; color: var(--muted); line-height: var(--lh-body);
+      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
     }
     .daily-step { display: flex; justify-content: space-between; gap: 8px; }
     .daily-step.done { opacity: 0.55; text-decoration: line-through; }
     .daily-step.current { color: var(--text); font-weight: 600; }
-    .daily-why { font-size: 11px; opacity: 0.85; text-align: right; }
+    .daily-why { font-size: 0.6875rem; opacity: 0.85; text-align: right; }
     #more-row { margin-top: 2px; }
     .hint {
       margin: 12px 0 0;
-      font-size: 11px; color: var(--muted); line-height: var(--lh-body);
+      font-size: 0.6875rem; color: var(--muted); line-height: var(--lh-body);
       opacity: 0.75;
     }
 
     /* learn mode: lesson panel */
     .lesson-title {
-      font-size: 13px; font-weight: 600; color: var(--text);
+      font-size: 0.8125rem; font-weight: 600; color: var(--text);
       margin-bottom: 8px; line-height: var(--lh-body);
     }
     .lesson-text p {
       margin: 0 0 8px;
-      font-size: 12px; color: var(--muted); line-height: var(--lh-prose);
+      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-prose);
     }
     /* The task is not another paragraph: it is the thing to DO, and it sits
        on its own surface so the eye can find it without reading the lesson
@@ -1406,7 +1433,7 @@
       border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
       background: color-mix(in srgb, var(--accent) 10%, transparent);
       border-radius: var(--radius-sm);
-      font-size: 13px; font-weight: 600; color: var(--text); line-height: var(--lh-body);
+      font-size: 0.8125rem; font-weight: 600; color: var(--text); line-height: var(--lh-body);
     }
     .lesson-controls {
       display: flex; gap: 8px; margin-bottom: 12px;
@@ -1465,7 +1492,7 @@
     #sec-editor .lesson-controls { margin-top: 12px; }
     .lesson-part {
       margin: 12px 0 4px;
-      font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+      font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.1em;
       color: var(--muted); opacity: 0.85;
     }
     .lesson-list { display: flex; flex-direction: column; gap: 2px; }
@@ -1473,7 +1500,7 @@
       appearance: none; text-align: left;
       border: 0; background: transparent;
       color: var(--muted);
-      font: inherit; font-size: 12px;
+      font: inherit; font-size: 0.75rem;
       padding: 6px 8px; border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
@@ -1488,17 +1515,17 @@
 
     /* side-panel side marks: king glyphs, hollow white / solid black */
     .pmark {
-      font-size: 19px; line-height: var(--lh-tight); flex-shrink: 0;
+      font-size: 1.1875rem; line-height: var(--lh-tight); flex-shrink: 0;
       color: var(--text); opacity: 0.9;
     }
     [data-theme="notebook"] .pmark.white { color: #9a3412; }
     [data-theme="notebook"] .pmark.black { color: #1e3a5f; }
     .badge {
-      font-size: 11px; padding: 0px 4px; border-radius: 999px;
+      font-size: 0.6875rem; padding: 0px 4px; border-radius: 999px;
       background: color-mix(in srgb, var(--accent) 80%, #000);
       color: var(--on-accent); font-weight: 600; letter-spacing: 0.02em;
     }
-    .muted { color: var(--muted); font-size: 12px; }
+    .muted { color: var(--muted); font-size: 0.75rem; }
 
     .toast {
       position: absolute; left: 50%; bottom: 24px; z-index: 40;
@@ -1506,7 +1533,7 @@
       background: color-mix(in srgb, var(--panel) 94%, #000);
       color: var(--text);
       border: 1px solid var(--panel-border);
-      padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 500;
+      padding: 8px 16px; border-radius: 999px; font-size: 0.8125rem; font-weight: 500;
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
       opacity: 0; pointer-events: none;
       transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
@@ -1516,7 +1543,7 @@
     .toast { display: flex; align-items: center; gap: 8px; }
     .toast-close {
       appearance: none; border: 0; background: transparent;
-      color: inherit; font: inherit; font-size: 12px; line-height: var(--lh-tight);
+      color: inherit; font: inherit; font-size: 0.75rem; line-height: var(--lh-tight);
       width: 20px; height: 20px; flex: none;
       display: grid; place-items: center;
       border-radius: 999px; cursor: pointer; opacity: 0.75;
@@ -1529,7 +1556,7 @@
     .toast-action {
       appearance: none; background: transparent;
       border: 1px solid currentColor;
-      color: inherit; font: inherit; font-size: 12px; font-weight: 500;
+      color: inherit; font: inherit; font-size: 0.75rem; font-weight: 500;
       line-height: var(--lh-tight);
       padding: 2px 8px; border-radius: 999px;
       flex: none; cursor: pointer; opacity: 0.85;
@@ -1567,11 +1594,13 @@
       max-width: min(560px, calc(100% - 32px));
       background: var(--danger); color: var(--on-danger, #fff);
       border-radius: var(--radius-md);
-      padding: 8px 16px; font-size: 13px; font-weight: 500;
+      padding: 8px 16px; font-size: 0.8125rem; font-weight: 500;
       line-height: var(--lh-body);
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
     }
 
+    /* 6.0: a second banner (the set-aside record) stacks under the first */
+    .storage-fault ~ .storage-fault { top: 56px; }
     .app-fault { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .app-fault .toast-action { color: inherit; border-color: color-mix(in srgb, currentColor 45%, transparent); }
 
@@ -1615,12 +1644,12 @@
       from { opacity: 0; transform: translateY(8px) scale(0.98); }
       to { opacity: 1; transform: none; }
     }
-    .modal h3 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
-    .modal table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .modal h3 { margin: 0 0 12px; font-size: 1rem; font-weight: 600; }
+    .modal table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
     .modal td { padding: 8px 0; border-bottom: 1px solid var(--card-border); }
     .modal td:first-child {
       color: var(--accent); width: 42%;
-      font-family: var(--font-num); font-size: 12px;
+      font-family: var(--font-num); font-size: 0.75rem;
     }
     .modal .close-row { margin-top: 16px; text-align: right; }
     /* Two variants, both of which were inline `style=` on the element until
@@ -1634,7 +1663,7 @@
     /* the sentence you read before agreeing to something irreversible */
     .confirm-msg {
       margin: 0 0 16px;
-      font-size: 15px; line-height: var(--lh-body); color: var(--text);
+      font-size: 0.9375rem; line-height: var(--lh-body); color: var(--text);
     }
 
     /* position editor: piece palette */
@@ -1646,7 +1675,7 @@
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
       border-radius: var(--radius-sm); padding: 6px 0 6px;
-      font-size: 19px; line-height: var(--lh-tight);
+      font-size: 1.1875rem; line-height: var(--lh-tight);
       transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
     .palette button:hover { background: var(--btn-hover); }
@@ -1667,7 +1696,7 @@
       appearance: none; text-align: left; cursor: pointer;
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
-      font: inherit; font-size: 13px; line-height: var(--lh-body);
+      font: inherit; font-size: 0.8125rem; line-height: var(--lh-body);
       padding: 8px 12px; border-radius: var(--radius-sm);
       transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
@@ -1675,18 +1704,18 @@
       border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
       background: color-mix(in srgb, var(--accent) 12%, transparent);
     }
-    .pick-sub { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+    .pick-sub { display: block; margin-top: 2px; font-size: 0.6875rem; color: var(--muted); }
     /* 「推荐」 on the door a newcomer should take: a word, not a second button weight */
     .pick-tag {
       display: inline-block; margin-left: 8px; padding: 0 6px;
-      font-size: 11px; font-weight: 600; line-height: var(--lh-body);
+      font-size: 0.6875rem; font-weight: 600; line-height: var(--lh-body);
       color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
       border-radius: var(--radius-sm); vertical-align: 1px;
     }
 
     .text-input {
       width: 100%; box-sizing: border-box;
-      font: inherit; font-family: var(--font-num); font-size: 12px;
+      font: inherit; font-family: var(--font-num); font-size: 0.75rem;
       padding: 8px 12px; border-radius: var(--radius-sm);
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
@@ -1708,7 +1737,7 @@
       background: var(--btn-ghost);
       color: var(--text);
       border-radius: var(--radius-md); padding: 8px 0 12px;
-      font: inherit; font-size: 12px; font-weight: 500;
+      font: inherit; font-size: 0.75rem; font-weight: 500;
       display: flex; flex-direction: column; align-items: center; gap: 4px;
       transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
     }
@@ -1717,7 +1746,7 @@
       background: color-mix(in srgb, var(--accent) 12%, transparent);
     }
     .promo-row button:active { transform: scale(0.96); }
-    .promo-glyph { font-size: 30px; line-height: var(--lh-tight); }
+    .promo-glyph { font-size: 1.875rem; line-height: var(--lh-tight); }
 
     .scrim {
       display: none; position: absolute; inset: 0; z-index: 25;
@@ -1835,11 +1864,22 @@
   top: calc(var(--wood-pad) + 8px);
   padding: 2px 8px;
   border-radius: var(--radius-sm);
-  font-size: 11px; line-height: var(--lh-body); font-weight: 600;
+  font-size: 0.6875rem; line-height: var(--lh-body); font-weight: 600;
   color: var(--on-accent); background: var(--accent);
   opacity: 0.92;
   pointer-events: none;
 }
+/* under the badge, the one thing a pinned line can be turned into (Q2.3) */
+.preview-try {
+  position: absolute;
+  left: calc(var(--wood-pad) + 8px);
+  top: calc(var(--wood-pad) + 34px);
+  appearance: none; border: 1px solid var(--accent); cursor: pointer;
+  padding: 2px 8px; border-radius: var(--radius-sm);
+  font: inherit; font-size: 0.6875rem; line-height: var(--lh-body); font-weight: 600;
+  color: var(--accent); background: var(--panel);
+}
+.preview-try:hover { color: var(--on-accent); background: var(--accent); }
 @keyframes think-dot-pulse {
   0%, 100% { transform: scale(0.7); opacity: 0.35; }
   50% { transform: scale(1.15); opacity: 0.85; }
@@ -1899,7 +1939,7 @@
        column; the family and the size are the move's. P4.4. */
     .mlnum {
       width: 26px; flex: none; text-align: right;
-      font-size: 13px; color: var(--muted);
+      font-size: 0.8125rem; color: var(--muted);
       font-variant-numeric: tabular-nums;
       padding-right: 2px;
     }
@@ -1915,7 +1955,7 @@
          themes, so this was a colour that silently did not apply and inherited
          the right one by luck. Defect 9. */
       color: var(--text);
-      font: inherit; font-size: 13px; font-weight: 500;
+      font: inherit; font-size: 0.8125rem; font-weight: 500;
       /* the one deliberate second height: a move-list cell is a dense grid of
          SAN tokens, not a control in the stack of controls, and at --row-h the
          list would be half as long for the same panel. On the scale all the
@@ -1933,12 +1973,69 @@
       background: color-mix(in srgb, var(--accent) 18%, transparent);
       color: var(--accent); font-weight: 600;
     }
+    /* --- the tree in the notation (v6-plan Q2.1) ---
+       A variation is a paragraph, not a row: indented under the move it
+       replaces, one size down and in the muted ink, parentheses nested as
+       deep as the line goes. A comment is the same paragraph without the
+       parentheses. The mainline row stays exactly what it was. */
+    .mlvar, .mlcomment {
+      margin: 0 0 0 24px;
+      padding: 0 4px;
+      font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted);
+      white-space: normal; overflow-wrap: anywhere;
+    }
+    .mlvline + .mlvline { margin-top: 2px; }
+    .mlvnum { font-variant-numeric: tabular-nums; margin: 0 2px; }
+    .mlvnest { margin-left: 2px; }
+    .mlvcomment { margin: 0 2px; font-style: italic; }
+    .mlv {
+      appearance: none; border: 0; background: transparent;
+      color: var(--text);
+      font: inherit; font-size: 0.75rem; font-weight: 500;
+      padding: 0 4px; min-height: var(--row-h-sm); line-height: var(--lh-body);
+      display: inline-flex; align-items: center;
+      border-radius: var(--radius-sm); cursor: pointer;
+      white-space: nowrap;
+    }
+    .mlv:hover { background: var(--btn-ghost); }
+    .mlv.current {
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+      color: var(--accent); font-weight: 600;
+    }
+    /* the menu handle beside the current move: as quiet as a move number */
+    .mlmenu {
+      appearance: none; border: 0; background: transparent;
+      color: var(--muted); font: inherit; font-size: 0.75rem; font-weight: 600;
+      padding: 0 4px; min-height: var(--row-h-sm); border-radius: var(--radius-sm); cursor: pointer;
+      flex: none;
+    }
+    .mlmenu:hover { background: var(--btn-ghost); color: var(--text); }
+    .move-menu {
+      position: fixed; z-index: 55;
+      display: grid; gap: 2px; min-width: 140px;
+      padding: 4px;
+      background: var(--panel); border: 1px solid var(--panel-border);
+      border-radius: var(--radius-md);
+      box-shadow: 0 12px 32px rgba(0,0,0,.35);
+    }
+    .move-menu button {
+      appearance: none; border: 0; background: transparent;
+      color: var(--text); font: inherit; font-size: 0.75rem; font-weight: 500;
+      text-align: left; padding: 0 12px; height: var(--row-h);
+      border-radius: var(--radius-sm); cursor: pointer;
+    }
+    .move-menu button:hover, .move-menu button:focus-visible { background: var(--btn-ghost); }
+    .replay-line { margin-top: 6px; }
+    .note-input {
+      width: 100%; resize: vertical;
+      font: inherit; font-size: 0.8125rem; line-height: var(--lh-body);
+    }
 
     /* --- review: the evaluation curve, the bar, and the accuracy line --- */
     #eval-wrap { margin: 8px 0 2px; }
     .pv-line {
       margin-top: 6px;
-      font-size: 12px; color: var(--muted); line-height: var(--lh-body);
+      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     /* The engine line as chips, not prose: each move is a place the pointer
@@ -1947,8 +2044,12 @@
        appearing under the cursor, not a row of buttons shouting. */
     #pv-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; }
     .pv-label { margin-right: 2px; }
+    /* 6.0: the other engine lines sit under the principal one as read-only
+       rows; a chip that cannot be previewed is a span, not a button */
+    .pv-alt-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; margin-top: 4px; }
+    .pv-chip.pv-alt { cursor: default; opacity: .8; }
     .pv-chip {
-      font: inherit; font-size: 12px; line-height: var(--lh-tight);
+      font: inherit; font-size: 0.75rem; line-height: var(--lh-tight);
       color: var(--text); background: transparent;
       border: 1px solid transparent; border-radius: var(--radius-sm);
       padding: 2px 6px; cursor: pointer;
@@ -1956,6 +2057,16 @@
     }
     .pv-chip:hover { border-color: var(--line); background: var(--btn-ghost); }
     .pv-chip.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    /* the one action among the chips: kept apart from them by its border,
+       so it does not read as a move (v6-plan Q2.3) */
+    .pv-act {
+      font: inherit; font-size: 0.6875rem; line-height: var(--lh-tight); font-weight: 600;
+      color: var(--muted); background: transparent;
+      border: 1px solid var(--line); border-radius: var(--radius-sm);
+      padding: 2px 8px; margin-left: 4px; cursor: pointer;
+      transition: color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease);
+    }
+    .pv-act:hover { color: var(--text); border-color: var(--accent); }
     #puzzle-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; margin: -4px 0 12px; overflow: visible; }
     /* the 主题 segment shows what it names: two squares of each board */
     #theme-seg button::before {
@@ -1972,7 +2083,7 @@
     .review-bank {
       display: block; width: 100%; margin-top: 4px;
       padding: 6px 8px; text-align: left;
-      font: inherit; font-size: 12px; line-height: var(--lh-body);
+      font: inherit; font-size: 0.75rem; line-height: var(--lh-body);
       color: var(--text); background: transparent;
       border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
       cursor: pointer;
@@ -1989,7 +2100,7 @@
     /* The difficulty row is two scales, so it is labelled as two. */
     .diff-group {
       display: block; margin: 6px 0 4px;
-      font-size: 11px; font-weight: 600; color: var(--muted);
+      font-size: 0.6875rem; font-weight: 600; color: var(--muted);
     }
     .diff-group:first-of-type { margin-top: 0; }
 
@@ -2006,17 +2117,17 @@
       margin-bottom: 8px; padding: 6px 8px;
       background: var(--card); border: 1px solid var(--card-border);
       border-radius: var(--radius-sm);
-      font-size: 12px; line-height: var(--lh-body); color: var(--text);
+      font-size: 0.75rem; line-height: var(--lh-body); color: var(--text);
     }
     .ach-group {
-      margin: 8px 0 4px; font-size: 11px; font-weight: 600; color: var(--muted);
+      margin: 8px 0 4px; font-size: 0.6875rem; font-weight: 600; color: var(--muted);
     }
     .ach-group:first-child { margin-top: 0; }
 
     /* A one-line note under a setting, for the thing the label cannot say. */
     .setting-note {
       display: block; margin-top: 4px;
-      font-size: 11px; line-height: var(--lh-body); color: var(--muted);
+      font-size: 0.6875rem; line-height: var(--lh-body); color: var(--muted);
     }
 
     /* Eval bar: the curve read at one ply. White's share fills from the left,
@@ -2037,7 +2148,7 @@
     .eval-bar.is-unmeasured { opacity: 0.35; }
     .eval-bar.is-unmeasured .eval-bar-fill { width: 50%; background: var(--muted); }
     .eval-bar-text {
-      font-size: 12px; color: var(--muted); min-width: 3.2em; text-align: right;
+      font-size: 0.75rem; color: var(--muted); min-width: 3.2em; text-align: right;
     }
     @media (prefers-reduced-motion: reduce) {
       .eval-bar-fill { transition: none; }
@@ -2049,27 +2160,27 @@
       background: var(--card); border: 1px solid var(--card-border);
       border-radius: var(--radius-sm);
     }
-    .review-row { font-size: 12px; line-height: var(--lh-body); margin-bottom: 4px; }
+    .review-row { font-size: 0.75rem; line-height: var(--lh-body); margin-bottom: 4px; }
     /* the side's name, over its three rows rather than in front of one line */
     .review-k { font-weight: 600; margin-bottom: 2px; }
     .review-row + .review-row { margin-top: 8px; }
-    .review .stat-row { font-size: 12px; padding: 2px 0; }
-    .review-note { font-size: 11px; margin-top: 0px; }
+    .review .stat-row { font-size: 0.75rem; padding: 2px 0; }
+    .review-note { font-size: 0.6875rem; margin-top: 0px; }
     .review-jump {
       display: block; width: 100%; margin-top: 6px;
       padding: 6px 8px; text-align: left;
-      font: inherit; font-size: 12px; line-height: var(--lh-body);
+      font: inherit; font-size: 0.75rem; line-height: var(--lh-body);
       color: var(--text); background: transparent;
       border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
       cursor: pointer;
     }
     .review-jump:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
 
-    .ach-pg { margin-left: auto; font-size: 11px; color: var(--muted); flex: none; }
+    .ach-pg { margin-left: auto; font-size: 0.6875rem; color: var(--muted); flex: none; }
     /* the "what next?" suggestion under the statistics */
     .stat-rec { margin-top: 6px; color: var(--accent); }
 
-    .mvtag { margin-left: 2px; font-weight: 600; font-size: 11px; }
+    .mvtag { margin-left: 2px; font-weight: 600; font-size: 0.6875rem; }
     .mvtag.t-soft { color: var(--judge-soft); }
     .mvtag.t-mid { color: var(--judge-mid); }
     .mvtag.t-bad { color: var(--judge-bad); }
@@ -2105,7 +2216,7 @@
     .rec-entry[hidden] { display: none; }
     .rec-lead {
       margin: 0 0 12px;
-      font-size: 12px; line-height: var(--lh-body); color: var(--muted);
+      font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted);
     }
     .rec-doors { display: flex; flex-direction: column; gap: 6px; }
     .rec-door {
@@ -2119,10 +2230,10 @@
     }
     .rec-door:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--card-border)); background: var(--btn-hover); }
     .rec-door:active { transform: scale(0.98); }
-    .rec-door-ic { font-size: 16px; line-height: var(--lh-tight); flex-shrink: 0; }
+    .rec-door-ic { font-size: 1rem; line-height: var(--lh-tight); flex-shrink: 0; }
     .rec-door-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .rec-door-k { font-size: 13px; font-weight: 600; line-height: var(--lh-tight); }
-    .rec-door-v { font-size: 11px; color: var(--muted); line-height: var(--lh-tight); }
+    .rec-door-k { font-size: 0.8125rem; font-weight: 600; line-height: var(--lh-tight); }
+    .rec-door-v { font-size: 0.6875rem; color: var(--muted); line-height: var(--lh-tight); }
     /* the fold at the end of the locked list — an .act-btn like every other
        action in the panel, just not stretched across the column */
     .ach-more { margin-top: 6px; flex: none; justify-self: start; padding: 8px 12px; }
@@ -2145,9 +2256,9 @@
       border-color: color-mix(in srgb, var(--accent) 45%, var(--card-border));
       background: color-mix(in srgb, var(--accent) 10%, transparent);
     }
-    .ach-ic { font-size: 16px; line-height: var(--lh-tight); flex-shrink: 0; }
+    .ach-ic { font-size: 1rem; line-height: var(--lh-tight); flex-shrink: 0; }
     .ach-nm {
-      font-size: 12px; color: var(--text); line-height: var(--lh-tight);
+      font-size: 0.75rem; color: var(--text); line-height: var(--lh-tight);
       /* `overflow-wrap: anywhere` was added in 2.0.1 to stop the name pushing
          its card past the panel edge. It stopped the overflow by breaking the
          word instead: nine of the fifteen badges read 规则通/关, 熟能生/巧,
@@ -2168,7 +2279,7 @@
       display: flex;
       justify-content: space-between;
       align-items: baseline;
-      font-size: 13px;
+      font-size: 0.8125rem;
       padding: 2px 2px;
     }
     .stat-k { color: var(--muted); }
@@ -2176,7 +2287,7 @@
        evaluations and the move numbers already were; the statistics, the
        achievement counters and the history rows were not, so a column of
        figures under 「战绩」 shifted its digits as the values changed. P4.6. */
-    .stat-v { color: var(--text); font-size: 12px; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+    .stat-v { color: var(--text); font-size: 0.75rem; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
     .ach-pg, .hist-row { font-variant-numeric: tabular-nums; }
     .stats-body .hint { margin: 4px 0 0; }
 
@@ -2220,7 +2331,17 @@
   max-height: 52vh; overflow-y: auto;
 }
 .key-list dt { display: flex; gap: 4px; flex-wrap: wrap; }
-.key-list dd { margin: 0; font-size: 13px; color: var(--muted); }
+/* 6.0: the About sheet reuses the shortcut sheet's two-column list; its
+   values are paths and licence lines, which must be allowed to wrap */
+.about-list dd { margin: 0; overflow-wrap: anywhere; font-size: 0.75rem; line-height: var(--lh-body); }
+.about-list dt { font-size: 0.75rem; color: var(--muted); }
+.link-btn {
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+  color: var(--primary-from); text-decoration: underline; font: inherit;
+}
+/* 6.0: the volume slider — one control, the theme's accent, no third look */
+.range { width: 120px; accent-color: var(--primary-from); }
+.key-list dd { margin: 0; font-size: 0.8125rem; color: var(--muted); }
 kbd {
   display: inline-block;
   min-width: 22px; padding: 2px 6px;
@@ -2244,11 +2365,32 @@ kbd.accel {
 
 /* 进步 — the accuracy sparkline on the record page. Same dress as the eval
    curve: a card, not a chrome element, because it is content you read. */
-#trend-acc {
+#trend-acc, #trend-rating {
   display: block;
   width: 100%;
   height: 56px;
   border-radius: var(--radius-sm);
   background: var(--card);
   border: 1px solid var(--card-border);
+}
+
+
+/* 6.0 (v6-plan Q3.6): a higher-contrast variant, from the same tokens. Muted
+   ink becomes ink, hairlines become text-coloured, and the focus ring gets
+   thicker. Only what the request is about: colours already come from the
+   theme, so nothing here names one. */
+@media (prefers-contrast: more) {
+  :root {
+    --muted: var(--text);
+    --panel-border: var(--text);
+  }
+  :focus-visible { outline-width: 3px; }
+}
+
+/* Windows high-contrast themes: let the system paint the controls it knows
+   about, and keep the board's own colours — a chess board in two system
+   colours is not a chess board. */
+@media (forced-colors: active) {
+  button, .switch, .tool-btn, .act-btn { forced-color-adjust: auto; }
+  #board, .coords { forced-color-adjust: none; }
 }

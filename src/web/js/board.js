@@ -11,6 +11,9 @@
  *   stars: array of square names — lesson goal markers (gold stars)
  *   flashSquare: square name | null — brief success flash (lesson feedback)
  *   cursor: square name | null — keyboard focus ring (keyboard play)
+ *   shapes: {arrows: [{from,to,color}], circles: [{sq,color}]} | undefined —
+ *     the player's own annotations on this position, colour letters G/R/B/Y
+ *     (lichess's), painted from the --shape-* tokens (v6-plan Q2.4)
  * @module board
  */
 import { CHESS_PIECE_SVGS } from "./pieces.js";
@@ -55,7 +58,14 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     // different one from a dark board, so it belongs to the palette too
     pieceShadow: ["--piece-shadow", "rgba(38, 20, 4, 0.26)"],
     cursorEdge: ["--sq-cursor-edge", "rgba(20, 20, 20, 0.55)"],
+    // the four annotation colours, lichess's letters: a theme tunes them
+    // like every other mark, and the fallbacks are lichess's own values
+    shapeG: ["--shape-g", "rgba(21, 120, 27, 0.8)"],
+    shapeR: ["--shape-r", "rgba(136, 32, 32, 0.8)"],
+    shapeB: ["--shape-b", "rgba(0, 48, 136, 0.8)"],
+    shapeY: ["--shape-y", "rgba(232, 143, 0, 0.8)"],
   };
+  const SHAPE_PAINT = { G: "shapeG", R: "shapeR", B: "shapeB", Y: "shapeY" };
   /** resolved once per theme change, not once per square */
   let _paint = null;
   function paint() {
@@ -347,12 +357,16 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
    * animation frame during a move.
    */
   let coordFlip = null;
-  function drawCoords(flipped) {
-    if (coordFlip === !!flipped) return;
-    coordFlip = !!flipped;
+  function drawCoords(flipped, on) {
+    // 6.0: the gutters can be emptied (v6-plan Q2.8) — `null` marks "nothing
+    // drawn" so switching back on repaints for the current orientation
+    const key = on === false ? "off" : !!flipped;
+    if (coordFlip === key) return;
+    coordFlip = key;
     const files = typeof document !== "undefined" && document.getElementById("coord-files");
     const ranks = typeof document !== "undefined" && document.getElementById("coord-ranks");
     if (!files || !ranks) return;
+    if (on === false) { files.replaceChildren(); ranks.replaceChildren(); return; }
     const fs = FILES.split("");
     const rs = ["8", "7", "6", "5", "4", "3", "2", "1"];
     const span = (t) => {
@@ -420,7 +434,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     // Coordinates are no longer painted here: they are printed on the frame
     // around the board (see .coords in styles.css), which is where a real
     // board has them and where they cannot sit on top of the a1/h1 rooks.
-    drawCoords(m.flipped);
+    drawCoords(m.flipped, m.coords !== false);
     // pieces: crisp vector sprites, Unicode glyphs only while sprites decode
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -448,6 +462,9 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     }
 
     function paintPiece(piece, x, y, scale) {
+      // 6.0 blindfold (v6-plan Q2.8): the marks, the cursor and the drag still
+      // draw — only the men are withheld, which is the whole exercise
+      if (m.blind) return;
       const k = scale || 1;
       // Rastered at the size it is drawn at. Until 2.0 the lifted piece was
       // the board sprite scaled up 12% at draw time, which made the one piece
@@ -529,10 +546,11 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
         ctx.stroke();
       }
     }
-    // engine hint arrow on top of pieces
-    if (m.hintMove) {
-      const a = screenPos(m.hintMove.from, m.flipped);
-      const b = screenPos(m.hintMove.to, m.flipped);
+    // one arrow, for the engine's hint and for the player's own: the shaft
+    // is MARK.arrow, and the geometry is the same whoever drew it
+    function paintArrow(from, to, colour) {
+      const a = screenPos(from, m.flipped);
+      const b = screenPos(to, m.flipped);
       const ax = a.sc * step + step / 2, ay = a.sr * step + step / 2;
       const bx = b.sc * step + step / 2, by = b.sr * step + step / 2;
       const ang = Math.atan2(by - ay, bx - ax);
@@ -540,8 +558,8 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
       // stop the shaft where the arrowhead begins
       const sx = bx - Math.cos(ang) * head * 0.8;
       const sy = by - Math.sin(ang) * head * 0.8;
-      ctx.strokeStyle = P.hint;
-      ctx.fillStyle = P.hint;
+      ctx.strokeStyle = colour;
+      ctx.fillStyle = colour;
       ctx.lineWidth = step * MARK.arrow;
       ctx.lineCap = "round";
       ctx.beginPath();
@@ -555,6 +573,21 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
       ctx.closePath();
       ctx.fill();
     }
+    // the player's annotations (v6-plan Q2.4): circles at the one ring
+    // radius in the bold weight, arrows as above, colours from the theme
+    if (m.shapes) {
+      for (const c of m.shapes.circles || []) {
+        const { sr, sc } = screenPos(c.sq, m.flipped);
+        ctx.beginPath();
+        ctx.arc(sc * step + step / 2, sr * step + step / 2, step * MARK.ring, 0, Math.PI * 2);
+        ctx.strokeStyle = P[SHAPE_PAINT[c.color] || "shapeG"];
+        ctx.lineWidth = step * MARK.bold;
+        ctx.stroke();
+      }
+      for (const a of m.shapes.arrows || []) paintArrow(a.from, a.to, P[SHAPE_PAINT[a.color] || "shapeG"]);
+    }
+    // engine hint arrow on top of pieces
+    if (m.hintMove) paintArrow(m.hintMove.from, m.hintMove.to, P.hint);
     // The dragged piece follows the pointer above everything else, lifted:
     // a shadow and a little scale, so it reads as picked UP rather than as a
     // copy sliding under the glass.

@@ -23,12 +23,61 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return new TextDecoder().decode(bytes);
   }
 
+  /**
+   * `err.name` on the rejection for a path the native side never issued.
+   *
+   * v6-plan Q1.2: chess.readTextFile / chess.writeTextFile accept only a path
+   * the native side handed out in this process — one a file dialog returned,
+   * one that was dropped on the window, or one the OS opened. The dialogs are
+   * SDK builtins whose answer main.zig never sees, so the wrappers below call
+   * chess.issuePath on every path they return; main.zig validates it (home or
+   * a removable volume, no dotfiles, no ~/Library / AppData, no .app bundle)
+   * and only then remembers it. A call site that names a path from anywhere
+   * else gets this error, which is the point.
+   */
+  const UNISSUED_PATH = "UnissuedPathError";
+
+  function unissuedPathError(path) {
+    const e = new Error("path was not issued by the native side");
+    e.name = UNISSUED_PATH;
+    e.path = path;
+    return e;
+  }
+
+  /** The refusal, if `r` is one; the old "true" / bare-string shapes pass. */
+  function throwIfRefused(r, path) {
+    if (r && typeof r === "object" && r.error === "unissued_path") throw unissuedPathError(path);
+  }
+
+  /**
+   * Register `path` with the native side as one the player picked.
+   *
+   * Best-effort and silent: on a build without chess.issuePath (or in a
+   * browser) the read/write that follows either works as before or fails
+   * with its own error, and nothing here can add information to that.
+   * @returns {Promise<boolean>} whether the native side accepted it
+   */
+  async function issuePath(path) {
+    if (!path || !hasZero() || typeof global.zero.invoke !== "function") return false;
+    try {
+      const r = await global.zero.invoke("chess.issuePath", { path: path });
+      return !!(r && r.ok);
+    } catch (_) { return false; }
+  }
+
+  async function issuePaths(input) {
+    const paths = normalizePaths(input);
+    for (let i = 0; i < paths.length; i++) await issuePath(paths[i]);
+    return paths;
+  }
+
   async function writeTextFile(path, text) {
     if (!hasZero()) throw new Error("no bridge");
-    await global.zero.invoke("chess.writeTextFile", {
+    const r = await global.zero.invoke("chess.writeTextFile", {
       path: path,
       b64: bytesToBase64(text),
     });
+    throwIfRefused(r, path);
   }
 
   /**
@@ -43,7 +92,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   async function writeBinaryFile(path, b64) {
     if (!hasZero()) throw new Error("no bridge");
-    await global.zero.invoke("chess.writeTextFile", { path: path, b64: b64 });
+    const r = await global.zero.invoke("chess.writeTextFile", { path: path, b64: b64 });
+    throwIfRefused(r, path);
   }
 
   /**
@@ -69,6 +119,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // refusal; the old shape still reads fine.
     if (typeof r === "string") return base64ToString(r);
     if (!r || typeof r !== "object") throw new Error("bad read result");
+    throwIfRefused(r, path);
     if (r.tooLarge) throw fileTooLargeError(r.limit);
     return base64ToString(r.b64);
   }
@@ -95,14 +146,21 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return e;
   }
 
+  // Both dialogs hand their answer to chess.issuePath before returning it
+  // (see UNISSUED_PATH): the dialog is the native side's word that the player
+  // chose this path, and the read/write that follows is refused without it.
   async function saveFileDialog(options) {
     if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.saveFile) throw noFileDialogError();
-    return global.zero.dialogs.saveFile(options || {});
+    const picked = await global.zero.dialogs.saveFile(options || {});
+    await issuePaths(picked);
+    return picked;
   }
 
   async function openFileDialog(options) {
     if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.openFile) throw noFileDialogError();
-    return global.zero.dialogs.openFile(options || {});
+    const picked = await global.zero.dialogs.openFile(options || {});
+    await issuePaths(picked);
+    return picked;
   }
 
   /**
@@ -279,13 +337,146 @@ const global = typeof window !== "undefined" ? window : globalThis;
     } catch (_) {}
   }
 
+  /** The paths inside a drop:files / open:files payload, whichever shape. */
+  function eventPaths(payload) {
+    return normalizePaths(payload && payload.paths ? payload.paths : payload);
+  }
+
   function onDropFiles(handler) {
     if (!hasZero() || typeof global.zero.on !== "function") return function () {};
     try {
-      return global.zero.on("drop:files", handler);
+      // a dropped path is native-issued too — register it before the handler
+      // reads it (see UNISSUED_PATH)
+      return global.zero.on("drop:files", async function (payload) {
+        await issuePaths(eventPaths(payload));
+        return handler(payload);
+      });
     } catch (_) {
       return function () {};
     }
+  }
+
+  /**
+   * A document the OS opened with this app (a double-clicked .pgn, once the
+   * type is registered — scripts/add-pgn-doctype.sh / register-pgn.reg).
+   * main.zig forwards it as "open:files" with the same {paths} shape as
+   * drop:files and has already issued the paths. Deduplicated over a short
+   * window in case the SDK also relays the OS event to the page itself.
+   * @returns {function} unsubscribe
+   */
+  function onOpenFiles(handler) {
+    if (!hasZero() || typeof global.zero.on !== "function") return function () {};
+    let lastKey = "";
+    let lastAt = 0;
+    try {
+      return global.zero.on("open:files", function (payload) {
+        const paths = eventPaths(payload);
+        if (!paths.length) return;
+        const key = paths.join("\n");
+        const now = Date.now();
+        if (key === lastKey && now - lastAt < 1000) return;
+        lastKey = key;
+        lastAt = now;
+        return handler({ paths: paths });
+      });
+    } catch (_) {
+      return function () {};
+    }
+  }
+
+  // ---- app data (v6-plan Q1.1) --------------------------------------------
+  //
+  // One native file, chessboard.json, in the per-user data directory
+  // (macOS ~/Library/Application Support/Chessboard/, Windows
+  // %APPDATA%\Chessboard\). The page owns the contents; the native side
+  // writes atomically (tmp → rename) and keeps the previous file as
+  // chessboard.json.bak. Every wrapper answers null when there is no bridge
+  // (the browser) or the platform gave no data directory, so persist.js can
+  // keep localStorage as the fallback and the one-time migration source.
+
+  /**
+   * @returns {Promise<{text: string}|{missing: true}|null>} the file, "no
+   *   file yet" (a fresh install — migrate from localStorage), or null when
+   *   native storage is unavailable here. Throws FileTooLargeError when the
+   *   file is over the native limit.
+   */
+  async function appdataRead() {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return null;
+    let r;
+    try { r = await global.zero.invoke("chess.appdataRead", {}); }
+    catch (_) { return null; }
+    if (!r || typeof r !== "object") return null;
+    if (r.missing) return { missing: true };
+    if (r.tooLarge) throw fileTooLargeError(r.limit);
+    if (r.error || typeof r.b64 !== "string") return null;
+    return { text: base64ToString(r.b64) };
+  }
+
+  /**
+   * @returns {Promise<boolean|null>} true when written, null when native
+   *   storage is unavailable here. Throws when the native side refused or
+   *   failed the write — the caller must NOT treat that as saved.
+   */
+  async function appdataWrite(text) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return null;
+    const r = await global.zero.invoke("chess.appdataWrite", { b64: bytesToBase64(String(text)) });
+    if (r && typeof r === "object") {
+      if (r.ok) return true;
+      if (r.tooLarge) throw fileTooLargeError(r.limit);
+      if (r.error === "no_appdata_dir") return null;
+      if (typeof r.error === "string") throw new Error("appdata write failed: " + r.error);
+    }
+    // any other answer is a shell that does not know the command (an older
+    // build, a test double): no mirror, and not a failure of the profile
+    return null;
+  }
+
+  /** @returns {Promise<string|null>} where chessboard.json lives, for About */
+  async function appdataPath() {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return null;
+    try {
+      const r = await global.zero.invoke("chess.appdataPath", {});
+      return r && typeof r === "object" && typeof r.path === "string" ? r.path : null;
+    } catch (_) { return null; }
+  }
+
+  /**
+   * Tell the native shell which UI language the menus should use.
+   *
+   * The menu bar is built once at launch from app.zon and the Runtime has no
+   * rebuild, so the native side stores the choice and applies it at the next
+   * launch; the answer says so (`applied: false, restartRequired: true`) and
+   * the caller should tell the player. null when there is no bridge.
+   * @param {"zh"|"en"|"ja"} lang
+   * @returns {Promise<{ok: boolean, applied: boolean, restartRequired: boolean}|null>}
+   */
+  async function setMenuLanguage(lang) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return null;
+    try {
+      const r = await global.zero.invoke("chess.setMenuLanguage", { lang: String(lang) });
+      return r && typeof r === "object" ? r : null;
+    } catch (_) { return null; }
+  }
+
+  /**
+   * Ask GitHub for the latest release. The native side returns the tag and
+   * the release page; comparing that tag with this build's own version — and
+   * deciding whether to say anything — is the page's job. Never called at
+   * startup on its own; only from an explicit "check for updates".
+   *
+   * Races the bridge call against 5 s: the native fetch has no timeout of
+   * its own, and a check that hangs the About panel is worse than none.
+   * @returns {Promise<{tag: string, url: string}|{error: string}|null>} null
+   *   when there is no bridge
+   */
+  async function checkUpdate() {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return null;
+    const call = global.zero.invoke("chess.checkUpdate", {}).then(
+      (r) => (r && typeof r === "object" ? r : { error: "bad_result" }),
+      () => ({ error: "network" }),
+    );
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: "timeout" }), 5000));
+    return Promise.race([call, timeout]);
   }
 
   function onAppLifecycle(handlers) {
@@ -322,6 +513,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     readTextFile,
     FILE_TOO_LARGE,
     NO_FILE_DIALOG,
+    UNISSUED_PATH,
+    issuePath,
     saveFileDialog,
     openFileDialog,
     showMessage,
@@ -336,6 +529,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
     storageSet,
     storageRemove,
     onDropFiles,
+    onOpenFiles,
     onAppLifecycle,
     normalizePaths,
+    appdataRead,
+    appdataWrite,
+    appdataPath,
+    setMenuLanguage,
+    checkUpdate,
   };

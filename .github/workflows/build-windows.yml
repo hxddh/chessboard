@@ -13,9 +13,14 @@ on:
         required: false
         default: ""
       sdk_version:
+        # Pinned, like release.yml's input of the same name (see the comment
+        # there). D7: this used to default to "latest", and the `|| '0.8.1'`
+        # below only catches an EMPTY string — so every hand-dispatched build
+        # got whatever npm had that day, while the step's comment claimed the
+        # opposite. The fallback stays for a caller that passes "".
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
-        default: "latest"
+        default: "0.8.1"
 
 permissions:
   contents: write
@@ -65,6 +70,14 @@ jobs:
           test "$(wc -c < frontend/dist/js/bundle.js)" -gt 400000
           # engine-src must carry the full wasm payload (~9MB), not a stub
           test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
+          # GPLv3 §4: the product carries its licence, and Stockfish's
+          mkdir -p frontend/dist/licenses
+          cp LICENSE frontend/dist/licenses/LICENSE.txt
+          cp third_party/stockfish/COPYING.txt frontend/dist/licenses/stockfish-COPYING.txt
+      # app.zon directly — it is the portable manifest and Windows wants its
+      # default close policy. The dev-server origin it lists (D6) is dropped
+      # by src/runner.zig in every non-Debug exe, so this ReleaseFast build
+      # never trusts it without a derived manifest.
       - name: manifest keys are actually read
         # src/runner.zig is a fork of the SDK's app_runner and does not
         # complain when it lags: an unread key silently takes the SDK
@@ -93,6 +106,13 @@ jobs:
         run: |
           mkdir -p dist
           native package --target windows --output dist/Chessboard --binary zig-out/bin/chessboard.exe
+          # .pgn association: Windows has no bundle manifest for it and the
+          # packager writes no registry entries, so the one-time registration
+          # script rides next to the exe (see scripts/register-pgn.cmd)
+          if [ -d dist/Chessboard ]; then
+            cp scripts/register-pgn.cmd scripts/register-pgn.reg dist/Chessboard/
+            test -f "$(find dist/Chessboard -path '*/licenses/LICENSE.txt' | head -n1)"
+          fi
           ls -R dist
       - name: zip package
         shell: pwsh

@@ -1,0 +1,20 @@
+Windows Registry Editor Version 5.00
+
+; Associate .pgn with Chessboard for the current user (no administrator
+; prompt). `native package` writes no registry entries on Windows, so this is
+; a one-time step after unzipping. EDIT THE PATH on the two lines below to
+; where chessboard.exe actually is (backslashes doubled), or run
+; register-pgn.cmd next to the exe instead — it fills the path in for you.
+
+[HKEY_CURRENT_USER\Software\Classes\.pgn]
+@="Chessboard.pgn"
+"Content Type"="application/x-chess-pgn"
+
+[HKEY_CURRENT_USER\Software\Classes\Chessboard.pgn]
+@="Portable Game Notation"
+
+[HKEY_CURRENT_USER\Software\Classes\Chessboard.pgn\DefaultIcon]
+@="\"C:\\Program Files\\Chessboard\\chessboard.exe\",0"
+
+[HKEY_CURRENT_USER\Software\Classes\Chessboard.pgn\shell\open\command]
+@="\"C:\\Program Files\\Chessboard\\chessboard.exe\" \"%1\""
