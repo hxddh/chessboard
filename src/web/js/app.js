@@ -37,6 +37,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
 import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES } from "./puzzles.js";
+import { MINED_PUZZLES } from "./puzzles-mined.js";
 import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
@@ -1620,6 +1621,7 @@ import { createStore } from "./store.js";
       const mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0");
       return tf("pz.mineName", [mm + "-" + dd, Math.floor((p.ply || 0) / 2) + 1]);
     }
+    if (p.src === "mined") return t("pz.cat." + p.cat) + " #" + (MINED_ORDINAL.get(p.id) || "");
     return contentField("puzzles", p.id, "name") || p.name;
   }
   /**
@@ -2330,7 +2332,15 @@ import { createStore } from "./store.js";
   }
 
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
-  const PUZZLES = CHESS_PUZZLES || [];
+  // the hand-written book plus the engine-mined set (scripts/mine-puzzles.mjs):
+  // same categories, same gate, named by category and number rather than by
+  // a translated title (v6-plan Q3.2)
+  const PUZZLES = (CHESS_PUZZLES || []).concat(MINED_PUZZLES || []);
+  const MINED_ORDINAL = new Map();
+  {
+    const perCat = {};
+    for (const p of MINED_PUZZLES || []) { perCat[p.cat] = (perCat[p.cat] || 0) + 1; MINED_ORDINAL.set(p.id, perCat[p.cat]); }
+  }
   const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "mine", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */

@@ -60,6 +60,11 @@ export const THEME_MAP = [
   ["doubleCheck", { cat: "tac", motif: "double" }],
   ["defensiveMove", { cat: "def" }],
   ["hangingPiece", { cat: "win" }],
+  // scripts/mine-puzzles.mjs's label for a line that simply wins material
+  // without a named motif: still a tactic, proven by the same swing gate,
+  // shown without a motif label. Not a Lichess theme — a Lichess "crushing"
+  // row stays unmapped, because that theme says nothing checkable.
+  ["material", { cat: "tac" }],
 ];
 
 /** @returns {{cat:string, motif?:string}|null} */

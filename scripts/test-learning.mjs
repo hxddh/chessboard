@@ -325,5 +325,35 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// --- the mined set (scripts/mine-puzzles.mjs) -------------------------------
+// Generated content is held to the hand-written standard: every entry passes
+// the same gate for its category, is white to move, carries its provenance
+// and an estimated rating, and repeats no hand-written position. The floors
+// are the size the book shipped with; a regeneration may only raise them.
+{
+  const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
+  const mined = mctx.MINED_PUZZLES;
+  assert(Array.isArray(mined) && mined.length >= 17, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  const ids = new Set(), fens = new Set(ctx.CHESS_PUZZLES.map((p) => p.fen));
+  let bad = 0;
+  const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
+  for (const p of mined) {
+    if (!/^mn-/.test(p.id) || ids.has(p.id)) fail("mined id missing or duplicate:", p.id);
+    ids.add(p.id);
+    if (p.src !== "mined") fail(p.id, "does not say where it came from");
+    if (!Number.isFinite(p.rating) || p.rating < 800 || p.rating > 2400) fail(p.id, "rating out of range:", p.rating);
+    if (p.fen.split(" ")[1] !== "w") fail(p.id, "not white to move");
+    if (fens.has(p.fen)) fail(p.id, "repeats a hand-written position");
+    if (!["m1", "m2", "m3", "tac", "win"].includes(p.cat)) fail(p.id, "unexpected category", p.cat);
+    const g = gate(Chess, p);
+    if (!g.ok) fail(p.id, "fails the", p.cat, "gate:", g.reason);
+    if (p.motif && !["fork", "pin", "skewer", "discovered", "double"].includes(p.motif)) fail(p.id, "unknown motif", p.motif);
+  }
+  assert(bad === 0, "every mined puzzle passes its category's gate and carries provenance");
+  const byCat = {};
+  for (const p of mined) byCat[p.cat] = (byCat[p.cat] || 0) + 1;
+  console.log("mined by category:", JSON.stringify(byCat));
+}
+
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
 console.log("all learning tests passed");

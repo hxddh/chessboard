@@ -197,6 +197,7 @@ src/web/
   js/openings.js   # 主流开局 ECO 库（SAN 前缀匹配,单测校验合法性）
   js/lessons.js    # 教学课程 96 课:零基础 72 + 中级 24（单测逐课校验 FEN/解法/目标）
   js/puzzles.js    # 题库 168 题:杀王/吃子/战术母题(求解器证明强制)/实战/防守/求和,另 119 条开局线路
+  js/puzzles-mined.js # 引擎自弈挖出的题(scripts/mine-puzzles.mjs 生成;过同一套求解器门禁并经引擎复核)
                    #   单测另查:生成题标题必须点名关键着的走子方、形状不得雷同
   js/achievements.js # 成就徽章(纯派生自统计/教学/做题进度)
   js/fide.js       # FIDE 和棋算术:重复计数 / 6.9 将杀子力判定 / 局面是否已终局(纯函数,单测覆盖)
