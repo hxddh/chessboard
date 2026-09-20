@@ -75,7 +75,8 @@ function fail(text, offset, token, what) {
  * @param {string} text
  * @returns {{text: string, tokens: object[]}}
  */
-function tokenize(input) {
+function tokenize(input, opts) {
+  const legacyBraces = !!(opts && opts.legacyBraces);
   const text = String(input || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   const tokens = [];
   const n = text.length;
@@ -97,23 +98,25 @@ function tokenize(input) {
       continue;
     }
     if (c === "{") {
-      // Two readings, because PGN itself has no escape here. Ours (see
-      // escapeCommentText) lets "\\}" carry a brace through a round trip;
-      // the standard says the first "}" ends the comment, full stop. A file
-      // we did not write can legitimately end a comment with a backslash —
-      // "{C:\\path\\}" — and reading that our way either runs off the end of
-      // the file or swallows the movetext up to some later brace. Neither is
-      // acceptable for an import path, so the private reading only wins when
-      // it is the one that can be true: it has to terminate, and the span it
-      // claims past the standard's "}" must not contain a "{", which our own
-      // output never does (escapeCommentText escapes nothing that opens one).
-      const plain = text.indexOf("}", i + 1);
+      // PGN has no escape inside a brace comment: the first "}" ends it, full
+      // stop. So that is what this scans for, and every valid foreign file
+      // imports intact — a comment may legitimately end in a backslash
+      // ("{C:\\path\\}") without the reader running off the end of the file or
+      // swallowing movetext up to some later brace.
+      //
+      // Our own "}" survives a round trip because escapeCommentText writes it
+      // as "\\R", never as a literal brace, so a serialized comment body holds
+      // no "}" at all and nothing has to be read *past* one. 6.0 and 6.1 wrote
+      // "\\}" instead; those files need the old scan, which parsePgn retries
+      // with after the standard reading fails (`legacyBraces`).
       let j = i + 1;
-      while (j < n && text[j] !== "}") j += text[j] === "\\" ? 2 : 1;
-      if (j >= n || (plain >= 0 && j > plain && text.slice(plain, j).includes("{"))) {
-        if (plain < 0) fail(text, start, "{", "unterminated comment");
-        j = plain;
+      if (legacyBraces) {
+        while (j < n && text[j] !== "}") j += text[j] === "\\" ? 2 : 1;
+      } else {
+        const end = text.indexOf("}", i + 1);
+        j = end < 0 ? n : end;
       }
+      if (j >= n) fail(text, start, "{", "unterminated comment");
       tokens.push({ type: "comment", text: text.slice(i + 1, j), pos: start });
       i = j + 1;
       continue;
@@ -207,8 +210,11 @@ function parseComment(raw, shapes) {
   // escapes first and in one pass, so "\\[" cannot be produced by decoding
   // "\\\\" and then be read as a command; the sentinels are characters no
   // comment contains, put back after the commands are pulled out
+  // "\\R" is this module's brace (see escapeCommentText); "\\}" is the 6.0/6.1
+  // spelling and stays readable. Any other "\\x" is left exactly as it came —
+  // a foreign comment must never be altered by a decoder guessing at escapes.
   const text0 = String(raw).replace(/\\([\s\S])/g, (all, ch) => (
-    ch === "\n" ? "" : ch === "\\" ? "\u0001" : ch === "}" ? "\u0002" : ch === "[" ? "\u0003" : all));
+    ch === "\n" ? "" : ch === "\\" ? "\u0001" : (ch === "R" || ch === "}") ? "\u0002" : ch === "[" ? "\u0003" : all));
   const text = text0
     .replace(/\[%cal\s+([^\]]*)\]/g, (all, list) => {
       const arrows = parseShapeList(list, /^\s*([A-Za-z])([a-h][1-8])([a-h][1-8])\s*$/,
@@ -270,17 +276,27 @@ function formatComment(node) {
 }
 
 /**
- * PGN has no escape inside a brace comment, so this module defines one and
- * reads it back in parseComment. A "}" used to be rewritten as "]", which
- * silently changed the user's text; a backslash escape keeps it:
- *   "\\\\" a backslash, "\\}" a brace that does not end the comment,
- *   "\\[" a bracket that begins text, not a "[%cal]" command the reader
- *   would swallow, and "\\" before a newline a break the wrapper inserted.
- * Another reader sees one stray backslash instead of a comment that ends in
- * the wrong place — the cheapest price for a lossless round trip.
+ * PGN has no escape inside a brace comment, so this module defines one:
+ *   "\\\\" a backslash, "\\R" a brace, "\\[" a bracket that begins text rather
+ *   than a "[%cal]" command the reader would swallow, and "\\" before a
+ *   newline a break the wrapper inserted.
+ *
+ * "\\R" and not "\\}" — which is what 6.0 and 6.1 wrote, and the reason this
+ * was rewritten. A private escape *over a literal brace* forces the reader to
+ * decide, at the brace, whether it ends the comment; there is no rule that
+ * answers correctly for both our files and foreign ones, and 6.1's heuristic
+ * got our own wrong: a comment holding "}" and then "{" came back truncated,
+ * or failed the whole file. Save slots hold PGN text, so that lost games.
+ *
+ * Writing the brace as "\\R" removes the decision. A serialized comment body
+ * contains no "}" at all, so the reader takes the first one as the end — the
+ * standard's rule, which is also the right one for every foreign file. The
+ * price is one bounded ambiguity in the other direction: a foreign comment
+ * that happens to contain "\\R" reads back as "}". That is one comment looking
+ * wrong, against a file that would not open.
  */
 function escapeCommentText(s) {
-  return s.replace(/\\/g, "\\\\").replace(/\}/g, "\\}").replace(/\[%(cal|csl)/g, "\\[%$1");
+  return s.replace(/\\/g, "\\\\").replace(/\}/g, "\\R").replace(/\[%(cal|csl)/g, "\\[%$1");
 }
 
 // ---------------------------------------------------------------------------
@@ -460,17 +476,45 @@ function parseGameAt(text, tokens, i, chess) {
  * @returns {{games: Array<{headers: Array<[string,string]>, root: object, result: string}>}}
  */
 function parsePgn(input) {
-  const { text, tokens } = tokenize(input);
-  const games = [];
-  const chess = new Chess();
-  let i = 0;
-  while (i < tokens.length) {
-    const { game, next } = parseGameAt(text, tokens, i, chess);
-    if (next === i) fail(text, tokens[i].pos, "", "no progress");
-    games.push(game);
-    i = next;
+  return withLegacyRetry(input, (opts) => {
+    const { text, tokens } = tokenize(input, opts);
+    const games = [];
+    const chess = new Chess();
+    let i = 0;
+    while (i < tokens.length) {
+      const { game, next } = parseGameAt(text, tokens, i, chess);
+      if (next === i) fail(text, tokens[i].pos, "", "no progress");
+      games.push(game);
+      i = next;
+    }
+    return { games };
+  });
+}
+
+/**
+ * Read `input` the standard way; if that fails, read it once more with the
+ * 6.0/6.1 brace escape honoured.
+ *
+ * Only files this app wrote before 7.0 need the second pass: they spell a
+ * literal "}" inside a comment as "\\}", which the standard reading ends the
+ * comment at, leaving the rest of that comment as movetext. That reliably
+ * throws, which is exactly what makes a retry safe — the fallback is reached
+ * only where the standard reading already refused the file, so no foreign
+ * file is ever re-interpreted. The error surfaced is the *first* one: if
+ * neither reading works, the message names the real problem rather than a
+ * confusing one from the legacy attempt.
+ */
+function withLegacyRetry(input, run) {
+  try {
+    return run(undefined);
+  } catch (first) {
+    if (!/\\\}/.test(String(input))) throw first;
+    try {
+      return run({ legacyBraces: true });
+    } catch (_) {
+      throw first;
+    }
   }
-  return { games };
 }
 
 /**
@@ -485,7 +529,11 @@ function parsePgn(input) {
  * @returns {string[]}
  */
 function splitGames(input) {
-  const { text, tokens } = tokenize(input);
+  return withLegacyRetry(input, (opts) => splitGamesWith(input, opts));
+}
+
+function splitGamesWith(input, opts) {
+  const { text, tokens } = tokenize(input, opts);
   if (!tokens.length) return text.trim() ? [text.trim()] : [];
   const starts = [tokens[0].pos];
   let inMoves = false;
