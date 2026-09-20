@@ -439,6 +439,57 @@ export async function main(argv) {
     console.log(JSON.stringify({ candidates: uniq.length, accepted: puzzles.length, byCat: stats.byCat, byTheme: stats.byTheme, byBand: stats.byBand, rejected: stats.rejected }));
     return;
   }
+  if (opt.cmd === "topup") {
+    // Fill the thin rating bands of an already-emitted set (6.1).
+    //
+    // §5 of docs/v6-plan.md wants ≥ 50 puzzles per 200-point band, and 6.0
+    // shipped three bands under that without saying so. Re-rating alone does
+    // not fix it — it re-sorts the same puzzles — so new candidates are mined,
+    // emitted through the same pipeline and the same gate, rated the same way,
+    // and only the ones that land in a band that is still short are kept.
+    // Nothing is added to a band that is already full: a bigger set is not the
+    // goal, an even one is.
+    await startEngine();
+    const target = opt.out || path.join(ROOT, "src/web/js/puzzles-mined.js");
+    const existing = loadAppModules([path.relative(ROOT, target)]).MINED_PUZZLES.map((p) => Object.assign({}, p));
+    const floor = opt.perBand || 50;
+    const bandOfRating = (r) => Math.floor(r / 200) * 200;
+    const count = {};
+    for (const p of existing) count[bandOfRating(p.rating)] = (count[bandOfRating(p.rating)] || 0) + 1;
+    const seen = new Set(existing.map((p) => p.fen + " " + p.solution[0]));
+
+    const rows = [];
+    for (const f of String(opt.rows).split(",")) if (fs.existsSync(f)) rows.push(...JSON.parse(fs.readFileSync(f, "utf8")));
+    for (const r of rows) if (r.themes === "crushing") r.themes = "material";
+    const fresh = rows.filter((r) => { const k = r.fen + " " + r.moves[0]; if (seen.has(k)) return false; seen.add(k); return true; });
+    const { puzzles } = runPipeline(Chess, fresh, { perTheme: opt.perTheme, perBand: opt.perBand, max: opt.max, seed: opt.seed });
+    for (const p of puzzles) { p.id = p.id.replace(/^lc-/, ""); p.src = "mined"; delete p.url; }
+    console.error(`${puzzles.length} fresh candidates through the gate; rating them`);
+
+    const added = [];
+    for (let i = 0; i < puzzles.length; i++) {
+      const p = puzzles[i];
+      const keyUci = sanToUci(p.fen, p.solution[0]);
+      const idx = keyUci ? await nodesToSolve(p.fen, keyUci) : NODE_LADDER.length;
+      const margin = await bestMargin(p.fen, 20000);
+      p.rating = ratingFromNodes(idx, margin, p.solution, p.fen);
+      const b = bandOfRating(p.rating);
+      if ((count[b] || 0) >= floor) continue;   // that band is already covered
+      count[b] = (count[b] || 0) + 1;
+      added.push(p);
+      if (added.length % 10 === 0) console.error(`${added.length} kept (${i + 1}/${puzzles.length} rated)`);
+    }
+    const all = existing.concat(added);
+    // ids must stay unique across the merged set
+    const ids = new Set();
+    for (const p of all) { let id = p.id, n = 2; while (ids.has(id)) id = p.id + "-" + n++; p.id = id; ids.add(id); }
+    const meta = `${all.length} puzzles (${added.length} added to thin bands); rating measured by nodes-to-solve (6.1), ladder ${NODE_LADDER.join("/")}.`;
+    fs.writeFileSync(target, emitMined(all, meta));
+    const byBand = {};
+    for (const p of all) { const b = bandOfRating(p.rating); byBand[b] = (byBand[b] || 0) + 1; }
+    console.log(JSON.stringify({ total: all.length, added: added.length, floor, byBand }));
+    return;
+  }
   if (opt.cmd === "rate") {
     // Re-rate an emitted set in place from measured depth-to-solve (6.1).
     await startEngine();
@@ -464,7 +515,7 @@ export async function main(argv) {
     console.log(JSON.stringify({ rated: puzzles.length, depthHistogram: hist, byBand }));
     return;
   }
-  console.error("usage: mine-puzzles.mjs mine --games N --seed S --rows out.json | emit --rows a.json[,b.json] --out puzzles-mined.js | rate [--out puzzles-mined.js]");
+  console.error("usage: mine-puzzles.mjs mine --games N --seed S --rows out.json | emit --rows a.json[,b.json] --out puzzles-mined.js | rate [--out puzzles-mined.js] | topup --rows a.json[,b.json] [--per-band 50]");
   process.exit(2);
 }
 
