@@ -51,6 +51,13 @@ const SAMPLE = argOf("--sample") || 0;
 const FIX = process.argv.includes("--fix");
 /** how far clear of the runner-up counts as "alone"; below this they are tied */
 const TIE = 50;
+/**
+ * How many lines to ask for. 2 was not enough: it answers "is the stored move
+ * first", and the question is "how much worse is the stored move", which needs
+ * to find it. 4 catches nearly all of them without paying for a wide search;
+ * anything further down gets its own `searchmoves` probe.
+ */
+const LINES = 4;
 
 const ctx = { console, Date, performance };
 ctx.globalThis = ctx;
@@ -97,10 +104,10 @@ const scoreOf = (line) => {
   return m[1] === "mate" ? (v > 0 ? 100000 - v : -100000 - v) : v;
 };
 
-/** the top two moves in SAN with their scores, best first */
-async function topTwo(fen) {
+/** the top `n` moves in SAN with their scores, best first */
+async function topLines(fen, n) {
   await ready();
-  send("setoption name MultiPV value 2");
+  send("setoption name MultiPV value " + n);
   send("position fen " + fen);
   const found = new Map();
   const collect = (line) => {
@@ -121,38 +128,89 @@ async function topTwo(fen) {
   });
 }
 
+/**
+ * What one specific move is worth, at the same depth.
+ *
+ * Needed because `MULTIPV` only shows the top few: a stored answer that is not
+ * among them has an unknown score, and "unknown" is not "bad". `searchmoves`
+ * restricts the search to that one move, so the number is directly comparable
+ * with the best line's.
+ */
+async function scoreOfMove(fen, san) {
+  const g = new Chess(fen);
+  const m = g.move(san);
+  if (!m) return null;
+  const uci = m.from + m.to + (m.promotion || "");
+  await ready();
+  send("setoption name MultiPV value 1");
+  send("position fen " + fen);
+  let best = null;
+  const collect = (line) => { const sc = scoreOf(line); if (sc != null && /\bpv\b/.test(line)) best = sc; };
+  listeners.push(collect);
+  const done = waitFor((l) => /^bestmove/.test(l), 180000);
+  send("go depth " + DEPTH + " searchmoves " + uci);
+  await done;
+  listeners.splice(listeners.indexOf(collect), 1);
+  return best;
+}
+
 console.log(`挖掘题里的 tac + win 共 ${all.length} 道，本轮检查 ${puzzles.length} 道，go depth ${DEPTH}\n`);
 
 const notBest = [];
 const tied = [];
-let clean = 0;
+let clean = 0, resolved = 0;
 for (let i = 0; i < puzzles.length; i++) {
   const p = puzzles[i];
   const stored = (p.solution || p.line || [])[0];
   if (!stored) continue;
-  const lines = await topTwo(p.fen);
+  const lines = await topLines(p.fen, LINES);
   if (!lines.length) continue;
-  const [first, second] = lines;
-  if (first.san !== stored) {
-    notBest.push({ id: p.id, cat: p.cat, stored, best: first.san,
-      gap: second ? first.score - second.score : null });
-  } else if (second && first.score - second.score < TIE) {
-    tied.push({ id: p.id, cat: p.cat, stored, alt: second.san, gap: first.score - second.score });
+  const best = lines[0];
+  // How much worse is the STORED answer — not what rank it happens to hold.
+  // Rank is the wrong question and the first cut of this file asked it anyway:
+  // two moves within a centipawn of each other swap places between runs (the
+  // transposition table carries different history into each position), so a
+  // gate built on rank reports a different set every time and never goes
+  // green. Worse, `--fix` retired on rank alone, so a puzzle whose answer was
+  // 1cp off the engine's pick was thrown away exactly like one that was 262cp
+  // off. Margin is the question, and `searchmoves` answers it for a stored
+  // move that did not make the top `LINES`.
+  const shown = lines.find((l) => l.san === stored);
+  const storedScore = shown ? shown.score : await scoreOfMove(p.fen, stored);
+  if (storedScore == null) { notBest.push({ id: p.id, cat: p.cat, stored, best: best.san, margin: null }); continue; }
+  const margin = best.score - storedScore;
+  const alts = Array.isArray(p.alts) ? p.alts : [];
+  if (margin > TIE) {
+    // genuinely worse: the answer this puzzle teaches is not a best move
+    notBest.push({ id: p.id, cat: p.cat, stored, best: best.san, margin });
+  } else if (best.san === stored) {
+    // stored IS the engine's pick. A runner-up within TIE is an equally good
+    // answer the app should accept — unless it is already recorded.
+    const second = lines[1];
+    if (second && best.score - second.score < TIE && !alts.includes(second.san)) {
+      tied.push({ id: p.id, cat: p.cat, stored, alt: second.san, gap: best.score - second.score });
+    } else { clean++; }
+  } else if (alts.includes(best.san)) {
+    // stored is within TIE of the engine's pick and that pick is already
+    // listed as acceptable — this is what "fixed" looks like, so say so
+    resolved++;
   } else {
-    clean++;
+    tied.push({ id: p.id, cat: p.cat, stored, alt: best.san, gap: margin });
   }
   if ((i + 1) % 25 === 0) process.stderr.write(`  ${i + 1}/${puzzles.length}\n`);
 }
 
 const bad = notBest.length + tied.length;
-console.log(`干净 ${clean} · 存的答案不是首选 ${notBest.length} · 有同等好的第二解 ${tied.length}`);
+console.log(`干净 ${clean} · 已记下同等解 ${resolved} · 存的答案确实更差 ${notBest.length} · 有未记下的同等解 ${tied.length}`);
 console.log(`问题率 ${((bad / puzzles.length) * 100).toFixed(1)}%\n`);
-for (const r of notBest.slice(0, 20)) console.log(`  not-best  ${r.id.padEnd(18)} 存 ${r.stored.padEnd(7)} 引擎 ${r.best}`);
+for (const r of notBest.slice(0, 20)) console.log(`  worse     ${r.id.padEnd(18)} 存 ${r.stored.padEnd(7)} 引擎 ${r.best.padEnd(7)} 差 ${r.margin == null ? "?" : r.margin}cp`);
 for (const r of tied.slice(0, 20)) console.log(`  tied      ${r.id.padEnd(18)} 存 ${r.stored.padEnd(7)} 同等 ${r.alt.padEnd(7)} 差 ${r.gap}cp`);
 
 if (FIX) {
   const file = path.join(root, "src/web/js/puzzles-mined.js");
   let src = fs.readFileSync(file, "utf8");
+  // only the ones measured to be genuinely worse are retired now — a move
+  // that merely lost a coin flip for first place is recorded, not deleted
   const retire = new Set(notBest.map((r) => r.id));
   let dropped = 0, noted = 0;
   // one entry per line in this generated file, so a line filter is exact
@@ -163,7 +221,16 @@ if (FIX) {
   }).join("\n");
   for (const r of tied) {
     const re = new RegExp('(id: "' + r.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '"[^\\n]*?)(\\s*\\},)');
-    if (re.test(src) && !new RegExp('id: "' + r.id + '"[^\\n]*alts:').test(src)) {
+    const hasAlts = new RegExp('id: "' + r.id + '"[^\\n]*alts: \\[([^\\]]*)\\]').exec(src);
+    if (hasAlts) {
+      // already has a list — append unless this alternative is in it. Two runs
+      // can name different runners-up for the same position (they are within
+      // a centipawn of each other), and both are acceptable answers.
+      if (!hasAlts[1].includes('"' + r.alt + '"')) {
+        src = src.replace(hasAlts[0], hasAlts[0].replace(/\]$/, ', "' + r.alt + '"]'));
+        noted++;
+      }
+    } else if (re.test(src)) {
       src = src.replace(re, (all0, head, tail) => head + ', alts: ["' + r.alt + '"]' + tail);
       noted++;
     }
