@@ -973,15 +973,16 @@ const PLACEMENT = STUDY.split(" ")[0];
     assert(line === "e4 e5", `……这一趟还是缓存里的那局棋(「${line}」)`);
     assert((await probe(page, "e2e.reloads")) === "0", "……没有重新载入:坏文件不是「更新的一方」");
     assert(/1\. e4/.test(await lsSave(page)), "……缓存原样还在");
-    // 6.1 的文案(msg.profile.fileBad)写着「原文件未被覆盖」。它没有做到:
-    // recover() 的 finally 会开闸(releaseMirror),启动时排队的那次镜像写
-    // 随即落在这份坏文件上,MIRROR_DELAY 之后原文件就没了。这里按**实际**
-    // 记账 —— 哪天补上这个洞,这条会当场失败,改的人顺手把文案也对上。
+    // 文案(msg.profile.fileBad)承诺「原文件未被覆盖」,这条盯着它是真的。
+    // 这个洞本来是有的:recover() 的 finally 会开闸(releaseMirror),启动时
+    // 排队的那次镜像写随即落在这份坏文件上,MIRROR_DELAY 之后原文件就没了
+    // —— 用户被告知留着的那一份,正是他唯一能拿去恢复的副本。这条 e2e 把
+    // 它抓了出来,persist.js 现在遇到读不出来的文件就把镜像闸死一整场。
     await page.waitForTimeout(1500);
     const still = await probe(page, "e2e.file");
-    assert(still !== "{not json at all",
-      "(已知缺陷)坏文件终究被缓存的镜像盖掉了 —— 文案承诺的「原文件未被覆盖」不成立");
-    assert(/1\. e4/.test(still || ""), "……盖上去的是缓存里的档案");
+    assert(still === "{not json at all",
+      "坏文件原样还在,一个字节没动 —— 文案承诺的「原文件未被覆盖」是真的");
+    assert((await probe(page, "e2e.writes")) === "0", "……整场一次镜像写都没发生");
     assert(errs.length === 0, `recover (c):全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
