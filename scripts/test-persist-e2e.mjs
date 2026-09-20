@@ -812,6 +812,209 @@ const PLACEMENT = STUDY.split(" ")[0];
   }
 }
 
+// --- 10. Persist.recover():档案文件与浏览器缓存谁说了算 (v6-plan §8.1) -----
+//
+// 6.1 在这条路上修了四处丢档,四处都有单测(test-chess.mjs「6.1 — 7. the boot
+// race」往下),但这个套件从来没有走过 recover() 一次 —— 而这四处修的恰恰是
+// **启动顺序**:谁先写、谁先读、写完谁还能再写。顺序是页面的事,不是模块的
+// 事,所以它们各自在这里再走一遍,连着真正的重新载入。
+//
+// 桥沿用本文件第 8 节的假桥办法,只是这次假的是 chess.appdataRead /
+// appdataWrite。那个「文件」和这一段自己的记账放在 sessionStorage 里:它跨得
+// 过一次 location.reload()(这一段的一半问题只有跨过那次重新载入才看得见),
+// 又不在应用的 localStorage 命名空间里 —— 测试脚手架不该混进档案的键里,
+// test-chess.mjs 有一条守卫专门盯着这件事。
+{
+  const FILE_PGN = '[Event "?"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n' +
+    '[White "?"]\n[Black "?"]\n[Result "*"]\n\n1. d4 d5 2. c4 *';
+  const CACHE_PGN = '[Event "?"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n' +
+    '[White "?"]\n[Black "?"]\n[Result "*"]\n\n1. e4 e5 *';
+  const SETTINGS = JSON.stringify({
+    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" });
+  const profileDoc = (pgn, writtenAt) => JSON.stringify({
+    app: "chessboard", schema: 1, writtenAt,
+    keys: { save: JSON.stringify({ v: 1, pgn }), settings: SETTINGS } });
+
+  /**
+   * 一个装着假档案文件的浏览器上下文。
+   *
+   * `file` 是文件的内容:null = 这台机器上还没有这个文件,"" = 文件在但是空
+   * 的(写了一半被打断),别的字符串 = 文件里就是这些字节。
+   * `cachePgn` 是启动时 localStorage 里已经存着的那一局。
+   * `readDelay` 让桥上的读慢下来 —— 6.1 的第一处丢档就发生在读还没回来、
+   * 启动时的写已经排上队的那几百毫秒里(MIRROR_DELAY 是 400 ms)。
+   */
+  const bootWithFile = async ({ file, cachePgn, settings, readDelay = 700 }) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(([file, cachePgn, settings, readDelay]) => {
+      const S = sessionStorage;                 // 脚手架自己的抽屉,不是档案的
+      const num = (k) => Number(S.getItem(k) || "0") || 0;
+      const bump = (k) => S.setItem(k, String(num(k) + 1));
+      // 只在第一次启动时布置现场:重新载入之后这段还会跑一遍,那一遍必须
+      // 看到的是上一遍留下的状态,不是重新摆好的现场
+      if (S.getItem("e2e.armed") == null) {
+        S.setItem("e2e.armed", "1");
+        if (file != null) S.setItem("e2e.file", file);
+        S.setItem("e2e.writes", "0");
+        S.setItem("e2e.writesBeforeRead", "0");
+        S.setItem("e2e.reloads", "0");
+        if (cachePgn) {
+          localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: cachePgn }));
+          localStorage.setItem("chess.v1.settings", settings);
+        }
+      } else {
+        bump("e2e.reloads");
+      }
+      localStorage.setItem("chess.panelOpen", "1");
+      const enc = (s) => {
+        const b = new TextEncoder().encode(s);
+        let x = ""; for (const c of b) x += String.fromCharCode(c);
+        return btoa(x);
+      };
+      const dec = (b64) => {
+        const bin = atob(b64); const u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        return new TextDecoder().decode(u);
+      };
+      let readDone = false;
+      window.zero = {
+        on: () => () => {}, off: () => {},
+        platform: { supports: () => Promise.resolve(false) },
+        clipboard: { readText: async () => "", writeText: async () => true },
+        invoke: async (cmd, arg) => {
+          if (cmd === "chess.appdataRead") {
+            await new Promise((r) => setTimeout(r, readDelay));
+            readDone = true;
+            const f = S.getItem("e2e.file");
+            if (f == null) return { missing: true };
+            if (f === "") return { empty: true };
+            return { b64: enc(f) };
+          }
+          if (cmd === "chess.appdataWrite") {
+            // 「在 recover() 读回来之前」是这一节要证明的事,所以它由桥自己
+            // 记下来 —— 测试进程这边的墙上时钟在慢机器上量不准这个
+            if (!readDone) bump("e2e.writesBeforeRead");
+            bump("e2e.writes");
+            S.setItem("e2e.file", dec(arg.b64));
+            return { ok: true };
+          }
+          return {};
+        },
+      };
+      // 重新载入之前页面还会做什么 —— 这个探针住在页面里,因为「恢复之后、
+      // 重新载入之前」那 1.2 秒是页面自己的时间,测试进程插不进去
+      const watch = () => {
+        const save = localStorage.getItem("chess.v1.save") || "";
+        if (/1\. d4/.test(save)) {
+          if (S.getItem("e2e.probed") == null) {
+            S.setItem("e2e.probed", "1");
+            // beforeunload → saveGame():单测第 8 条说的就是这一下
+            window.dispatchEvent(new Event("beforeunload"));
+            S.setItem("e2e.saveAfterUnload", localStorage.getItem("chess.v1.save") || "");
+          }
+          return;
+        }
+        setTimeout(watch, 10);
+      };
+      setTimeout(watch, 10);
+    }, [file, cachePgn, settings || SETTINGS, readDelay]);
+    const { page, errs } = await open(ctx);
+    return { ctx, page, errs };
+  };
+  const probe = (page, k) => page.evaluate((key) => sessionStorage.getItem(key), k);
+  const lsSave = (page) => page.evaluate(() => localStorage.getItem("chess.v1.save") || "");
+  const moves = (page) => page.evaluate(() =>
+    [...document.querySelectorAll(".move-list .mlmove")].map((m) => m.getAttribute("aria-label")).join(" "));
+  const toastNow = (page) => page.evaluate(() => {
+    const el = document.getElementById("toast");
+    return el && el.classList.contains("show")
+      ? { text: el.textContent.replace("✕", "").trim(), fault: el.classList.contains("t-fault") }
+      : { text: "", fault: false };
+  });
+  const waitForFileToast = (page) => page.waitForFunction(() => {
+    const el = document.getElementById("toast");
+    return !!el && el.classList.contains("show") && /数据文件/.test(el.textContent || "");
+  }, null, { timeout: 20000 }).catch(() => {});
+
+  // (a) 缓存被清空 + 文件完好 → 应用最终跑在文件里的那份上,而且文件没有先
+  // 被一份空档案盖掉。6.0 的顺序是反的:启动的写抢在 recover() 前面落地,
+  // recover() 再从自己刚毁掉的文件里「恢复」,还告诉用户恢复成功了。
+  {
+    const { ctx, page, errs } = await bootWithFile({ file: profileDoc(FILE_PGN, 9000), cachePgn: null });
+    await page.waitForFunction(() => Number(sessionStorage.getItem("e2e.reloads") || "0") > 0,
+      null, { timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    assert((await probe(page, "e2e.writesBeforeRead")) === "0",
+      `recover() 读回来之前,一个字节都没写进文件(写了 ${await probe(page, "e2e.writesBeforeRead")} 次)`);
+    assert((await probe(page, "e2e.reloads")) === "1",
+      `恢复之后页面重新载入了一次(${await probe(page, "e2e.reloads")})`);
+    const line = await moves(page);
+    assert(line === "d4 d5 c4", `重新载入之后应用跑在文件里的那局上(「${line}」)`);
+    assert(/1\. d4/.test(await lsSave(page)), "……localStorage 里也换成了文件里的那份");
+    assert(/1\. d4/.test(await probe(page, "e2e.file") || ""),
+      "……而文件还是文件:没有被启动时的空档案盖过");
+
+    // (b) 恢复之后到重新载入之间,页面再做什么都不许盖掉刚恢复的东西
+    assert((await probe(page, "e2e.probed")) === "1", "恢复与重新载入之间的那一下探针真的按下去了");
+    assert(/1\. d4/.test(await probe(page, "e2e.saveAfterUnload") || ""),
+      `……那之后 beforeunload 的 saveGame() 没有把它写回旧的那局(「${(await probe(page, "e2e.saveAfterUnload") || "").slice(-14)}」)`);
+    assert(errs.length === 0, `recover (a)(b):全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (c) 文件读不出来 → 横幅说一句,这一趟继续用缓存里的档案
+  {
+    const { ctx, page, errs } = await bootWithFile({ file: "{not json at all", cachePgn: CACHE_PGN });
+    await waitForFileToast(page);
+    const tst = await toastNow(page);
+    assert(/读不出来/.test(tst.text), `读不出来的档案文件有横幅(「${tst.text}」)`);
+    assert(tst.fault, "……而且是故障级的(t-fault),不会自己溜走");
+    const line = await moves(page);
+    assert(line === "e4 e5", `……这一趟还是缓存里的那局棋(「${line}」)`);
+    assert((await probe(page, "e2e.reloads")) === "0", "……没有重新载入:坏文件不是「更新的一方」");
+    assert(/1\. e4/.test(await lsSave(page)), "……缓存原样还在");
+    // 6.1 的文案(msg.profile.fileBad)写着「原文件未被覆盖」。它没有做到:
+    // recover() 的 finally 会开闸(releaseMirror),启动时排队的那次镜像写
+    // 随即落在这份坏文件上,MIRROR_DELAY 之后原文件就没了。这里按**实际**
+    // 记账 —— 哪天补上这个洞,这条会当场失败,改的人顺手把文案也对上。
+    await page.waitForTimeout(1500);
+    const still = await probe(page, "e2e.file");
+    assert(still !== "{not json at all",
+      "(已知缺陷)坏文件终究被缓存的镜像盖掉了 —— 文案承诺的「原文件未被覆盖」不成立");
+    assert(/1\. e4/.test(still || ""), "……盖上去的是缓存里的档案");
+    assert(errs.length === 0, `recover (c):全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (d) 长度为零的文件 → 同样报出来,而且**不**当作新装
+  {
+    const { ctx, page, errs } = await bootWithFile({ file: "", cachePgn: CACHE_PGN });
+    await waitForFileToast(page);
+    const tst = await toastNow(page);
+    assert(/读不出来/.test(tst.text), `空文件(写了一半被打断)也报出来,不当无事发生(「${tst.text}」)`);
+    assert(tst.fault, "……同样是故障级的");
+    const line = await moves(page);
+    assert(line === "e4 e5", `……缓存里的那局棋照旧在跑(「${line}」)`);
+    assert((await probe(page, "e2e.reloads")) === "0", "……也没有重新载入");
+    assert(errs.length === 0, `recover (d):全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (d 的对照组) 文件根本不存在 = 真·新装:一句话都不该说。少了这一条,上面
+  // 两条只证明了「启动时会弹横幅」,证明不了「它认得出这是损坏」。
+  {
+    const { ctx, page, errs } = await bootWithFile({ file: null, cachePgn: CACHE_PGN });
+    await page.waitForTimeout(3000);
+    const tst = await toastNow(page);
+    assert(!/数据文件/.test(tst.text), `文件不存在是新装,不是损坏:没有横幅(「${tst.text}」)`);
+    assert((await moves(page)) === "e4 e5", "……缓存里的那局棋照旧");
+    assert(/1\. e4/.test(await probe(page, "e2e.file") || ""),
+      "……而且缓存被镜像到了这台机器的文件里,下一次启动就有得读了");
+    assert(errs.length === 0, `recover (新装):全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
