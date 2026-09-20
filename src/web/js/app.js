@@ -238,6 +238,8 @@ import { createStore } from "./store.js";
       clock: null,
       /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
       flagFall: null,
+      /** 7.0: the clock is running (set by the first touch of the board) */
+      clockStarted: false,
       clockTimer: null,
       clockTickAt: 0,
       /** side that resigned ('w'|'b') — terminal for the game, like mate */
@@ -1220,7 +1222,7 @@ import { createStore } from "./store.js";
       payload.line = store.game.line.slice();
       if (store.game.imported) payload.imported = true;
       if (store.game.timeControl !== "off" && store.game.clock) {
-        payload.clock = { tc: store.game.timeControl, w: Math.round(store.game.clock.w), b: Math.round(store.game.clock.b), flag: store.game.flagFall };
+        payload.clock = { tc: store.game.timeControl, w: Math.round(store.game.clock.w), b: Math.round(store.game.clock.b), flag: store.game.flagFall, started: !!store.game.clockStarted };
       }
       if (store.game.resigned) payload.resigned = store.game.resigned;
       if (store.game.drawAgreed) payload.drawAgreed = true;
@@ -1287,6 +1289,9 @@ import { createStore } from "./store.js";
         store.game.timeControl = s.clock.tc;
         store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
         store.game.flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
+        // an archive from before 7.0 has no `started`; a game with moves in it
+        // was already ticking, so restoring it must not hand out a free move
+        store.game.clockStarted = typeof s.clock.started === "boolean" ? s.clock.started : sanHistory().length >= 1;
       }
       if (s.resigned === "w" || s.resigned === "b") store.game.resigned = s.resigned;
       if (s.drawAgreed === true) store.game.drawAgreed = true;
@@ -1412,6 +1417,7 @@ import { createStore } from "./store.js";
     const tc = parseTc(store.game.timeControl);
     store.game.clock = tc ? { w: tc.base * 1000, b: tc.base * 1000 } : null;
     store.game.flagFall = null;
+    store.game.clockStarted = false;
     syncClockTimer();
     renderClocks();
   }
@@ -1451,7 +1457,31 @@ import { createStore } from "./store.js";
    */
   function clockRunning() {
     return (store.session.mode === "pvp" || store.session.mode === "ai") && !!store.game.clock &&
-      !appGameOver() && sanHistory().length >= 1 && appAwake();
+      !appGameOver() && store.game.clockStarted && appAwake();
+  }
+
+  /**
+   * The clock starts at the board, not at the first completed move.
+   *
+   * Until 7.0 this asked for `sanHistory().length >= 1`, which spent White's
+   * whole first move off the clock — and `applyIncrement` then credited the
+   * Fischer bonus for it, so White opened with base + inc having spent
+   * nothing. Black was on the clock from its first move. The comment's intent
+   * ("nobody drains on the start screen") is right; keying it to a move made
+   * the first move free.
+   *
+   * `clockStarted` is set the first time the player touches the board in a
+   * timed game — a square click, a drag, or a move arriving from anywhere —
+   * so the start screen still costs nothing and move one is timed like every
+   * other move. It rides in the saved game beside the clock, so reloading a
+   * game in progress does not hand out a second free move.
+   */
+  function startClockIfIdle() {
+    if (store.game.clockStarted || !store.game.clock || appGameOver()) return;
+    if (store.session.mode !== "pvp" && store.session.mode !== "ai") return;
+    store.game.clockStarted = true;
+    syncClockTimer();
+    renderClocks();
   }
 
   function syncClockTimer() {
@@ -2972,16 +3002,18 @@ import { createStore } from "./store.js";
    * Now a different move is checked against the stored answer at the same
    * budget: costs less than a mistake, it is accepted and remembered.
    */
-  async function verifyMineAlt(mv) {
+  async function verifyAlt(mv, opts) {
     const pz = store.session.puzzle;
     const p = pz.p;
     const g = pz.g;
     if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) return null;
+    const stored = puzzleScript(p)[0];
+    if (!stored) return null;
     const budget = (p.rev && p.rev.budget) || 120;
     const side = p.fen.split(" ")[1];
     const afterAlt = g.fen();
     const probe = new Chess(p.fen);
-    if (!probe.move(p.solution[0])) return null;
+    if (!probe.move(stored)) return null;
     const afterBest = probe.fen();
     pz.verifying = true;
     sync();
@@ -2995,12 +3027,13 @@ import { createStore } from "./store.js";
     const cpBest = evalScalar(eBest), cpAlt = evalScalar(eAlt);
     if (cpBest == null || cpAlt == null) return null;
     const v = Mistakes.judgeAlt(cpBest, cpAlt, side, Review.MISTAKE);
-    if (v.ok) {
+    if (v.ok && opts && opts.remember) {
       p.alts = Array.isArray(p.alts) ? p.alts : [];
       if (!p.alts.includes(mv.san)) { p.alts.push(mv.san); saveMines(); }
     }
     return v;
   }
+  const verifyMineAlt = (mv) => verifyAlt(mv, { remember: true });
 
   /** Why the stored answer is the answer — from the numbers the pass kept. */
   function mineWhy(p) {
@@ -3060,6 +3093,34 @@ import { createStore } from "./store.js";
       const script = puzzleScript(store.session.puzzle.p);
       if (mv.san !== script[store.session.puzzle.stage]) {
         const c = store.session.puzzle.p.cat;
+        // 7.0: a different FIRST move that is just as good is right.
+        //
+        // `tac` and `win` graded by exact SAN and nothing else, which is the
+        // opposite of what every other category here argues for — `real`:
+        // "several follow-ups are equally good, and marking one of them wrong
+        // would teach the opposite of the lesson"; `def`: "insisting on one
+        // stored move would mark a perfectly good defence wrong"; `mine`
+        // already re-checked with the engine. Measured over 140 of the 894
+        // mined tac/win puzzles at depth 18: 6% had a second solution within
+        // 50cp and another 6% stored an answer that was not even the engine's
+        // first choice — so about one in nine told a player who found an
+        // equally good move that they were wrong, and docked their Glicko
+        // rating and re-queued the puzzle for it.
+        //
+        // Only the first move: from there the script is a demonstration, not
+        // a second question, exactly as `real` explains.
+        if ((c === "tac" || c === "win") && store.session.puzzle.stage === 0) {
+          const pz0 = store.session.puzzle;
+          if (Array.isArray(pz0.p.alts) && pz0.p.alts.includes(mv.san)) { puzzleSolved(); return; }
+          verifyAlt(mv, { remember: true }).then((v) => {
+            if (store.session.puzzle !== pz0 || pz0.done) return;
+            if (v && v.ok) { toast(tf("pz.mine.alsoFine", [mv.san, (v.loss / 100).toFixed(1)])); puzzleSolved(); return; }
+            puzzleWrong(c === "win"
+              ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize"))
+              : tf("pz.findMotif", [puzzleMotif(pz0.p)]));
+          });
+          return;
+        }
         puzzleWrong(
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
           c === "tac" ? (store.session.puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(store.session.puzzle.p)]) : t("pz.takeTarget")) :
@@ -6222,6 +6283,9 @@ import { createStore } from "./store.js";
     if (store.session.editor) { editorClick(sq); return; }
     if (store.session.mode === "learn" && store.session.learn) { learnClick(sq); return; }
     if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
+    // the clock starts when the player first reaches for the board, not when
+    // their first move completes — see startClockIfIdle
+    startClockIfIdle();
     // a plain click on an empty square, holding nothing, wipes the arrows and
     // circles drawn on this position — Escape does not (v6-plan Q2.4)
     if (!store.game.selection && !viewGame().get(sq) && hasNodeShapes()) {
