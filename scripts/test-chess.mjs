@@ -3987,8 +3987,14 @@ for (const lang of CONTENT_LANGS) {
   {
     // the key list, read from the module that owns it
     const keySrc = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
+    // KEYS plus the sidecars persist.js declares beside it (SCHEMA_KEY,
+    // STAMP_KEY). 6.1: "chess.schema" used to be written in here by hand and
+    // "chess.writtenAt" was simply missing, so a suite that seeded the stamp —
+    // which is how you make a cache look older than the file, the whole point
+    // of the recovery tests — was told it had invented a key. Read both from
+    // the module instead, so a third sidecar cannot repeat the trick.
     const known = new Set([...keySrc.matchAll(/^\s+\w+: "(chess\.[^"]+)",/gm)].map((m) => m[1])
-      .concat("chess.schema"));
+      .concat([...keySrc.matchAll(/^export const \w+_KEY = "(chess\.[^"]+)";/gm)].map((m) => m[1])));
     let stray = 0;
     for (const f of fs.readdirSync(path.join(root, "scripts")).filter((n) => /^test-.*\.mjs$/.test(n))) {
       const src = fs.readFileSync(path.join(root, "scripts", f), "utf8");
