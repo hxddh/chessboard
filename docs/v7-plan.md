@@ -238,69 +238,126 @@ CI 的正确性门禁里**。挖掘时的筛选是 120 毫秒、120 厘兵。而
 
 ---
 
-## 7 · 底层依赖：现在落后什么，升上去能拿到什么
+## 7 · 底层依赖：升上去能拿到什么，怎么把它用足
 
-逐个实测过，不是看版本号猜的。SDK 的两个分叉文件（`build.zig` 抄 SDK 的
-`build/app.zig`，`src/runner.zig` 抄 `app_runner/root.zig`）历史上出过两次事故，
-所以下载了 0.8.1 与 0.10.1 两个包逐文件比对。
+两个包都下下来逐文件比对过，Stockfish 直接跑了头对头。**上一稿这一节有两处判断
+错了，下面一并更正**——`.persist` 和 `core.store.*` 我当时以为 WebView 应用能用，
+实际不能。
 
 | 依赖 | 现在 | 最新 | 结论 |
 |---|---|---|---|
-| **@native-sdk/cli** | 0.8.1 | **0.10.1** | 值得升，且是这一版最大的杠杆 |
-| **Stockfish wasm** | 18 lite-single | **19 lite-single** | 值得升，体积降 75% |
-| Zig | 0.16.0 | 0.16.0 | 已是最新，不动 |
-| esbuild | 0.28.1 | 0.28.2 | 补丁，随手升 |
-| Playwright | 1.62.1 | 1.63.0 | 小版本，随手升；钉子照旧 |
-| chess.js（vendored） | 0.x（2022） | 1.4.0 | **不升**，见下 |
-| lichess chess-openings | 生成时的提交 | — | 重跑 `gen-eco.mjs` 即可，无风险 |
+| **@native-sdk/cli** | 0.8.1 | **0.10.1** | 升，能力最多 |
+| **Stockfish wasm** | 18 lite-single | **19 lite-single** | 升，体积降 75% |
+| Zig | 0.16.0 | 0.16.0 | 已最新，不动 |
+| esbuild | 0.28.1 | 0.28.2 | 补丁 |
+| Playwright | 1.62.1 | 1.63.0 | 小版本 |
+| chess.js（vendored） | 0.x（2022） | 1.4.0 | **不升**，见 §7.8 |
+| lichess chess-openings | 生成时的提交 | — | 重跑 `gen-eco.mjs`，无风险 |
 
-### 7.1 Native SDK 0.8.1 → 0.10.1
+### 7.1 先讲清楚能力开关的机制，后面每一条都靠它
 
-**能拿到的：**
+`app_runner/root.zig` 按 `app.zon` 的 `capabilities` 列表在 **comptime** 决定编进
+什么（`manifestDeclaresStore` / `manifestDeclaresSqlite` / `manifestDeclaresCredentials`）：
 
-- **`.persist` 成了 manifest 里的一个键**（0.10.1 新增）：
-  `.{ .version, .debounce_ms, .restore = .{ .ok, .none, .err } }`。这正是
-  `persist.js` 在 6.0/6.1 手写的那套——防抖镜像、三种恢复结局、横幅文案。这个
-  仓库为它花了两个版本，还在 6.1 自己捅出一个 P0 丢档洞。**但不能盲目换掉**：
-  手写那套有 `.bak` 回退、隔离区、以及 6.1 补的「读不出来的文件整场闸死镜像」。
-  要先逐条核对 SDK 的实现有没有这些性质，缺了就不换，或只换掉重合的那部分。
-- **SQLite 关系存储**（`src/runtime/relational_store.zig`，0.8.1 完全没有）：迁移、
-  分页查询、变更通知。还有一个键值 `record_store`，它**有桥命令**
-  （`core.store.get/set/delete/scan/setMany`），页面直接能调；关系存储只能从
-  Zig 侧用，得像现在的 `chess.appdataRead/Write` 一样自己包一层应用命令。
-  **这正是 §6 主线需要的存储原语**——今天 `persist.js` 是「整份档案一个 blob、
-  400ms 防抖全量重写」，存几 KB 设置没问题，存 200 局 × 80 手的分析数组就不行了。
-- **签名更新器**（`src/updater/`，0.10.1 新增）：Ed25519 验签的更新源 +
-  SHA-256 校验归档，manifest 里声明
-  `.updates = .{ .feed_url, .public_key, .check_on_start }`。今天仓库的
-  `chess.checkUpdate` 是手写的：问 GitHub API 拿 tag，页面自己比对，**不下载、
-  不验签、不安装**，用户得手动下载替换。**值得强调的是它和代码签名是两套信任根**
-  ——内置公钥 + 私钥签名的更新源，不需要 Apple / 微软的任何证书就能保证「这个
-  更新是我发的、没被掉包」。它**不能**替代公证（首次打开仍要右键过 Gatekeeper），
-  但它解决的是自动更新真正的安全属性。
-- 另外新增：`core.persist.flush`（退出时冲刷待写，正是 `persist.js` 关心的）、
-  `core.credentials.*`（钥匙串，这个应用用不上）、`.dock_visible`、`.images`。
-  内建桥命令总体只多了两条，能力主要在上面三块。
+- `"store"` → `RecordStore`：键值库，前缀扫描、批量写，开在应用数据目录
+- `"sqlite"` → `RelationalStore`：SQLite，带迁移、分页查询、变更通知
+- `"credentials"` → 钥匙串（这个应用没有账号，不要）
 
-**要付的代价（必须一起算）：**
+**声明了才编**——所以 9.5 MB 的 `sqlite3.c` 不是强制成本，可以只要 `store` 不要
+`sqlite`。这回答了上一稿留的那个疑问。
 
-- `build/app.zig` 从 1473 行涨到 2895 行，1654 行不同；源文件清单多了
-  `app_markup.c`、`native_sdk_macos_info_plist.c` 和 **9.5 MB 的
-  `third_party/sqlite/sqlite3.c`**。当年 Windows 未定义符号事故的根因就是
-  「我们的源文件清单落后上游」，所以 `build.zig` 必须逐行重新对齐，不能只打补丁。
-- `app_runner/root.zig` 952 → 1397 行，477 行不同；仓库的 `src/runner.zig`
-  （751 行）是它的分叉，同样要重对。`close_policy` 曾经就是这样「声明了但没人读」
-  地死在两个版本里，`manifest-check.mjs` 就是为这个写的——升级后它必须还绿。
-- **Node 22 → 24**：0.8.1 没有 `engines` 约束，0.10.1 要求 `>=24`。六个工作流
-  和 `package.json` 都要改。
-- 编进 sqlite 会让构建变慢、二进制变大。**用不上关系存储就不要开它**——先确认
-  manifest 里能不能只开 `record_store` 不开 `sqlite`。
+两个存储的 binding 进的是 runtime options，也就是 **Zig 侧**。页面拿不到：
+`native-sdk.*` 的完整命令表里没有任何存储命令。要给页面用，得像今天的
+`chess.appdataRead/Write` 一样，自己在 `main.zig` 写一层 `chess.db*`。
 
-跳过的 0.8.2/0.8.3/0.8.4 是同一条线上的补丁，升到 0.10.1 一并带上。
+> **更正**：上一稿说「`core.store.*` 有桥命令，页面直接能调」是错的。那几个名字
+> 出现在 `src/runtime/effects.zig`，是确定性 core 的**效果名**，不是 WebView 的
+> 桥命令。
 
-### 7.2 Stockfish 18 → 19（lite-single）
+### 7.2 更正：`.persist` 用不了，手写那套继续留着
 
-实测，40 道挖掘题的战术局面，同一台机器：
+`.persist`（`version` / `debounce_ms` / `restore.ok·none·err`）的消费者是
+`ts_core_main.zig`、`ts_ui_app.zig`、`ui_app.zig` —— 确定性 core 那条路线。
+`app_runner/root.zig`（本仓库 `runner.zig` 分叉的那个）里 **`persist` 一次都没出现**。
+`core.persist.flush` 同理。
+
+所以上一稿写的「SDK 现在自带 persist.js 那套」是误判。`persist.js` 继续留着，
+它的 `.bak` 回退、隔离区、以及 6.1 补的「读不出来的文件整场闸死镜像」都没有替代品。
+§1 的丢档修复照原计划做。
+
+### 7.3 `.updates`：白拿一整条签名自动更新
+
+在 `app.zon` 声明三个字段：
+
+```zig
+.updates = .{
+    .feed_url = "https://…/appcast.json",   // 必须 https
+    .public_key = "<base64 的 32 字节公钥>",
+    .check_on_start = true,
+},
+```
+
+宿主（`src/platform/macos/appkit_host.m`）就给出整条链路：拉取签名源 →
+**Ed25519 验签** → 弹「Install Update」→ 带进度条下载（可取消）→
+**SHA-256 校验归档** → 安装。菜单里多一个标准项，命令名 `app.check-for-updates`。
+
+**能删掉的**：`main.zig` 里手写的 `chess.checkUpdate`（连同那个 `std.http.Client`
+和 `formatLatestRelease`）、`host.js` 里的 5 秒竞速、页面侧的版本比对。今天这套
+只问 GitHub 要个 tag，**不下载、不验签、不安装**，用户得自己去下载替换。
+
+**为什么这件事比看起来重要**：它和代码签名是**两套信任根**。应用内置公钥、更新源
+用私钥签名，不需要 Apple 或微软的任何证书，就能保证「这个更新是我发的、没被掉包」。
+——但它**不能替代公证**，首次打开仍要右键过 Gatekeeper。这两件事别混为一谈。
+
+**要做的事**：生成 Ed25519 密钥对；私钥进 GitHub Actions secret；`release.yml`
+多一步生成并签名 feed JSON，发到固定 URL（GitHub Pages 或 release 资产均可）。
+
+**待核实的坑**：宿主的弹窗文案是硬编码英文（`"Install Update"`）。一个中文优先的
+应用弹出英文对话框是要解决的——实现时先确认能否本地化，不能就在 README 与
+`docs/manual-check.md` 里写明这条已知差距，**不要装作没看见**。
+
+### 7.4 SQLite：§6 的棋谱库该建在它上面
+
+今天 `persist.js` 是「整份档案一个 blob、400 ms 防抖、全量重写」。存几 KB 设置
+没问题；存 200 局 × 80 手的分析数组，每次改动都要重写整个几十 MB 的 blob，这个
+设计会直接塌掉。
+
+`RelationalStore` 给的正好是缺的那些：迁移（`src/schema/migrations.lock.json`，
+构建时生成 `migrations.zig`，**需要 node 在 PATH 上**）、分页查询
+（`default_page_rows = 256`）、变更通知（`ChangedTable` / `ChangeBatch`）。
+
+**分界线要划清楚**：档案（设置、当前对局、错题本、SRS 状态）继续走 `persist.js`
+那条已经被两版打磨过的路；**只有棋谱库这一块新数据进 SQLite**。不要借升级之机
+把已经正确的东西重写一遍——那是 6.1 教过的教训。
+
+### 7.5 通知：批量分析终于有了正确的载体
+
+0.10.1 的通知加了 `id`（去重/替换）和 `actionLabel` / `actionCommand`（动作按钮
+直接派发应用命令）；0.8.1 只有 `title` / `subtitle` / `body`。
+
+§6 的批量分析要跑半小时，正需要这个：一条固定 `id` 的通知随进度**替换**（而不是
+堆出二十条），完成时带一个「查看诊断」按钮直接跳到报告页。
+
+### 7.6 `.file_associations` 与 `.dmg`：三个手工件换成两段声明
+
+今天 `.pgn` 关联是**打包后改 plist**（`scripts/add-pgn-doctype.sh`）加两个 Windows
+注册表件（`register-pgn.cmd` / `register-pgn.reg`）；dmg 布局是脚本拼的。manifest
+里都有对应的键（`file_associations` 在 0.8.1 就有，`dmg` 在 0.10.1 的 schema 里，
+支持卷名、背景、窗口尺寸、图标位置）。换过去少三个手工件，而且跨平台一条声明。
+
+### 7.7 看过、明确不用的
+
+`cef`（用系统 WebView）、`core_compiler` / `service_*`（另一套架构，引擎是页面里的
+wasm Worker，搬过去等于重写）、`shell`（多窗口/多页签，仓库明确不做）、
+`url_schemes`、`dock_visible`、`webview_layer`、`transparent` / `click_through` /
+`always_on_top`、`credentials`（无账号）、tray。
+
+`titlebar = "hidden_inset"` 与 `theme_accent` 是纯外观，可做可不做，**不进这一版的
+必做项**——升级版本的风险预算要留给会出事的地方。
+
+### 7.8 Stockfish 18 → 19（lite-single）
+
+40 道挖掘题的战术局面，同一台机器实测：
 
 | | SF18 lite-single（当前） | SF19 lite-single |
 |---|---|---|
@@ -310,40 +367,52 @@ CI 的正确性门禁里**。挖掘时的筛选是 120 毫秒、120 厘兵。而
 | `go depth 12` 找到正解 | 37/40 | 37/40 |
 | 平均 nps | 947k | 627k（−34%） |
 
-SF19 的 lite 用的是一张新的 1MB 网络（sscg13 的 sf19-1mb），自带、不需要外部
-NNUE 文件，UCI 接口不变，同样 GPLv3。所以「更新的 Stockfish」这次**同时**意味着
-更小更快，而不是更强——nps 反而低了三分之一。
+SF19 的 lite 用的是一张新的 1 MB 网络（sscg13 的 sf19-1mb），自带、不需要外部
+NNUE，UCI 不变，同样 GPLv3。所以这次「更新的 Stockfish」意味着**更小更快，而不是
+更强**——nps 反而低了三分之一。
 
-**这个样本不足以下结论，必须说清楚**：40 道太少，而且这批题当初就是用 SF18
-挖出来并筛过的，对 SF18 有系统性偏向。正式评估要跑仓库自己的
-`test-strength.mjs`（真的对弈）、`test-tactics.mjs` 和 `test-novice.mjs`，
-并且**重跑 6.1 那套复盘噪声测量**——nps 降三分之一，120ms 快扫的噪声可能变差，
-而 `?!`/`?`/`??` 的可复现率是照着那个预算量出来的。
+**这个样本不足以下结论，必须写明**：40 道太少，而且这批题当初就是用 SF18 挖出并
+筛过的，对 SF18 有系统性偏向。正式评估要跑 `test-strength.mjs`（真对弈）、
+`test-tactics.mjs`、`test-novice.mjs`，并且**重跑 6.1 那套复盘噪声测量**——nps 降
+三分之一，120 ms 快扫的噪声可能变差，而 `?!`/`?`/`??` 的可复现率正是照着那个预算
+量出来的。若噪声确实变差，要么把快扫预算从 120 ms 上调（现在有体积预算可花），
+要么如实更新 `docs/measured.json` 和 §4 的结论。
 
-连带要改的：`engine-src.js` 现在 9,749,471 字节（wasm 的 base64），换 SF19 后约
-2,383,428 字节，而 `sync-dist.mjs` 有一条 `engine-src.js <= 5000000 就失败` 的
-守卫——它是防「打出个空壳」的，升级后必须重新标定到 2MB 上下，否则 CI 当场红。
+连带必改：`engine-src.js` 现在 9,749,471 字节（wasm 的 base64），换 SF19 后约
+2,383,428，而 `sync-dist.mjs` 有一条 `engine-src.js <= 5000000 就失败` 的守卫
+（防「打出个空壳」），必须重新标定到 2 MB 上下，否则 CI 当场红。
 
-### 7.3 明确不升的
+**chess.js 明确不升**：vendored 的是 0.x 的 snake_case API（`in_checkmate` /
+`game_over` / `validate_fen`），1.4.0 全改成 camelCase 且 `move()` 从返回 null
+改为抛异常，全仓库约 500 处调用点。而 perft 五组已经证明现有这份是对的，PGN 也
+早换成自写解析器——纯机械大改，风险实打实，用户零感知。
 
-- **chess.js**。vendored 的是 0.x 的 snake_case API（`in_checkmate` /
-  `game_over` / `validate_fen`），1.4.0 全部改成了 camelCase，`move()` 也从
-  返回 null 改为抛异常。全仓库约 500 处调用点。而收益接近于零：perft 五组已经
-  证明现有这份是对的，PGN 也早就换成了自写解析器，chess.js 只剩合法性与棋盘。
-  **一次纯机械的大改，风险实打实，用户一点感知都没有。**
-- **Zig**。0.16.0 已是最新稳定版（2026-04 发布），SDK 0.10.1 要求的也还是它。
+### 7.9 7.0-dep：只动依赖的那一版，怎么排
 
-### 7.4 建议的做法
+`build.zig` 与 `runner.zig` 是 SDK 两个文件的手抄分叉（`build/app.zig` 1473 →
+2895 行、1654 行不同，源文件清单多了 `app_markup.c`、
+`native_sdk_macos_info_plist.c`、`third_party/sqlite/sqlite3.c`；
+`app_runner/root.zig` 952 → 1397 行）。当年 Windows 未定义符号事故的根因就是
+「我们的清单落后上游」，`close_policy` 也曾这样「声明了但没人读」地死在两个版本里。
+**这类改动 CI 全绿也可能在真机上悄悄坏掉**，所以它独占一版。
 
-SDK 和 Stockfish 两件都值得做，但**不要和 §6 的主线挤在同一个版本里**——
-`build.zig` 与 `runner.zig` 的重新对齐是那种「CI 全绿但真机上某个键悄悄死掉」
-的改动（`close_policy` 就是先例），它需要独占一次真机走查
-（`docs/manual-check.md`）。
+顺序：
 
-所以：**先发一个只动依赖的 7.0-dep**，内容就是 SDK 0.10.1 + SF19 + Node 24 +
-esbuild/Playwright 补丁，验收是全量测试绿、`manifest-check` 绿、双平台真机走查
-过一遍、复盘噪声重测并更新 `docs/measured.json`。**确认稳了，再在它上面做 §6**
-——因为 §6 的批量棋谱库正要用 0.10.1 的存储原语，顺序反了就得写两遍。
+1. **Node 22 → 24**（0.10.1 的 `engines` 要求）：六个工作流加 `package.json`。
+2. **SDK 0.10.1**：`build.zig` 与 `runner.zig` 逐行重新对齐，不是打补丁。
+   `manifest-check.mjs` 必须还绿——它就是为这件事写的。
+3. **`.updates`**：密钥对、CI 签名步骤、删掉手写的 `checkUpdate`。弹窗文案的
+   本地化问题当场核实并记录。
+4. **`.file_associations` + `.dmg`**：删掉三个手工件。
+5. **Stockfish 19**：换文件、重标定体积守卫、跑全量 `test:engine`、
+   **重跑复盘噪声并更新 `measured.json`**。
+6. **esbuild / Playwright** 补丁位。
+7. **`capabilities` 加 `"store"`**（先不加 `"sqlite"`）：这一版只把开关打开、
+   写一条最小的 `chess.store*` 命令与一条往返测试，**不迁移任何数据**。
+   §6 真要用 SQLite 时再加 `"sqlite"`，那时迁移文件和表结构才有意义。
+
+**验收**：全量测试绿、`manifest-check` 绿、双平台**真机走查**（`docs/manual-check.md`
+补一节：更新流程、文件关联、dmg 布局、菜单、Esc、close_policy）、噪声重测入账。
 
 ## 8 · 下一版之后（不在 7.0 范围内，先记下来）
 
@@ -371,3 +440,16 @@ esbuild/Playwright 补丁，验收是全量测试绿、`manifest-check` 绿、�
 
 如果工期只够一半：做 §1–§5 加 §6.1/§6.2，把 §6.3/§6.4 留到 7.1。**不要**先做
 §6.4——在只有几局样本的时候解释失误，说服力和今天没有区别。
+
+### 和 §7 的关系
+
+依赖升级（§7.9 的 7.0-dep）**排在 §6 前面**，理由不是「先做简单的」，而是三条硬
+依赖：
+
+1. §6 的棋谱库要建在 SQLite 上（§7.4）。顺序反了就得先用 blob 写一遍、再迁移一遍。
+2. §6 的批量分析要半小时，需要 0.10.1 的可替换通知带动作按钮（§7.5）。
+3. Stockfish 19 会改变快扫的噪声特性（§7.8），而 §6.2 的诊断全部建立在那些分析
+   数字上——引擎换在诊断之后，等于让刚建立的基线立刻作废。
+
+但**两条 P0（§1 丢档、§2 判错）不等任何东西**：它们在线上正伤人，是独立的、小的，
+应该第一个发出去。所以整体顺序是：**P0 补丁 → 7.0-dep → 7.0 主线**。
