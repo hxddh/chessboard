@@ -5649,6 +5649,35 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// --- 7.0: every suite package.json runs, CI runs too -------------------------
+//
+// 6.1 found that `checks.yml`'s static job named three scripts by hand while
+// `npm run test:static` listed eight, so four suites had never once run in PR
+// CI. It fixed the static job — and left the same hand-written list in place
+// for the e2e job, for the release workflow's e2e loop, and for the engine
+// suite. A fix that is a one-time edit is not a fix; this is the assertion
+// that makes the next added suite fail loudly instead of silently never
+// running.
+{
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const scriptsIn = (cmd) => [...String(cmd || "").matchAll(/node (scripts\/[\w-]+\.mjs)/g)].map((m) => m[1]);
+  const checksWf = fs.readFileSync(path.join(root, ".github/workflows/checks.yml"), "utf8");
+  const releaseWf = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
+  // Only the e2e lists are spelled out: both workflows run `test:static` and
+  // `test:engine` through npm, which is the shape that cannot drift. The e2e
+  // loop cannot, because each browser engine needs its own env.
+  for (const [group, where, text] of [
+    ["test:e2e", "checks.yml", checksWf],
+    ["test:e2e", "release.yml", releaseWf],
+  ]) {
+    const want = scriptsIn(pkg.scripts[group]);
+    const missing = want.filter((f) => !text.includes(f));
+    assert(missing.length === 0,
+      where + " runs every suite in " + group + " (" + want.length + ")" +
+      (missing.length ? " —— 漏了 " + missing.join(", ") : ""));
+  }
+}
+
 // --- 6.1: an impossible [FEN] must not be quietly repaired -------------------
 //
 // ChessEditor exists to reject positions chess.js accepts. fromFen() used to

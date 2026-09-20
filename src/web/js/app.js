@@ -5035,6 +5035,19 @@ import { createStore } from "./store.js";
     try {
       for (;;) {
         if (run.abort) break;
+        // A pass over a few hundred games takes the better part of an hour,
+        // and the person will not be watching it. One notification carrying a
+        // fixed `id` (SDK 0.10.0) is REPLACED by the next one instead of
+        // stacking, which is the difference between a progress report and
+        // twenty notifications. No action button: `actionCommand` dispatches
+        // an app command, and every command in this app passes a mode gate
+        // built from the shortcut table — a command with no row there simply
+        // does not run, so a button wired to one would be a button that does
+        // nothing. Recorded in docs/v7-plan.md §7.5.
+        if (!store.ui.appForeground && run.done) {
+          Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
+            body: tf("ntf.libraryBody", [run.done, run.total]) });
+        }
         // re-read the queue each round: an import during the pass adds to it,
         // and an entry that failed to replay must not be handed back forever
         const next = Library.pending(store.session.library).find((g) => !g.an && !g.unplayable);
@@ -5049,9 +5062,14 @@ import { createStore } from "./store.js";
         renderLibrary();
       }
     } finally {
+      const done = run.done;
       store.session.libRun = null;
       saveLibrary();
       renderLibrary();
+      if (done && !store.ui.appForeground) {
+        Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
+          body: tf("ntf.libraryDone", [done]) });
+      }
     }
   }
 
