@@ -403,6 +403,177 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await ctx2.close();
 }
 
+// --- 6.1: 多线与持续分析 (v6-plan §5 Q2「MultiPV 3 时三条线可见」) ----------
+//
+// §7 对的是 §2 的实现项,不是 §5 的验收项,于是这两条一条断言都没有(§8.2)。
+// 引擎照旧是脚本化的:真搜索每次给的线数与分数都不一样,而「三条线」要成立,
+// 得先能证明那是三条**不同**的线,各自带着自己的胜率 —— 这只有喂已知数字才
+// 做得到。
+{
+  const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx3.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await ctx3.newPage();
+  const errs3 = [];
+  pg.on("pageerror", (e) => errs3.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel").catch(() => {});
+
+  const sq = async (name) => {
+    const c = await pg.evaluate((s) => {
+      const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, name);
+    await pg.mouse.click(c.x, c.y);
+    await pg.waitForTimeout(140);
+  };
+
+  // 6.0 的真缺陷:空棋盘上「复盘」这个组名还立着,底下一个按钮都没有。修法是
+  // 按 sanHistory().length 开门再 collapseEmptyGroups() 收组,所以这里先在
+  // 一着未走时看一眼 —— 这一条要是回退,下面的持续分析全都还能过。
+  {
+    const g = await pg.evaluate(() => ({
+      group: document.getElementById("review-actions").hidden,
+      live: document.getElementById("an-live").hidden,
+      run: document.getElementById("an-run").hidden,
+      lineBox: document.getElementById("live-line").hidden,
+    }));
+    assert(g.group, "一着未走时「复盘」整组收起,没有一个光头的组名");
+    assert(g.live && g.run, "……组里那几个按钮本来就不该在(持续分析 / 分析)");
+    assert(g.lineBox, "……引擎行也不在");
+  }
+
+  for (const s of ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6"]) await sq(s);
+  await pg.waitForTimeout(300);
+  assert(!(await pg.evaluate(() => document.getElementById("review-actions").hidden)),
+    "有棋可复盘了,这一组才出现");
+
+  // 设置里把线数调到 3。走界面而不是塞 localStorage:验收说的是「MultiPV 3
+  // 时」,那就得先证明那颗按钮真的把 3 送到了引擎。
+  await pg.click("#tab-setup");
+  await pg.waitForTimeout(200);
+  await pg.click('#multipv-seg button[data-multipv="3"]');
+  await pg.waitForTimeout(200);
+  await pg.click("#tab-play");
+  await pg.waitForTimeout(200);
+
+  // 一份三条线的评估。三条线各走一个**不同**的合法首着,所以「三条」是不是
+  // 真的三条,看得出来。
+  await pg.evaluate(() => {
+    window.__mpv = [];
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen, movetime, opts) => {
+      window.__mpv.push(opts && opts.multipv);
+      const turn = fen.split(" ")[1];
+      const line = (cp, uci) => ({ cp: turn === "w" ? cp : -cp, mate: null, pv: [uci], depth: 14 });
+      return { cp: turn === "w" ? 60 : -60, mate: null, turn, best: "e2e4", pv: ["e2e4"],
+        lines: [line(60, "e2e4"), line(20, "d2d4"), line(-10, "g1f3")] };
+    };
+  });
+  await pg.click("#an-run");
+  await pg.waitForTimeout(2500);
+  assert((await pg.evaluate(() => window.__mpv.every((n) => n === 3) && window.__mpv.length > 0)),
+    "设置里的 3 到了引擎手上,每一个局面都问了三条线 (" +
+    JSON.stringify(await pg.evaluate(() => window.__mpv.slice(0, 4))) + ")");
+
+  // 起始局面 —— 三条线的首着(e4 / d4 / Nf3)在这里都合法,所以三条都画得出来
+  await pg.click("#rep-start");
+  await pg.waitForTimeout(400);
+  const mpv = await pg.evaluate(() => {
+    const el = document.getElementById("pv-line");
+    const main = [...el.querySelectorAll("button.pv-chip")].map((c) => c.getAttribute("aria-label"));
+    const alts = [...el.querySelectorAll(".pv-alt-row")].map((r) => ({
+      label: r.querySelector(".pv-label").textContent,
+      sans: [...r.querySelectorAll(".pv-chip")].map((c) => c.getAttribute("aria-label")),
+    }));
+    return { hidden: el.hidden, main, alts, bar: document.getElementById("eval-bar-text").textContent };
+  });
+  assert(!mpv.hidden, "复盘面板给出了引擎的线");
+  assert(mpv.alts.length === 2 && mpv.main.length >= 1,
+    "MultiPV 3:主变一条 + 副变两条 = 三条线 (" + (1 + mpv.alts.length) + ")");
+  const heads = [mpv.main[0], ...mpv.alts.map((a) => a.sans[0])];
+  assert(new Set(heads).size === 3, "三条线是三条不同的线,不是同一条抄三遍 (" + heads.join(" / ") + ")");
+  assert(mpv.alts.every((a) => /胜率\s*\d+%/.test(a.label)),
+    "每条副变都带着自己的胜率 (" + mpv.alts.map((a) => a.label).join(" | ") + ")");
+  assert(mpv.alts[0].label !== mpv.alts[1].label,
+    "……而且是各算各的,不是同一个数字印两遍 (" + mpv.alts.map((a) => a.label).join(" | ") + ")");
+  assert(/^[+-]/.test(mpv.bar.trim()), "主变那条的数字在评估条上 (" + mpv.bar + ")");
+
+  // --- 持续分析:跟着复盘游标走,关掉就真的停 -------------------------------
+  // 每个局面给一个只跟这个局面有关的分数(按已走手数),所以「变了」意味着
+  // 引擎真的换了局面重问,而不是面板把上一次的数字留在那里。
+  await pg.evaluate(() => {
+    window.__live = { fens: [], stops: 0 };
+    window.__chess.engine.analyzeInfinite = (fen, opts, onUpdate) => {
+      window.__live.fens.push(fen);
+      const parts = fen.split(" ");
+      const ply = Number(parts[5]) * 2 - (parts[1] === "w" ? 2 : 1);
+      const base = 30 + ply * 37;
+      const lines = [];
+      for (let k = 0; k < ((opts && opts.multipv) || 1); k++) {
+        lines.push({ cp: base - k * 45, mate: null, pv: [], depth: 14 + k });
+      }
+      const id = setTimeout(() => onUpdate({ depth: 14, lines, turn: parts[1] }), 20);
+      return () => { clearTimeout(id); window.__live.stops++; return Promise.resolve(); };
+    };
+  });
+  const liveState = () => pg.evaluate(() => ({
+    hidden: document.getElementById("live-line").hidden,
+    head: (document.querySelector("#live-line > .pv-label") || {}).textContent || "",
+    rows: [...document.querySelectorAll("#live-line .pv-alt-row .pv-label")].map((x) => x.textContent),
+    pressed: document.getElementById("an-live").getAttribute("aria-pressed"),
+    fens: window.__live.fens.length,
+    stops: window.__live.stops,
+  }));
+
+  await pg.click("#rep-end");
+  await pg.waitForTimeout(300);
+  await pg.click("#an-live");
+  await pg.waitForTimeout(700);
+  const on = await liveState();
+  assert(on.pressed === "true" && !on.hidden, "「持续分析」按下之后引擎行出现了");
+  assert(/深度/.test(on.head), "……行首写着深度 (「" + on.head + "」)");
+  assert(on.rows.length === 3, "……MultiPV 3,三条线一起在跑 (" + on.rows.length + ")");
+  assert(on.rows.every((r) => /胜率\s*\d+%/.test(r)), "……每条都带胜率 (" + on.rows.join(" | ") + ")");
+  assert(new Set(on.rows).size === 3, "……三条线三个数,不是同一个 (" + on.rows.join(" | ") + ")");
+
+  // 游标用方向键退 —— 面板上的那对箭头在别处已经走过,这里走键盘这条路
+  await pg.evaluate(() => { if (document.activeElement) document.activeElement.blur(); });
+  await pg.keyboard.press("ArrowLeft");
+  await pg.waitForTimeout(700);
+  const back1 = await liveState();
+  assert(back1.fens === on.fens + 1, "← 之后引擎被重新问了一次,问的是新局面 (" + back1.fens + ")");
+  assert(back1.stops === on.stops + 1, "……上一条搜索被停掉,一次一条 (" + back1.stops + ")");
+  assert(back1.rows[0] !== on.rows[0],
+    "……面板上的评估跟着游标变了 (「" + on.rows[0] + "」→「" + back1.rows[0] + "」)");
+  await pg.keyboard.press("ArrowLeft");
+  await pg.waitForTimeout(700);
+  const back2 = await liveState();
+  assert(back2.rows[0] !== back1.rows[0] && back2.fens === back1.fens + 1,
+    "……再退一手再变一次 (「" + back1.rows[0] + "」→「" + back2.rows[0] + "」)");
+
+  // 关掉:最后一条搜索被停,面板收走,再动游标也不会再问引擎
+  await pg.click("#an-live");
+  await pg.waitForTimeout(500);
+  const off = await liveState();
+  assert(off.pressed === "false" && off.hidden && off.rows.length === 0,
+    "关掉之后引擎行连同它的三条线一起收走");
+  assert(off.stops === back2.stops + 1, "……在飞的那条搜索被停了 (" + off.stops + ")");
+  await pg.keyboard.press("ArrowLeft");
+  await pg.waitForTimeout(600);
+  const after = await liveState();
+  assert(after.fens === off.fens, "……关掉就是真的停了:再走游标也不再问引擎 (" + after.fens + ")");
+  assert(after.hidden, "……面板也没有自己冒出来");
+
+  assert(errs3.length === 0, "多线与持续分析:全程没有页面异常 — " + errs3.join(" / "));
+  await ctx3.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
