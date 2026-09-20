@@ -33,6 +33,11 @@ export const KEYS = {
   progress: "chess.v1.progress",
   achievements: "chess.v1.achv",
   slots: "chess.v1.slots",
+  // 7.0: the imported games library and their offline analyses. Its own key
+  // and not part of `stats`, because it is much the largest thing this app
+  // stores (a few hundred games with a per-ply loss array each) and a quota
+  // failure writing it must not take the play history down with it.
+  library: "chess.v1.library",
   panelOpen: "chess.panelOpen",
   // 6.0: where a value that failed to parse is kept, instead of being thrown
   // away and overwritten by the next autosave (v6-plan D2)
@@ -414,6 +419,7 @@ export function createPersist(host, onWriteFailure) {
     stats: (v) => (v && (v.v === 2 || v.v === 1) && Array.isArray(v.games) ? migrateStats(v) : null),
     achievements: (v) => (v && Array.isArray(v.seen) ? v : null),
     slots: (v) => (v && Array.isArray(v.slots) ? v : null),
+    library: (v) => (v && v.v === 1 && Array.isArray(v.games) ? v : null),
   };
   /**
    * stats v1 → v2: split the overloaded `sig` into the three things it was.

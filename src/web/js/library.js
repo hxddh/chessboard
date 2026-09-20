@@ -112,6 +112,16 @@ function entryFrom(game, sans, names, now) {
     event: tag("Event"),
     result: (game && game.result) || "*",
     plies: sans.length,
+    /**
+     * The mainline, space-separated SAN.
+     *
+     * The whole game and not just its length, because a diagnosis that can
+     * only say "your endgames lose 120cp a move" is a number, not an
+     * explanation: the player has to be able to open the game it came from.
+     * Joined rather than an array — a few hundred games' worth of one-element
+     * JSON strings is most of what this record would otherwise weigh.
+     */
+    sans: sans.join(" "),
     side,
     outcome: outcomeFor((game && game.result) || "*", side),
     /** set by the app once the analysis pass has run over this game */

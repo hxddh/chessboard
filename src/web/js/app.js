@@ -21,6 +21,7 @@ import { CHESS_LESSONS_JA } from "./lessons-ja.js";
 import { CHESS_LESSONS } from "./lessons.js";
 import { ChessMaterial } from "./material.js";
 import { motifOf } from "./motif.js";
+import { ChessLibrary } from "./library.js";
 import { ChessMistakes } from "./mistakes.js";
 import { ChessProgress } from "./progress.js";
 import { ChessPlanner } from "./planner.js";
@@ -2466,6 +2467,7 @@ import { createStore } from "./store.js";
    * reading ALL_PUZZLES: badge totals must not drift with a set that grows
    * and retires on its own.
    */
+  const Library = ChessLibrary;
   const Mistakes = ChessMistakes;
   function loadMines() {
     const s = Persist.read("mines").value;
@@ -4727,6 +4729,7 @@ import { createStore } from "./store.js";
         (withAcc.length ? t("stats.hintAcc") : t("stats.hintNoAcc"))
       : t("stats.emptyHint");
     el.appendChild(hint);
+    renderLibrary();
     renderPuzzleTally();
     renderTrends();
     const rec = recommendation();
@@ -4840,6 +4843,330 @@ import { createStore } from "./store.js";
     }
     return true;
   }
+
+  // --- 棋谱库 ---------------------------------------------------------------
+  //
+  // The model is library.js; everything here is scheduling, persistence and
+  // the two screens. See that file's header for why this exists at all.
+
+  /** How many analysed games buy a diagnosis. */
+  const LIB_MIN_GAMES = 20;
+  /**
+   * Per-position budget for the background pass, in ms.
+   *
+   * The same 120 ms the 分析 button spends, and for the same measured reason
+   * (docs/measured.json winPctNoise): at this budget two passes agree on `??`
+   * 86 % of the time, which is what makes a per-game tag worth storing. A
+   * cheaper scan would make the library bigger and the diagnosis emptier.
+   */
+  const LIB_BUDGET = 120;
+
+  function loadLibrary() {
+    const s = Persist.read("library").value;
+    if (!s) return { games: [], names: [] };
+    const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
+    return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
+  }
+  {
+    const loaded = loadLibrary();
+    store.session.library = loaded.games;
+    store.session.libNames = loaded.names;
+  }
+  /** Set while the background pass is running; the pause button clears it. */
+  store.session.libRun = null;
+  function saveLibrary() {
+    Persist.setJson("library", { v: 1, games: store.session.library, names: store.session.libNames });
+  }
+
+  /** The names split out of the one text field, trimmed, empties dropped. */
+  function libNamesFrom(text) {
+    return String(text || "").split(/[,，;；]/).map((n) => n.trim()).filter(Boolean);
+  }
+
+  /**
+   * Re-run the claim over every entry.
+   *
+   * Typing a name is the single most likely correction someone makes on this
+   * page — they import an archive, see 一局都没认出是你下的, and fix it. That
+   * has to re-decide `side` and `outcome` for games already in the library,
+   * and it must NOT touch `an`: the analysis measured both sides' plies, so
+   * the same pass answers for either chair.
+   */
+  function reclaimLibrary() {
+    const names = store.session.libNames;
+    for (const g of store.session.library) {
+      const headers = [["White", g.white || ""], ["Black", g.black || ""]];
+      g.side = Library.sideOf(headers, names);
+      g.outcome = Library.outcomeFor(g.result, g.side);
+    }
+  }
+
+  /**
+   * Take every game in a PGN file into the library.
+   *
+   * Deliberately not the same path as 导入棋谱: that one asks which single
+   * game you meant, because it is about to put one on the board. Here the
+   * whole file is the point.
+   */
+  async function importPgnToLibrary(text, label) {
+    const text0 = (text || "").trim();
+    if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
+    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    let chunks;
+    try { chunks = ChessPgnParser.splitGames(text0); }
+    catch (_) { chunks = ChessPgn.splitGames(text0); }
+    const now = Date.now();
+    const fresh = [];
+    for (const chunk of chunks) {
+      let parsed = null;
+      try { parsed = ChessPgnParser.parsePgn(chunk).games[0]; } catch (_) { parsed = null; }
+      if (!parsed) continue;
+      // mainline SAN only: a game's variations are the annotator's opinion,
+      // and what this library measures is what the player actually played
+      const sans = [];
+      for (let n = parsed.root; n && n.children.length; n = n.children[0]) sans.push(n.children[0].san);
+      if (!sans.length) continue;
+      fresh.push(Library.entryFrom(parsed, sans, store.session.libNames, now));
+    }
+    if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
+    const r = Library.addGames(store.session.library, fresh);
+    store.session.library = r.list;
+    saveLibrary();
+    renderLibrary();
+    if (!r.added) toast(tf("lib.addedNone", [r.dup]), "fix");
+    else toast(tf("lib.added", [r.added, r.dup]) + (label ? " · " + label : ""));
+    if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
+  }
+
+  /**
+   * Accuracy for one library game, from its own moves.
+   *
+   * `accuracyFrom` reads `sanHistory()` — the game on the board — so it cannot
+   * serve a game that is not on the board. Same measure, own arguments.
+   */
+  function libAccuracy(fens, scalars, sans) {
+    const loss = Review.lossesBySide(scalars, (i) => (fens[i].split(" ")[1] === "w" ? "w" : "b"));
+    const w = Review.accuracyOf(loss.w);
+    const b = Review.accuracyOf(loss.b);
+    const wp = Review.summarizeWinPct(scalars, sans, fens[0].split(" ")[1] === "b" ? "b" : "w");
+    return { acc: { w: wp ? wp.acc.w : w.acc, b: wp ? wp.acc.b : b.acc },
+      acpl: { w: w.acpl, b: b.acpl } };
+  }
+
+  /**
+   * One game's offline pass. Returns the `an` record, or null if it was cut
+   * short — a half-analysed game stays in the queue rather than being filed
+   * as a measurement of something it did not measure.
+   */
+  async function analyseLibraryGame(entry, run) {
+    const sans = entry.sans.split(" ").filter(Boolean);
+    const g = new Chess();
+    const fens = [g.fen()];
+    for (const san of sans) {
+      if (!g.move(san, { sloppy: true })) return null; // not a game we can replay
+      fens.push(g.fen());
+    }
+    const scalars = new Array(fens.length).fill(null);
+    const bests = new Array(fens.length).fill(null);
+    const repSeen = new Map();
+    for (let i = 0; i < fens.length; i++) {
+      if (run.abort) return null;
+      const probe = new Chess(fens[i]);
+      const repKey = Fide.positionKey(fens[i], probe);
+      const reps = (repSeen.get(repKey) || 0) + 1;
+      repSeen.set(repKey, reps);
+      // same terminal rule as analyzeGame(): threefold and the 50-move mark
+      // are claimable, not over, and scoring them 0 flattens the curve
+      if (probe.in_checkmate()) scalars[i] = probe.turn() === "w" ? -10000 : 10000;
+      else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
+      else {
+        let e = null;
+        try { e = await ChessEngine.analyze(fens[i], LIB_BUDGET, {}); } catch (_) { e = null; }
+        scalars[i] = evalScalar(e);
+        if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
+      }
+      run.ply = i + 1;
+      run.plies = fens.length;
+      renderLibrary();
+    }
+    const tags = sans.map((_, i) => {
+      const a = scalars[i], b = scalars[i + 1];
+      if (a == null || b == null) return null;
+      const mover = fens[i].split(" ")[1] === "w" ? "w" : "b";
+      return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
+    });
+    // centipawn loss per ply, from the mover's chair, floored at 0: a move
+    // that improved the engine's own assessment did not "lose" a negative
+    // amount, and letting it do so would net out somebody's real blunders
+    const losses = sans.map((_, i) => {
+      const a = scalars[i], b = scalars[i + 1];
+      if (a == null || b == null) return 0;
+      const mover = fens[i].split(" ")[1] === "w" ? 1 : -1;
+      return Math.max(0, (a - b) * mover);
+    });
+    // What the player missed, at the plies where they went wrong: the motif of
+    // the engine's OWN move in that position, not of the move they played. A
+    // blunder rarely has a motif; the thing that punished it does, and that is
+    // the name worth putting in front of someone ("你栽在双击上 7 次").
+    const motifs = {};
+    for (let i = 0; i < tags.length; i++) {
+      if (tags[i] !== "?" && tags[i] !== "??") continue;
+      const uci = bests[i];
+      if (!uci) continue;
+      const san = sansOf(fens[i], [uci], 1)[0];
+      if (!san) continue;
+      let m = null;
+      try { m = motifOf(fens[i], san, Chess); } catch (_) { m = null; }
+      if (m) motifs[i] = m;
+    }
+    const a = libAccuracy(fens, scalars, sans);
+    return { an: { acc: a.acc, acpl: a.acpl, tags, losses, scalars, bests, budget: LIB_BUDGET }, motifs };
+  }
+
+  /** Start (or stop) the background pass over everything still unanalysed. */
+  async function runLibraryPass() {
+    if (store.session.libRun) { store.session.libRun.abort = true; return; }
+    if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
+    if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    await stopLiveAnalysis();
+    const run = { abort: false, done: 0, total: Library.pending(store.session.library).length, ply: 0, plies: 0 };
+    store.session.libRun = run;
+    renderLibrary();
+    try {
+      for (;;) {
+        if (run.abort) break;
+        // re-read the queue each round: an import during the pass adds to it,
+        // and an entry that failed to replay must not be handed back forever
+        const next = Library.pending(store.session.library).find((g) => !g.an && !g.unplayable);
+        if (!next) break;
+        run.name = (next.white || "?") + " — " + (next.black || "?");
+        const r = await analyseLibraryGame(next, run);
+        if (run.abort) break;
+        if (!r) { next.unplayable = true; }
+        else { next.an = r.an; next.motifs = r.motifs; }
+        run.done++;
+        saveLibrary();
+        renderLibrary();
+      }
+    } finally {
+      store.session.libRun = null;
+      saveLibrary();
+      renderLibrary();
+    }
+  }
+
+  /** The library section in the 记录 pane. */
+  function renderLibrary() {
+    const body = document.getElementById("lib-body");
+    if (!body) return;
+    const list = store.session.library;
+    const analysed = list.filter((g) => g.an && g.side);
+    const queued = Library.pending(list).filter((g) => !g.unplayable).length;
+    const meta = document.getElementById("lib-meta");
+    if (meta) { meta.hidden = !list.length; meta.textContent = tf("lib.count", [list.length]); }
+    const namesRow = document.getElementById("lib-names-row");
+    if (namesRow) namesRow.hidden = !list.length;
+    body.replaceChildren();
+    const line = (text, cls) => {
+      const p = document.createElement("p");
+      p.className = cls || "hint";
+      p.textContent = text;
+      body.appendChild(p);
+    };
+    if (!list.length) {
+      line(t("lib.empty"));
+    } else {
+      const claimed = list.filter((g) => g.side).length;
+      const row = document.createElement("div");
+      row.className = "stat-row";
+      const k = document.createElement("span");
+      k.className = "stat-k";
+      k.textContent = tf("lib.claimed", [claimed]);
+      const v = document.createElement("span");
+      v.className = "stat-v num";
+      v.textContent = [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
+        .filter(Boolean).join(" · ");
+      row.append(k, v);
+      body.appendChild(row);
+      const run = store.session.libRun;
+      if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
+      else if (!claimed) line(t("lib.noneClaimed"), "hint warn");
+      else if (analysed.length < LIB_MIN_GAMES) line(tf("lib.needMore", [LIB_MIN_GAMES - analysed.length, analysed.length, LIB_MIN_GAMES]));
+    }
+    const an = document.getElementById("lib-analyse");
+    if (an) {
+      an.hidden = !queued && !store.session.libRun;
+      an.textContent = store.session.libRun ? t("lib.pause") : tf("lib.analyse", [queued]);
+    }
+    const dg = document.getElementById("lib-diagnose");
+    if (dg) dg.hidden = analysed.length < LIB_MIN_GAMES;
+  }
+
+  /** The diagnosis dialog: what `diagnose()` found, in sentences. */
+  function renderDiagnosis() {
+    const el = document.getElementById("lib-diag");
+    if (!el) return;
+    el.replaceChildren();
+    const d = Library.diagnose(store.session.library, LIB_MIN_GAMES);
+    const para = (text, cls) => {
+      const p = document.createElement("p");
+      p.className = cls || "hint";
+      p.textContent = text;
+      el.appendChild(p);
+    };
+    const row = (kText, vText) => {
+      const r = document.createElement("div");
+      r.className = "stat-row";
+      const k = document.createElement("span");
+      k.className = "stat-k";
+      k.textContent = kText;
+      const v = document.createElement("span");
+      v.className = "stat-v num";
+      v.textContent = vText;
+      r.append(k, v);
+      el.appendChild(r);
+    };
+    if (!d.enough) { para(tf("lib.needMore", [d.need - d.have, d.have, d.need])); return; }
+    para(tf("diag.from", [d.games]));
+    row(t("diag.record"), tf("diag.wld", [d.outcome.win, d.outcome.loss, d.outcome.draw]));
+    if (d.acc != null) row(t("diag.acc"), d.acc + "%");
+    const phaseName = {
+      opening: tf("diag.phaseOpening", [Library.OPENING_UNTIL]),
+      middle: t("diag.phaseMiddle"),
+      end: t("diag.phaseEnd"),
+    };
+    for (const k of ["opening", "middle", "end"]) {
+      const p = d.phase[k];
+      if (p.acpl == null) continue;
+      row(phaseName[k], tf("diag.acpl", [p.acpl]) + " · " +
+        tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10]));
+    }
+    if (d.weakestPhase) {
+      const best = ["opening", "middle", "end"].map((k) => d.phase[k].acpl).filter((n) => n != null);
+      para(tf("diag.weakest", [phaseName[d.weakestPhase], d.phase[d.weakestPhase].acpl,
+        d.phase[d.weakestPhase].acpl - Math.min(...best)]), "hint warn");
+    } else {
+      para(t("diag.noWeakest"));
+    }
+    if (d.peak) para(tf("diag.peak", [d.peak.move, d.peak.n]));
+    if (d.motifs.length) {
+      row(t("diag.motifs"), "");
+      for (const m of d.motifs.slice(0, 6)) row(t("motif." + m.motif), tf("diag.motifN", [m.n]));
+    }
+    if (d.ecos.length) {
+      row(t("diag.ecos"), "");
+      for (const e of d.ecos.slice(0, 6)) {
+        row(e.eco + (e.name ? " " + e.name : ""),
+          tf("diag.ecoRow", [e.n, Math.round((e.score || 0) * 100)]));
+      }
+    }
+  }
+
+  function openDiagnosis() {
+    renderDiagnosis();
+    Dlg.open(document.getElementById("lib-modal"));
+  }
+  function closeDiagnosis() { Dlg.close(document.getElementById("lib-modal")); }
 
   function renderHistory() {
     store.session.histCache = historyGames();
@@ -7005,14 +7332,22 @@ import { createStore } from "./store.js";
   }
 
   /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
-  async function openPgnFile() {
+  /**
+   * @param {(text: string, label: string) => any} [sink] where the file goes.
+   * The library import wants the same two pickers — native dialog, browser
+   * fallback, the same recent-documents bookkeeping — and a different
+   * destination; duplicating the picker to change the last line is how the two
+   * quietly drift apart.
+   */
+  async function openPgnFile(sink) {
+    const take = typeof sink === "function" ? sink : importPgnText;
     if (Host.hasZero()) {
       try {
         const picked = await Host.openFileDialog({ title: t("dlg.openPgn") });
         const paths = Host.normalizePaths(picked);
         if (!paths.length) return; // cancelled
         const text = await Host.readTextFile(paths[0]);
-        importPgnText(text, paths[0]);
+        take(text, paths[0]);
         Host.addRecentDocument(paths[0]);
         return;
       } catch (err) {
@@ -7029,7 +7364,7 @@ import { createStore } from "./store.js";
       const f = input.files && input.files[0];
       if (!f) return;
       const reader = new FileReader();
-      reader.onload = () => importPgnText(String(reader.result || ""), f.name);
+      reader.onload = () => take(String(reader.result || ""), f.name);
       reader.readAsText(f);
     };
     input.click();
@@ -8118,6 +8453,29 @@ import { createStore } from "./store.js";
   if (reportBtn) reportBtn.onclick = () => { exportReport(); };
   document.getElementById("pgn-paste").onclick = () => { pastePgn(); };
   document.getElementById("pgn-open").onclick = () => { openPgnFile(); };
+  {
+    const impBtn = document.getElementById("lib-import");
+    if (impBtn) impBtn.onclick = () => { openPgnFile(importPgnToLibrary); };
+    const anBtn = document.getElementById("lib-analyse");
+    if (anBtn) anBtn.onclick = () => { runLibraryPass(); };
+    const dgBtn = document.getElementById("lib-diagnose");
+    if (dgBtn) dgBtn.onclick = openDiagnosis;
+    const closeBtn = document.getElementById("lib-modal-close");
+    if (closeBtn) closeBtn.onclick = closeDiagnosis;
+    const names = document.getElementById("lib-names");
+    if (names) {
+      names.value = store.session.libNames.join(", ");
+      // on `change`, not on every keystroke: re-claiming walks the whole
+      // library and rewrites the stored copy, which is not what every
+      // character of a typed name should cost
+      names.onchange = () => {
+        store.session.libNames = libNamesFrom(names.value);
+        reclaimLibrary();
+        saveLibrary();
+        renderLibrary();
+      };
+    }
+  }
 
   // Drop a .pgn onto the window to import it — host bridge in the packaged
   // app, DataTransfer in browsers.
@@ -8961,6 +9319,7 @@ import { createStore } from "./store.js";
     Dlg.register(promoModal, () => finishPromotion(null));
     Dlg.register(document.getElementById("slots-modal"), closeSlots);
     Dlg.register(document.getElementById("hist-modal"), closeHistory);
+    Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(confirmModal, () => finishConfirm(false));

@@ -52,6 +52,17 @@ const T0 = 1758000000000;
   assert(L.outcomeFor("1-0", null) === null, "没认领就没有胜负");
 }
 
+// --- 条目：把一局棋压成一条记录 --------------------------------------------
+{
+  const game = { headers: hdr({ White: "me", Black: "them", Result: "0-1", Date: "2026.09.01" }), result: "0-1" };
+  const sans = ["e4", "e5", "Nf3", "Nc6"];
+  const e = L.entryFrom(game, sans, ["me"], T0);
+  assert(e.side === "w" && e.outcome === "loss", "认领与胜负一起算出来");
+  assert(e.plies === 4 && e.sans === "e4 e5 Nf3 Nc6",
+    "整局着法也存下来 —— 只存局数的话，诊断就只能给数字、给不出那局棋", e.sans);
+  assert(e.an === null, "刚进库的局还没分析");
+}
+
 // --- 合并：重复导入是常态，不是例外 ----------------------------------------
 {
   const mk = (id, t) => ({ id, t, plies: 20, side: "w", an: null });

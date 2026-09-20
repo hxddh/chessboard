@@ -340,7 +340,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 {
   const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
   const mined = mctx.MINED_PUZZLES;
-  assert(Array.isArray(mined) && mined.length >= 1023, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  assert(Array.isArray(mined) && mined.length >= 984, "mined set loaded (" + (mined ? mined.length : 0) + ")");
   const ids = new Set(), fens = new Set(ctx.CHESS_PUZZLES.map((p) => p.fen));
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -361,8 +361,17 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   for (const p of mined) { byCat[p.cat] = (byCat[p.cat] || 0) + 1; if (p.motif) byMotif[p.motif] = (byMotif[p.motif] || 0) + 1; }
   console.log("mined by category:", JSON.stringify(byCat), "motifs:", JSON.stringify(byMotif));
   // the shipped floors per category and motif — a regeneration may only raise them
-  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 589, win: 305 };
-  const MOTIF_FLOOR = { fork: 135, pin: 113, skewer: 51, discovered: 7, double: 10 };
+  // 7.0 lowered every tac/win floor here, and it is the only time that is
+  // allowed to happen: scripts/test-mined.mjs re-searched all 894 mined
+  // tac/win at depth 18 (they were screened once at 120 ms during mining and
+  // never looked at again) and found 39 whose stored answer was not even the
+  // engine's first choice — one by 262cp, which means the 「看答案」button was
+  // teaching a worse move. Those 39 were retired, and 56 more that had an
+  // equally good second solution gained an `alts` entry instead. A floor that
+  // kept the old number would have had exactly one way to be satisfied:
+  // putting wrong puzzles back.
+  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 554, win: 301 };
+  const MOTIF_FLOOR = { fork: 129, pin: 107, skewer: 48, discovered: 7, double: 8 };
   // 6.1: §5 of docs/v6-plan.md wants ≥ 50 puzzles in every 200-point rating
   // band. 6.0 shipped three bands short and did not say so; 6.1 re-rated the
   // set from measured difficulty and topped up the thin bands from fresh
@@ -371,7 +380,17 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // wants: engine self-play at low skill produces hanging pieces in bulk and
   // genuinely hard positions rarely, so that band cannot be filled from this
   // source. A number here that lies would be worse than one that is short.
-  const BAND_FLOOR = 50, BAND_SHORT = { 2200: 27 };
+  //
+  // 7.0: five bands instead of one. The depth-18 gate retired 39 puzzles, and
+  // they were not spread evenly — a puzzle whose 120 ms answer does not
+  // survive depth 18 is much more likely to be one of the harder ones, so the
+  // retirements landed on the top half of the range. Topping the bands back up
+  // is not available here: `emit` derives ids from the rows files, this repo
+  // does not carry them, and a regenerated id orphans a player's progress
+  // (6.0 → 6.1 kept all 958 for that reason). So the numbers are pinned at
+  // what they are. A short band is a gap in coverage; a wrong puzzle is the
+  // app teaching a worse move, and only one of those two is worth keeping.
+  const BAND_FLOOR = 50, BAND_SHORT = { 1200: 49, 1400: 49, 1600: 48, 1800: 46, 2000: 47, 2200: 26, 2400: 39 };
   for (const [c, n] of Object.entries(FLOOR)) assert((byCat[c] || 0) >= n, "mined " + c + " ≥ " + n + " (" + (byCat[c] || 0) + ")");
   for (const [m, n] of Object.entries(MOTIF_FLOOR)) assert((byMotif[m] || 0) >= n, "mined motif " + m + " ≥ " + n + " (" + (byMotif[m] || 0) + ")");
   {
