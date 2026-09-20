@@ -4960,7 +4960,7 @@ import { createStore } from "./store.js";
    */
   async function analyseLibraryGame(entry, run) {
     const sans = entry.sans.split(" ").filter(Boolean);
-    const g = new Chess();
+    const g = entry.fen ? new Chess(entry.fen) : new Chess();
     const fens = [g.fen()];
     for (const san of sans) {
       if (!g.move(san, { sloppy: true })) return null; // not a game we can replay
@@ -5110,6 +5110,11 @@ import { createStore } from "./store.js";
       if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
       else if (!claimed) line(t("lib.noneClaimed"), "hint warn");
       else if (analysed.length < LIB_MIN_GAMES) line(tf("lib.needMore", [LIB_MIN_GAMES - analysed.length, analysed.length, LIB_MIN_GAMES]));
+      // A game whose moves would not replay is dropped from the queue, and a
+      // queue that quietly gets shorter is how you end up wondering why the
+      // count stopped moving. Say how many and leave them in the list.
+      const stuck = list.filter((g) => g.unplayable).length;
+      if (stuck) line(tf("lib.unplayable", [stuck]));
     }
     const an = document.getElementById("lib-analyse");
     if (an) {

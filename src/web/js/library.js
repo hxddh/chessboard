@@ -122,6 +122,15 @@ function entryFrom(game, sans, names, now) {
      * JSON strings is most of what this record would otherwise weigh.
      */
     sans: sans.join(" "),
+    /**
+     * The starting position, when it is not the standard array.
+     *
+     * A `[SetUp]`/`[FEN]` game is a normal thing to find in an archive (a
+     * study, an endgame position, a puzzle someone sent you), and replaying
+     * its moves from the standard array simply fails. Empty means "the usual
+     * start", which keeps the common entry a few bytes shorter.
+     */
+    fen: tag("SetUp") === "1" ? tag("FEN") : (tag("FEN") || ""),
     side,
     outcome: outcomeFor((game && game.result) || "*", side),
     /** set by the app once the analysis pass has run over this game */

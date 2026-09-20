@@ -55,6 +55,10 @@ const PGN = [
   '[Event "Rated blitz"]\n[Site "lichess"]\n[Date "2026.09.01"]\n[White "hxddh"]\n[Black "rival"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0\n',
   '[Event "Rated blitz"]\n[Site "lichess"]\n[Date "2026.09.02"]\n[White "rival"]\n[Black "hxddh"]\n[Result "0-1"]\n\n1. d4 d5 2. c4 e6 3. Nc3 Nf6 0-1\n',
   '[Event "Club night"]\n[Site "somewhere"]\n[Date "2026.09.03"]\n[White "alice"]\n[Black "bob"]\n[Result "1/2-1/2"]\n\n1. c4 c5 2. g3 g6 1/2-1/2\n',
+  // A [SetUp]/[FEN] game — a study, an endgame, a position someone sent you.
+  // Replaying its moves from the standard array simply fails, so the entry has
+  // to carry the position it starts from.
+  '[Event "Study"]\n[Site "-"]\n[Date "2026.09.04"]\n[White "hxddh"]\n[Black "coach"]\n[Result "1-0"]\n[SetUp "1"]\n[FEN "8/8/4k3/8/8/8/4P3/4K3 w - - 0 1"]\n\n1. Kd2 Kd5 2. Ke3 1-0\n',
 ].join("\n");
 
 async function freshContext(seed) {
@@ -104,9 +108,9 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await importFile(page, PGN);
 
   let lib = await libOf(page);
-  assert(lib && lib.games.length === 3, "一个三局的文件进库就是三局 —— 不是让你挑一局",
+  assert(lib && lib.games.length === 4, "一个四局的文件进库就是四局 —— 不是让你挑一局",
     lib ? lib.games.length : "null");
-  const first = lib.games.find((g) => g.white === "hxddh");
+  const first = lib.games.find((g) => g.event === "Rated blitz" && g.white === "hxddh");
   assert(first && first.sans === "e4 e5 Nf3 Nc6 Bb5 a6",
     "每局的着法都跟着存下来了 —— 只存局数的话，诊断就只能给数字、给不出那局棋",
     first && first.sans);
@@ -123,8 +127,12 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await page.waitForTimeout(300);
   lib = await libOf(page);
   const mine = lib.games.filter((g) => g.side);
-  assert(mine.length === 2, "填上名字,已经在库里的棋重新认一遍 —— 两局是我的", mine.length);
-  const w = lib.games.find((g) => g.white === "hxddh");
+  assert(mine.length === 3, "填上名字,已经在库里的棋重新认一遍 —— 三局是我的", mine.length);
+  const study = lib.games.find((g) => g.event === "Study");
+  assert(study && study.fen === "8/8/4k3/8/8/8/4P3/4K3 w - - 0 1",
+    "[SetUp]/[FEN] 的棋局带着它自己的起始局面进库 —— 从标准开局重放它的着法根本走不通",
+    study && JSON.stringify(study.fen));
+  const w = lib.games.find((g) => g.event === "Rated blitz" && g.white === "hxddh");
   const b = lib.games.find((g) => g.black === "hxddh");
   assert(w && w.side === "w" && w.outcome === "win", "执白那局是赢的");
   assert(b && b.side === "b" && b.outcome === "win", "执黑赢的那局也是赢的 —— 结果从我这把椅子上读");
@@ -134,14 +142,14 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   // 再导一次同一个文件:不该翻倍
   await importFile(page, PGN);
   lib = await libOf(page);
-  assert(lib.games.length === 3, "同一个文件导第二遍,还是三局", lib.games.length);
+  assert(lib.games.length === 4, "同一个文件导第二遍,还是四局", lib.games.length);
 
   // 重启
   await page.close();
   const second = await open(ctx);
   const after = await libOf(second.page);
-  assert(after.games.length === 3 && after.names[0] === "hxddh", "重启之后棋和名字都还在");
-  assert(/认出是你的 2 局/.test(await second.page.textContent("#lib-body")),
+  assert(after.games.length === 4 && after.names[0] === "hxddh", "重启之后棋和名字都还在");
+  assert(/认出是你的 3 局/.test(await second.page.textContent("#lib-body")),
     "……页面也还这么说", await second.page.textContent("#lib-body"));
   assert(errs.length === 0 && second.errs.length === 0,
     "两轮都没有 JS 异常", errs.concat(second.errs).join(" / "));
