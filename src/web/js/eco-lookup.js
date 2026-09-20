@@ -22,7 +22,7 @@
  * @module eco-lookup
  */
 import { Chess } from "./chess.js";
-import { ECO_BY_KEY } from "./eco.js";
+import { loadChunk, chunkReady } from "./chunk.js";
 import { ChessFide } from "./fide.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 import { CHESS_OPENINGS_EN } from "./openings-en.js";
@@ -33,9 +33,40 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
     return ChessFide.positionKey(chess.fen(), chess);
   }
 
+  // 6.1: the table is 462 KB — a third of everything index.html parsed before
+  // the first paint, for a label that appears beside a game once one exists.
+  // It is its own chunk now (scripts/bundle.mjs builds js/chunk-eco.js) and
+  // arrives when something first asks. Until then every lookup answers null,
+  // which is what the caller already renders when a position is not in the
+  // book, so nothing downstream needed a new state to understand.
+  const ECO_GLOBAL = "ECO_BY_KEY";
+  const table = () => (typeof window !== "undefined" ? window[ECO_GLOBAL] : globalThis[ECO_GLOBAL]) || null;
+  /** Fetch the table if it is not here yet. @returns {Promise<void>} */
+  function ready() { return loadChunk("chunk-eco.js", ECO_GLOBAL).then(() => undefined); }
+  /** Is the table here? Callers render without it and re-render on ready(). */
+  function loaded() { return chunkReady(ECO_GLOBAL); }
+  // One shared wait, so a caller that redraws on every move does not stack a
+  // callback per move on the one load. The latch lives here rather than beside
+  // the caller: app.js keeps its state in the store and nothing else (see the
+  // module-level-let rule in scripts/test-chess.mjs), and this is not app
+  // state — it is this module's own bookkeeping about its own chunk.
+  const waiters = [];
+  let loading = false;
+  /** Call `fn` once, when the table has arrived. No-op if it already has. */
+  function whenReady(fn) {
+    if (loaded()) return;
+    waiters.push(fn);
+    if (loading) return;
+    loading = true;
+    ready().then(() => { for (const w of waiters.splice(0)) { try { w(); } catch (_) { /* a redraw is not worth a throw */ } } })
+      .catch(() => { waiters.length = 0; loading = false; });
+  }
+
   /** The table entry for exactly this position, or null. */
   function lookupPosition(chess) {
-    const hit = ECO_BY_KEY[positionKey(chess)];
+    const t = table();
+    if (!t) return null;
+    const hit = t[positionKey(chess)];
     return hit ? { eco: hit[0], name: hit[1] } : null;
   }
 
@@ -68,10 +99,12 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
       from = g.fen();
       for (const san of sans) g.move(san);
     }
+    const t = table();
+    if (!t) return null;
     const g = from ? new Chess(from) : new Chess();
     let best = null;
     const probe = (ply) => {
-      const hit = ECO_BY_KEY[positionKey(g)];
+      const hit = t[positionKey(g)];
       if (hit) best = { eco: hit[0], name: hit[1], ply };
     };
     probe(0);
@@ -82,17 +115,27 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
     return best;
   }
 
-  /** The broadest English name filed under an ECO code, or null. */
-  const NAME_BY_ECO = (() => {
+  /**
+   * The broadest English name filed under an ECO code, or null.
+   * Built on first use rather than at load: the table it reads is a chunk now
+   * and is usually not here yet when this module is evaluated (6.1).
+   */
+  let NAME_BY_ECO = null;
+  function nameByEco() {
+    const t = table();
+    if (!t) return null;
+    if (NAME_BY_ECO) return NAME_BY_ECO;
     const out = {};
-    for (const [eco, name] of Object.values(ECO_BY_KEY)) {
+    for (const [eco, name] of Object.values(t)) {
       // the shortest name is the family name; longer ones are its variations
       if (!out[eco] || name.length < out[eco].length) out[eco] = name;
     }
+    NAME_BY_ECO = out;
     return out;
-  })();
+  }
   function ecoName(eco) {
-    return NAME_BY_ECO[eco] || null;
+    const tbl = nameByEco();
+    return (tbl && tbl[eco]) || null;
   }
 
   /**
@@ -134,6 +177,7 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
   }
 
   export const ChessEco = {
-    positionKey, lookupPosition, openingForGame, ecoName, localName,
-    BOOK_ID_BY_ENTRY, size: Object.keys(ECO_BY_KEY).length,
+    positionKey, lookupPosition, openingForGame, ecoName, localName, ready, loaded, whenReady,
+    BOOK_ID_BY_ENTRY,
+    get size() { const t = table(); return t ? Object.keys(t).length : 0; },
   };

@@ -35,6 +35,22 @@ export const ENTRY = path.join(root, "src/web/js/app.js");
 export const OUT = path.join(root, "src/web/js/bundle.js");
 
 /**
+ * 6.1 — content the first paint does not use, built as its own classic script
+ * and injected on demand by src/web/js/chunk.js.
+ *
+ * `bundle.js` was 1.68 MB because everything app.js imports statically lands
+ * in it, and about a megabyte of that is data: the ECO table for a label that
+ * appears next to a game, the mined puzzles for a tab most sessions never
+ * open, and the two interface languages the reader is not reading in. Each
+ * entry below is bundled alone, exports onto the window, and is *not* reached
+ * from app.js's import graph — that last part is what keeps it out of the
+ * main bundle, and test-chess.mjs asserts it stays that way.
+ */
+export const CHUNKS = [
+  { entry: "src/web/js/eco.js", out: "src/web/js/chunk-eco.js", global: "ECO_BY_KEY" },
+];
+
+/**
  * Load esbuild, or explain how to get it.
  *
  * It is a devDependency rather than a vendored copy because it is a build
@@ -89,6 +105,26 @@ export async function build({ write = true } = {}) {
   });
   const text = r.outputFiles[0].text;
   if (write) fs.writeFileSync(OUT, text);
+  for (const c of CHUNKS) {
+    const cr = await esbuild.build({
+      entryPoints: [path.join(root, c.entry)],
+      bundle: true,
+      format: "iife",
+      globalName: "__chunk",
+      define: versionDefine(),
+      target: ["chrome100", "safari15"],
+      charset: "utf8",
+      legalComments: "inline",
+      minify: false,
+      write: false,
+      logLevel: "silent",
+    });
+    // esbuild leaves the namespace in `__chunk`; the page wants the names
+    // themselves, the same shape compileModuleSync uses for the tests.
+    const body = cr.outputFiles[0].text +
+      "\n;for (var k in __chunk) if (Object.prototype.hasOwnProperty.call(__chunk, k)) window[k] = __chunk[k];\n";
+    if (write) fs.writeFileSync(path.join(root, c.out), body);
+  }
   return text;
 }
 
@@ -162,7 +198,11 @@ const runDirectly = !!process.argv[1] &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (runDirectly) {
   const text = await build();
-  console.log(`bundle.js: ${(text.length / 1024).toFixed(1)} KB`);
+  // bytes, not UTF-16 code units: the sources carry Chinese, and length/1024
+  // under-reported the file on disk by about 15% (6.1)
+  const kb = (t) => (Buffer.byteLength(t, "utf8") / 1024).toFixed(1);
+  console.log(`bundle.js: ${kb(text)} KB` +
+    CHUNKS.map((c) => `, ${path.basename(c.out)}: ${kb(fs.readFileSync(path.join(root, c.out), "utf8"))} KB`).join(""));
   if (process.argv.includes("--check")) {
     const again = await build({ write: false });
     if (again !== text) { console.error("构建不是幂等的"); process.exit(1); }

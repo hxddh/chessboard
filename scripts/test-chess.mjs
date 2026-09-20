@@ -7,7 +7,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
-import { compileModuleSync } from "./bundle.mjs";
+import { compileModuleSync, CHUNKS } from "./bundle.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -5408,6 +5408,32 @@ for (const lang of CONTENT_LANGS) {
     P.set("learn", "x");
     assert(await P.recover() === "none", "a browser has no file and no error");
   }
+}
+
+// --- 6.1: the on-demand chunks stay out of the first-paint bundle ----------
+//
+// The whole point of CHUNKS is that index.html does not parse them before the
+// board appears. One stray `import "./eco.js"` anywhere in app.js's graph and
+// esbuild pulls the whole table back in, the bundle silently grows by a third
+// and nothing else notices. And a chunk that is built but not packaged is an
+// app whose opening names never appear, so the dist list is checked too.
+{
+  const bundleSrc = fs.readFileSync(path.join(root, "src/web/js/bundle.js"), "utf8");
+  const syncSrc = fs.readFileSync(path.join(root, "scripts/sync-dist.mjs"), "utf8");
+  for (const c of CHUNKS) {
+    const out = path.join(root, c.out);
+    assert(fs.existsSync(out), c.out + " is built alongside the bundle");
+    const chunkSrc = fs.readFileSync(out, "utf8");
+    assert(new RegExp("window\\[k\\]").test(chunkSrc) || chunkSrc.includes(c.global),
+      c.out + " puts " + c.global + " on the window");
+    // the table's own bulk must not be in the bundle: compare a distinctive
+    // slice of the chunk against the bundle rather than trusting a name
+    const probe = chunkSrc.slice(Math.floor(chunkSrc.length / 2), Math.floor(chunkSrc.length / 2) + 120);
+    assert(!bundleSrc.includes(probe), c.out + "'s payload is not also inside bundle.js");
+  }
+  assert(/CHUNKS\.map/.test(syncSrc), "sync-dist.mjs takes the chunk list from the bundler, not a second copy");
+  assert(fs.readFileSync(path.join(root, ".gitignore"), "utf8").includes("chunk-*.js"),
+    "the generated chunks are gitignored like the bundle");
 }
 
 // --- 6.1: an impossible [FEN] must not be quietly repaired -------------------

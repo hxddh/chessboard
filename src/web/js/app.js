@@ -1517,6 +1517,13 @@ import { createStore } from "./store.js";
   function renderOpening() {
     const el = document.getElementById("opening-line");
     if (!el) return;
+    // 6.1: the ECO table is a chunk now (462 KB the first paint does not use).
+    // Ask for it the first time a real game wants an opening name and redraw
+    // when it lands; until then openingFor() answers null, which is already
+    // what this renders for a position the book does not know.
+    if (store.session.mode !== "learn" && store.session.mode !== "puzzle" && sanHistory().length) {
+      ChessEco.whenReady(renderOpening);
+    }
     const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
     el.hidden = !hit;
     el.textContent = hit ? hit[0] + " · " + hit[1] : "";
