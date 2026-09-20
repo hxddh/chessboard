@@ -883,7 +883,12 @@ fn appdataWrite(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
     const seq = self.appdata_seq;
     self.appdata_seq +%= 1;
     var tmp_name_buf: [96]u8 = undefined;
-    const tmp_name = std.fmt.bufPrint(&tmp_name_buf, "{s}.{d}.{d}", .{ APPDATA_TMP, std.time.milliTimestamp(), seq }) catch return error.HandlerFailed;
+    // The App's own address plus the per-write counter. Not a clock: 0.16's
+    // std.time has no milliTimestamp, and reaching for a platform-specific
+    // pid would put an #if in the one place this file keeps portable. Two
+    // processes need the same heap address AND the same counter value at the
+    // same moment to collide, which is the pre-6.1 behaviour, not worse.
+    const tmp_name = std.fmt.bufPrint(&tmp_name_buf, "{s}.{x}.{d}", .{ APPDATA_TMP, @intFromPtr(self), seq }) catch return error.HandlerFailed;
     const tmp_path = self.appdataChild(&tmp_buf, tmp_name) orelse return appdataUnavailable(output);
     const bak_path = self.appdataChild(&bak_buf, APPDATA_BAK) orelse return appdataUnavailable(output);
 
