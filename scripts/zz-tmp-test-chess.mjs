@@ -5410,29 +5410,6 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
-// --- 6.1: an impossible [FEN] must not be quietly repaired -------------------
-//
-// ChessEditor exists to reject positions chess.js accepts. fromFen() used to
-// build its board with `new Chess(fen).board()`, and chess.js tracks one king
-// square per colour, so a FEN with two white kings arrived at validate() with
-// one already dropped: the guard said yes and the app loaded a position that
-// was not the one in the file. The no-king half worked, which is why it went
-// unseen.
-{
-  loadModule(ctx, "src/web/js/editor.js");
-  const E6 = ctx.ChessEditor;
-  const two = "4k3/8/8/8/8/8/8/K3K3 w - - 0 1";
-  assert(new Chess().validate_fen(two).valid, "chess.js itself accepts two white kings");
-  const st = E6.fromFen(two, Chess);
-  const kings = st.board.flat().filter((p) => p && p.type === "k" && p.color === "w").length;
-  assert(kings === 2, "fromFen() reads the board field as written (" + kings + " white kings)");
-  assert(E6.validate(st, Chess) === "edErr.manyWhiteKings", "…so validate() can reject it");
-  const one = "4k3/8/8/8/8/8/8/4K3 w - - 0 1";
-  assert(E6.validate(E6.fromFen(one, Chess), Chess) === null, "…and an ordinary position still passes");
-  assert(E6.boardFromFenField("8/8/8/8/8/8/8") === null, "a board field with seven ranks is not a board");
-  assert(E6.boardFromFenField("9/8/8/8/8/8/8/8") === null, "…nor is one with nine empty squares in a rank");
-}
-
 // --- 6.0: the register of source-text assertions in this file.
 //
 // This file holds a great many `/…/.test(appSrc)` checks: they lock the

@@ -41,14 +41,25 @@ function makeClock() {
     pending: () => timers.size,
     async advance(ms) {
       const target = now + ms;
-      for (;;) {
+      const due = () => {
         let pick = null;
         for (const [id, t] of timers) {
           if (t.at <= target && (!pick || t.at < pick.t.at || (t.at === pick.t.at && id < pick.id))) pick = { id, t };
         }
-        if (!pick) break;
+        return pick;
+      };
+      await settle();
+      for (let guard = 0; guard < 10000; guard++) {
+        const pick = due();
+        if (!pick) {
+          if (now === target) break;
+          now = target;          // a promise chain may still arm a timer here
+          await settle();
+          if (!due()) break;
+          continue;
+        }
         timers.delete(pick.id);
-        now = pick.t.at;
+        if (pick.t.at > now) now = pick.t.at;
         pick.t.fn();
         await settle();
       }
@@ -170,12 +181,15 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   await clock.advance(10);
   assert(stopResolved, "teardown settles the in-flight search, so stop() resolves");
   assert(clock.pending() === 0, "…and cancels its 24-hour timer");
-  // and the exclusive queue is not wedged behind the dead search
+  // and the exclusive queue is not wedged behind the dead search: the next
+  // caller gets a rebuilt worker and its own answer (still deaf here, so it
+  // ends in a timeout — what matters is that it ends, and on a live worker)
   let after = "pending";
-  const q = E.analyze(FEN2, 50).then((r) => { after = r; }, (e) => { after = "rejected:" + e.message });
-  await clock.advance(5); await q;
-  assert(after && after !== "pending" && after.best === "e2e4",
-    "…and the next search still runs (" + JSON.stringify(after) + ")");
+  const q = E.analyze(FEN2, 50).then((r) => { after = "result"; }, (e) => { after = e.message; });
+  await clock.advance(20000); await q;
+  assert(after !== "pending", "…and the next search reaches the queue at all (" + after + ")");
+  assert(state.workers.length === 2 && state.last().cmds.some((c) => /^go movetime/.test(c)),
+    "…on a worker rebuilt for it");
 }
 
 // --- 缺陷 3: two search timeouts in a row tear the worker down -------------

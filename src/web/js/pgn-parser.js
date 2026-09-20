@@ -25,6 +25,19 @@ const RESULTS = new Set(["1-0", "0-1", "1/2-1/2", "*"]);
 const STR = ["Event", "Site", "Date", "Round", "White", "Black", "Result"];
 /** move suffix annotations → NAG number (PGN standard §10) */
 const SUFFIX_NAG = { "!": 1, "?": 2, "!!": 3, "??": 4, "!?": 5, "?!": 6 };
+/**
+ * The SAN a null move is kept and exported as. Files write it as `--`
+ * (standard §8.2.2) or `Z0` (ChessBase, Scid); both become this one.
+ */
+const NULL_SAN = "--";
+/**
+ * Figurine SAN piece glyphs → the letters SAN uses. The two pawn glyphs map
+ * to nothing, because pawn SAN names no piece ("\u2659e4" is "e4").
+ */
+const FIGURINE = {
+  "\u2654": "K", "\u2655": "Q", "\u2656": "R", "\u2657": "B", "\u2658": "N", "\u2659": "",
+  "\u265A": "K", "\u265B": "Q", "\u265C": "R", "\u265D": "B", "\u265E": "N", "\u265F": "",
+};
 
 // ---------------------------------------------------------------------------
 // tokenizer
@@ -53,7 +66,8 @@ function fail(text, offset, token, what) {
 /**
  * Strip BOM and CRLF, then cut the text into tokens.
  *
- * Token kinds: tag, comment, open, close, nag, result, san, suffix. Move
+ * Token kinds: tag, comment, open, close, nag, result, san, suffix,
+ * nullmove. Move
  * numbers and loose dots are consumed here and never reach the parser — the
  * board decides whose turn it is, not the file, and files disagree with
  * themselves often enough (`1. ...`, missing numbers, `1 e4`) that trusting
@@ -83,8 +97,11 @@ function tokenize(input) {
       continue;
     }
     if (c === "{") {
-      const j = text.indexOf("}", i + 1);
-      if (j < 0) fail(text, start, "{", "unterminated comment");
+      // a backslash escapes the next character, so a comment that contains
+      // "}" does not end early — see escapeCommentText for the whole scheme
+      let j = i + 1;
+      while (j < n && text[j] !== "}") j += text[j] === "\\" ? 2 : 1;
+      if (j >= n) fail(text, start, "{", "unterminated comment");
       tokens.push({ type: "comment", text: text.slice(i + 1, j), pos: start });
       i = j + 1;
       continue;
@@ -99,10 +116,13 @@ function tokenize(input) {
     if (c === "(") { tokens.push({ type: "open", pos: start }); i++; continue; }
     if (c === ")") { tokens.push({ type: "close", pos: start }); i++; continue; }
     if (c === "$") {
-      const m = /^\$(\d+)/.exec(text.slice(i, i + 8));
-      if (!m) fail(text, start, "$", "malformed NAG");
-      tokens.push({ type: "nag", n: Number(m[1]), pos: start });
-      i += m[0].length;
+      // the whole digit run, not a fixed eight-byte window: "$12345678" used
+      // to come out as $1234567, a different annotation, with no complaint
+      let j = i + 1;
+      while (j < n && text[j] >= "0" && text[j] <= "9") j++;
+      if (j === i + 1) fail(text, start, "$", "malformed NAG");
+      tokens.push({ type: "nag", n: Number(text.slice(i + 1, j)), pos: start });
+      i = j;
       continue;
     }
     const rest = text.slice(i, i + 64);
@@ -113,14 +133,39 @@ function tokenize(input) {
       i += m[0].length;
       continue;
     }
-    // castling with digit zeros — before move numbers, or "0" would eat it
-    if ((m = /^(0-0-0|0-0)(?![\w/-])/.exec(rest))) {
-      tokens.push({ type: "san", text: m[1] === "0-0" ? "O-O" : "O-O-O", pos: start });
+    // castling with digit zeros — before move numbers, or "0" would eat it.
+    // "+"/"#" has to come along in the same token: the SAN the letters form
+    // is handed to chess.js whole, and a "+" left behind is not a token
+    if ((m = /^(0-0-0|0-0)([+#]?)(?![\w/-])([!?]{0,2})/.exec(rest))) {
+      tokens.push({ type: "san", text: (m[1] === "0-0" ? "O-O" : "O-O-O") + m[2], pos: start });
+      if (m[3]) tokens.push({ type: "suffix", text: m[3], pos: start + m[1].length + m[2].length });
       i += m[0].length;
       continue;
     }
     if ((m = /^\d+\.*/.exec(rest))) { i += m[0].length; continue; }
     if ((m = /^\.+/.exec(rest))) { i += m[0].length; continue; }
+    // a null move: chess.js has none, so it is a token of its own and the
+    // parser decides what to do with it
+    if ((m = /^(--+|Z0)(?![\w-])/.exec(rest))) {
+      tokens.push({ type: "nullmove", pos: start });
+      i += m[0].length;
+      continue;
+    }
+    // "e.p." after an en-passant capture is decoration, not a move; without
+    // this the "." rule and the SAN rule tore it into an illegal move "p"
+    if ((m = /^e\.p\.?(?![A-Za-z0-9])/.exec(rest))) { i += m[0].length; continue; }
+    // figurine SAN: the piece is a glyph, the rest is ordinary SAN. Offsets
+    // stay right because one glyph is one UTF-16 unit, like the letter it
+    // replaces (the pawn glyphs replace nothing and shift by one)
+    if (FIGURINE[c] !== undefined) {
+      const letter = FIGURINE[c];
+      const fm = /^([A-Za-z][A-Za-z0-9=+#:-]*)([!?]{0,2})/.exec(letter + text.slice(i + 1, i + 64));
+      if (!fm) fail(text, start, c, "unexpected character");
+      tokens.push({ type: "san", text: fm[1], pos: start });
+      if (fm[2]) tokens.push({ type: "suffix", text: fm[2], pos: start + 1 + fm[1].length - letter.length });
+      i += 1 + fm[0].length - letter.length;
+      continue;
+    }
     if ((m = /^[!?]{1,2}/.exec(rest))) {
       // a suffix separated from its move by a space still belongs to it
       tokens.push({ type: "suffix", text: m[0], pos: start });
@@ -147,24 +192,46 @@ function tokenize(input) {
  * survives a round trip untouched.
  */
 function parseComment(raw, shapes) {
-  const text = String(raw)
-    .replace(/\[%cal\s+([^\]]*)\]/g, (_, list) => {
-      for (const s of list.split(",")) {
-        const m = /^\s*([A-Za-z])([a-h][1-8])([a-h][1-8])\s*$/.exec(s);
-        if (m) shapes.arrows.push({ from: m[2], to: m[3], color: m[1].toUpperCase() });
-      }
+  // escapes first and in one pass, so "\\[" cannot be produced by decoding
+  // "\\\\" and then be read as a command; the sentinels are characters no
+  // comment contains, put back after the commands are pulled out
+  const text0 = String(raw).replace(/\\([\s\S])/g, (all, ch) => (
+    ch === "\n" ? "" : ch === "\\" ? "\u0001" : ch === "}" ? "\u0002" : ch === "[" ? "\u0003" : all));
+  const text = text0
+    .replace(/\[%cal\s+([^\]]*)\]/g, (all, list) => {
+      const arrows = parseShapeList(list, /^\s*([A-Za-z])([a-h][1-8])([a-h][1-8])\s*$/,
+        (m) => ({ from: m[2], to: m[3], color: m[1].toUpperCase() }));
+      if (!arrows) return all;
+      for (const a of arrows) shapes.arrows.push(a);
       return " ";
     })
-    .replace(/\[%csl\s+([^\]]*)\]/g, (_, list) => {
-      for (const s of list.split(",")) {
-        const m = /^\s*([A-Za-z])([a-h][1-8])\s*$/.exec(s);
-        if (m) shapes.circles.push({ sq: m[2], color: m[1].toUpperCase() });
-      }
+    .replace(/\[%csl\s+([^\]]*)\]/g, (all, list) => {
+      const circles = parseShapeList(list, /^\s*([A-Za-z])([a-h][1-8])\s*$/,
+        (m) => ({ sq: m[2], color: m[1].toUpperCase() }));
+      if (!circles) return all;
+      for (const c of circles) shapes.circles.push(c);
       return " ";
     });
   // newlines inside a comment are formatting, not content: the serializer
   // re-wraps at 80 columns, so only collapsed whitespace round-trips
-  return text.replace(/\s+/g, " ").trim();
+  return text.replace(/\s+/g, " ").trim()
+    .replace(/\u0001/g, "\\").replace(/\u0002/g, "}").replace(/\u0003/g, "[");
+}
+
+/**
+ * All the entries of a `[%cal]` / `[%csl]` list, or null if any one of them
+ * is malformed. Half a list used to be taken and the rest thrown away
+ * without a word; a list this module cannot read in full is left in the
+ * comment text instead, where it survives the round trip.
+ */
+function parseShapeList(list, re, make) {
+  const out = [];
+  for (const s of list.split(",")) {
+    const m = re.exec(s);
+    if (!m) return null;
+    out.push(make(m));
+  }
+  return out.length ? out : null;
 }
 
 function emptyShapes() {
@@ -186,8 +253,22 @@ function formatComment(node) {
       parts.push("[%cal " + node.shapes.arrows.map((a) => a.color + a.from + a.to).join(",") + "]");
     }
   }
-  if (node.comment) parts.push(String(node.comment).replace(/\}/g, "]"));
+  if (node.comment) parts.push(escapeCommentText(String(node.comment)));
   return parts.length ? parts.join(" ") : null;
+}
+
+/**
+ * PGN has no escape inside a brace comment, so this module defines one and
+ * reads it back in parseComment. A "}" used to be rewritten as "]", which
+ * silently changed the user's text; a backslash escape keeps it:
+ *   "\\\\" a backslash, "\\}" a brace that does not end the comment,
+ *   "\\[" a bracket that begins text, not a "[%cal]" command the reader
+ *   would swallow, and "\\" before a newline a break the wrapper inserted.
+ * Another reader sees one stray backslash instead of a comment that ends in
+ * the wrong place — the cheapest price for a lossless round trip.
+ */
+function escapeCommentText(s) {
+  return s.replace(/\\/g, "\\\\").replace(/\}/g, "\\}").replace(/\[%(cal|csl)/g, "\\[%$1");
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +317,41 @@ function parseGameAt(text, tokens, i, chess) {
   // a comment between "(" and the variation's first move belongs to that
   // move, which does not exist yet
   let pending = null;
+  // true from "(" until that variation's first move: every comment before it
+  // is the pending one, not a second comment on the node "(" rewound to
+  let justOpened = false;
+  // the depth of the line that wrote children[0] of a node. A RAV is parsed
+  // before the mainline continuation it interrupts, so without this the
+  // deeper line kept the slot and became the mainline
+  const lineDepth = new Map();
+  // nodes no position can be computed after: a null move and everything that
+  // follows it in that line (see the "nullmove" case)
+  const unplayable = new Set();
+
+  /**
+   * The child of `cur` for `san`, created if it is new. The move already
+   * being there is the same move, not a fork (a RAV that repeats the
+   * mainline move must not double it), but the shallower line owns
+   * children[0]: the mainline takes the slot back from a variation.
+   */
+  const linkChild = (san, fill) => {
+    let idx = cur.children.findIndex((c) => c.san === san);
+    if (idx < 0) {
+      const node = makeNode(cur.fen);
+      node.san = san;
+      if (fill) fill(node);
+      cur.children.push(node);
+      parents.set(node, cur);
+      idx = cur.children.length - 1;
+    }
+    const node = cur.children[idx];
+    const owner = lineDepth.has(cur) ? lineDepth.get(cur) : Infinity;
+    if (stack.length < owner) {
+      if (idx > 0) { cur.children.splice(idx, 1); cur.children.unshift(node); }
+      lineDepth.set(cur, stack.length);
+    }
+    return node;
+  };
 
   while (i < tokens.length && !done) {
     const t = tokens[i];
@@ -245,7 +361,7 @@ function parseGameAt(text, tokens, i, chess) {
         done = true;
         continue;
       case "comment":
-        if (i > 0 && tokens[i - 1].type === "open") pending = (pending ? pending + " " : "") + t.text;
+        if (justOpened) pending = (pending ? pending + " " : "") + t.text;
         else appendComment(cur, parseComment(t.text, cur.shapes));
         break;
       case "nag":
@@ -259,34 +375,56 @@ function parseGameAt(text, tokens, i, chess) {
         if (cur === root || !parents.has(cur)) fail(text, t.pos, "(", "variation before any move");
         stack.push(cur);
         cur = parents.get(cur);
+        justOpened = true;
         break;
       }
       case "close":
         if (!stack.length) fail(text, t.pos, ")", "unmatched ')'");
         cur = stack.pop();
+        // a moveless variation, "( {alt} )", has nothing to hang its comment
+        // on; dropping it here keeps it off the next move of the outer line
+        pending = null;
+        justOpened = false;
         break;
       case "result":
         if (stack.length) break; // a result inside a variation is noise
         result = t.text;
         done = true;
         break;
+      case "nullmove": {
+        // chess.js cannot make a null move, and inventing a position for it
+        // would falsify every FEN after it. So the node keeps the position
+        // it was played from, its SAN is "--" (which is what export writes,
+        // so the round trip is exact), and the rest of the line is recorded
+        // move by move without being played — see the "san" case.
+        const node = linkChild(NULL_SAN);
+        unplayable.add(node);
+        if (pending !== null) { appendComment(node, parseComment(pending, node.shapes)); pending = null; }
+        justOpened = false;
+        cur = node;
+        break;
+      }
       case "san": {
-        if (!chess.load(cur.fen)) fail(text, t.pos, t.text, "cannot load position");
-        const mv = chess.move(t.text, { sloppy: true });
-        if (!mv) fail(text, t.pos, t.text, "illegal move " + JSON.stringify(t.text));
-        // an identical move already branching here is the same node, so a
-        // file that repeats the mainline move inside a RAV does not fork it
-        let node = cur.children.find((c) => c.san === mv.san);
-        if (!node) {
-          node = makeNode(chess.fen());
-          node.san = mv.san;
-          node.from = mv.from;
-          node.to = mv.to;
-          node.promotion = mv.promotion || null;
-          cur.children.push(node);
-          parents.set(node, cur);
+        let node;
+        if (unplayable.has(cur)) {
+          // downstream of a null move: the SAN is kept verbatim at the last
+          // position this module can vouch for, with no from/to
+          node = linkChild(t.text);
+          unplayable.add(node);
+        } else {
+          if (!chess.load(cur.fen)) fail(text, t.pos, t.text, "cannot load position");
+          const mv = chess.move(t.text, { sloppy: true });
+          if (!mv) fail(text, t.pos, t.text, "illegal move " + JSON.stringify(t.text));
+          const fen = chess.fen();
+          node = linkChild(mv.san, (fresh) => {
+            fresh.fen = fen;
+            fresh.from = mv.from;
+            fresh.to = mv.to;
+            fresh.promotion = mv.promotion || null;
+          });
         }
         if (pending !== null) { appendComment(node, parseComment(pending, node.shapes)); pending = null; }
+        justOpened = false;
         cur = node;
         break;
       }
@@ -389,7 +527,9 @@ function emitLine(out, parent, first, numbered) {
   let force = numbered;
   while (node) {
     const white = prev.fen.split(" ")[1] === "w";
-    if (white || force) out.push(numberPrefix(prev.fen));
+    // a null move does not advance the clock, so the number of the position
+    // before it would be written twice; the move after it goes bare
+    if ((white || force) && prev.san !== NULL_SAN) out.push(numberPrefix(prev.fen));
     out.push(node.san);
     for (const n of node.nags || []) out.push("$" + n);
     force = false;
@@ -410,14 +550,49 @@ function emitLine(out, parent, first, numbered) {
   }
 }
 
+/**
+ * Pieces of a token too long to fit a line of its own. Breaking between
+ * tokens is not always enough: one `[%cal]` with a dozen arrows, or a URL
+ * in a comment, is a single token wider than 80 columns, and pushing it
+ * onto its own line still broke the limit the format asks for.
+ *
+ * A shape list breaks after a comma, which the reader joins again on its
+ * own. Anything else is comment text and breaks anywhere, with a trailing
+ * "\" that parseComment swallows whole — a bare newline there would come
+ * back as a space inside the word.
+ */
+function breakToken(t, width) {
+  const shapeList = /^\[%(cal|csl)\s/.test(t);
+  const pieces = [];
+  let rest = t;
+  while (rest.length > width) {
+    const comma = shapeList ? rest.lastIndexOf(",", width - 1) : -1;
+    if (comma > 0) { pieces.push(rest.slice(0, comma + 1)); rest = rest.slice(comma + 1); continue; }
+    // never cut between a backslash and the character it escapes
+    let cut = width - 1;
+    while (cut > 1 && (rest.slice(0, cut).length - rest.slice(0, cut).replace(/\\+$/, "").length) % 2 === 1) cut--;
+    pieces.push(rest.slice(0, cut) + "\\");
+    rest = rest.slice(cut);
+  }
+  pieces.push(rest);
+  return pieces;
+}
+
 /** Join tokens into lines no longer than `width`, breaking only between tokens. */
 function wrap(tokens, width) {
   const lines = [];
   let line = "";
   for (const t of tokens) {
-    if (!line) line = t;
-    else if (line.length + 1 + t.length <= width) line += " " + t;
-    else { lines.push(line); line = t; }
+    const pieces = t.length > width ? breakToken(t, width) : [t];
+    for (let k = 0; k < pieces.length; k++) {
+      const p = pieces[k];
+      // the pieces of one token are never joined by a space: that space
+      // would be read back as part of the comment
+      if (k > 0) { if (line) lines.push(line); line = p; }
+      else if (!line) line = p;
+      else if (line.length + 1 + p.length <= width) line += " " + p;
+      else { lines.push(line); line = p; }
+    }
   }
   if (line) lines.push(line);
   return lines.join("\n");
@@ -448,6 +623,6 @@ function serializePgn(game, opts) {
 }
 
 export const ChessPgnParser = {
-  START_FEN, STR, SUFFIX_NAG, tokenize, parsePgn, splitGames, serializePgn, parseComment, formatComment,
+  START_FEN, STR, SUFFIX_NAG, NULL_SAN, tokenize, parsePgn, splitGames, serializePgn, parseComment, formatComment,
 };
-export { START_FEN, STR, SUFFIX_NAG, tokenize, parsePgn, splitGames, serializePgn, parseComment, formatComment };
+export { START_FEN, STR, SUFFIX_NAG, NULL_SAN, tokenize, parsePgn, splitGames, serializePgn, parseComment, formatComment };

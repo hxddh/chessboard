@@ -6798,6 +6798,19 @@ import { createStore } from "./store.js";
       toast(t("msg.import.badPgn"), "fault");
       return false;
     }
+    // 6.1 (v6-plan Q2.2 said this and it was only ever wired into the manual
+    // "load FEN" dialog): a [SetUp]/[FEN] game starts wherever its header
+    // says, and chess.js's validate_fen accepts positions no game can reach —
+    // two kings of a colour, a side already in check while its opponent is to
+    // move. Read the header as written, because the parser has already handed
+    // its FEN through chess.js by now and chess.js keeps only one king.
+    {
+      const headerFen = ChessPgn.startFen(text0);
+      if (headerFen && ChessEditor) {
+        const bad = ChessEditor.validate(ChessEditor.fromFen(headerFen, Chess), Chess);
+        if (bad) { toast(t(bad), "fault"); return false; }
+      }
+    }
     invalidateEngine();
     stopEditor();
     if (parsed) {

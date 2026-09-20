@@ -115,12 +115,47 @@
   }
 
   /** fresh editor state seeded from an existing position */
+  /**
+   * The board field of a FEN, read literally.
+   *
+   * 6.1: this used to go through `new ChessCtor(fen).board()`, and chess.js
+   * tracks one king square per colour — so a FEN with two white kings arrived
+   * here with one of them already gone, validate() saw a legal position and
+   * said yes, and the app loaded a position that was not the one in the file.
+   * The "no white king" half of the same guard worked, which is why it went
+   * unnoticed. Reading the field ourselves is the only way validate() can
+   * judge what the FEN actually says.
+   *
+   * @returns {Array|null} board rows (rank 8 first), or null when the field
+   *   is not eight ranks of eight squares
+   */
+  function boardFromFenField(field) {
+    const rows = String(field || "").split("/");
+    if (rows.length !== 8) return null;
+    const board = [];
+    for (const row of rows) {
+      const out = [];
+      for (const ch of row) {
+        if (ch >= "1" && ch <= "8") { for (let i = 0; i < Number(ch); i++) out.push(null); continue; }
+        const type = ch.toLowerCase();
+        if (!"pnbrqk".includes(type)) return null;
+        out.push({ type, color: ch === type ? "b" : "w" });
+      }
+      if (out.length !== 8) return null;
+      board.push(out);
+    }
+    return board;
+  }
+
   function fromFen(fen, ChessCtor) {
-    const g = new ChessCtor(fen);
     const parts = fen.split(" ");
     const rights = parts[2] || "-";
+    const literal = boardFromFenField(parts[0]);
+    // an unreadable board field falls back to chess.js, which has already
+    // accepted this FEN if we got here at all
+    const board = literal || cloneBoard(new ChessCtor(fen).board());
     return {
-      board: cloneBoard(g.board()),
+      board,
       turn: parts[1] === "b" ? "b" : "w",
       castling: {
         K: rights.includes("K"), Q: rights.includes("Q"),
@@ -130,4 +165,4 @@
     };
   }
 
-  export const ChessEditor = { emptyBoard, cloneBoard, squareOf, indexOf, toFen, validate, fromFen, epCandidates };
+  export const ChessEditor = { emptyBoard, cloneBoard, squareOf, indexOf, toFen, validate, fromFen, boardFromFenField, epCandidates };

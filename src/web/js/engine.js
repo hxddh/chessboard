@@ -228,8 +228,16 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * bytes from then on and nothing else needs 9.7 MB of text around.
    */
   let sourcesPromise = null;
+  let loaderSrc = null; // kept for the same reason as wasmBytes: rebuilds
+  function haveSources() {
+    return !!(loaderSrc || global.CHESS_SF_LOADER) && !!(wasmBytes || global.CHESS_SF_WASM_B64);
+  }
   function loadSources() {
-    if (global.CHESS_SF_LOADER && global.CHESS_SF_WASM_B64) return Promise.resolve();
+    if (haveSources()) return Promise.resolve();
+    // 6.1: only a *pending* injection is shared. A settled one used to be
+    // returned forever, so an init() that found the globals gone — which is
+    // exactly what a rebuild after teardown finds, since the base64 is
+    // blanked below — got a resolved promise and no script.
     if (sourcesPromise) return sourcesPromise;
     sourcesPromise = new Promise((resolve, reject) => {
       const doc = global.document;
@@ -241,8 +249,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
       el.onerror = () => reject(new Error("engine sources failed to load"));
       doc.head.appendChild(el);
     });
-    sourcesPromise.catch(() => { sourcesPromise = null; });
-    return sourcesPromise;
+    const mine = sourcesPromise;
+    const forget = () => { if (sourcesPromise === mine) sourcesPromise = null; };
+    mine.then(forget, forget);
+    return mine;
   }
 
   /** Boot the engine (idempotent). Resolves when UCI handshake completes. */
@@ -250,9 +260,17 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (readyPromise) return readyPromise;
     readyPromise = (async () => {
       await loadSources();
-      const loaderText = global.CHESS_SF_LOADER;
-      const wasmB64 = global.CHESS_SF_WASM_B64;
-      if (!loaderText || !wasmB64) throw new Error("engine sources missing");
+      const loaderText = global.CHESS_SF_LOADER || loaderSrc;
+      if (!loaderText) throw new Error("engine sources missing");
+      loaderSrc = loaderText;
+      // the base64 is needed once; after that the decoded bytes are the source
+      // of truth, and a rebuilt worker is built from them alone.
+      if (!wasmBytes) {
+        const wasmB64 = global.CHESS_SF_WASM_B64;
+        if (!wasmB64) throw new Error("engine sources missing");
+        wasmBytes = b64ToBuffer(wasmB64);
+        global.CHESS_SF_WASM_B64 = "";
+      }
       const blobUrl = URL.createObjectURL(new Blob([workerSource(loaderText)], { type: "text/javascript" }));
       worker = new Worker(blobUrl);
       worker.onmessage = (ev) => onLine(ev.data);
@@ -261,12 +279,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
       worker.onerror = () => teardown();
       const readyWait = waitFor((l) => l === "__sf_ready__", 30000, "boot");
       // the buffer is transferred, not copied: the worker is its only reader.
-      // A rebuilt worker (teardown after a hang) needs the bytes again, so
-      // they are kept once decoded, but the base64 text is not.
-      if (!wasmBytes) wasmBytes = b64ToBuffer(wasmB64);
+      // A rebuilt worker (teardown after a hang) needs the bytes again, so a
+      // copy is handed over and the decoded original stays here.
       const payload = wasmBytes.slice(0);
       worker.postMessage({ type: "init", wasm: payload }, [payload]);
-      global.CHESS_SF_WASM_B64 = "";
       await readyWait;
       const uciWait = waitFor((l) => l === "uciok", 10000, "boot");
       send("uci");
@@ -462,7 +478,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   const options = { hash: 32 };
   function setOptions(o) {
-    if (o && Number.isFinite(o.hash)) options.hash = Math.max(1, Math.min(512, Math.round(o.hash)));
+    if (o && Number.isFinite(o.hash)) {
+      const hash = Math.max(1, Math.min(512, Math.round(o.hash)));
+      // 6.1: Hash changes what the search finds, so everything already in the
+      // eval cache was computed by a different engine. Served on, it would
+      // hide the very change the player just asked for.
+      if (hash !== options.hash) { options.hash = hash; evalCache.clear(); }
+    }
     return { ...options };
   }
   function getOptions() { return { ...options }; }
@@ -588,6 +610,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   function analyzeInfinite(fen, opts, onUpdate) {
     const multipv = opts && opts.multipv ? Math.max(1, Math.min(5, opts.multipv | 0)) : 1;
     let stopped = false;
+    let started = false; // our own `go infinite` is on the worker
     let release = null;
     const done = new Promise((r) => { release = r; });
     exclusive(async () => {
@@ -610,6 +633,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       };
       lineHandlers.push(collect);
       const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), 24 * 3600 * 1000, "search");
+      started = true;
       send("go infinite");
       try { await wait; } catch (_) { /* stopped or torn down */ }
       finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
@@ -617,7 +641,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return function stop() {
       if (stopped) return done;
       stopped = true;
-      if (worker) send("stop");
+      // 6.1: only if this call's own search is the one running. While the body
+      // is still queued behind another search, a `stop` here reached Stockfish
+      // in the middle of *that* search — which then returned a truncated
+      // result that analyze() cached as a full-budget one.
+      if (started && worker) send("stop");
       return done;
     };
   }
