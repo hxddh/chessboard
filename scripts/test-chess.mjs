@@ -5690,6 +5690,47 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// --- 7.0: every FEN this app ships must be a position that can exist ---------
+//
+// `ChessEditor.validate` has known since 6.0 that a pawn cannot stand on its
+// own back rank — and nothing had ever run the app's OWN content through it.
+// One knight lesson drew the "surrounded by your own pawns" box from c1 to e3,
+// which puts three white pawns on the first rank. chess.js accepts it and
+// Stockfish 18 evaluated it, so it shipped and was played for eleven versions.
+//
+// Stockfish 19 does not: `position fen` on that square set aborts the whole
+// wasm module with `RuntimeError: unreachable`. An aborted module is not a
+// crashed search — every later ccall hits the same trap, so 6.1's engine
+// self-healing cannot get back from it either. The engine upgrade turned a
+// cosmetic illegality into a dead engine on a beginner lesson.
+//
+// So: run the content through the guard that already existed.
+{
+  const Ed = ctx.ChessEditor;
+  const seen = new Set();
+  let bad = 0, checked = 0;
+  const vet = (fen, where) => {
+    if (!fen || seen.has(fen)) return;
+    seen.add(fen);
+    checked++;
+    // allowTerminal: a puzzle may start from a position with no legal move
+    // (a mate to recognise); that is content, not corruption. Everything
+    // structural — piece counts, kings, pawns on a back rank, an impossible
+    // en-passant square — is what this is here for.
+    let why = null;
+    try { why = Ed.validate(Ed.fromFen(fen, ctx.Chess), ctx.Chess, { allowTerminal: true }); }
+    catch (err) { why = "threw: " + err.message; }
+    if (why) { bad++; console.error("FAIL: " + where + " 的局面不合法 (" + why + "): " + fen); }
+  };
+  for (const L of ctx.CHESS_LESSONS || []) {
+    for (const t of L.tasks || []) vet(t.fen, "课程 " + L.id);
+  }
+  for (const p of ctx.CHESS_PUZZLES || []) vet(p.fen, "题目 " + p.id);
+  assert(checked > 100, "课程与题目的局面都取到了 (" + checked + ")");
+  assert(bad === 0, "每一个随应用发布的局面都是真能出现的局面 —— " +
+    "兵不在底线、王各一个、吃过路兵格站得住 (" + checked + " 个)");
+}
+
 // --- 6.1: an impossible [FEN] must not be quietly repaired -------------------
 //
 // ChessEditor exists to reject positions chess.js accepts. fromFen() used to

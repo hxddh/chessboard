@@ -561,14 +561,14 @@
       part: "Mating patterns", title: "Queen-next-to-king: get close, but bring support",
       text: [
         "The queen delivering check from **right beside** the enemy king is often called the kiss of death. From there she seals off the whole ring of squares around him at once.",
-        "Everything hangs on **support**: standing next to the king puts the queen inside his reach, so **another piece must defend that square** or he simply eats her and you have thrown a queen away. Here the supporting piece is the bishop on b2, eyeing the whole a1–h8 diagonal.",
+        "Everything hangs on **support**: standing next to the king puts the queen inside his reach, so **another piece must defend that square** or he simply eats her and you have thrown a queen away. Here the supporting piece is the bishop on h6, watching g7 from the side.",
         "So the checklist has exactly two questions: **can the queen get next to him, and is that square defended?** Both yes, it is mate. Only the first, it is a blunder.",
       ],
       tasks: [
-        { prompt: "The bishop on b2 covers g7 — step the queen up",
-          retry: "Qg7: the queen lands beside the king, defended by the b2 bishop, and h7 and g8 are both sealed off by the queen herself" },
+        { prompt: "The bishop on h6 covers g7 — step the queen up",
+          retry: "Qg7: the queen lands beside the king, defended by the h6 bishop, and h7 and g8 are both sealed off by the queen herself" },
         { prompt: "This time Black's own h7 pawn blocks his escape — same single move",
-          retry: "Qg7: the same long diagonal supports her, and h7 is taken by Black's own pawn" },
+          retry: "Qg7: the same h6 bishop supports her, and h7 is taken by Black's own pawn" },
       ],
     },
     arabian: {
@@ -579,7 +579,7 @@
         "The mnemonic is simply: **knight first, sealing both escape squares; rook last, giving check.** Reverse the order and the rook just gets captured.",
       ],
       tasks: [
-        { prompt: "The f6 knight already covers g8 and h7 — bring the rook up the h-file",
+        { prompt: "The f6 knight already covers g8 and h7 — swing the rook along the 7th rank",
           retry: "Rh7: check, and h7 is defended by the knight on f6; g8 is in the knight's field too" },
         { prompt: "Other corner: black king a8, knight on c6 — same shape, where does the rook go?",
           retry: "Ra7: the c6 knight covers a7 (defending the rook) and b8 (sealing the escape) — the same picture as before" },
