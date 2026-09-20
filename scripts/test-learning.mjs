@@ -340,7 +340,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 {
   const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
   const mined = mctx.MINED_PUZZLES;
-  assert(Array.isArray(mined) && mined.length >= 958, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  assert(Array.isArray(mined) && mined.length >= 1023, "mined set loaded (" + (mined ? mined.length : 0) + ")");
   const ids = new Set(), fens = new Set(ctx.CHESS_PUZZLES.map((p) => p.fen));
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -361,10 +361,32 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   for (const p of mined) { byCat[p.cat] = (byCat[p.cat] || 0) + 1; if (p.motif) byMotif[p.motif] = (byMotif[p.motif] || 0) + 1; }
   console.log("mined by category:", JSON.stringify(byCat), "motifs:", JSON.stringify(byMotif));
   // the shipped floors per category and motif — a regeneration may only raise them
-  const FLOOR = { m1: 42, m2: 27, m3: 49, tac: 540, win: 300 };
-  const MOTIF_FLOOR = { fork: 125, pin: 106, skewer: 48, discovered: 7, double: 10 };
+  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 589, win: 305 };
+  const MOTIF_FLOOR = { fork: 135, pin: 113, skewer: 51, discovered: 7, double: 10 };
+  // 6.1: §5 of docs/v6-plan.md wants ≥ 50 puzzles in every 200-point rating
+  // band. 6.0 shipped three bands short and did not say so; 6.1 re-rated the
+  // set from measured difficulty and topped up the thin bands from fresh
+  // mining, which got eight of the nine bands there. The 2200–2399 band is
+  // still short and is pinned at what it actually is, not at what the plan
+  // wants: engine self-play at low skill produces hanging pieces in bulk and
+  // genuinely hard positions rarely, so that band cannot be filled from this
+  // source. A number here that lies would be worse than one that is short.
+  const BAND_FLOOR = 50, BAND_SHORT = { 2200: 27 };
   for (const [c, n] of Object.entries(FLOOR)) assert((byCat[c] || 0) >= n, "mined " + c + " ≥ " + n + " (" + (byCat[c] || 0) + ")");
   for (const [m, n] of Object.entries(MOTIF_FLOOR)) assert((byMotif[m] || 0) >= n, "mined motif " + m + " ≥ " + n + " (" + (byMotif[m] || 0) + ")");
+  {
+    const band = {};
+    for (const p of mined) { const b = Math.floor(p.rating / 200) * 200; band[b] = (band[b] || 0) + 1; }
+    for (const [b, n] of Object.entries(band)) {
+      const want = BAND_SHORT[b] != null ? BAND_SHORT[b] : BAND_FLOOR;
+      assert(n >= want, "mined band " + b + "–" + (Number(b) + 199) + " ≥ " + want + " (" + n + ")" +
+        (BAND_SHORT[b] != null ? " —— 未达 §5 的 50，按实际钉住" : ""));
+    }
+    const short = Object.keys(band).filter((b) => band[b] < BAND_FLOOR);
+    assert(short.length <= Object.keys(BAND_SHORT).length,
+      "只有记录在案的那些分段不足 50（不足的是 " + (short.join(", ") || "无") + "）");
+  }
+
 }
 
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }

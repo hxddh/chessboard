@@ -395,6 +395,7 @@ function parseArgs(argv) {
     else if (a === "--out") opt.out = next();
     else if (a === "--per-theme") opt.perTheme = Number(next());
     else if (a === "--per-band") opt.perBand = Number(next());
+    else if (a === "--floor") opt.floor = Number(next());
     else if (a === "--max") opt.max = Number(next());
     else if (a === "--debug") opt.debug = true;
     else if (a === "--random") opt.random = Number(next());
@@ -452,7 +453,13 @@ export async function main(argv) {
     await startEngine();
     const target = opt.out || path.join(ROOT, "src/web/js/puzzles-mined.js");
     const existing = loadAppModules([path.relative(ROOT, target)]).MINED_PUZZLES.map((p) => Object.assign({}, p));
-    const floor = opt.perBand || 50;
+    // --floor is the target per band; --per-band is the *pipeline's* own quota
+    // and must not be the same number. Using one value for both capped the
+    // fresh candidates at the floor before they were ever rated — and the
+    // pipeline bands by the row's old estimate, which is the very thing this
+    // is replacing, so its quota is doubly wrong here. Let everything through
+    // and let the measured rating decide.
+    const floor = opt.floor || 50;
     const bandOfRating = (r) => Math.floor(r / 200) * 200;
     const count = {};
     for (const p of existing) count[bandOfRating(p.rating)] = (count[bandOfRating(p.rating)] || 0) + 1;
