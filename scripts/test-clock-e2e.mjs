@@ -209,10 +209,10 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await p3.waitForSelector('#board');
   await p3.waitForTimeout(500);
   await p3.click('#pick-cancel').catch(() => {});
-  await p3.click('#fold-game > summary').catch(() => {});
-  await p3.waitForTimeout(250);
-  await p3.click('#clock-seg button[data-tc="3+2"]').catch(() => {});
   await p3.waitForTimeout(350);
+  // 时限直接由种子设置给定，不去点面板里的按钮：那串点击在这个上下文里选中过
+  // 别的档位（读数 300 秒），而「加了两秒」的断言写成「> 180」时会在 300 上
+  // 假性通过——一条会说谎的断言比没有断言糟。
 
   const secs3 = () => p3.evaluate(() => {
     const to = (x) => { const m = /^(\d+):(\d\d)$/.exec(x.trim()); return m ? +m[1] * 60 + +m[2] : null; };
@@ -224,11 +224,17 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
     return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
   }, n);
   const before3 = await secs3();
-  chk(before3.length === 2 && before3.every((v) => v === 180), '真实时钟下也是两边各三分钟', JSON.stringify(before3));
+  chk(before3.length === 2 && before3[0] === 180 && before3[1] === 180,
+    '真实时钟下 3+2 就是两边各三分钟', JSON.stringify(before3));
   for (const s of ['e2', 'e4']) { const q = await sq3(s); await p3.mouse.click(q.x, q.y); await p3.waitForTimeout(120); }
   await p3.waitForTimeout(300);
   const after3 = await secs3();
-  chk(after3[0] > 180, '走一步棋,走子方加了两秒(3+2 的 +2 真的加上了)', `白方 ${after3[0]} 秒`);
+  // 相对基线比，而不是比一个写死的 180：真实时钟下这一手花掉不到一秒，
+  // 加两秒之后白方必然比开局时多
+  chk(after3[0] > before3[0], '走一步棋,走子方加了两秒(3+2 的 +2 真的加上了)',
+    `${before3[0]} → ${after3[0]} 秒`);
+  // （不断言黑方的钟不变：白方走完就轮到黑方，它的钟本来就该开始走。
+  //   先前这里断言过「不变」，是我写错了——那条会在正确行为上失败。）
   if (errs3.length) errs.push(...errs3);
   await c3.close();
 }

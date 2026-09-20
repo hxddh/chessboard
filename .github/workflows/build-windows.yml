@@ -14,13 +14,13 @@ on:
         default: ""
       sdk_version:
         # Pinned, like release.yml's input of the same name (see the comment
-        # there). D7: this used to default to "latest", and the `|| '0.8.1'`
+        # there). D7: this used to default to "latest", and the `|| '0.10.1'`
         # below only catches an EMPTY string — so every hand-dispatched build
         # got whatever npm had that day, while the step's comment claimed the
         # opposite. The fallback stays for a caller that passes "".
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
-        default: "0.8.1"
+        default: "0.10.1"
 
 permissions:
   contents: write
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       # esbuild, and nothing else. It bundles the ES modules under src/web/js
       # into the one classic script zero:// can load; `npm ci` rather than
       # `npm install` so the same commit gets the same bundler.
@@ -48,7 +48,7 @@ jobs:
         shell: bash
         env:
           # see release.yml's sdk_version input for why this is not 'latest'
-          SDK_VERSION: ${{ inputs.sdk_version || '0.8.1' }}
+          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true
