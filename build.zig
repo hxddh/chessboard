@@ -502,6 +502,14 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
         app_mod.linkSystemLibrary("ole32", .{});
         app_mod.linkSystemLibrary("oleacc", .{});
         app_mod.linkSystemLibrary("shell32", .{});
+        // 0.10.0 的 Windows 主机新引的三个：iphlpapi/ws2_32 给网络可达性
+        // 探测（签名更新的下载要先知道有没有网），advapi32 给凭据与注册表。
+        // 这个壳目前不开更新、也不用凭据，但链接器不管这些——SDK 的平台源
+        // 文件里只要有一处引用，少链一个就是一个 unresolved external，而那
+        // 是只有 Windows 构建才会炸的错。manifest-check --sdk 抓的就是它。
+        app_mod.linkSystemLibrary("iphlpapi", .{});
+        app_mod.linkSystemLibrary("ws2_32", .{});
+        app_mod.linkSystemLibrary("advapi32", .{});
         // The audio backend: Media Foundation (session + source resolver
         // + streaming audio renderer) and WinHTTP (the cache fill).
         app_mod.linkSystemLibrary("mf", .{});

@@ -57,9 +57,23 @@ pub const RunOptions = struct {
             // create — the two checks would disagree at runtime.
             .declares_tray = manifestDeclaresTrayCapability(),
             .has_web_content = manifestHasWebContent(),
+            // Pairs with declares_tray: an app that never declared "tray" has
+            // no way back to a hidden window, so the SDK refuses to hide it
+            // from the Dock. We keep the default (visible) — but wired, so
+            // that the day app.zon says otherwise the two agree.
+            .dock_visible = manifestDockVisible(),
             .window_title = self.window_title,
             .bundle_id = self.bundle_id,
             .icon_path = self.icon_path,
+            // The signed-update feed (SDK 0.10.0). Empty until app.zon grows
+            // an `.updates` block with a real feed URL and the Ed25519 public
+            // key its releases are signed with; the host does nothing at all
+            // with an empty feed, so this is safe to wire before the feed
+            // exists — and wiring it now is what makes turning updates on a
+            // manifest edit rather than a fork edit.
+            .update_feed_url = manifestUpdateString("feed_url"),
+            .update_public_key = manifestUpdateString("public_key"),
+            .update_check_on_start = manifestUpdateCheckOnStart(),
         };
         const windows = manifestWindowOptions(buffers);
         if (windows.len > 0) {
@@ -298,6 +312,11 @@ fn manifestWindow(comptime window: anytype, comptime index: usize) native_sdk.Wi
         .resizable = windowBool(window, "resizable", true),
         .restore_state = windowBool(window, "restore_state", true),
         .restore_policy = windowRestorePolicy(window),
+        // 0.10.0 split "where does a first-run window land" out of the frame:
+        // a window that authored no x/y wants the host's own placement, not
+        // (0,0). app.zon's window declares width/height only, so this is the
+        // field that keeps a fresh install centred instead of in the corner.
+        .initial_placement = if (windowHasExplicitOrigin(window)) .explicit else .default,
         .titlebar = windowTitlebarStyle(window),
         .show = windowShowMode(window),
         // Added by the SDK in 0.6.2, four days after 1.19.1 caught the fork
@@ -311,6 +330,7 @@ fn manifestWindow(comptime window: anytype, comptime index: usize) native_sdk.Wi
         .always_on_top = windowBool(window, "always_on_top", false),
         .click_through = windowBool(window, "click_through", false),
         .activate_on_show = windowBool(window, "activate_on_show", true),
+        .allows_fullscreen = windowBool(window, "allows_fullscreen", true),
         .min_width = windowMinSize(window, "min_width"),
         .min_height = windowMinSize(window, "min_height"),
         .close_policy = windowClosePolicy(window),
@@ -402,6 +422,44 @@ fn windowClosePolicy(comptime window: anytype) native_sdk.WindowClosePolicy {
 fn manifestStringField(comptime field: []const u8) []const u8 {
     if (comptime !@hasField(@TypeOf(app_manifest), field)) return "";
     return @field(app_manifest, field);
+}
+
+/// Whether the window authored its own origin. Without an x/y the window
+/// wants the host's placement, which is not the same thing as (0,0).
+fn windowHasExplicitOrigin(comptime window: anytype) bool {
+    return @hasField(@TypeOf(window), "x") or @hasField(@TypeOf(window), "y");
+}
+
+/// `.dock_visible` from app.zon. The SDK raises a comptime error for
+/// `false` without the "tray" capability; this fork keeps that shape so the
+/// error arrives from the same place it would upstream.
+fn manifestDockVisible() bool {
+    const visible = if (comptime @hasField(@TypeOf(app_manifest), "dock_visible")) app_manifest.dock_visible else true;
+    if (comptime !visible and !manifestDeclaresTrayCapability()) {
+        @compileError("app.zon dock_visible = false 需要 \"tray\" 能力：没有托盘图标，隐藏起来的窗口就再也回不来了");
+    }
+    return visible;
+}
+
+/// One string out of app.zon's optional `.updates` block. Absent block,
+/// absent field, and explicit null all read as "" — the host treats an empty
+/// feed URL or public key as "updates are off", so there is no third state
+/// to represent.
+fn manifestUpdateString(comptime field: []const u8) []const u8 {
+    if (comptime !@hasField(@TypeOf(app_manifest), "updates")) return "";
+    const updates = app_manifest.updates;
+    if (comptime !@hasField(@TypeOf(updates), field)) return "";
+    const value = @field(updates, field);
+    return switch (@typeInfo(@TypeOf(value))) {
+        .optional => value orelse "",
+        else => value,
+    };
+}
+
+fn manifestUpdateCheckOnStart() bool {
+    if (comptime !@hasField(@TypeOf(app_manifest), "updates")) return false;
+    if (comptime !@hasField(@TypeOf(app_manifest.updates), "check_on_start")) return false;
+    return app_manifest.updates.check_on_start;
 }
 
 fn manifestDeclaresTrayCapability() bool {
