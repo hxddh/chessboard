@@ -34,6 +34,8 @@
    * which turns out to have been the right instinct.
    */
   const INACCURACY = 50, MISTAKE = 100, BLUNDER = 300;
+  /** Win-% accuracy cut-offs for the one-line verdict — see verdictKey (6.1). */
+  const VERDICT_EXCELLENT = 94, VERDICT_SOLID = 86;
 
   /**
    * How many of a side's own moves have to be measured before the report is
@@ -66,8 +68,20 @@
    * @param {number} after  evaluation after it
    * @param {"w"|"b"} side  who played it
    */
+  /**
+   * The window a centipawn evaluation is compared inside. A mate score is
+   * 9500–9990 on the app's scalar track, so before 6.1 a ply where a fast
+   * search announced mate and the next where it only reported a large plus
+   * differed by ~8000 — clamped to the full 1000, i.e. the worst blunder the
+   * scale can express, charged to a player who did nothing wrong. Both ends
+   * are pulled into the window first, so "winning" and "winning by mate" are
+   * the same thing here, exactly as they are on the win-% track.
+   */
+  const EVAL_WINDOW = 1000;
+  const inWindow = (cp) => Math.max(-EVAL_WINDOW, Math.min(EVAL_WINDOW, cp));
   function lossOf(before, after, side) {
-    return Math.max(0, Math.min(1000, side === "w" ? before - after : after - before));
+    const b = inWindow(before), a = inWindow(after);
+    return Math.max(0, Math.min(1000, side === "w" ? b - a : a - b));
   }
 
   /**
@@ -186,15 +200,26 @@
     if (!summary || !summary.acc || summary.acc[side] == null) return null;
     // a fragment is described as a fragment — the blunder lines below are
     // about moves that were actually made and still apply; the three
-    // "how you play" lines need a sample
+    // "how you play" lines need a sample.
+    //
+    // 6.1: the cut-offs used to be 90 / 75. Those were read off the centipawn
+    // accuracy curve, but 6.0 changed what is handed in here to the win-%
+    // accuracy (app.js renderReview passes summarizeWinPct's summary), and
+    // that curve sits 10–17 points higher — see the note on accuracyOf. Every
+    // player was being graded a band too generously: 25 cp/move, an ordinary
+    // club game, scored 81 on the old scale ("solid") and 90 on the new one,
+    // which the unchanged cut-off read as "excellent". The numbers below are
+    // where the win-% curve sits at the same play the old ones described:
+    // 90 on the cp curve is 14 cp/move, which is 94 on this one; 75 is
+    // 36 cp/move, which is 86. Measured by scripts/test-review-winpct.mjs.
     const c = summary.counts[side];
     const enough = !summary.judged || summary.judged[side] >= MIN_JUDGED;
     if (!enough && c.blunder === 0 && c.mistake < 3) return "rv.verdict.tooShort";
     if (c.blunder >= 3) return "rv.verdict.blunders";
     if (c.blunder >= 1) return "rv.verdict.oneBlunder";
     if (c.mistake >= 3) return "rv.verdict.mistakes";
-    if (summary.acc[side] >= 90) return "rv.verdict.excellent";
-    if (summary.acc[side] >= 75) return "rv.verdict.solid";
+    if (summary.acc[side] >= VERDICT_EXCELLENT) return "rv.verdict.excellent";
+    if (summary.acc[side] >= VERDICT_SOLID) return "rv.verdict.solid";
     return "rv.verdict.roomToGrow";
   }
 
@@ -364,4 +389,5 @@
     INACCURACY, MISTAKE, BLUNDER, MIN_JUDGED,
     winPct, winPctDrop, classifyByWinPct, accuracyFromWinPct, summarizeWinPct,
     WIN_INACCURACY, WIN_MISTAKE, WIN_BLUNDER,
+    VERDICT_EXCELLENT, VERDICT_SOLID, EVAL_WINDOW,
   };

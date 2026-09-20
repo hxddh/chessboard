@@ -105,3 +105,48 @@ assert(R.summarizeWinPct([], [], "w") === null, "empty → null");
 
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }
 console.log("all passed");
+
+// --- 6.1: the verdict cut-offs belong to the curve they are read from -------
+//
+// 6.0 switched what renderReview hands verdictKey to the win-% summary but
+// left the 90 / 75 cut-offs that were read off the centipawn curve, so every
+// player was graded a band too generously. These pin the two curves together
+// at the play the old numbers described.
+{
+  const sans = Array.from({ length: 40 }, () => "Nf3");
+  const track = (L) => { const sc = []; let v = 0; for (let i = 0; i <= 40; i++) { sc.push(v); v += (i % 2 === 0 ? -L : +L); } return sc; };
+  const cpAcc = (L) => R.summarize(track(L), sans, "w").acc.w;
+  const wpAcc = (L) => R.summarizeWinPct(track(L), sans, "w").acc.w;
+  assert(R.VERDICT_EXCELLENT === 94 && R.VERDICT_SOLID === 86,
+    "the verdict cut-offs are the win-% ones (" + R.VERDICT_EXCELLENT + " / " + R.VERDICT_SOLID + ")");
+  assert(cpAcc(14) < 90 && cpAcc(13) >= 90, "the old 'excellent' line sat at ~14cp a move on the cp curve");
+  assert(Math.abs(wpAcc(14) - R.VERDICT_EXCELLENT) <= 1,
+    "…and the new one sits at the same play on the win-% curve (" + wpAcc(14) + " vs " + R.VERDICT_EXCELLENT + ")");
+  assert(cpAcc(36) < 75 && cpAcc(35) >= 75, "the old 'solid' line sat at ~36cp a move");
+  assert(Math.abs(wpAcc(36) - R.VERDICT_SOLID) <= 1,
+    "…and the new one matches it (" + wpAcc(36) + " vs " + R.VERDICT_SOLID + ")");
+  const verdict = (L) => R.verdictKey(R.summarizeWinPct(track(L), sans, "w"), "w");
+  assert(verdict(25) === "rv.verdict.solid", "25cp a move is solid, not excellent (" + verdict(25) + ")");
+  assert(verdict(10) === "rv.verdict.excellent", "10cp a move is still excellent");
+  assert(verdict(40) === "rv.verdict.roomToGrow", "40cp a move has room to grow (" + verdict(40) + ")");
+}
+
+// --- 6.1: a mate score and a big plus are the same thing to the cp track ----
+//
+// The app still banks and displays the centipawn ACPL (app.js rec.acpl). A
+// 120ms search gains and loses its mate announcement all the time in a won
+// endgame, and before 6.1 each of those transitions was ~8000cp, clamped to
+// the worst blunder the scale can express and charged to a player who did
+// nothing wrong.
+{
+  assert(R.lossOf(9810, 1500, "w") === 0, "a mate call that becomes a large plus costs nothing (" + R.lossOf(9810, 1500, "w") + ")");
+  assert(R.lossOf(1500, 9810, "w") === 0, "…and so does the reverse");
+  assert(R.lossOf(9970, 9920, "w") === 0, "mate-in-3 to mate-in-8 costs nothing");
+  assert(R.lossOf(200, -300, "w") === 500, "a real blunder is untouched (" + R.lossOf(200, -300, "w") + ")");
+  assert(R.lossOf(9800, 50, "w") === 950, "…and throwing a forced mate away still costs nearly everything");
+  const sc = [1400, 9800, 9810, 1500, 1500, 9840, 9850, 1600, 1600, 9880, 9890];
+  const sans = sc.slice(1).map(() => "Ke2");
+  const cp = R.summarize(sc, sans, "w");
+  assert(cp.acpl.w === 0 && cp.counts.w.blunder === 0,
+    "a won endgame whose search flickers in and out of mate reads as clean (acpl " + cp.acpl.w + ", blunders " + cp.counts.w.blunder + ")");
+}
