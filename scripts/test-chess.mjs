@@ -7,7 +7,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
-import { compileModuleSync, CHUNKS } from "./bundle.mjs";
+import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -5418,7 +5418,7 @@ for (const lang of CONTENT_LANGS) {
 // and nothing else notices. And a chunk that is built but not packaged is an
 // app whose opening names never appear, so the dist list is checked too.
 {
-  const bundleSrc = fs.readFileSync(path.join(root, "src/web/js/bundle.js"), "utf8");
+  const bundleSrc = await build({ write: true });
   const syncSrc = fs.readFileSync(path.join(root, "scripts/sync-dist.mjs"), "utf8");
   for (const c of CHUNKS) {
     const out = path.join(root, c.out);
