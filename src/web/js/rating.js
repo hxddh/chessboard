@@ -145,6 +145,40 @@ function rate1v1(player, puzzle, score) {
 }
 
 /**
+ * How much deviation one idle day adds back, squared (rating units²).
+ *
+ * Calibrated so an untouched rating climbs from a settled ~60 back to the
+ * newcomer's 350 in about a year: (350² − 60²) / 365.
+ */
+const IDLE_C2 = (DEFAULT.rd * DEFAULT.rd - 60 * 60) / 365;
+
+/**
+ * Let a rating go stale.
+ *
+ * This is Glicko-1's inactivity rule, not repeated Glicko-2 periods, and the
+ * reason is measured. `update(player, [])` is the Glicko-2 way to sit out a
+ * period, but with σ = 0.06 it moves `rd` by under a point a week: a settled
+ * 61 reaches only 96.8 after a *year* of weekly empty periods. This module's
+ * whole argument for Glicko-2 over Elo is that a player who leaves for a month
+ * comes back with a rating that can move again — 61 → 63 does not deliver
+ * that, so the empty-period path alone would leave the claim unearned.
+ *
+ * `rd` is capped at the newcomer's 350: being less sure about a returning
+ * player than about someone who has never answered anything says nothing.
+ * `r` and `vol` are untouched — time erodes confidence, not the estimate.
+ *
+ * @param {{r:number, rd:number, vol:number}} rating
+ * @param {number} days idle days; ≤ 0 or non-finite is a no-op
+ * @returns {{r:number, rd:number, vol:number}} a new object; input untouched
+ */
+function decayIdle(rating, days) {
+  const d = Number(days);
+  if (!rating || !Number.isFinite(d) || d <= 0) return rating;
+  const rd = Math.min(DEFAULT.rd, Math.sqrt(rating.rd * rating.rd + IDLE_C2 * d));
+  return { r: rating.r, rd, vol: rating.vol };
+}
+
+/**
  * Probability that `a` beats `b`. Both deviations count, so a fresh player
  * against a fresh puzzle sits near 0.5 however far the point estimates are
  * apart — the numbers do not yet know enough to promise otherwise.
@@ -167,4 +201,4 @@ function pickRange(rating, width) {
   return { lo: Math.round(rating.r - w - slack), hi: Math.round(rating.r + w + slack) };
 }
 
-export const ChessRating = { DEFAULT, PUZZLE, newRating, update, rate1v1, expectedScore, pickRange };
+export const ChessRating = { DEFAULT, PUZZLE, IDLE_C2, newRating, update, rate1v1, expectedScore, pickRange, decayIdle };

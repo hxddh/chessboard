@@ -318,6 +318,21 @@ import { createStore } from "./store.js";
       blindfold: false,
       hash: 32,
       multipv: 1,
+      /**
+       * 7.0: show the `?!` mark at all.
+       *
+       * Off by default, and the reason is measured rather than aesthetic.
+       * 6.1 swept twenty-eight games at three budgets (docs/measured.json,
+       * `winPctNoise`): of every ply either of two runs called `?!`, both runs
+       * agreed 52 / 56 / 54% of the time — a coin flip decides whether the
+       * same position gets the mark, and ten times the search does not help.
+       * `?` reaches 84% and `??` 95%, and both improve with depth, which is
+       * what a real signal does. 6.1 wrote down that `?!` is the one mark this
+       * app will not endorse and then went on showing it exactly like the
+       * other two. Showing noise with a caveat is still showing noise, so it
+       * is off; the switch is there for anyone who wants it anyway.
+       */
+      showSoftMark: false,
       /** 6.0 (v6-plan Q3.6): the theme follows the system's light/dark; the text size step */
       followSystem: false,
       textSize: "m",
@@ -1165,6 +1180,7 @@ import { createStore } from "./store.js";
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
       if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
+      if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
@@ -1190,7 +1206,7 @@ import { createStore } from "./store.js";
   function saveSettings() {
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
         followSystem: store.ui.followSystem, textSize: store.ui.textSize }));
     } catch (_) {}
   }
@@ -2596,7 +2612,39 @@ import { createStore } from "./store.js";
   function playerRating() {
     const st = store.session.puzzleState;
     if (!st.rating) st.rating = ChessRating.newRating();
+    settleIdleRating(st);
     return st.rating;
+  }
+
+  /**
+   * Charge the days since the rating last moved to its deviation.
+   *
+   * 6.1 review: rating.js documents `rd` as the thing that lets a returning
+   * player's rating move again, and nothing in the app ever grew it back —
+   * the only path that does was never called from anywhere.
+   *
+   * Settling also resets the idle clock, which is what makes this safe to call
+   * from `playerRating()` on every access: a second call the same second sees
+   * no whole day and does nothing. It also makes the charge exact across
+   * sessions without a session flag (a flag on `st` would be persisted and
+   * then never decay again): `rd²` is additive in days, so thirty daily opens
+   * and one thirty-day absence land on the same deviation.
+   *
+   * `ratedAt` is written by ratePuzzleOnce. An archive from before 7.0 has
+   * none, so the last rating-history stamp stands in. Neither present means
+   * this rating has never moved — decaying from the epoch would hand every
+   * such player a fresh 350 on first launch.
+   */
+  function settleIdleRating(st) {
+    const last = Number(st.ratedAt) ||
+      (Array.isArray(st.rhist) && st.rhist.length ? Number(st.rhist[st.rhist.length - 1].t) : 0);
+    if (!last) return;
+    const days = (Date.now() - last) / 86400000;
+    if (!(days >= 1)) return;
+    const next = ChessRating.decayIdle(st.rating, days);
+    st.ratedAt = Date.now();
+    if (next !== st.rating) st.rating = next;
+    savePuzzleState();
   }
   function puzzleRating(p) {
     const st = store.session.puzzleState;
@@ -2619,8 +2667,9 @@ import { createStore } from "./store.js";
     st.rating = r.player;
     if (!st.pr) st.pr = {};
     st.pr[id] = r.puzzle;
+    st.ratedAt = Date.now();
     if (!Array.isArray(st.rhist)) st.rhist = [];
-    st.rhist.push({ t: Date.now(), r: Math.round(r.player.r) });
+    st.rhist.push({ t: st.ratedAt, r: Math.round(r.player.r) });
     while (st.rhist.length > 60) st.rhist.shift();
   }
   /** "1523" or "1523 ±180" while the deviation is still wide */
@@ -3902,7 +3951,7 @@ import { createStore } from "./store.js";
     return [
       [t("rv.acc"), sum.acc[side] == null ? "—" : sum.acc[side] + "%"],
       [t("rv.acpl"), n(sum.acpl[side])],
-      [t("rv.marks"), [c.inaccuracy, c.mistake, c.blunder].join(" · ")],
+      [t("rv.marks"), (store.ui.showSoftMark ? [c.inaccuracy, c.mistake, c.blunder] : [c.mistake, c.blunder]).join(" · ")],
     ];
   }
 
@@ -5170,6 +5219,17 @@ import { createStore } from "./store.js";
 
   /** NAG number → the glyph a reader expects; anything else stays `$n`. */
   const NAG_GLYPH = { 1: "!", 2: "?", 3: "!!", 4: "??", 5: "!?", 6: "?!" };
+
+  /**
+   * `?!` unless the player asked for it; `?` and `??` always.
+   *
+   * One place, so the move list, its repaint signature and the report cannot
+   * disagree about whether the mark exists. See `ui.showSoftMark` for why the
+   * default is off.
+   */
+  function softFiltered(tag) {
+    return tag === "?!" && !store.ui.showSoftMark ? null : tag;
+  }
   function nagText(nags) { return (nags || []).map((n) => NAG_GLYPH[n] || ("$" + n)).join(""); }
 
   /**
@@ -5206,7 +5266,7 @@ import { createStore } from "./store.js";
     const tagOf = new Map();
     if (a && a.tags) store.game.line.forEach((id, k) => { if (k > 0 && a.tags[k - 1]) tagOf.set(id, a.tags[k - 1]); });
     const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
-    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (tagOf.get(n.id) || "") + "/" + (n.id === curId ? "*" : "");
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" : "");
     // a variation's signature is the whole of what it shows, nested included
     const lineSig = (parent, first) => {
       let out = "";
@@ -5268,7 +5328,7 @@ import { createStore } from "./store.js";
         b.appendChild(document.createTextNode(glyphs));
         b.setAttribute("aria-label", n.san + glyphs);
       }
-      const tag = tagOf.get(n.id);
+      const tag = softFiltered(tagOf.get(n.id));
       if (tag) {
         const span = document.createElement("span");
         span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
@@ -5901,6 +5961,7 @@ import { createStore } from "./store.js";
       b.setAttribute("aria-pressed", on ? "true" : "false");
     };
     sw("opt-coords", store.ui.coordsOn);
+    sw("opt-softmark", store.ui.showSoftMark);
     sw("opt-blind", store.ui.blindfold);
     sw("opt-follow", store.ui.followSystem);
     document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
@@ -8345,6 +8406,15 @@ import { createStore } from "./store.js";
     saveSettings();
     syncSettingsUI();
     draw();
+  };
+  document.getElementById("opt-softmark").onclick = () => {
+    store.ui.showSoftMark = !store.ui.showSoftMark;
+    saveSettings();
+    syncSettingsUI();
+    // the move list keys its repaint on each node's tag, and the report
+    // prints the counts, so both have to be asked again
+    store.commit("game", "action");
+    renderReview();
   };
   document.getElementById("opt-blind").onclick = () => {
     store.ui.blindfold = !store.ui.blindfold;

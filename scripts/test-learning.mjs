@@ -389,5 +389,52 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 
 }
 
+// --- 7.0: 评级会随时间松动（rating.js 的文件头承诺过，而它从没接上线）-------
+//
+// 6.1 复查发现：整个应用只调 rate1v1，而那条路每次都在收紧 rd。文件头写着选
+// Glicko-2 而不是 Elo 的理由是「让离开一个月的玩家评级能重新快速移动」，
+// 而唯一能让 rd 回升的分支（update(player, [])）全仓库没有任何地方调用。
+{
+  const R = ctx.ChessRating;
+  const settled = { r: 1400, rd: 61, vol: 0.06 };
+
+  // 先把「为什么不是反复跑空评分期」钉住：那条路一年只从 61 走到 97，
+  // 兑现不了文件头承诺的那件事。这条断言是 decayIdle 存在的理由。
+  let weekly = { ...settled };
+  for (let i = 0; i < 52; i++) weekly = R.update(weekly, []);
+  assert(weekly.rd < 100, "Glicko-2 的空评分期一年只把 rd 抬到 " + weekly.rd.toFixed(0) + "，所以不能只靠它");
+
+  assert(R.decayIdle(settled, 0) === settled, "闲置 0 天是恒等，连新对象都不建");
+  assert(R.decayIdle(settled, -5) === settled, "负数天数同样是恒等");
+  assert(R.decayIdle(settled, NaN) === settled, "非数字同样是恒等");
+
+  const d30 = R.decayIdle(settled, 30);
+  assert(d30.rd > settled.rd + 40, "闲置 30 天后 rd 明显回升（" + settled.rd + " → " + d30.rd.toFixed(0) + "）");
+  assert(d30.r === settled.r && d30.vol === settled.vol, "……只动把握程度，不动评级本身，也不动波动率");
+
+  const d365 = R.decayIdle(settled, 365);
+  assert(Math.abs(d365.rd - R.DEFAULT.rd) < 1, "闲置一年回到新手的 350（标定就是这么定的）");
+  assert(R.decayIdle(settled, 10000).rd === R.DEFAULT.rd, "……并且封顶在 350，不会比从没答过题的人还不确定");
+
+  // rd² 对天数可加，所以「每天开一次」和「一次性闲置 N 天」落在同一处——
+  // app.js 正是靠这条性质做到每次访问都结算而不需要会话标志
+  let daily = { ...settled };
+  for (let i = 0; i < 30; i++) daily = R.decayIdle(daily, 1);
+  assert(Math.abs(daily.rd - d30.rd) < 0.5, "三十次一天的结算 == 一次三十天的结算（" + daily.rd.toFixed(1) + " vs " + d30.rd.toFixed(1) + "）");
+
+  // 真正要的效果：回来之后评级能重新快速移动
+  const hard = { r: 1800, rd: 60, vol: 0.01 };
+  let stale = { ...settled }, fresh = { ...settled };
+  stale = R.decayIdle(stale, 90);
+  for (let i = 0; i < 5; i++) { stale = R.rate1v1(stale, hard, 1).player; fresh = R.rate1v1(fresh, hard, 1).player; }
+  const moved = stale.r - settled.r, stuck = fresh.r - settled.r;
+  assert(moved > stuck * 1.5, "闲置三个月后答对五题，评级的移动幅度远大于不衰减的情形（" +
+    moved.toFixed(0) + " vs " + stuck.toFixed(0) + " 分）");
+
+  // 选题区间也跟着放宽，这才是玩家能看见的后果
+  const wide = R.pickRange(d30), narrow = R.pickRange(settled);
+  assert((wide.hi - wide.lo) > (narrow.hi - narrow.lo), "……出题区间随之放宽，而不是照着三个月前的区间出题");
+}
+
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
 console.log("all learning tests passed");
