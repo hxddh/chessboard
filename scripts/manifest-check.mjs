@@ -494,7 +494,17 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
       check(ourLib.has(l),
         `SDK 交叉检查: SDK 链接系统库 ${l},build.zig 不链接 —— 同一份手抄件的另一半`);
     }
-    notes.push(`SDK 交叉检查: 平台源文件 ${sdkSrc.size} 个、系统库 ${sdkLib.size} 个,build.zig 全都有`);
+    // 7.0:第三张面孔。前两项查的是平台源文件和系统库,而 0.10 的 macOS 主机
+    // 新引的是三个 **框架**(CoreMedia / ScreenCaptureKit / CoreVideo)——
+    // 同一种失效、同一种后果(链接器报 undefined symbol,且只有 macOS 报),
+    // 而这一项当时没人查,于是又走了一趟 CI 往返才发现。
+    const sdkFw = pick(sdkBuild, /linkFramework\("([^"]+)"/g);
+    const ourFw = pick(ourBuild, /linkFramework\("([^"]+)"/g);
+    for (const f of sdkFw) {
+      check(ourFw.has(f),
+        `SDK 交叉检查: SDK 链接框架 ${f},build.zig 不链接 —— 手抄件的第三张面孔`);
+    }
+    notes.push(`SDK 交叉检查: 平台源文件 ${sdkSrc.size} 个、系统库 ${sdkLib.size} 个、框架 ${sdkFw.size} 个,build.zig 全都有`);
   } else {
     notes.push("SDK 交叉检查: 找不到 build/app.zig，源文件清单这一项跳过");
   }

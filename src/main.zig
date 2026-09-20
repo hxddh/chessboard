@@ -1305,6 +1305,21 @@ test "the update answer carries the tag and URL, and nothing it cannot vouch for
     try std.testing.expectEqualStrings("{\"error\":\"parse\"}", try formatLatestRelease("{\"html_url\":\"https://evil.example/x\",\"tag_name\":\"v1\"}", &out));
 }
 
+// `zig build test` roots the test binary at this file, and a test build never
+// analyses `main` — but `appkit_host.m` is attached to the module and compiled
+// regardless. That .m calls `native_sdk_update_verify_feed` / `_archive`, whose
+// Zig exports sit behind a `comptime` block in the SDK's
+// src/platform/macos/root.zig, reachable only through main → runner.run(). So
+// the test link failed with two undefined symbols while `zig build` was fine.
+//
+// Forcing `main` is also what the SDK's own build does for the app module
+// ("force semantic analysis of the app module", build/app.zig) — and it is
+// what makes `zig build test` actually typecheck the whole app rather than
+// only the files its test blocks happen to touch.
+test "the whole app is semantically analysed by the test build" {
+    _ = &main;
+}
+
 test "production source uses frontend assets" {
     const source = native_sdk.frontend.productionSource(.{ .dist = "frontend/dist" });
     try std.testing.expectEqual(native_sdk.WebViewSourceKind.assets, source.kind);

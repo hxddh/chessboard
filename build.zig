@@ -393,6 +393,16 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
         }
         app_mod.linkFramework("AppKit", .{});
         app_mod.linkFramework("AVFoundation", .{});
+        // 0.10 的 macOS 主机新引的三个。抄件落后一页的代价是链接器报
+        // undefined symbol，而且只有 macOS 构建才报：
+        //   CoreMedia        CMSampleBuffer* / CMTimeMake（屏幕音频采集）
+        //   ScreenCaptureKit SCStream / SCContentFilter / SCShareableContent
+        //   CoreVideo        与上面两个同一条采集链路
+        // ScreenCaptureKit 跟着 SDK 弱链接：它是 12.3 才有的框架，而这个壳的
+        // 下限是 11.0，硬链接会让老系统直接起不来。
+        app_mod.linkFramework("CoreMedia", .{});
+        app_mod.linkFramework("ScreenCaptureKit", .{ .weak = true });
+        app_mod.linkFramework("CoreVideo", .{});
         app_mod.linkFramework("MediaToolbox", .{});
         app_mod.linkFramework("Accelerate", .{});
         app_mod.linkFramework("Foundation", .{});
