@@ -146,13 +146,28 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * builds a fresh one.
    */
   let strikes = 0;
+  let strikeKind = null; // what kind of wait the current run of strikes is about
   let booted = false; // uciok seen on the current worker
-  function onTimeout() {
+  const pending = new Set(); // every live waitFor: {timer, reject}
+  /**
+   * 6.1: the two strikes have to be about the same thing.
+   *
+   * Every search drains with an `isready` first, so a worker that answers
+   * `isready` but never finishes a search used to alternate strike / reset
+   * forever — the 6.0 rebuild above never fired, which is precisely the
+   * pre-6.0 failure it was written to end. Strikes are now counted per kind
+   * of wait ("search", "ready", "boot"), and only progress of that same kind
+   * clears them: a readyok is no evidence that searching works.
+   */
+  function onTimeout(kind) {
+    if (kind !== strikeKind) { strikeKind = kind; strikes = 0; }
     strikes++;
     if (strikes >= 2) { teardown(); return; }
     send("stop");
   }
-  function onProgress() { strikes = 0; }
+  function onProgress(kind) {
+    if (kind === strikeKind) { strikes = 0; strikeKind = null; }
+  }
   function teardown() {
     booted = false;
     if (worker) { try { worker.terminate(); } catch (_) { /* already gone */ } }
@@ -160,20 +175,39 @@ const global = typeof window !== "undefined" ? window : globalThis;
     readyPromise = null;
     lineHandlers = [];
     strikes = 0;
+    strikeKind = null;
     gen++;
+    // 6.1: whoever was waiting on this worker is waiting on nothing now. Left
+    // pending, a search's 24-hour wait held the exclusive() chain forever and
+    // every later search queued behind a worker that no longer existed.
+    const orphans = [...pending];
+    pending.clear();
+    for (const w of orphans) {
+      clearTimeout(w.timer);
+      w.reject(new Error("engine torn down"));
+    }
   }
 
-  function waitFor(pred, timeoutMs) {
+  function waitFor(pred, timeoutMs, kind) {
     return new Promise((resolve, reject) => {
+      // 6.1: which worker this wait belongs to. A timer left over from a torn
+      // down (or cancelled) search used to strike whatever worker was running
+      // when it finally fired.
+      const myGen = gen;
+      const entry = { timer: 0, reject };
       const timer = setTimeout(() => {
+        pending.delete(entry);
         lineHandlers = lineHandlers.filter((h) => h !== handler);
-        onTimeout();
+        if (myGen === gen) onTimeout(kind);
         reject(new Error("engine timeout"));
       }, timeoutMs || 20000);
+      entry.timer = timer;
+      pending.add(entry);
       function handler(line) {
         if (pred(line)) {
           clearTimeout(timer);
-          onProgress();
+          pending.delete(entry);
+          if (myGen === gen) onProgress(kind);
           lineHandlers = lineHandlers.filter((h) => h !== handler);
           resolve(line);
         }
@@ -194,8 +228,16 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * bytes from then on and nothing else needs 9.7 MB of text around.
    */
   let sourcesPromise = null;
+  let loaderSrc = null; // kept for the same reason as wasmBytes: rebuilds
+  function haveSources() {
+    return !!(loaderSrc || global.CHESS_SF_LOADER) && !!(wasmBytes || global.CHESS_SF_WASM_B64);
+  }
   function loadSources() {
-    if (global.CHESS_SF_LOADER && global.CHESS_SF_WASM_B64) return Promise.resolve();
+    if (haveSources()) return Promise.resolve();
+    // 6.1: only a *pending* injection is shared. A settled one used to be
+    // returned forever, so an init() that found the globals gone — which is
+    // exactly what a rebuild after teardown finds, since the base64 is
+    // blanked below — got a resolved promise and no script.
     if (sourcesPromise) return sourcesPromise;
     sourcesPromise = new Promise((resolve, reject) => {
       const doc = global.document;
@@ -207,8 +249,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
       el.onerror = () => reject(new Error("engine sources failed to load"));
       doc.head.appendChild(el);
     });
-    sourcesPromise.catch(() => { sourcesPromise = null; });
-    return sourcesPromise;
+    const mine = sourcesPromise;
+    const forget = () => { if (sourcesPromise === mine) sourcesPromise = null; };
+    mine.then(forget, forget);
+    return mine;
   }
 
   /** Boot the engine (idempotent). Resolves when UCI handshake completes. */
@@ -216,25 +260,31 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (readyPromise) return readyPromise;
     readyPromise = (async () => {
       await loadSources();
-      const loaderText = global.CHESS_SF_LOADER;
-      const wasmB64 = global.CHESS_SF_WASM_B64;
-      if (!loaderText || !wasmB64) throw new Error("engine sources missing");
+      const loaderText = global.CHESS_SF_LOADER || loaderSrc;
+      if (!loaderText) throw new Error("engine sources missing");
+      loaderSrc = loaderText;
+      // the base64 is needed once; after that the decoded bytes are the source
+      // of truth, and a rebuilt worker is built from them alone.
+      if (!wasmBytes) {
+        const wasmB64 = global.CHESS_SF_WASM_B64;
+        if (!wasmB64) throw new Error("engine sources missing");
+        wasmBytes = b64ToBuffer(wasmB64);
+        global.CHESS_SF_WASM_B64 = "";
+      }
       const blobUrl = URL.createObjectURL(new Blob([workerSource(loaderText)], { type: "text/javascript" }));
       worker = new Worker(blobUrl);
       worker.onmessage = (ev) => onLine(ev.data);
       // a worker that throws inside the wasm never sends __sf_ready__; without
       // this the init promise waited out its 30 s and the worker lingered
       worker.onerror = () => teardown();
-      const readyWait = waitFor((l) => l === "__sf_ready__", 30000);
+      const readyWait = waitFor((l) => l === "__sf_ready__", 30000, "boot");
       // the buffer is transferred, not copied: the worker is its only reader.
-      // A rebuilt worker (teardown after a hang) needs the bytes again, so
-      // they are kept once decoded, but the base64 text is not.
-      if (!wasmBytes) wasmBytes = b64ToBuffer(wasmB64);
+      // A rebuilt worker (teardown after a hang) needs the bytes again, so a
+      // copy is handed over and the decoded original stays here.
       const payload = wasmBytes.slice(0);
       worker.postMessage({ type: "init", wasm: payload }, [payload]);
-      global.CHESS_SF_WASM_B64 = "";
       await readyWait;
-      const uciWait = waitFor((l) => l === "uciok", 10000);
+      const uciWait = waitFor((l) => l === "uciok", 10000, "boot");
       send("uci");
       await uciWait;
       booted = true;
@@ -310,7 +360,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const myGen = ++gen;
     // drain any stray bestmove from a cancelled search: the engine processes
     // commands in order, so its readyok arrives after that bestmove.
-    const drain = waitFor((l) => l === "readyok", 5000);
+    const drain = waitFor((l) => l === "readyok", 5000, "ready");
     send("isready");
     await drain;
     if (myGen !== gen) return null;
@@ -340,7 +390,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
     if (tier.multipv) lineHandlers.push(collect);
     const budget = (tier.movetime || 2000) + 15000;
-    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), budget);
+    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), budget, "search");
     send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
     let line;
     try { line = await wait; }
@@ -428,7 +478,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   const options = { hash: 32 };
   function setOptions(o) {
-    if (o && Number.isFinite(o.hash)) options.hash = Math.max(1, Math.min(512, Math.round(o.hash)));
+    if (o && Number.isFinite(o.hash)) {
+      const hash = Math.max(1, Math.min(512, Math.round(o.hash)));
+      // 6.1: Hash changes what the search finds, so everything already in the
+      // eval cache was computed by a different engine. Served on, it would
+      // hide the very change the player just asked for.
+      if (hash !== options.hash) { options.hash = hash; evalCache.clear(); }
+    }
     return { ...options };
   }
   function getOptions() { return { ...options }; }
@@ -513,7 +569,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   async function analyzeInner(fen, movetime, multipv) {
     await init();
     const myGen = ++gen;
-    const drain = waitFor((l) => l === "readyok", 5000);
+    const drain = waitFor((l) => l === "readyok", 5000, "ready");
     send("isready");
     await drain;
     if (myGen !== gen) return null;
@@ -523,7 +579,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const slots = new Map();
     const collect = (line) => { if (typeof line === "string") readInfo(line, slots); };
     lineHandlers.push(collect);
-    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), ms + 15000);
+    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), ms + 15000, "search");
     send("go movetime " + ms);
     let line;
     try { line = await wait; }
@@ -554,13 +610,14 @@ const global = typeof window !== "undefined" ? window : globalThis;
   function analyzeInfinite(fen, opts, onUpdate) {
     const multipv = opts && opts.multipv ? Math.max(1, Math.min(5, opts.multipv | 0)) : 1;
     let stopped = false;
+    let started = false; // our own `go infinite` is on the worker
     let release = null;
     const done = new Promise((r) => { release = r; });
     exclusive(async () => {
       if (stopped) return;
       await init();
       const myGen = ++gen;
-      const drain = waitFor((l) => l === "readyok", 5000);
+      const drain = waitFor((l) => l === "readyok", 5000, "ready");
       send("isready");
       await drain;
       if (myGen !== gen || stopped) return;
@@ -575,7 +632,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
         if (lines.length && onUpdate) onUpdate({ depth: lines[0].depth, lines, turn });
       };
       lineHandlers.push(collect);
-      const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), 24 * 3600 * 1000);
+      const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), 24 * 3600 * 1000, "search");
+      started = true;
       send("go infinite");
       try { await wait; } catch (_) { /* stopped or torn down */ }
       finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
@@ -583,7 +641,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return function stop() {
       if (stopped) return done;
       stopped = true;
-      if (worker) send("stop");
+      // 6.1: only if this call's own search is the one running. While the body
+      // is still queued behind another search, a `stop` here reached Stockfish
+      // in the middle of *that* search — which then returned a truncated
+      // result that analyze() cached as a full-budget one.
+      if (started && worker) send("stop");
       return done;
     };
   }

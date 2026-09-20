@@ -881,6 +881,69 @@ if (hasTab && REAL.length) {
   await ctx2.close();
 }
 
+// --- 6.1(复查):以将杀 / 逼和局面开局的 [FEN] 必须能导入 ------------------
+//
+// 6.1 把 ChessEditor.validate 接进了 PGN 导入,用来挡住 chess.js 会接受的
+// 不可能局面。但 validate 还有一条只属于编辑器的规则:没有合法着法就拒绝——
+// 摆一个已经结束的局面在编辑器里确实没意义,而一份从将杀局面起始的研究文件,
+// 或一局已经下完的棋,是再正常不过的 PGN,6.1 之前一直导得进来。
+//
+// 走拖放这条真实入口:#pgn-open 在折叠起来的面板里,点不到,而拖放和它进的是
+// 同一个 importPgnText。盯的是产品行为,不是 app.js 的源码形状。
+{
+  const ctx3 = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+  const pg = await ctx3.newPage();
+  pg.on("pageerror", (e) => errs.push("import-fen: " + e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await pg.waitForSelector("#board");
+  await pg.waitForTimeout(600);
+
+  const boardOf = () => pg.evaluate(() => {
+    const c = document.getElementById("board"); const g = c.getContext("2d");
+    const step = c.width / 8; const on = [];
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const x = Math.round(f * step + step * 0.2), y = Math.round(r * step + step * 0.2);
+      const w = Math.max(4, Math.round(step * 0.6));
+      const d = g.getImageData(x, y, w, w).data;
+      let lo = 255, hi = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        if (l < lo) lo = l; if (l > hi) hi = l;
+      }
+      if (hi - lo > 60) on.push("abcdefgh"[f] + (8 - r));
+    }
+    return on.sort().join(",");
+  });
+  const drop = async (name, text) => {
+    // 不用 new DataTransfer() / new DragEvent():两者在 WebKit 上不一定能构造,
+    // 而处理器只读 ev.dataTransfer.files[0],一个普通对象就够,两个引擎都能跑
+    await pg.evaluate(({ name, text }) => {
+      const ev = new Event("drop", { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "dataTransfer", {
+        value: { files: [new File([text], name, { type: "application/x-chess-pgn" })] },
+      });
+      window.dispatchEvent(ev);
+    }, { name, text });
+    await pg.waitForTimeout(1200);
+  };
+  const studyPgn = (fen) => [
+    '[Event "Study"]', '[Site "?"]', '[Date "????.??.??"]', '[Round "?"]',
+    '[White "?"]', '[Black "?"]', '[Result "1-0"]',
+    '[SetUp "1"]', `[FEN "${fen}"]`, "", "1-0", "",
+  ].join("\n");
+
+  const MATE_FEN = "7k/5KQ1/8/8/8/8/8/8 b - - 0 1";
+  await drop("mate.pgn", studyPgn(MATE_FEN));
+  assert(await boardOf() === squaresOf(MATE_FEN),
+    "将杀局面的 [FEN] 导进来了,棋盘就是文件里那三个子", await boardOf());
+
+  // 而编辑器那条真正的守卫没被削弱:不可能的局面照样挡在门外,棋盘一动不动
+  await drop("two-kings.pgn", studyPgn("4k3/8/8/8/8/8/8/K3K3 w - - 0 1"));
+  assert(await boardOf() === squaresOf(MATE_FEN),
+    "两个白王的 [FEN] 仍被拒,棋盘停在上一份文件上", await boardOf());
+  await ctx3.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

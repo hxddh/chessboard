@@ -28,12 +28,16 @@ function makeNode(id, fen) {
  * A new tree at `startFen` (the standard array by default). The FEN is
  * normalised through chess.js so two trees of the same position compare
  * equal whatever spelling the caller used.
+ *
+ * `result` is the game result the tree carries, null when nothing said one:
+ * a PGN may end "1-0" with no Result tag, and reading the tag alone lost it
+ * on the way out again.
  */
 function createTree(startFen) {
   const chess = new Chess();
   const fen = startFen ? String(startFen).trim() : START_FEN;
   if (!chess.load(fen)) throw new Error("game-tree: invalid start FEN " + JSON.stringify(fen));
-  return { startFen: chess.fen(), nextId: 1, root: makeNode(0, chess.fen()) };
+  return { startFen: chess.fen(), nextId: 1, result: null, root: makeNode(0, chess.fen()) };
 }
 
 /**
@@ -191,8 +195,12 @@ function cloneNode(n, keepId) {
 
 /**
  * The tree as a pgn-parser Game. `headers` may be pairs or an object; a
- * non-standard start position adds `SetUp`/`FEN` if the caller did not, and
- * the result comes from the Result tag (or "*").
+ * non-standard start position adds `SetUp`/`FEN` if the caller did not.
+ *
+ * The result is the one the tree carries — the movetext token the file
+ * ended with, which the standard lets disagree with the Result tag and
+ * which fromPgnGame put there — and only then the Result tag, for a tree
+ * built move by move that never had one.
  */
 function toPgnGame(tree, headers) {
   const pairs = Array.isArray(headers) ? headers.map(([k, v]) => [k, String(v)])
@@ -203,7 +211,9 @@ function toPgnGame(tree, headers) {
     if (!has("FEN")) pairs.push(["FEN", tree.startFen]);
   }
   const r = pairs.find(([k]) => k === "Result");
-  return { headers: pairs, root: cloneNode(tree.root, false), result: r && RESULTS.has(r[1]) ? r[1] : "*" };
+  const tag = r && RESULTS.has(r[1]) ? r[1] : null;
+  const carried = RESULTS.has(tree.result) ? tree.result : null;
+  return { headers: pairs, root: cloneNode(tree.root, false), result: carried || tag || "*" };
 }
 
 /** A tree from a pgn-parser Game — ids are assigned fresh, in preorder. */
@@ -212,6 +222,7 @@ function fromPgnGame(game) {
   // keepId so the id slot stays first in every node: a tree built by addMove
   // and one loaded from PGN must serialize byte-for-byte alike
   tree.root = cloneNode(game.root, true);
+  tree.result = RESULTS.has(game.result) ? game.result : null;
   return renumber(tree);
 }
 
@@ -226,7 +237,7 @@ function renumber(tree) {
 }
 
 function serialize(tree) {
-  return JSON.stringify({ startFen: tree.startFen, nextId: tree.nextId, root: tree.root });
+  return JSON.stringify({ startFen: tree.startFen, nextId: tree.nextId, result: tree.result || null, root: tree.root });
 }
 
 /**
@@ -252,6 +263,8 @@ function deserialize(json) {
   check(raw.root);
   // ids are kept, not renumbered: a saved cursor may point at one
   tree.root = cloneNode(raw.root, true);
+  // an older blob has no result; null is "nothing said one", not "*"
+  tree.result = RESULTS.has(raw.result) ? raw.result : null;
   tree.nextId = Math.max(max + 1, Number(raw.nextId) || 0);
   return tree;
 }

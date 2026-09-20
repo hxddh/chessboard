@@ -38,6 +38,8 @@ import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
 import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES } from "./puzzles.js";
 import { MINED_PUZZLES } from "./puzzles-mined.js";
+import { createA11y } from "./a11y.js";
+import { createNativeCommands } from "./native-commands.js";
 import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
@@ -1517,6 +1519,13 @@ import { createStore } from "./store.js";
   function renderOpening() {
     const el = document.getElementById("opening-line");
     if (!el) return;
+    // 6.1: the ECO table is a chunk now (462 KB the first paint does not use).
+    // Ask for it the first time a real game wants an opening name and redraw
+    // when it lands; until then openingFor() answers null, which is already
+    // what this renders for a position the book does not know.
+    if (store.session.mode !== "learn" && store.session.mode !== "puzzle" && sanHistory().length) {
+      ChessEco.whenReady(renderOpening);
+    }
     const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
     el.hidden = !hit;
     el.textContent = hit ? hit[0] + " · " + hit[1] : "";
@@ -6798,6 +6807,23 @@ import { createStore } from "./store.js";
       toast(t("msg.import.badPgn"), "fault");
       return false;
     }
+    // 6.1 (v6-plan Q2.2 said this and it was only ever wired into the manual
+    // "load FEN" dialog): a [SetUp]/[FEN] game starts wherever its header
+    // says, and chess.js's validate_fen accepts positions no game can reach —
+    // two kings of a colour, a side already in check while its opponent is to
+    // move. Read the header as written, because the parser has already handed
+    // its FEN through chess.js by now and chess.js keeps only one king.
+    {
+      const headerFen = ChessPgn.startFen(text0);
+      if (headerFen && ChessEditor) {
+        // allowTerminal: the editor refuses a position with no legal move
+        // because there would be nothing to play, but a game that starts from
+        // a checkmate or a stalemate is a normal study file. Only the
+        // structural and reachability checks belong on this path.
+        const bad = ChessEditor.validate(ChessEditor.fromFen(headerFen, Chess), Chess, { allowTerminal: true });
+        if (bad) { toast(t(bad), "fault"); return false; }
+      }
+    }
     invalidateEngine();
     stopEditor();
     if (parsed) {
@@ -7577,103 +7603,42 @@ import { createStore } from "./store.js";
   });
 
   // --- keyboard play: the board is a real focusable control, not just a canvas ---
-  const FILE_CHARS = "abcdefgh";
-  canvas.setAttribute("tabindex", "0");
-  canvas.setAttribute("role", "application");
-  canvas.setAttribute("data-i18n-aria", "aria.boardKeys");
-  canvas.setAttribute("aria-label", t("aria.boardKeys"));
-
-  function announce(msg) {
-    const el = document.getElementById("board-live");
-    if (el) el.textContent = msg;
-  }
-
-  /** describe a square for screen readers: "e4 · 白兵" / "e4 · 空格" */
-  function describeSquare(sq) {
-    const g = store.session.editor ? null : (store.session.mode === "learn" && store.session.learn ? store.session.learn.g : store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g : viewGame());
-    let piece = null;
-    if (g) piece = g.get(sq);
-    else if (store.session.editor) {
-      const { r, c } = ChessEditor.indexOf(sq);
-      piece = store.session.editor.board[r][c];
-    }
-    if (!piece) return sq + " · " + t("live.empty");
-    return sq + " · " + t(piece.color === "w" ? "vs.white" : "vs.black") + t("piece." + piece.type);
-  }
-
-  function moveCursor(df, dr) {
-    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
-    let f = FILE_CHARS.indexOf(store.ui.keyboardCursor[0]);
-    let r = Number(store.ui.keyboardCursor[1]);
-    // arrows follow what the player sees, so they invert with the board
-    const sign = store.game.flipped ? -1 : 1;
-    f = Math.max(0, Math.min(7, f + df * sign));
-    r = Math.max(1, Math.min(8, r + dr * sign));
-    store.ui.keyboardCursor = FILE_CHARS[f] + r;
-    announce(describeSquare(store.ui.keyboardCursor));
-    draw();
-  }
-
-  canvas.addEventListener("focus", () => {
-    store.ui.boardFocused = true;
-    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
-    announce(t("live.focused") + " · " + describeSquare(store.ui.keyboardCursor));
-    draw();
+  // a11y.js holds the cursor, the live region and both keydown handlers; it
+  // reads the app only through this bag (v6-plan Q1.7). The actions are
+  // wrapped so that the ones declared further down this file resolve when
+  // they are called rather than when this runs.
+  const A11y = createA11y({
+    doc: document, t, store, draw,
+    viewGame: () => viewGame(),
+    sanHistory: () => sanHistory(),
+    statusText: () => statusText(),
+    onSquareClick: (sq) => onSquareClick(sq),
+    escapeKey: () => escapeKey(),
+    dialogOpen: () => dialogOpen(),
+    promoOpen: () => !!promoModal && promoModal.classList.contains("show"),
+    confirmOpen: () => confirmModal.classList.contains("show"),
+    keyHelpOpen: () => NativeCmds.keyHelpOpen(),
+    openKeyHelp: () => openKeyHelp(),
+    closeKeyHelp: () => closeKeyHelp(),
+    finishPromotion: (p) => finishPromotion(p),
+    finishConfirm: (v) => finishConfirm(v),
+    togglePanel: () => togglePanel(),
+    toast: (m, tier) => toast(m, tier),
+    startLearnTask: () => startLearnTask(),
+    learnUndo: () => learnUndo(),
+    learnHint: () => learnHint(),
+    startPuzzleAt: (cat, i) => startPuzzleAt(cat, i),
+    nextPuzzle: () => nextPuzzle(),
+    showPuzzleAnswer: () => showPuzzleAnswer(),
+    setViewIndex: (n) => setViewIndex(n),
+    undo: () => undo(),
+    requestNewGame: () => requestNewGame(),
+    requestHint: () => requestHint(),
+    setFlipped: (v) => setFlipped(v),
   });
-  canvas.addEventListener("blur", () => { store.ui.boardFocused = false; draw(); });
-
-  canvas.addEventListener("keydown", (ev) => {
-    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    // A dialog outranks the board. The promotion chooser is the case that
-    // matters: it can only be opened by a move made on the board, so the board
-    // always holds focus when it appears — and the board used to swallow the
-    // Escape that was supposed to dismiss it, which meant Escape never once
-    // worked on the one dialog every player meets. Same fault as the FEN field
-    // in 1.10; that one got fixed and this one was missed.
-    if (dialogOpen()) return;
-    // arrows/Home/End also drive replay from the window handler — while the
-    // board itself is focused they belong to the cursor, so stop them here.
-    //
-    // Escape is the exception, and it is the same fault as the dialog above,
-    // one layer out: the board took every Escape and did something with it
-    // only when a piece was selected. Everything else Escape is for — the
-    // fault toast that does not leave on its own, the editor's exit, closing
-    // the panel — lives on the window handler and could not be reached, and
-    // the board is exactly where focus sits the moment you touch a piece.
-    // Measured on 2.1.6: with the board focused, three Escapes in a row left
-    // the toast up and the editor open. So it is ours only when there is
-    // something here to cancel.
-    const escIsOurs = ev.key !== "Escape" || !!store.game.selection;
-    if (escIsOurs &&
-        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
-      ev.stopPropagation();
-    }
-    switch (ev.key) {
-      case "ArrowLeft": ev.preventDefault(); moveCursor(-1, 0); return;
-      case "ArrowRight": ev.preventDefault(); moveCursor(1, 0); return;
-      case "ArrowUp": ev.preventDefault(); moveCursor(0, 1); return;
-      case "ArrowDown": ev.preventDefault(); moveCursor(0, -1); return;
-      case "Home": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "h1" : "a8"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
-      case "End": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "a8" : "h1"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
-      case "Enter":
-      case " ": {
-        ev.preventDefault();
-        if (!store.ui.keyboardCursor) return;
-        const before = store.game.selection ? store.game.selection.sq : null;
-        onSquareClick(store.ui.keyboardCursor);
-        if (store.game.selection && store.game.selection.sq === store.ui.keyboardCursor && before !== store.ui.keyboardCursor) {
-          announce(t("live.selected") + " " + describeSquare(store.ui.keyboardCursor) + " · " + store.game.selection.targets.length + " " + t("live.targets"));
-        } else if (!store.game.selection && before) {
-          announce(statusText());
-        }
-        return;
-      }
-      case "Escape":
-        if (store.game.selection) { ev.preventDefault(); escapeKey(); }
-        return;
-      default:
-    }
-  });
+  /** What the board says out loud — one live region, written from here. */
+  const announce = (msg) => A11y.announce(msg);
+  A11y.attachBoard(canvas);
   canvas.style.touchAction = "none"; // let touch drags move pieces, not the page
 
   /**
@@ -8052,195 +8017,29 @@ import { createStore } from "./store.js";
 
   // Native lifecycle: flush the save when the app loses focus.
   /**
-   * The keyboard reference.
+   * The menu bar's half of the app, and the sheet that documents it.
    *
-   * Built from a table rather than written into the markup, because the same
-   * table is what the native menu is checked against: a shortcut that exists
-   * in one place and not the other is exactly the state 1.9 shipped in, when
-   * the panel silently moved from Tab to P.
+   * native-commands.js owns both tables, the mode gate and the sheet; it
+   * reads the app only through this bag (v6-plan Q1.7, same shape as
+   * report.js). The nine actions are wrapped rather than passed by name so
+   * that the ones declared further down this file are resolved when they are
+   * called rather than when this runs.
    */
-  /* Which shortcuts exist is a property of the mode you are in. The keydown
-     handler has said so from the start — learn and puzzle return early, before
-     the replay keys, N, and F are ever reached — but this list did not, and it
-     is the only place the app tells you what the keyboard does. In 做题 it
-     offered 「Z 悔棋」, 「F 翻转棋盘」 and 「← → 上一手 / 下一手」, none of
-     which do anything there, and it named N 「新局」 when in that mode N is
-     the next puzzle. Three keys do different jobs in different modes — N, H
-     and R — so the row carries the mode it belongs to and the wording for that
-     mode, and the sheet is rendered fresh each time it opens. */
-  const ANY = ["ai", "pvp", "learn", "puzzle"];
-  const PLAY = ["ai", "pvp"];
-  /* `cmd` is the app.zon menu command that does this row's job in this row's
-     modes. It carries two things at once, and that is the point:
-
-       — the sheet draws the accelerator next to the letter, so the eight
-         shortcuts the menu bar has always offered stop being invisible to the
-         one screen whose title is 「快捷键」;
-       — and the native command is gated by it. Which door you came through
-         must not change what the app does, and it did: measured on 2.2.2,
-         ⌘N from inside 做题 put 「开始新局将清空当前对局」 over the puzzle
-         and threw the game away on OK, while the letter N there is 下一题 and
-         never touches it. ⌘F flipped a lesson board that F leaves alone, and
-         flipped it through an open dialog, where every letter key stops.
-
-     So the modes live in one table and both doors read it. A command with no
-     row for the current mode does not run — the same answer its letter gives. */
-  const KEY_HELP = [
-    { keys: ["P"], k: "keys.panel", in: ANY, cmd: ["view.panel"] },
-    { keys: ["N"], k: "keys.new", in: PLAY, cmd: ["game.new"] },
-    { keys: ["N"], k: "keys.next", in: ["puzzle"] },
-    { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },
-    { keys: ["Z"], k: "keys.undo", in: ["ai", "pvp", "learn"], cmd: ["game.undo"] },
-    { keys: ["H"], k: "keys.hint", in: PLAY, cmd: ["game.hint"] },
-    { keys: ["H"], k: "keys.lessonHint", in: ["learn"], cmd: ["game.hint"] },
-    { keys: ["H"], k: "keys.answer", in: ["puzzle"], cmd: ["game.hint"] },
-    { keys: ["F"], k: "keys.flip", in: PLAY, cmd: ["game.flip"] },
-    { keys: ["←", "→"], k: "keys.step", in: PLAY, cmd: ["view.prev", "view.next"] },
-    { keys: ["Home", "End"], k: "keys.ends", in: PLAY },
-    { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board", in: ANY },
-    { keys: ["Q", "R", "B", "N"], k: "keys.promo", in: ANY },
-    { keys: ["Tab"], k: "keys.tab", in: ANY },
-    { keys: ["Esc"], k: "keys.esc", in: ANY, cmd: ["view.escape"] },
-    { keys: ["?"], k: "keys.help", in: ANY, cmd: ["help.keys"] },
-  ];
-
-  /**
-   * The accelerators app.zon declares, spelled for a reader.
-   *
-   * A copy, because the page cannot read app.zon — so `scripts/test-chess.mjs`
-   * holds the two to being the same list in both directions: an accelerator
-   * here that the manifest does not declare, or a menu item there that never
-   * reaches this table, fails the build. That check is the whole reason a
-   * second copy is allowed to exist at all.
-   *
-   * ⌘ or Ctrl is not a preference: "primary" IS ⌘ on macOS and Ctrl on
-   * Windows, and the app ships on both, so the sheet has to say which machine
-   * it is on.
-   */
-  const MAC = /mac|iphone|ipad/i.test((navigator.platform || "") + " " + (navigator.userAgent || ""));
-  const MOD = MAC ? { primary: "⌘", shift: "⇧" } : { primary: "Ctrl+", shift: "Shift+" };
-  const MENU_ACCEL = {
-    "game.new": { key: "N", mods: ["primary"] },
-    "game.undo": { key: "Z", mods: ["primary"] },
-    "game.hint": { key: "H", mods: ["primary", "shift"] },
-    "game.flip": { key: "F", mods: ["primary"] },
-    "view.panel": { key: "\\", mods: ["primary"] },
-    "view.prev": { key: "[", mods: ["primary"] },
-    "view.next": { key: "]", mods: ["primary"] },
-    "help.keys": { key: "/", mods: ["primary"] },
-  };
-  const accelText = (id) => {
-    const a = MENU_ACCEL[id];
-    if (!a) return "";
-    return (a.mods.includes("primary") ? MOD.primary : "") +
-           (a.mods.includes("shift") ? MOD.shift : "") + a.key;
-  };
-
-  /** Which modes a native command is the right answer in — read off KEY_HELP. */
-  function commandModes(id) {
-    const modes = new Set();
-    for (const row of KEY_HELP) {
-      if (row.cmd && row.cmd.includes(id)) for (const m of row.in) modes.add(m);
-    }
-    return modes;
-  }
-
-  const keysModal = document.getElementById("keys-modal");
-  function renderKeyHelp() {
-    const list = document.getElementById("keys-list");
-    if (!list) return;
-    list.replaceChildren();
-    const mode = store.session.mode;
-    for (const row of KEY_HELP.filter((r) => r.in.includes(mode))) {
-      const dt = document.createElement("dt");
-      for (const key of row.keys) {
-        const kbd = document.createElement("kbd");
-        kbd.textContent = key;
-        dt.appendChild(kbd);
-      }
-      // …and the menu's way of saying the same thing. Same action, same row:
-      // the accelerator is not a different shortcut, it is the one the menu
-      // bar has been offering since 1.10 to a sheet that never mentioned it.
-      for (const id of row.cmd || []) {
-        const text = accelText(id);
-        if (!text) continue;
-        const kbd = document.createElement("kbd");
-        kbd.className = "accel";
-        kbd.textContent = text;
-        dt.appendChild(kbd);
-      }
-      const dd = document.createElement("dd");
-      dd.textContent = t(row.k);
-      list.appendChild(dt);
-      list.appendChild(dd);
-    }
-  }
-  function openKeyHelp() {
-    if (!keysModal) return;
-    renderKeyHelp();
-    Dlg.open(keysModal, document.getElementById("keys-close"));
-  }
-  function closeKeyHelp() { Dlg.close(keysModal); }
-  if (keysModal) {
-    document.getElementById("keys-close").onclick = closeKeyHelp;
-    keysModal.onclick = (ev) => { if (ev.target === keysModal) closeKeyHelp(); };
-  }
-
-  /**
-   * Native menu commands (app.zon → main.zig → host.js).
-   *
-   * The menu is the desktop-shaped half of the same actions the letter keys
-   * already do; both end up here so there is one implementation and the two
-   * can never drift.
-   *
-   * That paragraph was true of the *actions* and false of everything around
-   * them. The keydown handler gates on two things before it reaches any of
-   * these — a dialog in front of the game, and the mode you are in — and this
-   * map was called straight from the shortcut event, past both. Measured:
-   *
-   *   ⌘N  in 做题 / 教学   asked 「开始新局将清空当前对局」 over the trainer
-   *                        and deleted the main game on OK. The letter N is
-   *                        下一题 there and never touches it.
-   *   ⌘F  in 做题 / 教学   flipped an authored board. F does nothing there.
-   *   ⌘F  with the 快捷键 sheet open — flipped the board behind it. Every
-   *                        letter key stops at `if (dialogOpen()) return`.
-   *
-   * A shortcut you reach from the menu bar being able to throw away a game
-   * that the same shortcut on the keyboard refuses to touch is not a
-   * difference between two doors; it is one door that is wrong.
-   */
-  const NATIVE_COMMANDS = {
-    "game.new": () => requestNewGame(),
-    "game.undo": () => undo(),
-    "game.hint": () => requestHint(),
-    "game.flip": () => setFlipped(!store.game.flipped),
-    "view.panel": () => togglePanel(),
-    "view.prev": () => setViewIndex(store.game.viewIndex - 1),
-    "view.next": () => setViewIndex(store.game.viewIndex + 1),
-    "view.escape": () => escapeKey(),
-    "help.keys": () => openKeyHelp(),
-  };
-  /**
-   * The gate the letter keys pass through, in front of the menu as well.
-   *
-   * `help.keys` is the one command that is *about* a dialog rather than
-   * behind one, so it mirrors what "?" does: it closes the sheet when the
-   * sheet is what is up, and stays out of the way of anything else.
-   */
-  function runNativeCommand(id) {
-    if (!NATIVE_COMMANDS[id]) return;
-    // Escape is the key that applies WITH a dialog open — it is how dialogs
-    // close — so it passes neither gate below
-    if (id === "view.escape") { escapeKey(); return; }
-    if (id === "help.keys") {
-      if (keysModal && keysModal.classList.contains("show")) closeKeyHelp();
-      else if (!dialogOpen()) openKeyHelp();
-      return;
-    }
-    if (dialogOpen()) return;
-    if (!commandModes(id).has(store.session.mode)) return;
-    NATIVE_COMMANDS[id]();
-  }
+  const NativeCmds = createNativeCommands({
+    doc: document, t, store, Dlg, dialogOpen,
+    requestNewGame: () => requestNewGame(),
+    undo: () => undo(),
+    requestHint: () => requestHint(),
+    setFlipped: (v) => setFlipped(v),
+    togglePanel: () => togglePanel(),
+    setViewIndex: (n) => setViewIndex(n),
+    escapeKey: () => escapeKey(),
+  });
+  const keysModal = NativeCmds.keysModal;
+  const openKeyHelp = () => NativeCmds.openKeyHelp();
+  const closeKeyHelp = () => NativeCmds.closeKeyHelp();
+  /** One door into the table above — the native shortcut event below is the other. */
+  function runNativeCommand(id) { NativeCmds.run(id); }
   Host.onAppLifecycle({
     activate: () => { store.ui.appForeground = true; syncClockTimer(); renderClocks(); },
     deactivate: () => { store.ui.appForeground = false; saveGame(); syncClockTimer(); },
@@ -8974,73 +8773,7 @@ import { createStore } from "./store.js";
     return false;
   }
 
-  /** Is this element one that turns keystrokes into text? */
-  function isEditable(el) {
-    if (!el || el === document.body) return false;
-    const tag = el.tagName;
-    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
-  }
-
-  window.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") { escapeKey(); return; }
-    if (promoModal && promoModal.classList.contains("show")) {
-      const pk = ev.key.toLowerCase();
-      if (["q", "r", "b", "n"].includes(pk)) { ev.preventDefault(); finishPromotion(pk); }
-      return;
-    }
-    if (confirmModal.classList.contains("show")) {
-      if (ev.key === "Enter") { ev.preventDefault(); finishConfirm(true); }
-      return;
-    }
-    // "?" comes before the dialog guard below, because it is the one shortcut
-    // whose whole job is opening and closing a dialog — but only its own: with
-    // anything else on screen it stays out of the way like everything else.
-    if ((ev.key === "?" || (ev.key === "/" && ev.shiftKey)) && !ev.metaKey && !ev.ctrlKey) {
-      const sheetUp = keysModal && keysModal.classList.contains("show");
-      if (sheetUp || !dialogOpen()) {
-        ev.preventDefault();
-        if (sheetUp) closeKeyHelp(); else openKeyHelp();
-        return;
-      }
-    }
-    // Everything below acts on the game. A dialog is in front of the game, so
-    // none of it applies while one is open — see dialogOpen(). Escape is
-    // handled above precisely because it is the one key that does apply.
-    if (dialogOpen()) return;
-    // a letter typed into any text field is text, not a shortcut — the FEN
-    // box used to be the only field and guarded itself; the guard belongs
-    // here so the next field cannot forget it (v6-plan D8)
-    if (isEditable(ev.target)) return;
-    const k = ev.key.toLowerCase();
-    // Tab is not ours to take. Binding it to the panel meant focus could never
-    // move anywhere by keyboard — the app had a full keyboard board cursor and
-    // no way to reach any other control. The panel is on P instead.
-    if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
-    if (store.session.mode === "learn" && !store.session.study) {
-      // replay / game shortcuts act on the main game — inert during lessons;
-      // R retries the task, Z/H work in engine drills
-      if (!store.session.learn || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { startLearnTask(); toast(t("lm.restarted")); }
-      else if (k === "z") learnUndo();
-      else if (k === "h") learnHint();
-      return;
-    }
-    if (store.session.mode === "puzzle") {
-      if (!store.session.puzzle || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
-      else if (k === "n") nextPuzzle();
-      else if (k === "h") showPuzzleAnswer();
-      return;
-    }
-    if (ev.key === "ArrowLeft") { ev.preventDefault(); setViewIndex(store.game.viewIndex - 1); }
-    else if (ev.key === "ArrowRight") { ev.preventDefault(); setViewIndex(store.game.viewIndex + 1); }
-    else if (ev.key === "Home") { ev.preventDefault(); setViewIndex(0); }
-    else if (ev.key === "End") { ev.preventDefault(); setViewIndex(sanHistory().length); }
-    else if (k === "z" && !ev.metaKey && !ev.ctrlKey) undo();
-    else if (k === "n" && !ev.metaKey && !ev.ctrlKey) requestNewGame();
-    else if (k === "h" && !ev.metaKey && !ev.ctrlKey) requestHint();
-    else if (k === "f" && !ev.metaKey && !ev.ctrlKey) setFlipped(!store.game.flipped);
-  });
+  window.addEventListener("keydown", A11y.onKeyDown);
 
   window.addEventListener("resize", () => {
     appEl.classList.toggle("scrim-on", isPanelOpen() && window.innerWidth < 900);
@@ -9064,8 +8797,12 @@ import { createStore } from "./store.js";
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
   }
-  window.addEventListener("beforeunload", () => saveGame());
-  window.addEventListener("pagehide", () => saveGame());
+  // 6.1: saveGame() writes the cache, and the mirror behind it is on a 400 ms
+  // timer — on the way out that timer never fires, so up to one burst of
+  // writes never reached the file. Flush it here instead of waiting.
+  const saveAndFlush = () => { saveGame(); try { Persist.flushMirror(); } catch (_) { /* leaving anyway */ } };
+  window.addEventListener("beforeunload", saveAndFlush);
+  window.addEventListener("pagehide", saveAndFlush);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") saveGame();
     // and stop/restart the clock — syncClockTimer resets clockTickAt when it
@@ -9158,7 +8895,13 @@ import { createStore } from "./store.js";
   // it. This is the one moment an async read may change what the app stands
   // on, and it announces itself.
   Persist.recover().then((r) => {
+    // 6.1: the file is there and unreadable (damaged, or zero-length after an
+    // interrupted write). The cache is what the app is running on and stays
+    // that way, but the user hears it once — before 6.1 this was silent.
+    if (r === "corrupt") { toast(t("msg.profile.fileBad"), "fault"); return; }
     if (r !== "restored") return;
+    // persist.js has frozen every further write (6.1): from here to the
+    // reload nothing the page does can overwrite what was just restored.
     toast(t("msg.profile.restored"), "fault");
     setTimeout(() => location.reload(), 1200);
   }).catch(() => {});

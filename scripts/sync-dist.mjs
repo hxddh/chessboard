@@ -27,6 +27,7 @@ import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
+import { CHUNKS } from "./bundle.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..");
@@ -49,6 +50,11 @@ const FILES = [
   ["src/web/js/engine-src.js", "js/engine-src.js"],
   ["LICENSE", "licenses/LICENSE.txt"],
   ["third_party/stockfish/COPYING.txt", "licenses/stockfish-COPYING.txt"],
+  // 6.1: the on-demand chunks. Read from the bundler's own list rather than
+  // typed again here — a chunk that is built but not packaged is an app whose
+  // opening names silently never appear, and a list in two places is how that
+  // happens. The size guards below apply to these too.
+  ...CHUNKS.map((c) => [c.out, "js/" + path.basename(c.out)]),
 ];
 for (const [from, to] of FILES) fs.copyFileSync(path.join(ROOT, from), path.join(DIST, to));
 
@@ -60,5 +66,12 @@ if (size("js/bundle.js") <= 400000) {
 if (size("js/engine-src.js") <= 5000000) {
   console.error("FAIL: frontend/dist/js/engine-src.js 太小 —— 没带上完整的 wasm");
   process.exit(1);
+}
+for (const c of CHUNKS) {
+  const rel = "js/" + path.basename(c.out);
+  if (size(rel) <= 50000) {
+    console.error(`FAIL: frontend/dist/${rel} 太小 —— 分块没建出来`);
+    process.exit(1);
+  }
 }
 console.log(`frontend/dist ← src/web (${FILES.length} files)`);

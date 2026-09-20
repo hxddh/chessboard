@@ -11,20 +11,37 @@
    * The same cut-offs the move list annotates with ?! / ? / ??.
    *
    * **Measured, and deliberately not moved.** 缺陷 23 was right that 50cp is
-   * the same size as the quick scan's own noise: scanning four decided games
-   * twice at 120ms/position (168 plies), the evaluation of the *same* position
-   * moves by a median 10cp between runs, 34cp at the ninth percentile — and a
-   * move's loss is a difference of two of those. The consequence is measured
-   * too: of every ply either run called `?!`, both runs called it 39% of the
-   * time. `?` reaches 58% and `??` 86%.
+   * the same size as the quick scan's own noise: scanning twenty-eight decided
+   * games twice at 120ms/position (1320 plies — the corpus was four games and
+   * 168 plies until 6.1, which was too small to conclude anything from), the
+   * evaluation of the *same* position moves by a median 8cp between runs, 33cp
+   * at the ninth percentile — and a move's loss is a difference of two of
+   * those. The consequence is measured too: of every ply either run called
+   * `?!`, both runs called it 37% of the time. `?` reaches 63% and `??` 97%.
    *
-   * The defect proposed scaling the thresholds with movetime. Refuted — at
-   * 400ms the jitter is the same order (median 6cp, p90 20) and `?!` still
-   * only reaches 53%, so there is no movetime-dependent noise floor to track.
+   * The defect proposed scaling the thresholds with movetime. Refuted — 6.1
+   * swept three budgets over the whole corpus and `?!` does not come good at
+   * any of them (docs/measured.json, `scanNoise` / `winPctNoise`):
+   *
+   *            120ms      400ms     1200ms
+   *     ?!   37 / 52    50 / 56    54 / 54      (centipawn / win-%)
+   *     ?    63 / 62    69 / 68    77 / 84
+   *     ??   97 / 88    85 / 93    92 / 95
+   *
+   * Ten times the search does not make `?!` reproducible, on either measure —
+   * so there is no movetime-dependent noise floor to track, and no budget this
+   * app could ship that would fix it. `?` and `??` are sound and get better
+   * with depth, which is what a real signal does.
+   *
    * Raising the `?!` cut is refuted too: swept over the recorded tracks at
-   * 40/50/60/70/80/90cp, agreement wanders (50/39/31/22/29/33) with no trend,
+   * 40/50/60/70/80/90cp, agreement wanders (44/37/33/35/43/11) with no trend,
    * because a hard cut on a noisy quantity always has about half its members
    * sitting on the edge, wherever the edge is put.
+   *
+   * The conclusion 6.0 should have drawn, and 6.1 writes down: `?!` is the one
+   * annotation this app cannot stand behind. It stays off the evaluation
+   * curve's mistake dots (app.js) and out of the verdict, where it already
+   * was, and nothing anywhere claims it is reproducible.
    *
    * So the numbers stay, and what changed is that they are now known rather
    * than assumed: docs/measured.json `scanNoise`, written by
@@ -34,6 +51,8 @@
    * which turns out to have been the right instinct.
    */
   const INACCURACY = 50, MISTAKE = 100, BLUNDER = 300;
+  /** Win-% accuracy cut-offs for the one-line verdict — see verdictKey (6.1). */
+  const VERDICT_EXCELLENT = 94, VERDICT_SOLID = 86;
 
   /**
    * How many of a side's own moves have to be measured before the report is
@@ -66,8 +85,20 @@
    * @param {number} after  evaluation after it
    * @param {"w"|"b"} side  who played it
    */
+  /**
+   * The window a centipawn evaluation is compared inside. A mate score is
+   * 9500–9990 on the app's scalar track, so before 6.1 a ply where a fast
+   * search announced mate and the next where it only reported a large plus
+   * differed by ~8000 — clamped to the full 1000, i.e. the worst blunder the
+   * scale can express, charged to a player who did nothing wrong. Both ends
+   * are pulled into the window first, so "winning" and "winning by mate" are
+   * the same thing here, exactly as they are on the win-% track.
+   */
+  const EVAL_WINDOW = 1000;
+  const inWindow = (cp) => Math.max(-EVAL_WINDOW, Math.min(EVAL_WINDOW, cp));
   function lossOf(before, after, side) {
-    return Math.max(0, Math.min(1000, side === "w" ? before - after : after - before));
+    const b = inWindow(before), a = inWindow(after);
+    return Math.max(0, Math.min(1000, side === "w" ? b - a : a - b));
   }
 
   /**
@@ -186,15 +217,26 @@
     if (!summary || !summary.acc || summary.acc[side] == null) return null;
     // a fragment is described as a fragment — the blunder lines below are
     // about moves that were actually made and still apply; the three
-    // "how you play" lines need a sample
+    // "how you play" lines need a sample.
+    //
+    // 6.1: the cut-offs used to be 90 / 75. Those were read off the centipawn
+    // accuracy curve, but 6.0 changed what is handed in here to the win-%
+    // accuracy (app.js renderReview passes summarizeWinPct's summary), and
+    // that curve sits 10–17 points higher — see the note on accuracyOf. Every
+    // player was being graded a band too generously: 25 cp/move, an ordinary
+    // club game, scored 81 on the old scale ("solid") and 90 on the new one,
+    // which the unchanged cut-off read as "excellent". The numbers below are
+    // where the win-% curve sits at the same play the old ones described:
+    // 90 on the cp curve is 14 cp/move, which is 94 on this one; 75 is
+    // 36 cp/move, which is 86. Measured by scripts/test-review-winpct.mjs.
     const c = summary.counts[side];
     const enough = !summary.judged || summary.judged[side] >= MIN_JUDGED;
     if (!enough && c.blunder === 0 && c.mistake < 3) return "rv.verdict.tooShort";
     if (c.blunder >= 3) return "rv.verdict.blunders";
     if (c.blunder >= 1) return "rv.verdict.oneBlunder";
     if (c.mistake >= 3) return "rv.verdict.mistakes";
-    if (summary.acc[side] >= 90) return "rv.verdict.excellent";
-    if (summary.acc[side] >= 75) return "rv.verdict.solid";
+    if (summary.acc[side] >= VERDICT_EXCELLENT) return "rv.verdict.excellent";
+    if (summary.acc[side] >= VERDICT_SOLID) return "rv.verdict.solid";
     return "rv.verdict.roomToGrow";
   }
 
@@ -364,4 +406,5 @@
     INACCURACY, MISTAKE, BLUNDER, MIN_JUDGED,
     winPct, winPctDrop, classifyByWinPct, accuracyFromWinPct, summarizeWinPct,
     WIN_INACCURACY, WIN_MISTAKE, WIN_BLUNDER,
+    VERDICT_EXCELLENT, VERDICT_SOLID, EVAL_WINDOW,
   };

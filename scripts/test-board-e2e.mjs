@@ -685,6 +685,335 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- 6.1: §5 里四条没人认领的验收 (v6-plan §8.2) ---------------------------
+//
+// §7「按 §2 的编号逐条对账」对的是实现项,§5 的验收项没有人对,于是「首屏到
+// 可交互 < 1 s」「走一步棋 draw() 恰一次」「预走在对手走完后 ≤ 1 帧」三条在
+// 仓库里一条断言都找不到,盲棋与升主线也一样。下面四段一段一条。
+
+// --- 预走:对手走完之后 ≤ 1 帧 (v6-plan §5 Q2) ------------------------------
+// 量的是帧,不是毫秒。睡一觉再看着法表,「≤ 1 帧」和「≤ 1 秒」看起来一模一样,
+// 而 runPremove() 的整个设计就是那一帧:它把走子排在 requestAnimationFrame
+// 里,好让应手先被看见落下。所以计数器也住在页面里,数 rAF。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false,
+      themeId: "wood", humanColor: "w", difficulty: "easy" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  // 引擎的应手由测试放行:预走要在「引擎正在想」的那段时间里排上队,而那段
+  // 时间有多长必须是我们说了算,不能靠运气
+  await page.evaluate(() => {
+    window.__release = null;
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.bestMove = () => new Promise((res) => {
+      window.__release = () => res({ from: "e7", to: "e5" });
+    });
+  });
+  const sq = async (name) => {
+    const c = await page.evaluate((s) => {
+      const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, name);
+    await page.mouse.click(c.x, c.y);
+    await page.waitForTimeout(140);
+  };
+  await sq("e2"); await sq("e4");
+  await page.waitForFunction(() => !!window.__release, null, { timeout: 8000 });
+  const plies = () => page.evaluate(() => document.querySelectorAll(".move-list .mlmove").length);
+  assert((await plies()) === 1, "白方走了 1.e4,引擎还在想");
+  // 排一步预走 Ng1-f3。轮不到我们走,所以这两下点击只可能是预走。
+  await sq("g1"); await sq("f3");
+  const queued = await page.evaluate(() => {
+    const t = document.getElementById("toast");
+    return t && t.classList.contains("show") ? t.textContent : "";
+  });
+  assert(/预走/.test(queued), `引擎想棋的时候点两下,排的是预走(「${queued.replace("✕", "")}」)`);
+  assert((await plies()) === 1, "……而且它还没走:着法表仍然只有 1.e4");
+
+  const beat = await page.evaluate(async () => {
+    const count = () => document.querySelectorAll(".move-list .mlmove").length;
+    let frame = 0, reply = -1, pre = -1;
+    const done = new Promise((res) => {
+      const tick = () => {
+        frame++;
+        const n = count();
+        if (n >= 2 && reply < 0) reply = frame;
+        if (n >= 3 && pre < 0) { pre = frame; res(); return; }
+        if (frame > 240) { res(); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    // 计数器先排进 rAF 队列,再放引擎走子:这样每一帧我们都先看一眼,应手
+    // 落在第 reply 帧被看见,预走最快只能在下一帧被看见 —— 量到的 1 就是
+    // 「一帧之内」的下界,不是四舍五入出来的。
+    window.__release();
+    await done;
+    return { reply, pre };
+  });
+  assert(beat.reply > 0, `引擎的应手落了下来(第 ${beat.reply} 帧)`);
+  assert(beat.pre > 0, `预走执行了(第 ${beat.pre} 帧)`);
+  assert(beat.pre - beat.reply <= 1,
+    `预走在对手走完后 ≤ 1 帧执行(应手第 ${beat.reply} 帧,预走第 ${beat.pre} 帧,差 ${beat.pre - beat.reply} 帧)`);
+  const line = await page.evaluate(() =>
+    [...document.querySelectorAll(".move-list .mlmove")].map((m) => m.getAttribute("aria-label")).join(" "));
+  assert(line === "e4 e5 Nf3", `……走的是排队的那一着(「${line}」)`);
+  assert(errs.length === 0, `预走:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 盲棋:棋子不画,坐标与播报照旧 (v6-plan §2 Q2.8) ------------------------
+// 盲棋是「只把人拿掉」,不是「把棋盘关掉」。最容易写错的正是这一点:连坐标
+// 和 #board-live 一起藏起来,读屏用户就彻底没得下了 —— 而那恰好是盲棋唯一
+// 的受众之一。三件事各一条断言。
+// 同一页接着做升主线:变着建出来、升上去,主线换人,老主线降成变着。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  const sq = async (name) => {
+    const c = await page.evaluate((s) => {
+      const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, name);
+    await page.mouse.click(c.x, c.y);
+    await page.waitForTimeout(140);
+  };
+  /** 棋盘上还站着几个人 —— 和本文件开头 play() 用的是同一把尺子 */
+  const men = () => page.evaluate(() => {
+    const c = document.getElementById("board");
+    const g = c.getContext("2d");
+    const step = c.width / 8;
+    let pieces = 0;
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const x0 = Math.round(f * step + step * 0.2), y0 = Math.round(r * step + step * 0.2);
+      const n = Math.max(4, Math.round(step * 0.6));
+      const d = g.getImageData(x0, y0, n, n).data;
+      let lo = 255, hi = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        if (l < lo) lo = l;
+        if (l > hi) hi = l;
+      }
+      if (hi - lo > 60) pieces++;
+    }
+    return pieces;
+  });
+  const frame = () => page.evaluate(() => ({
+    files: (document.getElementById("coord-files").textContent || "").trim(),
+    ranks: (document.getElementById("coord-ranks").textContent || "").trim(),
+    filesShown: !!document.getElementById("coord-files").offsetParent,
+    ranksShown: !!document.getElementById("coord-ranks").offsetParent,
+  }));
+
+  for (const s of ["e2", "e4", "e7", "e5", "g1", "f3"]) await sq(s);
+  await page.waitForTimeout(300);
+  const before = await men();
+  assert(before >= 28, `开着的棋盘上看得见棋子(数到 ${before} 个)`);
+
+  await page.click("#tab-setup"); await page.waitForTimeout(200);
+  await page.click("#opt-blind"); await page.waitForTimeout(300);
+  assert((await page.getAttribute("#opt-blind", "aria-pressed")) === "true", "盲棋开关按下了");
+  await page.click("#tab-play"); await page.waitForTimeout(500);
+
+  assert((await men()) === 0, `盲棋:一个棋子都不画(数到 ${await men()} 个)`);
+  const co = await frame();
+  assert(co.files === "abcdefgh" && co.ranks === "87654321",
+    `……坐标还印在边框上(「${co.files}」/「${co.ranks}」)`);
+  assert(co.filesShown && co.ranksShown, "……而且真的看得见,不是留在 DOM 里被藏起来");
+  // 播报:盲棋唯一还能告诉人「这里站着谁」的东西
+  await page.evaluate(() => { document.getElementById("board").focus(); });
+  await page.keyboard.press("ArrowUp");
+  await page.waitForTimeout(250);
+  const said = await page.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
+  assert(said.trim().length > 0, `……#board-live 照旧在说话(「${said}」)`);
+  // 还能接着下:棋子看不见不等于棋盘停了
+  await sq("b8"); await sq("c6");
+  const n = await page.evaluate(() => document.querySelectorAll(".move-list .mlmove").length);
+  assert(n === 4, `……看不见也照样走得动(着法表 ${n} 手)`);
+  await page.click("#tab-setup"); await page.waitForTimeout(200);
+  await page.click("#opt-blind"); await page.waitForTimeout(300);
+  await page.click("#tab-play"); await page.waitForTimeout(500);
+  assert((await men()) >= 28, `关掉盲棋,人又都回来了(数到 ${await men()} 个)`);
+
+  // --- 升主线:把变着提上去,老主线自己退到变着里 (v6-plan §5 Q2) ----------
+  const notation = () => page.evaluate(() => ({
+    main: [...document.querySelectorAll("#move-list .mlmove:not(.mlgap)")].map((b) => b.getAttribute("aria-label")),
+    vars: [...document.querySelectorAll("#move-list .mlv")].map((b) => b.getAttribute("aria-label")),
+  }));
+  const before2 = await notation();
+  assert(before2.main.join(" ") === "e4 e5 Nf3 Nc6" && before2.vars.length === 0,
+    `升主线之前:一条主线,没有变着(「${before2.main.join(" ")}」)`);
+  // 回到第 2 手之后,走一条别的:复盘位置上的一着会开成变着。data-i 是着法
+  // 的序号,点它是「站到这一着之前」,所以要站在 1.e4 e5 之后得点第 3 着。
+  await page.click('#move-list .mlmove[data-i="2"]');
+  await page.waitForTimeout(300);
+  await sq("f1"); await sq("c4");
+  await page.waitForTimeout(300);
+  await sq("b8"); await sq("c6");
+  await page.waitForTimeout(300);
+  const mid = await notation();
+  assert(mid.vars.join(" ") === "Bc4 Nc6", `变着建起来了(「${mid.vars.join(" ")}」)`);
+  assert(mid.main.join(" ") === "e4 e5 Nf3 Nc6", "……主线一个字没动");
+  // 右键那一着 → 升主线
+  await page.click('#move-list .mlv[aria-label="Bc4"]', { button: "right" });
+  await page.waitForTimeout(250);
+  assert(await page.isVisible("#move-menu"), "右键开出了着法菜单");
+  await page.click("#mm-promote");
+  await page.waitForTimeout(400);
+  const after = await notation();
+  assert(after.main.join(" ") === "e4 e5 Bc4 Nc6", `升主线之后主线换了人(「${after.main.join(" ")}」)`);
+  assert(after.vars.join(" ") === "Nf3 Nc6", `……老主线退成了变着(「${after.vars.join(" ")}」)`);
+  assert(errs.length === 0, `盲棋与升主线:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 走一步棋 draw() 画几遍 (v6-plan §5 Q1) --------------------------------
+//
+// app.js 里 draw() 是模块内的一个名字,bundle 之后页面上没有它;但它每次都
+// 落到 BoardView.draw(),而 BoardView.draw() 每次都向 #board 要一次 2d 上下
+// 文,整个仓库里再没有第二处向 #board 要上下文。所以「画了几遍」是可以从页
+// 面上数的:数 getContext。
+//
+// 数出来的不是 1,是 2 —— §5 的「走一步棋 draw() 恰一次」不成立。两遍各有出
+// 处:gameMove() 里 store.commit("game") 一遍,收尾的 sync() 里 commitAll()
+// 又一遍(§7 自己写的是「commitAll 一次通知」,漏算了 gameMove 那一次)。
+// 这里按 test-chess.mjs 的登记册办法记下这个 2:只减不增,哪天真收成 1,这
+// 条会当场失败,改数字的人顺手就把 §5 对上了账。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__paints = 0;
+    const real = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (...a) {
+      if (this.id === "board") window.__paints++;
+      return real.apply(this, a);
+    };
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  // 动画是时间,不是状态:滑行中的每一帧都要重画,那不是「走一步棋画了几遍」
+  // 要问的事。reduced-motion 下走子直接落位(board.js animateMove),量到的就
+  // 只剩状态变化引起的重画。
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  const sq = async (name) => {
+    const c = await page.evaluate((s) => {
+      const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, name);
+    await page.mouse.click(c.x, c.y);
+    await page.waitForTimeout(250);
+  };
+  const REGISTERED = 2;   // 登记册:只减不增
+  for (const [from, to, label] of [["e2", "e4", "1.e4"], ["e7", "e5", "1...e5"], ["g1", "f3", "2.Nf3"]]) {
+    await sq(from);                                   // 选子也要重画一遍,不算
+    await page.evaluate(() => { window.__paints = 0; });
+    await sq(to);
+    await page.waitForTimeout(500);
+    const n = await page.evaluate(() => window.__paints);
+    assert(n <= REGISTERED, `${label}:走一步棋重画 ${n} 遍(登记 ${REGISTERED},只减不增)`);
+    assert(n === REGISTERED,
+      `${label}:登记册保持精确(${n} vs ${REGISTERED} —— §5 说的是 1,收到 1 的那天改这个数)`);
+  }
+  assert(errs.length === 0, `draw() 计数:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 首屏到可交互 < 1 s,引擎未加载 (v6-plan §5 Q1) -------------------------
+//
+// 「可交互」在这块棋盘上有确切的意思:canvas 上挂着 pointerdown,而且它已经
+// 被画过一遍 —— 在那之前点下去什么都不会发生。两件事都能在页面里打上时间戳,
+// 于是这条验收量的是 navigation start 到两者中较晚的那一个,用 Performance
+// API 的时间轴,不是测试进程这边的墙上时钟(那把浏览器启动也算了进去)。
+// 引擎没加载:本文件的 http 服务把 js/engine-src.js 换成了一行注释。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__t = { painted: null, wired: null };
+    const realCtx = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (...a) {
+      if (this.id === "board" && window.__t.painted == null) window.__t.painted = performance.now();
+      return realCtx.apply(this, a);
+    };
+    const realAdd = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (type, ...rest) {
+      if (type === "pointerdown" && this.id === "board" && window.__t.wired == null) {
+        window.__t.wired = performance.now();
+      }
+      return realAdd.call(this, type, ...rest);
+    };
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  // commit,不是 load:load 等的是这台机器把 1200×900 的页面栅格化完,那是
+  // 容器的事,不是这个应用的事
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "commit" });
+  await page.waitForFunction(() => window.__t && window.__t.painted != null && window.__t.wired != null,
+    null, { timeout: 30000 });
+  const t = await page.evaluate(() => {
+    const nav = performance.getEntriesByType("navigation")[0];
+    return {
+      painted: window.__t.painted,
+      wired: window.__t.wired,
+      start: nav ? nav.startTime : 0,
+      res: performance.getEntriesByType("resource").map((r) => r.name.split("/").pop()),
+    };
+  });
+  const interactive = Math.round(Math.max(t.painted, t.wired) - t.start);
+  assert(interactive < 1000, `首屏到可交互 ${interactive} ms < 1000 ms(棋盘画好 ${Math.round(t.painted)} ms,pointerdown 挂上 ${Math.round(t.wired)} ms)`);
+  // 6.1 把 ECO 表(462 KB)搬出了首屏包,改成用到才取(js/chunk-eco.js)。
+  // 它要是又回到首屏里,上面那个数字会慢慢爬回去而没人知道为什么。
+  assert(!t.res.some((n) => /^chunk-/.test(n)),
+    `……而且首屏一个 chunk 都没取(取了:${t.res.join(", ")})`);
+  // 「可交互」得是真的:这时候点下去,棋真的能走
+  await page.click("#pick-cancel").catch(() => {});
+  const c = await page.evaluate(() => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const at = (s) => { const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) }; };
+    return { a: at("e2"), b: at("e4") };
+  });
+  await page.mouse.click(c.a.x, c.a.y); await page.waitForTimeout(200);
+  await page.mouse.click(c.b.x, c.b.y); await page.waitForTimeout(400);
+  const played = await page.evaluate(() =>
+    [...document.querySelectorAll(".move-list .mlmove")].map((m) => m.getAttribute("aria-label")).join(" "));
+  assert(played === "e4", `……而「可交互」是真的可交互:点下去棋就走了(「${played}」)`);
+  assert(errs.length === 0, `首屏:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

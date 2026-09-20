@@ -24,7 +24,11 @@ const ctx = { console };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const m of ["chess.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js"]) {
+// 6.1: eco.js is a chunk now — at runtime the page injects it as its own
+// script and eco-lookup.js reads the global it defines. Loading it into this
+// context first is the same arrangement, and without it every lookup here
+// answers null, which is exactly what a missing chunk looks like.
+for (const m of ["chess.js", "eco.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", m)), ctx, { filename: m });
 }
 const { Chess, ChessEco, CHESS_OPENINGS, CHESS_OPENING_NAMES, CHESS_OPENINGS_JA } = ctx;
@@ -137,6 +141,44 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   assert(joined >= 100, "the book lends its translations to " + joined + " table entries");
   assert(ChessEco.ecoName("B90") === "Sicilian Defense: Najdorf Variation", "ecoName() gives the family name of a code (" + ChessEco.ecoName("B90") + ")");
   assert(ChessEco.ecoName("Z99") === null, "…and null for a code that is not one");
+}
+
+// --- 6.1 (review): the book join must survive the table arriving late -------
+//
+// Every context above preloads eco.js, which is *not* the runtime order: the
+// table is a chunk, injected after first paint, so eco-lookup.js is evaluated
+// while window.ECO_BY_KEY is undefined. BOOK_ID_BY_ENTRY used to be built by
+// an eager IIFE at that moment — openingForGame returned null for every book
+// line, the map came out empty and stayed empty for the rest of the session,
+// and localName() fell back to the English lichess name for Chinese and
+// Japanese for ever. This context reproduces the real order.
+{
+  const late = { console };
+  late.globalThis = late;
+  late.window = late;
+  vm.createContext(late);
+  // note the absence of eco.js here — exactly what the page sees at boot
+  for (const m of ["chess.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js"]) {
+    vm.runInContext(compileModuleSync(path.join(root, "src/web/js", m)), late, { filename: m });
+  }
+  const E = late.ChessEco;
+  assert(!E.loaded(), "the table is absent while eco-lookup.js is evaluated");
+  assert(E.openingForGame(["e4", "e5"]) === null, "…so a lookup answers null, as designed");
+
+  // now the chunk lands, the way loadChunk's injected script lands
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/eco.js")), late, { filename: "eco.js" });
+  const hit = E.openingForGame(["e4", "e5"]);
+  assert(hit && hit.eco, "once the chunk is here the lookup works again");
+
+  // the point of the test: the localised name, not the English fallback
+  const zh = E.localName(hit, "zh-CN");
+  assert(zh !== hit.name, "localName() gives the Chinese name, not the English fallback (" + zh + ")");
+  assert(Object.keys(E.BOOK_ID_BY_ENTRY).length > 100,
+    "…because the book join is built on first use, not at load (" + Object.keys(E.BOOK_ID_BY_ENTRY).length + " entries)");
+
+  // and it agrees with the eager context above, so laziness changed nothing else
+  const eager = ChessEco.localName(ChessEco.openingForGame(["e4", "e5"]), "zh-CN");
+  assert(zh === eager, "…and it matches the preloaded context (" + zh + " / " + eager + ")");
 }
 
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

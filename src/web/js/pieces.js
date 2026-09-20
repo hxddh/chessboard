@@ -2,7 +2,12 @@
  * Standard (cburnett) chess piece vectors, one standalone SVG per piece.
  * Source: Wikimedia Commons "SVG chess pieces/Standard" by Cburnett and
  * Rfc1394, as bundled in cm-chessboard (shaack.com).
- * License: CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0/
+ * License: the original is multi-licensed GFDL / BSD / GPL / CC BY-SA 3.0.
+ * This repository uses it under the GPL option, which is the one compatible
+ * with the app's own GPLv3 — CC BY-SA 3.0 alone is not (4.0 added the one-way
+ * compatibility, 3.0 never had it), so the option actually relied on is named
+ * here rather than left to the reader. The About panel says the same thing.
+ * https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces
  * @module pieces
  */
   export const CHESS_PIECE_SVGS = {

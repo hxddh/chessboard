@@ -7,7 +7,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
-import { compileModuleSync } from "./bundle.mjs";
+import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -1213,16 +1213,21 @@ for (const lang of CONTENT_LANGS) {
   const zon = fs.readFileSync(path.join(root, "app.zon"), "utf8");
 
   assert(/id="keys-modal"/.test(htmlK), "the shortcut sheet exists");
-  const table = /const KEY_HELP = \[([\s\S]*?)\];/.exec(appSrc);
-  assert(table, "the shortcut sheet is built from a table");
-  const helpKeys = [...table[1].matchAll(/k: "(keys\.[a-z]+)"/g)].map((m) => m[1]);
+  // 6.1: the two tables live in native-commands.js and are exported as data,
+  // so everything below reads the objects the app itself reads rather than a
+  // regex over app.js's source (v6-plan Q1.7).
+  loadModule(ctx, "src/web/js/native-commands.js");
+  const NC = { KEY_HELP: ctx.KEY_HELP, MENU_ACCEL: ctx.MENU_ACCEL,
+               accelText: ctx.accelText, commandModes: ctx.commandModes,
+               create: ctx.createNativeCommands };
+  assert(Array.isArray(NC.KEY_HELP), "the shortcut sheet is built from a table");
+  const helpKeys = NC.KEY_HELP.map((r) => r.k);
   assert(helpKeys.length >= 10, "the sheet lists the shortcuts (" + helpKeys.length + ")");
 
   // every letter the global handler binds must appear in the sheet
-  const listed = table[1].toLowerCase();
+  const sheetKeys = new Set(NC.KEY_HELP.flatMap((r) => r.keys).map((k) => k.toLowerCase()));
   for (const key of ["p", "n", "z", "h", "f"]) {
-    assert(new RegExp('"' + key + '"', "i").test(table[1]),
-      "the sheet lists the " + key.toUpperCase() + " shortcut");
+    assert(sheetKeys.has(key), "the sheet lists the " + key.toUpperCase() + " shortcut");
   }
   assert(/"\?"/.test(appSrc) && /openKeyHelp/.test(appSrc),
     "\"?\" opens the sheet — the one shortcut the sheet cannot teach");
@@ -1316,11 +1321,55 @@ for (const lang of CONTENT_LANGS) {
   assert(/\.menus = \.\{[\s\S]*?\.command = "/.test(zon), "app.zon declares native menu items");
   const commands = [...zon.matchAll(/\.command = "([a-z.]+)"/g)].map((m) => m[1]);
   assert(commands.length >= 6, "the menu carries the main actions (" + commands.length + ")");
-  const handled = /const NATIVE_COMMANDS = \{([\s\S]*?)\n  \};/.exec(appSrc);
-  assert(handled, "app.js handles native menu commands");
-  const unhandled = commands.filter((c) => !handled[1].includes('"' + c + '"'));
-  assert(unhandled.length === 0,
-    "every menu item does something" + (unhandled.length ? " — dead: " + unhandled.join(", ") : ""));
+  // Asked of the real handler map: build one against a recording app, fire
+  // every command app.zon declares, and see that each one did something.
+  const fired = [];
+  const rec = (name) => (...a) => fired.push(name + (a.length ? ":" + a.join(",") : ""));
+  // The smallest document the sheet can be built into: enough of a node for
+  // appendChild / replaceChildren / classList, and nothing else.
+  const fakeNode = (tag) => ({
+    tag, kids: [], text: "", className: "", onclick: null,
+    classList: {
+      set: new Set(),
+      contains(c) { return this.set.has(c); },
+      add(c) { this.set.add(c); },
+      remove(c) { this.set.delete(c); },
+    },
+    set textContent(v) { this.text = String(v); },
+    get textContent() { return this.text; },
+    appendChild(n) { this.kids.push(n); },
+    replaceChildren() { this.kids.length = 0; },
+  });
+  const fakeDoc = () => {
+    const byId = new Map();
+    for (const id of ["keys-modal", "keys-list", "keys-close"]) byId.set(id, fakeNode(id));
+    return { byId, getElementById: (id) => byId.get(id) || null, createElement: fakeNode };
+  };
+  const menuApp = (over) => Object.assign({
+    doc: fakeDoc(), t: (k) => k,
+    // the sheet is a dialog like any other: opening it is what puts "show" on
+    // it, which is also how the module knows it is up
+    Dlg: { open: (m) => { rec("dlg.open")(); m.classList.add("show"); },
+           close: (m) => { rec("dlg.close")(); if (m) m.classList.remove("show"); } },
+    store: { session: { mode: "ai" }, game: { flipped: false, viewIndex: 3 } },
+    dialogOpen: () => false,
+    requestNewGame: rec("game.new"), undo: rec("game.undo"), requestHint: rec("game.hint"),
+    setFlipped: rec("setFlipped"), togglePanel: rec("view.panel"),
+    setViewIndex: rec("setViewIndex"), escapeKey: rec("escapeKey"),
+  }, over || {});
+  const dead = [];
+  for (const c of commands) {
+    fired.length = 0;
+    // every mode this command is legal in gets a turn, since the gate is
+    // per-mode and "ai" alone would call a puzzle-only command dead
+    for (const mode of [...NC.commandModes(c), "ai"]) {
+      const app = menuApp({ store: { session: { mode }, game: { flipped: false, viewIndex: 3 } } });
+      NC.create(app).run(c);
+    }
+    if (!fired.length) dead.push(c);
+  }
+  assert(dead.length === 0,
+    "every menu item does something" + (dead.length ? " — dead: " + dead.join(", ") : ""));
   assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
     "the host bridge forwards the shortcut event");
   assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");
@@ -1329,11 +1378,19 @@ for (const lang of CONTENT_LANGS) {
   // from either door, dialog gates included
   assert(/\.shortcuts = \.\{[\s\S]*?\.id = "view\.escape", \.key = "escape"/.test(zon),
     "app.zon declares Escape as the view.escape shortcut");
-  assert(/"view\.escape": \(\) => escapeKey\(\)/.test(appSrc) &&
-         /if \(id === "view\.escape"\) \{ escapeKey\(\); return; \}/.test(appSrc),
-    "the shortcut runs escapeKey() before the dialog and mode gates");
-  assert(/if \(ev\.key === "Escape"\) \{ escapeKey\(\); return; \}/.test(appSrc),
-    "…and the window's own Escape runs the same routine");
+  // 6.1: asked of the handler, not of app.js's text. Escape is the one
+  // command that has to get through with a dialog in front of it — it is how
+  // the dialog closes — so fire it against an app that says a dialog is open
+  // and watch escapeKey() run anyway.
+  {
+    fired.length = 0;
+    NC.create(menuApp({ dialogOpen: () => true })).run("view.escape");
+    assert(fired.join() === "escapeKey",
+      "the shortcut runs escapeKey() before the dialog and mode gates (fired: " +
+      (fired.join() || "nothing") + ")");
+  }
+  // …and the window's own Escape is checked by pressing it — see the a11y
+  // block below, where the handler now lives.
   assert(/function escapeKey\(\) \{[\s\S]{0,1400}Dlg\.closeTop\(\)[\s\S]{0,600}clearPreview\(\)[\s\S]{0,400}setPanelOpen\(false\)/.test(appSrc),
     "escapeKey closes the top dialog, releases a pinned preview and shuts the panel, in that order");
 
@@ -1355,14 +1412,11 @@ for (const lang of CONTENT_LANGS) {
     }
     assert(declared.size === commands.length,
       "every menu item declares a key (" + declared.size + "/" + commands.length + ")");
-    const table = /const MENU_ACCEL = \{([\s\S]*?)\n  \};/.exec(appSrc);
-    assert(table, "app.js carries the accelerator table the sheet prints");
+    assert(NC.MENU_ACCEL && Object.keys(NC.MENU_ACCEL).length,
+      "native-commands.js carries the accelerator table the sheet prints");
     const listed = new Map();
-    for (const m of table[1].matchAll(/"([a-z.]+)": \{ key: "([^"]+)", mods: \[([^\]]*)\] \}/g)) {
-      listed.set(m[1], {
-        key: m[2].replace(/\\\\/g, "\\"),
-        mods: [...m[3].matchAll(/"([a-z]+)"/g)].map((x) => x[1]).sort().join("+"),
-      });
+    for (const [id, a] of Object.entries(NC.MENU_ACCEL)) {
+      listed.set(id, { key: a.key, mods: [...a.mods].sort().join("+") });
     }
     const wrong = [];
     for (const [id, want] of declared) {
@@ -1377,36 +1431,143 @@ for (const lang of CONTENT_LANGS) {
 
     // …and the sheet has to actually print them: a table nothing reads is the
     // 1.18 close_policy shape all over again.
-    assert(/kbd\.className = "accel"/.test(appSrc), "renderKeyHelp draws the accelerator");
+    // 6.1: asked of the sheet it actually builds. Render into a fake document
+    // and look for the accelerator beside the letter — a table nothing reads
+    // is the 1.18 close_policy shape all over again, and only a render can
+    // tell the difference.
+    {
+      const app = menuApp({});
+      NC.create(app).renderKeyHelp();
+      const kbds = app.doc.byId.get("keys-list").kids.flatMap((n) => n.kids || []);
+      const accels = kbds.filter((k) => k.className === "accel").map((k) => k.textContent);
+      assert(accels.length >= 6 && accels.includes(NC.accelText("game.new", false)),
+        "renderKeyHelp draws the accelerator (" + accels.length + " printed: " +
+        accels.slice(0, 4).join(" ") + "…)");
+    }
     assert(/kbd\.accel\s*\{/.test(fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8")),
       "…and it is styled");
 
     // Both doors, one gate. Every command the menu can fire has to be reachable
     // from KEY_HELP, because KEY_HELP is what says which modes it applies in —
     // a command with no row would be gated to nothing and silently dead.
-    const help = /const KEY_HELP = \[([\s\S]*?)\n  \];/.exec(appSrc);
-    assert(help, "app.js carries the key sheet table");
-    const ungated = [...declared.keys()].filter((c) => !help[1].includes('"' + c + '"'));
+    const ungated = [...declared.keys()].filter((c) => NC.commandModes(c).size === 0);
     assert(ungated.length === 0,
       "every menu command has a row saying which modes it belongs to" +
       (ungated.length ? " — 没有: " + ungated.join(", ") : ""));
-    // Two lines, in this order — and the break between them is written `\s*`
-    // rather than `\n` on purpose. A `\n` here passes on a LF checkout and
-    // fails on a Windows one, where the file really does contain `\r\n`. That
-    // is not hypothetical: this assertion shipped exactly that way in v2.3.0
-    // and the release run died on it — every ubuntu and macOS job green, the
-    // Windows build the only thing in the world that saw it, and it saw it
-    // *after* the tag and the draft release already existed. Same shape as
-    // the 2.0.0 CRLF-only test bug.
-    //
-    // So the check runs twice: against this checkout, and against a CRLF copy
-    // of it. A regex that can only read one of the two now fails on whatever
-    // platform you are on, rather than on the one platform you are not.
-    const gated = (src) =>
-      /if \(dialogOpen\(\)\) return;\s*if \(!commandModes\(id\)\.has\(store\.session\.mode\)\) return;/.test(src);
-    assert(gated(appSrc) && gated(appSrc.replace(/\r?\n/g, "\r\n")),
-      "the native command passes the dialog gate and the mode gate before it runs" +
-      " —— 在 LF 与 CRLF 两种检出下都读得到");
+    // Both gates, asked of the gate rather than of the two lines that spell
+    // it. This used to be a regex over app.js matching `if (dialogOpen())`
+    // followed by `if (!commandModes(id)…)`, with the line break written
+    // `\s*` because an earlier version wrote `\n` and died on the Windows
+    // job *after* the v2.3.0 tag and draft release already existed. A test
+    // that can be broken by a line ending was never testing the gate. This
+    // one fires the command and looks at what happened: ⌘N over a dialog and
+    // ⌘F inside 做题 are the two measured defects the gate exists for.
+    {
+      const blocked = [];
+      fired.length = 0;
+      NC.create(menuApp({ dialogOpen: () => true })).run("game.new");
+      if (fired.length) blocked.push("dialog gate: " + fired.join());
+      fired.length = 0;
+      NC.create(menuApp({ store: { session: { mode: "puzzle" }, game: { flipped: false, viewIndex: 3 } } }))
+        .run("game.flip");
+      if (fired.length) blocked.push("mode gate: " + fired.join());
+      // …and the same command in a mode it belongs to still runs, so the two
+      // gates are a gate and not a wall
+      fired.length = 0;
+      NC.create(menuApp({})).run("game.flip");
+      if (fired.join() !== "setFlipped:true") blocked.push("ai mode: " + (fired.join() || "nothing"));
+      assert(blocked.length === 0,
+        "the native command passes the dialog gate and the mode gate before it runs" +
+        (blocked.length ? " —— " + blocked.join("；") : ""));
+    }
+  }
+}
+
+// 6.1: the keyboard and the live region, asked of a11y.js rather than of
+// app.js's source (v6-plan Q1.7). Three of the guards below replace regexes
+// that matched the handler's text; the rest are new, because once the handler
+// is a function you can call, the things worth checking are what it does.
+{
+  loadModule(ctx, "src/web/js/a11y.js");
+  const createA11y = ctx.createA11y;
+  const fired = [];
+  const rec = (name) => (...a) => fired.push(name + (a.length ? ":" + a.join(",") : ""));
+  const live = { textContent: "" };
+  /** A board with a piece on e4 and nothing anywhere else. */
+  const fakeGame = { get: (sq) => (sq === "e4" ? { color: "w", type: "p" } : null) };
+  const a11yApp = (over) => Object.assign({
+    doc: { body: {}, getElementById: (id) => (id === "board-live" ? live : null) },
+    t: (k) => k, draw: () => {},
+    store: { session: { mode: "ai" }, ui: {}, game: { flipped: false, viewIndex: 4, selection: null } },
+    viewGame: () => fakeGame,
+    sanHistory: () => ["e4", "e5"],
+    statusText: () => "status",
+    onSquareClick: rec("click"),
+    escapeKey: rec("escapeKey"),
+    dialogOpen: () => false, promoOpen: () => false, confirmOpen: () => false,
+    keyHelpOpen: () => false,
+    openKeyHelp: rec("openKeyHelp"), closeKeyHelp: rec("closeKeyHelp"),
+    finishPromotion: rec("finishPromotion"), finishConfirm: rec("finishConfirm"),
+    togglePanel: rec("togglePanel"), toast: rec("toast"),
+    startLearnTask: rec("startLearnTask"), learnUndo: rec("learnUndo"), learnHint: rec("learnHint"),
+    startPuzzleAt: rec("startPuzzleAt"), nextPuzzle: rec("nextPuzzle"),
+    showPuzzleAnswer: rec("showPuzzleAnswer"),
+    setViewIndex: rec("setViewIndex"), undo: rec("undo"),
+    requestNewGame: rec("requestNewGame"), requestHint: rec("requestHint"),
+    setFlipped: rec("setFlipped"),
+  }, over || {});
+  const press = (key, over, extra) => {
+    fired.length = 0;
+    const app = a11yApp(over);
+    createA11y(app).onKeyDown(Object.assign({ key, preventDefault() {}, target: {} }, extra || {}));
+    return { fired: fired.join(), app };
+  };
+
+  // Escape is the first thing the handler looks at, and it runs the one
+  // routine app.js keeps — the same routine the native view.escape shortcut
+  // reaches. This was a regex over app.js for the literal line.
+  assert(press("Escape").fired === "escapeKey",
+    "…and the window's own Escape runs the same routine");
+
+  // The F key is one of the three doors onto setFlipped, and the only one
+  // that is a key. It is inert in the trainer, where the board is authored.
+  assert(press("f").fired === "setFlipped:true", "F turns the board over");
+  assert(press("f", { store: { session: { mode: "puzzle", puzzle: { cat: "tac", idx: 0 } },
+                               ui: {}, game: { flipped: false, viewIndex: 0, selection: null } } }).fired === "",
+    "…and does nothing in 做题, where the board is the puzzle's");
+
+  // A letter typed into a text field is text (v6-plan D8). The FEN box used
+  // to be the only field and guarded itself; the guard lives in the handler.
+  assert(press("n", null, { target: { tagName: "INPUT" } }).fired === "",
+    "a letter typed into a field is text, not a shortcut");
+  assert(press("n").fired === "requestNewGame", "…and the same letter outside one is the shortcut");
+
+  // Nothing acts on the game from behind a dialog — except Escape, above.
+  assert(press("z", { dialogOpen: () => true }).fired === "",
+    "no game key reaches the board through a dialog");
+
+  // "?" is the exception it has always been: it opens its own sheet, and
+  // closes it again.
+  assert(press("?").fired === "openKeyHelp", "\"?\" opens the shortcut sheet");
+  assert(press("?", { keyHelpOpen: () => true }).fired === "closeKeyHelp", "…and closes it");
+
+  // The live region. #board-live is the only place this app speaks to a
+  // screen reader; the cursor keys are what write it.
+  {
+    const app = a11yApp({});
+    const A = createA11y(app);
+    A.announce("hello");
+    assert(live.textContent === "hello", "announce() writes the live region");
+    assert(A.describeSquare("e4") === "e4 · vs.whitepiece.p", "a square is named with what stands on it");
+    assert(A.describeSquare("d4") === "d4 · live.empty", "…and an empty one says so");
+    app.store.ui.keyboardCursor = "e4";
+    A.moveCursor(1, 0);
+    assert(app.store.ui.keyboardCursor === "f4", "the cursor follows the arrow key");
+    assert(live.textContent === "f4 · live.empty", "…and the new square is announced");
+    // arrows follow what the player sees, so they invert with the board
+    app.store.game.flipped = true;
+    A.moveCursor(1, 0);
+    assert(app.store.ui.keyboardCursor === "e4", "a flipped board inverts the arrows");
   }
 }
 
@@ -1699,9 +1860,13 @@ for (const lang of CONTENT_LANGS) {
     // resets (lesson, puzzle), the loaded-record restore, the editor reset,
     // and setFlipped itself
     assert(/function setFlipped\(/.test(app), "setFlipped is the one place the view turns");
-    for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/,
-                          /k === "f"[^\n]*setFlipped\(/,
-                          /"game\.flip":\s*\(\)\s*=>\s*setFlipped\(/])
+    // Two of the three doors are still spelled in app.js; the third is the
+    // native View menu, which moved to native-commands.js in 6.1 and is
+    // checked by firing it (see the native-menu block above, "ai mode").
+    // One of the three doors is still spelled in app.js; the F key moved to
+    // a11y.js and the native View menu to native-commands.js in 6.1, and both
+    // are checked by pressing them (see the keyboard blocks above).
+    for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/])
       assert(caller.test(app), "…and it is what the three doors call — " + caller.source.slice(0, 26));
     assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
   }
@@ -3822,8 +3987,14 @@ for (const lang of CONTENT_LANGS) {
   {
     // the key list, read from the module that owns it
     const keySrc = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
+    // KEYS plus the sidecars persist.js declares beside it (SCHEMA_KEY,
+    // STAMP_KEY). 6.1: "chess.schema" used to be written in here by hand and
+    // "chess.writtenAt" was simply missing, so a suite that seeded the stamp —
+    // which is how you make a cache look older than the file, the whole point
+    // of the recovery tests — was told it had invented a key. Read both from
+    // the module instead, so a third sidecar cannot repeat the trick.
     const known = new Set([...keySrc.matchAll(/^\s+\w+: "(chess\.[^"]+)",/gm)].map((m) => m[1])
-      .concat("chess.schema"));
+      .concat([...keySrc.matchAll(/^export const \w+_KEY = "(chess\.[^"]+)";/gm)].map((m) => m[1])));
     let stray = 0;
     for (const f of fs.readdirSync(path.join(root, "scripts")).filter((n) => /^test-.*\.mjs$/.test(n))) {
       const src = fs.readFileSync(path.join(root, "scripts", f), "utf8");
@@ -5229,6 +5400,9 @@ for (const lang of CONTENT_LANGS) {
     const h = withFile(null);
     const P = createPersist(h, () => {});
     P.load();
+    // 6.1: the mirror is gated on recover(); the boot path always reconciles
+    // before it is allowed to write over the file (see scheduleMirror)
+    await P.recover();
     P.set("settings", "{\"a\":1}");
     P.set("learn", "{\"b\":2}");
     await tick(600);
@@ -5283,6 +5457,7 @@ for (const lang of CONTENT_LANGS) {
     let failed = null;
     const P = createPersist(h, (info) => { failed = info; });
     P.load();
+    await P.recover();
     P.set("slots", "{\"v\":1}");
     const doc = P.exportAll();
     assert(doc.keys.slots === "{\"v\":1}" && P.isProfileDoc(doc), "exportAll() is a profile document");
@@ -5295,7 +5470,129 @@ for (const lang of CONTENT_LANGS) {
     await tick(600);
     assert(failed && failed.key === "appdata", "a refused mirror write latches the failure like a refused cache write");
   }
-  // 6. no bridge at all: nothing mirrors, nothing fails, recover() says none
+  // 6.1 — 7. the boot race: a cleared cache, an intact file, a slow read.
+  // Before 6.1 the boot writes armed the 400ms mirror while recover() was
+  // still in flight, so an empty profile reached the file first, recover()
+  // then read back what it had just destroyed, and the user was told their
+  // profile had been restored.
+  {
+    const good = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000,
+      keys: { stats: "{\"v\":2,\"games\":[1]}", learn: "{\"v\":1,\"done\":1}" } });
+    const h = withFile(good);
+    h.appdataRead = async () => { await tick(900); return h.file; };  // slower than MIRROR_DELAY
+    const P = createPersist(h, () => {});
+    P.load();
+    const pending = P.recover();
+    P.set("settings", "{\"fresh\":1}");   // what loadSettings/saveGame do on boot
+    P.set("save", "{\"v\":1,\"pgn\":\"\"}");
+    await tick(600);                      // the old mirror would have fired here
+    assert(h.writes === 0, "no mirror write reaches the file before recover() has run (" + h.writes + ")");
+    assert(JSON.parse(h.file).keys.stats === "{\"v\":2,\"games\":[1]}", "…so the good file is still the good file");
+    const r = await pending;
+    assert(r === "restored", "…and the file wins over the cache the boot just wrote (" + r + ")");
+    assert(P.get("stats") === "{\"v\":2,\"games\":[1]}", "…with the real stats back in storage");
+  }
+  // 8. after a restore nothing may write again: the page is still standing on
+  // its pre-restore state and is about to reload onto the new one
+  {
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys: { save: "{\"v\":1,\"pgn\":\"real\"}" } }));
+    h.m.set("chess.writtenAt", "5000"); h.m.set(KEYS.save, "{\"v\":1,\"pgn\":\"stale\"}");
+    const P = createPersist(h, () => {});
+    P.load();
+    assert((await P.recover()) === "restored", "the older cache yields to the file");
+    P.set("save", "{\"v\":1,\"pgn\":\"stale\"}");   // beforeunload → saveGame() during the reload delay
+    await tick(600);
+    assert(P.get("save") === "{\"v\":1,\"pgn\":\"real\"}", "a write after a restore does not clobber what was restored");
+    assert(h.writes === 0, "…and nothing stale reaches the file either (" + h.writes + ")");
+  }
+  // 9. a restore that cannot be written is reported, not silently half-done
+  {
+    const h = withFile(null);
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    await P.recover();
+    const doc = { app: "chessboard", schema: 1, writtenAt: 1, keys: { learn: "a", stats: "b" } };
+    let allow = 1;
+    const realSet = h.storageSet;
+    h.storageSet = (k, v) => (allow-- > 0 ? realSet(k, v) : false);   // quota dies mid-restore
+    const ok = P.restoreAll(doc);
+    assert(ok === false, "restoreAll() reports a refused write instead of returning as if it wrote");
+    assert(failed && failed.key === "restore", "…and latches the failure so the app can say so");
+    h.storageSet = realSet;
+  }
+  // 10. a file that exists and holds nothing is damage, not a fresh install
+  {
+    const h = withFile(null);
+    h.appdataRead = async () => ({ empty: true });
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    const r = await P.recover();
+    assert(r === "corrupt", "a zero-length profile file reads as corrupt, not missing (" + r + ")");
+    assert(failed && failed.key === "appdataCorrupt", "…and the user is told");
+  }
+  // 11b. …and the damaged file is genuinely left alone. The banner promises
+  // exactly that, and the recovery e2e caught it being false: recover()'s own
+  // finally released the mirror, and the write the boot path had queued
+  // replaced the damaged bytes within MIRROR_DELAY — the one copy the user was
+  // told was kept, destroyed moments after they were told.
+  {
+    const damaged = "{not json at all";
+    const h = withFile(damaged);
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    P.set("save", "{\"v\":1,\"pgn\":\"whatever the boot path writes\"}");
+    const r = await P.recover();
+    await tick(700);
+    assert(r === "corrupt" && failed && failed.key === "appdataCorrupt", "an unreadable file is reported (" + r + ")");
+    assert(h.writes === 0 && h.file === damaged,
+      "…and nothing overwrites it, which is what the banner promises (" + h.writes + " write(s))");
+    P.set("learn", "later in the same session");
+    await tick(700);
+    assert(h.writes === 0 && h.file === damaged, "…for the rest of the session, not just the first moment");
+  }
+  // 11. an unreadable file is reported too — before 6.1 it returned "none" in
+  // silence and the broken file was left in place forever
+  {
+    const h = withFile("{not json at all");
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    const r = await P.recover();
+    assert(r === "corrupt", "a file that will not parse reads as corrupt (" + r + ")");
+    assert(failed && failed.key === "appdataCorrupt", "…and says so once");
+  }
+  // 12. the quarantine keeps the evidence it promises to keep
+  {
+    const h = mem();
+    const P = createPersist(h, () => {});
+    h.m.set(KEYS.learn, "{oops");
+    P.load();
+    for (let i = 0; i < 12; i++) { P.load(); P.read("learn"); }   // twelve launches, one bad key
+    const list = JSON.parse(P.get("quarantine"));
+    assert(list.length === 1 && list[0].raw === "{oops",
+      "the same unreadable value is kept once, not pushed on every launch (" + list.length + ")");
+    P.clearAll();
+    assert(P.get("quarantine") != null, "clearAll() does not destroy the quarantined evidence");
+    P.restoreAll({ app: "chessboard", schema: 1, writtenAt: 1, keys: {} });
+    assert(P.get("quarantine") != null, "…and neither does a restore");
+  }
+  // 13. a cache that cannot stamp itself must not report the write as kept:
+  // an unstamped cache reads as older than it is and the file overwrites it
+  {
+    const h = mem();
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    const realSet = h.storageSet;
+    h.storageSet = (k, v) => (k === "chess.writtenAt" ? false : realSet(k, v));
+    assert(P.set("learn", "x") === false, "a refused revision stamp is a refused write");
+    assert(failed && failed.key === "learn", "…and latches");
+    h.storageSet = realSet;
+  }
+  // 14. no bridge at all: nothing mirrors, nothing fails, recover() says none
   {
     const h = mem();
     const P = createPersist(h, () => { throw new Error("must not be called"); });
@@ -5303,6 +5600,105 @@ for (const lang of CONTENT_LANGS) {
     P.set("learn", "x");
     assert(await P.recover() === "none", "a browser has no file and no error");
   }
+}
+
+// --- 6.1: the on-demand chunks stay out of the first-paint bundle ----------
+//
+// The whole point of CHUNKS is that index.html does not parse them before the
+// board appears. One stray `import "./eco.js"` anywhere in app.js's graph and
+// esbuild pulls the whole table back in, the bundle silently grows by a third
+// and nothing else notices. And a chunk that is built but not packaged is an
+// app whose opening names never appear, so the dist list is checked too.
+{
+  // Build first: bundle.js and the chunks are generated and gitignored, so a
+  // fresh checkout (CI) has neither, and this block reads both. compileModuleSync
+  // elsewhere in this file compiles single modules, which does not produce them.
+  const bundleSrc = await build({ write: true });
+  const syncSrc = fs.readFileSync(path.join(root, "scripts/sync-dist.mjs"), "utf8");
+  for (const c of CHUNKS) {
+    const out = path.join(root, c.out);
+    assert(fs.existsSync(out), c.out + " is built alongside the bundle");
+    const chunkSrc = fs.readFileSync(out, "utf8");
+    assert(new RegExp("window\\[k\\]").test(chunkSrc) || chunkSrc.includes(c.global),
+      c.out + " puts " + c.global + " on the window");
+    // the table's own bulk must not be in the bundle: compare a distinctive
+    // slice of the chunk against the bundle rather than trusting a name
+    const probe = chunkSrc.slice(Math.floor(chunkSrc.length / 2), Math.floor(chunkSrc.length / 2) + 120);
+    assert(!bundleSrc.includes(probe), c.out + "'s payload is not also inside bundle.js");
+  }
+  assert(/CHUNKS\.map/.test(syncSrc), "sync-dist.mjs takes the chunk list from the bundler, not a second copy");
+  assert(fs.readFileSync(path.join(root, ".gitignore"), "utf8").includes("chunk-*.js"),
+    "the generated chunks are gitignored like the bundle");
+
+  // Every path that produces frontend/dist calls that one script. This is the
+  // check that was missing: sync-dist.mjs learned about CHUNKS, and the three
+  // shell copies that predate it (package.sh and the two build workflows) kept
+  // naming bundle.js and engine-src.js by hand, so the packaged app would have
+  // shipped without chunk-eco.js and lost every opening name. A guard on the
+  // one script is not a guard on the product while three other copies exist.
+  for (const rel of ["scripts/package.sh", ".github/workflows/build-macos.yml", ".github/workflows/build-windows.yml"]) {
+    // named `wf` rather than the obvious short name: the register at the end
+    // of this file counts a few variable names as app.js source-text
+    // assertions, and a workflow file is not app.js.
+    const wf = fs.readFileSync(path.join(root, rel), "utf8");
+    assert(/node scripts\/sync-dist\.mjs/.test(wf), rel + " builds frontend/dist with sync-dist.mjs");
+    const copies = wf.split("\n").filter((l) => !l.trim().startsWith("#") && /\bcp\b.*\b(bundle|engine-src)\.js/.test(l));
+    assert(copies.length === 0, rel + " does not hand-copy the dist file list (found: " + copies.join(" | ") + ")");
+  }
+}
+
+// --- 6.1: an impossible [FEN] must not be quietly repaired -------------------
+//
+// ChessEditor exists to reject positions chess.js accepts. fromFen() used to
+// build its board with `new Chess(fen).board()`, and chess.js tracks one king
+// square per colour, so a FEN with two white kings arrived at validate() with
+// one already dropped: the guard said yes and the app loaded a position that
+// was not the one in the file. The no-king half worked, which is why it went
+// unseen.
+{
+  loadModule(ctx, "src/web/js/editor.js");
+  const E6 = ctx.ChessEditor;
+  const two = "4k3/8/8/8/8/8/8/K3K3 w - - 0 1";
+  assert(new Chess().validate_fen(two).valid, "chess.js itself accepts two white kings");
+  const st = E6.fromFen(two, Chess);
+  const kings = st.board.flat().filter((p) => p && p.type === "k" && p.color === "w").length;
+  assert(kings === 2, "fromFen() reads the board field as written (" + kings + " white kings)");
+  assert(E6.validate(st, Chess) === "edErr.manyWhiteKings", "…so validate() can reject it");
+  const one = "4k3/8/8/8/8/8/8/4K3 w - - 0 1";
+  assert(E6.validate(E6.fromFen(one, Chess), Chess) === null, "…and an ordinary position still passes");
+  assert(E6.boardFromFenField("8/8/8/8/8/8/8") === null, "a board field with seven ranks is not a board");
+  assert(E6.boardFromFenField("9/8/8/8/8/8/8/8") === null, "…nor is one with nine empty squares in a rank");
+}
+
+// --- 6.1 (review): a terminal [FEN] is a normal file, not an invalid one -----
+//
+// The import path reuses ChessEditor.validate for the structural and
+// reachability checks. validate() also refuses a position with no legal move,
+// which is right for the editor (there would be nothing to play) and wrong
+// here: a game that starts from a checkmate or a stalemate is an ordinary
+// study or a finished game, and those files were importable before 6.1 wired
+// the validator in. opts.allowTerminal separates the two policies.
+{
+  const E7 = ctx.ChessEditor;
+  const mate = "7k/5KQ1/8/8/8/8/8/8 b - - 0 1";
+  const stale = "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1";
+  const mp = new Chess(mate), sp = new Chess(stale);
+  assert(mp.in_checkmate(), "the mate fixture really is a checkmate");
+  assert(sp.in_stalemate(), "the stalemate fixture really is a stalemate");
+  assert(E7.validate(E7.fromFen(mate, Chess), Chess) === "edErr.alreadyMate",
+    "the editor still refuses to set up a finished position");
+  assert(E7.validate(E7.fromFen(stale, Chess), Chess) === "edErr.alreadyStalemate", "…stalemate too");
+  assert(E7.validate(E7.fromFen(mate, Chess), Chess, { allowTerminal: true }) === null,
+    "…and the import path takes a checkmate [FEN]");
+  assert(E7.validate(E7.fromFen(stale, Chess), Chess, { allowTerminal: true }) === null,
+    "…and a stalemate [FEN]");
+  // allowTerminal relaxes only that one rule — everything above it still bites
+  assert(E7.validate(E7.fromFen("4k3/8/8/8/8/8/8/K3K3 w - - 0 1", Chess), Chess, { allowTerminal: true })
+    === "edErr.manyWhiteKings", "…while two white kings are still rejected");
+  // app.js's own wiring is checked where it can be checked behaviourally —
+  // scripts/test-content-e2e.mjs imports a PGN whose [FEN] is a checkmate and
+  // asserts the board loads it. A source-text assertion here would be a fifth
+  // entry in a register that only ever shrinks.
 }
 
 // --- 6.0: the register of source-text assertions in this file.
@@ -5316,7 +5712,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 124;
+  const REGISTERED = 119;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }

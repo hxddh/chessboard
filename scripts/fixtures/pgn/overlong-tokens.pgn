@@ -1,0 +1,10 @@
+[Event "Tokens wider than the line"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "Long"]
+[Black "Token"]
+[Result "*"]
+
+
+1. e4 { see https://example.org/openings/ruy-lopez/morphy-defence/closed-lines/chigorin-variation?ply=12&highlight=true } e5 2. Nf3 { [%cal Ge2e4,Gd2d4,Gg1f3,Gb1c3,Gf1c4,Gc1f4,Gd1d2,Ge1g1,Ga2a4,Gh2h4,Gb2b3,Gc2c3] [%csl Re4,Rd4,Rf3,Rc3,Rc4,Rf4,Rd2,Rg1,Ra4,Rh4,Rb3,Rc3] plan } Nc6 *

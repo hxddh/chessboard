@@ -47,13 +47,23 @@ function canonNode(n) {
 function canonGame(g) {
   return JSON.stringify({ headers: canonHeaders(g.headers), result: g.result, root: canonNode(g.root) });
 }
-/** every san in the tree is legal from its parent's fen and lands on the node's fen */
-function legal(node) {
+/**
+ * Every san in the tree is legal from its parent's fen and lands on the
+ * node's fen. A null move is the exception the parser makes: it is not a
+ * move chess.js can play, so it and everything after it in that line keep
+ * the position the line stopped at, and that is what is checked instead.
+ */
+function legal(node, stopped) {
   for (const c of node.children) {
+    if (stopped || c.san === P.NULL_SAN) {
+      if (c.fen !== node.fen || c.from !== null || c.to !== null) return false;
+      if (!legal(c, true)) return false;
+      continue;
+    }
     const g = new Chess(node.fen);
     const mv = g.move(c.san);
     if (!mv || g.fen() !== c.fen) return false;
-    if (!legal(c)) return false;
+    if (!legal(c, false)) return false;
   }
   return true;
 }
@@ -86,7 +96,7 @@ function legal(node) {
       const tree = T.fromPgnGame(g);
       assert(T.mainlineSans(tree).join(" ") === mainlineSans(g.root).join(" "), f + ": tree keeps the mainline");
       const back = T.toPgnGame(tree, g.headers);
-      assert(canonGame({ ...back, result: g.result }) === canonGame(g), f + ": tree → game is lossless");
+      assert(canonGame(back) === canonGame(g), f + ": tree → game is lossless (result included)");
       const copy = T.deserialize(T.serialize(tree));
       assert(JSON.stringify(copy) === JSON.stringify(tree), f + ": tree serialize → deserialize is identity");
     }
@@ -199,6 +209,98 @@ function mainlineSans(root) {
     "1-0 0-1 1/2-1/2", "multi-game file: three games, three results");
 }
 
+// --- the confirmed import/export defects, one block each --------------------
+{
+  // 1. castling with zeros and a check or mate suffix
+  const ck = P.parsePgn('[FEN "5k2/8/8/8/8/8/8/4K2R w K - 0 1"]\n\n1. 0-0+ *').games[0];
+  assert(mainlineSans(ck.root).join(" ") === "O-O+", "0-0+ is castling with a check, not an unexpected character");
+  const mate = P.parsePgn('[FEN "3k4/2p1p3/B4N2/8/8/8/8/R3K3 w Q - 0 1"]\n\n1. 0-0-0# 1-0').games[0];
+  assert(mainlineSans(mate.root).join(" ") === "O-O-O#", "0-0-0# too");
+  const ckn = P.parsePgn('[FEN "5k2/8/8/8/8/8/8/4K2R w K - 0 1"]\n\n1. 0-0+! *').games[0];
+  assert(ckn.root.children[0].nags.join() === "1", "...and a suffix annotation after it is still a NAG");
+
+  // 2. null moves
+  const nm = P.parsePgn("1. e4 e5 2. -- Nf6 *").games[0];
+  assert(mainlineSans(nm.root).join(" ") === "e4 e5 -- Nf6", "'--' is a null move, not a tokenizer error");
+  const e5 = nm.root.children[0].children[0];
+  assert(e5.children[0].san === P.NULL_SAN && e5.children[0].fen === e5.fen && e5.children[0].from === null,
+    "...it keeps the position before it rather than inventing one");
+  assert(e5.children[0].children[0].fen === e5.fen, "...and the moves after it are recorded, not applied");
+  assert(mainlineSans(P.parsePgn("1. e4 e5 2. Z0 Nf6 *").games[0].root).join(" ") === "e4 e5 -- Nf6", "Z0 is the same null move");
+  const nmOut = P.serializePgn(nm);
+  assert(/2\. -- Nf6/.test(nmOut), "...exported as '--', with no move number invented for the move after it");
+  assert(canonGame(P.parsePgn(nmOut).games[0]) === canonGame(nm), "...and the round trip is exact");
+  assert(P.splitGames("1. e4 e5 2. -- Nf6 *\n\n1. d4 d5 *").length === 2, "a null move no longer costs a whole file its games");
+
+  // 3. a variation repeating the mainline move must not steal the mainline
+  const st = P.parsePgn("1. e4 e5 (1... e5 2. d4) 2. Nf3 Nc6 *").games[0];
+  assert(mainlineSans(st.root).join(" ") === "e4 e5 Nf3 Nc6", "the mainline continuation owns children[0], not the RAV's");
+  const stE5 = st.root.children[0].children[0];
+  assert(stE5.children.map((c) => c.san).join(",") === "Nf3,d4", "...and the RAV's continuation is the variation");
+  assert(P.parsePgn("1. e4 (1. e4 e5) e5 *").games[0].root.children.length === 1, "...while the dedupe still does not fork");
+
+  // 4. the result travels through the tree even with no Result tag
+  const nores = P.parsePgn("1. e4 e5 2. Nf3 1-0").games[0];
+  const ntree = T.fromPgnGame(nores);
+  assert(ntree.result === "1-0", "fromPgnGame carries the result the movetext ended with");
+  assert(T.toPgnGame(ntree, nores.headers).result === "1-0", "...and toPgnGame gives it back without a Result tag");
+  assert(P.serializePgn(T.toPgnGame(ntree, nores.headers)).trim().endsWith("1-0"), "...so the export does not turn 1-0 into *");
+  assert(T.deserialize(T.serialize(ntree)).result === "1-0", "...and it survives the persisted blob");
+  assert(T.toPgnGame(T.createTree(), [["Result", "0-1"]]).result === "0-1", "a tree that carries nothing still reads the tag");
+
+  // 5. a single token wider than the line
+  const url = "https://example.org/a/" + "long-".repeat(20) + "path";
+  const wide = P.parsePgn("1. e4 { see " + url + " } e5 *").games[0];
+  const wideOut = P.serializePgn(wide);
+  assert(wideOut.split("\n").every((l) => l.length <= 80), "a URL longer than the line is broken, not pushed past 80 columns");
+  assert(canonGame(P.parsePgn(wideOut).games[0]) === canonGame(wide), "...losslessly: the comment comes back whole");
+  const many = "[%cal " + ["e2e4", "d2d4", "g1f3", "b1c3", "f1c4", "c1f4", "d1d2", "e1g1", "a2a4", "h2h4"]
+    .map((x) => "G" + x).join(",") + "]";
+  const arr = P.parsePgn("1. e4 { " + many + " } e5 *").games[0];
+  const arrOut = P.serializePgn(arr);
+  assert(arrOut.split("\n").every((l) => l.length <= 80), "a long shape list is broken after a comma");
+  assert(canonGame(P.parsePgn(arrOut).games[0]) === canonGame(arr), "...and every arrow comes back");
+
+  // 6. "}" inside a comment is escaped, not rewritten
+  const brace = P.parsePgn("1. e4 { a brace \\} and a backslash \\\\ } e5 *").games[0];
+  assert(brace.root.children[0].comment === "a brace } and a backslash \\", "'\\}' and '\\\\' decode to '}' and '\\'");
+  const braceOut = P.serializePgn(brace);
+  assert(braceOut.includes("{ a brace \\} and a backslash \\\\ }"), "...and are written back escaped, never as ']'");
+  assert(canonGame(P.parsePgn(braceOut).games[0]) === canonGame(brace), "...so the user's text survives the round trip");
+
+  // 7. a comment in a moveless variation belongs to nobody
+  const mv = P.parsePgn("1. e4 ( {alt} ) e5 2. Nf3 *").games[0];
+  assert(mv.root.children[0].children[0].san === "e5" && mv.root.children[0].children[0].comment === null,
+    "a comment in a variation with no move does not leak onto the next mainline move");
+  assert(mv.root.children.length === 1 && mv.root.children[0].children.length === 1, "...and adds no phantom node");
+  const two = P.parsePgn("1. e4 ( {a} {b} 1. d4 ) e5 *").games[0];
+  assert(two.root.children[1].comment === "a b" && two.root.children[0].comment === null,
+    "...while two comments before a variation's first move both belong to it");
+
+  // 8. the "e.p." suffix
+  const ep = P.parsePgn("1. e4 h6 2. e5 d5 3. exd6 e.p. Qxd6 *").games[0];
+  assert(mainlineSans(ep.root).join(" ") === "e4 h6 e5 d5 exd6 Qxd6", "'e.p.' after a capture is ignored, not fatal");
+
+  // 9. figurine SAN
+  const fig = P.parsePgn("1. ♘f3 d5 2. ♙d4 ♞f6 *").games[0];
+  assert(mainlineSans(fig.root).join(" ") === "Nf3 d5 d4 Nf6", "figurine pieces map to letters and the pawn glyph to nothing");
+  const figErr = throwsWith(() => P.parsePgn("1. ♘z9 *"), /illegal move/);
+  assert(!!figErr, "...and a figurine move that is illegal is an illegal move, not a character error");
+
+  // 10. the cheap ones
+  const lit = P.parsePgn("1. e4 { type \\[%cal Ge2e4] to draw } e5 *").games[0];
+  assert(lit.root.children[0].comment === "type [%cal Ge2e4] to draw" && lit.root.children[0].shapes.arrows.length === 0,
+    "an escaped '[%cal ...]' stays text and draws nothing");
+  assert(canonGame(P.parsePgn(P.serializePgn(lit)).games[0]) === canonGame(lit), "...and stays text on the way out and back");
+  const bad = P.parsePgn("1. e4 { [%cal Ge2e4,oops] } e5 *").games[0];
+  assert(bad.root.children[0].shapes.arrows.length === 0 && bad.root.children[0].comment === "[%cal Ge2e4,oops]",
+    "a shape list with a malformed entry is kept as text, not half-read and half-dropped");
+  assert(canonGame(P.parsePgn(P.serializePgn(bad)).games[0]) === canonGame(bad), "...and survives the round trip");
+  assert(P.parsePgn("1. e4 $12345678 e5 *").games[0].root.children[0].nags.join() === "12345678",
+    "a long NAG number is read whole, not truncated to eight bytes");
+  assert(!!throwsWith(() => P.parsePgn("1. e4 $ e5 *"), /malformed NAG/), "...and '$' with no digits is still an error");
+}
+
 // --- errors name the spot ---------------------------------------------------
 {
   const e = throwsWith(() => P.parsePgn('[Event "x"]\n\n1. e4 e5 2. Nf9 *'), /illegal move "Nf9"/);
@@ -289,6 +391,50 @@ function mainlineSans(root) {
   assert(P.serializePgn(fg).includes("1. O-O *"), "...and exports from that position");
   const rt = T.fromPgnGame(P.parsePgn(P.serializePgn(fg)).games[0]);
   assert(rt.startFen === fenTree.startFen && T.mainlineSans(rt).join() === "O-O", "fromPgnGame keeps the start position");
+}
+
+// --- 6.1 (review): a foreign comment may end with a backslash ---------------
+//
+// PGN defines no escape inside a brace comment: the first "}" ends it, full
+// stop. This module defines one anyway so that a "}" the user typed survives
+// a round trip (escapeCommentText). Applied unconditionally, that private
+// reading turns a perfectly valid foreign comment like "{C:\path\}" into
+// either an unterminated-comment error or a comment that silently swallows
+// the movetext up to some later brace. The private reading now only wins
+// where it can be true: it has to terminate, and the span it claims past the
+// standard's "}" must not contain a "{" — which our own output never does.
+{
+  const firstComment = (pgn) => {
+    const g = P.parsePgn(pgn).games[0];
+    const walk = (n) => { if (n.comment) return n.comment; for (const c of n.children) { const r = walk(c); if (r) return r; } return null; };
+    return walk(g.root);
+  };
+
+  // 1. the case the review found: a trailing backslash with nothing after it
+  assert(firstComment("1. e4 {C:\\path\\}") === "C:\\path\\",
+    "a comment ending in a backslash ends at its own brace");
+
+  // 2. the silent half — it must not eat the movetext up to the next brace
+  {
+    const g = P.parsePgn("1. e4 {C:\\path\\} e5 {fine} 2. Nf3").games[0];
+    const sans = [];
+    let n = g.root;
+    while (n.children.length) { n = n.children[0]; sans.push(n.san); }
+    assert(sans.join(" ") === "e4 e5 Nf3", "…and the moves after it are still moves (" + sans.join(" ") + ")");
+  }
+
+  // 3. our own round trip still carries a literal "}" and a backslash through
+  {
+    const g = P.parsePgn("1. e4").games[0];
+    g.root.children[0].comment = "a } b \\ c";
+    const out = P.serializePgn(g);
+    assert(/\\\}/.test(out), "the exporter still escapes a brace");
+    assert(firstComment(out) === "a } b \\ c", "…and reading it back gives the text unchanged");
+  }
+
+  // 4. a comment with no closing brace anywhere is still an error
+  assert(throwsWith(() => P.parsePgn("1. e4 {never closed"), /unterminated comment/),
+    "a comment with no closing brace at all is still rejected");
 }
 
 if (failed) {

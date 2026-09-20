@@ -1,0 +1,10 @@
+[Event "A variation that repeats the mainline move"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "Dedupe"]
+[Black "Mainline"]
+[Result "*"]
+
+
+1. e4 e5 ( 1... e5 2. d4 exd4 ) 2. Nf3 Nc6 3. Bb5 *

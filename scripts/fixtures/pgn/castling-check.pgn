@@ -1,0 +1,25 @@
+[Event "Castling with zeros and a check suffix"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "Zero"]
+[Black "Suffix"]
+[Result "1-0"]
+[SetUp "1"]
+[FEN "3k4/2p1p3/B4N2/8/8/8/8/R3K3 w Q - 0 1"]
+
+
+1. 0-0-0# 1-0
+
+[Event "Castling with zeros and a check"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "Zero"]
+[Black "Check"]
+[Result "*"]
+[SetUp "1"]
+[FEN "5k2/8/8/8/8/8/8/4K2R w K - 0 1"]
+
+
+1. 0-0+ Kg8 *

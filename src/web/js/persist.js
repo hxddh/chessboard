@@ -149,12 +149,33 @@ export function createPersist(host, onWriteFailure) {
   function set(name, value) {
     const key = KEYS[name];
     if (!key) throw new Error("unknown storage key: " + name);
+    // 6.1: after recover() rewrote storage from the file, the page is still
+    // running on its pre-restore state and is about to reload onto the new
+    // one. Anything it writes in between (beforeunload's saveGame, a clock
+    // tick, the theme media query) would overwrite what was just restored
+    // and re-stamp it newer, so the restored copy loses to the stale one.
+    // Nothing may write again until the reload.
+    if (frozen) return true;
     const ok = host.storageSet(key, value);
     if (!bag) bag = {};
-    if (ok) { bag[name] = value; host.storageSet(STAMP_KEY, String(Date.now())); scheduleMirror(); return true; }
+    if (ok) {
+      bag[name] = value;
+      // 6.1: the stamp decides who wins in recover(). A cache that takes new
+      // values under a frozen stamp reads as older than it is, and the file
+      // then overwrites it — so a refused stamp is a refused write.
+      if (!host.storageSet(STAMP_KEY, String(Date.now()))) { fail(name); return false; }
+      scheduleMirror();
+      return true;
+    }
     fail(name);
     return false;
   }
+
+  /**
+   * 6.1: stop writing, for good, until the page reloads. Used after a restore
+   * from the mirror, where any further write is by definition stale.
+   */
+  function freeze() { frozen = true; if (mirrorTimer) { clearTimeout(mirrorTimer); mirrorTimer = null; } }
 
   function fail(name) {
     if (broken) return;
@@ -179,6 +200,20 @@ export function createPersist(host, onWriteFailure) {
   const MIRROR_DELAY = 400; // ms; every autosave in a burst becomes one write
   let mirrorTimer = null;
   let mirrorEnabled = typeof host.appdataWrite === "function";
+  // 6.1: no write reaches the file before recover() has reconciled the two
+  // copies; with no reader there is nothing to reconcile, so the gate is open
+  // from the start.
+  let reconciled = typeof host.appdataRead !== "function";
+  let mirrorPending = false;
+  // 6.1: set when the file turned out to be unreadable. The banner tells the
+  // user their file was left alone so they can try to recover it — that has to
+  // be true. Before this flag existed recover()'s own finally released the
+  // mirror and the boot path's queued write replaced the damaged file within
+  // MIRROR_DELAY: the one copy of the thing they were told was kept, gone a
+  // fraction of a second after they were told. Found by the recovery e2e.
+  let mirrorBlocked = false;
+  // 6.1: set once a restore has rewritten storage — see set()
+  let frozen = false;
   function mirrorDoc() {
     const keys = {};
     for (const name of Object.keys(KEYS)) if (bag && bag[name] != null) keys[name] = bag[name];
@@ -191,14 +226,42 @@ export function createPersist(host, onWriteFailure) {
     return { app: "chessboard", schema: SCHEMA, writtenAt: at, keys };
   }
   function scheduleMirror() {
-    if (!mirrorEnabled) return;
+    if (!mirrorEnabled || frozen || mirrorBlocked) return;
+    // 6.1: the boot path writes before it reads. loadSettings/saveSettings
+    // and the first saveGame all run through set(), which arms this timer,
+    // while recover()'s bridge round trip is still in flight. When the cache
+    // was cleared but the file is intact — the one case this mirror exists
+    // for — a flush that lands first writes an empty profile over the good
+    // file, stamped newer, and recover() then "restores" the page from what
+    // it just destroyed. Nothing may reach the file until recover() has said
+    // which side wins.
+    if (!reconciled) { mirrorPending = true; return; }
     if (mirrorTimer) clearTimeout(mirrorTimer);
     mirrorTimer = setTimeout(flushMirror, MIRROR_DELAY);
+  }
+  /**
+   * The file is there and unreadable: keep it exactly as it is for the rest of
+   * this session. The cache is what the app runs on, and it is still the cache
+   * on the next launch, so nothing the player does is lost by not mirroring —
+   * what would be lost is the damaged file itself, which is the only thing a
+   * recovery could be attempted from.
+   */
+  function blockMirror() {
+    mirrorBlocked = true;
+    mirrorPending = false;
+    if (mirrorTimer) { clearTimeout(mirrorTimer); mirrorTimer = null; }
+    fail("appdataCorrupt");
+  }
+
+  /** recover() is done (or was never possible): let the mirror run. */
+  function releaseMirror() {
+    reconciled = true;
+    if (mirrorPending) { mirrorPending = false; scheduleMirror(); }
   }
   /** Write the whole profile to the native file now. @returns {Promise<boolean>} */
   async function flushMirror() {
     mirrorTimer = null;
-    if (!mirrorEnabled) return false;
+    if (!mirrorEnabled || mirrorBlocked) return false;
     try {
       const ok = await host.appdataWrite(JSON.stringify(mirrorDoc()));
       // null: the shell has no such file (no data dir, an older build) —
@@ -224,24 +287,43 @@ export function createPersist(host, onWriteFailure) {
    *   was rewritten from the file and the caller should reload the page
    */
   async function recover() {
+    // 6.1: whatever happens below, the mirror gate opens exactly once on the
+    // way out — a recover() that returns early must not leave the file
+    // unwritable for the rest of the session.
+    try { return await recoverInner(); }
+    finally { if (!frozen) releaseMirror(); else reconciled = true; }
+  }
+  async function recoverInner() {
     if (typeof host.appdataRead !== "function") return "none";
-    let text = null;
-    // host.js answers {text} | {missing:true} | null; a plain string is also
-    // accepted so a test host can be a one-liner
+    let text = null, empty = false;
+    // host.js answers {text,bak} | {missing:true} | {empty:true} | null; a
+    // plain string is also accepted so a test host can be a one-liner
     try {
       const r = await host.appdataRead();
-      text = typeof r === "string" ? r : (r && typeof r.text === "string" ? r.text : null);
+      if (typeof r === "string") text = r;
+      else if (r && typeof r.text === "string") text = r.text;
+      else if (r && r.empty) empty = true;
     } catch (_) { return "none"; }
+    // 6.1: a file that exists and holds nothing is damage, not a fresh
+    // install — an interrupted write leaves exactly that. Say so, and do not
+    // let the cache quietly overwrite it as if nothing had happened.
+    if (empty) { blockMirror(); return "corrupt"; }
     if (!text) { if (bag && !foundEmpty) scheduleMirror(); return "none"; }
     let doc = null;
-    try { doc = JSON.parse(text); } catch (_) { return "none"; }
-    if (!isProfileDoc(doc)) return "none";
+    try { doc = JSON.parse(text); } catch (_) { doc = null; }
+    // 6.1: unreadable file. Before 6.1 this returned "none" in silence, left
+    // the broken file in place and never told anyone. Report it, and keep the
+    // cache: overwriting the file is the caller's decision, not this one's.
+    if (!doc || !isProfileDoc(doc)) { blockMirror(); return "corrupt"; }
     const cacheAt = Number(host.storageGet(STAMP_KEY) || 0) || 0;
     const fileAt = Number(doc.writtenAt) || 0;
     // the cache wins whenever it has anything and is not provably older: a
     // file must not undo what the player did in a session the file missed
     if (!foundEmpty && (!cacheAt || fileAt <= cacheAt)) { scheduleMirror(); return "kept"; }
-    restoreAll(doc);
+    if (!restoreAll(doc)) return "corrupt";
+    // 6.1: storage now holds the file's profile but the page still holds the
+    // old one. Freeze until the caller reloads onto it.
+    freeze();
     return "restored";
   }
 
@@ -250,15 +332,26 @@ export function createPersist(host, onWriteFailure) {
   /** Replace storage with a document from exportAll() / the mirror. */
   function restoreAll(doc) {
     if (!isProfileDoc(doc)) throw new Error("not a chessboard profile");
+    // 6.1: every one of these was fired and forgotten. A restore is the
+    // largest write the app ever makes, so it is the most likely to hit the
+    // quota; a half-written profile was then re-read and mirrored back over
+    // the complete file. Now a refused write latches the failure and the
+    // caller is told, so nothing downstream treats the result as a profile.
+    let ok = true;
     for (const name of Object.keys(KEYS)) {
+      // the quarantine is evidence about this cache, not part of the profile
+      // being restored into it (6.1) — see read()
+      if (name === "quarantine") continue;
       const v = doc.keys[name];
-      if (typeof v === "string") host.storageSet(KEYS[name], v);
+      if (typeof v === "string") { if (!host.storageSet(KEYS[name], v)) ok = false; }
       else host.storageRemove(KEYS[name]);
     }
-    host.storageSet(SCHEMA_KEY, String(doc.schema || SCHEMA));
-    host.storageSet(STAMP_KEY, String(Number(doc.writtenAt) || Date.now()));
+    if (!host.storageSet(SCHEMA_KEY, String(doc.schema || SCHEMA))) ok = false;
+    if (!host.storageSet(STAMP_KEY, String(Number(doc.writtenAt) || Date.now()))) ok = false;
     bag = null;
     load();
+    if (!ok) fail("restore");
+    return ok;
   }
 
   /** JSON in one step, since every caller but panelOpen was doing it. */
@@ -278,7 +371,9 @@ export function createPersist(host, onWriteFailure) {
    * that exist — which is exactly what it had to do by hand before.
    */
   function clearAll() {
-    for (const name of Object.keys(KEYS)) remove(name);
+    // 6.1: the quarantine is evidence about values this cache could not read.
+    // Clearing the profile must not also destroy it.
+    for (const name of Object.keys(KEYS)) if (name !== "quarantine") remove(name);
     host.storageRemove(SCHEMA_KEY);
     host.storageRemove(STAMP_KEY);
     scheduleMirror();
@@ -357,21 +452,40 @@ export function createPersist(host, onWriteFailure) {
     return { value: null, state: "corrupt" };
   }
 
-  /** Keep a value that could not be read, so a later version (or the user) can. */
+  /**
+   * Keep a value that could not be read, so a later version (or the user) can.
+   *
+   * 6.1 closed three ways this used to lose the very thing it was keeping:
+   *   * the same unreadable key was pushed again on every launch, and eight
+   *     launches of one bad key evicted every genuinely distinct entry;
+   *   * quarantining doubles the footprint of the bad value, so on the full
+   *     quota that very likely caused the damage the write failed and the raw
+   *     value was not kept at all — while read() still reported "corrupt";
+   *   * `quarantine` sits in KEYS, so clearAll() removed it and restoreAll()
+   *     overwrote it. Both now leave it alone (see those two functions).
+   */
   function quarantine(name, raw) {
+    corrupt.push(name);
     let list = [];
     try { list = JSON.parse(get("quarantine") || "[]"); } catch (_) { list = []; }
     if (!Array.isArray(list)) list = [];
+    // the same value from the same key is the same evidence, not new evidence
+    if (list.some((e) => e && e.name === name && e.raw === raw)) return;
     list.push({ name, raw, at: Date.now() });
-    // bounded: a profile that keeps failing must not grow without limit
+    // bounded: a profile that keeps failing must not grow without limit.
+    // Drop from the front, but never the entry just pushed.
     while (list.length > 8) list.shift();
-    set("quarantine", JSON.stringify(list));
-    corrupt.push(name);
+    if (!set("quarantine", JSON.stringify(list))) {
+      // no room to keep a copy. Say so rather than report a preserved value
+      // that was never written.
+      fail("quarantine");
+    }
   }
 
   /** Names of the keys that failed to read this session, in order. */
   function corruptKeys() { return corrupt.slice(); }
 
   return { load, get, read, set, setJson, remove, clearAll, isBroken, wasEmpty, corruptKeys,
-    recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, ACCEPT, KEYS, SCHEMA };
+    recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, freeze, releaseMirror,
+    ACCEPT, KEYS, SCHEMA };
 }
