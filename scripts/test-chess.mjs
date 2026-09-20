@@ -5532,6 +5532,27 @@ for (const lang of CONTENT_LANGS) {
     assert(r === "corrupt", "a zero-length profile file reads as corrupt, not missing (" + r + ")");
     assert(failed && failed.key === "appdataCorrupt", "…and the user is told");
   }
+  // 11b. …and the damaged file is genuinely left alone. The banner promises
+  // exactly that, and the recovery e2e caught it being false: recover()'s own
+  // finally released the mirror, and the write the boot path had queued
+  // replaced the damaged bytes within MIRROR_DELAY — the one copy the user was
+  // told was kept, destroyed moments after they were told.
+  {
+    const damaged = "{not json at all";
+    const h = withFile(damaged);
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    P.set("save", "{\"v\":1,\"pgn\":\"whatever the boot path writes\"}");
+    const r = await P.recover();
+    await tick(700);
+    assert(r === "corrupt" && failed && failed.key === "appdataCorrupt", "an unreadable file is reported (" + r + ")");
+    assert(h.writes === 0 && h.file === damaged,
+      "…and nothing overwrites it, which is what the banner promises (" + h.writes + " write(s))");
+    P.set("learn", "later in the same session");
+    await tick(700);
+    assert(h.writes === 0 && h.file === damaged, "…for the rest of the session, not just the first moment");
+  }
   // 11. an unreadable file is reported too — before 6.1 it returned "none" in
   // silence and the broken file was left in place forever
   {

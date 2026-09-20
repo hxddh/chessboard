@@ -205,6 +205,13 @@ export function createPersist(host, onWriteFailure) {
   // from the start.
   let reconciled = typeof host.appdataRead !== "function";
   let mirrorPending = false;
+  // 6.1: set when the file turned out to be unreadable. The banner tells the
+  // user their file was left alone so they can try to recover it — that has to
+  // be true. Before this flag existed recover()'s own finally released the
+  // mirror and the boot path's queued write replaced the damaged file within
+  // MIRROR_DELAY: the one copy of the thing they were told was kept, gone a
+  // fraction of a second after they were told. Found by the recovery e2e.
+  let mirrorBlocked = false;
   // 6.1: set once a restore has rewritten storage — see set()
   let frozen = false;
   function mirrorDoc() {
@@ -219,7 +226,7 @@ export function createPersist(host, onWriteFailure) {
     return { app: "chessboard", schema: SCHEMA, writtenAt: at, keys };
   }
   function scheduleMirror() {
-    if (!mirrorEnabled || frozen) return;
+    if (!mirrorEnabled || frozen || mirrorBlocked) return;
     // 6.1: the boot path writes before it reads. loadSettings/saveSettings
     // and the first saveGame all run through set(), which arms this timer,
     // while recover()'s bridge round trip is still in flight. When the cache
@@ -232,6 +239,20 @@ export function createPersist(host, onWriteFailure) {
     if (mirrorTimer) clearTimeout(mirrorTimer);
     mirrorTimer = setTimeout(flushMirror, MIRROR_DELAY);
   }
+  /**
+   * The file is there and unreadable: keep it exactly as it is for the rest of
+   * this session. The cache is what the app runs on, and it is still the cache
+   * on the next launch, so nothing the player does is lost by not mirroring —
+   * what would be lost is the damaged file itself, which is the only thing a
+   * recovery could be attempted from.
+   */
+  function blockMirror() {
+    mirrorBlocked = true;
+    mirrorPending = false;
+    if (mirrorTimer) { clearTimeout(mirrorTimer); mirrorTimer = null; }
+    fail("appdataCorrupt");
+  }
+
   /** recover() is done (or was never possible): let the mirror run. */
   function releaseMirror() {
     reconciled = true;
@@ -240,7 +261,7 @@ export function createPersist(host, onWriteFailure) {
   /** Write the whole profile to the native file now. @returns {Promise<boolean>} */
   async function flushMirror() {
     mirrorTimer = null;
-    if (!mirrorEnabled) return false;
+    if (!mirrorEnabled || mirrorBlocked) return false;
     try {
       const ok = await host.appdataWrite(JSON.stringify(mirrorDoc()));
       // null: the shell has no such file (no data dir, an older build) —
@@ -286,14 +307,14 @@ export function createPersist(host, onWriteFailure) {
     // 6.1: a file that exists and holds nothing is damage, not a fresh
     // install — an interrupted write leaves exactly that. Say so, and do not
     // let the cache quietly overwrite it as if nothing had happened.
-    if (empty) { fail("appdataCorrupt"); return "corrupt"; }
+    if (empty) { blockMirror(); return "corrupt"; }
     if (!text) { if (bag && !foundEmpty) scheduleMirror(); return "none"; }
     let doc = null;
     try { doc = JSON.parse(text); } catch (_) { doc = null; }
     // 6.1: unreadable file. Before 6.1 this returned "none" in silence, left
     // the broken file in place and never told anyone. Report it, and keep the
     // cache: overwriting the file is the caller's decision, not this one's.
-    if (!doc || !isProfileDoc(doc)) { fail("appdataCorrupt"); return "corrupt"; }
+    if (!doc || !isProfileDoc(doc)) { blockMirror(); return "corrupt"; }
     const cacheAt = Number(host.storageGet(STAMP_KEY) || 0) || 0;
     const fileAt = Number(doc.writtenAt) || 0;
     // the cache wins whenever it has anything and is not provably older: a
