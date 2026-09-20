@@ -453,3 +453,79 @@ NNUE，UCI 不变，同样 GPLv3。所以这次「更新的 Stockfish」意味�
 
 但**两条 P0（§1 丢档、§2 判错）不等任何东西**：它们在线上正伤人，是独立的、小的，
 应该第一个发出去。所以整体顺序是：**P0 补丁 → 7.0-dep → 7.0 主线**。
+
+---
+
+## 10 · 落地记录
+
+写在发布前，对着代码逐条核，**没做到的也逐条写**。6.0 的教训是：计划里打了勾
+而代码里没有的东西，会在下一版被当成「已有」继续往上盖。
+
+### 做到了
+
+| § | 事 | 落在哪里 |
+|---|----|---------|
+| 1 | PGN 注释里的 `}`：导出写 `\R`，导入按规范扫描，旧档文档级回退 | `pgn-parser.js`、`test-pgn.mjs`（含 250 棵随机树的固化用例） |
+| 2 | `tac`/`win` 接受同等好的第一手；894 道全部过 depth-18 双线门禁 | `app.js verifyAlt`、`scripts/test-mined.mjs` |
+| 3 | Glicko 的 `rd` 随时间松动（Glicko-1 停赛规则，一年回到 350） | `rating.js decayIdle`、`app.js settleIdleRating` |
+| 4 | `?!` 默认不显示 | `app.js ui.showSoftMark` / `softFiltered` |
+| 5 | 白方第一手开始走钟 | `app.js startClockIfIdle` |
+| 6.1 | 多局 PGN 批量导入、逐局离线分析、可暂停可续 | `library.js`、`app.js importPgnToLibrary` / `runLibraryPass` |
+| 6.2 | 诊断：战绩、精准度、分阶段 ACPL、该练哪一段、失误密集回合、母题、开局 | `library.js diagnose`、`app.js renderDiagnosis` |
+| 6.4 | 失误解释：母题取的是**引擎在你走错之前的那一手**，不是你走的那一手 | `app.js analyseLibraryGame` |
+| 7.1 | 能力开关机制查清，`capabilities` 的三个值各自决定编译进什么 | `docs/v7-plan.md` §7.1 |
+| 7.5 | 批量分析的通知带固定 `id`，被替换而不是堆起来 | `host.js notify`、`app.js runLibraryPass` |
+| 7.6 | `.file_associations` 进清单（Windows 安装注册从此来自清单） | `app.zon`、`manifest-check.mjs` |
+| 7.8 | Stockfish 18 → 19 lite-single；体积守卫重标定；噪声重测两轮 | `third_party/stockfish/`、`docs/measured.json` |
+| 7.9 | SDK 0.8.1 → 0.10.1、Node 22 → 24；两个手抄分叉重新对齐 | `build.zig`、`src/runner.zig` |
+
+### 没做到的，逐条
+
+**§7.3 `.updates` 签名自动更新 —— 只接了一半。**
+`runner.zig` 的 `appInfo` 现在读 `.updates` 的三个字段（feed_url / public_key /
+check_on_start），空字符串就是「更新关着」。**但 `app.zon` 里没有 `.updates` 段，
+所以这条链路一次也没通过电。** 缺的是一对 Ed25519 密钥：私钥要进 GitHub Actions
+的 secret，而我建不了 secret。手写的 `chess.checkUpdate`（只问 tag、不下载、不验
+签）因此原样留着。接上这条的人要做的是：生成密钥对、私钥进 secret、`release.yml`
+加一步签 feed JSON、`app.zon` 写上三个字段——`runner.zig` 那一半已经在等着了。
+
+**§7.4 SQLite —— 明确不做，而且计划里的估算是错的。**
+计划说 blob 存 200 局分析「每次改动都要重写整个几十 MB 的 blob，这个设计会直接
+塌掉」。量了：一局（80 手的 tags / losses / scalars / bests 加头部）是 **2.2 KB**，
+500 局上限是 **1.05 MB**，不是几十 MB。差三十倍的原因是计划把 `pvs`（每手一串
+SAN）算了进去，而实现没有存它——主变可以随时重算，存下来只是为了省一次搜索。
+
+1 MB 仍然不小：批量分析一趟会重写它几百次。但换 `RelationalStore` 要动
+`capabilities`、构建期生成 `migrations.zig`（需要 node 在 PATH）、一套新的桥和
+一套新的 JS 侧，而**这些我在这里一次也跑不起来**（见下）。拿一个能测的实现换一个
+不能测的实现，不是升级。留给 7.1，前提是那一版有人能在真机上跑。
+
+**§7.6 `.dmg` —— 明确不做。**
+`.dmg` 是 `native package --archive` 消费的，而这个仓库的 macOS 流程是
+`native package` 打出 `.app` → `add-pgn-doctype.sh` 改 Info.plist 并重签 →
+`hdiutil` 出 dmg。`--archive` 在打包那一步就把 dmg 封好了，里面装的是**没有改过
+plist 的 .app**。顺序对不上，换过去就是把 `.pgn` 关联从 dmg 里丢掉。
+
+顺带更正一条：`.file_associations` **没有**替掉 `add-pgn-doctype.sh`。打包器只写
+`CFBundleDocumentTypes`（`src/tooling/package.zig` 的 `macosDocumentTypes`），
+`LSHandlerRank`（不抢默认打开方式）与 `UTExportedTypeDeclarations` 都没有键能
+承载。两者互补，脚本的文件头已经改成说这件事。
+
+**§7.2 `.persist` —— 上一版就已经确认用不了**（TS core 专属），手写那套继续留着。
+
+**`store` / `sqlite` / `credentials` 三个 capability —— 一个都没开。**
+理由同 §7.4：能力本身是真的，但把已经正确、已经被两个版本打磨过的存储换掉，
+需要一次真机往返来确认，而这里没有。
+
+### 这一版没有做过的验证
+
+和 6.0 / 6.1 一样，如实写在这里：
+
+1. **本机装不了 zig**（下载被出口代理挡住），`build.zig` 与 `src/runner.zig` 的
+   改动**只经过 CI 编译，没有在本机跑过**。
+2. **没有真机走查**。这两个文件是 SDK 两个文件的手抄分叉，这类改动 CI 绿了仍可能
+   在真机上悄悄失效——本仓库有两次前科（`close_policy` 声明了没人读、Windows
+   链接器未定义符号）。`manifest-check --sdk` 这一版又抓到一次（六个结构体字段、
+   三个系统库），这说明守卫在起作用，不说明真机没问题。
+3. **签名与公证仍未做**，首次打开仍要右键过 Gatekeeper。
+4. `docs/manual-check.md` 新增的棋谱库条目**需要一次真机走查**才能打勾。
