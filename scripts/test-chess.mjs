@@ -1213,16 +1213,21 @@ for (const lang of CONTENT_LANGS) {
   const zon = fs.readFileSync(path.join(root, "app.zon"), "utf8");
 
   assert(/id="keys-modal"/.test(htmlK), "the shortcut sheet exists");
-  const table = /const KEY_HELP = \[([\s\S]*?)\];/.exec(appSrc);
-  assert(table, "the shortcut sheet is built from a table");
-  const helpKeys = [...table[1].matchAll(/k: "(keys\.[a-z]+)"/g)].map((m) => m[1]);
+  // 6.1: the two tables live in native-commands.js and are exported as data,
+  // so everything below reads the objects the app itself reads rather than a
+  // regex over app.js's source (v6-plan Q1.7).
+  loadModule(ctx, "src/web/js/native-commands.js");
+  const NC = { KEY_HELP: ctx.KEY_HELP, MENU_ACCEL: ctx.MENU_ACCEL,
+               accelText: ctx.accelText, commandModes: ctx.commandModes,
+               create: ctx.createNativeCommands };
+  assert(Array.isArray(NC.KEY_HELP), "the shortcut sheet is built from a table");
+  const helpKeys = NC.KEY_HELP.map((r) => r.k);
   assert(helpKeys.length >= 10, "the sheet lists the shortcuts (" + helpKeys.length + ")");
 
   // every letter the global handler binds must appear in the sheet
-  const listed = table[1].toLowerCase();
+  const sheetKeys = new Set(NC.KEY_HELP.flatMap((r) => r.keys).map((k) => k.toLowerCase()));
   for (const key of ["p", "n", "z", "h", "f"]) {
-    assert(new RegExp('"' + key + '"', "i").test(table[1]),
-      "the sheet lists the " + key.toUpperCase() + " shortcut");
+    assert(sheetKeys.has(key), "the sheet lists the " + key.toUpperCase() + " shortcut");
   }
   assert(/"\?"/.test(appSrc) && /openKeyHelp/.test(appSrc),
     "\"?\" opens the sheet — the one shortcut the sheet cannot teach");
@@ -1316,11 +1321,55 @@ for (const lang of CONTENT_LANGS) {
   assert(/\.menus = \.\{[\s\S]*?\.command = "/.test(zon), "app.zon declares native menu items");
   const commands = [...zon.matchAll(/\.command = "([a-z.]+)"/g)].map((m) => m[1]);
   assert(commands.length >= 6, "the menu carries the main actions (" + commands.length + ")");
-  const handled = /const NATIVE_COMMANDS = \{([\s\S]*?)\n  \};/.exec(appSrc);
-  assert(handled, "app.js handles native menu commands");
-  const unhandled = commands.filter((c) => !handled[1].includes('"' + c + '"'));
-  assert(unhandled.length === 0,
-    "every menu item does something" + (unhandled.length ? " — dead: " + unhandled.join(", ") : ""));
+  // Asked of the real handler map: build one against a recording app, fire
+  // every command app.zon declares, and see that each one did something.
+  const fired = [];
+  const rec = (name) => (...a) => fired.push(name + (a.length ? ":" + a.join(",") : ""));
+  // The smallest document the sheet can be built into: enough of a node for
+  // appendChild / replaceChildren / classList, and nothing else.
+  const fakeNode = (tag) => ({
+    tag, kids: [], text: "", className: "", onclick: null,
+    classList: {
+      set: new Set(),
+      contains(c) { return this.set.has(c); },
+      add(c) { this.set.add(c); },
+      remove(c) { this.set.delete(c); },
+    },
+    set textContent(v) { this.text = String(v); },
+    get textContent() { return this.text; },
+    appendChild(n) { this.kids.push(n); },
+    replaceChildren() { this.kids.length = 0; },
+  });
+  const fakeDoc = () => {
+    const byId = new Map();
+    for (const id of ["keys-modal", "keys-list", "keys-close"]) byId.set(id, fakeNode(id));
+    return { byId, getElementById: (id) => byId.get(id) || null, createElement: fakeNode };
+  };
+  const menuApp = (over) => Object.assign({
+    doc: fakeDoc(), t: (k) => k,
+    // the sheet is a dialog like any other: opening it is what puts "show" on
+    // it, which is also how the module knows it is up
+    Dlg: { open: (m) => { rec("dlg.open")(); m.classList.add("show"); },
+           close: (m) => { rec("dlg.close")(); if (m) m.classList.remove("show"); } },
+    store: { session: { mode: "ai" }, game: { flipped: false, viewIndex: 3 } },
+    dialogOpen: () => false,
+    requestNewGame: rec("game.new"), undo: rec("game.undo"), requestHint: rec("game.hint"),
+    setFlipped: rec("setFlipped"), togglePanel: rec("view.panel"),
+    setViewIndex: rec("setViewIndex"), escapeKey: rec("escapeKey"),
+  }, over || {});
+  const dead = [];
+  for (const c of commands) {
+    fired.length = 0;
+    // every mode this command is legal in gets a turn, since the gate is
+    // per-mode and "ai" alone would call a puzzle-only command dead
+    for (const mode of [...NC.commandModes(c), "ai"]) {
+      const app = menuApp({ store: { session: { mode }, game: { flipped: false, viewIndex: 3 } } });
+      NC.create(app).run(c);
+    }
+    if (!fired.length) dead.push(c);
+  }
+  assert(dead.length === 0,
+    "every menu item does something" + (dead.length ? " — dead: " + dead.join(", ") : ""));
   assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
     "the host bridge forwards the shortcut event");
   assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");
@@ -1329,9 +1378,17 @@ for (const lang of CONTENT_LANGS) {
   // from either door, dialog gates included
   assert(/\.shortcuts = \.\{[\s\S]*?\.id = "view\.escape", \.key = "escape"/.test(zon),
     "app.zon declares Escape as the view.escape shortcut");
-  assert(/"view\.escape": \(\) => escapeKey\(\)/.test(appSrc) &&
-         /if \(id === "view\.escape"\) \{ escapeKey\(\); return; \}/.test(appSrc),
-    "the shortcut runs escapeKey() before the dialog and mode gates");
+  // 6.1: asked of the handler, not of app.js's text. Escape is the one
+  // command that has to get through with a dialog in front of it — it is how
+  // the dialog closes — so fire it against an app that says a dialog is open
+  // and watch escapeKey() run anyway.
+  {
+    fired.length = 0;
+    NC.create(menuApp({ dialogOpen: () => true })).run("view.escape");
+    assert(fired.join() === "escapeKey",
+      "the shortcut runs escapeKey() before the dialog and mode gates (fired: " +
+      (fired.join() || "nothing") + ")");
+  }
   assert(/if \(ev\.key === "Escape"\) \{ escapeKey\(\); return; \}/.test(appSrc),
     "…and the window's own Escape runs the same routine");
   assert(/function escapeKey\(\) \{[\s\S]{0,1400}Dlg\.closeTop\(\)[\s\S]{0,600}clearPreview\(\)[\s\S]{0,400}setPanelOpen\(false\)/.test(appSrc),
@@ -1355,14 +1412,11 @@ for (const lang of CONTENT_LANGS) {
     }
     assert(declared.size === commands.length,
       "every menu item declares a key (" + declared.size + "/" + commands.length + ")");
-    const table = /const MENU_ACCEL = \{([\s\S]*?)\n  \};/.exec(appSrc);
-    assert(table, "app.js carries the accelerator table the sheet prints");
+    assert(NC.MENU_ACCEL && Object.keys(NC.MENU_ACCEL).length,
+      "native-commands.js carries the accelerator table the sheet prints");
     const listed = new Map();
-    for (const m of table[1].matchAll(/"([a-z.]+)": \{ key: "([^"]+)", mods: \[([^\]]*)\] \}/g)) {
-      listed.set(m[1], {
-        key: m[2].replace(/\\\\/g, "\\"),
-        mods: [...m[3].matchAll(/"([a-z]+)"/g)].map((x) => x[1]).sort().join("+"),
-      });
+    for (const [id, a] of Object.entries(NC.MENU_ACCEL)) {
+      listed.set(id, { key: a.key, mods: [...a.mods].sort().join("+") });
     }
     const wrong = [];
     for (const [id, want] of declared) {
@@ -1377,36 +1431,55 @@ for (const lang of CONTENT_LANGS) {
 
     // …and the sheet has to actually print them: a table nothing reads is the
     // 1.18 close_policy shape all over again.
-    assert(/kbd\.className = "accel"/.test(appSrc), "renderKeyHelp draws the accelerator");
+    // 6.1: asked of the sheet it actually builds. Render into a fake document
+    // and look for the accelerator beside the letter — a table nothing reads
+    // is the 1.18 close_policy shape all over again, and only a render can
+    // tell the difference.
+    {
+      const app = menuApp({});
+      NC.create(app).renderKeyHelp();
+      const kbds = app.doc.byId.get("keys-list").kids.flatMap((n) => n.kids || []);
+      const accels = kbds.filter((k) => k.className === "accel").map((k) => k.textContent);
+      assert(accels.length >= 6 && accels.includes(NC.accelText("game.new", false)),
+        "renderKeyHelp draws the accelerator (" + accels.length + " printed: " +
+        accels.slice(0, 4).join(" ") + "…)");
+    }
     assert(/kbd\.accel\s*\{/.test(fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8")),
       "…and it is styled");
 
     // Both doors, one gate. Every command the menu can fire has to be reachable
     // from KEY_HELP, because KEY_HELP is what says which modes it applies in —
     // a command with no row would be gated to nothing and silently dead.
-    const help = /const KEY_HELP = \[([\s\S]*?)\n  \];/.exec(appSrc);
-    assert(help, "app.js carries the key sheet table");
-    const ungated = [...declared.keys()].filter((c) => !help[1].includes('"' + c + '"'));
+    const ungated = [...declared.keys()].filter((c) => NC.commandModes(c).size === 0);
     assert(ungated.length === 0,
       "every menu command has a row saying which modes it belongs to" +
       (ungated.length ? " — 没有: " + ungated.join(", ") : ""));
-    // Two lines, in this order — and the break between them is written `\s*`
-    // rather than `\n` on purpose. A `\n` here passes on a LF checkout and
-    // fails on a Windows one, where the file really does contain `\r\n`. That
-    // is not hypothetical: this assertion shipped exactly that way in v2.3.0
-    // and the release run died on it — every ubuntu and macOS job green, the
-    // Windows build the only thing in the world that saw it, and it saw it
-    // *after* the tag and the draft release already existed. Same shape as
-    // the 2.0.0 CRLF-only test bug.
-    //
-    // So the check runs twice: against this checkout, and against a CRLF copy
-    // of it. A regex that can only read one of the two now fails on whatever
-    // platform you are on, rather than on the one platform you are not.
-    const gated = (src) =>
-      /if \(dialogOpen\(\)\) return;\s*if \(!commandModes\(id\)\.has\(store\.session\.mode\)\) return;/.test(src);
-    assert(gated(appSrc) && gated(appSrc.replace(/\r?\n/g, "\r\n")),
-      "the native command passes the dialog gate and the mode gate before it runs" +
-      " —— 在 LF 与 CRLF 两种检出下都读得到");
+    // Both gates, asked of the gate rather than of the two lines that spell
+    // it. This used to be a regex over app.js matching `if (dialogOpen())`
+    // followed by `if (!commandModes(id)…)`, with the line break written
+    // `\s*` because an earlier version wrote `\n` and died on the Windows
+    // job *after* the v2.3.0 tag and draft release already existed. A test
+    // that can be broken by a line ending was never testing the gate. This
+    // one fires the command and looks at what happened: ⌘N over a dialog and
+    // ⌘F inside 做题 are the two measured defects the gate exists for.
+    {
+      const blocked = [];
+      fired.length = 0;
+      NC.create(menuApp({ dialogOpen: () => true })).run("game.new");
+      if (fired.length) blocked.push("dialog gate: " + fired.join());
+      fired.length = 0;
+      NC.create(menuApp({ store: { session: { mode: "puzzle" }, game: { flipped: false, viewIndex: 3 } } }))
+        .run("game.flip");
+      if (fired.length) blocked.push("mode gate: " + fired.join());
+      // …and the same command in a mode it belongs to still runs, so the two
+      // gates are a gate and not a wall
+      fired.length = 0;
+      NC.create(menuApp({})).run("game.flip");
+      if (fired.join() !== "setFlipped:true") blocked.push("ai mode: " + (fired.join() || "nothing"));
+      assert(blocked.length === 0,
+        "the native command passes the dialog gate and the mode gate before it runs" +
+        (blocked.length ? " —— " + blocked.join("；") : ""));
+    }
   }
 }
 
@@ -1699,9 +1772,11 @@ for (const lang of CONTENT_LANGS) {
     // resets (lesson, puzzle), the loaded-record restore, the editor reset,
     // and setFlipped itself
     assert(/function setFlipped\(/.test(app), "setFlipped is the one place the view turns");
+    // Two of the three doors are still spelled in app.js; the third is the
+    // native View menu, which moved to native-commands.js in 6.1 and is
+    // checked by firing it (see the native-menu block above, "ai mode").
     for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/,
-                          /k === "f"[^\n]*setFlipped\(/,
-                          /"game\.flip":\s*\(\)\s*=>\s*setFlipped\(/])
+                          /k === "f"[^\n]*setFlipped\(/])
       assert(caller.test(app), "…and it is what the three doors call — " + caller.source.slice(0, 26));
     assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
   }
@@ -5418,6 +5493,9 @@ for (const lang of CONTENT_LANGS) {
 // and nothing else notices. And a chunk that is built but not packaged is an
 // app whose opening names never appear, so the dist list is checked too.
 {
+  // Build first: bundle.js and the chunks are generated and gitignored, so a
+  // fresh checkout (CI) has neither, and this block reads both. compileModuleSync
+  // elsewhere in this file compiles single modules, which does not produce them.
   const bundleSrc = await build({ write: true });
   const syncSrc = fs.readFileSync(path.join(root, "scripts/sync-dist.mjs"), "utf8");
   for (const c of CHUNKS) {
@@ -5470,7 +5548,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 124;
+  const REGISTERED = 120;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }
