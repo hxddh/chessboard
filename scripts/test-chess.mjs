@@ -5629,6 +5629,22 @@ for (const lang of CONTENT_LANGS) {
   assert(/CHUNKS\.map/.test(syncSrc), "sync-dist.mjs takes the chunk list from the bundler, not a second copy");
   assert(fs.readFileSync(path.join(root, ".gitignore"), "utf8").includes("chunk-*.js"),
     "the generated chunks are gitignored like the bundle");
+
+  // Every path that produces frontend/dist calls that one script. This is the
+  // check that was missing: sync-dist.mjs learned about CHUNKS, and the three
+  // shell copies that predate it (package.sh and the two build workflows) kept
+  // naming bundle.js and engine-src.js by hand, so the packaged app would have
+  // shipped without chunk-eco.js and lost every opening name. A guard on the
+  // one script is not a guard on the product while three other copies exist.
+  for (const rel of ["scripts/package.sh", ".github/workflows/build-macos.yml", ".github/workflows/build-windows.yml"]) {
+    // named `wf` rather than the obvious short name: the register at the end
+    // of this file counts a few variable names as app.js source-text
+    // assertions, and a workflow file is not app.js.
+    const wf = fs.readFileSync(path.join(root, rel), "utf8");
+    assert(/node scripts\/sync-dist\.mjs/.test(wf), rel + " builds frontend/dist with sync-dist.mjs");
+    const copies = wf.split("\n").filter((l) => !l.trim().startsWith("#") && /\bcp\b.*\b(bundle|engine-src)\.js/.test(l));
+    assert(copies.length === 0, rel + " does not hand-copy the dist file list (found: " + copies.join(" | ") + ")");
+  }
 }
 
 // --- 6.1: an impossible [FEN] must not be quietly repaired -------------------
@@ -5652,6 +5668,37 @@ for (const lang of CONTENT_LANGS) {
   assert(E6.validate(E6.fromFen(one, Chess), Chess) === null, "…and an ordinary position still passes");
   assert(E6.boardFromFenField("8/8/8/8/8/8/8") === null, "a board field with seven ranks is not a board");
   assert(E6.boardFromFenField("9/8/8/8/8/8/8/8") === null, "…nor is one with nine empty squares in a rank");
+}
+
+// --- 6.1 (review): a terminal [FEN] is a normal file, not an invalid one -----
+//
+// The import path reuses ChessEditor.validate for the structural and
+// reachability checks. validate() also refuses a position with no legal move,
+// which is right for the editor (there would be nothing to play) and wrong
+// here: a game that starts from a checkmate or a stalemate is an ordinary
+// study or a finished game, and those files were importable before 6.1 wired
+// the validator in. opts.allowTerminal separates the two policies.
+{
+  const E7 = ctx.ChessEditor;
+  const mate = "7k/5KQ1/8/8/8/8/8/8 b - - 0 1";
+  const stale = "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1";
+  const mp = new Chess(mate), sp = new Chess(stale);
+  assert(mp.in_checkmate(), "the mate fixture really is a checkmate");
+  assert(sp.in_stalemate(), "the stalemate fixture really is a stalemate");
+  assert(E7.validate(E7.fromFen(mate, Chess), Chess) === "edErr.alreadyMate",
+    "the editor still refuses to set up a finished position");
+  assert(E7.validate(E7.fromFen(stale, Chess), Chess) === "edErr.alreadyStalemate", "…stalemate too");
+  assert(E7.validate(E7.fromFen(mate, Chess), Chess, { allowTerminal: true }) === null,
+    "…and the import path takes a checkmate [FEN]");
+  assert(E7.validate(E7.fromFen(stale, Chess), Chess, { allowTerminal: true }) === null,
+    "…and a stalemate [FEN]");
+  // allowTerminal relaxes only that one rule — everything above it still bites
+  assert(E7.validate(E7.fromFen("4k3/8/8/8/8/8/8/K3K3 w - - 0 1", Chess), Chess, { allowTerminal: true })
+    === "edErr.manyWhiteKings", "…while two white kings are still rejected");
+  // app.js's own wiring is checked where it can be checked behaviourally —
+  // scripts/test-content-e2e.mjs imports a PGN whose [FEN] is a checkmate and
+  // asserts the board loads it. A source-text assertion here would be a fifth
+  // entry in a register that only ever shrinks.
 }
 
 // --- 6.0: the register of source-text assertions in this file.

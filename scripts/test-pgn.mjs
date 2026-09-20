@@ -393,6 +393,50 @@ function mainlineSans(root) {
   assert(rt.startFen === fenTree.startFen && T.mainlineSans(rt).join() === "O-O", "fromPgnGame keeps the start position");
 }
 
+// --- 6.1 (review): a foreign comment may end with a backslash ---------------
+//
+// PGN defines no escape inside a brace comment: the first "}" ends it, full
+// stop. This module defines one anyway so that a "}" the user typed survives
+// a round trip (escapeCommentText). Applied unconditionally, that private
+// reading turns a perfectly valid foreign comment like "{C:\path\}" into
+// either an unterminated-comment error or a comment that silently swallows
+// the movetext up to some later brace. The private reading now only wins
+// where it can be true: it has to terminate, and the span it claims past the
+// standard's "}" must not contain a "{" — which our own output never does.
+{
+  const firstComment = (pgn) => {
+    const g = P.parsePgn(pgn).games[0];
+    const walk = (n) => { if (n.comment) return n.comment; for (const c of n.children) { const r = walk(c); if (r) return r; } return null; };
+    return walk(g.root);
+  };
+
+  // 1. the case the review found: a trailing backslash with nothing after it
+  assert(firstComment("1. e4 {C:\\path\\}") === "C:\\path\\",
+    "a comment ending in a backslash ends at its own brace");
+
+  // 2. the silent half — it must not eat the movetext up to the next brace
+  {
+    const g = P.parsePgn("1. e4 {C:\\path\\} e5 {fine} 2. Nf3").games[0];
+    const sans = [];
+    let n = g.root;
+    while (n.children.length) { n = n.children[0]; sans.push(n.san); }
+    assert(sans.join(" ") === "e4 e5 Nf3", "…and the moves after it are still moves (" + sans.join(" ") + ")");
+  }
+
+  // 3. our own round trip still carries a literal "}" and a backslash through
+  {
+    const g = P.parsePgn("1. e4").games[0];
+    g.root.children[0].comment = "a } b \\ c";
+    const out = P.serializePgn(g);
+    assert(/\\\}/.test(out), "the exporter still escapes a brace");
+    assert(firstComment(out) === "a } b \\ c", "…and reading it back gives the text unchanged");
+  }
+
+  // 4. a comment with no closing brace anywhere is still an error
+  assert(throwsWith(() => P.parsePgn("1. e4 {never closed"), /unterminated comment/),
+    "a comment with no closing brace at all is still rejected");
+}
+
 if (failed) {
   console.error(failed + " test(s) failed");
   process.exit(1);

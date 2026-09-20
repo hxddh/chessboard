@@ -146,7 +146,15 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
    * position lichess files under C92 is a different (finer) claim, and lending
    * the C88 name to it would be wrong. First line to claim an entry keeps it.
    */
-  const BOOK_ID_BY_ENTRY = (() => {
+  // Built on first use, not at load. It plays every book line through
+  // openingForGame, which needs the table — and the table is a chunk now (6.1),
+  // absent while this module is evaluated. Built eagerly it came out empty and
+  // stayed empty, so localName() fell back to English for every entry in
+  // Chinese and Japanese. The static test missed it because it preloads eco.js.
+  let BOOK_ID_BY_ENTRY = null;
+  function bookIdByEntry() {
+    if (BOOK_ID_BY_ENTRY) return BOOK_ID_BY_ENTRY;
+    if (!table()) return null;
     const out = {};
     for (const [eco, id, moves] of CHESS_OPENINGS) {
       const hit = openingForGame(moves.split(" "));
@@ -154,8 +162,9 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
       const k = hit.eco + "|" + hit.name;
       if (!out[k]) out[k] = id;
     }
+    BOOK_ID_BY_ENTRY = out;
     return out;
-  })();
+  }
 
   const LOCAL = { "zh-CN": CHESS_OPENING_NAMES, ja: CHESS_OPENINGS_JA, en: CHESS_OPENINGS_EN };
 
@@ -171,13 +180,14 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
   function localName(entry, lang) {
     if (!entry) return null;
     if (lang === "en") return entry.name;
-    const id = BOOK_ID_BY_ENTRY[entry.eco + "|" + entry.name];
+    const book = bookIdByEntry();
+    const id = book && book[entry.eco + "|" + entry.name];
     const tbl = LOCAL[lang];
     return (id && tbl && tbl[id]) || entry.name;
   }
 
   export const ChessEco = {
     positionKey, lookupPosition, openingForGame, ecoName, localName, ready, loaded, whenReady,
-    BOOK_ID_BY_ENTRY,
+    get BOOK_ID_BY_ENTRY() { return bookIdByEntry() || {}; },
     get size() { const t = table(); return t ? Object.keys(t).length : 0; },
   };

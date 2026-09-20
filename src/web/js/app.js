@@ -6816,7 +6816,11 @@ import { createStore } from "./store.js";
     {
       const headerFen = ChessPgn.startFen(text0);
       if (headerFen && ChessEditor) {
-        const bad = ChessEditor.validate(ChessEditor.fromFen(headerFen, Chess), Chess);
+        // allowTerminal: the editor refuses a position with no legal move
+        // because there would be nothing to play, but a game that starts from
+        // a checkmate or a stalemate is a normal study file. Only the
+        // structural and reachability checks belong on this path.
+        const bad = ChessEditor.validate(ChessEditor.fromFen(headerFen, Chess), Chess, { allowTerminal: true });
         if (bad) { toast(t(bad), "fault"); return false; }
       }
     }

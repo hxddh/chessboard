@@ -97,11 +97,23 @@ function tokenize(input) {
       continue;
     }
     if (c === "{") {
-      // a backslash escapes the next character, so a comment that contains
-      // "}" does not end early — see escapeCommentText for the whole scheme
+      // Two readings, because PGN itself has no escape here. Ours (see
+      // escapeCommentText) lets "\\}" carry a brace through a round trip;
+      // the standard says the first "}" ends the comment, full stop. A file
+      // we did not write can legitimately end a comment with a backslash —
+      // "{C:\\path\\}" — and reading that our way either runs off the end of
+      // the file or swallows the movetext up to some later brace. Neither is
+      // acceptable for an import path, so the private reading only wins when
+      // it is the one that can be true: it has to terminate, and the span it
+      // claims past the standard's "}" must not contain a "{", which our own
+      // output never does (escapeCommentText escapes nothing that opens one).
+      const plain = text.indexOf("}", i + 1);
       let j = i + 1;
       while (j < n && text[j] !== "}") j += text[j] === "\\" ? 2 : 1;
-      if (j >= n) fail(text, start, "{", "unterminated comment");
+      if (j >= n || (plain >= 0 && j > plain && text.slice(plain, j).includes("{"))) {
+        if (plain < 0) fail(text, start, "{", "unterminated comment");
+        j = plain;
+      }
       tokens.push({ type: "comment", text: text.slice(i + 1, j), pos: start });
       i = j + 1;
       continue;

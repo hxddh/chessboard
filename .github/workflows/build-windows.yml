@@ -60,24 +60,12 @@ jobs:
       - name: sync frontend dist
         shell: bash
         run: |
-          node scripts/gen-engine-src.mjs
-          node scripts/bundle.mjs
-          rm -rf frontend/dist && mkdir -p frontend/dist/js
-          cp src/web/index.html src/web/styles.css frontend/dist/
-          # only the two generated scripts ship — index.html loads exactly
-          # these, and the module sources are build inputs, not product
-          cp src/web/js/bundle.js src/web/js/engine-src.js frontend/dist/js/
-          test "$(wc -c < frontend/dist/js/bundle.js)" -gt 400000
-          # engine-src must carry the full wasm payload (~9MB), not a stub
-          test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
-          # GPLv3 §4: the product carries its licence, and Stockfish's
-          mkdir -p frontend/dist/licenses
-          cp LICENSE frontend/dist/licenses/LICENSE.txt
-          cp third_party/stockfish/COPYING.txt frontend/dist/licenses/stockfish-COPYING.txt
-      # app.zon directly — it is the portable manifest and Windows wants its
-      # default close policy. The dev-server origin it lists (D6) is dropped
-      # by src/runner.zig in every non-Debug exe, so this ReleaseFast build
-      # never trusts it without a derived manifest.
+          # One script, not a hand-copied list. 6.1 added an on-demand chunk
+          # (chunk-eco.js) to the bundler and to sync-dist.mjs, and these
+          # workflow copies kept naming two files — the packaged app would
+          # have shipped without it and lost every opening name. The list
+          # lives in scripts/bundle.mjs CHUNKS and is read, never retyped.
+          node scripts/sync-dist.mjs
       - name: manifest keys are actually read
         # src/runner.zig is a fork of the SDK's app_runner and does not
         # complain when it lags: an unread key silently takes the SDK

@@ -91,7 +91,7 @@
    * played, or null when it is fine. Keys (not text) keep this module free of
    * any particular language.
    */
-  function validate(state, ChessCtor) {
+  function validate(state, ChessCtor, opts) {
     const b = state.board;
     let wk = 0, bk = 0;
     for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
@@ -109,8 +109,16 @@
     const other = state.turn === "w" ? "b" : "w";
     const probe = new ChessCtor(fen.replace(" " + state.turn + " ", " " + other + " "));
     if (probe.in_check()) return "edErr.otherInCheck";
-    const g = new ChessCtor(fen);
-    if (!g.moves().length) return g.in_check() ? "edErr.alreadyMate" : "edErr.alreadyStalemate";
+    // Editor-only. Setting up a position that is already over is a mistake in
+    // the editor — there is nothing to play — but a checkmate or a stalemate
+    // is a perfectly ordinary [FEN] for a study or a finished game, and the
+    // import path (6.1) reuses this function for the structural and
+    // reachability checks above. It passes allowTerminal so that reuse does
+    // not quietly make those files unimportable.
+    if (!(opts && opts.allowTerminal)) {
+      const g = new ChessCtor(fen);
+      if (!g.moves().length) return g.in_check() ? "edErr.alreadyMate" : "edErr.alreadyStalemate";
+    }
     return null;
   }
 

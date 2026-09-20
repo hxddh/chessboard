@@ -6,35 +6,13 @@ cd "$ROOT"
 
 export PATH="${HOME}/.native/toolchains/zig-0.16.0:${PATH}"
 
-echo "==> generate engine sources (Stockfish loader + wasm base64)"
-node scripts/gen-engine-src.mjs
-
-echo "==> bundle the ES modules into one classic script"
-node scripts/bundle.mjs
-
-echo "==> sync frontend/dist from src/web"
-rm -rf frontend/dist
-mkdir -p frontend/dist/js
-cp src/web/index.html frontend/dist/
-cp src/web/styles.css frontend/dist/
-# Only the two generated scripts ship. index.html loads exactly these; the 28
-# module sources are inputs to the bundle, not part of the product, and copying
-# them would put a second (unloaded, drifting) copy of the app in the .app.
-cp src/web/js/bundle.js frontend/dist/js/
-cp src/web/js/engine-src.js frontend/dist/js/
-# sanity: what index.html asks for is what is there
-test -f frontend/dist/index.html
-test -f frontend/dist/styles.css
-test -f frontend/dist/js/bundle.js
-# the bundle must be the whole app, not an early-exit stub
-test "$(wc -c < frontend/dist/js/bundle.js)" -gt 400000
-# engine-src must carry the full wasm payload (~9MB), not a stub
-test "$(wc -c < frontend/dist/js/engine-src.js)" -gt 5000000
-# GPLv3 §4: the product carries its licence, and Stockfish's, next to
-# index.html. (scripts/sync-dist.mjs, which `zig build` uses, does the same.)
-mkdir -p frontend/dist/licenses
-cp LICENSE frontend/dist/licenses/LICENSE.txt
-cp third_party/stockfish/COPYING.txt frontend/dist/licenses/stockfish-COPYING.txt
+echo "==> sync frontend/dist from src/web (engine sources, bundle, chunks, licences)"
+# One script, not a hand-copied list. This file used to repeat the copies and
+# the size guards; 6.1 added an on-demand chunk (chunk-eco.js) to the bundler
+# and to sync-dist.mjs, and the copies here still named two files — the .app
+# would have shipped without it and lost every opening name. sync-dist.mjs
+# reads scripts/bundle.mjs CHUNKS, so a new chunk is packaged by existing.
+node scripts/sync-dist.mjs
 
 echo "==> unit tests"
 node scripts/test-chess.mjs
