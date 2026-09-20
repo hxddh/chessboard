@@ -1,0 +1,10 @@
+[Event "Shape commands that are text, not shapes"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "Shape"]
+[Black "Text"]
+[Result "*"]
+
+
+1. e4 { type \[%cal Ge2e4] to draw an arrow } e5 { [%cal Ge7e5,nonsense] was meant to be a shape } 2. Nf3 *

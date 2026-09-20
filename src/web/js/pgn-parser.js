@@ -561,6 +561,11 @@ function emitLine(out, parent, first, numbered) {
  * "\" that parseComment swallows whole — a bare newline there would come
  * back as a space inside the word.
  */
+function trailingBackslashes(s) {
+  const m = /\\+$/.exec(s);
+  return m ? m[0].length : 0;
+}
+
 function breakToken(t, width) {
   const shapeList = /^\[%(cal|csl)\s/.test(t);
   const pieces = [];
@@ -570,7 +575,7 @@ function breakToken(t, width) {
     if (comma > 0) { pieces.push(rest.slice(0, comma + 1)); rest = rest.slice(comma + 1); continue; }
     // never cut between a backslash and the character it escapes
     let cut = width - 1;
-    while (cut > 1 && (rest.slice(0, cut).length - rest.slice(0, cut).replace(/\\+$/, "").length) % 2 === 1) cut--;
+    while (cut > 1 && trailingBackslashes(rest.slice(0, cut)) % 2 === 1) cut--;
     pieces.push(rest.slice(0, cut) + "\\");
     rest = rest.slice(cut);
   }

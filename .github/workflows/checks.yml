@@ -44,6 +44,10 @@ jobs:
         run: npm ci
       - name: unit tests
         run: node scripts/test-chess.mjs
+      # the engine manager's lifecycle, on a fake Worker: teardown, rebuild,
+      # the two-strike rule and the exclusive queue. No engine, no browser.
+      - name: engine lifecycle
+        run: node scripts/test-engine.mjs
       # `free variables: node scripts/scope-check.mjs` used to sit here. The
       # sources are ES modules as of 1.25 and index.html loads one bundle, so
       # an unbound name is a build failure — test-chess.mjs asserts the bundle

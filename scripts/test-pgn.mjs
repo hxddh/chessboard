@@ -47,13 +47,23 @@ function canonNode(n) {
 function canonGame(g) {
   return JSON.stringify({ headers: canonHeaders(g.headers), result: g.result, root: canonNode(g.root) });
 }
-/** every san in the tree is legal from its parent's fen and lands on the node's fen */
-function legal(node) {
+/**
+ * Every san in the tree is legal from its parent's fen and lands on the
+ * node's fen. A null move is the exception the parser makes: it is not a
+ * move chess.js can play, so it and everything after it in that line keep
+ * the position the line stopped at, and that is what is checked instead.
+ */
+function legal(node, stopped) {
   for (const c of node.children) {
+    if (stopped || c.san === P.NULL_SAN) {
+      if (c.fen !== node.fen || c.from !== null || c.to !== null) return false;
+      if (!legal(c, true)) return false;
+      continue;
+    }
     const g = new Chess(node.fen);
     const mv = g.move(c.san);
     if (!mv || g.fen() !== c.fen) return false;
-    if (!legal(c)) return false;
+    if (!legal(c, false)) return false;
   }
   return true;
 }
@@ -86,7 +96,7 @@ function legal(node) {
       const tree = T.fromPgnGame(g);
       assert(T.mainlineSans(tree).join(" ") === mainlineSans(g.root).join(" "), f + ": tree keeps the mainline");
       const back = T.toPgnGame(tree, g.headers);
-      assert(canonGame({ ...back, result: g.result }) === canonGame(g), f + ": tree → game is lossless");
+      assert(canonGame(back) === canonGame(g), f + ": tree → game is lossless (result included)");
       const copy = T.deserialize(T.serialize(tree));
       assert(JSON.stringify(copy) === JSON.stringify(tree), f + ": tree serialize → deserialize is identity");
     }

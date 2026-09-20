@@ -193,7 +193,7 @@ node scripts/test-tactics.mjs      # 引擎检查,约两分钟
 src/web/
   index.html · styles.css
   js/chess.js      # 规则（vendored chess.js 0.13.4, BSD-2-Clause）
-  js/pieces.js     # 标准(cburnett)棋子 SVG 矢量集（CC BY-SA 3.0）
+  js/pieces.js     # 标准(cburnett)棋子 SVG 矢量集（多重许可,见下）
   js/openings.js   # 主流开局 ECO 库（SAN 前缀匹配,单测校验合法性）
   js/lessons.js    # 教学课程 96 课:零基础 72 + 中级 24（单测逐课校验 FEN/解法/目标）
   js/puzzles.js    # 题库 168 题:杀王/吃子/战术母题(求解器证明强制)/实战/防守/求和,另 119 条开局线路
@@ -250,4 +250,4 @@ scripts/test-audio-e2e.mjs
 
 GPLv3（见 LICENSE）。vendored chess.js 保留其 BSD-2-Clause 版权头；vendored Stockfish.js
 为 GPLv3（`third_party/stockfish/COPYING.txt`）；棋子矢量图形（`js/pieces.js`）来自
-Wikimedia Commons 标准棋子集（作者 Cburnett / Rfc1394，CC BY-SA 3.0，经 cm-chessboard 整理）。
+Wikimedia Commons 标准棋子集（作者 Cburnett / Rfc1394，经 cm-chessboard 整理）。原作以 GFDL / BSD / **GPL** / CC BY-SA 3.0 多重许可发布；本仓库按其中的 GPL 一项使用，与本应用的 GPLv3 相容（CC BY-SA 3.0 单独一项并不与 GPLv3 相容，4.0 才加入单向相容，所以写清楚取的是哪一项）。应用内「关于」面板列的是同一句。
