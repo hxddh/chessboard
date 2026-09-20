@@ -3011,6 +3011,11 @@ import { createStore } from "./store.js";
     if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) return null;
     const stored = puzzleScript(p)[0];
     if (!stored) return null;
+    // 120 and not SCAN_BUDGET: this is what a drill mined BEFORE the budget
+    // was stored was mined at. It is a fact about old records, not a default
+    // for new work — raising it here would claim those drills were searched
+    // deeper than they were, and the whole point of storing the budget is
+    // that a shallower pass may not overrule a deeper one (5.1, audit F2).
     const budget = (p.rev && p.rev.budget) || 120;
     const side = p.fen.split(" ")[1];
     const afterAlt = g.fen();
@@ -3678,10 +3683,35 @@ import { createStore } from "./store.js";
     });
   }
 
+  /**
+   * What 分析 spends per position, in ms. 精析 spends 400.
+   *
+   * 6.1 set this to 120 and measured the two-pass agreement there; 7.0 swapped
+   * Stockfish 18 for 19 lite-single, which is a different engine and therefore
+   * a different noise floor, so the number was re-measured — three independent
+   * 28-game passes at 120 / 200 / 400 ms (docs/measured.json winPctNoise).
+   *
+   * Read the runs PAIRED, each against itself, because the run-to-run spread
+   * is as wide as the effect:
+   *
+   *            ?  120→200    ??  120→200
+   *   run A    60 → 73 %     86 → 88 %
+   *   run B    64 → 73 %     82 → 84 %
+   *   run C    58 → 64 %     80 → 82 %
+   *
+   * Three out of three improve on both marks, which is why 200 is worth
+   * 1.67× the time: `?` is the mark a player reads on a single move and acts
+   * on, and at 120 ms it agreed with itself about three times in five.
+   * `?!` improves too (42 → 47 % pooled) and is still nowhere near the 60 %
+   * line §5 set, which is why 7.0 stopped showing it by default rather than
+   * trying to buy it with depth — 400 ms does not rescue it either.
+   */
+  const SCAN_BUDGET = 200;
+
   async function analyzeGame(movetime) {
     if (store.session.analyzing || !ChessEngine) return;
     await stopLiveAnalysis();
-    const perMove = movetime || 120;
+    const perMove = movetime || SCAN_BUDGET;
     const h = sanHistory();
     if (!h.length) { toast(t("msg.analysis.noGame"), "fix"); return; }
     const sig = game.pgn();
@@ -4118,6 +4148,8 @@ import { createStore } from "./store.js";
     const fen = gameAt(worst.ply).fen();
     const a = analysisFor();
     const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess,
+      // same rule as verifyAlt above: the fallback describes an analysis record
+      // written before `budget` existed, so it stays at what that pass spent
       { budget: (a && a.budget) || 120, src: "hand" });
     if (cand && a && a.pvs && typeof a.pvs[worst.ply] === "string") cand.pv = a.pvs[worst.ply];
     if (!cand) { toast(t("rv.bankNone"), "fix"); return; }
@@ -4852,14 +4884,15 @@ import { createStore } from "./store.js";
   /** How many analysed games buy a diagnosis. */
   const LIB_MIN_GAMES = 20;
   /**
-   * Per-position budget for the background pass, in ms.
+   * Per-position budget for the background pass, in ms. Same as the 分析
+   * button — see SCAN_BUDGET for why it is 200 and not 120.
    *
-   * The same 120 ms the 分析 button spends, and for the same measured reason
-   * (docs/measured.json winPctNoise): at this budget two passes agree on `??`
-   * 86 % of the time, which is what makes a per-game tag worth storing. A
-   * cheaper scan would make the library bigger and the diagnosis emptier.
+   * A pass over a full library costs about 1.7× what 120 ms would. That is
+   * the right trade here and not a close call: every number on the diagnosis
+   * page is meant to be acted on, and the pass is backgroundable, pausable
+   * and resumable, so the cost is wall-clock the player never waits through.
    */
-  const LIB_BUDGET = 120;
+  const LIB_BUDGET = SCAN_BUDGET;
 
   function loadLibrary() {
     const s = Persist.read("library").value;
@@ -8418,7 +8451,7 @@ import { createStore } from "./store.js";
       if (ChessEngine) ChessEngine.cancel();
       return;
     }
-    analyzeGame(120);
+    analyzeGame(SCAN_BUDGET);
   };
   document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
   document.getElementById("an-live").onclick = () => {
