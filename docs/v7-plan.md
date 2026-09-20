@@ -476,7 +476,8 @@ NNUE，UCI 不变，同样 GPLv3。所以这次「更新的 Stockfish」意味�
 | 7.1 | 能力开关机制查清，`capabilities` 的三个值各自决定编译进什么 | `docs/v7-plan.md` §7.1 |
 | 7.5 | 批量分析的通知带固定 `id`，被替换而不是堆起来 | `host.js notify`、`app.js runLibraryPass` |
 | 7.6 | `.file_associations` 进清单（Windows 安装注册从此来自清单） | `app.zon`、`manifest-check.mjs` |
-| 7.8 | Stockfish 18 → 19 lite-single；体积守卫重标定；噪声重测两轮 | `third_party/stockfish/`、`docs/measured.json` |
+| 7.8 | Stockfish 18 → 19 lite-single；体积守卫重标定；噪声重测 | `third_party/stockfish/`、`docs/measured.json` |
+| — | **计划外**：八个随应用发布的非法局面（SF19 遇到它们 abort 整个 wasm 模块），连同一条把全部 300 个局面过 `ChessEditor.validate` 的守卫 | `lessons.js`、`test-chess.mjs` |
 | 7.9 | SDK 0.8.1 → 0.10.1、Node 22 → 24；两个手抄分叉重新对齐 | `build.zig`、`src/runner.zig` |
 
 ### 没做到的，逐条
