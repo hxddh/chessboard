@@ -31,7 +31,14 @@
     .file_associations = .{
         .{
             .name = "PGN 棋谱",
-            .role = "alternate",
+            // "viewer", not "alternate": the SDK's role vocabulary is
+            // viewer / editor / shell / none (schemas/app.schema.json
+            // $defs.associationRole), and anything else falls through to
+            // Viewer silently. The *rank* — never take the default .pgn
+            // handler away from a dedicated PGN editor — is LSHandlerRank,
+            // which this key cannot express; scripts/add-pgn-doctype.sh
+            // still writes it, and says so.
+            .role = "viewer",
             .extensions = .{"pgn"},
             .mime_types = .{"application/x-chess-pgn"},
         },
