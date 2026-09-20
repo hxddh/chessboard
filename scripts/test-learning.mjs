@@ -340,7 +340,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 {
   const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
   const mined = mctx.MINED_PUZZLES;
-  assert(Array.isArray(mined) && mined.length >= 1023, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  assert(Array.isArray(mined) && mined.length >= 1002, "mined set loaded (" + (mined ? mined.length : 0) + ")");
   const ids = new Set(), fens = new Set(ctx.CHESS_PUZZLES.map((p) => p.fen));
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -376,19 +376,25 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // carries a number: the smallest margin is 60cp, and several are the engine
   // holding a forced mate the stored answer does not.
   //
-  // STATE: back at the full set while the gate is re-run from a clean
-  // baseline. Both earlier passes searched without clearing the engine's
-  // transposition table between puzzles, so every result depended on what had
-  // been searched before it — two passes disagreed about the best move, the
-  // margin, and even whether a forced mate existed. `ucinewgame` fixed that
-  // (same 60-puzzle sample now reproduces item for item), and the retirements
-  // made on the unreproducible runs were reverted rather than kept: a deletion
-  // is only as good as the measurement behind it.
+  // Getting this number right took three goes, and the first two were not
+  // wrong about chess — they were wrong about measurement:
+  //
+  //   1. judged by RANK ("is the stored answer the engine's #1") instead of by
+  //      margin, so a 1cp difference was retired like a 262cp one;
+  //   2. judged by margin, but still searched without clearing the engine's
+  //      transposition table between puzzles, so every result depended on what
+  //      had been searched before it — two passes disagreed about the best
+  //      move, about the margin, and even about whether a forced mate existed.
+  //
+  // `ucinewgame` fixed the second (the same 60-puzzle sample now reproduces
+  // item for item), and the retirements made on those runs were reverted
+  // rather than kept: a deletion is only as good as the measurement behind it.
+  // These floors come from the first pass that reproduces.
   //
   // A floor that kept the pre-gate number would have had exactly one way to be
   // satisfied: putting wrong puzzles back.
-  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 589, win: 305 };
-  const MOTIF_FLOOR = { fork: 135, pin: 113, skewer: 51, discovered: 7, double: 10 };
+  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 573, win: 300 };
+  const MOTIF_FLOOR = { fork: 134, pin: 111, skewer: 50, discovered: 5, double: 9 };
   // 6.1: §5 of docs/v6-plan.md wants ≥ 50 puzzles in every 200-point rating
   // band. 6.0 shipped three bands short and did not say so; 6.1 re-rated the
   // set from measured difficulty and topped up the thin bands from fresh
@@ -403,7 +409,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // half. Pinned at what they actually are rather than at what §5 wants:
   // topping them up would mean regenerating ids, and a changed id orphans a
   // player's progress (6.0 → 6.1 kept all 958 for exactly that reason).
-  const BAND_FLOOR = 50, BAND_SHORT = { 2200: 27 };
+  const BAND_FLOOR = 50, BAND_SHORT = { 1200: 49, 1600: 48, 2000: 48, 2200: 27, 2400: 46 };
   for (const [c, n] of Object.entries(FLOOR)) assert((byCat[c] || 0) >= n, "mined " + c + " ≥ " + n + " (" + (byCat[c] || 0) + ")");
   for (const [m, n] of Object.entries(MOTIF_FLOOR)) assert((byMotif[m] || 0) >= n, "mined motif " + m + " ≥ " + n + " (" + (byMotif[m] || 0) + ")");
   {
