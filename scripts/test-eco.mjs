@@ -24,7 +24,11 @@ const ctx = { console };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const m of ["chess.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js"]) {
+// 6.1: eco.js is a chunk now — at runtime the page injects it as its own
+// script and eco-lookup.js reads the global it defines. Loading it into this
+// context first is the same arrangement, and without it every lookup here
+// answers null, which is exactly what a missing chunk looks like.
+for (const m of ["chess.js", "eco.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", m)), ctx, { filename: m });
 }
 const { Chess, ChessEco, CHESS_OPENINGS, CHESS_OPENING_NAMES, CHESS_OPENINGS_JA } = ctx;

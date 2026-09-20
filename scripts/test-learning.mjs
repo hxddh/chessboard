@@ -6,6 +6,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { pathToFileURL } from "url";
 import { spawnSync } from "child_process";
 import { loadAppModules, ROOT } from "./lib/app-module.mjs";
 import { gate, positionGate } from "./lib/puzzle-gate.mjs";
@@ -322,7 +323,11 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(/emitted 49/.test(r.stdout), "CLI reports 49 emitted");
   const text = fs.readFileSync(out, "utf8");
   assert(/CC0/.test(text) && /export const LICHESS_PUZZLES = \[/.test(text), "output states the CC0 licence and exports LICHESS_PUZZLES");
-  const mod = await import(out);
+  // pathToFileURL, not the bare path: on Windows an absolute path is "D:\\..."
+  // and Node rejects it with ERR_UNSUPPORTED_ESM_URL_SCHEME. This script had
+  // never run in PR CI (6.1 wired the whole static suite in), so the platform
+  // it breaks on had never seen it.
+  const mod = await import(pathToFileURL(out).href);
   assert(mod.LICHESS_PUZZLES.length === 49 && JSON.stringify(mod.LICHESS_PUZZLES) === JSON.stringify(puzzles), "the written module round-trips the pipeline output");
   fs.rmSync(dir, { recursive: true, force: true });
 }
