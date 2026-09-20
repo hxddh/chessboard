@@ -303,14 +303,35 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * background. Never for anything the player is looking at — a toast is the
    * right answer when the window is in front.
    *
-   * @param {{title: string, body?: string}} opts
+   * `id` and the action pair are 0.10.1 (7.0). `id` replaces an earlier
+   * notification carrying the same one instead of stacking a new one beside
+   * it, which is what a long job needs: analysing three hundred imported
+   * games takes half an hour, and twenty progress notifications is not
+   * progress, it is a mess. `actionLabel` + `actionCommand` put one button on
+   * it that dispatches an ordinary app command — so "分析完成" can offer
+   * "看诊断" rather than making the player find the page themselves.
+   *
+   * Both are dropped on an older shell: the fields are simply ignored there,
+   * and the notification still shows. Nothing here branches on the SDK
+   * version — a field the host does not know is not an error.
+   *
+   * @param {{title: string, body?: string, id?: string,
+   *          actionLabel?: string, actionCommand?: string}} opts
    * @returns {Promise<boolean>} whether it was actually shown
    */
   async function notify(opts) {
     if (!opts || !opts.title) return false;
     if (!hasZero() || !global.zero.os || !global.zero.os.showNotification) return false;
     if (!(await supports("notifications", false))) return false;
-    try { return !!(await global.zero.os.showNotification(opts)); }
+    // the pair travels together or not at all — the SDK rejects a half of it
+    const payload = { title: opts.title };
+    if (opts.body) payload.body = opts.body;
+    if (opts.id) payload.id = String(opts.id);
+    if (opts.actionLabel && opts.actionCommand) {
+      payload.actionLabel = String(opts.actionLabel);
+      payload.actionCommand = String(opts.actionCommand);
+    }
+    try { return !!(await global.zero.os.showNotification(payload)); }
     catch (_) { return false; }
   }
 

@@ -271,6 +271,13 @@ function checkManifest(label, file) {
     "id", "name", // bundle identifier and the package basename, `native package` only
     "icons", "platforms", // iconset + target validation, `native package` only
     "frontend", // the dist to bundle; the app side reads it in src/main.zig
+    // 7.0: the .pgn document type. `native package` writes it into Info.plist
+    // (macOS) and the installer registration (Windows); nothing in the running
+    // app reads it, and nothing should — the OS asks the *package*, not the
+    // process, which application opens a .pgn. It is listed here rather than
+    // exempted silently, and the schema that proves the packager takes it
+    // ships with the SDK at schemas/app.schema.json ($defs.fileAssociation).
+    "file_associations",
   ]);
   // The manifest itself is one `.{ … }`, so the sections sit one level in —
   // walking the raw file finds nothing and this loop quietly checked zero keys

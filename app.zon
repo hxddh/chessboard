@@ -13,6 +13,29 @@
         .entry = "index.html",
         .spa_fallback = true,
     },
+    // 7.0：.pgn 的文档类型声明搬进 manifest。
+    //
+    // scripts/add-pgn-doctype.sh 的文件头写着它为什么曾经是「打包后改 plist」：
+    // 「0.8.1 的 CLI 是否接受在 app.zon 里声明文档类型，这个仓库看不到任何文档；
+    // 一个未知的键既可能被忽略，也可能让 native validate 直接失败。」0.10.1 随包
+    // 附了 schemas/app.schema.json，这个键在里面（name / role / extensions /
+    // mime_types / icon），所以答案不再靠猜。
+    //
+    // LSHandlerRank 的用意保持不变：alternate —— 绝不从用户已经装好的专业 PGN
+    // 编辑器手里抢走默认打开权。
+    //
+    // 那个脚本暂时留着。本机装不了 zig，也跑不了 native package，所以「SDK 写出来
+    // 的 plist 和脚本写的是不是一回事」只有真机能回答；脚本自称幂等（「SDK 若支持
+    // 了，这里的 Delete 只是替换它写的东西」），所以两者并存是安全的。真机核对过
+    // 之后再删脚本，这条记在 docs/manual-check.md 里。
+    .file_associations = .{
+        .{
+            .name = "PGN 棋谱",
+            .role = "alternate",
+            .extensions = .{"pgn"},
+            .mime_types = .{"application/x-chess-pgn"},
+        },
+    },
     .security = .{
         .navigation = .{
             .allowed_origins = .{ "zero://app", "zero://inline", "http://127.0.0.1:5173" },
