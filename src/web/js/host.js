@@ -395,10 +395,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
   // keep localStorage as the fallback and the one-time migration source.
 
   /**
-   * @returns {Promise<{text: string}|{missing: true}|null>} the file, "no
-   *   file yet" (a fresh install — migrate from localStorage), or null when
-   *   native storage is unavailable here. Throws FileTooLargeError when the
-   *   file is over the native limit.
+   * @returns {Promise<{text: string, bak?: boolean}|{missing: true}|{empty: true}|null>}
+   *   the file (with `bak` true when the native side had to fall back to
+   *   chessboard.json.bak), "no file yet" (a fresh install — migrate from
+   *   localStorage), "the file is there and holds nothing" (6.1: damage, not
+   *   a fresh install), or null when native storage is unavailable here.
+   *   Throws FileTooLargeError when the file is over the native limit.
    */
   async function appdataRead() {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
@@ -407,9 +409,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
     catch (_) { return null; }
     if (!r || typeof r !== "object") return null;
     if (r.missing) return { missing: true };
+    if (r.empty) return { empty: true };
     if (r.tooLarge) throw fileTooLargeError(r.limit);
     if (r.error || typeof r.b64 !== "string") return null;
-    return { text: base64ToString(r.b64) };
+    return { text: base64ToString(r.b64), bak: r.bak === true };
   }
 
   /**

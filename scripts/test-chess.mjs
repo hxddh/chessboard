@@ -5229,6 +5229,9 @@ for (const lang of CONTENT_LANGS) {
     const h = withFile(null);
     const P = createPersist(h, () => {});
     P.load();
+    // 6.1: the mirror is gated on recover(); the boot path always reconciles
+    // before it is allowed to write over the file (see scheduleMirror)
+    await P.recover();
     P.set("settings", "{\"a\":1}");
     P.set("learn", "{\"b\":2}");
     await tick(600);
@@ -5283,6 +5286,7 @@ for (const lang of CONTENT_LANGS) {
     let failed = null;
     const P = createPersist(h, (info) => { failed = info; });
     P.load();
+    await P.recover();
     P.set("slots", "{\"v\":1}");
     const doc = P.exportAll();
     assert(doc.keys.slots === "{\"v\":1}" && P.isProfileDoc(doc), "exportAll() is a profile document");
@@ -5295,7 +5299,108 @@ for (const lang of CONTENT_LANGS) {
     await tick(600);
     assert(failed && failed.key === "appdata", "a refused mirror write latches the failure like a refused cache write");
   }
-  // 6. no bridge at all: nothing mirrors, nothing fails, recover() says none
+  // 6.1 — 7. the boot race: a cleared cache, an intact file, a slow read.
+  // Before 6.1 the boot writes armed the 400ms mirror while recover() was
+  // still in flight, so an empty profile reached the file first, recover()
+  // then read back what it had just destroyed, and the user was told their
+  // profile had been restored.
+  {
+    const good = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000,
+      keys: { stats: "{\"v\":2,\"games\":[1]}", learn: "{\"v\":1,\"done\":1}" } });
+    const h = withFile(good);
+    h.appdataRead = async () => { await tick(900); return h.file; };  // slower than MIRROR_DELAY
+    const P = createPersist(h, () => {});
+    P.load();
+    const pending = P.recover();
+    P.set("settings", "{\"fresh\":1}");   // what loadSettings/saveGame do on boot
+    P.set("save", "{\"v\":1,\"pgn\":\"\"}");
+    await tick(600);                      // the old mirror would have fired here
+    assert(h.writes === 0, "no mirror write reaches the file before recover() has run (" + h.writes + ")");
+    assert(JSON.parse(h.file).keys.stats === "{\"v\":2,\"games\":[1]}", "…so the good file is still the good file");
+    const r = await pending;
+    assert(r === "restored", "…and the file wins over the cache the boot just wrote (" + r + ")");
+    assert(P.get("stats") === "{\"v\":2,\"games\":[1]}", "…with the real stats back in storage");
+  }
+  // 8. after a restore nothing may write again: the page is still standing on
+  // its pre-restore state and is about to reload onto the new one
+  {
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys: { save: "{\"v\":1,\"pgn\":\"real\"}" } }));
+    h.m.set("chess.writtenAt", "5000"); h.m.set(KEYS.save, "{\"v\":1,\"pgn\":\"stale\"}");
+    const P = createPersist(h, () => {});
+    P.load();
+    assert((await P.recover()) === "restored", "the older cache yields to the file");
+    P.set("save", "{\"v\":1,\"pgn\":\"stale\"}");   // beforeunload → saveGame() during the reload delay
+    await tick(600);
+    assert(P.get("save") === "{\"v\":1,\"pgn\":\"real\"}", "a write after a restore does not clobber what was restored");
+    assert(h.writes === 0, "…and nothing stale reaches the file either (" + h.writes + ")");
+  }
+  // 9. a restore that cannot be written is reported, not silently half-done
+  {
+    const h = withFile(null);
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    await P.recover();
+    const doc = { app: "chessboard", schema: 1, writtenAt: 1, keys: { learn: "a", stats: "b" } };
+    let allow = 1;
+    const realSet = h.storageSet;
+    h.storageSet = (k, v) => (allow-- > 0 ? realSet(k, v) : false);   // quota dies mid-restore
+    const ok = P.restoreAll(doc);
+    assert(ok === false, "restoreAll() reports a refused write instead of returning as if it wrote");
+    assert(failed && failed.key === "restore", "…and latches the failure so the app can say so");
+    h.storageSet = realSet;
+  }
+  // 10. a file that exists and holds nothing is damage, not a fresh install
+  {
+    const h = withFile(null);
+    h.appdataRead = async () => ({ empty: true });
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    const r = await P.recover();
+    assert(r === "corrupt", "a zero-length profile file reads as corrupt, not missing (" + r + ")");
+    assert(failed && failed.key === "appdataCorrupt", "…and the user is told");
+  }
+  // 11. an unreadable file is reported too — before 6.1 it returned "none" in
+  // silence and the broken file was left in place forever
+  {
+    const h = withFile("{not json at all");
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    const r = await P.recover();
+    assert(r === "corrupt", "a file that will not parse reads as corrupt (" + r + ")");
+    assert(failed && failed.key === "appdataCorrupt", "…and says so once");
+  }
+  // 12. the quarantine keeps the evidence it promises to keep
+  {
+    const h = mem();
+    const P = createPersist(h, () => {});
+    h.m.set(KEYS.learn, "{oops");
+    P.load();
+    for (let i = 0; i < 12; i++) { P.load(); P.read("learn"); }   // twelve launches, one bad key
+    const list = JSON.parse(P.get("quarantine"));
+    assert(list.length === 1 && list[0].raw === "{oops",
+      "the same unreadable value is kept once, not pushed on every launch (" + list.length + ")");
+    P.clearAll();
+    assert(P.get("quarantine") != null, "clearAll() does not destroy the quarantined evidence");
+    P.restoreAll({ app: "chessboard", schema: 1, writtenAt: 1, keys: {} });
+    assert(P.get("quarantine") != null, "…and neither does a restore");
+  }
+  // 13. a cache that cannot stamp itself must not report the write as kept:
+  // an unstamped cache reads as older than it is and the file overwrites it
+  {
+    const h = mem();
+    let failed = null;
+    const P = createPersist(h, (info) => { failed = info; });
+    P.load();
+    const realSet = h.storageSet;
+    h.storageSet = (k, v) => (k === "chess.writtenAt" ? false : realSet(k, v));
+    assert(P.set("learn", "x") === false, "a refused revision stamp is a refused write");
+    assert(failed && failed.key === "learn", "…and latches");
+    h.storageSet = realSet;
+  }
+  // 14. no bridge at all: nothing mirrors, nothing fails, recover() says none
   {
     const h = mem();
     const P = createPersist(h, () => { throw new Error("must not be called"); });

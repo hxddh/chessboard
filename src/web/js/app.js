@@ -9064,8 +9064,12 @@ import { createStore } from "./store.js";
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
   }
-  window.addEventListener("beforeunload", () => saveGame());
-  window.addEventListener("pagehide", () => saveGame());
+  // 6.1: saveGame() writes the cache, and the mirror behind it is on a 400 ms
+  // timer — on the way out that timer never fires, so up to one burst of
+  // writes never reached the file. Flush it here instead of waiting.
+  const saveAndFlush = () => { saveGame(); try { Persist.flushMirror(); } catch (_) { /* leaving anyway */ } };
+  window.addEventListener("beforeunload", saveAndFlush);
+  window.addEventListener("pagehide", saveAndFlush);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") saveGame();
     // and stop/restart the clock — syncClockTimer resets clockTickAt when it
@@ -9158,7 +9162,13 @@ import { createStore } from "./store.js";
   // it. This is the one moment an async read may change what the app stands
   // on, and it announces itself.
   Persist.recover().then((r) => {
+    // 6.1: the file is there and unreadable (damaged, or zero-length after an
+    // interrupted write). The cache is what the app is running on and stays
+    // that way, but the user hears it once — before 6.1 this was silent.
+    if (r === "corrupt") { toast(t("msg.profile.fileBad"), "fault"); return; }
     if (r !== "restored") return;
+    // persist.js has frozen every further write (6.1): from here to the
+    // reload nothing the page does can overwrite what was just restored.
     toast(t("msg.profile.restored"), "fault");
     setTimeout(() => location.reload(), 1200);
   }).catch(() => {});

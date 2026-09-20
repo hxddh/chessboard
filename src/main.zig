@@ -108,6 +108,8 @@ const App = struct {
     /// resolveAppDataDir() ran; main() keeps it in one place.
     appdata_dir_buf: [1024]u8 = undefined,
     appdata_dir: []const u8 = "",
+    /// 6.1 — bumped per appdata write so each one gets its own tmp file name.
+    appdata_seq: u32 = 0,
     /// Q1.2 — the paths the native side has issued to the page this process.
     issued: IssuedPaths = .{},
     /// Q1.6 — localized copies of the manifest menus, when the launch
@@ -730,13 +732,21 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
 // its contents (schema, migration from localStorage, the corrupt-file
 // banner); this side only promises two things:
 //
-//   * a write is atomic — the bytes go to chessboard.json.tmp, the previous
-//     file is renamed to chessboard.json.bak, the tmp is renamed into place.
-//     A crash at any point leaves either the old file or the new one, never
-//     a half-written one, and the .bak is the last good copy either way;
-//   * a read says which of three things happened: {b64} (the file, base64 so
-//     no JSON escaping is done here), {missing:true} (no file yet — a fresh
-//     install, so the page migrates), or {tooLarge:true,limit}.
+//   * a write is atomic and durable — the bytes go to a tmp file whose name
+//     is unique to this write (two windows must not share one tmp and
+//     interleave their bytes), that file is flushed to the disk before it is
+//     renamed, the previous file is renamed to chessboard.json.bak, and the
+//     tmp is renamed into place. A crash at any point leaves either the old
+//     file or the new one, never a half-written one;
+//   * a read that finds nothing usable in chessboard.json — no file, or a
+//     zero-length one, which is what the gap between those two renames looks
+//     like after a crash — falls back to chessboard.json.bak, so the last
+//     good copy is reachable rather than merely written (6.1);
+//   * a read says which of four things happened: {b64,bak} (the file, base64
+//     so no JSON escaping is done here, and whether it came from the .bak),
+//     {missing:true} (no file and no .bak — a fresh install, so the page
+//     migrates), {empty:true} (a zero-length file and no usable .bak: not a
+//     fresh install, something went wrong), or {tooLarge:true,limit}.
 //
 // The text rides as base64 in both directions (host.js does the conversion),
 // for the same reason chess.readTextFile does: the bridge frame is JSON and
@@ -756,6 +766,12 @@ fn fsMakePath(io: std.Io, dir: []const u8) void {
 fn fsRename(io: std.Io, from: []const u8, to: []const u8) !void {
     const cwd = std.Io.Dir.cwd();
     try std.Io.Dir.rename(cwd, from, cwd, to, io);
+}
+
+/// Flush one file's bytes to the disk. Isolated next to fsMakePath / fsRename
+/// for the same reason: a std.Io API mismatch stays a one-line fix.
+fn fsSync(io: std.Io, file: *std.Io.File) !void {
+    try file.sync(io);
 }
 
 fn appdataUnavailable(output: []u8) anyerror![]const u8 {
@@ -778,24 +794,55 @@ fn appdataPath(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     return output[0..n];
 }
 
+/// Read one appdata file into `raw`. null means "nothing usable here":
+/// either no such file, or a zero-length one. A zero-length file is not a
+/// fresh install — an interrupted write leaves one — so it must not be
+/// reported as a missing file, and the caller falls through to the .bak.
+fn appdataSlurp(io: std.Io, path: []const u8, raw: []u8) !?usize {
+    var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        else => return error.HandlerFailed,
+    };
+    defer file.close(io);
+    const n = file.readPositionalAll(io, raw, 0) catch return error.HandlerFailed;
+    if (n == 0) return null;
+    return n;
+}
+
 fn appdataRead(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     _ = invocation;
     var path_buf: [1200]u8 = undefined;
+    var bak_buf: [1200]u8 = undefined;
     const path = self.appdataChild(&path_buf, APPDATA_FILE) orelse return appdataUnavailable(output);
-
-    var file = std.Io.Dir.openFileAbsolute(self.io, path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return std.fmt.bufPrint(output, "{{\"missing\":true}}", .{}) catch return error.HandlerFailed,
-        else => return error.HandlerFailed,
-    };
-    defer file.close(self.io);
+    const bak_path = self.appdataChild(&bak_buf, APPDATA_BAK) orelse return appdataUnavailable(output);
 
     // Heap, not stack: 8 MiB plus its base64 is more than a handler thread
     // should carry. Same spare byte as readTextFile, same reason.
     const gpa = std.heap.page_allocator;
     const raw = gpa.alloc(u8, APPDATA_MAX_BYTES + 1) catch return error.HandlerFailed;
     defer gpa.free(raw);
-    const n = file.readPositionalAll(self.io, raw, 0) catch return error.HandlerFailed;
+
+    // 6.1: the .bak stopped being write-only. The main file wins whenever it
+    // holds bytes; only when it holds none does the previous copy answer.
+    var from_bak = false;
+    const main_n = try appdataSlurp(self.io, path, raw);
+    const n = main_n orelse blk: {
+        const bak_n = try appdataSlurp(self.io, bak_path, raw);
+        if (bak_n) |bn| {
+            from_bak = true;
+            break :blk bn;
+        }
+        // Nothing in either place. Tell the two cases apart: a main file that
+        // exists but is empty is damage, not a fresh install.
+        const exists = if (std.Io.Dir.openFileAbsolute(self.io, path, .{})) |f| blk2: {
+            var fh = f;
+            fh.close(self.io);
+            break :blk2 true;
+        } else |_| false;
+        if (exists) return std.fmt.bufPrint(output, "{{\"empty\":true}}", .{}) catch return error.HandlerFailed;
+        return std.fmt.bufPrint(output, "{{\"missing\":true}}", .{}) catch return error.HandlerFailed;
+    };
     if (n > APPDATA_MAX_BYTES) return appdataTooLarge(output);
 
     const enc = std.base64.standard.Encoder;
@@ -803,11 +850,11 @@ fn appdataRead(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     // The bridge's answer buffer is the SDK's; a file that does not fit it is
     // reported the same way as one over our own limit, so the page never gets
     // a truncated archive.
-    if (enc_len + 12 > output.len) return appdataTooLarge(output);
+    if (enc_len + 32 > output.len) return appdataTooLarge(output);
     const b64 = gpa.alloc(u8, enc_len) catch return error.HandlerFailed;
     defer gpa.free(b64);
     const encoded = enc.encode(b64, raw[0..n]);
-    return std.fmt.bufPrint(output, "{{\"b64\":\"{s}\"}}", .{encoded}) catch return error.HandlerFailed;
+    return std.fmt.bufPrint(output, "{{\"b64\":\"{s}\",\"bak\":{s}}}", .{ encoded, if (from_bak) "true" else "false" }) catch return error.HandlerFailed;
 }
 
 fn appdataWrite(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
@@ -829,7 +876,15 @@ fn appdataWrite(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
     var tmp_buf: [1200]u8 = undefined;
     var bak_buf: [1200]u8 = undefined;
     const main_path = self.appdataChild(&main_buf, APPDATA_FILE) orelse return appdataUnavailable(output);
-    const tmp_path = self.appdataChild(&tmp_buf, APPDATA_TMP) orelse return appdataUnavailable(output);
+    // 6.1: a tmp name unique to this write. One fixed name meant two windows
+    // (or one window whose next flush started before the last finished) both
+    // created the same file with .truncate and interleaved their bytes, and
+    // both then renamed that mixture into place.
+    const seq = self.appdata_seq;
+    self.appdata_seq +%= 1;
+    var tmp_name_buf: [96]u8 = undefined;
+    const tmp_name = std.fmt.bufPrint(&tmp_name_buf, "{s}.{d}.{d}", .{ APPDATA_TMP, std.time.milliTimestamp(), seq }) catch return error.HandlerFailed;
+    const tmp_path = self.appdataChild(&tmp_buf, tmp_name) orelse return appdataUnavailable(output);
     const bak_path = self.appdataChild(&bak_buf, APPDATA_BAK) orelse return appdataUnavailable(output);
 
     fsMakePath(self.io, self.appdata_dir);
@@ -837,6 +892,10 @@ fn appdataWrite(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
         var file = std.Io.Dir.createFileAbsolute(self.io, tmp_path, .{ .truncate = true }) catch return error.HandlerFailed;
         defer file.close(self.io);
         file.writeStreamingAll(self.io, decoded) catch return error.HandlerFailed;
+        // 6.1: rename is atomic, the write behind it is not. Without this a
+        // power loss could make the rename durable and the bytes not, which
+        // is exactly how a zero-length chessboard.json appears.
+        fsSync(self.io, &file) catch return error.HandlerFailed;
     }
     // previous file → .bak (there is none on the very first write)
     fsRename(self.io, main_path, bak_path) catch |err| switch (err) {
