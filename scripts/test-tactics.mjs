@@ -62,10 +62,10 @@ if (!puzzles.length) {
 
 const listeners = [];
 const engine = {
-  wasmBinary: new Uint8Array(fs.readFileSync(path.join(root, "third_party/stockfish/stockfish-18-lite-single.wasm"))),
+  wasmBinary: new Uint8Array(fs.readFileSync(path.join(root, "third_party/stockfish/stockfish-19-lite-single.wasm"))),
   listener: (line) => { for (const h of listeners.slice()) h(line); },
 };
-const factory = require(path.join(root, "third_party/stockfish/stockfish-18-lite-single.js"));
+const factory = require(path.join(root, "third_party/stockfish/stockfish-19-lite-single.js"));
 await (factory.length >= 1 ? factory(engine) : factory()(engine));
 await new Promise((r) => {
   const tick = () => (engine._isReady && !engine._isReady() ? setTimeout(tick, 10) : r());

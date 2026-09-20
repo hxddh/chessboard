@@ -63,7 +63,10 @@ if (size("js/bundle.js") <= 400000) {
   console.error("FAIL: frontend/dist/js/bundle.js 太小 —— 不是完整的应用");
   process.exit(1);
 }
-if (size("js/engine-src.js") <= 5000000) {
+// 7.0 重标定：Stockfish 18 lite-single 的 wasm 是 7.3 MB，base64 后 9.75 MB；
+// 19 lite-single 换了一张 1 MB 的网络，wasm 1.79 MB、base64 后 2.41 MB。这条
+// 守卫防的是「打出一个空壳」，所以门槛跟着实际体积走，不是跟着历史走。
+if (size("js/engine-src.js") <= 2000000) {
   console.error("FAIL: frontend/dist/js/engine-src.js 太小 —— 没带上完整的 wasm");
   process.exit(1);
 }

@@ -112,8 +112,12 @@
       "白方把四个中心兵全部推上去，要么碾过黑方，要么这条兵链自己塌掉。阿廖欣防御想要的就是这个。"],
     ["B05", "alekhines-defence-modern-main-line", "e4 Nf6 e5 Nd5 d4 d6 Nf3 Bg4 Be2 e6 O-O Be7 c4 Nb6 Nc3 O-O",
       "黑方故意让马被追着跑，引白方兵越推越前，再回头去啃这条过度伸展的兵链。是「诱敌深入」在开局里的样子。"],
-    ["B06", "modern-defence-austrian-attack", "e4 g6 d4 Bg7 Nc3 d6 f4 a6 Nf3 b5 Bd3 Nd7 O-O Bb7 Qe1 e6",
-      "比皮尔茨更晚出马：黑方先把象放上长斜线和后翼铺开，把出马的时机留到看清白方阵型之后。"],
+    // 7.0：末手由 ...e6 改为 ...c5。前十五手一直是黑方略优（−19cp），而 ...e6
+    // 一手掉到 +151——把自己的白格象关在里面，又不碰白方的中心。Stockfish 18
+    // 只把它报成 +108，刚好躲在 test-openings 的 ±130 里；19 报 +151 才现形。
+    // ...c5 是引擎在那个局面的首选，把这条线留在 −7cp。
+    ["B06", "modern-defence-austrian-attack", "e4 g6 d4 Bg7 Nc3 d6 f4 a6 Nf3 b5 Bd3 Nd7 O-O Bb7 Qe1 c5",
+      "比皮尔茨更晚出马：黑方先把象放上长斜线和后翼铺开，把出马的时机留到看清白方阵型之后；等白方 Qe1 表态，再用 ...c5 顶中心。"],
     ["B08", "pirc-defence-classical", "e4 d6 d4 Nf6 Nc3 g6 Nf3 Bg7 Be2 O-O O-O c6 a4 Nbd7 h3 e5",
       "黑方不争中心，先让白方占满，再用 ...c6 ...e5 从侧面顶回去。需要耐心，也需要对被挤压的局面不害怕。"],
     ["B12", "caro-kann-advance", "e4 c6 d4 d5 e5 Bf5 Nf3 e6 Be2 Nd7 O-O Ne7 Nbd2 Ng6 Nb3 Be7 a4 O-O",

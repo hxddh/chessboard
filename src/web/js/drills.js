@@ -76,6 +76,11 @@
    * Generated once from the 1.22 book; scripts/test-chess.mjs checks it still
    * describes every drill that book contained.
    */
+  // 7.0：B06 那一格从 op-B06-3i0au0 改到 op-B06-yayhtv。这张表冻结的是「书长大
+  // 时不许移动」，不是「书里的错不许改」——B06 的末手 ...e6 是错的（见
+  // openings.js 该行），改成 ...c5 之后着法序列变了，哈希 id 也就变了。同一个
+  // ECO、同一个名字、前十五手一字不差，所以老用户在这条线上的进度应该跟过来，
+  // 而不是变成孤儿。这是这张表唯一被允许改动的理由，改一格就在这里记一笔。
   const LEGACY_IDS = {
     "op-A57-0": "op-A57-8u9zzu", "op-A60-1": "op-A60-80t60k", "op-A08-2": "op-A08-vc3tne",
     "op-A13-3": "op-A13-5d0mux", "op-A29-4": "op-A29-1jy6ley", "op-A34-5": "op-A34-1p27j70",
@@ -85,7 +90,7 @@
     "op-B33-15": "op-B33-egzy0z", "op-B34-16": "op-B34-zcd3qa", "op-B41-17": "op-B41-5lq4xa",
     "op-B70-18": "op-B70-1vl4hz7", "op-B80-19": "op-B80-10iliw1", "op-B90-20": "op-B90-1vky6z9",
     "op-B01-21": "op-B01-140o8vn", "op-B02-22": "op-B02-1u0fwli", "op-B05-23": "op-B05-1saqk92",
-    "op-B06-24": "op-B06-3i0au0", "op-B08-25": "op-B08-1fonl11", "op-B12-26": "op-B12-8rhmli",
+    "op-B06-24": "op-B06-yayhtv", "op-B08-25": "op-B08-1fonl11", "op-B12-26": "op-B12-8rhmli",
     "op-B14-27": "op-B14-65igpi", "op-B18-28": "op-B18-m8swyz", "op-B19-29": "op-B19-1emm89y",
     "op-B21-30": "op-B21-bs5j5p", "op-B22-31": "op-B22-uufphl", "op-B23-32": "op-B23-13fggf5",
     "op-B31-33": "op-B31-xj5h9a", "op-B33-34": "op-B33-vz95sn", "op-B36-35": "op-B36-dcusv1",

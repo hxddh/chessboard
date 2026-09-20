@@ -6467,7 +6467,7 @@ import { createStore } from "./store.js";
 
   // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
   // object that predated the 1.19 "casual" rung and never grew one, so a
-  // casual game exported as "Stockfish 18 (casual)" — the raw id leaking into
+  // casual game exported as "Stockfish 19 (casual)" — the raw id leaking into
   // a file other programs read. The self-check now requires an entry here for
   // every rung, so the next tier cannot slip through the same way.
   const DIFF_EN = {
@@ -6479,7 +6479,7 @@ import { createStore } from "./store.js";
   function pgnForExport() {
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    const engineName = "Stockfish 18 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
+    const engineName = "Stockfish 19 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
     const white = store.session.mode === "ai" ? (store.session.humanColor === "w" ? "Player" : engineName) : "Player 1";
     const black = store.session.mode === "ai" ? (store.session.humanColor === "b" ? "Player" : engineName) : "Player 2";
     const result = gameResultToken();
