@@ -14,18 +14,34 @@
    * the same size as the quick scan's own noise: scanning twenty-eight decided
    * games twice at 120ms/position (1320 plies — the corpus was four games and
    * 168 plies until 6.1, which was too small to conclude anything from), the
-   * evaluation of the *same* position moves by a median 7cp between runs, 31cp
+   * evaluation of the *same* position moves by a median 8cp between runs, 33cp
    * at the ninth percentile — and a move's loss is a difference of two of
    * those. The consequence is measured too: of every ply either run called
-   * `?!`, both runs called it 44% of the time. `?` reaches 59% and `??` 79%.
+   * `?!`, both runs called it 37% of the time. `?` reaches 63% and `??` 97%.
    *
-   * The defect proposed scaling the thresholds with movetime. Refuted — at
-   * 400ms the jitter is the same order (median 7cp, p90 26) and `?!` still
-   * only reaches 47%, so there is no movetime-dependent noise floor to track.
+   * The defect proposed scaling the thresholds with movetime. Refuted — 6.1
+   * swept three budgets over the whole corpus and `?!` does not come good at
+   * any of them (docs/measured.json, `scanNoise` / `winPctNoise`):
+   *
+   *            120ms      400ms     1200ms
+   *     ?!   37 / 52    50 / 56    54 / 54      (centipawn / win-%)
+   *     ?    63 / 62    69 / 68    77 / 84
+   *     ??   97 / 88    85 / 93    92 / 95
+   *
+   * Ten times the search does not make `?!` reproducible, on either measure —
+   * so there is no movetime-dependent noise floor to track, and no budget this
+   * app could ship that would fix it. `?` and `??` are sound and get better
+   * with depth, which is what a real signal does.
+   *
    * Raising the `?!` cut is refuted too: swept over the recorded tracks at
-   * 40/50/60/70/80/90cp, agreement wanders (42/44/41/27/31/6) with no trend,
+   * 40/50/60/70/80/90cp, agreement wanders (44/37/33/35/43/11) with no trend,
    * because a hard cut on a noisy quantity always has about half its members
    * sitting on the edge, wherever the edge is put.
+   *
+   * The conclusion 6.0 should have drawn, and 6.1 writes down: `?!` is the one
+   * annotation this app cannot stand behind. It stays off the evaluation
+   * curve's mistake dots (app.js) and out of the verdict, where it already
+   * was, and nothing anywhere claims it is reproducible.
    *
    * So the numbers stay, and what changed is that they are now known rather
    * than assumed: docs/measured.json `scanNoise`, written by
