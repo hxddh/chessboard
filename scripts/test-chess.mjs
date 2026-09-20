@@ -5726,7 +5726,16 @@ for (const lang of CONTENT_LANGS) {
     for (const t of L.tasks || []) vet(t.fen, "课程 " + L.id);
   }
   for (const p of ctx.CHESS_PUZZLES || []) vet(p.fen, "题目 " + p.id);
-  assert(checked > 100, "课程与题目的局面都取到了 (" + checked + ")");
+  // the mined set too — it is generated, which is exactly the reason a bad
+  // position could arrive in bulk without anyone typing it
+  {
+    const mctx = { console, Date, performance };
+    mctx.globalThis = mctx; mctx.window = mctx;
+    vm.createContext(mctx);
+    loadModule(mctx, "src/web/js/puzzles-mined.js");
+    for (const p of mctx.MINED_PUZZLES || []) vet(p.fen, "挖掘题 " + p.id);
+  }
+  assert(checked > 1000, "课程、题目与挖掘题的局面都取到了 (" + checked + ")");
   assert(bad === 0, "每一个随应用发布的局面都是真能出现的局面 —— " +
     "兵不在底线、王各一个、吃过路兵格站得住 (" + checked + " 个)");
 }
