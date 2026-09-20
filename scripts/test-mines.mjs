@@ -245,5 +245,39 @@ if (RECORDING) {
   record("verdictFloor", verdictFloor);
   console.log("\nrecorded to docs/measured.json");
 }
+
+// --- 6.1: bounds, so this is a test and not only a printout -----------------
+//
+// v6-plan §1.2 listed this script among the three with "not one assert", and
+// Q0.5 only ever got round to two of them. A measurement with no bounds
+// cannot fail, so it cannot notice the day the numbers move; these are the
+// bands the recorded figures sit in, wide enough for the sampling noise a
+// four-game run has and narrow enough that a real change trips them.
+// The recorded values are in docs/measured.json (mineRevision,
+// mineAlternatives, verdictFloor) and this file writes them with --record.
+let failed = 0;
+function bound(label, value, lo, hi) {
+  const ok = typeof value === "number" && value >= lo && value <= hi;
+  console.log((ok ? "ok" : "FAIL") + `: ${label} = ${value}（区间 ${lo}–${hi}）`);
+  if (!ok) failed++;
+}
+console.log("\n=== 4 · 门槛断言 ===");
+// A quick scan mints mistakes a deeper look sometimes withdraws. Some churn is
+// the point of the revision pass; none of it would mean the deep pass is not
+// looking, and most of it would mean the quick scan is noise.
+bound("精析撤回的比例 %", revision.withdrawnPct, 0, 75);
+bound("精析改判最佳着的比例 %", revision.changedBestPct, 0, 75);
+bound("快扫铸出的 ?? 数", revision.quickBlunders, 1, 40);
+// If the second-best move were usually as good as the best, "there is one
+// move to find" would be false and the mistake threshold would be wrong.
+bound("次佳着差距中位数（厘兵）", alternatives.secondBestGapMedian, 30, 600);
+// Twenty plies is the floor the app uses before it will say anything about a
+// game; it is only a floor if the number has settled by then.
+bound("前 20 着与整局精准度的平均差", verdictFloor.byN["20"].accDiffMean, 0, 12);
+bound("前 20 着与整局精准度的最大差", verdictFloor.byN["20"].accDiffMax, 0, 25);
+bound("前 5 着与整局精准度的平均差（应明显更大）", verdictFloor.byN["5"].accDiffMean, 8, 60);
+
 send("quit");
+if (failed) { console.error(`\n${failed} 项不在区间内`); process.exit(1); }
+console.log("\nall mine tests passed");
 process.exit(0);

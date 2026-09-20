@@ -45,8 +45,10 @@ jobs:
       # `npm install` so the same commit gets the same bundler.
       - name: install build deps
         run: npm ci
-      - name: unit tests
-        run: node scripts/test-chess.mjs
+      # 6.1: the whole static suite, for the same reason checks.yml runs it —
+      # naming one script here meant seven others were not a release gate.
+      - name: static tests
+        run: npm run test:static
       # The engine-backed checks — all five of `npm run test:engine`, not just
       # openings + tactics (6.0 Q0.5: novice / strength / analysis were in no
       # workflow at all). They are opt-in locally (minutes) and were therefore

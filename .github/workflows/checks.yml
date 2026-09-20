@@ -42,18 +42,19 @@ jobs:
       # `npm install` so the same commit gets the same bundler.
       - name: install build deps
         run: npm ci
-      - name: unit tests
-        run: node scripts/test-chess.mjs
-      # the engine manager's lifecycle, on a fake Worker: teardown, rebuild,
-      # the two-strike rule and the exclusive queue. No engine, no browser.
-      - name: engine lifecycle
-        run: node scripts/test-engine.mjs
+      # 6.1: one source of truth. This job used to name three scripts, while
+      # `npm run test:static` named eight — so test-pgn, test-learning,
+      # test-eco and test-review-winpct never ran in PR CI at all, and
+      # test-classics was written and wired nowhere. A job that lists the
+      # tests by hand drifts from the script that lists them; running the
+      # script is the only arrangement where the two cannot disagree.
+      - name: static tests
+        run: npm run test:static
       # `free variables: node scripts/scope-check.mjs` used to sit here. The
       # sources are ES modules as of 1.25 and index.html loads one bundle, so
       # an unbound name is a build failure — test-chess.mjs asserts the bundle
       # resolves, which is the same rule enforced by the thing that ships.
-      - name: manifest keys + version agreement
-        run: node scripts/manifest-check.mjs
+      # manifest-check runs as the last step of `npm run test:static` above.
 
   browser:
     runs-on: ubuntu-latest
