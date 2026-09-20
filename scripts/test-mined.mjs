@@ -242,9 +242,26 @@ if (FIX) {
 
 // The gate itself. `--sample` is for looking around; only a full pass may
 // pronounce the set sound, so a sampled run never fails the build.
+//
+// Only `worse` fails. An unrecorded equally-good alternative is NOT a defect:
+// 7.0's app re-searches the position when the player plays a different first
+// move (app.js `verifyAlt`), so `alts` is a cache that skips that search, not
+// the thing that makes the answer right. A missing entry costs one engine
+// search, never a wrong verdict.
+//
+// And making it fail would leave the gate permanently red, because which move
+// is the runner-up is not stable between runs when two moves are a centipawn
+// apart — so every pass would name a slightly different set and the build
+// would never go green. A gate that can never be satisfied is a gate people
+// learn to ignore, which is worse than not having one.
 if (!FIX && !SAMPLE) {
-  if (bad) {
-    console.error(`\nFAIL: ${bad} 道没过门禁 —— 用 --fix 清理，或逐条改写`);
+  if (tied.length) {
+    console.log(`\n注意：${tied.length} 道有还没记下的同等解。不算失败（app 会当场复核），` +
+      "想省掉那次搜索就跑一次 --fix。");
+  }
+  if (notBest.length) {
+    console.error(`\nFAIL: ${notBest.length} 道存的答案确实更差（超过 ${TIE}cp）—— ` +
+      "用 --fix 退役，或逐条改写");
     process.exit(1);
   }
   console.log("\nall mined tac/win puzzles are sound");
