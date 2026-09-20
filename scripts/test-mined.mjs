@@ -97,6 +97,26 @@ const waitFor = (pred, ms) => new Promise((res, rej) => {
 const uciok = waitFor((l) => l === "uciok", 30000); send("uci"); await uciok;
 const ready = async () => { const w = waitFor((l) => l === "readyok", 20000); send("isready"); await w; };
 
+/**
+ * Start a position from a clean transposition table.
+ *
+ * Without this the engine carries every previous puzzle's hash entries into
+ * the next one, so a `go depth 18` depends on what was searched before it —
+ * the set, the shuffle, everything. That is not a small effect: two passes
+ * over the same file disagreed about which move was best, by how much, and
+ * even about whether a forced mate exists (margins of 95000cp appearing in
+ * one run and not the other). The first two cuts of this gate were both built
+ * on that sand.
+ *
+ * `ucinewgame` tells the engine the next position is unrelated to the last,
+ * which is exactly true here and is what makes a run reproducible.
+ */
+const freshSearch = async () => {
+  await ready();
+  send("ucinewgame");
+  await ready();
+};
+
 const scoreOf = (line) => {
   const m = line.match(/\bscore (cp|mate) (-?\d+)\b/);
   if (!m) return null;
@@ -106,7 +126,7 @@ const scoreOf = (line) => {
 
 /** the top `n` moves in SAN with their scores, best first */
 async function topLines(fen, n) {
-  await ready();
+  await freshSearch();
   send("setoption name MultiPV value " + n);
   send("position fen " + fen);
   const found = new Map();
@@ -141,7 +161,7 @@ async function scoreOfMove(fen, san) {
   const m = g.move(san);
   if (!m) return null;
   const uci = m.from + m.to + (m.promotion || "");
-  await ready();
+  await freshSearch();
   send("setoption name MultiPV value 1");
   send("position fen " + fen);
   let best = null;

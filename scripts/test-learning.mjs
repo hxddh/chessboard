@@ -376,6 +376,14 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // carries a number: the smallest margin is 60cp, and several are the engine
   // holding a forced mate the stored answer does not.
   //
+  // CAVEAT (being resolved): both of those passes ran without clearing the
+  // engine's transposition table between puzzles, so each search inherited
+  // whatever the previous ones left behind and the results were not
+  // reproducible — two passes disagreed about which move was best, by how
+  // much, and even about whether a forced mate existed. `ucinewgame` is in
+  // now; these floors are pinned at what the last pass produced and will be
+  // re-derived from a run that reproduces.
+  //
   // A floor that kept the pre-gate number would have had exactly one way to be
   // satisfied: putting wrong puzzles back.
   const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 572, win: 301 };
