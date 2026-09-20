@@ -5082,6 +5082,13 @@ for (const lang of CONTENT_LANGS) {
   const openings = new Set(ctx.CHESS_OPENINGS.map((o) => o[1])).size;
   // same filter app.js uses to decide a line is long enough to drill
   const drilledOpenings = ctx.CHESS_OPENINGS.filter((o) => o[2].split(" ").length >= 6).length;
+  const minedPuzzles = (() => {
+    const mctx = { console, Date, performance };
+    mctx.globalThis = mctx; mctx.window = mctx;
+    vm.createContext(mctx);
+    loadModule(mctx, "src/web/js/puzzles-mined.js");
+    return mctx.MINED_PUZZLES.length;
+  })();
   const claims = [
     [/零基础 (\d+) 课/, lessons, "the course size in the teaching row"],
     [/教学课程 (\d+) 课/, lessons, "the course size in the file map"],
@@ -5099,6 +5106,11 @@ for (const lang of CONTENT_LANGS) {
     [/开局线路 (\d+) 条/, drilledOpenings, "the drilled-opening count in the 做题 row"],
     [/开局题执白照谱背 \*\*(\d+) 条\*\*主流线路/, drilledOpenings, "the drilled-opening count in the drill sentence"],
     [/内置 \*\*(\d+) 条\*\* ECO 库/, ctx.CHESS_OPENINGS.length, "the ECO library size"],
+    // 7.0: the mined set was the one content number README stated and nothing
+    // checked — it still said 1023 after the depth-18 gate retired 39 of them.
+    // Every other count on this page has had a guard since 6.1; this one was
+    // simply missed.
+    [/引擎自弈挖出 (\d+) 题/, minedPuzzles, "the mined-puzzle count in the 做题 row"],
   ];
   let stale = 0;
   for (const [re, actual, what] of claims) {
