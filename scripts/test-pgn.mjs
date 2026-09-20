@@ -261,11 +261,17 @@ function mainlineSans(root) {
   assert(arrOut.split("\n").every((l) => l.length <= 80), "a long shape list is broken after a comma");
   assert(canonGame(P.parsePgn(arrOut).games[0]) === canonGame(arr), "...and every arrow comes back");
 
-  // 6. "}" inside a comment is escaped, not rewritten
-  const brace = P.parsePgn("1. e4 { a brace \\} and a backslash \\\\ } e5 *").games[0];
-  assert(brace.root.children[0].comment === "a brace } and a backslash \\", "'\\}' and '\\\\' decode to '}' and '\\'");
+  // 6. "}" inside a comment is escaped, not rewritten. 7.0 changed the
+  // spelling from "\\}" to "\\R": a private escape over a *literal brace*
+  // forces the reader to decide, at the brace, whether the comment ends,
+  // and 6.1's heuristic got our own files wrong. The old spelling still
+  // decodes, so anything 6.0/6.1 wrote keeps opening.
+  const brace = P.parsePgn("1. e4 { a brace \\R and a backslash \\\\ } e5 *").games[0];
+  assert(brace.root.children[0].comment === "a brace } and a backslash \\", "'\\R' and '\\\\' decode to '}' and '\\'");
+  const legacyBrace = P.parsePgn("1. e4 { a brace \\} and a backslash \\\\ } e5 *").games[0];
+  assert(legacyBrace.root.children[0].comment === "a brace } and a backslash \\", "...and the 6.0/6.1 spelling still decodes");
   const braceOut = P.serializePgn(brace);
-  assert(braceOut.includes("{ a brace \\} and a backslash \\\\ }"), "...and are written back escaped, never as ']'");
+  assert(braceOut.includes("{ a brace \\R and a backslash \\\\ }"), "...and are written back escaped, never as ']' and never as a literal brace");
   assert(canonGame(P.parsePgn(braceOut).games[0]) === canonGame(brace), "...so the user's text survives the round trip");
 
   // 7. a comment in a moveless variation belongs to nobody
@@ -428,13 +434,107 @@ function mainlineSans(root) {
     const g = P.parsePgn("1. e4").games[0];
     g.root.children[0].comment = "a } b \\ c";
     const out = P.serializePgn(g);
-    assert(/\\\}/.test(out), "the exporter still escapes a brace");
+    assert(/\\R/.test(out) && !out.includes("\\}"), "the exporter escapes a brace and emits no literal one");
     assert(firstComment(out) === "a } b \\ c", "…and reading it back gives the text unchanged");
   }
 
   // 4. a comment with no closing brace anywhere is still an error
   assert(throwsWith(() => P.parsePgn("1. e4 {never closed"), /unterminated comment/),
     "a comment with no closing brace at all is still rejected");
+}
+
+// --- 7.0: 注释里的 "}" 曾经能让文件再也打不开 ------------------------------
+//
+// 6.1 把私有转义写成 "\}"，也就是「一个字面右花括号，请别当成结束」。读的时候
+// 就必须在那个花括号上猜：它是结束，还是被转义了？6.1 的启发式对我们自己写的
+// 文件猜错了——注释里出现 "}" 再出现 "{"，要么静默截断，要么整份文件解析失败。
+// 存档槽位存的就是 PGN 文本，所以那是永久丢档。
+//
+// 7.0 把花括号写成 "\R"，序列化后的注释体里一个字面 "}" 都没有，读的时候就不
+// 用猜了：第一个 "}" 就是结束，也就是标准的规则。
+{
+  const firstComment = (pgn) => {
+    const g = P.parsePgn(pgn).games[0];
+    const walk = (n) => { if (n.comment) return n.comment; for (const c of n.children) { const r = walk(c); if (r) return r; } return null; };
+    return walk(g.root);
+  };
+  const mainline = (pgn) => {
+    const g = P.parsePgn(pgn).games[0];
+    const s = []; let n = g.root;
+    while (n.children.length) { n = n.children[0]; s.push(n.san); }
+    return s.join(" ");
+  };
+  // 6.1 下这五条各自会截断或抛错
+  for (const text of ["}{", "} x {", "a}b{c", "}}{{", "} [%cal Ge2e4] {", "}", "{", "\\R", "a\\Rb"]) {
+    const g = P.parsePgn("1. e4").games[0];
+    g.root.children[0].comment = text;
+    const out = P.serializePgn(g);
+    const back = firstComment(out);
+    assert(back === text, "注释 " + JSON.stringify(text) + " 原样往返（得到 " + JSON.stringify(back) + "）");
+  }
+  // 而且后面的着法还是着法，不会被吞进注释
+  {
+    const g = P.parsePgn("1. e4 e5 2. Nf3").games[0];
+    g.root.children[0].comment = "a}b{c";
+    const out = P.serializePgn(g);
+    assert(mainline(out) === "e4 e5 Nf3", "……且其后的着法一手不少");
+  }
+  // 外部文件以反斜杠结尾的注释仍然正确（6.1 修的那条不能回退）
+  assert(firstComment("1. e4 {C:\\path\\}") === "C:\\path\\", "外部注释以反斜杠结尾，按标准在它自己的花括号处结束");
+  assert(mainline("1. e4 {C:\\path\\} e5 {fine} 2. Nf3") === "e4 e5 Nf3", "……且不吞掉后面的着法");
+  // 真正没有结束花括号的仍然报错
+  assert(throwsWith(() => P.parsePgn("1. e4 {never closed"), /unterminated comment/), "全篇没有右花括号仍然报错");
+}
+
+// --- 7.0: 随机树往返模糊测试（固定种子，可复现）----------------------------
+//
+// 上面那条缺陷是随机往返测出来的，不是读代码读出来的：它只在「注释含 } 且其后
+// 含 {」这个组合上现形，而手写的用例不会想到去构造它。所以把那台随机机器留在
+// 这里，种子写死。它测的是一个性质，不是一组例子——任何往返不一致都会失败。
+{
+  let seed = 20260920;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const COMMENTS = [null, "简单", "a } b", "back\\slash", "path\\", "[%cal Gd1d4]",
+    "line1\nline2", "a".repeat(120), "半角:; 分号", "{nested}", "%", "$5", "1-0",
+    "((()))", "  spaced  ", "}{", "a}b{c", "}}{{", "\\R", "a\\Rb", "]", "[", "\\", "\\\\", "}{"];
+  const NAGSETS = [[], [1], [2, 14], [123], [1, 2, 3, 4, 5], [255]];
+  const SHAPES = [{ arrows: [], circles: [] },
+    { arrows: [{ from: "e2", to: "e4", color: "G" }], circles: [] },
+    { arrows: [], circles: [{ sq: "d4", color: "R" }] },
+    { arrows: [{ from: "a1", to: "h8", color: "B" }], circles: [{ sq: "e5", color: "Y" }] }];
+  const canonN = (n) => ({ san: n.san, comment: n.comment, nags: (n.nags || []).slice().sort((a, b) => a - b), shapes: n.shapes, children: n.children.map(canonN) });
+  const canonT = (x) => JSON.stringify({ startFen: x.startFen, root: canonN(x.root) });
+
+  let bad = 0, cases = 0;
+  for (let iter = 0; iter < 250 && bad < 3; iter++) {
+    const tr = T.createTree();
+    let frontier = [0];
+    for (let step = 0; step < 14; step++) {
+      const id = pick(frontier);
+      const g = new Chess(T.fenAt(tr, id));
+      const ms = g.moves();
+      if (!ms.length) continue;
+      let nd;
+      try { nd = T.addMove(tr, id, pick(ms)); } catch (_) { continue; }
+      if (rnd() < 0.6) T.setComment(tr, nd.id, pick(COMMENTS));
+      if (rnd() < 0.4) T.setNags(tr, nd.id, pick(NAGSETS));
+      if (rnd() < 0.3) T.setShapes(tr, nd.id, pick(SHAPES));
+      frontier.push(nd.id);
+      if (frontier.length > 6) frontier.shift();
+    }
+    tr.result = pick(["1-0", "0-1", "1/2-1/2", "*"]);
+    cases++;
+    let out, back;
+    try {
+      out = P.serializePgn(T.toPgnGame(tr, { Event: "fuzz" }));
+      back = T.fromPgnGame(P.parsePgn(out).games[0]);
+    } catch (e) {
+      bad++; console.error("  iter " + iter + " 抛错: " + e.message + "\n" + out); continue;
+    }
+    if (canonT(tr) !== canonT(back)) { bad++; console.error("  iter " + iter + " 往返不等\n" + out); }
+  }
+  assert(bad === 0, "随机树往返 " + cases + " 次，逐字段相等（不一致 " + bad + " 处）");
 }
 
 if (failed) {

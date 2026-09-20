@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       # esbuild, and nothing else. It bundles the ES modules under src/web/js
       # into the one classic script zero:// can load; `npm ci` rather than
       # `npm install` so the same commit gets the same bundler.
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       # esbuild, and nothing else. It bundles the ES modules under src/web/js
       # into the one classic script zero:// can load; `npm ci` rather than
       # `npm install` so the same commit gets the same bundler.
@@ -117,6 +117,8 @@ jobs:
         run: node scripts/test-persist-e2e.mjs
       - name: review
         run: node scripts/test-review-e2e.mjs
+      - name: game library
+        run: node scripts/test-library-e2e.mjs
       - name: panel layout
         run: node scripts/test-layout-e2e.mjs
 
@@ -135,13 +137,13 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - name: install build deps
         run: npm ci
       - name: install Native SDK CLI
         env:
           # the same pin the platform builds and release.yml carry
-          SDK_VERSION: "0.8.1"
+          SDK_VERSION: "0.10.1"
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true

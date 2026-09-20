@@ -14,27 +14,39 @@
    * the same size as the quick scan's own noise: scanning twenty-eight decided
    * games twice at 120ms/position (1320 plies — the corpus was four games and
    * 168 plies until 6.1, which was too small to conclude anything from), the
-   * evaluation of the *same* position moves by a median 8cp between runs, 33cp
+   * evaluation of the *same* position moves by a median 9cp between runs, 42cp
    * at the ninth percentile — and a move's loss is a difference of two of
    * those. The consequence is measured too: of every ply either run called
-   * `?!`, both runs called it 37% of the time. `?` reaches 63% and `??` 97%.
+   * `?!`, both runs called it 40% of the time. `?` reaches 62% and `??` 77%.
    *
-   * The defect proposed scaling the thresholds with movetime. Refuted — 6.1
-   * swept three budgets over the whole corpus and `?!` does not come good at
-   * any of them (docs/measured.json, `scanNoise` / `winPctNoise`):
+   * **7.0 re-measured all of this**, because Stockfish 18 → 19 lite-single is
+   * a different engine and therefore a different noise floor — and it is a
+   * noisier one at a fixed millisecond budget, which is what a 1 MB net buys
+   * its size with. The 6.1 figures at 120ms were 8cp / 33cp and 37 / 63 / 97;
+   * the numbers above are the same measurement on 19.
    *
-   *            120ms      400ms     1200ms
-   *     ?!   37 / 52    50 / 56    54 / 54      (centipawn / win-%)
-   *     ?    63 / 62    69 / 68    77 / 84
-   *     ??   97 / 88    85 / 93    92 / 95
+   * The defect proposed scaling the thresholds with movetime. Still refuted —
+   * the three budgets this app could plausibly spend, over the whole corpus
+   * (docs/measured.json, `scanNoise` / `winPctNoise`):
    *
-   * Ten times the search does not make `?!` reproducible, on either measure —
-   * so there is no movetime-dependent noise floor to track, and no budget this
-   * app could ship that would fix it. `?` and `??` are sound and get better
-   * with depth, which is what a real signal does.
+   *            120ms      200ms      400ms
+   *     ?!   40 / 38    35 / 45    38 / 45      (centipawn / win-%)
+   *     ?    62 / 58    66 / 64    68 / 77
+   *     ??   77 / 80    88 / 82    82 / 88
+   *
+   * More search does not make `?!` reproducible on either measure, so there is
+   * no movetime-dependent noise floor to track and no budget this app could
+   * ship that would fix it. `?` and `??` are sound and get better with depth
+   * on the win-% measure that actually ships (58 → 64 → 77 and 80 → 82 → 88),
+   * which is what a real signal does; the centipawn column wobbles for `??`
+   * because it is the measure this app stopped classifying by in 6.0.
+   *
+   * That improvement is why 7.0 raised the 分析 budget from 120 to 200ms —
+   * see SCAN_BUDGET in app.js, which reads the three runs paired rather than
+   * pooled, because the run-to-run spread is as wide as the effect.
    *
    * Raising the `?!` cut is refuted too: swept over the recorded tracks at
-   * 40/50/60/70/80/90cp, agreement wanders (44/37/33/35/43/11) with no trend,
+   * 40/50/60/70/80/90cp, agreement wanders (45/40/28/31/10/0) with no trend,
    * because a hard cut on a noisy quantity always has about half its members
    * sitting on the edge, wherever the edge is put.
    *

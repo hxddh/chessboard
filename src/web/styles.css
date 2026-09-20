@@ -1415,6 +1415,13 @@
       opacity: 0.75;
     }
 
+    /* 7.0: the one line on a page of numbers that is an instruction rather
+       than a reading — the diagnosis' 该练的是残局, and 一局都没认出是你下的.
+       Same size as the hints around it; only the colour and the opacity say
+       "this is the one to act on", because a louder size here would make the
+       numbers above it read as decoration. */
+    .hint.warn { color: var(--text); opacity: 1; }
+
     /* learn mode: lesson panel */
     .lesson-title {
       font-size: 0.8125rem; font-weight: 600; color: var(--text);

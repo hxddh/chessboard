@@ -4573,8 +4573,8 @@ for (const lang of CONTENT_LANGS) {
     // every key the app owns is in the list — a key added elsewhere would be
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
-    // 6.0 added the quarantine key (v6-plan D2)
-    assert(keys.length === 11, "all eleven keys are declared in one place (" + keys.length + ")");
+    // 6.0 added the quarantine key (v6-plan D2); 7.0 the games library
+    assert(keys.length === 12, "all twelve keys are declared in one place (" + keys.length + ")");
     for (const k of keys) {
       assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
     }
@@ -4779,7 +4779,9 @@ for (const lang of CONTENT_LANGS) {
   for (const [what, re] of [
     // 6.0: one exportText() serves PGN and the learning file; only a PGN is a document
     ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*if \(recent\) Host\.addRecentDocument\(path\);/],
-    ["the open dialog", /importPgnText\(text, paths\[0\]\);\s*\n\s*Host\.addRecentDocument\(paths\[0\]\);/],
+    // 7.0: the picker takes a sink (the library import reuses it), so what
+    // this looks for is the call, not the one destination it used to have
+    ["the open dialog", /take\(text, paths\[0\]\);\s*\n\s*Host\.addRecentDocument\(paths\[0\]\);/],
     ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
     ["clearing the save", /Persist\.clearAll\(\);[\s\S]{0,320}?Host\.clearRecentDocuments\(\);/],
   ]) assert(re.test(appSrc), "recent documents is recorded from " + what);
@@ -5080,6 +5082,13 @@ for (const lang of CONTENT_LANGS) {
   const openings = new Set(ctx.CHESS_OPENINGS.map((o) => o[1])).size;
   // same filter app.js uses to decide a line is long enough to drill
   const drilledOpenings = ctx.CHESS_OPENINGS.filter((o) => o[2].split(" ").length >= 6).length;
+  const minedPuzzles = (() => {
+    const mctx = { console, Date, performance };
+    mctx.globalThis = mctx; mctx.window = mctx;
+    vm.createContext(mctx);
+    loadModule(mctx, "src/web/js/puzzles-mined.js");
+    return mctx.MINED_PUZZLES.length;
+  })();
   const claims = [
     [/零基础 (\d+) 课/, lessons, "the course size in the teaching row"],
     [/教学课程 (\d+) 课/, lessons, "the course size in the file map"],
@@ -5097,6 +5106,11 @@ for (const lang of CONTENT_LANGS) {
     [/开局线路 (\d+) 条/, drilledOpenings, "the drilled-opening count in the 做题 row"],
     [/开局题执白照谱背 \*\*(\d+) 条\*\*主流线路/, drilledOpenings, "the drilled-opening count in the drill sentence"],
     [/内置 \*\*(\d+) 条\*\* ECO 库/, ctx.CHESS_OPENINGS.length, "the ECO library size"],
+    // 7.0: the mined set was the one content number README stated and nothing
+    // checked — it still said 1023 after the depth-18 gate retired 39 of them.
+    // Every other count on this page has had a guard since 6.1; this one was
+    // simply missed.
+    [/引擎自弈挖出 (\d+) 题/, minedPuzzles, "the mined-puzzle count in the 做题 row"],
   ];
   let stale = 0;
   for (const [re, actual, what] of claims) {
@@ -5645,6 +5659,85 @@ for (const lang of CONTENT_LANGS) {
     const copies = wf.split("\n").filter((l) => !l.trim().startsWith("#") && /\bcp\b.*\b(bundle|engine-src)\.js/.test(l));
     assert(copies.length === 0, rel + " does not hand-copy the dist file list (found: " + copies.join(" | ") + ")");
   }
+}
+
+// --- 7.0: every suite package.json runs, CI runs too -------------------------
+//
+// 6.1 found that `checks.yml`'s static job named three scripts by hand while
+// `npm run test:static` listed eight, so four suites had never once run in PR
+// CI. It fixed the static job — and left the same hand-written list in place
+// for the e2e job, for the release workflow's e2e loop, and for the engine
+// suite. A fix that is a one-time edit is not a fix; this is the assertion
+// that makes the next added suite fail loudly instead of silently never
+// running.
+{
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const scriptsIn = (cmd) => [...String(cmd || "").matchAll(/node (scripts\/[\w-]+\.mjs)/g)].map((m) => m[1]);
+  const checksWf = fs.readFileSync(path.join(root, ".github/workflows/checks.yml"), "utf8");
+  const releaseWf = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
+  // Only the e2e lists are spelled out: both workflows run `test:static` and
+  // `test:engine` through npm, which is the shape that cannot drift. The e2e
+  // loop cannot, because each browser engine needs its own env.
+  for (const [group, where, text] of [
+    ["test:e2e", "checks.yml", checksWf],
+    ["test:e2e", "release.yml", releaseWf],
+  ]) {
+    const want = scriptsIn(pkg.scripts[group]);
+    const missing = want.filter((f) => !text.includes(f));
+    assert(missing.length === 0,
+      where + " runs every suite in " + group + " (" + want.length + ")" +
+      (missing.length ? " —— 漏了 " + missing.join(", ") : ""));
+  }
+}
+
+// --- 7.0: every FEN this app ships must be a position that can exist ---------
+//
+// `ChessEditor.validate` has known since 6.0 that a pawn cannot stand on its
+// own back rank — and nothing had ever run the app's OWN content through it.
+// One knight lesson drew the "surrounded by your own pawns" box from c1 to e3,
+// which puts three white pawns on the first rank. chess.js accepts it and
+// Stockfish 18 evaluated it, so it shipped and was played for eleven versions.
+//
+// Stockfish 19 does not: `position fen` on that square set aborts the whole
+// wasm module with `RuntimeError: unreachable`. An aborted module is not a
+// crashed search — every later ccall hits the same trap, so 6.1's engine
+// self-healing cannot get back from it either. The engine upgrade turned a
+// cosmetic illegality into a dead engine on a beginner lesson.
+//
+// So: run the content through the guard that already existed.
+{
+  const Ed = ctx.ChessEditor;
+  const seen = new Set();
+  let bad = 0, checked = 0;
+  const vet = (fen, where) => {
+    if (!fen || seen.has(fen)) return;
+    seen.add(fen);
+    checked++;
+    // allowTerminal: a puzzle may start from a position with no legal move
+    // (a mate to recognise); that is content, not corruption. Everything
+    // structural — piece counts, kings, pawns on a back rank, an impossible
+    // en-passant square — is what this is here for.
+    let why = null;
+    try { why = Ed.validate(Ed.fromFen(fen, ctx.Chess), ctx.Chess, { allowTerminal: true }); }
+    catch (err) { why = "threw: " + err.message; }
+    if (why) { bad++; console.error("FAIL: " + where + " 的局面不合法 (" + why + "): " + fen); }
+  };
+  for (const L of ctx.CHESS_LESSONS || []) {
+    for (const t of L.tasks || []) vet(t.fen, "课程 " + L.id);
+  }
+  for (const p of ctx.CHESS_PUZZLES || []) vet(p.fen, "题目 " + p.id);
+  // the mined set too — it is generated, which is exactly the reason a bad
+  // position could arrive in bulk without anyone typing it
+  {
+    const mctx = { console, Date, performance };
+    mctx.globalThis = mctx; mctx.window = mctx;
+    vm.createContext(mctx);
+    loadModule(mctx, "src/web/js/puzzles-mined.js");
+    for (const p of mctx.MINED_PUZZLES || []) vet(p.fen, "挖掘题 " + p.id);
+  }
+  assert(checked > 1000, "课程、题目与挖掘题的局面都取到了 (" + checked + ")");
+  assert(bad === 0, "每一个随应用发布的局面都是真能出现的局面 —— " +
+    "兵不在底线、王各一个、吃过路兵格站得住 (" + checked + " 个)");
 }
 
 // --- 6.1: an impossible [FEN] must not be quietly repaired -------------------

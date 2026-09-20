@@ -19,14 +19,14 @@ on:
         # webview2_host.cpp. The undefined symbol was our source list lagging
         # upstream, not upstream breaking. Fixed in build.zig (the file plus
         # d2d1/dwrite, matching the SDK's own list), so the pin now moves to
-        # 0.8.1. It stays a pin because everything else this gate depends on
+        # 0.10.1. It stays a pin because everything else this gate depends on
         # is pinned too (playwright 1.62.1, zig 0.16.0): the SDK was the one
         # dependency that could change under a release with nobody changing
         # anything. Raise it deliberately, with a run that proves both
         # platforms still build.
         description: "@native-sdk/cli version both platform builds install"
         required: false
-        default: "0.8.1"
+        default: "0.10.1"
 
 permissions:
   contents: write
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       # esbuild, and nothing else. It bundles the ES modules under src/web/js
       # into the one classic script zero:// can load; `npm ci` rather than
       # `npm install` so the same commit gets the same bundler.
@@ -49,7 +49,7 @@ jobs:
       # naming one script here meant seven others were not a release gate.
       - name: static tests
         run: npm run test:static
-      # The engine-backed checks — all five of `npm run test:engine`, not just
+      # The engine-backed checks — all seven of `npm run test:engine`, not just
       # openings + tactics (6.0 Q0.5: novice / strength / analysis were in no
       # workflow at all). They are opt-in locally (minutes) and were therefore
       # run by hand, which meant the properties they prove — no drilled opening
@@ -95,6 +95,7 @@ jobs:
             E2E_BROWSER="$engine" node scripts/test-content-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-persist-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-review-e2e.mjs
+            E2E_BROWSER="$engine" node scripts/test-library-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-layout-e2e.mjs
             echo "::endgroup::"
           done

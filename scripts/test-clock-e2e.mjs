@@ -154,9 +154,21 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   };
   const start = await secs2();
   chk(start.length === 2 && start.every((v) => v === 180), '3+2:两边各三分钟', JSON.stringify(start));
+
+  // 7.0：白方的第一手也要计时。6.1 之前 clockRunning() 要求「已经走过一手」，
+  // 于是白方整个第一手不走钟，而 applyIncrement 照样给它加两秒——白方以
+  // base + inc 开局，一秒没花。黑方从它的第一手起就走钟。
+  // 这里先只点起子（不落子）再等，然后看白方的钟有没有在走。
+  {
+    const q = await sq2('e2');
+    await p2.mouse.click(q.x, q.y);          // 只是拿起 e2 的兵，还没走
+    await p2.waitForTimeout(2600);           // 加速时钟下这段够扣掉可见的秒数
+    const ticking = await secs2();
+    chk(ticking[0] < 180, '白方还没落子,钟已经在走了(第一手不再免费)', `白方 ${ticking[0]} 秒`);
+    chk(ticking[1] === 180, '……而黑方的钟没动', `黑方 ${ticking[1]} 秒`);
+  }
+
   await mv2('e2', 'e4');
-  const afterMove = await secs2();
-  chk(afterMove[0] > 180, '走一步棋,走子方加了两秒(3+2 的 +2 真的加上了)', `白方 ${afterMove[0]} 秒`);
   await mv2('e7', 'e5');
 
   // 现在轮白,让它的时间在加速下走光(3 分钟 ÷ 40 ≈ 4.6 秒)
@@ -176,6 +188,55 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   chk(before2 === after2, '…棋盘冻住了,旗落之后走不动了', `${before2} → ${after2} 着`);
   if (errs2.length) errs.push(...errs2);
   await c2.close();
+}
+
+// --- Fischer 增量：在不加速的页面里量 -------------------------------------
+//
+// 上面那个上下文把 Date.now 调快了 40 倍，一步棋的点击耗时就够扣掉十几秒棋钟，
+// 把 +2 完全淹没。7.0 之前这条断言能过，只是因为白方的第一手根本不走钟——
+// 而那正是这一版修掉的东西。所以增量改在真实时钟下量：一步棋不到一秒，
+// 加两秒之后读数必然回到 180 之上。
+{
+  const c3 = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
+  await c3.addInitScript(() => {
+    localStorage.setItem('chess.v1.settings', JSON.stringify({
+      mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: '3+2' }));
+  });
+  const p3 = await c3.newPage();
+  const errs3 = [];
+  p3.on('pageerror', (e) => errs3.push('inc: ' + e.message));
+  await p3.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await p3.waitForSelector('#board');
+  await p3.waitForTimeout(500);
+  await p3.click('#pick-cancel').catch(() => {});
+  await p3.waitForTimeout(350);
+  // 时限直接由种子设置给定，不去点面板里的按钮：那串点击在这个上下文里选中过
+  // 别的档位（读数 300 秒），而「加了两秒」的断言写成「> 180」时会在 300 上
+  // 假性通过——一条会说谎的断言比没有断言糟。
+
+  const secs3 = () => p3.evaluate(() => {
+    const to = (x) => { const m = /^(\d+):(\d\d)$/.exec(x.trim()); return m ? +m[1] * 60 + +m[2] : null; };
+    return [...document.querySelectorAll('#clock-w, #clock-b')].map((x) => to(x.textContent)).filter((v) => v !== null);
+  });
+  const sq3 = async (n) => p3.evaluate((s) => {
+    const cv = document.getElementById('board'), r = cv.getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - +s[1], z = r.width / 8;
+    return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+  }, n);
+  const before3 = await secs3();
+  chk(before3.length === 2 && before3[0] === 180 && before3[1] === 180,
+    '真实时钟下 3+2 就是两边各三分钟', JSON.stringify(before3));
+  for (const s of ['e2', 'e4']) { const q = await sq3(s); await p3.mouse.click(q.x, q.y); await p3.waitForTimeout(120); }
+  await p3.waitForTimeout(300);
+  const after3 = await secs3();
+  // 相对基线比，而不是比一个写死的 180：真实时钟下这一手花掉不到一秒，
+  // 加两秒之后白方必然比开局时多
+  chk(after3[0] > before3[0], '走一步棋,走子方加了两秒(3+2 的 +2 真的加上了)',
+    `${before3[0]} → ${after3[0]} 秒`);
+  // （不断言黑方的钟不变：白方走完就轮到黑方，它的钟本来就该开始走。
+  //   先前这里断言过「不变」，是我写错了——那条会在正确行为上失败。）
+  if (errs3.length) errs.push(...errs3);
+  await c3.close();
 }
 
 console.log('\nJS 异常:', errs.length ? errs : '无');

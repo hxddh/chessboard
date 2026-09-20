@@ -271,6 +271,13 @@ function checkManifest(label, file) {
     "id", "name", // bundle identifier and the package basename, `native package` only
     "icons", "platforms", // iconset + target validation, `native package` only
     "frontend", // the dist to bundle; the app side reads it in src/main.zig
+    // 7.0: the .pgn document type. `native package` writes it into Info.plist
+    // (macOS) and the installer registration (Windows); nothing in the running
+    // app reads it, and nothing should — the OS asks the *package*, not the
+    // process, which application opens a .pgn. It is listed here rather than
+    // exempted silently, and the schema that proves the packager takes it
+    // ships with the SDK at schemas/app.schema.json ($defs.fileAssociation).
+    "file_associations",
   ]);
   // The manifest itself is one `.{ … }`, so the sections sit one level in —
   // walking the raw file finds nothing and this loop quietly checked zero keys
@@ -411,6 +418,51 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
     }
     notes.push(`SDK 交叉检查: ${m.struct} 共 ${sdkFields.length} 个字段，${m.where} 赋值 ${m.assigns.size} 个`);
   }
+  // --- 枚举值:清单写了一个 SDK 不认识的词,是安静地取默认值 ---------------
+  //
+  // 7.0 自己犯的:`.file_associations[0].role = "alternate"`。SDK 的词表是
+  // viewer / editor / shell / none,别的一律落到 Viewer —— 不报错、不警告,
+  // 打出来的 Info.plist 就是另一个意思。schema 里这些词表是现成的,拿来对。
+  {
+    const schemaFile = path.join(sdkPath, "schemas", "app.schema.json");
+    if (fs.existsSync(schemaFile)) {
+      const schema = JSON.parse(fs.readFileSync(schemaFile, "utf8"));
+      const defs = schema.$defs || {};
+      // Every key anywhere in the schema whose value is an enum, by key name.
+      // Walked rather than listed: `role` lives in $defs.associationRole while
+      // `web_engine` is inline under properties, and a hand-written list would
+      // have covered exactly the one this check was written for.
+      const enums = new Map();
+      const resolve = (node) => (node && node.$ref ? defs[node.$ref.replace("#/$defs/", "")] : node);
+      const walk = (node, seen) => {
+        const n = resolve(node);
+        if (!n || typeof n !== "object" || seen.has(n)) return;
+        seen.add(n);
+        for (const [key, raw] of Object.entries(n.properties || {})) {
+          const child = resolve(raw);
+          if (child && Array.isArray(child.enum)) enums.set(key, child.enum);
+          walk(raw, seen);
+        }
+        if (n.items) walk(n.items, seen);
+      };
+      walk(schema, new Set());
+      let checked = 0;
+      const manifestSrc = fs.readFileSync(path.join(ROOT, "app.zon"), "utf8");
+      for (const [key, allowed] of enums) {
+        for (const m of manifestSrc.matchAll(new RegExp("\\." + key + '\\s*=\\s*"([^"]*)"', "g"))) {
+          checked++;
+          check(allowed.includes(m[1]),
+            `SDK 交叉检查: app.zon 的 .${key} = "${m[1]}" 不在 SDK 的词表里(${allowed.join(" / ")}) —— ` +
+            "SDK 不会报错,它会安静地取默认值");
+        }
+      }
+      check(checked > 0, "SDK 交叉检查: 一处枚举值都没查到 —— 这个检查自己坏了");
+      notes.push(`SDK 交叉检查: schema 里 ${enums.size} 个词表,清单里 ${checked} 处取值都在表内`);
+    } else {
+      notes.push("SDK 交叉检查: 找不到 schemas/app.schema.json，枚举值这一项跳过");
+    }
+  }
+
   // --- build.zig 也是一份手抄件 -----------------------------------------
   //
   // 上面查的是 src/runner.zig 落后没有。build.zig 是同一件事的另一半:它是
@@ -442,7 +494,17 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
       check(ourLib.has(l),
         `SDK 交叉检查: SDK 链接系统库 ${l},build.zig 不链接 —— 同一份手抄件的另一半`);
     }
-    notes.push(`SDK 交叉检查: 平台源文件 ${sdkSrc.size} 个、系统库 ${sdkLib.size} 个,build.zig 全都有`);
+    // 7.0:第三张面孔。前两项查的是平台源文件和系统库,而 0.10 的 macOS 主机
+    // 新引的是三个 **框架**(CoreMedia / ScreenCaptureKit / CoreVideo)——
+    // 同一种失效、同一种后果(链接器报 undefined symbol,且只有 macOS 报),
+    // 而这一项当时没人查,于是又走了一趟 CI 往返才发现。
+    const sdkFw = pick(sdkBuild, /linkFramework\("([^"]+)"/g);
+    const ourFw = pick(ourBuild, /linkFramework\("([^"]+)"/g);
+    for (const f of sdkFw) {
+      check(ourFw.has(f),
+        `SDK 交叉检查: SDK 链接框架 ${f},build.zig 不链接 —— 手抄件的第三张面孔`);
+    }
+    notes.push(`SDK 交叉检查: 平台源文件 ${sdkSrc.size} 个、系统库 ${sdkLib.size} 个、框架 ${sdkFw.size} 个,build.zig 全都有`);
   } else {
     notes.push("SDK 交叉检查: 找不到 build/app.zig，源文件清单这一项跳过");
   }

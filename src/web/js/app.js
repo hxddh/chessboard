@@ -21,6 +21,7 @@ import { CHESS_LESSONS_JA } from "./lessons-ja.js";
 import { CHESS_LESSONS } from "./lessons.js";
 import { ChessMaterial } from "./material.js";
 import { motifOf } from "./motif.js";
+import { ChessLibrary } from "./library.js";
 import { ChessMistakes } from "./mistakes.js";
 import { ChessProgress } from "./progress.js";
 import { ChessPlanner } from "./planner.js";
@@ -238,6 +239,8 @@ import { createStore } from "./store.js";
       clock: null,
       /** side whose flag fell ('w'|'b') — terminal for the game, like mate */
       flagFall: null,
+      /** 7.0: the clock is running (set by the first touch of the board) */
+      clockStarted: false,
       clockTimer: null,
       clockTickAt: 0,
       /** side that resigned ('w'|'b') — terminal for the game, like mate */
@@ -318,6 +321,21 @@ import { createStore } from "./store.js";
       blindfold: false,
       hash: 32,
       multipv: 1,
+      /**
+       * 7.0: show the `?!` mark at all.
+       *
+       * Off by default, and the reason is measured rather than aesthetic.
+       * 6.1 swept twenty-eight games at three budgets (docs/measured.json,
+       * `winPctNoise`): of every ply either of two runs called `?!`, both runs
+       * agreed 52 / 56 / 54% of the time — a coin flip decides whether the
+       * same position gets the mark, and ten times the search does not help.
+       * `?` reaches 84% and `??` 95%, and both improve with depth, which is
+       * what a real signal does. 6.1 wrote down that `?!` is the one mark this
+       * app will not endorse and then went on showing it exactly like the
+       * other two. Showing noise with a caveat is still showing noise, so it
+       * is off; the switch is there for anyone who wants it anyway.
+       */
+      showSoftMark: false,
       /** 6.0 (v6-plan Q3.6): the theme follows the system's light/dark; the text size step */
       followSystem: false,
       textSize: "m",
@@ -1165,6 +1183,7 @@ import { createStore } from "./store.js";
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
       if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
+      if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
@@ -1190,7 +1209,7 @@ import { createStore } from "./store.js";
   function saveSettings() {
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
         followSystem: store.ui.followSystem, textSize: store.ui.textSize }));
     } catch (_) {}
   }
@@ -1204,7 +1223,7 @@ import { createStore } from "./store.js";
       payload.line = store.game.line.slice();
       if (store.game.imported) payload.imported = true;
       if (store.game.timeControl !== "off" && store.game.clock) {
-        payload.clock = { tc: store.game.timeControl, w: Math.round(store.game.clock.w), b: Math.round(store.game.clock.b), flag: store.game.flagFall };
+        payload.clock = { tc: store.game.timeControl, w: Math.round(store.game.clock.w), b: Math.round(store.game.clock.b), flag: store.game.flagFall, started: !!store.game.clockStarted };
       }
       if (store.game.resigned) payload.resigned = store.game.resigned;
       if (store.game.drawAgreed) payload.drawAgreed = true;
@@ -1271,6 +1290,9 @@ import { createStore } from "./store.js";
         store.game.timeControl = s.clock.tc;
         store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
         store.game.flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
+        // an archive from before 7.0 has no `started`; a game with moves in it
+        // was already ticking, so restoring it must not hand out a free move
+        store.game.clockStarted = typeof s.clock.started === "boolean" ? s.clock.started : sanHistory().length >= 1;
       }
       if (s.resigned === "w" || s.resigned === "b") store.game.resigned = s.resigned;
       if (s.drawAgreed === true) store.game.drawAgreed = true;
@@ -1396,6 +1418,7 @@ import { createStore } from "./store.js";
     const tc = parseTc(store.game.timeControl);
     store.game.clock = tc ? { w: tc.base * 1000, b: tc.base * 1000 } : null;
     store.game.flagFall = null;
+    store.game.clockStarted = false;
     syncClockTimer();
     renderClocks();
   }
@@ -1435,7 +1458,31 @@ import { createStore } from "./store.js";
    */
   function clockRunning() {
     return (store.session.mode === "pvp" || store.session.mode === "ai") && !!store.game.clock &&
-      !appGameOver() && sanHistory().length >= 1 && appAwake();
+      !appGameOver() && store.game.clockStarted && appAwake();
+  }
+
+  /**
+   * The clock starts at the board, not at the first completed move.
+   *
+   * Until 7.0 this asked for `sanHistory().length >= 1`, which spent White's
+   * whole first move off the clock — and `applyIncrement` then credited the
+   * Fischer bonus for it, so White opened with base + inc having spent
+   * nothing. Black was on the clock from its first move. The comment's intent
+   * ("nobody drains on the start screen") is right; keying it to a move made
+   * the first move free.
+   *
+   * `clockStarted` is set the first time the player touches the board in a
+   * timed game — a square click, a drag, or a move arriving from anywhere —
+   * so the start screen still costs nothing and move one is timed like every
+   * other move. It rides in the saved game beside the clock, so reloading a
+   * game in progress does not hand out a second free move.
+   */
+  function startClockIfIdle() {
+    if (store.game.clockStarted || !store.game.clock || appGameOver()) return;
+    if (store.session.mode !== "pvp" && store.session.mode !== "ai") return;
+    store.game.clockStarted = true;
+    syncClockTimer();
+    renderClocks();
   }
 
   function syncClockTimer() {
@@ -2420,6 +2467,7 @@ import { createStore } from "./store.js";
    * reading ALL_PUZZLES: badge totals must not drift with a set that grows
    * and retires on its own.
    */
+  const Library = ChessLibrary;
   const Mistakes = ChessMistakes;
   function loadMines() {
     const s = Persist.read("mines").value;
@@ -2596,7 +2644,39 @@ import { createStore } from "./store.js";
   function playerRating() {
     const st = store.session.puzzleState;
     if (!st.rating) st.rating = ChessRating.newRating();
+    settleIdleRating(st);
     return st.rating;
+  }
+
+  /**
+   * Charge the days since the rating last moved to its deviation.
+   *
+   * 6.1 review: rating.js documents `rd` as the thing that lets a returning
+   * player's rating move again, and nothing in the app ever grew it back —
+   * the only path that does was never called from anywhere.
+   *
+   * Settling also resets the idle clock, which is what makes this safe to call
+   * from `playerRating()` on every access: a second call the same second sees
+   * no whole day and does nothing. It also makes the charge exact across
+   * sessions without a session flag (a flag on `st` would be persisted and
+   * then never decay again): `rd²` is additive in days, so thirty daily opens
+   * and one thirty-day absence land on the same deviation.
+   *
+   * `ratedAt` is written by ratePuzzleOnce. An archive from before 7.0 has
+   * none, so the last rating-history stamp stands in. Neither present means
+   * this rating has never moved — decaying from the epoch would hand every
+   * such player a fresh 350 on first launch.
+   */
+  function settleIdleRating(st) {
+    const last = Number(st.ratedAt) ||
+      (Array.isArray(st.rhist) && st.rhist.length ? Number(st.rhist[st.rhist.length - 1].t) : 0);
+    if (!last) return;
+    const days = (Date.now() - last) / 86400000;
+    if (!(days >= 1)) return;
+    const next = ChessRating.decayIdle(st.rating, days);
+    st.ratedAt = Date.now();
+    if (next !== st.rating) st.rating = next;
+    savePuzzleState();
   }
   function puzzleRating(p) {
     const st = store.session.puzzleState;
@@ -2619,8 +2699,9 @@ import { createStore } from "./store.js";
     st.rating = r.player;
     if (!st.pr) st.pr = {};
     st.pr[id] = r.puzzle;
+    st.ratedAt = Date.now();
     if (!Array.isArray(st.rhist)) st.rhist = [];
-    st.rhist.push({ t: Date.now(), r: Math.round(r.player.r) });
+    st.rhist.push({ t: st.ratedAt, r: Math.round(r.player.r) });
     while (st.rhist.length > 60) st.rhist.shift();
   }
   /** "1523" or "1523 ±180" while the deviation is still wide */
@@ -2923,16 +3004,23 @@ import { createStore } from "./store.js";
    * Now a different move is checked against the stored answer at the same
    * budget: costs less than a mistake, it is accepted and remembered.
    */
-  async function verifyMineAlt(mv) {
+  async function verifyAlt(mv, opts) {
     const pz = store.session.puzzle;
     const p = pz.p;
     const g = pz.g;
     if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) return null;
+    const stored = puzzleScript(p)[0];
+    if (!stored) return null;
+    // 120 and not SCAN_BUDGET: this is what a drill mined BEFORE the budget
+    // was stored was mined at. It is a fact about old records, not a default
+    // for new work — raising it here would claim those drills were searched
+    // deeper than they were, and the whole point of storing the budget is
+    // that a shallower pass may not overrule a deeper one (5.1, audit F2).
     const budget = (p.rev && p.rev.budget) || 120;
     const side = p.fen.split(" ")[1];
     const afterAlt = g.fen();
     const probe = new Chess(p.fen);
-    if (!probe.move(p.solution[0])) return null;
+    if (!probe.move(stored)) return null;
     const afterBest = probe.fen();
     pz.verifying = true;
     sync();
@@ -2946,12 +3034,13 @@ import { createStore } from "./store.js";
     const cpBest = evalScalar(eBest), cpAlt = evalScalar(eAlt);
     if (cpBest == null || cpAlt == null) return null;
     const v = Mistakes.judgeAlt(cpBest, cpAlt, side, Review.MISTAKE);
-    if (v.ok) {
+    if (v.ok && opts && opts.remember) {
       p.alts = Array.isArray(p.alts) ? p.alts : [];
       if (!p.alts.includes(mv.san)) { p.alts.push(mv.san); saveMines(); }
     }
     return v;
   }
+  const verifyMineAlt = (mv) => verifyAlt(mv, { remember: true });
 
   /** Why the stored answer is the answer — from the numbers the pass kept. */
   function mineWhy(p) {
@@ -3011,6 +3100,34 @@ import { createStore } from "./store.js";
       const script = puzzleScript(store.session.puzzle.p);
       if (mv.san !== script[store.session.puzzle.stage]) {
         const c = store.session.puzzle.p.cat;
+        // 7.0: a different FIRST move that is just as good is right.
+        //
+        // `tac` and `win` graded by exact SAN and nothing else, which is the
+        // opposite of what every other category here argues for — `real`:
+        // "several follow-ups are equally good, and marking one of them wrong
+        // would teach the opposite of the lesson"; `def`: "insisting on one
+        // stored move would mark a perfectly good defence wrong"; `mine`
+        // already re-checked with the engine. Measured over 140 of the 894
+        // mined tac/win puzzles at depth 18: 6% had a second solution within
+        // 50cp and another 6% stored an answer that was not even the engine's
+        // first choice — so about one in nine told a player who found an
+        // equally good move that they were wrong, and docked their Glicko
+        // rating and re-queued the puzzle for it.
+        //
+        // Only the first move: from there the script is a demonstration, not
+        // a second question, exactly as `real` explains.
+        if ((c === "tac" || c === "win") && store.session.puzzle.stage === 0) {
+          const pz0 = store.session.puzzle;
+          if (Array.isArray(pz0.p.alts) && pz0.p.alts.includes(mv.san)) { puzzleSolved(); return; }
+          verifyAlt(mv, { remember: true }).then((v) => {
+            if (store.session.puzzle !== pz0 || pz0.done) return;
+            if (v && v.ok) { toast(tf("pz.mine.alsoFine", [mv.san, (v.loss / 100).toFixed(1)])); puzzleSolved(); return; }
+            puzzleWrong(c === "win"
+              ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize"))
+              : tf("pz.findMotif", [puzzleMotif(pz0.p)]));
+          });
+          return;
+        }
         puzzleWrong(
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
           c === "tac" ? (store.session.puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(store.session.puzzle.p)]) : t("pz.takeTarget")) :
@@ -3566,10 +3683,35 @@ import { createStore } from "./store.js";
     });
   }
 
+  /**
+   * What 分析 spends per position, in ms. 精析 spends 400.
+   *
+   * 6.1 set this to 120 and measured the two-pass agreement there; 7.0 swapped
+   * Stockfish 18 for 19 lite-single, which is a different engine and therefore
+   * a different noise floor, so the number was re-measured — three independent
+   * 28-game passes at 120 / 200 / 400 ms (docs/measured.json winPctNoise).
+   *
+   * Read the runs PAIRED, each against itself, because the run-to-run spread
+   * is as wide as the effect:
+   *
+   *            ?  120→200    ??  120→200
+   *   run A    60 → 73 %     86 → 88 %
+   *   run B    64 → 73 %     82 → 84 %
+   *   run C    58 → 64 %     80 → 82 %
+   *
+   * Three out of three improve on both marks, which is why 200 is worth
+   * 1.67× the time: `?` is the mark a player reads on a single move and acts
+   * on, and at 120 ms it agreed with itself about three times in five.
+   * `?!` improves too (42 → 47 % pooled) and is still nowhere near the 60 %
+   * line §5 set, which is why 7.0 stopped showing it by default rather than
+   * trying to buy it with depth — 400 ms does not rescue it either.
+   */
+  const SCAN_BUDGET = 200;
+
   async function analyzeGame(movetime) {
     if (store.session.analyzing || !ChessEngine) return;
     await stopLiveAnalysis();
-    const perMove = movetime || 120;
+    const perMove = movetime || SCAN_BUDGET;
     const h = sanHistory();
     if (!h.length) { toast(t("msg.analysis.noGame"), "fix"); return; }
     const sig = game.pgn();
@@ -3902,7 +4044,7 @@ import { createStore } from "./store.js";
     return [
       [t("rv.acc"), sum.acc[side] == null ? "—" : sum.acc[side] + "%"],
       [t("rv.acpl"), n(sum.acpl[side])],
-      [t("rv.marks"), [c.inaccuracy, c.mistake, c.blunder].join(" · ")],
+      [t("rv.marks"), (store.ui.showSoftMark ? [c.inaccuracy, c.mistake, c.blunder] : [c.mistake, c.blunder]).join(" · ")],
     ];
   }
 
@@ -4006,6 +4148,8 @@ import { createStore } from "./store.js";
     const fen = gameAt(worst.ply).fen();
     const a = analysisFor();
     const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess,
+      // same rule as verifyAlt above: the fallback describes an analysis record
+      // written before `budget` existed, so it stays at what that pass spent
       { budget: (a && a.budget) || 120, src: "hand" });
     if (cand && a && a.pvs && typeof a.pvs[worst.ply] === "string") cand.pv = a.pvs[worst.ply];
     if (!cand) { toast(t("rv.bankNone"), "fix"); return; }
@@ -4617,6 +4761,7 @@ import { createStore } from "./store.js";
         (withAcc.length ? t("stats.hintAcc") : t("stats.hintNoAcc"))
       : t("stats.emptyHint");
     el.appendChild(hint);
+    renderLibrary();
     renderPuzzleTally();
     renderTrends();
     const rec = recommendation();
@@ -4730,6 +4875,354 @@ import { createStore } from "./store.js";
     }
     return true;
   }
+
+  // --- 棋谱库 ---------------------------------------------------------------
+  //
+  // The model is library.js; everything here is scheduling, persistence and
+  // the two screens. See that file's header for why this exists at all.
+
+  /** How many analysed games buy a diagnosis. */
+  const LIB_MIN_GAMES = 20;
+  /**
+   * Per-position budget for the background pass, in ms. Same as the 分析
+   * button — see SCAN_BUDGET for why it is 200 and not 120.
+   *
+   * A pass over a full library costs about 1.7× what 120 ms would. That is
+   * the right trade here and not a close call: every number on the diagnosis
+   * page is meant to be acted on, and the pass is backgroundable, pausable
+   * and resumable, so the cost is wall-clock the player never waits through.
+   */
+  const LIB_BUDGET = SCAN_BUDGET;
+
+  function loadLibrary() {
+    const s = Persist.read("library").value;
+    if (!s) return { games: [], names: [] };
+    const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
+    return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
+  }
+  {
+    const loaded = loadLibrary();
+    store.session.library = loaded.games;
+    store.session.libNames = loaded.names;
+  }
+  /** Set while the background pass is running; the pause button clears it. */
+  store.session.libRun = null;
+  function saveLibrary() {
+    Persist.setJson("library", { v: 1, games: store.session.library, names: store.session.libNames });
+  }
+
+  /** The names split out of the one text field, trimmed, empties dropped. */
+  function libNamesFrom(text) {
+    return String(text || "").split(/[,，;；]/).map((n) => n.trim()).filter(Boolean);
+  }
+
+  /**
+   * Re-run the claim over every entry.
+   *
+   * Typing a name is the single most likely correction someone makes on this
+   * page — they import an archive, see 一局都没认出是你下的, and fix it. That
+   * has to re-decide `side` and `outcome` for games already in the library,
+   * and it must NOT touch `an`: the analysis measured both sides' plies, so
+   * the same pass answers for either chair.
+   */
+  function reclaimLibrary() {
+    const names = store.session.libNames;
+    for (const g of store.session.library) {
+      const headers = [["White", g.white || ""], ["Black", g.black || ""]];
+      g.side = Library.sideOf(headers, names);
+      g.outcome = Library.outcomeFor(g.result, g.side);
+    }
+  }
+
+  /**
+   * Take every game in a PGN file into the library.
+   *
+   * Deliberately not the same path as 导入棋谱: that one asks which single
+   * game you meant, because it is about to put one on the board. Here the
+   * whole file is the point.
+   */
+  async function importPgnToLibrary(text, label) {
+    const text0 = (text || "").trim();
+    if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
+    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    let chunks;
+    try { chunks = ChessPgnParser.splitGames(text0); }
+    catch (_) { chunks = ChessPgn.splitGames(text0); }
+    const now = Date.now();
+    const fresh = [];
+    for (const chunk of chunks) {
+      let parsed = null;
+      try { parsed = ChessPgnParser.parsePgn(chunk).games[0]; } catch (_) { parsed = null; }
+      if (!parsed) continue;
+      // mainline SAN only: a game's variations are the annotator's opinion,
+      // and what this library measures is what the player actually played
+      const sans = [];
+      for (let n = parsed.root; n && n.children.length; n = n.children[0]) sans.push(n.children[0].san);
+      if (!sans.length) continue;
+      fresh.push(Library.entryFrom(parsed, sans, store.session.libNames, now));
+    }
+    if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
+    const r = Library.addGames(store.session.library, fresh);
+    store.session.library = r.list;
+    saveLibrary();
+    renderLibrary();
+    if (!r.added) toast(tf("lib.addedNone", [r.dup]), "fix");
+    else toast(tf("lib.added", [r.added, r.dup]) + (label ? " · " + label : ""));
+    if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
+  }
+
+  /**
+   * Accuracy for one library game, from its own moves.
+   *
+   * `accuracyFrom` reads `sanHistory()` — the game on the board — so it cannot
+   * serve a game that is not on the board. Same measure, own arguments.
+   */
+  function libAccuracy(fens, scalars, sans) {
+    const loss = Review.lossesBySide(scalars, (i) => (fens[i].split(" ")[1] === "w" ? "w" : "b"));
+    const w = Review.accuracyOf(loss.w);
+    const b = Review.accuracyOf(loss.b);
+    const wp = Review.summarizeWinPct(scalars, sans, fens[0].split(" ")[1] === "b" ? "b" : "w");
+    return { acc: { w: wp ? wp.acc.w : w.acc, b: wp ? wp.acc.b : b.acc },
+      acpl: { w: w.acpl, b: b.acpl } };
+  }
+
+  /**
+   * One game's offline pass. Returns the `an` record, or null if it was cut
+   * short — a half-analysed game stays in the queue rather than being filed
+   * as a measurement of something it did not measure.
+   */
+  async function analyseLibraryGame(entry, run) {
+    const sans = entry.sans.split(" ").filter(Boolean);
+    const g = entry.fen ? new Chess(entry.fen) : new Chess();
+    const fens = [g.fen()];
+    for (const san of sans) {
+      if (!g.move(san, { sloppy: true })) return null; // not a game we can replay
+      fens.push(g.fen());
+    }
+    const scalars = new Array(fens.length).fill(null);
+    const bests = new Array(fens.length).fill(null);
+    const repSeen = new Map();
+    for (let i = 0; i < fens.length; i++) {
+      if (run.abort) return null;
+      const probe = new Chess(fens[i]);
+      const repKey = Fide.positionKey(fens[i], probe);
+      const reps = (repSeen.get(repKey) || 0) + 1;
+      repSeen.set(repKey, reps);
+      // same terminal rule as analyzeGame(): threefold and the 50-move mark
+      // are claimable, not over, and scoring them 0 flattens the curve
+      if (probe.in_checkmate()) scalars[i] = probe.turn() === "w" ? -10000 : 10000;
+      else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
+      else {
+        let e = null;
+        try { e = await ChessEngine.analyze(fens[i], LIB_BUDGET, {}); } catch (_) { e = null; }
+        scalars[i] = evalScalar(e);
+        if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
+      }
+      run.ply = i + 1;
+      run.plies = fens.length;
+      renderLibrary();
+    }
+    const tags = sans.map((_, i) => {
+      const a = scalars[i], b = scalars[i + 1];
+      if (a == null || b == null) return null;
+      const mover = fens[i].split(" ")[1] === "w" ? "w" : "b";
+      return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
+    });
+    // centipawn loss per ply, from the mover's chair, floored at 0: a move
+    // that improved the engine's own assessment did not "lose" a negative
+    // amount, and letting it do so would net out somebody's real blunders
+    const losses = sans.map((_, i) => {
+      const a = scalars[i], b = scalars[i + 1];
+      if (a == null || b == null) return 0;
+      const mover = fens[i].split(" ")[1] === "w" ? 1 : -1;
+      return Math.max(0, (a - b) * mover);
+    });
+    // What the player missed, at the plies where they went wrong: the motif of
+    // the engine's OWN move in that position, not of the move they played. A
+    // blunder rarely has a motif; the thing that punished it does, and that is
+    // the name worth putting in front of someone ("你栽在双击上 7 次").
+    const motifs = {};
+    for (let i = 0; i < tags.length; i++) {
+      if (tags[i] !== "?" && tags[i] !== "??") continue;
+      const uci = bests[i];
+      if (!uci) continue;
+      const san = sansOf(fens[i], [uci], 1)[0];
+      if (!san) continue;
+      let m = null;
+      try { m = motifOf(fens[i], san, Chess); } catch (_) { m = null; }
+      if (m) motifs[i] = m;
+    }
+    const a = libAccuracy(fens, scalars, sans);
+    return { an: { acc: a.acc, acpl: a.acpl, tags, losses, scalars, bests, budget: LIB_BUDGET }, motifs };
+  }
+
+  /** Start (or stop) the background pass over everything still unanalysed. */
+  async function runLibraryPass() {
+    if (store.session.libRun) { store.session.libRun.abort = true; return; }
+    if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
+    if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    await stopLiveAnalysis();
+    const run = { abort: false, done: 0, total: Library.pending(store.session.library).length, ply: 0, plies: 0 };
+    store.session.libRun = run;
+    renderLibrary();
+    try {
+      for (;;) {
+        if (run.abort) break;
+        // A pass over a few hundred games takes the better part of an hour,
+        // and the person will not be watching it. One notification carrying a
+        // fixed `id` (SDK 0.10.0) is REPLACED by the next one instead of
+        // stacking, which is the difference between a progress report and
+        // twenty notifications. No action button: `actionCommand` dispatches
+        // an app command, and every command in this app passes a mode gate
+        // built from the shortcut table — a command with no row there simply
+        // does not run, so a button wired to one would be a button that does
+        // nothing. Recorded in docs/v7-plan.md §7.5.
+        if (!store.ui.appForeground && run.done) {
+          Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
+            body: tf("ntf.libraryBody", [run.done, run.total]) });
+        }
+        // re-read the queue each round: an import during the pass adds to it,
+        // and an entry that failed to replay must not be handed back forever
+        const next = Library.pending(store.session.library).find((g) => !g.an && !g.unplayable);
+        if (!next) break;
+        run.name = (next.white || "?") + " — " + (next.black || "?");
+        const r = await analyseLibraryGame(next, run);
+        if (run.abort) break;
+        if (!r) { next.unplayable = true; }
+        else { next.an = r.an; next.motifs = r.motifs; }
+        run.done++;
+        saveLibrary();
+        renderLibrary();
+      }
+    } finally {
+      const done = run.done;
+      store.session.libRun = null;
+      saveLibrary();
+      renderLibrary();
+      if (done && !store.ui.appForeground) {
+        Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
+          body: tf("ntf.libraryDone", [done]) });
+      }
+    }
+  }
+
+  /** The library section in the 记录 pane. */
+  function renderLibrary() {
+    const body = document.getElementById("lib-body");
+    if (!body) return;
+    const list = store.session.library;
+    const analysed = list.filter((g) => g.an && g.side);
+    const queued = Library.pending(list).filter((g) => !g.unplayable).length;
+    const meta = document.getElementById("lib-meta");
+    if (meta) { meta.hidden = !list.length; meta.textContent = tf("lib.count", [list.length]); }
+    const namesRow = document.getElementById("lib-names-row");
+    if (namesRow) namesRow.hidden = !list.length;
+    body.replaceChildren();
+    const line = (text, cls) => {
+      const p = document.createElement("p");
+      p.className = cls || "hint";
+      p.textContent = text;
+      body.appendChild(p);
+    };
+    if (!list.length) {
+      line(t("lib.empty"));
+    } else {
+      const claimed = list.filter((g) => g.side).length;
+      const row = document.createElement("div");
+      row.className = "stat-row";
+      const k = document.createElement("span");
+      k.className = "stat-k";
+      k.textContent = tf("lib.claimed", [claimed]);
+      const v = document.createElement("span");
+      v.className = "stat-v num";
+      v.textContent = [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
+        .filter(Boolean).join(" · ");
+      row.append(k, v);
+      body.appendChild(row);
+      const run = store.session.libRun;
+      if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
+      else if (!claimed) line(t("lib.noneClaimed"), "hint warn");
+      else if (analysed.length < LIB_MIN_GAMES) line(tf("lib.needMore", [LIB_MIN_GAMES - analysed.length, analysed.length, LIB_MIN_GAMES]));
+      // A game whose moves would not replay is dropped from the queue, and a
+      // queue that quietly gets shorter is how you end up wondering why the
+      // count stopped moving. Say how many and leave them in the list.
+      const stuck = list.filter((g) => g.unplayable).length;
+      if (stuck) line(tf("lib.unplayable", [stuck]));
+    }
+    const an = document.getElementById("lib-analyse");
+    if (an) {
+      an.hidden = !queued && !store.session.libRun;
+      an.textContent = store.session.libRun ? t("lib.pause") : tf("lib.analyse", [queued]);
+    }
+    const dg = document.getElementById("lib-diagnose");
+    if (dg) dg.hidden = analysed.length < LIB_MIN_GAMES;
+  }
+
+  /** The diagnosis dialog: what `diagnose()` found, in sentences. */
+  function renderDiagnosis() {
+    const el = document.getElementById("lib-diag");
+    if (!el) return;
+    el.replaceChildren();
+    const d = Library.diagnose(store.session.library, LIB_MIN_GAMES);
+    const para = (text, cls) => {
+      const p = document.createElement("p");
+      p.className = cls || "hint";
+      p.textContent = text;
+      el.appendChild(p);
+    };
+    const row = (kText, vText) => {
+      const r = document.createElement("div");
+      r.className = "stat-row";
+      const k = document.createElement("span");
+      k.className = "stat-k";
+      k.textContent = kText;
+      const v = document.createElement("span");
+      v.className = "stat-v num";
+      v.textContent = vText;
+      r.append(k, v);
+      el.appendChild(r);
+    };
+    if (!d.enough) { para(tf("lib.needMore", [d.need - d.have, d.have, d.need])); return; }
+    para(tf("diag.from", [d.games]));
+    row(t("diag.record"), tf("diag.wld", [d.outcome.win, d.outcome.loss, d.outcome.draw]));
+    if (d.acc != null) row(t("diag.acc"), d.acc + "%");
+    const phaseName = {
+      opening: tf("diag.phaseOpening", [Library.OPENING_UNTIL]),
+      middle: t("diag.phaseMiddle"),
+      end: t("diag.phaseEnd"),
+    };
+    for (const k of ["opening", "middle", "end"]) {
+      const p = d.phase[k];
+      if (p.acpl == null) continue;
+      row(phaseName[k], tf("diag.acpl", [p.acpl]) + " · " +
+        tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10]));
+    }
+    if (d.weakestPhase) {
+      const best = ["opening", "middle", "end"].map((k) => d.phase[k].acpl).filter((n) => n != null);
+      para(tf("diag.weakest", [phaseName[d.weakestPhase], d.phase[d.weakestPhase].acpl,
+        d.phase[d.weakestPhase].acpl - Math.min(...best)]), "hint warn");
+    } else {
+      para(t("diag.noWeakest"));
+    }
+    if (d.peak) para(tf("diag.peak", [d.peak.move, d.peak.n]));
+    if (d.motifs.length) {
+      row(t("diag.motifs"), "");
+      for (const m of d.motifs.slice(0, 6)) row(t("motif." + m.motif), tf("diag.motifN", [m.n]));
+    }
+    if (d.ecos.length) {
+      row(t("diag.ecos"), "");
+      for (const e of d.ecos.slice(0, 6)) {
+        row(e.eco + (e.name ? " " + e.name : ""),
+          tf("diag.ecoRow", [e.n, Math.round((e.score || 0) * 100)]));
+      }
+    }
+  }
+
+  function openDiagnosis() {
+    renderDiagnosis();
+    Dlg.open(document.getElementById("lib-modal"));
+  }
+  function closeDiagnosis() { Dlg.close(document.getElementById("lib-modal")); }
 
   function renderHistory() {
     store.session.histCache = historyGames();
@@ -5170,6 +5663,17 @@ import { createStore } from "./store.js";
 
   /** NAG number → the glyph a reader expects; anything else stays `$n`. */
   const NAG_GLYPH = { 1: "!", 2: "?", 3: "!!", 4: "??", 5: "!?", 6: "?!" };
+
+  /**
+   * `?!` unless the player asked for it; `?` and `??` always.
+   *
+   * One place, so the move list, its repaint signature and the report cannot
+   * disagree about whether the mark exists. See `ui.showSoftMark` for why the
+   * default is off.
+   */
+  function softFiltered(tag) {
+    return tag === "?!" && !store.ui.showSoftMark ? null : tag;
+  }
   function nagText(nags) { return (nags || []).map((n) => NAG_GLYPH[n] || ("$" + n)).join(""); }
 
   /**
@@ -5206,7 +5710,7 @@ import { createStore } from "./store.js";
     const tagOf = new Map();
     if (a && a.tags) store.game.line.forEach((id, k) => { if (k > 0 && a.tags[k - 1]) tagOf.set(id, a.tags[k - 1]); });
     const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
-    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (tagOf.get(n.id) || "") + "/" + (n.id === curId ? "*" : "");
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" : "");
     // a variation's signature is the whole of what it shows, nested included
     const lineSig = (parent, first) => {
       let out = "";
@@ -5268,7 +5772,7 @@ import { createStore } from "./store.js";
         b.appendChild(document.createTextNode(glyphs));
         b.setAttribute("aria-label", n.san + glyphs);
       }
-      const tag = tagOf.get(n.id);
+      const tag = softFiltered(tagOf.get(n.id));
       if (tag) {
         const span = document.createElement("span");
         span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
@@ -5901,6 +6405,7 @@ import { createStore } from "./store.js";
       b.setAttribute("aria-pressed", on ? "true" : "false");
     };
     sw("opt-coords", store.ui.coordsOn);
+    sw("opt-softmark", store.ui.showSoftMark);
     sw("opt-blind", store.ui.blindfold);
     sw("opt-follow", store.ui.followSystem);
     document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
@@ -6161,6 +6666,9 @@ import { createStore } from "./store.js";
     if (store.session.editor) { editorClick(sq); return; }
     if (store.session.mode === "learn" && store.session.learn) { learnClick(sq); return; }
     if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
+    // the clock starts when the player first reaches for the board, not when
+    // their first move completes — see startClockIfIdle
+    startClockIfIdle();
     // a plain click on an empty square, holding nothing, wipes the arrows and
     // circles drawn on this position — Escape does not (v6-plan Q2.4)
     if (!store.game.selection && !viewGame().get(sq) && hasNodeShapes()) {
@@ -6467,7 +6975,7 @@ import { createStore } from "./store.js";
 
   // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
   // object that predated the 1.19 "casual" rung and never grew one, so a
-  // casual game exported as "Stockfish 18 (casual)" — the raw id leaking into
+  // casual game exported as "Stockfish 19 (casual)" — the raw id leaking into
   // a file other programs read. The self-check now requires an entry here for
   // every rung, so the next tier cannot slip through the same way.
   const DIFF_EN = {
@@ -6479,7 +6987,7 @@ import { createStore } from "./store.js";
   function pgnForExport() {
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    const engineName = "Stockfish 18 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
+    const engineName = "Stockfish 19 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
     const white = store.session.mode === "ai" ? (store.session.humanColor === "w" ? "Player" : engineName) : "Player 1";
     const black = store.session.mode === "ai" ? (store.session.humanColor === "b" ? "Player" : engineName) : "Player 2";
     const result = gameResultToken();
@@ -6880,14 +7388,22 @@ import { createStore } from "./store.js";
   }
 
   /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
-  async function openPgnFile() {
+  /**
+   * @param {(text: string, label: string) => any} [sink] where the file goes.
+   * The library import wants the same two pickers — native dialog, browser
+   * fallback, the same recent-documents bookkeeping — and a different
+   * destination; duplicating the picker to change the last line is how the two
+   * quietly drift apart.
+   */
+  async function openPgnFile(sink) {
+    const take = typeof sink === "function" ? sink : importPgnText;
     if (Host.hasZero()) {
       try {
         const picked = await Host.openFileDialog({ title: t("dlg.openPgn") });
         const paths = Host.normalizePaths(picked);
         if (!paths.length) return; // cancelled
         const text = await Host.readTextFile(paths[0]);
-        importPgnText(text, paths[0]);
+        take(text, paths[0]);
         Host.addRecentDocument(paths[0]);
         return;
       } catch (err) {
@@ -6904,7 +7420,7 @@ import { createStore } from "./store.js";
       const f = input.files && input.files[0];
       if (!f) return;
       const reader = new FileReader();
-      reader.onload = () => importPgnText(String(reader.result || ""), f.name);
+      reader.onload = () => take(String(reader.result || ""), f.name);
       reader.readAsText(f);
     };
     input.click();
@@ -7935,7 +8451,7 @@ import { createStore } from "./store.js";
       if (ChessEngine) ChessEngine.cancel();
       return;
     }
-    analyzeGame(120);
+    analyzeGame(SCAN_BUDGET);
   };
   document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
   document.getElementById("an-live").onclick = () => {
@@ -7993,6 +8509,29 @@ import { createStore } from "./store.js";
   if (reportBtn) reportBtn.onclick = () => { exportReport(); };
   document.getElementById("pgn-paste").onclick = () => { pastePgn(); };
   document.getElementById("pgn-open").onclick = () => { openPgnFile(); };
+  {
+    const impBtn = document.getElementById("lib-import");
+    if (impBtn) impBtn.onclick = () => { openPgnFile(importPgnToLibrary); };
+    const anBtn = document.getElementById("lib-analyse");
+    if (anBtn) anBtn.onclick = () => { runLibraryPass(); };
+    const dgBtn = document.getElementById("lib-diagnose");
+    if (dgBtn) dgBtn.onclick = openDiagnosis;
+    const closeBtn = document.getElementById("lib-modal-close");
+    if (closeBtn) closeBtn.onclick = closeDiagnosis;
+    const names = document.getElementById("lib-names");
+    if (names) {
+      names.value = store.session.libNames.join(", ");
+      // on `change`, not on every keystroke: re-claiming walks the whole
+      // library and rewrites the stored copy, which is not what every
+      // character of a typed name should cost
+      names.onchange = () => {
+        store.session.libNames = libNamesFrom(names.value);
+        reclaimLibrary();
+        saveLibrary();
+        renderLibrary();
+      };
+    }
+  }
 
   // Drop a .pgn onto the window to import it — host bridge in the packaged
   // app, DataTransfer in browsers.
@@ -8345,6 +8884,15 @@ import { createStore } from "./store.js";
     saveSettings();
     syncSettingsUI();
     draw();
+  };
+  document.getElementById("opt-softmark").onclick = () => {
+    store.ui.showSoftMark = !store.ui.showSoftMark;
+    saveSettings();
+    syncSettingsUI();
+    // the move list keys its repaint on each node's tag, and the report
+    // prints the counts, so both have to be asked again
+    store.commit("game", "action");
+    renderReview();
   };
   document.getElementById("opt-blind").onclick = () => {
     store.ui.blindfold = !store.ui.blindfold;
@@ -8827,6 +9375,7 @@ import { createStore } from "./store.js";
     Dlg.register(promoModal, () => finishPromotion(null));
     Dlg.register(document.getElementById("slots-modal"), closeSlots);
     Dlg.register(document.getElementById("hist-modal"), closeHistory);
+    Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(confirmModal, () => finishConfirm(false));

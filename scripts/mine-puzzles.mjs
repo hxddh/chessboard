@@ -55,8 +55,8 @@ const MOTIF_THEME = { fork: "fork", pin: "pin", skewer: "skewer", discovered: "d
 let engine = null;
 const listeners = [];
 async function startEngine() {
-  const enginePath = path.join(ROOT, "third_party/stockfish/stockfish-18-lite-single.js");
-  const wasmPath = path.join(ROOT, "third_party/stockfish/stockfish-18-lite-single.wasm");
+  const enginePath = path.join(ROOT, "third_party/stockfish/stockfish-19-lite-single.js");
+  const wasmPath = path.join(ROOT, "third_party/stockfish/stockfish-19-lite-single.wasm");
   if (!fs.existsSync(enginePath) || !fs.existsSync(wasmPath)) throw new Error("vendored Stockfish not found at third_party/stockfish/");
   engine = { wasmBinary: new Uint8Array(fs.readFileSync(wasmPath)), listener: (l) => { for (const x of listeners.slice()) x(l); } };
   const factory = require(enginePath);

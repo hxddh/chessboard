@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
 # Declare the .pgn document type in a packaged Chessboard.app and re-sign it.
 #
-# Why a post-processing step and not a key in app.zon: `native package` writes
-# Info.plist from app.zon, and whether the CLI (0.8.1) accepts a document-type
-# declaration there is not documented anywhere this repo can see; an unknown
-# key could as easily fail `native validate` as be ignored. Editing the plist
-# the packager produced is the one path known to work on every macOS
-# (PlistBuddy ships with the OS) — and it is idempotent, so if the SDK gains
-# the feature the Delete below just replaces what it wrote.
+# Why this still exists now that app.zon has `.file_associations` (7.0).
+#
+# It is no longer "the SDK might not support it" — it does, and app.zon now
+# declares the association so the Windows installer registration comes from
+# the manifest too. But read what the packager actually writes
+# (src/tooling/package.zig, macosDocumentTypes): CFBundleDocumentTypes, and
+# only that. Two things this app depends on have no key to carry them:
+#
+#   LSHandlerRank                Without it macOS is free to make Chessboard
+#                                the default .pgn handler, taking the file
+#                                type away from whatever PGN editor the user
+#                                already had. "Alternate" is the whole point
+#                                of the declaration, and `role` cannot say it
+#                                — its vocabulary is viewer/editor/shell/none.
+#   UTExportedTypeDeclarations   Declaring com.chessboard.pgn as a real UTI
+#                                conforming to public.plain-text.
+#
+# So the manifest key and this script are complementary, not duplicates. The
+# script runs after packaging and is idempotent (Delete then Add), so what it
+# writes replaces the packager's array with the same content plus the rank.
+# The edit is what forces the re-sign below.
 #
 # What it declares (v6-plan Q1.5):
 #   UTExportedTypeDeclarations  com.chessboard.pgn, conforms to public.plain-text,

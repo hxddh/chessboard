@@ -393,6 +393,16 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
         }
         app_mod.linkFramework("AppKit", .{});
         app_mod.linkFramework("AVFoundation", .{});
+        // 0.10 的 macOS 主机新引的三个。抄件落后一页的代价是链接器报
+        // undefined symbol，而且只有 macOS 构建才报：
+        //   CoreMedia        CMSampleBuffer* / CMTimeMake（屏幕音频采集）
+        //   ScreenCaptureKit SCStream / SCContentFilter / SCShareableContent
+        //   CoreVideo        与上面两个同一条采集链路
+        // ScreenCaptureKit 跟着 SDK 弱链接：它是 12.3 才有的框架，而这个壳的
+        // 下限是 11.0，硬链接会让老系统直接起不来。
+        app_mod.linkFramework("CoreMedia", .{});
+        app_mod.linkFramework("ScreenCaptureKit", .{ .weak = true });
+        app_mod.linkFramework("CoreVideo", .{});
         app_mod.linkFramework("MediaToolbox", .{});
         app_mod.linkFramework("Accelerate", .{});
         app_mod.linkFramework("Foundation", .{});
@@ -502,6 +512,14 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
         app_mod.linkSystemLibrary("ole32", .{});
         app_mod.linkSystemLibrary("oleacc", .{});
         app_mod.linkSystemLibrary("shell32", .{});
+        // 0.10.0 的 Windows 主机新引的三个：iphlpapi/ws2_32 给网络可达性
+        // 探测（签名更新的下载要先知道有没有网），advapi32 给凭据与注册表。
+        // 这个壳目前不开更新、也不用凭据，但链接器不管这些——SDK 的平台源
+        // 文件里只要有一处引用，少链一个就是一个 unresolved external，而那
+        // 是只有 Windows 构建才会炸的错。manifest-check --sdk 抓的就是它。
+        app_mod.linkSystemLibrary("iphlpapi", .{});
+        app_mod.linkSystemLibrary("ws2_32", .{});
+        app_mod.linkSystemLibrary("advapi32", .{});
         // The audio backend: Media Foundation (session + source resolver
         // + streaming audio renderer) and WinHTTP (the cache fill).
         app_mod.linkSystemLibrary("mf", .{});

@@ -42,8 +42,8 @@ function rnd() {
   return rngState / 0x7fffffff;
 }
 
-const enginePath = path.join(root, "third_party/stockfish/stockfish-18-lite-single.js");
-const wasmPath = path.join(root, "third_party/stockfish/stockfish-18-lite-single.wasm");
+const enginePath = path.join(root, "third_party/stockfish/stockfish-19-lite-single.js");
+const wasmPath = path.join(root, "third_party/stockfish/stockfish-19-lite-single.wasm");
 if (!fs.existsSync(enginePath) || !fs.existsSync(wasmPath)) {
   console.log("skip: vendored Stockfish not found at third_party/stockfish/");
   process.exit(0);

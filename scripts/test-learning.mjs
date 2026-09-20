@@ -340,7 +340,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 {
   const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
   const mined = mctx.MINED_PUZZLES;
-  assert(Array.isArray(mined) && mined.length >= 1023, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  assert(Array.isArray(mined) && mined.length >= 1002, "mined set loaded (" + (mined ? mined.length : 0) + ")");
   const ids = new Set(), fens = new Set(ctx.CHESS_PUZZLES.map((p) => p.fen));
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -361,8 +361,40 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   for (const p of mined) { byCat[p.cat] = (byCat[p.cat] || 0) + 1; if (p.motif) byMotif[p.motif] = (byMotif[p.motif] || 0) + 1; }
   console.log("mined by category:", JSON.stringify(byCat), "motifs:", JSON.stringify(byMotif));
   // the shipped floors per category and motif — a regeneration may only raise them
-  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 589, win: 305 };
-  const MOTIF_FLOOR = { fork: 135, pin: 113, skewer: 51, discovered: 7, double: 10 };
+  // 7.0 lowered every tac/win floor here, and it is the only time that is
+  // allowed to happen — but it took two goes to get the number right, and the
+  // first one was wrong in BOTH directions.
+  //
+  // The first cut of scripts/test-mined.mjs judged a puzzle by whether its
+  // stored answer was the engine's #1, not by how much worse it was, and
+  // `--fix` retired 39 on that basis. Rank is the wrong question: two moves a
+  // centipawn apart swap places between runs, so the same puzzle came back
+  // `tied` in one pass and `not-best` in the next. Re-judged on the measured
+  // margin (`best − stored`, `searchmoves` for a stored move outside the top
+  // lines), the real answer is 21 — 26 of that 39 were fine and were restored,
+  // and 8 genuinely worse ones had been waved through. Every retirement now
+  // carries a number: the smallest margin is 60cp, and several are the engine
+  // holding a forced mate the stored answer does not.
+  //
+  // Getting this number right took three goes, and the first two were not
+  // wrong about chess — they were wrong about measurement:
+  //
+  //   1. judged by RANK ("is the stored answer the engine's #1") instead of by
+  //      margin, so a 1cp difference was retired like a 262cp one;
+  //   2. judged by margin, but still searched without clearing the engine's
+  //      transposition table between puzzles, so every result depended on what
+  //      had been searched before it — two passes disagreed about the best
+  //      move, about the margin, and even about whether a forced mate existed.
+  //
+  // `ucinewgame` fixed the second (the same 60-puzzle sample now reproduces
+  // item for item), and the retirements made on those runs were reverted
+  // rather than kept: a deletion is only as good as the measurement behind it.
+  // These floors come from the first pass that reproduces.
+  //
+  // A floor that kept the pre-gate number would have had exactly one way to be
+  // satisfied: putting wrong puzzles back.
+  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 573, win: 300 };
+  const MOTIF_FLOOR = { fork: 134, pin: 111, skewer: 50, discovered: 5, double: 9 };
   // 6.1: §5 of docs/v6-plan.md wants ≥ 50 puzzles in every 200-point rating
   // band. 6.0 shipped three bands short and did not say so; 6.1 re-rated the
   // set from measured difficulty and topped up the thin bands from fresh
@@ -371,7 +403,13 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // wants: engine self-play at low skill produces hanging pieces in bulk and
   // genuinely hard positions rarely, so that band cannot be filled from this
   // source. A number here that lies would be worse than one that is short.
-  const BAND_FLOOR = 50, BAND_SHORT = { 2200: 27 };
+  // 2200 was short before the gate ran (engine self-play at low skill makes
+  // hanging pieces in bulk and genuinely hard positions rarely); 1200 and 1600
+  // dipped under 50 because the retirements landed slightly more on the harder
+  // half. Pinned at what they actually are rather than at what §5 wants:
+  // topping them up would mean regenerating ids, and a changed id orphans a
+  // player's progress (6.0 → 6.1 kept all 958 for exactly that reason).
+  const BAND_FLOOR = 50, BAND_SHORT = { 1200: 49, 1600: 48, 2000: 48, 2200: 27, 2400: 46 };
   for (const [c, n] of Object.entries(FLOOR)) assert((byCat[c] || 0) >= n, "mined " + c + " ≥ " + n + " (" + (byCat[c] || 0) + ")");
   for (const [m, n] of Object.entries(MOTIF_FLOOR)) assert((byMotif[m] || 0) >= n, "mined motif " + m + " ≥ " + n + " (" + (byMotif[m] || 0) + ")");
   {
@@ -387,6 +425,53 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
       "只有记录在案的那些分段不足 50（不足的是 " + (short.join(", ") || "无") + "）");
   }
 
+}
+
+// --- 7.0: 评级会随时间松动（rating.js 的文件头承诺过，而它从没接上线）-------
+//
+// 6.1 复查发现：整个应用只调 rate1v1，而那条路每次都在收紧 rd。文件头写着选
+// Glicko-2 而不是 Elo 的理由是「让离开一个月的玩家评级能重新快速移动」，
+// 而唯一能让 rd 回升的分支（update(player, [])）全仓库没有任何地方调用。
+{
+  const R = ctx.ChessRating;
+  const settled = { r: 1400, rd: 61, vol: 0.06 };
+
+  // 先把「为什么不是反复跑空评分期」钉住：那条路一年只从 61 走到 97，
+  // 兑现不了文件头承诺的那件事。这条断言是 decayIdle 存在的理由。
+  let weekly = { ...settled };
+  for (let i = 0; i < 52; i++) weekly = R.update(weekly, []);
+  assert(weekly.rd < 100, "Glicko-2 的空评分期一年只把 rd 抬到 " + weekly.rd.toFixed(0) + "，所以不能只靠它");
+
+  assert(R.decayIdle(settled, 0) === settled, "闲置 0 天是恒等，连新对象都不建");
+  assert(R.decayIdle(settled, -5) === settled, "负数天数同样是恒等");
+  assert(R.decayIdle(settled, NaN) === settled, "非数字同样是恒等");
+
+  const d30 = R.decayIdle(settled, 30);
+  assert(d30.rd > settled.rd + 40, "闲置 30 天后 rd 明显回升（" + settled.rd + " → " + d30.rd.toFixed(0) + "）");
+  assert(d30.r === settled.r && d30.vol === settled.vol, "……只动把握程度，不动评级本身，也不动波动率");
+
+  const d365 = R.decayIdle(settled, 365);
+  assert(Math.abs(d365.rd - R.DEFAULT.rd) < 1, "闲置一年回到新手的 350（标定就是这么定的）");
+  assert(R.decayIdle(settled, 10000).rd === R.DEFAULT.rd, "……并且封顶在 350，不会比从没答过题的人还不确定");
+
+  // rd² 对天数可加，所以「每天开一次」和「一次性闲置 N 天」落在同一处——
+  // app.js 正是靠这条性质做到每次访问都结算而不需要会话标志
+  let daily = { ...settled };
+  for (let i = 0; i < 30; i++) daily = R.decayIdle(daily, 1);
+  assert(Math.abs(daily.rd - d30.rd) < 0.5, "三十次一天的结算 == 一次三十天的结算（" + daily.rd.toFixed(1) + " vs " + d30.rd.toFixed(1) + "）");
+
+  // 真正要的效果：回来之后评级能重新快速移动
+  const hard = { r: 1800, rd: 60, vol: 0.01 };
+  let stale = { ...settled }, fresh = { ...settled };
+  stale = R.decayIdle(stale, 90);
+  for (let i = 0; i < 5; i++) { stale = R.rate1v1(stale, hard, 1).player; fresh = R.rate1v1(fresh, hard, 1).player; }
+  const moved = stale.r - settled.r, stuck = fresh.r - settled.r;
+  assert(moved > stuck * 1.5, "闲置三个月后答对五题，评级的移动幅度远大于不衰减的情形（" +
+    moved.toFixed(0) + " vs " + stuck.toFixed(0) + " 分）");
+
+  // 选题区间也跟着放宽，这才是玩家能看见的后果
+  const wide = R.pickRange(d30), narrow = R.pickRange(settled);
+  assert((wide.hi - wide.lo) > (narrow.hi - narrow.lo), "……出题区间随之放宽，而不是照着三个月前的区间出题");
 }
 
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }

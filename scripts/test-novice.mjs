@@ -39,10 +39,10 @@ const Chess = ctx.Chess;
 
 const L = [];
 const engine = {
-  wasmBinary: new Uint8Array(fs.readFileSync(path.join(ROOT, 'third_party/stockfish/stockfish-18-lite-single.wasm'))),
+  wasmBinary: new Uint8Array(fs.readFileSync(path.join(ROOT, 'third_party/stockfish/stockfish-19-lite-single.wasm'))),
   listener: (l) => { for (const x of L.slice()) x(l); },
 };
-const factory = require(path.join(ROOT, 'third_party/stockfish/stockfish-18-lite-single.js'));
+const factory = require(path.join(ROOT, 'third_party/stockfish/stockfish-19-lite-single.js'));
 await (factory.length >= 1 ? factory(engine) : factory()(engine));
 await new Promise((r) => { const t = () => (engine._isReady && !engine._isReady() ? setTimeout(t, 10) : r()); t(); });
 const send = (c) => engine.ccall('command', null, ['string'], [c], { async: /^go\b/.test(c) });
