@@ -1389,8 +1389,8 @@ for (const lang of CONTENT_LANGS) {
       "the shortcut runs escapeKey() before the dialog and mode gates (fired: " +
       (fired.join() || "nothing") + ")");
   }
-  assert(/if \(ev\.key === "Escape"\) \{ escapeKey\(\); return; \}/.test(appSrc),
-    "…and the window's own Escape runs the same routine");
+  // …and the window's own Escape is checked by pressing it — see the a11y
+  // block below, where the handler now lives.
   assert(/function escapeKey\(\) \{[\s\S]{0,1400}Dlg\.closeTop\(\)[\s\S]{0,600}clearPreview\(\)[\s\S]{0,400}setPanelOpen\(false\)/.test(appSrc),
     "escapeKey closes the top dialog, releases a pinned preview and shuts the panel, in that order");
 
@@ -1480,6 +1480,94 @@ for (const lang of CONTENT_LANGS) {
         "the native command passes the dialog gate and the mode gate before it runs" +
         (blocked.length ? " —— " + blocked.join("；") : ""));
     }
+  }
+}
+
+// 6.1: the keyboard and the live region, asked of a11y.js rather than of
+// app.js's source (v6-plan Q1.7). Three of the guards below replace regexes
+// that matched the handler's text; the rest are new, because once the handler
+// is a function you can call, the things worth checking are what it does.
+{
+  loadModule(ctx, "src/web/js/a11y.js");
+  const createA11y = ctx.createA11y;
+  const fired = [];
+  const rec = (name) => (...a) => fired.push(name + (a.length ? ":" + a.join(",") : ""));
+  const live = { textContent: "" };
+  /** A board with a piece on e4 and nothing anywhere else. */
+  const fakeGame = { get: (sq) => (sq === "e4" ? { color: "w", type: "p" } : null) };
+  const a11yApp = (over) => Object.assign({
+    doc: { body: {}, getElementById: (id) => (id === "board-live" ? live : null) },
+    t: (k) => k, draw: () => {},
+    store: { session: { mode: "ai" }, ui: {}, game: { flipped: false, viewIndex: 4, selection: null } },
+    viewGame: () => fakeGame,
+    sanHistory: () => ["e4", "e5"],
+    statusText: () => "status",
+    onSquareClick: rec("click"),
+    escapeKey: rec("escapeKey"),
+    dialogOpen: () => false, promoOpen: () => false, confirmOpen: () => false,
+    keyHelpOpen: () => false,
+    openKeyHelp: rec("openKeyHelp"), closeKeyHelp: rec("closeKeyHelp"),
+    finishPromotion: rec("finishPromotion"), finishConfirm: rec("finishConfirm"),
+    togglePanel: rec("togglePanel"), toast: rec("toast"),
+    startLearnTask: rec("startLearnTask"), learnUndo: rec("learnUndo"), learnHint: rec("learnHint"),
+    startPuzzleAt: rec("startPuzzleAt"), nextPuzzle: rec("nextPuzzle"),
+    showPuzzleAnswer: rec("showPuzzleAnswer"),
+    setViewIndex: rec("setViewIndex"), undo: rec("undo"),
+    requestNewGame: rec("requestNewGame"), requestHint: rec("requestHint"),
+    setFlipped: rec("setFlipped"),
+  }, over || {});
+  const press = (key, over, extra) => {
+    fired.length = 0;
+    const app = a11yApp(over);
+    createA11y(app).onKeyDown(Object.assign({ key, preventDefault() {}, target: {} }, extra || {}));
+    return { fired: fired.join(), app };
+  };
+
+  // Escape is the first thing the handler looks at, and it runs the one
+  // routine app.js keeps — the same routine the native view.escape shortcut
+  // reaches. This was a regex over app.js for the literal line.
+  assert(press("Escape").fired === "escapeKey",
+    "…and the window's own Escape runs the same routine");
+
+  // The F key is one of the three doors onto setFlipped, and the only one
+  // that is a key. It is inert in the trainer, where the board is authored.
+  assert(press("f").fired === "setFlipped:true", "F turns the board over");
+  assert(press("f", { store: { session: { mode: "puzzle", puzzle: { cat: "tac", idx: 0 } },
+                               ui: {}, game: { flipped: false, viewIndex: 0, selection: null } } }).fired === "",
+    "…and does nothing in 做题, where the board is the puzzle's");
+
+  // A letter typed into a text field is text (v6-plan D8). The FEN box used
+  // to be the only field and guarded itself; the guard lives in the handler.
+  assert(press("n", null, { target: { tagName: "INPUT" } }).fired === "",
+    "a letter typed into a field is text, not a shortcut");
+  assert(press("n").fired === "requestNewGame", "…and the same letter outside one is the shortcut");
+
+  // Nothing acts on the game from behind a dialog — except Escape, above.
+  assert(press("z", { dialogOpen: () => true }).fired === "",
+    "no game key reaches the board through a dialog");
+
+  // "?" is the exception it has always been: it opens its own sheet, and
+  // closes it again.
+  assert(press("?").fired === "openKeyHelp", "\"?\" opens the shortcut sheet");
+  assert(press("?", { keyHelpOpen: () => true }).fired === "closeKeyHelp", "…and closes it");
+
+  // The live region. #board-live is the only place this app speaks to a
+  // screen reader; the cursor keys are what write it.
+  {
+    const app = a11yApp({});
+    const A = createA11y(app);
+    A.announce("hello");
+    assert(live.textContent === "hello", "announce() writes the live region");
+    assert(A.describeSquare("e4") === "e4 · vs.whitepiece.p", "a square is named with what stands on it");
+    assert(A.describeSquare("d4") === "d4 · live.empty", "…and an empty one says so");
+    app.store.ui.keyboardCursor = "e4";
+    A.moveCursor(1, 0);
+    assert(app.store.ui.keyboardCursor === "f4", "the cursor follows the arrow key");
+    assert(live.textContent === "f4 · live.empty", "…and the new square is announced");
+    // arrows follow what the player sees, so they invert with the board
+    app.store.game.flipped = true;
+    A.moveCursor(1, 0);
+    assert(app.store.ui.keyboardCursor === "e4", "a flipped board inverts the arrows");
   }
 }
 
@@ -1775,8 +1863,10 @@ for (const lang of CONTENT_LANGS) {
     // Two of the three doors are still spelled in app.js; the third is the
     // native View menu, which moved to native-commands.js in 6.1 and is
     // checked by firing it (see the native-menu block above, "ai mode").
-    for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/,
-                          /k === "f"[^\n]*setFlipped\(/])
+    // One of the three doors is still spelled in app.js; the F key moved to
+    // a11y.js and the native View menu to native-commands.js in 6.1, and both
+    // are checked by pressing them (see the keyboard blocks above).
+    for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/])
       assert(caller.test(app), "…and it is what the three doors call — " + caller.source.slice(0, 26));
     assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
   }
@@ -5548,7 +5638,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 120;
+  const REGISTERED = 119;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }

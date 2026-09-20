@@ -38,6 +38,7 @@ import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
 import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES } from "./puzzles.js";
 import { MINED_PUZZLES } from "./puzzles-mined.js";
+import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
@@ -7598,103 +7599,42 @@ import { createStore } from "./store.js";
   });
 
   // --- keyboard play: the board is a real focusable control, not just a canvas ---
-  const FILE_CHARS = "abcdefgh";
-  canvas.setAttribute("tabindex", "0");
-  canvas.setAttribute("role", "application");
-  canvas.setAttribute("data-i18n-aria", "aria.boardKeys");
-  canvas.setAttribute("aria-label", t("aria.boardKeys"));
-
-  function announce(msg) {
-    const el = document.getElementById("board-live");
-    if (el) el.textContent = msg;
-  }
-
-  /** describe a square for screen readers: "e4 · 白兵" / "e4 · 空格" */
-  function describeSquare(sq) {
-    const g = store.session.editor ? null : (store.session.mode === "learn" && store.session.learn ? store.session.learn.g : store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g : viewGame());
-    let piece = null;
-    if (g) piece = g.get(sq);
-    else if (store.session.editor) {
-      const { r, c } = ChessEditor.indexOf(sq);
-      piece = store.session.editor.board[r][c];
-    }
-    if (!piece) return sq + " · " + t("live.empty");
-    return sq + " · " + t(piece.color === "w" ? "vs.white" : "vs.black") + t("piece." + piece.type);
-  }
-
-  function moveCursor(df, dr) {
-    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
-    let f = FILE_CHARS.indexOf(store.ui.keyboardCursor[0]);
-    let r = Number(store.ui.keyboardCursor[1]);
-    // arrows follow what the player sees, so they invert with the board
-    const sign = store.game.flipped ? -1 : 1;
-    f = Math.max(0, Math.min(7, f + df * sign));
-    r = Math.max(1, Math.min(8, r + dr * sign));
-    store.ui.keyboardCursor = FILE_CHARS[f] + r;
-    announce(describeSquare(store.ui.keyboardCursor));
-    draw();
-  }
-
-  canvas.addEventListener("focus", () => {
-    store.ui.boardFocused = true;
-    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
-    announce(t("live.focused") + " · " + describeSquare(store.ui.keyboardCursor));
-    draw();
+  // a11y.js holds the cursor, the live region and both keydown handlers; it
+  // reads the app only through this bag (v6-plan Q1.7). The actions are
+  // wrapped so that the ones declared further down this file resolve when
+  // they are called rather than when this runs.
+  const A11y = createA11y({
+    doc: document, t, store, draw,
+    viewGame: () => viewGame(),
+    sanHistory: () => sanHistory(),
+    statusText: () => statusText(),
+    onSquareClick: (sq) => onSquareClick(sq),
+    escapeKey: () => escapeKey(),
+    dialogOpen: () => dialogOpen(),
+    promoOpen: () => !!promoModal && promoModal.classList.contains("show"),
+    confirmOpen: () => confirmModal.classList.contains("show"),
+    keyHelpOpen: () => NativeCmds.keyHelpOpen(),
+    openKeyHelp: () => openKeyHelp(),
+    closeKeyHelp: () => closeKeyHelp(),
+    finishPromotion: (p) => finishPromotion(p),
+    finishConfirm: (v) => finishConfirm(v),
+    togglePanel: () => togglePanel(),
+    toast: (m, tier) => toast(m, tier),
+    startLearnTask: () => startLearnTask(),
+    learnUndo: () => learnUndo(),
+    learnHint: () => learnHint(),
+    startPuzzleAt: (cat, i) => startPuzzleAt(cat, i),
+    nextPuzzle: () => nextPuzzle(),
+    showPuzzleAnswer: () => showPuzzleAnswer(),
+    setViewIndex: (n) => setViewIndex(n),
+    undo: () => undo(),
+    requestNewGame: () => requestNewGame(),
+    requestHint: () => requestHint(),
+    setFlipped: (v) => setFlipped(v),
   });
-  canvas.addEventListener("blur", () => { store.ui.boardFocused = false; draw(); });
-
-  canvas.addEventListener("keydown", (ev) => {
-    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    // A dialog outranks the board. The promotion chooser is the case that
-    // matters: it can only be opened by a move made on the board, so the board
-    // always holds focus when it appears — and the board used to swallow the
-    // Escape that was supposed to dismiss it, which meant Escape never once
-    // worked on the one dialog every player meets. Same fault as the FEN field
-    // in 1.10; that one got fixed and this one was missed.
-    if (dialogOpen()) return;
-    // arrows/Home/End also drive replay from the window handler — while the
-    // board itself is focused they belong to the cursor, so stop them here.
-    //
-    // Escape is the exception, and it is the same fault as the dialog above,
-    // one layer out: the board took every Escape and did something with it
-    // only when a piece was selected. Everything else Escape is for — the
-    // fault toast that does not leave on its own, the editor's exit, closing
-    // the panel — lives on the window handler and could not be reached, and
-    // the board is exactly where focus sits the moment you touch a piece.
-    // Measured on 2.1.6: with the board focused, three Escapes in a row left
-    // the toast up and the editor open. So it is ours only when there is
-    // something here to cancel.
-    const escIsOurs = ev.key !== "Escape" || !!store.game.selection;
-    if (escIsOurs &&
-        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
-      ev.stopPropagation();
-    }
-    switch (ev.key) {
-      case "ArrowLeft": ev.preventDefault(); moveCursor(-1, 0); return;
-      case "ArrowRight": ev.preventDefault(); moveCursor(1, 0); return;
-      case "ArrowUp": ev.preventDefault(); moveCursor(0, 1); return;
-      case "ArrowDown": ev.preventDefault(); moveCursor(0, -1); return;
-      case "Home": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "h1" : "a8"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
-      case "End": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "a8" : "h1"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
-      case "Enter":
-      case " ": {
-        ev.preventDefault();
-        if (!store.ui.keyboardCursor) return;
-        const before = store.game.selection ? store.game.selection.sq : null;
-        onSquareClick(store.ui.keyboardCursor);
-        if (store.game.selection && store.game.selection.sq === store.ui.keyboardCursor && before !== store.ui.keyboardCursor) {
-          announce(t("live.selected") + " " + describeSquare(store.ui.keyboardCursor) + " · " + store.game.selection.targets.length + " " + t("live.targets"));
-        } else if (!store.game.selection && before) {
-          announce(statusText());
-        }
-        return;
-      }
-      case "Escape":
-        if (store.game.selection) { ev.preventDefault(); escapeKey(); }
-        return;
-      default:
-    }
-  });
+  /** What the board says out loud — one live region, written from here. */
+  const announce = (msg) => A11y.announce(msg);
+  A11y.attachBoard(canvas);
   canvas.style.touchAction = "none"; // let touch drags move pieces, not the page
 
   /**
@@ -8829,73 +8769,7 @@ import { createStore } from "./store.js";
     return false;
   }
 
-  /** Is this element one that turns keystrokes into text? */
-  function isEditable(el) {
-    if (!el || el === document.body) return false;
-    const tag = el.tagName;
-    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
-  }
-
-  window.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") { escapeKey(); return; }
-    if (promoModal && promoModal.classList.contains("show")) {
-      const pk = ev.key.toLowerCase();
-      if (["q", "r", "b", "n"].includes(pk)) { ev.preventDefault(); finishPromotion(pk); }
-      return;
-    }
-    if (confirmModal.classList.contains("show")) {
-      if (ev.key === "Enter") { ev.preventDefault(); finishConfirm(true); }
-      return;
-    }
-    // "?" comes before the dialog guard below, because it is the one shortcut
-    // whose whole job is opening and closing a dialog — but only its own: with
-    // anything else on screen it stays out of the way like everything else.
-    if ((ev.key === "?" || (ev.key === "/" && ev.shiftKey)) && !ev.metaKey && !ev.ctrlKey) {
-      const sheetUp = NativeCmds.keyHelpOpen();
-      if (sheetUp || !dialogOpen()) {
-        ev.preventDefault();
-        if (sheetUp) closeKeyHelp(); else openKeyHelp();
-        return;
-      }
-    }
-    // Everything below acts on the game. A dialog is in front of the game, so
-    // none of it applies while one is open — see dialogOpen(). Escape is
-    // handled above precisely because it is the one key that does apply.
-    if (dialogOpen()) return;
-    // a letter typed into any text field is text, not a shortcut — the FEN
-    // box used to be the only field and guarded itself; the guard belongs
-    // here so the next field cannot forget it (v6-plan D8)
-    if (isEditable(ev.target)) return;
-    const k = ev.key.toLowerCase();
-    // Tab is not ours to take. Binding it to the panel meant focus could never
-    // move anywhere by keyboard — the app had a full keyboard board cursor and
-    // no way to reach any other control. The panel is on P instead.
-    if (k === "p" && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); togglePanel(); return; }
-    if (store.session.mode === "learn" && !store.session.study) {
-      // replay / game shortcuts act on the main game — inert during lessons;
-      // R retries the task, Z/H work in engine drills
-      if (!store.session.learn || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { startLearnTask(); toast(t("lm.restarted")); }
-      else if (k === "z") learnUndo();
-      else if (k === "h") learnHint();
-      return;
-    }
-    if (store.session.mode === "puzzle") {
-      if (!store.session.puzzle || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
-      else if (k === "n") nextPuzzle();
-      else if (k === "h") showPuzzleAnswer();
-      return;
-    }
-    if (ev.key === "ArrowLeft") { ev.preventDefault(); setViewIndex(store.game.viewIndex - 1); }
-    else if (ev.key === "ArrowRight") { ev.preventDefault(); setViewIndex(store.game.viewIndex + 1); }
-    else if (ev.key === "Home") { ev.preventDefault(); setViewIndex(0); }
-    else if (ev.key === "End") { ev.preventDefault(); setViewIndex(sanHistory().length); }
-    else if (k === "z" && !ev.metaKey && !ev.ctrlKey) undo();
-    else if (k === "n" && !ev.metaKey && !ev.ctrlKey) requestNewGame();
-    else if (k === "h" && !ev.metaKey && !ev.ctrlKey) requestHint();
-    else if (k === "f" && !ev.metaKey && !ev.ctrlKey) setFlipped(!store.game.flipped);
-  });
+  window.addEventListener("keydown", A11y.onKeyDown);
 
   window.addEventListener("resize", () => {
     appEl.classList.toggle("scrim-on", isPanelOpen() && window.innerWidth < 900);
