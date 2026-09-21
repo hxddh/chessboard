@@ -177,3 +177,79 @@ const loss = sA != null && sB != null ? Math.round(side === "w" ? sA - sB : sB -
 4. B1
 5. C1、C2
 6. 收尾：版本号、release notes、README、CHANGELOG、manual-check、落地记录
+
+---
+
+## 7 · 落地记录
+
+写在发布前，对着代码逐条核，**没做到的也逐条写**。这一版之所以存在，一半是因为
+7.0 的 §10 有三个洞（见 `docs/v7-plan.md` §11.6），所以这一节的规矩只能更严。
+
+### 做到了
+
+| § | 事 | 落在哪里 |
+|---|----|---------|
+| 1.1 | 棋谱库列表 → 点一局载入棋盘，**分析跟着过来、引擎不重跑** | `app.js renderLibList` / `loadFromLibrary`、`index.html #lib-list-modal` |
+| 1.1 | 诊断的母题行 / 开局行 / 失误峰值行可点，筛出那些棋局 | `app.js renderDiagnosis` 的 `pick`、`libPickMatches` |
+| 1.2 | §6.3：库里的失误进错题本，走和棋盘同一套规则 | `app.js mineLibraryGame`、`runLibraryPass` |
+| 1.2 | 按母题分层保留，`MAX_MINES` 50 → 90 | `mistakes.js addMines` / `KEEP_PER_MOTIF` |
+| 1.3 | 「今天下过棋」读得到在别处下的棋；弱项在题库空白时从自己的棋里读；日课多一步「分析剩下的 N 局」 | `app.js dailySignals` / `libWeakMotif`、`planner.js` |
+| 1.3 | 准确率走势并入库里的棋 | `app.js renderTrends` 的 `libPoints` |
+| 2.1 | 诊断页三张图 | `app.js drawPhaseChart` / `drawPeakChart` / `drawEcoChart` |
+| 2.2 | 列表的筛选与排序 | `app.js libMatches` / `store.ui.libFilter` |
+| 3.1 | §6.4 的验收：覆盖率量出来并写明 | `scripts/test-motif.mjs`、`docs/measured.json motifCoverage` |
+| 3.2 | 门禁分层：PR 与发布跑抽样 150、全量进 nightly；抽样从此会失败 | `checks.yml`、`release.yml`、`nightly.yml`、`test-mined.mjs` |
+| 3.3 | §10 记账漏洞补记 | `docs/v7-plan.md` §11.6 |
+| 3.4 | 钳制缺陷第三处，三份算式收成一份 | `mistakes.js candidatesFrom`、`app.js plyLosses` |
+| — | **计划外**：7.0 从来没有给条目写过 `eco`，「开局战绩」那一段从未渲染过 | `app.js fillOpenings`、e2e 第 4 组 |
+| — | **计划外**：28 局语料抽成公共件，不再有第二份拷贝 | `scripts/fixtures/corpus.mjs` |
+
+### 量出来的那个数
+
+§6.4 的验收，28 局 1320 半着、每手 200 毫秒：
+
+| | |
+|---|---|
+| 判为 `?` 或 `??` | 88 手 |
+| 给得出母题解释 | 20 手（**22.7%**） |
+| 只看 `??` | 14/47（29.8%） |
+| 给出来的母题 | 牵制 9 · 捉双 8 · 串击 3 |
+
+**这个数不高，而且它不该高。** `motif.js` 只认五个母题，而且只在几何事实确凿
+时才开口——「动的那个子不是将军的那个子」「这个子现在同时攻击两个值得拿的
+东西」——不确定就返回 null。22.7% 的正确读法是「这个应用有多经常有话说」。
+
+**没量的那一半，如实写在这里**：解释的**正确率**没有人工抽样核对过。会让人想
+关掉这个功能的是一个**错**的标签，而 `test-motif.mjs` 不是能找到错标签的仪器：
+它问 `motif.js` 要一个答案，再把这个答案数一遍。人工那一趟属于
+`docs/manual-check.md`，这一版没有做。
+
+### 没做到的，逐条
+
+**真机走查一次都没有。** `docs/manual-check.md` 新增的 M 组九条，以及 7.0 就
+欠着的 L4–L7（`initial_placement`、`allows_fullscreen`、三个 Windows 系统库、
+`LSHandlerRank`），**全部没有在真机上按过**。这一版没有改 `build.zig` 或
+`src/runner.zig`，所以 L4–L7 的风险和 7.0 发布时一模一样，没有变好也没有变坏。
+
+**`.updates` 仍然是半条链路。** 还是缺一对 Ed25519 密钥和一个 GitHub secret，
+这两样我都造不出来。`app.zon` 里依旧没有 `.updates` 段，`runner.zig` 的四个
+读取器依旧一律回落到 null。
+
+**SQLite / `RelationalStore`、`.dmg`：明确不做**，理由与 7.0 相同且未变
+（`docs/v7-plan.md` §10）。
+
+**`MAX_MINES` 90 是推的，不是量的。** 推法写在 `mistakes.js` 里：复习队列每天
+只服务 20 题，所以 90 道的积压要四天半清完，和 50 道的两天半同一个量级。真要
+量，需要的是一个人用几个月的真实复习记录，这里没有。
+
+**分层保留的效果只有单测保证。** 「一次两百道的导入不会把某一类整类冲掉」是
+单测钉住的；它在真实的、母题分布很歪的错题本上表现如何，只有 M5 那一条真机
+走查能回答。
+
+### 这一版新增的守卫
+
+- `scripts/test-library-e2e.mjs` 第 4–6 组（列表与筛选、点开一局带着分析、
+  诊断行可点、三张图有像素且画了东西、日课与进步读得到库）
+- `scripts/test-chess.mjs`：分层保留三条、日课新信号四条、门禁分层四条、
+  覆盖率与文档引用四条，源码正则登记册 119 → 127
+- `scripts/test-motif.mjs`：三条测量自身的合理性断言

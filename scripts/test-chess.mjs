@@ -5321,6 +5321,30 @@ for (const lang of CONTENT_LANGS) {
     // Move one of them and this fails until the scan is re-run, because the
     // recorded agreement rates describe 50/100/300 and nothing else.
     {
+      // 7.1 (v7-1-plan §3.1): §6.4's acceptance, and the prose that quotes it.
+      // The same rule as the tier figures — a re-record has to drag the
+      // documents with it, or the number in the release notes is a number
+      // nobody ran.
+      {
+        const mc = measured.motifCoverage;
+        assert(!!mc && Number.isFinite(mc.explainedPct),
+          "docs/measured.json holds a motif-coverage run (§6.4 的验收)");
+        if (mc) {
+          assert(mc.games === 28 && mc.plies === 1320,
+            "覆盖率是在那 28 局 1320 半着的语料上量的，不是别的样本 (" + mc.games + "/" + mc.plies + ")");
+          assert(typeof mc.caveat === "string" && /正确性没有人工抽样核对过/.test(mc.caveat),
+            "记录里带着「只量了覆盖率」那句话 —— 数字单独流传出去就是在骗人");
+          for (const rel of ["README.md", ".github/release-notes/v7.1.0.md", "docs/v7-1-plan.md"]) {
+            const text = fs.readFileSync(path.join(root, rel), "utf8");
+            if (!/母题解释|覆盖率/.test(text)) continue;
+            const nums = [...text.matchAll(/(\d+(?:\.\d+)?)%\s*的失误/g)].map((x) => Number(x[1]));
+            for (const n of nums) {
+              assert(n === mc.explainedPct,
+                rel + " 引的覆盖率就是量出来的那个 (" + n + " vs " + mc.explainedPct + ")");
+            }
+          }
+        }
+      }
       const scan = measured.scanNoise;
       assert(!!scan && !!scan.byMovetime, "docs/measured.json holds a scan-noise run");
       if (scan && scan.thresholds) {
