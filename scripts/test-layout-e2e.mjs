@@ -1840,7 +1840,14 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     await page.waitForTimeout(500);
     const r = await page.evaluate(() => {
       const rows = [...document.querySelectorAll("#hist-modal .hist-row")].filter((e) => e.offsetParent);
-      const segs = [...document.querySelectorAll(".hist-filters .theme-row")].map((seg) => {
+      // 7.1: scoped to the dialog under test. Unscoped, this also swept up the
+      // three filter rows of 棋谱库's own list dialog — which is CLOSED here,
+      // so their labels measure as invisible and their buttons as zero-sized,
+      // and the assertions below read that as "this filter has no visible
+      // label". The library's rows get the same scrutiny in their own block
+      // below, with the dialog open, which is the only state the question
+      // means anything in.
+      const segs = [...document.querySelectorAll("#hist-modal .hist-filters .theme-row")].map((seg) => {
         const by = seg.getAttribute("aria-labelledby");
         const label = by ? document.getElementById(by) : null;
         const bs = [...seg.querySelectorAll("button")];
@@ -1868,6 +1875,65 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       assert(s.spill.length === 0,
         s.id + " (" + lang + "): no filter label breaks out of its button" +
         (s.spill.length ? " — " + s.spill.join(", ") : ""));
+    }
+    await ctx.close();
+  }
+}
+
+// --- 4a2. 棋谱库的列表对话框，和对局历史同一把尺子 (7.1) -------------------
+// 同一套断言，换一个对话框：三排筛选/排序段，每一排都要有一个看得见的标签、
+// 不要第二份 aria-label、一行高、等宽、文字不溢出按钮。上面那一段之所以要
+// 限定在 #hist-modal 里，就是因为这三排在那时是关着的 —— 关着的东西量出来的
+// 是 0，而 0 不该被读成「这个筛选器没有标签」。
+{
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "record");
+    await page.evaluate(() => {
+      const games = [];
+      for (let i = 0; i < 25; i++) {
+        games.push({ id: "lib" + i, t: Date.now() - i * 36e5, white: "hxddh", black: "rival" + i,
+          date: "2026.09.01", event: "Rated blitz", result: i % 2 ? "1-0" : "0-1", plies: 6,
+          sans: "e4 e5 Nf3 Nc6 Bb5 a6", fen: "", side: "w", outcome: i % 2 ? "win" : "loss",
+          motifs: {}, an: null });
+      }
+      localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["hxddh"], games }));
+    });
+    await page.reload();
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+    await page.click("#tab-record", { timeout: 2000 }).catch(() => {});
+    await page.click("#lib-open", { timeout: 2500 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("#lib-list .hist-row")].filter((e) => e.offsetParent);
+      const segs = [...document.querySelectorAll("#lib-list-modal .hist-filters .theme-row")].map((seg) => {
+        const by = seg.getAttribute("aria-labelledby");
+        const label = by ? document.getElementById(by) : null;
+        const bs = [...seg.querySelectorAll("button")];
+        return { id: seg.id, label: label && label.offsetParent ? label.textContent.trim() : null,
+                 stray: seg.getAttribute("aria-label"),
+                 heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+                 widths: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().width)))],
+                 spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent.trim()) };
+      });
+      return { n: rows.length,
+               rowH: [...new Set(rows.map((e) => Math.round(e.getBoundingClientRect().height)))],
+               segs };
+    });
+    assert(r.n >= 20, lang + ": 棋谱库列表摆出了那些棋 (" + r.n + ")");
+    assert(r.rowH.length === 1,
+      lang + ": 每一行一样高 (" + r.rowH.join(", ") + ")");
+    assert(r.segs.length === 3, lang + ": 三排筛选/排序都在 (" + r.segs.length + ")");
+    for (const s of r.segs) {
+      assert(s.label, s.id + " (" + lang + "): 有一个看得见的标签，不是只有读屏听得见的那种");
+      assert(!s.stray, s.id + " (" + lang + "): 而且没有第二份 aria-label");
+      assert(s.heights.length === 1 && s.heights[0] < 40,
+        s.id + " (" + lang + "): 每一段都是一行高 (" + s.heights.join(", ") + ")");
+      assert(s.widths.length === 1,
+        s.id + " (" + lang + "): 每一段等宽 (" + s.widths.join(", ") + ")");
+      assert(s.spill.length === 0,
+        s.id + " (" + lang + "): 文字没有从按钮里挤出来" +
+        (s.spill.length ? " —— " + s.spill.join(", ") : ""));
     }
     await ctx.close();
   }
