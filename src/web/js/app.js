@@ -3804,7 +3804,7 @@ import { createStore } from "./store.js";
     let mined = 0, revised = 0, withdrawn = 0;
     if (store.session.mode === "ai") {
       const rev = { budget: perMove, src: "auto" };
-      const pass = { fens, sans: h, tags, bests, scalars, pvs };
+      const pass = { fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses(fens, scalars) };
       const cands = Mistakes.candidatesFrom(pass, store.session.humanColor, Chess, rev);
       const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
       // 5.1: a deeper pass first corrects what the book already says about
@@ -3840,6 +3840,36 @@ import { createStore } from "./store.js";
     // long enough that people go and do something else. A toast behind another
     // window is a message that was never delivered.
     if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
+  }
+
+  /**
+   * Centipawn loss for every ply of a pass, from the mover's chair.
+   *
+   * One routine for all three callers — the board's analysis pass, the
+   * library's, and the reload that repairs records 7.0 wrote. It was three
+   * copies until 7.1, and two of them had the same bug: they subtracted the
+   * raw scalars instead of going through `Review.lossOf`, which pulls both
+   * ends into ±EVAL_WINDOW first. 6.1 fixed that on the eval curve for a
+   * reason worth repeating here: one ply where a fast search announced mate
+   * and the next where it only reported a large plus differ by ~9000, and
+   * charging that difference to the mover records the worst blunder the
+   * scale can express against somebody who did nothing wrong.
+   *
+   * `null` — not 0 — where a ply was not measured. Zero is a *measurement*
+   * saying "this move gave away nothing", and averaging it in flatters the
+   * player; every consumer here already skips non-finite entries.
+   * @param {string[]} fens position before each ply, plus the final one
+   * @param {(number|null)[]} scalars evaluation after each, index 0 = start
+   * @returns {(number|null)[]} one entry per ply
+   */
+  function plyLosses(fens, scalars) {
+    const out = [];
+    for (let i = 0; i + 1 < fens.length; i++) {
+      const a = scalars[i], b = scalars[i + 1];
+      out.push(a == null || b == null ? null
+        : Review.lossOf(a, b, fens[i].split(" ")[1] === "w" ? "w" : "b"));
+    }
+    return out;
   }
 
   /**
@@ -4923,11 +4953,11 @@ import { createStore } from "./store.js";
     // side to move at ply 0, straight off the stored FEN — no board needed,
     // and this runs over the whole library on every boot
     let side = typeof g.fen === "string" && g.fen.trim().split(/\s+/)[1] === "b" ? "b" : "w";
-    an.losses = an.losses.map((old, i) => {
+    an.losses = an.losses.map((_, i) => {
       const a = sc[i], b = sc[i + 1];
-      const out = a == null || b == null ? 0 : Review.lossOf(a, b, side);
+      const out = a == null || b == null ? null : Review.lossOf(a, b, side);
       side = side === "w" ? "b" : "w";
-      return Number.isFinite(out) ? out : Number(old) || 0;
+      return out;
     });
   }
   {
@@ -5058,21 +5088,7 @@ import { createStore } from "./store.js";
       const mover = fens[i].split(" ")[1] === "w" ? "w" : "b";
       return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
     });
-    // Centipawn loss per ply, from the mover's chair — Review.lossOf and not
-    // arithmetic of its own. It floors at 0 (a move that improved the engine's
-    // own assessment did not "lose" a negative amount) and, the part this used
-    // to be missing, it pulls both ends into ±EVAL_WINDOW first. 6.1 fixed
-    // exactly that on the board: a ply where a fast search announced mate and
-    // the next where it only reported a large plus differ by ~9000, and
-    // charging that difference to the mover turns one endgame ply into 300
-    // games' worth of blunders. The game-level ACPL always went through
-    // lossesBySide and was safe; this array is what the diagnosis folds into
-    // per-phase ACPL, so the unclamped copy was the one that reached advice.
-    const losses = sans.map((_, i) => {
-      const a = scalars[i], b = scalars[i + 1];
-      if (a == null || b == null) return 0;
-      return Review.lossOf(a, b, fens[i].split(" ")[1] === "w" ? "w" : "b");
-    });
+    const losses = plyLosses(fens, scalars);
     // What the player missed, at the plies where they went wrong: the motif of
     // the engine's OWN move in that position, not of the move they played. A
     // blunder rarely has a motif; the thing that punished it does, and that is

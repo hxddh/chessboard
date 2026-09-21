@@ -3144,7 +3144,10 @@ for (const lang of CONTENT_LANGS) {
   const fens = [g.fen()];
   const sans = ["e4", "e5"];
   for (const m of sans) { g.move(m); fens.push(g.fen()); }
-  const base = { fens, sans, tags: ["??", "??"], bests: ["g1f3", "g8f6"], scalars: [30, -370, 20] };
+  // losses are the CALLER's, already clamped to the eval window — 7.1 moved
+  // that arithmetic out of this module (v7-1-plan C4)
+  const base = { fens, sans, tags: ["??", "??"], bests: ["g1f3", "g8f6"],
+    scalars: [30, -370, 20], losses: [400, 390] };
 
   // only the asked-for side is mined, and the answer is the engine's move in SAN
   const w = M.candidatesFrom(base, "w", C);
@@ -3164,6 +3167,18 @@ for (const lang of CONTENT_LANGS) {
     "a judgement without a stored answer is not a drill");
   assert(M.candidatesFrom({ ...base, bests: ["e2e4", "g8f6"] }, "w", C).length === 0,
     "best === played can happen on a lost position — nothing to teach, skip");
+
+  // a pass that hands over no losses still mints drills — they just carry no
+  // cost figure, the same as a terminal ply always has
+  {
+    const noLoss = M.candidatesFrom({ ...base, losses: undefined }, "w", C);
+    assert(noLoss.length === 1 && noLoss[0].loss === null,
+      "no losses from the caller → a drill with no cost, not a wrong cost");
+    const mate = M.candidatesFrom({ ...base, losses: [1000, 390] }, "w", C);
+    assert(mate[0].loss === 1000,
+      "a thrown-away mate costs the most the scale can express, not 99.5 pawns",
+      String(mate[0].loss));
+  }
 
   // the id is the position and the sin, not the game — re-analysis dedups
   assert(M.mineId(fens[0], "e4") === M.mineId(fens[0], "e4") &&
@@ -3270,8 +3285,13 @@ for (const lang of CONTENT_LANGS) {
     "achievement totals stay on the frozen book — badges must not drift with a set that retires itself");
   // mining happens where the judgement is born, for the player's side only
   assert(/if \(store\.session\.mode === "ai"\) \{[\s\S]{0,400}Mistakes\.candidatesFrom\(pass, store\.session\.humanColor, Chess, rev\)/.test(appSrc) &&
-         /const pass = \{ fens, sans: h, tags, bests, scalars, pvs \}/.test(appSrc),
+         /const pass = \{ fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses\(fens, scalars\) \}/.test(appSrc),
     "analyzeGame banks the human side's ?? plies, and only in games with a human side");
+  // 7.1 C4: the drill's cost comes from the one clamped routine, not from a
+  // third copy of the subtraction (v7-1-plan §3.4)
+  assert(/const raw = a\.losses \? a\.losses\[i\] : null;/
+           .test(fs.readFileSync(path.join(root, "src/web/js/mistakes.js"), "utf8")),
+    "mistakes.js takes the loss from the caller — the clamp has one home");
   // 5.1: …after letting the pass revise what the book already says about this
   // game — corrected answers and withdrawn ?? — through the same module
   assert(/Mistakes\.reviseMines\(store\.session\.mines, cands, pass, store\.session\.humanColor, rev\)/.test(appSrc) &&

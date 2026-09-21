@@ -52,9 +52,10 @@ function mineId(fen, played) {
  * best move (aborted probe, terminal position) has a judgement but no answer,
  * and a drill without an answer is not a drill.
  *
- * @param {object} a { fens, sans, tags, bests, scalars } — analyzeGame's own
+ * @param {object} a { fens, sans, tags, bests, losses } — analyzeGame's own
  *        arrays: fens[i] is the position ply i was played from, sans[i] the
- *        move, tags[i] its judgement, bests[i] the engine's UCI choice there
+ *        move, tags[i] its judgement, bests[i] the engine's UCI choice there,
+ *        losses[i] its centipawn cost already clamped to the eval window
  * @param {"w"|"b"} side whose mistakes to mine
  * @param {Function} Chess for UCI → SAN in the candidate's position
  * @param {object} [rev] the revision this analysis is — see drillFrom
@@ -67,11 +68,19 @@ function candidatesFrom(a, side, Chess, rev) {
     if (a.tags[i] !== "??") continue;
     const fen = a.fens[i];
     if (!fen || fen.split(" ")[1] !== side) continue;
-    // centipawn cost of the played move, from the mover's side — the same
-    // arithmetic the tag was computed from
-    const sA = a.scalars ? a.scalars[i] : null;
-    const sB = a.scalars ? a.scalars[i + 1] : null;
-    const loss = sA != null && sB != null ? Math.round(side === "w" ? sA - sB : sB - sA) : null;
+    // Centipawn cost of the played move, as the caller measured it.
+    //
+    // Subtracting `a.scalars` here is what this used to do, and it was the
+    // third copy of the bug 6.1 fixed on the eval curve: the raw difference
+    // between "mate" and "a large plus" is ~9000, so a drill minted on a
+    // thrown-away mate said 「亏了 99.5」. The judgement itself was never
+    // wrong — `??` comes from the win-percentage track, which saturates near
+    // a mate score — only this number was. The clamp lives in review.js and
+    // this module imports nothing by design, so the caller hands the losses
+    // in; an `a` without them yields drills with no cost figure, which the
+    // UI has always had to handle anyway (a terminal ply has no loss).
+    const raw = a.losses ? a.losses[i] : null;
+    const loss = Number.isFinite(raw) ? Math.round(raw) : null;
     const d = drillFrom(fen, a.sans[i], a.bests[i], loss, i, Chess, rev);
     if (d) {
       // the engine's continuation after the answer, for the explanation
