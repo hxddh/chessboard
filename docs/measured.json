@@ -134,29 +134,8 @@
           "skill": 0,
           "depth": 2,
           "multipv": 10,
-          "worstBias": 0.2
-        },
-        "random": {
-          "games": 32,
-          "win": 0,
-          "draw": 0,
-          "loss": 32,
-          "scorePct": 0
-        },
-        "careful": {
-          "games": 32,
-          "win": 13,
-          "draw": 10,
-          "loss": 9,
-          "scorePct": 56
-        }
-      },
-      "casual": {
-        "settings": {
-          "skill": 0,
-          "depth": 2,
-          "multipv": 6,
-          "worstBias": 0.15
+          "worstBias": 0.2,
+          "minMs": 350
         },
         "random": {
           "games": 32,
@@ -167,10 +146,33 @@
         },
         "careful": {
           "games": 32,
-          "win": 6,
-          "draw": 5,
-          "loss": 21,
-          "scorePct": 27
+          "win": 16,
+          "draw": 9,
+          "loss": 7,
+          "scorePct": 64
+        }
+      },
+      "casual": {
+        "settings": {
+          "skill": 0,
+          "depth": 2,
+          "multipv": 6,
+          "worstBias": 0.15,
+          "minMs": 350
+        },
+        "random": {
+          "games": 32,
+          "win": 0,
+          "draw": 0,
+          "loss": 32,
+          "scorePct": 0
+        },
+        "careful": {
+          "games": 32,
+          "win": 9,
+          "draw": 4,
+          "loss": 19,
+          "scorePct": 34
         }
       }
     }

@@ -151,18 +151,47 @@ async function playGame(careful, noviceIsWhite) {
 }
 
 const N = Number(arg('games', process.env.GAMES || 20));
+/**
+ * How many times to play the whole match (7.1.1).
+ *
+ * One match is one sample of a noisy statistic, and until now this script
+ * recorded that single number as though it were the tier's strength. The
+ * release gate then compared a fresh single match against a band derived
+ * from it — and a 20-game match of semi-random play has a standard
+ * deviation of about ten points, so the gate failed on its own noise
+ * roughly one run in six. (It did, on v7.1.0: 78% against a 35–75% band.)
+ *
+ * Repeating the match is what turns "56%" into "56% ± 9", and a band can
+ * only be honest if the spread behind it was measured rather than assumed.
+ */
+const REPEAT = Math.max(1, Number(arg('repeat', 1)));
 const measured = {};
 for (const careful of (process.env.ONLY_CAREFUL ? [true] : [false, true])) {
   const label = careful ? '不一步送子的随机手' : '纯随机手';
-  const tally = { win: 0, draw: 0, loss: 0 };
-  for (let i = 0; i < N; i++) {
-    const r = await playGame(careful, i % 2 === 0);
-    tally[r]++;
-    process.stdout.write(`\r  ${label}: ${i + 1}/${N}  胜${tally.win} 和${tally.draw} 负${tally.loss}   `);
+  const runs = [];
+  const total = { win: 0, draw: 0, loss: 0 };
+  for (let r0 = 0; r0 < REPEAT; r0++) {
+    const tally = { win: 0, draw: 0, loss: 0 };
+    for (let i = 0; i < N; i++) {
+      const r = await playGame(careful, i % 2 === 0);
+      tally[r]++;
+      total[r]++;
+      const tag = REPEAT > 1 ? `[${r0 + 1}/${REPEAT}] ` : '';
+      process.stdout.write(`\r  ${tag}${label}: ${i + 1}/${N}  胜${tally.win} 和${tally.draw} 负${tally.loss}   `);
+    }
+    runs.push(Number(((tally.win + tally.draw / 2) / N * 100).toFixed(0)));
   }
-  const score = Number(((tally.win + tally.draw / 2) / N * 100).toFixed(0));
-  console.log(`\n  ${label} 对 ${TIER_NAME} 档 ${N} 盘: 胜 ${tally.win} · 和 ${tally.draw} · 负 ${tally.loss}  → 得分率 ${score}%`);
-  measured[careful ? 'careful' : 'random'] = { games: N, ...tally, scorePct: score };
+  const games = N * REPEAT;
+  const score = Number(((total.win + total.draw / 2) / games * 100).toFixed(0));
+  // population SD over the repeats; with REPEAT === 1 there is no spread to
+  // speak of and the field says so by being null rather than 0
+  const sd = runs.length > 1
+    ? Number(Math.sqrt(runs.reduce((a, x) => a + (x - runs.reduce((p, q) => p + q, 0) / runs.length) ** 2, 0) / (runs.length - 1)).toFixed(1))
+    : null;
+  console.log(`\n  ${label} 对 ${TIER_NAME} 档 ${games} 盘（${REPEAT}×${N}）: 胜 ${total.win} · 和 ${total.draw} · 负 ${total.loss}  → 得分率 ${score}%` +
+    (sd == null ? '' : `（每轮 ${runs.join('/')}，样本标准差 ${sd}）`));
+  measured[careful ? 'careful' : 'random'] =
+    { games, matches: REPEAT, gamesPerMatch: N, ...total, scorePct: score, runs, sdPct: sd };
 }
 
 // --record writes docs/measured.json, which README and engine.js quote. The
