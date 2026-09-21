@@ -250,8 +250,10 @@ function addMines(list, cands, now, solvedIds) {
  *
  * @param {object[]} list the personal book
  * @param {object[]} cands candidatesFrom() of the new pass — the ?? plies
- * @param {object} a the pass's arrays {fens, sans, tags}, for the plies it
- *        judged NOT to be ??
+ * @param {object} a the pass's arrays {fens, sans, tags, scalars}, for the
+ *        plies it judged NOT to be ??. `scalars` is what tells a clean move
+ *        apart from an unmeasured one — without it only an explicit ?/?! can
+ *        withdraw a drill.
  * @param {"w"|"b"} side the side the pass mined
  * @param {object} rev {budget, src, from} of the new pass
  * @returns {{list: object[], updated: string[], retired: string[], filled: string[]}}
@@ -281,9 +283,17 @@ function reviseMines(list, cands, a, side, rev) {
     updated.push(m.id);
   }
   if (a && a.fens && a.sans && a.tags) {
+    // Did this pass actually have an opinion about ply i? A null tag means
+    // one of two opposite things: "a clean move" or "never measured" — and
+    // until 7.2 both were read as the second, so the commonest verdict a
+    // deeper pass reaches, *this was fine*, withdrew nothing. The two are
+    // told apart by the evaluations the tag was derived from: a ply with a
+    // score on both sides of it was judged, whatever the judgement was.
+    const judged = (i) => a.tags[i] != null ||
+      (Array.isArray(a.scalars) && a.scalars[i] != null && a.scalars[i + 1] != null);
     for (let i = 0; i < a.sans.length; i++) {
       if (!a.fens[i] || a.fens[i].split(" ")[1] !== side) continue;
-      if (a.tags[i] == null || a.tags[i] === "??") continue;
+      if (a.tags[i] === "??" || !judged(i)) continue;
       const m = byId.get(mineId(a.fens[i], a.sans[i]));
       if (m && deepEnough(m)) retired.push(m.id);
     }

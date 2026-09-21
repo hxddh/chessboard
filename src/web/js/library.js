@@ -170,6 +170,29 @@ function pending(list) {
   return (list || []).filter((g) => g && !g.an && g.plies > 0).sort((a, b) => (a.t || 0) - (b.t || 0));
 }
 
+/**
+ * Games already analysed, but at a shallower budget than `budget` (7.2 A1).
+ *
+ * `pending()` answers "never analysed" and is deliberately left alone: a
+ * game analysed once is out of the background pass for good, because the
+ * pass is an hour long and re-running it on its own is not a decision this
+ * app gets to make for someone.
+ *
+ * This is the other question — "analysed, but not deeply". The library scans
+ * at 200ms, and `docs/measured.json` (libRevision) measures what 400ms then
+ * does to those judgements. An entry with no recorded budget is from before
+ * `an.budget` existed, and counts as shallow: it was written by a pass that
+ * never spent more than the scan does.
+ *
+ * Oldest first, same as `pending()`, so working down the list is working
+ * through the backlog rather than through the newest thing twice.
+ */
+function deepenable(list, budget) {
+  const want = Number(budget) || 0;
+  return (list || []).filter((g) => g && g.an && !g.unplayable && (Number(g.an.budget) || 0) < want)
+    .sort((a, b) => (a.t || 0) - (b.t || 0));
+}
+
 /** The phase a full-move number falls in. */
 function phaseOf(moveNo) {
   if (moveNo <= OPENING_UNTIL) return "opening";
@@ -333,5 +356,5 @@ function diagnose(list, minGames) {
 
 export const ChessLibrary = {
   MAX_GAMES, OPENING_UNTIL, MIDDLE_UNTIL,
-  gameId, sideOf, outcomeFor, entryFrom, addGames, pending, phaseOf, diagnose,
+  gameId, sideOf, outcomeFor, entryFrom, addGames, pending, deepenable, phaseOf, diagnose,
 };

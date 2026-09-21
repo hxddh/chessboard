@@ -99,6 +99,28 @@ const T0 = 1758000000000;
   assert(q.join() === "a,c", "只排还没分析过、且真的有着法的局（先导入的先分析）");
 }
 
+// --- 值得再深一遍的队列（7.2 A1）-------------------------------------------
+{
+  const list = [
+    { id: "shallow", t: T0 + 2, plies: 30, an: { budget: 200 } },
+    { id: "deep", t: T0 + 1, plies: 30, an: { budget: 400 } },
+    { id: "older", t: T0, plies: 30, an: { budget: 200 } },
+    { id: "nobudget", t: T0 + 3, plies: 30, an: {} },
+    { id: "unanalysed", t: T0 + 4, plies: 30, an: null },
+    { id: "broken", t: T0 + 5, plies: 30, an: { budget: 200 }, unplayable: true },
+  ];
+  const d = L.deepenable(list, 400).map((g) => g.id);
+  assert(d.join() === "older,shallow,nobudget",
+    "只排分析过、但预算比这次浅的局（先导入的先来）", d.join());
+  assert(!L.deepenable(list, 400).some((g) => g.id === "deep"),
+    "已经深过一遍的不再排 —— 否则这条队列永远清不空");
+  assert(L.pending(list).map((g) => g.id).join() === "unanalysed",
+    "……而「还没分析过」那条队列一点没变：两个问题，两条队列");
+  // 同样的预算不算加深；但没记预算的那一局，连 200 都不敢说它花过
+  assert(L.deepenable(list, 200).map((g) => g.id).join() === "nobudget",
+    "同样的预算不算加深 —— 只剩那局连预算都没记的", L.deepenable(list, 200).map((g) => g.id).join());
+}
+
 // --- 阶段划分 ---------------------------------------------------------------
 {
   assert(L.phaseOf(1) === "opening" && L.phaseOf(L.OPENING_UNTIL) === "opening", "开局");

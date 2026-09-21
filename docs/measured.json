@@ -1,5 +1,37 @@
 {
   "_": "Measured figures. Written by scripts/*.mjs --record, read by README.md, src/web/js/engine.js and scripts/test-chess.mjs. Do not hand-edit: a number here that no run produced is worse than no number.",
+  "libRevision": {
+    "what": "快扫铸的错题，精析怎么看：还是 ?? 吗、最佳着变了吗、精析另外还发现了几处 ??",
+    "script": "scripts/test-mines.mjs --record --quick=200 --deep=400 --key=libRevision --only=revision --repeat=5",
+    "quickMs": 200,
+    "deepMs": 400,
+    "games": 4,
+    "rounds": 5,
+    "quickBlunders": 28,
+    "survived": 27,
+    "withdrawn": 1,
+    "withdrawnPct": 4,
+    "sameBest": 23,
+    "changedBest": 4,
+    "changedBestPct": 15,
+    "newAtDeep": 0,
+    "withdrawnPctEach": [
+      0,
+      17,
+      0,
+      0,
+      0
+    ],
+    "withdrawnPctSd": 7.6,
+    "changedBestPctEach": [
+      17,
+      40,
+      0,
+      17,
+      0
+    ],
+    "changedBestPctSd": 16.5
+  },
   "mineAlternatives": {
     "what": "?? 局面上（精析 MultiPV 5），次佳着离最佳着多少分；离最佳不到 50/100/200 分的替代着各有几个",
     "positions": 5,

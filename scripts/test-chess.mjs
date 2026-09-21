@@ -3263,6 +3263,21 @@ for (const lang of CONTENT_LANGS) {
     // and the same at a shallower depth is not believed
     const rv4 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 120 });
     assert(rv4.retired.length === 0, "…but only from a pass at least as deep");
+    // 7.2: and the commonest verdict of all — "that move was fine", which is
+    // a null tag — withdraws it too, as long as the pass really did measure
+    // the ply. Until 7.2 a null tag was read as "never measured", so the
+    // deeper pass could only withdraw a ?? it had downgraded to ? or ?!.
+    const clean = { fens: [fen, "x"], sans: ["e4"], tags: [null], scalars: [20, 25] };
+    const rv5 = M.reviseMines(rv.list, [], clean, "w", { budget: 400 });
+    assert(rv5.retired.length === 1 && rv5.list.length === 0,
+      "深一趟说「这一手没问题」，那道题也该撤 —— 这才是撤销里最常见的一种");
+    // …but a ply the pass never reached still withdraws nothing: same null tag,
+    // no evaluation behind it
+    const unmeasured = { fens: [fen, "x"], sans: ["e4"], tags: [null], scalars: [20, null] };
+    assert(M.reviseMines(rv.list, [], unmeasured, "w", { budget: 400 }).retired.length === 0,
+      "没测到的那一手不算「没问题」—— 分数缺一头就什么都不说");
+    assert(M.reviseMines(rv.list, [], { fens: [fen, "x"], sans: ["e4"], tags: [null] }, "w", { budget: 400 }).retired.length === 0,
+      "连分数都没给的 pass，照旧只认显式的 ?/?!");
     // alternatives: accepted when they cost less than a mistake against the best
     assert(M.judgeAlt(50, 20, "w", 100).ok && M.judgeAlt(50, 20, "w", 100).loss === 30, "a move 30cp short of the best is accepted");
     assert(!M.judgeAlt(50, -80, "w", 100).ok, "a move 130cp short is not");
@@ -3339,7 +3354,7 @@ for (const lang of CONTENT_LANGS) {
     "a deeper pass revises the book before extending it (audit F2)");
   // 7.1: and the library's pass banks them too — v7-plan §6.3, which 7.0
   // shipped without and then recorded in neither of §10's two tables
-  assert(/run\.mined \+= mineLibraryGame\(next, r\.pass\)/.test(appSrc),
+  assert(/run\.mined \+= mineLibraryGame\(next, r\.pass, LIB_BUDGET\)\.added/.test(appSrc),
     "每分析完一局棋谱库的棋，就把这一局的失误收进错题本");
   assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(appSrc),
     "棋谱库走的是和棋盘同一套规则，先修正再扩充，不是第二份实现");

@@ -20,6 +20,16 @@
  *
  * Opt-in and slow (minutes). Run:
  *   node scripts/test-mines.mjs [--record] [--quick=120] [--deep=400]
+ *
+ * 7.2 adds the library's own version of question 1 — the library scans at
+ * 200ms and 7.2 lets a game be re-run at 400ms, so how often does that
+ * change the answer? Same script, other budgets, its own key:
+ *   node scripts/test-mines.mjs --record --quick=200 --deep=400 \
+ *        --key=libRevision --only=revision --repeat=5
+ *
+ * --repeat pools R sweeps and records the per-round spread: a movetime search
+ * is not deterministic and four games mint single-digit ?? counts, so one
+ * round on its own is noise (7.1.1's lesson, applied before the fact).
  */
 import fs from "fs";
 import path from "path";
@@ -52,8 +62,17 @@ const Review = ctx.ChessReview;
 const Mistakes = ctx.ChessMistakes;
 
 const argOf = (k) => { const a = process.argv.find((x) => x.startsWith(k + "=")); return a ? Number(a.slice(k.length + 1)) : null; };
+const textArg = (k) => { const a = process.argv.find((x) => x.startsWith(k + "=")); return a ? a.slice(k.length + 1) : ""; };
 const QUICK = argOf("--quick") || 120;
 const DEEP = argOf("--deep") || 400;
+// 7.2 A1: the same section-1 measurement serves a second question — what a
+// 400ms pass does to what the LIBRARY's 200ms scan minted. Same method, other
+// budgets, so it records under its own key and leaves `mineRevision` alone.
+// Sections 2 and 3 do not depend on the quick budget, so --only=revision
+// skips them rather than re-recording them from a shorter run.
+const KEY = textArg("--key") || "mineRevision";
+const REVISION_ONLY = textArg("--only") === "revision";
+const REPEAT = Math.max(1, argOf("--repeat") || 1);
 
 // the same four games test-analysis.mjs measures scan noise on
 const GAMES = [
@@ -151,40 +170,95 @@ function fensOf(sans) {
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const quantile = (xs, q) => { if (!xs.length) return 0; const s = xs.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
 const mean = (xs) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0);
+/** sample standard deviation, one decimal — the spread 7.1.1 asked every
+    recorded figure to carry */
+const sd = (xs) => {
+  if (xs.length < 2) return 0;
+  const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+  return Math.round(Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1)) * 10) / 10;
+};
+
+let failed = 0;
+function bound(label, value, lo, hi) {
+  const ok = typeof value === "number" && value >= lo && value <= hi;
+  console.log((ok ? "ok" : "FAIL") + `: ${label} = ${value}（区间 ${lo}–${hi}）`);
+  if (!ok) failed++;
+}
 
 // =========================================================================
 // 1 · does the deep pass agree with the quick pass about the book?
 // =========================================================================
-const quickTracks = [], deepTracks = [];
-let survived = 0, withdrawn = 0, sameBest = 0, changedBest = 0, newAtDeep = 0;
-const blunderPositions = []; // {fen, side, deepBest} — the ?? plies at DEEP
-for (const game of GAMES) {
-  const fens = fensOf(game.san);
-  const q = [], d = [];
-  for (const fen of fens) q.push(await probe(fen, QUICK));
-  for (const fen of fens) d.push(await probe(fen, DEEP));
-  quickTracks.push(q); deepTracks.push(d);
-  for (let i = 0; i < game.san.length; i++) {
-    const side = fens[i].split(" ")[1];
-    const lossQ = q[i].cp == null || q[i + 1].cp == null ? null : Review.lossOf(q[i].cp, q[i + 1].cp, side);
-    const lossD = d[i].cp == null || d[i + 1].cp == null ? null : Review.lossOf(d[i].cp, d[i + 1].cp, side);
-    const qq = lossQ != null && Review.markFor(lossQ) === "??";
-    const dd = lossD != null && Review.markFor(lossD) === "??";
-    if (qq && dd) { survived++; if (q[i].best === d[i].best) sameBest++; else changedBest++; }
-    else if (qq && !dd) withdrawn++;
-    else if (!qq && dd) newAtDeep++;
-    if (dd) blunderPositions.push({ fen: fens[i], side, deepBest: d[i].best, played: game.san[i] });
+let quickTracks = [], deepTracks = [];
+let blunderPositions = []; // {fen, side, deepBest} — the ?? plies at DEEP
+
+/** One full sweep of the fixture games at QUICK and at DEEP. */
+async function oneRound() {
+  quickTracks = []; deepTracks = []; blunderPositions = [];
+  let survived = 0, withdrawn = 0, sameBest = 0, changedBest = 0, newAtDeep = 0;
+  for (const game of GAMES) {
+    const fens = fensOf(game.san);
+    const q = [], d = [];
+    for (const fen of fens) q.push(await probe(fen, QUICK));
+    for (const fen of fens) d.push(await probe(fen, DEEP));
+    quickTracks.push(q); deepTracks.push(d);
+    for (let i = 0; i < game.san.length; i++) {
+      const side = fens[i].split(" ")[1];
+      const lossQ = q[i].cp == null || q[i + 1].cp == null ? null : Review.lossOf(q[i].cp, q[i + 1].cp, side);
+      const lossD = d[i].cp == null || d[i + 1].cp == null ? null : Review.lossOf(d[i].cp, d[i + 1].cp, side);
+      const qq = lossQ != null && Review.markFor(lossQ) === "??";
+      const dd = lossD != null && Review.markFor(lossD) === "??";
+      if (qq && dd) { survived++; if (q[i].best === d[i].best) sameBest++; else changedBest++; }
+      else if (qq && !dd) withdrawn++;
+      else if (!qq && dd) newAtDeep++;
+      if (dd) blunderPositions.push({ fen: fens[i], side, deepBest: d[i].best, played: game.san[i] });
+    }
   }
+  return { survived, withdrawn, sameBest, changedBest, newAtDeep };
 }
+
+// 7.1.1 taught this repo that a single figure with no spread is a figure
+// nobody can tell has gone stale. A movetime search is not deterministic, and
+// four games mint single-digit ?? counts, so one round on its own is noise
+// with a decimal point on it: --repeat pools R rounds and records the spread.
+const rounds = [];
+for (let r = 0; r < REPEAT; r++) {
+  if (REPEAT > 1) console.log(`round ${r + 1}/${REPEAT} …`);
+  rounds.push(await oneRound());
+}
+const sumOf = (k) => rounds.reduce((a, x) => a + x[k], 0);
+const survived = sumOf("survived"), withdrawn = sumOf("withdrawn");
+const sameBest = sumOf("sameBest"), changedBest = sumOf("changedBest"), newAtDeep = sumOf("newAtDeep");
+const withdrawnEach = rounds.map((x) => pct(x.withdrawn, x.survived + x.withdrawn));
+const changedEach = rounds.map((x) => pct(x.changedBest, x.survived));
 const revision = {
   what: "快扫铸的错题，精析怎么看：还是 ?? 吗、最佳着变了吗、精析另外还发现了几处 ??",
-  script: "scripts/test-mines.mjs --record",
-  quickMs: QUICK, deepMs: DEEP, games: GAMES.length,
+  script: "scripts/test-mines.mjs --record" +
+    (REVISION_ONLY ? ` --quick=${QUICK} --deep=${DEEP} --key=${KEY} --only=revision --repeat=${REPEAT}` : ""),
+  quickMs: QUICK, deepMs: DEEP, games: GAMES.length, rounds: REPEAT,
   quickBlunders: survived + withdrawn, survived, withdrawn, withdrawnPct: pct(withdrawn, survived + withdrawn),
   sameBest, changedBest, changedBestPct: pct(changedBest, survived), newAtDeep,
 };
+if (REPEAT > 1) {
+  // 每轮各自的比例与样本标准差 —— 引擎按时间搜索，同一局两趟不必相同
+  revision.withdrawnPctEach = withdrawnEach;
+  revision.withdrawnPctSd = sd(withdrawnEach);
+  revision.changedBestPctEach = changedEach;
+  revision.changedBestPctSd = sd(changedEach);
+}
 console.log("\n=== 1 · 快扫 ?? 在精析下的命运 ===");
 console.log(revision);
+
+if (REVISION_ONLY) {
+  if (RECORDING) record(KEY, revision);
+  console.log("\n=== 门槛断言 ===");
+  bound("精析撤回的比例 %", revision.withdrawnPct, 0, 75);
+  bound("精析改判最佳着的比例 %", revision.changedBestPct, 0, 75);
+  bound("快扫铸出的 ?? 数", revision.quickBlunders, 1, 40);
+  send("quit");
+  if (failed) { console.error(`\n${failed} 项不在区间内`); process.exit(1); }
+  console.log("\nall mine tests passed");
+  process.exit(0);
+}
 
 // =========================================================================
 // 2 · at a ?? position, how many moves sit within MISTAKE of the best?
@@ -240,7 +314,7 @@ console.log("\n=== 3 · 样本门槛 ===");
 console.log(verdictFloor);
 
 if (RECORDING) {
-  record("mineRevision", revision);
+  record(KEY, revision);
   record("mineAlternatives", alternatives);
   record("verdictFloor", verdictFloor);
   console.log("\nrecorded to docs/measured.json");
@@ -255,12 +329,6 @@ if (RECORDING) {
 // four-game run has and narrow enough that a real change trips them.
 // The recorded values are in docs/measured.json (mineRevision,
 // mineAlternatives, verdictFloor) and this file writes them with --record.
-let failed = 0;
-function bound(label, value, lo, hi) {
-  const ok = typeof value === "number" && value >= lo && value <= hi;
-  console.log((ok ? "ok" : "FAIL") + `: ${label} = ${value}（区间 ${lo}–${hi}）`);
-  if (!ok) failed++;
-}
 console.log("\n=== 4 · 门槛断言 ===");
 // A quick scan mints mistakes a deeper look sometimes withdraws. Some churn is
 // the point of the revision pass; none of it would mean the deep pass is not

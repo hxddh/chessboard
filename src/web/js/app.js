@@ -5094,6 +5094,17 @@ import { createStore } from "./store.js";
    * and resumable, so the cost is wall-clock the player never waits through.
    */
   const LIB_BUDGET = SCAN_BUDGET;
+  /**
+   * What 「再深一遍」 spends per ply (7.2 A1).
+   *
+   * Not the default, deliberately. An 80-ply game is 16 seconds at 200ms and
+   * 32 at 400; two hundred games is 53 minutes against 107. The scan budget
+   * stays where it is and the deeper look is asked for, one game at a time,
+   * about the games worth it. `docs/measured.json` (libRevision) is what that
+   * second look is worth: the share of ?? it withdraws and the share of the
+   * survivors whose answer it changes.
+   */
+  const LIB_DEEP_BUDGET = 400;
 
   function loadLibrary() {
     const s = Persist.read("library").value;
@@ -5222,7 +5233,7 @@ import { createStore } from "./store.js";
    * short — a half-analysed game stays in the queue rather than being filed
    * as a measurement of something it did not measure.
    */
-  async function analyseLibraryGame(entry, run) {
+  async function analyseLibraryGame(entry, run, budget) {
     const sans = entry.sans.split(" ").filter(Boolean);
     const g = entry.fen ? new Chess(entry.fen) : new Chess();
     const fens = [g.fen()];
@@ -5245,7 +5256,7 @@ import { createStore } from "./store.js";
       else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
       else {
         let e = null;
-        try { e = await ChessEngine.analyze(fens[i], LIB_BUDGET, {}); } catch (_) { e = null; }
+        try { e = await ChessEngine.analyze(fens[i], budget, {}); } catch (_) { e = null; }
         scalars[i] = evalScalar(e);
         if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
       }
@@ -5280,8 +5291,10 @@ import { createStore } from "./store.js";
     // feeds 错题自炼 through exactly one set of rules rather than a second
     // copy of them (v7-1-plan §1.2). Not stored — it is the arrays that are
     // stored, and this is a view of them for the caller's next step.
-    return { an: { acc: a.acc, acpl: a.acpl, tags, losses, scalars, bests, budget: LIB_BUDGET },
-      motifs, pass: { fens, sans, tags, bests, losses } };
+    return { an: { acc: a.acc, acpl: a.acpl, tags, losses, scalars, bests, budget },
+      // scalars ride along so reviseMines can tell "this ply was fine" from
+      // "this ply was never measured" — see its `judged`
+      motifs, pass: { fens, sans, tags, bests, losses, scalars } };
   }
 
   /** Start (or stop) the background pass over everything still unanalysed. */
@@ -5300,16 +5313,19 @@ import { createStore } from "./store.js";
    * except where the arrays came from.
    * @returns {number} drills added
    */
-  function mineLibraryGame(entry, pass) {
-    if (!entry || !entry.side || !pass) return 0;
-    const rev = { budget: LIB_BUDGET, src: "lib", from: entry.id ? { kind: "lib", id: entry.id } : undefined };
+  function mineLibraryGame(entry, pass, budget) {
+    const none = { added: 0, revised: 0, withdrawn: 0 };
+    if (!entry || !entry.side || !pass) return none;
+    const rev = { budget, src: "lib", from: entry.id ? { kind: "lib", id: entry.id } : undefined };
     const cands = withMotifs(Mistakes.candidatesFrom(pass, entry.side, Chess, rev));
-    if (!cands.length) return 0;
     const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
+    // …but the revision pass runs even with no candidates: "this game has no
+    // ?? at 400ms" is exactly the sentence that withdraws the ones 200ms
+    // minted, and returning early on an empty list would throw it away.
     const rv = Mistakes.reviseMines(store.session.mines, cands, pass, entry.side, rev);
     const r = Mistakes.addMines(rv.list, cands, Date.now(), solvedIds);
     const dropped = rv.retired.concat(r.dropped);
-    if (!r.added && !dropped.length && !rv.updated.length && !rv.filled.length) return 0;
+    if (!r.added && !dropped.length && !rv.updated.length && !rv.filled.length) return none;
     store.session.mines = r.list;
     saveMines();
     for (const id of dropped) {
@@ -5318,7 +5334,52 @@ import { createStore } from "./store.js";
     }
     if (dropped.length) savePuzzleState();
     if (r.added) { Progress.recordMined(store.session.progress, r.added, Date.now()); saveProgress(); }
-    return r.added;
+    return { added: r.added, revised: rv.updated.length, withdrawn: rv.retired.length };
+  }
+
+  /**
+   * 「再深一遍」: re-analyse ONE library game at the deeper budget (7.2 A1).
+   *
+   * Until 7.2 a library game was analysed once and never again — `pending()`
+   * filters on `!g.an`, so nothing could ask for a second look. That was
+   * harmless while drills came only from the board, where 精析 already runs
+   * `reviseMines` over them; 7.1 made the library the book's main supplier
+   * and left it with no such door. `docs/measured.json` (libRevision) says
+   * what is behind it: at these two budgets, the share of ?? the deeper pass
+   * withdraws and the share of the survivors whose answer it changes.
+   *
+   * Same three steps as every other pass, in the same order — analyse,
+   * revise, extend — because the correction semantics are `reviseMines`'s
+   * and this is the first caller on this path to need them.
+   */
+  async function deepenLibraryGame(i) {
+    const entry = store.session.library[i];
+    if (!entry || !entry.an || entry.unplayable) return;
+    if (store.session.libRun) { toast(t("lib.busy"), "fix"); return; }
+    if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
+    if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    await stopLiveAnalysis();
+    const run = { abort: false, done: 0, mined: 0, total: 1, ply: 0, plies: 0, deep: true,
+      name: (entry.white || "?") + " — " + (entry.black || "?") };
+    store.session.libRun = run;
+    renderLibrary();
+    renderLibList();
+    let r = null;
+    try { r = await analyseLibraryGame(entry, run, LIB_DEEP_BUDGET); }
+    finally {
+      store.session.libRun = null;
+      renderLibrary();
+      renderLibList();
+    }
+    if (!r) { toast(t("lib.deepCut"), "fix"); return; }
+    entry.an = r.an;
+    entry.motifs = r.motifs;
+    const m = mineLibraryGame(entry, r.pass, LIB_DEEP_BUDGET);
+    saveLibrary();
+    renderLibrary();
+    renderLibList();
+    sync();
+    toast(tf("lib.deepDone", [libraryLabel(entry), m.withdrawn, m.revised, m.added]));
   }
 
   async function runLibraryPass() {
@@ -5350,13 +5411,13 @@ import { createStore } from "./store.js";
         const next = Library.pending(store.session.library).find((g) => !g.an && !g.unplayable);
         if (!next) break;
         run.name = (next.white || "?") + " — " + (next.black || "?");
-        const r = await analyseLibraryGame(next, run);
+        const r = await analyseLibraryGame(next, run, LIB_BUDGET);
         if (run.abort) break;
         if (!r) { next.unplayable = true; }
         else {
           next.an = r.an;
           next.motifs = r.motifs;
-          run.mined += mineLibraryGame(next, r.pass);
+          run.mined += mineLibraryGame(next, r.pass, LIB_BUDGET).added;
         }
         run.done++;
         saveLibrary();
@@ -5409,7 +5470,8 @@ import { createStore } from "./store.js";
       row.append(k, v);
       body.appendChild(row);
       const run = store.session.libRun;
-      if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
+      if (run && run.deep) line(tf("lib.deepWorking", [run.name || "", run.plies ? run.ply + "/" + run.plies : ""]));
+      else if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
       else if (!claimed) line(t("lib.noneClaimed"), "hint warn");
       else if (analysed.length < LIB_MIN_GAMES) line(tf("lib.needMore", [LIB_MIN_GAMES - analysed.length, analysed.length, LIB_MIN_GAMES]));
       // A game whose moves would not replay is dropped from the queue, and a
@@ -5417,6 +5479,9 @@ import { createStore } from "./store.js";
       // count stopped moving. Say how many and leave them in the list.
       const stuck = list.filter((g) => g.unplayable).length;
       if (stuck) line(tf("lib.unplayable", [stuck]));
+      // 7.2 A1: the other queue — analysed, but only at scan depth
+      const shallow = Library.deepenable(list, LIB_DEEP_BUDGET).length;
+      if (!run && shallow) line(tf("lib.deepable", [shallow]));
     }
     const an = document.getElementById("lib-analyse");
     if (an) {
@@ -5594,7 +5659,24 @@ import { createStore } from "./store.js";
     sub.textContent = librarySub(g);
     load.appendChild(sub);
     row.appendChild(load);
+    // 「再深一遍」 only where there is something to deepen: an analysed game
+    // whose pass was shallower than LIB_DEEP_BUDGET. An already-deep game
+    // does not get a greyed button, it gets none (P3).
+    if (entryDeepenable(g)) {
+      const deep = document.createElement("button");
+      deep.type = "button";
+      deep.className = "tool-btn";
+      deep.dataset.libDeep = String(i);
+      deep.textContent = t("lib.deepen");
+      deep.title = t("tip.libDeepen");
+      row.appendChild(deep);
+    }
     return row;
+  }
+
+  /** one game's half of Library.deepenable — the row button reads this */
+  function entryDeepenable(g) {
+    return !!g && !!g.an && !g.unplayable && (Number(g.an.budget) || 0) < LIB_DEEP_BUDGET;
   }
 
   /**
@@ -5623,7 +5705,9 @@ import { createStore } from "./store.js";
     }
     reconcile(list, rows,
       ({ g, i }) => g.id || ("i" + i),
-      ({ g }) => [g.outcome, g.side, g.eco, g.an ? "a" : "-", g.unplayable ? "u" : "-"].join("|"),
+      // the budget is in the signature: without it a game that just got
+      // deepened would keep the 「再深一遍」 button it no longer needs
+      ({ g }) => [g.outcome, g.side, g.eco, g.an ? "a" + (g.an.budget || 0) : "-", g.unplayable ? "u" : "-"].join("|"),
       ({ g, i }) => libraryRow(g, i));
     if (!rows.length) {
       const p = document.createElement("p");
@@ -9272,6 +9356,8 @@ import { createStore } from "./store.js";
     const listEl = document.getElementById("lib-list");
     if (listEl) {
       listEl.onclick = (ev) => {
+        const deep = ev.target.closest("button[data-lib-deep]");
+        if (deep) { deepenLibraryGame(Number(deep.dataset.libDeep)); return; }
         const b = ev.target.closest("button[data-lib]");
         if (b) loadFromLibrary(Number(b.dataset.lib));
       };
