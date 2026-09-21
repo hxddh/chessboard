@@ -3324,7 +3324,7 @@ for (const lang of CONTENT_LANGS) {
   assert(achBlock && !achBlock[0].includes("bookNow") && achBlock[0].includes("ALL_PUZZLES"),
     "achievement totals stay on the frozen book — badges must not drift with a set that retires itself");
   // mining happens where the judgement is born, for the player's side only
-  assert(/if \(store\.session\.mode === "ai"\) \{[\s\S]{0,400}Mistakes\.candidatesFrom\(pass, store\.session\.humanColor, Chess, rev\)/.test(appSrc) &&
+  assert(/if \(store\.session\.mode === "ai"\) \{[\s\S]{0,900}Mistakes\.candidatesFrom\(pass, store\.session\.humanColor, Chess, rev\)/.test(appSrc) &&
          /const pass = \{ fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses\(fens, scalars\) \}/.test(appSrc),
     "analyzeGame banks the human side's ?? plies, and only in games with a human side");
   // 7.1 C4: the drill's cost comes from the one clamped routine, not from a
@@ -3393,6 +3393,37 @@ for (const lang of CONTENT_LANGS) {
     const d = M.drillFrom(gb.fen(), "e5", "c7c5", 90, 1, C);
     assert(d && d.side === "b" && d.solution[0] === "c5",
       "a black-to-move ply carries side:\"b\" — the flipped-board rails read it");
+  }
+
+  // 7.2 A2: the drill remembers the game it came from, on both paths
+  {
+    const libD = M.drillFrom(fen, "e4", "g1f3", 300, 0, C, { budget: 200, src: "lib", from: { kind: "lib", id: "L1" } });
+    assert(libD.from && libD.from.kind === "lib" && libD.from.id === "L1",
+      "一道从棋谱库挖出来的错题记得它是库里哪一局");
+    const gameD = M.drillFrom(fen, "e4", "g1f3", 300, 0, C, { budget: 200, src: "auto", from: { kind: "game", id: "r7" } });
+    assert(gameD.from && gameD.from.kind === "game" && gameD.from.id === "r7",
+      "棋盘上挖出来的那条路同样记得它是哪一条战绩");
+    // no source is a legal state — the board path has none until the game is
+    // filed, and every drill banked before 7.2 has none either
+    assert(M.drillFrom(fen, "e4", "g1f3", 300, 0, C, { budget: 200, src: "auto" }).from === undefined,
+      "没有来源就是没有来源 —— 不编一个出来");
+    // …and a revision does not lose it: reviseMines replaces `rev` wholesale,
+    // which is exactly why the source does not live inside `rev`
+    const book = [libD];
+    const deeper = M.drillFrom(fen, "e4", "d2d4", 150, 0, C, { budget: 400, src: "lib", from: { kind: "lib", id: "L1" } });
+    const rv = M.reviseMines(book, [deeper], null, "w", { budget: 400, src: "lib" });
+    assert(rv.list[0].solution[0] === "d4" && rv.list[0].from && rv.list[0].from.id === "L1",
+      "精析改了答案，来源还在 —— 来源不是判断的一部分");
+    // a drill banked before 7.2 learns its source from the next pass that meets it
+    const old7 = M.drillFrom(fen, "e4", "g1f3", 300, 0, C, { budget: 200, src: "auto" });
+    const again = M.reviseMines([old7], [libD], null, "w", { budget: 200, src: "lib" });
+    assert(again.list[0].from && again.list[0].from.id === "L1" && again.filled.length === 1,
+      "7.2 之前存下的老题，下一趟遇见它时补上来源");
+    // …but never overwritten: the first game to mine a position stays its answer
+    const other = M.drillFrom(fen, "e4", "g1f3", 300, 0, C, { budget: 200, src: "lib", from: { kind: "lib", id: "L2" } });
+    const keep = M.reviseMines([libD], [other], null, "w", { budget: 200, src: "lib" });
+    assert(keep.list[0].from.id === "L1" && keep.filled.length === 0,
+      "同一个局面再被别的一局挖到，来源仍然是第一局");
   }
 
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");

@@ -3361,6 +3361,56 @@ import { createStore } from "./store.js";
     maybeEngineTurn();
   }
 
+  /**
+   * The game a drill was mined from, if it is still on disk.
+   *
+   * 7.2 (A2). `from` is a reference, not a copy, and both the things it can
+   * point at roll over: the library keeps 500 games and 战绩 keeps 500
+   * records, and 战绩 can be cleared outright. So every read asks whether the
+   * source is still there — and the entry point is drawn only when this
+   * answers yes. A button that opens nothing is exactly the promise P3 exists
+   * to stop the interface making.
+   */
+  function drillSourceOf(p) {
+    const from = p && p.from;
+    if (!from || !from.id) return null;
+    if (from.kind === "lib") {
+      const entry = (store.session.library || []).find((g) => g && g.id === from.id);
+      return entry ? { kind: "lib", entry } : null;
+    }
+    const rec = loadStats().games.find((g) => g && g.id === from.id);
+    return rec ? { kind: "game", rec } : null;
+  }
+
+  /**
+   * 「看那局棋」: leave the trainer and open the drill's source game, stopping
+   * the cursor on the move it was mined from.
+   *
+   * The drill's fen is the position *before* the blunder, so the cursor goes
+   * one ply later: that lands on the move itself — the one the move list
+   * marks ?? and the one just failed again — rather than on the moment
+   * before it, where the board would look identical to the puzzle just left.
+   *
+   * The trainer is left before the load, because the load asks whether it may
+   * replace the board and the answer may be no. That is the whole reason the
+   * category and index are kept: a cancelled jump puts the same drill back.
+   */
+  async function openDrillSource() {
+    const pz = store.session.puzzle;
+    const p = pz && pz.p;
+    const src = drillSourceOf(p);
+    if (!src) return;
+    const ply = Number.isFinite(p.ply) ? p.ply : null;
+    const cat = pz.cat, idx = pz.idx;
+    stopPuzzles();
+    const ok = src.kind === "lib" ? await loadLibraryEntry(src.entry) : await loadHistoryRecord(src.rec);
+    // nothing was loaded and the mode never left 做题 — put the drill back
+    if (!ok) { startPuzzleAt(cat, idx); return; }
+    if (ply != null) setViewIndex(ply + 1);
+    saveGame();
+    sync();
+  }
+
   function nextPuzzle() {
     if (!store.session.puzzle) return;
     let list = puzzlesInCat(store.session.puzzle.cat);
@@ -3532,6 +3582,10 @@ import { createStore } from "./store.js";
       playOn.hidden = !canPlayOn;
       playOn.classList.toggle("primary", canPlayOn);
     }
+    // 「看那局棋」 (7.2): only for a drill mined from a game that is still
+    // filed — see drillSourceOf for why that has to be asked every time
+    const srcBtn = document.getElementById("puzzle-source");
+    if (srcBtn) srcBtn.hidden = !drillSourceOf(store.session.puzzle.p);
     // 「答案」 asks the app to draw the right move for the stage you are on.
     // Once the puzzle is solved there is no stage left, and showPuzzleAnswer()
     // says so itself — it returns on `done`. It just kept being drawn: press
@@ -3832,7 +3886,7 @@ import { createStore } from "./store.js";
     // side is this player (ai mode); a pvp or imported game has no "you".
     let mined = 0, revised = 0, withdrawn = 0;
     if (store.session.mode === "ai") {
-      const rev = { budget: perMove, src: "auto" };
+      const rev = { budget: perMove, src: "auto", from: boardDrillSource() };
       const pass = { fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses(fens, scalars) };
       const cands = withMotifs(Mistakes.candidatesFrom(pass, store.session.humanColor, Chess, rev));
       const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
@@ -3842,7 +3896,7 @@ import { createStore } from "./store.js";
       const rv = Mistakes.reviseMines(store.session.mines, cands, pass, store.session.humanColor, rev);
       const r = Mistakes.addMines(rv.list, cands, Date.now(), solvedIds);
       const dropped = rv.retired.concat(r.dropped);
-      if (r.added || dropped.length || rv.updated.length) {
+      if (r.added || dropped.length || rv.updated.length || rv.filled.length) {
         store.session.mines = r.list;
         saveMines();
         // retired drills take their queue entries with them — an orphan id in
@@ -4230,7 +4284,8 @@ import { createStore } from "./store.js";
     const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess,
       // same rule as verifyAlt above: the fallback describes an analysis record
       // written before `budget` existed, so it stays at what that pass spent
-      { budget: (a && a.budget) || 120, src: "hand" });
+      // …and it points back at the same game the auto-miner would have named
+      { budget: (a && a.budget) || 120, src: "hand", from: boardDrillSource() });
     if (cand && a && a.pvs && typeof a.pvs[worst.ply] === "string") cand.pv = a.pvs[worst.ply];
     if (!cand) { toast(t("rv.bankNone"), "fix"); return; }
     if (store.session.mines.some((m) => m.id === cand.id)) { toast(t("rv.bankDup")); return; }
@@ -4420,6 +4475,21 @@ import { createStore } from "./store.js";
     // the v1 → v2 unpacking of `sig` happens in persist.js, with the shape
     const s = Persist.read("stats").value;
     return s && s.v === 2 && Array.isArray(s.games) ? s : { v: 2, games: [] };
+  }
+
+  /**
+   * The game on the board, as a drill source (7.2, A2) — or nothing.
+   *
+   * Nothing for the RESTORED_AND_FILED sentinel: that game *was* filed, but
+   * under an id this session never learnt, so a 「看那局棋」 built on it would
+   * be a door onto nothing. Nothing, too, for a game that is not filed at all
+   * — a pvp game, an imported PGN, a library game opened for a look. Those
+   * are all ordinary states, and `drillSourceOf` treats a missing source and
+   * a vanished one the same way: no entry point.
+   */
+  function boardDrillSource() {
+    return store.game.recordedId && store.game.recordedId !== RESTORED_AND_FILED
+      ? { kind: "game", id: store.game.recordedId } : undefined;
   }
 
   /** Record an AI game the moment it finishes on a live move (not on import). */
@@ -5232,14 +5302,14 @@ import { createStore } from "./store.js";
    */
   function mineLibraryGame(entry, pass) {
     if (!entry || !entry.side || !pass) return 0;
-    const rev = { budget: LIB_BUDGET, src: "lib" };
+    const rev = { budget: LIB_BUDGET, src: "lib", from: entry.id ? { kind: "lib", id: entry.id } : undefined };
     const cands = withMotifs(Mistakes.candidatesFrom(pass, entry.side, Chess, rev));
     if (!cands.length) return 0;
     const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
     const rv = Mistakes.reviseMines(store.session.mines, cands, pass, entry.side, rev);
     const r = Mistakes.addMines(rv.list, cands, Date.now(), solvedIds);
     const dropped = rv.retired.concat(r.dropped);
-    if (!r.added && !dropped.length && !rv.updated.length) return 0;
+    if (!r.added && !dropped.length && !rv.updated.length && !rv.filled.length) return 0;
     store.session.mines = r.list;
     saveMines();
     for (const id of dropped) {
@@ -5611,9 +5681,22 @@ import { createStore } from "./store.js";
     if (!entry) return;
     if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
     closeLibList();
+    return loadLibraryEntry(entry);
+  }
+
+  /**
+   * The load itself, without the list's own guards.
+   *
+   * Split out in 7.2 so 「看那局棋」 can reach it: that entry point comes from
+   * the puzzle page, which is exactly the mode `loadFromLibrary` refuses —
+   * it leaves the trainer first and then loads, so the mode check above would
+   * be asking about a mode nobody is in any more.
+   */
+  async function loadLibraryEntry(entry) {
+    if (!entry) return false;
     const ok = await importPgnText(libraryPgn(entry), t("lib.title"),
       { msg: t("dlg.loadLib"), title: t("dlg.loadLibTitle"), ok: t("dlg.loadLibOk") });
-    if (!ok) return;
+    if (!ok) return false;
     // an imported game has no "you" by default; the library knows who you are
     store.session.mode = "pvp";
     if (entry.side === "w" || entry.side === "b") {
@@ -5636,6 +5719,7 @@ import { createStore } from "./store.js";
     saveGame();
     sync();
     toast(tf("lib.loaded", [libraryLabel(entry)]));
+    return true;
   }
 
 
@@ -5973,9 +6057,15 @@ import { createStore } from "./store.js";
     const rec = store.session.histCache[i];
     if (!rec) return;
     closeHistory();
+    return loadHistoryRecord(rec);
+  }
+
+  /** The load itself — see `loadLibraryEntry` for why it is split out. */
+  async function loadHistoryRecord(rec) {
+    if (!rec) return false;
     const ok = await importPgnText(historyPgn(rec), t("hist.title"),
       { msg: t("dlg.loadHist"), title: t("dlg.loadHistTitle"), ok: t("dlg.loadHistOk") });
-    if (!ok) return;
+    if (!ok) return false;
     // Restore the context the game was played in. Orientation and difficulty
     // are what the board and the review report mean by "you", and pinning the
     // record id lets a fresh 分析 file its accuracy back onto the very game it
@@ -5994,6 +6084,7 @@ import { createStore } from "./store.js";
     saveGame();
     sync();
     toast(tf("hist.loaded", [historyLabel(rec)]));
+    return true;
   }
 
   /**
@@ -9457,6 +9548,8 @@ import { createStore } from "./store.js";
   };
   const playOnEl = document.getElementById("puzzle-playon");
   if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
+  const drillSrcEl = document.getElementById("puzzle-source");
+  if (drillSrcEl) drillSrcEl.onclick = () => { openDrillSource(); };
   document.getElementById("puzzle-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
     if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));

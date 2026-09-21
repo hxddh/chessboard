@@ -471,6 +471,82 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await ctx.close();
 }
 
+// --- 8. 7.2 A2:错题指得回它的来源局 ----------------------------------------
+{
+  // 7.1 把棋谱库接成了错题的主要来源，接完之后一道题落在做题页上，你问不出
+  // 「这是我哪一局」。这一段验的就是那条回头路：入口只在来源还在时出现，点
+  // 下去棋盘上是那一局，游标停在挖出这道题的那一手上。
+  const fen = "r5k1/5ppp/8/8/8/8/5PPP/R5K1 b - - 0 30";
+  const games = [{
+    id: "setup1", t: 1758000500000, white: "rival", black: "hxddh",
+    date: "2026.09.10", event: "Study", result: "0-1", plies: 4,
+    sans: "Rd8 Rb1 Rd2 Rb8+", fen, side: "b", outcome: "win", motifs: {},
+    an: { acc: { w: 40, b: 90 }, acpl: { w: 200, b: 10 },
+      tags: [null, null, "??", null], losses: [5, 5, 900, 5],
+      scalars: [0, -5, -10, -910, -915], bests: [null, null, null, null, null], budget: 200 },
+  }];
+  // the drill as the miner writes it: the position before 31...Rd2, the move
+  // actually played, and the game it came from
+  const drillFen = "3r2k1/5ppp/8/8/8/8/5PPP/1R4K1 b - - 2 31";
+  const mine = (id, from) => ({
+    id, cat: "mine", fen: drillFen, solution: ["Rd1"], played: "Rd2", loss: 900,
+    ply: 2, t: 1758000600000, side: "b", rev: { budget: 200, src: "lib" }, from,
+  });
+  const seed = async (mines, lib) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
+    await ctx.addInitScript(([ms, lb]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.v1.library", lb);
+      localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: ms }));
+      localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "mine" }));
+    }, [mines, lib]);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    return { ctx, page, errs };
+  };
+
+  const libJson = JSON.stringify({ v: 1, names: ["hxddh"], games });
+  {
+    const { ctx, page, errs } = await seed([mine("mine:src1", { kind: "lib", id: "setup1" })], libJson);
+    assert(await page.isVisible("#puzzle-source"), "来源还在，做题页上就有「看那局棋」");
+    await page.click("#puzzle-source");
+    await page.waitForTimeout(1200);
+    const state = await page.evaluate(() => ({
+      moves: [...document.querySelectorAll("#move-list .mlmove")].map((b) => b.textContent.trim()),
+      current: (document.querySelector("#move-list .mlmove.current") || {}).textContent || "",
+      puzzleGone: document.getElementById("sec-puzzle").hidden,
+    }));
+    const sans = state.moves.filter((x) => /[a-h][1-8]/.test(x));
+    assert(sans.length === 4 && /d8/.test(sans[0]) && /b8/.test(sans[3]),
+      "点下去，棋盘上就是挖出这道题的那一局", JSON.stringify(state.moves));
+    assert(/d2/.test(state.current),
+      "而且游标停在那一手上 —— 不是开头，也不是最后", JSON.stringify(state.current));
+    assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // 来源没了（库满淘汰、或者那局根本不在这台机器上）：入口就不该出现。一个
+  // 点开什么都没有的按钮，正是 P3 存在的理由。
+  {
+    const { ctx, page, errs } = await seed([mine("mine:src2", { kind: "lib", id: "gone" })], libJson);
+    assert(await page.isHidden("#puzzle-source"), "来源局已经不在库里，入口就不出现");
+    await ctx.close();
+    void errs;
+  }
+
+  // 7.2 之前存下的老错题没有来源字段，一样不该出现入口
+  {
+    const { ctx, page } = await seed([mine("mine:old", undefined)], libJson);
+    assert(await page.isHidden("#puzzle-source"), "7.2 之前的老错题没有来源，入口也不出现");
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

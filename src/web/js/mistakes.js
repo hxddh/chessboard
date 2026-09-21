@@ -131,6 +131,22 @@ function candidatesFrom(a, side, Chess, rev) {
  * search budget, and a deeper pass may change it or withdraw the ?? entirely.
  * Until 5.1 addMines skipped every known id, so the quick pass's answer was
  * the answer for ever and a later 精析 could not correct it (audit F2).
+ *
+ * `rev.from` — since 7.2 — is where the blunder happened: `{ kind, id }`,
+ * kind being "lib" (a game in the library) or "game" (a recorded game of
+ * your own). It is stored on the drill as `from`, NOT inside `rev`, because
+ * `reviseMines` replaces `rev` wholesale and the source game is not a
+ * property of the judgement.
+ *
+ * Why it exists: 7.1 made the library the main supplier of drills, and a
+ * drill arrived with no way back to the game it came from. `mistakes.js`
+ * opens by arguing that the one content source no canned book can have is
+ * the games this player really lost — and then handed over a position with
+ * the game stripped off, which is most of what made it theirs.
+ *
+ * The same blunder in two games keeps the FIRST game it was mined from:
+ * a drill's identity is (position, played), so the second sighting dedups
+ * against the first and never reaches `drillFrom` at all.
  */
 function drillFrom(fen, played, bestUci, loss, ply, Chess, rev) {
   if (!fen || typeof bestUci !== "string" || bestUci.length < 4) return null;
@@ -146,6 +162,9 @@ function drillFrom(fen, played, bestUci, loss, ply, Chess, rev) {
     loss: Number.isFinite(loss) ? Math.round(loss) : null,
     ply,
     rev: rev ? { budget: Number(rev.budget) || 0, src: rev.src || "auto" } : undefined,
+    from: rev && rev.from && rev.from.id
+      ? { kind: rev.from.kind === "lib" ? "lib" : "game", id: String(rev.from.id) }
+      : undefined,
     // black-to-move drills flip the board and gate input exactly like the
     // black opening drills — the rails read `side`, nothing else needed
     side: fen.split(" ")[1] === "b" ? "b" : undefined,
@@ -234,17 +253,24 @@ function addMines(list, cands, now, solvedIds) {
  * @param {object} a the pass's arrays {fens, sans, tags}, for the plies it
  *        judged NOT to be ??
  * @param {"w"|"b"} side the side the pass mined
- * @param {object} rev {budget, src} of the new pass
- * @returns {{list: object[], updated: string[], retired: string[]}}
+ * @param {object} rev {budget, src, from} of the new pass
+ * @returns {{list: object[], updated: string[], retired: string[], filled: string[]}}
+ *          `filled` are drills that only learnt their source game here: worth
+ *          saving for, not worth telling the player about.
  */
 function reviseMines(list, cands, a, side, rev) {
   const budget = rev ? Number(rev.budget) || 0 : 0;
   const deepEnough = (m) => !m.rev || budget >= (Number(m.rev.budget) || 0);
   const byId = new Map(list.map((m) => [m.id, m]));
-  const updated = [], retired = [];
+  const updated = [], retired = [], filled = [];
   for (const c of cands) {
     const m = byId.get(c.id);
     if (!m || !deepEnough(m)) continue;
+    // 7.2: a drill banked before there was a `from` learns its source from
+    // the first later pass that meets it again. Only ever filled in, never
+    // overwritten — the first game to mine a position stays its answer, the
+    // same rule dedup already enforces for new drills.
+    if (!m.from && c.from) { m.from = c.from; filled.push(m.id); }
     const changed = m.solution[0] !== c.solution[0] || m.loss !== c.loss;
     if (!changed) continue;
     m.solution = [c.solution[0]];
@@ -263,7 +289,7 @@ function reviseMines(list, cands, a, side, rev) {
     }
   }
   const gone = new Set(retired);
-  return { list: gone.size ? list.filter((m) => !gone.has(m.id)) : list, updated, retired };
+  return { list: gone.size ? list.filter((m) => !gone.has(m.id)) : list, updated, retired, filled };
 }
 
 /** Is `san` an answer this drill accepts — the stored best, or an alternative
