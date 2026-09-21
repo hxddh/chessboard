@@ -208,6 +208,48 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   }
 }
 
+// --- 3. 7.0 存下来的那一批「五位数厘兵」,开库时要就地改正 -------------------
+{
+  // 7.0 的分析那一趟写 losses 时没有钳制到 ±EVAL_WINDOW —— 6.1 在棋盘上修掉的
+  // 正是这件事。于是一局棋里引擎一旦报杀,那一手就被记成九千多厘兵,诊断按阶段
+  // 一平均,不管这个人残局下得怎么样,结论都是「该练残局」。
+  //
+  // 这里喂进去的就是 7.0 写出来的形状:losses 是没钳制的原始差值,scalars 在
+  // 旁边。开库时应当拿 scalars 重算一遍,而不是把存下来的数字将就着用。
+  const games = [];
+  for (let i = 0; i < 25; i++) {
+    const scalars = [0];
+    for (let ply = 0; ply < 80; ply++) scalars.push(ply % 2 === 0 ? scalars[ply] - 30 : scalars[ply] + 30);
+    scalars[71] = -9950; // 第 36 回合白方走完,引擎报黑方杀棋
+    const tags = [], losses = [];
+    for (let ply = 0; ply < 80; ply++) {
+      const w = ply % 2 === 0;
+      tags.push(null);
+      // 7.0 的算式,原样:Math.max(0, (a - b) * mover)
+      losses.push(Math.max(0, (scalars[ply] - scalars[ply + 1]) * (w ? 1 : -1)));
+    }
+    games.push({
+      id: "mate" + i, t: 1758000000000 + i, white: "hxddh", black: "rival",
+      result: "0-1", plies: 80, sans: "e4", side: "w", outcome: "loss",
+      motifs: {}, an: { acc: { w: 62, b: 55 }, acpl: { w: 60, b: 70 }, tags, losses, scalars },
+    });
+  }
+  const worst = Math.max(...games[0].an.losses);
+  assert(worst > 9000, "种子确实是 7.0 那种没钳制的数字", String(worst));
+
+  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  const { page, errs } = await open(ctx);
+  await page.click("#lib-diagnose");
+  await page.waitForTimeout(300);
+  const text = await page.textContent("#lib-diag");
+  // 白方残局的八手:七手各亏 30,报杀那一手钳到 1000 →(210+1000)/8 = 151
+  assert(/151 厘兵\/手/.test(text), "报杀那一手按窗口上限算,不是九千多", text);
+  assert(!/1[0-9]{3} 厘兵/.test(text), "诊断里不该出现四位数的每手厘兵", text);
+  assert(/30 厘兵\/手/.test(text), "开局中局照旧是 30 厘兵/手", text);
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

@@ -4898,7 +4898,37 @@ import { createStore } from "./store.js";
     const s = Persist.read("library").value;
     if (!s) return { games: [], names: [] };
     const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
+    for (const g of games) rescoreLosses(g);
     return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
+  }
+
+  /**
+   * Recompute a stored game's per-ply losses from the scalars beside them.
+   *
+   * 7.0 wrote this array unclamped (see analyseLibraryGame), so a library
+   * analysed under 7.0 carries plies charged five figures of centipawns, and
+   * the diagnosis built from it says 残局 whatever the player actually does
+   * there. Capping the stored number at 1000 would not undo it: mate-in-5 to
+   * mate-in-9 is 0 once both ends are in the window and 400 once they are not.
+   * The scalars are in the record, so the honest repair is to run lossOf over
+   * them again rather than to salvage the arithmetic. Idempotent — a record
+   * written by this version comes out of it unchanged — which is why it needs
+   * no version flag and can simply run on every load.
+   */
+  function rescoreLosses(g) {
+    const an = g && g.an;
+    if (!an || !Array.isArray(an.scalars) || !Array.isArray(an.losses)) return;
+    const sc = an.scalars;
+    if (sc.length !== an.losses.length + 1) return; // not a shape we wrote
+    // side to move at ply 0, straight off the stored FEN — no board needed,
+    // and this runs over the whole library on every boot
+    let side = typeof g.fen === "string" && g.fen.trim().split(/\s+/)[1] === "b" ? "b" : "w";
+    an.losses = an.losses.map((old, i) => {
+      const a = sc[i], b = sc[i + 1];
+      const out = a == null || b == null ? 0 : Review.lossOf(a, b, side);
+      side = side === "w" ? "b" : "w";
+      return Number.isFinite(out) ? out : Number(old) || 0;
+    });
   }
   {
     const loaded = loadLibrary();
@@ -5028,14 +5058,20 @@ import { createStore } from "./store.js";
       const mover = fens[i].split(" ")[1] === "w" ? "w" : "b";
       return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
     });
-    // centipawn loss per ply, from the mover's chair, floored at 0: a move
-    // that improved the engine's own assessment did not "lose" a negative
-    // amount, and letting it do so would net out somebody's real blunders
+    // Centipawn loss per ply, from the mover's chair — Review.lossOf and not
+    // arithmetic of its own. It floors at 0 (a move that improved the engine's
+    // own assessment did not "lose" a negative amount) and, the part this used
+    // to be missing, it pulls both ends into ±EVAL_WINDOW first. 6.1 fixed
+    // exactly that on the board: a ply where a fast search announced mate and
+    // the next where it only reported a large plus differ by ~9000, and
+    // charging that difference to the mover turns one endgame ply into 300
+    // games' worth of blunders. The game-level ACPL always went through
+    // lossesBySide and was safe; this array is what the diagnosis folds into
+    // per-phase ACPL, so the unclamped copy was the one that reached advice.
     const losses = sans.map((_, i) => {
       const a = scalars[i], b = scalars[i + 1];
       if (a == null || b == null) return 0;
-      const mover = fens[i].split(" ")[1] === "w" ? 1 : -1;
-      return Math.max(0, (a - b) * mover);
+      return Review.lossOf(a, b, fens[i].split(" ")[1] === "w" ? "w" : "b");
     });
     // What the player missed, at the plies where they went wrong: the motif of
     // the engine's OWN move in that position, not of the move they played. A
