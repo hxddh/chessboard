@@ -739,6 +739,9 @@
         <div class="close-row split" id="lib-acts">
           <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入棋谱文件</button>
           <span class="btn-pair">
+            <!-- label is 「全部 N 局」, filled by renderLibrary() in the
+                 interface language, so the markup carries no text -->
+            <button type="button" class="act-btn" id="lib-open" hidden></button>
             <button type="button" class="act-btn" id="lib-analyse" hidden></button>
             <button type="button" class="act-btn" id="lib-diagnose" hidden data-i18n="lib.diagnose">看诊断</button>
           </span>
@@ -825,6 +828,47 @@
         <p class="hint" id="hist-count" hidden></p>
         <p class="hint" data-i18n="hist.hint">点一局载入棋盘复盘:可跑「分析」看回顾报告、导出 PGN、另存到存档槽</p>
         <div class="close-row"><button type="button" class="tool-btn" id="hist-close" data-i18n="act.close">关闭</button></div>
+      </div>
+    </div>
+
+    <!-- 7.1 (v7-1-plan B2/A1): the games themselves.
+         7.0 stored every game's moves and its whole analysis and then had no
+         screen that could open one: the library was a counter and a statistics
+         page, and the statistics page was a dead end. This list is the way
+         back to the board, and the diagnosis rows filter it — which is what
+         v7-plan §6.2 asked for in the first place ("每一条都必须点到一个可
+         执行的下一步"). Built on the same parts as 对局历史 above it. -->
+    <div class="modal-bg" id="lib-list-modal" role="dialog" aria-labelledby="lib-list-title">
+      <div class="modal wide">
+        <h3 id="lib-list-title" data-i18n="lib.listTitle">棋谱库</h3>
+        <p class="hint" id="lib-pick-note" hidden></p>
+        <div class="hist-filters">
+          <span class="setting-k" id="lib-result-k" data-i18n="hist.byResult">按结果筛选</span>
+          <div class="theme-row" id="lib-result-seg" role="group" aria-labelledby="lib-result-k">
+            <button type="button" data-lres="all" class="active" data-i18n="hist.any">全部</button>
+            <button type="button" data-lres="win" data-i18n="hist.win">胜</button>
+            <button type="button" data-lres="loss" data-i18n="hist.loss">负</button>
+            <button type="button" data-lres="draw" data-i18n="hist.draw">和</button>
+          </div>
+          <span class="setting-k" id="lib-color-k" data-i18n="hist.byColor">按执子筛选</span>
+          <div class="theme-row" id="lib-color-seg" role="group" aria-labelledby="lib-color-k">
+            <button type="button" data-lcol="all" class="active" data-i18n="hist.any">全部</button>
+            <button type="button" data-lcol="w" data-i18n="hist.white">执白</button>
+            <button type="button" data-lcol="b" data-i18n="hist.black">执黑</button>
+          </div>
+          <span class="setting-k" id="lib-sort-k" data-i18n="lib.bySort">排序</span>
+          <div class="theme-row" id="lib-sort-seg" role="group" aria-labelledby="lib-sort-k">
+            <button type="button" data-lsort="t" class="active" data-i18n="lib.sortNew">最近导入</button>
+            <button type="button" data-lsort="acc" data-i18n="lib.sortWorst">我下得最差</button>
+          </div>
+        </div>
+        <div class="pick-list" id="lib-list"></div>
+        <p class="hint" id="lib-list-count" hidden></p>
+        <p class="hint" data-i18n="lib.listHint">点一局载入棋盘 —— 分析结果一起带过去，引擎不会重跑一遍。</p>
+        <div class="close-row split">
+          <button type="button" class="act-btn" id="lib-pick-clear" hidden data-i18n="lib.clearPick">清除筛选</button>
+          <button type="button" class="tool-btn" id="lib-list-close" data-i18n="act.close">关闭</button>
+        </div>
       </div>
     </div>
 

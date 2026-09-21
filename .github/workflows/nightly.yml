@@ -1,0 +1,41 @@
+name: nightly
+
+# The full engine sweep, once a day on main.
+#
+# 7.1 moved the mined-puzzle gate out of the release path and into a sample
+# (v7-1-plan §3.2): 1002 puzzles at depth 18 with a clean transposition table
+# each is about two hours, which turned every release into an afternoon. The
+# sample is a real gate — it fails on a stored answer more than 50cp worse
+# than the engine's choice — but it is 15% of the bank, so the other 85% has
+# to be searched somewhere. Here.
+#
+# Nothing else lives in this workflow on purpose. A nightly job that also
+# runs the fast suites is a nightly job whose failures are usually not about
+# the thing it exists for.
+on:
+  schedule:
+    # 03:20 UTC. Not on the hour: a cron shared with everyone else's cron is
+    # a cron that queues.
+    - cron: "20 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    # The whole sweep, and it is allowed to take as long as it takes.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
+      # Every one of `npm run test:engine`, mined gate included and unsampled.
+      # Each script exits 0 with a notice if the vendored engine is missing,
+      # so a stripped checkout reports "skipped" rather than a false green.
+      - name: engine checks (full)
+        run: npm run test:engine

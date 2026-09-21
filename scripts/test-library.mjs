@@ -156,6 +156,28 @@ const T0 = 1758000000000;
   // 没认领的局不进统计
   const mixed = games.concat([{ id: "z", t: T0, side: null, an: { acc: {}, tags: [], losses: [] } }]);
   assert(L.diagnose(mixed, 20).games === 40, "认不出是谁下的那局，不折进「你的」数字里");
+
+  // [SetUp] 局：起手方和起手手数都写在 FEN 里，7.0 两个都没读
+  //
+  // 下面每一局都是「黑方走 ply 0，黑方每一手丢 200，白方一手不丢」，而且这盘棋
+  // 从第 30 手开始。读不出 FEN 的版本会把这 20 局算成「白方视角、开局、每手 0」
+  // —— 把玩家自己的每一手都记到对手账上，再把残局的局面归进开局。
+  {
+    const tags = new Array(40).fill(null), losses = new Array(40).fill(0);
+    for (let i = 0; i < 40; i += 2) { losses[i] = 200; tags[i] = "??"; }
+    const setup = Array.from({ length: 20 }, (_, i) => ({
+      id: "s" + i, t: T0 + i, side: "b", plies: 40,
+      fen: "8/8/4k3/8/8/4K3/8/8 b - - 0 30",
+      outcome: "loss", motifs: {}, an: { acc: { b: 50 }, tags, losses },
+    }));
+    const d = L.diagnose(setup, 20);
+    assert(d.phase.end.acpl === 200,
+      "FEN 说黑方先走，统计的就该是黑方那些手", JSON.stringify(d.phase));
+    // 第 30–32 手还算中局（MIDDLE_UNTIL = 32），之后是残局；开局一手都没有
+    assert(d.phase.opening.plies === 0 && d.phase.middle.plies === 60 && d.phase.end.plies === 340,
+      "FEN 说从第 30 手开始，这些手就不是开局", JSON.stringify(d.phase));
+    assert(d.peak && d.peak.move === 30, "第一手是第 30 手，不是第 1 手", JSON.stringify(d.peak));
+  }
 }
 
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

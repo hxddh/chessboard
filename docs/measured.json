@@ -33,6 +33,25 @@
     "changedBestPct": 33,
     "newAtDeep": 2
   },
+  "motifCoverage": {
+    "what": "复盘把失误解释成一个母题的覆盖率 —— 用的是引擎在你走错之前那一手的母题",
+    "script": "scripts/test-motif.mjs --record",
+    "caveat": "只量了覆盖率。正确性没有人工抽样核对过：motif.js 只认五个母题、而且只在几何事实确凿时才开口，不确定就返回 null —— 这是构造上的正确性论证，不是一次抽样。人工核对属于 docs/manual-check.md。",
+    "movetimeMs": 200,
+    "games": 28,
+    "plies": 1320,
+    "mistakes": 88,
+    "explained": 20,
+    "explainedPct": 22.7,
+    "blunders": 47,
+    "blundersExplained": 14,
+    "blundersExplainedPct": 29.8,
+    "byMotif": {
+      "pin": 9,
+      "fork": 8,
+      "skewer": 3
+    }
+  },
   "multipvPhase": {
     "what": "新手档自己的搜索设置下,每个局面实际返回几条候选、候选之间差多少分",
     "script": "scripts/test-analysis.mjs --record",

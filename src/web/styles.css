@@ -2289,6 +2289,25 @@
       font-size: 0.8125rem;
       padding: 2px 2px;
     }
+    /* 7.1: a statistics row that names a subset of games is a door to those
+       games (v7-1-plan A1). Styled as the row it already was, plus the one
+       affordance that says it can be pressed — a button element so the
+       keyboard and a screen reader get it for free. */
+    button.stat-row, button.hint-link {
+      width: 100%; font: inherit; text-align: left;
+      background: transparent; border: 0; border-bottom: 1px dashed transparent;
+      cursor: pointer; color: inherit;
+    }
+    button.stat-row:hover, button.hint-link:hover,
+    button.stat-row:focus-visible, button.hint-link:focus-visible {
+      border-bottom-color: var(--accent);
+    }
+    button.stat-row:hover .stat-k, button.stat-row:focus-visible .stat-k { color: var(--accent); }
+    button.hint-link { padding: 2px 2px; font-size: 0.8125rem; color: var(--muted); }
+    button.hint-link:hover, button.hint-link:focus-visible { color: var(--accent); }
+    /* 7.1: the diagnosis charts. Width from the dialog, height set per chart
+       in JS; the canvas backing store is device-pixel sized there. */
+    .diag-chart { display: block; width: 100%; margin: 6px 0 2px; }
     .stat-k { color: var(--muted); }
     /* Every number in the app is tabular — see --font-num. The clock, the
        evaluations and the move numbers already were; the statistics, the

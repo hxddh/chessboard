@@ -3144,7 +3144,10 @@ for (const lang of CONTENT_LANGS) {
   const fens = [g.fen()];
   const sans = ["e4", "e5"];
   for (const m of sans) { g.move(m); fens.push(g.fen()); }
-  const base = { fens, sans, tags: ["??", "??"], bests: ["g1f3", "g8f6"], scalars: [30, -370, 20] };
+  // losses are the CALLER's, already clamped to the eval window — 7.1 moved
+  // that arithmetic out of this module (v7-1-plan C4)
+  const base = { fens, sans, tags: ["??", "??"], bests: ["g1f3", "g8f6"],
+    scalars: [30, -370, 20], losses: [400, 390] };
 
   // only the asked-for side is mined, and the answer is the engine's move in SAN
   const w = M.candidatesFrom(base, "w", C);
@@ -3164,6 +3167,18 @@ for (const lang of CONTENT_LANGS) {
     "a judgement without a stored answer is not a drill");
   assert(M.candidatesFrom({ ...base, bests: ["e2e4", "g8f6"] }, "w", C).length === 0,
     "best === played can happen on a lost position — nothing to teach, skip");
+
+  // a pass that hands over no losses still mints drills — they just carry no
+  // cost figure, the same as a terminal ply always has
+  {
+    const noLoss = M.candidatesFrom({ ...base, losses: undefined }, "w", C);
+    assert(noLoss.length === 1 && noLoss[0].loss === null,
+      "no losses from the caller → a drill with no cost, not a wrong cost");
+    const mate = M.candidatesFrom({ ...base, losses: [1000, 390] }, "w", C);
+    assert(mate[0].loss === 1000,
+      "a thrown-away mate costs the most the scale can express, not 99.5 pawns",
+      String(mate[0].loss));
+  }
 
   // the id is the position and the sin, not the game — re-analysis dedups
   assert(M.mineId(fens[0], "e4") === M.mineId(fens[0], "e4") &&
@@ -3186,6 +3201,46 @@ for (const lang of CONTENT_LANGS) {
     const r2 = M.addMines(r.list, [{ id: "mine:new2", cat: "mine", fen: "f3", solution: ["c"] }], 10000, new Set());
     assert(r2.dropped[0] === "mine:x0", "with nothing solved, the oldest retires");
   }
+  // 7.1 §6.3 (v7-1-plan §1.2): a bulk import must not evict every motif the
+  // player had been working on. One import is one batch with one timestamp,
+  // and the old oldest-first rule walked straight through them.
+  {
+    const MOTIFS = ["fork", "pin", "skewer", "discovered"];
+    const book = [];
+    for (let i = 0; i < M.MAX_MINES; i++) {
+      book.push({ id: "mine:old" + i, cat: "mine", fen: "f" + i, solution: ["a"],
+        motif: MOTIFS[i % MOTIFS.length], t: 1000 + i });
+    }
+    // 200 fresh drills, all one motif, all stamped with the same import time
+    const flood = [];
+    for (let i = 0; i < 200; i++) {
+      flood.push({ id: "mine:new" + i, cat: "mine", fen: "n" + i, solution: ["b"], motif: "fork" });
+    }
+    const r = M.addMines(book, flood, 99999, new Set());
+    assert(r.list.length === M.MAX_MINES, "上限照旧是上限", String(r.list.length));
+    const left = {};
+    for (const m of r.list) left[m.motif] = (left[m.motif] || 0) + 1;
+    for (const k of MOTIFS) {
+      if (k === "fork") continue;
+      assert(left[k] >= M.KEEP_PER_MOTIF,
+        "一次两百道的导入之后，「" + k + "」还留着它最近的 " + M.KEEP_PER_MOTIF + " 道",
+        JSON.stringify(left));
+    }
+    // the ones kept are the NEWEST of each motif, not an arbitrary few
+    const pins = r.list.filter((m) => m.motif === "pin").map((m) => m.t).sort((a, b) => b - a);
+    const allPins = book.filter((m) => m.motif === "pin").map((m) => m.t).sort((a, b) => b - a);
+    assert(pins[0] === allPins[0], "留下的是这个母题最近的那些，不是随便几道");
+    // and the quota is a preference, not a guarantee: the cap still wins
+    const onlyOne = [];
+    for (let i = 0; i < M.MAX_MINES; i++) {
+      onlyOne.push({ id: "mine:z" + i, cat: "mine", fen: "z" + i, solution: ["a"], motif: "fork", t: i });
+    }
+    const r2 = M.addMines(onlyOne, [{ id: "mine:zz", cat: "mine", fen: "zz", solution: ["c"], motif: "fork" }],
+      50000, new Set());
+    assert(r2.list.length === M.MAX_MINES && r2.dropped.length === 1,
+      "所有幸存者都在配额里的时候，上限依然是上限", JSON.stringify(r2.dropped));
+  }
+
   // --- 5.1: a deeper pass may correct or withdraw what a quick pass banked --
   {
     const g = new C(); const fen = g.fen();
@@ -3270,13 +3325,26 @@ for (const lang of CONTENT_LANGS) {
     "achievement totals stay on the frozen book — badges must not drift with a set that retires itself");
   // mining happens where the judgement is born, for the player's side only
   assert(/if \(store\.session\.mode === "ai"\) \{[\s\S]{0,400}Mistakes\.candidatesFrom\(pass, store\.session\.humanColor, Chess, rev\)/.test(appSrc) &&
-         /const pass = \{ fens, sans: h, tags, bests, scalars, pvs \}/.test(appSrc),
+         /const pass = \{ fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses\(fens, scalars\) \}/.test(appSrc),
     "analyzeGame banks the human side's ?? plies, and only in games with a human side");
+  // 7.1 C4: the drill's cost comes from the one clamped routine, not from a
+  // third copy of the subtraction (v7-1-plan §3.4)
+  assert(/const raw = a\.losses \? a\.losses\[i\] : null;/
+           .test(fs.readFileSync(path.join(root, "src/web/js/mistakes.js"), "utf8")),
+    "mistakes.js takes the loss from the caller — the clamp has one home");
   // 5.1: …after letting the pass revise what the book already says about this
   // game — corrected answers and withdrawn ?? — through the same module
   assert(/Mistakes\.reviseMines\(store\.session\.mines, cands, pass, store\.session\.humanColor, rev\)/.test(appSrc) &&
          /Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(appSrc),
     "a deeper pass revises the book before extending it (audit F2)");
+  // 7.1: and the library's pass banks them too — v7-plan §6.3, which 7.0
+  // shipped without and then recorded in neither of §10's two tables
+  assert(/run\.mined \+= mineLibraryGame\(next, r\.pass\)/.test(appSrc),
+    "每分析完一局棋谱库的棋，就把这一局的失误收进错题本");
+  assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(appSrc),
+    "棋谱库走的是和棋盘同一套规则，先修正再扩充，不是第二份实现");
+  assert(/withMotifs\(Mistakes\.candidatesFrom\(/.test(appSrc),
+    "每道错题带着它的母题 —— 分层保留靠它，否则一次导入会冲掉一整类");
   assert(/Mistakes\.isAccepted\(p, mv\.san\)/.test(appSrc) && /Mistakes\.judgeAlt\(cpBest, cpAlt, side, Review\.MISTAKE\)/.test(appSrc),
     "a personal drill accepts a verified alternative, not only the stored string (audit F3)");
   assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
@@ -3465,6 +3533,34 @@ for (const lang of CONTENT_LANGS) {
     assert(PL.stepDone({ kind: "motif", motif: "fork", n: 2 }, b, a2) && !PL.stepDone({ kind: "motif", motif: "pin", n: 2 }, b, a2),
       "母题步按该母题的答题数记");
   }
+  // 7.1 (v7-1-plan §1.3): the library is a signal the coach can see
+  {
+    // someone who imported an archive and has answered nothing here yet: the
+    // puzzle tally is empty, so 7.0 gave them no weakness step at all
+    const fresh = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, weakMotif: null,
+      libMotif: "fork", libQueued: 0, lessonNext: -1, opUnsolved: false, playedToday: true });
+    assert(fresh.steps.map((x) => x.kind).join(",") === "motif" &&
+           fresh.steps[0].motif === "fork" && fresh.steps[0].from === "lib",
+      "题库战绩一片空白时，弱项从你自己的棋里读", JSON.stringify(fresh.steps));
+    // …but the tally still wins when it has something to say: it measures
+    // answers this app watched
+    const both = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, weakMotif: "pin",
+      libMotif: "fork", libQueued: 0, lessonNext: -1, opUnsolved: false, playedToday: true });
+    assert(both.steps[0].motif === "pin" && both.steps[0].from === undefined,
+      "题库有话说的时候，还是题库说了算");
+    const queued = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, weakMotif: null,
+      libMotif: null, libQueued: 12, lessonNext: -1, opUnsolved: false, playedToday: true });
+    assert(queued.steps.map((x) => x.kind).join(",") === "lib" && queued.steps[0].n === 12,
+      "导进来没分析的棋，本身就是今天该干的一件事", JSON.stringify(queued.steps));
+    assert(PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, weakMotif: null, libMotif: null,
+      libQueued: 0, lessonNext: -1, opUnsolved: false, playedToday: true }).steps.length === 0,
+      "库里没有欠着的，就不摆这一步 — 这一页一贯的规矩");
+    const b = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, libAnalysed: 3 });
+    const a2 = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, libAnalysed: 4 });
+    assert(PL.stepDone({ kind: "lib", n: 12 }, b, a2) && !PL.stepDone({ kind: "lib", n: 12 }, b, b),
+      "分析完一局就算这一步做到了 — 整个队列清空要一小时，那不是一步");
+  }
+
   // completion is counter deltas, so quitting mid-step costs nothing
   const before = PL.snap({ owed: 3, byCat: { def: 10, mine: 2 }, lessonsDone: 1, opSolved: 5, games: 7 });
   const after = (o) => PL.snap(Object.assign({ owed: 3, byCat: { def: 10, mine: 2 }, lessonsDone: 1, opSolved: 5, games: 7 }, o));
@@ -3499,6 +3595,15 @@ for (const lang of CONTENT_LANGS) {
     "课表在 session 与 game 两个切片上都会醒 — 对局一步也是进度");
   assert(/renderPuzzleTally\(\);\s*renderTrends\(\)/.test(appSrc),
     "记录页画完战绩画进步");
+  // 7.1 A3: the coach and the progress page can see the library
+  assert(/playedToday: loadStats\(\)\.games\.some[\s\S]{0,200}store\.session\.library\.some\(\(g\) => g\.side && Progress\.dayKey\(libPlayedAt\(g\)\) === today\)/.test(appSrc),
+    "在别处下的棋也是今天下过棋 —— 7.0 只读本地战绩，导进来今早的快棋还被劝去下一盘");
+  assert(/libMotif: libWeakMotif\(\)/.test(appSrc) && /libQueued: Library\.pending\(/.test(appSrc),
+    "日课读得到棋谱库说的弱项和还欠着的分析");
+  assert(/const d = Library\.diagnose\(store\.session\.library, LIB_MIN_GAMES\);\s*return d\.enough/.test(appSrc),
+    "教练用的是诊断页同一个门槛 —— 两个门槛就是两张嘴");
+  assert(/Progress\.accSeries\(loadStats\(\)\.games\.concat\(libPoints\), 30\)/.test(appSrc),
+    "准确率走势把棋谱库里的棋并进同一条轴");
   assert(/function dailyJump\(step\) \{[\s\S]{0,400}#mode-seg button\[data-mode=/.test(appSrc),
     "跳步走的是模式段自己的点击路径,不是旁路");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
@@ -5216,6 +5321,30 @@ for (const lang of CONTENT_LANGS) {
     // Move one of them and this fails until the scan is re-run, because the
     // recorded agreement rates describe 50/100/300 and nothing else.
     {
+      // 7.1 (v7-1-plan §3.1): §6.4's acceptance, and the prose that quotes it.
+      // The same rule as the tier figures — a re-record has to drag the
+      // documents with it, or the number in the release notes is a number
+      // nobody ran.
+      {
+        const mc = measured.motifCoverage;
+        assert(!!mc && Number.isFinite(mc.explainedPct),
+          "docs/measured.json holds a motif-coverage run (§6.4 的验收)");
+        if (mc) {
+          assert(mc.games === 28 && mc.plies === 1320,
+            "覆盖率是在那 28 局 1320 半着的语料上量的，不是别的样本 (" + mc.games + "/" + mc.plies + ")");
+          assert(typeof mc.caveat === "string" && /正确性没有人工抽样核对过/.test(mc.caveat),
+            "记录里带着「只量了覆盖率」那句话 —— 数字单独流传出去就是在骗人");
+          for (const rel of ["README.md", ".github/release-notes/v7.1.0.md", "docs/v7-1-plan.md"]) {
+            const text = fs.readFileSync(path.join(root, rel), "utf8");
+            if (!/母题解释|覆盖率/.test(text)) continue;
+            const nums = [...text.matchAll(/(\d+(?:\.\d+)?)%\s*的失误/g)].map((x) => Number(x[1]));
+            for (const n of nums) {
+              assert(n === mc.explainedPct,
+                rel + " 引的覆盖率就是量出来的那个 (" + n + " vs " + mc.explainedPct + ")");
+            }
+          }
+        }
+      }
       const scan = measured.scanNoise;
       assert(!!scan && !!scan.byMovetime, "docs/measured.json holds a scan-noise run");
       if (scan && scan.thresholds) {
@@ -5688,6 +5817,18 @@ for (const lang of CONTENT_LANGS) {
       where + " runs every suite in " + group + " (" + want.length + ")" +
       (missing.length ? " —— 漏了 " + missing.join(", ") : ""));
   }
+  // 7.1 (v7-1-plan §3.2): the engine gate is tiered now, and a tier that
+  // quietly stops running is exactly the failure this whole block exists to
+  // prevent. Three places, one rule each.
+  const nightlyWf = fs.readFileSync(path.join(root, ".github/workflows/nightly.yml"), "utf8");
+  assert(/--sample=150/.test(checksWf),
+    "PR CI 跑抽样的题库门禁 —— 7.0 之前 PR 上一条引擎检查都没有");
+  assert(/npm run test:engine:sample/.test(releaseWf) && !/run: npm run test:engine$/m.test(releaseWf),
+    "发布跑的是抽样档，不是两个半小时的全量");
+  assert(/run: npm run test:engine$/m.test(nightlyWf),
+    "全量那一趟有人跑 —— 抽样只覆盖 15%，剩下的 85% 在 nightly");
+  assert(scriptsIn(pkg.scripts["test:engine:sample"]).length === scriptsIn(pkg.scripts["test:engine"]).length,
+    "抽样档少的是搜索量，不是脚本数 —— 抽样不等于少跑几个套件");
 }
 
 // --- 7.0: every FEN this app ships must be a position that can exist ---------
@@ -5805,7 +5946,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 119;
+  const REGISTERED = 127;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }

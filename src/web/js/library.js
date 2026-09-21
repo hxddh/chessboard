@@ -178,13 +178,42 @@ function phaseOf(moveNo) {
 }
 
 /**
+ * Where a game's ply 0 sits: who played it, and what move number it was.
+ *
+ * `entryFrom` keeps a `[SetUp]`/`[FEN]` game's starting position, and such a
+ * game is a normal thing to find in an archive — a study, an endgame, a
+ * position someone sent you. Two fields of that FEN decide how every ply of
+ * the game is filed, and 7.0 read neither: ply 0 is Black's whenever the FEN
+ * says Black is to move, and the game's first move number is the FEN's
+ * full-move counter, not 1. Assuming "even ply = White, move = i/2 + 1"
+ * credits every one of the player's moves to their opponent and files a
+ * position that began at move 30 under 开局.
+ *
+ * The move-number rule is review.js's `moveNumber`, and deliberately a second
+ * copy of it: this module is pure by design and imports nothing, which is what
+ * lets the tests run it in a bare context.
+ * @returns {{first: "w"|"b", moveNo: number}}
+ */
+function startOf(g) {
+  const fen = typeof (g && g.fen) === "string" ? g.fen.trim() : "";
+  if (!fen) return { first: "w", moveNo: 1 };
+  const parts = fen.split(/\s+/);
+  const n = Number(parts[5]);
+  return {
+    first: parts[1] === "b" ? "b" : "w",
+    moveNo: Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1,
+  };
+}
+
+/**
  * Fold one game's analysis into the running totals.
  *
  * `an` is what the app's analysis pass produced for this game, in the shape
  * the report already uses: `{ acc: {w,b}, acpl: {w,b}, tags: [], losses: [] }`
- * where `tags[i]` and `losses[i]` belong to ply `i` (0-based, so ply 0 is
- * White's first move). Only the player's own plies count — the opponent's
- * blunders are not this player's to learn from.
+ * where `tags[i]` and `losses[i]` belong to ply `i` (0-based — ply 0 is the
+ * first move of the game, which is White's unless the game started from an
+ * edited position; see `startOf`). Only the player's own plies count — the
+ * opponent's blunders are not this player's to learn from.
  */
 function foldGame(totals, g) {
   if (!g || !g.an || !g.side) return totals;
@@ -198,10 +227,13 @@ function foldGame(totals, g) {
   }
   const tags = Array.isArray(an.tags) ? an.tags : [];
   const losses = Array.isArray(an.losses) ? an.losses : [];
+  const start = startOf(g);
+  const other = start.first === "w" ? "b" : "w";
   for (let i = 0; i < tags.length; i++) {
-    // ply i is White's when i is even
-    if ((i % 2 === 0 ? "w" : "b") !== side) continue;
-    const moveNo = Math.floor(i / 2) + 1;
+    if ((i % 2 === 0 ? start.first : other) !== side) continue;
+    // a move number advances on White's ply, so a game opening at "1…" puts
+    // Black's ply 0 and White's ply 1 in the same move
+    const moveNo = start.moveNo + Math.floor((i + (start.first === "b" ? 1 : 0)) / 2);
     const ph = totals.phase[phaseOf(moveNo)];
     ph.plies++;
     const loss = Number(losses[i]);

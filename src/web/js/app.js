@@ -178,7 +178,7 @@ import { createStore } from "./store.js";
     const h = sanHistory();
     const at = h.length;
     if (!at) return;
-    announce(ChessReview.moveNumber(at - 1, "w") + (at % 2 ? ". " : "… ") + h[at - 1]);
+    announce(boardMoveNo(at - 1) + (at % 2 ? ". " : "… ") + h[at - 1]);
   }
 
   /** a game restored from the save that was already filed — see recordedId */
@@ -356,6 +356,11 @@ import { createStore } from "./store.js";
       toastTimer: null,
       confirmResolver: null,
       histFilter: { result: "all", color: "all" },
+      // 7.1: the library list's own filters, plus the one the diagnosis sets
+      // when a row there is clicked (`libPick`). Kept apart so that clearing
+      // the diagnosis's filter does not also undo "losses only".
+      libFilter: { result: "all", color: "all", sort: "t" },
+      libPick: null,
       promoResolver: null,
       /** Modal list picker → index of the chosen entry, or null when cancelled. */
       pickResolver: null,
@@ -652,7 +657,7 @@ import { createStore } from "./store.js";
     const probe = new Chess(at.fen);
     moveSound(probe.move({ from, to, promotion: promotion || undefined }), probe);
     store.commit("game", "action");
-    announce(ChessReview.moveNumber(ids.length - 2, "w") + ((ids.length - 1) % 2 ? ". " : "… ") + child.san);
+    announce(boardMoveNo(ids.length - 2) + ((ids.length - 1) % 2 ? ". " : "… ") + child.san);
     saveGame();
     return child;
   }
@@ -725,6 +730,30 @@ import { createStore } from "./store.js";
   function startFen() {
     const h = game.header();
     return h && h.SetUp === "1" && h.FEN ? h.FEN : null;
+  }
+
+  /**
+   * Where the game on the board starts: who plays ply 0, and at what move
+   * number. A `[SetUp]`/`[FEN]` game answers both from its FEN; everything
+   * else is White at move 1.
+   *
+   * 7.1: the second half of that used to be assumed rather than read, so a
+   * study handed to you at move 30 was listed, announced and reported as
+   * move 1 (v7-1-plan §7, 计划外). Harmless while such games arrived one at
+   * a time; the library opens them by the dozen.
+   */
+  function gameStart() {
+    const sf = startFen();
+    const parts = sf ? sf.trim().split(/\s+/) : [];
+    const n = Number(parts[5]);
+    return { first: parts[1] === "b" ? "b" : "w",
+      no: Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1 };
+  }
+
+  /** The move number to print for ply `i` of the game on the board. */
+  function boardMoveNo(i) {
+    const st = gameStart();
+    return ChessReview.moveNumber(i, st.first, st.no);
   }
 
   /** Fresh instance at this game's starting position (default or FEN header). */
@@ -3804,8 +3833,8 @@ import { createStore } from "./store.js";
     let mined = 0, revised = 0, withdrawn = 0;
     if (store.session.mode === "ai") {
       const rev = { budget: perMove, src: "auto" };
-      const pass = { fens, sans: h, tags, bests, scalars, pvs };
-      const cands = Mistakes.candidatesFrom(pass, store.session.humanColor, Chess, rev);
+      const pass = { fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses(fens, scalars) };
+      const cands = withMotifs(Mistakes.candidatesFrom(pass, store.session.humanColor, Chess, rev));
       const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
       // 5.1: a deeper pass first corrects what the book already says about
       // this game — a changed answer, a ?? that did not survive the depth —
@@ -3840,6 +3869,57 @@ import { createStore } from "./store.js";
     // long enough that people go and do something else. A toast behind another
     // window is a message that was never delivered.
     if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
+  }
+
+  /**
+   * Centipawn loss for every ply of a pass, from the mover's chair.
+   *
+   * One routine for all three callers — the board's analysis pass, the
+   * library's, and the reload that repairs records 7.0 wrote. It was three
+   * copies until 7.1, and two of them had the same bug: they subtracted the
+   * raw scalars instead of going through `Review.lossOf`, which pulls both
+   * ends into ±EVAL_WINDOW first. 6.1 fixed that on the eval curve for a
+   * reason worth repeating here: one ply where a fast search announced mate
+   * and the next where it only reported a large plus differ by ~9000, and
+   * charging that difference to the mover records the worst blunder the
+   * scale can express against somebody who did nothing wrong.
+   *
+   * `null` — not 0 — where a ply was not measured. Zero is a *measurement*
+   * saying "this move gave away nothing", and averaging it in flatters the
+   * player; every consumer here already skips non-finite entries.
+   * @param {string[]} fens position before each ply, plus the final one
+   * @param {(number|null)[]} scalars evaluation after each, index 0 = start
+   * @returns {(number|null)[]} one entry per ply
+   */
+  function plyLosses(fens, scalars) {
+    const out = [];
+    for (let i = 0; i + 1 < fens.length; i++) {
+      const a = scalars[i], b = scalars[i + 1];
+      out.push(a == null || b == null ? null
+        : Review.lossOf(a, b, fens[i].split(" ")[1] === "w" ? "w" : "b"));
+    }
+    return out;
+  }
+
+  /**
+   * Name what each drill is about, from the move that refutes it.
+   *
+   * The motif of the move the player *played* is rarely anything — a blunder
+   * usually has no pattern; the move that punishes it does, which is the
+   * argument `analyseLibraryGame` already makes about the diagnosis. Here it
+   * pays for something else: `addMines` keeps the newest few drills of every
+   * motif when the cap bites, and it can only do that if a drill says which
+   * motif it is (v7-1-plan §1.2). Unnameable is fine — those share one
+   * bucket, which is the honest reading of "not a pattern".
+   */
+  function withMotifs(cands) {
+    for (const c of cands) {
+      if (!c || c.motif || !c.solution || !c.solution[0]) continue;
+      let m = null;
+      try { m = motifOf(c.fen, c.solution[0], Chess); } catch (_) { m = null; }
+      if (m) c.motif = m;
+    }
+    return cands;
   }
 
   /**
@@ -4447,7 +4527,35 @@ import { createStore } from "./store.js";
       opSolved: ALL_PUZZLES.filter((p) => p.cat === "op" && st.solved[p.id]).length,
       // stats parse deferred: only the game step reads it, and snap() copies
       games: loadStats().games.length,
+      libAnalysed: store.session.library.filter((g) => g.an).length,
     };
+  }
+
+  /**
+   * The day a library game was played, as a Progress day key.
+   *
+   * A PGN `Date` is "2026.09.01" (or partly unknown, "2026.??.??"). Parsed
+   * as local midnight, never as UTC: `dayKey` is local, and an imported game
+   * would otherwise land on the previous day for anyone west of Greenwich.
+   * Falls back to the import timestamp, which is at least a real instant.
+   */
+  function libPlayedAt(g) {
+    const m = /^(\d{4})[.\-/](\d{2})[.\-/](\d{2})$/.exec(String((g && g.date) || "").trim());
+    if (!m) return Number(g && g.t) || 0;
+    const ms = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0).getTime();
+    return Number.isFinite(ms) ? ms : (Number(g && g.t) || 0);
+  }
+
+  /**
+   * The motif the player's own games say catches them, if the sample is there.
+   *
+   * Same call the diagnosis page makes, at the same floor — the coach must
+   * never say something the diagnosis would refuse to say for want of
+   * evidence, and two different floors is how those two start to disagree.
+   */
+  function libWeakMotif() {
+    const d = Library.diagnose(store.session.library, LIB_MIN_GAMES);
+    return d.enough && d.motifs.length ? d.motifs[0].motif : null;
   }
 
   /** What the coach can see today — every signal already existed. */
@@ -4462,7 +4570,13 @@ import { createStore } from "./store.js";
       weakMotif: (Picker.weakestMotif(st, Object.keys(st.mtally || {})) || {}).motif || null,
       lessonNext: LESSONS.findIndex((L) => !store.session.learnState.done[L.id]),
       opUnsolved: ALL_PUZZLES.some((p) => p.cat === "op" && !st.solved[p.id]),
-      playedToday: loadStats().games.some((g) => Progress.dayKey(g.t) === today),
+      // 7.1: a game played on another site today is still a game played
+      // today. Until now this read `stats` alone, so someone who imported
+      // this morning's blitz session was told to go and play one.
+      playedToday: loadStats().games.some((g) => Progress.dayKey(g.t) === today) ||
+        store.session.library.some((g) => g.side && Progress.dayKey(libPlayedAt(g)) === today),
+      libMotif: libWeakMotif(),
+      libQueued: Library.pending(store.session.library).filter((g) => !g.unplayable).length,
     };
   }
 
@@ -4473,6 +4587,7 @@ import { createStore } from "./store.js";
     if (step.kind === "motif") return tf("daily.motif", [t("motif." + step.motif)]);
     if (step.kind === "lesson") return t("daily.lesson");
     if (step.kind === "op") return t("daily.op");
+    if (step.kind === "lib") return tf("daily.lib", [step.n]);
     return t("daily.game");
   }
 
@@ -4554,6 +4669,16 @@ import { createStore } from "./store.js";
       else setSideTab("play", { top: true });
       return;
     }
+    // the library step is the one that asks for time rather than answers:
+    // show the section and start the pass, which is exactly what the player
+    // would have done by hand
+    if (step.kind === "lib") {
+      setSideTab("record", { top: false });
+      const sec = document.getElementById("lib-body");
+      if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "center" });
+      if (!store.session.libRun) runLibraryPass();
+      return;
+    }
     // 5.2: a motif step lands on a puzzle ABOUT that motif — the player's own
     // drill if one is unsolved, else the first canned one — wherever it shelves
     if (step.kind === "motif") {
@@ -4594,7 +4719,13 @@ import { createStore } from "./store.js";
     const streakEl = document.getElementById("trend-streak");
     if (!head || !body || !cv) return;
     const prog = store.session.progress;
-    const series = Progress.accSeries(loadStats().games, 30);
+    // 7.1: the games you played elsewhere are games you played. The library
+    // stores an accuracy per side once a game is analysed, which is the same
+    // measure `stats` records, so the two go on one axis in play order.
+    const libPoints = store.session.library
+      .filter((g) => g.side && g.an && g.an.acc && Number.isFinite(g.an.acc[g.side]))
+      .map((g) => ({ t: libPlayedAt(g), acc: g.an.acc[g.side] }));
+    const series = Progress.accSeries(loadStats().games.concat(libPoints), 30);
     const rows = Progress.weekOverWeek(prog, Date.now())
       .filter((r) => r.now != null || r.prev != null)
       .sort((a, b) => (b.now ?? b.prev) - (a.now ?? a.prev));
@@ -4898,7 +5029,37 @@ import { createStore } from "./store.js";
     const s = Persist.read("library").value;
     if (!s) return { games: [], names: [] };
     const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
+    for (const g of games) rescoreLosses(g);
     return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
+  }
+
+  /**
+   * Recompute a stored game's per-ply losses from the scalars beside them.
+   *
+   * 7.0 wrote this array unclamped (see analyseLibraryGame), so a library
+   * analysed under 7.0 carries plies charged five figures of centipawns, and
+   * the diagnosis built from it says 残局 whatever the player actually does
+   * there. Capping the stored number at 1000 would not undo it: mate-in-5 to
+   * mate-in-9 is 0 once both ends are in the window and 400 once they are not.
+   * The scalars are in the record, so the honest repair is to run lossOf over
+   * them again rather than to salvage the arithmetic. Idempotent — a record
+   * written by this version comes out of it unchanged — which is why it needs
+   * no version flag and can simply run on every load.
+   */
+  function rescoreLosses(g) {
+    const an = g && g.an;
+    if (!an || !Array.isArray(an.scalars) || !Array.isArray(an.losses)) return;
+    const sc = an.scalars;
+    if (sc.length !== an.losses.length + 1) return; // not a shape we wrote
+    // side to move at ply 0, straight off the stored FEN — no board needed,
+    // and this runs over the whole library on every boot
+    let side = typeof g.fen === "string" && g.fen.trim().split(/\s+/)[1] === "b" ? "b" : "w";
+    an.losses = an.losses.map((_, i) => {
+      const a = sc[i], b = sc[i + 1];
+      const out = a == null || b == null ? null : Review.lossOf(a, b, side);
+      side = side === "w" ? "b" : "w";
+      return out;
+    });
   }
   {
     const loaded = loadLibrary();
@@ -5028,15 +5189,7 @@ import { createStore } from "./store.js";
       const mover = fens[i].split(" ")[1] === "w" ? "w" : "b";
       return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
     });
-    // centipawn loss per ply, from the mover's chair, floored at 0: a move
-    // that improved the engine's own assessment did not "lose" a negative
-    // amount, and letting it do so would net out somebody's real blunders
-    const losses = sans.map((_, i) => {
-      const a = scalars[i], b = scalars[i + 1];
-      if (a == null || b == null) return 0;
-      const mover = fens[i].split(" ")[1] === "w" ? 1 : -1;
-      return Math.max(0, (a - b) * mover);
-    });
+    const losses = plyLosses(fens, scalars);
     // What the player missed, at the plies where they went wrong: the motif of
     // the engine's OWN move in that position, not of the move they played. A
     // blunder rarely has a motif; the thing that punished it does, and that is
@@ -5053,16 +5206,57 @@ import { createStore } from "./store.js";
       if (m) motifs[i] = m;
     }
     const a = libAccuracy(fens, scalars, sans);
-    return { an: { acc: a.acc, acpl: a.acpl, tags, losses, scalars, bests, budget: LIB_BUDGET }, motifs };
+    // `pass` is the same shape analyzeGame hands the miner, so the library
+    // feeds 错题自炼 through exactly one set of rules rather than a second
+    // copy of them (v7-1-plan §1.2). Not stored — it is the arrays that are
+    // stored, and this is a view of them for the caller's next step.
+    return { an: { acc: a.acc, acpl: a.acpl, tags, losses, scalars, bests, budget: LIB_BUDGET },
+      motifs, pass: { fens, sans, tags, bests, losses } };
   }
 
   /** Start (or stop) the background pass over everything still unanalysed. */
+  /**
+   * Bank one library game's blunders as drills.
+   *
+   * v7-plan §6.3, which 7.0 skipped: `mistakes.js` has argued since 5.1 that
+   * the one content source no canned book can have is the games this player
+   * really lost — and 7.0 shipped a feature that analysed hundreds of them
+   * and sent not one to the book. `addMines` was called from exactly two
+   * places, both on the board path.
+   *
+   * Same three calls in the same order as the board's pass, deliberately: a
+   * deeper look first REVISES what the book already says about a position
+   * (audit F2), and only then extends it. Nothing here is library-specific
+   * except where the arrays came from.
+   * @returns {number} drills added
+   */
+  function mineLibraryGame(entry, pass) {
+    if (!entry || !entry.side || !pass) return 0;
+    const rev = { budget: LIB_BUDGET, src: "lib" };
+    const cands = withMotifs(Mistakes.candidatesFrom(pass, entry.side, Chess, rev));
+    if (!cands.length) return 0;
+    const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
+    const rv = Mistakes.reviseMines(store.session.mines, cands, pass, entry.side, rev);
+    const r = Mistakes.addMines(rv.list, cands, Date.now(), solvedIds);
+    const dropped = rv.retired.concat(r.dropped);
+    if (!r.added && !dropped.length && !rv.updated.length) return 0;
+    store.session.mines = r.list;
+    saveMines();
+    for (const id of dropped) {
+      delete store.session.puzzleState.solved[id];
+      delete store.session.puzzleState.missed[id];
+    }
+    if (dropped.length) savePuzzleState();
+    if (r.added) { Progress.recordMined(store.session.progress, r.added, Date.now()); saveProgress(); }
+    return r.added;
+  }
+
   async function runLibraryPass() {
     if (store.session.libRun) { store.session.libRun.abort = true; return; }
     if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
     if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
     await stopLiveAnalysis();
-    const run = { abort: false, done: 0, total: Library.pending(store.session.library).length, ply: 0, plies: 0 };
+    const run = { abort: false, done: 0, mined: 0, total: Library.pending(store.session.library).length, ply: 0, plies: 0 };
     store.session.libRun = run;
     renderLibrary();
     try {
@@ -5089,19 +5283,24 @@ import { createStore } from "./store.js";
         const r = await analyseLibraryGame(next, run);
         if (run.abort) break;
         if (!r) { next.unplayable = true; }
-        else { next.an = r.an; next.motifs = r.motifs; }
+        else {
+          next.an = r.an;
+          next.motifs = r.motifs;
+          run.mined += mineLibraryGame(next, r.pass);
+        }
         run.done++;
         saveLibrary();
         renderLibrary();
       }
     } finally {
-      const done = run.done;
+      const done = run.done, mined = run.mined;
       store.session.libRun = null;
       saveLibrary();
       renderLibrary();
+      if (done && mined) toast(tf("lib.minedDone", [done, mined]));
       if (done && !store.ui.appForeground) {
         Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
-          body: tf("ntf.libraryDone", [done]) });
+          body: tf("ntf.libraryDone", [done]) + (mined ? " · " + tf("msg.mined", [mined]) : "") });
       }
     }
   }
@@ -5156,6 +5355,426 @@ import { createStore } from "./store.js";
     }
     const dg = document.getElementById("lib-diagnose");
     if (dg) dg.hidden = analysed.length < LIB_MIN_GAMES;
+    const op = document.getElementById("lib-open");
+    if (op) {
+      op.hidden = !list.length;
+      op.textContent = tf("lib.all", [list.length]);
+    }
+  }
+
+
+  /**
+   * The opening every claimed game was played in, filled in where missing.
+   *
+   * `diagnose()` has counted 开局战绩 since 7.0 and `foldGame` reads `g.eco` —
+   * but nothing in 7.0 ever *set* it, so `d.ecos` was always empty and the
+   * whole section silently never rendered. (The e2e seeded `eco` by hand,
+   * which is exactly why the test passed while the app produced nothing.)
+   *
+   * Cheap and idempotent: no engine, one position lookup per game, and only
+   * for games that lack one. The ECO table is a lazy chunk, so callers that
+   * can wait should await `ChessEco.whenReady` first; called before the table
+   * has landed this fills nothing and is simply called again later.
+   * @returns {number} how many entries it filled
+   */
+  function fillOpenings() {
+    let n = 0;
+    for (const g of store.session.library) {
+      if (g.eco || !g.side || typeof g.sans !== "string") continue;
+      const sans = g.sans.split(" ").filter(Boolean);
+      if (!sans.length) continue;
+      let hit = null;
+      try { hit = ChessEco.openingForGame(sans.slice(0, 24), g.fen || undefined); } catch (_) { hit = null; }
+      if (!hit) continue;
+      g.eco = hit.eco;
+      // the raw table name, localised at render time — freezing a translation
+      // into the record would leave it in whatever language it was imported in
+      g.ecoName = hit.name || "";
+      n++;
+    }
+    return n;
+  }
+
+  /** `openingForGame`'s name for a stored entry, in the interface language. */
+  function libEcoName(eco, name) {
+    if (!eco) return "";
+    return ChessEco.localName({ eco, name: name || "" }, store.ui.langId) || name || "";
+  }
+
+  /**
+   * A library entry as a PGN, so the ordinary import path can open it.
+   *
+   * Deliberately rebuilt from the record rather than kept as text: the record
+   * is what survived the import, and a second copy of the same game as a
+   * string would be most of what the library weighs (see `entryFrom`'s note
+   * on why `sans` is joined rather than an array).
+   */
+  function libraryPgn(entry) {
+    const tag = (k, v) => "[" + k + " \"" + String(v || "?").replace(/["\\\\]/g, "") + "\"]\n";
+    let head = tag("Event", entry.event) + tag("Site", "?") + tag("Date", entry.date) +
+      tag("Round", "?") + tag("White", entry.white) + tag("Black", entry.black) +
+      tag("Result", entry.result || "*");
+    if (entry.fen) head += tag("SetUp", "1") + tag("FEN", entry.fen);
+    const sans = String(entry.sans || "").split(" ").filter(Boolean);
+    const start = entry.fen ? entry.fen.trim().split(/\s+/) : [];
+    const first = start[1] === "b" ? "b" : "w";
+    const startNo = Number(start[5]) >= 1 ? Math.floor(Number(start[5])) : 1;
+    const out = [];
+    sans.forEach((san, i) => {
+      const moveNo = startNo + Math.floor((i + (first === "b" ? 1 : 0)) / 2);
+      // a game that opens with Black to move opens at "1…" — the same rule
+      // review.js's moveNumber and library.js's startOf both follow
+      if (i === 0 && first === "b") out.push(moveNo + "...");
+      else if ((i % 2 === 0) === (first === "w")) out.push(moveNo + ".");
+      out.push(san);
+    });
+    out.push(entry.result || "*");
+    return head + "\n" + out.join(" ") + "\n";
+  }
+
+  /** How many of this player's own plies in a game were `?` or `??`. */
+  function libBadCount(g) {
+    const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
+    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
+    const first = start[1] === "b" ? "b" : "w";
+    const other = first === "w" ? "b" : "w";
+    let n = 0;
+    for (let i = 0; i < tags.length; i++) {
+      if ((i % 2 === 0 ? first : other) !== g.side) continue;
+      if (tags[i] === "?" || tags[i] === "??") n++;
+    }
+    return n;
+  }
+
+  /** The move number of ply `i` in a library entry — startOf's rule, again. */
+  function libMoveNo(g, i) {
+    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
+    const first = start[1] === "b" ? "b" : "w";
+    const startNo = Number(start[5]) >= 1 ? Math.floor(Number(start[5])) : 1;
+    return startNo + Math.floor((i + (first === "b" ? 1 : 0)) / 2);
+  }
+
+  /**
+   * Does this game answer the filter the diagnosis set?
+   *
+   * The three kinds mirror the three things `diagnose()` reports that name a
+   * subset of games: a motif that keeps catching you, an opening, and the
+   * move number your mistakes cluster on. Each is answered from the same
+   * arrays `foldGame` counted, so the list can never disagree with the number
+   * that sent the player to it.
+   */
+  function libPickMatches(g) {
+    const pick = store.ui.libPick;
+    if (!pick) return true;
+    if (pick.kind === "eco") return g.eco === pick.value;
+    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
+    const first = start[1] === "b" ? "b" : "w";
+    const other = first === "w" ? "b" : "w";
+    const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
+    for (let i = 0; i < tags.length; i++) {
+      if ((i % 2 === 0 ? first : other) !== g.side) continue;
+      if (pick.kind === "motif") {
+        if (g.motifs && g.motifs[i] === pick.value) return true;
+      } else if (pick.kind === "peak") {
+        if ((tags[i] === "?" || tags[i] === "??") && libMoveNo(g, i) === pick.value) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Which slice of the library the list is showing. */
+  function libMatches(g) {
+    const f = store.ui.libFilter;
+    if (f.result !== "all" && g.outcome !== f.result) return false;
+    if (f.color !== "all" && g.side !== f.color) return false;
+    return libPickMatches(g);
+  }
+
+  /** "2026.09.01 · rival" — the row's headline, localised at render time. */
+  function libraryLabel(g) {
+    const res = g.outcome ? t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw")
+      : (g.result || "*");
+    const me = g.side === "b" ? g.black : g.white;
+    const foe = g.side === "b" ? g.white : g.black;
+    return res + " · " + (foe || t("lib.unknownFoe")) + (g.side ? "" : " · " + (me || ""));
+  }
+
+  /** The second line: when, how well, how many mistakes, which opening. */
+  function librarySub(g) {
+    const bits = [];
+    if (g.date && g.date !== "?") bits.push(g.date);
+    const acc = g.an && g.an.acc && g.side ? g.an.acc[g.side] : null;
+    if (Number.isFinite(acc)) bits.push(tf("lib.rowAcc", [Math.round(acc * 10) / 10]));
+    if (g.an) bits.push(tf("lib.rowBad", [libBadCount(g)]));
+    else bits.push(t(g.unplayable ? "lib.rowUnplayable" : "lib.rowPending"));
+    if (g.eco) bits.push(g.eco + " " + libEcoName(g.eco, g.ecoName));
+    return bits.join(" · ");
+  }
+
+  function libraryRow(g, i) {
+    const row = document.createElement("div");
+    row.className = "hist-row";
+    const load = document.createElement("button");
+    load.type = "button";
+    load.className = "pick-item";
+    load.dataset.lib = String(i);
+    load.textContent = libraryLabel(g);
+    const sub = document.createElement("span");
+    sub.className = "pick-sub";
+    sub.textContent = librarySub(g);
+    load.appendChild(sub);
+    row.appendChild(load);
+    return row;
+  }
+
+  /**
+   * The list dialog.
+   *
+   * Rows carry their index into `store.session.library`, never into the
+   * filtered array — the history list learned that the hard way: re-indexing
+   * a filtered list makes "open this game" open a different one whenever a
+   * filter is on.
+   */
+  function renderLibList() {
+    const list = document.getElementById("lib-list");
+    if (!list) return;
+    const all = store.session.library;
+    const rows = all.map((g, i) => ({ g, i })).filter(({ g }) => libMatches(g));
+    if (store.ui.libFilter.sort === "acc") {
+      // worst first: this list exists to find the games worth reopening, and
+      // an unanalysed game has no accuracy to rank, so it goes last
+      rows.sort((a, b) => {
+        const av = a.g.an && a.g.an.acc && a.g.side ? a.g.an.acc[a.g.side] : Infinity;
+        const bv = b.g.an && b.g.an.acc && b.g.side ? b.g.an.acc[b.g.side] : Infinity;
+        return (av == null ? Infinity : av) - (bv == null ? Infinity : bv);
+      });
+    } else {
+      rows.sort((a, b) => (b.g.t || 0) - (a.g.t || 0));
+    }
+    reconcile(list, rows,
+      ({ g, i }) => g.id || ("i" + i),
+      ({ g }) => [g.outcome, g.side, g.eco, g.an ? "a" : "-", g.unplayable ? "u" : "-"].join("|"),
+      ({ g, i }) => libraryRow(g, i));
+    if (!rows.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = t("hist.noneMatch");
+      list.appendChild(p);
+    }
+    const count = document.getElementById("lib-list-count");
+    if (count) {
+      const filtered = store.ui.libFilter.result !== "all" || store.ui.libFilter.color !== "all" || store.ui.libPick;
+      count.hidden = !filtered;
+      count.textContent = tf("hist.showing", [rows.length, all.length]);
+    }
+    const note = document.getElementById("lib-pick-note");
+    if (note) {
+      note.hidden = !store.ui.libPick;
+      note.textContent = store.ui.libPick ? store.ui.libPick.label : "";
+    }
+    const clear = document.getElementById("lib-pick-clear");
+    if (clear) clear.hidden = !store.ui.libPick;
+    document.querySelectorAll("#lib-result-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.lres === store.ui.libFilter.result);
+    });
+    document.querySelectorAll("#lib-color-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.lcol === store.ui.libFilter.color);
+    });
+    document.querySelectorAll("#lib-sort-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.lsort === store.ui.libFilter.sort);
+    });
+  }
+
+  function openLibList(pick) {
+    store.ui.libPick = pick || null;
+    // an opening name needs the ECO chunk; ask for it and redraw when it lands
+    if (!ChessEco.loaded()) ChessEco.whenReady(() => { if (fillOpenings()) saveLibrary(); renderLibList(); });
+    else if (fillOpenings()) saveLibrary();
+    renderLibList();
+    Dlg.open(document.getElementById("lib-list-modal"));
+  }
+  function closeLibList() { Dlg.close(document.getElementById("lib-list-modal")); }
+
+  /**
+   * Open one library game on the board, with the analysis it already has.
+   *
+   * The point of the whole feature: 7.0 paid minutes of engine time per game
+   * and then had no way to show any of it. `store.session.analysis` is the
+   * shape the review page reads, and the library's `an` holds five of its
+   * eight fields; `sig` is computed here from the game that just loaded, and
+   * `pvs` / `linesAt` are simply absent — every read of those is written
+   * `a && a.pvs ? … : null`, so their absence means "no engine line to
+   * expand", not a broken page. **No search is started.**
+   */
+  async function loadFromLibrary(i) {
+    const entry = store.session.library[i];
+    if (!entry) return;
+    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
+    closeLibList();
+    const ok = await importPgnText(libraryPgn(entry), t("lib.title"),
+      { msg: t("dlg.loadLib"), title: t("dlg.loadLibTitle"), ok: t("dlg.loadLibOk") });
+    if (!ok) return;
+    // an imported game has no "you" by default; the library knows who you are
+    store.session.mode = "pvp";
+    if (entry.side === "w" || entry.side === "b") {
+      store.session.humanColor = entry.side;
+      store.game.flipped = entry.side === "b";
+    }
+    store.game.recordedId = null;
+    invalidateEngine();
+    const an = entry.an;
+    store.session.analysis = an && Array.isArray(an.scalars) && Array.isArray(an.tags) ? {
+      sig: game.pgn(),
+      scalars: an.scalars,
+      tags: an.tags,
+      bests: an.bests || [],
+      budget: an.budget || LIB_BUDGET,
+      acc: { w: an.acc && an.acc.w, b: an.acc && an.acc.b,
+        wAcpl: an.acpl && an.acpl.w, bAcpl: an.acpl && an.acpl.b },
+    } : null;
+    saveSettings();
+    saveGame();
+    sync();
+    toast(tf("lib.loaded", [libraryLabel(entry)]));
+  }
+
+
+  /**
+   * The diagnosis charts (v7-1-plan §2.1).
+   *
+   * Three shapes for the three things the page says that a number alone does
+   * not carry: which phase is the weak one and by how much, where in the game
+   * things go wrong, and which openings actually score. Drawn in the same
+   * idiom as the two sparklines above — device-pixel sizing, colours read
+   * from the document so a theme change is answered, judgement colours from
+   * `judgeColours()` so the weak bar is the same red the move list uses.
+   *
+   * Created by this function rather than sitting in the markup: a chart with
+   * no data must not exist at all (the P3 rule this page has followed since
+   * 7.0), and "does not exist" is easier to be sure of than "is hidden".
+   */
+  function diagCanvas(parent, h, label) {
+    const cv = document.createElement("canvas");
+    cv.className = "diag-chart";
+    cv.style.height = h + "px";
+    cv.setAttribute("role", "img");
+    cv.setAttribute("aria-label", label);
+    parent.appendChild(cv);
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round((cv.clientWidth || parent.clientWidth || 320) * dpr));
+    const H = Math.max(1, Math.round(h * dpr));
+    cv.width = W;
+    cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement);
+    return { ctx, W, H, dpr,
+      muted: css.getPropertyValue("--muted").trim() || "#999",
+      accent: css.getPropertyValue("--accent").trim() || "#e8c39e",
+      text: css.getPropertyValue("--text").trim() || "#ddd" };
+  }
+
+  /** Per-phase centipawn loss, with the weak one in the judgement colour. */
+  function drawPhaseChart(parent, d, phaseName) {
+    const rows = ["opening", "middle", "end"]
+      .map((k) => ({ k, acpl: d.phase[k].acpl }))
+      .filter((r) => r.acpl != null);
+    if (rows.length < 2) return; // one bar is not a comparison
+    const c = diagCanvas(parent, 92, t("diag.chartPhase"));
+    const pad = 6 * c.dpr, gap = 10 * c.dpr, label = 16 * c.dpr;
+    const max = Math.max(...rows.map((r) => r.acpl)) * 1.15 || 1;
+    const bw = (c.W - 2 * pad - gap * (rows.length - 1)) / rows.length;
+    const bad = judgeColours().bad;
+    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-num").trim() || "monospace");
+    c.ctx.textAlign = "center";
+    rows.forEach((r, i) => {
+      const x = pad + i * (bw + gap);
+      const hgt = Math.max(1, (r.acpl / max) * (c.H - 2 * pad - 2 * label));
+      c.ctx.fillStyle = r.k === d.weakestPhase ? bad : c.accent;
+      c.ctx.fillRect(x, c.H - pad - label - hgt, bw, hgt);
+      c.ctx.fillStyle = c.text;
+      c.ctx.fillText(String(r.acpl), x + bw / 2, c.H - pad - label - hgt - 3 * c.dpr);
+      c.ctx.fillStyle = c.muted;
+      c.ctx.fillText(phaseName[r.k], x + bw / 2, c.H - pad);
+    });
+  }
+
+  /**
+   * Where the mistakes are, by move number.
+   *
+   * The page already says "第 24 回合，N 局栽在这里". What it cannot say in a
+   * sentence is whether that is a spike or a plateau — a clock problem and a
+   * knowledge problem look completely different here and identical there.
+   */
+  function drawPeakChart(parent, list) {
+    const counts = new Map();
+    let worst = 0;
+    for (const g of list) {
+      // each game's own claimed chair — the same games `foldGame` counted,
+      // so the spike here and the sentence under it cannot disagree
+      if (!g.an || !g.side) continue;
+      const tags = Array.isArray(g.an.tags) ? g.an.tags : [];
+      const start = g.fen ? g.fen.trim().split(/\s+/) : [];
+      const first = start[1] === "b" ? "b" : "w";
+      const other = first === "w" ? "b" : "w";
+      for (let i = 0; i < tags.length; i++) {
+        if ((i % 2 === 0 ? first : other) !== g.side) continue;
+        if (tags[i] !== "?" && tags[i] !== "??") continue;
+        const mv = libMoveNo(g, i);
+        counts.set(mv, (counts.get(mv) || 0) + 1);
+        if (mv > worst) worst = mv;
+      }
+    }
+    if (counts.size < 3) return;
+    const last = Math.max(10, Math.min(worst, 60));
+    const c = diagCanvas(parent, 80, t("diag.chartPeak"));
+    const pad = 6 * c.dpr, label = 14 * c.dpr;
+    const max = Math.max(...counts.values()) || 1;
+    const bw = (c.W - 2 * pad) / last;
+    c.ctx.fillStyle = c.accent;
+    for (let mv = 1; mv <= last; mv++) {
+      const n = counts.get(mv) || 0;
+      if (!n) continue;
+      const hgt = Math.max(1, (n / max) * (c.H - 2 * pad - label));
+      c.ctx.fillRect(pad + (mv - 1) * bw, c.H - pad - label - hgt, Math.max(1, bw - c.dpr), hgt);
+    }
+    c.ctx.fillStyle = c.muted;
+    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-num").trim() || "monospace");
+    c.ctx.textAlign = "left";
+    c.ctx.fillText("1", pad, c.H - pad);
+    c.ctx.textAlign = "right";
+    c.ctx.fillText(String(last), c.W - pad, c.H - pad);
+  }
+
+  /** Win / draw / loss per opening, as one stacked bar each. */
+  function drawEcoChart(parent, ecos) {
+    const rows = ecos.slice(0, 6).filter((e) => e.n > 0);
+    if (rows.length < 2) return;
+    const c = diagCanvas(parent, 18 * rows.length + 12, t("diag.chartEco"));
+    const pad = 4 * c.dpr;
+    const rh = (c.H - 2 * pad) / rows.length;
+    const cols = judgeColours();
+    const labelW = 46 * c.dpr;
+    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-num").trim() || "monospace");
+    c.ctx.textAlign = "left";
+    rows.forEach((e, i) => {
+      const y = pad + i * rh;
+      c.ctx.fillStyle = c.muted;
+      c.ctx.fillText(e.eco, pad, y + rh * 0.7);
+      let x = pad + labelW;
+      const full = c.W - pad - x;
+      const seg = [[e.win, c.accent], [e.draw, c.muted], [e.loss, cols.bad]];
+      for (const [n, col] of seg) {
+        if (!n) continue;
+        const w = (n / e.n) * full;
+        c.ctx.fillStyle = col;
+        c.ctx.fillRect(x, y + rh * 0.2, w, rh * 0.6);
+        x += w;
+      }
+    });
   }
 
   /** The diagnosis dialog: what `diagnose()` found, in sentences. */
@@ -5170,9 +5789,14 @@ import { createStore } from "./store.js";
       p.textContent = text;
       el.appendChild(p);
     };
-    const row = (kText, vText) => {
-      const r = document.createElement("div");
-      r.className = "stat-row";
+    const row = (kText, vText, pick) => {
+      const r = document.createElement(pick ? "button" : "div");
+      r.className = "stat-row" + (pick ? " stat-row-link" : "");
+      if (pick) {
+        r.type = "button";
+        r.dataset.diagPick = JSON.stringify(pick);
+        r.title = t("diag.openThese");
+      }
       const k = document.createElement("span");
       k.className = "stat-k";
       k.textContent = kText;
@@ -5181,6 +5805,16 @@ import { createStore } from "./store.js";
       v.textContent = vText;
       r.append(k, v);
       el.appendChild(r);
+    };
+    // v7-plan §6.2: 「每一条都必须点到一个可执行的下一步；没有下一步的统计
+    // 不写进这一页」。7.0 写了统计，一条下一步都没接上。These three are the
+    // rows that name a subset of games, so each one is a door to that subset.
+    const pickPara = (text, cls, pick) => {
+      const p = document.createElement(pick ? "button" : "p");
+      p.className = (cls || "hint") + (pick ? " hint-link" : "");
+      if (pick) { p.type = "button"; p.dataset.diagPick = JSON.stringify(pick); }
+      p.textContent = text;
+      el.appendChild(p);
     };
     if (!d.enough) { para(tf("lib.needMore", [d.need - d.have, d.have, d.need])); return; }
     para(tf("diag.from", [d.games]));
@@ -5197,6 +5831,7 @@ import { createStore } from "./store.js";
       row(phaseName[k], tf("diag.acpl", [p.acpl]) + " · " +
         tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10]));
     }
+    drawPhaseChart(el, d, phaseName);
     if (d.weakestPhase) {
       const best = ["opening", "middle", "end"].map((k) => d.phase[k].acpl).filter((n) => n != null);
       para(tf("diag.weakest", [phaseName[d.weakestPhase], d.phase[d.weakestPhase].acpl,
@@ -5204,23 +5839,41 @@ import { createStore } from "./store.js";
     } else {
       para(t("diag.noWeakest"));
     }
-    if (d.peak) para(tf("diag.peak", [d.peak.move, d.peak.n]));
+    drawPeakChart(el, store.session.library);
+    if (d.peak) {
+      pickPara(tf("diag.peak", [d.peak.move, d.peak.n]), "hint",
+        { kind: "peak", value: d.peak.move, label: tf("diag.pickPeak", [d.peak.move]) });
+    }
     if (d.motifs.length) {
       row(t("diag.motifs"), "");
-      for (const m of d.motifs.slice(0, 6)) row(t("motif." + m.motif), tf("diag.motifN", [m.n]));
+      for (const m of d.motifs.slice(0, 6)) {
+        row(t("motif." + m.motif), tf("diag.motifN", [m.n]),
+          { kind: "motif", value: m.motif, label: tf("diag.pickMotif", [t("motif." + m.motif)]) });
+      }
     }
     if (d.ecos.length) {
       row(t("diag.ecos"), "");
+      drawEcoChart(el, d.ecos);
       for (const e of d.ecos.slice(0, 6)) {
-        row(e.eco + (e.name ? " " + e.name : ""),
-          tf("diag.ecoRow", [e.n, Math.round((e.score || 0) * 100)]));
+        const name = libEcoName(e.eco, e.name);
+        row(e.eco + (name ? " " + name : ""),
+          tf("diag.ecoRow", [e.n, Math.round((e.score || 0) * 100)]),
+          { kind: "eco", value: e.eco, label: tf("diag.pickEco", [e.eco + (name ? " " + name : "")]) });
       }
     }
   }
 
   function openDiagnosis() {
-    renderDiagnosis();
+    // 7.1: the 开局战绩 section needs an `eco` on the records, which 7.0 never
+    // wrote. Fill what is missing before drawing, and draw again when the ECO
+    // chunk lands — a library analysed under 7.0 gets its openings without
+    // anyone re-running the engine over it.
+    if (!ChessEco.loaded()) ChessEco.whenReady(() => { if (fillOpenings()) saveLibrary(); renderDiagnosis(); });
+    else if (fillOpenings()) saveLibrary();
+    // open FIRST: the charts size themselves from their laid-out width, and a
+    // canvas inside a hidden dialog measures zero
     Dlg.open(document.getElementById("lib-modal"));
+    renderDiagnosis();
   }
   function closeDiagnosis() { Dlg.close(document.getElementById("lib-modal")); }
 
@@ -5701,8 +6354,10 @@ import { createStore } from "./store.js";
     // holds a single black move and White's reply belongs to move 2. Pairing
     // from ply 0 would file them together under move 1 — and the review
     // report's turning-point line would then disagree with this list.
-    const firstMover = tree.startFen.split(" ")[1] === "b" ? "b" : "w";
-    const moveNo = (i) => ChessReview.moveNumber(i, firstMover);
+    const startParts = tree.startFen.split(" ");
+    const firstMover = startParts[1] === "b" ? "b" : "w";
+    const startNo = Number(startParts[5]) >= 1 ? Math.floor(Number(startParts[5])) : 1;
+    const moveNo = (i) => ChessReview.moveNumber(i, firstMover, startNo);
     const curId = curNodeId();
     // the analysis describes the line `game` stands on: its tags belong to
     // those nodes, on the mainline or off it
@@ -6015,7 +6670,7 @@ import { createStore } from "./store.js";
     lastEl.hidden = !show;
     versusEl.hidden = show;
     if (!show) return;
-    const no = ChessReview.moveNumber(at - 1, "w");
+    const no = boardMoveNo(at - 1);
     lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
   }
 
@@ -6561,7 +7216,7 @@ import { createStore } from "./store.js";
     // in words, since there is no move to name (v6-plan D5)
     if (store.game.viewIndex !== was) {
       const at = store.game.viewIndex;
-      announce(at === 0 ? t("live.start") : ChessReview.moveNumber(at - 1, "w") + (at % 2 ? ". " : "… ") + sanHistory()[at - 1]);
+      announce(at === 0 ? t("live.start") : boardMoveNo(at - 1) + (at % 2 ? ". " : "… ") + sanHistory()[at - 1]);
     }
   }
 
@@ -8518,6 +9173,45 @@ import { createStore } from "./store.js";
     if (dgBtn) dgBtn.onclick = openDiagnosis;
     const closeBtn = document.getElementById("lib-modal-close");
     if (closeBtn) closeBtn.onclick = closeDiagnosis;
+    // 7.1: the list, and the three diagnosis rows that open a slice of it
+    const openBtn = document.getElementById("lib-open");
+    if (openBtn) openBtn.onclick = () => { openLibList(null); };
+    const listClose = document.getElementById("lib-list-close");
+    if (listClose) listClose.onclick = closeLibList;
+    const listEl = document.getElementById("lib-list");
+    if (listEl) {
+      listEl.onclick = (ev) => {
+        const b = ev.target.closest("button[data-lib]");
+        if (b) loadFromLibrary(Number(b.dataset.lib));
+      };
+    }
+    const clearPick = document.getElementById("lib-pick-clear");
+    if (clearPick) clearPick.onclick = () => { store.ui.libPick = null; renderLibList(); };
+    document.querySelectorAll("#lib-result-seg button").forEach((b) => {
+      b.onclick = () => { store.ui.libFilter.result = b.dataset.lres; renderLibList(); };
+    });
+    document.querySelectorAll("#lib-color-seg button").forEach((b) => {
+      b.onclick = () => { store.ui.libFilter.color = b.dataset.lcol; renderLibList(); };
+    });
+    document.querySelectorAll("#lib-sort-seg button").forEach((b) => {
+      b.onclick = () => { store.ui.libFilter.sort = b.dataset.lsort; renderLibList(); };
+    });
+    const diagEl = document.getElementById("lib-diag");
+    if (diagEl) {
+      diagEl.onclick = (ev) => {
+        const b = ev.target.closest("[data-diag-pick]");
+        if (!b) return;
+        let pick = null;
+        try { pick = JSON.parse(b.dataset.diagPick); } catch (_) { pick = null; }
+        if (!pick) return;
+        closeDiagnosis();
+        openLibList(pick);
+      };
+    }
+    const listModal = document.getElementById("lib-list-modal");
+    if (listModal) listModal.onclick = (ev) => { if (ev.target === listModal) closeLibList(); };
+    const diagModal = document.getElementById("lib-modal");
+    if (diagModal) diagModal.onclick = (ev) => { if (ev.target === diagModal) closeDiagnosis(); };
     const names = document.getElementById("lib-names");
     if (names) {
       names.value = store.session.libNames.join(", ");
@@ -9376,6 +10070,7 @@ import { createStore } from "./store.js";
     Dlg.register(document.getElementById("slots-modal"), closeSlots);
     Dlg.register(document.getElementById("hist-modal"), closeHistory);
     Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
+    Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(confirmModal, () => finishConfirm(false));
