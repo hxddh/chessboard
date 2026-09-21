@@ -19,13 +19,35 @@
  */
 
 /**
- * The personal book is a working set, not an archive. Fifty is roughly a
- * month of daily play at a handful of blunders a game — enough that a real
- * pattern (the same square, the same motif) will be represented, small enough
- * that the review queue stays payable. Beyond it, retired (solved) drills go
- * first, then the oldest: a drill you already fixed taught what it had to.
+ * The personal book is a working set, not an archive.
+ *
+ * Fifty was roughly a month of daily play at a handful of blunders a game.
+ * 7.0's library changed where the drills come from — a single import is
+ * months of play at once — so 7.1 re-estimated it (v7-1-plan §1.2).
+ *
+ * The ceiling is not storage, it is the review queue: `REVIEW_CAP` serves 20
+ * a day and pushes the rest to tomorrow, so a full backlog of 50 takes two
+ * and a half days to clear and one of 90 takes four and a half. Four and a
+ * half days is still a week's work, which is why 90 and not 300. This is an
+ * argument from the queue's own rate, not a measurement — said plainly
+ * because the difference matters.
+ *
+ * Size was never the real §6.3 problem, though. `KEEP_PER_MOTIF` is: a bulk
+ * import arrives as one batch with one timestamp, and a purely
+ * recency-ordered cap lets that batch evict every motif the player had been
+ * working on. Each motif keeps its newest few whatever else arrives.
  */
-const MAX_MINES = 50;
+const MAX_MINES = 90;
+
+/**
+ * Drills per motif that a new batch may not evict.
+ *
+ * Six is two sittings of three at the same pattern — enough that "you keep
+ * getting forked" is still answerable after an import that knows nothing
+ * about it. Drills whose motif could not be named share one bucket: they are
+ * not a pattern, so they get one pattern's worth of protection between them.
+ */
+const KEEP_PER_MOTIF = 6;
 
 /**
  * A stable id from the position and the move that was wrong in it.
@@ -155,6 +177,21 @@ function addMines(list, cands, now, solvedIds) {
   let next = list.concat(fresh);
   const dropped = [];
   if (next.length > MAX_MINES) {
+    // The newest KEEP_PER_MOTIF of every motif are spared before anything is
+    // retired. Without this a 200-game import — one batch, one timestamp —
+    // walks the oldest-first rule straight through every motif the player had
+    // been working on, and the book comes out of it knowing only the import.
+    const spared = new Set();
+    const byMotif = new Map();
+    for (const m of next) {
+      const k = m.motif || "";
+      if (!byMotif.has(k)) byMotif.set(k, []);
+      byMotif.get(k).push(m);
+    }
+    for (const group of byMotif.values()) {
+      group.sort((x, y) => (y.t || 0) - (x.t || 0));
+      for (const m of group.slice(0, KEEP_PER_MOTIF)) spared.add(m.id);
+    }
     const retire = (pred) => {
       for (const m of next.slice().sort((x, y) => (x.t || 0) - (y.t || 0))) {
         if (next.length <= MAX_MINES) break;
@@ -163,7 +200,14 @@ function addMines(list, cands, now, solvedIds) {
         dropped.push(m.id);
       }
     };
-    retire((m) => solvedIds && solvedIds.has(m.id));
+    const solved = (m) => !!(solvedIds && solvedIds.has(m.id));
+    // a drill you already fixed taught what it had to, so it still leaves
+    // first — but only after the ones no motif is relying on
+    retire((m) => solved(m) && !spared.has(m.id));
+    retire((m) => !spared.has(m.id));
+    // the quota is a preference, not a guarantee: when every survivor is
+    // spared, the cap still wins, in the order it always used
+    retire(solved);
     retire(() => true);
   }
   return { list: next, added: fresh.length, dropped };
@@ -247,4 +291,4 @@ function judgeAlt(cpAfterBest, cpAfterAlt, side, mistake) {
   return { ok: loss < mistake, loss };
 }
 
-export const ChessMistakes = { MAX_MINES, mineId, candidatesFrom, drillFrom, addMines, reviseMines, isAccepted, judgeAlt };
+export const ChessMistakes = { MAX_MINES, KEEP_PER_MOTIF, mineId, candidatesFrom, drillFrom, addMines, reviseMines, isAccepted, judgeAlt };

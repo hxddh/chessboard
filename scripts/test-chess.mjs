@@ -3201,6 +3201,46 @@ for (const lang of CONTENT_LANGS) {
     const r2 = M.addMines(r.list, [{ id: "mine:new2", cat: "mine", fen: "f3", solution: ["c"] }], 10000, new Set());
     assert(r2.dropped[0] === "mine:x0", "with nothing solved, the oldest retires");
   }
+  // 7.1 §6.3 (v7-1-plan §1.2): a bulk import must not evict every motif the
+  // player had been working on. One import is one batch with one timestamp,
+  // and the old oldest-first rule walked straight through them.
+  {
+    const MOTIFS = ["fork", "pin", "skewer", "discovered"];
+    const book = [];
+    for (let i = 0; i < M.MAX_MINES; i++) {
+      book.push({ id: "mine:old" + i, cat: "mine", fen: "f" + i, solution: ["a"],
+        motif: MOTIFS[i % MOTIFS.length], t: 1000 + i });
+    }
+    // 200 fresh drills, all one motif, all stamped with the same import time
+    const flood = [];
+    for (let i = 0; i < 200; i++) {
+      flood.push({ id: "mine:new" + i, cat: "mine", fen: "n" + i, solution: ["b"], motif: "fork" });
+    }
+    const r = M.addMines(book, flood, 99999, new Set());
+    assert(r.list.length === M.MAX_MINES, "上限照旧是上限", String(r.list.length));
+    const left = {};
+    for (const m of r.list) left[m.motif] = (left[m.motif] || 0) + 1;
+    for (const k of MOTIFS) {
+      if (k === "fork") continue;
+      assert(left[k] >= M.KEEP_PER_MOTIF,
+        "一次两百道的导入之后，「" + k + "」还留着它最近的 " + M.KEEP_PER_MOTIF + " 道",
+        JSON.stringify(left));
+    }
+    // the ones kept are the NEWEST of each motif, not an arbitrary few
+    const pins = r.list.filter((m) => m.motif === "pin").map((m) => m.t).sort((a, b) => b - a);
+    const allPins = book.filter((m) => m.motif === "pin").map((m) => m.t).sort((a, b) => b - a);
+    assert(pins[0] === allPins[0], "留下的是这个母题最近的那些，不是随便几道");
+    // and the quota is a preference, not a guarantee: the cap still wins
+    const onlyOne = [];
+    for (let i = 0; i < M.MAX_MINES; i++) {
+      onlyOne.push({ id: "mine:z" + i, cat: "mine", fen: "z" + i, solution: ["a"], motif: "fork", t: i });
+    }
+    const r2 = M.addMines(onlyOne, [{ id: "mine:zz", cat: "mine", fen: "zz", solution: ["c"], motif: "fork" }],
+      50000, new Set());
+    assert(r2.list.length === M.MAX_MINES && r2.dropped.length === 1,
+      "所有幸存者都在配额里的时候，上限依然是上限", JSON.stringify(r2.dropped));
+  }
+
   // --- 5.1: a deeper pass may correct or withdraw what a quick pass banked --
   {
     const g = new C(); const fen = g.fen();
@@ -3297,6 +3337,14 @@ for (const lang of CONTENT_LANGS) {
   assert(/Mistakes\.reviseMines\(store\.session\.mines, cands, pass, store\.session\.humanColor, rev\)/.test(appSrc) &&
          /Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(appSrc),
     "a deeper pass revises the book before extending it (audit F2)");
+  // 7.1: and the library's pass banks them too — v7-plan §6.3, which 7.0
+  // shipped without and then recorded in neither of §10's two tables
+  assert(/run\.mined \+= mineLibraryGame\(next, r\.pass\)/.test(appSrc),
+    "每分析完一局棋谱库的棋，就把这一局的失误收进错题本");
+  assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(appSrc),
+    "棋谱库走的是和棋盘同一套规则，先修正再扩充，不是第二份实现");
+  assert(/withMotifs\(Mistakes\.candidatesFrom\(/.test(appSrc),
+    "每道错题带着它的母题 —— 分层保留靠它，否则一次导入会冲掉一整类");
   assert(/Mistakes\.isAccepted\(p, mv\.san\)/.test(appSrc) && /Mistakes\.judgeAlt\(cpBest, cpAlt, side, Review\.MISTAKE\)/.test(appSrc),
     "a personal drill accepts a verified alternative, not only the stored string (audit F3)");
   assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
@@ -5825,7 +5873,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 119;
+  const REGISTERED = 122;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }

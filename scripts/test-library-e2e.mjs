@@ -250,6 +250,86 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await ctx.close();
 }
 
+// --- 4. 7.1:列表、点开那一局、诊断每一行都是一扇门 -------------------------
+{
+  // 25 局真棋,西班牙开局的头六个半着,白方第 2 个半着(Nf3)是 ??。前十局在那一手
+  // 上带 fork 母题 —— 诊断的母题行筛出来的就该是这十局。
+  const SANS = "e4 e5 Nf3 Nc6 Bb5 a6";
+  const games = [];
+  for (let i = 0; i < 25; i++) {
+    const tags = [null, null, "??", null, null, null];
+    const scalars = [20, 10, -400, -390, -380, -370, -360];
+    const bests = [null, null, "b1c3", null, null, null, null];
+    const losses = [10, 0, 410, 0, 0, 0];
+    games.push({
+      id: "real" + i, t: 1758000000000 + i,
+      white: "hxddh", black: "rival" + i, date: "2026.09." + String((i % 28) + 1).padStart(2, "0"),
+      event: "Rated blitz", result: i % 3 === 0 ? "1-0" : "0-1", plies: 6, sans: SANS, fen: "",
+      side: "w", outcome: i % 3 === 0 ? "win" : "loss",
+      motifs: i < 10 ? { 2: "fork" } : {},
+      an: { acc: { w: 50 + i, b: 60 }, acpl: { w: 70, b: 40 }, tags, losses, scalars, bests, budget: 200 },
+    });
+  }
+  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  const { page, errs } = await open(ctx);
+
+  // 列表本身
+  assert(await page.isVisible("#lib-open"), "有棋之后,「全部 N 局」这个入口才出现");
+  await page.click("#lib-open");
+  await page.waitForTimeout(400);
+  const rowCount = () => page.evaluate(() => document.querySelectorAll("#lib-list button[data-lib]").length);
+  assert((await rowCount()) === 25, "列表把 25 局都摆出来了", String(await rowCount()));
+  const firstRow = await page.textContent("#lib-list button[data-lib]");
+  assert(/精准度/.test(firstRow) && /1 处失误/.test(firstRow),
+    "每一行写着我这局下得怎么样,不只是个日期", firstRow);
+
+  // 筛选
+  await page.click('#lib-result-seg button[data-lres="loss"]');
+  await page.waitForTimeout(200);
+  assert((await rowCount()) === 16, "「只看输的」筛出 16 局", String(await rowCount()));
+  await page.click('#lib-result-seg button[data-lres="all"]');
+  await page.waitForTimeout(200);
+
+  // 点开那一局 —— 这是 7.0 完全做不到的事
+  await page.click("#lib-list button[data-lib]");
+  await page.waitForTimeout(900);
+  const moves = await page.evaluate(() =>
+    [...document.querySelectorAll("#move-list .mlmove")].map((b) => b.textContent.trim()));
+  assert(moves.length === 6 && /e4/.test(moves[0]) && /a6/.test(moves[5]),
+    "棋盘上是那一局棋", JSON.stringify(moves));
+  const bad = await page.evaluate(() =>
+    [...document.querySelectorAll("#move-list .mvtag.t-bad")].map((x) => x.textContent));
+  assert(bad.length === 1 && bad[0] === "??",
+    "存好的分析跟着一起过来了 —— 那个 ?? 立刻就在走子列表上,引擎一次都没跑",
+    JSON.stringify(bad));
+
+  // 诊断的母题行是一扇门
+  await page.click("#tab-record");
+  await page.waitForTimeout(200);
+  await page.click("#lib-diagnose");
+  await page.waitForTimeout(1200);
+  const diagText = await page.textContent("#lib-diag");
+  assert(/C6[0-9]|西班牙|Ruy/.test(diagText),
+    "开局战绩终于有东西了 —— 7.0 从来没有人给条目写过 eco,这一段一直是死的", diagText);
+  const motifBtn = await page.$("#lib-diag button[data-diag-pick]");
+  assert(!!motifBtn, "诊断里能点的行是 button,键盘和读屏都拿得到");
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("#lib-diag button[data-diag-pick]")]
+      .find((x) => JSON.parse(x.dataset.diagPick).kind === "motif");
+    if (b) b.click();
+  });
+  await page.waitForTimeout(500);
+  assert(await page.isVisible("#lib-list-modal"), "点一行母题,开的是那些棋局的列表");
+  assert((await rowCount()) === 10, "筛出来的正是被这个母题打中的那十局", String(await rowCount()));
+  assert(/只看被/.test(await page.textContent("#lib-pick-note")), "并且说清楚筛的是什么");
+  await page.click("#lib-pick-clear");
+  await page.waitForTimeout(200);
+  assert((await rowCount()) === 25, "清除筛选回到全部");
+
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }
