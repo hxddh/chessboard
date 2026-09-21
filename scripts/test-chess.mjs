@@ -5282,7 +5282,12 @@ for (const lang of CONTENT_LANGS) {
       // the `careful` bot is the one both texts quote — a bot that only avoids
       // dropping a piece to an immediate recapture, i.e. about what a raw
       // beginner sees
-      check("README", readme, /32 盘对新手得分率 \*\*(\d+)%\*\*/, nov.beginner.careful.scorePct, "the beginner score rate");
+      // 7.1.1: the game count is no longer baked into this pattern. It read
+      // /32 盘对新手得分率/ — so the moment the count changed, the guard
+      // stopped matching and reported "README no longer states it" instead of
+      // the mismatch it exists to find. A guard that hard-codes the number it
+      // is checking around is a guard with an expiry date.
+      check("README", readme, /盘对新手得分率 \*\*(\d+)%\*\*/, nov.beginner.careful.scorePct, "the beginner score rate");
       check("README", readme, /对休闲 \*\*(\d+)%\*\*/, nov.casual.careful.scorePct, "the casual score rate");
       check("engine.js", engineFlat, /now scores (\d+)% here/, nov.beginner.careful.scorePct, "the beginner score rate");
       check("engine.js", engineFlat, /and (\d+)% on `casual`/, nov.casual.careful.scorePct, "the casual score rate");
@@ -5343,6 +5348,40 @@ for (const lang of CONTENT_LANGS) {
                 rel + " 引的覆盖率就是量出来的那个 (" + n + " vs " + mc.explainedPct + ")");
             }
           }
+        }
+      }
+      // 7.1.1: the novice bands must be the recorded mean ± 3σ.
+      //
+      // This is the guard the repo did not have, and its absence cost a
+      // release. 7.0 swapped the engine; docs/measured.json's noviceScore
+      // still described Stockfish 18; the bands in test-novice.mjs were
+      // drawn around those stale figures; and v7.1.0 failed its release gate
+      // on a tier that had not changed at all. Nothing anywhere connected
+      // "the engine moved" to "this calibration is now fiction".
+      //
+      // Now it does: re-record noviceScore and this fails until the bands in
+      // test-novice.mjs are carried along with it. Same rule as the tier
+      // figures and the review cut-offs — a number that ships has to be the
+      // number that was measured.
+      {
+        const nv = measured.noviceScore;
+        assert(!!nv && nv.tiers, "docs/measured.json holds a novice-score run");
+        const src = fs.readFileSync(path.join(root, "scripts/test-novice.mjs"), "utf8");
+        const bandsBlock = /const BANDS = \{([\s\S]*?)\n  \};/.exec(src);
+        assert(!!bandsBlock, "test-novice.mjs still declares its bands in one block");
+        for (const [tier, rec] of Object.entries((nv && nv.tiers) || {})) {
+          const row = new RegExp(tier + ": \\{ careful: \\[(-?\\d+), (-?\\d+)\\]").exec(bandsBlock ? bandsBlock[1] : "");
+          assert(!!row, tier + " 有一条 careful 区间");
+          if (!row || !rec.careful) continue;
+          const mean = rec.careful.scorePct, sd = rec.careful.sdPct;
+          assert(Number.isFinite(sd),
+            tier + " 的记录带着实测标准差 —— 没有它，区间宽度就只能靠猜（跑 --repeat）");
+          if (!Number.isFinite(sd)) continue;
+          const lo = Math.max(0, Math.floor(mean - 3 * sd));
+          const hi = Math.min(100, Math.ceil(mean + 3 * sd));
+          assert(Number(row[1]) === lo && Number(row[2]) === hi,
+            tier + " 的区间就是记录里的均值 ±3σ（" + row[1] + "–" + row[2] +
+            " vs " + lo + "–" + hi + "；重测过就把区间一起改）");
         }
       }
       const scan = measured.scanNoise;

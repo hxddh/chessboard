@@ -36,9 +36,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // self-destructive: a bot playing random legal moves that merely avoided
     // dropping a piece to an immediate recapture scored 81% against it over 24
     // games. Meanwhile the next rung up was Elo 1320, so a learner who beat
-    // this one had nowhere to go. The same bot now scores 56% here and 27% on
-    // `casual` over 32 games, and near nothing at 1320 — a ladder with rungs
-    // instead of a cliff.
+    // this one had nowhere to go. The same bot now scores 59% here and 29% on
+    // `casual` over 100 games, and near nothing at 1320 — a ladder with rungs
+    // instead of a cliff. (Those were 56% and 27% until 7.1.1: they were
+    // measured under Stockfish 18, 7.0 swapped in SF19 lite-single, and
+    // nobody re-ran the match. Re-measured at 5×20 games per tier, the
+    // figures moved up ~3 points — a weaker engine makes a weaker tier.)
     //
     // Those two numbers are docs/measured.json's, not this comment's: run
     // `node scripts/test-novice.mjs --record` to change them, and

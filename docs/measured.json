@@ -134,21 +134,42 @@
           "skill": 0,
           "depth": 2,
           "multipv": 10,
-          "worstBias": 0.2
+          "worstBias": 0.2,
+          "minMs": 350
         },
         "random": {
-          "games": 32,
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
           "win": 0,
           "draw": 0,
-          "loss": 32,
-          "scorePct": 0
+          "loss": 100,
+          "scorePct": 0,
+          "runs": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sdPct": 0
         },
         "careful": {
-          "games": 32,
-          "win": 13,
-          "draw": 10,
-          "loss": 9,
-          "scorePct": 56
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 44,
+          "draw": 30,
+          "loss": 26,
+          "scorePct": 59,
+          "runs": [
+            68,
+            50,
+            53,
+            60,
+            65
+          ],
+          "sdPct": 7.7
         }
       },
       "casual": {
@@ -156,21 +177,42 @@
           "skill": 0,
           "depth": 2,
           "multipv": 6,
-          "worstBias": 0.15
+          "worstBias": 0.15,
+          "minMs": 350
         },
         "random": {
-          "games": 32,
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
           "win": 0,
-          "draw": 1,
-          "loss": 31,
-          "scorePct": 2
+          "draw": 0,
+          "loss": 100,
+          "scorePct": 0,
+          "runs": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sdPct": 0
         },
         "careful": {
-          "games": 32,
-          "win": 6,
-          "draw": 5,
-          "loss": 21,
-          "scorePct": 27
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 19,
+          "draw": 20,
+          "loss": 61,
+          "scorePct": 29,
+          "runs": [
+            33,
+            40,
+            15,
+            35,
+            23
+          ],
+          "sdPct": 10.1
         }
       }
     }
