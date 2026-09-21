@@ -138,18 +138,38 @@
           "minMs": 350
         },
         "random": {
-          "games": 32,
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
           "win": 0,
-          "draw": 1,
-          "loss": 31,
-          "scorePct": 2
+          "draw": 0,
+          "loss": 100,
+          "scorePct": 0,
+          "runs": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sdPct": 0
         },
         "careful": {
-          "games": 32,
-          "win": 16,
-          "draw": 9,
-          "loss": 7,
-          "scorePct": 64
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 44,
+          "draw": 30,
+          "loss": 26,
+          "scorePct": 59,
+          "runs": [
+            68,
+            50,
+            53,
+            60,
+            65
+          ],
+          "sdPct": 7.7
         }
       },
       "casual": {
