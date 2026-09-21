@@ -178,7 +178,7 @@ import { createStore } from "./store.js";
     const h = sanHistory();
     const at = h.length;
     if (!at) return;
-    announce(ChessReview.moveNumber(at - 1, "w") + (at % 2 ? ". " : "… ") + h[at - 1]);
+    announce(boardMoveNo(at - 1) + (at % 2 ? ". " : "… ") + h[at - 1]);
   }
 
   /** a game restored from the save that was already filed — see recordedId */
@@ -657,7 +657,7 @@ import { createStore } from "./store.js";
     const probe = new Chess(at.fen);
     moveSound(probe.move({ from, to, promotion: promotion || undefined }), probe);
     store.commit("game", "action");
-    announce(ChessReview.moveNumber(ids.length - 2, "w") + ((ids.length - 1) % 2 ? ". " : "… ") + child.san);
+    announce(boardMoveNo(ids.length - 2) + ((ids.length - 1) % 2 ? ". " : "… ") + child.san);
     saveGame();
     return child;
   }
@@ -730,6 +730,30 @@ import { createStore } from "./store.js";
   function startFen() {
     const h = game.header();
     return h && h.SetUp === "1" && h.FEN ? h.FEN : null;
+  }
+
+  /**
+   * Where the game on the board starts: who plays ply 0, and at what move
+   * number. A `[SetUp]`/`[FEN]` game answers both from its FEN; everything
+   * else is White at move 1.
+   *
+   * 7.1: the second half of that used to be assumed rather than read, so a
+   * study handed to you at move 30 was listed, announced and reported as
+   * move 1 (v7-1-plan §7, 计划外). Harmless while such games arrived one at
+   * a time; the library opens them by the dozen.
+   */
+  function gameStart() {
+    const sf = startFen();
+    const parts = sf ? sf.trim().split(/\s+/) : [];
+    const n = Number(parts[5]);
+    return { first: parts[1] === "b" ? "b" : "w",
+      no: Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1 };
+  }
+
+  /** The move number to print for ply `i` of the game on the board. */
+  function boardMoveNo(i) {
+    const st = gameStart();
+    return ChessReview.moveNumber(i, st.first, st.no);
   }
 
   /** Fresh instance at this game's starting position (default or FEN header). */
@@ -6330,8 +6354,10 @@ import { createStore } from "./store.js";
     // holds a single black move and White's reply belongs to move 2. Pairing
     // from ply 0 would file them together under move 1 — and the review
     // report's turning-point line would then disagree with this list.
-    const firstMover = tree.startFen.split(" ")[1] === "b" ? "b" : "w";
-    const moveNo = (i) => ChessReview.moveNumber(i, firstMover);
+    const startParts = tree.startFen.split(" ");
+    const firstMover = startParts[1] === "b" ? "b" : "w";
+    const startNo = Number(startParts[5]) >= 1 ? Math.floor(Number(startParts[5])) : 1;
+    const moveNo = (i) => ChessReview.moveNumber(i, firstMover, startNo);
     const curId = curNodeId();
     // the analysis describes the line `game` stands on: its tags belong to
     // those nodes, on the mainline or off it
@@ -6644,7 +6670,7 @@ import { createStore } from "./store.js";
     lastEl.hidden = !show;
     versusEl.hidden = show;
     if (!show) return;
-    const no = ChessReview.moveNumber(at - 1, "w");
+    const no = boardMoveNo(at - 1);
     lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
   }
 
@@ -7190,7 +7216,7 @@ import { createStore } from "./store.js";
     // in words, since there is no move to name (v6-plan D5)
     if (store.game.viewIndex !== was) {
       const at = store.game.viewIndex;
-      announce(at === 0 ? t("live.start") : ChessReview.moveNumber(at - 1, "w") + (at % 2 ? ". " : "… ") + sanHistory()[at - 1]);
+      announce(at === 0 ? t("live.start") : boardMoveNo(at - 1) + (at % 2 ? ". " : "… ") + sanHistory()[at - 1]);
     }
   }
 

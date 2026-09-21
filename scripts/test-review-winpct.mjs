@@ -150,3 +150,17 @@ console.log("all passed");
   assert(cp.acpl.w === 0 && cp.counts.w.blunder === 0,
     "a won endgame whose search flickers in and out of mate reads as clean (acpl " + cp.acpl.w + ", blunders " + cp.counts.w.blunder + ")");
 }
+
+// 7.1: a game that starts from a [FEN] opens at that position's full-move
+// number. Every version up to here listed a study handed to you at move 30 as
+// move 1 — harmless while such games arrived one at a time, immediately
+// visible now that the library opens them by the dozen (v7-1-plan §7).
+{
+  const row = (first, startNo) => [0, 1, 2, 3].map((i) => R.moveNumber(i, first, startNo)).join(",");
+  assert(row("w") === "1,1,2,2", "白方先走、没有起手手数：照旧从第 1 手开始 (" + row("w") + ")");
+  assert(row("b") === "1,2,2,3", "黑方先走：开在「1…」，白方的应手是第 2 手 (" + row("b") + ")");
+  assert(row("w", 30) === "30,30,31,31", "白方先走、从第 30 手开始 (" + row("w", 30) + ")");
+  assert(row("b", 30) === "30,31,31,32", "黑方先走、从第 30 手开始 (" + row("b", 30) + ")");
+  assert(row("w", 0) === "1,1,2,2" && row("w", NaN) === "1,1,2,2",
+    "起手手数是 0 或读不出来时，回到 1 —— 不是第 0 手");
+}

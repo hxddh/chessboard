@@ -461,9 +461,11 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     moves: [...document.querySelectorAll("#move-list .mlmove")].map((b) => b.textContent.trim()),
     nums: [...document.querySelectorAll("#move-list")].map((n) => n.textContent)[0] || "",
   }));
-  assert(state.moves.length === 4 && /Rd8/.test(state.moves[0]) && /Rb8/.test(state.moves[3]),
+  // 走子列表用的是图形记号（棋子是单独的字形），所以这里比的是格子不是 SAN
+  const sans = state.moves.filter((x) => /[a-h][1-8]/.test(x));
+  assert(sans.length === 4 && /d8/.test(sans[0]) && /b8/.test(sans[3]),
     "黑方先走的残局也照样摆得出来", JSON.stringify(state.moves));
-  assert(/30/.test(state.nums),
+  assert(/30/.test(state.nums) && !/^\s*1\./.test(state.nums),
     "而且它开在第 30 手，不是第 1 手 —— 手数从 FEN 的第六段起算", state.nums.slice(0, 60));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();

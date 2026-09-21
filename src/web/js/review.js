@@ -166,11 +166,20 @@
    * A game edited to start with Black to move opens at "1…" — Black's move is
    * still move 1, and White's reply is move 2. Counting pairs from ply 0 would
    * put White's first move in move 1 alongside it.
+   *
+   * 7.1: and a game that starts from a `[FEN]` opens at THAT position's
+   * full-move number, not at 1. A study or an endgame handed to you at move
+   * 30 was being listed as move 1 in every version up to here — harmless
+   * while `[SetUp]` games were something you loaded by hand once, and
+   * immediately visible now that the library opens them by the dozen.
+   * Omitting `startNo` keeps the old answer exactly.
    * @param {number} i ply index, 0-based
    * @param {"w"|"b"} firstMover side that played ply 0
+   * @param {number} [startNo] the starting position's full-move number
    */
-  function moveNumber(i, firstMover) {
-    return firstMover === "b" ? Math.floor((i + 1) / 2) + 1 : Math.floor(i / 2) + 1;
+  function moveNumber(i, firstMover, startNo) {
+    const base = Number.isFinite(startNo) && startNo >= 1 ? Math.floor(startNo) : 1;
+    return base + Math.floor((i + (firstMover === "b" ? 1 : 0)) / 2);
   }
 
   /**
