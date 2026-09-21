@@ -38,6 +38,10 @@ export const KEYS = {
   // stores (a few hundred games with a per-ply loss array each) and a quota
   // failure writing it must not take the play history down with it.
   library: "chess.v1.library",
+  // 7.2: the player's own opening book. Its own key for the same reason the
+  // library has one — it is imported data with its own lifetime, and it is
+  // the one thing here a player may want to clear on its own.
+  repertoire: "chess.v1.repertoire",
   panelOpen: "chess.panelOpen",
   // 6.0: where a value that failed to parse is kept, instead of being thrown
   // away and overwritten by the next autosave (v6-plan D2)
@@ -420,6 +424,7 @@ export function createPersist(host, onWriteFailure) {
     achievements: (v) => (v && Array.isArray(v.seen) ? v : null),
     slots: (v) => (v && Array.isArray(v.slots) ? v : null),
     library: (v) => (v && v.v === 1 && Array.isArray(v.games) ? v : null),
+    repertoire: (v) => (v && v.v === 1 && (Array.isArray(v.w) || Array.isArray(v.b)) ? v : null),
   };
   /**
    * stats v1 → v2: split the overloaded `sig` into the three things it was.

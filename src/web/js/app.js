@@ -41,6 +41,8 @@ import { CHESS_PUZZLES } from "./puzzles.js";
 import { MINED_PUZZLES } from "./puzzles-mined.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
+import { createLibraryUI } from "./library-ui.js";
+import { createRepertoireUI } from "./repertoire-ui.js";
 import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
@@ -1706,6 +1708,10 @@ import { createStore } from "./store.js";
       const mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0");
       return tf("pz.mineName", [mm + "-" + dd, Math.floor((p.ply || 0) / 2) + 1]);
     }
+    // a repertoire line is named by the book it came from — the ECO name when
+    // the position is a known one, and the chair, for the same reason the
+    // built-in drills carry theirs
+    if (p.cat === "rep") return p.name + (p.side === "b" ? " · " + t("color.black") : "");
     if (p.src === "mined") return t("pz.cat." + p.cat) + " #" + (MINED_ORDINAL.get(p.id) || "");
     return contentField("puzzles", p.id, "name") || p.name;
   }
@@ -2426,10 +2432,10 @@ import { createStore } from "./store.js";
     const perCat = {};
     for (const p of MINED_PUZZLES || []) { perCat[p.cat] = (perCat[p.cat] || 0) + 1; MINED_ORDINAL.set(p.id, perCat[p.cat]); }
   }
-  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "mine", "review"];
+  const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "rep", "mine", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
   /** scripted-line categories: exact-line play, opponent replies from the script */
-  const SCRIPTED_CATS = { win: true, op: true, tac: true, draw: true, real: true, mine: true };
+  const SCRIPTED_CATS = { win: true, op: true, rep: true, tac: true, draw: true, real: true, mine: true };
 
   /** A mate in one for whoever is to move in `g`, or null. */
   function mateInOne(g) {
@@ -2511,7 +2517,34 @@ import { createStore } from "./store.js";
     return Persist.read("progress").value;
   })());
   function saveProgress() { Persist.setJson("progress", store.session.progress); }
-  function bookNow() { return store.session.mines.length ? ALL_PUZZLES.concat(store.session.mines) : ALL_PUZZLES; }
+  /**
+   * The whole book right now: the frozen set, the mined drills, and — since
+   * 7.2 — the player's own opening book. All three dynamic sets are joined
+   * per read for the same reason: the review queue and the picker look a
+   * puzzle up by id, and an id they cannot resolve is a review owed to
+   * nothing.
+   */
+  function bookNow() {
+    const rep = REP_DRILLS();
+    if (!store.session.mines.length && !rep.length) return ALL_PUZZLES;
+    return ALL_PUZZLES.concat(store.session.mines, rep);
+  }
+  /**
+   * Both chairs of the player's own opening book.
+   *
+   * `RepUI` is created further down this file; every caller of `bookNow()` is
+   * a rail that serves a puzzle, and none of them runs before boot has walked
+   * past that line. Written as a plain reference deliberately: if that ever
+   * stops being true, the app fails loudly at startup rather than quietly
+   * serving a book with the repertoire missing from it.
+   */
+  function REP_DRILLS() { return RepUI.allDrills(); }
+  /** Opening drills, built-in or the player's own — one word for both. */
+  function isOpeningCat(cat) { return cat === "op" || cat === "rep"; }
+  /** The tree an opening drill is judged against. */
+  function openingTreeFor(p) {
+    return p && p.cat === "rep" ? RepUI.treeFor(p.side === "b" ? "b" : "w") : OPENING_TREE;
+  }
 
   /**
    * Rough difficulty tier for a puzzle, derived rather than hand-tagged so it
@@ -2560,7 +2593,7 @@ import { createStore } from "./store.js";
     // all 38 drillable lines scored "hard", and the difficulty filter had
     // therefore never done anything at all in this category. What actually
     // makes a rote line harder is how much of it there is to remember.
-    if (p.cat === "op") {
+    if (isOpeningCat(p.cat)) {
       const tier = plies <= 8 ? "easy" : plies <= 16 ? "mid" : "hard";
       PUZZLE_TIER_CACHE.set(p.id, tier);
       return tier;
@@ -2793,6 +2826,9 @@ import { createStore } from "./store.js";
         .map((id) => bookNow().find((p) => p.id === id)).filter(Boolean)
       // the op list shows one chair at a time — the side segment picks which
       : cat === "op" ? ALL_PUZZLES.filter((p) => p.cat === "op" && (p.side === "b") === (store.session.puzzleState.opSide === "b"))
+      // the repertoire tab shows one chair at a time too, and for the same
+      // reason: a drill is a question asked of the side you are sitting on
+      : cat === "rep" ? RepUI.drills(store.session.puzzleState.opSide === "b" ? "b" : "w")
       : cat === "mine" ? store.session.mines.slice()
       : ALL_PUZZLES.filter((p) => p.cat === cat);
     // "Review" is not a difficulty band — it is exactly the set of puzzles this
@@ -2809,8 +2845,8 @@ import { createStore } from "./store.js";
     // far, then the book's main continuation — the stored line may already
     // have been left by a weighted reply
     const pz = store.session.puzzle;
-    if (p.cat === "op" && pz && pz.p === p && Array.isArray(pz.opPath)) {
-      const kid = ChessOpeningTree.childrenAt(OPENING_TREE, pz.opPath)[0];
+    if (isOpeningCat(p.cat) && pz && pz.p === p && Array.isArray(pz.opPath)) {
+      const kid = ChessOpeningTree.childrenAt(openingTreeFor(p), pz.opPath)[0];
       return kid ? pz.opPath.concat(kid.san) : pz.opPath.slice();
     }
     return p.line || p.solution;
@@ -2823,20 +2859,27 @@ import { createStore } from "./store.js";
     const pz = store.session.puzzle;
     const path = g.history();
     const before = path.slice(0, -1);
-    const kids = ChessOpeningTree.childrenAt(OPENING_TREE, before);
+    const tree = openingTreeFor(pz.p);
+    const kids = ChessOpeningTree.childrenAt(tree, before);
     if (!kids.length) { puzzleSolved(); return true; } // already at a leaf
     if (!kids.some((k) => k.san === mv.san)) {
       // explain against the book move the player was rehearsing when it is
       // one of the options here, else the main one
       const book = kids.some((k) => k.san === pz.p.line[before.length]) ? pz.p.line[before.length] : kids[0].san;
-      puzzleWrong(openingWhy(g, mv, book));
+      const why = openingWhy(g, mv, book);
+      // 7.2: in your OWN book there is nothing to withhold. The built-in drills
+      // make you find the book move — that is the exercise, and 「答案」 is
+      // there when you cannot. A repertoire line is a thing you decided to
+      // play and are trying to remember, so being told which move that was is
+      // the whole exercise, not the end of it.
+      puzzleWrong(pz.p.cat === "rep" ? why + " · " + tf("pz.repBook", [book]) : why);
       return true;
     }
     pz.stage++;
     pz.opPath = path.slice();
-    let after = ChessOpeningTree.childrenAt(OPENING_TREE, path);
+    let after = ChessOpeningTree.childrenAt(tree, path);
     if (after.length) {
-      const reply = ChessOpeningTree.weightedPick(OPENING_TREE, path) || after[0].san;
+      const reply = ChessOpeningTree.weightedPick(tree, path) || after[0].san;
       const rm = g.move(reply);
       if (rm) {
         pz.last = { from: rm.from, to: rm.to };
@@ -2844,15 +2887,18 @@ import { createStore } from "./store.js";
         moveSound(rm, g);
         pz.stage++;
         pz.opPath = g.history();
-        after = ChessOpeningTree.childrenAt(OPENING_TREE, pz.opPath);
+        after = ChessOpeningTree.childrenAt(tree, pz.opPath);
       }
     }
     if (!after.length) {
       // the leaf reached is a line of its own: mark it learnt too, in the
       // chair it was played from
-      const leaf = ChessOpeningTree.nodeAt(OPENING_TREE, pz.opPath);
+      const leaf = ChessOpeningTree.nodeAt(tree, pz.opPath);
       for (const ln of (leaf && leaf.lines) || []) {
-        const id = Drills.drillId(ln.eco, ln.sans.join(" ")) + (pz.p.side === "b" ? ":b" : "");
+        // the repertoire's rows carry their own ids (repertoire.js mints them
+        // once, from the moves); the ECO book's are derived from the row
+        const id = (pz.p.cat === "rep" ? ln.id : Drills.drillId(ln.eco, ln.sans.join(" ")))
+          + (pz.p.side === "b" ? ":b" : "");
         if (id !== pz.p.id && !store.session.puzzleState.solved[id]) store.session.puzzleState.solved[id] = true;
       }
       puzzleSolved();
@@ -2879,9 +2925,9 @@ import { createStore } from "./store.js";
     store.session.puzzleState.cat = cat;
     savePuzzleState();
     const p = list[idx];
-    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: p.cat === "op" ? [] : null };
+    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: isOpeningCat(p.cat) ? [] : null };
     // playing Black: the app opens with White's book move, you answer
-    if (p.cat === "op" && p.side === "b") {
+    if (isOpeningCat(p.cat) && p.side === "b") {
       const first = store.session.puzzle.g.move(p.line[0]);
       if (first) {
         store.session.puzzle.stage = 1;
@@ -2898,7 +2944,8 @@ import { createStore } from "./store.js";
     let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) ? store.session.puzzleState.cat : "m1";
     // don't strand the user on an empty review tab — or an emptied personal
     // book, which retires drills on its own (mistakes.js cap)
-    if ((cat === "review" || cat === "mine") && !puzzlesInCat(cat).length) cat = "m1";
+    // …or an emptied repertoire, which is a file the player can delete
+    if ((cat === "review" || cat === "mine" || cat === "rep") && !puzzlesInCat(cat).length) cat = "m1";
     const list = puzzlesInCat(cat);
     let idx = list.findIndex((p) => !store.session.puzzleState.solved[p.id]);
     if (idx < 0) idx = 0;
@@ -2988,7 +3035,7 @@ import { createStore } from "./store.js";
       const cost = p.loss != null ? " · " + tf("pz.mineCost", [(p.loss / 100).toFixed(1)]) : "";
       return tf("pz.goalMine", [p.played]) + cost;
     }
-    if (p.cat === "op") return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
+    if (isOpeningCat(p.cat)) return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
     if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
     if (p.cat === "real") return tf("pz.goalReal", [puzzleName(p), p.men, p.gain]);
@@ -3123,7 +3170,7 @@ import { createStore } from "./store.js";
       });
       return;
     }
-    if (store.session.puzzle.p.cat === "op") { opTreeMove(g, mv); return; }
+    if (isOpeningCat(store.session.puzzle.p.cat)) { opTreeMove(g, mv); return; }
     if (SCRIPTED_CATS[store.session.puzzle.p.cat]) {
       // scripted line: exact match, opponent replies straight from the script
       const script = puzzleScript(store.session.puzzle.p);
@@ -3311,7 +3358,7 @@ import { createStore } from "./store.js";
       checkNewAchievements();
     }
     const verb = store.session.puzzle.p.cat === "mine" ? t("pz.doneMine") :
-      store.session.puzzle.p.cat === "op" ? t("pz.doneOp") :
+      isOpeningCat(store.session.puzzle.p.cat) ? t("pz.doneOp") :
       store.session.puzzle.p.cat === "def" ? t("pz.doneDef") :
       store.session.puzzle.p.cat === "draw" ? t("pz.doneDraw") :
       store.session.puzzle.p.cat === "real" ? t("pz.doneReal") :
@@ -3361,6 +3408,56 @@ import { createStore } from "./store.js";
     maybeEngineTurn();
   }
 
+  /**
+   * The game a drill was mined from, if it is still on disk.
+   *
+   * 7.2 (A2). `from` is a reference, not a copy, and both the things it can
+   * point at roll over: the library keeps 500 games and 战绩 keeps 500
+   * records, and 战绩 can be cleared outright. So every read asks whether the
+   * source is still there — and the entry point is drawn only when this
+   * answers yes. A button that opens nothing is exactly the promise P3 exists
+   * to stop the interface making.
+   */
+  function drillSourceOf(p) {
+    const from = p && p.from;
+    if (!from || !from.id) return null;
+    if (from.kind === "lib") {
+      const entry = (store.session.library || []).find((g) => g && g.id === from.id);
+      return entry ? { kind: "lib", entry } : null;
+    }
+    const rec = loadStats().games.find((g) => g && g.id === from.id);
+    return rec ? { kind: "game", rec } : null;
+  }
+
+  /**
+   * 「看那局棋」: leave the trainer and open the drill's source game, stopping
+   * the cursor on the move it was mined from.
+   *
+   * The drill's fen is the position *before* the blunder, so the cursor goes
+   * one ply later: that lands on the move itself — the one the move list
+   * marks ?? and the one just failed again — rather than on the moment
+   * before it, where the board would look identical to the puzzle just left.
+   *
+   * The trainer is left before the load, because the load asks whether it may
+   * replace the board and the answer may be no. That is the whole reason the
+   * category and index are kept: a cancelled jump puts the same drill back.
+   */
+  async function openDrillSource() {
+    const pz = store.session.puzzle;
+    const p = pz && pz.p;
+    const src = drillSourceOf(p);
+    if (!src) return;
+    const ply = Number.isFinite(p.ply) ? p.ply : null;
+    const cat = pz.cat, idx = pz.idx;
+    stopPuzzles();
+    const ok = src.kind === "lib" ? await loadLibraryEntry(src.entry) : await loadHistoryRecord(src.rec);
+    // nothing was loaded and the mode never left 做题 — put the drill back
+    if (!ok) { startPuzzleAt(cat, idx); return; }
+    if (ply != null) setViewIndex(ply + 1);
+    saveGame();
+    sync();
+  }
+
   function nextPuzzle() {
     if (!store.session.puzzle) return;
     let list = puzzlesInCat(store.session.puzzle.cat);
@@ -3385,7 +3482,7 @@ import { createStore } from "./store.js";
 
   /** The 执白/执黑 row exists only where there are two chairs: the op list. */
   function syncOpSideSeg(cat) {
-    avail(el("row-op-side"), cat === "op");
+    avail(el("row-op-side"), isOpeningCat(cat));
     const side = store.session.puzzleState.opSide === "b" ? "b" : "w";
     document.querySelectorAll("#op-side-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.side === side);
@@ -3469,6 +3566,8 @@ import { createStore } from "./store.js";
       document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
         b.classList.toggle("active", b.dataset.cat === store.session.puzzleState.cat);
         if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;
+      if (b.dataset.cat === "rep") b.hidden = !RepUI.total();
+        if (b.dataset.cat === "rep") b.hidden = !RepUI.total();
       });
       avail(el("row-puzzle-tier"), tierApplies(store.session.puzzleState.cat));
       syncOpSideSeg(store.session.puzzleState.cat);
@@ -3508,6 +3607,7 @@ import { createStore } from "./store.js";
       // surface how many are queued for review right on the tab
       if (b.dataset.cat === "review") b.textContent = t("pz.cat.review") + (missedCount ? "·" + missedCount : "");
       if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;
+      if (b.dataset.cat === "rep") b.hidden = !RepUI.total();
     });
     const task = document.getElementById("puzzle-task");
     if (task) {
@@ -3526,12 +3626,16 @@ import { createStore } from "./store.js";
     }
     // a finished opening line offers the game it was drilled for; that is the
     // reward, so it takes the primary emphasis from "next puzzle"
-    const canPlayOn = !!store.session.puzzle.done && store.session.puzzle.p.cat === "op";
+    const canPlayOn = !!store.session.puzzle.done && isOpeningCat(store.session.puzzle.p.cat);
     const playOn = document.getElementById("puzzle-playon");
     if (playOn) {
       playOn.hidden = !canPlayOn;
       playOn.classList.toggle("primary", canPlayOn);
     }
+    // 「看那局棋」 (7.2): only for a drill mined from a game that is still
+    // filed — see drillSourceOf for why that has to be asked every time
+    const srcBtn = document.getElementById("puzzle-source");
+    if (srcBtn) srcBtn.hidden = !drillSourceOf(store.session.puzzle.p);
     // 「答案」 asks the app to draw the right move for the stage you are on.
     // Once the puzzle is solved there is no stage left, and showPuzzleAnswer()
     // says so itself — it returns on `done`. It just kept being drawn: press
@@ -3561,7 +3665,7 @@ import { createStore } from "./store.js";
         b.dataset.i = String(i);
         // opening drills carry their length: "how much is there to remember"
         // is the first thing anyone wants to know before starting one
-        const len = p.cat === "op" ? "  " + Math.ceil(p.line.length / 2) + t("pz.moveUnit") : "";
+        const len = isOpeningCat(p.cat) ? "  " + Math.ceil(p.line.length / 2) + t("pz.moveUnit") : "";
         b.textContent = (store.session.puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + len;
         listEl.appendChild(b);
       });
@@ -3832,7 +3936,7 @@ import { createStore } from "./store.js";
     // side is this player (ai mode); a pvp or imported game has no "you".
     let mined = 0, revised = 0, withdrawn = 0;
     if (store.session.mode === "ai") {
-      const rev = { budget: perMove, src: "auto" };
+      const rev = { budget: perMove, src: "auto", from: boardDrillSource() };
       const pass = { fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses(fens, scalars) };
       const cands = withMotifs(Mistakes.candidatesFrom(pass, store.session.humanColor, Chess, rev));
       const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
@@ -3842,7 +3946,7 @@ import { createStore } from "./store.js";
       const rv = Mistakes.reviseMines(store.session.mines, cands, pass, store.session.humanColor, rev);
       const r = Mistakes.addMines(rv.list, cands, Date.now(), solvedIds);
       const dropped = rv.retired.concat(r.dropped);
-      if (r.added || dropped.length || rv.updated.length) {
+      if (r.added || dropped.length || rv.updated.length || rv.filled.length) {
         store.session.mines = r.list;
         saveMines();
         // retired drills take their queue entries with them — an orphan id in
@@ -4230,7 +4334,8 @@ import { createStore } from "./store.js";
     const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess,
       // same rule as verifyAlt above: the fallback describes an analysis record
       // written before `budget` existed, so it stays at what that pass spent
-      { budget: (a && a.budget) || 120, src: "hand" });
+      // …and it points back at the same game the auto-miner would have named
+      { budget: (a && a.budget) || 120, src: "hand", from: boardDrillSource() });
     if (cand && a && a.pvs && typeof a.pvs[worst.ply] === "string") cand.pv = a.pvs[worst.ply];
     if (!cand) { toast(t("rv.bankNone"), "fix"); return; }
     if (store.session.mines.some((m) => m.id === cand.id)) { toast(t("rv.bankDup")); return; }
@@ -4420,6 +4525,21 @@ import { createStore } from "./store.js";
     // the v1 → v2 unpacking of `sig` happens in persist.js, with the shape
     const s = Persist.read("stats").value;
     return s && s.v === 2 && Array.isArray(s.games) ? s : { v: 2, games: [] };
+  }
+
+  /**
+   * The game on the board, as a drill source (7.2, A2) — or nothing.
+   *
+   * Nothing for the RESTORED_AND_FILED sentinel: that game *was* filed, but
+   * under an id this session never learnt, so a 「看那局棋」 built on it would
+   * be a door onto nothing. Nothing, too, for a game that is not filed at all
+   * — a pvp game, an imported PGN, a library game opened for a look. Those
+   * are all ordinary states, and `drillSourceOf` treats a missing source and
+   * a vanished one the same way: no entry point.
+   */
+  function boardDrillSource() {
+    return store.game.recordedId && store.game.recordedId !== RESTORED_AND_FILED
+      ? { kind: "game", id: store.game.recordedId } : undefined;
   }
 
   /** Record an AI game the moment it finishes on a live move (not on import). */
@@ -4893,6 +5013,7 @@ import { createStore } from "./store.js";
       : t("stats.emptyHint");
     el.appendChild(hint);
     renderLibrary();
+    renderRepertoire();
     renderPuzzleTally();
     renderTrends();
     const rec = recommendation();
@@ -5009,873 +5130,75 @@ import { createStore } from "./store.js";
 
   // --- 棋谱库 ---------------------------------------------------------------
   //
-  // The model is library.js; everything here is scheduling, persistence and
-  // the two screens. See that file's header for why this exists at all.
+  // The whole of it — the pass, the record, and the two screens — lives in
+  // library-ui.js since 7.2 (v7-2-plan §4). What is left here is the bag it
+  // borrows from this file and the names the rest of this file calls it by.
+  const LibraryUI = createLibraryUI({
+    doc: document, store, Persist, game, t, tf, toast, sync,
+    SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
+    plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
+    saveSettings, stopLiveAnalysis, withMotifs,
+  });
+  const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
+  const closeDiagnosis = () => LibraryUI.closeDiagnosis();
+  const closeLibList = () => LibraryUI.closeLibList();
+  const deepenLibraryGame = (i) => LibraryUI.deepenLibraryGame(i);
+  const importPgnToLibrary = (text, label) => LibraryUI.importPgnToLibrary(text, label);
+  const libNamesFrom = (text) => LibraryUI.libNamesFrom(text);
+  const loadFromLibrary = (i) => LibraryUI.loadFromLibrary(i);
+  const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
+  const openDiagnosis = () => LibraryUI.openDiagnosis();
+  const openLibList = (pick) => LibraryUI.openLibList(pick);
+  const reclaimLibrary = () => LibraryUI.reclaimLibrary();
+  const renderLibList = () => LibraryUI.renderLibList();
+  const renderLibrary = () => LibraryUI.renderLibrary();
+  const runLibraryPass = () => LibraryUI.runLibraryPass();
+  const saveLibrary = () => LibraryUI.saveLibrary();
 
-  /** How many analysed games buy a diagnosis. */
-  const LIB_MIN_GAMES = 20;
-  /**
-   * Per-position budget for the background pass, in ms. Same as the 分析
-   * button — see SCAN_BUDGET for why it is 200 and not 120.
-   *
-   * A pass over a full library costs about 1.7× what 120 ms would. That is
-   * the right trade here and not a close call: every number on the diagnosis
-   * page is meant to be acted on, and the pass is backgroundable, pausable
-   * and resumable, so the cost is wall-clock the player never waits through.
-   */
-  const LIB_BUDGET = SCAN_BUDGET;
+  // --- 我的开局书 (7.2, v7-2-plan §3) ---------------------------------------
+  //
+  // The second opening book: not the 195 vendored lines everybody drills, but
+  // the four or five things THIS player intends to play, imported as a PGN
+  // with variations. The model is repertoire.js, the section and the storage
+  // are repertoire-ui.js, and the drilling is the trainer's own rails — a
+  // repertoire drill is an opening drill with a different tree behind it.
+  //
+  // It is created here, after the library, because the third thing it does is
+  // read the library's diagnosis: the openings you actually play and have
+  // nothing written down about, worst record first.
+  const RepUI = createRepertoireUI({
+    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync,
+    // the gap list compares the book against the openings this player has
+    // actually played, and that comparison is only as good as the ECO codes
+    // on the library's entries — 7.1 shipped `fillOpenings` for exactly this
+    // and only the two dialogs ever called it
+    diagnose: () => {
+      if (LibraryUI.fillOpenings()) LibraryUI.saveLibrary();
+      return Library.diagnose(store.session.library, LIB_MIN_GAMES);
+    },
+    startDrills: () => startRepDrills(),
+  });
+  const renderRepertoire = () => RepUI.render();
 
-  function loadLibrary() {
-    const s = Persist.read("library").value;
-    if (!s) return { games: [], names: [] };
-    const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
-    for (const g of games) rescoreLosses(g);
-    return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
-  }
-
-  /**
-   * Recompute a stored game's per-ply losses from the scalars beside them.
-   *
-   * 7.0 wrote this array unclamped (see analyseLibraryGame), so a library
-   * analysed under 7.0 carries plies charged five figures of centipawns, and
-   * the diagnosis built from it says 残局 whatever the player actually does
-   * there. Capping the stored number at 1000 would not undo it: mate-in-5 to
-   * mate-in-9 is 0 once both ends are in the window and 400 once they are not.
-   * The scalars are in the record, so the honest repair is to run lossOf over
-   * them again rather than to salvage the arithmetic. Idempotent — a record
-   * written by this version comes out of it unchanged — which is why it needs
-   * no version flag and can simply run on every load.
-   */
-  function rescoreLosses(g) {
-    const an = g && g.an;
-    if (!an || !Array.isArray(an.scalars) || !Array.isArray(an.losses)) return;
-    const sc = an.scalars;
-    if (sc.length !== an.losses.length + 1) return; // not a shape we wrote
-    // side to move at ply 0, straight off the stored FEN — no board needed,
-    // and this runs over the whole library on every boot
-    let side = typeof g.fen === "string" && g.fen.trim().split(/\s+/)[1] === "b" ? "b" : "w";
-    an.losses = an.losses.map((_, i) => {
-      const a = sc[i], b = sc[i + 1];
-      const out = a == null || b == null ? null : Review.lossOf(a, b, side);
-      side = side === "w" ? "b" : "w";
-      return out;
-    });
-  }
-  {
-    const loaded = loadLibrary();
-    store.session.library = loaded.games;
-    store.session.libNames = loaded.names;
-  }
-  /** Set while the background pass is running; the pause button clears it. */
-  store.session.libRun = null;
-  function saveLibrary() {
-    Persist.setJson("library", { v: 1, games: store.session.library, names: store.session.libNames });
-  }
-
-  /** The names split out of the one text field, trimmed, empties dropped. */
-  function libNamesFrom(text) {
-    return String(text || "").split(/[,，;；]/).map((n) => n.trim()).filter(Boolean);
-  }
-
-  /**
-   * Re-run the claim over every entry.
-   *
-   * Typing a name is the single most likely correction someone makes on this
-   * page — they import an archive, see 一局都没认出是你下的, and fix it. That
-   * has to re-decide `side` and `outcome` for games already in the library,
-   * and it must NOT touch `an`: the analysis measured both sides' plies, so
-   * the same pass answers for either chair.
-   */
-  function reclaimLibrary() {
-    const names = store.session.libNames;
-    for (const g of store.session.library) {
-      const headers = [["White", g.white || ""], ["Black", g.black || ""]];
-      g.side = Library.sideOf(headers, names);
-      g.outcome = Library.outcomeFor(g.result, g.side);
-    }
-  }
-
-  /**
-   * Take every game in a PGN file into the library.
-   *
-   * Deliberately not the same path as 导入棋谱: that one asks which single
-   * game you meant, because it is about to put one on the board. Here the
-   * whole file is the point.
-   */
-  async function importPgnToLibrary(text, label) {
-    const text0 = (text || "").trim();
-    if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
-    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
-    let chunks;
-    try { chunks = ChessPgnParser.splitGames(text0); }
-    catch (_) { chunks = ChessPgn.splitGames(text0); }
-    const now = Date.now();
-    const fresh = [];
-    for (const chunk of chunks) {
-      let parsed = null;
-      try { parsed = ChessPgnParser.parsePgn(chunk).games[0]; } catch (_) { parsed = null; }
-      if (!parsed) continue;
-      // mainline SAN only: a game's variations are the annotator's opinion,
-      // and what this library measures is what the player actually played
-      const sans = [];
-      for (let n = parsed.root; n && n.children.length; n = n.children[0]) sans.push(n.children[0].san);
-      if (!sans.length) continue;
-      fresh.push(Library.entryFrom(parsed, sans, store.session.libNames, now));
-    }
-    if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
-    const r = Library.addGames(store.session.library, fresh);
-    store.session.library = r.list;
-    saveLibrary();
-    renderLibrary();
-    if (!r.added) toast(tf("lib.addedNone", [r.dup]), "fix");
-    else toast(tf("lib.added", [r.added, r.dup]) + (label ? " · " + label : ""));
-    if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
-  }
-
-  /**
-   * Accuracy for one library game, from its own moves.
-   *
-   * `accuracyFrom` reads `sanHistory()` — the game on the board — so it cannot
-   * serve a game that is not on the board. Same measure, own arguments.
-   */
-  function libAccuracy(fens, scalars, sans) {
-    const loss = Review.lossesBySide(scalars, (i) => (fens[i].split(" ")[1] === "w" ? "w" : "b"));
-    const w = Review.accuracyOf(loss.w);
-    const b = Review.accuracyOf(loss.b);
-    const wp = Review.summarizeWinPct(scalars, sans, fens[0].split(" ")[1] === "b" ? "b" : "w");
-    return { acc: { w: wp ? wp.acc.w : w.acc, b: wp ? wp.acc.b : b.acc },
-      acpl: { w: w.acpl, b: b.acpl } };
-  }
-
-  /**
-   * One game's offline pass. Returns the `an` record, or null if it was cut
-   * short — a half-analysed game stays in the queue rather than being filed
-   * as a measurement of something it did not measure.
-   */
-  async function analyseLibraryGame(entry, run) {
-    const sans = entry.sans.split(" ").filter(Boolean);
-    const g = entry.fen ? new Chess(entry.fen) : new Chess();
-    const fens = [g.fen()];
-    for (const san of sans) {
-      if (!g.move(san, { sloppy: true })) return null; // not a game we can replay
-      fens.push(g.fen());
-    }
-    const scalars = new Array(fens.length).fill(null);
-    const bests = new Array(fens.length).fill(null);
-    const repSeen = new Map();
-    for (let i = 0; i < fens.length; i++) {
-      if (run.abort) return null;
-      const probe = new Chess(fens[i]);
-      const repKey = Fide.positionKey(fens[i], probe);
-      const reps = (repSeen.get(repKey) || 0) + 1;
-      repSeen.set(repKey, reps);
-      // same terminal rule as analyzeGame(): threefold and the 50-move mark
-      // are claimable, not over, and scoring them 0 flattens the curve
-      if (probe.in_checkmate()) scalars[i] = probe.turn() === "w" ? -10000 : 10000;
-      else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
-      else {
-        let e = null;
-        try { e = await ChessEngine.analyze(fens[i], LIB_BUDGET, {}); } catch (_) { e = null; }
-        scalars[i] = evalScalar(e);
-        if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
-      }
-      run.ply = i + 1;
-      run.plies = fens.length;
-      renderLibrary();
-    }
-    const tags = sans.map((_, i) => {
-      const a = scalars[i], b = scalars[i + 1];
-      if (a == null || b == null) return null;
-      const mover = fens[i].split(" ")[1] === "w" ? "w" : "b";
-      return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
-    });
-    const losses = plyLosses(fens, scalars);
-    // What the player missed, at the plies where they went wrong: the motif of
-    // the engine's OWN move in that position, not of the move they played. A
-    // blunder rarely has a motif; the thing that punished it does, and that is
-    // the name worth putting in front of someone ("你栽在双击上 7 次").
-    const motifs = {};
-    for (let i = 0; i < tags.length; i++) {
-      if (tags[i] !== "?" && tags[i] !== "??") continue;
-      const uci = bests[i];
-      if (!uci) continue;
-      const san = sansOf(fens[i], [uci], 1)[0];
-      if (!san) continue;
-      let m = null;
-      try { m = motifOf(fens[i], san, Chess); } catch (_) { m = null; }
-      if (m) motifs[i] = m;
-    }
-    const a = libAccuracy(fens, scalars, sans);
-    // `pass` is the same shape analyzeGame hands the miner, so the library
-    // feeds 错题自炼 through exactly one set of rules rather than a second
-    // copy of them (v7-1-plan §1.2). Not stored — it is the arrays that are
-    // stored, and this is a view of them for the caller's next step.
-    return { an: { acc: a.acc, acpl: a.acpl, tags, losses, scalars, bests, budget: LIB_BUDGET },
-      motifs, pass: { fens, sans, tags, bests, losses } };
-  }
-
-  /** Start (or stop) the background pass over everything still unanalysed. */
-  /**
-   * Bank one library game's blunders as drills.
-   *
-   * v7-plan §6.3, which 7.0 skipped: `mistakes.js` has argued since 5.1 that
-   * the one content source no canned book can have is the games this player
-   * really lost — and 7.0 shipped a feature that analysed hundreds of them
-   * and sent not one to the book. `addMines` was called from exactly two
-   * places, both on the board path.
-   *
-   * Same three calls in the same order as the board's pass, deliberately: a
-   * deeper look first REVISES what the book already says about a position
-   * (audit F2), and only then extends it. Nothing here is library-specific
-   * except where the arrays came from.
-   * @returns {number} drills added
-   */
-  function mineLibraryGame(entry, pass) {
-    if (!entry || !entry.side || !pass) return 0;
-    const rev = { budget: LIB_BUDGET, src: "lib" };
-    const cands = withMotifs(Mistakes.candidatesFrom(pass, entry.side, Chess, rev));
-    if (!cands.length) return 0;
-    const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
-    const rv = Mistakes.reviseMines(store.session.mines, cands, pass, entry.side, rev);
-    const r = Mistakes.addMines(rv.list, cands, Date.now(), solvedIds);
-    const dropped = rv.retired.concat(r.dropped);
-    if (!r.added && !dropped.length && !rv.updated.length) return 0;
-    store.session.mines = r.list;
-    saveMines();
-    for (const id of dropped) {
-      delete store.session.puzzleState.solved[id];
-      delete store.session.puzzleState.missed[id];
-    }
-    if (dropped.length) savePuzzleState();
-    if (r.added) { Progress.recordMined(store.session.progress, r.added, Date.now()); saveProgress(); }
-    return r.added;
-  }
-
-  async function runLibraryPass() {
-    if (store.session.libRun) { store.session.libRun.abort = true; return; }
-    if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
-    if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
-    await stopLiveAnalysis();
-    const run = { abort: false, done: 0, mined: 0, total: Library.pending(store.session.library).length, ply: 0, plies: 0 };
-    store.session.libRun = run;
-    renderLibrary();
-    try {
-      for (;;) {
-        if (run.abort) break;
-        // A pass over a few hundred games takes the better part of an hour,
-        // and the person will not be watching it. One notification carrying a
-        // fixed `id` (SDK 0.10.0) is REPLACED by the next one instead of
-        // stacking, which is the difference between a progress report and
-        // twenty notifications. No action button: `actionCommand` dispatches
-        // an app command, and every command in this app passes a mode gate
-        // built from the shortcut table — a command with no row there simply
-        // does not run, so a button wired to one would be a button that does
-        // nothing. Recorded in docs/v7-plan.md §7.5.
-        if (!store.ui.appForeground && run.done) {
-          Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
-            body: tf("ntf.libraryBody", [run.done, run.total]) });
-        }
-        // re-read the queue each round: an import during the pass adds to it,
-        // and an entry that failed to replay must not be handed back forever
-        const next = Library.pending(store.session.library).find((g) => !g.an && !g.unplayable);
-        if (!next) break;
-        run.name = (next.white || "?") + " — " + (next.black || "?");
-        const r = await analyseLibraryGame(next, run);
-        if (run.abort) break;
-        if (!r) { next.unplayable = true; }
-        else {
-          next.an = r.an;
-          next.motifs = r.motifs;
-          run.mined += mineLibraryGame(next, r.pass);
-        }
-        run.done++;
-        saveLibrary();
-        renderLibrary();
-      }
-    } finally {
-      const done = run.done, mined = run.mined;
-      store.session.libRun = null;
-      saveLibrary();
-      renderLibrary();
-      if (done && mined) toast(tf("lib.minedDone", [done, mined]));
-      if (done && !store.ui.appForeground) {
-        Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
-          body: tf("ntf.libraryDone", [done]) + (mined ? " · " + tf("msg.mined", [mined]) : "") });
-      }
-    }
-  }
-
-  /** The library section in the 记录 pane. */
-  function renderLibrary() {
-    const body = document.getElementById("lib-body");
-    if (!body) return;
-    const list = store.session.library;
-    const analysed = list.filter((g) => g.an && g.side);
-    const queued = Library.pending(list).filter((g) => !g.unplayable).length;
-    const meta = document.getElementById("lib-meta");
-    if (meta) { meta.hidden = !list.length; meta.textContent = tf("lib.count", [list.length]); }
-    const namesRow = document.getElementById("lib-names-row");
-    if (namesRow) namesRow.hidden = !list.length;
-    body.replaceChildren();
-    const line = (text, cls) => {
-      const p = document.createElement("p");
-      p.className = cls || "hint";
-      p.textContent = text;
-      body.appendChild(p);
-    };
-    if (!list.length) {
-      line(t("lib.empty"));
-    } else {
-      const claimed = list.filter((g) => g.side).length;
-      const row = document.createElement("div");
-      row.className = "stat-row";
-      const k = document.createElement("span");
-      k.className = "stat-k";
-      k.textContent = tf("lib.claimed", [claimed]);
-      const v = document.createElement("span");
-      v.className = "stat-v num";
-      v.textContent = [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
-        .filter(Boolean).join(" · ");
-      row.append(k, v);
-      body.appendChild(row);
-      const run = store.session.libRun;
-      if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
-      else if (!claimed) line(t("lib.noneClaimed"), "hint warn");
-      else if (analysed.length < LIB_MIN_GAMES) line(tf("lib.needMore", [LIB_MIN_GAMES - analysed.length, analysed.length, LIB_MIN_GAMES]));
-      // A game whose moves would not replay is dropped from the queue, and a
-      // queue that quietly gets shorter is how you end up wondering why the
-      // count stopped moving. Say how many and leave them in the list.
-      const stuck = list.filter((g) => g.unplayable).length;
-      if (stuck) line(tf("lib.unplayable", [stuck]));
-    }
-    const an = document.getElementById("lib-analyse");
-    if (an) {
-      an.hidden = !queued && !store.session.libRun;
-      an.textContent = store.session.libRun ? t("lib.pause") : tf("lib.analyse", [queued]);
-    }
-    const dg = document.getElementById("lib-diagnose");
-    if (dg) dg.hidden = analysed.length < LIB_MIN_GAMES;
-    const op = document.getElementById("lib-open");
-    if (op) {
-      op.hidden = !list.length;
-      op.textContent = tf("lib.all", [list.length]);
-    }
-  }
-
-
-  /**
-   * The opening every claimed game was played in, filled in where missing.
-   *
-   * `diagnose()` has counted 开局战绩 since 7.0 and `foldGame` reads `g.eco` —
-   * but nothing in 7.0 ever *set* it, so `d.ecos` was always empty and the
-   * whole section silently never rendered. (The e2e seeded `eco` by hand,
-   * which is exactly why the test passed while the app produced nothing.)
-   *
-   * Cheap and idempotent: no engine, one position lookup per game, and only
-   * for games that lack one. The ECO table is a lazy chunk, so callers that
-   * can wait should await `ChessEco.whenReady` first; called before the table
-   * has landed this fills nothing and is simply called again later.
-   * @returns {number} how many entries it filled
-   */
-  function fillOpenings() {
-    let n = 0;
-    for (const g of store.session.library) {
-      if (g.eco || !g.side || typeof g.sans !== "string") continue;
-      const sans = g.sans.split(" ").filter(Boolean);
-      if (!sans.length) continue;
-      let hit = null;
-      try { hit = ChessEco.openingForGame(sans.slice(0, 24), g.fen || undefined); } catch (_) { hit = null; }
-      if (!hit) continue;
-      g.eco = hit.eco;
-      // the raw table name, localised at render time — freezing a translation
-      // into the record would leave it in whatever language it was imported in
-      g.ecoName = hit.name || "";
-      n++;
-    }
-    return n;
-  }
-
-  /** `openingForGame`'s name for a stored entry, in the interface language. */
-  function libEcoName(eco, name) {
-    if (!eco) return "";
-    return ChessEco.localName({ eco, name: name || "" }, store.ui.langId) || name || "";
-  }
-
-  /**
-   * A library entry as a PGN, so the ordinary import path can open it.
-   *
-   * Deliberately rebuilt from the record rather than kept as text: the record
-   * is what survived the import, and a second copy of the same game as a
-   * string would be most of what the library weighs (see `entryFrom`'s note
-   * on why `sans` is joined rather than an array).
-   */
-  function libraryPgn(entry) {
-    const tag = (k, v) => "[" + k + " \"" + String(v || "?").replace(/["\\\\]/g, "") + "\"]\n";
-    let head = tag("Event", entry.event) + tag("Site", "?") + tag("Date", entry.date) +
-      tag("Round", "?") + tag("White", entry.white) + tag("Black", entry.black) +
-      tag("Result", entry.result || "*");
-    if (entry.fen) head += tag("SetUp", "1") + tag("FEN", entry.fen);
-    const sans = String(entry.sans || "").split(" ").filter(Boolean);
-    const start = entry.fen ? entry.fen.trim().split(/\s+/) : [];
-    const first = start[1] === "b" ? "b" : "w";
-    const startNo = Number(start[5]) >= 1 ? Math.floor(Number(start[5])) : 1;
-    const out = [];
-    sans.forEach((san, i) => {
-      const moveNo = startNo + Math.floor((i + (first === "b" ? 1 : 0)) / 2);
-      // a game that opens with Black to move opens at "1…" — the same rule
-      // review.js's moveNumber and library.js's startOf both follow
-      if (i === 0 && first === "b") out.push(moveNo + "...");
-      else if ((i % 2 === 0) === (first === "w")) out.push(moveNo + ".");
-      out.push(san);
-    });
-    out.push(entry.result || "*");
-    return head + "\n" + out.join(" ") + "\n";
-  }
-
-  /** How many of this player's own plies in a game were `?` or `??`. */
-  function libBadCount(g) {
-    const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
-    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
-    const first = start[1] === "b" ? "b" : "w";
-    const other = first === "w" ? "b" : "w";
-    let n = 0;
-    for (let i = 0; i < tags.length; i++) {
-      if ((i % 2 === 0 ? first : other) !== g.side) continue;
-      if (tags[i] === "?" || tags[i] === "??") n++;
-    }
-    return n;
-  }
-
-  /** The move number of ply `i` in a library entry — startOf's rule, again. */
-  function libMoveNo(g, i) {
-    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
-    const first = start[1] === "b" ? "b" : "w";
-    const startNo = Number(start[5]) >= 1 ? Math.floor(Number(start[5])) : 1;
-    return startNo + Math.floor((i + (first === "b" ? 1 : 0)) / 2);
-  }
-
-  /**
-   * Does this game answer the filter the diagnosis set?
-   *
-   * The three kinds mirror the three things `diagnose()` reports that name a
-   * subset of games: a motif that keeps catching you, an opening, and the
-   * move number your mistakes cluster on. Each is answered from the same
-   * arrays `foldGame` counted, so the list can never disagree with the number
-   * that sent the player to it.
-   */
-  function libPickMatches(g) {
-    const pick = store.ui.libPick;
-    if (!pick) return true;
-    if (pick.kind === "eco") return g.eco === pick.value;
-    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
-    const first = start[1] === "b" ? "b" : "w";
-    const other = first === "w" ? "b" : "w";
-    const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
-    for (let i = 0; i < tags.length; i++) {
-      if ((i % 2 === 0 ? first : other) !== g.side) continue;
-      if (pick.kind === "motif") {
-        if (g.motifs && g.motifs[i] === pick.value) return true;
-      } else if (pick.kind === "peak") {
-        if ((tags[i] === "?" || tags[i] === "??") && libMoveNo(g, i) === pick.value) return true;
-      }
-    }
-    return false;
-  }
-
-  /** Which slice of the library the list is showing. */
-  function libMatches(g) {
-    const f = store.ui.libFilter;
-    if (f.result !== "all" && g.outcome !== f.result) return false;
-    if (f.color !== "all" && g.side !== f.color) return false;
-    return libPickMatches(g);
-  }
-
-  /** "2026.09.01 · rival" — the row's headline, localised at render time. */
-  function libraryLabel(g) {
-    const res = g.outcome ? t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw")
-      : (g.result || "*");
-    const me = g.side === "b" ? g.black : g.white;
-    const foe = g.side === "b" ? g.white : g.black;
-    return res + " · " + (foe || t("lib.unknownFoe")) + (g.side ? "" : " · " + (me || ""));
-  }
-
-  /** The second line: when, how well, how many mistakes, which opening. */
-  function librarySub(g) {
-    const bits = [];
-    if (g.date && g.date !== "?") bits.push(g.date);
-    const acc = g.an && g.an.acc && g.side ? g.an.acc[g.side] : null;
-    if (Number.isFinite(acc)) bits.push(tf("lib.rowAcc", [Math.round(acc * 10) / 10]));
-    if (g.an) bits.push(tf("lib.rowBad", [libBadCount(g)]));
-    else bits.push(t(g.unplayable ? "lib.rowUnplayable" : "lib.rowPending"));
-    if (g.eco) bits.push(g.eco + " " + libEcoName(g.eco, g.ecoName));
-    return bits.join(" · ");
-  }
-
-  function libraryRow(g, i) {
-    const row = document.createElement("div");
-    row.className = "hist-row";
-    const load = document.createElement("button");
-    load.type = "button";
-    load.className = "pick-item";
-    load.dataset.lib = String(i);
-    load.textContent = libraryLabel(g);
-    const sub = document.createElement("span");
-    sub.className = "pick-sub";
-    sub.textContent = librarySub(g);
-    load.appendChild(sub);
-    row.appendChild(load);
-    return row;
-  }
-
-  /**
-   * The list dialog.
-   *
-   * Rows carry their index into `store.session.library`, never into the
-   * filtered array — the history list learned that the hard way: re-indexing
-   * a filtered list makes "open this game" open a different one whenever a
-   * filter is on.
-   */
-  function renderLibList() {
-    const list = document.getElementById("lib-list");
-    if (!list) return;
-    const all = store.session.library;
-    const rows = all.map((g, i) => ({ g, i })).filter(({ g }) => libMatches(g));
-    if (store.ui.libFilter.sort === "acc") {
-      // worst first: this list exists to find the games worth reopening, and
-      // an unanalysed game has no accuracy to rank, so it goes last
-      rows.sort((a, b) => {
-        const av = a.g.an && a.g.an.acc && a.g.side ? a.g.an.acc[a.g.side] : Infinity;
-        const bv = b.g.an && b.g.an.acc && b.g.side ? b.g.an.acc[b.g.side] : Infinity;
-        return (av == null ? Infinity : av) - (bv == null ? Infinity : bv);
-      });
-    } else {
-      rows.sort((a, b) => (b.g.t || 0) - (a.g.t || 0));
-    }
-    reconcile(list, rows,
-      ({ g, i }) => g.id || ("i" + i),
-      ({ g }) => [g.outcome, g.side, g.eco, g.an ? "a" : "-", g.unplayable ? "u" : "-"].join("|"),
-      ({ g, i }) => libraryRow(g, i));
-    if (!rows.length) {
-      const p = document.createElement("p");
-      p.className = "hint";
-      p.textContent = t("hist.noneMatch");
-      list.appendChild(p);
-    }
-    const count = document.getElementById("lib-list-count");
-    if (count) {
-      const filtered = store.ui.libFilter.result !== "all" || store.ui.libFilter.color !== "all" || store.ui.libPick;
-      count.hidden = !filtered;
-      count.textContent = tf("hist.showing", [rows.length, all.length]);
-    }
-    const note = document.getElementById("lib-pick-note");
-    if (note) {
-      note.hidden = !store.ui.libPick;
-      note.textContent = store.ui.libPick ? store.ui.libPick.label : "";
-    }
-    const clear = document.getElementById("lib-pick-clear");
-    if (clear) clear.hidden = !store.ui.libPick;
-    document.querySelectorAll("#lib-result-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.lres === store.ui.libFilter.result);
-    });
-    document.querySelectorAll("#lib-color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.lcol === store.ui.libFilter.color);
-    });
-    document.querySelectorAll("#lib-sort-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.lsort === store.ui.libFilter.sort);
-    });
-  }
-
-  function openLibList(pick) {
-    store.ui.libPick = pick || null;
-    // an opening name needs the ECO chunk; ask for it and redraw when it lands
-    if (!ChessEco.loaded()) ChessEco.whenReady(() => { if (fillOpenings()) saveLibrary(); renderLibList(); });
-    else if (fillOpenings()) saveLibrary();
-    renderLibList();
-    Dlg.open(document.getElementById("lib-list-modal"));
-  }
-  function closeLibList() { Dlg.close(document.getElementById("lib-list-modal")); }
-
-  /**
-   * Open one library game on the board, with the analysis it already has.
-   *
-   * The point of the whole feature: 7.0 paid minutes of engine time per game
-   * and then had no way to show any of it. `store.session.analysis` is the
-   * shape the review page reads, and the library's `an` holds five of its
-   * eight fields; `sig` is computed here from the game that just loaded, and
-   * `pvs` / `linesAt` are simply absent — every read of those is written
-   * `a && a.pvs ? … : null`, so their absence means "no engine line to
-   * expand", not a broken page. **No search is started.**
-   */
-  async function loadFromLibrary(i) {
-    const entry = store.session.library[i];
-    if (!entry) return;
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
-    closeLibList();
-    const ok = await importPgnText(libraryPgn(entry), t("lib.title"),
-      { msg: t("dlg.loadLib"), title: t("dlg.loadLibTitle"), ok: t("dlg.loadLibOk") });
-    if (!ok) return;
-    // an imported game has no "you" by default; the library knows who you are
-    store.session.mode = "pvp";
-    if (entry.side === "w" || entry.side === "b") {
-      store.session.humanColor = entry.side;
-      store.game.flipped = entry.side === "b";
-    }
-    store.game.recordedId = null;
-    invalidateEngine();
-    const an = entry.an;
-    store.session.analysis = an && Array.isArray(an.scalars) && Array.isArray(an.tags) ? {
-      sig: game.pgn(),
-      scalars: an.scalars,
-      tags: an.tags,
-      bests: an.bests || [],
-      budget: an.budget || LIB_BUDGET,
-      acc: { w: an.acc && an.acc.w, b: an.acc && an.acc.b,
-        wAcpl: an.acpl && an.acpl.w, bAcpl: an.acpl && an.acpl.b },
-    } : null;
+  /** 「开始背」: into the trainer, on the repertoire tab, in the chair with lines. */
+  function startRepDrills() {
+    if (!RepUI.total()) return;
+    // the chair that has a book is the chair to sit in; with both, keep the
+    // one the opening segment is already showing
+    const has = (side) => RepUI.drills(side).length > 0;
+    const cur = store.session.puzzleState.opSide === "b" ? "b" : "w";
+    const side = has(cur) ? cur : has("w") ? "w" : "b";
+    store.session.puzzleState.opSide = side;
+    store.session.puzzleState.cat = "rep";
+    store.session.puzzleTierFilter = "all";
+    savePuzzleState();
+    store.session.mode = "puzzle";
     saveSettings();
-    saveGame();
+    setSideTab("play");
+    startPuzzles();
     sync();
-    toast(tf("lib.loaded", [libraryLabel(entry)]));
   }
 
-
-  /**
-   * The diagnosis charts (v7-1-plan §2.1).
-   *
-   * Three shapes for the three things the page says that a number alone does
-   * not carry: which phase is the weak one and by how much, where in the game
-   * things go wrong, and which openings actually score. Drawn in the same
-   * idiom as the two sparklines above — device-pixel sizing, colours read
-   * from the document so a theme change is answered, judgement colours from
-   * `judgeColours()` so the weak bar is the same red the move list uses.
-   *
-   * Created by this function rather than sitting in the markup: a chart with
-   * no data must not exist at all (the P3 rule this page has followed since
-   * 7.0), and "does not exist" is easier to be sure of than "is hidden".
-   */
-  function diagCanvas(parent, h, label) {
-    const cv = document.createElement("canvas");
-    cv.className = "diag-chart";
-    cv.style.height = h + "px";
-    cv.setAttribute("role", "img");
-    cv.setAttribute("aria-label", label);
-    parent.appendChild(cv);
-    const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(1, Math.round((cv.clientWidth || parent.clientWidth || 320) * dpr));
-    const H = Math.max(1, Math.round(h * dpr));
-    cv.width = W;
-    cv.height = H;
-    const ctx = cv.getContext("2d");
-    ctx.clearRect(0, 0, W, H);
-    const css = getComputedStyle(document.documentElement);
-    return { ctx, W, H, dpr,
-      muted: css.getPropertyValue("--muted").trim() || "#999",
-      accent: css.getPropertyValue("--accent").trim() || "#e8c39e",
-      text: css.getPropertyValue("--text").trim() || "#ddd" };
-  }
-
-  /** Per-phase centipawn loss, with the weak one in the judgement colour. */
-  function drawPhaseChart(parent, d, phaseName) {
-    const rows = ["opening", "middle", "end"]
-      .map((k) => ({ k, acpl: d.phase[k].acpl }))
-      .filter((r) => r.acpl != null);
-    if (rows.length < 2) return; // one bar is not a comparison
-    const c = diagCanvas(parent, 92, t("diag.chartPhase"));
-    const pad = 6 * c.dpr, gap = 10 * c.dpr, label = 16 * c.dpr;
-    const max = Math.max(...rows.map((r) => r.acpl)) * 1.15 || 1;
-    const bw = (c.W - 2 * pad - gap * (rows.length - 1)) / rows.length;
-    const bad = judgeColours().bad;
-    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
-      .getPropertyValue("--font-num").trim() || "monospace");
-    c.ctx.textAlign = "center";
-    rows.forEach((r, i) => {
-      const x = pad + i * (bw + gap);
-      const hgt = Math.max(1, (r.acpl / max) * (c.H - 2 * pad - 2 * label));
-      c.ctx.fillStyle = r.k === d.weakestPhase ? bad : c.accent;
-      c.ctx.fillRect(x, c.H - pad - label - hgt, bw, hgt);
-      c.ctx.fillStyle = c.text;
-      c.ctx.fillText(String(r.acpl), x + bw / 2, c.H - pad - label - hgt - 3 * c.dpr);
-      c.ctx.fillStyle = c.muted;
-      c.ctx.fillText(phaseName[r.k], x + bw / 2, c.H - pad);
-    });
-  }
-
-  /**
-   * Where the mistakes are, by move number.
-   *
-   * The page already says "第 24 回合，N 局栽在这里". What it cannot say in a
-   * sentence is whether that is a spike or a plateau — a clock problem and a
-   * knowledge problem look completely different here and identical there.
-   */
-  function drawPeakChart(parent, list) {
-    const counts = new Map();
-    let worst = 0;
-    for (const g of list) {
-      // each game's own claimed chair — the same games `foldGame` counted,
-      // so the spike here and the sentence under it cannot disagree
-      if (!g.an || !g.side) continue;
-      const tags = Array.isArray(g.an.tags) ? g.an.tags : [];
-      const start = g.fen ? g.fen.trim().split(/\s+/) : [];
-      const first = start[1] === "b" ? "b" : "w";
-      const other = first === "w" ? "b" : "w";
-      for (let i = 0; i < tags.length; i++) {
-        if ((i % 2 === 0 ? first : other) !== g.side) continue;
-        if (tags[i] !== "?" && tags[i] !== "??") continue;
-        const mv = libMoveNo(g, i);
-        counts.set(mv, (counts.get(mv) || 0) + 1);
-        if (mv > worst) worst = mv;
-      }
-    }
-    if (counts.size < 3) return;
-    const last = Math.max(10, Math.min(worst, 60));
-    const c = diagCanvas(parent, 80, t("diag.chartPeak"));
-    const pad = 6 * c.dpr, label = 14 * c.dpr;
-    const max = Math.max(...counts.values()) || 1;
-    const bw = (c.W - 2 * pad) / last;
-    c.ctx.fillStyle = c.accent;
-    for (let mv = 1; mv <= last; mv++) {
-      const n = counts.get(mv) || 0;
-      if (!n) continue;
-      const hgt = Math.max(1, (n / max) * (c.H - 2 * pad - label));
-      c.ctx.fillRect(pad + (mv - 1) * bw, c.H - pad - label - hgt, Math.max(1, bw - c.dpr), hgt);
-    }
-    c.ctx.fillStyle = c.muted;
-    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
-      .getPropertyValue("--font-num").trim() || "monospace");
-    c.ctx.textAlign = "left";
-    c.ctx.fillText("1", pad, c.H - pad);
-    c.ctx.textAlign = "right";
-    c.ctx.fillText(String(last), c.W - pad, c.H - pad);
-  }
-
-  /** Win / draw / loss per opening, as one stacked bar each. */
-  function drawEcoChart(parent, ecos) {
-    const rows = ecos.slice(0, 6).filter((e) => e.n > 0);
-    if (rows.length < 2) return;
-    const c = diagCanvas(parent, 18 * rows.length + 12, t("diag.chartEco"));
-    const pad = 4 * c.dpr;
-    const rh = (c.H - 2 * pad) / rows.length;
-    const cols = judgeColours();
-    const labelW = 46 * c.dpr;
-    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
-      .getPropertyValue("--font-num").trim() || "monospace");
-    c.ctx.textAlign = "left";
-    rows.forEach((e, i) => {
-      const y = pad + i * rh;
-      c.ctx.fillStyle = c.muted;
-      c.ctx.fillText(e.eco, pad, y + rh * 0.7);
-      let x = pad + labelW;
-      const full = c.W - pad - x;
-      const seg = [[e.win, c.accent], [e.draw, c.muted], [e.loss, cols.bad]];
-      for (const [n, col] of seg) {
-        if (!n) continue;
-        const w = (n / e.n) * full;
-        c.ctx.fillStyle = col;
-        c.ctx.fillRect(x, y + rh * 0.2, w, rh * 0.6);
-        x += w;
-      }
-    });
-  }
-
-  /** The diagnosis dialog: what `diagnose()` found, in sentences. */
-  function renderDiagnosis() {
-    const el = document.getElementById("lib-diag");
-    if (!el) return;
-    el.replaceChildren();
-    const d = Library.diagnose(store.session.library, LIB_MIN_GAMES);
-    const para = (text, cls) => {
-      const p = document.createElement("p");
-      p.className = cls || "hint";
-      p.textContent = text;
-      el.appendChild(p);
-    };
-    const row = (kText, vText, pick) => {
-      const r = document.createElement(pick ? "button" : "div");
-      r.className = "stat-row" + (pick ? " stat-row-link" : "");
-      if (pick) {
-        r.type = "button";
-        r.dataset.diagPick = JSON.stringify(pick);
-        r.title = t("diag.openThese");
-      }
-      const k = document.createElement("span");
-      k.className = "stat-k";
-      k.textContent = kText;
-      const v = document.createElement("span");
-      v.className = "stat-v num";
-      v.textContent = vText;
-      r.append(k, v);
-      el.appendChild(r);
-    };
-    // v7-plan §6.2: 「每一条都必须点到一个可执行的下一步；没有下一步的统计
-    // 不写进这一页」。7.0 写了统计，一条下一步都没接上。These three are the
-    // rows that name a subset of games, so each one is a door to that subset.
-    const pickPara = (text, cls, pick) => {
-      const p = document.createElement(pick ? "button" : "p");
-      p.className = (cls || "hint") + (pick ? " hint-link" : "");
-      if (pick) { p.type = "button"; p.dataset.diagPick = JSON.stringify(pick); }
-      p.textContent = text;
-      el.appendChild(p);
-    };
-    if (!d.enough) { para(tf("lib.needMore", [d.need - d.have, d.have, d.need])); return; }
-    para(tf("diag.from", [d.games]));
-    row(t("diag.record"), tf("diag.wld", [d.outcome.win, d.outcome.loss, d.outcome.draw]));
-    if (d.acc != null) row(t("diag.acc"), d.acc + "%");
-    const phaseName = {
-      opening: tf("diag.phaseOpening", [Library.OPENING_UNTIL]),
-      middle: t("diag.phaseMiddle"),
-      end: t("diag.phaseEnd"),
-    };
-    for (const k of ["opening", "middle", "end"]) {
-      const p = d.phase[k];
-      if (p.acpl == null) continue;
-      row(phaseName[k], tf("diag.acpl", [p.acpl]) + " · " +
-        tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10]));
-    }
-    drawPhaseChart(el, d, phaseName);
-    if (d.weakestPhase) {
-      const best = ["opening", "middle", "end"].map((k) => d.phase[k].acpl).filter((n) => n != null);
-      para(tf("diag.weakest", [phaseName[d.weakestPhase], d.phase[d.weakestPhase].acpl,
-        d.phase[d.weakestPhase].acpl - Math.min(...best)]), "hint warn");
-    } else {
-      para(t("diag.noWeakest"));
-    }
-    drawPeakChart(el, store.session.library);
-    if (d.peak) {
-      pickPara(tf("diag.peak", [d.peak.move, d.peak.n]), "hint",
-        { kind: "peak", value: d.peak.move, label: tf("diag.pickPeak", [d.peak.move]) });
-    }
-    if (d.motifs.length) {
-      row(t("diag.motifs"), "");
-      for (const m of d.motifs.slice(0, 6)) {
-        row(t("motif." + m.motif), tf("diag.motifN", [m.n]),
-          { kind: "motif", value: m.motif, label: tf("diag.pickMotif", [t("motif." + m.motif)]) });
-      }
-    }
-    if (d.ecos.length) {
-      row(t("diag.ecos"), "");
-      drawEcoChart(el, d.ecos);
-      for (const e of d.ecos.slice(0, 6)) {
-        const name = libEcoName(e.eco, e.name);
-        row(e.eco + (name ? " " + name : ""),
-          tf("diag.ecoRow", [e.n, Math.round((e.score || 0) * 100)]),
-          { kind: "eco", value: e.eco, label: tf("diag.pickEco", [e.eco + (name ? " " + name : "")]) });
-      }
-    }
-  }
-
-  function openDiagnosis() {
-    // 7.1: the 开局战绩 section needs an `eco` on the records, which 7.0 never
-    // wrote. Fill what is missing before drawing, and draw again when the ECO
-    // chunk lands — a library analysed under 7.0 gets its openings without
-    // anyone re-running the engine over it.
-    if (!ChessEco.loaded()) ChessEco.whenReady(() => { if (fillOpenings()) saveLibrary(); renderDiagnosis(); });
-    else if (fillOpenings()) saveLibrary();
-    // open FIRST: the charts size themselves from their laid-out width, and a
-    // canvas inside a hidden dialog measures zero
-    Dlg.open(document.getElementById("lib-modal"));
-    renderDiagnosis();
-  }
-  function closeDiagnosis() { Dlg.close(document.getElementById("lib-modal")); }
 
   function renderHistory() {
     store.session.histCache = historyGames();
@@ -5973,9 +5296,15 @@ import { createStore } from "./store.js";
     const rec = store.session.histCache[i];
     if (!rec) return;
     closeHistory();
+    return loadHistoryRecord(rec);
+  }
+
+  /** The load itself — see `loadLibraryEntry` for why it is split out. */
+  async function loadHistoryRecord(rec) {
+    if (!rec) return false;
     const ok = await importPgnText(historyPgn(rec), t("hist.title"),
       { msg: t("dlg.loadHist"), title: t("dlg.loadHistTitle"), ok: t("dlg.loadHistOk") });
-    if (!ok) return;
+    if (!ok) return false;
     // Restore the context the game was played in. Orientation and difficulty
     // are what the board and the review report mean by "you", and pinning the
     // record id lets a fresh 分析 file its accuracy back onto the very game it
@@ -5994,6 +5323,7 @@ import { createStore } from "./store.js";
     saveGame();
     sync();
     toast(tf("hist.loaded", [historyLabel(rec)]));
+    return true;
   }
 
   /**
@@ -9164,6 +8494,7 @@ import { createStore } from "./store.js";
   if (reportBtn) reportBtn.onclick = () => { exportReport(); };
   document.getElementById("pgn-paste").onclick = () => { pastePgn(); };
   document.getElementById("pgn-open").onclick = () => { openPgnFile(); };
+  RepUI.wire();
   {
     const impBtn = document.getElementById("lib-import");
     if (impBtn) impBtn.onclick = () => { openPgnFile(importPgnToLibrary); };
@@ -9181,6 +8512,8 @@ import { createStore } from "./store.js";
     const listEl = document.getElementById("lib-list");
     if (listEl) {
       listEl.onclick = (ev) => {
+        const deep = ev.target.closest("button[data-lib-deep]");
+        if (deep) { deepenLibraryGame(Number(deep.dataset.libDeep)); return; }
         const b = ev.target.closest("button[data-lib]");
         if (b) loadFromLibrary(Number(b.dataset.lib));
       };
@@ -9439,7 +8772,7 @@ import { createStore } from "./store.js";
     // same contract for the side segment: if the picker chose an opening line
     // from the chair not currently shown, switch chairs so the pick is servable
     const picked = bookNow().find((p) => p.id === pick.id);
-    if (picked && picked.cat === "op" && pick.cat === "op")
+    if (picked && isOpeningCat(picked.cat) && isOpeningCat(pick.cat))
       store.session.puzzleState.opSide = picked.side === "b" ? "b" : "w";
     savePuzzleState();
     // the recommendation must be able to serve what it picked: the tier
@@ -9457,6 +8790,8 @@ import { createStore } from "./store.js";
   };
   const playOnEl = document.getElementById("puzzle-playon");
   if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
+  const drillSrcEl = document.getElementById("puzzle-source");
+  if (drillSrcEl) drillSrcEl.onclick = () => { openDrillSource(); };
   document.getElementById("puzzle-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
     if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));

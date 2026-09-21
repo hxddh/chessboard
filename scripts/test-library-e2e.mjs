@@ -85,13 +85,13 @@ async function open(ctx) {
 }
 
 /** Feed the file picker the way a person does: click, choose, done. */
-async function importFile(page, text) {
+async function importFile(page, text, button) {
   const file = path.join(HERE, "..", "node_modules", ".cache", "lib-e2e.pgn");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text);
   const [chooser] = await Promise.all([
     page.waitForEvent("filechooser"),
-    page.click("#lib-import"),
+    page.click(button || "#lib-import"),
   ]);
   await chooser.setFiles(file);
   await page.waitForTimeout(600);
@@ -467,6 +467,297 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     "黑方先走的残局也照样摆得出来", JSON.stringify(state.moves));
   assert(/30/.test(state.nums) && !/^\s*1\./.test(state.nums),
     "而且它开在第 30 手，不是第 1 手 —— 手数从 FEN 的第六段起算", state.nums.slice(0, 60));
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 8. 7.2 A2:错题指得回它的来源局 ----------------------------------------
+{
+  // 7.1 把棋谱库接成了错题的主要来源，接完之后一道题落在做题页上，你问不出
+  // 「这是我哪一局」。这一段验的就是那条回头路：入口只在来源还在时出现，点
+  // 下去棋盘上是那一局，游标停在挖出这道题的那一手上。
+  const fen = "r5k1/5ppp/8/8/8/8/5PPP/R5K1 b - - 0 30";
+  const games = [{
+    id: "setup1", t: 1758000500000, white: "rival", black: "hxddh",
+    date: "2026.09.10", event: "Study", result: "0-1", plies: 4,
+    sans: "Rd8 Rb1 Rd2 Rb8+", fen, side: "b", outcome: "win", motifs: {},
+    an: { acc: { w: 40, b: 90 }, acpl: { w: 200, b: 10 },
+      tags: [null, null, "??", null], losses: [5, 5, 900, 5],
+      scalars: [0, -5, -10, -910, -915], bests: [null, null, null, null, null], budget: 200 },
+  }];
+  // the drill as the miner writes it: the position before 31...Rd2, the move
+  // actually played, and the game it came from
+  const drillFen = "3r2k1/5ppp/8/8/8/8/5PPP/1R4K1 b - - 2 31";
+  const mine = (id, from) => ({
+    id, cat: "mine", fen: drillFen, solution: ["Rd1"], played: "Rd2", loss: 900,
+    ply: 2, t: 1758000600000, side: "b", rev: { budget: 200, src: "lib" }, from,
+  });
+  const seed = async (mines, lib) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
+    await ctx.addInitScript(([ms, lb]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.v1.library", lb);
+      localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: ms }));
+      localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "mine" }));
+    }, [mines, lib]);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    return { ctx, page, errs };
+  };
+
+  const libJson = JSON.stringify({ v: 1, names: ["hxddh"], games });
+  {
+    const { ctx, page, errs } = await seed([mine("mine:src1", { kind: "lib", id: "setup1" })], libJson);
+    assert(await page.isVisible("#puzzle-source"), "来源还在，做题页上就有「看那局棋」");
+    await page.click("#puzzle-source");
+    await page.waitForTimeout(1200);
+    const state = await page.evaluate(() => ({
+      moves: [...document.querySelectorAll("#move-list .mlmove")].map((b) => b.textContent.trim()),
+      current: (document.querySelector("#move-list .mlmove.current") || {}).textContent || "",
+      puzzleGone: document.getElementById("sec-puzzle").hidden,
+    }));
+    const sans = state.moves.filter((x) => /[a-h][1-8]/.test(x));
+    assert(sans.length === 4 && /d8/.test(sans[0]) && /b8/.test(sans[3]),
+      "点下去，棋盘上就是挖出这道题的那一局", JSON.stringify(state.moves));
+    assert(/d2/.test(state.current),
+      "而且游标停在那一手上 —— 不是开头，也不是最后", JSON.stringify(state.current));
+    assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // 来源没了（库满淘汰、或者那局根本不在这台机器上）：入口就不该出现。一个
+  // 点开什么都没有的按钮，正是 P3 存在的理由。
+  {
+    const { ctx, page, errs } = await seed([mine("mine:src2", { kind: "lib", id: "gone" })], libJson);
+    assert(await page.isHidden("#puzzle-source"), "来源局已经不在库里，入口就不出现");
+    await ctx.close();
+    void errs;
+  }
+
+  // 7.2 之前存下的老错题没有来源字段，一样不该出现入口
+  {
+    const { ctx, page } = await seed([mine("mine:old", undefined)], libJson);
+    assert(await page.isHidden("#puzzle-source"), "7.2 之前的老错题没有来源，入口也不出现");
+    await ctx.close();
+  }
+}
+
+// --- 9. 7.2 A1:库里的局可以再深一遍，而且修正它挖出来的错题 -----------------
+{
+  // 7.0 起，一局分析过一次就再也不会被重新分析（pending() 筛的是 !g.an），
+  // 而库用的是 200 毫秒快扫。docs/measured.json 的 libRevision 量过这件事：
+  // 400 毫秒撤销了 38% 的 ??，剩下的里 20% 换了最佳着。7.1 把库变成错题本的
+  // 主要来源之后，这些错答案没有任何出口。这一段验那扇门。
+  const FENS = [
+    "r5k1/5ppp/8/8/8/8/5PPP/R5K1 b - - 0 30",
+    "3r2k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 1 31",
+    "3r2k1/5ppp/8/8/8/8/5PPP/1R4K1 b - - 2 31",
+    "6k1/5ppp/8/8/8/8/3r1PPP/1R4K1 w - - 3 32",
+    "1R4k1/5ppp/8/8/8/8/3r1PPP/6K1 b - - 4 32",
+  ];
+  // 200 毫秒那一趟的说法：黑方第 2 手（Rd2）是个 ??，正解 Rd1
+  const games = [{
+    id: "deep1", t: 1758000900000, white: "rival", black: "hxddh",
+    date: "2026.09.11", event: "Study", result: "0-1", plies: 4,
+    sans: "Rd8 Rb1 Rd2 Rb8+", fen: FENS[0], side: "b", outcome: "win", motifs: {},
+    an: { acc: { w: 60, b: 60 }, acpl: { w: 100, b: 100 },
+      tags: [null, null, "??", null], losses: [0, 0, 900, 0],
+      scalars: [0, 0, 0, 900, 900], bests: [null, null, "d8d1", null, null], budget: 200 },
+  }];
+  // 两道题的 id 必须是 Mistakes.mineId(局面, 走的那一手) 真算出来的那个 —— 修正
+  // 靠 id 对上，编一个字符串就只会被当成两道不相干的题：
+  //   node -e "import('./src/web/js/mistakes.js').then(m=>console.log(
+  //     m.ChessMistakes.mineId(fen, san)))"
+  const ID_WITHDRAW = "mine:49b7uc";  // (FENS[2], "Rd2")
+  const ID_REVISE = "mine:1s09ot3";   // (FENS[0], "Rd8")
+  const mines = [
+    // 深一趟会说「这一手其实不是 ??」→ 撤销
+    { id: ID_WITHDRAW, cat: "mine", fen: FENS[2], solution: ["Rd1"], played: "Rd2",
+      loss: 900, ply: 2, t: 1758000900001, side: "b", rev: { budget: 200, src: "lib" },
+      from: { kind: "lib", id: "deep1" } },
+    // 深一趟会说「这一手是 ??，但正解是别的」→ 改答
+    { id: ID_REVISE, cat: "mine", fen: FENS[0], solution: ["Rf8"], played: "Rd8",
+      loss: 300, ply: 0, t: 1758000900002, side: "b", rev: { budget: 200, src: "lib" },
+      from: { kind: "lib", id: "deep1" } },
+  ];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
+  await ctx.addInitScript(([lb, ms]) => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.library", lb);
+    localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: ms }));
+  }, [JSON.stringify({ v: 1, names: ["hxddh"], games }), mines]);
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(900);
+  await page.click("#tab-record").catch(() => {});
+  await page.waitForTimeout(200);
+
+  const body = await page.textContent("#lib-body");
+  assert(/可以再深一遍/.test(body), "记录页说得出还有几局是快扫出来的", body);
+
+  // 深一趟的说法：黑方第 0 手才是 ??（而且正解换成 Rc8），第 2 手根本不是
+  await page.evaluate((fens) => {
+    const view = { [fens[0]]: 0, [fens[1]]: 900, [fens[2]]: 900, [fens[3]]: 900, [fens[4]]: 900 };
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen) => {
+      const turn = fen.split(" ")[1] === "b" ? "b" : "w";
+      const cpWhite = view[fen];
+      if (cpWhite == null) return null;
+      // app.js evalScalar 把「走子方视角」翻成白方视角，这里反着填
+      const cp = turn === "w" ? cpWhite : -cpWhite;
+      return { cp, mate: null, turn, best: fen === fens[0] ? "a8c8" : null, pv: [] };
+    };
+  }, FENS);
+
+  await page.click("#lib-open");
+  await page.waitForTimeout(400);
+  assert(await page.isVisible("#lib-list button[data-lib-deep]"),
+    "快扫过的那一局，列表里有「再深一遍」");
+  await page.click("#lib-list button[data-lib-deep]");
+  await page.waitForTimeout(2500);
+
+  const after = await page.evaluate(() => ({
+    budget: JSON.parse(localStorage.getItem("chess.v1.library")).games[0].an.budget,
+    tags: JSON.parse(localStorage.getItem("chess.v1.library")).games[0].an.tags,
+    mines: JSON.parse(localStorage.getItem("chess.v1.mines")).list
+      .map((m) => ({ id: m.id, sol: m.solution[0], budget: m.rev && m.rev.budget, from: m.from && m.from.id })),
+    deepBtn: !!document.querySelector("#lib-list button[data-lib-deep]"),
+  }));
+  assert(after.budget === 400, "这一局的分析预算从 200 变成了 400", after.budget);
+  assert(!after.deepBtn, "深过一遍之后，那个入口就不再出现 —— 没有第二次可深的了");
+  const ids = after.mines.map((m) => m.id);
+  assert(!ids.includes(ID_WITHDRAW),
+    "深一趟说不是 ?? 的那道题，从错题本里撤掉了", JSON.stringify(ids));
+  // 一撤一改，不该多出第三道 —— 多出来就说明修正没认出它是同一道题
+  assert(after.mines.length === 1, "错题本里剩下的正是那一道", JSON.stringify(ids));
+  const revised = after.mines.find((m) => m.id === ID_REVISE);
+  assert(revised && revised.sol === "Rc8",
+    "深一趟换了正解的那道题，答案跟着换了", JSON.stringify(revised));
+  assert(revised && revised.budget === 400,
+    "……并且记下它现在是 400 毫秒判的，免得下一趟快扫再把它改回去", JSON.stringify(revised));
+  assert(revised && revised.from === "deep1", "来源仍然是那一局");
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 10. 7.2 P1:我的开局书 ---------------------------------------------------
+{
+  // 内置的 195 条开局书教的是「开局原理」，用的是所有人都下的那些开局。这一
+  // 本是你自己的那四五套东西，从一份带变着的 PGN 进来。第三件事 —— 说出你下
+  // 过、书里却没有的开局 —— 只有 7.1 之后才成立：在那之前应用不知道你在哪些
+  // 开局里真的输过。
+  // 第二条和下面那本开局书走的是同一串 —— 覆盖是按 ECO 编号算的，换个次序
+  // 就是另一个编号，这里要验的是「补上了就不再是缺口」
+  const ECOS = ["e4 e5 Nf3 Nc6 Bb5 a6", "d4 d5 c4 e6 Nf3 Nf6"];
+  const games = [];
+  for (let i = 0; i < 24; i++) {
+    const tags = new Array(12).fill(null);
+    const losses = new Array(12).fill(20);
+    const scalars = new Array(13).fill(0);
+    const sans = ECOS[i % 2];
+    games.push({
+      id: "rep" + i, t: 1758100000000 + i, white: "hxddh", black: "rival" + i,
+      date: "2026.09.0" + ((i % 9) + 1), event: "Rated blitz",
+      // 西班牙赢得多，后翼（i 为奇数的那一半）输得多 —— 缺口按输赢排，不按局数
+      result: i % 2 ? "0-1" : "1-0", plies: 12, sans: sans + " " + sans, fen: "",
+      side: "w", outcome: i % 2 ? "loss" : "win", motifs: {},
+      an: { acc: { w: 60, b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars,
+        bests: new Array(13).fill(null), budget: 200 },
+    });
+  }
+  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  const { page, errs } = await open(ctx);
+  await page.waitForTimeout(600);
+
+  // 书是空的：你下过的每一个开局都是缺口，而且最该先补的排在最前面
+  let body = await page.textContent("#rep-body");
+  assert(/还没有你自己的开局书/.test(body), "没有书时就直说没有", body);
+  assert(/书里却没有的开局/.test(body), "……并且已经能说出你下过什么", body);
+  const firstGap = await page.evaluate(() =>
+    (document.querySelector("#rep-body .stat-row .stat-k") || {}).textContent || "");
+  assert(/^D/.test(firstGap), "输得最多的那个开局排第一 —— 不是下得最多的那个", firstGap);
+
+  // 导一份带变着的执白开局书进来
+  // 两条线里白方走的是同一串（d4 c4 Nf3），黑方的回答不同 —— 树是按权重挑
+  // 回答的，这样无论它挑哪一边，这一趟要走的都是同样三手
+  const REP = `[Event "White repertoire"]\n[White "?"]\n[Black "?"]\n[Result "*"]\n\n` +
+    `1. d4 d5 2. c4 e6 (2... c6) 3. Nf3 Nf6 *\n`;
+  await importFile(page, REP, "#rep-import-w");
+  await page.waitForTimeout(600);
+  const book = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire") || "null"));
+  assert(book && book.w.length === 2, "主线和变着各成一条线", book ? book.w.length : "null");
+  assert(book.b.length === 0, "执黑那本还是空的 —— 两本书，两套体系");
+  body = await page.textContent("#rep-body");
+  assert(/执白 2/.test(body), "记录页数得出两边各几条", body);
+  const gapsNow = await page.evaluate(() =>
+    [...document.querySelectorAll("#rep-body .stat-row .stat-k")].map((e) => e.textContent));
+  assert(!gapsNow.some((g) => /^D/.test(g)),
+    "补上的那个开局，不再算缺口", JSON.stringify(gapsNow));
+
+  // 同一份再导一遍，书不会变成两倍
+  await importFile(page, REP, "#rep-import-w");
+  await page.waitForTimeout(500);
+  const again = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire")));
+  assert(again.w.length === 2, "同一份导第二遍，还是两条", again.w.length);
+
+  // 背它：开始背 → 做题页开在「开局书」这一档
+  await page.click("#rep-drill");
+  await page.waitForTimeout(900);
+  const started = await page.evaluate(() => ({
+    cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat,
+    tabShown: !document.querySelector('#puzzle-cat-seg button[data-cat="rep"]').hidden,
+    task: (document.getElementById("puzzle-task") || {}).textContent || "",
+  }));
+  assert(started.cat === "rep" && started.tabShown, "「开始背」把你放在开局书那一档",
+    JSON.stringify(started));
+  assert(/d4|后翼|Queen/i.test(started.task) || started.task.length > 0,
+    "题面说的是这一条线", started.task);
+
+  // 走偏了：当场告诉你书上走什么
+  const tapAt = async (sq) => {
+    const p = await page.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1];
+      const flip = document.body.classList.contains("flipped");
+      const co = flip ? 7 - f : f, ro = flip ? 7 - rk : rk, z = r.width / 8;
+      return { x: r.left + (co + .5) * z, y: r.top + (ro + .5) * z };
+    }, sq);
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(220);
+  };
+  const mv = async (a, b) => { await tapAt(a); await tapAt(b); await page.waitForTimeout(420); };
+  await mv("e2", "e4");
+  const wrong = await page.evaluate(() => document.getElementById("toast").textContent.trim());
+  assert(/d4/.test(wrong), "走书上没有的一手，当场告诉你书上走的是 d4", wrong);
+  // 走错的那道题进复习队列 —— 和内置开局题、错题走的是同一条 SRS
+  const missed = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    return Object.keys(st.missed || {});
+  });
+  assert(missed.length === 1 && missed[0].startsWith("rep-"),
+    "走错的开局书题进了复习队列，和内置题同一条 SRS", JSON.stringify(missed));
+
+  // 书上那三手走得通，对手每一手都从书里回答，走到叶子就算背下来了
+  await mv("d2", "d4");
+  await mv("c2", "c4");
+  let done = await page.isVisible("#puzzle-playon");
+  // 黑方回的是 c6 那条的话，这里已经到叶子了；回 e6 就还差白方第三手
+  if (!done) { await mv("g1", "f3"); done = await page.isVisible("#puzzle-playon"); }
+  assert(done, "照书走完一条线就算背下来了 —— 对手的回答也是从这本书里挑的");
+  const solved = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    return Object.keys(st.solved).filter((k) => k.startsWith("rep-")).length;
+  });
+  assert(solved >= 1, "背下来的那条记进了进度，和内置开局书同一条轨", solved);
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }
