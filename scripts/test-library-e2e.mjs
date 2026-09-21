@@ -440,11 +440,13 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
 {
   // 7.0 的 foldGame 把这种局的每一手都记到了对手账上（7.1 修掉）。载入这条路上
   // 有同一个坑：把它写回 PGN 时，手数从 FEN 的第六段起算，而且开在「30...」上。
-  const fen = "4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 b - - 0 30";
+  // 一个真的能走下去的车残局。第一版的着法序列是非法的（Rxe1+ 之后白方已经没有
+  // 车可以吃回来），e2e 当场把它抓了出来 —— 局面本身合法不代表着法序列合法。
+  const fen = "r5k1/5ppp/8/8/8/8/5PPP/R5K1 b - - 0 30";
   const games = [{
     id: "setup1", t: 1758000500000, white: "rival", black: "hxddh",
     date: "2026.09.10", event: "Study", result: "0-1", plies: 4,
-    sans: "Rxe1+ Rxe1 Kf8 Re8#", fen, side: "b", outcome: "win", motifs: {},
+    sans: "Rd8 Rb1 Rd2 Rb8+", fen, side: "b", outcome: "win", motifs: {},
     an: { acc: { w: 40, b: 90 }, acpl: { w: 200, b: 10 },
       tags: [null, "??", null, null], losses: [5, 900, 5, 5],
       scalars: [0, -5, -900, -905, -910], bests: [null, null, null, null, null], budget: 200 },
@@ -459,7 +461,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     moves: [...document.querySelectorAll("#move-list .mlmove")].map((b) => b.textContent.trim()),
     nums: [...document.querySelectorAll("#move-list")].map((n) => n.textContent)[0] || "",
   }));
-  assert(state.moves.length === 4 && /Rxe1/.test(state.moves[0]) && /Re8/.test(state.moves[3]),
+  assert(state.moves.length === 4 && /Rd8/.test(state.moves[0]) && /Rb8/.test(state.moves[3]),
     "黑方先走的残局也照样摆得出来", JSON.stringify(state.moves));
   assert(/30/.test(state.nums),
     "而且它开在第 30 手，不是第 1 手 —— 手数从 FEN 的第六段起算", state.nums.slice(0, 60));
