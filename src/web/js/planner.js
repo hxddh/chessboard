@@ -14,9 +14,13 @@
  *   2. mine   — your own blunders next: the highest-value content the app
  *      holds, and the whole point of banking them.
  *   3. weak   — two puzzles in the tally's worst category.
- *   4. lesson / opening — forward motion: the next unfinished lesson, or an
+ *   4. lib    — analyse what the library still owes. 7.1 added it because
+ *      the library is where steps 2 and 3 get their content from: an
+ *      imported archive nobody ever presses 分析 on is a folder, not a
+ *      coach. It is the one step that asks for time rather than answers.
+ *   5. lesson / opening — forward motion: the next unfinished lesson, or an
  *      unsolved opening line when the course is done.
- *   5. game   — play, if today has had none. Training that never becomes a
+ *   6. game   — play, if today has had none. Training that never becomes a
  *      game is the opening-trainer mistake all over again.
  *
  * A step only exists when its source has something to serve (P3 in time:
@@ -39,9 +43,11 @@ const DOSE = { review: 3, mine: 2, weak: 2 };
  *   mineUnsolved: number,  // unsolved personal drills
  *   weakCat: string|null,  // Picker.weakest().cat, if any
  *   weakMotif: string|null,// Picker.weakestMotif().motif, if any (5.2)
+ *   libMotif: string|null, // what the library diagnosis says catches you (7.1)
+ *   libQueued: number,     // imported games still waiting to be analysed (7.1)
  *   lessonNext: number,    // index of first unfinished lesson, or -1
  *   opUnsolved: boolean,   // any unsolved opening line (either chair)
- *   playedToday: boolean,  // a game was recorded today
+ *   playedToday: boolean,  // a game was played today, here or elsewhere
  * }
  * @returns {{steps: Array<{kind: string, cat?: string, n?: number, i?: number}>}}
  */
@@ -56,7 +62,15 @@ function plan(sig) {
   // same weakness — it replaces the shelf step rather than joining it, so
   // the sitting still says one thing about weakness
   if (sig.weakMotif) steps.push({ kind: "motif", motif: sig.weakMotif, n: DOSE.weak });
+  // 7.1: failing that, what the player's OWN GAMES say catches them. The
+  // puzzle tally only knows the puzzles they have attempted here, so someone
+  // who imported an archive and has answered nothing yet — the exact person
+  // the library is for — used to get no weakness step at all. A diagnosis
+  // drawn from twenty real games is the better evidence anyway; it is second
+  // only because the tally measures answers this app watched.
+  else if (sig.libMotif) steps.push({ kind: "motif", motif: sig.libMotif, n: DOSE.weak, from: "lib" });
   else if (sig.weakCat && sig.weakCat !== "mine") steps.push({ kind: "weak", cat: sig.weakCat, n: DOSE.weak });
+  if (sig.libQueued > 0) steps.push({ kind: "lib", n: sig.libQueued });
   if (sig.lessonNext >= 0) steps.push({ kind: "lesson", i: sig.lessonNext });
   else if (sig.opUnsolved) steps.push({ kind: "op" });
   if (!sig.playedToday) steps.push({ kind: "game" });
@@ -85,6 +99,7 @@ function snap(src) {
     lessonsDone: src.lessonsDone,
     opSolved: src.opSolved,
     games: src.games,
+    libAnalysed: src.libAnalysed || 0,
   };
 }
 
@@ -112,6 +127,10 @@ function stepDone(step, before, after) {
     case "lesson": return after.lessonsDone > before.lessonsDone;
     case "op": return after.opSolved > before.opSolved;
     case "game": return after.games > before.games;
+    // one analysed game completes it: the pass runs for as long as the player
+    // leaves it running, and a step that only ticks when the whole queue is
+    // empty would stay unfinished for an hour
+    case "lib": return after.libAnalysed > before.libAnalysed;
     default: return false;
   }
 }

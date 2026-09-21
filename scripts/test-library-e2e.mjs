@@ -311,6 +311,10 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   const diagText = await page.textContent("#lib-diag");
   assert(/C6[0-9]|西班牙|Ruy/.test(diagText),
     "开局战绩终于有东西了 —— 7.0 从来没有人给条目写过 eco,这一段一直是死的", diagText);
+  // 这一组的棋全是六个半着、同一个开局、失误都在同一回合 —— 三张图一张都画不出来，
+  // 而这正是这一页一贯的规矩：没有数据就不要那个元素（v7-1-plan B1）
+  const noCharts = await page.evaluate(() => document.querySelectorAll("#lib-diag canvas.diag-chart").length);
+  assert(noCharts === 0, "画不出来的图就不存在，而不是一张空画布", String(noCharts));
   const motifBtn = await page.$("#lib-diag button[data-diag-pick]");
   assert(!!motifBtn, "诊断里能点的行是 button,键盘和读屏都拿得到");
   await page.evaluate(() => {
@@ -326,6 +330,108 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await page.waitForTimeout(200);
   assert((await rowCount()) === 25, "清除筛选回到全部");
 
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 5. 7.1 A3:日课和进步页看得见棋谱库 -------------------------------------
+{
+  // 一个刚导完存档、在这个应用里一道题都没做过的人。7.0 给他的日课里没有任何
+  // 一条和他自己的棋有关 —— 弱项读的是题库战绩(空的)，「今天下过棋」读的是
+  // 本地战绩(也是空的)。
+  const today = new Date();
+  const ymd = today.getFullYear() + "." +
+    String(today.getMonth() + 1).padStart(2, "0") + "." + String(today.getDate()).padStart(2, "0");
+  const games = [];
+  for (let i = 0; i < 25; i++) {
+    const tags = [null, null, "??", null, null, null];
+    const scalars = [20, 10, -400, -390, -380, -370, -360];
+    games.push({
+      id: "a3g" + i, t: 1758000000000 + i, white: "hxddh", black: "rival" + i,
+      date: ymd, event: "Rated blitz", result: "0-1", plies: 6,
+      sans: "e4 e5 Nf3 Nc6 Bb5 a6", fen: "", side: "w", outcome: "loss",
+      motifs: { 2: "fork" },
+      an: { acc: { w: 55, b: 70 }, acpl: { w: 90, b: 40 }, tags,
+        losses: [10, 0, 410, 0, 0, 0], scalars, bests: [null, null, "b1c3", null, null, null, null], budget: 200 },
+    });
+  }
+  // …plus five imported but never analysed, so the 「分析」 step has work
+  for (let i = 0; i < 5; i++) {
+    games.push({ id: "a3q" + i, t: 1758000100000 + i, white: "hxddh", black: "foe" + i,
+      date: "2026.08.01", event: "Rated blitz", result: "0-1", plies: 6,
+      sans: "e4 e5 Nf3 Nc6 Bb5 a6", fen: "", side: "w", outcome: "loss", motifs: {}, an: null });
+  }
+  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  const { page, errs } = await open(ctx);
+  await page.click("#tab-play");
+  await page.waitForTimeout(300);
+  await page.click("#daily-btn");
+  await page.waitForTimeout(500);
+  const plan = await page.textContent("#daily-plan");
+  assert(/捉双/.test(plan),
+    "题库战绩一片空白时，弱项从他自己的棋里读出来 —— 「捉双」", plan);
+  assert(/还没分析的 5 局/.test(plan),
+    "导进来没分析的五局，本身就是今天该干的一件事", plan);
+  assert(!/下一盘|下一局/.test(plan),
+    "今天在别处下过棋，就不该再劝他去下一盘", plan);
+
+  // 进步页的准确率走势有东西可画 —— 数据全部来自棋谱库
+  await page.click("#tab-record");
+  await page.waitForTimeout(400);
+  assert(await page.isVisible("#trend-acc"),
+    "准确率走势画得出来 —— 本地战绩是空的，这条线全部来自棋谱库");
+
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 6. 7.1 B1:三张图各自画出来 ---------------------------------------------
+{
+  // 专门为图准备的样本:25 局 80 半着(三个阶段都有)、失误散落在好几个回合、
+  // 两个开局。这三件事就是三张图各自的前提。
+  const ECOS = ["e4 e5 Nf3 Nc6 Bb5 a6", "d4 d5 c4 e6 Nc3 Nf6"];
+  const games = [];
+  for (let i = 0; i < 25; i++) {
+    const tags = new Array(80).fill(null);
+    const losses = new Array(80).fill(null);
+    const scalars = [0];
+    for (let ply = 0; ply < 80; ply++) {
+      const mine = ply % 2 === 0;
+      const moveNo = Math.floor(ply / 2) + 1;
+      losses[ply] = mine ? (moveNo > 32 ? 120 : 8) : 0;
+      scalars.push(scalars[ply] + (mine ? -losses[ply] : losses[ply]));
+    }
+    // 失误落在第 20、28、36 回合上，轻重不同 —— 分布图要看得出这是个坡不是个尖
+    for (const mv of [20, 28, 36]) {
+      if (i % 3 === 0 || mv !== 20) tags[(mv - 1) * 2] = mv === 28 ? "??" : "?";
+    }
+    const sans = ECOS[i % 2];
+    games.push({
+      id: "chart" + i, t: 1758000000000 + i, white: "hxddh", black: "rival" + i,
+      date: "2026.09.0" + ((i % 9) + 1), event: "Rated blitz",
+      result: i % 2 ? "1-0" : "0-1", plies: 80, sans: sans + " " + sans, fen: "",
+      side: "w", outcome: i % 2 ? "win" : "loss", motifs: {},
+      an: { acc: { w: 60, b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars,
+        bests: new Array(81).fill(null), budget: 200 },
+    });
+  }
+  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  const { page, errs } = await open(ctx);
+  await page.click("#lib-diagnose");
+  await page.waitForTimeout(1500);
+  const charts = await page.evaluate(() =>
+    [...document.querySelectorAll("#lib-diag canvas.diag-chart")]
+      .map((c) => ({ label: c.getAttribute("aria-label"), w: c.width, h: c.height,
+        painted: (() => {
+          const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+          for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+          return false;
+        })() })));
+  assert(charts.length === 3, "分阶段、失误分布、开局战绩各一张图", JSON.stringify(charts.map((c) => c.label)));
+  assert(charts.every((c) => c.w > 0 && c.h > 0 && c.label),
+    "每张图都有像素、都带着读屏能念的说明", JSON.stringify(charts));
+  assert(charts.every((c) => c.painted),
+    "而且真的画了东西上去 —— 不是三张空画布", JSON.stringify(charts.map((c) => c.painted)));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }

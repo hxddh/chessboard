@@ -3533,6 +3533,34 @@ for (const lang of CONTENT_LANGS) {
     assert(PL.stepDone({ kind: "motif", motif: "fork", n: 2 }, b, a2) && !PL.stepDone({ kind: "motif", motif: "pin", n: 2 }, b, a2),
       "母题步按该母题的答题数记");
   }
+  // 7.1 (v7-1-plan §1.3): the library is a signal the coach can see
+  {
+    // someone who imported an archive and has answered nothing here yet: the
+    // puzzle tally is empty, so 7.0 gave them no weakness step at all
+    const fresh = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, weakMotif: null,
+      libMotif: "fork", libQueued: 0, lessonNext: -1, opUnsolved: false, playedToday: true });
+    assert(fresh.steps.map((x) => x.kind).join(",") === "motif" &&
+           fresh.steps[0].motif === "fork" && fresh.steps[0].from === "lib",
+      "题库战绩一片空白时，弱项从你自己的棋里读", JSON.stringify(fresh.steps));
+    // …but the tally still wins when it has something to say: it measures
+    // answers this app watched
+    const both = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, weakMotif: "pin",
+      libMotif: "fork", libQueued: 0, lessonNext: -1, opUnsolved: false, playedToday: true });
+    assert(both.steps[0].motif === "pin" && both.steps[0].from === undefined,
+      "题库有话说的时候，还是题库说了算");
+    const queued = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, weakMotif: null,
+      libMotif: null, libQueued: 12, lessonNext: -1, opUnsolved: false, playedToday: true });
+    assert(queued.steps.map((x) => x.kind).join(",") === "lib" && queued.steps[0].n === 12,
+      "导进来没分析的棋，本身就是今天该干的一件事", JSON.stringify(queued.steps));
+    assert(PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, weakMotif: null, libMotif: null,
+      libQueued: 0, lessonNext: -1, opUnsolved: false, playedToday: true }).steps.length === 0,
+      "库里没有欠着的，就不摆这一步 — 这一页一贯的规矩");
+    const b = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, libAnalysed: 3 });
+    const a2 = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, libAnalysed: 4 });
+    assert(PL.stepDone({ kind: "lib", n: 12 }, b, a2) && !PL.stepDone({ kind: "lib", n: 12 }, b, b),
+      "分析完一局就算这一步做到了 — 整个队列清空要一小时，那不是一步");
+  }
+
   // completion is counter deltas, so quitting mid-step costs nothing
   const before = PL.snap({ owed: 3, byCat: { def: 10, mine: 2 }, lessonsDone: 1, opSolved: 5, games: 7 });
   const after = (o) => PL.snap(Object.assign({ owed: 3, byCat: { def: 10, mine: 2 }, lessonsDone: 1, opSolved: 5, games: 7 }, o));
@@ -3567,6 +3595,15 @@ for (const lang of CONTENT_LANGS) {
     "课表在 session 与 game 两个切片上都会醒 — 对局一步也是进度");
   assert(/renderPuzzleTally\(\);\s*renderTrends\(\)/.test(appSrc),
     "记录页画完战绩画进步");
+  // 7.1 A3: the coach and the progress page can see the library
+  assert(/playedToday: loadStats\(\)\.games\.some[\s\S]{0,200}store\.session\.library\.some\(\(g\) => g\.side && Progress\.dayKey\(libPlayedAt\(g\)\) === today\)/.test(appSrc),
+    "在别处下的棋也是今天下过棋 —— 7.0 只读本地战绩，导进来今早的快棋还被劝去下一盘");
+  assert(/libMotif: libWeakMotif\(\)/.test(appSrc) && /libQueued: Library\.pending\(/.test(appSrc),
+    "日课读得到棋谱库说的弱项和还欠着的分析");
+  assert(/const d = Library\.diagnose\(store\.session\.library, LIB_MIN_GAMES\);\s*return d\.enough/.test(appSrc),
+    "教练用的是诊断页同一个门槛 —— 两个门槛就是两张嘴");
+  assert(/Progress\.accSeries\(loadStats\(\)\.games\.concat\(libPoints\), 30\)/.test(appSrc),
+    "准确率走势把棋谱库里的棋并进同一条轴");
   assert(/function dailyJump\(step\) \{[\s\S]{0,400}#mode-seg button\[data-mode=/.test(appSrc),
     "跳步走的是模式段自己的点击路径,不是旁路");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
@@ -5756,6 +5793,18 @@ for (const lang of CONTENT_LANGS) {
       where + " runs every suite in " + group + " (" + want.length + ")" +
       (missing.length ? " —— 漏了 " + missing.join(", ") : ""));
   }
+  // 7.1 (v7-1-plan §3.2): the engine gate is tiered now, and a tier that
+  // quietly stops running is exactly the failure this whole block exists to
+  // prevent. Three places, one rule each.
+  const nightlyWf = fs.readFileSync(path.join(root, ".github/workflows/nightly.yml"), "utf8");
+  assert(/--sample=150/.test(checksWf),
+    "PR CI 跑抽样的题库门禁 —— 7.0 之前 PR 上一条引擎检查都没有");
+  assert(/npm run test:engine:sample/.test(releaseWf) && !/run: npm run test:engine$/m.test(releaseWf),
+    "发布跑的是抽样档，不是两个半小时的全量");
+  assert(/run: npm run test:engine$/m.test(nightlyWf),
+    "全量那一趟有人跑 —— 抽样只覆盖 15%，剩下的 85% 在 nightly");
+  assert(scriptsIn(pkg.scripts["test:engine:sample"]).length === scriptsIn(pkg.scripts["test:engine"]).length,
+    "抽样档少的是搜索量，不是脚本数 —— 抽样不等于少跑几个套件");
 }
 
 // --- 7.0: every FEN this app ships must be a position that can exist ---------
@@ -5873,7 +5922,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 122;
+  const REGISTERED = 127;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }

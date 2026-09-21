@@ -4503,7 +4503,35 @@ import { createStore } from "./store.js";
       opSolved: ALL_PUZZLES.filter((p) => p.cat === "op" && st.solved[p.id]).length,
       // stats parse deferred: only the game step reads it, and snap() copies
       games: loadStats().games.length,
+      libAnalysed: store.session.library.filter((g) => g.an).length,
     };
+  }
+
+  /**
+   * The day a library game was played, as a Progress day key.
+   *
+   * A PGN `Date` is "2026.09.01" (or partly unknown, "2026.??.??"). Parsed
+   * as local midnight, never as UTC: `dayKey` is local, and an imported game
+   * would otherwise land on the previous day for anyone west of Greenwich.
+   * Falls back to the import timestamp, which is at least a real instant.
+   */
+  function libPlayedAt(g) {
+    const m = /^(\d{4})[.\-/](\d{2})[.\-/](\d{2})$/.exec(String((g && g.date) || "").trim());
+    if (!m) return Number(g && g.t) || 0;
+    const ms = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0).getTime();
+    return Number.isFinite(ms) ? ms : (Number(g && g.t) || 0);
+  }
+
+  /**
+   * The motif the player's own games say catches them, if the sample is there.
+   *
+   * Same call the diagnosis page makes, at the same floor — the coach must
+   * never say something the diagnosis would refuse to say for want of
+   * evidence, and two different floors is how those two start to disagree.
+   */
+  function libWeakMotif() {
+    const d = Library.diagnose(store.session.library, LIB_MIN_GAMES);
+    return d.enough && d.motifs.length ? d.motifs[0].motif : null;
   }
 
   /** What the coach can see today — every signal already existed. */
@@ -4518,7 +4546,13 @@ import { createStore } from "./store.js";
       weakMotif: (Picker.weakestMotif(st, Object.keys(st.mtally || {})) || {}).motif || null,
       lessonNext: LESSONS.findIndex((L) => !store.session.learnState.done[L.id]),
       opUnsolved: ALL_PUZZLES.some((p) => p.cat === "op" && !st.solved[p.id]),
-      playedToday: loadStats().games.some((g) => Progress.dayKey(g.t) === today),
+      // 7.1: a game played on another site today is still a game played
+      // today. Until now this read `stats` alone, so someone who imported
+      // this morning's blitz session was told to go and play one.
+      playedToday: loadStats().games.some((g) => Progress.dayKey(g.t) === today) ||
+        store.session.library.some((g) => g.side && Progress.dayKey(libPlayedAt(g)) === today),
+      libMotif: libWeakMotif(),
+      libQueued: Library.pending(store.session.library).filter((g) => !g.unplayable).length,
     };
   }
 
@@ -4529,6 +4563,7 @@ import { createStore } from "./store.js";
     if (step.kind === "motif") return tf("daily.motif", [t("motif." + step.motif)]);
     if (step.kind === "lesson") return t("daily.lesson");
     if (step.kind === "op") return t("daily.op");
+    if (step.kind === "lib") return tf("daily.lib", [step.n]);
     return t("daily.game");
   }
 
@@ -4610,6 +4645,16 @@ import { createStore } from "./store.js";
       else setSideTab("play", { top: true });
       return;
     }
+    // the library step is the one that asks for time rather than answers:
+    // show the section and start the pass, which is exactly what the player
+    // would have done by hand
+    if (step.kind === "lib") {
+      setSideTab("record", { top: false });
+      const sec = document.getElementById("lib-body");
+      if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "center" });
+      if (!store.session.libRun) runLibraryPass();
+      return;
+    }
     // 5.2: a motif step lands on a puzzle ABOUT that motif — the player's own
     // drill if one is unsolved, else the first canned one — wherever it shelves
     if (step.kind === "motif") {
@@ -4650,7 +4695,13 @@ import { createStore } from "./store.js";
     const streakEl = document.getElementById("trend-streak");
     if (!head || !body || !cv) return;
     const prog = store.session.progress;
-    const series = Progress.accSeries(loadStats().games, 30);
+    // 7.1: the games you played elsewhere are games you played. The library
+    // stores an accuracy per side once a game is analysed, which is the same
+    // measure `stats` records, so the two go on one axis in play order.
+    const libPoints = store.session.library
+      .filter((g) => g.side && g.an && g.an.acc && Number.isFinite(g.an.acc[g.side]))
+      .map((g) => ({ t: libPlayedAt(g), acc: g.an.acc[g.side] }));
+    const series = Progress.accSeries(loadStats().games.concat(libPoints), 30);
     const rows = Progress.weekOverWeek(prog, Date.now())
       .filter((r) => r.now != null || r.prev != null)
       .sort((a, b) => (b.now ?? b.prev) - (a.now ?? a.prev));
@@ -5563,6 +5614,145 @@ import { createStore } from "./store.js";
     toast(tf("lib.loaded", [libraryLabel(entry)]));
   }
 
+
+  /**
+   * The diagnosis charts (v7-1-plan §2.1).
+   *
+   * Three shapes for the three things the page says that a number alone does
+   * not carry: which phase is the weak one and by how much, where in the game
+   * things go wrong, and which openings actually score. Drawn in the same
+   * idiom as the two sparklines above — device-pixel sizing, colours read
+   * from the document so a theme change is answered, judgement colours from
+   * `judgeColours()` so the weak bar is the same red the move list uses.
+   *
+   * Created by this function rather than sitting in the markup: a chart with
+   * no data must not exist at all (the P3 rule this page has followed since
+   * 7.0), and "does not exist" is easier to be sure of than "is hidden".
+   */
+  function diagCanvas(parent, h, label) {
+    const cv = document.createElement("canvas");
+    cv.className = "diag-chart";
+    cv.style.height = h + "px";
+    cv.setAttribute("role", "img");
+    cv.setAttribute("aria-label", label);
+    parent.appendChild(cv);
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round((cv.clientWidth || parent.clientWidth || 320) * dpr));
+    const H = Math.max(1, Math.round(h * dpr));
+    cv.width = W;
+    cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement);
+    return { ctx, W, H, dpr,
+      muted: css.getPropertyValue("--muted").trim() || "#999",
+      accent: css.getPropertyValue("--accent").trim() || "#e8c39e",
+      text: css.getPropertyValue("--text").trim() || "#ddd" };
+  }
+
+  /** Per-phase centipawn loss, with the weak one in the judgement colour. */
+  function drawPhaseChart(parent, d, phaseName) {
+    const rows = ["opening", "middle", "end"]
+      .map((k) => ({ k, acpl: d.phase[k].acpl }))
+      .filter((r) => r.acpl != null);
+    if (rows.length < 2) return; // one bar is not a comparison
+    const c = diagCanvas(parent, 92, t("diag.chartPhase"));
+    const pad = 6 * c.dpr, gap = 10 * c.dpr, label = 16 * c.dpr;
+    const max = Math.max(...rows.map((r) => r.acpl)) * 1.15 || 1;
+    const bw = (c.W - 2 * pad - gap * (rows.length - 1)) / rows.length;
+    const bad = judgeColours().bad;
+    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-num").trim() || "monospace");
+    c.ctx.textAlign = "center";
+    rows.forEach((r, i) => {
+      const x = pad + i * (bw + gap);
+      const hgt = Math.max(1, (r.acpl / max) * (c.H - 2 * pad - 2 * label));
+      c.ctx.fillStyle = r.k === d.weakestPhase ? bad : c.accent;
+      c.ctx.fillRect(x, c.H - pad - label - hgt, bw, hgt);
+      c.ctx.fillStyle = c.text;
+      c.ctx.fillText(String(r.acpl), x + bw / 2, c.H - pad - label - hgt - 3 * c.dpr);
+      c.ctx.fillStyle = c.muted;
+      c.ctx.fillText(phaseName[r.k], x + bw / 2, c.H - pad);
+    });
+  }
+
+  /**
+   * Where the mistakes are, by move number.
+   *
+   * The page already says "第 24 回合，N 局栽在这里". What it cannot say in a
+   * sentence is whether that is a spike or a plateau — a clock problem and a
+   * knowledge problem look completely different here and identical there.
+   */
+  function drawPeakChart(parent, list) {
+    const counts = new Map();
+    let worst = 0;
+    for (const g of list) {
+      // each game's own claimed chair — the same games `foldGame` counted,
+      // so the spike here and the sentence under it cannot disagree
+      if (!g.an || !g.side) continue;
+      const tags = Array.isArray(g.an.tags) ? g.an.tags : [];
+      const start = g.fen ? g.fen.trim().split(/\s+/) : [];
+      const first = start[1] === "b" ? "b" : "w";
+      const other = first === "w" ? "b" : "w";
+      for (let i = 0; i < tags.length; i++) {
+        if ((i % 2 === 0 ? first : other) !== g.side) continue;
+        if (tags[i] !== "?" && tags[i] !== "??") continue;
+        const mv = libMoveNo(g, i);
+        counts.set(mv, (counts.get(mv) || 0) + 1);
+        if (mv > worst) worst = mv;
+      }
+    }
+    if (counts.size < 3) return;
+    const last = Math.max(10, Math.min(worst, 60));
+    const c = diagCanvas(parent, 80, t("diag.chartPeak"));
+    const pad = 6 * c.dpr, label = 14 * c.dpr;
+    const max = Math.max(...counts.values()) || 1;
+    const bw = (c.W - 2 * pad) / last;
+    c.ctx.fillStyle = c.accent;
+    for (let mv = 1; mv <= last; mv++) {
+      const n = counts.get(mv) || 0;
+      if (!n) continue;
+      const hgt = Math.max(1, (n / max) * (c.H - 2 * pad - label));
+      c.ctx.fillRect(pad + (mv - 1) * bw, c.H - pad - label - hgt, Math.max(1, bw - c.dpr), hgt);
+    }
+    c.ctx.fillStyle = c.muted;
+    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-num").trim() || "monospace");
+    c.ctx.textAlign = "left";
+    c.ctx.fillText("1", pad, c.H - pad);
+    c.ctx.textAlign = "right";
+    c.ctx.fillText(String(last), c.W - pad, c.H - pad);
+  }
+
+  /** Win / draw / loss per opening, as one stacked bar each. */
+  function drawEcoChart(parent, ecos) {
+    const rows = ecos.slice(0, 6).filter((e) => e.n > 0);
+    if (rows.length < 2) return;
+    const c = diagCanvas(parent, 18 * rows.length + 12, t("diag.chartEco"));
+    const pad = 4 * c.dpr;
+    const rh = (c.H - 2 * pad) / rows.length;
+    const cols = judgeColours();
+    const labelW = 46 * c.dpr;
+    c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-num").trim() || "monospace");
+    c.ctx.textAlign = "left";
+    rows.forEach((e, i) => {
+      const y = pad + i * rh;
+      c.ctx.fillStyle = c.muted;
+      c.ctx.fillText(e.eco, pad, y + rh * 0.7);
+      let x = pad + labelW;
+      const full = c.W - pad - x;
+      const seg = [[e.win, c.accent], [e.draw, c.muted], [e.loss, cols.bad]];
+      for (const [n, col] of seg) {
+        if (!n) continue;
+        const w = (n / e.n) * full;
+        c.ctx.fillStyle = col;
+        c.ctx.fillRect(x, y + rh * 0.2, w, rh * 0.6);
+        x += w;
+      }
+    });
+  }
+
   /** The diagnosis dialog: what `diagnose()` found, in sentences. */
   function renderDiagnosis() {
     const el = document.getElementById("lib-diag");
@@ -5617,6 +5807,7 @@ import { createStore } from "./store.js";
       row(phaseName[k], tf("diag.acpl", [p.acpl]) + " · " +
         tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10]));
     }
+    drawPhaseChart(el, d, phaseName);
     if (d.weakestPhase) {
       const best = ["opening", "middle", "end"].map((k) => d.phase[k].acpl).filter((n) => n != null);
       para(tf("diag.weakest", [phaseName[d.weakestPhase], d.phase[d.weakestPhase].acpl,
@@ -5624,6 +5815,7 @@ import { createStore } from "./store.js";
     } else {
       para(t("diag.noWeakest"));
     }
+    drawPeakChart(el, store.session.library);
     if (d.peak) {
       pickPara(tf("diag.peak", [d.peak.move, d.peak.n]), "hint",
         { kind: "peak", value: d.peak.move, label: tf("diag.pickPeak", [d.peak.move]) });
@@ -5637,6 +5829,7 @@ import { createStore } from "./store.js";
     }
     if (d.ecos.length) {
       row(t("diag.ecos"), "");
+      drawEcoChart(el, d.ecos);
       for (const e of d.ecos.slice(0, 6)) {
         const name = libEcoName(e.eco, e.name);
         row(e.eco + (name ? " " + name : ""),
@@ -5653,8 +5846,10 @@ import { createStore } from "./store.js";
     // anyone re-running the engine over it.
     if (!ChessEco.loaded()) ChessEco.whenReady(() => { if (fillOpenings()) saveLibrary(); renderDiagnosis(); });
     else if (fillOpenings()) saveLibrary();
-    renderDiagnosis();
+    // open FIRST: the charts size themselves from their laid-out width, and a
+    // canvas inside a hidden dialog measures zero
     Dlg.open(document.getElementById("lib-modal"));
+    renderDiagnosis();
   }
   function closeDiagnosis() { Dlg.close(document.getElementById("lib-modal")); }
 

@@ -2305,6 +2305,9 @@
     button.stat-row:hover .stat-k, button.stat-row:focus-visible .stat-k { color: var(--accent); }
     button.hint-link { padding: 2px 2px; font-size: 0.8125rem; color: var(--muted); }
     button.hint-link:hover, button.hint-link:focus-visible { color: var(--accent); }
+    /* 7.1: the diagnosis charts. Width from the dialog, height set per chart
+       in JS; the canvas backing store is device-pixel sized there. */
+    .diag-chart { display: block; width: 100%; margin: 6px 0 2px; }
     .stat-k { color: var(--muted); }
     /* Every number in the app is tabular — see --font-num. The clock, the
        evaluations and the move numbers already were; the statistics, the

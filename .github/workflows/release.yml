@@ -65,8 +65,25 @@ jobs:
       # closest opening line and the closest puzzle each sat within ~20cp of
       # their limit, which is inside the run-to-run spread. See the header of
       # either script.
-      - name: engine checks (openings, tactics, novice, strength, analysis)
-        run: npm run test:engine
+      #
+      # 7.1 (v7-1-plan §3.2): this step is `test:engine:sample`, not
+      # `test:engine`. The difference is one script — the mined-puzzle gate
+      # runs over a fixed sample of 150 instead of all 1002 — and it is the
+      # difference between a release gate of about half an hour and one of
+      # two and a half hours. 7.0 created that cost by wiring test-mined into
+      # test:engine and then giving it a clean transposition table per puzzle
+      # (which is what made it reproducible, so it is not coming back out).
+      #
+      # The trade-off, stated rather than hidden: a release now searches 15%
+      # of the mined bank rather than all of it. What makes that acceptable
+      # is that the bank is content that does not change between releases —
+      # it changed in 6.0, 6.1 and 7.0, and each time by a deliberate edit to
+      # puzzles-mined.js. So the full sweep runs nightly on main
+      # (nightly.yml), a PR runs the same 150 (checks.yml), and anyone
+      # editing the bank runs `npm run test:engine` by hand, which is what
+      # --fix already requires. The other six scripts run in full, as before.
+      - name: engine checks (openings, tactics, novice, strength, analysis, mined sample)
+        run: npm run test:engine:sample
       # The browser checks. Every one of them is a regression that shipped: the
       # board one is the `CHECK is not defined` that emptied the board for two
       # releases, the persistence one is the study position that vanished on

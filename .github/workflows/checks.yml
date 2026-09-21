@@ -50,6 +50,18 @@ jobs:
       # script is the only arrangement where the two cannot disagree.
       - name: static tests
         run: npm run test:static
+      # 7.1 (v7-1-plan §3.2): the sampled soundness gate.
+      #
+      # PR CI had no engine-backed check at all — every one of them lived in
+      # release.yml, so a change to the puzzle bank or the mining rules was
+      # first searched against a real engine at the moment of release. 150 of
+      # the 1002 mined puzzles at depth 18 is about five minutes, the sample
+      # is a fixed shuffle (same 150 every run, so the number does not move
+      # on its own), and a sampled run now FAILS on a stored answer that is
+      # more than 50cp worse — it used to print and exit 0, which made it
+      # worth nothing as a gate. The full sweep stays: nightly.yml.
+      - name: mined-puzzle soundness (sampled)
+        run: node scripts/test-mined.mjs --sample=150
       # `free variables: node scripts/scope-check.mjs` used to sit here. The
       # sources are ES modules as of 1.25 and index.html loads one bundle, so
       # an unbound name is a build failure — test-chess.mjs asserts the bundle

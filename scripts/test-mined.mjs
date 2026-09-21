@@ -274,15 +274,27 @@ if (FIX) {
 // apart — so every pass would name a slightly different set and the build
 // would never go green. A gate that can never be satisfied is a gate people
 // learn to ignore, which is worse than not having one.
-if (!FIX && !SAMPLE) {
+if (!FIX) {
   if (tied.length) {
     console.log(`\n注意：${tied.length} 道有还没记下的同等解。不算失败（app 会当场复核），` +
       "想省掉那次搜索就跑一次 --fix。");
   }
+  // 7.1 (v7-1-plan §3.2): a sample fails on `not-best` too.
+  //
+  // Until now a `--sample` run printed its findings and exited 0, which made
+  // the sampled tier worth nothing as a gate — and the sampled tier is the
+  // only one a pull request can afford. The reason the whole verdict was
+  // skipped was `tied`, not `not-best`: which move is the runner-up is not
+  // stable between runs when two are a centipawn apart, so gating on `tied`
+  // would be a gate that can never go green. `not-best` is a content error
+  // by a margin of more than TIE — it does not flicker, and a sample that
+  // finds one has found a real one.
   if (notBest.length) {
     console.error(`\nFAIL: ${notBest.length} 道存的答案确实更差（超过 ${TIE}cp）—— ` +
       "用 --fix 退役，或逐条改写");
     process.exit(1);
   }
-  console.log("\nall mined tac/win puzzles are sound");
+  console.log(SAMPLE
+    ? `\nsampled ${puzzles.length} mined tac/win puzzles: none stores a worse answer`
+    : "\nall mined tac/win puzzles are sound");
 }
