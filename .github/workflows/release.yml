@@ -82,7 +82,7 @@ jobs:
       # (nightly.yml), a PR runs the same 150 (checks.yml), and anyone
       # editing the bank runs `npm run test:engine` by hand, which is what
       # --fix already requires. The other six scripts run in full, as before.
-      - name: engine checks (openings, tactics, novice, strength, analysis, mined sample)
+      - name: engine checks (openings, tactics, novice, strength, analysis, mined sample, motif coverage)
         run: npm run test:engine:sample
       # The browser checks. Every one of them is a regression that shipped: the
       # board one is the `CHECK is not defined` that emptied the board for two
