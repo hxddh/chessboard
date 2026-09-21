@@ -292,7 +292,7 @@ for (const p of ["r", "b", "n"]) {
     bands[b2] = (bands[b2] || 0) + 1;
   }
   const src = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
-  assert(/cat === "op"[\s\S]{0,400}?plies <= 8 \? "easy" : plies <= 16 \? "mid" : "hard"/.test(src),
+  assert(/isOpeningCat\(p\.cat\)[\s\S]{0,400}?plies <= 8 \? "easy" : plies <= 16 \? "mid" : "hard"/.test(src),
     "opening drills get their own tier rule rather than the tactic scale");
   assert(Object.keys(bands).length === 3 && Math.min(...Object.values(bands)) >= 15,
     "the difficulty filter splits the drills three ways (" + JSON.stringify(bands) + ")");
@@ -3103,7 +3103,7 @@ for (const lang of CONTENT_LANGS) {
   assert(/cat === "op" \? ALL_PUZZLES\.filter\(\(p\) => p\.cat === "op" && \(p\.side === "b"\) === \(store\.session\.puzzleState\.opSide === "b"\)\)/.test(appSrc),
     "the op list shows the chair the side segment picked");
   // playing Black: the app opens with White's book move before you answer
-  assert(/p\.cat === "op" && p\.side === "b"[\s\S]{0,200}g\.move\(p\.line\[0\]\)[\s\S]{0,200}stage = 1/.test(appSrc),
+  assert(/isOpeningCat\(p\.cat\) && p\.side === "b"[\s\S]{0,200}g\.move\(p\.line\[0\]\)[\s\S]{0,200}stage = 1/.test(appSrc),
     "a Black drill opens with White's first book move already played");
   // the board faces the chair you sit in
   assert(/flipped: store\.session\.puzzle\.p\.side === "b"/.test(appSrc),
@@ -3121,10 +3121,10 @@ for (const lang of CONTENT_LANGS) {
   assert(/opSolved[\s\S]{0,120}p\.side !== "b"/.test(appSrc) || /side !== "b"[\s\S]{0,240}opSolved/.test(appSrc),
     "achievement totals still mean the White book — doubling them silently would cheapen earned badges");
   // 为你出一题 can serve a pick from the hidden chair
-  assert(/picked\.cat === "op"[\s\S]{0,120}opSide = picked\.side === "b" \? "b" : "w"/.test(appSrc),
+  assert(/isOpeningCat\(picked\.cat\)[\s\S]{0,120}opSide = picked\.side === "b" \? "b" : "w"/.test(appSrc),
     "the recommender switches chairs so its pick is always servable");
   // the side row is drawn only where there are two chairs (P3: absent, not greyed)
-  assert(/function syncOpSideSeg\(cat\) \{[\s\S]{0,120}avail\(el\("row-op-side"\), cat === "op"\)/.test(appSrc),
+  assert(/function syncOpSideSeg\(cat\) \{[\s\S]{0,120}avail\(el\("row-op-side"\), isOpeningCat\(cat\)\)/.test(appSrc),
     "the 执白/执黑 row exists only in the opening category");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
   assert(/id="op-side-seg"[\s\S]{0,400}data-side="w"[\s\S]{0,400}data-side="b"/.test(html),
@@ -3354,9 +3354,12 @@ for (const lang of CONTENT_LANGS) {
     "a deeper pass revises the book before extending it (audit F2)");
   // 7.1: and the library's pass banks them too — v7-plan §6.3, which 7.0
   // shipped without and then recorded in neither of §10's two tables
-  assert(/run\.mined \+= mineLibraryGame\(next, r\.pass, LIB_BUDGET\)\.added/.test(appSrc),
+  // 7.2 (P2): 棋谱库那一整块搬进了 library-ui.js，这两条跟着它走 —— 也因此
+  // 不再算在 app.js 的登记册里
+  const libUiSrc = fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8");
+  assert(/run\.mined \+= mineLibraryGame\(next, r\.pass, LIB_BUDGET\)\.added/.test(libUiSrc),
     "每分析完一局棋谱库的棋，就把这一局的失误收进错题本");
-  assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(appSrc),
+  assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(libUiSrc),
     "棋谱库走的是和棋盘同一套规则，先修正再扩充，不是第二份实现");
   assert(/withMotifs\(Mistakes\.candidatesFrom\(/.test(appSrc),
     "每道错题带着它的母题 —— 分层保留靠它，否则一次导入会冲掉一整类");
@@ -3367,9 +3370,9 @@ for (const lang of CONTENT_LANGS) {
   // the tab exists exactly while the book does (P3), and the cat is real
   assert(/if \(b\.dataset\.cat === "mine"\) b\.hidden = !store\.session\.mines\.length;/.test(appSrc),
     "the 错题 tab is drawn only while the personal book holds drills");
-  assert(/"op", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
+  assert(/"op", "rep", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
     "mine is a real category on the scripted-grading rail");
-  assert(/\(cat === "review" \|\| cat === "mine"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
+  assert(/\(cat === "review" \|\| cat === "mine" \|\| cat === "rep"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
     "an emptied personal book does not strand the player");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
   assert(/data-cat="mine" hidden/.test(html), "…and the button starts hidden until the book says otherwise");
@@ -4490,7 +4493,9 @@ for (const lang of CONTENT_LANGS) {
   {
     const cssC = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const htmlC = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-    const appC = appSrc;
+    // 7.2: the 棋谱库 markup is built in library-ui.js now, so the app's
+    // source alone no longer accounts for every class it wears
+    const appC = appSrc + fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8");
     // class selectors the stylesheet defines, minus state/modifier suffixes
     const defined = new Set([...cssC.matchAll(/^\s*\.([a-z][a-z0-9-]*)/gm)].map((m) => m[1]));
     const orphans = [];
@@ -4724,8 +4729,9 @@ for (const lang of CONTENT_LANGS) {
     // every key the app owns is in the list — a key added elsewhere would be
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
-    // 6.0 added the quarantine key (v6-plan D2); 7.0 the games library
-    assert(keys.length === 12, "all twelve keys are declared in one place (" + keys.length + ")");
+    // 6.0 added the quarantine key (v6-plan D2); 7.0 the games library;
+    // 7.2 the player's own opening book
+    assert(keys.length === 13, "all thirteen keys are declared in one place (" + keys.length + ")");
     for (const k of keys) {
       assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
     }
@@ -6031,7 +6037,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 127;
+  const REGISTERED = 125;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }

@@ -478,6 +478,10 @@
             <!-- The personal book. Drawn only while it holds drills (P3) —
                  mined from the player's own analysed games, see mistakes.js. -->
             <button type="button" data-cat="mine" hidden title="错题:复盘标为 ?? 的你自己的失着,重摆一遍找对的那手" data-i18n-title="tip.cat.mine" data-i18n="pz.cat.mine">错题</button>
+            <!-- 我的开局书 (7.2). Same rule as 错题: drawn only while there
+                 is a book to drill, and the book is imported, not authored —
+                 see repertoire.js. -->
+            <button type="button" data-cat="rep" hidden title="我的开局书:背你自己导进来的那套开局,走偏了当场告诉你书上走什么" data-i18n-title="tip.cat.rep" data-i18n="pz.cat.rep">开局书</button>
             <button type="button" data-cat="review" title="复习:重做答错或看过答案的题,做对即移出" data-i18n-title="tip.cat.review" data-i18n="pz.cat.review">复习</button>
           </div>
         </div>
@@ -745,6 +749,28 @@
             <button type="button" class="act-btn" id="lib-open" hidden></button>
             <button type="button" class="act-btn" id="lib-analyse" hidden></button>
             <button type="button" class="act-btn" id="lib-diagnose" hidden data-i18n="lib.diagnose">看诊断</button>
+          </span>
+        </div>
+        <!-- 我的开局书 (7.2, v7-2-plan §3). The trainer's built-in book
+             teaches opening principles through the openings everybody plays;
+             this one is the four or five things THIS player intends to play,
+             imported as a PGN with variations. It sits here, next to the
+             library, because the third thing it does — naming the openings
+             you keep losing in and have nothing written down about — is read
+             straight off the library's diagnosis. -->
+        <div class="side-h-row">
+          <h2 class="side-h" data-i18n="rep.title">我的开局书</h2>
+          <span class="side-h-meta num" id="rep-meta" hidden></span>
+        </div>
+        <div class="stats-body" id="rep-body"></div>
+        <div class="close-row split" id="rep-acts">
+          <span class="btn-pair">
+            <button type="button" class="act-btn" id="rep-import-w" data-i18n="rep.importW">导入执白开局书</button>
+            <button type="button" class="act-btn" id="rep-import-b" data-i18n="rep.importB">导入执黑开局书</button>
+          </span>
+          <span class="btn-pair">
+            <button type="button" class="act-btn" id="rep-drill" hidden data-i18n="rep.drill">开始背</button>
+            <button type="button" class="act-btn" id="rep-clear" hidden data-i18n="rep.clear">清空</button>
           </span>
         </div>
         <div class="side-h-row">

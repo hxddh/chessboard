@@ -85,13 +85,13 @@ async function open(ctx) {
 }
 
 /** Feed the file picker the way a person does: click, choose, done. */
-async function importFile(page, text) {
+async function importFile(page, text, button) {
   const file = path.join(HERE, "..", "node_modules", ".cache", "lib-e2e.pgn");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text);
   const [chooser] = await Promise.all([
     page.waitForEvent("filechooser"),
-    page.click("#lib-import"),
+    page.click(button || "#lib-import"),
   ]);
   await chooser.setFiles(file);
   await page.waitForTimeout(600);
@@ -645,6 +645,119 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   assert(revised && revised.budget === 400,
     "……并且记下它现在是 400 毫秒判的，免得下一趟快扫再把它改回去", JSON.stringify(revised));
   assert(revised && revised.from === "deep1", "来源仍然是那一局");
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 10. 7.2 P1:我的开局书 ---------------------------------------------------
+{
+  // 内置的 195 条开局书教的是「开局原理」，用的是所有人都下的那些开局。这一
+  // 本是你自己的那四五套东西，从一份带变着的 PGN 进来。第三件事 —— 说出你下
+  // 过、书里却没有的开局 —— 只有 7.1 之后才成立：在那之前应用不知道你在哪些
+  // 开局里真的输过。
+  // 第二条和下面那本开局书走的是同一串 —— 覆盖是按 ECO 编号算的，换个次序
+  // 就是另一个编号，这里要验的是「补上了就不再是缺口」
+  const ECOS = ["e4 e5 Nf3 Nc6 Bb5 a6", "d4 d5 c4 e6 Nf3 Nf6"];
+  const games = [];
+  for (let i = 0; i < 24; i++) {
+    const tags = new Array(12).fill(null);
+    const losses = new Array(12).fill(20);
+    const scalars = new Array(13).fill(0);
+    const sans = ECOS[i % 2];
+    games.push({
+      id: "rep" + i, t: 1758100000000 + i, white: "hxddh", black: "rival" + i,
+      date: "2026.09.0" + ((i % 9) + 1), event: "Rated blitz",
+      // 西班牙赢得多，后翼（i 为奇数的那一半）输得多 —— 缺口按输赢排，不按局数
+      result: i % 2 ? "0-1" : "1-0", plies: 12, sans: sans + " " + sans, fen: "",
+      side: "w", outcome: i % 2 ? "loss" : "win", motifs: {},
+      an: { acc: { w: 60, b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars,
+        bests: new Array(13).fill(null), budget: 200 },
+    });
+  }
+  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  const { page, errs } = await open(ctx);
+  await page.waitForTimeout(600);
+
+  // 书是空的：你下过的每一个开局都是缺口，而且最该先补的排在最前面
+  let body = await page.textContent("#rep-body");
+  assert(/还没有你自己的开局书/.test(body), "没有书时就直说没有", body);
+  assert(/书里却没有的开局/.test(body), "……并且已经能说出你下过什么", body);
+  const firstGap = await page.evaluate(() =>
+    (document.querySelector("#rep-body .stat-row .stat-k") || {}).textContent || "");
+  assert(/^D/.test(firstGap), "输得最多的那个开局排第一 —— 不是下得最多的那个", firstGap);
+
+  // 导一份带变着的执白开局书进来
+  // 两条线里白方走的是同一串（d4 c4 Nf3），黑方的回答不同 —— 树是按权重挑
+  // 回答的，这样无论它挑哪一边，这一趟要走的都是同样三手
+  const REP = `[Event "White repertoire"]\n[White "?"]\n[Black "?"]\n[Result "*"]\n\n` +
+    `1. d4 d5 2. c4 e6 (2... c6) 3. Nf3 Nf6 *\n`;
+  await importFile(page, REP, "#rep-import-w");
+  await page.waitForTimeout(600);
+  const book = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire") || "null"));
+  assert(book && book.w.length === 2, "主线和变着各成一条线", book ? book.w.length : "null");
+  assert(book.b.length === 0, "执黑那本还是空的 —— 两本书，两套体系");
+  body = await page.textContent("#rep-body");
+  assert(/执白 2/.test(body), "记录页数得出两边各几条", body);
+  const gapsNow = await page.evaluate(() =>
+    [...document.querySelectorAll("#rep-body .stat-row .stat-k")].map((e) => e.textContent));
+  assert(!gapsNow.some((g) => /^D/.test(g)),
+    "补上的那个开局，不再算缺口", JSON.stringify(gapsNow));
+
+  // 同一份再导一遍，书不会变成两倍
+  await importFile(page, REP, "#rep-import-w");
+  await page.waitForTimeout(500);
+  const again = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire")));
+  assert(again.w.length === 2, "同一份导第二遍，还是两条", again.w.length);
+
+  // 背它：开始背 → 做题页开在「开局书」这一档
+  await page.click("#rep-drill");
+  await page.waitForTimeout(900);
+  const started = await page.evaluate(() => ({
+    cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat,
+    tabShown: !document.querySelector('#puzzle-cat-seg button[data-cat="rep"]').hidden,
+    task: (document.getElementById("puzzle-task") || {}).textContent || "",
+  }));
+  assert(started.cat === "rep" && started.tabShown, "「开始背」把你放在开局书那一档",
+    JSON.stringify(started));
+  assert(/d4|后翼|Queen/i.test(started.task) || started.task.length > 0,
+    "题面说的是这一条线", started.task);
+
+  // 走偏了：当场告诉你书上走什么
+  const tapAt = async (sq) => {
+    const p = await page.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1];
+      const flip = document.body.classList.contains("flipped");
+      const co = flip ? 7 - f : f, ro = flip ? 7 - rk : rk, z = r.width / 8;
+      return { x: r.left + (co + .5) * z, y: r.top + (ro + .5) * z };
+    }, sq);
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(220);
+  };
+  const mv = async (a, b) => { await tapAt(a); await tapAt(b); await page.waitForTimeout(420); };
+  await mv("e2", "e4");
+  const wrong = await page.evaluate(() => document.getElementById("toast").textContent.trim());
+  assert(/d4/.test(wrong), "走书上没有的一手，当场告诉你书上走的是 d4", wrong);
+  // 走错的那道题进复习队列 —— 和内置开局题、错题走的是同一条 SRS
+  const missed = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    return Object.keys(st.missed || {});
+  });
+  assert(missed.length === 1 && missed[0].startsWith("rep-"),
+    "走错的开局书题进了复习队列，和内置题同一条 SRS", JSON.stringify(missed));
+
+  // 书上那三手走得通，对手每一手都从书里回答，走到叶子就算背下来了
+  await mv("d2", "d4");
+  await mv("c2", "c4");
+  let done = await page.isVisible("#puzzle-playon");
+  // 黑方回的是 c6 那条的话，这里已经到叶子了；回 e6 就还差白方第三手
+  if (!done) { await mv("g1", "f3"); done = await page.isVisible("#puzzle-playon"); }
+  assert(done, "照书走完一条线就算背下来了 —— 对手的回答也是从这本书里挑的");
+  const solved = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    return Object.keys(st.solved).filter((k) => k.startsWith("rep-")).length;
+  });
+  assert(solved >= 1, "背下来的那条记进了进度，和内置开局书同一条轨", solved);
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }
