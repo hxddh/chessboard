@@ -27,7 +27,7 @@ import { ChessRepertoire } from "./repertoire.js";
  * @param {object} d everything this module borrows from app.js
  */
 export function createRepertoireUI(d) {
-  const { doc, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync } = d;
+  const { doc, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync, forgetDrills } = d;
   const Rep = ChessRepertoire;
 
   /** How many of your games in an opening before its absence is a gap. */
@@ -92,6 +92,9 @@ export function createRepertoireUI(d) {
     if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
     const r = Rep.addLines(linesOf(side), fresh, nameOf);
     store.session.repertoire[side === "b" ? "b" : "w"] = r.lines;
+    // the ids that left — the cap's casualties and the shorter lines a deeper
+    // one replaced — take their solved/missed entries with them
+    if (r.dropped.length) forgetDrills(r.dropped);
     saveBook();
     render();
     sync();
@@ -105,6 +108,9 @@ export function createRepertoireUI(d) {
     const ok = await confirmNative(t("rep.clearAsk"), t("rep.clearTitle"),
       { ok: t("rep.clearOk"), cancel: t("act.cancel") });
     if (!ok) return;
+    // …and so does the whole book: a review owed to a drill that no longer
+    // exists is counted for ever and can never be served
+    forgetDrills(linesOf("w").concat(linesOf("b")).map((l) => l.id));
     store.session.repertoire = { w: [], b: [] };
     saveBook();
     render();

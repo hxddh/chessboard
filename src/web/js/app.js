@@ -2940,8 +2940,26 @@ import { createStore } from "./store.js";
     sync();
   }
 
+  /**
+   * Sit in a chair the repertoire actually has lines for.
+   *
+   * The 开局书 tab is drawn from `RepUI.total()` — both books together — while
+   * the list it serves is one chair at a time. Import a Black book only, and
+   * the tab appears while `opSide` still says White: the category is empty,
+   * the guard below falls back to 一步杀, and the side segment never gets
+   * drawn because nobody ever entered the category. The book is there and
+   * there is no way in. Same rule 「开始背」 already follows.
+   */
+  function seatRepSide() {
+    const cur = store.session.puzzleState.opSide === "b" ? "b" : "w";
+    if (RepUI.drills(cur).length || !RepUI.total()) return;
+    store.session.puzzleState.opSide = cur === "w" ? "b" : "w";
+    savePuzzleState();
+  }
+
   function startPuzzles() {
     let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) ? store.session.puzzleState.cat : "m1";
+    if (cat === "rep") seatRepSide();
     // don't strand the user on an empty review tab — or an emptied personal
     // book, which retires drills on its own (mistakes.js cap)
     // …or an emptied repertoire, which is a file the player can delete
@@ -3379,16 +3397,29 @@ import { createStore } from "./store.js";
    * intact, from the White side the player just rehearsed.
    */
   function playOnFromPuzzle() {
-    if (!store.session.puzzle || !store.session.puzzle.done || store.session.puzzle.p.cat !== "op") return;
+    // Both opening categories: the button is drawn for both (canPlayOn reads
+    // isOpeningCat), and a guard that disagreed with the button is a button
+    // that does nothing — which for a line out of your OWN book is the worst
+    // place to make that promise. Found by review on 7.2's own PR.
+    if (!store.session.puzzle || !store.session.puzzle.done || !isOpeningCat(store.session.puzzle.p.cat)) return;
+    // Everything this needs off the puzzle, taken BEFORE the trainer is
+    // stopped. `stopPuzzles()` sets `store.session.puzzle` to null, and the
+    // three lines below used to read through it afterwards — so this button
+    // threw on its first statement past that call and did nothing, for every
+    // category, since it was written in 6.0. What kept it looking fine was a
+    // source-text assertion that matched the very expression that was broken:
+    // the shape was right and nobody had pressed it. 7.2 replaced that check
+    // with an e2e that presses it, and the e2e failed immediately.
+    const p = store.session.puzzle.p;
     const line = store.session.puzzle.g.pgn();
-    const name = puzzleName(store.session.puzzle.p);
+    const name = puzzleName(p);
     if (!line.trim()) return;
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
     stopPuzzles();
     store.session.mode = "ai";
-    store.session.humanColor = store.session.puzzle.p.side === "b" ? "b" : "w";
-    store.game.flipped = store.session.puzzle.p.side === "b";
+    store.session.humanColor = p.side === "b" ? "b" : "w";
+    store.game.flipped = p.side === "b";
     store.game.flagFall = null;
     store.game.resigned = null;
     store.game.drawAgreed = false;
@@ -5172,6 +5203,22 @@ import { createStore } from "./store.js";
     // actually played, and that comparison is only as good as the ECO codes
     // on the library's entries — 7.1 shipped `fillOpenings` for exactly this
     // and only the two dialogs ever called it
+    // A drill that leaves the book takes its queue entries with it. The mined
+    // book has said this since 5.1 — an id in `missed` that nothing can serve
+    // is a review owed to nothing: `owedNow()` counts it for ever while the
+    // 复习 list filters it out, so the app advertises work it cannot hand you.
+    // Clearing the book, the 400-line cap, and a line replaced by a deeper
+    // version all remove ids, so all three come through here.
+    forgetDrills: (ids) => {
+      let hit = false;
+      for (const id of ids || []) {
+        for (const key of [id, id + ":b"]) {
+          if (store.session.puzzleState.solved[key] != null) { delete store.session.puzzleState.solved[key]; hit = true; }
+          if (store.session.puzzleState.missed[key] != null) { delete store.session.puzzleState.missed[key]; hit = true; }
+        }
+      }
+      if (hit) savePuzzleState();
+    },
     diagnose: () => {
       if (LibraryUI.fillOpenings()) LibraryUI.saveLibrary();
       return Library.diagnose(store.session.library, LIB_MIN_GAMES);
@@ -5183,12 +5230,8 @@ import { createStore } from "./store.js";
   /** 「开始背」: into the trainer, on the repertoire tab, in the chair with lines. */
   function startRepDrills() {
     if (!RepUI.total()) return;
-    // the chair that has a book is the chair to sit in; with both, keep the
-    // one the opening segment is already showing
-    const has = (side) => RepUI.drills(side).length > 0;
-    const cur = store.session.puzzleState.opSide === "b" ? "b" : "w";
-    const side = has(cur) ? cur : has("w") ? "w" : "b";
-    store.session.puzzleState.opSide = side;
+    // which chair to sit in is `seatRepSide`'s rule, and startPuzzles() below
+    // applies it — one rule, one place
     store.session.puzzleState.cat = "rep";
     store.session.puzzleTierFilter = "all";
     savePuzzleState();

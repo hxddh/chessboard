@@ -3114,9 +3114,12 @@ for (const lang of CONTENT_LANGS) {
     /piece\.color === puzzleHumanSide\(\)/.test(appSrc) &&
     /function showPuzzleAnswer\(\) \{[\s\S]{0,200}g\.turn\(\) !== puzzleHumanSide\(\)/.test(appSrc),
     "clicks, selection and the answer arrow all read the solver's chair from the puzzle");
-  // 接实战 keeps the chair
-  assert(/humanColor = store\.session\.puzzle\.p\.side === "b" \? "b" : "w"/.test(appSrc),
-    "接实战 seats you on the side you drilled");
+  // 接实战 keeps the chair — retired from the register in 7.2 and replaced by
+  // a behavioural test (scripts/test-library-e2e.mjs 第 10 组: 「接实战」把刚
+  // 背完的那条线带上棋盘). This is the register's whole argument, demonstrated:
+  // the regex matched an expression that ran AFTER stopPuzzles() had nulled
+  // the object it reads, so the assertion passed for three versions while the
+  // button threw on every press.
   // the badge kept its meaning: op achievements count the White set only
   assert(/opSolved[\s\S]{0,120}p\.side !== "b"/.test(appSrc) || /side !== "b"[\s\S]{0,240}opSolved/.test(appSrc),
     "achievement totals still mean the White book — doubling them silently would cheapen earned badges");
@@ -6037,7 +6040,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 125;
+  const REGISTERED = 124;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }

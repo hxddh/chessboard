@@ -68,6 +68,11 @@ const PGN = `[Event "White repertoire"]
   assert(extended.added === 1 && extended.lines.length === 1 && extended.lines[0].sans === "e4 e5 Nf3 Nc6 Bb5",
     "反过来，更深的那条替掉它 —— 书长了，不是多了一条",
     JSON.stringify(extended.lines.map((l) => l.sans)));
+  // 被替掉的那条的 id 离开了这本书，所以它要出现在 dropped 里：挂在这个 id 上
+  // 的复习债，调用方得跟着一起清掉（7.2 发布前复查提的第三条）
+  assert(extended.dropped.length === 1 && extended.dropped[0] === shallow.lines[0].id,
+    "被替掉的那条 id 报在 dropped 里 —— 否则它欠下的复习永远还不上",
+    JSON.stringify(extended.dropped));
 }
 
 // --- id 由着法决定，不由它排第几决定（drills.js 那条教训） ------------------
