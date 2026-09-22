@@ -88,9 +88,12 @@ export function createRepertoireUI(d) {
     if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
     let games = [];
     try { games = ChessPgnParser.parsePgn(text0).games; } catch (_) { games = []; }
-    const fresh = Rep.linesFrom(games);
-    if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
-    const r = Rep.addLines(linesOf(side), fresh, nameOf);
+    const read = Rep.linesFrom(games);
+    // a file that held nothing but set-up positions is not a broken file —
+    // it is the wrong kind of file, and saying which is the whole difference
+    if (!read.lines.length && read.skipped) { toast(tf("rep.skippedSetUp", [read.skipped]), "fix"); return; }
+    if (!read.lines.length) { toast(t("msg.import.badPgn"), "fault"); return; }
+    const r = Rep.addLines(linesOf(side), read.lines, nameOf);
     store.session.repertoire[side === "b" ? "b" : "w"] = r.lines;
     // the ids that left — the cap's casualties and the shorter lines a deeper
     // one replaced — take their solved/missed entries with them
@@ -101,6 +104,7 @@ export function createRepertoireUI(d) {
     if (!r.added) toast(tf("rep.addedNone", [r.dup]), "fix");
     else toast(tf("rep.added", [r.added, r.dup]) + (label ? " · " + label : ""));
     if (r.dropped.length) toast(tf("rep.dropped", [Rep.MAX_LINES, r.dropped.length]), "fix");
+    if (read.skipped) toast(tf("rep.skippedSetUp", [read.skipped]), "fix");
   }
 
   async function clearBook() {
@@ -232,6 +236,9 @@ export function createRepertoireUI(d) {
         const k = doc.createElement("span");
         k.className = "stat-k";
         k.textContent = g.eco + " " + (g.name || "");
+        // an opening's full name rarely fits the name track — it is cut with
+        // an ellipsis there, so the whole of it lives here (7.3 B3)
+        k.title = k.textContent;
         const v = doc.createElement("span");
         v.className = "stat-v num";
         v.textContent = tf("rep.gapRecord", [g.n, g.loss]);

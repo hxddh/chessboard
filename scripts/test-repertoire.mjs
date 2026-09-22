@@ -38,7 +38,7 @@ const PGN = `[Event "White repertoire"]
 // --- 变着就是这本书的全部意义 ----------------------------------------------
 {
   const games = P.parsePgn(PGN).games;
-  const lines = R.linesFrom(games);
+  const lines = R.linesFrom(games).lines;
   assert(lines.length === 2, "一份带一个变着的书，读出来是两条线", lines.length);
   assert(lines.includes("e4 e5 Nf3 Nc6 Bb5 a6"), "主线在", JSON.stringify(lines));
   assert(lines.includes("e4 c5 Nf3 d6 d4"), "变着也在 —— 棋谱库只留主线，这里正相反", JSON.stringify(lines));
@@ -46,9 +46,24 @@ const PGN = `[Event "White repertoire"]
   assert(lines[0] === "e4 e5 Nf3 Nc6 Bb5 a6", "主线排在前面", lines[0]);
 }
 
+// --- 从别的局面出发的「体系」不是一条开局线（7.3 B2）------------------------
+{
+  // 一份从残局出发的 PGN。7.2 把它读成一条线 "Rd8 Rb1 Rd2" 照样进书 —— 而这
+  // 三手从标准开局第一手就非法，于是铸出一道谁也做不了的题，还什么都不说。
+  // 7.1 在棋谱库那条导入路径上修过同一类缺陷（foldGame 不读起始 FEN）。
+  const SETUP = `[Event "Rook endgame"]\n[SetUp "1"]\n[FEN "r5k1/5ppp/8/8/8/8/5PPP/R5K1 b - - 0 30"]\n\n1... Rd8 2. Rb1 Rd2 *\n`;
+  const r = R.linesFrom(P.parsePgn(SETUP).games);
+  assert(r.lines.length === 0, "从别的局面出发的局，一条线都不产出", JSON.stringify(r.lines));
+  assert(r.skipped === 1, "……而且数出来跳过了几局，页面才说得出为什么", r.skipped);
+  // 普通的局照旧
+  const ok = R.linesFrom(P.parsePgn(PGN).games);
+  assert(ok.lines.length === 2 && ok.skipped === 0, "标准开局的书一切照旧",
+    JSON.stringify([ok.lines.length, ok.skipped]));
+}
+
 // --- 同一份书导第二遍，不该变成两本 ----------------------------------------
 {
-  const fresh = R.linesFrom(P.parsePgn(PGN).games);
+  const fresh = R.linesFrom(P.parsePgn(PGN).games).lines;
   const a = R.addLines([], fresh, null);
   assert(a.added === 2 && a.lines.length === 2, "空书导进两条线", a.added);
   const b = R.addLines(a.lines, fresh, null);
@@ -149,7 +164,7 @@ const PGN = `[Event "White repertoire"]
   const root = { children: [] };
   let cur = root;
   for (const san of sans) { const n = { san, children: [] }; cur.children.push(n); cur = n; }
-  const lines = R.linesFrom([{ root }]);
+  const lines = R.linesFrom([{ root }]).lines;
   assert(lines[0].split(" ").length === R.MAX_PLIES,
     `再长也只取前 ${R.MAX_PLIES} 个半着`, lines[0].split(" ").length);
   void long;

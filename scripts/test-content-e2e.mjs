@@ -944,6 +944,65 @@ if (hasTab && REAL.length) {
   await ctx3.close();
 }
 
+// 顶栏与题面,同屏两处,不说同一句话 (7.3 B4)
+// 7.2 的顶栏 chip 直接返回 puzzleGoalText():
+//   顶栏  「实战里你走了 d3 —— 找出更强的一手 · 当时亏 3.2 分」
+//   题面  「第 1 题 · 实战里你走了 d3 —— 找出更强的一手 · 当时亏 3.2 分 · 评级 1500」
+// 一字不差。现在顶栏说「第几题 · 哪一类」,题面说目标、细节与来源。
+// 三语各跑一遍:重复是从一句共用的文案里来的,不是从中文里来的。
+{
+  const MINE = [{ id: "mine:a", cat: "mine",
+    fen: "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+    solution: ["Ng5"], played: "d3", loss: 320, ply: 6, t: 1758200000000,
+    rev: { budget: 200, src: "lib" }, from: { kind: "lib", id: "g0" }, motif: "fork" }];
+  for (const lang of ["zh-CN", "en", "ja"]) {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
+    await ctx.addInitScript(([l, mines]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "puzzle", langId: l, sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: mines }));
+      localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "mine" }));
+    }, [lang, MINE]);
+    const pg = await ctx.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(1000);
+    const seen = await pg.evaluate(() => ({
+      chip: (document.getElementById("status") || {}).textContent || "",
+      task: (document.getElementById("puzzle-task") || {}).textContent || "",
+    }));
+    assert(seen.chip.length > 0 && seen.task.length > 0,
+      lang + ":顶栏与题面都有字", JSON.stringify(seen));
+    assert(!seen.task.includes(seen.chip) && !seen.chip.includes(seen.task),
+      lang + ":顶栏不是题面的一截,题面也不是顶栏的一截", JSON.stringify(seen));
+    // 再严一点:任意 8 个字的连续片段都不该同时出现在两处。整句相同只是
+    // 最刺眼的那种重复,半句相同一样是同屏读两遍。
+    //
+    // 这一条在 CI 上抓到过一个真的:英文里顶栏是「Puzzle 1」,题面末尾是
+    // 「Puzzle 1500」—— 一个是第几题,一个是这道题的评级,两个毫不相干的数
+    // 戴着同一个名词并排站着(三语都这样,英文最糟,两串字面上就是前缀关系)。
+    // 评级的那个名字已经改成 Rated / 评级 / レーティング,叫它本来是的东西。
+    const shared = (() => {
+      const N = 8;
+      for (let i = 0; i + N <= seen.chip.length; i++) {
+        const frag = seen.chip.slice(i, i + N);
+        if (seen.task.includes(frag)) return frag;
+      }
+      return "";
+    })();
+    assert(!shared, lang + ":两处没有 8 字以上的重叠" + (shared ? "(「" + shared + "」)" : ""),
+      JSON.stringify(seen));
+    // 顶栏确实说了「第几题」——这是它接手的那件事
+    assert(/\d/.test(seen.chip), lang + ":顶栏报出第几题", seen.chip);
+    // 这里原本还断言「题面上没有四位数的评级」—— 写错了。B1 定下的规则是
+    // 背谱类(op / rep)不进评级,**别的都进**,错题也在内(isRatedCat =
+    // !isOpeningCat)。错题的题面本来就该带着它的评级,7.2 起的既有断言也是
+    // 这么钉的。这条是照着计划文档里一句顺带的话写的,不是照着规则写的。
+    await ctx.close();
+  }
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

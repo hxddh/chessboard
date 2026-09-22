@@ -65,18 +65,18 @@ console.log("引擎:", ENGINE);
 // 520x520. A panel column is 239px at 1400 and the whole layout argument rests
 // on numbers like that, so "it fits" was only ever established at the widest
 // end. `viewport` lets a section re-run at the narrow end; see 4c.
-async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, height: 900 }) {
+async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, height: 900 }, panelOpen = "1") {
   const ctx = await browser.newContext({ viewport, locale: lang });
   // The theme is chosen at load. Setting data-theme on a page already living in
   // another one leaves a mixture — the theme blocks and the component block
   // have equal specificity, so which wins depends on source order, not on the
   // attribute — and a measurement taken then reads one theme's ink on another
   // theme's paper.
-  await ctx.addInitScript(([l, m, tb, th]) => {
+  await ctx.addInitScript(([l, m, tb, th, po]) => {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
       mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th }));
-    localStorage.setItem("chess.panelOpen", "1");
-  }, [lang, mode, tab, theme]);
+    localStorage.setItem("chess.panelOpen", po);
+  }, [lang, mode, tab, theme, panelOpen]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -1077,8 +1077,14 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   const tab = await page.evaluate(async () => {
     document.getElementById("tab-record").click();
     const pane = document.getElementById("pane-record");
-    const names = pane.getAnimations().map((a) => a.animationName);
-    await new Promise((r) => setTimeout(r, 400));
+    const anims = pane.getAnimations();
+    const names = anims.map((a) => a.animationName);
+    // wait for the animation itself rather than for a number of milliseconds:
+    // 7.3 gave the 记录 tab a wider panel, so switching to it now also relays
+    // out the board, and a fixed 400ms caught the fade at 0.98 — a timing
+    // flake dressed up as a claim about where the pane comes to rest.
+    await Promise.all(anims.map((a) => a.finished.catch(() => {})));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     return { names, settled: getComputedStyle(pane).opacity };
   });
   assert(tab.names.includes("reveal-in"), "切页签的时候新页是走进来的(" + tab.names.join(", ") + ")");
@@ -1475,6 +1481,337 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       (rows.find((r) => r.h === Math.max(...heights)) || {}).k + "」");
     await ctx.close();
   }
+}
+
+// --- 3u2. every `label → value` row, everywhere, is one line and one column
+// 7.3 B3. §3u above asks the six difficulty rows to be the same height, which
+// they were — the rows that were not are the ones carrying data rather than a
+// fixed label. Measured at 1400x900 before the fix, in all three languages:
+// 「D30 Queen's Gambit Declined」 → 「12 局 · 输 12」 stood 42px against every
+// other row's 23, because the name wrapped and took the value with it, and the
+// value's left edge sat at one of eight different x positions down a single
+// panel (1271 … 1316) because `space-between` puts it wherever the text ends.
+//
+// So this walks every `.stat-row` the app can show — the statistics, the
+// library, the gaps in the book, the puzzle tally, the progress rows and the
+// diagnosis dialog — and asks two things of all of them at once:
+//   1. one line. Not "the same height as its neighbours": a row that wraps in
+//      a section where every row wraps would pass that and still be wrong.
+//   2. one value column per container. The track is fixed, so this holds by
+//      construction — which is exactly why it is worth an assertion: the next
+//      person to reach for `space-between` here should find out immediately.
+{
+  for (const lang of LANGS) {
+    const { ctx, page, errs } = await open(lang, "ai", "record");
+    await page.evaluate(() => {
+      const games = [], diffs = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+      for (let i = 0; i < 20; i++) games.push({ id: "g" + i, t: Date.now() - i * 864e5,
+        diff: diffs[i % 6], color: i % 2 ? "w" : "b", result: ["win", "loss", "draw"][i % 3],
+        moves: 8 + i * 4, pgn: '[Event "?"]\n\n1. e4 e5 1/2-1/2', ending: "", acc: 40 + i * 2, acpl: 120 - i * 4 });
+      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+      // a library with two openings, so the rows that carry an ECO name — the
+      // ones that wrapped — are on screen
+      const ECOS = ["e4 e5 Nf3 Nc6 Bb5 a6", "d4 d5 c4 e6 Nf3 Nf6"];
+      const lib = [];
+      for (let i = 0; i < 24; i++) {
+        const tags = new Array(80).fill(null), losses = new Array(80).fill(null), scalars = [0];
+        for (let ply = 0; ply < 80; ply++) {
+          const mine = ply % 2 === 0, moveNo = Math.floor(ply / 2) + 1;
+          losses[ply] = mine ? (moveNo > 32 ? 120 : 8) : 0;
+          scalars.push(scalars[ply] + (mine ? -losses[ply] : losses[ply]));
+        }
+        const sans = ECOS[i % 2];
+        lib.push({ id: "g" + i, t: 1758000000000 + i * 864e5, white: "hxddh", black: "rival" + i,
+          date: "2026.09.01", event: "Rated blitz", result: i % 2 ? "0-1" : "1-0", plies: 80,
+          sans: sans + " " + sans, fen: "", side: "w", outcome: i % 2 ? "loss" : "win",
+          motifs: { 54: "fork", 40: "pin" },
+          an: { acc: { w: 60 + (i % 20), b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars,
+                bests: new Array(81).fill(null), budget: 200 } });
+      }
+      localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["hxddh"], games: lib }));
+    });
+    await page.reload();
+    await page.waitForTimeout(1000);
+    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+
+    // the same reading, taken twice: once on the panel, once with the
+    // diagnosis dialog open — the dialog is where the ECO rows live, and it is
+    // a different width, so it is a second container with its own column
+    const read = () => page.evaluate(() => {
+      // group by the actual parent box, not by its id — a container without
+      // one would otherwise be lumped in with every other container without
+      // one, and two columns that differ would read as a failure in the wrong
+      // place (or, worse, one that does differ would read as fine)
+      const boxes = new Map();
+      const boxKey = (el) => {
+        if (!boxes.has(el)) boxes.set(el, el.id || (el.className || "box") + "#" + (boxes.size + 1));
+        return boxes.get(el);
+      };
+      return [...document.querySelectorAll(".stat-row")].filter((e) => e.offsetParent).map((e) => {
+        const k = e.querySelector(".stat-k"), v = e.querySelector(".stat-v");
+        const cs = getComputedStyle(e);
+        // one line = the row is no taller than its own line box plus padding
+        const line = parseFloat(cs.lineHeight) || 0;
+        const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+        return {
+          box: boxKey(e.parentElement),
+          h: Math.round(e.getBoundingClientRect().height),
+          oneLine: Math.round(e.getBoundingClientRect().height) <= Math.ceil(line + pad) + 1,
+          k: k ? k.textContent : "", v: v ? v.textContent : "",
+          kTitled: !!(k && k.title),
+          vleft: v ? Math.round(v.getBoundingClientRect().left) : 0,
+        };
+      });
+    });
+
+    for (const where of ["panel", "diagnosis"]) {
+      if (where === "diagnosis") {
+        await page.click("#lib-diagnose", { timeout: 800 }).catch(() => {});
+        await page.waitForTimeout(1600);
+      }
+      const rows = await read();
+      assert(rows.length >= (where === "panel" ? 6 : 8),
+        lang + " / " + where + ": there are rows to read (" + rows.length + ")");
+      const wrapped = rows.filter((r) => !r.oneLine);
+      assert(wrapped.length === 0,
+        lang + " / " + where + ": every row is one line" +
+        (wrapped.length ? " — wrapped: " + wrapped.map((r) => "「" + r.k + "」 → 「" + r.v + "」 " + r.h + "px").join("; ") : ""));
+      // one value column per container
+      const byBox = new Map();
+      for (const r of rows) {
+        if (!byBox.has(r.box)) byBox.set(r.box, new Set());
+        byBox.get(r.box).add(r.vleft);
+      }
+      for (const [box, lefts] of byBox) {
+        assert(lefts.size === 1,
+          lang + " / " + where + ": the numbers in #" + box + " are one column (x = " +
+          [...lefts].join(", ") + ")");
+      }
+    }
+    // the name that had to be cut keeps the whole of itself on `title`
+    const named = (await read()).filter((r) => /^[A-E]\d\d /.test(r.k));
+    assert(named.length > 0, lang + ": the diagnosis names openings (" + named.length + " rows)");
+    assert(named.every((r) => r.kTitled),
+      lang + ": …and each of those names is kept whole on `title`");
+    assert(errs.length === 0, lang + ": no JS exception while reading the rows");
+    await ctx.close();
+  }
+}
+
+// --- 3u3. a bar chart's shortest bar is still a bar ------------------------
+// 7.3 §4B. Measured on the diagnosis page with a real library: the phases came
+// out 开局 8 / 中局 8 / 残局 93, and on a linear scale in a 92px canvas the
+// first two were drawn 1px tall — a hairline, which is also what a phase with
+// no data at all would look like. Three numbers floated over what read as two
+// empty slots and one red brick. The 失误分布 chart had the same disease:
+// three hairlines suspended in white, no floor under them.
+//
+// Read off the canvas rather than off the source: the claim is about what is
+// drawn. The background is cleared to transparent, so ink is alpha > 0 and a
+// bar is the longest run of SOLID ink (alpha > 200) down its column — the
+// value printed above it and the dashed tick are antialiased and broken, so
+// they cannot be mistaken for it.
+{
+  const { ctx, page, errs } = await open("zh-CN", "ai", "record");
+  await page.evaluate(() => {
+    const games = [];
+    for (let i = 0; i < 24; i++) {
+      const tags = new Array(80).fill(null), losses = new Array(80).fill(null), scalars = [0];
+      for (let ply = 0; ply < 80; ply++) {
+        // mine: a trickle through the opening and middlegame, a flood in the
+        // endgame — the shape that drew two hairlines and one brick
+        const mine = ply % 2 === 0, moveNo = Math.floor(ply / 2) + 1;
+        losses[ply] = mine ? (moveNo > 32 ? 120 : 8) : 0;
+        scalars.push(scalars[ply] + (mine ? -losses[ply] : losses[ply]));
+      }
+      for (const mv of [20, 28, 36]) tags[(mv - 1) * 2] = mv === 28 ? "??" : "?";
+      const sans = i % 2 ? "d4 d5 c4 e6 Nf3 Nf6" : "e4 e5 Nf3 Nc6 Bb5 a6";
+      games.push({ id: "g" + i, t: 1758000000000 + i * 864e5, white: "hxddh", black: "rival" + i,
+        date: "2026.09.01", event: "Rated blitz", result: i % 2 ? "0-1" : "1-0", plies: 80,
+        sans: sans + " " + sans, fen: "", side: "w", outcome: i % 2 ? "loss" : "win",
+        motifs: { 54: "fork", 40: "pin" },
+        an: { acc: { w: 60 + (i % 20), b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars,
+              bests: new Array(81).fill(null), budget: 200 } });
+    }
+    localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  });
+  await page.reload();
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+  await page.click("#lib-diagnose", { timeout: 900 });
+  await page.waitForTimeout(1800);
+
+  const charts = await page.evaluate(() => {
+    const out = [];
+    for (const cv of document.querySelectorAll("#lib-diag canvas.diag-chart")) {
+      const g = cv.getContext("2d");
+      const { width: W, height: H } = cv;
+      const data = g.getImageData(0, 0, W, H).data;
+      // the longest run of solid ink in one column — a bar, if there is one
+      const runAt = (x) => {
+        let best = 0, run = 0;
+        for (let y = 0; y < H; y++) {
+          if (data[(y * W + x) * 4 + 3] > 200) { run++; if (run > best) best = run; }
+          else run = 0;
+        }
+        return best;
+      };
+      const bars = [];
+      for (let x = 0; x < W; x++) { const r = runAt(x); if (r > 0) bars.push(r); }
+      out.push({ label: cv.getAttribute("aria-label") || "", role: cv.getAttribute("role"),
+                 W, H, tallest: Math.max(0, ...bars), shortest: bars.length ? Math.min(...bars) : 0,
+                 inked: bars.length });
+    }
+    return out;
+  });
+  assert(charts.length >= 2, "诊断页画出了图 (" + charts.length + " 张)");
+  const dpr = await page.evaluate(() => window.devicePixelRatio || 1);
+  for (const c of charts) {
+    assert(!!c.label && c.role === "img", "「" + c.label + "」是一张有名字的图");
+    assert(c.tallest > 0 && c.tallest <= c.H,
+      "「" + c.label + "」最高的一根在画布里 (" + c.tallest + " / " + c.H + ")");
+  }
+  // the two bar charts: nothing drawn is a hairline. `shortest` counts every
+  // inked column including the axis labels' stems, so the claim is made on
+  // the bars themselves — the columns whose run is at least a bar's minimum.
+  const MIN_BAR_PX = 4;
+  const barish = await page.evaluate(() => {
+    const out = [];
+    // only the two charts that stand bars on a floor. The 开局战绩 chart lays
+    // its bars on their side, so a column of ink there is a slice through a
+    // row, not a bar — reading it this way would measure the wrong thing and
+    // then complain about the answer.
+    for (const cv of document.querySelectorAll('#lib-diag canvas[data-chart="phase"], #lib-diag canvas[data-chart="peak"]')) {
+      const g = cv.getContext("2d");
+      const { width: W, height: H } = cv;
+      const data = g.getImageData(0, 0, W, H).data;
+      const runs = [];
+      for (let x = 0; x < W; x++) {
+        let best = 0, bestEnd = -1, run = 0;
+        for (let y = 0; y < H; y++) {
+          if (data[(y * W + x) * 4 + 3] > 200) { run++; if (run > best) { best = run; bestEnd = y; } }
+          else run = 0;
+        }
+        if (best > 0) runs.push({ x, len: best, end: bestEnd });
+      }
+      // the floor is the row the most columns end on. Not the lowest one:
+      // the axis labels are printed BELOW the baseline, so "lowest" is the
+      // bottom of a glyph, and every bar would then be off the floor.
+      const tally = new Map();
+      for (const r of runs) tally.set(r.end, (tally.get(r.end) || 0) + 1);
+      let floor = -1, most = 0;
+      for (const [end, n] of tally) if (n > most) { most = n; floor = end; }
+      const onFloor = runs.filter((r) => Math.abs(r.end - floor) <= 1);
+      out.push({ label: cv.getAttribute("aria-label") || "", kind: cv.dataset.chart,
+                 bars: onFloor.length, min: onFloor.length ? Math.min(...onFloor.map((r) => r.len)) : 0,
+                 max: onFloor.length ? Math.max(...onFloor.map((r) => r.len)) : 0 });
+    }
+    return out;
+  });
+  assert(barish.length === 2, "两张立着柱子的图都读到了 (" + barish.length + ")");
+  for (const c of barish) {
+    if (!c.bars) continue;
+    assert(c.min >= Math.floor(MIN_BAR_PX * dpr) - 1,
+      "「" + c.label + "」最矮的一根也有 " + c.min + " 设备像素（下限 " + Math.round(MIN_BAR_PX * dpr) +
+      "）—— 「小」和「没有」不再长得一样");
+  }
+  // and every number the charts print is also on the page in words
+  const text = await page.evaluate(() => (document.getElementById("lib-diag") || {}).innerText || "");
+  assert(/回合/.test(text), "失误分布图的横轴范围在页面文字里也说了一遍", text.slice(0, 120));
+  assert(errs.length === 0, "读图时零 JS 异常", errs.join(" | "));
+  await ctx.close();
+}
+
+// --- 3u4. the chrome has three duties and three levels --------------------
+// 7.3 §4D. The bar held eight things — a status pill, two king glyphs, two
+// names, two personas, a 行 badge, the last move — at 0.6875, 0.75 and
+// 0.8125rem with the LOUDEST weight on a persona's name and the lightest on
+// the one fact that changes every half-move. Three duties, left to right:
+// whose move it is, what game this is, what you can do about it. One level
+// each, and the level has to descend in that order.
+//
+// …and the bar must not be saying what the panel is already saying. The
+// puzzle page had them word for word (§2 B4), so this asks it of every mode.
+{
+  for (const lang of LANGS) {
+    for (const mode of ["ai", "pvp", "puzzle", "learn"]) {
+      const { ctx, page, errs } = await open(lang, mode, "play");
+      const seen = await page.evaluate(() => {
+        const px = (el) => (el ? parseFloat(getComputedStyle(el).fontSize) : 0);
+        const wt = (el) => (el ? Number(getComputedStyle(el).fontWeight) : 0);
+        const pill = document.getElementById("status");
+        const name = document.querySelector(".vs-name");
+        const role = document.querySelector(".vs-role");
+        const panel = document.querySelector(".side [id$='-task'], .side .task, #puzzle-task, #lesson-task");
+        return {
+          pill: (pill || {}).textContent || "", pillPx: px(pill), pillWt: wt(pill),
+          namePx: px(name), nameWt: wt(name), rolePx: px(role),
+          panelFirst: panel ? (panel.textContent || "").trim() : "",
+        };
+      });
+      assert(seen.pillPx > 0, lang + "/" + mode + ":顶栏有状态药丸 (" + seen.pillPx + "px)");
+      if (seen.namePx > 0) {
+        assert(seen.pillPx > seen.namePx || (seen.pillPx === seen.namePx && seen.pillWt >= seen.nameWt),
+          lang + "/" + mode + ":谁在走比对手名字重 (" + seen.pillPx + "/" + seen.pillWt +
+          " vs " + seen.namePx + "/" + seen.nameWt + ")");
+      }
+      if (seen.rolePx > 0 && seen.namePx > 0) {
+        assert(seen.namePx >= seen.rolePx,
+          lang + "/" + mode + ":名字不比它的说明小 (" + seen.namePx + " vs " + seen.rolePx + ")");
+      }
+      // 没有 ≥8 字的公共子串:顶栏与右栏第一句不是同一句话
+      if (seen.panelFirst) {
+        let shared = "";
+        for (let i = 0; i + 8 <= seen.pill.length && !shared; i++) {
+          const frag = seen.pill.slice(i, i + 8);
+          if (seen.panelFirst.includes(frag)) shared = frag;
+        }
+        assert(!shared, lang + "/" + mode + ":顶栏与右栏首行没有 8 字以上的重叠" +
+          (shared ? "(「" + shared + "」)" : ""));
+      }
+      assert(errs.length === 0, lang + "/" + mode + ":顶栏零 JS 异常", errs.join(" | "));
+      await ctx.close();
+    }
+  }
+}
+
+// --- 3u5. on a reading page the reading gets the room ---------------------
+// 7.3 §4E. Measured at 1400x900 on the 记录 tab: 856px of board — 54% of the
+// window, holding a position nobody was playing — against a 239px column
+// carrying the statistics, the history, the diagnosis and the book. This is
+// the one structural trade this version makes, so it is asserted on both
+// sides: the reading page gets at least 520px of content, and the playing
+// page's board does not move by a pixel when you come back to it.
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const boardOn = async (tab) => page.evaluate(async (t) => {
+    document.getElementById("tab-" + t).click();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise((r) => setTimeout(r, 420));
+    const b = document.getElementById("board-wrap").getBoundingClientRect();
+    const pane = document.getElementById("pane-" + t);
+    const p = pane ? pane.getBoundingClientRect() : { width: 0 };
+    return { board: Math.round(b.width), content: Math.round(p.width) };
+  }, tab);
+
+  const play1 = await boardOn("play");
+  const rec = await boardOn("record");
+  const play2 = await boardOn("play");
+  assert(rec.content >= 520,
+    "1400×900 记录页内容区 " + rec.content + "px ≥ 520px");
+  assert(play2.board === play1.board,
+    "切回对局页棋盘一个像素都没动 (" + play1.board + " → " + rec.board + " → " + play2.board + ")");
+  assert(rec.board < play1.board,
+    "……而记录页是真的让了位 (" + rec.board + " < " + play1.board + ")");
+  await ctx.close();
+}
+// 而窄窗不付这笔账:1180px 以下面板还是原来的宽度,棋盘还是原来的大小
+{
+  const { ctx, page } = await open("zh-CN", "ai", "record", "wood", { width: 1024, height: 700 });
+  const w = await page.evaluate(() =>
+    Math.round(document.querySelector(".side").getBoundingClientRect().width));
+  assert(w < 400, "1024×700 记录页面板没有变宽 (" + w + "px)");
+  await ctx.close();
 }
 
 // --- 3v. a dialog is called what it says it is ----------------------------
@@ -2575,6 +2912,78 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
     }));
     assert(m.clocksShown && m.badgesGone, "计时局:钟在,「行」退场 —— 轮次不再被说第三遍");
     assert(m.activeIsBlack, "……走表的那侧钟亮着,正是轮到的黑方");
+    await ctx.close();
+  }
+}
+
+// --- 5. 竖窗：这一整类视口从来没有人量过（7.3 §1）------------------------
+//
+// 把侧栏换成底部抽屉的那条规则带着 `min-width: 560px`。比它窄的竖窗既不走抽屉
+// （宽度不够），也不走窄横窗那一套（那条要求 min-aspect-ratio: 1/1），于是掉回
+// 桌面那套：侧栏照旧占 284px，棋盘分剩下的。而 `chess.panelOpen` 的默认值是
+// 「开」，所以这是首启第一屏。
+//
+// 这一整类视口在这套 e2e 里一次都没有出现过：48 个视口实例里 47 个宽度
+// ≥1200px，唯一的窄视口是 520×520 —— 正方形，落进窄横窗那条规则，碰不到这里。
+// 已发布的桌面壳允许 520×520 起步的窗口，所以 520×900 这种形状是真能摆出来的。
+{
+  // 手机常见宽度，外加桌面壳允许的最窄窗口
+  const PORTRAIT = [
+    { width: 360, height: 780 },
+    { width: 390, height: 844 },
+    { width: 430, height: 932 },
+    { width: 520, height: 900 },
+  ];
+  /** 棋盘小于这个数就不再是棋盘，是一张邮票 */
+  const MIN_BOARD = 260;
+  const measure = (page) => page.evaluate(() => {
+    const b = document.getElementById("board").getBoundingClientRect();
+    const de = document.documentElement;
+    // a CLOSED panel is parked off-screen on purpose (translateX/Y 100%), so
+    // everything inside it reads as "past the right edge" and means nothing
+    const parked = document.getElementById("app").classList.contains("panel-open")
+      ? null : document.getElementById("side");
+    const over = [...document.querySelectorAll("body *")].filter((el) => {
+      if (!el.offsetParent && el.tagName !== "BODY") return false;
+      if (parked && (el === parked || parked.contains(el))) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && (r.right > de.clientWidth + 1 || r.left < -1);
+    }).map((el) => el.id || el.className);
+    return { board: Math.round(b.width), vw: de.clientWidth, vh: de.clientHeight, over };
+  });
+
+  for (const vp of PORTRAIT) {
+    const size = vp.width + "×" + vp.height;
+    // 面板记着「开」—— 这就是首启第一屏的状态，不需要先按任何东西
+    const openPanel = await open("zh-CN", "ai", "play", "wood", vp, "1");
+    const a = await measure(openPanel.page);
+    assert(a.board >= MIN_BOARD,
+      `${size} 面板开着时棋盘 ${a.board}px ≥ ${MIN_BOARD}px —— 这是首启第一屏`);
+    assert(a.over.length === 0, `${size} 面板开着时没有元素越出视口`);
+    assert(openPanel.errs.length === 0, `${size} 没有 JS 异常`);
+    await openPanel.ctx.close();
+
+    const shut = await open("zh-CN", "ai", "play", "wood", vp, "0");
+    const b = await measure(shut.page);
+    // 手机宽度上宽是短边，棋盘该铺满它；520×900 那种形状是高度在卡，
+    // 「开合一样大」与「≥260」两条已经说完了该说的
+    if (vp.width <= 430) {
+      assert(b.board >= Math.round(b.vw * 0.85),
+        `${size} 棋盘铺满宽度 ${b.board}px（≥ ${Math.round(b.vw * 0.85)}px）`);
+    }
+    await shut.ctx.close();
+
+    // 抽屉是覆盖上去的，不是把棋盘挤小的 —— 两种状态下棋盘一样大
+    assert(a.board === b.board,
+      `${size} 开合面板棋盘一样大（开 ${a.board} / 合 ${b.board}）—— 抽屉盖在棋盘上，不挤它`);
+  }
+
+  // 三语各跑一遍首屏：文字长度不该把这件事变成另一种结果
+  for (const lang of LANGS) {
+    const { ctx, page, errs } = await open(lang, "ai", "play", "wood", { width: 390, height: 844 }, "1");
+    const m = await measure(page);
+    assert(m.board >= MIN_BOARD && m.over.length === 0 && errs.length === 0,
+      `390×844 / ${lang}：棋盘 ${m.board}px，无溢出，无异常`);
     await ctx.close();
   }
 }

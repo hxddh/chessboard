@@ -486,6 +486,8 @@
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 16px;
+      /* the value track of a `label → value` row — measured, see .stat-row */
+      --stat-v-w: 7.125rem;
       /* Three line-heights, and no fourth. 1.12 collapsed font-size to seven
          steps and left leading alone: the panel was running seven values,
          including the UA's `normal` (which differs per font, so Chinese and
@@ -585,8 +587,17 @@
     }
     .chrome > * { pointer-events: auto; }
 
+    /* 7.3 §4D: the chrome has three duties, left to right — whose move it is,
+       what game this is, what you can do about it — and one visual level each.
+       Level 1 is this pill: it is the one thing in the bar that changes with
+       every half-move and the one thing a glance is for. It was 0.75rem/500,
+       the same ink as the personas beside it and lighter than their names, so
+       the bar read as eight things of one size. Level 2 is the match — names
+       at 0.75/600, roles and the versus mark at 0.6875 and muted. Level 3 is
+       the actions, which have been their own idiom since 2.0.
+       No new type step: all three are already on the seven-step scale. */
     .status-pill {
-      font-size: 0.75rem; font-weight: 500; color: var(--text);
+      font-size: 0.8125rem; font-weight: 600; color: var(--text);
       /* an explicit box rather than 4px of padding around whatever the text
          happened to measure — that gave 27.4px next to the buttons' 32 and
          put its baseline 1.2px off theirs */
@@ -843,7 +854,8 @@
       font-size: 0.75rem; font-weight: 500;
       color: var(--muted);
     }
-    .vs-name { font-size: 0.8125rem; font-weight: 600; }
+    /* level 2 — below the status pill, above the roles (7.3 §4D) */
+    .vs-name { font-size: 0.75rem; font-weight: 600; }
     .vs-role {
       font-size: 0.6875rem;
       /* the one thing here that can be arbitrarily long — a persona name in
@@ -1003,6 +1015,28 @@
        chrome, so the floor moved with it. Widening only in the reading modes
        keeps the playing layout exactly where it was. */
     #app[data-mode="learn"], #app[data-mode="puzzle"] { --side-w: 380px; }
+
+    /* 7.3 §4E: on the pages where the board is not the subject, the content
+       gets the room.
+       Measured at 1400x900 on the 记录 tab: the board took 856px — 54% of the
+       window, showing a position nobody was playing — while the statistics,
+       the game history, the diagnosis and the book were laid out in a 239px
+       column, where an opening's name does not fit on a line. 做题 is the same
+       shape with a 336px column: the task, the puzzle list and the answer all
+       queue up in a slot beside a board that only needs to be big enough to
+       click.
+       568px of panel is 521px of content — the floor this version sets for a
+       page made of text — and it is the FIRST number in this file that costs
+       the board anything, so it is gated on there being room to pay: below
+       1180px the panel stays where it was, because a 604px board is the
+       smallest this trade is worth making. The 对局 tab is untouched at any
+       width; switching back to it puts the board back to the pixel. */
+    @media (min-width: 1180px) {
+      /* 568, not 564: `.side` is border-box and carries a 1px left border, so
+         564 − 1 − 2×22 of padding measured 519 — one pixel under the floor
+         this section sets. Measured, then set from the measurement. */
+      #app[data-tab="record"], #app[data-mode="puzzle"] { --side-w: 568px; }
+    }
 
     .reading-index > summary {
       display: flex; align-items: center; gap: 8px;
@@ -1699,6 +1733,15 @@
       max-height: min(52vh, 340px); overflow-y: auto;
       margin-bottom: 4px;
     }
+    /* 7.3 §4C: while there is a row below the fold, the lower edge fades, so
+       the half-row sitting on it reads as a cut rather than as a row drawn
+       wrong. The class is set by the app — CSS cannot ask whether a box
+       overflows — and it comes off at the end of the list, so nothing is
+       dimmed once there is nothing left to reach. */
+    .pick-list.scrolls {
+      -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%);
+    }
     .pick-item {
       appearance: none; text-align: left; cursor: pointer;
       border: 1px solid var(--card-border);
@@ -1796,6 +1839,80 @@
       }
       /* the sheet is at most 430px tall no matter how tall the window is, so
          the viewport-relative move-list cap must not apply here */
+      .move-list { max-height: 176px; }
+    }
+
+    /* Portrait windows narrower than the sheet above: the panel overlays the
+       board instead of squeezing it.
+
+       The block above carries `min-width: 560px`, and nothing carried the
+       other side of that line: a portrait window under 560px matched neither
+       it (too narrow) nor the landscape rule below (wrong aspect), so it fell
+       back to the desktop layout — a 284px sidebar beside the board. Measured
+       on 7.2.0 with the panel open, which is the state the onboarding leaves
+       it in:
+
+           360×780  → board  30px        520×900 → board 190px
+           390×844  → board  60px        559×900 → board 229px
+           430×932  → board 100px        560×900 → board 408px
+
+       One pixel of window width nearly doubled the board. Nobody saw it
+       because every viewport in the e2e suite but one was ≥1200px wide and
+       that one was square (see test-layout-e2e.mjs §5).
+
+       Strictly portrait (99/100, not 1/1): a square 520×520 window is the one
+       narrow viewport this suite always had, and it belongs to the landscape
+       rule below. At exactly 1/1 both queries match, and this block sets a
+       padding that one does not — which held a 245px strip under the board in
+       that window until the aspect was tightened.
+
+       The sheet here does NOT take height from the board, unlike the one
+       above: on a phone there is no height to take — 46vh of 844 leaves a
+       board of about 350, and the smaller phones leave less than the board
+       needs to be readable. So it lies on top with the scrim behind it (the
+       base rule already turns the scrim on under 900px), and the board keeps
+       every pixel it had. Play, open the sheet, read, close it. */
+    @media (max-aspect-ratio: 99/100) and (max-width: 559.98px) {
+      /* declared on :root, not bare in the media block — a custom property is
+         a declaration and needs a rule to live in */
+      :root { --sheet-h: min(46vh, 430px); }
+      .side {
+        top: auto; left: 0; right: 0; bottom: 0;
+        width: auto; height: var(--sheet-h);
+        padding: 12px 16px 16px;
+        border-left: 0; border-top: 1px solid var(--panel-border);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        transform: translateY(100%);
+        box-shadow: 0 -12px 40px rgba(0,0,0,.28);
+      }
+      #app.panel-open .side { transform: translateY(0); }
+      /* The sheet's place is reserved whether it is up or not, and the board
+         is centred in what is left. Three things fall out of that, and all
+         three are the point:
+           — opening the sheet does not resize the board (the 5% / 20% / 84%
+             jumps design-constraints §1 argues against);
+           — opening the sheet does not cover the board either, so the two can
+             be read together;
+           — the empty strip under the board when the sheet is down is not
+             waste, it is where the sheet lives. */
+      .stage, #app.panel-open .stage {
+        padding-right: var(--stage-pad);
+        padding-bottom: calc(var(--sheet-h) + var(--stage-pad));
+      }
+      #board-wrap, #app.panel-open #board-wrap {
+        --free-w: calc(100vw - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--sheet-h) - 2 * var(--stage-pad));
+        width: min(var(--free-w), var(--free-h));
+        height: min(var(--free-w), var(--free-h));
+      }
+      /* Reserved space, not an overlay: the sheet sits under the board, so
+         there is nothing to dim and nothing to tap through. With the scrim on,
+         the board was greyed out and un-tappable while the sheet was up —
+         which would have made "play with the move list open" impossible on
+         exactly the screens where it matters most. */
+      #app.panel-open.scrim-on .scrim { display: none; }
+      /* the sheet is at most 430px tall, so the viewport-relative cap on the
+         move list (written for a full-height column) has to come down with it */
       .move-list { max-height: 176px; }
     }
 
@@ -2282,9 +2399,26 @@
     .ach-item:not(.got) .ach-nm { color: var(--muted); }
 
     .stats-body { display: flex; flex-direction: column; gap: 2px; }
+    /* 7.3 B3: one shape for every `label → value` row in the app.
+       It was `flex` + `space-between`, which is a shape for short labels only.
+       Measured at 1400x900 (a 239px panel), the 「缺口」 rows carrying an ECO
+       name — 「D30 Queen's Gambit Declined」 against 「12 局 · 输 12」 — stood
+       42px against every other row's 23: the name wrapped, and the value
+       wrapped with it, breaking after the 「·」 so that 「12 局 ·」 and
+       「输 12」 were two lines. Worse, space-between puts the value's LEFT
+       edge wherever the value happens to end: measured across ten rows in one
+       panel, that edge sat at 1271, 1277, 1294, 1297, 1301, 1302, 1309, 1316
+       — eight positions for one column of figures.
+       So: a two-track grid. The value track is fixed, so every number in the
+       app starts at the same left edge; the name track takes what is left and
+       truncates rather than wrapping (the full name is on `title`). Sized
+       from measurement — the widest value across zh-CN/en/ja was 105px
+       (「69% · last 78%」), hence 7.125rem = 114px at the middle font step,
+       in rem so it follows the three font sizes. */
     .stat-row {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) var(--stat-v-w);
+      gap: 8px;
       align-items: baseline;
       font-size: 0.8125rem;
       padding: 2px 2px;
@@ -2308,12 +2442,19 @@
     /* 7.1: the diagnosis charts. Width from the dialog, height set per chart
        in JS; the canvas backing store is device-pixel sized there. */
     .diag-chart { display: block; width: 100%; margin: 6px 0 2px; }
-    .stat-k { color: var(--muted); }
+    /* One line, always: a name too long for the track is cut with an ellipsis
+       and kept whole on `title` — see the grid above. */
+    .stat-k { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* Every number in the app is tabular — see --font-num. The clock, the
        evaluations and the move numbers already were; the statistics, the
        achievement counters and the history rows were not, so a column of
        figures under 「战绩」 shifted its digits as the values changed. P4.6. */
-    .stat-v { color: var(--text); font-size: 0.75rem; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+    .stat-v {
+      color: var(--text); font-size: 0.75rem;
+      font-family: var(--font-num); font-variant-numeric: tabular-nums;
+      /* right-aligned in a fixed track, so the figures read as a column */
+      text-align: right; white-space: nowrap;
+    }
     .ach-pg, .hist-row { font-variant-numeric: tabular-nums; }
     .stats-body .hint { margin: 4px 0 0; }
 
@@ -2325,6 +2466,35 @@
        thing, which is a copy the stylesheet cannot see. */
     .hist-row, .pick-row { display: flex; gap: 6px; align-items: stretch; }
     .hist-row .pick-item, .pick-row .pick-item { flex: 1; min-width: 0; padding: 6px 8px; }
+    /* 7.3 §4C: a row's second action belongs to the row.
+       「再深一遍」 and 「PGN」 were `.tool-btn` — the same filled, bordered,
+       body-sized control the dialog's own footer uses — sitting in the gap
+       beside the card, once per row. Twenty-four games meant twenty-four of
+       them down the right edge, each one louder than the game it belonged to,
+       and none of them the thing you came to the list to press.
+       So the action joins the card: same border, no seam between them, muted
+       until you reach for it. Still a real button, still in the tab order —
+       it is the emphasis that changes, not the affordance. */
+    .row-act {
+      appearance: none; cursor: pointer; font: inherit;
+      font-size: 0.75rem; line-height: var(--lh-tight);
+      white-space: nowrap; padding: 0 8px;
+      color: var(--muted);
+      background: var(--btn-ghost);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      transition: color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease);
+    }
+    .row-act:hover, .row-act:focus-visible {
+      color: var(--text);
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
+    }
+    /* flush against the card it acts on — one object, not two */
+    .hist-row:has(> .row-act) .pick-item {
+      border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0;
+    }
+    .hist-row:has(> .row-act) { gap: 0; }
+    .row-act { border-top-left-radius: 0; border-bottom-left-radius: 0; }
 
 /* --- history filters, the shortcut sheet, and the save slots ---------- */
 /* Two filters, stacked, each filling the dialog.
@@ -2348,6 +2518,21 @@
   display: grid; grid-template-columns: auto minmax(0, 1fr);
   gap: 8px 12px; align-items: center;
   margin-bottom: 12px;
+}
+/* 7.3 §4C: the three segments in a filter block are one control asked three
+   times, so they are the same width and end on the same pixel. Plain
+   `.theme-row` is a flex row of content-sized buttons, which made the four
+   result segments, the three colour segments and the two sort segments three
+   different widths with three different right edges, stacked — a ragged
+   right margin down the left half of a dialog whose whole job is to look
+   like a list. `design-constraints.md` §4 already says a segmented control's
+   segments are equal; this is the row that did not obey it.
+   `grid-auto-flow: column` rather than `.theme-row.wrap`, because `.wrap`'s
+   column count is tuned for a 284px panel — see the comment above. */
+.hist-filters .theme-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
 }
 
 .key-list {

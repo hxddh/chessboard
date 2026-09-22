@@ -167,7 +167,12 @@ function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range, now = Date.
   // and before exploration, which is what is left when nothing else is known.
   // The caller passes a range only once the rating has actually moved.
   if (ratingOf && range) {
-    const fit = all.filter((p) => !state.solved[p.id] && p.cat !== "mine" && p.cat !== "op");
+    // `mine` stays out by name: its positions are real tactics with real
+    // ratings, but they are this player's own set, not a calibrated one.
+    // Everything else is decided by `ratingOf` returning null — the caller
+    // owns the question "is this category on the scale at all" (7.3 B1), so
+    // it cannot be answered differently here than it is answered on screen.
+    const fit = all.filter((p) => !state.solved[p.id] && p.cat !== "mine");
     let pick = null, best = Infinity;
     for (const p of fit) {
       const r = ratingOf(p);

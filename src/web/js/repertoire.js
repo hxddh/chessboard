@@ -31,6 +31,18 @@ const MAX_LINES = 400;
 const MIN_PLIES = 2;
 /** Longest path this will follow — a whole annotated game is not a line. */
 const MAX_PLIES = 40;
+/**
+ * Where a line has to begin.
+ *
+ * A repertoire line is a string of moves from the starting position: that is
+ * what `opening-tree.js` replays and what a drill hands the player. 7.2 read
+ * a `[SetUp]/[FEN]` game as a line anyway — measured: the endgame file
+ * `1... Rd8 2. Rb1 Rd2` came out as a line whose very first move is illegal
+ * from the array, so it minted a drill nobody could ever solve and said
+ * nothing. 7.1 had already fixed the same class of bug on the library's
+ * importer (`foldGame` ignoring the start FEN); this path did not inherit it.
+ */
+const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 /** SAN text, one space between moves — the id must not depend on whitespace. */
 function normalize(sans) {
@@ -74,19 +86,25 @@ function pathsOf(root) {
 
 /**
  * The lines in a parsed PGN file, deepest-first within each game.
+ *
+ * Games that start somewhere other than the initial array are skipped and
+ * counted, so the caller can say why rather than quietly importing nothing —
+ * see START_FEN.
  * @param {object[]} games parsed games, each with a `root`
- * @returns {string[]} each line as normalised SAN text
+ * @returns {{lines: string[], skipped: number}} SAN text per line
  */
 function linesFrom(games) {
   const out = [];
+  let skipped = 0;
   for (const g of games || []) {
     if (!g || !g.root) continue;
+    if (g.root.fen && g.root.fen !== START_FEN) { skipped++; continue; }
     for (const path of pathsOf(g.root)) {
       if (path.length < MIN_PLIES) continue;
       out.push(normalize(path));
     }
   }
-  return out;
+  return { lines: out, skipped };
 }
 
 /**
@@ -196,6 +214,6 @@ function gaps(ecos, covered, minGames) {
 }
 
 export const ChessRepertoire = {
-  MAX_LINES, MIN_PLIES, MAX_PLIES,
+  MAX_LINES, MIN_PLIES, MAX_PLIES, START_FEN,
   normalize, pathsOf, linesFrom, addLines, rowsOf, coveredEcos, gaps,
 };

@@ -2541,6 +2541,21 @@ import { createStore } from "./store.js";
   function REP_DRILLS() { return RepUI.allDrills(); }
   /** Opening drills, built-in or the player's own — one word for both. */
   function isOpeningCat(cat) { return cat === "op" || cat === "rep"; }
+  /**
+   * Is this category's difficulty a *tactical* difficulty? (7.3 B1)
+   *
+   * Only those belong on the Glicko scale, because that is the only thing the
+   * scale means. A rote line's "difficulty" is `puzzleTier`'s ply count —
+   * how much there is to remember — so rating one would let a long variation
+   * out of your own imported book move the number that is supposed to say how
+   * well you see tactics. 7.2 shipped exactly that.
+   *
+   * This rule was already written in two places and contradicted in a third:
+   * the picker's rated rung excluded opening drills, the task line refused to
+   * print their rating — and `ratePuzzleOnce` rated them anyway, every time,
+   * since 6.0. One function now, read by all three.
+   */
+  function isRatedCat(cat) { return !isOpeningCat(cat); }
   /** The tree an opening drill is judged against. */
   function openingTreeFor(p) {
     return p && p.cat === "rep" ? RepUI.treeFor(p.side === "b" ? "b" : "w") : OPENING_TREE;
@@ -2750,10 +2765,12 @@ import { createStore } from "./store.js";
     const bump = p.cat === "m3" ? 100 : p.cat === "m1" ? -100 : 0;
     return { r: base + bump, rd: 200, vol: 0.06 };
   }
-  function puzzleRatingOf(p) { return Math.round(puzzleRating(p).r); }
+  /** @returns {number|null} null for the categories that are not on the scale */
+  function puzzleRatingOf(p) { return isRatedCat(p.cat) ? Math.round(puzzleRating(p).r) : null; }
   function ratePuzzleOnce(id, score) {
     const pz = store.session.puzzle;
     if (!pz || pz.p.id !== id || pz.rated) return;
+    if (!isRatedCat(pz.p.cat)) return; // 背谱不是战术水平（7.3 B1）
     if (store.session.puzzleState.solved[id]) return; // not a first attempt
     pz.rated = true;
     const st = store.session.puzzleState;
@@ -3597,7 +3614,6 @@ import { createStore } from "./store.js";
       document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
         b.classList.toggle("active", b.dataset.cat === store.session.puzzleState.cat);
         if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;
-      if (b.dataset.cat === "rep") b.hidden = !RepUI.total();
         if (b.dataset.cat === "rep") b.hidden = !RepUI.total();
       });
       avail(el("row-puzzle-tier"), tierApplies(store.session.puzzleState.cat));
@@ -3642,10 +3658,13 @@ import { createStore } from "./store.js";
     });
     const task = document.getElementById("puzzle-task");
     if (task) {
+      // 「第 N 题」 is the chip's job now (7.3 B4) — the card carries the goal,
+      // the detail and, where there is one, the puzzle's rating
       task.textContent = store.session.puzzle.done
         ? t("pz.solvedNext")
-        : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText()
-          + (store.session.puzzle.p.cat !== "op" ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
+        : puzzleGoalText()
+          + (puzzleRatingOf(store.session.puzzle.p) != null
+            ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
     }
     renderPuzzleLine();
     // opening drills are rote memorisation without the "why" — show the idea
@@ -5135,7 +5154,7 @@ import { createStore } from "./store.js";
     if (withPgn) {
       const copy = document.createElement("button");
       copy.type = "button";
-      copy.className = "tool-btn";
+      copy.className = "row-act";
       copy.dataset.histPgn = String(i);
       copy.textContent = t("hist.pgn");
       row.appendChild(copy);
@@ -5657,7 +5676,15 @@ import { createStore } from "./store.js";
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
       if (store.session.puzzle.done) return t("st.puzzleDone");
-      return puzzleGoalText();
+      // 7.3 B4: this used to return puzzleGoalText() — the whole instruction,
+      // 「实战里你走了 d3 —— 找出更强的一手 · 当时亏 3.2 分」 — and the task
+      // card two centimetres away said the same sentence, word for word, at
+      // the same moment. The lesson chip above already settled what a chip is
+      // for: where you are, not what the thing is called. Same answer here.
+      // Which puzzle, of what kind; the goal, the detail and where it came
+      // from stay on the card, which is a box that wraps.
+      return tf("pz.nth", [store.session.puzzle.idx + 1]) +
+        " · " + t("pz.cat." + store.session.puzzle.p.cat);
     }
     const g = viewGame();
     if (!isLive()) return t("st.replay") + " " + store.game.viewIndex + "/" + sanHistory().length;
@@ -7246,7 +7273,10 @@ import { createStore } from "./store.js";
       store.session.mode = "ai";
       store.session.difficulty = "easy";
     }
-    setPanelOpen(true);
+    // …but not where the panel is a full-height sheet over the board: ending
+    // the onboarding by covering the thing it just set up is not a welcome.
+    // The ☰ is in the corner and the board is what they came for (7.3 §1).
+    setPanelOpen(!panelCoversBoard());
     saveSettings();
     store.commit("session", "sync");
     if (choice !== 0) maybeEngineTurn();
@@ -7925,6 +7955,11 @@ import { createStore } from "./store.js";
   function setSideTab(id, opts) {
     const want = TABS.includes(id) ? id : "play";
     store.ui.sideTab = want;
+    // which tab is showing is a layout fact, not only a state one: the
+    // reading tab gets a wider panel on a wide window (7.3 §4E), and that is
+    // the stylesheet's decision to make, from an attribute, rather than a
+    // width this function would have to compute and keep in step.
+    appEl.setAttribute("data-tab", want);
     for (const t of TABS) {
       const btn = document.getElementById("tab-" + t);
       const pane = document.getElementById("pane-" + t);
@@ -7939,6 +7974,17 @@ import { createStore } from "./store.js";
   }
 
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
+  /**
+   * Is the panel a sheet lying ON the board right now? (7.3 §1)
+   *
+   * The same media query the stylesheet uses, asked of the same browser —
+   * not a number copied into JS that can drift from the one in the CSS.
+   * scripts/test-chess.mjs asserts the two strings are identical.
+   */
+  const SHEET_QUERY = "(max-aspect-ratio: 99/100) and (max-width: 559.98px)";
+  function panelCoversBoard() {
+    return typeof window.matchMedia === "function" && window.matchMedia(SHEET_QUERY).matches;
+  }
   function setPanelOpen(open) {
     const want = !!open;
     // the panel holds every preview owner; closing it releases the board
@@ -9328,6 +9374,35 @@ import { createStore } from "./store.js";
     const histBody = document.getElementById("hist-body");
     if (histBody) histBody.onclick = onHistClick;
     histModal.onclick = (ev) => { if (ev.target === histModal) closeHistory(); };
+  }
+
+  /**
+   * A cut-off row at the bottom of a scrolling list should read as "there is
+   * more", not as a broken row (7.3 §4C).
+   *
+   * Measured on the library dialog: the list ends flush against the dialog's
+   * lower edge with whatever half-row happens to land there — 「负 · rival17」
+   * with its second line sliced through the middle. Nothing said the list
+   * scrolled; the scrollbar is an overlay that appears while you scroll and
+   * is gone by the time you look.
+   *
+   * So the bottom edge fades, and only while there is something below it: at
+   * the end of the list the fade turns off, so a short list — or a list you
+   * have read to the bottom — is not dimmed for nothing. Wired once, for
+   * every `.pick-list` there is and every one there will be, rather than at
+   * each of the four places that render into one.
+   *   - scroll:    you moved, so the answer changed
+   *   - mutation:  the rows were replaced
+   *   - resize:    the dialog opened (until then the box has no height, and
+   *                every reading taken inside it is zero)
+   */
+  for (const list of document.querySelectorAll(".pick-list")) {
+    const sync = () => list.classList.toggle("scrolls",
+      list.scrollHeight - list.scrollTop - list.clientHeight > 1);
+    list.addEventListener("scroll", sync, { passive: true });
+    if (typeof MutationObserver === "function") new MutationObserver(sync).observe(list, { childList: true, subtree: true });
+    if (typeof ResizeObserver === "function") new ResizeObserver(sync).observe(list);
+    sync();
   }
 
   const pickModal = document.getElementById("pick-modal");

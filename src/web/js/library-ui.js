@@ -639,7 +639,7 @@ export function createLibraryUI(d) {
     if (entryDeepenable(g)) {
       const deep = doc.createElement("button");
       deep.type = "button";
-      deep.className = "tool-btn";
+      deep.className = "row-act";
       deep.dataset.libDeep = String(i);
       deep.textContent = t("lib.deepen");
       deep.title = t("tip.libDeepen");
@@ -795,9 +795,14 @@ export function createLibraryUI(d) {
    * no data must not exist at all (the P3 rule this page has followed since
    * 7.0), and "does not exist" is easier to be sure of than "is hidden".
    */
-  function diagCanvas(parent, h, label) {
+  function diagCanvas(parent, h, label, kind) {
     const cv = doc.createElement("canvas");
     cv.className = "diag-chart";
+    // which shape this is, for anyone reading the canvas back: the phase and
+    // peak charts stand bars on a shared floor, the eco chart lays them on
+    // their side. A pixel reader cannot tell those apart from the ink alone,
+    // and it has to — the floor is what tells a bar from a glyph (7.3 §4B).
+    if (kind) cv.dataset.chart = kind;
     cv.style.height = h + "px";
     cv.setAttribute("role", "img");
     cv.setAttribute("aria-label", label);
@@ -816,30 +821,78 @@ export function createLibraryUI(d) {
       text: css.getPropertyValue("--text").trim() || "#ddd" };
   }
 
+/**
+   * The smallest a bar is allowed to be, in CSS pixels.
+   *
+   * 7.3 §4B. Measured on a real library: 开局 8、中局 8、残局 93. On a linear
+   * scale in a 92px canvas the first two came out at 1px — a hairline, which
+   * is what a bar of zero would also look like. 「小」 and 「没有」 are two
+   * different findings about a player and the chart drew them the same.
+   * So: anything greater than zero is at least this tall, and zero draws
+   * nothing at all. The distortion is bounded and in the honest direction —
+   * it can only make a small bar look bigger, never a big one look smaller.
+   */
+  const MIN_BAR = 4;
+
+  /** The line a bar stands on, so "short" reads as short and not as floating. */
+  function baseline(c, y, x0, x1) {
+    c.ctx.fillStyle = c.muted;
+    c.ctx.globalAlpha = 0.5;
+    c.ctx.fillRect(x0, y, x1 - x0, Math.max(1, Math.round(c.dpr)));
+    c.ctx.globalAlpha = 1;
+  }
+
   /** Per-phase centipawn loss, with the weak one in the judgement colour. */
   function drawPhaseChart(parent, d, phaseName) {
     const rows = ["opening", "middle", "end"]
       .map((k) => ({ k, acpl: d.phase[k].acpl }))
       .filter((r) => r.acpl != null);
     if (rows.length < 2) return; // one bar is not a comparison
-    const c = diagCanvas(parent, 92, t("diag.chartPhase"));
+    const c = diagCanvas(parent, 92, t("diag.chartPhase"), "phase");
     const pad = 6 * c.dpr, gap = 10 * c.dpr, label = 16 * c.dpr;
-    const max = Math.max(...rows.map((r) => r.acpl)) * 1.15 || 1;
+    // the scale's top is a real number off this page — the largest of the
+    // three — so the tick can be read against the rows above it. 1.15 of it
+    // is headroom for the value printed over the tallest bar, not scale.
+    const top = Math.max(...rows.map((r) => r.acpl)) || 1;
+    const max = top * 1.15;
     const bw = (c.W - 2 * pad - gap * (rows.length - 1)) / rows.length;
     const bad = judgeColours().bad;
+    const floorY = c.H - pad - label;
+    const plot = c.H - 2 * pad - 2 * label;
     c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(doc.documentElement)
       .getPropertyValue("--font-num").trim() || "monospace");
+    // the tick: a dashed line at the top of the scale, labelled with the value
+    // it stands for. Without it the bars are three heights and no unit.
+    const tickY = floorY - (top / max) * plot;
+    c.ctx.strokeStyle = c.muted;
+    c.ctx.globalAlpha = 0.45;
+    c.ctx.setLineDash([3 * c.dpr, 3 * c.dpr]);
+    c.ctx.lineWidth = Math.max(1, Math.round(c.dpr));
+    c.ctx.beginPath();
+    c.ctx.moveTo(pad, tickY);
+    c.ctx.lineTo(c.W - pad, tickY);
+    c.ctx.stroke();
+    c.ctx.setLineDash([]);
+    c.ctx.globalAlpha = 1;
+    c.ctx.fillStyle = c.muted;
+    c.ctx.textAlign = "left";
+    c.ctx.fillText(tf("diag.chartTop", [top]), pad, tickY - 3 * c.dpr);
     c.ctx.textAlign = "center";
     rows.forEach((r, i) => {
       const x = pad + i * (bw + gap);
-      const hgt = Math.max(1, (r.acpl / max) * (c.H - 2 * pad - 2 * label));
-      c.ctx.fillStyle = r.k === d.weakestPhase ? bad : c.accent;
-      c.ctx.fillRect(x, c.H - pad - label - hgt, bw, hgt);
+      const hgt = r.acpl > 0
+        ? Math.max(MIN_BAR * c.dpr, (r.acpl / max) * plot)
+        : 0;
+      if (hgt) {
+        c.ctx.fillStyle = r.k === d.weakestPhase ? bad : c.accent;
+        c.ctx.fillRect(x, floorY - hgt, bw, hgt);
+      }
       c.ctx.fillStyle = c.text;
-      c.ctx.fillText(String(r.acpl), x + bw / 2, c.H - pad - label - hgt - 3 * c.dpr);
+      c.ctx.fillText(String(r.acpl), x + bw / 2, floorY - hgt - 3 * c.dpr);
       c.ctx.fillStyle = c.muted;
       c.ctx.fillText(phaseName[r.k], x + bw / 2, c.H - pad);
     });
+    baseline(c, floorY, pad, c.W - pad);
   }
 
   /**
@@ -868,19 +921,25 @@ export function createLibraryUI(d) {
         if (mv > worst) worst = mv;
       }
     }
-    if (counts.size < 3) return;
+    if (counts.size < 3) return null;
     const last = Math.max(10, Math.min(worst, 60));
-    const c = diagCanvas(parent, 80, t("diag.chartPeak"));
+    const c = diagCanvas(parent, 80, t("diag.chartPeak"), "peak");
     const pad = 6 * c.dpr, label = 14 * c.dpr;
     const max = Math.max(...counts.values()) || 1;
     const bw = (c.W - 2 * pad) / last;
+    const floorY = c.H - pad - label;
+    const plot = c.H - 2 * pad - label;
     c.ctx.fillStyle = c.accent;
     for (let mv = 1; mv <= last; mv++) {
       const n = counts.get(mv) || 0;
       if (!n) continue;
-      const hgt = Math.max(1, (n / max) * (c.H - 2 * pad - label));
-      c.ctx.fillRect(pad + (mv - 1) * bw, c.H - pad - label - hgt, Math.max(1, bw - c.dpr), hgt);
+      // 7.3 §4B: three hairlines floating in a field of white was the whole
+      // chart. MIN_BAR gives the shortest of them a body; the baseline below
+      // gives all of them a floor to stand on.
+      const hgt = Math.max(MIN_BAR * c.dpr, (n / max) * plot);
+      c.ctx.fillRect(pad + (mv - 1) * bw, floorY - hgt, Math.max(1, bw - c.dpr), hgt);
     }
+    baseline(c, floorY, pad, c.W - pad);
     c.ctx.fillStyle = c.muted;
     c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(doc.documentElement)
       .getPropertyValue("--font-num").trim() || "monospace");
@@ -888,26 +947,62 @@ export function createLibraryUI(d) {
     c.ctx.fillText("1", pad, c.H - pad);
     c.ctx.textAlign = "right";
     c.ctx.fillText(String(last), c.W - pad, c.H - pad);
+    // what the axes mean, for the caller to print as words: a chart must not
+    // be the only place a number appears (v7-3-plan §4B)
+    return { last, max };
   }
 
-  /** Win / draw / loss per opening, as one stacked bar each. */
+  /**
+   * Win / draw / loss per opening, as one stacked bar each.
+   *
+   * 7.3 §4B: the bars were right and unreadable. A 100% record and a 0% record
+   * each fill the whole width, so two openings with opposite results drew as
+   * two identical bars in different colours — and nothing on the canvas said
+   * which colour meant which. A stacked bar without a key is a coloured
+   * rectangle. So the chart now carries its own key, in words, above the bars.
+   */
   function drawEcoChart(parent, ecos) {
     const rows = ecos.slice(0, 6).filter((e) => e.n > 0);
     if (rows.length < 2) return;
-    const c = diagCanvas(parent, 18 * rows.length + 12, t("diag.chartEco"));
+    const LEGEND = 16;
+    const c = diagCanvas(parent, 18 * rows.length + 12 + LEGEND, t("diag.chartEco"), "eco");
     const pad = 4 * c.dpr;
-    const rh = (c.H - 2 * pad) / rows.length;
+    const leg = LEGEND * c.dpr;
+    const rh = (c.H - 2 * pad - leg) / rows.length;
     const cols = judgeColours();
     const labelW = 46 * c.dpr;
     c.ctx.font = (10 * c.dpr) + "px " + (getComputedStyle(doc.documentElement)
       .getPropertyValue("--font-num").trim() || "monospace");
     c.ctx.textAlign = "left";
+    // the key: swatch, word, swatch, word, swatch, word
+    {
+      const sw = 8 * c.dpr, gap = 4 * c.dpr, sp = 10 * c.dpr;
+      let x = pad;
+      const y = pad + leg * 0.35;
+      for (const [col, word] of [[c.accent, t("diag.legendWin")], [c.muted, t("diag.legendDraw")],
+                                 [cols.bad, t("diag.legendLoss")]]) {
+        c.ctx.fillStyle = col;
+        c.ctx.fillRect(x, y - sw * 0.75, sw, sw);
+        x += sw + gap;
+        c.ctx.fillStyle = c.muted;
+        c.ctx.fillText(word, x, y);
+        x += c.ctx.measureText(word).width + sp;
+      }
+    }
     rows.forEach((e, i) => {
-      const y = pad + i * rh;
+      const y = pad + leg + i * rh;
       c.ctx.fillStyle = c.muted;
       c.ctx.fillText(e.eco, pad, y + rh * 0.7);
-      let x = pad + labelW;
-      const full = c.W - pad - x;
+      const x0 = pad + labelW;
+      const full = c.W - pad - x0;
+      // the track, so the bar's full extent is visible even when one segment
+      // is the whole of it — 「全胜」 and 「全负」 are then the same shape in
+      // two colours, which is the truth, rather than two shapes
+      c.ctx.fillStyle = c.muted;
+      c.ctx.globalAlpha = 0.14;
+      c.ctx.fillRect(x0, y + rh * 0.2, full, rh * 0.6);
+      c.ctx.globalAlpha = 1;
+      let x = x0;
       const seg = [[e.win, c.accent], [e.draw, c.muted], [e.loss, cols.bad]];
       for (const [n, col] of seg) {
         if (!n) continue;
@@ -931,7 +1026,7 @@ export function createLibraryUI(d) {
       p.textContent = text;
       el.appendChild(p);
     };
-    const row = (kText, vText, pick) => {
+    const row = (kText, vText, pick, full) => {
       const r = doc.createElement(pick ? "button" : "div");
       r.className = "stat-row" + (pick ? " stat-row-link" : "");
       if (pick) {
@@ -942,6 +1037,10 @@ export function createLibraryUI(d) {
       const k = doc.createElement("span");
       k.className = "stat-k";
       k.textContent = kText;
+      // `full` for a name that will not fit the name track: it is cut with an
+      // ellipsis there, so the whole of it goes on `title` (7.3 B3). Only the
+      // rows carrying data — an opening's name — need it; the fixed labels fit.
+      if (full) k.title = kText;
       const v = doc.createElement("span");
       v.className = "stat-v num";
       v.textContent = vText;
@@ -981,7 +1080,9 @@ export function createLibraryUI(d) {
     } else {
       para(t("diag.noWeakest"));
     }
-    drawPeakChart(el, store.session.library);
+    const peakAxes = drawPeakChart(el, store.session.library);
+    // the chart is not the only place its numbers appear (v7-3-plan §4B)
+    if (peakAxes) para(tf("diag.peakRange", [1, peakAxes.last, peakAxes.max]));
     if (d.peak) {
       pickPara(tf("diag.peak", [d.peak.move, d.peak.n]), "hint",
         { kind: "peak", value: d.peak.move, label: tf("diag.pickPeak", [d.peak.move]) });
@@ -1000,7 +1101,8 @@ export function createLibraryUI(d) {
         const name = libEcoName(e.eco, e.name);
         row(e.eco + (name ? " " + name : ""),
           tf("diag.ecoRow", [e.n, Math.round((e.score || 0) * 100)]),
-          { kind: "eco", value: e.eco, label: tf("diag.pickEco", [e.eco + (name ? " " + name : "")]) });
+          { kind: "eco", value: e.eco, label: tf("diag.pickEco", [e.eco + (name ? " " + name : "")]) },
+          true);
       }
     }
   }

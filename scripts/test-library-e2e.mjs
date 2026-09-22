@@ -759,6 +759,20 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   });
   assert(solved >= 1, "背下来的那条记进了进度，和内置开局书同一条轨", solved);
 
+  // 7.3 B1：背谱不是战术水平 —— 背对一条自己的线，Glicko 一动不动。
+  // 7.2 里它会动：ratePuzzleOnce 不看类别，而这条线的「难度」是按它有多长
+  // 推出来的，于是导一本长变着的书就能刷高战术评级。
+  const rated = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    return { hist: (st.rhist || []).length, rating: st.rating ? Math.round(st.rating.r) : null,
+      task: (document.getElementById("puzzle-task") || {}).textContent || "" };
+  });
+  assert(rated.hist === 0 && rated.rating === null,
+    "背对一条开局书的线，评级一动不动 —— 背谱的「难度」是线有多长，不是战术水平",
+    JSON.stringify(rated));
+  assert(!/\d{4}/.test(rated.task),
+    "……题面上也不挂一个没有意义的评级数字", rated.task);
+
   // 背完一条线，「接实战」不只是出现，它还得真的把这个局面带到棋盘上 —— 7.2
   // 发布前的复查发现：按钮按 isOpeningCat 画出来了，而它的处理函数仍然只认
   // cat === "op"，于是自己书里那条线背完之后，这个按钮点下去什么都不发生
@@ -789,6 +803,30 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   assert(afterClear.lines === 0, "清空就是清空", afterClear.lines);
   assert(afterClear.orphan.length === 0,
     "书没了，它欠的复习也没了 —— 不留一道谁也端不出来的题", JSON.stringify(afterClear.orphan));
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 12. 7.3 B2：从别的局面出发的「体系」不进书，而且说清为什么 --------------
+{
+  // 这种文件本身没坏，只是不是开局书。7.2 把它读成一条线照样进书，铸出一道
+  // 第一手就非法、谁也做不了的题，一个字都不说。
+  const SETUP = `[Event "Rook endgame"]\n[SetUp "1"]\n` +
+    `[FEN "r5k1/5ppp/8/8/8/8/5PPP/R5K1 b - - 0 30"]\n\n1... Rd8 2. Rb1 Rd2 *\n`;
+  const ctx = await freshContext();
+  const { page, errs } = await open(ctx);
+  await importFile(page, SETUP, "#rep-import-w");
+  await page.waitForTimeout(600);
+  const after = await page.evaluate(() => ({
+    book: JSON.parse(localStorage.getItem("chess.v1.repertoire") || "null"),
+    toast: document.getElementById("toast").textContent.trim(),
+    tab: (document.querySelector('#puzzle-cat-seg button[data-cat="rep"]') || {}).hidden,
+  }));
+  assert(!after.book || (after.book.w.length === 0 && after.book.b.length === 0),
+    "从别的局面出发的局，一条都不进书", JSON.stringify(after.book));
+  assert(/起始局面|跳过/.test(after.toast),
+    "……并且说清了为什么，而不是默默地什么都不做", after.toast);
+  assert(after.tab !== false, "书还是空的，「开局书」那一档也就不出现");
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }

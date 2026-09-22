@@ -1391,8 +1391,11 @@ for (const lang of CONTENT_LANGS) {
   }
   // …and the window's own Escape is checked by pressing it — see the a11y
   // block below, where the handler now lives.
-  assert(/function escapeKey\(\) \{[\s\S]{0,1400}Dlg\.closeTop\(\)[\s\S]{0,600}clearPreview\(\)[\s\S]{0,400}setPanelOpen\(false\)/.test(appSrc),
-    "escapeKey closes the top dialog, releases a pinned preview and shuts the panel, in that order");
+  // 7.3 §3: escapeKey's three effects — close the top dialog, release a pinned
+  // preview, shut the panel — were one source-text assertion asking that they
+  // appear in that order in the file. All three are now pressed: the dialog
+  // and the toast in test-board-e2e.mjs, the pinned preview and the panel in
+  // test-review-e2e.mjs. `action` class, retired.
 
   // The shortcut sheet is the only screen that tells anyone what the keyboard
   // does, and for eight releases it did not mention a single one of the eight
@@ -2955,6 +2958,25 @@ for (const lang of CONTENT_LANGS) {
   ];
   const fresh = () => ({ v: 1, solved: {}, missed: {}, cat: "m1" });
 
+  // 7.3 B1: 「和你水平相当」这一档只认真有评级的题。没有评级的那几类，
+  // `ratingOf` 返回 null —— 这一档必须把 null 当成「不在这把尺上」，而不是
+  // 当成 0 分（那会让它们挤满整条带子的下沿）。调用方（app.js isRatedCat）
+  // owns 这个判断，所以这里验的是「null 被当回事」。
+  {
+    const st = fresh();
+    st.rhist = [{ t: 1, r: 1500 }];
+    const book = BOOK.concat([{ id: "r1", cat: "rep" }, { id: "o1", cat: "op" }]);
+    const ratingOf = (p) => (p.cat === "rep" || p.cat === "op" ? null : 1500);
+    const pick = P.pickNext(st, book, S, () => "mid", () => null, ratingOf, { lo: 1400, hi: 1600 });
+    assert(pick.kind !== "rated" || (pick.cat !== "rep" && pick.cat !== "op"),
+      "没有评级的题不会被「和你水平相当」挑中 —— null 不是 0 分",
+      JSON.stringify(pick));
+    // ……而真有评级的照旧挑得出来
+    const only = P.pickNext(st, [{ id: "z1", cat: "win" }], S, () => "mid", () => null,
+      () => 1500, { lo: 1400, hi: 1600 });
+    assert(only.kind === "rated" && only.id === "z1", "有评级的题照旧挑得出来", JSON.stringify(only));
+  }
+
   // rung 1: anything due beats everything else, and the queue's own order picks
   {
     const st = fresh();
@@ -3456,16 +3478,12 @@ for (const lang of CONTENT_LANGS) {
   assert(/function setBoardPreview\(p\) \{[\s\S]{0,200}BoardView\.draw\(\);/.test(appSrc) &&
          !/function setBoardPreview\(p\) \{[\s\S]{0,200}sync\(\)/.test(appSrc),
     "holding a preview repaints the canvas only — a hover must not run the whole sync");
-  // the move list: enter previews, leave releases
-  assert(/mlEl\.addEventListener\("mouseover"[\s\S]{0,200}previewAt\(Number\(b\.dataset\.i\)\)/.test(appSrc),
-    "hovering a move-list row previews that ply");
-  assert(/mlEl\.addEventListener\("mouseleave", \(\) => setBoardPreview\(null\)\)/.test(appSrc),
-    "leaving the list releases the board back to the committed cursor");
-  // the curve: click and scrub are the same jump
-  assert(/curveEl\.onclick = jumpOnCurve/.test(appSrc) &&
-         /curveEl\.onpointerdown[\s\S]{0,120}setPointerCapture[\s\S]{0,80}jumpOnCurve\(ev\)/.test(appSrc) &&
-         /curveEl\.onpointermove = \(ev\) => \{ if \(ev\.buttons & 1\) jumpOnCurve\(ev\); \}/.test(appSrc),
-    "the curve scrubs with the pointer through the same call the click makes");
+  // 7.3 §3: the move list's hover/leave and the curve's click/scrub were four
+  // source-text assertions apiece — `action` class, the class 7.2 proved can
+  // hold a button nobody can press. They are now pressed for real, in
+  // scripts/test-review-e2e.mjs: the pointer goes onto a move row and the
+  // board follows, comes off and the board comes back; the curve is clicked
+  // on the right and dragged to the left and the cursor travels with it.
   // PV chips: built from the stored line, previewed off the board's position
   // 5.1 moved the line-walk into previewPvChip() so hover, focus and Enter
   // share it; the property is the same — the walk starts from the board's own
@@ -3484,23 +3502,17 @@ for (const lang of CONTENT_LANGS) {
     assert(ply.kind === "ply" && ply.ply === 4 && ply.check === "e1" && ply.last.from === "d8",
       "plyPreview marks the checked king and the move that reached the position");
   }
-  assert(/b\.className = "pv-chip"/.test(appSrc) &&
-         /ChessPreview\.pvPreview\(Chess, viewGame\(\)\.fen\(\), pv, k\)/.test(appSrc) &&
-         /closest\("button\.pv-chip"\)/.test(appSrc) &&
-         /previewPvChip\(Number\(b\.dataset\.k\)\)/.test(appSrc),
-    "PV chips preview the line off the current position — these moves are never committed");
-  // …and the keyboard reaches the same line: focus previews, Enter/Space pin,
-  // and every explicit navigation lets go (audit F1/F4, 5.1 work packages A/D)
-  assert(/pvLineEl\.addEventListener\("focusin"/.test(appSrc) &&
-         /pvLineEl\.addEventListener\("keydown"[\s\S]{0,300}ev\.key === "Enter" \|\| ev\.key === " "/.test(appSrc),
-    "PV chips answer focus and Enter/Space, not only the pointer");
+  // 7.3 §3: the chips' click, their focus and their Enter/Space were six more
+  // `action` assertions. Pressed for real in test-review-e2e.mjs — clicked,
+  // then focused with nothing pressed, then dismissed with Esc — so what is
+  // asserted is that the board changes, not that the listener is spelled a
+  // particular way. The line-walk itself (pvPreview) stays under unit test
+  // directly above: that one is `shape`, and it is a pure function.
   assert(/function setViewIndex\(n\) \{[\s\S]{0,200}clearPreview\(\)/.test(appSrc),
     "explicit navigation releases any preview — the board can never disagree with the cursor");
   assert(/store\.subscribe\("game", releaseOrphanPreview\)/.test(appSrc) &&
          /store\.subscribe\("session", releaseOrphanPreview\)/.test(appSrc),
     "a preview nobody holds any more is released on the next commit");
-  assert(/pvLineEl\.addEventListener\("mouseleave", \(\) => setBoardPreview\(null\)\)/.test(appSrc),
-    "leaving the PV releases the board too");
   // the bank button: only where the analysis stored an answer, via the shared rule
   assert(/const bestUci = a && a\.bests \? a\.bests\[sum\.worst\.ply\] : null;\s*if \(bestUci\) \{/.test(appSrc),
     "拿去练 is drawn only when the analysis holds an answer for the turning point (P3)");
@@ -6029,6 +6041,27 @@ for (const lang of CONTENT_LANGS) {
   // entry in a register that only ever shrinks.
 }
 
+// --- 7.3: the sheet breakpoint is one string, asked of the browser ---------
+//
+// The narrow-portrait layout exists in CSS (a media query) and the app has to
+// know when it is in force (the onboarding must not end by raising a sheet
+// over the board). Two copies of "560px" in two languages is exactly the kind
+// of pair that drifts, so app.js asks `matchMedia` with the *same query text*
+// — and this asserts the two strings really are the same one.
+{
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const cssSrc = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+  const m = /const SHEET_QUERY = "([^"]+)"/.exec(appSrc);
+  assert(!!m, "app.js 把那条媒体查询写成一个具名常量");
+  if (m) {
+    assert(cssSrc.includes("@media " + m[1]),
+      "……而样式表里就是同一条查询，一字不差（" + m[1] + "）");
+  }
+  // 用它的地方只有一处：引导结束时要不要把面板打开
+  assert((appSrc.match(/panelCoversBoard\(\)/g) || []).length >= 2,
+    "定义它、并且真的有人用它 —— 常量本身不是护栏");
+}
+
 // --- 6.0: the register of source-text assertions in this file.
 //
 // This file holds a great many `/…/.test(appSrc)` checks: they lock the
@@ -6037,10 +6070,50 @@ for (const lang of CONTENT_LANGS) {
 // (v6-plan §1.2). They retire one at a time, each replaced by a behavioural
 // test; the number may only go down. Bump it down when you retire one, never
 // up. Same register discipline as the colour and token registers above.
+//
+// 7.3 §3 — the register, classified. 7.2 found one of these guarding a button
+// that had been unpressable since 6.0, and guarding it *precisely*: the regex
+// matched the broken expression exactly. That is not a random failure, it is
+// what this kind of assertion does when what it describes is something a user
+// can press. So every entry is now one of two classes:
+//
+//   `action` — it stands in for something a person does: a button's handler,
+//     a key, a pointer gesture, a menu command, a dialog's open or close.
+//     The shape being right says nothing about whether it works. These are
+//     the ones to replace, and they are replaced by pressing the thing.
+//   `shape`  — it stands for a data shape or a wiring fact with no seam
+//     between the text and the behaviour: a table's contents, a constant, an
+//     id scheme, which module a call goes to, a store slice's existence.
+//     A regex is a fair statement of those, and they stay.
+//
+// Retired in 7.3 (13 of them, all `action`, 124 → 111):
+//   · the move list's mouseover / mouseleave preview  → test-review-e2e.mjs
+//   · the curve's click / pointerdown / pointermove   → test-review-e2e.mjs
+//   · the PV chips' click / focusin / keydown         → test-review-e2e.mjs
+//   · the PV line's mouseleave                        → test-review-e2e.mjs
+//   · escapeKey's three effects                       → test-review-e2e.mjs
+//                                                       + test-board-e2e.mjs
+//   (7.2 retired one before them: 接实战, the button broken since 6.0.)
+//
+// Still `action`, and why each is still here — the remaining list this
+// version owes (v7-3-plan §3):
+//   · the four native-lifecycle handlers (activate / deactivate, recent
+//     documents, Host.notify): pressing them needs the Zig shell, and the
+//     browser suites have no shell. The behavioural cover that exists is
+//     scripts/manifest-check.mjs, which asserts the runner really reads every
+//     key. Replacing these means an end-to-end test against a built app.
+//   · the 「?」 shortcut sheet and `shortcut: (detail)`: the sheet's contents
+//     ARE asserted behaviourally (test-layout-e2e.mjs opens it and reads every
+//     row); what is left here is that the app subscribes to the native
+//     channel at all, which is the shell again.
+//   · dailyJump's click into #mode-seg: the jump is covered end to end in
+//     test-content-e2e.mjs; this one asserts which selector it uses, and is
+//     a candidate for the next version.
+// Everything else in the register is `shape`.
 {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
   const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 124;
+  const REGISTERED = 111;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }
