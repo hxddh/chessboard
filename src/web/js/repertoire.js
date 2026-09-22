@@ -111,17 +111,23 @@ function linesFrom(games) {
  * @param {string[]} fresh normalised SAN texts
  * @param {(sans: string) => {eco: string, name: string}|null} nameOf
  * @returns {{lines: object[], added: number, dup: number, dropped: string[]}}
+ *          `dropped` is every id that left the book — the cap's casualties
+ *          AND the shorter lines a deeper one replaced. The caller owes each
+ *          of them the same cleanup, so they come back in one list.
  */
 function addLines(lines, fresh, nameOf) {
   const out = (lines || []).slice();
+  const replaced = [];
   let added = 0, dup = 0;
   for (const sans of fresh || []) {
     if (!sans) continue;
     // already here, or contained in something deeper
     if (out.some((l) => l.sans === sans || (l.sans + " ").startsWith(sans + " "))) { dup++; continue; }
-    // …or it is itself the deeper version of something here
+    // …or it is itself the deeper version of something here. The shorter
+    // line's id leaves the book, so it is reported in `dropped` like any
+    // other departure — whatever is hanging off that id has to go with it.
     for (let i = out.length - 1; i >= 0; i--) {
-      if ((sans + " ").startsWith(out[i].sans + " ")) out.splice(i, 1);
+      if ((sans + " ").startsWith(out[i].sans + " ")) replaced.push(out.splice(i, 1)[0].id);
     }
     const named = (nameOf && nameOf(sans)) || null;
     out.push({
@@ -139,7 +145,7 @@ function addLines(lines, fresh, nameOf) {
     });
     added++;
   }
-  const dropped = [];
+  const dropped = replaced.slice();
   // oldest out first, the same rule the library uses when it fills up
   while (out.length > MAX_LINES) dropped.push(out.shift().id);
   return { lines: out, added, dup, dropped };

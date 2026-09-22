@@ -758,6 +758,64 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     return Object.keys(st.solved).filter((k) => k.startsWith("rep-")).length;
   });
   assert(solved >= 1, "背下来的那条记进了进度，和内置开局书同一条轨", solved);
+
+  // 背完一条线，「接实战」不只是出现，它还得真的把这个局面带到棋盘上 —— 7.2
+  // 发布前的复查发现：按钮按 isOpeningCat 画出来了，而它的处理函数仍然只认
+  // cat === "op"，于是自己书里那条线背完之后，这个按钮点下去什么都不发生
+  await page.click("#puzzle-playon");
+  await page.waitForTimeout(900);
+  const playedOn = await page.evaluate(() => ({
+    mode: JSON.parse(localStorage.getItem("chess.v1.settings")).mode,
+    moves: [...document.querySelectorAll("#move-list .mlmove")]
+      .map((b) => b.textContent.trim()).filter((x) => /[a-h][1-8]/.test(x)),
+  }));
+  assert(playedOn.mode === "ai" && playedOn.moves.length >= 3,
+    "「接实战」把刚背完的那条线带上棋盘，继续跟引擎下", JSON.stringify(playedOn));
+
+  // 清空开局书：欠下的复习跟着一起没有，否则 owedNow() 会永远数着一道谁也
+  // 端不出来的题
+  await page.click("#tab-record");
+  await page.waitForTimeout(300);
+  await page.click("#rep-clear");
+  await page.waitForTimeout(400);
+  await page.click("#confirm-ok");   // 清空要问一句，问的是这个应用自己的对话框
+  await page.waitForTimeout(700);
+  const afterClear = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    const book = JSON.parse(localStorage.getItem("chess.v1.repertoire"));
+    return { lines: book.w.length + book.b.length,
+      orphan: Object.keys(st.missed || {}).filter((k) => k.startsWith("rep-")) };
+  });
+  assert(afterClear.lines === 0, "清空就是清空", afterClear.lines);
+  assert(afterClear.orphan.length === 0,
+    "书没了，它欠的复习也没了 —— 不留一道谁也端不出来的题", JSON.stringify(afterClear.orphan));
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 11. 7.2 复查：只导了执黑那本，「开局书」这一档得能进得去 ----------------
+{
+  // 标签是按两本书加起来画的，而列表一次只给一把椅子。只导执黑、而 opSide
+  // 还停在执白时，这一档是空的 —— 空的那一下会被「别把人晾在空档上」的兜底
+  // 甩回一步杀，于是书在那儿，却没有任何一条路进得去。
+  const REP_B = `[Event "Black repertoire"]\n[White "?"]\n[Black "?"]\n[Result "*"]\n\n` +
+    `1. e4 c5 2. Nf3 d6 3. d4 cxd4 *\n`;
+  const ctx = await freshContext();
+  const { page, errs } = await open(ctx);
+  await importFile(page, REP_B, "#rep-import-b");
+  await page.waitForTimeout(500);
+  const book = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire")));
+  assert(book.b.length === 1 && book.w.length === 0, "只有执黑那本有东西",
+    JSON.stringify([book.w.length, book.b.length]));
+  await page.click("#rep-drill");
+  await page.waitForTimeout(900);
+  const seated = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    return { cat: st.cat, side: st.opSide,
+      task: (document.getElementById("puzzle-task") || {}).textContent || "" };
+  });
+  assert(seated.cat === "rep" && seated.side === "b",
+    "只有执黑那本时，自动坐到执黑那把椅子上", JSON.stringify(seated));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }
