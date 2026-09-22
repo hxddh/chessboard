@@ -2955,6 +2955,25 @@ for (const lang of CONTENT_LANGS) {
   ];
   const fresh = () => ({ v: 1, solved: {}, missed: {}, cat: "m1" });
 
+  // 7.3 B1: 「和你水平相当」这一档只认真有评级的题。没有评级的那几类，
+  // `ratingOf` 返回 null —— 这一档必须把 null 当成「不在这把尺上」，而不是
+  // 当成 0 分（那会让它们挤满整条带子的下沿）。调用方（app.js isRatedCat）
+  // owns 这个判断，所以这里验的是「null 被当回事」。
+  {
+    const st = fresh();
+    st.rhist = [{ t: 1, r: 1500 }];
+    const book = BOOK.concat([{ id: "r1", cat: "rep" }, { id: "o1", cat: "op" }]);
+    const ratingOf = (p) => (p.cat === "rep" || p.cat === "op" ? null : 1500);
+    const pick = P.pickNext(st, book, S, () => "mid", () => null, ratingOf, { lo: 1400, hi: 1600 });
+    assert(pick.kind !== "rated" || (pick.cat !== "rep" && pick.cat !== "op"),
+      "没有评级的题不会被「和你水平相当」挑中 —— null 不是 0 分",
+      JSON.stringify(pick));
+    // ……而真有评级的照旧挑得出来
+    const only = P.pickNext(st, [{ id: "z1", cat: "win" }], S, () => "mid", () => null,
+      () => 1500, { lo: 1400, hi: 1600 });
+    assert(only.kind === "rated" && only.id === "z1", "有评级的题照旧挑得出来", JSON.stringify(only));
+  }
+
   // rung 1: anything due beats everything else, and the queue's own order picks
   {
     const st = fresh();
@@ -6027,6 +6046,27 @@ for (const lang of CONTENT_LANGS) {
   // scripts/test-content-e2e.mjs imports a PGN whose [FEN] is a checkmate and
   // asserts the board loads it. A source-text assertion here would be a fifth
   // entry in a register that only ever shrinks.
+}
+
+// --- 7.3: the sheet breakpoint is one string, asked of the browser ---------
+//
+// The narrow-portrait layout exists in CSS (a media query) and the app has to
+// know when it is in force (the onboarding must not end by raising a sheet
+// over the board). Two copies of "560px" in two languages is exactly the kind
+// of pair that drifts, so app.js asks `matchMedia` with the *same query text*
+// — and this asserts the two strings really are the same one.
+{
+  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const cssSrc = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+  const m = /const SHEET_QUERY = "([^"]+)"/.exec(appSrc);
+  assert(!!m, "app.js 把那条媒体查询写成一个具名常量");
+  if (m) {
+    assert(cssSrc.includes("@media " + m[1]),
+      "……而样式表里就是同一条查询，一字不差（" + m[1] + "）");
+  }
+  // 用它的地方只有一处：引导结束时要不要把面板打开
+  assert((appSrc.match(/panelCoversBoard\(\)/g) || []).length >= 2,
+    "定义它、并且真的有人用它 —— 常量本身不是护栏");
 }
 
 // --- 6.0: the register of source-text assertions in this file.

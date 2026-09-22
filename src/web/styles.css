@@ -1799,6 +1799,80 @@
       .move-list { max-height: 176px; }
     }
 
+    /* Portrait windows narrower than the sheet above: the panel overlays the
+       board instead of squeezing it.
+
+       The block above carries `min-width: 560px`, and nothing carried the
+       other side of that line: a portrait window under 560px matched neither
+       it (too narrow) nor the landscape rule below (wrong aspect), so it fell
+       back to the desktop layout — a 284px sidebar beside the board. Measured
+       on 7.2.0 with the panel open, which is the state the onboarding leaves
+       it in:
+
+           360×780  → board  30px        520×900 → board 190px
+           390×844  → board  60px        559×900 → board 229px
+           430×932  → board 100px        560×900 → board 408px
+
+       One pixel of window width nearly doubled the board. Nobody saw it
+       because every viewport in the e2e suite but one was ≥1200px wide and
+       that one was square (see test-layout-e2e.mjs §5).
+
+       Strictly portrait (99/100, not 1/1): a square 520×520 window is the one
+       narrow viewport this suite always had, and it belongs to the landscape
+       rule below. At exactly 1/1 both queries match, and this block sets a
+       padding that one does not — which held a 245px strip under the board in
+       that window until the aspect was tightened.
+
+       The sheet here does NOT take height from the board, unlike the one
+       above: on a phone there is no height to take — 46vh of 844 leaves a
+       board of about 350, and the smaller phones leave less than the board
+       needs to be readable. So it lies on top with the scrim behind it (the
+       base rule already turns the scrim on under 900px), and the board keeps
+       every pixel it had. Play, open the sheet, read, close it. */
+    @media (max-aspect-ratio: 99/100) and (max-width: 559.98px) {
+      /* declared on :root, not bare in the media block — a custom property is
+         a declaration and needs a rule to live in */
+      :root { --sheet-h: min(46vh, 430px); }
+      .side {
+        top: auto; left: 0; right: 0; bottom: 0;
+        width: auto; height: var(--sheet-h);
+        padding: 12px 16px 16px;
+        border-left: 0; border-top: 1px solid var(--panel-border);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        transform: translateY(100%);
+        box-shadow: 0 -12px 40px rgba(0,0,0,.28);
+      }
+      #app.panel-open .side { transform: translateY(0); }
+      /* The sheet's place is reserved whether it is up or not, and the board
+         is centred in what is left. Three things fall out of that, and all
+         three are the point:
+           — opening the sheet does not resize the board (the 5% / 20% / 84%
+             jumps design-constraints §1 argues against);
+           — opening the sheet does not cover the board either, so the two can
+             be read together;
+           — the empty strip under the board when the sheet is down is not
+             waste, it is where the sheet lives. */
+      .stage, #app.panel-open .stage {
+        padding-right: var(--stage-pad);
+        padding-bottom: calc(var(--sheet-h) + var(--stage-pad));
+      }
+      #board-wrap, #app.panel-open #board-wrap {
+        --free-w: calc(100vw - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--sheet-h) - 2 * var(--stage-pad));
+        width: min(var(--free-w), var(--free-h));
+        height: min(var(--free-w), var(--free-h));
+      }
+      /* Reserved space, not an overlay: the sheet sits under the board, so
+         there is nothing to dim and nothing to tap through. With the scrim on,
+         the board was greyed out and un-tappable while the sheet was up —
+         which would have made "play with the move list open" impossible on
+         exactly the screens where it matters most. */
+      #app.panel-open.scrim-on .scrim { display: none; }
+      /* the sheet is at most 430px tall, so the viewport-relative cap on the
+         move list (written for a full-height column) has to come down with it */
+      .move-list { max-height: 176px; }
+    }
+
     /* Narrow *landscape* windows: the panel overlays the board instead of
        squeezing it. The aspect guard keeps this from fighting the bottom-sheet
        rule above — without it, an 800x1000 window took the sheet's position

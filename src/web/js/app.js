@@ -2541,6 +2541,21 @@ import { createStore } from "./store.js";
   function REP_DRILLS() { return RepUI.allDrills(); }
   /** Opening drills, built-in or the player's own — one word for both. */
   function isOpeningCat(cat) { return cat === "op" || cat === "rep"; }
+  /**
+   * Is this category's difficulty a *tactical* difficulty? (7.3 B1)
+   *
+   * Only those belong on the Glicko scale, because that is the only thing the
+   * scale means. A rote line's "difficulty" is `puzzleTier`'s ply count —
+   * how much there is to remember — so rating one would let a long variation
+   * out of your own imported book move the number that is supposed to say how
+   * well you see tactics. 7.2 shipped exactly that.
+   *
+   * This rule was already written in two places and contradicted in a third:
+   * the picker's rated rung excluded opening drills, the task line refused to
+   * print their rating — and `ratePuzzleOnce` rated them anyway, every time,
+   * since 6.0. One function now, read by all three.
+   */
+  function isRatedCat(cat) { return !isOpeningCat(cat); }
   /** The tree an opening drill is judged against. */
   function openingTreeFor(p) {
     return p && p.cat === "rep" ? RepUI.treeFor(p.side === "b" ? "b" : "w") : OPENING_TREE;
@@ -2750,10 +2765,12 @@ import { createStore } from "./store.js";
     const bump = p.cat === "m3" ? 100 : p.cat === "m1" ? -100 : 0;
     return { r: base + bump, rd: 200, vol: 0.06 };
   }
-  function puzzleRatingOf(p) { return Math.round(puzzleRating(p).r); }
+  /** @returns {number|null} null for the categories that are not on the scale */
+  function puzzleRatingOf(p) { return isRatedCat(p.cat) ? Math.round(puzzleRating(p).r) : null; }
   function ratePuzzleOnce(id, score) {
     const pz = store.session.puzzle;
     if (!pz || pz.p.id !== id || pz.rated) return;
+    if (!isRatedCat(pz.p.cat)) return; // 背谱不是战术水平（7.3 B1）
     if (store.session.puzzleState.solved[id]) return; // not a first attempt
     pz.rated = true;
     const st = store.session.puzzleState;
@@ -3645,7 +3662,8 @@ import { createStore } from "./store.js";
       task.textContent = store.session.puzzle.done
         ? t("pz.solvedNext")
         : tf("pz.nth", [store.session.puzzle.idx + 1]) + " · " + puzzleGoalText()
-          + (store.session.puzzle.p.cat !== "op" ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
+          + (puzzleRatingOf(store.session.puzzle.p) != null
+            ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
     }
     renderPuzzleLine();
     // opening drills are rote memorisation without the "why" — show the idea
@@ -7246,7 +7264,10 @@ import { createStore } from "./store.js";
       store.session.mode = "ai";
       store.session.difficulty = "easy";
     }
-    setPanelOpen(true);
+    // …but not where the panel is a full-height sheet over the board: ending
+    // the onboarding by covering the thing it just set up is not a welcome.
+    // The ☰ is in the corner and the board is what they came for (7.3 §1).
+    setPanelOpen(!panelCoversBoard());
     saveSettings();
     store.commit("session", "sync");
     if (choice !== 0) maybeEngineTurn();
@@ -7939,6 +7960,17 @@ import { createStore } from "./store.js";
   }
 
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
+  /**
+   * Is the panel a sheet lying ON the board right now? (7.3 §1)
+   *
+   * The same media query the stylesheet uses, asked of the same browser —
+   * not a number copied into JS that can drift from the one in the CSS.
+   * scripts/test-chess.mjs asserts the two strings are identical.
+   */
+  const SHEET_QUERY = "(max-aspect-ratio: 99/100) and (max-width: 559.98px)";
+  function panelCoversBoard() {
+    return typeof window.matchMedia === "function" && window.matchMedia(SHEET_QUERY).matches;
+  }
   function setPanelOpen(open) {
     const want = !!open;
     // the panel holds every preview owner; closing it releases the board

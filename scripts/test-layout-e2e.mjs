@@ -65,18 +65,18 @@ console.log("引擎:", ENGINE);
 // 520x520. A panel column is 239px at 1400 and the whole layout argument rests
 // on numbers like that, so "it fits" was only ever established at the widest
 // end. `viewport` lets a section re-run at the narrow end; see 4c.
-async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, height: 900 }) {
+async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, height: 900 }, panelOpen = "1") {
   const ctx = await browser.newContext({ viewport, locale: lang });
   // The theme is chosen at load. Setting data-theme on a page already living in
   // another one leaves a mixture — the theme blocks and the component block
   // have equal specificity, so which wins depends on source order, not on the
   // attribute — and a measurement taken then reads one theme's ink on another
   // theme's paper.
-  await ctx.addInitScript(([l, m, tb, th]) => {
+  await ctx.addInitScript(([l, m, tb, th, po]) => {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
       mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th }));
-    localStorage.setItem("chess.panelOpen", "1");
-  }, [lang, mode, tab, theme]);
+    localStorage.setItem("chess.panelOpen", po);
+  }, [lang, mode, tab, theme, panelOpen]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -2575,6 +2575,78 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
     }));
     assert(m.clocksShown && m.badgesGone, "计时局:钟在,「行」退场 —— 轮次不再被说第三遍");
     assert(m.activeIsBlack, "……走表的那侧钟亮着,正是轮到的黑方");
+    await ctx.close();
+  }
+}
+
+// --- 5. 竖窗：这一整类视口从来没有人量过（7.3 §1）------------------------
+//
+// 把侧栏换成底部抽屉的那条规则带着 `min-width: 560px`。比它窄的竖窗既不走抽屉
+// （宽度不够），也不走窄横窗那一套（那条要求 min-aspect-ratio: 1/1），于是掉回
+// 桌面那套：侧栏照旧占 284px，棋盘分剩下的。而 `chess.panelOpen` 的默认值是
+// 「开」，所以这是首启第一屏。
+//
+// 这一整类视口在这套 e2e 里一次都没有出现过：48 个视口实例里 47 个宽度
+// ≥1200px，唯一的窄视口是 520×520 —— 正方形，落进窄横窗那条规则，碰不到这里。
+// 已发布的桌面壳允许 520×520 起步的窗口，所以 520×900 这种形状是真能摆出来的。
+{
+  // 手机常见宽度，外加桌面壳允许的最窄窗口
+  const PORTRAIT = [
+    { width: 360, height: 780 },
+    { width: 390, height: 844 },
+    { width: 430, height: 932 },
+    { width: 520, height: 900 },
+  ];
+  /** 棋盘小于这个数就不再是棋盘，是一张邮票 */
+  const MIN_BOARD = 260;
+  const measure = (page) => page.evaluate(() => {
+    const b = document.getElementById("board").getBoundingClientRect();
+    const de = document.documentElement;
+    // a CLOSED panel is parked off-screen on purpose (translateX/Y 100%), so
+    // everything inside it reads as "past the right edge" and means nothing
+    const parked = document.getElementById("app").classList.contains("panel-open")
+      ? null : document.getElementById("side");
+    const over = [...document.querySelectorAll("body *")].filter((el) => {
+      if (!el.offsetParent && el.tagName !== "BODY") return false;
+      if (parked && (el === parked || parked.contains(el))) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && (r.right > de.clientWidth + 1 || r.left < -1);
+    }).map((el) => el.id || el.className);
+    return { board: Math.round(b.width), vw: de.clientWidth, vh: de.clientHeight, over };
+  });
+
+  for (const vp of PORTRAIT) {
+    const size = vp.width + "×" + vp.height;
+    // 面板记着「开」—— 这就是首启第一屏的状态，不需要先按任何东西
+    const openPanel = await open("zh-CN", "ai", "play", "wood", vp, "1");
+    const a = await measure(openPanel.page);
+    assert(a.board >= MIN_BOARD,
+      `${size} 面板开着时棋盘 ${a.board}px ≥ ${MIN_BOARD}px —— 这是首启第一屏`);
+    assert(a.over.length === 0, `${size} 面板开着时没有元素越出视口`);
+    assert(openPanel.errs.length === 0, `${size} 没有 JS 异常`);
+    await openPanel.ctx.close();
+
+    const shut = await open("zh-CN", "ai", "play", "wood", vp, "0");
+    const b = await measure(shut.page);
+    // 手机宽度上宽是短边，棋盘该铺满它；520×900 那种形状是高度在卡，
+    // 「开合一样大」与「≥260」两条已经说完了该说的
+    if (vp.width <= 430) {
+      assert(b.board >= Math.round(b.vw * 0.85),
+        `${size} 棋盘铺满宽度 ${b.board}px（≥ ${Math.round(b.vw * 0.85)}px）`);
+    }
+    await shut.ctx.close();
+
+    // 抽屉是覆盖上去的，不是把棋盘挤小的 —— 两种状态下棋盘一样大
+    assert(a.board === b.board,
+      `${size} 开合面板棋盘一样大（开 ${a.board} / 合 ${b.board}）—— 抽屉盖在棋盘上，不挤它`);
+  }
+
+  // 三语各跑一遍首屏：文字长度不该把这件事变成另一种结果
+  for (const lang of LANGS) {
+    const { ctx, page, errs } = await open(lang, "ai", "play", "wood", { width: 390, height: 844 }, "1");
+    const m = await measure(page);
+    assert(m.board >= MIN_BOARD && m.over.length === 0 && errs.length === 0,
+      `390×844 / ${lang}：棋盘 ${m.board}px，无溢出，无异常`);
     await ctx.close();
   }
 }
