@@ -1077,8 +1077,14 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   const tab = await page.evaluate(async () => {
     document.getElementById("tab-record").click();
     const pane = document.getElementById("pane-record");
-    const names = pane.getAnimations().map((a) => a.animationName);
-    await new Promise((r) => setTimeout(r, 400));
+    const anims = pane.getAnimations();
+    const names = anims.map((a) => a.animationName);
+    // wait for the animation itself rather than for a number of milliseconds:
+    // 7.3 gave the 记录 tab a wider panel, so switching to it now also relays
+    // out the board, and a fixed 400ms caught the fade at 0.98 — a timing
+    // flake dressed up as a claim about where the pane comes to rest.
+    await Promise.all(anims.map((a) => a.finished.catch(() => {})));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     return { names, settled: getComputedStyle(pane).opacity };
   });
   assert(tab.names.includes("reveal-in"), "切页签的时候新页是走进来的(" + tab.names.join(", ") + ")");
@@ -1669,32 +1675,40 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   // inked column including the axis labels' stems, so the claim is made on
   // the bars themselves — the columns whose run is at least a bar's minimum.
   const MIN_BAR_PX = 4;
-  const barish = await page.evaluate((min) => {
+  const barish = await page.evaluate(() => {
     const out = [];
-    for (const cv of document.querySelectorAll("#lib-diag canvas.diag-chart")) {
+    // only the two charts that stand bars on a floor. The 开局战绩 chart lays
+    // its bars on their side, so a column of ink there is a slice through a
+    // row, not a bar — reading it this way would measure the wrong thing and
+    // then complain about the answer.
+    for (const cv of document.querySelectorAll('#lib-diag canvas[data-chart="phase"], #lib-diag canvas[data-chart="peak"]')) {
       const g = cv.getContext("2d");
       const { width: W, height: H } = cv;
       const data = g.getImageData(0, 0, W, H).data;
-      // a column belongs to a bar if its solid run reaches the same floor as
-      // the tallest one — bars share a baseline, glyphs do not
-      let floor = 0;
       const runs = [];
       for (let x = 0; x < W; x++) {
-        let best = 0, bestEnd = 0, run = 0;
+        let best = 0, bestEnd = -1, run = 0;
         for (let y = 0; y < H; y++) {
           if (data[(y * W + x) * 4 + 3] > 200) { run++; if (run > best) { best = run; bestEnd = y; } }
           else run = 0;
         }
-        runs.push({ x, len: best, end: bestEnd });
-        if (best > 0 && bestEnd > floor) floor = bestEnd;
+        if (best > 0) runs.push({ x, len: best, end: bestEnd });
       }
-      const onFloor = runs.filter((r) => r.len > 0 && Math.abs(r.end - floor) <= 2);
-      out.push({ label: cv.getAttribute("aria-label") || "",
+      // the floor is the row the most columns end on. Not the lowest one:
+      // the axis labels are printed BELOW the baseline, so "lowest" is the
+      // bottom of a glyph, and every bar would then be off the floor.
+      const tally = new Map();
+      for (const r of runs) tally.set(r.end, (tally.get(r.end) || 0) + 1);
+      let floor = -1, most = 0;
+      for (const [end, n] of tally) if (n > most) { most = n; floor = end; }
+      const onFloor = runs.filter((r) => Math.abs(r.end - floor) <= 1);
+      out.push({ label: cv.getAttribute("aria-label") || "", kind: cv.dataset.chart,
                  bars: onFloor.length, min: onFloor.length ? Math.min(...onFloor.map((r) => r.len)) : 0,
-                 max: onFloor.length ? Math.max(...onFloor.map((r) => r.len)) : 0, min_px: min });
+                 max: onFloor.length ? Math.max(...onFloor.map((r) => r.len)) : 0 });
     }
     return out;
-  }, MIN_BAR_PX);
+  });
+  assert(barish.length === 2, "两张立着柱子的图都读到了 (" + barish.length + ")");
   for (const c of barish) {
     if (!c.bars) continue;
     assert(c.min >= Math.floor(MIN_BAR_PX * dpr) - 1,

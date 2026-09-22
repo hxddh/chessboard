@@ -795,9 +795,14 @@ export function createLibraryUI(d) {
    * no data must not exist at all (the P3 rule this page has followed since
    * 7.0), and "does not exist" is easier to be sure of than "is hidden".
    */
-  function diagCanvas(parent, h, label) {
+  function diagCanvas(parent, h, label, kind) {
     const cv = doc.createElement("canvas");
     cv.className = "diag-chart";
+    // which shape this is, for anyone reading the canvas back: the phase and
+    // peak charts stand bars on a shared floor, the eco chart lays them on
+    // their side. A pixel reader cannot tell those apart from the ink alone,
+    // and it has to — the floor is what tells a bar from a glyph (7.3 §4B).
+    if (kind) cv.dataset.chart = kind;
     cv.style.height = h + "px";
     cv.setAttribute("role", "img");
     cv.setAttribute("aria-label", label);
@@ -843,7 +848,7 @@ export function createLibraryUI(d) {
       .map((k) => ({ k, acpl: d.phase[k].acpl }))
       .filter((r) => r.acpl != null);
     if (rows.length < 2) return; // one bar is not a comparison
-    const c = diagCanvas(parent, 92, t("diag.chartPhase"));
+    const c = diagCanvas(parent, 92, t("diag.chartPhase"), "phase");
     const pad = 6 * c.dpr, gap = 10 * c.dpr, label = 16 * c.dpr;
     // the scale's top is a real number off this page — the largest of the
     // three — so the tick can be read against the rows above it. 1.15 of it
@@ -918,7 +923,7 @@ export function createLibraryUI(d) {
     }
     if (counts.size < 3) return null;
     const last = Math.max(10, Math.min(worst, 60));
-    const c = diagCanvas(parent, 80, t("diag.chartPeak"));
+    const c = diagCanvas(parent, 80, t("diag.chartPeak"), "peak");
     const pad = 6 * c.dpr, label = 14 * c.dpr;
     const max = Math.max(...counts.values()) || 1;
     const bw = (c.W - 2 * pad) / last;
@@ -960,7 +965,7 @@ export function createLibraryUI(d) {
     const rows = ecos.slice(0, 6).filter((e) => e.n > 0);
     if (rows.length < 2) return;
     const LEGEND = 16;
-    const c = diagCanvas(parent, 18 * rows.length + 12 + LEGEND, t("diag.chartEco"));
+    const c = diagCanvas(parent, 18 * rows.length + 12 + LEGEND, t("diag.chartEco"), "eco");
     const pad = 4 * c.dpr;
     const leg = LEGEND * c.dpr;
     const rh = (c.H - 2 * pad - leg) / rows.length;

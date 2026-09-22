@@ -1025,14 +1025,17 @@
        shape with a 336px column: the task, the puzzle list and the answer all
        queue up in a slot beside a board that only needs to be big enough to
        click.
-       564px of panel is 520px of content — the floor this version sets for a
+       568px of panel is 521px of content — the floor this version sets for a
        page made of text — and it is the FIRST number in this file that costs
        the board anything, so it is gated on there being room to pay: below
        1180px the panel stays where it was, because a 604px board is the
        smallest this trade is worth making. The 对局 tab is untouched at any
        width; switching back to it puts the board back to the pixel. */
     @media (min-width: 1180px) {
-      #app[data-tab="record"], #app[data-mode="puzzle"] { --side-w: 564px; }
+      /* 568, not 564: `.side` is border-box and carries a 1px left border, so
+         564 − 1 − 2×22 of padding measured 519 — one pixel under the floor
+         this section sets. Measured, then set from the measurement. */
+      #app[data-tab="record"], #app[data-mode="puzzle"] { --side-w: 568px; }
     }
 
     .reading-index > summary {
