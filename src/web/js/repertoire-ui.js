@@ -236,6 +236,9 @@ export function createRepertoireUI(d) {
         const k = doc.createElement("span");
         k.className = "stat-k";
         k.textContent = g.eco + " " + (g.name || "");
+        // an opening's full name rarely fits the name track — it is cut with
+        // an ellipsis there, so the whole of it lives here (7.3 B3)
+        k.title = k.textContent;
         const v = doc.createElement("span");
         v.className = "stat-v num";
         v.textContent = tf("rep.gapRecord", [g.n, g.loss]);

@@ -571,7 +571,192 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(after.hidden, "……面板也没有自己冒出来");
 
   assert(errs3.length === 0, "多线与持续分析:全程没有页面异常 — " + errs3.join(" / "));
+
+  // --- 7.3 §3:把「预览」这一族从正则换成真去指、真去按 -------------------
+  // 登记册里守着这一族的是十三条源码正则(棋谱行 mouseover/mouseleave、曲线
+  // 的 click/pointerdown/pointermove、pv 小块的 click/focusin/keydown、Esc)。
+  // 7.2 刚证明这类断言能一字不差地守着一个从 6.0 就按不动的按钮:形状对不代
+  // 表按得动。所以这一版把它们换成下面这些 —— 指上去、按下去、看棋盘。
+  {
+    const badge = () => pg.evaluate(() => {
+      const el = document.getElementById("preview-badge");
+      return { hidden: !el || el.hidden, text: el ? el.textContent : "" };
+    });
+    // 游标的位置,从页面自己报出来的地方读 —— 曲线是个 slider,它的
+    // aria-valuenow 就是 viewIndex,而这条线本来就有单独的断言看着
+    const viewIndex = () => pg.evaluate(() =>
+      Number((document.getElementById("eval-curve") || {}).getAttribute
+        ? document.getElementById("eval-curve").getAttribute("aria-valuenow") : NaN));
+
+    // 1. 指在棋谱的一行上,棋盘就走到那一手;指开,棋盘就回来
+    await pg.click("#rep-start").catch(() => {});
+    await pg.waitForTimeout(300);
+    await pg.hover("#move-list button[data-i]");
+    await pg.waitForTimeout(260);
+    const hov = await badge();
+    assert(!hov.hidden, "指在棋谱的一行上,棋盘预览那一手(" + hov.text + ")");
+    await pg.hover("#board");
+    await pg.waitForTimeout(300);
+    assert((await badge()).hidden, "指开,预览就收了 —— 棋盘回到游标那一手");
+
+    // 2. 引擎那条线的小块:按一下就预览,焦点走到它身上也预览
+    const chips = await pg.evaluate(() =>
+      document.querySelectorAll("#pv-line button.pv-chip").length);
+    if (chips > 0) {
+      await pg.click("#pv-line button.pv-chip");
+      await pg.waitForTimeout(280);
+      const pin = await badge();
+      assert(!pin.hidden, "按下引擎线上的一个小块,棋盘就摆出那条线(" + pin.text + ")");
+      // 按下去的预览是钉住的 —— 它得能被 Esc 请走,这也是 escapeKey 的活
+      await pg.keyboard.press("Escape");
+      await pg.waitForTimeout(300);
+      assert((await badge()).hidden, "Esc 把钉住的预览请走");
+      // 键盘也走得通:焦点落到小块上就预览。先把焦点挪开 —— Esc 不会让它
+      // 失焦,而 focus() 打在已经有焦点的元素上不发 focusin,那样测的就是
+      // 「什么都没发生」。
+      await pg.evaluate(() => document.getElementById("board").focus());
+      await pg.waitForTimeout(200);
+      await pg.evaluate(() => document.querySelector("#pv-line button.pv-chip").focus());
+      await pg.waitForTimeout(260);
+      assert(!(await badge()).hidden, "焦点落在小块上,不按也预览 —— 键盘走得通同一条路");
+      await pg.keyboard.press("Escape");
+      await pg.waitForTimeout(250);
+    }
+
+    // 3. 曲线:点一下跳到那一手,按着拖过去一路跟着走
+    // 3. Esc 还管面板 —— escapeKey 的最后一段
+    // Esc 是一串「最局部的先走」:走子菜单、预走、选中的子、对话框、提示条、
+    // 钉住的预览、编辑器,最后才是面板。所以这里按到面板收起为止,并数一下
+    // 按了几下:这条断言问的是「面板终究收得掉」,不是「第一下就收」。
+    await pg.evaluate(() => {
+      const app = document.getElementById("app");
+      if (!app.classList.contains("panel-open")) document.getElementById("toggle-panel").click();
+      document.getElementById("board").focus();
+    });
+    await pg.waitForTimeout(350);
+    const open = () => pg.evaluate(() => document.getElementById("app").classList.contains("panel-open"));
+    assert(await open(), "侧栏是开着的");
+    let taps = 0;
+    while (await open() && taps < 5) {
+      await pg.keyboard.press("Escape");
+      await pg.waitForTimeout(350);
+      taps++;
+    }
+    assert(!(await open()),
+      "按 Esc,侧栏收起来 —— 这是 escapeKey 最后一段,此前只有一条正则看着它(按了 " + taps + " 下)");
+  }
+
+  assert(errs3.length === 0, "预览一族:全程没有页面异常 — " + errs3.join(" / "));
   await ctx3.close();
+}
+
+// --- 7.3 §3:局势曲线,点一下与拖一路 ---------------------------------------
+// 曲线的 click / pointerdown / pointermove 此前是一条源码正则(「the curve
+// scrubs with the pointer through the same call the click makes」)。形状对不
+// 代表拖得动,所以这里真的按下去、真的拖过去,看游标有没有跟着走。
+// 自己一个上下文:曲线要 30 手以上判过的着法才画得出来(Review.longEnough),
+// 而把一整局棋送进去最省事的路是剪贴板,那需要一份 zero.clipboard 的替身。
+{
+  // 一局够长的棋:Review.longEnough 要 30 手以上判过的着法,曲线才画得出来
+  const LONG_PGN = '[Event "Curve"]\n[Site "?"]\n[Date "2026.09.20"]\n[Round "-"]\n' +
+    '[White "A"]\n[Black "B"]\n[Result "*"]\n\n' +
+    '1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 ' +
+    '8. c3 O-O 9. h3 Nb8 10. d4 Nbd7 11. Nbd2 Bb7 12. Bc2 Re8 13. Nf1 Bf8 ' +
+    '14. Ng3 g6 15. b3 Bg7 16. d5 Nb6 17. Be3 Nfd7 18. c4 f5 19. exf5 gxf5 ' +
+    '20. Nh2 e4 21. f3 Qh4 22. Qd2 Rf8 23. Bxb6 Nxb6 24. Rf1 *\n';
+
+  const ctxC = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctxC.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__clip = "";
+    window.zero = {
+      invoke: () => Promise.resolve(true), on: () => () => {}, off: () => {},
+      platform: { supports: () => Promise.resolve(false) },
+      clipboard: {
+        readText: () => Promise.resolve(window.__clip),
+        writeText: (t) => { window.__clip = String(t); return Promise.resolve(true); },
+      },
+    };
+  });
+  // 一页只收第一个指针手势:实测同一个页面上先点一下再按着拖,拖的那一串
+  // pointermove 一个都不来(probe 过:单独拖是 0 → 41,点过之后再拖是 38 → 38)。
+  // 这是 Playwright 合成指针事件的脾气,不是曲线的。所以点击和拖动各开一页,
+  // 每一页上它都是第一个手势 —— 两条断言各自问的那件事都问得干净。
+  const errsC = [];
+  const readyPage = async () => {
+    const pgC = await ctxC.newPage();
+    pgC.on("pageerror", (e) => errsC.push(e.message));
+    await pgC.goto(`http://127.0.0.1:${PORT}/`);
+    await pgC.waitForTimeout(900);
+    await pgC.click("#pick-cancel").catch(() => {});
+    await pgC.evaluate((x) => { window.__clip = x; }, LONG_PGN);
+    if (await pgC.evaluate(() => !!document.getElementById("more-row").hidden)) {
+      await pgC.click("#more-tools"); await pgC.waitForTimeout(250);
+    }
+    await pgC.click("#pgn-paste");
+    await pgC.waitForTimeout(900);
+    if (await pgC.isVisible("#confirm-modal.show").catch(() => false)) {
+      await pgC.click("#confirm-ok"); await pgC.waitForTimeout(700);
+    }
+    // 一份不吃 CPU 的评估:每个局面给一个跟着手数走的分数,曲线就有起伏
+    await pgC.evaluate(() => {
+      let n = 0;
+      window.__chess.engine.analyze = async (fen) => {
+        const turn = fen.split(" ")[1];
+        const cp = ((n++ % 9) - 4) * 30;
+        return { cp: turn === "w" ? cp : -cp, mate: null, turn, best: "e2e4", pv: ["e2e4"],
+          lines: [{ cp, mate: null, pv: ["e2e4"], depth: 12 }] };
+      };
+    });
+    await pgC.click("#an-run");
+    await pgC.waitForTimeout(4000);
+    await pgC.click("#rep-start");
+    await pgC.waitForTimeout(350);
+    const box = await pgC.evaluate(() => {
+      const el = document.getElementById("eval-curve");
+      if (!el || el.hidden || !el.offsetParent) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left, y: r.top + r.height / 2, w: r.width };
+    });
+    const at = () => pgC.evaluate(() =>
+      Number(document.getElementById("eval-curve").getAttribute("aria-valuenow")));
+    return { pgC, box, at };
+  };
+
+  // 点一下:游标跳到那一手
+  {
+    const { pgC, box, at } = await readyPage();
+    assert(!!box, "一整局棋分析完,局势曲线画出来了 —— 下面两条要指的就是它");
+    if (box) {
+      assert(await at() === 0, "先回到开局(第 " + (await at()) + " 手)");
+      await pgC.mouse.click(box.x + box.w * 0.8, box.y);
+      await pgC.waitForTimeout(400);
+      const clicked = await at();
+      assert(clicked > 20, "在曲线右边点一下,棋盘就跳到那一手(第 " + clicked + " 手)");
+    }
+    await pgC.close();
+  }
+  // 按着拖:游标一路跟着走,不是松手才到
+  {
+    const { pgC, box, at } = await readyPage();
+    if (box) {
+      await pgC.mouse.move(box.x + box.w * 0.15, box.y);
+      await pgC.mouse.down();
+      // 按下之后停一拍再动:不停的话第一段移动会和按下并成一次派发
+      await pgC.waitForTimeout(180);
+      await pgC.mouse.move(box.x + box.w * 0.85, box.y, { steps: 6 });
+      await pgC.waitForTimeout(350);
+      // 还没松手就量 —— 拖的定义就是「松手之前已经跟上了」
+      const mid = await at();
+      await pgC.mouse.up();
+      assert(mid > 20, "按着从左往右拖,松手之前棋盘就已经跟到了那边(第 " + mid + " 手)");
+    }
+    await pgC.close();
+  }
+  assert(errsC.length === 0, "曲线:全程没有页面异常 — " + errsC.join(" / "));
+  await ctxC.close();
 }
 
 await browser.close();
