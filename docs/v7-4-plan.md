@@ -9,14 +9,14 @@
 规矩和前几版一样：每条写**依据**（核过的代码、跑出来的数、截下来的图），
 每条有**验收**，发布前补**落地记录**。
 
-复查当天的基线：`npm run test:static` 全绿；`npm run test:e2e` 结果见 §6。
+复查当天的基线见 §6。
 
 ---
 
 ## 0 · 结论先行
 
-1. **P0：页面的 CSP 挡住了 Stockfish 的 WebAssembly。** 在 Chromium（也就是
-   Windows 上 WebView2 用的引擎）里，引擎一次都启动不了。人机对局停在
+1. **P0：页面的 CSP 挡住了 Stockfish 的 WebAssembly。** 在 Chromium（Windows 的
+   WebView2）和 WebKit（macOS 的 WKWebView）里，引擎都一次也启动不了。人机对局停在
    「引擎思考中…」，而且一直停在那里：等了 45 秒，界面上没有出现任何一句
    错误提示。复盘、分析、棋谱库逐局分析、挖错题，凡是要引擎的功能都跟着
    失效。**应当马上单独发一个 7.3.1。**
@@ -57,11 +57,9 @@ Chromium 里，blob worker 继承创建它的文档的 CSP；而 `script-src` �
 复现脚本就是 `test-*-e2e.mjs` 的那个静态服务器，只是**不替换**
 `engine-src.js`（先跑 `node scripts/gen-engine-src.mjs` 生成它）。
 
-**WebKit（macOS 的 WKWebView）没有验证。** 复查环境里没装 Playwright 的
-WebKit。WebKit 同样用 CSP 管 WebAssembly 的编译，但 blob worker 是否继承
-文档的 CSP，各引擎的做法不完全一样。macOS 版是不是也挂了，要靠下面这条
-e2e 在 CI 的 webkit 矩阵上跑一次才能回答。回答之前按「两个平台都坏了」来
-处理。
+**WebKit（macOS 的 WKWebView）同样中招。** 复查时本地没有 WebKit，这一条是
+由下面那条 e2e 在 CI 的 webkit 矩阵上回答的：原样页面报「Refused to create a
+WebAssembly object」，不应；去掉 CSP，0.84 秒就应（数字见 §6）。
 
 ### 为什么没人发现
 
@@ -284,7 +282,18 @@ e2e 进 CI 双引擎矩阵、manual-check A0。这一版**必须在真机上各�
 
 ### 复查当天 e2e 的结果
 
-`npm run test:static` 通过。`npm run test:e2e` 见落地记录（跑在本地 Chromium 上）。
+- `npm run test:static` 通过。
+- `npm run test:e2e` 原有 8 个套件，本地 Chromium：1900 项 ok，0 项 FAIL。它们
+  都把引擎 stub 掉了，所以全绿和 §1 并不矛盾。
+- 新增的 `test-engine-e2e`，先红后绿：
+  - 修之前，本地 Chromium：原样页面 35 秒不应，3 次 `CompileError`；去掉 CSP
+    2.2 秒应。对 v7.3.0 官方 Windows 发布包里的 `frontend/dist` 跑，结果相同。
+    macOS 发布包里的 `index.html` 是同一份 CSP。
+  - 修之前，CI 的 WebKit（PR #76，a8d8ef0）：原样页面报
+    `Refused to create a WebAssembly object because 'unsafe-eval' or
+    'wasm-unsafe-eval' is not an allowed source of script`，不应；去掉 CSP 0.84 秒应。
+    **macOS 同样中招。**
+  - 加上 `'wasm-unsafe-eval'` 之后，本地 Chromium：原样页面 2.0 秒应。
 
 ---
 

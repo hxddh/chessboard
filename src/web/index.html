@@ -6,8 +6,13 @@
   <!-- 6.0: the page holds a bridge that can write files, so it must not be
        able to run anything it did not ship with. Scripts and styles come
        only from the app's own origin; the engine runs in a blob worker; the
-       piece sprites are data: SVGs. No inline script, no remote origin. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; worker-src blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+       piece sprites are data: SVGs. No inline script, no remote origin.
+       7.3.1: 'wasm-unsafe-eval' lets that worker compile Stockfish's wasm —
+       the blob worker inherits this policy, and without it both WebView2 and
+       WKWebView refused the compile, so from 6.0 to 7.3.0 the engine never
+       started. It allows WebAssembly compilation only, not eval(); see
+       scripts/test-engine-e2e.mjs, the check that boots the real engine. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; worker-src blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>国际象棋</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
