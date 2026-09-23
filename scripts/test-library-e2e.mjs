@@ -858,6 +858,257 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await ctx.close();
 }
 
+// --- 13. 7.4 D1：点 A 局，打开的就是 A 局 ------------------------------------
+{
+  // 7.1 起，列表的每一行带的是这一局在库里的下标。每次导入 addGames 都按新到旧
+  // 重排，下标全跟着挪；可 reconcile 按 id 复用行、签名里又没有下标，于是旧行
+  // 原样留着、指向的却是挪进那个位置的另一局：点 A 打开的是 C，点 A 的「再深
+  // 一遍」改写的是 C 的分析和错题。这一段就按这个次序走一遍。
+  const an = () => ({ acc: { w: 80, b: 70 }, acpl: { w: 20, b: 30 },
+    tags: [null, null, null, null], losses: [0, 0, 0, 0], scalars: [0, 0, 0, 0, 0],
+    bests: [null, null, null, null, null], budget: 200 });
+  const mk = (id, t, foe, sans, eco) => ({
+    id, t, white: "hxddh", black: foe, date: "2026.09.01", event: "Rated blitz",
+    result: "1-0", plies: 4, sans, fen: "", side: "w", outcome: "win", motifs: {},
+    // eco already there, so the ECO chunk landing does not rebuild these rows
+    // for an unrelated reason and hide the bug
+    eco, ecoName: "x", an: an(),
+  });
+  // stored oldest first — the order the bug needs: alpha at index 0
+  const games = [mk("d1a", 1758000000000, "alpha", "e4 e5 d4 d5", "C20"),
+    mk("d1b", 1758000000001, "bravo", "c4 c5 g3 g6", "A30")];
+  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  const { page, errs } = await open(ctx);
+  await page.click("#lib-open");
+  await page.waitForTimeout(1200);
+  const rowOf = (foe) => page.locator("#lib-list .hist-row", { hasText: foe });
+  assert((await rowOf("alpha").count()) === 1, "列表里有 alpha 那一行");
+  await page.click("#lib-list-close");
+  await page.waitForTimeout(200);
+
+  // 导进一局更新的：它排到最前面，每一个下标都挪了一位
+  await importFile(page, '[Event "Rated blitz"]\n[Date "2026.09.20"]\n[White "hxddh"]\n[Black "charlie"]\n' +
+    '[Result "1-0"]\n\n1. a3 a6 2. h3 h6 1-0\n');
+  const order = (await libOf(page)).games.map((g) => g.black);
+  assert(order[0] === "charlie", "新导的那局排在库的最前面 —— 旧局的下标全挪了", JSON.stringify(order));
+
+  await page.click("#lib-open");
+  await page.waitForTimeout(500);
+  const ids = await page.evaluate(() =>
+    [...document.querySelectorAll("#lib-list .hist-row")].map((r) => ({
+      text: r.textContent, lib: r.querySelector("button[data-lib]").dataset.lib })));
+  const alphaRow = ids.find((r) => /alpha/.test(r.text));
+  assert(alphaRow && alphaRow.lib === "d1a", "行上带的是这一局的 id，不是下标", JSON.stringify(ids));
+
+  // 「再深一遍」先点 —— 点「打开」会关掉列表
+  await page.evaluate(() => {
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen) =>
+      ({ cp: 0, mate: null, turn: fen.split(" ")[1] === "b" ? "b" : "w", best: null, pv: [] });
+  });
+  await rowOf("alpha").locator("button[data-lib-deep]").click();
+  await page.waitForTimeout(1500);
+  const budgets = Object.fromEntries((await libOf(page)).games.map((g) => [g.black, g.an ? g.an.budget : null]));
+  assert(budgets.alpha === 400, "点 alpha 的「再深一遍」，深的是 alpha", JSON.stringify(budgets));
+  assert(budgets.bravo === 200 && budgets.charlie === null, "……别的局一个字都没动", JSON.stringify(budgets));
+
+  await rowOf("alpha").locator("button[data-lib]").click();
+  await page.waitForTimeout(900);
+  const moves = await page.evaluate(() =>
+    [...document.querySelectorAll("#move-list .mlmove")].map((b) => b.textContent.trim()));
+  assert(moves.length === 4 && /e4/.test(moves[0]) && /d5/.test(moves[3]),
+    "点 alpha，棋盘上是 alpha 那一局 —— 不是挪进它下标的 charlie", JSON.stringify(moves));
+
+  // 行签名里有语言：换成英文再打开列表，行文字跟着换（7.1 就有的缝）
+  await page.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
+  await page.waitForTimeout(300);
+  await page.click("#tab-record");
+  await page.click("#lib-open");
+  await page.waitForTimeout(400);
+  const enRow = await rowOf("bravo").locator("button[data-lib]").textContent();
+  assert(/^Win/.test(enRow) && !/胜/.test(enRow), "换了语言，列表的行跟着换 —— 不留上一种语言的字", enRow);
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 14. 7.4 D7：库分析拿到空结果，绝不拿更差的覆盖更好的 ------------------
+{
+  const good = { acc: { w: 88, b: 70 }, acpl: { w: 12, b: 30 },
+    tags: [null, null, null, null], losses: [0, 0, 0, 0], scalars: [20, 25, 30, 22, 18],
+    bests: [null, null, null, null, null], budget: 200 };
+  const games = [
+    { id: "d7a", t: 1758000000000, white: "hxddh", black: "alpha", date: "2026.09.01", event: "x",
+      result: "1-0", plies: 4, sans: "e4 e5 d4 d5", fen: "", side: "w", outcome: "win", motifs: {},
+      eco: "C20", ecoName: "x", an: good },
+    { id: "d7q", t: 1758000000001, white: "hxddh", black: "queued", date: "2026.09.02", event: "x",
+      result: "1-0", plies: 4, sans: "c4 c5 g3 g6", fen: "", side: "w", outcome: "win", motifs: {},
+      eco: "A30", ecoName: "x", an: null },
+  ];
+  const seedJson = JSON.stringify({ v: 1, names: ["hxddh"], games });
+
+  // (a) 引擎死了：每一次都是 null
+  {
+    const ctx = await freshContext(seedJson);
+    const { page, errs } = await open(ctx);
+    await page.evaluate(() => {
+      window.__calls = 0;
+      window.__chess.engine.isReady = () => true;
+      window.__chess.engine.analyze = async () => { window.__calls++; return null; };
+    });
+    await page.click("#lib-open");
+    await page.waitForTimeout(400);
+    await page.locator("#lib-list .hist-row", { hasText: "alpha" }).locator("button[data-lib-deep]").click();
+    await page.waitForTimeout(800);
+    let lib = await libOf(page);
+    const a = lib.games.find((g) => g.id === "d7a");
+    assert(a.an.budget === 200 && JSON.stringify(a.an.scalars) === JSON.stringify(good.scalars),
+      "「再深一遍」一手都没拿到评估：原来 200 毫秒的分析原样留着，没被一份全是空洞的记录盖掉",
+      JSON.stringify(a.an));
+    assert(/原样留着/.test(await page.textContent("#toast")), "……并且说了", await page.textContent("#toast"));
+    await page.click("#lib-list-close");
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => { window.__calls = 0; });
+    await page.click("#lib-analyse");
+    await page.waitForTimeout(1200);
+    lib = await libOf(page);
+    const q = lib.games.find((g) => g.id === "d7q");
+    assert(q.an == null && !q.unplayable,
+      "后台分析拿不到评估：那一局不存档，也不被当成「摆不出来」", JSON.stringify(q));
+    const calls = await page.evaluate(() => window.__calls);
+    assert(calls === 2, "同一手问两次（重试一次），然后整趟停下 —— 不在同一局上转圈", String(calls));
+    assert(/停在这里/.test(await page.textContent("#toast")), "停下来的时候说了为什么",
+      await page.textContent("#toast"));
+    assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // (b) 棋盘上的一步把在途的搜索取消了一次：重试一次就接上，整局照常存档
+  {
+    const ctx = await freshContext(seedJson);
+    const { page, errs } = await open(ctx);
+    await page.evaluate(() => {
+      const seen = new Set();
+      window.__chess.engine.isReady = () => true;
+      window.__chess.engine.analyze = async (fen) => {
+        // every position's first ask is "cancelled", the second answers
+        if (!seen.has(fen)) { seen.add(fen); return null; }
+        return { cp: 15, mate: null, turn: fen.split(" ")[1] === "b" ? "b" : "w", best: null, pv: [] };
+      };
+    });
+    await page.click("#lib-analyse");
+    await page.waitForTimeout(1500);
+    const q = (await libOf(page)).games.find((g) => g.id === "d7q");
+    assert(q.an && q.an.scalars.length === 5 && q.an.scalars.every((x) => x != null),
+      "每一手第一次都被取消，重试一次就拿到了 —— 整局存下来，一个空洞都没有",
+      JSON.stringify(q.an && q.an.scalars));
+    assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // (c) 连点两下「分析」：7.3 的 run token 在第一个 await 之后才立起来，两下
+  // 都看见 libRun 是空的，于是两趟一起跑、同一局分析两遍
+  {
+    const ctx = await freshContext(seedJson);
+    const { page, errs } = await open(ctx);
+    await page.evaluate(() => {
+      window.__asked = {};
+      window.__inflight = 0;
+      window.__maxInflight = 0;
+      window.__chess.engine.isReady = () => true;
+      window.__chess.engine.analyze = async (fen) => {
+        window.__asked[fen] = (window.__asked[fen] || 0) + 1;
+        window.__inflight++;
+        window.__maxInflight = Math.max(window.__maxInflight, window.__inflight);
+        await new Promise((r) => setTimeout(r, 20));
+        window.__inflight--;
+        return { cp: 15, mate: null, turn: fen.split(" ")[1] === "b" ? "b" : "w", best: null, pv: [] };
+      };
+      const b = document.getElementById("lib-analyse");
+      b.click();
+      b.click();
+    });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => ({ asked: window.__asked, max: window.__maxInflight }));
+    assert(r.max <= 1 && Object.values(r.asked).every((n) => n === 1),
+      "连点两下，不会有两趟分析同时跑同一局", JSON.stringify(r));
+    assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+}
+
+// --- 15. 7.4 D5 与「接实战」：换掉开局书之后，屏幕上的那道题 -----------------
+{
+  const REP = `[Event "White repertoire"]\n[White "?"]\n[Black "?"]\n[Result "*"]\n\n` +
+    `1. d4 d5 2. c4 e6 3. Nf3 Nf6 *\n`;
+  const ctx = await freshContext();
+  const { page, errs } = await open(ctx);
+  const tapAt = async (sq) => {
+    const p = await page.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1];
+      const flip = document.body.classList.contains("flipped");
+      const co = flip ? 7 - f : f, ro = flip ? 7 - rk : rk, z = r.width / 8;
+      return { x: r.left + (co + .5) * z, y: r.top + (ro + .5) * z };
+    }, sq);
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(220);
+  };
+  const mv = async (a, b) => { await tapAt(a); await tapAt(b); await page.waitForTimeout(420); };
+  const missedRep = () => page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}");
+    return Object.keys(st.missed || {}).filter((k) => k.startsWith("rep-"));
+  });
+
+  // 棋盘上先有一盘没下完的棋（双人模式，走两步）
+  await mv("e2", "e4");
+  await mv("e7", "e5");
+
+  await importFile(page, REP, "#rep-import-w");
+  await page.waitForTimeout(400);
+  await page.click("#rep-drill");
+  await page.waitForTimeout(900);
+
+  // 书清掉，题还在屏幕上
+  await page.click("#tab-record");
+  await page.waitForTimeout(200);
+  await page.click("#rep-clear");
+  await page.waitForTimeout(300);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(500);
+  await mv("e2", "e4");   // 书上是 d4：这是一步错棋
+  assert((await missedRep()).length === 0,
+    "书已经清空，屏幕上那道题走错了也不写进复习队列 —— 不留一道谁也端不出来的题",
+    JSON.stringify(await missedRep()));
+
+  // 「接实战」：重新导书、背完一条线，棋盘上还压着那盘没下完的棋
+  await importFile(page, REP, "#rep-import-w");
+  await page.waitForTimeout(400);
+  await page.click("#rep-drill");
+  await page.waitForTimeout(900);
+  await mv("d2", "d4");
+  await mv("c2", "c4");
+  let done = await page.isVisible("#puzzle-playon");
+  if (!done) { await mv("g1", "f3"); done = await page.isVisible("#puzzle-playon"); }
+  assert(done, "背完一条线，「接实战」出来了");
+  await page.click("#puzzle-playon");
+  await page.waitForTimeout(400);
+  assert(await page.isVisible("#confirm-modal"),
+    "棋盘上有一盘没下完的棋，「接实战」先问一声 —— 和「新局」一样");
+  await page.click("#confirm-cancel");
+  await page.waitForTimeout(400);
+  const mode1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings")).mode);
+  assert(mode1 === "puzzle", "取消就什么都不变 —— 还在做题", mode1);
+  await page.click("#puzzle-playon");
+  await page.waitForTimeout(400);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(900);
+  const mode2 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings")).mode);
+  assert(mode2 === "ai", "确定之后才接着和引擎下", mode2);
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

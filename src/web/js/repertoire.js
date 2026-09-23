@@ -125,48 +125,75 @@ function linesFrom(games) {
  * ids. The converse also holds: a new line that *extends* one in the book
  * replaces it.
  *
+ * One pass, not a pass per line (7.4 D4). 7.2 compared every incoming line
+ * against the whole book so far, so a 20000-leaf file cost 90.8 s on the main
+ * thread before the cap cut it to 400. Sorting the keys `sans + " "` puts every
+ * line that extends L after L with nothing but other extensions of L in
+ * between, so "is L a prefix of something here" is a look at its neighbour.
+ * Names are asked for last, for the survivors only.
+ *
  * @param {object[]} lines the book's current entries
  * @param {string[]} fresh normalised SAN texts
  * @param {(sans: string) => {eco: string, name: string}|null} nameOf
- * @returns {{lines: object[], added: number, dup: number, dropped: string[]}}
- *          `dropped` is every id that left the book — the cap's casualties
- *          AND the shorter lines a deeper one replaced. The caller owes each
- *          of them the same cleanup, so they come back in one list.
+ * @returns {{lines: object[], added: number, dup: number, dropped: string[], replaced: string[]}}
+ *          `replaced` are the ids of shorter lines a deeper one took over from;
+ *          `dropped` the ids the cap pushed out (and new lines it never let
+ *          in). Two lists because they are two different sentences: only the
+ *          cap is worth telling the player about (7.4 D3). The caller owes
+ *          both the same cleanup. `added` counts new lines that are in the
+ *          book at the end — not ones a later, deeper line in the same file
+ *          took over, and not ones the cap turned away.
  */
 function addLines(lines, fresh, nameOf) {
-  const out = (lines || []).slice();
-  const replaced = [];
-  let added = 0, dup = 0;
+  const old = (lines || []).slice();
+  const have = new Set(old.map((l) => l.sans));
+  const incoming = [];
+  const seen = new Set();
+  let dup = 0;
   for (const sans of fresh || []) {
     if (!sans) continue;
-    // already here, or contained in something deeper
-    if (out.some((l) => l.sans === sans || (l.sans + " ").startsWith(sans + " "))) { dup++; continue; }
-    // …or it is itself the deeper version of something here. The shorter
-    // line's id leaves the book, so it is reported in `dropped` like any
-    // other departure — whatever is hanging off that id has to go with it.
-    for (let i = out.length - 1; i >= 0; i--) {
-      if ((sans + " ").startsWith(out[i].sans + " ")) replaced.push(out.splice(i, 1)[0].id);
-    }
-    const named = (nameOf && nameOf(sans)) || null;
-    out.push({
-      // `rep-`, never `op-`: a repertoire line is very often exactly a line
-      // the built-in book also holds, and `drillId` derives its id from the
-      // ECO code and the moves — so the two would share an id, and solving
-      // one would silently mark the other solved. Derived from the moves
-      // ALONE, not from the name: the ECO code arrives later (fillNames),
-      // and an id that changed when a name turned up would take the progress
-      // hanging off it with it — the very failure drills.js is a monument to.
-      id: "rep-" + ChessDrills.hash36(sans),
-      sans,
-      eco: named ? named.eco : "",
-      name: named ? named.name : "",
-    });
-    added++;
+    if (have.has(sans) || seen.has(sans)) { dup++; continue; }
+    seen.add(sans);
+    incoming.push(sans);
   }
-  const dropped = replaced.slice();
+  // every distinct line, old and new; a line is covered when its sorted
+  // neighbour extends it
+  const keys = [...have, ...seen].map((x) => x + " ").sort();
+  const covered = new Set();
+  for (let i = 0; i + 1 < keys.length; i++) {
+    if (keys[i + 1].startsWith(keys[i])) covered.add(keys[i].slice(0, -1));
+  }
+  const out = [];
+  const replaced = [];
+  // a book line that something deeper now extends leaves the book; its id
+  // goes with it, and whatever hangs off that id has to go too
+  for (const l of old) {
+    if (covered.has(l.sans)) replaced.push(l.id);
+    else out.push(l);
+  }
+  const firstNew = out.length;
+  for (const sans of incoming) {
+    // contained in something deeper, in the book or in this same file
+    if (covered.has(sans)) { dup++; continue; }
+    // `rep-`, never `op-`: a repertoire line is very often exactly a line
+    // the built-in book also holds, and `drillId` derives its id from the
+    // ECO code and the moves — so the two would share an id, and solving
+    // one would silently mark the other solved. Derived from the moves
+    // ALONE, not from the name: the ECO code arrives later (fillNames),
+    // and an id that changed when a name turned up would take the progress
+    // hanging off it with it — the very failure drills.js is a monument to.
+    out.push({ id: "rep-" + ChessDrills.hash36(sans), sans, eco: "", name: "" });
+  }
   // oldest out first, the same rule the library uses when it fills up
-  while (out.length > MAX_LINES) dropped.push(out.shift().id);
-  return { lines: out, added, dup, dropped };
+  const cut = Math.max(0, out.length - MAX_LINES);
+  const dropped = out.slice(0, cut).map((l) => l.id);
+  const kept = out.slice(cut);
+  const added = out.length - Math.max(firstNew, cut);
+  for (let i = Math.max(0, firstNew - cut); i < kept.length; i++) {
+    const named = (nameOf && nameOf(kept[i].sans)) || null;
+    if (named) { kept[i].eco = named.eco; kept[i].name = named.name; }
+  }
+  return { lines: kept, added, dup, dropped, replaced };
 }
 
 /** The book as `opening-tree.js` rows: [eco, id, sanSequence]. */
