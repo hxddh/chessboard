@@ -279,6 +279,8 @@ import { createStore } from "./store.js";
       /** the engine failed to start — analysis and hints are not offered, and
           the review group says why in place (5.1) */
       engineDown: false,
+      /** the boot in flight, shared by everyone who asks for one (7.3.1) */
+      engineBoot: null,
       analyzing: false,
       /** set by the stop button; the analysis loop bails at the next position */
       analyzeAbort: false,
@@ -1050,6 +1052,50 @@ import { createStore } from "./store.js";
     el.append(text, copy, close);
     el.hidden = false;
   }
+  /**
+   * 7.3.1: the engine did not start. Until then a boot failure was silent:
+   * init() rejected, the worker was torn down, and the pill sat on
+   * 「引擎思考中…」 for good (v7-4-plan §1). Same banner family as the fault
+   * above, because it is the same kind of statement — a feature is gone until
+   * something changes — with a way forward added: 重试.
+   */
+  function showEngineFault(err) {
+    const detail = [
+      "engine boot failed: " + (err && (err.stack || err.message) ? String(err.stack || err.message) : String(err)),
+      "version: " + (typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "?"),
+      "WebAssembly: " + (typeof WebAssembly === "object" ? "yes" : "no"),
+      "userAgent: " + navigator.userAgent,
+      "time: " + new Date().toISOString(),
+    ].join("\n");
+    let el = document.getElementById("engine-fault");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "engine-fault";
+      el.className = "storage-fault app-fault";
+      el.setAttribute("role", "alert");
+      document.body.appendChild(el);
+    }
+    el.replaceChildren();
+    const text = document.createElement("span");
+    text.textContent = t("msg.engine.bootFailed");
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "toast-action";
+    retry.textContent = t("act.retry");
+    retry.onclick = () => retryEngine();
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "toast-action";
+    copy.textContent = t("msg.fault.copy");
+    copy.onclick = () => copyText(detail.slice(0, 4000), t("msg.fault.copied"));
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-action";
+    close.textContent = t("act.close");
+    close.onclick = () => { el.hidden = true; };
+    el.append(text, retry, copy, close);
+    el.hidden = false;
+  }
   window.addEventListener("error", (ev) => { if (ev && ev.error) showAppFault(ev.error); });
   window.addEventListener("unhandledrejection", (ev) => { showAppFault(ev && ev.reason); });
 
@@ -1352,16 +1398,67 @@ import { createStore } from "./store.js";
     if (ChessEngine) ChessEngine.cancel();
   }
 
+  /**
+   * 7.3.1: every boot the app asks for goes through here, so a failed one is
+   * said exactly once (the notice) and then stays failed: `engineDown` stops
+   * the game from booting again on every move. Only an explicit 重试 — the
+   * notice's, or the one the hint button offers — clears it. Before this the
+   * app booted three workers in a row per failure and said nothing.
+   * Resolves true / false; never rejects.
+   */
+  function bootEngine() {
+    if (!ChessEngine) return Promise.resolve(false);
+    if (store.session.engineBoot) return store.session.engineBoot;
+    const mine = store.session.engineBoot = ChessEngine.init().then(() => {
+      store.session.engineDown = false;
+      const el = document.getElementById("engine-fault");
+      if (el) el.hidden = true;
+      return true;
+    }, (err) => {
+      store.session.engineDown = true;
+      showEngineFault(err);
+      sync();
+      return false;
+    });
+    mine.then(() => { if (store.session.engineBoot === mine) store.session.engineBoot = null; });
+    return mine;
+  }
+  function retryEngine() {
+    store.session.engineDown = false;
+    const el = document.getElementById("engine-fault");
+    if (el) el.hidden = true;
+    if (store.session.mode === "ai" && !appGameOver() && game.turn() !== store.session.humanColor) maybeEngineTurn();
+    else bootEngine().then(() => sync());
+  }
+  /** Down, and still down: a worker that did come up since (a later boot
+      elsewhere) outranks the flag. */
+  function engineOut() {
+    return !!store.session.engineDown && !(ChessEngine && ChessEngine.isReady());
+  }
+  /** What a button that needs the engine says while it is down. */
+  function engineDownToast() {
+    toast(t("msg.engine.bootFailed"), "fault", { label: t("act.retry"), onClick: retryEngine });
+  }
+
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
     if (store.session.mode !== "ai" || !ChessEngine) return;
     if (appGameOver() || game.turn() === store.session.humanColor) return;
+    // a failed boot is not retried by moving: the pill says so instead
+    if (engineOut()) { sync(); return; }
     const token = ++store.game.engineToken;
     store.session.engineThinking = true;
     // one worker: a running infinite search must let go before the game move
     await stopLiveAnalysis();
     if (token !== store.game.engineToken) return;
     store.commit("session", "sync");
+    const up = ChessEngine.isReady() || await bootEngine();
+    if (token !== store.game.engineToken) return;
+    if (!up) {
+      store.session.engineThinking = false;
+      store.commit("session", "sync");
+      return;
+    }
     // clocked AI games: the engine budgets its think time from its clock
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
     const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
@@ -1414,6 +1511,7 @@ import { createStore } from "./store.js";
     if (store.session.mode === "learn" && store.session.learn) { learnHint(); return; }
     if (store.session.mode === "puzzle") { showPuzzleAnswer(); return; }
     if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
+    if (engineOut()) { engineDownToast(); return; }
     if (!isLive()) { toast(t("msg.replay.returnToLive"), "fix"); return; }
     if (appGameOver()) return;
     if (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor)) return;
@@ -5703,6 +5801,10 @@ import { createStore } from "./store.js";
     if (auto) return t(auto === "fivefold" ? "st.autoFivefold" : "st.autoSeventyfive");
     const side = g.turn() === "w" ? t("turn.white") : t("turn.black");
     const base = g.in_check() ? side + " · " + t("turn.check") : side;
+    // 7.3.1: the engine's move, and no engine — said, instead of 思考中 forever
+    if (store.session.mode === "ai" && engineOut() && g.turn() !== store.session.humanColor) {
+      return base + " · " + t("st.engineDown");
+    }
     if (claimableDrawReason()) return base + " · " + t("st.claimable");
     // The 50-move rule arrives without warning: nothing on screen changes until
     // the move it becomes claimable, so a player grinding a rook ending has no
@@ -6959,6 +7061,7 @@ import { createStore } from "./store.js";
     if (store.session.engineThinking || game.turn() !== store.session.humanColor) { toast(t("msg.draw.offerOnYourTurn"), "fix"); return; }
     if (sanHistory().length < 20) { toast(t("msg.draw.offerTooEarly"), "fix"); return; }
     if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
+    if (engineOut()) { engineDownToast(); return; }
     store.session.drawOfferPending = true;
     toast(t("msg.draw.offerSent"));
     let e = null;
@@ -8530,9 +8633,7 @@ import { createStore } from "./store.js";
   document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
   document.getElementById("an-live").onclick = () => {
     store.session.liveOn = !store.session.liveOn;
-    if (store.session.liveOn && ChessEngine && !ChessEngine.isReady()) {
-      ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
-    }
+    if (store.session.liveOn && ChessEngine && !ChessEngine.isReady()) bootEngine();
     store.commit("session", "sync");
   };
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };
@@ -9606,7 +9707,7 @@ import { createStore } from "./store.js";
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)
     requestAnimationFrame(() => setTimeout(() => {
-      ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
+      bootEngine();
       maybeEngineTurn(); // resumed save may leave the engine on move
     }, 0));
   }
