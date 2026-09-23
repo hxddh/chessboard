@@ -3686,15 +3686,9 @@ import { createStore } from "./store.js";
     // filed — see drillSourceOf for why that has to be asked every time
     const srcBtn = document.getElementById("puzzle-source");
     if (srcBtn) srcBtn.hidden = !drillSourceOf(store.session.puzzle.p);
-    // 「答案」 asks the app to draw the right move for the stage you are on.
-    // Once the puzzle is solved there is no stage left, and showPuzzleAnswer()
-    // says so itself — it returns on `done`. It just kept being drawn: press
-    // it after solving and the canvas changed by exactly 0 pixels and no toast
-    // appeared. That is the promise P3 exists to stop the interface making,
-    // and the button beside it (接实战) has been keeping it since it was
-    // written. Same treatment.
-    const answer = document.getElementById("puzzle-answer");
-    if (answer) answer.hidden = !!store.session.puzzle.done;
+    // 「答案」 lives in the chrome's hint slot only (7.4 §5 — see index.html):
+    // renderGameActions() empties that slot once the puzzle is done, the
+    // same P3 rule the panel copy used to keep here.
     // the after-solve review nudge: the queue's size is the whole message
     const nudge = document.getElementById("puzzle-review-nudge");
     if (nudge) {
@@ -4779,11 +4773,15 @@ import { createStore } from "./store.js";
     steps.forEach((step, i) => {
       const li = document.createElement("li");
       li.className = "daily-step" + (i < current ? " done" : i === current ? " current" : "");
+      // 7.4 §5: the step, then why — two lines, see .daily-step
       const what = document.createElement("span");
+      what.className = "daily-what";
       what.textContent = dailyStepLabel(step);
+      what.title = what.textContent;
       const why = document.createElement("span");
       why.className = "daily-why";
       why.textContent = t("daily.why." + step.kind);
+      why.title = why.textContent;
       li.append(what, why);
       ol.appendChild(li);
     });
@@ -6302,6 +6300,9 @@ import { createStore } from "./store.js";
       hintBtn.disabled = false;
       hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer")
         : busy ? t("chrome.thinking") : t("chrome.hint");
+      // on the puzzle page this is the only 「答案」 (the panel's copy went in
+      // 7.4), so its tooltip says what it does there, not "engine hint"
+      hintBtn.title = t(store.session.mode === "puzzle" ? "tip.puzzle.answer" : "tip.hint");
       hintBtn.classList.toggle("busy", busy);
     }
 
@@ -7980,8 +7981,10 @@ import { createStore } from "./store.js";
    * The same media query the stylesheet uses, asked of the same browser —
    * not a number copied into JS that can drift from the one in the CSS.
    * scripts/test-chess.mjs asserts the two strings are identical.
+   * 7.4 §3: every portrait window up to 820px, square included — in the
+   * near-square ones the sheet does lie over the board's lower part.
    */
-  const SHEET_QUERY = "(max-aspect-ratio: 99/100) and (max-width: 559.98px)";
+  const SHEET_QUERY = "(max-aspect-ratio: 1/1) and (max-width: 820px)";
   function panelCoversBoard() {
     return typeof window.matchMedia === "function" && window.matchMedia(SHEET_QUERY).matches;
   }
@@ -8836,7 +8839,6 @@ import { createStore } from "./store.js";
   document.getElementById("puzzle-retry").onclick = () => {
     if (store.session.puzzle) { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
   };
-  document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
   document.getElementById("puzzle-review-nudge").onclick = () =>
     document.getElementById("puzzle-smart").click();

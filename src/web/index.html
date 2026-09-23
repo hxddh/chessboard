@@ -513,7 +513,14 @@
         <p class="hint" id="puzzle-idea" hidden></p>
         <div class="lesson-controls">
           <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)" data-i18n-title="tip.puzzle.retry" data-i18n="act.puzzleRetry">重做</button>
-          <button type="button" class="tool-btn" id="puzzle-answer" data-i18n="chrome.answer" title="标出当前一步的正解 (H)" data-i18n-title="tip.puzzle.answer">答案</button>
+          <!-- 7.4 §5: no 「答案」 here. The chrome's hint slot already becomes
+               答案 on this page (same handler, same H key), and two buttons
+               for one action on one screen made the panel's row read as four
+               things to do when there are three. The chrome one is the keeper:
+               it is in the fixed slot the learn page uses for its own hint, it
+               is still there with the panel shut (the narrow-window state),
+               and its slot is held while unavailable instead of shifting its
+               neighbours (P3). -->
           <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)" data-i18n-title="tip.puzzle.next" data-i18n="act.puzzleNext">下一题</button>
           <button type="button" class="tool-btn" id="puzzle-playon" hidden title="从这个开局局面接着与引擎对弈" data-i18n-title="tip.playOn" data-i18n="act.playOn">接实战</button>
           <button type="button" class="tool-btn" id="puzzle-source" hidden title="打开这道题挖出来的那一局，停在那一手" data-i18n-title="tip.drillSource" data-i18n="act.drillSource">看那局棋</button>
