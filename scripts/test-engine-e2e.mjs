@@ -184,6 +184,102 @@ console.log("坏引擎:", JSON.stringify({ moves: broken.moves, pill: broken.pil
   workers: broken.workers, workersLater: broken.workersLater, workersRetry: broken.workersRetry, ms: broken.ms }));
 for (const e of broken.errs.slice(0, 3)) console.log("  ", e.slice(0, 300));
 
+// Codex review on #76: in 双人 mode nothing boots the engine at startup, so
+// the first boot is the lazy one a hint makes by calling ChessEngine directly
+// — around bootEngine(). Its failure has to reach the same notice and the
+// same gate, or every press of 提示 builds another worker.
+const pvp = await (async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    const W = window.Worker;
+    window.__workers = 0;
+    window.Worker = function (...a) { window.__workers++; return new W(...a); };
+    window.Worker.prototype = W.prototype;
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/broken/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  const before = await page.evaluate(() => window.__workers);
+  for (let i = 0; i < 3; i++) { await page.click("#btn-hint").catch(() => {}); await page.waitForTimeout(2500); }
+  const out = await page.evaluate(() => {
+    const n = document.getElementById("engine-fault");
+    return { workers: window.__workers, notice: n && !n.hidden && n.getBoundingClientRect().height > 0 ? n.textContent.trim() : "" };
+  });
+  await ctx.close();
+  return { before, ...out };
+})();
+console.log("坏引擎 · 双人 · 连按三次提示:", JSON.stringify(pvp));
+assert(pvp.before === 0, "双人模式启动时不启动引擎(workers " + pvp.before + ")");
+assert(!!pvp.notice && /引擎/.test(pvp.notice), "双人模式：提示按钮懒启动失败，同样出现启动失败提示");
+assert(pvp.workers === 1, "双人模式：连按三次提示只启动一次，不每按一次就起一个 worker(workers " + pvp.workers + ")");
+
+// Codex review on #77: a lesson drill whose sparring reply was the lazy boot
+// that failed. The student's move stands, it is Black to move, and only White
+// may move in a drill — so 重试 must fetch the reply, not just boot and redraw.
+// The first worker the page builds throws; the retry gets the real engine.
+const drill = await (async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    const W = window.Worker;
+    window.__workers = 0;
+    window.Worker = function (...a) {
+      if (++window.__workers === 1) throw new Error("first boot fails on purpose");
+      return new W(...a);
+    };
+    window.Worker.prototype = W.prototype;
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  // 卢塞纳：the course's first drill; 1K1k4/1P6/8/8/8/8/r7/2R5 w
+  await page.evaluate(() => {
+    const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
+    rows.find((r) => /卢塞纳/.test(r.textContent || ""))?.click();
+  });
+  await page.waitForTimeout(800);
+  const xy = (sq) => page.evaluate((q) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    const sz = r.width / 8;
+    return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * sz, y: r.top + (8 - Number(q[1]) + 0.5) * sz };
+  }, sq);
+  const a = await xy("c1"); await page.mouse.click(a.x, a.y); await page.waitForTimeout(150);
+  const b = await xy("d1"); await page.mouse.click(b.x, b.y);
+  await page.waitForTimeout(2500);
+  const occ = (sq) => page.evaluate((q) => {
+    const c = document.getElementById("board"), g = c.getContext("2d");
+    const step = c.width / 8, f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
+    const d = g.getImageData(Math.round(f * step + step * 0.2), Math.round(rk * step + step * 0.2),
+      Math.round(step * 0.6), Math.round(step * 0.6)).data;
+    let lo = 255, hi = 0;
+    for (let i = 0; i < d.length; i += 4) { const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; lo = Math.min(lo, l); hi = Math.max(hi, l); }
+    return hi - lo > 60;
+  }, sq);
+  const notice = () => page.evaluate(() => {
+    const n = document.getElementById("engine-fault");
+    return !!n && !n.hidden && n.getBoundingClientRect().height > 0;
+  });
+  const before = { d1: await occ("d1"), d8: await occ("d8"), a2: await occ("a2"), notice: await notice(), workers: await page.evaluate(() => window.__workers) };
+  await page.click('#engine-fault button:text-is("重试")', { timeout: 3000 }).catch((e) => console.log("click:", e.message.split("\n")[0]));
+  // Black is in check from d1: the reply either moves the king off d8 or
+  // interposes the a2 rook on d2 — either way one of the two squares empties
+  let replied = false;
+  for (let i = 0; i < 60 && !replied; i++) { await page.waitForTimeout(250); replied = !(await occ("d8")) || !(await occ("a2")); }
+  const after = { replied, notice: await notice(), workers: await page.evaluate(() => window.__workers) };
+  await ctx.close();
+  return { before, after };
+})();
+console.log("教学对练 · 首次懒启动失败后重试:", JSON.stringify(drill));
+assert(drill.before.d1 && drill.before.d8 && drill.before.a2 && drill.before.notice,
+  "教学对练：学生那一步留在棋盘上、轮到黑方，引擎懒启动失败给出提示");
+assert(drill.after.replied && !drill.after.notice,
+  "教学对练：按「重试」之后引擎补上黑方那一步，对练接着进行，不卡住");
+
 assert(shipped.plies >= 2, "原样页面里，人机走 1. e4，引擎应了一手(" + ENGINE + ")");
 assert(!shipped.errs.length, "…页面上没有报错");
 assert(!broken.thinking && !/思考中/.test(broken.pill) && broken.ms < 40000,

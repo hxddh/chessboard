@@ -77,10 +77,12 @@ function makeClock() {
  * cfg.deafReady   — never answers `isready`
  * cfg.goDelay     — ms (virtual) before `go movetime` answers; `stop` cuts it
  *                   short with a shallower score, exactly like Stockfish
+ * cfg.bootFail    — the first N boots fail the way a wasm that will not
+ *                   compile does (`__sf_fail__`); later ones succeed
  */
 function boot(cfg = {}) {
   const clock = makeClock();
-  const state = { injections: 0, workers: [] };
+  const state = { injections: 0, workers: [], failBoots: cfg.bootFail || 0 };
   const ctx = {
     console, Date, JSON, Math, Uint8Array, ArrayBuffer,
     setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
@@ -111,7 +113,7 @@ function boot(cfg = {}) {
       this.say("bestmove e2e4");
     }
     postMessage(m) {
-      if (m && m.type === "init") { this.say("__sf_ready__"); return; }
+      if (m && m.type === "init") { this.say(cfg.bootFail && state.failBoots-- > 0 ? "__sf_fail__ CompileError" : "__sf_ready__"); return; }
       this.cmds.push(m);
       if (m === "uci") { this.say("uciok"); return; }
       if (m === "isready") { if (!cfg.deafReady) this.say("readyok"); return; }
@@ -261,6 +263,29 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   E.setOptions({ hash: 512 });
   const same = E.analyze(FEN, 100); await clock.advance(1); await same;
   assert(gos() === 2, "setting the same value again keeps the cache");
+}
+
+// --- 7.4 (Codex review on #76): a failed boot is sticky, whoever hit it ----
+// A hint or a library pass calls analyze()/bestMove() directly and boots the
+// engine lazily, around app.js's bootEngine(). Each such call used to build a
+// fresh worker after a failure, and nothing told the app it had failed.
+{
+  const { E, clock, state } = boot({ bootFail: 1 });
+  const heard = [];
+  E.onBootFail((err) => heard.push(err && err.message));
+  let rejected = null;
+  const p = E.analyze(FEN, 100).catch((e) => { rejected = e; });
+  await clock.advance(1); await p;
+  assert(state.workers.length === 1, "a lazy boot through analyze() builds one worker", state.workers.length);
+  assert(heard.length === 1 && /CompileError/.test(heard[0]),
+    "…and its failure reaches onBootFail, with the worker's reason", JSON.stringify(heard));
+  const again = [E.analyze(FEN2, 100).catch(() => null), E.bestMove(FEN, "beginner").catch(() => null), E.init().catch(() => null)];
+  await clock.advance(1); await Promise.all(again);
+  assert(state.workers.length === 1, "after a failed boot, analyze / bestMove / init build no more workers", state.workers.length);
+  assert(heard.length === 1, "…and the failure is reported once, not per caller", heard.length);
+  E.retry();
+  const r = E.init(); await clock.advance(1); await r;
+  assert(E.isReady() && state.workers.length === 2, "retry() lets exactly one new boot through, and it can succeed");
 }
 
 if (failed) {

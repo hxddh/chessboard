@@ -1414,21 +1414,42 @@ import { createStore } from "./store.js";
       const el = document.getElementById("engine-fault");
       if (el) el.hidden = true;
       return true;
-    }, (err) => {
-      store.session.engineDown = true;
-      showEngineFault(err);
-      sync();
-      return false;
-    });
+    }, () => false); // the failure is reported once, by engineBootFailed()
     mine.then(() => { if (store.session.engineBoot === mine) store.session.engineBoot = null; });
     return mine;
   }
+  /**
+   * Whoever booted the engine — bootEngine(), or a hint / analysis / library
+   * pass that called ChessEngine directly and so booted it lazily — a failed
+   * boot lands here, once (engine.js makes it sticky until retry()).
+   */
+  function engineBootFailed(err) {
+    store.session.engineDown = true;
+    showEngineFault(err);
+    sync();
+  }
   function retryEngine() {
+    if (ChessEngine && ChessEngine.retry) ChessEngine.retry();
     store.session.engineDown = false;
     const el = document.getElementById("engine-fault");
     if (el) el.hidden = true;
     if (store.session.mode === "ai" && !appGameOver() && game.turn() !== store.session.humanColor) maybeEngineTurn();
-    else bootEngine().then(() => sync());
+    else if (learnReplyOwed()) {
+      // a lesson drill whose sparring reply was the call that failed: the
+      // student's move is on the board and only White may move, so a retry
+      // that only boots would leave the drill stuck (Codex review on #77)
+      const token = store.session.learn.token;
+      bootEngine().then((up) => {
+        if (up && learnReplyOwed() && store.session.learn.token === token) learnEngineReply();
+        else sync();
+      });
+    } else bootEngine().then(() => sync());
+  }
+  /** A lesson drill is waiting on the engine's move and nothing is fetching it. */
+  function learnReplyOwed() {
+    const l = store.session.learn;
+    return store.session.mode === "learn" && !!l && !l.done && !l.engineBusy && !l.demoing &&
+      curTask().type === "drill" && l.g.turn() !== "w" && !l.g.game_over();
   }
   /** Down, and still down: a worker that did come up since (a later boot
       elsewhere) outranks the flag. */
@@ -9725,6 +9746,9 @@ import { createStore } from "./store.js";
     toast(t("msg.profile.restored"), "fault");
     setTimeout(() => location.reload(), 1200);
   }).catch(() => {});
+  // every boot, including the lazy ones a hint or a library pass makes
+  // without going through bootEngine(), reports a failure here (7.4)
+  if (ChessEngine && ChessEngine.onBootFail) ChessEngine.onBootFail(engineBootFailed);
   if (store.session.mode === "ai" && ChessEngine) {
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)

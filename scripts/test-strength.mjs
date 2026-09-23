@@ -28,7 +28,7 @@ import vm from "vm";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import { compileModuleSync } from "./bundle.mjs";
-import { record, RECORDING } from "./measurements.mjs";
+import { record, read, RECORDING } from "./measurements.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -184,34 +184,49 @@ async function evalAfter(fen, uci) {
 }
 
 // --- measure -------------------------------------------------------------
-const ref = {};
-for (const fen of FENS) {
-  const b = await analyze(fen, 600);
-  if (b.best) ref[fen] = await evalAfter(fen, b.best);
-}
-
+// --repeat=N measures N times over and, with --record, writes the spread per
+// tier (tierAcplSpread). 7.4: the easy tier is Stockfish's own
+// UCI_LimitStrength, whose randomness is inside the engine and cannot be
+// seeded like the handicap tiers' sampling above; on one commit it measured
+// 51 / 26 / 38 locally and 81 in the release gate, against a ceiling of 80
+// that had been set from a single run. The ceiling now comes from the
+// recorded spread, the same fix 7.1.1 made for the novice score rate.
+const argRepeat = Number((process.argv.find((a) => a.startsWith("--repeat=")) || "").slice(9));
+const REPEAT = Number.isFinite(argRepeat) && argRepeat > 1 ? Math.floor(argRepeat) : 1;
 const order = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
-const stats = {};
-for (const name of order) {
-  const tier = TIERS[name];
-  if (!tier) continue;
-  const losses = [];
+const runs = Object.fromEntries(order.map((n) => [n, []]));
+let stats = {};
+for (let rep = 0; rep < REPEAT; rep++) {
+  stats = {};
+  const ref = {};
   for (const fen of FENS) {
-    if (ref[fen] == null) continue;
-    for (let k = 0; k < SAMPLES; k++) {
-      const uci = await tierMove(fen, tier);
-      if (!uci) continue;
-      const got = await evalAfter(fen, uci);
-      if (got != null) losses.push(Math.max(0, ref[fen] - got));
-    }
+    const b = await analyze(fen, 600);
+    if (b.best) ref[fen] = await evalAfter(fen, b.best);
   }
-  losses.sort((a, b) => a - b);
-  stats[name] = {
-    n: losses.length,
-    acpl: losses.length ? Math.round(losses.reduce((a, b) => a + b, 0) / losses.length) : null,
-    median: losses.length ? losses[Math.floor(losses.length / 2)] : null,
-    serious: losses.filter((l) => l >= 300).length,
-  };
+
+  for (const name of order) {
+    const tier = TIERS[name];
+    if (!tier) continue;
+    const losses = [];
+    for (const fen of FENS) {
+      if (ref[fen] == null) continue;
+      for (let k = 0; k < SAMPLES; k++) {
+        const uci = await tierMove(fen, tier);
+        if (!uci) continue;
+        const got = await evalAfter(fen, uci);
+        if (got != null) losses.push(Math.max(0, ref[fen] - got));
+      }
+    }
+    losses.sort((a, b) => a - b);
+    stats[name] = {
+      n: losses.length,
+      acpl: losses.length ? Math.round(losses.reduce((a, b) => a + b, 0) / losses.length) : null,
+      median: losses.length ? losses[Math.floor(losses.length / 2)] : null,
+      serious: losses.filter((l) => l >= 300).length,
+    };
+    if (stats[name].acpl != null) runs[name].push(stats[name].acpl);
+  }
+  if (REPEAT > 1) console.log("第 " + (rep + 1) + "/" + REPEAT + " 轮 ACPL: " + order.map((n) => n + "=" + (stats[n] ? stats[n].acpl : "-")).join(" "));
 }
 
 console.log("每档在 " + FENS.length + " 个尖锐局面各走 " + SAMPLES + " 次,按满强度评估计算失分:\n");
@@ -228,13 +243,44 @@ for (const name of order) {
 
 // --record writes docs/measured.json; README and engine.js quote it from there
 // rather than each keeping their own copy of the number. Defect 12.
-if (RECORDING) {
+// A --repeat run records only the spread: tierAcpl is the single run that
+// README and engine.js quote, and re-recording it is a separate decision.
+if (RECORDING && REPEAT === 1) {
   record('tierAcpl', {
     what: '每档在 ' + FENS.length + ' 个尖锐局面各走 ' + SAMPLES + ' 次,按满强度评估算平均失分(厘兵)',
     script: 'scripts/test-strength.mjs --record',
     positions: FENS.length,
     samplesPerPosition: SAMPLES,
     tiers: Object.fromEntries(order.filter((n) => stats[n]).map((n) => [n, stats[n]])),
+  });
+}
+// --observed=easy:81,... adds figures measured elsewhere — the release gate
+// runs on a different machine, and its numbers are part of the spread the
+// ceiling has to cover. They are kept apart (`observed`) so the record says
+// which runs this script made and which were copied in, and from where
+// (--observed-from).
+const observedArg = (process.argv.find((a) => a.startsWith("--observed=")) || "").slice(11);
+const observed = {};
+for (const pair of observedArg.split(",").filter(Boolean)) {
+  const [tier, v] = pair.split(":");
+  if (tier && Number.isFinite(Number(v))) (observed[tier] = observed[tier] || []).push(Number(v));
+}
+const observedFrom = (process.argv.find((a) => a.startsWith("--observed-from=")) || "").slice(16);
+if (RECORDING && REPEAT > 1) {
+  const spread = (name) => {
+    const xs = runs[name].concat(observed[name] || []);
+    const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) * (b - mean), 0) / xs.length);
+    const out = { runs: runs[name], mean: Math.round(mean * 10) / 10, sd: Math.round(sd * 10) / 10 };
+    if (observed[name]) out.observed = observed[name];
+    return out;
+  };
+  record('tierAcplSpread', {
+    what: '同一份代码把 tierAcpl 那套测量重复 N 次（runs），加上别处量到的（observed），每档 ACPL 的均值与总体标准差。入门档的上限取均值 +3σ',
+    script: 'scripts/test-strength.mjs --record --repeat=' + REPEAT + (observedArg ? ' --observed=' + observedArg : ''),
+    repeat: REPEAT,
+    observedFrom: observedFrom || undefined,
+    tiers: Object.fromEntries(order.filter((n) => runs[n].length).map((n) => [n, spread(n)])),
   });
 }
 
@@ -284,7 +330,13 @@ assert(cas && cas.acpl >= 25, "休闲档仍会犯错 (ACPL 实测 " + (cas && ca
 assert(cas && beg && cas.acpl < beg.acpl,
   "休闲档比新手档准 (" + (cas && cas.acpl) + " < " + (beg && beg.acpl) + ")");
 assert(ext && ext.acpl <= 30, "极限档 ACPL ≤ 30 (实测 " + (ext && ext.acpl) + ")");
-assert(easy && easy.acpl <= 80, "入门档 ACPL ≤ 80 (实测 " + (easy && easy.acpl) + ")");
+// The easy tier's ceiling is the recorded mean + 3σ, not a number picked from
+// one run (see --repeat above). A missing record is a failure, not a pass.
+const easySpread = ((read().tierAcplSpread || {}).tiers || {}).easy;
+const EASY_CEIL = easySpread ? Math.ceil(easySpread.mean + 3 * easySpread.sd) : null;
+assert(EASY_CEIL != null, "docs/measured.json 里有入门档 ACPL 的多轮记录（tierAcplSpread.easy）");
+assert(easy && EASY_CEIL != null && easy.acpl <= EASY_CEIL,
+  "入门档 ACPL ≤ " + EASY_CEIL + "（记录的均值 " + (easySpread && easySpread.mean) + " +3σ " + (easySpread && easySpread.sd) + "；实测 " + (easy && easy.acpl) + "）");
 
 if (failed) { console.error("\n" + failed + " test(s) failed"); process.exit(1); }
 console.log("\nall passed");
