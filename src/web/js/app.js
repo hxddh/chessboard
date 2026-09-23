@@ -279,7 +279,7 @@ import { createStore } from "./store.js";
       /** the engine failed to start — analysis and hints are not offered, and
           the review group says why in place (5.1) */
       engineDown: false,
-      /** the boot in flight, shared by everyone who asks for one (7.3.1) */
+      /** the boot in flight, shared by everyone who asks for one (7.4) */
       engineBoot: null,
       analyzing: false,
       /** set by the stop button; the analysis loop bails at the next position */
@@ -1053,7 +1053,7 @@ import { createStore } from "./store.js";
     el.hidden = false;
   }
   /**
-   * 7.3.1: the engine did not start. Until then a boot failure was silent:
+   * 7.4: the engine did not start. Until then a boot failure was silent:
    * init() rejected, the worker was torn down, and the pill sat on
    * 「引擎思考中…」 for good (v7-4-plan §1). Same banner family as the fault
    * above, because it is the same kind of statement — a feature is gone until
@@ -1399,7 +1399,7 @@ import { createStore } from "./store.js";
   }
 
   /**
-   * 7.3.1: every boot the app asks for goes through here, so a failed one is
+   * 7.4: every boot the app asks for goes through here, so a failed one is
    * said exactly once (the notice) and then stays failed: `engineDown` stops
    * the game from booting again on every move. Only an explicit 重试 — the
    * notice's, or the one the hint button offers — clears it. Before this the
@@ -5817,7 +5817,7 @@ import { createStore } from "./store.js";
     if (auto) return t(auto === "fivefold" ? "st.autoFivefold" : "st.autoSeventyfive");
     const side = g.turn() === "w" ? t("turn.white") : t("turn.black");
     const base = g.in_check() ? side + " · " + t("turn.check") : side;
-    // 7.3.1: the engine's move, and no engine — said, instead of 思考中 forever
+    // 7.4: the engine's move, and no engine — said, instead of 思考中 forever
     if (store.session.mode === "ai" && engineOut() && g.turn() !== store.session.humanColor) {
       return base + " · " + t("st.engineDown");
     }

@@ -15,7 +15,7 @@
  *             answers, shipped does not) from "the engine does not run in this
  *             browser at all" (neither answers).
  *   broken    the shipped page, but engine-src.js carries the real loader and
- *             a wasm that cannot compile. Until 7.3.1 this is what every
+ *             a wasm that cannot compile. Until 7.4 this is what every
  *             install looked like, and the page said nothing: the pill sat on
  *             「引擎思考中…」 while the app booted three workers in a row. Now
  *             the pill must let go, a notice must say the engine did not

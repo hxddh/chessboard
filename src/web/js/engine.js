@@ -109,7 +109,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       "      wasmBinary: new Uint8Array(msg.wasm),",
       "      listener: function (line) { postMessage(line); },",
       "    };",
-      "    // 7.3.1: a wasm that will not compile rejects this promise, and",
+      "    // 7.4: a wasm that will not compile rejects this promise, and",
       "    // nothing used to listen: the page waited out its 30 s boot timeout",
       "    // with nothing to say. The reason is now sent back as a line.",
       "    var fail = function (e) { postMessage('__sf_fail__ ' + String(e && (e.message || e))); };",
@@ -284,7 +284,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       worker.onmessage = (ev) => onLine(ev.data);
       // a worker that throws inside the wasm never sends __sf_ready__; without
       // this the init promise waited out its 30 s and the worker lingered
-      // 7.3.1: …and the rejection carries what the worker said, because the
+      // 7.4: …and the rejection carries what the worker said, because the
       // page shows it as the diagnostic text of the "engine did not start"
       // notice
       worker.onerror = (ev) => teardown("engine worker error: " + ((ev && ev.message) || "unknown"));
