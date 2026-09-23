@@ -19,14 +19,25 @@
  *   - per-id review entries (missed) keep whichever has the longer streak
  *   - counters (tally, streaks) take the larger value, never the sum — the
  *     same file imported twice must be a no-op
+ *   - the repertoire merges by repertoire.js's own rules (addLines, imported
+ *     rather than copied so the two cannot drift), and a `rep-` review entry
+ *     whose line is not in the merged book is dropped
  * @module learning
  */
+import { ChessRepertoire } from "./repertoire.js";
 
 export const LEARNING_KIND = "chessboard-learning";
 export const LEARNING_VERSION = 1;
 
-/** The keys that make up "learning data"; everything else is the game. */
-export const LEARNING_KEYS = ["learn", "puzzles", "mines", "progress", "achievements", "stats"];
+/**
+ * The keys that make up "learning data"; everything else is the game.
+ *
+ * `repertoire` belongs here too (7.4 D6). 7.2 put `rep-*` entries into
+ * `puzzles.missed` and left the book they point at out of the file, so
+ * importing on another machine brought a queue of reviews for lines that
+ * machine did not have.
+ */
+export const LEARNING_KEYS = ["learn", "puzzles", "mines", "progress", "achievements", "stats", "repertoire"];
 
 /**
  * @param {Record<string, string|null>} bag raw stored strings by key name
@@ -126,6 +137,38 @@ function mergeAchievements(cur, inc) {
   return Object.assign({}, c, { seen: [...new Set(arr(c.seen).concat(arr(i.seen)))] });
 }
 
+/**
+ * Two books into one, side by side, through the book's own merge: a line
+ * already here is kept with its id (and so its progress), a deeper line
+ * replaces the shorter one it extends, the cap holds. The incoming names
+ * ride along — addLines asks for a name only for lines it adds.
+ */
+function mergeRepertoire(cur, inc) {
+  const c = obj(cur), i = obj(inc);
+  const out = { v: 1 };
+  for (const side of ["w", "b"]) {
+    const ok = (l) => l && typeof l.id === "string" && typeof l.sans === "string" && l.sans;
+    const mine = arr(c[side]).filter(ok);
+    const theirs = arr(i[side]).filter(ok);
+    const named = new Map(theirs.map((l) => [l.sans, l]));
+    const nameOf = (sans) => {
+      const l = named.get(sans);
+      return l && l.eco ? { eco: l.eco, name: l.name || "" } : null;
+    };
+    out[side] = ChessRepertoire.addLines(mine, theirs.map((l) => l.sans), nameOf).lines;
+  }
+  return out;
+}
+
+/** Every drill id a book can serve — the `:b` suffix is the black chair's. */
+function repIds(book) {
+  const b = obj(book);
+  const ids = new Set();
+  for (const l of arr(b.w)) if (l && l.id) ids.add(l.id);
+  for (const l of arr(b.b)) if (l && l.id) ids.add(l.id + ":b");
+  return ids;
+}
+
 function mergeProgress(cur, inc) {
   // days practised is a set of day keys; streak-like counters take the max
   const c = obj(cur), i = obj(inc);
@@ -144,11 +187,25 @@ function merge(bag, doc, maxMines) {
   const parse = (raw) => { try { return raw == null ? null : JSON.parse(raw); } catch (_) { return null; } };
   const d = doc.data;
   const out = {};
-  const each = { learn: mergeLearn, puzzles: mergePuzzles, stats: mergeStats, achievements: mergeAchievements, progress: mergeProgress };
+  const each = { learn: mergeLearn, puzzles: mergePuzzles, stats: mergeStats, achievements: mergeAchievements,
+    progress: mergeProgress, repertoire: mergeRepertoire };
   for (const k of LEARNING_KEYS) {
     if (!(k in d)) continue;
     const cur = parse(bag[k]);
     out[k] = k === "mines" ? mergeMines(cur, d[k], maxMines) : each[k](cur, d[k]);
+  }
+  // A `rep-` review is owed to a line in a book. After the merge, the book is
+  // the merged one (or this machine's, when the file carried none — a 7.3
+  // export); an entry nothing in it can serve is dropped rather than counted
+  // for ever by `owedNow()`.
+  const puzzles = out.puzzles || (out.repertoire ? parse(bag.puzzles) : null);
+  if (puzzles) {
+    const ids = repIds(out.repertoire || parse(bag.repertoire));
+    const missed = {};
+    for (const [id, e] of Object.entries(obj(puzzles.missed))) {
+      if (!id.startsWith("rep-") || ids.has(id)) missed[id] = e;
+    }
+    out.puzzles = Object.assign({}, puzzles, { missed });
   }
   return out;
 }

@@ -2789,15 +2789,22 @@ import { createStore } from "./store.js";
     return Math.round(r.r) + (r.rd > 100 ? " " + tf("rec.ratingRd", [Math.round(r.rd)]) : "");
   }
   function markMissed(id) {
+    // Only a puzzle the book can still serve (7.4 D5). The one on screen can
+    // outlive its book: replacing or clearing the repertoire (or a mined
+    // drill retiring) forgets the ids, but the board keeps the drill — and a
+    // wrong move on it then wrote the id straight back into the queue, a
+    // review `owedNow()` counts for ever and nothing can hand out.
+    const p = bookNow().find((x) => x.id === id);
+    if (!p) return;
     store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
     // 6.0 (v6-plan Q3.1): the first answer to a puzzle moves both ratings
     ratePuzzleOnce(id, 0);
     // …and into the lifetime tally, which unlike the queue survives
     // graduation — it is the memory 为你出一题 reads (see picker.js)
-    const p = bookNow().find((x) => x.id === id);
-    if (p) Picker.recordAnswer(store.session.puzzleState, p.cat, true, motifKeyOf(p));
+    Picker.recordAnswer(store.session.puzzleState, p.cat, true, motifKeyOf(p));
     // …and into this week's bucket — the tally is the total, this is the change
-    if (p) { Progress.recordAnswer(store.session.progress, p.cat, true, Date.now()); saveProgress(); }
+    Progress.recordAnswer(store.session.progress, p.cat, true, Date.now());
+    saveProgress();
     savePuzzleState();
   }
   /**
@@ -3413,7 +3420,7 @@ import { createStore } from "./store.js";
    * here. This hands the drilled position to the engine with the moves
    * intact, from the White side the player just rehearsed.
    */
-  function playOnFromPuzzle() {
+  async function playOnFromPuzzle() {
     // Both opening categories: the button is drawn for both (canPlayOn reads
     // isOpeningCat), and a guard that disagreed with the button is a button
     // that does nothing — which for a line out of your OWN book is the worst
@@ -3427,10 +3434,21 @@ import { createStore } from "./store.js";
     // source-text assertion that matched the very expression that was broken:
     // the shape was right and nobody had pressed it. 7.2 replaced that check
     // with an e2e that presses it, and the e2e failed immediately.
-    const p = store.session.puzzle.p;
-    const line = store.session.puzzle.g.pgn();
+    const pz = store.session.puzzle;
+    const p = pz.p;
+    const line = pz.g.pgn();
     const name = puzzleName(p);
     if (!line.trim()) return;
+    // The game on the board is about to be replaced, so ask first — the same
+    // question 新局 asks (7.4). Until 7.2 this button never did anything, so
+    // the silent wipe of an unfinished game only became reachable then. A
+    // finished game has nothing left to lose: it is already in 战绩.
+    if (sanHistory().length && !appGameOver() &&
+        !(await confirmNative(t("dlg.newGame"), t("act.playOn"), { ok: t("act.playOn"), cancel: t("act.cancel") }))) {
+      return;
+    }
+    // the dialog is an await: the drill may have moved on under it
+    if (store.session.puzzle !== pz) return;
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
     stopPuzzles();
@@ -5192,10 +5210,10 @@ import { createStore } from "./store.js";
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
   const closeLibList = () => LibraryUI.closeLibList();
-  const deepenLibraryGame = (i) => LibraryUI.deepenLibraryGame(i);
+  const deepenLibraryGame = (id) => LibraryUI.deepenLibraryGame(id);
   const importPgnToLibrary = (text, label) => LibraryUI.importPgnToLibrary(text, label);
   const libNamesFrom = (text) => LibraryUI.libNamesFrom(text);
-  const loadFromLibrary = (i) => LibraryUI.loadFromLibrary(i);
+  const loadFromLibrary = (id) => LibraryUI.loadFromLibrary(id);
   const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
   const openDiagnosis = () => LibraryUI.openDiagnosis();
   const openLibList = (pick) => LibraryUI.openLibList(pick);
@@ -8602,9 +8620,10 @@ import { createStore } from "./store.js";
     if (listEl) {
       listEl.onclick = (ev) => {
         const deep = ev.target.closest("button[data-lib-deep]");
-        if (deep) { deepenLibraryGame(Number(deep.dataset.libDeep)); return; }
+        // rows carry the game's id, never an index (7.4 D1, library-ui.js)
+        if (deep) { deepenLibraryGame(deep.dataset.libDeep); return; }
         const b = ev.target.closest("button[data-lib]");
-        if (b) loadFromLibrary(Number(b.dataset.lib));
+        if (b) loadFromLibrary(b.dataset.lib);
       };
     }
     const clearPick = document.getElementById("lib-pick-clear");
@@ -9067,6 +9086,7 @@ import { createStore } from "./store.js";
     if (merged.puzzles) store.session.puzzleState = loadPuzzleState().state;
     if (merged.progress) store.session.progress = Progress.coerce(Persist.read("progress", (v) => v).value);
     if (merged.achievements) store.session.achSeen = loadAchSeen();
+    if (merged.repertoire) RepUI.reload();
     if (merged.stats) statsCache.v = null;
     renderStats();
     store.commit("session", "sync");
