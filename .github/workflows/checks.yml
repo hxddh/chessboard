@@ -133,6 +133,11 @@ jobs:
         run: node scripts/test-library-e2e.mjs
       - name: panel layout
         run: node scripts/test-layout-e2e.mjs
+      # The only browser check that serves the real engine-src.js — every one
+      # above stubs it. Answers "does Stockfish start in the page as shipped"
+      # on this matrix's engine (v7-4-plan §1).
+      - name: engine (real Stockfish)
+        run: node scripts/test-engine-e2e.mjs
 
   # src/main.zig and src/runner.zig, compiled and their tests run, on every
   # push — not only at release time. Until 6.0 the Zig side had no PR-time

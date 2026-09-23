@@ -83,11 +83,101 @@ const PGN = `[Event "White repertoire"]
   assert(extended.added === 1 && extended.lines.length === 1 && extended.lines[0].sans === "e4 e5 Nf3 Nc6 Bb5",
     "反过来，更深的那条替掉它 —— 书长了，不是多了一条",
     JSON.stringify(extended.lines.map((l) => l.sans)));
-  // 被替掉的那条的 id 离开了这本书，所以它要出现在 dropped 里：挂在这个 id 上
-  // 的复习债，调用方得跟着一起清掉（7.2 发布前复查提的第三条）
-  assert(extended.dropped.length === 1 && extended.dropped[0] === shallow.lines[0].id,
-    "被替掉的那条 id 报在 dropped 里 —— 否则它欠下的复习永远还不上",
-    JSON.stringify(extended.dropped));
+  // 被替掉的那条的 id 离开了这本书，所以它要报出来：挂在这个 id 上的复习债，
+  // 调用方得跟着一起清掉（7.2 发布前复查提的第三条）。7.4 D3 起它报在
+  // replaced 里、不在 dropped 里 —— dropped 是上限挤出去的，界面只为那个弹
+  // 「上限 400 条」
+  assert(extended.replaced.length === 1 && extended.replaced[0] === shallow.lines[0].id,
+    "被替掉的那条 id 报在 replaced 里 —— 否则它欠下的复习永远还不上",
+    JSON.stringify(extended.replaced));
+  assert(extended.dropped.length === 0,
+    "……而不在 dropped 里：书没满，不该弹「上限」", JSON.stringify(extended.dropped));
+}
+
+// --- 7.4 D3：同一个文件里短线在前、长线在后 ----------------------------------
+{
+  // 7.3：addLines([], ["e4 e5", "e4 e5 Nf3"]) 返回 added 2、dropped 1 —— 书里
+  // 其实只有一条线，界面却弹「上限 400 条，退出了 1 条」
+  const r = R.addLines([], ["e4 e5", "e4 e5 Nf3"], null);
+  assert(r.lines.length === 1 && r.lines[0].sans === "e4 e5 Nf3", "书里只有那条长的",
+    JSON.stringify(r.lines.map((l) => l.sans)));
+  assert(r.added === 1, "进书 1 条，不是 2 条 —— added 不多数", r.added);
+  assert(r.dropped.length === 0 && r.replaced.length === 0,
+    "没有东西被上限挤出去，也没有书里原有的线被替掉 —— 不弹「触顶」",
+    JSON.stringify([r.dropped, r.replaced]));
+  // 反过来的次序，结果一样
+  const r2 = R.addLines([], ["e4 e5 Nf3", "e4 e5"], null);
+  assert(r2.lines.length === 1 && r2.added === 1 && r2.dup === 1 && !r2.dropped.length,
+    "长线在前、短线在后：短的算已有", JSON.stringify([r2.added, r2.dup, r2.dropped]));
+  // 边界：前缀按「着」算，不按字符算 —— N 不是 Nf3 的前缀
+  const r3 = R.addLines([], ["e4 e5 N", "e4 e5 Nf3"].map((x) => x), null);
+  assert(r3.lines.length === 2, "按着法比前缀，不按字符", JSON.stringify(r3.lines.map((l) => l.sans)));
+  // 上限真的挤掉了书里的老线：这才是要说的那件事
+  const old = R.addLines([], ["a3 a6"], null).lines;
+  const many = [];
+  for (let i = 0; i < R.MAX_LINES; i++) many.push("e4 e5 Nf3 x" + i);
+  const r4 = R.addLines(old, many, null);
+  assert(r4.dropped.length === 1 && r4.dropped[0] === old[0].id && r4.added === R.MAX_LINES,
+    "书满时挤出去的是最老的那条，报在 dropped 里", JSON.stringify([r4.dropped.length, r4.added]));
+  // 新线本身就超过上限：进不来的那些不算 added
+  many.push("e4 e5 Nf3 y");
+  const r5 = R.addLines([], many, null);
+  assert(r5.added === R.MAX_LINES && r5.lines.length === R.MAX_LINES && r5.dropped.length === 1,
+    "上限挡在门外的新线不算进书", JSON.stringify([r5.added, r5.dropped.length]));
+  // 起名只起留下来的那些
+  let asked = 0;
+  R.addLines([], many, () => { asked++; return null; });
+  assert(asked === R.MAX_LINES, "名字只为留在书里的线查", asked);
+}
+
+// --- 7.4 D4：两万个叶子的书，一秒之内 --------------------------------------
+{
+  // 7.3 每进一条线都对整本书做一遍前缀比较，两万个叶子实测 90.8 秒，界面一直
+  // 冻着。这里是 20 × 20 × 50 三层、两万条线直接喂 addLines（着法串只是
+  // 字符串，合不合法不归这一步管）。门槛给得宽（2 秒），它量的是 O(n²) 回没
+  // 回来，不是机器快慢。
+  const A = ["a3", "a4", "b3", "b4", "c3", "c4", "d3", "d4", "e3", "e4",
+    "f3", "f4", "g3", "g4", "h3", "h4", "Na3", "Nc3", "Nf3", "Nh3"];
+  const B = ["a6", "a5", "b6", "b5", "c6", "c5", "d6", "d5", "e6", "e5",
+    "f6", "f5", "g6", "g5", "h6", "h5", "Na6", "Nc6", "Nf6", "Nh6"];
+  const lines = [];
+  for (const a of A) for (const b of B) {
+    for (let k = 0; k < 50; k++) lines.push([a, b, "x" + k]);
+  }
+  const t0 = Date.now();
+  const r = R.addLines([], lines.map((l) => R.normalize(l)), () => null);
+  const ms = Date.now() - t0;
+  assert(lines.length === 20000, "两万个叶子", lines.length);
+  assert(ms < 2000, "两万条线进书用了 " + ms + " ms（门槛 2000）", ms);
+  assert(r.lines.length === R.MAX_LINES && r.dropped.length === 20000 - R.MAX_LINES,
+    "……而且结果对：留下上限那么多，其余报在 dropped 里", JSON.stringify([r.lines.length, r.dropped.length]));
+  // 已经有一本满的书，再导两万条：同样快
+  const t1 = Date.now();
+  R.addLines(r.lines, lines.map((l) => R.normalize(l.concat("y"))), () => null);
+  const ms2 = Date.now() - t1;
+  assert(ms2 < 2000, "满书之上再导两万条（全是替换）用了 " + ms2 + " ms", ms2);
+}
+
+// --- 7.4 D4：pathsOf / linesFrom 在一棵两万叶子的树上 ------------------------
+{
+  // 解析器那一头不归这里管；这里造树，量的是把树摊成线这一步
+  const root = { children: [] };
+  for (let a = 0; a < 20; a++) {
+    const na = { san: "a" + a, children: [] };
+    root.children.push(na);
+    for (let b = 0; b < 20; b++) {
+      const nb = { san: "b" + b, children: [] };
+      na.children.push(nb);
+      for (let c = 0; c < 50; c++) nb.children.push({ san: "c" + c, children: [] });
+    }
+  }
+  const t0 = Date.now();
+  const read = R.linesFrom([{ root }]);
+  const r = R.addLines([], read.lines, () => null);
+  const ms = Date.now() - t0;
+  assert(read.lines.length === 20000 && r.lines.length === R.MAX_LINES,
+    "两万叶子的树读出两万条线", read.lines.length);
+  assert(ms < 2000, "从树到书用了 " + ms + " ms（门槛 2000）", ms);
 }
 
 // --- id 由着法决定，不由它排第几决定（drills.js 那条教训） ------------------
@@ -168,6 +258,65 @@ const PGN = `[Event "White repertoire"]
   assert(lines[0].split(" ").length === R.MAX_PLIES,
     `再长也只取前 ${R.MAX_PLIES} 个半着`, lines[0].split(" ").length);
   void long;
+}
+
+// --- 7.4 D2 / D3：导入那一层（repertoire-ui.js）---------------------------
+{
+  // 界面那一层要的东西，全部从一个袋子里递进去；这里递假的：没有 DOM（render
+  // 找不到节点就直接返回）、存档写进一个对象、toast 记下来
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/repertoire-ui.js")), ctx, { filename: "repertoire-ui.js" });
+  const make = () => {
+    const toasts = [];
+    const forgotten = [];
+    const store = { session: { library: [], puzzleState: { solved: {}, missed: {} } } };
+    const t = (k) => k;
+    const tf = (k, args) => k + ":" + args.join(",");
+    const ui = ctx.createRepertoireUI({
+      doc: { getElementById: () => null }, store,
+      Persist: { read: () => ({ value: null }), setJson: () => {} },
+      t, tf, toast: (m, tier) => toasts.push([m, tier || ""]),
+      confirmNative: async () => true, openPgnFile: () => {}, sync: () => {},
+      forgetDrills: (ids) => forgotten.push(...ids),
+      diagnose: () => null, startDrills: () => {},
+    });
+    return { ui, toasts, forgotten };
+  };
+
+  // D2：一份四局的文件，第三局有一着非法。7.3 整份拒掉；现在坏的那局跳过、
+  // 说出来，其余三局照常进书
+  const GOOD = (moves) => `[Event "r"]\n[Result "*"]\n\n${moves} *\n`;
+  const FILE = [
+    GOOD("1. e4 e5 2. Nf3 Nc6"),
+    GOOD("1. d4 d5 2. c4 e6"),
+    GOOD("1. e4 e5 2. Ke3 Nc6"),   // Ke3 is illegal
+    GOOD("1. c4 e5 2. Nc3 Nf6"),
+  ].join("\n");
+  // 先确认这份文件整份喂给解析器确实会抛 —— 否则这条测试什么都没测
+  let threw = false;
+  try { P.parsePgn(FILE); } catch (_) { threw = true; }
+  assert(threw, "整份一次解析，一着非法就整份抛错（7.3 的行为）");
+  const a = make();
+  a.ui.importInto("w", FILE, "file.pgn");
+  assert(a.ui.linesOf("w").length === 3, "好的三局照常进书", a.ui.linesOf("w").length);
+  assert(a.toasts.some(([m]) => m === "rep.badGames:1"), "坏的那一局数出来、说出来",
+    JSON.stringify(a.toasts));
+  assert(!a.toasts.some(([m]) => m === "msg.import.badPgn"), "不再说整份读不懂", JSON.stringify(a.toasts));
+
+  // D3：先导短线，再导把它延长了的那条 —— 书没满，不弹「上限」；可短线的 id
+  // 仍然交给 forgetDrills，它欠的复习要跟着清
+  const b = make();
+  b.ui.importInto("w", GOOD("1. e4 e5"), "");
+  const shortId = b.ui.linesOf("w")[0].id;
+  b.ui.importInto("w", GOOD("1. e4 e5 2. Nf3 Nc6"), "");
+  assert(b.ui.linesOf("w").length === 1, "书里还是一条线，只是长了");
+  assert(!b.toasts.some(([m]) => m.startsWith("rep.dropped")),
+    "被更长的线替掉不是「上限挤出去」，不弹那一句", JSON.stringify(b.toasts));
+  assert(b.forgotten.includes(shortId), "被替掉的 id 照样清掉它欠的复习", JSON.stringify(b.forgotten));
+  // 同一份文件里短线、长线各一局：进书 1 条，不是 2 条
+  const c = make();
+  c.ui.importInto("w", [GOOD("1. e4 e5"), GOOD("1. e4 e5 2. Nf3")].join("\n"), "");
+  assert(c.toasts.some(([m]) => m === "rep.added:1,1"), "进书 1 条（1 条已经在里面了）", JSON.stringify(c.toasts));
+  assert(!c.toasts.some(([m]) => m.startsWith("rep.dropped")), "……不弹「上限」", JSON.stringify(c.toasts));
 }
 
 if (failed) { console.error(`\n${failed} 项失败`); process.exit(1); }

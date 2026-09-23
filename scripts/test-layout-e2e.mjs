@@ -1813,6 +1813,23 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   assert(w < 400, "1024×700 记录页面板没有变宽 (" + w + "px)");
   await ctx.close();
 }
+// 7.4 §5：做题页不再拿这笔宽度。1400×900 放宽到 568 之后，这一栏只有题面和
+// 一排题型按钮，下半截是空的，棋盘却为它缩了。做题页回到阅读栏的 380px，
+// 棋盘与教学页一样大；记录页照旧放宽（上面那组）。
+{
+  const at = async (mode) => {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    const r = await page.evaluate(() => ({
+      side: Math.round(document.querySelector(".side").getBoundingClientRect().width),
+      board: Math.round(document.getElementById("board-wrap").getBoundingClientRect().width) }));
+    await ctx.close();
+    return r;
+  };
+  const pz = await at("puzzle"), learn = await at("learn");
+  assert(pz.side < 400, "1400×900 做题页面板是阅读栏的宽度，不是记录页那 568 (" + pz.side + "px)");
+  assert(pz.board === learn.board,
+    "……所以做题页的棋盘和教学页一样大 (" + pz.board + " / " + learn.board + ")");
+}
 
 // --- 3v. a dialog is called what it says it is ----------------------------
 // Every dialog carried its title twice — an aria-label on the box and a
@@ -2986,6 +3003,143 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
       `390×844 / ${lang}：棋盘 ${m.board}px，无溢出，无异常`);
     await ctx.close();
   }
+}
+
+// --- 5b. 真实可达的那一段：520…620 宽 × 520…960 高（7.4 §3）--------------
+//
+// 上面那组量的是 360 / 390 / 430 —— 已发布的桌面壳根本到不了（app.zon 的
+// min_width = 520）。用户够得着、而 7.3 没有测的，是 520–620 这一段，尤其是
+// 接近正方形的那些窗口。7.3.0 上实测（面板开 / 关，棋盘边长）：
+//
+//     540×543 → 210 / 465     559×562 → 229 / 484
+//     560×900 → 408 / 514     600×610 → 251 / 532
+//
+// 宽 520–559、长宽比落在 (0.99, 1) 的窗口三条媒体查询一条都不命中；宽 ≥560 的
+// 竖窗走旧抽屉，面板一开棋盘就缩。这里把整张网格走一遍，每格面板开关各量一次。
+// 一个页面、改视口尺寸、按 ☰ —— 每格开一个新页面要跑十几分钟。
+{
+  const MIN_BOARD = 260;
+  const sizes = [];
+  for (let w = 520; w <= 620; w += 10) {
+    for (let h = 520; h <= 960; h += 20) sizes.push([w, h]);
+  }
+  // 计划里点名的四个实测点，外加步长会跨过去的边：正方与差一像素
+  sizes.push([540, 543], [559, 562], [560, 900], [600, 610], [559, 560], [560, 559],
+             [620, 625], [625, 620]);
+  // 再往上到桌面尺寸：只要求 ≥260、不越界（≥821 宽的竖窗抽屉仍让出高度，
+  // 那是桌面，开合面板棋盘本来就会变）
+  const wide = [[700, 700], [700, 1000], [820, 830], [820, 640], [821, 900], [900, 1200],
+                [1000, 1000], [1024, 700], [1180, 820], [1400, 900]];
+
+  // The panel slides (transform over --dur-slow): two frames after a toggle
+  // it is still half-way in and reads as overflow. This asks where things
+  // come to rest, and the app's own reduced-motion rule makes the transform
+  // jump (inline styles are off the table: the page's CSP forbids them).
+  const ctx = await browser.newContext({ viewport: { width: 520, height: 520 }, locale: "zh-CN",
+                                         reducedMotion: "reduce" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+
+  const probe = () => page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const de = document.documentElement;
+    const app = document.getElementById("app");
+    const side = document.getElementById("side");
+    const b = document.getElementById("board").getBoundingClientRect();
+    const open = app.classList.contains("panel-open");
+    const over = [...document.querySelectorAll("body *")].filter((el) => {
+      if (!el.offsetParent) return false;
+      if (!open && (el === side || side.contains(el))) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && (r.right > de.clientWidth + 1 || r.left < -1);
+    }).map((el) => el.id || el.className);
+    const s = side.getBoundingClientRect();
+    // 底部抽屉（它的上沿在棋盘上沿之下）让出的是高度：棋盘不该被它压住
+    const sheet = open && s.top > b.top;
+    res({ open, board: Math.round(b.width), over,
+          inView: b.bottom <= de.clientHeight + 1 && b.right <= de.clientWidth + 1,
+          underSheet: sheet && b.bottom > s.top + 1 });
+  }))));
+  const setOpen = (want) => page.evaluate((w) => {
+    if (document.getElementById("app").classList.contains("panel-open") !== w)
+      document.getElementById("toggle-panel").click();
+  }, want);
+
+  const bad = { small: [], moved: [], over: [], out: [] };
+  for (const [w, h] of [...sizes, ...wide]) {
+    await page.setViewportSize({ width: w, height: h });
+    await setOpen(true);
+    const a = await probe();
+    await setOpen(false);
+    const c = await probe();
+    const tag = `${w}×${h}`;
+    if (a.board < MIN_BOARD || c.board < MIN_BOARD) bad.small.push(`${tag} ${a.board}/${c.board}`);
+    if (w <= 820 && a.board !== c.board) bad.moved.push(`${tag} ${a.board}/${c.board}`);
+    if (a.over.length || c.over.length) bad.over.push(`${tag} ${[...a.over, ...c.over].slice(0, 2).join(",")}`);
+    // A near-square window has no height to spare under a full-width board,
+    // so its sheet lies over the board's bottom while it is up (styles.css,
+    // the portrait sheet). Once the spare height reaches the sheet's minimum
+    // (240px, plus 32 of chrome) it must not: the sheet lives under the board.
+    const roomy = w > 820 || h - w >= 272;
+    if (!a.inView || !c.inView || (roomy && a.underSheet)) bad.out.push(tag);
+  }
+  const n = sizes.length + wide.length;
+  assert(bad.small.length === 0,
+    `${n} 个视口、面板开关两种状态，棋盘都 ≥ ${MIN_BOARD}px` +
+    (bad.small.length ? ` —— 开/关：${bad.small.slice(0, 12).join("；")}（共 ${bad.small.length} 个）` : ""));
+  assert(bad.moved.length === 0,
+    `宽 ≤820 的 ${sizes.length + wide.filter(([w]) => w <= 820).length} 个视口里，开合面板棋盘一样大` +
+    (bad.moved.length ? ` —— 开/关：${bad.moved.slice(0, 12).join("；")}（共 ${bad.moved.length} 个）` : ""));
+  assert(bad.over.length === 0, "没有元素越出视口" +
+    (bad.over.length ? " —— " + bad.over.slice(0, 6).join("；") : ""));
+  assert(bad.out.length === 0, "棋盘整块在视口里；有富余高度时也不压在底部抽屉下面" +
+    (bad.out.length ? " —— " + bad.out.slice(0, 12).join("；") : ""));
+  assert(errs.length === 0, "改窗口尺寸、开合面板，没有 JS 异常" + (errs.length ? " —— " + errs[0] : ""));
+  await ctx.close();
+}
+
+// --- 5c. 顶栏的东西不互相压着（7.4 §3.5）----------------------------------
+//
+// 390×844 截图里「行」徽章压在「黑」字上：顶栏中段是 `flex: 1; min-width: 0`，
+// 放不下的时候里面的字不是让出去，而是缩进邻居里。520 宽（桌面壳最窄）同样的
+// 行，换一种语言、一种状态就会碰上。这里取顶栏里每一个看得见的叶子元素，两两
+// 求交 —— 包括占位但隐形的「悔棋」槽：它下一手就会出现在那里。
+{
+  const WIDTHS = [[520, 900], [540, 545], [560, 900], [620, 700], [390, 844]];
+  const hits = [];
+  for (const lang of LANGS) {
+    for (const mode of ["ai", "pvp", "puzzle", "learn"]) {
+      const { ctx, page } = await open(lang, mode, "play", "wood", { width: 520, height: 900 }, "0");
+      for (const [w, h] of WIDTHS) {
+        await page.setViewportSize({ width: w, height: h });
+        const r = await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => {
+          const leaves = [...document.querySelectorAll(".chrome *")]
+            .filter((e) => e.offsetParent && !e.children.length && e.getBoundingClientRect().width > 0)
+            .map((e) => ({ t: (e.textContent || e.id).trim().slice(0, 8), r: e.getBoundingClientRect() }));
+          const out = [];
+          for (let i = 0; i < leaves.length; i++) {
+            for (let j = i + 1; j < leaves.length; j++) {
+              const a = leaves[i].r, b = leaves[j].r;
+              if (a.left < b.right - 0.5 && b.left < a.right - 0.5 &&
+                  a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) out.push(leaves[i].t + "/" + leaves[j].t);
+            }
+          }
+          res(out);
+        })));
+        if (r.length) hits.push(`${lang} ${mode} ${w}×${h}: ${r.join(",")}`);
+      }
+      await ctx.close();
+    }
+  }
+  assert(hits.length === 0, "顶栏里没有两个元素叠在一起（三语 × 四种模式 × 五档宽度）" +
+    (hits.length ? " —— " + hits.slice(0, 8).join("；") + `（共 ${hits.length} 处）` : ""));
 }
 
 await browser.close();

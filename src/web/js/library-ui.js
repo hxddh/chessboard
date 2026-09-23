@@ -127,6 +127,11 @@ export function createLibraryUI(d) {
     Persist.setJson("library", { v: 1, games: store.session.library, names: store.session.libNames });
   }
 
+  /** A library game by its id — what the list's rows carry (D1). */
+  function libEntryById(id) {
+    return id ? store.session.library.find((g) => g.id === id) || null : null;
+  }
+
   /** The names split out of the one text field, trimmed, empties dropped. */
   function libNamesFrom(text) {
     return String(text || "").split(/[,，;；]/).map((n) => n.trim()).filter(Boolean);
@@ -206,6 +211,16 @@ export function createLibraryUI(d) {
    * One game's offline pass. Returns the `an` record, or null if it was cut
    * short — a half-analysed game stays in the queue rather than being filed
    * as a measurement of something it did not measure.
+   *
+   * A search that comes back empty is not "no evaluation" (7.4 D7). It is a
+   * search that `invalidateEngine()` cancelled because someone moved a piece
+   * on the board, or an engine that has died. 7.3 wrote it down as a hole
+   * and filed the game anyway, at the full budget — so one click on the board
+   * could leave a ?? that 「再深一遍」 would never be offered for, and a dead
+   * engine wrote a record of nothing but holes over a good 200ms one. Now:
+   * one retry, and if that is empty too the whole game is abandoned with
+   * `run.failed` set, and nothing is written. A worse result never replaces
+   * a better one.
    */
   async function analyseLibraryGame(entry, run, budget) {
     const sans = entry.sans.split(" ").filter(Boolean);
@@ -230,7 +245,11 @@ export function createLibraryUI(d) {
       else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
       else {
         let e = null;
-        try { e = await ChessEngine.analyze(fens[i], budget, {}); } catch (_) { e = null; }
+        for (let tries = 0; tries < 2 && evalScalar(e) == null; tries++) {
+          if (run.abort) return null;
+          try { e = await ChessEngine.analyze(fens[i], budget, {}); } catch (_) { e = null; }
+        }
+        if (evalScalar(e) == null) { run.failed = true; return null; }
         scalars[i] = evalScalar(e);
         if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
       }
@@ -326,21 +345,23 @@ export function createLibraryUI(d) {
    * revise, extend — because the correction semantics are `reviseMines`'s
    * and this is the first caller on this path to need them.
    */
-  async function deepenLibraryGame(i) {
-    const entry = store.session.library[i];
+  async function deepenLibraryGame(id) {
+    const entry = libEntryById(id);
     if (!entry || !entry.an || entry.unplayable) return;
     if (store.session.libRun) { toast(t("lib.busy"), "fix"); return; }
     if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
     if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
-    await stopLiveAnalysis();
+    // the token before the first await — see runLibraryPass
     const run = { abort: false, done: 0, mined: 0, total: 1, ply: 0, plies: 0, deep: true,
       name: (entry.white || "?") + " — " + (entry.black || "?") };
     store.session.libRun = run;
     renderLibrary();
     renderLibList();
     let r = null;
-    try { r = await analyseLibraryGame(entry, run, LIB_DEEP_BUDGET); }
-    finally {
+    try {
+      await stopLiveAnalysis();
+      r = await analyseLibraryGame(entry, run, LIB_DEEP_BUDGET);
+    } finally {
       store.session.libRun = null;
       renderLibrary();
       renderLibList();
@@ -360,11 +381,14 @@ export function createLibraryUI(d) {
     if (store.session.libRun) { store.session.libRun.abort = true; return; }
     if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
     if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
-    await stopLiveAnalysis();
+    // The run token goes up BEFORE the first await. It used to go up after
+    // `stopLiveAnalysis()`, and two clicks inside that await both found
+    // `libRun` empty and started two passes over the same queue.
     const run = { abort: false, done: 0, mined: 0, total: Library.pending(store.session.library).length, ply: 0, plies: 0 };
     store.session.libRun = run;
     renderLibrary();
     try {
+      await stopLiveAnalysis();
       for (;;) {
         if (run.abort) break;
         // A pass over a few hundred games takes the better part of an hour,
@@ -387,6 +411,10 @@ export function createLibraryUI(d) {
         run.name = (next.white || "?") + " — " + (next.black || "?");
         const r = await analyseLibraryGame(next, run, LIB_BUDGET);
         if (run.abort) break;
+        // the engine gave nothing twice: stop here, file nothing. Carrying on
+        // would hand the same game back forever (it is still pending), and
+        // marking it unplayable would be a lie about the game
+        if (run.failed) break;
         if (!r) { next.unplayable = true; }
         else {
           next.an = r.an;
@@ -402,6 +430,7 @@ export function createLibraryUI(d) {
       store.session.libRun = null;
       saveLibrary();
       renderLibrary();
+      if (run.failed) toast(t("lib.passCut"), "fix");
       if (done && mined) toast(tf("lib.minedDone", [done, mined]));
       if (done && !store.ui.appForeground) {
         Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
@@ -620,13 +649,13 @@ export function createLibraryUI(d) {
     return bits.join(" · ");
   }
 
-  function libraryRow(g, i) {
+  function libraryRow(g) {
     const row = doc.createElement("div");
     row.className = "hist-row";
     const load = doc.createElement("button");
     load.type = "button";
     load.className = "pick-item";
-    load.dataset.lib = String(i);
+    load.dataset.lib = g.id;
     load.textContent = libraryLabel(g);
     const sub = doc.createElement("span");
     sub.className = "pick-sub";
@@ -640,7 +669,7 @@ export function createLibraryUI(d) {
       const deep = doc.createElement("button");
       deep.type = "button";
       deep.className = "row-act";
-      deep.dataset.libDeep = String(i);
+      deep.dataset.libDeep = g.id;
       deep.textContent = t("lib.deepen");
       deep.title = t("tip.libDeepen");
       row.appendChild(deep);
@@ -656,16 +685,21 @@ export function createLibraryUI(d) {
   /**
    * The list dialog.
    *
-   * Rows carry their index into `store.session.library`, never into the
-   * filtered array — the history list learned that the hard way: re-indexing
-   * a filtered list makes "open this game" open a different one whenever a
-   * filter is on.
+   * Rows carry the game's id — not its index into the filtered array (the
+   * history list learned that the hard way: re-indexing a filtered list makes
+   * "open this game" open a different one whenever a filter is on), and not
+   * its index into `store.session.library` either (7.4 D1). `addGames` re-sorts
+   * the library newest first on every import, so every index moves, while
+   * `reconcile` keeps a row whose signature has not changed — and the index
+   * is not in the signature. An old row then pointed at whichever game had
+   * moved into its slot: 「打开」 opened another game, and 「再深一遍」
+   * rewrote another game's analysis and drills. An id does not move.
    */
   function renderLibList() {
     const list = doc.getElementById("lib-list");
     if (!list) return;
     const all = store.session.library;
-    const rows = all.map((g, i) => ({ g, i })).filter(({ g }) => libMatches(g));
+    const rows = all.filter((g) => libMatches(g)).map((g) => ({ g }));
     if (store.ui.libFilter.sort === "acc") {
       // worst first: this list exists to find the games worth reopening, and
       // an unanalysed game has no accuracy to rank, so it goes last
@@ -678,11 +712,12 @@ export function createLibraryUI(d) {
       rows.sort((a, b) => (b.g.t || 0) - (a.g.t || 0));
     }
     reconcile(list, rows,
-      ({ g, i }) => g.id || ("i" + i),
+      ({ g }) => g.id,
       // the budget is in the signature: without it a game that just got
-      // deepened would keep the 「再深一遍」 button it no longer needs
-      ({ g }) => [g.outcome, g.side, g.eco, g.an ? "a" + (g.an.budget || 0) : "-", g.unplayable ? "u" : "-"].join("|"),
-      ({ g, i }) => libraryRow(g, i));
+      // deepened would keep the 「再深一遍」 button it no longer needs — and so
+      // is the language, or the rows keep the old one's words after a switch
+      ({ g }) => [store.ui.langId, g.outcome, g.side, g.eco, g.an ? "a" + (g.an.budget || 0) : "-", g.unplayable ? "u" : "-"].join("|"),
+      ({ g }) => libraryRow(g));
     if (!rows.length) {
       const p = doc.createElement("p");
       p.className = "hint";
@@ -734,8 +769,8 @@ export function createLibraryUI(d) {
    * `a && a.pvs ? … : null`, so their absence means "no engine line to
    * expand", not a broken page. **No search is started.**
    */
-  async function loadFromLibrary(i) {
-    const entry = store.session.library[i];
+  async function loadFromLibrary(id) {
+    const entry = libEntryById(id);
     if (!entry) return;
     if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
     closeLibList();

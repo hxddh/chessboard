@@ -82,12 +82,23 @@ export function createRepertoireUI(d) {
    * Every root-to-leaf path becomes a line, including the variations —
    * unlike the library's importer, which keeps the mainline only. See
    * repertoire.js for why the two opposite rules are the same rule.
+   *
+   * Game by game, the way the library's importer reads a file (7.4 D2). 7.2
+   * handed the whole text to one `parsePgn`, so a single illegal move in the
+   * fortieth game of a file threw the other thirty-nine away with it.
    */
   function importInto(side, text, label) {
     const text0 = (text || "").trim();
     if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
-    let games = [];
-    try { games = ChessPgnParser.parsePgn(text0).games; } catch (_) { games = []; }
+    let chunks;
+    try { chunks = ChessPgnParser.splitGames(text0); } catch (_) { chunks = [text0]; }
+    const games = [];
+    let bad = 0;
+    for (const chunk of chunks) {
+      let g = null;
+      try { g = ChessPgnParser.parsePgn(chunk).games[0] || null; } catch (_) { g = null; }
+      if (g) games.push(g); else bad++;
+    }
     const read = Rep.linesFrom(games);
     // a file that held nothing but set-up positions is not a broken file —
     // it is the wrong kind of file, and saying which is the whole difference
@@ -97,14 +108,18 @@ export function createRepertoireUI(d) {
     store.session.repertoire[side === "b" ? "b" : "w"] = r.lines;
     // the ids that left — the cap's casualties and the shorter lines a deeper
     // one replaced — take their solved/missed entries with them
-    if (r.dropped.length) forgetDrills(r.dropped);
+    const gone = r.dropped.concat(r.replaced);
+    if (gone.length) forgetDrills(gone);
     saveBook();
     render();
     sync();
     if (!r.added) toast(tf("rep.addedNone", [r.dup]), "fix");
     else toast(tf("rep.added", [r.added, r.dup]) + (label ? " · " + label : ""));
+    // only the cap is news: a short line a deeper one grew out of did not
+    // leave the book, it got longer (7.4 D3)
     if (r.dropped.length) toast(tf("rep.dropped", [Rep.MAX_LINES, r.dropped.length]), "fix");
     if (read.skipped) toast(tf("rep.skippedSetUp", [read.skipped]), "fix");
+    if (bad) toast(tf("rep.badGames", [bad]), "fix");
   }
 
   async function clearBook() {
@@ -264,5 +279,11 @@ export function createRepertoireUI(d) {
     if (clear) clear.onclick = () => { clearBook(); };
   }
 
-  return { render, wire, drills, allDrills, treeFor, total, gapRows, importInto, linesOf };
+  /** Re-read the book from storage — after a learning file brought one in. */
+  function reload() {
+    store.session.repertoire = loadBook();
+    render();
+  }
+
+  return { render, wire, drills, allDrills, treeFor, total, gapRows, importInto, linesOf, reload };
 }

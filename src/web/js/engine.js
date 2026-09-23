@@ -109,12 +109,17 @@ const global = typeof window !== "undefined" ? window : globalThis;
       "      wasmBinary: new Uint8Array(msg.wasm),",
       "      listener: function (line) { postMessage(line); },",
       "    };",
-      "    var p = __F.length >= 1 ? __F(eng) : __F()(eng);",
+      "    // 7.4: a wasm that will not compile rejects this promise, and",
+      "    // nothing used to listen: the page waited out its 30 s boot timeout",
+      "    // with nothing to say. The reason is now sent back as a line.",
+      "    var fail = function (e) { postMessage('__sf_fail__ ' + String(e && (e.message || e))); };",
+      "    var p;",
+      "    try { p = __F.length >= 1 ? __F(eng) : __F()(eng); } catch (e) { fail(e); return; }",
       "    p.then(function ready() {",
       "      if (eng._isReady && !eng._isReady()) { return setTimeout(ready, 10); }",
       "      __engine = eng;",
       "      postMessage('__sf_ready__');",
-      "    });",
+      "    }, fail);",
       "    return;",
       "  }",
       "  if (typeof msg === 'string' && __engine) {",
@@ -171,7 +176,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   function onProgress(kind) {
     if (kind === strikeKind) { strikes = 0; strikeKind = null; }
   }
-  function teardown() {
+  function teardown(reason) {
     booted = false;
     if (worker) { try { worker.terminate(); } catch (_) { /* already gone */ } }
     worker = null;
@@ -187,7 +192,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     pending.clear();
     for (const w of orphans) {
       clearTimeout(w.timer);
-      w.reject(new Error("engine torn down"));
+      w.reject(new Error(reason || "engine torn down"));
     }
   }
 
@@ -279,14 +284,19 @@ const global = typeof window !== "undefined" ? window : globalThis;
       worker.onmessage = (ev) => onLine(ev.data);
       // a worker that throws inside the wasm never sends __sf_ready__; without
       // this the init promise waited out its 30 s and the worker lingered
-      worker.onerror = () => teardown();
-      const readyWait = waitFor((l) => l === "__sf_ready__", 30000, "boot");
+      // 7.4: …and the rejection carries what the worker said, because the
+      // page shows it as the diagnostic text of the "engine did not start"
+      // notice
+      worker.onerror = (ev) => teardown("engine worker error: " + ((ev && ev.message) || "unknown"));
+      const readyWait = waitFor((l) => l === "__sf_ready__" ||
+        (typeof l === "string" && l.startsWith("__sf_fail__")), 30000, "boot");
       // the buffer is transferred, not copied: the worker is its only reader.
       // A rebuilt worker (teardown after a hang) needs the bytes again, so a
       // copy is handed over and the decoded original stays here.
       const payload = wasmBytes.slice(0);
       worker.postMessage({ type: "init", wasm: payload }, [payload]);
-      await readyWait;
+      const said = await readyWait;
+      if (said !== "__sf_ready__") throw new Error("engine boot failed: " + said.slice(12).trim());
       const uciWait = waitFor((l) => l === "uciok", 10000, "boot");
       send("uci");
       await uciWait;

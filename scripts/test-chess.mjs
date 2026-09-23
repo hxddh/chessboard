@@ -3349,6 +3349,64 @@ for (const lang of CONTENT_LANGS) {
     const m2 = L.merge(bag2, other, 50);
     assert(JSON.stringify(m2) === JSON.stringify(m1), "importing the same file again is a no-op");
   }
+  // --- 7.4 D6: the repertoire travels with the reviews it is owed ----------
+  {
+    const L = ctx.ChessLearning;
+    assert(L.LEARNING_KEYS.includes("repertoire"), "the repertoire is learning data — it goes in the file");
+    // a line's id is repertoire.js's to mint (from the moves), so the test
+    // asks it rather than inventing strings the merge would not reproduce
+    loadModule(ctx, "src/web/js/repertoire.js");
+    const repId = (sans) => ctx.ChessRepertoire.addLines([], [sans], null).lines[0].id;
+    const A = repId("e4 e5 Nf3"), B = repId("d4 Nf6 c4"), SHORT = repId("e4 e5");
+    // machine A: a book with one white and one black line, a review owed to
+    // each, and one owed to a line A dropped long ago
+    const book = { v: 1,
+      w: [{ id: A, sans: "e4 e5 Nf3", eco: "C40", name: "王翼马" }],
+      b: [{ id: B, sans: "d4 Nf6 c4", eco: "", name: "" }] };
+    const bagA = {
+      puzzles: JSON.stringify({ v: 1, idv: 2, solved: {}, tally: {},
+        missed: { [A]: { streak: 1 }, [B + ":b"]: { streak: 0 }, "rep-gone": { streak: 0 }, "m1-3": { streak: 0 } } }),
+      repertoire: JSON.stringify(book),
+    };
+    const doc = L.pack(bagA, 7);
+    assert(doc.data.repertoire && doc.data.repertoire.w.length === 1,
+      "pack carries the book, not just the reviews that point into it");
+    // machine B has no book at all: after the import the book is there and
+    // every review it can serve came with it — the orphan did not
+    const mB = L.merge({ puzzles: null, repertoire: null }, doc, 50);
+    assert(mB.repertoire && mB.repertoire.w[0].id === A && mB.repertoire.b[0].id === B,
+      "the book arrives with its ids — the progress hanging off them still resolves",
+      JSON.stringify(mB.repertoire));
+    assert(mB.repertoire.w[0].eco === "C40", "…and its names", JSON.stringify(mB.repertoire.w[0]));
+    const missedB = Object.keys(mB.puzzles.missed).sort();
+    assert(JSON.stringify(missedB) === JSON.stringify(["m1-3", A, B + ":b"].sort()),
+      "a rep- review whose line is not in the merged book is dropped; the rest stay (the :b chair included)",
+      JSON.stringify(missedB));
+    // a 7.3 file: reviews but no book. Merged onto a machine with no book,
+    // the rep- reviews have nothing to be served from and do not come in
+    const old = { kind: doc.kind, v: 1, exportedAt: 1, data: { puzzles: JSON.parse(bagA.puzzles) } };
+    const mOld = L.merge({ puzzles: null, repertoire: null }, old, 50);
+    assert(Object.keys(mOld.puzzles.missed).join() === "m1-3",
+      "a file without a book brings no rep- reviews onto a machine without one",
+      JSON.stringify(Object.keys(mOld.puzzles.missed)));
+    // …and onto a machine that HAS the book, they are kept
+    const mOld2 = L.merge({ puzzles: null, repertoire: JSON.stringify(book) }, old, 50);
+    assert(A in mOld2.puzzles.missed && !("rep-gone" in mOld2.puzzles.missed),
+      "onto a machine that has the book, the reviews it can serve are kept");
+    // the two books merge by the book's own rules: a deeper line replaces the
+    // shorter one, and the review owed to the shorter id goes with it
+    const bagC = {
+      puzzles: JSON.stringify({ v: 1, solved: {}, tally: {}, missed: { [SHORT]: { streak: 0 } } }),
+      repertoire: JSON.stringify({ v: 1, w: [{ id: SHORT, sans: "e4 e5", eco: "", name: "" }], b: [] }),
+    };
+    const mC = L.merge(bagC, doc, 50);
+    assert(mC.repertoire.w.length === 1 && mC.repertoire.w[0].sans === "e4 e5 Nf3",
+      "a deeper incoming line replaces the shorter local one", JSON.stringify(mC.repertoire.w));
+    assert(!(SHORT in mC.puzzles.missed), "…and the review owed to the replaced line goes too");
+    const bagC2 = {}; for (const k of Object.keys(mC)) bagC2[k] = JSON.stringify(mC[k]);
+    assert(JSON.stringify(L.merge(bagC2, doc, 50)) === JSON.stringify(mC),
+      "importing the same file again is still a no-op with a book in it");
+  }
 
   // --- the wiring ---------------------------------------------------------
   const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");

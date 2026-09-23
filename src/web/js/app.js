@@ -279,6 +279,8 @@ import { createStore } from "./store.js";
       /** the engine failed to start — analysis and hints are not offered, and
           the review group says why in place (5.1) */
       engineDown: false,
+      /** the boot in flight, shared by everyone who asks for one (7.4) */
+      engineBoot: null,
       analyzing: false,
       /** set by the stop button; the analysis loop bails at the next position */
       analyzeAbort: false,
@@ -1050,6 +1052,50 @@ import { createStore } from "./store.js";
     el.append(text, copy, close);
     el.hidden = false;
   }
+  /**
+   * 7.4: the engine did not start. Until then a boot failure was silent:
+   * init() rejected, the worker was torn down, and the pill sat on
+   * 「引擎思考中…」 for good (v7-4-plan §1). Same banner family as the fault
+   * above, because it is the same kind of statement — a feature is gone until
+   * something changes — with a way forward added: 重试.
+   */
+  function showEngineFault(err) {
+    const detail = [
+      "engine boot failed: " + (err && (err.stack || err.message) ? String(err.stack || err.message) : String(err)),
+      "version: " + (typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "?"),
+      "WebAssembly: " + (typeof WebAssembly === "object" ? "yes" : "no"),
+      "userAgent: " + navigator.userAgent,
+      "time: " + new Date().toISOString(),
+    ].join("\n");
+    let el = document.getElementById("engine-fault");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "engine-fault";
+      el.className = "storage-fault app-fault";
+      el.setAttribute("role", "alert");
+      document.body.appendChild(el);
+    }
+    el.replaceChildren();
+    const text = document.createElement("span");
+    text.textContent = t("msg.engine.bootFailed");
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "toast-action";
+    retry.textContent = t("act.retry");
+    retry.onclick = () => retryEngine();
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "toast-action";
+    copy.textContent = t("msg.fault.copy");
+    copy.onclick = () => copyText(detail.slice(0, 4000), t("msg.fault.copied"));
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-action";
+    close.textContent = t("act.close");
+    close.onclick = () => { el.hidden = true; };
+    el.append(text, retry, copy, close);
+    el.hidden = false;
+  }
   window.addEventListener("error", (ev) => { if (ev && ev.error) showAppFault(ev.error); });
   window.addEventListener("unhandledrejection", (ev) => { showAppFault(ev && ev.reason); });
 
@@ -1352,16 +1398,67 @@ import { createStore } from "./store.js";
     if (ChessEngine) ChessEngine.cancel();
   }
 
+  /**
+   * 7.4: every boot the app asks for goes through here, so a failed one is
+   * said exactly once (the notice) and then stays failed: `engineDown` stops
+   * the game from booting again on every move. Only an explicit 重试 — the
+   * notice's, or the one the hint button offers — clears it. Before this the
+   * app booted three workers in a row per failure and said nothing.
+   * Resolves true / false; never rejects.
+   */
+  function bootEngine() {
+    if (!ChessEngine) return Promise.resolve(false);
+    if (store.session.engineBoot) return store.session.engineBoot;
+    const mine = store.session.engineBoot = ChessEngine.init().then(() => {
+      store.session.engineDown = false;
+      const el = document.getElementById("engine-fault");
+      if (el) el.hidden = true;
+      return true;
+    }, (err) => {
+      store.session.engineDown = true;
+      showEngineFault(err);
+      sync();
+      return false;
+    });
+    mine.then(() => { if (store.session.engineBoot === mine) store.session.engineBoot = null; });
+    return mine;
+  }
+  function retryEngine() {
+    store.session.engineDown = false;
+    const el = document.getElementById("engine-fault");
+    if (el) el.hidden = true;
+    if (store.session.mode === "ai" && !appGameOver() && game.turn() !== store.session.humanColor) maybeEngineTurn();
+    else bootEngine().then(() => sync());
+  }
+  /** Down, and still down: a worker that did come up since (a later boot
+      elsewhere) outranks the flag. */
+  function engineOut() {
+    return !!store.session.engineDown && !(ChessEngine && ChessEngine.isReady());
+  }
+  /** What a button that needs the engine says while it is down. */
+  function engineDownToast() {
+    toast(t("msg.engine.bootFailed"), "fault", { label: t("act.retry"), onClick: retryEngine });
+  }
+
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
     if (store.session.mode !== "ai" || !ChessEngine) return;
     if (appGameOver() || game.turn() === store.session.humanColor) return;
+    // a failed boot is not retried by moving: the pill says so instead
+    if (engineOut()) { sync(); return; }
     const token = ++store.game.engineToken;
     store.session.engineThinking = true;
     // one worker: a running infinite search must let go before the game move
     await stopLiveAnalysis();
     if (token !== store.game.engineToken) return;
     store.commit("session", "sync");
+    const up = ChessEngine.isReady() || await bootEngine();
+    if (token !== store.game.engineToken) return;
+    if (!up) {
+      store.session.engineThinking = false;
+      store.commit("session", "sync");
+      return;
+    }
     // clocked AI games: the engine budgets its think time from its clock
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
     const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
@@ -1414,6 +1511,7 @@ import { createStore } from "./store.js";
     if (store.session.mode === "learn" && store.session.learn) { learnHint(); return; }
     if (store.session.mode === "puzzle") { showPuzzleAnswer(); return; }
     if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
+    if (engineOut()) { engineDownToast(); return; }
     if (!isLive()) { toast(t("msg.replay.returnToLive"), "fix"); return; }
     if (appGameOver()) return;
     if (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor)) return;
@@ -2789,15 +2887,22 @@ import { createStore } from "./store.js";
     return Math.round(r.r) + (r.rd > 100 ? " " + tf("rec.ratingRd", [Math.round(r.rd)]) : "");
   }
   function markMissed(id) {
+    // Only a puzzle the book can still serve (7.4 D5). The one on screen can
+    // outlive its book: replacing or clearing the repertoire (or a mined
+    // drill retiring) forgets the ids, but the board keeps the drill — and a
+    // wrong move on it then wrote the id straight back into the queue, a
+    // review `owedNow()` counts for ever and nothing can hand out.
+    const p = bookNow().find((x) => x.id === id);
+    if (!p) return;
     store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
     // 6.0 (v6-plan Q3.1): the first answer to a puzzle moves both ratings
     ratePuzzleOnce(id, 0);
     // …and into the lifetime tally, which unlike the queue survives
     // graduation — it is the memory 为你出一题 reads (see picker.js)
-    const p = bookNow().find((x) => x.id === id);
-    if (p) Picker.recordAnswer(store.session.puzzleState, p.cat, true, motifKeyOf(p));
+    Picker.recordAnswer(store.session.puzzleState, p.cat, true, motifKeyOf(p));
     // …and into this week's bucket — the tally is the total, this is the change
-    if (p) { Progress.recordAnswer(store.session.progress, p.cat, true, Date.now()); saveProgress(); }
+    Progress.recordAnswer(store.session.progress, p.cat, true, Date.now());
+    saveProgress();
     savePuzzleState();
   }
   /**
@@ -3413,7 +3518,7 @@ import { createStore } from "./store.js";
    * here. This hands the drilled position to the engine with the moves
    * intact, from the White side the player just rehearsed.
    */
-  function playOnFromPuzzle() {
+  async function playOnFromPuzzle() {
     // Both opening categories: the button is drawn for both (canPlayOn reads
     // isOpeningCat), and a guard that disagreed with the button is a button
     // that does nothing — which for a line out of your OWN book is the worst
@@ -3427,10 +3532,21 @@ import { createStore } from "./store.js";
     // source-text assertion that matched the very expression that was broken:
     // the shape was right and nobody had pressed it. 7.2 replaced that check
     // with an e2e that presses it, and the e2e failed immediately.
-    const p = store.session.puzzle.p;
-    const line = store.session.puzzle.g.pgn();
+    const pz = store.session.puzzle;
+    const p = pz.p;
+    const line = pz.g.pgn();
     const name = puzzleName(p);
     if (!line.trim()) return;
+    // The game on the board is about to be replaced, so ask first — the same
+    // question 新局 asks (7.4). Until 7.2 this button never did anything, so
+    // the silent wipe of an unfinished game only became reachable then. A
+    // finished game has nothing left to lose: it is already in 战绩.
+    if (sanHistory().length && !appGameOver() &&
+        !(await confirmNative(t("dlg.newGame"), t("act.playOn"), { ok: t("act.playOn"), cancel: t("act.cancel") }))) {
+      return;
+    }
+    // the dialog is an await: the drill may have moved on under it
+    if (store.session.puzzle !== pz) return;
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
     stopPuzzles();
@@ -3686,15 +3802,9 @@ import { createStore } from "./store.js";
     // filed — see drillSourceOf for why that has to be asked every time
     const srcBtn = document.getElementById("puzzle-source");
     if (srcBtn) srcBtn.hidden = !drillSourceOf(store.session.puzzle.p);
-    // 「答案」 asks the app to draw the right move for the stage you are on.
-    // Once the puzzle is solved there is no stage left, and showPuzzleAnswer()
-    // says so itself — it returns on `done`. It just kept being drawn: press
-    // it after solving and the canvas changed by exactly 0 pixels and no toast
-    // appeared. That is the promise P3 exists to stop the interface making,
-    // and the button beside it (接实战) has been keeping it since it was
-    // written. Same treatment.
-    const answer = document.getElementById("puzzle-answer");
-    if (answer) answer.hidden = !!store.session.puzzle.done;
+    // 「答案」 lives in the chrome's hint slot only (7.4 §5 — see index.html):
+    // renderGameActions() empties that slot once the puzzle is done, the
+    // same P3 rule the panel copy used to keep here.
     // the after-solve review nudge: the queue's size is the whole message
     const nudge = document.getElementById("puzzle-review-nudge");
     if (nudge) {
@@ -4779,11 +4889,15 @@ import { createStore } from "./store.js";
     steps.forEach((step, i) => {
       const li = document.createElement("li");
       li.className = "daily-step" + (i < current ? " done" : i === current ? " current" : "");
+      // 7.4 §5: the step, then why — two lines, see .daily-step
       const what = document.createElement("span");
+      what.className = "daily-what";
       what.textContent = dailyStepLabel(step);
+      what.title = what.textContent;
       const why = document.createElement("span");
       why.className = "daily-why";
       why.textContent = t("daily.why." + step.kind);
+      why.title = why.textContent;
       li.append(what, why);
       ol.appendChild(li);
     });
@@ -5192,10 +5306,10 @@ import { createStore } from "./store.js";
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
   const closeLibList = () => LibraryUI.closeLibList();
-  const deepenLibraryGame = (i) => LibraryUI.deepenLibraryGame(i);
+  const deepenLibraryGame = (id) => LibraryUI.deepenLibraryGame(id);
   const importPgnToLibrary = (text, label) => LibraryUI.importPgnToLibrary(text, label);
   const libNamesFrom = (text) => LibraryUI.libNamesFrom(text);
-  const loadFromLibrary = (i) => LibraryUI.loadFromLibrary(i);
+  const loadFromLibrary = (id) => LibraryUI.loadFromLibrary(id);
   const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
   const openDiagnosis = () => LibraryUI.openDiagnosis();
   const openLibList = (pick) => LibraryUI.openLibList(pick);
@@ -5703,6 +5817,10 @@ import { createStore } from "./store.js";
     if (auto) return t(auto === "fivefold" ? "st.autoFivefold" : "st.autoSeventyfive");
     const side = g.turn() === "w" ? t("turn.white") : t("turn.black");
     const base = g.in_check() ? side + " · " + t("turn.check") : side;
+    // 7.4: the engine's move, and no engine — said, instead of 思考中 forever
+    if (store.session.mode === "ai" && engineOut() && g.turn() !== store.session.humanColor) {
+      return base + " · " + t("st.engineDown");
+    }
     if (claimableDrawReason()) return base + " · " + t("st.claimable");
     // The 50-move rule arrives without warning: nothing on screen changes until
     // the move it becomes claimable, so a player grinding a rook ending has no
@@ -6302,6 +6420,9 @@ import { createStore } from "./store.js";
       hintBtn.disabled = false;
       hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer")
         : busy ? t("chrome.thinking") : t("chrome.hint");
+      // on the puzzle page this is the only 「答案」 (the panel's copy went in
+      // 7.4), so its tooltip says what it does there, not "engine hint"
+      hintBtn.title = t(store.session.mode === "puzzle" ? "tip.puzzle.answer" : "tip.hint");
       hintBtn.classList.toggle("busy", busy);
     }
 
@@ -6959,6 +7080,7 @@ import { createStore } from "./store.js";
     if (store.session.engineThinking || game.turn() !== store.session.humanColor) { toast(t("msg.draw.offerOnYourTurn"), "fix"); return; }
     if (sanHistory().length < 20) { toast(t("msg.draw.offerTooEarly"), "fix"); return; }
     if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
+    if (engineOut()) { engineDownToast(); return; }
     store.session.drawOfferPending = true;
     toast(t("msg.draw.offerSent"));
     let e = null;
@@ -7980,8 +8102,10 @@ import { createStore } from "./store.js";
    * The same media query the stylesheet uses, asked of the same browser —
    * not a number copied into JS that can drift from the one in the CSS.
    * scripts/test-chess.mjs asserts the two strings are identical.
+   * 7.4 §3: every portrait window up to 820px, square included — in the
+   * near-square ones the sheet does lie over the board's lower part.
    */
-  const SHEET_QUERY = "(max-aspect-ratio: 99/100) and (max-width: 559.98px)";
+  const SHEET_QUERY = "(max-aspect-ratio: 1/1) and (max-width: 820px)";
   function panelCoversBoard() {
     return typeof window.matchMedia === "function" && window.matchMedia(SHEET_QUERY).matches;
   }
@@ -8530,9 +8654,7 @@ import { createStore } from "./store.js";
   document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
   document.getElementById("an-live").onclick = () => {
     store.session.liveOn = !store.session.liveOn;
-    if (store.session.liveOn && ChessEngine && !ChessEngine.isReady()) {
-      ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
-    }
+    if (store.session.liveOn && ChessEngine && !ChessEngine.isReady()) bootEngine();
     store.commit("session", "sync");
   };
   document.getElementById("retry-here").onclick = () => { retryFromHere(); };
@@ -8602,9 +8724,10 @@ import { createStore } from "./store.js";
     if (listEl) {
       listEl.onclick = (ev) => {
         const deep = ev.target.closest("button[data-lib-deep]");
-        if (deep) { deepenLibraryGame(Number(deep.dataset.libDeep)); return; }
+        // rows carry the game's id, never an index (7.4 D1, library-ui.js)
+        if (deep) { deepenLibraryGame(deep.dataset.libDeep); return; }
         const b = ev.target.closest("button[data-lib]");
-        if (b) loadFromLibrary(Number(b.dataset.lib));
+        if (b) loadFromLibrary(b.dataset.lib);
       };
     }
     const clearPick = document.getElementById("lib-pick-clear");
@@ -8836,7 +8959,6 @@ import { createStore } from "./store.js";
   document.getElementById("puzzle-retry").onclick = () => {
     if (store.session.puzzle) { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
   };
-  document.getElementById("puzzle-answer").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
   document.getElementById("puzzle-review-nudge").onclick = () =>
     document.getElementById("puzzle-smart").click();
@@ -9067,6 +9189,7 @@ import { createStore } from "./store.js";
     if (merged.puzzles) store.session.puzzleState = loadPuzzleState().state;
     if (merged.progress) store.session.progress = Progress.coerce(Persist.read("progress", (v) => v).value);
     if (merged.achievements) store.session.achSeen = loadAchSeen();
+    if (merged.repertoire) RepUI.reload();
     if (merged.stats) statsCache.v = null;
     renderStats();
     store.commit("session", "sync");
@@ -9606,7 +9729,7 @@ import { createStore } from "./store.js";
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)
     requestAnimationFrame(() => setTimeout(() => {
-      ChessEngine.init().catch(() => { store.session.engineDown = true; sync(); });
+      bootEngine();
       maybeEngineTurn(); // resumed save may leave the engine on move
     }, 0));
   }
