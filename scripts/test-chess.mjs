@@ -3396,13 +3396,17 @@ for (const lang of CONTENT_LANGS) {
     // the two books merge by the book's own rules: a deeper line replaces the
     // shorter one, and the review owed to the shorter id goes with it
     const bagC = {
-      puzzles: JSON.stringify({ v: 1, solved: {}, tally: {}, missed: { [SHORT]: { streak: 0 } } }),
+      puzzles: JSON.stringify({ v: 1, solved: { [SHORT]: 1, "m1-3": 1 }, tally: {}, missed: { [SHORT]: { streak: 0 } } }),
       repertoire: JSON.stringify({ v: 1, w: [{ id: SHORT, sans: "e4 e5", eco: "", name: "" }], b: [] }),
     };
     const mC = L.merge(bagC, doc, 50);
     assert(mC.repertoire.w.length === 1 && mC.repertoire.w[0].sans === "e4 e5 Nf3",
       "a deeper incoming line replaces the shorter local one", JSON.stringify(mC.repertoire.w));
     assert(!(SHORT in mC.puzzles.missed), "…and the review owed to the replaced line goes too");
+    // Codex review on #76: `solved` needs the same filter, or re-importing the
+    // short line later would show it done without ever having been practised
+    assert(!(SHORT in mC.puzzles.solved) && mC.puzzles.solved["m1-3"] === 1,
+      "…and so does its solved mark — only the rep- id, nothing else", JSON.stringify(mC.puzzles.solved));
     const bagC2 = {}; for (const k of Object.keys(mC)) bagC2[k] = JSON.stringify(mC[k]);
     assert(JSON.stringify(L.merge(bagC2, doc, 50)) === JSON.stringify(mC),
       "importing the same file again is still a no-op with a book in it");

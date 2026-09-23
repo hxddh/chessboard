@@ -1414,16 +1414,22 @@ import { createStore } from "./store.js";
       const el = document.getElementById("engine-fault");
       if (el) el.hidden = true;
       return true;
-    }, (err) => {
-      store.session.engineDown = true;
-      showEngineFault(err);
-      sync();
-      return false;
-    });
+    }, () => false); // the failure is reported once, by engineBootFailed()
     mine.then(() => { if (store.session.engineBoot === mine) store.session.engineBoot = null; });
     return mine;
   }
+  /**
+   * Whoever booted the engine — bootEngine(), or a hint / analysis / library
+   * pass that called ChessEngine directly and so booted it lazily — a failed
+   * boot lands here, once (engine.js makes it sticky until retry()).
+   */
+  function engineBootFailed(err) {
+    store.session.engineDown = true;
+    showEngineFault(err);
+    sync();
+  }
   function retryEngine() {
+    if (ChessEngine && ChessEngine.retry) ChessEngine.retry();
     store.session.engineDown = false;
     const el = document.getElementById("engine-fault");
     if (el) el.hidden = true;
@@ -9725,6 +9731,9 @@ import { createStore } from "./store.js";
     toast(t("msg.profile.restored"), "fault");
     setTimeout(() => location.reload(), 1200);
   }).catch(() => {});
+  // every boot, including the lazy ones a hint or a library pass makes
+  // without going through bootEngine(), reports a failure here (7.4)
+  if (ChessEngine && ChessEngine.onBootFail) ChessEngine.onBootFail(engineBootFailed);
   if (store.session.mode === "ai" && ChessEngine) {
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)

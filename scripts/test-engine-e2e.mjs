@@ -184,6 +184,38 @@ console.log("坏引擎:", JSON.stringify({ moves: broken.moves, pill: broken.pil
   workers: broken.workers, workersLater: broken.workersLater, workersRetry: broken.workersRetry, ms: broken.ms }));
 for (const e of broken.errs.slice(0, 3)) console.log("  ", e.slice(0, 300));
 
+// Codex review on #76: in 双人 mode nothing boots the engine at startup, so
+// the first boot is the lazy one a hint makes by calling ChessEngine directly
+// — around bootEngine(). Its failure has to reach the same notice and the
+// same gate, or every press of 提示 builds another worker.
+const pvp = await (async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    const W = window.Worker;
+    window.__workers = 0;
+    window.Worker = function (...a) { window.__workers++; return new W(...a); };
+    window.Worker.prototype = W.prototype;
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/broken/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel").catch(() => {});
+  const before = await page.evaluate(() => window.__workers);
+  for (let i = 0; i < 3; i++) { await page.click("#btn-hint").catch(() => {}); await page.waitForTimeout(2500); }
+  const out = await page.evaluate(() => {
+    const n = document.getElementById("engine-fault");
+    return { workers: window.__workers, notice: n && !n.hidden && n.getBoundingClientRect().height > 0 ? n.textContent.trim() : "" };
+  });
+  await ctx.close();
+  return { before, ...out };
+})();
+console.log("坏引擎 · 双人 · 连按三次提示:", JSON.stringify(pvp));
+assert(pvp.before === 0, "双人模式启动时不启动引擎(workers " + pvp.before + ")");
+assert(!!pvp.notice && /引擎/.test(pvp.notice), "双人模式：提示按钮懒启动失败，同样出现启动失败提示");
+assert(pvp.workers === 1, "双人模式：连按三次提示只启动一次，不每按一次就起一个 worker(workers " + pvp.workers + ")");
+
 assert(shipped.plies >= 2, "原样页面里，人机走 1. e4，引擎应了一手(" + ENGINE + ")");
 assert(!shipped.errs.length, "…页面上没有报错");
 assert(!broken.thinking && !/思考中/.test(broken.pill) && broken.ms < 40000,

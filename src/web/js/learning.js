@@ -197,15 +197,20 @@ function merge(bag, doc, maxMines) {
   // A `rep-` review is owed to a line in a book. After the merge, the book is
   // the merged one (or this machine's, when the file carried none — a 7.3
   // export); an entry nothing in it can serve is dropped rather than counted
-  // for ever by `owedNow()`.
+  // for ever by `owedNow()`. `solved` gets the same filter, as forgetDrills()
+  // does on the app's own paths: a line the merge replaced or evicted keeps
+  // no "solved" mark, or re-importing it later would show it done unpractised.
   const puzzles = out.puzzles || (out.repertoire ? parse(bag.puzzles) : null);
   if (puzzles) {
     const ids = repIds(out.repertoire || parse(bag.repertoire));
-    const missed = {};
-    for (const [id, e] of Object.entries(obj(puzzles.missed))) {
-      if (!id.startsWith("rep-") || ids.has(id)) missed[id] = e;
-    }
-    out.puzzles = Object.assign({}, puzzles, { missed });
+    const keep = (m) => {
+      const kept = {};
+      for (const [id, e] of Object.entries(obj(m))) {
+        if (!id.startsWith("rep-") || ids.has(id)) kept[id] = e;
+      }
+      return kept;
+    };
+    out.puzzles = Object.assign({}, puzzles, { missed: keep(puzzles.missed), solved: keep(puzzles.solved) });
   }
   return out;
 }

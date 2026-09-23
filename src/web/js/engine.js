@@ -263,8 +263,21 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return mine;
   }
 
+  // 7.4: a boot that failed stays failed until retry(). Every consumer —
+  // bestMove, analyze, the live line — boots lazily through init(), and
+  // before this each of them built a fresh worker on every call after a
+  // failure, while only the callers that went through app.js's bootEngine()
+  // ever told the user. Now the failure is sticky here, and it is reported
+  // once through onBootFail() whichever caller hit it first.
+  let bootError = null;
+  const bootFailListeners = [];
+  function onBootFail(fn) { bootFailListeners.push(fn); }
+  /** Clear a failed boot so the next init() really tries again. */
+  function retry() { bootError = null; }
+
   /** Boot the engine (idempotent). Resolves when UCI handshake completes. */
   function init() {
+    if (bootError) return Promise.reject(bootError);
     if (readyPromise) return readyPromise;
     readyPromise = (async () => {
       await loadSources();
@@ -305,8 +318,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
     })();
     // a failed boot leaves no worker behind: isReady() used to keep answering
     // true after init() rejected, because only the promise was cleared
-    readyPromise.catch(() => teardown());
-    return readyPromise;
+    const mine = readyPromise;
+    mine.catch((err) => {
+      teardown();
+      // a teardown for a hang clears readyPromise without failing it; only
+      // a boot that itself rejected is sticky
+      bootError = err instanceof Error ? err : new Error(String(err));
+      for (const fn of bootFailListeners) { try { fn(bootError); } catch (_) { /* a listener must not break the engine */ } }
+    });
+    return mine;
   }
 
   function isReady() {
@@ -663,4 +683,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate };
