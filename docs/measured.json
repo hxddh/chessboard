@@ -494,6 +494,89 @@
       }
     }
   },
+  "tierAcplSpread": {
+    "what": "同一份代码把 tierAcpl 那套测量重复 N 次（runs），加上别处量到的（observed），每档 ACPL 的均值与总体标准差。入门档的上限取均值 +3σ",
+    "script": "scripts/test-strength.mjs --record --repeat=6 --observed=easy:81",
+    "repeat": 6,
+    "observedFrom": "release run 35847144712（v7.4.0 发布门禁，ubuntu-latest，2026-09-23）",
+    "tiers": {
+      "beginner": {
+        "runs": [
+          135,
+          151,
+          145,
+          185,
+          136,
+          169
+        ],
+        "mean": 153.5,
+        "sd": 18.1
+      },
+      "casual": {
+        "runs": [
+          96,
+          102,
+          122,
+          114,
+          107,
+          113
+        ],
+        "mean": 109,
+        "sd": 8.5
+      },
+      "easy": {
+        "runs": [
+          24,
+          38,
+          43,
+          38,
+          42,
+          33
+        ],
+        "mean": 42.7,
+        "sd": 16.7,
+        "observed": [
+          81
+        ]
+      },
+      "normal": {
+        "runs": [
+          19,
+          18,
+          29,
+          14,
+          12,
+          29
+        ],
+        "mean": 20.2,
+        "sd": 6.7
+      },
+      "hard": {
+        "runs": [
+          9,
+          15,
+          12,
+          12,
+          9,
+          11
+        ],
+        "mean": 11.3,
+        "sd": 2.1
+      },
+      "extreme": {
+        "runs": [
+          2,
+          2,
+          1,
+          2,
+          1,
+          2
+        ],
+        "mean": 1.7,
+        "sd": 0.5
+      }
+    }
+  },
   "verdictFloor": {
     "what": "只看前 N 着算出的精准度，与整局精准度差多少个百分点（越小说明 N 着已经够说话）",
     "minJudged": 10,
