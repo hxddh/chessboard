@@ -661,8 +661,10 @@ const PLACEMENT = STUDY.split(" ")[0];
     await page.waitForTimeout(700);
     assert((await rows(page)) === 2, "「打开」把文件里的两回合棋谱装了进来");
     // 6.0: the profile mirror writes on its own clock and the dialog's path
-    // is issued before it is read — neither is a second road into the file
-    const calls = (await page.evaluate(() => window.__calls)).filter((c) => c !== "chess.appdataWrite" && c !== "chess.appdataRead");
+    // is issued before it is read — neither is a second road into the file;
+    // 7.5: nor is the one self-test probe every page load makes
+    const calls = (await page.evaluate(() => window.__calls))
+      .filter((c) => c !== "chess.appdataWrite" && c !== "chess.appdataRead" && c !== "chess.selftestMode");
     assert(calls.join("→") === "openFile→chess.issuePath→chess.readTextFile",
       `……走的是文件对话框 → 桥上读文件这一条,别无他路(${calls.join("→")})`);
     assert(await page.evaluate(() => document.getElementById("status").textContent.trim()) === "白方走子",
