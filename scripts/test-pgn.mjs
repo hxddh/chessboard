@@ -537,6 +537,39 @@ function mainlineSans(root) {
   assert(bad === 0, "随机树往返 " + cases + " 次，逐字段相等（不一致 " + bad + " 处）");
 }
 
+// --- 7.5: 大文件导入不再冻住窗口 ------------------------------------------
+// 7.4 把一整份文件放在一个同步循环里逐局解析：每局几毫秒，几千局就是好几秒
+// 画面不动。现在 parseGamesAsync 每跑 ~16ms 让一次线程；这里用插桩的 pause
+// 量两次让出之间最长的一段同步时间（切分也算在第一段里），要求不超过 50ms。
+{
+  const game = (k) => `[Event "g${k}"]\n[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n` +
+    (k % 97 === 13 ? "1. e4 e5 2. Ke3 Nc6 1-0" // illegal: this one must come back null
+      : "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 (3... Nf6 4. O-O) 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 1-0") + "\n\n";
+  const big = (n) => Array.from({ length: n }, (_, k) => game(k)).join("");
+  const N = 1000;
+  const text = big(N);
+  const now = () => performance.now();
+  let last = now(), worst = 0, pauses = 0;
+  const chunks = P.splitGames(text);
+  const games = await P.parseGamesAsync(chunks, {
+    now,
+    pause: async () => { worst = Math.max(worst, now() - last); pauses++; await null; last = now(); },
+  });
+  worst = Math.max(worst, now() - last);
+  const bad = Array.from({ length: N }, (_, k) => k).filter((k) => k % 97 === 13).length;
+  assert(chunks.length === N && games.length === N, `${N} 局切出 ${chunks.length} 段、解析出 ${games.length} 个槽位`);
+  assert(games.filter((g) => !g).length === bad, `坏的 ${bad} 局是 null，其余照常 —— 一局坏不连累别的`);
+  assert(games[1] && games[1].headers.some(([k, v]) => k === "Event" && v === "g1"), "槽位按文件顺序");
+  assert(pauses > 0 && worst < 50,
+    `${N} 局：解析中让出线程 ${pauses} 次，最长一段同步 ${worst.toFixed(1)}ms（< 50ms）`);
+  // splitting stays linear: it looked for the move number in all the text
+  // before every boundary, so 4× the games cost ~16× the time (8000 局 9.4s)
+  const time = (n) => { const t = big(n); let best = Infinity;
+    for (let r = 0; r < 2; r++) { const t0 = now(); P.splitGames(t); best = Math.min(best, now() - t0); } return best; };
+  const s1 = time(1500), s4 = time(6000);
+  assert(s4 / s1 < 8, `切分是线性的：1500 局 ${s1.toFixed(0)}ms，6000 局 ${s4.toFixed(0)}ms（比值 ${(s4 / s1).toFixed(1)} < 8）`);
+}
+
 if (failed) {
   console.error(failed + " test(s) failed");
   process.exit(1);

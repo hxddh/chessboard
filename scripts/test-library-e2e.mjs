@@ -1109,6 +1109,92 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await ctx.close();
 }
 
+// --- 16. 7.5：这趟要跑多久，照实说；中途关掉再开，从断点接着分析 -------------
+// 真引擎下 8 局 200ms 快扫用了 102 秒（v7-5-plan §4），满载 500 局是一两个
+// 小时。按钮上要说出预计时长；而「后台、可暂停、可续」这句话从 6.0 写到现在
+// 没被验证过：跑到一半重新载入，分析完的留着、没分析的仍在队列里、接着点
+// 「分析」就从那里往下走，已经分析过的不再重跑。
+{
+  // (a) 满载：500 局 × 80 手 → 500 × 81 个局面 × 200ms × 0.98 ≈ 133 分钟
+  {
+    const sans = Array.from({ length: 20 }, () => "Nf3 Nf6 Ng1 Ng8").join(" ");
+    const games = Array.from({ length: 500 }, (_, k) => ({
+      id: "eta" + k, t: 1758000000000 + k, white: "hxddh", black: "r" + k, date: "2026.09.01", event: "x",
+      result: "1/2-1/2", plies: 80, sans, fen: "", side: "w", outcome: "draw", motifs: {}, eco: "A04", ecoName: "x", an: null }));
+    const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+    const { page, errs } = await open(ctx);
+    const label = (await page.textContent("#lib-analyse")).trim();
+    assert(label === "分析剩下的 500 局（约 2.2 小时）", "满载的库，按钮上照实写出要跑多久", label);
+    assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // (b) 跑到一半重新载入
+  const line = "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7".split(" ");
+  const games = Array.from({ length: 6 }, (_, k) => ({
+    id: "rs" + k, t: 1758000000000 + k, white: "hxddh", black: "r" + k, date: "2026.09.0" + (k + 1), event: "x",
+    result: "1-0", plies: line.length - k, sans: line.slice(0, line.length - k).join(" "), fen: "",
+    side: "w", outcome: "win", motifs: {}, eco: "C60", ecoName: "x", an: null }));
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
+  await ctx.addInitScript((lib) => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    // seeded once: a reload must find what the pass saved, not the seed again
+    if (!localStorage.getItem("chess.v1.library")) localStorage.setItem("chess.v1.library", lib);
+  }, JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  const stub = (page) => page.evaluate(() => {
+    window.__asked = [];
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen) => {
+      window.__asked.push(fen);
+      await new Promise((r) => setTimeout(r, 60));
+      return { cp: 15, mate: null, turn: fen.split(" ")[1] === "b" ? "b" : "w", best: null, pv: [] };
+    };
+  });
+  const { page, errs } = await open(ctx);
+  const label0 = (await page.textContent("#lib-analyse")).trim();
+  assert(label0 === "分析剩下的 6 局（约 1 分钟）", "六局待分析，按钮写着预计时长（不到一分钟也说 1 分钟）", label0);
+  await stub(page);
+  await page.click("#lib-analyse");
+  let done = [];
+  for (let i = 0; i < 80; i++) {
+    await page.waitForTimeout(100);
+    done = (await libOf(page)).games.filter((g) => g.an).map((g) => g.id);
+    if (done.length >= 2) break;
+  }
+  const before = (await libOf(page)).games;
+  assert(done.length >= 2 && done.length < 6, "跑到一半（已存 " + done.length + " 局）就重新载入", done.join(","));
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#tab-record").catch(() => {});
+  await page.waitForTimeout(200);
+  const mid = (await libOf(page)).games;
+  const kept = before.filter((g) => g.an);
+  assert(kept.every((g) => JSON.stringify(mid.find((m) => m.id === g.id).an) === JSON.stringify(g.an)),
+    "重新载入之后，分析完的局原样还在", kept.map((g) => g.id).join(","));
+  const left = mid.filter((g) => !g.an && !g.unplayable).length;
+  assert(left === 6 - kept.length && left > 0, "没分析完的仍在队列里（" + left + " 局），没有被丢掉，也没有被标成摆不出来", String(left));
+  const label1 = (await page.textContent("#lib-analyse")).trim();
+  assert(label1.startsWith("分析剩下的 " + left + " 局"), "按钮说的是剩下的局数", label1);
+  await stub(page);
+  await page.click("#lib-analyse");
+  for (let i = 0; i < 150; i++) {
+    await page.waitForTimeout(100);
+    if ((await libOf(page)).games.every((g) => g.an)) break;
+  }
+  const end = (await libOf(page)).games;
+  assert(end.every((g) => g.an), "接着点「分析」，从断点往下跑完", end.filter((g) => !g.an).map((g) => g.id).join(","));
+  const asked = await page.evaluate(() => window.__asked.length);
+  const expect = end.filter((g) => !kept.some((k) => k.id === g.id)).reduce((n, g) => n + g.plies + 1, 0);
+  assert(asked === expect, "续跑只问没分析过的局面（" + asked + " 次，应为 " + expect + "）—— 已分析的局不重跑", String(asked));
+  assert(kept.every((g) => JSON.stringify(end.find((m) => m.id === g.id).an) === JSON.stringify(g.an)),
+    "……先前那几局的记录一字未动");
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

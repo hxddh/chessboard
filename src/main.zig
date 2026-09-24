@@ -80,6 +80,8 @@ const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.appdataPath", .invoke_fn = appdataPath },
     .{ .name = "chess.setMenuLanguage", .invoke_fn = setMenuLanguage },
     .{ .name = "chess.checkUpdate", .invoke_fn = checkUpdate },
+    .{ .name = "chess.selftestMode", .invoke_fn = selftestMode },
+    .{ .name = "chess.selftestReport", .invoke_fn = selftestReport },
 };
 
 /// The platform path separator, as the strings this file builds need it.
@@ -1050,6 +1052,55 @@ fn safeUrl(s: []const u8) bool {
     return true;
 }
 
+// ------------------------------------------------------------ self-test (7.5)
+//
+// 6.0 to 7.3 shipped an app whose engine never started, and every check the
+// release ran was green: CI drove Chromium and WebKit, never the packaged app
+// with its own WebView. CHESS_SELFTEST=1 makes the packaged app answer one
+// question about itself — can the page, as shipped, start Stockfish and get a
+// move — and the platform build pipelines ask it before they package.
+//
+// The page does the work (it is the thing under test); this side only says
+// whether the mode is on and, when the page reports, writes the report to
+// CHESS_SELFTEST_OUT and exits with 0 (ok) or 1. Off by default: without the
+// variable, selftestMode answers {"on":false} and selftestReport refuses.
+
+fn selftestOn(self: *const App) bool {
+    const v = self.env_map.get("CHESS_SELFTEST") orelse return false;
+    return std.mem.eql(u8, v, "1");
+}
+
+fn selftestMode(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    _ = invocation;
+    const on = selftestOn(self);
+    return std.fmt.bufPrint(output, "{{\"on\":{s}}}", .{if (on) "true" else "false"}) catch return error.HandlerFailed;
+}
+
+/// The report the page sends is written as-is: it is the page's own JSON, and
+/// the pipeline reads it back with a JSON parser. `"ok":true` in it decides
+/// the exit code.
+fn selftestOk(payload: []const u8) bool {
+    return std.mem.indexOf(u8, payload, "\"ok\":true") != null;
+}
+
+fn selftestReport(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    _ = output;
+    if (!selftestOn(self)) return error.InvalidRequest;
+    const payload = invocation.request.payload;
+    if (self.env_map.get("CHESS_SELFTEST_OUT")) |path| {
+        if (path.len > 0) {
+            if (std.Io.Dir.createFileAbsolute(self.io, path, .{ .truncate = true })) |file| {
+                var f = file;
+                f.writeStreamingAll(self.io, payload) catch {};
+                f.close(self.io);
+            } else |_| {}
+        }
+    }
+    std.process.exit(if (selftestOk(payload)) 0 else 1);
+}
+
 pub fn main(init: std.process.Init) !void {
     var app_state = App{ .env_map = init.environ_map, .io = init.io };
     // Q1.1: the data dir, before anything can ask for it. Q1.6: the language
@@ -1079,6 +1130,23 @@ test "the builtin bridge grants exactly the SDK commands the page calls" {
     try std.testing.expectEqual(@as(usize, 10), BUILTIN_COMMANDS.len);
 }
 
+test "the self-test report decides the exit code by its ok field" {
+    try std.testing.expect(selftestOk("{\"ok\":true,\"move\":\"e2e4\"}"));
+    try std.testing.expect(!selftestOk("{\"ok\":false,\"err\":\"CompileError\"}"));
+    try std.testing.expect(!selftestOk("{}"));
+}
+
+test "the self-test mode is off unless CHESS_SELFTEST is exactly 1" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var app_state = App{ .env_map = &env, .io = undefined };
+    try std.testing.expect(!selftestOn(&app_state));
+    try env.put("CHESS_SELFTEST", "yes");
+    try std.testing.expect(!selftestOn(&app_state));
+    try env.put("CHESS_SELFTEST", "1");
+    try std.testing.expect(selftestOn(&app_state));
+}
+
 test "every app command has a chess. name and no two share one" {
     for (APP_COMMANDS, 0..) |cmd, i| {
         try std.testing.expect(std.mem.startsWith(u8, cmd.name, "chess."));
@@ -1086,7 +1154,7 @@ test "every app command has a chess. name and no two share one" {
             try std.testing.expect(!std.mem.eql(u8, cmd.name, other.name));
         }
     }
-    try std.testing.expectEqual(@as(usize, 8), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 10), APP_COMMANDS.len);
 }
 
 test "the file handlers' buffers fit the limits they advertise" {

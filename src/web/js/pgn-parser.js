@@ -546,9 +546,13 @@ function splitGamesWith(input, opts) {
     const boundary = (t.type === "tag" && inMoves) || (t.type !== "tag" && afterResult);
     if (boundary) {
       // the tokenizer dropped the move number before a first move; the chunk
-      // should still begin with it
-      const num = /\d+\.+\s*$/.exec(text.slice(0, t.pos));
-      starts.push(num ? num.index : t.pos);
+      // should still begin with it. 7.5: looked for in a short window before
+      // the token, not in everything before it — an unanchored `$` search over
+      // text.slice(0, pos) at every boundary made splitting quadratic (8000
+      // games: 9.4 s, before a single one was parsed)
+      const from = Math.max(0, t.pos - 64);
+      const num = /\d+\.+\s*$/.exec(text.slice(from, t.pos));
+      starts.push(num ? from + num.index : t.pos);
       inMoves = false; afterResult = false; depth = 0;
     }
     if (t.type !== "tag") inMoves = true;
@@ -558,6 +562,44 @@ function splitGamesWith(input, opts) {
   for (let k = 0; k < starts.length; k++) {
     const chunk = text.slice(starts[k], k + 1 < starts.length ? starts[k + 1] : undefined).trim();
     if (chunk) out.push(chunk);
+  }
+  return out;
+}
+
+/**
+ * Parse per-game chunks (from splitGames) without holding the main thread.
+ *
+ * 7.5: an import read every game in one synchronous loop — a few milliseconds
+ * a game, so a big archive froze the window for seconds with nothing on
+ * screen. Now the loop hands the thread back (a macrotask) whenever it has
+ * run for `budgetMs`, so the page keeps painting and answering input. A game
+ * that does not parse is null in its slot: one bad game never costs the rest
+ * (7.4 D2). A single enormous game is still one synchronous parse — this
+ * bounds the time between games, not inside one.
+ * @param {string[]} chunks
+ * @param {{budgetMs?: number, pause?: () => Promise<void>, now?: () => number,
+ *          onProgress?: (done: number, total: number) => void}} [opts]
+ *   `pause` and `now` are for tests: a fake yield and a fake clock
+ * @returns {Promise<Array<object|null>>}
+ */
+async function parseGamesAsync(chunks, opts) {
+  const o = opts || {};
+  const budget = o.budgetMs > 0 ? o.budgetMs : 16;
+  const pause = o.pause || (() => new Promise((r) => {
+    if (typeof globalThis.setTimeout === "function") globalThis.setTimeout(r); else r();
+  }));
+  const now = o.now || (() => Date.now());
+  const out = [];
+  let t0 = now();
+  for (let i = 0; i < chunks.length; i++) {
+    let g = null;
+    try { g = parsePgn(chunks[i]).games[0] || null; } catch (_) { g = null; }
+    out.push(g);
+    if (i + 1 < chunks.length && now() - t0 >= budget) {
+      if (o.onProgress) o.onProgress(i + 1, chunks.length);
+      await pause();
+      t0 = now();
+    }
   }
   return out;
 }
@@ -688,6 +730,6 @@ function serializePgn(game, opts) {
 }
 
 export const ChessPgnParser = {
-  START_FEN, STR, SUFFIX_NAG, NULL_SAN, tokenize, parsePgn, splitGames, serializePgn, parseComment, formatComment,
+  START_FEN, STR, SUFFIX_NAG, NULL_SAN, tokenize, parsePgn, splitGames, parseGamesAsync, serializePgn, parseComment, formatComment,
 };
-export { START_FEN, STR, SUFFIX_NAG, NULL_SAN, tokenize, parsePgn, splitGames, serializePgn, parseComment, formatComment };
+export { START_FEN, STR, SUFFIX_NAG, NULL_SAN, tokenize, parsePgn, splitGames, parseGamesAsync, serializePgn, parseComment, formatComment };

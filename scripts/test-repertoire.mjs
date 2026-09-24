@@ -279,7 +279,7 @@ const PGN = `[Event "White repertoire"]
       forgetDrills: (ids) => forgotten.push(...ids),
       diagnose: () => null, startDrills: () => {},
     });
-    return { ui, toasts, forgotten };
+    return { ui, toasts, forgotten, store };
   };
 
   // D2：一份四局的文件，第三局有一着非法。7.3 整份拒掉；现在坏的那局跳过、
@@ -296,7 +296,7 @@ const PGN = `[Event "White repertoire"]
   try { P.parsePgn(FILE); } catch (_) { threw = true; }
   assert(threw, "整份一次解析，一着非法就整份抛错（7.3 的行为）");
   const a = make();
-  a.ui.importInto("w", FILE, "file.pgn");
+  await a.ui.importInto("w", FILE, "file.pgn");
   assert(a.ui.linesOf("w").length === 3, "好的三局照常进书", a.ui.linesOf("w").length);
   assert(a.toasts.some(([m]) => m === "rep.badGames:1"), "坏的那一局数出来、说出来",
     JSON.stringify(a.toasts));
@@ -305,18 +305,29 @@ const PGN = `[Event "White repertoire"]
   // D3：先导短线，再导把它延长了的那条 —— 书没满，不弹「上限」；可短线的 id
   // 仍然交给 forgetDrills，它欠的复习要跟着清
   const b = make();
-  b.ui.importInto("w", GOOD("1. e4 e5"), "");
+  await b.ui.importInto("w", GOOD("1. e4 e5"), "");
   const shortId = b.ui.linesOf("w")[0].id;
-  b.ui.importInto("w", GOOD("1. e4 e5 2. Nf3 Nc6"), "");
+  await b.ui.importInto("w", GOOD("1. e4 e5 2. Nf3 Nc6"), "");
   assert(b.ui.linesOf("w").length === 1, "书里还是一条线，只是长了");
   assert(!b.toasts.some(([m]) => m.startsWith("rep.dropped")),
     "被更长的线替掉不是「上限挤出去」，不弹那一句", JSON.stringify(b.toasts));
   assert(b.forgotten.includes(shortId), "被替掉的 id 照样清掉它欠的复习", JSON.stringify(b.forgotten));
   // 同一份文件里短线、长线各一局：进书 1 条，不是 2 条
   const c = make();
-  c.ui.importInto("w", [GOOD("1. e4 e5"), GOOD("1. e4 e5 2. Nf3")].join("\n"), "");
+  await c.ui.importInto("w", [GOOD("1. e4 e5"), GOOD("1. e4 e5 2. Nf3")].join("\n"), "");
   assert(c.toasts.some(([m]) => m === "rep.added:1,1"), "进书 1 条（1 条已经在里面了）", JSON.stringify(c.toasts));
   assert(!c.toasts.some(([m]) => m.startsWith("rep.dropped")), "……不弹「上限」", JSON.stringify(c.toasts));
+
+  // 7.5：导入改成分批读以后，读文件的这段时间里界面是活的。这时清空开局书
+  // （clearBook 换上一个空对象），读完的文件不能再把线加回去 —— 否则「清空」被悄悄撤销
+  const d = make();
+  await d.ui.importInto("w", GOOD("1. e4 e5"), "");
+  assert(d.ui.linesOf("w").length === 1, "清空之前书里有一条线");
+  const pending = d.ui.importInto("w", GOOD("1. d4 d5 2. c4"), "");
+  d.store.session.repertoire = { w: [], b: [] };
+  await pending;
+  assert(d.ui.linesOf("w").length === 0, "读文件时书被清空了，读完的文件不再往里加线",
+    JSON.stringify(d.ui.linesOf("w").map((l) => l.id)));
 }
 
 if (failed) { console.error(`\n${failed} 项失败`); process.exit(1); }

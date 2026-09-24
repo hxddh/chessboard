@@ -115,6 +115,7 @@ jobs:
             E2E_BROWSER="$engine" node scripts/test-library-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-layout-e2e.mjs
             E2E_BROWSER="$engine" node scripts/test-engine-e2e.mjs
+            E2E_BROWSER="$engine" node scripts/test-engine-flows-e2e.mjs
             echo "::endgroup::"
           done
 

@@ -102,6 +102,14 @@ jobs:
             test -f "$(find dist/Chessboard -path '*/licenses/LICENSE.txt' | head -n1)"
           fi
           ls -R dist
+      # 7.5: launch the packaged app once before shipping it — see the same
+      # step in build-macos.yml and scripts/selftest-app.mjs.
+      - name: self-test the packaged app
+        shell: bash
+        run: |
+          exe="$(find dist/Chessboard -name chessboard.exe | head -n1)"
+          [ -n "$exe" ] || exe=zig-out/bin/chessboard.exe
+          node scripts/selftest-app.mjs "$exe"
       - name: zip package
         shell: pwsh
         run: |

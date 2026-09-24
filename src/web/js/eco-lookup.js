@@ -17,8 +17,10 @@
  * than retranslated: a lichess entry is joined to a book line when the book
  * line's deepest position in the table *is* that entry, and the ECO codes
  * agree. The join is built once at load from the book itself; nothing here
- * is typed twice. Entries with no book line show the English name — that is
- * most of the table, and it is stated rather than hidden.
+ * is typed twice. Entries with no book line (most of the table) keep their
+ * variation name in English but show the *family* — the text before the
+ * first colon — in the reader's language (7.5): 149 families cover all 3810
+ * entries, where full translations would be 3810 strings.
  * @module eco-lookup
  */
 import { Chess } from "./chess.js";
@@ -27,6 +29,8 @@ import { ChessFide } from "./fide.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 import { CHESS_OPENINGS_EN } from "./openings-en.js";
 import { CHESS_OPENINGS_JA } from "./openings-ja.js";
+import { OPENING_FAMILIES_ZH } from "./openings-family-zh.js";
+import { OPENING_FAMILIES_JA } from "./openings-family-ja.js";
 
   /** The table's key for the position `chess` is at. */
   function positionKey(chess) {
@@ -167,13 +171,34 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
   }
 
   const LOCAL = { "zh-CN": CHESS_OPENING_NAMES, ja: CHESS_OPENINGS_JA, en: CHESS_OPENINGS_EN };
+  // Family names are small (149 per language, a few KB) and ship in the main
+  // bundle, not the eco chunk: library-ui names games from their PGN
+  // `Opening` header, which needs no table at all.
+  const FAMILY = { "zh-CN": OPENING_FAMILIES_ZH, ja: OPENING_FAMILIES_JA };
+
+  /**
+   * `"Italian Game: Giuoco Piano"` → `"意大利开局：Giuoco Piano"`, or null
+   * when the family is not in `lang`'s table. A name with no colon is all
+   * family. Both CJK languages join with the full-width colon, as the rest
+   * of their copy does (scripts/cjk-punct.mjs).
+   */
+  function familyName(name, lang) {
+    const tbl = FAMILY[lang];
+    if (!tbl || !name) return null;
+    const i = name.indexOf(":");
+    const fam = tbl[i < 0 ? name : name.slice(0, i)];
+    if (!fam) return null;
+    const rest = i < 0 ? "" : name.slice(i + 1).trim();
+    return rest ? fam + "：" + rest : fam;
+  }
 
   /**
    * The name to show for a table entry in `lang`.
    *
    * The book's translation when the entry is one of the book's lines, else
-   * the lichess English name. English also prefers lichess: the book's
-   * English is a translation of its Chinese, the table's is the source.
+   * the family translated with the variation left in English, else the
+   * lichess English name. English also prefers lichess: the book's English
+   * is a translation of its Chinese, the table's is the source.
    * @param {{eco: string, name: string}} entry from lookupPosition / openingForGame
    * @param {"zh-CN"|"en"|"ja"} lang
    */
@@ -183,11 +208,11 @@ import { CHESS_OPENINGS_JA } from "./openings-ja.js";
     const book = bookIdByEntry();
     const id = book && book[entry.eco + "|" + entry.name];
     const tbl = LOCAL[lang];
-    return (id && tbl && tbl[id]) || entry.name;
+    return (id && tbl && tbl[id]) || familyName(entry.name, lang) || entry.name;
   }
 
   export const ChessEco = {
-    positionKey, lookupPosition, openingForGame, ecoName, localName, ready, loaded, whenReady,
+    positionKey, lookupPosition, openingForGame, ecoName, localName, familyName, ready, loaded, whenReady,
     get BOOK_ID_BY_ENTRY() { return bookIdByEntry() || {}; },
     get size() { const t = table(); return t ? Object.keys(t).length : 0; },
   };

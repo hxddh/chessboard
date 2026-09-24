@@ -1428,6 +1428,35 @@ import { createStore } from "./store.js";
     showEngineFault(err);
     sync();
   }
+  /**
+   * One question, asked of the page as shipped: can it start the engine and
+   * get a move? The answer goes to the native side, which records it and
+   * exits. 60 s is twice the engine's own boot timeout.
+   */
+  async function runSelftest() {
+    const t0 = performance.now();
+    const report = {
+      ok: false,
+      version: typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "?",
+      wasm: typeof WebAssembly === "object",
+      ua: navigator.userAgent,
+    };
+    try {
+      if (!ChessEngine) throw new Error("no engine module");
+      const start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout 60s")), 60000));
+      const mv = await Promise.race([ChessEngine.bestMove(start, "normal"), timeout]);
+      if (!mv || !mv.from || !mv.to) throw new Error("no move");
+      const legal = new Chess(start).move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
+      if (!legal) throw new Error("illegal move " + mv.from + mv.to);
+      report.ok = true;
+      report.move = legal.san;
+    } catch (err) {
+      report.err = String((err && (err.message || err)) || "unknown");
+    }
+    report.ms = Math.round(performance.now() - t0);
+    await Host.selftestReport(report);
+  }
   function retryEngine() {
     if (ChessEngine && ChessEngine.retry) ChessEngine.retry();
     store.session.engineDown = false;
@@ -6934,6 +6963,10 @@ import { createStore } from "./store.js";
         !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
     }
+    // 7.5: a new game is also the natural moment to try a dead engine again —
+    // once, through retryEngine(), so a second failure is the same notice
+    // again and not a toast per press
+    const wasDown = engineOut();
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
     gameReset();
@@ -6954,7 +6987,8 @@ import { createStore } from "./store.js";
     syncAutoFlip();
     sync();
     saveGame();
-    maybeEngineTurn();
+    if (wasDown) retryEngine();
+    else maybeEngineTurn();
   }
 
   /** Truncate the game to the replay cursor and continue playing from there. */
@@ -7084,7 +7118,9 @@ import { createStore } from "./store.js";
     if (h.length < p.len || h[p.len - 1] !== p.san) return;
     const moverIsWhite = p.before.split(" ")[1] === "w";
     const loss = moverIsWhite ? sa - sb : sb - sa;
-    if (loss >= 300) toast(tf("mm.blunder", [p.san]));
+    // "fix", not the default "ok": it is a warning that asks for Z, and 2.2 s
+    // of success-green was gone before it could be read (7.5)
+    if (loss >= 300) toast(tf("mm.blunder", [p.san]), "fix");
   }
 
   // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
@@ -8785,7 +8821,13 @@ import { createStore } from "./store.js";
       // library and rewrites the stored copy, which is not what every
       // character of a typed name should cost
       names.onchange = () => {
-        store.session.libNames = libNamesFrom(names.value);
+        const next = libNamesFrom(names.value);
+        // the same names again (a second `change` as focus leaves the field,
+        // which is what clicking 分析 right after typing does) change nothing:
+        // re-rendering the panel under that click can move the button between
+        // mouse-down and mouse-up, and the click is lost (7.5, WebKit)
+        if (next.join("\n") === store.session.libNames.join("\n")) return;
+        store.session.libNames = next;
         reclaimLibrary();
         saveLibrary();
         renderLibrary();
@@ -9749,6 +9791,10 @@ import { createStore } from "./store.js";
   // every boot, including the lazy ones a hint or a library pass makes
   // without going through bootEngine(), reports a failure here (7.4)
   if (ChessEngine && ChessEngine.onBootFail) ChessEngine.onBootFail(engineBootFailed);
+  // 7.5: the packaged app's self-test (CHESS_SELFTEST=1, see main.zig). The
+  // page as shipped starts Stockfish and asks it for a move; the platform
+  // build pipelines read the report before they package.
+  Host.selftestMode().then((on) => { if (on) runSelftest(); });
   if (store.session.mode === "ai" && ChessEngine) {
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)

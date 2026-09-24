@@ -76,6 +76,10 @@ export function createRepertoireUI(d) {
     return changed;
   }
 
+  // a file being read (7.5: that is no longer instant); a second import
+  // meanwhile is turned away rather than interleaved with it
+  let importing = false;
+
   /**
    * Take a repertoire PGN into one side's book.
    *
@@ -87,18 +91,25 @@ export function createRepertoireUI(d) {
    * handed the whole text to one `parsePgn`, so a single illegal move in the
    * fortieth game of a file threw the other thirty-nine away with it.
    */
-  function importInto(side, text, label) {
+  async function importInto(side, text, label) {
     const text0 = (text || "").trim();
     if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
+    if (importing) return;
     let chunks;
     try { chunks = ChessPgnParser.splitGames(text0); } catch (_) { chunks = [text0]; }
-    const games = [];
-    let bad = 0;
-    for (const chunk of chunks) {
-      let g = null;
-      try { g = ChessPgnParser.parsePgn(chunk).games[0] || null; } catch (_) { g = null; }
-      if (g) games.push(g); else bad++;
-    }
+    // 7.5: game by game with the thread handed back every ~16 ms, so a big
+    // book file does not freeze the window while it is read
+    let parsed;
+    // the book this import was started on: clearing it, or restoring learning
+    // data, while the file is still being read replaces the object, and adding
+    // the file's lines afterwards would quietly undo that
+    const book = store.session.repertoire;
+    importing = true;
+    try { parsed = await ChessPgnParser.parseGamesAsync(chunks); }
+    finally { importing = false; }
+    if (store.session.repertoire !== book) return;
+    const games = parsed.filter(Boolean);
+    const bad = parsed.length - games.length;
     const read = Rep.linesFrom(games);
     // a file that held nothing but set-up positions is not a broken file —
     // it is the wrong kind of file, and saying which is the whole difference

@@ -553,7 +553,15 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   const missing = Object.keys(esb).filter((k) => !lock.packages["node_modules/" + k]);
   check(missing.length === 0,
     `版本检查: package-lock.json 缺少 esbuild 的平台包 ${missing.join(", ")} —— 只有生成它的那台机器装得起来`);
-  if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json 一致（${appVer}）`);
+  // 7.5: the README says what each version changed, and 7.4 §4 asked for the
+  // current one to be required — it was written down and never checked. The
+  // heading is exact ("## 7.4.0 改了什么"): a release that bumps app.zon and
+  // forgets the README fails here, not in a reader's hands.
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const verHead = appVer && /^\d+\.\d+\.\d+$/.test(appVer) &&
+    new RegExp("^## " + appVer.replace(/\./g, "\\.") + " 改了什么\\s*$", "m").test(readme);
+  check(!!verHead, `版本检查: README.md 没有「## ${appVer} 改了什么」这一节 —— 当前版本改了什么没写`);
+  if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json 一致（${appVer}），README 有这一版的一节`);
 }
 
 // ------------------------------------------------ 5. host.js ↔ main.zig 内建桥
