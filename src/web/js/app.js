@@ -8821,7 +8821,13 @@ import { createStore } from "./store.js";
       // library and rewrites the stored copy, which is not what every
       // character of a typed name should cost
       names.onchange = () => {
-        store.session.libNames = libNamesFrom(names.value);
+        const next = libNamesFrom(names.value);
+        // the same names again (a second `change` as focus leaves the field,
+        // which is what clicking 分析 right after typing does) change nothing:
+        // re-rendering the panel under that click can move the button between
+        // mouse-down and mouse-up, and the click is lost (7.5, WebKit)
+        if (next.join("\n") === store.session.libNames.join("\n")) return;
+        store.session.libNames = next;
         reclaimLibrary();
         saveLibrary();
         renderLibrary();

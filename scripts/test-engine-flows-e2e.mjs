@@ -318,7 +318,29 @@ await scenario("棋谱库", async () => {
   // the pass may already have started on its own when the names came in
   const running = await page.evaluate(() => /停/.test((document.getElementById("lib-analyse") || {}).textContent || ""));
   const visible = await page.isVisible("#lib-analyse");
-  if (!running && visible) await page.click("#lib-analyse");
+  // did the click reach the button, and did the pass start? WebKit once lost
+  // this click outright (the button kept its label, no toast, no search)
+  await page.evaluate(() => {
+    window.__libClicks = 0;
+    document.addEventListener("click", (e) => {
+      if (e.target && e.target.id === "lib-analyse") window.__libClicks++;
+    }, true);
+  });
+  const started = () => until(() => page.evaluate(() =>
+    /停/.test((document.getElementById("lib-analyse") || {}).textContent || "")), 3000, 100);
+  let clicks = 0;
+  if (!running && visible) {
+    await page.click("#lib-analyse");
+    clicks = 1;
+    if (!(await started())) {
+      console.log("棋谱库 · 第一下点击没有开始分析:", JSON.stringify(await page.evaluate(() => ({
+        clicks: window.__libClicks, active: document.activeElement && document.activeElement.id,
+        text: (document.getElementById("lib-analyse") || {}).textContent }))));
+      await page.click("#lib-analyse");
+      clicks = 2;
+    }
+  }
+  assert(running || clicks === 1, "棋谱库：点一下「分析」就开始了", "点了 " + clicks + " 下");
   l = await until(async () => {
     const x = await lib();
     return x && x.games.every((g) => g.an) ? x : null;
