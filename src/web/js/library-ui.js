@@ -200,6 +200,8 @@ export function createLibraryUI(d) {
     importing = true;
     try { games = await ChessPgnParser.parseGamesAsync(chunks); }
     finally { importing = false; }
+    // a pass may have started while the file was being read
+    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
     const now = Date.now();
     const fresh = [];
     for (const parsed of games) {

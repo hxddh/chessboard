@@ -100,9 +100,14 @@ export function createRepertoireUI(d) {
     // 7.5: game by game with the thread handed back every ~16 ms, so a big
     // book file does not freeze the window while it is read
     let parsed;
+    // the book this import was started on: clearing it, or restoring learning
+    // data, while the file is still being read replaces the object, and adding
+    // the file's lines afterwards would quietly undo that
+    const book = store.session.repertoire;
     importing = true;
     try { parsed = await ChessPgnParser.parseGamesAsync(chunks); }
     finally { importing = false; }
+    if (store.session.repertoire !== book) return;
     const games = parsed.filter(Boolean);
     const bad = parsed.length - games.length;
     const read = Rep.linesFrom(games);

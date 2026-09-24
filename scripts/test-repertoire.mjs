@@ -279,7 +279,7 @@ const PGN = `[Event "White repertoire"]
       forgetDrills: (ids) => forgotten.push(...ids),
       diagnose: () => null, startDrills: () => {},
     });
-    return { ui, toasts, forgotten };
+    return { ui, toasts, forgotten, store };
   };
 
   // D2：一份四局的文件，第三局有一着非法。7.3 整份拒掉；现在坏的那局跳过、
@@ -317,6 +317,17 @@ const PGN = `[Event "White repertoire"]
   await c.ui.importInto("w", [GOOD("1. e4 e5"), GOOD("1. e4 e5 2. Nf3")].join("\n"), "");
   assert(c.toasts.some(([m]) => m === "rep.added:1,1"), "进书 1 条（1 条已经在里面了）", JSON.stringify(c.toasts));
   assert(!c.toasts.some(([m]) => m.startsWith("rep.dropped")), "……不弹「上限」", JSON.stringify(c.toasts));
+
+  // 7.5：导入改成分批读以后，读文件的这段时间里界面是活的。这时清空开局书
+  // （clearBook 换上一个空对象），读完的文件不能再把线加回去 —— 否则「清空」被悄悄撤销
+  const d = make();
+  await d.ui.importInto("w", GOOD("1. e4 e5"), "");
+  assert(d.ui.linesOf("w").length === 1, "清空之前书里有一条线");
+  const pending = d.ui.importInto("w", GOOD("1. d4 d5 2. c4"), "");
+  d.store.session.repertoire = { w: [], b: [] };
+  await pending;
+  assert(d.ui.linesOf("w").length === 0, "读文件时书被清空了，读完的文件不再往里加线",
+    JSON.stringify(d.ui.linesOf("w").map((l) => l.id)));
 }
 
 if (failed) { console.error(`\n${failed} 项失败`); process.exit(1); }
