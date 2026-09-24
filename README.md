@@ -125,7 +125,7 @@ README 记 56%/27%（32 盘），engine.js 注释记 66%/25% 且没写盘数。7
 | `npm ci`（唯一依赖:esbuild） | 把 `src/web/js` 的 ES 模块打成 `js/bundle.js` | 页面加载不出来:index.html 只加载这一个脚本 |
 | Zig 0.16.0 | 编译 `src/*.zig`（`package.sh` 从 `~/.native/toolchains/zig-0.16.0` 找） | 只能改前端，编译不了 |
 | Native SDK CLI（`@native-sdk/cli`） | `native package` 打出 `.app` / `.exe` | 编译得出二进制，打不出安装包 |
-| Playwright + Chromium / WebKit | 九个浏览器 E2E（两个引擎各跑一遍）| 各自打印「跳过」并通过；发布流水线设 `E2E_REQUIRED=1`，那里跳过即失败 |
+| Playwright + Chromium / WebKit | 十个浏览器 E2E（两个引擎各跑一遍）| 各自打印「跳过」并通过；发布流水线设 `E2E_REQUIRED=1`，那里跳过即失败 |
 
 ```bash
 cd ~/chessboard
@@ -136,7 +136,7 @@ cd ~/chessboard
 npm test                           # = test:static + test:e2e,对应 CI 的 static 与 browser 两个 job(CI 另有 zig)
 npm run build                      # 打包:src/web/js 下的 ES 模块 → js/bundle.js(生成物,不进 git)
 npm run test:static                # 单测 + 清单,秒级(测试自己会按需构建)
-npm run test:e2e                   # 九个浏览器 E2E(缺 Playwright 则逐个跳过)
+npm run test:e2e                   # 十个浏览器 E2E(缺 Playwright 则逐个跳过)
 npm run test:engine                # 引擎检查:开局/战术/新手档/强度/分析/挖题/母题,分钟级,不在 npm test 里
 
 # 或者逐个跑
@@ -150,7 +150,8 @@ node scripts/test-persist-e2e.mjs
 node scripts/test-review-e2e.mjs
 node scripts/test-library-e2e.mjs
 node scripts/test-layout-e2e.mjs
-node scripts/test-engine-e2e.mjs   # 唯一真启动 Stockfish 的浏览器检查(其余都把引擎换成空桩)
+node scripts/test-engine-e2e.mjs   # 真启动 Stockfish:引擎起不起得来(其余都把引擎换成空桩)
+node scripts/test-engine-flows-e2e.mjs  # 真 Stockfish 走一遍要引擎的功能:人机、提示、失着提醒、分析、持续分析、棋谱库、教学对练,约一分半到几分钟
 node scripts/test-openings.mjs     # 引擎检查,约两分钟
 node scripts/test-tactics.mjs      # 引擎检查,约两分钟
 ```

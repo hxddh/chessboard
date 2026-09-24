@@ -138,6 +138,12 @@ jobs:
       # on this matrix's engine (v7-4-plan §1).
       - name: engine (real Stockfish)
         run: node scripts/test-engine-e2e.mjs
+      # The features that need the engine, on the real one: vs computer, hint,
+      # blunder coach, analysis, live analysis, game library, lesson drill.
+      # The stubbed checks above cannot see a wrong answer shape or a search
+      # too slow for some timeout (v7-5-plan §2).
+      - name: engine flows (real Stockfish)
+        run: node scripts/test-engine-flows-e2e.mjs
 
   # src/main.zig and src/runner.zig, compiled and their tests run, on every
   # push — not only at release time. Until 6.0 the Zig side had no PR-time
