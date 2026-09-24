@@ -296,7 +296,7 @@ const PGN = `[Event "White repertoire"]
   try { P.parsePgn(FILE); } catch (_) { threw = true; }
   assert(threw, "整份一次解析，一着非法就整份抛错（7.3 的行为）");
   const a = make();
-  a.ui.importInto("w", FILE, "file.pgn");
+  await a.ui.importInto("w", FILE, "file.pgn");
   assert(a.ui.linesOf("w").length === 3, "好的三局照常进书", a.ui.linesOf("w").length);
   assert(a.toasts.some(([m]) => m === "rep.badGames:1"), "坏的那一局数出来、说出来",
     JSON.stringify(a.toasts));
@@ -305,16 +305,16 @@ const PGN = `[Event "White repertoire"]
   // D3：先导短线，再导把它延长了的那条 —— 书没满，不弹「上限」；可短线的 id
   // 仍然交给 forgetDrills，它欠的复习要跟着清
   const b = make();
-  b.ui.importInto("w", GOOD("1. e4 e5"), "");
+  await b.ui.importInto("w", GOOD("1. e4 e5"), "");
   const shortId = b.ui.linesOf("w")[0].id;
-  b.ui.importInto("w", GOOD("1. e4 e5 2. Nf3 Nc6"), "");
+  await b.ui.importInto("w", GOOD("1. e4 e5 2. Nf3 Nc6"), "");
   assert(b.ui.linesOf("w").length === 1, "书里还是一条线，只是长了");
   assert(!b.toasts.some(([m]) => m.startsWith("rep.dropped")),
     "被更长的线替掉不是「上限挤出去」，不弹那一句", JSON.stringify(b.toasts));
   assert(b.forgotten.includes(shortId), "被替掉的 id 照样清掉它欠的复习", JSON.stringify(b.forgotten));
   // 同一份文件里短线、长线各一局：进书 1 条，不是 2 条
   const c = make();
-  c.ui.importInto("w", [GOOD("1. e4 e5"), GOOD("1. e4 e5 2. Nf3")].join("\n"), "");
+  await c.ui.importInto("w", [GOOD("1. e4 e5"), GOOD("1. e4 e5 2. Nf3")].join("\n"), "");
   assert(c.toasts.some(([m]) => m === "rep.added:1,1"), "进书 1 条（1 条已经在里面了）", JSON.stringify(c.toasts));
   assert(!c.toasts.some(([m]) => m.startsWith("rep.dropped")), "……不弹「上限」", JSON.stringify(c.toasts));
 }

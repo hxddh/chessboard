@@ -6963,6 +6963,10 @@ import { createStore } from "./store.js";
         !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
     }
+    // 7.5: a new game is also the natural moment to try a dead engine again —
+    // once, through retryEngine(), so a second failure is the same notice
+    // again and not a toast per press
+    const wasDown = engineOut();
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
     gameReset();
@@ -6983,7 +6987,8 @@ import { createStore } from "./store.js";
     syncAutoFlip();
     sync();
     saveGame();
-    maybeEngineTurn();
+    if (wasDown) retryEngine();
+    else maybeEngineTurn();
   }
 
   /** Truncate the game to the replay cursor and continue playing from there. */
@@ -7113,7 +7118,9 @@ import { createStore } from "./store.js";
     if (h.length < p.len || h[p.len - 1] !== p.san) return;
     const moverIsWhite = p.before.split(" ")[1] === "w";
     const loss = moverIsWhite ? sa - sb : sb - sa;
-    if (loss >= 300) toast(tf("mm.blunder", [p.san]));
+    // "fix", not the default "ok": it is a warning that asks for Z, and 2.2 s
+    // of success-green was gone before it could be read (7.5)
+    if (loss >= 300) toast(tf("mm.blunder", [p.san]), "fix");
   }
 
   // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
