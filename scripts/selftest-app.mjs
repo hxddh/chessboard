@@ -34,8 +34,12 @@ const child = spawn(exe, [], {
 });
 
 const exited = new Promise((resolve) => child.on("exit", (code, signal) => resolve({ code, signal })));
-const timedOut = new Promise((resolve) => setTimeout(() => resolve(null), LIMIT_MS));
+let timer = null;
+const timedOut = new Promise((resolve) => { timer = setTimeout(() => resolve(null), LIMIT_MS); });
 const result = await Promise.race([exited, timedOut]);
+// the pending timer would otherwise keep node alive for the full 90 s after
+// the app has already answered (the first CI run sat there, green, doing so)
+clearTimeout(timer);
 if (!result) {
   child.kill();
   console.error("FAIL: " + LIMIT_MS / 1000 + " 秒内应用没有交回自检结果（窗口没起来，或页面没跑到自检）");
@@ -52,3 +56,4 @@ if (!report) { console.error("FAIL: 应用退出了，但没有写出自检报�
 if (report.ok !== true) { console.error("FAIL: 打包好的应用里，引擎没能给出一步棋：" + (report.err || "原因不明")); process.exit(1); }
 if (result.code !== 0) { console.error("FAIL: 报告说 ok，退出码却是 " + result.code); process.exit(1); }
 console.log("ok: 打包好的应用启动了引擎，第一步 " + report.move + "，" + report.ms + " ms");
+process.exit(0);
