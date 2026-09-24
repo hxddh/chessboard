@@ -280,6 +280,40 @@ assert(drill.before.d1 && drill.before.d8 && drill.before.a2 && drill.before.not
 assert(drill.after.replied && !drill.after.notice,
   "教学对练：按「重试」之后引擎补上黑方那一步，对练接着进行，不卡住");
 
+// 7.5: the packaged app's self-test (CHESS_SELFTEST=1, main.zig). The native
+// half — mode on, report written, exit code — has its own zig tests; this is
+// the page half, with a stand-in bridge that answers only the two self-test
+// commands. On the real engine the report says ok with a legal move; on the
+// broken one it says not ok and names the error, instead of hanging.
+async function selftestPage(prefix) {
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    window.__report = null;
+    window.zero = {
+      invoke: async (name, args) => {
+        if (name === "chess.selftestMode") return { on: true };
+        if (name === "chess.selftestReport") { window.__report = args; return {}; }
+        throw new Error("not in this stand-in: " + name);
+      },
+      on() {},
+    };
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}${prefix}/`);
+  let rep = null;
+  for (let i = 0; i < 280 && !rep; i++) { await page.waitForTimeout(250); rep = await page.evaluate(() => window.__report); }
+  await ctx.close();
+  return rep;
+}
+const selfOk = await selftestPage("");
+const selfBad = await selftestPage("/broken");
+console.log("自检 · 原样:", JSON.stringify(selfOk && { ok: selfOk.ok, move: selfOk.move, ms: selfOk.ms, err: selfOk.err }));
+console.log("自检 · 坏引擎:", JSON.stringify(selfBad && { ok: selfBad.ok, ms: selfBad.ms, err: selfBad.err }));
+assert(!!selfOk && selfOk.ok === true && typeof selfOk.move === "string" && selfOk.move.length >= 2,
+  "自检（页面这一半）：原样页面报告 ok，并给出一步合法着法");
+assert(!!selfBad && selfBad.ok === false && !!selfBad.err,
+  "自检（页面这一半）：引擎起不来时报告 ok:false 并写明原因，不会一直挂着");
+
 assert(shipped.plies >= 2, "原样页面里，人机走 1. e4，引擎应了一手(" + ENGINE + ")");
 assert(!shipped.errs.length, "…页面上没有报错");
 assert(!broken.thinking && !/思考中/.test(broken.pill) && broken.ms < 40000,

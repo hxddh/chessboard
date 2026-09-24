@@ -503,6 +503,31 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return Promise.race([call, timeout]);
   }
 
+  /**
+   * 7.5 — whether the packaged app was launched with CHESS_SELFTEST=1 (see
+   * main.zig). false everywhere else, including every browser and every
+   * build without the command.
+   * @returns {Promise<boolean>}
+   */
+  async function selftestMode() {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return false;
+    try {
+      const r = await global.zero.invoke("chess.selftestMode", {});
+      return !!(r && r.on === true);
+    } catch (_) { return false; }
+  }
+
+  /**
+   * Hand the self-test's result to the native side, which writes it to
+   * CHESS_SELFTEST_OUT and exits the process — this call does not return
+   * when it works.
+   * @param {{ok: boolean}} report
+   */
+  async function selftestReport(report) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return;
+    try { await global.zero.invoke("chess.selftestReport", report); } catch (_) {}
+  }
+
   function onAppLifecycle(handlers) {
     if (!hasZero() || typeof global.zero.on !== "function") return;
     try {
@@ -561,4 +586,6 @@ const global = typeof window !== "undefined" ? window : globalThis;
     appdataPath,
     setMenuLanguage,
     checkUpdate,
+    selftestMode,
+    selftestReport,
   };

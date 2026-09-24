@@ -1428,6 +1428,35 @@ import { createStore } from "./store.js";
     showEngineFault(err);
     sync();
   }
+  /**
+   * One question, asked of the page as shipped: can it start the engine and
+   * get a move? The answer goes to the native side, which records it and
+   * exits. 60 s is twice the engine's own boot timeout.
+   */
+  async function runSelftest() {
+    const t0 = performance.now();
+    const report = {
+      ok: false,
+      version: typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "?",
+      wasm: typeof WebAssembly === "object",
+      ua: navigator.userAgent,
+    };
+    try {
+      if (!ChessEngine) throw new Error("no engine module");
+      const start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout 60s")), 60000));
+      const mv = await Promise.race([ChessEngine.bestMove(start, "normal"), timeout]);
+      if (!mv || !mv.from || !mv.to) throw new Error("no move");
+      const legal = new Chess(start).move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
+      if (!legal) throw new Error("illegal move " + mv.from + mv.to);
+      report.ok = true;
+      report.move = legal.san;
+    } catch (err) {
+      report.err = String((err && (err.message || err)) || "unknown");
+    }
+    report.ms = Math.round(performance.now() - t0);
+    await Host.selftestReport(report);
+  }
   function retryEngine() {
     if (ChessEngine && ChessEngine.retry) ChessEngine.retry();
     store.session.engineDown = false;
@@ -9749,6 +9778,10 @@ import { createStore } from "./store.js";
   // every boot, including the lazy ones a hint or a library pass makes
   // without going through bootEngine(), reports a failure here (7.4)
   if (ChessEngine && ChessEngine.onBootFail) ChessEngine.onBootFail(engineBootFailed);
+  // 7.5: the packaged app's self-test (CHESS_SELFTEST=1, see main.zig). The
+  // page as shipped starts Stockfish and asks it for a move; the platform
+  // build pipelines read the report before they package.
+  Host.selftestMode().then((on) => { if (on) runSelftest(); });
   if (store.session.mode === "ai" && ChessEngine) {
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)
