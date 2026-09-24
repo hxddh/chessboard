@@ -317,12 +317,29 @@ await scenario("棋谱库", async () => {
   const t0 = Date.now();
   // the pass may already have started on its own when the names came in
   const running = await page.evaluate(() => /停/.test((document.getElementById("lib-analyse") || {}).textContent || ""));
-  if (!running && await page.isVisible("#lib-analyse")) await page.click("#lib-analyse");
+  const visible = await page.isVisible("#lib-analyse");
+  if (!running && visible) await page.click("#lib-analyse");
   l = await until(async () => {
     const x = await lib();
     return x && x.games.every((g) => g.an) ? x : null;
   }, 120000, 500);
   const ms = Date.now() - t0;
+  // what the page looked like, printed only when the pass did not finish —
+  // the first WebKit run failed here with nothing to go on
+  if (!l) {
+    console.log("棋谱库 · 未完成时的页面:", JSON.stringify(await page.evaluate(() => {
+      const b = document.getElementById("lib-analyse");
+      const st = document.getElementById("lib-body");
+      let x = null;
+      try { x = JSON.parse(localStorage.getItem("chess.v1.library") || "null"); } catch (_) { /* shown as null */ }
+      return {
+        button: b ? { hidden: b.hidden, text: b.textContent.trim() } : null,
+        status: st ? st.textContent.trim().slice(0, 300) : null,
+        toasts: window.__toasts, go: window.__go,
+        games: x ? x.games.map((g) => ({ an: !!g.an, unplayable: !!g.unplayable, side: g.side || null })) : null,
+      };
+    })), "running=" + running, "visible=" + visible);
+  }
   const nulls = l ? l.games.map((g) => g.an.scalars.filter((s) => s == null).length) : [];
   assert(!!l && nulls.every((n) => n === 0) && l.games.every((g) => g.an.scalars.length === g.plies + 1),
     "棋谱库：三局 " + (ms / 1000).toFixed(1) + " 秒全部分析完，an.scalars 里没有 null", JSON.stringify(nulls));
