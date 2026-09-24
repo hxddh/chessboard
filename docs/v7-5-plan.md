@@ -190,6 +190,103 @@
 
 ---
 
-## 8 · 落地记录
+## 8 · 落地记录（7.5.0）
 
-（发布前补。）
+### §1 真壳自检（P0）
+
+**调研结论：可行。** GitHub 托管的 `macos-14` 和 `windows-latest` 都能打开这个
+应用的 WebView 窗口，页面能加载、能起 worker、能编译 wasm，原生桥能来回。
+第一次实测（bc94a27）：
+
+| 平台 | WebView | 第一步 | 引擎应着 | 整步用时 |
+|---|---|---|---|---|
+| macOS | WKWebView | Nf3 | 2053 ms | 9 秒 |
+| Windows | WebView2（Edg/153） | d4 | 2349 ms | 14 秒 |
+
+做法和计划有一处不同：没有用 `index.html?selftest=1`，而是让页面在启动时问原生壳
+一句 `chess.selftestMode`。这样不用改 `main.zig` 的入口 URL，页面加载的就是用户
+加载的那一份。
+
+- `main.zig`：新增 `chess.selftestMode`、`chess.selftestReport` 两个桥命令，只在
+  `CHESS_SELFTEST` 恰好为 `1` 时生效。报告写到 `CHESS_SELFTEST_OUT`，按 `ok` 以
+  0 或 1 退出。桥命令从 8 个变成 10 个，另加两条 zig 测试。
+- `app.js runSelftest()`：用原样的引擎对初始局面要一步棋（60 秒超时），用 chess.js
+  核对合法，报告里带 `{ok, version, wasm, ua, move, ms, err}`。
+- `scripts/selftest-app.mjs`：启动可执行文件，限时 90 秒，读回报告。第一版在应用
+  答完之后还空等满 90 秒（未清的定时器让 node 不退出），f81c5ed 修掉了。
+- `build-macos.yml` 在打包之后、上传之前跑它；`build-windows.yml` 在压 zip 之前跑。
+  发布门禁本来就要等这两条流水线，所以自检不过，就不会有产物，也就发不出去。
+- `test-engine-e2e` 用替身桥验证页面这一半：原样页面报 ok，坏 wasm 页面报
+  `ok:false` 并带原因。
+
+**先红后绿**（验收）：
+
+| | 7.3 的 CSP（3daac4a，临时提交） | 撤回之后 |
+|---|---|---|
+| macOS | 红，8 秒退出：`CompileError: Refused to create a WebAssembly object because 'unsafe-eval' or 'wasm-unsafe-eval' is not an allowed source of script …` | 绿（f90c55b）：e4，1921 ms，7 秒退出 |
+| Windows | 红，20 秒退出：`CompileError: WebAssembly.instantiate(): … violates the following Content Security policy directive …` | 绿（f90c55b），自检这一步 31 秒 |
+
+**顺带撞到的**：`test-persist-e2e` 断言「打开」只走「文件对话框 → 读文件」这一条桥
+路径，页面启动时多出的 `chess.selftestMode` 让它红了。它不是另一条读文件的路，测试
+里把它和已有的 `appdataRead/Write` 一起排除（25bda01）。
+
+**没做到的**：A0 仍然没有人在真机上走过。CI 自检做的是同一件事，跑的也是真的
+WKWebView 与 WebView2，但机器是 GitHub 的，不是用户的。
+
+### §2 真引擎流程测试
+
+`scripts/test-engine-flows-e2e.mjs`，六个场景各开一个新的浏览器上下文，本地
+Chromium 约 84 秒。接进了 `npm run test:e2e`、`checks.yml` 的双引擎矩阵和
+`release.yml` 的门禁，README 的浏览器测试计数改成十个。
+
+先红后绿：临时把 `engine.analyze` 换成返回 `{}`，场景 1（提示）、2（失着提醒）、
+3（分析、精析）、5（棋谱库）共 6 项断言失败。
+
+**没做到的**：场景 4（持续分析）和 6（教学对练）没有单独做过先红后绿；场景 5 里
+「打开一局时引擎不重跑」那一条，红跑时恰好通过，也不算验证过。
+
+### §3 开局族名
+
+- `openings-family-{zh,ja}.js` 覆盖 eco.js 的全部 149 个族。`localName()` 查不到整条
+  译名时，换族名、保留变例名；两边都查不到才显示英文原名。英文界面不变。
+- 族名尽量沿用开局书已有的写法（例如 1.Nf3 叫「列蒂开局」）。开局书本身就有一个
+  开局两种写法的情况（卡罗-卡恩 / 卡罗-康，王翼印度 / 国王印度，四马开局 / 四马
+  防御，彼得罗夫防御 / 俄罗斯防御，后兵开局 / 后兵对局），测试里登记了 5 组、9 条
+  例外，只减不增。要做到一个开局只有一个名字，得先统一开局书。
+- 测试：两种语言都覆盖全部族、没有孤儿条目、族名里没有半角标点；中文下 3810 条里
+  没有一条整条英文；content e2e 走 1.e4 c5 2.Bc4，侧栏显示「B20 · 西西里防御：Bowdler
+  Attack」。
+- 两张表放进主包，没有放进 eco 分块：棋谱库按 PGN 里的开局名显示时不加载 eco 表。
+  主包增加约 17.7 KB。
+
+### §4 小修
+
+- **失着提醒**：改成 `fix` 档。守它的是 test-chess 里的一条静态断言（每处
+  `mm.blunder` 调用都以 `"fix")` 结尾），去掉 `"fix"` 实测会红。**计划写的是在
+  layout e2e 里断言样式类，没做**：要让引擎的应着稳定地送出 300 厘兵以上，场景
+  不好造。
+- **新局重试引擎**：`requestNewGame()` 在引擎坏着时改走 `retryEngine()`。
+  test-engine-e2e 的坏 wasm 场景加了断言：点「新局」后 worker 只多起一个
+  （2 → 3），横幅还在，toast 0 条。不改代码时是 2 → 2，红。
+- **大 PGN**：新增 `parseGamesAsync()`，逐局解析，约 16 毫秒让出一次；棋谱库和开局书
+  的导入都换成它，并防止导入重叠。另外修掉 `splitGamesWith` 的二次方（原来对边界
+  之前的全部文本跑正则，现在只看前 64 个字符）：8000 局 9.4 秒 → 0.19 秒。
+  test-pgn 断言两次让出之间最长不到 50 毫秒（实测 37），切分近似线性。
+  **没做到的**：单个巨大的对局仍是一次同步解析，要彻底解决得挪进 Worker。
+- **README 版本门禁**：`manifest-check` 断言 README 有 `## <app.zon 版本> 改了什么`。
+- **棋谱库时长**：按钮写成「分析剩下的 N 局（约 X 分钟）」，满 100 分钟改用小时。
+  系数 `LIB_PACE` 按 §5 那次实测倒推：102 秒 ÷（8 局共 522 个局面 × 200 毫秒）≈ 0.98。
+  「§5 那 8 局就是语料的前 8 局」是推断。500 局 × 80 手满载显示约 2.2 小时。
+  中途重载后续跑，test-library-e2e 第 16 节第一次守住：6 局分析完 2 局时重载，已分析
+  的原样保留，剩下 4 局接着排队，再点「分析」只问没分析过的局面。这一节用的是空桩
+  引擎，**真引擎下的断点续跑仍然没有实测过**。
+
+### 数字
+
+界面键 914 → 917：`lib.analyseEta`、`lib.etaMin`、`lib.etaHour`。桥命令 8 → 10。
+浏览器测试 9 → 10。
+
+### 发布前仍然需要
+
+A0：在 Windows 与 macOS 的真机上，新装的应用和电脑走一步，电脑要应。CI 的自检已经
+在这两个平台的真 WebView 里做过同样的事，这一条剩下的只是「用户那台机器」。
