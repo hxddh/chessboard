@@ -1003,6 +1003,44 @@ if (hasTab && REAL.length) {
   }
 }
 
+// --- 7.5 §3:开局书外的开局,族名也说中文 -----------------------------------
+// 1.e4 c5 2.Bc4 是 B20 Sicilian Defense: Bowdler Attack,开局书没有这条线。
+// 以前侧栏整条显示英文;现在族名本地化、变例名保留英文。表是按需加载的分块,
+// 所以等它到了再读。
+{
+  const ctx5 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx5.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", autoFlipPvp: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await ctx5.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel").catch(() => {});
+  const tap5 = async (s) => {
+    const p = await pg.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1], z = r.width / 8;
+      return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+    }, s);
+    await pg.mouse.click(p.x, p.y);
+    await pg.waitForTimeout(220);
+  };
+  await tap5("e2"); await tap5("e4");
+  await tap5("c7"); await tap5("c5");
+  await tap5("f1"); await tap5("c4");
+  let line = "";
+  for (let i = 0; i < 30; i++) {
+    line = await pg.evaluate(() => document.getElementById("opening-line").textContent);
+    if (/B20/.test(line) && /Bowdler/.test(line)) break;
+    await pg.waitForTimeout(150);
+  }
+  assert(line === "B20 · 西西里防御：Bowdler Attack", "开局书外的 B20:族名说中文,变例名保留英文", line);
+  await ctx5.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

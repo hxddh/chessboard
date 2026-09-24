@@ -28,10 +28,10 @@ vm.createContext(ctx);
 // script and eco-lookup.js reads the global it defines. Loading it into this
 // context first is the same arrangement, and without it every lookup here
 // answers null, which is exactly what a missing chunk looks like.
-for (const m of ["chess.js", "eco.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js"]) {
+for (const m of ["chess.js", "eco.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js", "openings-family-zh.js", "openings-family-ja.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", m)), ctx, { filename: m });
 }
-const { Chess, ChessEco, CHESS_OPENINGS, CHESS_OPENING_NAMES, CHESS_OPENINGS_JA } = ctx;
+const { Chess, ChessEco, CHESS_OPENINGS, CHESS_OPENING_NAMES, CHESS_OPENINGS_JA, OPENING_FAMILIES_ZH, OPENING_FAMILIES_JA } = ctx;
 
 let failed = 0;
 function assert(cond, msg) {
@@ -136,7 +136,99 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   assert(ChessEco.localName(it, "zh-CN") === CHESS_OPENING_NAMES["italian-game"], "Chinese shows the book's name for a joined entry (" + ChessEco.localName(it, "zh-CN") + ")");
   assert(ChessEco.localName(it, "ja") === CHESS_OPENINGS_JA["italian-game"], "Japanese too (" + ChessEco.localName(it, "ja") + ")");
   const far = { eco: "A00", name: "Formation: Hippopotamus Attack" };
-  assert(ChessEco.localName(far, "zh-CN") === far.name, "an entry the book does not have falls back to English");
+  assert(ChessEco.localName(far, "en") === far.name, "English is unchanged for an entry the book does not have");
+  assert(ChessEco.localName({ eco: "Z99", name: "Nonexistent Family: Something" }, "zh-CN") === "Nonexistent Family: Something",
+    "a family with no translation falls back to the English name");
+}
+
+// --- 7.5 §3: families ------------------------------------------------------
+//
+// The book translates ~195 lines; the other 3600-odd table entries show their
+// family (the text before the first colon) in the reader's language and keep
+// the variation in English. Every family in the table must be in both
+// dictionaries — a lichess table update that brings a new family fails here.
+{
+  const families = new Map();
+  for (const [, name] of Object.values(ctx.ECO_BY_KEY)) {
+    const f = name.split(":")[0];
+    families.set(f, (families.get(f) || 0) + 1);
+  }
+  for (const [lang, tbl] of [["zh-CN", OPENING_FAMILIES_ZH], ["ja", OPENING_FAMILIES_JA]]) {
+    const missing = [...families.keys()].filter((f) => !tbl[f]);
+    assert(missing.length === 0, "every one of the " + families.size + " families in eco.js has a " + lang + " name" +
+      (missing.length ? " — missing: " + missing.join(" | ") : ""));
+    const orphan = Object.keys(tbl).filter((f) => !families.has(f));
+    assert(orphan.length === 0, "…and the " + lang + " dictionary has no family the table lacks" +
+      (orphan.length ? " — orphans: " + orphan.join(" | ") : ""));
+    const ascii = Object.entries(tbl).filter(([, v]) => /[:,;()]/.test(v));
+    assert(ascii.length === 0, "…and no " + lang + " family name carries ASCII punctuation" +
+      (ascii.length ? " — " + ascii.map(([k]) => k).join(" | ") : ""));
+  }
+
+  // a non-book line: the family translated, the variation left in English
+  const bowdler = ChessEco.openingForGame("e4 c5 Bc4".split(" "));
+  assert(bowdler && bowdler.eco === "B20" && bowdler.name === "Sicilian Defense: Bowdler Attack",
+    "1.e4 c5 2.Bc4 is B20 Sicilian Defense: Bowdler Attack (" + (bowdler && bowdler.name) + ")");
+  assert(!ChessEco.BOOK_ID_BY_ENTRY["B20|Sicilian Defense: Bowdler Attack"], "…which the book does not translate");
+  assert(ChessEco.localName(bowdler, "zh-CN") === OPENING_FAMILIES_ZH["Sicilian Defense"] + "：Bowdler Attack",
+    "Chinese shows the family in Chinese and the rest in English (" + ChessEco.localName(bowdler, "zh-CN") + ")");
+  assert(ChessEco.localName(bowdler, "ja") === OPENING_FAMILIES_JA["Sicilian Defense"] + "：Bowdler Attack",
+    "Japanese too (" + ChessEco.localName(bowdler, "ja") + ")");
+  assert(ChessEco.localName(bowdler, "en") === "Sicilian Defense: Bowdler Attack", "English is unchanged");
+  const greco = { eco: "C54", name: "Italian Game: Giuoco Piano, Greco's Attack" };
+  assert(ChessEco.localName(greco, "zh-CN") === "意大利开局：Giuoco Piano, Greco's Attack",
+    "the plan's example reads 意大利开局：Giuoco Piano, Greco's Attack (" + ChessEco.localName(greco, "zh-CN") + ")");
+  const far = { eco: "A00", name: "Formation: Hippopotamus Attack" };
+  assert(ChessEco.localName(far, "zh-CN") === OPENING_FAMILIES_ZH.Formation + "：Hippopotamus Attack",
+    "…and so does an A00 oddity (" + ChessEco.localName(far, "zh-CN") + ")");
+  // a name with no colon is all family
+  const kg = { eco: "Z99", name: "King's Gambit" };
+  assert(ChessEco.localName(kg, "zh-CN") === OPENING_FAMILIES_ZH["King's Gambit"], "a name with no colon is translated whole");
+
+  // a family the book also names must be spelt the same way here, so one
+  // opening never appears under two names: for every book line whose table
+  // entry is a bare family name, the dictionary agrees with the book
+  // (a trailing parenthetical is the book's gloss — 西班牙开局（鲁伊·洛佩斯）—
+  // and the book's Japanese "X：アクセプテッド" is written "X・アクセプテッド"
+  // here, since a family is followed by its own "：variation").
+  //
+  // Where the book itself uses two names, or lends a bare family's name to a
+  // line that is really something narrower, the pair is registered below.
+  // Shrink-only, like TOLERATED.
+  const FAMILY_TOLERATED = {
+    // book: 1.d4 后兵开局, 1.d4 d5 后兵对局 — lichess calls both "Queen's Pawn Game"
+    "A40|Queen's Pawn Game zh": true, "A40|Queen's Pawn Game ja": true,
+    // book: 1.e4 王兵开局, 1.e4 e5 王兵对局 — lichess calls both "King's Pawn Game"
+    "B00|King's Pawn Game zh": true, "B00|King's Pawn Game ja": true,
+    // book: 沃尔加-贝科弃兵 for the gambit, 贝科弃兵·接受 for the acceptance
+    "A57|Benko Gambit zh": true,
+    // book: both 俄罗斯防御（彼得罗夫） and 彼得罗夫防御; ロシアン（ペトロフ） and ペトロフ
+    "C42|Petrov's Defense zh": true, "C42|Petrov's Defense ja": true,
+    // the book's "Center Game" line ends on the capture lichess calls Accepted
+    "C21|Center Game Accepted zh": true, "C21|Center Game Accepted ja": true,
+    // a deep book line (London vs King's Indian) whose last position lichess files here
+    "A48|London System, with Be2 zh": true, "A48|London System, with Be2 ja": true,
+  };
+  const norm = (s) => s.replace(/（[^）]*）$/, "").replace(/（[^）]*）・/, "・").replace(/：/g, "・");
+  const disagree = [];
+  const seen = new Set();
+  for (const [k, id] of Object.entries(ChessEco.BOOK_ID_BY_ENTRY)) {
+    const name = k.slice(k.indexOf("|") + 1);
+    if (name.includes(":")) continue;
+    for (const [lang, fam, book] of [["zh", OPENING_FAMILIES_ZH, CHESS_OPENING_NAMES], ["ja", OPENING_FAMILIES_JA, CHESS_OPENINGS_JA]]) {
+      if (!fam[name] || norm(fam[name]) === norm(book[id])) continue;
+      seen.add(k + " " + lang);
+      if (!FAMILY_TOLERATED[k + " " + lang]) disagree.push(k + " " + lang + ": " + fam[name] + " ≠ book " + book[id]);
+    }
+  }
+  assert(disagree.length === 0, "family names agree with the book where the book names the bare family" +
+    (disagree.length ? " — " + disagree.join("; ") : ""));
+  const staleFam = Object.keys(FAMILY_TOLERATED).filter((k) => !seen.has(k));
+  assert(staleFam.length === 0, "…and the family register only shrinks" + (staleFam.length ? " (delete: " + staleFam.join(", ") + ")" : ""));
+
+  // coverage in the reader's language: no table entry falls back to all-English
+  const english = Object.values(ctx.ECO_BY_KEY).filter(([eco, name]) => ChessEco.localName({ eco, name }, "zh-CN") === name);
+  assert(english.length === 0, "no table entry shows an all-English name in Chinese (" + english.length + ")");
   const joined = Object.keys(ChessEco.BOOK_ID_BY_ENTRY).length;
   assert(joined >= 100, "the book lends its translations to " + joined + " table entries");
   assert(ChessEco.ecoName("B90") === "Sicilian Defense: Najdorf Variation", "ecoName() gives the family name of a code (" + ChessEco.ecoName("B90") + ")");

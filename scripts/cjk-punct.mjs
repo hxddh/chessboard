@@ -34,6 +34,7 @@ export const FILES = [
   "src/web/js/lessons.js", "src/web/js/lessons-ja.js",
   "src/web/js/puzzles.js", "src/web/js/puzzles-ja.js",
   "src/web/js/openings.js", "src/web/js/openings-ja.js",
+  "src/web/js/openings-family-zh.js", "src/web/js/openings-family-ja.js",
 ];
 
 const CJK = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/;
