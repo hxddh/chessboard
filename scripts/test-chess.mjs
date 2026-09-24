@@ -4559,6 +4559,11 @@ for (const lang of CONTENT_LANGS) {
     const fixes = (appSrc.match(/, "fix"\)/g) || []).length;
     assert(faults >= 10, "the fault tier is used (" + faults + " call sites)");
     assert(fixes >= 10, "the correction tier is used (" + fixes + " call sites)");
+    // 7.5: the blunder coach asks you to press Z. On the default tier it was a
+    // green "success" receipt gone in 2.2 s — before it could be read and acted on
+    const blunders = appSrc.match(/toast\(tf\("mm\.blunder"[^;]*;/g) || [];
+    assert(blunders.length >= 1 && blunders.every((c) => /, "fix"\);$/.test(c)),
+      "the blunder warning is a correction (fix tier, 4.2 s), not a receipt: " + blunders.join(" | "));
   }
 
   // --- one implementation per component, and no orphan rules ---------------

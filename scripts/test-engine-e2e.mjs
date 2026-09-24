@@ -166,6 +166,22 @@ async function firstReply(prefix, failing) {
     const again = await probe();
     out.workersRetry = again.workers;
     out.noticeRetry = again.notice;
+    // 7.5: 新局 is the other place a dead engine is tried again — once, and a
+    // second failure is the same notice, not a toast
+    await page.evaluate(() => { window.__toasts = [];
+      const el = document.getElementById("toast");
+      if (el) new MutationObserver(() => { if (el.textContent.trim()) window.__toasts.push(el.textContent.trim()); })
+        .observe(el, { childList: true }); });
+    // the button sits in a tab the viewport may have scrolled under #app: the
+    // handler is what is under test, not the hit-testing
+    await page.evaluate(() => document.getElementById("btn-new").click());
+    await page.click("#confirm-ok", { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(3000);
+    const fresh = await probe();
+    out.workersNew = fresh.workers;
+    out.noticeNew = fresh.notice;
+    out.movesNew = fresh.moves.length;
+    out.toastsNew = (await page.evaluate(() => window.__toasts)).length;
   }
   await ctx.close();
   return { ...out, plies, ms, errs };
@@ -181,7 +197,8 @@ for (const e of control.errs.slice(0, 3)) console.log("  ", e.slice(0, 300));
 
 const broken = await firstReply("/broken", true);
 console.log("坏引擎:", JSON.stringify({ moves: broken.moves, pill: broken.pill, notice: broken.notice,
-  workers: broken.workers, workersLater: broken.workersLater, workersRetry: broken.workersRetry, ms: broken.ms }));
+  workers: broken.workers, workersLater: broken.workersLater, workersRetry: broken.workersRetry,
+  workersNew: broken.workersNew, toastsNew: broken.toastsNew, ms: broken.ms }));
 for (const e of broken.errs.slice(0, 3)) console.log("  ", e.slice(0, 300));
 
 // Codex review on #76: in 双人 mode nothing boots the engine at startup, so
@@ -289,6 +306,8 @@ assert(broken.workers >= 1 && broken.workers <= 2 && broken.workersLater === bro
   "坏引擎：启动有上限，不无限重试(workers " + broken.workers + " → " + broken.workersLater + ")");
 assert(broken.workersRetry === broken.workersLater + 1 && !!broken.noticeRetry,
   "坏引擎：点「重试」只再启动一次，失败后提示仍在(workers " + broken.workersRetry + ")");
+assert(broken.movesNew === 0 && broken.workersNew === broken.workersRetry + 1 && !!broken.noticeNew && !broken.toastsNew,
+  "坏引擎：点「新局」顺带重试一次，失败后仍是那条提示、不另弹 toast(workers " + broken.workersRetry + " → " + broken.workersNew + ", toasts " + broken.toastsNew + ")");
 if (shipped.plies < 2) {
   console.error(control.plies >= 2
     ? "诊断:去掉 CSP 之后引擎能应 —— 是 index.html 的 CSP 挡住了它"

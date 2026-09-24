@@ -79,6 +79,26 @@ export function createLibraryUI(d) {
    * survivors whose answer it changes.
    */
   const LIB_DEEP_BUDGET = 400;
+  /**
+   * What a library pass really costs per position, as a share of LIB_BUDGET
+   * (7.5). Measured with the real engine in the 7.5 walkthrough: the first 8
+   * corpus games (scripts/fixtures/corpus.mjs — 514 plies, so 522 positions
+   * with each start) took 102 s at 200 ms, mining included:
+   * 102000 / (522 × 200) ≈ 0.98. Terminal positions skip the engine and the
+   * rest of the per-ply work is small beside the search, so this is ~1.
+   */
+  const LIB_PACE = 0.98;
+  /**
+   * 「约 N 分钟」 for the games still queued: their positions × the scan
+   * budget × LIB_PACE. 500 games is one to two hours, and a button that says
+   * 分析剩下的 500 局 and nothing else lets that come as a surprise.
+   */
+  function libEta(games) {
+    let positions = 0;
+    for (const g of games) positions += (Number(g.plies) || 0) + 1;
+    const min = Math.max(1, Math.ceil(positions * LIB_BUDGET * LIB_PACE / 60000));
+    return min < 100 ? tf("lib.etaMin", [min]) : tf("lib.etaHour", [Math.round(min / 6) / 10]);
+  }
 
   function loadLibrary() {
     const s = Persist.read("library").value;
@@ -155,6 +175,10 @@ export function createLibraryUI(d) {
     }
   }
 
+  // a file being read (7.5: that is no longer instant); a second import
+  // meanwhile is turned away rather than interleaved with it
+  let importing = false;
+
   /**
    * Take every game in a PGN file into the library.
    *
@@ -166,14 +190,19 @@ export function createLibraryUI(d) {
     const text0 = (text || "").trim();
     if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
     if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    if (importing) return;
     let chunks;
     try { chunks = ChessPgnParser.splitGames(text0); }
     catch (_) { chunks = ChessPgn.splitGames(text0); }
+    // 7.5: read game by game, handing the thread back every ~16 ms — a big
+    // archive used to freeze the window for seconds (see parseGamesAsync)
+    let games;
+    importing = true;
+    try { games = await ChessPgnParser.parseGamesAsync(chunks); }
+    finally { importing = false; }
     const now = Date.now();
     const fresh = [];
-    for (const chunk of chunks) {
-      let parsed = null;
-      try { parsed = ChessPgnParser.parsePgn(chunk).games[0]; } catch (_) { parsed = null; }
+    for (const parsed of games) {
       if (!parsed) continue;
       // mainline SAN only: a game's variations are the annotator's opinion,
       // and what this library measures is what the player actually played
@@ -445,7 +474,8 @@ export function createLibraryUI(d) {
     if (!body) return;
     const list = store.session.library;
     const analysed = list.filter((g) => g.an && g.side);
-    const queued = Library.pending(list).filter((g) => !g.unplayable).length;
+    const queuedGames = Library.pending(list).filter((g) => !g.unplayable);
+    const queued = queuedGames.length;
     const meta = doc.getElementById("lib-meta");
     if (meta) { meta.hidden = !list.length; meta.textContent = tf("lib.count", [list.length]); }
     const namesRow = doc.getElementById("lib-names-row");
@@ -489,7 +519,8 @@ export function createLibraryUI(d) {
     const an = doc.getElementById("lib-analyse");
     if (an) {
       an.hidden = !queued && !store.session.libRun;
-      an.textContent = store.session.libRun ? t("lib.pause") : tf("lib.analyse", [queued]);
+      an.textContent = store.session.libRun ? t("lib.pause")
+        : queued ? tf("lib.analyseEta", [queued, libEta(queuedGames)]) : tf("lib.analyse", [queued]);
     }
     const dg = doc.getElementById("lib-diagnose");
     if (dg) dg.hidden = analysed.length < LIB_MIN_GAMES;
