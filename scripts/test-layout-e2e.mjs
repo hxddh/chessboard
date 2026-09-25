@@ -2558,6 +2558,13 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       return document.getElementById("pick-modal").classList.contains("show");
     });
     assert(!after, locale + ": answering it closes it");
+    // 7.6 §3a: the first answer is 「我是新手」 — the lesson it opens is not
+    // the whole of it: the engine waiting after the lessons is the Beginner
+    // one, not the default 1700 (「我会下棋」 was already getting a lower rung)
+    const chose = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+    assert(chose.mode === "learn" && chose.difficulty === "beginner",
+      locale + ": 「new to chess」 lands in the lessons with the Beginner engine (" +
+      chose.mode + " / " + chose.difficulty + ")");
     await page.reload();
     await page.waitForTimeout(1100);
     const again = await page.evaluate(() =>
@@ -3140,6 +3147,64 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
   }
   assert(hits.length === 0, "顶栏里没有两个元素叠在一起（三语 × 四种模式 × 五档宽度）" +
     (hits.length ? " —— " + hits.slice(0, 8).join("；") + `（共 ${hits.length} 处）` : ""));
+}
+
+// --- 5d. 教学的任务在棋盘上方看得见，和面板开合无关（7.6 §3f）------------------
+// 7.5 走查：540×900 选「新手」进来，面板是收起的 —— 而「点击 e4」这句只写在
+// 面板里的任务卡上，棋盘上什么也没说。
+{
+  const measure = (page) => page.evaluate(() => {
+    const strip = document.getElementById("task-strip");
+    const task = document.getElementById("lesson-task");
+    const chrome = document.querySelector(".chrome").getBoundingClientRect();
+    const wrap = document.getElementById("board-wrap").getBoundingClientRect();
+    const s = strip ? strip.getBoundingClientRect() : null;
+    return {
+      shown: !!s && getComputedStyle(strip).display !== "none" && s.height > 0,
+      text: strip ? strip.textContent.trim() : "",
+      task: task ? task.textContent.trim() : "",
+      top: s ? s.top : 0, bottom: s ? s.bottom : 0,
+      chromeBottom: chrome.bottom, boardTop: wrap.top, board: Math.round(wrap.width),
+      clipped: strip && strip.firstElementChild ? strip.firstElementChild.scrollHeight > strip.firstElementChild.clientHeight + 1 : false,
+    };
+  });
+  for (const lang of LANGS) {
+    for (const vp of [{ width: 540, height: 900 }, { width: 620, height: 520 }, { width: 1400, height: 900 }]) {
+      const tag = lang + " " + vp.width + "×" + vp.height;
+      const { ctx, page, errs } = await open(lang, "learn", "play", "wood", vp, "0");
+      // (the first lesson may open on its watch-first demo; the card and the
+      // strip then both say so, which is the same claim)
+      const shut = await measure(page);
+      assert(shut.shown, tag + " 面板收起：棋盘上方有任务条");
+      assert(shut.text && shut.text === shut.task, tag + " 任务条说的就是任务卡上那句（「" + shut.text + "」）");
+      assert(shut.top >= shut.chromeBottom - 0.5 && shut.bottom <= shut.boardTop + 0.5,
+        tag + " 任务条在顶栏之下、棋盘之上，不压着第 8 横排（" +
+        [shut.chromeBottom, shut.top, shut.bottom, shut.boardTop].map(Math.round).join(" / ") + "）");
+      assert(!shut.clipped, tag + " 两行之内说得完");
+      await page.click("#toggle-panel");
+      await page.waitForTimeout(400);
+      const up = await measure(page);
+      if (vp.width <= 820) {
+        // the panel is over or under the board here, not beside it: the strip
+        // stays, and so does the board's size
+        assert(up.shown, tag + " 面板打开：任务条仍在");
+        assert(up.board === shut.board, tag + " 开合面板，棋盘不变大小（" + shut.board + " → " + up.board + "）");
+      } else {
+        assert(!up.shown, tag + " 宽窗面板打开：任务就在旁边的面板里，棋盘上方不再重复");
+      }
+      assert(errs.length === 0, tag + " 没有 JS 异常", errs.join(" / "));
+      await ctx.close();
+    }
+  }
+  // …and the board of a portrait window keeps every pixel it had: the strip's
+  // height comes out of the sheet's reserve (540×900: 528px either way)
+  {
+    const a = await open("zh-CN", "learn", "play", "wood", { width: 540, height: 900 }, "0");
+    const b = await open("zh-CN", "pvp", "play", "wood", { width: 540, height: 900 }, "0");
+    const la = await measure(a.page), lb = await measure(b.page);
+    assert(la.board === lb.board, "540×900：教学里的棋盘和双人模式一样大（" + la.board + " / " + lb.board + "）");
+    await a.ctx.close(); await b.ctx.close();
+  }
 }
 
 await browser.close();

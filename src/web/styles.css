@@ -682,7 +682,7 @@
       display: grid; place-items: center;
       /* reserve the chrome bar's height: its translucent gradient must never
          sit on top of the board (visible as a dark band across rank 8) */
-      padding: calc(var(--chrome-h) + var(--stage-pad)) var(--stage-pad) var(--stage-pad);
+      padding: calc(var(--chrome-h) + var(--task-h, 0px) + var(--stage-pad)) var(--stage-pad) var(--stage-pad);
       /* no transition: this is the same layout change as #board-wrap's size,
          and animating one without the other makes the board overflow the
          stage for the duration */
@@ -690,10 +690,44 @@
     #app.panel-open .stage {
       padding-right: calc(var(--side-w) + var(--stage-pad));
     }
+    /* The lesson's task, over the board (7.6 §3f).
+       The task card lives in the panel, and at 540×900 the onboarding leaves
+       the panel shut — so the one sentence that says what to do (「点击 e4」)
+       was nowhere on screen. When the panel is not beside the board to say it,
+       this strip does. On a desktop window that is while the panel is shut —
+       the board is resized by that toggle anyway. At 820px and under it is
+       always: there the panel lies over the board or below it rather than
+       beside it, the board keeps its size when the panel comes and goes, and
+       a strip that came and went with the panel would be the one thing that
+       moved it. It takes its height from the stage through --task-h, the
+       same way the chrome does, so it never lies on rank 8; in the portrait
+       sheet layout it comes out of the sheet's reserve instead (see there).
+       Two lines at most; the whole sentence is still in the panel. */
+    .task-strip {
+      display: none;
+      position: absolute; top: var(--chrome-h); left: 0; right: 0;
+      height: var(--task-h, 0px);
+      padding: 0 16px;
+      align-items: center; justify-content: center;
+      text-align: center;
+      font-size: 0.8125rem; font-weight: 600; line-height: var(--lh-body);
+      color: var(--text);
+      pointer-events: none;
+    }
+    .task-strip > span {
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+    #app.has-task:not(.panel-open) { --task-h: 40px; }
+    #app.has-task:not(.panel-open) .task-strip { display: flex; }
+    @media (max-width: 820px) {
+      #app.has-task { --task-h: 40px; }
+      #app.has-task .task-strip { display: flex; }
+    }
     #board-wrap {
       position: relative;
       --free-w: calc(100vw - 2 * var(--stage-pad));
-      --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--stage-pad));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
       max-width: 100%; max-height: 100%;
@@ -712,7 +746,7 @@
     }
     #app.panel-open #board-wrap {
       --free-w: calc(100vw - var(--side-w) - 2 * var(--stage-pad));
-      --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--stage-pad));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
     }
@@ -1602,8 +1636,12 @@
     }
     .muted { color: var(--muted); font-size: 0.75rem; }
 
+    /* Above every dialog, the confirm included (7.6 §3d): a toast raised from
+       inside a dialog — or while one is still closing — used to sit under the
+       blurred backdrop at z-index 40, the one message on screen that could not
+       be read. */
     .toast {
-      position: absolute; left: 50%; bottom: 24px; z-index: 40;
+      position: absolute; left: 50%; bottom: 24px; z-index: 70;
       transform: translateX(-50%) translateY(10px);
       background: color-mix(in srgb, var(--panel) 94%, #000);
       color: var(--text);
@@ -1696,6 +1734,23 @@
       border-radius: var(--radius-lg); padding: 16px 20px;
       box-shadow: 0 24px 60px rgba(0,0,0,.4);
       animation: modal-in .22s var(--ease);
+      /* 7.6 §3c: no dialog is taller than the window. 「看诊断」 on 24 games
+         measured a 1025px card in a 900px window, with no max-height and
+         nothing to scroll: the wheel went to the panel behind it, 关闭 sat at
+         y=976, and the last opening rows could not be reached at all. The card
+         scrolls inside itself, and the scroll stays there at either end. */
+      max-height: calc(100% - 32px);
+      overflow-y: auto; overflow-x: hidden;
+      overscroll-behavior: contain;
+    }
+    /* …and the way out stays on screen while it scrolls: the close row is
+       pinned to the card's lower edge, over the content passing under it. The
+       negative margin takes the card's own bottom padding into the row, so it
+       sits flush with the edge instead of floating 16px above a gap. */
+    .modal > .close-row:last-child {
+      position: sticky; bottom: -16px;
+      margin-top: 8px; margin-bottom: -16px; padding: 8px 0 16px;
+      background: var(--panel);
     }
     /* Three dialogs hold a scrolling list of sentences rather than a single
        question, and 380px was the width of the ones that hold a question.
@@ -1866,7 +1921,7 @@
       }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - min(46vh, 430px) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - min(46vh, 430px) - 2 * var(--stage-pad));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
@@ -1897,7 +1952,7 @@
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--stage-pad));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
@@ -1965,6 +2020,14 @@
         --sheet-h: clamp(0px, 100vh - var(--chrome-h) - 100vw, min(46vh, 430px));
         --sheet-vis: max(var(--sheet-h), min(46vh, 240px));
       }
+      /* 7.6 §3f: in a lesson the task strip over the board (.task-strip)
+         takes its height out of the sheet's reserve, not out of the board:
+         a portrait window is width-bound, so 540×900 keeps its 528px board
+         and the sheet is 40px shorter. */
+      #app.has-task {
+        --sheet-h: clamp(0px, 100vh - var(--chrome-h) - var(--task-h, 0px) - 100vw, min(46vh, 430px));
+        --sheet-vis: max(var(--sheet-h), min(46vh, 240px));
+      }
       .side {
         top: auto; left: 0; right: 0; bottom: 0;
         width: auto; height: var(--sheet-vis);
@@ -1990,7 +2053,7 @@
       }
       #board-wrap, #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - var(--sheet-h) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - var(--sheet-h) - 2 * var(--stage-pad));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
