@@ -17,6 +17,7 @@ import { ChessFide } from "./fide.js";
 import { ChessTree } from "./game-tree.js";
 import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
+import { ChessIcons } from "./icons.js";
 import { CHESS_LESSONS_EN } from "./lessons-en.js";
 import { CHESS_LESSONS_JA } from "./lessons-ja.js";
 import { CHESS_LESSONS } from "./lessons.js";
@@ -70,6 +71,7 @@ import { createStore } from "./store.js";
   const Review = ChessReview;
   const BoardView = ChessBoardView;
   const Audio2 = ChessAudio;
+  const Icons = ChessIcons;
 
   /** Shared dialog behaviour: focus trap, focus return, aria-modal. */
   const Dlg = ChessDialog;
@@ -327,6 +329,10 @@ import { createStore } from "./store.js";
       editor: null,
       coachPending: null,
       drawOfferPending: false,
+      /** 7.7 §4: the ending whose result card was put away with ✕ */
+      goDismissed: null,
+      /** 7.7 §4: puzzles solved clean in a row, this sitting */
+      pzStreak: 0,
       _analysisTick: null,
       /** the newest-first list the rendered rows index into */
       histCache: [],
@@ -377,6 +383,8 @@ import { createStore } from "./store.js";
       boardFocused: false,
       toastTimer: null,
       confirmResolver: null,
+      /** 7.7 §3: the review group, opened by hand during an engine game */
+      reviewOpen: false,
       histFilter: { result: "all", color: "all" },
       // 7.1: the library list's own filters, plus the one the diagnosis sets
       // when a row there is clicked (`libPick`). Kept apart so that clearing
@@ -1200,7 +1208,7 @@ import { createStore } from "./store.js";
       const close = document.createElement("button");
       close.type = "button";
       close.className = "toast-close";
-      close.textContent = "✕";
+      close.appendChild(Icons.icon("x"));
       close.setAttribute("aria-label", t("act.close"));
       close.onclick = dismissToast;
       el.appendChild(close);
@@ -1262,9 +1270,18 @@ import { createStore } from "./store.js";
     if (msgEl) msgEl.textContent = message;
     okBtn.textContent = okLabel;
     cancelBtn.textContent = cancelLabel;
+    // 7.7 (v7-7-plan §4): an answer that cannot be taken back is red, not
+    // the accent. The accent fill is this UI's word for "the thing to press
+    // here"; on 认输 and on the deletions it was saying the opposite of what
+    // the question means. The native alert has its own critical style; this
+    // is the in-page box saying the same.
+    const destructive = !!(buttons && (buttons.destructive || buttons.danger));
+    okBtn.classList.toggle("danger", destructive);
+    okBtn.classList.toggle("primary", !destructive);
     if (altBtn) {
       altBtn.hidden = !altLabel;
       if (altLabel) altBtn.textContent = altLabel;
+      altBtn.classList.toggle("danger", destructive);
     }
     Dlg.open(modal, okBtn);
     return new Promise((resolve) => { store.ui.confirmResolver = resolve; });
@@ -1776,7 +1793,8 @@ import { createStore } from "./store.js";
     const want = clockRunning();
     if (want && !store.game.clockTimer) {
       store.game.clockTickAt = Date.now();
-      store.game.clockTimer = setInterval(clockTick, 200);
+      // 100ms, not 200: the last ten seconds show tenths (fmtClock)
+      store.game.clockTimer = setInterval(clockTick, 100);
     } else if (!want && store.game.clockTimer) {
       clearInterval(store.game.clockTimer);
       store.game.clockTimer = null;
@@ -1800,16 +1818,25 @@ import { createStore } from "./store.js";
         recordOutcome(isDraw ? "draw" : side === store.session.humanColor ? "loss" : "win", "flag");
       }
       saveGame();
+      // the result card says it (7.7 §4): a toast is for what happens
+      // behind the game, not for how the game ended
       store.commit("game", "action");
-      const who = sideName(side);
-      toast(isDraw ? who + t("msg.clock.flagDrawNoMaterial") :
-        tf("mm.flagWin", [who, otherSideName(side)]));
       return;
     }
     renderClocks();
   }
 
+  /**
+   * m:ss, and 0:0s.t in the last ten seconds (7.7, v7-7-plan §2): a second is
+   * a long time when there are nine of them left, and the tenth is what says
+   * whether a move can still be made. Seconds round up (a clock reading 0:00
+   * has fallen), tenths round down.
+   */
   function fmtClock(ms) {
+    if (ms > 0 && ms < 10000) {
+      const d = Math.floor(ms / 100);
+      return "0:0" + Math.floor(d / 10) + "." + (d % 10);
+    }
     const s = Math.max(0, Math.ceil(ms / 1000));
     return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
   }
@@ -1819,14 +1846,18 @@ import { createStore } from "./store.js";
     const bEl = document.getElementById("clock-b");
     if (!wEl || !bEl) return;
     const show = (store.session.mode === "pvp" || store.session.mode === "ai") && store.game.timeControl !== "off" && !!store.game.clock;
-    wEl.hidden = !show;
-    bEl.hidden = !show;
+    if (wEl.hidden === show) wEl.hidden = !show;
+    if (bEl.hidden === show) bEl.hidden = !show;
     if (!show) return;
     const active = clockRunning() ? game.turn() : null;
-    for (const [el, side] of [[wEl, "w"], [bEl, "b"]]) {
-      el.textContent = fmtClock(store.game.clock[side]);
-      el.classList.toggle("active", active === side);
-      el.classList.toggle("low", store.game.clock[side] < 20000);
+    for (const [node, side] of [[wEl, "w"], [bEl, "b"]]) {
+      // In place: this runs ten times a second while a clock runs, inside a
+      // strip the pointer may be resting on (see setText).
+      setText(node, fmtClock(store.game.clock[side]));
+      const on = active === side;
+      if (node.classList.contains("active") !== on) node.classList.toggle("active", on);
+      const low = store.game.clock[side] < 20000;
+      if (node.classList.contains("low") !== low) node.classList.toggle("low", low);
     }
   }
 
@@ -2116,6 +2147,9 @@ import { createStore } from "./store.js";
       body.appendChild(p);
     }
     if (task) { task.hidden = true; task.replaceChildren(); }
+    // a classic being read has no tasks, so no progress dots
+    const dots = el("lesson-dots");
+    if (dots && dots.firstChild) { dots.replaceChildren(); delete dots.dataset.sig; }
     for (const id of ["lesson-restart", "lesson-demo", "lesson-practice", "lesson-next"]) {
       const b = document.getElementById(id);
       if (b) b.hidden = true;
@@ -2539,7 +2573,9 @@ import { createStore } from "./store.js";
       saveLearnState();
       checkNewAchievements();
     }
-    toast(tf("lm.lessonDone", [lessonText(L).title]));
+    // no toast (7.7 §4): the dot row fills, the task card says 完成 and
+    // points at 下一课, and 下一课 takes the fill — the lesson's own screen
+    // says it is finished, where the next step is
     sync();
   }
 
@@ -2592,6 +2628,25 @@ import { createStore } from "./store.js";
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
     if (title) title.textContent = t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
+    // 7.7 (v7-7-plan §4): the lesson's tasks as a row of dots — done filled,
+    // current ringed; a finished lesson is a full row
+    const dots = el("lesson-dots");
+    if (dots) {
+      const n = L.tasks.length;
+      const ti = store.session.learn.ti;
+      const done = !!store.session.learn.done;
+      const sig = L.id + "|" + n + "|" + ti + "|" + done + "|" + store.ui.langId;
+      if (dots.dataset.sig !== sig) {
+        dots.dataset.sig = sig;
+        dots.replaceChildren(...L.tasks.map((_, i) => {
+          const d = document.createElement("li");
+          d.className = "lesson-dot" + (done || i < ti ? " done" : i === ti ? " current" : "");
+          return d;
+        }));
+        dots.classList.toggle("complete", done);
+        dots.setAttribute("aria-label", t("aria.lessonDots") + " " + (done ? n : ti) + "/" + n);
+      }
+    }
     const textEl = document.getElementById("lesson-text");
     if (textEl) {
       textEl.replaceChildren();
@@ -2624,7 +2679,10 @@ import { createStore } from "./store.js";
       practice.disabled = false;
       if (rest.total) {
         practice.textContent = tf("act.practice", [rest.left || rest.total]);
-        practice.classList.toggle("primary", store.session.learn.done && rest.left > 0);
+        // Never the filled one (7.7 §3): once the lesson is done that is
+        // 下一课, and two filled buttons in one row say nothing about which
+        // to press. 接着练 stays one click away beside it.
+        practice.classList.remove("primary");
       }
     }
     const next = document.getElementById("lesson-next");
@@ -3040,7 +3098,10 @@ import { createStore } from "./store.js";
     if (store.session.puzzleState.solved[id]) return; // not a first attempt
     pz.rated = true;
     const st = store.session.puzzleState;
+    const before = Math.round(playerRating().r);
     const r = ChessRating.rate1v1(playerRating(), puzzleRating(pz.p), score);
+    // what the answer did to the rating, for the feedback card (7.7 §4)
+    pz.rating = { now: Math.round(r.player.r), delta: Math.round(r.player.r) - before };
     st.rating = r.player;
     if (!st.pr) st.pr = {};
     st.pr[id] = r.puzzle;
@@ -3588,6 +3649,7 @@ import { createStore } from "./store.js";
         }
       }
       if (store.session.puzzle.stage >= script.length) { puzzleSolved(); return; }
+      puzzleGoodMove();
       sync();
       return;
     }
@@ -3630,6 +3692,7 @@ import { createStore } from "./store.js";
       animateReply(rm);
       moveSound(rm, g);
     }
+    puzzleGoodMove();
     sync();
   }
 
@@ -3658,12 +3721,51 @@ import { createStore } from "./store.js";
     store.session.puzzle.g.undo();
     store.session.puzzle.last = null;
     store.session.puzzle.misses++;
+    store.session.pzStreak = 0;
     markMissed(store.session.puzzle.p.id); // a missed puzzle joins the review queue
-    // the correction tier: this is the app telling you what you got wrong,
-    // which in the puzzle and opening modes is the entire product
-    toast((reason || t("pz.noForcedMate")) +
-      (store.session.puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")), "fix");
+    // The correction: this is the app telling you what you got wrong, which
+    // in the puzzle and opening modes is the entire product. 7.7 (v7-7-plan
+    // §4): on the feedback card beside the board rather than in a toast over
+    // it — a cross, 再想想, the reason, and the way to the answer.
+    store.session.puzzle.fb = { ok: false, head: t("pz.fb.retry"), sub: reason || t("pz.noForcedMate") };
     store.commit("session", "sync");
+  }
+
+  /** A right move that is not yet the end of the puzzle: say so (7.7 §4). */
+  function puzzleGoodMove() {
+    store.session.puzzle.fb = { ok: true, head: t("pz.fb.best"), sub: t("pz.fb.keepGoing") };
+  }
+
+  /**
+   * The feedback card under the task (7.7, v7-7-plan §4) — what the last
+   * move was. Lichess's shape: a tick and 「最佳着」, or a cross and 「再想想」
+   * with the way to the answer; on the solve, the run of clean solves and
+   * what the answer did to the rating.
+   */
+  function renderPuzzleFeedback() {
+    const box = el("puzzle-feedback");
+    if (!box) return;
+    const pz = store.session.puzzle;
+    const fb = pz && pz.fb;
+    avail(box, !!fb);
+    if (!fb) return;
+    box.classList.toggle("ok", fb.ok);
+    box.classList.toggle("bad", !fb.ok);
+    setIcon(el("puzzle-fb-ic"), fb.ok ? "check" : "x");
+    setText(el("puzzle-fb-head"), fb.head);
+    setText(el("puzzle-fb-sub"), fb.sub || "");
+    const meta = el("puzzle-fb-meta");
+    const parts = [];
+    if (fb.ok && pz.done && store.session.pzStreak >= 2) parts.push(tf("pz.fb.streak", [store.session.pzStreak]));
+    if (pz.rating && (pz.done || !fb.ok)) {
+      const d = pz.rating.delta;
+      parts.push(pz.rating.now + " " + (d > 0 ? "+" + d : d < 0 ? "−" + -d : "±0"));
+    }
+    avail(meta, parts.length > 0);
+    setText(meta, parts.join(" · "));
+    if (meta) meta.classList.toggle("up", !!(pz.rating && pz.rating.delta > 0));
+    // the way to the answer, after a miss, while there is still a question
+    avail(el("puzzle-fb-hint"), !fb.ok && !pz.done && !pz.helpArrow);
   }
 
   /** Arrow for the correct move at the current stage. */
@@ -3736,7 +3838,11 @@ import { createStore } from "./store.js";
       store.session.puzzle.p.cat === "win" || store.session.puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
     const why = store.session.puzzle.p.cat === "mine" ? mineWhy(store.session.puzzle.p) : "";
     if (store.session.puzzle.p.cat === "mine") store.session.puzzle.lineAt = 0;
-    toast("✅ " + verb + " · " + puzzleName(sp) + (why ? " · " + why : ""));
+    // the run of clean first-try solves this sitting, and the card that says
+    // so — the tick, the verb, the puzzle's name (7.7 §4; was a toast)
+    const clean = store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer;
+    store.session.pzStreak = clean ? store.session.pzStreak + 1 : 0;
+    store.session.puzzle.fb = { ok: true, head: verb, sub: puzzleName(sp) + (why ? " · " + why : "") };
     sync();
   }
 
@@ -4015,6 +4121,7 @@ import { createStore } from "./store.js";
       if (emptyTask) emptyTask.textContent = t("pz.noneInTier");
       const emptyList = document.getElementById("puzzle-list");
       if (emptyList) emptyList.replaceChildren();
+      avail(el("puzzle-feedback"), false);
       return;
     }
     const list = puzzlesInCat(store.session.puzzle.cat);
@@ -4057,6 +4164,7 @@ import { createStore } from "./store.js";
             ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
     }
     renderPuzzleLine();
+    renderPuzzleFeedback();
     // opening drills are rote memorisation without the "why" — show the idea
     const ideaEl = document.getElementById("puzzle-idea");
     if (ideaEl) {
@@ -4302,7 +4410,13 @@ import { createStore } from "./store.js";
   /** textContent, written only when it differs — a same-text write still
       replaces the text node, and still costs a layout. */
   function setText(node, text) {
-    if (node.textContent !== text) node.textContent = text;
+    if (!node || node.textContent === text) return;
+    // 7.7: into the text node that is there, when there is exactly one — the
+    // clock writes ten times a second, and a replaced child is a replaced
+    // child to WebKit's hit testing whatever it says
+    const f = node.firstChild;
+    if (f && f === node.lastChild && f.nodeType === 3) f.nodeValue = text;
+    else node.textContent = text;
   }
 
   /**
@@ -5112,25 +5226,13 @@ import { createStore } from "./store.js";
     saveStats(s);
     renderStats();
     checkNewAchievements();
-    offerReview();
   }
 
-  /**
-   * Nudge towards the post-game report once a game is actually over.
-   *
-   * The review is the most useful thing the app can tell a learner, and until
-   * 1.7 it was only reachable by knowing to press "分析" afterwards — so the
-   * feature shipped in 1.6 and most players never saw it. Only a hint: running
-   * the engine over a whole game is a real wait, so it stays opt-in.
-   */
-  function offerReview() {
-    if (store.session.mode !== "ai" || !ChessEngine || store.session.analyzing) return;
-    if (analysisFor()) return; // already analysed — the report is on screen
-    if (sanHistory().length < 6) return; // too short to say anything useful
-    setTimeout(() => {
-      if (store.session.mode === "ai" && !store.session.analyzing && !analysisFor() && appGameOver()) toast(t("rv.offer"));
-    }, 2200);
-  }
+  // offerReview() lived here: a toast, 2.2s after the ending, saying
+  // 「本局结束 —— 点『分析』看这盘的回顾」. The review is still the most useful
+  // thing the app can tell a learner (that was the whole argument for the
+  // nudge in 1.7) — so 7.7 gives it the result card's filled button instead
+  // of a message that leaves after four seconds (v7-7-plan §4).
 
   /** 做题战绩 — the tally the picker reads, drawn for the player. */
   function renderPuzzleTally() {
@@ -5278,35 +5380,74 @@ import { createStore } from "./store.js";
   function renderDailyPlan(steps, current) {
     const ol = document.getElementById("daily-plan");
     if (!ol) return;
-    ol.replaceChildren();
     ol.hidden = !steps.length;
+    // 7.7 (v7-7-plan §1i): the step you would go to next — the current one,
+    // or the first before the plan has begun — is a control of its own. It
+    // is rebuilt only when the plan or the language changed: this runs on
+    // every commit, and a button rebuilt under the pointer loses the click
+    // on WebKit (7.6).
+    const go = current < 0 ? 0 : current;
+    const labels = steps.map(dailyStepLabel);
+    const sig = current + "|" + labels.join("\u0001") + "|" + store.ui.langId;
+    if (ol.dataset.sig === sig) return;
+    ol.dataset.sig = sig;
+    ol.replaceChildren();
     steps.forEach((step, i) => {
       const li = document.createElement("li");
       li.className = "daily-step" + (i < current ? " done" : i === current ? " current" : "");
+      const row = document.createElement(i === go ? "button" : "div");
+      row.className = "daily-row";
+      if (i === go) {
+        row.type = "button";
+        row.dataset.daily = "go";
+        row.onclick = () => el("daily-btn").click();
+      }
+      const dot = document.createElement("span");
+      dot.className = "daily-dot";
+      dot.setAttribute("aria-hidden", "true");
+      if (i < current) dot.appendChild(Icons.icon("check"));
       // 7.4 §5: the step, then why — two lines, see .daily-step
+      const txt = document.createElement("span");
+      txt.className = "daily-txt";
       const what = document.createElement("span");
       what.className = "daily-what";
-      what.textContent = dailyStepLabel(step);
+      what.textContent = labels[i];
       what.title = what.textContent;
       const why = document.createElement("span");
       why.className = "daily-why";
       why.textContent = t("daily.why." + step.kind);
       why.title = why.textContent;
-      li.append(what, why);
+      txt.append(what, why);
+      row.append(dot, txt);
+      if (i === go) {
+        const arrow = document.createElement("span");
+        arrow.className = "daily-arrow";
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.appendChild(Icons.icon("chevron-right"));
+        row.appendChild(arrow);
+      }
+      li.appendChild(row);
       ol.appendChild(li);
     });
   }
 
   function syncDailyUI() {
     const btn = document.getElementById("daily-btn");
+    const label = document.getElementById("daily-label");
     const note = document.getElementById("daily-note");
-    if (!btn || !note) return;
+    if (!btn || !label || !note) return;
+    // 7.7 (v7-7-plan §3, §10): while a game is being played the notation is
+    // what the page is for, and this card was the first screen of the drawer
+    // in a portrait window. It steps aside until the game is over.
+    const playing = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
+      sanHistory().length > 0 && isLive() && !appGameOver();
+    avail(el("daily-row"), !playing);
     const d = store.session.daily;
     if (!d) {
-      btn.textContent = t("daily.btn");
+      setText(label, t("daily.btn"));
       const run = Progress.streak(store.session.progress, Date.now());
       note.hidden = run < 2;
-      if (run >= 2) note.textContent = tf("daily.streak", [run]);
+      if (run >= 2) setText(note, tf("daily.streak", [run]));
       renderDailyPlan(Planner.plan(dailySignals()).steps, -1);
       return;
     }
@@ -5322,12 +5463,12 @@ import { createStore } from "./store.js";
       saveProgress();
       const run = Progress.streak(store.session.progress, Date.now());
       toast(t("daily.done") + (run >= 2 ? " · " + tf("daily.streak", [run]) : ""));
-      btn.textContent = t("daily.btn");
+      setText(label, t("daily.btn"));
       note.hidden = run < 2;
-      if (run >= 2) note.textContent = tf("daily.streak", [run]);
+      if (run >= 2) setText(note, tf("daily.streak", [run]));
       return;
     }
-    btn.textContent = tf("daily.of", [d.i + 1, d.steps.length]) + " · " + dailyStepLabel(d.steps[d.i]);
+    setText(label, tf("daily.of", [d.i + 1, d.steps.length]) + " · " + dailyStepLabel(d.steps[d.i]));
     note.hidden = true;
     renderDailyPlan(d.steps, d.i);
   }
@@ -6038,7 +6179,8 @@ import { createStore } from "./store.js";
     if (fresh.length) {
       Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
       // one toast per unlock, staggered so several don't collide
-      fresh.forEach((r, i) => setTimeout(() => toast("🎉 " + t("ach.unlocked") + " · " + r.ach.icon + " " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
+      // (the badge's picture is on the record page; a toast is words — 7.7 §7)
+      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
     }
     renderAchievements();
     renderRecordEntry();
@@ -6139,7 +6281,7 @@ import { createStore } from "./store.js";
       b.dataset.mode = d.mode;
       const ic = document.createElement("span");
       ic.className = "rec-door-ic";
-      ic.textContent = a ? a.icon : "·";
+      if (a) ic.appendChild(Icons.icon(a.icon));
       const txt = document.createElement("span");
       txt.className = "rec-door-t";
       const k = document.createElement("span");
@@ -6170,7 +6312,7 @@ import { createStore } from "./store.js";
       b.title = r.ach.descKey ? t(r.ach.descKey) : r.ach.desc;
       const ic = document.createElement("span");
       ic.className = "ach-ic";
-      ic.textContent = r.unlocked ? r.ach.icon : "🔒";
+      ic.appendChild(Icons.icon(r.unlocked ? r.ach.icon : "lock"));
       const nm = document.createElement("span");
       nm.className = "ach-nm";
       nm.textContent = r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name;
@@ -6407,7 +6549,8 @@ import { createStore } from "./store.js";
       m.className = "mlmenu";
       m.dataset.node = String(n.id);
       m.dataset.menu = "1";
-      m.textContent = "…";
+      // the icon, not a literal 「…」 — that read as notation cut short (7.7 §1f)
+      m.appendChild(Icons.icon("ellipsis"));
       m.setAttribute("aria-label", t("ml.menu"));
       m.title = t("ml.menu");
       return m;
@@ -6611,30 +6754,171 @@ import { createStore } from "./store.js";
     return store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
   }
 
+  // setText() (above, with the library's status lines) writes only what
+  // differs; the strips and the clock lean on it — they repaint on every
+  // commit and every tick, and 7.6 learned on WebKit that a node replaced
+  // between pointerdown and pointerup loses the click.
+  /** Put icon `name` into `slot`, unless it is already the one there. */
+  function setIcon(slot, name) {
+    if (!slot || slot.dataset.icon === name) return;
+    slot.dataset.icon = name;
+    slot.replaceChildren(Icons.icon(name));
+  }
+
+  /** The sparring style's picture, for the engine's strip (7.5 persona). */
+  const PERSONA_ICON = { off: "bot", greedy: "coins", principled: "scale", attacker: "swords" };
+
   /**
-   * The middle of the match bar: what is between the two players.
-   *
-   * Before the first move that is nothing, and 对 says so; from then on it is
-   * the move just played. Never both — one slot, one meaning.
-   *
-   * This is the last of the four facts the spine used to carry under the board
-   * with the panel shut. The other three moved with it: whose move is the
-   * status pill, the clocks are the two `.vs-clock`s, and the material lead is
-   * `.taken-diff`, beside the pieces it is counted from — which is a more
-   * precise place for it than a lone number at the far end of a pill.
+   * Who sits on each side, as the strips say it: an icon, a name and a
+   * second, quieter line. `null` for a side nobody is playing — a lesson
+   * task with no sparring partner.
+   * @returns {{w: ?{icon: string, name: string, level: string}, b: ?{icon: string, name: string, level: string}}}
    */
-  function renderMatchLast() {
-    const lastEl = el("vs-last");
-    const versusEl = el("vs-versus");
-    if (!lastEl || !versusEl) return;
-    const h = sanHistory();
-    const at = store.game.viewIndex;
-    const show = at > 0 && !inModal();
-    lastEl.hidden = !show;
-    versusEl.hidden = show;
+  function stripPeople() {
+    const mode = store.session.mode;
+    if (mode === "ai") {
+      const engine = {
+        icon: PERSONA_ICON[store.session.personaId] || "bot",
+        name: "Stockfish",
+        level: [DIFF_NAMES[store.session.difficulty] || store.session.difficulty]
+          .concat(store.session.personaId !== "off" ? [t("persona." + store.session.personaId)] : []).join(" · "),
+      };
+      const you = { icon: "user", name: t("vs.player"), level: "" };
+      return store.session.humanColor === "w" ? { w: you, b: engine } : { w: engine, b: you };
+    }
+    if (mode === "learn") {
+      // A lesson that is not a drill has no opponent: that strip's place is
+      // kept (so the board does not move between modes) and left empty.
+      const drill = !!(store.session.learn && curTask().type === "drill");
+      return {
+        w: { icon: "graduation-cap", name: t("role.student"), level: "" },
+        b: drill ? { icon: "bot", name: t("role.sparring"), level: "" } : null,
+      };
+    }
+    if (mode === "puzzle") {
+      // black drills swap the chairs: the book plays White, you answer
+      const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
+      const you = { icon: "user", name: t(asBlack ? "role.youB" : "role.you"), level: "" };
+      const book = { icon: "puzzle", name: t("role.puzzle"), level: "" };
+      return asBlack ? { w: book, b: you } : { w: you, b: book };
+    }
+    // Two players: a loaded game names its players — the file's [White] /
+    // [Black] where it has them, rather than 玩家 1 / 玩家 2 (7.6); "?" is
+    // PGN for unknown. The rating goes on the quiet line when the file has one.
+    const h = game.header() || {};
+    const nm = (v) => { const x = String(v || "").trim(); return /^\?*$/.test(x) ? "" : x; };
+    const elo = (v) => (/^\d{3,4}$/.test(String(v || "").trim()) ? String(v).trim() : "");
+    return {
+      w: { icon: "user", name: nm(h.White) || t("vs.p1"), level: elo(h.WhiteElo) },
+      b: { icon: "user", name: nm(h.Black) || t("vs.p2"), level: elo(h.BlackElo) },
+    };
+  }
+
+  /**
+   * The two player strips (7.7, v7-7-plan §2).
+   *
+   * Placed by the board's orientation: the side whose men stand at the bottom
+   * of the board has the bottom strip, so the default is you below and the
+   * opponent above, and F carries them round with the board. The side to
+   * move carries .is-active — the lit disc and the lit clock are how the
+   * screen says whose move it is now that the status pill is gone from sight.
+   * When the game is over each strip carries its score, 1 / 0 / ½.
+   */
+  function renderStrips() {
+    const people = stripPeople();
+    const bottom = store.game.flipped ? "b" : "w";
+    const mode = store.session.mode;
+    // whose move: the trainer's position in the two teaching modes, the
+    // position on the board otherwise
+    const trainerG = mode === "puzzle" ? store.session.puzzle && store.session.puzzle.g
+      : mode === "learn" ? store.session.learn && store.session.learn.g : null;
+    const g = trainerG || viewGame();
+    const over = !inModal() && (appGameOver() || resultFromFile());
+    const token = over ? gameResultToken() : "*";
+    const done = mode === "puzzle" ? !!(store.session.puzzle && store.session.puzzle.done)
+      : mode === "learn" ? !!(store.session.learn && store.session.learn.done) : false;
+    const thinking = !!store.session.engineThinking || !!(store.session.learn && store.session.learn.engineBusy);
+    const score = { "1-0": { w: "1", b: "0" }, "0-1": { w: "0", b: "1" }, "1/2-1/2": { w: "½", b: "½" } }[token];
+    for (const side of ["w", "b"]) {
+      const strip = el("strip-" + side);
+      if (!strip) continue;
+      strip.classList.toggle("at-bottom", side === bottom);
+      strip.classList.toggle("at-top", side !== bottom);
+      const p = people[side];
+      strip.classList.toggle("is-empty", !p);
+      if (!p) continue;
+      setIcon(el("av-" + side), p.icon);
+      setText(el(side === "w" ? "white-role" : "black-role"), p.name);
+      setText(el(side === "w" ? "white-level" : "black-level"), p.level);
+      const active = !over && !done && !store.session.editor && !!g && g.turn() === side &&
+        !(mode === "learn" && !trainerG);
+      strip.classList.toggle("is-active", active);
+      // the engine is the one that thinks; its disc breathes while it does
+      const engineSide = mode === "ai" ? (store.session.humanColor === "w" ? "b" : "w")
+        : mode === "learn" ? "b" : null;
+      strip.classList.toggle("thinking", thinking && side === engineSide);
+      const res = el("result-" + side);
+      if (res) {
+        res.hidden = !score;
+        if (score) {
+          setText(res, score[side]);
+          res.classList.toggle("win", score[side] === "1");
+        }
+      }
+    }
+    renderGameOverCard();
+  }
+
+  /**
+   * How the live game ended, or null while it is still going (7.7 §4).
+   * Only the two game modes have an ending to report; the trainers have
+   * their own cards.
+   */
+  function gameEnding() {
+    const mode = store.session.mode;
+    if ((mode !== "ai" && mode !== "pvp") || store.session.editor) return null;
+    if (!appGameOver() && !resultFromFile()) return null;
+    const token = gameResultToken();
+    const winner = token === "1-0" ? "w" : token === "0-1" ? "b" : null;
+    let reason;
+    if (resultFromFile()) reason = t("go.r.file");
+    else if (game.in_checkmate()) reason = t("go.r.mate");
+    else if (store.game.flagFall) reason = timeoutIsDraw() ? t("go.r.flagDraw") : tf("go.r.flag", [sideName(store.game.flagFall)]);
+    else if (store.game.resigned) reason = tf("go.r.resign", [sideName(store.game.resigned)]);
+    else if (store.game.drawAgreed) reason = t("go.r.agreed");
+    else if (store.game.drawClaimed) reason = t(store.game.drawClaimed === "threefold" ? "go.r.threefold" : "go.r.fifty");
+    else if (game.in_stalemate()) reason = t("go.r.stalemate");
+    else if (game.insufficient_material()) reason = t("go.r.insufficient");
+    else reason = t(autoDrawReason() === "fivefold" ? "go.r.fivefold" : "go.r.seventyfive");
+    return { token, winner, reason, sig: sanHistory().length + "|" + game.fen() + "|" + token };
+  }
+
+  /**
+   * The result card (7.7, v7-7-plan §4): the result in large type, how it
+   * came about, and what to do next — 分析这盘 filled while the game is not
+   * analysed, 再来一盘 and 换个对手 beside it. It replaces the toast that
+   * used to be the whole of the ending. Non-modal and in the panel, so it can
+   * never cover the board; ✕ puts it away for this ending.
+   */
+  function renderGameOverCard() {
+    const card = el("go-card");
+    if (!card) return;
+    const end = gameEnding();
+    const show = !!end && store.session.goDismissed !== end.sig;
+    card.hidden = !show;
     if (!show) return;
-    const no = boardMoveNo(at - 1);
-    lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
+    const mode = store.session.mode;
+    const mine = mode === "ai" ? store.session.humanColor : null;
+    setText(el("go-result"), !end.winner ? t("go.draw")
+      : mine ? t(end.winner === mine ? "go.youWin" : "go.youLose")
+      : t(end.winner === "w" ? "go.whiteWins" : "go.blackWins"));
+    setText(el("go-reason"), end.reason);
+    setText(el("go-mark"), end.token === "1/2-1/2" ? "½–½" : end.token.replace("-", "–"));
+    card.classList.toggle("won", !!end.winner && (!mine || end.winner === mine));
+    const engineDown = !ChessEngine || !!store.session.engineDown;
+    const canAnalyse = !engineDown && !analysisFor() && !store.session.analyzing;
+    avail(el("go-analyse"), canAnalyse);
+    avail(el("go-switch"), mode === "ai");
   }
 
   /**
@@ -6703,34 +6987,21 @@ import { createStore } from "./store.js";
     if (winner === mine) Audio2.playWin(); else Audio2.playLoss();
   }
 
-  /** The status pill: whose move, or how it ended, or that we are replaying. */
+  /**
+   * The status sentence: whose move, or how it ended, or that we are
+   * replaying. 7.7: read by a screen reader only (#status is .sr-only) — on
+   * screen, the lit player strip says whose move it is and the result card
+   * says how it ended (renderStrips). Same words as ever, in the same place in
+   * the reading order.
+   */
   function renderStatusPill() {
-    const modal = inModal();
-    const status = el("status");
-    status.textContent = statusText();
-    const g = viewGame();
-    const decisiveEnd = g.in_checkmate() || !!store.game.resigned || (store.game.flagFall && !timeoutIsDraw());
-    status.classList.toggle("win", !modal && isLive() && decisiveEnd);
-    status.classList.toggle("replay", !modal && !isLive());
+    setText(el("status"), statusText());
     // "思考中" with nothing moving reads as a hang at the higher levels, where
-    // a search can run for seconds; the pill breathes while the engine works
+    // a search can run for seconds: a pulse on the board itself, where the
+    // player is actually looking (the thinking side's disc breathes as well)
     const busy = store.session.engineThinking || store.session.analyzing || !!(store.session.learn && store.session.learn.engineBusy);
-    status.classList.toggle("thinking", busy);
-    // …and a pulse on the board itself, where the player is actually looking
     const dot = el("think-dot");
     if (dot) dot.hidden = !busy;
-    /* Whose move it is gets said once per place that needs it, not three
-       times across the bar. The status pill always says it. In a clocked game
-       the running clock's brightness marks the side as well, right next to
-       the name — so the 行 badge would be a third telling, and one more thing
-       hopping sides every half-move in peripheral vision. It earns its place
-       only in unclocked games, where the pill is the sole teller and the
-       badge is the one mark that sits *beside the side it names*. */
-    const clocksShown = (store.session.mode === "pvp" || store.session.mode === "ai") &&
-      store.game.timeControl !== "off" && !!store.game.clock;
-    const showTurn = !modal && isLive() && !appGameOver() && !clocksShown;
-    el("white-turn").hidden = !(showTurn && game.turn() === "w");
-    el("black-turn").hidden = !(showTurn && game.turn() === "b");
   }
 
   /**
@@ -6766,6 +7037,8 @@ import { createStore } from "./store.js";
    * where a row that goes away should genuinely stop taking up space.
    */
   function slot(node, ok) { if (node) node.classList.toggle("slot-empty", !ok); }
+  /** `disabled`, written only when it changes (see setText). */
+  function setDisabled(node, off) { if (node && node.disabled !== off) node.disabled = off; }
 
   /** Hide a group whose whole row went away, so no empty heading is left. */
   function collapseEmptyGroups() {
@@ -6807,18 +7080,22 @@ import { createStore } from "./store.js";
     avail(el("replay-seg"), h.length > 0);
     const back = store.game.viewIndex > 0;
     const fwd = store.game.viewIndex < h.length;
-    // Slots, not `avail`. These five are one control — «  ‹  ●  ›  » — and
-    // their positions relative to each other are what they mean. Measured on
-    // 2.1.1: at the live position only « and ‹ are available, so `flex: 1`
-    // gave them 97px each; press ‹ once and all five appear, every key snaps
-    // to 37px and ‹ jumps 61px to the left, out from under the pointer that
-    // was about to press it again. Same family as the chrome's take-back and
-    // hint trading places, third instance.
-    slot(el("rep-start"), back);
-    slot(el("rep-prev"), back);
-    slot(el("rep-next"), fwd);
-    slot(el("rep-end"), fwd);
-    slot(el("rep-live"), !isLive());
+    // Four keys, always drawn. These are one control — «  ‹  ›  » — and their
+    // positions relative to each other are what they mean. Measured on 2.1.1:
+    // at the live position only « and ‹ were available, so `flex: 1` gave them
+    // 97px each; press ‹ once and every key snapped to 37px and ‹ jumped 61px
+    // to the left, out from under the pointer about to press it again. 2.1.2
+    // held the slots with `visibility`, which fixed the jump and left the row
+    // missing its two right-hand keys at exactly the move being played —
+    // plus a ● (回到最新) that did what » does. 7.7 (v7-7-plan §1f): the
+    // four keys are always on screen, and the ones that lead nowhere are
+    // disabled in place, which is what a transport control does everywhere
+    // else. The one exception to P3's "absent, not disabled", and the reason
+    // is the one above: the keys' places are their meaning.
+    setDisabled(el("rep-start"), !back);
+    setDisabled(el("rep-prev"), !back);
+    setDisabled(el("rep-next"), !fwd);
+    setDisabled(el("rep-end"), !fwd);
     // "resume from here" is a replay action, and it only exists off the live
     // position — where it used to sit greyed out with a tooltip explaining
     // that it only exists off the live position
@@ -6863,8 +7140,10 @@ import { createStore } from "./store.js";
         !!(store.session.learn && store.session.learn.engineBusy) || store.session.engineThinking ||
         !!(store.session.puzzle && store.session.puzzle.verifying);
       hintBtn.disabled = false;
-      hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer")
-        : busy ? t("chrome.thinking") : t("chrome.hint");
+      // the label is its own span beside the icon (7.7 §7), and it is written
+      // only when it changes: this runs on every commit, under the pointer
+      setText(el("btn-hint-label"), store.session.mode === "puzzle" ? t("chrome.answer")
+        : busy ? t("chrome.thinking") : t("chrome.hint"));
       // on the puzzle page this is the only 「答案」 (the panel's copy went in
       // 7.4), so its tooltip says what it does there, not "engine hint"
       hintBtn.title = t(store.session.mode === "puzzle" ? "tip.puzzle.answer" : "tip.hint");
@@ -6901,8 +7180,32 @@ import { createStore } from "./store.js";
       eng.hidden = !(engineDown && hasGame);
       if (!eng.hidden) eng.textContent = t("mm.engineInitFailed");
     }
+    // 7.7 (v7-7-plan §3): the review is opened, not standing by. While an
+    // engine game is being played its four buttons sit behind the 复盘 key
+    // in the tool row; everywhere else — the game over, an analysis on
+    // screen or running, the two-player board — they are simply there.
+    const optional = reviewOptional();
+    const rvKey = el("review-open");
+    if (rvKey) {
+      avail(rvKey, optional);
+      rvKey.setAttribute("aria-pressed", optional && store.ui.reviewOpen ? "true" : "false");
+    }
     setPrimaryAction();
     collapseEmptyGroups();
+    const rvGroup = el("review-actions");
+    if (rvGroup && optional && !store.ui.reviewOpen) rvGroup.hidden = true;
+  }
+
+  /**
+   * Is the review something to open rather than something on screen?
+   * Exactly while an engine game is under way and nothing about it is being
+   * analysed: that is when the panel is for the notation (v7-7-plan §3). A
+   * finished game, a replay, an analysis and the two-player board (which is
+   * also where imported games are read) always show it.
+   */
+  function reviewOptional() {
+    return store.session.mode === "ai" && !store.session.editor && sanHistory().length > 0 &&
+      isLive() && !appGameOver() && !store.session.analyzing && !analysisFor() && !store.session.liveOn;
   }
 
   /**
@@ -6920,10 +7223,20 @@ import { createStore } from "./store.js";
    * ("完局后点「分析」可记录精准度"). While a game is running there is no
    * one thing to press in this panel, and the honest rendering of that is no
    * filled button at all.
+   *
+   * 7.7 (v7-7-plan §4): at the end of a game the thing to press is on the
+   * result card — 分析这盘 while the game is unanalysed, 再来一盘 once it is —
+   * and 分析 in the review row goes back to being a secondary. Only when the
+   * card has been put away does 分析 take the fill back.
    */
   function setPrimaryAction() {
     const over = isLive() && appGameOver();
-    const wants = over && !analysisFor() && !store.session.analyzing ? "an-run" : null;
+    const unanalysed = !analysisFor() && !store.session.analyzing;
+    const end = gameEnding();
+    const card = !!end && store.session.goDismissed !== end.sig;
+    const engineDown = !ChessEngine || !!store.session.engineDown;
+    const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
+      : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
       if (b.id !== wants) b.classList.remove("primary");
     }
@@ -6985,8 +7298,10 @@ import { createStore } from "./store.js";
 
     // the settings panel reads the game too (the clock preset is a game fact),
     // so it hears about all three
-    store.subscribe("game", renderMatchLast);
-    store.subscribe("session", renderMatchLast);
+    // the strips read the position, the mode and the orientation — all three
+    store.subscribe("game", renderStrips);
+    store.subscribe("session", renderStrips);
+    store.subscribe("ui", renderStrips);
     store.subscribe("game", syncSettingsUI);
     store.subscribe("ui", syncSettingsUI);
     store.subscribe("ui", draw);
@@ -7114,36 +7429,7 @@ import { createStore } from "./store.js";
     // 统计/历史/成就 used to be hidden in the trainer modes because they sat in
     // the same scroll and got in the way. They now live behind their own tab,
     // which nobody opens by accident — and puzzle badges are earned right there.
-    const engineName = "Stockfish · " + (DIFF_NAMES[store.session.difficulty] || store.session.difficulty);
-    const wRole = document.getElementById("white-role");
-    const bRole = document.getElementById("black-role");
-    // A lesson that is not a drill has no opponent. Writing "—" into the black
-    // role left an empty card at the top of the panel; the whole half is now
-    // hidden instead (see .vs.solo).
-    const solo = store.session.mode === "learn" && !(store.session.learn && curTask().type === "drill");
-    const vsBar = document.getElementById("vs-bar");
-    if (vsBar) vsBar.classList.toggle("solo", solo);
-    if (wRole && bRole) {
-      if (store.session.mode === "ai") {
-        wRole.textContent = store.session.humanColor === "w" ? t("vs.player") : engineName;
-        bRole.textContent = store.session.humanColor === "b" ? t("vs.player") : engineName;
-      } else if (store.session.mode === "learn") {
-        wRole.textContent = t("role.student");
-        bRole.textContent = solo ? "" : t("role.sparring");
-      } else if (store.session.mode === "puzzle") {
-        // black drills swap the chairs: the book plays White, you answer
-        const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
-        wRole.textContent = asBlack ? t("role.puzzle") : t("role.you");
-        bRole.textContent = asBlack ? t("role.youB") : t("role.puzzle");
-      } else {
-        // a loaded game names its players: the file's [White]/[Black], where
-        // it has them, rather than 玩家 1 / 玩家 2 (7.6). "?" is PGN for unknown.
-        const h = game.header() || {};
-        const nm = (v) => { const x = String(v || "").trim(); return /^\?*$/.test(x) ? "" : x; };
-        wRole.textContent = nm(h.White) || t("vs.p1");
-        bRole.textContent = nm(h.Black) || t("vs.p2");
-      }
-    }
+    // (Who plays each side is written by renderStrips — 7.7.)
   }
 
   /**
@@ -7358,9 +7644,12 @@ import { createStore } from "./store.js";
     maybeEngineTurn();
   }
 
-  async function requestNewGame() {
+  async function requestNewGame(opts) {
     stopEditor(t("msg.editor.exited"));
-    if (sanHistory().length &&
+    // 再来一盘 on the result card (7.7 §4) does not ask: a finished engine
+    // game is already filed in the history, so there is nothing to lose
+    const filed = !!(opts && opts.again) && store.session.mode === "ai" && appGameOver();
+    if (sanHistory().length && !filed &&
         !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
     }
@@ -7427,15 +7716,14 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") {
       side = store.session.humanColor;
       if (!(await confirmNative(tf("dlg.resign", [sideName(side)]),
-        t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel") }))) return;
+        t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel"), destructive: true }))) return;
     } else {
       // pvp: either player may resign at any time (FIDE) — pick the side
       const pick = await confirmNative(t("dlg.whoResigns"), t("act.resign"),
-        { ok: t("dlg.whiteResigns"), alt: t("dlg.blackResigns"), cancel: t("act.cancel") });
+        { ok: t("dlg.whiteResigns"), alt: t("dlg.blackResigns"), cancel: t("act.cancel"), destructive: true });
       if (!pick) return;
       side = pick === "alt" ? "b" : "w";
     }
-    const who = sideName(side);
     invalidateEngine();
     store.game.resigned = side;
     forgetFileResult();
@@ -7444,7 +7732,6 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") recordResign();
     saveGame();
     store.commit("game", "action");
-    toast(tf("mm.resignWin", [who, otherSideName(side)]));
   }
 
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
@@ -7458,7 +7745,6 @@ import { createStore } from "./store.js";
     saveStats(s);
     renderStats();
     checkNewAchievements();
-    offerReview(); // resignation and flag-fall end a game just as much as mate
   }
 
   function recordResign() { recordOutcome("loss", "resigned"); }
@@ -7565,7 +7851,6 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") recordAgreedDraw();
     saveGame();
     store.commit("game", "action");
-    toast(t("msg.draw.agreed"));
   }
 
   function recordAgreedDraw() { recordOutcome("draw", "drawAgreed"); }
@@ -7581,7 +7866,6 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") recordOutcome("draw", "claimed");
     saveGame();
     store.commit("game", "action");
-    toast(reason === "threefold" ? t("msg.draw.claimedRepetition") : t("msg.draw.claimedFiftyMove"));
   }
 
   // --- FEN / PGN I/O ---
@@ -8172,7 +8456,7 @@ import { createStore } from "./store.js";
       b.type = "button";
       if (!color) {
         b.dataset.erase = "1";
-        b.textContent = "✕";
+        b.appendChild(Icons.icon("x"));
         b.title = t("ed.eraser");
         b.classList.toggle("active", store.session.editor.brush.type === "");
       } else {
@@ -8517,7 +8801,7 @@ import { createStore } from "./store.js";
     const bEl = document.getElementById("taken-b");
     if (!wEl || !bEl) return;
     const off = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
-    if (!Mat || off) { wEl.replaceChildren(); bEl.replaceChildren(); return; }
+    if (!Mat || off) { wEl.replaceChildren(); bEl.replaceChildren(); delete wEl.dataset.sig; return; }
     const shown = viewGame();
     const promos = verboseHistory().slice(0, store.game.viewIndex)
       .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
@@ -8529,11 +8813,15 @@ import { createStore } from "./store.js";
     // places it mattered (the move list, the history rows) learned it here.
     const strip = (parent, list, color, lead) => {
       const kids = [];
+      let prevType = null;
       for (const tp of list) {
         const svg = svgs[color + tp];
         if (!svg) continue;
         const span = document.createElement("span");
-        span.className = "taken-p";
+        // grouped by kind (7.7 §2): two pawns overlap like a pile, a knight
+        // after them starts a new pile — see .taken-p.new-kind
+        span.className = "taken-p" + (prevType && prevType !== tp ? " new-kind" : "");
+        prevType = tp;
         // the sprite set is our own file, not input — parsed once per piece
         span.insertAdjacentHTML("afterbegin", svg);
         kids.push(span);
@@ -8546,7 +8834,11 @@ import { createStore } from "./store.js";
       }
       parent.replaceChildren(...kids);
     };
-    // White's row shows the black pieces White has taken
+    // White's row shows the black pieces White has taken. Rebuilt only when
+    // the tally changed: this hears every game and session commit.
+    const sig = s.w.join("") + "|" + s.b.join("") + "|" + s.diff;
+    if (wEl.dataset.sig === sig) return;
+    wEl.dataset.sig = sig;
     strip(wEl, s.w, "b", s.diff);
     strip(bEl, s.b, "w", -s.diff);
   }
@@ -9001,7 +9293,7 @@ import { createStore } from "./store.js";
       const node = id != null ? ChessTree.nodeAt(store.game.tree, id) : null;
       if (!node || node.id === 0 || refusePgnEdit()) return;
       if (!(await confirmNative(tf("dlg.deleteBranch", [node.san]), t("ml.delete"),
-        { ok: t("ml.delete"), cancel: t("act.cancel") }))) return;
+        { ok: t("ml.delete"), cancel: t("act.cancel"), destructive: true }))) return;
       const parent = ChessTree.deleteNode(store.game.tree, id);
       if (store.game.line.includes(id)) {
         // the cursor stood on the deleted line: back to where it forked
@@ -9160,8 +9452,27 @@ import { createStore } from "./store.js";
   document.getElementById("rep-prev").onclick = () => setViewIndex(store.game.viewIndex - 1);
   document.getElementById("rep-next").onclick = () => setViewIndex(store.game.viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
-  document.getElementById("rep-live").onclick = () => { goLive(); };
   document.getElementById("back-main").onclick = () => { backToMain(); };
+
+  // the result card (7.7 §4)
+  document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET); };
+  document.getElementById("go-again").onclick = () => { requestNewGame({ again: true }); };
+  document.getElementById("go-switch").onclick = () => {
+    // the opponent is chosen on the settings page, in the game group
+    setSideTab("setup", { top: true });
+    const fold = el("fold-game");
+    if (fold) { fold.open = true; fold.scrollIntoView({ block: "start" }); }
+  };
+  document.getElementById("go-close").onclick = () => {
+    const end = gameEnding();
+    store.session.goDismissed = end ? end.sig : null;
+    store.commit("session", "sync");
+  };
+  // the review, opened by hand while an engine game is on (7.7 §3)
+  document.getElementById("review-open").onclick = () => {
+    store.ui.reviewOpen = !store.ui.reviewOpen;
+    store.commit("session", "sync");
+  };
 
   document.getElementById("an-run").onclick = () => {
     if (store.session.analyzing) {
@@ -9498,6 +9809,8 @@ import { createStore } from "./store.js";
     if (store.session.puzzle) { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
   };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
+  // the feedback card's way to the answer: the same as the chrome's 答案
+  document.getElementById("puzzle-fb-hint").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-review-nudge").onclick = () =>
     document.getElementById("puzzle-smart").click();
   document.getElementById("daily-btn").onclick = () => {
@@ -10198,6 +10511,9 @@ import { createStore } from "./store.js";
     Dlg.register(aboutModal, () => Dlg.close(aboutModal));
   }
   wireDialogs();
+  // the markup names its icons (<span data-icon="…">); draw them before the
+  // first frame (7.7 §7)
+  Icons.hydrate(document);
 
   // Views listen from here on. Wired before any state is loaded, so the first
   // sync() below paints a screen that already agrees with the restored game

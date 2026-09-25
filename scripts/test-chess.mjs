@@ -1691,9 +1691,11 @@ for (const lang of CONTENT_LANGS) {
   // it could not be aligned, only nudged.
   {
     assert(/--chrome-ctl-h:\s*\d+px/.test(stripped), "the chrome has one control-height token");
+    // 7.7 (v7-7-plan §2): the status pill left the bar — whose move it is is
+    // the lit player strip now, and the sentence is .sr-only — so the bar's
+    // controls are the two tools and the panel key.
     for (const sel of [/\.chrome \.tool-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
-                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
-                       /\.status-pill \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
+                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
       assert(sel.test(stripped), "…and every control in it is that height — " + sel.source.slice(0, 22));
     const chrome = /\n    \.chrome \{([\s\S]*?)\n    \}/.exec(stripped);
     assert(chrome, ".chrome is styled");
@@ -2009,8 +2011,9 @@ for (const lang of CONTENT_LANGS) {
     const KNOWN = new Map([
       ["#fff", "two white paper fills (notebook theme's own surface)"],
       ["#000", "two color-mix() darkening steps, not a paint colour"],
-      ["#9a3412", "notebook promotion mark, white side"],
-      ["#1e3a5f", "notebook promotion mark, black side"],
+      // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
+      // the match bar (7.7) — the strips draw each side as a disc in
+      // --side-white / --side-black)
       ["#4a90d9", "var(--accent) fallback, never reached"],
     ]);
     const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
@@ -4043,7 +4046,12 @@ for (const lang of CONTENT_LANGS) {
     const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const num = (re, src) => { const m = re.exec(src); return m ? Number(m[1]) : NaN; };
     const w = num(/\.width = (\d+)/, zon), h = num(/\.height = (\d+)/, zon);
-    const side = num(/--side-w:\s*(\d+)px/, css), chrome = num(/--chrome-h:\s*(\d+)px/, css);
+    // 7.7 (v7-7-plan §1g): the panel is clamp(floor, Nvw, cap) — a function
+    // of the window — and the board's height also pays for the two player
+    // strips, so both enter the sum
+    const sw = /--side-w:\s*clamp\((\d+)px,\s*(\d+)vw,\s*(\d+)px\)/.exec(css);
+    const side = sw ? Math.min(Number(sw[3]), Math.max(Number(sw[1]), w * Number(sw[2]) / 100)) : NaN;
+    const chrome = num(/--chrome-h:\s*(\d+)px/, css) + 2 * num(/--strip-h:\s*(\d+)px/, css);
     assert([w, h, side, chrome].every(Number.isFinite),
       "read the default window (" + w + "x" + h + ") and the panel metrics (" + side + "/" + chrome + ")");
     assert(w - side >= h - chrome,
