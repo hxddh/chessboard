@@ -1299,20 +1299,20 @@
        segments, .icon-btn, .promo-row) keep theirs. No transition is added:
        it is a state, not a movement, and under reduced motion it simply is. */
     :where(button):active { transform: scale(0.98); }
-    /* 7.7 §1a: an .act-btn is sized by itself, not by the row it happens to
+    /* 7.7 §1a: the control family is sized by itself, not by the row it happens to
        sit in. The block above gives it `padding: 8px 0` — no sides — which is
        right in a grid track that sets the width, and was the whole box
        everywhere else: 导入棋谱文件 and the two 导入…开局书 on the record page
        sit in a plain `.close-row`, and there the label touched the border and
-       the button was as tall as its text. The segments keep their own rule;
-       this is the action family only.
+       the button was as tall as its text. The segments share it, as they share
+       the block above: one family, one box.
        8px a side costs the 70px grid track 16px of label, and the longest
        labels (清除教学进度, Edit position) now take two lines where they used
        to run edge to edge. Tight leading keeps two lines inside --row-h, so a
        wrapped label no longer makes its whole grid row taller; a label that
        needs three is the label's problem, and §3 moves most of these out of
        the grid anyway. */
-    .act-btn {
+    .theme-row button, .act-btn {
       min-height: var(--row-h);
       padding: 0 8px;
       line-height: var(--lh-tight);
