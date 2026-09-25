@@ -3984,7 +3984,7 @@ import { createStore } from "./store.js";
     }
     if (!liveAllowed()) {
       stopLiveAnalysis();
-      if (el && !store.session.liveOn) { el.hidden = true; el.replaceChildren(); }
+      if (el && !store.session.liveOn) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
       return;
     }
     const fen = viewGame().fen();
@@ -3997,33 +3997,82 @@ import { createStore } from "./store.js";
       if (!rec.raf) rec.raf = requestAnimationFrame(() => { rec.raf = 0; renderLiveAnalysis(rec); });
     });
     store.session.live = rec;
-    if (el) { el.hidden = false; el.replaceChildren(); }
+    // the frame for this search goes up at once, empty: rows for every line
+    // it will report, so the first info — and every one after it — only
+    // writes text into boxes that are already their final size
+    if (el) { el.hidden = false; paintLive(el, rec); }
   }
   function renderLiveAnalysis(rec) {
     const el = document.getElementById("live-line");
     if (!el || store.session.live !== rec || !rec.info) return;
     el.hidden = false;
-    el.replaceChildren();
-    const turn = rec.info.turn;
-    const head = document.createElement("span");
-    head.className = "pv-label";
-    head.textContent = t("act.live") + " · " + t("an.depth") + " " + (rec.info.depth || 0);
-    el.appendChild(head);
-    rec.info.lines.forEach((l, n) => {
-      const row = document.createElement("div");
-      row.className = "pv-alt-row";
-      const lab = document.createElement("span");
-      lab.className = "pv-label";
-      lab.textContent = (rec.info.lines.length > 1 ? tf("an.line", [n + 1]) + " · " : "") + winLabel(l, turn);
-      row.appendChild(lab);
-      sansOf(rec.fen, l.pv, 8).forEach((san, k) => {
-        const sp = document.createElement("span");
-        sp.className = "pv-chip pv-alt";
-        writeSan(sp, san, k % 2 === 0 ? turn : (turn === "w" ? "b" : "w"));
-        row.appendChild(sp);
-      });
-      el.appendChild(row);
-    });
+    paintLive(el, rec);
+  }
+  /**
+   * #live-line in place (7.6, v7-6-plan §2). This runs every animation frame
+   * while a search is reporting. It used to replaceChildren() the whole
+   * block, and the block changed height as lines arrived and as their moves
+   * wrapped or stopped wrapping: with MultiPV 3, 新局 under it jumped 22px
+   * several times a second, and a button that moves between mouse-down and
+   * mouse-up loses the click on WebKit. Now: one head and exactly
+   * `rec.multipv` rows, built once per line count, and a frame only rewrites
+   * their text; and the block keeps the tallest height it has had at this
+   * width. The rows still wrap as before — eight moves are worth two lines —
+   * but a line that gets shorter, or a new search starting empty, no longer
+   * pulls everything under it up. It grows until the lines are as long as
+   * they get (a second or so into a search) and then stands still.
+   */
+  function paintLive(el, rec) {
+    const n = rec.multipv || 1;
+    const head0 = el.firstElementChild;
+    if (el.childElementCount !== n + 1 || !head0 || head0.tagName !== "SPAN") {
+      const head = document.createElement("span");
+      head.className = "pv-label";
+      const rows = [];
+      for (let i = 0; i < n; i++) {
+        const row = document.createElement("div");
+        row.className = "pv-alt-row";
+        const lab = document.createElement("span");
+        lab.className = "pv-label";
+        row.appendChild(lab);
+        rows.push(row);
+      }
+      el.replaceChildren(head, ...rows);
+      el.style.minHeight = "";
+    }
+    const info = rec.info;
+    const turn = info ? info.turn : (rec.fen.split(" ")[1] === "b" ? "b" : "w");
+    setText(el.firstElementChild, t("act.live") + " · " + t("an.depth") + " " + ((info && info.depth) || 0));
+    for (let i = 0; i < n; i++) {
+      const row = el.children[i + 1];
+      const l = info && info.lines[i];
+      setText(row.firstElementChild, l ? (n > 1 ? tf("an.line", [i + 1]) + " · " : "") + winLabel(l, turn) : "");
+      const sans = l ? sansOf(rec.fen, l.pv, 8) : [];
+      while (row.childElementCount - 1 > sans.length) row.lastElementChild.remove();
+      for (let k = 0; k < sans.length; k++) {
+        let sp = row.children[k + 1];
+        if (!sp) {
+          sp = document.createElement("span");
+          sp.className = "pv-chip pv-alt";
+          row.appendChild(sp);
+        }
+        const color = k % 2 === 0 ? turn : (turn === "w" ? "b" : "w");
+        if (sp.dataset.san !== color + sans[k]) { sp.dataset.san = color + sans[k]; writeSan(sp, sans[k], color); }
+      }
+    }
+    // the high-water mark, per width: a wider panel wraps less, and the
+    // height kept from a narrower one would be empty space. Not while the
+    // group is collapsed (width 0) — the mark is for when it is back.
+    const w = el.clientWidth;
+    if (!w) return;
+    if (el.dataset.hwWidth !== String(w)) { el.dataset.hwWidth = String(w); el.style.minHeight = ""; }
+    const h = el.getBoundingClientRect().height;
+    if (h > (parseFloat(el.style.minHeight) || 0)) el.style.minHeight = h + "px";
+  }
+  /** textContent, written only when it differs — a same-text write still
+      replaces the text node, and still costs a layout. */
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
   }
 
   /**
@@ -4342,8 +4391,17 @@ import { createStore } from "./store.js";
       const a = analysisFor();
       const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
       pvEl.hidden = !pv;
-      pvEl.replaceChildren();
-      if (pv) {
+      // 7.6 (v7-6-plan §2): rebuilt only when what it shows changes. This
+      // runs once a ply while a pass is in flight, over the previous
+      // analysis's line — the same line every time — and rebuilding it
+      // swapped the chip under a pointer that was mid-press for a new node:
+      // the click then went to #pv-line itself and pinned nothing.
+      const key = pv ? JSON.stringify([pv, viewGame().turn(), (a.linesAt && a.linesAt[store.game.viewIndex]) || null,
+        inModal(), store.ui.langId, !!store.session.analyzing]) : "";
+      const fresh = pvEl.dataset.key !== key;
+      pvEl.dataset.key = key;
+      if (fresh) pvEl.replaceChildren();
+      if (pv && fresh) {
         // the line used to be prose; each move is now a chip the pointer can
         // rest on — the board plays the line that far while it does
         const lab = document.createElement("span");

@@ -763,6 +763,12 @@
             <button type="button" class="act-btn" id="lib-diagnose" hidden data-i18n="lib.diagnose">看诊断</button>
           </span>
         </div>
+        <!-- 7.6 (v7-6-plan §2): what the library is doing — 没认出你、还差几局、
+             正在分析第几局 — sits UNDER the buttons. Above them, every change
+             of these lines moved 分析 / 暂停分析: the first `change` as focus
+             leaves the name field rewrote them between mouse-down and
+             mouse-up, and WebKit drops a click whose button moved. -->
+        <div class="stats-body" id="lib-status"></div>
         <!-- 我的开局书 (7.2, v7-2-plan §3). The trainer's built-in book
              teaches opening principles through the openings everybody plays;
              this one is the four or five things THIS player intends to play,
