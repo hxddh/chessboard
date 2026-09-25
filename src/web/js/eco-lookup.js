@@ -46,7 +46,7 @@ import { OPENING_FAMILIES_JA } from "./openings-family-ja.js";
   const ECO_GLOBAL = "ECO_BY_KEY";
   const table = () => (typeof window !== "undefined" ? window[ECO_GLOBAL] : globalThis[ECO_GLOBAL]) || null;
   /** Fetch the table if it is not here yet. @returns {Promise<void>} */
-  function ready() { return loadChunk("chunk-eco-missing.js", ECO_GLOBAL).then(() => undefined); }
+  function ready() { return loadChunk("chunk-eco.js", ECO_GLOBAL).then(() => undefined); }
   /** Is the table here? Callers render without it and re-render on ready(). */
   function loaded() { return chunkReady(ECO_GLOBAL); }
   // One shared wait, so a caller that redraws on every move does not stack a
