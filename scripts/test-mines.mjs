@@ -338,7 +338,12 @@ bound("精析改判最佳着的比例 %", revision.changedBestPct, 0, 75);
 bound("快扫铸出的 ?? 数", revision.quickBlunders, 1, 40);
 // If the second-best move were usually as good as the best, "there is one
 // move to find" would be false and the mistake threshold would be wrong.
-bound("次佳着差距中位数（厘兵）", alternatives.secondBestGapMedian, 30, 600);
+// 7.6: the floor was 30 and a v7.6.0 release run read 25 on unchanged code —
+// the median of six ?? positions, each probed by a movetime search, moved
+// 25 / 33 / 78 / 86 across four runs (recorded: 116 over five). "Usually as
+// good as the best" is a median near 0; 10 says that without tripping on
+// which six positions this round's quick scan happened to mint.
+bound("次佳着差距中位数（厘兵）", alternatives.secondBestGapMedian, 10, 600);
 // Twenty plies is the floor the app uses before it will say anything about a
 // game; it is only a floor if the number has settled by then.
 bound("前 20 着与整局精准度的平均差", verdictFloor.byN["20"].accDiffMean, 0, 12);
