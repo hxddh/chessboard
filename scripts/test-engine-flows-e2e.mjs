@@ -18,6 +18,18 @@
  *               and opening one shows its marks without a new engine search
  *   6 教学对练  卢塞纳 Rc1–d1+ gets a reply from the engine
  *
+ * v7-6-plan §1 and §6 added:
+ *
+ *   7  持续分析+棋谱库  live analysis on, a library pass, one step back mid-pass:
+ *                      every game still finishes and the live line comes back
+ *   8  分析中锁棋谱    during 精析, 存为变着 / 编辑注释 / a board move are refused
+ *   9  分析存盘        an analysis survives a reload and a 对局历史 load, no search
+ *   10 精析回写库      精析 of a library game writes budget/accuracy back, via reviseMines
+ *   11 再深一遍        the 400 ms re-pass of one library game, reviseMines included
+ *   12 人机高档棋钟    hard / normal send their UCI_Elo; a short clock caps movetime
+ *   13 多主变          multipv=3 in 分析 and in 持续分析
+ *   14 FEN黑先         a [SetUp] game with Black to move is numbered and marked right
+ *
  * Each scenario gets a fresh browser context, so one flow's engine state
  * cannot carry the next. Only key results are asserted: what the engine says
  * varies run to run, the fact that it reaches the page does not.
@@ -33,6 +45,7 @@ import path from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { Chess } from "../src/web/js/chess.js";
+import { ChessMistakes } from "../src/web/js/mistakes.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -93,12 +106,18 @@ const tmpFile = (name, text) => {
 };
 
 /** A fresh context and page in `mode`, with the side panel on screen. */
-async function openPage(settings) {
+async function openPage(settings, seed) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
-  await ctx.addInitScript((s) => {
+  await ctx.addInitScript(([s, sd]) => {
     localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign(
       { langId: "zh-CN", sideTab: "play", soundOn: false }, s)));
     localStorage.setItem("chess.panelOpen", "1");
+    // stored state the scenario starts from — written on the first load only,
+    // so a reload sees what the page itself wrote since
+    if (sd && !sessionStorage.getItem("flows.seeded")) {
+      for (const [k, v] of Object.entries(sd)) localStorage.setItem(k, v);
+      sessionStorage.setItem("flows.seeded", "1");
+    }
     // every toast the page shows, in order — the next one replaces the text
     window.__toasts = [];
     let last = "";
@@ -111,17 +130,20 @@ async function openPage(settings) {
     // every search the page asks the engine for
     const W = window.Worker;
     window.__go = 0;
+    window.__uci = [];
     window.Worker = function (...a) {
       const w = new W(...a);
       const pm = w.postMessage.bind(w);
       w.postMessage = (m, ...r) => {
         if (typeof m === "string" && /^go\b/.test(m)) window.__go++;
+        // what was asked, in order: the tier (UCI_Elo), the budget (movetime)
+        if (typeof m === "string" && /^(go|setoption|uci|isready)\b/.test(m)) window.__uci.push(m);
         return pm(m, ...r);
       };
       return w;
     };
     window.Worker.prototype = W.prototype;
-  }, settings);
+  }, [settings, seed || null]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push("pageerror: " + e.message));
@@ -184,6 +206,57 @@ async function openPgn(page, text) {
   if (!(await page.isVisible("#pgn-open"))) await page.click("#more-tools");
   await importVia(page, "#pgn-open", text, "flows-trap.pgn");
 }
+
+/** 分析 is running: its button has become the stop control. */
+const anBusy = (page) => page.evaluate(() => /停/.test(document.getElementById("an-run").textContent || ""));
+
+/** Press 分析 or 精析 and wait for the pass to finish; its wall time in ms. */
+async function runAn(page, sel, ms) {
+  const t0 = Date.now();
+  await page.click(sel);
+  await until(() => anBusy(page), 3000, 50);
+  await until(async () => !(await anBusy(page)), ms);
+  return Date.now() - t0;
+}
+
+/** What the page shows of an analysis: the marks (with their ply), the accuracy line. */
+const readAn = (page) => page.evaluate(() => {
+  const acc = document.getElementById("acc-line");
+  return {
+    tags: [...document.querySelectorAll(".move-list .mlmove")].filter((b) => b.querySelector(".mvtag"))
+      .map((b) => b.dataset.i + b.querySelector(".mvtag").textContent.trim()),
+    acc: acc && !acc.hidden ? (acc.textContent || "").trim() : "",
+    btn: (document.getElementById("an-run").textContent || "").trim(),
+  };
+});
+
+const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
+const minesOf = (page) => page.evaluate(() =>
+  (JSON.parse(localStorage.getItem("chess.v1.mines") || "null") || { list: [] }).list);
+
+/** Import LIB_PGN into the library, claim hxddh's games and run the pass to the end. */
+async function libraryPass(page, file) {
+  await page.click("#tab-record");
+  await importVia(page, "#lib-import", LIB_PGN, file);
+  await page.click("#lib-names");
+  await page.keyboard.type("hxddh");
+  await page.click("#lib-analyse");
+  return until(async () => {
+    const x = await libOf(page);
+    return x && x.games.length === 3 && x.games.every((g) => g.an) ? x : null;
+  }, 120000, 500);
+}
+
+/**
+ * A drill the library could have minted at 300 ms from hxddh's 1. e4 — a
+ * move no pass calls ??. Deeper than a 200 ms pass, so only a 400 ms one may
+ * judge it; that pass's reviseMines has to withdraw it. Its absence afterwards
+ * is the proof the deeper pass went through reviseMines at all.
+ */
+const START_FEN = new Chess().fen();
+const FAKE_DRILL = { id: ChessMistakes.mineId(START_FEN, "e4"), cat: "mine", fen: START_FEN,
+  solution: ["d4"], played: "e4", loss: 300, ply: 0, rev: { budget: 300, src: "lib" } };
+const FAKE_MINES = JSON.stringify({ v: 1, list: [FAKE_DRILL] });
 
 // FLOWS_ONLY=人机,棋谱库 runs just those (a local convenience while debugging)
 const ONLY = (process.env.FLOWS_ONLY || "").split(",").filter(Boolean);
@@ -308,12 +381,13 @@ await scenario("棋谱库", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" });
   await page.click("#tab-record").catch(() => {});
   await importVia(page, "#lib-import", LIB_PGN, "flows-lib.pgn");
-  await page.fill("#lib-names", "hxddh");
-  await page.dispatchEvent("#lib-names", "change");
-  await page.waitForTimeout(300);
+  // the real path (v7-6-plan §6): type the name and go straight for 分析 —
+  // the field's `change` fires on the way, as focus leaves it for the button
+  await page.click("#lib-names");
+  await page.keyboard.type("hxddh");
   const lib = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
   let l = await lib();
-  assert(l && l.games.length === 3 && l.games.every((g) => g.side), "棋谱库：三局进库，都认领为我的", l && l.games.length);
+  assert(l && l.games.length === 3, "棋谱库：三局进库", l && l.games.length);
   const t0 = Date.now();
   // the pass may already have started on its own when the names came in
   const running = await page.evaluate(() => /停/.test((document.getElementById("lib-analyse") || {}).textContent || ""));
@@ -365,6 +439,7 @@ await scenario("棋谱库", async () => {
   const nulls = l ? l.games.map((g) => g.an.scalars.filter((s) => s == null).length) : [];
   assert(!!l && nulls.every((n) => n === 0) && l.games.every((g) => g.an.scalars.length === g.plies + 1),
     "棋谱库：三局 " + (ms / 1000).toFixed(1) + " 秒全部分析完，an.scalars 里没有 null", JSON.stringify(nulls));
+  assert(!!l && l.games.every((g) => g.side), "棋谱库：打的名字在点「分析」的路上生效，三局都认领为我的");
   await page.waitForTimeout(500);
   await page.click("#lib-open");
   await page.waitForTimeout(300);
@@ -413,6 +488,292 @@ await scenario("教学对练", async () => {
   assert(before.d8 && before.a2 && replied,
     "教学对练：卢塞纳 Rc1–d1+ 之后，引擎 " + (Date.now() - t0) + "ms 内应了一手", JSON.stringify(before));
   assert(!errs.length, "教学对练：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 7. 持续分析 + 棋谱库 (v7-6-plan §1a) -----------------------------------
+// Live analysis on, then a library pass, then one step back on the board in
+// the middle of it. Up to 7.5 that step re-armed `go infinite`, which took
+// the engine's exclusive lock for good: the pass stopped at "17/23" and never
+// moved again. Every game has to finish, and the live line has to come back.
+await scenario("持续分析+棋谱库", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, TRAP);
+  await page.click("#an-live");
+  const livePv = () => page.evaluate(() => {
+    const el = document.getElementById("live-line");
+    return !!el && !el.hidden && el.querySelectorAll(".pv-chip").length > 0;
+  });
+  assert(!!(await until(livePv, 6000, 100)), "持续分析+棋谱库：持续分析先跑起来了");
+  await page.click("#tab-record");
+  await importVia(page, "#lib-import", LIB_PGN, "flows-lib-live.pgn");
+  await page.click("#lib-names");
+  await page.keyboard.type("hxddh");
+  await page.click("#lib-analyse");
+  const lib = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
+  // mid-pass: wait for the first game to be filed, then step back one move
+  const first = await until(async () => {
+    const x = await lib();
+    return x && x.games.some((g) => g.an) ? x : null;
+  }, 40000, 200);
+  const go0 = await page.evaluate(() => window.__go);
+  await page.evaluate(() => document.getElementById("rep-prev").click());
+  const t0 = Date.now();
+  const l = await until(async () => {
+    const x = await lib();
+    return x && x.games.every((g) => g.an) ? x : null;
+  }, 90000, 500);
+  if (!l) {
+    console.log("持续分析+棋谱库 · 卡住时:", JSON.stringify(await page.evaluate(() => ({
+      button: (document.getElementById("lib-analyse") || {}).textContent,
+      status: ((document.getElementById("lib-body") || {}).textContent || "").slice(0, 200),
+      go: window.__go }))), "go0=" + go0);
+  }
+  assert(!!first && !!l, "持续分析+棋谱库：翻了一步之后，三局仍然全部分析完(" + ((Date.now() - t0) / 1000).toFixed(1) + "s)");
+  // the pass is over and 持续分析 is still on: it picks up where the board is
+  // — a fresh search, not the chips the pass left standing
+  const back = await until(() => page.evaluate(() => {
+    const idle = !/停/.test((document.getElementById("lib-analyse") || {}).textContent || "");
+    const gos = window.__uci.filter((m) => /^go\b/.test(m));
+    return idle && /^go infinite/.test(gos[gos.length - 1] || "");
+  }), 8000, 150);
+  const on = await page.getAttribute("#an-live", "aria-pressed");
+  assert(!!back && on === "true", "持续分析+棋谱库：分析跑完后持续分析自己接上");
+  assert(!errs.length, "持续分析+棋谱库：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 8. 分析中不许改棋谱 (v7-6-plan §1b) -------------------------------------
+// 存为变着 / 编辑注释 / a move on the board all change what the running pass
+// is keyed on, and up to 7.5 one click threw a half-done 精析 away without a
+// word. While it runs they are disabled (or refused, for the board); after
+// it, they work again.
+await scenario("分析中锁棋谱", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, TRAP);
+  const busy = () => page.evaluate(() => /停/.test(document.getElementById("an-run").textContent || ""));
+  await page.click("#an-run");
+  await until(busy, 3000, 50);
+  await until(async () => !(await busy()), 60000);
+  const state = () => page.evaluate(() => {
+    const save = document.querySelector("#pv-line .pv-act");
+    return { save: save ? save.disabled : null, plies: document.querySelectorAll(".move-list .mlmove:not(.mlgap)").length };
+  });
+  const before = await state();
+  const kDeep = await page.evaluate(() => window.__toasts.length);
+  await page.click("#an-deep");
+  await until(busy, 3000, 50);
+  // a couple of plies in, like the 7.5 walkthrough's 「停止 3/7」
+  await until(() => page.evaluate(() => /停止 [3-9]/.test(document.getElementById("an-run").textContent || "")), 20000, 50);
+  const during = await state();
+  await page.click("#move-list .mlmenu");
+  const menu = await page.evaluate(() => ({
+    open: !document.getElementById("move-menu").hidden,
+    note: document.getElementById("mm-note").disabled,
+    del: document.getElementById("mm-delete").disabled,
+  }));
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.mouse.click(5, 5);
+  // the pointer does not give up either: a board move is refused, and says why
+  const k = await page.evaluate(() => window.__toasts.length);
+  await clickMove(page, "e4", "e2");
+  const refused = await until(() => page.evaluate((i) =>
+    window.__toasts.slice(i).find((s) => /分析进行中/.test(s)) || null, k), 2000, 100);
+  const mid = await state();
+  await until(async () => !(await busy()), 90000);
+  const after = await state();
+  const toasts = await page.evaluate((i) => window.__toasts.slice(i), kDeep);
+  assert(before.save === false, "分析中锁棋谱：分析完成后「存为变着」可点", JSON.stringify(before));
+  assert(during.save === true && menu.open && menu.note && menu.del,
+    "分析中锁棋谱：精析进行中「存为变着」「编辑注释」「删除分支」都不可点", JSON.stringify({ during, menu }));
+  assert(!!refused && mid.plies === 13, "分析中锁棋谱：精析进行中在棋盘上走子被拒，并说明原因", JSON.stringify({ refused, mid }));
+  assert(after.save === false && after.plies === 13 && toasts.some((s) => /^分析完成/.test(s)) &&
+    !toasts.some((s) => /已存为变着/.test(s)),
+    "分析中锁棋谱：精析照常跑完，之后「存为变着」又能点了", JSON.stringify({ after, toasts }));
+  assert(!errs.length, "分析中锁棋谱：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 9. 分析结果存盘 (v7-6-plan §1c) -----------------------------------------
+// A 分析 is 13 s of engine time on a 60-ply game. Up to 7.5 a reload threw it
+// away, and so did loading the same game back from 对局历史. Both now put it
+// back from storage — and without asking the engine for a single search.
+await scenario("分析存盘", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, TRAP);
+  await runAn(page, "#an-run", 60000);
+  const r0 = await readAn(page);
+  assert(r0.tags.length > 0 && !!r0.acc, "分析存盘：先分析一遍", JSON.stringify(r0));
+  await page.reload();
+  await page.waitForTimeout(900);
+  if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+  const r1 = await until(() => readAn(page).then((r) => (r.acc ? r : null)), 3000, 100);
+  const go1 = await page.evaluate(() => window.__go);
+  assert(!!r1 && r1.acc === r0.acc && r1.tags.join(",") === r0.tags.join(",") && go1 === 0 && !/停/.test(r1.btn),
+    "分析存盘：刷新以后精准度和标注都还在，引擎一次没跑(go " + go1 + ")", JSON.stringify({ r0, r1 }));
+  const kept = await page.evaluate(() => localStorage.getItem("chess.v1.analyses"));
+  assert(!errs.length, "分析存盘：页面没有报错", errs.join(" / "));
+  await ctx.close();
+
+  // 对局历史: a fresh profile holding only that store and a record of this game
+  const stats = { v: 2, games: [{ id: "flows-h1", t: Date.now() - 60000, diff: "beginner", color: "b",
+    result: "loss", moves: 13, pgn: TRAP, ending: "" }] };
+  // pvp until the load: an ai board would offer the position to the engine
+  // the moment it lands, before the record's colour is restored (the same
+  // search 7.5 already made and cancelled) — that is not what is measured here
+  const p2 = await openPage({ mode: "pvp", sideTab: "record" },
+    { "chess.v1.analyses": kept, "chess.v1.stats": JSON.stringify(stats) });
+  await p2.page.click("#tab-record").catch(() => {});
+  const row = await until(() => p2.page.isVisible('#hist-body button[data-hist="0"]'), 3000, 100);
+  if (row) await p2.page.click('#hist-body button[data-hist="0"]');
+  const r2 = await until(() => readAn(p2.page).then((r) => (r.acc && r.tags.length ? r : null)), 3000, 100);
+  const go2 = await p2.page.evaluate(() => window.__go);
+  assert(!!r2 && r2.acc === r0.acc && r2.tags.join(",") === r0.tags.join(",") && go2 === 0,
+    "分析存盘：从对局历史载入同一局，分析直接回来，引擎一次没跑(go " + go2 + ")", JSON.stringify({ row, r2 }));
+  assert(!p2.errs.length, "分析存盘：对局历史这一步页面没有报错", p2.errs.join(" / "));
+  await p2.ctx.close();
+});
+
+// --- 10. 精析回写棋谱库 (v7-6-plan §1c) ----------------------------------------
+// 7.5: open a library game, 精析 it, and the library still said budget 200
+// and the old accuracy. The deeper look now goes back to the entry the way
+// 「再深一遍」 does, drills included (reviseMines).
+await scenario("精析回写库", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" }, { "chess.v1.mines": FAKE_MINES });
+  const l0 = await libraryPass(page, "flows-lib-deep1.pgn");
+  const trap0 = l0 && l0.games.find((g) => /Nxf7/.test(g.sans));
+  const fake0 = (await minesOf(page)).some((m) => m.id === FAKE_DRILL.id);
+  assert(!!trap0 && trap0.an.budget === 200 && fake0, "精析回写库：库分析完，那局 budget 200，300ms 的假题还在",
+    JSON.stringify({ budget: trap0 && trap0.an.budget, fake0 }));
+  await page.waitForTimeout(500);
+  await page.click("#lib-open");
+  await page.waitForTimeout(300);
+  await page.click(`#lib-list button[data-lib="${trap0.id}"]`);
+  await page.waitForTimeout(500);
+  await page.click("#tab-play");
+  const ms = await runAn(page, "#an-deep", 90000);
+  const shown = await readAn(page);
+  const l1 = await libOf(page);
+  const trap1 = l1.games.find((g) => g.id === trap0.id);
+  const others = l1.games.filter((g) => g.id !== trap0.id).map((g) => g.an.budget);
+  const pct = (shown.acc.match(/(\d+)%/g) || []).map((x) => Number(x.replace("%", "")));
+  assert(trap1.an.budget === 400 && pct.length === 2 && pct[0] === trap1.an.acc.w && pct[1] === trap1.an.acc.b &&
+    others.every((b) => b === 200),
+    "精析回写库：精析 " + (ms / 1000).toFixed(1) + " 秒完成，库里那局 budget 200 → 400，精准度和界面一致，别的局不动",
+    JSON.stringify({ budget: trap1.an.budget, acc: trap1.an.acc, shown: shown.acc, others }));
+  const fake1 = (await minesOf(page)).some((m) => m.id === FAKE_DRILL.id);
+  assert(!fake1, "精析回写库：回写走了 reviseMines，300ms 的假题被 400ms 撤回");
+  assert(!errs.length, "精析回写库：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 11. 再深一遍 (v7-6-plan §6.2) ---------------------------------------------
+await scenario("再深一遍", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" }, { "chess.v1.mines": FAKE_MINES });
+  const l0 = await libraryPass(page, "flows-lib-deep2.pgn");
+  const trap0 = l0 && l0.games.find((g) => /Nxf7/.test(g.sans));
+  await page.waitForTimeout(500);
+  await page.click("#lib-open");
+  await page.waitForTimeout(300);
+  const k = await page.evaluate(() => window.__toasts.length);
+  const t0 = Date.now();
+  await page.click(`#lib-list button[data-lib-deep="${trap0.id}"]`);
+  const l1 = await until(async () => {
+    const x = await libOf(page);
+    const g = x && x.games.find((e) => e.id === trap0.id);
+    return g && g.an.budget === 400 ? x : null;
+  }, 60000, 300);
+  const done = await until(() => page.evaluate((i) =>
+    window.__toasts.slice(i).find((s) => /深分析完/.test(s)) || null, k), 3000, 100);
+  const g1 = l1 && l1.games.find((e) => e.id === trap0.id);
+  assert(!!g1 && g1.an.scalars.every((x) => x != null) && g1.an.scalars.length === g1.plies + 1 && !!done,
+    "再深一遍：" + ((Date.now() - t0) / 1000).toFixed(1) + " 秒按 400ms 重析完那一局，没有空洞，并报告结果", done);
+  const fake1 = (await minesOf(page)).some((m) => m.id === FAKE_DRILL.id);
+  assert(!fake1 && /撤销 [1-9]/.test(done || ""), "再深一遍：reviseMines 撤回了 300ms 的假题", done);
+  assert(!errs.length, "再深一遍：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 12. 人机·高档 + 棋钟 (v7-6-plan §6.3) ---------------------------------------
+// hard is UCI_Elo 2200 at 900 ms and normal 1700 at 700 ms; a clock caps the
+// think time at a thirtieth of what is left on it (never below 150).
+await scenario("人机高档棋钟", async () => {
+  // Black's clock stands at 20 s with White to move, so it does not tick while
+  // the engine boots (~10 s from a cold page here); the budget is then
+  // 20000 / 30 ≈ 666 ms, under hard's own 900
+  const save = { v: 1, pgn: '[Event "flows"]\n[Result "*"]\n\n1. e4 e5 *', savedAt: Date.now(),
+    clock: { tc: "3", w: 170000, b: 20000, started: true } };
+  const hard = await openPage({ mode: "ai", difficulty: "hard", humanColor: "w", timeControl: "3" },
+    { "chess.v1.save": JSON.stringify(save) });
+  // the boot the page starts on its own for an ai game: wait for it to answer
+  const ready = await until(() => hard.page.evaluate(() => window.__uci.includes("uci")), 30000, 200);
+  await hard.page.waitForTimeout(3000);
+  await clickMove(hard.page, "g1", "f3");
+  const t0 = Date.now();
+  const n = await until(() => plies(hard.page).then((p) => (p >= 4 ? p : 0)), 15000, 100);
+  const uci = await hard.page.evaluate(() => window.__uci);
+  const g = await savedAt(hard.page, 4, 3000);
+  const clk = await hard.page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.save") || "{}").clock) || null);
+  const ms = uci.filter((m) => /^go movetime/.test(m)).map((m) => Number(m.split(" ")[2]));
+  assert(!!ready && n >= 4 && uci.includes("setoption name UCI_Elo value 2200") && ms.length === 1 && ms[0] >= 600 && ms[0] < 667,
+    "人机高档棋钟：hard 档、黑方钟上 20 秒，引擎按 UCI_Elo 2200、压到 " + ms[0] + "ms(不是 900)应着(" + (Date.now() - t0) + "ms)", JSON.stringify({ ready, n, uci }));
+  assert(!!g && !!clk && clk.b < 20000 && clk.b > 15000 && clk.w <= 170000, "人机高档棋钟：引擎那一侧的钟在走", JSON.stringify(clk));
+  assert(!hard.errs.length, "人机高档棋钟：页面没有报错", hard.errs.join(" / "));
+  await hard.ctx.close();
+
+  const normal = await openPage({ mode: "ai", difficulty: "normal", humanColor: "w", timeControl: "5+3" });
+  await clickMove(normal.page, "e2", "e4");
+  const n2 = await until(() => plies(normal.page).then((p) => (p >= 2 ? p : 0)), 15000, 100);
+  const uci2 = await normal.page.evaluate(() => window.__uci);
+  assert(n2 >= 2 && uci2.includes("setoption name UCI_Elo value 1700") && uci2.includes("go movetime 700"),
+    "人机高档棋钟：normal 档、5+3 钟上时间充足，按 UCI_Elo 1700 / 700ms 应着", JSON.stringify(uci2));
+  assert(!normal.errs.length, "人机高档棋钟：normal 档页面没有报错", normal.errs.join(" / "));
+  await normal.ctx.close();
+});
+
+// --- 13. multipv=3：分析与持续分析 (v7-6-plan §6.4) ------------------------------
+await scenario("多主变", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp", multipv: 3 });
+  await openPgn(page, TRAP);
+  await runAn(page, "#an-run", 90000);
+  const alt = await page.evaluate(() => document.querySelectorAll("#pv-line .pv-alt-row").length);
+  const uci = await page.evaluate(() => window.__uci);
+  assert(alt === 2 && uci.includes("setoption name MultiPV value 3"),
+    "多主变：multipv=3 分析，最后一个局面下列出另外两条变化", JSON.stringify({ alt }));
+  await page.click("#an-live");
+  const rows = await until(() => page.evaluate(() => {
+    const el = document.getElementById("live-line");
+    const n = el && !el.hidden ? el.querySelectorAll(".pv-alt-row").length : 0;
+    return n === 3 ? n : 0;
+  }), 6000, 100);
+  assert(rows === 3, "多主变：持续分析同时显示三条主变", rows);
+  assert(!errs.length, "多主变：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 14. 从 FEN 起始、黑先的对局 (v7-6-plan §6.5) --------------------------------
+// The trap again, handed over after 1. e4: Black moves first and the list
+// opens on "1. … e5". Every mark has to land on the move it judges — an
+// off-by-one here moves White's blunders onto Black's replies.
+await scenario("FEN黑先", async () => {
+  const FEN = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+  const pgn = '[Event "flows"]\n[Site "-"]\n[Date "2026.09.25"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n' +
+    '[SetUp "1"]\n[FEN "' + FEN + '"]\n\n1... e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7 Qxg2 6. Rf1 Qxe4+ 7. Be2 *\n';
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, pgn);
+  const head = await page.evaluate(() => {
+    const row = document.querySelector(".move-list .mlrow");
+    return row ? { no: (row.querySelector(".mlnum") || {}).textContent, gap: !!row.querySelector(".mlgap") } : null;
+  });
+  assert((await plies(page)) === 12 && !!head && head.no === "1." && head.gap, "FEN黑先：12 半着，棋谱从「1. … e5」开始", JSON.stringify(head));
+  await runAn(page, "#an-run", 60000);
+  const r = await readAn(page);
+  const sans = ["e5", "Nf3", "Nc6", "Bc4", "Nd4", "Nxe5", "Qg5", "Nxf7", "Qxg2", "Rf1", "Qxe4+", "Be2"];
+  // data-i is the ply, 1-based: odd plies are Black's here
+  const marked = r.tags.filter((x) => /\?$/.test(x)).map((x) => sans[parseInt(x, 10) - 1]);
+  assert(marked.length > 0 && marked.some((s) => s === "Nxe5" || s === "Nxf7") && !!r.acc && /白 \d+%.*黑 \d+%/.test(r.acc),
+    "FEN黑先：分析完，? / ?? 落在白方的 Nxe5 / Nxf7 上，双方精准度都有", JSON.stringify({ marked, acc: r.acc }));
+  assert(!errs.length, "FEN黑先：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
 

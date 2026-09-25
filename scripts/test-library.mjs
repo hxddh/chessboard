@@ -202,5 +202,32 @@ const T0 = 1758000000000;
   }
 }
 
+// --- 7.6 §1c：分析结果按对局存盘（src/web/js/analysis-store.js）-------------
+{
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/analysis-store.js")), ctx, { filename: "analysis-store.js" });
+  const S = ctx.ChessAnalysisStore;
+  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const an = (budget, n) => ({ sig: "x", scalars: new Array(n + 1).fill(0), tags: new Array(n).fill(null), budget, acc: { w: 90, b: 80 } });
+  let list = S.put([], START, ["e4", "e5"], an(200, 2), T0);
+  const hit = S.find(list, START, ["e4", "e5"]);
+  assert(!!hit && hit.budget === 200 && hit.sig === undefined, "存进去的能按起始局面 + 着法取回来，sig 不存（载入时按当前棋局重算）");
+  assert(S.find(list, START, ["e4"]) === null && S.find(list, "8/8/4k3/8/8/4K3/8/8 w - - 0 1", ["e4", "e5"]) === null,
+    "着法或起始局面不同，就不是同一局");
+  list = S.put(list, START, ["e4", "e5"], an(400, 2), T0 + 1);
+  assert(list.length === 1 && S.find(list, START, ["e4", "e5"]).budget === 400, "同一局再存，替换而不是多一条");
+  const same = S.put(list, START, ["e4", "e5"], an(200, 2), T0 + 2);
+  assert(same === list && S.find(same, START, ["e4", "e5"]).budget === 400, "浅的不覆盖深的：精析之后再分析，存盘的仍是精析");
+  let many = [];
+  for (let i = 0; i < S.MAX_ANALYSES + 5; i++) many = S.put(many, START, ["e4", "a" + i], an(200, 2), T0 + i);
+  assert(many.length === S.MAX_ANALYSES && S.find(many, START, ["e4", "a0"]) === null &&
+    !!S.find(many, START, ["e4", "a" + (S.MAX_ANALYSES + 4)]), "超过条数上限，最旧的先出去");
+  let big = [];
+  for (let i = 0; i < 10; i++) big = S.put(big, START, ["d4", "b" + i], an(200, 20000), T0 + i);
+  assert(JSON.stringify(S.dump(big)).length <= S.MAX_CHARS && big.length < 10 && !!S.find(big, START, ["d4", "b9"]),
+    "超过大小上限，也是最旧的先出去，最新的一条总在", String(big.length));
+  assert(S.load(null).length === 0 && S.load({ v: 1, list: [{ k: "x" }, null] }).length === 0 &&
+    S.load(S.dump(list)).length === 1, "读回来时认不出的形状直接丢掉");
+}
+
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }
 console.log("\nall library tests passed");

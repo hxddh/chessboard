@@ -41,7 +41,7 @@ export function createLibraryUI(d) {
     doc, store, Persist, game, t, tf, toast, sync,
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
-    saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs,
+    saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
   } = d;
   const Dlg = ChessDialog;
   const Fide = ChessFide;
@@ -288,6 +288,17 @@ export function createLibraryUI(d) {
       run.plies = fens.length;
       renderLibrary();
     }
+    return libRecord(fens, sans, scalars, bests, budget);
+  }
+
+  /**
+   * The `an` record (and the miner's view of it) from one pass's arrays.
+   *
+   * Split out of analyseLibraryGame (v7-6-plan §1c) so a 精析 on the board can file
+   * its result into the library entry it came from through the same code —
+   * the same tags, motifs and accuracy a library pass would have written.
+   */
+  function libRecord(fens, sans, scalars, bests, budget) {
     const tags = sans.map((_, i) => {
       const a = scalars[i], b = scalars[i + 1];
       if (a == null || b == null) return null;
@@ -396,6 +407,8 @@ export function createLibraryUI(d) {
       store.session.libRun = null;
       renderLibrary();
       renderLibList();
+      // 7.6 §1a: 持续分析 stood aside for the pass (liveAllowed); pick it up
+      if (store.session.liveOn) sync();
     }
     if (!r) { toast(t("lib.deepCut"), "fix"); return; }
     entry.an = r.an;
@@ -406,6 +419,39 @@ export function createLibraryUI(d) {
     renderLibList();
     sync();
     toast(tf("lib.deepDone", [libraryLabel(entry), m.withdrawn, m.revised, m.added]));
+  }
+
+  /**
+   * A pass run on the board, over a game that is in the library (7.6 §1c).
+   *
+   * Opening a library game and pressing 精析 used to leave the library where
+   * it was: budget 200 and the old accuracy in the entry, 400 and the new one
+   * on screen, and the diagnosis and the drills still reading the shallower
+   * look. Now the deeper pass is filed back exactly as 「再深一遍」 files its
+   * own — record, then revise and extend the drills — and a shallower or
+   * equal one changes nothing. Matched by moves and start position, not by
+   * how the game got onto the board.
+   * @param {{fens: string[], sans: string[], scalars: number[], bests: string[], budget: number}} p
+   * @param {boolean} mine run the library's miner (false when the board's own
+   *   miner already took this pass)
+   * @returns {boolean} whether an entry was updated
+   */
+  function adoptBoardAnalysis(p, mine) {
+    if (!p || !Array.isArray(p.sans) || !p.sans.length || store.session.libRun) return false;
+    // a hole is a search that did not answer; the library never files those
+    if (p.scalars.some((x) => x == null)) return false;
+    const text = p.sans.join(" ");
+    const entry = store.session.library.find((g) => g && g.sans === text && !g.unplayable &&
+      new Chess(g.fen || undefined).fen() === p.fens[0]);
+    if (!entry || (entry.an && (entry.an.budget || LIB_BUDGET) >= p.budget)) return false;
+    const r = libRecord(p.fens, p.sans, p.scalars, p.bests, p.budget);
+    entry.an = r.an;
+    entry.motifs = r.motifs;
+    if (mine) mineLibraryGame(entry, r.pass, p.budget);
+    saveLibrary();
+    renderLibrary();
+    renderLibList();
+    return true;
   }
 
   async function runLibraryPass() {
@@ -461,6 +507,8 @@ export function createLibraryUI(d) {
       store.session.libRun = null;
       saveLibrary();
       renderLibrary();
+      // 7.6 §1a: 持续分析 stood aside for the pass (liveAllowed); pick it up
+      if (store.session.liveOn) sync();
       if (run.failed) toast(t("lib.passCut"), "fix");
       if (done && mined) toast(tf("lib.minedDone", [done, mined]));
       if (done && !store.ui.appForeground) {
@@ -883,7 +931,11 @@ export function createLibraryUI(d) {
     store.game.recordedId = null;
     invalidateEngine();
     const an = entry.an;
-    store.session.analysis = an && Array.isArray(an.scalars) && Array.isArray(an.tags) ? {
+    // a board pass of this very game at least as deep as the entry's (7.6
+    // §1c) carries the engine lines too, which the library never stores
+    const kept = recallAnalysis();
+    if (kept && (!an || (kept.budget || 0) >= (an.budget || LIB_BUDGET))) store.session.analysis = kept;
+    else store.session.analysis = an && Array.isArray(an.scalars) && Array.isArray(an.tags) ? {
       sig: game.pgn(),
       scalars: an.scalars,
       tags: an.tags,
@@ -1245,7 +1297,7 @@ export function createLibraryUI(d) {
 
   return {
     LIB_MIN_GAMES, fillOpenings,
-    closeDiagnosis, closeLibList, deepenLibraryGame, importPgnToLibrary,
+    adoptBoardAnalysis, closeDiagnosis, closeLibList, deepenLibraryGame, importPgnToLibrary,
     libNamesFrom, loadFromLibrary, loadLibraryEntry, openDiagnosis, openLibList,
     reclaimLibrary, renderLibList, renderLibrary, runLibraryPass, saveLibrary,
   };
