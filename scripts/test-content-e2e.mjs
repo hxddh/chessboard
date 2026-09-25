@@ -124,9 +124,11 @@ const move = async (a, b) => { await tap(a); await tap(b); await page.waitForTim
 const toasts = () => page.evaluate(() => [...document.querySelectorAll(".toast")].map((x) => x.textContent).join(" | "));
 /** a lesson demonstrates its first move on entry, and swallows a click while it does */
 const settle = async () => {
-  // the same 6 s cap the old 40 × 150 ms poll had, without its granularity
-  await page.waitForFunction(() => !/演示中|Showing/.test(document.getElementById("lesson-task").textContent),
-    null, { timeout: 6000 }).catch(() => {});
+  for (let i = 0; i < 40; i++) {
+    const busy = await page.evaluate(() => /演示中|Showing/.test(document.getElementById("lesson-task").textContent));
+    if (!busy) break;
+    await page.waitForTimeout(150);
+  }
   await page.waitForTimeout(200);
 };
 
@@ -155,14 +157,7 @@ for (const les of LESSONS) {
     row.click();
     return true;
   }, les.title);
-  // 7.6: was a fixed 500 ms, 96 times over. startLesson() renders the text
-  // inside the click (and sets the demo flag settle() waits on), so waiting
-  // for this lesson's paragraphs is enough; a miss falls through to the
-  // paragraph assertion below, which says so.
-  if (opened) {
-    await page.waitForFunction((n) => document.querySelectorAll("#lesson-text p").length === n,
-      les.text.length, { timeout: 3000 }).catch(() => {});
-  }
+  await page.waitForTimeout(500);
   assert(opened, `${les.id}:课程列表里点得开`);
   if (!opened) continue;
 
