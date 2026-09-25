@@ -109,6 +109,16 @@
         <div class="coords files" id="coord-files" aria-hidden="true"></div>
         <div class="coords ranks" id="coord-ranks" aria-hidden="true"></div>
         <div class="think-dot" id="think-dot" hidden></div>
+        <!-- 7.7 §5: the evaluation of the position on the board, as a gauge
+             down the board's left edge (it was a bar in the panel). White's
+             share fills from White's side of the board, so it turns with the
+             board. Review only: it reads the analysis, never the engine. -->
+        <div class="eval-gauge" id="eval-bar-row" hidden>
+          <div class="eval-bar" id="eval-bar" role="img" aria-label="当前局面形势" data-i18n-aria="aria.evalBar">
+            <span class="eval-bar-fill" id="eval-bar-fill"></span>
+          </div>
+          <span class="eval-bar-text num" id="eval-bar-text"></span>
+        </div>
         <!-- Says when the board is not showing the committed position: a
              hovered move, a focused or pinned engine line. Without it the
              drawn position and the cursor could disagree in silence. -->
@@ -281,6 +291,16 @@
               <button type="button" data-text="s" data-i18n="text.s">小</button>
               <button type="button" data-text="m" class="active" data-i18n="text.m">标准</button>
               <button type="button" data-text="l" data-i18n="text.l">大</button>
+            </div>
+          </div>
+          <!-- v7-7-plan §6: a second piece set, licence-cleared (GPLv2+, see
+               js/pieces-merida.js). The board only: the move list's
+               figurines stay the standard set, they are type, not pieces. -->
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.pieces">棋子样式</span>
+            <div class="theme-row" id="pieces-seg" role="group" aria-label="棋子样式" data-i18n-aria="side.pieces">
+              <button type="button" data-pieces="cburnett" class="active" data-i18n="pieces.cburnett">标准</button>
+              <button type="button" data-pieces="merida" data-i18n="pieces.merida">梅里达</button>
             </div>
           </div>
           <!-- Which way round the board is drawn is a property of the view,
@@ -648,17 +668,13 @@
                global ← / → / Home / End replay keys move it once it has focus,
                so the keyboard gets the same time machine (5.1, work package D). -->
           <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" title="点击跳转到对应局面" data-i18n-title="tip.evalCurve"></canvas>
-          <!-- The curve is the whole game; this is the one position the board
-               is standing on, in a form that needs no axis read. -->
-          <div class="eval-bar-row" id="eval-bar-row" hidden>
-            <div class="eval-bar" id="eval-bar" role="img" aria-label="当前局面形势" data-i18n-aria="aria.evalBar">
-              <span class="eval-bar-fill" id="eval-bar-fill"></span>
-            </div>
-            <span class="eval-bar-text num" id="eval-bar-text"></span>
-          </div>
-          <div class="pv-line num" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级" data-i18n-title="tip.accuracy"></div>
           <div class="pv-line num" id="pv-line" hidden></div>
-          <div class="review" id="review-body" hidden></div>
+          <!-- 7.7 §5: one card. The two accuracies are the headline, once —
+               they used to be a line above the report and a row inside it. -->
+          <div class="report-card" id="report-card" hidden>
+            <div class="acc-hero" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级" data-i18n-title="tip.accuracy"></div>
+            <div class="review" id="review-body" hidden></div>
+          </div>
         </div>
         <!-- 14 identical text links in one wrapped block made "PGN" and
              "认输" look like the same kind of thing. Grouped by what they act

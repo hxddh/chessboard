@@ -1,5 +1,6 @@
 /**
- * Browser check for what the review shows: the eval bar.
+ * Browser check for what the review shows: the eval gauge, the report card,
+ * the curve and the marks on the board.
  *
  * The bar is a pure rendering of `analysis.scalars[viewIndex]` — no engine
  * call, which is what keeps it review-only and stops it becoming an answer key
@@ -65,9 +66,11 @@ await page.goto(`http://127.0.0.1:${PORT}/`);
 await page.waitForTimeout(900);
 await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
+// v7-7-plan §5: the bar is a vertical gauge down the board's left edge now;
+// White's share is its height, filled from White's side of the board
 const bar = () => page.evaluate(() => ({
   rowHidden: document.getElementById("eval-bar-row").hidden,
-  width: document.getElementById("eval-bar-fill").style.width,
+  width: document.getElementById("eval-bar-fill").style.height,
   text: document.getElementById("eval-bar-text").textContent,
   unmeasured: document.getElementById("eval-bar").classList.contains("is-unmeasured"),
 }));
@@ -122,6 +125,68 @@ assert(Math.abs(parseFloat(start.width) - 50) < 5,
   "back at the opening the bar is near level (" + start.width + ")");
 assert(start.text !== end.text, "the bar reads the position the board is standing on, not the game's result");
 
+// --- v7-7-plan §5: the gauge stands beside the board, as tall as it --------
+// …and turns with it: White's end is the end White sits at. The fill is read
+// as the rectangle the page actually draws, not as a class name.
+{
+  await page.click("#rep-end");
+  await page.waitForTimeout(300);
+  const geo = () => page.evaluate(() => {
+    const r = (el) => el.getBoundingClientRect();
+    const board = r(document.getElementById("board"));
+    const g = r(document.getElementById("eval-bar"));
+    const f = r(document.getElementById("eval-bar-fill"));
+    const wrap = r(document.getElementById("board-wrap"));
+    return { bt: board.top, bh: board.height, gt: g.top, gh: g.height, gl: g.left, gr: g.right,
+      wl: wrap.left, ft: f.top, fb: f.bottom, fh: f.height };
+  });
+  const a = await geo();
+  assert(Math.abs(a.gh - a.bh) <= 1 && Math.abs(a.gt - a.bt) <= 1,
+    "the gauge is exactly as tall as the board and level with it (" + a.gh + " vs " + a.bh + ")");
+  assert(a.gr <= a.wl, "…standing to the left of the frame, not on the squares (" + a.gr + " ≤ " + a.wl + ")");
+  assert(Math.abs(a.fb - (a.gt + a.gh)) <= 1 && a.fh > a.gh / 2,
+    "White ahead: the white fill rises from the bottom, White's side (" + Math.round(a.fh) + " of " + Math.round(a.gh) + ")");
+  await page.evaluate(() => document.querySelector('[data-orient="b"]').click());
+  await page.waitForTimeout(300);
+  const b = await geo();
+  assert(Math.abs(b.ft - b.gt) <= 1 && Math.abs(b.fh - a.fh) <= 1,
+    "flipped: the same fill now hangs from the top, where White sits (" + Math.round(b.ft - b.gt) + "px from the top)");
+  await page.evaluate(() => document.querySelector('[data-orient="w"]').click());
+  // back where the blocks below expect to start: the opening
+  await page.evaluate(() => document.getElementById("rep-start").click());
+  await page.waitForTimeout(300);
+}
+
+// --- v7-7-plan §5: the curve is there for every analysed game ---------------
+// 5.1 hid it below 30 judged moves, so an ordinary short game — this one is
+// seven — was analysed and showed no curve at all.
+{
+  const c = await page.evaluate(() => {
+    const el = document.getElementById("eval-curve");
+    return { hidden: el.hidden, w: el.clientWidth, h: el.clientHeight };
+  });
+  assert(!c.hidden && c.w > 100 && c.h > 30,
+    "a seven-move game, analysed, has its curve on screen (" + c.w + "×" + c.h + ")");
+}
+
+// --- v7-7-plan §5: accuracy is said once ------------------------------------
+// It was a line above the report (「精准度 · 白 99% · 黑 98%」) and a row in
+// each side's block inside it. Now the two figures are the card's headline and
+// appear nowhere else in the panel.
+{
+  const r = await page.evaluate(() => {
+    const pane = document.getElementById("pane-play");
+    const vis = (e) => !!(e.offsetParent || e.getClientRects().length);
+    const hits = [...pane.querySelectorAll("*")].filter((e) => vis(e) &&
+      [...e.childNodes].some((n) => n.nodeType === 3 && /精准度/.test(n.textContent)));
+    const nums = [...document.querySelectorAll("#acc-line .acc-num")].map((e) => e.textContent);
+    return { labels: hits.length, nums };
+  });
+  assert(r.labels === 1, "「精准度」 appears once in the panel (" + r.labels + ")");
+  assert(r.nums.length === 2 && r.nums.every((n) => /^\d+%$/.test(n)),
+    "…over two figures, White's and Black's (" + r.nums.join(" / ") + ")");
+}
+
 // --- the report can be taken away ------------------------------------------
 // A PGN hands somebody a move list; this hands them the conclusion. The button
 // is only useful once there is an analysis, and it must say so rather than
@@ -150,61 +215,59 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   assert(shot.bytes > 3000, "…with a drawn report in it, not an empty canvas (" + shot.bytes + " bytes)");
 }
 
-// --- the report is a list of numbers, laid out as one -----------------------
-// Each side's figures were one sentence carrying five values — 「精准度 100% ·
-// 平均失分 0 · 小失误 0 / 失误 0 / 严重 0」 — which in a 239px panel wrapped to
-// three lines in Chinese and five in English, breaking after the separators so
-// that 「/」 and 「·」 ended the lines. Directly above it, the statistics
-// section lays out the same kind of content (named quantities) as one row
-// each, label left and value right. Now the report is made of those rows, and
-// the exported picture draws the same three from the same helper — splitting
-// them for the panel alone would have left the picture describing the same
-// five numbers in different words, which is how every other pair in this app
-// has drifted.
+// --- the report card: a headline, a table, a footnote ------------------------
+// v7-7-plan §5. Each side's figures were first one sentence carrying five
+// values, then (5.x–7.6) three label/value rows per side under a line that
+// already said both accuracies. Now: the two accuracies as the card's
+// headline, then one small table — a row per mark, a column per side, the
+// counts in the marks' own colours — and the caveats as a footnote. Only the
+// marks the analysis has: no 「妙着 / 好棋」 rows, which this model has no
+// basis for. The exported picture still draws sideRows(), the same numbers.
 {
   const r = await page.evaluate(() => {
-    const body = document.getElementById("review-body");
-    const blocks = [...body.querySelectorAll(".review-row")].filter((e) => e.querySelector(".stat-row"));
-    return blocks.map((b) => ({
-      who: (b.querySelector(".review-k") || {}).textContent || "",
-      rows: [...b.querySelectorAll(".stat-row")].map((r) => ({
-        h: Math.round(r.getBoundingClientRect().height),
-        k: (r.querySelector(".stat-k") || {}).textContent || "",
-        v: (r.querySelector(".stat-v") || {}).textContent || "",
-        fits: (() => {
-          const kk = r.querySelector(".stat-k"), vv = r.querySelector(".stat-v");
-          if (!kk || !vv) return false;
-          return kk.getBoundingClientRect().right <= vv.getBoundingClientRect().left + 1;
-        })(),
-      })),
+    const t = document.querySelector("#review-body .rv-table");
+    if (!t) return null;
+    const rows = [...t.querySelectorAll("tbody tr")].map((tr) => ({
+      k: tr.querySelector("th").textContent,
+      v: [...tr.querySelectorAll("td")].map((td) => td.textContent),
+      cls: tr.className,
+      h: Math.round(tr.getBoundingClientRect().height),
+      colour: getComputedStyle(tr.querySelector(".rv-mark") || tr.querySelector("th")).color,
     }));
+    const head = [...t.querySelectorAll("thead th")].map((th) => th.textContent);
+    const notes = [...document.querySelectorAll("#review-body .review-note")].map((n) => n.textContent);
+    const css = getComputedStyle(document.documentElement);
+    const rgb = (v) => { const d = document.createElement("span"); d.style.color = v; document.body.appendChild(d);
+      const c = getComputedStyle(d).color; d.remove(); return c; };
+    return { rows, head, notes, mid: rgb(css.getPropertyValue("--judge-mid")), bad: rgb(css.getPropertyValue("--judge-bad")) };
   });
-  assert(r.length === 2, "the report has a block per side (" + r.length + ")");
-  for (const b of r) {
-    assert(b.rows.length === 3, b.who + ": three numbers, three rows (" + b.rows.length + ")");
-    const hs = [...new Set(b.rows.map((x) => x.h))];
-    assert(hs.length === 1, b.who + ": every row is the same height (" + hs.join(", ") + ")");
-    for (const row of b.rows) {
-      assert(row.fits, b.who + " 「" + row.k + "」: the label ends before the value starts");
-      assert(row.h < 30, b.who + " 「" + row.k + "」: on one line (" + row.h + "px)");
-      assert(row.v.trim() !== "", b.who + " 「" + row.k + "」: has a value");
-    }
-    // 7.6: the marks row's label follows 存疑标注 — with it off (the default)
-    // two numbers sit under 「? · ??」, never under three marks
-    const marks = b.rows[2];
-    assert(marks && marks.k.split(" · ").length === marks.v.split(" · ").length && marks.k === "? · ??",
-      b.who + ": 存疑标注关着,标签只写两个标记,与两个数一一对应 (" + (marks && marks.k + " / " + marks.v) + ")");
+  assert(!!r, "the report has its table");
+  if (r) {
+    assert(r.head.length === 3 && r.head[1] && r.head[2], "one column per side (" + r.head.join(" | ") + ")");
+    const marks = r.rows.filter((x) => /rv-kind/.test(x.cls));
+    // 存疑标注 is off by default: 「?」 and 「??」, not 「?!」
+    assert(marks.length === 2 && /^\?\D/.test(marks[0].k) && /^\?\?/.test(marks[1].k),
+      "存疑标注关着,表里只有 ? 与 ?? 两行 (" + marks.map((x) => x.k).join(" / ") + ")");
+    assert(marks[0] && marks[0].colour === r.mid && marks[1] && marks[1].colour === r.bad,
+      "…each mark in its own colour from the theme (" + marks.map((x) => x.colour).join(" / ") + ")");
+    assert(r.rows.every((x) => x.v.length === 2 && x.v.every((v) => v.trim() !== "")),
+      "every row has a value for both sides");
+    const hs = [...new Set(r.rows.map((x) => x.h))];
+    assert(hs.every((h) => h < 30), "every row is one line (" + hs.join(", ") + "px)");
+    assert(!r.rows.some((x) => /妙|好棋|最佳|brilliant|best/i.test(x.k)),
+      "no category the model does not have");
+    // a seven-move game: the sample caveat is one line, said once
+    const short = r.notes.filter((n) => /只分析了/.test(n));
+    assert(short.length === 1, "「只分析了 N 着」 is one footnote, not one per side (" + short.length + ")");
   }
-  // switch 存疑标注 on: the label grows its 「?!」 together with the value
+  // switch 存疑标注 on: the ?! row joins, in place
   const on = await page.evaluate(() => {
     document.getElementById("opt-softmark").click();
-    const row = [...document.querySelectorAll("#review-body .stat-row")][2];
-    const out = { k: row.querySelector(".stat-k").textContent, v: row.querySelector(".stat-v").textContent };
+    const rows = [...document.querySelectorAll("#review-body .rv-table tbody tr.rv-kind")].map((tr) => tr.querySelector("th").textContent);
     document.getElementById("opt-softmark").click();
-    return out;
+    return rows;
   });
-  assert(on.k === "?! · ? · ??" && on.v.split(" · ").length === 3,
-    "存疑标注打开后,标签和数值都是三项 (" + on.k + " / " + on.v + ")");
+  assert(on.length === 3 && /^\?!/.test(on[0]), "存疑标注打开后,表里多出 ?! 一行 (" + on.join(" / ") + ")");
 }
 
 // --- the move list, with annotations on it ---------------------------------
@@ -273,6 +336,43 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   assert(r.unnamed === 0, "every move keeps its full SAN as its accessible name");
   assert(/^[KQRBN]/.test(r.names[2] || ""),
     "…including the piece letter the figurine replaces (" + r.names[2] + ")");
+}
+
+// --- v7-7-plan §5: the mark on the board ------------------------------------
+// The move that lost the game carries its 「??」 on the board too: a badge in
+// the top-right corner of the square it landed on, in the theme's --judge-bad.
+// Read off the canvas's own pixels — the badge is paint, not DOM. Here the
+// 「??」 is White's 2.Bc4 (300 → −400), so at ply 3 the badge sits on c4; at
+// ply 2 (1…e5, unmarked) nothing is drawn there.
+{
+  const at = async (n) => {
+    // pressed through the DOM: at either end of the game the button that
+    // leads nowhere is not shown, and this walks from one end on purpose
+    await page.evaluate((k) => {
+      document.getElementById("rep-start").click();
+      for (let i = 0; i < k; i++) document.getElementById("rep-next").click();
+    }, n);
+    await page.waitForTimeout(300);
+    return page.evaluate(() => {
+      const cv = document.getElementById("board");
+      const step = cv.width / 8;
+      // c4, White at the bottom: column 2, row 4 from the top
+      const r = step * 0.19;
+      const cx = 3 * step - r - step * 0.03, cy = 4 * step + r + step * 0.03;
+      const d = cv.getContext("2d").getImageData(Math.round(cx - r * 0.78), Math.round(cy), 1, 1).data;
+      const s = document.createElement("span");
+      s.style.color = getComputedStyle(document.documentElement).getPropertyValue("--judge-bad");
+      document.body.appendChild(s);
+      const want = getComputedStyle(s).color.match(/\d+/g).map(Number);
+      s.remove();
+      return { got: [d[0], d[1], d[2]], want };
+    });
+  };
+  const near = (p) => p.got.every((v, i) => Math.abs(v - p.want[i]) <= 12);
+  const on = await at(3);
+  assert(near(on), "the 「??」 move has its badge on its square, in --judge-bad (" + on.got + " vs " + on.want + ")");
+  const off = await at(2);
+  assert(!near(off), "…and an unmarked move has none (" + off.got + ")");
 }
 
 // --- 7.6: a turning point already in the mistakes book says so -------------
