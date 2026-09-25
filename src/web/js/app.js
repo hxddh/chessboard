@@ -369,6 +369,10 @@ import { createStore } from "./store.js";
       /** Modal list picker → index of the chosen entry, or null when cancelled. */
       pickResolver: null,
       dragging: null,
+      /** 7.6: a pointer is down right now, and what waits for it to come up
+          (afterPress) — never persisted, never rendered. */
+      pointerPressed: false,
+      pressQueue: [],
       /** 摸得到的复盘 — the position under the pointer (move-list row or PV
           chip being hovered): {position, last, check} or null. Transient by
           construction: set on hover, cleared on leave, never persisted. */
@@ -5512,6 +5516,25 @@ import { createStore } from "./store.js";
   const runLibraryPass = () => LibraryUI.runLibraryPass();
   const saveLibrary = () => LibraryUI.saveLibrary();
 
+  // 7.6 (v7-6-plan §2): is a pointer pressed right now? A render that a
+  // press itself sets off (focus leaving a field commits it) waits for the
+  // release: rewriting the DOM between mouse-down and mouse-up — even a
+  // button's label, with the same text, which replaces its text node — is
+  // how WebKit loses a click. Queued work runs in a task after the release,
+  // so after the `click` that release produces.
+  function afterPress(fn) {
+    if (!store.ui.pointerPressed) { fn(); return; }
+    if (!store.ui.pressQueue.includes(fn)) store.ui.pressQueue.push(fn);
+  }
+  const pressOver = () => {
+    store.ui.pointerPressed = false;
+    if (store.ui.pressQueue.length) setTimeout(() => { for (const fn of store.ui.pressQueue.splice(0)) fn(); }, 0);
+  };
+  window.addEventListener("pointerdown", () => { store.ui.pointerPressed = true; }, true);
+  window.addEventListener("pointerup", pressOver, true);
+  window.addEventListener("pointercancel", pressOver, true);
+  window.addEventListener("blur", pressOver);
+
   // --- 我的开局书 (7.2, v7-2-plan §3) ---------------------------------------
   //
   // The second opening book: not the 195 vendored lines everybody drills, but
@@ -8960,10 +8983,12 @@ import { createStore } from "./store.js";
     const names = document.getElementById("lib-names");
     if (names) {
       names.value = store.session.libNames.join(", ");
-      // on `change`, not on every keystroke: re-claiming walks the whole
-      // library and rewrites the stored copy, which is not what every
-      // character of a typed name should cost
-      names.onchange = () => {
+      // on `change` or a pause in typing, not on every keystroke: re-claiming
+      // walks the whole library and rewrites the stored copy, which is not
+      // what every character of a typed name should cost
+      let namesTimer = 0;
+      const commitNames = () => {
+        clearTimeout(namesTimer);
         const next = libNamesFrom(names.value);
         // the same names again (a second `change` as focus leaves the field,
         // which is what clicking 分析 right after typing does) change nothing:
@@ -8973,8 +8998,18 @@ import { createStore } from "./store.js";
         store.session.libNames = next;
         reclaimLibrary();
         saveLibrary();
-        renderLibrary();
+        // 7.6 (v7-6-plan §2): the `change` that commits a name as it is typed
+        // is focus leaving the field — i.e. the mouse-down of the click on
+        // 分析. Re-rendering there rewrote the panel, the button's own label
+        // included, between that press and its release, and WebKit dropped
+        // the click even with nothing moving on screen. The data is settled
+        // now; the panel waits until the pointer is up and the click is in.
+        afterPress(renderLibrary);
       };
+      // …and a pause in typing commits too, so that by the time the pointer
+      // gets to 分析 there is usually nothing left for the blur to do
+      names.oninput = () => { clearTimeout(namesTimer); namesTimer = setTimeout(commitNames, 600); };
+      names.onchange = commitNames;
     }
   }
 

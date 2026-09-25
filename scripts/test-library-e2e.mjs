@@ -1231,9 +1231,13 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await page.click("#lib-names");
   await page.keyboard.type("hxddh");
   const r = await heldClick(page, "#lib-analyse");
-  console.log("  lib-names → 分析：按住期间按钮位移 " + r.drift + "px，节点" + (r.replaced ? "被换掉了" : "还是原来那个"));
+  console.log("  lib-names → 分析：按住期间按钮位移 " + r.drift + "px，节点" + (r.replaced ? "被换掉了" : "还是原来那个") +
+    "，按钮里的 DOM 变动 " + r.mutated + " 处");
   assert(r.drift === 0 && !r.replaced, "失焦那一下的 change 重排了面板，按钮在按下与松开之间没有挪动",
     JSON.stringify(r));
+  // 不挪还不够：7.6 的 WebKit 上按钮一像素没动，点击照样丢了 —— 失焦的重绘
+  // 把「分析」的文字用同样的内容重写了一遍，按下时压着的那个文本节点被换掉
+  assert(r.mutated === 0, "……按住期间按钮里的 DOM 一处都没被改写（连同样的文字重写一遍也不行）", JSON.stringify(r));
   assert(r.clicked, "这一下点击落在了「分析」上");
   let running = false;
   for (let i = 0; i < 20 && !running; i++) {
@@ -1248,7 +1252,8 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   // 跑的过程中，「暂停分析」上方的内容也不许动：每一手都在刷新进度
   const p = await heldClick(page, "#lib-analyse", { hold: 600 });
   console.log("  分析进行中按「暂停分析」：位移 " + p.drift + "px");
-  assert(p.drift === 0 && !p.replaced && p.clicked, "分析进行中，进度每手一刷，「暂停分析」按住期间不挪", JSON.stringify(p));
+  assert(p.drift === 0 && !p.replaced && p.mutated === 0 && p.clicked,
+    "分析进行中，进度每手一刷，「暂停分析」按住期间不挪、按钮里也不被改写", JSON.stringify(p));
   let paused = false;
   for (let i = 0; i < 20 && !paused; i++) {
     await page.waitForTimeout(100);

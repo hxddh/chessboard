@@ -13,9 +13,14 @@
  *     from where it was at mouse-down, over every frame until mouse-up;
  *   - `replaced`: the element under the pointer at mouse-down was taken out
  *     of the document (or swapped for another node) before mouse-up;
+ *   - `mutated`: how many DOM mutations landed inside that element while it
+ *     was held. 7.6's WebKit run showed this matters on its own: the label of
+ *     分析 was rewritten with the same text by the blur's re-render — no
+ *     movement, same button — and WebKit still dropped the click, because
+ *     the node it was pressed on was the label's text node, now detached;
  *   - `clicked`: a `click` event reached that same element.
  *
- * The first two are what make WebKit drop a click; asserting them is what
+ * The first three are what make WebKit drop a click; asserting them is what
  * lets a Chromium run stand guard for both engines (v7-6-plan §2).
  */
 
@@ -27,7 +32,7 @@
  *   enough to straddle a few re-renders; a real press is 80–150ms, a slow one
  *   more); before: called with the button down, just before the release
  * @returns {Promise<{ drift: number, replaced: boolean, clicked: boolean,
- *   down: object|null, up: object|null }>}
+ *   mutated: number, down: object|null, up: object|null }>}
  */
 export async function heldClick(page, selector, opts = {}) {
   const hold = opts.hold == null ? 450 : opts.hold;
@@ -42,7 +47,7 @@ export async function heldClick(page, selector, opts = {}) {
   }
   if (!box) throw new Error("heldClick: " + selector + " has no box");
   await page.evaluate((sel) => {
-    const rec = { el: null, down: null, up: null, drift: 0, replaced: false, clicked: false, raf: 0 };
+    const rec = { el: null, down: null, up: null, drift: 0, replaced: false, clicked: false, mutated: 0, raf: 0, mo: null };
     const rect = (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
     // centres, not corners: a pressed button is often drawn scaled down a
     // little (:active), which moves its corners but never its centre
@@ -57,11 +62,14 @@ export async function heldClick(page, selector, opts = {}) {
       rec.el = e.target instanceof Element ? e.target.closest(sel) : null;
       if (!rec.el) return;
       rec.down = rect(rec.el);
+      rec.mo = new MutationObserver((list) => { rec.mutated += list.length; });
+      rec.mo.observe(rec.el, { childList: true, characterData: true, subtree: true });
       rec.raf = requestAnimationFrame(watch);
     };
     const onUp = (e) => {
       if (!rec.el) return;
       cancelAnimationFrame(rec.raf);
+      if (rec.mo) { rec.mutated += rec.mo.takeRecords().length; rec.mo.disconnect(); }
       if (!rec.el.isConnected) rec.replaced = true;
       else {
         rec.up = rect(rec.el);
@@ -93,7 +101,7 @@ export async function heldClick(page, selector, opts = {}) {
     const h = window.__heldClick;
     h.off();
     delete window.__heldClick;
-    const { drift, replaced, clicked, down, up } = h.rec;
-    return { drift: Math.round(drift * 10) / 10, replaced, clicked, down, up };
+    const { drift, replaced, clicked, mutated, down, up } = h.rec;
+    return { drift: Math.round(drift * 10) / 10, replaced, clicked, mutated, down, up };
   });
 }

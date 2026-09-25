@@ -847,8 +847,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       await pgH.click("#confirm-ok");
       await pgH.waitForTimeout(300);
     }
-    if (asked && r.clicked && !r.replaced && r.drift === 0 && (await plies()) === 0) took++;
-    else lost.push(n + ": " + JSON.stringify({ asked, drift: r.drift, replaced: r.replaced, clicked: r.clicked }));
+    if (asked && r.clicked && !r.replaced && !r.mutated && r.drift === 0 && (await plies()) === 0) took++;
+    else lost.push(n + ": " + JSON.stringify({ asked, drift: r.drift, replaced: r.replaced, mutated: r.mutated, clicked: r.clicked }));
   }
   console.log("  持续分析 multipv=3 时按住「新局」：最大位移 " + worst + "px");
   assert(worst === 0, "持续分析每拍都在刷新，「新局」按住期间一像素都没挪 (最多 " + worst + "px)");
@@ -884,7 +884,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const still = await pgH.evaluate(() => /停止/.test(document.getElementById("an-run").textContent));
   console.log("  分析进行中按住引擎线上的着法：位移 " + c.drift + "px，节点" + (c.replaced ? "被换掉了" : "还是原来那个"));
   assert(still, "……按住的这 600 毫秒里，精析一直在跑（每一手都刷新面板）");
-  assert(!c.replaced && c.drift === 0, "分析进行中，按住的那一着既没被换成新节点，也没挪", JSON.stringify(c));
+  assert(!c.replaced && !c.mutated && c.drift === 0, "分析进行中，按住的那一着既没被换成新节点、没被改写，也没挪", JSON.stringify(c));
   const badgeH = await pgH.evaluate(() => {
     const el = document.getElementById("preview-badge");
     return { hidden: el.hidden, text: el.textContent };
