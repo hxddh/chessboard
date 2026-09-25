@@ -3170,11 +3170,13 @@ import { createStore } from "./store.js";
     for (const q of opPool(p)) if (onLine(q) && (!best || q.line.length < best.line.length)) best = q;
     if (best) return best;
     // a leaf shorter than a drill (drills.js keeps >=6 plies): name it from
-    // the book's own row, so the credit still lands on the line played
+    // the book's own row, but credit the drill that was opened — a leaf that
+    // short is not a drill, so an id minted for it would be counted nowhere
+    // (not in 背下来 N/M, not by the daily plan's opening step; Codex on #79)
     const leaf = ChessOpeningTree.nodeAt(openingTreeFor(p), path);
     const ln = leaf && !Object.keys(leaf.children).length && leaf.lines[0];
     if (!ln || p.cat !== "op") return p;
-    return { id: Drills.drillId(ln.eco, ln.sans.join(" ")) + (side ? ":b" : ""), cat: "op", side,
+    return { id: p.id, cat: "op", side,
       nameId: ln.id, eco: ln.eco, name: ln.eco + " " + (CHESS_OPENING_NAMES[ln.id] || ln.id),
       line: ln.sans.slice(), idea: ln.idea || "" };
   }
@@ -3224,12 +3226,17 @@ import { createStore } from "./store.js";
       // puzzleSolved(), which credits it with the tally and the week too.
       const leaf = ChessOpeningTree.nodeAt(tree, pz.opPath);
       const onBoard = opCurrent(pz).id;
+      // only ids that are drills: a book row shorter than a drill has no
+      // puzzle of its own, and a key minted for it is counted nowhere
+      const drillIds = new Set(opPool(pz.p).map((q) => q.id));
       for (const ln of (leaf && leaf.lines) || []) {
         // the repertoire's rows carry their own ids (repertoire.js mints them
         // once, from the moves); the ECO book's are derived from the row
         const id = (pz.p.cat === "rep" ? ln.id : Drills.drillId(ln.eco, ln.sans.join(" ")))
           + (pz.p.side === "b" ? ":b" : "");
-        if (id !== onBoard && !store.session.puzzleState.solved[id]) store.session.puzzleState.solved[id] = true;
+        if (id !== onBoard && drillIds.has(id) && !store.session.puzzleState.solved[id]) {
+          store.session.puzzleState.solved[id] = true;
+        }
       }
       // …and so is every shorter drill the path played through from end to
       // end — the puzzle's own line among them when it was a prefix of this

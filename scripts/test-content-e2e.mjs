@@ -595,6 +595,41 @@ if (hasTab && REAL.length) {
   await pg.click('#op-side-seg button[data-side="w"]');
   await pg.waitForTimeout(600);
   assert(await occ() === squaresOf(new Chess().fen()), "切回执白:初始局面,没有预走的着");
+  // 7.6 (Codex on #79): the tree accepts any book move, so the player can
+  // finish on a leaf shorter than any drill (e.g. 1.b4 is a whole book line).
+  // That leaf is no drill of its own: the credit has to land on the drill that
+  // was opened, or it is counted nowhere — not in 背下来 N/M, not by the plan
+  const firstMoves = new Map();
+  for (const [, , seq] of data.CHESS_OPENINGS) {
+    const sans = seq.split(" ");
+    const k = sans[0];
+    if (!firstMoves.has(k)) firstMoves.set(k, []);
+    firstMoves.get(k).push(sans.length);
+  }
+  const leaf = [...firstMoves].find(([m, lens]) => m !== first.line[0] && lens.every((n) => n === 1));
+  if (leaf) {
+    const lm = new Chess().moves({ verbose: true }).find((x) => x.san === leaf[0]);
+    const tapW = async (s) => {
+      const p = await pg.evaluate((x) => {
+        const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+        const f = x.charCodeAt(0) - 97, rk = 8 - +x[1], z = r.width / 8;
+        return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+      }, s);
+      await pg.mouse.click(p.x, p.y);
+      await pg.waitForTimeout(240);
+    };
+    await tapW(lm.from); await tapW(lm.to);
+    await pg.waitForTimeout(700);
+    const st = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+    const known = new Set(rows.map((r) => data.ChessDrills.drillId(r.eco, r.seq)));
+    const credited = Object.keys(st.solved).filter((k) => !k.endsWith(":b"));
+    assert(credited.length === 1 && credited[0] === firstId && known.has(credited[0]),
+      `走到比任何一题都短的书上叶子（1.${leaf[0]}），记账落在开题的那道题上，不是一个谁也数不到的 id`,
+      JSON.stringify(credited));
+    // back to the start for what follows
+    await pg.click('#op-side-seg button[data-side="w"]');
+    await pg.waitForTimeout(600);
+  }
   await pg.evaluate(() => [...document.querySelectorAll("#puzzle-cat-seg button")].find((b) => b.dataset.cat === "m1").click());
   await pg.waitForTimeout(400);
   assert(await pg.evaluate(() => document.getElementById("row-op-side").hidden),
