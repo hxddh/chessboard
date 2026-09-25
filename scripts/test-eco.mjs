@@ -192,23 +192,21 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   // and the book's Japanese "X：アクセプテッド" is written "X・アクセプテッド"
   // here, since a family is followed by its own "：variation").
   //
-  // Where the book itself uses two names, or lends a bare family's name to a
-  // line that is really something narrower, the pair is registered below.
-  // Shrink-only, like TOLERATED.
-  const FAMILY_TOLERATED = {
-    // book: 1.d4 后兵开局, 1.d4 d5 后兵对局 — lichess calls both "Queen's Pawn Game"
-    "A40|Queen's Pawn Game zh": true, "A40|Queen's Pawn Game ja": true,
-    // book: 1.e4 王兵开局, 1.e4 e5 王兵对局 — lichess calls both "King's Pawn Game"
-    "B00|King's Pawn Game zh": true, "B00|King's Pawn Game ja": true,
-    // book: 沃尔加-贝科弃兵 for the gambit, 贝科弃兵·接受 for the acceptance
-    "A57|Benko Gambit zh": true,
-    // book: both 俄罗斯防御（彼得罗夫） and 彼得罗夫防御; ロシアン（ペトロフ） and ペトロフ
-    "C42|Petrov's Defense zh": true, "C42|Petrov's Defense ja": true,
-    // the book's "Center Game" line ends on the capture lichess calls Accepted
-    "C21|Center Game Accepted zh": true, "C21|Center Game Accepted ja": true,
-    // a deep book line (London vs King's Indian) whose last position lichess files here
-    "A48|London System, with Be2 zh": true, "A48|London System, with Be2 ja": true,
-  };
+  // 7.5 registered 11 exceptions here — five openings the book itself spelt
+  // two ways (卡罗-卡恩 / 卡罗-康, 王翼印度 / 国王印度, 四马开局 / 四马防御,
+  // 彼得罗夫防御 / 俄罗斯防御, 后兵开局 / 后兵对局) and a few lines named
+  // after something broader than lichess files them under. 7.6 renamed the
+  // book instead, so the register is empty and must stay so: one opening,
+  // one name.
+  const FAMILY_TOLERATED = {};
+  assert(Object.keys(FAMILY_TOLERATED).length === 0, "the family register is empty");
+  const twoWays = Object.entries(CHESS_OPENING_NAMES)
+    .filter(([, v]) => /卡罗-康|国王印度|四马防御|俄罗斯防御|后兵对局|王兵对局/.test(v)).map(([k]) => k);
+  const twoWaysJa = Object.entries(CHESS_OPENINGS_JA)
+    .filter(([, v]) => /ロシアン|カロ・カン[：防]|キングズ・インディアン：|ポーン・オープニング|フォー・ナイツ・[デス]/.test(v)).map(([k]) => k);
+  assert(twoWays.length === 0 && twoWaysJa.length === 0,
+    "the book spells each of those openings one way, in both languages" +
+    (twoWays.length + twoWaysJa.length ? " — " + twoWays.concat(twoWaysJa).join(", ") : ""));
   const norm = (s) => s.replace(/（[^）]*）$/, "").replace(/（[^）]*）・/, "・").replace(/：/g, "・");
   const disagree = [];
   const seen = new Set();
