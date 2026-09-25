@@ -532,8 +532,13 @@ export function createLibraryUI(d) {
         else box.appendChild(p);
       }
       if (p.className !== it.cls) p.className = it.cls;
-      if (p.textContent !== it.text) p.textContent = it.text;
+      setText(p, it.text);
     });
+  }
+
+  /** textContent, written only when it differs (see renderLibrary). */
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
   }
 
   /** The library section in the 记录 pane. */
@@ -571,9 +576,9 @@ export function createLibraryUI(d) {
         row.append(k, v);
         body.replaceChildren(row);
       }
-      row.children[0].textContent = tf("lib.claimed", [claimed]);
-      row.children[1].textContent = [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
-        .filter(Boolean).join(" · ");
+      setText(row.children[0], tf("lib.claimed", [claimed]));
+      setText(row.children[1], [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
+        .filter(Boolean).join(" · "));
       const run = store.session.libRun;
       if (run && run.deep) line(tf("lib.deepWorking", [run.name || "", run.plies ? run.ply + "/" + run.plies : ""]));
       else if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
@@ -593,15 +598,18 @@ export function createLibraryUI(d) {
     const an = doc.getElementById("lib-analyse");
     if (an) {
       an.hidden = !queued && !store.session.libRun;
-      an.textContent = store.session.libRun ? t("lib.pause")
-        : queued ? tf("lib.analyseEta", [queued, libEta(queuedGames)]) : tf("lib.analyse", [queued]);
+      // only when it differs: writing the same label again still swaps the
+      // button's text node, and that node is what a press on the label was
+      // pressed on — this runs once a ply during a pass, under 暂停分析
+      setText(an, store.session.libRun ? t("lib.pause")
+        : queued ? tf("lib.analyseEta", [queued, libEta(queuedGames)]) : tf("lib.analyse", [queued]));
     }
     const dg = doc.getElementById("lib-diagnose");
     if (dg) dg.hidden = analysed.length < LIB_MIN_GAMES;
     const op = doc.getElementById("lib-open");
     if (op) {
       op.hidden = !list.length;
-      op.textContent = tf("lib.all", [list.length]);
+      setText(op, tf("lib.all", [list.length]));
     }
   }
 
