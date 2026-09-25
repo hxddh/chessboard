@@ -608,7 +608,7 @@
        allowed; the lit player strip says it now, beside the side that is to
        move. The sentence itself is still in the bar for a screen reader
        (#status is .sr-only), and the end of a game is the result card. */
-    .chrome-actions { display: flex; align-items: center; gap: 6px; }
+    .chrome-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     .icon-btn, .tool-btn {
       appearance: none; border: 0; border-radius: var(--radius-sm);
       background: var(--btn-ghost); color: var(--text);
@@ -648,12 +648,17 @@
     .chrome-actions .slot-empty,
     .replay-bar .slot-empty { visibility: hidden; }
     .icon-btn:hover, .tool-btn:hover { background: var(--btn-hover); }
+    /* 7.7 (v7-7-plan §3): one primary, one look. This was a gradient in
+       --primary-from/to — blue on 日 and 纸 — while .act-btn.primary was the
+       flat accent, so 下一题 and 分析这盘 were two different "press this"
+       buttons depending on which family they were built from. */
     .tool-btn.primary {
-      background: linear-gradient(180deg, var(--primary-from), var(--primary-to));
-      color: var(--on-primary); font-weight: 600;
+      background: var(--accent);
+      color: var(--on-accent); font-weight: 600;
       border-color: transparent;
       box-shadow: 0 1px 2px rgba(0,0,0,.12);
     }
+    .tool-btn.primary:hover { background: color-mix(in srgb, var(--accent) 86%, var(--text)); }
     .tool-btn:disabled, .icon-btn:disabled { opacity: .35; cursor: default; transform: none; }
 
     .stage {
@@ -925,7 +930,7 @@
     .ps-result.win {
       color: var(--on-accent); background: var(--accent); border-color: transparent;
     }
-    .ps-result + .ps-clock { margin-left: 8px; }
+    .ps-result:not([hidden]) + .ps-clock { margin-left: 8px; }
 
     /* the clock is a block, right-aligned: dim while waiting, lit while it
        runs, red once it is short */
@@ -1713,9 +1718,12 @@
        and it sits at the top where a banner belongs rather than at the bottom
        where confirmations do. 缺陷 3. */
     .storage-fault {
-      position: absolute; left: 50%; top: 8px; z-index: 60;
-      transform: translateX(-50%);
-      max-width: min(560px, calc(100% - 32px));
+      /* 7.7: at the left of the board's column rather than the window's
+         centre. The panel is 30vw now (up to 440px), and a 560px banner
+         centred in the window came down on the chrome's three actions —
+         the one bar that has to stay pressable while the banner is up. */
+      position: absolute; left: 8px; top: 8px; z-index: 60;
+      max-width: max(240px, min(560px, calc(100% - var(--side-w) - 240px)));
       background: var(--danger); color: var(--on-danger, #fff);
       border-radius: var(--radius-md);
       padding: 8px 16px; font-size: 0.8125rem; font-weight: 500;
@@ -2268,11 +2276,11 @@
          produce. */
       /* a block with one line box, not a flex row: in flex the figurine is an
          item centred on its box and cannot sit on the text's baseline */
-      padding: 4px 8px; min-height: var(--row-h-sm);
+      padding: 4px 8px 0; height: var(--row-h-sm);
       display: block; line-height: var(--lh-tight);
       border-radius: var(--radius-sm); cursor: pointer;
       min-width: 52px; text-align: left;
-      overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .mlmove:hover { background: var(--btn-ghost); }
     /* the "…" placeholder standing in for White's missing first move */
@@ -2884,9 +2892,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
   transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
 }
 .go-close:hover { background: var(--btn-ghost); color: var(--text); }
-.go-acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.go-acts > .primary { grid-column: 1 / -1; }
-.go-acts > :only-child { grid-column: 1 / -1; }
+/* the filled one on its own line; the secondaries share the next one
+   equally, however many of them are shown */
+.go-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.go-acts > .act-btn { flex: 1 1 0; min-width: 0; }
+.go-acts > .primary { flex-basis: 100%; }
 
 /* ------------------------------------------------------------------
    Puzzle feedback (7.7, v7-7-plan §4): a tick or a cross, one line, and
@@ -2932,3 +2942,34 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .lesson-dot.done { background: var(--accent); border-color: var(--accent); }
 .lesson-dot.current { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
 .lesson-dots.complete .lesson-dot { background: var(--accent); border-color: var(--accent); }
+
+/* ------------------------------------------------------------------
+   Empty states on the record page (7.7, v7-7-plan §3): an icon, one line,
+   and the button that fills it right under it. They were paragraphs of
+   grey prose — three of them stacked on a fresh install. The icon is the
+   Lucide icon of the section (icons.js), drawn as a mask in currentColor:
+   these lines are written by three different modules, and a pseudo-element
+   is the one place all three can share without each building an <svg>.
+   ------------------------------------------------------------------ */
+.hint.empty-note {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; align-items: center;
+  margin: 4px 0 0; padding: 12px;
+  border: 1px dashed var(--card-border); border-radius: var(--radius-md);
+  font-size: 0.75rem; color: var(--muted); opacity: 1;
+}
+.hint.empty-note::before {
+  content: ""; width: 32px; height: 32px; grid-column: 1; grid-row: 1;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--card-border);
+}
+.hint.empty-note::after {
+  content: ""; grid-column: 1; grid-row: 1; justify-self: center;
+  width: 18px; height: 18px; background: currentColor;
+  -webkit-mask: var(--empty-ic) center / contain no-repeat;
+  mask: var(--empty-ic) center / contain no-repeat;
+}
+#stats-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v16a2 2 0 0 0 2 2h16'/%3E%3Cpath d='M18 17V9'/%3E%3Cpath d='M13 17V5'/%3E%3Cpath d='M8 17v-3'/%3E%3C/svg%3E"); }
+#lib-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m16 6 4 14'/%3E%3Cpath d='M12 6v14'/%3E%3Cpath d='M8 8v12'/%3E%3Cpath d='M4 4v16'/%3E%3C/svg%3E"); }
+#rep-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v16'/%3E%3Cpath d='M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z'/%3E%3C/svg%3E"); }
+#hist-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 22h14'/%3E%3Cpath d='M5 2h14'/%3E%3Cpath d='M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22'/%3E%3Cpath d='M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2'/%3E%3C/svg%3E"); }

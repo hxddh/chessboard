@@ -135,12 +135,12 @@ async function firstReply(prefix, failing) {
   const t0 = Date.now();
   let plies = 0;
   const probe = () => page.evaluate(() => {
-    const pillEl = document.querySelector(".status-pill");
+    const pillEl = document.getElementById("status");   // 7.7: the sentence is .sr-only
     const n = document.getElementById("engine-fault");
     return {
       moves: [...document.querySelectorAll(".move-list .mlmove")].map((e) => e.getAttribute("aria-label") || e.textContent.trim()),
       pill: ((pillEl || {}).textContent || "").trim(),
-      thinking: !!(pillEl && pillEl.classList.contains("thinking")),
+      thinking: !!document.querySelector(".pstrip.thinking"),   // 7.7: the engine's disc breathes
       notice: n && !n.hidden && n.getBoundingClientRect().height > 0 ? n.textContent.trim() : "",
       workers: window.__workers,
     };

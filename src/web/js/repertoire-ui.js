@@ -244,7 +244,7 @@ export function createRepertoireUI(d) {
       body.appendChild(p);
     };
     if (!total()) {
-      line(t("rep.empty"));
+      line(t("rep.empty"), "hint empty-note");   // 7.7 §3: see .empty-note
     } else {
       const row = doc.createElement("div");
       row.className = "stat-row";

@@ -3842,7 +3842,8 @@ import { createStore } from "./store.js";
     // so — the tick, the verb, the puzzle's name (7.7 §4; was a toast)
     const clean = store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer;
     store.session.pzStreak = clean ? store.session.pzStreak + 1 : 0;
-    store.session.puzzle.fb = { ok: true, head: verb, sub: puzzleName(sp) + (why ? " · " + why : "") };
+    store.session.puzzle.fb = { ok: true, head: clean ? t("pz.fb.best") : verb,
+      sub: (clean ? verb + " · " : "") + puzzleName(sp) + (why ? " · " + why : "") };
     sync();
   }
 
@@ -5727,7 +5728,7 @@ import { createStore } from "./store.js";
       el.appendChild(row);
     }
     const hint = document.createElement("p");
-    hint.className = "hint";
+    hint.className = total ? "hint" : "hint empty-note";   // 7.7 §3: see .empty-note
     hint.textContent = total
       ? t("stats.games") + total + t("stats.gamesSuffix") + " · " + t("stats.hint") +
         (withAcc.length ? t("stats.hintAcc") : t("stats.hintNoAcc"))
@@ -5959,7 +5960,7 @@ import { createStore } from "./store.js";
       body.replaceChildren();
       if (!store.session.histCache.length) {
         const p = document.createElement("p");
-        p.className = "hint";
+        p.className = "hint empty-note";   // 7.7 §3: see .empty-note
         p.textContent = t("hist.empty");
         body.appendChild(p);
       } else {
@@ -7046,7 +7047,8 @@ import { createStore } from "./store.js";
       // a status line (the engine being down) keeps its group on screen even
       // when it has taken every button with it
       const live = [...group.querySelectorAll("button, [role=\"status\"]")].some((b) => !b.hidden);
-      group.hidden = !live;
+      // the review group waits behind its key during an engine game (7.7 §3)
+      group.hidden = !live || (group.id === "review-actions" && reviewOptional() && !store.ui.reviewOpen);
     }
   }
 
@@ -7192,8 +7194,6 @@ import { createStore } from "./store.js";
     }
     setPrimaryAction();
     collapseEmptyGroups();
-    const rvGroup = el("review-actions");
-    if (rvGroup && optional && !store.ui.reviewOpen) rvGroup.hidden = true;
   }
 
   /**

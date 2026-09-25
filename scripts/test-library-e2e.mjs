@@ -745,7 +745,9 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   };
   const mv = async (a, b) => { await tapAt(a); await tapAt(b); await page.waitForTimeout(420); };
   await mv("e2", "e4");
-  const wrong = await page.evaluate(() => document.getElementById("toast").textContent.trim());
+  // 7.7 (v7-7-plan §4): the correction is on the puzzle's feedback card
+  // beside the board now, not in a toast over it
+  const wrong = await page.evaluate(() => document.getElementById("puzzle-feedback").textContent.trim());
   assert(/d4/.test(wrong), "走书上没有的一手，当场告诉你书上走的是 d4", wrong);
   // 走错的那道题进复习队列 —— 和内置开局题、错题走的是同一条 SRS
   const missed = await page.evaluate(() => {
@@ -774,7 +776,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
     const book = JSON.parse(localStorage.getItem("chess.v1.repertoire"));
     return { solved: Object.keys(st.solved).filter((k) => k.startsWith("rep-")), book: book.w,
-      toast: document.getElementById("toast").textContent.trim(),
+      toast: document.getElementById("puzzle-feedback").textContent.trim(),   // 7.7: the card, not a toast
       body: document.getElementById("rep-body").textContent };
   });
   const played = fin.book.find((l) => l.sans === (slav ? "d4 d5 c4 c6" : "d4 d5 c4 e6 Nf3 Nf6"));
