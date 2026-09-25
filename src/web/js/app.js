@@ -3866,18 +3866,24 @@ import { createStore } from "./store.js";
   function leaveTrainer() {
     const mode = store.session.mode;
     if (mode !== "learn" && mode !== "puzzle") return () => {};
-    const pz = store.session.puzzle;
-    const cat = pz ? pz.cat : null, idx = pz ? pz.idx : 0;
-    const li = store.session.learn ? store.session.learn.li : null;
-    const ci = store.session.study ? store.session.study.ci : null;
+    // the trainer objects themselves, not their indices: restarting from an
+    // index resets a puzzle's stage, misses and hints, a lesson to its first
+    // task and a classic to its first move — so cancelling the load used to
+    // throw the training in progress away (Codex on #79). Stopping only drops
+    // these references (stopLearn also bumps the lesson's token, which just
+    // cancels a demo in flight), and a refused load changes nothing else.
+    const kept = { puzzle: store.session.puzzle, learn: store.session.learn, study: store.session.study };
     invalidateEngine();
     clearPreview();
     if (mode === "puzzle") stopPuzzles(); else stopLearn();
     return () => {
-      if (mode === "puzzle") { if (cat != null) startPuzzleAt(cat, idx); else startPuzzles(); }
-      else if (ci != null) startClassic(ci);
-      else if (li != null) startLesson(li);
-      else startLearn();
+      store.session.mode = mode;
+      if (mode === "puzzle") {
+        if (kept.puzzle) store.session.puzzle = kept.puzzle; else startPuzzles();
+      } else if (kept.study || kept.learn) {
+        store.session.learn = kept.learn;
+        store.session.study = kept.study;
+      } else startLearn();
       sync();
     };
   }

@@ -1427,6 +1427,52 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     await ctx.close();
   }
 
+  // §3d（Codex on #79）—— 在教学里点库里的一局、再在「替换当前对局」上点取消：
+  // 教学原样回来，停在刚才那一步，而不是从这一课的第一步重来
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript((lib) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.v1.library", lib);
+      // a game in progress on the main board, so the load has to ask first
+      localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+    }, seed);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1500);
+    const task = () => page.evaluate(() => (document.getElementById("lesson-task") || {}).textContent || "");
+    const first = await task();
+    // lesson 1's first step asks for e4: do it, so the lesson is one step in
+    const pt = await page.evaluate(() => {
+      const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+      return { x: r.left + 4.5 * z, y: r.top + 4.5 * z };
+    });
+    await page.mouse.click(pt.x, pt.y);
+    await page.waitForTimeout(1200);
+    const before = await task();
+    await page.click("#tab-record");
+    await page.waitForTimeout(300);
+    await page.click("#lib-open");
+    await page.waitForTimeout(400);
+    await page.click("#lib-list button[data-lib]");
+    await page.waitForTimeout(900);
+    const asked = await page.isVisible("#confirm-cancel");
+    if (asked) { await page.click("#confirm-cancel"); await page.waitForTimeout(600); }
+    await page.click("#tab-play");
+    await page.waitForTimeout(300);
+    const after = await task();
+    const st = await settingsOf(page);
+    assert(asked && before !== first, "教学里点库里的一局，先问要不要替换棋盘上那一局（已走过第一步）");
+    assert(st.mode === "learn" && after === before,
+      "取消之后教学原样回来，停在刚才那一步，不从第一步重来（「" + before.slice(0, 20) + "」→「" + after.slice(0, 20) + "」）");
+    assert(errs.length === 0, "取消：没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
   // §3e —— 从诊断的「第 N 回合」「母题」行筛出来的局，打开停在那一手，侧栏在对局页
   for (const kind of ["peak", "motif"]) {
     const { ctx, page, errs } = await openAt({ width: 1400, height: 900 }, "pvp", "record");
