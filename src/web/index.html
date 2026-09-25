@@ -293,6 +293,16 @@
               <button type="button" data-text="l" data-i18n="text.l">大</button>
             </div>
           </div>
+          <!-- v7-7-plan §6: a second piece set, licence-cleared (GPLv2+, see
+               js/pieces-merida.js). The board only: the move list's
+               figurines stay the standard set, they are type, not pieces. -->
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.pieces">棋子样式</span>
+            <div class="theme-row" id="pieces-seg" role="group" aria-label="棋子样式" data-i18n-aria="side.pieces">
+              <button type="button" data-pieces="cburnett" class="active" data-i18n="pieces.cburnett">标准</button>
+              <button type="button" data-pieces="merida" data-i18n="pieces.merida">梅里达</button>
+            </div>
+          </div>
           <!-- Which way round the board is drawn is a property of the view,
                like the theme, so it sits next to the theme rather than in the
                chrome — where it was one of four buttons over the board and one

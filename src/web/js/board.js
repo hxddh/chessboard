@@ -17,6 +17,7 @@
  * @module board
  */
 import { CHESS_PIECE_SVGS } from "./pieces.js";
+import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
   const FILES = "abcdefgh";
 
   // Solid glyph set for both colors — colored via fill, outlined for contrast.
@@ -182,15 +183,40 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
   let _sprites = {};
   let _spriteSize = 0;
 
+  /**
+   * The piece sets, by id (v7-7-plan §6). Each is licence-cleared in its own
+   * module's header; the About panel lists them.
+   */
+  const PIECE_SETS = { cburnett: CHESS_PIECE_SVGS, merida: MERIDA_PIECE_SVGS };
+  let _set = "cburnett";
+
   function initPieceImages() {
-    const svgs = CHESS_PIECE_SVGS;
+    const svgs = PIECE_SETS[_set] || CHESS_PIECE_SVGS;
     if (!svgs || typeof Image === "undefined") return;
+    const want = _set;
+    // A switch keeps drawing the old set until the whole new one has
+    // decoded, then swaps all twelve at once: swapping piece by piece showed
+    // a board of two sets, and clearing first showed the glyph fallback.
+    const fresh = {};
+    let left = Object.keys(svgs).length;
+    const first = !Object.keys(_imgs).length;
     for (const key of Object.keys(svgs)) {
       const img = new Image();
-      img.onload = () => { _sprites = {}; draw(); };
+      img.onload = () => {
+        if (_set !== want) return; // superseded by a later switch
+        if (first) { _sprites = {}; draw(); return; }
+        if (--left === 0) { Object.assign(_imgs, fresh); _sprites = {}; draw(); }
+      };
       img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]);
-      _imgs[key] = img;
+      if (first) _imgs[key] = img; else fresh[key] = img;
     }
+  }
+
+  /** Choose the piece set by id; an unknown id is ignored. */
+  function setPieceSet(id) {
+    if (!PIECE_SETS[id] || id === _set) return;
+    _set = id;
+    if (Object.keys(_imgs).length) initPieceImages();
   }
 
   /**
@@ -735,7 +761,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
    *              selection, the legal targets, the last move, the check, the
    *              hint arrow, the stars, the flash, the cursor, and since 1.25
    *              the drag. Nothing is pushed in ahead of time.
-   *   lifecycle  attach() / resizeCanvas() / invalidatePaint() — the canvas
+   *   lifecycle  attach() / resizeCanvas() / invalidatePaint() / setPieceSet() — the canvas
    *              itself, its backing store, and the theme colours it caches.
    *   effects    animateMove() / reboundDrag() / cancelAnim() — the three
    *              things that are genuinely time, not state. An animation is
@@ -745,4 +771,4 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
    *              needs to know the board's geometry at all.
    */
   export const ChessBoardView = { draw, attach, resizeCanvas, invalidatePaint,
-    animateMove, reboundDrag, cancelAnim, cellAt };
+    animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet };

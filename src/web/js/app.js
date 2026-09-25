@@ -361,6 +361,7 @@ import { createStore } from "./store.js";
       /** 6.0 (v6-plan Q3.6): the theme follows the system's light/dark; the text size step */
       followSystem: false,
       textSize: "m",
+      pieceSet: "cburnett",
       /** @type {'wood'|'night'|'day'|'notebook'} */
       themeId: "wood",
       /** pvp: flip the board to face the side to move after every move */
@@ -1309,6 +1310,7 @@ import { createStore } from "./store.js";
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
       if (typeof s.followSystem === "boolean") store.ui.followSystem = s.followSystem;
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
+      if (["cburnett", "merida"].includes(s.pieceSet)) store.ui.pieceSet = s.pieceSet;
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
@@ -1330,7 +1332,7 @@ import { createStore } from "./store.js";
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
-        followSystem: store.ui.followSystem, textSize: store.ui.textSize }));
+        followSystem: store.ui.followSystem, textSize: store.ui.textSize, pieceSet: store.ui.pieceSet }));
     } catch (_) {}
   }
   function saveGame() {
@@ -7127,6 +7129,7 @@ import { createStore } from "./store.js";
     sw("opt-blind", store.ui.blindfold);
     sw("opt-follow", store.ui.followSystem);
     document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
+    document.querySelectorAll("#pieces-seg button").forEach((b) => b.classList.toggle("active", b.dataset.pieces === store.ui.pieceSet));
     const vol = document.getElementById("opt-volume");
     if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
     const rowVol = document.getElementById("row-volume");
@@ -9754,6 +9757,14 @@ import { createStore } from "./store.js";
     syncSettingsUI();
     applyTextSize();
   };
+  document.getElementById("pieces-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-pieces]");
+    if (!b) return;
+    store.ui.pieceSet = b.dataset.pieces;
+    saveSettings();
+    syncSettingsUI();
+    BoardView.setPieceSet(store.ui.pieceSet);
+  };
   document.getElementById("opt-coords").onclick = () => {
     store.ui.coordsOn = !store.ui.coordsOn;
     saveSettings();
@@ -10311,6 +10322,7 @@ import { createStore } from "./store.js";
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
   document.documentElement.setAttribute("data-text", store.ui.textSize);
+  BoardView.setPieceSet(store.ui.pieceSet);
   if (store.ui.followSystem && schemeMq) store.ui.themeId = schemeMq.matches ? "night" : "day";
   document.documentElement.setAttribute("data-theme", store.ui.themeId);
   document.documentElement.setAttribute("data-board", store.ui.themeId);
