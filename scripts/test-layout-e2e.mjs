@@ -2352,11 +2352,14 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     const r = await page.evaluate(() => {
       const app = document.getElementById("app");
       const wrap = document.getElementById("board-wrap").getBoundingClientRect();
-      const pad = parseFloat(getComputedStyle(app).getPropertyValue("--stage-pad")) || 6;
+      // 7.7: below the board is the player's own strip (--strip-h) and the
+      // vertical pad (--stage-pad-y) — both are the layout, not a spine
+      const cs = getComputedStyle(app);
+      const pad = (parseFloat(cs.getPropertyValue("--strip-h")) || 0) + (parseFloat(cs.getPropertyValue("--stage-pad-y")) || 0);
       return { shut: !app.classList.contains("panel-open"),
                bottom: Math.round(wrap.bottom), board: Math.round(wrap.width),
                pad: Math.round(pad), vh: innerHeight,
-               heightBound: Math.round(wrap.width) <= innerWidth - 2 * pad - 1 };
+               heightBound: Math.round(wrap.width) <= innerWidth - 2 * (parseFloat(cs.getPropertyValue("--stage-pad")) || 6) - 1 };
     });
     assert(r.shut, w + "x" + h + ": the panel is shut");
     assert(r.bottom <= r.vh, w + "x" + h + ": the board ends inside the window (" + r.bottom + " of " + r.vh + ")");
