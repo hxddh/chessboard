@@ -954,6 +954,10 @@ import { createStore } from "./store.js";
       // arrow permanently on the board. Never during live play, where it would
       // be an answer key rather than a review.
       hintMove: isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex),
+      // 7.7 §5: the mark the analysis gave the move that led here, as a badge
+      // on the square it landed on — the same three marks the move list
+      // carries, never a fourth kind
+      annotation: annotationAt(store.game.viewIndex, last),
       // the node's own arrows and circles, plus the one being drawn
       shapes: shapesToDraw(),
       stars: [],
@@ -992,6 +996,22 @@ import { createStore } from "./store.js";
     const uci = a.bests[i];
     if (!uci || uci.length < 4) return null;
     return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
+  }
+
+  /**
+   * The badge for the move that produced the position `i` plies in: its
+   * destination square and its mark, or null. The mark is the one the move
+   * list shows (softFiltered — `?!` only when 存疑标注 is on), so the board
+   * and the notation cannot disagree about whether a move was a mistake.
+   * Derived like bestArrowAt: nothing stored, nothing to clear.
+   */
+  function annotationAt(i, last) {
+    if (!last || i < 1) return null;
+    const a = analysisFor();
+    if (!a || !a.tags) return null;
+    const tag = softFiltered(a.tags[i - 1]);
+    if (!Review.isMistake(tag)) return null;
+    return { sq: last.to, tag };
   }
 
   function draw() { BoardView.draw(); }
@@ -4634,16 +4654,17 @@ import { createStore } from "./store.js";
     const wrap = document.getElementById("eval-wrap");
     if (wrap) {
       wrap.hidden = !analysisFor();
-      // the curve needs a game to draw: below the sample floor it is an empty
-      // box with a flat line in it (audit, 5.1 work package C)
-      const cv = document.getElementById("eval-curve");
-      if (cv) {
-        const a = analysisFor();
-        const sum = a && Review ? Review.summarize(a.scalars, sanHistory(), startFen() && startFen().split(" ")[1] === "b" ? "b" : "w") : null;
-        cv.hidden = !Review.longEnough(sum);
-      }
-      if (!wrap.hidden) { drawEvalCurve(); drawEvalBar(); }
+      // 7.7 §5: the curve is drawn for every analysed game. 5.1 hid it below
+      // the verdict's sample floor (Review.longEnough, 30 judged moves) as
+      // "an empty box with a flat line in it" — but a curve over eleven moves
+      // is not empty, it is short, and hiding it meant the one picture of the
+      // game was missing after every analysis of an ordinary short game (the
+      // 7.7 walk-through: no curve in three screenshots at 1440×900). The
+      // floor still decides what the report may *say* (verdictKey); what
+      // happened is always worth showing.
+      if (!wrap.hidden) drawEvalCurve();
     }
+    drawEvalBar();
     // the export and the mark legend describe a report — none, and they do
     // not stand there promising one (audit F7)
     avail(document.getElementById("report-export"), !!analysisFor());
@@ -4713,20 +4734,6 @@ import { createStore } from "./store.js";
       }
     }
     renderReview();
-    const accEl = document.getElementById("acc-line");
-    if (accEl) {
-      const a = analysisFor();
-      const acc = a && a.acc;
-      const has = acc && (acc.w != null || acc.b != null);
-      accEl.hidden = !has;
-      if (has) {
-        // the average loss lives in the report card below; this line was
-        // carrying both figures for both sides and truncating in every
-        // language at the default window (audit F6)
-        const part = (side, name) => name + " " + (acc[side] == null ? "—" : acc[side] + "%");
-        accEl.textContent = t("acc.label") + " · " + part("w", t("vs.white")) + " · " + part("b", t("vs.black"));
-      }
-    }
     lockPgnEdits();
   }
 
@@ -4781,59 +4788,128 @@ import { createStore } from "./store.js";
     // the turning point is chosen by win-percentage drop, but the drill it
     // banks records what the move cost in centipawns (bankWorst → drillFrom)
     if (sum && sum.worst) sum.worst.loss = R.lossAt(a.scalars, sum.worst.ply, sum.worst.side);
+    const card = document.getElementById("report-card");
+    const hero = document.getElementById("acc-line");
+    if (card) card.hidden = !sum;
     el.hidden = !sum;
+    if (hero) hero.hidden = !sum;
+    if (!sum) { el.replaceChildren(); if (hero) hero.replaceChildren(); el.dataset.key = ""; return; }
+
+    // the stored figure where there is one — it is what the statistics filed
+    const acc = { w: sum.acc.w, b: sum.acc.b };
+    if (a.acc) { if (a.acc.w != null) acc.w = a.acc.w; if (a.acc.b != null) acc.b = a.acc.b; }
+    const soft = !!store.ui.showSoftMark;
+    const isPlayer = (side) => store.session.mode === "ai" && side === store.session.humanColor;
+    const worstBest = sum.worst && a.bests ? a.bests[sum.worst.ply] : null;
+    const cand = sum.worst && worstBest ? worstDrill(sum.worst, worstBest) : null;
+    const banked = !!cand && store.session.mines.some((m) => m.id === cand.id);
+    // 7.6 lesson: this runs on every sync, and rebuilding the card swapped the
+    // turning-point button under a pointer that was mid-press. Rebuilt only
+    // when something it shows has changed.
+    const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured,
+      sum.worst && [sum.worst.ply, Math.round(sum.worst.drop)], soft, store.ui.langId,
+      store.session.mode, store.session.humanColor, !!worstBest, banked, sanHistory().length]);
+    if (el.dataset.key === key && el.childElementCount) return;
+    el.dataset.key = key;
     el.replaceChildren();
-    if (!sum) return;
+
+    // --- the headline: two accuracies, side by side, once -----------------
+    // They were a text line above the report (「精准度 · 白 99% · 黑 98%」) AND
+    // the first row of each side's block inside it — the same two numbers
+    // twice, neither of them the thing the eye landed on.
+    if (hero) {
+      const cap = document.createElement("div");
+      cap.className = "acc-cap";
+      cap.textContent = t("acc.label");
+      const cols = document.createElement("div");
+      cols.className = "acc-cols";
+      for (const side of ["w", "b"]) {
+        const c = document.createElement("div");
+        c.className = "acc-side" + (isPlayer(side) ? " is-you" : "");
+        const num = document.createElement("span");
+        num.className = "acc-num num";
+        num.textContent = acc[side] == null ? "—" : acc[side] + "%";
+        const who = document.createElement("span");
+        who.className = "acc-who";
+        const dot = document.createElement("span");
+        dot.className = "acc-dot " + (side === "w" ? "is-w" : "is-b");
+        dot.setAttribute("aria-hidden", "true");
+        who.append(dot, document.createTextNode(sideName(side)));
+        c.append(num, who);
+        cols.appendChild(c);
+      }
+      hero.replaceChildren(cap, cols);
+    }
 
     const line = (cls) => { const d = document.createElement("div"); d.className = cls; el.appendChild(d); return d; };
-    const head = line("review-h");
-    head.textContent = t("rv.title");
-    const opening = openingFor(sanHistory().length);
-    if (opening) {
-      const o = line("review-row muted");
-      o.textContent = t("rv.opening") + " · " + opening[0] + " " + opening[1];
+    // (the opening's name is not repeated here: the panel already heads with
+    // it, a few centimetres up. The exported picture, which has no panel
+    // around it, still carries it — report.js.)
+
+    // --- the marks, per side: a small table, coloured by the marks' scale --
+    // Only the three marks the analysis has. Other products grade moves as
+    // brilliant / best / good; this model has no basis for any of those, and
+    // a category drawn without one is a misleading number (v7-7-plan §5).
+    const table = document.createElement("table");
+    table.className = "rv-table";
+    const tr = (cells, head) => {
+      const row = document.createElement("tr");
+      cells.forEach((c, i) => {
+        const cell = document.createElement(head || i === 0 ? "th" : "td");
+        if (i === 0 && !head) cell.scope = "row";
+        if (head && i > 0) cell.scope = "col";
+        if (c instanceof Node) cell.appendChild(c); else cell.textContent = c;
+        row.appendChild(cell);
+      });
+      return row;
+    };
+    const thead = document.createElement("thead");
+    thead.appendChild(tr(["", sideName("w"), sideName("b")], true));
+    const tbody = document.createElement("tbody");
+    const KINDS = [["?!", "inaccuracy", "t-soft", "rv.kind.soft"], ["?", "mistake", "t-mid", "rv.kind.mid"],
+      ["??", "blunder", "t-bad", "rv.kind.bad"]].filter((k) => soft || k[0] !== "?!");
+    for (const [mark, field, cls, label] of KINDS) {
+      const lab = document.createDocumentFragment();
+      const m = document.createElement("span");
+      m.className = "rv-mark " + cls;
+      m.textContent = mark;
+      lab.append(m, document.createTextNode(t(label)));
+      const row = tr([lab, String(sum.counts.w[field]), String(sum.counts.b[field])]);
+      row.className = "rv-kind " + cls;
+      // a zero is not news: only the counts that happened carry the colour
+      for (const td of row.querySelectorAll("td")) td.classList.toggle("is-zero", td.textContent === "0");
+      tbody.appendChild(row);
     }
+    const n = (x) => (x == null ? "—" : String(x));
+    const lossRow = tr([t("rv.acpl"), n(sum.acpl.w), n(sum.acpl.b)]);
+    lossRow.className = "rv-loss";
+    tbody.appendChild(lossRow);
+    table.append(thead, tbody);
+    for (const td of table.querySelectorAll("td")) td.classList.add("num");
+    el.appendChild(table);
+
+    // --- the footnote: what the numbers cannot carry ----------------------
+    // 「只分析了 N 着」 is a caveat about the whole report, not about one side,
+    // so it is said once. The advice lines stay per side and only where the
+    // advice is for somebody: the player's side of an ai game, both sides of
+    // anything else.
+    const notes = [];
+    let short = false;
     for (const side of ["w", "b"]) {
-      if (sum.acc[side] == null) continue;
-      const row = line("review-row");
-      const who = document.createElement("div");
-      who.className = "review-k";
-      // the full word, not the one-letter clock label — "W Accuracy 64%" reads
-      // like a typo in a report meant to be read as prose
-      who.textContent = sideName(side);
-      row.appendChild(who);
-      // One row per number, label left and value right — the same row the
-      // statistics directly above this report are already made of. It was one
-      // sentence carrying five values (「精准度 100% · 平均失分 0 · 小失误 0 /
-      // 失误 0 / 严重 0」), which in a 239px panel wrapped to three lines in
-      // Chinese and five in English, breaking after the separators so that
-      // 「/」 and 「·」 ended the lines. A report of named quantities laid out
-      // as prose, directly under the same quantities laid out as a list.
-      for (const [k, v] of sideRows(sum, side)) {
-        const r = document.createElement("div");
-        r.className = "stat-row";
-        const kk = document.createElement("span");
-        kk.className = "stat-k";
-        kk.textContent = k;
-        const vv = document.createElement("span");
-        vv.className = "stat-v num";
-        vv.textContent = v;
-        r.append(kk, vv);
-        row.appendChild(r);
-      }
+      if (acc[side] == null) continue;
       let vk = R.verdictKey(sum, side);
-      // 「挑战更高难度」 is advice to the player about the engine's level; the
-      // other side of an ai game, and both sides of a pvp or imported game,
-      // get the judgement without the advice
-      const isPlayer = store.session.mode === "ai" && side === store.session.humanColor;
-      if (vk === "rv.verdict.excellent" && !isPlayer) vk = "rv.verdict.excellentPlain";
-      if (vk) {
-        const note = document.createElement("div");
-        note.className = "review-note muted";
-        note.textContent = vk === "rv.verdict.tooShort" ? tf(vk, [sum.judged[side]]) : t(vk);
-        row.appendChild(note);
-      }
+      if (vk === "rv.verdict.tooShort") { short = true; continue; }
+      // 「挑战更高难度」 is advice to the player about the engine's level
+      if (vk === "rv.verdict.excellent" && !isPlayer(side)) vk = "rv.verdict.excellentPlain";
+      if (store.session.mode === "ai" && !isPlayer(side)) continue;
+      if (vk) notes.push(sideName(side) + " · " + t(vk));
     }
+    if (short) notes.unshift(tf("rv.verdict.tooShort", [sum.measured]));
+    for (const txt of notes) {
+      const note = line("review-note muted");
+      note.textContent = txt;
+    }
+
     if (sum.worst) {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -4856,12 +4932,10 @@ import { createStore } from "./store.js";
         bank.className = "review-bank";
         // already in the book — the auto-miner banked it, or this button did:
         // say so on the button instead of offering to bank it again (7.6)
-        const cand = worstDrill(sum.worst, bestUci);
-        const have = !!cand && store.session.mines.some((m) => m.id === cand.id);
-        bank.textContent = have ? t("rv.bankDup") : t("rv.bank");
-        bank.disabled = have;
-        bank.title = have ? "" : t("rv.bankTip");
-        if (!have) bank.onclick = () => bankWorst(sum.worst, bestUci);
+        bank.textContent = banked ? t("rv.bankDup") : t("rv.bank");
+        bank.disabled = banked;
+        bank.title = banked ? "" : t("rv.bankTip");
+        if (!banked) bank.onclick = () => bankWorst(sum.worst, bestUci);
         el.appendChild(bank);
       }
     }
@@ -4899,13 +4973,20 @@ import { createStore } from "./store.js";
   }
 
   /**
-   * The eval bar for the position the board is standing on.
+   * The eval gauge for the position the board is standing on.
    *
    * Pure rendering of `analysis.scalars[viewIndex]` — no engine call, which is
    * the whole reason this is review-only. During a live game `analysisFor()`
    * is null (the signature is the PGN, and that changes every move), so the
-   * bar hides itself without needing a mode check, and there is no way for it
-   * to become an answer key while somebody is still playing.
+   * gauge hides itself without needing a mode check, and there is no way for
+   * it to become an answer key while somebody is still playing.
+   *
+   * 7.7 §5: a vertical gauge down the board's left edge, where Lichess keeps
+   * it, instead of a bar in the panel — the number is about the board, so it
+   * stands beside the board, and it reads with the panel shut. White's share
+   * fills from White's side, so it turns over with the board. Where the
+   * window leaves no room beside the frame (a board that is width-bound), it
+   * moves onto the frame's own left edge rather than off the screen.
    */
   function drawEvalBar() {
     const row = document.getElementById("eval-bar-row");
@@ -4914,8 +4995,14 @@ import { createStore } from "./store.js";
     const text = document.getElementById("eval-bar-text");
     if (!row || !bar || !fill || !text) return;
     const a = analysisFor();
-    if (!a) { row.hidden = true; return; }
+    const inReview = !!a && !store.session.editor && store.session.mode !== "learn" && store.session.mode !== "puzzle";
+    if (!inReview) { row.hidden = true; return; }
     row.hidden = false;
+    row.classList.toggle("is-flipped", !!store.game.flipped);
+    // room to the left of the frame: the stage's padding plus whatever the
+    // centring leaves. The gauge and its gap need about 20px.
+    const wrap = document.getElementById("board-wrap");
+    if (wrap) row.classList.toggle("is-inset", wrap.getBoundingClientRect().left < 24);
     const cp = a.scalars[store.game.viewIndex];
     const frac = Review.evalBar(cp);
     // the curve is a slider for the keyboard: ← / → (the global replay keys)
@@ -4931,13 +5018,17 @@ import { createStore } from "./store.js";
     if (frac == null) {
       // measured and level is not the same thing as never measured
       bar.classList.add("is-unmeasured");
-      fill.style.width = "50%";
-      text.textContent = t("rv.evalNone");
+      fill.style.height = "50%";
+      setText(text, t("rv.evalNone"));
+      row.classList.remove("white-ahead", "black-ahead");
       return;
     }
     bar.classList.remove("is-unmeasured");
-    fill.style.width = (frac * 100).toFixed(1) + "%";
-    text.textContent = evalText(cp);
+    fill.style.height = (frac * 100).toFixed(1) + "%";
+    setText(text, evalText(cp));
+    // the number sits at the end of the side that is ahead, like the fill
+    row.classList.toggle("white-ahead", frac >= 0.5);
+    row.classList.toggle("black-ahead", frac < 0.5);
   }
 
   /** "+0.4", "−1.2", or "+#" — a forced mate has no meaningful pawn count. */
@@ -4973,6 +5064,7 @@ import { createStore } from "./store.js";
     const css = getComputedStyle(document.documentElement);
     const cMuted = css.getPropertyValue("--muted").trim() || "#999";
     const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const cPanel = css.getPropertyValue("--panel").trim() || cMuted;
     const JC = judgeColours();
     // midline
     ctx.strokeStyle = cMuted;
@@ -5030,9 +5122,14 @@ import { createStore } from "./store.js";
       if (tagCh !== "?" && tagCh !== "??") continue;
       const s = a.scalars[i + 1];
       if (s == null) continue;
+      // 7.7 §5: a dot you can find — 2.4px was a speck on a 60px curve —
+      // ringed in the panel's own colour so it separates from the fill
       ctx.fillStyle = tagCh === "??" ? JC.bad : JC.mid;
+      ctx.strokeStyle = cPanel;
+      ctx.lineWidth = 1.5 * dpr;
       ctx.beginPath();
-      ctx.arc(x(i + 1), y(s), 2.4 * dpr, 0, Math.PI * 2);
+      ctx.arc(x(i + 1), y(s), 3.5 * dpr, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.fill();
     }
     // current view marker
@@ -9647,7 +9744,7 @@ import { createStore } from "./store.js";
   function applyTextSize() {
     document.documentElement.setAttribute("data-text", store.ui.textSize);
     // the board is sized from its container, which the type size can move
-    requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); drawEvalCurve(); });
+    requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); drawEvalCurve(); drawEvalBar(); });
   }
   document.getElementById("text-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-text]");
@@ -10136,6 +10233,7 @@ import { createStore } from "./store.js";
     BoardView.resizeCanvas();
     draw();
     drawEvalCurve();
+    drawEvalBar();
   });
   // Track the canvas size continuously, so the backing store never disagrees
   // with the CSS size (a whole board rendered scaled reads as blurry).
@@ -10151,7 +10249,7 @@ import { createStore } from "./store.js";
   // is final immediately, precisely because there is no transition), and the
   // window resize handler covers the rest.
   if (typeof ResizeObserver !== "undefined") {
-    new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
+    new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); drawEvalBar(); }).observe(canvas);
     // the eval curve goes from 0×0 to its real size whenever its tab, the
     // panel or the curve itself is shown again — the draws it skipped while
     // hidden are made up here, not by every path that can unhide it (7.6 §3b)

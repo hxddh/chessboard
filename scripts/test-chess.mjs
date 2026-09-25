@@ -8,6 +8,7 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
 import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
+import { measureMarks, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -2129,6 +2130,35 @@ for (const lang of CONTENT_LANGS) {
       const r = ratio(0, lum(hex));
       assert(r >= 4.5, theme + " " + which + " keeps the piece outline legible (" + r.toFixed(2) + ":1)");
     }
+  }
+
+  // 7.7 §6: a mark is one colour, whichever square it lands on. On 7.6.0 the
+  // wood last-move green composited to lime over the light square and olive
+  // over the dark one, and the selection was a second, different yellow. The
+  // measure is the hue term of CIEDE2000 between the two composites
+  // (scripts/lib/mark-colour.mjs); 7.6.0 ran to 5.7 on four marks, 7.7 to 4.6.
+  // The ceiling sits under every one of the old values, so re-tinting a mark
+  // back towards olive fails here rather than on somebody's screen. And the
+  // marks must stay apart from each other: a last-move tint that matches the
+  // selection on the same square is two marks saying one thing.
+  {
+    const HUE_CEILING = 5.0;
+    const SEP_FLOOR = 10;
+    const now = measureMarks(css2);
+    for (const b of MARK_BOARDS) {
+      for (const k of MARKS) {
+        const v = now[b].marks[k];
+        assert(v.dH <= HUE_CEILING,
+          b + " " + k + ": the same hue on the light and the dark square (ΔE00 hue term " + v.dH + " ≤ " + HUE_CEILING + ")");
+      }
+      assert(now[b].sep >= SEP_FLOOR,
+        b + ": every two marks stay apart on the same square (closest ΔE00 " + now[b].sep + ", " + now[b].sepPair + ")");
+    }
+    // …and what docs/measured.json says is what ships: a retune without a
+    // re-record is a stale number, and a stale number is worse than none
+    const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).markHue;
+    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now),
+      "docs/measured.json markHue.after is these palettes (re-run scripts/measure-marks.mjs --record)");
   }
 }
 
@@ -5324,8 +5354,10 @@ for (const lang of CONTENT_LANGS) {
   assert(threw === null, "draw() survives all " + shapes.length + " model shapes" + (threw ? " — " + threw : ""));
   assert(drew === shapes.length, "drew " + drew + "/" + shapes.length + " shapes");
   // the branch that shipped broken twice: prove it painted, not just that it
-  // did not throw. Two stops per check gradient, on two of the shapes.
-  assert(checkStops === 4, "the check gradient painted on both shapes that set checkSquare (" + checkStops + " stops)");
+  // did not throw. Three stops per check gradient (v7-7-plan §6: a hot core,
+  // the token's strength a third of the way out, gone by the corners) on
+  // two of the shapes.
+  assert(checkStops === 6, "the check gradient painted on both shapes that set checkSquare (" + checkStops + " stops)");
   // and prove the marks come from the theme, not from constants in the file.
   // paintPiece is excluded on purpose: the men are pure black and white on
   // every board, which is both the convention and what keeps the outline

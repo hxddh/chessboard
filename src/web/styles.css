@@ -310,8 +310,15 @@
        unchanged — this only makes the pairing a *choice* rather than a fact.
        ------------------------------------------------------------------ */
     :root, [data-board="wood"] {
-      /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(38,20,4,.26);
+      /* the ellipse under a standing piece — see board.js paintContactShadow.
+         7.7 §6 halved all four (was .26 / .34 / .20 / .18): three renders
+         side by side — as shipped, half, none — and at full strength the
+         blur reached past the knight's mane and the pawns' collars, which on
+         the light squares read as a smudge on the board rather than as
+         contact. None is how Lichess draws them and looked clean too, but it
+         undoes 缺陷 17 (men sitting on flat colour with no contact at all);
+         half keeps the contact at the base and loses the smudge. */
+      --piece-shadow: rgba(38,20,4,.13);
       /* 3 · judgement — one scale for "how bad was that move", read by the
          stylesheet AND by the canvas (see app.js readMistakeColours). */
       --judge-soft: #c9b458;
@@ -327,10 +334,10 @@
       --board-edge: rgba(60,34,12,.30);
       --sq-light: #f0d9b5;
       --sq-dark: #b58863;
-      --sq-sel: rgba(201, 204, 0, var(--mark-soft));
-      --sq-last: rgba(64, 153, 23, var(--mark-soft));
-      --sq-check: rgba(220, 60, 40, var(--mark-mid));
-      --sq-hint: rgba(25, 128, 78, var(--mark-mid));
+      --sq-sel: rgba(0, 150, 0, var(--mark-mid));
+      --sq-last: rgba(0, 255, 0, var(--mark-soft));
+      --sq-check: rgba(245, 70, 55, var(--mark-mid));
+      --sq-hint: rgba(5, 165, 255, var(--mark-mid));
       --sq-star: rgba(255, 219, 38, var(--mark-strong));
       --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
       --sq-flash: rgba(0, 115, 36, var(--mark-mid));
@@ -346,7 +353,7 @@
     }
     [data-board="night"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(0,10,6,.34);
+      --piece-shadow: rgba(0,10,6,.17);
       --judge-soft: #d8c46a;
       --judge-mid: #eaa94a;
       --judge-bad: #e8705c;
@@ -358,10 +365,10 @@
       --board-edge: rgba(8,20,16,.34);
       --sq-light: #bed4c9;
       --sq-dark: #66907f;
-      --sq-sel: rgba(230, 117, 11, var(--mark-soft));
-      --sq-last: rgba(13, 255, 69, var(--mark-soft));
-      --sq-check: rgba(232, 90, 70, var(--mark-mid));
-      --sq-hint: rgba(13, 130, 255, var(--mark-mid));
+      --sq-sel: rgba(0, 130, 70, var(--mark-mid));
+      --sq-last: rgba(0, 250, 55, var(--mark-soft));
+      --sq-check: rgba(255, 35, 20, var(--mark-mid));
+      --sq-hint: rgba(0, 80, 230, var(--mark-mid));
       --sq-star: rgba(217, 144, 0, var(--mark-strong));
       --sq-star-edge: rgba(60, 38, 0, var(--mark-mid));
       --sq-flash: rgba(64, 255, 198, var(--mark-mid));
@@ -378,7 +385,7 @@
     }
     [data-board="day"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(40,36,28,.20);
+      --piece-shadow: rgba(40,36,28,.10);
       --judge-soft: #9a7b12;
       --judge-mid: #b7690c;
       --judge-bad: #c0392b;
@@ -391,10 +398,10 @@
       --board-edge: rgba(90,66,36,.26);
       --sq-light: #eddcc0;
       --sq-dark: #c39a6b;
-      --sq-sel: rgba(255, 221, 25, var(--mark-soft));
-      --sq-last: rgba(156, 255, 64, var(--mark-soft));
-      --sq-check: rgba(190, 50, 35, var(--mark-mid));
-      --sq-hint: rgba(0, 115, 59, var(--mark-mid));
+      --sq-sel: rgba(0, 155, 0, var(--mark-mid));
+      --sq-last: rgba(0, 255, 45, var(--mark-soft));
+      --sq-check: rgba(255, 55, 20, var(--mark-mid));
+      --sq-hint: rgba(0, 125, 255, var(--mark-mid));
       --sq-star: rgba(255, 227, 89, var(--mark-strong));
       --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
       --sq-flash: rgba(0, 115, 54, var(--mark-mid));
@@ -410,7 +417,7 @@
     }
     [data-board="notebook"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(50,44,30,.18);
+      --piece-shadow: rgba(50,44,30,.09);
       --judge-soft: #8a6d0f;
       --judge-mid: #a85c08;
       --judge-bad: #b3372a;
@@ -422,10 +429,10 @@
       --board-edge: rgba(42,49,64,.22);
       --sq-light: #e8ecf3;
       --sq-dark: #98a8bd;
-      --sq-sel: rgba(217, 90, 0, var(--mark-soft));
-      --sq-last: rgba(13, 69, 255, var(--mark-soft));
-      --sq-check: rgba(192, 57, 43, var(--mark-mid));
-      --sq-hint: rgba(0, 166, 52, var(--mark-mid));
+      --sq-sel: rgba(35, 65, 160, var(--mark-mid));
+      --sq-last: rgba(30, 85, 240, var(--mark-soft));
+      --sq-check: rgba(255, 35, 0, var(--mark-mid));
+      --sq-hint: rgba(0, 255, 60, var(--mark-mid));
       --sq-star: rgba(166, 110, 0, var(--mark-strong));
       --sq-star-edge: rgba(60, 40, 0, var(--mark-mid));
       --sq-flash: rgba(10, 191, 94, var(--mark-mid));
@@ -454,9 +461,20 @@
                                         else: it is the one mark the whole
                                         screen is asking you to act on
        mid     "the board is telling
-                you something"        — check, hint arrow square, success flash
-       soft    "context"              — selection, last move, legal-target dot
-                                        and ring: present, not shouting
+                you something"        — check, hint arrow, success flash, and
+                                        the selection (7.7: the same hue as
+                                        the last move, one step stronger)
+       soft    "context"              — last move, legal-target dot and
+                                        ring: present, not shouting
+
+       7.7 §6 retuned the colours under these steps, per board: last move and
+       selection share one hue (Lichess's rule — two different yellow-greens
+       on one board read as two unrelated things), and every mark was chosen
+       so that over the light square and over the dark one it is the same
+       hue. On 7.6 the wood last-move green composited to lime on a light
+       square and olive on a dark one. Measured as the hue term of CIEDE2000
+       between the two composites — scripts/measure-marks.mjs, recorded in
+       docs/measured.json → markHue, ceiling in scripts/test-chess.mjs.
 
        The keyboard cursor keeps its own .95: it is a focus ring, and it has to
        carry on all four square colours and on both piece colours. That is an
@@ -2399,42 +2417,117 @@
       font-size: 0.6875rem; line-height: var(--lh-body); color: var(--muted);
     }
 
-    /* Eval bar: the curve read at one ply. White's share fills from the left,
-       so "the bar is mostly light" means what it looks like it means. An
-       unmeasured position is NOT drawn as a level bar — see ChessReview.evalBar. */
-    .eval-bar-row {
-      display: flex; align-items: center; gap: 8px; margin-top: 6px;
+    /* Eval gauge (7.7 §5): the curve read at one ply, standing beside the
+       board it describes — down the frame's left edge, the height of the
+       squares. White's share fills from White's side of the board and turns
+       with it; an unmeasured position is NOT drawn as level (ChessReview.evalBar
+       returns null for it, and the gauge greys out). It used to be a
+       horizontal bar in the panel, which said "this position" from 600px away
+       and was gone with the panel shut. */
+    .eval-gauge {
+      position: absolute; z-index: 2;
+      top: var(--wood-pad); bottom: var(--wood-pad);
+      right: calc(100% + 6px);
+      width: 12px;
+      pointer-events: none;
     }
     .eval-bar {
-      flex: 1; height: 10px; border-radius: 999px; overflow: hidden;
-      background: var(--side-black); border: 1px solid var(--card-border);
+      position: absolute; inset: 0; overflow: hidden;
+      border-radius: 3px;
+      background: var(--side-black);
+      /* the interface's own hairline: on the three dark shells the black end
+         of the gauge is the colour of the page, and only its edge says where
+         the gauge stops */
+      box-shadow: 0 0 0 1px var(--line);
     }
     .eval-bar-fill {
-      display: block; height: 100%; width: 50%;
+      position: absolute; left: 0; right: 0; bottom: 0; height: 50%;
       background: var(--side-white);
-      transition: width var(--dur-base) var(--ease);
+      transition: height var(--dur-base) var(--ease);
+    }
+    .eval-gauge.is-flipped .eval-bar-fill { top: 0; bottom: auto; }
+    /* the midline: level is a place on the gauge, not a guess */
+    .eval-bar::after {
+      content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+      background: color-mix(in srgb, var(--judge-mid) 70%, transparent);
     }
     .eval-bar.is-unmeasured { opacity: 0.35; }
-    .eval-bar.is-unmeasured .eval-bar-fill { width: 50%; background: var(--muted); }
+    .eval-bar.is-unmeasured .eval-bar-fill { background: var(--muted); }
+    /* the number, at the end of the side that is ahead — in the frame-high
+       strip above or below the squares, right-aligned to the gauge */
     .eval-bar-text {
-      font-size: 0.75rem; color: var(--muted); min-width: 3.2em; text-align: right;
+      position: absolute; right: 0;
+      font-size: 0.6875rem; font-weight: 600; line-height: var(--lh-tight);
+      color: var(--muted); white-space: nowrap;
+      bottom: calc(100% + 2px);
     }
+    .eval-gauge.white-ahead:not(.is-flipped) .eval-bar-text,
+    .eval-gauge.black-ahead.is-flipped .eval-bar-text { bottom: auto; top: calc(100% + 2px); }
+    /* A width-bound board (portrait, narrow) has no room beside the frame:
+       the gauge moves onto the frame's own left edge, over the rank letters,
+       and the number is left to the curve and the screen reader. */
+    .eval-gauge.is-inset { right: auto; left: 3px; width: 11px; }
+    .eval-gauge.is-inset .eval-bar-text {
+      position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip: rect(0 0 0 0); white-space: nowrap;
+    }
+    #board-wrap:has(.eval-gauge.is-inset:not([hidden])) .coords.ranks { visibility: hidden; }
     @media (prefers-reduced-motion: reduce) {
       .eval-bar-fill { transition: none; }
     }
 
-    /* --- review: the report card shown once a game is analysed --- */
-    .review {
-      margin-top: 8px; padding: 8px 8px;
+    /* --- review: the report card shown once a game is analysed ---
+       7.7 §5: a card with a headline — the two accuracies, large, side by
+       side, once — then a small table of the marks per side in the marks' own
+       colours, then one muted line for what the numbers cannot carry. It was
+       two blocks of label/value rows per side, under a text line that already
+       said both accuracies. */
+    .report-card {
+      margin-top: 8px; padding: 12px 12px 8px;
       background: var(--card); border: 1px solid var(--card-border);
       border-radius: var(--radius-sm);
     }
-    .review-row { font-size: 0.75rem; line-height: var(--lh-body); margin-bottom: 4px; }
-    /* the side's name, over its three rows rather than in front of one line */
-    .review-k { font-weight: 600; margin-bottom: 2px; }
-    .review-row + .review-row { margin-top: 8px; }
-    .review .stat-row { font-size: 0.75rem; padding: 2px 0; }
-    .review-note { font-size: 0.6875rem; margin-top: 0px; }
+    .acc-cap {
+      font-size: 0.6875rem; font-weight: 600; color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+    .acc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+    .acc-side { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .acc-num {
+      font-size: 1.875rem; font-weight: 600; line-height: var(--lh-tight);
+      color: var(--text);
+    }
+    .acc-who {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-tight);
+    }
+    .acc-side.is-you .acc-who { color: var(--text); font-weight: 600; }
+    .acc-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex: none;
+      box-shadow: 0 0 0 1px var(--card-border);
+    }
+    .acc-dot.is-w { background: var(--side-white); }
+    .acc-dot.is-b { background: var(--side-black); }
+    .review { margin-top: 8px; }
+    .rv-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.75rem; line-height: var(--lh-body);
+      border-top: 1px solid var(--card-border);
+    }
+    .rv-table th, .rv-table td { padding: 2px 0; font-weight: 400; }
+    .rv-table thead th {
+      font-size: 0.6875rem; color: var(--muted); text-align: right; padding-top: 6px;
+    }
+    .rv-table tbody th { text-align: left; color: var(--text); }
+    .rv-table td { text-align: right; width: 3.5em; color: var(--text); font-weight: 600; }
+    .rv-table td.is-zero { color: var(--muted); font-weight: 400; }
+    .rv-kind.t-soft td:not(.is-zero), .rv-mark.t-soft { color: var(--judge-soft); }
+    .rv-kind.t-mid td:not(.is-zero), .rv-mark.t-mid { color: var(--judge-mid); }
+    .rv-kind.t-bad td:not(.is-zero), .rv-mark.t-bad { color: var(--judge-bad); }
+    .rv-mark { display: inline-block; min-width: 1.75em; font-weight: 600; }
+    .rv-loss th, .rv-loss td { border-top: 1px solid var(--card-border); }
+    .rv-loss th { color: var(--muted); }
+    .review-note { font-size: 0.6875rem; line-height: var(--lh-body); margin-top: 6px; }
     .review-jump {
       display: block; width: 100%; margin-top: 6px;
       padding: 6px 8px; text-align: left;
