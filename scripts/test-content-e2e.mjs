@@ -79,7 +79,7 @@ const errs = [];
 page.on("pageerror", (e) => errs.push(e.message));
 await page.goto(`http://127.0.0.1:${PORT}/`);
 await page.waitForTimeout(1000);
-await page.click("#pick-cancel").catch(() => {});
+await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
 /**
  * Which squares hold a piece, read off the canvas.
@@ -732,7 +732,7 @@ if (hasTab && REAL.length) {
   pg.on("pageerror", (e) => errs.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
-  await pg.click("#pick-cancel").catch(() => {});
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
   const btnText = () => pg.evaluate(() => document.getElementById("daily-btn").textContent.trim());
   assert(await btnText() === "今天的训练", "开工前按钮只是一句邀请,不报进度");
@@ -832,7 +832,7 @@ if (hasTab && REAL.length) {
   pg.on("pageerror", (e) => errs.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
-  await pg.click("#pick-cancel").catch(() => {});
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
   const tap2 = async (s) => {
     const p = await pg.evaluate((x) => {
@@ -1018,7 +1018,7 @@ if (hasTab && REAL.length) {
   pg.on("pageerror", (e) => errs.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
-  await pg.click("#pick-cancel").catch(() => {});
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const tap5 = async (s) => {
     const p = await pg.evaluate((x) => {
       const cv = document.getElementById("board"), r = cv.getBoundingClientRect();

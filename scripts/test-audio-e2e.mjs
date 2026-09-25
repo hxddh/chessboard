@@ -148,7 +148,7 @@ async function open(settings) {
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(900);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);

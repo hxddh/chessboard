@@ -78,7 +78,7 @@ async function open(ctx) {
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(900);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   await page.click("#tab-record").catch(() => {});
   await page.waitForTimeout(200);
   return { page, errs };
@@ -1167,7 +1167,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   assert(done.length >= 2 && done.length < 6, "跑到一半（已存 " + done.length + " 局）就重新载入", done.join(","));
   await page.reload();
   await page.waitForTimeout(900);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   await page.click("#tab-record").catch(() => {});
   await page.waitForTimeout(200);
   const mid = (await libOf(page)).games;

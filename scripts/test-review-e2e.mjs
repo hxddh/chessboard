@@ -62,7 +62,7 @@ const errs = [];
 page.on("pageerror", (e) => errs.push(e.message));
 await page.goto(`http://127.0.0.1:${PORT}/`);
 await page.waitForTimeout(900);
-await page.click("#pick-cancel").catch(() => {});
+await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
 const bar = () => page.evaluate(() => ({
   rowHidden: document.getElementById("eval-bar-row").hidden,
@@ -290,7 +290,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   pg.on("pageerror", (e) => errs2.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
-  await pg.click("#pick-cancel").catch(() => {});
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
   const moreOpen = async () => {
     if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await pg.waitForTimeout(250); }
@@ -421,7 +421,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   pg.on("pageerror", (e) => errs3.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
-  await pg.click("#pick-cancel").catch(() => {});
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
   const sq = async (name) => {
     const c = await pg.evaluate((s) => {
@@ -690,7 +690,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     pgC.on("pageerror", (e) => errsC.push(e.message));
     await pgC.goto(`http://127.0.0.1:${PORT}/`);
     await pgC.waitForTimeout(900);
-    await pgC.click("#pick-cancel").catch(() => {});
+    await pgC.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
     await pgC.evaluate((x) => { window.__clip = x; }, LONG_PGN);
     if (await pgC.evaluate(() => !!document.getElementById("more-row").hidden)) {
       await pgC.click("#more-tools"); await pgC.waitForTimeout(250);

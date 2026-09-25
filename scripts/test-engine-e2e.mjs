@@ -119,7 +119,7 @@ async function firstReply(prefix, failing) {
   });
   await page.goto(`http://127.0.0.1:${PORT}${prefix}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const xy = (s) => page.evaluate((sq) => {
     const r = document.getElementById("board").getBoundingClientRect();
     const f = sq.charCodeAt(0) - 97, rk = 8 - Number(sq[1]);
@@ -218,7 +218,7 @@ const pvp = await (async () => {
   const page = await ctx.newPage();
   await page.goto(`http://127.0.0.1:${PORT}/broken/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const before = await page.evaluate(() => window.__workers);
   for (let i = 0; i < 3; i++) { await page.click("#btn-hint").catch(() => {}); await page.waitForTimeout(2500); }
   const out = await page.evaluate(() => {
@@ -253,7 +253,7 @@ const drill = await (async () => {
   const page = await ctx.newPage();
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   // 卢塞纳：the course's first drill; 1K1k4/1P6/8/8/8/8/r7/2R5 w
   await page.evaluate(() => {
     const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];

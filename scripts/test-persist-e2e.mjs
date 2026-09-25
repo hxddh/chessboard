@@ -73,7 +73,7 @@ async function open(ctx) {
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(900);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   return { page, errs };
 }
 
@@ -596,7 +596,7 @@ const PLACEMENT = STUDY.split(" ")[0];
 
   await page.reload();
   await page.waitForTimeout(1200);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const back = await page.evaluate(() => ({
     status: document.getElementById("status").textContent.trim(),
     rows: [...document.querySelectorAll(".mlrow")].length,
