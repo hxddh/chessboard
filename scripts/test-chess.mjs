@@ -4812,8 +4812,8 @@ for (const lang of CONTENT_LANGS) {
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
     // 6.0 added the quarantine key (v6-plan D2); 7.0 the games library;
-    // 7.2 the player's own opening book
-    assert(keys.length === 13, "all thirteen keys are declared in one place (" + keys.length + ")");
+    // 7.2 the player's own opening book; 7.6 the board's finished analyses
+    assert(keys.length === 14, "all fourteen keys are declared in one place (" + keys.length + ")");
     for (const k of keys) {
       assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
     }

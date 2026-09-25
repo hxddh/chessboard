@@ -1,4 +1,5 @@
 import { CHESS_ACHIEVEMENTS } from "./achievements.js";
+import { ChessAnalysisStore } from "./analysis-store.js";
 import { ChessAudio } from "./audio.js";
 import { ChessBoardView } from "./board.js";
 import { Chess } from "./chess.js";
@@ -276,6 +277,9 @@ import { createStore } from "./store.js";
       live: null,
       /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
       analysis: null,
+      /** 7.6 §1c: finished analyses by game, as stored (analysis-store.js);
+          read from storage on first use */
+      analysesKept: null,
       /** the engine failed to start — analysis and hints are not offered, and
           the review group says why in place (5.1) */
       engineDown: false,
@@ -649,6 +653,7 @@ import { createStore } from "./store.js";
    * that already is that move), and the line follows it.
    */
   function playVariationMove(from, to, promotion) {
+    if (refusePgnEdit()) return null;
     const at = curNode();
     if (!at) return null;
     let child;
@@ -3961,7 +3966,13 @@ import { createStore } from "./store.js";
   function liveAllowed() {
     return store.session.liveOn && ChessEngine && !store.session.engineDown &&
       (store.session.mode === "ai" || store.session.mode === "pvp") &&
-      !store.session.editor && !store.session.analyzing && !store.session.engineThinking;
+      !store.session.editor && !store.session.analyzing && !store.session.engineThinking &&
+      // 7.6 §1a: a library pass (and 再深一遍, which runs under the same
+      // token) owns the engine too. Without this, any sync during the pass
+      // re-armed `go infinite`, which holds the exclusive lock until it is
+      // stopped — and nothing stopped it, so the pass's next analyze() waited
+      // forever. The pass ends with a sync(), which picks the line back up.
+      !store.session.libRun;
   }
   function stopLiveAnalysis() {
     const l = store.session.live;
@@ -4140,6 +4151,11 @@ import { createStore } from "./store.js";
     store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, budget: perMove, acc: accuracyFrom(fens, scalars) };
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
+    fileAnalysis(fens[0], h, store.session.analysis);
+    // a library game on the board: the deeper look goes back to its entry
+    // (7.6 §1c). The miner below only runs in ai mode, where the game has a
+    // "you"; anywhere else the library's own miner takes this one.
+    LibraryUI.adoptBoardAnalysis({ fens, sans: h, scalars, bests, budget: perMove }, store.session.mode !== "ai");
     recordAccuracy();
     // 错题自炼: the pass just judged every move — bank the player's ?? plies
     // as drills before the judgement scrolls away. Only in games where one
@@ -4183,6 +4199,33 @@ import { createStore } from "./store.js";
     // long enough that people go and do something else. A toast behind another
     // window is a message that was never delivered.
     if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
+  }
+
+  // --- 7.6 §1c: analyses kept across a reload --------------------------------
+  //
+  // A finished pass is filed under the line it measured (analysis-store.js),
+  // and every path that puts a game on the board asks for it back — the
+  // launch, 对局历史, 打开 and the library. Nothing here searches: a hit is
+  // the stored arrays with this game's `sig`, a miss is no analysis.
+  function analysesList() {
+    if (!store.session.analysesKept) store.session.analysesKept = ChessAnalysisStore.load(Persist.read("analyses").value);
+    return store.session.analysesKept;
+  }
+  function fileAnalysis(fen, sans, an) {
+    const next = ChessAnalysisStore.put(analysesList(), fen, sans, an, Date.now());
+    if (next === store.session.analysesKept) return;
+    store.session.analysesKept = next;
+    Persist.setJson("analyses", ChessAnalysisStore.dump(next));
+  }
+  /** The stored analysis of the line on the board, ready to use, or null. */
+  function recallAnalysis() {
+    const an = ChessAnalysisStore.find(analysesList(), baseGame().fen(), sanHistory());
+    return an ? Object.assign({}, an, { sig: game.pgn() }) : null;
+  }
+  /** Put the stored analysis of the game just loaded back; true when there was one. */
+  function restoreAnalysis() {
+    store.session.analysis = sanHistory().length ? recallAnalysis() : null;
+    return !!store.session.analysis;
   }
 
   /**
@@ -4407,6 +4450,7 @@ import { createStore } from "./store.js";
         accEl.textContent = t("acc.label") + " · " + part("w", t("vs.white")) + " · " + part("b", t("vs.black"));
       }
     }
+    lockPgnEdits();
   }
 
   /**
@@ -5351,7 +5395,7 @@ import { createStore } from "./store.js";
     doc: document, store, Persist, game, t, tf, toast, sync,
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
     plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
-    saveSettings, stopLiveAnalysis, withMotifs,
+    saveSettings, stopLiveAnalysis, withMotifs, recallAnalysis,
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
@@ -5544,7 +5588,8 @@ import { createStore } from "./store.js";
     // in resignation is not over by its moves, so call off that search now that
     // the ending is back in place
     invalidateEngine();
-    store.session.analysis = null;
+    // 7.6 §1c: analysed before? then it is analysed now, without a search
+    restoreAnalysis();
     saveSettings();
     saveGame();
     sync();
@@ -6819,6 +6864,7 @@ import { createStore } from "./store.js";
   }
 
   function playHumanMove(from, to, promotion) {
+    if (refusePgnEdit()) { clearSelection(); return; }
     const mv = gameMove({ from, to, promotion });
     if (!mv) return;
     store.game.selection = null;
@@ -6943,6 +6989,7 @@ import { createStore } from "./store.js";
     if (store.session.mode === "learn" && store.session.learn) { learnUndo(); return; }
     if (!sanHistory().length || ruleTerminated()) return;
     if (!isLive()) { goLive(); return; }
+    if (refusePgnEdit()) return;
     invalidateEngine();
     gameUndo();
     // in AI mode take back the engine reply too, so it's the human's turn again
@@ -6993,7 +7040,7 @@ import { createStore } from "./store.js";
 
   /** Truncate the game to the replay cursor and continue playing from there. */
   async function retryFromHere() {
-    if (isLive()) return;
+    if (isLive() || refusePgnEdit()) return;
     const keep = store.game.viewIndex;
     const drop = sanHistory().length - keep;
     if (!(await confirmNative(tf("dlg.retryHere", [keep, drop]), t("act.retryHere"),
@@ -7588,6 +7635,8 @@ import { createStore } from "./store.js";
     // the rules do not explain is an agreed one. Before 6.0 the result was
     // dropped and the export wrote `*` under a game the file called 1-0.
     adoptHeaderResult();
+    // 7.6 §1c: a game analysed before comes back analysed, without a search
+    restoreAnalysis();
     resetClocks();
     syncAutoFlip();
     store.commit("game", "action");
@@ -8515,6 +8564,7 @@ import { createStore } from "./store.js";
     // already the mainline: nothing to promote, and a menu item that does
     // nothing is a control that looks available and is not
     avail(document.getElementById("mm-promote"), !isMainlineNode(id));
+    lockPgnEdits();
     moveMenuEl.hidden = false;
     // beside the pointer when it came from one, under the handle otherwise;
     // clamped so it never opens off the window
@@ -8525,7 +8575,7 @@ import { createStore } from "./store.js";
     const mh = moveMenuEl.offsetHeight || 100;
     moveMenuEl.style.left = Math.max(4, Math.min(left, window.innerWidth - mw - 4)) + "px";
     moveMenuEl.style.top = Math.max(4, Math.min(top, window.innerHeight - mh - 4)) + "px";
-    const first = moveMenuEl.querySelector("button:not([hidden])");
+    const first = moveMenuEl.querySelector("button:not([hidden]):not(:disabled)");
     if (first) first.focus();
   }
   function closeMoveMenu() {
@@ -8559,7 +8609,7 @@ import { createStore } from "./store.js";
     document.getElementById("mm-promote").onclick = () => {
       const id = store.ui.moveMenu;
       closeMoveMenu();
-      if (id == null) return;
+      if (id == null || refusePgnEdit()) return;
       ChessTree.promoteToMain(store.game.tree, id);
       store.commit("game", "promote");
       saveGame();
@@ -8569,7 +8619,7 @@ import { createStore } from "./store.js";
       const id = store.ui.moveMenu;
       closeMoveMenu();
       const node = id != null ? ChessTree.nodeAt(store.game.tree, id) : null;
-      if (!node || node.id === 0) return;
+      if (!node || node.id === 0 || refusePgnEdit()) return;
       if (!(await confirmNative(tf("dlg.deleteBranch", [node.san]), t("ml.delete"),
         { ok: t("ml.delete"), cancel: t("act.cancel") }))) return;
       const parent = ChessTree.deleteNode(store.game.tree, id);
@@ -8592,11 +8642,42 @@ import { createStore } from "./store.js";
     };
   }
 
+  // --- 7.6 §1b: the notation is read-only while an analysis runs ------------
+  //
+  // The pass is keyed on `game.pgn()` and drops out, silently, the moment it
+  // changes (analyzeGame's two sig checks). Up to 7.5 the controls that change
+  // it stayed live: one click on 存为变着 halfway through a 精析 and the whole
+  // run was gone with nothing but "已存为变着" to show for it. Disabled rather
+  // than "allowed, and the analysis stops" — the run is the expensive thing.
+  /** True while a change to the notation would throw away a running pass. */
+  function pgnLocked() { return !!store.session.analyzing; }
+  /** Say so, once per attempt, from a path that has no button to grey out. */
+  function refusePgnEdit() {
+    if (!pgnLocked()) return false;
+    toast(t("msg.pgnLocked"), "fix");
+    return true;
+  }
+  /** Grey out every control that edits the notation; called from setAnalyzeUI. */
+  function lockPgnEdits() {
+    const locked = pgnLocked();
+    document.querySelectorAll("#pv-line .pv-act").forEach((b) => {
+      b.disabled = locked;
+      b.title = t(locked ? "msg.pgnLocked" : "tip.pvSave");
+    });
+    const tryBtn = document.getElementById("preview-try");
+    if (tryBtn) { tryBtn.disabled = locked; tryBtn.title = locked ? t("msg.pgnLocked") : ""; }
+    for (const id of ["mm-promote", "mm-delete", "mm-note"]) {
+      const b = document.getElementById(id);
+      if (b) b.disabled = locked;
+    }
+  }
+
   // --- the comment dialog --------------------------------------------------
   const noteModal = document.getElementById("note-modal");
   function openNoteModal(id) {
     const node = ChessTree.nodeAt(store.game.tree, id);
     if (!noteModal || !node) return;
+    if (refusePgnEdit()) return;
     store.ui.noteFor = id;
     const input = document.getElementById("note-input");
     input.value = node.comment || "";
@@ -8606,6 +8687,7 @@ import { createStore } from "./store.js";
   }
   function closeNoteModal() { store.ui.noteFor = null; Dlg.close(noteModal); }
   function submitNote() {
+    if (refusePgnEdit()) return;
     const id = store.ui.noteFor;
     const input = document.getElementById("note-input");
     const text = input ? input.value : "";
@@ -8632,6 +8714,7 @@ import { createStore } from "./store.js";
    */
   function savePvAsVariation(sans, upTo, landOnLast) {
     if (inModal() || !Array.isArray(sans) || !sans.length) return false;
+    if (refusePgnEdit()) return false;
     const at = curNode();
     if (!at) return false;
     let node = at;
@@ -9742,6 +9825,8 @@ import { createStore } from "./store.js";
   setSideTab(store.ui.sideTab);
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
+  // 7.6 §1c: …and the analysis it had, which used to die with the session
+  if (resumed) restoreAnalysis();
   // a resumed finished game must not be re-counted on the next live move
   // A restored game that is already over was filed when it ended; marking it
   // recorded stops the launch path filing it a second time. The id is unknown
