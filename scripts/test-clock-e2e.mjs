@@ -57,7 +57,7 @@ await c.addInitScript(() => {
 const pg = await c.newPage();
 const errs = []; pg.on('pageerror', (e) => errs.push(e.message));
 await pg.goto(`http://127.0.0.1:${PORT}/`); await pg.waitForTimeout(1200);
-await pg.click('#pick-cancel').catch(() => {});
+await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
 const sq = async (s) => pg.evaluate((x) => {
   const cv = document.getElementById('board'), r = cv.getBoundingClientRect();
@@ -133,7 +133,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   const p2 = await c2.newPage();
   const errs2 = []; p2.on('pageerror', (e) => errs2.push(e.message));
   await p2.goto(`http://127.0.0.1:${PORT}/`); await p2.waitForTimeout(900);
-  await p2.click('#pick-cancel').catch(() => {});
+  await p2.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   // 棋钟那一行在「对局」那段折叠里
   await p2.click('#fold-game > summary'); await p2.waitForTimeout(300);
   await p2.click('#clock-seg button[data-tc="3+2"]'); await p2.waitForTimeout(400);
@@ -208,7 +208,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await p3.goto(`http://127.0.0.1:${PORT}/index.html`);
   await p3.waitForSelector('#board');
   await p3.waitForTimeout(500);
-  await p3.click('#pick-cancel').catch(() => {});
+  await p3.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   await p3.waitForTimeout(350);
   // 时限直接由种子设置给定，不去点面板里的按钮：那串点击在这个上下文里选中过
   // 别的档位（读数 300 秒），而「加了两秒」的断言写成「> 180」时会在 300 上

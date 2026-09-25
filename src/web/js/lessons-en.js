@@ -26,7 +26,7 @@
         steps: [
           "Click e4 (where the e-file meets the 4th rank)",
           "Click a1 (White's bottom-left corner)",
-          "Click h8 (the far corner on Black's side)",
+          "Click h8 (the top-right corner, seen from White's side)",
         ],
       },
         { prompt: "Three more — no corners to guess from this time",
@@ -47,8 +47,8 @@
       tasks: [{
         prompt: "Get clear on which squares are which",
         steps: [
-          "Click a1 — White's bottom-left corner, a **dark** square",
-          "Click h1 — White's bottom-right corner, a **light** square (setting up, the near right corner must be light)",
+          "Click a1 — White's bottom-left corner, a dark square",
+          "Click h1 — White's bottom-right corner, a light square (setting up, the near right corner must be light)",
           "Click whichever of White's bishops stands on a dark square (c1)",
           "Now the one on a light square (f1)",
         ],
@@ -667,9 +667,9 @@
         "So before a piece comes out, ask: **can it stay there?** A square it cannot hold costs you the move you spent getting there.",
       ],
       tasks: [
-        { prompt: "White to play — bring out a **new** piece",
+        { prompt: "White to play — bring out a new piece",
           retry: "Moving the e-pawn again, or bringing the queen out early, is not development. Put a piece that has not moved yet into the game" },
-        { prompt: "White has played e4, Nf3, Bb5 — click the piece that came out **last**",
+        { prompt: "White has played e4, Nf3, Bb5 — click the piece that came out last",
           steps: [
             "The bishop on b5 was the third to arrive. Three moves, three different pieces, nothing wasted — click b5",
           ] },
@@ -942,7 +942,7 @@
             "h8 and g8: White can neither check it with the bishop nor drive it away (trying to means stalemate) — click h8 or g8",
           ] },
         { prompt: "Your turn to defend: Black has the wrong bishop plus an h-pawn — where does the white king have to go?",
-          retry: "Running to the e-file only takes you further from the corner, and the black king will squeeze you to death. **Head for h1** — Black's bishop is dark-squared and can never touch it" },
+          retry: "Running to the e-file only takes you further from the corner, and the black king will squeeze you to death. Head for h1 — Black's bishop is dark-squared and can never touch it" },
       ],
     },
     "rookbehind": {
@@ -990,7 +990,7 @@
             "Black has pawns facing the a- and b-files; only the c-file is clear — click c2",
           ] },
         { prompt: "Push the candidate",
-          retry: "The one to move first is the one with **no enemy pawn opposite** — the c-pawn. The a- and b-pawns have nowhere to go yet" },
+          retry: "The one to move first is the one with no enemy pawn opposite — the c-pawn. The a- and b-pawns have nowhere to go yet" },
       ],
     },
     "kingactive": {
@@ -1005,7 +1005,7 @@
         { prompt: "The black pawn promotes next move and White has exactly one move that holds — everything else is mated",
           retry: "The king has to block the promotion path. Stepping to g3, h1, h2 or h3 all abandon the f-file and the pawn goes straight through" },
         { prompt: "King and pawn against a lone king, White to move — king first or pawn first? This one move decides it",
-          retry: "Pushing the pawn draws: the pawn runs ahead, the king can't keep up and the black king blocks it head-on. **King first** — walk it in front of the pawn to clear the way" },
+          retry: "Pushing the pawn draws: the pawn runs ahead, the king can't keep up and the black king blocks it head-on. King first — walk it in front of the pawn to clear the way" },
       ],
     },
     "drill-pawn": {

@@ -79,7 +79,7 @@ const errs = [];
 page.on("pageerror", (e) => errs.push(e.message));
 await page.goto(`http://127.0.0.1:${PORT}/`);
 await page.waitForTimeout(1000);
-await page.click("#pick-cancel").catch(() => {});
+await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
 /**
  * Which squares hold a piece, read off the canvas.
@@ -595,6 +595,41 @@ if (hasTab && REAL.length) {
   await pg.click('#op-side-seg button[data-side="w"]');
   await pg.waitForTimeout(600);
   assert(await occ() === squaresOf(new Chess().fen()), "切回执白:初始局面,没有预走的着");
+  // 7.6 (Codex on #79): the tree accepts any book move, so the player can
+  // finish on a leaf shorter than any drill (e.g. 1.b4 is a whole book line).
+  // That leaf is no drill of its own: the credit has to land on the drill that
+  // was opened, or it is counted nowhere — not in 背下来 N/M, not by the plan
+  const firstMoves = new Map();
+  for (const [, , seq] of data.CHESS_OPENINGS) {
+    const sans = seq.split(" ");
+    const k = sans[0];
+    if (!firstMoves.has(k)) firstMoves.set(k, []);
+    firstMoves.get(k).push(sans.length);
+  }
+  const leaf = [...firstMoves].find(([m, lens]) => m !== first.line[0] && lens.every((n) => n === 1));
+  if (leaf) {
+    const lm = new Chess().moves({ verbose: true }).find((x) => x.san === leaf[0]);
+    const tapW = async (s) => {
+      const p = await pg.evaluate((x) => {
+        const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+        const f = x.charCodeAt(0) - 97, rk = 8 - +x[1], z = r.width / 8;
+        return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+      }, s);
+      await pg.mouse.click(p.x, p.y);
+      await pg.waitForTimeout(240);
+    };
+    await tapW(lm.from); await tapW(lm.to);
+    await pg.waitForTimeout(700);
+    const st = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+    const known = new Set(rows.map((r) => data.ChessDrills.drillId(r.eco, r.seq)));
+    const credited = Object.keys(st.solved).filter((k) => !k.endsWith(":b"));
+    assert(credited.length === 1 && credited[0] === firstId && known.has(credited[0]),
+      `走到比任何一题都短的书上叶子（1.${leaf[0]}），记账落在开题的那道题上，不是一个谁也数不到的 id`,
+      JSON.stringify(credited));
+    // back to the start for what follows
+    await pg.click('#op-side-seg button[data-side="w"]');
+    await pg.waitForTimeout(600);
+  }
   await pg.evaluate(() => [...document.querySelectorAll("#puzzle-cat-seg button")].find((b) => b.dataset.cat === "m1").click());
   await pg.waitForTimeout(400);
   assert(await pg.evaluate(() => document.getElementById("row-op-side").hidden),
@@ -732,7 +767,7 @@ if (hasTab && REAL.length) {
   pg.on("pageerror", (e) => errs.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
-  await pg.click("#pick-cancel").catch(() => {});
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
   const btnText = () => pg.evaluate(() => document.getElementById("daily-btn").textContent.trim());
   assert(await btnText() === "今天的训练", "开工前按钮只是一句邀请,不报进度");
@@ -759,6 +794,19 @@ if (hasTab && REAL.length) {
   await pg.waitForTimeout(600);
   const step2 = await btnText();
   assert(/第 2\/\d 步/.test(step2), "清完欠账,课表自己走到第二步", step2);
+  // 7.6 §3g: the prominent 下一题 on the solved puzzle follows the plan. The
+  // review queue is empty now, and 7.5 answered 下一题 there with 「复习清空了」
+  // and 一步杀 — the plan's second step (上一课新的) was never reached from it.
+  assert(await pg.evaluate(() => document.getElementById("puzzle-next").classList.contains("primary")),
+    "解出之后「下一题」是那个醒目的按钮");
+  await pg.click("#puzzle-next");
+  await pg.waitForTimeout(700);
+  const st2 = await pg.evaluate(() => ({
+    mode: JSON.parse(localStorage.getItem("chess.v1.settings")).mode,
+    cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat,
+  }));
+  assert(/上一课新的/.test(step2) ? st2.mode === "learn" : st2.cat !== "m1",
+    "计划进行中,「下一题」进的是计划的下一步(" + step2 + "),不是一步杀", JSON.stringify(st2));
   await ctx2.close();
 
   // B. 进步区:没有数据整节不画;种入两周的档案就出现,数字如实
@@ -810,8 +858,10 @@ if (hasTab && REAL.length) {
     rows: [...document.querySelectorAll("#trend-body .stat-row")].map((r) => r.textContent.trim()),
   }));
   assert(trend.head && trend.curve, "有数据时「进步」节与准确率走势都画出来了", JSON.stringify(trend));
-  assert(trend.rows.some((r) => /防守/.test(r) && /本周 0%/.test(r) && /上周 50%/.test(r)),
-    "防守一行:本周 0% 对上周 50% — 数字就是档案里的数字", trend.rows.join(" | "));
+  // 7.6: the figure is the solve rate and says so — a clean week of three
+  // solves reads 100%, not the old unlabelled miss rate "0%"
+  assert(trend.rows.some((r) => /防守/.test(r) && /本周正确率 100%/.test(r) && /上周 50%/.test(r)),
+    "防守一行:本周正确率 100% 对上周 50% — 数字就是档案里的数字,且写明是正确率", trend.rows.join(" | "));
   assert(trend.rows.some((r) => /错题/.test(r) && /收 3/.test(r) && /找回 1/.test(r)),
     "错题一行:本周收 3 · 找回 1", trend.rows.join(" | "));
   await ctx4.close();
@@ -832,7 +882,7 @@ if (hasTab && REAL.length) {
   pg.on("pageerror", (e) => errs.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
-  await pg.click("#pick-cancel").catch(() => {});
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
   const tap2 = async (s) => {
     const p = await pg.evaluate((x) => {
@@ -944,6 +994,51 @@ if (hasTab && REAL.length) {
   await ctx3.close();
 }
 
+// --- 7.6:导入的棋局,结果只说结果,对阵栏用棋谱里的名字 ---------------------
+// [Result "1-0"] 只记了谁赢,没记为什么;状态栏原来写「黑方认输」—— 编出来的
+// 原因。对阵栏原来写「玩家 1 / 玩家 2」,文件里明明有 [White] / [Black]。
+{
+  const ctx5 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx5.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await ctx5.newPage();
+  pg.on("pageerror", (e) => errs.push("import-result: " + e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await pg.waitForSelector("#board");
+  await pg.waitForTimeout(600);
+  const drop = async (text) => {
+    await pg.evaluate((text) => {
+      const ev = new Event("drop", { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "dataTransfer", {
+        value: { files: [new File([text], "g.pgn", { type: "application/x-chess-pgn" })] },
+      });
+      window.dispatchEvent(ev);
+    }, text);
+    await pg.waitForTimeout(1000);
+    if (await pg.isVisible("#confirm-ok")) { await pg.click("#confirm-ok"); await pg.waitForTimeout(800); }
+  };
+  const seen = () => pg.evaluate(() => ({
+    status: (document.getElementById("status") || {}).textContent || "",
+    w: document.getElementById("white-role").textContent,
+    b: document.getElementById("black-role").textContent,
+  }));
+  await drop('[Event "Club"]\n[White "Anderssen"]\n[Black "Kieseritzky"]\n[Result "1-0"]\n\n1. e4 e5 2. f4 exf4 1-0\n');
+  let s = await seen();
+  assert(/1-0/.test(s.status) && /白方胜/.test(s.status) && !/认输/.test(s.status),
+    "导入的 1-0:状态栏只说「1-0 · 白方胜」,不编一个认输的原因", s.status);
+  assert(s.w === "Anderssen" && s.b === "Kieseritzky",
+    "对阵栏用棋谱里的 White / Black 名字", JSON.stringify(s));
+  await drop('[Event "?"]\n[White "?"]\n[Black "?"]\n[Result "1/2-1/2"]\n\n1. d4 d5 1/2-1/2\n');
+  s = await seen();
+  assert(/½-½/.test(s.status) && !/协议/.test(s.status),
+    "导入的和棋同样只说结果,不说「协议和棋」", s.status);
+  assert(s.w === "玩家 1" && s.b === "玩家 2", "名字是「?」的棋谱,退回玩家 1 / 玩家 2", JSON.stringify(s));
+  await ctx5.close();
+}
+
 // 顶栏与题面,同屏两处,不说同一句话 (7.3 B4)
 // 7.2 的顶栏 chip 直接返回 puzzleGoalText():
 //   顶栏  「实战里你走了 d3 —— 找出更强的一手 · 当时亏 3.2 分」
@@ -1018,7 +1113,7 @@ if (hasTab && REAL.length) {
   pg.on("pageerror", (e) => errs.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
-  await pg.click("#pick-cancel").catch(() => {});
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const tap5 = async (s) => {
     const p = await pg.evaluate((x) => {
       const cv = document.getElementById("board"), r = cv.getBoundingClientRect();

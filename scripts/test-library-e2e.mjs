@@ -23,6 +23,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { heldClick } from "./lib/held-click.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -78,7 +79,7 @@ async function open(ctx) {
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(900);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   await page.click("#tab-record").catch(() => {});
   await page.waitForTimeout(200);
   return { page, errs };
@@ -96,6 +97,11 @@ async function importFile(page, text, button) {
   await chooser.setFiles(file);
   await page.waitForTimeout(600);
 }
+
+/** What the library section says: the counts above the buttons and the
+    status lines under them (7.6 moved those below, see renderLibrary). */
+const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
+  .map((id) => (document.getElementById(id) || {}).textContent || "").join("\n"));
 
 const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
 
@@ -118,12 +124,15 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
 
   // 没填名字 → 一局都不认领,而且说出来
   assert(lib.games.every((g) => g.side === null), "还没说自己是谁的时候,一局都不认");
-  const body0 = await page.textContent("#lib-body");
+  const body0 = await libText(page);
   assert(/一局都没认出是你下的/.test(body0), "……而且页面直说了这件事", body0);
 
   // 填上名字 → 已经在库里的棋也要重新认一遍
-  await page.fill("#lib-names", "hxddh");
-  await page.dispatchEvent("#lib-names", "change");
+  // typed, and left the way a person leaves a field — no hand-made `change`:
+  // the event the app actually gets is the one focus leaving produces
+  await page.click("#lib-names");
+  await page.keyboard.type("hxddh");
+  await page.keyboard.press("Tab");
   await page.waitForTimeout(300);
   lib = await libOf(page);
   const mine = lib.games.filter((g) => g.side);
@@ -182,8 +191,8 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games: games.slice(0, 5) }));
     const { page } = await open(ctx);
     assert(await page.isHidden("#lib-diagnose"), "只有五局时,「看诊断」根本不出现");
-    assert(/还差 15 局/.test(await page.textContent("#lib-body")), "……并且说清楚还差多少",
-      await page.textContent("#lib-body"));
+    assert(/还差 15 局/.test(await libText(page)), "……并且说清楚还差多少",
+      await libText(page));
     await ctx.close();
   }
   // 25 局:门槛之上
@@ -601,7 +610,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await page.click("#tab-record").catch(() => {});
   await page.waitForTimeout(200);
 
-  const body = await page.textContent("#lib-body");
+  const body = await libText(page);
   assert(/可以再深一遍/.test(body), "记录页说得出还有几局是快扫出来的", body);
 
   // 深一趟的说法：黑方第 0 手才是 ??（而且正解换成 Rc8），第 2 手根本不是
@@ -751,6 +760,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await mv("c2", "c4");
   let done = await page.isVisible("#puzzle-playon");
   // 黑方回的是 c6 那条的话，这里已经到叶子了；回 e6 就还差白方第三手
+  const slav = done;
   if (!done) { await mv("g1", "f3"); done = await page.isVisible("#puzzle-playon"); }
   assert(done, "照书走完一条线就算背下来了 —— 对手的回答也是从这本书里挑的");
   const solved = await page.evaluate(() => {
@@ -758,6 +768,23 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     return Object.keys(st.solved).filter((k) => k.startsWith("rep-")).length;
   });
   assert(solved >= 1, "背下来的那条记进了进度，和内置开局书同一条轨", solved);
+  // 7.6: the credit, the toast's name and the record pane's count all follow
+  // the line the board actually finished — whichever one the drill opened as
+  const fin = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    const book = JSON.parse(localStorage.getItem("chess.v1.repertoire"));
+    return { solved: Object.keys(st.solved).filter((k) => k.startsWith("rep-")), book: book.w,
+      toast: document.getElementById("toast").textContent.trim(),
+      body: document.getElementById("rep-body").textContent };
+  });
+  const played = fin.book.find((l) => l.sans === (slav ? "d4 d5 c4 c6" : "d4 d5 c4 e6 Nf3 Nf6"));
+  assert(played && fin.solved.length === 1 && fin.solved[0] === played.id,
+    "记成已背的正是走完的那条线，没走到的那条不算", JSON.stringify({ slav, solved: fin.solved }));
+  assert(played && (!played.eco || fin.toast.includes(played.eco)),
+    "「背谱完成」报的是走完的那条线的名字", fin.toast);
+  assert(!/Queen's Gambit|Slav Defense/.test(fin.toast + started.task),
+    "开局书的线名按界面语言显示族名，不是整条英文", fin.toast + " | " + started.task);
+  assert(/背下来 1\/2/.test(fin.body), "记录页的「背下来」当场就是 1/2，不用重载", fin.body);
 
   // 7.3 B1：背谱不是战术水平 —— 背对一条自己的线，Glicko 一动不动。
   // 7.2 里它会动：ratePuzzleOnce 不看类别，而这条线的「难度」是按它有多长
@@ -1167,7 +1194,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   assert(done.length >= 2 && done.length < 6, "跑到一半（已存 " + done.length + " 局）就重新载入", done.join(","));
   await page.reload();
   await page.waitForTimeout(900);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   await page.click("#tab-record").catch(() => {});
   await page.waitForTimeout(200);
   const mid = (await libOf(page)).games;
@@ -1191,6 +1218,371 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   assert(asked === expect, "续跑只问没分析过的局面（" + asked + " 次，应为 " + expect + "）—— 已分析的局不重跑", String(asked));
   assert(kept.every((g) => JSON.stringify(end.find((m) => m.id === g.id).an) === JSON.stringify(g.an)),
     "……先前那几局的记录一字未动");
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 17. 7.6 §2：打完名字直接点「分析」，一下就开始 ---------------------------
+// 7.5 在 WebKit 上丢过这一下：名字框失焦时的第一次 change 重建了按钮上方的
+// #lib-body，1100 宽时按钮在按下与松开之间上移 16px，这次点击就没了。这里走
+// 真实路径 —— 点进框里、打字、直接去按按钮，不手动派发 change —— 并且按住
+// 一会儿再松开，逐帧看按钮挪没挪。挪了，WebKit 上这一下就会丢。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 1000 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const { page, errs } = await open(ctx);
+  await importFile(page, PGN);
+  await page.evaluate(() => {
+    window.__asked = 0;
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen) => {
+      window.__asked++;
+      await new Promise((r) => setTimeout(r, 80));
+      return { cp: 15, mate: null, turn: fen.split(" ")[1] === "b" ? "b" : "w", best: null, pv: [] };
+    };
+  });
+  assert(/一局都没认出是你下的/.test(await libText(page)), "打名字之前，页面说一局都没认出来");
+  await page.click("#lib-names");
+  await page.keyboard.type("hxddh");
+  const r = await heldClick(page, "#lib-analyse");
+  console.log("  lib-names → 分析：按住期间按钮位移 " + r.drift + "px，节点" + (r.replaced ? "被换掉了" : "还是原来那个") +
+    "，按钮里的 DOM 变动 " + r.mutated + " 处");
+  assert(r.drift === 0 && !r.replaced, "失焦那一下的 change 重排了面板，按钮在按下与松开之间没有挪动",
+    JSON.stringify(r));
+  // 不挪还不够：7.6 的 WebKit 上按钮一像素没动，点击照样丢了 —— 失焦的重绘
+  // 把「分析」的文字用同样的内容重写了一遍，按下时压着的那个文本节点被换掉
+  assert(r.mutated === 0, "……按住期间按钮里的 DOM 一处都没被改写（连同样的文字重写一遍也不行）", JSON.stringify(r));
+  assert(r.clicked, "这一下点击落在了「分析」上");
+  let running = false;
+  for (let i = 0; i < 20 && !running; i++) {
+    await page.waitForTimeout(100);
+    running = /暂停/.test(await page.textContent("#lib-analyse"));
+  }
+  assert(running && (await page.evaluate(() => window.__asked)) > 0, "点一下，分析就开始了",
+    await page.textContent("#lib-analyse"));
+  const lib = await libOf(page);
+  assert(lib.games.filter((g) => g.side).length === 3, "……名字也照样生效：三局认领为我的");
+
+  // 跑的过程中，「暂停分析」上方的内容也不许动：每一手都在刷新进度
+  const p = await heldClick(page, "#lib-analyse", { hold: 600 });
+  console.log("  分析进行中按「暂停分析」：位移 " + p.drift + "px");
+  assert(p.drift === 0 && !p.replaced && p.mutated === 0 && p.clicked,
+    "分析进行中，进度每手一刷，「暂停分析」按住期间不挪、按钮里也不被改写", JSON.stringify(p));
+  let paused = false;
+  for (let i = 0; i < 20 && !paused; i++) {
+    await page.waitForTimeout(100);
+    paused = !/暂停/.test(await page.textContent("#lib-analyse"));
+  }
+  assert(paused, "……而且一下就停了", await page.textContent("#lib-analyse"));
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 18. 7.6 §3c/§3d/§3e：诊断弹窗滚得动；教学/做题里也打得开；按筛选停在那一手 ----
+{
+  // 25 局、80 半着，失误落在第 20、28、36 回合，第 28 回合那一手是「捉双」；
+  // 两个开局。和第 6 节的样本同一个形状：三张图都画得出来，诊断页因此最长 ——
+  // 7.5 在 900 高的窗口里量到卡片 1025px，关闭按钮在 y=976。
+  // 两局真能摆完 80 半着的棋（开局之后是确定性地挑的安静着）—— 打开要停在
+  // 第 55 半着，前提是棋盘上真有第 55 半着
+  const ECOS = [
+    "e4 e5 Nf3 Nc6 Bb5 a6 b4 Bc5 Be2 Bd4 Bb5 b6 Nc3 Rb8 a3 Nf6 Kf1 Bc5 Ne1 d6 g4 h5 Qe2 Kd7 f3 Qf8 a4 Ke7 Qf2 Nh7 Ba3 Nd8 Qg2 Ng5 Bd7 Nge6 Rc1 f6 b5 Bb4 Rb1 g5 Rg1 Qe8 Ke2 f5 Nd3 Ba5 Qh3 Bb4 Rh1 Ba5 Rbe1 Kf7 Bb4 Kf6 Na2 Ke7 Ref1 Qg6 Re1 Qg8 Kf1 Nc6 Kg2 Ra8 Rc1 Qf8 Rce1 Rh6 Ra1 Qh8 Qg3 Qd8 Rhf1 Kf8 Rab1 Rf6 Ra1 Ra7",
+    "d4 d5 c4 e6 Nc3 Nf6 b3 c6 Be3 Kd7 a3 c5 Bh6 Qe7 Nh3 e5 e4 Nh5 f4 Qg5 Nb1 Rg8 Nf2 a6 Ng4 Ke7 g3 Qf6 Bg5 Ke6 Nc3 Kd7 Bd3 Kd6 Ke2 Qe6 Bb1 Kc6 Bh6 Kd6 h4 Nc6 Kd2 Bd7 Qc2 Rh8 Na4 Na7 Rc1 Bc8 Rd1 Kd7 Ke3 Qe7 Qc1 Nf6 Rf1 Nh5 Re1 Qe8 Nf2 f6 Ke2 Qe6 Qd2 Kc7 Ng4 Qf7 Qc3 b6 Qb4 Qg6 Rh1 Nb5 Nf2 Be7 Nc3 Na7 Kf1 Kb8",
+  ];
+  const games = [];
+  for (let i = 0; i < 25; i++) {
+    const tags = new Array(80).fill(null);
+    const losses = new Array(80).fill(null);
+    const scalars = [0];
+    for (let ply = 0; ply < 80; ply++) {
+      const mine = ply % 2 === 0;
+      const moveNo = Math.floor(ply / 2) + 1;
+      losses[ply] = mine ? (moveNo > 32 ? 120 : 8) : 0;
+      scalars.push(scalars[ply] + (mine ? -losses[ply] : losses[ply]));
+    }
+    for (const mv of [20, 28, 36]) {
+      if (i % 3 === 0 || mv !== 20) tags[(mv - 1) * 2] = mv === 28 ? "??" : "?";
+    }
+    const sans = ECOS[i % 2];
+    games.push({
+      id: "s3g" + i, t: 1758000000000 + i, white: "hxddh", black: "rival" + i,
+      date: "2026.09.0" + ((i % 9) + 1), event: "Rated blitz",
+      result: i % 2 ? "1-0" : "0-1", plies: 80, sans,
+      fen: "", side: "w", outcome: i % 2 ? "win" : "loss",
+      // six openings and five motifs: every section of the page at its
+      // longest, which is what made the card taller than the window
+      eco: ["C70", "D35", "B20", "A00", "E60", "C00"][i % 6],
+      ecoName: ["Ruy Lopez", "Queen's Gambit Declined", "Sicilian Defense", "Polish Opening",
+        "King's Indian Defense", "French Defense"][i % 6],
+      motifs: { [(28 - 1) * 2]: "fork", [(36 - 1) * 2]: ["pin", "skewer", "discovered", "double"][i % 4] },
+      an: { acc: { w: 60, b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars,
+        bests: new Array(81).fill(null), budget: 200 },
+    });
+  }
+  const seed = JSON.stringify({ v: 1, names: ["hxddh"], games });
+  const openAt = async (viewport, mode, tab, panelOpen = "1") => {
+    const ctx = await browser.newContext({ viewport, locale: "zh-CN" });
+    await ctx.addInitScript(([lib, m, tb, po]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: m, langId: "zh-CN", sideTab: tb, soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", po);
+      localStorage.setItem("chess.v1.library", lib);
+    }, [seed, mode, tab, panelOpen]);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+    return { ctx, page, errs };
+  };
+  const settingsOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+
+  // §3c —— 两个窗口都要能点到弹窗的最后一行，而且是用滚轮滚过去的，不是脚本
+  // 替人 scrollIntoView（#app 是 overflow: hidden，脚本滚得动它，人滚不动）
+  for (const viewport of [{ width: 1400, height: 900 }, { width: 540, height: 900 }]) {
+    const tag = viewport.width + "×" + viewport.height;
+    const { ctx, page, errs } = await openAt(viewport, "pvp", "record");
+    await page.click("#lib-diagnose");
+    await page.waitForTimeout(900);
+    const geo = () => page.evaluate(() => {
+      const card = document.querySelector("#lib-modal .modal").getBoundingClientRect();
+      const rows = document.querySelectorAll("#lib-diag [data-diag-pick]");
+      const last = rows[rows.length - 1];
+      const r = last.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const close = document.getElementById("lib-modal-close").getBoundingClientRect();
+      const hitClose = document.elementFromPoint(close.left + close.width / 2, close.top + close.height / 2);
+      return {
+        cardTop: card.top, cardBottom: card.bottom, vh: innerHeight,
+        lastTop: r.top, lastBottom: r.bottom,
+        lastReachable: !!hit && (hit === last || last.contains(hit)),
+        closeReachable: !!hitClose && hitClose.id === "lib-modal-close",
+        paneScroll: document.getElementById("pane-record").scrollTop,
+        lastPick: last.dataset.diagPick,
+      };
+    });
+    const g0 = await geo();
+    assert(g0.cardTop >= 0 && g0.cardBottom <= g0.vh,
+      tag + "：诊断卡片整张在窗口里（" + Math.round(g0.cardTop) + "–" + Math.round(g0.cardBottom) + " / " + g0.vh + "）");
+    assert(g0.closeReachable, tag + "：一打开，「关闭」就点得到");
+    // 滚轮在卡片上往下滚到底
+    const card = await page.$("#lib-modal .modal");
+    const cb = await card.boundingBox();
+    await page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2);
+    for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, 400); await page.waitForTimeout(40); }
+    await page.waitForTimeout(300);
+    const g1 = await geo();
+    assert(g1.lastReachable, tag + "：滚到底，最后一行开局点得到（y=" + Math.round(g1.lastTop) + "）");
+    assert(g1.closeReachable, tag + "：滚到底，「关闭」也还在、点得到");
+    assert(g1.paneScroll === g0.paneScroll, tag + "：滚轮滚的是弹窗，不是背后的面板（" + g0.paneScroll + " → " + g1.paneScroll + "）");
+    // 真点一下最后一行：那一组棋的列表打开
+    const lastBox = await page.evaluate(() => {
+      const rows = document.querySelectorAll("#lib-diag [data-diag-pick]");
+      const r = rows[rows.length - 1].getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await page.mouse.click(lastBox.x, lastBox.y);
+    await page.waitForTimeout(500);
+    assert(await page.isVisible("#lib-list-modal"),
+      tag + "：点最后一行，开的是那一组棋的列表");
+    assert(errs.length === 0, tag + "：没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // toast 在弹窗和它的模糊背景之上
+  {
+    const { ctx, page } = await openAt({ width: 1400, height: 900 }, "pvp", "record");
+    const z = await page.evaluate(() => ({
+      toast: Number(getComputedStyle(document.getElementById("toast")).zIndex),
+      modals: [...document.querySelectorAll(".modal-bg")].map((m) => Number(getComputedStyle(m).zIndex) || 0),
+    }));
+    assert(z.toast > Math.max(...z.modals), "toast 的层级在所有弹窗之上（" + z.toast + " > " + Math.max(...z.modals) + "）");
+    await ctx.close();
+  }
+
+  // §3d —— 做题、教学里从棋谱库点一局：切到双人复盘，棋盘上就是那一局
+  for (const mode of ["puzzle", "learn"]) {
+    const { ctx, page, errs } = await openAt({ width: 1400, height: 900 }, mode, "record");
+    await page.click("#lib-open");
+    await page.waitForTimeout(400);
+    const id = await page.getAttribute("#lib-list button[data-lib]", "data-lib");
+    await page.click("#lib-list button[data-lib]");
+    await page.waitForTimeout(900);
+    // whatever the trainer left on the main board may be asked about first
+    if (await page.isVisible("#confirm-ok")) {
+      await page.click("#confirm-ok");
+      await page.waitForTimeout(600);
+    }
+    const st = await settingsOf(page);
+    const moves = await page.evaluate(() => document.querySelectorAll("#move-list .mlmove:not(.mlgap)").length);
+    assert(st.mode === "pvp", mode + "：点库里的一局，自动切到双人复盘（mode=" + st.mode + "）");
+    assert(moves === 80, mode + "：棋盘上就是那一局（" + moves + " 半着，" + id + "）");
+    assert(!(await page.isVisible("#lib-list-modal")), mode + "：列表关上了");
+    assert(errs.length === 0, mode + "：没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // §3d（Codex on #79）—— 在教学里点库里的一局、再在「替换当前对局」上点取消：
+  // 教学原样回来，停在刚才那一步，而不是从这一课的第一步重来
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript((lib) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.v1.library", lib);
+      // a game in progress on the main board, so the load has to ask first
+      localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+    }, seed);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1500);
+    const task = () => page.evaluate(() => (document.getElementById("lesson-task") || {}).textContent || "");
+    const first = await task();
+    // lesson 1's first step asks for e4: do it, so the lesson is one step in
+    const pt = await page.evaluate(() => {
+      const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+      return { x: r.left + 4.5 * z, y: r.top + 4.5 * z };
+    });
+    await page.mouse.click(pt.x, pt.y);
+    await page.waitForTimeout(1200);
+    const before = await task();
+    await page.click("#tab-record");
+    await page.waitForTimeout(300);
+    await page.click("#lib-open");
+    await page.waitForTimeout(400);
+    await page.click("#lib-list button[data-lib]");
+    await page.waitForTimeout(900);
+    const asked = await page.isVisible("#confirm-cancel");
+    if (asked) { await page.click("#confirm-cancel"); await page.waitForTimeout(600); }
+    await page.click("#tab-play");
+    await page.waitForTimeout(300);
+    const after = await task();
+    const st = await settingsOf(page);
+    assert(asked && before !== first, "教学里点库里的一局，先问要不要替换棋盘上那一局（已走过第一步）");
+    assert(st.mode === "learn" && after === before,
+      "取消之后教学原样回来，停在刚才那一步，不从第一步重来（「" + before.slice(0, 20) + "」→「" + after.slice(0, 20) + "」）");
+    assert(errs.length === 0, "取消：没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // §3e —— 从诊断的「第 N 回合」「母题」行筛出来的局，打开停在那一手，侧栏在对局页
+  for (const kind of ["peak", "motif"]) {
+    const { ctx, page, errs } = await openAt({ width: 1400, height: 900 }, "pvp", "record");
+    await page.click("#lib-diagnose");
+    await page.waitForTimeout(900);
+    const pick = await page.evaluate((k) => {
+      const b = [...document.querySelectorAll("#lib-diag [data-diag-pick]")]
+        .find((x) => JSON.parse(x.dataset.diagPick).kind === k);
+      if (!b) return null;
+      b.click();
+      return JSON.parse(b.dataset.diagPick);
+    }, kind);
+    await page.waitForTimeout(500);
+    assert(!!pick, kind + "：诊断里有这一行", JSON.stringify(pick));
+    await page.click("#lib-list button[data-lib]");
+    await page.waitForTimeout(900);
+    const r = await page.evaluate(() => {
+      const moves = [...document.querySelectorAll("#move-list .mlmove:not(.mlgap)")];
+      return {
+        at: moves.findIndex((b) => b.classList.contains("current")) + 1,
+        total: moves.length,
+        tab: document.getElementById("tab-play").getAttribute("aria-selected"),
+      };
+    });
+    // 第 28 回合白方那一手是第 55 半着；第 20、36 回合是 39、71
+    const want = kind === "motif" ? 55 : (pick.value - 1) * 2 + 1;
+    assert(r.at === want, kind + "：打开停在出问题的那一手（第 " + r.at + " 半着，应为 " + want + "，共 " + r.total + "）");
+    assert(r.tab === "true", kind + "：侧栏切到了对局页");
+    assert(errs.length === 0, kind + "：没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+}
+
+// --- 18. 7.6 §3b：评估曲线不在隐藏的时候按 0×0 去画 ---------------------------
+{
+  // 一局分析过的库棋。7.5 实测：曲线在它所在的标签页隐藏时被重画，画布成了
+  // 1×1，再被样式表拉成 60px 高的一整块红色 —— 从棋谱库打开一局，或者在设置页
+  // 换语言，都会这样。
+  // long enough that the curve is drawn at all (Review.longEnough)
+  const sans = "e4 e5 Nf3 Nc6 Bb5 a6 b4 Bc5 Be2 Bd4 Bb5 b6 Nc3 Rb8 a3 Nf6 Kf1 Bc5 Ne1 d6 g4 h5 Qe2 Kd7 f3 Qf8 a4 Ke7 Qf2 Nh7 Ba3 Nd8 Qg2 Ng5 Bd7 Nge6 Rc1 f6 b5 Bb4";
+  const n = sans.split(" ").length;
+  const tags = new Array(n).fill(null); tags[6] = "??"; tags[13] = "?";
+  const scalars = [0];
+  for (let i = 0; i < n; i++) scalars.push(scalars[i] + (i === 6 ? -300 : i === 13 ? 150 : (i % 2 ? -10 : 10)));
+  const game = {
+    id: "curve1", t: 1758000000000, white: "hxddh", black: "rival", date: "2026.09.01",
+    event: "Rated blitz", result: "1-0", plies: n, sans, fen: "", side: "w", outcome: "win", motifs: {},
+    an: { acc: { w: 80, b: 70 }, acpl: { w: 30, b: 40 }, tags, losses: new Array(n).fill(5), scalars,
+      bests: new Array(n + 1).fill(null), budget: 200 },
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript((lib) => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.library", lib);
+  }, JSON.stringify({ v: 1, names: ["hxddh"], games: [game] }));
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(900);
+  if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+  // the backing store is the curve's laid-out size in device pixels, and it
+  // has ink in more than one colour — a 1×1 store stretched is one colour
+  const curve = () => page.evaluate(() => {
+    const c = document.getElementById("eval-curve");
+    const dpr = window.devicePixelRatio || 1;
+    const colours = new Set();
+    if (c.width > 1 && c.height > 1) {
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      for (let i = 0; i < d.length; i += 4 * 37) if (d[i + 3]) colours.add(d[i] + "," + d[i + 1] + "," + d[i + 2]);
+    }
+    return { w: c.width, h: c.height, cw: Math.round(c.clientWidth * dpr), ch: Math.round(c.clientHeight * dpr),
+      colours: colours.size, visible: c.clientWidth > 0 };
+  });
+  const sized = (r) => r.visible && r.w === r.cw && r.h === r.ch && r.w > 50 && r.colours > 2;
+
+  // 1) 从「记录」页打开库里这一局
+  await page.click("#lib-open");
+  await page.waitForTimeout(400);
+  await page.click("#lib-list button[data-lib]");
+  await page.waitForTimeout(900);
+  if (!(await page.evaluate(() => document.getElementById("tab-play").getAttribute("aria-selected") === "true"))) {
+    await page.click("#tab-play");
+    await page.waitForTimeout(400);
+  }
+  let r = await curve();
+  assert(sized(r), "从记录页打开一局，曲线按自己的尺寸画出来（" + JSON.stringify(r) + "）");
+
+  // 2) 在设置页换语言，再回对局页
+  await page.click("#tab-setup");
+  await page.waitForTimeout(200);
+  await page.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
+  await page.waitForTimeout(400);
+  await page.click("#tab-play");
+  await page.waitForTimeout(400);
+  r = await curve();
+  assert(sized(r), "在设置页换了语言再回来，曲线不是一块拉伸的单色（" + JSON.stringify(r) + "）");
+
+  // 3) 标签页藏着的时候窗口变了尺寸，回来时按新尺寸画
+  await page.click("#tab-setup");
+  await page.waitForTimeout(200);
+  await page.setViewportSize({ width: 800, height: 900 }); // the panel becomes a full-width sheet
+  await page.waitForTimeout(400);
+  await page.click("#tab-play");
+  await page.waitForTimeout(400);
+  r = await curve();
+  assert(sized(r), "藏着的时候窗口变了，回来时按新宽度重画（" + JSON.stringify(r) + "）");
+
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }

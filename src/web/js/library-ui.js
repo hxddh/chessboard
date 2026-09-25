@@ -40,8 +40,8 @@ export function createLibraryUI(d) {
   const {
     doc, store, Persist, game, t, tf, toast, sync,
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
-    plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
-    saveSettings, stopLiveAnalysis, withMotifs,
+    leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
+    saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
   } = d;
   const Dlg = ChessDialog;
   const Fide = ChessFide;
@@ -288,6 +288,17 @@ export function createLibraryUI(d) {
       run.plies = fens.length;
       renderLibrary();
     }
+    return libRecord(fens, sans, scalars, bests, budget);
+  }
+
+  /**
+   * The `an` record (and the miner's view of it) from one pass's arrays.
+   *
+   * Split out of analyseLibraryGame (v7-6-plan §1c) so a 精析 on the board can file
+   * its result into the library entry it came from through the same code —
+   * the same tags, motifs and accuracy a library pass would have written.
+   */
+  function libRecord(fens, sans, scalars, bests, budget) {
     const tags = sans.map((_, i) => {
       const a = scalars[i], b = scalars[i + 1];
       if (a == null || b == null) return null;
@@ -396,6 +407,8 @@ export function createLibraryUI(d) {
       store.session.libRun = null;
       renderLibrary();
       renderLibList();
+      // 7.6 §1a: 持续分析 stood aside for the pass (liveAllowed); pick it up
+      if (store.session.liveOn) sync();
     }
     if (!r) { toast(t("lib.deepCut"), "fix"); return; }
     entry.an = r.an;
@@ -406,6 +419,39 @@ export function createLibraryUI(d) {
     renderLibList();
     sync();
     toast(tf("lib.deepDone", [libraryLabel(entry), m.withdrawn, m.revised, m.added]));
+  }
+
+  /**
+   * A pass run on the board, over a game that is in the library (7.6 §1c).
+   *
+   * Opening a library game and pressing 精析 used to leave the library where
+   * it was: budget 200 and the old accuracy in the entry, 400 and the new one
+   * on screen, and the diagnosis and the drills still reading the shallower
+   * look. Now the deeper pass is filed back exactly as 「再深一遍」 files its
+   * own — record, then revise and extend the drills — and a shallower or
+   * equal one changes nothing. Matched by moves and start position, not by
+   * how the game got onto the board.
+   * @param {{fens: string[], sans: string[], scalars: number[], bests: string[], budget: number}} p
+   * @param {boolean} mine run the library's miner (false when the board's own
+   *   miner already took this pass)
+   * @returns {boolean} whether an entry was updated
+   */
+  function adoptBoardAnalysis(p, mine) {
+    if (!p || !Array.isArray(p.sans) || !p.sans.length || store.session.libRun) return false;
+    // a hole is a search that did not answer; the library never files those
+    if (p.scalars.some((x) => x == null)) return false;
+    const text = p.sans.join(" ");
+    const entry = store.session.library.find((g) => g && g.sans === text && !g.unplayable &&
+      new Chess(g.fen || undefined).fen() === p.fens[0]);
+    if (!entry || (entry.an && (entry.an.budget || LIB_BUDGET) >= p.budget)) return false;
+    const r = libRecord(p.fens, p.sans, p.scalars, p.bests, p.budget);
+    entry.an = r.an;
+    entry.motifs = r.motifs;
+    if (mine) mineLibraryGame(entry, r.pass, p.budget);
+    saveLibrary();
+    renderLibrary();
+    renderLibList();
+    return true;
   }
 
   async function runLibraryPass() {
@@ -461,6 +507,8 @@ export function createLibraryUI(d) {
       store.session.libRun = null;
       saveLibrary();
       renderLibrary();
+      // 7.6 §1a: 持续分析 stood aside for the pass (liveAllowed); pick it up
+      if (store.session.liveOn) sync();
       if (run.failed) toast(t("lib.passCut"), "fix");
       if (done && mined) toast(tf("lib.minedDone", [done, mined]));
       if (done && !store.ui.appForeground) {
@@ -468,6 +516,29 @@ export function createLibraryUI(d) {
           body: tf("ntf.libraryDone", [done]) + (mined ? " · " + tf("msg.mined", [mined]) : "") });
       }
     }
+  }
+
+  /**
+   * `items` as <p> lines in `box`, reusing the ones already there: the text
+   * of a progress line changes every ply, the nodes need not.
+   */
+  function putLines(box, items) {
+    while (box.childElementCount > items.length) box.lastElementChild.remove();
+    items.forEach((it, i) => {
+      let p = box.children[i];
+      if (!p || p.tagName !== "P") {
+        p = doc.createElement("p");
+        if (box.children[i]) box.children[i].replaceWith(p);
+        else box.appendChild(p);
+      }
+      if (p.className !== it.cls) p.className = it.cls;
+      setText(p, it.text);
+    });
+  }
+
+  /** textContent, written only when it differs (see renderLibrary). */
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
   }
 
   /** The library section in the 记录 pane. */
@@ -482,28 +553,32 @@ export function createLibraryUI(d) {
     if (meta) { meta.hidden = !list.length; meta.textContent = tf("lib.count", [list.length]); }
     const namesRow = doc.getElementById("lib-names-row");
     if (namesRow) namesRow.hidden = !list.length;
-    body.replaceChildren();
-    const line = (text, cls) => {
-      const p = doc.createElement("p");
-      p.className = cls || "hint";
-      p.textContent = text;
-      body.appendChild(p);
-    };
+    // 7.6 (v7-6-plan §2): the counts stay above the buttons and are updated
+    // in place; every line that comes and goes goes to #lib-status, under
+    // them. This runs on the name field's first `change` — which is focus
+    // leaving it, i.e. the mouse-down of the click on 分析 — and once a ply
+    // during a pass, under 暂停分析: nothing above those buttons may change
+    // height here, or WebKit loses the click.
+    const lines = [];
+    const line = (text, cls) => { lines.push({ text, cls: cls || "hint" }); };
     if (!list.length) {
-      line(t("lib.empty"));
+      putLines(body, [{ text: t("lib.empty"), cls: "hint" }]);
     } else {
       const claimed = list.filter((g) => g.side).length;
-      const row = doc.createElement("div");
-      row.className = "stat-row";
-      const k = doc.createElement("span");
-      k.className = "stat-k";
-      k.textContent = tf("lib.claimed", [claimed]);
-      const v = doc.createElement("span");
-      v.className = "stat-v num";
-      v.textContent = [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
-        .filter(Boolean).join(" · ");
-      row.append(k, v);
-      body.appendChild(row);
+      let row = body.firstElementChild;
+      if (!row || row.className !== "stat-row" || body.childElementCount !== 1) {
+        row = doc.createElement("div");
+        row.className = "stat-row";
+        const k = doc.createElement("span");
+        k.className = "stat-k";
+        const v = doc.createElement("span");
+        v.className = "stat-v num";
+        row.append(k, v);
+        body.replaceChildren(row);
+      }
+      setText(row.children[0], tf("lib.claimed", [claimed]));
+      setText(row.children[1], [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
+        .filter(Boolean).join(" · "));
       const run = store.session.libRun;
       if (run && run.deep) line(tf("lib.deepWorking", [run.name || "", run.plies ? run.ply + "/" + run.plies : ""]));
       else if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
@@ -518,18 +593,23 @@ export function createLibraryUI(d) {
       const shallow = Library.deepenable(list, LIB_DEEP_BUDGET).length;
       if (!run && shallow) line(tf("lib.deepable", [shallow]));
     }
+    const status = doc.getElementById("lib-status");
+    if (status) putLines(status, lines);
     const an = doc.getElementById("lib-analyse");
     if (an) {
       an.hidden = !queued && !store.session.libRun;
-      an.textContent = store.session.libRun ? t("lib.pause")
-        : queued ? tf("lib.analyseEta", [queued, libEta(queuedGames)]) : tf("lib.analyse", [queued]);
+      // only when it differs: writing the same label again still swaps the
+      // button's text node, and that node is what a press on the label was
+      // pressed on — this runs once a ply during a pass, under 暂停分析
+      setText(an, store.session.libRun ? t("lib.pause")
+        : queued ? tf("lib.analyseEta", [queued, libEta(queuedGames)]) : tf("lib.analyse", [queued]));
     }
     const dg = doc.getElementById("lib-diagnose");
     if (dg) dg.hidden = analysed.length < LIB_MIN_GAMES;
     const op = doc.getElementById("lib-open");
     if (op) {
       op.hidden = !list.length;
-      op.textContent = tf("lib.all", [list.length]);
+      setText(op, tf("lib.all", [list.length]));
     }
   }
 
@@ -638,19 +718,33 @@ export function createLibraryUI(d) {
     const pick = store.ui.libPick;
     if (!pick) return true;
     if (pick.kind === "eco") return g.eco === pick.value;
+    return libPickPly(g) != null;
+  }
+
+  /**
+   * The move a motif or move-number filter is about, in this game.
+   *
+   * The first of this player's moves on the move number the mistakes cluster
+   * on, or the first one the motif caught them with. It is both the list's
+   * test (a game matches when it has such a move) and — 7.6 §3e — where
+   * the game opens — one walk over the arrays, so the move the game opens on
+   * is the very move that put it in the list. An opening filter names no
+   * move, and neither does no filter: null.
+   * @returns {number|null} the index of the move, as in `an.tags`
+   */
+  function libPickPly(g) {
+    const pick = store.ui.libPick;
+    if (!pick || (pick.kind !== "motif" && pick.kind !== "peak")) return null;
     const start = g.fen ? g.fen.trim().split(/\s+/) : [];
     const first = start[1] === "b" ? "b" : "w";
     const other = first === "w" ? "b" : "w";
     const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
     for (let i = 0; i < tags.length; i++) {
       if ((i % 2 === 0 ? first : other) !== g.side) continue;
-      if (pick.kind === "motif") {
-        if (g.motifs && g.motifs[i] === pick.value) return true;
-      } else if (pick.kind === "peak") {
-        if ((tags[i] === "?" || tags[i] === "??") && libMoveNo(g, i) === pick.value) return true;
-      }
+      if (pick.kind === "motif" && g.motifs && g.motifs[i] === pick.value) return i;
+      if (pick.kind === "peak" && (tags[i] === "?" || tags[i] === "??") && libMoveNo(g, i) === pick.value) return i;
     }
-    return false;
+    return null;
   }
 
   /** Which slice of the library the list is showing. */
@@ -805,9 +899,22 @@ export function createLibraryUI(d) {
   async function loadFromLibrary(id) {
     const entry = libEntryById(id);
     if (!entry) return;
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
+    // read before the list closes: the filter is what says which move matters
+    const ply = libPickPly(entry);
     closeLibList();
-    return loadLibraryEntry(entry);
+    // 7.6 §3d: from 教学 or 做题 this used to refuse with a toast — one the
+    // dialog's blurred backdrop covered, so the click simply did nothing, and
+    // the daily plan's last step leaves people in exactly that mode. It now
+    // does what 「看那局棋」 does: leave the trainer, open the game for review,
+    // and put the trainer back as it was if the load is refused.
+    const back = leaveTrainer();
+    const ok = await loadLibraryEntry(entry);
+    if (!ok) { back(); return false; }
+    // 7.6 §3e: a game found through 「第 10 回合」 or a motif opens on that
+    // move, not at its end — the same one-ply-later rule as 「看那局棋」, so
+    // the cursor is on the move the move list marks, not the moment before
+    if (ply != null) { setViewIndex(ply + 1); saveGame(); sync(); }
+    return true;
   }
 
   /**
@@ -832,7 +939,11 @@ export function createLibraryUI(d) {
     store.game.recordedId = null;
     invalidateEngine();
     const an = entry.an;
-    store.session.analysis = an && Array.isArray(an.scalars) && Array.isArray(an.tags) ? {
+    // a board pass of this very game at least as deep as the entry's (7.6
+    // §1c) carries the engine lines too, which the library never stores
+    const kept = recallAnalysis();
+    if (kept && (!an || (kept.budget || 0) >= (an.budget || LIB_BUDGET))) store.session.analysis = kept;
+    else store.session.analysis = an && Array.isArray(an.scalars) && Array.isArray(an.tags) ? {
       sig: game.pgn(),
       scalars: an.scalars,
       tags: an.tags,
@@ -843,6 +954,9 @@ export function createLibraryUI(d) {
     } : null;
     saveSettings();
     saveGame();
+    // the game and its review are on the 对局 tab; opened from 记录 the board
+    // changed while the panel went on showing the list it came from (7.6 §3e)
+    setSideTab("play", { top: true });
     sync();
     toast(tf("lib.loaded", [libraryLabel(entry)]));
     return true;
@@ -1191,7 +1305,7 @@ export function createLibraryUI(d) {
 
   return {
     LIB_MIN_GAMES, fillOpenings,
-    closeDiagnosis, closeLibList, deepenLibraryGame, importPgnToLibrary,
+    adoptBoardAnalysis, closeDiagnosis, closeLibList, deepenLibraryGame, importPgnToLibrary,
     libNamesFrom, loadFromLibrary, loadLibraryEntry, openDiagnosis, openLibList,
     reclaimLibrary, renderLibList, renderLibrary, runLibraryPass, saveLibrary,
   };

@@ -549,13 +549,21 @@ function mainlineSans(root) {
   const N = 1000;
   const text = big(N);
   const now = () => performance.now();
-  let last = now(), worst = 0, pauses = 0;
-  const chunks = P.splitGames(text);
-  const games = await P.parseGamesAsync(chunks, {
-    now,
-    pause: async () => { worst = Math.max(worst, now() - last); pauses++; await null; last = now(); },
-  });
-  worst = Math.max(worst, now() - last);
+  // best of three: on a busy CI runner one garbage-collection pause can push a
+  // single slice past 50ms (a shared macOS runner measured 66ms once), while
+  // the regression this guards — a parse that never yields — costs seconds
+  // on every run, so the minimum still catches it
+  let worst = Infinity, pauses = 0, chunks = [], games = [];
+  for (let run = 0; run < 3 && worst >= 50; run++) {
+    let last = now(), w = 0, p = 0;
+    chunks = P.splitGames(text);
+    games = await P.parseGamesAsync(chunks, {
+      now,
+      pause: async () => { w = Math.max(w, now() - last); p++; await null; last = now(); },
+    });
+    w = Math.max(w, now() - last);
+    if (w < worst) { worst = w; pauses = p; }
+  }
   const bad = Array.from({ length: N }, (_, k) => k).filter((k) => k % 97 === 13).length;
   assert(chunks.length === N && games.length === N, `${N} 局切出 ${chunks.length} 段、解析出 ${games.length} 个槽位`);
   assert(games.filter((g) => !g).length === bad, `坏的 ${bad} 局是 null，其余照常 —— 一局坏不连累别的`);
@@ -565,7 +573,7 @@ function mainlineSans(root) {
   // splitting stays linear: it looked for the move number in all the text
   // before every boundary, so 4× the games cost ~16× the time (8000 局 9.4s)
   const time = (n) => { const t = big(n); let best = Infinity;
-    for (let r = 0; r < 2; r++) { const t0 = now(); P.splitGames(t); best = Math.min(best, now() - t0); } return best; };
+    for (let r = 0; r < 3; r++) { const t0 = now(); P.splitGames(t); best = Math.min(best, now() - t0); } return best; };
   const s1 = time(1500), s4 = time(6000);
   assert(s4 / s1 < 8, `切分是线性的：1500 局 ${s1.toFixed(0)}ms，6000 局 ${s4.toFixed(0)}ms（比值 ${(s4 / s1).toFixed(1)} < 8）`);
 }

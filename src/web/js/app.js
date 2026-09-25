@@ -1,4 +1,5 @@
 import { CHESS_ACHIEVEMENTS } from "./achievements.js";
+import { ChessAnalysisStore } from "./analysis-store.js";
 import { ChessAudio } from "./audio.js";
 import { ChessBoardView } from "./board.js";
 import { Chess } from "./chess.js";
@@ -20,7 +21,7 @@ import { CHESS_LESSONS_EN } from "./lessons-en.js";
 import { CHESS_LESSONS_JA } from "./lessons-ja.js";
 import { CHESS_LESSONS } from "./lessons.js";
 import { ChessMaterial } from "./material.js";
-import { motifOf } from "./motif.js";
+import { motifOf, puzzleMotifKey } from "./motif.js";
 import { ChessLibrary } from "./library.js";
 import { ChessMistakes } from "./mistakes.js";
 import { ChessProgress } from "./progress.js";
@@ -37,7 +38,7 @@ import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
 import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
-import { CHESS_PUZZLES } from "./puzzles.js";
+import { CHESS_PUZZLES, HAND_MOTIF_KEY } from "./puzzles.js";
 import { MINED_PUZZLES } from "./puzzles-mined.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
@@ -177,6 +178,20 @@ import { createStore } from "./store.js";
 
   /** "12… Nf6" in the live region — what just happened on the board. */
   function announceLastMove() {
+    // A puzzle or a lesson plays on its own board, not on `game`: reading
+    // `game` here left the live region on the previous game's last move for
+    // the whole of a puzzle session, and the opponent's reply was never said
+    // (7.6). The trainer's number comes from its FEN — a puzzle starts
+    // mid-game, and its history only holds the moves played since.
+    const tg = store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g
+      : store.session.mode === "learn" && store.session.learn ? store.session.learn.g : null;
+    if (tg) {
+      const last = tg.history().slice(-1)[0];
+      if (!last) return;
+      const [, turn, , , , full] = tg.fen().split(" ");
+      announce(turn === "b" ? full + ". " + last : (Number(full) - 1) + "… " + last);
+      return;
+    }
     const h = sanHistory();
     const at = h.length;
     if (!at) return;
@@ -276,6 +291,9 @@ import { createStore } from "./store.js";
       live: null,
       /** review analysis: {sig, scalars[n+1], tags[n]}; stale when sig ≠ pgn */
       analysis: null,
+      /** 7.6 §1c: finished analyses by game, as stored (analysis-store.js);
+          read from storage on first use */
+      analysesKept: null,
       /** the engine failed to start — analysis and hints are not offered, and
           the review group says why in place (5.1) */
       engineDown: false,
@@ -369,6 +387,10 @@ import { createStore } from "./store.js";
       /** Modal list picker → index of the chosen entry, or null when cancelled. */
       pickResolver: null,
       dragging: null,
+      /** 7.6: a pointer is down right now, and what waits for it to come up
+          (afterPress) — never persisted, never rendered. */
+      pointerPressed: false,
+      pressQueue: [],
       /** 摸得到的复盘 — the position under the pointer (move-list row or PV
           chip being hovered): {position, last, check} or null. Transient by
           construction: set on hover, cleared on leave, never persisted. */
@@ -649,6 +671,7 @@ import { createStore } from "./store.js";
    * that already is that move), and the line follows it.
    */
   function playVariationMove(from, to, promotion) {
+    if (refusePgnEdit()) return null;
     const at = curNode();
     if (!at) return null;
     let child;
@@ -1429,9 +1452,21 @@ import { createStore } from "./store.js";
     sync();
   }
   /**
-   * One question, asked of the page as shipped: can it start the engine and
-   * get a move? The answer goes to the native side, which records it and
-   * exits. 60 s is twice the engine's own boot timeout.
+   * The packaged app's self-test (CHESS_SELFTEST=1, see main.zig): questions
+   * asked of the page as shipped, each answered on its own, the verdict handed
+   * to the native side, which records it and exits.
+   *
+   *   engine   can it start Stockfish and get a legal move (7.5)
+   *   appdata  does the native save file take a write and give it back (7.6)
+   *   chunk    does a lazy chunk arrive over zero:// and answer a lookup (7.6)
+   *   restart  does localStorage keep a marker: every run reports the marker
+   *            it found and writes a fresh one; scripts/selftest-app.mjs
+   *            launches the app twice and checks that the second run found
+   *            the first run's (7.6)
+   *
+   * `ok` is true only when every check passes, and `err` names the ones that
+   * did not. The checks say `pass`, never `ok`: main.zig decides the exit
+   * code by looking for `"ok":true` anywhere in the report.
    */
   async function runSelftest() {
     const t0 = performance.now();
@@ -1440,20 +1475,93 @@ import { createStore } from "./store.js";
       version: typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "?",
       wasm: typeof WebAssembly === "object",
       ua: navigator.userAgent,
+      checks: {},
     };
+    const within = (p, ms, what) => Promise.race([p, new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("timeout " + Math.round(ms / 1000) + "s: " + what)), ms))]);
+    const errText = (err) => String((err && (err.message || err)) || "unknown");
+    const nonce = (tag) => tag + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+    // First, so the WebView has the whole run to commit it to disk before
+    // main.zig exits the process (see MARKER_SETTLE_MS below). The marker is
+    // outside the profile on purpose (persist.js SELFTEST_KEY).
+    const markerAt = performance.now();
+    const restart = report.checks.restart = { pass: false };
+    try {
+      restart.wrote = nonce("m");
+      const swap = Persist.swapSelftestMarker(restart.wrote);
+      restart.found = swap.found;
+      if (!swap.stored) throw new Error("localStorage did not keep the marker");
+      restart.pass = true;
+    } catch (err) { restart.err = errText(err); }
+
+    const engine = report.checks.engine = { pass: false };
+    const te = performance.now();
     try {
       if (!ChessEngine) throw new Error("no engine module");
       const start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout 60s")), 60000));
-      const mv = await Promise.race([ChessEngine.bestMove(start, "normal"), timeout]);
+      // 60 s is twice the engine's own boot timeout
+      const mv = await within(ChessEngine.bestMove(start, "normal"), 60000, "engine move");
       if (!mv || !mv.from || !mv.to) throw new Error("no move");
       const legal = new Chess(start).move({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
       if (!legal) throw new Error("illegal move " + mv.from + mv.to);
-      report.ok = true;
-      report.move = legal.san;
-    } catch (err) {
-      report.err = String((err && (err.message || err)) || "unknown");
-    }
+      engine.pass = true;
+      engine.move = report.move = legal.san;
+    } catch (err) { engine.err = errText(err); }
+    engine.ms = Math.round(performance.now() - te);
+
+    // The file is the player's whole profile (persist.js), so the marker rides
+    // on the profile as persist.js would write it, never in place of it, and
+    // the next mirror flush drops it again. A file that is there and
+    // unreadable is left alone, as persist.js leaves it (6.1). One of
+    // persist's own flushes landing between the write and the read replaces
+    // the marker, so a mismatch gets two more tries before it counts.
+    const appdata = report.checks.appdata = { pass: false };
+    try {
+      const before = await within(Host.appdataRead(), 10000, "appdataRead");
+      if (before == null) throw new Error("no native save file here (appdataRead answered null)");
+      if (before.empty) throw new Error("the save file exists and is empty; left alone");
+      if (typeof before.text === "string") {
+        let doc = null;
+        try { doc = JSON.parse(before.text); } catch (_) { doc = null; }
+        if (!Persist.isProfileDoc(doc)) throw new Error("the save file is not a readable profile; left alone");
+      }
+      for (let attempt = 1; attempt <= 3 && !appdata.pass; attempt++) {
+        const text = JSON.stringify(Object.assign(Persist.exportAll(), { selftest: nonce("a") }));
+        const wrote = await within(Host.appdataWrite(text), 10000, "appdataWrite");
+        if (wrote !== true) throw new Error("appdataWrite answered " + JSON.stringify(wrote));
+        const back = await within(Host.appdataRead(), 10000, "appdataRead");
+        appdata.attempts = attempt;
+        if (back && back.text === text) appdata.pass = true;
+        else if (attempt === 3) {
+          throw new Error("read back " + (back && typeof back.text === "string"
+            ? back.text.length + " bytes that are not what was written" : JSON.stringify(back)));
+        }
+      }
+    } catch (err) { appdata.err = errText(err); }
+
+    // the road renderOpening() takes: eco-lookup.js injects js/chunk-eco.js
+    // as a classic script over zero://, then answers from its table
+    const chunk = report.checks.chunk = { pass: false, preloaded: ChessEco.loaded() };
+    try {
+      await within(ChessEco.ready(), 15000, "chunk-eco.js");
+      const hit = ChessEco.openingForGame(["e4", "c5"]);
+      if (!hit || hit.eco !== "B20") throw new Error("1.e4 c5 looked up as " + JSON.stringify(hit));
+      chunk.pass = true;
+      chunk.name = hit.eco + " " + ChessEco.localName(hit, store.ui.langId);
+    } catch (err) { chunk.err = errText(err); }
+
+    // A WebView commits localStorage to disk on a timer of its own (Chromium's
+    // is a few seconds), and main.zig exits the moment the report arrives: a
+    // marker written just before that could be lost for a reason no player's
+    // session meets. Give it a floor.
+    const MARKER_SETTLE_MS = 6000;
+    const settle = MARKER_SETTLE_MS - (performance.now() - markerAt);
+    if (restart.pass && settle > 0) await new Promise((r) => setTimeout(r, settle));
+
+    const failed = Object.keys(report.checks).filter((k) => !report.checks[k].pass);
+    report.ok = failed.length === 0;
+    if (failed.length) report.err = failed.map((k) => k + ": " + (report.checks[k].err || "failed")).join("; ");
     report.ms = Math.round(performance.now() - t0);
     await Host.selftestReport(report);
   }
@@ -1891,7 +1999,11 @@ import { createStore } from "./store.js";
       try { return p.fen && p.solution && p.solution[0] ? motifOf(p.fen, p.solution[0], Chess) : null; } catch (_) { return null; }
     }
     if (p.cat !== "tac" && p.cat !== "real" && p.cat !== "win") return null;
-    return derivedMotif(p);
+    // A written label wins, as it does on screen (puzzleMotif). 「把车引离底线」
+    // is labelled 引离 and its first move, Re8+, also hits king and rook — so
+    // the derivation said fork and the tally counted a fork the player was
+    // never shown (7.6). A label outside the five keys counts as no motif.
+    return puzzleMotifKey(p, HAND_MOTIF_KEY, () => derivedMotif(p));
   }
   function puzzleMotif(p) {
     const hand = contentField("puzzles", p.id, "motif") || p.motif;
@@ -2464,6 +2576,12 @@ import { createStore } from "./store.js";
     const sec = document.getElementById("sec-learn");
     if (!sec) return;
     sec.hidden = store.session.mode !== "learn";
+    // the strip over the board (7.6 §3f): a lesson task, not a classic being
+    // read — the stylesheet decides where it shows, this only says there is one
+    const hasTask = store.session.mode === "learn" && !!store.session.learn;
+    appEl.classList.toggle("has-task", hasTask);
+    const strip = document.getElementById("task-strip-text");
+    if (strip) strip.textContent = hasTask ? learnTaskText() : "";
     if (store.session.mode !== "learn" || !store.session.learn) return;
     const L = curLesson();
     const doneCount = LESSONS.filter((x) => store.session.learnState.done[x.id]).length;
@@ -3024,6 +3142,46 @@ import { createStore } from "./store.js";
     return p.line || p.solution;
   }
   /**
+   * The drill an opening puzzle in progress is actually on (7.6).
+   *
+   * The trainer accepts any book move and the opponent answers from the whole
+   * tree, so a few plies in, the board can be on a different line from the
+   * one the puzzle was opened as: 1.e4 is accepted in A01's drill, and C54's
+   * can end in the Rossolimo. The title, the 「背谱完成」 toast and the credit
+   * all used to name the line it started as — so finishing the Rossolimo
+   * marked the Italian learnt. They follow the board now: the puzzle's own
+   * line while the path is still on it, else the shortest drill the path is
+   * still on, and at a leaf the line that ends there.
+   */
+  /** Every drill of this opening drill's book, in its chair. */
+  function opPool(p) {
+    const side = p.side === "b" ? "b" : undefined;
+    return p.cat === "rep" ? RepUI.drills(side === "b" ? "b" : "w")
+      : ALL_PUZZLES.filter((q) => q.cat === "op" && q.side === side);
+  }
+  function opCurrent(pz) {
+    const p = pz && pz.p;
+    if (!p || !isOpeningCat(p.cat) || !Array.isArray(pz.opPath)) return p;
+    const path = pz.opPath;
+    const onLine = (q) => path.length <= q.line.length && path.every((san, i) => q.line[i] === san);
+    if (onLine(p)) return p;
+    const side = p.side === "b" ? "b" : undefined;
+    let best = null;
+    for (const q of opPool(p)) if (onLine(q) && (!best || q.line.length < best.line.length)) best = q;
+    if (best) return best;
+    // a leaf shorter than a drill (drills.js keeps >=6 plies): name it from
+    // the book's own row, but credit the drill that was opened — a leaf that
+    // short is not a drill, so an id minted for it would be counted nowhere
+    // (not in 背下来 N/M, not by the daily plan's opening step; Codex on #79)
+    const leaf = ChessOpeningTree.nodeAt(openingTreeFor(p), path);
+    const ln = leaf && !Object.keys(leaf.children).length && leaf.lines[0];
+    if (!ln || p.cat !== "op") return p;
+    return { id: p.id, cat: "op", side,
+      nameId: ln.id, eco: ln.eco, name: ln.eco + " " + (CHESS_OPENING_NAMES[ln.id] || ln.id),
+      line: ln.sans.slice(), idea: ln.idea || "" };
+  }
+
+  /**
    * An opening drill's move, judged against the tree rather than one line.
    * @returns {boolean} true when this call handled the move entirely
    */
@@ -3064,14 +3222,30 @@ import { createStore } from "./store.js";
     }
     if (!after.length) {
       // the leaf reached is a line of its own: mark it learnt too, in the
-      // chair it was played from
+      // chair it was played from. The one the board is on is left for
+      // puzzleSolved(), which credits it with the tally and the week too.
       const leaf = ChessOpeningTree.nodeAt(tree, pz.opPath);
+      const onBoard = opCurrent(pz).id;
+      // only ids that are drills: a book row shorter than a drill has no
+      // puzzle of its own, and a key minted for it is counted nowhere
+      const drillIds = new Set(opPool(pz.p).map((q) => q.id));
       for (const ln of (leaf && leaf.lines) || []) {
         // the repertoire's rows carry their own ids (repertoire.js mints them
         // once, from the moves); the ECO book's are derived from the row
         const id = (pz.p.cat === "rep" ? ln.id : Drills.drillId(ln.eco, ln.sans.join(" ")))
           + (pz.p.side === "b" ? ":b" : "");
-        if (id !== pz.p.id && !store.session.puzzleState.solved[id]) store.session.puzzleState.solved[id] = true;
+        if (id !== onBoard && drillIds.has(id) && !store.session.puzzleState.solved[id]) {
+          store.session.puzzleState.solved[id] = true;
+        }
+      }
+      // …and so is every shorter drill the path played through from end to
+      // end — the puzzle's own line among them when it was a prefix of this
+      // one. A line the path left is not: it was not played.
+      const path = pz.opPath;
+      for (const q of opPool(pz.p)) {
+        if (q.id !== onBoard && q.line.length < path.length && q.line.every((san, i) => path[i] === san)) {
+          store.session.puzzleState.solved[q.id] = true;
+        }
       }
       puzzleSolved();
       return true;
@@ -3220,7 +3394,8 @@ import { createStore } from "./store.js";
   }
 
   function puzzleGoalText() {
-    const p = store.session.puzzle.p;
+    // an opening drill is titled by the line the board is on (7.6)
+    const p = opCurrent(store.session.puzzle);
     if (p.cat === "mine") {
       const cost = p.loss != null ? " · " + tf("pz.mineCost", [(p.loss / 100).toFixed(1)]) : "";
       return tf("pz.goalMine", [p.played]) + cost;
@@ -3529,11 +3704,13 @@ import { createStore } from "./store.js";
     store.session.puzzle.done = true;
     store.game.selection = null;
     Audio2.playWin();
+    // an opening drill is credited to the line the board is on (7.6)
+    const sp = opCurrent(store.session.puzzle);
     // a clean first-try solve retires the puzzle from review; a shaky one keeps it
-    if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(store.session.puzzle.p.id);
-    if (!store.session.puzzleState.solved[store.session.puzzle.p.id]) {
-      if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) ratePuzzleOnce(store.session.puzzle.p.id, 1);
-      store.session.puzzleState.solved[store.session.puzzle.p.id] = true;
+    if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(sp.id);
+    if (!store.session.puzzleState.solved[sp.id]) {
+      if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) ratePuzzleOnce(sp.id, 1);
+      store.session.puzzleState.solved[sp.id] = true;
       // a clean first solve counts into the lifetime tally; a solve after
       // misses already counted those misses — counting the solve too would
       // let one shaky puzzle wash its own signal out
@@ -3547,6 +3724,10 @@ import { createStore } from "./store.js";
       savePuzzleState();
       checkNewAchievements();
     }
+    // the record pane's 背下来 N/M and the tally count this solve now, not
+    // after a reload (7.6)
+    if (isOpeningCat(sp.cat)) renderRepertoire();
+    renderPuzzleTally();
     const verb = store.session.puzzle.p.cat === "mine" ? t("pz.doneMine") :
       isOpeningCat(store.session.puzzle.p.cat) ? t("pz.doneOp") :
       store.session.puzzle.p.cat === "def" ? t("pz.doneDef") :
@@ -3555,7 +3736,7 @@ import { createStore } from "./store.js";
       store.session.puzzle.p.cat === "win" || store.session.puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
     const why = store.session.puzzle.p.cat === "mine" ? mineWhy(store.session.puzzle.p) : "";
     if (store.session.puzzle.p.cat === "mine") store.session.puzzle.lineAt = 0;
-    toast("✅ " + verb + " · " + puzzleName(store.session.puzzle.p) + (why ? " · " + why : ""));
+    toast("✅ " + verb + " · " + puzzleName(sp) + (why ? " · " + why : ""));
     sync();
   }
 
@@ -3585,7 +3766,7 @@ import { createStore } from "./store.js";
     const pz = store.session.puzzle;
     const p = pz.p;
     const line = pz.g.pgn();
-    const name = puzzleName(p);
+    const name = puzzleName(opCurrent(pz));
     if (!line.trim()) return;
     // The game on the board is about to be replaced, so ask first — the same
     // question 新局 asks (7.4). Until 7.2 this button never did anything, so
@@ -3672,8 +3853,51 @@ import { createStore } from "./store.js";
     sync();
   }
 
+  /**
+   * Step out of 教学 / 做题 so a game can go on the board (7.6 §3d).
+   *
+   * The mode itself is left as it is — the load that follows sets it, and a
+   * load can be refused (the 「替换当前棋局？」 question). What is returned
+   * puts the trainer back exactly where it was for that case: the same
+   * drill, the same lesson, the same classic. Outside the trainer modes
+   * there is nothing to leave and nothing to restore.
+   * @returns {() => void}
+   */
+  function leaveTrainer() {
+    const mode = store.session.mode;
+    if (mode !== "learn" && mode !== "puzzle") return () => {};
+    // the trainer objects themselves, not their indices: restarting from an
+    // index resets a puzzle's stage, misses and hints, a lesson to its first
+    // task and a classic to its first move — so cancelling the load used to
+    // throw the training in progress away (Codex on #79). Stopping only drops
+    // these references (stopLearn also bumps the lesson's token, which just
+    // cancels a demo in flight), and a refused load changes nothing else.
+    const kept = { puzzle: store.session.puzzle, learn: store.session.learn, study: store.session.study };
+    invalidateEngine();
+    clearPreview();
+    if (mode === "puzzle") stopPuzzles(); else stopLearn();
+    return () => {
+      store.session.mode = mode;
+      if (mode === "puzzle") {
+        if (kept.puzzle) store.session.puzzle = kept.puzzle; else startPuzzles();
+      } else if (kept.study || kept.learn) {
+        store.session.learn = kept.learn;
+        store.session.study = kept.study;
+      } else startLearn();
+      sync();
+    };
+  }
+
   function nextPuzzle() {
     if (!store.session.puzzle) return;
+    // 7.6 §3g: while 今天的训练 is running, 下一题 is the plan's next step.
+    // It used to be only "the next one in this category" — so the step that
+    // had just been completed was left for whatever the category held, and an
+    // emptied review queue graduated to 一步杀 instead of to the plan's next
+    // item. Where the current step is this category, that is still the move.
+    const d = store.session.daily;
+    const step = d && d.steps[d.i];
+    if (step && !dailyStepIsHere(step) && dailyJump(step)) { store.commit("session", "sync"); return; }
     let list = puzzlesInCat(store.session.puzzle.cat);
     if (store.session.puzzle.cat === "review") {
       // a clean re-solve shrinks the queue; graduate to m1 when it empties
@@ -3836,7 +4060,7 @@ import { createStore } from "./store.js";
     // opening drills are rote memorisation without the "why" — show the idea
     const ideaEl = document.getElementById("puzzle-idea");
     if (ideaEl) {
-      const idea = puzzleIdea(store.session.puzzle.p);
+      const idea = puzzleIdea(opCurrent(store.session.puzzle));
       ideaEl.hidden = !idea;
       ideaEl.textContent = idea ? t("pz.idea") + " · " + idea : "";
     }
@@ -3961,7 +4185,13 @@ import { createStore } from "./store.js";
   function liveAllowed() {
     return store.session.liveOn && ChessEngine && !store.session.engineDown &&
       (store.session.mode === "ai" || store.session.mode === "pvp") &&
-      !store.session.editor && !store.session.analyzing && !store.session.engineThinking;
+      !store.session.editor && !store.session.analyzing && !store.session.engineThinking &&
+      // 7.6 §1a: a library pass (and 再深一遍, which runs under the same
+      // token) owns the engine too. Without this, any sync during the pass
+      // re-armed `go infinite`, which holds the exclusive lock until it is
+      // stopped — and nothing stopped it, so the pass's next analyze() waited
+      // forever. The pass ends with a sync(), which picks the line back up.
+      !store.session.libRun;
   }
   function stopLiveAnalysis() {
     const l = store.session.live;
@@ -3984,7 +4214,7 @@ import { createStore } from "./store.js";
     }
     if (!liveAllowed()) {
       stopLiveAnalysis();
-      if (el && !store.session.liveOn) { el.hidden = true; el.replaceChildren(); }
+      if (el && !store.session.liveOn) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
       return;
     }
     const fen = viewGame().fen();
@@ -3997,33 +4227,82 @@ import { createStore } from "./store.js";
       if (!rec.raf) rec.raf = requestAnimationFrame(() => { rec.raf = 0; renderLiveAnalysis(rec); });
     });
     store.session.live = rec;
-    if (el) { el.hidden = false; el.replaceChildren(); }
+    // the frame for this search goes up at once, empty: rows for every line
+    // it will report, so the first info — and every one after it — only
+    // writes text into boxes that are already their final size
+    if (el) { el.hidden = false; paintLive(el, rec); }
   }
   function renderLiveAnalysis(rec) {
     const el = document.getElementById("live-line");
     if (!el || store.session.live !== rec || !rec.info) return;
     el.hidden = false;
-    el.replaceChildren();
-    const turn = rec.info.turn;
-    const head = document.createElement("span");
-    head.className = "pv-label";
-    head.textContent = t("act.live") + " · " + t("an.depth") + " " + (rec.info.depth || 0);
-    el.appendChild(head);
-    rec.info.lines.forEach((l, n) => {
-      const row = document.createElement("div");
-      row.className = "pv-alt-row";
-      const lab = document.createElement("span");
-      lab.className = "pv-label";
-      lab.textContent = (rec.info.lines.length > 1 ? tf("an.line", [n + 1]) + " · " : "") + winLabel(l, turn);
-      row.appendChild(lab);
-      sansOf(rec.fen, l.pv, 8).forEach((san, k) => {
-        const sp = document.createElement("span");
-        sp.className = "pv-chip pv-alt";
-        writeSan(sp, san, k % 2 === 0 ? turn : (turn === "w" ? "b" : "w"));
-        row.appendChild(sp);
-      });
-      el.appendChild(row);
-    });
+    paintLive(el, rec);
+  }
+  /**
+   * #live-line in place (7.6, v7-6-plan §2). This runs every animation frame
+   * while a search is reporting. It used to replaceChildren() the whole
+   * block, and the block changed height as lines arrived and as their moves
+   * wrapped or stopped wrapping: with MultiPV 3, 新局 under it jumped 22px
+   * several times a second, and a button that moves between mouse-down and
+   * mouse-up loses the click on WebKit. Now: one head and exactly
+   * `rec.multipv` rows, built once per line count, and a frame only rewrites
+   * their text; and the block keeps the tallest height it has had at this
+   * width. The rows still wrap as before — eight moves are worth two lines —
+   * but a line that gets shorter, or a new search starting empty, no longer
+   * pulls everything under it up. It grows until the lines are as long as
+   * they get (a second or so into a search) and then stands still.
+   */
+  function paintLive(el, rec) {
+    const n = rec.multipv || 1;
+    const head0 = el.firstElementChild;
+    if (el.childElementCount !== n + 1 || !head0 || head0.tagName !== "SPAN") {
+      const head = document.createElement("span");
+      head.className = "pv-label";
+      const rows = [];
+      for (let i = 0; i < n; i++) {
+        const row = document.createElement("div");
+        row.className = "pv-alt-row";
+        const lab = document.createElement("span");
+        lab.className = "pv-label";
+        row.appendChild(lab);
+        rows.push(row);
+      }
+      el.replaceChildren(head, ...rows);
+      el.style.minHeight = "";
+    }
+    const info = rec.info;
+    const turn = info ? info.turn : (rec.fen.split(" ")[1] === "b" ? "b" : "w");
+    setText(el.firstElementChild, t("act.live") + " · " + t("an.depth") + " " + ((info && info.depth) || 0));
+    for (let i = 0; i < n; i++) {
+      const row = el.children[i + 1];
+      const l = info && info.lines[i];
+      setText(row.firstElementChild, l ? (n > 1 ? tf("an.line", [i + 1]) + " · " : "") + winLabel(l, turn) : "");
+      const sans = l ? sansOf(rec.fen, l.pv, 8) : [];
+      while (row.childElementCount - 1 > sans.length) row.lastElementChild.remove();
+      for (let k = 0; k < sans.length; k++) {
+        let sp = row.children[k + 1];
+        if (!sp) {
+          sp = document.createElement("span");
+          sp.className = "pv-chip pv-alt";
+          row.appendChild(sp);
+        }
+        const color = k % 2 === 0 ? turn : (turn === "w" ? "b" : "w");
+        if (sp.dataset.san !== color + sans[k]) { sp.dataset.san = color + sans[k]; writeSan(sp, sans[k], color); }
+      }
+    }
+    // the high-water mark, per width: a wider panel wraps less, and the
+    // height kept from a narrower one would be empty space. Not while the
+    // group is collapsed (width 0) — the mark is for when it is back.
+    const w = el.clientWidth;
+    if (!w) return;
+    if (el.dataset.hwWidth !== String(w)) { el.dataset.hwWidth = String(w); el.style.minHeight = ""; }
+    const h = el.getBoundingClientRect().height;
+    if (h > (parseFloat(el.style.minHeight) || 0)) el.style.minHeight = h + "px";
+  }
+  /** textContent, written only when it differs — a same-text write still
+      replaces the text node, and still costs a layout. */
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
   }
 
   /**
@@ -4140,6 +4419,11 @@ import { createStore } from "./store.js";
     store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, budget: perMove, acc: accuracyFrom(fens, scalars) };
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
+    fileAnalysis(fens[0], h, store.session.analysis);
+    // a library game on the board: the deeper look goes back to its entry
+    // (7.6 §1c). The miner below only runs in ai mode, where the game has a
+    // "you"; anywhere else the library's own miner takes this one.
+    LibraryUI.adoptBoardAnalysis({ fens, sans: h, scalars, bests, budget: perMove }, store.session.mode !== "ai");
     recordAccuracy();
     // 错题自炼: the pass just judged every move — bank the player's ?? plies
     // as drills before the judgement scrolls away. Only in games where one
@@ -4183,6 +4467,33 @@ import { createStore } from "./store.js";
     // long enough that people go and do something else. A toast behind another
     // window is a message that was never delivered.
     if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
+  }
+
+  // --- 7.6 §1c: analyses kept across a reload --------------------------------
+  //
+  // A finished pass is filed under the line it measured (analysis-store.js),
+  // and every path that puts a game on the board asks for it back — the
+  // launch, 对局历史, 打开 and the library. Nothing here searches: a hit is
+  // the stored arrays with this game's `sig`, a miss is no analysis.
+  function analysesList() {
+    if (!store.session.analysesKept) store.session.analysesKept = ChessAnalysisStore.load(Persist.read("analyses").value);
+    return store.session.analysesKept;
+  }
+  function fileAnalysis(fen, sans, an) {
+    const next = ChessAnalysisStore.put(analysesList(), fen, sans, an, Date.now());
+    if (next === store.session.analysesKept) return;
+    store.session.analysesKept = next;
+    Persist.setJson("analyses", ChessAnalysisStore.dump(next));
+  }
+  /** The stored analysis of the line on the board, ready to use, or null. */
+  function recallAnalysis() {
+    const an = ChessAnalysisStore.find(analysesList(), baseGame().fen(), sanHistory());
+    return an ? Object.assign({}, an, { sig: game.pgn() }) : null;
+  }
+  /** Put the stored analysis of the game just loaded back; true when there was one. */
+  function restoreAnalysis() {
+    store.session.analysis = sanHistory().length ? recallAnalysis() : null;
+    return !!store.session.analysis;
   }
 
   /**
@@ -4342,8 +4653,17 @@ import { createStore } from "./store.js";
       const a = analysisFor();
       const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
       pvEl.hidden = !pv;
-      pvEl.replaceChildren();
-      if (pv) {
+      // 7.6 (v7-6-plan §2): rebuilt only when what it shows changes. This
+      // runs once a ply while a pass is in flight, over the previous
+      // analysis's line — the same line every time — and rebuilding it
+      // swapped the chip under a pointer that was mid-press for a new node:
+      // the click then went to #pv-line itself and pinned nothing.
+      const key = pv ? JSON.stringify([pv, viewGame().turn(), (a.linesAt && a.linesAt[store.game.viewIndex]) || null,
+        inModal(), store.ui.langId, !!store.session.analyzing]) : "";
+      const fresh = pvEl.dataset.key !== key;
+      pvEl.dataset.key = key;
+      if (fresh) pvEl.replaceChildren();
+      if (pv && fresh) {
         // the line used to be prose; each move is now a chip the pointer can
         // rest on — the board plays the line that far while it does
         const lab = document.createElement("span");
@@ -4407,6 +4727,7 @@ import { createStore } from "./store.js";
         accEl.textContent = t("acc.label") + " · " + part("w", t("vs.white")) + " · " + part("b", t("vs.black"));
       }
     }
+    lockPgnEdits();
   }
 
   /**
@@ -4431,14 +4752,18 @@ import { createStore } from "./store.js";
    * The third row's label is the app's own move marks rather than three long
    * words: 「?! · ? · ??」 against 「3 · 2 · 1」, label and value lining up
    * term for term, and the legend for them sits in the same panel.
+   * With 存疑标注 off the value has two terms, so the label drops its 「?!」
+   * too (7.6: three marks over two numbers read one column off).
    */
   function sideRows(sum, side) {
     const c = sum.counts[side];
     const n = (x) => (x == null ? "—" : String(x));
+    const soft = !!store.ui.showSoftMark;
     return [
       [t("rv.acc"), sum.acc[side] == null ? "—" : sum.acc[side] + "%"],
       [t("rv.acpl"), n(sum.acpl[side])],
-      [t("rv.marks"), (store.ui.showSoftMark ? [c.inaccuracy, c.mistake, c.blunder] : [c.mistake, c.blunder]).join(" · ")],
+      [t("rv.marks").split(" · ").slice(soft ? 0 : 1).join(" · "),
+        (soft ? [c.inaccuracy, c.mistake, c.blunder] : [c.mistake, c.blunder]).join(" · ")],
     ];
   }
 
@@ -4529,16 +4854,21 @@ import { createStore } from "./store.js";
         const bank = document.createElement("button");
         bank.type = "button";
         bank.className = "review-bank";
-        bank.textContent = t("rv.bank");
-        bank.title = t("rv.bankTip");
-        bank.onclick = () => bankWorst(sum.worst, bestUci);
+        // already in the book — the auto-miner banked it, or this button did:
+        // say so on the button instead of offering to bank it again (7.6)
+        const cand = worstDrill(sum.worst, bestUci);
+        const have = !!cand && store.session.mines.some((m) => m.id === cand.id);
+        bank.textContent = have ? t("rv.bankDup") : t("rv.bank");
+        bank.disabled = have;
+        bank.title = have ? "" : t("rv.bankTip");
+        if (!have) bank.onclick = () => bankWorst(sum.worst, bestUci);
         el.appendChild(bank);
       }
     }
   }
 
-  /** Bank the review's turning point into the personal book, by hand. */
-  function bankWorst(worst, bestUci) {
+  /** The drill the review's turning point would bank as, or null. */
+  function worstDrill(worst, bestUci) {
     const fen = gameAt(worst.ply).fen();
     const a = analysisFor();
     const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess,
@@ -4547,6 +4877,12 @@ import { createStore } from "./store.js";
       // …and it points back at the same game the auto-miner would have named
       { budget: (a && a.budget) || 120, src: "hand", from: boardDrillSource() });
     if (cand && a && a.pvs && typeof a.pvs[worst.ply] === "string") cand.pv = a.pvs[worst.ply];
+    return cand;
+  }
+
+  /** Bank the review's turning point into the personal book, by hand. */
+  function bankWorst(worst, bestUci) {
+    const cand = worstDrill(worst, bestUci);
     if (!cand) { toast(t("rv.bankNone"), "fix"); return; }
     if (store.session.mines.some((m) => m.id === cand.id)) { toast(t("rv.bankDup")); return; }
     const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
@@ -4615,6 +4951,14 @@ import { createStore } from "./store.js";
     const cv = document.getElementById("eval-curve");
     const a = analysisFor();
     if (!cv || !a) return;
+    // 7.6 §3b: a curve asked to draw while its tab, its panel or itself is
+    // hidden measures 0×0, and the `max(1, …)` below used to turn that into
+    // a 1×1 backing store — which the stylesheet then stretched to 60px of
+    // one blurred pixel, a solid red block after opening a library game from
+    // the 记录 tab or switching language on the 设置 tab. Nothing drawn from
+    // a box that is not laid out; the ResizeObserver on the canvas redraws it
+    // the moment it gets a size again.
+    if (!cv.clientWidth || !cv.clientHeight) return;
     const dpr = window.devicePixelRatio || 1;
     const W = Math.max(1, Math.round(cv.clientWidth * dpr));
     const H = Math.max(1, Math.round(cv.clientHeight * dpr));
@@ -4988,7 +5332,28 @@ import { createStore } from "./store.js";
     renderDailyPlan(d.steps, d.i);
   }
 
-  /** Take the player to where the current step happens. Invited, not automatic. */
+  /**
+   * Is the puzzle on the board already where this step is done?
+   *
+   * The category steps are, when their category is the one being worked
+   * through — the next puzzle in it is the plan's next puzzle too. A motif
+   * step is never "here": the category a motif puzzle sat in says nothing
+   * about whether the next one in it is about that motif. The other steps
+   * are not puzzles at all.
+   */
+  function dailyStepIsHere(step) {
+    const pz = store.session.puzzle;
+    if (!pz || store.session.mode !== "puzzle") return false;
+    if (step.kind === "review" || step.kind === "mine" || step.kind === "op") return pz.cat === step.kind;
+    if (step.kind === "weak") return pz.cat === step.cat;
+    return false;
+  }
+
+  /**
+   * Take the player to where the current step happens. Invited, not automatic.
+   * @returns {boolean} false when there was nowhere to go (a motif step with
+   *   nothing left unsolved about it), so a caller can fall back
+   */
   function dailyJump(step) {
     const modeBtn = (m) => document.querySelector('#mode-seg button[data-mode="' + m + '"]');
     if (step.kind === "lesson") {
@@ -4996,12 +5361,12 @@ import { createStore } from "./store.js";
       saveLearnState();
       if (store.session.mode !== "learn") modeBtn("learn").click();
       else { startLesson(step.i); setSideTab("play", { top: true }); sync(); }
-      return;
+      return true;
     }
     if (step.kind === "game") {
       if (store.session.mode !== "ai") modeBtn("ai").click();
       else setSideTab("play", { top: true });
-      return;
+      return true;
     }
     // the library step is the one that asks for time rather than answers:
     // show the section and start the pass, which is exactly what the player
@@ -5011,14 +5376,14 @@ import { createStore } from "./store.js";
       const sec = document.getElementById("lib-body");
       if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "center" });
       if (!store.session.libRun) runLibraryPass();
-      return;
+      return true;
     }
     // 5.2: a motif step lands on a puzzle ABOUT that motif — the player's own
     // drill if one is unsolved, else the first canned one — wherever it shelves
     if (step.kind === "motif") {
       const about = bookNow().filter((p) => !store.session.puzzleState.solved[p.id] && motifKeyOf(p) === step.motif);
       const pick = about.find((p) => p.cat === "mine") || about[0];
-      if (!pick) { toast(t("daily.motifDone")); return; }
+      if (!pick) { toast(t("daily.motifDone")); return false; }
       store.session.puzzleState.cat = pick.cat;
       savePuzzleState();
       store.session.puzzleTierFilter = "all";
@@ -5029,7 +5394,7 @@ import { createStore } from "./store.js";
       };
       if (store.session.mode !== "puzzle") { modeBtn("puzzle").click(); go(); }
       else { go(); saveSettings(); sync(); }
-      return;
+      return true;
     }
     // the puzzle steps: pick the category, then enter (or re-enter) the mode
     const cat = step.kind === "weak" ? step.cat : step.kind;
@@ -5039,6 +5404,7 @@ import { createStore } from "./store.js";
     store.session.puzzleTierFilter = "all";
     if (store.session.mode !== "puzzle") modeBtn("puzzle").click();
     else { startPuzzles(); setSideTab("play", { top: true }); saveSettings(); sync(); }
+    return true;
   }
 
   /**
@@ -5062,7 +5428,7 @@ import { createStore } from "./store.js";
     const series = Progress.accSeries(loadStats().games.concat(libPoints), 30);
     const rows = Progress.weekOverWeek(prog, Date.now())
       .filter((r) => r.now != null || r.prev != null)
-      .sort((a, b) => (b.now ?? b.prev) - (a.now ?? a.prev));
+      .sort((a, b) => (a.now ?? a.prev) - (b.now ?? b.prev)); // weakest first
     const wk = prog.weeks[Progress.weekKey(Date.now())];
     const showCurve = series.length >= 2;
     const showRows = rows.length > 0 || !!wk;
@@ -5350,8 +5716,8 @@ import { createStore } from "./store.js";
   const LibraryUI = createLibraryUI({
     doc: document, store, Persist, game, t, tf, toast, sync,
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
-    plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
-    saveSettings, stopLiveAnalysis, withMotifs,
+    leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
+    saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
@@ -5368,6 +5734,25 @@ import { createStore } from "./store.js";
   const renderLibrary = () => LibraryUI.renderLibrary();
   const runLibraryPass = () => LibraryUI.runLibraryPass();
   const saveLibrary = () => LibraryUI.saveLibrary();
+
+  // 7.6 (v7-6-plan §2): is a pointer pressed right now? A render that a
+  // press itself sets off (focus leaving a field commits it) waits for the
+  // release: rewriting the DOM between mouse-down and mouse-up — even a
+  // button's label, with the same text, which replaces its text node — is
+  // how WebKit loses a click. Queued work runs in a task after the release,
+  // so after the `click` that release produces.
+  function afterPress(fn) {
+    if (!store.ui.pointerPressed) { fn(); return; }
+    if (!store.ui.pressQueue.includes(fn)) store.ui.pressQueue.push(fn);
+  }
+  const pressOver = () => {
+    store.ui.pointerPressed = false;
+    if (store.ui.pressQueue.length) setTimeout(() => { for (const fn of store.ui.pressQueue.splice(0)) fn(); }, 0);
+  };
+  window.addEventListener("pointerdown", () => { store.ui.pointerPressed = true; }, true);
+  window.addEventListener("pointerup", pressOver, true);
+  window.addEventListener("pointercancel", pressOver, true);
+  window.addEventListener("blur", pressOver);
 
   // --- 我的开局书 (7.2, v7-2-plan §3) ---------------------------------------
   //
@@ -5544,7 +5929,8 @@ import { createStore } from "./store.js";
     // in resignation is not over by its moves, so call off that search now that
     // the ending is back in place
     invalidateEngine();
-    store.session.analysis = null;
+    // 7.6 §1c: analysed before? then it is analysed now, without a search
+    restoreAnalysis();
     saveSettings();
     saveGame();
     sync();
@@ -5856,6 +6242,12 @@ import { createStore } from "./store.js";
       if (timeoutIsDraw()) return t("st.flagDraw");
       return t(store.game.flagFall === "w" ? "st.flagWhite" : "st.flagBlack");
     }
+    // a result the file declared says only the result: a [Result "1-0"]
+    // records who won, not that Black resigned (7.6 — the reason was made up)
+    if (resultFromFile()) {
+      const r = gameResultToken();
+      return t(r === "1-0" ? "st.result10" : r === "0-1" ? "st.result01" : "st.resultDraw");
+    }
     if (store.game.resigned) return t(store.game.resigned === "w" ? "st.resignWhite" : "st.resignBlack");
     if (store.game.drawAgreed) return t("st.drawAgreed");
     if (store.game.drawClaimed) return t(store.game.drawClaimed === "threefold" ? "st.claimThreefold" : "st.claimFifty");
@@ -5933,7 +6325,10 @@ import { createStore } from "./store.js";
     const tagOf = new Map();
     if (a && a.tags) store.game.line.forEach((id, k) => { if (k > 0 && a.tags[k - 1]) tagOf.set(id, a.tags[k - 1]); });
     const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
-    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" : "");
+    // the current move carries the menu handle, whose name is a translated
+    // string — so its signature carries the language, or a switch to English
+    // kept the Chinese 「着法操作」 on it until the cursor moved (7.6)
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" + store.ui.langId : "");
     // a variation's signature is the whole of what it shows, nested included
     const lineSig = (parent, first) => {
       let out = "";
@@ -6741,8 +7136,12 @@ import { createStore } from "./store.js";
         wRole.textContent = asBlack ? t("role.puzzle") : t("role.you");
         bRole.textContent = asBlack ? t("role.youB") : t("role.puzzle");
       } else {
-        wRole.textContent = t("vs.p1");
-        bRole.textContent = t("vs.p2");
+        // a loaded game names its players: the file's [White]/[Black], where
+        // it has them, rather than 玩家 1 / 玩家 2 (7.6). "?" is PGN for unknown.
+        const h = game.header() || {};
+        const nm = (v) => { const x = String(v || "").trim(); return /^\?*$/.test(x) ? "" : x; };
+        wRole.textContent = nm(h.White) || t("vs.p1");
+        bRole.textContent = nm(h.Black) || t("vs.p2");
       }
     }
   }
@@ -6819,6 +7218,7 @@ import { createStore } from "./store.js";
   }
 
   function playHumanMove(from, to, promotion) {
+    if (refusePgnEdit()) { clearSelection(); return; }
     const mv = gameMove({ from, to, promotion });
     if (!mv) return;
     store.game.selection = null;
@@ -6943,6 +7343,7 @@ import { createStore } from "./store.js";
     if (store.session.mode === "learn" && store.session.learn) { learnUndo(); return; }
     if (!sanHistory().length || ruleTerminated()) return;
     if (!isLive()) { goLive(); return; }
+    if (refusePgnEdit()) return;
     invalidateEngine();
     gameUndo();
     // in AI mode take back the engine reply too, so it's the human's turn again
@@ -6993,7 +7394,7 @@ import { createStore } from "./store.js";
 
   /** Truncate the game to the replay cursor and continue playing from there. */
   async function retryFromHere() {
-    if (isLive()) return;
+    if (isLive() || refusePgnEdit()) return;
     const keep = store.game.viewIndex;
     const drop = sanHistory().length - keep;
     if (!(await confirmNative(tf("dlg.retryHere", [keep, drop]), t("act.retryHere"),
@@ -7037,6 +7438,7 @@ import { createStore } from "./store.js";
     const who = sideName(side);
     invalidateEngine();
     store.game.resigned = side;
+    forgetFileResult();
     // resigning is losing, whatever the previous six years of this file said
     playEnding(side === "w" ? "b" : "w");
     if (store.session.mode === "ai") recordResign();
@@ -7158,6 +7560,7 @@ import { createStore } from "./store.js";
   function acceptDraw() {
     invalidateEngine();
     store.game.drawAgreed = true;
+    forgetFileResult();
     Audio2.playDraw();
     if (store.session.mode === "ai") recordAgreedDraw();
     saveGame();
@@ -7197,6 +7600,25 @@ import { createStore } from "./store.js";
     }
     if (naturalGameOver()) return "1/2-1/2"; // stalemate + the auto draw rules
     return "*";
+  }
+
+  /**
+   * Is the ending on the board the one adoptHeaderResult() read off the
+   * file's [Result] tag, rather than something played out here? An imported
+   * game's tag names a result and no reason. A resignation or an agreed draw
+   * played here clears the tag (forgetFileResult), so it is never mistaken
+   * for one read off the file.
+   */
+  function resultFromFile() {
+    if (!store.game.imported || !(store.game.resigned || store.game.drawAgreed)) return false;
+    const r = (game.header() || {}).Result;
+    return (r === "1-0" || r === "0-1" || r === "1/2-1/2") && r === gameResultToken();
+  }
+
+  /** An ending played out here replaces whatever the file's tag said. */
+  function forgetFileResult() {
+    const r = (game.header() || {}).Result;
+    if (r && r !== "*") game.header("Result", "*");
   }
 
   /** Read the [Result] tag of the loaded game into the terminal flags. */
@@ -7444,6 +7866,11 @@ import { createStore } from "./store.js";
     ], { cancelLabel: t("ob.later") });
     if (choice === 0) {
       store.session.mode = "learn";
+      // …and the engine they meet after the first lessons is the one built
+      // for them. Up to 7.5 this branch left `difficulty` at the default
+      // "normal" (Elo 1700), so the self-declared beginner got a stronger
+      // opponent than 「我会下棋」 does (7.6 §3a).
+      store.session.difficulty = "beginner";
       startLearn();
     } else {
       // they can play, but "normal" is Elo 1700 — start a rung lower and let
@@ -7588,6 +8015,8 @@ import { createStore } from "./store.js";
     // the rules do not explain is an agreed one. Before 6.0 the result was
     // dropped and the export wrote `*` under a game the file called 1-0.
     adoptHeaderResult();
+    // 7.6 §1c: a game analysed before comes back analysed, without a search
+    restoreAnalysis();
     resetClocks();
     syncAutoFlip();
     store.commit("game", "action");
@@ -8515,6 +8944,7 @@ import { createStore } from "./store.js";
     // already the mainline: nothing to promote, and a menu item that does
     // nothing is a control that looks available and is not
     avail(document.getElementById("mm-promote"), !isMainlineNode(id));
+    lockPgnEdits();
     moveMenuEl.hidden = false;
     // beside the pointer when it came from one, under the handle otherwise;
     // clamped so it never opens off the window
@@ -8525,7 +8955,7 @@ import { createStore } from "./store.js";
     const mh = moveMenuEl.offsetHeight || 100;
     moveMenuEl.style.left = Math.max(4, Math.min(left, window.innerWidth - mw - 4)) + "px";
     moveMenuEl.style.top = Math.max(4, Math.min(top, window.innerHeight - mh - 4)) + "px";
-    const first = moveMenuEl.querySelector("button:not([hidden])");
+    const first = moveMenuEl.querySelector("button:not([hidden]):not(:disabled)");
     if (first) first.focus();
   }
   function closeMoveMenu() {
@@ -8559,7 +8989,7 @@ import { createStore } from "./store.js";
     document.getElementById("mm-promote").onclick = () => {
       const id = store.ui.moveMenu;
       closeMoveMenu();
-      if (id == null) return;
+      if (id == null || refusePgnEdit()) return;
       ChessTree.promoteToMain(store.game.tree, id);
       store.commit("game", "promote");
       saveGame();
@@ -8569,7 +8999,7 @@ import { createStore } from "./store.js";
       const id = store.ui.moveMenu;
       closeMoveMenu();
       const node = id != null ? ChessTree.nodeAt(store.game.tree, id) : null;
-      if (!node || node.id === 0) return;
+      if (!node || node.id === 0 || refusePgnEdit()) return;
       if (!(await confirmNative(tf("dlg.deleteBranch", [node.san]), t("ml.delete"),
         { ok: t("ml.delete"), cancel: t("act.cancel") }))) return;
       const parent = ChessTree.deleteNode(store.game.tree, id);
@@ -8592,11 +9022,42 @@ import { createStore } from "./store.js";
     };
   }
 
+  // --- 7.6 §1b: the notation is read-only while an analysis runs ------------
+  //
+  // The pass is keyed on `game.pgn()` and drops out, silently, the moment it
+  // changes (analyzeGame's two sig checks). Up to 7.5 the controls that change
+  // it stayed live: one click on 存为变着 halfway through a 精析 and the whole
+  // run was gone with nothing but "已存为变着" to show for it. Disabled rather
+  // than "allowed, and the analysis stops" — the run is the expensive thing.
+  /** True while a change to the notation would throw away a running pass. */
+  function pgnLocked() { return !!store.session.analyzing; }
+  /** Say so, once per attempt, from a path that has no button to grey out. */
+  function refusePgnEdit() {
+    if (!pgnLocked()) return false;
+    toast(t("msg.pgnLocked"), "fix");
+    return true;
+  }
+  /** Grey out every control that edits the notation; called from setAnalyzeUI. */
+  function lockPgnEdits() {
+    const locked = pgnLocked();
+    document.querySelectorAll("#pv-line .pv-act").forEach((b) => {
+      b.disabled = locked;
+      b.title = t(locked ? "msg.pgnLocked" : "tip.pvSave");
+    });
+    const tryBtn = document.getElementById("preview-try");
+    if (tryBtn) { tryBtn.disabled = locked; tryBtn.title = locked ? t("msg.pgnLocked") : ""; }
+    for (const id of ["mm-promote", "mm-delete", "mm-note"]) {
+      const b = document.getElementById(id);
+      if (b) b.disabled = locked;
+    }
+  }
+
   // --- the comment dialog --------------------------------------------------
   const noteModal = document.getElementById("note-modal");
   function openNoteModal(id) {
     const node = ChessTree.nodeAt(store.game.tree, id);
     if (!noteModal || !node) return;
+    if (refusePgnEdit()) return;
     store.ui.noteFor = id;
     const input = document.getElementById("note-input");
     input.value = node.comment || "";
@@ -8606,6 +9067,7 @@ import { createStore } from "./store.js";
   }
   function closeNoteModal() { store.ui.noteFor = null; Dlg.close(noteModal); }
   function submitNote() {
+    if (refusePgnEdit()) return;
     const id = store.ui.noteFor;
     const input = document.getElementById("note-input");
     const text = input ? input.value : "";
@@ -8632,6 +9094,7 @@ import { createStore } from "./store.js";
    */
   function savePvAsVariation(sans, upTo, landOnLast) {
     if (inModal() || !Array.isArray(sans) || !sans.length) return false;
+    if (refusePgnEdit()) return false;
     const at = curNode();
     if (!at) return false;
     let node = at;
@@ -8817,10 +9280,12 @@ import { createStore } from "./store.js";
     const names = document.getElementById("lib-names");
     if (names) {
       names.value = store.session.libNames.join(", ");
-      // on `change`, not on every keystroke: re-claiming walks the whole
-      // library and rewrites the stored copy, which is not what every
-      // character of a typed name should cost
-      names.onchange = () => {
+      // on `change` or a pause in typing, not on every keystroke: re-claiming
+      // walks the whole library and rewrites the stored copy, which is not
+      // what every character of a typed name should cost
+      let namesTimer = 0;
+      const commitNames = () => {
+        clearTimeout(namesTimer);
         const next = libNamesFrom(names.value);
         // the same names again (a second `change` as focus leaves the field,
         // which is what clicking 分析 right after typing does) change nothing:
@@ -8830,8 +9295,18 @@ import { createStore } from "./store.js";
         store.session.libNames = next;
         reclaimLibrary();
         saveLibrary();
-        renderLibrary();
+        // 7.6 (v7-6-plan §2): the `change` that commits a name as it is typed
+        // is focus leaving the field — i.e. the mouse-down of the click on
+        // 分析. Re-rendering there rewrote the panel, the button's own label
+        // included, between that press and its release, and WebKit dropped
+        // the click even with nothing moving on screen. The data is settled
+        // now; the panel waits until the pointer is up and the click is in.
+        afterPress(renderLibrary);
       };
+      // …and a pause in typing commits too, so that by the time the pointer
+      // gets to 分析 there is usually nothing left for the blur to do
+      names.oninput = () => { clearTimeout(namesTimer); namesTimer = setTimeout(commitNames, 600); };
+      names.onchange = commitNames;
     }
   }
 
@@ -9677,6 +10152,11 @@ import { createStore } from "./store.js";
   // window resize handler covers the rest.
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
+    // the eval curve goes from 0×0 to its real size whenever its tab, the
+    // panel or the curve itself is shown again — the draws it skipped while
+    // hidden are made up here, not by every path that can unhide it (7.6 §3b)
+    const curve = document.getElementById("eval-curve");
+    if (curve) new ResizeObserver(() => drawEvalCurve()).observe(curve);
   }
   // 6.1: saveGame() writes the cache, and the mirror behind it is on a 400 ms
   // timer — on the way out that timer never fires, so up to one burst of
@@ -9742,6 +10222,8 @@ import { createStore } from "./store.js";
   setSideTab(store.ui.sideTab);
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
+  // 7.6 §1c: …and the analysis it had, which used to die with the session
+  if (resumed) restoreAnalysis();
   // a resumed finished game must not be re-counted on the next live move
   // A restored game that is already over was filed when it ended; marking it
   // recorded stops the launch path filing it a second time. The id is unknown
@@ -9792,8 +10274,10 @@ import { createStore } from "./store.js";
   // without going through bootEngine(), reports a failure here (7.4)
   if (ChessEngine && ChessEngine.onBootFail) ChessEngine.onBootFail(engineBootFailed);
   // 7.5: the packaged app's self-test (CHESS_SELFTEST=1, see main.zig). The
-  // page as shipped starts Stockfish and asks it for a move; the platform
-  // build pipelines read the report before they package.
+  // page as shipped starts Stockfish and asks it for a move, then (7.6) round
+  // trips the native save file, loads the eco chunk and leaves a marker for
+  // the second launch; the platform build pipelines read the report before
+  // they package.
   Host.selftestMode().then((on) => { if (on) runSelftest(); });
   if (store.session.mode === "ai" && ChessEngine) {
     // after the first paint, not before it: the engine sources are 9.7 MB of

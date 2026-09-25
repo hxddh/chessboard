@@ -38,7 +38,7 @@
         { type: "tap", fen: START, prompt: "在棋盘上找到指定坐标", steps: [
           { tip: "点击 e4 格（e 线与第 4 横线交汇处）", squares: ["e4"] },
           { tip: "点击 a1 格（白方左下角）", squares: ["a1"] },
-          { tip: "点击 h8 格（黑方那侧的角落）", squares: ["h8"] },
+          { tip: "点击 h8 格（白方视角的右上角）", squares: ["h8"] },
         ] },
         { type: "tap", fen: START, prompt: "再找三个 —— 这次没有角落可以蒙", steps: [
           { tip: "点击 d5：先数到 d 线，再数到第 5 横线", squares: ["d5"] },
@@ -56,8 +56,8 @@
       ],
       tasks: [
         { type: "tap", fen: START, prompt: "看清楚哪格深、哪格浅", steps: [
-          { tip: "点击 a1 —— 白方左下角，是**深**格", squares: ["a1"] },
-          { tip: "点击 h1 —— 白方右下角，是**浅**格（摆盘时右下角必须是浅格）", squares: ["h1"] },
+          { tip: "点击 a1 —— 白方左下角，是深格", squares: ["a1"] },
+          { tip: "点击 h1 —— 白方右下角，是浅格（摆盘时右下角必须是浅格）", squares: ["h1"] },
           { tip: "点击白方两个象中站深格的那个（c1）", squares: ["c1"] },
           { tip: "再点站浅格的那个（f1）", squares: ["f1"] },
         ] },
@@ -838,11 +838,11 @@
       tasks: [
         { type: "move", fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", goal: "one-of",
           accept: ["Nf3", "Nc3", "Bc4", "Bb5", "d4", "d3", "Be2"],
-          prompt: "轮白走 —— 带一个**新的**子出来",
+          prompt: "轮白走 —— 带一个新的子出来",
           retry: "再动一次已经走过的 e 兵、或者早早把后放出去，都不叫出子。让一个还没动过的子上场。",
           solution: ["Nf3"] },
         { type: "tap", fen: "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
-          prompt: "白方三步走完：e4、Nf3、Bb5 —— 点出这三步里**最后一个**上场的子",
+          prompt: "白方三步走完：e4、Nf3、Bb5 —— 点出这三步里最后一个上场的子",
           steps: [
             { tip: "b5 的象是第三个出场的。三步棋、三个不同的子，一步没浪费 —— 点 b5", squares: ["b5"] },
           ] },

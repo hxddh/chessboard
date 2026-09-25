@@ -64,7 +64,7 @@ async function play(theme, line) {
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const xy = (s) => page.evaluate((sq) => {
     const c = document.getElementById("board");
     const r = c.getBoundingClientRect();
@@ -153,7 +153,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   const page = await ctx.newPage();
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   let asked = 0;
   await page.evaluate(() => {
     window.__asked = 0;
@@ -288,7 +288,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
@@ -397,7 +397,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const page = await ctx.newPage();
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
@@ -441,7 +441,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const said = () => page.evaluate(() => (document.getElementById("board-live") || {}).textContent);
   const key = async (k, ms = 160) => { await page.keyboard.press(k); await page.waitForTimeout(ms); };
   const read = () => page.evaluate(READ_BOARD);
@@ -499,7 +499,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const page = await ctx.newPage();
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   await page.evaluate(() => {
     window.__chess.engine.isReady = () => true;
     window.__chess.engine.bestMove = async () => { throw new Error("engine down"); };
@@ -541,7 +541,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
@@ -623,7 +623,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
@@ -708,7 +708,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   // 引擎的应手由测试放行:预走要在「引擎正在想」的那段时间里排上队,而那段
   // 时间有多长必须是我们说了算,不能靠运气
   await page.evaluate(() => {
@@ -789,7 +789,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const sq = async (name) => {
     const c = await page.evaluate((s) => {
       const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
@@ -922,7 +922,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const sq = async (name) => {
     const c = await page.evaluate((s) => {
       const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
@@ -998,7 +998,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   assert(!t.res.some((n) => /^chunk-/.test(n)),
     `……而且首屏一个 chunk 都没取(取了:${t.res.join(", ")})`);
   // 「可交互」得是真的:这时候点下去,棋真的能走
-  await page.click("#pick-cancel").catch(() => {});
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const c = await page.evaluate(() => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const at = (s) => { const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
@@ -1011,6 +1011,36 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     [...document.querySelectorAll(".move-list .mlmove")].map((m) => m.getAttribute("aria-label")).join(" "));
   assert(played === "e4", `……而「可交互」是真的可交互:点下去棋就走了(「${played}」)`);
   assert(errs.length === 0, `首屏:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 7.6:做题时,读屏那一行念的是题板上对方的应着 ---------------------------
+// announceLastMove() 读的是主对局 `game`,而题目下在自己的棋盘上:整段做题
+// 期间 #board-live 停在上一盘棋的最后一着,对方的应着一次也没念过。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+  const at = (sq) => page.evaluate((s) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
+  }, sq);
+  // any book move is accepted in an opening drill; 1.e4 is in the book
+  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(250); }
+  await page.waitForTimeout(500);
+  const said = await page.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
+  assert(/^1… [a-hKQRBNO]/.test(said.trim()), `做开局题:走完 1.e4,读屏念出对方的应着(「${said}」)`);
+  assert(errs.length === 0, `做题读屏:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
 
