@@ -169,7 +169,12 @@ import { createStore } from "./store.js";
    */
   function animateReply(mv) {
     if (!mv) return;
-    BoardView.animateMove(mv.from, mv.to, castleRook(mv));
+    // 7.7 §9: who was taken, and where — en passant takes on the mover's rank
+    const taken = mv.captured && mv.color ? {
+      sq: mv.flags && mv.flags.includes("e") ? mv.to[0] + mv.from[1] : mv.to,
+      piece: { type: mv.captured, color: mv.color === "w" ? "b" : "w" },
+    } : null;
+    BoardView.animateMove(mv.from, mv.to, castleRook(mv), taken);
     // the reply is the one move the player did not make, so it is the one a
     // screen reader must say (v6-plan D5); the SAN is read from the history
     // rather than from `mv`, which is a from/to pair without a name
@@ -375,6 +380,9 @@ import { createStore } from "./store.js";
       /** keyboard play: focused square, shown only while the board has focus */
       keyboardCursor: null,
       boardFocused: false,
+      /** …and only after the board was reached or used by keyboard (7.7 §1c,
+       *  a11y.js): the canvas's own `:focus-visible` */
+      cursorShown: false,
       toastTimer: null,
       confirmResolver: null,
       histFilter: { result: "all", color: "all" },
@@ -918,7 +926,7 @@ import { createStore } from "./store.js";
 
   const kingSquare = ChessPreview.kingSquare;
 
-  const cursorSquare = () => (store.ui.boardFocused ? store.ui.keyboardCursor : null);
+  const cursorSquare = () => (store.ui.boardFocused && store.ui.cursorShown ? store.ui.keyboardCursor : null);
 
   BoardView.attach(canvas, () => {
     if (store.session.editor) return editorModel();
@@ -1145,6 +1153,52 @@ import { createStore } from "./store.js";
    * @param {"ok"|"fix"|"fault"} [tier]
    */
   const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+
+  /**
+   * Where a toast stands: never on the board (7.7 §1d).
+   *
+   * It stood 24px above the bottom of the window, centred on the window, and
+   * in every landscape window the board runs to within 6px of that edge — so
+   * 「本局结束 —— 点『分析』看这盘的回顾」 and 「分析完成」 sat on e1 and f1,
+   * over the very position they were talking about, and a fault toast stayed
+   * there until dismissed. It was also centred on the window, which is not
+   * the board's middle whenever the panel is open beside it.
+   *
+   * Now it is centred on the board, no wider than it, and stands where the
+   * board is not:
+   *   - its old place, 24px off the bottom, wherever that is clear of the
+   *     board — the portrait windows, where it lies over the sheet's reserve
+   *     as it always did;
+   *   - otherwise the strip above the board: the chrome's row down to the
+   *     first rank, 55px in the landscape layout, which a one-line toast
+   *     clears with room either side. It covers the middle of the chrome for
+   *     its two seconds, which is the price of not covering the position;
+   *   - a message that wraps past that strip goes under the squares if there
+   *     is room there, and only a window with neither lets it overlap, at the
+   *     top, as little as it can.
+   */
+  function placeToast(el) {
+    const board = document.getElementById("board");
+    const wrap = document.getElementById("board-wrap");
+    if (!el || !board || !wrap || !appEl) return;
+    const a = appEl.getBoundingClientRect();
+    const b = board.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    if (!b.width) return; // not laid out (a hidden window): keep the stylesheet's place
+    el.style.maxWidth = Math.round(Math.max(200, Math.min(560, w.width - 16))) + "px";
+    const h = el.offsetHeight;
+    const GAP = 4, LOW = 24;
+    let top = GAP;
+    if (a.bottom - w.bottom >= h + LOW + GAP) top = a.height - LOW - h;
+    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP) top = b.bottom - a.top + GAP;
+    el.style.top = Math.round(top) + "px";
+    el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
+  }
+  // a fault toast stays up, and the board it is placed against can move
+  window.addEventListener("resize", () => {
+    const el = document.getElementById("toast");
+    if (el && el.classList.contains("show")) placeToast(el);
+  });
   function dismissToast() {
     const el = document.getElementById("toast");
     if (!el) return false;
@@ -1206,7 +1260,9 @@ import { createStore } from "./store.js";
       el.appendChild(close);
     }
     el.classList.remove("t-ok", "t-fix", "t-fault");
-    el.classList.add("show", "t-" + kind);
+    el.classList.add("t-" + kind);
+    placeToast(el);
+    el.classList.add("show");
     if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
     store.ui.toastTimer = null;
     if (ms) store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), ms);
@@ -8578,7 +8634,19 @@ import { createStore } from "./store.js";
         if (t === want && opts && opts.top) pane.scrollTop = 0;
       }
     }
+    syncTabRule();
     saveSettings();
+  }
+
+  /** 7.7 §1e: the rule under the tab row, drawn while the pane is scrolled. */
+  function syncTabRule() {
+    const row = document.querySelector(".side-tabs");
+    const pane = document.getElementById("pane-" + store.ui.sideTab);
+    if (row) row.classList.toggle("is-scrolled", !!pane && pane.scrollTop > 0);
+  }
+  for (const t of TABS) {
+    const pane = document.getElementById("pane-" + t);
+    if (pane) pane.addEventListener("scroll", syncTabRule, { passive: true });
   }
 
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }

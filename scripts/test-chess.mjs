@@ -1646,6 +1646,19 @@ for (const lang of CONTENT_LANGS) {
       "the board's slide reads --dur-base rather than a number of its own");
     assert(!/dur:\s*\d/.test(board), "no hard-coded animation duration left in board.js");
 
+    // 7.7 §9: a press and a keyboard focus look the same on every button. Both
+    // are declared once for all of them rather than per family — per-family is
+    // how the tabs, the move list and the toast's own buttons went without a
+    // pressed state while the action grid had one.
+    assert(/:where\(button\):active\s*\{[^}]*transform/.test(stripped),
+      "every button has a pressed state (:where(button):active)");
+    assert(/(^|\})\s*:focus-visible\s*\{[^}]*outline:\s*2px solid/.test(stripped),
+      "…and every focusable thing the one focus ring");
+    const ringOff = [...stripped.matchAll(/([^{}]*button[^{}]*:focus[^{}]*)\{([^{}]*)\}/g)]
+      .filter((m) => /outline\s*:\s*(none|0)\b/.test(m[2])).map((m) => m[1].trim());
+    assert(ringOff.length === 0,
+      "no button rule takes the ring away" + (ringOff.length ? " — " + ringOff.join(" ;; ") : ""));
+
     // …and nothing waits for a transition the stylesheet does not declare.
     // app.js carried a transitionend handler for #board-wrap's width/height
     // for several versions, with a comment explaining that the panel toggle
@@ -3968,7 +3981,9 @@ for (const lang of CONTENT_LANGS) {
     // nothing may call the raw animator except that helper — a direct call is
     // how the player's own move got animated in the first place
     const raw = [...appSrc.matchAll(/^.*BoardView\.animateMove\(.*$/gm)].map((m) => m[0].trim());
-    assert(raw.length === 1 && /animateMove\(mv\.from, mv\.to, castleRook\(mv\)\)/.test(raw[0]),
+    // (7.7 §9 added a fourth argument, the captured man who fades out under the
+    // reply; the call is still the one, in the one place)
+    assert(raw.length === 1 && /animateMove\(mv\.from, mv\.to, castleRook\(mv\), taken\)/.test(raw[0]),
       "the board animator has exactly one caller, inside animateReply" +
       (raw.length === 1 ? "" : " — extra: " + raw.join(" ;; ")));
     // and every opponent-reply site must use it

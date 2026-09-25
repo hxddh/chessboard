@@ -63,8 +63,24 @@ export function createA11y(d) {
     draw();
   }
 
-  function onBoardFocus() {
+  /**
+   * 7.7 §1c: the cursor follows `:focus-visible`, not `:focus`.
+   *
+   * Clicking a square focuses the canvas — that is what lets the keys work
+   * straight after — and focus was the only thing the cursor asked about, so
+   * a game played with the mouse carried a white double frame on e4 from the
+   * first click to the last. The browser already knows which kind of focus
+   * this is: a Tab lands with `:focus-visible`, a click without. The first
+   * key on the board turns it on, as a key does for `:focus-visible`; the
+   * next press of the pointer turns it off again.
+   */
+  function focusIsVisible(el) {
+    try { return !!el && el.matches(":focus-visible"); } catch { return true; }
+  }
+
+  function onBoardFocus(ev) {
     store.ui.boardFocused = true;
+    store.ui.cursorShown = focusIsVisible(ev && ev.target);
     if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
     announce(t("live.focused") + " · " + describeSquare(store.ui.keyboardCursor));
     draw();
@@ -97,6 +113,8 @@ export function createA11y(d) {
     if (escIsOurs &&
         ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
       ev.stopPropagation();
+      // a key on the board is keyboard use: from here on the cursor is drawn
+      if (ev.key !== "Escape") store.ui.cursorShown = true;
     }
     switch (ev.key) {
       case "ArrowLeft": ev.preventDefault(); moveCursor(-1, 0); return;
@@ -210,6 +228,13 @@ export function createA11y(d) {
     canvas.addEventListener("focus", onBoardFocus);
     canvas.addEventListener("blur", onBoardBlur);
     canvas.addEventListener("keydown", onBoardKeyDown);
+    // pointerdown comes before the focus it causes, so a click that focuses
+    // the board and a click on a board that already has focus both land here
+    canvas.addEventListener("pointerdown", () => {
+      if (!store.ui.cursorShown) return;
+      store.ui.cursorShown = false;
+      draw();
+    });
   }
 
   return { announce, describeSquare, moveCursor, isEditable,

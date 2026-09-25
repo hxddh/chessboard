@@ -981,7 +981,19 @@
     .side-tabs {
       display: flex; align-items: stretch; gap: 4px;
       padding: 8px 0 0;
+      /* 7.7 §1e: the pane scrolls up to the row's lower edge, and with nothing
+         marking that edge the half-cut line at the top of the pane (棋谱 row
+         10, measured) read as content showing through from under the tabs.
+         The row is solid — `inherit` lays the panel's own fill over the panel,
+         so it is the panel's colour, not a band of a new one — and above the
+         pane, so the rule under it is not painted over. The rule is --line,
+         and only while the pane below is scrolled: at the top there is
+         nothing passing under it to separate. */
+      position: relative; z-index: 1;
+      background: inherit;
+      transition: box-shadow var(--dur-quick) var(--ease);
     }
+    .side-tabs.is-scrolled { box-shadow: 0 1px 0 var(--line); }
     .side-tabs button[role="tab"] {
       flex: 1;
       appearance: none; border: 0; background: transparent;
@@ -1272,6 +1284,36 @@
     .theme-row button, .act-btn { overflow-wrap: break-word; hyphens: auto; }
     .theme-row button:hover, .act-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--card-border)); }
     .theme-row button:active, .act-btn:active { transform: scale(0.97); }
+    /* 7.7 §9: every button answers a press, not only the families above.
+       Tabs, move-list moves, the replay bar, the palette, the move menu, the
+       toast's own buttons and the record page's rows went down and up with no
+       sign they had been touched. One pixel down is the smallest "pressed"
+       there is and fits a 20px ✕ as well as a full-width lesson row.
+       `:where()` keeps it at the weight of one class, so the families that
+       already have a press of their own (the scales above, .icon-btn,
+       .promo-row, .rec-door) keep theirs. No transition is added: it is a
+       state, not a movement, and under reduced motion it simply is. */
+    :where(button):active { transform: translateY(1px); }
+    /* 7.7 §1a: an .act-btn is sized by itself, not by the row it happens to
+       sit in. The block above gives it `padding: 8px 0` — no sides — which is
+       right in a grid track that sets the width, and was the whole box
+       everywhere else: 导入棋谱文件 and the two 导入…开局书 on the record page
+       sit in a plain `.close-row`, and there the label touched the border and
+       the button was as tall as its text. The segments keep their own rule;
+       this is the action family only.
+       8px a side costs the 70px grid track 16px of label, and the longest
+       labels (清除教学进度, Edit position) now take two lines where they used
+       to run edge to edge. Tight leading keeps two lines inside --row-h, so a
+       wrapped label no longer makes its whole grid row taller; a label that
+       needs three is the label's problem, and §3 moves most of these out of
+       the grid anyway. */
+    .act-btn {
+      min-height: var(--row-h);
+      padding: 0 8px;
+      line-height: var(--lh-tight);
+      display: inline-flex; align-items: center; justify-content: center;
+      text-align: center;
+    }
     .theme-row button.active {
       color: var(--text);
       border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
@@ -1640,9 +1682,12 @@
        inside a dialog — or while one is still closing — used to sit under the
        blurred backdrop at z-index 40, the one message on screen that could not
        be read. */
+    /* 7.7 §1d: at the top, over the chrome's row, not on the board's first
+       rank; toast() centres it on the board and moves it off the board where
+       the row is too short (placeToast in app.js). */
     .toast {
-      position: absolute; left: 50%; bottom: 24px; z-index: 70;
-      transform: translateX(-50%) translateY(10px);
+      position: absolute; left: 50%; top: 4px; z-index: 70;
+      transform: translateX(-50%) translateY(-6px);
       background: color-mix(in srgb, var(--panel) 94%, #000);
       color: var(--text);
       border: 1px solid var(--panel-border);
