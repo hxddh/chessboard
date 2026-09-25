@@ -931,7 +931,7 @@
       "color.white": "White", "color.black": "Black",
       "clock.off": "No clock",
       "theme.wood": "Wood", "theme.night": "Night", "theme.day": "Day", "theme.notebook": "Paper",
-      "act.analyze": "Analyse", "act.deep": "Deep", "act.stop": "Stop", "act.retryHere": "Replay from here",
+      "act.analyze": "Analyse", "act.deep": "Deep", "act.stop": "Stop", "act.retryHere": "Resume",
       "act.live": "Live analysis", "tip.live": "Keep the engine analysing the position on the board, following the replay cursor", "an.depth": "Depth", "an.win": "Win", "an.line": "Line {0}",
       "msg.premove.set": "Premove {0}", "msg.premove.dropped": "Premove no longer legal",
       "act.pgnCopy": "PGN", "act.export": "Export", "act.paste": "Paste", "act.open": "Open",
