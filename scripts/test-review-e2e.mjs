@@ -189,7 +189,22 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
       assert(row.h < 30, b.who + " 「" + row.k + "」: on one line (" + row.h + "px)");
       assert(row.v.trim() !== "", b.who + " 「" + row.k + "」: has a value");
     }
+    // 7.6: the marks row's label follows 存疑标注 — with it off (the default)
+    // two numbers sit under 「? · ??」, never under three marks
+    const marks = b.rows[2];
+    assert(marks && marks.k.split(" · ").length === marks.v.split(" · ").length && marks.k === "? · ??",
+      b.who + ": 存疑标注关着,标签只写两个标记,与两个数一一对应 (" + (marks && marks.k + " / " + marks.v) + ")");
   }
+  // switch 存疑标注 on: the label grows its 「?!」 together with the value
+  const on = await page.evaluate(() => {
+    document.getElementById("opt-softmark").click();
+    const row = [...document.querySelectorAll("#review-body .stat-row")][2];
+    const out = { k: row.querySelector(".stat-k").textContent, v: row.querySelector(".stat-v").textContent };
+    document.getElementById("opt-softmark").click();
+    return out;
+  });
+  assert(on.k === "?! · ? · ??" && on.v.split(" · ").length === 3,
+    "存疑标注打开后,标签和数值都是三项 (" + on.k + " / " + on.v + ")");
 }
 
 // --- the move list, with annotations on it ---------------------------------
@@ -258,6 +273,29 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   assert(r.unnamed === 0, "every move keeps its full SAN as its accessible name");
   assert(/^[KQRBN]/.test(r.names[2] || ""),
     "…including the piece letter the figurine replaces (" + r.names[2] + ")");
+}
+
+// --- 7.6: a turning point already in the mistakes book says so -------------
+// The button offered 「把这一手收进错题」 again after the drill was banked (by
+// the auto-miner or by this very button); pressing it only toasted 「已经在错
+// 题里」. Now the button itself reads that way and cannot be pressed.
+{
+  const before = await page.evaluate(() => {
+    const b = document.querySelector("#review-body .review-bank");
+    return b ? { text: b.textContent, disabled: b.disabled } : null;
+  });
+  assert(before && !before.disabled && /收进错题/.test(before.text),
+    "转折点还没收进错题时,按钮可按 (" + JSON.stringify(before) + ")");
+  await page.click("#review-body .review-bank");
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => {
+    const b = document.querySelector("#review-body .review-bank");
+    const mines = JSON.parse(localStorage.getItem("chess.v1.mines") || "null");
+    return { text: b && b.textContent, disabled: b && b.disabled, n: mines ? mines.list.length : 0 };
+  });
+  assert(after.n === 1, "按一下,错题里多了这一道 (" + after.n + ")");
+  assert(after.disabled && /已经在错题里/.test(after.text || ""),
+    "收进以后,按钮就写「已经在错题里」且按不动 (" + JSON.stringify(after) + ")");
 }
 
 assert(errs.length === 0, "no JS exception through analysis and replay — " + errs.join(" / "));

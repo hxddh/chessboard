@@ -760,6 +760,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await mv("c2", "c4");
   let done = await page.isVisible("#puzzle-playon");
   // 黑方回的是 c6 那条的话，这里已经到叶子了；回 e6 就还差白方第三手
+  const slav = done;
   if (!done) { await mv("g1", "f3"); done = await page.isVisible("#puzzle-playon"); }
   assert(done, "照书走完一条线就算背下来了 —— 对手的回答也是从这本书里挑的");
   const solved = await page.evaluate(() => {
@@ -767,6 +768,23 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     return Object.keys(st.solved).filter((k) => k.startsWith("rep-")).length;
   });
   assert(solved >= 1, "背下来的那条记进了进度，和内置开局书同一条轨", solved);
+  // 7.6: the credit, the toast's name and the record pane's count all follow
+  // the line the board actually finished — whichever one the drill opened as
+  const fin = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    const book = JSON.parse(localStorage.getItem("chess.v1.repertoire"));
+    return { solved: Object.keys(st.solved).filter((k) => k.startsWith("rep-")), book: book.w,
+      toast: document.getElementById("toast").textContent.trim(),
+      body: document.getElementById("rep-body").textContent };
+  });
+  const played = fin.book.find((l) => l.sans === (slav ? "d4 d5 c4 c6" : "d4 d5 c4 e6 Nf3 Nf6"));
+  assert(played && fin.solved.length === 1 && fin.solved[0] === played.id,
+    "记成已背的正是走完的那条线，没走到的那条不算", JSON.stringify({ slav, solved: fin.solved }));
+  assert(played && (!played.eco || fin.toast.includes(played.eco)),
+    "「背谱完成」报的是走完的那条线的名字", fin.toast);
+  assert(!/Queen's Gambit|Slav Defense/.test(fin.toast + started.task),
+    "开局书的线名按界面语言显示族名，不是整条英文", fin.toast + " | " + started.task);
+  assert(/背下来 1\/2/.test(fin.body), "记录页的「背下来」当场就是 1/2，不用重载", fin.body);
 
   // 7.3 B1：背谱不是战术水平 —— 背对一条自己的线，Glicko 一动不动。
   // 7.2 里它会动：ratePuzzleOnce 不看类别，而这条线的「难度」是按它有多长

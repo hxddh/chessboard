@@ -181,9 +181,21 @@ export function createRepertoireUI(d) {
       cat: "rep",
       side: key === "b" ? "b" : undefined,
       eco: l.eco || "",
-      name: (l.eco ? l.eco + " " : "") + (l.name || t("rep.unnamed")),
+      name: (l.eco ? l.eco + " " : "") + (localName(l.eco, l.name) || t("rep.unnamed")),
       line: l.sans.split(" "),
     }));
+  }
+
+  /**
+   * A stored lichess name in the interface language (7.6). The book keeps the
+   * raw English name — freezing a translation into it would leave it in the
+   * language it was imported in — and every display goes through the same
+   * 7.5 family localisation the library uses: 「意大利开局：Classical
+   * Variation」, not the whole name in English.
+   */
+  function localName(eco, name) {
+    if (!name) return "";
+    return ChessEco.localName({ eco: eco || "", name }, store.ui.langId) || name;
   }
 
   /** Every drill in the book, both chairs — what the review queue reads. */
@@ -261,7 +273,7 @@ export function createRepertoireUI(d) {
         r.className = "stat-row";
         const k = doc.createElement("span");
         k.className = "stat-k";
-        k.textContent = g.eco + " " + (g.name || "");
+        k.textContent = g.eco + " " + localName(g.eco, g.name);
         // an opening's full name rarely fits the name track — it is cut with
         // an ellipsis there, so the whole of it lives here (7.3 B3)
         k.title = k.textContent;
@@ -296,5 +308,5 @@ export function createRepertoireUI(d) {
     render();
   }
 
-  return { render, wire, drills, allDrills, treeFor, total, gapRows, importInto, linesOf, reload };
+  return { render, wire, drills, allDrills, treeFor, total, gapRows, importInto, linesOf, reload, localName };
 }

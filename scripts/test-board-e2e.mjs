@@ -1014,6 +1014,36 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- 7.6:做题时,读屏那一行念的是题板上对方的应着 ---------------------------
+// announceLastMove() 读的是主对局 `game`,而题目下在自己的棋盘上:整段做题
+// 期间 #board-live 停在上一盘棋的最后一着,对方的应着一次也没念过。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+  const at = (sq) => page.evaluate((s) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
+  }, sq);
+  // any book move is accepted in an opening drill; 1.e4 is in the book
+  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(250); }
+  await page.waitForTimeout(500);
+  const said = await page.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
+  assert(/^1… [a-hKQRBNO]/.test(said.trim()), `做开局题:走完 1.e4,读屏念出对方的应着(「${said}」)`);
+  assert(errs.length === 0, `做题读屏:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

@@ -3207,6 +3207,51 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
   }
 }
 
+// --- 7.6：「重下」三语都是一行；换语言后着法菜单的名字跟着换 ----------------
+// 日文原来是「ここから指し直す」，英文是「Replay from here」，在按钮里都挤成两行。着法旁边那颗「…」的
+// title / aria-label 在切到英文后还是「着法操作」：着法列表是按签名复用
+// 节点的，签名里没有语言，于是它一直留着切换前的那个名字。
+{
+  const mv = async (page, sq) => {
+    const pt = await page.evaluate((s) => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+               y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
+    }, sq);
+    await page.mouse.click(pt.x, pt.y);
+    await page.waitForTimeout(180);
+  };
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "pvp", "play");
+    await mv(page, "e2"); await mv(page, "e4");
+    await page.click("#rep-start");
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const b = document.getElementById("retry-here");
+      const range = document.createRange();
+      range.selectNodeContents(b);
+      const lines = new Set([...range.getClientRects()].map((x) => Math.round(x.top))).size;
+      return { shown: !!b.offsetParent, text: b.textContent.trim(), lines };
+    });
+    assert(r.shown && r.lines === 1, `${lang}:「${r.text}」按钮里是一行（${r.lines} 行）`);
+    await ctx.close();
+  }
+  const { ctx, page } = await open("zh-CN", "pvp", "play");
+  await mv(page, "e2"); await mv(page, "e4");
+  await page.waitForTimeout(300);
+  const zh = await page.evaluate(() => (document.querySelector("#move-list .mlmenu") || {}).title);
+  await page.click("#tab-setup");
+  await page.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
+  await page.waitForTimeout(400);
+  const en = await page.evaluate(() => {
+    const m = document.querySelector("#move-list .mlmenu");
+    return m ? { title: m.title, aria: m.getAttribute("aria-label") } : null;
+  });
+  assert(zh === "着法操作" && en && en.title === "Move actions" && en.aria === "Move actions",
+    "切到英文后，着法菜单按钮的 title 与 aria-label 都是英文（" + zh + " → " + JSON.stringify(en) + "）");
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

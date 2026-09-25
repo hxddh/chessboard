@@ -422,3 +422,11 @@
     { id: "dr-h8-rook", cat: "draw", via: "stalemate", name: "右上角逼和：送车",
       fen: "7K/R7/6k1/8/8/8/q7/8 w - - 0 1", solution: ["Rf7", "Qxf7"] },
   ];
+
+  /**
+   * The written motif labels above, as the keys motif.js derives (7.6). The
+   * tally, the planner and 为你出一题 join on the key, and a puzzle is counted
+   * under the label its card shows; a label with no key here (引离, 消除防守者,
+   * 过载) counts as no motif rather than as whatever its first move derives.
+   */
+  export const HAND_MOTIF_KEY = { "捉双": "fork", "牵制": "pin", "串击": "skewer", "闪将": "discovered", "双将": "double" };

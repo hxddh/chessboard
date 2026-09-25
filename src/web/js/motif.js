@@ -192,3 +192,21 @@ function lineTargets(Chess, fen, from, color) {
   }
   return null;
 }
+
+/** The keys motifOf() can return. */
+export const MOTIF_KEYS = ["fork", "pin", "skewer", "discovered", "double"];
+
+/**
+ * The motif key a puzzle is counted under (7.6): its written label when it
+ * has one, mapped through `handKeys` (the puzzle set's own table), else what
+ * `derive()` works out from the position. A label is what the card shows, so
+ * it must be what the tally records; a label with no key counts as no motif.
+ * @param {{motif?: string}} p
+ * @param {Object<string, string>} handKeys written label → key
+ * @param {function(): (string|null)} derive
+ * @returns {string|null}
+ */
+export function puzzleMotifKey(p, handKeys, derive) {
+  if (p.motif) return handKeys[p.motif] || (MOTIF_KEYS.includes(p.motif) ? p.motif : null);
+  return derive();
+}
