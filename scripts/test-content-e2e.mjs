@@ -759,6 +759,19 @@ if (hasTab && REAL.length) {
   await pg.waitForTimeout(600);
   const step2 = await btnText();
   assert(/第 2\/\d 步/.test(step2), "清完欠账,课表自己走到第二步", step2);
+  // 7.6 §3g: the prominent 下一题 on the solved puzzle follows the plan. The
+  // review queue is empty now, and 7.5 answered 下一题 there with 「复习清空了」
+  // and 一步杀 — the plan's second step (上一课新的) was never reached from it.
+  assert(await pg.evaluate(() => document.getElementById("puzzle-next").classList.contains("primary")),
+    "解出之后「下一题」是那个醒目的按钮");
+  await pg.click("#puzzle-next");
+  await pg.waitForTimeout(700);
+  const st2 = await pg.evaluate(() => ({
+    mode: JSON.parse(localStorage.getItem("chess.v1.settings")).mode,
+    cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat,
+  }));
+  assert(/上一课新的/.test(step2) ? st2.mode === "learn" : st2.cat !== "m1",
+    "计划进行中,「下一题」进的是计划的下一步(" + step2 + "),不是一步杀", JSON.stringify(st2));
   await ctx2.close();
 
   // B. 进步区:没有数据整节不画;种入两周的档案就出现,数字如实

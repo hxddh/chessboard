@@ -40,8 +40,8 @@ export function createLibraryUI(d) {
   const {
     doc, store, Persist, game, t, tf, toast, sync,
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
-    plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
-    saveSettings, stopLiveAnalysis, withMotifs,
+    leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
+    saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs,
   } = d;
   const Dlg = ChessDialog;
   const Fide = ChessFide;
@@ -662,19 +662,33 @@ export function createLibraryUI(d) {
     const pick = store.ui.libPick;
     if (!pick) return true;
     if (pick.kind === "eco") return g.eco === pick.value;
+    return libPickPly(g) != null;
+  }
+
+  /**
+   * The move a motif or move-number filter is about, in this game.
+   *
+   * The first of this player's moves on the move number the mistakes cluster
+   * on, or the first one the motif caught them with. It is both the list's
+   * test (a game matches when it has such a move) and — 7.6 §3e — where
+   * the game opens — one walk over the arrays, so the move the game opens on
+   * is the very move that put it in the list. An opening filter names no
+   * move, and neither does no filter: null.
+   * @returns {number|null} the index of the move, as in `an.tags`
+   */
+  function libPickPly(g) {
+    const pick = store.ui.libPick;
+    if (!pick || (pick.kind !== "motif" && pick.kind !== "peak")) return null;
     const start = g.fen ? g.fen.trim().split(/\s+/) : [];
     const first = start[1] === "b" ? "b" : "w";
     const other = first === "w" ? "b" : "w";
     const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
     for (let i = 0; i < tags.length; i++) {
       if ((i % 2 === 0 ? first : other) !== g.side) continue;
-      if (pick.kind === "motif") {
-        if (g.motifs && g.motifs[i] === pick.value) return true;
-      } else if (pick.kind === "peak") {
-        if ((tags[i] === "?" || tags[i] === "??") && libMoveNo(g, i) === pick.value) return true;
-      }
+      if (pick.kind === "motif" && g.motifs && g.motifs[i] === pick.value) return i;
+      if (pick.kind === "peak" && (tags[i] === "?" || tags[i] === "??") && libMoveNo(g, i) === pick.value) return i;
     }
-    return false;
+    return null;
   }
 
   /** Which slice of the library the list is showing. */
@@ -829,9 +843,22 @@ export function createLibraryUI(d) {
   async function loadFromLibrary(id) {
     const entry = libEntryById(id);
     if (!entry) return;
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
+    // read before the list closes: the filter is what says which move matters
+    const ply = libPickPly(entry);
     closeLibList();
-    return loadLibraryEntry(entry);
+    // 7.6 §3d: from 教学 or 做题 this used to refuse with a toast — one the
+    // dialog's blurred backdrop covered, so the click simply did nothing, and
+    // the daily plan's last step leaves people in exactly that mode. It now
+    // does what 「看那局棋」 does: leave the trainer, open the game for review,
+    // and put the trainer back as it was if the load is refused.
+    const back = leaveTrainer();
+    const ok = await loadLibraryEntry(entry);
+    if (!ok) { back(); return false; }
+    // 7.6 §3e: a game found through 「第 10 回合」 or a motif opens on that
+    // move, not at its end — the same one-ply-later rule as 「看那局棋」, so
+    // the cursor is on the move the move list marks, not the moment before
+    if (ply != null) { setViewIndex(ply + 1); saveGame(); sync(); }
+    return true;
   }
 
   /**
@@ -867,6 +894,9 @@ export function createLibraryUI(d) {
     } : null;
     saveSettings();
     saveGame();
+    // the game and its review are on the 对局 tab; opened from 记录 the board
+    // changed while the panel went on showing the list it came from (7.6 §3e)
+    setSideTab("play", { top: true });
     sync();
     toast(tf("lib.loaded", [libraryLabel(entry)]));
     return true;

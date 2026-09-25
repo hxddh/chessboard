@@ -2549,6 +2549,12 @@ import { createStore } from "./store.js";
     const sec = document.getElementById("sec-learn");
     if (!sec) return;
     sec.hidden = store.session.mode !== "learn";
+    // the strip over the board (7.6 §3f): a lesson task, not a classic being
+    // read — the stylesheet decides where it shows, this only says there is one
+    const hasTask = store.session.mode === "learn" && !!store.session.learn;
+    appEl.classList.toggle("has-task", hasTask);
+    const strip = document.getElementById("task-strip-text");
+    if (strip) strip.textContent = hasTask ? learnTaskText() : "";
     if (store.session.mode !== "learn" || !store.session.learn) return;
     const L = curLesson();
     const doneCount = LESSONS.filter((x) => store.session.learnState.done[x.id]).length;
@@ -3757,8 +3763,45 @@ import { createStore } from "./store.js";
     sync();
   }
 
+  /**
+   * Step out of 教学 / 做题 so a game can go on the board (7.6 §3d).
+   *
+   * The mode itself is left as it is — the load that follows sets it, and a
+   * load can be refused (the 「替换当前棋局？」 question). What is returned
+   * puts the trainer back exactly where it was for that case: the same
+   * drill, the same lesson, the same classic. Outside the trainer modes
+   * there is nothing to leave and nothing to restore.
+   * @returns {() => void}
+   */
+  function leaveTrainer() {
+    const mode = store.session.mode;
+    if (mode !== "learn" && mode !== "puzzle") return () => {};
+    const pz = store.session.puzzle;
+    const cat = pz ? pz.cat : null, idx = pz ? pz.idx : 0;
+    const li = store.session.learn ? store.session.learn.li : null;
+    const ci = store.session.study ? store.session.study.ci : null;
+    invalidateEngine();
+    clearPreview();
+    if (mode === "puzzle") stopPuzzles(); else stopLearn();
+    return () => {
+      if (mode === "puzzle") { if (cat != null) startPuzzleAt(cat, idx); else startPuzzles(); }
+      else if (ci != null) startClassic(ci);
+      else if (li != null) startLesson(li);
+      else startLearn();
+      sync();
+    };
+  }
+
   function nextPuzzle() {
     if (!store.session.puzzle) return;
+    // 7.6 §3g: while 今天的训练 is running, 下一题 is the plan's next step.
+    // It used to be only "the next one in this category" — so the step that
+    // had just been completed was left for whatever the category held, and an
+    // emptied review queue graduated to 一步杀 instead of to the plan's next
+    // item. Where the current step is this category, that is still the move.
+    const d = store.session.daily;
+    const step = d && d.steps[d.i];
+    if (step && !dailyStepIsHere(step) && dailyJump(step)) { store.commit("session", "sync"); return; }
     let list = puzzlesInCat(store.session.puzzle.cat);
     if (store.session.puzzle.cat === "review") {
       // a clean re-solve shrinks the queue; graduate to m1 when it empties
@@ -4758,6 +4801,14 @@ import { createStore } from "./store.js";
     const cv = document.getElementById("eval-curve");
     const a = analysisFor();
     if (!cv || !a) return;
+    // 7.6 §3b: a curve asked to draw while its tab, its panel or itself is
+    // hidden measures 0×0, and the `max(1, …)` below used to turn that into
+    // a 1×1 backing store — which the stylesheet then stretched to 60px of
+    // one blurred pixel, a solid red block after opening a library game from
+    // the 记录 tab or switching language on the 设置 tab. Nothing drawn from
+    // a box that is not laid out; the ResizeObserver on the canvas redraws it
+    // the moment it gets a size again.
+    if (!cv.clientWidth || !cv.clientHeight) return;
     const dpr = window.devicePixelRatio || 1;
     const W = Math.max(1, Math.round(cv.clientWidth * dpr));
     const H = Math.max(1, Math.round(cv.clientHeight * dpr));
@@ -5131,7 +5182,28 @@ import { createStore } from "./store.js";
     renderDailyPlan(d.steps, d.i);
   }
 
-  /** Take the player to where the current step happens. Invited, not automatic. */
+  /**
+   * Is the puzzle on the board already where this step is done?
+   *
+   * The category steps are, when their category is the one being worked
+   * through — the next puzzle in it is the plan's next puzzle too. A motif
+   * step is never "here": the category a motif puzzle sat in says nothing
+   * about whether the next one in it is about that motif. The other steps
+   * are not puzzles at all.
+   */
+  function dailyStepIsHere(step) {
+    const pz = store.session.puzzle;
+    if (!pz || store.session.mode !== "puzzle") return false;
+    if (step.kind === "review" || step.kind === "mine" || step.kind === "op") return pz.cat === step.kind;
+    if (step.kind === "weak") return pz.cat === step.cat;
+    return false;
+  }
+
+  /**
+   * Take the player to where the current step happens. Invited, not automatic.
+   * @returns {boolean} false when there was nowhere to go (a motif step with
+   *   nothing left unsolved about it), so a caller can fall back
+   */
   function dailyJump(step) {
     const modeBtn = (m) => document.querySelector('#mode-seg button[data-mode="' + m + '"]');
     if (step.kind === "lesson") {
@@ -5139,12 +5211,12 @@ import { createStore } from "./store.js";
       saveLearnState();
       if (store.session.mode !== "learn") modeBtn("learn").click();
       else { startLesson(step.i); setSideTab("play", { top: true }); sync(); }
-      return;
+      return true;
     }
     if (step.kind === "game") {
       if (store.session.mode !== "ai") modeBtn("ai").click();
       else setSideTab("play", { top: true });
-      return;
+      return true;
     }
     // the library step is the one that asks for time rather than answers:
     // show the section and start the pass, which is exactly what the player
@@ -5154,14 +5226,14 @@ import { createStore } from "./store.js";
       const sec = document.getElementById("lib-body");
       if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "center" });
       if (!store.session.libRun) runLibraryPass();
-      return;
+      return true;
     }
     // 5.2: a motif step lands on a puzzle ABOUT that motif — the player's own
     // drill if one is unsolved, else the first canned one — wherever it shelves
     if (step.kind === "motif") {
       const about = bookNow().filter((p) => !store.session.puzzleState.solved[p.id] && motifKeyOf(p) === step.motif);
       const pick = about.find((p) => p.cat === "mine") || about[0];
-      if (!pick) { toast(t("daily.motifDone")); return; }
+      if (!pick) { toast(t("daily.motifDone")); return false; }
       store.session.puzzleState.cat = pick.cat;
       savePuzzleState();
       store.session.puzzleTierFilter = "all";
@@ -5172,7 +5244,7 @@ import { createStore } from "./store.js";
       };
       if (store.session.mode !== "puzzle") { modeBtn("puzzle").click(); go(); }
       else { go(); saveSettings(); sync(); }
-      return;
+      return true;
     }
     // the puzzle steps: pick the category, then enter (or re-enter) the mode
     const cat = step.kind === "weak" ? step.cat : step.kind;
@@ -5182,6 +5254,7 @@ import { createStore } from "./store.js";
     store.session.puzzleTierFilter = "all";
     if (store.session.mode !== "puzzle") modeBtn("puzzle").click();
     else { startPuzzles(); setSideTab("play", { top: true }); saveSettings(); sync(); }
+    return true;
   }
 
   /**
@@ -5493,8 +5566,8 @@ import { createStore } from "./store.js";
   const LibraryUI = createLibraryUI({
     doc: document, store, Persist, game, t, tf, toast, sync,
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
-    plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
-    saveSettings, stopLiveAnalysis, withMotifs,
+    leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
+    saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs,
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
@@ -7587,6 +7660,11 @@ import { createStore } from "./store.js";
     ], { cancelLabel: t("ob.later") });
     if (choice === 0) {
       store.session.mode = "learn";
+      // …and the engine they meet after the first lessons is the one built
+      // for them. Up to 7.5 this branch left `difficulty` at the default
+      // "normal" (Elo 1700), so the self-declared beginner got a stronger
+      // opponent than 「我会下棋」 does (7.6 §3a).
+      store.session.difficulty = "beginner";
       startLearn();
     } else {
       // they can play, but "normal" is Elo 1700 — start a rung lower and let
@@ -9820,6 +9898,11 @@ import { createStore } from "./store.js";
   // window resize handler covers the rest.
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
+    // the eval curve goes from 0×0 to its real size whenever its tab, the
+    // panel or the curve itself is shown again — the draws it skipped while
+    // hidden are made up here, not by every path that can unhide it (7.6 §3b)
+    const curve = document.getElementById("eval-curve");
+    if (curve) new ResizeObserver(() => drawEvalCurve()).observe(curve);
   }
   // 6.1: saveGame() writes the cache, and the mirror behind it is on a 400 ms
   // timer — on the way out that timer never fires, so up to one burst of
