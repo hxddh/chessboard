@@ -5996,8 +5996,37 @@ for (const lang of CONTENT_LANGS) {
   const nightlyWf = fs.readFileSync(path.join(root, ".github/workflows/nightly.yml"), "utf8");
   assert(/--sample=150/.test(checksWf),
     "PR CI 跑抽样的题库门禁 —— 7.0 之前 PR 上一条引擎检查都没有");
-  assert(/npm run test:engine:sample/.test(releaseWf) && !/run: npm run test:engine$/m.test(releaseWf),
-    "发布跑的是抽样档，不是两个半小时的全量");
+  // 7.6: release.yml runs the sampled tier as a matrix, one job per script,
+  // so it no longer says `npm run test:engine:sample`. Each command of that
+  // npm script must appear in it verbatim, arguments included — a matrix that
+  // dropped a script, or dropped `--sample=150` and so ran the two-hour full
+  // sweep, fails here just as a missing `npm run` line did.
+  const sampleCmds = String(pkg.scripts["test:engine:sample"]).split("&&").map((c) => c.trim()).filter(Boolean);
+  const sampleMissing = sampleCmds.filter((c) => !releaseWf.includes(c));
+  const fullMined = [...releaseWf.matchAll(/scripts\/test-mined\.mjs(?! --sample=)/g)].length;
+  assert((/npm run test:engine:sample/.test(releaseWf) || sampleMissing.length === 0) &&
+    !/run: npm run test:engine$/m.test(releaseWf) && fullMined === 0,
+    "发布跑的是抽样档，不是两个半小时的全量" +
+    (sampleMissing.length ? " —— 漏了 " + sampleMissing.join(", ") : "") +
+    (fullMined ? " —— test-mined 没带 --sample" : ""));
+  // 7.6: the gates are parallel jobs now, and what used to make "red means
+  // no release" true by construction — one job, steps in a row — no longer
+  // does. The job that tags and publishes must `needs:` every other job.
+  {
+    const jobsAt = releaseWf.search(/^jobs:\s*$/m);
+    const heads = [...releaseWf.slice(jobsAt).matchAll(/^  ([\w-]+):\s*$/gm)];
+    const jobNames = heads.map((m) => m[1]);
+    const body = {};
+    heads.forEach((m, i) => { body[m[1]] = releaseWf.slice(jobsAt).slice(m.index, i + 1 < heads.length ? heads[i + 1].index : undefined); });
+    const tagger = jobNames.filter((j) => /git push/.test(body[j]) || /--draft=false/.test(body[j]));
+    const tagBody = tagger.length === 1 ? body[tagger[0]] : "";
+    const needs = ((tagBody.match(/^    needs:\s*\[([^\]]*)\]/m) || [])[1] || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const unguarded = jobNames.filter((j) => j !== tagger[0] && !needs.includes(j));
+    assert(tagger.length === 1 && jobNames.length > 1 && unguarded.length === 0,
+      "release.yml 里打 tag、发布的那个 job needs 其余每一个 job —— 任何一项红了都不发" +
+      (tagger.length !== 1 ? "（找到 " + tagger.length + " 个打 tag / 发布的 job）" : "") +
+      (unguarded.length ? " —— 没等 " + unguarded.join(", ") : ""));
+  }
   assert(/run: npm run test:engine$/m.test(nightlyWf),
     "全量那一趟有人跑 —— 抽样只覆盖 15%，剩下的 85% 在 nightly");
   assert(scriptsIn(pkg.scripts["test:engine:sample"]).length === scriptsIn(pkg.scripts["test:engine"]).length,

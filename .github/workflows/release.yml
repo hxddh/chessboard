@@ -1,9 +1,25 @@
 name: release
 
-# Creates the git tag + GitHub Release from notes in .github/release-notes/.
-# The macOS app zip cannot be built here (Native SDK is a local framework),
-# so build it with scripts/package.sh and attach it to the release:
-#   gh release upload <tag> dist/Chessboard-macOS-arm64.zip
+# Creates the git tag + GitHub Release from notes in .github/release-notes/,
+# with both platform packages attached, once every gate below is green.
+#
+# 7.6 (v7-6-plan §5): the gates run as parallel jobs. Until 7.5 this was one
+# job that ran them in a row — static, engine, then every browser suite on
+# Chromium and then again on WebKit (2 h 36 min of a 3 h 11 min release) —
+# and only then dispatched the two platform builds and waited for them. Now:
+#
+#   preflight ─┐
+#   static ────┤
+#   engine ×8 ─┤
+#   browser ×10┼──► publish: tag → draft with both packages → verify → publish
+#   build-macos┤
+#   build-win ─┘
+#
+# `publish` needs every one of them, so the guarantee is the one the serial
+# job gave: if anything is red, nothing is tagged and nothing is published.
+# The platform builds are this run's own jobs (build-*.yml via workflow_call),
+# built from the commit this run checked out — the same commit the tag will
+# name — and their packages travel as artifacts, not through the release.
 on:
   workflow_dispatch:
     inputs:
@@ -30,10 +46,29 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  actions: read
 
 jobs:
-  release:
+  # The two things that would stop `publish` at the very end, checked in the
+  # first minute instead of after every gate has run: the notes file exists,
+  # and the tag is not already a published release. `publish` checks both
+  # again — this job only makes a doomed run go red early.
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: notes exist, tag not yet published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -f ".github/release-notes/${TAG}.md" || { echo "missing .github/release-notes/${TAG}.md"; exit 1; }
+          published=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq "[.[] | select(.tag_name==\"${TAG}\") | select(.draft==false)] | .[0].id // empty")
+          [ -z "$published" ] || { echo "${TAG} is already published"; exit 1; }
+
+  static:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -49,93 +84,165 @@ jobs:
       # naming one script here meant seven others were not a release gate.
       - name: static tests
         run: npm run test:static
-      # The engine-backed checks — all seven of `npm run test:engine`, not just
-      # openings + tactics (6.0 Q0.5: novice / strength / analysis were in no
-      # workflow at all). They are opt-in locally (minutes) and were therefore
-      # run by hand, which meant the properties they prove — no drilled opening
-      # line is a transcription error, no "only one move wins" puzzle has a
-      # second solution, the novice levels really are weaker — were guarded by
-      # whoever remembered. A release is exactly the moment nobody should be
-      # relying on remembering. They are platform-independent, so they run
-      # here rather than in both platform builds. Each skips itself with exit
-      # 0 if the vendored engine is missing.
-      #
-      # The soundness checks search to a fixed depth rather than a fixed time.
-      # Gating on a time-limited search would have been a flaky gate: the
-      # closest opening line and the closest puzzle each sat within ~20cp of
-      # their limit, which is inside the run-to-run spread. See the header of
-      # either script.
-      #
-      # 7.1 (v7-1-plan §3.2): this step is `test:engine:sample`, not
-      # `test:engine`. The difference is one script — the mined-puzzle gate
-      # runs over a fixed sample of 150 instead of all 1002 — and it is the
-      # difference between a release gate of about half an hour and one of
-      # two and a half hours. 7.0 created that cost by wiring test-mined into
-      # test:engine and then giving it a clean transposition table per puzzle
-      # (which is what made it reproducible, so it is not coming back out).
-      #
-      # The trade-off, stated rather than hidden: a release now searches 15%
-      # of the mined bank rather than all of it. What makes that acceptable
-      # is that the bank is content that does not change between releases —
-      # it changed in 6.0, 6.1 and 7.0, and each time by a deliberate edit to
-      # puzzles-mined.js. So the full sweep runs nightly on main
-      # (nightly.yml), a PR runs the same 150 (checks.yml), and anyone
-      # editing the bank runs `npm run test:engine` by hand, which is what
-      # --fix already requires. The other six scripts run in full, as before.
-      - name: engine checks (openings, tactics, novice, strength, analysis, mined sample, motif coverage)
-        run: npm run test:engine:sample
-      # The browser checks. Every one of them is a regression that shipped: the
-      # board one is the `CHECK is not defined` that emptied the board for two
-      # releases, the persistence one is the study position that vanished on
-      # restart. They lived in the repo without guarding anything, because a
-      # runner with no Chromium made them exit 0 with a notice. E2E_REQUIRED=1
-      # turns that notice into a failure, so a green release means they ran.
-      #
-      # Playwright is pinned. An unpinned global install is how the same commit
-      # comes out different on different days.
-      # Both engines, because the app ships on both: Windows runs the page in
-      # WebView2 (Chromium) and macOS in WKWebView (WebKit). Chromium alone
-      # gates half the product.
-      - name: browser regression tests
-        env:
-          E2E_REQUIRED: "1"
+
+  # The engine-backed checks — every script in `npm run test:engine:sample`,
+  # one job each (7.6: in a row they took 26 minutes, the longest gate once
+  # the browser suites run side by side). scripts/test-chess.mjs checks that
+  # this list is exactly that npm script's, arguments included, so a script
+  # added there cannot be missing here.
+  #
+  # Why they gate a release at all: they are opt-in locally (minutes) and
+  # were therefore run by hand, which meant the properties they prove — no
+  # drilled opening line is a transcription error, no "only one move wins"
+  # puzzle has a second solution, the novice levels really are weaker — were
+  # guarded by whoever remembered. A release is exactly the moment nobody
+  # should be relying on remembering. They are platform-independent, so they
+  # run here rather than in both platform builds. Each skips itself with exit
+  # 0 if the vendored engine is missing.
+  #
+  # The soundness checks search to a fixed depth rather than a fixed time.
+  # Gating on a time-limited search would have been a flaky gate: the
+  # closest opening line and the closest puzzle each sat within ~20cp of
+  # their limit, which is inside the run-to-run spread. See the header of
+  # either script.
+  #
+  # 7.1 (v7-1-plan §3.2): the sampled tier, not `test:engine`. The difference
+  # is one script — the mined-puzzle gate runs over a fixed sample of 150
+  # instead of all 1002 — and it is the difference between a release gate of
+  # about half an hour and one of two and a half hours. The trade-off, stated
+  # rather than hidden: a release searches 15% of the mined bank. The bank is
+  # content that does not change between releases (it changed in 6.0, 6.1 and
+  # 7.0, each time by a deliberate edit to puzzles-mined.js), so the full
+  # sweep runs nightly on main (nightly.yml), a PR runs the same 150
+  # (checks.yml), and anyone editing the bank runs `npm run test:engine` by
+  # hand, which is what --fix already requires.
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - node scripts/test-openings.mjs
+          - node scripts/test-tactics.mjs
+          - node scripts/test-novice.mjs
+          - node scripts/test-strength.mjs
+          - node scripts/test-analysis.mjs
+          - node scripts/test-mines.mjs
+          - node scripts/test-mined.mjs --sample=150
+          - node scripts/test-motif.mjs --games=6
+    name: engine (${{ matrix.check }})
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
+      - name: ${{ matrix.check }}
+        run: ${{ matrix.check }}
+
+  # The browser checks. Every one of them is a regression that shipped: the
+  # board one is the `CHECK is not defined` that emptied the board for two
+  # releases, the persistence one is the study position that vanished on
+  # restart. They lived in the repo without guarding anything, because a
+  # runner with no Chromium made them exit 0 with a notice. E2E_REQUIRED=1
+  # turns that notice into a failure, so a green release means they ran.
+  #
+  # Both engines, because the app ships on both: Windows runs the page in
+  # WebView2 (Chromium) and macOS in WKWebView (WebKit). Chromium alone gates
+  # half the product. 7.6: engine × group, the same groups as checks.yml,
+  # each group sized to be one of the long suites or a few short ones.
+  # scripts/test-chess.mjs checks every suite in `npm run test:e2e` is here.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+        group:
+          - name: board + sound + clock
+            suites: scripts/test-board-e2e.mjs scripts/test-audio-e2e.mjs scripts/test-clock-e2e.mjs
+          - name: lessons + review + engine
+            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs
+          - name: persistence
+            suites: scripts/test-persist-e2e.mjs
+          - name: game library
+            suites: scripts/test-library-e2e.mjs
+          - name: panel layout
+            suites: scripts/test-layout-e2e.mjs
+    name: browser (${{ matrix.engine }}, ${{ matrix.group.name }})
+    env:
+      E2E_REQUIRED: "1"
+      E2E_BROWSER: ${{ matrix.engine }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
+      # Playwright is pinned. An unpinned global install is how the same
+      # commit comes out different on different days.
+      - name: install playwright + ${{ matrix.engine }}
         run: |
           npm install --no-save playwright@1.62.1
-          npx --yes playwright@1.62.1 install --with-deps chromium webkit
-          for engine in chromium webkit; do
-            echo "::group::$engine"
-            path="$(node -e "console.log(require('playwright')['$engine'].executablePath())")"
-            if [ "$engine" = chromium ]; then export CHROME_PATH="$path"; else export WEBKIT_PATH="$path"; fi
-            E2E_BROWSER="$engine" node scripts/test-board-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-audio-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-clock-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-content-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-persist-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-review-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-library-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-layout-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-engine-e2e.mjs
-            E2E_BROWSER="$engine" node scripts/test-engine-flows-e2e.mjs
+          npx --yes playwright@1.62.1 install --with-deps ${{ matrix.engine }}
+          path="$(node -e "console.log(require('playwright')['${{ matrix.engine }}'].executablePath())")"
+          if [ "${{ matrix.engine }}" = chromium ]; then echo "CHROME_PATH=$path"; else echo "WEBKIT_PATH=$path"; fi >> "$GITHUB_ENV"
+      # every suite in the group runs even when an earlier one fails, so one
+      # red run says everything that is wrong in it
+      - name: ${{ matrix.group.name }}
+        env:
+          SUITES: ${{ matrix.group.suites }}
+        run: |
+          failed=""
+          for s in $SUITES; do
+            echo "::group::$s"
+            node "$s" || failed="$failed $s"
             echo "::endgroup::"
           done
+          [ -z "$failed" ] || { echo "::error::failed:$failed"; exit 1; }
 
-      # The tag comes first and everything downstream is built FROM it.
+  # The platform builds, as jobs of this run (see the header). Each one runs
+  # its own unit tests, zig tests and the packaged-app self-test
+  # (scripts/selftest-app.mjs) and uploads its package as an artifact.
+  build-macos:
+    uses: ./.github/workflows/build-macos.yml
+    with:
+      sdk_version: ${{ inputs.sdk_version }}
+  build-windows:
+    uses: ./.github/workflows/build-windows.yml
+    with:
+      sdk_version: ${{ inputs.sdk_version }}
+
+  publish:
+    needs: [preflight, static, engine, browser, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: Chessboard-*
+          path: dist
+          merge-multiple: true
+      - name: both packages are here
+        run: |
+          ls -l dist
+          for f in Chessboard-macOS-arm64.zip Chessboard-macOS-arm64.dmg Chessboard-Windows-x64.zip; do
+            test -f "dist/$f" || { echo "missing $f"; exit 1; }
+          done
+      # The tag names the commit every job above checked out and tested.
       #
-      # It used to be the other way round: the release was published, then the
-      # two platform builds were dispatched against $GITHUB_REF_NAME — the
-      # branch — and nobody waited for either. A build that failed left a
-      # published release with no download on it, and a push to the branch
-      # between dispatch and checkout meant the binaries were not built from
-      # the source the tag names. Both are silent.
-      #
-      # And it has to be retryable. Everything after this point can fail — the
-      # platform builds run afterwards — and until 2.0 a failure there left a
-      # tag and a draft behind that made every later attempt die at
-      # `gh release create` with "release already exists". The 2.0.0 release hit
-      # exactly that: the Windows build failed on a CRLF-only test bug, and the
-      # only way forward was to delete a tag and a draft by hand. A release
-      # process that cannot be retried is one that gets finished by hand, which
-      # is the opposite of what it is for.
+      # And it has to be retryable. Until 2.0 a failure after this point left
+      # a tag and a draft behind that made every later attempt die at
+      # `gh release create` with "release already exists". The 2.0.0 release
+      # hit exactly that: the Windows build failed on a CRLF-only test bug,
+      # and the only way forward was to delete a tag and a draft by hand. A
+      # release process that cannot be retried is one that gets finished by
+      # hand, which is the opposite of what it is for. ("Re-run failed jobs"
+      # reruns only what failed; the green gates are kept.)
       #
       # Retrying is allowed only while nothing has been published: a draft for
       # this tag is deleted, a *published* release for it stops the run.
@@ -163,7 +270,7 @@ jobs:
           fi
           git tag -f "$TAG" "$GITHUB_SHA"
           git push -f origin "refs/tags/${TAG}"
-      - name: draft the release
+      - name: draft the release with both packages
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -172,49 +279,8 @@ jobs:
             --draft \
             --target "$GITHUB_SHA" \
             --title "$TAG" \
-            --notes-file ".github/release-notes/${TAG}.md"
-      - name: build both platforms from the tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
-          SDK_VERSION: ${{ inputs.sdk_version }}
-        run: |
-          set -euo pipefail
-          # recorded before the dispatch so the wait below can tell this
-          # attempt's runs from a previous attempt's
-          echo "DISPATCHED_AT=$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
-          gh workflow run build-macos.yml --ref "$TAG" \
-            -f release_tag="$TAG" -f sdk_version="$SDK_VERSION"
-          gh workflow run build-windows.yml --ref "$TAG" \
-            -f release_tag="$TAG" -f sdk_version="$SDK_VERSION"
-      - name: wait for both builds to upload their assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
-          DISPATCHED_AT: ${{ env.DISPATCHED_AT }}
-        run: |
-          set -euo pipefail
-          # give the dispatches a moment to register as runs
-          sleep 20
-          deadline=$(( $(date +%s) + 3600 ))
-          for wf in build-macos.yml build-windows.yml; do
-            id=""
-            while [ -z "$id" ]; do
-              # Only runs newer than this attempt's dispatch. On a retry the tag
-              # already carries the previous attempt's runs, and "the most
-              # recent run for this tag" can still be one of those in the
-              # seconds before the new one registers — which would make the
-              # retry watch the very run that failed last time and fail again.
-              id=$(gh run list --workflow="$wf" --branch "$TAG" --limit 30 \
-                     --json databaseId,createdAt \
-                     --jq "[.[] | select(.createdAt >= \"${DISPATCHED_AT}\")] | .[0].databaseId // empty")
-              [ -n "$id" ] && break
-              [ "$(date +%s)" -lt "$deadline" ] || { echo "no $wf run appeared for $TAG"; exit 1; }
-              sleep 15
-            done
-            echo "waiting on $wf run $id"
-            gh run watch "$id" --exit-status
-          done
+            --notes-file ".github/release-notes/${TAG}.md" \
+            dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip
       - name: the release must actually have both downloads
         env:
           GH_TOKEN: ${{ github.token }}

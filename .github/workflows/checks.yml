@@ -78,6 +78,23 @@ jobs:
         # other — "does this break everywhere or only on WebKit" is the first
         # question worth answering.
         engine: [chromium, webkit]
+        # 7.6 (v7-6-plan §5): engine × group rather than one job per engine
+        # running every suite in a row (84 minutes on Chromium). A group is
+        # one of the long suites, or a few short ones; release.yml uses the
+        # same groups. scripts/test-chess.mjs checks that every suite in
+        # `npm run test:e2e` is named here.
+        group:
+          - name: board + sound + clock
+            suites: scripts/test-board-e2e.mjs scripts/test-audio-e2e.mjs scripts/test-clock-e2e.mjs
+          - name: lessons + review + engine
+            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs
+          - name: persistence
+            suites: scripts/test-persist-e2e.mjs
+          - name: game library
+            suites: scripts/test-library-e2e.mjs
+          - name: panel layout
+            suites: scripts/test-layout-e2e.mjs
+    name: browser (${{ matrix.engine }}, ${{ matrix.group.name }})
     env:
       E2E_REQUIRED: "1"
       E2E_BROWSER: ${{ matrix.engine }}
@@ -117,33 +134,26 @@ jobs:
             require('fs').appendFileSync(process.env.GITHUB_ENV,
               ('${{ matrix.engine }}' === 'chromium' ? 'CHROME_PATH=' : 'WEBKIT_PATH=') + p + '\n');
           "
-      - name: board
-        run: node scripts/test-board-e2e.mjs
-      - name: sound
-        run: node scripts/test-audio-e2e.mjs
-      - name: clock
-        run: node scripts/test-clock-e2e.mjs
-      - name: lessons + puzzles
-        run: node scripts/test-content-e2e.mjs
-      - name: persistence
-        run: node scripts/test-persist-e2e.mjs
-      - name: review
-        run: node scripts/test-review-e2e.mjs
-      - name: game library
-        run: node scripts/test-library-e2e.mjs
-      - name: panel layout
-        run: node scripts/test-layout-e2e.mjs
-      # The only browser check that serves the real engine-src.js — every one
-      # above stubs it. Answers "does Stockfish start in the page as shipped"
-      # on this matrix's engine (v7-4-plan §1).
-      - name: engine (real Stockfish)
-        run: node scripts/test-engine-e2e.mjs
-      # The features that need the engine, on the real one: vs computer, hint,
-      # blunder coach, analysis, live analysis, game library, lesson drill.
-      # The stubbed checks above cannot see a wrong answer shape or a search
-      # too slow for some timeout (v7-5-plan §2).
-      - name: engine flows (real Stockfish)
-        run: node scripts/test-engine-flows-e2e.mjs
+      # Every suite in the group runs even when an earlier one fails, so one
+      # red job says everything that is wrong in it.
+      #
+      # test-engine-e2e is the only browser check that serves the real
+      # engine-src.js — every other stubs it — and answers "does Stockfish
+      # start in the page as shipped" on this matrix's engine (v7-4-plan §1).
+      # test-engine-flows-e2e runs the features that need the engine on the
+      # real one: vs computer, hint, blunder coach, analysis, live analysis,
+      # game library, lesson drill (v7-5-plan §2).
+      - name: ${{ matrix.group.name }}
+        env:
+          SUITES: ${{ matrix.group.suites }}
+        run: |
+          failed=""
+          for s in $SUITES; do
+            echo "::group::$s"
+            node "$s" || failed="$failed $s"
+            echo "::endgroup::"
+          done
+          [ -z "$failed" ] || { echo "::error::failed:$failed"; exit 1; }
 
   # src/main.zig and src/runner.zig, compiled and their tests run, on every
   # push — not only at release time. Until 6.0 the Zig side had no PR-time

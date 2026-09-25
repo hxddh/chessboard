@@ -19,6 +19,20 @@ on:
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
         default: "0.10.1"
+  # 7.6: release.yml calls this workflow directly, in parallel with its test
+  # jobs, and takes the package from the uploaded artifact once every test is
+  # green. It passes no release_tag, so nothing is uploaded from here; a hand
+  # dispatch works as before.
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: false
+        default: ""
+      sdk_version:
+        type: string
+        required: false
+        default: "0.10.1"
 
 permissions:
   contents: write
@@ -109,6 +123,9 @@ jobs:
       # makes the page start Stockfish and ask for a move, and the app exits
       # with the verdict (scripts/selftest-app.mjs). 6.0 to 7.3 shipped an app
       # whose engine never started, with every check above this line green.
+      # 7.6: it also round trips the native save file, loads the eco chunk
+      # over zero://, and launches twice to see localStorage survive a restart;
+      # a red run names the check that failed.
       - name: self-test the packaged app
         run: |
           exe="$(find dist/Chessboard.app/Contents/MacOS -type f -perm -u+x | head -n1)"

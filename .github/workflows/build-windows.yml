@@ -21,6 +21,18 @@ on:
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
         default: "0.10.1"
+  # 7.6: called by release.yml in parallel with its test jobs — see the same
+  # trigger in build-macos.yml.
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: false
+        default: ""
+      sdk_version:
+        type: string
+        required: false
+        default: "0.10.1"
 
 permissions:
   contents: write
