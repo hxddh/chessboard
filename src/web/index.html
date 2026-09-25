@@ -318,6 +318,15 @@
             <span class="setting-k" data-i18n="side.volume">音量</span>
             <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
           </div>
+          <!-- 7.7 (v7-7-plan §8): the sound set. 木质 is the default; 经典 is
+               the oscillator set every version until 7.6 played. -->
+          <div class="setting-row stack" id="row-sound-set">
+            <span class="setting-k" data-i18n="side.soundSet">音色</span>
+            <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：7.6 以前的合成音" data-i18n-title="tip.soundSet">
+              <button type="button" data-sound-set="wood" class="active" data-i18n="soundSet.wood">木质</button>
+              <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
+            </div>
+          </div>
           <div class="setting-row">
             <span class="setting-k" data-i18n="side.coords">坐标</span>
             <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘边框上标出 a–h 与 1–8" data-i18n-title="tip.coords">

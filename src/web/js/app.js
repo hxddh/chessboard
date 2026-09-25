@@ -337,6 +337,8 @@ import { createStore } from "./store.js";
     },
     ui: {
       soundOn: true,
+      /** 7.7 (v7-7-plan §8): "wood" (the rendered samples) or "classic" (the oscillators) */
+      soundSet: "wood",
       /** 6.0 (v6-plan Q2.8 / Q2.6): the level, the frame labels, the men, the engine knobs */
       volume: 100,
       coordsOn: true,
@@ -1281,6 +1283,7 @@ import { createStore } from "./store.js";
       const s = Persist.read("settings").value;
       if (!s) return;
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
+      if (Audio2.SOUND_SETS.includes(s.soundSet)) Audio2.setSoundSet(store.ui.soundSet = s.soundSet);
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
       if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
@@ -1310,7 +1313,8 @@ import { createStore } from "./store.js";
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
-        followSystem: store.ui.followSystem, textSize: store.ui.textSize }));
+        followSystem: store.ui.followSystem, textSize: store.ui.textSize,
+        soundSet: store.ui.soundSet }));
     } catch (_) {}
   }
   function saveGame() {
@@ -1463,6 +1467,7 @@ import { createStore } from "./store.js";
    *            it found and writes a fresh one; scripts/selftest-app.mjs
    *            launches the app twice and checks that the second run found
    *            the first run's (7.6)
+   *   sound    the default sound set's buffers build and render, offline (7.7)
    *
    * `ok` is true only when every check passes, and `err` names the ones that
    * did not. The checks say `pass`, never `ok`: main.zig decides the exit
@@ -1550,6 +1555,13 @@ import { createStore } from "./store.js";
       chunk.pass = true;
       chunk.name = hit.eco + " " + ChessEco.localName(hit, store.ui.langId);
     } catch (err) { chunk.err = errText(err); }
+
+    // the default sound set renders here: buffers built and rendered offline,
+    // no gesture needed and nothing heard (audio.js selftest, 7.7)
+    const sound = report.checks.sound = { pass: false };
+    try {
+      Object.assign(sound, await within(Audio2.selftest(), 15000, "sound render"));
+    } catch (err) { sound.err = errText(err); }
 
     // A WebView commits localStorage to disk on a timer of its own (Chromium's
     // is a few seconds), and main.zig exits the moment the report arrives: a
@@ -1827,6 +1839,8 @@ import { createStore } from "./store.js";
       el.textContent = fmtClock(store.game.clock[side]);
       el.classList.toggle("active", active === side);
       el.classList.toggle("low", store.game.clock[side] < 20000);
+      // the warning is for the person at the board, not for the engine's clock
+      if (store.session.mode === "pvp" || side === store.session.humanColor) Audio2.noteClock(side, store.game.clock[side]);
     }
   }
 
@@ -3659,6 +3673,7 @@ import { createStore } from "./store.js";
     store.session.puzzle.last = null;
     store.session.puzzle.misses++;
     markMissed(store.session.puzzle.p.id); // a missed puzzle joins the review queue
+    Audio2.playWrong();
     // the correction tier: this is the app telling you what you got wrong,
     // which in the puzzle and opening modes is the entire product
     toast((reason || t("pz.noForcedMate")) +
@@ -7034,6 +7049,9 @@ import { createStore } from "./store.js";
     if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
     const rowVol = document.getElementById("row-volume");
     if (rowVol) rowVol.hidden = !store.ui.soundOn;
+    const rowSet = document.getElementById("row-sound-set");
+    if (rowSet) rowSet.hidden = !store.ui.soundOn;
+    document.querySelectorAll("#sound-set-seg button").forEach((b) => b.classList.toggle("active", b.dataset.soundSet === store.ui.soundSet));
     document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
     document.querySelectorAll("#multipv-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.multipv) === store.ui.multipv));
     document.querySelectorAll("#mode-seg button").forEach((b) => {
@@ -7388,6 +7406,7 @@ import { createStore } from "./store.js";
     syncAutoFlip();
     sync();
     saveGame();
+    Audio2.playStart();
     if (wasDown) retryEngine();
     else maybeEngineTurn();
   }
@@ -9629,6 +9648,15 @@ import { createStore } from "./store.js";
     // one save and one sample per release of the slider, not one per pixel
     volEl.onchange = () => { saveSettings(); if (store.ui.soundOn) Audio2.playMove("w"); };
   }
+  // 7.7 (v7-7-plan §8): wood or classic, with a sample of the one just picked
+  document.getElementById("sound-set-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-sound-set]");
+    if (!b) return;
+    Audio2.setSoundSet(store.ui.soundSet = b.dataset.soundSet);
+    saveSettings();
+    syncSettingsUI();
+    Audio2.playMove("w");
+  };
   // 6.0 (v6-plan Q3.6): the theme follows the system's scheme while the
   // switch is on — night for dark, day for light — and reacts live
   const schemeMq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;

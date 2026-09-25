@@ -18,6 +18,13 @@
  * pass by mistake — if the app plays no sound at all, the tap sees nothing and
  * every assertion below fails.
  *
+ * 7.7 (v7-7-plan §8): two sound sets. The wooden one plays sample buffers,
+ * which the tap names by a hash of their samples; the dispatch sections run
+ * once per set. Then the wooden set on its own: fourteen events, fourteen
+ * different buffers; attack, decay and spectral centroid measured against
+ * what wood sounds like; the start of a game; the low-time warning firing
+ * once; and switching to the classic set in the settings.
+ *
  * Needs playwright-core and a browser (see scripts/e2e-browser.mjs).
  * Exits 0 with a notice when either is missing, except under E2E_REQUIRED=1:
  *   node scripts/test-audio-e2e.mjs
@@ -31,6 +38,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { loadSoundBank, measure } from "./lib/sound-metrics.mjs";
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 const server = http.createServer((req, res) => {
@@ -92,10 +100,27 @@ const TAP = (settings) => {
     o.start = (t) => { window.__voices.push(fs); return st(t); };
     return o;
   };
+  // 7.7: a buffer is named by what is in it. The wooden set is buffers only,
+  // so its voices are told apart by a hash of their samples — the same FNV-1a
+  // over 16-bit samples as scripts/lib/sound-metrics.mjs pcmHash — and the
+  // classic set's one buffer (its noise burst) is simply a hash nobody knows.
+  window.__pcmHash = (x) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < x.length; i++) {
+      const v = Math.max(-32768, Math.min(32767, Math.round(x[i] * 32767))) & 0xffff;
+      h = Math.imul(h ^ (v & 0xff), 0x01000193);
+      h = Math.imul(h ^ (v >>> 8), 0x01000193);
+    }
+    return (h >>> 0).toString(16).padStart(8, "0");
+  };
   AC.prototype.createBufferSource = function () {
     const s = cb.call(this);
     const st = s.start.bind(s);
-    s.start = (t) => { window.__voices.push(["noise"]); return st(t); };
+    s.start = (t) => {
+      const b = s.buffer;
+      window.__voices.push(["buf", b ? window.__pcmHash(b.getChannelData(0)) : "", b ? b.sampleRate : 0]);
+      return st(t);
+    };
     return s;
   };
   localStorage.setItem("chess.v1.settings", JSON.stringify(settings));
@@ -108,7 +133,11 @@ const TAP = (settings) => {
  * Runs in Node, on the numbers the tap collected, so a failure prints what was
  * actually heard rather than a boolean.
  */
-function nameVoices(voices) {
+const LABEL = { move: "落子", capture: "吃子", check: "将军", castle: "王车易位", promote: "升变",
+  lift: "拿起", refused: "拒绝", start: "开局", win: "胜利", loss: "失败", draw: "和棋",
+  lowtime: "时间不多", star: "星", wrong: "做错" };
+
+function nameVoices(voices, bank) {
   const near = (v, hz) => typeof v === "number" && Math.abs(v - hz) <= hz * 0.045;
   // (start, target) — audio.js gives every voice its own pair, and the pair is
   // what survives the ±3% wobble on the ones that have it
@@ -116,7 +145,14 @@ function nameVoices(voices) {
   const out = [];
   let noises = 0, bodies = 0;
   for (const fs of voices) {
-    if (fs[0] === "noise") { noises++; continue; }
+    if (fs[0] === "buf") {
+      // a wooden sample is one voice and one event; anything else is the
+      // classic set's noise burst
+      const name = bank && bank[fs[2]] && bank[fs[2]][fs[1]];
+      if (name) out.push(LABEL[name] || name);
+      else noises++;
+      continue;
+    }
     if (is(fs, 255, 190) || is(fs, 195, 145)) { bodies++; continue; }
     if (is(fs, 196, 155)) { out.push("拒绝"); continue; }
     if (is(fs, 232) || is(fs, 178)) { out.push("王车易位"); continue; }
@@ -138,12 +174,30 @@ function nameVoices(voices) {
   return out;
 }
 
+/** hash → sound name, per sample rate, rendered by the page's own sound-bank.js */
+const BANK = {};
+/** the set the sections below run under; they run once per set (7.7) */
+let SET = "wood";
+
+/**
+ * In the page: every sound of the bank at `sr`, as hash → name. Rendered by
+ * the page, not by Node, so the hashes come from the same engine's Math as
+ * the buffers the app played — WebKit's libm need not agree with V8's.
+ */
+const bankAt = async (sr) => {
+  const m = await import("/js/sound-bank.js");
+  const o = {};
+  for (const n of m.SOUND_NAMES) o[window.__pcmHash(m.renderSound(n, sr))] = n;
+  return o;
+};
+
 /** A page with the tap installed and the first-run picker dismissed. */
-async function open(settings) {
+async function open(settings, { fakeClock = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(TAP, { langId: "zh-CN", sideTab: "play", soundOn: true,
-    themeId: "wood", ...settings });
+    themeId: "wood", soundSet: SET, ...settings });
   const page = await ctx.newPage();
+  if (fakeClock) await page.clock.install();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
@@ -166,7 +220,10 @@ async function open(settings) {
         window.__voices.length = 0;
         return v;
       });
-      return nameVoices(raw);
+      for (const sr of new Set(raw.filter((v) => v[0] === "buf").map((v) => v[2]))) {
+        if (!BANK[sr]) BANK[sr] = await page.evaluate(bankAt, sr);
+      }
+      return nameVoices(raw, BANK);
     },
     async click(sq) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(120); },
     async move(a, b) { await api.click(a); await api.click(b); },
@@ -189,6 +246,12 @@ const scriptEngine = (page, replies) => page.evaluate((rs) => {
   window.__chess.engine.bestMove = async () => rs[i++] || null;
 }, replies);
 
+/**
+ * The dispatch, heard. 7.7: run once per sound set — the wooden samples and
+ * the classic oscillators answer the same calls, so every event below has to
+ * come out right in both, and the assertions name events, not voices.
+ */
+async function suite() {
 // --- 关掉音效,就是真的一声不出 -------------------------------------------
 {
   const a = await open({ mode: "pvp", soundOn: false });
@@ -351,6 +414,102 @@ const scriptEngine = (page, replies) => page.evaluate((rs) => {
   assert(!end.includes("胜利") && !end.includes("失败"),
     "…既不响胜利也不响失败");
   assert(a.errs.length === 0, `全程没有页面异常${a.errs.length ? " — " + a.errs[0] : ""}`);
+  await a.close();
+}
+}
+
+for (SET of ["wood", "classic"]) {
+  console.log("--- 音色:" + SET);
+  await suite();
+}
+SET = "wood";
+
+// --- 7.7 木质音效:每种事件一个声音,两两不同 -------------------------------
+// v7-7-plan §8 的验收:比对音频的哈希,不能两两相同。声音不是文件而是运行时
+// 渲染的缓冲区,所以比的是缓冲区里的采样 —— 在页面里、用页面自己的引擎渲染。
+{
+  const a = await open({ mode: "pvp" });
+  for (const sr of [44100, 48000]) {
+    const bank = await a.page.evaluate(bankAt, sr);
+    const names = Object.values(bank);
+    const want = Object.keys(LABEL);
+    assert(names.length === want.length && want.every((n) => names.includes(n)),
+      `${sr} Hz:${want.length} 种事件各有一个声音,哈希两两不同(得到 ${names.length} 个不同的哈希)`);
+  }
+  await a.close();
+}
+
+// 听不见,就量:起音、衰减、频谱重心(scripts/lib/sound-metrics.mjs)。
+// 数字是木头的数字 —— 落子是一声短促、明亮的「嗒」,吃子更低更重。
+{
+  const { renderSound, SOUND_NAMES } = loadSoundBank();
+  const m = Object.fromEntries(SOUND_NAMES.map((n) => [n, measure(renderSound(n, 44100), 44100)]));
+  for (const n of SOUND_NAMES) console.log("  " + n.padEnd(8) + JSON.stringify(m[n]));
+  assert(SOUND_NAMES.every((n) => m[n].attackMs < 5), "每一声的起音都在 5 ms 以内(敲击,不是渐强)");
+  assert(m.move.decayMs >= 60 && m.move.decayMs <= 150,
+    `落子衰减到 −40 dB 用 60–150 ms(${m.move.decayMs} ms)`);
+  assert(m.move.centroidHz >= 1500 && m.move.centroidHz <= 4000,
+    `落子的频谱重心在木头敲击的 1.5–4 kHz(${m.move.centroidHz} Hz)`);
+  assert(m.capture.centroidHz < m.move.centroidHz * 0.6 && m.capture.decayMs > m.move.decayMs,
+    `吃子比落子低、比落子长 —— 更重(${m.capture.centroidHz} Hz / ${m.capture.decayMs} ms)`);
+  assert(m.castle.centroidHz >= 1500 && m.lift.decayMs < 40 && m.lift.peak < m.move.peak,
+    "易位还是木头落子;拿起比落子短、比落子轻");
+  assert(m.loss.peak < m.win.peak, "输棋比赢棋轻(audio.js playLoss:输是学棋时的常态)");
+}
+
+// 新的一局:两个上行的木琴音。经典音效这里本来就不出声,也还是不出声。
+for (SET of ["wood", "classic"]) {
+  const a = await open({ mode: "pvp" });
+  await a.move("e2", "e4"); await a.heard();
+  await a.page.click("#btn-new");
+  await a.page.waitForTimeout(200);
+  await a.page.click("#confirm-ok").catch(() => {});
+  const heard = await a.heard(500);
+  if (SET === "wood") assert(heard.includes("开局"), `新局有开局的声音(听到 ${JSON.stringify(heard)})`);
+  else assert(heard.length === 0, `经典音效:新局照旧不出声(听到 ${JSON.stringify(heard)})`);
+  await a.close();
+}
+SET = "wood";
+
+// 时间不多(< 20 秒):只响一次。页面的时钟换成假的,一下快进 161 秒。
+for (SET of ["wood", "classic"]) {
+  const a = await open({ mode: "pvp", timeControl: "3" }, { fakeClock: true });
+  await a.move("e2", "e4"); // 白方走完,黑方的钟开始走
+  await a.heard();
+  await a.page.clock.fastForward(161000);
+  await a.page.waitForTimeout(300);
+  const low = await a.heard();
+  const n = low.filter((x) => x === "时间不多").length;
+  const beeps = SET === "classic" ? low.filter((x) => /988/.test(x)).length : n;
+  assert(beeps >= 1 && (SET === "classic" ? beeps === 2 : n === 1),
+    `${SET}:黑方的钟跌破 20 秒,提示响一次(听到 ${JSON.stringify(low)})`);
+  await a.page.clock.fastForward(4000);
+  await a.page.waitForTimeout(300);
+  await a.page.clock.fastForward(4000);
+  const again = await a.heard();
+  assert(again.length === 0, `${SET}:…之后再走几秒,不再响(听到 ${JSON.stringify(again)})`);
+  await a.move("e7", "e5");
+  const next = await a.heard();
+  assert(!next.includes("时间不多") && !next.some((x) => /988/.test(x)),
+    `${SET}:黑方走了一步,白方的钟还多,也不响(听到 ${JSON.stringify(next)})`);
+  assert(a.errs.length === 0, `全程没有页面异常${a.errs.length ? " — " + a.errs[0] : ""}`);
+  await a.close();
+}
+SET = "wood";
+
+// 设置里换成经典:立刻用经典的声音示范一下,并且记住
+{
+  const a = await open({ mode: "pvp" });
+  await a.heard();
+  await a.page.evaluate(() => document.querySelector('#sound-set-seg button[data-sound-set="classic"]').click());
+  const demo = await a.heard();
+  assert(JSON.stringify(demo) === '["落子"]',
+    `换成经典:示范的是经典的落子声(听到 ${JSON.stringify(demo)})`);
+  await a.move("e2", "e4");
+  const raw = await a.page.evaluate(() => window.__voices.slice());
+  assert(raw.some((v) => typeof v[0] === "number"), "…之后走棋用的是振荡器,不是木质采样");
+  const stored = await a.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").soundSet);
+  assert(stored === "classic", `…并且存进了设置(soundSet: ${JSON.stringify(stored)})`);
   await a.close();
 }
 
