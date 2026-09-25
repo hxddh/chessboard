@@ -15,8 +15,9 @@
  *   appdata  the native save file takes a write and gives it back (7.6)
  *   chunk    js/chunk-eco.js loads over zero:// and names 1.e4 c5 (7.6)
  *   restart  a localStorage marker survives a restart (7.6)
+ *   sound    the default sound set builds and renders offline, not silent (7.7)
  *
- * The first three the page judges for itself, on each launch. `restart` needs
+ * All but `restart` the page judges for itself, on each launch. `restart` needs
  * two launches: every launch reports the marker it found and writes a fresh
  * one, and the second launch must have found the one the first wrote. That
  * comparison happens here, which is why the app is launched twice.
@@ -38,7 +39,7 @@ if (!exe || !fs.existsSync(exe)) {
 }
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "chess-selftest-"));
 const LIMIT_MS = 120000;
-const CHECKS = ["engine", "appdata", "chunk", "restart"];
+const CHECKS = ["engine", "appdata", "chunk", "restart", "sound"];
 
 /** One launch. @returns {Promise<{report: object|null, code: number|null, why: string|null}>} */
 async function launch(n) {
@@ -102,5 +103,6 @@ if (failures.size) {
 }
 const r1 = runs[0].report;
 console.log("ok: 打包好的应用启动了引擎（第一步 " + r1.move + "，" + r1.checks.engine.ms + " ms），存档读写来回一致，" +
-  "eco 分块查到「" + r1.checks.chunk.name + "」，重启后 localStorage 标记还在");
+  "eco 分块查到「" + r1.checks.chunk.name + "」，重启后 localStorage 标记还在，" +
+  r1.checks.sound.sounds + " 种音效离线渲染都有声");
 process.exit(0);
