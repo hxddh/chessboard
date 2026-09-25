@@ -23,6 +23,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { heldClick } from "./lib/held-click.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -97,6 +98,11 @@ async function importFile(page, text, button) {
   await page.waitForTimeout(600);
 }
 
+/** What the library section says: the counts above the buttons and the
+    status lines under them (7.6 moved those below, see renderLibrary). */
+const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
+  .map((id) => (document.getElementById(id) || {}).textContent || "").join("\n"));
+
 const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
 
 // --- 1. every game in the file, not one of them -----------------------------
@@ -118,12 +124,15 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
 
   // 没填名字 → 一局都不认领,而且说出来
   assert(lib.games.every((g) => g.side === null), "还没说自己是谁的时候,一局都不认");
-  const body0 = await page.textContent("#lib-body");
+  const body0 = await libText(page);
   assert(/一局都没认出是你下的/.test(body0), "……而且页面直说了这件事", body0);
 
   // 填上名字 → 已经在库里的棋也要重新认一遍
-  await page.fill("#lib-names", "hxddh");
-  await page.dispatchEvent("#lib-names", "change");
+  // typed, and left the way a person leaves a field — no hand-made `change`:
+  // the event the app actually gets is the one focus leaving produces
+  await page.click("#lib-names");
+  await page.keyboard.type("hxddh");
+  await page.keyboard.press("Tab");
   await page.waitForTimeout(300);
   lib = await libOf(page);
   const mine = lib.games.filter((g) => g.side);
@@ -182,8 +191,8 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games: games.slice(0, 5) }));
     const { page } = await open(ctx);
     assert(await page.isHidden("#lib-diagnose"), "只有五局时,「看诊断」根本不出现");
-    assert(/还差 15 局/.test(await page.textContent("#lib-body")), "……并且说清楚还差多少",
-      await page.textContent("#lib-body"));
+    assert(/还差 15 局/.test(await libText(page)), "……并且说清楚还差多少",
+      await libText(page));
     await ctx.close();
   }
   // 25 局:门槛之上
@@ -601,7 +610,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await page.click("#tab-record").catch(() => {});
   await page.waitForTimeout(200);
 
-  const body = await page.textContent("#lib-body");
+  const body = await libText(page);
   assert(/可以再深一遍/.test(body), "记录页说得出还有几局是快扫出来的", body);
 
   // 深一趟的说法：黑方第 0 手才是 ??（而且正解换成 Rc8），第 2 手根本不是
@@ -1191,6 +1200,61 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   assert(asked === expect, "续跑只问没分析过的局面（" + asked + " 次，应为 " + expect + "）—— 已分析的局不重跑", String(asked));
   assert(kept.every((g) => JSON.stringify(end.find((m) => m.id === g.id).an) === JSON.stringify(g.an)),
     "……先前那几局的记录一字未动");
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 17. 7.6 §2：打完名字直接点「分析」，一下就开始 ---------------------------
+// 7.5 在 WebKit 上丢过这一下：名字框失焦时的第一次 change 重建了按钮上方的
+// #lib-body，1100 宽时按钮在按下与松开之间上移 16px，这次点击就没了。这里走
+// 真实路径 —— 点进框里、打字、直接去按按钮，不手动派发 change —— 并且按住
+// 一会儿再松开，逐帧看按钮挪没挪。挪了，WebKit 上这一下就会丢。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 1000 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "record", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const { page, errs } = await open(ctx);
+  await importFile(page, PGN);
+  await page.evaluate(() => {
+    window.__asked = 0;
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen) => {
+      window.__asked++;
+      await new Promise((r) => setTimeout(r, 80));
+      return { cp: 15, mate: null, turn: fen.split(" ")[1] === "b" ? "b" : "w", best: null, pv: [] };
+    };
+  });
+  assert(/一局都没认出是你下的/.test(await libText(page)), "打名字之前，页面说一局都没认出来");
+  await page.click("#lib-names");
+  await page.keyboard.type("hxddh");
+  const r = await heldClick(page, "#lib-analyse");
+  console.log("  lib-names → 分析：按住期间按钮位移 " + r.drift + "px，节点" + (r.replaced ? "被换掉了" : "还是原来那个"));
+  assert(r.drift === 0 && !r.replaced, "失焦那一下的 change 重排了面板，按钮在按下与松开之间没有挪动",
+    JSON.stringify(r));
+  assert(r.clicked, "这一下点击落在了「分析」上");
+  let running = false;
+  for (let i = 0; i < 20 && !running; i++) {
+    await page.waitForTimeout(100);
+    running = /暂停/.test(await page.textContent("#lib-analyse"));
+  }
+  assert(running && (await page.evaluate(() => window.__asked)) > 0, "点一下，分析就开始了",
+    await page.textContent("#lib-analyse"));
+  const lib = await libOf(page);
+  assert(lib.games.filter((g) => g.side).length === 3, "……名字也照样生效：三局认领为我的");
+
+  // 跑的过程中，「暂停分析」上方的内容也不许动：每一手都在刷新进度
+  const p = await heldClick(page, "#lib-analyse", { hold: 600 });
+  console.log("  分析进行中按「暂停分析」：位移 " + p.drift + "px");
+  assert(p.drift === 0 && !p.replaced && p.clicked, "分析进行中，进度每手一刷，「暂停分析」按住期间不挪", JSON.stringify(p));
+  let paused = false;
+  for (let i = 0; i < 20 && !paused; i++) {
+    await page.waitForTimeout(100);
+    paused = !/暂停/.test(await page.textContent("#lib-analyse"));
+  }
+  assert(paused, "……而且一下就停了", await page.textContent("#lib-analyse"));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }

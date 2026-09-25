@@ -470,6 +470,24 @@ export function createLibraryUI(d) {
     }
   }
 
+  /**
+   * `items` as <p> lines in `box`, reusing the ones already there: the text
+   * of a progress line changes every ply, the nodes need not.
+   */
+  function putLines(box, items) {
+    while (box.childElementCount > items.length) box.lastElementChild.remove();
+    items.forEach((it, i) => {
+      let p = box.children[i];
+      if (!p || p.tagName !== "P") {
+        p = doc.createElement("p");
+        if (box.children[i]) box.children[i].replaceWith(p);
+        else box.appendChild(p);
+      }
+      if (p.className !== it.cls) p.className = it.cls;
+      if (p.textContent !== it.text) p.textContent = it.text;
+    });
+  }
+
   /** The library section in the 记录 pane. */
   function renderLibrary() {
     const body = doc.getElementById("lib-body");
@@ -482,28 +500,32 @@ export function createLibraryUI(d) {
     if (meta) { meta.hidden = !list.length; meta.textContent = tf("lib.count", [list.length]); }
     const namesRow = doc.getElementById("lib-names-row");
     if (namesRow) namesRow.hidden = !list.length;
-    body.replaceChildren();
-    const line = (text, cls) => {
-      const p = doc.createElement("p");
-      p.className = cls || "hint";
-      p.textContent = text;
-      body.appendChild(p);
-    };
+    // 7.6 (v7-6-plan §2): the counts stay above the buttons and are updated
+    // in place; every line that comes and goes goes to #lib-status, under
+    // them. This runs on the name field's first `change` — which is focus
+    // leaving it, i.e. the mouse-down of the click on 分析 — and once a ply
+    // during a pass, under 暂停分析: nothing above those buttons may change
+    // height here, or WebKit loses the click.
+    const lines = [];
+    const line = (text, cls) => { lines.push({ text, cls: cls || "hint" }); };
     if (!list.length) {
-      line(t("lib.empty"));
+      putLines(body, [{ text: t("lib.empty"), cls: "hint" }]);
     } else {
       const claimed = list.filter((g) => g.side).length;
-      const row = doc.createElement("div");
-      row.className = "stat-row";
-      const k = doc.createElement("span");
-      k.className = "stat-k";
-      k.textContent = tf("lib.claimed", [claimed]);
-      const v = doc.createElement("span");
-      v.className = "stat-v num";
-      v.textContent = [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
+      let row = body.firstElementChild;
+      if (!row || row.className !== "stat-row" || body.childElementCount !== 1) {
+        row = doc.createElement("div");
+        row.className = "stat-row";
+        const k = doc.createElement("span");
+        k.className = "stat-k";
+        const v = doc.createElement("span");
+        v.className = "stat-v num";
+        row.append(k, v);
+        body.replaceChildren(row);
+      }
+      row.children[0].textContent = tf("lib.claimed", [claimed]);
+      row.children[1].textContent = [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
         .filter(Boolean).join(" · ");
-      row.append(k, v);
-      body.appendChild(row);
       const run = store.session.libRun;
       if (run && run.deep) line(tf("lib.deepWorking", [run.name || "", run.plies ? run.ply + "/" + run.plies : ""]));
       else if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
@@ -518,6 +540,8 @@ export function createLibraryUI(d) {
       const shallow = Library.deepenable(list, LIB_DEEP_BUDGET).length;
       if (!run && shallow) line(tf("lib.deepable", [shallow]));
     }
+    const status = doc.getElementById("lib-status");
+    if (status) putLines(status, lines);
     const an = doc.getElementById("lib-analyse");
     if (an) {
       an.hidden = !queued && !store.session.libRun;

@@ -23,6 +23,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { heldClick } from "./lib/held-click.mjs";
 import { Chess } from "../src/web/js/chess.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -757,6 +758,142 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   }
   assert(errsC.length === 0, "曲线:全程没有页面异常 — " + errsC.join(" / "));
   await ctxC.close();
+}
+
+// --- 7.6 §2：按住的时候，按钮不许挪 ------------------------------------------
+// 7.5 在 WebKit 上确认过：按钮在按下与松开之间挪了位置，这次点击就会丢。
+// 持续分析的 #live-line 每帧整段重建，multipv=3 时下面的「新局」上下跳；分析
+// 进行中，#pv-line 的着法 chip 每一手都被换成新节点。这两处都按住一会儿再
+// 松开，逐帧看被按的那个东西挪没挪、换没换（scripts/lib/held-click.mjs）。
+{
+  const ctxH = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctxH.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", multipv: 3 }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pgH = await ctxH.newPage();
+  const errsH = [];
+  pgH.on("pageerror", (e) => errsH.push(e.message));
+  await pgH.goto(`http://127.0.0.1:${PORT}/`);
+  await pgH.waitForTimeout(900);
+  if (await pgH.isVisible("#pick-cancel").catch(() => false)) await pgH.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const tap = async (s) => {
+    const c = await pgH.evaluate((x) => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - Number(x[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, s);
+    await pgH.mouse.click(c.x, c.y);
+  };
+  const plies = () => pgH.evaluate(() => document.querySelectorAll("#move-list button[data-i]").length);
+
+  // 一个像真引擎那样说话的持续分析：刚开始一条线，接着两条、三条；之后每一拍
+  // 都换一次读法 —— 主变时长时短，着法也换。这正是真 Stockfish 在 multipv=3
+  // 时每秒几次送来的东西，也正是旧的 #live-line 每帧整段重建的原因。
+  await pgH.evaluate(() => {
+    const LINES = {
+      // after 1.e4
+      b: [
+        "g8f6 e4e5 f6d5 d2d4 d7d6 g1f3 b8c6 c2c4",
+        "e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1",
+        "c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3",
+      ],
+      w: [
+        "e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6",
+        "d2d4 d7d5 c2c4 e7e6 b1c3 g8f6 c1g5 f8e7",
+        "g1f3 g8f6 c2c4 e7e6 b1c3 d7d5 d2d4 f8e7",
+      ],
+    };
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyzeInfinite = (fen, opts, onUpdate) => {
+      const turn = fen.split(" ")[1];
+      const mpv = (opts && opts.multipv) || 1;
+      let beat = 0;
+      const id = setInterval(() => {
+        beat++;
+        const n = Math.min(mpv, beat);
+        const lines = [];
+        for (let k = 0; k < n; k++) {
+          const pv = LINES[turn][(k + (beat >> 2)) % 3].split(" ");
+          // long, short, long, short…: a row that wraps, then one that does not
+          lines.push({ cp: 30 - k * 25 + (beat % 7), mate: null, pv: beat % 2 ? pv : pv.slice(0, 2), depth: 8 + beat });
+        }
+        onUpdate({ depth: 8 + beat, lines, turn });
+      }, 70);
+      return () => { clearInterval(id); return Promise.resolve(); };
+    };
+  });
+
+  // --- (a) 持续分析开着，连点「新局」10 次，每次都生效 -------------------
+  await tap("e2"); await tap("e4");
+  await pgH.waitForTimeout(250);
+  await pgH.click("#an-live");
+  await pgH.waitForTimeout(500);
+  const liveRows = await pgH.evaluate(() => document.querySelectorAll("#live-line .pv-alt-row").length);
+  assert(liveRows === 3, "持续分析开着，multipv=3 的三条线都在 (" + liveRows + ")");
+  let worst = 0, took = 0, lost = [];
+  for (let n = 0; n < 10; n++) {
+    if (!(await plies())) { await tap("e2"); await tap("e4"); }
+    await pgH.waitForTimeout(350);
+    const r = await heldClick(pgH, "#btn-new", { hold: 450 });
+    worst = Math.max(worst, r.drift);
+    let asked = false;
+    for (let i = 0; i < 10 && !asked; i++) {
+      await pgH.waitForTimeout(60);
+      asked = await pgH.isVisible("#confirm-modal.show").catch(() => false);
+    }
+    if (asked) {
+      await pgH.click("#confirm-ok");
+      await pgH.waitForTimeout(300);
+    }
+    if (asked && r.clicked && !r.replaced && r.drift === 0 && (await plies()) === 0) took++;
+    else lost.push(n + ": " + JSON.stringify({ asked, drift: r.drift, replaced: r.replaced, clicked: r.clicked }));
+  }
+  console.log("  持续分析 multipv=3 时按住「新局」：最大位移 " + worst + "px");
+  assert(worst === 0, "持续分析每拍都在刷新，「新局」按住期间一像素都没挪 (最多 " + worst + "px)");
+  assert(took === 10, "连点「新局」10 次，10 次都生效了 (" + took + "/10)" + (lost.length ? " — " + lost.join(" | ") : ""));
+
+  // --- (b) 分析进行中，按住引擎线上的一着 --------------------------------
+  // 先有一份分析，开局那一手带一条五着的主变；再开一遍精析，让它慢慢跑。
+  for (const s of ["e2", "e4", "e7", "e5", "f1", "c4", "b8", "c6", "d1", "h5", "g8", "f6", "h5", "f7"]) await tap(s);
+  await pgH.waitForTimeout(300);
+  await pgH.click("#an-live");
+  await pgH.waitForTimeout(200);
+  await pgH.evaluate(() => {
+    window.__chess.engine.analyze = async (fen, movetime) => {
+      const turn = fen.split(" ")[1];
+      // the second pass (精析) is slow on purpose: it is the pass in flight
+      if (movetime >= 400) await new Promise((r) => setTimeout(r, 200));
+      const start = fen.startsWith("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w");
+      return { cp: turn === "w" ? 25 : -25, mate: null, turn, best: start ? "e2e4" : null,
+        pv: start ? ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"] : [] };
+    };
+  });
+  await pgH.click("#an-run");
+  await pgH.waitForTimeout(1500);
+  await pgH.click("#rep-start");
+  await pgH.waitForTimeout(300);
+  const chips = await pgH.evaluate(() => document.querySelectorAll("#pv-line button.pv-chip").length);
+  assert(chips === 5, "开局那一手的引擎线是五个可以按的着法 (" + chips + ")");
+  await pgH.click("#an-deep");
+  await pgH.waitForTimeout(400);
+  const busy = await pgH.evaluate(() => /停止/.test(document.getElementById("an-run").textContent));
+  assert(busy, "精析在跑");
+  const c = await heldClick(pgH, '#pv-line button.pv-chip[data-k="2"]', { hold: 600 });
+  const still = await pgH.evaluate(() => /停止/.test(document.getElementById("an-run").textContent));
+  console.log("  分析进行中按住引擎线上的着法：位移 " + c.drift + "px，节点" + (c.replaced ? "被换掉了" : "还是原来那个"));
+  assert(still, "……按住的这 600 毫秒里，精析一直在跑（每一手都刷新面板）");
+  assert(!c.replaced && c.drift === 0, "分析进行中，按住的那一着既没被换成新节点，也没挪", JSON.stringify(c));
+  const badgeH = await pgH.evaluate(() => {
+    const el = document.getElementById("preview-badge");
+    return { hidden: el.hidden, text: el.textContent };
+  });
+  assert(c.clicked && !badgeH.hidden && /Esc/.test(badgeH.text),
+    "……松开就是一次点击：棋盘钉在那条线上 (" + badgeH.text + ")");
+  await pgH.keyboard.press("Escape");
+  assert(errsH.length === 0, "按住不挪：全程没有页面异常 — " + errsH.join(" / "));
+  await ctxH.close();
 }
 
 await browser.close();
