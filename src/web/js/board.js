@@ -323,8 +323,13 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
    * @param {string} [to] destination, when called with two squares
    * @param {{from: string, to: string}} [also] a second piece moving with the
    *   first — the rook's hop in a castle
+   * @param {{sq: string, piece: {type: string, color: string}}} [taken] the
+   *   man this move captured, and where he stood (not `to` for en passant).
+   *   7.7 §9: he fades out under the arriving piece over the same window,
+   *   instead of being gone before it has left its square. The model has
+   *   already moved on when this is called, so the caller has to say who it was.
    */
-  function animateMove(from, to, also) {
+  function animateMove(from, to, also, taken) {
     if (!_canvas || !_model || !from) return;
     const segs = Array.isArray(from)
       ? from.filter((sg) => sg && sg.from && sg.to)
@@ -336,7 +341,8 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
     // repaints from the updated model a moment later, and drawing now would
     // paint the pre-move position for that moment.
     if (_reduceMotion) { _anim = null; return; }
-    _anim = { segs, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: slideMs() };
+    _anim = { segs, taken: taken && taken.sq && taken.piece ? taken : null,
+      start: (typeof performance !== "undefined" ? performance.now() : 0), dur: slideMs() };
     const step = () => {
       if (!_anim) return;
       const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
@@ -565,6 +571,16 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
     if (_anim) {
       const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
       const t = easeOut(Math.max(0, Math.min(1, (now - _anim.start) / _anim.dur)));
+      // the captured man, fading under whoever is arriving — drawn first so
+      // the mover passes over him (animateMove's `taken`)
+      const lands = (sq) => { const r = m.position[8 - Number(sq[1])]; return !!(r && r[FILES.indexOf(sq[0])]); };
+      if (_anim.taken && _anim.segs.some((sg) => lands(sg.to))) {
+        const { sr, sc } = screenPos(_anim.taken.sq, m.flipped);
+        ctx.save();
+        ctx.globalAlpha = 1 - t;
+        paintPiece(_anim.taken.piece, sc * step + step / 2, sr * step + step / 2);
+        ctx.restore();
+      }
       let painted = 0;
       for (const sg of _anim.segs) {
         const c = FILES.indexOf(sg.to[0]);

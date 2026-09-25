@@ -15,3 +15,6 @@ src/web/js/chunk-*.js
 
 # downloaded by scripts/gen-eco.mjs (lichess opening TSVs); the generated src/web/js/eco.js is committed
 scripts/cache/
+
+# 7.7 §12: scripts/shots.mjs writes the screenshot walk-through here
+shots/
