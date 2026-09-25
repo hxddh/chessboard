@@ -2292,7 +2292,9 @@
       border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
       cursor: pointer;
     }
-    .review-bank:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
+    .review-bank:hover:not(:disabled) { border-style: solid; border-color: var(--accent); color: var(--accent); }
+    /* already banked: a statement, not an offer */
+    .review-bank:disabled { cursor: default; color: var(--muted); border-style: solid; }
     #eval-curve {
       display: block;
       width: 100%;

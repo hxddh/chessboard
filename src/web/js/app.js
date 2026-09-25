@@ -20,7 +20,7 @@ import { CHESS_LESSONS_EN } from "./lessons-en.js";
 import { CHESS_LESSONS_JA } from "./lessons-ja.js";
 import { CHESS_LESSONS } from "./lessons.js";
 import { ChessMaterial } from "./material.js";
-import { motifOf } from "./motif.js";
+import { motifOf, puzzleMotifKey } from "./motif.js";
 import { ChessLibrary } from "./library.js";
 import { ChessMistakes } from "./mistakes.js";
 import { ChessProgress } from "./progress.js";
@@ -37,7 +37,7 @@ import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
 import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
-import { CHESS_PUZZLES } from "./puzzles.js";
+import { CHESS_PUZZLES, HAND_MOTIF_KEY } from "./puzzles.js";
 import { MINED_PUZZLES } from "./puzzles-mined.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
@@ -177,6 +177,20 @@ import { createStore } from "./store.js";
 
   /** "12… Nf6" in the live region — what just happened on the board. */
   function announceLastMove() {
+    // A puzzle or a lesson plays on its own board, not on `game`: reading
+    // `game` here left the live region on the previous game's last move for
+    // the whole of a puzzle session, and the opponent's reply was never said
+    // (7.6). The trainer's number comes from its FEN — a puzzle starts
+    // mid-game, and its history only holds the moves played since.
+    const tg = store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g
+      : store.session.mode === "learn" && store.session.learn ? store.session.learn.g : null;
+    if (tg) {
+      const last = tg.history().slice(-1)[0];
+      if (!last) return;
+      const [, turn, , , , full] = tg.fen().split(" ");
+      announce(turn === "b" ? full + ". " + last : (Number(full) - 1) + "… " + last);
+      return;
+    }
     const h = sanHistory();
     const at = h.length;
     if (!at) return;
@@ -1891,7 +1905,11 @@ import { createStore } from "./store.js";
       try { return p.fen && p.solution && p.solution[0] ? motifOf(p.fen, p.solution[0], Chess) : null; } catch (_) { return null; }
     }
     if (p.cat !== "tac" && p.cat !== "real" && p.cat !== "win") return null;
-    return derivedMotif(p);
+    // A written label wins, as it does on screen (puzzleMotif). 「把车引离底线」
+    // is labelled 引离 and its first move, Re8+, also hits king and rook — so
+    // the derivation said fork and the tally counted a fork the player was
+    // never shown (7.6). A label outside the five keys counts as no motif.
+    return puzzleMotifKey(p, HAND_MOTIF_KEY, () => derivedMotif(p));
   }
   function puzzleMotif(p) {
     const hand = contentField("puzzles", p.id, "motif") || p.motif;
@@ -3024,6 +3042,44 @@ import { createStore } from "./store.js";
     return p.line || p.solution;
   }
   /**
+   * The drill an opening puzzle in progress is actually on (7.6).
+   *
+   * The trainer accepts any book move and the opponent answers from the whole
+   * tree, so a few plies in, the board can be on a different line from the
+   * one the puzzle was opened as: 1.e4 is accepted in A01's drill, and C54's
+   * can end in the Rossolimo. The title, the 「背谱完成」 toast and the credit
+   * all used to name the line it started as — so finishing the Rossolimo
+   * marked the Italian learnt. They follow the board now: the puzzle's own
+   * line while the path is still on it, else the shortest drill the path is
+   * still on, and at a leaf the line that ends there.
+   */
+  /** Every drill of this opening drill's book, in its chair. */
+  function opPool(p) {
+    const side = p.side === "b" ? "b" : undefined;
+    return p.cat === "rep" ? RepUI.drills(side === "b" ? "b" : "w")
+      : ALL_PUZZLES.filter((q) => q.cat === "op" && q.side === side);
+  }
+  function opCurrent(pz) {
+    const p = pz && pz.p;
+    if (!p || !isOpeningCat(p.cat) || !Array.isArray(pz.opPath)) return p;
+    const path = pz.opPath;
+    const onLine = (q) => path.length <= q.line.length && path.every((san, i) => q.line[i] === san);
+    if (onLine(p)) return p;
+    const side = p.side === "b" ? "b" : undefined;
+    let best = null;
+    for (const q of opPool(p)) if (onLine(q) && (!best || q.line.length < best.line.length)) best = q;
+    if (best) return best;
+    // a leaf shorter than a drill (drills.js keeps >=6 plies): name it from
+    // the book's own row, so the credit still lands on the line played
+    const leaf = ChessOpeningTree.nodeAt(openingTreeFor(p), path);
+    const ln = leaf && !Object.keys(leaf.children).length && leaf.lines[0];
+    if (!ln || p.cat !== "op") return p;
+    return { id: Drills.drillId(ln.eco, ln.sans.join(" ")) + (side ? ":b" : ""), cat: "op", side,
+      nameId: ln.id, eco: ln.eco, name: ln.eco + " " + (CHESS_OPENING_NAMES[ln.id] || ln.id),
+      line: ln.sans.slice(), idea: ln.idea || "" };
+  }
+
+  /**
    * An opening drill's move, judged against the tree rather than one line.
    * @returns {boolean} true when this call handled the move entirely
    */
@@ -3064,14 +3120,25 @@ import { createStore } from "./store.js";
     }
     if (!after.length) {
       // the leaf reached is a line of its own: mark it learnt too, in the
-      // chair it was played from
+      // chair it was played from. The one the board is on is left for
+      // puzzleSolved(), which credits it with the tally and the week too.
       const leaf = ChessOpeningTree.nodeAt(tree, pz.opPath);
+      const onBoard = opCurrent(pz).id;
       for (const ln of (leaf && leaf.lines) || []) {
         // the repertoire's rows carry their own ids (repertoire.js mints them
         // once, from the moves); the ECO book's are derived from the row
         const id = (pz.p.cat === "rep" ? ln.id : Drills.drillId(ln.eco, ln.sans.join(" ")))
           + (pz.p.side === "b" ? ":b" : "");
-        if (id !== pz.p.id && !store.session.puzzleState.solved[id]) store.session.puzzleState.solved[id] = true;
+        if (id !== onBoard && !store.session.puzzleState.solved[id]) store.session.puzzleState.solved[id] = true;
+      }
+      // …and so is every shorter drill the path played through from end to
+      // end — the puzzle's own line among them when it was a prefix of this
+      // one. A line the path left is not: it was not played.
+      const path = pz.opPath;
+      for (const q of opPool(pz.p)) {
+        if (q.id !== onBoard && q.line.length < path.length && q.line.every((san, i) => path[i] === san)) {
+          store.session.puzzleState.solved[q.id] = true;
+        }
       }
       puzzleSolved();
       return true;
@@ -3220,7 +3287,8 @@ import { createStore } from "./store.js";
   }
 
   function puzzleGoalText() {
-    const p = store.session.puzzle.p;
+    // an opening drill is titled by the line the board is on (7.6)
+    const p = opCurrent(store.session.puzzle);
     if (p.cat === "mine") {
       const cost = p.loss != null ? " · " + tf("pz.mineCost", [(p.loss / 100).toFixed(1)]) : "";
       return tf("pz.goalMine", [p.played]) + cost;
@@ -3529,11 +3597,13 @@ import { createStore } from "./store.js";
     store.session.puzzle.done = true;
     store.game.selection = null;
     Audio2.playWin();
+    // an opening drill is credited to the line the board is on (7.6)
+    const sp = opCurrent(store.session.puzzle);
     // a clean first-try solve retires the puzzle from review; a shaky one keeps it
-    if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(store.session.puzzle.p.id);
-    if (!store.session.puzzleState.solved[store.session.puzzle.p.id]) {
-      if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) ratePuzzleOnce(store.session.puzzle.p.id, 1);
-      store.session.puzzleState.solved[store.session.puzzle.p.id] = true;
+    if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(sp.id);
+    if (!store.session.puzzleState.solved[sp.id]) {
+      if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) ratePuzzleOnce(sp.id, 1);
+      store.session.puzzleState.solved[sp.id] = true;
       // a clean first solve counts into the lifetime tally; a solve after
       // misses already counted those misses — counting the solve too would
       // let one shaky puzzle wash its own signal out
@@ -3547,6 +3617,10 @@ import { createStore } from "./store.js";
       savePuzzleState();
       checkNewAchievements();
     }
+    // the record pane's 背下来 N/M and the tally count this solve now, not
+    // after a reload (7.6)
+    if (isOpeningCat(sp.cat)) renderRepertoire();
+    renderPuzzleTally();
     const verb = store.session.puzzle.p.cat === "mine" ? t("pz.doneMine") :
       isOpeningCat(store.session.puzzle.p.cat) ? t("pz.doneOp") :
       store.session.puzzle.p.cat === "def" ? t("pz.doneDef") :
@@ -3555,7 +3629,7 @@ import { createStore } from "./store.js";
       store.session.puzzle.p.cat === "win" || store.session.puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
     const why = store.session.puzzle.p.cat === "mine" ? mineWhy(store.session.puzzle.p) : "";
     if (store.session.puzzle.p.cat === "mine") store.session.puzzle.lineAt = 0;
-    toast("✅ " + verb + " · " + puzzleName(store.session.puzzle.p) + (why ? " · " + why : ""));
+    toast("✅ " + verb + " · " + puzzleName(sp) + (why ? " · " + why : ""));
     sync();
   }
 
@@ -3585,7 +3659,7 @@ import { createStore } from "./store.js";
     const pz = store.session.puzzle;
     const p = pz.p;
     const line = pz.g.pgn();
-    const name = puzzleName(p);
+    const name = puzzleName(opCurrent(pz));
     if (!line.trim()) return;
     // The game on the board is about to be replaced, so ask first — the same
     // question 新局 asks (7.4). Until 7.2 this button never did anything, so
@@ -3836,7 +3910,7 @@ import { createStore } from "./store.js";
     // opening drills are rote memorisation without the "why" — show the idea
     const ideaEl = document.getElementById("puzzle-idea");
     if (ideaEl) {
-      const idea = puzzleIdea(store.session.puzzle.p);
+      const idea = puzzleIdea(opCurrent(store.session.puzzle));
       ideaEl.hidden = !idea;
       ideaEl.textContent = idea ? t("pz.idea") + " · " + idea : "";
     }
@@ -4431,14 +4505,18 @@ import { createStore } from "./store.js";
    * The third row's label is the app's own move marks rather than three long
    * words: 「?! · ? · ??」 against 「3 · 2 · 1」, label and value lining up
    * term for term, and the legend for them sits in the same panel.
+   * With 存疑标注 off the value has two terms, so the label drops its 「?!」
+   * too (7.6: three marks over two numbers read one column off).
    */
   function sideRows(sum, side) {
     const c = sum.counts[side];
     const n = (x) => (x == null ? "—" : String(x));
+    const soft = !!store.ui.showSoftMark;
     return [
       [t("rv.acc"), sum.acc[side] == null ? "—" : sum.acc[side] + "%"],
       [t("rv.acpl"), n(sum.acpl[side])],
-      [t("rv.marks"), (store.ui.showSoftMark ? [c.inaccuracy, c.mistake, c.blunder] : [c.mistake, c.blunder]).join(" · ")],
+      [t("rv.marks").split(" · ").slice(soft ? 0 : 1).join(" · "),
+        (soft ? [c.inaccuracy, c.mistake, c.blunder] : [c.mistake, c.blunder]).join(" · ")],
     ];
   }
 
@@ -4529,16 +4607,21 @@ import { createStore } from "./store.js";
         const bank = document.createElement("button");
         bank.type = "button";
         bank.className = "review-bank";
-        bank.textContent = t("rv.bank");
-        bank.title = t("rv.bankTip");
-        bank.onclick = () => bankWorst(sum.worst, bestUci);
+        // already in the book — the auto-miner banked it, or this button did:
+        // say so on the button instead of offering to bank it again (7.6)
+        const cand = worstDrill(sum.worst, bestUci);
+        const have = !!cand && store.session.mines.some((m) => m.id === cand.id);
+        bank.textContent = have ? t("rv.bankDup") : t("rv.bank");
+        bank.disabled = have;
+        bank.title = have ? "" : t("rv.bankTip");
+        if (!have) bank.onclick = () => bankWorst(sum.worst, bestUci);
         el.appendChild(bank);
       }
     }
   }
 
-  /** Bank the review's turning point into the personal book, by hand. */
-  function bankWorst(worst, bestUci) {
+  /** The drill the review's turning point would bank as, or null. */
+  function worstDrill(worst, bestUci) {
     const fen = gameAt(worst.ply).fen();
     const a = analysisFor();
     const cand = Mistakes.drillFrom(fen, sanHistory()[worst.ply], bestUci, Math.round(worst.loss), worst.ply, Chess,
@@ -4547,6 +4630,12 @@ import { createStore } from "./store.js";
       // …and it points back at the same game the auto-miner would have named
       { budget: (a && a.budget) || 120, src: "hand", from: boardDrillSource() });
     if (cand && a && a.pvs && typeof a.pvs[worst.ply] === "string") cand.pv = a.pvs[worst.ply];
+    return cand;
+  }
+
+  /** Bank the review's turning point into the personal book, by hand. */
+  function bankWorst(worst, bestUci) {
+    const cand = worstDrill(worst, bestUci);
     if (!cand) { toast(t("rv.bankNone"), "fix"); return; }
     if (store.session.mines.some((m) => m.id === cand.id)) { toast(t("rv.bankDup")); return; }
     const solvedIds = new Set(Object.keys(store.session.puzzleState.solved).filter((k) => k.startsWith("mine:")));
@@ -5062,7 +5151,7 @@ import { createStore } from "./store.js";
     const series = Progress.accSeries(loadStats().games.concat(libPoints), 30);
     const rows = Progress.weekOverWeek(prog, Date.now())
       .filter((r) => r.now != null || r.prev != null)
-      .sort((a, b) => (b.now ?? b.prev) - (a.now ?? a.prev));
+      .sort((a, b) => (a.now ?? a.prev) - (b.now ?? b.prev)); // weakest first
     const wk = prog.weeks[Progress.weekKey(Date.now())];
     const showCurve = series.length >= 2;
     const showRows = rows.length > 0 || !!wk;
@@ -5856,6 +5945,12 @@ import { createStore } from "./store.js";
       if (timeoutIsDraw()) return t("st.flagDraw");
       return t(store.game.flagFall === "w" ? "st.flagWhite" : "st.flagBlack");
     }
+    // a result the file declared says only the result: a [Result "1-0"]
+    // records who won, not that Black resigned (7.6 — the reason was made up)
+    if (resultFromFile()) {
+      const r = gameResultToken();
+      return t(r === "1-0" ? "st.result10" : r === "0-1" ? "st.result01" : "st.resultDraw");
+    }
     if (store.game.resigned) return t(store.game.resigned === "w" ? "st.resignWhite" : "st.resignBlack");
     if (store.game.drawAgreed) return t("st.drawAgreed");
     if (store.game.drawClaimed) return t(store.game.drawClaimed === "threefold" ? "st.claimThreefold" : "st.claimFifty");
@@ -5933,7 +6028,10 @@ import { createStore } from "./store.js";
     const tagOf = new Map();
     if (a && a.tags) store.game.line.forEach((id, k) => { if (k > 0 && a.tags[k - 1]) tagOf.set(id, a.tags[k - 1]); });
     const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
-    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" : "");
+    // the current move carries the menu handle, whose name is a translated
+    // string — so its signature carries the language, or a switch to English
+    // kept the Chinese 「着法操作」 on it until the cursor moved (7.6)
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" + store.ui.langId : "");
     // a variation's signature is the whole of what it shows, nested included
     const lineSig = (parent, first) => {
       let out = "";
@@ -6741,8 +6839,12 @@ import { createStore } from "./store.js";
         wRole.textContent = asBlack ? t("role.puzzle") : t("role.you");
         bRole.textContent = asBlack ? t("role.youB") : t("role.puzzle");
       } else {
-        wRole.textContent = t("vs.p1");
-        bRole.textContent = t("vs.p2");
+        // a loaded game names its players: the file's [White]/[Black], where
+        // it has them, rather than 玩家 1 / 玩家 2 (7.6). "?" is PGN for unknown.
+        const h = game.header() || {};
+        const nm = (v) => { const x = String(v || "").trim(); return /^\?*$/.test(x) ? "" : x; };
+        wRole.textContent = nm(h.White) || t("vs.p1");
+        bRole.textContent = nm(h.Black) || t("vs.p2");
       }
     }
   }
@@ -7037,6 +7139,7 @@ import { createStore } from "./store.js";
     const who = sideName(side);
     invalidateEngine();
     store.game.resigned = side;
+    forgetFileResult();
     // resigning is losing, whatever the previous six years of this file said
     playEnding(side === "w" ? "b" : "w");
     if (store.session.mode === "ai") recordResign();
@@ -7158,6 +7261,7 @@ import { createStore } from "./store.js";
   function acceptDraw() {
     invalidateEngine();
     store.game.drawAgreed = true;
+    forgetFileResult();
     Audio2.playDraw();
     if (store.session.mode === "ai") recordAgreedDraw();
     saveGame();
@@ -7197,6 +7301,25 @@ import { createStore } from "./store.js";
     }
     if (naturalGameOver()) return "1/2-1/2"; // stalemate + the auto draw rules
     return "*";
+  }
+
+  /**
+   * Is the ending on the board the one adoptHeaderResult() read off the
+   * file's [Result] tag, rather than something played out here? An imported
+   * game's tag names a result and no reason. A resignation or an agreed draw
+   * played here clears the tag (forgetFileResult), so it is never mistaken
+   * for one read off the file.
+   */
+  function resultFromFile() {
+    if (!store.game.imported || !(store.game.resigned || store.game.drawAgreed)) return false;
+    const r = (game.header() || {}).Result;
+    return (r === "1-0" || r === "0-1" || r === "1/2-1/2") && r === gameResultToken();
+  }
+
+  /** An ending played out here replaces whatever the file's tag said. */
+  function forgetFileResult() {
+    const r = (game.header() || {}).Result;
+    if (r && r !== "*") game.header("Result", "*");
   }
 
   /** Read the [Result] tag of the loaded game into the terminal flags. */

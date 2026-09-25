@@ -710,6 +710,32 @@ for (const lang of CONTENT_LANGS) {
 }
 }
 
+// 7.6: `**…**` is bold only where lessonParagraph() renders it — the lesson
+// paragraphs. A task's prompt, a step's tip and a retry line are set as plain
+// text, so markup there reached the reader as asterisks: 「是**深**格」 in
+// lesson 2, 「**新的**子」 in the tempo lesson, in all three languages.
+{
+  const stray = [];
+  const walk = (o, where) => {
+    if (typeof o === "string") { if (o.includes("**") && !/\.text\[\d+\]$/.test(where)) stray.push(where); return; }
+    if (Array.isArray(o)) o.forEach((x, i) => walk(x, where + "[" + i + "]"));
+    else if (o && typeof o === "object") for (const k of Object.keys(o)) walk(o[k], where + "." + k);
+  };
+  for (const L of ctx.CHESS_LESSONS) walk(L, "zh:" + L.id);
+  for (const lang of CONTENT_LANGS) {
+    for (const [id, tr] of Object.entries(ctx["CHESS_LESSONS_" + sfx(lang)] || {})) walk(tr, lang + ":" + id);
+  }
+  assert(stray.length === 0, "课文里的 ** 只出现在会被渲染成粗体的段落里" +
+    (stray.length ? " — " + stray.join(", ") : ""));
+}
+
+// 7.6: one measure, one word. The analysis line under the curve said
+// Precision (ja 精度) while the report beside it said Accuracy (ja 正確度).
+for (const [lang, dict] of Object.entries(ctx.ChessI18n.DICT)) {
+  assert(dict["acc.label"] === dict["rv.acc"],
+    lang + ": 分析行与回顾用同一个词称呼精准度 (" + dict["acc.label"] + " / " + dict["rv.acc"] + ")");
+}
+
 // English names for puzzles and openings: the app falls back to the Chinese
 // name when one is missing, so only a coverage check keeps English mode honest
 {
@@ -3578,8 +3604,10 @@ for (const lang of CONTENT_LANGS) {
   // the bank button: only where the analysis stored an answer, via the shared rule
   assert(/const bestUci = a && a\.bests \? a\.bests\[sum\.worst\.ply\] : null;\s*if \(bestUci\) \{/.test(appSrc),
     "拿去练 is drawn only when the analysis holds an answer for the turning point (P3)");
-  assert(/function bankWorst\(worst, bestUci\) \{[\s\S]{0,300}Mistakes\.drillFrom\(/.test(appSrc) &&
-         /bankWorst\(worst, bestUci\) \{[\s\S]{0,900}Mistakes\.addMines\(/.test(appSrc),
+  // 7.6: the drill is built by worstDrill(), which the button also asks to
+  // learn whether the turning point is banked already
+  assert(/function worstDrill\(worst, bestUci\) \{[\s\S]{0,300}Mistakes\.drillFrom\(/.test(appSrc) &&
+         /function bankWorst\(worst, bestUci\) \{\s*const cand = worstDrill\(worst, bestUci\);[\s\S]{0,600}Mistakes\.addMines\(/.test(appSrc),
     "the hand bank goes through the same drillFrom + addMines the miner uses");
 }
 
@@ -3602,7 +3630,7 @@ for (const lang of CONTENT_LANGS) {
     P.recordAnswer(g, "def", false, D("2026-08-18"));
     const rows = P.weekOverWeek(g, D("2026-08-19"));
     const def = rows.find((r) => r.cat === "def");
-    assert(def && def.prev === 0.5 && def.now === 0, "本周对上周:错误率各算各的周");
+    assert(def && def.prev === 0.5 && def.now === 1, "本周对上周:正确率各算各的周(7.6:答对的比例,不是失手率)");
     // buckets are additive history — the lifetime tally is not consulted
     P.recordMined(g, 3, D("2026-08-18"));
     P.recordRedeemed(g, D("2026-08-18"));
@@ -4399,6 +4427,19 @@ for (const lang of CONTENT_LANGS) {
     // t-disco-q is a discovered check that is also a double check
     assert(differ <= 1,
       "the derivation agrees with the hand labels (" + agree + " agree, " + differ + " differ)");
+
+    // 7.6: what the tally records is what the card says. motifKeyOf() takes a
+    // written label first, through app.js's own table; a label with no key
+    // (引离, 消除防守者, 过载) records none — t-deflect-r's Re8+ derives as a
+    // fork, and it used to be counted as one under a card that said 引离.
+    const HK = ctx.HAND_MOTIF_KEY || {};
+    const keyOf = (p) => ctx.puzzleMotifKey(p, HK, () => M(p.fen, (p.line || p.solution)[0], ctx.Chess));
+    const dr = ctx.CHESS_PUZZLES.find((p) => p.id === "t-deflect-r");
+    assert(dr && M(dr.fen, dr.line[0], ctx.Chess) === "fork" && keyOf(dr) === null,
+      "「把车引离底线」显示引离,就不再被记成捉双");
+    for (const [label, key] of Object.entries(HAND)) {
+      assert(HK[label] === key, "手写的「" + label + "」记作 " + key);
+    }
   }
 
   // --- every "category × difficulty" combination is non-empty, or absent ----

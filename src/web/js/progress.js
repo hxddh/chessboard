@@ -104,7 +104,9 @@ function weeksOf(prog) {
 
 /**
  * This week vs last week, per category with data in either — the record
- * page's rows. rate is miss/(miss+solve), null where a week has no answers.
+ * page's rows. rate is the SOLVE rate, solve/(miss+solve), null where a week
+ * has no answers. (Through 7.5 it was the miss rate, shown unlabelled — a clean
+ * week read "0%" and everyone took it for a score of zero.)
  */
 function weekOverWeek(prog, now) {
   const ks = Object.keys(prog.weeks).sort();
@@ -116,7 +118,7 @@ function weekOverWeek(prog, now) {
   }
   const rate = (k, c) => {
     const t = k && prog.weeks[k] && prog.weeks[k].cats[c];
-    return t && t.m + t.s > 0 ? t.m / (t.m + t.s) : null;
+    return t && t.m + t.s > 0 ? t.s / (t.m + t.s) : null;
   };
   return [...cats].map((c) => ({ cat: c, now: rate(cur, c), prev: rate(prev, c) }));
 }

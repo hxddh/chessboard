@@ -810,8 +810,10 @@ if (hasTab && REAL.length) {
     rows: [...document.querySelectorAll("#trend-body .stat-row")].map((r) => r.textContent.trim()),
   }));
   assert(trend.head && trend.curve, "有数据时「进步」节与准确率走势都画出来了", JSON.stringify(trend));
-  assert(trend.rows.some((r) => /防守/.test(r) && /本周 0%/.test(r) && /上周 50%/.test(r)),
-    "防守一行:本周 0% 对上周 50% — 数字就是档案里的数字", trend.rows.join(" | "));
+  // 7.6: the figure is the solve rate and says so — a clean week of three
+  // solves reads 100%, not the old unlabelled miss rate "0%"
+  assert(trend.rows.some((r) => /防守/.test(r) && /本周正确率 100%/.test(r) && /上周 50%/.test(r)),
+    "防守一行:本周正确率 100% 对上周 50% — 数字就是档案里的数字,且写明是正确率", trend.rows.join(" | "));
   assert(trend.rows.some((r) => /错题/.test(r) && /收 3/.test(r) && /找回 1/.test(r)),
     "错题一行:本周收 3 · 找回 1", trend.rows.join(" | "));
   await ctx4.close();
@@ -942,6 +944,51 @@ if (hasTab && REAL.length) {
   assert(await boardOf() === squaresOf(MATE_FEN),
     "两个白王的 [FEN] 仍被拒,棋盘停在上一份文件上", await boardOf());
   await ctx3.close();
+}
+
+// --- 7.6:导入的棋局,结果只说结果,对阵栏用棋谱里的名字 ---------------------
+// [Result "1-0"] 只记了谁赢,没记为什么;状态栏原来写「黑方认输」—— 编出来的
+// 原因。对阵栏原来写「玩家 1 / 玩家 2」,文件里明明有 [White] / [Black]。
+{
+  const ctx5 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx5.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await ctx5.newPage();
+  pg.on("pageerror", (e) => errs.push("import-result: " + e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await pg.waitForSelector("#board");
+  await pg.waitForTimeout(600);
+  const drop = async (text) => {
+    await pg.evaluate((text) => {
+      const ev = new Event("drop", { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "dataTransfer", {
+        value: { files: [new File([text], "g.pgn", { type: "application/x-chess-pgn" })] },
+      });
+      window.dispatchEvent(ev);
+    }, text);
+    await pg.waitForTimeout(1000);
+    if (await pg.isVisible("#confirm-ok")) { await pg.click("#confirm-ok"); await pg.waitForTimeout(800); }
+  };
+  const seen = () => pg.evaluate(() => ({
+    status: (document.getElementById("status") || {}).textContent || "",
+    w: document.getElementById("white-role").textContent,
+    b: document.getElementById("black-role").textContent,
+  }));
+  await drop('[Event "Club"]\n[White "Anderssen"]\n[Black "Kieseritzky"]\n[Result "1-0"]\n\n1. e4 e5 2. f4 exf4 1-0\n');
+  let s = await seen();
+  assert(/1-0/.test(s.status) && /白方胜/.test(s.status) && !/认输/.test(s.status),
+    "导入的 1-0:状态栏只说「1-0 · 白方胜」,不编一个认输的原因", s.status);
+  assert(s.w === "Anderssen" && s.b === "Kieseritzky",
+    "对阵栏用棋谱里的 White / Black 名字", JSON.stringify(s));
+  await drop('[Event "?"]\n[White "?"]\n[Black "?"]\n[Result "1/2-1/2"]\n\n1. d4 d5 1/2-1/2\n');
+  s = await seen();
+  assert(/½-½/.test(s.status) && !/协议/.test(s.status),
+    "导入的和棋同样只说结果,不说「协议和棋」", s.status);
+  assert(s.w === "玩家 1" && s.b === "玩家 2", "名字是「?」的棋谱,退回玩家 1 / 玩家 2", JSON.stringify(s));
+  await ctx5.close();
 }
 
 // 顶栏与题面,同屏两处,不说同一句话 (7.3 B4)
