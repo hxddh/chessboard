@@ -769,9 +769,10 @@ await scenario("FEN黑先", async () => {
   await runAn(page, "#an-run", 60000);
   const r = await readAn(page);
   const sans = ["e5", "Nf3", "Nc6", "Bc4", "Nd4", "Nxe5", "Qg5", "Nxf7", "Qxg2", "Rf1", "Qxe4+", "Be2"];
-  // data-i is the ply, 1-based: odd plies are Black's here
+  // data-i is the ply, 1-based: odd plies are Black's here. The accuracy is
+  // the report card's headline now (v7-7-plan §5): each figure over its side
   const marked = r.tags.filter((x) => /\?$/.test(x)).map((x) => sans[parseInt(x, 10) - 1]);
-  assert(marked.length > 0 && marked.some((s) => s === "Nxe5" || s === "Nxf7") && !!r.acc && /白 \d+%.*黑 \d+%/.test(r.acc),
+  assert(marked.length > 0 && marked.some((s) => s === "Nxe5" || s === "Nxf7") && !!r.acc && /\d+%\s*白.*\d+%\s*黑/.test(r.acc),
     "FEN黑先：分析完，? / ?? 落在白方的 Nxe5 / Nxf7 上，双方精准度都有", JSON.stringify({ marked, acc: r.acc }));
   assert(!errs.length, "FEN黑先：页面没有报错", errs.join(" / "));
   await ctx.close();
