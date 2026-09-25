@@ -52,6 +52,13 @@ export const KEYS = {
 export const SCHEMA_KEY = "chess.schema";
 /** When the cache last changed — what recover() compares against the file. */
 export const STAMP_KEY = "chess.writtenAt";
+/**
+ * The packaged app's self-test marker (app.js runSelftest). Deliberately not
+ * in KEYS: it is not part of the profile, so it is never mirrored to the
+ * native file or restored from it — a restart check that the file could
+ * answer would not be a check of localStorage.
+ */
+export const SELFTEST_KEY = "chess.selftest";
 
 /**
  * The current schema version, and how to get here from each earlier one.
@@ -392,6 +399,17 @@ export function createPersist(host, onWriteFailure) {
   function isBroken() { return !!broken; }
 
   /**
+   * Swap the self-test marker (SELFTEST_KEY) for `next`: what was there
+   * before, and whether `next` was written and reads back.
+   * @returns {{found: string|null, stored: boolean}}
+   */
+  function swapSelftestMarker(next) {
+    const found = host.storageGet(SELFTEST_KEY);
+    const stored = host.storageSet(SELFTEST_KEY, next) !== false && host.storageGet(SELFTEST_KEY) === next;
+    return { found, stored };
+  }
+
+  /**
    * Read a key and vouch for its shape, or say what went wrong.
    *
    * Every reader in app.js used to be `try { JSON.parse(...) } catch (_) {}`
@@ -496,7 +514,7 @@ export function createPersist(host, onWriteFailure) {
   /** Names of the keys that failed to read this session, in order. */
   function corruptKeys() { return corrupt.slice(); }
 
-  return { load, get, read, set, setJson, remove, clearAll, isBroken, wasEmpty, corruptKeys,
+  return { load, get, read, set, setJson, remove, clearAll, isBroken, swapSelftestMarker, wasEmpty, corruptKeys,
     recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, freeze, releaseMirror,
     ACCEPT, KEYS, SCHEMA };
 }

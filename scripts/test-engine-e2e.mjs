@@ -63,7 +63,11 @@ const server = http.createServer((req, res) => {
   if (control) p = p.slice("/control".length);
   const broken = p.startsWith("/broken/");
   if (broken) p = p.slice("/broken".length);
+  // 7.6 self-test: the shipped page with its eco chunk missing
+  const nochunk = p.startsWith("/nochunk/");
+  if (nochunk) p = p.slice("/nochunk".length);
   if (p === "/") p = "/index.html";
+  if (nochunk && p === "/js/chunk-eco.js") { res.writeHead(404); res.end(); return; }
   if (broken && p === "/js/engine-src.js") {
     res.writeHead(200, { "content-type": "text/javascript" });
     res.end(BROKEN_SRC);
@@ -299,37 +303,76 @@ assert(drill.after.replied && !drill.after.notice,
 
 // 7.5: the packaged app's self-test (CHESS_SELFTEST=1, main.zig). The native
 // half — mode on, report written, exit code — has its own zig tests; this is
-// the page half, with a stand-in bridge that answers only the two self-test
-// commands. On the real engine the report says ok with a legal move; on the
-// broken one it says not ok and names the error, instead of hanging.
-async function selftestPage(prefix) {
+// the page half, with a stand-in bridge that answers the two self-test
+// commands and keeps chessboard.json in memory (7.6: the report has four
+// checks — engine, appdata, chunk, restart). On the real engine the report
+// says ok with a legal move; with one piece broken it says not ok and names
+// that check, instead of hanging. `reloads` relaunches the page in the same
+// context, which is what the restart check needs: localStorage survives it.
+async function selftestPage(prefix, { appdataWrite = "ok", reloads = 0 } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  await ctx.addInitScript(() => {
+  await ctx.addInitScript((writeMode) => {
     window.__report = null;
+    let file = null; // base64 of chessboard.json, or null when there is none
     window.zero = {
       invoke: async (name, args) => {
         if (name === "chess.selftestMode") return { on: true };
         if (name === "chess.selftestReport") { window.__report = args; return {}; }
+        if (name === "chess.appdataRead") return file == null ? { missing: true } : { b64: file };
+        if (name === "chess.appdataWrite") {
+          if (writeMode === "reject") return { error: "io" };
+          file = args.b64;
+          return { ok: true };
+        }
         throw new Error("not in this stand-in: " + name);
       },
       on() {},
     };
-  });
+  }, appdataWrite);
   const page = await ctx.newPage();
-  await page.goto(`http://127.0.0.1:${PORT}${prefix}/`);
-  let rep = null;
-  for (let i = 0; i < 280 && !rep; i++) { await page.waitForTimeout(250); rep = await page.evaluate(() => window.__report); }
+  const reports = [];
+  for (let run = 0; run <= reloads; run++) {
+    if (run === 0) await page.goto(`http://127.0.0.1:${PORT}${prefix}/`);
+    else await page.reload();
+    let rep = null;
+    for (let i = 0; i < 280 && !rep; i++) { await page.waitForTimeout(250); rep = await page.evaluate(() => window.__report); }
+    reports.push(rep);
+  }
   await ctx.close();
-  return rep;
+  return reloads ? reports : reports[0];
 }
-const selfOk = await selftestPage("");
+const brief = (r) => r && { ok: r.ok, move: r.move, ms: r.ms, err: r.err, checks: r.checks };
+const passed = (r, k) => !!(r && r.checks && r.checks[k] && r.checks[k].pass === true);
+const [selfOk, selfOk2] = await selftestPage("", { reloads: 1 });
 const selfBad = await selftestPage("/broken");
-console.log("自检 · 原样:", JSON.stringify(selfOk && { ok: selfOk.ok, move: selfOk.move, ms: selfOk.ms, err: selfOk.err }));
-console.log("自检 · 坏引擎:", JSON.stringify(selfBad && { ok: selfBad.ok, ms: selfBad.ms, err: selfBad.err }));
+const selfNoWrite = await selftestPage("", { appdataWrite: "reject" });
+const selfNoChunk = await selftestPage("/nochunk");
+console.log("自检 · 原样:", JSON.stringify(brief(selfOk)));
+console.log("自检 · 原样，重启后:", JSON.stringify(brief(selfOk2)));
+console.log("自检 · 坏引擎:", JSON.stringify(brief(selfBad)));
+console.log("自检 · 存档写入被拒:", JSON.stringify(brief(selfNoWrite)));
+console.log("自检 · eco 分块缺失:", JSON.stringify(brief(selfNoChunk)));
 assert(!!selfOk && selfOk.ok === true && typeof selfOk.move === "string" && selfOk.move.length >= 2,
   "自检（页面这一半）：原样页面报告 ok，并给出一步合法着法");
+assert(["engine", "appdata", "chunk", "restart"].every((k) => passed(selfOk, k)) && !selfOk.err,
+  "自检：原样页面四项（engine、appdata、chunk、restart）分别报告通过");
+assert(/^B20 /.test(String(selfOk && selfOk.checks.chunk.name)),
+  "自检：chunk 一项真的从 eco 分块里查到了 1.e4 c5 的开局名(" + (selfOk && selfOk.checks.chunk.name) + ")");
+assert(!JSON.stringify(Object.values((selfOk && selfOk.checks) || {})).includes('"ok":'),
+  "自检：各项用 pass 而不用 ok —— main.zig 按报告里有没有 \"ok\":true 决定退出码");
+assert(!!selfOk && !!selfOk2 && selfOk.checks.restart.found == null &&
+  selfOk2.checks.restart.found === selfOk.checks.restart.wrote && selfOk2.ok === true,
+  "自检：第二次启动读回了第一次写下的 localStorage 标记(" + (selfOk2 && selfOk2.checks.restart.found) + ")");
 assert(!!selfBad && selfBad.ok === false && !!selfBad.err,
   "自检（页面这一半）：引擎起不来时报告 ok:false 并写明原因，不会一直挂着");
+assert(!!selfBad && !passed(selfBad, "engine") && /^engine: /.test(selfBad.err) && passed(selfBad, "chunk") && passed(selfBad, "appdata"),
+  "自检：坏引擎只让 engine 一项红，err 以 engine 开头，其余各项照常检查");
+assert(!!selfNoWrite && selfNoWrite.ok === false && !passed(selfNoWrite, "appdata") && passed(selfNoWrite, "engine") &&
+  passed(selfNoWrite, "chunk") && /^appdata: .*io/.test(selfNoWrite.err || ""),
+  "自检：存档写入被拒时 ok:false，err 点名 appdata 并带上原因");
+assert(!!selfNoChunk && selfNoChunk.ok === false && !passed(selfNoChunk, "chunk") && passed(selfNoChunk, "engine") &&
+  /^chunk: .*chunk-eco\.js/.test(selfNoChunk.err || ""),
+  "自检：eco 分块加载不到时 ok:false，err 点名 chunk 和那个文件");
 
 assert(shipped.plies >= 2, "原样页面里，人机走 1. e4，引擎应了一手(" + ENGINE + ")");
 assert(!shipped.errs.length, "…页面上没有报错");
