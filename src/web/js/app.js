@@ -7104,7 +7104,10 @@ import { createStore } from "./store.js";
     setText(el("go-mark"), end.token === "1/2-1/2" ? "½–½" : end.token.replace("-", "–"));
     card.classList.toggle("won", !!end.winner && (!mine || end.winner === mine));
     const engineDown = !ChessEngine || !!store.session.engineDown;
-    const canAnalyse = !engineDown && !analysisFor() && !store.session.analyzing;
+    // A position loaded already over (a mated FEN, a result-only PGN) has an
+    // ending but no moves, and analyzeGame() refuses an empty history — the
+    // review row's 分析 already asks for one (Codex on #82)
+    const canAnalyse = !engineDown && sanHistory().length > 0 && !analysisFor() && !store.session.analyzing;
     avail(el("go-analyse"), canAnalyse);
     avail(el("go-switch"), mode === "ai");
   }

@@ -3483,6 +3483,27 @@ const mv = async (page, sq) => {
     assert((await cardState(page)).shown, "the same mate in the next game gets its card again, the ✕ was for the last one");
     await ctx.close();
   }
+  // Codex on #82: a game opened already mated — a [FEN] header and no moves —
+  // has an ending but nothing to analyse, and 分析这盘 on its card led straight
+  // to "no game to analyse". (The FEN dialog refuses such a position; a PGN
+  // does not.) The engine is marked ready so only the missing history decides.
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 });
+    await page.evaluate(() => {
+      window.__chess.engine.isReady = () => true;
+      const pgn = '[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "0-1"]\n[SetUp "1"]\n' +
+        '[FEN "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"]\n\n0-1\n';
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { readText: () => Promise.resolve(pgn), writeText: () => Promise.resolve() } });
+    });
+    if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+    await page.click("#pgn-paste");
+    await page.waitForTimeout(800);
+    const s = await cardState(page);
+    const analyse = await page.evaluate(() => !!document.getElementById("go-analyse").offsetParent);
+    assert(s.shown && !analyse, "打开一局已将死、没有着法的棋谱：终局卡在，但不给「分析这盘」(" + JSON.stringify({ shown: s.shown, analyse }) + ")");
+    await ctx.close();
+  }
   // Codex on #82: with the panel shut the card is off-screen, and nothing else
   // on screen said how the game ended
   {
