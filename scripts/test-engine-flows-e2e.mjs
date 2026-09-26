@@ -736,17 +736,62 @@ await scenario("多主变", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp", multipv: 3 });
   await openPgn(page, TRAP);
   await runAn(page, "#an-run", 90000);
-  const alt = await page.evaluate(() => document.querySelectorAll("#pv-line .pv-alt-row").length);
+  // 7.8 §2: the review's desk — three rows numbered 1 2 3 (the principal line
+  // is no longer a separate 「引擎主变」), each one line of text with a score box
+  const desk = (sel) => page.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el || el.hidden) return { rows: [] };
+    return {
+      head: (el.querySelector(".pv-head .pv-label") || {}).textContent || "",
+      rows: [...el.querySelectorAll(".pv-row")].map((r) => {
+        const box = r.querySelector(".pv-eval");
+        const chip = r.querySelector(".pv-chip");
+        return { no: r.querySelector(".pv-no").textContent, box: box.textContent, tip: box.title,
+          dark: box.classList.contains("is-black"), h: r.getBoundingClientRect().height,
+          chipH: chip ? chip.getBoundingClientRect().height : 0 };
+      }),
+    };
+  }, sel);
+  const rv = await desk("#pv-line");
   const uci = await page.evaluate(() => window.__uci);
-  assert(alt === 2 && uci.includes("setoption name MultiPV value 3"),
-    "多主变：multipv=3 分析，最后一个局面下列出另外两条变化", JSON.stringify({ alt }));
+  assert(rv.rows.length === 3 && uci.includes("setoption name MultiPV value 3"),
+    "多主变：multipv=3 分析，最后一个局面下列出三条线", JSON.stringify(rv));
+  const shapeOk = (d) => d.rows.length === 3 && d.rows.map((r) => r.no).join("") === "123" &&
+    d.rows.every((r) => /^([+−]\d+\.\d|0\.0|#\d+)$/.test(r.box) && r.h > 0 && r.h < r.chipH * 1.6);
+  assert(shapeOk(rv), "多主变：三条线编号 1/2/3，每条一行、左边一个分值框（+1.2 / −0.4 / #3）", JSON.stringify(rv.rows));
+  assert(rv.rows.every((r) => /胜率 \d+%/.test(r.tip)), "多主变：胜率挪到分值框的悬停说明里", JSON.stringify(rv.rows.map((r) => r.tip)));
+  assert(/深度 \d+/.test(rv.head), "多主变：深度写在分析台的标题行", rv.head);
+  // the review's arrows: line 1 (or the mistake arrow standing in for it) and
+  // the lighter ones, off the analysis
+  const rvShapes = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E" || a.color === "e"));
+  assert(rvShapes.length >= 1, "多主变：复盘时棋盘上有引擎的箭头", JSON.stringify(rvShapes));
   await page.click("#an-live");
   const rows = await until(() => page.evaluate(() => {
     const el = document.getElementById("live-line");
-    const n = el && !el.hidden ? el.querySelectorAll(".pv-alt-row").length : 0;
+    const n = el && !el.hidden ? [...el.querySelectorAll(".pv-row .pv-eval")].filter((b) => b.textContent).length : 0;
     return n === 3 ? n : 0;
   }), 6000, 100);
-  assert(rows === 3, "多主变：持续分析同时显示三条主变", rows);
+  assert(rows === 3, "多主变：持续分析同时显示三条线", rows);
+  const lv = await desk("#live-line");
+  assert(shapeOk(lv), "多主变：持续分析也是一行一条、带分值框", JSON.stringify(lv.rows));
+  assert(/深度 \d+/.test(lv.head), "多主变：持续分析的标题行写着深度", lv.head);
+  const live = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E"));
+  assert(live.length === 1, "多主变：持续分析时棋盘上有第一条线的引擎箭头", JSON.stringify(live));
+  // 「显示引擎箭头」 off: no engine arrow at all
+  await page.click("#tab-setup");
+  await page.click("#opt-engine-arrows");
+  await page.click("#tab-play");
+  await page.waitForTimeout(300);
+  const offArrows = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E" || a.color === "e"));
+  assert(offArrows.length === 0, "多主变：关掉「显示引擎箭头」，棋盘上就没有引擎箭头", JSON.stringify(offArrows));
+  // a chip in line 2 walks the board into that line
+  const pinned = await page.evaluate(() => {
+    const b = document.querySelector('#live-line .pv-row[data-line="1"] .pv-chip');
+    if (!b) return null;
+    b.click();
+    return document.getElementById("preview-badge").hidden === false;
+  });
+  assert(pinned === true, "多主变：点第 2 条线里的一步，棋盘走进这条变化", pinned);
   assert(!errs.length, "多主变：页面没有报错", errs.join(" / "));
   await ctx.close();
 });

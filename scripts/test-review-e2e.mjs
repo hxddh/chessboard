@@ -625,22 +625,23 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForTimeout(400);
   const mpv = await pg.evaluate(() => {
     const el = document.getElementById("pv-line");
-    const main = [...el.querySelectorAll("button.pv-chip")].map((c) => c.getAttribute("aria-label"));
-    const alts = [...el.querySelectorAll(".pv-alt-row")].map((r) => ({
-      label: r.querySelector(".pv-label").textContent,
+    // 7.8 §2: one row per line, numbered 1 2 3 — the principal line is row 1
+    const rows = [...el.querySelectorAll(".pv-row")].map((r) => ({
+      label: r.querySelector(".pv-eval").title,
+      box: r.querySelector(".pv-eval").textContent,
       sans: [...r.querySelectorAll(".pv-chip")].map((c) => c.getAttribute("aria-label")),
     }));
-    return { hidden: el.hidden, main, alts, bar: document.getElementById("eval-bar-text").textContent };
+    return { hidden: el.hidden, rows, bar: document.getElementById("eval-bar-text").textContent };
   });
   assert(!mpv.hidden, "复盘面板给出了引擎的线");
-  assert(mpv.alts.length === 2 && mpv.main.length >= 1,
-    "MultiPV 3:主变一条 + 副变两条 = 三条线 (" + (1 + mpv.alts.length) + ")");
-  const heads = [mpv.main[0], ...mpv.alts.map((a) => a.sans[0])];
+  assert(mpv.rows.length === 3 && mpv.rows.every((r) => r.sans.length >= 1),
+    "MultiPV 3:三行,一条线一行 (" + mpv.rows.length + ")");
+  const heads = mpv.rows.map((a) => a.sans[0]);
   assert(new Set(heads).size === 3, "三条线是三条不同的线,不是同一条抄三遍 (" + heads.join(" / ") + ")");
-  assert(mpv.alts.every((a) => /胜率\s*\d+%/.test(a.label)),
-    "每条副变都带着自己的胜率 (" + mpv.alts.map((a) => a.label).join(" | ") + ")");
-  assert(mpv.alts[0].label !== mpv.alts[1].label,
-    "……而且是各算各的,不是同一个数字印两遍 (" + mpv.alts.map((a) => a.label).join(" | ") + ")");
+  assert(mpv.rows.every((a) => /胜率\s*\d+%/.test(a.label)),
+    "每条线的分值框悬停都带着自己的胜率 (" + mpv.rows.map((a) => a.label).join(" | ") + ")");
+  assert(mpv.rows.map((r) => r.box).join(" ") === "+0.6 +0.2 −0.1",
+    "……分值框写的是分值,从白方看,各算各的 (" + mpv.rows.map((r) => r.box).join(" ") + ")");
   assert(/^[+-]/.test(mpv.bar.trim()), "主变那条的数字在评估条上 (" + mpv.bar + ")");
 
   // --- 持续分析:跟着复盘游标走,关掉就真的停 -------------------------------
@@ -663,8 +664,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   });
   const liveState = () => pg.evaluate(() => ({
     hidden: document.getElementById("live-line").hidden,
-    head: (document.querySelector("#live-line > .pv-label") || {}).textContent || "",
-    rows: [...document.querySelectorAll("#live-line .pv-alt-row .pv-label")].map((x) => x.textContent),
+    head: (document.querySelector("#live-line > .pv-head > .pv-label") || {}).textContent || "",
+    // 7.8 §2: the win chance is the score box's tooltip now, beside its score
+    rows: [...document.querySelectorAll("#live-line .pv-row .pv-eval")].map((x) => x.textContent + " " + x.title),
     pressed: document.getElementById("an-live").getAttribute("aria-pressed"),
     fens: window.__live.fens.length,
     stops: window.__live.stops,
@@ -1019,7 +1021,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pgH.waitForTimeout(250);
   await pgH.click("#an-live");
   await pgH.waitForTimeout(500);
-  const liveRows = await pgH.evaluate(() => document.querySelectorAll("#live-line .pv-alt-row").length);
+  const liveRows = await pgH.evaluate(() => document.querySelectorAll("#live-line .pv-row").length);
   assert(liveRows === 3, "持续分析开着，multipv=3 的三条线都在 (" + liveRows + ")");
   let worst = 0, took = 0, lost = [];
   for (let n = 0; n < 10; n++) {
@@ -1080,6 +1082,40 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   });
   assert(c.clicked && !badgeH.hidden && /Esc/.test(badgeH.text),
     "……松开就是一次点击：棋盘钉在那条线上 (" + badgeH.text + ")");
+  await pgH.keyboard.press("Escape");
+
+  // --- (c) 7.8 §2：持续分析的着法也是按钮了。引擎每 30ms 换一次主变，按住
+  // 第 1 条线的第 2 步 600ms：那颗按钮不许被换掉、改写或挪动，松开钉住那条线
+  if (await pgH.evaluate(() => /停止/.test(document.getElementById("an-run").textContent))) {
+    await pgH.click("#an-run");
+    await pgH.waitForTimeout(1500);
+  }
+  await pgH.evaluate(() => {
+    window.__chess.engine.analyzeInfinite = (fen, opts, onUpdate) => {
+      const turn = fen.split(" ")[1];
+      const A = ["e2e4", "e7e5", "g1f3", "b8c6"], B = ["d2d4", "d7d5", "c2c4", "e7e6"];
+      let n = 0;
+      const id = setInterval(() => {
+        n++;
+        const pv = n % 2 ? A : B;
+        onUpdate({ depth: 10 + n, turn, lines: [0, 1, 2].map((k) => ({ cp: 30 - k * 40 + (n % 5), mate: null, pv, depth: 10 + n })) });
+      }, 30);
+      return () => { clearInterval(id); return Promise.resolve(); };
+    };
+  });
+  await pgH.evaluate(() => { const b = document.getElementById("rep-start"); if (!b.disabled) b.click(); });
+  await pgH.waitForTimeout(200);
+  if (await pgH.evaluate(() => document.getElementById("an-live").getAttribute("aria-pressed") === "true")) {
+    await pgH.click("#an-live"); await pgH.waitForTimeout(200);
+  }
+  await pgH.click("#an-live");
+  await pgH.waitForTimeout(1000);
+  const lc = await heldClick(pgH, '#live-line .pv-row[data-line="0"] button.pv-chip[data-k="1"]', { hold: 600 });
+  console.log("  持续分析中按住引擎线上的着法：位移 " + lc.drift + "px，节点" + (lc.replaced ? "被换掉了" : "还是原来那个"));
+  assert(!lc.replaced && !lc.mutated && lc.drift === 0,
+    "持续分析每 30ms 换一次主变，按住的那一着既没被换成新节点、没被改写，也没挪", JSON.stringify(lc));
+  const badgeL = await pgH.evaluate(() => document.getElementById("preview-badge").hidden);
+  assert(lc.clicked && !badgeL, "……松开就是一次点击：棋盘走进了那条线");
   await pgH.keyboard.press("Escape");
   assert(errsH.length === 0, "按住不挪：全程没有页面异常 — " + errsH.join(" / "));
   await ctxH.close();

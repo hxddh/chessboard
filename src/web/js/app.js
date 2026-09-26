@@ -9803,11 +9803,15 @@ import { createStore } from "./store.js";
     // 7.6's rule, kept for the live rows: nothing under a press is rewritten
     // between pointerdown and pointerup (paintLive checks liveHeld)
     liveLineEl.addEventListener("pointerdown", () => { store.ui.liveHeld = true; });
+    // …nor between pointerup and the click that follows it: the rows catch
+    // up on the next frame, after the click has landed on the chip it was over
     const release = () => {
       if (!store.ui.liveHeld) return;
-      store.ui.liveHeld = false;
-      const rec = store.session.live;
-      if (rec) renderLiveAnalysis(rec);
+      requestAnimationFrame(() => {
+        store.ui.liveHeld = false;
+        const rec = store.session.live;
+        if (rec) renderLiveAnalysis(rec);
+      });
     };
     window.addEventListener("pointerup", release);
     window.addEventListener("pointercancel", release);

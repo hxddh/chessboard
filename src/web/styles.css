@@ -2479,6 +2479,12 @@
       margin-top: 2px;
     }
     .pv-row > * { vertical-align: middle; }
+    /* every box in a row is one fixed height, whatever it holds: a chip with
+       a figurine in it was 0.6px taller than one without, so a line that
+       changed from 1.e4 e5 2.Nf3 to 1.d4 d5 2.c4 moved every chip in the row
+       under the pointer (measured, review e2e 7.6 §2 (c)) */
+    .pv-row .pv-chip, .pv-eval { display: inline-flex; align-items: center; justify-content: center; height: 1.75em; }
+    .pv-row .pv-chip { font-size: 0.75rem; }
     .pv-no {
       display: inline-block; width: 12px; margin-right: 2px;
       font-size: 0.6875rem; color: var(--muted);
