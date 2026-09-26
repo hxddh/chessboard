@@ -32,6 +32,76 @@
     ],
     "changedBestPctSd": 16.5
   },
+  "markChroma": {
+    "what": "每种棋盘标记叠在浅格上的 CIELAB 色度 C*（越大越艳）。上一步标记的上限以 Lichess 默认棋盘的上一步高亮（rgba(155,199,0,.41) 叠在 #f0d9b5 上）为参照，取其约九成，不照抄数值",
+    "script": "scripts/measure-marks.mjs --record",
+    "metric": "C* = √(a*² + b*²)，sRGB → CIELAB D65；标记按 source-over 叠在 --sq-light 上",
+    "marks": [
+      "last",
+      "sel",
+      "check",
+      "hint"
+    ],
+    "reference": {
+      "lichessLastOnLight": 52.4
+    },
+    "ceiling": {
+      "last": 47
+    },
+    "beforeRef": "721fe05",
+    "before": {
+      "wood": {
+        "last": 54.1,
+        "sel": 56.9,
+        "check": 47.2,
+        "hint": 26.3
+      },
+      "night": {
+        "last": 45.2,
+        "sel": 34.7,
+        "check": 46.5,
+        "hint": 42.6
+      },
+      "day": {
+        "last": 46.5,
+        "sel": 57.2,
+        "check": 53.7,
+        "hint": 33.2
+      },
+      "notebook": {
+        "last": 26.4,
+        "sel": 30,
+        "check": 49.7,
+        "hint": 68
+      }
+    },
+    "after": {
+      "wood": {
+        "last": 43.9,
+        "sel": 56.9,
+        "check": 47.2,
+        "hint": 26.3
+      },
+      "night": {
+        "last": 45.2,
+        "sel": 34.7,
+        "check": 46.5,
+        "hint": 42.6
+      },
+      "day": {
+        "last": 46.5,
+        "sel": 57.2,
+        "check": 53.7,
+        "hint": 33.2
+      },
+      "notebook": {
+        "last": 26.4,
+        "sel": 30,
+        "check": 49.7,
+        "hint": 68
+      }
+    }
+  },
   "markHue": {
     "what": "每种棋盘标记叠在浅格与深格上的 CIEDE2000：dE 为整体色差（大半是明度，本就该不同），dH 为其中的色相项 ΔH'/(kH·SH)（要小）；sep 为同一格上两种不同标记之间的最小 ΔE00（要大）",
     "script": "scripts/measure-marks.mjs --record",
@@ -137,8 +207,8 @@
       "wood": {
         "marks": {
           "last": {
-            "dE": 15.1,
-            "dH": 3.1
+            "dE": 16,
+            "dH": 4.2
           },
           "sel": {
             "dE": 12.2,
@@ -153,7 +223,7 @@
             "dH": 1.6
           }
         },
-        "sep": 10.1,
+        "sep": 10.9,
         "sepPair": "last/sel on dark"
       },
       "night": {

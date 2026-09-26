@@ -13,6 +13,7 @@ import { CHESS_CLASSICS_EN } from "./classics-en.js";
 import { CHESS_CLASSICS_JA } from "./classics-ja.js";
 import { ChessEditor } from "./editor.js";
 import { ChessEngine } from "./engine.js";
+import { ChessExplain } from "./explain.js";
 import { ChessFide } from "./fide.js";
 import { ChessTree } from "./game-tree.js";
 import { ChessHost } from "./host.js";
@@ -65,7 +66,9 @@ import { createStore } from "./store.js";
    * purpose, and the modules on it are the object identities the app itself
    * holds, so patching a method here is patching the app's engine.
    */
-  window.__chess = { engine: ChessEngine };
+  // `shapes`: what the board is drawing as arrows and circles right now —
+  // the player's, the premove's and the engine's (7.8 §2)
+  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw() };
 
   const Host = ChessHost;
   const Review = ChessReview;
@@ -288,6 +291,9 @@ import { createStore } from "./store.js";
       difficulty: "normal",
       /** @type {'w'|'b'} human side in AI mode */
       humanColor: "w",
+      /** v7-8-plan §4: the last new game was started with 执子「随机」, so the
+       *  dialog offers that again; humanColor is still the side actually drawn */
+      colorRandom: false,
       engineThinking: false,
       /** 6.0 (v6-plan Q2.8): the move queued while the engine thinks, {from,to} */
       premove: null,
@@ -320,6 +326,8 @@ import { createStore } from "./store.js";
       learn: null,
       /** puzzle-mode runtime; null unless mode === 'puzzle' */
       puzzle: null,
+      /** 7.8 §3: 再试一次 — one move to find, on top of the replay; see startRetry */
+      retry: null,
       learnState: null,  // filled in below, where it can first be computed
       puzzleState: null,  // filled in below, where it can first be computed
       /** 错题自炼 — the personal book (mistakes.js); filled in below */
@@ -354,6 +362,8 @@ import { createStore } from "./store.js";
       /** 6.0 (v6-plan Q2.8 / Q2.6): the level, the frame labels, the men, the engine knobs */
       volume: 100,
       coordsOn: true,
+      /** v7-8-plan §5: coordinates in the corner squares instead of on the frame */
+      coordsInside: false,
       blindfold: false,
       hash: 32,
       multipv: 1,
@@ -372,6 +382,10 @@ import { createStore } from "./store.js";
        * is off; the switch is there for anyone who wants it anyway.
        */
       showSoftMark: false,
+      // 7.8 §2: the engine lines drawn as board arrows (持续分析 and the review)
+      engineArrows: true,
+      // a pointer is pressed inside #live-line: its rows hold still (paintLive)
+      liveHeld: false,
       /** 6.0 (v6-plan Q3.6): the theme follows the system's light/dark; the text size step */
       followSystem: false,
       textSize: "m",
@@ -395,6 +409,10 @@ import { createStore } from "./store.js";
       cursorShown: false,
       toastTimer: null,
       confirmResolver: null,
+      /** v7-8-plan §4: the new-game dialog's draft while it is open —
+       *  {difficulty, personaId, color: "w"|"b"|"random", timeControl} — else null.
+       *  Never persisted: the choices are committed by 开始, not by the clicks. */
+      newGame: null,
       /** 7.7 §3: the review group, opened by hand during an engine game */
       reviewOpen: false,
       histFilter: { result: "all", color: "all" },
@@ -404,6 +422,8 @@ import { createStore } from "./store.js";
       libFilter: { result: "all", color: "all", sort: "t" },
       libPick: null,
       promoResolver: null,
+      /** 7.8 §1c: the square the open promotion chooser stands on */
+      promoSquare: null,
       /** Modal list picker → index of the chosen entry, or null when cancelled. */
       pickResolver: null,
       dragging: null,
@@ -901,10 +921,11 @@ import { createStore } from "./store.js";
     if (store.ui.previewPinned) return true;
     const ml = document.getElementById("move-list");
     const pv = document.getElementById("pv-line");
+    const live = document.getElementById("live-line");
     const ae = document.activeElement;
     const held = (el) => !!el && !el.hidden && el.offsetParent !== null &&
       (el.matches(":hover") || (ae && el.contains(ae) && ae.matches("button")));
-    return held(ml) || held(pv);
+    return held(ml) || held(pv) || held(live);
   }
 
   function renderPreviewBadge() {
@@ -939,12 +960,17 @@ import { createStore } from "./store.js";
     setBoardPreview(ChessPreview.plyPreview(new Chess(node.fen), node.from ? { from: node.from, to: node.to } : null, depth));
   }
 
-  /** Preview the engine line up to and including chip k, off the board's own
-      position — a preview, never a commit: these moves were not played. */
-  function previewPvChip(k) {
-    const a = analysisFor();
-    const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
-    const p = ChessPreview.pvPreview(Chess, viewGame().fen(), pv, k);
+  /** The moves of the engine line a desk chip belongs to (its row keeps them). */
+  function chipLine(b) {
+    const row = b && b.closest(".pv-row");
+    return row && Array.isArray(row._sans) ? row._sans : null;
+  }
+  /** Preview the chip's engine line up to and including that chip, off the
+      board's own position — a preview, never a commit: these moves were not
+      played. Any line of the desk, the review's or 持续分析's (7.8 §2). */
+  function previewPvChip(b) {
+    const sans = chipLine(b);
+    const p = sans ? ChessPreview.pvPreview(Chess, viewGame().fen(), sans.join(" "), Number(b.dataset.k)) : null;
     if (!p) return false;
     setBoardPreview(p);
     return true;
@@ -958,6 +984,7 @@ import { createStore } from "./store.js";
     if (store.session.editor) return editorModel();
     if (store.session.mode === "learn" && store.session.learn) return learnModel();
     if (store.session.mode === "puzzle" && store.session.puzzle) return puzzleModel();
+    if (store.session.retry) return retryModel();
     // the position under the pointer wins while it is held — reading is
     // touching now, and the committed cursor comes back the moment you let go
     if (store.ui.preview && !store.ui.dragging) {
@@ -1006,6 +1033,9 @@ import { createStore } from "./store.js";
   /** What the board draws of the annotations: the node's shapes and the draft. */
   function shapesToDraw() {
     let s = nodeShapes();
+    // 7.8 §2: the engine's lines as arrows, under the player's own
+    const eng = engineArrows();
+    if (eng.length) s = { arrows: eng.concat(s.arrows), circles: s.circles };
     // the queued premove is drawn as a yellow arrow — the one colour the
     // player's own annotations use least
     if (store.session.premove && isLive()) {
@@ -1015,6 +1045,63 @@ import { createStore } from "./store.js";
     if (!d || !d.over) return s;
     if (d.over === d.from) return { arrows: s.arrows, circles: s.circles.concat({ sq: d.from, color: d.color }) };
     return { arrows: s.arrows.concat({ from: d.from, to: d.over, color: d.color }), circles: s.circles };
+  }
+
+  /**
+   * 7.8 §2: the first move of each engine line, as board arrows — line 1 in
+   * the engine's colour (letter E, --engine-arrow), lines 2 and 3 lighter
+   * (e, --engine-arrow-alt). Through the same shapes channel as the player's
+   * arrows, never stored in the tree: derived from what the desk shows.
+   *
+   * 持续分析 on this position wins; otherwise the review's lines, but not at
+   * the live position of an engine game still being played — that would be
+   * an answer key, the same reason bestArrowAt keeps out of live play. The
+   * principal arrow is left out where the review's mistake arrow already
+   * draws that move. 「显示引擎箭头」 turns all of it off.
+   */
+  function engineArrows() {
+    if (!store.ui.engineArrows) return [];
+    const g = viewGame();
+    const fen = g.fen();
+    const live = store.session.live;
+    let firsts = [];
+    // the arrow the board model already draws as its hint (same expression)
+    const hint = isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex);
+    if (live && live.fen === fen) {
+      if (live.info) firsts = live.info.lines.slice(0, 3).map((l) => uciArrow(Array.isArray(l.pv) ? l.pv[0] : null));
+    } else {
+      const a = analysisFor();
+      const inGame = isLive() && store.session.mode === "ai" && !appGameOver() && !store.game.imported;
+      if (!a || inGame || store.session.analyzing) return [];
+      const vi = store.game.viewIndex;
+      const memo = store.session._engineArrows;
+      if (memo && memo.a === a && memo.vi === vi && memo.fen === fen) firsts = memo.firsts;
+      else {
+        const lines = reviewLines(a, vi, g.turn());
+        firsts = lines.slice(0, 3).map((l, i) => {
+          if (i === 0 && a.bests && a.bests[vi]) return uciArrow(a.bests[vi]);
+          const m = l.sans[0] ? new Chess(fen).move(l.sans[0]) : null;
+          return m ? { from: m.from, to: m.to } : null;
+        });
+        store.session._engineArrows = { a, vi, fen, firsts };
+      }
+    }
+    const out = [];
+    firsts.forEach((m, i) => {
+      if (!m) return;
+      if (i === 0 && hint && hint.from === m.from && hint.to === m.to) return;
+      // two lines can open with the same move; one arrow says it
+      if (out.some((o) => o.from === m.from && o.to === m.to)) return;
+      out.push({ from: m.from, to: m.to, color: i === 0 ? "E" : "e" });
+    });
+    return out;
+  }
+  function uciArrow(u) {
+    return typeof u === "string" && u.length >= 4 ? { from: u.slice(0, 2), to: u.slice(2, 4) } : null;
+  }
+  /** What the live arrows depend on: the first move of each line. */
+  function engineArrowKey(info) {
+    return info ? info.lines.slice(0, 3).map((l) => (Array.isArray(l.pv) && l.pv[0]) || "").join(" ") : "";
   }
 
   /**
@@ -1234,9 +1321,18 @@ import { createStore } from "./store.js";
     el.style.maxWidth = Math.round(Math.max(200, Math.min(560, w.width - 16))) + "px";
     const h = el.offsetHeight;
     const GAP = 4, LOW = 24;
+    // 7.8 §1d: nor on the drawer. In a portrait window the panel is a sheet
+    // from the bottom, and the bottom place put 「成就解锁 · 首胜」 over the
+    // result card's second button. A place that would cross the sheet is not
+    // taken; the strip above the board is what is left.
+    const sideEl = document.getElementById("side");
+    const s = sideEl ? sideEl.getBoundingClientRect() : null;
+    const cx = w.left + w.width / 2, half = el.offsetWidth / 2;
+    const onSheet = (y) => !!s && s.width > 0 && a.top + y < s.bottom && a.top + y + h > s.top &&
+      cx - half < s.right && cx + half > s.left;
     let top = GAP;
-    if (a.bottom - w.bottom >= h + LOW + GAP) top = a.height - LOW - h;
-    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP) top = b.bottom - a.top + GAP;
+    if (a.bottom - w.bottom >= h + LOW + GAP && !onSheet(a.height - LOW - h)) top = a.height - LOW - h;
+    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP)) top = b.bottom - a.top + GAP;
     el.style.top = Math.round(top) + "px";
     el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
   }
@@ -1395,7 +1491,9 @@ import { createStore } from "./store.js";
       if (Audio2.SOUND_SETS.includes(s.soundSet)) Audio2.setSoundSet(store.ui.soundSet = s.soundSet);
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
       if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
+      if (typeof s.coordsIn === "boolean") store.ui.coordsInside = s.coordsIn;
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
+      if (typeof s.engineArrows === "boolean") store.ui.engineArrows = s.engineArrows;
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
@@ -1410,6 +1508,7 @@ import { createStore } from "./store.js";
       // have thrown the choice away on the next launch, silently.
       if (DIFF_IDS.includes(s.difficulty)) store.session.difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) store.session.humanColor = s.humanColor;
+      if (typeof s.colorRandom === "boolean") store.session.colorRandom = s.colorRandom;
       if (s.timeControl === "off" || TCS[s.timeControl]) store.game.timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
@@ -1421,8 +1520,8 @@ import { createStore } from "./store.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
         followSystem: store.ui.followSystem, textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         soundSet: store.ui.soundSet }));
     } catch (_) {}
@@ -1998,8 +2097,14 @@ import { createStore } from "./store.js";
     if (store.session.mode !== "learn" && store.session.mode !== "puzzle" && sanHistory().length) {
       ChessEco.whenReady(renderOpening);
     }
-    const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
-    el.hidden = !hit;
+    const drill = store.session.mode === "learn" || store.session.mode === "puzzle";
+    const hit = drill ? null : openingFor(store.game.viewIndex);
+    // 7.8 §1b: stepping back to the start of a named game left no name to
+    // show, and the line collapsed — the notation under it moved 29px. While
+    // the game as a whole has a name, the line keeps its box and goes blank.
+    const held = !hit && !drill && !!openingFor(sanHistory().length);
+    el.hidden = !hit && !held;
+    el.classList.toggle("vacant", held);
     el.textContent = hit ? hit[0] + " · " + hit[1] : "";
   }
 
@@ -2449,7 +2554,7 @@ import { createStore } from "./store.js";
       const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
-        choosePromotion(g.turn()).then((p) => { if (p) learnMove(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) learnMove(from, sq, p); });
         return;
       }
       learnMove(from, sq, "q");
@@ -3593,7 +3698,7 @@ import { createStore } from "./store.js";
       const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
-        choosePromotion(g.turn()).then((p) => { if (p) puzzleMove(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) puzzleMove(from, sq, p); });
         return;
       }
       puzzleMove(from, sq, "q");
@@ -4408,12 +4513,17 @@ import { createStore } from "./store.js";
       // re-armed `go infinite`, which holds the exclusive lock until it is
       // stopped — and nothing stopped it, so the pass's next analyze() waited
       // forever. The pass ends with a sync(), which picks the line back up.
-      !store.session.libRun;
+      !store.session.libRun &&
+      // 7.8 §3: 再试一次 hides the answer, and a retried move may need the
+      // engine for two searches — the same exclusive lock again (Codex, #83)
+      !store.session.retry;
   }
   function stopLiveAnalysis() {
     const l = store.session.live;
     store.session.live = null;
     if (!l) return Promise.resolve();
+    // its arrows go with it
+    if (l.arrowKey) draw();
     return l.stop();
   }
   function syncLiveAnalysis() {
@@ -4431,7 +4541,7 @@ import { createStore } from "./store.js";
     }
     if (!liveAllowed()) {
       stopLiveAnalysis();
-      if (el && !store.session.liveOn) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
+      if (el && (!store.session.liveOn || store.session.retry)) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
       return;
     }
     const fen = viewGame().fen();
@@ -4463,58 +4573,136 @@ import { createStore } from "./store.js";
    * several times a second, and a button that moves between mouse-down and
    * mouse-up loses the click on WebKit. Now: one head and exactly
    * `rec.multipv` rows, built once per line count, and a frame only rewrites
-   * their text; and the block keeps the tallest height it has had at this
-   * width. The rows still wrap as before — eight moves are worth two lines —
-   * but a line that gets shorter, or a new search starting empty, no longer
-   * pulls everything under it up. It grows until the lines are as long as
-   * they get (a second or so into a search) and then stands still.
+   * their text.
+   *
+   * 7.8 §2: and a row is one line of text, never two — a score box, then the
+   * moves, cut with an ellipsis where the panel ends (Lichess's analysis
+   * desk). That also retired the high-water height 7.6 kept here: a row that
+   * cannot wrap cannot change height. While a pointer is down inside the
+   * block the rows are not touched at all, only the depth in the head —
+   * the chips are buttons now (a click walks the board into the line), and
+   * the one under the press stays the one under the release.
    */
   function paintLive(el, rec) {
     const n = rec.multipv || 1;
     const head0 = el.firstElementChild;
-    if (el.childElementCount !== n + 1 || !head0 || head0.tagName !== "SPAN") {
-      const head = document.createElement("span");
-      head.className = "pv-label";
-      const rows = [];
-      for (let i = 0; i < n; i++) {
-        const row = document.createElement("div");
-        row.className = "pv-alt-row";
-        const lab = document.createElement("span");
-        lab.className = "pv-label";
-        row.appendChild(lab);
-        rows.push(row);
-      }
-      el.replaceChildren(head, ...rows);
+    if (el.childElementCount !== n + 1 || !head0 || !head0.classList.contains("pv-head")) {
+      el.replaceChildren(deskHead(), ...lineRows(n));
       el.style.minHeight = "";
     }
     const info = rec.info;
     const turn = info ? info.turn : (rec.fen.split(" ")[1] === "b" ? "b" : "w");
-    setText(el.firstElementChild, t("act.live") + " · " + t("an.depth") + " " + ((info && info.depth) || 0));
+    setText(el.firstElementChild.firstElementChild, t("act.live") + " · " + t("an.depth") + " " + ((info && info.depth) || 0));
+    if (store.ui.liveHeld || liveOwnsPreview(el)) return;
     for (let i = 0; i < n; i++) {
-      const row = el.children[i + 1];
       const l = info && info.lines[i];
-      setText(row.firstElementChild, l ? (n > 1 ? tf("an.line", [i + 1]) + " · " : "") + winLabel(l, turn) : "");
-      const sans = l ? sansOf(rec.fen, l.pv, 8) : [];
-      while (row.childElementCount - 1 > sans.length) row.lastElementChild.remove();
-      for (let k = 0; k < sans.length; k++) {
-        let sp = row.children[k + 1];
-        if (!sp) {
-          sp = document.createElement("span");
-          sp.className = "pv-chip pv-alt";
-          row.appendChild(sp);
-        }
-        const color = k % 2 === 0 ? turn : (turn === "w" ? "b" : "w");
-        if (sp.dataset.san !== color + sans[k]) { sp.dataset.san = color + sans[k]; writeSan(sp, sans[k], color); }
-      }
+      paintLineRow(el.children[i + 1], i, l || null, l ? sansOf(rec.fen, l.pv, 8) : [], turn);
     }
-    // the high-water mark, per width: a wider panel wraps less, and the
-    // height kept from a narrower one would be empty space. Not while the
-    // group is collapsed (width 0) — the mark is for when it is back.
-    const w = el.clientWidth;
-    if (!w) return;
-    if (el.dataset.hwWidth !== String(w)) { el.dataset.hwWidth = String(w); el.style.minHeight = ""; }
-    const h = el.getBoundingClientRect().height;
-    if (h > (parseFloat(el.style.minHeight) || 0)) el.style.minHeight = h + "px";
+    // the board's engine arrows follow the lines' first moves — redrawn only
+    // when one of those changes, not on every depth
+    const key = engineArrowKey(info);
+    if (key !== rec.arrowKey) { rec.arrowKey = key; draw(); }
+  }
+
+  /** A chip of this desk is showing its line on the board (pointer or focus,
+      not pinned): the rows stand still until it lets go, or the board and
+      the chip under it would say different things (Codex, #83). */
+  function liveOwnsPreview(el) {
+    if (!store.ui.preview || store.ui.preview.kind !== "pv" || store.ui.previewPinned) return false;
+    const ae = document.activeElement;
+    return el.matches(":hover") || (!!ae && el.contains(ae) && ae.matches("button.pv-chip"));
+  }
+
+  /** The desk's head row: a label (what, and how deep) and room for an action. */
+  function deskHead() {
+    const head = document.createElement("div");
+    head.className = "pv-head";
+    const lab = document.createElement("span");
+    lab.className = "pv-label";
+    head.appendChild(lab);
+    return head;
+  }
+  /** `n` empty line rows: score box, line number, then the moves. */
+  function lineRows(n) {
+    const rows = [];
+    for (let i = 0; i < n; i++) {
+      const row = document.createElement("div");
+      row.className = "pv-row";
+      row.dataset.line = String(i);
+      const no = document.createElement("span");
+      no.className = "pv-no";
+      no.textContent = String(i + 1);
+      const box = document.createElement("span");
+      box.className = "pv-eval";
+      row.append(no, box);
+      rows.push(row);
+    }
+    return rows;
+  }
+  /**
+   * One line's row, written in place: the score box's text and side, its
+   * tooltip (line number and win chance — 7.8 §2 moved the win chance here),
+   * and one chip per move, a chip rewritten only when its move changed.
+   * `sans` is kept on the row for the chip handlers.
+   */
+  function paintLineRow(row, i, l, sans, turn) {
+    const box = row.children[1];
+    const sc = l ? lineScore(l, turn) : null;
+    setText(box, sc ? sc.text : "");
+    box.classList.toggle("is-white", !!sc && sc.white);
+    box.classList.toggle("is-black", !!sc && !sc.white);
+    const tip = tf("an.line", [i + 1]) + (l && winLabel(l, turn) ? " · " + winLabel(l, turn) : "");
+    if (box.title !== tip) box.title = tip;
+    row._sans = sans;
+    while (row.childElementCount - 2 > sans.length) row.lastElementChild.remove();
+    for (let k = 0; k < sans.length; k++) {
+      let b = row.children[k + 2];
+      if (!b) {
+        b = document.createElement("button");
+        b.type = "button";
+        b.className = "pv-chip";
+        b.dataset.k = String(k);
+        row.appendChild(b);
+      }
+      const color = k % 2 === 0 ? turn : (turn === "w" ? "b" : "w");
+      if (b.dataset.san !== color + sans[k]) { b.dataset.san = color + sans[k]; writeSan(b, sans[k], color); }
+    }
+  }
+  /**
+   * A line's score as its box says it, from White's side (like the curve and
+   * the gauge): "+1.2", "−0.4", "#3". `white` picks the box: light when
+   * White is better, dark when Black is; level reads as White's, like the
+   * gauge's number.
+   */
+  function lineScore(l, turn) {
+    if (l.mate != null && l.mate !== 0) {
+      const w = turn === "w" ? l.mate : -l.mate;
+      return { text: "#" + Math.abs(w), white: w > 0 };
+    }
+    if (l.cp == null) return null;
+    const w = turn === "w" ? l.cp : -l.cp;
+    return { text: (w > 0 ? "+" : w < 0 ? "−" : "") + (Math.abs(w) / 100).toFixed(1), white: w >= 0 };
+  }
+  /** A stored White-side scalar (evalScalar) back into a side-to-move line score. */
+  function scalarLine(s, turn) {
+    if (s == null) return { cp: null, mate: null };
+    const sign = turn === "w" ? 1 : -1;
+    if (Math.abs(s) >= 9000) {
+      const m = Math.max(1, Math.round((10000 - Math.abs(s)) / 10));
+      return { cp: null, mate: sign * (s > 0 ? m : -m) };
+    }
+    return { cp: sign * s, mate: null };
+  }
+  /**
+   * The review's lines at ply `i`: every line the pass kept (linesAt, MultiPV
+   * above 1), or the principal one alone off `pvs` and the curve's scalar.
+   */
+  function reviewLines(a, i, turn) {
+    const la = a.linesAt && a.linesAt[i];
+    if (la && la.length) return la.map((l) => ({ cp: l.cp, mate: l.mate, sans: l.pv || [] }));
+    const pv = a.pvs ? a.pvs[i] : null;
+    if (typeof pv !== "string" || !pv) return [];
+    return [Object.assign(scalarLine(a.scalars[i], turn), { sans: pv.split(" ") })];
   }
   /** textContent, written only when it differs — a same-text write still
       replaces the text node, and still costs a layout. */
@@ -4570,6 +4758,8 @@ import { createStore } from "./store.js";
     const scalars = new Array(fens.length).fill(null);
     const pvs = new Array(fens.length).fill(null);
     const linesAt = new Array(fens.length).fill(null);
+    // 7.8 §2: how deep the principal line went, for the desk's head
+    const depths = new Array(fens.length).fill(null);
     // the engine's own choice at each position, UCI — this is what the board
     // draws an arrow for when the move actually played was a mistake
     const bests = new Array(fens.length).fill(null);
@@ -4609,6 +4799,7 @@ import { createStore } from "./store.js";
         // shows them under the principal one (v6-plan Q2.6)
         if (e && Array.isArray(e.lines) && e.lines.length > 1) linesAt[i] = e.lines.map((l) => ({ cp: l.cp, mate: l.mate, pv: sansOf(fens[i], l.pv, 6) }));
         if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
+        if (e && Array.isArray(e.lines) && e.lines[0] && e.lines[0].depth) depths[i] = e.lines[0].depth;
         // principal variation, converted to SAN for display
         if (e && e.pv && e.pv.length) {
           const pvProbe = new Chess(fens[i]);
@@ -4639,7 +4830,7 @@ import { createStore } from "./store.js";
       // the same call (v6-plan Q2.5).
       return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
     });
-    store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, budget: perMove, acc: accuracyFrom(fens, scalars) };
+    store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, depths, budget: perMove, acc: accuracyFrom(fens, scalars) };
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
     fileAnalysis(fens[0], h, store.session.analysis);
@@ -4875,67 +5066,48 @@ import { createStore } from "./store.js";
     const pvEl = document.getElementById("pv-line");
     if (pvEl) {
       const a = analysisFor();
-      const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
-      pvEl.hidden = !pv;
+      const vi = store.game.viewIndex;
+      const turn = viewGame().turn();
+      const lines = a ? reviewLines(a, vi, turn) : [];
+      // 再试一次 hides the lines: at the position before the mistake they are the answer
+      pvEl.hidden = !lines.length || !!store.session.retry;
       // 7.6 (v7-6-plan §2): rebuilt only when what it shows changes. This
       // runs once a ply while a pass is in flight, over the previous
       // analysis's line — the same line every time — and rebuilding it
       // swapped the chip under a pointer that was mid-press for a new node:
       // the click then went to #pv-line itself and pinned nothing.
-      const key = pv ? JSON.stringify([pv, viewGame().turn(), (a.linesAt && a.linesAt[store.game.viewIndex]) || null,
+      const depth = a && a.depths ? a.depths[vi] : null;
+      const key = lines.length ? JSON.stringify([lines, turn, depth || null,
         inModal(), store.ui.langId, !!store.session.analyzing]) : "";
       const fresh = pvEl.dataset.key !== key;
       pvEl.dataset.key = key;
       if (fresh) pvEl.replaceChildren();
-      if (pv && fresh) {
-        // the line used to be prose; each move is now a chip the pointer can
-        // rest on — the board plays the line that far while it does
-        const lab = document.createElement("span");
-        lab.className = "pv-label";
-        lab.textContent = t("an.pv");
-        pvEl.appendChild(lab);
-        const start = viewGame().turn();
-        pv.split(" ").forEach((san, k) => {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "pv-chip";
-          b.dataset.k = String(k);
-          writeSan(b, san, k % 2 === 0 ? start : (start === "w" ? "b" : "w"));
-          pvEl.appendChild(b);
-        });
-        // the other lines the review asked for, each with its win chance;
-        // read-only rows (no preview) so the chip handlers stay one line's
-        const extra = a.linesAt && a.linesAt[store.game.viewIndex];
-        if (extra && extra.length > 1) {
-          extra.slice(1).forEach((l, n) => {
-            const row = document.createElement("div");
-            row.className = "pv-alt-row";
-            const lab = document.createElement("span");
-            lab.className = "pv-label";
-            lab.textContent = tf("an.line", [n + 2]) + " · " + winLabel(l, viewGame().turn());
-            row.appendChild(lab);
-            l.pv.forEach((san, k) => {
-              const sp = document.createElement("span");
-              sp.className = "pv-chip pv-alt";
-              writeSan(sp, san, k % 2 === 0 ? start : (start === "w" ? "b" : "w"));
-              row.appendChild(sp);
-            });
-            pvEl.appendChild(row);
-          });
-        }
-        // …and the line can be kept: written into the tree as a variation
-        // at this position (Q2.3)
+      if (lines.length && fresh) {
+        // 7.8 §2: the same desk as 持续分析 — a head with the depth, then one
+        // row per line, numbered 1, 2, 3, each a score box and its moves. The
+        // principal line used to be 「引擎主变」 and the others 「第 2 线」
+        // 「第 3 线」, one thing under two names. Every chip is a button: a
+        // click walks the board into that line, whichever line it is.
+        const head = deskHead();
+        setText(head.firstElementChild, t("an.pv") + (depth ? " · " + t("an.depth") + " " + depth : ""));
+        pvEl.appendChild(head);
+        const rows = lineRows(lines.length);
+        rows.forEach((row, i) => { paintLineRow(row, i, lines[i], lines[i].sans, turn); pvEl.appendChild(row); });
+        // …and the principal line can be kept: written into the tree as a
+        // variation at this position (Q2.3)
         if (!inModal()) {
           const save = document.createElement("button");
           save.type = "button";
           save.className = "pv-act";
           save.textContent = t("an.pvSave");
           save.title = t("tip.pvSave");
-          save.onclick = () => { savePvAsVariation(pv.split(" ")); };
-          pvEl.appendChild(save);
+          save.onclick = () => { savePvAsVariation(lines[0].sans.slice()); };
+          head.appendChild(save);
         }
       }
     }
+    renderWhyLine();
+    renderRetry();
     renderReview();
     lockPgnEdits();
   }
@@ -5011,7 +5183,8 @@ import { createStore } from "./store.js";
     // when something it shows has changed.
     const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured,
       sum.worst && [sum.worst.ply, Math.round(sum.worst.drop)], soft, store.ui.langId,
-      store.session.mode, store.session.humanColor, !!worstBest, banked, sanHistory().length]);
+      store.session.mode, store.session.humanColor, !!worstBest, banked, sanHistory().length,
+      (a.tags || []).join(","), a.budget || 0]);
     if (el.dataset.key === key && el.childElementCount) return;
     el.dataset.key = key;
     el.replaceChildren();
@@ -5142,6 +5315,7 @@ import { createStore } from "./store.js";
         el.appendChild(bank);
       }
     }
+    renderMistakeList(el);
   }
 
   /** The drill the review's turning point would bank as, or null. */
@@ -5173,6 +5347,326 @@ import { createStore } from "./store.js";
     if (r.dropped.length) savePuzzleState();
     store.commit("session", "sync");
     toast(tf("rv.banked", [cand.solution[0]]));
+  }
+
+  // --- 7.8 §3: why a ? or ?? was a mistake, and 再试一次 ---------------------
+  //
+  // The sentence is explain.js's: the refutation (the first move of the
+  // engine line after the mistake) with its motif when motif.js is sure, what
+  // that line wins, and the engine's own choice. Everything it reads is
+  // already in the analysis record — `pvs[i + 1]` is the line after ply i
+  // (continued by lineAfter where the game followed it), `pvs[i]` and
+  // `bests[i]` the line and the move before it — so this is a
+  // derivation like bestArrowAt: nothing stored, nothing to migrate.
+
+  /** Memo per analysis record: a record is replaced, never edited. */
+  const whyMemo = new WeakMap();
+
+  /** The facts about ply `i` of the analysed game, or null. */
+  function mistakeFacts(i) {
+    const a = analysisFor();
+    if (!a || !a.tags || !a.bests) return null;
+    const tag = a.tags[i];
+    if (tag !== "?" && tag !== "??") return null;
+    let memo = whyMemo.get(a);
+    if (!memo) { memo = new Map(); whyMemo.set(a, memo); }
+    if (memo.has(i)) return memo.get(i);
+    const h = sanHistory();
+    const ex = i < h.length && a.bests[i] ? ChessExplain.explainMistake({
+      fen: gameAt(i).fen(), played: h[i], best: a.bests[i],
+      bestLine: a.pvs ? a.pvs[i] : null, line: a.pvs ? ChessExplain.lineAfter(a.pvs, h, i) : null,
+    }, Chess) : null;
+    memo.set(i, ex);
+    return ex;
+  }
+
+  /** The sentence into `node`, moves drawn the way the move list draws them. */
+  function writeWhy(node, ex) {
+    node.replaceChildren();
+    for (const p of ChessExplain.explainParts(ex, t)) {
+      if (typeof p === "string") { node.appendChild(document.createTextNode(p)); continue; }
+      const s = document.createElement("span");
+      s.className = "why-san";
+      writeSan(s, p.san, p.color);
+      node.appendChild(s);
+    }
+  }
+
+  /** 「9. a3」 / 「9… Nb4」 — ply `i` of the main line, numbered. */
+  function plyLabel(i) {
+    return boardMoveNo(i) + (gameAt(i).turn() === "w" ? ". " : "… ");
+  }
+
+  /** The plies the report lists: every ? and ??, the player's only in an ai game. */
+  function mistakePlies() {
+    const a = analysisFor();
+    if (!a || !a.tags) return [];
+    const out = [];
+    const firstMover = startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w";
+    a.tags.forEach((tag, i) => {
+      if (tag !== "?" && tag !== "??") return;
+      const side = (i % 2 === 0) === (firstMover === "w") ? "w" : "b";
+      if (store.session.mode === "ai" && side !== store.session.humanColor) return;
+      if (a.bests && a.bests[i]) out.push(i);
+    });
+    return out;
+  }
+
+  /** The report card's list: a row per ? / ??, its reason and 再试一次. */
+  function renderMistakeList(el) {
+    const plies = mistakePlies();
+    if (!plies.length) return;
+    const a = analysisFor();
+    const h = sanHistory();
+    const box = document.createElement("div");
+    box.className = "rv-moments";
+    const cap = document.createElement("div");
+    cap.className = "rv-moments-cap";
+    cap.textContent = t("rv.mistakes");
+    box.appendChild(cap);
+    for (const i of plies) {
+      const ex = mistakeFacts(i);
+      const row = document.createElement("div");
+      row.className = "rv-moment";
+      row.dataset.ply = String(i);
+      const jump = document.createElement("button");
+      jump.type = "button";
+      jump.className = "rv-mo-jump num";
+      const san = document.createElement("span");
+      writeSan(san, h[i], gameAt(i).turn());
+      const mark = document.createElement("span");
+      mark.className = "rv-mark " + (a.tags[i] === "??" ? "t-bad" : "t-mid");
+      mark.textContent = a.tags[i];
+      jump.append(document.createTextNode(plyLabel(i)), san, mark);
+      jump.title = t("rv.jumpTip");
+      jump.onclick = () => setViewIndex(i + 1);
+      const why = document.createElement("span");
+      why.className = "rv-mo-why";
+      if (ex) writeWhy(why, ex);
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "pv-act rv-mo-retry";
+      retry.textContent = t("rv.retry");
+      retry.onclick = () => startRetry(i);
+      row.append(jump, why);
+      if (ex && ex.better) row.appendChild(retry);
+      box.appendChild(row);
+    }
+    el.appendChild(box);
+  }
+
+  /**
+   * Under the engine line, while the cursor stands on a ? or ??: the reason,
+   * and 再试一次. Rebuilt only when what it shows changes (7.6: never swap
+   * the button under a press).
+   */
+  function renderWhyLine() {
+    const box = document.getElementById("why-line");
+    if (!box) return;
+    const i = store.game.viewIndex - 1;
+    const ex = i >= 0 && !store.session.retry && !inModal() ? mistakeFacts(i) : null;
+    // the facts themselves, not the game's signature: 分析 again or 精析
+    // replaces the record for the same game, and its reason may differ (Codex, #83)
+    const key = ex ? JSON.stringify([i, store.ui.langId, sanHistory()[i], ex]) : "";
+    box.hidden = !ex;
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    box.replaceChildren();
+    if (!ex) return;
+    const why = document.createElement("span");
+    why.className = "why-text";
+    writeWhy(why, ex);
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "pv-act";
+    retry.id = "why-retry";
+    retry.textContent = t("rv.retry");
+    retry.onclick = () => startRetry(i);
+    box.append(why, retry);
+  }
+
+  /**
+   * 再试一次: the position before the mistake, on the board, one move to find.
+   *
+   * Not a puzzle: switching mode would leave the review, the analysis and the
+   * report behind, and coming back is the whole point. It is a small state
+   * on top of the replay — the board draws `retry.g`, a click moves on it,
+   * and any replay navigation (a move-list row, ←/→, the curve) ends it,
+   * because each of those is a way of saying "back to the game".
+   *
+   * Judged by the rule the personal drills use: the engine's move is right,
+   * the mistake again is wrong, anything else is searched after both moves at
+   * the budget of the pass that marked it and accepted when it costs less
+   * than Review.MISTAKE against the best (Mistakes.judgeAlt).
+   */
+  function startRetry(i) {
+    const ex = mistakeFacts(i);
+    const a = analysisFor();
+    if (!ex || !ex.better || !a) return;
+    setViewIndex(i);
+    const fen = gameAt(i).fen();
+    store.session.retry = { a, ply: i, fen, g: new Chess(fen), ex, side: ex.side, last: null, verdict: null, tried: null };
+    store.game.selection = null;
+    BoardView.cancelAnim();
+    sync();
+    const box = document.getElementById("retry-box");
+    if (box && box.scrollIntoView) box.scrollIntoView({ block: "nearest" });
+  }
+
+  /** Leave 再试一次, standing on the mistake so its reason is on screen. */
+  function endRetry() {
+    const r = store.session.retry;
+    store.session.retry = null;
+    store.game.selection = null;
+    if (r) setViewIndex(r.ply + 1);
+    else sync();
+  }
+
+  /** Put the position back and let the player try again. */
+  function resetRetry() {
+    const r = store.session.retry;
+    if (!r || r.verdict === "checking") return;
+    Object.assign(r, { g: new Chess(r.fen), last: null, verdict: null, tried: null });
+    store.game.selection = null;
+    sync();
+  }
+
+  function retryModel() {
+    const r = store.session.retry;
+    const g = r.g;
+    return {
+      position: g.board(), flipped: store.game.flipped,
+      selected: store.game.selection ? store.game.selection.sq : null,
+      legalTargets: store.game.selection ? store.game.selection.targets : [],
+      lastMove: r.last,
+      checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
+      mated: g.in_checkmate(),
+      // after a verdict, the engine's choice as the arrow — "either way, show
+      // the best move" — drawn from the position before the move tried
+      hintMove: r.verdict && r.verdict !== "checking" ? bestArrowAt(r.ply) : null,
+      stars: [], cursor: cursorSquare(), drag: store.ui.dragging,
+      coords: store.ui.coordsOn, blind: store.ui.blindfold,
+    };
+  }
+
+  function retryClick(sq) {
+    const r = store.session.retry;
+    if (r.verdict || r.g.turn() !== r.side) return;
+    const g = r.g;
+    if (store.game.selection && store.game.selection.targets.includes(sq)) {
+      const from = store.game.selection.sq;
+      const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
+      if (vmv && vmv.promotion) {
+        choosePromotion(g.turn(), sq).then((p) => { if (p) retryMove(from, sq, p); });
+        return;
+      }
+      retryMove(from, sq, "q");
+      return;
+    }
+    const piece = g.get(sq);
+    if (piece && piece.color === r.side) {
+      selectSquare(sq, g.moves({ square: sq, verbose: true }).map((m) => m.to));
+      return;
+    }
+    clearSelection();
+  }
+
+  async function retryMove(from, to, promotion) {
+    const r = store.session.retry;
+    if (!r || r.verdict) return;
+    const mv = r.g.move({ from, to, promotion });
+    if (!mv) return;
+    store.game.selection = null;
+    r.last = { from: mv.from, to: mv.to };
+    r.tried = mv.san;
+    BoardView.cancelAnim();
+    moveSound(mv, r.g);
+    const quick = ChessExplain.retryQuick(mv.san, r.ex);
+    if (quick) { r.verdict = quick; sync(); return; }
+    if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) { r.verdict = "unknown"; sync(); return; }
+    r.verdict = "checking";
+    sync();
+    const probe = new Chess(r.fen);
+    probe.move(r.ex.better.san);
+    const budget = r.a.budget || SCAN_BUDGET;
+    let eBest = null, eAlt = null;
+    try {
+      eBest = await ChessEngine.analyze(probe.fen(), budget);
+      eAlt = await ChessEngine.analyze(r.g.fen(), budget);
+    } catch (_) {}
+    if (store.session.retry !== r) return;
+    const cpBest = evalScalar(eBest), cpAlt = evalScalar(eAlt);
+    if (cpBest == null || cpAlt == null) { r.verdict = "unknown"; sync(); return; }
+    const v = Mistakes.judgeAlt(cpBest, cpAlt, r.side, Review.MISTAKE);
+    r.verdict = v.ok ? "right" : "wrong";
+    sync();
+  }
+
+  /** The 再试一次 panel: the question, then the verdict, the best move and why. */
+  function renderRetry() {
+    const box = document.getElementById("retry-box");
+    if (!box) return;
+    let r = store.session.retry;
+    // the game or its analysis changed underneath: the question is gone too
+    // — and the board may already have drawn the attempt in this same commit,
+    // so it draws again (Codex, #83)
+    if (r && (analysisFor() !== r.a || inModal())) {
+      store.session.retry = r = null;
+      store.game.selection = null;
+      draw();
+    }
+    const key = r ? JSON.stringify([r.ply, r.verdict, r.tried, store.ui.langId]) : "";
+    box.hidden = !r;
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    box.replaceChildren();
+    if (!r) return;
+    const p = (cls, text) => {
+      const d = document.createElement("p");
+      d.className = cls;
+      if (text != null) d.textContent = text;
+      box.appendChild(d);
+      return d;
+    };
+    p("rt-ask", tf("rt.ask", [boardMoveNo(r.ply), sideName(r.side)]));
+    const status = p("rt-verdict");
+    status.setAttribute("role", "status");
+    if (r.verdict) {
+      const tried = document.createElement("span");
+      tried.className = "why-san";
+      writeSan(tried, r.tried, r.side);
+      const word = { right: t("rt.right"), wrong: t("rt.wrong"), checking: t("rt.checking"), unknown: t("rt.noEngine") }[r.verdict];
+      status.classList.add("is-" + r.verdict);
+      status.append(tried, document.createTextNode(" · " + word));
+    }
+    if (r.verdict && r.verdict !== "checking") {
+      const best = p("rt-best");
+      const tpl = t("rt.best").split("{0}");
+      const bs = document.createElement("span");
+      bs.className = "why-san";
+      writeSan(bs, r.ex.better.san, r.side);
+      best.append(document.createTextNode(tpl[0]), bs, document.createTextNode(tpl[1] || ""));
+      writeWhy(p("rt-why"), r.ex);
+    }
+    const row = document.createElement("div");
+    row.className = "rt-acts";
+    if (r.verdict && r.verdict !== "checking") {
+      const again = document.createElement("button");
+      again.type = "button";
+      again.className = "pv-act";
+      again.id = "rt-again";
+      again.textContent = t("rt.again");
+      again.onclick = resetRetry;
+      row.appendChild(again);
+    }
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "pv-act";
+    back.id = "rt-back";
+    back.textContent = t("rt.back");
+    back.onclick = endRetry;
+    row.appendChild(back);
+    box.appendChild(row);
   }
 
   /**
@@ -5261,9 +5755,12 @@ import { createStore } from "./store.js";
     const ctx = cv.getContext("2d");
     ctx.clearRect(0, 0, W, H);
     const n = a.scalars.length - 1;
-    const CAP = 500; // ±5 pawns fills the curve height
+    // 7.8 §2: the height is White's win chance, 50 % on the midline — the
+    // scale the marks are judged on. It was ±5 pawns linear, where a game
+    // decided by a lost rook still drew as a line hugging the axis for its
+    // first thirty moves and a mate as the same height as +5.
     const x = (i) => (n ? (i / n) * (W - 8 * dpr) + 4 * dpr : W / 2);
-    const y = (s) => H / 2 - (Math.max(-CAP, Math.min(CAP, s)) / CAP) * (H / 2 - 4 * dpr);
+    const y = (s) => 4 * dpr + (1 - Review.winPct(s) / 100) * (H - 8 * dpr);
     const css = getComputedStyle(document.documentElement);
     const cMuted = css.getPropertyValue("--muted").trim() || "#999";
     const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
@@ -5624,10 +6121,16 @@ import { createStore } from "./store.js";
     if (!btn || !label || !note) return;
     // 7.7 (v7-7-plan §3, §10): while a game is being played the notation is
     // what the page is for, and this card was the first screen of the drawer
-    // in a portrait window. It steps aside until the game is over.
-    const playing = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
-      sanHistory().length > 0 && isLive() && !appGameOver();
-    avail(el("daily-row"), !playing);
+    // in a portrait window.
+    //
+    // 7.8 §1b: it steps aside whenever there is a game to look at, not only
+    // while one is live. Tied to isLive(), a step back in replay brought the
+    // card in and pushed the notation ~160px down, and the step forward took
+    // it away again — the panel jumped on every key press. Whether there is
+    // notation does not change while you walk through it, so neither does this.
+    const hasGame = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
+      sanHistory().length > 0;
+    avail(el("daily-row"), !hasGame);
     const d = store.session.daily;
     if (!d) {
       setText(label, t("daily.btn"));
@@ -7264,15 +7767,51 @@ import { createStore } from "./store.js";
    * piece you *chose*, which is worth reading as a word.
    */
   const SAN_PIECE = { K: "k", Q: "q", R: "r", B: "b", N: "n" };
+
+  /**
+   * 7.8 §1e: the board's piece as a figurine — one colour, the text's, and
+   * cropped to the figure.
+   *
+   * The sprites were dropped in as they are drawn on the board: white filled
+   * white and black filled black, in a 40-unit box with a margin, so ♞xd5 was
+   * a smudge about six tenths of the letters' height, sitting high. Now the
+   * box is cut to the figure itself (measured once per piece: getBBox, plus
+   * half the stroke), so the stylesheet can make the figure exactly a capital
+   * high on the baseline; and the colours become the text's — white moves an
+   * outline (the white fill is let through), black moves solid (the white
+   * detail lines are let through too, which reads as a cut in the shape).
+   */
+  const FIGURINES = {};
+  function figurineSvg(key) {
+    if (FIGURINES[key]) return FIGURINES[key];
+    const svgs = CHESS_PIECE_SVGS || {};
+    if (!svgs[key]) return null;
+    let svg = svgs[key].replace(/"#000000"/gi, "\"currentColor\"").replace(/"#FFFFFF"/gi, "\"none\"");
+    try {
+      const probe = document.createElement("span");
+      probe.className = "fig-probe";
+      probe.insertAdjacentHTML("afterbegin", svg);
+      document.body.appendChild(probe);
+      const bb = probe.firstElementChild.getBBox();
+      probe.remove();
+      if (bb && bb.height > 0) {
+        const pad = 0.75; // half of the sprites' 1.5-unit stroke
+        const box = [bb.x - pad, bb.y - pad, bb.width + 2 * pad, bb.height + 2 * pad].map((v) => Math.round(v * 100) / 100).join(" ");
+        svg = svg.replace(/viewBox="[^"]*"/, "viewBox=\"" + box + "\"");
+      }
+    } catch (_) { /* no layout here: keep the sprite's own box */ }
+    FIGURINES[key] = svg;
+    return svg;
+  }
+
   function writeSan(node, san, color) {
     node.setAttribute("aria-label", san);
     node.title = san;
     const type = SAN_PIECE[san[0]];
-    const svgs = CHESS_PIECE_SVGS || {};
-    const svg = type && svgs[color + type];
+    const svg = type && figurineSvg(color + type);
     if (!svg) { node.textContent = san; return; }
     const fig = document.createElement("span");
-    fig.className = "mlfig";
+    fig.className = "mlfig " + (color === "w" ? "fig-w" : "fig-b");
     fig.setAttribute("aria-hidden", "true");
     fig.insertAdjacentHTML("afterbegin", svg);
     node.replaceChildren(fig, document.createTextNode(san.slice(1)));
@@ -7545,7 +8084,15 @@ import { createStore } from "./store.js";
       b.setAttribute("aria-pressed", on ? "true" : "false");
     };
     sw("opt-coords", store.ui.coordsOn);
+    // where they are printed only matters while they are printed at all
+    const rowCoordsAt = document.getElementById("row-coords-at");
+    if (rowCoordsAt) rowCoordsAt.hidden = !store.ui.coordsOn;
+    document.querySelectorAll("#coords-seg button").forEach((b) => b.classList.toggle("active", (b.dataset.coords === "in") === store.ui.coordsInside));
+    // the frame narrows with them (styles.css #app[data-coords="in"]); an
+    // attribute on #app because the board rect is the layout's, not the canvas's
+    appEl.setAttribute("data-coords", store.ui.coordsOn && store.ui.coordsInside ? "in" : "out");
     sw("opt-softmark", store.ui.showSoftMark);
+    sw("opt-engine-arrows", store.ui.engineArrows);
     sw("opt-blind", store.ui.blindfold);
     sw("opt-follow", store.ui.followSystem);
     document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
@@ -7570,20 +8117,30 @@ import { createStore } from "./store.js";
         : store.session.mode === "puzzle" ? t("mode.puzzle") : t("tab.play");
     }
     // two rows now: sparring tiers and engine-strength tiers (see index.html)
+    // While the new-game dialog is open (v7-8-plan §4) these rows are in it
+    // and show its draft — what the next game will be — not the game on the
+    // board; closing the dialog drops the draft and they read the store again.
+    const ng = store.ui.newGame;
+    const pick = ng || {
+      difficulty: store.session.difficulty, personaId: store.session.personaId,
+      color: store.session.humanColor, timeControl: store.game.timeControl,
+    };
     document.querySelectorAll("#diff-seg button, #diff-seg-engine button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.diff === store.session.difficulty);
+      b.classList.toggle("active", b.dataset.diff === pick.difficulty);
     });
     document.querySelectorAll("#persona-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.persona === store.session.personaId);
+      b.classList.toggle("active", b.dataset.persona === pick.personaId);
     });
     document.querySelectorAll("#color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.color === store.session.humanColor);
+      b.classList.toggle("active", b.dataset.color === pick.color);
+      // 随机 is a way to start a game, not a side to switch to mid-game
+      if (b.dataset.color === "random") b.hidden = !ng;
     });
     document.querySelectorAll("#orient-seg button").forEach((b) => {
       b.classList.toggle("active", (b.dataset.orient === "b") === !!store.game.flipped);
     });
     document.querySelectorAll("#clock-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tc === store.game.timeControl);
+      b.classList.toggle("active", b.dataset.tc === pick.timeControl);
     });
     const diffRow = document.getElementById("row-difficulty");
     const colorRow = document.getElementById("row-color");
@@ -7591,7 +8148,14 @@ import { createStore } from "./store.js";
     if (diffRow) diffRow.hidden = store.session.mode !== "ai";
     const personaRow = document.getElementById("row-persona");
     if (personaRow) personaRow.hidden = store.session.mode !== "ai";
-    if (colorRow) colorRow.hidden = store.session.mode !== "ai";
+    // in the dialog a two-player game also chooses a side: which one sits at
+    // the bottom of the board (「谁执白」) — unless 自动翻转 is on, which
+    // turns the board to White the moment the game starts (Codex, #83)
+    const pvpPick = !!ng && store.session.mode === "pvp" && !store.ui.autoFlipPvp;
+    if (colorRow) {
+      colorRow.hidden = store.session.mode !== "ai" && !pvpPick;
+      setText(colorRow.querySelector(".setting-k"), t(pvpPick ? "ng.pvpColor" : "side.color"));
+    }
     if (clockRow) clockRow.hidden = store.session.mode !== "pvp" && store.session.mode !== "ai";
     const coachRow = document.getElementById("row-coach");
     if (coachRow) coachRow.hidden = store.session.mode !== "ai";
@@ -7673,6 +8237,8 @@ import { createStore } from "./store.js";
     store.game.viewIndex = Math.max(0, Math.min(n, sanHistory().length));
     store.game.selection = null;
     clearPreview();
+    // any way of moving through the game is a way back to it (7.8 §3)
+    store.session.retry = null;
     BoardView.cancelAnim();
     syncAutoFlip();
     store.commit("game", "action");
@@ -7689,25 +8255,56 @@ import { createStore } from "./store.js";
   /** localised promotion piece names — read through t() so a language switch
    * takes effect without rebuilding the table */
   const PROMO_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
-  const PROMO_GLYPHS = {
-    w: { q: "♕", r: "♖", b: "♗", n: "♘" },
-    b: { q: "♛", r: "♜", b: "♝", n: "♞" },
-  };
-
-  /** Modal chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel. */
-  function choosePromotion(color) {
+  /**
+   * Chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel.
+   *
+   * 7.8 §1c: on the board. It was a dialog in the middle of the window, over
+   * a blurred board, holding Unicode outline glyphs that are not the pieces
+   * the board draws. Now the four pieces stand in the promotion file, from
+   * the promotion square inward, in the board's own set; the rest of the
+   * board is dimmed. It is still the same `role="dialog"` with the same
+   * heading, focus and Escape — only where it is drawn has changed.
+   */
+  function choosePromotion(color, sq) {
     const modal = document.getElementById("promo-modal");
     if (!modal) return Promise.resolve("q");
     modal.querySelectorAll("button[data-p]").forEach((b) => {
-      const gl = b.querySelector(".promo-glyph");
-      if (gl) gl.textContent = PROMO_GLYPHS[color][b.dataset.p];
+      const img = b.querySelector(".promo-piece");
+      if (img) img.src = BoardView.pieceSrc(color + b.dataset.p);
     });
-    Dlg.open(modal, modal.querySelector('button[data-p="q"]'));
+    store.ui.promoSquare = sq;
+    const queen = modal.querySelector('button[data-p="q"]');
+    Dlg.open(modal, queen);
+    placePromotion();
+    // The chooser opens from the board's pointerdown, and the press then
+    // focuses the canvas as its default action — after us. Focus has to land
+    // in the dialog once that is done, or Escape goes to the board's
+    // selection first and the dialog stays up.
+    setTimeout(() => { if (modal.classList.contains("show") && !modal.contains(document.activeElement)) queen.focus(); }, 0);
     return new Promise((resolve) => { store.ui.promoResolver = resolve; });
+  }
+  /** Lay the chooser over the canvas: the dim square, then one piece a cell. */
+  function placePromotion() {
+    const modal = document.getElementById("promo-modal");
+    const box = document.getElementById("promo-box");
+    if (!modal || !box || !modal.classList.contains("show") || !store.ui.promoSquare) return;
+    const b = canvas.getBoundingClientRect(), m = modal.getBoundingClientRect();
+    box.style.left = (b.left - m.left) + "px";
+    box.style.top = (b.top - m.top) + "px";
+    box.style.width = b.width + "px";
+    box.style.height = b.height + "px";
+    const { col, row } = BoardView.screenCell(store.ui.promoSquare);
+    // from the edge the pawn arrived at, toward the middle of the board
+    const dir = row < 4 ? 1 : -1;
+    modal.querySelectorAll("button[data-p]").forEach((btn, i) => {
+      btn.style.left = col * 12.5 + "%";
+      btn.style.top = (row + dir * i) * 12.5 + "%";
+    });
   }
   function finishPromotion(p) {
     const modal = document.getElementById("promo-modal");
     Dlg.close(modal);
+    store.ui.promoSquare = null;
     if (store.ui.promoResolver) { store.ui.promoResolver(p); store.ui.promoResolver = null; }
   }
 
@@ -7786,6 +8383,7 @@ import { createStore } from "./store.js";
     if (store.session.editor) { editorClick(sq); return; }
     if (store.session.mode === "learn" && store.session.learn) { learnClick(sq); return; }
     if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
+    if (store.session.retry) { retryClick(sq); return; }
     // the clock starts when the player first reaches for the board, not when
     // their first move completes — see startClockIfIdle
     startClockIfIdle();
@@ -7820,7 +8418,7 @@ import { createStore } from "./store.js";
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         // cancelling keeps the selection so the player can pick another square
-        choosePromotion(g.turn()).then((p) => { if (p) play(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) play(from, sq, p); });
         return;
       }
       play(from, sq, "q");
@@ -7852,15 +8450,99 @@ import { createStore } from "./store.js";
     maybeEngineTurn();
   }
 
+  /**
+   * 新局 / N / 再来一盘 / 换个对手 (v7-8-plan §4).
+   *
+   * In the two playing modes this is one dialog: the opponent, the side and
+   * the clock, then 开始. It used to be a bare 「清空当前对局？」 that restarted
+   * with whatever the settings page held, so changing opponent meant three
+   * places — the settings tab, the fold, back to 新局. The question the
+   * confirm asked is now one line at the top of the dialog, and only when
+   * there is something to lose: moves on the board and the game not over
+   * (7.7's 再来一盘 already skipped it for a finished game; that is now the
+   * rule for every entry). One step, not two.
+   *
+   * The teaching modes have no opponent to choose and keep the confirm.
+   */
   async function requestNewGame(opts) {
     stopEditor(t("msg.editor.exited"));
-    // 再来一盘 on the result card (7.7 §4) does not ask: a finished engine
-    // game is already filed in the history, so there is nothing to lose
-    const filed = !!(opts && opts.again) && store.session.mode === "ai" && appGameOver();
-    if (sanHistory().length && !filed &&
+    const mode = store.session.mode;
+    if (mode === "ai" || mode === "pvp") { openNewGame(opts); return; }
+    if (sanHistory().length && !appGameOver() &&
         !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
     }
+    startNewGame();
+  }
+
+  // The dialog hosts the settings page's own rows while it is open — the
+  // same four DOM nodes, moved, not a second copy that could drift from the
+  // first (their handlers, labels, tooltips and i18n all come along). They
+  // go back in front of 失着提醒 when it closes. Moving them is safe with
+  // respect to 7.6's rule because it never happens under a press: opening is
+  // a click (after pointerup) and closing waits for any press to end.
+  const NG_ROWS = ["row-difficulty", "row-persona", "row-color", "row-clock"];
+  function hostNewGameRows(inDialog) {
+    const host = el("ng-host");
+    const home = el("row-coach");
+    if (!host || !home) return;
+    for (const id of NG_ROWS) {
+      const row = el(id);
+      if (!row) continue;
+      if (inDialog) { if (row.parentNode !== host) host.appendChild(row); }
+      else if (row.parentNode !== home.parentNode) home.parentNode.insertBefore(row, home);
+    }
+  }
+
+  function openNewGame(opts) {
+    const modal = el("newgame-modal");
+    if (!modal) { startNewGame(); return; }
+    const pvp = store.session.mode === "pvp";
+    const side = pvp ? (store.game.flipped ? "b" : "w") : store.session.humanColor;
+    // the last choices, so Enter alone is 「再来一盘同样的」
+    store.ui.newGame = {
+      difficulty: store.session.difficulty, personaId: store.session.personaId,
+      color: store.session.colorRandom ? "random" : side, timeControl: store.game.timeControl,
+    };
+    const warn = el("ng-warn");
+    if (warn) warn.hidden = !(sanHistory().length && !appGameOver());
+    hostNewGameRows(true);
+    syncSettingsUI();
+    // 换个对手 lands on the opponent; everything else on 开始
+    const first = opts && opts.switchOpponent && !pvp
+      ? modal.querySelector("#row-difficulty button.active") : el("ng-start");
+    Dlg.open(modal, first || undefined);
+  }
+
+  function closeNewGame() {
+    const modal = el("newgame-modal");
+    store.ui.newGame = null;
+    Dlg.close(modal);
+    // the seg rows read the store again, and go home once no button is held
+    syncSettingsUI();
+    afterPress(() => { if (!store.ui.newGame) hostNewGameRows(false); });
+  }
+
+  /** 开始: the draft becomes the settings, then the game starts. */
+  function startFromDialog() {
+    const d = store.ui.newGame;
+    if (!d) return;
+    const pvp = store.session.mode === "pvp";
+    const side = d.color === "random" ? (Math.random() < 0.5 ? "w" : "b") : d.color;
+    store.session.colorRandom = d.color === "random";
+    if (!pvp) {
+      store.session.difficulty = d.difficulty;
+      store.session.personaId = d.personaId;
+      store.session.humanColor = side;
+    }
+    store.game.flipped = side === "b";
+    store.game.timeControl = d.timeControl;
+    closeNewGame();
+    saveSettings();
+    startNewGame();
+  }
+
+  function startNewGame() {
     // 7.5: a new game is also the natural moment to try a dead engine again —
     // once, through retryEngine(), so a second failure is the same notice
     // again and not a toast per press
@@ -9197,6 +9879,11 @@ import { createStore } from "./store.js";
       const p = store.session.puzzle.g.get(sq);
       return !!p && p.color === "w" && store.session.puzzle.g.turn() === "w";
     }
+    if (store.session.retry) {
+      const r = store.session.retry;
+      const p = r.g.get(sq);
+      return !r.verdict && !!p && p.color === r.side && r.g.turn() === r.side;
+    }
     if (!isLive()) {
       // replaying: a piece can be picked up wherever a variation may open
       if (!canBranchHere()) return false;
@@ -9296,7 +9983,7 @@ import { createStore } from "./store.js";
     // click is what may move it.
     const refused = !sq || sq === wasDrag.from ||
       !(store.game.selection && store.game.selection.targets.includes(sq));
-    const held = refused ? viewGame().get(wasDrag.from) : null;
+    const held = refused ? (store.session.retry ? store.session.retry.g : viewGame()).get(wasDrag.from) : null;
     draw();
     // Every other outcome of a drop routes through onSquareClick, which now
     // says out loud what it did — placed, picked up, or refused. What it never
@@ -9625,46 +10312,67 @@ import { createStore } from "./store.js";
     toast(t("msg.variation.saved"));
     return true;
   }
-  const pvLineEl = document.getElementById("pv-line");
-  if (pvLineEl) {
+  // The engine desk's chips — the review's #pv-line and 持续分析's #live-line
+  // alike (7.8 §2: every line, not only the principal one).
+  function wireLineChips(lineEl) {
     // The pointer resting on a chip and keyboard focus on a chip are the same
     // gesture: both show the line that far. Until 5.0.0 only the pointer did —
     // the chips were focusable and Enter did nothing (audit F4).
     const chipOf = (ev) => ev.target.closest("button.pv-chip");
-    pvLineEl.addEventListener("mouseover", (ev) => {
+    lineEl.addEventListener("mouseover", (ev) => {
       const b = chipOf(ev);
       if (!b || store.ui.dragging || store.ui.previewPinned) return;
-      previewPvChip(Number(b.dataset.k));
+      previewPvChip(b);
     });
-    pvLineEl.addEventListener("mouseleave", () => setBoardPreview(null));
-    pvLineEl.addEventListener("focusin", (ev) => {
+    lineEl.addEventListener("mouseleave", () => setBoardPreview(null));
+    lineEl.addEventListener("focusin", (ev) => {
       const b = chipOf(ev);
       if (!b || store.ui.dragging || store.ui.previewPinned) return;
-      previewPvChip(Number(b.dataset.k));
+      previewPvChip(b);
     });
-    pvLineEl.addEventListener("focusout", (ev) => {
-      if (ev.relatedTarget && pvLineEl.contains(ev.relatedTarget)) return;
+    lineEl.addEventListener("focusout", (ev) => {
+      if (ev.relatedTarget && lineEl.contains(ev.relatedTarget)) return;
       setBoardPreview(null);
     });
     // Enter / Space pin the line on the board so focus can move on (to the
     // notation, to the report) while the position stays; Esc — the global
-    // handler — or any navigation lets go. A click does the same as Enter.
+    // handler — or any navigation lets go. A click does the same as Enter:
+    // the board walks into the line, and 存为变着 on the badge keeps it.
     const pin = (b) => {
-      const k = Number(b.dataset.k);
-      if (!previewPvChip(k)) return;
-      const a = analysisFor();
-      const pv = a && a.pvs ? a.pvs[store.game.viewIndex] : null;
-      store.ui.previewPv = pv ? pv.split(" ").slice(0, k + 1) : null;
+      if (!previewPvChip(b)) return;
+      const sans = chipLine(b);
+      store.ui.previewPv = sans ? sans.slice(0, Number(b.dataset.k) + 1) : null;
       store.ui.previewPinned = true;
       renderPreviewBadge();
       announce(t("board.previewPv") + " · " + t("board.previewEsc"));
     };
-    pvLineEl.addEventListener("click", (ev) => { const b = chipOf(ev); if (b) pin(b); });
-    pvLineEl.addEventListener("keydown", (ev) => {
+    lineEl.addEventListener("click", (ev) => { const b = chipOf(ev); if (b) pin(b); });
+    lineEl.addEventListener("keydown", (ev) => {
       const b = chipOf(ev);
       if (!b) return;
       if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pin(b); }
     });
+  }
+  const pvLineEl = document.getElementById("pv-line");
+  if (pvLineEl) wireLineChips(pvLineEl);
+  const liveLineEl = document.getElementById("live-line");
+  if (liveLineEl) {
+    wireLineChips(liveLineEl);
+    // 7.6's rule, kept for the live rows: nothing under a press is rewritten
+    // between pointerdown and pointerup (paintLive checks liveHeld)
+    liveLineEl.addEventListener("pointerdown", () => { store.ui.liveHeld = true; });
+    // …nor between pointerup and the click that follows it: the rows catch
+    // up on the next frame, after the click has landed on the chip it was over
+    const release = () => {
+      if (!store.ui.liveHeld) return;
+      requestAnimationFrame(() => {
+        store.ui.liveHeld = false;
+        const rec = store.session.live;
+        if (rec) renderLiveAnalysis(rec);
+      });
+    };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
   }
   document.getElementById("preview-try").onclick = () => {
     const sans = store.ui.previewPv;
@@ -9678,13 +10386,25 @@ import { createStore } from "./store.js";
 
   // the result card (7.7 §4)
   document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET); };
+  // v7-8-plan §4: both open the new-game dialog — 换个对手 no longer sends
+  // you to the settings page to find the opponent in a fold
   document.getElementById("go-again").onclick = () => { requestNewGame({ again: true }); };
-  document.getElementById("go-switch").onclick = () => {
-    // the opponent is chosen on the settings page, in the game group
-    setSideTab("setup", { top: true });
-    const fold = el("fold-game");
-    if (fold) { fold.open = true; fold.scrollIntoView({ block: "start" }); }
-  };
+  document.getElementById("go-switch").onclick = () => { requestNewGame({ switchOpponent: true }); };
+  {
+    const ngModal = el("newgame-modal");
+    el("ng-start").onclick = () => { startFromDialog(); };
+    el("ng-cancel").onclick = () => { closeNewGame(); };
+    ngModal.onclick = (ev) => { if (ev.target === ngModal) closeNewGame(); };
+    // Enter is 开始 wherever focus is inside the dialog — on a segment you
+    // just chose, too, where the browser would otherwise re-press it. Space
+    // still presses the focused button; Enter on 取消 is still 取消.
+    ngModal.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" || ev.isComposing || ev.target === el("ng-cancel")) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      startFromDialog();
+    });
+  }
   document.getElementById("go-close").onclick = () => {
     const end = gameEnding();
     store.session.goDismissed = end ? end.sig : null;
@@ -9729,7 +10449,42 @@ import { createStore } from "./store.js";
       curveEl.setPointerCapture(ev.pointerId);
       jumpOnCurve(ev);
     };
-    curveEl.onpointermove = (ev) => { if (ev.buttons & 1) jumpOnCurve(ev); };
+    // 7.8 §2: what is under the pointer, as Lichess's graph says it — the
+    // move that led to that position and the score after it
+    const tipEl = document.getElementById("curve-tip");
+    const showCurveTip = (ev) => {
+      const a = analysisFor();
+      if (!a || !tipEl) return;
+      const rect = curveEl.getBoundingClientRect();
+      const n = a.scalars.length - 1;
+      const frac = Math.max(0, Math.min(1, (ev.clientX - rect.left - 4) / Math.max(1, rect.width - 8)));
+      const i = Math.round(frac * n);
+      const s = a.scalars[i];
+      const score = s == null ? t("rv.evalNone") : evalText(s);
+      const vh = verboseHistory();
+      const mv = i > 0 ? vh[i - 1] : null;
+      const head = mv ? tf("curve.hover", [boardMoveNo(i - 1), (mv.color === "b" ? "…" : "") + mv.san, score])
+        : tf("curve.at", [0]) + " " + score;
+      const hint = tipEl.lastElementChild;
+      if (!hint) {
+        const main = document.createElement("span");
+        const h = document.createElement("span");
+        h.className = "curve-tip-hint";
+        tipEl.replaceChildren(main, h);
+      }
+      setText(tipEl.firstElementChild, head);
+      setText(tipEl.lastElementChild, t("tip.evalCurve"));
+      tipEl.hidden = false;
+      // centred on the point, kept inside the panel
+      const wrap = tipEl.offsetParent || curveEl.parentElement;
+      const wr = wrap.getBoundingClientRect();
+      const half = tipEl.offsetWidth / 2;
+      const px = rect.left - wr.left + 4 + (n ? (i / n) * (rect.width - 8) : rect.width / 2);
+      tipEl.style.left = Math.max(half, Math.min(wr.width - half, px)) + "px";
+      tipEl.style.top = (rect.top - wr.top) + "px";
+    };
+    curveEl.onpointermove = (ev) => { showCurveTip(ev); if (ev.buttons & 1) jumpOnCurve(ev); };
+    curveEl.onpointerleave = () => { if (tipEl) tipEl.hidden = true; };
     curveEl.style.cursor = "pointer";
   }
   document.getElementById("stats-clear").onclick = async () => {
@@ -10080,9 +10835,18 @@ import { createStore } from "./store.js";
     const b = ev.target.closest("button[data-i]");
     if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));
   };
+  // v7-8-plan §4: inside the new-game dialog a click chooses for the NEXT
+  // game — it goes into the draft and nothing on the board changes until
+  // 开始. On the settings page the same buttons act at once, as before.
+  const draftPick = (field, value) => {
+    if (!store.ui.newGame) return false;
+    store.ui.newGame[field] = value;
+    syncSettingsUI();
+    return true;
+  };
   document.getElementById("clock-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-tc]");
-    if (!b || b.dataset.tc === store.game.timeControl) return;
+    if (!b || draftPick("timeControl", b.dataset.tc) || b.dataset.tc === store.game.timeControl) return;
     store.game.timeControl = b.dataset.tc;
     resetClocks();
     saveSettings();
@@ -10092,7 +10856,7 @@ import { createStore } from "./store.js";
   };
   const onDiffClick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
-    if (!b || b.dataset.diff === store.session.difficulty) return;
+    if (!b || draftPick("difficulty", b.dataset.diff) || b.dataset.diff === store.session.difficulty) return;
     store.session.difficulty = b.dataset.diff;
     saveSettings();
     store.commit("session", "sync");
@@ -10102,14 +10866,17 @@ import { createStore } from "./store.js";
   if (diffEngineSeg) diffEngineSeg.onclick = onDiffClick;
   document.getElementById("persona-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-persona]");
-    if (!b || b.dataset.persona === store.session.personaId) return;
+    if (!b || draftPick("personaId", b.dataset.persona) || b.dataset.persona === store.session.personaId) return;
     store.session.personaId = b.dataset.persona;
     saveSettings();
     store.commit("session", "sync");
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
-    if (!b || b.dataset.color === store.session.humanColor) return;
+    if (!b || draftPick("color", b.dataset.color) || !["w", "b"].includes(b.dataset.color)) return;
+    // a side picked here is a side: 随机 from the last new game is over (Codex, #83)
+    if (store.session.colorRandom) { store.session.colorRandom = false; saveSettings(); }
+    if (b.dataset.color === store.session.humanColor) { sync(); return; }
     invalidateEngine();
     store.session.humanColor = b.dataset.color;
     store.game.flipped = store.session.humanColor === "b";
@@ -10211,6 +10978,20 @@ import { createStore } from "./store.js";
   };
   document.getElementById("opt-coords").onclick = () => {
     store.ui.coordsOn = !store.ui.coordsOn;
+    saveSettings();
+    syncSettingsUI();
+    draw();
+  };
+  document.getElementById("coords-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-coords]");
+    if (!b || (b.dataset.coords === "in") === store.ui.coordsInside) return;
+    store.ui.coordsInside = b.dataset.coords === "in";
+    saveSettings();
+    syncSettingsUI();
+    draw();
+  };
+  document.getElementById("opt-engine-arrows").onclick = () => {
+    store.ui.engineArrows = !store.ui.engineArrows;
     saveSettings();
     syncSettingsUI();
     draw();
@@ -10639,7 +11420,11 @@ import { createStore } from "./store.js";
     promoModal.querySelectorAll("button[data-p]").forEach((b) => {
       b.onclick = () => finishPromotion(b.dataset.p);
     });
-    promoModal.onclick = (ev) => { if (ev.target === promoModal) finishPromotion(null); };
+    // a press anywhere but on one of the four pieces — the dimmed board or
+    // the window around it — takes the move back (7.8 §1c)
+    const promoBox = document.getElementById("promo-box");
+    promoModal.onclick = (ev) => { if (ev.target === promoModal || ev.target === promoBox) finishPromotion(null); };
+    window.addEventListener("resize", placePromotion);
   }
 
   // Tab belongs to the browser everywhere except inside an open dialog, where
@@ -10746,6 +11531,7 @@ import { createStore } from "./store.js";
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(confirmModal, () => finishConfirm(false));
+    Dlg.register(document.getElementById("newgame-modal"), closeNewGame);
     Dlg.register(keysModal, closeKeyHelp);
     Dlg.register(noteModal, closeNoteModal);
     Dlg.register(aboutModal, () => Dlg.close(aboutModal));

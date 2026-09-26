@@ -8,7 +8,7 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
 import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
-import { measureMarks, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
+import { measureMarks, markChroma, LAST_CHROMA_CEILING, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -2176,6 +2176,22 @@ for (const lang of CONTENT_LANGS) {
     assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now),
       "docs/measured.json markHue.after is these palettes (re-run scripts/measure-marks.mjs --record)");
   }
+  // 7.8 §6: …and not louder than it needs to be. The hue term kept the wood
+  // last-move tint one colour on both squares; over the light square that
+  // colour was a bright lime (C* 54.1 on 7.7.0). The ceiling is set against
+  // Lichess's default board measured the same way (C* 52.4 — see
+  // LAST_CHROMA_CEILING) and sits under it, so a last move reads as a tint,
+  // not as a highlighter pen. Recorded as markChroma beside markHue.
+  {
+    const now = markChroma(css2);
+    for (const b of MARK_BOARDS) {
+      assert(now[b].last <= LAST_CHROMA_CEILING,
+        b + " last move: a soft tint over the light square (C* " + now[b].last + " ≤ " + LAST_CHROMA_CEILING + ")");
+    }
+    const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).markChroma;
+    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now) && recorded.ceiling.last === LAST_CHROMA_CEILING,
+      "docs/measured.json markChroma.after is these palettes (re-run scripts/measure-marks.mjs --record)");
+  }
 }
 
 // Sparring personalities. `pick` is pure — candidates in, one of them out —
@@ -2453,7 +2469,8 @@ for (const lang of CONTENT_LANGS) {
   // checkmate must not render as an ordinary check
   const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
   assert(/m\.mated/.test(boardSrc), "the board draws checkmate differently from check");
-  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 3,
+  // four models: the game, the puzzle, the lesson, and 再试一次 (v7-8-plan §3)
+  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 4,
     "every board model says whether the check is mate");
 
   // the analyser must not carry a fifth copy of the numbers
@@ -5224,10 +5241,11 @@ for (const lang of CONTENT_LANGS) {
   // issued id since 1.25 (缺陷 13), and the flag the game on the board holds is
   // "which record am I", so it still has to be cleared when the game is not
   // that game any more.
-  for (const [where, src] of [["新局", fn("requestNewGame")], ["清除存档", appSrc]]) {
+  for (const [where, src] of [["新局", fn("startNewGame")], ["清除存档", appSrc]]) {
     assert(src.length > 0, where + " is still there to check");
   }
-  const newGame = fn("requestNewGame");
+  // v7-8-plan §4: requestNewGame() opens the dialog; the reset itself is startNewGame()
+  const newGame = fn("startNewGame");
   assert(/recordedId = null/.test(newGame), "a new game is not the last game's record");
   assert(/analysis = null/.test(newGame), "a new game forgets the last game's analysis");
   const clearSave = appSrc.slice(appSrc.indexOf('Persist.clearAll()'));

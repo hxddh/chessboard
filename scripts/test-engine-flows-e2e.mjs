@@ -30,6 +30,11 @@
  *   13 多主变          multipv=3 in 分析 and in 持续分析
  *   14 FEN黑先         a [SetUp] game with Black to move is numbered and marked right
  *
+ * v7-8-plan §3 added:
+ *
+ *   15 为什么          9. a3's reason names 捉双 and 车; 再试一次 marks a3 wrong
+ *                      and the engine's move right
+ *
  * Each scenario gets a fresh browser context, so one flow's engine state
  * cannot carry the next. Only key results are asserted: what the engine says
  * varies run to run, the fact that it reaches the page does not.
@@ -736,17 +741,62 @@ await scenario("多主变", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp", multipv: 3 });
   await openPgn(page, TRAP);
   await runAn(page, "#an-run", 90000);
-  const alt = await page.evaluate(() => document.querySelectorAll("#pv-line .pv-alt-row").length);
+  // 7.8 §2: the review's desk — three rows numbered 1 2 3 (the principal line
+  // is no longer a separate 「引擎主变」), each one line of text with a score box
+  const desk = (sel) => page.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el || el.hidden) return { rows: [] };
+    return {
+      head: (el.querySelector(".pv-head .pv-label") || {}).textContent || "",
+      rows: [...el.querySelectorAll(".pv-row")].map((r) => {
+        const box = r.querySelector(".pv-eval");
+        const chip = r.querySelector(".pv-chip");
+        return { no: r.querySelector(".pv-no").textContent, box: box.textContent, tip: box.title,
+          dark: box.classList.contains("is-black"), h: r.getBoundingClientRect().height,
+          chipH: chip ? chip.getBoundingClientRect().height : 0 };
+      }),
+    };
+  }, sel);
+  const rv = await desk("#pv-line");
   const uci = await page.evaluate(() => window.__uci);
-  assert(alt === 2 && uci.includes("setoption name MultiPV value 3"),
-    "多主变：multipv=3 分析，最后一个局面下列出另外两条变化", JSON.stringify({ alt }));
+  assert(rv.rows.length === 3 && uci.includes("setoption name MultiPV value 3"),
+    "多主变：multipv=3 分析，最后一个局面下列出三条线", JSON.stringify(rv));
+  const shapeOk = (d) => d.rows.length === 3 && d.rows.map((r) => r.no).join("") === "123" &&
+    d.rows.every((r) => /^([+−]\d+\.\d|0\.0|#\d+)$/.test(r.box) && r.h > 0 && r.h < r.chipH * 1.6);
+  assert(shapeOk(rv), "多主变：三条线编号 1/2/3，每条一行、左边一个分值框（+1.2 / −0.4 / #3）", JSON.stringify(rv.rows));
+  assert(rv.rows.every((r) => /胜率 \d+%/.test(r.tip)), "多主变：胜率挪到分值框的悬停说明里", JSON.stringify(rv.rows.map((r) => r.tip)));
+  assert(/深度 \d+/.test(rv.head), "多主变：深度写在分析台的标题行", rv.head);
+  // the review's arrows: line 1 (or the mistake arrow standing in for it) and
+  // the lighter ones, off the analysis
+  const rvShapes = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E" || a.color === "e"));
+  assert(rvShapes.length >= 1, "多主变：复盘时棋盘上有引擎的箭头", JSON.stringify(rvShapes));
   await page.click("#an-live");
   const rows = await until(() => page.evaluate(() => {
     const el = document.getElementById("live-line");
-    const n = el && !el.hidden ? el.querySelectorAll(".pv-alt-row").length : 0;
+    const n = el && !el.hidden ? [...el.querySelectorAll(".pv-row .pv-eval")].filter((b) => b.textContent).length : 0;
     return n === 3 ? n : 0;
   }), 6000, 100);
-  assert(rows === 3, "多主变：持续分析同时显示三条主变", rows);
+  assert(rows === 3, "多主变：持续分析同时显示三条线", rows);
+  const lv = await desk("#live-line");
+  assert(shapeOk(lv), "多主变：持续分析也是一行一条、带分值框", JSON.stringify(lv.rows));
+  assert(/深度 \d+/.test(lv.head), "多主变：持续分析的标题行写着深度", lv.head);
+  const live = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E"));
+  assert(live.length === 1, "多主变：持续分析时棋盘上有第一条线的引擎箭头", JSON.stringify(live));
+  // 「显示引擎箭头」 off: no engine arrow at all
+  await page.click("#tab-setup");
+  await page.click("#opt-engine-arrows");
+  await page.click("#tab-play");
+  await page.waitForTimeout(300);
+  const offArrows = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E" || a.color === "e"));
+  assert(offArrows.length === 0, "多主变：关掉「显示引擎箭头」，棋盘上就没有引擎箭头", JSON.stringify(offArrows));
+  // a chip in line 2 walks the board into that line
+  const pinned = await page.evaluate(() => {
+    const b = document.querySelector('#live-line .pv-row[data-line="1"] .pv-chip');
+    if (!b) return null;
+    b.click();
+    return document.getElementById("preview-badge").hidden === false;
+  });
+  assert(pinned === true, "多主变：点第 2 条线里的一步，棋盘走进这条变化", pinned);
   assert(!errs.length, "多主变：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
@@ -775,6 +825,220 @@ await scenario("FEN黑先", async () => {
   assert(marked.length > 0 && marked.some((s) => s === "Nxe5" || s === "Nxf7") && !!r.acc && /\d+%\s*白.*\d+%\s*黑/.test(r.acc),
     "FEN黑先：分析完，? / ?? 落在白方的 Nxe5 / Nxf7 上，双方精准度都有", JSON.stringify({ marked, acc: r.acc }));
   assert(!errs.length, "FEN黑先：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 15. 为什么 + 再试一次 (v7-8-plan §3) ---------------------------------------
+// The walk-through game x02: 9. a3 walks into …Nxc2+, the knight hitting king
+// and rook at once. The report has to say so — 捉双 and 车 — and 再试一次 from
+// the position before 9. a3 has to mark a3 wrong and the engine's move right.
+// The fixed-line version of the same sentence is in test-explain.mjs; this is
+// the real engine's line reaching the page.
+await scenario("为什么", async () => {
+  const pgn = '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n\n' +
+    "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. Ng5 d5 5. exd5 Nxd5 6. Nxf7 Kxf7 7. Qf3+ Ke6 8. Nc3 Nb4 9. a3 Nxc2+ 10. Kd1 Nxa1 11. Nxd5 Kd6 *\n";
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, pgn);
+  assert((await plies(page)) === 22, "为什么：导入 22 半着的对局", await plies(page));
+  await runAn(page, "#an-run", 90000);
+  // 9. a3 is ply 16 (0-based), data-i 17 in the move list
+  const tag = await page.evaluate(() => {
+    const b = document.querySelector('.move-list .mlmove[data-i="17"] .mvtag');
+    return b ? b.textContent.trim() : "";
+  });
+  assert(tag === "?" || tag === "??", "为什么：9. a3 被标成 ? 或 ??", tag);
+  const row = await page.evaluate(() => {
+    const r = document.querySelector('.rv-moment[data-ply="16"]');
+    return r ? { why: r.querySelector(".rv-mo-why").textContent, retry: !!r.querySelector(".rv-mo-retry") } : null;
+  });
+  assert(!!row && /捉双/.test(row.why) && /车/.test(row.why) && row.retry,
+    "为什么：报告里 9. a3 的说明有「捉双」和「车」，旁边是「再试一次」", JSON.stringify(row));
+  // on the move itself, under the engine line
+  await page.click('.rv-moment[data-ply="16"] .rv-mo-jump');
+  await page.waitForTimeout(200);
+  const at = await page.evaluate(() => {
+    const w = document.getElementById("why-line");
+    return w && !w.hidden ? w.textContent : "";
+  });
+  assert(/捉双/.test(at) && /车/.test(at), "为什么：光标停在 9. a3 上，引擎线下面也是这一句", at);
+  if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/why-line.png" });
+
+  // 再试一次: a3 again is wrong
+  await page.click('.rv-moment[data-ply="16"] .rv-mo-retry');
+  await page.waitForTimeout(200);
+  const box = await page.evaluate(() => {
+    const b = document.getElementById("retry-box");
+    return { shown: !!b && !b.hidden, pv: !document.getElementById("pv-line").hidden, ask: b ? b.textContent : "" };
+  });
+  assert(box.shown && !box.pv && /第 9 回合/.test(box.ask), "再试一次：出现练习框，问第 9 回合；引擎线收起（那是答案）", JSON.stringify(box));
+  await clickMove(page, "a2", "a3");
+  const wrong = await until(() => page.evaluate(() => {
+    const v = document.querySelector("#retry-box .rt-verdict");
+    return v && v.classList.contains("is-wrong") ? {
+      best: (document.querySelector("#retry-box .rt-best .why-san") || {}).title || "",
+      why: (document.querySelector("#retry-box .rt-why") || {}).textContent || "",
+    } : null;
+  }), 5000);
+  assert(!!wrong && !!wrong.best && /捉双/.test(wrong.why), "再试一次：再走 a3 判错，给出引擎最佳和那一句", JSON.stringify(wrong));
+  if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/retry-wrong.png" });
+  // …and the engine's move is right
+  await page.click("#rt-again");
+  await page.waitForTimeout(150);
+  const g = new Chess("r1bq1b1r/ppp3pp/4k3/3np3/1nB5/2N2Q2/PPPP1PPP/R1B1K2R w KQ - 4 9");
+  const mv = wrong ? g.move(wrong.best) : null;
+  if (mv) await clickMove(page, mv.from, mv.to);
+  const right = await until(() => page.evaluate(() => {
+    const v = document.querySelector("#retry-box .rt-verdict");
+    return !!v && v.classList.contains("is-right");
+  }), 20000);
+  assert(!!mv && right, "再试一次：走引擎最佳 " + (mv && mv.san) + " 判对");
+  if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/retry-right.png" });
+  await page.click("#rt-back");
+  await page.waitForTimeout(200);
+  const back = await page.evaluate(() => ({
+    box: document.getElementById("retry-box").hidden,
+    why: !document.getElementById("why-line").hidden,
+    sel: (document.querySelector(".move-list .mlmove.cur, .move-list .mlmove[aria-current]") || {}).dataset,
+  }));
+  assert(back.box && back.why, "再试一次：「回到复盘」回到 9. a3 这一手，说明还在", JSON.stringify(back));
+  assert(!errs.length, "为什么：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 16. 再试一次，持续分析开着；升变 (Codex on #83) --------------------------------
+// 1. Kf1?? lets …Rb2 win the b-pawn; 1. b8=Q+ was the move. With 持续分析 on,
+// 再试一次 must stop it: its line is the answer, and `go infinite` holds the
+// engine, so a move that needs checking would wait on it forever. And the
+// right answer is a promotion, whose chooser has to stand in the b-file.
+await scenario("再试一次·持续分析与升变", async () => {
+  const FEN = "6k1/1P6/8/8/8/8/r7/6K1 w - - 0 1";
+  const pgn = '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n' +
+    '[SetUp "1"]\n[FEN "' + FEN + '"]\n\n1. Kf1 Rb2 2. Ke1 Rxb7 *\n';
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, pgn);
+  await runAn(page, "#an-run", 60000);
+  const tag = await page.evaluate(() => {
+    const b = document.querySelector('.move-list .mlmove[data-i="1"] .mvtag');
+    return b ? b.textContent.trim() : "";
+  });
+  assert(tag === "?" || tag === "??", "升变：1. Kf1 被标成 ? 或 ??", tag);
+  await page.click("#an-live");
+  const liveUp = await until(() => page.evaluate(() => {
+    const el = document.getElementById("live-line");
+    return !!el && !el.hidden && /\d/.test(el.textContent);
+  }), 8000);
+  assert(liveUp, "持续分析：打开后有引擎线");
+  await page.click('.rv-moment[data-ply="0"] .rv-mo-retry');
+  await page.waitForTimeout(300);
+  const during = await page.evaluate(() => ({
+    box: !document.getElementById("retry-box").hidden,
+    live: !document.getElementById("live-line").hidden,
+  }));
+  assert(during.box && !during.live, "再试一次：持续分析的引擎线收起（那是答案）", JSON.stringify(during));
+  // neither the mistake nor the best: this one goes to the engine
+  await clickMove(page, "g1", "h1");
+  const judged = await until(() => page.evaluate(() => {
+    const v = document.querySelector("#retry-box .rt-verdict");
+    return v && (v.classList.contains("is-right") || v.classList.contains("is-wrong")) ? v.className : null;
+  }), 20000);
+  assert(!!judged, "再试一次：持续分析开着，要引擎判的一步也能判完", judged || await page.evaluate(() => document.getElementById("retry-box").outerHTML.slice(0, 600)));
+  await page.click("#rt-again");
+  await page.waitForTimeout(150);
+  await clickMove(page, "b7", "b8");
+  await page.waitForTimeout(250);
+  const promo = await page.evaluate(() => {
+    const b = document.getElementById("board").getBoundingClientRect();
+    const sz = b.width / 8;
+    return [...document.querySelectorAll("#promo-modal button[data-p]")].map((x) => {
+      const r = x.getBoundingClientRect();
+      return { col: Math.round((r.left - b.left) / sz), row: Math.round((r.top - b.top) / sz), w: Math.round(r.width) };
+    });
+  });
+  const inFile = promo.length === 4 && promo.every((p, i) => p.col === 1 && p.row === i && p.w > 10);
+  assert(inFile, "再试一次：升变的四个棋子排在 b 列上", JSON.stringify(promo));
+  await page.click('#promo-modal button[data-p="q"]');
+  const right = await until(() => page.evaluate(() => {
+    const v = document.querySelector("#retry-box .rt-verdict");
+    return !!v && v.classList.contains("is-right");
+  }), 20000);
+  assert(right, "再试一次：b8=Q+ 判对");
+  await page.click("#rt-back");
+  await page.waitForTimeout(300);
+  const after = await until(() => page.evaluate(() => {
+    const el = document.getElementById("live-line");
+    return !!el && !el.hidden;
+  }), 8000);
+  assert(after, "回到复盘：持续分析接着跑");
+  assert(!errs.length, "再试一次·持续分析与升变：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 17. 持续分析：指着一步时，那一行不动 (Codex on #83) -----------------------
+// The pointer on a chip shows that line on the board. A later depth used to
+// rewrite the chip under it, and the board kept the old line: the two said
+// different things until the pointer left. While a chip owns the preview its
+// line stands still, like it does under a press; the head's depth still runs.
+await scenario("持续分析·悬停", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n\n' +
+    "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 Bc5 5. c3 d6 6. O-O O-O *\n");
+  await page.click("#an-live");
+  const chip = '#live-line .pv-row[data-line="0"] .pv-chip';
+  assert(!!(await until(() => page.evaluate((s) => !!document.querySelector(s), chip), 6000, 50)), "持续分析·悬停：引擎线出来了");
+  await page.hover(chip);
+  const read = () => page.evaluate(() => {
+    const row = document.querySelector('#live-line .pv-row[data-line="0"]');
+    const head = document.querySelector("#live-line .pv-label");
+    const d = /(\d+)\s*$/.exec(head ? head.textContent : "");
+    return { sans: [...row.querySelectorAll(".pv-chip")].map((b) => b.dataset.san).join(" "),
+      depth: d ? Number(d[1]) : 0, badge: !document.getElementById("preview-badge").hidden };
+  });
+  const r0 = await read();
+  let changed = null, last = r0;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000) {
+    await page.waitForTimeout(100);
+    last = await read();
+    if (last.sans !== r0.sans && !changed) changed = last.sans;
+  }
+  assert(r0.badge && !changed, "持续分析·悬停：指着的那一行不变，棋盘上的预览和它一致", JSON.stringify({ r0, changed }));
+  assert(last.depth > r0.depth, "持续分析·悬停：深度照样往上走", r0.depth + " → " + last.depth);
+  // off the desk: the rows catch up
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(600);
+  const after = await read();
+  assert(!after.badge, "持续分析·悬停：移开之后预览撤掉", JSON.stringify(after));
+  assert(!errs.length, "持续分析·悬停：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 18. 再试一次之后再分析，棋盘回到复盘 (Codex on #83) ------------------------
+// 精析 replacing the record ends 再试一次 — the question was the old record's.
+// The panel went, but the canvas had already drawn the attempt in that same
+// commit and nothing drew it again: the board showed Kf1 while a click acted
+// on the replay's position. What is on the canvas after the pass has to be
+// what a fresh draw of the same state gives.
+await scenario("再试一次·重新分析", async () => {
+  const pgn = '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n' +
+    '[SetUp "1"]\n[FEN "6k1/1P6/8/8/8/8/r7/6K1 w - - 0 1"]\n\n1. Kf1 Rb2 2. Ke1 Rxb7 *\n';
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, pgn);
+  await runAn(page, "#an-run", 60000);
+  await page.click('.rv-moment[data-ply="0"] .rv-mo-retry');
+  await page.waitForTimeout(200);
+  await clickMove(page, "g1", "f1");
+  const wrong = await until(() => page.evaluate(() => !!document.querySelector("#retry-box .rt-verdict.is-wrong")), 5000);
+  assert(wrong, "重新分析：再试一次里再走 Kf1，判错");
+  await runAn(page, "#an-deep", 90000);
+  await page.waitForTimeout(300);
+  const shot = () => page.evaluate(() => document.getElementById("board").toDataURL());
+  const a = await shot();
+  const gone = await page.evaluate(() => document.getElementById("retry-box").hidden);
+  await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+  await page.waitForTimeout(400);
+  const b = await shot();
+  assert(gone && a === b, "重新分析：练习框收起，棋盘上画的是复盘的局面，不是练习里走的那一步", JSON.stringify({ gone, same: a === b }));
+  assert(!errs.length, "再试一次·重新分析：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
 

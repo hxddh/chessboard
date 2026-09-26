@@ -335,7 +335,11 @@
       --sq-light: #f0d9b5;
       --sq-dark: #b58863;
       --sq-sel: rgba(0, 150, 0, var(--mark-mid));
-      --sq-last: rgba(0, 255, 0, var(--mark-soft));
+      /* 7.8 §6: a yellower, quieter green — over the light square C* 54.1 →
+         43.9 (Lichess's own last move, measured the same way: 52.4), hue
+         term 3.1 → 4.2 (ceiling 5), still ΔE00 18 from the bare square
+         (docs/measured.json markChroma) */
+      --sq-last: rgba(40, 200, 0, var(--mark-soft));
       --sq-check: rgba(245, 70, 55, var(--mark-mid));
       --sq-hint: rgba(5, 165, 255, var(--mark-mid));
       --sq-star: rgba(255, 219, 38, var(--mark-strong));
@@ -350,6 +354,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(5, 165, 255, var(--mark-mid));
+      --engine-arrow-alt: rgba(5, 165, 255, var(--mark-soft));
     }
     [data-board="night"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -381,6 +389,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 80, 230, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 80, 230, var(--mark-soft));
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
     [data-board="day"] {
@@ -414,6 +426,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 125, 255, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 125, 255, var(--mark-soft));
     }
     [data-board="notebook"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -445,6 +461,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 255, 60, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 255, 60, var(--mark-soft));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
     }
 
@@ -788,6 +808,39 @@
     }
     /* a wider frame can carry the larger step */
     @media (min-width: 1100px) { .coords { font-size: 0.8125rem; } }
+    /* v7-8-plan §5: 「坐标：盘内」 — Lichess's way. The letters sit in the
+       bottom-right corner of the first-rank squares, the numbers in the
+       top-left corner of the a-file squares, each in the colour of the OTHER
+       square so it reads on both. The frame has nothing left to carry and
+       narrows; the board is bigger by the difference, and that difference is
+       the same on every tab.
+       Which span sits on which colour needs no JavaScript: the square at the
+       bottom-left of a chessboard is dark whichever way it faces (a1, or h8
+       when flipped), so the first file letter is on a dark square and the
+       first rank number (top-left: a8 or h1) on a light one, alternating. */
+    #app[data-coords="in"] { --wood-pad: 8px; }
+    #app[data-coords="in"] .coords { font-size: 0.6875rem; letter-spacing: 0; }
+    @media (min-width: 1100px) { #app[data-coords="in"] .coords { font-size: 0.75rem; } }
+    #app[data-coords="in"] .coords.files {
+      top: var(--wood-pad); bottom: var(--wood-pad); height: auto;
+      align-items: stretch;
+    }
+    #app[data-coords="in"] .coords.files > span {
+      display: flex; align-items: flex-end; justify-content: flex-end;
+      padding: 0 0.2em 0.1em 0;
+    }
+    #app[data-coords="in"] .coords.ranks {
+      left: var(--wood-pad); right: var(--wood-pad); width: auto;
+      align-items: stretch;
+    }
+    #app[data-coords="in"] .coords.ranks > span {
+      display: flex; align-items: flex-start; justify-content: flex-start;
+      padding: 0.1em 0 0 0.25em;
+    }
+    #app[data-coords="in"] .coords.files > span:nth-child(odd),
+    #app[data-coords="in"] .coords.ranks > span:nth-child(even) { color: var(--sq-light); }
+    #app[data-coords="in"] .coords.files > span:nth-child(even),
+    #app[data-coords="in"] .coords.ranks > span:nth-child(odd) { color: var(--sq-dark); }
 
     canvas {
       display: block; width: 100%; height: 100%;
@@ -982,6 +1035,9 @@
       font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
     }
     .opening-line[hidden] { display: none; }
+    /* 7.8 §1b: blank but still taking its line, so the notation does not move */
+    .opening-line.vacant { visibility: hidden; }
+    .opening-line.vacant::before { content: "\00a0"; }
     /* Mode used to be a nav row with its own idiom — an underline it shared
        with the tab row, a `margin-top: 12px` from its life inside the panel,
        and a group border drawn for a tab row that stopped sitting beneath it
@@ -1887,6 +1943,9 @@
       margin: 0 0 16px;
       font-size: 0.9375rem; line-height: var(--lh-body); color: var(--text);
     }
+    /* v7-8-plan §4: the new-game dialog's one line of consequence — in the
+       colour this UI gives an answer that cannot be taken back (7.7 §4) */
+    .ng-warn { margin-bottom: 8px; color: var(--danger); }
 
     /* position editor: piece palette */
     .palette {
@@ -1959,25 +2018,30 @@
     .text-input.bad { border-color: var(--danger); }
 
     /* pawn promotion chooser */
-    .promo-modal { width: min(340px, calc(100vw - 32px)); }
-    .promo-row { display: flex; gap: 8px; }
+    /* 7.8 §1c: on the board, not over it. The backdrop is clear and unblurred;
+       the dimming is the board's own square (#promo-box, placed on the canvas
+       by placePromotion()), and the four pieces stand on their squares in the
+       promotion file — left/top per button, also from placePromotion(). */
+    .modal-bg.promo-bg { background: transparent; backdrop-filter: none; }
+    .modal-bg.promo-bg.show { display: block; }
+    .promo-modal {
+      position: absolute;
+      background: rgba(0,0,0,.45);
+    }
     .promo-row button {
-      flex: 1;
-      appearance: none; cursor: pointer;
-      border: 1px solid var(--card-border);
-      background: var(--btn-ghost);
-      color: var(--text);
-      border-radius: var(--radius-md); padding: 8px 0 12px;
-      font: inherit; font-size: 0.75rem; font-weight: 500;
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
+      position: absolute; width: 12.5%; height: 12.5%;
+      appearance: none; cursor: pointer; padding: 0; margin: 0;
+      border: 0; border-radius: 50%;
+      background: var(--sq-light);
+      display: grid; place-items: center;
+      transition: border-radius var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
-    .promo-row button:hover {
-      border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
-      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    .promo-row button:hover,
+    .promo-row button:focus-visible {
+      border-radius: 0;
+      background: color-mix(in srgb, var(--accent) 45%, var(--sq-light));
     }
-    .promo-row button:active { transform: scale(0.96); }
-    .promo-glyph { font-size: 1.875rem; line-height: var(--lh-tight); }
+    .promo-piece { width: 100%; height: 100%; display: block; pointer-events: none; }
 
     .scrim {
       display: none; position: absolute; inset: 0; z-index: 25;
@@ -2202,7 +2266,19 @@
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }
 }
-.side-pane:not([hidden]),
+/* v7-8-plan §5: a tab is not revealed from above, it replaces the pane
+   beside it — so the pane only fades, it does not also slide the whole
+   column 4px (7.7 §9's crossfade). Only the incoming pane: the outgoing one
+   is hidden in the same frame, so two panes are never drawn at once and
+   nothing under a pressed button is rewritten (7.6). Stopped under
+   prefers-reduced-motion by the blanket rule below, like every keyframe. */
+@keyframes pane-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.side-pane:not([hidden]) {
+  animation: pane-in var(--dur-base) var(--ease);
+}
 .setting-fold[open] > *:not(summary),
 .reading-index[open] > *:not(summary) {
   animation: reveal-in var(--dur-base) var(--ease);
@@ -2289,8 +2365,9 @@
   *, *::before, *::after {
     transition-property: color, background-color, border-color, box-shadow,
       opacity, fill, stroke !important;
-    /* keyframes are all-or-nothing: every @keyframes in this file moves or
-       scales something, so they stop outright */
+    /* keyframes are all-or-nothing: nearly every @keyframes in this file
+       moves or scales something, so they stop outright — the tab fade
+       (pane-in) with them, as v7-8-plan §5 asks */
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
@@ -2333,12 +2410,21 @@
        above the letters beside it and smaller than they read (截图 20): the
        sprites keep a margin inside their 40-unit box, so a piece has to be
        drawn larger than the cap height to look as tall as one. */
+    /* 7.8 §1e: the figure is exactly a capital high and stands on the
+       baseline. The SVG's box is cropped to the figure (figurineSvg() in
+       app.js), so the box's height is the figure's; `1cap` is the capital
+       height of the font this line is set in, and an inline-block with no
+       text sits its bottom edge on the baseline. 0.7em is for an engine
+       without the `cap` unit. */
     .mlfig {
-      display: inline-block; width: 1.3em; height: 1.3em;
-      vertical-align: -0.28em;
-      margin-right: -1px;
+      display: inline-block; height: 0.7em; height: 1cap;
+      vertical-align: baseline;
     }
-    .mlfig svg { width: 100%; height: 100%; display: block; }
+    .mlfig svg { height: 100%; width: auto; display: block; overflow: visible; fill: currentColor; }
+    /* the board's 1.5-unit line is a hairline at a capital's height */
+    .mlfig svg * { stroke-width: 2.4; }
+    /* figurineSvg() measures each figure once in one of these, off screen */
+    .fig-probe { position: absolute; visibility: hidden; width: 40px; height: 40px; }
     .mlmove {
       appearance: none; border: 0; background: transparent;
       /* --text, not --fg: there has never been a --fg token in any of the four
@@ -2434,7 +2520,8 @@
     }
 
     /* --- review: the evaluation curve, the bar, and the accuracy line --- */
-    #eval-wrap { margin: 8px 0 2px; }
+    /* relative: the curve's hover label is placed against it */
+    #eval-wrap { margin: 8px 0 2px; position: relative; }
     .pv-line {
       margin-top: 6px;
       font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
@@ -2444,12 +2531,44 @@
        can rest, and while it rests there the board plays the line that far.
        Same ink as the prose line it replaced — the affordance is the border
        appearing under the cursor, not a row of buttons shouting. */
-    #pv-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; }
+    /* 7.8 §2: the analysis desk — the review's #pv-line and 持续分析's
+       #live-line are one shape. A head (what, how deep, and 存为变着), then
+       one row per engine line, numbered 1 2 3: a bold score box and the
+       moves, on ONE line, cut with an ellipsis where the panel ends (Lichess's
+       desk). Each line used to wrap to two rows behind 「第 1 线 · 胜率 67%」. */
+    #pv-line, #live-line { white-space: normal; overflow: visible; }
+    .pv-head { display: flex; align-items: center; gap: 8px; }
+    .pv-head .pv-act { margin-left: auto; }
     .pv-label { margin-right: 2px; }
-    /* 6.0: the other engine lines sit under the principal one as read-only
-       rows; a chip that cannot be previewed is a span, not a button */
-    .pv-alt-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; margin-top: 4px; }
-    .pv-chip.pv-alt { cursor: default; opacity: .8; }
+    .pv-row {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .pv-row > * { vertical-align: middle; }
+    /* every box in a row is one fixed height, whatever it holds: a chip with
+       a figurine in it was 0.6px taller than one without, so a line that
+       changed from 1.e4 e5 2.Nf3 to 1.d4 d5 2.c4 moved every chip in the row
+       under the pointer (measured, review e2e 7.6 §2 (c)) */
+    .pv-row .pv-chip, .pv-eval { display: inline-flex; align-items: center; justify-content: center; height: 1.75em; }
+    .pv-row .pv-chip { font-size: 0.75rem; }
+    .pv-no {
+      display: inline-block; width: 12px; margin-right: 2px;
+      font-size: 0.6875rem; color: var(--muted);
+    }
+    /* the score, from White's side: a light box when White is better, a dark
+       one when Black is — the gauge's two ends. The win chance is its tooltip. */
+    .pv-eval {
+      display: inline-block; min-width: 42px; margin-right: 4px; padding: 2px 4px;
+      border-radius: var(--radius-sm); text-align: center;
+      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
+      color: var(--muted); box-shadow: inset 0 0 0 1px var(--line);
+    }
+    .pv-eval:empty::before { content: "\00a0"; }
+    .pv-eval.is-white { background: var(--side-white); color: var(--side-black); }
+    .pv-eval.is-black { background: var(--side-black); color: var(--side-white); }
+    /* a press lands on the chip itself, never on the glyph inside it that a
+       frame may replace (7.6's rule, v7-6-plan §2) */
+    .pv-chip > * { pointer-events: none; }
     .pv-chip {
       font: inherit; font-size: 0.75rem; line-height: var(--lh-tight);
       color: var(--text); background: transparent;
@@ -2493,14 +2612,29 @@
     .review-bank:hover:not(:disabled) { border-style: solid; border-color: var(--accent); color: var(--accent); }
     /* already banked: a statement, not an offer */
     .review-bank:disabled { cursor: default; color: var(--muted); border-style: solid; }
+    /* 7.8 §2: 120px, Lichess's is about 150. At 60 a game with a lost rook
+       in it was a line two pixels off the axis for most of its length. */
     #eval-curve {
       display: block;
       width: 100%;
-      height: 60px;
+      height: 120px;
       border-radius: var(--radius-sm);
       background: var(--card);
       border: 1px solid var(--card-border);
     }
+    /* 7.8 §2: what the pointer is over on the curve — move and score — above
+       the curve at the pointer's x. Not interactive: it must never be what
+       a press lands on. */
+    .curve-tip {
+      position: absolute; top: 0; z-index: 3;
+      transform: translate(-50%, calc(-100% - 4px));
+      padding: 2px 6px; border-radius: var(--radius-sm);
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--panel-border);
+      font-size: 0.75rem; line-height: var(--lh-tight); white-space: nowrap;
+      pointer-events: none;
+    }
+    .curve-tip-hint { color: var(--muted); margin-left: 6px; }
     /* The difficulty row is two scales, so it is labelled as two. */
     .diff-group {
       display: block; margin: 6px 0 4px;
@@ -2572,9 +2706,10 @@
     .eval-bar.is-unmeasured .eval-bar-fill { background: var(--muted); }
     /* the number, at the end of the side that is ahead — in the frame-high
        strip above or below the squares, right-aligned to the gauge */
+    /* 7.8 §2: one step up the type scale (11 → 12px) */
     .eval-bar-text {
       position: absolute; right: 0;
-      font-size: 0.6875rem; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
       color: var(--muted); white-space: nowrap;
       bottom: calc(100% + 2px);
     }
@@ -2589,6 +2724,10 @@
       clip: rect(0 0 0 0); white-space: nowrap;
     }
     #board-wrap:has(.eval-gauge.is-inset:not([hidden])) .coords.ranks { visibility: hidden; }
+    /* 坐标：盘内 (v7-8-plan §5): the narrow frame takes a narrower gauge, and
+       the numbers are inside the squares, out of its way */
+    #app[data-coords="in"] .eval-gauge.is-inset { left: 2px; width: calc(var(--wood-pad) - 4px); }
+    #app[data-coords="in"] #board-wrap:has(.eval-gauge.is-inset:not([hidden])) .coords.ranks { visibility: visible; }
     @media (prefers-reduced-motion: reduce) {
       .eval-bar-fill { transition: none; }
     }
@@ -2654,6 +2793,40 @@
       cursor: pointer;
     }
     .review-jump:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
+    /* 7.8 §3: why each ? / ?? was one — a row per mistake, the move, the
+       reason in the muted voice, and 再试一次 as the one action on the row */
+    .rv-moments { margin-top: 12px; border-top: 1px solid var(--card-border); padding-top: 6px; }
+    .rv-moments-cap { font-size: 0.6875rem; color: var(--muted); margin-bottom: 2px; }
+    .rv-moment {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px;
+      font-size: 0.75rem; line-height: var(--lh-body); padding: 2px 0;
+    }
+    .rv-mo-jump {
+      font: inherit; color: var(--text); background: transparent; border: 0;
+      padding: 0; cursor: pointer; white-space: nowrap;
+    }
+    .rv-mo-jump:hover { color: var(--accent); }
+    .rv-mo-jump .rv-mark { min-width: 0; margin-left: 2px; }
+    .rv-mo-why { flex: 1 1 8em; color: var(--muted); }
+    .rv-mo-retry { margin-left: auto; }
+    .why-line {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+      margin-top: 4px; font-size: 0.75rem; line-height: var(--lh-body); color: var(--text);
+    }
+    .why-text { flex: 1 1 10em; }
+    .why-san { white-space: nowrap; }
+    .retry-box {
+      margin-top: 6px; padding: 8px;
+      border: 1px solid var(--accent); border-radius: var(--radius-sm);
+      font-size: 0.75rem; line-height: var(--lh-body);
+    }
+    .retry-box p { margin: 0 0 4px; }
+    .rt-ask { font-weight: 600; }
+    .rt-verdict.is-right { color: var(--accent); font-weight: 600; }
+    .rt-verdict.is-wrong { color: var(--judge-bad); font-weight: 600; }
+    .rt-why { color: var(--muted); }
+    .rt-acts { display: flex; gap: 6px; margin-top: 6px; }
+    .rt-acts .pv-act { margin-left: 0; }
 
     .ach-pg { margin-left: auto; font-size: 0.6875rem; color: var(--muted); flex: none; }
     /* the "what next?" suggestion under the statistics */
