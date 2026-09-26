@@ -3276,167 +3276,6 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
   await ctx.close();
 }
 
-// --- 7.7 §1：看得见的瑕疵，写成几何断言 ------------------------------------
-// 每一条都是 7.6.0 截图里看得见的东西（v7-7-plan §1a–§1e）。量的是摆好之后
-// 的盒子和画布上的像素，不是样式表里写了什么。
-{
-  const sqAt = async (page, sq) => page.evaluate((s) => {
-    const cv = document.getElementById("board");
-    const r = cv.getBoundingClientRect();
-    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
-    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
-  }, sq);
-  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(120); };
-
-  // §1a：每个看得见的 .act-btn 都有左右内边距，高度正好是 --row-h（两行字也
-  // 装得下，行距是紧的）。例外只有一种：同一行里有标签要折成三行（英文的
-  // Clear lesson progress、日文的几条长标签在 70px 栅格里），栅格的等高行
-  // 把整行一起撑高 —— 那时只要求不矮于 --row-h。标签太长是文案的事。
-  for (const lang of LANGS) {
-    for (const theme of ["wood", "night", "day", "notebook"]) {
-      for (const tab of ["play", "setup", "record"]) {
-        const { ctx, page } = await open(lang, "pvp", tab, theme);
-        await page.evaluate(() => { document.querySelectorAll("details").forEach((d) => { d.open = true; }); });
-        const r = await page.evaluate(() => {
-          const rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-h"));
-          const out = [];
-          const linesOf = (b) => {
-            const range = document.createRange();
-            range.selectNodeContents(b);
-            return new Set([...range.getClientRects()].map((x) => Math.round(x.top))).size;
-          };
-          for (const b of document.querySelectorAll(".act-btn")) {
-            if (!b.offsetParent) continue;
-            const cs = getComputedStyle(b);
-            const h = b.getBoundingClientRect().height;
-            const lines = linesOf(b);
-            // the tallest label among the buttons sharing this row
-            const top = Math.round(b.getBoundingClientRect().top);
-            const rowMax = Math.max(...[...b.parentElement.querySelectorAll(".act-btn")]
-              .filter((o) => o.offsetParent && Math.round(o.getBoundingClientRect().top) === top).map(linesOf));
-            const padOk = parseFloat(cs.paddingLeft) >= 8 && parseFloat(cs.paddingRight) >= 8;
-            const hOk = rowMax <= 2 ? Math.abs(h - rowH) < 0.5 : h >= rowH - 0.5;
-            if (!padOk || !hOk) out.push(b.id + "「" + b.textContent.trim() + "」 h=" + h.toFixed(1) + " pad=" + cs.paddingLeft + " lines=" + lines);
-          }
-          return { rowH, bad: out, n: document.querySelectorAll(".act-btn").length };
-        });
-        assert(r.bad.length === 0, `§1a ${lang}/${theme}/${tab}：可见的 .act-btn 左右内边距 ≥ 8px、单行高 ${r.rowH}px` +
-          (r.bad.length ? " —— " + r.bad.join("；") : ""));
-        await ctx.close();
-      }
-    }
-  }
-
-  // §1b：「今天的训练」的文字不是等宽字体
-  for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "play");
-    const r = await page.evaluate(() => {
-      const num = getComputedStyle(document.documentElement).getPropertyValue("--font-num").trim();
-      const first = num.split(",")[0].trim();
-      const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why")];
-      return { n: els.length, first, mono: els.filter((e) => getComputedStyle(e).fontFamily.split(",")[0].trim() === first).map((e) => e.textContent) };
-    });
-    assert(r.n > 0 && r.mono.length === 0, `§1b ${lang}：今天的训练 ${r.n} 段文字都不用 ${r.first}` + (r.mono.length ? " —— " + r.mono.join(" / ") : ""));
-    await ctx.close();
-  }
-
-  // §1c：键盘光标照 :focus-visible 的规矩。读画布像素：光标是一圈近白的
-  // 描边，横在格子上缘内侧；浅格、深格、上一步的绿都到不了近白。
-  {
-    const { ctx, page } = await open("zh-CN", "pvp", "play");
-    const ringed = (sq) => page.evaluate((s) => {
-      const c = document.getElementById("board");
-      const g = c.getContext("2d");
-      const step = c.width / 8;
-      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
-      const x0 = Math.round(f * step + step * 0.3), w = Math.round(step * 0.4);
-      let best = 0;
-      for (let y = Math.round(rk * step + 1); y < Math.round(rk * step + step * 0.14); y++) {
-        const d = g.getImageData(x0, y, w, 1).data;
-        let white = 0;
-        for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++;
-        best = Math.max(best, white / w);
-      }
-      return best > 0.8;
-    }, sq);
-    await tap(page, "e2"); await tap(page, "e4");
-    await page.waitForTimeout(300);
-    const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
-    assert(focused === "board" && !(await ringed("e4")) && !(await ringed("e5")),
-      `§1c 鼠标走完 e2-e4，棋盘有焦点（${focused}）但没有画键盘光标`);
-    await page.keyboard.press("ArrowUp");
-    await page.waitForTimeout(150);
-    assert(await ringed("e5"), "§1c 按一下方向键，光标出现（e4 → e5）");
-    await tap(page, "a2");
-    await page.waitForTimeout(150);
-    assert(!(await ringed("e5")), "§1c 再用鼠标点一下，光标又收起来");
-    await ctx.close();
-  }
-
-  // §1d：toast 的矩形与 #board 不相交。两种 toast：一条回执（复制 PGN），
-  // 一条带按钮的故障（引擎两次都没给出着法）—— 后者更宽，也不会自己走。
-  for (const vp of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1024, height: 700 }, { width: 600, height: 900 }]) {
-    for (const panel of ["1", "0"]) {
-      const { ctx, page } = await open("en", "ai", "play", "wood", vp, panel);
-      await page.evaluate(() => {
-        window.__chess.engine.isReady = () => true;
-        window.__chess.engine.bestMove = async () => { throw new Error("engine down"); };
-        const f = document.getElementById("engine-fault");
-        if (f) f.hidden = true;
-      });
-      await tap(page, "e2"); await tap(page, "e4");
-      await page.waitForSelector(".toast.show .toast-action", { timeout: 8000 }).catch(() => {});
-      await page.waitForTimeout(350);
-      const hit = () => page.evaluate(() => {
-        const t = document.getElementById("toast");
-        const a = t.getBoundingClientRect(), b = document.getElementById("board").getBoundingClientRect();
-        const cross = a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-        return { shown: t.classList.contains("show"), cross, text: t.textContent.slice(0, 40),
-          a: [a.left, a.top, a.right, a.bottom].map(Math.round), b: [b.left, b.top, b.right, b.bottom].map(Math.round) };
-      });
-      const fault = await hit();
-      assert(fault.shown && !fault.cross,
-        `§1d ${vp.width}×${vp.height} 面板${panel === "1" ? "开" : "关"}：故障 toast 不压棋盘（toast ${fault.a} / 棋盘 ${fault.b}）`);
-      await page.keyboard.press("Escape");
-      await page.evaluate(() => { const b = document.getElementById("pgn-copy"); if (b && b.offsetParent) b.click(); });
-      await page.waitForTimeout(350);
-      const receipt = await hit();
-      if (receipt.shown) {
-        assert(!receipt.cross, `§1d ${vp.width}×${vp.height} 面板${panel === "1" ? "开" : "关"}：回执 toast 不压棋盘（「${receipt.text}」 ${receipt.a}）`);
-      }
-      await ctx.close();
-    }
-  }
-
-  // §1e：页签条不透明；窗格滚下去之后，页签下缘有一道 --line，页签矩形里
-  // 取到的只有页签自己
-  {
-    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1024, height: 700 });
-    for (const m of ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6", "d2d4", "e5d4"]) {
-      await tap(page, m.slice(0, 2)); await tap(page, m.slice(2));
-    }
-    const before = await page.evaluate(() => document.querySelector(".side-tabs").classList.contains("is-scrolled"));
-    const r = await page.evaluate(async () => {
-      const pane = document.getElementById("pane-play");
-      pane.scrollTop = 400;
-      await new Promise((res) => setTimeout(res, 150));
-      const row = document.querySelector(".side-tabs");
-      const rr = row.getBoundingClientRect();
-      const cs = getComputedStyle(row);
-      const probes = [0.1, 0.5, 0.9].flatMap((fx) => [0.2, 0.95].map((fy) =>
-        document.elementFromPoint(rr.left + rr.width * fx, rr.top + rr.height * fy)));
-      return {
-        scrolled: pane.scrollTop,
-        cls: row.classList.contains("is-scrolled"),
-        bg: cs.backgroundColor,
-        shadow: cs.boxShadow,
-        own: probes.every((el) => el && row.contains(el)),
-      };
-    });
-    assert(!before, "§1e 窗格在顶上时，页签下没有分隔线");
-    assert(r.scrolled > 0 && r.cls && r.shadow !== "none", `§1e 滚下去 ${r.scrolled}px，页签下缘有分隔线（${r.shadow}）`);
-    assert(r.bg !== "rgba(0, 0, 0, 0)" && r.bg !== "transparent", `§1e 页签条有自己的底色（${r.bg}）`);
-    assert(r.own, "§1e 页签矩形里取到的每一点都是页签自己");
 /** click one square, the way a person does (7.7's sections below) */
 const mv = async (page, sq) => {
   const pt = await page.evaluate((s) => {
@@ -3664,6 +3503,173 @@ for (const [when, mode, act] of [
   assert(right.shown && right.ok, "走对:对勾(" + JSON.stringify(right) + ")");
   await ctx.close();
 }
+
+
+// --- 7.7 §1：看得见的瑕疵，写成几何断言 ------------------------------------
+// 每一条都是 7.6.0 截图里看得见的东西（v7-7-plan §1a–§1e）。量的是摆好之后
+// 的盒子和画布上的像素，不是样式表里写了什么。
+{
+  const sqAt = async (page, sq) => page.evaluate((s) => {
+    const cv = document.getElementById("board");
+    const r = cv.getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(120); };
+
+  // §1a：每个看得见的 .act-btn 都有左右内边距，高度正好是 --row-h（两行字也
+  // 装得下，行距是紧的）。例外只有一种：同一行里有标签要折成三行（英文的
+  // Clear lesson progress、日文的几条长标签在 70px 栅格里），栅格的等高行
+  // 把整行一起撑高 —— 那时只要求不矮于 --row-h。标签太长是文案的事。
+  for (const lang of LANGS) {
+    for (const theme of ["wood", "night", "day", "notebook"]) {
+      for (const tab of ["play", "setup", "record"]) {
+        const { ctx, page } = await open(lang, "pvp", tab, theme);
+        await page.evaluate(() => { document.querySelectorAll("details").forEach((d) => { d.open = true; }); });
+        const r = await page.evaluate(() => {
+          const rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-h"));
+          const out = [];
+          const linesOf = (b) => {
+            const range = document.createRange();
+            range.selectNodeContents(b);
+            return new Set([...range.getClientRects()].map((x) => Math.round(x.top))).size;
+          };
+          for (const b of document.querySelectorAll(".act-btn")) {
+            if (!b.offsetParent) continue;
+            const cs = getComputedStyle(b);
+            const h = b.getBoundingClientRect().height;
+            const lines = linesOf(b);
+            // the tallest label among the buttons sharing this row
+            const top = Math.round(b.getBoundingClientRect().top);
+            const rowMax = Math.max(...[...b.parentElement.querySelectorAll(".act-btn")]
+              .filter((o) => o.offsetParent && Math.round(o.getBoundingClientRect().top) === top).map(linesOf));
+            const padOk = parseFloat(cs.paddingLeft) >= 8 && parseFloat(cs.paddingRight) >= 8;
+            const hOk = rowMax <= 2 ? Math.abs(h - rowH) < 0.5 : h >= rowH - 0.5;
+            if (!padOk || !hOk) out.push(b.id + "「" + b.textContent.trim() + "」 h=" + h.toFixed(1) + " pad=" + cs.paddingLeft + " lines=" + lines);
+          }
+          return { rowH, bad: out, n: document.querySelectorAll(".act-btn").length };
+        });
+        assert(r.bad.length === 0, `§1a ${lang}/${theme}/${tab}：可见的 .act-btn 左右内边距 ≥ 8px、单行高 ${r.rowH}px` +
+          (r.bad.length ? " —— " + r.bad.join("；") : ""));
+        await ctx.close();
+      }
+    }
+  }
+
+  // §1b：「今天的训练」的文字不是等宽字体
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play");
+    const r = await page.evaluate(() => {
+      const num = getComputedStyle(document.documentElement).getPropertyValue("--font-num").trim();
+      const first = num.split(",")[0].trim();
+      const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why")];
+      return { n: els.length, first, mono: els.filter((e) => getComputedStyle(e).fontFamily.split(",")[0].trim() === first).map((e) => e.textContent) };
+    });
+    assert(r.n > 0 && r.mono.length === 0, `§1b ${lang}：今天的训练 ${r.n} 段文字都不用 ${r.first}` + (r.mono.length ? " —— " + r.mono.join(" / ") : ""));
+    await ctx.close();
+  }
+
+  // §1c：键盘光标照 :focus-visible 的规矩。读画布像素：光标是一圈近白的
+  // 描边，横在格子上缘内侧；浅格、深格、上一步的绿都到不了近白。
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play");
+    const ringed = (sq) => page.evaluate((s) => {
+      const c = document.getElementById("board");
+      const g = c.getContext("2d");
+      const step = c.width / 8;
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      const x0 = Math.round(f * step + step * 0.3), w = Math.round(step * 0.4);
+      let best = 0;
+      for (let y = Math.round(rk * step + 1); y < Math.round(rk * step + step * 0.14); y++) {
+        const d = g.getImageData(x0, y, w, 1).data;
+        let white = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++;
+        best = Math.max(best, white / w);
+      }
+      return best > 0.8;
+    }, sq);
+    await tap(page, "e2"); await tap(page, "e4");
+    await page.waitForTimeout(300);
+    const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
+    assert(focused === "board" && !(await ringed("e4")) && !(await ringed("e5")),
+      `§1c 鼠标走完 e2-e4，棋盘有焦点（${focused}）但没有画键盘光标`);
+    await page.keyboard.press("ArrowUp");
+    await page.waitForTimeout(150);
+    assert(await ringed("e5"), "§1c 按一下方向键，光标出现（e4 → e5）");
+    await tap(page, "a2");
+    await page.waitForTimeout(150);
+    assert(!(await ringed("e5")), "§1c 再用鼠标点一下，光标又收起来");
+    await ctx.close();
+  }
+
+  // §1d：toast 的矩形与 #board 不相交。两种 toast：一条回执（复制 PGN），
+  // 一条带按钮的故障（引擎两次都没给出着法）—— 后者更宽，也不会自己走。
+  for (const vp of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1024, height: 700 }, { width: 600, height: 900 }]) {
+    for (const panel of ["1", "0"]) {
+      const { ctx, page } = await open("en", "ai", "play", "wood", vp, panel);
+      await page.evaluate(() => {
+        window.__chess.engine.isReady = () => true;
+        window.__chess.engine.bestMove = async () => { throw new Error("engine down"); };
+        const f = document.getElementById("engine-fault");
+        if (f) f.hidden = true;
+      });
+      await tap(page, "e2"); await tap(page, "e4");
+      await page.waitForSelector(".toast.show .toast-action", { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(350);
+      const hit = () => page.evaluate(() => {
+        const t = document.getElementById("toast");
+        const a = t.getBoundingClientRect(), b = document.getElementById("board").getBoundingClientRect();
+        const cross = a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        return { shown: t.classList.contains("show"), cross, text: t.textContent.slice(0, 40),
+          a: [a.left, a.top, a.right, a.bottom].map(Math.round), b: [b.left, b.top, b.right, b.bottom].map(Math.round) };
+      });
+      const fault = await hit();
+      assert(fault.shown && !fault.cross,
+        `§1d ${vp.width}×${vp.height} 面板${panel === "1" ? "开" : "关"}：故障 toast 不压棋盘（toast ${fault.a} / 棋盘 ${fault.b}）`);
+      await page.keyboard.press("Escape");
+      await page.evaluate(() => { const b = document.getElementById("pgn-copy"); if (b && b.offsetParent) b.click(); });
+      await page.waitForTimeout(350);
+      const receipt = await hit();
+      if (receipt.shown) {
+        assert(!receipt.cross, `§1d ${vp.width}×${vp.height} 面板${panel === "1" ? "开" : "关"}：回执 toast 不压棋盘（「${receipt.text}」 ${receipt.a}）`);
+      }
+      await ctx.close();
+    }
+  }
+
+  // §1e：页签条不透明；窗格滚下去之后，页签下缘有一道 --line，页签矩形里
+  // 取到的只有页签自己
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1024, height: 700 });
+    for (const m of ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6", "d2d4", "e5d4"]) {
+      await tap(page, m.slice(0, 2)); await tap(page, m.slice(2));
+    }
+    const before = await page.evaluate(() => document.querySelector(".side-tabs").classList.contains("is-scrolled"));
+    const r = await page.evaluate(async () => {
+      const pane = document.getElementById("pane-play");
+      pane.scrollTop = 400;
+      await new Promise((res) => setTimeout(res, 150));
+      const row = document.querySelector(".side-tabs");
+      const rr = row.getBoundingClientRect();
+      const cs = getComputedStyle(row);
+      const probes = [0.1, 0.5, 0.9].flatMap((fx) => [0.2, 0.95].map((fy) =>
+        document.elementFromPoint(rr.left + rr.width * fx, rr.top + rr.height * fy)));
+      return {
+        scrolled: pane.scrollTop,
+        cls: row.classList.contains("is-scrolled"),
+        bg: cs.backgroundColor,
+        shadow: cs.boxShadow,
+        own: probes.every((el) => el && row.contains(el)),
+      };
+    });
+    assert(!before, "§1e 窗格在顶上时，页签下没有分隔线");
+    assert(r.scrolled > 0 && r.cls && r.shadow !== "none", `§1e 滚下去 ${r.scrolled}px，页签下缘有分隔线（${r.shadow}）`);
+    assert(r.bg !== "rgba(0, 0, 0, 0)" && r.bg !== "transparent", `§1e 页签条有自己的底色（${r.bg}）`);
+    assert(r.own, "§1e 页签矩形里取到的每一点都是页签自己");
+    await ctx.close();
+  }
+}
+
 
 await browser.close();
 server.close();

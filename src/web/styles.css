@@ -1484,6 +1484,11 @@
       grid-auto-rows: 1fr;
       gap: 6px; margin-top: 8px;
     }
+    /* 7.7: 为你出一题 stands alone on its row, and one 70px track is narrower
+       than its five characters plus the 8px sides §1a gave every .act-btn —
+       it broke after 一, leaving 题 on a line of its own. Two tracks, still
+       not the full width (see auto-fill above). */
+    #puzzle-smart { grid-column: span 2; }
     /* The three weights this family has, and nothing else.
      *
      *   default   — a thing you can do
