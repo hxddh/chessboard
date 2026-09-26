@@ -1012,6 +1012,36 @@ await scenario("持续分析·悬停", async () => {
   await ctx.close();
 });
 
+// --- 18. 再试一次之后再分析，棋盘回到复盘 (Codex on #83) ------------------------
+// 精析 replacing the record ends 再试一次 — the question was the old record's.
+// The panel went, but the canvas had already drawn the attempt in that same
+// commit and nothing drew it again: the board showed Kf1 while a click acted
+// on the replay's position. What is on the canvas after the pass has to be
+// what a fresh draw of the same state gives.
+await scenario("再试一次·重新分析", async () => {
+  const pgn = '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n' +
+    '[SetUp "1"]\n[FEN "6k1/1P6/8/8/8/8/r7/6K1 w - - 0 1"]\n\n1. Kf1 Rb2 2. Ke1 Rxb7 *\n';
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, pgn);
+  await runAn(page, "#an-run", 60000);
+  await page.click('.rv-moment[data-ply="0"] .rv-mo-retry');
+  await page.waitForTimeout(200);
+  await clickMove(page, "g1", "f1");
+  const wrong = await until(() => page.evaluate(() => !!document.querySelector("#retry-box .rt-verdict.is-wrong")), 5000);
+  assert(wrong, "重新分析：再试一次里再走 Kf1，判错");
+  await runAn(page, "#an-deep", 90000);
+  await page.waitForTimeout(300);
+  const shot = () => page.evaluate(() => document.getElementById("board").toDataURL());
+  const a = await shot();
+  const gone = await page.evaluate(() => document.getElementById("retry-box").hidden);
+  await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+  await page.waitForTimeout(400);
+  const b = await shot();
+  assert(gone && a === b, "重新分析：练习框收起，棋盘上画的是复盘的局面，不是练习里走的那一步", JSON.stringify({ gone, same: a === b }));
+  assert(!errs.length, "再试一次·重新分析：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
 await browser.close();
 server.close();
 console.log("用时", ((Date.now() - T0) / 1000).toFixed(1) + "s");

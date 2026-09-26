@@ -5608,7 +5608,13 @@ import { createStore } from "./store.js";
     if (!box) return;
     let r = store.session.retry;
     // the game or its analysis changed underneath: the question is gone too
-    if (r && (analysisFor() !== r.a || inModal())) { store.session.retry = r = null; }
+    // — and the board may already have drawn the attempt in this same commit,
+    // so it draws again (Codex, #83)
+    if (r && (analysisFor() !== r.a || inModal())) {
+      store.session.retry = r = null;
+      store.game.selection = null;
+      draw();
+    }
     const key = r ? JSON.stringify([r.ply, r.verdict, r.tried, store.ui.langId]) : "";
     box.hidden = !r;
     if (box.dataset.key === key) return;
