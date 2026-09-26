@@ -335,7 +335,11 @@
       --sq-light: #f0d9b5;
       --sq-dark: #b58863;
       --sq-sel: rgba(0, 150, 0, var(--mark-mid));
-      --sq-last: rgba(0, 255, 0, var(--mark-soft));
+      /* 7.8 §6: a yellower, quieter green — over the light square C* 54.1 →
+         43.9 (Lichess's own last move, measured the same way: 52.4), hue
+         term 3.1 → 4.2 (ceiling 5), still ΔE00 18 from the bare square
+         (docs/measured.json markChroma) */
+      --sq-last: rgba(40, 200, 0, var(--mark-soft));
       --sq-check: rgba(245, 70, 55, var(--mark-mid));
       --sq-hint: rgba(5, 165, 255, var(--mark-mid));
       --sq-star: rgba(255, 219, 38, var(--mark-strong));

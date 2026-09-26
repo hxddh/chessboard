@@ -8,7 +8,7 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
 import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
-import { measureMarks, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
+import { measureMarks, markChroma, LAST_CHROMA_CEILING, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -2175,6 +2175,22 @@ for (const lang of CONTENT_LANGS) {
     const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).markHue;
     assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now),
       "docs/measured.json markHue.after is these palettes (re-run scripts/measure-marks.mjs --record)");
+  }
+  // 7.8 §6: …and not louder than it needs to be. The hue term kept the wood
+  // last-move tint one colour on both squares; over the light square that
+  // colour was a bright lime (C* 54.1 on 7.7.0). The ceiling is set against
+  // Lichess's default board measured the same way (C* 52.4 — see
+  // LAST_CHROMA_CEILING) and sits under it, so a last move reads as a tint,
+  // not as a highlighter pen. Recorded as markChroma beside markHue.
+  {
+    const now = markChroma(css2);
+    for (const b of MARK_BOARDS) {
+      assert(now[b].last <= LAST_CHROMA_CEILING,
+        b + " last move: a soft tint over the light square (C* " + now[b].last + " ≤ " + LAST_CHROMA_CEILING + ")");
+    }
+    const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).markChroma;
+    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now) && recorded.ceiling.last === LAST_CHROMA_CEILING,
+      "docs/measured.json markChroma.after is these palettes (re-run scripts/measure-marks.mjs --record)");
   }
 }
 
