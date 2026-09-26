@@ -973,6 +973,45 @@ await scenario("再试一次·持续分析与升变", async () => {
   await ctx.close();
 });
 
+// --- 17. 持续分析：指着一步时，那一行不动 (Codex on #83) -----------------------
+// The pointer on a chip shows that line on the board. A later depth used to
+// rewrite the chip under it, and the board kept the old line: the two said
+// different things until the pointer left. While a chip owns the preview its
+// line stands still, like it does under a press; the head's depth still runs.
+await scenario("持续分析·悬停", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n\n' +
+    "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 Bc5 5. c3 d6 6. O-O O-O *\n");
+  await page.click("#an-live");
+  const chip = '#live-line .pv-row[data-line="0"] .pv-chip';
+  assert(!!(await until(() => page.evaluate((s) => !!document.querySelector(s), chip), 6000, 50)), "持续分析·悬停：引擎线出来了");
+  await page.hover(chip);
+  const read = () => page.evaluate(() => {
+    const row = document.querySelector('#live-line .pv-row[data-line="0"]');
+    const head = document.querySelector("#live-line .pv-label");
+    const d = /(\d+)\s*$/.exec(head ? head.textContent : "");
+    return { sans: [...row.querySelectorAll(".pv-chip")].map((b) => b.dataset.san).join(" "),
+      depth: d ? Number(d[1]) : 0, badge: !document.getElementById("preview-badge").hidden };
+  });
+  const r0 = await read();
+  let changed = null, last = r0;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000) {
+    await page.waitForTimeout(100);
+    last = await read();
+    if (last.sans !== r0.sans && !changed) changed = last.sans;
+  }
+  assert(r0.badge && !changed, "持续分析·悬停：指着的那一行不变，棋盘上的预览和它一致", JSON.stringify({ r0, changed }));
+  assert(last.depth > r0.depth, "持续分析·悬停：深度照样往上走", r0.depth + " → " + last.depth);
+  // off the desk: the rows catch up
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(600);
+  const after = await read();
+  assert(!after.badge, "持续分析·悬停：移开之后预览撤掉", JSON.stringify(after));
+  assert(!errs.length, "持续分析·悬停：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
 await browser.close();
 server.close();
 console.log("用时", ((Date.now() - T0) / 1000).toFixed(1) + "s");

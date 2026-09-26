@@ -1481,6 +1481,14 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const pre = await page.evaluate(() => (document.querySelector("#ng-host #color-seg button.active") || {}).dataset?.color);
   assert(pre === "random", `再开对话框,预选的仍是上次的「随机」(${pre})`);
   await page.click("#ng-cancel"); await page.waitForTimeout(300);
+  // …until a side is picked in 设置 itself: that is a side, not 随机 (Codex, #83)
+  await page.click("#tab-setup"); await page.waitForTimeout(200);
+  await page.evaluate(() => document.querySelector('#color-seg button[data-color="w"]').click()); await page.waitForTimeout(200);
+  await page.click("#tab-play").catch(() => {}); await page.waitForTimeout(200);
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+  const fixed = await page.evaluate(() => (document.querySelector("#ng-host #color-seg button.active") || {}).dataset?.color);
+  assert(fixed === "w", `在设置里选了白方,新对局对话框预选白方,不再是「随机」(${fixed})`);
+  await page.click("#ng-cancel"); await page.waitForTimeout(300);
 
   // the result card's two buttons open the same dialog; 换个对手 lands on the opponent
   await page.evaluate(() => document.getElementById("go-again").click()); await page.waitForTimeout(300);

@@ -4593,7 +4593,7 @@ import { createStore } from "./store.js";
     const info = rec.info;
     const turn = info ? info.turn : (rec.fen.split(" ")[1] === "b" ? "b" : "w");
     setText(el.firstElementChild.firstElementChild, t("act.live") + " · " + t("an.depth") + " " + ((info && info.depth) || 0));
-    if (store.ui.liveHeld) return;
+    if (store.ui.liveHeld || liveOwnsPreview(el)) return;
     for (let i = 0; i < n; i++) {
       const l = info && info.lines[i];
       paintLineRow(el.children[i + 1], i, l || null, l ? sansOf(rec.fen, l.pv, 8) : [], turn);
@@ -4602,6 +4602,15 @@ import { createStore } from "./store.js";
     // when one of those changes, not on every depth
     const key = engineArrowKey(info);
     if (key !== rec.arrowKey) { rec.arrowKey = key; draw(); }
+  }
+
+  /** A chip of this desk is showing its line on the board (pointer or focus,
+      not pinned): the rows stand still until it lets go, or the board and
+      the chip under it would say different things (Codex, #83). */
+  function liveOwnsPreview(el) {
+    if (!store.ui.preview || store.ui.preview.kind !== "pv" || store.ui.previewPinned) return false;
+    const ae = document.activeElement;
+    return el.matches(":hover") || (!!ae && el.contains(ae) && ae.matches("button.pv-chip"));
   }
 
   /** The desk's head row: a label (what, and how deep) and room for an action. */
@@ -10858,7 +10867,10 @@ import { createStore } from "./store.js";
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
-    if (!b || draftPick("color", b.dataset.color) || !["w", "b"].includes(b.dataset.color) || b.dataset.color === store.session.humanColor) return;
+    if (!b || draftPick("color", b.dataset.color) || !["w", "b"].includes(b.dataset.color)) return;
+    // a side picked here is a side: 随机 from the last new game is over (Codex, #83)
+    if (store.session.colorRandom) { store.session.colorRandom = false; saveSettings(); }
+    if (b.dataset.color === store.session.humanColor) { sync(); return; }
     invalidateEngine();
     store.session.humanColor = b.dataset.color;
     store.game.flipped = store.session.humanColor === "b";
