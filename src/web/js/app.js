@@ -336,6 +336,7 @@ import { createStore } from "./store.js";
       drawOfferPending: false,
       /** 7.7 §4: the ending whose result card was put away with ✕ */
       goDismissed: null,
+      goAnnounced: null,
       /** 7.7 §4: puzzles solved clean in a row, this sitting */
       pzStreak: 0,
       _analysisTick: null,
@@ -7075,14 +7076,30 @@ import { createStore } from "./store.js";
     const card = el("go-card");
     if (!card) return;
     const end = gameEnding();
+    // An ending's ✕ and its announcement belong to that ending. The signature
+    // (plies, final FEN, result) cannot tell a replay of the same short mate
+    // from the one already put away (Codex on #82), so whenever the game is
+    // not over — every new game, undo, or load of an unfinished one passes
+    // through that — both are forgotten.
+    if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; }
     const show = !!end && store.session.goDismissed !== end.sig;
     card.hidden = !show;
     if (!show) return;
     const mode = store.session.mode;
     const mine = mode === "ai" ? store.session.humanColor : null;
-    setText(el("go-result"), !end.winner ? t("go.draw")
+    const result = !end.winner ? t("go.draw")
       : mine ? t(end.winner === mine ? "go.youWin" : "go.youLose")
-      : t(end.winner === "w" ? "go.whiteWins" : "go.blackWins"));
+      : t(end.winner === "w" ? "go.whiteWins" : "go.blackWins");
+    // The card lives in the panel. With the panel shut it is off-screen, the
+    // ending no longer toasts, and #status is for screen readers only — so a
+    // mate would pass with nothing on screen but the strips' 1 / 0 (Codex on
+    // #82). Say it once, beside the board (§1d keeps toasts off it), for a
+    // game that ended here rather than one opened already finished.
+    if (store.session.goAnnounced !== end.sig) {
+      store.session.goAnnounced = end.sig;
+      if (!isPanelOpen() && !resultFromFile()) toast(result + " · " + end.reason, "fix");
+    }
+    setText(el("go-result"), result);
     setText(el("go-reason"), end.reason);
     setText(el("go-mark"), end.token === "1/2-1/2" ? "½–½" : end.token.replace("-", "–"));
     card.classList.toggle("won", !!end.winner && (!mine || end.winner === mine));

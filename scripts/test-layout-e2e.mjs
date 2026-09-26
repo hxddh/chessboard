@@ -3472,6 +3472,25 @@ const mv = async (page, sq) => {
     const s = await cardState(page);
     assert(!s.shown && s.primaries.length === 1 && s.primaries[0] === "an-run",
       "✕ puts the card away, and 分析 in the review row is the one filled button again (" + s.primaries.join(", ") + ")");
+    // Codex on #82: the ✕ was remembered by (plies, FEN, result), so the same
+    // mate in the next game came up already dismissed
+    await page.click("#btn-new");
+    await page.waitForTimeout(300);
+    await page.click("#confirm-ok").catch(() => {});
+    await page.waitForTimeout(400);
+    for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
+    await page.waitForTimeout(500);
+    assert((await cardState(page)).shown, "the same mate in the next game gets its card again, the ✕ was for the last one");
+    await ctx.close();
+  }
+  // Codex on #82: with the panel shut the card is off-screen, and nothing else
+  // on screen said how the game ended
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 }, "0");
+    for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
+    await page.waitForTimeout(500);
+    const s = await cardState(page);
+    assert(/黑方胜/.test(s.toast) && /将杀/.test(s.toast), "面板收起时终局：棋盘旁说一次结果和原因(" + s.toast + ")");
     await ctx.close();
   }
 }
