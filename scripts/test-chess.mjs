@@ -8,6 +8,7 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
 import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
+import { measureMarks, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -1646,6 +1647,19 @@ for (const lang of CONTENT_LANGS) {
       "the board's slide reads --dur-base rather than a number of its own");
     assert(!/dur:\s*\d/.test(board), "no hard-coded animation duration left in board.js");
 
+    // 7.7 §9: a press and a keyboard focus look the same on every button. Both
+    // are declared once for all of them rather than per family — per-family is
+    // how the tabs, the move list and the toast's own buttons went without a
+    // pressed state while the action grid had one.
+    assert(/:where\(button\):active\s*\{[^}]*transform/.test(stripped),
+      "every button has a pressed state (:where(button):active)");
+    assert(/(^|\})\s*:focus-visible\s*\{[^}]*outline:\s*2px solid/.test(stripped),
+      "…and every focusable thing the one focus ring");
+    const ringOff = [...stripped.matchAll(/([^{}]*button[^{}]*:focus[^{}]*)\{([^{}]*)\}/g)]
+      .filter((m) => /outline\s*:\s*(none|0)\b/.test(m[2])).map((m) => m[1].trim());
+    assert(ringOff.length === 0,
+      "no button rule takes the ring away" + (ringOff.length ? " — " + ringOff.join(" ;; ") : ""));
+
     // …and nothing waits for a transition the stylesheet does not declare.
     // app.js carried a transitionend handler for #board-wrap's width/height
     // for several versions, with a comment explaining that the panel toggle
@@ -1691,9 +1705,11 @@ for (const lang of CONTENT_LANGS) {
   // it could not be aligned, only nudged.
   {
     assert(/--chrome-ctl-h:\s*\d+px/.test(stripped), "the chrome has one control-height token");
+    // 7.7 (v7-7-plan §2): the status pill left the bar — whose move it is is
+    // the lit player strip now, and the sentence is .sr-only — so the bar's
+    // controls are the two tools and the panel key.
     for (const sel of [/\.chrome \.tool-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
-                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
-                       /\.status-pill \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
+                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
       assert(sel.test(stripped), "…and every control in it is that height — " + sel.source.slice(0, 22));
     const chrome = /\n    \.chrome \{([\s\S]*?)\n    \}/.exec(stripped);
     assert(chrome, ".chrome is styled");
@@ -2009,8 +2025,9 @@ for (const lang of CONTENT_LANGS) {
     const KNOWN = new Map([
       ["#fff", "two white paper fills (notebook theme's own surface)"],
       ["#000", "two color-mix() darkening steps, not a paint colour"],
-      ["#9a3412", "notebook promotion mark, white side"],
-      ["#1e3a5f", "notebook promotion mark, black side"],
+      // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
+      // the match bar (7.7) — the strips draw each side as a disc in
+      // --side-white / --side-black)
       ["#4a90d9", "var(--accent) fallback, never reached"],
     ]);
     const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
@@ -2129,6 +2146,35 @@ for (const lang of CONTENT_LANGS) {
       const r = ratio(0, lum(hex));
       assert(r >= 4.5, theme + " " + which + " keeps the piece outline legible (" + r.toFixed(2) + ":1)");
     }
+  }
+
+  // 7.7 §6: a mark is one colour, whichever square it lands on. On 7.6.0 the
+  // wood last-move green composited to lime over the light square and olive
+  // over the dark one, and the selection was a second, different yellow. The
+  // measure is the hue term of CIEDE2000 between the two composites
+  // (scripts/lib/mark-colour.mjs); 7.6.0 ran to 5.7 on four marks, 7.7 to 4.6.
+  // The ceiling sits under every one of the old values, so re-tinting a mark
+  // back towards olive fails here rather than on somebody's screen. And the
+  // marks must stay apart from each other: a last-move tint that matches the
+  // selection on the same square is two marks saying one thing.
+  {
+    const HUE_CEILING = 5.0;
+    const SEP_FLOOR = 10;
+    const now = measureMarks(css2);
+    for (const b of MARK_BOARDS) {
+      for (const k of MARKS) {
+        const v = now[b].marks[k];
+        assert(v.dH <= HUE_CEILING,
+          b + " " + k + ": the same hue on the light and the dark square (ΔE00 hue term " + v.dH + " ≤ " + HUE_CEILING + ")");
+      }
+      assert(now[b].sep >= SEP_FLOOR,
+        b + ": every two marks stay apart on the same square (closest ΔE00 " + now[b].sep + ", " + now[b].sepPair + ")");
+    }
+    // …and what docs/measured.json says is what ships: a retune without a
+    // re-record is a stale number, and a stale number is worse than none
+    const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).markHue;
+    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now),
+      "docs/measured.json markHue.after is these palettes (re-run scripts/measure-marks.mjs --record)");
   }
 }
 
@@ -3968,7 +4014,9 @@ for (const lang of CONTENT_LANGS) {
     // nothing may call the raw animator except that helper — a direct call is
     // how the player's own move got animated in the first place
     const raw = [...appSrc.matchAll(/^.*BoardView\.animateMove\(.*$/gm)].map((m) => m[0].trim());
-    assert(raw.length === 1 && /animateMove\(mv\.from, mv\.to, castleRook\(mv\)\)/.test(raw[0]),
+    // (7.7 §9 added a fourth argument, the captured man who fades out under the
+    // reply; the call is still the one, in the one place)
+    assert(raw.length === 1 && /animateMove\(mv\.from, mv\.to, castleRook\(mv\), taken\)/.test(raw[0]),
       "the board animator has exactly one caller, inside animateReply" +
       (raw.length === 1 ? "" : " — extra: " + raw.join(" ;; ")));
     // and every opponent-reply site must use it
@@ -4043,7 +4091,12 @@ for (const lang of CONTENT_LANGS) {
     const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const num = (re, src) => { const m = re.exec(src); return m ? Number(m[1]) : NaN; };
     const w = num(/\.width = (\d+)/, zon), h = num(/\.height = (\d+)/, zon);
-    const side = num(/--side-w:\s*(\d+)px/, css), chrome = num(/--chrome-h:\s*(\d+)px/, css);
+    // 7.7 (v7-7-plan §1g): the panel is clamp(floor, Nvw, cap) — a function
+    // of the window — and the board's height also pays for the two player
+    // strips, so both enter the sum
+    const sw = /--side-w:\s*clamp\((\d+)px,\s*(\d+)vw,\s*(\d+)px\)/.exec(css);
+    const side = sw ? Math.min(Number(sw[3]), Math.max(Number(sw[1]), w * Number(sw[2]) / 100)) : NaN;
+    const chrome = num(/--chrome-h:\s*(\d+)px/, css) + 2 * num(/--strip-h:\s*(\d+)px/, css);
     assert([w, h, side, chrome].every(Number.isFinite),
       "read the default window (" + w + "x" + h + ") and the panel metrics (" + side + "/" + chrome + ")");
     assert(w - side >= h - chrome,
@@ -5324,8 +5377,10 @@ for (const lang of CONTENT_LANGS) {
   assert(threw === null, "draw() survives all " + shapes.length + " model shapes" + (threw ? " — " + threw : ""));
   assert(drew === shapes.length, "drew " + drew + "/" + shapes.length + " shapes");
   // the branch that shipped broken twice: prove it painted, not just that it
-  // did not throw. Two stops per check gradient, on two of the shapes.
-  assert(checkStops === 4, "the check gradient painted on both shapes that set checkSquare (" + checkStops + " stops)");
+  // did not throw. Three stops per check gradient (v7-7-plan §6: a hot core,
+  // the token's strength a third of the way out, gone by the corners) on
+  // two of the shapes.
+  assert(checkStops === 6, "the check gradient painted on both shapes that set checkSquare (" + checkStops + " stops)");
   // and prove the marks come from the theme, not from constants in the file.
   // paintPiece is excluded on purpose: the men are pure black and white on
   // every board, which is both the convention and what keeps the outline
@@ -5336,6 +5391,41 @@ for (const lang of CONTENT_LANGS) {
     + draws.slice(draws.indexOf("let dragPiece = null;"));
   const literals = marks.match(/(?:fillStyle|strokeStyle)\s*=\s*"(?:rgba?\(|#)/g) || [];
   assert(literals.length === 0, "every board mark is painted from a theme token (" + literals.length + " literal(s) left)");
+}
+
+// 7.7 (v7-7-plan §7): no emoji in the interface. Emoji are the one kind of
+// glyph each platform draws in its own house style — the same badge was a
+// glossy picture on macOS and a flat one on Windows — so the achievements,
+// the ✅ / 🎉 / 👀 / ⚠️ in the messages and the 🔒 on a locked badge were
+// replaced by the Lucide line icons in icons.js. The scan covers the markup,
+// the stylesheet and every script the page ships (i18n strings included),
+// comments stripped. The chess symbols U+2654–265F are pieces, not emoji
+// (the promotion dialog and the editor palette draw with them), and are
+// excluded — although ♟ carries the pictographic property since Emoji 11.
+// Register: what is left, per file. Empty, and it may only shrink.
+{
+  const KNOWN_EMOJI = new Map([]);
+  const web = path.join(root, "src/web");
+  const files = ["index.html", "styles.css", ...fs.readdirSync(path.join(web, "js"))
+    .filter((f) => f.endsWith(".js") && !["bundle.js", "engine-src.js"].includes(f)).map((f) => "js/" + f)];
+  const found = new Map();
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(web, f), "utf8")
+      .replace(/<!--[\s\S]*?-->/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const hits = [...src.matchAll(/\p{Extended_Pictographic}/gu)].map((m) => m[0]).filter((c) => !/[♔-♟]/u.test(c));
+    if (hits.length) found.set(f, [...new Set(hits)].join(""));
+  }
+  const fresh = [...found].filter(([f, e]) => !KNOWN_EMOJI.has(f) || [...e].some((c) => !KNOWN_EMOJI.get(f).includes(c)));
+  for (const [f, e] of fresh) console.error("  emoji in " + f + ": " + e);
+  assert(fresh.length === 0, "the interface draws no emoji" + (fresh.length ? " — " + fresh.map(([f]) => f).join(", ") : ""));
+  const gone = [...KNOWN_EMOJI.keys()].filter((f) => !found.has(f));
+  assert(gone.length === 0, "the emoji register lists no file that is already clean" + (gone.length ? " — drop " + gone.join(", ") : ""));
+  // …and every achievement names an icon that exists
+  const iconSrc = fs.readFileSync(path.join(web, "js/icons.js"), "utf8");
+  const achSrc = fs.readFileSync(path.join(web, "js/achievements.js"), "utf8");
+  const missing = [...achSrc.matchAll(/icon: "([^"]+)"/g)].map((m) => m[1])
+    .filter((n) => !iconSrc.includes("\n    " + JSON.stringify(n) + ": [["));
+  assert(missing.length === 0, "every achievement's icon is in icons.js" + (missing.length ? " — " + missing.join(", ") : ""));
 }
 
 // 5.1: the Chinese and Japanese copy uses full-width punctuation. One pass of

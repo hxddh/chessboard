@@ -298,8 +298,7 @@ const LANGS = ["zh-CN", "en", "ja"];
       await new Promise((z) => setTimeout(z, 400));
       const ch = document.querySelector(".chrome");
       const cr = ch.getBoundingClientRect();
-      const items = [document.querySelector(".status-pill"),
-                     ...document.querySelectorAll(".chrome button")]
+      const items = [...document.querySelectorAll(".chrome button")]
         .filter((e) => e && e.getBoundingClientRect().width > 0);
       const cs = getComputedStyle(ch);
       return {
@@ -330,57 +329,97 @@ const LANGS = ["zh-CN", "en", "ja"];
   }
 }
 
-// --- 3c. the match bar: the game lives in the top strip -------------------
-// Through 2.1.9 the game lived at the top of the panel — 白 / 玩家 / 已吃掉的子 /
-// 棋钟, four rows deep, in the 284px column — and closing the panel took all of
-// it away. A pill under the board (the spine) was drawn to patch that case,
-// which made two components for one job and cost the board a 30px strip.
-// Now: one row, in the 32px bar that was already reserved, drawn whether the
-// panel is open or shut. This section asks the spine's question of the bar.
+// --- 3c. the player strips: each side on its own edge of the board ---------
+// 7.7 (v7-7-plan §2). From 2.2 to 7.6 the whole match — both colours, both
+// names, both clocks, the material, the last move — was one 32px row in the
+// top bar, with whose move it was in a pill in the corner. Now each side is a
+// 40px strip on its own edge of the board: the opponent above, you below,
+// following the board when it turns; the side to move is lit (.is-active);
+// the end of the game puts 1 / 0 / ½ on them. (Through 7.6 this section
+// asked the same questions of the match bar: nothing patches the panel-shut
+// case, both players stay named with the panel shut.)
 {
   const { ctx, page } = await open("zh-CN", "pvp", "play");
   const clickSquares = async (list) => {
     for (const sq of list) {
       const pt = await page.evaluate((sqr) => {
         const c = document.getElementById("board"), r = c.getBoundingClientRect();
-        return { x: r.left + (sqr.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
-                 y: r.top + (8 - Number(sqr[1]) + 0.5) * (r.height / 8) };
+        const fl = document.getElementById("strip-w").classList.contains("at-top");
+        const f = sqr.charCodeAt(0) - 97, rk = 8 - Number(sqr[1]);
+        const co = fl ? 7 - f : f, ro = fl ? 7 - rk : rk;
+        return { x: r.left + (co + 0.5) * (r.width / 8), y: r.top + (ro + 0.5) * (r.height / 8) };
       }, sq);
       await page.mouse.click(pt.x, pt.y);
       await page.waitForTimeout(200);
     }
   };
   const read = () => page.evaluate(() => {
-    const seen = (id) => { const e = document.getElementById(id); return e && e.offsetParent ? e.textContent.trim() : null; };
-    return { bar: !!document.getElementById("vs-bar").offsetParent,
-             wRole: seen("white-role"), bRole: seen("black-role"),
-             last: seen("vs-last"), versus: seen("vs-versus"),
-             spine: !!document.getElementById("spine") };
+    const box = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right, h: b.height }; };
+    const s = (side) => {
+      const e = document.getElementById("strip-" + side);
+      return { ...box("strip-" + side), shown: !!e.offsetParent && getComputedStyle(e).visibility === "visible",
+        top: e.classList.contains("at-top"), active: e.classList.contains("is-active"),
+        name: document.getElementById(side === "w" ? "white-role" : "black-role").textContent.trim(),
+        result: (() => { const r = document.getElementById("result-" + side); return r.hidden ? null : r.textContent.trim(); })() };
+    };
+    return { w: s("w"), b: s("b"), board: box("board-wrap"),
+             status: document.getElementById("status").textContent.trim(),
+             statusSr: getComputedStyle(document.getElementById("status")).clip !== "auto",
+             spine: !!document.getElementById("spine"), bar: !!document.getElementById("vs-bar") };
   });
   const fresh = await read();
-  assert(!fresh.spine, "the spine is gone — nothing under the board patches the panel-shut case now");
-  assert(fresh.versus && !fresh.last, "before the first move the middle of the bar says 对");
-  await clickSquares(["e2", "e4", "e7", "e5"]);
+  assert(!fresh.spine && !fresh.bar, "no spine, no match bar in the chrome — the strips hold the match");
+  assert(fresh.w.shown && fresh.b.shown, "two strips, both drawn");
+  assert(!fresh.w.top && fresh.b.top, "White (the side at the bottom of an unflipped board) has the bottom strip");
+  assert(Math.abs(fresh.b.b - fresh.board.t) <= 1 && Math.abs(fresh.w.t - fresh.board.b) <= 1,
+    "…and they hug the board's top and bottom edges (" + [fresh.b.b, fresh.board.t, fresh.w.t, fresh.board.b].map(Math.round).join(" / ") + ")");
+  assert(fresh.w.h === 40 && fresh.b.h === 40, "…40px each (" + fresh.w.h + " / " + fresh.b.h + ")");
+  assert(fresh.w.name === "玩家 1" && fresh.b.name === "玩家 2", "two players are both named (" + fresh.w.name + " / " + fresh.b.name + ")");
+  assert(fresh.w.active && !fresh.b.active, "the side to move is the lit one — White before the first move");
+  assert(fresh.status.length > 0 && fresh.statusSr, "the whose-move sentence is still there for a screen reader, and only for one (" + fresh.status + ")");
+  await clickSquares(["f2", "f3"]);
   const played = await read();
-  assert(played.last === "1… e5", "…and from then on it is the move just played (" + played.last + ")");
-  assert(!played.versus, "……instead of 对, not beside it: one slot, one meaning");
+  assert(played.b.active && !played.w.active, "…and after 1.f3 it is Black's strip that is lit");
 
   await page.click("#toggle-panel");
   await page.waitForTimeout(400);
   const shut = await read();
-  assert(shut.bar, "shutting the panel does not take the match away");
-  assert(shut.wRole && shut.bRole, "…both players are still named (" + shut.wRole + " / " + shut.bRole + ")");
-  assert(shut.last === "1… e5", "…and the last move is still there (" + shut.last + ")");
-  const pill = await page.evaluate(() => document.querySelector(".status-pill").textContent.trim());
-  assert(pill.length > 0, "…and whose move it is, in the pill beside it — " + pill);
+  assert(shut.w.shown && shut.b.shown && shut.w.name && shut.b.name,
+    "shutting the panel does not take the players away (" + shut.w.name + " / " + shut.b.name + ")");
+  // F turns the board and the strips go with it
+  await page.keyboard.press("f");
+  await page.waitForTimeout(300);
+  const flipped = await read();
+  assert(flipped.w.top && !flipped.b.top, "a flipped board carries the strips round: White is above now");
+  assert(Math.abs(flipped.w.b - flipped.board.t) <= 1, "…still hugging the edge it moved to");
+  await page.keyboard.press("f");
+  await page.waitForTimeout(300);
+  // Fool's mate: the result goes on the strips, and nobody is lit any more
+  await clickSquares(["e7", "e5", "g2", "g4", "d8", "h4"]);
+  await page.waitForTimeout(400);
+  const over = await read();
+  assert(over.w.result === "0" && over.b.result === "1", "checkmate writes the score on the strips (" + over.w.result + " / " + over.b.result + ")");
+  assert(!over.w.active && !over.b.active, "…and neither side is lit once the game is over");
   await ctx.close();
 }
 
-// --- 3c2. the clocks are in the bar, and the running one is the lit one ----
-// They were `.vs-clock` inside the panel and they still are — the same two
-// elements, moved. What is new is that a timed game with the panel shut used
-// to show them as "3:00 · 2:58" in the spine, one string, neither side named
-// and neither marked as running.
+// the persona's icon on the engine's strip, and the imported names (7.6) on
+// a loaded game's
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  const r = await page.evaluate(() => ({
+    bName: document.getElementById("black-role").textContent.trim(),
+    bLevel: document.getElementById("black-level").textContent.trim(),
+    bIcon: (document.querySelector("#av-b svg") || {}).dataset?.icon,
+    wIcon: (document.querySelector("#av-w svg") || {}).dataset?.icon,
+    wName: document.getElementById("white-role").textContent.trim(),
+  }));
+  assert(r.bName === "Stockfish" && r.bLevel.length > 0, "the engine's strip names it and its level (" + r.bName + " · " + r.bLevel + ")");
+  assert(r.bIcon === "bot" && r.wIcon === "user", "…with the sparring style's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
+  await ctx.close();
+}
+
+// --- 3c2. the clocks are blocks on the strips, and the running one is lit --
 {
   const { ctx, page } = await open("zh-CN", "pvp", "setup");
   await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
@@ -389,32 +428,28 @@ const LANGS = ["zh-CN", "en", "ja"];
   await page.waitForTimeout(400);
   const c = await page.evaluate(() => {
     const w = document.getElementById("clock-w"), b = document.getElementById("clock-b");
-    const bar = document.getElementById("vs-bar");
-    return { inBar: bar.contains(w) && bar.contains(b),
+    const sw = document.getElementById("strip-w"), sb = document.getElementById("strip-b");
+    const rw = w.getBoundingClientRect(), rs = sw.getBoundingClientRect();
+    return { inStrips: sw.contains(w) && sb.contains(b),
+             right: Math.round(rs.right - rw.right),
              shown: !!w.offsetParent && !!b.offsetParent,
              w: w.textContent.trim(), b: b.textContent.trim(),
              active: [w, b].filter((e) => e.classList.contains("active")).map((e) => e.id) };
   });
-  assert(c.inBar, "both clocks are in the match bar");
+  assert(c.inStrips, "each clock is on its own side's strip");
+  assert(c.right <= 4, "…right-aligned, at the strip's end (" + c.right + "px in)");
   assert(c.shown, "…and a timed game shows them");
   assert(c.w === "3:00" && c.b === "3:00", "…set to the control just chosen (" + c.w + " / " + c.b + ")");
-  // Nothing is lit yet, and that is right: the clock does not start until the
-  // first move is on the board (renderClocks lights `clockRunning() ?
-  // game.turn() : null`). Asserting 白 was lit here is what this section did
-  // first, and it went red against a correct app.
+  // Nothing is lit yet: the clock does not start until the board is touched.
   assert(c.active.length === 0, "…and neither is running before the first move (" + c.active.join(", ") + ")");
-  const pt = await page.evaluate((sqr) => {
-    const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
-    return { x: r.left + (sqr.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
-             y: r.top + (8 - Number(sqr[1]) + 0.5) * (r.height / 8) };
-  }, "e2");
-  await page.mouse.click(pt.x, pt.y);
-  const pt2 = await page.evaluate((sqr) => {
-    const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
-    return { x: r.left + (sqr.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
-             y: r.top + (8 - Number(sqr[1]) + 0.5) * (r.height / 8) };
-  }, "e4");
-  await page.mouse.click(pt2.x, pt2.y);
+  for (const sq of ["e2", "e4"]) {
+    const pt = await page.evaluate((sqr) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      return { x: r.left + (sqr.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+               y: r.top + (8 - Number(sqr[1]) + 0.5) * (r.height / 8) };
+    }, sq);
+    await page.mouse.click(pt.x, pt.y);
+  }
   await page.waitForTimeout(500);
   const after = await page.evaluate(() => ["clock-w", "clock-b"]
     .filter((id) => document.getElementById(id).classList.contains("active")));
@@ -423,54 +458,42 @@ const LANGS = ["zh-CN", "en", "ja"];
   await ctx.close();
 }
 
-// --- 3c3. the bar fits, in three languages at three window sizes -----------
-// A row that holds the two names, the two personas, the two clocks and both
-// captured-piece strips is the widest thing this bar has ever carried, in a
-// strip that also holds a status pill and three tools. So it sheds: the
-// personas at 1099, the captures and the middle at 819 — and what is left at
-// the narrowest window app.zon allows is the two colours, whose move it is and
-// the two clocks. The failure this guards against is silent in a screenshot
-// and loud in use: the bar overflowing pushes the tools off the right edge.
+// --- 3c3. the strips fit, in three languages at three window sizes ---------
+// The widest a strip gets is an engine game with a persona, a clock and a
+// row of captures. What must never happen: the strip running past the board
+// it belongs to, or the clock being pushed off it.
 for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup", "wood", { width: w, height: h });
     await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
     await page.waitForTimeout(200);
+    await page.click('#persona-seg button[data-persona="principled"]');
     await page.click('#clock-seg button[data-tc="3+2"]');
     await page.waitForTimeout(350);
-    // At 820 and below the panel overlays the bar rather than making room for
-    // it, and the bar is not drawn under a modal panel — so the state to
-    // measure at the narrow end is the one it is drawn in: panel shut.
     if (w <= 820) { await page.keyboard.press("p"); await page.waitForTimeout(400); }
     const r = await page.evaluate(() => {
       const ch = document.querySelector(".chrome");
-      const box = (sel) => { const e = document.querySelector(sel); const b = e.getBoundingClientRect();
-        return { l: Math.round(b.left), r: Math.round(b.right), h: Math.round(b.height) }; };
-      const bar = box("#vs-bar"), pill = box(".status-pill"), act = box(".chrome-actions");
-      const on = (id) => { const e = document.getElementById(id); return !!(e && e.offsetParent); };
-      return { over: ch.scrollWidth - ch.clientWidth, bar, pill, act, chromeH: Math.round(ch.getBoundingClientRect().height),
-               role: on("white-role"), taken: !!document.querySelector("#taken-w"),
-               mid: !!document.querySelector(".vs-mid") && !!document.querySelector(".vs-mid").offsetParent,
-               name: on("clock-w") };
+      const wrap = document.getElementById("board-wrap").getBoundingClientRect();
+      const one = (side) => {
+        const s = document.getElementById("strip-" + side), b = s.getBoundingClientRect();
+        const clk = document.getElementById("clock-" + side).getBoundingClientRect();
+        return { over: s.scrollWidth - s.clientWidth, l: b.left, r: b.right, clkR: clk.right, clkW: clk.width,
+                 inView: b.top >= 0 && b.bottom <= innerHeight };
+      };
+      return { chromeOver: ch.scrollWidth - ch.clientWidth, wrap: { l: wrap.left, r: wrap.right }, w: one("w"), b: one("b") };
     });
     const at = lang + " " + w + "x" + h + ": ";
-    assert(r.over <= 0, at + "顶栏没有被撑破(溢出 " + r.over + "px)");
-    assert(r.bar.l >= r.pill.r, at + "比赛条没有压到状态条(" + r.bar.l + " vs " + r.pill.r + ")");
-    assert(r.bar.r <= r.act.l, at + "……也没有压到工具组(" + r.bar.r + " vs " + r.act.l + ")");
-    assert(r.bar.h <= r.chromeH, at + "……而且是一行(" + r.bar.h + " of " + r.chromeH + ")");
-    assert(r.name, at + "无论多窄,棋钟都还在");
-    assert(r.role === (w >= 1100), at + "对手名字在 1100 以上才画(" + r.role + ")");
-    assert(r.mid === (w > 820), at + "中间那一格在 820 以上才画(" + r.mid + ")");
-    if (w <= 820) {
-      await page.keyboard.press("p");        // and back open: the panel is modal here
-      await page.waitForTimeout(400);
-      const under = await page.evaluate(() => !!document.getElementById("vs-bar").offsetParent);
-      assert(!under, at + "面板盖上来的时候,比赛条不画 —— 不留半个名字在面板边上");
+    assert(r.chromeOver <= 0, at + "顶栏没有被撑破(溢出 " + r.chromeOver + "px)");
+    for (const side of ["w", "b"]) {
+      const s = r[side];
+      assert(s.over <= 0, at + side + " 对阵条没有溢出(" + s.over + "px)");
+      assert(s.l >= r.wrap.l - 1 && s.r <= r.wrap.r + 1, at + side + " 对阵条不超出棋盘宽度");
+      assert(s.clkW > 0 && s.clkR <= s.r + 1, at + side + " 棋钟在条内(" + Math.round(s.clkR) + " ≤ " + Math.round(s.r) + ")");
+      assert(s.inView, at + side + " 对阵条在窗口里");
     }
     await ctx.close();
   }
 }
-
 // --- 3d. no visible control is disabled -----------------------------------
 // P3's acceptance criterion, and P3.3's whole content. At 0 moves twelve
 // visible controls were explicitly disabled — take back, the five replay keys,
@@ -525,6 +548,10 @@ for (const [when, mode, setup] of [
       if (!b.disabled) continue;
       if (!b.offsetParent && getComputedStyle(b).position !== "fixed") continue; // not rendered
       if (b.closest(".modal-bg")) continue;                                      // a dialog's own controls
+      // 7.7 (v7-7-plan §1f): the four transport keys are always drawn and the
+      // ones that lead nowhere are disabled in place — their positions are
+      // what they mean, so a missing key reshapes the control
+      if (b.closest("#replay-seg")) continue;
       out.push(b.id || b.textContent.trim().slice(0, 12) || b.className);
     }
     return out;
@@ -707,8 +734,9 @@ for (const [when, mode, setup] of [
   assert(await view() === "b", "……再退一手,还是不动");
   assert(await page.evaluate(() => window.__writes()) === 0,
     "……而且这两步没有写设置(此前每翻一次就存一次盘)");
-  await page.click("#rep-live"); await page.waitForTimeout(500);
-  assert(await view() === "b", "按 ● 回到实战位置,棋盘仍朝着该走子的一方");
+  // 7.7: ● (回到最新) did what » does, and is gone; » is the way back
+  await page.click("#rep-end"); await page.waitForTimeout(500);
+  assert(await view() === "b", "按 » 回到实战位置,棋盘仍朝着该走子的一方");
   await ctx.close();
 }
 
@@ -1152,7 +1180,10 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const w = await page.evaluate(() => Math.round(document.getElementById("side").getBoundingClientRect().width));
-  assert(w <= 300, "…and the playing layout is exactly where it was (" + w + "px)");
+  // 7.7 (v7-7-plan §1g): through 7.6 the playing page kept a 284px column
+  // and only the reading modes widened — which slid the board sideways on
+  // every mode change. One width now, for every page, from the window alone.
+  assert(w >= 340, "…and the playing page has the same column: the width follows the window, not the mode (" + w + "px)");
   await ctx.close();
 }
 
@@ -1348,8 +1379,12 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 }
 
 // --- 3s. the transport keys are one control -------------------------------
-// «  ‹  ●  ›  »  — five keys whose positions relative to each other are what
-// they mean, and which come and go with the replay position. Under `flex: 1`
+// 7.7 (v7-7-plan §1f): «  ‹  ›  » — four keys, always on screen; the ones that
+// lead nowhere are disabled in place. Through 7.6 there were five (● did what
+// » does) and the unavailable ones held their slot invisibly, so at the last
+// move the row lost its two right-hand keys. Their positions relative to
+// each other are what they mean, and they come and go with the replay
+// position. Under `flex: 1`
 // that meant two visible keys took 97px each and five took 37: press ‹ once at
 // the live position and every key snapped to a third of its width while ‹
 // itself jumped 61px left, out from under the pointer about to press it again.
@@ -1361,7 +1396,9 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       id: b.id,
       l: Math.round(b.getBoundingClientRect().left),
       w: Math.round(b.getBoundingClientRect().width),
-      shown: getComputedStyle(b).visibility === "visible",
+      shown: getComputedStyle(b).visibility === "visible" && !!b.offsetParent,
+      off: b.disabled,
+      icon: !!b.querySelector("svg.ic") && b.textContent.trim() === "",
     })));
   const clickSquares = async (list) => {
     for (const sq of list) {
@@ -1379,7 +1416,8 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   await page.click("#rep-prev");
   await page.waitForTimeout(400);
   const backOne = await bar();
-  assert(atLive.length === 5 && backOne.length === 5, "five transport keys");
+  assert(atLive.length === 4 && backOne.length === 4, "four transport keys (" + atLive.map((b) => b.id).join(", ") + ")");
+  assert(atLive.every((b) => b.icon), "…drawn as icons, not as « ‹ › » characters");
   const widths = [...new Set(atLive.concat(backOne).map((b) => b.w))];
   assert(widths.length === 1,
     "every transport key is the same width in every state (" + widths.join(", ") + ")");
@@ -1389,8 +1427,13 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   });
   assert(moved.length === 0,
     "…and stepping back moves none of them (" + moved.map((m) => m.id).join(", ") + ")");
-  assert(atLive.filter((b) => b.shown).length < 5 && backOne.every((b) => b.shown),
-    "…while still only offering the ones that lead somewhere");
+  assert(atLive.every((b) => b.shown) && backOne.every((b) => b.shown),
+    "…all four visible at the last move and one back");
+  assert(JSON.stringify(atLive.map((b) => b.off)) === "[false,false,true,true]" && backOne.every((b) => !b.off),
+    "…and the ones that lead nowhere are disabled, not hidden (" + atLive.map((b) => b.id + ":" + b.off).join(" ") + ")");
+  // no trailing 「…」 after the last move: the menu handle is an icon now
+  const dots = await page.evaluate(() => [...document.querySelectorAll("#move-list *")].filter((e) => e.childElementCount === 0 && e.textContent.trim() === "…").length);
+  assert(dots === 0, "the notation does not end in a literal 「…」 (" + dots + ")");
   // one number, one place: the chip that repeated the 棋谱 heading's count is gone
   const counters = await page.evaluate(() => document.querySelectorAll("#replay-seg #moves").length);
   assert(counters === 0, "the replay bar does not repeat the move counter above it");
@@ -1740,8 +1783,9 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
         const px = (el) => (el ? parseFloat(getComputedStyle(el).fontSize) : 0);
         const wt = (el) => (el ? Number(getComputedStyle(el).fontWeight) : 0);
         const pill = document.getElementById("status");
-        const name = document.querySelector(".vs-name");
-        const role = document.querySelector(".vs-role");
+        // 7.7: the names are on the player strips now (.ps-name / .ps-level)
+        const name = document.querySelector("#strip-b .ps-name");
+        const role = [...document.querySelectorAll("#strip-b .ps-level")].find((e) => e.textContent.trim());
         const panel = document.querySelector(".side [id$='-task'], .side .task, #puzzle-task, #lesson-task");
         return {
           pill: (pill || {}).textContent || "", pillPx: px(pill), pillWt: wt(pill),
@@ -1749,12 +1793,10 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
           panelFirst: panel ? (panel.textContent || "").trim() : "",
         };
       });
-      assert(seen.pillPx > 0, lang + "/" + mode + ":顶栏有状态药丸 (" + seen.pillPx + "px)");
-      if (seen.namePx > 0) {
-        assert(seen.pillPx > seen.namePx || (seen.pillPx === seen.namePx && seen.pillWt >= seen.nameWt),
-          lang + "/" + mode + ":谁在走比对手名字重 (" + seen.pillPx + "/" + seen.pillWt +
-          " vs " + seen.namePx + "/" + seen.nameWt + ")");
-      }
+      // 7.7 (v7-7-plan §2): the status sentence is for a screen reader now —
+      // whose move it is shows as the lit strip — so the weight contest
+      // between the pill and the names is over; the sentence must still exist
+      assert(seen.pill.trim().length > 0, lang + "/" + mode + ":状态句还在(读屏用)「" + seen.pill + "」");
       if (seen.rolePx > 0 && seen.namePx > 0) {
         assert(seen.namePx >= seen.rolePx,
           lang + "/" + mode + ":名字不比它的说明小 (" + seen.namePx + " vs " + seen.rolePx + ")");
@@ -1775,13 +1817,13 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   }
 }
 
-// --- 3u5. on a reading page the reading gets the room ---------------------
-// 7.3 §4E. Measured at 1400x900 on the 记录 tab: 856px of board — 54% of the
-// window, holding a position nobody was playing — against a 239px column
-// carrying the statistics, the history, the diagnosis and the book. This is
-// the one structural trade this version makes, so it is asserted on both
-// sides: the reading page gets at least 520px of content, and the playing
-// page's board does not move by a pixel when you come back to it.
+// --- 3u5. on a reading page the reading gets the room — by the window -----
+// 7.3 §4E widened the 记录 tab to 568px from 1180px up (521px of content) and
+// asserted the board gave way for it. 7.7 (v7-7-plan §1g) takes that back:
+// the price was paid by the board moving — its left edge went from 150 to 8
+// at 1440×900 whenever you glanced at your records. The column is now one
+// function of the window, 30vw, wide enough for the records at the sizes
+// where they had been widened, and the same on every tab.
 {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const boardOn = async (tab) => page.evaluate(async (t) => {
@@ -1791,31 +1833,23 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     const b = document.getElementById("board-wrap").getBoundingClientRect();
     const pane = document.getElementById("pane-" + t);
     const p = pane ? pane.getBoundingClientRect() : { width: 0 };
-    return { board: Math.round(b.width), content: Math.round(p.width) };
+    return { board: Math.round(b.width), left: Math.round(b.left), content: Math.round(p.width) };
   }, tab);
-
   const play1 = await boardOn("play");
   const rec = await boardOn("record");
   const play2 = await boardOn("play");
-  assert(rec.content >= 520,
-    "1400×900 记录页内容区 " + rec.content + "px ≥ 520px");
-  assert(play2.board === play1.board,
-    "切回对局页棋盘一个像素都没动 (" + play1.board + " → " + rec.board + " → " + play2.board + ")");
-  assert(rec.board < play1.board,
-    "……而记录页是真的让了位 (" + rec.board + " < " + play1.board + ")");
+  assert(rec.content >= 360, "1400×900 记录页内容区 " + rec.content + "px ≥ 360px");
+  assert(play1.board === rec.board && play1.left === rec.left && play2.left === play1.left,
+    "看一眼记录页,棋盘一个像素都没动 (" + play1.left + " → " + rec.left + " → " + play2.left + ")");
   await ctx.close();
 }
-// 而窄窗不付这笔账:1180px 以下面板还是原来的宽度,棋盘还是原来的大小
 {
   const { ctx, page } = await open("zh-CN", "ai", "record", "wood", { width: 1024, height: 700 });
   const w = await page.evaluate(() =>
     Math.round(document.querySelector(".side").getBoundingClientRect().width));
-  assert(w < 400, "1024×700 记录页面板没有变宽 (" + w + "px)");
+  assert(w >= 284 && w < 400, "1024×700 记录页面板在 284 的下限之上,不越界变宽 (" + w + "px)");
   await ctx.close();
 }
-// 7.4 §5：做题页不再拿这笔宽度。1400×900 放宽到 568 之后，这一栏只有题面和
-// 一排题型按钮，下半截是空的，棋盘却为它缩了。做题页回到阅读栏的 380px，
-// 棋盘与教学页一样大；记录页照旧放宽（上面那组）。
 {
   const at = async (mode) => {
     const { ctx, page } = await open("zh-CN", mode, "play");
@@ -1825,10 +1859,11 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     await ctx.close();
     return r;
   };
-  const pz = await at("puzzle"), learn = await at("learn");
-  assert(pz.side < 400, "1400×900 做题页面板是阅读栏的宽度，不是记录页那 568 (" + pz.side + "px)");
-  assert(pz.board === learn.board,
-    "……所以做题页的棋盘和教学页一样大 (" + pz.board + " / " + learn.board + ")");
+  const pz = await at("puzzle"), learn = await at("learn"), ai = await at("ai");
+  assert(pz.side === learn.side && learn.side === ai.side,
+    "1400×900 做题、教学、对局三页的面板一样宽 (" + [pz.side, learn.side, ai.side].join(" / ") + ")");
+  assert(pz.board === learn.board && learn.board === ai.board,
+    "……所以三页的棋盘一样大 (" + [pz.board, learn.board, ai.board].join(" / ") + ")");
 }
 
 // --- 3v. a dialog is called what it says it is ----------------------------
@@ -1935,17 +1970,18 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // --- 5. a lesson with no opponent draws no opponent ------------------------
 {
   const { ctx, page } = await open("zh-CN", "learn", "play");
+  // 7.7: the opponent's strip keeps its place (the board must not move
+  // between modes) and draws nothing in it
   const vs = await page.evaluate(() => {
-    const bar = document.getElementById("vs-bar");
-    const right = bar.querySelector(".vs-right");
+    const top = document.getElementById("strip-b");
     return {
-      solo: bar.classList.contains("solo"),
-      rightShown: !!right.offsetParent,
+      empty: top.classList.contains("is-empty"),
+      shown: getComputedStyle(top).visibility === "visible",
       role: document.getElementById("black-role").textContent.trim(),
     };
   });
-  assert(vs.solo, "lesson 1 has no sparring partner, so the bar is in solo mode");
-  assert(!vs.rightShown, "…and the opponent half is not drawn at all");
+  assert(vs.empty, "lesson 1 has no sparring partner, so the opponent's strip is empty");
+  assert(!vs.shown, "…and it is not drawn at all");
   assert(vs.role !== "—", "…rather than drawn with an em dash for a name");
   await ctx.close();
 }
@@ -2316,11 +2352,14 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     const r = await page.evaluate(() => {
       const app = document.getElementById("app");
       const wrap = document.getElementById("board-wrap").getBoundingClientRect();
-      const pad = parseFloat(getComputedStyle(app).getPropertyValue("--stage-pad")) || 6;
+      // 7.7: below the board is the player's own strip (--strip-h) and the
+      // vertical pad (--stage-pad-y) — both are the layout, not a spine
+      const cs = getComputedStyle(app);
+      const pad = (parseFloat(cs.getPropertyValue("--strip-h")) || 0) + (parseFloat(cs.getPropertyValue("--stage-pad-y")) || 0);
       return { shut: !app.classList.contains("panel-open"),
                bottom: Math.round(wrap.bottom), board: Math.round(wrap.width),
                pad: Math.round(pad), vh: innerHeight,
-               heightBound: Math.round(wrap.width) <= innerWidth - 2 * pad - 1 };
+               heightBound: Math.round(wrap.width) <= innerWidth - 2 * (parseFloat(cs.getPropertyValue("--stage-pad")) || 6) - 1 };
     });
     assert(r.shut, w + "x" + h + ": the panel is shut");
     assert(r.bottom <= r.vh, w + "x" + h + ": the board ends inside the window (" + r.bottom + " of " + r.vh + ")");
@@ -2580,6 +2619,17 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // 「认输」和「PGN」看起来同样可点。这一节量的就是这两件事。
 for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"], ["ja", "ai", "setup"]]) {
   const { ctx, page } = await open(lang, mode, tab);
+  // 7.7 §3: at 0 moves the play pane has no action buttons left to measure —
+  // the tools became an icon row and 本局 waits for a game — so play one.
+  if (tab === "play") {
+    for (const sq of ["e2", "e4"]) {
+      const p = await page.evaluate((s) => { const r = document.getElementById("board").getBoundingClientRect();
+        const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+        return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) }; }, sq);
+      await page.mouse.click(p.x, p.y); await page.waitForTimeout(140);
+    }
+    await page.waitForTimeout(400);
+  }
   const shape = await page.evaluate(() => {
     const vis = (e) => { const b = e.getBoundingClientRect();
       return e.offsetParent !== null && b.width > 0 && b.height > 0; };
@@ -2633,8 +2683,11 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
   await play("g2", "g4"); await play("d8", "h4");   // 愚人将杀
   await page.waitForTimeout(600);
   const after = await primaries();
-  assert(JSON.stringify(after) === '["an-run"]',
-    `这局下完了,「分析」成为唯一的主按钮(实际 ${JSON.stringify(after)})`);
+  // 7.7 §4: the one to press now sits on the result card (分析这盘); the review
+  // row's 分析 takes the fill back once the card is put away — the §4 block
+  // near the end of this file checks that half.
+  assert(JSON.stringify(after) === '["go-analyse"]',
+    `这局下完了,结果卡上的「分析这盘」成为唯一的主按钮(实际 ${JSON.stringify(after)})`);
   await ctx.close();
 }
 
@@ -2892,49 +2945,34 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
     return { ctx, page };
   };
 
-  // 不计时:上一手素装,轮次由药丸和轮方旁边的「行」说 —— 各说一次
+  // 7.7 (v7-7-plan §2): the last move is the board's two highlighted squares
+  // and the notation's current move — the bar's middle slot that repeated it
+  // is gone with the bar. Whose move it is is said once, by the lit strip: in
+  // an untimed game the side's disc takes the accent ring, in a timed one
+  // the running clock is lit as well, on the same strip.
   {
     const { ctx, page } = await openTc("off");
-    const m = await page.evaluate(() => {
-      const lum = (c) => {
-        const v = c.match(/[\d.]+/g).map(Number);
-        const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
-        return 0.2126 * f(v[0]) + 0.7152 * f(v[1]) + 0.0722 * f(v[2]);
-      };
-      const bg = lum(getComputedStyle(document.body).backgroundColor);
-      const ratio = (el) => {
-        const l = lum(getComputedStyle(el).color);
-        return (Math.max(l, bg) + 0.05) / (Math.min(l, bg) + 0.05);
-      };
-      const last = document.getElementById("vs-last");
-      const cs = getComputedStyle(last);
-      return {
-        lastText: last.textContent.trim(),
-        plateless: cs.backgroundColor === "rgba(0, 0, 0, 0)" && cs.borderStyle === "none",
-        sameInkAsRole: cs.color === getComputedStyle(document.getElementById("white-role")).color,
-        lastVsStatus: ratio(last) < ratio(document.getElementById("status")),
-        badgeW: !document.getElementById("white-turn").hidden,
-        badgeB: !document.getElementById("black-turn").hidden,
-        clocksHidden: document.getElementById("clock-w").hidden && document.getElementById("clock-b").hidden,
-      };
-    });
-    assert(m.lastText === "1. e4", "上一手在中间槽里(" + m.lastText + ")");
-    assert(m.plateless, "……但不再是药丸:无底、无框");
-    assert(m.sameInkAsRole, "……墨色和「玩家 1」同级 —— 最短命的事实穿最素的衣");
-    assert(m.lastVsStatus, "……于是状态药丸重新成为栏里最响的文字 —— 它说的才是棋盘没说的事");
-    assert(m.clocksHidden && !m.badgeW && m.badgeB, "不计时局:钟不画,「行」只亮在轮到的那一方旁");
+    const m = await page.evaluate(() => ({
+      lastSlot: !!document.getElementById("vs-last"),
+      activeB: document.getElementById("strip-b").classList.contains("is-active"),
+      activeW: document.getElementById("strip-w").classList.contains("is-active"),
+      ring: getComputedStyle(document.getElementById("av-b")).boxShadow !== "none",
+      clocksHidden: document.getElementById("clock-w").hidden && document.getElementById("clock-b").hidden,
+    }));
+    assert(!m.lastSlot, "上一手不再在顶栏里重复一遍(棋盘高亮和棋谱已经说了)");
+    assert(m.activeB && !m.activeW && m.ring, "不计时局:轮到的黑方那条亮起(圆标带强调色描边)");
+    assert(m.clocksHidden, "……钟不画");
     await ctx.close();
   }
-  // 计时局:钟的亮暗已经在说轮次,徽章退场 —— 每个事实只有一个说法在动
   {
     const { ctx, page } = await openTc("3+2");
     const m = await page.evaluate(() => ({
       clocksShown: !document.getElementById("clock-w").hidden && !document.getElementById("clock-b").hidden,
-      badgesGone: document.getElementById("white-turn").hidden && document.getElementById("black-turn").hidden,
+      stripB: document.getElementById("strip-b").classList.contains("is-active"),
       activeIsBlack: document.getElementById("clock-b").classList.contains("active") &&
         !document.getElementById("clock-w").classList.contains("active"),
     }));
-    assert(m.clocksShown && m.badgesGone, "计时局:钟在,「行」退场 —— 轮次不再被说第三遍");
+    assert(m.clocksShown && m.stripB, "计时局:钟在,轮到的黑方那条亮着");
     assert(m.activeIsBlack, "……走表的那侧钟亮着,正是轮到的黑方");
     await ctx.close();
   }
@@ -3251,6 +3289,468 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
     "切到英文后，着法菜单按钮的 title 与 aria-label 都是英文（" + zh + " → " + JSON.stringify(en) + "）");
   await ctx.close();
 }
+
+/** click one square, the way a person does (7.7's sections below) */
+const mv = async (page, sq) => {
+  const pt = await page.evaluate((s) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+             y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
+  }, sq);
+  await page.mouse.click(pt.x, pt.y);
+  await page.waitForTimeout(180);
+};
+
+// --- 7.7 (v7-7-plan §1g, §1h, §2): the board is the anchor -----------------
+// Through 7.6 the panel's width followed its page (284 / 380 / 568), so the
+// board slid sideways when a tab was switched: at 1440×900 its frame's left
+// edge was 150 on 对局, 8 on 记录 and 102 in 教学 / 做题. Now the panel is a
+// function of the window alone, and the board's rect is the same to the pixel
+// on every tab and in every mode. The strips cost the board some height; the
+// floor is 88% of 7.6's side (canvas 822 at 1440×900, 722 at 1280×800, 622 at
+// 1024×700 — measured on main 75a3560).
+{
+  const OLD = { "1440x900": 822, "1280x800": 722, "1024x700": 622 };
+  for (const [w, h] of [[1440, 900], [1280, 800], [1024, 700]]) {
+    const rects = new Map();
+    let tabsTop = null;
+    for (const [mode, tab] of [["ai", "play"], ["ai", "setup"], ["ai", "record"], ["pvp", "play"], ["learn", "play"], ["puzzle", "play"], ["puzzle", "record"]]) {
+      const { ctx, page } = await open("zh-CN", mode, tab, "wood", { width: w, height: h });
+      const r = await page.evaluate(() => {
+        const b = document.getElementById("board").getBoundingClientRect();
+        const t = document.querySelector('.side-tabs [role="tab"]').getBoundingClientRect();
+        return { board: [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 10) / 10), tabTop: t.top };
+      });
+      rects.set(mode + "/" + tab, JSON.stringify(r.board));
+      if (tabsTop === null) tabsTop = r.tabTop;
+      await ctx.close();
+    }
+    const distinct = [...new Set(rects.values())];
+    assert(distinct.length === 1, w + "x" + h + ": #board 在三个页签、四种模式下逐像素相同(" +
+      [...rects].map(([k, v]) => k + " " + v).join(" · ") + ")");
+    const side = JSON.parse(distinct[0])[2];
+    const old = OLD[w + "x" + h];
+    assert(side >= 0.88 * old, w + "x" + h + ": 棋盘边长 " + side + " ≥ 7.6 的 88%(" + old + " → " + Math.round(side / old * 1000) / 10 + "%)");
+    assert(tabsTop <= 12, w + "x" + h + ": 侧栏页签贴顶(上缘 " + tabsTop + "px)");
+  }
+}
+
+// --- 7.7 (v7-7-plan §10): portrait, the strips stay with the board ---------
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play", "wood", { width: 600, height: 900 });
+  const r = await page.evaluate(() => {
+    const box = (id) => document.getElementById(id).getBoundingClientRect();
+    return { top: box("strip-b").top, bottom: box("strip-w").bottom, side: box("side").top,
+             open: document.getElementById("app").classList.contains("panel-open") };
+  });
+  assert(r.open, "600x900: the drawer is up");
+  assert(r.top >= 0 && r.bottom <= r.side + 1,
+    "600x900: 两条对阵条和棋盘一起在抽屉上方(条底 " + Math.round(r.bottom) + " ≤ 抽屉顶 " + Math.round(r.side) + ")");
+  await ctx.close();
+}
+
+// --- 7.7 (v7-7-plan §3): mid-game the notation is what the panel is for ---
+{
+  const { ctx, page } = await open("zh-CN", "ai", "play", "wood", { width: 1440, height: 900 });
+  await page.evaluate(() => { window.__chess.engine.bestMove = async () => null; });
+  for (const sq of ["e2", "e4"]) await mv(page, sq);
+  await page.waitForTimeout(500);
+  const r = await page.evaluate(() => {
+    const pane = document.getElementById("pane-play").getBoundingClientRect();
+    const list = document.getElementById("move-list").getBoundingClientRect();
+    const vis = (e) => !!e.offsetParent;
+    return { pane: pane.height, list: list.height,
+             review: vis(document.getElementById("review-actions")),
+             reviewKey: vis(document.getElementById("review-open")),
+             daily: vis(document.getElementById("daily-row")),
+             primaries: [...document.querySelectorAll("#side .primary, .chrome .primary")].filter(vis).map((b) => b.id),
+             tertiary: ["pgn-copy", "pgn-download", "slots-open", "editor-open"].map((id) => {
+               const b = document.getElementById(id);
+               return b.classList.contains("tool-ic") && !!b.title && !!b.getAttribute("aria-label");
+             }) };
+  });
+  assert(r.list >= 0.45 * r.pane, "对局中,棋谱区占侧栏可用高度的 " + Math.round(r.list / r.pane * 100) + "%(≥ 45%)");
+  assert(!r.review && r.reviewKey, "…复盘的按钮收在「复盘」键后面,不是对局中的常驻家具");
+  assert(!r.daily, "…「今天的训练」在对局进行中让位");
+  assert(r.primaries.length === 0, "…对局中没有主按钮(" + r.primaries.join(", ") + ")");
+  assert(r.tertiary.every(Boolean), "PGN / 导出 / 存档槽 / 编辑局面 是第三级:图标 + tooltip + 可读名");
+  await page.click("#review-open");
+  await page.waitForTimeout(200);
+  assert(await page.evaluate(() => !!document.getElementById("review-actions").offsetParent), "…按「复盘」键,它们就出来");
+  await ctx.close();
+}
+
+// --- 7.7 (v7-7-plan §4): every ending gets the result card ------------------
+// Mate, flag, resignation and a draw — the card is there, says the right
+// thing, carries at most one filled button, and never lies on the board.
+{
+  const cardState = (page) => page.evaluate(() => {
+    const c = document.getElementById("go-card");
+    const b = document.getElementById("board-wrap").getBoundingClientRect();
+    const r = c.getBoundingClientRect();
+    const hit = !(r.right <= b.left || r.left >= b.right || r.bottom <= b.top || r.top >= b.bottom);
+    const vis = (e) => !!e.offsetParent;
+    return { shown: vis(c), hit, result: document.getElementById("go-result").textContent.trim(),
+             reason: document.getElementById("go-reason").textContent.trim(),
+             primaries: [...document.querySelectorAll("#side .primary")].filter(vis).map((e) => e.id),
+             toast: document.getElementById("toast").classList.contains("show") ? document.getElementById("toast").textContent : "" };
+  });
+  const cases = [
+    ["将杀", async (page) => { for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq); }, /黑方胜/, /将杀/],
+    ["认输", async (page) => {
+      for (const sq of ["e2", "e4"]) await mv(page, sq);
+      await page.click("#btn-resign");
+      await page.waitForTimeout(300);
+      const btn = await page.evaluate(() => {
+        const ok = document.getElementById("confirm-ok");
+        const probe = document.createElement("div");
+        probe.style.background = "var(--danger)";
+        document.body.appendChild(probe);
+        const danger = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { bg: getComputedStyle(ok).backgroundColor, danger, cls: ok.className };
+      });
+      assert(btn.bg === btn.danger && /danger/.test(btn.cls),
+        "认输确认框的确认按钮背景取自 --danger(" + btn.bg + " vs " + btn.danger + ")");
+      await page.click("#confirm-ok");
+    }, /白方胜|黑方胜/, /认输/],
+    ["和棋", async (page) => {
+      for (const sq of ["e2", "e4"]) await mv(page, sq);
+      await page.click("#btn-offerdraw");
+      await page.waitForTimeout(300);
+      await page.click("#confirm-ok");
+    }, /和棋/, /协议和棋/],
+  ];
+  for (const [what, play, resultRe, reasonRe] of cases) {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 });
+    await play(page);
+    await page.waitForTimeout(700);
+    const s = await cardState(page);
+    assert(s.shown, what + ":终局卡出现");
+    assert(resultRe.test(s.result) && reasonRe.test(s.reason), what + ":写着结果和原因(" + s.result + " · " + s.reason + ")");
+    assert(!s.hit, what + ":终局卡与棋盘矩形不相交");
+    assert(s.primaries.length === 1 && s.primaries[0] === "go-analyse", what + ":唯一的主按钮是「分析这盘」(" + s.primaries.join(", ") + ")");
+    assert(!s.toast, what + ":结局不再由 toast 宣布(" + s.toast + ")");
+    await ctx.close();
+  }
+  // Flag fall: Date.now runs forty times fast (the clock suite's device), so a
+  // three-minute clock falls in a few seconds of real time.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1024, height: 700 }, locale: "zh-CN" });
+    await ctx.addInitScript(() => {
+      const t0 = Date.now(), real = Date.now;
+      Date.now = () => t0 + (real() - t0) * 40;
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", timeControl: "3" }));
+      localStorage.setItem("chess.panelOpen", "1");
+    });
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+    for (const sq of ["e2", "e4"]) await mv(page, sq);
+    // under ten seconds the running clock shows tenths
+    let tenths = false;
+    for (let i = 0; i < 80 && !tenths; i++) {
+      await page.waitForTimeout(50);
+      tenths = await page.evaluate(() => /^0:0\d\.\d$/.test(document.getElementById("clock-b").textContent.trim()));
+    }
+    assert(tenths, "超时前最后十秒,钟显示到 0.1 秒");
+    await page.waitForTimeout(1500);
+    const s = await cardState(page);
+    assert(s.shown && /白方胜/.test(s.result) && /超时/.test(s.reason), "超时:终局卡出现(" + s.result + " · " + s.reason + ")");
+    assert(!s.hit, "超时:终局卡与棋盘矩形不相交(1024x700)");
+    await ctx.close();
+  }
+  // ✕ puts it away, and 分析 in the review row takes the fill back
+  {
+    const { ctx, page } = await open("en", "pvp", "play", "day", { width: 1440, height: 900 });
+    for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
+    await page.waitForTimeout(500);
+    await page.click("#go-close");
+    await page.waitForTimeout(200);
+    const s = await cardState(page);
+    assert(!s.shown && s.primaries.length === 1 && s.primaries[0] === "an-run",
+      "✕ puts the card away, and 分析 in the review row is the one filled button again (" + s.primaries.join(", ") + ")");
+    // Codex on #82: the ✕ was remembered by (plies, FEN, result), so the same
+    // mate in the next game came up already dismissed
+    await page.click("#btn-new");
+    await page.waitForTimeout(300);
+    await page.click("#confirm-ok").catch(() => {});
+    await page.waitForTimeout(400);
+    for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
+    await page.waitForTimeout(500);
+    assert((await cardState(page)).shown, "the same mate in the next game gets its card again, the ✕ was for the last one");
+    await ctx.close();
+  }
+  // Codex on #82: a game opened already mated — a [FEN] header and no moves —
+  // has an ending but nothing to analyse, and 分析这盘 on its card led straight
+  // to "no game to analyse". (The FEN dialog refuses such a position; a PGN
+  // does not.) The engine is marked ready so only the missing history decides.
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 });
+    await page.evaluate(() => {
+      window.__chess.engine.isReady = () => true;
+      const pgn = '[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "0-1"]\n[SetUp "1"]\n' +
+        '[FEN "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"]\n\n0-1\n';
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { readText: () => Promise.resolve(pgn), writeText: () => Promise.resolve() } });
+    });
+    if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+    await page.click("#pgn-paste");
+    await page.waitForTimeout(800);
+    const s = await cardState(page);
+    const analyse = await page.evaluate(() => !!document.getElementById("go-analyse").offsetParent);
+    assert(s.shown && !analyse, "打开一局已将死、没有着法的棋谱：终局卡在，但不给「分析这盘」(" + JSON.stringify({ shown: s.shown, analyse }) + ")");
+    await ctx.close();
+  }
+  // Codex on #82 (second round): importing the same finished game again goes
+  // straight from one ending to the other, never through a game in progress,
+  // so the ✕ on the first still hid the second
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 });
+    await page.evaluate(() => {
+      const pgn = '[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n';
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { readText: () => Promise.resolve(pgn), writeText: () => Promise.resolve() } });
+    });
+    const paste = async () => {
+      if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+      await page.click("#pgn-paste");
+      await page.waitForTimeout(800);
+      if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }
+    };
+    await paste();
+    const first = (await cardState(page)).shown;
+    await page.click("#go-close");
+    await page.waitForTimeout(200);
+    await paste();
+    assert(first && (await cardState(page)).shown, "同一局已完的棋谱再导入一次：终局卡重新出现，上一次的 ✕ 不算数");
+    await ctx.close();
+  }
+  // Codex on #82: with the panel shut the card is off-screen, and nothing else
+  // on screen said how the game ended
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 }, "0");
+    for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
+    await page.waitForTimeout(500);
+    const s = await cardState(page);
+    assert(/黑方胜/.test(s.toast) && /将杀/.test(s.toast), "面板收起时终局：棋盘旁说一次结果和原因(" + s.toast + ")");
+    await ctx.close();
+  }
+}
+
+// --- 7.7 (v7-7-plan §3, §4): at most one filled button, in every context ---
+for (const [when, mode, act] of [
+  ["教学·第 1 课", "learn", async () => {}],
+  ["做题·第 1 题", "puzzle", async () => {}],
+  ["人机·开局前", "ai", async () => {}],
+  ["记录页", "ai", async (page) => { await page.click("#tab-record"); }],
+  ["设置页", "pvp", async (page) => { await page.click("#tab-setup"); }],
+]) {
+  const { ctx, page } = await open("zh-CN", mode, "play");
+  await act(page);
+  await page.waitForTimeout(400);
+  const p = await page.evaluate(() => [...document.querySelectorAll(".primary")].filter((e) => !!e.offsetParent && !e.closest(".modal-bg")).map((e) => e.id));
+  assert(p.length <= 1, when + ":可见的主按钮 ≤ 1(" + p.join(", ") + ")");
+  if (mode === "learn") {
+    const dots = await page.evaluate(() => document.querySelectorAll("#lesson-dots .lesson-dot").length);
+    assert(dots >= 1, "教学:课程进度是一排圆点(" + dots + " 个)");
+  }
+  await ctx.close();
+}
+
+// --- 7.7 (v7-7-plan §4): the puzzle answers on its own card ----------------
+{
+  const { ctx, page } = await open("zh-CN", "puzzle", "play");
+  // the first 一步杀 is the back rank: Ra1, Kg1 against Kg8 behind f7 g7 h7
+  const fb = () => page.evaluate(() => { const e = document.getElementById("puzzle-feedback");
+    return { shown: !!e.offsetParent, ok: e.classList.contains("ok"), bad: e.classList.contains("bad"),
+             head: document.getElementById("puzzle-fb-head").textContent.trim(),
+             hint: !!document.getElementById("puzzle-fb-hint").offsetParent }; });
+  assert(!(await fb()).shown, "做题:还没走,没有反馈卡");
+  // a1 rook to a2 is legal in the first mate-in-one and does not mate
+  await mv(page, "a1"); await mv(page, "a2");
+  await page.waitForTimeout(400);
+  const wrong = await fb();
+  assert(wrong.shown && wrong.bad && /再想想/.test(wrong.head) && wrong.hint,
+    "走错:叉、「再想想」和提示入口(" + JSON.stringify(wrong) + ")");
+  await mv(page, "a1"); await mv(page, "a8");
+  await page.waitForTimeout(600);
+  const right = await fb();
+  assert(right.shown && right.ok, "走对:对勾(" + JSON.stringify(right) + ")");
+  await ctx.close();
+}
+
+
+// --- 7.7 §1：看得见的瑕疵，写成几何断言 ------------------------------------
+// 每一条都是 7.6.0 截图里看得见的东西（v7-7-plan §1a–§1e）。量的是摆好之后
+// 的盒子和画布上的像素，不是样式表里写了什么。
+{
+  const sqAt = async (page, sq) => page.evaluate((s) => {
+    const cv = document.getElementById("board");
+    const r = cv.getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(120); };
+
+  // §1a：每个看得见的 .act-btn 都有左右内边距，高度正好是 --row-h（两行字也
+  // 装得下，行距是紧的）。例外只有一种：同一行里有标签要折成三行（英文的
+  // Clear lesson progress、日文的几条长标签在 70px 栅格里），栅格的等高行
+  // 把整行一起撑高 —— 那时只要求不矮于 --row-h。标签太长是文案的事。
+  for (const lang of LANGS) {
+    for (const theme of ["wood", "night", "day", "notebook"]) {
+      for (const tab of ["play", "setup", "record"]) {
+        const { ctx, page } = await open(lang, "pvp", tab, theme);
+        await page.evaluate(() => { document.querySelectorAll("details").forEach((d) => { d.open = true; }); });
+        const r = await page.evaluate(() => {
+          const rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-h"));
+          const out = [];
+          const linesOf = (b) => {
+            const range = document.createRange();
+            range.selectNodeContents(b);
+            return new Set([...range.getClientRects()].map((x) => Math.round(x.top))).size;
+          };
+          for (const b of document.querySelectorAll(".act-btn")) {
+            if (!b.offsetParent) continue;
+            const cs = getComputedStyle(b);
+            const h = b.getBoundingClientRect().height;
+            const lines = linesOf(b);
+            // the tallest label among the buttons sharing this row
+            const top = Math.round(b.getBoundingClientRect().top);
+            const rowMax = Math.max(...[...b.parentElement.querySelectorAll(".act-btn")]
+              .filter((o) => o.offsetParent && Math.round(o.getBoundingClientRect().top) === top).map(linesOf));
+            const padOk = parseFloat(cs.paddingLeft) >= 8 && parseFloat(cs.paddingRight) >= 8;
+            const hOk = rowMax <= 2 ? Math.abs(h - rowH) < 0.5 : h >= rowH - 0.5;
+            if (!padOk || !hOk) out.push(b.id + "「" + b.textContent.trim() + "」 h=" + h.toFixed(1) + " pad=" + cs.paddingLeft + " lines=" + lines);
+          }
+          return { rowH, bad: out, n: document.querySelectorAll(".act-btn").length };
+        });
+        assert(r.bad.length === 0, `§1a ${lang}/${theme}/${tab}：可见的 .act-btn 左右内边距 ≥ 8px、单行高 ${r.rowH}px` +
+          (r.bad.length ? " —— " + r.bad.join("；") : ""));
+        await ctx.close();
+      }
+    }
+  }
+
+  // §1b：「今天的训练」的文字不是等宽字体
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "ai", "play");
+    const r = await page.evaluate(() => {
+      const num = getComputedStyle(document.documentElement).getPropertyValue("--font-num").trim();
+      const first = num.split(",")[0].trim();
+      const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why")];
+      return { n: els.length, first, mono: els.filter((e) => getComputedStyle(e).fontFamily.split(",")[0].trim() === first).map((e) => e.textContent) };
+    });
+    assert(r.n > 0 && r.mono.length === 0, `§1b ${lang}：今天的训练 ${r.n} 段文字都不用 ${r.first}` + (r.mono.length ? " —— " + r.mono.join(" / ") : ""));
+    await ctx.close();
+  }
+
+  // §1c：键盘光标照 :focus-visible 的规矩。读画布像素：光标是一圈近白的
+  // 描边，横在格子上缘内侧；浅格、深格、上一步的绿都到不了近白。
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play");
+    const ringed = (sq) => page.evaluate((s) => {
+      const c = document.getElementById("board");
+      const g = c.getContext("2d");
+      const step = c.width / 8;
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      const x0 = Math.round(f * step + step * 0.3), w = Math.round(step * 0.4);
+      let best = 0;
+      for (let y = Math.round(rk * step + 1); y < Math.round(rk * step + step * 0.14); y++) {
+        const d = g.getImageData(x0, y, w, 1).data;
+        let white = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++;
+        best = Math.max(best, white / w);
+      }
+      return best > 0.8;
+    }, sq);
+    await tap(page, "e2"); await tap(page, "e4");
+    await page.waitForTimeout(300);
+    const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
+    assert(focused === "board" && !(await ringed("e4")) && !(await ringed("e5")),
+      `§1c 鼠标走完 e2-e4，棋盘有焦点（${focused}）但没有画键盘光标`);
+    await page.keyboard.press("ArrowUp");
+    await page.waitForTimeout(150);
+    assert(await ringed("e5"), "§1c 按一下方向键，光标出现（e4 → e5）");
+    await tap(page, "a2");
+    await page.waitForTimeout(150);
+    assert(!(await ringed("e5")), "§1c 再用鼠标点一下，光标又收起来");
+    await ctx.close();
+  }
+
+  // §1d：toast 的矩形与 #board 不相交。两种 toast：一条回执（复制 PGN），
+  // 一条带按钮的故障（引擎两次都没给出着法）—— 后者更宽，也不会自己走。
+  for (const vp of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1024, height: 700 }, { width: 600, height: 900 }]) {
+    for (const panel of ["1", "0"]) {
+      const { ctx, page } = await open("en", "ai", "play", "wood", vp, panel);
+      await page.evaluate(() => {
+        window.__chess.engine.isReady = () => true;
+        window.__chess.engine.bestMove = async () => { throw new Error("engine down"); };
+        const f = document.getElementById("engine-fault");
+        if (f) f.hidden = true;
+      });
+      await tap(page, "e2"); await tap(page, "e4");
+      await page.waitForSelector(".toast.show .toast-action", { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(350);
+      const hit = () => page.evaluate(() => {
+        const t = document.getElementById("toast");
+        const a = t.getBoundingClientRect(), b = document.getElementById("board").getBoundingClientRect();
+        const cross = a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        return { shown: t.classList.contains("show"), cross, text: t.textContent.slice(0, 40),
+          a: [a.left, a.top, a.right, a.bottom].map(Math.round), b: [b.left, b.top, b.right, b.bottom].map(Math.round) };
+      });
+      const fault = await hit();
+      assert(fault.shown && !fault.cross,
+        `§1d ${vp.width}×${vp.height} 面板${panel === "1" ? "开" : "关"}：故障 toast 不压棋盘（toast ${fault.a} / 棋盘 ${fault.b}）`);
+      await page.keyboard.press("Escape");
+      await page.evaluate(() => { const b = document.getElementById("pgn-copy"); if (b && b.offsetParent) b.click(); });
+      await page.waitForTimeout(350);
+      const receipt = await hit();
+      if (receipt.shown) {
+        assert(!receipt.cross, `§1d ${vp.width}×${vp.height} 面板${panel === "1" ? "开" : "关"}：回执 toast 不压棋盘（「${receipt.text}」 ${receipt.a}）`);
+      }
+      await ctx.close();
+    }
+  }
+
+  // §1e：页签条不透明；窗格滚下去之后，页签下缘有一道 --line，页签矩形里
+  // 取到的只有页签自己
+  {
+    // The settings pane with every fold open: it overflows at this size in
+    // both engines. (It used to be the play pane after ten moves; 7.7 §3 made
+    // the move list scroll inside the pane, and on WebKit's narrower glyphs
+    // the pane itself no longer overflowed — scrollTop stayed 0.)
+    const { ctx, page } = await open("zh-CN", "pvp", "setup", "wood", { width: 1024, height: 700 });
+    await page.evaluate(() => { document.querySelectorAll("#pane-setup details").forEach((d) => { d.open = true; }); });
+    await page.waitForTimeout(200);
+    const before = await page.evaluate(() => document.querySelector(".side-tabs").classList.contains("is-scrolled"));
+    const r = await page.evaluate(async () => {
+      const pane = document.getElementById("pane-setup");
+      pane.scrollTop = 400;
+      await new Promise((res) => setTimeout(res, 150));
+      const row = document.querySelector(".side-tabs");
+      const rr = row.getBoundingClientRect();
+      const cs = getComputedStyle(row);
+      const probes = [0.1, 0.5, 0.9].flatMap((fx) => [0.2, 0.95].map((fy) =>
+        document.elementFromPoint(rr.left + rr.width * fx, rr.top + rr.height * fy)));
+      return {
+        scrolled: pane.scrollTop,
+        cls: row.classList.contains("is-scrolled"),
+        bg: cs.backgroundColor,
+        shadow: cs.boxShadow,
+        own: probes.every((el) => el && row.contains(el)),
+      };
+    });
+    assert(!before, "§1e 窗格在顶上时，页签下没有分隔线");
+    assert(r.scrolled > 0 && r.cls && r.shadow !== "none", `§1e 滚下去 ${r.scrolled}px，页签下缘有分隔线（${r.shadow}）`);
+    assert(r.bg !== "rgba(0, 0, 0, 0)" && r.bg !== "transparent", `§1e 页签条有自己的底色（${r.bg}）`);
+    assert(r.own, "§1e 页签矩形里取到的每一点都是页签自己");
+    await ctx.close();
+  }
+}
+
 
 await browser.close();
 server.close();

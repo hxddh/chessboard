@@ -17,6 +17,7 @@
  * @module board
  */
 import { CHESS_PIECE_SVGS } from "./pieces.js";
+import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
   const FILES = "abcdefgh";
 
   // Solid glyph set for both colors — colored via fill, outlined for contrast.
@@ -38,16 +39,16 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
   const PAINT = {
     light: ["--sq-light", "#f0d9b5"],
     dark: ["--sq-dark", "#b58863"],
-    sel: ["--sq-sel", "rgba(255, 210, 60, 0.45)"],
-    last: ["--sq-last", "rgba(155, 199, 0, 0.34)"],
-    check: ["--sq-check", "rgba(220, 60, 40, 0.55)"],
+    sel: ["--sq-sel", "rgba(0, 150, 0, 0.52)"],
+    last: ["--sq-last", "rgba(0, 255, 0, 0.28)"],
+    check: ["--sq-check", "rgba(245, 70, 55, 0.52)"],
     dot: ["--sq-dot", "rgba(30, 30, 30, 0.28)"],
     ring: ["--sq-ring", "rgba(30, 30, 30, 0.32)"],
     // 1.12 moved the squares onto variables and stopped there, so these four
     // kept the wood theme's values on every board. They are marks *on* the
     // squares, and a theme that repaints the squares under them but not them
     // is the same half-done job the squares were.
-    hint: ["--sq-hint", "rgba(56, 142, 78, 0.75)"],
+    hint: ["--sq-hint", "rgba(5, 165, 255, 0.52)"],
     star: ["--sq-star", "rgba(230, 170, 30, 0.95)"],
     starEdge: ["--sq-star-edge", "rgba(120, 80, 0, 0.5)"],
     flash: ["--sq-flash", "rgba(72, 190, 100, 0.45)"],
@@ -56,7 +57,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     cursor: ["--sq-cursor", "rgba(255, 255, 255, 0.95)"],
     // the contact shadow under a standing piece: a light board wants a
     // different one from a dark board, so it belongs to the palette too
-    pieceShadow: ["--piece-shadow", "rgba(38, 20, 4, 0.26)"],
+    pieceShadow: ["--piece-shadow", "rgba(38, 20, 4, 0.13)"],
     cursorEdge: ["--sq-cursor-edge", "rgba(20, 20, 20, 0.55)"],
     // the four annotation colours, lichess's letters: a theme tunes them
     // like every other mark, and the fallbacks are lichess's own values
@@ -64,7 +65,16 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     shapeR: ["--shape-r", "rgba(136, 32, 32, 0.8)"],
     shapeB: ["--shape-b", "rgba(0, 48, 136, 0.8)"],
     shapeY: ["--shape-y", "rgba(232, 143, 0, 0.8)"],
+    // 7.7 §5: the analysis marks' badge, on the one scale the move list, the
+    // report and the curve already read (--judge-*), and the two side inks
+    // for the glyph inside it — whichever reads on that fill
+    judgeSoft: ["--judge-soft", "#c9b458"],
+    judgeMid: ["--judge-mid", "#e0a03c"],
+    judgeBad: ["--judge-bad", "#e05252"],
+    sideWhite: ["--side-white", "#f2f2ee"],
+    sideBlack: ["--side-black", "#1d1d1b"],
   };
+  const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad" };
   const SHAPE_PAINT = { G: "shapeG", R: "shapeR", B: "shapeB", Y: "shapeY" };
   /** resolved once per theme change, not once per square */
   let _paint = null;
@@ -78,6 +88,10 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
       const v = cs ? cs.getPropertyValue(varName).trim() : "";
       out[key] = v || fallback;
     }
+    // the interface's own type for the one piece of text the board draws
+    let ff = "";
+    try { ff = document.body ? getComputedStyle(document.body).fontFamily : ""; } catch (_) { ff = ""; }
+    out.font = ff || "sans-serif";
     _paint = out;
     return out;
   }
@@ -108,17 +122,30 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
    * be written here.
    *
    * @param {string} col a CSS colour as authored in the theme variables
-   * @returns {string} the same hue, fully transparent
+   * @param {number} [alpha] the alpha to give it (default 0: transparent)
+   * @returns {string} the same hue at that alpha
    */
-  function fade(col) {
+  function fade(col, alpha) {
+    const a = alpha == null ? 0 : alpha;
     const m = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(col);
-    if (m) return "rgba(" + m[1] + "," + m[2] + "," + m[3] + ",0)";
+    if (m) return "rgba(" + m[1] + "," + m[2] + "," + m[3] + "," + a + ")";
     const h = /^#([0-9a-f]{6})$/i.exec(col.trim());
     if (h) {
       const n = parseInt(h[1], 16);
-      return "rgba(" + (n >> 16 & 255) + "," + (n >> 8 & 255) + "," + (n & 255) + ",0)";
+      return "rgba(" + (n >> 16 & 255) + "," + (n >> 8 & 255) + "," + (n & 255) + "," + a + ")";
     }
-    return "rgba(0,0,0,0)";
+    return "rgba(0,0,0," + a + ")";
+  }
+
+  /** Relative luminance of a #rrggbb / rgb() colour, 0..1 (WCAG). */
+  function luminance(col) {
+    let r = 0, g = 0, b = 0;
+    const m = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(col);
+    const h = /^#([0-9a-f]{6})$/i.exec(col.trim());
+    if (m) { r = +m[1]; g = +m[2]; b = +m[3]; }
+    else if (h) { const n = parseInt(h[1], 16); r = n >> 16 & 255; g = n >> 8 & 255; b = n & 255; }
+    const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
   }
 
   /** 5-point star path centered at (cx,cy) with outer radius r. */
@@ -156,15 +183,40 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
   let _sprites = {};
   let _spriteSize = 0;
 
+  /**
+   * The piece sets, by id (v7-7-plan §6). Each is licence-cleared in its own
+   * module's header; the About panel lists them.
+   */
+  const PIECE_SETS = { cburnett: CHESS_PIECE_SVGS, merida: MERIDA_PIECE_SVGS };
+  let _set = "cburnett";
+
   function initPieceImages() {
-    const svgs = CHESS_PIECE_SVGS;
+    const svgs = PIECE_SETS[_set] || CHESS_PIECE_SVGS;
     if (!svgs || typeof Image === "undefined") return;
+    const want = _set;
+    // A switch keeps drawing the old set until the whole new one has
+    // decoded, then swaps all twelve at once: swapping piece by piece showed
+    // a board of two sets, and clearing first showed the glyph fallback.
+    const fresh = {};
+    let left = Object.keys(svgs).length;
+    const first = !Object.keys(_imgs).length;
     for (const key of Object.keys(svgs)) {
       const img = new Image();
-      img.onload = () => { _sprites = {}; draw(); };
+      img.onload = () => {
+        if (_set !== want) return; // superseded by a later switch
+        if (first) { _sprites = {}; draw(); return; }
+        if (--left === 0) { Object.assign(_imgs, fresh); _sprites = {}; draw(); }
+      };
       img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]);
-      _imgs[key] = img;
+      if (first) _imgs[key] = img; else fresh[key] = img;
     }
+  }
+
+  /** Choose the piece set by id; an unknown id is ignored. */
+  function setPieceSet(id) {
+    if (!PIECE_SETS[id] || id === _set) return;
+    _set = id;
+    if (Object.keys(_imgs).length) initPieceImages();
   }
 
   /**
@@ -271,8 +323,13 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
    * @param {string} [to] destination, when called with two squares
    * @param {{from: string, to: string}} [also] a second piece moving with the
    *   first — the rook's hop in a castle
+   * @param {{sq: string, piece: {type: string, color: string}}} [taken] the
+   *   man this move captured, and where he stood (not `to` for en passant).
+   *   7.7 §9: he fades out under the arriving piece over the same window,
+   *   instead of being gone before it has left its square. The model has
+   *   already moved on when this is called, so the caller has to say who it was.
    */
-  function animateMove(from, to, also) {
+  function animateMove(from, to, also, taken) {
     if (!_canvas || !_model || !from) return;
     const segs = Array.isArray(from)
       ? from.filter((sg) => sg && sg.from && sg.to)
@@ -284,7 +341,8 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     // repaints from the updated model a moment later, and drawing now would
     // paint the pre-move position for that moment.
     if (_reduceMotion) { _anim = null; return; }
-    _anim = { segs, start: (typeof performance !== "undefined" ? performance.now() : 0), dur: slideMs() };
+    _anim = { segs, taken: taken && taken.sq && taken.piece ? taken : null,
+      start: (typeof performance !== "undefined" ? performance.now() : 0), dur: slideMs() };
     const step = () => {
       if (!_anim) return;
       const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
@@ -415,11 +473,20 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     // plus a ring: until 1.22.1 the end of the game looked exactly like being
     // checked once, which is the wrong emphasis for the one frame a player is
     // most likely to sit and look at.
+    //
+    // 7.7 §6: a glow, not a wash. The gradient used to start at the token's
+    // own alpha (.52) and fade linearly to the square's edge, which on screen
+    // was a red square with softened corners — "flat" in the walk-through.
+    // Now it is Lichess's shape: a hot core under the king, the token's
+    // strength by a third of the way out, gone before the corners. Still one
+    // square, still through cellRect(): the glow is clipped to the king's
+    // square by the fill, so it never bleeds onto a neighbour.
     if (m.checkSquare) {
       const { sr, sc } = screenPos(m.checkSquare, m.flipped);
       const cx = sc * step + step / 2, cy = sr * step + step / 2;
-      const g = ctx.createRadialGradient(cx, cy, step * 0.1, cx, cy, step * 0.62);
-      g.addColorStop(0, P.check);
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, step * 0.7);
+      g.addColorStop(0, fade(P.check, 0.95));
+      g.addColorStop(0.3, P.check);
       g.addColorStop(1, fade(P.check));
       ctx.fillStyle = g;
       ctx.fillRect(...cellRect(sr, sc));
@@ -504,6 +571,16 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     if (_anim) {
       const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
       const t = easeOut(Math.max(0, Math.min(1, (now - _anim.start) / _anim.dur)));
+      // the captured man, fading under whoever is arriving — drawn first so
+      // the mover passes over him (animateMove's `taken`)
+      const lands = (sq) => { const r = m.position[8 - Number(sq[1])]; return !!(r && r[FILES.indexOf(sq[0])]); };
+      if (_anim.taken && _anim.segs.some((sg) => lands(sg.to))) {
+        const { sr, sc } = screenPos(_anim.taken.sq, m.flipped);
+        ctx.save();
+        ctx.globalAlpha = 1 - t;
+        paintPiece(_anim.taken.piece, sc * step + step / 2, sr * step + step / 2);
+        ctx.restore();
+      }
       let painted = 0;
       for (const sg of _anim.segs) {
         const c = FILES.indexOf(sg.to[0]);
@@ -588,6 +665,34 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
     }
     // engine hint arrow on top of pieces
     if (m.hintMove) paintArrow(m.hintMove.from, m.hintMove.to, P.hint);
+    // 7.7 §5: the analysis mark of the move that led here, as a badge in the
+    // top-right corner of the square it landed on — where Lichess and
+    // Chess.com put it, so the eye that follows the last-move tint finds it.
+    // Only the three marks the analysis has (?! ? ??), coloured from the same
+    // --judge-* scale as the move list; the glyph takes whichever side ink
+    // reads on that fill. Drawn inside the square, so a1–h8 corners never
+    // clip it.
+    if (m.annotation && JUDGE_PAINT[m.annotation.tag]) {
+      const { sr, sc } = screenPos(m.annotation.sq, m.flipped);
+      const r = step * 0.19;
+      const cx = (sc + 1) * step - r - step * 0.03, cy = sr * step + r + step * 0.03;
+      const fill = P[JUDGE_PAINT[m.annotation.tag]];
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.lineWidth = Math.max(1, step * MARK.hair);
+      ctx.strokeStyle = P.cursorEdge;
+      ctx.stroke();
+      ctx.fillStyle = luminance(fill) > 0.4 ? P.sideBlack : P.sideWhite;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const tag = m.annotation.tag;
+      ctx.font = "600 " + Math.round(r * (tag.length > 1 ? 0.95 : 1.25)) + "px " + P.font;
+      ctx.fillText(tag, cx, cy + r * 0.04);
+      ctx.restore();
+    }
     // The dragged piece follows the pointer above everything else, lifted:
     // a shadow and a little scale, so it reads as picked UP rather than as a
     // copy sliding under the glass.
@@ -672,7 +777,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
    *              selection, the legal targets, the last move, the check, the
    *              hint arrow, the stars, the flash, the cursor, and since 1.25
    *              the drag. Nothing is pushed in ahead of time.
-   *   lifecycle  attach() / resizeCanvas() / invalidatePaint() — the canvas
+   *   lifecycle  attach() / resizeCanvas() / invalidatePaint() / setPieceSet() — the canvas
    *              itself, its backing store, and the theme colours it caches.
    *   effects    animateMove() / reboundDrag() / cancelAnim() — the three
    *              things that are genuinely time, not state. An animation is
@@ -682,4 +787,4 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
    *              needs to know the board's geometry at all.
    */
   export const ChessBoardView = { draw, attach, resizeCanvas, invalidatePaint,
-    animateMove, reboundDrag, cancelAnim, cellAt };
+    animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet };

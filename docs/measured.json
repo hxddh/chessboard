@@ -32,6 +32,198 @@
     ],
     "changedBestPctSd": 16.5
   },
+  "markHue": {
+    "what": "每种棋盘标记叠在浅格与深格上的 CIEDE2000：dE 为整体色差（大半是明度，本就该不同），dH 为其中的色相项 ΔH'/(kH·SH)（要小）；sep 为同一格上两种不同标记之间的最小 ΔE00（要大）",
+    "script": "scripts/measure-marks.mjs --record",
+    "metric": "CIEDE2000, sRGB → CIELAB D65, kL = kC = kH = 1",
+    "marks": [
+      "last",
+      "sel",
+      "check",
+      "hint"
+    ],
+    "beforeRef": "75a3560",
+    "before": {
+      "wood": {
+        "marks": {
+          "last": {
+            "dE": 17,
+            "dH": 5.3
+          },
+          "sel": {
+            "dE": 15.5,
+            "dH": 5.6
+          },
+          "check": {
+            "dE": 11.5,
+            "dH": 0.3
+          },
+          "hint": {
+            "dE": 12.9,
+            "dH": 2.3
+          }
+        },
+        "sep": 9.1,
+        "sepPair": "last/sel on light"
+      },
+      "night": {
+        "marks": {
+          "last": {
+            "dE": 13.7,
+            "dH": 0.1
+          },
+          "sel": {
+            "dE": 17.1,
+            "dH": 5.7
+          },
+          "check": {
+            "dE": 11.9,
+            "dH": 2.2
+          },
+          "hint": {
+            "dE": 10.9,
+            "dH": 0.4
+          }
+        },
+        "sep": 20,
+        "sepPair": "last/sel on dark"
+      },
+      "day": {
+        "marks": {
+          "last": {
+            "dE": 12.5,
+            "dH": 5.4
+          },
+          "sel": {
+            "dE": 12.3,
+            "dH": 4.8
+          },
+          "check": {
+            "dE": 10.2,
+            "dH": 2.1
+          },
+          "hint": {
+            "dE": 11.3,
+            "dH": 3.8
+          }
+        },
+        "sep": 10.3,
+        "sepPair": "last/sel on light"
+      },
+      "notebook": {
+        "marks": {
+          "last": {
+            "dE": 14.8,
+            "dH": 0.1
+          },
+          "sel": {
+            "dE": 14.6,
+            "dH": 2.4
+          },
+          "check": {
+            "dE": 11.6,
+            "dH": 2.5
+          },
+          "hint": {
+            "dE": 9.6,
+            "dH": 1.4
+          }
+        },
+        "sep": 15.4,
+        "sepPair": "sel/check on dark"
+      }
+    },
+    "after": {
+      "wood": {
+        "marks": {
+          "last": {
+            "dE": 15.1,
+            "dH": 3.1
+          },
+          "sel": {
+            "dE": 12.2,
+            "dH": 1.8
+          },
+          "check": {
+            "dE": 10.9,
+            "dH": 0
+          },
+          "hint": {
+            "dE": 11.4,
+            "dH": 1.6
+          }
+        },
+        "sep": 10.1,
+        "sepPair": "last/sel on dark"
+      },
+      "night": {
+        "marks": {
+          "last": {
+            "dE": 13.7,
+            "dH": 0
+          },
+          "sel": {
+            "dE": 11.6,
+            "dH": 0.5
+          },
+          "check": {
+            "dE": 12.8,
+            "dH": 1.8
+          },
+          "hint": {
+            "dE": 12.7,
+            "dH": 0
+          }
+        },
+        "sep": 13,
+        "sepPair": "last/sel on dark"
+      },
+      "day": {
+        "marks": {
+          "last": {
+            "dE": 12.5,
+            "dH": 4.6
+          },
+          "sel": {
+            "dE": 9.8,
+            "dH": 2.8
+          },
+          "check": {
+            "dE": 8.8,
+            "dH": 1.8
+          },
+          "hint": {
+            "dE": 10.2,
+            "dH": 0.4
+          }
+        },
+        "sep": 10.1,
+        "sepPair": "last/sel on dark"
+      },
+      "notebook": {
+        "marks": {
+          "last": {
+            "dE": 14.6,
+            "dH": 0
+          },
+          "sel": {
+            "dE": 12.1,
+            "dH": 0.3
+          },
+          "check": {
+            "dE": 10.9,
+            "dH": 1.5
+          },
+          "hint": {
+            "dE": 7.7,
+            "dH": 0.6
+          }
+        },
+        "sep": 11,
+        "sepPair": "last/sel on dark"
+      }
+    }
+  },
   "mineAlternatives": {
     "what": "?? 局面上（精析 MultiPV 5），次佳着离最佳着多少分；离最佳不到 50/100/200 分的替代着各有几个",
     "positions": 5,

@@ -17,6 +17,7 @@ import { ChessFide } from "./fide.js";
 import { ChessTree } from "./game-tree.js";
 import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
+import { ChessIcons } from "./icons.js";
 import { CHESS_LESSONS_EN } from "./lessons-en.js";
 import { CHESS_LESSONS_JA } from "./lessons-ja.js";
 import { CHESS_LESSONS } from "./lessons.js";
@@ -70,6 +71,7 @@ import { createStore } from "./store.js";
   const Review = ChessReview;
   const BoardView = ChessBoardView;
   const Audio2 = ChessAudio;
+  const Icons = ChessIcons;
 
   /** Shared dialog behaviour: focus trap, focus return, aria-modal. */
   const Dlg = ChessDialog;
@@ -169,7 +171,12 @@ import { createStore } from "./store.js";
    */
   function animateReply(mv) {
     if (!mv) return;
-    BoardView.animateMove(mv.from, mv.to, castleRook(mv));
+    // 7.7 §9: who was taken, and where — en passant takes on the mover's rank
+    const taken = mv.captured && mv.color ? {
+      sq: mv.flags && mv.flags.includes("e") ? mv.to[0] + mv.from[1] : mv.to,
+      piece: { type: mv.captured, color: mv.color === "w" ? "b" : "w" },
+    } : null;
+    BoardView.animateMove(mv.from, mv.to, castleRook(mv), taken);
     // the reply is the one move the player did not make, so it is the one a
     // screen reader must say (v6-plan D5); the SAN is read from the history
     // rather than from `mv`, which is a from/to pair without a name
@@ -327,6 +334,11 @@ import { createStore } from "./store.js";
       editor: null,
       coachPending: null,
       drawOfferPending: false,
+      /** 7.7 §4: the ending whose result card was put away with ✕ */
+      goDismissed: null,
+      goAnnounced: null,
+      /** 7.7 §4: puzzles solved clean in a row, this sitting */
+      pzStreak: 0,
       _analysisTick: null,
       /** the newest-first list the rendered rows index into */
       histCache: [],
@@ -337,6 +349,8 @@ import { createStore } from "./store.js";
     },
     ui: {
       soundOn: true,
+      /** 7.7 (v7-7-plan §8): "wood" (the rendered samples) or "classic" (the oscillators) */
+      soundSet: "wood",
       /** 6.0 (v6-plan Q2.8 / Q2.6): the level, the frame labels, the men, the engine knobs */
       volume: 100,
       coordsOn: true,
@@ -361,6 +375,7 @@ import { createStore } from "./store.js";
       /** 6.0 (v6-plan Q3.6): the theme follows the system's light/dark; the text size step */
       followSystem: false,
       textSize: "m",
+      pieceSet: "cburnett",
       /** @type {'wood'|'night'|'day'|'notebook'} */
       themeId: "wood",
       /** pvp: flip the board to face the side to move after every move */
@@ -375,8 +390,13 @@ import { createStore } from "./store.js";
       /** keyboard play: focused square, shown only while the board has focus */
       keyboardCursor: null,
       boardFocused: false,
+      /** …and only after the board was reached or used by keyboard (7.7 §1c,
+       *  a11y.js): the canvas's own `:focus-visible` */
+      cursorShown: false,
       toastTimer: null,
       confirmResolver: null,
+      /** 7.7 §3: the review group, opened by hand during an engine game */
+      reviewOpen: false,
       histFilter: { result: "all", color: "all" },
       // 7.1: the library list's own filters, plus the one the diagnosis sets
       // when a row there is clicked (`libPick`). Kept apart so that clearing
@@ -472,6 +492,18 @@ import { createStore } from "./store.js";
     if (!store.game._batch) store.commit("game", "load");
     return r;
   }
+  /**
+   * A different game is now on the board: its ending, if it has one, has not
+   * been announced or put away (7.7 §4). Called where a game is REPLACED —
+   * a file, a slot, a new game, a set-up position — not from gameLoad(),
+   * which also replays the same game along another line. Codex on #82: the
+   * ✕ was keyed on (plies, FEN, result) alone, so re-importing the same
+   * finished game came up already dismissed.
+   */
+  function forgetEnding() {
+    store.session.goDismissed = null;
+    store.session.goAnnounced = null;
+  }
   function gameLoadPgn(pgn, opts) {
     // the parser first: it keeps variations, comments, NAGs and shapes that
     // chess.js's load_pgn throws away, and reads the shapes it refuses
@@ -493,10 +525,12 @@ import { createStore } from "./store.js";
       r = game.load_pgn(pgn, opts);
       if (r && store.game._treeSync) treeRebuild();
     }
+    if (r) forgetEnding();
     if (!store.game._batch) store.commit("game", "loadPgn");
     return r;
   }
   function gameReset() {
+    forgetEnding();
     game.reset();
     if (store.game._treeSync) treeRestart(null);
     if (!store.game._batch) store.commit("game", "reset");
@@ -918,7 +952,7 @@ import { createStore } from "./store.js";
 
   const kingSquare = ChessPreview.kingSquare;
 
-  const cursorSquare = () => (store.ui.boardFocused ? store.ui.keyboardCursor : null);
+  const cursorSquare = () => (store.ui.boardFocused && store.ui.cursorShown ? store.ui.keyboardCursor : null);
 
   BoardView.attach(canvas, () => {
     if (store.session.editor) return editorModel();
@@ -954,6 +988,10 @@ import { createStore } from "./store.js";
       // arrow permanently on the board. Never during live play, where it would
       // be an answer key rather than a review.
       hintMove: isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex),
+      // 7.7 §5: the mark the analysis gave the move that led here, as a badge
+      // on the square it landed on — the same three marks the move list
+      // carries, never a fourth kind
+      annotation: annotationAt(store.game.viewIndex, last),
       // the node's own arrows and circles, plus the one being drawn
       shapes: shapesToDraw(),
       stars: [],
@@ -992,6 +1030,22 @@ import { createStore } from "./store.js";
     const uci = a.bests[i];
     if (!uci || uci.length < 4) return null;
     return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
+  }
+
+  /**
+   * The badge for the move that produced the position `i` plies in: its
+   * destination square and its mark, or null. The mark is the one the move
+   * list shows (softFiltered — `?!` only when 存疑标注 is on), so the board
+   * and the notation cannot disagree about whether a move was a mistake.
+   * Derived like bestArrowAt: nothing stored, nothing to clear.
+   */
+  function annotationAt(i, last) {
+    if (!last || i < 1) return null;
+    const a = analysisFor();
+    if (!a || !a.tags) return null;
+    const tag = softFiltered(a.tags[i - 1]);
+    if (!Review.isMistake(tag)) return null;
+    return { sq: last.to, tag };
   }
 
   function draw() { BoardView.draw(); }
@@ -1145,6 +1199,52 @@ import { createStore } from "./store.js";
    * @param {"ok"|"fix"|"fault"} [tier]
    */
   const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+
+  /**
+   * Where a toast stands: never on the board (7.7 §1d).
+   *
+   * It stood 24px above the bottom of the window, centred on the window, and
+   * in every landscape window the board runs to within 6px of that edge — so
+   * 「本局结束 —— 点『分析』看这盘的回顾」 and 「分析完成」 sat on e1 and f1,
+   * over the very position they were talking about, and a fault toast stayed
+   * there until dismissed. It was also centred on the window, which is not
+   * the board's middle whenever the panel is open beside it.
+   *
+   * Now it is centred on the board, no wider than it, and stands where the
+   * board is not:
+   *   - its old place, 24px off the bottom, wherever that is clear of the
+   *     board — the portrait windows, where it lies over the sheet's reserve
+   *     as it always did;
+   *   - otherwise the strip above the board: the chrome's row down to the
+   *     first rank, 55px in the landscape layout, which a one-line toast
+   *     clears with room either side. It covers the middle of the chrome for
+   *     its two seconds, which is the price of not covering the position;
+   *   - a message that wraps past that strip goes under the squares if there
+   *     is room there, and only a window with neither lets it overlap, at the
+   *     top, as little as it can.
+   */
+  function placeToast(el) {
+    const board = document.getElementById("board");
+    const wrap = document.getElementById("board-wrap");
+    if (!el || !board || !wrap || !appEl) return;
+    const a = appEl.getBoundingClientRect();
+    const b = board.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    if (!b.width) return; // not laid out (a hidden window): keep the stylesheet's place
+    el.style.maxWidth = Math.round(Math.max(200, Math.min(560, w.width - 16))) + "px";
+    const h = el.offsetHeight;
+    const GAP = 4, LOW = 24;
+    let top = GAP;
+    if (a.bottom - w.bottom >= h + LOW + GAP) top = a.height - LOW - h;
+    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP) top = b.bottom - a.top + GAP;
+    el.style.top = Math.round(top) + "px";
+    el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
+  }
+  // a fault toast stays up, and the board it is placed against can move
+  window.addEventListener("resize", () => {
+    const el = document.getElementById("toast");
+    if (el && el.classList.contains("show")) placeToast(el);
+  });
   function dismissToast() {
     const el = document.getElementById("toast");
     if (!el) return false;
@@ -1200,13 +1300,15 @@ import { createStore } from "./store.js";
       const close = document.createElement("button");
       close.type = "button";
       close.className = "toast-close";
-      close.textContent = "✕";
+      close.appendChild(Icons.icon("x"));
       close.setAttribute("aria-label", t("act.close"));
       close.onclick = dismissToast;
       el.appendChild(close);
     }
     el.classList.remove("t-ok", "t-fix", "t-fault");
-    el.classList.add("show", "t-" + kind);
+    el.classList.add("t-" + kind);
+    placeToast(el);
+    el.classList.add("show");
     if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
     store.ui.toastTimer = null;
     if (ms) store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), ms);
@@ -1262,9 +1364,18 @@ import { createStore } from "./store.js";
     if (msgEl) msgEl.textContent = message;
     okBtn.textContent = okLabel;
     cancelBtn.textContent = cancelLabel;
+    // 7.7 (v7-7-plan §4): an answer that cannot be taken back is red, not
+    // the accent. The accent fill is this UI's word for "the thing to press
+    // here"; on 认输 and on the deletions it was saying the opposite of what
+    // the question means. The native alert has its own critical style; this
+    // is the in-page box saying the same.
+    const destructive = !!(buttons && (buttons.destructive || buttons.danger));
+    okBtn.classList.toggle("danger", destructive);
+    okBtn.classList.toggle("primary", !destructive);
     if (altBtn) {
       altBtn.hidden = !altLabel;
       if (altLabel) altBtn.textContent = altLabel;
+      altBtn.classList.toggle("danger", destructive);
     }
     Dlg.open(modal, okBtn);
     return new Promise((resolve) => { store.ui.confirmResolver = resolve; });
@@ -1281,6 +1392,7 @@ import { createStore } from "./store.js";
       const s = Persist.read("settings").value;
       if (!s) return;
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
+      if (Audio2.SOUND_SETS.includes(s.soundSet)) Audio2.setSoundSet(store.ui.soundSet = s.soundSet);
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
       if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
@@ -1289,6 +1401,7 @@ import { createStore } from "./store.js";
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
       if (typeof s.followSystem === "boolean") store.ui.followSystem = s.followSystem;
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
+      if (["cburnett", "merida"].includes(s.pieceSet)) store.ui.pieceSet = s.pieceSet;
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
@@ -1310,7 +1423,8 @@ import { createStore } from "./store.js";
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
-        followSystem: store.ui.followSystem, textSize: store.ui.textSize }));
+        followSystem: store.ui.followSystem, textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
+        soundSet: store.ui.soundSet }));
     } catch (_) {}
   }
   function saveGame() {
@@ -1463,6 +1577,7 @@ import { createStore } from "./store.js";
    *            it found and writes a fresh one; scripts/selftest-app.mjs
    *            launches the app twice and checks that the second run found
    *            the first run's (7.6)
+   *   sound    the default sound set's buffers build and render, offline (7.7)
    *
    * `ok` is true only when every check passes, and `err` names the ones that
    * did not. The checks say `pass`, never `ok`: main.zig decides the exit
@@ -1550,6 +1665,13 @@ import { createStore } from "./store.js";
       chunk.pass = true;
       chunk.name = hit.eco + " " + ChessEco.localName(hit, store.ui.langId);
     } catch (err) { chunk.err = errText(err); }
+
+    // the default sound set renders here: buffers built and rendered offline,
+    // no gesture needed and nothing heard (audio.js selftest, 7.7)
+    const sound = report.checks.sound = { pass: false };
+    try {
+      Object.assign(sound, await within(Audio2.selftest(), 15000, "sound render"));
+    } catch (err) { sound.err = errText(err); }
 
     // A WebView commits localStorage to disk on a timer of its own (Chromium's
     // is a few seconds), and main.zig exits the moment the report arrives: a
@@ -1776,7 +1898,8 @@ import { createStore } from "./store.js";
     const want = clockRunning();
     if (want && !store.game.clockTimer) {
       store.game.clockTickAt = Date.now();
-      store.game.clockTimer = setInterval(clockTick, 200);
+      // 100ms, not 200: the last ten seconds show tenths (fmtClock)
+      store.game.clockTimer = setInterval(clockTick, 100);
     } else if (!want && store.game.clockTimer) {
       clearInterval(store.game.clockTimer);
       store.game.clockTimer = null;
@@ -1800,16 +1923,25 @@ import { createStore } from "./store.js";
         recordOutcome(isDraw ? "draw" : side === store.session.humanColor ? "loss" : "win", "flag");
       }
       saveGame();
+      // the result card says it (7.7 §4): a toast is for what happens
+      // behind the game, not for how the game ended
       store.commit("game", "action");
-      const who = sideName(side);
-      toast(isDraw ? who + t("msg.clock.flagDrawNoMaterial") :
-        tf("mm.flagWin", [who, otherSideName(side)]));
       return;
     }
     renderClocks();
   }
 
+  /**
+   * m:ss, and 0:0s.t in the last ten seconds (7.7, v7-7-plan §2): a second is
+   * a long time when there are nine of them left, and the tenth is what says
+   * whether a move can still be made. Seconds round up (a clock reading 0:00
+   * has fallen), tenths round down.
+   */
   function fmtClock(ms) {
+    if (ms > 0 && ms < 10000) {
+      const d = Math.floor(ms / 100);
+      return "0:0" + Math.floor(d / 10) + "." + (d % 10);
+    }
     const s = Math.max(0, Math.ceil(ms / 1000));
     return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
   }
@@ -1819,14 +1951,20 @@ import { createStore } from "./store.js";
     const bEl = document.getElementById("clock-b");
     if (!wEl || !bEl) return;
     const show = (store.session.mode === "pvp" || store.session.mode === "ai") && store.game.timeControl !== "off" && !!store.game.clock;
-    wEl.hidden = !show;
-    bEl.hidden = !show;
+    if (wEl.hidden === show) wEl.hidden = !show;
+    if (bEl.hidden === show) bEl.hidden = !show;
     if (!show) return;
     const active = clockRunning() ? game.turn() : null;
-    for (const [el, side] of [[wEl, "w"], [bEl, "b"]]) {
-      el.textContent = fmtClock(store.game.clock[side]);
-      el.classList.toggle("active", active === side);
-      el.classList.toggle("low", store.game.clock[side] < 20000);
+    for (const [node, side] of [[wEl, "w"], [bEl, "b"]]) {
+      // In place: this runs ten times a second while a clock runs, inside a
+      // strip the pointer may be resting on (see setText).
+      setText(node, fmtClock(store.game.clock[side]));
+      const on = active === side;
+      if (node.classList.contains("active") !== on) node.classList.toggle("active", on);
+      const low = store.game.clock[side] < 20000;
+      if (node.classList.contains("low") !== low) node.classList.toggle("low", low);
+      // the warning is for the person at the board, not for the engine's clock
+      if (store.session.mode === "pvp" || side === store.session.humanColor) Audio2.noteClock(side, store.game.clock[side]);
     }
   }
 
@@ -2116,6 +2254,9 @@ import { createStore } from "./store.js";
       body.appendChild(p);
     }
     if (task) { task.hidden = true; task.replaceChildren(); }
+    // a classic being read has no tasks, so no progress dots
+    const dots = el("lesson-dots");
+    if (dots && dots.firstChild) { dots.replaceChildren(); delete dots.dataset.sig; }
     for (const id of ["lesson-restart", "lesson-demo", "lesson-practice", "lesson-next"]) {
       const b = document.getElementById(id);
       if (b) b.hidden = true;
@@ -2539,7 +2680,9 @@ import { createStore } from "./store.js";
       saveLearnState();
       checkNewAchievements();
     }
-    toast(tf("lm.lessonDone", [lessonText(L).title]));
+    // no toast (7.7 §4): the dot row fills, the task card says 完成 and
+    // points at 下一课, and 下一课 takes the fill — the lesson's own screen
+    // says it is finished, where the next step is
     sync();
   }
 
@@ -2592,6 +2735,25 @@ import { createStore } from "./store.js";
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
     if (title) title.textContent = t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
+    // 7.7 (v7-7-plan §4): the lesson's tasks as a row of dots — done filled,
+    // current ringed; a finished lesson is a full row
+    const dots = el("lesson-dots");
+    if (dots) {
+      const n = L.tasks.length;
+      const ti = store.session.learn.ti;
+      const done = !!store.session.learn.done;
+      const sig = L.id + "|" + n + "|" + ti + "|" + done + "|" + store.ui.langId;
+      if (dots.dataset.sig !== sig) {
+        dots.dataset.sig = sig;
+        dots.replaceChildren(...L.tasks.map((_, i) => {
+          const d = document.createElement("li");
+          d.className = "lesson-dot" + (done || i < ti ? " done" : i === ti ? " current" : "");
+          return d;
+        }));
+        dots.classList.toggle("complete", done);
+        dots.setAttribute("aria-label", t("aria.lessonDots") + " " + (done ? n : ti) + "/" + n);
+      }
+    }
     const textEl = document.getElementById("lesson-text");
     if (textEl) {
       textEl.replaceChildren();
@@ -2624,7 +2786,10 @@ import { createStore } from "./store.js";
       practice.disabled = false;
       if (rest.total) {
         practice.textContent = tf("act.practice", [rest.left || rest.total]);
-        practice.classList.toggle("primary", store.session.learn.done && rest.left > 0);
+        // Never the filled one (7.7 §3): once the lesson is done that is
+        // 下一课, and two filled buttons in one row say nothing about which
+        // to press. 接着练 stays one click away beside it.
+        practice.classList.remove("primary");
       }
     }
     const next = document.getElementById("lesson-next");
@@ -3040,7 +3205,10 @@ import { createStore } from "./store.js";
     if (store.session.puzzleState.solved[id]) return; // not a first attempt
     pz.rated = true;
     const st = store.session.puzzleState;
+    const before = Math.round(playerRating().r);
     const r = ChessRating.rate1v1(playerRating(), puzzleRating(pz.p), score);
+    // what the answer did to the rating, for the feedback card (7.7 §4)
+    pz.rating = { now: Math.round(r.player.r), delta: Math.round(r.player.r) - before };
     st.rating = r.player;
     if (!st.pr) st.pr = {};
     st.pr[id] = r.puzzle;
@@ -3588,6 +3756,7 @@ import { createStore } from "./store.js";
         }
       }
       if (store.session.puzzle.stage >= script.length) { puzzleSolved(); return; }
+      puzzleGoodMove();
       sync();
       return;
     }
@@ -3630,6 +3799,7 @@ import { createStore } from "./store.js";
       animateReply(rm);
       moveSound(rm, g);
     }
+    puzzleGoodMove();
     sync();
   }
 
@@ -3658,12 +3828,52 @@ import { createStore } from "./store.js";
     store.session.puzzle.g.undo();
     store.session.puzzle.last = null;
     store.session.puzzle.misses++;
+    store.session.pzStreak = 0;
     markMissed(store.session.puzzle.p.id); // a missed puzzle joins the review queue
-    // the correction tier: this is the app telling you what you got wrong,
-    // which in the puzzle and opening modes is the entire product
-    toast((reason || t("pz.noForcedMate")) +
-      (store.session.puzzle.misses >= 2 ? t("pz.seeAnswer") : t("pz.tryAgain")), "fix");
+    Audio2.playWrong();
+    // The correction: this is the app telling you what you got wrong, which
+    // in the puzzle and opening modes is the entire product. 7.7 (v7-7-plan
+    // §4): on the feedback card beside the board rather than in a toast over
+    // it — a cross, 再想想, the reason, and the way to the answer.
+    store.session.puzzle.fb = { ok: false, head: t("pz.fb.retry"), sub: reason || t("pz.noForcedMate") };
     store.commit("session", "sync");
+  }
+
+  /** A right move that is not yet the end of the puzzle: say so (7.7 §4). */
+  function puzzleGoodMove() {
+    store.session.puzzle.fb = { ok: true, head: t("pz.fb.best"), sub: t("pz.fb.keepGoing") };
+  }
+
+  /**
+   * The feedback card under the task (7.7, v7-7-plan §4) — what the last
+   * move was. Lichess's shape: a tick and 「最佳着」, or a cross and 「再想想」
+   * with the way to the answer; on the solve, the run of clean solves and
+   * what the answer did to the rating.
+   */
+  function renderPuzzleFeedback() {
+    const box = el("puzzle-feedback");
+    if (!box) return;
+    const pz = store.session.puzzle;
+    const fb = pz && pz.fb;
+    avail(box, !!fb);
+    if (!fb) return;
+    box.classList.toggle("ok", fb.ok);
+    box.classList.toggle("bad", !fb.ok);
+    setIcon(el("puzzle-fb-ic"), fb.ok ? "check" : "x");
+    setText(el("puzzle-fb-head"), fb.head);
+    setText(el("puzzle-fb-sub"), fb.sub || "");
+    const meta = el("puzzle-fb-meta");
+    const parts = [];
+    if (fb.ok && pz.done && store.session.pzStreak >= 2) parts.push(tf("pz.fb.streak", [store.session.pzStreak]));
+    if (pz.rating && (pz.done || !fb.ok)) {
+      const d = pz.rating.delta;
+      parts.push(pz.rating.now + " " + (d > 0 ? "+" + d : d < 0 ? "−" + -d : "±0"));
+    }
+    avail(meta, parts.length > 0);
+    setText(meta, parts.join(" · "));
+    if (meta) meta.classList.toggle("up", !!(pz.rating && pz.rating.delta > 0));
+    // the way to the answer, after a miss, while there is still a question
+    avail(el("puzzle-fb-hint"), !fb.ok && !pz.done && !pz.helpArrow);
   }
 
   /** Arrow for the correct move at the current stage. */
@@ -3736,7 +3946,12 @@ import { createStore } from "./store.js";
       store.session.puzzle.p.cat === "win" || store.session.puzzle.p.cat === "tac" ? t("pz.doneWin") : t("pz.doneMate");
     const why = store.session.puzzle.p.cat === "mine" ? mineWhy(store.session.puzzle.p) : "";
     if (store.session.puzzle.p.cat === "mine") store.session.puzzle.lineAt = 0;
-    toast("✅ " + verb + " · " + puzzleName(sp) + (why ? " · " + why : ""));
+    // the run of clean first-try solves this sitting, and the card that says
+    // so — the tick, the verb, the puzzle's name (7.7 §4; was a toast)
+    const clean = store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer;
+    store.session.pzStreak = clean ? store.session.pzStreak + 1 : 0;
+    store.session.puzzle.fb = { ok: true, head: clean ? t("pz.fb.best") : verb,
+      sub: (clean ? verb + " · " : "") + puzzleName(sp) + (why ? " · " + why : "") };
     sync();
   }
 
@@ -4015,6 +4230,7 @@ import { createStore } from "./store.js";
       if (emptyTask) emptyTask.textContent = t("pz.noneInTier");
       const emptyList = document.getElementById("puzzle-list");
       if (emptyList) emptyList.replaceChildren();
+      avail(el("puzzle-feedback"), false);
       return;
     }
     const list = puzzlesInCat(store.session.puzzle.cat);
@@ -4057,6 +4273,7 @@ import { createStore } from "./store.js";
             ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
     }
     renderPuzzleLine();
+    renderPuzzleFeedback();
     // opening drills are rote memorisation without the "why" — show the idea
     const ideaEl = document.getElementById("puzzle-idea");
     if (ideaEl) {
@@ -4302,7 +4519,13 @@ import { createStore } from "./store.js";
   /** textContent, written only when it differs — a same-text write still
       replaces the text node, and still costs a layout. */
   function setText(node, text) {
-    if (node.textContent !== text) node.textContent = text;
+    if (!node || node.textContent === text) return;
+    // 7.7: into the text node that is there, when there is exactly one — the
+    // clock writes ten times a second, and a replaced child is a replaced
+    // child to WebKit's hit testing whatever it says
+    const f = node.firstChild;
+    if (f && f === node.lastChild && f.nodeType === 3) f.nodeValue = text;
+    else node.textContent = text;
   }
 
   /**
@@ -4634,16 +4857,17 @@ import { createStore } from "./store.js";
     const wrap = document.getElementById("eval-wrap");
     if (wrap) {
       wrap.hidden = !analysisFor();
-      // the curve needs a game to draw: below the sample floor it is an empty
-      // box with a flat line in it (audit, 5.1 work package C)
-      const cv = document.getElementById("eval-curve");
-      if (cv) {
-        const a = analysisFor();
-        const sum = a && Review ? Review.summarize(a.scalars, sanHistory(), startFen() && startFen().split(" ")[1] === "b" ? "b" : "w") : null;
-        cv.hidden = !Review.longEnough(sum);
-      }
-      if (!wrap.hidden) { drawEvalCurve(); drawEvalBar(); }
+      // 7.7 §5: the curve is drawn for every analysed game. 5.1 hid it below
+      // the verdict's sample floor (Review.longEnough, 30 judged moves) as
+      // "an empty box with a flat line in it" — but a curve over eleven moves
+      // is not empty, it is short, and hiding it meant the one picture of the
+      // game was missing after every analysis of an ordinary short game (the
+      // 7.7 walk-through: no curve in three screenshots at 1440×900). The
+      // floor still decides what the report may *say* (verdictKey); what
+      // happened is always worth showing.
+      if (!wrap.hidden) drawEvalCurve();
     }
+    drawEvalBar();
     // the export and the mark legend describe a report — none, and they do
     // not stand there promising one (audit F7)
     avail(document.getElementById("report-export"), !!analysisFor());
@@ -4713,20 +4937,6 @@ import { createStore } from "./store.js";
       }
     }
     renderReview();
-    const accEl = document.getElementById("acc-line");
-    if (accEl) {
-      const a = analysisFor();
-      const acc = a && a.acc;
-      const has = acc && (acc.w != null || acc.b != null);
-      accEl.hidden = !has;
-      if (has) {
-        // the average loss lives in the report card below; this line was
-        // carrying both figures for both sides and truncating in every
-        // language at the default window (audit F6)
-        const part = (side, name) => name + " " + (acc[side] == null ? "—" : acc[side] + "%");
-        accEl.textContent = t("acc.label") + " · " + part("w", t("vs.white")) + " · " + part("b", t("vs.black"));
-      }
-    }
     lockPgnEdits();
   }
 
@@ -4781,59 +4991,128 @@ import { createStore } from "./store.js";
     // the turning point is chosen by win-percentage drop, but the drill it
     // banks records what the move cost in centipawns (bankWorst → drillFrom)
     if (sum && sum.worst) sum.worst.loss = R.lossAt(a.scalars, sum.worst.ply, sum.worst.side);
+    const card = document.getElementById("report-card");
+    const hero = document.getElementById("acc-line");
+    if (card) card.hidden = !sum;
     el.hidden = !sum;
+    if (hero) hero.hidden = !sum;
+    if (!sum) { el.replaceChildren(); if (hero) hero.replaceChildren(); el.dataset.key = ""; return; }
+
+    // the stored figure where there is one — it is what the statistics filed
+    const acc = { w: sum.acc.w, b: sum.acc.b };
+    if (a.acc) { if (a.acc.w != null) acc.w = a.acc.w; if (a.acc.b != null) acc.b = a.acc.b; }
+    const soft = !!store.ui.showSoftMark;
+    const isPlayer = (side) => store.session.mode === "ai" && side === store.session.humanColor;
+    const worstBest = sum.worst && a.bests ? a.bests[sum.worst.ply] : null;
+    const cand = sum.worst && worstBest ? worstDrill(sum.worst, worstBest) : null;
+    const banked = !!cand && store.session.mines.some((m) => m.id === cand.id);
+    // 7.6 lesson: this runs on every sync, and rebuilding the card swapped the
+    // turning-point button under a pointer that was mid-press. Rebuilt only
+    // when something it shows has changed.
+    const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured,
+      sum.worst && [sum.worst.ply, Math.round(sum.worst.drop)], soft, store.ui.langId,
+      store.session.mode, store.session.humanColor, !!worstBest, banked, sanHistory().length]);
+    if (el.dataset.key === key && el.childElementCount) return;
+    el.dataset.key = key;
     el.replaceChildren();
-    if (!sum) return;
+
+    // --- the headline: two accuracies, side by side, once -----------------
+    // They were a text line above the report (「精准度 · 白 99% · 黑 98%」) AND
+    // the first row of each side's block inside it — the same two numbers
+    // twice, neither of them the thing the eye landed on.
+    if (hero) {
+      const cap = document.createElement("div");
+      cap.className = "acc-cap";
+      cap.textContent = t("acc.label");
+      const cols = document.createElement("div");
+      cols.className = "acc-cols";
+      for (const side of ["w", "b"]) {
+        const c = document.createElement("div");
+        c.className = "acc-side" + (isPlayer(side) ? " is-you" : "");
+        const num = document.createElement("span");
+        num.className = "acc-num num";
+        num.textContent = acc[side] == null ? "—" : acc[side] + "%";
+        const who = document.createElement("span");
+        who.className = "acc-who";
+        const dot = document.createElement("span");
+        dot.className = "acc-dot " + (side === "w" ? "is-w" : "is-b");
+        dot.setAttribute("aria-hidden", "true");
+        who.append(dot, document.createTextNode(sideName(side)));
+        c.append(num, who);
+        cols.appendChild(c);
+      }
+      hero.replaceChildren(cap, cols);
+    }
 
     const line = (cls) => { const d = document.createElement("div"); d.className = cls; el.appendChild(d); return d; };
-    const head = line("review-h");
-    head.textContent = t("rv.title");
-    const opening = openingFor(sanHistory().length);
-    if (opening) {
-      const o = line("review-row muted");
-      o.textContent = t("rv.opening") + " · " + opening[0] + " " + opening[1];
+    // (the opening's name is not repeated here: the panel already heads with
+    // it, a few centimetres up. The exported picture, which has no panel
+    // around it, still carries it — report.js.)
+
+    // --- the marks, per side: a small table, coloured by the marks' scale --
+    // Only the three marks the analysis has. Other products grade moves as
+    // brilliant / best / good; this model has no basis for any of those, and
+    // a category drawn without one is a misleading number (v7-7-plan §5).
+    const table = document.createElement("table");
+    table.className = "rv-table";
+    const tr = (cells, head) => {
+      const row = document.createElement("tr");
+      cells.forEach((c, i) => {
+        const cell = document.createElement(head || i === 0 ? "th" : "td");
+        if (i === 0 && !head) cell.scope = "row";
+        if (head && i > 0) cell.scope = "col";
+        if (c instanceof Node) cell.appendChild(c); else cell.textContent = c;
+        row.appendChild(cell);
+      });
+      return row;
+    };
+    const thead = document.createElement("thead");
+    thead.appendChild(tr(["", sideName("w"), sideName("b")], true));
+    const tbody = document.createElement("tbody");
+    const KINDS = [["?!", "inaccuracy", "t-soft", "rv.kind.soft"], ["?", "mistake", "t-mid", "rv.kind.mid"],
+      ["??", "blunder", "t-bad", "rv.kind.bad"]].filter((k) => soft || k[0] !== "?!");
+    for (const [mark, field, cls, label] of KINDS) {
+      const lab = document.createDocumentFragment();
+      const m = document.createElement("span");
+      m.className = "rv-mark " + cls;
+      m.textContent = mark;
+      lab.append(m, document.createTextNode(t(label)));
+      const row = tr([lab, String(sum.counts.w[field]), String(sum.counts.b[field])]);
+      row.className = "rv-kind " + cls;
+      // a zero is not news: only the counts that happened carry the colour
+      for (const td of row.querySelectorAll("td")) td.classList.toggle("is-zero", td.textContent === "0");
+      tbody.appendChild(row);
     }
+    const n = (x) => (x == null ? "—" : String(x));
+    const lossRow = tr([t("rv.acpl"), n(sum.acpl.w), n(sum.acpl.b)]);
+    lossRow.className = "rv-loss";
+    tbody.appendChild(lossRow);
+    table.append(thead, tbody);
+    for (const td of table.querySelectorAll("td")) td.classList.add("num");
+    el.appendChild(table);
+
+    // --- the footnote: what the numbers cannot carry ----------------------
+    // 「只分析了 N 着」 is a caveat about the whole report, not about one side,
+    // so it is said once. The advice lines stay per side and only where the
+    // advice is for somebody: the player's side of an ai game, both sides of
+    // anything else.
+    const notes = [];
+    let short = false;
     for (const side of ["w", "b"]) {
-      if (sum.acc[side] == null) continue;
-      const row = line("review-row");
-      const who = document.createElement("div");
-      who.className = "review-k";
-      // the full word, not the one-letter clock label — "W Accuracy 64%" reads
-      // like a typo in a report meant to be read as prose
-      who.textContent = sideName(side);
-      row.appendChild(who);
-      // One row per number, label left and value right — the same row the
-      // statistics directly above this report are already made of. It was one
-      // sentence carrying five values (「精准度 100% · 平均失分 0 · 小失误 0 /
-      // 失误 0 / 严重 0」), which in a 239px panel wrapped to three lines in
-      // Chinese and five in English, breaking after the separators so that
-      // 「/」 and 「·」 ended the lines. A report of named quantities laid out
-      // as prose, directly under the same quantities laid out as a list.
-      for (const [k, v] of sideRows(sum, side)) {
-        const r = document.createElement("div");
-        r.className = "stat-row";
-        const kk = document.createElement("span");
-        kk.className = "stat-k";
-        kk.textContent = k;
-        const vv = document.createElement("span");
-        vv.className = "stat-v num";
-        vv.textContent = v;
-        r.append(kk, vv);
-        row.appendChild(r);
-      }
+      if (acc[side] == null) continue;
       let vk = R.verdictKey(sum, side);
-      // 「挑战更高难度」 is advice to the player about the engine's level; the
-      // other side of an ai game, and both sides of a pvp or imported game,
-      // get the judgement without the advice
-      const isPlayer = store.session.mode === "ai" && side === store.session.humanColor;
-      if (vk === "rv.verdict.excellent" && !isPlayer) vk = "rv.verdict.excellentPlain";
-      if (vk) {
-        const note = document.createElement("div");
-        note.className = "review-note muted";
-        note.textContent = vk === "rv.verdict.tooShort" ? tf(vk, [sum.judged[side]]) : t(vk);
-        row.appendChild(note);
-      }
+      if (vk === "rv.verdict.tooShort") { short = true; continue; }
+      // 「挑战更高难度」 is advice to the player about the engine's level
+      if (vk === "rv.verdict.excellent" && !isPlayer(side)) vk = "rv.verdict.excellentPlain";
+      if (store.session.mode === "ai" && !isPlayer(side)) continue;
+      if (vk) notes.push(sideName(side) + " · " + t(vk));
     }
+    if (short) notes.unshift(tf("rv.verdict.tooShort", [sum.measured]));
+    for (const txt of notes) {
+      const note = line("review-note muted");
+      note.textContent = txt;
+    }
+
     if (sum.worst) {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -4856,12 +5135,10 @@ import { createStore } from "./store.js";
         bank.className = "review-bank";
         // already in the book — the auto-miner banked it, or this button did:
         // say so on the button instead of offering to bank it again (7.6)
-        const cand = worstDrill(sum.worst, bestUci);
-        const have = !!cand && store.session.mines.some((m) => m.id === cand.id);
-        bank.textContent = have ? t("rv.bankDup") : t("rv.bank");
-        bank.disabled = have;
-        bank.title = have ? "" : t("rv.bankTip");
-        if (!have) bank.onclick = () => bankWorst(sum.worst, bestUci);
+        bank.textContent = banked ? t("rv.bankDup") : t("rv.bank");
+        bank.disabled = banked;
+        bank.title = banked ? "" : t("rv.bankTip");
+        if (!banked) bank.onclick = () => bankWorst(sum.worst, bestUci);
         el.appendChild(bank);
       }
     }
@@ -4899,13 +5176,20 @@ import { createStore } from "./store.js";
   }
 
   /**
-   * The eval bar for the position the board is standing on.
+   * The eval gauge for the position the board is standing on.
    *
    * Pure rendering of `analysis.scalars[viewIndex]` — no engine call, which is
    * the whole reason this is review-only. During a live game `analysisFor()`
    * is null (the signature is the PGN, and that changes every move), so the
-   * bar hides itself without needing a mode check, and there is no way for it
-   * to become an answer key while somebody is still playing.
+   * gauge hides itself without needing a mode check, and there is no way for
+   * it to become an answer key while somebody is still playing.
+   *
+   * 7.7 §5: a vertical gauge down the board's left edge, where Lichess keeps
+   * it, instead of a bar in the panel — the number is about the board, so it
+   * stands beside the board, and it reads with the panel shut. White's share
+   * fills from White's side, so it turns over with the board. Where the
+   * window leaves no room beside the frame (a board that is width-bound), it
+   * moves onto the frame's own left edge rather than off the screen.
    */
   function drawEvalBar() {
     const row = document.getElementById("eval-bar-row");
@@ -4914,8 +5198,14 @@ import { createStore } from "./store.js";
     const text = document.getElementById("eval-bar-text");
     if (!row || !bar || !fill || !text) return;
     const a = analysisFor();
-    if (!a) { row.hidden = true; return; }
+    const inReview = !!a && !store.session.editor && store.session.mode !== "learn" && store.session.mode !== "puzzle";
+    if (!inReview) { row.hidden = true; return; }
     row.hidden = false;
+    row.classList.toggle("is-flipped", !!store.game.flipped);
+    // room to the left of the frame: the stage's padding plus whatever the
+    // centring leaves. The gauge and its gap need about 20px.
+    const wrap = document.getElementById("board-wrap");
+    if (wrap) row.classList.toggle("is-inset", wrap.getBoundingClientRect().left < 24);
     const cp = a.scalars[store.game.viewIndex];
     const frac = Review.evalBar(cp);
     // the curve is a slider for the keyboard: ← / → (the global replay keys)
@@ -4931,13 +5221,17 @@ import { createStore } from "./store.js";
     if (frac == null) {
       // measured and level is not the same thing as never measured
       bar.classList.add("is-unmeasured");
-      fill.style.width = "50%";
-      text.textContent = t("rv.evalNone");
+      fill.style.height = "50%";
+      setText(text, t("rv.evalNone"));
+      row.classList.remove("white-ahead", "black-ahead");
       return;
     }
     bar.classList.remove("is-unmeasured");
-    fill.style.width = (frac * 100).toFixed(1) + "%";
-    text.textContent = evalText(cp);
+    fill.style.height = (frac * 100).toFixed(1) + "%";
+    setText(text, evalText(cp));
+    // the number sits at the end of the side that is ahead, like the fill
+    row.classList.toggle("white-ahead", frac >= 0.5);
+    row.classList.toggle("black-ahead", frac < 0.5);
   }
 
   /** "+0.4", "−1.2", or "+#" — a forced mate has no meaningful pawn count. */
@@ -4973,6 +5267,7 @@ import { createStore } from "./store.js";
     const css = getComputedStyle(document.documentElement);
     const cMuted = css.getPropertyValue("--muted").trim() || "#999";
     const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const cPanel = css.getPropertyValue("--panel").trim() || cMuted;
     const JC = judgeColours();
     // midline
     ctx.strokeStyle = cMuted;
@@ -5030,9 +5325,14 @@ import { createStore } from "./store.js";
       if (tagCh !== "?" && tagCh !== "??") continue;
       const s = a.scalars[i + 1];
       if (s == null) continue;
+      // 7.7 §5: a dot you can find — 2.4px was a speck on a 60px curve —
+      // ringed in the panel's own colour so it separates from the fill
       ctx.fillStyle = tagCh === "??" ? JC.bad : JC.mid;
+      ctx.strokeStyle = cPanel;
+      ctx.lineWidth = 1.5 * dpr;
       ctx.beginPath();
-      ctx.arc(x(i + 1), y(s), 2.4 * dpr, 0, Math.PI * 2);
+      ctx.arc(x(i + 1), y(s), 3.5 * dpr, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.fill();
     }
     // current view marker
@@ -5112,25 +5412,13 @@ import { createStore } from "./store.js";
     saveStats(s);
     renderStats();
     checkNewAchievements();
-    offerReview();
   }
 
-  /**
-   * Nudge towards the post-game report once a game is actually over.
-   *
-   * The review is the most useful thing the app can tell a learner, and until
-   * 1.7 it was only reachable by knowing to press "分析" afterwards — so the
-   * feature shipped in 1.6 and most players never saw it. Only a hint: running
-   * the engine over a whole game is a real wait, so it stays opt-in.
-   */
-  function offerReview() {
-    if (store.session.mode !== "ai" || !ChessEngine || store.session.analyzing) return;
-    if (analysisFor()) return; // already analysed — the report is on screen
-    if (sanHistory().length < 6) return; // too short to say anything useful
-    setTimeout(() => {
-      if (store.session.mode === "ai" && !store.session.analyzing && !analysisFor() && appGameOver()) toast(t("rv.offer"));
-    }, 2200);
-  }
+  // offerReview() lived here: a toast, 2.2s after the ending, saying
+  // 「本局结束 —— 点『分析』看这盘的回顾」. The review is still the most useful
+  // thing the app can tell a learner (that was the whole argument for the
+  // nudge in 1.7) — so 7.7 gives it the result card's filled button instead
+  // of a message that leaves after four seconds (v7-7-plan §4).
 
   /** 做题战绩 — the tally the picker reads, drawn for the player. */
   function renderPuzzleTally() {
@@ -5278,35 +5566,74 @@ import { createStore } from "./store.js";
   function renderDailyPlan(steps, current) {
     const ol = document.getElementById("daily-plan");
     if (!ol) return;
-    ol.replaceChildren();
     ol.hidden = !steps.length;
+    // 7.7 (v7-7-plan §1i): the step you would go to next — the current one,
+    // or the first before the plan has begun — is a control of its own. It
+    // is rebuilt only when the plan or the language changed: this runs on
+    // every commit, and a button rebuilt under the pointer loses the click
+    // on WebKit (7.6).
+    const go = current < 0 ? 0 : current;
+    const labels = steps.map(dailyStepLabel);
+    const sig = current + "|" + labels.join("\u0001") + "|" + store.ui.langId;
+    if (ol.dataset.sig === sig) return;
+    ol.dataset.sig = sig;
+    ol.replaceChildren();
     steps.forEach((step, i) => {
       const li = document.createElement("li");
       li.className = "daily-step" + (i < current ? " done" : i === current ? " current" : "");
+      const row = document.createElement(i === go ? "button" : "div");
+      row.className = "daily-row";
+      if (i === go) {
+        row.type = "button";
+        row.dataset.daily = "go";
+        row.onclick = () => el("daily-btn").click();
+      }
+      const dot = document.createElement("span");
+      dot.className = "daily-dot";
+      dot.setAttribute("aria-hidden", "true");
+      if (i < current) dot.appendChild(Icons.icon("check"));
       // 7.4 §5: the step, then why — two lines, see .daily-step
+      const txt = document.createElement("span");
+      txt.className = "daily-txt";
       const what = document.createElement("span");
       what.className = "daily-what";
-      what.textContent = dailyStepLabel(step);
+      what.textContent = labels[i];
       what.title = what.textContent;
       const why = document.createElement("span");
       why.className = "daily-why";
       why.textContent = t("daily.why." + step.kind);
       why.title = why.textContent;
-      li.append(what, why);
+      txt.append(what, why);
+      row.append(dot, txt);
+      if (i === go) {
+        const arrow = document.createElement("span");
+        arrow.className = "daily-arrow";
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.appendChild(Icons.icon("chevron-right"));
+        row.appendChild(arrow);
+      }
+      li.appendChild(row);
       ol.appendChild(li);
     });
   }
 
   function syncDailyUI() {
     const btn = document.getElementById("daily-btn");
+    const label = document.getElementById("daily-label");
     const note = document.getElementById("daily-note");
-    if (!btn || !note) return;
+    if (!btn || !label || !note) return;
+    // 7.7 (v7-7-plan §3, §10): while a game is being played the notation is
+    // what the page is for, and this card was the first screen of the drawer
+    // in a portrait window. It steps aside until the game is over.
+    const playing = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
+      sanHistory().length > 0 && isLive() && !appGameOver();
+    avail(el("daily-row"), !playing);
     const d = store.session.daily;
     if (!d) {
-      btn.textContent = t("daily.btn");
+      setText(label, t("daily.btn"));
       const run = Progress.streak(store.session.progress, Date.now());
       note.hidden = run < 2;
-      if (run >= 2) note.textContent = tf("daily.streak", [run]);
+      if (run >= 2) setText(note, tf("daily.streak", [run]));
       renderDailyPlan(Planner.plan(dailySignals()).steps, -1);
       return;
     }
@@ -5322,12 +5649,12 @@ import { createStore } from "./store.js";
       saveProgress();
       const run = Progress.streak(store.session.progress, Date.now());
       toast(t("daily.done") + (run >= 2 ? " · " + tf("daily.streak", [run]) : ""));
-      btn.textContent = t("daily.btn");
+      setText(label, t("daily.btn"));
       note.hidden = run < 2;
-      if (run >= 2) note.textContent = tf("daily.streak", [run]);
+      if (run >= 2) setText(note, tf("daily.streak", [run]));
       return;
     }
-    btn.textContent = tf("daily.of", [d.i + 1, d.steps.length]) + " · " + dailyStepLabel(d.steps[d.i]);
+    setText(label, tf("daily.of", [d.i + 1, d.steps.length]) + " · " + dailyStepLabel(d.steps[d.i]));
     note.hidden = true;
     renderDailyPlan(d.steps, d.i);
   }
@@ -5586,7 +5913,7 @@ import { createStore } from "./store.js";
       el.appendChild(row);
     }
     const hint = document.createElement("p");
-    hint.className = "hint";
+    hint.className = total ? "hint" : "hint empty-note";   // 7.7 §3: see .empty-note
     hint.textContent = total
       ? t("stats.games") + total + t("stats.gamesSuffix") + " · " + t("stats.hint") +
         (withAcc.length ? t("stats.hintAcc") : t("stats.hintNoAcc"))
@@ -5818,7 +6145,7 @@ import { createStore } from "./store.js";
       body.replaceChildren();
       if (!store.session.histCache.length) {
         const p = document.createElement("p");
-        p.className = "hint";
+        p.className = "hint empty-note";   // 7.7 §3: see .empty-note
         p.textContent = t("hist.empty");
         body.appendChild(p);
       } else {
@@ -6038,7 +6365,8 @@ import { createStore } from "./store.js";
     if (fresh.length) {
       Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
       // one toast per unlock, staggered so several don't collide
-      fresh.forEach((r, i) => setTimeout(() => toast("🎉 " + t("ach.unlocked") + " · " + r.ach.icon + " " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
+      // (the badge's picture is on the record page; a toast is words — 7.7 §7)
+      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
     }
     renderAchievements();
     renderRecordEntry();
@@ -6139,7 +6467,7 @@ import { createStore } from "./store.js";
       b.dataset.mode = d.mode;
       const ic = document.createElement("span");
       ic.className = "rec-door-ic";
-      ic.textContent = a ? a.icon : "·";
+      if (a) ic.appendChild(Icons.icon(a.icon));
       const txt = document.createElement("span");
       txt.className = "rec-door-t";
       const k = document.createElement("span");
@@ -6170,7 +6498,7 @@ import { createStore } from "./store.js";
       b.title = r.ach.descKey ? t(r.ach.descKey) : r.ach.desc;
       const ic = document.createElement("span");
       ic.className = "ach-ic";
-      ic.textContent = r.unlocked ? r.ach.icon : "🔒";
+      ic.appendChild(Icons.icon(r.unlocked ? r.ach.icon : "lock"));
       const nm = document.createElement("span");
       nm.className = "ach-nm";
       nm.textContent = r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name;
@@ -6407,7 +6735,8 @@ import { createStore } from "./store.js";
       m.className = "mlmenu";
       m.dataset.node = String(n.id);
       m.dataset.menu = "1";
-      m.textContent = "…";
+      // the icon, not a literal 「…」 — that read as notation cut short (7.7 §1f)
+      m.appendChild(Icons.icon("ellipsis"));
       m.setAttribute("aria-label", t("ml.menu"));
       m.title = t("ml.menu");
       return m;
@@ -6611,30 +6940,190 @@ import { createStore } from "./store.js";
     return store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
   }
 
+  // setText() (above, with the library's status lines) writes only what
+  // differs; the strips and the clock lean on it — they repaint on every
+  // commit and every tick, and 7.6 learned on WebKit that a node replaced
+  // between pointerdown and pointerup loses the click.
+  /** Put icon `name` into `slot`, unless it is already the one there. */
+  function setIcon(slot, name) {
+    if (!slot || slot.dataset.icon === name) return;
+    slot.dataset.icon = name;
+    slot.replaceChildren(Icons.icon(name));
+  }
+
+  /** The sparring style's picture, for the engine's strip (7.5 persona). */
+  const PERSONA_ICON = { off: "bot", greedy: "coins", principled: "scale", attacker: "swords" };
+
   /**
-   * The middle of the match bar: what is between the two players.
-   *
-   * Before the first move that is nothing, and 对 says so; from then on it is
-   * the move just played. Never both — one slot, one meaning.
-   *
-   * This is the last of the four facts the spine used to carry under the board
-   * with the panel shut. The other three moved with it: whose move is the
-   * status pill, the clocks are the two `.vs-clock`s, and the material lead is
-   * `.taken-diff`, beside the pieces it is counted from — which is a more
-   * precise place for it than a lone number at the far end of a pill.
+   * Who sits on each side, as the strips say it: an icon, a name and a
+   * second, quieter line. `null` for a side nobody is playing — a lesson
+   * task with no sparring partner.
+   * @returns {{w: ?{icon: string, name: string, level: string}, b: ?{icon: string, name: string, level: string}}}
    */
-  function renderMatchLast() {
-    const lastEl = el("vs-last");
-    const versusEl = el("vs-versus");
-    if (!lastEl || !versusEl) return;
-    const h = sanHistory();
-    const at = store.game.viewIndex;
-    const show = at > 0 && !inModal();
-    lastEl.hidden = !show;
-    versusEl.hidden = show;
+  function stripPeople() {
+    const mode = store.session.mode;
+    if (mode === "ai") {
+      const engine = {
+        icon: PERSONA_ICON[store.session.personaId] || "bot",
+        name: "Stockfish",
+        level: [DIFF_NAMES[store.session.difficulty] || store.session.difficulty]
+          .concat(store.session.personaId !== "off" ? [t("persona." + store.session.personaId)] : []).join(" · "),
+      };
+      const you = { icon: "user", name: t("vs.player"), level: "" };
+      return store.session.humanColor === "w" ? { w: you, b: engine } : { w: engine, b: you };
+    }
+    if (mode === "learn") {
+      // A lesson that is not a drill has no opponent: that strip's place is
+      // kept (so the board does not move between modes) and left empty.
+      const drill = !!(store.session.learn && curTask().type === "drill");
+      return {
+        w: { icon: "graduation-cap", name: t("role.student"), level: "" },
+        b: drill ? { icon: "bot", name: t("role.sparring"), level: "" } : null,
+      };
+    }
+    if (mode === "puzzle") {
+      // black drills swap the chairs: the book plays White, you answer
+      const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
+      const you = { icon: "user", name: t(asBlack ? "role.youB" : "role.you"), level: "" };
+      const book = { icon: "puzzle", name: t("role.puzzle"), level: "" };
+      return asBlack ? { w: book, b: you } : { w: you, b: book };
+    }
+    // Two players: a loaded game names its players — the file's [White] /
+    // [Black] where it has them, rather than 玩家 1 / 玩家 2 (7.6); "?" is
+    // PGN for unknown. The rating goes on the quiet line when the file has one.
+    const h = game.header() || {};
+    const nm = (v) => { const x = String(v || "").trim(); return /^\?*$/.test(x) ? "" : x; };
+    const elo = (v) => (/^\d{3,4}$/.test(String(v || "").trim()) ? String(v).trim() : "");
+    return {
+      w: { icon: "user", name: nm(h.White) || t("vs.p1"), level: elo(h.WhiteElo) },
+      b: { icon: "user", name: nm(h.Black) || t("vs.p2"), level: elo(h.BlackElo) },
+    };
+  }
+
+  /**
+   * The two player strips (7.7, v7-7-plan §2).
+   *
+   * Placed by the board's orientation: the side whose men stand at the bottom
+   * of the board has the bottom strip, so the default is you below and the
+   * opponent above, and F carries them round with the board. The side to
+   * move carries .is-active — the lit disc and the lit clock are how the
+   * screen says whose move it is now that the status pill is gone from sight.
+   * When the game is over each strip carries its score, 1 / 0 / ½.
+   */
+  function renderStrips() {
+    const people = stripPeople();
+    const bottom = store.game.flipped ? "b" : "w";
+    const mode = store.session.mode;
+    // whose move: the trainer's position in the two teaching modes, the
+    // position on the board otherwise
+    const trainerG = mode === "puzzle" ? store.session.puzzle && store.session.puzzle.g
+      : mode === "learn" ? store.session.learn && store.session.learn.g : null;
+    const g = trainerG || viewGame();
+    const over = !inModal() && (appGameOver() || resultFromFile());
+    const token = over ? gameResultToken() : "*";
+    const done = mode === "puzzle" ? !!(store.session.puzzle && store.session.puzzle.done)
+      : mode === "learn" ? !!(store.session.learn && store.session.learn.done) : false;
+    const thinking = !!store.session.engineThinking || !!(store.session.learn && store.session.learn.engineBusy);
+    const score = { "1-0": { w: "1", b: "0" }, "0-1": { w: "0", b: "1" }, "1/2-1/2": { w: "½", b: "½" } }[token];
+    for (const side of ["w", "b"]) {
+      const strip = el("strip-" + side);
+      if (!strip) continue;
+      strip.classList.toggle("at-bottom", side === bottom);
+      strip.classList.toggle("at-top", side !== bottom);
+      const p = people[side];
+      strip.classList.toggle("is-empty", !p);
+      if (!p) continue;
+      setIcon(el("av-" + side), p.icon);
+      setText(el(side === "w" ? "white-role" : "black-role"), p.name);
+      setText(el(side === "w" ? "white-level" : "black-level"), p.level);
+      const active = !over && !done && !store.session.editor && !!g && g.turn() === side &&
+        !(mode === "learn" && !trainerG);
+      strip.classList.toggle("is-active", active);
+      // the engine is the one that thinks; its disc breathes while it does
+      const engineSide = mode === "ai" ? (store.session.humanColor === "w" ? "b" : "w")
+        : mode === "learn" ? "b" : null;
+      strip.classList.toggle("thinking", thinking && side === engineSide);
+      const res = el("result-" + side);
+      if (res) {
+        res.hidden = !score;
+        if (score) {
+          setText(res, score[side]);
+          res.classList.toggle("win", score[side] === "1");
+        }
+      }
+    }
+    renderGameOverCard();
+  }
+
+  /**
+   * How the live game ended, or null while it is still going (7.7 §4).
+   * Only the two game modes have an ending to report; the trainers have
+   * their own cards.
+   */
+  function gameEnding() {
+    const mode = store.session.mode;
+    if ((mode !== "ai" && mode !== "pvp") || store.session.editor) return null;
+    if (!appGameOver() && !resultFromFile()) return null;
+    const token = gameResultToken();
+    const winner = token === "1-0" ? "w" : token === "0-1" ? "b" : null;
+    let reason;
+    if (resultFromFile()) reason = t("go.r.file");
+    else if (game.in_checkmate()) reason = t("go.r.mate");
+    else if (store.game.flagFall) reason = timeoutIsDraw() ? t("go.r.flagDraw") : tf("go.r.flag", [sideName(store.game.flagFall)]);
+    else if (store.game.resigned) reason = tf("go.r.resign", [sideName(store.game.resigned)]);
+    else if (store.game.drawAgreed) reason = t("go.r.agreed");
+    else if (store.game.drawClaimed) reason = t(store.game.drawClaimed === "threefold" ? "go.r.threefold" : "go.r.fifty");
+    else if (game.in_stalemate()) reason = t("go.r.stalemate");
+    else if (game.insufficient_material()) reason = t("go.r.insufficient");
+    else reason = t(autoDrawReason() === "fivefold" ? "go.r.fivefold" : "go.r.seventyfive");
+    return { token, winner, reason, sig: sanHistory().length + "|" + game.fen() + "|" + token };
+  }
+
+  /**
+   * The result card (7.7, v7-7-plan §4): the result in large type, how it
+   * came about, and what to do next — 分析这盘 filled while the game is not
+   * analysed, 再来一盘 and 换个对手 beside it. It replaces the toast that
+   * used to be the whole of the ending. Non-modal and in the panel, so it can
+   * never cover the board; ✕ puts it away for this ending.
+   */
+  function renderGameOverCard() {
+    const card = el("go-card");
+    if (!card) return;
+    const end = gameEnding();
+    // An ending's ✕ and its announcement belong to that ending. The signature
+    // (plies, final FEN, result) cannot tell a replay of the same short mate
+    // from the one already put away (Codex on #82), so whenever the game is
+    // not over — every new game, undo, or load of an unfinished one passes
+    // through that — both are forgotten.
+    if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; }
+    const show = !!end && store.session.goDismissed !== end.sig;
+    card.hidden = !show;
     if (!show) return;
-    const no = boardMoveNo(at - 1);
-    lastEl.textContent = no + (at % 2 ? ". " : "… ") + h[at - 1];
+    const mode = store.session.mode;
+    const mine = mode === "ai" ? store.session.humanColor : null;
+    const result = !end.winner ? t("go.draw")
+      : mine ? t(end.winner === mine ? "go.youWin" : "go.youLose")
+      : t(end.winner === "w" ? "go.whiteWins" : "go.blackWins");
+    // The card lives in the panel. With the panel shut it is off-screen, the
+    // ending no longer toasts, and #status is for screen readers only — so a
+    // mate would pass with nothing on screen but the strips' 1 / 0 (Codex on
+    // #82). Say it once, beside the board (§1d keeps toasts off it), for a
+    // game that ended here rather than one opened already finished.
+    if (store.session.goAnnounced !== end.sig) {
+      store.session.goAnnounced = end.sig;
+      if (!isPanelOpen() && !resultFromFile()) toast(result + " · " + end.reason, "fix");
+    }
+    setText(el("go-result"), result);
+    setText(el("go-reason"), end.reason);
+    setText(el("go-mark"), end.token === "1/2-1/2" ? "½–½" : end.token.replace("-", "–"));
+    card.classList.toggle("won", !!end.winner && (!mine || end.winner === mine));
+    const engineDown = !ChessEngine || !!store.session.engineDown;
+    // A position loaded already over (a mated FEN, a result-only PGN) has an
+    // ending but no moves, and analyzeGame() refuses an empty history — the
+    // review row's 分析 already asks for one (Codex on #82)
+    const canAnalyse = !engineDown && sanHistory().length > 0 && !analysisFor() && !store.session.analyzing;
+    avail(el("go-analyse"), canAnalyse);
+    avail(el("go-switch"), mode === "ai");
   }
 
   /**
@@ -6703,34 +7192,21 @@ import { createStore } from "./store.js";
     if (winner === mine) Audio2.playWin(); else Audio2.playLoss();
   }
 
-  /** The status pill: whose move, or how it ended, or that we are replaying. */
+  /**
+   * The status sentence: whose move, or how it ended, or that we are
+   * replaying. 7.7: read by a screen reader only (#status is .sr-only) — on
+   * screen, the lit player strip says whose move it is and the result card
+   * says how it ended (renderStrips). Same words as ever, in the same place in
+   * the reading order.
+   */
   function renderStatusPill() {
-    const modal = inModal();
-    const status = el("status");
-    status.textContent = statusText();
-    const g = viewGame();
-    const decisiveEnd = g.in_checkmate() || !!store.game.resigned || (store.game.flagFall && !timeoutIsDraw());
-    status.classList.toggle("win", !modal && isLive() && decisiveEnd);
-    status.classList.toggle("replay", !modal && !isLive());
+    setText(el("status"), statusText());
     // "思考中" with nothing moving reads as a hang at the higher levels, where
-    // a search can run for seconds; the pill breathes while the engine works
+    // a search can run for seconds: a pulse on the board itself, where the
+    // player is actually looking (the thinking side's disc breathes as well)
     const busy = store.session.engineThinking || store.session.analyzing || !!(store.session.learn && store.session.learn.engineBusy);
-    status.classList.toggle("thinking", busy);
-    // …and a pulse on the board itself, where the player is actually looking
     const dot = el("think-dot");
     if (dot) dot.hidden = !busy;
-    /* Whose move it is gets said once per place that needs it, not three
-       times across the bar. The status pill always says it. In a clocked game
-       the running clock's brightness marks the side as well, right next to
-       the name — so the 行 badge would be a third telling, and one more thing
-       hopping sides every half-move in peripheral vision. It earns its place
-       only in unclocked games, where the pill is the sole teller and the
-       badge is the one mark that sits *beside the side it names*. */
-    const clocksShown = (store.session.mode === "pvp" || store.session.mode === "ai") &&
-      store.game.timeControl !== "off" && !!store.game.clock;
-    const showTurn = !modal && isLive() && !appGameOver() && !clocksShown;
-    el("white-turn").hidden = !(showTurn && game.turn() === "w");
-    el("black-turn").hidden = !(showTurn && game.turn() === "b");
   }
 
   /**
@@ -6766,6 +7242,8 @@ import { createStore } from "./store.js";
    * where a row that goes away should genuinely stop taking up space.
    */
   function slot(node, ok) { if (node) node.classList.toggle("slot-empty", !ok); }
+  /** `disabled`, written only when it changes (see setText). */
+  function setDisabled(node, off) { if (node && node.disabled !== off) node.disabled = off; }
 
   /** Hide a group whose whole row went away, so no empty heading is left. */
   function collapseEmptyGroups() {
@@ -6773,7 +7251,8 @@ import { createStore } from "./store.js";
       // a status line (the engine being down) keeps its group on screen even
       // when it has taken every button with it
       const live = [...group.querySelectorAll("button, [role=\"status\"]")].some((b) => !b.hidden);
-      group.hidden = !live;
+      // the review group waits behind its key during an engine game (7.7 §3)
+      group.hidden = !live || (group.id === "review-actions" && reviewOptional() && !store.ui.reviewOpen);
     }
   }
 
@@ -6807,18 +7286,22 @@ import { createStore } from "./store.js";
     avail(el("replay-seg"), h.length > 0);
     const back = store.game.viewIndex > 0;
     const fwd = store.game.viewIndex < h.length;
-    // Slots, not `avail`. These five are one control — «  ‹  ●  ›  » — and
-    // their positions relative to each other are what they mean. Measured on
-    // 2.1.1: at the live position only « and ‹ are available, so `flex: 1`
-    // gave them 97px each; press ‹ once and all five appear, every key snaps
-    // to 37px and ‹ jumps 61px to the left, out from under the pointer that
-    // was about to press it again. Same family as the chrome's take-back and
-    // hint trading places, third instance.
-    slot(el("rep-start"), back);
-    slot(el("rep-prev"), back);
-    slot(el("rep-next"), fwd);
-    slot(el("rep-end"), fwd);
-    slot(el("rep-live"), !isLive());
+    // Four keys, always drawn. These are one control — «  ‹  ›  » — and their
+    // positions relative to each other are what they mean. Measured on 2.1.1:
+    // at the live position only « and ‹ were available, so `flex: 1` gave them
+    // 97px each; press ‹ once and every key snapped to 37px and ‹ jumped 61px
+    // to the left, out from under the pointer about to press it again. 2.1.2
+    // held the slots with `visibility`, which fixed the jump and left the row
+    // missing its two right-hand keys at exactly the move being played —
+    // plus a ● (回到最新) that did what » does. 7.7 (v7-7-plan §1f): the
+    // four keys are always on screen, and the ones that lead nowhere are
+    // disabled in place, which is what a transport control does everywhere
+    // else. The one exception to P3's "absent, not disabled", and the reason
+    // is the one above: the keys' places are their meaning.
+    setDisabled(el("rep-start"), !back);
+    setDisabled(el("rep-prev"), !back);
+    setDisabled(el("rep-next"), !fwd);
+    setDisabled(el("rep-end"), !fwd);
     // "resume from here" is a replay action, and it only exists off the live
     // position — where it used to sit greyed out with a tooltip explaining
     // that it only exists off the live position
@@ -6863,8 +7346,10 @@ import { createStore } from "./store.js";
         !!(store.session.learn && store.session.learn.engineBusy) || store.session.engineThinking ||
         !!(store.session.puzzle && store.session.puzzle.verifying);
       hintBtn.disabled = false;
-      hintBtn.textContent = store.session.mode === "puzzle" ? t("chrome.answer")
-        : busy ? t("chrome.thinking") : t("chrome.hint");
+      // the label is its own span beside the icon (7.7 §7), and it is written
+      // only when it changes: this runs on every commit, under the pointer
+      setText(el("btn-hint-label"), store.session.mode === "puzzle" ? t("chrome.answer")
+        : busy ? t("chrome.thinking") : t("chrome.hint"));
       // on the puzzle page this is the only 「答案」 (the panel's copy went in
       // 7.4), so its tooltip says what it does there, not "engine hint"
       hintBtn.title = t(store.session.mode === "puzzle" ? "tip.puzzle.answer" : "tip.hint");
@@ -6901,8 +7386,30 @@ import { createStore } from "./store.js";
       eng.hidden = !(engineDown && hasGame);
       if (!eng.hidden) eng.textContent = t("mm.engineInitFailed");
     }
+    // 7.7 (v7-7-plan §3): the review is opened, not standing by. While an
+    // engine game is being played its four buttons sit behind the 复盘 key
+    // in the tool row; everywhere else — the game over, an analysis on
+    // screen or running, the two-player board — they are simply there.
+    const optional = reviewOptional();
+    const rvKey = el("review-open");
+    if (rvKey) {
+      avail(rvKey, optional);
+      rvKey.setAttribute("aria-pressed", optional && store.ui.reviewOpen ? "true" : "false");
+    }
     setPrimaryAction();
     collapseEmptyGroups();
+  }
+
+  /**
+   * Is the review something to open rather than something on screen?
+   * Exactly while an engine game is under way and nothing about it is being
+   * analysed: that is when the panel is for the notation (v7-7-plan §3). A
+   * finished game, a replay, an analysis and the two-player board (which is
+   * also where imported games are read) always show it.
+   */
+  function reviewOptional() {
+    return store.session.mode === "ai" && !store.session.editor && sanHistory().length > 0 &&
+      isLive() && !appGameOver() && !store.session.analyzing && !analysisFor() && !store.session.liveOn;
   }
 
   /**
@@ -6920,10 +7427,20 @@ import { createStore } from "./store.js";
    * ("完局后点「分析」可记录精准度"). While a game is running there is no
    * one thing to press in this panel, and the honest rendering of that is no
    * filled button at all.
+   *
+   * 7.7 (v7-7-plan §4): at the end of a game the thing to press is on the
+   * result card — 分析这盘 while the game is unanalysed, 再来一盘 once it is —
+   * and 分析 in the review row goes back to being a secondary. Only when the
+   * card has been put away does 分析 take the fill back.
    */
   function setPrimaryAction() {
     const over = isLive() && appGameOver();
-    const wants = over && !analysisFor() && !store.session.analyzing ? "an-run" : null;
+    const unanalysed = !analysisFor() && !store.session.analyzing;
+    const end = gameEnding();
+    const card = !!end && store.session.goDismissed !== end.sig;
+    const engineDown = !ChessEngine || !!store.session.engineDown;
+    const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
+      : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
       if (b.id !== wants) b.classList.remove("primary");
     }
@@ -6985,8 +7502,10 @@ import { createStore } from "./store.js";
 
     // the settings panel reads the game too (the clock preset is a game fact),
     // so it hears about all three
-    store.subscribe("game", renderMatchLast);
-    store.subscribe("session", renderMatchLast);
+    // the strips read the position, the mode and the orientation — all three
+    store.subscribe("game", renderStrips);
+    store.subscribe("session", renderStrips);
+    store.subscribe("ui", renderStrips);
     store.subscribe("game", syncSettingsUI);
     store.subscribe("ui", syncSettingsUI);
     store.subscribe("ui", draw);
@@ -7030,10 +7549,14 @@ import { createStore } from "./store.js";
     sw("opt-blind", store.ui.blindfold);
     sw("opt-follow", store.ui.followSystem);
     document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
+    document.querySelectorAll("#pieces-seg button").forEach((b) => b.classList.toggle("active", b.dataset.pieces === store.ui.pieceSet));
     const vol = document.getElementById("opt-volume");
     if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
     const rowVol = document.getElementById("row-volume");
     if (rowVol) rowVol.hidden = !store.ui.soundOn;
+    const rowSet = document.getElementById("row-sound-set");
+    if (rowSet) rowSet.hidden = !store.ui.soundOn;
+    document.querySelectorAll("#sound-set-seg button").forEach((b) => b.classList.toggle("active", b.dataset.soundSet === store.ui.soundSet));
     document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
     document.querySelectorAll("#multipv-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.multipv) === store.ui.multipv));
     document.querySelectorAll("#mode-seg button").forEach((b) => {
@@ -7114,36 +7637,7 @@ import { createStore } from "./store.js";
     // 统计/历史/成就 used to be hidden in the trainer modes because they sat in
     // the same scroll and got in the way. They now live behind their own tab,
     // which nobody opens by accident — and puzzle badges are earned right there.
-    const engineName = "Stockfish · " + (DIFF_NAMES[store.session.difficulty] || store.session.difficulty);
-    const wRole = document.getElementById("white-role");
-    const bRole = document.getElementById("black-role");
-    // A lesson that is not a drill has no opponent. Writing "—" into the black
-    // role left an empty card at the top of the panel; the whole half is now
-    // hidden instead (see .vs.solo).
-    const solo = store.session.mode === "learn" && !(store.session.learn && curTask().type === "drill");
-    const vsBar = document.getElementById("vs-bar");
-    if (vsBar) vsBar.classList.toggle("solo", solo);
-    if (wRole && bRole) {
-      if (store.session.mode === "ai") {
-        wRole.textContent = store.session.humanColor === "w" ? t("vs.player") : engineName;
-        bRole.textContent = store.session.humanColor === "b" ? t("vs.player") : engineName;
-      } else if (store.session.mode === "learn") {
-        wRole.textContent = t("role.student");
-        bRole.textContent = solo ? "" : t("role.sparring");
-      } else if (store.session.mode === "puzzle") {
-        // black drills swap the chairs: the book plays White, you answer
-        const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
-        wRole.textContent = asBlack ? t("role.puzzle") : t("role.you");
-        bRole.textContent = asBlack ? t("role.youB") : t("role.puzzle");
-      } else {
-        // a loaded game names its players: the file's [White]/[Black], where
-        // it has them, rather than 玩家 1 / 玩家 2 (7.6). "?" is PGN for unknown.
-        const h = game.header() || {};
-        const nm = (v) => { const x = String(v || "").trim(); return /^\?*$/.test(x) ? "" : x; };
-        wRole.textContent = nm(h.White) || t("vs.p1");
-        bRole.textContent = nm(h.Black) || t("vs.p2");
-      }
-    }
+    // (Who plays each side is written by renderStrips — 7.7.)
   }
 
   /**
@@ -7358,9 +7852,12 @@ import { createStore } from "./store.js";
     maybeEngineTurn();
   }
 
-  async function requestNewGame() {
+  async function requestNewGame(opts) {
     stopEditor(t("msg.editor.exited"));
-    if (sanHistory().length &&
+    // 再来一盘 on the result card (7.7 §4) does not ask: a finished engine
+    // game is already filed in the history, so there is nothing to lose
+    const filed = !!(opts && opts.again) && store.session.mode === "ai" && appGameOver();
+    if (sanHistory().length && !filed &&
         !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
     }
@@ -7388,6 +7885,7 @@ import { createStore } from "./store.js";
     syncAutoFlip();
     sync();
     saveGame();
+    Audio2.playStart();
     if (wasDown) retryEngine();
     else maybeEngineTurn();
   }
@@ -7427,15 +7925,14 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") {
       side = store.session.humanColor;
       if (!(await confirmNative(tf("dlg.resign", [sideName(side)]),
-        t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel") }))) return;
+        t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel"), destructive: true }))) return;
     } else {
       // pvp: either player may resign at any time (FIDE) — pick the side
       const pick = await confirmNative(t("dlg.whoResigns"), t("act.resign"),
-        { ok: t("dlg.whiteResigns"), alt: t("dlg.blackResigns"), cancel: t("act.cancel") });
+        { ok: t("dlg.whiteResigns"), alt: t("dlg.blackResigns"), cancel: t("act.cancel"), destructive: true });
       if (!pick) return;
       side = pick === "alt" ? "b" : "w";
     }
-    const who = sideName(side);
     invalidateEngine();
     store.game.resigned = side;
     forgetFileResult();
@@ -7444,7 +7941,6 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") recordResign();
     saveGame();
     store.commit("game", "action");
-    toast(tf("mm.resignWin", [who, otherSideName(side)]));
   }
 
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
@@ -7458,7 +7954,6 @@ import { createStore } from "./store.js";
     saveStats(s);
     renderStats();
     checkNewAchievements();
-    offerReview(); // resignation and flag-fall end a game just as much as mate
   }
 
   function recordResign() { recordOutcome("loss", "resigned"); }
@@ -7565,7 +8060,6 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") recordAgreedDraw();
     saveGame();
     store.commit("game", "action");
-    toast(t("msg.draw.agreed"));
   }
 
   function recordAgreedDraw() { recordOutcome("draw", "drawAgreed"); }
@@ -7581,7 +8075,6 @@ import { createStore } from "./store.js";
     if (store.session.mode === "ai") recordOutcome("draw", "claimed");
     saveGame();
     store.commit("game", "action");
-    toast(reason === "threefold" ? t("msg.draw.claimedRepetition") : t("msg.draw.claimedFiftyMove"));
   }
 
   // --- FEN / PGN I/O ---
@@ -8172,7 +8665,7 @@ import { createStore } from "./store.js";
       b.type = "button";
       if (!color) {
         b.dataset.erase = "1";
-        b.textContent = "✕";
+        b.appendChild(Icons.icon("x"));
         b.title = t("ed.eraser");
         b.classList.toggle("active", store.session.editor.brush.type === "");
       } else {
@@ -8239,6 +8732,7 @@ import { createStore } from "./store.js";
     stopEditor();
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
+    forgetEnding();
     gameLoad(fen);
     game.header("SetUp", "1", "FEN", fen);
     store.game.selection = null;
@@ -8517,7 +9011,7 @@ import { createStore } from "./store.js";
     const bEl = document.getElementById("taken-b");
     if (!wEl || !bEl) return;
     const off = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
-    if (!Mat || off) { wEl.replaceChildren(); bEl.replaceChildren(); return; }
+    if (!Mat || off) { wEl.replaceChildren(); bEl.replaceChildren(); delete wEl.dataset.sig; return; }
     const shown = viewGame();
     const promos = verboseHistory().slice(0, store.game.viewIndex)
       .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
@@ -8529,11 +9023,15 @@ import { createStore } from "./store.js";
     // places it mattered (the move list, the history rows) learned it here.
     const strip = (parent, list, color, lead) => {
       const kids = [];
+      let prevType = null;
       for (const tp of list) {
         const svg = svgs[color + tp];
         if (!svg) continue;
         const span = document.createElement("span");
-        span.className = "taken-p";
+        // grouped by kind (7.7 §2): two pawns overlap like a pile, a knight
+        // after them starts a new pile — see .taken-p.new-kind
+        span.className = "taken-p" + (prevType && prevType !== tp ? " new-kind" : "");
+        prevType = tp;
         // the sprite set is our own file, not input — parsed once per piece
         span.insertAdjacentHTML("afterbegin", svg);
         kids.push(span);
@@ -8546,7 +9044,11 @@ import { createStore } from "./store.js";
       }
       parent.replaceChildren(...kids);
     };
-    // White's row shows the black pieces White has taken
+    // White's row shows the black pieces White has taken. Rebuilt only when
+    // the tally changed: this hears every game and session commit.
+    const sig = s.w.join("") + "|" + s.b.join("") + "|" + s.diff;
+    if (wEl.dataset.sig === sig) return;
+    wEl.dataset.sig = sig;
     strip(wEl, s.w, "b", s.diff);
     strip(bEl, s.b, "w", -s.diff);
   }
@@ -8578,7 +9080,19 @@ import { createStore } from "./store.js";
         if (t === want && opts && opts.top) pane.scrollTop = 0;
       }
     }
+    syncTabRule();
     saveSettings();
+  }
+
+  /** 7.7 §1e: the rule under the tab row, drawn while the pane is scrolled. */
+  function syncTabRule() {
+    const row = document.querySelector(".side-tabs");
+    const pane = document.getElementById("pane-" + store.ui.sideTab);
+    if (row) row.classList.toggle("is-scrolled", !!pane && pane.scrollTop > 0);
+  }
+  for (const t of TABS) {
+    const pane = document.getElementById("pane-" + t);
+    if (pane) pane.addEventListener("scroll", syncTabRule, { passive: true });
   }
 
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
@@ -9001,7 +9515,7 @@ import { createStore } from "./store.js";
       const node = id != null ? ChessTree.nodeAt(store.game.tree, id) : null;
       if (!node || node.id === 0 || refusePgnEdit()) return;
       if (!(await confirmNative(tf("dlg.deleteBranch", [node.san]), t("ml.delete"),
-        { ok: t("ml.delete"), cancel: t("act.cancel") }))) return;
+        { ok: t("ml.delete"), cancel: t("act.cancel"), destructive: true }))) return;
       const parent = ChessTree.deleteNode(store.game.tree, id);
       if (store.game.line.includes(id)) {
         // the cursor stood on the deleted line: back to where it forked
@@ -9160,8 +9674,27 @@ import { createStore } from "./store.js";
   document.getElementById("rep-prev").onclick = () => setViewIndex(store.game.viewIndex - 1);
   document.getElementById("rep-next").onclick = () => setViewIndex(store.game.viewIndex + 1);
   document.getElementById("rep-end").onclick = () => setViewIndex(sanHistory().length);
-  document.getElementById("rep-live").onclick = () => { goLive(); };
   document.getElementById("back-main").onclick = () => { backToMain(); };
+
+  // the result card (7.7 §4)
+  document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET); };
+  document.getElementById("go-again").onclick = () => { requestNewGame({ again: true }); };
+  document.getElementById("go-switch").onclick = () => {
+    // the opponent is chosen on the settings page, in the game group
+    setSideTab("setup", { top: true });
+    const fold = el("fold-game");
+    if (fold) { fold.open = true; fold.scrollIntoView({ block: "start" }); }
+  };
+  document.getElementById("go-close").onclick = () => {
+    const end = gameEnding();
+    store.session.goDismissed = end ? end.sig : null;
+    store.commit("session", "sync");
+  };
+  // the review, opened by hand while an engine game is on (7.7 §3)
+  document.getElementById("review-open").onclick = () => {
+    store.ui.reviewOpen = !store.ui.reviewOpen;
+    store.commit("session", "sync");
+  };
 
   document.getElementById("an-run").onclick = () => {
     if (store.session.analyzing) {
@@ -9498,6 +10031,8 @@ import { createStore } from "./store.js";
     if (store.session.puzzle) { startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); toast(t("pz.restarted")); }
   };
   document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
+  // the feedback card's way to the answer: the same as the chrome's 答案
+  document.getElementById("puzzle-fb-hint").onclick = () => { showPuzzleAnswer(); };
   document.getElementById("puzzle-review-nudge").onclick = () =>
     document.getElementById("puzzle-smart").click();
   document.getElementById("daily-btn").onclick = () => {
@@ -9629,6 +10164,15 @@ import { createStore } from "./store.js";
     // one save and one sample per release of the slider, not one per pixel
     volEl.onchange = () => { saveSettings(); if (store.ui.soundOn) Audio2.playMove("w"); };
   }
+  // 7.7 (v7-7-plan §8): wood or classic, with a sample of the one just picked
+  document.getElementById("sound-set-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-sound-set]");
+    if (!b) return;
+    Audio2.setSoundSet(store.ui.soundSet = b.dataset.soundSet);
+    saveSettings();
+    syncSettingsUI();
+    Audio2.playMove("w");
+  };
   // 6.0 (v6-plan Q3.6): the theme follows the system's scheme while the
   // switch is on — night for dark, day for light — and reacts live
   const schemeMq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
@@ -9647,7 +10191,7 @@ import { createStore } from "./store.js";
   function applyTextSize() {
     document.documentElement.setAttribute("data-text", store.ui.textSize);
     // the board is sized from its container, which the type size can move
-    requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); drawEvalCurve(); });
+    requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); drawEvalCurve(); drawEvalBar(); });
   }
   document.getElementById("text-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-text]");
@@ -9656,6 +10200,14 @@ import { createStore } from "./store.js";
     saveSettings();
     syncSettingsUI();
     applyTextSize();
+  };
+  document.getElementById("pieces-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-pieces]");
+    if (!b) return;
+    store.ui.pieceSet = b.dataset.pieces;
+    saveSettings();
+    syncSettingsUI();
+    BoardView.setPieceSet(store.ui.pieceSet);
   };
   document.getElementById("opt-coords").onclick = () => {
     store.ui.coordsOn = !store.ui.coordsOn;
@@ -10136,6 +10688,7 @@ import { createStore } from "./store.js";
     BoardView.resizeCanvas();
     draw();
     drawEvalCurve();
+    drawEvalBar();
   });
   // Track the canvas size continuously, so the backing store never disagrees
   // with the CSS size (a whole board rendered scaled reads as blurry).
@@ -10151,7 +10704,7 @@ import { createStore } from "./store.js";
   // is final immediately, precisely because there is no transition), and the
   // window resize handler covers the rest.
   if (typeof ResizeObserver !== "undefined") {
-    new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); }).observe(canvas);
+    new ResizeObserver(() => { BoardView.resizeCanvas(); draw(); drawEvalBar(); }).observe(canvas);
     // the eval curve goes from 0×0 to its real size whenever its tab, the
     // panel or the curve itself is shown again — the draws it skipped while
     // hidden are made up here, not by every path that can unhide it (7.6 §3b)
@@ -10198,6 +10751,9 @@ import { createStore } from "./store.js";
     Dlg.register(aboutModal, () => Dlg.close(aboutModal));
   }
   wireDialogs();
+  // the markup names its icons (<span data-icon="…">); draw them before the
+  // first frame (7.7 §7)
+  Icons.hydrate(document);
 
   // Views listen from here on. Wired before any state is loaded, so the first
   // sync() below paints a screen that already agrees with the restored game
@@ -10213,6 +10769,7 @@ import { createStore } from "./store.js";
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
   document.documentElement.setAttribute("data-text", store.ui.textSize);
+  BoardView.setPieceSet(store.ui.pieceSet);
   if (store.ui.followSystem && schemeMq) store.ui.themeId = schemeMq.matches ? "night" : "day";
   document.documentElement.setAttribute("data-theme", store.ui.themeId);
   document.documentElement.setAttribute("data-board", store.ui.themeId);

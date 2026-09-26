@@ -38,50 +38,15 @@
          what moved lost a duplicate button, not its only route. ☰ stays: with
          the panel shut it is the only pointer path back to any of this. -->
     <header class="chrome">
-      <!-- One job: whose move it is, or how the game ended. The wordmark and
-           the unlabelled 14/14 counter are gone — this is a desktop app with a
-           title bar, and a move counter is a position inside a game, which is
-           panel information. -->
-      <span class="status-pill" id="status">白方走子</span>
-      <!-- The match, in the bar it was already paying 32px a session for.
-           Measured at 1280x820 with the panel open: the board is 822px wide
-           and the panel 284, and the strip above the board held one pill, two
-           buttons and 640px of nothing. Meanwhile the two players, the two
-           clocks and the captured pieces were stacked four rows deep at the
-           top of the narrowest column on screen, and vanished with it every
-           time the panel closed — which is what a small window plays in
-           permanently, and is what the spine at the bottom edge existed to
-           patch. One row, over the board, always there: the spine is gone and
-           so is the 30px strip it reserved under the board.
-           Left to right it reads as the game does — 白, whose move, who they
-           are, their clock, what they have taken — and mirrors around the
-           middle, which holds the last move (or 对, before there is one). -->
-      <div class="vs" id="vs-bar">
-        <div class="vs-side">
-          <span class="pmark white" aria-hidden="true">♔</span>
-          <span class="vs-name" data-i18n="vs.white">白</span>
-          <span class="badge" id="white-turn" data-i18n="vs.turnBadge" hidden>行</span>
-          <span class="vs-role muted" id="white-role">玩家 1</span>
-          <span class="taken" id="taken-w" aria-label="白方已吃掉的子" data-i18n-aria="mat.takenW"></span>
-          <span class="vs-clock num" id="clock-w" hidden>5:00</span>
-        </div>
-        <div class="vs-mid">
-          <!-- One slot, one meaning: what is between the two of them. Before
-               the first move that is nothing, and 对 says so; after it, the
-               move just played, which is the fact the panel-shut window used
-               to lose. Never both. -->
-          <span class="vs-versus muted" id="vs-versus" data-i18n="vs.versus">对</span>
-          <span class="vs-last num" id="vs-last" hidden></span>
-        </div>
-        <div class="vs-side vs-right">
-          <span class="vs-clock num" id="clock-b" hidden>5:00</span>
-          <span class="taken" id="taken-b" aria-label="黑方已吃掉的子" data-i18n-aria="mat.takenB"></span>
-          <span class="vs-role muted" id="black-role">玩家 2</span>
-          <span class="badge" id="black-turn" data-i18n="vs.turnBadge" hidden>行</span>
-          <span class="vs-name" data-i18n="vs.black">黑</span>
-          <span class="pmark black" aria-hidden="true">♚</span>
-        </div>
-      </div>
+      <!-- 7.7 (v7-7-plan §2): the bar is the three actions and nothing else.
+           Whose move it is, the two clocks, the material and the players
+           moved to the two strips that hug the board's top and bottom edges
+           (.pstrip, below) — the chess-site shape, where the facts about a
+           side sit on that side's edge of the board. What stays here is the
+           status sentence, visually hidden: a screen reader still reads
+           「白方走子」 in the order it always did, and the eye reads the lit
+           strip instead of a pill in the corner. -->
+      <span class="sr-only" id="status">白方走子</span>
       <div class="chrome-actions">
         <!-- Undo before hint, and the order matters: undo is absent until
              there is a move to take back (P3 — a disabled control is not shown
@@ -91,9 +56,9 @@
              exact pixels 提示 had just vacated — click twice in one place and
              the second click took back the move you had just been offered help
              with. At the head of the group it has nothing to push. -->
-        <button type="button" class="tool-btn" id="undo" title="悔棋 (Z)" data-i18n-title="tip.undo" data-i18n="chrome.undo">悔棋</button>
-        <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint" data-i18n="chrome.hint">提示</button>
-        <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel">☰</button>
+        <button type="button" class="tool-btn" id="undo" title="悔棋 (Z)" data-i18n-title="tip.undo"><span data-icon="undo-2" aria-hidden="true"></span><span class="btn-label" data-i18n="chrome.undo">悔棋</span></button>
+        <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint"><span data-icon="lightbulb" aria-hidden="true"></span><span class="btn-label" id="btn-hint-label" data-i18n="chrome.hint">提示</span></button>
+        <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel"><span data-icon="menu" aria-hidden="true"></span></button>
       </div>
     </header>
 
@@ -103,12 +68,52 @@
     <div class="task-strip" id="task-strip"><span id="task-strip-text"></span></div>
     <div class="stage">
       <div id="board-wrap">
+        <!-- 7.7 (v7-7-plan §2): the two sides, on the two edges of the board
+             they sit behind — Lichess's and Chess.com's shape. Each strip is
+             one side: who (the persona's icon for the engine), what they have
+             taken and the lead, and their clock as a block at the right end.
+             The strip of the side to move carries .is-active. They are
+             placed by the board's orientation, not by who is who (see
+             renderStrips in app.js): whoever's pieces stand at the bottom of
+             the board has the bottom strip, so a flip carries them round. The
+             ids inside are the old match bar's (#clock-w, #taken-w, #white-
+             role …), moved rather than renamed. -->
+        <div class="pstrip" id="strip-w" data-side="w">
+          <span class="ps-av" id="av-w" aria-hidden="true"></span>
+          <span class="ps-who">
+            <span class="ps-name" id="white-role"></span>
+            <span class="ps-level" id="white-level"></span>
+          </span>
+          <span class="taken" id="taken-w" aria-label="白方已吃掉的子" data-i18n-aria="mat.takenW"></span>
+          <span class="ps-result num" id="result-w" hidden></span>
+          <span class="ps-clock num" id="clock-w" hidden>5:00</span>
+        </div>
+        <div class="pstrip" id="strip-b" data-side="b">
+          <span class="ps-av" id="av-b" aria-hidden="true"></span>
+          <span class="ps-who">
+            <span class="ps-name" id="black-role"></span>
+            <span class="ps-level" id="black-level"></span>
+          </span>
+          <span class="taken" id="taken-b" aria-label="黑方已吃掉的子" data-i18n-aria="mat.takenB"></span>
+          <span class="ps-result num" id="result-b" hidden></span>
+          <span class="ps-clock num" id="clock-b" hidden>5:00</span>
+        </div>
         <canvas id="board" width="900" height="900" aria-label="棋盘" data-i18n-aria="aria.board"></canvas>
         <!-- coordinates live on the frame, not on a1/h1 where they sat on top
              of the rooks; the board itself is left to the pieces -->
         <div class="coords files" id="coord-files" aria-hidden="true"></div>
         <div class="coords ranks" id="coord-ranks" aria-hidden="true"></div>
         <div class="think-dot" id="think-dot" hidden></div>
+        <!-- 7.7 §5: the evaluation of the position on the board, as a gauge
+             down the board's left edge (it was a bar in the panel). White's
+             share fills from White's side of the board, so it turns with the
+             board. Review only: it reads the analysis, never the engine. -->
+        <div class="eval-gauge" id="eval-bar-row" hidden>
+          <div class="eval-bar" id="eval-bar" role="img" aria-label="当前局面形势" data-i18n-aria="aria.evalBar">
+            <span class="eval-bar-fill" id="eval-bar-fill"></span>
+          </div>
+          <span class="eval-bar-text num" id="eval-bar-text"></span>
+        </div>
         <!-- Says when the board is not showing the committed position: a
              hovered move, a focused or pinned engine line. Without it the
              drawn position and the cursor could disagree in silence. -->
@@ -283,6 +288,16 @@
               <button type="button" data-text="l" data-i18n="text.l">大</button>
             </div>
           </div>
+          <!-- v7-7-plan §6: a second piece set, licence-cleared (GPLv2+, see
+               js/pieces-merida.js). The board only: the move list's
+               figurines stay the standard set, they are type, not pieces. -->
+          <div class="setting-row stack">
+            <span class="setting-k" data-i18n="side.pieces">棋子样式</span>
+            <div class="theme-row" id="pieces-seg" role="group" aria-label="棋子样式" data-i18n-aria="side.pieces">
+              <button type="button" data-pieces="cburnett" class="active" data-i18n="pieces.cburnett">标准</button>
+              <button type="button" data-pieces="merida" data-i18n="pieces.merida">梅里达</button>
+            </div>
+          </div>
           <!-- Which way round the board is drawn is a property of the view,
                like the theme, so it sits next to the theme rather than in the
                chrome — where it was one of four buttons over the board and one
@@ -317,6 +332,15 @@
           <div class="setting-row" id="row-volume">
             <span class="setting-k" data-i18n="side.volume">音量</span>
             <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
+          </div>
+          <!-- 7.7 (v7-7-plan §8): the sound set. 木质 is the default; 经典 is
+               the oscillator set every version until 7.6 played. -->
+          <div class="setting-row stack" id="row-sound-set">
+            <span class="setting-k" data-i18n="side.soundSet">音色</span>
+            <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：7.6 以前的合成音" data-i18n-title="tip.soundSet">
+              <button type="button" data-sound-set="wood" class="active" data-i18n="soundSet.wood">木质</button>
+              <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
+            </div>
           </div>
           <div class="setting-row">
             <span class="setting-k" data-i18n="side.coords">坐标</span>
@@ -420,6 +444,30 @@
            that used to stand above it is in the top bar now, and the panel
            starts on its tab row — 60px of the narrowest column on screen,
            returned to its content. -->
+      <!-- 7.7 (v7-7-plan §4): how the game ended, said once, at the top of
+           the page you are already on — the result in large type, the reason
+           under it, and what to do next. It used to be a pill in the corner
+           and a toast over rank 1 that left after four seconds. Not a dialog:
+           nothing is blocked, the board and the notation stay live, and ✕
+           puts it away. It sits in the panel so it can never lie on the
+           board (asserted in test-layout-e2e). One filled button: 分析这盘
+           while the game is unanalysed, 再来一盘 once it has been. -->
+      <section class="go-card" id="go-card" aria-labelledby="go-result" hidden>
+        <div class="go-head">
+          <span class="go-mark num" id="go-mark"></span>
+          <div class="go-txt">
+            <p class="go-result" id="go-result"></p>
+            <p class="go-reason" id="go-reason"></p>
+          </div>
+          <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
+        </div>
+        <div class="go-acts">
+          <button type="button" class="act-btn" id="go-analyse" data-i18n="go.analyse">分析这盘</button>
+          <button type="button" class="act-btn" id="go-again" data-i18n="go.again">再来一盘</button>
+          <button type="button" class="act-btn" id="go-switch" data-i18n="go.switch">换个对手</button>
+        </div>
+      </section>
+
       <div class="opening-line" id="opening-line" hidden></div>
 
       <!-- 今天的训练 — the coach's plan for one sitting (planner.js). One
@@ -431,11 +479,20 @@
            it came from (a debt, your own blunder, the weakest category, the
            next lesson), so the coach's order is readable before it is followed
            — planner.js always had the order; nothing displayed it. The button
-           spans the column: it is the one entrance shared by every mode. -->
+           spans the column: it is the one entrance shared by every mode.
+           7.7 §1b: the list is prose, so it is not `.num` — that class set the
+           whole of 「Learn a new lesson / the next lesson」 in the clock's
+           monospace. The counts inside a step are words in a sentence, not a
+           column of figures, and take the sentence's face. -->
+
       <div class="daily" id="daily-row">
-        <button type="button" class="act-btn" id="daily-btn" title="按复习欠账、错题、弱项和课程进度排出这一节练习" data-i18n-title="tip.daily" data-i18n="daily.btn">今天的训练</button>
+        <!-- 7.7 (v7-7-plan §1i): a card, not a wide ghost button. The head
+             is the button — title (or 「第 1/3 步 · …」 once running) and an
+             arrow — and every step under it has a state dot; the one you
+             would go to next is itself a control, with the arrow and a hover. -->
+        <button type="button" class="daily-head" id="daily-btn" title="按复习欠账、错题、弱项和课程进度排出这一节练习" data-i18n-title="tip.daily"><span class="daily-label" id="daily-label" data-i18n="daily.btn">今天的训练</span><span class="daily-go" data-icon="arrow-right" aria-hidden="true"></span></button>
         <span class="side-h-meta" id="daily-note" hidden></span>
-        <ol class="daily-plan num" id="daily-plan" aria-label="这一节的步骤" data-i18n-aria="daily.planAria" hidden></ol>
+        <ol class="daily-plan" id="daily-plan" aria-label="这一节的步骤" data-i18n-aria="daily.planAria" hidden></ol>
       </div>
 
       <section class="side-section" id="sec-learn" hidden>
@@ -444,6 +501,10 @@
           <span class="side-h-meta num" id="learn-progress" title="已完成的课数" data-i18n-title="learn.doneOf">0/0</span>
         </div>
         <div class="lesson-title" id="lesson-title"></div>
+        <!-- 7.7 (v7-7-plan §4): where you are in this lesson, as a row of
+             dots — one per task, the finished ones filled, the current one
+             ringed. A finished lesson is a full row, not only a toast. -->
+        <ol class="lesson-dots" id="lesson-dots"></ol>
         <div class="lesson-text" id="lesson-text"></div>
         <div class="lesson-task" id="lesson-task"></div>
         <div class="lesson-controls">
@@ -513,6 +574,19 @@
           </div>
         </div>
         <div class="lesson-task" id="puzzle-task"></div>
+        <!-- 7.7 (v7-7-plan §4): the answer to the move you just made, in the
+             panel beside the board, not in a toast over it. Right: a tick,
+             「最佳着」, the run of clean solves and the rating change. Wrong:
+             a cross, 「再想想」, why, and the way to the answer. -->
+        <div class="pz-fb" id="puzzle-feedback" role="status" aria-live="polite" hidden>
+          <span class="pz-fb-ic" id="puzzle-fb-ic" aria-hidden="true"></span>
+          <div class="pz-fb-txt">
+            <p class="pz-fb-head" id="puzzle-fb-head"></p>
+            <p class="pz-fb-sub" id="puzzle-fb-sub"></p>
+          </div>
+          <span class="pz-fb-meta num" id="puzzle-fb-meta" hidden></span>
+          <button type="button" class="act-btn" id="puzzle-fb-hint" hidden data-i18n="pz.fb.showHint">看提示</button>
+        </div>
         <!-- 5.2: once a personal drill is solved (or its answer shown), the
              engine's continuation stands here as chips — 题面, the answer, the
              next few moves. Click one and the board walks the line that far.
@@ -589,6 +663,11 @@
           <h2 class="side-h" data-i18n="side.moves">棋谱</h2>
           <span class="side-h-meta num" id="replay-pos">0 / 0</span>
         </div>
+        <!-- 7.7 (v7-7-plan §3): while a game is on, the notation is what the
+             panel is for, so it takes the height that is left (≥ 45% of the
+             column at 1440×900, asserted) and everything else in this section
+             is a row. It used to be capped at seven lines and sized like
+             存档槽. -->
         <div class="move-list" id="move-list" aria-label="着法列表" data-i18n-aria="aria.moveList"></div>
         <!-- The first screen of every new game used to be 39% empty: at move 0
              the notation is one line, the curve and the review have nothing to
@@ -597,18 +676,16 @@
              result, the running record, and the one suggestion the statistics
              page was keeping to itself. -->
         <div class="idle-card" id="idle-card" hidden></div>
-        <!-- The counter that used to sit at the head of this row said the same
-             thing as the 「2 / 2」 in the 棋谱 heading two centimetres above it,
-             in a different format (2/2 against 2 / 2), and its other two
-             branches — lesson number, puzzle number — could never be seen,
-             because the whole 棋谱 section is hidden in those two modes. One
-             number, one place. -->
+        <!-- 7.7 (v7-7-plan §1f): four keys, always four. At the last move the
+             two forward keys used to vanish (and ● 回到最新 stood in a fifth
+             slot doing what » does), so the row changed shape exactly when
+             the game reached the move being played. A key that leads nowhere
+             is drawn disabled now, in its place. -->
         <div class="replay-bar" id="replay-seg">
-          <button type="button" id="rep-start" title="开局 (Home)" data-i18n-title="tip.replay.start">«</button>
-          <button type="button" id="rep-prev" title="上一着 (←)" data-i18n-title="tip.replay.prev">‹</button>
-          <button type="button" id="rep-live" title="回到最新" data-i18n-title="tip.replay.live">●</button>
-          <button type="button" id="rep-next" title="下一着 (→)" data-i18n-title="tip.replay.next">›</button>
-          <button type="button" id="rep-end" title="终局 (End)" data-i18n-title="tip.replay.end">»</button>
+          <button type="button" id="rep-start" title="开局 (Home)" data-i18n-title="tip.replay.start"><span data-icon="chevrons-left" aria-hidden="true"></span></button>
+          <button type="button" id="rep-prev" title="上一着 (←)" data-i18n-title="tip.replay.prev"><span data-icon="chevron-left" aria-hidden="true"></span></button>
+          <button type="button" id="rep-next" title="下一着 (→)" data-i18n-title="tip.replay.next"><span data-icon="chevron-right" aria-hidden="true"></span></button>
+          <button type="button" id="rep-end" title="终局 (End)" data-i18n-title="tip.replay.end"><span data-icon="chevrons-right" aria-hidden="true"></span></button>
         </div>
         <!-- 6.0: the line the notation is following is a variation. Shown
              only then — on the mainline there is nothing to go back to
@@ -616,6 +693,11 @@
         <div class="link-row replay-line" id="line-row" hidden>
           <button type="button" class="act-btn" id="back-main" data-i18n="act.backMain" title="回到本局主线，光标停在同一深度" data-i18n-title="tip.backMain">回主线</button>
         </div>
+        <!-- 7.7 (v7-7-plan §3): the review is something you open, not
+             furniture. In an engine game still being played these four sit
+             behind the 复盘 key in the tool row; they come out by themselves
+             when the game ends, when an analysis exists or is running, and in
+             every other mode. See reviewShown() in app.js. -->
         <!-- 5.1: the actions stand above what they produce. At the default
              1200×900 window the curve, the bar, the line and the report pushed
              分析 / 精析 below the fold — the one thing to press on this page
@@ -639,40 +721,22 @@
                global ← / → / Home / End replay keys move it once it has focus,
                so the keyboard gets the same time machine (5.1, work package D). -->
           <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" title="点击跳转到对应局面" data-i18n-title="tip.evalCurve"></canvas>
-          <!-- The curve is the whole game; this is the one position the board
-               is standing on, in a form that needs no axis read. -->
-          <div class="eval-bar-row" id="eval-bar-row" hidden>
-            <div class="eval-bar" id="eval-bar" role="img" aria-label="当前局面形势" data-i18n-aria="aria.evalBar">
-              <span class="eval-bar-fill" id="eval-bar-fill"></span>
-            </div>
-            <span class="eval-bar-text num" id="eval-bar-text"></span>
-          </div>
-          <div class="pv-line num" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级" data-i18n-title="tip.accuracy"></div>
           <div class="pv-line num" id="pv-line" hidden></div>
-          <div class="review" id="review-body" hidden></div>
-        </div>
-        <!-- 14 identical text links in one wrapped block made "PGN" and
-             "认输" look like the same kind of thing. Grouped by what they act
-             on, with the four import paths behind a disclosure and the game's
-             terminal actions on their own row. -->
-        <div class="act-group">
-          <span class="act-k" data-i18n="act.groupFile">棋谱与局面</span>
-          <div class="link-row">
-            <button type="button" class="act-btn" id="pgn-copy" data-i18n="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy">PGN</button>
-            <button type="button" class="act-btn" id="pgn-download" data-i18n="act.export">导出</button>
-            <button type="button" class="act-btn" id="report-export" title="把复盘结论存成一张图" data-i18n-title="tip.reportExport" data-i18n="act.reportExport">导出复盘图</button>
-            <button type="button" class="act-btn" id="slots-open" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots" data-i18n="act.slots">存档槽</button>
-            <button type="button" class="act-btn" id="editor-open" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open" data-i18n="act.editor">编辑局面</button>
-            <button type="button" class="act-btn" id="more-tools" aria-expanded="false" aria-controls="more-row" data-i18n="act.more">更多</button>
-          </div>
-          <div class="link-row" id="more-row" hidden>
-            <button type="button" class="act-btn" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n-title="tip.pgn.paste" data-i18n="act.paste">粘贴</button>
-            <button type="button" class="act-btn" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n-title="tip.pgn.open" data-i18n="act.open">打开</button>
-            <button type="button" class="act-btn" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.fen.copy">FEN</button>
-            <button type="button" class="act-btn" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.fen.load" data-i18n="act.loadFen">载入 FEN</button>
+          <!-- 7.7 §5: one card. The two accuracies are the headline, once —
+               they used to be a line above the report and a row inside it. -->
+          <div class="report-card" id="report-card" hidden>
+            <div class="acc-hero" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级" data-i18n-title="tip.accuracy"></div>
+            <div class="review" id="review-body" hidden></div>
           </div>
         </div>
-        <div class="act-group">
+        <!-- 7.7 (v7-7-plan §3): three weights. The game's own actions are
+             the outlined buttons (secondary). The file and position tools are
+             the third tier — icons with a tooltip and an accessible name, in
+             one quiet row: they are used between games, not during one, and
+             were drawn exactly as loud as 认输. 14 identical text links in one
+             wrapped block used to make "PGN" and "认输" look like the same
+             kind of thing. -->
+        <div class="act-group" id="game-actions">
           <span class="act-k" data-i18n="act.groupGame">本局</span>
           <div class="link-row">
             <button type="button" class="act-btn" id="btn-offerdraw" data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.offerDraw">提和</button>
@@ -684,6 +748,21 @@
             <button type="button" class="act-btn" id="btn-new" title="新局 (N)" data-i18n-title="tip.newGame" data-i18n="chrome.new">新局</button>
             <button type="button" class="act-btn danger" id="btn-resign" title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
           </div>
+        </div>
+        <div class="tool-row" id="tool-row" role="toolbar" aria-label="棋谱与局面" data-i18n-aria="act.groupFile">
+          <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：分析、精析、持续分析" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span></button>
+          <button type="button" class="tool-ic" id="pgn-copy" aria-label="PGN" data-i18n-aria="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy"><span data-icon="clipboard-copy" aria-hidden="true"></span></button>
+          <button type="button" class="tool-ic" id="pgn-download" aria-label="导出" data-i18n-aria="act.export" title="导出 PGN 文件" data-i18n-title="tip.pgn.export"><span data-icon="download" aria-hidden="true"></span></button>
+          <button type="button" class="tool-ic" id="slots-open" aria-label="存档槽" data-i18n-aria="act.slots" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots"><span data-icon="archive" aria-hidden="true"></span></button>
+          <button type="button" class="tool-ic" id="editor-open" aria-label="编辑局面" data-i18n-aria="act.editor" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open"><span data-icon="square-pen" aria-hidden="true"></span></button>
+          <button type="button" class="tool-ic" id="more-tools" aria-expanded="false" aria-controls="more-row" aria-label="更多" data-i18n-aria="act.more" title="更多：粘贴、打开、FEN" data-i18n-title="tip.more"><span data-icon="ellipsis" aria-hidden="true"></span></button>
+          <button type="button" class="tool-txt" id="report-export" title="把复盘结论存成一张图" data-i18n-title="tip.reportExport" data-i18n="act.reportExport">导出复盘图</button>
+        </div>
+        <div class="link-row" id="more-row" hidden>
+          <button type="button" class="act-btn" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n-title="tip.pgn.paste" data-i18n="act.paste">粘贴</button>
+          <button type="button" class="act-btn" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n-title="tip.pgn.open" data-i18n="act.open">打开</button>
+          <button type="button" class="act-btn" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.fen.copy">FEN</button>
+          <button type="button" class="act-btn" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.fen.load" data-i18n="act.loadFen">载入 FEN</button>
         </div>
         <p class="hint" id="analysis-legend" data-i18n="hint.analysis" hidden>分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
       </section>

@@ -104,7 +104,9 @@ async function play(theme, line) {
       }
       if (hi - lo > 60) pieces++;
     }
-    const pill = document.querySelector(".status-pill");
+    // 7.7: the status sentence is screen-reader text now (#status, .sr-only);
+    // the words are the same, and the result card says it on screen
+    const pill = document.getElementById("status");
     return { pieces, status: pill ? pill.textContent.trim() : "",
       // the moves, not every button: the current move now carries a
       // 「…」 menu handle beside it (v6-plan Q2.1)

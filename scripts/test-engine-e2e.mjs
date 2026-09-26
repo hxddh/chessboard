@@ -135,12 +135,12 @@ async function firstReply(prefix, failing) {
   const t0 = Date.now();
   let plies = 0;
   const probe = () => page.evaluate(() => {
-    const pillEl = document.querySelector(".status-pill");
+    const pillEl = document.getElementById("status");   // 7.7: the sentence is .sr-only
     const n = document.getElementById("engine-fault");
     return {
       moves: [...document.querySelectorAll(".move-list .mlmove")].map((e) => e.getAttribute("aria-label") || e.textContent.trim()),
       pill: ((pillEl || {}).textContent || "").trim(),
-      thinking: !!(pillEl && pillEl.classList.contains("thinking")),
+      thinking: !!document.querySelector(".pstrip.thinking"),   // 7.7: the engine's disc breathes
       notice: n && !n.hidden && n.getBoundingClientRect().height > 0 ? n.textContent.trim() : "",
       workers: window.__workers,
     };
@@ -304,7 +304,6 @@ assert(drill.after.replied && !drill.after.notice,
 // 7.5: the packaged app's self-test (CHESS_SELFTEST=1, main.zig). The native
 // half — mode on, report written, exit code — has its own zig tests; this is
 // the page half, with a stand-in bridge that answers the two self-test
-// commands and keeps chessboard.json in memory (7.6: the report has four
 // checks — engine, appdata, chunk, restart). On the real engine the report
 // says ok with a legal move; with one piece broken it says not ok and names
 // that check, instead of hanging. `reloads` relaunches the page in the same
@@ -354,8 +353,10 @@ console.log("自检 · 存档写入被拒:", JSON.stringify(brief(selfNoWrite)))
 console.log("自检 · eco 分块缺失:", JSON.stringify(brief(selfNoChunk)));
 assert(!!selfOk && selfOk.ok === true && typeof selfOk.move === "string" && selfOk.move.length >= 2,
   "自检（页面这一半）：原样页面报告 ok，并给出一步合法着法");
-assert(["engine", "appdata", "chunk", "restart"].every((k) => passed(selfOk, k)) && !selfOk.err,
-  "自检：原样页面四项（engine、appdata、chunk、restart）分别报告通过");
+assert(["engine", "appdata", "chunk", "restart", "sound"].every((k) => passed(selfOk, k)) && !selfOk.err,
+  "自检：原样页面五项（engine、appdata、chunk、restart、sound）分别报告通过");
+assert(!!selfOk && selfOk.checks.sound.sounds >= 14,
+  "自检：sound 一项把默认音效逐个离线渲染过（" + (selfOk && selfOk.checks.sound.sounds) + " 种）");
 assert(/^B20 /.test(String(selfOk && selfOk.checks.chunk.name)),
   "自检：chunk 一项真的从 eco 分块里查到了 1.e4 c5 的开局名(" + (selfOk && selfOk.checks.chunk.name) + ")");
 assert(!JSON.stringify(Object.values((selfOk && selfOk.checks) || {})).includes('"ok":'),
