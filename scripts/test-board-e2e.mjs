@@ -595,6 +595,119 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- 7.8 §1c / §7.2:升变在棋盘上选 ------------------------------------------
+// 7.7 的升变是窗口正中的对话框,棋盘被模糊,四个按钮里是 Unicode 空心字符。
+// 现在四个棋子画在升变格那一列上,从升变格往里排,用的是棋盘那一套棋子;棋盘
+// 不模糊。白黑、正反视角、边线和中间列都量;点、按键、取消三条路都走。
+{
+  // white pawns a7 d7, black pawns a2 d2
+  const FEN = "7k/P2P4/8/8/8/8/p2p4/7K";
+  const setup = async (turn, set, flip) => {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(([s, f]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", pieceSet: s, flipped: f, autoFlipPvp: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+    }, [set, flip]);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1000);
+    await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+    await page.evaluate(async (fen) => {
+      document.getElementById("fen-load-open").click();
+      await new Promise((r) => setTimeout(r, 300));
+      document.getElementById("fen-input").value = fen;
+      document.getElementById("fen-load").click();
+      await new Promise((r) => setTimeout(r, 300));
+    }, FEN + " " + turn + " - - 0 1");
+    return { ctx, page, errs };
+  };
+  const at = (page, s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    let f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    if (flip) { f = 7 - f; rk = 7 - rk; }
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  const click = async (page, s) => { const p = await at(page, s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); };
+  const chooser = (page) => page.evaluate(() => {
+    const m = document.getElementById("promo-modal");
+    const b = document.getElementById("board").getBoundingClientRect();
+    return {
+      open: m.classList.contains("show"), role: m.getAttribute("role"), modal: m.getAttribute("aria-modal"),
+      blur: getComputedStyle(m).backdropFilter, board: [b.left, b.top, b.right, b.bottom],
+      pieces: [...m.querySelectorAll("button[data-p]")].map((x) => {
+        const r = x.getBoundingClientRect();
+        const img = x.querySelector("img");
+        return { p: x.dataset.p, name: x.textContent.trim(), cx: (r.left + r.right) / 2, cy: (r.top + r.bottom) / 2,
+                 r: [r.left, r.top, r.right, r.bottom],
+                 svg: img && img.src.startsWith("data:image/svg+xml") ? decodeURIComponent(img.src.split(",").slice(1).join(",")) : "" };
+      }),
+      focus: document.activeElement && document.activeElement.dataset.p,
+    };
+  });
+  const lastSan = (page) => page.evaluate(() => {
+    const ms = [...document.querySelectorAll(".move-list .mlmove:not(.mlgap)")];
+    return ms.length ? ms[ms.length - 1].getAttribute("aria-label") : "";
+  });
+  const cases = [
+    { turn: "w", flip: false, from: "a7", to: "a8" }, { turn: "w", flip: false, from: "d7", to: "d8" },
+    { turn: "w", flip: true, from: "a7", to: "a8" }, { turn: "b", flip: false, from: "d2", to: "d1" },
+    { turn: "b", flip: true, from: "a2", to: "a1" }, { turn: "b", flip: true, from: "d2", to: "d1" },
+  ];
+  for (const c of cases) {
+    const tag = `${c.turn === "w" ? "白" : "黑"}方 ${c.from}-${c.to}${c.flip ? "(反转)" : ""}`;
+    const { ctx, page, errs } = await setup(c.turn, "cburnett", c.flip);
+    await click(page, c.from); await click(page, c.to);
+    const s = await chooser(page);
+    const target = await at(page, c.to);
+    const step = (s.board[2] - s.board[0]) / 8;
+    const inside = s.pieces.every((x) => x.r[0] >= s.board[0] - 1 && x.r[2] <= s.board[2] + 1 && x.r[1] >= s.board[1] - 1 && x.r[3] <= s.board[3] + 1);
+    const column = s.pieces.every((x) => Math.abs(x.cx - target.x) < 2);
+    const inward = s.pieces.every((x, i) => Math.abs(Math.abs(x.cy - target.y) - i * step) < 2) &&
+      s.pieces.every((x) => (x.cy - target.y) * (target.y < (s.board[1] + s.board[3]) / 2 ? 1 : -1) >= -1);
+    assert(s.open && s.role === "dialog" && s.modal === "true", `§1c ${tag}:选择器是一个模态 dialog`);
+    assert(inside && column && inward,
+      `§1c ${tag}:四个棋子都在棋盘内、在 ${c.to} 那一列、从升变格往里排(${s.pieces.map((x) => x.p + "@" + Math.round(x.cx) + "," + Math.round(x.cy)).join(" ")})`);
+    assert(s.pieces.every((x) => x.svg.includes('id="' + c.turn + x.p + '"')),
+      `§1c ${tag}:画的是棋盘那一套(cburnett)的${c.turn === "w" ? "白" : "黑"}子,不是 Unicode 字符`);
+    assert(s.blur === "none" || s.blur === "", `§1c ${tag}:棋盘不模糊(${s.blur})`);
+    assert(s.pieces.map((x) => x.name).join("") === "后车象马" && s.focus === "q", `§1c ${tag}:读屏名字照旧、焦点在「后」上`);
+    // three paths: a click, a key, a cancel
+    if (c.from === "a7" && !c.flip) {
+      const r = s.pieces.find((x) => x.p === "n");
+      await page.mouse.click(r.cx, r.cy); await page.waitForTimeout(250);
+      assert(!(await chooser(page)).open && await lastSan(page) === "a8=N", `§1c ${tag}:点马,升变成马(${await lastSan(page)})`);
+    } else if (c.from === "d7") {
+      await page.keyboard.press("r"); await page.waitForTimeout(250);
+      assert(!(await chooser(page)).open && (await lastSan(page)).startsWith("d8=R"), `§1c ${tag}:按 R,升变成车(${await lastSan(page)})`);
+    } else if (c.from === "d2" && !c.flip) {
+      await page.keyboard.press("Escape"); await page.waitForTimeout(250);
+      assert(!(await chooser(page)).open && await lastSan(page) === "", `§1c ${tag}:Esc 取消,这一步没有走`);
+      await click(page, c.from); await click(page, c.to);
+      await page.keyboard.press("b"); await page.waitForTimeout(250);
+      assert((await lastSan(page)).startsWith("d1=B"), `§1c ${tag}:取消之后再走一次,按 B 升变成象(${await lastSan(page)})`);
+    } else {
+      const other = await at(page, c.from[0] === "a" ? "e4" : "h4");
+      await page.mouse.click(other.x, other.y); await page.waitForTimeout(250);
+      assert(!(await chooser(page)).open && await lastSan(page) === "", `§1c ${tag}:点棋盘别处,取消,这一步没有走`);
+    }
+    assert(errs.length === 0, `§1c ${tag}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+  // the other piece set: the chooser follows the setting
+  {
+    const { ctx, page } = await setup("w", "merida", false);
+    await click(page, "a7"); await click(page, "a8");
+    const s = await chooser(page);
+    assert(s.open && s.pieces.every((x) => x.svg.includes('viewBox="0 0 50 50"')),
+      "§1c 换成 Merida,选择器里画的也是 Merida");
+    await ctx.close();
+  }
+}
+
 // --- 棋盘拿着焦点的时候,Esc 还是不是「让它消失」的意思 ----------------------
 // 实测已发布的 2.1.6:不是。canvas 的 keydown 把每一个 Escape 都吞掉,而只在
 // 有选中时才真的做事 —— 于是提示条、编辑器出口、收面板这三层全部够不着,

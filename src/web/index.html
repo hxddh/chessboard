@@ -901,14 +901,20 @@
          for every question it asks, while its aria-label was the fixed word
          「确认」. Delete your entire save and the screen said 「清除存档」 while
          a screen reader said 「确认」. -->
-    <div class="modal-bg" id="promo-modal" role="dialog" aria-labelledby="promo-title">
-      <div class="modal promo-modal">
-        <h3 id="promo-title" data-i18n="promo.title">升变为</h3>
+    <!-- 7.8 §1c: the promotion chooser sits on the board, Lichess's shape —
+         four pieces in the promotion file, from the promotion square inward,
+         drawn with the board's own piece set (placePromotion() in app.js
+         puts them there). The board is dimmed, not blurred. It is still a
+         dialog to a screen reader: the same role, the same heading (visually
+         hidden now), a named button per piece. -->
+    <div class="modal-bg promo-bg" id="promo-modal" role="dialog" aria-labelledby="promo-title">
+      <div class="promo-modal" id="promo-box">
+        <h3 id="promo-title" class="sr-only" data-i18n="promo.title">升变为</h3>
         <div class="promo-row">
-          <button type="button" data-p="q" title="升变为后 (Q)" data-i18n-title="tip.promote.q"><span class="promo-glyph">♛</span><span data-i18n="piece.q">后</span></button>
-          <button type="button" data-p="r" title="升变为车 (R)" data-i18n-title="tip.promote.r"><span class="promo-glyph">♜</span><span data-i18n="piece.r">车</span></button>
-          <button type="button" data-p="b" title="升变为象 (B)" data-i18n-title="tip.promote.b"><span class="promo-glyph">♝</span><span data-i18n="piece.b">象</span></button>
-          <button type="button" data-p="n" title="升变为马 (N)" data-i18n-title="tip.promote.n"><span class="promo-glyph">♞</span><span data-i18n="piece.n">马</span></button>
+          <button type="button" data-p="q" title="升变为后 (Q)" data-i18n-title="tip.promote.q"><img class="promo-piece" alt=""><span class="sr-only" data-i18n="piece.q">后</span></button>
+          <button type="button" data-p="r" title="升变为车 (R)" data-i18n-title="tip.promote.r"><img class="promo-piece" alt=""><span class="sr-only" data-i18n="piece.r">车</span></button>
+          <button type="button" data-p="b" title="升变为象 (B)" data-i18n-title="tip.promote.b"><img class="promo-piece" alt=""><span class="sr-only" data-i18n="piece.b">象</span></button>
+          <button type="button" data-p="n" title="升变为马 (N)" data-i18n-title="tip.promote.n"><img class="promo-piece" alt=""><span class="sr-only" data-i18n="piece.n">马</span></button>
         </div>
       </div>
     </div>

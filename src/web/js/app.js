@@ -404,6 +404,8 @@ import { createStore } from "./store.js";
       libFilter: { result: "all", color: "all", sort: "t" },
       libPick: null,
       promoResolver: null,
+      /** 7.8 §1c: the square the open promotion chooser stands on */
+      promoSquare: null,
       /** Modal list picker → index of the chosen entry, or null when cancelled. */
       pickResolver: null,
       dragging: null,
@@ -2455,7 +2457,7 @@ import { createStore } from "./store.js";
       const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
-        choosePromotion(g.turn()).then((p) => { if (p) learnMove(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) learnMove(from, sq, p); });
         return;
       }
       learnMove(from, sq, "q");
@@ -3599,7 +3601,7 @@ import { createStore } from "./store.js";
       const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
-        choosePromotion(g.turn()).then((p) => { if (p) puzzleMove(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) puzzleMove(from, sq, p); });
         return;
       }
       puzzleMove(from, sq, "q");
@@ -7701,25 +7703,56 @@ import { createStore } from "./store.js";
   /** localised promotion piece names — read through t() so a language switch
    * takes effect without rebuilding the table */
   const PROMO_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
-  const PROMO_GLYPHS = {
-    w: { q: "♕", r: "♖", b: "♗", n: "♘" },
-    b: { q: "♛", r: "♜", b: "♝", n: "♞" },
-  };
-
-  /** Modal chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel. */
-  function choosePromotion(color) {
+  /**
+   * Chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel.
+   *
+   * 7.8 §1c: on the board. It was a dialog in the middle of the window, over
+   * a blurred board, holding Unicode outline glyphs that are not the pieces
+   * the board draws. Now the four pieces stand in the promotion file, from
+   * the promotion square inward, in the board's own set; the rest of the
+   * board is dimmed. It is still the same `role="dialog"` with the same
+   * heading, focus and Escape — only where it is drawn has changed.
+   */
+  function choosePromotion(color, sq) {
     const modal = document.getElementById("promo-modal");
     if (!modal) return Promise.resolve("q");
     modal.querySelectorAll("button[data-p]").forEach((b) => {
-      const gl = b.querySelector(".promo-glyph");
-      if (gl) gl.textContent = PROMO_GLYPHS[color][b.dataset.p];
+      const img = b.querySelector(".promo-piece");
+      if (img) img.src = BoardView.pieceSrc(color + b.dataset.p);
     });
-    Dlg.open(modal, modal.querySelector('button[data-p="q"]'));
+    store.ui.promoSquare = sq;
+    const queen = modal.querySelector('button[data-p="q"]');
+    Dlg.open(modal, queen);
+    placePromotion();
+    // The chooser opens from the board's pointerdown, and the press then
+    // focuses the canvas as its default action — after us. Focus has to land
+    // in the dialog once that is done, or Escape goes to the board's
+    // selection first and the dialog stays up.
+    setTimeout(() => { if (modal.classList.contains("show") && !modal.contains(document.activeElement)) queen.focus(); }, 0);
     return new Promise((resolve) => { store.ui.promoResolver = resolve; });
+  }
+  /** Lay the chooser over the canvas: the dim square, then one piece a cell. */
+  function placePromotion() {
+    const modal = document.getElementById("promo-modal");
+    const box = document.getElementById("promo-box");
+    if (!modal || !box || !modal.classList.contains("show") || !store.ui.promoSquare) return;
+    const b = canvas.getBoundingClientRect(), m = modal.getBoundingClientRect();
+    box.style.left = (b.left - m.left) + "px";
+    box.style.top = (b.top - m.top) + "px";
+    box.style.width = b.width + "px";
+    box.style.height = b.height + "px";
+    const { col, row } = BoardView.screenCell(store.ui.promoSquare);
+    // from the edge the pawn arrived at, toward the middle of the board
+    const dir = row < 4 ? 1 : -1;
+    modal.querySelectorAll("button[data-p]").forEach((btn, i) => {
+      btn.style.left = col * 12.5 + "%";
+      btn.style.top = (row + dir * i) * 12.5 + "%";
+    });
   }
   function finishPromotion(p) {
     const modal = document.getElementById("promo-modal");
     Dlg.close(modal);
+    store.ui.promoSquare = null;
     if (store.ui.promoResolver) { store.ui.promoResolver(p); store.ui.promoResolver = null; }
   }
 
@@ -7832,7 +7865,7 @@ import { createStore } from "./store.js";
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         // cancelling keeps the selection so the player can pick another square
-        choosePromotion(g.turn()).then((p) => { if (p) play(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) play(from, sq, p); });
         return;
       }
       play(from, sq, "q");
@@ -10651,7 +10684,11 @@ import { createStore } from "./store.js";
     promoModal.querySelectorAll("button[data-p]").forEach((b) => {
       b.onclick = () => finishPromotion(b.dataset.p);
     });
-    promoModal.onclick = (ev) => { if (ev.target === promoModal) finishPromotion(null); };
+    // a press anywhere but on one of the four pieces — the dimmed board or
+    // the window around it — takes the move back (7.8 §1c)
+    const promoBox = document.getElementById("promo-box");
+    promoModal.onclick = (ev) => { if (ev.target === promoModal || ev.target === promoBox) finishPromotion(null); };
+    window.addEventListener("resize", placePromotion);
   }
 
   // Tab belongs to the browser everywhere except inside an open dialog, where
