@@ -3742,6 +3742,41 @@ for (const [when, mode, act] of [
     await ctx.close();
   }
 
+  // 7.8 §1e：棋谱里的兵种字形 = 字母的大写高度（±10%），与字母同一条基线；
+  // 白方空心，黑方实心，都是文字的颜色。三种语言各量一遍。
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "pvp", "play");
+    // 1.Nf3 Nc6 2.Nc3 Nf6 3.e4 d6 4.Bb5 Bd7 5.Qe2 Qc8 6.Kd1 Kd8
+    for (const sq of ["g1", "f3", "b8", "c6", "b1", "c3", "g8", "f6", "e2", "e4", "d7", "d6", "f1", "b5", "c8", "d7", "d1", "e2", "d8", "c8", "e1", "d1", "e8", "d8"]) await tap(page, sq);
+    await page.waitForTimeout(300);
+    const figs = await page.evaluate(() => {
+      const ctx2 = document.createElement("canvas").getContext("2d");
+      return [...document.querySelectorAll(".move-list .mlmove .mlfig")].map((f) => {
+        const btn = f.closest(".mlmove");
+        const cs = getComputedStyle(btn);
+        ctx2.font = cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+        const cap = ctx2.measureText("H").actualBoundingBoxAscent;
+        const probe = document.createElement("span");
+        probe.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+        btn.appendChild(probe);
+        const base = probe.getBoundingClientRect().bottom;
+        probe.remove();
+        const g = f.querySelector("svg").getBoundingClientRect();
+        const text = cs.color;
+        const fills = [...f.querySelectorAll("path, circle, rect, polygon")].map((p) => getComputedStyle(p).fill);
+        return { san: btn.getAttribute("aria-label"), w: f.classList.contains("fig-w"), h: g.height, cap, dy: g.bottom - base,
+                 foreign: fills.filter((x) => x !== "none" && x !== text).length, hollow: fills.filter((x) => x === "none").length, solid: fills.filter((x) => x === text).length };
+      });
+    });
+    const off = figs.filter((f) => Math.abs(f.h / f.cap - 1) > 0.1 || Math.abs(f.dy) > 1.5);
+    assert(figs.length === 10 && off.length === 0,
+      `§1e ${lang}：${figs.length} 个字形都是大写高度、在基线上` + (off.length ? "（" + off.map((f) => f.san + " " + f.h.toFixed(1) + "/" + f.cap.toFixed(1) + " dy " + f.dy.toFixed(1)).join("，") + "）" : ""));
+    assert(figs.every((f) => f.foreign === 0), `§1e ${lang}：字形只用文字的颜色`);
+    assert(figs.filter((f) => f.w).every((f) => f.hollow > 0) && figs.filter((f) => !f.w).every((f) => f.solid > 0 && f.w === false),
+      `§1e ${lang}：白方空心、黑方实心（白 ${figs.filter((f) => f.w).length} 个，黑 ${figs.filter((f) => !f.w).length} 个）`);
+    await ctx.close();
+  }
+
   // §1e：页签条不透明；窗格滚下去之后，页签下缘有一道 --line，页签矩形里
   // 取到的只有页签自己
   {
