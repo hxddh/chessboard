@@ -60,7 +60,7 @@ export const KEY_HELP = [
   { keys: ["F"], k: "keys.flip", in: PLAY, cmd: ["game.flip"] },
   { keys: ["←", "→"], k: "keys.step", in: PLAY, cmd: ["view.prev", "view.next"] },
   { keys: ["Home", "End"], k: "keys.ends", in: PLAY },
-  { keys: ["↑", "↓", "←", "→", "Enter"], k: "keys.board", in: ANY },
+  { keys: ["Enter", "↑", "↓", "←", "→", "Esc"], k: "keys.board", in: ANY },
   { keys: ["Q", "R", "B", "N"], k: "keys.promo", in: ANY },
   { keys: ["Tab"], k: "keys.tab", in: ANY },
   { keys: ["Esc"], k: "keys.esc", in: ANY, cmd: ["view.escape"] },

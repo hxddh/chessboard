@@ -486,6 +486,70 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- 7.8 §1a / §7.2:鼠标走完一步,再按 ← -----------------------------------
+// 7.7 的样子:鼠标一点棋盘,焦点就在棋盘上;之后的 ← → Home End 全被一个没画
+// 出来的键盘光标吃掉 —— 按 ←,什么也没发生。现在光标没画出来时,这几个键翻
+// 棋谱;回车(或 Tab 到棋盘)才进光标模式,Esc 退出。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const at = (s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  for (const sq of ["e2", "e4", "e7", "e5", "g1", "f3"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); }
+  // viewIndex, read off the move list: which ply carries .current (0 = none)
+  const view = () => page.evaluate(() => {
+    const ms = [...document.querySelectorAll(".move-list .mlmove:not(.mlgap)")];
+    return ms.findIndex((b) => b.classList.contains("current")) + 1;
+  });
+  // the cursor is a near-white ring along the top edge inside its square
+  const ringed = (sq) => page.evaluate((s) => {
+    const c = document.getElementById("board");
+    const g = c.getContext("2d");
+    const step = c.width / 8;
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    const x0 = Math.round(f * step + step * 0.3), w = Math.round(step * 0.4);
+    let best = 0;
+    for (let y = Math.round(rk * step + 1); y < Math.round(rk * step + step * 0.14); y++) {
+      const d = g.getImageData(x0, y, w, 1).data;
+      let white = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++;
+      best = Math.max(best, white / w);
+    }
+    return best > 0.8;
+  }, sq);
+  const key = async (k) => { await page.keyboard.press(k); await page.waitForTimeout(200); };
+  const focus = () => page.evaluate(() => document.activeElement && document.activeElement.id);
+  assert(await focus() === "board" && await view() === 3, `§1a 鼠标走完三手,焦点在棋盘上,停在第 3 手(${await focus()} / ${await view()})`);
+  await key("ArrowLeft");
+  assert(await view() === 2 && !(await ringed("e4")), `§1a 按 ←,退回第 2 手,光标没有画出来(${await view()})`);
+  await key("ArrowRight");
+  assert(await view() === 3, `§1a 按 →,回到第 3 手(${await view()})`);
+  await key("Home");
+  assert(await view() === 0, `§1a 按 Home,回到开局(${await view()})`);
+  await key("End");
+  assert(await view() === 3, `§1a 按 End,跳到最新(${await view()})`);
+  await key("Enter");
+  assert(await ringed("e4"), "§1a 按回车,进入光标模式:光标画出来了");
+  await key("ArrowLeft");
+  assert(await view() === 3 && await ringed("d4"), `§1a 光标模式里按 ←,光标挪到 d4,棋谱不动(${await view()})`);
+  await key("Escape");
+  assert(!(await ringed("d4")) && await focus() === "board", "§1a Esc 退出光标模式,焦点仍在棋盘上");
+  await key("ArrowLeft");
+  assert(await view() === 2, `§1a 退出之后按 ←,又是翻棋谱(${await view()})`);
+  await ctx.close();
+}
+
 // --- 棋盘拿着焦点的时候,Esc 还是不是「让它消失」的意思 ----------------------
 // 实测已发布的 2.1.6:不是。canvas 的 keydown 把每一个 Escape 都吞掉,而只在
 // 有选中时才真的做事 —— 于是提示条、编辑器出口、收面板这三层全部够不着,

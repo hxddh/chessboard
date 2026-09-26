@@ -97,24 +97,45 @@ export function createA11y(d) {
     // worked on the one dialog every player meets. Same fault as the FEN field
     // in 1.10; that one got fixed and this one was missed.
     if (d.dialogOpen()) return;
-    // arrows/Home/End also drive replay from the window handler — while the
-    // board itself is focused they belong to the cursor, so stop them here.
+    // 7.8 §1a: two modes, and whether the cursor is drawn is the switch.
+    // With it hidden — every game played with the mouse — the arrows, Home
+    // and End are not the board's: they fall through to the window handler
+    // and step the move list, as on every other chess site. Measured on 7.7:
+    // click, move, press ←, and nothing happened — an invisible cursor moved
+    // one square instead.
     //
-    // Escape is the exception, and it is the same fault as the dialog above,
-    // one layer out: the board took every Escape and did something with it
-    // only when a piece was selected. Everything else Escape is for — the
-    // fault toast that does not leave on its own, the editor's exit, closing
-    // the panel — lives on the window handler and could not be reached, and
-    // the board is exactly where focus sits the moment you touch a piece.
-    // Measured on 2.1.6: with the board focused, three Escapes in a row left
-    // the toast up and the editor open. So it is ours only when there is
-    // something here to cancel.
-    const escIsOurs = ev.key !== "Escape" || !!store.game.selection;
-    if (escIsOurs &&
-        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
+    // The cursor mode is entered on purpose: a Tab onto the board (that focus
+    // is :focus-visible, see onBoardFocus) or Enter / Space. Inside it the
+    // arrows, Home and End are the cursor's. Escape leaves it.
+    //
+    // Escape is otherwise not ours, and that is the same fault as the dialog
+    // above, one layer out: the board took every Escape and did something
+    // with it only when a piece was selected. Everything else Escape is for —
+    // the fault toast that does not leave on its own, the editor's exit,
+    // closing the panel — lives on the window handler and could not be
+    // reached, and the board is exactly where focus sits the moment you touch
+    // a piece. Measured on 2.1.6: with the board focused, three Escapes in a
+    // row left the toast up and the editor open. So it is ours only when
+    // there is something here to cancel: a selection, or the cursor itself.
+    if (!store.ui.cursorShown) {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault(); ev.stopPropagation();
+        store.ui.cursorShown = true;
+        if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
+        announce(describeSquare(store.ui.keyboardCursor));
+        draw();
+        return;
+      }
+      if (ev.key !== "Escape" || !store.game.selection) return;
+    }
+    if (ev.key === "Escape" && !store.game.selection) {
+      ev.preventDefault(); ev.stopPropagation();
+      store.ui.cursorShown = false;
+      draw();
+      return;
+    }
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", " ", "Escape"].includes(ev.key)) {
       ev.stopPropagation();
-      // a key on the board is keyboard use: from here on the cursor is drawn
-      if (ev.key !== "Escape") store.ui.cursorShown = true;
     }
     switch (ev.key) {
       case "ArrowLeft": ev.preventDefault(); moveCursor(-1, 0); return;

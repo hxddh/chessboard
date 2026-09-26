@@ -3671,9 +3671,11 @@ for (const [when, mode, act] of [
     const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
     assert(focused === "board" && !(await ringed("e4")) && !(await ringed("e5")),
       `§1c 鼠标走完 e2-e4，棋盘有焦点（${focused}）但没有画键盘光标`);
+    // 7.8 §1a：方向键在光标没画出来时翻棋谱；进光标模式的是回车
+    await page.keyboard.press("Enter");
     await page.keyboard.press("ArrowUp");
     await page.waitForTimeout(150);
-    assert(await ringed("e5"), "§1c 按一下方向键，光标出现（e4 → e5）");
+    assert(await ringed("e5"), "§1c 按回车进光标模式，再按方向键，光标出现（e4 → e5）");
     await tap(page, "a2");
     await page.waitForTimeout(150);
     assert(!(await ringed("e5")), "§1c 再用鼠标点一下，光标又收起来");
