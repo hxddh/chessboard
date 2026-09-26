@@ -2654,6 +2654,40 @@
       cursor: pointer;
     }
     .review-jump:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
+    /* 7.8 §3: why each ? / ?? was one — a row per mistake, the move, the
+       reason in the muted voice, and 再试一次 as the one action on the row */
+    .rv-moments { margin-top: 12px; border-top: 1px solid var(--card-border); padding-top: 6px; }
+    .rv-moments-cap { font-size: 0.6875rem; color: var(--muted); margin-bottom: 2px; }
+    .rv-moment {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px;
+      font-size: 0.75rem; line-height: var(--lh-body); padding: 2px 0;
+    }
+    .rv-mo-jump {
+      font: inherit; color: var(--text); background: transparent; border: 0;
+      padding: 0; cursor: pointer; white-space: nowrap;
+    }
+    .rv-mo-jump:hover { color: var(--accent); }
+    .rv-mo-jump .rv-mark { min-width: 0; margin-left: 2px; }
+    .rv-mo-why { flex: 1 1 8em; color: var(--muted); }
+    .rv-mo-retry { margin-left: auto; }
+    .why-line {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+      margin-top: 4px; font-size: 0.75rem; line-height: var(--lh-body); color: var(--text);
+    }
+    .why-text { flex: 1 1 10em; }
+    .why-san { white-space: nowrap; }
+    .retry-box {
+      margin-top: 6px; padding: 8px;
+      border: 1px solid var(--accent); border-radius: var(--radius-sm);
+      font-size: 0.75rem; line-height: var(--lh-body);
+    }
+    .retry-box p { margin: 0 0 4px; }
+    .rt-ask { font-weight: 600; }
+    .rt-verdict.is-right { color: var(--accent); font-weight: 600; }
+    .rt-verdict.is-wrong { color: var(--judge-bad); font-weight: 600; }
+    .rt-why { color: var(--muted); }
+    .rt-acts { display: flex; gap: 6px; margin-top: 6px; }
+    .rt-acts .pv-act { margin-left: 0; }
 
     .ach-pg { margin-left: auto; font-size: 0.6875rem; color: var(--muted); flex: none; }
     /* the "what next?" suggestion under the statistics */

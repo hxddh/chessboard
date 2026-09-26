@@ -778,6 +778,83 @@ await scenario("FEN黑先", async () => {
   await ctx.close();
 });
 
+// --- 15. 为什么 + 再试一次 (v7-8-plan §3) ---------------------------------------
+// The walk-through game x02: 9. a3 walks into …Nxc2+, the knight hitting king
+// and rook at once. The report has to say so — 捉双 and 车 — and 再试一次 from
+// the position before 9. a3 has to mark a3 wrong and the engine's move right.
+// The fixed-line version of the same sentence is in test-explain.mjs; this is
+// the real engine's line reaching the page.
+await scenario("为什么", async () => {
+  const pgn = '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n\n' +
+    "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. Ng5 d5 5. exd5 Nxd5 6. Nxf7 Kxf7 7. Qf3+ Ke6 8. Nc3 Nb4 9. a3 Nxc2+ 10. Kd1 Nxa1 11. Nxd5 Kd6 *\n";
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, pgn);
+  assert((await plies(page)) === 22, "为什么：导入 22 半着的对局", await plies(page));
+  await runAn(page, "#an-run", 90000);
+  // 9. a3 is ply 16 (0-based), data-i 17 in the move list
+  const tag = await page.evaluate(() => {
+    const b = document.querySelector('.move-list .mlmove[data-i="17"] .mvtag');
+    return b ? b.textContent.trim() : "";
+  });
+  assert(tag === "?" || tag === "??", "为什么：9. a3 被标成 ? 或 ??", tag);
+  const row = await page.evaluate(() => {
+    const r = document.querySelector('.rv-moment[data-ply="16"]');
+    return r ? { why: r.querySelector(".rv-mo-why").textContent, retry: !!r.querySelector(".rv-mo-retry") } : null;
+  });
+  assert(!!row && /捉双/.test(row.why) && /车/.test(row.why) && row.retry,
+    "为什么：报告里 9. a3 的说明有「捉双」和「车」，旁边是「再试一次」", JSON.stringify(row));
+  // on the move itself, under the engine line
+  await page.click('.rv-moment[data-ply="16"] .rv-mo-jump');
+  await page.waitForTimeout(200);
+  const at = await page.evaluate(() => {
+    const w = document.getElementById("why-line");
+    return w && !w.hidden ? w.textContent : "";
+  });
+  assert(/捉双/.test(at) && /车/.test(at), "为什么：光标停在 9. a3 上，引擎线下面也是这一句", at);
+  if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/why-line.png" });
+
+  // 再试一次: a3 again is wrong
+  await page.click('.rv-moment[data-ply="16"] .rv-mo-retry');
+  await page.waitForTimeout(200);
+  const box = await page.evaluate(() => {
+    const b = document.getElementById("retry-box");
+    return { shown: !!b && !b.hidden, pv: !document.getElementById("pv-line").hidden, ask: b ? b.textContent : "" };
+  });
+  assert(box.shown && !box.pv && /第 9 回合/.test(box.ask), "再试一次：出现练习框，问第 9 回合；引擎线收起（那是答案）", JSON.stringify(box));
+  await clickMove(page, "a2", "a3");
+  const wrong = await until(() => page.evaluate(() => {
+    const v = document.querySelector("#retry-box .rt-verdict");
+    return v && v.classList.contains("is-wrong") ? {
+      best: (document.querySelector("#retry-box .rt-best .why-san") || {}).title || "",
+      why: (document.querySelector("#retry-box .rt-why") || {}).textContent || "",
+    } : null;
+  }), 5000);
+  assert(!!wrong && !!wrong.best && /捉双/.test(wrong.why), "再试一次：再走 a3 判错，给出引擎最佳和那一句", JSON.stringify(wrong));
+  if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/retry-wrong.png" });
+  // …and the engine's move is right
+  await page.click("#rt-again");
+  await page.waitForTimeout(150);
+  const g = new Chess("r1bq1b1r/ppp3pp/4k3/3np3/1nB5/2N2Q2/PPPP1PPP/R1B1K2R w KQ - 4 9");
+  const mv = wrong ? g.move(wrong.best) : null;
+  if (mv) await clickMove(page, mv.from, mv.to);
+  const right = await until(() => page.evaluate(() => {
+    const v = document.querySelector("#retry-box .rt-verdict");
+    return !!v && v.classList.contains("is-right");
+  }), 20000);
+  assert(!!mv && right, "再试一次：走引擎最佳 " + (mv && mv.san) + " 判对");
+  if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/retry-right.png" });
+  await page.click("#rt-back");
+  await page.waitForTimeout(200);
+  const back = await page.evaluate(() => ({
+    box: document.getElementById("retry-box").hidden,
+    why: !document.getElementById("why-line").hidden,
+    sel: (document.querySelector(".move-list .mlmove.cur, .move-list .mlmove[aria-current]") || {}).dataset,
+  }));
+  assert(back.box && back.why, "再试一次：「回到复盘」回到 9. a3 这一手，说明还在", JSON.stringify(back));
+  assert(!errs.length, "为什么：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
 await browser.close();
 server.close();
 console.log("用时", ((Date.now() - T0) / 1000).toFixed(1) + "s");
