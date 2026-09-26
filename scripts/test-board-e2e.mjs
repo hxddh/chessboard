@@ -550,6 +550,51 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- 7.8 §1b / §7.2:翻棋谱时,棋谱区不上下跳 ---------------------------------
+// 7.7 的「今天的训练」只在「对局中、停在最新局面」时让位:一退回,卡片冒出来,
+// 棋谱被推下去约 160px;回到最新,又收回去。现在有棋谱就不出现。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const daily = () => page.evaluate(() => !!document.getElementById("daily-row").offsetParent);
+  assert(await daily(), "§1b 零着时,「今天的训练」在");
+  const at = (s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  // 22 plies: 1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.c3 Nf6 5.d3 d6 6.O-O O-O 7.Re1 a6
+  // 8.a4 h6 9.h3 Re8 10.Nbd2 Be6 11.Bb5 Bd7
+  const line = "e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6 d2d3 d7d6 e1g1 e8g8 f1e1 a7a6 a2a4 h7h6 h2h3 f8e8 b1d2 c8e6 c4b5 e6d7".split(" ");
+  for (const m of line) {
+    for (const sq of [m.slice(0, 2), m.slice(2)]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(100); }
+  }
+  const n = await page.evaluate(() => document.querySelectorAll(".move-list .mlmove:not(.mlgap)").length);
+  assert(n === 22, `§1b 走完 22 着(${n})`);
+  const top = () => page.evaluate(() => document.getElementById("move-list").getBoundingClientRect().top);
+  const t0 = await top();
+  const seen = new Set();
+  const cards = new Set();
+  for (const k of [...Array(22).fill("ArrowLeft"), ...Array(22).fill("ArrowRight")]) {
+    await page.keyboard.press(k);
+    await page.waitForTimeout(40);
+    seen.add(await top());
+    cards.add(await daily());
+  }
+  assert(seen.size === 1 && seen.has(t0),
+    `§1b 从最新退到开局再回到最新,每一步棋谱区上缘都在 ${t0}px(见过:${[...seen].join(", ")})`);
+  assert(!cards.has(true), "§1b …其间「今天的训练」一次也没有冒出来");
+  await ctx.close();
+}
+
 // --- 棋盘拿着焦点的时候,Esc 还是不是「让它消失」的意思 ----------------------
 // 实测已发布的 2.1.6:不是。canvas 的 keydown 把每一个 Escape 都吞掉,而只在
 // 有选中时才真的做事 —— 于是提示条、编辑器出口、收面板这三层全部够不着,

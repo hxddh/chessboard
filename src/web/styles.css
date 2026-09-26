@@ -982,6 +982,9 @@
       font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
     }
     .opening-line[hidden] { display: none; }
+    /* 7.8 §1b: blank but still taking its line, so the notation does not move */
+    .opening-line.vacant { visibility: hidden; }
+    .opening-line.vacant::before { content: "\00a0"; }
     /* Mode used to be a nav row with its own idiom — an underline it shared
        with the tab row, a `margin-top: 12px` from its life inside the panel,
        and a group border drawn for a tab row that stopped sitting beneath it

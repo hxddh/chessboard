@@ -1998,8 +1998,14 @@ import { createStore } from "./store.js";
     if (store.session.mode !== "learn" && store.session.mode !== "puzzle" && sanHistory().length) {
       ChessEco.whenReady(renderOpening);
     }
-    const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
-    el.hidden = !hit;
+    const drill = store.session.mode === "learn" || store.session.mode === "puzzle";
+    const hit = drill ? null : openingFor(store.game.viewIndex);
+    // 7.8 §1b: stepping back to the start of a named game left no name to
+    // show, and the line collapsed — the notation under it moved 29px. While
+    // the game as a whole has a name, the line keeps its box and goes blank.
+    const held = !hit && !drill && !!openingFor(sanHistory().length);
+    el.hidden = !hit && !held;
+    el.classList.toggle("vacant", held);
     el.textContent = hit ? hit[0] + " · " + hit[1] : "";
   }
 
@@ -5624,10 +5630,16 @@ import { createStore } from "./store.js";
     if (!btn || !label || !note) return;
     // 7.7 (v7-7-plan §3, §10): while a game is being played the notation is
     // what the page is for, and this card was the first screen of the drawer
-    // in a portrait window. It steps aside until the game is over.
-    const playing = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
-      sanHistory().length > 0 && isLive() && !appGameOver();
-    avail(el("daily-row"), !playing);
+    // in a portrait window.
+    //
+    // 7.8 §1b: it steps aside whenever there is a game to look at, not only
+    // while one is live. Tied to isLive(), a step back in replay brought the
+    // card in and pushed the notation ~160px down, and the step forward took
+    // it away again — the panel jumped on every key press. Whether there is
+    // notation does not change while you walk through it, so neither does this.
+    const hasGame = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
+      sanHistory().length > 0;
+    avail(el("daily-row"), !hasGame);
     const d = store.session.daily;
     if (!d) {
       setText(label, t("daily.btn"));
