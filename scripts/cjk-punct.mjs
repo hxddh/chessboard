@@ -35,6 +35,7 @@ export const FILES = [
   "src/web/js/puzzles.js", "src/web/js/puzzles-ja.js",
   "src/web/js/openings.js", "src/web/js/openings-ja.js",
   "src/web/js/openings-family-zh.js", "src/web/js/openings-family-ja.js",
+  "src/web/js/openings-variation-zh.js", "src/web/js/openings-variation-ja.js",
 ];
 
 const CJK = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/;

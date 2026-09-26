@@ -463,7 +463,7 @@ for (SET of ["wood", "classic"]) {
   await a.move("e2", "e4"); await a.heard();
   await a.page.click("#btn-new");
   await a.page.waitForTimeout(200);
-  await a.page.click("#confirm-ok").catch(() => {});
+  await a.page.click("#ng-start");   // v7-8-plan §4: the new-game dialog
   const heard = await a.heard(500);
   if (SET === "wood") assert(heard.includes("开局"), `新局有开局的声音(听到 ${JSON.stringify(heard)})`);
   else assert(heard.length === 0, `经典音效:新局照旧不出声(听到 ${JSON.stringify(heard)})`);

@@ -28,7 +28,8 @@ vm.createContext(ctx);
 // script and eco-lookup.js reads the global it defines. Loading it into this
 // context first is the same arrangement, and without it every lookup here
 // answers null, which is exactly what a missing chunk looks like.
-for (const m of ["chess.js", "eco.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js", "openings-family-zh.js", "openings-family-ja.js"]) {
+for (const m of ["chess.js", "eco.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js", "openings-family-zh.js", "openings-family-ja.js",
+  "openings-variation-zh.js", "openings-variation-ja.js", "classics.js", "lessons.js", "puzzles.js", "puzzles-mined.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", m)), ctx, { filename: m });
 }
 const { Chess, ChessEco, CHESS_OPENINGS, CHESS_OPENING_NAMES, CHESS_OPENINGS_JA, OPENING_FAMILIES_ZH, OPENING_FAMILIES_JA } = ctx;
@@ -184,6 +185,101 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   // a name with no colon is all family
   const kg = { eco: "Z99", name: "King's Gambit" };
   assert(ChessEco.localName(kg, "zh-CN") === OPENING_FAMILIES_ZH["King's Gambit"], "a name with no colon is translated whole");
+}
+
+// --- the most frequent variation names (7.8, v7-8-plan §6) ----------------
+// 7.5 translated the families and left every variation in English, so the
+// Chinese screen read 「意大利开局：Two Knights Defense, Fried Liver Attack」.
+// Which variations to translate is measured here, not listed by taste: every
+// name this app itself puts on screen from its own data — each ply of the 195
+// book lines, the first 30 plies of the ten classics, every lesson and puzzle
+// position — is looked up, the names still showing English are cut into their
+// comma-separated segments, and the 60 most frequent segments (ties broken by
+// how many table entries carry the segment) must be translated. A segment
+// with no established Chinese/Japanese name is NOT forced: it goes in
+// NO_ESTABLISHED_NAME and stays English, visibly, in this file.
+// Before 7.8 this block failed on all 60 (there was no variation table).
+{
+  const { OPENING_VARIATIONS_ZH, OPENING_VARIATIONS_JA, CHESS_CLASSICS, CHESS_LESSONS, CHESS_PUZZLES, MINED_PUZZLES } = ctx;
+  const NO_ESTABLISHED_NAME = new Set([
+    "Agincourt Defense", "Polerio Defense", "Neo-Catalan", "Neo-Catalan Declined",
+    "Bastrikov Variation", "Mieses-Kotroc Variation", "Pierce Defense", "Nyezhmetdinov-Rossolimo Attack",
+  ]);
+  const seen = new Map();   // "eco|name" → times shown
+  const show = (hit) => { if (hit) seen.set(hit.eco + "|" + hit.name, (seen.get(hit.eco + "|" + hit.name) || 0) + 1); };
+  const walkLine = (sans) => {
+    const names = new Set();
+    for (let i = 1; i <= sans.length; i++) {
+      const h = ChessEco.openingForGame(sans.slice(0, i));
+      if (h && !names.has(h.name)) { names.add(h.name); show(h); }
+    }
+  };
+  for (const [, , moves] of CHESS_OPENINGS) walkLine(moves.split(" "));
+  for (const c of CHESS_CLASSICS) {
+    const g = new Chess();
+    g.load_pgn(c.pgn, { sloppy: true });
+    walkLine(g.history().slice(0, 30));
+  }
+  const walkFens = (o) => {
+    if (!o || typeof o !== "object") return;
+    if (typeof o.fen === "string") { try { show(ChessEco.lookupPosition(new Chess(o.fen))); } catch (_) { /* not a position */ } }
+    for (const v of Object.values(o)) walkFens(v);
+  };
+  walkFens(CHESS_LESSONS);
+  for (const p of [...CHESS_PUZZLES, ...MINED_PUZZLES]) { try { show(ChessEco.lookupPosition(new Chess(p.fen))); } catch (_) { /* skip */ } }
+  // what 7.5 would show: the family translated, the book's own names whole
+  const family75 = (key) => !ChessEco.BOOK_ID_BY_ENTRY[key];
+  const reach = new Map();
+  for (const [, name] of Object.values(ctx.ECO_BY_KEY)) {
+    const i = name.indexOf(":");
+    if (i >= 0) for (const s of name.slice(i + 1).split(",")) reach.set(s.trim(), (reach.get(s.trim()) || 0) + 1);
+  }
+  const freq = new Map();
+  for (const [k, n] of seen) {
+    if (!family75(k)) continue;
+    const name = k.slice(k.indexOf("|") + 1);
+    const i = name.indexOf(":");
+    if (i < 0) continue;
+    for (const s of name.slice(i + 1).split(",")) freq.set(s.trim(), (freq.get(s.trim()) || 0) + n);
+  }
+  const top = [...freq.keys()].sort((a, b) => freq.get(b) - freq.get(a) || reach.get(b) - reach.get(a) || (a < b ? -1 : 1)).slice(0, 60);
+  assert(top.length === 60, "the app's own data shows at least 60 distinct variation segments (" + top.length + ")");
+  for (const [lang, tbl] of [["zh-CN", OPENING_VARIATIONS_ZH], ["ja", OPENING_VARIATIONS_JA]]) {
+    const missing = top.filter((s) => !tbl[s] && !NO_ESTABLISHED_NAME.has(s));
+    assert(missing.length === 0, "the 60 most frequent variation segments have a " + lang + " name, or are registered as having none" +
+      (missing.length ? " — missing: " + missing.join(" | ") : ""));
+    const forced = [...NO_ESTABLISHED_NAME].filter((s) => tbl[s] || !top.includes(s));
+    assert(forced.length === 0, "…and the no-established-name register is exactly that: untranslated, and in the 60" +
+      (forced.length ? " — " + forced.join(" | ") : ""));
+    const latin = Object.entries(tbl).filter(([, v]) => /[A-Za-z,;:()]/.test(v));
+    assert(latin.length === 0, "…no " + lang + " variation name carries Latin letters or ASCII punctuation" +
+      (latin.length ? " — " + latin.map(([k]) => k).join(" | ") : ""));
+    // every name on screen made only of translated segments now reads with no English at all
+    const still = [];
+    for (const k of seen.keys()) {
+      const [eco, name] = [k.slice(0, k.indexOf("|")), k.slice(k.indexOf("|") + 1)];
+      const i = name.indexOf(":");
+      if (i < 0 || !family75(k)) continue;
+      const segs = name.slice(i + 1).split(",").map((s) => s.trim());
+      if (!segs.every((s) => top.includes(s) && !NO_ESTABLISHED_NAME.has(s))) continue;
+      const shown = ChessEco.localName({ eco, name }, lang);
+      if (/[A-Za-z]/.test(shown)) still.push(name + " → " + shown);
+    }
+    assert(still.length === 0, "…so no " + lang + " name built from them shows English any more" +
+      (still.length ? " — " + still.slice(0, 5).join(" | ") : ""));
+  }
+  const fried = { eco: "C57", name: "Italian Game: Two Knights Defense, Fried Liver Attack" };
+  assert(ChessEco.localName(fried, "zh-CN") === "意大利开局：双马防御，炸肝攻击",
+    "the plan's example reads 意大利开局：双马防御，炸肝攻击 (" + ChessEco.localName(fried, "zh-CN") + ")");
+  assert(ChessEco.localName(fried, "ja") === OPENING_FAMILIES_JA["Italian Game"] + "：ツー・ナイツ・ディフェンス、フライド・リバー・アタック",
+    "…and in Japanese (" + ChessEco.localName(fried, "ja") + ")");
+  const mixed = { eco: "C55", name: "Italian Game: Two Knights Defense, Perreux Variation" };
+  assert(ChessEco.localName(mixed, "zh-CN") === "意大利开局：双马防御，Perreux Variation",
+    "a segment outside the table stays English beside one inside it (" + ChessEco.localName(mixed, "zh-CN") + ")");
+  assert(ChessEco.localName(fried, "en") === fried.name, "English is unchanged");
+  console.log("  the 60: " + top.map((s) => s + "=" + (OPENING_VARIATIONS_ZH[s] || "—")).join(", "));
+}
+{
 
   // a family the book also names must be spelt the same way here, so one
   // opening never appears under two names: for every book line whose table

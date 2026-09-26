@@ -1115,7 +1115,8 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     return { names, settled: getComputedStyle(pane).opacity };
   });
-  assert(tab.names.includes("reveal-in"), "切页签的时候新页是走进来的(" + tab.names.join(", ") + ")");
+  // v7-8-plan §5: a fade (pane-in), no longer the 4px reveal-in slide — a tab replaces the pane, it is not revealed from above
+  assert(tab.names.includes("pane-in"), "切页签的时候新页是淡入的(" + tab.names.join(", ") + ")");
   assert(tab.settled === "1", "……而且走完就停在原地(" + tab.settled + ")");
 
   const fold = await page.evaluate(async () => {
@@ -3476,7 +3477,7 @@ const mv = async (page, sq) => {
     // mate in the next game came up already dismissed
     await page.click("#btn-new");
     await page.waitForTimeout(300);
-    await page.click("#confirm-ok").catch(() => {});
+    await page.click("#ng-start");   // v7-8-plan §4: a finished game — no warning, just 开始
     await page.waitForTimeout(400);
     for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
     await page.waitForTimeout(500);

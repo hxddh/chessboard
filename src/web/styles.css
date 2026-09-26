@@ -788,6 +788,39 @@
     }
     /* a wider frame can carry the larger step */
     @media (min-width: 1100px) { .coords { font-size: 0.8125rem; } }
+    /* v7-8-plan §5: 「坐标：盘内」 — Lichess's way. The letters sit in the
+       bottom-right corner of the first-rank squares, the numbers in the
+       top-left corner of the a-file squares, each in the colour of the OTHER
+       square so it reads on both. The frame has nothing left to carry and
+       narrows; the board is bigger by the difference, and that difference is
+       the same on every tab.
+       Which span sits on which colour needs no JavaScript: the square at the
+       bottom-left of a chessboard is dark whichever way it faces (a1, or h8
+       when flipped), so the first file letter is on a dark square and the
+       first rank number (top-left: a8 or h1) on a light one, alternating. */
+    #app[data-coords="in"] { --wood-pad: 8px; }
+    #app[data-coords="in"] .coords { font-size: 0.6875rem; letter-spacing: 0; }
+    @media (min-width: 1100px) { #app[data-coords="in"] .coords { font-size: 0.75rem; } }
+    #app[data-coords="in"] .coords.files {
+      top: var(--wood-pad); bottom: var(--wood-pad); height: auto;
+      align-items: stretch;
+    }
+    #app[data-coords="in"] .coords.files > span {
+      display: flex; align-items: flex-end; justify-content: flex-end;
+      padding: 0 0.2em 0.1em 0;
+    }
+    #app[data-coords="in"] .coords.ranks {
+      left: var(--wood-pad); right: var(--wood-pad); width: auto;
+      align-items: stretch;
+    }
+    #app[data-coords="in"] .coords.ranks > span {
+      display: flex; align-items: flex-start; justify-content: flex-start;
+      padding: 0.1em 0 0 0.25em;
+    }
+    #app[data-coords="in"] .coords.files > span:nth-child(odd),
+    #app[data-coords="in"] .coords.ranks > span:nth-child(even) { color: var(--sq-light); }
+    #app[data-coords="in"] .coords.files > span:nth-child(even),
+    #app[data-coords="in"] .coords.ranks > span:nth-child(odd) { color: var(--sq-dark); }
 
     canvas {
       display: block; width: 100%; height: 100%;
@@ -1887,6 +1920,9 @@
       margin: 0 0 16px;
       font-size: 0.9375rem; line-height: var(--lh-body); color: var(--text);
     }
+    /* v7-8-plan §4: the new-game dialog's one line of consequence — in the
+       colour this UI gives an answer that cannot be taken back (7.7 §4) */
+    .ng-warn { margin-bottom: 8px; color: var(--danger); }
 
     /* position editor: piece palette */
     .palette {
@@ -2202,7 +2238,19 @@
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }
 }
-.side-pane:not([hidden]),
+/* v7-8-plan §5: a tab is not revealed from above, it replaces the pane
+   beside it — so the pane only fades, it does not also slide the whole
+   column 4px (7.7 §9's crossfade). Only the incoming pane: the outgoing one
+   is hidden in the same frame, so two panes are never drawn at once and
+   nothing under a pressed button is rewritten (7.6). Stopped under
+   prefers-reduced-motion by the blanket rule below, like every keyframe. */
+@keyframes pane-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.side-pane:not([hidden]) {
+  animation: pane-in var(--dur-base) var(--ease);
+}
 .setting-fold[open] > *:not(summary),
 .reading-index[open] > *:not(summary) {
   animation: reveal-in var(--dur-base) var(--ease);
@@ -2289,8 +2337,9 @@
   *, *::before, *::after {
     transition-property: color, background-color, border-color, box-shadow,
       opacity, fill, stroke !important;
-    /* keyframes are all-or-nothing: every @keyframes in this file moves or
-       scales something, so they stop outright */
+    /* keyframes are all-or-nothing: nearly every @keyframes in this file
+       moves or scales something, so they stop outright — the tab fade
+       (pane-in) with them, as v7-8-plan §5 asks */
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
@@ -2589,6 +2638,10 @@
       clip: rect(0 0 0 0); white-space: nowrap;
     }
     #board-wrap:has(.eval-gauge.is-inset:not([hidden])) .coords.ranks { visibility: hidden; }
+    /* 坐标：盘内 (v7-8-plan §5): the narrow frame takes a narrower gauge, and
+       the numbers are inside the squares, out of its way */
+    #app[data-coords="in"] .eval-gauge.is-inset { left: 2px; width: calc(var(--wood-pad) - 4px); }
+    #app[data-coords="in"] #board-wrap:has(.eval-gauge.is-inset:not([hidden])) .coords.ranks { visibility: visible; }
     @media (prefers-reduced-motion: reduce) {
       .eval-bar-fill { transition: none; }
     }

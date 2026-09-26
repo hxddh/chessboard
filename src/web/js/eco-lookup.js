@@ -31,6 +31,8 @@ import { CHESS_OPENINGS_EN } from "./openings-en.js";
 import { CHESS_OPENINGS_JA } from "./openings-ja.js";
 import { OPENING_FAMILIES_ZH } from "./openings-family-zh.js";
 import { OPENING_FAMILIES_JA } from "./openings-family-ja.js";
+import { OPENING_VARIATIONS_ZH } from "./openings-variation-zh.js";
+import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
 
   /** The table's key for the position `chess` is at. */
   function positionKey(chess) {
@@ -175,10 +177,28 @@ import { OPENING_FAMILIES_JA } from "./openings-family-ja.js";
   // bundle, not the eco chunk: library-ui names games from their PGN
   // `Opening` header, which needs no table at all.
   const FAMILY = { "zh-CN": OPENING_FAMILIES_ZH, ja: OPENING_FAMILIES_JA };
+  // 7.8 (v7-8-plan §6): the most frequent variation names too, one
+  // comma-separated segment at a time, keyed by lichess's English segment
+  const VARIATION = { "zh-CN": OPENING_VARIATIONS_ZH, ja: OPENING_VARIATIONS_JA };
+  const LIST_SEP = { "zh-CN": "，", ja: "、" };
+
+  /**
+   * `"Two Knights Defense, Fried Liver Attack"` → `"双马防御，炸肝攻击"`.
+   * Segments the table does not have stay English; a variation none of whose
+   * segments is known comes back exactly as it went in.
+   */
+  function variationName(rest, lang) {
+    const tbl = VARIATION[lang];
+    if (!tbl || !rest) return rest;
+    const segs = rest.split(",").map((s) => s.trim());
+    if (!segs.some((s) => tbl[s])) return rest;
+    return segs.map((s) => tbl[s] || s).join(LIST_SEP[lang]);
+  }
 
   /**
    * `"Italian Game: Giuoco Piano"` → `"意大利开局：Giuoco Piano"`, or null
-   * when the family is not in `lang`'s table. A name with no colon is all
+   * when the family is not in `lang`'s table. The variation's segments
+   * are translated too, where variationName() knows them (v7-8-plan §6). A name with no colon is all
    * family. Both CJK languages join with the full-width colon, as the rest
    * of their copy does (scripts/cjk-punct.mjs).
    */
@@ -188,7 +208,7 @@ import { OPENING_FAMILIES_JA } from "./openings-family-ja.js";
     const i = name.indexOf(":");
     const fam = tbl[i < 0 ? name : name.slice(0, i)];
     if (!fam) return null;
-    const rest = i < 0 ? "" : name.slice(i + 1).trim();
+    const rest = i < 0 ? "" : variationName(name.slice(i + 1).trim(), lang);
     return rest ? fam + "：" + rest : fam;
   }
 

@@ -1046,6 +1046,248 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- v7-8-plan §5: 坐标 盘外 / 盘内, and the tab fade ------------------------
+// Both red before 7.8's change: there was no 「坐标位置」 control (the click
+// below times out), and the tab pane slid in with reveal-in, not pane-in.
+{
+  const rectsFor = async (w, h, coordsIn, theme) => {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, locale: "zh-CN" });
+    await ctx.addInitScript((th) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: th }));
+      localStorage.setItem("chess.panelOpen", "1");
+    }, theme);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+    // chosen the way a person chooses it: on the settings page
+    await page.click("#tab-setup"); await page.waitForTimeout(150);
+    await page.click(`#coords-seg button[data-coords="${coordsIn ? "in" : "out"}"]`, { timeout: 2000 });
+    await page.waitForTimeout(300);
+    const rects = [];
+    for (const tab of ["play", "setup", "record", "play"]) {
+      await page.click("#tab-" + tab); await page.waitForTimeout(250);
+      rects.push(await page.evaluate(() => {
+        const r = document.getElementById("board").getBoundingClientRect();
+        return [r.x, r.y, r.width, r.height].join(",");
+      }));
+    }
+    const geo = await page.evaluate(() => {
+      const board = document.getElementById("board").getBoundingClientRect();
+      const wrap = document.getElementById("board-wrap").getBoundingClientRect();
+      const step = board.width / 8;
+      const span = (id, i) => document.getElementById(id).children[i];
+      const box = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, r: r.right, b: r.bottom }; };
+      // the ink box of the text, not the span: a Range over its text node
+      const ink = (el) => { const rg = document.createRange(); rg.selectNodeContents(el); return box(rg); };
+      const css = getComputedStyle(document.documentElement);
+      const tok = (n) => { const d = document.createElement("span"); d.style.color = css.getPropertyValue(n); document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; };
+      // the gauge is review-only; shown here only to read where the layout puts it
+      const g = document.getElementById("eval-bar-row");
+      g.hidden = false;
+      const gauge = box(g);
+      g.hidden = true;
+      return {
+        board: { x: board.x, y: board.y, r: board.right, b: board.bottom }, frame: board.x - wrap.x, step,
+        a: ink(span("coord-files", 0)), h: ink(span("coord-files", 7)),
+        r8: ink(span("coord-ranks", 0)), r1: ink(span("coord-ranks", 7)),
+        aInk: getComputedStyle(span("coord-files", 0)).color, bInk: getComputedStyle(span("coord-files", 1)).color,
+        r8Ink: getComputedStyle(span("coord-ranks", 0)).color,
+        light: tok("--sq-light"), dark: tok("--sq-dark"),
+        gauge, wrapX: wrap.x,
+      };
+    });
+    await ctx.close();
+    return { rects, geo, errs };
+  };
+  for (const [w, h] of [[1200, 900], [600, 900]]) {
+    const out = await rectsFor(w, h, false, "wood");
+    const inn = await rectsFor(w, h, true, "wood");
+    assert(new Set(out.rects).size === 1, `${w}×${h} 坐标盘外:棋盘矩形在三个页签之间逐像素不变(${[...new Set(out.rects)].join(" / ")})`);
+    assert(new Set(inn.rects).size === 1, `${w}×${h} 坐标盘内:同样逐像素不变(${[...new Set(inn.rects)].join(" / ")})`);
+    assert(inn.geo.frame < out.geo.frame && inn.geo.step > out.geo.step,
+      `${w}×${h} 盘内时外框收窄(${out.geo.frame} → ${inn.geo.frame}px),格子随之变大(${out.geo.step.toFixed(1)} → ${inn.geo.step.toFixed(1)})`);
+    const g = inn.geo, s = g.step, B = g.board;
+    // a in a1's bottom-right quarter, h in h1's; 8 in a8's top-left quarter, 1 in a1's
+    const inQuarter = (k, col, row, right, bottom) => {
+      const x0 = B.x + col * s, y0 = B.y + row * s;
+      const qx = right ? [x0 + s / 2, x0 + s] : [x0, x0 + s / 2];
+      const qy = bottom ? [y0 + s / 2, y0 + s] : [y0, y0 + s / 2];
+      return k.x >= qx[0] - 0.5 && k.r <= qx[1] + 0.5 && k.y >= qy[0] - 0.5 && k.b <= qy[1] + 0.5;
+    };
+    assert(inQuarter(g.a, 0, 7, true, true) && inQuarter(g.h, 7, 7, true, true),
+      `${w}×${h} 盘内:a–h 在第一横排格子的右下角`);
+    assert(inQuarter(g.r8, 0, 0, false, false) && inQuarter(g.r1, 0, 7, false, false),
+      `${w}×${h} 盘内:1–8 在 a 列格子的左上角`);
+    assert(g.aInk === g.light && g.bInk === g.dark && g.r8Ink === g.dark,
+      `${w}×${h} 盘内:字色与所在格子反色(a1 深格写浅色 ${g.aInk},b1 浅格写深色 ${g.bInk},a8 浅格写深色 ${g.r8Ink})`);
+    const gaugeOk = g.gauge.r <= B.x + 0.5 && g.gauge.y >= B.y - 0.5 && g.gauge.b <= B.b + 0.5;
+    assert(gaugeOk, `${w}×${h} 盘内:竖评估条仍在棋盘左侧、与格子同高(条 ${g.gauge.x.toFixed(0)}–${g.gauge.r.toFixed(0)},格子从 ${B.x.toFixed(0)} 起)`);
+    assert(!out.errs.length && !inn.errs.length, `${w}×${h} 坐标两种位置:没有页面异常`);
+  }
+  // a light theme: same rules, its own square colours
+  const day = await rectsFor(1200, 900, true, "day");
+  assert(day.geo.aInk === day.geo.light && day.geo.bInk === day.geo.dark, `日间主题盘内:字色取这套主题自己的格子色(${day.geo.aInk} / ${day.geo.bInk})`);
+
+  // the tab fade: one pane drawn, fading in over --dur-base; none under reduced motion
+  for (const reduced of [false, true]) {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: reduced ? "reduce" : "no-preference" });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+    });
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+    const r = await page.evaluate(() => {
+      document.getElementById("tab-record").click();
+      const shown = ["play", "setup", "record"].filter((t) => !document.getElementById("pane-" + t).hidden);
+      const cs = getComputedStyle(document.getElementById("pane-record"));
+      const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-base").trim();
+      const ms = (v) => (/ms$/.test(v) ? parseFloat(v) : parseFloat(v) * 1000);
+      return { shown, name: cs.animationName, dur: cs.animationDuration, base, same: ms(cs.animationDuration) === ms(base), durMs: ms(cs.animationDuration) };
+    });
+    if (!reduced) {
+      assert(r.shown.length === 1 && r.name === "pane-in" && r.same,
+        `页签切换:只画新窗格(${r.shown.join(",")}),它用 pane-in 淡入,时长就是 --dur-base(${r.dur} / ${r.base})`);
+    } else {
+      assert(r.shown.length === 1 && r.durMs <= 1,
+        `减少动态效果:页签切换不淡入(${r.dur})`);
+    }
+    await ctx.close();
+  }
+}
+
+// --- v7-8-plan §4: one dialog for a new game ------------------------------
+// Red before 7.8: #btn-new raised the 「清空当前对局？」 confirm (no
+// #newgame-modal), 换个对手 switched to the settings tab, and there was no 随机.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", difficulty: "normal", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+  const tap = async (s) => {
+    const p = await page.evaluate((n) => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      return { x: r.left + (n.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(n[1]) + 0.5) * (r.height / 8) };
+    }, s);
+    await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+  };
+  const state = () => page.evaluate(() => {
+    const m = document.getElementById("newgame-modal");
+    const s = JSON.parse(localStorage.getItem("chess.v1.settings") || "{}");
+    return {
+      open: !!m && m.classList.contains("show"),
+      confirm: document.getElementById("confirm-modal").classList.contains("show"),
+      warn: !!m && !document.getElementById("ng-warn").hidden,
+      rows: m ? [...document.getElementById("ng-host").children].filter((r) => !r.hidden).map((r) => r.id) : [],
+      plies: document.querySelectorAll(".mlmove").length,
+      tab: document.getElementById("app").getAttribute("data-tab"),
+      diffActive: (document.querySelector("#diff-seg-engine button.active, #diff-seg button.active") || {}).dataset?.diff,
+      level: document.getElementById("black-level").textContent.trim(),
+      settings: s,
+      focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
+      rowsHome: ["row-difficulty", "row-persona", "row-color", "row-clock"].every((id) => document.getElementById(id).closest("#fold-game")),
+    };
+  });
+  const stateBefore = await state();
+  assert(stateBefore.rowsHome, "开局前:四组分段控件都在设置页「对局」折叠里");
+
+  // a game in progress: one step, the warning in the dialog, no second box
+  await tap("e2"); await tap("e4"); await page.waitForTimeout(400);
+  await page.click("#btn-new"); await page.waitForTimeout(300);
+  let s = await state();
+  assert(s.open && !s.confirm, `「新局」打开新对局对话框,不再先弹确认框(对话框 ${s.open} / 确认框 ${s.confirm})`);
+  assert(s.warn, "……对局进行中,对话框顶上写着「会结束当前这盘」");
+  assert(JSON.stringify(s.rows) === JSON.stringify(["row-difficulty", "row-persona", "row-color", "row-clock"]),
+    `……里面就是设置页那几组控件,同一批节点(${s.rows.join(",")})`);
+  assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
+  // the draft is not the game: choosing 执黑 here changes nothing until 开始
+  await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(200);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  s = await state();
+  assert(!s.open && s.plies === 1 && s.settings.humanColor === "w" && s.rowsHome,
+    `Esc 关掉:这盘还在(${s.plies} 着),执子没变(${s.settings.humanColor}),控件回到设置页`);
+
+  // Tab stays in the dialog and walks it top to bottom
+  await page.click("#btn-new"); await page.waitForTimeout(300);
+  const order = await page.evaluate(() => {
+    const m = document.getElementById("newgame-modal");
+    return [...m.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.id || b.dataset.diff || b.dataset.persona || b.dataset.color || b.dataset.tc);
+  });
+  await page.keyboard.press("Tab"); await page.waitForTimeout(80);
+  const wrapped = (await state()).focus;
+  await page.keyboard.press("Shift+Tab"); await page.waitForTimeout(80);
+  const back = (await state()).focus;
+  assert(order[0] === "beginner" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "beginner" && back === "ng-start",
+    `Tab 顺序:陪练档 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order[0]}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
+  // change the level and start: one step, the strip and the settings page agree
+  await page.click('#ng-host #diff-seg-engine button[data-diff="hard"]'); await page.waitForTimeout(150);
+  await page.keyboard.press("Enter"); await page.waitForTimeout(500);
+  s = await state();
+  assert(!s.open && !s.confirm && s.plies === 0, `回车 = 开始:一步就开了新局(${s.plies} 着,没有第二个确认框)`);
+  assert(s.settings.difficulty === "hard" && s.diffActive === "hard" && /高级/.test(s.level),
+    `新档位写进设置、设置页分段同步、对阵条上是「${s.level}」`);
+  assert(s.rowsHome, "……控件回到设置页");
+
+  // no moves: no warning. 随机 is offered, and remembered
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
+  s = await state();
+  assert(s.open && !s.warn, "没有着法时不写「会结束当前这盘」");
+  await page.click('#ng-host #color-seg button[data-color="random"]'); await page.waitForTimeout(150);
+  await page.click("#ng-start"); await page.waitForTimeout(500);
+  s = await state();
+  assert(s.settings.colorRandom === true && ["w", "b"].includes(s.settings.humanColor),
+    `执子「随机」:抽到了一方(${s.settings.humanColor}),并记住这次选的是随机`);
+  const randomHidden = await page.evaluate(() => document.querySelector('#color-seg button[data-color="random"]').hidden);
+  assert(randomHidden, "……设置页上没有「随机」这一格 —— 那是开局的选项,不是换边");
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
+  const pre = await page.evaluate(() => (document.querySelector("#ng-host #color-seg button.active") || {}).dataset?.color);
+  assert(pre === "random", `再开对话框,预选的仍是上次的「随机」(${pre})`);
+  await page.click("#ng-cancel"); await page.waitForTimeout(300);
+
+  // the result card's two buttons open the same dialog; 换个对手 lands on the opponent
+  await page.evaluate(() => document.getElementById("go-again").click()); await page.waitForTimeout(300);
+  s = await state();
+  assert(s.open && s.tab === "play", "「再来一盘」打开同一个对话框");
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  await page.evaluate(() => document.getElementById("go-switch").click()); await page.waitForTimeout(300);
+  s = await state();
+  assert(s.open && s.tab === "play" && s.focus === "hard", `「换个对手」也是它,不再跳去设置页,焦点落在当前档位上(${s.tab} / ${s.focus})`);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+
+  // two players: only who plays White (the bottom side) and the clock
+  await page.click("#tab-setup"); await page.waitForTimeout(200);
+  await page.click('#mode-seg button[data-mode="pvp"]'); await page.waitForTimeout(400);
+  await page.click("#tab-play").catch(() => {}); await page.waitForTimeout(200);
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
+  s = await state();
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock"]),
+    `双人模式只显示「谁执白」和棋钟(${s.rows.join(",")})`);
+  await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(150);
+  await page.click('#ng-host #clock-seg button[data-tc="5+3"]'); await page.waitForTimeout(150);
+  await page.click("#ng-start"); await page.waitForTimeout(400);
+  s = await state();
+  const flipped = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active'));
+  assert(s.settings.timeControl === "5+3" && flipped, `双人:棋钟 5+3、下方执黑(棋盘翻转 ${flipped})`);
+  assert(errs.length === 0, `新对局对话框:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

@@ -979,10 +979,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     let asked = false;
     for (let i = 0; i < 10 && !asked; i++) {
       await pgH.waitForTimeout(60);
-      asked = await pgH.isVisible("#confirm-modal.show").catch(() => false);
+      asked = await pgH.isVisible("#newgame-modal.show").catch(() => false);
     }
     if (asked) {
-      await pgH.click("#confirm-ok");
+      await pgH.click("#ng-start");
       await pgH.waitForTimeout(300);
     }
     if (asked && r.clicked && !r.replaced && !r.mutated && r.drift === 0 && (await plies()) === 0) took++;

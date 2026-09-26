@@ -179,7 +179,7 @@ async function firstReply(prefix, failing) {
     // the button sits in a tab the viewport may have scrolled under #app: the
     // handler is what is under test, not the hit-testing
     await page.evaluate(() => document.getElementById("btn-new").click());
-    await page.click("#confirm-ok", { timeout: 3000 }).catch(() => {});
+    await page.click("#ng-start", { timeout: 3000 }).catch(() => {});   // v7-8-plan §4
     await page.waitForTimeout(3000);
     const fresh = await probe();
     out.workersNew = fresh.workers;
