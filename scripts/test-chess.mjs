@@ -2453,7 +2453,8 @@ for (const lang of CONTENT_LANGS) {
   // checkmate must not render as an ordinary check
   const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
   assert(/m\.mated/.test(boardSrc), "the board draws checkmate differently from check");
-  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 3,
+  // four models: the game, the puzzle, the lesson, and 再试一次 (v7-8-plan §3)
+  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 4,
     "every board model says whether the check is mate");
 
   // the analyser must not carry a fifth copy of the numbers
