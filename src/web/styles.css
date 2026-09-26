@@ -1920,6 +1920,9 @@
       margin: 0 0 16px;
       font-size: 0.9375rem; line-height: var(--lh-body); color: var(--text);
     }
+    /* v7-8-plan §4: the new-game dialog's one line of consequence — in the
+       colour this UI gives an answer that cannot be taken back (7.7 §4) */
+    .ng-warn { margin-bottom: 8px; color: var(--danger); }
 
     /* position editor: piece palette */
     .palette {

@@ -1162,6 +1162,132 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   }
 }
 
+// --- v7-8-plan §4: one dialog for a new game ------------------------------
+// Red before 7.8: #btn-new raised the 「清空当前对局？」 confirm (no
+// #newgame-modal), 换个对手 switched to the settings tab, and there was no 随机.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "ai", difficulty: "normal", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+  const tap = async (s) => {
+    const p = await page.evaluate((n) => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      return { x: r.left + (n.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(n[1]) + 0.5) * (r.height / 8) };
+    }, s);
+    await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+  };
+  const state = () => page.evaluate(() => {
+    const m = document.getElementById("newgame-modal");
+    const s = JSON.parse(localStorage.getItem("chess.v1.settings") || "{}");
+    return {
+      open: !!m && m.classList.contains("show"),
+      confirm: document.getElementById("confirm-modal").classList.contains("show"),
+      warn: !!m && !document.getElementById("ng-warn").hidden,
+      rows: m ? [...document.getElementById("ng-host").children].filter((r) => !r.hidden).map((r) => r.id) : [],
+      plies: document.querySelectorAll(".mlmove").length,
+      tab: document.getElementById("app").getAttribute("data-tab"),
+      diffActive: (document.querySelector("#diff-seg-engine button.active, #diff-seg button.active") || {}).dataset?.diff,
+      level: document.getElementById("black-level").textContent.trim(),
+      settings: s,
+      focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
+      rowsHome: ["row-difficulty", "row-persona", "row-color", "row-clock"].every((id) => document.getElementById(id).closest("#fold-game")),
+    };
+  });
+  const stateBefore = await state();
+  assert(stateBefore.rowsHome, "开局前:四组分段控件都在设置页「对局」折叠里");
+
+  // a game in progress: one step, the warning in the dialog, no second box
+  await tap("e2"); await tap("e4"); await page.waitForTimeout(400);
+  await page.click("#btn-new"); await page.waitForTimeout(300);
+  let s = await state();
+  assert(s.open && !s.confirm, `「新局」打开新对局对话框,不再先弹确认框(对话框 ${s.open} / 确认框 ${s.confirm})`);
+  assert(s.warn, "……对局进行中,对话框顶上写着「会结束当前这盘」");
+  assert(JSON.stringify(s.rows) === JSON.stringify(["row-difficulty", "row-persona", "row-color", "row-clock"]),
+    `……里面就是设置页那几组控件,同一批节点(${s.rows.join(",")})`);
+  assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
+  // the draft is not the game: choosing 执黑 here changes nothing until 开始
+  await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(200);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  s = await state();
+  assert(!s.open && s.plies === 1 && s.settings.humanColor === "w" && s.rowsHome,
+    `Esc 关掉:这盘还在(${s.plies} 着),执子没变(${s.settings.humanColor}),控件回到设置页`);
+
+  // Tab stays in the dialog and walks it top to bottom
+  await page.click("#btn-new"); await page.waitForTimeout(300);
+  const order = await page.evaluate(() => {
+    const m = document.getElementById("newgame-modal");
+    return [...m.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.id || b.dataset.diff || b.dataset.persona || b.dataset.color || b.dataset.tc);
+  });
+  await page.keyboard.press("Tab"); await page.waitForTimeout(80);
+  const wrapped = (await state()).focus;
+  await page.keyboard.press("Shift+Tab"); await page.waitForTimeout(80);
+  const back = (await state()).focus;
+  assert(order[0] === "beginner" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "beginner" && back === "ng-start",
+    `Tab 顺序:陪练档 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order[0]}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
+  // change the level and start: one step, the strip and the settings page agree
+  await page.click('#ng-host #diff-seg-engine button[data-diff="hard"]'); await page.waitForTimeout(150);
+  await page.keyboard.press("Enter"); await page.waitForTimeout(500);
+  s = await state();
+  assert(!s.open && !s.confirm && s.plies === 0, `回车 = 开始:一步就开了新局(${s.plies} 着,没有第二个确认框)`);
+  assert(s.settings.difficulty === "hard" && s.diffActive === "hard" && /高级/.test(s.level),
+    `新档位写进设置、设置页分段同步、对阵条上是「${s.level}」`);
+  assert(s.rowsHome, "……控件回到设置页");
+
+  // no moves: no warning. 随机 is offered, and remembered
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
+  s = await state();
+  assert(s.open && !s.warn, "没有着法时不写「会结束当前这盘」");
+  await page.click('#ng-host #color-seg button[data-color="random"]'); await page.waitForTimeout(150);
+  await page.click("#ng-start"); await page.waitForTimeout(500);
+  s = await state();
+  assert(s.settings.colorRandom === true && ["w", "b"].includes(s.settings.humanColor),
+    `执子「随机」:抽到了一方(${s.settings.humanColor}),并记住这次选的是随机`);
+  const randomHidden = await page.evaluate(() => document.querySelector('#color-seg button[data-color="random"]').hidden);
+  assert(randomHidden, "……设置页上没有「随机」这一格 —— 那是开局的选项,不是换边");
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
+  const pre = await page.evaluate(() => (document.querySelector("#ng-host #color-seg button.active") || {}).dataset?.color);
+  assert(pre === "random", `再开对话框,预选的仍是上次的「随机」(${pre})`);
+  await page.click("#ng-cancel"); await page.waitForTimeout(300);
+
+  // the result card's two buttons open the same dialog; 换个对手 lands on the opponent
+  await page.evaluate(() => document.getElementById("go-again").click()); await page.waitForTimeout(300);
+  s = await state();
+  assert(s.open && s.tab === "play", "「再来一盘」打开同一个对话框");
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  await page.evaluate(() => document.getElementById("go-switch").click()); await page.waitForTimeout(300);
+  s = await state();
+  assert(s.open && s.tab === "play" && s.focus === "hard", `「换个对手」也是它,不再跳去设置页,焦点落在当前档位上(${s.tab} / ${s.focus})`);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+
+  // two players: only who plays White (the bottom side) and the clock
+  await page.click("#tab-setup"); await page.waitForTimeout(200);
+  await page.click('#mode-seg button[data-mode="pvp"]'); await page.waitForTimeout(400);
+  await page.click("#tab-play").catch(() => {}); await page.waitForTimeout(200);
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
+  s = await state();
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock"]),
+    `双人模式只显示「谁执白」和棋钟(${s.rows.join(",")})`);
+  await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(150);
+  await page.click('#ng-host #clock-seg button[data-tc="5+3"]'); await page.waitForTimeout(150);
+  await page.click("#ng-start"); await page.waitForTimeout(400);
+  s = await state();
+  const flipped = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active'));
+  assert(s.settings.timeControl === "5+3" && flipped, `双人:棋钟 5+3、下方执黑(棋盘翻转 ${flipped})`);
+  assert(errs.length === 0, `新对局对话框:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

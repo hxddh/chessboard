@@ -5224,10 +5224,11 @@ for (const lang of CONTENT_LANGS) {
   // issued id since 1.25 (缺陷 13), and the flag the game on the board holds is
   // "which record am I", so it still has to be cleared when the game is not
   // that game any more.
-  for (const [where, src] of [["新局", fn("requestNewGame")], ["清除存档", appSrc]]) {
+  for (const [where, src] of [["新局", fn("startNewGame")], ["清除存档", appSrc]]) {
     assert(src.length > 0, where + " is still there to check");
   }
-  const newGame = fn("requestNewGame");
+  // v7-8-plan §4: requestNewGame() opens the dialog; the reset itself is startNewGame()
+  const newGame = fn("startNewGame");
   assert(/recordedId = null/.test(newGame), "a new game is not the last game's record");
   assert(/analysis = null/.test(newGame), "a new game forgets the last game's analysis");
   const clearSave = appSrc.slice(appSrc.indexOf('Persist.clearAll()'));

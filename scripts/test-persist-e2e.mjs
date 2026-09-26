@@ -185,7 +185,7 @@ const PLACEMENT = STUDY.split(" ")[0];
 
   // wipe the board, then read the slot back
   await page.click("#btn-new");
-  await page.click("#confirm-ok").catch(() => {});
+  await page.click("#ng-start");   // v7-8-plan §4: the new-game dialog, one step
   await page.waitForTimeout(300);
   await page.click("#slots-open");
   await page.click("#slots-list button[data-load='0']");

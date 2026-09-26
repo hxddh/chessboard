@@ -3477,7 +3477,7 @@ const mv = async (page, sq) => {
     // mate in the next game came up already dismissed
     await page.click("#btn-new");
     await page.waitForTimeout(300);
-    await page.click("#confirm-ok").catch(() => {});
+    await page.click("#ng-start");   // v7-8-plan §4: a finished game — no warning, just 开始
     await page.waitForTimeout(400);
     for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
     await page.waitForTimeout(500);

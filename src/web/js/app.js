@@ -288,6 +288,9 @@ import { createStore } from "./store.js";
       difficulty: "normal",
       /** @type {'w'|'b'} human side in AI mode */
       humanColor: "w",
+      /** v7-8-plan §4: the last new game was started with 执子「随机」, so the
+       *  dialog offers that again; humanColor is still the side actually drawn */
+      colorRandom: false,
       engineThinking: false,
       /** 6.0 (v6-plan Q2.8): the move queued while the engine thinks, {from,to} */
       premove: null,
@@ -397,6 +400,10 @@ import { createStore } from "./store.js";
       cursorShown: false,
       toastTimer: null,
       confirmResolver: null,
+      /** v7-8-plan §4: the new-game dialog's draft while it is open —
+       *  {difficulty, personaId, color: "w"|"b"|"random", timeControl} — else null.
+       *  Never persisted: the choices are committed by 开始, not by the clicks. */
+      newGame: null,
       /** 7.7 §3: the review group, opened by hand during an engine game */
       reviewOpen: false,
       histFilter: { result: "all", color: "all" },
@@ -1413,6 +1420,7 @@ import { createStore } from "./store.js";
       // have thrown the choice away on the next launch, silently.
       if (DIFF_IDS.includes(s.difficulty)) store.session.difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) store.session.humanColor = s.humanColor;
+      if (typeof s.colorRandom === "boolean") store.session.colorRandom = s.colorRandom;
       if (s.timeControl === "off" || TCS[s.timeControl]) store.game.timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
@@ -1424,7 +1432,7 @@ import { createStore } from "./store.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
         followSystem: store.ui.followSystem, textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         soundSet: store.ui.soundSet }));
@@ -7580,20 +7588,30 @@ import { createStore } from "./store.js";
         : store.session.mode === "puzzle" ? t("mode.puzzle") : t("tab.play");
     }
     // two rows now: sparring tiers and engine-strength tiers (see index.html)
+    // While the new-game dialog is open (v7-8-plan §4) these rows are in it
+    // and show its draft — what the next game will be — not the game on the
+    // board; closing the dialog drops the draft and they read the store again.
+    const ng = store.ui.newGame;
+    const pick = ng || {
+      difficulty: store.session.difficulty, personaId: store.session.personaId,
+      color: store.session.humanColor, timeControl: store.game.timeControl,
+    };
     document.querySelectorAll("#diff-seg button, #diff-seg-engine button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.diff === store.session.difficulty);
+      b.classList.toggle("active", b.dataset.diff === pick.difficulty);
     });
     document.querySelectorAll("#persona-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.persona === store.session.personaId);
+      b.classList.toggle("active", b.dataset.persona === pick.personaId);
     });
     document.querySelectorAll("#color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.color === store.session.humanColor);
+      b.classList.toggle("active", b.dataset.color === pick.color);
+      // 随机 is a way to start a game, not a side to switch to mid-game
+      if (b.dataset.color === "random") b.hidden = !ng;
     });
     document.querySelectorAll("#orient-seg button").forEach((b) => {
       b.classList.toggle("active", (b.dataset.orient === "b") === !!store.game.flipped);
     });
     document.querySelectorAll("#clock-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tc === store.game.timeControl);
+      b.classList.toggle("active", b.dataset.tc === pick.timeControl);
     });
     const diffRow = document.getElementById("row-difficulty");
     const colorRow = document.getElementById("row-color");
@@ -7601,7 +7619,13 @@ import { createStore } from "./store.js";
     if (diffRow) diffRow.hidden = store.session.mode !== "ai";
     const personaRow = document.getElementById("row-persona");
     if (personaRow) personaRow.hidden = store.session.mode !== "ai";
-    if (colorRow) colorRow.hidden = store.session.mode !== "ai";
+    // in the dialog a two-player game also chooses a side: which one sits at
+    // the bottom of the board (「谁执白」)
+    const pvpPick = !!ng && store.session.mode === "pvp";
+    if (colorRow) {
+      colorRow.hidden = store.session.mode !== "ai" && !pvpPick;
+      setText(colorRow.querySelector(".setting-k"), t(pvpPick ? "ng.pvpColor" : "side.color"));
+    }
     if (clockRow) clockRow.hidden = store.session.mode !== "pvp" && store.session.mode !== "ai";
     const coachRow = document.getElementById("row-coach");
     if (coachRow) coachRow.hidden = store.session.mode !== "ai";
@@ -7862,15 +7886,99 @@ import { createStore } from "./store.js";
     maybeEngineTurn();
   }
 
+  /**
+   * 新局 / N / 再来一盘 / 换个对手 (v7-8-plan §4).
+   *
+   * In the two playing modes this is one dialog: the opponent, the side and
+   * the clock, then 开始. It used to be a bare 「清空当前对局？」 that restarted
+   * with whatever the settings page held, so changing opponent meant three
+   * places — the settings tab, the fold, back to 新局. The question the
+   * confirm asked is now one line at the top of the dialog, and only when
+   * there is something to lose: moves on the board and the game not over
+   * (7.7's 再来一盘 already skipped it for a finished game; that is now the
+   * rule for every entry). One step, not two.
+   *
+   * The teaching modes have no opponent to choose and keep the confirm.
+   */
   async function requestNewGame(opts) {
     stopEditor(t("msg.editor.exited"));
-    // 再来一盘 on the result card (7.7 §4) does not ask: a finished engine
-    // game is already filed in the history, so there is nothing to lose
-    const filed = !!(opts && opts.again) && store.session.mode === "ai" && appGameOver();
-    if (sanHistory().length && !filed &&
+    const mode = store.session.mode;
+    if (mode === "ai" || mode === "pvp") { openNewGame(opts); return; }
+    if (sanHistory().length && !appGameOver() &&
         !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
       return;
     }
+    startNewGame();
+  }
+
+  // The dialog hosts the settings page's own rows while it is open — the
+  // same four DOM nodes, moved, not a second copy that could drift from the
+  // first (their handlers, labels, tooltips and i18n all come along). They
+  // go back in front of 失着提醒 when it closes. Moving them is safe with
+  // respect to 7.6's rule because it never happens under a press: opening is
+  // a click (after pointerup) and closing waits for any press to end.
+  const NG_ROWS = ["row-difficulty", "row-persona", "row-color", "row-clock"];
+  function hostNewGameRows(inDialog) {
+    const host = el("ng-host");
+    const home = el("row-coach");
+    if (!host || !home) return;
+    for (const id of NG_ROWS) {
+      const row = el(id);
+      if (!row) continue;
+      if (inDialog) { if (row.parentNode !== host) host.appendChild(row); }
+      else if (row.parentNode !== home.parentNode) home.parentNode.insertBefore(row, home);
+    }
+  }
+
+  function openNewGame(opts) {
+    const modal = el("newgame-modal");
+    if (!modal) { startNewGame(); return; }
+    const pvp = store.session.mode === "pvp";
+    const side = pvp ? (store.game.flipped ? "b" : "w") : store.session.humanColor;
+    // the last choices, so Enter alone is 「再来一盘同样的」
+    store.ui.newGame = {
+      difficulty: store.session.difficulty, personaId: store.session.personaId,
+      color: store.session.colorRandom ? "random" : side, timeControl: store.game.timeControl,
+    };
+    const warn = el("ng-warn");
+    if (warn) warn.hidden = !(sanHistory().length && !appGameOver());
+    hostNewGameRows(true);
+    syncSettingsUI();
+    // 换个对手 lands on the opponent; everything else on 开始
+    const first = opts && opts.switchOpponent && !pvp
+      ? modal.querySelector("#row-difficulty button.active") : el("ng-start");
+    Dlg.open(modal, first || undefined);
+  }
+
+  function closeNewGame() {
+    const modal = el("newgame-modal");
+    store.ui.newGame = null;
+    Dlg.close(modal);
+    // the seg rows read the store again, and go home once no button is held
+    syncSettingsUI();
+    afterPress(() => { if (!store.ui.newGame) hostNewGameRows(false); });
+  }
+
+  /** 开始: the draft becomes the settings, then the game starts. */
+  function startFromDialog() {
+    const d = store.ui.newGame;
+    if (!d) return;
+    const pvp = store.session.mode === "pvp";
+    const side = d.color === "random" ? (Math.random() < 0.5 ? "w" : "b") : d.color;
+    store.session.colorRandom = d.color === "random";
+    if (!pvp) {
+      store.session.difficulty = d.difficulty;
+      store.session.personaId = d.personaId;
+      store.session.humanColor = side;
+    }
+    store.game.flipped = side === "b";
+    store.game.timeControl = d.timeControl;
+    closeNewGame();
+    saveSettings();
+    startNewGame();
+  }
+
+  function startNewGame() {
     // 7.5: a new game is also the natural moment to try a dead engine again —
     // once, through retryEngine(), so a second failure is the same notice
     // again and not a toast per press
@@ -9688,13 +9796,25 @@ import { createStore } from "./store.js";
 
   // the result card (7.7 §4)
   document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET); };
+  // v7-8-plan §4: both open the new-game dialog — 换个对手 no longer sends
+  // you to the settings page to find the opponent in a fold
   document.getElementById("go-again").onclick = () => { requestNewGame({ again: true }); };
-  document.getElementById("go-switch").onclick = () => {
-    // the opponent is chosen on the settings page, in the game group
-    setSideTab("setup", { top: true });
-    const fold = el("fold-game");
-    if (fold) { fold.open = true; fold.scrollIntoView({ block: "start" }); }
-  };
+  document.getElementById("go-switch").onclick = () => { requestNewGame({ switchOpponent: true }); };
+  {
+    const ngModal = el("newgame-modal");
+    el("ng-start").onclick = () => { startFromDialog(); };
+    el("ng-cancel").onclick = () => { closeNewGame(); };
+    ngModal.onclick = (ev) => { if (ev.target === ngModal) closeNewGame(); };
+    // Enter is 开始 wherever focus is inside the dialog — on a segment you
+    // just chose, too, where the browser would otherwise re-press it. Space
+    // still presses the focused button; Enter on 取消 is still 取消.
+    ngModal.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" || ev.isComposing || ev.target === el("ng-cancel")) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      startFromDialog();
+    });
+  }
   document.getElementById("go-close").onclick = () => {
     const end = gameEnding();
     store.session.goDismissed = end ? end.sig : null;
@@ -10090,9 +10210,18 @@ import { createStore } from "./store.js";
     const b = ev.target.closest("button[data-i]");
     if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));
   };
+  // v7-8-plan §4: inside the new-game dialog a click chooses for the NEXT
+  // game — it goes into the draft and nothing on the board changes until
+  // 开始. On the settings page the same buttons act at once, as before.
+  const draftPick = (field, value) => {
+    if (!store.ui.newGame) return false;
+    store.ui.newGame[field] = value;
+    syncSettingsUI();
+    return true;
+  };
   document.getElementById("clock-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-tc]");
-    if (!b || b.dataset.tc === store.game.timeControl) return;
+    if (!b || draftPick("timeControl", b.dataset.tc) || b.dataset.tc === store.game.timeControl) return;
     store.game.timeControl = b.dataset.tc;
     resetClocks();
     saveSettings();
@@ -10102,7 +10231,7 @@ import { createStore } from "./store.js";
   };
   const onDiffClick = (ev) => {
     const b = ev.target.closest("button[data-diff]");
-    if (!b || b.dataset.diff === store.session.difficulty) return;
+    if (!b || draftPick("difficulty", b.dataset.diff) || b.dataset.diff === store.session.difficulty) return;
     store.session.difficulty = b.dataset.diff;
     saveSettings();
     store.commit("session", "sync");
@@ -10112,14 +10241,14 @@ import { createStore } from "./store.js";
   if (diffEngineSeg) diffEngineSeg.onclick = onDiffClick;
   document.getElementById("persona-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-persona]");
-    if (!b || b.dataset.persona === store.session.personaId) return;
+    if (!b || draftPick("personaId", b.dataset.persona) || b.dataset.persona === store.session.personaId) return;
     store.session.personaId = b.dataset.persona;
     saveSettings();
     store.commit("session", "sync");
   };
   document.getElementById("color-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-color]");
-    if (!b || b.dataset.color === store.session.humanColor) return;
+    if (!b || draftPick("color", b.dataset.color) || !["w", "b"].includes(b.dataset.color) || b.dataset.color === store.session.humanColor) return;
     invalidateEngine();
     store.session.humanColor = b.dataset.color;
     store.game.flipped = store.session.humanColor === "b";
@@ -10764,6 +10893,7 @@ import { createStore } from "./store.js";
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(confirmModal, () => finishConfirm(false));
+    Dlg.register(document.getElementById("newgame-modal"), closeNewGame);
     Dlg.register(keysModal, closeKeyHelp);
     Dlg.register(noteModal, closeNoteModal);
     Dlg.register(aboutModal, () => Dlg.close(aboutModal));
