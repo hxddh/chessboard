@@ -488,7 +488,23 @@
     /* Scales that are not a theme's business: they are the same in all four.
        Sizes, radii, leading, motion, and the row heights the panel is built on. */
     :root {
-      --side-w: 284px;
+      /* 7.7 (v7-7-plan §1g): the panel's width is a function of the window
+         and of nothing else. It used to follow the page — 284 on 对局, 380 in
+         the two reading modes, 568 on 记录 from 1180px up — so switching a
+         tab slid the board sideways: at 1440×900 its left edge stood at 150,
+         102 or 8 depending on what the panel was showing. The board is the
+         anchor of this interface; a glance at the records must not move it.
+         284 stays the floor (design-constraints §4), 30vw is what the reading
+         pages and the records were each asking for in their own way, and
+         440 is where more panel stops buying anything but line length. The
+         board is height-bound in every window where the cap applies. */
+      --side-w: clamp(284px, 30vw, 440px);
+      /* 7.7 (v7-7-plan §2): each player strip, above and below the board.
+         Taken out of the board's edge like the chrome's height — which is
+         why the vertical stage pad is --stage-pad-y and not --stage-pad: the
+         strips carry their own 4px of air against the frame. */
+      --strip-h: 40px;
+      --stage-pad-y: 4px;
       /* 44px until the bar was cut to a status and two actions. Every pixel
          here is taken off the board's edge, not off slack: the board is
          height-bound in every window this ships in and is already fitted to
@@ -605,49 +621,12 @@
     }
     .chrome > * { pointer-events: auto; }
 
-    /* 7.3 §4D: the chrome has three duties, left to right — whose move it is,
-       what game this is, what you can do about it — and one visual level each.
-       Level 1 is this pill: it is the one thing in the bar that changes with
-       every half-move and the one thing a glance is for. It was 0.75rem/500,
-       the same ink as the personas beside it and lighter than their names, so
-       the bar read as eight things of one size. Level 2 is the match — names
-       at 0.75/600, roles and the versus mark at 0.6875 and muted. Level 3 is
-       the actions, which have been their own idiom since 2.0.
-       No new type step: all three are already on the seven-step scale. */
-    .status-pill {
-      font-size: 0.8125rem; font-weight: 600; color: var(--text);
-      /* an explicit box rather than 4px of padding around whatever the text
-         happened to measure — that gave 27.4px next to the buttons' 32 and
-         put its baseline 1.2px off theirs */
-      height: var(--chrome-ctl-h);
-      display: inline-flex; align-items: center;
-      padding: 0 12px; border-radius: 999px;
-      background: var(--btn-ghost);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(8px);
-      transition: color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), background var(--dur-base) var(--ease);
-      /* One short phrase — "白方走子", "将死 · 白方胜". It used to carry the
-         whole lesson task when the panel was shut, clipped at 44vw with an
-         ellipsis: a chip that gets truncated is a chip holding a sentence that
-         belongs somewhere else. The task went back to its task card, and the
-         panel-shut case belongs to the match bar beside it now. */
-      max-width: 30vw;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .status-pill.win {
-      color: var(--win);
-      border-color: color-mix(in srgb, var(--win) 35%, transparent);
-      background: color-mix(in srgb, var(--win) 12%, transparent);
-    }
-    .status-pill.thinking {
-      color: var(--accent);
-      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-      background: color-mix(in srgb, var(--accent) 10%, transparent);
-    }
-    .status-pill.replay {
-      color: var(--muted);
-    }
-    .chrome-actions { display: flex; align-items: center; gap: 6px; }
+    /* 7.7 (v7-7-plan §2): the status pill is gone from sight. It said whose
+       move it was in the top-left corner, as far from the board as the bar
+       allowed; the lit player strip says it now, beside the side that is to
+       move. The sentence itself is still in the bar for a screen reader
+       (#status is .sr-only), and the end of a game is the result card. */
+    .chrome-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     .icon-btn, .tool-btn {
       appearance: none; border: 0; border-radius: var(--radius-sm);
       background: var(--btn-ghost); color: var(--text);
@@ -687,20 +666,26 @@
     .chrome-actions .slot-empty,
     .replay-bar .slot-empty { visibility: hidden; }
     .icon-btn:hover, .tool-btn:hover { background: var(--btn-hover); }
+    /* 7.7 (v7-7-plan §3): one primary, one look. This was a gradient in
+       --primary-from/to — blue on 日 and 纸 — while .act-btn.primary was the
+       flat accent, so 下一题 and 分析这盘 were two different "press this"
+       buttons depending on which family they were built from. */
     .tool-btn.primary {
-      background: linear-gradient(180deg, var(--primary-from), var(--primary-to));
-      color: var(--on-primary); font-weight: 600;
+      background: var(--accent);
+      color: var(--on-accent); font-weight: 600;
       border-color: transparent;
       box-shadow: 0 1px 2px rgba(0,0,0,.12);
     }
+    .tool-btn.primary:hover { background: color-mix(in srgb, var(--accent) 86%, var(--text)); }
     .tool-btn:disabled, .icon-btn:disabled { opacity: .35; cursor: default; transform: none; }
 
     .stage {
       position: absolute; inset: 0;
       display: grid; place-items: center;
       /* reserve the chrome bar's height: its translucent gradient must never
-         sit on top of the board (visible as a dark band across rank 8) */
-      padding: calc(var(--chrome-h) + var(--task-h, 0px) + var(--stage-pad)) var(--stage-pad) var(--stage-pad);
+         sit on top of the board (visible as a dark band across rank 8) —
+         and (7.7) one player strip above the board and one below */
+      padding: calc(var(--chrome-h) + var(--task-h, 0px) + var(--strip-h)) var(--stage-pad) calc(var(--strip-h) + var(--stage-pad-y));
       /* no transition: this is the same layout change as #board-wrap's size,
          and animating one without the other makes the board overflow the
          stage for the duration */
@@ -745,7 +730,7 @@
     #board-wrap {
       position: relative;
       --free-w: calc(100vw - 2 * var(--stage-pad));
-      --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
       max-width: 100%; max-height: 100%;
@@ -764,7 +749,7 @@
     }
     #app.panel-open #board-wrap {
       --free-w: calc(100vw - var(--side-w) - 2 * var(--stage-pad));
-      --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--stage-pad));
+      --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
     }
@@ -844,7 +829,13 @@
       border-left: 1px solid var(--panel-border);
       backdrop-filter: blur(22px) saturate(1.15);
       -webkit-backdrop-filter: blur(22px) saturate(1.15);
-      padding: calc(var(--chrome-h) + 18px) 22px 20px;
+      /* 7.7 (v7-7-plan §1h): the panel starts at the top of the window. It
+         used to open under 50px of its own padding — the chrome's height
+         plus 18 — so a 58px dark band ran down beside the top bar with the
+         tab row under it, although the bar belongs to the board's column
+         only (at >820px it stops short of the panel, see .chrome). Now the
+         tabs are the panel's first line, 8px from the top edge. */
+      padding: 4px 20px 20px;
       display: flex; flex-direction: column; gap: 0;
       transform: translateX(100%);
       transition: transform var(--dur-slow) var(--ease);
@@ -861,122 +852,130 @@
       pointer-events: auto;
     }
 
-    /* —— the match bar: the game, in the strip above the board ——————————
-       It lived at the top of the panel until 2.2 — four rows deep, in the
-       narrowest column on screen, and gone the moment the panel closed. Here
-       it is one row in a bar that was already reserved, always drawn, and
-       centred over the board. `flex: 1` between the status pill and the tools
-       is what centres it: the pill and the tool group are not the same width,
-       so the bar's own middle is not the window's, and `justify-content:
-       center` on a stretched box puts the middle *of the row* over the middle
-       of the space it is given, which is what the eye reads against the board.
+    /* —— the player strips: each side on its own edge of the board ——————
+       7.7 (v7-7-plan §2). From 2.2 to 7.6 the whole match — both colours,
+       both names, both clocks, the material, the last move — was one 32px
+       row in the top bar, eleven to sixteen pixels high, with the lead as a
+       10px tag and whose move it was in a pill in the far corner. Lichess and
+       Chess.com put each side on its own edge of the board, and so does this:
+       the opponent above, you below, following the board when it turns.
+       Left to right: who (a disc in the side's colour with the persona's
+       icon on it), what they have taken with the lead, and the clock as a
+       block at the right end — lit for the side to move, red under twenty
+       seconds, tenths under ten.
 
-       Three densities, one component. Everything in it is optional except the
-       two colours and the two clocks, and each piece leaves at the width where
-       the row would otherwise start to squeeze the board's own strip. */
-    /* 7.4 §3.5: `flex: 1; min-width: 0` let the row be squeezed below its
-       own content, and what gave was not the row but its letters: each span
-       shrank into its neighbour, and at 390×844 the 行 badge sat on 黑 (en:
-       W on B, • on ♚ on Undo). Now the row is sized from its content and may
-       not go under it (`auto` basis, automatic minimum), its pieces do not
-       shrink, and when the bar is short it is the status pill — the one item
-       here built to end in an ellipsis — that gives. Below 560px the row
-       drops to its colour marks first (density 4, further down), so at the
-       widths the app can reach that last resort is not needed. */
-    .vs {
-      flex: 1 1 auto;
-      display: flex; align-items: center; justify-content: center; gap: 12px;
-      font-size: 0.75rem; line-height: var(--lh-tight);
+       The strips hang off #board-wrap's edges, so they are exactly the
+       frame's width at every size and go wherever the board goes; the stage
+       reserves --strip-h above and below for them (see .stage). */
+    .pstrip {
+      position: absolute; left: 0; right: 0;
+      height: var(--strip-h);
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 2px;
+      font-size: 0.8125rem; line-height: var(--lh-tight);
       white-space: nowrap;
+      pointer-events: none;
     }
-    .vs-side {
-      display: flex; align-items: center; gap: 6px; min-width: 0;
+    /* the air goes between the strip and the window, not between the strip
+       and the board it belongs to */
+    .pstrip.at-top { top: calc(-1 * var(--strip-h)); padding-bottom: 4px; align-items: flex-end; }
+    .pstrip.at-bottom { bottom: calc(-1 * var(--strip-h)); padding-top: 4px; align-items: flex-start; }
+    /* a lesson with no sparring partner has nobody on the other side; the
+       strip's place is kept, so the board does not move between modes */
+    .pstrip.is-empty { visibility: hidden; }
+    .pstrip > * { flex-shrink: 0; }
+    .ps-av {
+      width: 32px; height: 32px; border-radius: var(--radius-sm);
+      display: grid; place-items: center;
+      font-size: 1.1875rem;
+      border: 1px solid var(--card-border);
+      transition: box-shadow var(--dur-quick) var(--ease);
     }
-    .vs-side > *, .vs-mid > * { flex-shrink: 0; }
-    /* A lesson task has no sparring partner, and the bar used to open on
-       "黑 / ♚ / —" anyway: a whole half whose content was an em dash. When
-       there is nobody on the other side, the other side is not drawn. */
-    .vs.solo .vs-mid, .vs.solo .vs-right { display: none; }
-    .vs-mid {
-      display: flex; align-items: center; gap: 6px;
-      flex-shrink: 0; min-width: 0;
+    .pstrip[data-side="w"] .ps-av { background: var(--side-white); color: var(--side-black); }
+    .pstrip[data-side="b"] .ps-av { background: var(--side-black); color: var(--side-white); }
+    /* whose move: the side's own disc takes the accent ring, beside the side
+       it names — where the 行 badge and the corner pill used to split it */
+    .pstrip.is-active .ps-av { box-shadow: 0 0 0 2px var(--accent); }
+    .ps-who {
+      display: flex; align-items: baseline; gap: 8px;
+      min-width: 0; flex-shrink: 1; overflow: hidden;
+      height: 32px; align-self: auto;
     }
-    .vs-versus { font-size: 0.6875rem; letter-spacing: 0.14em; opacity: 0.55; }
-    .vs-versus[hidden], .vs-last[hidden] { display: none; }
-    /* The last move, dressed like the personas, on purpose. It used to be a
-       pill — bright numerals on a plate — which made the shortest-lived and
-       most redundant fact in the bar (the board's two highlighted squares say
-       the same thing, with position and direction) the loudest text in the
-       chrome, changing every half-move in the player's peripheral vision.
-       Assessed against a live frame: the ink order was the inverse of the
-       information order. Its two real jobs — naming the move number in
-       replay, standing in for the board highlight in a panel-shut narrow
-       window — need it present, not loud. */
-    .vs-last {
-      font-size: 0.75rem; font-weight: 500;
-      color: var(--muted);
+    .pstrip.at-top .ps-who, .pstrip.at-bottom .ps-who { align-items: center; }
+    .ps-name {
+      font-weight: 600; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; min-width: 0;
     }
-    /* level 2 — below the status pill, above the roles (7.3 §4D) */
-    .vs-name { font-size: 0.75rem; font-weight: 600; }
-    .vs-role {
-      font-size: 0.6875rem;
-      /* the one thing here that can be arbitrarily long — a persona name in
-         three languages — so it is the one thing allowed to end in an
-         ellipsis rather than push the clock off the row */
-      max-width: 14vw; overflow: hidden; text-overflow: ellipsis;
+    .ps-level {
+      font-size: 0.75rem; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; min-width: 0;
     }
-    /* captured pieces + the lead, beside each name */
+    .ps-level:empty { display: none; }
+    .pstrip:not(.is-active) .ps-name { color: color-mix(in srgb, var(--text) 82%, transparent); }
+
+    /* captured pieces, grouped by kind: a second pawn tucks under the first
+       the way a pile of taken men sits beside a real board */
     .taken {
-      display: flex; align-items: center; gap: 0px; min-height: 0;
+      display: flex; align-items: center; min-height: 0; height: 32px;
     }
     .taken:empty { display: none; }
-    /* Black pieces are a black silhouette: on the dark themes they vanish, and
-       on the light ones the white ones do. A mid-tone plate derived from the
-       theme's own text colour keeps both readable in all four. */
     .taken-p {
-      width: 14px; height: 14px; display: block;
-      padding: 0px; border-radius: 3px;
-      background: color-mix(in srgb, var(--text) 34%, var(--panel));
+      width: 20px; height: 20px; display: block;
+      /* Black men are a black silhouette and vanish on the dark themes, the
+         white ones on the light themes. A hairline halo in the theme's own
+         ink keeps both readable on all four without a plate behind them. */
+      filter: drop-shadow(0 0 1px color-mix(in srgb, var(--text) 70%, transparent));
     }
+    .taken-p + .taken-p { margin-left: -10px; }
+    .taken-p.new-kind { margin-left: 2px; }
     .taken-p svg { width: 100%; height: 100%; display: block; }
     .taken-diff {
       font-family: var(--font-num);
-      font-size: 0.6875rem; font-weight: 600; color: var(--accent);
+      font-size: 0.75rem; font-weight: 600; color: var(--muted);
       margin-left: 4px;
     }
-    .vs-clock {
-      font-size: 0.9375rem; font-weight: 600; line-height: var(--lh-tight);
-      color: var(--text); opacity: 0.45;
-      transition: opacity var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
+
+    /* the result, once there is one: 1 / 0 / ½ beside the clock */
+    .ps-result {
+      margin-left: auto;
+      min-width: 28px; height: 28px; padding: 0 8px;
+      display: grid; place-items: center;
+      border-radius: var(--radius-sm);
+      font-size: 0.9375rem; font-weight: 600;
+      color: var(--muted);
+      border: 1px solid var(--card-border);
     }
-    .vs-clock.active { opacity: 1; }
-    .vs-clock.low { color: var(--danger); opacity: 1; }
-    .vs-clock[hidden] { display: none; }
-    /* Density 2: the personas go first. They are the longest run of text in
-       the row and the least urgent — you chose the opponent, you know who it
-       is. Measured at 900x700 with the panel open, the bar has 300px of usable
-       middle and the names alone want 180 of it. */
-    @media (max-width: 1099px) { .vs-role { display: none; } }
-    /* Density 3: at the narrow end the row is two colours, two clocks and
-       whose move it is. 520px is the smallest window app.zon allows. */
-    @media (max-width: 820px) {
-      .vs { gap: 6px; }
-      .taken, .vs-mid { display: none; }
-      /* 820 is also the width below which the chrome stops making room for the
-         panel (see the min-width: 821 rule above it): the panel overlays the
-         bar instead. The tools have been behind it since 2.0 — they are pinned
-         right, so the panel covers them whole — but the match bar is centred,
-         so it came out sliced down the middle by the panel's own edge, half a
-         name on one side of it. A modal panel is the interface while it is
-         open; the bar under it is not drawn. */
-      #app.panel-open .vs { display: none; }
+    .ps-result.win {
+      color: var(--on-accent); background: var(--accent); border-color: transparent;
     }
-    /* Density 4 (7.4 §3.5): under 560px the bar keeps the two colour marks
-       and the clocks. The names are what the marks already say, and 行 is
-       what the status pill beside it says in words. With the clocks on and
-       the longest pill (30vw) the full row needs more than 520px leaves. */
-    @media (max-width: 559.98px) {
-      .vs .vs-name, .vs .badge { display: none; }
+    .ps-result:not([hidden]) + .ps-clock { margin-left: 8px; }
+
+    /* the clock is a block, right-aligned: dim while waiting, lit while it
+       runs, red once it is short */
+    .ps-clock {
+      margin-left: auto;
+      height: 32px; min-width: 80px; padding: 0 12px;
+      display: grid; place-items: center end;
+      border-radius: var(--radius-sm);
+      font-size: 1.1875rem; font-weight: 600; line-height: var(--lh-tight);
+      color: var(--muted);
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease);
+    }
+    .ps-clock.active {
+      color: var(--on-accent); background: var(--accent); border-color: transparent;
+    }
+    .ps-clock.low { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--card-border)); }
+    .ps-clock.active.low { color: var(--on-danger); background: var(--danger); border-color: transparent; }
+    .ps-clock[hidden] { display: none; }
+
+    /* A narrow board has less strip than the full row wants: the level goes
+       first (you chose the opponent, you know it), then the lead's digits
+       stay and the pieces go. */
+    @media (max-width: 560px) {
+      .ps-level { display: none; }
+      .taken-p { display: none; }
     }
     .opening-line {
       margin-top: 12px;
@@ -998,7 +997,7 @@
     .side-tabs { flex-shrink: 0; }
     .side-tabs {
       display: flex; align-items: stretch; gap: 4px;
-      padding: 8px 0 0;
+      padding: 4px 0 0;
       /* 7.7 §1e: the pane scrolls up to the row's lower edge, and with nothing
          marking that edge the half-cut line at the top of the pane (棋谱 row
          10, measured) read as content showing through from under the tabs.
@@ -1059,14 +1058,16 @@
       /* height, not just a margin: an 11px label at 1.2 leading occupies
          13.2px, so every block under it started half a pixel off and the gaps
          down the panel measured 8 / 12.5 / 39.9 / 80.8. Pinned to --label-h
-         they land on the scale. */
+         they land on the scale.
+         7.7 (v7-7-plan §3): one step up the scale — 11px grey was the
+         smallest type in the panel and it was holding the panel's structure.
+         No new step: 0.75rem is the next one on the seven. */
       margin: 0 0 8px;
       height: var(--label-h);
       display: flex; align-items: center;
-      font-size: 0.6875rem; font-weight: 600;
-      letter-spacing: 0.12em; text-transform: uppercase;
+      font-size: 0.75rem; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
       color: var(--muted);
-      opacity: 0.9;
     }
     .side-h-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -1085,46 +1086,16 @@
     .side-section > .side-h-row:not(:first-child) { margin-top: 16px; }
 
     .setting-list { display: flex; flex-direction: column; gap: 12px; }
-    /* --- reading modes get a wider column and a foldable index ------------
-       72 lessons of prose in a 284px panel wrapped at about twenty characters
-       a line, with the text, the task, three controls and the whole table of
-       contents stacked in that one column. Learning chess from nothing is the
-       thing this product is proudest of and it was reading it through a slot.
-
-       284px is documented as the floor for THREE layers of navigation
-       (design-constraints §4). P3.1 took one of those layers out to the
-       chrome, so the floor moved with it. Widening only in the reading modes
-       keeps the playing layout exactly where it was. */
-    #app[data-mode="learn"], #app[data-mode="puzzle"] { --side-w: 380px; }
-
-    /* 7.3 §4E: on the pages where the board is not the subject, the content
-       gets the room.
-       Measured at 1400x900 on the 记录 tab: the board took 856px — 54% of the
-       window, showing a position nobody was playing — while the statistics,
-       the game history, the diagnosis and the book were laid out in a 239px
-       column, where an opening's name does not fit on a line. 做题 is the same
-       shape with a 336px column: the task, the puzzle list and the answer all
-       queue up in a slot beside a board that only needs to be big enough to
-       click.
-       568px of panel is 521px of content — the floor this version sets for a
-       page made of text — and it is the FIRST number in this file that costs
-       the board anything, so it is gated on there being room to pay: below
-       1180px the panel stays where it was, because a 604px board is the
-       smallest this trade is worth making. The 对局 tab is untouched at any
-       width; switching back to it puts the board back to the pixel.
-
-       7.4 §5: 做题 is out again. Walked through at 1400x900, the widened
-       column held one task line and a row of category buttons with its lower
-       half empty, and the board had shrunk to pay for it. The width is right
-       for the records and wrong for a puzzle, which keeps the 380px reading
-       column above; it comes back only if that page gets something that needs
-       the width (the source game in miniature, say). */
-    @media (min-width: 1180px) {
-      /* 568, not 564: `.side` is border-box and carries a 1px left border, so
-         564 − 1 − 2×22 of padding measured 519 — one pixel under the floor
-         this section sets. Measured, then set from the measurement. */
-      #app[data-tab="record"] { --side-w: 568px; }
-    }
+    /* --- one panel width for every page ------------------------------------
+       Through 7.6 the reading modes widened the column to 380px (72 lessons of
+       prose in a 284px slot wrapped at about twenty characters a line) and
+       the 记录 tab to 568px from 1180px up (7.3 §4E: an opening name did not
+       fit on a line in 239px). Both were right about the content and wrong
+       about the price, which was paid by the board moving: switching to 记录
+       slid it 142px left and back. --side-w is now one function of the
+       window (see :root), wide enough for the reading pages at the sizes
+       where they were widened — 30vw is 384px at 1280, 432px at 1440 — and
+       the same on every tab and in every mode (v7-7-plan §1g). */
 
     .reading-index > summary {
       display: flex; align-items: center; gap: 8px;
@@ -1396,9 +1367,16 @@
        never worse than 1.9 and is better on anything tall:
          800px window → 176px (7 rows, unchanged)
          1100px       → 330px (all 12 rows, no scrolling)
-       The 770px subtrahend is the chrome, the vs bar, the replay controls,
-       the three action groups and their margins — measured, not guessed. */
-    .move-list { max-height: max(176px, calc(100vh - 770px)); }
+       The 770px subtrahend was the chrome, the vs bar, the replay controls,
+       the three action groups and their margins — measured, not guessed.
+       7.7 (v7-7-plan §3): the list no longer waits for a cap to be lifted. It
+       is the flexible item of its section, which is the flexible item of the
+       page, so it takes whatever height the rows under it leave — measured
+       ≥ 45% of the column at 1440×900 mid-game (test-layout-e2e). The cap is
+       now only a ceiling for the tallest windows; the 176px floor stays. */
+    .move-list { max-height: max(176px, calc(100vh - 120px)); }
+    #sec-moves { display: flex; flex-direction: column; }
+    #sec-moves > .move-list { flex: 1 1 0; min-height: calc(7 * var(--row-h-sm) + 8px); }
     .move-list:empty { display: none; }
     .move-list button {
       border: 0;
@@ -1441,7 +1419,7 @@
          position, and under `flex: 1` two visible keys took 97px each while
          five took 37px. A transport row whose keys resize by a factor of three
          as you use it is not one control. */
-      display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
       padding: 4px 0 0;
       border-top: 1px solid var(--card-border);
       background: transparent;
@@ -1549,13 +1527,41 @@
          kind of thing (audit, work package E). One rule, three selectors. */
       display: flex; align-items: center;
       height: var(--label-h); margin-bottom: 8px;
-      font-size: 0.6875rem; font-weight: 600;
-      letter-spacing: 0.12em; text-transform: uppercase;
-      color: var(--muted); opacity: 0.9;
+      font-size: 0.75rem; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted);
     }
     /* 今天的训练: one entrance for every mode, the width of the column, with
-       the plan it will walk written under it. */
-    .daily { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+       the plan it will walk written under it.
+       7.7 (v7-7-plan §1i): a card. It was a wide ghost button with no fill
+       and muted text over two lines of plain prose — it read as a disabled
+       text field, and nothing under it looked like it could be pressed. Now:
+       the head (title or 「第 1/3 步 · …」, and an arrow) is the button; each
+       step has a state dot; the step you would go to next is a control of
+       its own, with a hover and the same arrow. */
+    .daily {
+      display: flex; flex-direction: column; gap: 4px; margin-top: 8px;
+      padding: 4px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      background: var(--card);
+    }
+    .daily-head {
+      appearance: none; border: 0; background: transparent;
+      font: inherit; color: var(--text); text-align: left;
+      display: flex; align-items: center; gap: 8px;
+      min-height: var(--row-h); padding: 0 8px;
+      border-radius: var(--radius-sm); cursor: pointer;
+      transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
+    }
+    .daily-head:hover { background: var(--btn-ghost); }
+    .daily-label {
+      flex: 1; min-width: 0;
+      font-size: 0.8125rem; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .daily-go { color: var(--accent); font-size: 1rem; display: grid; }
+    #daily-note { padding: 0 8px; }
     /* 7.4 §5: each step is the second of 7.3 §4A's three rows — a label and
        one line saying why. It was the step and its reason side by side in one
        flex row, both in muted ink one step apart in size, so 「上一课新的」
@@ -1564,16 +1570,38 @@
        the line in body ink, the reason sits under it in the smallest step and
        muted, and each is one line (cut with an ellipsis, whole on `title`). */
     .daily-plan {
-      list-style: none; margin: 0; padding: 0 2px;
-      display: flex; flex-direction: column; gap: 6px;
+      list-style: none; margin: 0; padding: 0;
+      display: flex; flex-direction: column; gap: 2px;
       line-height: var(--lh-tight);
     }
-    .daily-step { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .daily-row {
+      appearance: none; border: 0; background: transparent;
+      font: inherit; color: inherit; text-align: left; width: 100%;
+      display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
+      align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: var(--radius-sm);
+    }
+    button.daily-row {
+      cursor: pointer;
+      transition: background var(--dur-quick) var(--ease);
+    }
+    button.daily-row:hover { background: var(--btn-ghost); }
+    .daily-txt { display: grid; gap: 2px; min-width: 0; }
     .daily-what, .daily-why { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .daily-what { font-size: 0.75rem; color: var(--text); }
     .daily-why { font-size: 0.6875rem; color: var(--muted); }
-    .daily-step.done { opacity: 0.55; }
-    .daily-step.done .daily-what { text-decoration: line-through; }
+    /* the state, before the words: hollow = to come, ringed = next, filled
+       with a tick = done */
+    .daily-dot {
+      width: 16px; height: 16px; border-radius: 50%;
+      display: grid; place-items: center;
+      border: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent);
+      font-size: 0.6875rem; color: var(--on-accent);
+    }
+    .daily-step.current .daily-dot { border-color: var(--accent); box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+    .daily-step.done .daily-dot { background: var(--accent); border-color: var(--accent); }
+    .daily-arrow { color: var(--accent); font-size: 0.9375rem; display: grid; }
+    .daily-step.done .daily-what { color: var(--muted); text-decoration: line-through; }
     .daily-step.current .daily-what { font-weight: 600; }
     #more-row { margin-top: 2px; }
     .hint {
@@ -1687,18 +1715,6 @@
 
     /* the only control left under the comfortable 32px minimum */
 
-    /* side-panel side marks: king glyphs, hollow white / solid black */
-    .pmark {
-      font-size: 1.1875rem; line-height: var(--lh-tight); flex-shrink: 0;
-      color: var(--text); opacity: 0.9;
-    }
-    [data-theme="notebook"] .pmark.white { color: #9a3412; }
-    [data-theme="notebook"] .pmark.black { color: #1e3a5f; }
-    .badge {
-      font-size: 0.6875rem; padding: 0px 4px; border-radius: 999px;
-      background: color-mix(in srgb, var(--accent) 80%, #000);
-      color: var(--on-accent); font-weight: 600; letter-spacing: 0.02em;
-    }
     .muted { color: var(--muted); font-size: 0.75rem; }
 
     /* Above every dialog, the confirm included (7.6 §3d): a toast raised from
@@ -1770,9 +1786,12 @@
        and it sits at the top where a banner belongs rather than at the bottom
        where confirmations do. 缺陷 3. */
     .storage-fault {
-      position: absolute; left: 50%; top: 8px; z-index: 60;
-      transform: translateX(-50%);
-      max-width: min(560px, calc(100% - 32px));
+      /* 7.7: at the left of the board's column rather than the window's
+         centre. The panel is 30vw now (up to 440px), and a 560px banner
+         centred in the window came down on the chrome's three actions —
+         the one bar that has to stay pressable while the banner is up. */
+      position: absolute; left: 8px; top: 8px; z-index: 60;
+      max-width: max(240px, min(560px, calc(100% - var(--side-w) - 240px)));
       background: var(--danger); color: var(--on-danger, #fff);
       border-radius: var(--radius-md);
       padding: 8px 16px; font-size: 0.8125rem; font-weight: 500;
@@ -1985,11 +2004,11 @@
       #app.panel-open .side { transform: translateY(0); }
       #app.panel-open .stage {
         padding-right: var(--stage-pad);
-        padding-bottom: calc(min(46vh, 430px) + var(--stage-pad));
+        padding-bottom: calc(min(46vh, 430px) + var(--strip-h) + var(--stage-pad-y));
       }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - min(46vh, 430px) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - min(46vh, 430px) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
@@ -2020,7 +2039,7 @@
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
@@ -2083,19 +2102,31 @@
       /* declared on :root, not bare in the media block — a custom property is
          a declaration and needs a rule to live in.
          The spare height is 100vh − chrome − 2·pad − (100vw − 2·pad): the pads
-         cancel. */
-      :root {
-        --sheet-h: clamp(0px, 100vh - var(--chrome-h) - 100vw, min(46vh, 430px));
+         cancel.
+         7.7 (v7-7-plan §2, §10): two changes. The two player strips come out
+         of the same height (2 × --strip-h), and the vertical pad is 4px
+         against the horizontal 6, so 8px of the pads no longer cancel. And
+         the reserve has a floor: at 600×900 the leftover under a full-width
+         board and its strips is 196px, less than the 240px the sheet comes up
+         at, so the sheet lay over the lower strip and the last rank. The
+         strips belong with the board, above the drawer, so where the window
+         can afford it the reserve is at least 240px — "afford" meaning the
+         board keeps 80% of the window's width; below that (the near-square
+         windows) the floor gives way and the sheet lies over the board while
+         it is up, as it did before. Still one continuous function of the
+         window, with no step in it. */
+      :root, #app.has-task {
+        --sheet-h: clamp(0px,
+          max(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - 100vw + 8px,
+              min(240px, 46vh, 100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - 80vw)),
+          min(46vh, 430px));
         --sheet-vis: max(var(--sheet-h), min(46vh, 240px));
       }
       /* 7.6 §3f: in a lesson the task strip over the board (.task-strip)
          takes its height out of the sheet's reserve, not out of the board:
          a portrait window is width-bound, so 540×900 keeps its 528px board
-         and the sheet is 40px shorter. */
-      #app.has-task {
-        --sheet-h: clamp(0px, 100vh - var(--chrome-h) - var(--task-h, 0px) - 100vw, min(46vh, 430px));
-        --sheet-vis: max(var(--sheet-h), min(46vh, 240px));
-      }
+         and the sheet is 40px shorter. (7.7: the rule above is declared on
+         #app.has-task as well, so --task-h resolves where it is set.) */
       .side {
         top: auto; left: 0; right: 0; bottom: 0;
         width: auto; height: var(--sheet-vis);
@@ -2117,11 +2148,11 @@
              waste, it is where the sheet lives. */
       .stage, #app.panel-open .stage {
         padding-right: var(--stage-pad);
-        padding-bottom: calc(var(--sheet-h) + var(--stage-pad));
+        padding-bottom: calc(var(--sheet-h) + var(--strip-h) + var(--stage-pad-y));
       }
       #board-wrap, #app.panel-open #board-wrap {
         --free-w: calc(100vw - 2 * var(--stage-pad));
-        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - var(--sheet-h) - 2 * var(--stage-pad));
+        --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - var(--sheet-h) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
       }
@@ -2169,9 +2200,9 @@
 }
 
 /* --- the thinking pulse ---------------------------------------------
-   On the status pill and on the board dot: the two places that say the
-   engine is working. Both stop under prefers-reduced-motion. */
-.status-pill.thinking {
+   On the thinking side's avatar and on the board dot: the two places that
+   say the engine is working. Both stop under prefers-reduced-motion. */
+.pstrip.thinking .ps-av {
   animation: think-pulse 1.2s var(--ease) infinite;
 }
 @keyframes think-pulse {
@@ -2259,29 +2290,44 @@
      stop regardless of whether the property animated is a "safe" one. The dot
      stays put at its base opacity (.65) rather than vanishing — it is the only
      on-board sign that the engine is working. */
-  .think-dot, .status-pill.thinking { animation: none !important; }
+  .think-dot, .pstrip.thinking .ps-av { animation: none !important; }
 }
 
 
     /* --- chess move list (SAN pairs) --- */
+    /* 7.7 (v7-7-plan §3): a notation sheet, not a row of chips — the number
+       in a shaded gutter, White's and Black's move in two equal columns, the
+       menu handle floating at the row's end instead of shoving Black's move
+       sideways when White's is current. */
     .mlrow {
-      display: flex; align-items: center; gap: 4px;
-      padding: 0px 2px;
+      position: relative;
+      display: grid; grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1fr);
+      align-items: stretch; gap: 2px;
+      padding: 0;
     }
+    .mlrow > .mlmove { min-width: 0; }
     /* One font for the row. The move number was SF Mono 12px and the move
        beside it the interface sans at 13px — two typefaces and two sizes in a
        three-character span. Tabular figures stay, because the numbers are a
        column; the family and the size are the move's. P4.4. */
     .mlnum {
-      width: 26px; flex: none; text-align: right;
+      width: 36px; flex: none; text-align: right;
       font-size: 0.8125rem; color: var(--muted);
       font-variant-numeric: tabular-nums;
-      padding-right: 2px;
+      padding-right: 8px;
+      display: flex; align-items: center; justify-content: flex-end;
+      background: var(--card);
+      border-radius: var(--radius-sm);
     }
-    /* the piece, drawn at the cap height of the text beside it */
+    /* The piece, standing on the text's baseline at the size of a capital.
+       It was 1.05em with its box centred on the line, which put the figure
+       above the letters beside it and smaller than they read (截图 20): the
+       sprites keep a margin inside their 40-unit box, so a piece has to be
+       drawn larger than the cap height to look as tall as one. */
     .mlfig {
-      display: inline-flex; width: 1.05em; height: 1.05em;
-      vertical-align: -0.16em;
+      display: inline-block; width: 1.3em; height: 1.3em;
+      vertical-align: -0.28em;
+      margin-right: -1px;
     }
     .mlfig svg { width: 100%; height: 100%; display: block; }
     .mlmove {
@@ -2296,10 +2342,13 @@
          list would be half as long for the same panel. On the scale all the
          same — 24, not the 23 that 2px padding round a 13px line happened to
          produce. */
-      padding: 0 8px; min-height: var(--row-h-sm);
-      display: flex; align-items: center;
+      /* a block with one line box, not a flex row: in flex the figurine is an
+         item centred on its box and cannot sit on the text's baseline */
+      padding: 4px 8px 0; height: var(--row-h-sm);
+      display: block; line-height: var(--lh-tight);
       border-radius: var(--radius-sm); cursor: pointer;
       min-width: 52px; text-align: left;
+      white-space: nowrap;
     }
     .mlmove:hover { background: var(--btn-ghost); }
     /* the "…" placeholder standing in for White's missing first move */
@@ -2337,13 +2386,22 @@
       background: color-mix(in srgb, var(--accent) 18%, transparent);
       color: var(--accent); font-weight: 600;
     }
-    /* the menu handle beside the current move: as quiet as a move number */
+    /* The menu handle beside the current move: as quiet as a move number.
+       7.7 (v7-7-plan §1f): it was a literal 「…」 after the last move, which
+       reads as notation that has been cut off. It is the ellipsis icon now,
+       at the row's right edge, and it shows while the list is pointed at or
+       while it has focus — the right-click menu is the same menu. */
     .mlmenu {
       appearance: none; border: 0; background: transparent;
-      color: var(--muted); font: inherit; font-size: 0.75rem; font-weight: 600;
+      color: var(--muted); font: inherit; font-size: 0.9375rem;
       padding: 0 4px; min-height: var(--row-h-sm); border-radius: var(--radius-sm); cursor: pointer;
       flex: none;
+      display: inline-grid; place-items: center;
+      opacity: 0;
+      transition: opacity var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
+    .mlrow > .mlmenu { position: absolute; right: 0; top: 0; bottom: 0; }
+    .move-list:hover .mlmenu, .mlmenu:focus-visible { opacity: 1; }
     .mlmenu:hover { background: var(--btn-ghost); color: var(--text); }
     .move-menu {
       position: fixed; z-index: 55;
@@ -2893,3 +2951,168 @@ kbd.accel {
   button, .switch, .tool-btn, .act-btn { forced-color-adjust: auto; }
   #board, .coords { forced-color-adjust: none; }
 }
+
+/* ------------------------------------------------------------------
+   Icons (7.7, v7-7-plan §7) — one set, drawn in currentColor.
+   An icon is 1em square, so it takes its size from the font-size of the
+   control it sits in, like the text beside it would.
+   ------------------------------------------------------------------ */
+.ic { width: 1em; height: 1em; display: block; flex: none; }
+span[data-icon] { display: inline-grid; place-items: center; }
+
+/* the chrome's two text actions carry their icon before the label */
+.chrome .tool-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.chrome .tool-btn > span[data-icon] { font-size: 0.9375rem; }
+.chrome .icon-btn { font-size: 1rem; }
+.replay-bar button { display: grid; place-items: center; font-size: 1.1875rem; }
+
+/* ------------------------------------------------------------------
+   The third tier (7.7, v7-7-plan §3). Three weights, three shapes:
+     primary    .act-btn.primary — filled accent, at most one per context
+     secondary  .act-btn         — the outlined box
+     tertiary   .tool-ic / .tool-txt — an icon or a word, no box until the
+                pointer is on it, a tooltip and an accessible name always.
+   PGN, 导出, 存档槽 and 编辑局面 were four of eleven identical outlined
+   boxes in the game page; they are used between games, not in one.
+   ------------------------------------------------------------------ */
+.tool-row {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 8px;
+  border-top: 1px solid var(--card-border);
+}
+.tool-ic, .tool-txt {
+  appearance: none; border: 1px solid transparent; background: transparent;
+  color: var(--muted); font: inherit;
+  height: var(--row-h); border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease);
+}
+.tool-ic { width: var(--row-h); display: grid; place-items: center; font-size: 1.1875rem; }
+.tool-txt { padding: 0 8px; font-size: 0.75rem; font-weight: 500; margin-left: auto; }
+.tool-ic:hover, .tool-txt:hover { background: var(--btn-ghost); color: var(--text); }
+.tool-ic[aria-pressed="true"], .tool-ic[aria-expanded="true"] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--card-border));
+}
+
+/* a destructive confirmation is red, not the accent (v7-7-plan §4): the
+   filled accent means "the thing to press here", and 认输 is not that */
+.tool-btn.danger {
+  background: var(--danger); color: var(--on-danger); font-weight: 600;
+  border-color: transparent;
+}
+.tool-btn.danger:hover { background: color-mix(in srgb, var(--danger) 88%, var(--text)); }
+
+/* ------------------------------------------------------------------
+   The result card (7.7, v7-7-plan §4). In the panel, never on the board.
+   ------------------------------------------------------------------ */
+.go-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+  display: grid; gap: 12px;
+  animation: reveal-in var(--dur-base) var(--ease);
+}
+.go-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.go-mark {
+  min-width: 48px; height: 48px; padding: 0 8px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--card); border: 1px solid var(--card-border);
+  font-size: 1.1875rem; font-weight: 600; color: var(--text);
+}
+.go-card.won .go-mark { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.go-txt { min-width: 0; }
+.go-result { margin: 0; font-size: 1.1875rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
+.go-reason { margin: 4px 0 0; font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body); }
+.go-close {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  display: grid; place-items: center; font-size: 1rem; cursor: pointer; align-self: start;
+  transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
+}
+.go-close:hover { background: var(--btn-ghost); color: var(--text); }
+/* the filled one on its own line; the secondaries share the next one
+   equally, however many of them are shown */
+.go-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.go-acts > .act-btn { flex: 1 1 0; min-width: 0; }
+.go-acts > .primary { flex-basis: 100%; }
+
+/* ------------------------------------------------------------------
+   Puzzle feedback (7.7, v7-7-plan §4): a tick or a cross, one line, and
+   what follows from it.
+   ------------------------------------------------------------------ */
+.pz-fb {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 12px;
+  align-items: center;
+  margin: 0 0 12px; padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--card-border);
+  background: var(--card);
+}
+.pz-fb-ic {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.1875rem;
+}
+.pz-fb.ok { border-color: color-mix(in srgb, var(--accent) 45%, var(--card-border)); }
+.pz-fb.ok .pz-fb-ic { background: var(--accent); color: var(--on-accent); }
+.pz-fb.bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--card-border)); }
+.pz-fb.bad .pz-fb-ic { background: var(--danger); color: var(--on-danger); }
+.pz-fb-txt { min-width: 0; }
+.pz-fb-head { margin: 0; font-size: 0.9375rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
+.pz-fb-sub { margin: 4px 0 0; font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted); }
+.pz-fb-sub:empty { display: none; }
+.pz-fb-meta { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-align: right; white-space: nowrap; }
+.pz-fb-meta.up { color: var(--accent); }
+.pz-fb > .act-btn { grid-column: 1 / -1; }
+
+/* ------------------------------------------------------------------
+   Lesson progress (7.7, v7-7-plan §4): one dot per task.
+   ------------------------------------------------------------------ */
+.lesson-dots {
+  list-style: none; margin: 0 0 12px; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.lesson-dots:empty { display: none; }
+.lesson-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent);
+  transition: background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
+}
+.lesson-dot.done { background: var(--accent); border-color: var(--accent); }
+.lesson-dot.current { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.lesson-dots.complete .lesson-dot { background: var(--accent); border-color: var(--accent); }
+
+/* ------------------------------------------------------------------
+   Empty states on the record page (7.7, v7-7-plan §3): an icon, one line,
+   and the button that fills it right under it. They were paragraphs of
+   grey prose — three of them stacked on a fresh install. The icon is the
+   Lucide icon of the section (icons.js), drawn as a mask in currentColor:
+   these lines are written by three different modules, and a pseudo-element
+   is the one place all three can share without each building an <svg>.
+   ------------------------------------------------------------------ */
+.hint.empty-note {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; align-items: center;
+  margin: 4px 0 0; padding: 12px;
+  border: 1px dashed var(--card-border); border-radius: var(--radius-md);
+  font-size: 0.75rem; color: var(--muted); opacity: 1;
+}
+.hint.empty-note::before {
+  content: ""; width: 32px; height: 32px; grid-column: 1; grid-row: 1;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--card-border);
+}
+.hint.empty-note::after {
+  content: ""; grid-column: 1; grid-row: 1; justify-self: center;
+  width: 18px; height: 18px; background: currentColor;
+  -webkit-mask: var(--empty-ic) center / contain no-repeat;
+  mask: var(--empty-ic) center / contain no-repeat;
+}
+#stats-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v16a2 2 0 0 0 2 2h16'/%3E%3Cpath d='M18 17V9'/%3E%3Cpath d='M13 17V5'/%3E%3Cpath d='M8 17v-3'/%3E%3C/svg%3E"); }
+#lib-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m16 6 4 14'/%3E%3Cpath d='M12 6v14'/%3E%3Cpath d='M8 8v12'/%3E%3Cpath d='M4 4v16'/%3E%3C/svg%3E"); }
+#rep-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v16'/%3E%3Cpath d='M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z'/%3E%3C/svg%3E"); }
+#hist-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 22h14'/%3E%3Cpath d='M5 2h14'/%3E%3Cpath d='M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22'/%3E%3Cpath d='M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2'/%3E%3C/svg%3E"); }

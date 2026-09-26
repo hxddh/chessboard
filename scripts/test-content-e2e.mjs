@@ -120,8 +120,10 @@ const squareAt = (s) => page.evaluate((x) => {
 }, s);
 const tap = async (s) => { const p = await squareAt(s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(240); };
 const move = async (a, b) => { await tap(a); await tap(b); await page.waitForTimeout(300); };
-// the toast element is reused rather than re-added, so read its live text
-const toasts = () => page.evaluate(() => [...document.querySelectorAll(".toast")].map((x) => x.textContent).join(" | "));
+// the toast element is reused rather than re-added, so read its live text.
+// 7.7 (v7-7-plan §4): a puzzle's right / wrong is said on its feedback card
+// beside the board, so that is read with the toasts.
+const toasts = () => page.evaluate(() => [...document.querySelectorAll(".toast, #puzzle-feedback")].map((x) => x.textContent).join(" | "));
 /** a lesson demonstrates its first move on entry, and swallows a click while it does */
 const settle = async () => {
   for (let i = 0; i < 40; i++) {
@@ -576,7 +578,8 @@ if (hasTab && REAL.length) {
   const wrong = g2.moves({ verbose: true }).find((m) => m.san !== first.line[1]);
   await moveB(wrong.from, wrong.to);
   assert(await occ() === mirror(squaresOf(g2.fen())), "应错被退回,棋盘不留痕");
-  const why = await pg.evaluate(() => document.getElementById("toast").textContent.trim());
+  // 7.7: on the puzzle's feedback card (a cross, 再想想, the coach's reason)
+  const why = await pg.evaluate(() => document.getElementById("puzzle-fb-sub").textContent.trim());
   assert(why.length > 4, "应错有教练的说法,不是无声拒绝", why);
 
   // answer the whole line: each Black book move, White's reply plays itself
@@ -694,7 +697,8 @@ if (hasTab && REAL.length) {
     await pg.waitForTimeout(240);
   };
   const mv2 = async (a, b, fl) => { await tapAt(a, fl); await tapAt(b, fl); await pg.waitForTimeout(360); };
-  const toastText = () => pg.evaluate(() => document.getElementById("toast").textContent.trim());
+  // 7.7 (v7-7-plan §4): the drill's verdict is on the feedback card
+  const toastText = () => pg.evaluate(() => document.getElementById("puzzle-feedback").textContent.trim());
 
   // the tab exists, the first drill is served, and the goal names the sin
   const seg = await pg.evaluate(() => {

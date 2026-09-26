@@ -1705,9 +1705,11 @@ for (const lang of CONTENT_LANGS) {
   // it could not be aligned, only nudged.
   {
     assert(/--chrome-ctl-h:\s*\d+px/.test(stripped), "the chrome has one control-height token");
+    // 7.7 (v7-7-plan §2): the status pill left the bar — whose move it is is
+    // the lit player strip now, and the sentence is .sr-only — so the bar's
+    // controls are the two tools and the panel key.
     for (const sel of [/\.chrome \.tool-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
-                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
-                       /\.status-pill \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
+                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
       assert(sel.test(stripped), "…and every control in it is that height — " + sel.source.slice(0, 22));
     const chrome = /\n    \.chrome \{([\s\S]*?)\n    \}/.exec(stripped);
     assert(chrome, ".chrome is styled");
@@ -2023,8 +2025,9 @@ for (const lang of CONTENT_LANGS) {
     const KNOWN = new Map([
       ["#fff", "two white paper fills (notebook theme's own surface)"],
       ["#000", "two color-mix() darkening steps, not a paint colour"],
-      ["#9a3412", "notebook promotion mark, white side"],
-      ["#1e3a5f", "notebook promotion mark, black side"],
+      // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
+      // the match bar (7.7) — the strips draw each side as a disc in
+      // --side-white / --side-black)
       ["#4a90d9", "var(--accent) fallback, never reached"],
     ]);
     const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
@@ -4088,7 +4091,12 @@ for (const lang of CONTENT_LANGS) {
     const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const num = (re, src) => { const m = re.exec(src); return m ? Number(m[1]) : NaN; };
     const w = num(/\.width = (\d+)/, zon), h = num(/\.height = (\d+)/, zon);
-    const side = num(/--side-w:\s*(\d+)px/, css), chrome = num(/--chrome-h:\s*(\d+)px/, css);
+    // 7.7 (v7-7-plan §1g): the panel is clamp(floor, Nvw, cap) — a function
+    // of the window — and the board's height also pays for the two player
+    // strips, so both enter the sum
+    const sw = /--side-w:\s*clamp\((\d+)px,\s*(\d+)vw,\s*(\d+)px\)/.exec(css);
+    const side = sw ? Math.min(Number(sw[3]), Math.max(Number(sw[1]), w * Number(sw[2]) / 100)) : NaN;
+    const chrome = num(/--chrome-h:\s*(\d+)px/, css) + 2 * num(/--strip-h:\s*(\d+)px/, css);
     assert([w, h, side, chrome].every(Number.isFinite),
       "read the default window (" + w + "x" + h + ") and the panel metrics (" + side + "/" + chrome + ")");
     assert(w - side >= h - chrome,
@@ -5383,6 +5391,41 @@ for (const lang of CONTENT_LANGS) {
     + draws.slice(draws.indexOf("let dragPiece = null;"));
   const literals = marks.match(/(?:fillStyle|strokeStyle)\s*=\s*"(?:rgba?\(|#)/g) || [];
   assert(literals.length === 0, "every board mark is painted from a theme token (" + literals.length + " literal(s) left)");
+}
+
+// 7.7 (v7-7-plan §7): no emoji in the interface. Emoji are the one kind of
+// glyph each platform draws in its own house style — the same badge was a
+// glossy picture on macOS and a flat one on Windows — so the achievements,
+// the ✅ / 🎉 / 👀 / ⚠️ in the messages and the 🔒 on a locked badge were
+// replaced by the Lucide line icons in icons.js. The scan covers the markup,
+// the stylesheet and every script the page ships (i18n strings included),
+// comments stripped. The chess symbols U+2654–265F are pieces, not emoji
+// (the promotion dialog and the editor palette draw with them), and are
+// excluded — although ♟ carries the pictographic property since Emoji 11.
+// Register: what is left, per file. Empty, and it may only shrink.
+{
+  const KNOWN_EMOJI = new Map([]);
+  const web = path.join(root, "src/web");
+  const files = ["index.html", "styles.css", ...fs.readdirSync(path.join(web, "js"))
+    .filter((f) => f.endsWith(".js") && !["bundle.js", "engine-src.js"].includes(f)).map((f) => "js/" + f)];
+  const found = new Map();
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(web, f), "utf8")
+      .replace(/<!--[\s\S]*?-->/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const hits = [...src.matchAll(/\p{Extended_Pictographic}/gu)].map((m) => m[0]).filter((c) => !/[♔-♟]/u.test(c));
+    if (hits.length) found.set(f, [...new Set(hits)].join(""));
+  }
+  const fresh = [...found].filter(([f, e]) => !KNOWN_EMOJI.has(f) || [...e].some((c) => !KNOWN_EMOJI.get(f).includes(c)));
+  for (const [f, e] of fresh) console.error("  emoji in " + f + ": " + e);
+  assert(fresh.length === 0, "the interface draws no emoji" + (fresh.length ? " — " + fresh.map(([f]) => f).join(", ") : ""));
+  const gone = [...KNOWN_EMOJI.keys()].filter((f) => !found.has(f));
+  assert(gone.length === 0, "the emoji register lists no file that is already clean" + (gone.length ? " — drop " + gone.join(", ") : ""));
+  // …and every achievement names an icon that exists
+  const iconSrc = fs.readFileSync(path.join(web, "js/icons.js"), "utf8");
+  const achSrc = fs.readFileSync(path.join(web, "js/achievements.js"), "utf8");
+  const missing = [...achSrc.matchAll(/icon: "([^"]+)"/g)].map((m) => m[1])
+    .filter((n) => !iconSrc.includes("\n    " + JSON.stringify(n) + ": [["));
+  assert(missing.length === 0, "every achievement's icon is in icons.js" + (missing.length ? " — " + missing.join(", ") : ""));
 }
 
 // 5.1: the Chinese and Japanese copy uses full-width punctuation. One pass of

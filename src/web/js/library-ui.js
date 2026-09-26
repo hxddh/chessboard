@@ -562,7 +562,9 @@ export function createLibraryUI(d) {
     const lines = [];
     const line = (text, cls) => { lines.push({ text, cls: cls || "hint" }); };
     if (!list.length) {
-      putLines(body, [{ text: t("lib.empty"), cls: "hint" }]);
+      // 7.7 (v7-7-plan §3): an empty state — icon, one line, and 导入棋谱文件
+      // right under it (see .empty-note)
+      putLines(body, [{ text: t("lib.empty"), cls: "hint empty-note" }]);
     } else {
       const claimed = list.filter((g) => g.side).length;
       let row = body.firstElementChild;
