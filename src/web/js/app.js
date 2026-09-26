@@ -4513,7 +4513,10 @@ import { createStore } from "./store.js";
       // re-armed `go infinite`, which holds the exclusive lock until it is
       // stopped — and nothing stopped it, so the pass's next analyze() waited
       // forever. The pass ends with a sync(), which picks the line back up.
-      !store.session.libRun;
+      !store.session.libRun &&
+      // 7.8 §3: 再试一次 hides the answer, and a retried move may need the
+      // engine for two searches — the same exclusive lock again (Codex, #83)
+      !store.session.retry;
   }
   function stopLiveAnalysis() {
     const l = store.session.live;
@@ -4538,7 +4541,7 @@ import { createStore } from "./store.js";
     }
     if (!liveAllowed()) {
       stopLiveAnalysis();
-      if (el && !store.session.liveOn) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
+      if (el && (!store.session.liveOn || store.session.retry)) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
       return;
     }
     const fen = viewGame().fen();
@@ -5543,7 +5546,7 @@ import { createStore } from "./store.js";
       const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
-        choosePromotion(g.turn()).then((p) => { if (p) retryMove(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) retryMove(from, sq, p); });
         return;
       }
       retryMove(from, sq, "q");

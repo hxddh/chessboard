@@ -905,6 +905,74 @@ await scenario("为什么", async () => {
   await ctx.close();
 });
 
+// --- 16. 再试一次，持续分析开着；升变 (Codex on #83) --------------------------------
+// 1. Kf1?? lets …Rb2 win the b-pawn; 1. b8=Q+ was the move. With 持续分析 on,
+// 再试一次 must stop it: its line is the answer, and `go infinite` holds the
+// engine, so a move that needs checking would wait on it forever. And the
+// right answer is a promotion, whose chooser has to stand in the b-file.
+await scenario("再试一次·持续分析与升变", async () => {
+  const FEN = "6k1/1P6/8/8/8/8/r7/6K1 w - - 0 1";
+  const pgn = '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n' +
+    '[SetUp "1"]\n[FEN "' + FEN + '"]\n\n1. Kf1 Rb2 2. Ke1 Rxb7 *\n';
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, pgn);
+  await runAn(page, "#an-run", 60000);
+  const tag = await page.evaluate(() => {
+    const b = document.querySelector('.move-list .mlmove[data-i="1"] .mvtag');
+    return b ? b.textContent.trim() : "";
+  });
+  assert(tag === "?" || tag === "??", "升变：1. Kf1 被标成 ? 或 ??", tag);
+  await page.click("#an-live");
+  const liveUp = await until(() => page.evaluate(() => {
+    const el = document.getElementById("live-line");
+    return !!el && !el.hidden && /\d/.test(el.textContent);
+  }), 8000);
+  assert(liveUp, "持续分析：打开后有引擎线");
+  await page.click('.rv-moment[data-ply="0"] .rv-mo-retry');
+  await page.waitForTimeout(300);
+  const during = await page.evaluate(() => ({
+    box: !document.getElementById("retry-box").hidden,
+    live: !document.getElementById("live-line").hidden,
+  }));
+  assert(during.box && !during.live, "再试一次：持续分析的引擎线收起（那是答案）", JSON.stringify(during));
+  // neither the mistake nor the best: this one goes to the engine
+  await clickMove(page, "g1", "h1");
+  const judged = await until(() => page.evaluate(() => {
+    const v = document.querySelector("#retry-box .rt-verdict");
+    return v && (v.classList.contains("is-right") || v.classList.contains("is-wrong")) ? v.className : null;
+  }), 20000);
+  assert(!!judged, "再试一次：持续分析开着，要引擎判的一步也能判完", judged || await page.evaluate(() => document.getElementById("retry-box").outerHTML.slice(0, 600)));
+  await page.click("#rt-again");
+  await page.waitForTimeout(150);
+  await clickMove(page, "b7", "b8");
+  await page.waitForTimeout(250);
+  const promo = await page.evaluate(() => {
+    const b = document.getElementById("board").getBoundingClientRect();
+    const sz = b.width / 8;
+    return [...document.querySelectorAll("#promo-modal button[data-p]")].map((x) => {
+      const r = x.getBoundingClientRect();
+      return { col: Math.round((r.left - b.left) / sz), row: Math.round((r.top - b.top) / sz), w: Math.round(r.width) };
+    });
+  });
+  const inFile = promo.length === 4 && promo.every((p, i) => p.col === 1 && p.row === i && p.w > 10);
+  assert(inFile, "再试一次：升变的四个棋子排在 b 列上", JSON.stringify(promo));
+  await page.click('#promo-modal button[data-p="q"]');
+  const right = await until(() => page.evaluate(() => {
+    const v = document.querySelector("#retry-box .rt-verdict");
+    return !!v && v.classList.contains("is-right");
+  }), 20000);
+  assert(right, "再试一次：b8=Q+ 判对");
+  await page.click("#rt-back");
+  await page.waitForTimeout(300);
+  const after = await until(() => page.evaluate(() => {
+    const el = document.getElementById("live-line");
+    return !!el && !el.hidden;
+  }), 8000);
+  assert(after, "回到复盘：持续分析接着跑");
+  assert(!errs.length, "再试一次·持续分析与升变：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
 await browser.close();
 server.close();
 console.log("用时", ((Date.now() - T0) / 1000).toFixed(1) + "s");
