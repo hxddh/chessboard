@@ -39,7 +39,10 @@ export function createA11y(d) {
 
   /** describe a square for screen readers: "e4 · 白兵" / "e4 · 空格" */
   function describeSquare(sq) {
-    const g = store.session.editor ? null : (store.session.mode === "learn" && store.session.learn ? store.session.learn.g : store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g : d.viewGame());
+    // 7.8 §3: during 再试一次 the board shows the retry's own position, not
+    // the replay's — a square has to be described from what is drawn
+    const g = store.session.editor ? null : store.session.retry ? store.session.retry.g
+      : (store.session.mode === "learn" && store.session.learn ? store.session.learn.g : store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g : d.viewGame());
     let piece = null;
     if (g) piece = g.get(sq);
     else if (store.session.editor) {
