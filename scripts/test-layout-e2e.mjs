@@ -2619,6 +2619,17 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // 「认输」和「PGN」看起来同样可点。这一节量的就是这两件事。
 for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"], ["ja", "ai", "setup"]]) {
   const { ctx, page } = await open(lang, mode, tab);
+  // 7.7 §3: at 0 moves the play pane has no action buttons left to measure —
+  // the tools became an icon row and 本局 waits for a game — so play one.
+  if (tab === "play") {
+    for (const sq of ["e2", "e4"]) {
+      const p = await page.evaluate((s) => { const r = document.getElementById("board").getBoundingClientRect();
+        const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+        return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) }; }, sq);
+      await page.mouse.click(p.x, p.y); await page.waitForTimeout(140);
+    }
+    await page.waitForTimeout(400);
+  }
   const shape = await page.evaluate(() => {
     const vis = (e) => { const b = e.getBoundingClientRect();
       return e.offsetParent !== null && b.width > 0 && b.height > 0; };
@@ -2672,8 +2683,11 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
   await play("g2", "g4"); await play("d8", "h4");   // 愚人将杀
   await page.waitForTimeout(600);
   const after = await primaries();
-  assert(JSON.stringify(after) === '["an-run"]',
-    `这局下完了,「分析」成为唯一的主按钮(实际 ${JSON.stringify(after)})`);
+  // 7.7 §4: the one to press now sits on the result card (分析这盘); the review
+  // row's 分析 takes the fill back once the card is put away — the §4 block
+  // near the end of this file checks that half.
+  assert(JSON.stringify(after) === '["go-analyse"]',
+    `这局下完了,结果卡上的「分析这盘」成为唯一的主按钮(实际 ${JSON.stringify(after)})`);
   await ctx.close();
 }
 
@@ -3640,13 +3654,16 @@ for (const [when, mode, act] of [
   // §1e：页签条不透明；窗格滚下去之后，页签下缘有一道 --line，页签矩形里
   // 取到的只有页签自己
   {
-    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1024, height: 700 });
-    for (const m of ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6", "d2d4", "e5d4"]) {
-      await tap(page, m.slice(0, 2)); await tap(page, m.slice(2));
-    }
+    // The settings pane with every fold open: it overflows at this size in
+    // both engines. (It used to be the play pane after ten moves; 7.7 §3 made
+    // the move list scroll inside the pane, and on WebKit's narrower glyphs
+    // the pane itself no longer overflowed — scrollTop stayed 0.)
+    const { ctx, page } = await open("zh-CN", "pvp", "setup", "wood", { width: 1024, height: 700 });
+    await page.evaluate(() => { document.querySelectorAll("#pane-setup details").forEach((d) => { d.open = true; }); });
+    await page.waitForTimeout(200);
     const before = await page.evaluate(() => document.querySelector(".side-tabs").classList.contains("is-scrolled"));
     const r = await page.evaluate(async () => {
-      const pane = document.getElementById("pane-play");
+      const pane = document.getElementById("pane-setup");
       pane.scrollTop = 400;
       await new Promise((res) => setTimeout(res, 150));
       const row = document.querySelector(".side-tabs");

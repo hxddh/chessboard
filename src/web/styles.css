@@ -2119,13 +2119,17 @@
          board keeps 80% of the window's width; below that (the near-square
          windows) the floor gives way and the sheet lies over the board while
          it is up, as it did before. Still one continuous function of the
-         window, with no step in it. */
+         window, with no step in it.
+         The floor and the visible height both give up the task strip's
+         height, so 7.6 §3f below still holds with the strips in: a lesson's
+         board is the two-player board, and it is the sheet that is shorter
+         (540×900: 470px against 494px before this, WebKit's CI caught it). */
       :root, #app.has-task {
         --sheet-h: clamp(0px,
           max(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - 100vw + 8px,
-              min(240px, 46vh, 100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - 80vw)),
+              min(240px - var(--task-h, 0px), 46vh, 100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - 80vw)),
           min(46vh, 430px));
-        --sheet-vis: max(var(--sheet-h), min(46vh, 240px));
+        --sheet-vis: max(var(--sheet-h), min(46vh, 240px) - var(--task-h, 0px));
       }
       /* 7.6 §3f: in a lesson the task strip over the board (.task-strip)
          takes its height out of the sheet's reserve, not out of the board:
