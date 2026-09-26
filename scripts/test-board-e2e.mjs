@@ -1506,6 +1506,18 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   s = await state();
   const flipped = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active'));
   assert(s.settings.timeControl === "5+3" && flipped, `双人:棋钟 5+3、下方执黑(棋盘翻转 ${flipped})`);
+  // with 自动转向 on, the board faces whoever is to move — a bottom side
+  // chosen here would be undone the moment the game starts (Codex, #83)
+  await page.click("#tab-setup"); await page.waitForTimeout(200);
+  await page.evaluate(() => document.getElementById("opt-autoflip").click()); await page.waitForTimeout(150);
+  await page.click("#tab-play").catch(() => {}); await page.waitForTimeout(200);
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+  s = await state();
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-clock"]),
+    `双人、自动转向开着:不问哪一方在下方,只有棋钟(${s.rows.join(",")})`);
+  await page.click("#ng-start"); await page.waitForTimeout(400);
+  const white = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="w"].active'));
+  assert(white, "双人、自动转向开着:开局白方在下方");
   assert(errs.length === 0, `新对局对话框:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }

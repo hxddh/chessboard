@@ -5456,7 +5456,9 @@ import { createStore } from "./store.js";
     if (!box) return;
     const i = store.game.viewIndex - 1;
     const ex = i >= 0 && !store.session.retry && !inModal() ? mistakeFacts(i) : null;
-    const key = ex ? JSON.stringify([i, store.ui.langId, sanHistory()[i], analysisFor().sig]) : "";
+    // the facts themselves, not the game's signature: 分析 again or 精析
+    // replaces the record for the same game, and its reason may differ (Codex, #83)
+    const key = ex ? JSON.stringify([i, store.ui.langId, sanHistory()[i], ex]) : "";
     box.hidden = !ex;
     if (box.dataset.key === key) return;
     box.dataset.key = key;
@@ -8132,8 +8134,9 @@ import { createStore } from "./store.js";
     const personaRow = document.getElementById("row-persona");
     if (personaRow) personaRow.hidden = store.session.mode !== "ai";
     // in the dialog a two-player game also chooses a side: which one sits at
-    // the bottom of the board (「谁执白」)
-    const pvpPick = !!ng && store.session.mode === "pvp";
+    // the bottom of the board (「谁执白」) — unless 自动翻转 is on, which
+    // turns the board to White the moment the game starts (Codex, #83)
+    const pvpPick = !!ng && store.session.mode === "pvp" && !store.ui.autoFlipPvp;
     if (colorRow) {
       colorRow.hidden = store.session.mode !== "ai" && !pvpPick;
       setText(colorRow.querySelector(".setting-k"), t(pvpPick ? "ng.pvpColor" : "side.color"));
