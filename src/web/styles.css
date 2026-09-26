@@ -354,6 +354,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(5, 165, 255, var(--mark-mid));
+      --engine-arrow-alt: rgba(5, 165, 255, var(--mark-soft));
     }
     [data-board="night"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -385,6 +389,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 80, 230, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 80, 230, var(--mark-soft));
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
     [data-board="day"] {
@@ -418,6 +426,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 125, 255, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 125, 255, var(--mark-soft));
     }
     [data-board="notebook"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -449,6 +461,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 255, 60, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 255, 60, var(--mark-soft));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
     }
 
@@ -2449,12 +2465,38 @@
        can rest, and while it rests there the board plays the line that far.
        Same ink as the prose line it replaced — the affordance is the border
        appearing under the cursor, not a row of buttons shouting. */
-    #pv-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; }
+    /* 7.8 §2: the analysis desk — the review's #pv-line and 持续分析's
+       #live-line are one shape. A head (what, how deep, and 存为变着), then
+       one row per engine line, numbered 1 2 3: a bold score box and the
+       moves, on ONE line, cut with an ellipsis where the panel ends (Lichess's
+       desk). Each line used to wrap to two rows behind 「第 1 线 · 胜率 67%」. */
+    #pv-line, #live-line { white-space: normal; overflow: visible; }
+    .pv-head { display: flex; align-items: center; gap: 8px; }
+    .pv-head .pv-act { margin-left: auto; }
     .pv-label { margin-right: 2px; }
-    /* 6.0: the other engine lines sit under the principal one as read-only
-       rows; a chip that cannot be previewed is a span, not a button */
-    .pv-alt-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; margin-top: 4px; }
-    .pv-chip.pv-alt { cursor: default; opacity: .8; }
+    .pv-row {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .pv-row > * { vertical-align: middle; }
+    .pv-no {
+      display: inline-block; width: 12px; margin-right: 2px;
+      font-size: 0.6875rem; color: var(--muted);
+    }
+    /* the score, from White's side: a light box when White is better, a dark
+       one when Black is — the gauge's two ends. The win chance is its tooltip. */
+    .pv-eval {
+      display: inline-block; min-width: 42px; margin-right: 4px; padding: 2px 4px;
+      border-radius: var(--radius-sm); text-align: center;
+      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
+      color: var(--muted); box-shadow: inset 0 0 0 1px var(--line);
+    }
+    .pv-eval:empty::before { content: "\00a0"; }
+    .pv-eval.is-white { background: var(--side-white); color: var(--side-black); }
+    .pv-eval.is-black { background: var(--side-black); color: var(--side-white); }
+    /* a press lands on the chip itself, never on the glyph inside it that a
+       frame may replace (7.6's rule, v7-6-plan §2) */
+    .pv-chip > * { pointer-events: none; }
     .pv-chip {
       font: inherit; font-size: 0.75rem; line-height: var(--lh-tight);
       color: var(--text); background: transparent;

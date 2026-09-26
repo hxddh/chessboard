@@ -65,6 +65,10 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
     shapeR: ["--shape-r", "rgba(136, 32, 32, 0.8)"],
     shapeB: ["--shape-b", "rgba(0, 48, 136, 0.8)"],
     shapeY: ["--shape-y", "rgba(232, 143, 0, 0.8)"],
+    // 7.8 §2: the engine lines as arrows — line 1 in the hint's colour, the
+    // other two the same hue a step lighter; letters E and e below
+    engine: ["--engine-arrow", "rgba(5, 165, 255, 0.52)"],
+    engineAlt: ["--engine-arrow-alt", "rgba(5, 165, 255, 0.28)"],
     // 7.7 §5: the analysis marks' badge, on the one scale the move list, the
     // report and the curve already read (--judge-*), and the two side inks
     // for the glyph inside it — whichever reads on that fill
@@ -75,7 +79,7 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
     sideBlack: ["--side-black", "#1d1d1b"],
   };
   const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad" };
-  const SHAPE_PAINT = { G: "shapeG", R: "shapeR", B: "shapeB", Y: "shapeY" };
+  const SHAPE_PAINT = { G: "shapeG", R: "shapeR", B: "shapeB", Y: "shapeY", E: "engine", e: "engineAlt" };
   /** resolved once per theme change, not once per square */
   let _paint = null;
   function paint() {
