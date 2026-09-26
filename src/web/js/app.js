@@ -492,6 +492,18 @@ import { createStore } from "./store.js";
     if (!store.game._batch) store.commit("game", "load");
     return r;
   }
+  /**
+   * A different game is now on the board: its ending, if it has one, has not
+   * been announced or put away (7.7 §4). Called where a game is REPLACED —
+   * a file, a slot, a new game, a set-up position — not from gameLoad(),
+   * which also replays the same game along another line. Codex on #82: the
+   * ✕ was keyed on (plies, FEN, result) alone, so re-importing the same
+   * finished game came up already dismissed.
+   */
+  function forgetEnding() {
+    store.session.goDismissed = null;
+    store.session.goAnnounced = null;
+  }
   function gameLoadPgn(pgn, opts) {
     // the parser first: it keeps variations, comments, NAGs and shapes that
     // chess.js's load_pgn throws away, and reads the shapes it refuses
@@ -513,10 +525,12 @@ import { createStore } from "./store.js";
       r = game.load_pgn(pgn, opts);
       if (r && store.game._treeSync) treeRebuild();
     }
+    if (r) forgetEnding();
     if (!store.game._batch) store.commit("game", "loadPgn");
     return r;
   }
   function gameReset() {
+    forgetEnding();
     game.reset();
     if (store.game._treeSync) treeRestart(null);
     if (!store.game._batch) store.commit("game", "reset");
@@ -8718,6 +8732,7 @@ import { createStore } from "./store.js";
     stopEditor();
     invalidateEngine();
     if (ChessEngine) ChessEngine.newGame();
+    forgetEnding();
     gameLoad(fen);
     game.header("SetUp", "1", "FEN", fen);
     store.game.selection = null;

@@ -3504,6 +3504,30 @@ const mv = async (page, sq) => {
     assert(s.shown && !analyse, "打开一局已将死、没有着法的棋谱：终局卡在，但不给「分析这盘」(" + JSON.stringify({ shown: s.shown, analyse }) + ")");
     await ctx.close();
   }
+  // Codex on #82 (second round): importing the same finished game again goes
+  // straight from one ending to the other, never through a game in progress,
+  // so the ✕ on the first still hid the second
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 });
+    await page.evaluate(() => {
+      const pgn = '[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n';
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { readText: () => Promise.resolve(pgn), writeText: () => Promise.resolve() } });
+    });
+    const paste = async () => {
+      if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+      await page.click("#pgn-paste");
+      await page.waitForTimeout(800);
+      if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }
+    };
+    await paste();
+    const first = (await cardState(page)).shown;
+    await page.click("#go-close");
+    await page.waitForTimeout(200);
+    await paste();
+    assert(first && (await cardState(page)).shown, "同一局已完的棋谱再导入一次：终局卡重新出现，上一次的 ✕ 不算数");
+    await ctx.close();
+  }
   // Codex on #82: with the panel shut the card is off-screen, and nothing else
   // on screen said how the game ended
   {
