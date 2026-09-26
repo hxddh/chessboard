@@ -1236,9 +1236,18 @@ import { createStore } from "./store.js";
     el.style.maxWidth = Math.round(Math.max(200, Math.min(560, w.width - 16))) + "px";
     const h = el.offsetHeight;
     const GAP = 4, LOW = 24;
+    // 7.8 §1d: nor on the drawer. In a portrait window the panel is a sheet
+    // from the bottom, and the bottom place put 「成就解锁 · 首胜」 over the
+    // result card's second button. A place that would cross the sheet is not
+    // taken; the strip above the board is what is left.
+    const sideEl = document.getElementById("side");
+    const s = sideEl ? sideEl.getBoundingClientRect() : null;
+    const cx = w.left + w.width / 2, half = el.offsetWidth / 2;
+    const onSheet = (y) => !!s && s.width > 0 && a.top + y < s.bottom && a.top + y + h > s.top &&
+      cx - half < s.right && cx + half > s.left;
     let top = GAP;
-    if (a.bottom - w.bottom >= h + LOW + GAP) top = a.height - LOW - h;
-    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP) top = b.bottom - a.top + GAP;
+    if (a.bottom - w.bottom >= h + LOW + GAP && !onSheet(a.height - LOW - h)) top = a.height - LOW - h;
+    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP)) top = b.bottom - a.top + GAP;
     el.style.top = Math.round(top) + "px";
     el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
   }

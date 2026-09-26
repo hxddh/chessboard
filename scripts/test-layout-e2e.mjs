@@ -3717,6 +3717,31 @@ for (const [when, mode, act] of [
     }
   }
 
+  // 7.8 §1d：竖窗下抽屉打开时，toast 不压结果卡的按钮。7.7 把它放在窗口
+  // 底部 24px 处 —— 正好落在抽屉里结果卡的第二个按钮「换个对手」上。
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 600, height: 900 });
+    for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await tap(page, sq);
+    await page.waitForTimeout(400);
+    const check = () => page.evaluate(() => {
+      const t = document.getElementById("toast");
+      const a = t.getBoundingClientRect();
+      const btns = [...document.querySelectorAll("#go-card button")].filter((b) => b.offsetParent);
+      const hits = btns.filter((b) => { const r = b.getBoundingClientRect(); return a.left < r.right && r.left < a.right && a.top < r.bottom && r.top < a.bottom; });
+      return { shown: t.classList.contains("show"), card: btns.length, hits: hits.map((b) => b.id), text: t.textContent.slice(0, 30), top: Math.round(a.top),
+               open: document.getElementById("app").classList.contains("panel-open") };
+    });
+    const end = await check();
+    assert(end.open && end.card >= 3, `§1d 600×900 终局：抽屉开着，结果卡在（${end.card} 个按钮）`);
+    if (end.shown) assert(end.hits.length === 0, `§1d …终局的 toast「${end.text}」不压结果卡的按钮（${end.hits.join(", ")}）`);
+    // a receipt raised while the card is up — the same place any toast takes
+    await page.evaluate(() => document.getElementById("pgn-copy").click());
+    await page.waitForTimeout(350);
+    const rc = await check();
+    assert(rc.shown && rc.hits.length === 0, `§1d …再来一条 toast「${rc.text}」（上缘 ${rc.top}px），也不压结果卡的按钮（${rc.hits.join(", ")}）`);
+    await ctx.close();
+  }
+
   // §1e：页签条不透明；窗格滚下去之后，页签下缘有一道 --line，页签矩形里
   // 取到的只有页签自己
   {
