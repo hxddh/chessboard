@@ -155,6 +155,60 @@ jobs:
           done
           [ -z "$failed" ] || { echo "::error::failed:$failed"; exit 1; }
 
+  # 7.8 (v7-8-plan §7.1): the screenshot set, on both engines, as an
+  # artifact — so a PR's before and after can be looked at side by side
+  # without anyone re-running scripts/shots.mjs by hand. It is not a gate:
+  # nothing in it compares pixels (what can be measured is asserted in the
+  # e2e suites), so the job never turns a PR red — `continue-on-error`, and
+  # the artifact is uploaded whatever the script's exit. For the same reason
+  # it is not in `npm run test:e2e` (test-chess.mjs would then require it in
+  # release.yml too) and not in release.yml: a release must not wait on, or
+  # be blocked by, a set of pictures.
+  shots:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    name: screenshots (${{ matrix.engine }}, not a gate)
+    env:
+      E2E_BROWSER: ${{ matrix.engine }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
+      # the same pin as the browser job above, walked forward together
+      - name: install playwright + ${{ matrix.engine }}
+        run: |
+          npm install --no-save playwright@1.62.1
+          npx --yes playwright@1.62.1 install --with-deps ${{ matrix.engine }}
+      - name: resolve the browser Playwright just installed
+        run: |
+          node -e "
+            const pw = require('playwright');
+            const p = pw['${{ matrix.engine }}'].executablePath();
+            console.log('${{ matrix.engine }} =', p);
+            require('fs').appendFileSync(process.env.GITHUB_ENV,
+              ('${{ matrix.engine }}' === 'chromium' ? 'CHROME_PATH=' : 'WEBKIT_PATH=') + p + '\n');
+          "
+      - name: take the screenshot set
+        env:
+          E2E_REQUIRED: "1"
+          OUT: shots
+        run: node scripts/shots.mjs
+      - name: upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: shots-${{ matrix.engine }}
+          path: shots/${{ matrix.engine }}/
+          if-no-files-found: warn
+          retention-days: 14
+
   # src/main.zig and src/runner.zig, compiled and their tests run, on every
   # push — not only at release time. Until 6.0 the Zig side had no PR-time
   # CI at all, and 5.0–5.2 shipped three versions with dead file dialogs and

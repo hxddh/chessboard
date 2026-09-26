@@ -255,6 +255,23 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
     return c;
   }
 
+  /**
+   * 7.8 §1c: the current set's picture of piece `key`, for the DOM — the
+   * in-board promotion picker draws with the same art as the board, not the
+   * Unicode glyphs it used to. A data: URL of the SVG the sprites decode.
+   */
+  function pieceSrc(key) {
+    const svgs = PIECE_SETS[_set] || CHESS_PIECE_SVGS;
+    return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]) : "";
+  }
+
+  /** Where `sq` is drawn right now: screen column and row, 0–7 from top left. */
+  function screenCell(sq) {
+    const m = _model ? _model() : null;
+    const p = screenPos(sq, !!(m && m.flipped));
+    return { col: p.sc, row: p.sr };
+  }
+
   function attach(canvas, modelFn) {
     _canvas = canvas;
     _model = modelFn;
@@ -791,4 +808,4 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
    *              needs to know the board's geometry at all.
    */
   export const ChessBoardView = { draw, attach, resizeCanvas, invalidatePaint,
-    animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet };
+    animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet, pieceSrc, screenCell };

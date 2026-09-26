@@ -1035,6 +1035,9 @@
       font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
     }
     .opening-line[hidden] { display: none; }
+    /* 7.8 §1b: blank but still taking its line, so the notation does not move */
+    .opening-line.vacant { visibility: hidden; }
+    .opening-line.vacant::before { content: "\00a0"; }
     /* Mode used to be a nav row with its own idiom — an underline it shared
        with the tab row, a `margin-top: 12px` from its life inside the panel,
        and a group border drawn for a tab row that stopped sitting beneath it
@@ -2015,25 +2018,30 @@
     .text-input.bad { border-color: var(--danger); }
 
     /* pawn promotion chooser */
-    .promo-modal { width: min(340px, calc(100vw - 32px)); }
-    .promo-row { display: flex; gap: 8px; }
+    /* 7.8 §1c: on the board, not over it. The backdrop is clear and unblurred;
+       the dimming is the board's own square (#promo-box, placed on the canvas
+       by placePromotion()), and the four pieces stand on their squares in the
+       promotion file — left/top per button, also from placePromotion(). */
+    .modal-bg.promo-bg { background: transparent; backdrop-filter: none; }
+    .modal-bg.promo-bg.show { display: block; }
+    .promo-modal {
+      position: absolute;
+      background: rgba(0,0,0,.45);
+    }
     .promo-row button {
-      flex: 1;
-      appearance: none; cursor: pointer;
-      border: 1px solid var(--card-border);
-      background: var(--btn-ghost);
-      color: var(--text);
-      border-radius: var(--radius-md); padding: 8px 0 12px;
-      font: inherit; font-size: 0.75rem; font-weight: 500;
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
+      position: absolute; width: 12.5%; height: 12.5%;
+      appearance: none; cursor: pointer; padding: 0; margin: 0;
+      border: 0; border-radius: 50%;
+      background: var(--sq-light);
+      display: grid; place-items: center;
+      transition: border-radius var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
-    .promo-row button:hover {
-      border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
-      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    .promo-row button:hover,
+    .promo-row button:focus-visible {
+      border-radius: 0;
+      background: color-mix(in srgb, var(--accent) 45%, var(--sq-light));
     }
-    .promo-row button:active { transform: scale(0.96); }
-    .promo-glyph { font-size: 1.875rem; line-height: var(--lh-tight); }
+    .promo-piece { width: 100%; height: 100%; display: block; pointer-events: none; }
 
     .scrim {
       display: none; position: absolute; inset: 0; z-index: 25;
@@ -2402,12 +2410,21 @@
        above the letters beside it and smaller than they read (截图 20): the
        sprites keep a margin inside their 40-unit box, so a piece has to be
        drawn larger than the cap height to look as tall as one. */
+    /* 7.8 §1e: the figure is exactly a capital high and stands on the
+       baseline. The SVG's box is cropped to the figure (figurineSvg() in
+       app.js), so the box's height is the figure's; `1cap` is the capital
+       height of the font this line is set in, and an inline-block with no
+       text sits its bottom edge on the baseline. 0.7em is for an engine
+       without the `cap` unit. */
     .mlfig {
-      display: inline-block; width: 1.3em; height: 1.3em;
-      vertical-align: -0.28em;
-      margin-right: -1px;
+      display: inline-block; height: 0.7em; height: 1cap;
+      vertical-align: baseline;
     }
-    .mlfig svg { width: 100%; height: 100%; display: block; }
+    .mlfig svg { height: 100%; width: auto; display: block; overflow: visible; fill: currentColor; }
+    /* the board's 1.5-unit line is a hairline at a capital's height */
+    .mlfig svg * { stroke-width: 2.4; }
+    /* figurineSvg() measures each figure once in one of these, off screen */
+    .fig-probe { position: absolute; visibility: hidden; width: 40px; height: 40px; }
     .mlmove {
       appearance: none; border: 0; background: transparent;
       /* --text, not --fg: there has never been a --fg token in any of the four

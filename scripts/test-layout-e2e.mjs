@@ -3672,9 +3672,11 @@ for (const [when, mode, act] of [
     const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
     assert(focused === "board" && !(await ringed("e4")) && !(await ringed("e5")),
       `§1c 鼠标走完 e2-e4，棋盘有焦点（${focused}）但没有画键盘光标`);
+    // 7.8 §1a：方向键在光标没画出来时翻棋谱；进光标模式的是回车
+    await page.keyboard.press("Enter");
     await page.keyboard.press("ArrowUp");
     await page.waitForTimeout(150);
-    assert(await ringed("e5"), "§1c 按一下方向键，光标出现（e4 → e5）");
+    assert(await ringed("e5"), "§1c 按回车进光标模式，再按方向键，光标出现（e4 → e5）");
     await tap(page, "a2");
     await page.waitForTimeout(150);
     assert(!(await ringed("e5")), "§1c 再用鼠标点一下，光标又收起来");
@@ -3714,6 +3716,66 @@ for (const [when, mode, act] of [
       }
       await ctx.close();
     }
+  }
+
+  // 7.8 §1d：竖窗下抽屉打开时，toast 不压结果卡的按钮。7.7 把它放在窗口
+  // 底部 24px 处 —— 正好落在抽屉里结果卡的第二个按钮「换个对手」上。
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 600, height: 900 });
+    for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await tap(page, sq);
+    await page.waitForTimeout(400);
+    const check = () => page.evaluate(() => {
+      const t = document.getElementById("toast");
+      const a = t.getBoundingClientRect();
+      const btns = [...document.querySelectorAll("#go-card button")].filter((b) => b.offsetParent);
+      const hits = btns.filter((b) => { const r = b.getBoundingClientRect(); return a.left < r.right && r.left < a.right && a.top < r.bottom && r.top < a.bottom; });
+      return { shown: t.classList.contains("show"), card: btns.length, hits: hits.map((b) => b.id), text: t.textContent.slice(0, 30), top: Math.round(a.top),
+               open: document.getElementById("app").classList.contains("panel-open") };
+    });
+    const end = await check();
+    assert(end.open && end.card >= 3, `§1d 600×900 终局：抽屉开着，结果卡在（${end.card} 个按钮）`);
+    if (end.shown) assert(end.hits.length === 0, `§1d …终局的 toast「${end.text}」不压结果卡的按钮（${end.hits.join(", ")}）`);
+    // a receipt raised while the card is up — the same place any toast takes
+    await page.evaluate(() => document.getElementById("pgn-copy").click());
+    await page.waitForTimeout(350);
+    const rc = await check();
+    assert(rc.shown && rc.hits.length === 0, `§1d …再来一条 toast「${rc.text}」（上缘 ${rc.top}px），也不压结果卡的按钮（${rc.hits.join(", ")}）`);
+    await ctx.close();
+  }
+
+  // 7.8 §1e：棋谱里的兵种字形 = 字母的大写高度（±10%），与字母同一条基线；
+  // 白方空心，黑方实心，都是文字的颜色。三种语言各量一遍。
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "pvp", "play");
+    // 1.Nf3 Nc6 2.Nc3 Nf6 3.e4 d6 4.Bb5 Bd7 5.Qe2 Qc8 6.Kd1 Kd8
+    for (const sq of ["g1", "f3", "b8", "c6", "b1", "c3", "g8", "f6", "e2", "e4", "d7", "d6", "f1", "b5", "c8", "d7", "d1", "e2", "d8", "c8", "e1", "d1", "e8", "d8"]) await tap(page, sq);
+    await page.waitForTimeout(300);
+    const figs = await page.evaluate(() => {
+      const ctx2 = document.createElement("canvas").getContext("2d");
+      return [...document.querySelectorAll(".move-list .mlmove .mlfig")].map((f) => {
+        const btn = f.closest(".mlmove");
+        const cs = getComputedStyle(btn);
+        ctx2.font = cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+        const cap = ctx2.measureText("H").actualBoundingBoxAscent;
+        const probe = document.createElement("span");
+        probe.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+        btn.appendChild(probe);
+        const base = probe.getBoundingClientRect().bottom;
+        probe.remove();
+        const g = f.querySelector("svg").getBoundingClientRect();
+        const text = cs.color;
+        const fills = [...f.querySelectorAll("path, circle, rect, polygon")].map((p) => getComputedStyle(p).fill);
+        return { san: btn.getAttribute("aria-label"), w: f.classList.contains("fig-w"), h: g.height, cap, dy: g.bottom - base,
+                 foreign: fills.filter((x) => x !== "none" && x !== text).length, hollow: fills.filter((x) => x === "none").length, solid: fills.filter((x) => x === text).length };
+      });
+    });
+    const off = figs.filter((f) => Math.abs(f.h / f.cap - 1) > 0.1 || Math.abs(f.dy) > 1.5);
+    assert(figs.length === 10 && off.length === 0,
+      `§1e ${lang}：${figs.length} 个字形都是大写高度、在基线上` + (off.length ? "（" + off.map((f) => f.san + " " + f.h.toFixed(1) + "/" + f.cap.toFixed(1) + " dy " + f.dy.toFixed(1)).join("，") + "）" : ""));
+    assert(figs.every((f) => f.foreign === 0), `§1e ${lang}：字形只用文字的颜色`);
+    assert(figs.filter((f) => f.w).every((f) => f.hollow > 0) && figs.filter((f) => !f.w).every((f) => f.solid > 0 && f.w === false),
+      `§1e ${lang}：白方空心、黑方实心（白 ${figs.filter((f) => f.w).length} 个，黑 ${figs.filter((f) => !f.w).length} 个）`);
+    await ctx.close();
   }
 
   // §1e：页签条不透明；窗格滚下去之后，页签下缘有一道 --line，页签矩形里

@@ -486,6 +486,228 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- 7.8 §1a / §7.2:鼠标走完一步,再按 ← -----------------------------------
+// 7.7 的样子:鼠标一点棋盘,焦点就在棋盘上;之后的 ← → Home End 全被一个没画
+// 出来的键盘光标吃掉 —— 按 ←,什么也没发生。现在光标没画出来时,这几个键翻
+// 棋谱;回车(或 Tab 到棋盘)才进光标模式,Esc 退出。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const at = (s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  for (const sq of ["e2", "e4", "e7", "e5", "g1", "f3"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); }
+  // viewIndex, read off the move list: which ply carries .current (0 = none)
+  const view = () => page.evaluate(() => {
+    const ms = [...document.querySelectorAll(".move-list .mlmove:not(.mlgap)")];
+    return ms.findIndex((b) => b.classList.contains("current")) + 1;
+  });
+  // the cursor is a near-white ring along the top edge inside its square
+  const ringed = (sq) => page.evaluate((s) => {
+    const c = document.getElementById("board");
+    const g = c.getContext("2d");
+    const step = c.width / 8;
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    const x0 = Math.round(f * step + step * 0.3), w = Math.round(step * 0.4);
+    let best = 0;
+    for (let y = Math.round(rk * step + 1); y < Math.round(rk * step + step * 0.14); y++) {
+      const d = g.getImageData(x0, y, w, 1).data;
+      let white = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++;
+      best = Math.max(best, white / w);
+    }
+    return best > 0.8;
+  }, sq);
+  const key = async (k) => { await page.keyboard.press(k); await page.waitForTimeout(200); };
+  const focus = () => page.evaluate(() => document.activeElement && document.activeElement.id);
+  assert(await focus() === "board" && await view() === 3, `§1a 鼠标走完三手,焦点在棋盘上,停在第 3 手(${await focus()} / ${await view()})`);
+  await key("ArrowLeft");
+  assert(await view() === 2 && !(await ringed("e4")), `§1a 按 ←,退回第 2 手,光标没有画出来(${await view()})`);
+  await key("ArrowRight");
+  assert(await view() === 3, `§1a 按 →,回到第 3 手(${await view()})`);
+  await key("Home");
+  assert(await view() === 0, `§1a 按 Home,回到开局(${await view()})`);
+  await key("End");
+  assert(await view() === 3, `§1a 按 End,跳到最新(${await view()})`);
+  await key("Enter");
+  assert(await ringed("e4"), "§1a 按回车,进入光标模式:光标画出来了");
+  await key("ArrowLeft");
+  assert(await view() === 3 && await ringed("d4"), `§1a 光标模式里按 ←,光标挪到 d4,棋谱不动(${await view()})`);
+  await key("Escape");
+  assert(!(await ringed("d4")) && await focus() === "board", "§1a Esc 退出光标模式,焦点仍在棋盘上");
+  await key("ArrowLeft");
+  assert(await view() === 2, `§1a 退出之后按 ←,又是翻棋谱(${await view()})`);
+  await ctx.close();
+}
+
+// --- 7.8 §1b / §7.2:翻棋谱时,棋谱区不上下跳 ---------------------------------
+// 7.7 的「今天的训练」只在「对局中、停在最新局面」时让位:一退回,卡片冒出来,
+// 棋谱被推下去约 160px;回到最新,又收回去。现在有棋谱就不出现。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1000);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const daily = () => page.evaluate(() => !!document.getElementById("daily-row").offsetParent);
+  assert(await daily(), "§1b 零着时,「今天的训练」在");
+  const at = (s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  // 22 plies: 1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.c3 Nf6 5.d3 d6 6.O-O O-O 7.Re1 a6
+  // 8.a4 h6 9.h3 Re8 10.Nbd2 Be6 11.Bb5 Bd7
+  const line = "e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6 d2d3 d7d6 e1g1 e8g8 f1e1 a7a6 a2a4 h7h6 h2h3 f8e8 b1d2 c8e6 c4b5 e6d7".split(" ");
+  for (const m of line) {
+    for (const sq of [m.slice(0, 2), m.slice(2)]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(100); }
+  }
+  const n = await page.evaluate(() => document.querySelectorAll(".move-list .mlmove:not(.mlgap)").length);
+  assert(n === 22, `§1b 走完 22 着(${n})`);
+  const top = () => page.evaluate(() => document.getElementById("move-list").getBoundingClientRect().top);
+  const t0 = await top();
+  const seen = new Set();
+  const cards = new Set();
+  for (const k of [...Array(22).fill("ArrowLeft"), ...Array(22).fill("ArrowRight")]) {
+    await page.keyboard.press(k);
+    await page.waitForTimeout(40);
+    seen.add(await top());
+    cards.add(await daily());
+  }
+  assert(seen.size === 1 && seen.has(t0),
+    `§1b 从最新退到开局再回到最新,每一步棋谱区上缘都在 ${t0}px(见过:${[...seen].join(", ")})`);
+  assert(!cards.has(true), "§1b …其间「今天的训练」一次也没有冒出来");
+  await ctx.close();
+}
+
+// --- 7.8 §1c / §7.2:升变在棋盘上选 ------------------------------------------
+// 7.7 的升变是窗口正中的对话框,棋盘被模糊,四个按钮里是 Unicode 空心字符。
+// 现在四个棋子画在升变格那一列上,从升变格往里排,用的是棋盘那一套棋子;棋盘
+// 不模糊。白黑、正反视角、边线和中间列都量;点、按键、取消三条路都走。
+{
+  // white pawns a7 d7, black pawns a2 d2
+  const FEN = "7k/P2P4/8/8/8/8/p2p4/7K";
+  const setup = async (turn, set, flip) => {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(([s, f]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", pieceSet: s, flipped: f, autoFlipPvp: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+    }, [set, flip]);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1000);
+    await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+    await page.evaluate(async (fen) => {
+      document.getElementById("fen-load-open").click();
+      await new Promise((r) => setTimeout(r, 300));
+      document.getElementById("fen-input").value = fen;
+      document.getElementById("fen-load").click();
+      await new Promise((r) => setTimeout(r, 300));
+    }, FEN + " " + turn + " - - 0 1");
+    return { ctx, page, errs };
+  };
+  const at = (page, s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    let f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    if (flip) { f = 7 - f; rk = 7 - rk; }
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  const click = async (page, s) => { const p = await at(page, s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); };
+  const chooser = (page) => page.evaluate(() => {
+    const m = document.getElementById("promo-modal");
+    const b = document.getElementById("board").getBoundingClientRect();
+    return {
+      open: m.classList.contains("show"), role: m.getAttribute("role"), modal: m.getAttribute("aria-modal"),
+      blur: getComputedStyle(m).backdropFilter, board: [b.left, b.top, b.right, b.bottom],
+      pieces: [...m.querySelectorAll("button[data-p]")].map((x) => {
+        const r = x.getBoundingClientRect();
+        const img = x.querySelector("img");
+        return { p: x.dataset.p, name: x.textContent.trim(), cx: (r.left + r.right) / 2, cy: (r.top + r.bottom) / 2,
+                 r: [r.left, r.top, r.right, r.bottom],
+                 svg: img && img.src.startsWith("data:image/svg+xml") ? decodeURIComponent(img.src.split(",").slice(1).join(",")) : "" };
+      }),
+      focus: document.activeElement && document.activeElement.dataset.p,
+    };
+  });
+  const lastSan = (page) => page.evaluate(() => {
+    const ms = [...document.querySelectorAll(".move-list .mlmove:not(.mlgap)")];
+    return ms.length ? ms[ms.length - 1].getAttribute("aria-label") : "";
+  });
+  const cases = [
+    { turn: "w", flip: false, from: "a7", to: "a8" }, { turn: "w", flip: false, from: "d7", to: "d8" },
+    { turn: "w", flip: true, from: "a7", to: "a8" }, { turn: "b", flip: false, from: "d2", to: "d1" },
+    { turn: "b", flip: true, from: "a2", to: "a1" }, { turn: "b", flip: true, from: "d2", to: "d1" },
+  ];
+  for (const c of cases) {
+    const tag = `${c.turn === "w" ? "白" : "黑"}方 ${c.from}-${c.to}${c.flip ? "(反转)" : ""}`;
+    const { ctx, page, errs } = await setup(c.turn, "cburnett", c.flip);
+    await click(page, c.from); await click(page, c.to);
+    const s = await chooser(page);
+    const target = await at(page, c.to);
+    const step = (s.board[2] - s.board[0]) / 8;
+    const inside = s.pieces.every((x) => x.r[0] >= s.board[0] - 1 && x.r[2] <= s.board[2] + 1 && x.r[1] >= s.board[1] - 1 && x.r[3] <= s.board[3] + 1);
+    const column = s.pieces.every((x) => Math.abs(x.cx - target.x) < 2);
+    const inward = s.pieces.every((x, i) => Math.abs(Math.abs(x.cy - target.y) - i * step) < 2) &&
+      s.pieces.every((x) => (x.cy - target.y) * (target.y < (s.board[1] + s.board[3]) / 2 ? 1 : -1) >= -1);
+    assert(s.open && s.role === "dialog" && s.modal === "true", `§1c ${tag}:选择器是一个模态 dialog`);
+    assert(inside && column && inward,
+      `§1c ${tag}:四个棋子都在棋盘内、在 ${c.to} 那一列、从升变格往里排(${s.pieces.map((x) => x.p + "@" + Math.round(x.cx) + "," + Math.round(x.cy)).join(" ")})`);
+    assert(s.pieces.every((x) => x.svg.includes('id="' + c.turn + x.p + '"')),
+      `§1c ${tag}:画的是棋盘那一套(cburnett)的${c.turn === "w" ? "白" : "黑"}子,不是 Unicode 字符`);
+    assert(s.blur === "none" || s.blur === "", `§1c ${tag}:棋盘不模糊(${s.blur})`);
+    assert(s.pieces.map((x) => x.name).join("") === "后车象马" && s.focus === "q", `§1c ${tag}:读屏名字照旧、焦点在「后」上`);
+    // three paths: a click, a key, a cancel
+    if (c.from === "a7" && !c.flip) {
+      const r = s.pieces.find((x) => x.p === "n");
+      await page.mouse.click(r.cx, r.cy); await page.waitForTimeout(250);
+      assert(!(await chooser(page)).open && await lastSan(page) === "a8=N", `§1c ${tag}:点马,升变成马(${await lastSan(page)})`);
+    } else if (c.from === "d7") {
+      await page.keyboard.press("r"); await page.waitForTimeout(250);
+      assert(!(await chooser(page)).open && (await lastSan(page)).startsWith("d8=R"), `§1c ${tag}:按 R,升变成车(${await lastSan(page)})`);
+    } else if (c.from === "d2" && !c.flip) {
+      await page.keyboard.press("Escape"); await page.waitForTimeout(250);
+      assert(!(await chooser(page)).open && await lastSan(page) === "", `§1c ${tag}:Esc 取消,这一步没有走`);
+      await click(page, c.from); await click(page, c.to);
+      await page.keyboard.press("b"); await page.waitForTimeout(250);
+      assert((await lastSan(page)).startsWith("d1=B"), `§1c ${tag}:取消之后再走一次,按 B 升变成象(${await lastSan(page)})`);
+    } else {
+      const other = await at(page, c.from[0] === "a" ? "e4" : "h4");
+      await page.mouse.click(other.x, other.y); await page.waitForTimeout(250);
+      assert(!(await chooser(page)).open && await lastSan(page) === "", `§1c ${tag}:点棋盘别处,取消,这一步没有走`);
+    }
+    assert(errs.length === 0, `§1c ${tag}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+  // the other piece set: the chooser follows the setting
+  {
+    const { ctx, page } = await setup("w", "merida", false);
+    await click(page, "a7"); await click(page, "a8");
+    const s = await chooser(page);
+    assert(s.open && s.pieces.every((x) => x.svg.includes('viewBox="0 0 50 50"')),
+      "§1c 换成 Merida,选择器里画的也是 Merida");
+    await ctx.close();
+  }
+}
+
 // --- 棋盘拿着焦点的时候,Esc 还是不是「让它消失」的意思 ----------------------
 // 实测已发布的 2.1.6:不是。canvas 的 keydown 把每一个 Escape 都吞掉,而只在
 // 有选中时才真的做事 —— 于是提示条、编辑器出口、收面板这三层全部够不着,

@@ -422,6 +422,8 @@ import { createStore } from "./store.js";
       libFilter: { result: "all", color: "all", sort: "t" },
       libPick: null,
       promoResolver: null,
+      /** 7.8 §1c: the square the open promotion chooser stands on */
+      promoSquare: null,
       /** Modal list picker → index of the chosen entry, or null when cancelled. */
       pickResolver: null,
       dragging: null,
@@ -1319,9 +1321,18 @@ import { createStore } from "./store.js";
     el.style.maxWidth = Math.round(Math.max(200, Math.min(560, w.width - 16))) + "px";
     const h = el.offsetHeight;
     const GAP = 4, LOW = 24;
+    // 7.8 §1d: nor on the drawer. In a portrait window the panel is a sheet
+    // from the bottom, and the bottom place put 「成就解锁 · 首胜」 over the
+    // result card's second button. A place that would cross the sheet is not
+    // taken; the strip above the board is what is left.
+    const sideEl = document.getElementById("side");
+    const s = sideEl ? sideEl.getBoundingClientRect() : null;
+    const cx = w.left + w.width / 2, half = el.offsetWidth / 2;
+    const onSheet = (y) => !!s && s.width > 0 && a.top + y < s.bottom && a.top + y + h > s.top &&
+      cx - half < s.right && cx + half > s.left;
     let top = GAP;
-    if (a.bottom - w.bottom >= h + LOW + GAP) top = a.height - LOW - h;
-    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP) top = b.bottom - a.top + GAP;
+    if (a.bottom - w.bottom >= h + LOW + GAP && !onSheet(a.height - LOW - h)) top = a.height - LOW - h;
+    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP)) top = b.bottom - a.top + GAP;
     el.style.top = Math.round(top) + "px";
     el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
   }
@@ -2086,8 +2097,14 @@ import { createStore } from "./store.js";
     if (store.session.mode !== "learn" && store.session.mode !== "puzzle" && sanHistory().length) {
       ChessEco.whenReady(renderOpening);
     }
-    const hit = store.session.mode === "learn" || store.session.mode === "puzzle" ? null : openingFor(store.game.viewIndex);
-    el.hidden = !hit;
+    const drill = store.session.mode === "learn" || store.session.mode === "puzzle";
+    const hit = drill ? null : openingFor(store.game.viewIndex);
+    // 7.8 §1b: stepping back to the start of a named game left no name to
+    // show, and the line collapsed — the notation under it moved 29px. While
+    // the game as a whole has a name, the line keeps its box and goes blank.
+    const held = !hit && !drill && !!openingFor(sanHistory().length);
+    el.hidden = !hit && !held;
+    el.classList.toggle("vacant", held);
     el.textContent = hit ? hit[0] + " · " + hit[1] : "";
   }
 
@@ -2537,7 +2554,7 @@ import { createStore } from "./store.js";
       const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
-        choosePromotion(g.turn()).then((p) => { if (p) learnMove(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) learnMove(from, sq, p); });
         return;
       }
       learnMove(from, sq, "q");
@@ -3681,7 +3698,7 @@ import { createStore } from "./store.js";
       const from = store.game.selection.sq;
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
-        choosePromotion(g.turn()).then((p) => { if (p) puzzleMove(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) puzzleMove(from, sq, p); });
         return;
       }
       puzzleMove(from, sq, "q");
@@ -6084,10 +6101,16 @@ import { createStore } from "./store.js";
     if (!btn || !label || !note) return;
     // 7.7 (v7-7-plan §3, §10): while a game is being played the notation is
     // what the page is for, and this card was the first screen of the drawer
-    // in a portrait window. It steps aside until the game is over.
-    const playing = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
-      sanHistory().length > 0 && isLive() && !appGameOver();
-    avail(el("daily-row"), !playing);
+    // in a portrait window.
+    //
+    // 7.8 §1b: it steps aside whenever there is a game to look at, not only
+    // while one is live. Tied to isLive(), a step back in replay brought the
+    // card in and pushed the notation ~160px down, and the step forward took
+    // it away again — the panel jumped on every key press. Whether there is
+    // notation does not change while you walk through it, so neither does this.
+    const hasGame = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
+      sanHistory().length > 0;
+    avail(el("daily-row"), !hasGame);
     const d = store.session.daily;
     if (!d) {
       setText(label, t("daily.btn"));
@@ -7724,15 +7747,51 @@ import { createStore } from "./store.js";
    * piece you *chose*, which is worth reading as a word.
    */
   const SAN_PIECE = { K: "k", Q: "q", R: "r", B: "b", N: "n" };
+
+  /**
+   * 7.8 §1e: the board's piece as a figurine — one colour, the text's, and
+   * cropped to the figure.
+   *
+   * The sprites were dropped in as they are drawn on the board: white filled
+   * white and black filled black, in a 40-unit box with a margin, so ♞xd5 was
+   * a smudge about six tenths of the letters' height, sitting high. Now the
+   * box is cut to the figure itself (measured once per piece: getBBox, plus
+   * half the stroke), so the stylesheet can make the figure exactly a capital
+   * high on the baseline; and the colours become the text's — white moves an
+   * outline (the white fill is let through), black moves solid (the white
+   * detail lines are let through too, which reads as a cut in the shape).
+   */
+  const FIGURINES = {};
+  function figurineSvg(key) {
+    if (FIGURINES[key]) return FIGURINES[key];
+    const svgs = CHESS_PIECE_SVGS || {};
+    if (!svgs[key]) return null;
+    let svg = svgs[key].replace(/"#000000"/gi, "\"currentColor\"").replace(/"#FFFFFF"/gi, "\"none\"");
+    try {
+      const probe = document.createElement("span");
+      probe.className = "fig-probe";
+      probe.insertAdjacentHTML("afterbegin", svg);
+      document.body.appendChild(probe);
+      const bb = probe.firstElementChild.getBBox();
+      probe.remove();
+      if (bb && bb.height > 0) {
+        const pad = 0.75; // half of the sprites' 1.5-unit stroke
+        const box = [bb.x - pad, bb.y - pad, bb.width + 2 * pad, bb.height + 2 * pad].map((v) => Math.round(v * 100) / 100).join(" ");
+        svg = svg.replace(/viewBox="[^"]*"/, "viewBox=\"" + box + "\"");
+      }
+    } catch (_) { /* no layout here: keep the sprite's own box */ }
+    FIGURINES[key] = svg;
+    return svg;
+  }
+
   function writeSan(node, san, color) {
     node.setAttribute("aria-label", san);
     node.title = san;
     const type = SAN_PIECE[san[0]];
-    const svgs = CHESS_PIECE_SVGS || {};
-    const svg = type && svgs[color + type];
+    const svg = type && figurineSvg(color + type);
     if (!svg) { node.textContent = san; return; }
     const fig = document.createElement("span");
-    fig.className = "mlfig";
+    fig.className = "mlfig " + (color === "w" ? "fig-w" : "fig-b");
     fig.setAttribute("aria-hidden", "true");
     fig.insertAdjacentHTML("afterbegin", svg);
     node.replaceChildren(fig, document.createTextNode(san.slice(1)));
@@ -8175,25 +8234,56 @@ import { createStore } from "./store.js";
   /** localised promotion piece names — read through t() so a language switch
    * takes effect without rebuilding the table */
   const PROMO_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
-  const PROMO_GLYPHS = {
-    w: { q: "♕", r: "♖", b: "♗", n: "♘" },
-    b: { q: "♛", r: "♜", b: "♝", n: "♞" },
-  };
-
-  /** Modal chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel. */
-  function choosePromotion(color) {
+  /**
+   * Chooser for pawn promotion → 'q'|'r'|'b'|'n', or null on cancel.
+   *
+   * 7.8 §1c: on the board. It was a dialog in the middle of the window, over
+   * a blurred board, holding Unicode outline glyphs that are not the pieces
+   * the board draws. Now the four pieces stand in the promotion file, from
+   * the promotion square inward, in the board's own set; the rest of the
+   * board is dimmed. It is still the same `role="dialog"` with the same
+   * heading, focus and Escape — only where it is drawn has changed.
+   */
+  function choosePromotion(color, sq) {
     const modal = document.getElementById("promo-modal");
     if (!modal) return Promise.resolve("q");
     modal.querySelectorAll("button[data-p]").forEach((b) => {
-      const gl = b.querySelector(".promo-glyph");
-      if (gl) gl.textContent = PROMO_GLYPHS[color][b.dataset.p];
+      const img = b.querySelector(".promo-piece");
+      if (img) img.src = BoardView.pieceSrc(color + b.dataset.p);
     });
-    Dlg.open(modal, modal.querySelector('button[data-p="q"]'));
+    store.ui.promoSquare = sq;
+    const queen = modal.querySelector('button[data-p="q"]');
+    Dlg.open(modal, queen);
+    placePromotion();
+    // The chooser opens from the board's pointerdown, and the press then
+    // focuses the canvas as its default action — after us. Focus has to land
+    // in the dialog once that is done, or Escape goes to the board's
+    // selection first and the dialog stays up.
+    setTimeout(() => { if (modal.classList.contains("show") && !modal.contains(document.activeElement)) queen.focus(); }, 0);
     return new Promise((resolve) => { store.ui.promoResolver = resolve; });
+  }
+  /** Lay the chooser over the canvas: the dim square, then one piece a cell. */
+  function placePromotion() {
+    const modal = document.getElementById("promo-modal");
+    const box = document.getElementById("promo-box");
+    if (!modal || !box || !modal.classList.contains("show") || !store.ui.promoSquare) return;
+    const b = canvas.getBoundingClientRect(), m = modal.getBoundingClientRect();
+    box.style.left = (b.left - m.left) + "px";
+    box.style.top = (b.top - m.top) + "px";
+    box.style.width = b.width + "px";
+    box.style.height = b.height + "px";
+    const { col, row } = BoardView.screenCell(store.ui.promoSquare);
+    // from the edge the pawn arrived at, toward the middle of the board
+    const dir = row < 4 ? 1 : -1;
+    modal.querySelectorAll("button[data-p]").forEach((btn, i) => {
+      btn.style.left = col * 12.5 + "%";
+      btn.style.top = (row + dir * i) * 12.5 + "%";
+    });
   }
   function finishPromotion(p) {
     const modal = document.getElementById("promo-modal");
     Dlg.close(modal);
+    store.ui.promoSquare = null;
     if (store.ui.promoResolver) { store.ui.promoResolver(p); store.ui.promoResolver = null; }
   }
 
@@ -8307,7 +8397,7 @@ import { createStore } from "./store.js";
       const vmv = g.moves({ square: from, verbose: true }).find((m) => m.to === sq);
       if (vmv && vmv.promotion) {
         // cancelling keeps the selection so the player can pick another square
-        choosePromotion(g.turn()).then((p) => { if (p) play(from, sq, p); });
+        choosePromotion(g.turn(), sq).then((p) => { if (p) play(from, sq, p); });
         return;
       }
       play(from, sq, "q");
@@ -11306,7 +11396,11 @@ import { createStore } from "./store.js";
     promoModal.querySelectorAll("button[data-p]").forEach((b) => {
       b.onclick = () => finishPromotion(b.dataset.p);
     });
-    promoModal.onclick = (ev) => { if (ev.target === promoModal) finishPromotion(null); };
+    // a press anywhere but on one of the four pieces — the dimmed board or
+    // the window around it — takes the move back (7.8 §1c)
+    const promoBox = document.getElementById("promo-box");
+    promoModal.onclick = (ev) => { if (ev.target === promoModal || ev.target === promoBox) finishPromotion(null); };
+    window.addEventListener("resize", placePromotion);
   }
 
   // Tab belongs to the browser everywhere except inside an open dialog, where
