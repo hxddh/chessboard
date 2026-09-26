@@ -30,6 +30,11 @@
  *   13 多主变          multipv=3 in 分析 and in 持续分析
  *   14 FEN黑先         a [SetUp] game with Black to move is numbered and marked right
  *
+ * v7-8-plan §3 added:
+ *
+ *   15 为什么          9. a3's reason names 捉双 and 车; 再试一次 marks a3 wrong
+ *                      and the engine's move right
+ *
  * Each scenario gets a fresh browser context, so one flow's engine state
  * cannot carry the next. Only key results are asserted: what the engine says
  * varies run to run, the fact that it reaches the page does not.

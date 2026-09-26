@@ -5189,8 +5189,9 @@ import { createStore } from "./store.js";
   // The sentence is explain.js's: the refutation (the first move of the
   // engine line after the mistake) with its motif when motif.js is sure, what
   // that line wins, and the engine's own choice. Everything it reads is
-  // already in the analysis record — `pvs[i + 1]` is the line after ply i,
-  // `pvs[i]` and `bests[i]` the line and the move before it — so this is a
+  // already in the analysis record — `pvs[i + 1]` is the line after ply i
+  // (continued by lineAfter where the game followed it), `pvs[i]` and
+  // `bests[i]` the line and the move before it — so this is a
   // derivation like bestArrowAt: nothing stored, nothing to migrate.
 
   /** Memo per analysis record: a record is replaced, never edited. */
