@@ -894,6 +894,57 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     }
     await pgC.close();
   }
+  // 7.8 §2:120px 高、以 50% 胜率为中线、上白下黑两块面积、悬停说「第 N 回合
+  // 着法 分值」。换一份评估:前半盘白方 +1.5,第 30 手之后黑方 −6 —— 中间
+  // 那一步是 ??,上下两块面积都得有东西。面积按画布上的像素数,不看代码。
+  {
+    const { pgC } = await readyPage();
+    await pgC.evaluate(() => {
+      let n = 0;
+      window.__chess.engine.analyze = async (fen) => {
+        const turn = fen.split(" ")[1];
+        const cp = n++ < 31 ? 150 : -600;
+        return { cp: turn === "w" ? cp : -cp, mate: null, turn, best: "e2e4", pv: ["e2e4"] };
+      };
+    });
+    await pgC.click("#an-run");
+    await pgC.waitForTimeout(4000);
+    const g = await pgC.evaluate(() => {
+      const el = document.getElementById("eval-curve");
+      const ctx = el.getContext("2d");
+      const { width: W, height: H } = el;
+      const d = ctx.getImageData(0, 0, W, H).data;
+      let white = 0, black = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const k = (y * W + x) * 4;
+        if (Math.abs(d[k + 3] - 128) > 3) continue; // the half-alpha area fill only
+        if (y < H / 2 - 2 && d[k] > 200) white++;
+        if (y > H / 2 + 2 && d[k] < 60) black++;
+      }
+      const marks = [...document.querySelectorAll(".move-list .mvtag")].map((a) => a.textContent.trim());
+      return { h: el.getBoundingClientRect().height, white, black, marks };
+    });
+    assert(g.marks.includes("??"), "这一盘棋里有一步 ?? (" + g.marks.join(" ") + ")");
+    assert(g.h >= 120, "局势曲线至少 120px 高 (" + g.h + ")");
+    assert(g.white > 0 && g.black > 0,
+      "……中线上方白方一块、下方黑方一块,都不是空的 (白 " + g.white + " px / 黑 " + g.black + " px)");
+    const box = await pgC.evaluate(() => {
+      const r = document.getElementById("eval-curve").getBoundingClientRect();
+      return { x: r.left, y: r.top + r.height / 2, w: r.width };
+    });
+    await pgC.mouse.move(box.x + box.w * 0.25, box.y);
+    await pgC.waitForTimeout(200);
+    const tip = await pgC.evaluate(() => {
+      const el = document.getElementById("curve-tip");
+      return { hidden: !el || el.hidden, text: el && el.firstElementChild ? el.firstElementChild.textContent : "" };
+    });
+    assert(!tip.hidden && /^第 \d+ 回合 …?\S+ [+−]?\d+\.\d$/.test(tip.text),
+      "悬停在曲线上:「第 N 回合 着法 分值」(「" + tip.text + "」)");
+    await pgC.mouse.move(box.x, box.y - 200);
+    await pgC.waitForTimeout(150);
+    assert(await pgC.evaluate(() => { const el = document.getElementById("curve-tip"); return !!el && el.hidden; }), "……指针离开就收起");
+    await pgC.close();
+  }
   assert(errsC.length === 0, "曲线:全程没有页面异常 — " + errsC.join(" / "));
   await ctxC.close();
 }

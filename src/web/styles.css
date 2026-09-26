@@ -2438,7 +2438,8 @@
     }
 
     /* --- review: the evaluation curve, the bar, and the accuracy line --- */
-    #eval-wrap { margin: 8px 0 2px; }
+    /* relative: the curve's hover label is placed against it */
+    #eval-wrap { margin: 8px 0 2px; position: relative; }
     .pv-line {
       margin-top: 6px;
       font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
@@ -2497,14 +2498,29 @@
     .review-bank:hover:not(:disabled) { border-style: solid; border-color: var(--accent); color: var(--accent); }
     /* already banked: a statement, not an offer */
     .review-bank:disabled { cursor: default; color: var(--muted); border-style: solid; }
+    /* 7.8 §2: 120px, Lichess's is about 150. At 60 a game with a lost rook
+       in it was a line two pixels off the axis for most of its length. */
     #eval-curve {
       display: block;
       width: 100%;
-      height: 60px;
+      height: 120px;
       border-radius: var(--radius-sm);
       background: var(--card);
       border: 1px solid var(--card-border);
     }
+    /* 7.8 §2: what the pointer is over on the curve — move and score — above
+       the curve at the pointer's x. Not interactive: it must never be what
+       a press lands on. */
+    .curve-tip {
+      position: absolute; top: 0; z-index: 3;
+      transform: translate(-50%, calc(-100% - 4px));
+      padding: 2px 6px; border-radius: var(--radius-sm);
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--panel-border);
+      font-size: 0.75rem; line-height: var(--lh-tight); white-space: nowrap;
+      pointer-events: none;
+    }
+    .curve-tip-hint { color: var(--muted); margin-left: 6px; }
     /* The difficulty row is two scales, so it is labelled as two. */
     .diff-group {
       display: block; margin: 6px 0 4px;
@@ -2576,9 +2592,10 @@
     .eval-bar.is-unmeasured .eval-bar-fill { background: var(--muted); }
     /* the number, at the end of the side that is ahead — in the frame-high
        strip above or below the squares, right-aligned to the gauge */
+    /* 7.8 §2: one step up the type scale (11 → 12px) */
     .eval-bar-text {
       position: absolute; right: 0;
-      font-size: 0.6875rem; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
       color: var(--muted); white-space: nowrap;
       bottom: calc(100% + 2px);
     }

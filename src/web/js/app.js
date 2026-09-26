@@ -5261,9 +5261,12 @@ import { createStore } from "./store.js";
     const ctx = cv.getContext("2d");
     ctx.clearRect(0, 0, W, H);
     const n = a.scalars.length - 1;
-    const CAP = 500; // ±5 pawns fills the curve height
+    // 7.8 §2: the height is White's win chance, 50 % on the midline — the
+    // scale the marks are judged on. It was ±5 pawns linear, where a game
+    // decided by a lost rook still drew as a line hugging the axis for its
+    // first thirty moves and a mate as the same height as +5.
     const x = (i) => (n ? (i / n) * (W - 8 * dpr) + 4 * dpr : W / 2);
-    const y = (s) => H / 2 - (Math.max(-CAP, Math.min(CAP, s)) / CAP) * (H / 2 - 4 * dpr);
+    const y = (s) => 4 * dpr + (1 - Review.winPct(s) / 100) * (H - 8 * dpr);
     const css = getComputedStyle(document.documentElement);
     const cMuted = css.getPropertyValue("--muted").trim() || "#999";
     const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
@@ -9729,7 +9732,42 @@ import { createStore } from "./store.js";
       curveEl.setPointerCapture(ev.pointerId);
       jumpOnCurve(ev);
     };
-    curveEl.onpointermove = (ev) => { if (ev.buttons & 1) jumpOnCurve(ev); };
+    // 7.8 §2: what is under the pointer, as Lichess's graph says it — the
+    // move that led to that position and the score after it
+    const tipEl = document.getElementById("curve-tip");
+    const showCurveTip = (ev) => {
+      const a = analysisFor();
+      if (!a || !tipEl) return;
+      const rect = curveEl.getBoundingClientRect();
+      const n = a.scalars.length - 1;
+      const frac = Math.max(0, Math.min(1, (ev.clientX - rect.left - 4) / Math.max(1, rect.width - 8)));
+      const i = Math.round(frac * n);
+      const s = a.scalars[i];
+      const score = s == null ? t("rv.evalNone") : evalText(s);
+      const vh = verboseHistory();
+      const mv = i > 0 ? vh[i - 1] : null;
+      const head = mv ? tf("curve.hover", [boardMoveNo(i - 1), (mv.color === "b" ? "…" : "") + mv.san, score])
+        : tf("curve.at", [0]) + " " + score;
+      const hint = tipEl.lastElementChild;
+      if (!hint) {
+        const main = document.createElement("span");
+        const h = document.createElement("span");
+        h.className = "curve-tip-hint";
+        tipEl.replaceChildren(main, h);
+      }
+      setText(tipEl.firstElementChild, head);
+      setText(tipEl.lastElementChild, t("tip.evalCurve"));
+      tipEl.hidden = false;
+      // centred on the point, kept inside the panel
+      const wrap = tipEl.offsetParent || curveEl.parentElement;
+      const wr = wrap.getBoundingClientRect();
+      const half = tipEl.offsetWidth / 2;
+      const px = rect.left - wr.left + 4 + (n ? (i / n) * (rect.width - 8) : rect.width / 2);
+      tipEl.style.left = Math.max(half, Math.min(wr.width - half, px)) + "px";
+      tipEl.style.top = (rect.top - wr.top) + "px";
+    };
+    curveEl.onpointermove = (ev) => { showCurveTip(ev); if (ev.buttons & 1) jumpOnCurve(ev); };
+    curveEl.onpointerleave = () => { if (tipEl) tipEl.hidden = true; };
     curveEl.style.cursor = "pointer";
   }
   document.getElementById("stats-clear").onclick = async () => {

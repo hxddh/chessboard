@@ -720,7 +720,11 @@
           <!-- Focusable and a slider: the pointer already scrubs it, and the
                global ← / → / Home / End replay keys move it once it has focus,
                so the keyboard gets the same time machine (5.1, work package D). -->
-          <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" title="点击跳转到对应局面" data-i18n-title="tip.evalCurve"></canvas>
+          <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve"></canvas>
+          <!-- 7.8 §2: the move and score under the pointer; it replaces the
+               canvas's own title, which would stack a second, stale label
+               on top of this one after a second's rest -->
+          <div class="curve-tip num" id="curve-tip" aria-hidden="true" hidden></div>
           <div class="pv-line num" id="pv-line" hidden></div>
           <!-- 7.7 §5: one card. The two accuracies are the headline, once —
                they used to be a line above the report and a row inside it. -->
