@@ -1046,6 +1046,122 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- v7-8-plan §5: 坐标 盘外 / 盘内, and the tab fade ------------------------
+// Both red before 7.8's change: there was no 「坐标位置」 control (the click
+// below times out), and the tab pane slid in with reveal-in, not pane-in.
+{
+  const rectsFor = async (w, h, coordsIn, theme) => {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, locale: "zh-CN" });
+    await ctx.addInitScript((th) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: th }));
+      localStorage.setItem("chess.panelOpen", "1");
+    }, theme);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+    // chosen the way a person chooses it: on the settings page
+    await page.click("#tab-setup"); await page.waitForTimeout(150);
+    await page.click(`#coords-seg button[data-coords="${coordsIn ? "in" : "out"}"]`, { timeout: 2000 });
+    await page.waitForTimeout(300);
+    const rects = [];
+    for (const tab of ["play", "setup", "record", "play"]) {
+      await page.click("#tab-" + tab); await page.waitForTimeout(250);
+      rects.push(await page.evaluate(() => {
+        const r = document.getElementById("board").getBoundingClientRect();
+        return [r.x, r.y, r.width, r.height].join(",");
+      }));
+    }
+    const geo = await page.evaluate(() => {
+      const board = document.getElementById("board").getBoundingClientRect();
+      const wrap = document.getElementById("board-wrap").getBoundingClientRect();
+      const step = board.width / 8;
+      const span = (id, i) => document.getElementById(id).children[i];
+      const box = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, r: r.right, b: r.bottom }; };
+      // the ink box of the text, not the span: a Range over its text node
+      const ink = (el) => { const rg = document.createRange(); rg.selectNodeContents(el); return box(rg); };
+      const css = getComputedStyle(document.documentElement);
+      const tok = (n) => { const d = document.createElement("span"); d.style.color = css.getPropertyValue(n); document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; };
+      // the gauge is review-only; shown here only to read where the layout puts it
+      const g = document.getElementById("eval-bar-row");
+      g.hidden = false;
+      const gauge = box(g);
+      g.hidden = true;
+      return {
+        board: { x: board.x, y: board.y, r: board.right, b: board.bottom }, frame: board.x - wrap.x, step,
+        a: ink(span("coord-files", 0)), h: ink(span("coord-files", 7)),
+        r8: ink(span("coord-ranks", 0)), r1: ink(span("coord-ranks", 7)),
+        aInk: getComputedStyle(span("coord-files", 0)).color, bInk: getComputedStyle(span("coord-files", 1)).color,
+        r8Ink: getComputedStyle(span("coord-ranks", 0)).color,
+        light: tok("--sq-light"), dark: tok("--sq-dark"),
+        gauge, wrapX: wrap.x,
+      };
+    });
+    await ctx.close();
+    return { rects, geo, errs };
+  };
+  for (const [w, h] of [[1200, 900], [600, 900]]) {
+    const out = await rectsFor(w, h, false, "wood");
+    const inn = await rectsFor(w, h, true, "wood");
+    assert(new Set(out.rects).size === 1, `${w}×${h} 坐标盘外:棋盘矩形在三个页签之间逐像素不变(${[...new Set(out.rects)].join(" / ")})`);
+    assert(new Set(inn.rects).size === 1, `${w}×${h} 坐标盘内:同样逐像素不变(${[...new Set(inn.rects)].join(" / ")})`);
+    assert(inn.geo.frame < out.geo.frame && inn.geo.step > out.geo.step,
+      `${w}×${h} 盘内时外框收窄(${out.geo.frame} → ${inn.geo.frame}px),格子随之变大(${out.geo.step.toFixed(1)} → ${inn.geo.step.toFixed(1)})`);
+    const g = inn.geo, s = g.step, B = g.board;
+    // a in a1's bottom-right quarter, h in h1's; 8 in a8's top-left quarter, 1 in a1's
+    const inQuarter = (k, col, row, right, bottom) => {
+      const x0 = B.x + col * s, y0 = B.y + row * s;
+      const qx = right ? [x0 + s / 2, x0 + s] : [x0, x0 + s / 2];
+      const qy = bottom ? [y0 + s / 2, y0 + s] : [y0, y0 + s / 2];
+      return k.x >= qx[0] - 0.5 && k.r <= qx[1] + 0.5 && k.y >= qy[0] - 0.5 && k.b <= qy[1] + 0.5;
+    };
+    assert(inQuarter(g.a, 0, 7, true, true) && inQuarter(g.h, 7, 7, true, true),
+      `${w}×${h} 盘内:a–h 在第一横排格子的右下角`);
+    assert(inQuarter(g.r8, 0, 0, false, false) && inQuarter(g.r1, 0, 7, false, false),
+      `${w}×${h} 盘内:1–8 在 a 列格子的左上角`);
+    assert(g.aInk === g.light && g.bInk === g.dark && g.r8Ink === g.dark,
+      `${w}×${h} 盘内:字色与所在格子反色(a1 深格写浅色 ${g.aInk},b1 浅格写深色 ${g.bInk},a8 浅格写深色 ${g.r8Ink})`);
+    const gaugeOk = g.gauge.r <= B.x + 0.5 && g.gauge.y >= B.y - 0.5 && g.gauge.b <= B.b + 0.5;
+    assert(gaugeOk, `${w}×${h} 盘内:竖评估条仍在棋盘左侧、与格子同高(条 ${g.gauge.x.toFixed(0)}–${g.gauge.r.toFixed(0)},格子从 ${B.x.toFixed(0)} 起)`);
+    assert(!out.errs.length && !inn.errs.length, `${w}×${h} 坐标两种位置:没有页面异常`);
+  }
+  // a light theme: same rules, its own square colours
+  const day = await rectsFor(1200, 900, true, "day");
+  assert(day.geo.aInk === day.geo.light && day.geo.bInk === day.geo.dark, `日间主题盘内:字色取这套主题自己的格子色(${day.geo.aInk} / ${day.geo.bInk})`);
+
+  // the tab fade: one pane drawn, fading in over --dur-base; none under reduced motion
+  for (const reduced of [false, true]) {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: reduced ? "reduce" : "no-preference" });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+    });
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+    const r = await page.evaluate(() => {
+      document.getElementById("tab-record").click();
+      const shown = ["play", "setup", "record"].filter((t) => !document.getElementById("pane-" + t).hidden);
+      const cs = getComputedStyle(document.getElementById("pane-record"));
+      const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-base").trim();
+      const ms = (v) => (/ms$/.test(v) ? parseFloat(v) : parseFloat(v) * 1000);
+      return { shown, name: cs.animationName, dur: cs.animationDuration, base, same: ms(cs.animationDuration) === ms(base), durMs: ms(cs.animationDuration) };
+    });
+    if (!reduced) {
+      assert(r.shown.length === 1 && r.name === "pane-in" && r.same,
+        `页签切换:只画新窗格(${r.shown.join(",")}),它用 pane-in 淡入,时长就是 --dur-base(${r.dur} / ${r.base})`);
+    } else {
+      assert(r.shown.length === 1 && r.durMs <= 1,
+        `减少动态效果:页签切换不淡入(${r.dur})`);
+    }
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

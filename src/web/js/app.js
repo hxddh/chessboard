@@ -354,6 +354,8 @@ import { createStore } from "./store.js";
       /** 6.0 (v6-plan Q2.8 / Q2.6): the level, the frame labels, the men, the engine knobs */
       volume: 100,
       coordsOn: true,
+      /** v7-8-plan §5: coordinates in the corner squares instead of on the frame */
+      coordsInside: false,
       blindfold: false,
       hash: 32,
       multipv: 1,
@@ -1395,6 +1397,7 @@ import { createStore } from "./store.js";
       if (Audio2.SOUND_SETS.includes(s.soundSet)) Audio2.setSoundSet(store.ui.soundSet = s.soundSet);
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
       if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
+      if (typeof s.coordsIn === "boolean") store.ui.coordsInside = s.coordsIn;
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
@@ -1422,7 +1425,7 @@ import { createStore } from "./store.js";
   function saveSettings() {
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
         followSystem: store.ui.followSystem, textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         soundSet: store.ui.soundSet }));
     } catch (_) {}
@@ -7545,6 +7548,13 @@ import { createStore } from "./store.js";
       b.setAttribute("aria-pressed", on ? "true" : "false");
     };
     sw("opt-coords", store.ui.coordsOn);
+    // where they are printed only matters while they are printed at all
+    const rowCoordsAt = document.getElementById("row-coords-at");
+    if (rowCoordsAt) rowCoordsAt.hidden = !store.ui.coordsOn;
+    document.querySelectorAll("#coords-seg button").forEach((b) => b.classList.toggle("active", (b.dataset.coords === "in") === store.ui.coordsInside));
+    // the frame narrows with them (styles.css #app[data-coords="in"]); an
+    // attribute on #app because the board rect is the layout's, not the canvas's
+    appEl.setAttribute("data-coords", store.ui.coordsOn && store.ui.coordsInside ? "in" : "out");
     sw("opt-softmark", store.ui.showSoftMark);
     sw("opt-blind", store.ui.blindfold);
     sw("opt-follow", store.ui.followSystem);
@@ -10211,6 +10221,14 @@ import { createStore } from "./store.js";
   };
   document.getElementById("opt-coords").onclick = () => {
     store.ui.coordsOn = !store.ui.coordsOn;
+    saveSettings();
+    syncSettingsUI();
+    draw();
+  };
+  document.getElementById("coords-seg").onclick = (ev) => {
+    const b = ev.target.closest("button[data-coords]");
+    if (!b || (b.dataset.coords === "in") === store.ui.coordsInside) return;
+    store.ui.coordsInside = b.dataset.coords === "in";
     saveSettings();
     syncSettingsUI();
     draw();

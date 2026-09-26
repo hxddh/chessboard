@@ -344,9 +344,21 @@
           </div>
           <div class="setting-row">
             <span class="setting-k" data-i18n="side.coords">坐标</span>
-            <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘边框上标出 a–h 与 1–8" data-i18n-title="tip.coords">
+            <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘上标出 a–h 与 1–8" data-i18n-title="tip.coords">
               <span class="switch-knob"></span>
             </button>
+          </div>
+          <!-- v7-8-plan §5: printed on the frame (as since 1.x) or in the
+               corner squares, the way Lichess does it — a–h in the first
+               rank, 1–8 in the a-file, each in the other square colour. The
+               frame narrows to match; the board rect then depends on this
+               option and on the window, never on the tab. -->
+          <div class="setting-row stack" id="row-coords-at">
+            <span class="setting-k" data-i18n="side.coordsAt">坐标位置</span>
+            <div class="theme-row" id="coords-seg" role="group" aria-label="坐标位置" data-i18n-aria="side.coordsAt">
+              <button type="button" data-coords="out" class="active" data-i18n="coords.out">盘外</button>
+              <button type="button" data-coords="in" data-i18n="coords.in">盘内</button>
+            </div>
           </div>
           <div class="setting-row">
             <span class="setting-k" data-i18n="side.softMark">存疑标注</span>
