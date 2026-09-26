@@ -167,3 +167,36 @@ export function measureMarks(css) {
   }
   return out;
 }
+
+/**
+ * 7.8 §6: how colourful each mark is where it is brightest — composited over
+ * the LIGHT square — as CIELAB chroma C* = √(a*² + b*²).
+ *
+ * The hue term above keeps a mark one colour on both squares; it says nothing
+ * about how loud that colour is. On 7.7 the wood last-move tint was the right
+ * hue on both squares and a bright lime on the light one (C* 54). Lichess's
+ * default brown board, measured the same way (rgba(155,199,0,.41) over
+ * #f0d9b5), comes to C* 52.4 at a yellower hue; LAST_CHROMA_CEILING sits a
+ * tenth under that reference rather than copying it.
+ */
+export const LICHESS_LAST = { mark: { r: 155, g: 199, b: 0, a: 0.41 }, light: { r: 240, g: 217, b: 181, a: 1 } };
+export const LAST_CHROMA_CEILING = 47;
+
+/** C* of a composite, one decimal. */
+export function chroma(c) {
+  const l = lab(c);
+  return r1(Math.hypot(l.a, l.b));
+}
+
+/** {[board]: {[mark]: C* over the light square}} from the stylesheet text. */
+export function markChroma(css) {
+  const steps = markSteps(css);
+  const out = {};
+  for (const board of BOARDS) {
+    const blk = boardBlock(css, board);
+    const L = parseColour(tokenIn(blk, "--sq-light"), steps);
+    out[board] = {};
+    for (const k of MARKS) out[board][k] = chroma(over(parseColour(tokenIn(blk, "--sq-" + k), steps), L));
+  }
+  return out;
+}

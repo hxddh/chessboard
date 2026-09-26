@@ -369,6 +369,12 @@
             </button>
           </div>
           <div class="setting-row">
+            <span class="setting-k" data-i18n="side.engineArrows">显示引擎箭头</span>
+            <button type="button" class="switch" id="opt-engine-arrows" aria-pressed="true" title="持续分析与复盘时，把引擎前三条线的第一步画成棋盘上的箭头" data-i18n-title="tip.engineArrows">
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+          <div class="setting-row">
             <span class="setting-k" data-i18n="side.blindfold">盲棋</span>
             <button type="button" class="switch" id="opt-blind" aria-pressed="false" title="不画棋子，只画标记 —— 靠记忆下" data-i18n-title="tip.blindfold">
               <span class="switch-knob"></span>
@@ -734,7 +740,11 @@
           <!-- Focusable and a slider: the pointer already scrubs it, and the
                global ← / → / Home / End replay keys move it once it has focus,
                so the keyboard gets the same time machine (5.1, work package D). -->
-          <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" title="点击跳转到对应局面" data-i18n-title="tip.evalCurve"></canvas>
+          <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve"></canvas>
+          <!-- 7.8 §2: the move and score under the pointer; it replaces the
+               canvas's own title, which would stack a second, stale label
+               on top of this one after a second's rest -->
+          <div class="curve-tip num" id="curve-tip" aria-hidden="true" hidden></div>
           <div class="pv-line num" id="pv-line" hidden></div>
           <!-- 7.8 §3: on a ? / ??, why it was one; and 再试一次 from the
                position before it (built by renderWhyLine / renderRetry). -->

@@ -335,7 +335,11 @@
       --sq-light: #f0d9b5;
       --sq-dark: #b58863;
       --sq-sel: rgba(0, 150, 0, var(--mark-mid));
-      --sq-last: rgba(0, 255, 0, var(--mark-soft));
+      /* 7.8 §6: a yellower, quieter green — over the light square C* 54.1 →
+         43.9 (Lichess's own last move, measured the same way: 52.4), hue
+         term 3.1 → 4.2 (ceiling 5), still ΔE00 18 from the bare square
+         (docs/measured.json markChroma) */
+      --sq-last: rgba(40, 200, 0, var(--mark-soft));
       --sq-check: rgba(245, 70, 55, var(--mark-mid));
       --sq-hint: rgba(5, 165, 255, var(--mark-mid));
       --sq-star: rgba(255, 219, 38, var(--mark-strong));
@@ -350,6 +354,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(5, 165, 255, var(--mark-mid));
+      --engine-arrow-alt: rgba(5, 165, 255, var(--mark-soft));
     }
     [data-board="night"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -381,6 +389,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 80, 230, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 80, 230, var(--mark-soft));
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
     [data-board="day"] {
@@ -414,6 +426,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 125, 255, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 125, 255, var(--mark-soft));
     }
     [data-board="notebook"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow */
@@ -445,6 +461,10 @@
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
       --shape-b: rgba(0, 48, 136, var(--mark-strong));
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(0, 255, 60, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 255, 60, var(--mark-soft));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
     }
 
@@ -2483,7 +2503,8 @@
     }
 
     /* --- review: the evaluation curve, the bar, and the accuracy line --- */
-    #eval-wrap { margin: 8px 0 2px; }
+    /* relative: the curve's hover label is placed against it */
+    #eval-wrap { margin: 8px 0 2px; position: relative; }
     .pv-line {
       margin-top: 6px;
       font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
@@ -2493,12 +2514,44 @@
        can rest, and while it rests there the board plays the line that far.
        Same ink as the prose line it replaced — the affordance is the border
        appearing under the cursor, not a row of buttons shouting. */
-    #pv-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; }
+    /* 7.8 §2: the analysis desk — the review's #pv-line and 持续分析's
+       #live-line are one shape. A head (what, how deep, and 存为变着), then
+       one row per engine line, numbered 1 2 3: a bold score box and the
+       moves, on ONE line, cut with an ellipsis where the panel ends (Lichess's
+       desk). Each line used to wrap to two rows behind 「第 1 线 · 胜率 67%」. */
+    #pv-line, #live-line { white-space: normal; overflow: visible; }
+    .pv-head { display: flex; align-items: center; gap: 8px; }
+    .pv-head .pv-act { margin-left: auto; }
     .pv-label { margin-right: 2px; }
-    /* 6.0: the other engine lines sit under the principal one as read-only
-       rows; a chip that cannot be previewed is a span, not a button */
-    .pv-alt-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; margin-top: 4px; }
-    .pv-chip.pv-alt { cursor: default; opacity: .8; }
+    .pv-row {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .pv-row > * { vertical-align: middle; }
+    /* every box in a row is one fixed height, whatever it holds: a chip with
+       a figurine in it was 0.6px taller than one without, so a line that
+       changed from 1.e4 e5 2.Nf3 to 1.d4 d5 2.c4 moved every chip in the row
+       under the pointer (measured, review e2e 7.6 §2 (c)) */
+    .pv-row .pv-chip, .pv-eval { display: inline-flex; align-items: center; justify-content: center; height: 1.75em; }
+    .pv-row .pv-chip { font-size: 0.75rem; }
+    .pv-no {
+      display: inline-block; width: 12px; margin-right: 2px;
+      font-size: 0.6875rem; color: var(--muted);
+    }
+    /* the score, from White's side: a light box when White is better, a dark
+       one when Black is — the gauge's two ends. The win chance is its tooltip. */
+    .pv-eval {
+      display: inline-block; min-width: 42px; margin-right: 4px; padding: 2px 4px;
+      border-radius: var(--radius-sm); text-align: center;
+      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
+      color: var(--muted); box-shadow: inset 0 0 0 1px var(--line);
+    }
+    .pv-eval:empty::before { content: "\00a0"; }
+    .pv-eval.is-white { background: var(--side-white); color: var(--side-black); }
+    .pv-eval.is-black { background: var(--side-black); color: var(--side-white); }
+    /* a press lands on the chip itself, never on the glyph inside it that a
+       frame may replace (7.6's rule, v7-6-plan §2) */
+    .pv-chip > * { pointer-events: none; }
     .pv-chip {
       font: inherit; font-size: 0.75rem; line-height: var(--lh-tight);
       color: var(--text); background: transparent;
@@ -2542,14 +2595,29 @@
     .review-bank:hover:not(:disabled) { border-style: solid; border-color: var(--accent); color: var(--accent); }
     /* already banked: a statement, not an offer */
     .review-bank:disabled { cursor: default; color: var(--muted); border-style: solid; }
+    /* 7.8 §2: 120px, Lichess's is about 150. At 60 a game with a lost rook
+       in it was a line two pixels off the axis for most of its length. */
     #eval-curve {
       display: block;
       width: 100%;
-      height: 60px;
+      height: 120px;
       border-radius: var(--radius-sm);
       background: var(--card);
       border: 1px solid var(--card-border);
     }
+    /* 7.8 §2: what the pointer is over on the curve — move and score — above
+       the curve at the pointer's x. Not interactive: it must never be what
+       a press lands on. */
+    .curve-tip {
+      position: absolute; top: 0; z-index: 3;
+      transform: translate(-50%, calc(-100% - 4px));
+      padding: 2px 6px; border-radius: var(--radius-sm);
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--panel-border);
+      font-size: 0.75rem; line-height: var(--lh-tight); white-space: nowrap;
+      pointer-events: none;
+    }
+    .curve-tip-hint { color: var(--muted); margin-left: 6px; }
     /* The difficulty row is two scales, so it is labelled as two. */
     .diff-group {
       display: block; margin: 6px 0 4px;
@@ -2621,9 +2689,10 @@
     .eval-bar.is-unmeasured .eval-bar-fill { background: var(--muted); }
     /* the number, at the end of the side that is ahead — in the frame-high
        strip above or below the squares, right-aligned to the gauge */
+    /* 7.8 §2: one step up the type scale (11 → 12px) */
     .eval-bar-text {
       position: absolute; right: 0;
-      font-size: 0.6875rem; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
       color: var(--muted); white-space: nowrap;
       bottom: calc(100% + 2px);
     }
