@@ -46,9 +46,36 @@ export const OUT = path.join(root, "src/web/js/bundle.js");
  * from app.js's import graph — that last part is what keeps it out of the
  * main bundle, and test-chess.mjs asserts it stays that way.
  */
+//
+// v8-0-plan F5 finished what 6.1 planned: the languages, the mined puzzles
+// and the second piece set are chunks too (src/web/js/lazy-content.js says
+// who needs which, and when), and `boot` is the one chunk index.html itself
+// loads — ahead of bundle.js, to put the saved language's chunk on the page
+// before the first frame. `min` is sync-dist.mjs's "was it really built"
+// floor, per chunk now that they are not all the ECO table's size.
 export const CHUNKS = [
-  { entry: "src/web/js/eco.js", out: "src/web/js/chunk-eco.js", global: "ECO_BY_KEY" },
+  { entry: "src/web/js/eco.js", out: "src/web/js/chunk-eco.js", global: "ECO_BY_KEY", min: 400000 },
+  { entry: "src/web/js/lang-en.js", out: "src/web/js/chunk-lang-en.js", global: "CHESS_I18N_EN", min: 150000 },
+  { entry: "src/web/js/lang-ja.js", out: "src/web/js/chunk-lang-ja.js", global: "CHESS_I18N_JA", min: 200000 },
+  { entry: "src/web/js/puzzles-mined.js", out: "src/web/js/chunk-mined.js", global: "MINED_PUZZLES", min: 150000 },
+  { entry: "src/web/js/pieces-merida.js", out: "src/web/js/chunk-merida.js", global: "MERIDA_PIECE_SVGS", min: 30000 },
+  { entry: "src/web/js/boot.js", out: "src/web/js/chunk-boot.js", global: null, boot: true, min: 500 },
 ];
+
+/**
+ * The first-paint budget (v8-0-plan F5): bundle.js at 7.9.0 was 1,709,973
+ * bytes, and F5's acceptance is "at least 40% smaller" — met when F5 landed,
+ * at 1,024,644 (40.1% off). test-chess.mjs fails the build past this line.
+ *
+ * The line itself sits at 70%, not 60%: the rest of 8.0 adds code to the
+ * bundle (a home page, a review view, a database), and a line 1.3 KB above
+ * the day it was drawn would stop the first of them. What the budget exists
+ * to catch — a chunk's payload inlined again by a stray static import — is
+ * caught per chunk by the probe checks beside it in test-chess.mjs; this line
+ * is the backstop for a whole language's content coming back (~200 KB each).
+ */
+export const BUNDLE_BYTES_BEFORE_F5 = 1709973;
+export const BUNDLE_BUDGET = Math.floor(BUNDLE_BYTES_BEFORE_F5 * 0.7);
 
 /**
  * Load esbuild, or explain how to get it.

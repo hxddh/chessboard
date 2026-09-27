@@ -506,10 +506,8 @@ if (hasTab && REAL.length) {
   for (const f of ["openings.js", "drills.js"]) {
     vm.runInContext(compileModuleSync(path.join(ROOT, "js", f)), data, { filename: "module" });
   }
-  const rows = data.ChessDrills.drillLines(data.CHESS_OPENINGS)
-    .map(([eco, nameId, seq]) => ({ eco, nameId, seq, line: seq.split(" ") }))
-    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1
-      : (data.CHESS_OPENING_NAMES[a.nameId] || "").localeCompare(data.CHESS_OPENING_NAMES[b.nameId] || "", "zh")));
+  const rows = data.ChessDrills.orderDrills(data.ChessDrills.drillLines(data.CHESS_OPENINGS)
+    .map(([eco, nameId, seq]) => ({ eco, nameId, seq, line: seq.split(" ") })), data.CHESS_OPENING_NAMES);
   const first = rows[0];
   const firstId = data.ChessDrills.drillId(first.eco, first.seq);
   // the canvas reader labels cells as if unflipped, so on a flipped board a
@@ -575,23 +573,70 @@ if (hasTab && REAL.length) {
   assert(/执黑/.test(taskB), "题面写明这是执黑练习", taskB.trim());
 
   // a wrong reply is taken back, with the coach naming why
-  const wrong = g2.moves({ verbose: true }).find((m) => m.san !== first.line[1]);
+  // not any book reply either: the tree takes every book move (7.6), and after
+  // 1.e4 the first legal reply a Black could pick may well be one of them
+  const bookReplies = new Set(data.CHESS_OPENINGS.map((r) => r[2].split(" "))
+    .filter((sans) => sans[0] === first.line[0] && sans[1]).map((sans) => sans[1]));
+  const wrong = g2.moves({ verbose: true }).find((m) => m.san !== first.line[1] && !bookReplies.has(m.san));
   await moveB(wrong.from, wrong.to);
   assert(await occ() === mirror(squaresOf(g2.fen())), "应错被退回,棋盘不留痕");
   // 7.7: on the puzzle's feedback card (a cross, 再想想, the coach's reason)
   const why = await pg.evaluate(() => document.getElementById("puzzle-fb-sub").textContent.trim());
   assert(why.length > 4, "应错有教练的说法,不是无声拒绝", why);
 
-  // answer the whole line: each Black book move, White's reply plays itself
-  for (let i = 1; i < first.line.length; i += 2) {
-    const m = g2.moves({ verbose: true }).find((x) => x.san === first.line[i]);
+  // answer the whole line: each Black book move, White's reply plays itself.
+  // White's reply is weighted among the book's children (6.0), so it is read
+  // off the board rather than assumed to be the line's; Black answers with a
+  // book move from wherever that leads, until the book runs out (a leaf).
+  const walked = [first.line[0]];
+  const bookNext = () => {
+    const nx = [];
+    for (const [, , seq] of data.CHESS_OPENINGS) {
+      const sans = seq.split(" ");
+      if (sans.length > walked.length && walked.every((x, i) => sans[i] === x)) nx.push(sans[walked.length]);
+    }
+    return nx.includes(first.line[walked.length]) ? first.line[walked.length] : nx[0];
+  };
+  for (let guard = 0; guard < 40; guard++) {
+    const san = bookNext();
+    if (!san) break;
+    const m = g2.moves({ verbose: true }).find((x) => x.san === san);
     await moveB(m.from, m.to);
-    g2.move(first.line[i]);
-    if (i + 1 < first.line.length) g2.move(first.line[i + 1]);
+    g2.move(san); walked.push(san);
+    if (!bookNext()) break;
+    // White's reply plays itself after a pause, and WebKit on CI can be
+    // slower than the fixed wait (#85): poll until the board has moved on
+    // from the position Black just made, rather than reading it once
+    const mine = mirror(squaresOf(g2.fen()));
+    let seen = await occ();
+    for (let t = 0; t < 40 && seen === mine; t++) { await pg.waitForTimeout(100); seen = await occ(); }
+    // the reply by name, from the board's live region (announceLastMove):
+    // occupancy alone cannot tell two captures by the same piece apart —
+    // after …Nxe4, 9.Nxe4 and 9.Nxf7 both leave g5 and land on an occupied
+    // square, and guessing the wrong one lost the line (CI, #85)
+    const said = ((await pg.evaluate(() => document.getElementById("board-live")?.textContent || "")).trim().split(/\s+/).pop() || "");
+    const legal = g2.moves();
+    const reply = legal.includes(said) && (() => { const t = new Chess(g2.fen()); t.move(said); return mirror(squaresOf(t.fen())) === seen; })() ? said
+      : legal.find((w) => { const t = new Chess(g2.fen()); t.move(w); return mirror(squaresOf(t.fen())) === seen; });
+    if (!reply) break;
+    g2.move(reply); walked.push(reply);
   }
-  await pg.waitForTimeout(600);
-  const after = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
-  assert(!!after.solved[firstId + ":b"], "应完整条线,解出记在 `:b` 键上");
+  // The solve is recorded once the line's last move has landed: poll for it
+  // (up to 4 s) instead of trusting one fixed pause. White's replies are weighted among the book's children, so the walk can
+  // leave the puzzle's own line (after 1.e4 e5 2.Nf3 Nc6 it may go 3.Bb5).
+  // Then the app credits the line actually played (the leaf's drill, and any
+  // shorter drill the path completed) — so the key to expect is the opened
+  // puzzle's only if the walk stayed on its line; otherwise any Black key.
+  const stayed = first.line.every((san, i) => i >= walked.length || walked[i] === san);
+  const credited = (a) => a && a.solved && (stayed ? !!a.solved[firstId + ":b"]
+    : Object.keys(a.solved).some((k) => k.endsWith(":b") && a.solved[k]));
+  let after = null;
+  for (let t = 0; t < 40; t++) {
+    await pg.waitForTimeout(100);
+    after = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+    if (credited(after)) break;
+  }
+  assert(credited(after), "应完整条线,解出记在 `:b` 键上" + (stayed ? "" : "(白方应着离开了这道题的线,记在实际走完的那条线上)"), walked.join(" "));
   assert(!after.solved[firstId], "……白方那把椅子的进度一格没动");
 
   // back on White's side: no pre-played move, and the row is op-only (P3)
@@ -1138,6 +1183,130 @@ if (hasTab && REAL.length) {
   }
   assert(line === "B20 · 西西里防御：Bowdler Attack", "开局书外的 B20:族名说中文,变例名保留英文", line);
   await ctx5.close();
+}
+
+// --- v8-0-plan F5:分块之后,首帧仍是存下的语言 ------------------------------
+// 英文、日文(字典 + 课文题名开局名)和挖掘题都搬出了 bundle.js。index.html
+// 先跑 chunk-boot.js,按存下的设置把要用的分块写在 bundle.js 前面。这里在
+// DOMContentLoaded 那一刻读页面 —— bundle 同步跑完、任何「晚到再补」都还没
+// 发生的时刻:那时标题和界面字若还是中文,就是闪了一帧错的语言。
+{
+  const han = /[一-鿿]/;
+  for (const [lang, mode, want] of [
+    ["en", "puzzle", ["chunk-lang-en.js", "chunk-mined.js"]],
+    ["ja", "pvp", ["chunk-lang-en.js", "chunk-lang-ja.js"]],
+    ["zh-CN", "pvp", []],
+  ]) {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+    await c.addInitScript(([l, m]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: m, langId: l, sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      document.addEventListener("DOMContentLoaded", () => {
+        const res = performance.getEntriesByType("resource").map((r) => r.name.split("/").pop());
+        window.__dcl = {
+          title: document.title,
+          lang: document.documentElement.lang,
+          undo: (document.querySelector("[data-i18n]") || {}).textContent || "",
+          chunks: res.filter((n) => /^chunk-/.test(n)),
+          mined: !!window.MINED_PUZZLES,
+          pz: (document.getElementById("puzzle-progress") || {}).textContent || "",
+        };
+      });
+    }, [lang, mode]);
+    const pg = await c.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(1500);
+    const r = await pg.evaluate(() => Object.assign({}, window.__dcl, {
+      later: performance.getEntriesByType("resource").map((e) => e.name.split("/").pop()).filter((n) => /^chunk-/.test(n)),
+      pzLater: (document.getElementById("puzzle-progress") || {}).textContent || "",
+    }));
+    assert(r.lang === lang, `F5 ${lang}:DOMContentLoaded 时 <html lang> 已经是 ${lang}`, r.lang);
+    if (lang === "zh-CN") assert(han.test(r.title), "F5 zh-CN:首帧标题是中文", r.title);
+    else if (lang === "en") assert(!han.test(r.title) && !han.test(r.undo), "F5 en:首帧标题和界面字没有一帧中文", r.title + " / " + r.undo);
+    // 日文也写汉字,看假名
+    else assert(/[぀-ヿ]/.test(r.title) && /[぀-ヿ]/.test(r.undo), "F5 ja:首帧标题和界面字已是日文", r.title + " / " + r.undo);
+    // which chunks, not in what order: WebKit lists two script fetches that
+    // start together in the other order from Chromium (CI, #85)
+    const early = r.chunks.filter((n) => n !== "chunk-boot.js").sort();
+    assert(JSON.stringify(early) === JSON.stringify([...want].sort()),
+      `F5 ${lang}/${mode}:首帧前取的分块正好是要用的那几个`, early.join(", ") || "(无)");
+    if (mode === "puzzle") {
+      assert(r.mined && r.pz === r.pzLater, "F5:以做题模式启动,挖掘题在首帧前就在,题数不会在首帧后跳一下", r.pz + " → " + r.pzLater);
+    } else {
+      assert(!r.mined && r.later.includes("chunk-mined.js"), "F5:其余模式首帧不带挖掘题,首帧后才取", r.later.join(", "));
+    }
+    await c.close();
+  }
+}
+
+// Codex on #85: a language whose chunk is still on its way must not land
+// after the player has already picked another one. Red before: 日本語 (slow
+// chunk) then back to 中文 — the Japanese load finished last and switched the
+// page, and the saved setting, to Japanese.
+{
+  const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await c.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.route(/chunk-lang-(en|ja)\.js/, async (route) => { await new Promise((r) => setTimeout(r, 1200)); await route.continue(); });
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1200);
+  await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="ja"]').click());
+  await pg.waitForTimeout(100);
+  await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="zh-CN"]').click());
+  await pg.waitForTimeout(2500);
+  const r = await pg.evaluate(() => ({ lang: document.documentElement.lang,
+    saved: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").langId }));
+  assert(r.lang === "zh-CN" && r.saved === "zh-CN", "F5:换到还在加载的语言后又换回中文,晚到的分块不再把界面切过去", JSON.stringify(r));
+  await c.close();
+}
+
+// --- v8-0-plan §5: 暂定评级标「?」,开局题从常见开局开始 -------------------
+// Red before §5: the record page printed 「1104 ±200」 for a rating two
+// answers old, and the opening list began at A01 Nimzo-Larsen (1.b3).
+{
+  for (const [rd, want, label] of [[200, "1104?", "暂定"], [60, "1104", "稳定"]]) {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+    await c.addInitScript((d) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "record", soundOn: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+      const now = Date.now();
+      localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "m1",
+        tally: { m1: { miss: 1, solve: 2 } }, rating: { r: 1104, rd: d, vol: 0.06 }, ratedAt: now, rhist: [{ t: now - 1000, r: 1180 }, { t: now, r: 1104 }] }));
+    }, rd);
+    const pg = await c.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(1000);
+    await pg.click("#tab-record").catch(() => {});
+    await pg.waitForTimeout(300);
+    const meta = await pg.evaluate(() => (document.getElementById("rating-meta") || {}).textContent || "");
+    const m = /做题评级 (\S+)/.exec(meta);
+    assert(!!m && m[1] === want, `§5 ${label}评级(RD ${rd})写作「${want}」`, meta);
+    await c.close();
+  }
+  // the opening list opens on the Italian Game, not on 1.b3
+  const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
+  });
+  const pg = await c.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1000);
+  const first = await pg.evaluate(() => {
+    const cur = document.querySelector("#puzzle-list .lesson-item.current");
+    return cur ? cur.textContent.trim() : "";
+  });
+  assert(/^1\. C50 意大利开局/.test(first), "§5 开局题默认第一道是意大利开局", first);
+  await c.close();
 }
 
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));

@@ -1212,15 +1212,20 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       painted: window.__t.painted,
       wired: window.__t.wired,
       start: nav ? nav.startTime : 0,
-      res: performance.getEntriesByType("resource").map((r) => r.name.split("/").pop()),
+      // v8-0-plan F5: with the time each fetch started, so "before the
+      // first paint" is a question the timeline answers
+      res: performance.getEntriesByType("resource").map((r) => ({ name: r.name.split("/").pop(), at: r.startTime })),
     };
   });
   const interactive = Math.round(Math.max(t.painted, t.wired) - t.start);
   assert(interactive < 1000, `首屏到可交互 ${interactive} ms < 1000 ms(棋盘画好 ${Math.round(t.painted)} ms,pointerdown 挂上 ${Math.round(t.wired)} ms)`);
   // 6.1 把 ECO 表(462 KB)搬出了首屏包,改成用到才取(js/chunk-eco.js)。
   // 它要是又回到首屏里,上面那个数字会慢慢爬回去而没人知道为什么。
-  assert(!t.res.some((n) => /^chunk-/.test(n)),
-    `……而且首屏一个 chunk 都没取(取了:${t.res.join(", ")})`);
+  // v8-0-plan F5 起 index.html 先跑 chunk-boot.js(几百字节,只负责替已存
+  // 的语言写 script 标签);中文用户它什么都不写。挖掘题在首屏之后才取。
+  const early = t.res.filter((r) => /^chunk-/.test(r.name) && r.at < t.painted && r.name !== "chunk-boot.js");
+  assert(early.length === 0,
+    `……而且首屏前除 chunk-boot.js 外一个 chunk 都没取(取了:${early.map((r) => r.name).join(", ")})`);
   // 「可交互」得是真的:这时候点下去,棋真的能走
   await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const c = await page.evaluate(() => {
@@ -1235,6 +1240,85 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     [...document.querySelectorAll(".move-list .mlmove")].map((m) => m.getAttribute("aria-label")).join(" "));
   assert(played === "e4", `……而「可交互」是真的可交互:点下去棋就走了(「${played}」)`);
   assert(errs.length === 0, `首屏:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- v8-0-plan F5:十二张棋子图全部解码完,只重画一次 -------------------------
+//
+// 7.9 之前每张图 onload 都清空精灵缓存、整盘重画:首次加载一共画 12 次,
+// 无 GPU 的环境里每次约 150 ms,全部排在 DOMContentLoaded 之前。现在十二张
+// 一起 decode(),完了换上、画一次。计数来自 board.js 本身
+// (window.__chess.board().imageRedraws);整盘重画的总数另外从 canvas 这边
+// 数一遍(每次 draw() 都从 a8 那一格的 fillRect(0, 0, …) 开始),两边互证。
+// 换 Merida 也只画一次,而 Merida 是按需取的 chunk。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    window.__full = 0;
+    const real = CanvasRenderingContext2D.prototype.fillRect;
+    CanvasRenderingContext2D.prototype.fillRect = function (x, y, ...rest) {
+      if (this.canvas && this.canvas.id === "board" && x === 0 && y === 0) window.__full++;
+      return real.call(this, x, y, ...rest);
+    };
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForFunction(() => window.__chess && window.__chess.board && window.__chess.board().imageRedraws >= 1,
+    null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const r = await page.evaluate(() => ({
+    image: window.__chess && window.__chess.board ? window.__chess.board().imageRedraws : -1,
+    full: window.__full,
+  }));
+  assert(r.image === 1, `首次加载:棋子图解码完只重画了一次(${r.image} 次)`);
+  // 12 张图各画一次时这里是 17;留出启动本身那几次 sync()
+  assert(r.full > 0 && r.full < 12, `首次加载:整盘重画 ${r.full} 次 < 12(每张图一次的时候是 17)`);
+  // 换成 Merida:按需取 chunk-merida.js,解码完再一次画
+  await page.evaluate(() => { const b = document.querySelector('[data-pieces="merida"]'); if (b) b.click(); });
+  await page.waitForFunction(() => window.__chess.board().imageRedraws >= 2, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const m = await page.evaluate(() => ({
+    image: window.__chess.board().imageRedraws,
+    fetched: performance.getEntriesByType("resource").some((e) => /chunk-merida\.js$/.test(e.name)),
+  }));
+  assert(m.fetched && m.image === 2, `换 Merida:取了 chunk-merida.js,解码完只多画一次(共 ${m.image} 次)`);
+  assert(errs.length === 0, `棋子图:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// Codex on #85: the first decode of the standard set finishing while Merida
+// is picked (its chunk still on the way), then a switch back to standard —
+// red before: the finished decode was dropped as superseded but still marked
+// the standard set as "decoding", so the switch back returned at once and the
+// board stayed on the glyph fallback for good.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    // a slow decode, so the switch can land while it runs
+    const real = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function () {
+      return new Promise((r) => setTimeout(r, 1200)).then(() => real.call(this));
+    };
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.route(/chunk-merida\.js/, async (route) => { await new Promise((r) => setTimeout(r, 5000)); await route.continue(); });
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(200);
+  await page.evaluate(() => document.querySelector('[data-pieces="merida"]').click());
+  await page.waitForTimeout(1800);   // the standard set's decode ends, Merida still loading
+  await page.evaluate(() => document.querySelector('[data-pieces="cburnett"]').click());
+  await page.waitForFunction(() => window.__chess.board().imageRedraws >= 1, null, { timeout: 4000 }).catch(() => {});
+  const n = await page.evaluate(() => window.__chess.board().imageRedraws);
+  assert(n >= 1, `标准→梅里达(还在取)→标准:标准棋子图照样装上(重画 ${n} 次)`);
+  assert(errs.length === 0, `棋子图来回切:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
 
@@ -1528,6 +1612,152 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   assert(white, "双人、自动转向开着:开局白方在下方");
   assert(errs.length === 0, `新对局对话框:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
+}
+
+// --- v8-0-plan §5: the small fixes that live on the board ------------------
+// Red before §5: (a) at move 0 no control on screen opened the new-game
+// dialog — 新局 waits for a game to end; (b) 「我会下棋」 closed the guide on a
+// game against 初级 that nobody had been asked about; (c) 悔棋 stood beside a
+// mated king, and Z took the mate back.
+{
+  const seeded = async (mode) => {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript((m) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: m, difficulty: "normal", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+    }, mode);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1000);
+    await page.click("#pick-cancel", { timeout: 800 }).catch(() => {});
+    return { ctx, page, errs };
+  };
+  const ngState = (page) => page.evaluate(() => ({
+    open: document.getElementById("newgame-modal").classList.contains("show"),
+    focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.diff || ""),
+    plies: document.querySelectorAll(".mlmove").length,
+  }));
+
+  // (a) move 0: a visible way in, in both playing modes
+  for (const [mode, label, focus] of [["ai", "换个对手", "normal"], ["pvp", "新局", "ng-start"]]) {
+    const { ctx, page, errs } = await seeded(mode);
+    const b = await page.evaluate(() => {
+      const e = document.getElementById("idle-new");
+      return e ? { shown: !!e.offsetParent, text: e.textContent.trim() } : null;
+    });
+    assert(!!b && b.shown && b.text === label,
+      `§5 ${mode} 一步未走:棋盘旁有「${label}」可点(${JSON.stringify(b)})`);
+    if (b && b.shown) {
+      await page.click("#idle-new"); await page.waitForTimeout(300);
+      const s = await ngState(page);
+      assert(s.open && s.focus === focus, `§5 ${mode} …点它打开新对局对话框,焦点在 ${focus}(${JSON.stringify(s)})`);
+      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+    }
+    // …and it goes once the game has begun: 本局's 新局 takes over
+    const tap = async (sq) => {
+      const p = await page.evaluate((q) => {
+        const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+        return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * z, y: r.top + (8 - Number(q[1]) + 0.5) * z };
+      }, sq);
+      await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+    };
+    await tap("e2"); await tap("e4"); await page.waitForTimeout(300);
+    const after = await page.evaluate(() => ({
+      idle: !!(document.getElementById("idle-new") || {}).offsetParent,
+      btnNew: !!document.getElementById("btn-new").offsetParent,
+    }));
+    assert(!after.idle && after.btnNew, `§5 ${mode} 走了一步之后:它让位给「本局」里的新局(${JSON.stringify(after)})`);
+    assert(errs.length === 0, `§5 ${mode}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (b) first launch, 「我会下棋」: the dialog, on the opponent
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    const page = await ctx.newPage();          // nothing seeded: a new install
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    const guide = await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item").length);
+    assert(guide === 2, `§5 新安装:引导里两条路(${guide})`);
+    await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[1].click());
+    await page.waitForTimeout(500);
+    let s = await ngState(page);
+    const pick = await page.evaluate(() => ({
+      guide: document.getElementById("pick-modal").classList.contains("show"),
+      diff: (document.querySelector("#ng-host #diff-seg-engine button.active, #ng-host #diff-seg button.active") || {}).dataset?.diff,
+    }));
+    assert(!pick.guide && s.open, `§5 选「我会下棋」:引导关掉,新对局对话框打开(${JSON.stringify(s)})`);
+    assert(pick.diff === "easy" && s.focus === "easy", `§5 …预选初级,焦点在对手那一行上(${pick.diff} / ${s.focus})`);
+    await page.keyboard.press("Enter"); await page.waitForTimeout(500);
+    s = await ngState(page);
+    const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+    assert(!s.open && set.mode === "ai" && set.difficulty === "easy", `§5 …回车开局:人机、初级(${set.mode} / ${set.difficulty})`);
+    assert(errs.length === 0, `§5 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (c) a finished game: no 悔棋, and Z does not take the mate back
+  {
+    const { ctx, page, errs } = await seeded("pvp");
+    const tap = async (sq) => {
+      const p = await page.evaluate((q) => {
+        const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+        const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+        const f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
+        return { x: r.left + ((flip ? 7 - f : f) + 0.5) * z, y: r.top + ((flip ? 7 - rk : rk) + 0.5) * z };
+      }, sq);
+      await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+    };
+    for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(a); await tap(b); await page.waitForTimeout(250); }
+    const undoShown = () => page.evaluate(() => {
+      const u = document.getElementById("undo");
+      return !!u && !u.hidden && !u.classList.contains("slot-empty");
+    });
+    const r = await page.evaluate(() => ({
+      plies: document.querySelectorAll(".mlmove").length,
+      card: !document.getElementById("go-card").hidden,
+      again: !document.getElementById("go-again").hidden,
+    }));
+    assert(r.plies === 4 && r.card, `§5 愚者杀:四着,结果卡片在(${JSON.stringify(r)})`);
+    assert(!(await undoShown()), "§5 终局之后「悔棋」不在");
+    assert(r.again, "§5 …自己下完的一盘,「再来一盘」还在");
+    await page.keyboard.press("z"); await page.waitForTimeout(300);
+    const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
+    assert(plies === 4, `§5 …按 Z 也不把杀棋收回去(${plies} 着)`);
+    assert(errs.length === 0, `§5 终局:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (d) a game opened from a file, still unfinished: someone's record, so no
+  // 悔棋 either — the finished ones already lost it to the ending itself
+  {
+    const { ctx, page, errs } = await seeded("pvp");
+    await page.evaluate(async () => {
+      const pgn = '[Event "Club"]\n[White "alice"]\n[Black "bob"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 *\n';
+      const dt = new DataTransfer();
+      dt.items.add(new File([pgn], "one.pgn", { type: "application/x-chess-pgn" }));
+      document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      await new Promise((r) => setTimeout(r, 900));
+    });
+    if (await page.evaluate(() => document.getElementById("confirm-modal").classList.contains("show"))) {
+      await page.click("#confirm-ok"); await page.waitForTimeout(500);
+    }
+    const r = await page.evaluate(() => {
+      const u = document.getElementById("undo");
+      return { plies: document.querySelectorAll(".mlmove").length, undo: !!u && !u.hidden && !u.classList.contains("slot-empty") };
+    });
+    assert(r.plies === 4 && !r.undo, `§5 打开的棋谱(未终局):没有「悔棋」(${JSON.stringify(r)})`);
+    await page.keyboard.press("z"); await page.waitForTimeout(300);
+    const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
+    assert(plies === 4, `§5 …按 Z 也不改(${plies} 着)`);
+    assert(errs.length === 0, `§5 打开棋谱:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
 }
 
 await browser.close();

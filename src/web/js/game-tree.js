@@ -16,6 +16,7 @@
  * @module game-tree
  */
 import { Chess } from "./chess.js";
+import { ChessFide } from "./fide.js";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const RESULTS = new Set(["1-0", "0-1", "1/2-1/2", "*"]);
@@ -40,6 +41,35 @@ function createTree(startFen) {
   return { startFen: chess.fen(), nextId: 1, result: null, root: makeNode(0, chess.fen()) };
 }
 
+// v8-0-plan F2: an id → node index and each node's derived facts, kept
+// beside the tree rather than in it. Walking the whole tree per lookup was
+// the right call for the games of 6.0; at 160 plies every commit was paying
+// for dozens of walks, and the replay paths re-derived every position from
+// the SAN list besides. Both caches live in WeakMaps so the tree stays the
+// plain object serialize() writes — nothing here ever reaches a save.
+//
+// The index is rebuilt whenever it cannot vouch for itself (the root was
+// replaced, an id is missing); addMove / deleteNode / renumber — the only
+// code that changes a tree's shape — keep it current or drop it. A node's
+// facts never go stale: its fen and the path above it are fixed for as long
+// as the node exists (promote reorders siblings, it never re-parents).
+const INDEX = new WeakMap();
+const FACTS = new WeakMap();
+
+function indexOf(tree) {
+  let ix = INDEX.get(tree);
+  if (ix && ix.root === tree.root) return ix;
+  ix = { root: tree.root, byId: new Map(), up: new Map() };
+  const stack = [tree.root];
+  while (stack.length) {
+    const n = stack.pop();
+    ix.byId.set(n.id, n);
+    for (const c of n.children) { ix.up.set(c, n); stack.push(c); }
+  }
+  INDEX.set(tree, ix);
+  return ix;
+}
+
 /**
  * Locate a node with the chain of ancestors that leads to it.
  * @returns {{node: object, parent: object|null, path: object[]}|null}
@@ -47,15 +77,21 @@ function createTree(startFen) {
  */
 function find(tree, nodeId) {
   const id = Number(nodeId);
-  const stack = [{ node: tree.root, path: [tree.root] }];
-  while (stack.length) {
-    const { node, path } = stack.pop();
-    if (node.id === id) return { node, parent: path.length > 1 ? path[path.length - 2] : null, path };
-    for (let k = node.children.length - 1; k >= 0; k--) {
-      stack.push({ node: node.children[k], path: path.concat(node.children[k]) });
-    }
-  }
-  return null;
+  let ix = indexOf(tree);
+  let node = ix.byId.get(id);
+  if (!node) { INDEX.delete(tree); ix = indexOf(tree); node = ix.byId.get(id); }
+  if (!node) return null;
+  const parent = ix.up.get(node) || null;
+  return {
+    node, parent,
+    // built on demand: most callers want the node or its parent, and the
+    // chain is the one part that costs the depth of the game
+    get path() {
+      const out = [node];
+      for (let n = ix.up.get(node); n; n = ix.up.get(n)) out.push(n);
+      return out.reverse();
+    },
+  };
 }
 
 function must(tree, nodeId) {
@@ -96,6 +132,8 @@ function addMove(tree, nodeId, move) {
   child.to = mv.to;
   child.promotion = mv.promotion || null;
   node.children.push(child);
+  const ix = INDEX.get(tree);
+  if (ix && ix.root === tree.root) { ix.byId.set(child.id, child); ix.up.set(child, node); }
   return child;
 }
 
@@ -128,6 +166,7 @@ function deleteNode(tree, nodeId) {
   const { node, parent } = must(tree, nodeId);
   if (!parent) throw new Error("game-tree: cannot delete the root");
   parent.children.splice(parent.children.indexOf(node), 1);
+  INDEX.delete(tree);
   return parent;
 }
 
@@ -151,6 +190,66 @@ function pathTo(tree, nodeId) {
 
 function fenAt(node) {
   return node ? node.fen : null;
+}
+
+/**
+ * A fact about the line root → node, worked out once per node and then
+ * looked up (v8-0-plan F2). `step(node, above)` derives the node's value
+ * from its parent's (`above` is undefined at the root); the walk climbs only
+ * as far as the nearest node that already knows, so each move of a growing
+ * game costs one step, not a replay. `slot` names the fact — callers own
+ * their slots and must only cache what cannot change under them.
+ * @returns {*} the node's value, or undefined when there is no such node
+ */
+function derive(tree, nodeId, slot, step) {
+  const hit = find(tree, nodeId);
+  if (!hit) return undefined;
+  const up = indexOf(tree).up;
+  const chain = [];
+  let n = hit.node;
+  while (n && !(FACTS.has(n) && slot in FACTS.get(n))) { chain.push(n); n = up.get(n); }
+  let v = n ? FACTS.get(n)[slot] : undefined;
+  for (let k = chain.length - 1; k >= 0; k--) {
+    v = step(chain[k], v);
+    if (!FACTS.has(chain[k])) FACTS.set(chain[k], {});
+    FACTS.get(chain[k])[slot] = v;
+  }
+  return v;
+}
+
+/**
+ * The repetition key of a node's position — ChessFide.positionKey, so the
+ * placement, side to move, castling rights and an en-passant right only
+ * when the capture is really playable (FIDE 9.2). Cached on the node.
+ */
+function nodeKey(node) {
+  let f = FACTS.get(node);
+  if (!f) FACTS.set(node, (f = {}));
+  if (f.key === undefined) f.key = ChessFide.positionKey(node.fen, null, Chess);
+  return f.key;
+}
+
+/** Plies from the root to the node (root 0). */
+function depthOf(tree, nodeId) {
+  return derive(tree, nodeId, "depth", (n, above) => (above === undefined ? 0 : above + 1));
+}
+
+/**
+ * How many times the node's position has stood on the board along the line
+ * root → node, this time included — what ChessFide.repetitionCount answers
+ * by replaying the SAN list, answered once per node instead.
+ */
+function repetitions(tree, nodeId) {
+  const hit = find(tree, nodeId);
+  if (!hit) return 0;
+  const f = FACTS.get(hit.node);
+  if (f && f.reps !== undefined) return f.reps;
+  const up = indexOf(tree).up;
+  const key = nodeKey(hit.node);
+  let reps = 1;
+  for (let n = up.get(hit.node); n; n = up.get(n)) if (nodeKey(n) === key) reps++;
+  FACTS.get(hit.node).reps = reps;
+  return reps;
 }
 
 function setComment(tree, nodeId, text) {
@@ -233,6 +332,7 @@ function renumber(tree) {
   tree.root.id = 0;
   walk(tree.root);
   tree.nextId = next;
+  INDEX.delete(tree);
   return tree;
 }
 
@@ -272,8 +372,10 @@ function deserialize(json) {
 export const ChessTree = {
   START_FEN, createTree, addMove, promote, promoteToMain, deleteNode, mainline, mainlineSans, pathTo, nodeAt,
   parentOf, fenAt, setComment, setNags, setShapes, toPgnGame, fromPgnGame, renumber, serialize, deserialize,
+  derive, nodeKey, depthOf, repetitions,
 };
 export {
   createTree, addMove, promote, promoteToMain, deleteNode, mainline, mainlineSans, pathTo, nodeAt,
   parentOf, fenAt, setComment, setNags, setShapes, toPgnGame, fromPgnGame, renumber, serialize, deserialize,
+  derive, nodeKey, depthOf, repetitions,
 };

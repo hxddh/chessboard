@@ -220,6 +220,8 @@ src/web/
   js/app.js        # UI 编排(bundle 的入口:import 图从这里出发)
   js/bundle.js     # 生成物（gitignored）：以上 ES 模块打成的单个经典脚本,
                    #   index.html 只加载它和 engine-src.js
+  js/chunk-*.js    # 生成物：按需分块 —— ECO 表、英/日文（字典+内容）、挖掘题、
+                   #   梅里达棋子；chunk-boot.js 在 bundle 之前按存下的设置写入要用的
 src/main.zig
 assets/           # 应用图标(骑士标,assets/logo.svg 为源)
 third_party/stockfish/   # Stockfish.js 19 lite-single（GPLv3）

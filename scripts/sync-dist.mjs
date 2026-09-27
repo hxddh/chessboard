@@ -72,7 +72,9 @@ if (size("js/engine-src.js") <= 2000000) {
 }
 for (const c of CHUNKS) {
   const rel = "js/" + path.basename(c.out);
-  if (size(rel) <= 50000) {
+  // v8-0-plan F5: each chunk names its own floor — the boot script is a few
+  // hundred bytes and the Merida set 34 KB, so one 50 KB line no longer fits
+  if (size(rel) <= c.min) {
     console.error(`FAIL: frontend/dist/${rel} 太小 —— 分块没建出来`);
     process.exit(1);
   }

@@ -28,11 +28,11 @@ vm.createContext(ctx);
 // script and eco-lookup.js reads the global it defines. Loading it into this
 // context first is the same arrangement, and without it every lookup here
 // answers null, which is exactly what a missing chunk looks like.
-for (const m of ["chess.js", "eco.js", "eco-lookup.js", "openings.js", "openings-en.js", "openings-ja.js", "openings-family-zh.js", "openings-family-ja.js",
+for (const m of ["chess.js", "eco.js", "eco-lookup.js", "game-tree.js", "openings.js", "openings-en.js", "openings-ja.js", "openings-family-zh.js", "openings-family-ja.js",
   "openings-variation-zh.js", "openings-variation-ja.js", "classics.js", "lessons.js", "puzzles.js", "puzzles-mined.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", m)), ctx, { filename: m });
 }
-const { Chess, ChessEco, CHESS_OPENINGS, CHESS_OPENING_NAMES, CHESS_OPENINGS_JA, OPENING_FAMILIES_ZH, OPENING_FAMILIES_JA } = ctx;
+const { Chess, ChessEco, ChessTree, CHESS_OPENINGS, CHESS_OPENING_NAMES, CHESS_OPENINGS_JA, OPENING_FAMILIES_ZH, OPENING_FAMILIES_JA } = ctx;
 
 let failed = 0;
 function assert(cond, msg) {
@@ -107,6 +107,40 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   assert(ChessEco.openingForGame(g) && ChessEco.openingForGame(g).eco === "B90", "a chess.js instance loaded from a FEN classifies too");
   assert(ChessEco.openingForGame(["a3", "a6", "Ra2"]) === null || ChessEco.openingForGame(["a3", "a6", "Ra2"]).ply < 3,
     "a position outside the table falls back to the deepest one inside it");
+}
+
+// --- v8-0-plan F2: the tree answers without replaying ---------------------
+// openingAt reads the deepest hit each node keeps; it must say exactly what
+// openingForGame says replaying the same moves — every book line at every
+// ply, on a variation, and from a FEN start.
+{
+  const same = (a, b) => (a === null && b === null) || (!!a && !!b && a.eco === b.eco && a.name === b.name && a.ply === b.ply);
+  const tree = ChessTree.createTree();
+  let bad = 0, probes = 0;
+  for (const [, , moves] of CHESS_OPENINGS) {
+    const sans = moves.split(" ");
+    let id = 0;
+    for (let k = 0; k < sans.length; k++) {
+      id = ChessTree.addMove(tree, id, sans[k]).id;
+      probes++;
+      if (!same(ChessEco.openingAt(tree, id), ChessEco.openingForGame(sans.slice(0, k + 1)))) bad++;
+    }
+  }
+  assert(bad === 0, "openingAt agrees with openingForGame on every ply of every book line, all in one tree (" + probes + " probes, " + bad + " differ)");
+  const fen = "rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6";
+  const ft = ChessTree.createTree(fen);
+  const be3 = ChessTree.addMove(ft, 0, "Be3");
+  const e5 = ChessTree.addMove(ft, be3.id, "e5");
+  assert(same(ChessEco.openingAt(ft, 0), ChessEco.openingForGame([], fen)) &&
+    same(ChessEco.openingAt(ft, e5.id), ChessEco.openingForGame(["Be3", "e5"], fen)), "…and from a FEN start");
+  // a transposition reached on a variation names the same opening
+  const tt = ChessTree.createTree();
+  let a = 0;
+  for (const san of "e4 e5 Nf3 Nc6 Bc4".split(" ")) a = ChessTree.addMove(tt, a, san).id;
+  let b = ChessTree.mainline(tt)[1].id;
+  for (const san of "Bc4 Nc6 Nf3".split(" ")) b = ChessTree.addMove(tt, b, san).id;
+  const ha = ChessEco.openingAt(tt, a), hb = ChessEco.openingAt(tt, b);
+  assert(ha && hb && ha.eco === hb.eco && ha.name === hb.name, "…and a transposition on a variation classifies like the mainline (" + (hb && hb.name) + ")");
 }
 
 // --- the curated book, line by line ------------------------------------

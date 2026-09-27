@@ -214,4 +214,37 @@
     return null;
   }
 
-  export const ChessDrills = { MIN_PLIES, hash36, drillId, drillLines, legacyIdMap, migrateIds, drillAdvice };
+  /**
+   * v8-0-plan §5: the openings a player meets first, in the order to learn
+   * them. Sorted by ECO alone the list opened on A01 Nimzo-Larsen (1.b3),
+   * the first drill anyone was handed — an opening almost nobody plays and
+   * nobody will face. These come first; the rest keep ECO order after them.
+   * Keyed by the book's name ids; a test holds every one to being a drill.
+   */
+  const COMMON_OPENINGS = [
+    "italian-game", "italian-game-giuoco-piano", "ruy-lopez", "ruy-lopez-berlin-defense",
+    "sicilian-defense-najdorf-variation", "sicilian-defense-dragon-variation",
+    "french-defense-classical-variation", "french-advance",
+    "caro-kann-defense-classical-variation", "caro-kann-advance",
+    "scotch-game", "two-knights-defense", "four-knights-game",
+    "queens-gambit-declined", "queens-gambit-accepted-main", "slav-defense",
+    "london-system-main-line", "kings-indian-defense", "nimzo-indian-defense",
+    "english-opening-reversed-sicilian",
+  ];
+
+  /**
+   * Drill order: the common openings in teaching order, then everything else
+   * by ECO code, ties by the Chinese name (so the order does not move when
+   * the interface language does).
+   * @param {Array<{eco:string, nameId:string}>} drills
+   * @param {Object<string,string>} names the Chinese name table
+   * @returns {Array} a new, sorted array
+   */
+  function orderDrills(drills, names) {
+    const rank = (d) => { const i = COMMON_OPENINGS.indexOf(d.nameId); return i < 0 ? COMMON_OPENINGS.length : i; };
+    const nm = (d) => (names && names[d.nameId]) || "";
+    return drills.slice().sort((a, b) => rank(a) - rank(b) ||
+      (a.eco < b.eco ? -1 : a.eco > b.eco ? 1 : nm(a).localeCompare(nm(b), "zh")));
+  }
+
+  export const ChessDrills = { MIN_PLIES, COMMON_OPENINGS, hash36, drillId, drillLines, orderDrills, legacyIdMap, migrateIds, drillAdvice };
