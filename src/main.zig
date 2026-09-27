@@ -87,12 +87,15 @@ const APP_COMMANDS = [_]AppCommand{
 /// The platform path separator, as the strings this file builds need it.
 const SEP: []const u8 = if (builtin.os.tag == .windows) "\\" else "/";
 
-/// Q1.1 — the one user-data file, and the sidecars the atomic write leaves.
+/// Q1.1 — the one-document user-data file 6.x–7.x mirrored into. Since
+/// v8-0-plan F3 the page reads it only to migrate from, and mirrors into the
+/// per-key store instead: `<appdata>/store/<key>.json`, one file per profile
+/// key plus the page's manifest. Both kinds share the sidecars below.
 const APPDATA_FILE = "chessboard.json";
-const APPDATA_TMP = "chessboard.json.tmp";
-const APPDATA_BAK = "chessboard.json.bak";
-/// Generous: the localStorage this replaces was capped at 5–10 MB in total.
-const APPDATA_MAX_BYTES: usize = 8 * 1024 * 1024;
+const STORE_DIR = "store";
+/// The sidecars the atomic write leaves next to a data file.
+const TMP_SUFFIX = ".tmp";
+const BAK_SUFFIX = ".bak";
 /// Q1.6 — the UI language the page last chose, read once at launch to pick
 /// the menu set (see setMenuLanguage for why it is a file and not a call).
 const LANG_FILE = "lang";
@@ -114,6 +117,8 @@ const App = struct {
     appdata_seq: u32 = 0,
     /// Q1.2 — the paths the native side has issued to the page this process.
     issued: IssuedPaths = .{},
+    /// v8-0-plan F3 — writes arriving in pieces, until their last piece.
+    stages: Stages = .{},
     /// Q1.6 — localized copies of the manifest menus, when the launch
     /// language is not Chinese. Same storage shape as runner.MenuStorage.
     menu_storage: runner.MenuStorage = .{},
@@ -205,6 +210,17 @@ const App = struct {
         return std.fmt.bufPrint(buf, "{s}{s}{s}", .{ self.appdata_dir, SEP, name }) catch null;
     }
 
+    /// v8-0-plan F3: `<appdata>/store/<key>.json<suffix>` for a key of the
+    /// per-key store, `<appdata>/chessboard.json<suffix>` for null. The key
+    /// has passed storeKeyValid, so it cannot climb out of the directory.
+    fn appdataFile(self: *@This(), buf: []u8, key: ?[]const u8, suffix: []const u8) ?[]const u8 {
+        if (self.appdata_dir.len == 0) return null;
+        if (key) |k| {
+            return std.fmt.bufPrint(buf, "{s}{s}{s}{s}{s}.json{s}", .{ self.appdata_dir, SEP, STORE_DIR, SEP, k, suffix }) catch null;
+        }
+        return std.fmt.bufPrint(buf, "{s}{s}{s}{s}", .{ self.appdata_dir, SEP, APPDATA_FILE, suffix }) catch null;
+    }
+
     fn pathPolicy(self: *@This()) PathPolicy {
         const home_var: []const u8 = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
         return .{
@@ -267,6 +283,37 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
         else => {},
     }
     forwardOpenFiles(self, runtime, event);
+    issueDroppedPaths(self, event);
+}
+
+// -------------------------------------------------------------- drop:files
+//
+// v8-0-plan F3 (§6: narrow what chess.issuePath is for). The SDK hands a drop
+// to the app as Event.files_dropped BEFORE it emits "drop:files" to the page
+// (runtime flow.zig: dispatchEvent, then emitFileDropEvent), so the paths can
+// be issued here, on the native side's own word, instead of the page
+// forwarding them to chess.issuePath. They get the same pathAllowed rule the
+// page's call used to get — a drop is the player's choice, but no wider than
+// a dialog's. What still goes through chess.issuePath is the file dialogs:
+// they are SDK builtins whose answer only the page sees (a bridge handler
+// holds no Runtime to open one itself), so that door stays, validated.
+//
+// Probed by name at comptime like OPEN_FILE_VARIANTS: an SDK without the
+// variant compiles this to nothing, and a drop is then simply not issued.
+fn issueDroppedPaths(self: *App, event: native_sdk.Event) void {
+    if (comptime @hasField(native_sdk.Event, "files_dropped")) {
+        if (event == .files_dropped) {
+            const drop = event.files_dropped;
+            if (comptime @hasField(@TypeOf(drop), "paths")) {
+                const policy = self.pathPolicy();
+                for (drop.paths) |item| {
+                    if (openFilePathOf(item)) |p| {
+                        if (pathAllowed(policy, p)) self.issued.add(p);
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------- open:files
@@ -384,16 +431,314 @@ fn jsonAppendString(buf: []u8, n: *usize, s: []const u8) bool {
     return jsonAppend(buf, n, "\"");
 }
 
-// Buffer sizes for the two file handlers, at file scope so the tests below can
-// check the arithmetic between them. They used to be literals inside the
-// functions, which is fine until one of them moves: base64 grows a payload by
-// 4/3, so raising the read limit without raising the encode buffer turns every
-// large file into error.InvalidRequest, and raising the write cap without
-// raising the decode buffer does the same to every large save.
-const READ_MAX_BYTES: usize = 256 * 1024;
-const READ_B64_BUF: usize = 360 * 1024;
-const WRITE_B64_MAX: usize = 512 * 1024;
-const WRITE_DECODED_BUF: usize = 384 * 1024;
+// ------------------------------------------------ chunked transfer (v8-0-plan F3)
+//
+// Sizes for the file and appdata handlers, at file scope so the tests below
+// can check the arithmetic between them.
+//
+// Before v8-0-plan F3 a file crossed the bridge in one frame: readTextFile refused past
+// 256 KiB, writeTextFile past 384 KiB, and the appdata pair was nominally 8 MiB
+// — but the SDK caps one bridge frame at 1 MiB each way (0.10.1:
+// bridge.max_message_bytes for the request, max_result_bytes for what a
+// handler may answer), so anything whose base64 passed ~1 MiB never arrived
+// at all. That is how "export all data" fell back to the clipboard and
+// "import all data" was refused once a player had a few hundred games.
+//
+// Now a transfer is cut into pieces of CHUNK_BYTES, whose base64 plus the
+// envelope fits a frame with room to spare. A read names an `offset` and is
+// answered {b64, more}; a write sends {txn, total, offset, b64} pieces that
+// are staged on the heap (Stages below) and written — atomically, for the
+// appdata files — once the last is in. One piece with none of those fields is
+// the pre-F3 shape and is still taken whole. FILE_MAX_BYTES bounds the
+// whole transfer either way.
+const BRIDGE_FRAME_MAX: usize = 1024 * 1024;
+const CHUNK_BYTES: usize = 512 * 1024;
+/// base64 of one full chunk, padding included: the most a write piece carries.
+const WRITE_B64_MAX: usize = (CHUNK_BYTES + 2) / 3 * 4;
+/// The largest file a read or a write carries, and the largest appdata file.
+const FILE_MAX_BYTES: usize = 16 * 1024 * 1024;
+/// Chunked writes in flight at once. Two is the realistic most (a mirror
+/// flush and an export, or two windows); a new one past the last evicts the
+/// oldest, which then answers stage_lost and starts over (host.js).
+const STAGE_SLOTS: usize = 4;
+/// A transfer's name, as the page makes it: [A-Za-z0-9_-], at most this long.
+const TXN_MAX: usize = 32;
+/// A store key, as persist.js names them ("save", "panelOpen", "meta"…).
+const STORE_KEY_MAX: usize = 32;
+
+fn isJsonSpace(c: u8) bool {
+    return c == ' ' or c == '\t' or c == '\n' or c == '\r';
+}
+
+/// Where the value of `"key":` starts. A quoted match that is not followed by
+/// a colon — a string value that happens to spell the name — is skipped.
+fn jsonFieldValue(payload: []const u8, key: []const u8) ?usize {
+    var key_buf: [96]u8 = undefined;
+    if (key.len + 2 > key_buf.len) return null;
+    const needle = std.fmt.bufPrint(&key_buf, "\"{s}\"", .{key}) catch return null;
+    var from: usize = 0;
+    while (std.mem.indexOfPos(u8, payload, from, needle)) |at| {
+        var i = at + needle.len;
+        while (i < payload.len and isJsonSpace(payload[i])) : (i += 1) {}
+        if (i < payload.len and payload[i] == ':') {
+            i += 1;
+            while (i < payload.len and isJsonSpace(payload[i])) : (i += 1) {}
+            return i;
+        }
+        from = at + 1;
+    }
+    return null;
+}
+
+/// A non-negative integer field, or null when it is absent or not one.
+fn jsonUintField(payload: []const u8, key: []const u8) ?usize {
+    const start = jsonFieldValue(payload, key) orelse return null;
+    var i = start;
+    while (i < payload.len and std.ascii.isDigit(payload[i])) : (i += 1) {}
+    if (i == start or i - start > 12) return null;
+    return std.fmt.parseInt(usize, payload[start..i], 10) catch null;
+}
+
+/// A boolean field, or null when it is absent or not one.
+fn jsonBoolField(payload: []const u8, key: []const u8) ?bool {
+    const start = jsonFieldValue(payload, key) orelse return null;
+    const rest = payload[start..];
+    if (std.mem.startsWith(u8, rest, "true")) return true;
+    if (std.mem.startsWith(u8, rest, "false")) return false;
+    return null;
+}
+
+/// 1..max characters of [A-Za-z0-9_-] — a transfer name or a store key.
+fn tokenValid(s: []const u8, max: usize) bool {
+    if (s.len == 0 or s.len > max) return false;
+    for (s) |c| {
+        if (!(std.ascii.isAlphanumeric(c) or c == '_' or c == '-')) return false;
+    }
+    return true;
+}
+
+/// A store key becomes a file name, so it is a plain token — no separator,
+/// no dot, nothing to climb out of store/ with — and not one of the device
+/// names Windows reserves whatever the extension.
+fn storeKeyValid(key: []const u8) bool {
+    if (!tokenValid(key, STORE_KEY_MAX)) return false;
+    for ([_][]const u8{ "con", "prn", "aux", "nul" }) |dev| {
+        if (std.ascii.eqlIgnoreCase(key, dev)) return false;
+    }
+    if (key.len == 4 and (std.ascii.startsWithIgnoreCase(key, "com") or std.ascii.startsWithIgnoreCase(key, "lpt")) and std.ascii.isDigit(key[3])) return false;
+    return true;
+}
+
+const StageError = error{ TooLarge, StageLost, BadChunk, OutOfMemory };
+
+/// One chunked write, between its first piece and its last.
+const Stage = struct {
+    txn_buf: [TXN_MAX]u8 = undefined,
+    txn_len: usize = 0,
+    /// what the bytes become: an issued path, or "appdata:<key>"
+    target_buf: [ISSUED_PATH_MAX]u8 = undefined,
+    target_len: usize = 0,
+    /// `total` bytes, heap; filled from the front, piece by piece
+    data: []u8 = &.{},
+    filled: usize = 0,
+
+    fn busy(self: *const Stage) bool {
+        return self.txn_len > 0;
+    }
+    fn txn(self: *const Stage) []const u8 {
+        return self.txn_buf[0..self.txn_len];
+    }
+    fn target(self: *const Stage) []const u8 {
+        return self.target_buf[0..self.target_len];
+    }
+    fn complete(self: *const Stage) bool {
+        return self.busy() and self.filled == self.data.len;
+    }
+};
+
+/// Where one piece's decoded bytes go.
+const Claim = struct { stage: *Stage, dest: []u8 };
+
+const Stages = struct {
+    slots: [STAGE_SLOTS]Stage = [_]Stage{.{}} ** STAGE_SLOTS,
+    next: usize = 0,
+
+    fn release(self: *Stages, gpa: std.mem.Allocator, stage: *Stage) void {
+        _ = self;
+        if (stage.data.len > 0) gpa.free(stage.data);
+        stage.* = .{};
+    }
+
+    fn releaseAll(self: *Stages, gpa: std.mem.Allocator) void {
+        for (&self.slots) |*s| self.release(gpa, s);
+    }
+
+    /// Room for a piece of `len` bytes at `offset` of transfer `txn`.
+    ///
+    /// Offset 0 opens the transfer (again, if it had begun: a page that
+    /// starts over means it). Any other offset has to continue one exactly
+    /// where it stopped, into the same target at the same total — a piece
+    /// that does not is refused and the transfer dropped, never patched
+    /// into a file with a hole in it.
+    fn claim(self: *Stages, gpa: std.mem.Allocator, txn: []const u8, target: []const u8, total: usize, offset: usize, len: usize) StageError!Claim {
+        if (total == 0 or total > FILE_MAX_BYTES) return error.TooLarge;
+        if (!tokenValid(txn, TXN_MAX) or target.len == 0 or target.len > ISSUED_PATH_MAX) return error.BadChunk;
+        var found: ?*Stage = null;
+        for (&self.slots) |*s| {
+            if (s.busy() and std.mem.eql(u8, s.txn(), txn)) {
+                found = s;
+                break;
+            }
+        }
+        if (offset == 0) {
+            const fresh = found orelse self.freeSlot(gpa);
+            self.release(gpa, fresh);
+            fresh.data = try gpa.alloc(u8, total);
+            @memcpy(fresh.txn_buf[0..txn.len], txn);
+            fresh.txn_len = txn.len;
+            @memcpy(fresh.target_buf[0..target.len], target);
+            fresh.target_len = target.len;
+            found = fresh;
+        }
+        const st = found orelse return error.StageLost;
+        if (!std.mem.eql(u8, st.target(), target) or st.data.len != total or offset != st.filled) {
+            self.release(gpa, st);
+            return error.StageLost;
+        }
+        if (len == 0 or len > total - offset) {
+            self.release(gpa, st);
+            return error.BadChunk;
+        }
+        return .{ .stage = st, .dest = st.data[offset..][0..len] };
+    }
+
+    /// An idle slot, or the one to evict: the least recently opened.
+    fn freeSlot(self: *Stages, gpa: std.mem.Allocator) *Stage {
+        for (&self.slots) |*slot| {
+            if (!slot.busy()) return slot;
+        }
+        const oldest = &self.slots[self.next];
+        self.next = (self.next + 1) % STAGE_SLOTS;
+        self.release(gpa, oldest);
+        return oldest;
+    }
+};
+
+/// A write request's bytes, once they are all in.
+const Incoming = struct {
+    bytes: []u8,
+    /// the stage that holds `bytes`, or null when one request carried them
+    stage: ?*Stage,
+};
+
+const Received = enum { ready, pending, answered };
+
+/// Decode a write request (writeTextFile / appdataWrite) toward `target`.
+///
+/// `.ready`: `incoming` holds the whole content — hand it to finishReceive when
+/// done. `.pending`: a piece was staged and more are due. `.answered`:
+/// `answer` holds the refusal the page is to get (too large, stage lost).
+fn receive(self: *App, payload: []const u8, target: []const u8, output: []u8, incoming: *Incoming, answer: *[]const u8) anyerror!Received {
+    const gpa = std.heap.page_allocator;
+    // base64 needs no unescaping — its alphabet has nothing JSON would escape
+    const b64 = jsonStringFieldRaw(payload, "b64") orelse return error.InvalidRequest;
+    if (b64.len == 0 or b64.len > WRITE_B64_MAX) return error.InvalidRequest;
+    const dec = std.base64.standard.Decoder;
+    const len = dec.calcSizeForSlice(b64) catch return error.InvalidRequest;
+
+    // one piece, no staging fields: the whole content, as before F3
+    const total = jsonUintField(payload, "total") orelse {
+        const bytes = gpa.alloc(u8, len) catch return error.HandlerFailed;
+        dec.decode(bytes, b64) catch {
+            gpa.free(bytes);
+            return error.InvalidRequest;
+        };
+        incoming.* = .{ .bytes = bytes, .stage = null };
+        return .ready;
+    };
+    const offset = jsonUintField(payload, "offset") orelse return error.InvalidRequest;
+    var txn_buf: [TXN_MAX]u8 = undefined;
+    const txn = jsonStringField(payload, "txn", &txn_buf) orelse return error.InvalidRequest;
+
+    const got = self.stages.claim(gpa, txn, target, total, offset, len) catch |err| switch (err) {
+        error.TooLarge => {
+            answer.* = try tooLargeAnswer(output);
+            return .answered;
+        },
+        error.StageLost => {
+            answer.* = std.fmt.bufPrint(output, "{{\"error\":\"stage_lost\"}}", .{}) catch return error.HandlerFailed;
+            return .answered;
+        },
+        error.BadChunk => return error.InvalidRequest,
+        error.OutOfMemory => return error.HandlerFailed,
+    };
+    dec.decode(got.dest, b64) catch {
+        self.stages.release(gpa, got.stage);
+        return error.InvalidRequest;
+    };
+    got.stage.filled += len;
+    if (!got.stage.complete()) return .pending;
+    incoming.* = .{ .bytes = got.stage.data, .stage = got.stage };
+    return .ready;
+}
+
+fn finishReceive(self: *App, incoming: Incoming) void {
+    const gpa = std.heap.page_allocator;
+    if (incoming.stage) |s| self.stages.release(gpa, s) else gpa.free(incoming.bytes);
+}
+
+fn pendingAnswer(output: []u8) anyerror![]const u8 {
+    return std.fmt.bufPrint(output, "{{\"ok\":true,\"pending\":true}}", .{}) catch return error.HandlerFailed;
+}
+
+fn tooLargeAnswer(output: []u8) anyerror![]const u8 {
+    return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{FILE_MAX_BYTES}) catch return error.HandlerFailed;
+}
+
+/// One piece of a file as the page gets it: {"b64":…,"more":…[,"bak":…]}.
+/// The base64 is encoded straight into `output`, which is the SDK's result
+/// buffer (BRIDGE_FRAME_MAX), so a piece costs no second copy.
+fn chunkAnswer(output: []u8, bytes: []const u8, more: bool, bak: ?bool) anyerror![]const u8 {
+    const enc = std.base64.standard.Encoder;
+    const enc_len = enc.calcSize(bytes.len);
+    var n: usize = 0;
+    if (!jsonAppend(output, &n, "{\"b64\":\"")) return error.HandlerFailed;
+    // the tail below is at most 27 bytes
+    if (n + enc_len + 32 > output.len) return error.HandlerFailed;
+    _ = enc.encode(output[n..][0..enc_len], bytes);
+    n += enc_len;
+    if (!jsonAppend(output, &n, if (more) "\",\"more\":true" else "\",\"more\":false")) return error.HandlerFailed;
+    if (bak) |b| {
+        if (!jsonAppend(output, &n, if (b) ",\"bak\":true" else ",\"bak\":false")) return error.HandlerFailed;
+    }
+    if (!jsonAppend(output, &n, "}")) return error.HandlerFailed;
+    return output[0..n];
+}
+
+const ChunkRead = struct { n: usize, more: bool };
+
+/// Up to CHUNK_BYTES of `path` from `offset`, into `buf` (CHUNK_BYTES + 1
+/// long: the spare byte says whether more follows). null: no such file.
+///
+/// A first read (offset 0) also refuses a file over FILE_MAX_BYTES, by
+/// reading the one byte past the limit — the same spare-byte idea the 256 KiB
+/// read used, without a stat: readPositionalAll reports how much it read, so
+/// a byte there means the file is too long.
+fn readChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8) error{ FileTooLarge, HandlerFailed }!?ChunkRead {
+    if (offset > FILE_MAX_BYTES) return error.FileTooLarge;
+    var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        else => return error.HandlerFailed,
+    };
+    defer file.close(io);
+    if (offset == 0) {
+        var probe: [1]u8 = undefined;
+        const past = file.readPositionalAll(io, &probe, FILE_MAX_BYTES) catch return error.HandlerFailed;
+        if (past > 0) return error.FileTooLarge;
+    }
+    const n = file.readPositionalAll(io, buf[0 .. CHUNK_BYTES + 1], offset) catch return error.HandlerFailed;
+    return .{ .n = @min(n, CHUNK_BYTES), .more = n > CHUNK_BYTES };
+}
 
 /// Raw (still-escaped) bytes of a JSON string field, without the quotes.
 fn jsonStringFieldRaw(payload: []const u8, key: []const u8) ?[]const u8 {
@@ -667,23 +1012,25 @@ fn unissuedPath(output: []u8) anyerror![]const u8 {
 fn writeTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     var path_buf: [4096]u8 = undefined;
-    const path = jsonStringField(invocation.request.payload, "path", &path_buf) orelse return error.InvalidRequest;
-    // base64 needs no unescaping — its alphabet has nothing JSON would escape
-    const b64 = jsonStringFieldRaw(invocation.request.payload, "b64") orelse return error.InvalidRequest;
+    const payload = invocation.request.payload;
+    const path = jsonStringField(payload, "path", &path_buf) orelse return error.InvalidRequest;
     if (path.len == 0) return error.InvalidRequest;
-    if (b64.len == 0 or b64.len > WRITE_B64_MAX) return error.InvalidRequest;
     // Q1.2: only a path the native side issued this process (see IssuedPaths)
     if (!self.issued.contains(path)) return unissuedPath(output);
 
-    var decoded_buf: [WRITE_DECODED_BUF]u8 = undefined;
-    const dec = std.base64.standard.Decoder;
-    const dec_len = dec.calcSizeForSlice(b64) catch return error.InvalidRequest;
-    if (dec_len > decoded_buf.len) return error.InvalidRequest;
-    dec.decode(decoded_buf[0..dec_len], b64) catch return error.InvalidRequest;
+    // v8-0-plan F3: whole, or piece by piece on the heap until the last one
+    var incoming: Incoming = undefined;
+    var answer: []const u8 = "";
+    switch (try receive(self, payload, path, output, &incoming, &answer)) {
+        .answered => return answer,
+        .pending => return pendingAnswer(output),
+        .ready => {},
+    }
+    defer finishReceive(self, incoming);
 
     var file = std.Io.Dir.createFileAbsolute(self.io, path, .{ .truncate = true }) catch return error.HandlerFailed;
     defer file.close(self.io);
-    file.writeStreamingAll(self.io, decoded_buf[0..dec_len]) catch return error.HandlerFailed;
+    file.writeStreamingAll(self.io, incoming.bytes) catch return error.HandlerFailed;
 
     return std.fmt.bufPrint(output, "true", .{}) catch "true";
 }
@@ -691,41 +1038,35 @@ fn writeTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, 
 fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     var path_buf: [4096]u8 = undefined;
-    const path = jsonStringField(invocation.request.payload, "path", &path_buf) orelse return error.InvalidRequest;
+    const payload = invocation.request.payload;
+    const path = jsonStringField(payload, "path", &path_buf) orelse return error.InvalidRequest;
     if (path.len == 0) return error.InvalidRequest;
     // Q1.2: only a path the native side issued this process (see IssuedPaths)
     if (!self.issued.contains(path)) return unissuedPath(output);
+    // v8-0-plan F3: which piece; absent is the first
+    const offset = jsonUintField(payload, "offset") orelse 0;
 
-    var file = std.Io.Dir.openFileAbsolute(self.io, path, .{}) catch return error.HandlerFailed;
-    defer file.close(self.io);
+    // Heap, not stack: the 256 KiB this used to hold in two stack buffers is
+    // now a 512 KiB piece, on a handler that already sits under the SDK's own
+    // 1 MiB result buffer.
+    const gpa = std.heap.page_allocator;
+    const buf = gpa.alloc(u8, CHUNK_BYTES + 1) catch return error.HandlerFailed;
+    defer gpa.free(buf);
 
-    // One byte past the limit, on purpose. readPositionalAll stops when the
-    // buffer is full and reports only how much it read, so with a buffer of
-    // exactly MAX_BYTES a file that overflows it is indistinguishable from one
-    // that fills it — and the handler returned the first 256 KiB as if it were
-    // the whole file. For the multi-game PGN libraries this app advertises
-    // that meant losing every game past the cut and handing back a syntax
-    // error for the one straddling it, reported to the player as an ordinary
-    // failed import. The spare byte turns "too big" into something the caller
-    // can be told about.
-    var raw_buf: [READ_MAX_BYTES + 1]u8 = undefined;
-    const n = file.readPositionalAll(self.io, &raw_buf, 0) catch return error.HandlerFailed;
-    if (n == 0) return error.InvalidRequest;
-    if (n > READ_MAX_BYTES) {
-        return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{READ_MAX_BYTES}) catch
-            return error.HandlerFailed;
-    }
-
-    var b64_buf: [READ_B64_BUF]u8 = undefined;
-    const enc = std.base64.standard.Encoder;
-    const enc_len = enc.calcSize(n);
-    if (enc_len > b64_buf.len) return error.InvalidRequest;
-    const encoded = enc.encode(b64_buf[0..enc_len], raw_buf[0..n]);
+    // Too big is refused, never truncated: a file past the buffer once
+    // came back as its first 256 KiB, and a PGN library lost every game past
+    // the cut while the one straddling it read as a syntax error. readChunk's
+    // probe keeps "too big" something the caller can be told about.
+    const got = (readChunk(self.io, path, offset, buf) catch |err| switch (err) {
+        error.FileTooLarge => return tooLargeAnswer(output),
+        error.HandlerFailed => return error.HandlerFailed,
+    }) orelse return error.HandlerFailed;
+    if (offset == 0 and got.n == 0) return error.InvalidRequest;
 
     // JSON object, not a bare string: the result has to be able to say whether
     // it is the whole file. base64 never contains a character JSON escapes, so
     // it can be quoted as-is.
-    return std.fmt.bufPrint(output, "{{\"b64\":\"{s}\"}}", .{encoded}) catch return error.HandlerFailed;
+    return chunkAnswer(output, buf[0..got.n], got.more, null);
 }
 
 // ------------------------------------------------------------ app data (Q1.1)
@@ -754,6 +1095,13 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
 // for the same reason chess.readTextFile does: the bridge frame is JSON and
 // base64 is the one encoding that needs no escaping on the Zig side.
 //
+// v8-0-plan F3: "one file" became one file per key. A request that names a
+// `key` (storeKeyValid) reads or writes store/<key>.json with every promise
+// above, .bak and all; one without is chessboard.json, which pages since F3 only
+// read, to migrate from. Both travel in pieces past CHUNK_BYTES: a read's
+// later pieces name their `offset` and whether the first came from the .bak,
+// so every piece comes from the same file.
+//
 // The two filesystem calls this needs beyond what the file handlers above
 // already use — create the directory, rename — are isolated in fsMakePath /
 // fsRename so a std.Io API mismatch is a one-line fix in one place.
@@ -780,125 +1128,135 @@ fn appdataUnavailable(output: []u8) anyerror![]const u8 {
     return std.fmt.bufPrint(output, "{{\"error\":\"no_appdata_dir\"}}", .{}) catch return error.HandlerFailed;
 }
 
-fn appdataTooLarge(output: []u8) anyerror![]const u8 {
-    return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{APPDATA_MAX_BYTES}) catch return error.HandlerFailed;
-}
-
+/// The data directory, for About ("数据位置"). It used to name
+/// chessboard.json; since v8-0-plan F3 the profile is the store/ folder beside
+/// it, so the folder is the honest answer.
 fn appdataPath(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     _ = invocation;
-    var path_buf: [1200]u8 = undefined;
-    const path = self.appdataChild(&path_buf, APPDATA_FILE) orelse return appdataUnavailable(output);
+    if (self.appdata_dir.len == 0) return appdataUnavailable(output);
     var n: usize = 0;
     if (!jsonAppend(output, &n, "{\"path\":")) return error.HandlerFailed;
-    if (!jsonAppendString(output, &n, path)) return error.HandlerFailed;
+    if (!jsonAppendString(output, &n, self.appdata_dir)) return error.HandlerFailed;
     if (!jsonAppend(output, &n, "}")) return error.HandlerFailed;
     return output[0..n];
 }
 
-/// Read one appdata file into `raw`. null means "nothing usable here":
-/// either no such file, or a zero-length one. A zero-length file is not a
-/// fresh install — an interrupted write leaves one — so it must not be
-/// reported as a missing file, and the caller falls through to the .bak.
-fn appdataSlurp(io: std.Io, path: []const u8, raw: []u8) !?usize {
-    var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return null,
-        else => return error.HandlerFailed,
-    };
-    defer file.close(io);
-    const n = file.readPositionalAll(io, raw, 0) catch return error.HandlerFailed;
-    if (n == 0) return null;
-    return n;
+/// The store key a request names (v8-0-plan F3), or null for chessboard.json.
+/// A key that is there and not a valid one fails the request.
+fn requestKey(payload: []const u8, buf: []u8) error{InvalidRequest}!?[]const u8 {
+    if (jsonFieldValue(payload, "key") == null) return null;
+    const key = jsonStringField(payload, "key", buf) orelse return error.InvalidRequest;
+    if (!storeKeyValid(key)) return error.InvalidRequest;
+    return key;
 }
 
 fn appdataRead(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
-    _ = invocation;
+    const payload = invocation.request.payload;
+    var key_buf: [STORE_KEY_MAX]u8 = undefined;
+    const key = try requestKey(payload, &key_buf);
+    const offset = jsonUintField(payload, "offset") orelse 0;
     var path_buf: [1200]u8 = undefined;
     var bak_buf: [1200]u8 = undefined;
-    const path = self.appdataChild(&path_buf, APPDATA_FILE) orelse return appdataUnavailable(output);
-    const bak_path = self.appdataChild(&bak_buf, APPDATA_BAK) orelse return appdataUnavailable(output);
+    const path = self.appdataFile(&path_buf, key, "") orelse return appdataUnavailable(output);
+    const bak_path = self.appdataFile(&bak_buf, key, BAK_SUFFIX) orelse return appdataUnavailable(output);
 
-    // Heap, not stack: 8 MiB plus its base64 is more than a handler thread
-    // should carry. Same spare byte as readTextFile, same reason.
+    // Heap, not stack, like readTextFile: one piece and its spare byte.
     const gpa = std.heap.page_allocator;
-    const raw = gpa.alloc(u8, APPDATA_MAX_BYTES + 1) catch return error.HandlerFailed;
-    defer gpa.free(raw);
+    const buf = gpa.alloc(u8, CHUNK_BYTES + 1) catch return error.HandlerFailed;
+    defer gpa.free(buf);
+
+    // a later piece comes from the file the first one did, which the page
+    // says (`bak`) — deciding again could splice the .bak onto the main file
+    if (offset > 0) {
+        const from_bak = jsonBoolField(payload, "bak") orelse false;
+        const later = (readChunk(self.io, if (from_bak) bak_path else path, offset, buf) catch |err| switch (err) {
+            error.FileTooLarge => return tooLargeAnswer(output),
+            error.HandlerFailed => return error.HandlerFailed,
+        }) orelse return error.HandlerFailed;
+        return chunkAnswer(output, buf[0..later.n], later.more, from_bak);
+    }
 
     // 6.1: the .bak stopped being write-only. The main file wins whenever it
     // holds bytes; only when it holds none does the previous copy answer.
-    var from_bak = false;
-    const main_n = try appdataSlurp(self.io, path, raw);
-    const n = main_n orelse blk: {
-        const bak_n = try appdataSlurp(self.io, bak_path, raw);
-        if (bak_n) |bn| {
-            from_bak = true;
-            break :blk bn;
-        }
-        // Nothing in either place. Tell the two cases apart: a main file that
-        // exists but is empty is damage, not a fresh install.
-        const exists = if (std.Io.Dir.openFileAbsolute(self.io, path, .{})) |f| blk2: {
-            var fh = f;
-            fh.close(self.io);
-            break :blk2 true;
-        } else |_| false;
-        if (exists) return std.fmt.bufPrint(output, "{{\"empty\":true}}", .{}) catch return error.HandlerFailed;
-        return std.fmt.bufPrint(output, "{{\"missing\":true}}", .{}) catch return error.HandlerFailed;
+    // A zero-length file is not a fresh install — an interrupted write leaves
+    // one — so it falls through to the .bak rather than reading as missing.
+    const main_got = readChunk(self.io, path, 0, buf) catch |err| switch (err) {
+        error.FileTooLarge => return tooLargeAnswer(output),
+        error.HandlerFailed => return error.HandlerFailed,
     };
-    if (n > APPDATA_MAX_BYTES) return appdataTooLarge(output);
-
-    const enc = std.base64.standard.Encoder;
-    const enc_len = enc.calcSize(n);
-    // The bridge's answer buffer is the SDK's; a file that does not fit it is
-    // reported the same way as one over our own limit, so the page never gets
-    // a truncated archive.
-    if (enc_len + 32 > output.len) return appdataTooLarge(output);
-    const b64 = gpa.alloc(u8, enc_len) catch return error.HandlerFailed;
-    defer gpa.free(b64);
-    const encoded = enc.encode(b64, raw[0..n]);
-    return std.fmt.bufPrint(output, "{{\"b64\":\"{s}\",\"bak\":{s}}}", .{ encoded, if (from_bak) "true" else "false" }) catch return error.HandlerFailed;
+    if (main_got) |got| {
+        if (got.n > 0) return chunkAnswer(output, buf[0..got.n], got.more, false);
+    }
+    const bak_got = readChunk(self.io, bak_path, 0, buf) catch |err| switch (err) {
+        error.FileTooLarge => return tooLargeAnswer(output),
+        error.HandlerFailed => return error.HandlerFailed,
+    };
+    if (bak_got) |got| {
+        if (got.n > 0) return chunkAnswer(output, buf[0..got.n], got.more, true);
+    }
+    // Nothing in either place. Tell the two cases apart: a main file that
+    // exists but is empty is damage, not a fresh install.
+    if (main_got != null) return std.fmt.bufPrint(output, "{{\"empty\":true}}", .{}) catch return error.HandlerFailed;
+    return std.fmt.bufPrint(output, "{{\"missing\":true}}", .{}) catch return error.HandlerFailed;
 }
 
 fn appdataWrite(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     if (self.appdata_dir.len == 0) return appdataUnavailable(output);
-    // base64 needs no unescaping — its alphabet has nothing JSON would escape
-    const b64 = jsonStringFieldRaw(invocation.request.payload, "b64") orelse return error.InvalidRequest;
-    if (b64.len == 0) return error.InvalidRequest;
+    const payload = invocation.request.payload;
+    var key_buf: [STORE_KEY_MAX]u8 = undefined;
+    const key = try requestKey(payload, &key_buf);
 
-    const dec = std.base64.standard.Decoder;
-    const dec_len = dec.calcSizeForSlice(b64) catch return error.InvalidRequest;
-    if (dec_len > APPDATA_MAX_BYTES) return appdataTooLarge(output);
-    const gpa = std.heap.page_allocator;
-    const decoded = gpa.alloc(u8, dec_len) catch return error.HandlerFailed;
-    defer gpa.free(decoded);
-    dec.decode(decoded, b64) catch return error.InvalidRequest;
+    // v8-0-plan F3: whole, or staged piece by piece under "appdata:<key>" —
+    // a name no issued path (always absolute) can share
+    var target_buf: [STORE_KEY_MAX + 16]u8 = undefined;
+    const target = std.fmt.bufPrint(&target_buf, "appdata:{s}", .{key orelse ""}) catch return error.HandlerFailed;
+    var incoming: Incoming = undefined;
+    var answer: []const u8 = "";
+    switch (try receive(self, payload, target, output, &incoming, &answer)) {
+        .answered => return answer,
+        .pending => return pendingAnswer(output),
+        .ready => {},
+    }
+    defer finishReceive(self, incoming);
+    try appdataCommit(self, key, incoming.bytes);
+    return std.fmt.bufPrint(output, "{{\"ok\":true}}", .{}) catch return error.HandlerFailed;
+}
 
+/// The atomic, durable write the section comment promises, for one data file.
+fn appdataCommit(self: *App, key: ?[]const u8, bytes: []const u8) anyerror!void {
     var main_buf: [1200]u8 = undefined;
     var tmp_buf: [1200]u8 = undefined;
     var bak_buf: [1200]u8 = undefined;
-    const main_path = self.appdataChild(&main_buf, APPDATA_FILE) orelse return appdataUnavailable(output);
+    var dir_buf: [1200]u8 = undefined;
+    const main_path = self.appdataFile(&main_buf, key, "") orelse return error.HandlerFailed;
     // 6.1: a tmp name unique to this write. One fixed name meant two windows
     // (or one window whose next flush started before the last finished) both
     // created the same file with .truncate and interleaved their bytes, and
     // both then renamed that mixture into place.
     const seq = self.appdata_seq;
     self.appdata_seq +%= 1;
-    var tmp_name_buf: [96]u8 = undefined;
+    var tmp_suffix_buf: [96]u8 = undefined;
     // The App's own address plus the per-write counter. Not a clock: 0.16's
     // std.time has no milliTimestamp, and reaching for a platform-specific
     // pid would put an #if in the one place this file keeps portable. Two
     // processes need the same heap address AND the same counter value at the
     // same moment to collide, which is the pre-6.1 behaviour, not worse.
-    const tmp_name = std.fmt.bufPrint(&tmp_name_buf, "{s}.{x}.{d}", .{ APPDATA_TMP, @intFromPtr(self), seq }) catch return error.HandlerFailed;
-    const tmp_path = self.appdataChild(&tmp_buf, tmp_name) orelse return appdataUnavailable(output);
-    const bak_path = self.appdataChild(&bak_buf, APPDATA_BAK) orelse return appdataUnavailable(output);
+    const tmp_suffix = std.fmt.bufPrint(&tmp_suffix_buf, "{s}.{x}.{d}", .{ TMP_SUFFIX, @intFromPtr(self), seq }) catch return error.HandlerFailed;
+    const tmp_path = self.appdataFile(&tmp_buf, key, tmp_suffix) orelse return error.HandlerFailed;
+    const bak_path = self.appdataFile(&bak_buf, key, BAK_SUFFIX) orelse return error.HandlerFailed;
+    var dir: []const u8 = self.appdata_dir;
+    if (key != null) {
+        dir = std.fmt.bufPrint(&dir_buf, "{s}{s}{s}", .{ self.appdata_dir, SEP, STORE_DIR }) catch return error.HandlerFailed;
+    }
 
-    fsMakePath(self.io, self.appdata_dir);
+    fsMakePath(self.io, dir);
     {
         var file = std.Io.Dir.createFileAbsolute(self.io, tmp_path, .{ .truncate = true }) catch return error.HandlerFailed;
         defer file.close(self.io);
-        file.writeStreamingAll(self.io, decoded) catch return error.HandlerFailed;
+        file.writeStreamingAll(self.io, bytes) catch return error.HandlerFailed;
         // 6.1: rename is atomic, the write behind it is not. Without this a
         // power loss could make the rename durable and the bytes not, which
         // is exactly how a zero-length chessboard.json appears.
@@ -909,10 +1267,8 @@ fn appdataWrite(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
         error.FileNotFound => {},
         else => return error.HandlerFailed,
     };
-    // tmp → chessboard.json: the one step that makes the new data visible
+    // tmp → the data file: the one step that makes the new data visible
     fsRename(self.io, tmp_path, main_path) catch return error.HandlerFailed;
-
-    return std.fmt.bufPrint(output, "{{\"ok\":true}}", .{}) catch return error.HandlerFailed;
 }
 
 // -------------------------------------------------------- menu language (Q1.6)
@@ -1157,30 +1513,175 @@ test "every app command has a chess. name and no two share one" {
     try std.testing.expectEqual(@as(usize, 10), APP_COMMANDS.len);
 }
 
-test "the file handlers' buffers fit the limits they advertise" {
+test "one piece each way fits the SDK's bridge frame" {
     const enc = std.base64.standard.Encoder;
     const dec = std.base64.standard.Decoder;
-
-    // Read path: a file at exactly the limit must still encode. base64 grows a
-    // payload by 4/3, so this is the pair that breaks first if the limit moves
-    // — and it breaks by turning every large file into InvalidRequest, which
-    // reads to the player as "this file is broken" rather than "too big".
-    try std.testing.expect(enc.calcSize(READ_MAX_BYTES) <= READ_B64_BUF);
-    // the spare byte that makes truncation observable at all
-    try std.testing.expect(READ_MAX_BYTES + 1 > READ_MAX_BYTES);
-
-    // Write path: the largest base64 the handler accepts must decode into the
-    // buffer it decodes into.
-    const max_decoded = try dec.calcSizeUpperBound(WRITE_B64_MAX);
-    try std.testing.expect(max_decoded <= WRITE_DECODED_BUF);
+    // v8-0-plan F3. A full chunk's base64 is exactly the most a write piece
+    // may carry, and it decodes back into a chunk. base64 grows a payload by
+    // 4/3, so this is the pair that breaks first if CHUNK_BYTES moves.
+    try std.testing.expectEqual(enc.calcSize(CHUNK_BYTES), WRITE_B64_MAX);
+    try std.testing.expect(try dec.calcSizeUpperBound(WRITE_B64_MAX) >= CHUNK_BYTES);
+    // The request: that piece, plus the longest issued path at its worst
+    // escaping (\u00XX, six bytes a byte) and the other fields.
+    try std.testing.expect(WRITE_B64_MAX + 6 * ISSUED_PATH_MAX + 512 <= BRIDGE_FRAME_MAX);
+    // The answer: a full piece inside {"b64":…,"more":…,"bak":…}, inside the
+    // SDK's {"id":…,"ok":true,"result":…} with its 64-byte id.
+    try std.testing.expect(enc.calcSize(CHUNK_BYTES) + 32 + 8 + 64 + 32 <= BRIDGE_FRAME_MAX);
+    // BRIDGE_FRAME_MAX is the SDK's number, where this SDK names it
+    if (comptime @hasDecl(native_sdk.bridge, "max_message_bytes")) {
+        try std.testing.expect(BRIDGE_FRAME_MAX <= native_sdk.bridge.max_message_bytes);
+    }
+    if (comptime @hasDecl(native_sdk.bridge, "max_result_bytes")) {
+        try std.testing.expect(BRIDGE_FRAME_MAX <= native_sdk.bridge.max_result_bytes);
+    }
+    // the plan's floor, in whole pieces
+    try std.testing.expect(FILE_MAX_BYTES >= 16 * 1024 * 1024);
+    try std.testing.expectEqual(@as(usize, 0), FILE_MAX_BYTES % CHUNK_BYTES);
 }
 
-test "an oversized read answers with a refusal, not a truncated file" {
-    // The handler cannot be called without an SDK Invocation and an Io, but the
-    // answer it writes is plain formatting and is exactly what host.js keys on.
+test "an oversized file answers with a refusal naming the limit, not a truncated file" {
+    // The handlers cannot be called without an SDK Invocation and an Io, but
+    // the answer they write is exactly what host.js keys on.
     var out: [64]u8 = undefined;
-    const refusal = try std.fmt.bufPrint(&out, "{{\"tooLarge\":true,\"limit\":{d}}}", .{READ_MAX_BYTES});
-    try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":262144}", refusal);
+    try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":16777216}", try tooLargeAnswer(&out));
+}
+
+test "a 2 MB file crosses the bridge in pieces and comes back byte for byte" {
+    const gpa = std.testing.allocator;
+    const enc = std.base64.standard.Encoder;
+    const dec = std.base64.standard.Decoder;
+    // not a multiple of the chunk or of 3, so the last piece is short and
+    // its base64 is padded
+    const total: usize = 2 * 1024 * 1024 + 7;
+    const src = try gpa.alloc(u8, total);
+    defer gpa.free(src);
+    for (src, 0..) |*b, i| b.* = @truncate(i *% 2654435761 >> 7);
+
+    // Write: the page's pieces, each base64'd on its own, staged by `claim`
+    // and complete exactly when the last one is in.
+    var stages: Stages = .{};
+    defer stages.releaseAll(gpa);
+    const b64_buf = try gpa.alloc(u8, WRITE_B64_MAX);
+    defer gpa.free(b64_buf);
+    var offset: usize = 0;
+    var pieces: usize = 0;
+    var written = false;
+    while (offset < total) : (pieces += 1) {
+        const n = @min(CHUNK_BYTES, total - offset);
+        const b64 = enc.encode(b64_buf[0..enc.calcSize(n)], src[offset..][0..n]);
+        try std.testing.expect(b64.len <= WRITE_B64_MAX);
+        const len = try dec.calcSizeForSlice(b64);
+        const got = try stages.claim(gpa, "p1-a", "appdata:library", total, offset, len);
+        try dec.decode(got.dest, b64);
+        got.stage.filled += len;
+        offset += n;
+        try std.testing.expectEqual(offset == total, got.stage.complete());
+        if (got.stage.complete()) {
+            try std.testing.expectEqualSlices(u8, src, got.stage.data);
+            stages.release(gpa, got.stage);
+            written = true;
+        }
+    }
+    try std.testing.expect(written);
+    try std.testing.expectEqual(@as(usize, 5), pieces);
+
+    // Read: the handler's pieces, each inside the frame, reassembled.
+    const out = try gpa.alloc(u8, BRIDGE_FRAME_MAX);
+    defer gpa.free(out);
+    const back = try gpa.alloc(u8, total);
+    defer gpa.free(back);
+    var at: usize = 0;
+    while (at < total) {
+        const n = @min(CHUNK_BYTES, total - at);
+        const more = at + n < total;
+        const answer = try chunkAnswer(out, src[at..][0..n], more, false);
+        try std.testing.expect(answer.len + 128 <= BRIDGE_FRAME_MAX);
+        try std.testing.expectEqual(more, jsonBoolField(answer, "more").?);
+        try std.testing.expectEqual(false, jsonBoolField(answer, "bak").?);
+        const b64 = jsonStringFieldRaw(answer, "b64").?;
+        const len = try dec.calcSizeForSlice(b64);
+        try dec.decode(back[at..][0..len], b64);
+        at += len;
+    }
+    try std.testing.expectEqualSlices(u8, src, back);
+}
+
+test "a staged write refuses what it cannot finish, and frees what it drops" {
+    // std.testing.allocator fails the test on a leak: every refusal below
+    // has to hand its buffer back
+    const gpa = std.testing.allocator;
+    var stages: Stages = .{};
+    defer stages.releaseAll(gpa);
+
+    // over the limit, or nothing at all
+    try std.testing.expectError(error.TooLarge, stages.claim(gpa, "t", "appdata:x", FILE_MAX_BYTES + 1, 0, 1));
+    try std.testing.expectError(error.TooLarge, stages.claim(gpa, "t", "appdata:x", 0, 0, 1));
+    // a name that is not a plain token
+    try std.testing.expectError(error.BadChunk, stages.claim(gpa, "a/b", "appdata:x", 10, 0, 5));
+    try std.testing.expectError(error.BadChunk, stages.claim(gpa, "", "appdata:x", 10, 0, 5));
+    // a later piece of a transfer nobody opened
+    try std.testing.expectError(error.StageLost, stages.claim(gpa, "t", "appdata:x", 10, 5, 5));
+
+    // out of order: the transfer is dropped, not patched with a hole
+    _ = try stages.claim(gpa, "t", "appdata:x", 10, 0, 4);
+    try std.testing.expectError(error.StageLost, stages.claim(gpa, "t", "appdata:x", 10, 6, 4));
+    try std.testing.expectError(error.StageLost, stages.claim(gpa, "t", "appdata:x", 10, 4, 4));
+
+    // a piece aimed at another file, or claiming another size
+    var got = try stages.claim(gpa, "t", "appdata:x", 10, 0, 4);
+    got.stage.filled += 4;
+    try std.testing.expectError(error.StageLost, stages.claim(gpa, "t", "appdata:y", 10, 4, 4));
+    got = try stages.claim(gpa, "t", "appdata:x", 10, 0, 4);
+    got.stage.filled += 4;
+    try std.testing.expectError(error.StageLost, stages.claim(gpa, "t", "appdata:x", 11, 4, 4));
+    // a piece running past the total
+    got = try stages.claim(gpa, "t", "appdata:x", 10, 0, 4);
+    got.stage.filled += 4;
+    try std.testing.expectError(error.BadChunk, stages.claim(gpa, "t", "appdata:x", 10, 4, 7));
+
+    // starting over at 0 replaces the transfer rather than adding a second
+    got = try stages.claim(gpa, "t", "appdata:x", 10, 0, 4);
+    got.stage.filled += 4;
+    got = try stages.claim(gpa, "t", "appdata:x", 10, 0, 4);
+    try std.testing.expectEqual(@as(usize, 0), got.stage.filled);
+    var busy: usize = 0;
+    for (&stages.slots) |*s| busy += @intFromBool(s.busy());
+    try std.testing.expectEqual(@as(usize, 1), busy);
+
+    // more transfers than slots: the oldest is evicted and answers StageLost
+    var name_buf: [8]u8 = undefined;
+    var i: usize = 0;
+    while (i < STAGE_SLOTS) : (i += 1) {
+        const name = try std.fmt.bufPrint(&name_buf, "n{d}", .{i});
+        _ = try stages.claim(gpa, name, "appdata:x", 10, 0, 4);
+    }
+    try std.testing.expectError(error.StageLost, stages.claim(gpa, "t", "appdata:x", 10, 4, 4));
+}
+
+test "a piece's fields are read as numbers and flags, not as look-alike text" {
+    const p = "{\"key\":\"offset\",\"path\":\"/Users/a/\\\"total\\\":9.pgn\",\"txn\":\"p1\",\"total\" : 1048576,\"offset\":524288,\"bak\":true}";
+    try std.testing.expectEqual(@as(?usize, 1048576), jsonUintField(p, "total"));
+    try std.testing.expectEqual(@as(?usize, 524288), jsonUintField(p, "offset"));
+    try std.testing.expectEqual(@as(?bool, true), jsonBoolField(p, "bak"));
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField(p, "missing"));
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField("{\"offset\":-1}", "offset"));
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField("{\"offset\":\"5\"}", "offset"));
+    try std.testing.expectEqual(@as(?bool, null), jsonBoolField("{\"bak\":1}", "bak"));
+    // no fields at all is the pre-F3 one-piece shape
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField("{\"path\":\"/a\",\"b64\":\"AAAA\"}", "total"));
+}
+
+test "store keys are plain names that cannot leave the store" {
+    for ([_][]const u8{ "save", "settings", "panelOpen", "meta", "selftest", "achievements", "a_b-c" }) |k| {
+        try std.testing.expect(storeKeyValid(k));
+    }
+    for ([_][]const u8{ "", "../x", "a/b", "a\\b", ".bak", "save.json", "a b", "CON", "nul", "com1", "LPT9", "x" ** 33 }) |k| {
+        try std.testing.expect(!storeKeyValid(k));
+    }
+    var buf: [STORE_KEY_MAX]u8 = undefined;
+    try std.testing.expectEqualStrings("library", (try requestKey("{\"key\":\"library\",\"b64\":\"AA==\"}", &buf)).?);
+    try std.testing.expect((try requestKey("{\"b64\":\"AA==\"}", &buf)) == null);
+    try std.testing.expectError(error.InvalidRequest, requestKey("{\"key\":\"../chessboard\"}", &buf));
 }
 
 test "base64 survives the round trip the bridge puts it through" {

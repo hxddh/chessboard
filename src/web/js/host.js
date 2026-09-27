@@ -8,19 +8,132 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return typeof global.zero === "object" && global.zero != null;
   }
 
+  // ---- bytes over the bridge (v8-0-plan F3) --------------------------------
+  //
+  // Everything the native side reads or writes rides as base64 in a JSON
+  // frame, and the SDK caps one frame at 1 MiB each way (0.10.1:
+  // bridge.max_message_bytes / max_result_bytes). So a transfer is cut into
+  // pieces of CHUNK raw bytes — main.zig's CHUNK_BYTES, whose base64 plus the
+  // envelope fits a frame — and anything larger than one piece goes as
+  // several: a write as {txn, total, offset, b64} pieces the native side
+  // stages and commits once the last one is in, a read as {offset} requests
+  // answered {b64, more}. One piece is sent exactly as before (no txn), which
+  // is also what every earlier shell understood.
+  const CHUNK = 512 * 1024;
+  /** main.zig FILE_MAX_BYTES: the largest file either direction carries. */
+  const FILE_MAX = 16 * 1024 * 1024;
+
+  /**
+   * base64 of raw bytes, a slice at a time.
+   *
+   * It used to append one String.fromCharCode per byte to a growing string:
+   * 2 MB took 80+ ms on the main thread, on every autosave. btoa over slices
+   * of 3 × 8192 bytes does the same work in native code; every slice but the
+   * last is a whole number of 3-byte groups, so the pieces join without
+   * padding in between.
+   */
+  function b64FromBytes(bytes) {
+    let out = "";
+    for (let i = 0; i < bytes.length; i += 24576) {
+      out += btoa(String.fromCharCode.apply(null, bytes.subarray(i, i + 24576)));
+    }
+    return out;
+  }
+
+  function bytesFromB64(b64) {
+    const bin = atob(typeof b64 === "string" ? b64 : String(b64));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
   function bytesToBase64(str) {
-    const bytes = new TextEncoder().encode(str);
-    let bin = "";
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin);
+    return b64FromBytes(new TextEncoder().encode(str));
   }
 
   function base64ToString(b64) {
-    const raw = typeof b64 === "string" ? b64 : String(b64);
-    const bin = atob(raw);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return new TextDecoder().decode(bytes);
+    return new TextDecoder().decode(bytesFromB64(b64));
+  }
+
+  let txnSeq = 0;
+  /** A name for one chunked write, unique in this page ([A-Za-z0-9_-], ≤ 32). */
+  function newTxn() {
+    txnSeq = (txnSeq + 1) % 1e9;
+    return "p" + Date.now().toString(36) + "-" + txnSeq.toString(36) + "-" + Math.floor(Math.random() * 1e9).toString(36);
+  }
+
+  /**
+   * Send `bytes` through `call` (one bridge command), in pieces when they
+   * would not fit one frame.
+   * @param {(fields: object) => Promise<any>} call the invoke, command fixed
+   * @param {object} fields what every piece carries besides the bytes
+   * @param {Uint8Array} bytes
+   * @returns {Promise<any>} the answer to the last piece, or the first answer
+   *   that was not "go on" (a refusal, or a shell that does not stage)
+   */
+  async function sendBytes(call, fields, bytes) {
+    if (bytes.length <= CHUNK) return call(Object.assign({}, fields, { b64: b64FromBytes(bytes) }));
+    for (let attempt = 0; ; attempt++) {
+      const txn = newTxn();
+      let r = null;
+      for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+        // one slice encoded per bridge round trip, so no single task on the
+        // main thread holds more than CHUNK bytes' worth of this
+        const b64 = b64FromBytes(bytes.subarray(offset, offset + CHUNK));
+        r = await call(Object.assign({}, fields, { txn, total: bytes.length, offset, b64 }));
+        const last = offset + CHUNK >= bytes.length;
+        if (last || (r && typeof r === "object" && r.ok === true && r.pending === true)) continue;
+        // "done" before the last piece is a shell that ignored the staging
+        // fields and wrote this one piece as the whole file: not saved
+        if (r === true || (r && typeof r === "object" && r.ok === true)) r = { error: "not_staged" };
+        break;
+      }
+      // Another transfer took this one's staging slot (main.zig keeps a few
+      // at once; two windows saving together can use them up). Once more
+      // from the top is enough — the other writer is not a loop.
+      if (r && r.error === "stage_lost" && attempt === 0) continue;
+      return r;
+    }
+  }
+
+  /**
+   * Read through `call`, following {more} until the whole content is in.
+   * @returns {Promise<any>} the first answer, with `bytes` (Uint8Array) set to
+   *   the whole content when it carried any; any other shape ({missing},
+   *   {tooLarge}, an error, an older shell's bare string) exactly as it came
+   */
+  async function readBytes(call, fields) {
+    const first = await call(fields);
+    if (!first || typeof first !== "object" || typeof first.b64 !== "string") return first;
+    const parts = [bytesFromB64(first.b64)];
+    let size = parts[0].length;
+    let r = first;
+    while (r.more === true) {
+      if (size > FILE_MAX) throw fileTooLargeError(FILE_MAX);
+      // the .bak the first piece came from, if it did: the rest must too
+      r = await call(Object.assign({}, fields, { offset: size }, first.bak === true ? { bak: true } : null));
+      if (!r || typeof r !== "object" || typeof r.b64 !== "string") throw new Error("chunked read broke off");
+      const piece = bytesFromB64(r.b64);
+      if (!piece.length && r.more === true) throw new Error("chunked read made no progress");
+      parts.push(piece);
+      size += piece.length;
+    }
+    let bytes = parts[0];
+    if (parts.length > 1) {
+      bytes = new Uint8Array(size);
+      let at = 0;
+      for (const p of parts) { bytes.set(p, at); at += p.length; }
+    }
+    return Object.assign({}, first, { bytes, more: false });
+  }
+
+  /** A write answer that says the native side did not take it. */
+  function throwIfWriteRefused(r, path) {
+    throwIfRefused(r, path);
+    if (r && typeof r === "object") {
+      if (r.tooLarge) throw fileTooLargeError(r.limit);
+      if (typeof r.error === "string") throw new Error("write failed: " + r.error);
+    }
   }
 
   /**
@@ -32,8 +145,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * SDK builtins whose answer main.zig never sees, so the wrappers below call
    * chess.issuePath on every path they return; main.zig validates it (home or
    * a removable volume, no dotfiles, no ~/Library / AppData, no .app bundle)
-   * and only then remembers it. A call site that names a path from anywhere
-   * else gets this error, which is the point.
+   * and only then remembers it. Drops and OS opens are issued by main.zig
+   * itself (v8-0-plan F3), so the dialogs are the one road left through
+   * chess.issuePath. A call site that names a path from anywhere else gets
+   * this error, which is the point.
    */
   const UNISSUED_PATH = "UnissuedPathError";
 
@@ -73,11 +188,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
 
   async function writeTextFile(path, text) {
     if (!hasZero()) throw new Error("no bridge");
-    const r = await global.zero.invoke("chess.writeTextFile", {
-      path: path,
-      b64: bytesToBase64(text),
-    });
-    throwIfRefused(r, path);
+    const r = await sendBytes((f) => global.zero.invoke("chess.writeTextFile", f),
+      { path: path }, new TextEncoder().encode(String(text)));
+    throwIfWriteRefused(r, path);
   }
 
   /**
@@ -92,8 +205,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   async function writeBinaryFile(path, b64) {
     if (!hasZero()) throw new Error("no bridge");
-    const r = await global.zero.invoke("chess.writeTextFile", { path: path, b64: b64 });
-    throwIfRefused(r, path);
+    const r = await sendBytes((f) => global.zero.invoke("chess.writeTextFile", f), { path: path }, bytesFromB64(b64));
+    throwIfWriteRefused(r, path);
   }
 
   /**
@@ -114,14 +227,16 @@ const global = typeof window !== "undefined" ? window : globalThis;
 
   async function readTextFile(path) {
     if (!hasZero()) throw new Error("no bridge");
-    const r = await global.zero.invoke("chess.readTextFile", { path: path });
+    const r = await readBytes((f) => global.zero.invoke("chess.readTextFile", f), { path: path });
     // this used to be a bare base64 string, which had nowhere to put the
     // refusal; the old shape still reads fine.
     if (typeof r === "string") return base64ToString(r);
     if (!r || typeof r !== "object") throw new Error("bad read result");
     throwIfRefused(r, path);
     if (r.tooLarge) throw fileTooLargeError(r.limit);
-    return base64ToString(r.b64);
+    if (!r.bytes) throw new Error("bad read result");
+    // decoded once, whole: a piece boundary can fall inside a UTF-8 sequence
+    return new TextDecoder().decode(r.bytes);
   }
 
   /**
@@ -366,10 +481,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
   function onDropFiles(handler) {
     if (!hasZero() || typeof global.zero.on !== "function") return function () {};
     try {
-      // a dropped path is native-issued too — register it before the handler
-      // reads it (see UNISSUED_PATH)
-      return global.zero.on("drop:files", async function (payload) {
-        await issuePaths(eventPaths(payload));
+      // v8-0-plan F3 (§6): main.zig issues a dropped path itself, from the
+      // SDK's files_dropped event, before the page hears "drop:files" — so a
+      // drop no longer goes through chess.issuePath, which is left for what
+      // the file dialogs return (see UNISSUED_PATH)
+      return global.zero.on("drop:files", function (payload) {
         return handler(payload);
       });
     } catch (_) {
@@ -407,43 +523,51 @@ const global = typeof window !== "undefined" ? window : globalThis;
 
   // ---- app data (v6-plan Q1.1) --------------------------------------------
   //
-  // One native file, chessboard.json, in the per-user data directory
-  // (macOS ~/Library/Application Support/Chessboard/, Windows
-  // %APPDATA%\Chessboard\). The page owns the contents; the native side
-  // writes atomically (tmp → rename) and keeps the previous file as
-  // chessboard.json.bak. Every wrapper answers null when there is no bridge
-  // (the browser) or the platform gave no data directory, so persist.js can
-  // keep localStorage as the fallback and the one-time migration source.
+  // The per-user data directory (macOS ~/Library/Application Support/
+  // Chessboard/, Windows %APPDATA%\Chessboard\). The page owns the contents;
+  // the native side writes atomically (tmp → rename) and keeps the previous
+  // copy as a .bak. Every wrapper answers null when there is no bridge (the
+  // browser) or the platform gave no data directory, so persist.js can keep
+  // localStorage as the fallback and the one-time migration source.
+  //
+  // v8-0-plan F3: two kinds of file live there. `key` names one file of the
+  // per-key store (store/<key>.json) that persist.js mirrors into since v8-0-plan F3;
+  // no key is chessboard.json, the one-document mirror 6.x–7.x wrote, which
+  // the page now only reads to migrate from.
 
   /**
+   * @param {string} [key] a store key; omitted for chessboard.json
    * @returns {Promise<{text: string, bak?: boolean}|{missing: true}|{empty: true}|null>}
    *   the file (with `bak` true when the native side had to fall back to
-   *   chessboard.json.bak), "no file yet" (a fresh install — migrate from
+   *   its .bak), "no file yet" (a fresh install — migrate from
    *   localStorage), "the file is there and holds nothing" (6.1: damage, not
    *   a fresh install), or null when native storage is unavailable here.
    *   Throws FileTooLargeError when the file is over the native limit.
    */
-  async function appdataRead() {
+  async function appdataRead(key) {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
     let r;
-    try { r = await global.zero.invoke("chess.appdataRead", {}); }
-    catch (_) { return null; }
+    try { r = await readBytes((f) => global.zero.invoke("chess.appdataRead", f), key == null ? {} : { key: String(key) }); }
+    catch (err) { if (err && err.name === FILE_TOO_LARGE) throw err; return null; }
     if (!r || typeof r !== "object") return null;
     if (r.missing) return { missing: true };
     if (r.empty) return { empty: true };
     if (r.tooLarge) throw fileTooLargeError(r.limit);
-    if (r.error || typeof r.b64 !== "string") return null;
-    return { text: base64ToString(r.b64), bak: r.bak === true };
+    if (r.error || !r.bytes) return null;
+    return { text: new TextDecoder().decode(r.bytes), bak: r.bak === true };
   }
 
   /**
+   * @param {string} text
+   * @param {string} [key] a store key; omitted for chessboard.json
    * @returns {Promise<boolean|null>} true when written, null when native
    *   storage is unavailable here. Throws when the native side refused or
    *   failed the write — the caller must NOT treat that as saved.
    */
-  async function appdataWrite(text) {
+  async function appdataWrite(text, key) {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
-    const r = await global.zero.invoke("chess.appdataWrite", { b64: bytesToBase64(String(text)) });
+    const r = await sendBytes((f) => global.zero.invoke("chess.appdataWrite", f),
+      key == null ? {} : { key: String(key) }, new TextEncoder().encode(String(text)));
     if (r && typeof r === "object") {
       if (r.ok) return true;
       if (r.tooLarge) throw fileTooLargeError(r.limit);
@@ -455,7 +579,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return null;
   }
 
-  /** @returns {Promise<string|null>} where chessboard.json lives, for About */
+  /** @returns {Promise<string|null>} the data directory, for About */
   async function appdataPath() {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
     try {
@@ -581,8 +705,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
     onOpenFiles,
     onAppLifecycle,
     normalizePaths,
-    appdataRead,
-    appdataWrite,
+    appdataRead: () => appdataRead(),
+    appdataWrite: (text) => appdataWrite(text),
+    // v8-0-plan F3: one file of the per-key store (persist.js)
+    appdataReadKey: (key) => appdataRead(key),
+    appdataWriteKey: (key, text) => appdataWrite(text, key),
     appdataPath,
     setMenuLanguage,
     checkUpdate,
