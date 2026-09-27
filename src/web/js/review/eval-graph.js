@@ -23,6 +23,7 @@ export function createEvalGraph(d) {
   } = d;
   const document = doc;
   const Review = ChessReview;
+
   /**
    * The judgement colours, from the same tokens the stylesheet reads.
    *
