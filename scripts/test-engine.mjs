@@ -288,6 +288,19 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   assert(E.isReady() && state.workers.length === 2, "retry() lets exactly one new boot through, and it can succeed");
 }
 
+// v8-0-plan §5: the generated engine-src.js header named Stockfish 18 after
+// 19 was vendored — the version it prints must be the one it reads
+{
+  const fs = await import("fs");
+  const gen = fs.readFileSync(path.join(root, "scripts/gen-engine-src.mjs"), "utf8");
+  const read = [...gen.matchAll(/stockfish-(\d+)-lite-single\.(?:js|wasm)/g)].map((m) => m[1]);
+  const said = [...gen.matchAll(/Stockfish(?:\.js)? (\d+)/g)].map((m) => m[1]);
+  const vendored = fs.readdirSync(path.join(root, "third_party/stockfish")).map((f) => (/^stockfish-(\d+)-/.exec(f) || [])[1]).filter(Boolean);
+  const v = vendored[0];
+  assert(v && read.length && read.every((x) => x === v) && said.length && said.every((x) => x === v),
+    "gen-engine-src.mjs reads and names the vendored Stockfish " + v + " (reads " + read.join("/") + ", header says " + said.join("/") + ")");
+}
+
 if (failed) {
   console.error(failed + " test(s) failed");
   process.exit(1);

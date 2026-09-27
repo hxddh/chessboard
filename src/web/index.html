@@ -707,7 +707,14 @@
              of 619. This fills it with what the app already knows: the last
              result, the running record, and the one suggestion the statistics
              page was keeping to itself. -->
-        <div class="idle-card" id="idle-card" hidden></div>
+        <div class="idle-card" id="idle-card" hidden>
+          <div id="idle-body"></div>
+          <!-- v8-0-plan §5: at move 0 新局 is not in 本局 (there is no game
+               to end), and that left no way to the opponent / side / clock
+               dialog on the board you open to except N and the menu. Written
+               once here and relabelled in place (7.6: never rebuilt). -->
+          <div class="link-row"><button type="button" class="act-btn" id="idle-new"></button></div>
+        </div>
         <!-- 7.7 (v7-7-plan §1f): four keys, always four. At the last move the
              two forward keys used to vanish (and ● 回到最新 stood in a fifth
              slot doing what » does), so the row changed shape exactly when

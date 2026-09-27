@@ -341,6 +341,10 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
   const mined = mctx.MINED_PUZZLES;
   assert(Array.isArray(mined) && mined.length >= 1002, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  // v8-0-plan §5: the header said 1023 while the array held 1002 — the
+  // count a reader sees first must be the count that ships
+  const headN = (/\* (\d+) puzzles/.exec(fs.readFileSync(path.join(ROOT, "src/web/js/puzzles-mined.js"), "utf8")) || [])[1];
+  assert(Number(headN) === mined.length, "puzzles-mined.js header count matches the array (" + headN + " vs " + mined.length + ")");
   const ids = new Set(), fens = new Set(ctx.CHESS_PUZZLES.map((p) => p.fen));
   let bad = 0;
   const fail = (...m) => { bad++; console.error("FAIL:", ...m); };
@@ -472,6 +476,47 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // 选题区间也跟着放宽，这才是玩家能看见的后果
   const wide = R.pickRange(d30), narrow = R.pickRange(settled);
   assert((wide.hi - wide.lo) > (narrow.hi - narrow.lo), "……出题区间随之放宽，而不是照着三个月前的区间出题");
+}
+
+// --- v8-0-plan §5: 暂定评级标「?」 ------------------------------------------
+// The record page printed 「1104 ±180」 for a rating two answers old. A wide
+// deviation is marked the way Lichess marks it: provisional above RD 110.
+{
+  const R = ctx.ChessRating;
+  assert(typeof R.isProvisional === "function", "rating.js says whether a rating is provisional");
+  if (typeof R.isProvisional === "function") {
+    assert(R.isProvisional(R.newRating()), "a new rating (RD 350) is provisional");
+    assert(!R.isProvisional({ r: 1500, rd: 60, vol: 0.06 }), "a settled rating (RD 60) is not");
+    // how many first answers until the 「?」 goes: about a dozen, not one and not a hundred
+    let pl = R.newRating(), n = 0;
+    while (R.isProvisional(pl) && n < 200) { pl = R.rate1v1(pl, { r: 1500, rd: 150, vol: 0.01 }, n % 2).player; n++; }
+    assert(n >= 5 && n <= 30, "the 「?」 goes after a dozen or so answers (" + n + ")");
+    const back = R.decayIdle({ r: 1500, rd: 60, vol: 0.06 }, 3650);
+    assert(R.isProvisional(back), "…and comes back after a long absence (RD " + Math.round(back.rd) + ")");
+  }
+}
+
+// --- v8-0-plan §5: 开局题默认从常见开局开始 ----------------------------------
+// Sorted by ECO alone the first drill was always A01 Nimzo-Larsen (1.b3).
+{
+  const dctx = loadAppModules(["src/web/js/openings.js", "src/web/js/drills.js"]);
+  const D = dctx.ChessDrills;
+  assert(typeof D.orderDrills === "function", "drills.js orders the drills");
+  if (typeof D.orderDrills === "function") {
+    const drills = D.drillLines(dctx.CHESS_OPENINGS).map(([eco, nameId]) => ({ eco, nameId }));
+    const ordered = D.orderDrills(drills, dctx.CHESS_OPENING_NAMES);
+    assert(ordered.length === drills.length, "ordering keeps every drill (" + ordered.length + ")");
+    assert(ordered[0].nameId === "italian-game", "the first drill is the Italian Game (" + ordered[0].eco + " " + ordered[0].nameId + ")");
+    const ids = new Set(drills.map((d) => d.nameId));
+    const missing = D.COMMON_OPENINGS.filter((id) => !ids.has(id));
+    assert(missing.length === 0, "every common opening named is a drill in the book", missing.join(", "));
+    const head = ordered.slice(0, D.COMMON_OPENINGS.length).map((d) => d.nameId);
+    assert(JSON.stringify(head) === JSON.stringify(D.COMMON_OPENINGS), "the common openings come first, in teaching order");
+    const rest = ordered.slice(D.COMMON_OPENINGS.length).map((d) => d.eco);
+    assert(rest.every((e, i) => i === 0 || rest[i - 1] <= e), "…and the rest keep ECO order");
+    assert(ordered.slice(0, 10).some((d) => d.eco[0] === "B") && ordered.slice(0, 10).some((d) => d.eco[0] === "C"),
+      "the first ten include 1.e4 e5 and the Sicilian");
+  }
 }
 
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }

@@ -1511,6 +1511,8 @@
       background: var(--card);
       display: grid; gap: 8px;
     }
+    /* the rebuilt part of the card; its lines are the card's grid items */
+    #idle-body { display: contents; }
     .idle-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
     .idle-k { font-size: 0.6875rem; color: var(--muted); }
     .idle-v { font-size: 0.8125rem; color: var(--text); font-weight: 500; }
@@ -2735,10 +2737,14 @@
       pointer-events: none;
     }
     .curve-tip-hint { color: var(--muted); margin-left: 6px; }
-    /* The difficulty row is two scales, so it is labelled as two. */
+    /* The difficulty row is two scales, so it is labelled as two. v8-0-plan
+       §5: those two labels stand in for the row's own (see index.html), so
+       they are dressed as one — 11px muted caps beside 陪练风格 / 执子 / 棋钟
+       at 14px read as a lower rank in the 新对局 dialog, where the four rows
+       are the whole dialog and nothing else says which is which. */
     .diff-group {
       display: block; margin: 6px 0 4px;
-      font-size: 0.6875rem; font-weight: 600; color: var(--muted);
+      font-size: 0.875rem; font-weight: 500; color: var(--text);
     }
     .diff-group:first-of-type { margin-top: 0; }
 
@@ -3085,6 +3091,15 @@
       text-align: right; white-space: nowrap;
     }
     .ach-pg, .hist-row { font-variant-numeric: tabular-nums; }
+    /* v8-0-plan §5: the diagnosis says more per value than any panel row —
+       「5 厘兵/手 · 失误率 16.7%」 is 153px, 「1 手あたり 5 センチポーン ·
+       失着率 16.7%」 258px — and the fixed 114px track cut them off at the
+       dialog's edge (39px in Chinese, 70 in English, 144 in Japanese, at
+       every width). The dialog sizes its own value track to its widest value
+       (library-ui.js fitDiagColumn), so the figures stay one column and the
+       names truncate onto `title` as before; where even that track is capped
+       (a phone), a value wraps inside it rather than being cut. */
+    #lib-diag .stat-v { white-space: normal; }
     .stats-body .hint { margin: 4px 0 0; }
 
     /* game history: same row shape in the sidebar preview and the full list */
@@ -3164,11 +3179,17 @@
   grid-auto-columns: minmax(0, 1fr);
 }
 
+/* v8-0-plan §5: the sheet was a 380px card with the list capped at 52vh
+   inside it. Twelve rows of sentences wrapped to two and three lines there,
+   and the cap hid the bottom of the list behind a second scroll bar — 128px
+   of it at 1400x900 in Chinese, 388px in English, with nothing to say more
+   was there. The card is as wide as the sentences want and the list is not
+   capped: a card taller than the window scrolls itself, with 关闭 pinned. */
+#keys-modal .modal { width: min(720px, calc(100vw - 32px)); }
 .key-list {
-  display: grid; grid-template-columns: auto 1fr;
-  gap: 8px 12px; margin: 0 0 12px;
+  display: grid; grid-template-columns: fit-content(11rem) 1fr;
+  gap: 8px 16px; margin: 0 0 12px;
   align-items: baseline;
-  max-height: 52vh; overflow-y: auto;
 }
 .key-list dt { display: flex; gap: 4px; flex-wrap: wrap; }
 /* 6.0: the About sheet reuses the shortcut sheet's two-column list; its

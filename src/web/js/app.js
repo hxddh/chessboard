@@ -3054,7 +3054,7 @@ import { createStore } from "./store.js";
 
   /** Opening trainer drills, generated from the vendored ECO book (≥6 plies). */
   const Drills = ChessDrills;
-  const OPENING_DRILLS = Drills.drillLines(CHESS_OPENINGS || [])
+  const OPENING_DRILLS = Drills.orderDrills(Drills.drillLines(CHESS_OPENINGS || [])
     // The id is derived from the ECO code and the moves, NOT from the row's
     // position — see drills.js. With a positional id, adding a single deep
     // line to the book moved 108 of the 109 ids onto a different drill and
@@ -3069,15 +3069,15 @@ import { createStore } from "./store.js";
       name: eco + " " + (CHESS_OPENING_NAMES[nameId] || nameId),
       line: seq.split(" "),
       idea: idea || "",
-    }))
-    // ECO order, so the list reads A→E: flank, then semi-open, then open, then
-    // queen's-pawn, then Indian. The book is authored in family order inside
-    // each letter, which put A57 next to A08 once 1.15 added the deep lines,
-    // and 109 rows in no order at all is a list nobody scrolls twice.
-    // sorted by the Chinese name, not the displayed one: the list order must
+    })),
+    // The common openings first (v8-0-plan §5 — the list used to open on A01),
+    // then ECO order, so the rest reads A→E: flank, then semi-open, then open,
+    // then queen's-pawn, then Indian. The book is authored in family order
+    // inside each letter, which put A57 next to A08 once 1.15 added the deep
+    // lines, and 109 rows in no order at all is a list nobody scrolls twice.
+    // Ties go by the Chinese name, not the displayed one: the list order must
     // not shuffle when the interface language changes
-    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1
-      : (CHESS_OPENING_NAMES[a.nameId] || "").localeCompare(CHESS_OPENING_NAMES[b.nameId] || "", "zh")));
+    CHESS_OPENING_NAMES);
   /**
    * The same 119 lines, played from the other chair. Nearly half the book is
    * a Black defence — Caro-Kann, French, the whole Sicilian family — and
@@ -3374,7 +3374,8 @@ import { createStore } from "./store.js";
     const before = Math.round(playerRating().r);
     const r = ChessRating.rate1v1(playerRating(), puzzleRating(pz.p), score);
     // what the answer did to the rating, for the feedback card (7.7 §4)
-    pz.rating = { now: Math.round(r.player.r), delta: Math.round(r.player.r) - before };
+    pz.rating = { now: Math.round(r.player.r), delta: Math.round(r.player.r) - before,
+      provisional: ChessRating.isProvisional(r.player) };
     st.rating = r.player;
     if (!st.pr) st.pr = {};
     st.pr[id] = r.puzzle;
@@ -3383,10 +3384,18 @@ import { createStore } from "./store.js";
     st.rhist.push({ t: st.ratedAt, r: Math.round(r.player.r) });
     while (st.rhist.length > 60) st.rhist.shift();
   }
-  /** "1523" or "1523 ±180" while the deviation is still wide */
+  /**
+   * "1523", or "1104?" while the rating is provisional (v8-0-plan §5). The
+   * ± it used to print beside the number is the tooltip now: 「1104 ±180」
+   * read as a measurement with an error bar, where 「?」 says what it is.
+   */
   function ratingLabel() {
     const r = playerRating();
-    return Math.round(r.r) + (r.rd > 100 ? " " + tf("rec.ratingRd", [Math.round(r.rd)]) : "");
+    return Math.round(r.r) + (ChessRating.isProvisional(r) ? "?" : "");
+  }
+  function ratingTip() {
+    const r = playerRating();
+    return ChessRating.isProvisional(r) ? tf("rec.ratingRd", [Math.round(r.rd)]) : "";
   }
   function markMissed(id) {
     // Only a puzzle the book can still serve (7.4 D5). The one on screen can
@@ -4033,7 +4042,7 @@ import { createStore } from "./store.js";
     if (fb.ok && pz.done && store.session.pzStreak >= 2) parts.push(tf("pz.fb.streak", [store.session.pzStreak]));
     if (pz.rating && (pz.done || !fb.ok)) {
       const d = pz.rating.delta;
-      parts.push(pz.rating.now + " " + (d > 0 ? "+" + d : d < 0 ? "−" + -d : "±0"));
+      parts.push(pz.rating.now + (pz.rating.provisional ? "?" : "") + " " + (d > 0 ? "+" + d : d < 0 ? "−" + -d : "±0"));
     }
     avail(meta, parts.length > 0);
     setText(meta, parts.join(" · "));
@@ -6012,6 +6021,7 @@ import { createStore } from "./store.js";
       if (owed || tomorrow) parts.push(tf("rec.due", [owed, tomorrow]));
       meta.hidden = !parts.length;
       if (parts.length) { meta.textContent = parts.join(" · "); head.hidden = false; }
+      meta.title = hist.length ? ratingTip() : "";
     }
     if (rcv) {
       rcv.hidden = hist.length < 2;
@@ -6616,6 +6626,7 @@ import { createStore } from "./store.js";
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
+    renderRecordEntry,
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
@@ -7032,8 +7043,10 @@ import { createStore } from "./store.js";
     const doors = document.getElementById("record-doors");
     if (!box || !doors) return;
     const stats = loadStats();
-    const res = evalAch();
-    const fresh = !stats.games.length && !res.some((r) => r.unlocked);
+    // v8-0-plan §5: a library of imported games is a record too — with 500
+    // of them on this page it still opened on 「现在还空着」
+    const fresh = !(store.session.library || []).length && !stats.games.length &&
+      !evalAch().some((r) => r.unlocked);
     box.hidden = !fresh;
     if (!fresh) return;
     doors.replaceChildren();
@@ -7720,6 +7733,12 @@ import { createStore } from "./store.js";
     const canAnalyse = !engineDown && sanHistory().length > 0 && !analysisFor() && !store.session.analyzing;
     avail(el("go-analyse"), canAnalyse);
     avail(el("go-switch"), mode === "ai");
+    // v8-0-plan §5: a finished game from the library or a file is a record,
+    // and 再来一盘 of a game you did not play is not a rematch
+    avail(el("go-again"), !store.game.imported);
+    // …which can leave the row empty (an analysed library game)
+    const acts = card.querySelector(".go-acts");
+    if (acts) acts.hidden = ![...acts.children].some((b) => !b.hidden);
   }
 
   /**
@@ -7953,7 +7972,7 @@ import { createStore } from "./store.js";
     // a move to take back, the live position, and a game still running.
     slot(el("undo"), modal
       ? !!(inDrill && store.session.learn.g && store.session.learn.g.history().length)
-      : h.length > 0 && isLive() && !ruleTerminated());
+      : canTakeBack());
     // A new game needs a game to replace. At move 0 on the standard start
     // there is nothing for it to do, and it was the only surviving member of
     // the 「本局」 group — a heading over a single item, promising a group of
@@ -8526,9 +8545,20 @@ import { createStore } from "./store.js";
     clearSelection();
   }
 
+  /**
+   * v8-0-plan §5: 悔棋 is for a game being played here. A game that is over
+   * (mate, stalemate, a flag, a resignation, a draw) has nothing to take back
+   * into — 重下 / 再来一盘 are the ways on — and a game opened from the
+   * library or a file is somebody's record, not a move of yours. The key and
+   * the menu stop at the same rule the button is drawn by.
+   */
+  function canTakeBack() {
+    return sanHistory().length > 0 && isLive() && !appGameOver() && !store.game.imported;
+  }
+
   function undo() {
     if (store.session.mode === "learn" && store.session.learn) { learnUndo(); return; }
-    if (!sanHistory().length || ruleTerminated()) return;
+    if (!sanHistory().length || appGameOver() || store.game.imported) return;
     if (!isLive()) { goLive(); return; }
     if (refusePgnEdit()) return;
     invalidateEngine();
@@ -9155,7 +9185,12 @@ import { createStore } from "./store.js";
     setPanelOpen(!panelCoversBoard());
     saveSettings();
     store.commit("session", "sync");
-    if (choice !== 0) maybeEngineTurn();
+    // v8-0-plan §5: 「我会下棋」 is someone about to choose an opponent, so
+    // they are shown the choice — the new-game dialog, on the opponent row,
+    // with 初级 already picked — instead of a game against a rung they never
+    // saw being chosen. 「以后再说」 still leaves them on the board.
+    if (choice === 1) openNewGame({ switchOpponent: true });
+    else if (choice !== 0) maybeEngineTurn();
   }
 
   function pickFromList(title, items, opts) {
@@ -9744,7 +9779,15 @@ import { createStore } from "./store.js";
     const show = (store.session.mode === "ai" || store.session.mode === "pvp") && !sanHistory().length && !store.session.editor;
     el.hidden = !show;
     if (!show) return;
-    el.replaceChildren();
+    // v8-0-plan §5: the way to the new-game dialog before the first move —
+    // the opponent in an engine game, the side and clock between two players
+    const ng = document.getElementById("idle-new");
+    if (ng) {
+      const label = t(store.session.mode === "ai" ? "go.switch" : "chrome.new");
+      if (ng.textContent !== label) ng.textContent = label;
+    }
+    const body = document.getElementById("idle-body") || el;
+    body.replaceChildren();
     const line = (k, v) => {
       const row = document.createElement("div");
       row.className = "idle-line";
@@ -9755,7 +9798,7 @@ import { createStore } from "./store.js";
       b.className = "idle-v";
       b.textContent = v;
       row.append(a, b);
-      el.appendChild(row);
+      body.appendChild(row);
     };
     const st = loadStats();
     const games = st.games || [];
@@ -9773,13 +9816,13 @@ import { createStore } from "./store.js";
       const ready = document.createElement("div");
       ready.className = "idle-v";
       ready.textContent = t("idle.ready") + " · " + t(store.session.mode === "ai" ? "idle.vsEngine" : "idle.vsHuman");
-      el.appendChild(ready);
+      body.appendChild(ready);
     }
     const rec = recommendation();
     const tip = document.createElement("div");
     tip.className = "idle-rec";
     tip.textContent = rec || t("idle.tip");
-    el.appendChild(tip);
+    body.appendChild(tip);
   }
 
   function renderMaterial() {
@@ -10492,6 +10535,7 @@ import { createStore } from "./store.js";
   // you to the settings page to find the opponent in a fold
   document.getElementById("go-again").onclick = () => { requestNewGame({ again: true }); };
   document.getElementById("go-switch").onclick = () => { requestNewGame({ switchOpponent: true }); };
+  document.getElementById("idle-new").onclick = () => { requestNewGame({ switchOpponent: store.session.mode === "ai" }); };
   {
     const ngModal = el("newgame-modal");
     el("ng-start").onclick = () => { startFromDialog(); };

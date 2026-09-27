@@ -9,7 +9,7 @@
  * set is held to. `rating` is an estimate (see mine-puzzles.mjs); the app's
  * Glicko-2 takes over from the first answer.
  *
- * 1023 puzzles (65 added to thin bands); rating measured by nodes-to-solve (6.1), ladder 30/80/200/500/1500/5000/20000/80000/320000.
+ * 1002 puzzles (65 added to thin bands, 21 later retired by test-mined --fix); rating measured by nodes-to-solve (6.1), ladder 30/80/200/500/1500/5000/20000/80000/320000.
  * @module puzzles-mined
  */
 export const MINED_PUZZLES = [
