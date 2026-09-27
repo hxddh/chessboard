@@ -324,6 +324,20 @@ function guarded(Chess, fen, sq, color) {
   try { ms = g.moves({ verbose: true }) || []; } catch (_) { return false; }
   return ms.some((m) => m.to === sq);
 }
+/**
+ * Is the side on move in `fen` in check from a man other than the one on
+ * `sq`? Then a take-back on `sq` is illegal because of the check, not
+ * because nothing guards it, and "free" would be a misreading: a discovered
+ * check (review of PR #87 — Nxc5+ with Re1 behind, the b6 pawn guarding c5).
+ */
+function checkedFromElsewhere(Chess, fen, sq) {
+  const g = load(Chess, fen);
+  if (!g || !g.in_check()) return false;
+  const grid = gridOf(g);
+  const V = g.turn();
+  const k = kingOf(grid, V);
+  return !!k && hittersOf(grid, k, other(V)).some((s) => s !== sq);
+}
 function playOn(g, m) {
   let mv = null;
   try { mv = g.move(m); } catch (_) { mv = null; }
@@ -390,6 +404,9 @@ function laterMine(c, f) {
 function dHanging(c) {
   const m = c.L.moves[0];
   if (!m.captured || VALUE[m.captured] < 3 || c.W < 2) return null;
+  // a check from behind the capturer, not the capture, is what forbids the
+  // take-back: unsure whether it hangs, so leave it to dDiscovered
+  if (checkedFromElsewhere(c.Chess, c.L.fens[0], m.to)) return null;
   // asked where it happened: can the side that lost it take back, legally?
   const free = !takersOf(c.Chess, c.L.fens[0], m.to, c.V).some((x) => x.captured);
   const cheap = m.piece !== "k" && VALUE[m.piece] < VALUE[m.captured];
@@ -743,6 +760,7 @@ export function threatOf(fenBefore, reply, best, Chess) {
     if (!m) return null;
     if (g.in_checkmate()) return { motif: "mateThreat" };
     if (!m.captured || VALUE[m.captured] < 3) return null;
+    if (checkedFromElsewhere(Chess, g.fen(), m.to)) return null;   // a discovered check, as in dHanging
     const free = !takersOf(Chess, g.fen(), m.to, other(A)).some((x) => x.captured);
     const cheap = m.piece !== "k" && VALUE[m.piece] < VALUE[m.captured];
     return free || cheap ? { motif: "hanging", piece: m.captured, by: m.piece, free } : null;
