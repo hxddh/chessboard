@@ -560,6 +560,50 @@ for (const v of ["home", "library", "me"]) {
   await ctx.close();
 }
 
+// Codex on #86: a PGN dropped while a page covers a lesson or a puzzle opens
+// in a playing mode — the trainer draws its own board, not the game. Red
+// before: back on 谜题, the loaded game nowhere on screen.
+{
+  const { ctx, page, errs } = await open({ mode: "puzzle" });
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['[Event "?"]\n\n1. d4 d5 2. c4 *'], "drop.pgn", { type: "text/plain" }));
+    window.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(900);
+  await page.click("#confirm-ok", { timeout: 600 }).catch(() => {});
+  await page.waitForTimeout(500);
+  const st = await state(page);
+  const rows = await page.evaluate(() => document.querySelectorAll("#move-list .mlrow").length);
+  assert(st.current === "play" && (st.mode === "ai" || st.mode === "pvp") && rows === 2,
+    "谜题上盖着首页时拖入 PGN:回到下棋、离开谜题模式,看得见这一局(" + JSON.stringify({ current: st.current, mode: st.mode, rows }) + ")");
+  assert(errs.length === 0, "训练模式下拖入:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// Codex on #86: a home card worked from the keyboard hides the page its
+// button is on; focus goes where the player went, not into a hidden subtree.
+{
+  const { ctx, page, errs } = await open();
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  await page.focus("#home-continue .home-go");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(600);
+  await page.keyboard.press("Escape");   // the new-game dialog the empty board opens
+  await page.waitForTimeout(400);
+  const f = await page.evaluate(() => {
+    const a = document.activeElement;
+    return { tag: a && a.tagName, id: a && (a.id || a.dataset.view || ""), seen: !!a && a !== document.body && a.getClientRects().length > 0,
+      inPage: !!a && !!a.closest("#page-home, #page-library, #page-me") };
+  });
+  assert(f.seen && !f.inPage, "键盘点首页卡片离开整页后,焦点在看得见的地方(" + JSON.stringify(f) + ")");
+  assert(errs.length === 0, "焦点:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }

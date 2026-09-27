@@ -9195,9 +9195,9 @@ import { createStore } from "./store.js";
     adoptHeaderResult();
     // 7.6 §1c: a game analysed before comes back analysed, without a search
     restoreAnalysis();
-    resetClocks();
-    syncAutoFlip();
-    // a page in front (a drop, an Open, a paste) gives way to the game (Codex on #86)
+    resetClocks(); syncAutoFlip();
+    // a trainer draws its own board and a page covers it: the game opens in play, on the board (Codex on #86)
+    if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
     Shell.toBoard(); store.commit("game", "action"); saveGame();
     toast(sanHistory().length
       ? t("msg.import.donePrefix") + moveCount(Math.ceil(sanHistory().length / 2))

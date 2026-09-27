@@ -68,9 +68,19 @@ export function createShell(d) {
       if (b.dataset.view === want) b.setAttribute("aria-current", "page");
       else b.removeAttribute("aria-current");
     }
+    // Focus inside a page that is about to be hidden (a home card worked from
+    // the keyboard, a sheet that hands focus back to its opener) would sit in
+    // a display:none subtree, with nothing visible to go on from. It goes to
+    // the rail's entry for where the player went instead (Codex on #86).
+    const had = doc.activeElement;
     for (const [v, id] of Object.entries(PAGES)) {
       const page = doc.getElementById(id);
-      if (page) page.hidden = v !== want;
+      if (!page) continue;
+      if (v !== want && had && page.contains(had)) {
+        const to = railBtns().find((b) => b.dataset.view === want);
+        if (to) to.focus();
+      }
+      page.hidden = v !== want;
     }
     // Under a page the board and the panel are still laid out (so nothing
     // moves when the page goes), but they are not there for the keyboard or
