@@ -34,6 +34,9 @@
  * @module fit-row
  */
 
+/** The panel width at which the tool row takes its labels (v7-9-plan §1d). */
+const WIDE = 360;
+
 const shown = (b) => !b.hidden && getComputedStyle(b).display !== "none";
 
 /** The column counts a row may use, widest first. */
@@ -63,7 +66,14 @@ export function fitRow(row) {
  */
 export function watchFitRows(root) {
   const rows = [...root.querySelectorAll(".fit-row")];
-  const all = () => { for (const r of rows) fitRow(r); };
+  const all = () => {
+    // 7.9 §1d: the tool row's labels, once the panel has 360px for them.
+    // A class, not a container query: the bundle targets Safari 15 and those
+    // are 16 (Codex, #84). A panel that is not laid out keeps what it had.
+    const w = root.clientWidth;
+    if (w) root.classList.toggle("side-wide", w >= WIDE);
+    for (const r of rows) fitRow(r);
+  };
   let frame = 0;
   const soon = () => {
     if (!frame) frame = requestAnimationFrame(() => { frame = 0; all(); });
@@ -76,6 +86,7 @@ export function watchFitRows(root) {
       attributes: true, attributeFilter: ["hidden", "disabled", "class"] });
     if (ro) ro.observe(r);
   }
+  if (ro) ro.observe(root);
   // a label measured in the fallback face is narrower or wider than the same
   // label once the real one arrives
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(all);

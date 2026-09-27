@@ -1788,6 +1788,13 @@ for (const lang of CONTENT_LANGS) {
   // gets added: this makes that edit fail here rather than pass quietly.
   assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
 
+  // The bundle targets Safari 15 (scripts/bundle.mjs), and container queries
+  // arrived in Safari 16: a rule inside @container is simply not there on
+  // 15, so 7.9 §1d's tool labels never showed (Codex, #84). Width-dependent
+  // rules key on a class the page sets instead.
+  assert(!/@container\b|\bcontainer(?:-type|-name)?\s*:/.test(stripped),
+    "styles.css uses no container queries — the bundle targets Safari 15");
+
   // 7.9 §2b: numbers are the interface face with tabular figures. The mono
   // stack made every counter, the accuracy figure and the clock look like
   // terminal output beside the prose; this keeps it from coming back through
@@ -4772,7 +4779,9 @@ for (const lang of CONTENT_LANGS) {
     const htmlC = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
     // 7.2: the 棋谱库 markup is built in library-ui.js now, so the app's
     // source alone no longer accounts for every class it wears
-    const appC = appSrc + fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8");
+    // 7.9: and fit-row.js sets the panel's width class (.side-wide)
+    const appC = appSrc + fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8") +
+      fs.readFileSync(path.join(root, "src/web/js/fit-row.js"), "utf8");
     // class selectors the stylesheet defines, minus state/modifier suffixes
     const defined = new Set([...cssC.matchAll(/^\s*\.([a-z][a-z0-9-]*)/gm)].map((m) => m[1]));
     const orphans = [];

@@ -916,10 +916,6 @@
     .side {
       position: absolute; top: 0; right: 0; bottom: 0;
       width: var(--side-w); z-index: 30;
-      /* 7.9 §1d: what the tool row's labels ask is the panel's width, not
-         the window's — the panel is a column beside the board, a sheet under
-         it, or --side-w, depending on the window's shape */
-      container: side / inline-size;
       background: color-mix(in srgb, var(--panel) 94%, transparent);
       border-left: 1px solid var(--panel-border);
       backdrop-filter: blur(22px) saturate(1.15);
@@ -3282,23 +3278,25 @@ span[data-icon] { display: inline-grid; place-items: center; }
    beneath a smaller glyph — both inside the same --ctl-h, so the row's
    height does not change and there is still one button height (§1e).
    导出复盘图, the one worded tool, takes a line of its own at the end:
-   beside five labelled cells it left each of them 24px in Japanese. */
+   beside five labelled cells it left each of them 24px in Japanese.
+   What the labels ask is the panel's width, not the window's (a column, a
+   sheet, or --side-w by the window's shape), so fit-row.js measures #side
+   and sets .side-wide — not a container query: the bundle targets Safari 15
+   and those arrived in 16 (Codex, #84). */
 .tool-lbl { display: none; }
-@container side (min-width: 360px) {
-  .tool-row { column-gap: 2px; row-gap: 4px; }
-  .tool-row .tool-ic {
-    flex: 1 1 0; min-width: 0; width: auto;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-    padding: 0 2px; font-size: 1rem;
-  }
-  .tool-lbl {
-    display: block; max-width: 100%;
-    font-size: 0.6875rem; font-weight: 500; line-height: var(--lh-tight);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .tool-row:has(> .tool-txt:not([hidden]))::after { content: ""; flex-basis: 100%; order: 1; }
-  .tool-row .tool-txt { order: 2; }
+.side-wide .tool-row { column-gap: 2px; row-gap: 4px; }
+.side-wide .tool-row .tool-ic {
+  flex: 1 1 0; min-width: 0; width: auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  padding: 0 2px; font-size: 1rem;
 }
+.side-wide .tool-lbl {
+  display: block; max-width: 100%;
+  font-size: 0.6875rem; font-weight: 500; line-height: var(--lh-tight);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.side-wide .tool-row:has(> .tool-txt:not([hidden]))::after { content: ""; flex-basis: 100%; order: 1; }
+.side-wide .tool-row .tool-txt { order: 2; }
 .tool-txt { padding: 0 8px; font-size: 0.8125rem; font-weight: 500; margin-left: auto; }
 .tool-ic:hover, .tool-txt:hover { background: var(--btn-ghost); color: var(--text); }
 .tool-ic[aria-pressed="true"], .tool-ic[aria-expanded="true"] {
