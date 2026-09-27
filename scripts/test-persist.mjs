@@ -555,5 +555,54 @@ for (const how of ["restore", "clear"]) {
     "a removal's cleanup leaves alone what another window committed meanwhile (" + valOf(h, "stats") + ")");
 }
 
+// 2o. (Codex on #85) two windows flushing different keys from the same
+// starting manifest: the second commit must not point the first one's key
+// back at its old file
+{
+  const h = withStore(null);
+  const A = createPersist(h, () => {});
+  A.load();
+  await A.recover();
+  A.set("save", "s1");
+  A.set("settings", "t1");
+  await A.flushMirror();
+  const B = createPersist(h, () => {});
+  B.load();
+  await B.recover();
+  A.set("save", "s2");
+  await A.flushMirror();
+  B.set("settings", "t2");
+  await B.flushMirror();
+  assert(valOf(h, "save") === "s2" && valOf(h, "settings") === "t2",
+    "each window's commit keeps the other's newer key (save " + valOf(h, "save") + ", settings " + valOf(h, "settings") + ")");
+}
+
+// 2p. (Codex on #85) a restore reads the files one manifest names; if a
+// commit lands while it reads, it reads again rather than stitch generations
+{
+  const h = withStore(null);
+  h.store.set("save", "s-old");
+  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save"], files: { save: "save" } }));
+  const orig = h.appdataReadKey;
+  let once = true;
+  h.appdataReadKey = async (k) => {
+    const r = await orig(k);
+    if (k === "save" && once) {
+      once = false;
+      // another window commits a new generation, and the file just read is
+      // then overwritten by a third flush (as a stale view would)
+      h.store.set("save-b", "s-new");
+      h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 6000, keys: ["save"], files: { save: "save-b" } }));
+      h.store.set("save", "{half");
+      return { text: "{half" };
+    }
+    return r;
+  };
+  const P = createPersist(h, () => {});
+  P.load();
+  const r = await P.recover();
+  assert(r === "restored" && P.get("save") === "s-new", "a commit during a restore's reads is read again, whole (" + r + ": " + P.get("save") + ")");
+}
+
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");

@@ -403,24 +403,41 @@ export function createPersist(host, onWriteFailure) {
     dirty.clear();
     removed.clear();
     const values = names.map((name) => [name, bag ? bag[name] : null]);
-    const meta = { app: "chessboard", schema: SCHEMA, writtenAt: stamp(),
-      keys: Object.keys(KEYS).filter((name) => bag && bag[name] != null) };
+    const meta = { app: "chessboard", schema: SCHEMA, writtenAt: stamp(), keys: [] };
     const legacy = clearLegacy;
     clearLegacy = false;
     try {
-      if (!committed) committed = await readCommitted();
-      const files = {};
-      for (const name of meta.keys) files[name] = committed[name] || name;
+      // (Codex on #85) the manifest on disk, read fresh: a second window
+      // (two instances share one store) may have committed since this one
+      // last looked, and a slot picked from a stale map could be the file
+      // that window's manifest names
+      const before = await readDisk();
+      const base = before.missing ? committed || {} : before.files;
       // the new generation: every changed key into the file the manifest on
       // disk does not name (STORE_ALT). Nothing the old manifest points at
       // is touched before the new one replaces it.
+      const written = {};
       for (const [name, value] of values) {
         if (value == null) continue;
-        const file = committed[name] === name ? name + STORE_ALT : name;
+        const file = base[name] === name ? name + STORE_ALT : name;
         const ok = await host.appdataWriteKey(file, value);
         if (ok == null) { mirrorEnabled = false; return false; }
-        files[name] = file;
+        written[name] = file;
       }
+      // Commit against the manifest as it is now: this flush's keys are
+      // ours, every other key is whatever the last commit — possibly another
+      // window's — says it is. Without a lock on the native side this is as
+      // close to compare-and-swap as the store gets; the window left open is
+      // the few milliseconds between this read and the write below.
+      const now = await readDisk();
+      const cur = now.missing ? base : now.files;
+      const flushed = new Set(names);
+      const files = {};
+      for (const name of Object.keys(KEYS)) {
+        if (written[name]) files[name] = written[name];
+        else if (!flushed.has(name) && cur[name]) files[name] = cur[name];
+      }
+      meta.keys = Object.keys(files);
       meta.files = files;
       const ok = await host.appdataWriteKey(STORE_META, JSON.stringify(meta));
       if (ok == null) { mirrorEnabled = false; return false; }
@@ -430,9 +447,9 @@ export function createPersist(host, onWriteFailure) {
       // longer lists the key. A key that is simply empty has nothing to clear.
       // Asked of the manifest on disk, not assumed from ours: a second window
       // may have written the key again and committed since (Codex on #85).
-      const now = gone.size ? await readCommitted() : {};
+      const after = gone.size ? (await readDisk()).files : {};
       for (const name of gone) {
-        if (now[name]) continue;
+        if (after[name]) continue;
         for (const file of [name, name + STORE_ALT]) {
           if ((await host.appdataWriteKey(file, "null")) == null) { mirrorEnabled = false; return false; }
         }
@@ -453,15 +470,16 @@ export function createPersist(host, onWriteFailure) {
   }
 
   /**
-   * The manifest on disk's key → file map, for a flush that runs before
-   * recover() read it. A store with no manifest has nothing committed.
+   * The manifest on disk, as its key → file map. A store with no manifest
+   * has nothing committed.
+   * @returns {Promise<{files: object, missing: boolean}>}
    */
-  async function readCommitted() {
+  async function readDisk() {
     const r = await host.appdataReadKey(STORE_META);
-    if (r && r.missing) return {};
+    if (r && r.missing) return { files: {}, missing: true };
     let m = null;
     try { m = r && typeof r.text === "string" ? JSON.parse(r.text) : null; } catch (_) { m = null; }
-    if (isStoreMeta(m)) return storeFiles(m);
+    if (isStoreMeta(m)) return { files: storeFiles(m), missing: false };
     // not knowing which files the store's profile is in, writing any of them
     // could break it: the flush fails and its keys stay owed
     throw new Error("store manifest unreadable");
@@ -561,20 +579,36 @@ export function createPersist(host, onWriteFailure) {
     let meta = null;
     try { meta = JSON.parse(r.text); } catch (_) { meta = null; }
     if (!isStoreMeta(meta)) return { damaged: true };
-    const files = storeFiles(meta);
-    committed = files;
+    committed = storeFiles(meta);
     return {
       at: Number(meta.writtenAt) || 0,
+      // (Codex on #85) the files one manifest names, read against that same
+      // manifest: a commit from another window while this reads (a large
+      // key takes several bridge calls) means reading again from the new
+      // one, never stitching two generations into one profile
       load: async () => {
-        const keys = {};
-        for (const name of meta.keys) {
-          if (!KEYS[name]) continue;   // a key a later version added
-          const v = await host.appdataReadKey(files[name]);
-          // a key the manifest lists and the store cannot produce is damage
-          if (!v || typeof v.text !== "string") return null;
-          keys[name] = v.text;
+        let text = r.text, m = meta;
+        for (let tries = 0; tries < 3; tries++) {
+          const files = storeFiles(m);
+          const keys = {};
+          for (const name of m.keys) {
+            if (!KEYS[name]) continue;   // a key a later version added
+            const v = await host.appdataReadKey(files[name]);
+            // a key the manifest lists and the store cannot produce is damage
+            if (!v || typeof v.text !== "string") return null;
+            keys[name] = v.text;
+          }
+          const again = await host.appdataReadKey(STORE_META);
+          if (again && again.text === text) {
+            committed = files;
+            return { app: "chessboard", schema: Number(m.schema) || SCHEMA, writtenAt: m.writtenAt, keys };
+          }
+          let next = null;
+          try { next = again && typeof again.text === "string" ? JSON.parse(again.text) : null; } catch (_) { next = null; }
+          if (!isStoreMeta(next)) return null;
+          text = again.text; m = next;
         }
-        return { app: "chessboard", schema: Number(meta.schema) || SCHEMA, writtenAt: meta.writtenAt, keys };
+        return null;
       },
     };
   }
