@@ -556,7 +556,10 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 {
   const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
   const mined = mctx.MINED_PUZZLES;
-  assert(Array.isArray(mined) && mined.length >= 1002, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  // 980 since v8-0-plan B1: the whole set re-checked at depth 18 and the 22
+  // lines with any solver move ≥ 50cp below the engine's best retired
+  // (verify-puzzles.mjs --retire)
+  assert(Array.isArray(mined) && mined.length >= 980, "mined set loaded (" + (mined ? mined.length : 0) + ")");
   // v8-0-plan §5: the header said 1023 while the array held 1002 — the
   // count a reader sees first must be the count that ships
   const headN = (/\* (\d+) puzzles/.exec(fs.readFileSync(path.join(ROOT, "src/web/js/puzzles-mined.js"), "utf8")) || [])[1];
@@ -613,8 +616,8 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   //
   // A floor that kept the pre-gate number would have had exactly one way to be
   // satisfied: putting wrong puzzles back.
-  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 573, win: 300 };
-  const MOTIF_FLOOR = { fork: 134, pin: 111, skewer: 50, discovered: 5, double: 9 };
+  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 551, win: 300 };
+  const MOTIF_FLOOR = { fork: 131, pin: 109, skewer: 50, discovered: 5, double: 9 };
   // 6.1: §5 of docs/v6-plan.md wants ≥ 50 puzzles in every 200-point rating
   // band. 6.0 shipped three bands short and did not say so; 6.1 re-rated the
   // set from measured difficulty and topped up the thin bands from fresh
@@ -629,7 +632,10 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // half. Pinned at what they actually are rather than at what §5 wants:
   // topping them up would mean regenerating ids, and a changed id orphans a
   // player's progress (6.0 → 6.1 kept all 958 for exactly that reason).
-  const BAND_FLOOR = 50, BAND_SHORT = { 1200: 49, 1600: 48, 2000: 48, 2200: 27, 2400: 46 };
+  // v8-0-plan B1 re-checked all of it at depth 18 and retired the 22 lines with a
+  // solver move ≥ 50cp below the engine's best (verify-puzzles.mjs --retire):
+  // the floors above and the short bands below are what is left, 1800 among them.
+  const BAND_FLOOR = 50, BAND_SHORT = { 1200: 47, 1600: 45, 1800: 49, 2000: 46, 2200: 24, 2400: 44 };
   for (const [c, n] of Object.entries(FLOOR)) assert((byCat[c] || 0) >= n, "mined " + c + " ≥ " + n + " (" + (byCat[c] || 0) + ")");
   for (const [m, n] of Object.entries(MOTIF_FLOOR)) assert((byMotif[m] || 0) >= n, "mined motif " + m + " ≥ " + n + " (" + (byMotif[m] || 0) + ")");
   {
