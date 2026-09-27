@@ -145,7 +145,7 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js"];
+const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -6860,7 +6860,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 11413; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3)
+  const APP_JS_LINE_CEILING = 11174; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -6882,6 +6882,23 @@ for (const lang of CONTENT_LANGS) {
   const app = WEB_MODULES.get("app.js");
   assert(!["theme-seg", "multipv-seg", "opt-blind"].some((id) => app.includes('getElementById("' + id + '")')),
     "F4: app.js no longer wires the settings page's controls");
+}
+
+// --- v8-0-plan F4 (M3): the review region lives in review/ --------------
+// Analysis, the review panel, 再试一次 and the eval graphs are modules under
+// review/, each with its dependencies handed in (createLibraryUI's shape).
+// app.js names what it still calls with one destructuring line per module.
+{
+  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
+  const REVIEW_OWNERS = {
+    "review/eval-graph.js": ["judgeColours", "drawEvalBar", "evalText", "drawEvalCurve"],
+  };
+  for (const [file, names] of Object.entries(REVIEW_OWNERS)) {
+    assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
+    for (const name of names) {
+      assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
+    }
+  }
 }
 
 // --- 6.0: the register of source-text assertions in this file.
