@@ -6851,7 +6851,7 @@ import { createStore } from "./store.js";
     restoreAnalysis();
     saveSettings();
     saveGame();
-    sync();
+    setSideTab("play", { top: true }); sync(); // onto the board, as a library game goes (Codex on #86)
     toast(tf("hist.loaded", [historyLabel(rec)]));
     return true;
   }

@@ -422,6 +422,37 @@ for (const lang of ["en", "ja"]) {
   await ctx.close();
 }
 
+// Codex on #86: a game opened from 对局历史 on 我的 is loaded onto the board,
+// so the board is what shows next — as a library game already does. Red
+// before: the sheet closed, and the 我的 page went on covering the new game.
+{
+  const { ctx, page, errs } = await open();
+  await page.evaluate(() => {
+    localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games: [
+      { id: "h1", t: Date.now() - 864e5, diff: "normal", color: "w", result: "win", moves: 3,
+        pgn: '[Event "?"]\n\n1. e4 e5 2. Nf3 *', ending: "", acc: 70 },
+    ] }));
+  });
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(400);
+  await page.click("#hist-open");
+  await page.waitForTimeout(400);
+  await page.click("#hist-list [data-hist]");
+  await page.waitForTimeout(600);
+  await page.click("#confirm-ok", { timeout: 800 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const st = await state(page);
+  const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
+  assert(rows === 2, "从对局历史打开的一局载入了棋盘(" + rows + " 行)");
+  assert(!st.me && st.current === "play" && !st.stageInert,
+    "……载入之后看见的是棋盘,不是还盖着的「我的」(" + JSON.stringify({ me: st.me, current: st.current, inert: st.stageInert }) + ")");
+  assert(errs.length === 0, "对局历史载入:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }
