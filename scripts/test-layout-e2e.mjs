@@ -4205,6 +4205,53 @@ if (scenario()) {
   }
 }
 
+// --- v8-0-plan §5: the shortcut sheet and the new-game dialog ---------------
+// Red before §5: the sheet was 380px with its list capped at 52vh, so the
+// bottom rows sat behind an inner scroll bar (128px of list hidden at
+// 1400x900 in Chinese, 388 in English); and the new-game dialog's two
+// difficulty labels were 11px beside 14px 陪练风格 / 执子 / 棋钟.
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const vp of [{ width: 1400, height: 900 }, { width: 1200, height: 800 }, { width: 390, height: 700 }]) {
+      const { ctx, page, errs } = await open(lang, "ai", "play", "wood", vp);
+      await page.evaluate(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true })));
+      await page.waitForTimeout(400);
+      const k = await page.evaluate(() => {
+        const m = document.querySelector("#keys-modal .modal"), l = document.getElementById("keys-list");
+        const box = m.getBoundingClientRect();
+        const lh = (d) => parseFloat(getComputedStyle(d).lineHeight) || 20;
+        return {
+          shown: document.getElementById("keys-modal").classList.contains("show"),
+          width: Math.round(box.width),
+          listHidden: l.scrollHeight - l.clientHeight,
+          cardHidden: m.scrollHeight - m.clientHeight,
+          maxLines: Math.max(...[...l.querySelectorAll("dd")].map((d) => Math.round(d.getBoundingClientRect().height / lh(d)))),
+          outside: [...l.querySelectorAll("dt, dd")].filter((e) => e.getBoundingClientRect().right > box.right + 0.5).length,
+        };
+      });
+      const at = lang + " " + vp.width + "x" + vp.height + ": ";
+      assert(k.shown && k.listHidden <= 0, at + "§5 快捷键表没有藏在内层滚动条后面的行(" + k.listHidden + "px)");
+      assert(k.outside === 0, at + "§5 …没有一行伸出卡片右缘");
+      if (vp.width >= 1200) {
+        assert(k.width >= 640, at + "§5 …卡片够宽(" + k.width + "px)");
+        assert(k.cardHidden <= 0, at + "§5 …整张表一屏放得下,关闭不用滚(" + k.cardHidden + "px)");
+        assert(k.maxLines <= 2, at + "§5 …每条说明至多两行(" + k.maxLines + ")");
+      }
+      assert(errs.length === 0, at + "no JS exception — " + errs.join(" / "));
+      await ctx.close();
+    }
+    // the new-game dialog: one size for every group title in it
+    const { ctx, page } = await open(lang, "ai", "play");
+    await page.evaluate(() => document.getElementById("btn-new").click());
+    await page.waitForTimeout(400);
+    const sizes = await page.evaluate(() => [...document.querySelectorAll("#ng-host .diff-group, #ng-host .setting-k")]
+      .filter((e) => e.offsetParent).map((e) => e.textContent.trim() + " " + getComputedStyle(e).fontSize + "/" + getComputedStyle(e).fontWeight));
+    const distinct = new Set(sizes.map((s) => s.split(" ").pop()));
+    assert(sizes.length >= 4 && distinct.size === 1, lang + ": §5 新对局对话框的组标题同一字号同一字重(" + sizes.join(", ") + ")");
+    await ctx.close();
+  }
+}
+
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();
