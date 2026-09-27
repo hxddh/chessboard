@@ -3558,10 +3558,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .rail-end { margin-top: auto; }
 
 @media (max-width: 820px) {
-  /* the bar's row, left of the ☰; under the scrim and the panel, which are
-     modal at this width */
+  /* the bar's row, left of the ☰. Over the scrim — the way out of the
+     overlaid panel to anywhere else is one click, not two — and under the
+     panel itself, which starts well right of the last button. */
   .rail {
-    z-index: 22;
+    z-index: 26;
     bottom: auto; right: calc(var(--ctl-h-sm) + 16px); width: auto;
     height: var(--chrome-h);
     flex-direction: row; align-items: center; gap: 2px;
@@ -3585,7 +3586,8 @@ span[data-icon] { display: inline-grid; place-items: center; }
     position: absolute; width: 1px; height: 1px; overflow: hidden;
     clip: rect(0 0 0 0); white-space: nowrap;
   }
-  .rail-end { margin-top: 0; margin-left: auto; }
+  /* 偏好 stays with the others: pushed to the far end it sat under the panel */
+  .rail-end { margin-top: 0; }
 }
 
 /* A page lies over the stage and the panel; they keep their layout under
@@ -3598,7 +3600,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   scrollbar-width: thin;
 }
 .page[hidden] { display: none; }
-#app.page-on .chrome { visibility: hidden; }
+#app.page-on .chrome, #app.page-on .side, #app.page-on .scrim { visibility: hidden; }
 .page-inner {
   max-width: 1120px; margin: 0 auto;
   padding: 24px;

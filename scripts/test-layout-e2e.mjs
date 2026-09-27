@@ -81,11 +81,15 @@ async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, h
   // have equal specificity, so which wins depends on source order, not on the
   // attribute — and a measurement taken then reads one theme's ink on another
   // theme's paper.
-  await ctx.addInitScript(([l, m, tb, th, po]) => {
+  // v8-0-plan A1: `tab` may name a page of the top level instead — 记录 is
+  // the 我的 page now ("record" still opens it), and home / library / me are
+  // restored the way the app restores them, from the saved view
+  const view = { record: "me", me: "me", home: "home", library: "library" }[tab] || "play";
+  await ctx.addInitScript(([l, m, tb, th, po, v]) => {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th }));
+      mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th, view: v }));
     localStorage.setItem("chess.panelOpen", po);
-  }, [lang, mode, tab, theme, panelOpen]);
+  }, [lang, mode, view === "play" ? tab : "play", theme, panelOpen, view]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -125,15 +129,19 @@ if (scenario()) {
 }
 
 // --- 2. the mode segment reads as one control in every language ------------
-// It is a `.theme-row.wrap` on the settings page now, the same control the
-// difficulty, the persona and the theme use. Same requirement as any segment:
-// every button the same size, no label clipped, nothing past the panel edge.
+// It is a `.theme-row.wrap`, the same control the difficulty, the persona and
+// the theme use — on the settings page until v8-0-plan A1, in the new-game
+// dialog since (人机 / 双人; 谜题 and 学习 are the rail's). Same requirement
+// as any segment: every button the same size, no label clipped, nothing past
+// the edge of what holds it.
 if (scenario()) {
   for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "setup");
+    const { ctx, page } = await open(lang, "ai", "play");
+    await page.evaluate(() => document.getElementById("btn-new").click());
+    await page.waitForTimeout(400);
     const seg = await page.evaluate(() => {
       const el = document.getElementById("mode-seg");
-      const pane = el.closest(".side-pane").getBoundingClientRect();
+      const pane = el.closest(".modal").getBoundingClientRect();
       return {
         buttons: [...el.querySelectorAll("button")].map((b) => ({
           text: b.textContent.trim(),
@@ -145,14 +153,14 @@ if (scenario()) {
         visible: !!el.offsetParent,
       };
     });
-    assert(seg.visible, lang + ": the mode segment is on the settings page");
-    assert(seg.buttons.length === 4, lang + ": four modes");
+    assert(seg.visible, lang + ": the mode segment is in the new-game dialog");
+    assert(seg.buttons.length === 2, lang + ": two modes there, 人机 and 双人");
     const heights = [...new Set(seg.buttons.map((b) => b.h))];
     assert(heights.length === 1,
       lang + ": every mode is the same height (" + heights.join(", ") + ")");
     for (const b of seg.buttons) {
       assert(b.over <= 0, lang + ": “" + b.text + "” fits its button (over by " + b.over + ")");
-      assert(b.pastPane <= 1, lang + ": “" + b.text + "” stays inside the panel (past by " + b.pastPane + ")");
+      assert(b.pastPane <= 1, lang + ": “" + b.text + "” stays inside the dialog (past by " + b.pastPane + ")");
     }
     await ctx.close();
   }
@@ -215,11 +223,15 @@ if (scenario()) {
       inChrome: !!(seg && seg.closest(".chrome")),
       inPanel: !!(seg && seg.closest(".side")),
       navRowsInPanel: document.querySelectorAll(".side .mode-nav, .side .side-tabs").length,
-      onSetupPane: !!(seg && seg.closest("#pane-setup")),
+      inDialog: !!(seg && seg.closest("#newgame-modal")),
+      rail: [...document.querySelectorAll("#rail button[data-view]")].map((b) => b.dataset.view).join(","),
     };
   });
   assert(!where.inChrome, "the mode switch is off the bar over the board");
-  assert(where.inPanel && where.onSetupPane, "…and on the settings page");
+  // v8-0-plan A1: and off the panel — 人机 / 双人 with the new game, the
+  // trainers on the rail
+  assert(!where.inPanel && where.inDialog, "…off the panel, in the new-game dialog");
+  assert(where.rail === "home,play,puzzle,learn,library,me", "…and the modes are the rail's (" + where.rail + ")");
   assert(where.navRowsInPanel === 1,
     "the panel still has one navigation row, not two (" + where.navRowsInPanel + ")");
 
@@ -802,7 +814,7 @@ if (scenario()) for (const lang of LANGS) {
 // are silent by construction rather than by exception, because both are
 // pseudo-elements and neither is in the DOM: the switch's ::after hit target
 // (inset -6px -2px) and the disclosure ›, which is rotated 90° when open.
-if (scenario()) for (const tab of ["play", "setup", "record"]) {
+if (scenario()) for (const tab of ["play", "setup"]) {
   const { ctx, page } = await open("zh-CN", "ai", tab);
   await page.evaluate(() => {
     for (const d of document.querySelectorAll("#side details")) d.open = true;
@@ -834,7 +846,7 @@ if (scenario()) for (const tab of ["play", "setup", "record"]) {
 // links that prompted this were in the *setup* tab, where 3d never looked:
 // `offsetParent` is null for anything in a pane that is not showing, so a
 // check that only ever opens one tab cannot see the other two.
-if (scenario()) for (const tab of ["play", "setup", "record"]) {
+if (scenario()) for (const tab of ["play", "setup"]) {
   const { ctx, page } = await open("zh-CN", "ai", tab);
   await page.evaluate(() => {
     for (const d of document.querySelectorAll("#side details")) d.open = true;
@@ -1117,8 +1129,8 @@ if (scenario()) {
   assert(bare.length === 0, "每一个能按的东西都声明了过渡" + (bare.length ? " —— 没有的:" + bare.join(", ") : ""));
 
   const tab = await page.evaluate(async () => {
-    document.getElementById("tab-record").click();
-    const pane = document.getElementById("pane-record");
+    document.getElementById("tab-setup").click();
+    const pane = document.getElementById("pane-setup");
     const anims = pane.getAnimations();
     const names = anims.map((a) => a.animationName);
     // wait for the animation itself rather than for a number of milliseconds:
@@ -1238,7 +1250,8 @@ if (scenario()) {
     return {
       onPlayTab: danger.filter((b) => b.closest("#pane-play") && b.offsetParent).map((b) => b.id),
       inFoot: document.querySelectorAll(".side-foot").length,
-      grouped: [...document.querySelectorAll("#pane-setup .act-btn.danger")].map((b) => b.id).sort(),
+      // v8-0-plan A1: in the preferences window, off the game's settings too
+      grouped: [...document.querySelectorAll("#prefs-modal .act-btn.danger")].map((b) => b.id).sort(),
     };
   });
   assert(found.inFoot === 0, "nothing irreversible is pinned to the foot of the panel");
@@ -1298,7 +1311,7 @@ if (scenario()) {
 // the 「本局」 heading standing over a single 「新局」 at move 0.
 if (scenario()) {
   for (const mode of ["ai", "pvp", "learn", "puzzle"]) {
-    for (const tab of ["play", "setup", "record"]) {
+    for (const tab of ["play", "setup"]) {
       const { ctx, page } = await open("zh-CN", mode, tab);
       const empties = await page.evaluate(() => {
         const pane = document.querySelector(".side-pane:not([hidden])");
@@ -1624,6 +1637,8 @@ if (scenario()) {
 
     for (const where of ["panel", "diagnosis"]) {
       if (where === "diagnosis") {
+        // v8-0-plan A1: the diagnosis opens from the library page
+        await page.click('#rail button[data-view="library"]', { timeout: 800 }).catch(() => {});
         await page.click("#lib-diagnose", { timeout: 800 }).catch(() => {});
         await page.waitForTimeout(1600);
       }
@@ -1696,6 +1711,7 @@ if (scenario()) {
   await page.reload();
   await page.waitForTimeout(1000);
   await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+  await page.click('#rail button[data-view="library"]', { timeout: 900 });   // v8-0-plan A1
   await page.click("#lib-diagnose", { timeout: 900 });
   await page.waitForTimeout(1800);
 
@@ -1841,19 +1857,21 @@ if (scenario()) {
 // where they had been widened, and the same on every tab.
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
-  const boardOn = async (tab) => page.evaluate(async (t) => {
-    document.getElementById("tab-" + t).click();
+  // v8-0-plan A1: the records are the 我的 page, over the stage; the board
+  // is laid out under it, and must be where it was when the page goes
+  const boardOn = async (view) => page.evaluate(async (v) => {
+    document.querySelector('#rail button[data-view="' + v + '"]').click();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     await new Promise((r) => setTimeout(r, 420));
     const b = document.getElementById("board-wrap").getBoundingClientRect();
-    const pane = document.getElementById("pane-" + t);
-    const p = pane ? pane.getBoundingClientRect() : { width: 0 };
+    const sec = document.getElementById("sec-stats");
+    const p = sec && sec.offsetParent ? sec.getBoundingClientRect() : { width: 0 };
     return { board: Math.round(b.width), left: Math.round(b.left), content: Math.round(p.width) };
-  }, tab);
+  }, view);
   const play1 = await boardOn("play");
-  const rec = await boardOn("record");
+  const rec = await boardOn("me");
   const play2 = await boardOn("play");
-  assert(rec.content >= 360, "1400×900 记录页内容区 " + rec.content + "px ≥ 360px");
+  assert(rec.content >= 360, "1400×900 「我的」页一栏内容 " + rec.content + "px ≥ 360px");
   assert(play1.board === rec.board && play1.left === rec.left && play2.left === play1.left,
     "看一眼记录页,棋盘一个像素都没动 (" + play1.left + " → " + rec.left + " → " + play2.left + ")");
   await ctx.close();
@@ -1862,7 +1880,7 @@ if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "record", "wood", { width: 1024, height: 700 });
   const w = await page.evaluate(() =>
     Math.round(document.querySelector(".side").getBoundingClientRect().width));
-  assert(w >= 284 && w < 400, "1024×700 记录页面板在 284 的下限之上,不越界变宽 (" + w + "px)");
+  assert(w >= 284 && w < 400, "1024×700 在「我的」页下,面板仍按窗口取宽:284 的下限之上,不越界变宽 (" + w + "px)");
   await ctx.close();
 }
 if (scenario()) {
@@ -1927,7 +1945,7 @@ if (scenario()) {
   const boxes = await page.evaluate(() =>
     [...document.querySelectorAll(".modal-bg > .modal")].map((m) => {
       const cs = getComputedStyle(m);
-      return { id: m.parentElement.id, bg: cs.backgroundColor,
+      return { id: m.parentElement.id, bg: cs.backgroundColor, sheet: m.parentElement.classList.contains("page-sheet"),
                pad: parseFloat(cs.paddingTop), border: parseFloat(cs.borderTopWidth),
                w: Math.round(m.getBoundingClientRect().width) };
     }));
@@ -1935,7 +1953,9 @@ if (scenario()) {
     assert(!/rgba\(0, 0, 0, 0\)|transparent/.test(b.bg),
       b.id + ": is drawn on something, not straight onto the board (" + b.bg + ")");
     assert(b.pad >= 12, b.id + ": keeps its padding (" + b.pad + ")");
-    assert(b.border > 0, b.id + ": keeps its border (" + b.border + ")");
+    // v8-0-plan A1: the three page sheets are pages, not cards: edge to
+    // edge over the page they came from, so no border to keep
+    assert(b.border > 0 || b.sheet, b.id + ": keeps its border (" + b.border + ")");
   }
   assert(asked.name && asked.name !== "确认",
     "…and it is announced by what it is asking, not by the word 「确认」 — 「" + asked.name + "」");
@@ -1943,10 +1963,11 @@ if (scenario()) {
 }
 
 // --- 3r. the settings page reads as one page ------------------------------
-// Four groups, and the order is the argument: what you are doing, how this game
-// is set, what the app looks like, and — last, always last — the three things
-// that delete data. 2.1 had the deletions in the middle, the only red on the
-// page, between the two groups you actually come here to adjust.
+// The order is the argument: how this game is set, how the board in front of
+// you is shown, the engine. v8-0-plan A1 took the mode off it (the new-game
+// dialog and the rail have it) and the app's own look, language, sound and
+// data (偏好设置); there the deletions are — last, always last: 2.1 had them
+// in the middle of a page, the only red on it.
 if (scenario()) {
   for (const mode of ["ai", "learn"]) {
     const { ctx, page } = await open("zh-CN", mode, "setup");
@@ -1954,9 +1975,13 @@ if (scenario()) {
       [...document.querySelectorAll("#pane-setup > section")]
         .filter((s) => s.offsetParent)
         .map((s) => (s.querySelector(".side-h") || {}).textContent || "?"));
-    assert(secs[0] === "模式", mode + ": mode comes first — " + secs.join(" → "));
-    assert(secs[secs.length - 1] === "清除数据",
-      mode + ": the deletions come last — " + secs.join(" → "));
+    assert(!secs.includes("模式") && !secs.includes("清除数据"),
+      mode + ": no mode and no deletions on the game's settings — " + secs.join(" → "));
+    assert(secs[secs.length - 1] === "引擎", mode + ": the engine comes last — " + secs.join(" → "));
+    const prefs = await page.evaluate(() => [...document.querySelectorAll("#prefs-modal .side-section")]
+      .map((s) => (s.querySelector(".side-h") || {}).textContent || "?"));
+    assert(prefs[0] === "外观" && prefs[prefs.length - 1] === "清除数据",
+      mode + ": 偏好设置 opens on 外观 and ends on the deletions — " + prefs.join(" → "));
     assert(secs.includes("对局") === (mode === "ai"),
       mode + ": the game group is present exactly when there is a game to set — " + secs.join(" → "));
     await ctx.close();
@@ -1968,8 +1993,9 @@ if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const kids = await page.evaluate(() => [...document.querySelector(".side-tabs").children]
     .map((el) => el.getAttribute("role")));
-  assert(kids.length === 3 && kids.every((r) => r === "tab"),
-    "the tab row contains three tabs and nothing else — got " + JSON.stringify(kids));
+  // v8-0-plan A1: two since 记录 became the 我的 and 棋谱库 pages
+  assert(kids.length === 2 && kids.every((r) => r === "tab"),
+    "the tab row contains two tabs and nothing else — got " + JSON.stringify(kids));
   // and the panel is still closable without it
   await page.click("#toggle-panel");
   await page.waitForTimeout(400);
@@ -2306,7 +2332,7 @@ if (scenario()) {
     await page.reload();
     await page.waitForTimeout(900);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
-    await page.click("#tab-record", { timeout: 2000 }).catch(() => {});
+    await page.click('#rail button[data-view="library"]', { timeout: 2000 }).catch(() => {});
     await page.click("#lib-open", { timeout: 2500 }).catch(() => {});
     await page.waitForTimeout(500);
     const r = await page.evaluate(() => {
@@ -2762,9 +2788,18 @@ if (scenario()) {
     for (const sq of [a, b]) { const p = await at(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); }
     await page.waitForTimeout(280);
   };
+  // v8-0-plan A1: a trainer is the rail's; 双人 comes with a new game
   const toSetup = async (page, mode) => {
-    await page.click("#tab-setup"); await page.waitForTimeout(250);
-    await page.click(`#mode-seg button[data-mode="${mode}"]`); await page.waitForTimeout(800);
+    if (mode === "puzzle" || mode === "learn") {
+      await page.click(`#rail button[data-view="${mode}"]`); await page.waitForTimeout(800);
+    } else {
+      await page.click('#rail button[data-view="play"]'); await page.waitForTimeout(400);
+      if (await page.evaluate((m) => JSON.parse(localStorage.getItem("chess.v1.settings")).mode !== m, mode)) {
+        await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+        await page.click(`#mode-seg button[data-mode="${mode}"]`);
+        await page.click("#ng-start"); await page.waitForTimeout(800);
+      }
+    }
     await page.click("#tab-play"); await page.waitForTimeout(250);
   };
 
@@ -2893,6 +2928,7 @@ if (scenario()) {
   // 1. it asks the platform, with the right shape, and takes "no" for an answer
   {
     const { ctx, page } = await openDialogBridge("secondary", true);
+    await page.click("#prefs-open");   // v8-0-plan A1: the deletions are in 偏好设置
     await page.click("#clear-save");
     await page.waitForTimeout(500);
     const calls = await asked(page);
@@ -2908,6 +2944,7 @@ if (scenario()) {
   // 2. and takes "yes" for one
   {
     const { ctx, page } = await openDialogBridge("primary", true);
+    await page.click("#prefs-open");   // v8-0-plan A1: the deletions are in 偏好设置
     await page.click("#clear-save");
     await page.waitForTimeout(900);
     assert((await saved(page)) === null, "答「清除」,存档真的没了");
@@ -2917,6 +2954,7 @@ if (scenario()) {
   // 3. a build with no native dialog still asks — in the page, as before
   {
     const { ctx, page } = await openDialogBridge("primary", false);
+    await page.click("#prefs-open");   // v8-0-plan A1: the deletions are in 偏好设置
     await page.click("#clear-save");
     await page.waitForTimeout(500);
     assert((await asked(page)).length === 0, "平台说自己没有对话框时,不去调它");
@@ -3330,7 +3368,9 @@ if (scenario()) {
   for (const [w, h] of [[1440, 900], [1280, 800], [1024, 700]]) {
     const rects = new Map();
     let tabsTop = null;
-    for (const [mode, tab] of [["ai", "play"], ["ai", "setup"], ["ai", "record"], ["pvp", "play"], ["learn", "play"], ["puzzle", "play"], ["puzzle", "record"]]) {
+    // v8-0-plan A1: …and every page of the top level — the board is laid
+    // out under 首页 / 棋谱库 / 我的, so coming back to it moves nothing
+    for (const [mode, tab] of [["ai", "play"], ["ai", "setup"], ["ai", "record"], ["pvp", "play"], ["learn", "play"], ["puzzle", "play"], ["puzzle", "record"], ["ai", "home"], ["pvp", "library"]]) {
       const { ctx, page } = await open("zh-CN", mode, tab, "wood", { width: w, height: h });
       const r = await page.evaluate(() => {
         const b = document.getElementById("board").getBoundingClientRect();
@@ -3342,7 +3382,7 @@ if (scenario()) {
       await ctx.close();
     }
     const distinct = [...new Set(rects.values())];
-    assert(distinct.length === 1, w + "x" + h + ": #board 在三个页签、四种模式下逐像素相同(" +
+    assert(distinct.length === 1, w + "x" + h + ": #board 在两个页签、四种模式、三张整页下逐像素相同(" +
       [...rects].map(([k, v]) => k + " " + v).join(" · ") + ")");
     const side = JSON.parse(distinct[0])[2];
     const old = OLD[w + "x" + h];
@@ -3561,7 +3601,9 @@ if (scenario()) for (const [when, mode, act] of [
   ["教学·第 1 课", "learn", async () => {}],
   ["做题·第 1 题", "puzzle", async () => {}],
   ["人机·开局前", "ai", async () => {}],
-  ["记录页", "ai", async (page) => { await page.click("#tab-record"); }],
+  ["我的", "ai", async (page) => { await page.click('#rail button[data-view="me"]'); }],
+  ["首页", "ai", async (page) => { await page.click('#rail button[data-view="home"]'); }],
+  ["棋谱库", "ai", async (page) => { await page.click('#rail button[data-view="library"]'); }],
   ["设置页", "pvp", async (page) => { await page.click("#tab-setup"); }],
 ]) {
   const { ctx, page } = await open("zh-CN", mode, "play");
@@ -4249,6 +4291,146 @@ if (scenario()) {
     const distinct = new Set(sizes.map((s) => s.split(" ").pop()));
     assert(sizes.length >= 4 && distinct.size === 1, lang + ": §5 新对局对话框的组标题同一字号同一字重(" + sizes.join(", ") + ")");
     await ctx.close();
+  }
+}
+
+// --- v8-0-plan A1: the rail stands still -------------------------------------
+// The top level's one invariant of its own, in the shape of 7.7's two: the
+// rail is the same box, to the pixel, whichever of its entries is current —
+// a navigation that moves under the pointer is clicked twice in the wrong
+// place — in a wide window (a column), a narrow one and a portrait one (a row
+// in the top bar). And the board is where it was after a trip through every
+// page: re-proving "the board rect is fixed" for the new shell.
+if (scenario()) {
+  for (const vp of [{ width: 1440, height: 900 }, { width: 760, height: 600 }, { width: 600, height: 900 }]) {
+    const tag = vp.width + "x" + vp.height;
+    const { ctx, page, errs } = await open("zh-CN", "ai", "play", "wood", vp);
+    const railBox = () => page.evaluate(() => {
+      const r = (e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 10) / 10).join(","); };
+      const nav = document.getElementById("rail");
+      return { rail: r(nav), buttons: [...nav.querySelectorAll("button")].map(r).join(" "),
+               board: r(document.getElementById("board")) };
+    });
+    const first = await railBox();
+    const seen = new Set();
+    for (const v of ["home", "puzzle", "learn", "library", "me", "play"]) {
+      await page.click('#rail button[data-view="' + v + '"]');
+      await page.waitForTimeout(350);
+      const b = await railBox();
+      seen.add(b.rail + " | " + b.buttons);
+      if (v === "play") assert(b.board === first.board, tag + ": 走遍六个入口回到「下棋」,棋盘逐像素在原处(" + first.board + " → " + b.board + ")");
+    }
+    assert(seen.size === 1 && [...seen][0] === first.rail + " | " + first.buttons,
+      tag + ": 切换入口时导航栏和它的每个按钮都不动(" + seen.size + " 种)");
+    const shape = await page.evaluate(() => {
+      const r = document.getElementById("rail").getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.left), y: Math.round(r.top) };
+    });
+    if (vp.width > 820) assert(shape.x === 0 && shape.y === 0 && shape.w <= 72 && shape.h === vp.height, tag + ": 宽窗是左侧通高的窄栏(" + JSON.stringify(shape) + ")");
+    else assert(shape.y === 0 && shape.h <= 32, tag + ": 窄窗是 32px 顶栏里的一行(" + JSON.stringify(shape) + ")");
+    assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+}
+
+// --- v8-0-plan A1: the rail costs the play view nothing ---------------------
+// "下棋视图保持现在的几何". In every window this app runs in the board is
+// height-bound, so a 64px column on the left comes out of the side slack and
+// not out of the board: its edge is what the 7.9 formula (no rail) gave, to
+// the pixel. And the panel's width is still a function of the window alone —
+// the same on both tabs, in every mode and under every page (7.7 §1g).
+if (scenario()) {
+  for (const [w, h] of [[1920, 1080], [1440, 900], [1280, 800], [1024, 700]]) {
+    const widths = new Set(), boards = new Set();
+    for (const [mode, tab] of [["ai", "play"], ["ai", "setup"], ["puzzle", "play"], ["learn", "play"], ["ai", "me"], ["ai", "library"]]) {
+      const { ctx, page } = await open("zh-CN", mode, tab, "wood", { width: w, height: h });
+      const r = await page.evaluate(() => {
+        const css = getComputedStyle(document.documentElement);
+        const px = (n) => parseFloat(css.getPropertyValue(n));
+        const side = document.getElementById("side").getBoundingClientRect().width;
+        // 7.9's #board-wrap: min(100vw − side − 2·pad, 100vh − bar − 2·strip − pad-y)
+        const old = Math.min(innerWidth - side - 2 * px("--stage-pad"),
+          innerHeight - px("--chrome-h") - 2 * px("--strip-h") - px("--stage-pad-y"));
+        return { side: Math.round(side), wrap: Math.round(document.getElementById("board-wrap").getBoundingClientRect().width), old: Math.round(old) };
+      });
+      widths.add(r.side); boards.add(r.wrap + "/" + r.old);
+      await ctx.close();
+    }
+    assert(widths.size === 1, w + "x" + h + ": 面板宽度只由窗口决定 —— 两个页签、四种模式、两张整页一个宽度(" + [...widths].join(", ") + ")");
+    const [wrap, old] = [...boards][0].split("/").map(Number);
+    assert(boards.size === 1 && wrap === old, w + "x" + h + ": 导航栏不占棋盘:棋盘框 " + wrap + "px = 没有栏时的 " + old + "px");
+  }
+}
+
+// --- v8-0-plan A1: a page is as wide as the window, never wider --------------
+// The pages took the records out of a 400px panel and the diagnosis out of a
+// 460px dialog; the one way a page can go wrong the panel could not is to be
+// wider than the window. At the five widths A2 measures: no horizontal
+// scroll on the page, and nothing on it past its right edge — the list and
+// the diagnosis sheets included, which are the widest things in the app.
+if (scenario()) {
+  const games = [];
+  for (let i = 0; i < 24; i++) {
+    const tags = new Array(80).fill(null), losses = new Array(80).fill(null), scalars = [0];
+    for (let ply = 0; ply < 80; ply++) {
+      const mine = ply % 2 === 0;
+      losses[ply] = mine ? (ply > 60 ? 120 : 8) : 0;
+      scalars.push(scalars[ply] + (mine ? -losses[ply] : losses[ply]));
+    }
+    tags[54] = "??";
+    const sans = i % 2 ? "d4 d5 c4 e6 Nf3 Nf6" : "e4 e5 Nf3 Nc6 Bb5 a6";
+    games.push({ id: "g" + i, t: 1758000000000 + i * 864e5, white: "hxddh", black: "rival" + i,
+      date: "2026.09.01", event: "Rated blitz", result: i % 2 ? "0-1" : "1-0", plies: 80,
+      sans: sans + " " + sans, fen: "", side: "w", outcome: i % 2 ? "loss" : "win",
+      eco: i % 2 ? "D37" : "C60", ecoName: i % 2 ? "Queen's Gambit Declined" : "Ruy Lopez",
+      motifs: { 54: "fork" },
+      an: { acc: { w: 60, b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars, bests: new Array(81).fill(null), budget: 200 } });
+  }
+  const lib = JSON.stringify({ v: 1, names: ["hxddh"], games });
+  for (const [w, h] of [[1024, 768], [1280, 800], [1440, 900], [1920, 1080], [600, 900]]) {
+    for (const lang of ["zh-CN", "en"]) {
+      const tag = w + "x" + h + "/" + lang;
+      const { ctx, page, errs } = await open(lang, "ai", "home", "wood", { width: w, height: h });
+      await page.evaluate((l) => { localStorage.setItem("chess.v1.library", l); }, lib);
+      await page.reload();
+      await page.waitForTimeout(900);
+      const overflow = (sel) => page.evaluate((q) => {
+        const root = document.querySelector(q);
+        if (!root || !root.getClientRects().length) return { missing: q };
+        const edge = root.getBoundingClientRect().right;
+        const past = [...root.querySelectorAll("*")].filter((e) => e.getClientRects().length)
+          .filter((e) => e.getBoundingClientRect().right > edge + 1 && !e.closest(".sr-only"))
+          .map((e) => (e.id || e.className || e.tagName) + "@" + Math.round(e.getBoundingClientRect().right));
+        return { doc: document.scrollingElement.scrollWidth - innerWidth, own: root.scrollWidth - root.clientWidth, past: past.slice(0, 4) };
+      }, sel);
+      const check = async (what, sel) => {
+        const o = await overflow(sel);
+        assert(!o.missing && o.doc <= 0 && o.own <= 0 && o.past.length === 0,
+          tag + ": " + what + " 没有横向滚动,也没有东西伸出右缘(" + JSON.stringify(o) + ")");
+      };
+      await check("首页", "#page-home");
+      await page.click('#rail button[data-view="library"]'); await page.waitForTimeout(300);
+      await check("棋谱库", "#page-library");
+      await page.click("#lib-diagnose"); await page.waitForTimeout(900);
+      await check("诊断", "#lib-modal .modal");
+      await page.keyboard.press("Escape"); await page.waitForTimeout(200);
+      await page.click("#lib-open"); await page.waitForTimeout(500);
+      await check("棋谱列表", "#lib-list-modal .modal");
+      await page.keyboard.press("Escape"); await page.waitForTimeout(200);
+      await page.click('#rail button[data-view="me"]'); await page.waitForTimeout(300);
+      await check("我的", "#page-me");
+      // …and a page is as wide as the window lets it be: the diagnosis was
+      // cut at 460px
+      if (w >= 1024) {
+        await page.click('#rail button[data-view="library"]'); await page.waitForTimeout(200);
+        await page.click("#lib-diagnose"); await page.waitForTimeout(700);
+        const cw = await page.evaluate(() => Math.round(document.querySelector("#lib-modal .modal").getBoundingClientRect().width));
+        assert(cw >= 900, tag + ": 诊断是整页宽(" + cw + "px),不再是 460px 的弹窗");
+        await page.keyboard.press("Escape");
+      }
+      assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
+      await ctx.close();
+    }
   }
 }
 
