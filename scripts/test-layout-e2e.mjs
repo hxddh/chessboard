@@ -21,6 +21,11 @@
  * wrong. Same harness as the other browser checks (see e2e-browser.mjs);
  * skips cleanly without a browser unless E2E_REQUIRED=1.
  *   node scripts/test-layout-e2e.mjs
+ *   SHARD=2/4 node scripts/test-layout-e2e.mjs   # one quarter (v8-0-plan F1)
+ *
+ * Every top-level scenario opens with `if (scenario()) {` — see
+ * e2e-shard.mjs. A new one must too; test-chess.mjs fails on one that
+ * does not, because an ungated block would run in every shard.
  */
 import fs from "fs";
 import http from "http";
@@ -31,6 +36,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { makeScenarioGate } from "./e2e-shard.mjs";
+
+// v8-0-plan F1: SHARD=i/n runs every n-th scenario; unset runs all of them
+const scenario = makeScenarioGate(process.env.SHARD);
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 const server = http.createServer((req, res) => {
@@ -93,7 +102,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 // --- 1. no button in a wrapped row is wider than the others ----------------
 // The bug was specifically the *last* one on a short final line, so measuring
 // max/min across the row catches it without knowing which row wraps.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page, errs } = await open(lang, "ai", "setup");
     // The "are these buttons the same width" measurement moved to
@@ -119,7 +128,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 // It is a `.theme-row.wrap` on the settings page now, the same control the
 // difficulty, the persona and the theme use. Same requirement as any segment:
 // every button the same size, no label clipped, nothing past the panel edge.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");
     const seg = await page.evaluate(() => {
@@ -159,7 +168,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 // sparring tiers must not borrow the ladder's vocabulary, because the ladder
 // starts *above* them and a reader who knows the word "novice" will read it
 // as the weaker of the two.
-{
+if (scenario()) {
   // The top rung is 不限档 / Unrated / 無制限 since P5.8: 「满强度」 promised
   // unlimited strength and read as unlimited time, while the search is still
   // 1.2 seconds a move like every other tier. 缺陷 31.
@@ -198,7 +207,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 // tools used mid-move — in three heights and two baselines, because nothing in
 // the row shared a unit. It is 32px now, and it holds one sentence and the two
 // actions that belong to the move being made.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const where = await page.evaluate(() => {
     const seg = document.getElementById("mode-seg");
@@ -293,7 +302,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 // 26.5 / 25.3, because the mode row sized from --row-h, the buttons were a
 // literal 32 and the pill was 4px of padding around whatever the text
 // measured. It is also 12px from the left edge and 8px from the right.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play");
     const bar = await page.evaluate(async () => {
@@ -343,7 +352,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 // the end of the game puts 1 / 0 / ½ on them. (Through 7.6 this section
 // asked the same questions of the match bar: nothing patches the panel-shut
 // case, both players stay named with the panel shut.)
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "pvp", "play");
   const clickSquares = async (list) => {
     for (const sq of list) {
@@ -410,7 +419,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 
 // the persona's icon on the engine's strip, and the imported names (7.6) on
 // a loaded game's
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const r = await page.evaluate(() => ({
     bName: document.getElementById("black-role").textContent.trim(),
@@ -425,7 +434,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 }
 
 // --- 3c2. the clocks are blocks on the strips, and the running one is lit --
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "pvp", "setup");
   await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
   await page.waitForTimeout(200);
@@ -467,7 +476,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 // The widest a strip gets is an engine game with a persona, a clock and a
 // row of captures. What must never happen: the strip running past the board
 // it belongs to, or the clock being pushed off it.
-for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
+if (scenario()) for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup", "wood", { width: w, height: h });
     await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
@@ -516,7 +525,7 @@ for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
 // there greyed at opacity .35 the whole time, which is the exact shape of the
 // thing this section was written to forbid. Found by asking the same question
 // in all four modes; it was the only one in eight states.
-for (const [when, mode, setup] of [
+if (scenario()) for (const [when, mode, setup] of [
   ["人机·开局前", "ai", async () => {}],
   ["双人·开局前", "pvp", async () => {}],
   ["做题·第 1 题", "puzzle", async () => {}],
@@ -596,7 +605,7 @@ for (const [when, mode, setup] of [
 //   · anything that needs the engine (提示): the vendored engine does not
 //     initialise in a headless page, so a dead 提示 here would be a fact about
 //     the harness, not about the app.
-{
+if (scenario()) {
   const STATES = [
     ["做题·解出后", { mode: "puzzle", tab: "play" }, async (page, sqClick) => {
       await sqClick("a1"); await sqClick("a8");   // Ra8# — puzzle 1 is m1-backrank-r
@@ -697,7 +706,7 @@ for (const [when, mode, setup] of [
 // Both halves are asserted, because the fix must not cost the feature: while
 // the game is live the board still turns after every move, and ● still brings
 // it back to whoever is on move.
-{
+if (scenario()) {
   // through the switch itself, which is also a control no test had ever pressed
   const { ctx, page } = await open("zh-CN", "pvp", "setup");
   await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
@@ -750,7 +759,7 @@ for (const [when, mode, setup] of [
 // first is a label that fits in the language it was designed in. A clipped
 // label is detectable — scrollWidth exceeds clientWidth — so it need not be
 // looked for by eye. The status pill is exempt: it ellipsizes on purpose.
-for (const lang of LANGS) {
+if (scenario()) for (const lang of LANGS) {
   for (const theme of ["wood", "day"]) {
     const { ctx, page } = await open(lang, "ai", "setup");
     await page.evaluate((th) => {
@@ -793,7 +802,7 @@ for (const lang of LANGS) {
 // are silent by construction rather than by exception, because both are
 // pseudo-elements and neither is in the DOM: the switch's ::after hit target
 // (inset -6px -2px) and the disclosure ›, which is rotated 90° when open.
-for (const tab of ["play", "setup", "record"]) {
+if (scenario()) for (const tab of ["play", "setup", "record"]) {
   const { ctx, page } = await open("zh-CN", "ai", tab);
   await page.evaluate(() => {
     for (const d of document.querySelectorAll("#side details")) d.open = true;
@@ -825,7 +834,7 @@ for (const tab of ["play", "setup", "record"]) {
 // links that prompted this were in the *setup* tab, where 3d never looked:
 // `offsetParent` is null for anything in a pane that is not showing, so a
 // check that only ever opens one tab cannot see the other two.
-for (const tab of ["play", "setup", "record"]) {
+if (scenario()) for (const tab of ["play", "setup", "record"]) {
   const { ctx, page } = await open("zh-CN", "ai", tab);
   await page.evaluate(() => {
     for (const d of document.querySelectorAll("#side details")) d.open = true;
@@ -866,7 +875,7 @@ for (const tab of ["play", "setup", "record"]) {
 // The unit suite has "every var() names a token that exists" — and it passed
 // both times, because both tokens do exist in the text. Existing is not
 // resolving. Only a browser can tell the difference.
-{
+if (scenario()) {
   const TOKENS = ["--bg","--panel","--panel-border","--text","--muted","--accent","--win",
     "--btn","--btn-hover","--btn-ghost","--card","--card-border",
     "--primary-from","--primary-to","--danger","--on-primary","--on-accent","--on-danger"];
@@ -901,7 +910,7 @@ for (const tab of ["play", "setup", "record"]) {
 // only that one line was being dropped. The comment above that rule exists
 // because the app once shipped with the UA default at about 1.0:1. It was
 // back to nothing.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "setup");
   const bad = [];
   for (let i = 0; i < 14; i++) {
@@ -940,7 +949,7 @@ for (const tab of ["play", "setup", "record"]) {
 // color-mix() computes to `color(srgb 0.72 0.61 0.49)`, whose components are
 // 0–1, and reading those as 0–255 makes every mixed background look black —
 // which is what briefly "found" a 1.13:1 badge that is really 7:1.
-for (const theme of ["wood", "night", "day", "notebook"]) {
+if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
   const { ctx, page } = await open("zh-CN", "ai", "setup", theme);
   await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
   await page.waitForTimeout(250);
@@ -1008,7 +1017,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // first: warming 本's panel cost 次要 text 0.75 of its ratio (5.14 → 4.39) and
 // 「清除全部存档」 0.2 of its own, both of which had to be paid back in the ink
 // before this section could be written.
-{
+if (scenario()) {
   const surf = {};
   for (const theme of ["wood", "night", "day", "notebook"]) {
     const { ctx, page } = await open("zh-CN", "ai", "play", theme);
@@ -1049,7 +1058,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // already on it. Now: a card naming what the page will hold and three doors,
 // each labelled with the badge behind it, and the locked list folds after the
 // three closest.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "record");
   const fresh = await page.evaluate(() => {
     const card = document.getElementById("record-empty");
@@ -1097,7 +1106,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // on a <details>) — because neither is a property a transition can reach.
 // Both are keyframed now, so the check is `getAnimations()`, not a computed
 // style: an animation that is declared but never runs would pass the latter.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const bare = await page.evaluate(() => {
     const sel = 'button, [role="tab"], summary, .lesson-item, .hist-row, .ach-item, .mlrow, .rec-door';
@@ -1142,7 +1151,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // 2.0.0's 失着提醒 and 自动翻转 switches had none: a screen reader announced
 // "button, pressed" and nothing else. The sound switch beside them had a
 // title, so the row read differently to a sighted user and to a blind one.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "setup");
   await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
   await page.waitForTimeout(250);
@@ -1161,7 +1170,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // 72 lessons of prose in a 284px panel wrapped at about twenty characters a
 // line, with the text, the task, three controls and the entire table of
 // contents stacked in that one column. P3.5.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "learn", "play");
   await page.waitForTimeout(400);
   const st = await page.evaluate(() => {
@@ -1183,7 +1192,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   assert(st.taskOwnSurface, "the task sits on its own surface, apart from the prose");
   await ctx.close();
 }
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const w = await page.evaluate(() => Math.round(document.getElementById("side").getBoundingClientRect().width));
   // 7.7 (v7-7-plan §1g): through 7.6 the playing page kept a 284px column
@@ -1197,7 +1206,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // Eighteen equal-weight buttons stood open permanently — six difficulties,
 // four sparring styles, two colours, six clocks — in front of someone who
 // mostly wants to know what the current ones are. P3.2.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "setup");
   const st = await page.evaluate(() => {
     const f = document.getElementById("fold-game");
@@ -1221,7 +1230,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // "destroy" — 清除存档 pinned in red at the foot of the panel, 重置 in the
 // lesson header, 清零 in the statistics header, 认输 in the game group — all of
 // them permanent furniture a stray click away while you play. P3.7.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const found = await page.evaluate(() => {
     const danger = [...document.querySelectorAll(".act-btn.danger, .danger")]
@@ -1250,7 +1259,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // below. A segment alone on a line reads as a different kind of thing.
 // 2.0.0 met this family once already and made the two rows equal *height*,
 // which tidied the orphan without removing it.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     for (const mode of ["ai", "pvp", "learn", "puzzle"]) {
       const { ctx, page } = await open(lang, mode, "setup");
@@ -1287,7 +1296,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // with the group's dividing rule still under it, on the settings page of both
 // teaching modes — which reads as a group that failed to load. Same shape as
 // the 「本局」 heading standing over a single 「新局」 at move 0.
-{
+if (scenario()) {
   for (const mode of ["ai", "pvp", "learn", "puzzle"]) {
     for (const tab of ["play", "setup", "record"]) {
       const { ctx, page } = await open("zh-CN", mode, tab);
@@ -1325,7 +1334,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // 2.0.1 stopped them overflowing with `overflow-wrap: anywhere`, which stopped
 // the overflow by breaking the word instead — nine of fifteen read 规则通/关,
 // 熟能生/巧, 杀法大/师.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "record");
     const r = await page.evaluate(() => {
@@ -1395,7 +1404,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // the live position and every key snapped to a third of its width while ‹
 // itself jumped 61px left, out from under the pointer about to press it again.
 // Third instance of the family, after the chrome's take-back/hint trade.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "pvp", "play");
   const bar = () => page.evaluate(() =>
     [...document.querySelectorAll("#replay-seg button")].map((b) => ({
@@ -1454,7 +1463,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // its own, had no way out but a mouse landing on a div: not focusable, no ✕
 // (the docblock said there was one), and Escape — which closes everything else
 // transient in this app — did nothing, while it sat over the board's back rank.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   // the stubbed engine makes 提示 fail, which is a real fault through the real
   // code path rather than a synthetic one
@@ -1505,7 +1514,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // In English the accuracy row wrapped both its halves and stood 42px against
 // the others' 23 — 「Accuracy, last 10 games」 against 「69% · latest 78%」 in
 // a 239px row. Chinese and Japanese never showed it.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "record");
     await page.evaluate(() => {
@@ -1549,7 +1558,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 //   2. one value column per container. The track is fixed, so this holds by
 //      construction — which is exactly why it is worth an assertion: the next
 //      person to reach for `space-between` here should find out immediately.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page, errs } = await open(lang, "ai", "record");
     await page.evaluate(() => {
@@ -1660,7 +1669,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // bar is the longest run of SOLID ink (alpha > 200) down its column — the
 // value printed above it and the dashed tick are antialiased and broken, so
 // they cannot be mistaken for it.
-{
+if (scenario()) {
   const { ctx, page, errs } = await open("zh-CN", "ai", "record");
   await page.evaluate(() => {
     const games = [];
@@ -1781,7 +1790,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 //
 // …and the bar must not be saying what the panel is already saying. The
 // puzzle page had them word for word (§2 B4), so this asks it of every mode.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     for (const mode of ["ai", "pvp", "puzzle", "learn"]) {
       const { ctx, page, errs } = await open(lang, mode, "play");
@@ -1830,7 +1839,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // at 1440×900 whenever you glanced at your records. The column is now one
 // function of the window, 30vw, wide enough for the records at the sizes
 // where they had been widened, and the same on every tab.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const boardOn = async (tab) => page.evaluate(async (t) => {
     document.getElementById("tab-" + t).click();
@@ -1849,14 +1858,14 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
     "看一眼记录页,棋盘一个像素都没动 (" + play1.left + " → " + rec.left + " → " + play2.left + ")");
   await ctx.close();
 }
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "record", "wood", { width: 1024, height: 700 });
   const w = await page.evaluate(() =>
     Math.round(document.querySelector(".side").getBoundingClientRect().width));
   assert(w >= 284 && w < 400, "1024×700 记录页面板在 284 的下限之上,不越界变宽 (" + w + "px)");
   await ctx.close();
 }
-{
+if (scenario()) {
   const at = async (mode) => {
     const { ctx, page } = await open("zh-CN", mode, "play");
     const r = await page.evaluate(() => ({
@@ -1881,7 +1890,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // every save and the screen said 「清除存档」 while a screen reader said
 // 「确认」 — the most consequential dialog in the app, announced as nothing in
 // particular.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "setup");
   const dialogs = await page.evaluate(() =>
     [...document.querySelectorAll(".modal-bg")].map((d) => {
@@ -1938,7 +1947,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // is set, what the app looks like, and — last, always last — the three things
 // that delete data. 2.1 had the deletions in the middle, the only red on the
 // page, between the two groups you actually come here to adjust.
-{
+if (scenario()) {
   for (const mode of ["ai", "learn"]) {
     const { ctx, page } = await open("zh-CN", mode, "setup");
     const secs = await page.evaluate(() =>
@@ -1955,7 +1964,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 }
 
 // --- 4. the tab row holds tabs only ---------------------------------------
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const kids = await page.evaluate(() => [...document.querySelector(".side-tabs").children]
     .map((el) => el.getAttribute("role")));
@@ -1974,7 +1983,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 }
 
 // --- 5. a lesson with no opponent draws no opponent ------------------------
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "learn", "play");
   // 7.7: the opponent's strip keeps its place (the board must not move
   // between modes) and draws nothing in it
@@ -1993,7 +2002,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 }
 
 // --- 6. 演示 is present when it works and absent when it cannot ------------
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "learn", "play");
   const state = await page.evaluate(() => {
     const b = document.getElementById("lesson-demo");
@@ -2015,7 +2024,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // the pill. scrollHeight against clientHeight catches the whole class — any
 // control anywhere whose text needs more room than the control has — which is
 // why this is not written against the editor.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play");
     await page.click("#editor-open", { timeout: 2000 }).catch(() => {});
@@ -2052,7 +2061,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // 「Win material」 needed 79px in a 78px cell. One label one pixel too wide,
 // and `grid-auto-rows: 1fr` passed its wrapped height to all ten buttons: the
 // whole control half again as tall, in English only.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "puzzle", "play");
     const seg = await page.evaluate(() => {
@@ -2129,7 +2138,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // a screen reader never mentions — the same defect the toast had, in the two
 // spots where the app is saying no. The FEN field also went red without ever
 // being marked invalid, so the ring was the whole message.
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const attrs = await page.evaluate(() => {
     const g = (id) => {
@@ -2169,7 +2178,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // there, and it called N 「新局」 when in that mode N is the next puzzle. The
 // only screen that tells you what the keyboard does was wrong in two of the
 // app's four modes.
-{
+if (scenario()) {
   const expect = {
     ai:     { has: ["新局", "悔棋", "翻转棋盘"], hasnt: ["下一题", "看答案", "重做当前这题"] },
     learn:  { has: ["重做当前这题", "悔棋", "本课提示"], hasnt: ["新局", "翻转棋盘", "下一题"] },
@@ -2219,7 +2228,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // Stacked, full width, and each one now carries as a visible label the string
 // that was only ever its aria-label — two 「全部」 buttons above each other,
 // both active, with nothing on screen saying what either row filtered.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "record");
     await page.evaluate(() => {
@@ -2281,7 +2290,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // 不要第二份 aria-label、一行高、等宽、文字不溢出按钮。上面那一段之所以要
 // 限定在 #hist-modal 里，就是因为这三排在那时是关着的 —— 关着的东西量出来的
 // 是 0，而 0 不该被读成「这个筛选器没有标签」。
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "record");
     await page.evaluate(() => {
@@ -2350,7 +2359,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // on a window this shape, and it reaches the floor. What is guarded is that
 // the strip does not come back — a board that stops short of the bottom edge
 // by ~30px is exactly what a re-reserved --spine-h looks like.
-{
+if (scenario()) {
   for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
     const { ctx, page } = await open("zh-CN", "ai", "play", "wood", { width: w, height: h });
     await page.keyboard.press("p");          // shut the panel
@@ -2390,7 +2399,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // written at 1400x900. docs/manual-check.md D5 ("缩到某个尺寸就不再变小，布局
 // 不塌") is the only thing that ever covered the other end, and nobody has run
 // it. These are the same questions the wide checks ask, asked at 520.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play", "wood", { width: 520, height: 520 });
     const r = await page.evaluate(() => {
@@ -2433,7 +2442,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // teaching track exists to reach.
 // Not the editor's fix — that row overflowed sideways and needed 2×2. This one
 // fits across; what it did not fit was the label inside the box.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "learn", "play");
     // 6.0: the list ends with the ten classic games (data-c), which are read,
@@ -2482,7 +2491,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // what kind of game on the first line, how long and when on the second — and
 // the dialog is the wide one, because this is the second list of sentences in
 // the app and 2.1.2 only widened the first.
-{
+if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play");
     await page.evaluate(() => {
@@ -2525,7 +2534,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // the history rows and the save slots, in the same 380px box, found two
 // versions after the first one was fixed. Guarded structurally in
 // test-chess.mjs as well: any dialog holding a `.pick-list` gets the wide box.
-{
+if (scenario()) {
   const GAMES = [
     ["Linares Super Tournament 1994", "Kasparov, Garry", "Karpov, Anatoly", "1-0"],
     ["Ch", "Li, Y", "Wu, X", "1/2-1/2"],
@@ -2573,7 +2582,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // Measured on the shipped 2.1.4 with clean storage: en-US, ja-JP, zh-CN and
 // de-DE all came up in Chinese, and the guide never appeared. Both of those are
 // what docs/manual-check.md A3 names as the failure, and A3 has never been run.
-{
+if (scenario()) {
   // de-DE is here on purpose: an unsupported locale falls back to Chinese by
   // design (test-chess pins fr-FR → zh-CN), so it proves the fallback still
   // works rather than that everything is Chinese again.
@@ -2623,7 +2632,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
 // 2.1.9 实测:设置页用的是有边框的分段控件,对局页用的是 12px 无边框无填充的
 // 文本链接 —— 同一块面板两种语言,而对局页恰恰是主屏。同时十六个动作一样重,
 // 「认输」和「PGN」看起来同样可点。这一节量的就是这两件事。
-for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"], ["ja", "ai", "setup"]]) {
+if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"], ["ja", "ai", "setup"]]) {
   const { ctx, page } = await open(lang, mode, tab);
   // 7.7 §3: at 0 moves the play pane has no action buttons left to measure —
   // the tools became an icon row and 本局 waits for a game — so play one.
@@ -2670,7 +2679,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // 主按钮什么时候出现:这局下完、而且还没分析过 —— 正是空复盘段一直用散文写着
 // 的那句话（「完局后点『分析』可记录精准度」）。对局进行中没有「唯一该点的
 // 那一个」,那就一个都不填。
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "pvp", "play");
   const at = (sq) => page.evaluate((s) => {
     const c = document.getElementById("board"); const r = c.getBoundingClientRect();
@@ -2711,7 +2720,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // Every case below is one of those, plus the other direction — the commands
 // still have to work where they always did, or "fixing" this would just be
 // taking the menu away.
-{
+if (scenario()) {
   /* The SDK injects `zero`; nothing in a headless page does. host.js only
      asks whether it is an object, and the one thing this section needs from
      it is the shortcut handler the app registers through `zero.on`. */
@@ -2850,7 +2859,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // native dialog must still be able to ask. `Host.showMessage` returning null
 // means "no such dialog here", and reading that as "the player said no" would
 // turn a missing capability into a dead button.
-{
+if (scenario()) {
   const openDialogBridge = async (answer, supported) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([a, sup]) => {
@@ -2925,7 +2934,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // 个真正职责(复盘时指认第几着、窄窗无面板时替补棋盘高亮)都只要求它在,
 // 不要求它响。轮次同理:状态药丸永远在说,计时局里走表那侧的钟又亮着,
 // 「行」徽章只在不计时的对局里才是第二个不多余的说法。
-{
+if (scenario()) {
   const openTc = async (tc) => {
     const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 }, locale: "zh-CN" });
     await ctx.addInitScript((t) => {
@@ -2994,7 +3003,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // 这一整类视口在这套 e2e 里一次都没有出现过：48 个视口实例里 47 个宽度
 // ≥1200px，唯一的窄视口是 520×520 —— 正方形，落进窄横窗那条规则，碰不到这里。
 // 已发布的桌面壳允许 520×520 起步的窗口，所以 520×900 这种形状是真能摆出来的。
-{
+if (scenario()) {
   // 手机常见宽度，外加桌面壳允许的最窄窗口
   const PORTRAIT = [
     { width: 360, height: 780 },
@@ -3068,7 +3077,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // 宽 520–559、长宽比落在 (0.99, 1) 的窗口三条媒体查询一条都不命中；宽 ≥560 的
 // 竖窗走旧抽屉，面板一开棋盘就缩。这里把整张网格走一遍，每格面板开关各量一次。
 // 一个页面、改视口尺寸、按 ☰ —— 每格开一个新页面要跑十几分钟。
-{
+if (scenario()) {
   const MIN_BOARD = 260;
   const sizes = [];
   for (let w = 520; w <= 620; w += 10) {
@@ -3163,7 +3172,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // 行，换一种语言、一种状态就会碰上。这里取顶栏里每一个看得见的叶子元素，两两
 // 求交 —— 包括占位但隐形的「悔棋」槽：它下一手就会出现在那里。
 // 7.9 §1a：悔棋、提示搬到了对手那一行，所以上方那一条对阵条也一起量。
-{
+if (scenario()) {
   const WIDTHS = [[520, 900], [540, 545], [560, 900], [620, 700], [390, 844]];
   const hits = [];
   for (const lang of LANGS) {
@@ -3197,7 +3206,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // --- 5d. 教学的任务在棋盘上方看得见，和面板开合无关（7.6 §3f）------------------
 // 7.5 走查：540×900 选「新手」进来，面板是收起的 —— 而「点击 e4」这句只写在
 // 面板里的任务卡上，棋盘上什么也没说。
-{
+if (scenario()) {
   const measure = (page) => page.evaluate(() => {
     const strip = document.getElementById("task-strip");
     const task = document.getElementById("lesson-task");
@@ -3256,7 +3265,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // 日文原来是「ここから指し直す」，英文是「Replay from here」，在按钮里都挤成两行。着法旁边那颗「…」的
 // title / aria-label 在切到英文后还是「着法操作」：着法列表是按签名复用
 // 节点的，签名里没有语言，于是它一直留着切换前的那个名字。
-{
+if (scenario()) {
   const mv = async (page, sq) => {
     const pt = await page.evaluate((s) => {
       const r = document.getElementById("board").getBoundingClientRect();
@@ -3316,7 +3325,7 @@ const mv = async (page, sq) => {
 // on every tab and in every mode. The strips cost the board some height; the
 // floor is 88% of 7.6's side (canvas 822 at 1440×900, 722 at 1280×800, 622 at
 // 1024×700 — measured on main 75a3560).
-{
+if (scenario()) {
   const OLD = { "1440x900": 822, "1280x800": 722, "1024x700": 622 };
   for (const [w, h] of [[1440, 900], [1280, 800], [1024, 700]]) {
     const rects = new Map();
@@ -3343,7 +3352,7 @@ const mv = async (page, sq) => {
 }
 
 // --- 7.7 (v7-7-plan §10): portrait, the strips stay with the board ---------
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play", "wood", { width: 600, height: 900 });
   const r = await page.evaluate(() => {
     const box = (id) => document.getElementById(id).getBoundingClientRect();
@@ -3357,7 +3366,7 @@ const mv = async (page, sq) => {
 }
 
 // --- 7.7 (v7-7-plan §3): mid-game the notation is what the panel is for ---
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play", "wood", { width: 1440, height: 900 });
   await page.evaluate(() => { window.__chess.engine.bestMove = async () => null; });
   for (const sq of ["e2", "e4"]) await mv(page, sq);
@@ -3390,7 +3399,7 @@ const mv = async (page, sq) => {
 // --- 7.7 (v7-7-plan §4): every ending gets the result card ------------------
 // Mate, flag, resignation and a draw — the card is there, says the right
 // thing, carries at most one filled button, and never lies on the board.
-{
+if (scenario()) {
   const cardState = (page) => page.evaluate(() => {
     const c = document.getElementById("go-card");
     const b = document.getElementById("board-wrap").getBoundingClientRect();
@@ -3548,7 +3557,7 @@ const mv = async (page, sq) => {
 }
 
 // --- 7.7 (v7-7-plan §3, §4): at most one filled button, in every context ---
-for (const [when, mode, act] of [
+if (scenario()) for (const [when, mode, act] of [
   ["教学·第 1 课", "learn", async () => {}],
   ["做题·第 1 题", "puzzle", async () => {}],
   ["人机·开局前", "ai", async () => {}],
@@ -3568,7 +3577,7 @@ for (const [when, mode, act] of [
 }
 
 // --- 7.7 (v7-7-plan §4): the puzzle answers on its own card ----------------
-{
+if (scenario()) {
   const { ctx, page } = await open("zh-CN", "puzzle", "play");
   // the first 一步杀 is the back rank: Ra1, Kg1 against Kg8 behind f7 g7 h7
   const fb = () => page.evaluate(() => { const e = document.getElementById("puzzle-feedback");
@@ -3593,7 +3602,7 @@ for (const [when, mode, act] of [
 // 7.8.0 在教学里,第一课正在上,面板最上面仍是「今天的训练:学一节新课」,把课文
 // 往下推了约 140px;做题页同理。量法:卡片藏着时课文标题的纵坐标,对比把卡片
 // 临时放回来时的纵坐标 —— 后者就是 7.8.0 的位置。
-{
+if (scenario()) {
   for (const mode of ["learn", "puzzle"]) {
     const { ctx, page } = await open("zh-CN", mode, "play");
     const r = await page.evaluate((m) => {
@@ -3623,7 +3632,7 @@ for (const [when, mode, act] of [
 // 同一组内 8px,组与组之间 20px。7.8.0 是 8 / 0 / 8 / 12 / 12,「为你出一题」
 // 离「题型」只有 9px。量的是 #sec-puzzle 里每个看得见的块,上一块下缘到下一块
 // 上缘;没走、走错(反馈卡加提示)、走对(反馈卡加后续)三种状态都量。
-{
+if (scenario()) {
   const gaps = (page) => page.evaluate(() => {
     const kids = [...document.getElementById("sec-puzzle").children]
       .filter((e) => e.getClientRects().length && e.getBoundingClientRect().height > 0);
@@ -3658,7 +3667,7 @@ for (const [when, mode, act] of [
 // --- 7.7 §1：看得见的瑕疵，写成几何断言 ------------------------------------
 // 每一条都是 7.6.0 截图里看得见的东西（v7-7-plan §1a–§1e）。量的是摆好之后
 // 的盒子和画布上的像素，不是样式表里写了什么。
-{
+if (scenario()) {
   const sqAt = async (page, sq) => page.evaluate((s) => {
     const cv = document.getElementById("board");
     const r = cv.getBoundingClientRect();
@@ -3891,7 +3900,7 @@ for (const [when, mode, act] of [
 // 7.8.0 量到：「标准」下棋谱着法 13px，面板文字只有 12 和 13 两档；回合号装在
 // 一个居中的小方块里，文字下缘比着法高 2.6px。三种语言 × 三种宽度各量一遍。
 // 下缘用 Range.getClientRects 量文字本身，不量盒子：盒子对齐了，字不一定。
-{
+if (scenario()) {
   const sqAt = async (page, sq) => page.evaluate((s) => {
     const r = document.getElementById("board").getBoundingClientRect();
     const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
@@ -3960,7 +3969,7 @@ for (const [when, mode, act] of [
 // 英文「Live analysis」「Offer draw」折成两行；面板里的按钮 36px 与 28px 两种
 // 之外还混着别的。这里量摆好之后的盒子，不量样式表写了什么（那是
 // test-chess.mjs 的两种高度守卫）。
-{
+if (scenario()) {
   const SIZES = [{ width: 1440, height: 900 }, { width: 1024, height: 700 }, { width: 600, height: 900 }];
   const clickSquares = async (page, list) => {
     for (const sq of list) {
@@ -4196,6 +4205,8 @@ for (const [when, mode, act] of [
   }
 }
 
+const { shard, total } = scenario.done();
+console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
