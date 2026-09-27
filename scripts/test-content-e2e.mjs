@@ -1182,8 +1182,10 @@ if (hasTab && REAL.length) {
     else if (lang === "en") assert(!han.test(r.title) && !han.test(r.undo), "F5 en:首帧标题和界面字没有一帧中文", r.title + " / " + r.undo);
     // 日文也写汉字,看假名
     else assert(/[぀-ヿ]/.test(r.title) && /[぀-ヿ]/.test(r.undo), "F5 ja:首帧标题和界面字已是日文", r.title + " / " + r.undo);
-    const early = r.chunks.filter((n) => n !== "chunk-boot.js");
-    assert(JSON.stringify(early) === JSON.stringify(want),
+    // which chunks, not in what order: WebKit lists two script fetches that
+    // start together in the other order from Chromium (CI, #85)
+    const early = r.chunks.filter((n) => n !== "chunk-boot.js").sort();
+    assert(JSON.stringify(early) === JSON.stringify([...want].sort()),
       `F5 ${lang}/${mode}:首帧前取的分块正好是要用的那几个`, early.join(", ") || "(无)");
     if (mode === "puzzle") {
       assert(r.mined && r.pz === r.pzLater, "F5:以做题模式启动,挖掘题在首帧前就在,题数不会在首帧后跳一下", r.pz + " → " + r.pzLater);
