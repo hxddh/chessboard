@@ -85,7 +85,11 @@ const msArg = (process.argv.find((a) => a.startsWith("--ms=")) || "").slice(5);
 // quick. See the corpus note at the top of this file.
 const gamesArg = Number((process.argv.find((a) => a.startsWith("--games=")) || "").slice(8));
 const GAME_LIMIT = Number.isFinite(gamesArg) && gamesArg > 0 ? gamesArg : (RECORDING ? Infinity : 6);
-const MOVETIMES = msArg ? msArg.split(",").map(Number).filter((n) => n > 0) : [120, 400];
+// v8-0-plan B2: the timed passes are 7.9's pass and run only when asked for
+// (--ms=120,400); the default is the node-limited pass that ships
+const MOVETIMES = msArg ? msArg.split(",").map(Number).filter((n) => n > 0) : [];
+// the 缺陷 32 candidate count is its own measurement, run with --multipv
+const MULTIPV = process.argv.includes("--multipv");
 
 // The corpus lives in scripts/fixtures/corpus.mjs since 7.1 — see its header.
 
@@ -350,125 +354,334 @@ for (const ms of MOVETIMES) {
 // =========================================================================
 // 缺陷 32 — is the beginner tier's strength a function of candidate count?
 // =========================================================================
-const tier = TIERS.beginner;
+const mvOut = { phases: {} };
+if (MULTIPV) {
+  const tier = TIERS.beginner;
 
-/** Every candidate the beginner tier's own search returns for `fen`. */
-async function candidates(fen) {
-  await ready();
-  send("setoption name MultiPV value " + (tier.multipv || 1));
-  send("setoption name UCI_LimitStrength value false");
-  send("setoption name Skill Level value " + (tier.skill != null ? tier.skill : 20));
-  send("position fen " + fen);
-  const cands = new Map();
-  const collect = (line) => {
-    if (typeof line !== "string") return;
-    const mv = line.match(/\bmultipv (\d+)\b/);
-    const pv = line.match(/\bpv\s+([a-h][1-8][a-h][1-8][qrbn]?)/);
-    const sc = infoScore(line);
-    if (mv && pv) cands.set(Number(mv[1]), { uci: pv[1], cp: sc && sc.kind === "cp" ? sc.val : (sc ? (sc.val > 0 ? 9000 : -9000) : null) });
-  };
-  listeners.push(collect);
-  const w = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), (tier.movetime || 2000) + 20000);
-  send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
-  try { await w; } finally { listeners.splice(listeners.indexOf(collect), 1); }
-  return [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
-}
-
-/** Opening / middlegame / endgame, by men left on the board. */
-const phaseOf = (fen) => {
-  const men = (fen.split(" ")[0].match(/[a-zA-Z]/g) || []).length;
-  return men >= 26 ? "opening" : men >= 14 ? "middlegame" : "endgame";
-};
-
-const mvOut = { what: "新手档自己的搜索设置下,每个局面实际返回几条候选、候选之间差多少分",
-  script: "scripts/test-analysis.mjs --record",
-  tier: { skill: tier.skill, depth: tier.depth, multipv: tier.multipv, worstBias: tier.worstBias },
-  // The change this measurement was taken to justify, and what happened when
-  // it was tried anyway. Kept here because a rejected option with numbers on
-  // it is what stops the same idea being re-proposed from first principles.
-  weightedSamplingTried: {
-    what: "把八成的均匀抽样改成按与首选的分差加权(exp(-gap/K)),量新手 bot 的得分率",
-    script: "scripts/test-novice.mjs --tier=<id> --games=32",
-    baselineScorePct: { beginner: 56, casual: 27 },
-    runs: [
-      { spreadK: { beginner: 250, casual: 180 }, scorePct: { beginner: 33, casual: 6 } },
-      { spreadK: { beginner: 700, casual: 500 }, scorePct: { beginner: 38, casual: 8 } },
-    ],
-    verdict: "不采用:两档都远强于既定标定,要补回来只能把 worstBias 抬回 1.19 已经否掉的 0.6 附近",
-  },
-  phases: {} };
-// Four decided games never reach an endgame — all four are mating attacks —
-// so the phase the defect is actually about would have had no data at all.
-// The endgame positions come from the app's own shipped content (the endgame
-// lessons and the draw/defence puzzles) rather than being invented here: those
-// are the positions a player using this app really arrives at.
-const extra = [];
-{
-  const cCtx = { console, Date, performance };
-  cCtx.globalThis = cCtx;
-  cCtx.window = cCtx;
-  vm.createContext(cCtx);
-  for (const m of ["lessons.js", "puzzles.js"]) {
-    vm.runInContext(compileModuleSync(path.join(root, "src/web/js/" + m)), cCtx, { filename: "module" });
+  /** Every candidate the beginner tier's own search returns for `fen`. */
+  async function candidates(fen) {
+    await ready();
+    send("setoption name MultiPV value " + (tier.multipv || 1));
+    send("setoption name UCI_LimitStrength value false");
+    send("setoption name Skill Level value " + (tier.skill != null ? tier.skill : 20));
+    send("position fen " + fen);
+    const cands = new Map();
+    const collect = (line) => {
+      if (typeof line !== "string") return;
+      const mv = line.match(/\bmultipv (\d+)\b/);
+      const pv = line.match(/\bpv\s+([a-h][1-8][a-h][1-8][qrbn]?)/);
+      const sc = infoScore(line);
+      if (mv && pv) cands.set(Number(mv[1]), { uci: pv[1], cp: sc && sc.kind === "cp" ? sc.val : (sc ? (sc.val > 0 ? 9000 : -9000) : null) });
+    };
+    listeners.push(collect);
+    const w = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), (tier.movetime || 2000) + 20000);
+    send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
+    try { await w; } finally { listeners.splice(listeners.indexOf(collect), 1); }
+    return [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
   }
-  const seen = new Set();
-  const take = (fen) => {
-    if (!fen || seen.has(fen)) return;
-    seen.add(fen);
-    let probe;
-    try { probe = new Chess(fen); } catch (_) { return; }
-    if (!probe.fen() || probe.game_over()) return;
-    if (phaseOf(fen) !== "endgame") return;
-    extra.push(fen);
-  };
-  for (const L of cCtx.CHESS_LESSONS || []) for (const t of L.tasks || []) take(t.fen);
-  for (const p of cCtx.CHESS_PUZZLES || []) take(p.fen);
-}
-console.log(`\n(残局局面 ${extra.length} 个,取自课程与题库 —— 四局对局全是杀王局,走不到残局)`);
 
-const rows = [];
-for (const fen of GAMES.flatMap((g) => fensOf(g.san)).concat(extra)) {
+  /** Opening / middlegame / endgame, by men left on the board. */
+  const phaseOf = (fen) => {
+    const men = (fen.split(" ")[0].match(/[a-zA-Z]/g) || []).length;
+    return men >= 26 ? "opening" : men >= 14 ? "middlegame" : "endgame";
+  };
+
+  Object.assign(mvOut, { what: "新手档自己的搜索设置下,每个局面实际返回几条候选、候选之间差多少分",
+    script: "scripts/test-analysis.mjs --record",
+    tier: { skill: tier.skill, depth: tier.depth, multipv: tier.multipv, worstBias: tier.worstBias },
+    // The change this measurement was taken to justify, and what happened when
+    // it was tried anyway. Kept here because a rejected option with numbers on
+    // it is what stops the same idea being re-proposed from first principles.
+    weightedSamplingTried: {
+      what: "把八成的均匀抽样改成按与首选的分差加权(exp(-gap/K)),量新手 bot 的得分率",
+      script: "scripts/test-novice.mjs --tier=<id> --games=32",
+      baselineScorePct: { beginner: 56, casual: 27 },
+      runs: [
+        { spreadK: { beginner: 250, casual: 180 }, scorePct: { beginner: 33, casual: 6 } },
+        { spreadK: { beginner: 700, casual: 500 }, scorePct: { beginner: 38, casual: 8 } },
+      ],
+      verdict: "不采用:两档都远强于既定标定,要补回来只能把 worstBias 抬回 1.19 已经否掉的 0.6 附近",
+    },
+    phases: {} });
+  // Four decided games never reach an endgame — all four are mating attacks —
+  // so the phase the defect is actually about would have had no data at all.
+  // The endgame positions come from the app's own shipped content (the endgame
+  // lessons and the draw/defence puzzles) rather than being invented here: those
+  // are the positions a player using this app really arrives at.
+  const extra = [];
   {
-    const probe = new Chess(fen);
-    if (probe.game_over()) continue;
-    const legal = probe.moves().length;
-    const cs = await candidates(fen);
-    const scored = cs.filter((c) => c.cp != null);
-    rows.push({
-      phase: phaseOf(fen), legal, n: cs.length,
-      // what a uniform pick actually costs: best candidate minus the mean of
-      // the rest, in centipawns, from the mover's point of view
-      spread: scored.length >= 2 ? scored[0].cp - Math.round(scored.slice(1).reduce((a, c) => a + c.cp, 0) / (scored.length - 1)) : null,
-      worst: scored.length >= 2 ? scored[0].cp - Math.min(...scored.map((c) => c.cp)) : null,
+    const cCtx = { console, Date, performance };
+    cCtx.globalThis = cCtx;
+    cCtx.window = cCtx;
+    vm.createContext(cCtx);
+    for (const m of ["lessons.js", "puzzles.js"]) {
+      vm.runInContext(compileModuleSync(path.join(root, "src/web/js/" + m)), cCtx, { filename: "module" });
+    }
+    const seen = new Set();
+    const take = (fen) => {
+      if (!fen || seen.has(fen)) return;
+      seen.add(fen);
+      let probe;
+      try { probe = new Chess(fen); } catch (_) { return; }
+      if (!probe.fen() || probe.game_over()) return;
+      if (phaseOf(fen) !== "endgame") return;
+      extra.push(fen);
+    };
+    for (const L of cCtx.CHESS_LESSONS || []) for (const t of L.tasks || []) take(t.fen);
+    for (const p of cCtx.CHESS_PUZZLES || []) take(p.fen);
+  }
+  console.log(`\n(残局局面 ${extra.length} 个,取自课程与题库 —— 四局对局全是杀王局,走不到残局)`);
+
+  const rows = [];
+  for (const fen of GAMES.flatMap((g) => fensOf(g.san)).concat(extra)) {
+    {
+      const probe = new Chess(fen);
+      if (probe.game_over()) continue;
+      const legal = probe.moves().length;
+      const cs = await candidates(fen);
+      const scored = cs.filter((c) => c.cp != null);
+      rows.push({
+        phase: phaseOf(fen), legal, n: cs.length,
+        // what a uniform pick actually costs: best candidate minus the mean of
+        // the rest, in centipawns, from the mover's point of view
+        spread: scored.length >= 2 ? scored[0].cp - Math.round(scored.slice(1).reduce((a, c) => a + c.cp, 0) / (scored.length - 1)) : null,
+        worst: scored.length >= 2 ? scored[0].cp - Math.min(...scored.map((c) => c.cp)) : null,
+      });
+    }
+  }
+  console.log(`\n--- 缺陷 32 · 新手档候选条数 (multipv ${tier.multipv}, depth ${tier.depth}) ---`);
+  for (const ph of ["opening", "middlegame", "endgame"]) {
+    const r = rows.filter((x) => x.phase === ph);
+    if (!r.length) continue;
+    const mean = (xs) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
+    const spreads = r.map((x) => x.spread).filter((x) => x != null);
+    const worsts = r.map((x) => x.worst).filter((x) => x != null);
+    const row = {
+      positions: r.length,
+      legalMean: mean(r.map((x) => x.legal)),
+      candidatesMean: mean(r.map((x) => x.n)),
+      candidatesMin: Math.min(...r.map((x) => x.n)),
+      cappedPct: pct(r.filter((x) => x.n >= (tier.multipv || 1)).length, r.length),
+      spreadMean: mean(spreads),
+      spreadMedian: quantile(spreads, 0.5),
+      worstGapMedian: quantile(worsts, 0.5),
+    };
+    mvOut.phases[ph] = row;
+    console.log(`  ${ph.padEnd(11)} ${String(row.positions).padStart(3)} 个局面 · 合法着法均 ${row.legalMean} · 候选均 ${row.candidatesMean}(最少 ${row.candidatesMin},满 ${tier.multipv} 条的占 ${row.cappedPct}%)`);
+    console.log(`  ${" ".repeat(11)}     首选领先其余均值 ${row.spreadMean}cp(中位 ${row.spreadMedian})· 首选与最差差 ${row.worstGapMedian}cp(中位)`);
+  }
+}
+
+// =========================================================================
+// v8-0-plan B2 — the review pass as it ships: does the same game, analysed
+// twice, tell the same story? And what does it cost?
+// =========================================================================
+//
+// Through 7.9 this file measured 7.9's pass: `go movetime`, whose agreement
+// with itself (`winPctNoise.movetime`, kept below) was `??` 82%, `?` 64%,
+// `?!` 45% at the 200 ms it shipped with. B2 replaced it with a node count
+// from a cleared engine plus a deeper MultiPV 3 look at every move that
+// drops ≥ 5 points — review-pass.js runPass, run here as the app runs it,
+// with a node engine driven by the same UCI sequence as engine.js
+// analyzeInner. Run B is taken after the engine has been deliberately
+// dirtied with unrelated searches, because in the app the engine has always
+// done something else first (the coach, a hint, the game).
+//
+// Also recorded: wall time of 分析 (budget 200) and 精析 (400), split into
+// the quick scan and the deepening, against 7.9's timed pass over the same
+// positions; and every 妙着 / 仅此一着 the passes found, with the engine's
+// lines, for docs/manual-check.md.
+const B2_GAME_LIMIT = Number.isFinite(gamesArg) && gamesArg > 0 ? gamesArg : (RECORDING ? Infinity : 4);
+const b2Ctx = { console, Date, performance };
+b2Ctx.globalThis = b2Ctx;
+b2Ctx.window = b2Ctx;
+vm.createContext(b2Ctx);
+for (const m of ["chess.js", "eco.js", "eco-lookup.js", "review-pass.js", "review-grade.js"]) {
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/" + m)), b2Ctx, { filename: m });
+}
+const B2Chess = b2Ctx.Chess, Pass = b2Ctx.ChessReviewPass, Grade = b2Ctx.ChessReviewGrade, Eco = b2Ctx.ChessEco;
+const nodesFor = engCtx.ChessEngine.nodesFor;
+
+/** engine.js readInfo, to the letter. */
+function readInfo(line, into) {
+  const mv = line.match(/\bmultipv (\d+)\b/);
+  const idx = mv ? Number(mv[1]) : 1;
+  const m = line.match(/\bscore (cp|mate) (-?\d+)\b/);
+  const pm = line.match(/\bpv\s+(.+)$/);
+  const dm = line.match(/\bdepth (\d+)\b/);
+  if (!m && !pm) return;
+  const slot = into.get(idx) || { cp: null, mate: null, pv: null, depth: 0 };
+  if (m) { slot.cp = m[1] === "cp" ? Number(m[2]) : null; slot.mate = m[1] === "mate" ? Number(m[2]) : null; }
+  if (pm) slot.pv = pm[1].trim().split(/\s+/);
+  if (dm) slot.depth = Number(dm[1]);
+  into.set(idx, slot);
+}
+
+/**
+ * engine.js analyzeInner, the same UCI in the same order: ucinewgame,
+ * isready, the full-strength options (Hash 32, the app's default), the
+ * position, `go nodes`. `timed` swaps the last for 7.9's `go movetime`.
+ */
+async function analyzeB2(fen, budget, opts, timed) {
+  if (!timed) send("ucinewgame"); // 7.9 sent none
+  await ready();
+  const multipv = opts && opts.multipv ? opts.multipv : 1;
+  send("setoption name MultiPV value " + multipv);
+  send("setoption name Skill Level value 20");
+  send("setoption name UCI_LimitStrength value false");
+  send("setoption name Hash value 32");
+  send("position fen " + fen);
+  const slots = new Map();
+  const collect = (l) => { if (typeof l === "string") readInfo(l, slots); };
+  listeners.push(collect);
+  const w = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), 120000);
+  send(timed ? "go movetime " + budget : "go nodes " + nodesFor(budget));
+  let line;
+  try { line = await w; } finally { listeners.splice(listeners.indexOf(collect), 1); }
+  const uci = line.split(/\s+/)[1];
+  const lines = [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+  const top = lines[0] || { cp: null, mate: null, pv: null };
+  return { cp: top.cp, mate: top.mate, turn: fen.split(" ")[1] === "b" ? "b" : "w",
+    best: uci && uci !== "(none)" ? uci : null, pv: top.pv || null, lines };
+}
+const scalarOf = (e) => (e ? evalScalar(e.mate != null ? { kind: "mate", val: e.mate } : e.cp != null ? { kind: "cp", val: e.cp } : null, e.turn) : null);
+
+/** Unrelated searches, so the next pass starts from a used engine. */
+async function dirty() {
+  send("setoption name MultiPV value 4");
+  for (const fen of ["r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+    "8/5pk1/6p1/8/3R4/6P1/5PKP/2r5 b - - 0 40"]) {
+    send("position fen " + fen);
+    const w = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), 20000);
+    send("go movetime 150");
+    await w;
+  }
+}
+
+/** One pass the way app.js analyzeGame runs it, timed per stage. */
+async function passOf(fens, sans, budget) {
+  const t = { quick: 0, deep: 0, deepPositions: 0 };
+  const lastDeep = new Map();
+  const p = await Pass.runPass({ fens, sans, budget, lines: 1, evalScalar: scalarOf,
+    analyze: async (fen, b, o) => {
+      const t0 = performance.now();
+      const e = await analyzeB2(fen, b, o);
+      const dt = performance.now() - t0;
+      if (b === budget) t.quick += dt; else { t.deep += dt; t.deepPositions++; lastDeep.set(fen, e); }
+      return e;
+    } });
+  p.book = Grade.bookPlies(fens, (f) => !!Eco.lookupPosition(new B2Chess(f)));
+  return { p, tags: dropsOf(p.scalars).map(Review.classifyByWinPct), grades: Grade.gradeMoves(p, B2Chess), t, lastDeep };
+}
+
+/** 7.9's pass over the same positions, for the time it took. */
+async function timedPass(fens) {
+  const t0 = performance.now();
+  for (const fen of fens) {
+    const probe = new B2Chess(fen);
+    if (probe.in_checkmate() || probe.in_stalemate()) continue;
+    await analyzeB2(fen, 200, { multipv: 1 }, true);
+  }
+  return performance.now() - t0;
+}
+
+const b2Games = GAMES.slice(0, B2_GAME_LIMIT);
+const b2Agree = { "?!": { a: 0, b: 0, both: 0 }, "?": { a: 0, b: 0, both: 0 }, "??": { a: 0, b: 0, both: 0 } };
+const deepAgree = { "?!": { a: 0, b: 0, both: 0 }, "?": { a: 0, b: 0, both: 0 }, "??": { a: 0, b: 0, both: 0 } };
+let b2Plies = 0, sameScalars = 0, sameGrades = 0, scalarN = 0;
+const gradeTotals = Object.fromEntries(Grade.GRADES.map((g) => [g, 0]));
+const time = { positions: 0, quick200: 0, deep200: 0, deepPositions200: 0, quick400: 0, deep400: 0, deepPositions400: 0, timed200: 0 };
+const found = [];
+for (const game of b2Games) {
+  const fens = fensOf(game.san);
+  const A = await passOf(fens, game.san, 200);
+  await dirty();
+  const B = await passOf(fens, game.san, 200);
+  const D = await passOf(fens, game.san, 400);
+  const T = await timedPass(fens);
+  time.positions += fens.length;
+  time.quick200 += A.t.quick; time.deep200 += A.t.deep; time.deepPositions200 += A.t.deepPositions;
+  time.quick400 += D.t.quick; time.deep400 += D.t.deep; time.deepPositions400 += D.t.deepPositions;
+  time.timed200 += T;
+  b2Plies += A.tags.length;
+  for (let i = 0; i < fens.length; i++) { scalarN++; if (A.p.scalars[i] === B.p.scalars[i]) sameScalars++; }
+  for (let i = 0; i < A.grades.length; i++) if (A.grades[i] === B.grades[i]) sameGrades++;
+  for (const g of A.grades) if (g) gradeTotals[g]++;
+  const ab = tagAgreement(A.tags, B.tags, TAGS), ad = tagAgreement(A.tags, D.tags, TAGS);
+  for (const k of TAGS) {
+    for (const f of ["a", "b", "both"]) { b2Agree[k][f] += ab[k][f]; deepAgree[k][f] += ad[k][f]; }
+  }
+  assert(JSON.stringify(A.grades) === JSON.stringify(B.grades),
+    "B2 · " + game.name.split(",")[0] + ": the same game twice, the engine dirtied in between — identical grades");
+  // every 妙着 / 仅此一着 of either budget, with the deep lines behind it
+  for (const [run, budget] of [[A, 200], [D, 400]]) {
+    run.grades.forEach((g, i) => {
+      if (g !== "brilliant" && g !== "only") return;
+      if (found.some((x) => x.fen === fens[i] && x.san === game.san[i])) return;
+      const e = run.lastDeep.get(fens[i]);
+      const mover = fens[i].split(" ")[1] === "b" ? "b" : "w";
+      const win = (s) => { const w = Review.winPct(s); return Math.round((mover === "w" ? w : 100 - w) * 10) / 10; };
+      found.push({ grade: g, budget, game: game.name, moveNo: Review.moveNumber(i, "w"), side: mover, san: game.san[i], fen: fens[i],
+        winBefore: win(run.p.scalars[i]), winAfter: win(run.p.scalars[i + 1]), second: win(run.p.seconds[i]),
+        reply: run.p.pvs[i + 1],
+        lines: e ? e.lines.map((l) => ({ score: l.mate != null ? "#" + l.mate : (l.cp / 100).toFixed(2), pv: Pass.sansOf(fens[i], l.pv, 6).join(" ") })) : [] });
     });
   }
+  console.log(`  B2 · ${game.name.split(",")[0]}: ${fens.length} 个局面 · 加深 ${A.t.deepPositions} 个 · 分析 ${((A.t.quick + A.t.deep) / 1000).toFixed(1)}s(旧 ${(T / 1000).toFixed(1)}s)· 精析 ${((D.t.quick + D.t.deep) / 1000).toFixed(1)}s`);
 }
-console.log(`\n--- 缺陷 32 · 新手档候选条数 (multipv ${tier.multipv}, depth ${tier.depth}) ---`);
-for (const ph of ["opening", "middlegame", "endgame"]) {
-  const r = rows.filter((x) => x.phase === ph);
-  if (!r.length) continue;
-  const mean = (xs) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
-  const spreads = r.map((x) => x.spread).filter((x) => x != null);
-  const worsts = r.map((x) => x.worst).filter((x) => x != null);
-  const row = {
-    positions: r.length,
-    legalMean: mean(r.map((x) => x.legal)),
-    candidatesMean: mean(r.map((x) => x.n)),
-    candidatesMin: Math.min(...r.map((x) => x.n)),
-    cappedPct: pct(r.filter((x) => x.n >= (tier.multipv || 1)).length, r.length),
-    spreadMean: mean(spreads),
-    spreadMedian: quantile(spreads, 0.5),
-    worstGapMedian: quantile(worsts, 0.5),
-  };
-  mvOut.phases[ph] = row;
-  console.log(`  ${ph.padEnd(11)} ${String(row.positions).padStart(3)} 个局面 · 合法着法均 ${row.legalMean} · 候选均 ${row.candidatesMean}(最少 ${row.candidatesMin},满 ${tier.multipv} 条的占 ${row.cappedPct}%)`);
-  console.log(`  ${" ".repeat(11)}     首选领先其余均值 ${row.spreadMean}cp(中位 ${row.spreadMedian})· 首选与最差差 ${row.worstGapMedian}cp(中位)`);
+const rate = (v) => { const u = v.a + v.b - v.both; return { runA: v.a, runB: v.b, both: v.both, agreePct: pct(v.both, u), agreeRate: u ? Math.round((v.both / u) * 1000) / 1000 : 1 }; };
+const prior = (() => { try { return JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).winPctNoise; } catch (_) { return null; } })();
+const b2Noise = {
+  what: "同一局用 8.0 的复盘流程(review-pass.js:定节点、每步前清空引擎、胜率掉 ≥5 的着法加深并开 MultiPV 3)跑两遍,第二遍之前先用无关搜索把引擎弄脏,按胜率降幅分类比较两次的标注集合",
+  script: "scripts/test-analysis.mjs --record",
+  thresholds: { inaccuracy: Review.WIN_INACCURACY, mistake: Review.WIN_MISTAKE, blunder: Review.WIN_BLUNDER },
+  games: b2Games.length, plies: b2Plies,
+  pass: { budget: 200, nodes: nodesFor(200), deepFactor: Grade.DEEP_FACTOR, deepMultipv: Grade.DEEP_MULTIPV, deepTrigger: Grade.DEEP_TRIGGER },
+  tags: Object.fromEntries(TAGS.map((k) => [k, rate(b2Agree[k])])),
+  sameScalarPct: pct(sameScalars, scalarN), sameGradePct: pct(sameGrades, b2Plies),
+  grades: gradeTotals,
+  // not reproducibility — how much the marks move when the budget doubles
+  vs400: Object.fromEntries(TAGS.map((k) => [k, rate(deepAgree[k])])),
+  // 7.9's timed pass, as recorded then: the before of this section
+  movetime: prior && prior.byMovetime ? prior.byMovetime : prior && prior.movetime ? prior.movetime : null,
+};
+const perPos = (ms, n) => (n ? Math.round(ms / n) : 0);
+const b2Pass = {
+  what: "复盘一局的引擎耗时(node 里的 Stockfish 19 lite-single,单线程,同一台机器):分析 = 预算 200,精析 = 400,各分快扫与加深两段;旧 = 7.9 的 go movetime 200 走同样的局面",
+  script: "scripts/test-analysis.mjs --record",
+  games: b2Games.length, positions: time.positions,
+  analyse: { quickMs: Math.round(time.quick200), deepMs: Math.round(time.deep200), deepPositions: time.deepPositions200,
+    msPerPosition: perPos(time.quick200 + time.deep200, time.positions), quickMsPerPosition: perPos(time.quick200, time.positions),
+    msPerGame: Math.round((time.quick200 + time.deep200) / Math.max(1, b2Games.length)) },
+  deepAnalyse: { quickMs: Math.round(time.quick400), deepMs: Math.round(time.deep400), deepPositions: time.deepPositions400,
+    msPerPosition: perPos(time.quick400 + time.deep400, time.positions),
+    msPerGame: Math.round((time.quick400 + time.deep400) / Math.max(1, b2Games.length)) },
+  timed79: { ms: Math.round(time.timed200), msPerPosition: perPos(time.timed200, time.positions),
+    msPerGame: Math.round(time.timed200 / Math.max(1, b2Games.length)) },
+  found: found.length,
+};
+console.log(`\n--- v8-0-plan B2 · 复盘流程两遍(${b2Games.length} 局 ${b2Plies} 手,第二遍前弄脏引擎)---`);
+for (const k of TAGS) {
+  const v = b2Noise.tags[k], d = b2Noise.vs400[k];
+  const was = b2Noise.movetime && b2Noise.movetime["200"] ? b2Noise.movetime["200"].tags[k].agreePct : null;
+  console.log(`  ${k.padEnd(2)}  两遍各 ${v.runA}/${v.runB} 处 · 都标 ${v.both} · 重合率 ${v.agreePct}%(7.9 的 200ms:${was == null ? "—" : was + "%"})· 与精析 400 重合 ${d.agreePct}%`);
+}
+console.log(`  逐点评估完全相同 ${b2Noise.sameScalarPct}% · 分级完全相同 ${b2Noise.sameGradePct}%`);
+console.log(`  分级计数 ${JSON.stringify(gradeTotals)}`);
+console.log(`  耗时:分析 ${(b2Pass.analyse.msPerGame / 1000).toFixed(1)}s/局(快扫 ${b2Pass.analyse.quickMsPerPosition}ms/局面 + 加深 ${b2Pass.analyse.deepPositions} 个局面)· 精析 ${(b2Pass.deepAnalyse.msPerGame / 1000).toFixed(1)}s/局 · 7.9 分析 ${(b2Pass.timed79.msPerGame / 1000).toFixed(1)}s/局`);
+assert(b2Noise.tags["??"].agreeRate >= 0.95, "B2 acceptance: ?? agreement ≥ 95% (" + b2Noise.tags["??"].agreePct + "%)");
+assert(b2Noise.tags["?!"].agreeRate >= 0.70, "B2 acceptance: ?! agreement ≥ 70% (" + b2Noise.tags["?!"].agreePct + "%)");
+if (process.argv.includes("--found")) {
+  const out = path.join(process.env.FOUND_DIR || ".", "b2-found.json");
+  fs.writeFileSync(out, JSON.stringify(found, null, 1));
+  console.log("  妙着 / 仅此一着 " + found.length + " 处 → " + out);
 }
 
 if (RECORDING) {
-  record("scanNoise", scanOut);
-  record("winPctNoise", wpOut);
-  record("multipvPhase", mvOut);
+  if (MOVETIMES.length) record("scanNoise", scanOut);
+  record("winPctNoise", b2Noise);
+  record("reviewPass", b2Pass);
+  if (MULTIPV) record("multipvPhase", mvOut);
 } else {
   console.log("\n（只打印,没写入。加 --record 才写 docs/measured.json）");
 }

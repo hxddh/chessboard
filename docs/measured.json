@@ -852,6 +852,33 @@
       }
     }
   },
+  "reviewPass": {
+    "what": "复盘一局的引擎耗时(node 里的 Stockfish 19 lite-single,单线程,同一台机器):分析 = 预算 200,精析 = 400,各分快扫与加深两段;旧 = 7.9 的 go movetime 200 走同样的局面",
+    "script": "scripts/test-analysis.mjs --record",
+    "games": 28,
+    "positions": 1348,
+    "analyse": {
+      "quickMs": 310936,
+      "deepMs": 244749,
+      "deepPositions": 365,
+      "msPerPosition": 412,
+      "quickMsPerPosition": 231,
+      "msPerGame": 19846
+    },
+    "deepAnalyse": {
+      "quickMs": 603188,
+      "deepMs": 496379,
+      "deepPositions": 375,
+      "msPerPosition": 816,
+      "msPerGame": 39270
+    },
+    "timed79": {
+      "ms": 278035,
+      "msPerPosition": 206,
+      "msPerGame": 9930
+    },
+    "found": 61
+  },
   "scanNoise": {
     "what": "同一局连跑两次快扫,比较两次的标注集合与逐点评估抖动",
     "script": "scripts/test-analysis.mjs --record",
@@ -1207,7 +1234,7 @@
     }
   },
   "winPctNoise": {
-    "what": "同一两遍快扫的评估轨迹,改按胜率降幅分类(review.js classifyByWinPct),比较两次的标注集合",
+    "what": "同一局用 8.0 的复盘流程(review-pass.js:定节点、每步前清空引擎、胜率掉 ≥5 的着法加深并开 MultiPV 3)跑两遍,第二遍之前先用无关搜索把引擎弄脏,按胜率降幅分类比较两次的标注集合",
     "script": "scripts/test-analysis.mjs --record",
     "thresholds": {
       "inaccuracy": 5,
@@ -1215,7 +1242,75 @@
       "blunder": 20
     },
     "games": 28,
-    "byMovetime": {
+    "plies": 1320,
+    "pass": {
+      "budget": 200,
+      "nodes": 90000,
+      "deepFactor": 3,
+      "deepMultipv": 3,
+      "deepTrigger": 5
+    },
+    "tags": {
+      "?!": {
+        "runA": 70,
+        "runB": 70,
+        "both": 70,
+        "agreePct": 100,
+        "agreeRate": 1
+      },
+      "?": {
+        "runA": 54,
+        "runB": 54,
+        "both": 54,
+        "agreePct": 100,
+        "agreeRate": 1
+      },
+      "??": {
+        "runA": 48,
+        "runB": 48,
+        "both": 48,
+        "agreePct": 100,
+        "agreeRate": 1
+      }
+    },
+    "sameScalarPct": 100,
+    "sameGradePct": 100,
+    "grades": {
+      "brilliant": 2,
+      "only": 54,
+      "best": 700,
+      "excellent": 133,
+      "good": 134,
+      "book": 127,
+      "miss": 17,
+      "inaccuracy": 69,
+      "mistake": 46,
+      "blunder": 38
+    },
+    "vs400": {
+      "?!": {
+        "runA": 70,
+        "runB": 68,
+        "both": 41,
+        "agreePct": 42,
+        "agreeRate": 0.423
+      },
+      "?": {
+        "runA": 54,
+        "runB": 52,
+        "both": 39,
+        "agreePct": 58,
+        "agreeRate": 0.582
+      },
+      "??": {
+        "runA": 48,
+        "runB": 49,
+        "both": 44,
+        "agreePct": 83,
+        "agreeRate": 0.83
+      }
+    },
+    "movetime": {
       "120": {
         "plies": 1320,
         "tags": {
