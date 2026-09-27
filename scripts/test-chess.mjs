@@ -65,9 +65,18 @@ function assert(cond, msg) {
 // exported contract — still reads that file by name.
 const WEB_JS = path.join(root, "src/web/js");
 const GENERATED_JS = /^(?:bundle|engine-src|chunk-.+)\.js$/;
+/**
+ * Every .js under `dir`, as paths relative to it ("app.js", "review/panel.js").
+ * F4 moves app.js's regions into folders (review/, trainer/), and a scan that
+ * read only the top level would stop seeing the code it was written for.
+ * lichess/ is left out: the import script writes it (v8-0-plan B1).
+ */
+const webJsFiles = (dir) => fs.readdirSync(dir, { recursive: true })
+  .map((f) => String(f).split(path.sep).join("/"))
+  .filter((f) => f.endsWith(".js") && !f.startsWith("lichess/"));
 /** file name → source for every hand-written module in `dir`, app.js first */
 function readWebModules(dir) {
-  const names = fs.readdirSync(dir).filter((f) => f.endsWith(".js") && !GENERATED_JS.test(f)).sort();
+  const names = webJsFiles(dir).filter((f) => !GENERATED_JS.test(f)).sort();
   names.sort((a, b) => (b === "app.js") - (a === "app.js"));
   return new Map(names.map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")]));
 }
@@ -136,7 +145,7 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js"];
+const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -4152,7 +4161,7 @@ for (const lang of CONTENT_LANGS) {
   // answerable, and this makes it answered: a key nobody reads is either dead
   // weight or a control that lost its label.
   {
-    const sources = ["src/web/index.html", ...fs.readdirSync(path.join(root, "src/web/js"))
+    const sources = ["src/web/index.html", ...webJsFiles(WEB_JS)
       // the dictionaries define keys rather than read them; so do the chunks
       // built from them (v8-0-plan F5)
       .filter((f) => f.endsWith(".js") && f !== "bundle.js" && !/^i18n(-\w+)?\.js$/.test(f) && !f.startsWith("chunk-"))
@@ -5150,7 +5159,7 @@ for (const lang of CONTENT_LANGS) {
   {
     const dir = path.join(root, "src/web/js");
     const offenders = [];
-    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "bundle.js")) {
+    for (const f of webJsFiles(dir).filter((n) => n !== "bundle.js")) {
       const src = fs.readFileSync(path.join(dir, f), "utf8");
       const n = (src.match(/\.innerHTML\b/g) || []).length;
       if (n) offenders.push(f + " (" + n + ")");
@@ -5571,7 +5580,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const bad = [];
   const dir = path.join(root, "src/web/js");
-  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "bundle.js")) {
+  for (const f of webJsFiles(dir).filter((n) => n !== "bundle.js")) {
     const src = fs.readFileSync(path.join(dir, f), "utf8");
     const imported = new Set();
     for (const m of src.matchAll(/^import \{([^}]+)\} from/gm)) {
@@ -6080,8 +6089,8 @@ for (const lang of CONTENT_LANGS) {
         return maj > cur[0] || (maj === cur[0] && min > cur[1]);
       };
       const files = [
-        ...fs.readdirSync(path.join(root, "src/web/js"))
-          .filter((n) => n.endsWith(".js") && !["bundle.js", "pieces.js", "chess.js"].includes(n))
+        ...webJsFiles(WEB_JS)
+          .filter((n) => !["bundle.js", "pieces.js", "chess.js"].includes(n))
           .map((n) => "src/web/js/" + n),
         ...fs.readdirSync(path.join(root, "scripts")).filter((n) => n.endsWith(".mjs")).map((n) => "scripts/" + n),
         "README.md", "docs/design-constraints.md", "docs/refactor-plan.md",
@@ -6851,7 +6860,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 11413; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3)
+  const APP_JS_LINE_CEILING = 9887; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -6873,6 +6882,28 @@ for (const lang of CONTENT_LANGS) {
   const app = WEB_MODULES.get("app.js");
   assert(!["theme-seg", "multipv-seg", "opt-blind"].some((id) => app.includes('getElementById("' + id + '")')),
     "F4: app.js no longer wires the settings page's controls");
+}
+
+// --- v8-0-plan F4 (M3): the review region lives in review/ --------------
+// Analysis, the review panel, 再试一次 and the eval graphs are modules under
+// review/, each with its dependencies handed in (createLibraryUI's shape).
+// app.js names what it still calls with one destructuring per module.
+{
+  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
+  const REVIEW_OWNERS = {
+    "review/eval-graph.js": ["judgeColours", "drawEvalBar", "evalText", "drawEvalCurve"],
+    "review/retry.js": ["mistakeFacts", "writeWhy", "renderMistakeList", "renderWhyLine", "startRetry", "endRetry", "resetRetry", "retryModel", "retryClick", "retryMove", "renderRetry"],
+    "review/panel.js": ["setAnalyzeUI", "sideRows", "renderReview", "worstDrill", "bankWorst", "renderReportCanvas", "exportReport"],
+    "review/lines.js": ["engineArrowKey", "winLabel", "liveAllowed", "stopLiveAnalysis", "syncLiveAnalysis", "renderLiveAnalysis", "paintLive", "deskHead", "lineRows", "paintLineRow", "lineScore", "scalarLine", "reviewLines"],
+    "review/analysis.js": ["evalScalar", "analysisFor", "SCAN_BUDGET", "analyzeGame", "analysesList", "fileAnalysis", "recallAnalysis", "restoreAnalysis", "plyLosses", "withMotifs", "accuracyFrom", "recordAccuracy"],
+    "review/board-marks.js": ["engineArrows", "uciArrow", "bestArrowAt", "annotationAt"],
+  };
+  for (const [file, names] of Object.entries(REVIEW_OWNERS)) {
+    assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
+    for (const name of names) {
+      assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
+    }
+  }
 }
 
 // --- 6.0: the register of source-text assertions in this file.
