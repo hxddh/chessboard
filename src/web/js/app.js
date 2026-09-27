@@ -44,7 +44,7 @@ import { ChessSrs } from "./srs.js";
 import { ChessPicker } from "./picker.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
-import { watchFitRows } from "./fit-row.js";
+import { watchPlayLayout } from "./play-layout.js";
 import { createStore } from "./store.js";
 
   /**
@@ -7436,8 +7436,8 @@ import { createStore } from "./store.js";
     // move 20. "Before the first move" is the top of the list.
     if (!cur) el.scrollTop = 0;
     else if (cur.scrollIntoView) {
-      // scroll only within the list container
-      el.scrollTop = cur.offsetTop - el.clientHeight / 2;
+      // scroll only within the list container (by the boxes: a cell's offsetParent is its row, v8-0-plan A2)
+      el.scrollTop += cur.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 2;
     }
   }
 
@@ -10209,8 +10209,8 @@ import { createStore } from "./store.js";
     if (b) setFlipped(b.dataset.orient === "b");
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
-  // 7.9 §1b: the action groups are equal cells whose labels never wrap
-  watchFitRows(document.getElementById("side"));
+  // 7.9 §1b equal action cells; v8-0-plan A2 the play view stretches with its window
+  watchPlayLayout({ app: appEl, side: el("side"), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
   const moreBtn = document.getElementById("more-tools");
   if (moreBtn) {
     moreBtn.onclick = () => {

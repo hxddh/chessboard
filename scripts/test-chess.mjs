@@ -6666,6 +6666,35 @@ for (const lang of CONTENT_LANGS) {
     "定义它、并且真的有人用它 —— 常量本身不是护栏");
 }
 
+// --- v8-0-plan A2: when the wide layout is used, as a rule ------------------
+// play-layout.js decides `pv-wide` from the play view's size and the
+// stylesheet's lengths. The rule is "≥ 1280 wide, landscape, and the board no
+// smaller than in the two-column layout" — so here: the five acceptance sizes
+// land where A2 says, a tall 1280 window keeps the old layout (the wide one
+// would shrink its board), and the lengths the function reads are the ones
+// the stylesheet declares.
+{
+  const { boardEdges, isWide, WIDE_MIN } = await import("../src/web/js/play-layout.js");
+  const cssSrc = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+  const tok = (n) => { const m = new RegExp(n + ":\\s*(\\d+)px").exec(cssSrc); return m ? Number(m[1]) : NaN; };
+  const k = { chrome: tok("--chrome-h"), strip: tok("--strip-h"), pad: tok("--stage-pad"), padY: tok("--stage-pad-y"),
+              info: tok("--info-w"), gap: tok("--info-gap"), sideMax: tok("--side-max-wide") };
+  assert(Object.values(k).every(Number.isFinite), "A2：宽布局用到的长度样式表里都有（" + JSON.stringify(k) + "）");
+  assert(WIDE_MIN === 1280, "A2：宽布局从 1280 起算");
+  assert(cssSrc.includes("--side-w: clamp(284px, 30vw, 440px);"),
+    "A2：两栏布局的面板宽度仍是 clamp(284px, 30vw, 440px)，boardEdges 按同一条算");
+  const at = (w, h) => isWide(w, h, k);
+  assert(!at(1024, 768) && at(1280, 800) && at(1440, 900) && at(1920, 1080) && !at(600, 900) && !at(1400, 900),
+    "A2：1280 / 1440 / 1920 用宽布局，1024、600 与 1400×900 不用（1400 那里宽布局的棋盘比两栏小）");
+  assert(!at(1280, 1024), "A2：1280×1024 不用 —— 那里宽布局会让棋盘变小");
+  for (const [w, h] of [[1280, 800], [1366, 768], [1440, 900], [1920, 1080], [2560, 1440]]) {
+    const e = boardEdges(w, h, k);
+    const two = Math.min(440, Math.max(284, 0.3 * w));
+    assert(!at(w, h) || (e.wide >= e.two && e.right >= two && e.right <= Math.max(two, k.sideMax)),
+      `A2：${w}×${h} 棋盘 ${e.two} → ${e.wide}，右栏 ${two} → ${e.right}（不窄于两栏布局，至多 ${k.sideMax}）`);
+  }
+}
+
 // --- v8-0-plan F4: the lookup survives the move it exists for --------------
 //
 // The point of srcOf() and allAppSource is that cutting a function out of
