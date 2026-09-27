@@ -275,5 +275,6 @@ export function createEvalGraph(d) {
       curveEl.style.cursor = "pointer";
     }
   }
+
   return { judgeColours, drawEvalBar, evalText, drawEvalCurve, wire };
 }
