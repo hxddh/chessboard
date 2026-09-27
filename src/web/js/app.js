@@ -8145,7 +8145,7 @@ import { createStore } from "./store.js";
     store.subscribe("session", syncDailyUI);
     store.subscribe("game", syncDailyUI);
     store.subscribe("session", syncSettingsUI);
-    store.subscribe("session", Shell.onSession);
+    store.subscribe("session", Shell.onSession); store.subscribe("game", Shell.onGame);
 
     // …and the two views that were living inside syncSettingsUI while reading
     // the *game*. The captured-piece strip follows the replay cursor — it shows

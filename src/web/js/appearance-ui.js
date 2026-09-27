@@ -187,10 +187,14 @@ export function mount(container, deps) {
     mark("button[data-frame]", (b) => b.dataset.frame === look.boardFrame);
     mark("button[data-piece-set]", (b) => b.dataset.pieceSet === look.pieceSet);
   }
-  /** Draw the board previews (again): at mount, and once the row has a size. */
+  /**
+   * Draw the board previews — by the caller, once the row is on screen and
+   * has a size. Not at mount: paper and marble build their textures in code,
+   * and the preferences window this lives in is closed at launch and in most
+   * sessions (Codex on #86).
+   */
   function repaint() { for (const [cv, sw] of previews) paintBoardPreview(cv, sw); }
 
-  repaint();
   sync();
   return { sync, repaint };
 }

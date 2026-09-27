@@ -120,6 +120,15 @@ export function createShell(d) {
    * A session commit: the mode may have changed under a board view. The
    * view follows it, and the last playing mode is remembered for 下棋.
    */
+  /**
+   * A game commit: 首页 reads the game (继续上次's move count, whether it is
+   * over), so an open home page follows it — an engine reply or a finished
+   * game lands while it is showing (Codex on #86).
+   */
+  function onGame() {
+    if (shown() && store.ui.view === "home") renderHome();
+  }
+
   function onSession() {
     const m = store.session.mode;
     if (m === "ai" || m === "pvp") store.ui.playMode = m;
@@ -310,7 +319,7 @@ export function createShell(d) {
   }
 
   return {
-    go, show, toBoard, restore, onSession, renderHome, wire, boardView, setSideTab,
+    go, show, toBoard, restore, onSession, onGame, renderHome, wire, boardView, setSideTab,
     /** Is a page (not the board) in front? The game's keys stand down. */
     pageShown: () => isPage(store.ui.view),
   };

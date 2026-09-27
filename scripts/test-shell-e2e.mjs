@@ -478,6 +478,57 @@ for (const lang of ["en", "ja"]) {
   await ctx.close();
 }
 
+// Codex on #86: the board previews (paper and marble build their textures
+// procedurally) are drawn when the preferences window opens, not at every
+// launch for a window most sessions never open. Red before: every preview
+// canvas already held pixels at startup.
+{
+  const { ctx, page, errs } = await open();
+  const inked = () => page.evaluate(() => [...document.querySelectorAll("#prefs-look canvas.look-board")].map((cv) => {
+    if (!cv.width || !cv.height) return false;
+    const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+    return false;
+  }));
+  const before = await inked();
+  assert(before.length > 0 && before.every((x) => !x), "启动时偏好窗口还没开,棋盘预览一张也没画(" + before.join(",") + ")");
+  await page.click("#prefs-open");
+  await page.waitForTimeout(500);
+  const after = await inked();
+  assert(after.length === before.length && after.every(Boolean), "打开偏好设置,棋盘预览都画出来了(" + after.join(",") + ")");
+  assert(errs.length === 0, "预览推迟绘制:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// Codex on #86: 首页 stays current while it is open — a game commit (the
+// engine's reply) changes what 继续上次 says. Red before: only session
+// commits reached the home page, so the card still said 「还没有对局」.
+{
+  const { ctx, page, errs } = await open({ mode: "pvp" });
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  const said0 = await page.evaluate(() => document.getElementById("home-continue").textContent);
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  const at = (sq) => page.evaluate((x) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    return { x: r.left + (x.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(x[1]) + 0.5) * (r.height / 8) };
+  }, sq);
+  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); }
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  const said1 = await page.evaluate(() => document.getElementById("home-continue").textContent);
+  // now, with 首页 in front, take the move back through the menu path the
+  // page does not own: the game changes under the open page
+  await page.evaluate(() => document.getElementById("undo").click());
+  await page.waitForTimeout(400);
+  const said2 = await page.evaluate(() => document.getElementById("home-continue").textContent);
+  assert(said0 !== said1, "首页:走了一步再回来,「继续上次」变了");
+  assert(said2 === said0, "首页开着时对局变了(悔掉那一步),「继续上次」跟着变回去(" + said2.trim().slice(0, 30) + ")");
+  assert(errs.length === 0, "首页刷新:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }
