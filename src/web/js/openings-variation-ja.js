@@ -7,12 +7,19 @@
  * 「内容の翻訳表は id で引く」）。
  *
  * どれを収めるかは scripts/test-eco.mjs が本アプリ自身のデータ（定跡書 195 本の
- * 各手、名局 10 局、講座と問題集の局面）から出現回数を数えて決める上位 60 区切り。
+ * 各手、名局 10 局、講座と問題集の局面）から、定跡書が名前ごと訳していない名前の
+ * 区切りを数えて決める。7.8 は上位 60 区切り、7.9（v7-9-plan §5）は出てくる
+ * 137 区切り（計 387 回）すべて —— 訳名があるか、定着した名がないと登録されているか。
  * 表記は定跡書（openings-ja.js）の書き方に合わせる。定着した日本語名のないものは
  * 無理に訳さず、テストの NO_ESTABLISHED_NAME に載せて英語のまま残す。
  *
- * 「フライド・リバー・アタック」は上位 60 には入らないが、計画が名指しした例なので
- * 別に収める。
+ * 名前を半分だけ訳さない（7.9）：コロンの後に一つでもこの表にない区切り（表外、
+ * または登録済みの区切り）があれば、変化の部分はまるごと英語で、ファミリー名だけ
+ * 日本語になる —— eco-lookup.js の variationName() を参照。棋譜記号（「e6 型」）は
+ * 英語に数えない。
+ *
+ * 「フライド・リバー・アタック」は本アプリのデータには出てこないが、7.8 の計画が
+ * 名指しした例なので別に収める。
  * @module openings-variation-ja
  */
   export const OPENING_VARIATIONS_JA = {
@@ -70,4 +77,73 @@
     "Winawer Variation": "ウィナワー変化",
     "Tarrasch Variation": "タラッシュ変化",
     "Fried Liver Attack": "フライド・リバー・アタック",
+    // 7.9（v7-9-plan §5）：本アプリのデータに出てくる残りの区切り
+    "Reversed Sicilian": "逆シシリアン",
+    "Fianchetto Line": "フィアンケット・ライン",
+    "Three Knights Variation": "スリー・ナイツ変化",
+    "Fully Accepted Variation": "完全受諾変化",
+    "Yugoslav": "ユーゴスラフ変化",
+    "King's Pawn Line": "キングズ・ポーン・ライン",
+    "Traditional Variation": "トラディショナル変化",
+    "Semi-Leningrad Variation": "セミ・レニングラード変化",
+    "Ilyin-Zhenevsky Variation": "イリン・ジェネフスキー変化",
+    "Standard Line": "スタンダード・ライン",
+    "Standard Defense": "スタンダード・ディフェンス",
+    "Quiet System": "クワイエット・システム",
+    "Panov Attack": "パノフ・アタック",
+    "Smith-Morra Gambit Accepted": "スミス・モラ・ギャンビット・アクセプテッド",
+    "Traditional": "トラディショナル変化",
+    "Lasker-Pelikan Variation": "ラスカー・ペリカン変化",
+    "Sveshnikov Variation": "スヴェシニコフ変化",
+    "English Attack": "イングリッシュ・アタック",
+    "Early Deviations": "早期の脇道",
+    "King's Indian Attack": "キングズ・インディアン・アタック",
+    "Paulsen Attack": "パウルゼン・アタック",
+    "Open System": "オープン・システム",
+    "King's Knight's Gambit": "キングズ・ナイツ・ギャンビット",
+    "Classical Attack": "クラシカル・アタック",
+    "Scotch Gambit": "スコッチ・ギャンビット",
+    "Scotch Variation": "スコッチ変化",
+    "Double Spanish": "ダブル・スパニッシュ",
+    "Normal": "ノーマル変化",
+    "Knight Attack": "ナイト・アタック",
+    "Bishop Check Line": "ビショップ・チェック・ライン",
+    "London System": "ロンドン・システム",
+    "with e6": "e6 型",
+    "Symmetrical Line": "対称ライン",
+    "Two Knights Attack": "ツー・ナイツ・アタック",
+    "Classical System": "クラシカル・システム",
+    "Dutch Variation": "オランダ変化",
+    "Traditional System": "トラディショナル・システム",
+    "Accelerated Move Order": "加速手順",
+    "Noteboom Variation": "ノーテボーム変化",
+    "Tarrasch Defense": "タラッシュ・ディフェンス",
+    "Rubinstein System": "ルビンシュタイン・システム",
+    "Positional Variation": "ポジショナル変化",
+    "Chigorin Defense": "チゴリン・ディフェンス",
+    "Semi-Meran Variation": "セミ・メラン変化",
+    "Meran Variation": "メラン変化",
+    "Tartakower Defense": "タルタコワー・ディフェンス",
+    "Open Defense": "オープン・ディフェンス",
+    "Classical Line": "クラシカル・ライン",
+    "Quiet Line": "クワイエット・ライン",
+    "Check Variation": "チェック変化",
+    "Exchange Line": "交換ライン",
+    "Immediate Fianchetto": "即フィアンケット",
+    "Classical Fianchetto": "クラシカル・フィアンケット",
+    "Classical Main Line": "クラシカル主変化",
+    "Stonewall Variation": "ストーンウォール変化",
+    "Closed Variation": "クローズド変化",
+    "Rare Defenses": "珍しいディフェンス",
+    "Aronin-Taimanov Defense": "アロニン・タイマノフ・ディフェンス",
+    "Center Attack": "センター・アタック",
+    "Traditional Line": "トラディショナル・ライン",
+    "Giuoco Piano": "ジュオコ・ピアノ",
+    "Greco's Attack": "グレコ・アタック",
+    "Pillsbury Variation": "ピルズベリー変化",
+    "Marshall Attack": "マーシャル・アタック",
+    "Original Marshall Attack": "オリジナル・マーシャル・アタック",
+    "Anglo-Indian Defense": "アングロ・インディアン・ディフェンス",
+    "King's Knight Variation": "キングズ・ナイト変化",
+    "Bogoljubow Defense": "ボゴリュボフ・ディフェンス",
   };
