@@ -6230,7 +6230,7 @@ for (const lang of CONTENT_LANGS) {
   const bundleBytes = Buffer.byteLength(bundleSrc, "utf8");
   console.log("  bundle.js " + bundleBytes + " bytes (7.9.0: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
-    "bundle.js stays within the first-paint budget (" + bundleBytes + " > " + BUNDLE_BUDGET + " bytes, 60% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + ")");
+    "bundle.js stays within the first-paint budget (" + bundleBytes + " > " + BUNDLE_BUDGET + " bytes, 70% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + ")");
 
   // The boot chunk is the one index.html loads, and it loads before the
   // bundle — that order is the whole reason the first frame is in the right
