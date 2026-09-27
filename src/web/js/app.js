@@ -11033,23 +11033,23 @@ import { createStore } from "./store.js";
   };
   const langSeg = document.getElementById("lang-seg");
   if (langSeg) {
+    let langAsked = null;   // the latest pick wins over a chunk still loading (Codex on #85)
     langSeg.onclick = (ev) => {
       const b = ev.target.closest("button[data-lang]");
-      if (!b || !I18n || b.dataset.lang === store.ui.langId) return;
+      if (!b || !I18n || (langAsked = b.dataset.lang) === store.ui.langId) return;
       const want = b.dataset.lang;
       // v8-0-plan F5: the language's chunk first, then the switch — switched
       // before it arrived, the page would repaint in Chinese fallbacks first.
       // A chunk that cannot load leaves the language as it was.
       ChessLazy.ensureLang(want).then(() => {
-        if (store.ui.langId === want) return;
+        if (langAsked !== want || store.ui.langId === want) return;
         store.ui.langId = I18n.setLang(want);
         saveSettings();
         applyLanguage();
         // the native menu is built at launch from a per-language table; the
         // shell records the choice and applies it on the next start (Q1.6)
-        Host.setMenuLanguage(store.ui.langId.split("-")[0]).then((r) => {
-          if (r && r.restartRequired) toast(t("msg.menuLang.restart"));
-        }).catch(() => {});
+        Host.setMenuLanguage(store.ui.langId.split("-")[0])
+          .then((r) => { if (r && r.restartRequired) toast(t("msg.menuLang.restart")); }).catch(() => {});
       }).catch(() => {});
     };
   }

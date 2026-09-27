@@ -512,5 +512,20 @@ for (const how of ["restore", "clear"]) {
   assert(!h.store.has(STORE_META) && h.legacy === legacy, "a failed read of chessboard.json while migrating writes no store (" + h.writes.join(",") + ")");
 }
 
+// 2m. (Codex on #85) removed and written again before the flush: the new
+// value is what the store keeps, not "null"
+{
+  const h = withStore(null);
+  const P = createPersist(h, () => {});
+  P.load();
+  await P.recover();
+  P.set("stats", "old");
+  await P.flushMirror();
+  P.remove("stats");
+  P.set("stats", "fresh");
+  await P.flushMirror();
+  assert(valOf(h, "stats") === "fresh", "a key cleared and rewritten in one burst keeps its new value in the store (" + valOf(h, "stats") + ")");
+}
+
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");

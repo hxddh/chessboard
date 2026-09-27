@@ -610,7 +610,14 @@ if (hasTab && REAL.length) {
     const mine = mirror(squaresOf(g2.fen()));
     let seen = await occ();
     for (let t = 0; t < 40 && seen === mine; t++) { await pg.waitForTimeout(100); seen = await occ(); }
-    const reply = g2.moves().find((w) => { const t = new Chess(g2.fen()); t.move(w); return mirror(squaresOf(t.fen())) === seen; });
+    // the reply by name, from the board's live region (announceLastMove):
+    // occupancy alone cannot tell two captures by the same piece apart —
+    // after …Nxe4, 9.Nxe4 and 9.Nxf7 both leave g5 and land on an occupied
+    // square, and guessing the wrong one lost the line (CI, #85)
+    const said = ((await pg.evaluate(() => document.getElementById("board-live")?.textContent || "")).trim().split(/\s+/).pop() || "");
+    const legal = g2.moves();
+    const reply = legal.includes(said) && (() => { const t = new Chess(g2.fen()); t.move(said); return mirror(squaresOf(t.fen())) === seen; })() ? said
+      : legal.find((w) => { const t = new Chess(g2.fen()); t.move(w); return mirror(squaresOf(t.fen())) === seen; });
     if (!reply) break;
     g2.move(reply); walked.push(reply);
   }
@@ -1232,6 +1239,31 @@ if (hasTab && REAL.length) {
     }
     await c.close();
   }
+}
+
+// Codex on #85: a language whose chunk is still on its way must not land
+// after the player has already picked another one. Red before: 日本語 (slow
+// chunk) then back to 中文 — the Japanese load finished last and switched the
+// page, and the saved setting, to Japanese.
+{
+  const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await c.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.route(/chunk-lang-(en|ja)\.js/, async (route) => { await new Promise((r) => setTimeout(r, 1200)); await route.continue(); });
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1200);
+  await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="ja"]').click());
+  await pg.waitForTimeout(100);
+  await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="zh-CN"]').click());
+  await pg.waitForTimeout(2500);
+  const r = await pg.evaluate(() => ({ lang: document.documentElement.lang,
+    saved: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").langId }));
+  assert(r.lang === "zh-CN" && r.saved === "zh-CN", "F5:换到还在加载的语言后又换回中文,晚到的分块不再把界面切过去", JSON.stringify(r));
+  await c.close();
 }
 
 // --- v8-0-plan §5: 暂定评级标「?」,开局题从常见开局开始 -------------------

@@ -1669,6 +1669,9 @@ test "a piece's fields are read as numbers and flags, not as look-alike text" {
     try std.testing.expectEqual(@as(?bool, null), jsonBoolField("{\"bak\":1}", "bak"));
     // no fields at all is the pre-F3 one-piece shape
     try std.testing.expectEqual(@as(?usize, null), jsonUintField("{\"path\":\"/a\",\"b64\":\"AAAA\"}", "total"));
+    // Codex on #85: a file name that spells a field is escaped inside its
+    // string (every inner quote is \"), so it can never read as the field
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField("{\"path\":\"/tmp/\\\"offset\\\":1\"}", "offset"));
 }
 
 test "store keys are plain names that cannot leave the store" {

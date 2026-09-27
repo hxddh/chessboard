@@ -242,6 +242,9 @@ export function createPersist(host, onWriteFailure) {
     if (ok) {
       bag[name] = value;
       dirty.add(name);
+      // (Codex on #85) written again after a remove(): no longer removed, or
+      // the flush would null the files of the value it just committed
+      removed.delete(name);
       // 6.1: the stamp decides who wins in recover(). A cache that takes new
       // values under a frozen stamp reads as older than it is, and the file
       // then overwrites it — so a refused stamp is a refused write.
