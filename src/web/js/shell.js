@@ -39,7 +39,7 @@ const PAGES = { home: "page-home", library: "page-library", me: "page-me" };
 export function createShell(d) {
   const {
     doc, store, appEl, t, tf, switchMode, saveSettings, requestNewGame, openPrefs,
-    sanHistory, gameOver, recommendation, nextLesson, owed, dailyPlan, dailyStepLabel,
+    sanHistory, gameOver, recommendation, nextLesson, owed, dailyPlan, dailyStepLabel, dailyJump,
   } = d;
   const Dlg = ChessDialog;
   const rail = doc.getElementById("rail");
@@ -249,12 +249,15 @@ export function createShell(d) {
     const lesson = nextLesson();
     const due = owed();
     const lines = said ? [said] : [];
+    // The button opens what the card names — the daily plan's own jump, so
+    // the lesson is that lesson (not the last one visited) and the review is
+    // the 错题 category (not whichever one was open) (Codex on #86)
     if (lesson) {
       lines.push(tf("home.next.lesson", [lesson.n, lesson.title]));
-      fill("home-next", lines, t("home.next.learn"), () => go("learn"));
+      fill("home-next", lines, t("home.next.learn"), () => dailyJump({ kind: "lesson", i: lesson.i }));
     } else if (due) {
       lines.push(tf("home.next.review", [due]));
-      fill("home-next", lines, t("nav.puzzle"), () => go("puzzle"));
+      fill("home-next", lines, t("nav.puzzle"), () => dailyJump({ kind: "review" }));
     } else {
       lines.push(t("home.next.smart"));
       fill("home-next", lines, t("pz.smart"), () => {

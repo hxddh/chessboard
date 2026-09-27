@@ -10622,8 +10622,8 @@ import { createStore } from "./store.js";
   const Shell = createShell({
     doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
     requestNewGame: () => requestNewGame(), openPrefs: () => PrefsUI.open(), gameOver: () => appGameOver(),
-    recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps,
-    nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { n: i + 1, title: lessonText(LESSONS[i]).title }; },
+    recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
+    nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
   });
   Shell.wire();
   /**

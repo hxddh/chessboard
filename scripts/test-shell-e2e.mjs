@@ -453,6 +453,31 @@ for (const lang of ["en", "ja"]) {
   await ctx.close();
 }
 
+// Codex on #86: 下一步建议 names the first unfinished lesson; its button opens
+// THAT lesson, not whichever lesson was visited last. Red before: with
+// lesson 1 done and lesson 3 the last one open, the card said 「第 2 课」 and
+// the button went back to lesson 3.
+{
+  const { ctx, page, errs } = await open();
+  await page.evaluate(() => {
+    localStorage.setItem("chess.v1.learn", JSON.stringify({ v: 1, done: { board: true }, last: 2 }));
+  });
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  const said = await page.evaluate(() => document.getElementById("home-next").textContent);
+  await page.click("#home-next .home-go");
+  await page.waitForTimeout(700);
+  const last = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.learn")).last);
+  const st = await state(page);
+  assert(st.view === "learn" && last === 1,
+    "「下一步建议」点开的正是卡上说的那一课(第 2 课;打开的是第 " + (last + 1) + " 课,视图 " + st.view + ";卡上:" + said.trim().slice(0, 40) + ")");
+  assert(errs.length === 0, "下一步建议:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }
