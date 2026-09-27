@@ -65,9 +65,18 @@ function assert(cond, msg) {
 // exported contract — still reads that file by name.
 const WEB_JS = path.join(root, "src/web/js");
 const GENERATED_JS = /^(?:bundle|engine-src|chunk-.+)\.js$/;
+/**
+ * Every .js under `dir`, as paths relative to it ("app.js", "review/panel.js").
+ * F4 moves app.js's regions into folders (review/, trainer/), and a scan that
+ * read only the top level would stop seeing the code it was written for.
+ * lichess/ is left out: the import script writes it (v8-0-plan B1).
+ */
+const webJsFiles = (dir) => fs.readdirSync(dir, { recursive: true })
+  .map((f) => String(f).split(path.sep).join("/"))
+  .filter((f) => f.endsWith(".js") && !f.startsWith("lichess/"));
 /** file name → source for every hand-written module in `dir`, app.js first */
 function readWebModules(dir) {
-  const names = fs.readdirSync(dir).filter((f) => f.endsWith(".js") && !GENERATED_JS.test(f)).sort();
+  const names = webJsFiles(dir).filter((f) => !GENERATED_JS.test(f)).sort();
   names.sort((a, b) => (b === "app.js") - (a === "app.js"));
   return new Map(names.map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")]));
 }
@@ -4152,7 +4161,7 @@ for (const lang of CONTENT_LANGS) {
   // answerable, and this makes it answered: a key nobody reads is either dead
   // weight or a control that lost its label.
   {
-    const sources = ["src/web/index.html", ...fs.readdirSync(path.join(root, "src/web/js"))
+    const sources = ["src/web/index.html", ...webJsFiles(WEB_JS)
       // the dictionaries define keys rather than read them; so do the chunks
       // built from them (v8-0-plan F5)
       .filter((f) => f.endsWith(".js") && f !== "bundle.js" && !/^i18n(-\w+)?\.js$/.test(f) && !f.startsWith("chunk-"))
@@ -5150,7 +5159,7 @@ for (const lang of CONTENT_LANGS) {
   {
     const dir = path.join(root, "src/web/js");
     const offenders = [];
-    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "bundle.js")) {
+    for (const f of webJsFiles(dir).filter((n) => n !== "bundle.js")) {
       const src = fs.readFileSync(path.join(dir, f), "utf8");
       const n = (src.match(/\.innerHTML\b/g) || []).length;
       if (n) offenders.push(f + " (" + n + ")");
@@ -5571,7 +5580,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const bad = [];
   const dir = path.join(root, "src/web/js");
-  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "bundle.js")) {
+  for (const f of webJsFiles(dir).filter((n) => n !== "bundle.js")) {
     const src = fs.readFileSync(path.join(dir, f), "utf8");
     const imported = new Set();
     for (const m of src.matchAll(/^import \{([^}]+)\} from/gm)) {
@@ -6080,8 +6089,8 @@ for (const lang of CONTENT_LANGS) {
         return maj > cur[0] || (maj === cur[0] && min > cur[1]);
       };
       const files = [
-        ...fs.readdirSync(path.join(root, "src/web/js"))
-          .filter((n) => n.endsWith(".js") && !["bundle.js", "pieces.js", "chess.js"].includes(n))
+        ...webJsFiles(WEB_JS)
+          .filter((n) => !["bundle.js", "pieces.js", "chess.js"].includes(n))
           .map((n) => "src/web/js/" + n),
         ...fs.readdirSync(path.join(root, "scripts")).filter((n) => n.endsWith(".mjs")).map((n) => "scripts/" + n),
         "README.md", "docs/design-constraints.md", "docs/refactor-plan.md",

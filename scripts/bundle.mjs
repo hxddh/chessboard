@@ -181,7 +181,9 @@ export async function build({ write = true } = {}) {
 /** Build only when the sources are newer than the bundle. */
 export async function buildIfStale() {
   const dir = path.dirname(ENTRY);
-  const srcs = fs.readdirSync(dir)
+  // recursive: v8-0-plan F4 puts app.js's regions in folders (review/, trainer/)
+  const srcs = fs.readdirSync(dir, { recursive: true })
+    .map(String)
     .filter((f) => f.endsWith(".js") && f !== "bundle.js")
     .map((f) => fs.statSync(path.join(dir, f)).mtimeMs);
   let out = 0;
