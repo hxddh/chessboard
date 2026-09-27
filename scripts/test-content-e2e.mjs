@@ -604,14 +604,32 @@ if (hasTab && REAL.length) {
     await moveB(m.from, m.to);
     g2.move(san); walked.push(san);
     if (!bookNext()) break;
-    const seen = await occ();
+    // White's reply plays itself after a pause, and WebKit on CI can be
+    // slower than the fixed wait (#85): poll until the board has moved on
+    // from the position Black just made, rather than reading it once
+    const mine = mirror(squaresOf(g2.fen()));
+    let seen = await occ();
+    for (let t = 0; t < 40 && seen === mine; t++) { await pg.waitForTimeout(100); seen = await occ(); }
     const reply = g2.moves().find((w) => { const t = new Chess(g2.fen()); t.move(w); return mirror(squaresOf(t.fen())) === seen; });
     if (!reply) break;
     g2.move(reply); walked.push(reply);
   }
-  await pg.waitForTimeout(600);
-  const after = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
-  assert(!!after.solved[firstId + ":b"], "应完整条线,解出记在 `:b` 键上");
+  // The solve is recorded once the line's last move has landed: poll for it
+  // (up to 4 s) instead of trusting one fixed pause. White's replies are weighted among the book's children, so the walk can
+  // leave the puzzle's own line (after 1.e4 e5 2.Nf3 Nc6 it may go 3.Bb5).
+  // Then the app credits the line actually played (the leaf's drill, and any
+  // shorter drill the path completed) — so the key to expect is the opened
+  // puzzle's only if the walk stayed on its line; otherwise any Black key.
+  const stayed = first.line.every((san, i) => i >= walked.length || walked[i] === san);
+  const credited = (a) => a && a.solved && (stayed ? !!a.solved[firstId + ":b"]
+    : Object.keys(a.solved).some((k) => k.endsWith(":b") && a.solved[k]));
+  let after = null;
+  for (let t = 0; t < 40; t++) {
+    await pg.waitForTimeout(100);
+    after = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+    if (credited(after)) break;
+  }
+  assert(credited(after), "应完整条线,解出记在 `:b` 键上" + (stayed ? "" : "(白方应着离开了这道题的线,记在实际走完的那条线上)"), walked.join(" "));
   assert(!after.solved[firstId], "……白方那把椅子的进度一格没动");
 
   // back on White's side: no pre-played move, and the row is op-only (P3)
