@@ -345,7 +345,7 @@ const PLACEMENT = STUDY.split(" ")[0];
 
   await page.keyboard.press("Escape");   // 复盘邀请挡在前面
   await page.waitForTimeout(300);
-  await page.click('.side-tabs button[data-tab="record"]');
+  await page.click('#rail button[data-view="me"]');   // v8-0-plan A1: the record is the 我的 page
   await page.waitForTimeout(500);
   const stats = await page.evaluate(() =>
     (document.getElementById("sec-stats") || {}).textContent.replace(/\s+/g, " "));

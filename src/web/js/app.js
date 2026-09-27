@@ -37,9 +37,11 @@ import { CHESS_PUZZLES, HAND_MOTIF_KEY } from "./puzzles.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
-import { mount as mountAppearance } from "./appearance-ui.js";
-import { LOOK_DEFAULT, migrateLook, lookAttrs } from "./look.js";
+import { LOOK_DEFAULT, migrateLook } from "./look.js";
 import { createRepertoireUI } from "./repertoire-ui.js";
+import { createSettingsUI } from "./settings-ui.js";
+import { createShell } from "./shell.js";
+import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
@@ -1549,13 +1551,15 @@ import { createStore } from "./store.js";
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
       if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
-      if (["play", "setup", "record"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
+      if (["play", "setup"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
+      // v8-0-plan A1: the view and the last playing mode; shell.js vets both
+      Object.assign(store.ui, { view: s.view, playMode: s.playMode });
       if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
     }
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look; themeId and followSystem still written, for
@@ -6269,16 +6273,15 @@ import { createStore } from "./store.js";
    *   nothing left unsolved about it), so a caller can fall back
    */
   function dailyJump(step) {
-    const modeBtn = (m) => document.querySelector('#mode-seg button[data-mode="' + m + '"]');
     if (step.kind === "lesson") {
       store.session.learnState.last = step.i;
       saveLearnState();
-      if (store.session.mode !== "learn") modeBtn("learn").click();
+      if (store.session.mode !== "learn") switchMode("learn");
       else { startLesson(step.i); setSideTab("play", { top: true }); sync(); }
       return true;
     }
     if (step.kind === "game") {
-      if (store.session.mode !== "ai") modeBtn("ai").click();
+      if (store.session.mode !== "ai") switchMode("ai");
       else setSideTab("play", { top: true });
       return true;
     }
@@ -6286,7 +6289,7 @@ import { createStore } from "./store.js";
     // show the section and start the pass, which is exactly what the player
     // would have done by hand
     if (step.kind === "lib") {
-      setSideTab("record", { top: false });
+      Shell.go("library");
       const sec = document.getElementById("lib-body");
       if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "center" });
       if (!store.session.libRun) runLibraryPass();
@@ -6306,7 +6309,7 @@ import { createStore } from "./store.js";
         startPuzzleAt(pick.cat, Math.max(0, list.findIndex((p) => p.id === pick.id)));
         setSideTab("play", { top: true });
       };
-      if (store.session.mode !== "puzzle") { modeBtn("puzzle").click(); go(); }
+      if (store.session.mode !== "puzzle") { switchMode("puzzle"); go(); }
       else { go(); saveSettings(); sync(); }
       return true;
     }
@@ -6316,7 +6319,7 @@ import { createStore } from "./store.js";
     savePuzzleState();
     // same contract as 为你出一题: a browse filter must not hide the plan
     store.session.puzzleTierFilter = "all";
-    if (store.session.mode !== "puzzle") modeBtn("puzzle").click();
+    if (store.session.mode !== "puzzle") switchMode("puzzle");
     else { startPuzzles(); setSideTab("play", { top: true }); saveSettings(); sync(); }
     return true;
   }
@@ -7076,14 +7079,9 @@ import { createStore } from "./store.js";
       v.textContent = tf(d.win ? "rec.winUnlocks" : "rec.unlocks", [nm]);
       txt.append(k, v);
       b.append(ic, txt);
-      b.onclick = () => {
-        const seg = document.querySelector('#mode-seg button[data-mode="' + d.mode + '"]');
-        // already in that mode: the mode row's handler returns early on
-        // purpose, so there is nothing for it to do and the door still has to
-        // land somewhere — the board, with the panel showing 对局
-        if (!seg || d.mode === store.session.mode) { setSideTab("play", { top: true }); return; }
-        seg.click();
-      };
+      // already in that mode, the door still lands somewhere: the board,
+      // with the panel showing 对局 (setSideTab leaves the page, A1)
+      b.onclick = () => { if (d.mode !== store.session.mode) switchMode(d.mode); else setSideTab("play", { top: true }); };
       doors.appendChild(b);
     }
   }
@@ -8101,7 +8099,7 @@ import { createStore } from "./store.js";
     for (const b of document.querySelectorAll(".act-btn.primary")) {
       // 7.9 §4a: the record page's empty library spends its own fill, on a
       // tab of its own (library-ui.js renderLibrary) — not this function's
-      if (b.id !== wants && !b.closest("#pane-record")) b.classList.remove("primary");
+      if (b.id !== wants && !b.closest(".page")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
@@ -8147,6 +8145,7 @@ import { createStore } from "./store.js";
     store.subscribe("session", syncDailyUI);
     store.subscribe("game", syncDailyUI);
     store.subscribe("session", syncSettingsUI);
+    store.subscribe("session", Shell.onSession);
 
     // …and the two views that were living inside syncSettingsUI while reading
     // the *game*. The captured-piece strip follows the replay cursor — it shows
@@ -8188,140 +8187,7 @@ import { createStore } from "./store.js";
     store.commitAll(["game", "session", "ui"], "sync");
   }
 
-  function syncSettingsUI() {
-    if (lookUI) lookUI.sync();
-    const sb = document.getElementById("opt-sound");
-    if (sb) {
-      sb.classList.toggle("active", store.ui.soundOn);
-      sb.setAttribute("aria-pressed", store.ui.soundOn ? "true" : "false");
-    }
-    const sw = (id, on) => {
-      const b = document.getElementById(id);
-      if (!b) return;
-      b.classList.toggle("active", !!on);
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-    };
-    sw("opt-coords", store.ui.coordsOn);
-    // where they are printed only matters while they are printed at all
-    const rowCoordsAt = document.getElementById("row-coords-at");
-    // …and only on the wooden frame: a flat board has no frame to print on,
-    // so there they are always in the squares (v8-0-plan A3)
-    const framed = store.ui.boardFrame === "frame";
-    if (rowCoordsAt) rowCoordsAt.hidden = !store.ui.coordsOn || !framed;
-    document.querySelectorAll("#coords-seg button").forEach((b) => b.classList.toggle("active", (b.dataset.coords === "in") === store.ui.coordsInside));
-    // the frame narrows with them (styles.css #app[data-coords="in"]); an
-    // attribute on #app because the board rect is the layout's, not the canvas's
-    appEl.setAttribute("data-coords", store.ui.coordsOn && (store.ui.coordsInside || !framed) ? "in" : "out");
-    sw("opt-softmark", store.ui.showSoftMark);
-    sw("opt-engine-arrows", store.ui.engineArrows);
-    sw("opt-blind", store.ui.blindfold);
-    document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
-    const vol = document.getElementById("opt-volume");
-    if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
-    const rowVol = document.getElementById("row-volume");
-    if (rowVol) rowVol.hidden = !store.ui.soundOn;
-    const rowSet = document.getElementById("row-sound-set");
-    if (rowSet) rowSet.hidden = !store.ui.soundOn;
-    document.querySelectorAll("#sound-set-seg button").forEach((b) => b.classList.toggle("active", b.dataset.soundSet === store.ui.soundSet));
-    document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
-    document.querySelectorAll("#multipv-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.multipv) === store.ui.multipv));
-    document.querySelectorAll("#mode-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.mode === store.session.mode);
-    });
-    // the first tab holds the lesson or the puzzle in those modes, so it says
-    // so — 「对局」 over a lesson read as a page that had not changed
-    const playTab = document.getElementById("tab-play");
-    if (playTab) {
-      playTab.textContent = store.session.mode === "learn" ? t("mode.learn")
-        : store.session.mode === "puzzle" ? t("mode.puzzle") : t("tab.play");
-    }
-    // two rows now: sparring tiers and engine-strength tiers (see index.html)
-    // While the new-game dialog is open (v7-8-plan §4) these rows are in it
-    // and show its draft — what the next game will be — not the game on the
-    // board; closing the dialog drops the draft and they read the store again.
-    const ng = store.ui.newGame;
-    const pick = ng || {
-      difficulty: store.session.difficulty, personaId: store.session.personaId,
-      color: store.session.humanColor, timeControl: store.game.timeControl,
-    };
-    document.querySelectorAll("#diff-seg button, #diff-seg-engine button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.diff === pick.difficulty);
-    });
-    document.querySelectorAll("#persona-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.persona === pick.personaId);
-    });
-    document.querySelectorAll("#color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.color === pick.color);
-      // 随机 is a way to start a game, not a side to switch to mid-game
-      if (b.dataset.color === "random") b.hidden = !ng;
-    });
-    document.querySelectorAll("#orient-seg button").forEach((b) => {
-      b.classList.toggle("active", (b.dataset.orient === "b") === !!store.game.flipped);
-    });
-    document.querySelectorAll("#clock-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tc === pick.timeControl);
-    });
-    const diffRow = document.getElementById("row-difficulty");
-    const colorRow = document.getElementById("row-color");
-    const clockRow = document.getElementById("row-clock");
-    if (diffRow) diffRow.hidden = store.session.mode !== "ai";
-    const personaRow = document.getElementById("row-persona");
-    if (personaRow) personaRow.hidden = store.session.mode !== "ai";
-    // in the dialog a two-player game also chooses a side: which one sits at
-    // the bottom of the board (「谁执白」) — unless 自动翻转 is on, which
-    // turns the board to White the moment the game starts (Codex, #83)
-    const pvpPick = !!ng && store.session.mode === "pvp" && !store.ui.autoFlipPvp;
-    if (colorRow) {
-      colorRow.hidden = store.session.mode !== "ai" && !pvpPick;
-      setText(colorRow.querySelector(".setting-k"), t(pvpPick ? "ng.pvpColor" : "side.color"));
-    }
-    if (clockRow) clockRow.hidden = store.session.mode !== "pvp" && store.session.mode !== "ai";
-    const coachRow = document.getElementById("row-coach");
-    if (coachRow) coachRow.hidden = store.session.mode !== "ai";
-    const coachSwitch = document.getElementById("opt-coach");
-    if (coachSwitch) coachSwitch.setAttribute("aria-pressed", store.session.coachOn ? "true" : "false");
-    const flipRow = document.getElementById("row-autoflip");
-    if (flipRow) flipRow.hidden = store.session.mode !== "pvp";
-    const flipSwitch = document.getElementById("opt-autoflip");
-    if (flipSwitch) flipSwitch.setAttribute("aria-pressed", store.ui.autoFlipPvp ? "true" : "false");
-    // The one line that answers "what am I set to" without opening anything.
-    // Only the rows that apply in this mode are in it — a summary that lists a
-    // clock in lesson mode is a summary of a different app.
-    const sum = el("game-summary");
-    if (sum) {
-      const parts = [];
-      if (store.session.mode === "ai") {
-        parts.push(DIFF_NAMES[store.session.difficulty] || store.session.difficulty);
-        if (store.session.personaId !== "off") parts.push(t("persona." + store.session.personaId));
-        parts.push(t(store.session.humanColor === "w" ? "color.white" : "color.black"));
-      }
-      if (store.session.mode === "ai" || store.session.mode === "pvp") {
-        parts.push(store.game.timeControl === "off" ? t("clock.off") : store.game.timeControl);
-      }
-      sum.textContent = parts.join(" · ");
-    }
-    // the reading modes get a wider column — see styles.css [data-mode]
-    appEl.setAttribute("data-mode", store.session.mode);
-    // The whole section, not just the fold inside it. Hiding the <details>
-    // alone left the <section> standing: 33px of nothing with the group's
-    // dividing rule still drawn under it, which on the settings page of the
-    // two teaching modes read as a group that had failed to load.
-    const foldGame = el("fold-game");
-    const teaching = store.session.mode === "learn" || store.session.mode === "puzzle";
-    if (foldGame) {
-      foldGame.hidden = teaching;
-      const sec = foldGame.closest("section");
-      if (sec) sec.hidden = teaching;
-    }
-
-    const secMoves = document.getElementById("sec-moves");
-    const trainer = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
-    if (secMoves) secMoves.hidden = trainer;
-    // 统计/历史/成就 used to be hidden in the trainer modes because they sat in
-    // the same scroll and got in the way. They now live behind their own tab,
-    // which nobody opens by accident — and puzzle badges are earned right there.
-    // (Who plays each side is written by renderStrips — 7.7.)
-  }
+  function syncSettingsUI() { SettingsUI.sync(); }
 
   /**
    * Point the board at whoever is on move (pvp auto-flip).
@@ -8631,7 +8497,7 @@ import { createStore } from "./store.js";
     const side = pvp ? (store.game.flipped ? "b" : "w") : store.session.humanColor;
     // the last choices, so Enter alone is 「再来一盘同样的」
     store.ui.newGame = {
-      difficulty: store.session.difficulty, personaId: store.session.personaId,
+      mode: pvp ? "pvp" : "ai", difficulty: store.session.difficulty, personaId: store.session.personaId,
       color: store.session.colorRandom ? "random" : side, timeControl: store.game.timeControl,
     };
     const warn = el("ng-warn");
@@ -8657,7 +8523,7 @@ import { createStore } from "./store.js";
   function startFromDialog() {
     const d = store.ui.newGame;
     if (!d) return;
-    const pvp = store.session.mode === "pvp";
+    const pvp = d.mode === "pvp";
     const side = d.color === "random" ? (Math.random() < 0.5 ? "w" : "b") : d.color;
     store.session.colorRandom = d.color === "random";
     if (!pvp) {
@@ -8668,6 +8534,8 @@ import { createStore } from "./store.js";
     store.game.flipped = side === "b";
     store.game.timeControl = d.timeControl;
     closeNewGame();
+    switchMode(d.mode);
+    Shell.toBoard();
     saveSettings();
     startNewGame();
   }
@@ -9878,47 +9746,8 @@ import { createStore } from "./store.js";
     strip(bEl, s.b, "w", -s.diff);
   }
 
-  // --- panel tabs ---
-  //
-  // Until 1.9 the panel was one 1788px scroll in a 900px window, ordered by
-  // when a setting is chosen rather than by how often it is used: theme and
-  // language sat above the fold while the move list, the replay bar and this
-  // game's own actions all started below it. Three tabs split it by what the
-  // player is doing — playing, configuring, or looking back.
-  const TABS = ["play", "setup", "record"];
-
-  function setSideTab(id, opts) {
-    const want = TABS.includes(id) ? id : "play";
-    store.ui.sideTab = want;
-    // which tab is showing is a layout fact, not only a state one: the
-    // reading tab gets a wider panel on a wide window (7.3 §4E), and that is
-    // the stylesheet's decision to make, from an attribute, rather than a
-    // width this function would have to compute and keep in step.
-    appEl.setAttribute("data-tab", want);
-    for (const t of TABS) {
-      const btn = document.getElementById("tab-" + t);
-      const pane = document.getElementById("pane-" + t);
-      if (btn) btn.setAttribute("aria-selected", t === want ? "true" : "false");
-      if (pane) {
-        pane.hidden = t !== want;
-        // a pane left scrolled half-way reads as a broken tab when you return
-        if (t === want && opts && opts.top) pane.scrollTop = 0;
-      }
-    }
-    syncTabRule();
-    saveSettings();
-  }
-
-  /** 7.7 §1e: the rule under the tab row, drawn while the pane is scrolled. */
-  function syncTabRule() {
-    const row = document.querySelector(".side-tabs");
-    const pane = document.getElementById("pane-" + store.ui.sideTab);
-    if (row) row.classList.toggle("is-scrolled", !!pane && pane.scrollTop > 0);
-  }
-  for (const t of TABS) {
-    const pane = document.getElementById("pane-" + t);
-    if (pane) pane.addEventListener("scroll", syncTabRule, { passive: true });
-  }
+  /** The panel's two tabs are shell.js's since v8-0-plan A1 — one door. */
+  function setSideTab(id, opts) { Shell.setSideTab(id, opts); }
 
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
   /**
@@ -9982,34 +9811,6 @@ import { createStore } from "./store.js";
     renderRecordEntry();
     if (store.session.editor) renderEditorPalette();
     sync();
-  }
-
-  /**
-   * Put the look on the page (v8-0-plan A3): the shell, the board and the
-   * frame as three attributes (look.js lookAttrs), the piece set on the
-   * board. `patch` is a change from the pickers, saved; without one this is
-   * the boot pass or the system turning dark, and nothing is written.
-   */
-  function applyLook(patch) {
-    if (patch) Object.assign(store.ui, patch);
-    const dark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    const at = lookAttrs(store.ui, dark);
-    const root = document.documentElement;
-    const reframed = root.getAttribute("data-frame") !== at.frame;
-    store.ui.themeId = at.theme;
-    root.setAttribute("data-theme", at.theme);
-    root.setAttribute("data-board", at.board);
-    root.setAttribute("data-frame", at.frame);
-    BoardView.setPieceSet(store.ui.pieceSet);
-    // the board reads its square colours from the same variables, and caches
-    // them — the cache is only ever stale here
-    if (BoardView.invalidatePaint) BoardView.invalidatePaint();
-    if (!patch) return;
-    saveSettings();
-    syncSettingsUI();
-    draw();
-    // the frame's 17px come and go with it: the canvas takes the new size
-    if (reframed) requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); });
   }
 
   // --- events: pointer-driven board (click-click AND drag-drop both work) ---
@@ -10171,7 +9972,7 @@ import { createStore } from "./store.js";
     statusText: () => statusText(),
     onSquareClick: (sq) => onSquareClick(sq),
     escapeKey: () => escapeKey(),
-    dialogOpen: () => dialogOpen(),
+    dialogOpen: () => dialogOpen(), pageShown: () => Shell.pageShown(),
     promoOpen: () => !!promoModal && promoModal.classList.contains("show"),
     confirmOpen: () => confirmModal.classList.contains("show"),
     keyHelpOpen: () => NativeCmds.keyHelpOpen(),
@@ -10246,23 +10047,6 @@ import { createStore } from "./store.js";
       if (lbl) { lbl.setAttribute("data-i18n", key); lbl.textContent = t(key); }
       moreBtn.setAttribute("data-i18n-aria", key);
       moreBtn.setAttribute("aria-label", t(key));
-    };
-  }
-  const tabRow = document.querySelector(".side-tabs");
-  if (tabRow) {
-    tabRow.onclick = (ev) => {
-      const b = ev.target.closest("button[data-tab]");
-      if (b) setSideTab(b.dataset.tab, { top: true });
-    };
-    // ARIA tablist keyboard contract: arrows move between tabs
-    tabRow.onkeydown = (ev) => {
-      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
-      const cur = TABS.indexOf(store.ui.sideTab);
-      const next = TABS[(cur + (ev.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
-      ev.preventDefault();
-      setSideTab(next, { top: true });
-      const btn = document.getElementById("tab-" + next);
-      if (btn) btn.focus();
     };
   }
   document.getElementById("scrim").onclick = () => setPanelOpen(false);
@@ -10821,15 +10605,40 @@ import { createStore } from "./store.js";
     },
   });
 
-  document.getElementById("mode-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-mode]");
-    if (!b || b.dataset.mode === store.session.mode) return;
+  // v8-0-plan A1: the preferences window (prefs-ui.js), with the A3 look
+  // pickers (appearance-ui.js) mounted in it; a pick goes to settings-ui.js
+  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs });
+  PrefsUI.wire();
+  // v8-0-plan F4: the settings page (settings-ui.js) — its view, the look
+  // and the handlers behind its controls
+  const SettingsUI = createSettingsUI({
+    doc: document, store, appEl, t, el, setText, DIFF_NAMES,
+    saveSettings, saveGame, toast, sync, draw, resetClocks, parseTc,
+    invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
+    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook,
+  });
+  SettingsUI.wire();
+  // v8-0-plan A1: the rail, the home page and the pages (shell.js)
+  const Shell = createShell({
+    doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
+    requestNewGame: () => requestNewGame(), openPrefs: () => PrefsUI.open(), gameOver: () => appGameOver(),
+    recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps,
+    nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { n: i + 1, title: lessonText(LESSONS[i]).title }; },
+  });
+  Shell.wire();
+  /**
+   * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
+   * now the rail's (shell.js) and the new-game dialog's. It stops the engine,
+   * leaves the editor, gives a clocked mode fresh clocks and shows 对局.
+   */
+  function switchMode(mode) {
+    if (!mode || mode === store.session.mode) return;
     invalidateEngine();
     clearPreview();
     stopEditor(t("msg.editor.exited"));
     const wasLearn = store.session.mode === "learn";
     const wasPuzzle = store.session.mode === "puzzle";
-    store.session.mode = b.dataset.mode;
+    store.session.mode = mode;
     // entering a clocked mode mid-game gets fresh clocks
     store.game.flagFall = null;
     if (store.session.mode === "pvp" || store.session.mode === "ai") resetClocks();
@@ -10845,7 +10654,7 @@ import { createStore } from "./store.js";
     syncAutoFlip();
     sync();
     maybeEngineTurn();
-  };
+  }
   document.getElementById("lesson-restart").onclick = () => {
     if (store.session.learn) { startLearnTask(); toast(t("lm.restarted")); }
   };
@@ -10990,199 +10799,6 @@ import { createStore } from "./store.js";
   document.getElementById("puzzle-list").onclick = (ev) => {
     const b = ev.target.closest("button[data-i]");
     if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));
-  };
-  // v7-8-plan §4: inside the new-game dialog a click chooses for the NEXT
-  // game — it goes into the draft and nothing on the board changes until
-  // 开始. On the settings page the same buttons act at once, as before.
-  const draftPick = (field, value) => {
-    if (!store.ui.newGame) return false;
-    store.ui.newGame[field] = value;
-    syncSettingsUI();
-    return true;
-  };
-  document.getElementById("clock-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-tc]");
-    if (!b || draftPick("timeControl", b.dataset.tc) || b.dataset.tc === store.game.timeControl) return;
-    store.game.timeControl = b.dataset.tc;
-    resetClocks();
-    saveSettings();
-    saveGame();
-    store.commit("game", "action");
-    const tcSet = parseTc(store.game.timeControl);
-  };
-  const onDiffClick = (ev) => {
-    const b = ev.target.closest("button[data-diff]");
-    if (!b || draftPick("difficulty", b.dataset.diff) || b.dataset.diff === store.session.difficulty) return;
-    store.session.difficulty = b.dataset.diff;
-    saveSettings();
-    store.commit("session", "sync");
-  };
-  document.getElementById("diff-seg").onclick = onDiffClick;
-  const diffEngineSeg = document.getElementById("diff-seg-engine");
-  if (diffEngineSeg) diffEngineSeg.onclick = onDiffClick;
-  document.getElementById("persona-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-persona]");
-    if (!b || draftPick("personaId", b.dataset.persona) || b.dataset.persona === store.session.personaId) return;
-    store.session.personaId = b.dataset.persona;
-    saveSettings();
-    store.commit("session", "sync");
-  };
-  document.getElementById("color-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-color]");
-    if (!b || draftPick("color", b.dataset.color) || !["w", "b"].includes(b.dataset.color)) return;
-    // a side picked here is a side: 随机 from the last new game is over (Codex, #83)
-    if (store.session.colorRandom) { store.session.colorRandom = false; saveSettings(); }
-    if (b.dataset.color === store.session.humanColor) { sync(); return; }
-    invalidateEngine();
-    store.session.humanColor = b.dataset.color;
-    store.game.flipped = store.session.humanColor === "b";
-    saveSettings();
-    sync();
-    toast(store.session.humanColor === "w" ? t("msg.side.whiteChosen") : t("msg.side.blackChosen"));
-    maybeEngineTurn();
-  };
-  const langSeg = document.getElementById("lang-seg");
-  if (langSeg) {
-    let langAsked = null;   // the latest pick wins over a chunk still loading (Codex on #85)
-    langSeg.onclick = (ev) => {
-      const b = ev.target.closest("button[data-lang]");
-      if (!b || !I18n || (langAsked = b.dataset.lang) === store.ui.langId) return;
-      const want = b.dataset.lang;
-      // v8-0-plan F5: the language's chunk first, then the switch — switched
-      // before it arrived, the page would repaint in Chinese fallbacks first.
-      // A chunk that cannot load leaves the language as it was.
-      ChessLazy.ensureLang(want).then(() => {
-        if (langAsked !== want || store.ui.langId === want) return;
-        store.ui.langId = I18n.setLang(want);
-        saveSettings();
-        applyLanguage();
-        // the native menu is built at launch from a per-language table; the
-        // shell records the choice and applies it on the next start (Q1.6)
-        Host.setMenuLanguage(store.ui.langId.split("-")[0])
-          .then((r) => { if (r && r.restartRequired) toast(t("msg.menuLang.restart")); }).catch(() => {});
-      }).catch(() => {});
-    };
-  }
-  document.getElementById("opt-coach").onclick = () => {
-    store.session.coachOn = !store.session.coachOn;
-    saveSettings();
-    syncSettingsUI();
-    toast(store.session.coachOn ? t("msg.coach.on") : t("msg.coach.off"));
-  };
-  document.getElementById("opt-autoflip").onclick = () => {
-    store.ui.autoFlipPvp = !store.ui.autoFlipPvp;
-    if (syncAutoFlip()) draw();
-    saveSettings();
-    syncSettingsUI();
-    toast(store.ui.autoFlipPvp ? t("msg.autoflip.on") : t("msg.autoflip.off"));
-  };
-  document.getElementById("opt-sound").onclick = () => {
-    store.ui.soundOn = !store.ui.soundOn;
-    saveSettings();
-    syncSettingsUI();
-    if (store.ui.soundOn) Audio2.playMove("w");
-    toast(store.ui.soundOn ? t("msg.sound.on") : t("msg.sound.off"));
-  };
-  // 6.0 (v6-plan Q2.8): volume, coordinates, blindfold
-  Audio2.setVolume(store.ui.volume / 100);
-  const volEl = document.getElementById("opt-volume");
-  if (volEl) {
-    volEl.oninput = () => {
-      store.ui.volume = Math.max(0, Math.min(100, Number(volEl.value) || 0));
-      Audio2.setVolume(store.ui.volume / 100);
-    };
-    // one save and one sample per release of the slider, not one per pixel
-    volEl.onchange = () => { saveSettings(); if (store.ui.soundOn) Audio2.playMove("w"); };
-  }
-  // 7.7 (v7-7-plan §8): wood or classic, with a sample of the one just picked
-  document.getElementById("sound-set-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-sound-set]");
-    if (!b) return;
-    Audio2.setSoundSet(store.ui.soundSet = b.dataset.soundSet);
-    saveSettings();
-    syncSettingsUI();
-    Audio2.playMove("w");
-  };
-  // 6.0 (v6-plan Q3.6): the appearance follows the system's scheme — since
-  // v8-0-plan A3 as its default, 跟随系统 — and reacts live
-  const schemeMq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-  if (schemeMq && schemeMq.addEventListener) {
-    schemeMq.addEventListener("change", () => {
-      if (store.ui.appearance !== "system") return;
-      applyLook();
-      draw();
-    });
-  }
-  // v8-0-plan A3: 外观 / 棋盘 / 边框 / 棋子, a module of their own
-  const lookUI = mountAppearance(document.getElementById("appearance-ui"), {
-    t, getLook: () => store.ui, setLook: applyLook, pieceSvgs: BoardView.setSvgs,
-  });
-  function applyTextSize() {
-    document.documentElement.setAttribute("data-text", store.ui.textSize);
-    // the board is sized from its container, which the type size can move
-    requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); drawEvalCurve(); drawEvalBar(); });
-  }
-  document.getElementById("text-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-text]");
-    if (!b) return;
-    store.ui.textSize = b.dataset.text;
-    saveSettings();
-    syncSettingsUI();
-    applyTextSize();
-  };
-  document.getElementById("opt-coords").onclick = () => {
-    store.ui.coordsOn = !store.ui.coordsOn;
-    saveSettings();
-    syncSettingsUI();
-    draw();
-  };
-  document.getElementById("coords-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-coords]");
-    if (!b || (b.dataset.coords === "in") === store.ui.coordsInside) return;
-    store.ui.coordsInside = b.dataset.coords === "in";
-    saveSettings();
-    syncSettingsUI();
-    draw();
-  };
-  document.getElementById("opt-engine-arrows").onclick = () => {
-    store.ui.engineArrows = !store.ui.engineArrows;
-    saveSettings();
-    syncSettingsUI();
-    draw();
-  };
-  document.getElementById("opt-softmark").onclick = () => {
-    store.ui.showSoftMark = !store.ui.showSoftMark;
-    saveSettings();
-    syncSettingsUI();
-    // the move list keys its repaint on each node's tag, and the report
-    // prints the counts, so both have to be asked again
-    store.commit("game", "action");
-    renderReview();
-  };
-  document.getElementById("opt-blind").onclick = () => {
-    store.ui.blindfold = !store.ui.blindfold;
-    saveSettings();
-    syncSettingsUI();
-    draw();
-    toast(store.ui.blindfold ? t("msg.blind.on") : t("msg.blind.off"));
-  };
-  // 6.0 (v6-plan Q2.6): the engine knobs
-  if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash });
-  document.getElementById("hash-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-hash]");
-    if (!b) return;
-    store.ui.hash = Number(b.dataset.hash);
-    if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash });
-    saveSettings();
-    syncSettingsUI();
-  };
-  document.getElementById("multipv-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-multipv]");
-    if (!b) return;
-    store.ui.multipv = Number(b.dataset.multipv);
-    saveSettings();
-    syncSettingsUI();
-    setAnalyzeUI();
   };
   // --- learning data: out as one file, back in as a merge (learning.js) ---
   const Learning = ChessLearning;
@@ -11624,7 +11240,8 @@ import { createStore } from "./store.js";
     if (store.ui.preview) { clearPreview(); return true; }
     // before closing the panel — the panel holds the editor's only exit
     if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return true; }
-    if (isPanelOpen()) { setPanelOpen(false); return true; }
+    // under a page (v8-0-plan A1) the panel is not on screen to be closed
+    if (isPanelOpen() && !Shell.pageShown()) { setPanelOpen(false); return true; }
     return false;
   }
 
@@ -11697,6 +11314,7 @@ import { createStore } from "./store.js";
     Dlg.register(keysModal, closeKeyHelp);
     Dlg.register(noteModal, closeNoteModal);
     Dlg.register(aboutModal, () => Dlg.close(aboutModal));
+    Dlg.register(document.getElementById("prefs-modal"), () => PrefsUI.close());
   }
   wireDialogs();
   // the markup names its icons (<span data-icon="…">); draw them before the
@@ -11717,7 +11335,7 @@ import { createStore } from "./store.js";
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
   document.documentElement.setAttribute("data-text", store.ui.textSize);
-  applyLook();
+  SettingsUI.applyLook();
   if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
   // v8-0-plan F5: chunk-boot.js loaded the saved language ahead of this
   // script. Should its guess have missed (a profile restored since, storage
@@ -11728,6 +11346,7 @@ import { createStore } from "./store.js";
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
   setSideTab(store.ui.sideTab);
+  Shell.restore();
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
   // 7.6 §1c: …and the analysis it had, which used to die with the session

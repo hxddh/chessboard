@@ -50,6 +50,8 @@ const PLAY = ["ai", "pvp"];
    row for the current mode does not run — the same answer its letter gives. */
 export const KEY_HELP = [
   { keys: ["P"], k: "keys.panel", in: ANY, cmd: ["view.panel"] },
+  // v8-0-plan A1: the preferences window, every desktop app's key
+  { keys: ["⌘,", "Ctrl+,"], k: "keys.prefs", in: ANY },
   { keys: ["N"], k: "keys.new", in: PLAY, cmd: ["game.new"] },
   { keys: ["N"], k: "keys.next", in: ["puzzle"] },
   { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },
