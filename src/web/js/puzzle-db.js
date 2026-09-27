@@ -19,7 +19,9 @@
 import { LC_INDEX } from "./puzzles-lc-index.js";
 import { loadChunk, chunkReady } from "./chunk.js";
 
-  /** motif.js's keys: a `tac` puzzle is labelled with the first it carries */
+  /** motif.js's keys: a `tac` puzzle is labelled with the first it carries
+      (the importer puts the verified label first; "discoveredAttack", 闪击,
+      is a theme, not one of these) */
   const MOTIFS = ["fork", "pin", "skewer", "discovered", "double"];
 
   const bandName = (band) => String(band).padStart(4, "0");

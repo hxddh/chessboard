@@ -403,6 +403,23 @@ assert(R.summarizeWinPct([], [], "w") === null, "empty → null");
   calls.length = 0;
   const cut = await P.runPass({ fens, sans, budget: 200, lines: 1, analyze, evalScalar, halt: () => (calls.length >= 3 ? "abort" : null) });
   assert(cut.halted === "abort" && cut.at === 3 && cut.scalars[2] != null && cut.scalars[3] === null, "a stop keeps the positions already measured and says where");
+  assert(!cut.deepCut, "…a stop inside the quick scan is not a finished scan");
+  // stopped while deepening (review of PR #87): the quick scan measured every
+  // position, so the pass says so — and the search Stop cancelled is not
+  // counted as deepened, or its quick numbers would pass for confirmed ones
+  calls.length = 0;
+  let stopAt = -1;
+  const deepCut = await P.runPass({ fens, sans, budget: 200, lines: 1, evalScalar,
+    analyze: async (fen, b, o) => { const e = await analyze(fen, b, o); if (b > 200 && stopAt < 0) stopAt = fens.indexOf(fen); return e; },
+    halt: () => (stopAt >= 0 ? "abort" : null) });
+  assert(!deepCut.halted && deepCut.deepCut === true,
+    "a stop while deepening is not a halt: the scan was complete, only the deepening was cut (" + deepCut.halted + " deepCut=" + deepCut.deepCut + ")");
+  assert(deepCut.scalars.every((s) => s != null) && deepCut.bests.every((b, i) => b || deepCut.terminal[i]),
+    "…every position keeps its quick-scan numbers");
+  assert(stopAt >= 0 && !deepCut.deep[stopAt] && deepCut.scalars[4] === 110,
+    "…the search Stop cancelled is not counted as deepened, and its quick number stands (" + stopAt + ")");
+  const gCut = G.gradeMoves(deepCut, Chess);
+  assert(gCut.length === sans.length && gCut.every((x) => typeof x === "string"), "…and every move still gets a grade (" + gCut.join(" ") + ")");
 }
 
 // v8-0-plan B2: the exit sits at the very end — through 7.9 it sat halfway

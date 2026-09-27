@@ -51,7 +51,9 @@ function sansOf(fen, ucis, max) {
  * @param {() => ("abort"|"gone"|null)} [o.halt] asked before every search
  * @param {(done: number, total: number) => void} [o.progress]
  * @returns {Promise<object>} the arrays below, plus `halted` ("abort" / "gone"
- *   with `at` = the position it stopped before) when the pass was cut short
+ *   with `at` = the position it stopped before) when the pass was cut short,
+ *   or `deepCut: true` when Stop came during the deepening — the pass is whole
+ *   then, the positions not yet searched again keep their quick numbers
  */
 async function runPass(o) {
   const { fens, budget } = o;
@@ -129,10 +131,18 @@ async function runPass(o) {
     if (!targets.length) break;
     count.total += targets.length;
     for (const i of targets) {
+      // a Stop here is not a halt: every position already has its quick
+      // numbers, so the pass is whole and the caller grades and files it;
+      // `deepCut` only says the deepening was cut (review of PR #87)
       const why = stop();
-      if (why) return Object.assign(p, { halted: why, at: n });
+      if (why === "gone") return Object.assign(p, { halted: why, at: n });
+      if (why) return Object.assign(p, { deepCut: true });
       const e = await search(i, budget * Grade.DEEP_FACTOR, deepMpv);
-      if (stop() === "gone") return Object.assign(p, { halted: "gone", at: n });
+      // a search Stop cancelled is cut short, not deeper: keep the quick
+      // numbers and do not count the position as deepened (confirmed)
+      const late = stop();
+      if (late === "gone") return Object.assign(p, { halted: late, at: n });
+      if (late) return Object.assign(p, { deepCut: true });
       // a failed deep search keeps the quick numbers rather than a hole
       if (o.evalScalar(e) != null) take(i, e);
       p.deep[i] = true;

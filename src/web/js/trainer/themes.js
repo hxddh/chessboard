@@ -18,7 +18,7 @@
 export const THEME_IDS = [
   "underPromotion", "enPassant", "castling", "smothered", "arabian", "double", "backRank", "f2f7",
   "promotion", "knightEnding", "bishopEnding", "queenEnding", "queenRookEnding", "pawnEnding",
-  "rookEnding", "skewer", "discovered", "pin", "sacrifice", "quiet", "advancedPawn", "def",
+  "rookEnding", "skewer", "discoveredAttack", "discovered", "pin", "sacrifice", "quiet", "advancedPawn", "def",
   "hanging", "m3", "m2", "fork", "m1",
 ];
 const KNOWN = new Set(THEME_IDS);

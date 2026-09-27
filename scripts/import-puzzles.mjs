@@ -241,13 +241,23 @@ export function convert(Chess, row, opt) {
     const v = verifyThemes(ctx, row.themes, opt.motifOf, target.cat);
     const cell = checkableTags(row.themes)[0];
     if (!cell) return { ok: false, stage: "theme", reason: "no checkable theme tag" };
-    if (!v.ids.includes(cell.id)) return { ok: false, stage: "theme", reason: "claimed " + cell.tag + " does not hold" };
+    if (!v.kept.includes(cell.tag)) return { ok: false, stage: "theme", reason: "claimed " + cell.tag + " does not hold" };
     p.themes = v.ids;
-    // the motif label is a claim too: only a motif that was verified
+    // the motif label is a claim too: only a motif that was verified, and of
+    // those the one motif.js names on the solver's earliest move — not the
+    // rarest (review of PR #87: a verified fork lost the label to a rarer tag)
     const motifs = ["fork", "pin", "skewer", "discovered", "double"];
     if (p.cat === "tac") {
-      const m = v.ids.find((id) => motifs.includes(id));
-      if (m) p.motif = m; else delete p.motif;
+      const named = ctx.plies.filter((q) => q.solver).map((q) => opt.motifOf(q.before, q.m.san, Chess));
+      const m = named.find((k) => motifs.includes(k) && v.ids.includes(k)) || v.ids.find((id) => motifs.includes(id));
+      if (m) {
+        p.motif = m;
+        // puzzle-db.js decodeRow labels a row with its first motif theme: the
+        // label goes first among them, every other theme stays where it was
+        const order = [m].concat(v.ids.filter((id) => motifs.includes(id) && id !== m));
+        let k = 0;
+        p.themes = v.ids.map((id) => (motifs.includes(id) ? order[k++] : id));
+      } else delete p.motif;
     }
     p.dropped = v.dropped;
   }

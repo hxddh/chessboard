@@ -160,7 +160,13 @@ export const THEMES = [
   { tag: "pawnEndgame", id: "pawnEnding", verify: (c) => ending([])(c) && Object.keys(menOf(c.start).w).concat(Object.keys(menOf(c.start).b)).includes("p") },
   { tag: "rookEndgame", id: "rookEnding", verify: ending(["r"]) },
   { tag: "skewer", id: "skewer", verify: hasMotif("skewer") },
-  { tag: "discoveredAttack", id: "discovered", verify: (c, motifOf) => hasMotif("discovered")(c, motifOf) || solverMoves(c).some((p) => discovers(c, p)) },
+  // Lichess's discoveredAttack is any discovery; the app's "discovered" is a
+  // discovered CHECK (闪将, motif.js). So the tag is 闪击 (discoveredAttack)
+  // unless motif.js proves a discovered check on a solver move — then it is
+  // filed as `alt` (review of PR #87: a queen uncovered plus a fork was
+  // labelled 闪将, and outranked the fork for the puzzle's motif)
+  { tag: "discoveredAttack", id: "discoveredAttack", alt: "discovered",
+    verify: (c, motifOf) => (hasMotif("discovered")(c, motifOf) ? "discovered" : solverMoves(c).some((p) => discovers(c, p))) },
   { tag: "pin", id: "pin", verify: hasMotif("pin") },
   { tag: "sacrifice", id: "sacrifice", verify: (c) => c.plies.some((p, i) => {
     // the solver's man is taken on the square it just moved to, and it was
@@ -216,7 +222,7 @@ function discovers(c, p) {
   return after.some((a) => !before.has(key(a)));
 }
 
-export const THEME_IDS = THEMES.map((t) => t.id);
+export const THEME_IDS = THEMES.flatMap((t) => (t.alt ? [t.id, t.alt] : [t.id]));
 const BY_TAG = new Map(THEMES.map((t) => [t.tag, t]));
 
 /** The Lichess tags on a row this module can check, in THEMES order (rarest first). */
@@ -231,16 +237,20 @@ export function checkableTags(themes) {
  * @param {string} tags the row's Lichess Themes column
  * @param {Function} motifOf motif.js
  * @param {string} gatedCat the category whose gate the puzzle passed
- * @returns {{ids:string[], dropped:string[]}} dropped: tags whose check failed
+ * @returns {{ids:string[], kept:string[], dropped:string[]}} kept: tags whose
+ *   check passed; dropped: tags whose check failed. A check may answer with
+ *   the id it proved (an entry's `alt`) instead of true.
  */
 export function verifyThemes(ctx, tags, motifOf, gatedCat) {
-  const ids = [], dropped = [];
+  const ids = [], kept = [], dropped = [];
   for (const t of checkableTags(tags)) {
     let ok = false;
-    try { ok = !!t.verify(ctx, motifOf, gatedCat); } catch (_) { ok = false; }
-    (ok ? ids : dropped).push(ok ? t.id : t.tag);
+    try { ok = t.verify(ctx, motifOf, gatedCat); } catch (_) { ok = false; }
+    if (!ok) { dropped.push(t.tag); continue; }
+    ids.push(typeof ok === "string" ? ok : t.id);
+    kept.push(t.tag);
   }
-  return { ids, dropped };
+  return { ids, kept, dropped };
 }
 
 export { BY_TAG };

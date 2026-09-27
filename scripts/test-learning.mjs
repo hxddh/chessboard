@@ -463,6 +463,30 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(!t2.ok && t2.stage === "theme" && /smotheredMate/.test(t2.reason), "a row whose cell tag fails is rejected (" + t2.reason + ")");
   const t3 = convert(Chess, row[2], { motifOf });
   assert(!t3.ok, "a crushing line with no checkable tag or no material is not imported (" + t3.reason + ")");
+
+  // review of PR #87: Lichess's discoveredAttack is a discovered ATTACK; the
+  // app's "discovered" is a discovered CHECK (闪将). Nc6 uncovers Rd1 on the
+  // queen and forks queen and rook — no check anywhere, and the fork is what
+  // motif.js names, so the label is the fork.
+  const [da] = parseCsv("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags\n" +
+    "T4,1r1q2k1/5ppp/8/8/3N4/8/5PPP/3R2K1 b - - 0 1,g8h8 d4c6 d8f6 c6b8,1500,80,90,500,advantage discoveredAttack fork middlegame short,https://lichess.org/t4,\n");
+  const t4 = convert(Chess, da, { motifOf });
+  assert(t4.ok && t4.puzzle.motif === "fork" && t4.puzzle.themes.join() === "discoveredAttack,fork",
+    "discoveredAttack without a check is 闪击, not 闪将, and the verified fork is the label (" +
+    (t4.ok ? t4.puzzle.motif + " / " + t4.puzzle.themes : t4.reason) + ")");
+  if (t4.ok) {
+    const d4 = ctx.ChessPuzzleDb.decodeRow(JSON.parse(JSON.stringify(encodeRow(t4.puzzle))));
+    assert(d4.motif === "fork" && d4.themes.includes("discoveredAttack") && !d4.themes.includes("discovered"),
+      "…and the stored row decodes to the same label (" + d4.motif + " / " + d4.themes + ")");
+  }
+  const dcOf = (fen, sol) => verifyThemes(themeContext(Chess, fen, sol), "discoveredAttack", motifOf, "tac").ids.join();
+  assert(dcOf("4k3/1q6/8/8/4N3/8/8/4R1K1 w - - 0 1", ["Nc5+"]) === "discovered",
+    "…while a discoveredAttack row that IS a discovered check keeps 闪将 (" + dcOf("4k3/1q6/8/8/4N3/8/8/4R1K1 w - - 0 1", ["Nc5+"]) + ")");
+  assert(dcOf("4k3/8/8/4q3/8/2N5/8/B6K w - - 0 1", ["Nd5"]) === "discoveredAttack", "…and a plain one is 闪击");
+  const ictx = loadAppModules(["src/web/js/lang-en.js", "src/web/js/lang-ja.js", "src/web/js/i18n.js"]);
+  for (const lang of ["zh-CN", "en", "ja"]) {
+    assert(!!ictx.ChessI18n.DICT[lang]["motif.discoveredAttack"], lang + " names the discoveredAttack theme");
+  }
 }
 
 // ---------------------------------------------------------------- the stratified import, end to end
@@ -746,7 +770,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const tctx = loadAppModules(["src/web/js/trainer/themes.js", "src/web/js/trainer/runs.js"]);
   const Th = tctx.ChessThemes, Ru = tctx.ChessRuns;
   // the browser lists exactly what the importer verifies, in its order
-  assert(JSON.stringify(Th.THEME_IDS) === JSON.stringify(THEMES.map((x) => x.id)),
+  assert(JSON.stringify(Th.THEME_IDS) === JSON.stringify(THEMES.flatMap((x) => (x.alt ? [x.id, x.alt] : [x.id]))),
     "trainer/themes.js lists the importer's verifiable themes, same ids, same order (" + Th.THEME_IDS.length + ")");
   assert(JSON.stringify(Th.themesOf({ id: "lc-x", cat: "tac", themes: ["fork", "nope", "sacrifice"] }, "pin")) === JSON.stringify(["fork", "sacrifice"]),
     "an imported puzzle keeps its verified themes, unknown ids dropped, the motif ignored");

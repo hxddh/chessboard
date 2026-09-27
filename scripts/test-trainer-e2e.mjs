@@ -232,7 +232,7 @@ const hasMateIn = (g, n) => {
   assert(await page.evaluate(() => document.getElementById("theme-modal").classList.contains("show")), "b: 「按主题练」打开主题页");
   const rows = () => page.evaluate(() => [...document.querySelectorAll("#theme-list button[data-theme]")].map((b) => ({ id: b.dataset.theme, text: b.textContent, off: b.disabled })));
   let r = await rows();
-  assert(r.length === 27, "b: 列出全部 27 个可验证主题", r.length);
+  assert(r.length === 28, "b: 列出全部 28 个可验证主题", r.length);
   const localM1 = data.CHESS_PUZZLES.concat(data.MINED_PUZZLES).filter((p) => p.cat === "m1" && p.fen).length;
   const m1 = r.find((x) => x.id === "m1");
   assert(m1 && m1.text.includes((localM1 + LC_INDEX.themes.m1.n) + " 道"), "b: 一步杀的题数 = 本地 + 题库索引", m1 && m1.text);

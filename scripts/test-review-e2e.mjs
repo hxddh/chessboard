@@ -1136,6 +1136,69 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await ctxH.close();
 }
 
+// --- 停在加深阶段（评审 #87）：快速扫描已经量完每个局面，停止不该丢掉它 ---
+// Through PR #87 a Stop pressed while the pass searched the marked moves
+// again, deeper, took the partial branch: every tag null, no accuracy, no
+// grades, nothing filed, and 「保留前 N 步」 for a game measured end to end.
+{
+  const ctxS = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctxS.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pgS = await ctxS.newPage();
+  const errsS = [];
+  pgS.on("pageerror", (e) => errsS.push(e.message));
+  await pgS.goto(`http://127.0.0.1:${PORT}/`);
+  await pgS.waitForTimeout(900);
+  await pgS.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  // scholar's mate again, played on the board
+  for (const sq of ["e2", "e4", "e7", "e5", "f1", "c4", "b8", "c6", "d1", "h5", "g8", "f6", "h5", "f7"]) {
+    const c = await pgS.evaluate((s) => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, sq);
+    await pgS.mouse.click(c.x, c.y);
+  }
+  await pgS.waitForTimeout(400);
+  const stopped = await pgS.evaluate(async () => {
+    const W = [20, 20, 300, -400, -380, -390, -1200, -1210];
+    const seen = new Map();
+    let n = 0, deepAsked = 0;
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen, budget) => {
+      const turn = fen.split(" ")[1];
+      if (!seen.has(fen)) seen.set(fen, n++);
+      // the first deeper search: the player presses 停止 while it runs
+      if (budget > 200 && !deepAsked++) document.getElementById("an-run").click();
+      const w = W[Math.min(seen.get(fen), W.length - 1)];
+      return { cp: turn === "w" ? w : -w, mate: null, turn, best: "d1h5", pv: ["d1h5"] };
+    };
+    document.getElementById("an-run").click();
+    await new Promise((r) => setTimeout(r, 2500));
+    const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+    const e = kept && kept.list && kept.list[kept.list.length - 1];
+    return { deepAsked, toast: document.getElementById("toast").textContent,
+      an: e ? { tags: e.an.tags, acc: e.an.acc, grades: e.an.grades, scalars: e.an.scalars, deep: e.an.deep } : null,
+      tags: [...document.querySelectorAll(".move-list .mvtag")].map((t) => t.textContent.trim()) };
+  });
+  console.log("  加深时停止：" + JSON.stringify(stopped));
+  assert(stopped.deepAsked >= 1, "加深时停止：确实停在了加深阶段 (" + stopped.deepAsked + ")");
+  assert(!!stopped.an && stopped.an.scalars.length === 8 && stopped.an.scalars.every((s) => s != null),
+    "加深时停止：快速扫描量过的每个局面都存进了分析记录", JSON.stringify(stopped.an));
+  assert(!!stopped.an && stopped.an.tags.length === 7 && stopped.an.tags.some((t) => t === "??") && stopped.tags.includes("??"),
+    "加深时停止：失着照样标出（记录与着法表）", JSON.stringify(stopped.an && stopped.an.tags) + " " + stopped.tags.join(" "));
+  assert(!!stopped.an && stopped.an.acc && typeof stopped.an.acc === "object"
+    && Array.isArray(stopped.an.grades) && stopped.an.grades.length === 7 && stopped.an.grades.every((x) => typeof x === "string"),
+    "加深时停止：准确率与分级都在", JSON.stringify(stopped.an && { acc: stopped.an.acc, grades: stopped.an.grades }));
+  assert(!/保留前/.test(stopped.toast) && /分析完成/.test(stopped.toast) && /加深/.test(stopped.toast),
+    "加深时停止：提示说分析完成、加深被停，不说「保留前 N 步」 (" + stopped.toast + ")");
+  assert(errsS.length === 0, "加深时停止：没有页面异常 — " + errsS.join(" / "));
+  await ctxS.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

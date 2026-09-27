@@ -274,6 +274,20 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
     "没理会的威胁：走之前 ♛xa1+ 就在那里 (" + X.explainText(th, tOf("zh-CN")) + ")");
   // …and a move that CREATED the problem is not an ignored threat
   assert(!bg5.threat, "4.Bg5 自己走进去被吃：不是「没理会威胁」");
+  // Nxc5+ unmasks Re1 on the king: …bxc5 is illegal only because of the check,
+  // the b6 pawn does guard c5 — the lesson is the discovered check, not a
+  // bishop 「没有保护住」 (review of PR #87)
+  const dc = X.explainMistake({ fen: "4k3/p3npp1/1p6/2b4p/4N3/8/5PPP/4R1K1 b - - 0 1",
+    played: "Ng6", best: "Kd8", bestLine: ["Kd8"], line: ["Nxc5+", "Kf8", "Nd3", "a5"] }, Chess);
+  assert(dc && dc.refute && dc.refute.motif === "discovered",
+    "闪将吃掉有兵保护的象：说闪将，不说挂着的子 (" + X.explainKey(dc) + " " + (dc && dc.refute && dc.refute.motif) + ")");
+  assert(ctx.lineMotif("4k3/p4pp1/1p6/2b4p/4N3/8/5PPP/4R1K1 w - - 0 1", ["Nxc5+", "Kf8", "Nd3", "a5"], Chess).motif === "discovered",
+    "…lineMotif 本身：闪将，不是 hanging");
+  // the same capture was already on before …a6: still not a hanging-piece threat
+  const dt = X.explainMistake({ fen: "4k3/p4pp1/1p6/2b4p/4N3/8/5PPP/4R1K1 b - - 0 1",
+    played: "a6", best: "Kf8", bestLine: ["Kf8"], line: ["Nxc5+", "Kf8", "Nd3", "a5"] }, Chess);
+  assert(dt && !dt.threat && X.explainKey(dt) !== "ex.threatHanging" && !(dt.refute && dt.refute.motif === "hanging"),
+    "闪将的威胁：不说「没理会威胁，象没有保护住」 (" + X.explainKey(dt) + ")");
   for (const lang of LANGS) {
     for (const ex of [bg5, nf6, th]) {
       const s = X.explainText(ex, tOf(lang));
