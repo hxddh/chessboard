@@ -184,21 +184,24 @@ import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
 
   /**
    * `"Two Knights Defense, Fried Liver Attack"` → `"双马防御，炸肝攻击"`.
-   * Segments the table does not have stay English; a variation none of whose
-   * segments is known comes back exactly as it went in.
+   * All or nothing (7.9 §5): if any segment is missing from the table, the
+   * whole variation comes back exactly as it went in, in English — never
+   * 「古典变例，Center Attack」, which reads as unfinished where all-English
+   * reads as a proper name.
    */
   function variationName(rest, lang) {
     const tbl = VARIATION[lang];
     if (!tbl || !rest) return rest;
     const segs = rest.split(",").map((s) => s.trim());
-    if (!segs.some((s) => tbl[s])) return rest;
-    return segs.map((s) => tbl[s] || s).join(LIST_SEP[lang]);
+    if (!segs.every((s) => tbl[s])) return rest;
+    return segs.map((s) => tbl[s]).join(LIST_SEP[lang]);
   }
 
   /**
    * `"Italian Game: Giuoco Piano"` → `"意大利开局：Giuoco Piano"`, or null
    * when the family is not in `lang`'s table. The variation's segments
-   * are translated too, where variationName() knows them (v7-8-plan §6). A name with no colon is all
+   * are translated too, when variationName() knows every one of them
+   * (v7-8-plan §6, 7.9 §5). A name with no colon is all
    * family. Both CJK languages join with the full-width colon, as the rest
    * of their copy does (scripts/cjk-punct.mjs).
    */
