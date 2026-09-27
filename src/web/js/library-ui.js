@@ -42,6 +42,7 @@ export function createLibraryUI(d) {
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
+    renderRecordEntry,
   } = d;
   const Dlg = ChessDialog;
   const Fide = ChessFide;
@@ -568,6 +569,8 @@ export function createLibraryUI(d) {
     if (block) block.classList.toggle("empty", !list.length);
     const imp = doc.getElementById("lib-import");
     if (imp) imp.classList.toggle("primary", !list.length);
+    // v8-0-plan §5: the page's own empty state counts the library as well
+    if (renderRecordEntry) renderRecordEntry();
     if (!list.length) {
       // 7.7 (v7-7-plan §3): an empty state — icon, one line, and 导入棋谱文件
       // (see .empty-note)

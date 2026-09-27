@@ -255,6 +255,9 @@ if (FIX) {
       noted++;
     }
   }
+  // v8-0-plan §5: retiring lines left the header's count stale (1023 over an
+  // array of 1002) — keep "N puzzles" equal to what is left
+  if (dropped) src = src.replace(/^( \* )(\d+) puzzles/m, (all0, lead, n) => lead + (Number(n) - dropped) + " puzzles");
   fs.writeFileSync(file, src);
   console.log(`\n--fix：退役 ${dropped} 道，记下 ${noted} 道的同等解。id 一个都没改写。`);
   console.log("重新跑 test-learning.mjs 更新题量下限，再跑一遍本文件复核。");

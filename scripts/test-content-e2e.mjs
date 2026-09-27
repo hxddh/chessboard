@@ -506,10 +506,8 @@ if (hasTab && REAL.length) {
   for (const f of ["openings.js", "drills.js"]) {
     vm.runInContext(compileModuleSync(path.join(ROOT, "js", f)), data, { filename: "module" });
   }
-  const rows = data.ChessDrills.drillLines(data.CHESS_OPENINGS)
-    .map(([eco, nameId, seq]) => ({ eco, nameId, seq, line: seq.split(" ") }))
-    .sort((a, b) => (a.eco < b.eco ? -1 : a.eco > b.eco ? 1
-      : (data.CHESS_OPENING_NAMES[a.nameId] || "").localeCompare(data.CHESS_OPENING_NAMES[b.nameId] || "", "zh")));
+  const rows = data.ChessDrills.orderDrills(data.ChessDrills.drillLines(data.CHESS_OPENINGS)
+    .map(([eco, nameId, seq]) => ({ eco, nameId, seq, line: seq.split(" ") })), data.CHESS_OPENING_NAMES);
   const first = rows[0];
   const firstId = data.ChessDrills.drillId(first.eco, first.seq);
   // the canvas reader labels cells as if unflipped, so on a flipped board a
@@ -575,19 +573,41 @@ if (hasTab && REAL.length) {
   assert(/执黑/.test(taskB), "题面写明这是执黑练习", taskB.trim());
 
   // a wrong reply is taken back, with the coach naming why
-  const wrong = g2.moves({ verbose: true }).find((m) => m.san !== first.line[1]);
+  // not any book reply either: the tree takes every book move (7.6), and after
+  // 1.e4 the first legal reply a Black could pick may well be one of them
+  const bookReplies = new Set(data.CHESS_OPENINGS.map((r) => r[2].split(" "))
+    .filter((sans) => sans[0] === first.line[0] && sans[1]).map((sans) => sans[1]));
+  const wrong = g2.moves({ verbose: true }).find((m) => m.san !== first.line[1] && !bookReplies.has(m.san));
   await moveB(wrong.from, wrong.to);
   assert(await occ() === mirror(squaresOf(g2.fen())), "应错被退回,棋盘不留痕");
   // 7.7: on the puzzle's feedback card (a cross, 再想想, the coach's reason)
   const why = await pg.evaluate(() => document.getElementById("puzzle-fb-sub").textContent.trim());
   assert(why.length > 4, "应错有教练的说法,不是无声拒绝", why);
 
-  // answer the whole line: each Black book move, White's reply plays itself
-  for (let i = 1; i < first.line.length; i += 2) {
-    const m = g2.moves({ verbose: true }).find((x) => x.san === first.line[i]);
+  // answer the whole line: each Black book move, White's reply plays itself.
+  // White's reply is weighted among the book's children (6.0), so it is read
+  // off the board rather than assumed to be the line's; Black answers with a
+  // book move from wherever that leads, until the book runs out (a leaf).
+  const walked = [first.line[0]];
+  const bookNext = () => {
+    const nx = [];
+    for (const [, , seq] of data.CHESS_OPENINGS) {
+      const sans = seq.split(" ");
+      if (sans.length > walked.length && walked.every((x, i) => sans[i] === x)) nx.push(sans[walked.length]);
+    }
+    return nx.includes(first.line[walked.length]) ? first.line[walked.length] : nx[0];
+  };
+  for (let guard = 0; guard < 40; guard++) {
+    const san = bookNext();
+    if (!san) break;
+    const m = g2.moves({ verbose: true }).find((x) => x.san === san);
     await moveB(m.from, m.to);
-    g2.move(first.line[i]);
-    if (i + 1 < first.line.length) g2.move(first.line[i + 1]);
+    g2.move(san); walked.push(san);
+    if (!bookNext()) break;
+    const seen = await occ();
+    const reply = g2.moves().find((w) => { const t = new Chess(g2.fen()); t.move(w); return mirror(squaresOf(t.fen())) === seen; });
+    if (!reply) break;
+    g2.move(reply); walked.push(reply);
   }
   await pg.waitForTimeout(600);
   const after = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
@@ -1138,6 +1158,49 @@ if (hasTab && REAL.length) {
   }
   assert(line === "B20 · 西西里防御：Bowdler Attack", "开局书外的 B20:族名说中文,变例名保留英文", line);
   await ctx5.close();
+}
+
+// --- v8-0-plan §5: 暂定评级标「?」,开局题从常见开局开始 -------------------
+// Red before §5: the record page printed 「1104 ±200」 for a rating two
+// answers old, and the opening list began at A01 Nimzo-Larsen (1.b3).
+{
+  for (const [rd, want, label] of [[200, "1104?", "暂定"], [60, "1104", "稳定"]]) {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+    await c.addInitScript((d) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "record", soundOn: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+      const now = Date.now();
+      localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "m1",
+        tally: { m1: { miss: 1, solve: 2 } }, rating: { r: 1104, rd: d, vol: 0.06 }, ratedAt: now, rhist: [{ t: now - 1000, r: 1180 }, { t: now, r: 1104 }] }));
+    }, rd);
+    const pg = await c.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(1000);
+    await pg.click("#tab-record").catch(() => {});
+    await pg.waitForTimeout(300);
+    const meta = await pg.evaluate(() => (document.getElementById("rating-meta") || {}).textContent || "");
+    const m = /做题评级 (\S+)/.exec(meta);
+    assert(!!m && m[1] === want, `§5 ${label}评级(RD ${rd})写作「${want}」`, meta);
+    await c.close();
+  }
+  // the opening list opens on the Italian Game, not on 1.b3
+  const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
+  });
+  const pg = await c.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1000);
+  const first = await pg.evaluate(() => {
+    const cur = document.querySelector("#puzzle-list .lesson-item.current");
+    return cur ? cur.textContent.trim() : "";
+  });
+  assert(/^1\. C50 意大利开局/.test(first), "§5 开局题默认第一道是意大利开局", first);
+  await c.close();
 }
 
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));

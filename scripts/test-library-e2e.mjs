@@ -1638,6 +1638,103 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await ctx.close();
 }
 
+// --- v8-0-plan §5: the record page and the library -------------------------
+// Red before §5: (a) with a library and nothing else recorded the page still
+// opened on 「现在还空着」; (b) a library game — someone's record — carried
+// 悔棋 and 再来一盘; (c) the diagnosis cut its values off at the dialog's
+// right edge (「5 厘兵/手 · 失误率 16.7%」 in a 114px track), in every language.
+{
+  // (a) a library is a record: seeded, and imported into an empty page
+  {
+    const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games: [
+      { id: "g1", t: 1758000000000, white: "hxddh", black: "rival", result: "1-0", plies: 5, sans: "e4 e5 Nf3 Nc6 Bb5", side: "w", outcome: "win" }] }));
+    const { page, errs } = await open(ctx);
+    const empty = await page.evaluate(() => !document.getElementById("record-empty").hidden);
+    assert(!empty, "§5 库里有棋、别的都还没有:记录页不说「现在还空着」");
+    assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+  {
+    const ctx = await freshContext();
+    const { page, errs } = await open(ctx);
+    const before = await page.evaluate(() => !document.getElementById("record-empty").hidden);
+    await importFile(page, PGN);
+    const after = await page.evaluate(() => !document.getElementById("record-empty").hidden);
+    assert(before && !after, "§5 空档案导入棋谱:入口卡片在导入那一刻让位(" + before + " → " + after + ")");
+    // (b) open one of them: a record, not a game of yours
+    await page.click("#lib-open");
+    await page.waitForTimeout(400);
+    await page.click("#lib-list button[data-lib]");
+    await page.waitForTimeout(900);
+    await page.click("#tab-play").catch(() => {});
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const u = document.getElementById("undo");
+      return {
+        plies: document.querySelectorAll(".mlmove").length,
+        undo: !!u && !u.hidden && !u.classList.contains("slot-empty"),
+        card: !document.getElementById("go-card").hidden,
+        again: !document.getElementById("go-again").hidden,
+      };
+    });
+    assert(r.plies > 0 && !r.undo, "§5 从棋谱库打开的一局:没有「悔棋」", JSON.stringify(r));
+    assert(!r.card || !r.again, "§5 …也没有「再来一盘」", JSON.stringify(r));
+    await page.keyboard.press("z");
+    await page.waitForTimeout(300);
+    const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
+    assert(plies === r.plies, "§5 …按 Z 也不改别人的棋谱(" + r.plies + " → " + plies + ")");
+    assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+    await ctx.close();
+  }
+
+  // (c) the diagnosis: every value whole and inside the dialog
+  const games = [];
+  for (let i = 0; i < 25; i++) {
+    const tags = [], losses = [];
+    for (let ply = 0; ply < 80; ply++) {
+      const mine = ply % 2 === 0, moveNo = Math.floor(ply / 2) + 1;
+      // a ? now and then, so the blunder rate has decimals: 16.7%, not 0%
+      tags.push(mine && moveNo === 40 ? "??" : mine && ply % 7 === 0 ? "?" : null);
+      losses.push(mine ? (moveNo > 32 ? 120 : 5) : 0);
+    }
+    games.push({ id: "d" + i, t: 1758000000000 + i, white: "hxddh", black: "rival", result: "1-0", plies: 80, sans: "e4",
+      side: "w", outcome: i % 2 ? "win" : "loss", eco: "B20", ecoName: "西西里防御", motifs: { 78: "fork" },
+      an: { acc: { w: 62, b: 55 }, acpl: { w: 60, b: 70 }, tags, losses } });
+  }
+  for (const lang of ["zh-CN", "en", "ja"]) {
+    for (const vp of [{ width: 1400, height: 1000 }, { width: 390, height: 800 }]) {
+      const ctx = await browser.newContext({ viewport: vp, locale: lang });
+      await ctx.addInitScript(([lib, l]) => {
+        localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: l, sideTab: "record", soundOn: false }));
+        localStorage.setItem("chess.panelOpen", "1");
+        localStorage.setItem("chess.v1.library", lib);
+      }, [JSON.stringify({ v: 1, names: ["hxddh"], games }), lang]);
+      const { page, errs } = await open(ctx);
+      await page.click("#tab-record").catch(() => {});
+      await page.click("#lib-diagnose");
+      await page.waitForTimeout(400);
+      const bad = await page.evaluate(() => {
+        const box = document.querySelector("#lib-modal .modal").getBoundingClientRect();
+        const out = [];
+        for (const v of document.querySelectorAll("#lib-diag .stat-v")) {
+          if (!v.textContent) continue;
+          const r = v.getBoundingClientRect();
+          if (v.scrollWidth > v.clientWidth + 1 || r.right > box.right - 8 || r.left < box.left + 8)
+            out.push(v.textContent + " (" + (v.scrollWidth - v.clientWidth) + "px)");
+        }
+        // a name may be cut only where its whole text is on the title
+        for (const k of document.querySelectorAll("#lib-diag .stat-k")) {
+          if (k.scrollWidth > k.clientWidth + 1 && k.title !== k.textContent) out.push(k.textContent + " (name)");
+        }
+        return out;
+      });
+      assert(bad.length === 0, "§5 " + lang + " " + vp.width + ":诊断里每个数值都完整、在弹窗之内", bad.join(" / "));
+      assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

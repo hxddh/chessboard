@@ -1530,6 +1530,152 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// --- v8-0-plan §5: the small fixes that live on the board ------------------
+// Red before §5: (a) at move 0 no control on screen opened the new-game
+// dialog — 新局 waits for a game to end; (b) 「我会下棋」 closed the guide on a
+// game against 初级 that nobody had been asked about; (c) 悔棋 stood beside a
+// mated king, and Z took the mate back.
+{
+  const seeded = async (mode) => {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript((m) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: m, difficulty: "normal", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+    }, mode);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1000);
+    await page.click("#pick-cancel", { timeout: 800 }).catch(() => {});
+    return { ctx, page, errs };
+  };
+  const ngState = (page) => page.evaluate(() => ({
+    open: document.getElementById("newgame-modal").classList.contains("show"),
+    focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.diff || ""),
+    plies: document.querySelectorAll(".mlmove").length,
+  }));
+
+  // (a) move 0: a visible way in, in both playing modes
+  for (const [mode, label, focus] of [["ai", "换个对手", "normal"], ["pvp", "新局", "ng-start"]]) {
+    const { ctx, page, errs } = await seeded(mode);
+    const b = await page.evaluate(() => {
+      const e = document.getElementById("idle-new");
+      return e ? { shown: !!e.offsetParent, text: e.textContent.trim() } : null;
+    });
+    assert(!!b && b.shown && b.text === label,
+      `§5 ${mode} 一步未走:棋盘旁有「${label}」可点(${JSON.stringify(b)})`);
+    if (b && b.shown) {
+      await page.click("#idle-new"); await page.waitForTimeout(300);
+      const s = await ngState(page);
+      assert(s.open && s.focus === focus, `§5 ${mode} …点它打开新对局对话框,焦点在 ${focus}(${JSON.stringify(s)})`);
+      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+    }
+    // …and it goes once the game has begun: 本局's 新局 takes over
+    const tap = async (sq) => {
+      const p = await page.evaluate((q) => {
+        const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+        return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * z, y: r.top + (8 - Number(q[1]) + 0.5) * z };
+      }, sq);
+      await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+    };
+    await tap("e2"); await tap("e4"); await page.waitForTimeout(300);
+    const after = await page.evaluate(() => ({
+      idle: !!(document.getElementById("idle-new") || {}).offsetParent,
+      btnNew: !!document.getElementById("btn-new").offsetParent,
+    }));
+    assert(!after.idle && after.btnNew, `§5 ${mode} 走了一步之后:它让位给「本局」里的新局(${JSON.stringify(after)})`);
+    assert(errs.length === 0, `§5 ${mode}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (b) first launch, 「我会下棋」: the dialog, on the opponent
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    const page = await ctx.newPage();          // nothing seeded: a new install
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    const guide = await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item").length);
+    assert(guide === 2, `§5 新安装:引导里两条路(${guide})`);
+    await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[1].click());
+    await page.waitForTimeout(500);
+    let s = await ngState(page);
+    const pick = await page.evaluate(() => ({
+      guide: document.getElementById("pick-modal").classList.contains("show"),
+      diff: (document.querySelector("#ng-host #diff-seg-engine button.active, #ng-host #diff-seg button.active") || {}).dataset?.diff,
+    }));
+    assert(!pick.guide && s.open, `§5 选「我会下棋」:引导关掉,新对局对话框打开(${JSON.stringify(s)})`);
+    assert(pick.diff === "easy" && s.focus === "easy", `§5 …预选初级,焦点在对手那一行上(${pick.diff} / ${s.focus})`);
+    await page.keyboard.press("Enter"); await page.waitForTimeout(500);
+    s = await ngState(page);
+    const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+    assert(!s.open && set.mode === "ai" && set.difficulty === "easy", `§5 …回车开局:人机、初级(${set.mode} / ${set.difficulty})`);
+    assert(errs.length === 0, `§5 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (c) a finished game: no 悔棋, and Z does not take the mate back
+  {
+    const { ctx, page, errs } = await seeded("pvp");
+    const tap = async (sq) => {
+      const p = await page.evaluate((q) => {
+        const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+        const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+        const f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
+        return { x: r.left + ((flip ? 7 - f : f) + 0.5) * z, y: r.top + ((flip ? 7 - rk : rk) + 0.5) * z };
+      }, sq);
+      await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+    };
+    for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(a); await tap(b); await page.waitForTimeout(250); }
+    const undoShown = () => page.evaluate(() => {
+      const u = document.getElementById("undo");
+      return !!u && !u.hidden && !u.classList.contains("slot-empty");
+    });
+    const r = await page.evaluate(() => ({
+      plies: document.querySelectorAll(".mlmove").length,
+      card: !document.getElementById("go-card").hidden,
+      again: !document.getElementById("go-again").hidden,
+    }));
+    assert(r.plies === 4 && r.card, `§5 愚者杀:四着,结果卡片在(${JSON.stringify(r)})`);
+    assert(!(await undoShown()), "§5 终局之后「悔棋」不在");
+    assert(r.again, "§5 …自己下完的一盘,「再来一盘」还在");
+    await page.keyboard.press("z"); await page.waitForTimeout(300);
+    const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
+    assert(plies === 4, `§5 …按 Z 也不把杀棋收回去(${plies} 着)`);
+    assert(errs.length === 0, `§5 终局:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (d) a game opened from a file, still unfinished: someone's record, so no
+  // 悔棋 either — the finished ones already lost it to the ending itself
+  {
+    const { ctx, page, errs } = await seeded("pvp");
+    await page.evaluate(async () => {
+      const pgn = '[Event "Club"]\n[White "alice"]\n[Black "bob"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 *\n';
+      const dt = new DataTransfer();
+      dt.items.add(new File([pgn], "one.pgn", { type: "application/x-chess-pgn" }));
+      document.body.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      await new Promise((r) => setTimeout(r, 900));
+    });
+    if (await page.evaluate(() => document.getElementById("confirm-modal").classList.contains("show"))) {
+      await page.click("#confirm-ok"); await page.waitForTimeout(500);
+    }
+    const r = await page.evaluate(() => {
+      const u = document.getElementById("undo");
+      return { plies: document.querySelectorAll(".mlmove").length, undo: !!u && !u.hidden && !u.classList.contains("slot-empty") };
+    });
+    assert(r.plies === 4 && !r.undo, `§5 打开的棋谱(未终局):没有「悔棋」(${JSON.stringify(r)})`);
+    await page.keyboard.press("z"); await page.waitForTimeout(300);
+    const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
+    assert(plies === 4, `§5 …按 Z 也不改(${plies} 着)`);
+    assert(errs.length === 0, `§5 打开棋谱:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

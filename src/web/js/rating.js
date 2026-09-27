@@ -201,4 +201,15 @@ function pickRange(rating, width) {
   return { lo: Math.round(rating.r - w - slack), hi: Math.round(rating.r + w + slack) };
 }
 
-export const ChessRating = { DEFAULT, PUZZLE, IDLE_C2, newRating, update, rate1v1, expectedScore, pickRange, decayIdle };
+/**
+ * v8-0-plan §5: a rating whose deviation is still this wide is a guess, and
+ * says so with a 「?」 after the number ("1104?"). 110 is Lichess's line for a
+ * provisional rating; from the newcomer's 350 it takes roughly a dozen first
+ * answers to cross it, and a long absence (decayIdle) can put it back.
+ */
+const PROVISIONAL_RD = 110;
+function isProvisional(rating) {
+  return !rating || !Number.isFinite(rating.rd) || rating.rd > PROVISIONAL_RD;
+}
+
+export const ChessRating = { DEFAULT, PUZZLE, IDLE_C2, PROVISIONAL_RD, newRating, update, rate1v1, expectedScore, pickRange, decayIdle, isProvisional };
