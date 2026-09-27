@@ -217,20 +217,25 @@ const LANGS = ["zh-CN", "en", "ja"];
   // …and the chrome carries one meaning per element: whose move, the two
   // actions for the move being made, the panel toggle. The wordmark and the
   // unlabelled move counter went in 2.0; mode, flip and new game went here.
+  // 7.9 §1a: the two actions went to the opponent's strip, so the bar holds
+  // the panel toggle alone.
   const chrome = await page.evaluate(() => ({
     brand: document.querySelectorAll(".chrome .brand").length,
     counter: document.querySelectorAll(".chrome #moves").length,
     pill: (document.getElementById("status") || {}).textContent || "",
     ids: [...document.querySelectorAll(".chrome button")].map((b) => b.id),
     // the one filled button in the app was "new game", over the board
-    primaries: document.querySelectorAll(".chrome .primary").length,
+    primaries: document.querySelectorAll(".chrome .primary, #strip-tools .primary").length,
+    tools: [...document.querySelectorAll("#strip-tools button")].map((b) => b.id),
   }));
   assert(chrome.brand === 0, "the wordmark is gone from the chrome");
   assert(chrome.counter === 0, "…and so is the unlabelled move counter");
   assert(chrome.pill.length <= 16,
     "the status pill holds a phrase, not a sentence (" + chrome.pill.length + " chars: " + chrome.pill + ")");
-  assert(JSON.stringify(chrome.ids) === JSON.stringify(["undo", "btn-hint", "toggle-panel"]),
-    "the bar is take-back, hint, panel — in that order (" + chrome.ids.join(", ") + ")");
+  assert(JSON.stringify(chrome.ids) === JSON.stringify(["toggle-panel"]),
+    "the bar is the panel key alone (" + chrome.ids.join(", ") + ")");
+  assert(JSON.stringify(chrome.tools) === JSON.stringify(["undo", "btn-hint"]),
+    "…and the strip's tools are take-back, hint — in that order (" + chrome.tools.join(", ") + ")");
   assert(chrome.primaries === 0,
     "nothing over the board is styled as the action to take");
 
@@ -239,7 +244,7 @@ const LANGS = ["zh-CN", "en", "ja"];
   // undo in the middle it pushed 提示 56px sideways and landed in the pixels
   // 提示 had just left — two clicks in one place, help then take-back.
   const shift = await page.evaluate(async () => {
-    const at = () => [...document.querySelectorAll(".chrome button")]
+    const at = () => [...document.querySelectorAll("#strip-tools button")]
       .map((b) => ({ id: b.id, l: Math.round(b.getBoundingClientRect().left),
                      shown: getComputedStyle(b).visibility === "visible" }));
     const before = at();
@@ -263,7 +268,7 @@ const LANGS = ["zh-CN", "en", "ja"];
   assert(undoBefore && !undoBefore.shown, "take-back is not shown with nothing to take back");
   assert(undoAfter && undoAfter.shown, "…and is shown once there is");
   assert(moved.length === 0,
-    "…without moving anything in the bar, itself included (moved: " +
+    "…without moving anything in the group, itself included (moved: " +
     moved.map((m) => m.id).join(", ") + ")");
   // it is the trade that is dangerous: after 1.e4 it is the engine's move, so
   // hint goes away in the same repaint that take-back arrives
@@ -276,7 +281,7 @@ const LANGS = ["zh-CN", "en", "ja"];
     hintBefore.l + "→" + hintAfter.l + ", take-back at " + undoAfter.l + ")");
   // a slot nobody can use is a slot nobody can tab into
   const reach = await page.evaluate(() =>
-    [...document.querySelectorAll(".chrome button")]
+    [...document.querySelectorAll("#strip-tools button")]
       .filter((b) => getComputedStyle(b).visibility !== "visible")
       .every((b) => b.offsetParent === null || !b.checkVisibility({ visibilityProperty: true })));
   assert(reach, "an empty slot is not reachable by keyboard");
@@ -652,7 +657,7 @@ for (const [when, mode, setup] of [
       }
     };
     const { ctx: c0, page: p0 } = await fresh();
-    const ids = await p0.evaluate(() => [...document.querySelectorAll("#side button[id], .chrome button[id]")]
+    const ids = await p0.evaluate(() => [...document.querySelectorAll("#side button[id], .chrome button[id], #strip-tools button[id]")]
       .filter((b) => b.offsetParent && !b.disabled && getComputedStyle(b).visibility === "visible")
       .filter((b) => b.getAttribute("aria-selected") !== "true")
       .map((b) => b.id));
@@ -951,7 +956,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
       const c = rgba(cs.backgroundColor); if (c[3] > 242) return c.slice(0, 3); n = n.parentElement; }
       return [255, 255, 255]; };
     const out = [];
-    for (const e of document.querySelectorAll("#side *, .chrome *")) {
+    for (const e of document.querySelectorAll("#side *, .chrome *, #strip-tools *")) {
       if (!e.offsetParent) continue;
       if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
       const cs = getComputedStyle(e);
@@ -3157,6 +3162,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
 // 放不下的时候里面的字不是让出去，而是缩进邻居里。520 宽（桌面壳最窄）同样的
 // 行，换一种语言、一种状态就会碰上。这里取顶栏里每一个看得见的叶子元素，两两
 // 求交 —— 包括占位但隐形的「悔棋」槽：它下一手就会出现在那里。
+// 7.9 §1a：悔棋、提示搬到了对手那一行，所以上方那一条对阵条也一起量。
 {
   const WIDTHS = [[520, 900], [540, 545], [560, 900], [620, 700], [390, 844]];
   const hits = [];
@@ -3166,7 +3172,7 @@ for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"],
       for (const [w, h] of WIDTHS) {
         await page.setViewportSize({ width: w, height: h });
         const r = await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => {
-          const leaves = [...document.querySelectorAll(".chrome *")]
+          const leaves = [...document.querySelectorAll(".chrome *, .pstrip.at-top *")]
             .filter((e) => e.offsetParent && !e.children.length && e.getBoundingClientRect().width > 0)
             .map((e) => ({ t: (e.textContent || e.id).trim().slice(0, 8), r: e.getBoundingClientRect() }));
           const out = [];
@@ -3583,6 +3589,71 @@ for (const [when, mode, act] of [
   await ctx.close();
 }
 
+// --- 7.9 §4b:「今天的训练」只在人机和双人、没有对局时出现 -------------------
+// 7.8.0 在教学里,第一课正在上,面板最上面仍是「今天的训练:学一节新课」,把课文
+// 往下推了约 140px;做题页同理。量法:卡片藏着时课文标题的纵坐标,对比把卡片
+// 临时放回来时的纵坐标 —— 后者就是 7.8.0 的位置。
+{
+  for (const mode of ["learn", "puzzle"]) {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    const r = await page.evaluate((m) => {
+      const row = document.getElementById("daily-row");
+      const head = document.querySelector(m === "learn" ? "#lesson-title" : "#sec-puzzle .side-h-row");
+      const shown = !!row.offsetParent;
+      const now = head.getBoundingClientRect().top;
+      row.hidden = false;
+      const was = head.getBoundingClientRect().top;
+      row.hidden = true;
+      return { shown, now, was };
+    }, mode);
+    assert(!r.shown, "§4b " + mode + ":「今天的训练」不出现");
+    assert(r.was - r.now >= 40, "§4b " + mode + ":" + (mode === "learn" ? "课文标题" : "做题标题") +
+      "上移 " + Math.round(r.was - r.now) + "px(" + Math.round(r.was) + " → " + Math.round(r.now) + ")");
+    await ctx.close();
+  }
+  for (const mode of ["ai", "pvp"]) {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    assert(await page.evaluate(() => !!document.getElementById("daily-row").offsetParent),
+      "§4b " + mode + ":没有对局时「今天的训练」在");
+    await ctx.close();
+  }
+}
+
+// --- 7.9 §4d:做题页的纵向节奏只有两种间距 ----------------------------------
+// 同一组内 8px,组与组之间 20px。7.8.0 是 8 / 0 / 8 / 12 / 12,「为你出一题」
+// 离「题型」只有 9px。量的是 #sec-puzzle 里每个看得见的块,上一块下缘到下一块
+// 上缘;没走、走错(反馈卡加提示)、走对(反馈卡加后续)三种状态都量。
+{
+  const gaps = (page) => page.evaluate(() => {
+    const kids = [...document.getElementById("sec-puzzle").children]
+      .filter((e) => e.getClientRects().length && e.getBoundingClientRect().height > 0);
+    const out = [];
+    for (let i = 1; i < kids.length; i++) {
+      const g = kids[i].getBoundingClientRect().top - kids[i - 1].getBoundingClientRect().bottom;
+      out.push({ g: Math.round(g * 10) / 10, at: kids[i].id || kids[i].className });
+    }
+    return out;
+  });
+  const ok = (gs) => gs.every((x) => Math.abs(x.g - 8) <= 0.5 || Math.abs(x.g - 20) <= 0.5);
+  const show = (gs) => gs.map((x) => x.g + "→" + x.at).join(", ");
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "puzzle", "play");
+    const g0 = await gaps(page);
+    assert(g0.length >= 4 && ok(g0), "§4d " + lang + " 做题页各段间距只有 8 / 20:" + show(g0));
+    if (lang === "zh-CN") {
+      await mv(page, "a1"); await mv(page, "a2");
+      await page.waitForTimeout(400);
+      const g1 = await gaps(page);
+      assert(ok(g1), "§4d 走错之后(反馈卡)仍只有 8 / 20:" + show(g1));
+      await mv(page, "a1"); await mv(page, "a8");
+      await page.waitForTimeout(600);
+      const g2 = await gaps(page);
+      assert(ok(g2), "§4d 走对之后仍只有 8 / 20:" + show(g2));
+    }
+    await ctx.close();
+  }
+}
+
 
 // --- 7.7 §1：看得见的瑕疵，写成几何断言 ------------------------------------
 // 每一条都是 7.6.0 截图里看得见的东西（v7-7-plan §1a–§1e）。量的是摆好之后
@@ -3638,11 +3709,13 @@ for (const [when, mode, act] of [
   // §1b：「今天的训练」的文字不是等宽字体
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play");
+    // 7.9 §2b: --font-num is the interface face itself now, so "not the
+    // --font-num family" stopped meaning anything; ask the real question
     const r = await page.evaluate(() => {
-      const num = getComputedStyle(document.documentElement).getPropertyValue("--font-num").trim();
-      const first = num.split(",")[0].trim();
+      const first = "等宽字体";
+      const monoRe = /SF Mono|Menlo|Consolas|ui-monospace|monospace/i;
       const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why")];
-      return { n: els.length, first, mono: els.filter((e) => getComputedStyle(e).fontFamily.split(",")[0].trim() === first).map((e) => e.textContent) };
+      return { n: els.length, first, mono: els.filter((e) => monoRe.test(getComputedStyle(e).fontFamily)).map((e) => e.textContent) };
     });
     assert(r.n > 0 && r.mono.length === 0, `§1b ${lang}：今天的训练 ${r.n} 段文字都不用 ${r.first}` + (r.mono.length ? " —— " + r.mono.join(" / ") : ""));
     await ctx.close();
@@ -3814,6 +3887,314 @@ for (const [when, mode, act] of [
   }
 }
 
+// --- 7.9 §2a / §2c：棋谱大一号，回合号与着法同一条基线 ----------------------
+// 7.8.0 量到：「标准」下棋谱着法 13px，面板文字只有 12 和 13 两档；回合号装在
+// 一个居中的小方块里，文字下缘比着法高 2.6px。三种语言 × 三种宽度各量一遍。
+// 下缘用 Range.getClientRects 量文字本身，不量盒子：盒子对齐了，字不一定。
+{
+  const sqAt = async (page, sq) => page.evaluate((s) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(120); };
+  // 意大利开局十手：五行，其中有兵种字形（字形是 inline-block，不能把基线带跑）
+  const ITALIAN = ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6", "f1", "c4", "f8", "c5", "c2", "c3", "g8", "f6", "d2", "d4", "e5", "d4"];
+  const SIZES = [{ width: 1440, height: 900 }, { width: 1024, height: 700 }, { width: 600, height: 900 }];
+  for (const lang of LANGS) {
+    for (const vp of SIZES) {
+      const { ctx, page } = await open(lang, "pvp", "play", "wood", vp);
+      for (const sq of ITALIAN) await tap(page, sq);
+      await page.waitForTimeout(300);
+      const r = await page.evaluate(() => {
+        const vis = (e) => { const b = e.getBoundingClientRect(); return e.offsetParent !== null && b.width > 0 && b.height > 0; };
+        // the bottom of the last line box of the element's first text run
+        const textBottom = (el) => {
+          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => n.textContent.trim() ? 1 : 3 });
+          const tn = w.nextNode();
+          if (!tn) return null;
+          const rg = document.createRange(); rg.selectNodeContents(tn);
+          const rs = [...rg.getClientRects()];
+          return rs.length ? rs[rs.length - 1].bottom : null;
+        };
+        const rows = [...document.querySelectorAll(".move-list .mlrow")].filter(vis).map((row) => {
+          const no = row.querySelector(".mlnum");
+          const nb = textBottom(no);
+          const mv = [...row.querySelectorAll(".mlmove:not(.mlgap)")].map(textBottom).filter((x) => x != null);
+          return { no: no.textContent, d: mv.length && nb != null ? Math.max(...mv.map((m) => Math.abs(m - nb))) : null,
+                   bg: getComputedStyle(no).backgroundColor, align: getComputedStyle(no).textAlign };
+        });
+        const texts = [...document.querySelectorAll("#side *")].filter((e) => vis(e) &&
+          [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()));
+        const pane = document.getElementById("pane-play");
+        return {
+          rows,
+          san: [...new Set([...document.querySelectorAll(".move-list .mlmove")].map((e) => getComputedStyle(e).fontSize))],
+          tab: getComputedStyle(document.getElementById("tab-play")).fontSize,
+          twelve: texts.filter((e) => getComputedStyle(e).fontSize === "12px").map((e) => e.id || e.className),
+          hscroll: pane.scrollWidth - pane.clientWidth,
+          docScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      });
+      const tag = `7.9 ${lang} ${vp.width}×${vp.height}`;
+      assert(r.san.length === 1 && r.san[0] === "15px", `§2a ${tag}：棋谱着法 15px（${r.san.join(" ")}）`);
+      assert(r.tab === "14px", `§2a ${tag}：面板正文 14px（页签 ${r.tab}）`);
+      assert(r.twelve.length === 0, `§2a ${tag}：面板里不再有 12px 的字` + (r.twelve.length ? "（" + r.twelve.slice(0, 4).join("，") + "）" : ""));
+      assert(r.hscroll <= 0 && r.docScroll <= 0, `§2a ${tag}：大一号之后没有横向滚动（窗格 ${r.hscroll}，页面 ${r.docScroll}）`);
+      const off = r.rows.filter((x) => x.d == null || x.d > 1);
+      assert(r.rows.length === 5 && off.length === 0,
+        `§2c ${tag}：${r.rows.length} 行里回合号与着法的文字下缘相差 ≤ 1px` +
+        (off.length ? "（" + off.map((x) => x.no + " " + (x.d == null ? "?" : x.d.toFixed(2))).join("，") + "）" : "（最大 " + Math.max(...r.rows.map((x) => x.d)).toFixed(2) + "）"));
+      assert(r.rows.every((x) => x.bg === "rgba(0, 0, 0, 0)" && x.align === "right"),
+        `§2c ${tag}：回合号没有底色、右对齐（${[...new Set(r.rows.map((x) => x.bg + " " + x.align))].join("；")}）`);
+      await ctx.close();
+    }
+  }
+}
+
+
+// --- 7.9 §1 + §7：控件的归属与网格，量到像素 -------------------------------
+// v7-9-plan §1a–§1e 的量尺断言，三种语言 × 三种窗口（1440×900、1024×700、
+// 600×900）。7.8.0 上量到的是：悔棋/提示/☰ 在 y 2–30、对手那一行在 36–66，
+// ☰ 的右缘比棋盘外框多出 104px；「复盘」「本局」两组按钮 72px 定宽、靠左，
+// 英文「Live analysis」「Offer draw」折成两行；面板里的按钮 36px 与 28px 两种
+// 之外还混着别的。这里量摆好之后的盒子，不量样式表写了什么（那是
+// test-chess.mjs 的两种高度守卫）。
+{
+  const SIZES = [{ width: 1440, height: 900 }, { width: 1024, height: 700 }, { width: 600, height: 900 }];
+  const clickSquares = async (page, list) => {
+    for (const sq of list) {
+      const pt = await page.evaluate((s) => {
+        const c = document.getElementById("board"), r = c.getBoundingClientRect();
+        return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8),
+                 y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
+      }, sq);
+      await page.mouse.click(pt.x, pt.y);
+      await page.waitForTimeout(160);
+    }
+  };
+  // Every visible button in the panel, measured: its height, how many lines
+  // its text takes (distinct line tops of a Range over each text node, 3px
+  // apart or more — an icon beside a label is not a second line), and
+  // whether the text runs out of its box. Two kinds of row are not in it,
+  // being entries of a list rather than controls in the sense of §1e: the
+  // notation's cells (--row-h-sm, the one deliberate second height 1.13 gave
+  // the move list) and the steps of 今天的训练, which are the step and then
+  // why, on two lines by design (7.4 §5).
+  const panelButtons = (page) => page.evaluate(() => {
+    const lines = (b) => {
+      const tops = [];
+      const walk = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        if (!n.data.trim()) continue;
+        const r = document.createRange();
+        r.selectNodeContents(n);
+        for (const rc of r.getClientRects()) if (rc.width > 0) tops.push(rc.top);
+      }
+      tops.sort((a, z) => a - z);
+      return tops.filter((t, i) => i === 0 || t - tops[i - 1] >= 3).length;
+    };
+    return [...document.querySelectorAll("#side button")]
+      .filter((b) => b.checkVisibility({ visibilityProperty: true }) && !b.closest("#move-list, .daily-plan"))
+      .map((b) => {
+        const r = b.getBoundingClientRect();
+        return { id: b.id || b.className, text: b.textContent.trim().slice(0, 24), h: Math.round(r.height * 10) / 10,
+                 w: r.width, lines: lines(b), over: b.scrollWidth - b.clientWidth };
+      });
+  });
+
+  for (const vp of SIZES) {
+    for (const lang of LANGS) {
+      const at = `7.9 ${lang} ${vp.width}×${vp.height}：`;
+      const { ctx, page, errs } = await open(lang, "pvp", "play", "wood", vp);
+      await clickSquares(page, ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6"]);
+      await page.waitForTimeout(300);
+
+      // §1a — 悔棋、提示 are the right end of the opponent's strip: on its
+      // centre line (the disc's), and flush with the frame's right edge
+      const a = await page.evaluate(() => {
+        const top = document.querySelector(".pstrip.at-top");
+        const wrap = document.getElementById("board-wrap").getBoundingClientRect();
+        const av = top.querySelector(".ps-av").getBoundingClientRect();
+        const tools = [...document.querySelectorAll("#strip-tools button")]
+          .filter((b) => getComputedStyle(b).visibility === "visible")
+          .map((b) => { const r = b.getBoundingClientRect(); return { id: b.id, mid: (r.top + r.bottom) / 2, r: r.right, h: r.height }; });
+        const chromeBtns = [...document.querySelectorAll(".chrome button")].map((b) => b.id);
+        return { inTop: !!top.querySelector("#strip-tools"), rowMid: (av.top + av.bottom) / 2, frameR: wrap.right,
+                 tools, chromeBtns };
+      });
+      assert(a.inTop, at + "§1a 悔棋/提示在对手那一行（上方的对阵条）里");
+      assert(a.tools.length === 2, at + "§1a 两步之后悔棋和提示都在（" + a.tools.map((t) => t.id).join(", ") + "）");
+      const offMid = a.tools.map((t) => Math.abs(t.mid - a.rowMid));
+      assert(offMid.every((d) => d <= 1),
+        at + "§1a 控件的垂直中线 = 对手那一行的中线 ±1px（差 " + offMid.map((d) => d.toFixed(1)).join(" / ") + "）");
+      const rightmost = Math.max(...a.tools.map((t) => t.r));
+      assert(Math.abs(rightmost - a.frameR) <= 1,
+        at + "§1a 最右一个控件的右缘 = 棋盘外框右缘 ±1px（" + rightmost.toFixed(1) + " vs " + a.frameR.toFixed(1) + "）");
+      assert(a.tools.every((t) => Math.abs(t.h - 32) < 0.5), at + "§1e 这两个控件是 --ctl-h-sm（" + a.tools.map((t) => t.h).join(", ") + "）");
+      assert(JSON.stringify(a.chromeBtns) === '["toggle-panel"]', at + "§1a 顶栏只剩 ☰（" + a.chromeBtns.join(", ") + "）");
+
+      // Two states: the live position, where 本局 is 提和 / 新局 / 认输 and
+      // English used to break 「Offer draw」; and one move back with 更多
+      // open, where 复盘 shows all four (重下 appears while replaying) and the
+      // fourth row is drawn.
+      for (const state of ["live", "back"]) {
+        if (state === "back") {
+          await page.click("#rep-prev");
+          await page.waitForTimeout(250);
+          await page.click("#more-tools");
+          await page.waitForTimeout(250);
+        }
+        const st = at + "[" + state + "] ";
+        const btns = await panelButtons(page);
+
+        // §1b — one line, in its box, every button in the panel
+        const wrapped = btns.filter((b) => b.text && (b.lines > 1 || b.over > 0));
+        assert(wrapped.length === 0,
+          st + "§1b 面板里每个按钮的文字都只有一行、不出框" +
+          (wrapped.length ? " —— " + wrapped.map((b) => b.id + "「" + b.text + "」 lines=" + b.lines + " over=" + b.over).join("；") : ""));
+        // …and the groups are equal cells; a group with a full first row
+        // reaches the column's right edge
+        const groups = await page.evaluate(() => [...document.querySelectorAll("#pane-play .fit-row")]
+          .filter((r) => r.checkVisibility())
+          .map((r) => {
+            const kids = [...r.children].filter((b) => b.checkVisibility());
+            const rr = r.getBoundingClientRect();
+            const ws = kids.map((b) => b.getBoundingClientRect().width);
+            const cols = Number(getComputedStyle(r).getPropertyValue("--cols")) || 0;
+            return { id: r.id || r.parentElement.id, n: kids.length, spread: Math.max(...ws) - Math.min(...ws), cols,
+                     filled: Math.max(...kids.map((b) => b.getBoundingClientRect().right)) - rr.right };
+          }));
+        const want = state === "live" ? ["review-actions", "game-actions"] : ["review-actions", "game-actions", "more-row"];
+        assert(want.every((id) => groups.some((g) => g.id === id)),
+          st + "§1b 这几组都在（" + groups.map((g) => g.id + ":" + g.n + "×" + g.cols + "列").join(", ") + "）");
+        for (const g of groups) {
+          assert(g.spread <= 1, st + "§1b " + g.id + " 同组按钮宽度相差 ≤ 1px（" + g.spread.toFixed(2) + "）");
+          if (g.n >= g.cols) assert(Math.abs(g.filled) <= 1,
+            st + "§1b " + g.id + " 铺满面板宽度（" + g.n + " 个 " + g.cols + " 列，右缘差 " + g.filled.toFixed(1) + "）");
+        }
+
+        // §1e — two heights among the panel's buttons, and only these two
+        const heights = [...new Set(btns.map((b) => b.h))].sort((x, y) => x - y);
+        assert(heights.length <= 2 && heights.every((h) => h === 32 || h === 36),
+          st + "§1e 面板里可见按钮的高度只有 32 / 36 两种（" +
+          heights.map((h) => h + "×" + btns.filter((b) => b.h === h).length).join("、") + "）" +
+          (heights.some((h) => h !== 32 && h !== 36)
+            ? " —— " + btns.filter((b) => b.h !== 32 && b.h !== 36).map((b) => b.id + "=" + b.h).join(", ") : ""));
+      }
+
+      // §1c — four equal cells of one bar, 36px, reached in order by Tab
+      const bar = await page.evaluate(() => {
+        const seg = document.getElementById("replay-seg");
+        const cs = getComputedStyle(seg);
+        return {
+          radius: parseFloat(cs.borderTopLeftRadius), border: cs.borderTopStyle,
+          cells: [...seg.querySelectorAll("button")].map((b) => {
+            const r = b.getBoundingClientRect();
+            return { id: b.id, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, off: b.disabled };
+          }),
+        };
+      });
+      assert(bar.cells.length === 4 && bar.border === "solid" && bar.radius > 0,
+        at + "§1c 翻棋谱是一条带圆角外框的按钮栏（" + bar.cells.length + " 格，" + bar.border + "，r=" + bar.radius + "）");
+      const cw = bar.cells.map((c) => c.w), ch = bar.cells.map((c) => c.h);
+      assert(Math.max(...cw) - Math.min(...cw) <= 1 && ch.every((h) => h === 36),
+        at + "§1c 四格同宽同高 36px（宽 " + cw.join("/") + "，高 " + ch.join("/") + "）");
+      if (vp.width === 1440 && bar.cells.every((c) => !c.off)) {
+        await page.focus("#rep-start");
+        const order = ["rep-start"];
+        const rings = [];
+        for (let i = 0; i < 3; i++) {
+          await page.keyboard.press("Tab");
+          const f = await page.evaluate(() => {
+            const e = document.activeElement, cs = getComputedStyle(e);
+            return { id: e.id, ring: cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) >= 2 };
+          });
+          order.push(f.id); rings.push(f.ring);
+        }
+        assert(order.join(",") === "rep-start,rep-prev,rep-next,rep-end",
+          at + "§1c Tab 依次到达四格（" + order.join(" → ") + "）");
+        assert(rings.every(Boolean), at + "§1c 每一格的焦点环都看得见");
+      }
+
+      // §1d — the icons carry their names when the panel is 360px or wider,
+      // and a name never runs out of its cell
+      const d = await page.evaluate(() => {
+        const side = document.getElementById("side").getBoundingClientRect().width;
+        const lbls = [...document.querySelectorAll("#tool-row .tool-lbl")]
+          .filter((l) => l.closest("button").checkVisibility());
+        return {
+          side,
+          shown: lbls.filter((l) => l.checkVisibility()).length, total: lbls.length,
+          bad: lbls.filter((l) => l.checkVisibility()).filter((l) => {
+            const b = l.closest("button").getBoundingClientRect(), r = l.getBoundingClientRect();
+            return l.scrollWidth > l.clientWidth || r.left < b.left - 0.5 || r.right > b.right + 0.5 ||
+              r.bottom > b.bottom + 0.5 || parseFloat(getComputedStyle(l).fontSize) !== 11;
+          }).map((l) => l.textContent),
+        };
+      });
+      if (d.side >= 360) {
+        assert(d.total > 0 && d.shown === d.total, at + "§1d 面板 " + Math.round(d.side) + "px ≥ 360：每个图标下有字（" + d.shown + "/" + d.total + "）");
+        assert(d.bad.length === 0, at + "§1d 11px 的字不出各自的格子" + (d.bad.length ? " —— " + d.bad.join("、") : ""));
+      } else {
+        assert(d.shown === 0, at + "§1d 面板 " + Math.round(d.side) + "px < 360：只显示图标（" + d.shown + "）");
+      }
+      assert(errs.length === 0, at + "零 JS 异常 " + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+
+  // §1e on the two reading pages — 重来/下一课 and 重做/下一题 were the 28px
+  // ones, one row under the 36px type buttons
+  for (const vp of SIZES) {
+    for (const lang of LANGS) {
+      for (const mode of ["learn", "puzzle"]) {
+        const at = `7.9 ${lang} ${vp.width}×${vp.height} ${mode}：`;
+        const { ctx, page } = await open(lang, mode, "play", "wood", vp);
+        const btns = await panelButtons(page);
+        const heights = [...new Set(btns.map((b) => b.h))].sort((x, y) => x - y);
+        assert(heights.length <= 2 && heights.every((h) => h === 32 || h === 36),
+          at + "§1e 可见按钮的高度只有 32 / 36 两种（" + heights.map((h) => h + "×" + btns.filter((b) => b.h === h).length).join("、") + "）" +
+          (heights.some((h) => h !== 32 && h !== 36) ? " —— " + btns.filter((b) => b.h !== 32 && b.h !== 36).map((b) => b.id + "=" + b.h).join(", ") : ""));
+        const wrapped = btns.filter((b) => b.text && (b.lines > 1 || b.over > 0));
+        assert(wrapped.length === 0, at + "§1b 按钮文字都只有一行" +
+          (wrapped.length ? " —— " + wrapped.map((b) => b.id + "「" + b.text + "」").join("；") : ""));
+        const ctl = await page.evaluate(() => [...document.querySelectorAll(".lesson-controls.fit-row button")]
+          .filter((b) => b.checkVisibility()).map((b) => b.getBoundingClientRect().width));
+        if (ctl.length) assert(Math.max(...ctl) - Math.min(...ctl) <= 1, at + "§1b 课程/做题那一行等宽（" + ctl.map(Math.round).join("/") + "）");
+        await ctx.close();
+      }
+    }
+  }
+
+  // §1a — ☰ opens and shuts the panel, so it stands on the panel's edge:
+  // beside it while it is open, in the window's top-right corner while it is
+  // shut; and the strip's tools follow the board when it turns
+  {
+    const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 });
+    const openR = await page.evaluate(() => ({
+      btn: document.getElementById("toggle-panel").getBoundingClientRect().right,
+      side: document.getElementById("side").getBoundingClientRect().left,
+    }));
+    assert(openR.side - openR.btn >= 0 && openR.side - openR.btn <= 12,
+      "7.9 §1a 面板开着：☰ 贴着面板的边（右缘 " + openR.btn + "，面板左缘 " + openR.side + "）");
+    await page.keyboard.press("p");
+    await page.waitForTimeout(450);
+    const shut = await page.evaluate(() => document.getElementById("toggle-panel").getBoundingClientRect().right);
+    assert(Math.abs(1440 - 8 - shut) <= 1, "7.9 §1a 面板关着：☰ 在窗口右上角（右缘 " + shut + "）");
+    await page.keyboard.press("p");
+    await page.waitForTimeout(450);
+    await page.keyboard.press("f");
+    await page.waitForTimeout(300);
+    const flipped = await page.evaluate(() => ({
+      topId: document.querySelector(".pstrip.at-top").id,
+      holder: document.getElementById("strip-tools").parentElement.id,
+    }));
+    assert(flipped.topId === "strip-w" && flipped.holder === "strip-w",
+      "7.9 §1a 翻转棋盘后，悔棋/提示跟着到上方那一条（" + flipped.holder + "）");
+    await ctx.close();
+  }
+}
 
 await browser.close();
 server.close();

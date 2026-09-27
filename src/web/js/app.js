@@ -52,6 +52,7 @@ import { ChessSrs } from "./srs.js";
 import { ChessPicker } from "./picker.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
+import { watchFitRows } from "./fit-row.js";
 import { createStore } from "./store.js";
 
   /**
@@ -6128,9 +6129,16 @@ import { createStore } from "./store.js";
     // card in and pushed the notation ~160px down, and the step forward took
     // it away again — the panel jumped on every key press. Whether there is
     // notation does not change while you walk through it, so neither does this.
-    const hasGame = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
-      sanHistory().length > 0;
-    avail(el("daily-row"), !hasGame);
+    //
+    // 7.9 §4b: and it is only ever on the two playing boards. In a lesson
+    // or a puzzle the person is already doing today's training — the card
+    // said 「学一节新课」 above the first lesson in progress and pushed the
+    // lesson ~140px down. It is for someone who does not know what to do
+    // next: the ai or pvp board with no game on it. The label below is still
+    // kept current, so the plan's step reads right when the card comes back.
+    const playing = store.session.mode === "ai" || store.session.mode === "pvp";
+    const hasGame = playing && !store.session.editor && sanHistory().length > 0;
+    avail(el("daily-row"), playing && !hasGame);
     const d = store.session.daily;
     if (!d) {
       setText(label, t("daily.btn"));
@@ -7528,6 +7536,20 @@ import { createStore } from "./store.js";
       : mode === "learn" ? !!(store.session.learn && store.session.learn.done) : false;
     const thinking = !!store.session.engineThinking || !!(store.session.learn && store.session.learn.engineBusy);
     const score = { "1-0": { w: "1", b: "0" }, "0-1": { w: "0", b: "1" }, "1/2-1/2": { w: "½", b: "½" } }[token];
+    // 7.9 §1a: 悔棋 / 提示 sit on the opponent's line, which is whichever
+    // strip is at the top. They move only when the board turns — a flip, or
+    // 自动翻转 after a move — and both of those come from a click or a key
+    // that has already finished, never between a pointerdown and its
+    // pointerup (7.6). Moving a node drops its focus, so the key a keyboard
+    // player just pressed gets it back.
+    const tools = el("strip-tools");
+    const topSide = bottom === "w" ? "b" : "w";
+    const topStrip = el("strip-" + topSide);
+    if (tools && topStrip && tools.parentNode !== topStrip) {
+      const had = tools.contains(document.activeElement) ? document.activeElement : null;
+      topStrip.insertBefore(tools, el("result-" + topSide));
+      if (had) had.focus({ preventScroll: true });
+    }
     for (const side of ["w", "b"]) {
       const strip = el("strip-" + side);
       if (!strip) continue;
@@ -7981,7 +8003,9 @@ import { createStore } from "./store.js";
     const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
       : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
-      if (b.id !== wants) b.classList.remove("primary");
+      // 7.9 §4a: the record page's empty library spends its own fill, on a
+      // tab of its own (library-ui.js renderLibrary) — not this function's
+      if (b.id !== wants && !b.closest("#pane-record")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
@@ -10071,6 +10095,8 @@ import { createStore } from "./store.js";
     if (b) setFlipped(b.dataset.orient === "b");
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
+  // 7.9 §1b: the action groups are equal cells whose labels never wrap
+  watchFitRows(document.getElementById("side"));
   const moreBtn = document.getElementById("more-tools");
   if (moreBtn) {
     moreBtn.onclick = () => {
@@ -10080,9 +10106,14 @@ import { createStore } from "./store.js";
       row.hidden = !show;
       moreBtn.setAttribute("aria-expanded", show ? "true" : "false");
       // the key moves with the state, so a language switch re-renders the
-      // label that matches what the disclosure is actually doing
-      moreBtn.setAttribute("data-i18n", show ? "act.less" : "act.more");
-      moreBtn.textContent = t(show ? "act.less" : "act.more");
+      // label that matches what the disclosure is actually doing. 7.9 §1d:
+      // on the label and the name, not on the button — writing the button's
+      // text threw its icon away and left 「收起」 in a 36px square.
+      const key = show ? "act.less" : "act.more";
+      const lbl = moreBtn.querySelector(".tool-lbl");
+      if (lbl) { lbl.setAttribute("data-i18n", key); lbl.textContent = t(key); }
+      moreBtn.setAttribute("data-i18n-aria", key);
+      moreBtn.setAttribute("aria-label", t(key));
     };
   }
   const tabRow = document.querySelector(".side-tabs");

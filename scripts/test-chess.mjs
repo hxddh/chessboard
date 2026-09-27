@@ -8,7 +8,7 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
 import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
-import { measureMarks, markChroma, LAST_CHROMA_CEILING, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
+import { measureMarks, markChroma, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -1693,8 +1693,10 @@ for (const lang of CONTENT_LANGS) {
       "every control height comes from a token" + (stray.length ? " — off it: " + [...new Set(stray)].join(", ") : ""));
     for (const tokName of ["--row-h", "--row-h-sm", "--label-h"])
       assert(new RegExp(tokName + ":\\s*\\d+px").test(stripped), tokName + " is defined");
-    const tabH = /\.side-tabs button\[role="tab"\]\s*\{[^}]*min-height:\s*var\(--row-h\)/.test(stripped);
-    assert(tabH, "the tab row's height comes from --row-h");
+    // 7.9 §1e: a tab is a button, so its height is the buttons' token now
+    // (the same 36px, see the two-heights guard below)
+    const tabH = /\.side-tabs button\[role="tab"\]\s*\{[^}]*min-height:\s*var\(--ctl-h\)/.test(stripped);
+    assert(tabH, "the tab row's height comes from --ctl-h");
   }
 
   // The chrome is one strip, so everything standing in it is one height and one
@@ -1704,13 +1706,14 @@ for (const lang of CONTENT_LANGS) {
   // whatever the text measured. Nothing in the bar shared a unit, which is why
   // it could not be aligned, only nudged.
   {
-    assert(/--chrome-ctl-h:\s*\d+px/.test(stripped), "the chrome has one control-height token");
     // 7.7 (v7-7-plan §2): the status pill left the bar — whose move it is is
-    // the lit player strip now, and the sentence is .sr-only — so the bar's
-    // controls are the two tools and the panel key.
-    for (const sel of [/\.chrome \.tool-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
-                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
-      assert(sel.test(stripped), "…and every control in it is that height — " + sel.source.slice(0, 22));
+    // the lit player strip now, and the sentence is .sr-only. 7.9 §1a: 悔棋
+    // and 提示 left it too, for the opponent's strip, so the bar holds ☰
+    // alone, at the small control height — which is the bar's own 32px.
+    assert(/\.chrome \.icon-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
+      "the bar's one control is the small control height");
+    assert(/\.ps-tools \.tool-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
+      "…and so are the two tools on the opponent's strip (7.9 §1a)");
     const chrome = /\n    \.chrome \{([\s\S]*?)\n    \}/.exec(stripped);
     assert(chrome, ".chrome is styled");
     const pad = /padding:\s*([^;]+);/.exec(chrome[1]);
@@ -1719,18 +1722,62 @@ for (const lang of CONTENT_LANGS) {
   }
 
   // the replay bar was the heaviest object in a panel of text links: a filled,
-  // bordered slab of 10800px², nine times the area of anything else in it
+  // bordered slab of 10800px², nine times the area of anything else in it.
+  // 7.7 took it down to a hairline and four bare glyphs; 7.9 §1c gave it back
+  // an edge — one outlined bar in four cells, Lichess's shape — but still no
+  // fill: the weight is the outline, not a slab.
   {
     const bar = /\.replay-bar\s*\{([^}]*)\}/.exec(stripped);
     assert(!!bar, ".replay-bar is styled");
     assert(/background:\s*transparent/.test(bar[1]), "the replay bar carries no fill");
-    assert(!/\bborder:\s*1px/.test(bar[1]), "the replay bar is a rule, not a box");
+    assert(/\bborder:\s*1px/.test(bar[1]) && /border-radius:\s*var\(--radius-/.test(bar[1]),
+      "…and is one rounded container (7.9 §1c)");
+    assert(/repeat\(4,\s*minmax\(0,\s*1fr\)\)/.test(bar[1]), "…of four equal cells");
+    const cell = /\.replay-bar button\s*\{([^}]*)\}/.exec(stripped);
+    assert(cell && /transition:[^;]*var\(--dur-quick\) var\(--ease\)/.test(cell[1]),
+      "…whose hover and press use --dur-quick and the one curve");
+    assert(/\.replay-bar button:hover:not\(:disabled\)/.test(stripped),
+      "…and a disabled cell answers no hover");
+  }
+
+  // 7.9 §1e: two control heights, and no third — the same kind of guard as
+  // the type scale and the one easing curve. 7.8.0 measured 36px buttons (18
+  // of them) beside 28px ones (悔棋/提示 over the board, 重来/下一课, 重做/
+  // 下一题), and on the puzzle page the two sat one under the other. Every
+  // rule that sizes a button takes its height from --ctl-h or --ctl-h-sm.
+  // What counts as a button is the selector's last compound: `button`, a
+  // `*-btn` class, or one of the button classes that do not say so in their
+  // name. A pseudo-element is not the button (#theme-seg's swatch), and the
+  // promotion picker is squares of the board, sized as 12.5% of it.
+  {
+    const tok = (n) => new RegExp(n + ":\\s*(\\d+)px").exec(stripped);
+    const big = tok("--ctl-h"), small = tok("--ctl-h-sm");
+    assert(big && big[1] === "36" && small && small[1] === "32",
+      "two control-height tokens: --ctl-h 36px and --ctl-h-sm 32px (" +
+      (big ? big[1] : "?") + " / " + (small ? small[1] : "?") + ")");
+    assert(!/--chrome-ctl-h/.test(stripped), "…and the chrome's 28px token is gone");
+    const BUTTON = /(^|[\s>+~(,])(button|\.[\w-]+-btn|\.tool-ic|\.tool-txt|\.go-close|\.daily-head)(?![\w-])/;
+    const EXEMPT = /\.promo-row|::/;
+    const off = [];
+    for (const m of stripped.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const sels = m[1].split(",").map((x) => x.trim()).filter(Boolean);
+      const last = (sel) => sel.split(/\s*[\s>+~]\s*(?![^(]*\))/).pop();
+      if (!sels.some((sel) => !EXEMPT.test(sel) && BUTTON.test(" " + last(sel)))) continue;
+      for (const d of m[2].matchAll(/(?<![\w-])(height|min-height)\s*:\s*([^;]+);/g)) {
+        const v = d[2].trim();
+        if (!/^(var\(--ctl-h(-sm)?\)|auto)$/.test(v)) off.push(m[1].trim().replace(/\s+/g, " ") + " { " + d[1] + ": " + v + " }");
+      }
+    }
+    assert(off.length === 0,
+      "every button height comes from --ctl-h or --ctl-h-sm" + (off.length ? " — off it: " + off.join(" ;; ") : ""));
   }
 
   // type: six steps, and no half pixels
   // 6.0: the same seven steps, in rem (16px root) so the text-size setting
   // scales the whole sheet together (v6-plan Q3.6)
-  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.9375rem", "1rem", "1.1875rem", "1.875rem"]);
+  // 7.9 §2a: the panel moved up a step — 12px (0.75rem) left the scale and
+  // 14px (0.875rem) took its place. Still seven.
+  const TYPE = new Set(["0.6875rem", "0.8125rem", "0.875rem", "0.9375rem", "1rem", "1.1875rem", "1.875rem"]);
   const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
@@ -1740,6 +1787,29 @@ for (const lang of CONTENT_LANGS) {
   // The membership sets above are the scale, so widening one is how a step
   // gets added: this makes that edit fail here rather than pass quietly.
   assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
+
+  // The bundle targets Safari 15 (scripts/bundle.mjs), and container queries
+  // arrived in Safari 16: a rule inside @container is simply not there on
+  // 15, so 7.9 §1d's tool labels never showed (Codex, #84). Width-dependent
+  // rules key on a class the page sets instead.
+  assert(!/@container\b|\bcontainer(?:-type|-name)?\s*:/.test(stripped),
+    "styles.css uses no container queries — the bundle targets Safari 15");
+
+  // 7.9 §2b: numbers are the interface face with tabular figures. The mono
+  // stack made every counter, the accuracy figure and the clock look like
+  // terminal output beside the prose; this keeps it from coming back through
+  // the token, and keeps every user of the token tabular.
+  {
+    const fn = /--font-num:\s*([^;]+);/.exec(stripped);
+    assert(!!fn, "--font-num is declared");
+    const monoNames = /SF Mono|Menlo|Consolas|ui-monospace|monospace/i;
+    const stackOf = (v) => v.replace(/var\(--font-ui\)/, ((/--font-ui:\s*([^;]+);/.exec(stripped)) || [, ""])[1]);
+    assert(fn && !monoNames.test(stackOf(fn[1])),
+      "--font-num names no monospace family (" + (fn ? fn[1].trim() : "") + ")");
+    const users = [...stripped.matchAll(/\{([^{}]*font-family: var\(--font-num\)[^{}]*)\}/g)].map((m) => m[1]);
+    assert(users.length > 0 && users.every((b) => /font-variant-numeric: tabular-nums/.test(b)),
+      "…and every rule that sets it asks for tabular figures (" + users.length + " rules)");
+  }
   assert(SPACE.size === 9, "the spacing scale still has nine steps (" + SPACE.size + ")");
 
   // leading: three steps, declared as tokens. 1.12 collapsed font-size and
@@ -2169,6 +2239,9 @@ for (const lang of CONTENT_LANGS) {
       }
       assert(now[b].sep >= SEP_FLOOR,
         b + ": every two marks stay apart on the same square (closest ΔE00 " + now[b].sep + ", " + now[b].sepPair + ")");
+      // 7.9 §3: quieter marks, not closer ones — no board below what 7.8.0 had
+      assert(now[b].sep >= SEP_FLOOR_BY_BOARD[b],
+        b + ": the marks at least as far apart as 7.8.0 (closest ΔE00 " + now[b].sep + " ≥ " + SEP_FLOOR_BY_BOARD[b] + ")");
     }
     // …and what docs/measured.json says is what ships: a retune without a
     // re-record is a stale number, and a stale number is worse than none
@@ -2182,14 +2255,22 @@ for (const lang of CONTENT_LANGS) {
   // Lichess's default board measured the same way (C* 52.4 — see
   // LAST_CHROMA_CEILING) and sits under it, so a last move reads as a tint,
   // not as a highlighter pen. Recorded as markChroma beside markHue.
+  // 7.9 §3: every mark has a ceiling — the selection had run to 57, louder
+  // than the last move it sits one step above, and the notebook hint to 68.
+  // Last and selection ≤ 47, check and hint ≤ 52 (CHROMA_CEILING).
   {
     const now = markChroma(css2);
     for (const b of MARK_BOARDS) {
       assert(now[b].last <= LAST_CHROMA_CEILING,
         b + " last move: a soft tint over the light square (C* " + now[b].last + " ≤ " + LAST_CHROMA_CEILING + ")");
+      for (const k of MARKS) {
+        assert(now[b][k] <= CHROMA_CEILING[k],
+          b + " " + k + ": under its chroma ceiling over the light square (C* " + now[b][k] + " ≤ " + CHROMA_CEILING[k] + ")");
+      }
     }
     const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).markChroma;
-    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now) && recorded.ceiling.last === LAST_CHROMA_CEILING,
+    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now) &&
+      JSON.stringify(recorded.ceiling) === JSON.stringify(CHROMA_CEILING),
       "docs/measured.json markChroma.after is these palettes (re-run scripts/measure-marks.mjs --record)");
   }
 }
@@ -4164,7 +4245,7 @@ for (const lang of CONTENT_LANGS) {
     // same three symbols in every chess-playing language. They label the row
     // whose value is 「3 · 2 · 1」, term lining up with term; spelling them out
     // as words is what the row is getting away from.
-    ja: new Set(["act.pgnCopy", "act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
+    ja: new Set(["act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
       "learn.lessonPre", "ed.crK", "ed.crQ", "rv.marks",
       "tip.diffNormal", "tip.diffHard", "lm.tipSep"]),
   };
@@ -4554,8 +4635,18 @@ for (const lang of CONTENT_LANGS) {
     assert(/san\.slice\(1\)/.test(ws), "…the rest of the move is text");
     const cssM2 = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const num = /\.mlnum \{([^}]*)\}/.exec(cssM2);
-    assert(num && /font-size: 0\.8125rem/.test(num[1]),
-      "the move number is the same size as the move beside it");
+    const mvRule = /\n\s*\.mlmove \{([^}]*)\}/.exec(cssM2);
+    const sizeOf = (r) => ((r && /font-size: ([\d.]+rem)/.exec(r[1])) || [])[1];
+    // 7.9 §2a: 15px now, both of them
+    assert(num && sizeOf(num) === "0.9375rem" && sizeOf(num) === sizeOf(mvRule),
+      "the move number is the same size as the move beside it (" + sizeOf(num) + " / " + sizeOf(mvRule) + ")");
+    // 7.9 §2c: no chip behind the number, and set like the move so the
+    // baselines agree (the measurement is in test-layout-e2e)
+    assert(num && !/background/.test(num[1]) && !/border-radius/.test(num[1]),
+      "…and it stands on the page, not in a box");
+    assert(num && /padding: 4px /.test(num[1]) && /height: var\(--row-h-sm\)/.test(num[1]) &&
+      /line-height: var\(--lh-tight\)/.test(num[1]),
+      "…set in the move's box and leading, so the two share a baseline");
     assert(num && /tabular-nums/.test(num[1]), "…and still a column of figures");
     assert(!/\.mlnum num/.test(appSrc), "…without borrowing the mono stack for it");
   }
@@ -4688,7 +4779,9 @@ for (const lang of CONTENT_LANGS) {
     const htmlC = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
     // 7.2: the 棋谱库 markup is built in library-ui.js now, so the app's
     // source alone no longer accounts for every class it wears
-    const appC = appSrc + fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8");
+    // 7.9: and fit-row.js sets the panel's width class (.side-wide)
+    const appC = appSrc + fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8") +
+      fs.readFileSync(path.join(root, "src/web/js/fit-row.js"), "utf8");
     // class selectors the stylesheet defines, minus state/modifier suffixes
     const defined = new Set([...cssC.matchAll(/^\s*\.([a-z][a-z0-9-]*)/gm)].map((m) => m[1]));
     const orphans = [];

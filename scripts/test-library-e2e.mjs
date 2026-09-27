@@ -165,6 +165,55 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await ctx.close();
 }
 
+// --- 1b. 7.9 §4a:记录页只有一种空状态 ---------------------------------------
+// 7.8.0 的同一页上有三种:实底的入口卡片、虚线卡片、卡片外面左对齐的裸按钮
+// (导入棋谱文件 / 按白方导入 / 按黑方导入,各自一个宽度)。现在每一处空状态
+// 都是虚线卡片,按钮在卡片里,每张至多一个主按钮;开局书的两个导入并排等宽。
+{
+  const ctx = await freshContext();
+  const { page, errs } = await open(ctx);
+  const r = await page.evaluate(() => {
+    const vis = (e) => !!e.offsetParent;
+    const CARD = ".rec-entry, .rec-block.empty, .empty-note";
+    const cards = [...document.querySelectorAll("#pane-record " + CARD)].filter(vis)
+      .filter((c) => !c.parentElement.closest(".rec-block.empty"));
+    const inside = (b, c) => {
+      const x = b.getBoundingClientRect(), y = c.getBoundingClientRect();
+      return x.left >= y.left - 0.5 && x.right <= y.right + 0.5 && x.top >= y.top - 0.5 && x.bottom <= y.bottom + 0.5;
+    };
+    // the empty sections and everything that belongs to them, headings included
+    const scope = ["record-empty", "stats-body", "lib-block", "rep-block", "hist-body", "hist-open"]
+      .map((id) => document.getElementById(id));
+    const buttons = scope.flatMap((el) => el.matches("button") ? [el] : [...el.querySelectorAll("button")]).filter(vis);
+    return {
+      cards: cards.map((c) => ({ id: c.id || c.parentElement.id, dashed: getComputedStyle(c).borderTopStyle,
+        primaries: [...c.querySelectorAll(".primary")].filter(vis).length })),
+      outside: buttons.filter((b) => !cards.some((c) => c.contains(b) && inside(b, c))).map((b) => b.id || b.textContent.trim()),
+      repBtns: ["rep-import-w", "rep-import-b"].map((id) => document.getElementById(id).getBoundingClientRect())
+        .map((x) => ({ w: x.width, top: x.top })),
+      libPrimary: document.getElementById("lib-import").classList.contains("primary"),
+    };
+  });
+  assert(r.cards.length >= 5, "§4a 全新档案的记录页:入口、统计、棋谱库、开局书、对局历史,五张空状态卡片",
+    JSON.stringify(r.cards));
+  assert(r.cards.every((c) => c.dashed === "dashed"), "§4a …全是同一种:虚线卡片", JSON.stringify(r.cards));
+  assert(r.cards.every((c) => c.primaries <= 1), "§4a …每张至多一个主按钮", JSON.stringify(r.cards));
+  assert(r.outside.length === 0, "§4a …卡片外面没有按钮", r.outside.join(", "));
+  assert(r.libPrimary, "§4a 空棋谱库里「导入棋谱文件」是主按钮");
+  assert(Math.abs(r.repBtns[0].w - r.repBtns[1].w) <= 1 && Math.abs(r.repBtns[0].top - r.repBtns[1].top) <= 1,
+    "§4a 开局书的两个导入在卡片里并排、等宽", JSON.stringify(r.repBtns));
+  // …and once there is a library the card gives way and the fill with it
+  await importFile(page, PGN);
+  const after = await page.evaluate(() => ({
+    empty: document.getElementById("lib-block").classList.contains("empty"),
+    primary: document.getElementById("lib-import").classList.contains("primary"),
+  }));
+  assert(!after.empty && !after.primary, "§4a 导入之后棋谱库不再是空状态,「导入棋谱文件」回到次要按钮",
+    JSON.stringify(after));
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 2. 诊断:够不够样本,是这一页唯一要紧的事 -------------------------------
 {
   // 25 局已分析的棋,白方在残局每手亏 120 厘兵、开局只亏 5,每局第 40 回合

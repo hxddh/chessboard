@@ -33,7 +33,7 @@
     "changedBestPctSd": 16.5
   },
   "markChroma": {
-    "what": "每种棋盘标记叠在浅格上的 CIELAB 色度 C*（越大越艳）。上一步标记的上限以 Lichess 默认棋盘的上一步高亮（rgba(155,199,0,.41) 叠在 #f0d9b5 上）为参照，取其约九成，不照抄数值",
+    "what": "每种棋盘标记叠在浅格上的 CIELAB 色度 C*（越大越艳）。上一步标记的上限以 Lichess 默认棋盘的上一步高亮（rgba(155,199,0,.41) 叠在 #f0d9b5 上）为参照，取其约九成，不照抄数值；7.9 §3 给四种标记都定了上限：上一步、选中 ≤ 47，将军、提示 ≤ 52（参照值本身取整）",
     "script": "scripts/measure-marks.mjs --record",
     "metric": "C* = √(a*² + b*²)，sRGB → CIELAB D65；标记按 source-over 叠在 --sq-light 上",
     "marks": [
@@ -46,12 +46,15 @@
       "lichessLastOnLight": 52.4
     },
     "ceiling": {
-      "last": 47
+      "last": 47,
+      "sel": 47,
+      "check": 52,
+      "hint": 52
     },
-    "beforeRef": "721fe05",
+    "beforeRef": "e94abfe",
     "before": {
       "wood": {
-        "last": 54.1,
+        "last": 43.9,
         "sel": 56.9,
         "check": 47.2,
         "hint": 26.3
@@ -78,7 +81,7 @@
     "after": {
       "wood": {
         "last": 43.9,
-        "sel": 56.9,
+        "sel": 42.3,
         "check": 47.2,
         "hint": 26.3
       },
@@ -90,20 +93,20 @@
       },
       "day": {
         "last": 46.5,
-        "sel": 57.2,
-        "check": 53.7,
+        "sel": 44.8,
+        "check": 49.9,
         "hint": 33.2
       },
       "notebook": {
         "last": 26.4,
         "sel": 30,
         "check": 49.7,
-        "hint": 68
+        "hint": 49.9
       }
     }
   },
   "markHue": {
-    "what": "每种棋盘标记叠在浅格与深格上的 CIEDE2000：dE 为整体色差（大半是明度，本就该不同），dH 为其中的色相项 ΔH'/(kH·SH)（要小）；sep 为同一格上两种不同标记之间的最小 ΔE00（要大）",
+    "what": "每种棋盘标记叠在浅格与深格上的 CIEDE2000：dE 为整体色差（大半是明度，本就该不同），dH 为其中的色相项 ΔH'/(kH·SH)（要小）；sep 为同一格上两种不同标记之间的最小 ΔE00（要大；7.9 §3：不得低于 7.8.0 的值，见 sepFloor）",
     "script": "scripts/measure-marks.mjs --record",
     "metric": "CIEDE2000, sRGB → CIELAB D65, kL = kC = kH = 1",
     "marks": [
@@ -112,98 +115,14 @@
       "check",
       "hint"
     ],
-    "beforeRef": "75a3560",
-    "before": {
-      "wood": {
-        "marks": {
-          "last": {
-            "dE": 17,
-            "dH": 5.3
-          },
-          "sel": {
-            "dE": 15.5,
-            "dH": 5.6
-          },
-          "check": {
-            "dE": 11.5,
-            "dH": 0.3
-          },
-          "hint": {
-            "dE": 12.9,
-            "dH": 2.3
-          }
-        },
-        "sep": 9.1,
-        "sepPair": "last/sel on light"
-      },
-      "night": {
-        "marks": {
-          "last": {
-            "dE": 13.7,
-            "dH": 0.1
-          },
-          "sel": {
-            "dE": 17.1,
-            "dH": 5.7
-          },
-          "check": {
-            "dE": 11.9,
-            "dH": 2.2
-          },
-          "hint": {
-            "dE": 10.9,
-            "dH": 0.4
-          }
-        },
-        "sep": 20,
-        "sepPair": "last/sel on dark"
-      },
-      "day": {
-        "marks": {
-          "last": {
-            "dE": 12.5,
-            "dH": 5.4
-          },
-          "sel": {
-            "dE": 12.3,
-            "dH": 4.8
-          },
-          "check": {
-            "dE": 10.2,
-            "dH": 2.1
-          },
-          "hint": {
-            "dE": 11.3,
-            "dH": 3.8
-          }
-        },
-        "sep": 10.3,
-        "sepPair": "last/sel on light"
-      },
-      "notebook": {
-        "marks": {
-          "last": {
-            "dE": 14.8,
-            "dH": 0.1
-          },
-          "sel": {
-            "dE": 14.6,
-            "dH": 2.4
-          },
-          "check": {
-            "dE": 11.6,
-            "dH": 2.5
-          },
-          "hint": {
-            "dE": 9.6,
-            "dH": 1.4
-          }
-        },
-        "sep": 15.4,
-        "sepPair": "sel/check on dark"
-      }
+    "sepFloor": {
+      "wood": 10.9,
+      "night": 13,
+      "day": 10.1,
+      "notebook": 11
     },
-    "after": {
+    "beforeRef": "e94abfe",
+    "before": {
       "wood": {
         "marks": {
           "last": {
@@ -287,6 +206,96 @@
           "hint": {
             "dE": 7.7,
             "dH": 0.6
+          }
+        },
+        "sep": 11,
+        "sepPair": "last/sel on dark"
+      }
+    },
+    "after": {
+      "wood": {
+        "marks": {
+          "last": {
+            "dE": 16,
+            "dH": 4.2
+          },
+          "sel": {
+            "dE": 13.7,
+            "dH": 2.8
+          },
+          "check": {
+            "dE": 10.9,
+            "dH": 0
+          },
+          "hint": {
+            "dE": 11.4,
+            "dH": 1.6
+          }
+        },
+        "sep": 12.2,
+        "sepPair": "last/sel on dark"
+      },
+      "night": {
+        "marks": {
+          "last": {
+            "dE": 13.7,
+            "dH": 0
+          },
+          "sel": {
+            "dE": 11.6,
+            "dH": 0.5
+          },
+          "check": {
+            "dE": 12.8,
+            "dH": 1.8
+          },
+          "hint": {
+            "dE": 12.7,
+            "dH": 0
+          }
+        },
+        "sep": 13,
+        "sepPair": "last/sel on dark"
+      },
+      "day": {
+        "marks": {
+          "last": {
+            "dE": 12.5,
+            "dH": 4.6
+          },
+          "sel": {
+            "dE": 10.8,
+            "dH": 3.3
+          },
+          "check": {
+            "dE": 9.2,
+            "dH": 1.9
+          },
+          "hint": {
+            "dE": 10.2,
+            "dH": 0.4
+          }
+        },
+        "sep": 13.9,
+        "sepPair": "last/sel on dark"
+      },
+      "notebook": {
+        "marks": {
+          "last": {
+            "dE": 14.6,
+            "dH": 0
+          },
+          "sel": {
+            "dE": 12.1,
+            "dH": 0.3
+          },
+          "check": {
+            "dE": 10.9,
+            "dH": 1.5
+          },
+          "hint": {
+            "dE": 8,
+            "dH": 1.4
           }
         },
         "sep": 11,

@@ -6,13 +6,17 @@
  * 做法（设计约束「内容翻译表按 id 取」）。
  *
  * 收哪些不是猜的：scripts/test-eco.mjs 把本应用自己的数据 —— 开局书 195 条
- * 线的每一步、十盘经典对局、课程与题库里的局面 —— 逐一查表，数出仍显示英文
- * 的变例段各出现多少次，取前 60 段（同次数时按它在全表里出现的条数）。
+ * 线的每一步、十盘经典对局、课程与题库里的局面 —— 逐一查表，数出开局书没有
+ * 整句译过的名字里，每个变例段出现多少次。7.8 收了最常见的 60 段；7.9（v7-9-plan
+ * §5）收全：出现过的 137 段（共 387 次）每一段都要有译名，或登记为没有通行叫法。
  * 译名沿用开局书（openings.js）已有的写法；中文棋界没有通行叫法的不硬译，
- * 写在测试的 NO_ESTABLISHED_NAME 里，照旧显示英文。表外的段也照旧是英文。
+ * 写在测试的 NO_ESTABLISHED_NAME 里，照旧显示英文。
  *
- * 「炸肝攻击」不在前 60 段里（本应用的数据里没有这盘棋），是计划点名的例子，
- * 单独收下。
+ * 一个名字不半中半英（7.9）：冒号之后只要有一段不在本表里（表外的段，或登记为
+ * 没有通行叫法的段），整个变例部分都显示英文，族名仍是中文 —— 见 eco-lookup.js
+ * 的 variationName()。着法记号（「e6 型」）不算英文。
+ *
+ * 「炸肝攻击」不在本应用的数据里（没有这盘棋），是 7.8 计划点名的例子，单独收下。
  * @module openings-variation-zh
  */
   export const OPENING_VARIATIONS_ZH = {
@@ -55,7 +59,7 @@
     "Alapin Variation": "阿拉平变例",
     "Four Pawns Attack": "四兵攻击",
     "Kieseritzky Gambit": "基泽利茨基弃兵",
-    "Chigorin Variation": "契戈林变例",
+    "Chigorin Variation": "奇戈林变例",
     "Two Knights Variation": "双马变例",
     "Greco Gambit": "格列柯弃兵",
     "Accelerated Dragon": "加速龙式",
@@ -70,4 +74,73 @@
     "Winawer Variation": "维纳韦尔变例",
     "Tarrasch Variation": "塔拉什变例",
     "Fried Liver Attack": "炸肝攻击",
+    // 7.9（v7-9-plan §5）：本应用数据里出现的其余各段
+    "Reversed Sicilian": "反西西里",
+    "Fianchetto Line": "侧翼出象走法",
+    "Three Knights Variation": "三马变例",
+    "Fully Accepted Variation": "完全接受变例",
+    "Yugoslav": "南斯拉夫变例",
+    "King's Pawn Line": "王兵走法",
+    "Traditional Variation": "传统变例",
+    "Semi-Leningrad Variation": "半列宁格勒变例",
+    "Ilyin-Zhenevsky Variation": "伊林-热涅夫斯基变例",
+    "Standard Line": "标准走法",
+    "Standard Defense": "标准防御",
+    "Quiet System": "平稳体系",
+    "Panov Attack": "帕诺夫进攻",
+    "Smith-Morra Gambit Accepted": "接受史密斯-莫拉弃兵",
+    "Traditional": "传统变例",
+    "Lasker-Pelikan Variation": "拉斯克-佩利坎变例",
+    "Sveshnikov Variation": "斯维什尼科夫变例",
+    "English Attack": "英国式攻击",
+    "Early Deviations": "早期变着",
+    "King's Indian Attack": "王翼印度攻击",
+    "Paulsen Attack": "保尔森攻击",
+    "Open System": "开放体系",
+    "King's Knight's Gambit": "王马弃兵",
+    "Classical Attack": "古典攻击",
+    "Scotch Gambit": "苏格兰弃兵",
+    "Scotch Variation": "苏格兰变例",
+    "Double Spanish": "双西班牙变例",
+    "Normal": "常规变例",
+    "Knight Attack": "骑士进攻",
+    "Bishop Check Line": "象将军走法",
+    "London System": "伦敦体系",
+    "with e6": "e6 型",
+    "Symmetrical Line": "对称走法",
+    "Two Knights Attack": "双马攻击",
+    "Classical System": "古典体系",
+    "Dutch Variation": "荷兰变例",
+    "Traditional System": "传统体系",
+    "Accelerated Move Order": "加速走法",
+    "Noteboom Variation": "诺特博姆变例",
+    "Tarrasch Defense": "塔拉什防御",
+    "Rubinstein System": "鲁宾斯坦体系",
+    "Positional Variation": "局面型变例",
+    "Chigorin Defense": "奇戈林防御",
+    "Semi-Meran Variation": "半梅兰变例",
+    "Meran Variation": "梅兰变例",
+    "Tartakower Defense": "塔尔塔科维尔防御",
+    "Open Defense": "开放防御",
+    "Classical Line": "古典走法",
+    "Quiet Line": "平稳走法",
+    "Check Variation": "将军变例",
+    "Exchange Line": "交换走法",
+    "Immediate Fianchetto": "立即侧翼出象",
+    "Classical Fianchetto": "古典侧翼出象",
+    "Classical Main Line": "古典主变",
+    "Stonewall Variation": "石墙变例",
+    "Closed Variation": "封闭变例",
+    "Rare Defenses": "少见防御",
+    "Aronin-Taimanov Defense": "阿罗宁-泰马诺夫防御",
+    "Center Attack": "中心攻击",
+    "Traditional Line": "传统走法",
+    "Giuoco Piano": "朱奥科·皮亚诺",
+    "Greco's Attack": "格列柯攻击",
+    "Pillsbury Variation": "皮尔斯伯里变例",
+    "Marshall Attack": "马歇尔攻击",
+    "Original Marshall Attack": "原始马歇尔攻击",
+    "Anglo-Indian Defense": "英印防御",
+    "King's Knight Variation": "王马变例",
+    "Bogoljubow Defense": "博戈留波夫防御",
   };

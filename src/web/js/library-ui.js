@@ -561,9 +561,16 @@ export function createLibraryUI(d) {
     // height here, or WebKit loses the click.
     const lines = [];
     const line = (text, cls) => { lines.push({ text, cls: cls || "hint" }); };
+    // 7.9 §4a: empty, the section is one dashed card with 导入棋谱文件
+    // inside it, and that button is the page's primary (see .rec-block).
+    // Classes only — the button itself is never rebuilt (7.6).
+    const block = doc.getElementById("lib-block");
+    if (block) block.classList.toggle("empty", !list.length);
+    const imp = doc.getElementById("lib-import");
+    if (imp) imp.classList.toggle("primary", !list.length);
     if (!list.length) {
       // 7.7 (v7-7-plan §3): an empty state — icon, one line, and 导入棋谱文件
-      // right under it (see .empty-note)
+      // (see .empty-note)
       putLines(body, [{ text: t("lib.empty"), cls: "hint empty-note" }]);
     } else {
       const claimed = list.filter((g) => g.side).length;

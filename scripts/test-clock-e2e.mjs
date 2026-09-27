@@ -113,6 +113,33 @@ const running = await clockSecs();
 const moved = Math.max(...after.map((v, i) => v - (running[i] ?? v)));
 chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${moved} 秒`);
 
+// --- 7.9 §2b：棋钟走字时宽度不跳 --------------------------------------------
+// 数字从等宽字体换成了正文字体加 tabular-nums。换了之后，「等宽」全靠这个
+// 字体特性真的生效：走 10 秒，末位把 0–9 扫一遍，量正在走的那只钟的盒子宽度
+// 和数字本身（Range）的宽度，最大减最小都 ≤ 0.5px。
+{
+  const widths = { box: [], text: [] };
+  const faces = new Set();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 10000) {
+    const w = await pg.evaluate(() => {
+      const c = document.querySelector('#clock-w.active, #clock-b.active') || document.getElementById('clock-b');
+      const rg = document.createRange(); rg.selectNodeContents(c);
+      return { box: c.getBoundingClientRect().width, text: rg.getBoundingClientRect().width, t: c.textContent,
+               face: getComputedStyle(c).fontFamily.split(',')[0], weight: getComputedStyle(c).fontWeight };
+    });
+    widths.box.push(w.box); widths.text.push(w.text); faces.add(w.face + ' ' + w.weight + ' ' + w.t.length);
+    await pg.waitForTimeout(250);
+  }
+  const spread = (a) => Math.max(...a) - Math.min(...a);
+  chk(widths.box.length >= 20 && spread(widths.box) <= 0.5 && spread(widths.text) <= 0.5,
+    '棋钟走 10 秒,宽度不跳(≤ 0.5px)',
+    `盒子 ${spread(widths.box).toFixed(2)}px、数字 ${spread(widths.text).toFixed(2)}px,${widths.box.length} 次读数`);
+  const face = [...faces][0] || '';
+  chk(!/Mono|Menlo|Consolas|monospace/i.test(face) && /\b(600|700)\b/.test(face),
+    '…用的是正文字体,仍然加粗', face);
+}
+
 // --- 加秒、旗落,以及旗落之后 ------------------------------------------------
 // 这个套件此前只回答一个问题:切走之后时钟会不会空跑。棋钟自己的实战面 ——
 // 走一步加不加秒、时间真的走光了会怎样、走光之后还能不能继续走 —— 一条都没
