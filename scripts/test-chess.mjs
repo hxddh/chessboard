@@ -135,7 +135,7 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js"];
+const APP_MODULES = ["app.js", "settings-ui.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -6714,10 +6714,28 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 11808; // 11764 when drawn; +44 from §5 (the M1 small fixes), which landed alongside
+  const APP_JS_LINE_CEILING = 11462; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js (M2)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
+}
+
+// --- v8-0-plan F4 (M2): the settings page lives in settings-ui.js ----------
+// The panel's settings code — the view that paints every segment and switch,
+// the theme, and the handlers behind them — is one module with its
+// dependencies handed in (createLibraryUI's shape). app.js keeps a one-line
+// door for each of the names the rest of it calls.
+{
+  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
+  assert(WEB_MODULES.has("settings-ui.js") && WEB_MODULES.get("settings-ui.js").includes("export function createSettingsUI(d)"),
+    "F4: settings-ui.js exports createSettingsUI(d)");
+  for (const name of ["paintSettings", "applyThemeNow", "wireSettings", "draftPick"]) {
+    assert(owner(name) === "settings-ui.js", "F4: " + name + " is declared in settings-ui.js (found in " + owner(name) + ")");
+  }
+  assert(APP_MODULES.includes("settings-ui.js"), "F4: settings-ui.js follows app.js's house rules (APP_MODULES)");
+  const app = WEB_MODULES.get("app.js");
+  assert(!["theme-seg", "multipv-seg", "opt-blind"].some((id) => app.includes('getElementById("' + id + '")')),
+    "F4: app.js no longer wires the settings page's controls");
 }
 
 // --- 6.0: the register of source-text assertions in this file.
