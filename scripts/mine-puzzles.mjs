@@ -48,6 +48,13 @@ const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/motif.js"]);
 const Chess = ctx.Chess;
 const motifOf = ctx.motifOf;
 
+/**
+ * The mined set is white to move (its header says so, and 1002 ids depend on
+ * it); the importer keeps the solver's side since v8-0-plan B1, so the miner
+ * asks for the old mirroring explicitly.
+ */
+const MIRROR = { mirror: true };
+
 /** motif.js name → the Lichess theme the importer maps back to it */
 const MOTIF_THEME = { fork: "fork", pin: "pin", skewer: "skewer", discovered: "discoveredAttack", double: "doubleCheck" };
 
@@ -333,13 +340,13 @@ async function verified(fen, solution, opt) {
  * @returns {Promise<object|null>} the row with `themes` and `moves` set, or null
  */
 export async function classify(row, opt) {
-  const n = normalise(Chess, Object.assign({}, row, { themes: "x" }));
+  const n = normalise(Chess, Object.assign({}, row, { themes: "x" }), MIRROR);
   if (!n.ok) return null;
   const fen = n.fen, sol = n.solution;
   const attempt = async (theme, plies, mate) => {
     if (sol.length < plies) return null;
     const r = Object.assign({}, row, { themes: theme, moves: row.moves.slice(0, 1 + plies) });
-    const c = convert(Chess, r);
+    const c = convert(Chess, r, MIRROR);
     if (!c.ok) return null;
     if (!mate && !(await verified(c.puzzle.fen, c.puzzle.solution, opt))) return null;
     r.rating = estimateRating(c.puzzle.cat, c.puzzle.solution, c.puzzle.fen);
@@ -433,7 +440,7 @@ export async function main(argv) {
     // the same position reached in two games is one puzzle
     const seen = new Set();
     const uniq = rows.filter((r) => { const k = r.fen + " " + r.moves[0]; if (seen.has(k)) return false; seen.add(k); return true; });
-    const { puzzles, stats } = runPipeline(Chess, uniq, { perTheme: opt.perTheme, perBand: opt.perBand, max: opt.max, seed: opt.seed });
+    const { puzzles, stats } = runPipeline(Chess, uniq, { perTheme: opt.perTheme, perBand: opt.perBand, max: opt.max, seed: opt.seed, mirror: true });
     for (const p of puzzles) { p.id = p.id.replace(/^lc-/, ""); p.src = "mined"; delete p.url; }
     const meta = `${puzzles.length} puzzles from ${uniq.length} candidate positions; per theme ≤ ${opt.perTheme}, per 200-point band ≤ ${opt.perBand}.`;
     fs.writeFileSync(opt.out, emitMined(puzzles, meta));
@@ -469,7 +476,7 @@ export async function main(argv) {
     for (const f of String(opt.rows).split(",")) if (fs.existsSync(f)) rows.push(...JSON.parse(fs.readFileSync(f, "utf8")));
     for (const r of rows) if (r.themes === "crushing") r.themes = "material";
     const fresh = rows.filter((r) => { const k = r.fen + " " + r.moves[0]; if (seen.has(k)) return false; seen.add(k); return true; });
-    const { puzzles } = runPipeline(Chess, fresh, { perTheme: opt.perTheme, perBand: opt.perBand, max: opt.max, seed: opt.seed });
+    const { puzzles } = runPipeline(Chess, fresh, { perTheme: opt.perTheme, perBand: opt.perBand, max: opt.max, seed: opt.seed, mirror: true });
     for (const p of puzzles) { p.id = p.id.replace(/^lc-/, ""); p.src = "mined"; delete p.url; }
     console.error(`${puzzles.length} fresh candidates through the gate; rating them`);
 

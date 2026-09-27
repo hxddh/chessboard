@@ -3948,7 +3948,7 @@ import { createStore } from "./store.js";
     if (store.session.puzzle.p.cat === "def") {
       if (!g.game_over() && mateInOne(g)) {
         const still = mateInOne(g);
-        puzzleWrong(tf("pz.stillMate", [still]));
+        puzzleWrong(tf("pz.stillMate", [still, sideName(g.turn())]));
         return;
       }
       puzzleSolved();
@@ -3960,7 +3960,7 @@ import { createStore } from "./store.js";
     if (remaining <= 0) {
       // used the last move without mating — explain what black gets to play
       const escape = g.moves()[0];
-      puzzleWrong(escape ? tf("pz.notMateYetMove", [escape]) : t("pz.notMateYet"));
+      puzzleWrong(escape ? tf("pz.notMateYetMove", [escape, sideName(g.turn())]) : t("pz.notMateYet"));
       return;
     }
     // midpoint: the stored line, or any alternate that still forces mate
@@ -3968,7 +3968,7 @@ import { createStore } from "./store.js";
     if (!onLine) {
       const refutation = findRefutation(g, remaining);
       if (refutation) {
-        puzzleWrong(tf("pz.refuted", [refutation]));
+        puzzleWrong(tf("pz.refuted", [refutation, sideName(g.turn())]));
         return;
       }
     }
@@ -10033,7 +10033,7 @@ import { createStore } from "./store.js";
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle || store.session.puzzle.done) return false;
       const p = store.session.puzzle.g.get(sq);
-      return !!p && p.color === "w" && store.session.puzzle.g.turn() === "w";
+      return !!p && p.color === puzzleHumanSide() && store.session.puzzle.g.turn() === p.color; // v8-0-plan B1: a black solver too
     }
     if (store.session.retry) {
       const r = store.session.retry;

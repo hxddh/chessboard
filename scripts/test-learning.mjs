@@ -6,16 +6,21 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { pathToFileURL } from "url";
+import zlib from "zlib";
 import { spawnSync } from "child_process";
 import { loadAppModules, ROOT } from "./lib/app-module.mjs";
-import { gate, positionGate } from "./lib/puzzle-gate.mjs";
-import { parseCsv, runPipeline, convert, mirrorFen, mirrorUci, mapThemes, THEME_MAP, themeKey, bandOf, seededRng }
-  from "./import-puzzles.mjs";
+import { gate, positionGate, mirrorLine } from "./lib/puzzle-gate.mjs";
+import { THEMES, themeContext, verifyThemes } from "./lib/puzzle-themes.mjs";
+import { CHUNKS, lichessChunks } from "./bundle.mjs";
+import {
+  parseCsv, runPipeline, convert, mirrorFen, mirrorUci, mapThemes, categoryOf, THEME_MAP, themeKey, bandOf, seededRng,
+  admissible, cellOf, qualityKey, createPools, selectPuzzles, encodeRow,
+} from "./import-puzzles.mjs";
 
 const ctx = loadAppModules([
   "src/web/js/chess.js", "src/web/js/rating.js", "src/web/js/srs.js",
   "src/web/js/opening-tree.js", "src/web/js/openings.js", "src/web/js/puzzles.js",
+  "src/web/js/motif.js", "src/web/js/puzzle-db.js",
 ]);
 const Chess = ctx.Chess;
 
@@ -64,6 +69,66 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(range.lo === 1350 && range.hi === 1650, "pickRange defaults to ±150 for a settled rating");
   assert(R.pickRange({ r: 1500, rd: 350 }).lo < 1350, "…and widens while the rating is uncertain");
   assert(R.pickRange({ r: 1500, rd: 50 }, 100).hi === 1600, "width is a parameter");
+
+  // v8-0-plan B1: a newcomer who misses one easy puzzle (a hand-written m1,
+  // 1100/200) lost 396 points in one answer — out of the band they were
+  // being served from and into puzzles far too easy for them. One answer
+  // may move a rating by at most the pick band's half-width.
+  const firstMiss = R.rate1v1(R.newRating(), { r: 1100, rd: 200, vol: 0.06 }, 0).player;
+  const firstHit = R.rate1v1(R.newRating(), { r: 1900, rd: 200, vol: 0.06 }, 1).player;
+  assert(1500 - firstMiss.r <= 150 && firstMiss.r < 1500, "first miss on an easy puzzle moves a new player at most 150 (" + (firstMiss.r - 1500).toFixed(0) + ")");
+  assert(firstHit.r - 1500 <= 150 && firstHit.r > 1500, "…and a first solve of a hard one at most +150 (" + (firstHit.r - 1500).toFixed(0) + ")");
+  assert(firstMiss.rd < 350 && R.isProvisional(firstMiss), "the capped answer still narrows rd, and the rating stays provisional (" + firstMiss.rd.toFixed(0) + ")");
+  const settled = R.rate1v1({ r: 1500, rd: 60, vol: 0.06 }, { r: 1500, rd: 80, vol: 0.01 }, 1).player;
+  const settledRaw = R.update({ r: 1500, rd: 60, vol: 0.06 }, [{ r: 1500, rd: 80, score: 1 }]);
+  assert(settled.r === settledRaw.r, "a settled rating is plain Glicko-2 — the cap never binds there");
+}
+
+// ---------------------------------------------------------------- rating model, simulated
+// v8-0-plan B1 acceptance: a virtual player of fixed strength answers
+// puzzles, each correctly with the Glicko win-expectancy of that strength
+// against the puzzle; the app's own update (rate1v1, cap included) rates
+// every answer. The model is right if (a) the rating finds the strength, and
+// (b) the correct-rate, bucketed by puzzle − player rating at the moment of
+// answering, is the curve the rating itself predicts. Seeded, so the numbers
+// below are the same on every run.
+{
+  const R = ctx.ChessRating;
+  const PUZZLE_RD = 75; // what a Lichess puzzle carries after thousands of plays
+  const truth = (T, pr) => R.expectedScore({ r: T, rd: 0 }, { r: pr, rd: PUZZLE_RD });
+  const bins = {}; // (puzzle − player) in 100-point bins → [answers, correct, predicted]
+  for (const T of [900, 1500, 2100]) {
+    const rng = seededRng(T);
+    let pl = R.newRating();
+    const tail = [];
+    for (let i = 0; i < 3000; i++) {
+      // a spread of ±300 around the current estimate, wider than pickRange,
+      // so the curve is measured on both flanks and not only near 50%
+      const pr = pl.r + (rng() * 600 - 300);
+      const puzzle = { r: pr, rd: PUZZLE_RD, vol: 0.01 };
+      const correct = rng() < truth(T, pr) ? 1 : 0;
+      if (i >= 500) {
+        const k = Math.max(-300, Math.min(200, Math.floor((pr - pl.r) / 100) * 100));
+        const b = bins[k] || (bins[k] = [0, 0, 0]);
+        b[0]++; b[1] += correct; b[2] += R.expectedScore(pl, puzzle);
+      }
+      pl = R.rate1v1(pl, puzzle, correct).player;
+      if (i >= 1500) tail.push(pl.r);
+    }
+    const mean = tail.reduce((a, b) => a + b, 0) / tail.length;
+    assert(Math.abs(mean - T) <= 40, "simulated player of strength " + T + " is rated " + mean.toFixed(0) + " (±40)");
+    assert(!R.isProvisional(pl), "…and no longer provisional after 3000 answers (rd " + pl.rd.toFixed(0) + ")");
+  }
+  const keys = Object.keys(bins).map(Number).sort((a, b) => a - b);
+  let prev = 1, worst = 0;
+  for (const k of keys) {
+    const [n, c, e] = bins[k];
+    const got = c / n, want = e / n;
+    worst = Math.max(worst, Math.abs(got - want));
+    assert(got < prev, "correct-rate falls as the puzzle gets harder (" + k + ".." + (k + 99) + ": " + (got * 100).toFixed(1) + "%)");
+    prev = got;
+  }
+  assert(worst <= 0.04, "correct-rate by (puzzle − player) matches the Glicko prediction within 4 points in every bin (worst " + (worst * 100).toFixed(1) + ")");
 }
 
 // ---------------------------------------------------------------- srs
@@ -249,6 +314,9 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(mapThemes("fork mateIn2 short").cat === "m2", "a mate theme outranks a motif theme");
   assert(mapThemes("pin fork").motif === "fork" && mapThemes("endgame crushing") === null, "first match in THEME_MAP order; unknown themes map to nothing");
   assert(THEME_MAP.every(([, t]) => ["m1", "m2", "m3", "tac", "win", "def"].includes(t.cat)), "every mapped category has a gate");
+  assert(categoryOf("endgame crushing").cat === "tac" && categoryOf("advantage sacrifice").cat === "tac",
+    "v8-0-plan B1: a crushing/advantage line is graded as a tactic (its gate proves the material)");
+  assert(categoryOf("mate mateIn4 long") === null && categoryOf("equality endgame") === null, "…but a mate in four and an equal line have no gate");
 
   const opt = { perTheme: 100, perBand: 50, max: 2000, seed: 1 };
   const { puzzles, stats } = runPipeline(Chess, rows, opt);
@@ -272,32 +340,43 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const motifs = new Set(puzzles.filter((p) => p.motif).map((p) => p.motif));
   assert(["fork", "pin", "skewer", "discovered"].every((m) => motifs.has(m)), "motifs use motif.js names: " + [...motifs].join(","));
 
-  // shape of an emitted entry
+  // shape of an emitted entry — v8-0-plan B1: the solver keeps its side
   const shapeBad = puzzles.filter((p) => !/^lc-/.test(p.id) || p.src !== "lichess" || !p.url || !Number.isFinite(p.rating) ||
-    !Array.isArray(p.solution) || !p.solution.length || p.fen.split(" ")[1] !== "w");
-  assert(shapeBad.length === 0, "every entry is {id:lc-…, cat, fen (white to move), solution, rating, src, url}");
+    !Array.isArray(p.solution) || !p.solution.length || (p.fen.split(" ")[1] === "b") !== (p.side === "b"));
+  assert(shapeBad.length === 0, "every entry is {id:lc-…, cat, fen, solution, rating, src, url}, and side:\"b\" exactly when Black is to move");
+  const blacks = puzzles.filter((p) => p.side === "b");
+  assert(blacks.length >= 20 && blacks.length < puzzles.length, "black-to-move rows stay black (" + blacks.length + " of " + puzzles.length + "), none mirrored");
   assert(puzzles.filter((p) => p.cat === "tac" || p.cat === "win").every((p) => p.gain >= 1), "tac/win entries carry the gain the gate measured");
   assert(puzzles.filter((p) => p.cat === "def").every((p) => p.saves >= 1), "def entries carry the number of saving moves");
   assert(new Set(puzzles.map((p) => p.id)).size === puzzles.length, "ids are unique");
 
-  // every emitted puzzle passes the same gate as the hand-written ones
+  // every emitted puzzle passes the same gate as the hand-written ones —
+  // a black one on its mirror (puzzle-gate.mjs gate → mirrorLine)
   let gateBad = 0;
   for (const p of puzzles) { const r = gate(Chess, p); if (!r.ok) { gateBad++; console.error("  ", p.id, r.reason); } }
-  assert(gateBad === 0, "all emitted puzzles pass the hand-written gate");
+  assert(gateBad === 0, "all emitted puzzles pass the hand-written gate, black ones included");
+  assert(!gate(Chess, { cat: "m1", fen: "r5k1/8/8/8/8/8/5PPP/6K1 b - - 0 1", solution: ["Ra2"] }).ok, "…and the mirrored gate still rejects a black non-mate");
 
-  // mirrored rows come back as the very positions they were derived from
+  // a black row is exactly the hand-written white puzzle, seen from the other chair
   const byOrig = {};
-  for (const p of ctx.CHESS_PUZZLES) byOrig[p.fen.split(" ").slice(0, 4).join(" ")] = p.id;
-  const mirroredRows = rows.filter((r) => /^F/.test(r.id) && r.fen.split(" ")[1] === "w");
-  assert(mirroredRows.length === 26, "26 fixture rows have the solver on Black (" + mirroredRows.length + ")");
-  let backHome = 0;
-  for (const r of mirroredRows) {
+  for (const p of ctx.CHESS_PUZZLES) byOrig[p.fen.split(" ").slice(0, 4).join(" ")] = p;
+  const blackRows = rows.filter((r) => /^F/.test(r.id) && r.fen.split(" ")[1] === "w");
+  assert(blackRows.length === 26, "26 fixture rows have the solver on Black (" + blackRows.length + ")");
+  let backHome = 0, mapped = 0;
+  for (const r of blackRows) {
+    if (!mapThemes(r.themes)) continue;
+    mapped++;
     const c = convert(Chess, r);
-    if (c.ok && byOrig[c.puzzle.fen.split(" ").slice(0, 4).join(" ")]) backHome++;
-    else if (c.ok) console.error("  not a hand-written position after mirroring:", r.id, c.puzzle.fen);
+    const m = c.ok && c.puzzle.side === "b" ? mirrorLine(Chess, c.puzzle.fen, c.puzzle.solution) : null;
+    const hand = m && byOrig[m.fen.split(" ").slice(0, 4).join(" ")];
+    if (hand) backHome++;
+    else console.error("  not a hand-written position after mirroring:", r.id, c.ok ? c.puzzle.fen : c.reason);
   }
-  const mappedMirrored = mirroredRows.filter((r) => mapThemes(r.themes)).length;
-  assert(backHome === mappedMirrored, "every mapped black-to-move row normalises to a hand-written white-to-move puzzle (" + backHome + "/" + mappedMirrored + ")");
+  assert(backHome === mapped, "every mapped black row is stored black, and mirrors to a hand-written white puzzle (" + backHome + "/" + mapped + ")");
+  // the miner keeps the old white-to-move form (its 1002 ids depend on it)
+  const legacy = runPipeline(Chess, rows, Object.assign({ mirror: true }, opt));
+  assert(legacy.puzzles.length === 49 && legacy.puzzles.every((p) => p.fen.split(" ")[1] === "w" && !p.side),
+    "--mirror (mine-puzzles.mjs) still puts every solver on White");
 
   // quotas and determinism
   const small = runPipeline(Chess, rows, { perTheme: 3, perBand: 50, max: 2000, seed: 1 });
@@ -313,23 +392,160 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const other = runPipeline(Chess, rows, { perTheme: 100, perBand: 50, max: 10, seed: 2 });
   assert(other.puzzles.map((p) => p.id).join() !== capped.puzzles.map((p) => p.id).join(), "a different seed samples differently");
   assert(themeKey({ cat: "tac", motif: "fork" }) === "tac/fork" && themeKey({ cat: "m1" }) === "m1", "theme keys");
+}
 
-  // the CLI writes an importable module with the CC0 notice
+// ---------------------------------------------------------------- theme checks (v8-0-plan B1)
+// Every Lichess tag the importer keeps has a check that holds on a real line
+// and fails on one it does not describe. The positions are the hand-written
+// set's where one fits (so the claim is about a puzzle the app already has).
+{
+  const motifOf = ctx.motifOf;
+  const hand = Object.fromEntries(ctx.CHESS_PUZZLES.map((p) => [p.id, p]));
+  const lineOf = (p) => p.solution || p.line;
+  const holds = (tag, fen, solution, gated) => {
+    const c = themeContext(Chess, fen, solution);
+    return !!c && verifyThemes(c, tag, motifOf, gated).ids.length === 1;
+  };
+  const H = (id, tag, gated) => holds(tag, hand[id].fen, lineOf(hand[id]), gated);
+  assert(THEMES.length >= 20 && new Set(THEMES.map((t) => t.id)).size === THEMES.length,
+    "≥ 20 checkable themes, ids unique (" + THEMES.length + ")");
+  const cases = [
+    // [tag, holds?, fen, solution, gated category, why]
+    ["underPromotion", true, "7k/5P2/6K1/8/8/8/8/8 w - - 0 1", ["f8=R+"], null, "promotes to a rook"],
+    ["underPromotion", false, "7k/5P2/6K1/8/8/8/8/8 w - - 0 1", ["f8=Q+"], null, "a queen is not an under-promotion"],
+    ["enPassant", true, "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", ["exd6"], null, "exd6 e.p."],
+    ["enPassant", false, "4k3/8/8/3pP3/8/8/8/4K3 w - - 0 1", ["e6"], null, "a push is not e.p."],
+    ["castling", true, "4k3/8/8/8/8/8/8/4K2R w K - 0 1", ["O-O"], null, "O-O"],
+    ["castling", false, "4k3/8/8/8/8/8/8/4K2R w K - 0 1", ["Kf1"], null, "a king walk"],
+    ["doubleCheck", true, "4k3/8/8/8/4B3/8/8/4R1K1 w - - 0 1", ["Bc6+"], null, "bishop checks, rook uncovered"],
+    ["doubleCheck", false, "4k3/8/8/8/4B3/8/8/4R1K1 w - - 0 1", ["Bd5"], null, "no check at all"],
+    ["attackingF2F7", true, "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 0 1", ["Qxf7#"], null, "Qxf7#"],
+    ["attackingF2F7", true, mirrorFen("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 0 1"), ["Qxf2#"], null, "…and Black's Qxf2#"],
+    ["discoveredAttack", true, "4k3/8/8/4q3/8/2N5/8/B6K w - - 0 1", ["Nd5"], null, "the knight uncovers the bishop on the queen"],
+    ["discoveredAttack", false, "4k3/8/8/4q3/8/2N5/8/B6K w - - 0 1", ["Kg2"], null, "the king moves, the knight still blocks"],
+    ["pawnEndgame", true, "8/8/4k3/8/4P3/4K3/8/8 w - - 0 1", ["Kd3"], null, "kings and pawns"],
+    ["rookEndgame", true, "8/8/4k3/8/4P3/4K3/8/R6r w - - 0 1", ["Kd3"], null, "rooks and pawns"],
+    ["rookEndgame", false, "8/8/4k3/8/4P3/4K3/8/RN5r w - - 0 1", ["Kd3"], null, "a knight too is not a rook ending"],
+    ["knightEndgame", true, "8/8/4k3/8/4P3/4K3/8/N7 w - - 0 1", ["Kd3"], null, "a knight"],
+    ["bishopEndgame", true, "8/8/4k3/8/4P3/4K3/8/B6b w - - 0 1", ["Kd3"], null, "bishops"],
+    ["queenEndgame", true, "8/8/4k3/8/4P3/4K3/8/Q6q w - - 0 1", ["Kd3"], null, "queens"],
+    ["queenRookEndgame", true, "8/8/4k3/8/4P3/4K3/8/QR5r w - - 0 1", ["Kd3"], null, "queen and rooks"],
+    ["queenRookEndgame", false, "8/8/4k3/8/4P3/4K3/8/Q6q w - - 0 1", ["Kd3"], null, "no rook"],
+    ["advancedPawn", false, "8/8/4k3/8/8/4K3/4P3/8 w - - 0 1", ["e4"], null, "a pawn to the fourth"],
+    ["hangingPiece", false, "4k3/8/2p5/3n4/8/8/8/3QK3 w - - 0 1", ["Qxd5"], null, "a guarded knight is not hanging"],
+    ["defensiveMove", false, "4k3/8/8/8/8/8/8/4K3 w - - 0 1", ["Kd1"], "tac", "only the def gate proves a defence"],
+  ];
+  for (const [tag, want, fen, sol, gated, why] of cases) {
+    assert(holds(tag, fen, sol, gated) === want, "theme " + tag + (want ? " holds: " : " does not hold: ") + why);
+  }
+  assert(H("m1-smother", "smotheredMate") && !H("m1-q-knight", "smotheredMate"), "smotheredMate: Nf7# holds, a queen mate does not");
+  assert(H("m1-arabian", "arabianMate") && !H("m1-backrank-r", "arabianMate"), "arabianMate: rook + knight in the corner");
+  assert(H("m1-backrank-r", "backRankMate") && !H("m1-edge-r", "backRankMate"), "backRankMate: on the back rank, not the h-file");
+  assert(H("m1-promo", "promotion") && !H("m1-promo", "underPromotion"), "promotion: f8=Q#, which is not an under-promotion");
+  assert(H("m2-q-sac", "sacrifice") && !H("m2-rr-sac", "sacrifice"), "sacrifice: the queen for a rook, not a rook for a rook");
+  assert(H("m2-corner-h8", "quietMove") && !H("m1-backrank-r", "quietMove"), "quietMove: Kg6 is quiet, Ra8# is not");
+  assert(H("m3-promo", "advancedPawn"), "advancedPawn: d7 on the way to d8");
+  assert(H("w-hangq", "hangingPiece"), "hangingPiece: Rxd6 takes an unguarded queen");
+  for (const [id, tag] of [["t-skewer-h", "skewer"], ["t-pin-e", "pin"]]) {
+    assert(holds(tag, hand[id].fen, [hand[id].first], null), tag + ": motif.js finds it in " + id);
+  }
+  assert(H("m1-backrank-r", "mateIn1", "m1") && !H("m1-backrank-r", "mateIn1", "tac"), "mate lengths are the gate's verdict, not the tag's");
+
+  // the tag that puts a row in its cell must hold; any other failing tag is dropped
+  const row = parseCsv("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags\n" +
+    "T1,5pk1/6pp/8/8/8/8/8/R5K1 b - - 0 1,f8f7 a1a8,900,75,95,5000,backRankMate mateIn1 fork short,https://lichess.org/t1,\n" +
+    "T2,5pk1/6pp/8/8/8/8/8/R5K1 b - - 0 1,f8f7 a1a8,900,75,95,5000,smotheredMate mateIn1,https://lichess.org/t2,\n" +
+    "T3,rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1,e2e4 d8h4,900,75,95,5000,crushing opening,https://lichess.org/t3,\n");
+  const t1 = convert(Chess, row[0], { motifOf });
+  assert(t1.ok && t1.puzzle.themes.join() === "backRank,m1" && t1.puzzle.dropped.join() === "fork",
+    "backRank + mateIn1 hold, the fork tag is dropped (" + (t1.ok ? t1.puzzle.themes + " / " + t1.puzzle.dropped : t1.reason) + ")");
+  const t2 = convert(Chess, row[1], { motifOf });
+  assert(!t2.ok && t2.stage === "theme" && /smotheredMate/.test(t2.reason), "a row whose cell tag fails is rejected (" + t2.reason + ")");
+  const t3 = convert(Chess, row[2], { motifOf });
+  assert(!t3.ok, "a crushing line with no checkable tag or no material is not imported (" + t3.reason + ")");
+}
+
+// ---------------------------------------------------------------- the stratified import, end to end
+// v8-0-plan B1: stream (.csv or .csv.zst) → pools per (theme × band) cell →
+// gate + theme checks → round-robin selection → one chunk per band + an index.
+{
+  const motifOf = ctx.motifOf;
+  const csvPath = path.join(ROOT, "scripts/fixtures/lichess-sample.csv");
+  const rows = parseCsv(fs.readFileSync(csvPath, "utf8"));
+  // the cheap filters: the reject rows are unpopular and little played
+  assert(rows.filter((r) => admissible(r, {})).length === 49 && !admissible(rows.find((r) => r.id === "R0052"), {}),
+    "default filters admit the 49 good rows and not the unpopular R rows (" + rows.filter((r) => admissible(r, {})).length + ")");
+  assert(cellOf(rows[0]) === "m1@600" && cellOf({ themes: "fork mateIn2", rating: 1450 }) === "m2@1400",
+    "a row's cell is its rarest checkable theme × its band");
+  assert(qualityKey({ id: "a", popularity: 95, plays: 9000 }, 1)[0] > qualityKey({ id: "b", popularity: 80, plays: 90000 }, 1)[0],
+    "popularity ranks first");
+
+  const pools = createPools({ pool: 1 });
+  for (const r of rows) pools.add(r);
+  const one = pools.done();
+  assert([...one.values()].every((l) => l.length === 1), "--pool bounds each cell while streaming");
+
+  const all = createPools({});
+  for (const r of rows) all.add(r);
+  const cells = all.done();
+  const sel = selectPuzzles(Chess, cells, motifOf, {});
+  assert(sel.puzzles.length === 49 && sel.stats.sides.b >= 20, "49 selected, black ones kept black (" + sel.stats.sides.b + ")");
+  assert(sel.puzzles.every((p) => p.themes.length >= 1 && gate(Chess, p).ok), "each selected puzzle carries ≥ 1 checked theme and passes the gate");
+  const capped = selectPuzzles(Chess, cells, motifOf, { max: 12 });
+  const cellsHit = new Set(capped.puzzles.map((p) => p.themes[0] + "@" + bandOf(p.rating)));
+  assert(capped.puzzles.length === 12 && cellsHit.size === 12, "round-robin: the first 12 come from 12 different cells");
+  const perCell = selectPuzzles(Chess, cells, motifOf, { perCell: 1 });
+  assert(Object.values(perCell.stats.byCell).every((n) => n <= 1), "--per-cell caps a cell");
+  assert(JSON.stringify(selectPuzzles(Chess, cells, motifOf, { max: 12 }).puzzles) === JSON.stringify(capped.puzzles), "same seed, same selection");
+
+  // the compact row round-trips through puzzle-db.js
+  const Db = ctx.ChessPuzzleDb;
+  const rt = sel.puzzles.filter((p) => {
+    const d = Db.decodeRow(JSON.parse(JSON.stringify(encodeRow(p))));
+    const want = Object.assign({}, p);
+    delete want.url;
+    return JSON.stringify(Object.entries(d).sort()) !== JSON.stringify(Object.entries(want).sort());
+  });
+  assert(rt.length === 0, "encodeRow → decodeRow gives back every field the app reads (" + (rt[0] ? rt[0].id : "") + ")");
+
+  // the CLI, from a .csv.zst (Node's zlib compresses the fixture here; the
+  // real file comes from database.lichess.org) — writes the index and bands
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lichess-import-"));
-  const out = path.join(dir, "puzzles-lichess.js");
-  const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out", out,
-    "--per-theme", "100", "--per-band", "50", "--max", "2000", "--seed", "1"], { encoding: "utf8" });
-  assert(r.status === 0, "CLI exits 0 (" + (r.stderr || "").trim().split("\n")[0] + ")");
-  assert(/emitted 49/.test(r.stdout), "CLI reports 49 emitted");
-  const text = fs.readFileSync(out, "utf8");
-  assert(/CC0/.test(text) && /export const LICHESS_PUZZLES = \[/.test(text), "output states the CC0 licence and exports LICHESS_PUZZLES");
-  // pathToFileURL, not the bare path: on Windows an absolute path is "D:\\..."
-  // and Node rejects it with ERR_UNSUPPORTED_ESM_URL_SCHEME. This script had
-  // never run in PR CI (6.1 wired the whole static suite in), so the platform
-  // it breaks on had never seen it.
-  const mod = await import(pathToFileURL(out).href);
-  assert(mod.LICHESS_PUZZLES.length === 49 && JSON.stringify(mod.LICHESS_PUZZLES) === JSON.stringify(puzzles), "the written module round-trips the pipeline output");
+  const zst = path.join(dir, "sample.csv.zst");
+  fs.writeFileSync(zst, zlib.zstdCompressSync(fs.readFileSync(csvPath)));
+  const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), zst, "--out-dir", dir, "--seed", "1"], { encoding: "utf8" });
+  assert(r.status === 0, "CLI exits 0 on a .csv.zst (" + (r.stderr || "").trim().split("\n")[0] + ")");
+  assert(/lines 59, admissible 49, .*accepted 49 \(w 25 \/ b 24\)/.test(r.stdout), "CLI streams 59 lines and accepts 49 (" + r.stdout.split("\n")[0] + ")");
+  const r2 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", path.join(dir, "plain"), "--seed", "1"], { encoding: "utf8" });
+  assert(r2.status === 0 && fs.readFileSync(path.join(dir, "plain/puzzles-lc-index.js"), "utf8") === fs.readFileSync(path.join(dir, "puzzles-lc-index.js"), "utf8"),
+    "…and the plain .csv gives the identical output");
+  const lctx = loadAppModules([path.join(dir, "puzzles-lc-index.js")]);
+  const idx = lctx.LC_INDEX;
+  const bandFiles = fs.readdirSync(path.join(dir, "lichess")).sort();
+  assert(idx.total === 49 && idx.sides.b === 24 && idx.bands.reduce((n, b) => n + b.n, 0) === 49, "index: 49 puzzles, 24 black, counted per band");
+  assert(bandFiles.length === idx.bands.length && idx.bands.every((b) => bandFiles.includes("band-" + String(b.band).padStart(4, "0") + ".js")),
+    "one band file per index band (" + bandFiles.join(",") + ")");
+  const chunks = lichessChunks(path.join(dir, "lichess"));
+  assert(chunks.length === idx.bands.length && idx.bands.every((b) => {
+    const c = Db.bandChunk(b.band);
+    return chunks.some((k) => path.basename(k.out) === c.file && k.global === c.global);
+  }), "bundle.mjs builds every band under the file and global puzzle-db.js asks for");
+  let decoded = 0, inRange = true;
+  for (const b of idx.bands) {
+    const bctx = loadAppModules([path.join(dir, "lichess", "band-" + String(b.band).padStart(4, "0") + ".js")]);
+    const list = bctx[Db.bandChunk(b.band).global].map(Db.decodeRow);
+    decoded += list.length;
+    inRange = inRange && list.length === b.n && list.every((p) => p.rating >= b.lo && p.rating <= b.hi && bandOf(p.rating) === b.band);
+  }
+  assert(decoded === 49 && inRange, "every band decodes to its count, inside its rating range");
+  assert(Object.values(idx.themes).every((t) => t.bands.length === idx.bands.length) && idx.themes.m1.n === 8, "per-theme counts per band");
+  const idxBytes = fs.statSync(path.join(dir, "puzzles-lc-index.js")).size;
+  assert(idxBytes < 4000, "the index is small (" + idxBytes + " bytes) — it is what the main bundle carries");
   fs.rmSync(dir, { recursive: true, force: true });
+
+  // what ships today: the committed index, and chunks exactly for its bands
+  assert(ctx.ChessPuzzleDb.index.bands.length === CHUNKS.filter((c) => /chunk-lc-/.test(c.out)).length,
+    "CHUNKS carries one Lichess chunk per band of the committed index (" + ctx.ChessPuzzleDb.index.bands.length + ")");
 }
 
 // --- the mined set (scripts/mine-puzzles.mjs) -------------------------------

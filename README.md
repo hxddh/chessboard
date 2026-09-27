@@ -193,6 +193,8 @@ src/web/
   js/puzzles.js    # 题库 168 题:杀王/吃子/战术母题(求解器证明强制)/实战/防守/求和,另 119 条开局线路
   js/puzzles-mined.js # 引擎自弈挖出的题(scripts/mine-puzzles.mjs 生成;过同一套求解器门禁并经引擎复核)
                    #   单测另查:生成题标题必须点名关键着的走子方、形状不得雷同
+  js/puzzle-db.js  # Lichess 题库(8.0 B1):主包只带 js/puzzles-lc-index.js 的计数索引,题目按 200 分评级段
+                   #   各一个按需加载的分块(js/lichess/band-NNNN.js → chunk-lc-NNNN.js);保留原执子方,黑先的题 side: "b"
   js/achievements.js # 成就徽章(纯派生自统计/教学/做题进度)
   js/analysis-store.js # 分析结果按对局(起始局面 + 着法)存盘，刷新或从对局历史载入时直接恢复；按条数和大小封顶
   js/fide.js       # FIDE 和棋算术:重复计数 / 6.9 将杀子力判定 / 局面是否已终局(纯函数,单测覆盖)
@@ -263,3 +265,5 @@ GPLv3（见 LICENSE）。vendored chess.js 保留其 BSD-2-Clause 版权头；ve
 - **Fantasy / Celtic / Spatial（`js/pieces-fantasy.js` · `js/pieces-celtic.js` · `js/pieces-spatial.js`）**：作者 Maurizio Monge，原样取自 lila 的 `public/piece/{fantasy,celtic,spatial}`；COPYING.md 列为 MIT，作者仓库（maurimo/chess-art）的 LICENSE 是 MIT 全文，README 要求注明作者 —— 「关于」面板写了。MIT 与 GPLv3 相容。
 
 同一张表里其余候选没有收：CC BY-NC-SA（限非商业，与 GPL 不相容）、「freeware」、AGPL 的不收；mpchess（表中写 GPLv3+，作者仓库却是 LPPL 1.3c）、shapes 与 Firi（作者仓库里没有许可文件，只有 lila 表里的一行）三套，来源与表不一致或无法从来源核实，也不收。
+
+题库数据：`js/puzzles-lc-index.js` 与 `js/lichess/band-*.js` 由 `scripts/import-puzzles.mjs` 从 [Lichess 题库](https://database.lichess.org/#puzzles)（lichess.org 开放数据库，**CC0 1.0** 公有领域贡献）抽样生成：局面、解法、评级无许可义务，每题的 id 就是 Lichess 题号（`lichess.org/training/<id>`），在此致谢。原始的 `.csv.zst` 不进仓库；导入命令是 `node scripts/import-puzzles.mjs <本地路径>.csv.zst`（或已解压的 `.csv`）。
