@@ -530,11 +530,18 @@
          height-bound in every window this ships in and is already fitted to
          within 6px of the space the bar leaves. */
       --chrome-h: 32px;
-      /* One height for everything in the chrome, so the status and the tools
-         share a box and a baseline. The bar used to hold three heights
-         (36 / 32 / 27.4) and two baselines (26.5 / 25.3), which is what
-         "not quite aligned" looks like when the parts have no common unit. */
-      --chrome-ctl-h: 28px;
+      /* 7.9 §1e: two control heights, and no third. Measured on 7.8.0 the
+         panel ran 36px buttons (18) beside 28px ones (3) — the chrome's
+         悔棋/提示, 重来/下一课, 重做/下一题 — so on the puzzle page the
+         type buttons and the row right under them were two families.
+           --ctl-h     every button in the panel
+           --ctl-h-sm  the controls on the opponent's strip (§1a), the panel
+                       key in the bar, and the small icon keys (a card's ✕)
+         The old --chrome-ctl-h (28) is gone with the bar's two tools: the
+         bar is 32 and holds only ☰, which now fills it. Guarded in
+         test-chess.mjs like the type scale and the easing curve. */
+      --ctl-h: 36px;
+      --ctl-h-sm: 32px;
       --stage-pad: 6px;
       --wood-pad: 17px;
       --radius-sm: 8px;
@@ -656,12 +663,13 @@
     }
     .icon-btn:active, .tool-btn:active { transform: scale(0.96); }
     .icon-btn {
-      width: 32px; height: 32px; display: grid; place-items: center;
+      width: var(--ctl-h-sm); height: var(--ctl-h-sm); display: grid; place-items: center;
       font-size: 0.9375rem; line-height: var(--lh-tight);
     }
-    .tool-btn { height: 32px; padding: 0 12px; font-size: 0.75rem; font-weight: 500; }
-    /* The chrome's own size. Scoped, because .tool-btn is also the panel's
-       button and the panel is not on a 32px bar.
+    .tool-btn { height: var(--ctl-h-sm); padding: 0 12px; font-size: 0.75rem; font-weight: 500; }
+    /* 悔棋 and 提示 on the opponent's strip (7.9 §1a; they stood in the bar
+       over the board until then, see .ps-tools). Scoped, because .tool-btn is
+       also the panel's button, which is --ctl-h.
 
        Two fixed slots, and both halves of "fixed" are load-bearing. This group
        is right-aligned, so anything that changes its contents re-maps every
@@ -681,9 +689,9 @@
            (提示 / 思考中 / 答案 · Hint / Thinking / Answer) and a button that
            changes width drags its neighbour along. 80px clears the widest of
            the six labels in the three languages, measured: Thinking at 78. */
-    .chrome .tool-btn { height: var(--chrome-ctl-h); min-width: 80px; }
-    .chrome .icon-btn { width: var(--chrome-ctl-h); height: var(--chrome-ctl-h); }
-    .chrome-actions .slot-empty,
+    .ps-tools .tool-btn { height: var(--ctl-h-sm); min-width: 80px; }
+    .chrome .icon-btn { width: var(--ctl-h-sm); height: var(--ctl-h-sm); }
+    .ps-tools .slot-empty,
     .replay-bar .slot-empty { visibility: hidden; }
     .icon-btn:hover, .tool-btn:hover { background: var(--btn-hover); }
     /* 7.7 (v7-7-plan §3): one primary, one look. This was a gradient in
@@ -878,6 +886,10 @@
     .side {
       position: absolute; top: 0; right: 0; bottom: 0;
       width: var(--side-w); z-index: 30;
+      /* 7.9 §1d: what the tool row's labels ask is the panel's width, not
+         the window's — the panel is a column beside the board, a sheet under
+         it, or --side-w, depending on the window's shape */
+      container: side / inline-size;
       background: color-mix(in srgb, var(--panel) 94%, transparent);
       border-left: 1px solid var(--panel-border);
       backdrop-filter: blur(22px) saturate(1.15);
@@ -924,7 +936,9 @@
       position: absolute; left: 0; right: 0;
       height: var(--strip-h);
       display: flex; align-items: center; gap: 8px;
-      padding: 0 2px;
+      /* 7.9 §1a: flush with the frame. The last item on the top strip is a
+         control now, and its right edge is the frame's (±1px, asserted) */
+      padding: 0;
       font-size: 0.8125rem; line-height: var(--lh-tight);
       white-space: nowrap;
       pointer-events: none;
@@ -937,6 +951,22 @@
        strip's place is kept, so the board does not move between modes */
     .pstrip.is-empty { visibility: hidden; }
     .pstrip > * { flex-shrink: 0; }
+    /* 7.9 §1a: 悔棋 and 提示 (答案 on the puzzle page) belong to the
+       opponent's line. They floated over the board's top-right corner in the
+       bar, at y 2–30 against the strip's 36–66 and 104px past the frame's
+       right edge with ☰ — half a row off and aligned to nothing. Now they
+       are the right end of the top strip (renderStrips moves them there when
+       the board turns), left of the score and the clock, on the strip's own
+       centre line: the same 32px box as the disc. The strip ignores the
+       pointer; its tools do not. A lesson without a sparring partner hides
+       the strip (is-empty) but not the tools — hint is the learn page's too. */
+    .ps-tools {
+      display: flex; align-items: center; gap: 6px;
+      margin-left: auto;
+      pointer-events: auto;
+      visibility: visible;
+    }
+    .ps-tools ~ .ps-result, .ps-tools ~ .ps-clock { margin-left: 0; }
     .ps-av {
       width: 32px; height: 32px; border-radius: var(--radius-sm);
       display: grid; place-items: center;
@@ -1075,7 +1105,7 @@
       /* same box as the mode row above it: they select a view, they sit one on
          top of the other, and until now one was 37px tall at weight 600 and the
          other 35 at 12px/500 */
-      min-height: var(--row-h);
+      min-height: var(--ctl-h);
       display: flex; align-items: center; justify-content: center;
       padding: 0 4px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
       cursor: pointer;
@@ -1358,7 +1388,7 @@
        needs three is the label's problem, and §3 moves most of these out of
        the grid anyway. */
     .theme-row button, .act-btn {
-      min-height: var(--row-h);
+      min-height: var(--ctl-h);
       padding: 0 8px;
       line-height: var(--lh-tight);
       display: inline-flex; align-items: center; justify-content: center;
@@ -1467,33 +1497,49 @@
     /* This was the heaviest thing in the panel: a filled, bordered 45px slab
        measuring 10800px² — nine times the area of any other solid in a column
        that is otherwise all quiet text links. It navigates the move list and
-       it outweighed the move list. Now it is a hairline under the moves it
-       scrubs, and the buttons carry themselves. */
+       it outweighed the move list. 7.7 made it a hairline and four bare
+       glyphs; 7.9 §1c found that went too far the other way — four 20px
+       icons about 200px apart, no edge to say where one could be pressed,
+       and a disabled key told apart only by a lighter grey. Lichess keeps
+       the same four keys in the same place as one bar in four cells.
+       So: one outlined container (still no fill — the weight is the
+       outline, not a slab), four equal cells of --ctl-h split by hairlines,
+       a fill under the pointer and a deeper one while pressed. A disabled
+       cell fades its glyph, not its hairline, and answers no hover. */
     .replay-bar {
-      /* Five equal columns, always — not five flex items sharing whatever is
-         available. See renderReplayBar(): the keys come and go with the replay
-         position, and under `flex: 1` two visible keys took 97px each while
-         five took 37px. A transport row whose keys resize by a factor of three
-         as you use it is not one control. */
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
-      padding: 4px 0 0;
-      border-top: 1px solid var(--card-border);
+      /* Four equal columns, always — not flex items sharing whatever is
+         available. See renderReplayBar(): under `flex: 1` two visible keys
+         took 97px each while five took 37px. A transport row whose keys
+         resize by a factor of three as you use it is not one control. */
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
+      margin-top: 8px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
       background: transparent;
     }
     .replay-bar button {
-      flex: 1;
       appearance: none; border: 0; background: transparent;
       color: var(--muted);
       font: inherit; font-size: 0.9375rem; line-height: var(--lh-tight);
-      min-height: var(--row-h); padding: 0; border-radius: var(--radius-sm);
+      height: var(--ctl-h); padding: 0; border-radius: 0;
       cursor: pointer;
-      transition: background var(--dur-quick) var(--ease);
+      transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
     }
+    .replay-bar button + button { border-left: 1px solid var(--card-border); }
+    /* the container's corner, less its own 1px border */
+    .replay-bar button:first-child { border-radius: calc(var(--radius-md) - 1px) 0 0 calc(var(--radius-md) - 1px); }
+    .replay-bar button:last-child { border-radius: 0 calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0; }
     .replay-bar button:hover:not(:disabled) {
       background: var(--btn-ghost);
       color: var(--text);
     }
-    .replay-bar button:disabled { opacity: 0.28; cursor: default; }
+    /* pressed: a fill, not the family's scale — a cell that shrinks inside a
+       joined bar opens a gap at its hairlines */
+    .replay-bar button:active:not(:disabled) { background: var(--btn-hover); color: var(--text); transform: none; }
+    .replay-bar button:disabled { cursor: default; }
+    .replay-bar button:disabled > * { opacity: 0.28; }
+    /* the global ring, drawn inside the cell so its neighbours do not cover it */
+    .replay-bar button:focus-visible { outline-offset: -2px; }
 
     /* Content-sized, wrapping, shrinkable.
        The history here is a pendulum, so both ends are written down. It began
@@ -1540,6 +1586,28 @@
       grid-auto-rows: 1fr;
       gap: 6px; margin-top: 8px;
     }
+    /* 7.9 §1b: the panel's action groups (复盘, 本局, 更多, and the lesson and
+       puzzle rows) fill the column in equal cells, and a label never wraps.
+       On 7.8.0 the tracks above came out 72px wide and left-packed — the
+       right half of a 400px panel stood empty — and at that width English
+       broke 「Live analysis」 and 「Offer draw」 over two lines. Whether a
+       label fits depends on the language and on the window, so the column
+       count is measured, not declared: fit-row.js tries three columns (four
+       for four actions; as many as there are buttons in a lesson row) and
+       steps down to two, then one, until every label sits on one line, and
+       writes the answer to --cols. Three columns rather than auto-fill keeps
+       what auto-fill was for: a lone action is one cell wide, not the row. */
+    .fit-row {
+      --cols: 3;
+      display: grid;
+      grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+      grid-auto-rows: 1fr;
+    }
+    .fit-row > button { white-space: nowrap; min-width: 0; }
+    /* the puzzle type segment is ten buttons in three columns, and at 1024
+       wide 「Win material」 and 「引き分け狙い」 broke inside an 83px cell;
+       it steps down to two columns the same way (fit-row.js) */
+    .theme-row.wrap.fit-row { grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); }
     /* 7.7: 为你出一题 stands alone on its row, and one 70px track is narrower
        than its five characters plus the 8px sides §1a gave every .act-btn —
        it broke after 一, leaving 题 on a line of its own. Two tracks, still
@@ -1611,7 +1679,7 @@
       appearance: none; border: 0; background: transparent;
       font: inherit; color: var(--text); text-align: left;
       display: flex; align-items: center; gap: 8px;
-      min-height: var(--row-h); padding: 0 8px;
+      min-height: var(--ctl-h); padding: 0 8px;
       border-radius: var(--radius-sm); cursor: pointer;
       transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
     }
@@ -1702,26 +1770,20 @@
       display: flex; gap: 8px; margin-bottom: 12px;
     }
     .lesson-controls .tool-btn { flex: 1; }
-    /* A label that needs two lines gets two lines, and the row grows with it.
-       `.tool-btn` is 32px tall and does not wrap, which is right on the chrome
-       bar where the labels are one word and the height is the bar's. In the
-       lesson row it meant the text came out through the bottom of the pill:
-       measured on the shipped 2.1.3, every lesson that offers all four buttons
-       leaked in all three languages — 「接着练 2 题」 wrapping to 「接着练 2 /
-       题」 with 「题」 hanging under the border, 「Practise (2)」 and 「Next
-       lesson」 both leaking in English, 「続けて2問」 and 「次のレッスン」 in
-       Japanese. Lesson 72 leaks with only two buttons: 「Play the Beginner
-       engine」, the one button the whole teaching track exists to reach.
-
-       Not the editor's fix. That row overflowed *sideways* — four buttons
-       demanding 271px of a 239px row — and needed 2×2. This row fits across;
-       what it does not fit is the label inside the box. `align-items` is
-       stretch by default, so one two-line label makes every button in the row
-       two lines tall: the row stays one control, in any language, at any of
-       the two, three or four buttons a lesson may show. */
+    /* A label never takes two lines here, and never runs out of its box.
+       Shipped 2.1.3 had `.tool-btn` at a fixed 32px with wrapping labels, so
+       「接着练 2 题」 broke to 「接着练 2 / 题」 with 「题」 hanging under the
+       border (all three languages leaked; lesson 72's 「Play the Beginner
+       engine」 with only two buttons). 2.1.3's answer was to let the row grow
+       with a two-line label, which made these buttons 28px on one line and
+       44 on two — a third and a fourth height beside the panel's 36.
+       7.9 §1e/§1b: one height, --ctl-h, and one line, with the columns
+       stepping down (fit-row.js) when the labels do not fit across. The
+       editor's four are the 2×2 below and stay that way. */
     .lesson-controls .tool-btn {
-      height: auto; min-height: var(--chrome-ctl-h);
-      padding: 6px 12px; line-height: var(--lh-tight);
+      height: var(--ctl-h);
+      padding: 0 8px; line-height: var(--lh-tight);
+      white-space: nowrap;
     }
     /* Two and three buttons fit across; four do not, and `flex: 1` cannot
        save them. A `.tool-btn` carries 24px of horizontal padding and will
@@ -2509,7 +2571,7 @@
     .move-menu button {
       appearance: none; border: 0; background: transparent;
       color: var(--text); font: inherit; font-size: 0.75rem; font-weight: 500;
-      text-align: left; padding: 0 12px; height: var(--row-h);
+      text-align: left; padding: 0 12px; height: var(--ctl-h);
       border-radius: var(--radius-sm); cursor: pointer;
     }
     .move-menu button:hover, .move-menu button:focus-visible { background: var(--btn-ghost); }
@@ -3142,9 +3204,9 @@ kbd.accel {
 .ic { width: 1em; height: 1em; display: block; flex: none; }
 span[data-icon] { display: inline-grid; place-items: center; }
 
-/* the chrome's two text actions carry their icon before the label */
-.chrome .tool-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.chrome .tool-btn > span[data-icon] { font-size: 0.9375rem; }
+/* the strip's two text actions carry their icon before the label */
+.ps-tools .tool-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.ps-tools .tool-btn > span[data-icon] { font-size: 0.9375rem; }
 .chrome .icon-btn { font-size: 1rem; }
 .replay-bar button { display: grid; place-items: center; font-size: 1.1875rem; }
 
@@ -3165,11 +3227,35 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .tool-ic, .tool-txt {
   appearance: none; border: 1px solid transparent; background: transparent;
   color: var(--muted); font: inherit;
-  height: var(--row-h); border-radius: var(--radius-sm);
+  height: var(--ctl-h); border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease);
 }
-.tool-ic { width: var(--row-h); display: grid; place-items: center; font-size: 1.1875rem; }
+.tool-ic { width: var(--ctl-h); display: grid; place-items: center; font-size: 1.1875rem; }
+/* 7.9 §1d: the icon's name under it, once the panel has the room. Below
+   360px the row is the icons alone, as it was, with the name on hover and
+   in the accessible name. At 360 and up each icon is a cell of the row
+   (equal shares of it, like the action grid above) with an 11px word
+   beneath a smaller glyph — both inside the same --ctl-h, so the row's
+   height does not change and there is still one button height (§1e).
+   导出复盘图, the one worded tool, takes a line of its own at the end:
+   beside five labelled cells it left each of them 24px in Japanese. */
+.tool-lbl { display: none; }
+@container side (min-width: 360px) {
+  .tool-row { column-gap: 2px; row-gap: 4px; }
+  .tool-row .tool-ic {
+    flex: 1 1 0; min-width: 0; width: auto;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    padding: 0 2px; font-size: 1rem;
+  }
+  .tool-lbl {
+    display: block; max-width: 100%;
+    font-size: 0.6875rem; font-weight: 500; line-height: var(--lh-tight);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tool-row:has(> .tool-txt:not([hidden]))::after { content: ""; flex-basis: 100%; order: 1; }
+  .tool-row .tool-txt { order: 2; }
+}
 .tool-txt { padding: 0 8px; font-size: 0.75rem; font-weight: 500; margin-left: auto; }
 .tool-ic:hover, .tool-txt:hover { background: var(--btn-ghost); color: var(--text); }
 .tool-ic[aria-pressed="true"], .tool-ic[aria-expanded="true"] {
@@ -3212,7 +3298,8 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .go-reason { margin: 4px 0 0; font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body); }
 .go-close {
   appearance: none; border: 0; background: transparent; color: var(--muted);
-  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  /* 7.9 §1e: the small size, not a third one (was 28) */
+  width: var(--ctl-h-sm); height: var(--ctl-h-sm); border-radius: var(--radius-sm);
   display: grid; place-items: center; font-size: 1rem; cursor: pointer; align-self: start;
   transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
 }

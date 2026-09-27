@@ -52,6 +52,7 @@ import { ChessSrs } from "./srs.js";
 import { ChessPicker } from "./picker.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
+import { watchFitRows } from "./fit-row.js";
 import { createStore } from "./store.js";
 
   /**
@@ -7528,6 +7529,20 @@ import { createStore } from "./store.js";
       : mode === "learn" ? !!(store.session.learn && store.session.learn.done) : false;
     const thinking = !!store.session.engineThinking || !!(store.session.learn && store.session.learn.engineBusy);
     const score = { "1-0": { w: "1", b: "0" }, "0-1": { w: "0", b: "1" }, "1/2-1/2": { w: "½", b: "½" } }[token];
+    // 7.9 §1a: 悔棋 / 提示 sit on the opponent's line, which is whichever
+    // strip is at the top. They move only when the board turns — a flip, or
+    // 自动翻转 after a move — and both of those come from a click or a key
+    // that has already finished, never between a pointerdown and its
+    // pointerup (7.6). Moving a node drops its focus, so the key a keyboard
+    // player just pressed gets it back.
+    const tools = el("strip-tools");
+    const topSide = bottom === "w" ? "b" : "w";
+    const topStrip = el("strip-" + topSide);
+    if (tools && topStrip && tools.parentNode !== topStrip) {
+      const had = tools.contains(document.activeElement) ? document.activeElement : null;
+      topStrip.insertBefore(tools, el("result-" + topSide));
+      if (had) had.focus({ preventScroll: true });
+    }
     for (const side of ["w", "b"]) {
       const strip = el("strip-" + side);
       if (!strip) continue;
@@ -10071,6 +10086,8 @@ import { createStore } from "./store.js";
     if (b) setFlipped(b.dataset.orient === "b");
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
+  // 7.9 §1b: the action groups are equal cells whose labels never wrap
+  watchFitRows(document.getElementById("side"));
   const moreBtn = document.getElementById("more-tools");
   if (moreBtn) {
     moreBtn.onclick = () => {
@@ -10080,9 +10097,14 @@ import { createStore } from "./store.js";
       row.hidden = !show;
       moreBtn.setAttribute("aria-expanded", show ? "true" : "false");
       // the key moves with the state, so a language switch re-renders the
-      // label that matches what the disclosure is actually doing
-      moreBtn.setAttribute("data-i18n", show ? "act.less" : "act.more");
-      moreBtn.textContent = t(show ? "act.less" : "act.more");
+      // label that matches what the disclosure is actually doing. 7.9 §1d:
+      // on the label and the name, not on the button — writing the button's
+      // text threw its icon away and left 「收起」 in a 36px square.
+      const key = show ? "act.less" : "act.more";
+      const lbl = moreBtn.querySelector(".tool-lbl");
+      if (lbl) { lbl.setAttribute("data-i18n", key); lbl.textContent = t(key); }
+      moreBtn.setAttribute("data-i18n-aria", key);
+      moreBtn.setAttribute("aria-label", t(key));
     };
   }
   const tabRow = document.querySelector(".side-tabs");
