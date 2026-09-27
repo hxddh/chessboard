@@ -178,29 +178,29 @@
         },
         "green": {
           "last": {
-            "cl": 35.2,
-            "cd": 46.5,
-            "dE": 15.4
+            "cl": 31.2,
+            "cd": 35.5,
+            "dE": 14.9
           },
           "sel": {
-            "cl": 40.2,
-            "cd": 46.7,
-            "dE": 12.6
+            "cl": 37.4,
+            "cd": 39.5,
+            "dE": 12.3
           },
           "check": {
-            "cl": 43.7,
-            "cd": 47.3,
-            "dE": 12.9
+            "cl": 41.1,
+            "cd": 39.7,
+            "dE": 12.1
           },
           "hint": {
-            "cl": 32.2,
-            "cd": 28.5,
-            "dE": 13.4
+            "cl": 34.9,
+            "cd": 35.6,
+            "dE": 12.2
           },
           "arrow": {
-            "cl": 32.2,
-            "cd": 28.5,
-            "dE": 13.4
+            "cl": 34.9,
+            "cd": 35.6,
+            "dE": 12.2
           }
         },
         "blue": {
@@ -289,13 +289,13 @@
         "min": 10.8,
         "pair": "blue/marble",
         "pairs": {
-          "wood/green": 25.5,
+          "wood/green": 28.5,
           "wood/blue": 28.6,
           "wood/paper": 17.4,
           "wood/marble": 18.1,
-          "green/blue": 26.7,
-          "green/paper": 18.6,
-          "green/marble": 20.5,
+          "green/blue": 17.9,
+          "green/paper": 19,
+          "green/marble": 16.9,
           "blue/paper": 20.7,
           "blue/marble": 10.8,
           "paper/marble": 13.9
@@ -389,10 +389,10 @@
         "hint": 26.3
       },
       "green": {
-        "last": 35.2,
-        "sel": 40.2,
-        "check": 43.7,
-        "hint": 32.2
+        "last": 31.2,
+        "sel": 37.4,
+        "check": 41.1,
+        "hint": 34.9
       },
       "blue": {
         "last": 24.7,
@@ -548,23 +548,23 @@
       "green": {
         "marks": {
           "last": {
-            "dE": 15.4,
-            "dH": 3.3
+            "dE": 14.9,
+            "dH": 4.6
           },
           "sel": {
-            "dE": 12.6,
-            "dH": 2.7
+            "dE": 12.3,
+            "dH": 3.4
           },
           "check": {
-            "dE": 12.9,
-            "dH": 4.4
+            "dE": 12.1,
+            "dH": 2.5
           },
           "hint": {
-            "dE": 13.4,
-            "dH": 4
+            "dE": 12.2,
+            "dH": 1
           }
         },
-        "sep": 11.6,
+        "sep": 12.2,
         "sepPair": "last/sel on dark"
       },
       "blue": {

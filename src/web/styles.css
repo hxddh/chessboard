@@ -402,10 +402,11 @@
       --engine-arrow-alt: rgba(5, 165, 255, var(--mark-soft));
     }
     [data-board="green"] {
-      /* 7.x 夜's board was a grey teal (#bed4c9 / #66907f). A green board
-         is what people mean by one — the tournament vinyl — at ΔL* 29 rather
-         than Lichess's 35 (see the ceilings above). Marks in yellow and a
-         dark olive, the way green boards mark a move. */
+      /* 7.x 夜's board was a grey teal (#bed4c9 / #66907f), nearly grey. A
+         green that is green, but still a sea green — green first, then blue,
+         then red, the order of 夜's shell it sits in (test-layout 3m2) —
+         at ΔL* 28 rather than Lichess's 35 (see the ceilings above). Marks
+         in yellow and a dark olive, the way green boards mark a move. */
       --piece-shadow: rgba(10,26,4,.15);
       --board-texture: none;
       --piece-ink: none;
@@ -413,8 +414,8 @@
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
       --coord-ink: rgba(220,235,228,.55);
       --board-edge: rgba(8,20,16,.34);
-      --sq-light: #e6eacb;
-      --sq-dark: #86a168;
+      --sq-light: #e2ead6;
+      --sq-dark: #81a38a;
       --sq-sel: rgba(140, 115, 0, var(--mark-mid));
       --sq-last: rgba(220, 205, 40, var(--mark-soft));
       --sq-check: rgba(235, 80, 20, var(--mark-mid));
@@ -1509,7 +1510,10 @@
     }
     .look-board { display: block; width: 100%; height: 100%; }
     .look-kings { display: flex; gap: 2px; }
-    .look-king { display: block; width: 26px; height: 26px; }
+    .look-king { display: block; width: 24px; height: 24px; }
+    /* seven sets: 4 + 3, not the 3 + 3 + 1 the five-or-more rule above
+       would give — no segment alone on a line (test-layout 3m3) */
+    #piece-pick-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .look-name { line-height: var(--lh-tight); }
     .theme-row button.active {
       color: var(--text);

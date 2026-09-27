@@ -2648,13 +2648,20 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   const shape = await page.evaluate(() => {
     const vis = (e) => { const b = e.getBoundingClientRect();
       return e.offsetParent !== null && b.width > 0 && b.height > 0; };
-    const btns = [...document.querySelectorAll("#side .act-btn, #side .theme-row button")].filter(vis);
+    // v8-0-plan A3: the board and piece pickers are pictures of what they
+    // choose (a corner of the board, two kings) — a tile, not an action, and
+    // their height is the picture's; they answer to the segment family in
+    // everything else (font, border), measured by the two lines after this
+    const btns = [...document.querySelectorAll("#side .act-btn, #side .theme-row:not(.look-grid) button")].filter(vis);
+    const tiles = [...document.querySelectorAll("#side .look-grid button")].filter(vis);
+    const tileKinds = [...new Set(tiles.map((b) => getComputedStyle(b).fontSize + "|" + getComputedStyle(b).borderStyle))];
     const kind = (e) => { const s = getComputedStyle(e);
       return [s.fontSize, s.fontWeight, s.borderStyle, Math.round(e.getBoundingClientRect().height)].join("|"); };
     const kinds = {};
     for (const b of btns) (kinds[kind(b)] ||= []).push(b.id || b.textContent.trim().slice(0, 6));
     return {
-      n: btns.length,
+      n: btns.length, tileKinds,
+      segKind: btns.filter((b) => b.closest(".theme-row")).map((b) => getComputedStyle(b).fontSize + "|" + getComputedStyle(b).borderStyle)[0] || null,
       heights: [...new Set(btns.map((b) => Math.round(b.getBoundingClientRect().height)))].sort((a, c) => a - c),
       sizes: [...new Set(btns.map((b) => getComputedStyle(b).fontSize))],
       borderless: btns.filter((b) => getComputedStyle(b).borderStyle === "none").map((b) => b.id),
@@ -2671,6 +2678,10 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   assert(shape.sizes.length === 1, `${lang}/${tab}: 所有动作一个字号(${shape.sizes.join(" ")})`);
   assert(shape.heights.length <= 2,
     `${lang}/${tab}: 高度最多两种(一行的和折行的),实际 ${JSON.stringify(shape.heights)}`);
+  if (shape.tileKinds.length) {
+    assert(shape.tileKinds.length === 1 && shape.tileKinds[0] === shape.segKind,
+      `${lang}/${tab}: 棋盘与棋子的图块和分段控件同一字号、同一边框(${shape.tileKinds.join(" ")} vs ${shape.segKind})`);
+  }
   assert(shape.primaries.length <= 1,
     `${lang}/${tab}: 同屏最多一个主按钮(${JSON.stringify(shape.primaries)})`);
   await ctx.close();
