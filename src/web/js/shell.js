@@ -108,7 +108,12 @@ export function createShell(d) {
 
   /** Leave a page for the board, keeping the mode (app.js's setSideTab). */
   function toBoard() {
-    if (shown() && isPage(store.ui.view)) show(boardView());
+    if (!shown() || !isPage(store.ui.view)) return;
+    show(boardView());
+    // saved, as go() saves: a flow that leaves a page for the board (an
+    // import, a history or library game) is where the app reopens next
+    // (Codex on #86)
+    saveSettings();
   }
 
   /** At launch: the page that was open, or the board of the restored mode. */

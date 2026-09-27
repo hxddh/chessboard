@@ -549,6 +549,13 @@ for (const v of ["home", "library", "me"]) {
   const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
   assert(rows === 2 && !st[v] && !st.stageInert && st.current === "play",
     v + ":整页在前时拖进来的 PGN 载入后回到棋盘(" + JSON.stringify({ rows, page: st[v], current: st.current, inert: st.stageInert }) + ")");
+  // …and the board is what the app reopens on: the navigation is saved, not
+  // only made (Codex on #86 — the next launch covered the game again)
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  const again = await state(page);
+  assert(again.current === "play" && !again[v], v + ":拖入后直接重开,回来的是棋盘不是这张整页(" + again.current + ")");
   assert(errs.length === 0, v + ":拖入 PGN 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
