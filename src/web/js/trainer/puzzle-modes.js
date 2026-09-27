@@ -41,7 +41,7 @@ export const isThemeCat = (cat) => typeof cat === "string" && cat.startsWith(THE
 export function createPuzzleModes(d) {
   const {
     doc, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend,
-    ALL_PUZZLES, isRatedCat, puzzleRating, playerRating, ratingLabel, ratingTip, motifKeyOf,
+    ALL_PUZZLES, isRatedCat, puzzleRating, playerRating, motifKeyOf,
     savePuzzleState, saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide,
   } = d;
   const Db = ChessPuzzleDb;
@@ -106,6 +106,12 @@ export function createPuzzleModes(d) {
     return rec && rec.rating ? rec.rating : null;
   }
   const ratingText = (r) => Math.round(r.r) + (ChessRating.isProvisional(r) ? "?" : "");
+  /**
+   * The player's rating for showing: the trainer's (idle days charged) once
+   * there is one, else a fresh one that is NOT filed — a view must not write
+   * a rating nobody has earned (7.3 B1: a rote drill leaves `rating` unset).
+   */
+  const seenRating = () => (store.session.puzzleState.rating ? playerRating() : ChessRating.newRating());
 
   /**
    * The first answer to a puzzle moves the rating of every theme it belongs
@@ -123,7 +129,7 @@ export function createPuzzleModes(d) {
 
   /** Nearest the theme's own rating first, unsolved first. */
   function themeStartIdx(id, list) {
-    const r = (themeRating(id) || playerRating()).r;
+    const r = (themeRating(id) || seenRating()).r;
     let best = -1;
     list.forEach((p, i) => {
       if (store.session.puzzleState.solved[p.id]) return;
@@ -140,7 +146,7 @@ export function createPuzzleModes(d) {
   function startTheme(id) {
     const cat = THEME_CAT + id;
     const bands = Db.bandsWith(id).map((x) => x.band);
-    const r = (themeRating(id) || playerRating()).r;
+    const r = (themeRating(id) || seenRating()).r;
     bands.sort((a, b) => Math.abs(a + 100 - r) - Math.abs(b + 100 - r));
     const serve = () => {
       // the player may have gone elsewhere while the chunk loaded
@@ -337,12 +343,12 @@ export function createPuzzleModes(d) {
     const v = el("pz-rating-v");
     const theme = !run && isThemeCat(cat) ? cat.slice(THEME_CAT.length) : null;
     const tr = theme ? themeRating(theme) : null;
-    setText(v, ratingLabel() + (theme ? " · " + themeName(theme) + " " + (tr ? ratingText(tr) : "—") : ""));
-    if (v) v.title = ratingTip();
+    setText(v, ratingText(seenRating()) + (theme ? " · " + themeName(theme) + " " + (tr ? ratingText(tr) : "—") : ""));
+    if (v) v.title = ChessRating.isProvisional(seenRating()) ? tf("rec.ratingRd", [Math.round(seenRating().rd)]) : "";
     const cv = el("pz-rating-curve");
     if (cv && cv.clientWidth) {
       const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);
-      if (!ys.length) ys.push(Math.round(playerRating().r));
+      if (!ys.length) ys.push(Math.round(seenRating().r));
       drawRatingTrend(cv, ys.length > 1 ? ys : [ys[0], ys[0]]);
     }
     const mode = run ? run.kind : "practice";

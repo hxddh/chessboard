@@ -1654,7 +1654,7 @@ export function createPuzzlesUI(d) {
   // v8-0-plan B1: 冲刺 / 连胜, the themes, the rating on the view (puzzle-modes.js)
   const Modes = createPuzzleModes({
     doc: document, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend,
-    ALL_PUZZLES, isRatedCat, puzzleRating, playerRating, ratingLabel, ratingTip, motifKeyOf,
+    ALL_PUZZLES, isRatedCat, puzzleRating, playerRating, motifKeyOf,
     savePuzzleState, saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide,
   });
 

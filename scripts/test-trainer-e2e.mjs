@@ -211,6 +211,13 @@ const hasMateIn = (g, n) => {
   const fresh = await open(null);
   const hf = helpers(fresh.page);
   assert(/^\d+\?/.test(await hf.text("#pz-rating-v") || ""), "c: 新档案也有评级，标「?」", await hf.text("#pz-rating-v"));
+  // …shown, not filed: a rating is written by an answer, never by the view
+  // (test-library-e2e: a rote drill must leave `rating` unset)
+  await fresh.page.click('#pz-mode-seg button[data-run="practice"]').catch(() => {});
+  await fresh.page.evaluate(() => document.getElementById("puzzle-next").click());
+  await fresh.page.waitForTimeout(300);
+  const filed = await fresh.page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}")).rating);
+  assert(filed == null, "c: 看一眼评级不会把评级存进档案", JSON.stringify(filed));
   await fresh.ctx.close();
 }
 
