@@ -380,7 +380,10 @@ export function createPersist(host, onWriteFailure) {
     if (mirrorTimer) { clearTimeout(mirrorTimer); mirrorTimer = null; }
     if (!mirrorEnabled || mirrorBlocked) return Promise.resolve(false);
     if (!perKey) return flushWhole();
-    const run = flushChain.then(flushKeys, flushKeys);
+    // one flush at a time on this page, and — with the store's lock — across
+    // every window sharing the store (host.js withStoreLock, Codex on #85)
+    const locked = () => (typeof host.withStoreLock === "function" ? host.withStoreLock(flushKeys) : flushKeys());
+    const run = flushChain.then(locked, locked);
     flushChain = run;
     return run;
   }
@@ -426,9 +429,8 @@ export function createPersist(host, onWriteFailure) {
       }
       // Commit against the manifest as it is now: this flush's keys are
       // ours, every other key is whatever the last commit — possibly another
-      // window's — says it is. Without a lock on the native side this is as
-      // close to compare-and-swap as the store gets; the window left open is
-      // the few milliseconds between this read and the write below.
+      // window's — says it is. The store lock (flushMirror) keeps another
+      // window's whole flush out from between this read and the write.
       const now = await readDisk();
       const cur = now.missing ? base : now.files;
       const flushed = new Set(names);

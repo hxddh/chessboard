@@ -579,6 +579,23 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return null;
   }
 
+  /**
+   * Run `fn` holding the per-key store's lock (Codex on #85). Two instances
+   * of the app can share one store (a second launch on Windows shares the
+   * WebView2 profile, and so its localStorage); a flush reads the manifest,
+   * writes key files, commits and cleans up, and two of those interleaved
+   * can drop each other's keys. Web Locks are held across every same-origin
+   * page of one browser profile, so one whole flush runs at a time. Where
+   * the API is missing (Safari before 15.4) there is no second instance to
+   * share a store with in practice, and `fn` simply runs.
+   * @template T @param {() => Promise<T>} fn @returns {Promise<T>}
+   */
+  function withStoreLock(fn) {
+    const locks = global.navigator && global.navigator.locks;
+    if (!locks || typeof locks.request !== "function") return fn();
+    return locks.request("chessboard.store", () => fn());
+  }
+
   /** @returns {Promise<string|null>} the data directory, for About */
   async function appdataPath() {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
@@ -710,6 +727,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // v8-0-plan F3: one file of the per-key store (persist.js)
     appdataReadKey: (key) => appdataRead(key),
     appdataWriteKey: (key, text) => appdataWrite(text, key),
+    withStoreLock,
     appdataPath,
     setMenuLanguage,
     checkUpdate,

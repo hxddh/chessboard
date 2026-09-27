@@ -604,5 +604,35 @@ for (const how of ["restore", "clear"]) {
   assert(r === "restored" && P.get("save") === "s-new", "a commit during a restore's reads is read again, whole (" + r + ": " + P.get("save") + ")");
 }
 
+// 2q. (Codex on #85) two windows flushing at the same moment: with the
+// store's lock (navigator.locks in host.js) one whole flush — read, write,
+// commit, clean up — runs before the other starts, so neither drops the
+// other's key however their bridge calls interleave
+{
+  const h = withStore(null);
+  let chain = Promise.resolve();
+  h.withStoreLock = (fn) => { const run = chain.then(fn, fn); chain = run.catch(() => {}); return run; };
+  const orig = h.appdataWriteKey, origR = h.appdataReadKey;
+  h.appdataWriteKey = async (k, t) => { await tick(5); return orig(k, t); };
+  h.appdataReadKey = async (k) => { await tick(5); return origR(k); };
+  const A = createPersist(h, () => {});
+  A.load();
+  await A.recover();
+  A.set("save", "s1");
+  A.set("stats", "old");
+  await A.flushMirror();
+  const B = createPersist(h, () => {});
+  B.load();
+  await B.recover();
+  A.set("save", "s2");
+  B.set("settings", "t2");
+  B.remove("stats");
+  A.set("stats", "again");
+  await Promise.all([A.flushMirror(), B.flushMirror()]);
+  const got = ["save", "settings", "stats"].map((n) => n + "=" + valOf(h, n)).join(" ");
+  assert(valOf(h, "save") === "s2" && valOf(h, "settings") === "t2",
+    "two windows flushing at once under the store lock keep both keys (" + got + ")");
+}
+
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");
