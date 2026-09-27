@@ -16,7 +16,9 @@
  *     the badges and the plan read. A session that starts in puzzle mode gets
  *     them before the bundle, the same way; every other session fetches them
  *     right after the first paint, the way the engine is booted.
- *   - **Merida** is needed only by a player who chose it; board.js asks.
+ *   - **a piece set other than the two in the bundle** is needed only by a
+ *     player who chose it; board.js asks (v8-0-plan A3: Merida, and since
+ *     8.0 four more — PIECE_CHUNKS).
  *
  * zh-CN, the source, stays in the bundle: it is also every other language's
  * last fallback, key by key.
@@ -37,6 +39,19 @@ import { LANG_IDS, FALLBACK_LANG, detectLang } from "./lang-ids.js";
   };
   export const MINED_CHUNK = { file: "chunk-mined.js", global: "MINED_PUZZLES" };
   export const MERIDA_CHUNK = { file: "chunk-merida.js", global: "MERIDA_PIECE_SVGS" };
+  /**
+   * v8-0-plan A3: every piece set but the two the bundle carries (the default
+   * cburnett, and pieces.js — the 7.x drawing the move list's figurines are
+   * cut from) is a chunk of its own, by set id. Merida keeps its M1 file
+   * name.
+   */
+  export const PIECE_CHUNKS = {
+    merida: MERIDA_CHUNK,
+    chessnut: { file: "chunk-pieces-chessnut.js", global: "CHESSNUT_PIECE_SVGS" },
+    fantasy: { file: "chunk-pieces-fantasy.js", global: "FANTASY_PIECE_SVGS" },
+    celtic: { file: "chunk-pieces-celtic.js", global: "CELTIC_PIECE_SVGS" },
+    spatial: { file: "chunk-pieces-spatial.js", global: "SPATIAL_PIECE_SVGS" },
+  };
 
   /** Where the settings live — persist.js KEYS.settings, read raw by chunk-boot.js. */
   export const SETTINGS_KEY = "chess.v1.settings";
@@ -62,7 +77,7 @@ import { LANG_IDS, FALLBACK_LANG, detectLang } from "./lang-ids.js";
     const lang = s ? (LANG_IDS.includes(s.langId) ? s.langId : FALLBACK_LANG) : detectLang(nav);
     const out = LANG_CHUNKS[lang].map((c) => c.file);
     if (s && s.mode === "puzzle") out.push(MINED_CHUNK.file);
-    if (s && s.pieceSet === "merida") out.push(MERIDA_CHUNK.file);
+    if (s && Object.prototype.hasOwnProperty.call(PIECE_CHUNKS, s.pieceSet)) out.push(PIECE_CHUNKS[s.pieceSet].file);
     return out;
   }
 

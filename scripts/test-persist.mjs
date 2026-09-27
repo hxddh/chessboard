@@ -15,6 +15,7 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { compileModuleSync } from "./bundle.mjs";
 import { createPersist, KEYS, SCHEMA, STORE_META, isStoreMeta } from "../src/web/js/persist.js";
+import { migrateLook, lookAttrs, LEGACY_THEMES, LOOK_DEFAULT, PIECE_SET_IDS, BOARD_IDS } from "../src/web/js/look.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -415,6 +416,62 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   assert((await P2.recover()) === "kept", "the relaunch keeps the cache");
   await tick(600);
   assert(h.writes.length === 0, "…and rewrites nothing (" + h.writes.join(",") + ")");
+}
+
+// --- 3. v8-0-plan A3: the look, migrated from 7.x settings ------------------
+// The settings record kept one `themeId` (and a `followSystem` switch over
+// it) through 7.x; 8.0 keeps four fields. Every old id, the switch, a first
+// run and a value nobody wrote must land somewhere deliberate — and every old
+// theme must come back as the shell it was, since a profile that opens in a
+// different colour looks like a profile that was lost.
+{
+  const cases = [
+    // [stored, want look, want data-theme when the system is light / dark]
+    [null, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
+    [{ mode: "ai" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
+    [{ themeId: "wood" }, { appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "wood", "wood"],
+    [{ themeId: "night" }, { appearance: "dark", boardId: "green", boardFrame: "flat", pieceSet: "cburnett" }, "night", "night"],
+    [{ themeId: "day" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "day"],
+    [{ themeId: "notebook" }, { appearance: "light", boardId: "blue", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "notebook"],
+    // 7.x's follow switch overrode the theme on every launch; it still does
+    [{ themeId: "night", followSystem: true }, { appearance: "system", boardId: "green", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "night"],
+    [{ themeId: "day", followSystem: false, pieceSet: "merida" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "day"],
+    // 7.7+ wrote "cburnett" for everybody: it is the new default drawing now
+    [{ themeId: "wood", pieceSet: "cburnett" }, { appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "wood", "wood"],
+    // garbage falls back field by field
+    [{ themeId: "toString", pieceSet: "nope" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
+    // 8.0 settings are read as written, and win over the themeId beside them
+    [{ themeId: "wood", followSystem: false, appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" },
+      { appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" }, "day", "day"],
+    [{ appearance: "dark", boardId: "paper", boardFrame: "sideways", pieceSet: "classic" },
+      { appearance: "dark", boardId: "paper", boardFrame: "flat", pieceSet: "classic" }, "wood", "wood"],
+    [{ appearance: "sepia", boardId: "blue" }, { appearance: "system", boardId: "blue", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "night"],
+  ];
+  for (const [stored, want, lightShell, darkShell] of cases) {
+    const got = migrateLook(stored);
+    assert(JSON.stringify(got) === JSON.stringify(want),
+      "migrateLook(" + JSON.stringify(stored) + ") = " + JSON.stringify(got));
+    assert(lookAttrs(got, false).theme === lightShell && lookAttrs(got, true).theme === darkShell,
+      "…in the " + lightShell + " / " + darkShell + " shell on a light / dark system");
+  }
+  // every 7.x theme is covered, and comes back as exactly the shell it was
+  for (const id of ["wood", "night", "day", "notebook"]) {
+    assert(Object.prototype.hasOwnProperty.call(LEGACY_THEMES, id), "7.x theme " + id + " has a migration");
+    for (const dark of [false, true]) {
+      assert(lookAttrs(migrateLook({ themeId: id }), dark).theme === id,
+        "7.x theme " + id + " opens in its own shell (system " + (dark ? "dark" : "light") + ")");
+    }
+  }
+  assert(JSON.stringify(migrateLook(null)) === JSON.stringify(LOOK_DEFAULT), "a first run gets the default look");
+  assert(LOOK_DEFAULT.appearance === "system" && LOOK_DEFAULT.boardFrame === "flat",
+    "…which follows the system, on the flat board (§8 decision 3)");
+  // what the stored record can say is what the pickers offer
+  for (const id of PIECE_SET_IDS) {
+    assert(migrateLook({ appearance: "system", pieceSet: id }).pieceSet === id, "piece set " + id + " survives a save");
+  }
+  for (const id of BOARD_IDS) {
+    assert(migrateLook({ appearance: "system", boardId: id }).boardId === id, "board " + id + " survives a save");
+  }
 }
 
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

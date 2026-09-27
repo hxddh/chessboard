@@ -51,14 +51,6 @@
          warm enough to be recognisably the same material. 正文 lands 12.4:1 on
          the panel and 次要 6.1:1 (was 8.9 and 4.4 — the muted text is the one
          that gained, because the surface it sits on moved toward it). */
-      /* 5.2 · the theme index. Each theme's two square colours, named for
-         the theme, so the 主题 segment can show all four swatches at once
-         whichever theme is live. Raw values live here with the others; the
-         segment reads them by name and nothing else does. */
-      --sw-wood-a: #f0d9b5; --sw-wood-b: #b58863;
-      --sw-night-a: #bed4c9; --sw-night-b: #66907f;
-      --sw-day-a: #eddcc0; --sw-day-b: #c39a6b;
-      --sw-notebook-a: #e8ecf3; --sw-notebook-b: #98a8bd;
       --wood-bg: #241a12;
       --wood-panel: #33261c;
       --wood-panel-border: #4a3729;
@@ -101,6 +93,16 @@
       --card-fill: var(--wood-card);
       --card-line: var(--wood-card-border);
       --control-ghost: var(--wood-btn-ghost);
+      /* one scale for "how bad was that move", read by the stylesheet AND
+         by the canvas (app.js judgeColours), and the two sides for anything
+         that draws White against Black. v8-0-plan A3: here, not on the
+         board — the panel they colour is the shell's, and a board no longer
+         implies its shell. Each shell keeps the values its board had. */
+      --judge-soft: #c9b458;
+      --judge-mid: #e0a03c;
+      --judge-bad: #e05252;
+      --side-white: #f2f2ee;
+      --side-black: #1d1d1b;
     }
     [data-theme="night"] {
       /* 1 · raw values — literals, named for the theme they belong to.
@@ -153,6 +155,11 @@
       --card-fill: var(--night-card);
       --card-line: var(--night-card-border);
       --control-ghost: var(--night-btn-ghost);
+      --judge-soft: #d8c46a;
+      --judge-mid: #eaa94a;
+      --judge-bad: #e8705c;
+      --side-white: #dfeae4;
+      --side-black: #0e1613;
     }
     [data-theme="day"] {
       /* 1 · raw values — literals, named for the theme they belong to.
@@ -208,6 +215,11 @@
       --card-fill: var(--day-card);
       --card-line: var(--day-card-border);
       --control-ghost: var(--day-btn-ghost);
+      --judge-soft: #9a7b12;
+      --judge-mid: #b7690c;
+      --judge-bad: #c0392b;
+      --side-white: #fbfbf8;
+      --side-black: #23231f;
     }
     [data-theme="notebook"] {
       /* 1 · raw values — literals, named for the theme they belong to.
@@ -257,6 +269,11 @@
       --card-fill: var(--notebook-card);
       --card-line: var(--notebook-card-border);
       --control-ghost: var(--notebook-btn-ghost);
+      --judge-soft: #8a6d0f;
+      --judge-mid: #a85c08;
+      --judge-bad: #b3372a;
+      --side-white: #fdfdfa;
+      --side-black: #26261f;
     }
 
     /* 3 · component variables — the names the rules below actually use.
@@ -313,8 +330,25 @@
        whole game, and "I want the paper interface with the wooden board" is a
        reasonable thing to want.
 
-       app.js sets data-board to the theme's own id, so the default pairing is
-       unchanged — this only makes the pairing a *choice* rather than a fact.
+       v8-0-plan A3: and now it is a choice of its own. js/look.js keeps the
+       board apart from the appearance (light / dark / system); the shell
+       follows the appearance and takes the board's warm or cool family. Five
+       boards, each one its own thing — 7.x had four palettes and three
+       boards, 日's squares sitting ΔE00 6.4 from 木's on the dark square and
+       2.8 on the light one. The closest two dark squares here are 10 apart
+       (docs/measured.json boardLook), and paper and marble carry a texture
+       besides (--board-texture, drawn by js/board-skin.js).
+
+       Every mark on every board is held to two ceilings, over the light
+       square AND the dark one (scripts/lib/mark-colour.mjs, test-chess):
+       its chroma (last move and selection ≤ 47, check, hint and the engine
+       arrow ≤ 52), and the ΔE00 between its two composites (≤ 16) — the
+       same mark has to read as the same mark on either square. That second
+       ceiling is why no board here is as contrasty as Lichess's green
+       (ΔL* 35): past about 28 the soft marks cannot stay one colour.
+
+       --judge-* and --side-* moved to the shells: they colour the panel as
+       much as the board, and a board no longer implies its shell.
        ------------------------------------------------------------------ */
     :root, [data-board="wood"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow.
@@ -326,14 +360,9 @@
          undoes 缺陷 17 (men sitting on flat colour with no contact at all);
          half keeps the contact at the base and loses the smudge. */
       --piece-shadow: rgba(38,20,4,.13);
-      /* 3 · judgement — one scale for "how bad was that move", read by the
-         stylesheet AND by the canvas (see app.js readMistakeColours). */
-      --judge-soft: #c9b458;
-      --judge-mid: #e0a03c;
-      --judge-bad: #e05252;
-      /* the two sides, for anything that draws White against Black */
-      --side-white: #f2f2ee;
-      --side-black: #1d1d1b;
+      /* v8-0-plan A3: flat colour; paper and marble name a texture here */
+      --board-texture: none;
+      --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
       --board-shadow: 0 10px 36px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22);
@@ -351,7 +380,9 @@
          term 3.1 → 4.2 (ceiling 5), still ΔE00 18 from the bare square
          (docs/measured.json markChroma) */
       --sq-last: rgba(40, 200, 0, var(--mark-soft));
-      --sq-check: rgba(245, 70, 55, var(--mark-mid));
+      /* v8-0-plan A3: over the dark square this was C* 55.1, past the check
+         ceiling the light square had always met; a deeper red, 51.8 */
+      --sq-check: rgba(215, 55, 45, var(--mark-mid));
       --sq-hint: rgba(5, 165, 255, var(--mark-mid));
       --sq-star: rgba(255, 219, 38, var(--mark-strong));
       --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
@@ -370,31 +401,31 @@
       --engine-arrow: rgba(5, 165, 255, var(--mark-mid));
       --engine-arrow-alt: rgba(5, 165, 255, var(--mark-soft));
     }
-    [data-board="night"] {
-      /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(0,10,6,.17);
-      --judge-soft: #d8c46a;
-      --judge-mid: #eaa94a;
-      --judge-bad: #e8705c;
-      --side-white: #dfeae4;
-      --side-black: #0e1613;
+    [data-board="green"] {
+      /* 7.x 夜's board was a grey teal (#bed4c9 / #66907f). A green board
+         is what people mean by one — the tournament vinyl — at ΔL* 29 rather
+         than Lichess's 35 (see the ceilings above). Marks in yellow and a
+         dark olive, the way green boards mark a move. */
+      --piece-shadow: rgba(10,26,4,.15);
+      --board-texture: none;
+      --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
       --coord-ink: rgba(220,235,228,.55);
       --board-edge: rgba(8,20,16,.34);
-      --sq-light: #bed4c9;
-      --sq-dark: #66907f;
-      --sq-sel: rgba(0, 130, 70, var(--mark-mid));
-      --sq-last: rgba(0, 250, 55, var(--mark-soft));
-      --sq-check: rgba(255, 35, 20, var(--mark-mid));
-      --sq-hint: rgba(0, 80, 230, var(--mark-mid));
+      --sq-light: #e6eacb;
+      --sq-dark: #86a168;
+      --sq-sel: rgba(140, 115, 0, var(--mark-mid));
+      --sq-last: rgba(220, 205, 40, var(--mark-soft));
+      --sq-check: rgba(235, 80, 20, var(--mark-mid));
+      --sq-hint: rgba(0, 95, 225, var(--mark-mid));
       --sq-star: rgba(217, 144, 0, var(--mark-strong));
       --sq-star-edge: rgba(60, 38, 0, var(--mark-mid));
-      --sq-flash: rgba(64, 255, 198, var(--mark-mid));
+      --sq-flash: rgba(0, 110, 60, var(--mark-mid));
       --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(6,16,12,.60);
-      --sq-dot: rgba(8, 18, 15, var(--mark-soft));
-      --sq-ring: rgba(8, 18, 15, var(--mark-soft));
+      --sq-cursor-edge: rgba(8,18,6,.60);
+      --sq-dot: rgba(14, 26, 8, var(--mark-soft));
+      --sq-ring: rgba(14, 26, 8, var(--mark-soft));
       /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
       --shape-g: rgba(21, 120, 27, var(--mark-strong));
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
@@ -402,76 +433,35 @@
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
       /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
          (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(0, 80, 230, var(--mark-mid));
-      --engine-arrow-alt: rgba(0, 80, 230, var(--mark-soft));
+      --engine-arrow: rgba(0, 95, 225, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 95, 225, var(--mark-soft));
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
-    [data-board="day"] {
-      /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(40,36,28,.10);
-      --judge-soft: #9a7b12;
-      --judge-mid: #b7690c;
-      --judge-bad: #c0392b;
-      --side-white: #fbfbf8;
-      --side-black: #23231f;
-
-      --board-frame: linear-gradient(145deg, #f3e6d0, #e8d4b0 45%, #dfc9a0);
-      --board-shadow: 0 10px 28px rgba(80,60,30,.18), inset 0 1px 0 rgba(255,255,255,.7);
-      --coord-ink: rgba(70,52,28,.62);
-      --board-edge: rgba(90,66,36,.26);
-      --sq-light: #eddcc0;
-      --sq-dark: #c39a6b;
-      /* 7.9 §3: selection C* 57.2 → 44.8 and a step darker (L* 69.1 →
-         64.8), so it parts from the last move by lightness — closest ΔE00
-         10.1 → 13.9; check C* 53.7 → 49.9 at the same hue */
-      --sq-sel: rgba(10, 125, 10, var(--mark-mid));
-      --sq-last: rgba(0, 255, 45, var(--mark-soft));
-      --sq-check: rgba(235, 50, 20, var(--mark-mid));
-      --sq-hint: rgba(0, 125, 255, var(--mark-mid));
-      --sq-star: rgba(255, 227, 89, var(--mark-strong));
-      --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
-      --sq-flash: rgba(0, 115, 54, var(--mark-mid));
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(40,28,12,.55);
-      --sq-dot: rgba(60, 45, 25, var(--mark-soft));
-      --sq-ring: rgba(60, 45, 25, var(--mark-soft));
-      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
-      --shape-g: rgba(21, 120, 27, var(--mark-strong));
-      --shape-r: rgba(136, 32, 32, var(--mark-strong));
-      --shape-b: rgba(0, 48, 136, var(--mark-strong));
-      --shape-y: rgba(232, 143, 0, var(--mark-strong));
-      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
-         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(0, 125, 255, var(--mark-mid));
-      --engine-arrow-alt: rgba(0, 125, 255, var(--mark-soft));
-    }
-    [data-board="notebook"] {
-      /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(50,44,30,.09);
-      --judge-soft: #8a6d0f;
-      --judge-mid: #a85c08;
-      --judge-bad: #b3372a;
-      --side-white: #fdfdfa;
-      --side-black: #26261f;
+    [data-board="blue"] {
+      /* 7.x 纸's blue-grey board, a step warmer and lighter (#e8ecf3 /
+         #98a8bd): Lichess's blue family. Its marks moved off blue — a blue
+         last move on a blue board is a tint of the board — to a yellow-green
+         and an orange hint. */
+      --piece-shadow: rgba(30,44,54,.10);
+      --board-texture: none;
+      --piece-ink: none;
 
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
       --coord-ink: rgba(42,49,64,.55);
       --board-edge: rgba(42,49,64,.22);
-      --sq-light: #e8ecf3;
-      --sq-dark: #98a8bd;
-      --sq-sel: rgba(35, 65, 160, var(--mark-mid));
-      --sq-last: rgba(30, 85, 240, var(--mark-soft));
-      --sq-check: rgba(255, 35, 0, var(--mark-mid));
-      /* 7.9 §3: the hint was the loudest colour in the app (C* 68.0); the
-         same green at the same lightness, C* 49.9 */
-      --sq-hint: rgba(70, 245, 100, var(--mark-mid));
+      --sq-light: #dfe5e8;
+      --sq-dark: #8ba3b0;
+      --sq-sel: rgba(55, 110, 0, var(--mark-mid));
+      --sq-last: rgba(150, 200, 30, var(--mark-soft));
+      --sq-check: rgba(240, 50, 40, var(--mark-mid));
+      --sq-hint: rgba(255, 150, 0, var(--mark-mid));
       --sq-star: rgba(166, 110, 0, var(--mark-strong));
       --sq-star-edge: rgba(60, 40, 0, var(--mark-mid));
-      --sq-flash: rgba(10, 191, 94, var(--mark-mid));
+      --sq-flash: rgba(10, 150, 80, var(--mark-mid));
       --sq-cursor: rgba(255,255,255,.95);
       --sq-cursor-edge: rgba(28,33,44,.58);
-      --sq-dot: rgba(42, 49, 64, var(--mark-soft));
-      --sq-ring: rgba(42, 49, 64, var(--mark-soft));
+      --sq-dot: rgba(30, 40, 52, var(--mark-soft));
+      --sq-ring: rgba(30, 40, 52, var(--mark-soft));
       /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
       --shape-g: rgba(21, 120, 27, var(--mark-strong));
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
@@ -479,9 +469,82 @@
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
       /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
          (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(70, 245, 100, var(--mark-mid));
-      --engine-arrow-alt: rgba(70, 245, 100, var(--mark-soft));
+      --engine-arrow: rgba(255, 150, 0, var(--mark-mid));
+      --engine-arrow-alt: rgba(255, 150, 0, var(--mark-soft));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
+    }
+    [data-board="paper"] {
+      /* 纸墨: the diagram page. Cream paper with its fibre, dark squares a
+         grey ink wash laid on it (board-skin.js draws both), and the men in
+         ink: their white is the paper's, their black the ink's (--piece-ink,
+         "ink paper"). The lowest-contrast board here (ΔL* 19), which is what
+         a printed diagram is — and so the marks are quiet too, an indigo
+         last move and a vermilion check, the two colours a printer has. */
+      --piece-shadow: rgba(40,34,20,.08);
+      --board-texture: paper;
+      --piece-ink: #1d2230 #f6f1e4;
+
+      --board-frame: linear-gradient(145deg, #efe6d2, #e3d7bd 50%, #d8caac);
+      --board-shadow: 0 8px 24px rgba(60,48,20,.16), inset 0 1px 0 rgba(255,255,255,.6);
+      --coord-ink: rgba(40,36,30,.62);
+      --board-edge: rgba(60,50,30,.24);
+      --sq-light: #f3eee2;
+      --sq-dark: #c4b9a2;
+      --sq-sel: rgba(30, 60, 150, var(--mark-mid));
+      --sq-last: rgba(40, 90, 200, var(--mark-soft));
+      --sq-check: rgba(200, 40, 30, var(--mark-mid));
+      --sq-hint: rgba(20, 140, 90, var(--mark-mid));
+      --sq-star: rgba(200, 120, 0, var(--mark-strong));
+      --sq-star-edge: rgba(70, 40, 0, var(--mark-mid));
+      --sq-flash: rgba(20, 140, 90, var(--mark-mid));
+      --sq-cursor: rgba(255,255,255,.95);
+      --sq-cursor-edge: rgba(29,34,48,.60);
+      --sq-dot: rgba(29, 34, 48, var(--mark-soft));
+      --sq-ring: rgba(29, 34, 48, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(20, 140, 90, var(--mark-mid));
+      --engine-arrow-alt: rgba(20, 140, 90, var(--mark-soft));
+    }
+    [data-board="marble"] {
+      /* White Carrara and a grey bardiglio, veined (board-skin.js). Neutral
+         where every other board has a hue, which is what sets it apart from
+         blue (ΔE00 10.8 on the dark square) at a similar lightness. */
+      --piece-shadow: rgba(20,20,24,.12);
+      --board-texture: marble;
+      --piece-ink: none;
+
+      --board-frame: linear-gradient(145deg, #d9d6d0, #bfbcb6 50%, #a9a6a0);
+      --board-shadow: 0 10px 30px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.45);
+      --coord-ink: rgba(30,30,34,.62);
+      --board-edge: rgba(30,30,34,.26);
+      --sq-light: #e9e7e3;
+      --sq-dark: #989796;
+      --sq-sel: rgba(10, 95, 65, var(--mark-mid));
+      --sq-last: rgba(60, 170, 120, var(--mark-soft));
+      --sq-check: rgba(230, 40, 40, var(--mark-mid));
+      --sq-hint: rgba(40, 110, 240, var(--mark-mid));
+      --sq-star: rgba(230, 170, 20, var(--mark-strong));
+      --sq-star-edge: rgba(90, 60, 0, var(--mark-mid));
+      --sq-flash: rgba(10, 130, 80, var(--mark-mid));
+      --sq-cursor: rgba(255,255,255,.95);
+      --sq-cursor-edge: rgba(20,20,24,.58);
+      --sq-dot: rgba(24, 24, 30, var(--mark-soft));
+      --sq-ring: rgba(24, 24, 30, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(40, 110, 240, var(--mark-mid));
+      --engine-arrow-alt: rgba(40, 110, 240, var(--mark-soft));
     }
 
     /* Board mark strength — one scale, three steps, all four boards.
@@ -879,6 +942,20 @@
     #app[data-coords="in"] .coords.ranks > span:nth-child(even) { color: var(--sq-light); }
     #app[data-coords="in"] .coords.files > span:nth-child(even),
     #app[data-coords="in"] .coords.ranks > span:nth-child(odd) { color: var(--sq-dark); }
+    /* v8-0-plan A3: the flat board — the default from 8.0 (§8 decision 3).
+       No frame: no gradient, no 36px shadow, no 17px of wood; the squares
+       run to the edge with a 3px corner, and the coordinates are in the
+       squares (app.js sets data-coords="in" whenever the frame is off —
+       there is no frame to print them on). The board is bigger by the
+       frame it lost, on every tab alike, so the rect still depends only on
+       the window and on this setting. The frame is one switch away
+       (边框 → 木框), unchanged; keyed as "not the frame" so that the page
+       before app.js has set data-frame is already the default. */
+    html:not([data-frame="frame"]) #app { --wood-pad: 0px; }
+    html:not([data-frame="frame"]) #board-wrap { background: none; box-shadow: none; border-radius: 3px; }
+    html:not([data-frame="frame"]) #board,
+    html:not([data-frame="frame"]) #board-wrap::after { border-radius: 3px; }
+    html:not([data-frame="frame"]) #app .eval-gauge.is-inset { left: 2px; width: 8px; }
 
     canvas {
       display: block; width: 100%; height: 100%;
@@ -1420,6 +1497,20 @@
       display: inline-flex; align-items: center; justify-content: center;
       text-align: center;
     }
+    /* v8-0-plan A3: the board and piece pickers (js/appearance-ui.js) are
+       segments like every other choice on this page — same box, same active
+       state — whose segments show what they name: a 4×4 corner of the board,
+       or the set's two kings. Only the stacking differs; the height is still
+       the family's floor, grown by its content. */
+    .look-grid button { flex-direction: column; gap: 4px; padding: 6px 4px; }
+    .look-swatch {
+      display: block; width: 40px; height: 40px; overflow: hidden;
+      border-radius: 3px; box-shadow: 0 0 0 1px var(--card-border);
+    }
+    .look-board { display: block; width: 100%; height: 100%; }
+    .look-kings { display: flex; gap: 2px; }
+    .look-king { display: block; width: 26px; height: 26px; }
+    .look-name { line-height: var(--lh-tight); }
     .theme-row button.active {
       color: var(--text);
       border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
@@ -2691,16 +2782,6 @@
     }
     .pv-act:hover { color: var(--text); border-color: var(--accent); }
     #puzzle-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; margin: -4px 0 12px; overflow: visible; }
-    /* the 主题 segment shows what it names: two squares of each board */
-    #theme-seg button::before {
-      content: ""; display: inline-block; width: 10px; height: 10px;
-      margin-right: 6px; vertical-align: -1px; border-radius: 3px;
-      border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
-    }
-    #theme-seg button[data-theme="wood"]::before { background: linear-gradient(135deg, var(--sw-wood-a) 50%, var(--sw-wood-b) 50%); }
-    #theme-seg button[data-theme="night"]::before { background: linear-gradient(135deg, var(--sw-night-a) 50%, var(--sw-night-b) 50%); }
-    #theme-seg button[data-theme="day"]::before { background: linear-gradient(135deg, var(--sw-day-a) 50%, var(--sw-day-b) 50%); }
-    #theme-seg button[data-theme="notebook"]::before { background: linear-gradient(135deg, var(--sw-notebook-a) 50%, var(--sw-notebook-b) 50%); }
     /* 拿去练 — the turning point's second half: same quiet dashed voice as
        the jump row above it, because they are two verbs on one fact. */
     .review-bank {
