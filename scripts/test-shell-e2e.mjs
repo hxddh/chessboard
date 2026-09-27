@@ -529,6 +529,30 @@ for (const lang of ["en", "ja"]) {
   await ctx.close();
 }
 
+// Codex on #86: a PGN dropped onto the window while a page is in front loads
+// onto the board, and the board is what shows next — the same as a game from
+// the library or the history. Red before: the toast said it loaded, and the
+// page went on covering it.
+for (const v of ["home", "library", "me"]) {
+  const { ctx, page, errs } = await open({ mode: "pvp" });
+  await page.click('#rail button[data-view="' + v + '"]');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['[Event "?"]\n\n1. d4 d5 2. c4 *'], "drop.pgn", { type: "text/plain" }));
+    window.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(900);
+  await page.click("#confirm-ok", { timeout: 600 }).catch(() => {});
+  await page.waitForTimeout(500);
+  const st = await state(page);
+  const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
+  assert(rows === 2 && !st[v] && !st.stageInert && st.current === "play",
+    v + ":整页在前时拖进来的 PGN 载入后回到棋盘(" + JSON.stringify({ rows, page: st[v], current: st.current, inert: st.stageInert }) + ")");
+  assert(errs.length === 0, v + ":拖入 PGN 没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }

@@ -9197,8 +9197,8 @@ import { createStore } from "./store.js";
     restoreAnalysis();
     resetClocks();
     syncAutoFlip();
-    store.commit("game", "action");
-    saveGame();
+    // a page in front (a drop, an Open, a paste) gives way to the game (Codex on #86)
+    Shell.toBoard(); store.commit("game", "action"); saveGame();
     toast(sanHistory().length
       ? t("msg.import.donePrefix") + moveCount(Math.ceil(sanHistory().length / 2))
       : t("mm.positionLoaded"));
