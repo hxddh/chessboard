@@ -3583,6 +3583,71 @@ for (const [when, mode, act] of [
   await ctx.close();
 }
 
+// --- 7.9 §4b:「今天的训练」只在人机和双人、没有对局时出现 -------------------
+// 7.8.0 在教学里,第一课正在上,面板最上面仍是「今天的训练:学一节新课」,把课文
+// 往下推了约 140px;做题页同理。量法:卡片藏着时课文标题的纵坐标,对比把卡片
+// 临时放回来时的纵坐标 —— 后者就是 7.8.0 的位置。
+{
+  for (const mode of ["learn", "puzzle"]) {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    const r = await page.evaluate((m) => {
+      const row = document.getElementById("daily-row");
+      const head = document.querySelector(m === "learn" ? "#lesson-title" : "#sec-puzzle .side-h-row");
+      const shown = !!row.offsetParent;
+      const now = head.getBoundingClientRect().top;
+      row.hidden = false;
+      const was = head.getBoundingClientRect().top;
+      row.hidden = true;
+      return { shown, now, was };
+    }, mode);
+    assert(!r.shown, "§4b " + mode + ":「今天的训练」不出现");
+    assert(r.was - r.now >= 40, "§4b " + mode + ":" + (mode === "learn" ? "课文标题" : "做题标题") +
+      "上移 " + Math.round(r.was - r.now) + "px(" + Math.round(r.was) + " → " + Math.round(r.now) + ")");
+    await ctx.close();
+  }
+  for (const mode of ["ai", "pvp"]) {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    assert(await page.evaluate(() => !!document.getElementById("daily-row").offsetParent),
+      "§4b " + mode + ":没有对局时「今天的训练」在");
+    await ctx.close();
+  }
+}
+
+// --- 7.9 §4d:做题页的纵向节奏只有两种间距 ----------------------------------
+// 同一组内 8px,组与组之间 20px。7.8.0 是 8 / 0 / 8 / 12 / 12,「为你出一题」
+// 离「题型」只有 9px。量的是 #sec-puzzle 里每个看得见的块,上一块下缘到下一块
+// 上缘;没走、走错(反馈卡加提示)、走对(反馈卡加后续)三种状态都量。
+{
+  const gaps = (page) => page.evaluate(() => {
+    const kids = [...document.getElementById("sec-puzzle").children]
+      .filter((e) => e.getClientRects().length && e.getBoundingClientRect().height > 0);
+    const out = [];
+    for (let i = 1; i < kids.length; i++) {
+      const g = kids[i].getBoundingClientRect().top - kids[i - 1].getBoundingClientRect().bottom;
+      out.push({ g: Math.round(g * 10) / 10, at: kids[i].id || kids[i].className });
+    }
+    return out;
+  });
+  const ok = (gs) => gs.every((x) => Math.abs(x.g - 8) <= 0.5 || Math.abs(x.g - 20) <= 0.5);
+  const show = (gs) => gs.map((x) => x.g + "→" + x.at).join(", ");
+  for (const lang of LANGS) {
+    const { ctx, page } = await open(lang, "puzzle", "play");
+    const g0 = await gaps(page);
+    assert(g0.length >= 4 && ok(g0), "§4d " + lang + " 做题页各段间距只有 8 / 20:" + show(g0));
+    if (lang === "zh-CN") {
+      await mv(page, "a1"); await mv(page, "a2");
+      await page.waitForTimeout(400);
+      const g1 = await gaps(page);
+      assert(ok(g1), "§4d 走错之后(反馈卡)仍只有 8 / 20:" + show(g1));
+      await mv(page, "a1"); await mv(page, "a8");
+      await page.waitForTimeout(600);
+      const g2 = await gaps(page);
+      assert(ok(g2), "§4d 走对之后仍只有 8 / 20:" + show(g2));
+    }
+    await ctx.close();
+  }
+}
+
 
 // --- 7.7 §1：看得见的瑕疵，写成几何断言 ------------------------------------
 // 每一条都是 7.6.0 截图里看得见的东西（v7-7-plan §1a–§1e）。量的是摆好之后

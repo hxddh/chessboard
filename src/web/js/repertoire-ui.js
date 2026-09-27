@@ -243,6 +243,11 @@ export function createRepertoireUI(d) {
       p.textContent = text;
       body.appendChild(p);
     };
+    // 7.9 §4a: with no book, the section is one dashed card with the two
+    // imports inside it, side by side (see .rec-block) — the gaps below,
+    // when there are any, inside it too
+    const block = doc.getElementById("rep-block");
+    if (block) block.classList.toggle("empty", !total());
     if (!total()) {
       line(t("rep.empty"), "hint empty-note");   // 7.7 §3: see .empty-note
     } else {

@@ -6128,9 +6128,16 @@ import { createStore } from "./store.js";
     // card in and pushed the notation ~160px down, and the step forward took
     // it away again — the panel jumped on every key press. Whether there is
     // notation does not change while you walk through it, so neither does this.
-    const hasGame = (store.session.mode === "ai" || store.session.mode === "pvp") && !store.session.editor &&
-      sanHistory().length > 0;
-    avail(el("daily-row"), !hasGame);
+    //
+    // 7.9 §4b: and it is only ever on the two playing boards. In a lesson
+    // or a puzzle the person is already doing today's training — the card
+    // said 「学一节新课」 above the first lesson in progress and pushed the
+    // lesson ~140px down. It is for someone who does not know what to do
+    // next: the ai or pvp board with no game on it. The label below is still
+    // kept current, so the plan's step reads right when the card comes back.
+    const playing = store.session.mode === "ai" || store.session.mode === "pvp";
+    const hasGame = playing && !store.session.editor && sanHistory().length > 0;
+    avail(el("daily-row"), playing && !hasGame);
     const d = store.session.daily;
     if (!d) {
       setText(label, t("daily.btn"));
@@ -7981,7 +7988,9 @@ import { createStore } from "./store.js";
     const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
       : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
-      if (b.id !== wants) b.classList.remove("primary");
+      // 7.9 §4a: the record page's empty library spends its own fill, on a
+      // tab of its own (library-ui.js renderLibrary) — not this function's
+      if (b.id !== wants && !b.closest("#pane-record")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
