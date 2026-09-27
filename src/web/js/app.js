@@ -43,6 +43,7 @@ import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
 import { ChessReviewGrade as Grade } from "./review-grade.js";
 import { createAnalysis } from "./review/analysis.js";
+import { createBoardMarks } from "./review/board-marks.js";
 import { createEvalGraph } from "./review/eval-graph.js";
 import { createLines } from "./review/lines.js";
 import { createReviewPanel } from "./review/panel.js";
@@ -1085,94 +1086,6 @@ import { createStore } from "./store.js";
     if (!d || !d.over) return s;
     if (d.over === d.from) return { arrows: s.arrows, circles: s.circles.concat({ sq: d.from, color: d.color }) };
     return { arrows: s.arrows.concat({ from: d.from, to: d.over, color: d.color }), circles: s.circles };
-  }
-
-  /**
-   * 7.8 §2: the first move of each engine line, as board arrows — line 1 in
-   * the engine's colour (letter E, --engine-arrow), lines 2 and 3 lighter
-   * (e, --engine-arrow-alt). Through the same shapes channel as the player's
-   * arrows, never stored in the tree: derived from what the desk shows.
-   *
-   * 持续分析 on this position wins; otherwise the review's lines, but not at
-   * the live position of an engine game still being played — that would be
-   * an answer key, the same reason bestArrowAt keeps out of live play. The
-   * principal arrow is left out where the review's mistake arrow already
-   * draws that move. 「显示引擎箭头」 turns all of it off.
-   */
-  function engineArrows() {
-    if (!store.ui.engineArrows) return [];
-    const g = viewGame();
-    const fen = g.fen();
-    const live = store.session.live;
-    let firsts = [];
-    // the arrow the board model already draws as its hint (same expression)
-    const hint = isLive() ? store.session.hintMove : bestArrowAt(store.game.viewIndex);
-    if (live && live.fen === fen) {
-      if (live.info) firsts = live.info.lines.slice(0, 3).map((l) => uciArrow(Array.isArray(l.pv) ? l.pv[0] : null));
-    } else {
-      const a = analysisFor();
-      const inGame = isLive() && store.session.mode === "ai" && !appGameOver() && !store.game.imported;
-      if (!a || inGame || store.session.analyzing) return [];
-      const vi = store.game.viewIndex;
-      const memo = store.session._engineArrows;
-      if (memo && memo.a === a && memo.vi === vi && memo.fen === fen) firsts = memo.firsts;
-      else {
-        const lines = reviewLines(a, vi, g.turn());
-        firsts = lines.slice(0, 3).map((l, i) => {
-          if (i === 0 && a.bests && a.bests[vi]) return uciArrow(a.bests[vi]);
-          const m = l.sans[0] ? new Chess(fen).move(l.sans[0]) : null;
-          return m ? { from: m.from, to: m.to } : null;
-        });
-        store.session._engineArrows = { a, vi, fen, firsts };
-      }
-    }
-    const out = [];
-    firsts.forEach((m, i) => {
-      if (!m) return;
-      if (i === 0 && hint && hint.from === m.from && hint.to === m.to) return;
-      // two lines can open with the same move; one arrow says it
-      if (out.some((o) => o.from === m.from && o.to === m.to)) return;
-      out.push({ from: m.from, to: m.to, color: i === 0 ? "E" : "e" });
-    });
-    return out;
-  }
-  function uciArrow(u) {
-    return typeof u === "string" && u.length >= 4 ? { from: u.slice(0, 2), to: u.slice(2, 4) } : null;
-  }
-  /** What the live arrows depend on: the first move of each line. */
-  function engineArrowKey(info) {
-    return info ? info.lines.slice(0, 3).map((l) => (Array.isArray(l.pv) && l.pv[0]) || "").join(" ") : "";
-  }
-
-  /**
-   * The engine's choice at the position `i` plies in, as a board arrow —
-   * derived from the analysis and the replay cursor, never stored. Nothing to
-   * clear on a new game, nothing to migrate, nothing that can fall out of step
-   * with the board because it *is* a function of the board.
-   */
-  function bestArrowAt(i) {
-    const a = analysisFor();
-    if (!a || !a.bests || !a.tags) return null;
-    if (!Review.isMistake(a.tags[i])) return null;
-    const uci = a.bests[i];
-    if (!uci || uci.length < 4) return null;
-    return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
-  }
-
-  /**
-   * The badge for the move that produced the position `i` plies in: its
-   * destination square and its mark, or null. The mark is the one the move
-   * list shows (softFiltered — `?!` only when 存疑标注 is on), so the board
-   * and the notation cannot disagree about whether a move was a mistake.
-   * Derived like bestArrowAt: nothing stored, nothing to clear.
-   */
-  function annotationAt(i, last) {
-    if (!last || i < 1) return null;
-    const a = analysisFor();
-    if (!a || !a.tags) return null;
-    const tag = softFiltered(a.tags[i - 1]);
-    if (!Review.isMistake(tag)) return null;
-    return { sq: last.to, tag };
   }
 
   function draw() { BoardView.draw(); }
@@ -4525,7 +4438,7 @@ import { createStore } from "./store.js";
   // v8-0-plan F4: 持续分析 and the rows of the engine lines live in
   // review/lines.js
   const Lines = createLines({
-    doc: document, store, t, tf, draw, avail, collapseEmptyGroups, sanHistory, viewGame, engineArrowKey, writeSan, setText,
+    doc: document, store, t, tf, draw, avail, collapseEmptyGroups, sanHistory, viewGame, writeSan, setText,
   });
   const {
     sansOf, stopLiveAnalysis, syncLiveAnalysis, renderLiveAnalysis, deskHead, lineRows, paintLineRow, reviewLines,
@@ -4555,6 +4468,14 @@ import { createStore } from "./store.js";
   const {
     evalScalar, analysisFor, SCAN_BUDGET, analyzeGame, recallAnalysis, restoreAnalysis, plyLosses, withMotifs,
   } = Analysis;
+
+  // v8-0-plan F4: the analysis's marks on the board — the engine arrows, the
+  // best move where a move was marked, the mark's badge — live in
+  // review/board-marks.js
+  const BoardMarks = createBoardMarks({
+    store, viewGame, isLive, appGameOver, analysisFor, reviewLines, softFiltered,
+  });
+  const { engineArrows, bestArrowAt, annotationAt } = BoardMarks;
 
   // v8-0-plan F4: why a ? or ?? was a mistake, and 再试一次 (7.8 §3), live
   // in review/retry.js

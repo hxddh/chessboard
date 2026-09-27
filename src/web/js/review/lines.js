@@ -24,7 +24,7 @@ import { ChessReviewPass } from "../review-pass.js";
  */
 export function createLines(d) {
   const {
-    doc, store, t, tf, draw, avail, collapseEmptyGroups, sanHistory, viewGame, engineArrowKey, writeSan, setText,
+    doc, store, t, tf, draw, avail, collapseEmptyGroups, sanHistory, viewGame, writeSan, setText,
   } = d;
   const document = doc;
   const Review = ChessReview;
@@ -142,6 +142,11 @@ export function createLines(d) {
     // when one of those changes, not on every depth
     const key = engineArrowKey(info);
     if (key !== rec.arrowKey) { rec.arrowKey = key; draw(); }
+  }
+
+  /** What the live arrows depend on: the first move of each line. */
+  function engineArrowKey(info) {
+    return info ? info.lines.slice(0, 3).map((l) => (Array.isArray(l.pv) && l.pv[0]) || "").join(" ") : "";
   }
 
   /** A chip of this desk is showing its line on the board (pointer or focus,
