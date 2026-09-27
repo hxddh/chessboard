@@ -5454,7 +5454,7 @@ import { createStore } from "./store.js";
     const h = sanHistory();
     const ex = i < h.length && a.bests[i] ? ChessExplain.explainMistake({
       fen: gameAt(i).fen(), played: h[i], best: a.bests[i],
-      bestLine: a.pvs ? a.pvs[i] : null, line: a.pvs ? ChessExplain.lineAfter(a.pvs, h, i) : null,
+      bestLine: a.pvs ? a.pvs[i] : null, line: a.pvs ? ChessExplain.lineAfter(a.pvs, h, i) : null, evalBefore: a.scalars && a.scalars[i], evalAfter: a.scalars && a.scalars[i + 1],
     }, Chess) : null;
     memo.set(i, ex);
     return ex;
