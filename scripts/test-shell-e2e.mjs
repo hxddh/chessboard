@@ -375,6 +375,53 @@ for (const lang of ["en", "ja"]) {
   await ctx.close();
 }
 
+// Codex on #86: a page in front of the board makes the game's letter keys
+// inert (a11y.js), and the native menu's accelerators — the same commands
+// through Host.onAppLifecycle → NativeCmds.run() — must be inert with it.
+// Red before: ⌘F on 首页 flipped the hidden board, ⌘\ shut the panel.
+{
+  const ctx = await browser.newContext({ viewport: WIDE, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__handlers = {};
+    window.zero = {
+      on: (n, cb) => { (window.__handlers[n] = window.__handlers[n] || []).push(cb); return () => {}; },
+      invoke: async () => ({}),
+      platform: { supports: async () => false },
+    };
+    window.__fire = (command) => { for (const cb of window.__handlers.shortcut || []) cb({ command, id: command, windowId: 1 }); };
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  const look = () => page.evaluate(() => ({
+    flipped: [...document.querySelectorAll("#orient-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0],
+    panel: localStorage.getItem("chess.panelOpen") }));
+  const fire = async (c) => { await page.evaluate((x) => window.__fire(x), c); await page.waitForTimeout(400); };
+  for (const v of ["home", "library", "me"]) {
+    await page.click('#rail button[data-view="' + v + '"]');
+    await page.waitForTimeout(400);
+    const before = await look();
+    await fire("game.flip");
+    await fire("view.panel");
+    const after = await look();
+    assert(JSON.stringify(before) === JSON.stringify(after),
+      v + ":整页在前时,菜单的「翻转棋盘」「侧栏」不动背后的棋盘(" + JSON.stringify(before) + " → " + JSON.stringify(after) + ")");
+  }
+  // …and on the play view they still work
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(400);
+  const b0 = await look();
+  await fire("game.flip");
+  assert((await look()).flipped !== b0.flipped, "回到下棋,菜单的「翻转棋盘」照常翻");
+  assert(errs.length === 0, "菜单快捷键与整页:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }

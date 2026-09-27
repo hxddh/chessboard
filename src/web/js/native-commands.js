@@ -229,6 +229,9 @@ export function createNativeCommands(d) {
       return;
     }
     if (dialogOpen()) return;
+    // …nor behind a page of the top level (v8-0-plan A1), as the letter keys
+    // are not: the board and its panel are inert under it (Codex on #86)
+    if (d.pageShown && d.pageShown()) return;
     if (!commandModes(id).has(store.session.mode)) return;
     NATIVE_COMMANDS[id]();
   }

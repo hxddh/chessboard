@@ -10578,7 +10578,7 @@ import { createStore } from "./store.js";
    * called rather than when this runs.
    */
   const NativeCmds = createNativeCommands({
-    doc: document, t, store, Dlg, dialogOpen,
+    doc: document, t, store, Dlg, dialogOpen, pageShown: () => Shell.pageShown(),
     requestNewGame: () => requestNewGame(),
     undo: () => undo(),
     requestHint: () => requestHint(),
