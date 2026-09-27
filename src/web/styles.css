@@ -51,14 +51,6 @@
          warm enough to be recognisably the same material. 正文 lands 12.4:1 on
          the panel and 次要 6.1:1 (was 8.9 and 4.4 — the muted text is the one
          that gained, because the surface it sits on moved toward it). */
-      /* 5.2 · the theme index. Each theme's two square colours, named for
-         the theme, so the 主题 segment can show all four swatches at once
-         whichever theme is live. Raw values live here with the others; the
-         segment reads them by name and nothing else does. */
-      --sw-wood-a: #f0d9b5; --sw-wood-b: #b58863;
-      --sw-night-a: #bed4c9; --sw-night-b: #66907f;
-      --sw-day-a: #eddcc0; --sw-day-b: #c39a6b;
-      --sw-notebook-a: #e8ecf3; --sw-notebook-b: #98a8bd;
       --wood-bg: #241a12;
       --wood-panel: #33261c;
       --wood-panel-border: #4a3729;
@@ -101,6 +93,16 @@
       --card-fill: var(--wood-card);
       --card-line: var(--wood-card-border);
       --control-ghost: var(--wood-btn-ghost);
+      /* one scale for "how bad was that move", read by the stylesheet AND
+         by the canvas (app.js judgeColours), and the two sides for anything
+         that draws White against Black. v8-0-plan A3: here, not on the
+         board — the panel they colour is the shell's, and a board no longer
+         implies its shell. Each shell keeps the values its board had. */
+      --judge-soft: #c9b458;
+      --judge-mid: #e0a03c;
+      --judge-bad: #e05252;
+      --side-white: #f2f2ee;
+      --side-black: #1d1d1b;
     }
     [data-theme="night"] {
       /* 1 · raw values — literals, named for the theme they belong to.
@@ -153,6 +155,11 @@
       --card-fill: var(--night-card);
       --card-line: var(--night-card-border);
       --control-ghost: var(--night-btn-ghost);
+      --judge-soft: #d8c46a;
+      --judge-mid: #eaa94a;
+      --judge-bad: #e8705c;
+      --side-white: #dfeae4;
+      --side-black: #0e1613;
     }
     [data-theme="day"] {
       /* 1 · raw values — literals, named for the theme they belong to.
@@ -208,6 +215,11 @@
       --card-fill: var(--day-card);
       --card-line: var(--day-card-border);
       --control-ghost: var(--day-btn-ghost);
+      --judge-soft: #9a7b12;
+      --judge-mid: #b7690c;
+      --judge-bad: #c0392b;
+      --side-white: #fbfbf8;
+      --side-black: #23231f;
     }
     [data-theme="notebook"] {
       /* 1 · raw values — literals, named for the theme they belong to.
@@ -257,6 +269,11 @@
       --card-fill: var(--notebook-card);
       --card-line: var(--notebook-card-border);
       --control-ghost: var(--notebook-btn-ghost);
+      --judge-soft: #8a6d0f;
+      --judge-mid: #a85c08;
+      --judge-bad: #b3372a;
+      --side-white: #fdfdfa;
+      --side-black: #26261f;
     }
 
     /* 3 · component variables — the names the rules below actually use.
@@ -313,8 +330,25 @@
        whole game, and "I want the paper interface with the wooden board" is a
        reasonable thing to want.
 
-       app.js sets data-board to the theme's own id, so the default pairing is
-       unchanged — this only makes the pairing a *choice* rather than a fact.
+       v8-0-plan A3: and now it is a choice of its own. js/look.js keeps the
+       board apart from the appearance (light / dark / system); the shell
+       follows the appearance and takes the board's warm or cool family. Five
+       boards, each one its own thing — 7.x had four palettes and three
+       boards, 日's squares sitting ΔE00 6.4 from 木's on the dark square and
+       2.8 on the light one. The closest two dark squares here are 10 apart
+       (docs/measured.json boardLook), and paper and marble carry a texture
+       besides (--board-texture, drawn by js/board-skin.js).
+
+       Every mark on every board is held to two ceilings, over the light
+       square AND the dark one (scripts/lib/mark-colour.mjs, test-chess):
+       its chroma (last move and selection ≤ 47, check, hint and the engine
+       arrow ≤ 52), and the ΔE00 between its two composites (≤ 16) — the
+       same mark has to read as the same mark on either square. That second
+       ceiling is why no board here is as contrasty as Lichess's green
+       (ΔL* 35): past about 28 the soft marks cannot stay one colour.
+
+       --judge-* and --side-* moved to the shells: they colour the panel as
+       much as the board, and a board no longer implies its shell.
        ------------------------------------------------------------------ */
     :root, [data-board="wood"] {
       /* the ellipse under a standing piece — see board.js paintContactShadow.
@@ -326,14 +360,9 @@
          undoes 缺陷 17 (men sitting on flat colour with no contact at all);
          half keeps the contact at the base and loses the smudge. */
       --piece-shadow: rgba(38,20,4,.13);
-      /* 3 · judgement — one scale for "how bad was that move", read by the
-         stylesheet AND by the canvas (see app.js readMistakeColours). */
-      --judge-soft: #c9b458;
-      --judge-mid: #e0a03c;
-      --judge-bad: #e05252;
-      /* the two sides, for anything that draws White against Black */
-      --side-white: #f2f2ee;
-      --side-black: #1d1d1b;
+      /* v8-0-plan A3: flat colour; paper and marble name a texture here */
+      --board-texture: none;
+      --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
       --board-shadow: 0 10px 36px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22);
@@ -351,7 +380,9 @@
          term 3.1 → 4.2 (ceiling 5), still ΔE00 18 from the bare square
          (docs/measured.json markChroma) */
       --sq-last: rgba(40, 200, 0, var(--mark-soft));
-      --sq-check: rgba(245, 70, 55, var(--mark-mid));
+      /* v8-0-plan A3: over the dark square this was C* 55.1, past the check
+         ceiling the light square had always met; a deeper red, 51.8 */
+      --sq-check: rgba(215, 55, 45, var(--mark-mid));
       --sq-hint: rgba(5, 165, 255, var(--mark-mid));
       --sq-star: rgba(255, 219, 38, var(--mark-strong));
       --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
@@ -370,31 +401,32 @@
       --engine-arrow: rgba(5, 165, 255, var(--mark-mid));
       --engine-arrow-alt: rgba(5, 165, 255, var(--mark-soft));
     }
-    [data-board="night"] {
-      /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(0,10,6,.17);
-      --judge-soft: #d8c46a;
-      --judge-mid: #eaa94a;
-      --judge-bad: #e8705c;
-      --side-white: #dfeae4;
-      --side-black: #0e1613;
+    [data-board="green"] {
+      /* 7.x 夜's board was a grey teal (#bed4c9 / #66907f), nearly grey. A
+         green that is green, but still a sea green — green first, then blue,
+         then red, the order of 夜's shell it sits in (test-layout 3m2) —
+         at ΔL* 28 rather than Lichess's 35 (see the ceilings above). Marks
+         in yellow and a dark olive, the way green boards mark a move. */
+      --piece-shadow: rgba(10,26,4,.15);
+      --board-texture: none;
+      --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
       --coord-ink: rgba(220,235,228,.55);
       --board-edge: rgba(8,20,16,.34);
-      --sq-light: #bed4c9;
-      --sq-dark: #66907f;
-      --sq-sel: rgba(0, 130, 70, var(--mark-mid));
-      --sq-last: rgba(0, 250, 55, var(--mark-soft));
-      --sq-check: rgba(255, 35, 20, var(--mark-mid));
-      --sq-hint: rgba(0, 80, 230, var(--mark-mid));
+      --sq-light: #e2ead6;
+      --sq-dark: #81a38a;
+      --sq-sel: rgba(140, 115, 0, var(--mark-mid));
+      --sq-last: rgba(220, 205, 40, var(--mark-soft));
+      --sq-check: rgba(235, 80, 20, var(--mark-mid));
+      --sq-hint: rgba(0, 95, 225, var(--mark-mid));
       --sq-star: rgba(217, 144, 0, var(--mark-strong));
       --sq-star-edge: rgba(60, 38, 0, var(--mark-mid));
-      --sq-flash: rgba(64, 255, 198, var(--mark-mid));
+      --sq-flash: rgba(0, 110, 60, var(--mark-mid));
       --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(6,16,12,.60);
-      --sq-dot: rgba(8, 18, 15, var(--mark-soft));
-      --sq-ring: rgba(8, 18, 15, var(--mark-soft));
+      --sq-cursor-edge: rgba(8,18,6,.60);
+      --sq-dot: rgba(14, 26, 8, var(--mark-soft));
+      --sq-ring: rgba(14, 26, 8, var(--mark-soft));
       /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
       --shape-g: rgba(21, 120, 27, var(--mark-strong));
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
@@ -402,76 +434,35 @@
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
       /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
          (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(0, 80, 230, var(--mark-mid));
-      --engine-arrow-alt: rgba(0, 80, 230, var(--mark-soft));
+      --engine-arrow: rgba(0, 95, 225, var(--mark-mid));
+      --engine-arrow-alt: rgba(0, 95, 225, var(--mark-soft));
       --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
     }
-    [data-board="day"] {
-      /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(40,36,28,.10);
-      --judge-soft: #9a7b12;
-      --judge-mid: #b7690c;
-      --judge-bad: #c0392b;
-      --side-white: #fbfbf8;
-      --side-black: #23231f;
-
-      --board-frame: linear-gradient(145deg, #f3e6d0, #e8d4b0 45%, #dfc9a0);
-      --board-shadow: 0 10px 28px rgba(80,60,30,.18), inset 0 1px 0 rgba(255,255,255,.7);
-      --coord-ink: rgba(70,52,28,.62);
-      --board-edge: rgba(90,66,36,.26);
-      --sq-light: #eddcc0;
-      --sq-dark: #c39a6b;
-      /* 7.9 §3: selection C* 57.2 → 44.8 and a step darker (L* 69.1 →
-         64.8), so it parts from the last move by lightness — closest ΔE00
-         10.1 → 13.9; check C* 53.7 → 49.9 at the same hue */
-      --sq-sel: rgba(10, 125, 10, var(--mark-mid));
-      --sq-last: rgba(0, 255, 45, var(--mark-soft));
-      --sq-check: rgba(235, 50, 20, var(--mark-mid));
-      --sq-hint: rgba(0, 125, 255, var(--mark-mid));
-      --sq-star: rgba(255, 227, 89, var(--mark-strong));
-      --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
-      --sq-flash: rgba(0, 115, 54, var(--mark-mid));
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(40,28,12,.55);
-      --sq-dot: rgba(60, 45, 25, var(--mark-soft));
-      --sq-ring: rgba(60, 45, 25, var(--mark-soft));
-      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
-      --shape-g: rgba(21, 120, 27, var(--mark-strong));
-      --shape-r: rgba(136, 32, 32, var(--mark-strong));
-      --shape-b: rgba(0, 48, 136, var(--mark-strong));
-      --shape-y: rgba(232, 143, 0, var(--mark-strong));
-      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
-         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(0, 125, 255, var(--mark-mid));
-      --engine-arrow-alt: rgba(0, 125, 255, var(--mark-soft));
-    }
-    [data-board="notebook"] {
-      /* the ellipse under a standing piece — see board.js paintContactShadow */
-      --piece-shadow: rgba(50,44,30,.09);
-      --judge-soft: #8a6d0f;
-      --judge-mid: #a85c08;
-      --judge-bad: #b3372a;
-      --side-white: #fdfdfa;
-      --side-black: #26261f;
+    [data-board="blue"] {
+      /* 7.x 纸's blue-grey board, a step warmer and lighter (#e8ecf3 /
+         #98a8bd): Lichess's blue family. Its marks moved off blue — a blue
+         last move on a blue board is a tint of the board — to a yellow-green
+         and an orange hint. */
+      --piece-shadow: rgba(30,44,54,.10);
+      --board-texture: none;
+      --piece-ink: none;
 
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
       --coord-ink: rgba(42,49,64,.55);
       --board-edge: rgba(42,49,64,.22);
-      --sq-light: #e8ecf3;
-      --sq-dark: #98a8bd;
-      --sq-sel: rgba(35, 65, 160, var(--mark-mid));
-      --sq-last: rgba(30, 85, 240, var(--mark-soft));
-      --sq-check: rgba(255, 35, 0, var(--mark-mid));
-      /* 7.9 §3: the hint was the loudest colour in the app (C* 68.0); the
-         same green at the same lightness, C* 49.9 */
-      --sq-hint: rgba(70, 245, 100, var(--mark-mid));
+      --sq-light: #dfe5e8;
+      --sq-dark: #8ba3b0;
+      --sq-sel: rgba(55, 110, 0, var(--mark-mid));
+      --sq-last: rgba(150, 200, 30, var(--mark-soft));
+      --sq-check: rgba(240, 50, 40, var(--mark-mid));
+      --sq-hint: rgba(255, 150, 0, var(--mark-mid));
       --sq-star: rgba(166, 110, 0, var(--mark-strong));
       --sq-star-edge: rgba(60, 40, 0, var(--mark-mid));
-      --sq-flash: rgba(10, 191, 94, var(--mark-mid));
+      --sq-flash: rgba(10, 150, 80, var(--mark-mid));
       --sq-cursor: rgba(255,255,255,.95);
       --sq-cursor-edge: rgba(28,33,44,.58);
-      --sq-dot: rgba(42, 49, 64, var(--mark-soft));
-      --sq-ring: rgba(42, 49, 64, var(--mark-soft));
+      --sq-dot: rgba(30, 40, 52, var(--mark-soft));
+      --sq-ring: rgba(30, 40, 52, var(--mark-soft));
       /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
       --shape-g: rgba(21, 120, 27, var(--mark-strong));
       --shape-r: rgba(136, 32, 32, var(--mark-strong));
@@ -479,9 +470,82 @@
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
       /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
          (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(70, 245, 100, var(--mark-mid));
-      --engine-arrow-alt: rgba(70, 245, 100, var(--mark-soft));
+      --engine-arrow: rgba(255, 150, 0, var(--mark-mid));
+      --engine-arrow-alt: rgba(255, 150, 0, var(--mark-soft));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
+    }
+    [data-board="paper"] {
+      /* 纸墨: the diagram page. Cream paper with its fibre, dark squares a
+         grey ink wash laid on it (board-skin.js draws both), and the men in
+         ink: their white is the paper's, their black the ink's (--piece-ink,
+         "ink paper"). The lowest-contrast board here (ΔL* 19), which is what
+         a printed diagram is — and so the marks are quiet too, an indigo
+         last move and a vermilion check, the two colours a printer has. */
+      --piece-shadow: rgba(40,34,20,.08);
+      --board-texture: paper;
+      --piece-ink: #1d2230 #f6f1e4;
+
+      --board-frame: linear-gradient(145deg, #efe6d2, #e3d7bd 50%, #d8caac);
+      --board-shadow: 0 8px 24px rgba(60,48,20,.16), inset 0 1px 0 rgba(255,255,255,.6);
+      --coord-ink: rgba(40,36,30,.62);
+      --board-edge: rgba(60,50,30,.24);
+      --sq-light: #f3eee2;
+      --sq-dark: #c4b9a2;
+      --sq-sel: rgba(30, 60, 150, var(--mark-mid));
+      --sq-last: rgba(40, 90, 200, var(--mark-soft));
+      --sq-check: rgba(200, 40, 30, var(--mark-mid));
+      --sq-hint: rgba(20, 140, 90, var(--mark-mid));
+      --sq-star: rgba(200, 120, 0, var(--mark-strong));
+      --sq-star-edge: rgba(70, 40, 0, var(--mark-mid));
+      --sq-flash: rgba(20, 140, 90, var(--mark-mid));
+      --sq-cursor: rgba(255,255,255,.95);
+      --sq-cursor-edge: rgba(29,34,48,.60);
+      --sq-dot: rgba(29, 34, 48, var(--mark-soft));
+      --sq-ring: rgba(29, 34, 48, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(20, 140, 90, var(--mark-mid));
+      --engine-arrow-alt: rgba(20, 140, 90, var(--mark-soft));
+    }
+    [data-board="marble"] {
+      /* White Carrara and a grey bardiglio, veined (board-skin.js). Neutral
+         where every other board has a hue, which is what sets it apart from
+         blue (ΔE00 10.8 on the dark square) at a similar lightness. */
+      --piece-shadow: rgba(20,20,24,.12);
+      --board-texture: marble;
+      --piece-ink: none;
+
+      --board-frame: linear-gradient(145deg, #d9d6d0, #bfbcb6 50%, #a9a6a0);
+      --board-shadow: 0 10px 30px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.45);
+      --coord-ink: rgba(30,30,34,.62);
+      --board-edge: rgba(30,30,34,.26);
+      --sq-light: #e9e7e3;
+      --sq-dark: #989796;
+      --sq-sel: rgba(10, 95, 65, var(--mark-mid));
+      --sq-last: rgba(60, 170, 120, var(--mark-soft));
+      --sq-check: rgba(230, 40, 40, var(--mark-mid));
+      --sq-hint: rgba(40, 110, 240, var(--mark-mid));
+      --sq-star: rgba(230, 170, 20, var(--mark-strong));
+      --sq-star-edge: rgba(90, 60, 0, var(--mark-mid));
+      --sq-flash: rgba(10, 130, 80, var(--mark-mid));
+      --sq-cursor: rgba(255,255,255,.95);
+      --sq-cursor-edge: rgba(20,20,24,.58);
+      --sq-dot: rgba(24, 24, 30, var(--mark-soft));
+      --sq-ring: rgba(24, 24, 30, var(--mark-soft));
+      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
+      --shape-g: rgba(21, 120, 27, var(--mark-strong));
+      --shape-r: rgba(136, 32, 32, var(--mark-strong));
+      --shape-b: rgba(0, 48, 136, var(--mark-strong));
+      --shape-y: rgba(232, 143, 0, var(--mark-strong));
+      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
+         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
+      --engine-arrow: rgba(40, 110, 240, var(--mark-mid));
+      --engine-arrow-alt: rgba(40, 110, 240, var(--mark-soft));
     }
 
     /* Board mark strength — one scale, three steps, all four boards.
@@ -533,8 +597,30 @@
          284 stays the floor (design-constraints §4), 30vw is what the reading
          pages and the records were each asking for in their own way, and
          440 is where more panel stops buying anything but line length. The
-         board is height-bound in every window where the cap applies. */
-      --side-w: clamp(284px, 30vw, 440px);
+         board is height-bound in every window where the cap applies.
+         M2 (v8-0-plan A1 × A2): 30% of the play view, not of the window —
+         the rail beside it is not the play view's, and play-layout.js
+         (boardEdges) weighs the two layouts with this same rule. */
+      --side-w: clamp(284px, 0.3 * var(--pv-w), 440px);
+      /* …the floor of the two-column panel. Beside it (≥ 821px, below) the
+         panel also takes what the height-bound board leaves, up to
+         --side-max-wide: the M2 merge (v8-0-plan A2 × A1). */
+      /* v8-0-plan A1: the navigation rail's column on a wide window, and how
+         far a page starts from the top (the rail is a row in the top bar on
+         a narrow one, see .rail). The play view is what the rail leaves. */
+      --rail-w: 0px;
+      --page-top: var(--chrome-h);
+      /* v8-0-plan A2: the wide layout (#app.pv-wide, below) — the info
+         column's floor and its gap to the board, and how wide the panel may
+         grow (it never gets narrower than --side-w). play-layout.js reads
+         these three to decide when that layout fits. */
+      --info-w: 188px;
+      --info-gap: 8px;
+      --side-max-wide: 520px;
+      /* the play view's box (.stage: the window less the rail); play-layout.js
+         writes the measured size on #app, and until it has, it is this */
+      --pv-w: calc(100vw - var(--rail-w));
+      --pv-h: 100vh;
       /* 7.7 (v7-7-plan §2): each player strip, above and below the board.
          Taken out of the board's edge like the chrome's height — which is
          why the vertical stage pad is --stage-pad-y and not --stage-pad: the
@@ -787,7 +873,7 @@
     }
     #board-wrap {
       position: relative;
-      --free-w: calc(100vw - 2 * var(--stage-pad));
+      --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
       --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
@@ -806,7 +892,7 @@
       transition: background var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
     }
     #app.panel-open #board-wrap {
-      --free-w: calc(100vw - var(--side-w) - 2 * var(--stage-pad));
+      --free-w: calc(var(--pv-w) - var(--side-w) - 2 * var(--stage-pad));
       --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
@@ -879,6 +965,20 @@
     #app[data-coords="in"] .coords.ranks > span:nth-child(even) { color: var(--sq-light); }
     #app[data-coords="in"] .coords.files > span:nth-child(even),
     #app[data-coords="in"] .coords.ranks > span:nth-child(odd) { color: var(--sq-dark); }
+    /* v8-0-plan A3: the flat board — the default from 8.0 (§8 decision 3).
+       No frame: no gradient, no 36px shadow, no 17px of wood; the squares
+       run to the edge with a 3px corner, and the coordinates are in the
+       squares (app.js sets data-coords="in" whenever the frame is off —
+       there is no frame to print them on). The board is bigger by the
+       frame it lost, on every tab alike, so the rect still depends only on
+       the window and on this setting. The frame is one switch away
+       (边框 → 木框), unchanged; keyed as "not the frame" so that the page
+       before app.js has set data-frame is already the default. */
+    html:not([data-frame="frame"]) #app { --wood-pad: 0px; }
+    html:not([data-frame="frame"]) #board-wrap { background: none; box-shadow: none; border-radius: 3px; }
+    html:not([data-frame="frame"]) #board,
+    html:not([data-frame="frame"]) #board-wrap::after { border-radius: 3px; }
+    html:not([data-frame="frame"]) #app .eval-gauge.is-inset { left: 2px; width: 8px; }
 
     canvas {
       display: block; width: 100%; height: 100%;
@@ -1420,6 +1520,23 @@
       display: inline-flex; align-items: center; justify-content: center;
       text-align: center;
     }
+    /* v8-0-plan A3: the board and piece pickers (js/appearance-ui.js) are
+       segments like every other choice on this page — same box, same active
+       state — whose segments show what they name: a 4×4 corner of the board,
+       or the set's two kings. Only the stacking differs; the height is still
+       the family's floor, grown by its content. */
+    .look-grid button { flex-direction: column; gap: 4px; padding: 6px 4px; }
+    .look-swatch {
+      display: block; width: 40px; height: 40px; overflow: hidden;
+      border-radius: 3px; box-shadow: 0 0 0 1px var(--card-border);
+    }
+    .look-board { display: block; width: 100%; height: 100%; }
+    .look-kings { display: flex; gap: 2px; }
+    .look-king { display: block; width: 24px; height: 24px; }
+    /* seven sets: 4 + 3, not the 3 + 3 + 1 the five-or-more rule above
+       would give — no segment alone on a line (test-layout 3m3) */
+    #piece-pick-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .look-name { line-height: var(--lh-tight); }
     .theme-row button.active {
       color: var(--text);
       border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
@@ -1471,6 +1588,11 @@
       overflow-y: auto;
       padding: 2px;
       margin-bottom: 8px;
+      /* v8-0-plan A2: the White column's width and the number of blocks,
+         until play-layout.js has measured and counted (see .mlrow and
+         #sec-moves below) */
+      --ml-w: 64px;
+      --ml-rows: 7;
     }
     /* The cap used to be a flat `max-height: 176px` — about seven move pairs,
        the same seven whether the window was 800px tall or 1400px. A 26-ply
@@ -1485,10 +1607,24 @@
        is the flexible item of its section, which is the flexible item of the
        page, so it takes whatever height the rows under it leave — measured
        ≥ 45% of the column at 1440×900 mid-game (test-layout-e2e). The cap is
-       now only a ceiling for the tallest windows; the 176px floor stays. */
+       now only a ceiling for the tallest windows; the 176px floor stays.
+       v8-0-plan A2: taking the height made the list the height, not the
+       notation — five rows at 1440×900 stood 380px above the transport bar
+       under them. The list is as tall as its rows now, and only a long game
+       shrinks it (it then scrolls), so ⏮ ◀ ▶ ⏭ follow the last row down
+       and stay on screen once the rows fill the column: the section is held
+       to the page's height (min-height 0), so a long game shrinks the list
+       rather than pushing the bar out of the pane. The 176px floor stays for
+       what is under the list (a review can be taller than the page), but a
+       floor taller than the rows was the empty band itself, so it is seven
+       rows or all of them, whichever is less — --ml-rows is the count
+       (play-layout.js; CSS cannot count children). */
     .move-list { max-height: max(176px, calc(100vh - 120px)); }
-    #sec-moves { display: flex; flex-direction: column; }
-    #sec-moves > .move-list { flex: 1 1 0; min-height: calc(7 * var(--row-h-sm) + 8px); }
+    #sec-moves { display: flex; flex-direction: column; min-height: 0; }
+    #sec-moves > .move-list {
+      flex: 0 1 auto; margin-bottom: 0;
+      min-height: min(calc(7 * var(--row-h-sm) + 8px), calc(var(--ml-rows) * (var(--row-h-sm) + 2px) + 4px));
+    }
     .move-list:empty { display: none; }
     .move-list button {
       border: 0;
@@ -2153,7 +2289,7 @@
        design-constraints §1 argues against. */
     @media (max-aspect-ratio: 1/1) and (min-width: 821px) {
       .side {
-        top: auto; left: 0; right: 0; bottom: 0;
+        top: auto; left: var(--rail-w); right: 0; bottom: 0;
         width: auto; height: min(46vh, 430px);
         padding: 12px 20px 16px;
         border-left: 0; border-top: 1px solid var(--panel-border);
@@ -2166,7 +2302,7 @@
         padding-bottom: calc(min(46vh, 430px) + var(--strip-h) + var(--stage-pad-y));
       }
       #app.panel-open #board-wrap {
-        --free-w: calc(100vw - 2 * var(--stage-pad));
+        --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
         --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - min(46vh, 430px) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
@@ -2197,7 +2333,7 @@
     @media (max-width: 820px) {
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
-        --free-w: calc(100vw - 2 * var(--stage-pad));
+        --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
         --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
@@ -2314,7 +2450,7 @@
         padding-bottom: calc(var(--sheet-h) + var(--strip-h) + var(--stage-pad-y));
       }
       #board-wrap, #app.panel-open #board-wrap {
-        --free-w: calc(100vw - 2 * var(--stage-pad));
+        --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
         --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - var(--sheet-h) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
@@ -2474,14 +2610,23 @@
     /* 7.7 (v7-7-plan §3): a notation sheet, not a row of chips — the number
        in a shaded gutter (7.9 §2c: unshaded now), White's and Black's move in two equal columns, the
        menu handle floating at the row's end instead of shoving Black's move
-       sideways when White's is current. */
+       sideways when White's is current.
+       v8-0-plan A2: a compact table. The two 1fr columns put Black's move
+       174px to the right of White's at 1440×900 — 144px of white space
+       between the columns for a five-letter move. Now White's column is as
+       wide as its widest move (--ml-w, measured by play-layout.js; 64px
+       until it has been), Black's is as wide as its move, and the rest of
+       the row is the fourth column, where the menu handle floats. Every
+       other row is shaded, so a line can be followed across. */
     .mlrow {
       position: relative;
-      display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr);
+      display: grid; grid-template-columns: 40px var(--ml-w) minmax(0, max-content) minmax(0, 1fr);
       align-items: stretch; gap: 2px;
       padding: 0;
+      border-radius: var(--radius-sm);
     }
-    .mlrow > .mlmove { min-width: 0; }
+    .move-list > .mlrow:nth-child(even) { background: color-mix(in srgb, var(--text) 5%, transparent); }
+    .mlrow > .mlmove { min-width: 0; justify-self: start; }
     /* One font for the row. The move number was SF Mono 12px and the move
        beside it the interface sans at 13px — two typefaces and two sizes in a
        three-character span. Tabular figures stay, because the numbers are a
@@ -2558,10 +2703,13 @@
        A variation is a paragraph, not a row: indented under the move it
        replaces, one size down and in the muted ink, parentheses nested as
        deep as the line goes. A comment is the same paragraph without the
-       parentheses. The mainline row stays exactly what it was. */
+       parentheses. The mainline row stays exactly what it was.
+       v8-0-plan A2: and it hangs off a rule, so where a side line starts
+       and stops can be seen without reading the parentheses. */
     .mlvar, .mlcomment {
-      margin: 0 0 0 24px;
-      padding: 0 4px;
+      margin: 2px 0 2px 20px;
+      padding: 0 4px 0 8px;
+      border-left: 2px solid var(--line);
       font-size: 0.8125rem; line-height: var(--lh-body); color: var(--muted);
       white-space: normal; overflow-wrap: anywhere;
     }
@@ -2691,16 +2839,6 @@
     }
     .pv-act:hover { color: var(--text); border-color: var(--accent); }
     #puzzle-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; margin: -4px 0 12px; overflow: visible; }
-    /* the 主题 segment shows what it names: two squares of each board */
-    #theme-seg button::before {
-      content: ""; display: inline-block; width: 10px; height: 10px;
-      margin-right: 6px; vertical-align: -1px; border-radius: 3px;
-      border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
-    }
-    #theme-seg button[data-theme="wood"]::before { background: linear-gradient(135deg, var(--sw-wood-a) 50%, var(--sw-wood-b) 50%); }
-    #theme-seg button[data-theme="night"]::before { background: linear-gradient(135deg, var(--sw-night-a) 50%, var(--sw-night-b) 50%); }
-    #theme-seg button[data-theme="day"]::before { background: linear-gradient(135deg, var(--sw-day-a) 50%, var(--sw-day-b) 50%); }
-    #theme-seg button[data-theme="notebook"]::before { background: linear-gradient(135deg, var(--sw-notebook-a) 50%, var(--sw-notebook-b) 50%); }
     /* 拿去练 — the turning point's second half: same quiet dashed voice as
        the jump row above it, because they are two verbs on one fact. */
     .review-bank {
@@ -3489,3 +3627,290 @@ span[data-icon] { display: inline-grid; place-items: center; }
 /* the nudge's row with its one button hidden is still a box, and a flex
    gap is paid for every box — an empty one is not a block of the page */
 #sec-puzzle > .link-row:not(:has(> :not([hidden]))) { display: none; }
+
+/* ------------------------------------------------------------------
+   v8-0-plan A1: the top level — the rail, the pages, the preferences.
+
+   Wide windows (≥ 821px, the panel's own breakpoint) get a 64px column on
+   the left: 首页 at its head, the five views, 偏好 at its foot. The stage,
+   the bar and the task strip start after it and the board's free width
+   subtracts it (#board-wrap --free-w), so in the height-bound windows this
+   app runs in the board keeps its size and only its centre moves.
+   Narrow windows fold the same buttons into the 32px bar the ☰ already
+   lives in, so the board loses nothing to them there.
+   ------------------------------------------------------------------ */
+@media (min-width: 821px) {
+  :root { --rail-w: 64px; --page-top: 0px; }
+  /* M2 (v8-0-plan A2 × A1): the two-column panel stretches, as A2's right
+     column does, into what the height-bound board leaves — up to
+     --side-max-wide, never under 7.7's clamp. Beside the 64px rail the wide
+     layout no longer fits a 1280 or 1440 window, and that leftover stood as
+     an 84–90px empty band either side of the board. The board is unchanged:
+     it is height-bound here, and where it is not the panel is its floor.
+     Declared on #app, where play-layout.js writes the measured --pv-w;
+     --task-h is left out on purpose: it is 0 whenever the panel is open.
+     One formula with play-layout.js boardEdges (sideTwo). */
+  #app {
+    --side-w: clamp(clamp(284px, 0.3 * var(--pv-w), 440px),
+      var(--pv-w) - 2 * var(--stage-pad) - (var(--pv-h) - var(--chrome-h) - 2 * var(--strip-h) - var(--stage-pad-y)),
+      var(--side-max-wide));
+  }
+}
+.stage, .chrome, .task-strip { left: var(--rail-w); }
+/* the fault banners stand at the top-left of the board's column: after the
+   rail, and under it where it is the top bar */
+.storage-fault { left: calc(var(--rail-w) + 8px); top: calc(var(--page-top) + 8px); }
+.storage-fault ~ .storage-fault { top: calc(var(--page-top) + 56px); }
+.rail {
+  position: absolute; z-index: 40;
+  top: 0; bottom: 0; left: 0; width: var(--rail-w);
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  padding: 8px 4px;
+  background: var(--panel);
+  border-right: 1px solid var(--panel-border);
+}
+.rail-btn {
+  appearance: none; border: 0; background: transparent;
+  color: var(--muted);
+  font: inherit; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-height: auto; padding: 4px 0;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-quick) var(--ease);
+}
+/* the icon sits in a pill of the small control height: the pill is what
+   lights for the current view and under the pointer */
+.rail-ic {
+  width: 44px; height: var(--ctl-h-sm);
+  display: grid; place-items: center;
+  font-size: 1.1875rem;
+  border-radius: var(--radius-lg);
+  transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
+}
+.rail-lbl {
+  max-width: 100%;
+  font-size: 0.6875rem; font-weight: 500; line-height: var(--lh-tight);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rail-btn:hover { color: var(--text); }
+.rail-btn:hover .rail-ic { background: var(--btn-hover); }
+.rail-btn[aria-current="page"] { color: var(--text); }
+.rail-btn[aria-current="page"] .rail-ic {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+.rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 偏好 is not a view: it stands apart at the foot of the column */
+.rail-end { margin-top: auto; }
+
+@media (max-width: 820px) {
+  /* the bar's row, left of the ☰. Over the scrim — the way out of the
+     overlaid panel to anywhere else is one click, not two — and under the
+     panel itself, which starts well right of the last button. */
+  .rail {
+    z-index: 26;
+    bottom: auto; right: calc(var(--ctl-h-sm) + 16px); width: auto;
+    height: var(--chrome-h);
+    flex-direction: row; align-items: center; gap: 2px;
+    padding: 0 8px;
+    background: transparent; border-right: 0;
+    overflow: hidden;
+  }
+  .rail-btn {
+    flex-direction: row; gap: 4px;
+    height: var(--ctl-h-sm); padding: 0 8px;
+  }
+  .rail-ic { width: auto; height: auto; font-size: 1rem; background: none; }
+  .rail-btn:hover .rail-ic, .rail-btn[aria-current="page"] .rail-ic { background: none; }
+  .rail-btn:hover { background: var(--btn-hover); }
+  .rail-btn[aria-current="page"] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  /* icons only in the bar — every button keeps its box whichever view is
+     current, so nothing in the row moves when you go somewhere. Each is
+     named by its title for the pointer and, for a screen reader, by the
+     label itself, which is clipped rather than removed. */
+  .rail-lbl {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  /* 偏好 stays with the others: pushed to the far end it sat under the panel */
+  .rail-end { margin-top: 0; }
+}
+
+/* A page lies over the stage and the panel; they keep their layout under
+   it (the board's rect does not change), but not their chrome. */
+.page {
+  position: absolute; z-index: 35;
+  top: var(--page-top); left: var(--rail-w); right: 0; bottom: 0;
+  overflow-x: hidden; overflow-y: auto;
+  background: var(--bg);
+  scrollbar-width: thin;
+}
+.page[hidden] { display: none; }
+#app.page-on .chrome, #app.page-on .side, #app.page-on .scrim { visibility: hidden; }
+.page-inner {
+  max-width: 1120px; margin: 0 auto;
+  padding: 24px;
+}
+.page-h {
+  margin: 0 0 16px;
+  font-size: 1.1875rem; font-weight: 600; line-height: var(--lh-tight);
+}
+.page-cols {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  align-items: start;
+}
+.page-sec, .home-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  background: var(--card);
+}
+.page-inner > .rec-entry { margin-bottom: 16px; }
+
+/* 首页 */
+.home-cards {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: stretch;
+}
+.home-card { display: flex; flex-direction: column; gap: 8px; }
+.home-body { flex: 1; display: grid; align-content: start; gap: 4px; }
+.home-line { margin: 0; font-size: 0.875rem; line-height: var(--lh-body); color: var(--text); }
+.home-go { align-self: flex-start; }
+
+/* The library's list, its diagnosis and the game history: sheets over the
+   page they were opened from, the page's width rather than 460px. They are
+   still dialogs (focus stays in them, Escape and 关闭 go back). */
+.modal-bg.page-sheet {
+  top: var(--page-top); left: var(--rail-w);
+  background: var(--bg);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  place-items: start center;
+}
+.modal-bg.page-sheet > .modal {
+  width: min(1072px, 100%);
+  max-height: 100%; height: 100%;
+  border: 0; border-radius: 0; box-shadow: none;
+  background: var(--bg);
+  padding: 24px 24px 16px;
+  animation: none;
+}
+.modal-bg.page-sheet > .modal > .close-row:last-child { background: var(--bg); }
+
+/* 偏好设置: the settings page's rows, in a window of their own */
+.modal.prefs-modal { width: min(560px, calc(100vw - 32px)); }
+
+/* ------------------------------------------------------------------
+   The play view stretches with its window (v8-0-plan §2 A2).
+
+   Wide — #app.pv-wide, set by play-layout.js from the play view's own box
+   (--pv-w / --pv-h) where it is ≥ 1280 wide, landscape, and the board is no
+   smaller for it. At 1920×1080 the board used to stand in the middle of
+   1480px with 258px of nothing on either side: the panel stopped at 440 and
+   the board is height-bound. Here the two player strips leave the board's
+   top and bottom edges and become the cards of a column on its left — the
+   opponent at the top, you at the bottom, the opening's name between them —
+   so the board takes the 80px of height they gave back, and the panel on
+   the right takes what the board leaves, never less than the two-column
+   panel (the reading pages were sized for it: test-layout-e2e 3u5, 3x) and
+   up to 520. What is left over after that goes to the info column (up to
+   360), not to a margin.
+     1280×800  info 188 · board frame 688 · panel 384   (7.7: 684 · 384)
+     1440×900  info 188 · board frame 800 · panel 432   (7.7: 784 · 432)
+     1920×1080 info 340 · board frame 1040 · panel 520  (7.7: 964 · 440)
+   Every length is one function of the play view's size, so a tab or a mode
+   moves nothing (7.7 §1g, re-proved in test-layout-e2e).
+   ------------------------------------------------------------------ */
+#app.pv-wide {
+  --board-h: calc(var(--pv-h) - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--stage-pad-y));
+  --side-w: clamp(clamp(284px, 0.3 * var(--pv-w), 440px), var(--pv-w) - var(--info-w) - var(--info-gap) - 2 * var(--stage-pad) - var(--board-h), var(--side-max-wide));
+  --info-w-fit: clamp(var(--info-w), var(--pv-w) - var(--side-w) - var(--info-gap) - 2 * var(--stage-pad) - var(--board-h), 360px);
+  --info-lead: calc(var(--stage-pad) + var(--info-w-fit) + var(--info-gap));
+}
+/* shut, the board stands in the middle of the window with its column
+   beside it; open, it stands against the panel */
+#app.pv-wide .stage {
+  padding: calc(var(--chrome-h) + var(--task-h, 0px) + var(--stage-pad-y)) var(--info-lead) var(--stage-pad-y);
+}
+#app.pv-wide.panel-open .stage { padding-right: calc(var(--side-w) + var(--stage-pad)); }
+#app.pv-wide #board-wrap {
+  --free-w: calc(var(--pv-w) - 2 * var(--info-lead));
+  --free-h: var(--board-h);
+}
+#app.pv-wide.panel-open #board-wrap {
+  --free-w: calc(var(--pv-w) - var(--info-lead) - var(--side-w) - var(--stage-pad));
+}
+/* the strips as the column's two cards: who, what they have taken, the
+   opponent's two tools, and the clock as the card's widest line */
+#app.pv-wide .pstrip {
+  left: auto; right: calc(100% + var(--info-gap));
+  width: var(--info-w-fit); height: auto;
+  flex-wrap: wrap; align-items: center; gap: 12px 8px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+}
+#app.pv-wide .pstrip.at-top { top: 0; padding-bottom: 12px; align-items: center; }
+#app.pv-wide .pstrip.at-bottom { bottom: 0; padding-top: 12px; align-items: center; }
+#app.pv-wide .ps-who {
+  flex: 1 1 calc(100% - 40px);
+  flex-direction: column; align-items: flex-start; justify-content: center; gap: 0;
+  height: auto; min-height: var(--ctl-h-sm);
+}
+#app.pv-wide .ps-name, #app.pv-wide .ps-level { max-width: 100%; }
+#app.pv-wide .taken { flex-basis: 100%; }
+#app.pv-wide .ps-tools { flex-basis: 100%; min-width: 0; margin-left: 0; }
+/* two equal halves: a relabelled hint (提示 / 思考中 / 答案) still cannot
+   push take-back along (the reason for the 80px floor on the strip) */
+#app.pv-wide .ps-tools .tool-btn { flex: 1 1 0; min-width: 0; padding: 0 6px; }
+#app.pv-wide .ps-result { margin-left: 0; }
+#app.pv-wide .ps-clock { flex: 1 1 auto; margin-left: 0; height: 48px; font-size: 1.875rem; }
+/* the opening's name, between the two cards; the panel's copy stands down */
+.info-col { display: none; }
+#app.pv-wide .info-col {
+  position: absolute; top: 0; bottom: 0; right: calc(100% + var(--info-gap));
+  width: var(--info-w-fit);
+  display: flex; flex-direction: column; justify-content: center;
+  pointer-events: none;
+}
+.info-opening {
+  margin: 0; padding: 0 4px;
+  font-size: 0.9375rem; font-weight: 600; line-height: var(--lh-body); color: var(--text);
+}
+.info-opening[hidden] { display: none; }
+.info-opening.vacant { visibility: hidden; }
+#app.pv-wide .opening-line { display: none; }
+
+/* Portrait: the notation on the drawer's first screen. At 600×900 the
+   drawer comes up 240px tall and its first screen was the tabs, the
+   opening's name and the list's heading. The strip is the mainline in one
+   line above the tabs, scrolled so the move on the board is in view (a
+   mirror of #move-list; play-layout.js). */
+.move-strip { display: none; }
+@media (max-aspect-ratio: 1/1) {
+  .move-strip:not([hidden]) {
+    display: flex; align-items: center; gap: 2px;
+    flex: none; height: var(--ctl-h-sm);
+    width: 100%; max-width: 620px; margin: 0 auto 4px;
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+    white-space: nowrap;
+  }
+  .move-strip::-webkit-scrollbar { display: none; }
+}
+.ms-num {
+  flex: none; padding: 0 2px 0 8px;
+  font-size: 0.9375rem; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.ms-num:first-child { padding-left: 0; }
+.ms-move {
+  appearance: none; border: 0; background: transparent; color: var(--text);
+  flex: none; height: var(--ctl-h-sm); padding: 0 6px;
+  font: inherit; font-size: 0.9375rem; font-weight: 500; line-height: var(--lh-tight);
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.ms-move:hover { background: var(--btn-ghost); }
+.ms-move.current {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent); font-weight: 600;
+}

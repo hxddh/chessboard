@@ -29,7 +29,11 @@
 
 /** The marks the plan names: last move, selection, check, hint. */
 export const MARKS = ["last", "sel", "check", "hint"];
-export const BOARDS = ["wood", "night", "day", "notebook"];
+/**
+ * v8-0-plan A3: the five boards of js/look.js (7.x's four were wood, night,
+ * day and notebook — the palettes are now per board, not per theme).
+ */
+export const BOARDS = ["wood", "green", "blue", "paper", "marble"];
 
 /** One board palette's declarations, from the stylesheet text. */
 export function boardBlock(css, board) {
@@ -138,10 +142,10 @@ const r1 = (x) => Math.round(x * 10) / 10;
  * Every mark on every board, measured from the stylesheet text.
  * @returns {{[board: string]: {marks: object, sep: number, sepPair: string}}}
  */
-export function measureMarks(css) {
+export function measureMarks(css, boards) {
   const steps = markSteps(css);
   const out = {};
-  for (const board of BOARDS) {
+  for (const board of boards || BOARDS) {
     const blk = boardBlock(css, board);
     const L = parseColour(tokenIn(blk, "--sq-light"), steps);
     const D = parseColour(tokenIn(blk, "--sq-dark"), steps);
@@ -201,6 +205,12 @@ export const CHROMA_CEILING = { last: LAST_CHROMA_CEILING, sel: LAST_CHROMA_CEIL
  * must not become closer marks: the retune may only hold or widen these.
  */
 export const SEP_FLOOR = { wood: 10.9, night: 13, day: 10.1, notebook: 11 };
+/**
+ * v8-0-plan A3: the floor per board of js/look.js. Wood keeps 7.8.0's; the
+ * four new boards take the suite-wide floor (10) — they have no 7.8.0 to
+ * hold to. 7.x's night / day / notebook stay above for the record.
+ */
+export const SEP_FLOOR_BOARD = { wood: SEP_FLOOR.wood, green: 10, blue: 10, paper: 10, marble: 10 };
 
 /** C* of a composite, one decimal. */
 export function chroma(c) {
@@ -209,14 +219,83 @@ export function chroma(c) {
 }
 
 /** {[board]: {[mark]: C* over the light square}} from the stylesheet text. */
-export function markChroma(css) {
+export function markChroma(css, boards) {
   const steps = markSteps(css);
   const out = {};
-  for (const board of BOARDS) {
+  for (const board of boards || BOARDS) {
     const blk = boardBlock(css, board);
     const L = parseColour(tokenIn(blk, "--sq-light"), steps);
     out[board] = {};
     for (const k of MARKS) out[board][k] = chroma(over(parseColour(tokenIn(blk, "--sq-" + k), steps), L));
   }
   return out;
+}
+
+/**
+ * v8-0-plan A3: every mark, on BOTH squares, per board.
+ *
+ * 7.8 and 7.9 capped each mark's chroma over the light square and the hue
+ * term between its two composites. Neither asked the question a player asks
+ * — "is that the same mark on the dark square?" — as a whole: a mark whose
+ * hue holds can still be a tint on one square and a stain on the other. So
+ * per board and per mark, both composites' C* (capped together: the louder
+ * of the two), and the whole ΔE00 between them (capped). The engine arrow
+ * joins the four marks: it is drawn over both squares as well.
+ */
+export const LOOK_MARKS = { last: "--sq-last", sel: "--sq-sel", check: "--sq-check", hint: "--sq-hint", arrow: "--engine-arrow" };
+/** C* ceiling over either square — 7.9's figures, now for both squares and the arrow */
+export const LOOK_CHROMA_CEILING = { last: LAST_CHROMA_CEILING, sel: LAST_CHROMA_CEILING, check: 52, hint: 52, arrow: 52 };
+/**
+ * ΔE00 between a mark over the light square and over the dark one. 7.9.0's
+ * wood last move was 16.0, the largest of its sixteen; the ceiling holds the
+ * five boards to it. (7.9.0's night last move was 13.7, notebook 14.6 — the
+ * ceiling is not a new strictness, it is the old worst case made a rule.)
+ */
+export const LOOK_DE_CEILING = 16;
+/** The closest two boards' dark squares, ΔE00: 7.9.0 had 6.4 (木 / 日). */
+export const BOARD_DISTINCT_FLOOR = 10;
+
+/**
+ * @returns {{[board]: {[mark]: {cl: number, cd: number, dE: number}}}}
+ *   cl / cd: C* over the light / dark square; dE: ΔE00 between the two
+ */
+export function markLook(css, boards) {
+  const steps = markSteps(css);
+  const out = {};
+  for (const board of boards || BOARDS) {
+    const blk = boardBlock(css, board);
+    const L = parseColour(tokenIn(blk, "--sq-light"), steps);
+    const D = parseColour(tokenIn(blk, "--sq-dark"), steps);
+    out[board] = {};
+    for (const [k, tok] of Object.entries(LOOK_MARKS)) {
+      let m;
+      try { m = parseColour(tokenIn(blk, tok), steps); } catch { continue; } // 7.x boards without an engine arrow
+      const ol = over(m, L), od = over(m, D);
+      out[board][k] = { cl: chroma(ol), cd: chroma(od), dE: r1(de2000(lab(ol), lab(od)).dE) };
+    }
+  }
+  return out;
+}
+
+/**
+ * How far apart the boards are: ΔE00 between every two boards' dark squares
+ * (the square that carries a board's colour; the light ones are all near
+ * white), and the closest pair.
+ * @returns {{min: number, pair: string, pairs: object}}
+ */
+export function boardDistinct(css, boards) {
+  const steps = markSteps(css);
+  const list = boards || BOARDS;
+  const dark = {};
+  for (const b of list) dark[b] = lab(parseColour(tokenIn(boardBlock(css, b), "--sq-dark"), steps));
+  const pairs = {};
+  let min = Infinity, pair = "";
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const d = r1(de2000(dark[list[i]], dark[list[j]]).dE);
+      pairs[list[i] + "/" + list[j]] = d;
+      if (d < min) { min = d; pair = list[i] + "/" + list[j]; }
+    }
+  }
+  return { min, pair, pairs };
 }

@@ -50,6 +50,8 @@ const PLAY = ["ai", "pvp"];
    row for the current mode does not run — the same answer its letter gives. */
 export const KEY_HELP = [
   { keys: ["P"], k: "keys.panel", in: ANY, cmd: ["view.panel"] },
+  // v8-0-plan A1: the preferences window, every desktop app's key
+  { keys: ["⌘,", "Ctrl+,"], k: "keys.prefs", in: ANY },
   { keys: ["N"], k: "keys.new", in: PLAY, cmd: ["game.new"] },
   { keys: ["N"], k: "keys.next", in: ["puzzle"] },
   { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },
@@ -227,6 +229,9 @@ export function createNativeCommands(d) {
       return;
     }
     if (dialogOpen()) return;
+    // …nor behind a page of the top level (v8-0-plan A1), as the letter keys
+    // are not: the board and its panel are inert under it (Codex on #86)
+    if (d.pageShown && d.pageShown()) return;
     if (!commandModes(id).has(store.session.mode)) return;
     NATIVE_COMMANDS[id]();
   }

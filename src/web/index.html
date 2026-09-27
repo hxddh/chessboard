@@ -19,6 +19,23 @@
 <body>
 
   <div id="app">
+    <!-- v8-0-plan A1: the top level. The rail on a wide window (a row in the
+         top bar on a narrow one) goes to six views: 首页, the board in its
+         three modes — 下棋 / 谜题 / 学习 — and two pages, 棋谱库 and 我的,
+         which lie over the stage instead of standing in a 400px panel or a
+         460px dialog. The board keeps its size under a page, so coming back
+         moves nothing. shell.js owns all of it; 偏好 opens the preferences
+         window (prefs-ui.js). -->
+    <nav class="rail" id="rail" aria-label="主导航" data-i18n-aria="nav.aria">
+      <button type="button" class="rail-btn" data-view="home" title="首页" data-i18n-title="nav.home"><span class="rail-ic" data-icon="crown" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.home">首页</span></button>
+      <button type="button" class="rail-btn" data-view="play" title="下棋" data-i18n-title="nav.play"><span class="rail-ic" data-icon="swords" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.play">下棋</span></button>
+      <button type="button" class="rail-btn" data-view="puzzle" title="谜题" data-i18n-title="nav.puzzle"><span class="rail-ic" data-icon="puzzle" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.puzzle">谜题</span></button>
+      <button type="button" class="rail-btn" data-view="learn" title="学习" data-i18n-title="nav.learn"><span class="rail-ic" data-icon="graduation-cap" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.learn">学习</span></button>
+      <button type="button" class="rail-btn" data-view="library" title="棋谱库" data-i18n-title="nav.library"><span class="rail-ic" data-icon="library" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.library">棋谱库</span></button>
+      <button type="button" class="rail-btn" data-view="me" title="我的" data-i18n-title="nav.me"><span class="rail-ic" data-icon="user" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.me">我的</span></button>
+      <button type="button" class="rail-btn rail-end" id="prefs-open" title="偏好设置（Ctrl 或 ⌘ 加逗号）" data-i18n-title="tip.prefs"><span class="rail-ic" data-icon="eye" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.prefs">偏好</span></button>
+    </nav>
+
     <!-- The bar is 44px of permanently reserved height directly above a board
          that is height-bound in every window this app runs in, so those pixels
          come out of the board's *edge*: measured, 5.2% of it at 1400x900 and
@@ -107,6 +124,13 @@
           <span class="ps-result num" id="result-b" hidden></span>
           <span class="ps-clock num" id="clock-b" hidden>5:00</span>
         </div>
+        <!-- v8-0-plan A2: the wide layout's info column. The two strips
+             above become its top and bottom cards (styles.css #app.pv-wide);
+             between them, the opening's name, which the panel shows in every
+             other layout (play-layout.js copies it here). -->
+        <div class="info-col" id="info-col">
+          <p class="info-opening" id="info-opening" hidden></p>
+        </div>
         <canvas id="board" width="900" height="900" aria-label="棋盘" data-i18n-aria="aria.board"></canvas>
         <!-- coordinates live on the frame, not on a1/h1 where they sat on top
              of the rooks; the board itself is left to the pieces -->
@@ -146,10 +170,14 @@
            (moves, replay, analysis, this game's actions), what you set once
            (level, clock, theme, language), and what you look back at
            (statistics, history, achievements). -->
+      <!-- v8-0-plan A2: in a portrait window, the mainline in one line that
+           scrolls sideways, above the drawer's tabs — the notation on the
+           drawer's first screen. A mirror of #move-list for the pointer
+           (play-layout.js); the list stays the keyboard's route. -->
+      <div class="move-strip" id="move-strip" aria-hidden="true" hidden></div>
       <div class="side-tabs" role="tablist" aria-label="面板分区" data-i18n-aria="aria.tabs">
         <button type="button" role="tab" id="tab-play" data-tab="play" aria-selected="true" aria-controls="pane-play" data-i18n="tab.play">对局</button>
         <button type="button" role="tab" id="tab-setup" data-tab="setup" aria-selected="false" aria-controls="pane-setup" data-i18n="tab.setup">设置</button>
-        <button type="button" role="tab" id="tab-record" data-tab="record" aria-selected="false" aria-controls="pane-record" data-i18n="tab.record">记录</button>
         <!-- The ✕ used to sit here, as a fourth item in a row of three tabs:
              same height, same row, same alignment, but it closed the panel
              instead of selecting a view. Closing already has two affordances
@@ -157,26 +185,6 @@
       </div>
 
       <div class="side-pane" id="pane-setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
-      <!-- Mode decides what every other control on screen means, which is why
-           it spent 2.0 in the chrome: an application-level switch, not a
-           setting. That was right about what it *is* and wrong about what it
-           costs — it is changed once or twice a session, and it was holding the
-           top-left corner, the first tab stop and four of the chrome's nine
-           controls for the whole time it was not being used.
-           It is the first thing on the settings page instead, which is the one
-           screen you are not on while playing. It reads as a segment here, the
-           same control the difficulty, the persona and the theme use; the
-           underline vocabulary it shared with the tab row is gone with it, and
-           so is the pair of identical-looking rows that vocabulary created. -->
-      <section class="side-section" id="sec-mode">
-        <h2 class="side-h" data-i18n="side.mode">模式</h2>
-        <div class="theme-row wrap" id="mode-seg" role="group" aria-label="模式" data-i18n-aria="side.mode">
-          <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n-title="tip.mode.ai" data-i18n="mode.ai">人机</button>
-          <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.mode.pvp" data-i18n="mode.pvp">双人</button>
-          <button type="button" data-mode="learn" title="从零学国际象棋:互动课程" data-i18n-title="tip.mode.learn" data-i18n="mode.learn">教学</button>
-          <button type="button" data-mode="puzzle" title="战术做题:一步杀 / 两步杀" data-i18n-title="tip.mode.puzzle" data-i18n="mode.puzzle">做题</button>
-        </div>
-      </section>
       <!-- Summary first, controls on request.
            Eighteen equal-weight buttons stood open here permanently — six
            difficulties, four sparring styles, two colours, six clocks — which
@@ -264,51 +272,13 @@
       </section>
 
 
-      <!-- Was 「外观」 until 2.1.1, holding the theme, the language, the board
-           orientation and the sound. Two of those four are not appearance: a
-           language is what the app says, a sound is not seen at all. The
-           heading is what the group is, so the group is 「界面」 and the order
-           inside it goes from the most visible to the least: the two that
-           change what the board looks like, then the words, then the sound.
-           (Orientation spent 2.1 between the language and the sound, which put
-           the greatest distance in the group between it and the theme — the
-           one setting it belongs with.) -->
-      <section class="side-section">
-        <h2 class="side-h" data-i18n="side.look">界面</h2>
+      <!-- v8-0-plan A1: what is left of 「界面」 once the window's look,
+           its language and its sound went to 偏好设置 (⌘, / Ctrl+,): the
+           rows about the board in front of you — which way it faces, what the
+           review marks, the engine's arrows, playing blind. -->
+      <section class="side-section" id="sec-view">
+        <h2 class="side-h" data-i18n="side.display">显示</h2>
         <div class="setting-list">
-          <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.theme">主题</span>
-            <div class="theme-row" id="theme-seg" role="group" aria-label="主题" data-i18n-aria="side.theme">
-              <button type="button" data-theme="wood" class="active" title="木色" data-i18n-title="tip.theme.wood" data-i18n="theme.wood">木</button>
-              <button type="button" data-theme="night" title="夜色" data-i18n-title="tip.theme.night" data-i18n="theme.night">夜</button>
-              <button type="button" data-theme="day" title="日间" data-i18n-title="tip.theme.day" data-i18n="theme.day">日</button>
-              <button type="button" data-theme="notebook" title="纸本" data-i18n-title="tip.theme.notebook" data-i18n="theme.notebook">纸</button>
-            </div>
-          </div>
-          <div class="setting-row">
-            <span class="setting-k" data-i18n="side.followSystem">跟随系统深浅</span>
-            <button type="button" class="switch" id="opt-follow" aria-pressed="false" title="系统切到深色时用「夜」，浅色时用「日」" data-i18n-title="tip.followSystem">
-              <span class="switch-knob"></span>
-            </button>
-          </div>
-          <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.textSize">字号</span>
-            <div class="theme-row" id="text-seg" role="group" aria-label="字号" data-i18n-aria="side.textSize" title="整个界面的文字大小" data-i18n-title="tip.textSize">
-              <button type="button" data-text="s" data-i18n="text.s">小</button>
-              <button type="button" data-text="m" class="active" data-i18n="text.m">标准</button>
-              <button type="button" data-text="l" data-i18n="text.l">大</button>
-            </div>
-          </div>
-          <!-- v7-7-plan §6: a second piece set, licence-cleared (GPLv2+, see
-               js/pieces-merida.js). The board only: the move list's
-               figurines stay the standard set, they are type, not pieces. -->
-          <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.pieces">棋子样式</span>
-            <div class="theme-row" id="pieces-seg" role="group" aria-label="棋子样式" data-i18n-aria="side.pieces">
-              <button type="button" data-pieces="cburnett" class="active" data-i18n="pieces.cburnett">标准</button>
-              <button type="button" data-pieces="merida" data-i18n="pieces.merida">梅里达</button>
-            </div>
-          </div>
           <!-- Which way round the board is drawn is a property of the view,
                like the theme, so it sits next to the theme rather than in the
                chrome — where it was one of four buttons over the board and one
@@ -326,49 +296,6 @@
             <div class="theme-row" id="orient-seg" role="group" aria-label="棋盘方向" data-i18n-aria="side.orientation">
               <button type="button" data-orient="w" class="active" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="msg.view.white">白方视角</button>
               <button type="button" data-orient="b" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="msg.view.black">黑方视角</button>
-            </div>
-          </div>
-          <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.language">语言</span>
-            <div class="theme-row" id="lang-seg" role="group" aria-label="语言" data-i18n-aria="side.language"></div>
-          </div>
-          <div class="setting-row">
-            <span class="setting-k" data-i18n="side.sound">音效</span>
-            <button type="button" class="switch" id="opt-sound" aria-pressed="true" title="走子音效" data-i18n-title="tip.sound">
-              <span class="switch-knob"></span>
-            </button>
-          </div>
-          <!-- 6.0 (v6-plan Q2.8): the level under the switch, the coordinates
-               on the frame, and the board with its men withheld. -->
-          <div class="setting-row" id="row-volume">
-            <span class="setting-k" data-i18n="side.volume">音量</span>
-            <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
-          </div>
-          <!-- 7.7 (v7-7-plan §8): the sound set. 木质 is the default; 经典 is
-               the oscillator set every version until 7.6 played. -->
-          <div class="setting-row stack" id="row-sound-set">
-            <span class="setting-k" data-i18n="side.soundSet">音色</span>
-            <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：7.6 以前的合成音" data-i18n-title="tip.soundSet">
-              <button type="button" data-sound-set="wood" class="active" data-i18n="soundSet.wood">木质</button>
-              <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
-            </div>
-          </div>
-          <div class="setting-row">
-            <span class="setting-k" data-i18n="side.coords">坐标</span>
-            <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘上标出 a–h 与 1–8" data-i18n-title="tip.coords">
-              <span class="switch-knob"></span>
-            </button>
-          </div>
-          <!-- v7-8-plan §5: printed on the frame (as since 1.x) or in the
-               corner squares, the way Lichess does it — a–h in the first
-               rank, 1–8 in the a-file, each in the other square colour. The
-               frame narrows to match; the board rect then depends on this
-               option and on the window, never on the tab. -->
-          <div class="setting-row stack" id="row-coords-at">
-            <span class="setting-k" data-i18n="side.coordsAt">坐标位置</span>
-            <div class="theme-row" id="coords-seg" role="group" aria-label="坐标位置" data-i18n-aria="side.coordsAt">
-              <button type="button" data-coords="out" class="active" data-i18n="coords.out">盘外</button>
-              <button type="button" data-coords="in" data-i18n="coords.in">盘内</button>
             </div>
           </div>
           <div class="setting-row">
@@ -418,51 +345,6 @@
         </div>
       </section>
 
-      <!-- Every irreversible action, in one place, with one naming pattern.
-           They used to be four: 「清除存档」 pinned in red at the foot of the
-           panel, 「重置」 in the lesson header, 「清零」 in the statistics
-           header, 「认输」 in the game group — four unrecoverable actions,
-           four locations, three different words for "destroy", all of them
-           permanent furniture sitting a stray click away while you play.
-           Resign stayed with the game (it is a move, not a deletion) and is
-           only present while a game is running; the three that delete data
-           live here, behind one heading, off the screen you play on.
-
-           And last on that screen. Until 2.1 this sat in the middle of the
-           settings page — three irreversible deletions, and the only red on
-           the page, wedged between the two groups you actually come here to
-           adjust. A destructive group belongs at the end of the thing it is
-           the end of. -->
-      <!-- 5.1: the learning data — the personal book, the review queue, the
-           lesson progress, the record — has a way out and a way back in. It
-           is the one content in the app nobody can download again, and it
-           used to live behind two buttons that could only delete it. -->
-      <section class="side-section" id="sec-learning">
-        <h2 class="side-h" data-i18n="side.learning">学习数据</h2>
-        <div class="link-row">
-          <button type="button" class="act-btn" id="learning-export" data-i18n="act.learningExport" title="把错题本、复习队列、课程进度和战绩存成一个文件" data-i18n-title="tip.learning.export">导出</button>
-          <button type="button" class="act-btn" id="learning-import" data-i18n="act.learningImport" title="从导出的文件合并回来，不会覆盖本机已有的进度" data-i18n-title="tip.learning.import">导入</button>
-        </div>
-      </section>
-      <!-- 6.0 (v6-plan Q1.1): the whole profile — every key, including the
-           current game, the slots, the settings and the record — as one file.
-           The learning export above is a merge; this one is a copy. -->
-      <section class="side-section" id="sec-alldata">
-        <h2 class="side-h" data-i18n="side.allData">全部数据</h2>
-        <div class="link-row">
-          <button type="button" class="act-btn" id="alldata-export" data-i18n="act.allExport" title="把本机全部数据（对局、存档槽、设置、战绩、学习数据）存成一个文件" data-i18n-title="tip.allData.export">导出</button>
-          <button type="button" class="act-btn" id="alldata-import" data-i18n="act.allImport" title="用导出的文件整个替换本机数据" data-i18n-title="tip.allData.import">导入</button>
-          <button type="button" class="act-btn" id="about-open" data-i18n="act.about" title="版本、许可与致谢" data-i18n-title="tip.about">关于</button>
-        </div>
-      </section>
-      <section class="side-section">
-        <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
-        <div class="link-row">
-          <button type="button" class="act-btn danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
-          <button type="button" class="act-btn danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
-          <button type="button" class="act-btn danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
-        </div>
-      </section>
 
       </div><!-- /pane-setup -->
 
@@ -821,135 +703,190 @@
 
       </div><!-- /pane-play -->
 
-      <div class="side-pane" id="pane-record" role="tabpanel" aria-labelledby="tab-record" hidden>
-      <!-- What a new install used to open on: two grey sentences saying
-           nothing has happened yet, and fifteen 🔒 rows. Fifteen locks is not
-           an empty state, it is a wall with the score already 0/15 on it — and
-           the three sections under it are all "come back later" in three
-           different wordings.
-           This card is what stands there instead until the first thing is
-           recorded: what the page will hold, and three doors, each with the
-           badge it opens on it. The rows are built by renderRecordEntry() so
-           the badge names come from the achievement table rather than being
-           written out a second time in three languages. -->
-      <div class="rec-entry" id="record-empty" hidden>
-        <p class="rec-lead" data-i18n="rec.emptyLead">这一页记的是你下过的棋:战绩、每局的棋谱、十五个成就。现在还空着 —— 下面三件事,每件都开一个头。</p>
-        <div class="rec-doors" id="record-doors"></div>
-      </div>
-      <section class="side-section" id="sec-stats">
-        <div class="side-h-row">
-          <h2 class="side-h" data-i18n="side.stats">统计</h2>
-        </div>
-        <div class="stats-body" id="stats-body"></div>
-        <!-- The memory 为你出一题 reads, finally visible. Rows exist only for
-             categories with answered puzzles (P3 — no record, no row), and the
-             "most missed" marker comes from the same Picker.weakest() the
-             recommendation toast uses, so the two can never name different
-             categories. -->
-        <div class="side-h-row" id="puzzle-tally-head" hidden>
-          <h2 class="side-h" data-i18n="side.puzzleTally">做题战绩</h2>
-          <span class="side-h-meta num" id="rating-meta" hidden></span>
-        </div>
-        <!-- 6.0 (v6-plan Q3.1): the number that can go up. Drawn only once a
-             first attempt has moved it, like everything else on this page. -->
-        <canvas id="trend-rating" hidden aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
-        <div class="stats-body" id="puzzle-tally-body" hidden></div>
-        <!-- 进步 — change over time, not totals (progress.js). The accuracy
-             sparkline reads what stats.games already stores; the weekly rows
-             read buckets that start filling at 4.0 — no history is invented.
-             Every element exists only when it has data to show (P3). -->
-        <div class="side-h-row" id="trend-head" hidden>
-          <h2 class="side-h" data-i18n="side.trend">进步</h2>
-          <span class="side-h-meta num" id="trend-streak" hidden></span>
-        </div>
-        <canvas id="trend-acc" hidden aria-label="准确率走势" data-i18n-aria="aria.trendAcc" title="最近分析过的对局的准确率,按时间排列" data-i18n-title="tip.trendAcc"></canvas>
-        <div class="stats-body" id="trend-body" hidden></div>
-        <!-- 7.0: 棋谱库. 对局历史 below is what this app watched you play;
-             this is what you played everywhere else. mistakes.js has argued
-             since 5.1 that "任何现成题库都给不了的那一种内容,是这个玩家真正
-             输掉的那些棋" — and until now that loop only closed for games
-             played inside this window, which for anyone who plays online is a
-             rounding error of their real play. The model is library.js; this
-             section is its one screen. -->
-        <div class="side-h-row">
-          <h2 class="side-h" data-i18n="lib.title">棋谱库</h2>
-          <span class="side-h-meta num" id="lib-meta" hidden></span>
-        </div>
-        <!-- 7.9 §4a: the section's body and its buttons in one block, so the
-             empty state can be one dashed card with its button inside it
-             (.rec-block in styles.css). The buttons stay where they are in
-             the markup — a class, not a re-render, is what moves them. -->
-        <div class="rec-block" id="lib-block">
-        <div class="stats-body" id="lib-body"></div>
-        <!-- Who "you" are in an imported file. Without a name that matches a
-             header, library.js refuses to pick a side — every number on the
-             diagnosis page is from one player's chair, and a guess here would
-             quietly poison all of them. Built in the markup rather than by
-             renderLibrary() so that typing in it does not race a re-render. -->
-        <div class="setting-row stack" id="lib-names-row" hidden>
-          <label class="setting-k" for="lib-names" data-i18n="lib.names">你在棋谱里的名字</label>
-          <input type="text" id="lib-names" class="text-input" spellcheck="false"
-                 aria-describedby="lib-names-hint" />
-          <p class="hint" id="lib-names-hint" data-i18n="lib.namesHint">用逗号分隔多个账号名;大小写不论。认不出来的棋局会照样留着,只是不算进「你的」数字里。</p>
-        </div>
-        <div class="close-row split" id="lib-acts">
-          <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入棋谱文件</button>
-          <span class="btn-pair">
-            <!-- label is 「全部 N 局」, filled by renderLibrary() in the
-                 interface language, so the markup carries no text -->
-            <button type="button" class="act-btn" id="lib-open" hidden></button>
-            <button type="button" class="act-btn" id="lib-analyse" hidden></button>
-            <button type="button" class="act-btn" id="lib-diagnose" hidden data-i18n="lib.diagnose">看诊断</button>
-          </span>
-        </div>
-        <!-- 7.6 (v7-6-plan §2): what the library is doing — 没认出你、还差几局、
-             正在分析第几局 — sits UNDER the buttons. Above them, every change
-             of these lines moved 分析 / 暂停分析: the first `change` as focus
-             leaves the name field rewrote them between mouse-down and
-             mouse-up, and WebKit drops a click whose button moved. -->
-        <div class="stats-body" id="lib-status"></div>
-        </div>
-        <!-- 我的开局书 (7.2, v7-2-plan §3). The trainer's built-in book
-             teaches opening principles through the openings everybody plays;
-             this one is the four or five things THIS player intends to play,
-             imported as a PGN with variations. It sits here, next to the
-             library, because the third thing it does — naming the openings
-             you keep losing in and have nothing written down about — is read
-             straight off the library's diagnosis. -->
-        <div class="side-h-row">
-          <h2 class="side-h" data-i18n="rep.title">我的开局书</h2>
-          <span class="side-h-meta num" id="rep-meta" hidden></span>
-        </div>
-        <div class="rec-block" id="rep-block">
-        <div class="stats-body" id="rep-body"></div>
-        <div class="close-row split" id="rep-acts">
-          <span class="btn-pair">
-            <button type="button" class="act-btn" id="rep-import-w" data-i18n="rep.importW">导入执白开局书</button>
-            <button type="button" class="act-btn" id="rep-import-b" data-i18n="rep.importB">导入执黑开局书</button>
-          </span>
-          <span class="btn-pair">
-            <button type="button" class="act-btn" id="rep-drill" hidden data-i18n="rep.drill">开始背</button>
-            <button type="button" class="act-btn" id="rep-clear" hidden data-i18n="rep.clear">清空</button>
-          </span>
-        </div>
-        </div>
-        <div class="side-h-row">
-          <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
-          <!-- label is "全部 N 局": renderHistory() fills in both the count and
-               the language, so the markup deliberately carries no text -->
-          <button type="button" class="act-btn" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
-        </div>
-        <div class="hist-body" id="hist-body"></div>
-        <div class="side-h-row">
-          <h2 class="side-h" data-i18n="side.ach">成就</h2>
-          <span class="side-h-meta num" id="ach-count">0/0</span>
-        </div>
-        <div class="ach-body" id="ach-body"></div>
-      </section>
-
-      </div><!-- /pane-record -->
 
     </aside>
+
+
+    <!-- 首页: three cards, each one sentence or three and one button —
+         where you left off, what the coach planned for today, and what to
+         do next. Built by shell.js from the save, planner.js and the
+         coach's recommendation(); nothing here is new data. -->
+    <main class="page" id="page-home" aria-labelledby="home-h" hidden>
+      <div class="page-inner">
+        <h1 class="page-h" id="home-h" data-i18n="nav.home">首页</h1>
+        <div class="home-cards">
+          <section class="home-card" id="home-continue" aria-labelledby="home-continue-h">
+            <h2 class="side-h" id="home-continue-h" data-i18n="home.continue">继续上次</h2>
+            <div class="home-body"></div>
+            <button type="button" class="act-btn primary home-go"></button>
+          </section>
+          <section class="home-card" id="home-daily" aria-labelledby="home-daily-h">
+            <h2 class="side-h" id="home-daily-h" data-i18n="daily.btn">今天的训练</h2>
+            <div class="home-body"></div>
+            <button type="button" class="act-btn home-go"></button>
+          </section>
+          <section class="home-card" id="home-next" aria-labelledby="home-next-h">
+            <h2 class="side-h" id="home-next-h" data-i18n="home.next">下一步建议</h2>
+            <div class="home-body"></div>
+            <button type="button" class="act-btn home-go"></button>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- 棋谱库: the library and the opening book, the two things you bring
+         in from outside. The game list, the diagnosis and the history open
+         as sheets over this page (.page-sheet), full width — the diagnosis
+         had its right column cut at 460px. -->
+    <main class="page" id="page-library" aria-labelledby="library-h" hidden>
+      <div class="page-inner">
+        <h1 class="page-h" id="library-h" data-i18n="nav.library">棋谱库</h1>
+        <div class="page-cols">
+          <section class="side-section page-sec" id="sec-library">
+            <!-- 7.0: 棋谱库. 对局历史 below is what this app watched you play;
+                 this is what you played everywhere else. mistakes.js has argued
+                 since 5.1 that "任何现成题库都给不了的那一种内容,是这个玩家真正
+                 输掉的那些棋" — and until now that loop only closed for games
+                 played inside this window, which for anyone who plays online is a
+                 rounding error of their real play. The model is library.js; this
+                 section is its one screen. -->
+            <div class="side-h-row">
+              <h2 class="side-h" data-i18n="lib.title">棋谱库</h2>
+              <span class="side-h-meta num" id="lib-meta" hidden></span>
+            </div>
+            <!-- 7.9 §4a: the section's body and its buttons in one block, so the
+                 empty state can be one dashed card with its button inside it
+                 (.rec-block in styles.css). The buttons stay where they are in
+                 the markup — a class, not a re-render, is what moves them. -->
+            <div class="rec-block" id="lib-block">
+            <div class="stats-body" id="lib-body"></div>
+            <!-- Who "you" are in an imported file. Without a name that matches a
+                 header, library.js refuses to pick a side — every number on the
+                 diagnosis page is from one player's chair, and a guess here would
+                 quietly poison all of them. Built in the markup rather than by
+                 renderLibrary() so that typing in it does not race a re-render. -->
+            <div class="setting-row stack" id="lib-names-row" hidden>
+              <label class="setting-k" for="lib-names" data-i18n="lib.names">你在棋谱里的名字</label>
+              <input type="text" id="lib-names" class="text-input" spellcheck="false"
+                     aria-describedby="lib-names-hint" />
+              <p class="hint" id="lib-names-hint" data-i18n="lib.namesHint">用逗号分隔多个账号名;大小写不论。认不出来的棋局会照样留着,只是不算进「你的」数字里。</p>
+            </div>
+            <div class="close-row split" id="lib-acts">
+              <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入棋谱文件</button>
+              <span class="btn-pair">
+                <!-- label is 「全部 N 局」, filled by renderLibrary() in the
+                     interface language, so the markup carries no text -->
+                <button type="button" class="act-btn" id="lib-open" hidden></button>
+                <button type="button" class="act-btn" id="lib-analyse" hidden></button>
+                <button type="button" class="act-btn" id="lib-diagnose" hidden data-i18n="lib.diagnose">看诊断</button>
+              </span>
+            </div>
+            <!-- 7.6 (v7-6-plan §2): what the library is doing — 没认出你、还差几局、
+                 正在分析第几局 — sits UNDER the buttons. Above them, every change
+                 of these lines moved 分析 / 暂停分析: the first `change` as focus
+                 leaves the name field rewrote them between mouse-down and
+                 mouse-up, and WebKit drops a click whose button moved. -->
+            <div class="stats-body" id="lib-status"></div>
+            </div>
+          </section>
+          <section class="side-section page-sec" id="sec-rep">
+            <!-- 我的开局书 (7.2, v7-2-plan §3). The trainer's built-in book
+                 teaches opening principles through the openings everybody plays;
+                 this one is the four or five things THIS player intends to play,
+                 imported as a PGN with variations. It sits here, next to the
+                 library, because the third thing it does — naming the openings
+                 you keep losing in and have nothing written down about — is read
+                 straight off the library's diagnosis. -->
+            <div class="side-h-row">
+              <h2 class="side-h" data-i18n="rep.title">我的开局书</h2>
+              <span class="side-h-meta num" id="rep-meta" hidden></span>
+            </div>
+            <div class="rec-block" id="rep-block">
+            <div class="stats-body" id="rep-body"></div>
+            <div class="close-row split" id="rep-acts">
+              <span class="btn-pair">
+                <button type="button" class="act-btn" id="rep-import-w" data-i18n="rep.importW">导入执白开局书</button>
+                <button type="button" class="act-btn" id="rep-import-b" data-i18n="rep.importB">导入执黑开局书</button>
+              </span>
+              <span class="btn-pair">
+                <button type="button" class="act-btn" id="rep-drill" hidden data-i18n="rep.drill">开始背</button>
+                <button type="button" class="act-btn" id="rep-clear" hidden data-i18n="rep.clear">清空</button>
+              </span>
+            </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- 我的: what this app watched you do — the record, the puzzles, the
+         trend, the games, the badges. It was the 记录 tab of the panel. -->
+    <main class="page" id="page-me" aria-labelledby="me-h" hidden>
+      <div class="page-inner">
+        <h1 class="page-h" id="me-h" data-i18n="nav.me">我的</h1>
+        <!-- What a new install used to open on: two grey sentences saying
+             nothing has happened yet, and fifteen 🔒 rows. Fifteen locks is not
+             an empty state, it is a wall with the score already 0/15 on it — and
+             the three sections under it are all "come back later" in three
+             different wordings.
+             This card is what stands there instead until the first thing is
+             recorded: what the page will hold, and three doors, each with the
+             badge it opens on it. The rows are built by renderRecordEntry() so
+             the badge names come from the achievement table rather than being
+             written out a second time in three languages. -->
+        <div class="rec-entry" id="record-empty" hidden>
+          <p class="rec-lead" data-i18n="rec.emptyLead">这一页记的是你下过的棋:战绩、每局的棋谱、十五个成就。现在还空着 —— 下面三件事,每件都开一个头。</p>
+          <div class="rec-doors" id="record-doors"></div>
+        </div>
+        <div class="page-cols">
+          <section class="side-section page-sec" id="sec-stats">
+            <div class="side-h-row">
+              <h2 class="side-h" data-i18n="side.stats">统计</h2>
+            </div>
+            <div class="stats-body" id="stats-body"></div>
+            <!-- The memory 为你出一题 reads, finally visible. Rows exist only for
+                 categories with answered puzzles (P3 — no record, no row), and the
+                 "most missed" marker comes from the same Picker.weakest() the
+                 recommendation toast uses, so the two can never name different
+                 categories. -->
+            <div class="side-h-row" id="puzzle-tally-head" hidden>
+              <h2 class="side-h" data-i18n="side.puzzleTally">做题战绩</h2>
+              <span class="side-h-meta num" id="rating-meta" hidden></span>
+            </div>
+            <!-- 6.0 (v6-plan Q3.1): the number that can go up. Drawn only once a
+                 first attempt has moved it, like everything else on this page. -->
+            <canvas id="trend-rating" hidden aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
+            <div class="stats-body" id="puzzle-tally-body" hidden></div>
+            <!-- 进步 — change over time, not totals (progress.js). The accuracy
+                 sparkline reads what stats.games already stores; the weekly rows
+                 read buckets that start filling at 4.0 — no history is invented.
+                 Every element exists only when it has data to show (P3). -->
+            <div class="side-h-row" id="trend-head" hidden>
+              <h2 class="side-h" data-i18n="side.trend">进步</h2>
+              <span class="side-h-meta num" id="trend-streak" hidden></span>
+            </div>
+            <canvas id="trend-acc" hidden aria-label="准确率走势" data-i18n-aria="aria.trendAcc" title="最近分析过的对局的准确率,按时间排列" data-i18n-title="tip.trendAcc"></canvas>
+            <div class="stats-body" id="trend-body" hidden></div>
+          </section>
+          <section class="side-section page-sec" id="sec-history">
+            <div class="side-h-row">
+              <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
+              <!-- label is "全部 N 局": renderHistory() fills in both the count and
+                   the language, so the markup deliberately carries no text -->
+              <button type="button" class="act-btn" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
+            </div>
+            <div class="hist-body" id="hist-body"></div>
+          </section>
+          <section class="side-section page-sec" id="sec-ach">
+            <div class="side-h-row">
+              <h2 class="side-h" data-i18n="side.ach">成就</h2>
+              <span class="side-h-meta num" id="ach-count">0/0</span>
+            </div>
+            <div class="ach-body" id="ach-body"></div>
+          </section>
+        </div>
+      </div>
+    </main>
 
     <div class="toast" id="toast"></div>
 
@@ -997,7 +934,7 @@
       </div>
     </div>
 
-    <div class="modal-bg" id="hist-modal" role="dialog" aria-labelledby="hist-modal-title">
+    <div class="modal-bg page-sheet" id="hist-modal" role="dialog" aria-labelledby="hist-modal-title">
       <div class="modal wide">
         <h3 id="hist-modal-title" data-i18n="hist.title">对局历史</h3>
         <!-- a few hundred games with no filter is a list you scroll, not a
@@ -1031,7 +968,7 @@
          back to the board, and the diagnosis rows filter it — which is what
          v7-plan §6.2 asked for in the first place ("每一条都必须点到一个可
          执行的下一步"). Built on the same parts as 对局历史 above it. -->
-    <div class="modal-bg" id="lib-list-modal" role="dialog" aria-labelledby="lib-list-title">
+    <div class="modal-bg page-sheet" id="lib-list-modal" role="dialog" aria-labelledby="lib-list-title">
       <div class="modal wide">
         <h3 id="lib-list-title" data-i18n="lib.listTitle">棋谱库</h3>
         <p class="hint" id="lib-pick-note" hidden></p>
@@ -1070,7 +1007,7 @@
          its sample floor — the whole claim of this page is that it speaks from
          a sample one game cannot provide, so 三局的图 would be the one thing
          that makes it worthless. -->
-    <div class="modal-bg" id="lib-modal" role="dialog" aria-labelledby="lib-modal-title">
+    <div class="modal-bg page-sheet" id="lib-modal" role="dialog" aria-labelledby="lib-modal-title">
       <div class="modal wide">
         <h3 id="lib-modal-title" data-i18n="diag.title">棋谱库诊断</h3>
         <div class="stats-body" id="lib-diag"></div>
@@ -1157,11 +1094,146 @@
          hostNewGameRows() in app.js. The line under the title replaces the
          old 「清空当前对局？」 confirm, and is there only when a game in
          progress would be lost. -->
+    <!-- v8-0-plan A1: 偏好设置 — the app's look, language, sound and data,
+         out of the game's settings page. ⌘, on macOS, Ctrl+, elsewhere, or
+         the rail's last entry. The look pickers are v8-0-plan A3's module,
+         mounted by one call (prefs-ui.js mountAppearance). -->
+    <div class="modal-bg" id="prefs-modal" role="dialog" aria-labelledby="prefs-title">
+      <div class="modal wide prefs-modal">
+        <h3 id="prefs-title" data-i18n="prefs.title">偏好设置</h3>
+        <section class="side-section" id="prefs-look-sec">
+          <h2 class="side-h" data-i18n="prefs.look">外观</h2>
+          <div class="setting-list">
+            <!-- v8-0-plan A3: 外观 / 棋盘 / 边框 / 棋子, built by
+                 js/appearance-ui.js mount() through prefs-ui.js
+                 mountAppearance(). They replace the 主题 row (four pairings of
+                 a shell with a board, two of them one board), the 跟随系统深浅
+                 switch (now the appearance's third choice, and the default) and
+                 the two-button 棋子样式 row. -->
+            <div class="setting-list" id="prefs-look"></div>
+            <div class="setting-row stack">
+              <span class="setting-k" data-i18n="side.textSize">字号</span>
+              <div class="theme-row" id="text-seg" role="group" aria-label="字号" data-i18n-aria="side.textSize" title="整个界面的文字大小" data-i18n-title="tip.textSize">
+                <button type="button" data-text="s" data-i18n="text.s">小</button>
+                <button type="button" data-text="m" class="active" data-i18n="text.m">标准</button>
+                <button type="button" data-text="l" data-i18n="text.l">大</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <span class="setting-k" data-i18n="side.coords">坐标</span>
+              <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘上标出 a–h 与 1–8" data-i18n-title="tip.coords">
+                <span class="switch-knob"></span>
+              </button>
+            </div>
+            <!-- v7-8-plan §5: printed on the frame (as since 1.x) or in the
+                 corner squares, the way Lichess does it — a–h in the first
+                 rank, 1–8 in the a-file, each in the other square colour. The
+                 frame narrows to match; the board rect then depends on this
+                 option and on the window, never on the tab. -->
+            <div class="setting-row stack" id="row-coords-at">
+              <span class="setting-k" data-i18n="side.coordsAt">坐标位置</span>
+              <div class="theme-row" id="coords-seg" role="group" aria-label="坐标位置" data-i18n-aria="side.coordsAt">
+                <button type="button" data-coords="out" class="active" data-i18n="coords.out">盘外</button>
+                <button type="button" data-coords="in" data-i18n="coords.in">盘内</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="side-section" id="prefs-lang-sec">
+          <h2 class="side-h" data-i18n="prefs.langSound">语言与声音</h2>
+          <div class="setting-list">
+            <div class="setting-row stack">
+              <span class="setting-k" data-i18n="side.language">语言</span>
+              <div class="theme-row" id="lang-seg" role="group" aria-label="语言" data-i18n-aria="side.language"></div>
+            </div>
+            <div class="setting-row">
+              <span class="setting-k" data-i18n="side.sound">音效</span>
+              <button type="button" class="switch" id="opt-sound" aria-pressed="true" title="走子音效" data-i18n-title="tip.sound">
+                <span class="switch-knob"></span>
+              </button>
+            </div>
+            <!-- 6.0 (v6-plan Q2.8): the level under the switch, the coordinates
+                 on the frame, and the board with its men withheld. -->
+            <div class="setting-row" id="row-volume">
+              <span class="setting-k" data-i18n="side.volume">音量</span>
+              <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
+            </div>
+            <!-- 7.7 (v7-7-plan §8): the sound set. 木质 is the default; 经典 is
+                 the oscillator set every version until 7.6 played. -->
+            <div class="setting-row stack" id="row-sound-set">
+              <span class="setting-k" data-i18n="side.soundSet">音色</span>
+              <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：7.6 以前的合成音" data-i18n-title="tip.soundSet">
+                <button type="button" data-sound-set="wood" class="active" data-i18n="soundSet.wood">木质</button>
+                <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <!-- Every irreversible action, in one place, with one naming pattern.
+             They used to be four: 「清除存档」 pinned in red at the foot of the
+             panel, 「重置」 in the lesson header, 「清零」 in the statistics
+             header, 「认输」 in the game group — four unrecoverable actions,
+             four locations, three different words for "destroy", all of them
+             permanent furniture sitting a stray click away while you play.
+             Resign stayed with the game (it is a move, not a deletion) and is
+             only present while a game is running; the three that delete data
+             live here, behind one heading, off the screen you play on.
+
+             And last on that screen. Until 2.1 this sat in the middle of the
+             settings page — three irreversible deletions, and the only red on
+             the page, wedged between the two groups you actually come here to
+             adjust. A destructive group belongs at the end of the thing it is
+             the end of. -->
+        <!-- 5.1: the learning data — the personal book, the review queue, the
+             lesson progress, the record — has a way out and a way back in. It
+             is the one content in the app nobody can download again, and it
+             used to live behind two buttons that could only delete it. -->
+        <section class="side-section" id="sec-learning">
+          <h2 class="side-h" data-i18n="side.learning">学习数据</h2>
+          <div class="link-row">
+            <button type="button" class="act-btn" id="learning-export" data-i18n="act.learningExport" title="把错题本、复习队列、课程进度和战绩存成一个文件" data-i18n-title="tip.learning.export">导出</button>
+            <button type="button" class="act-btn" id="learning-import" data-i18n="act.learningImport" title="从导出的文件合并回来，不会覆盖本机已有的进度" data-i18n-title="tip.learning.import">导入</button>
+          </div>
+        </section>
+        <!-- 6.0 (v6-plan Q1.1): the whole profile — every key, including the
+             current game, the slots, the settings and the record — as one file.
+             The learning export above is a merge; this one is a copy. -->
+        <section class="side-section" id="sec-alldata">
+          <h2 class="side-h" data-i18n="side.allData">全部数据</h2>
+          <div class="link-row">
+            <button type="button" class="act-btn" id="alldata-export" data-i18n="act.allExport" title="把本机全部数据（对局、存档槽、设置、战绩、学习数据）存成一个文件" data-i18n-title="tip.allData.export">导出</button>
+            <button type="button" class="act-btn" id="alldata-import" data-i18n="act.allImport" title="用导出的文件整个替换本机数据" data-i18n-title="tip.allData.import">导入</button>
+            <button type="button" class="act-btn" id="about-open" data-i18n="act.about" title="版本、许可与致谢" data-i18n-title="tip.about">关于</button>
+          </div>
+        </section>
+        <section class="side-section">
+          <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
+          <div class="link-row">
+            <button type="button" class="act-btn danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
+            <button type="button" class="act-btn danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
+            <button type="button" class="act-btn danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
+          </div>
+        </section>
+        <div class="close-row"><button type="button" class="tool-btn" id="prefs-close" data-i18n="act.close">关闭</button></div>
+      </div>
+    </div>
+
     <div class="modal-bg" id="newgame-modal" role="dialog" aria-labelledby="newgame-title">
       <div class="modal wide newgame-modal">
         <h3 id="newgame-title" data-i18n="ng.title">新对局</h3>
         <p id="ng-warn" class="confirm-msg ng-warn" data-i18n="ng.endsCurrent" hidden>会结束当前这盘</p>
-        <div class="setting-list" id="ng-host"></div>
+        <div class="setting-list" id="ng-host">
+          <!-- v8-0-plan A1: 人机 or 双人 is chosen with the game, like the
+               opponent and the clock — the mode segment left the settings
+               page, and 谜题 / 学习 are the rail's. -->
+          <div class="setting-row stack" id="row-mode">
+            <span class="setting-k" data-i18n="ng.mode">对手</span>
+            <div class="theme-row wrap" id="mode-seg" role="group" aria-label="对手" data-i18n-aria="ng.mode">
+              <button type="button" data-mode="ai" class="active" title="与 Stockfish 引擎对弈" data-i18n-title="tip.mode.ai" data-i18n="mode.ai">人机</button>
+              <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.mode.pvp" data-i18n="mode.pvp">双人</button>
+            </div>
+          </div>
+        </div>
         <div class="close-row end">
           <button type="button" class="tool-btn" id="ng-cancel" data-i18n="act.cancel">取消</button>
           <button type="button" class="tool-btn primary" id="ng-start" data-i18n="ng.start">开始</button>

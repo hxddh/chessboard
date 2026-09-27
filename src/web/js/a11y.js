@@ -205,6 +205,9 @@ export function createA11y(d) {
     // none of it applies while one is open — see dialogOpen(). Escape is
     // handled above precisely because it is the one key that does apply.
     if (d.dialogOpen()) return;
+    // …nor while a page of the top level stands in front of the board
+    // (v8-0-plan A1): the board and its panel are behind it, inert
+    if (d.pageShown && d.pageShown()) return;
     // a letter typed into any text field is text, not a shortcut — the FEN
     // box used to be the only field and guarded itself; the guard belongs
     // here so the next field cannot forget it (v6-plan D8)

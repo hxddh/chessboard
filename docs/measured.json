@@ -1,5 +1,579 @@
 {
   "_": "Measured figures. Written by scripts/*.mjs --record, read by README.md, src/web/js/engine.js and scripts/test-chess.mjs. Do not hand-edit: a number here that no run produced is worse than no number.",
+  "boardLook": {
+    "what": "8.0 A3：每块棋盘、每种标记（上一步、选中、将军、提示、引擎箭头）叠在浅格（cl）与深格（cd）上的色度 C*，两者都不得超过上限；同一标记浅格与深格两个叠色之间的 ΔE00（dE）不得超过上限 —— 同一个标记在两种格子上要读成同一个标记。distinct：每两块棋盘深格之间的 ΔE00，最近的一对不得低于下限（7.9.0 的「日」与「木」只差 6.4）",
+    "script": "scripts/measure-marks.mjs --record",
+    "metric": "CIEDE2000 与 C*，sRGB → CIELAB D65；标记按 source-over 叠在 --sq-light / --sq-dark 上",
+    "marks": [
+      "last",
+      "sel",
+      "check",
+      "hint",
+      "arrow"
+    ],
+    "ceiling": {
+      "chroma": {
+        "last": 47,
+        "sel": 47,
+        "check": 52,
+        "hint": 52,
+        "arrow": 52
+      },
+      "dE": 16,
+      "distinct": 10
+    },
+    "beforeRef": "107838a",
+    "before": {
+      "marks": {
+        "wood": {
+          "last": {
+            "cl": 43.9,
+            "cd": 44.7,
+            "dE": 16
+          },
+          "sel": {
+            "cl": 42.3,
+            "cd": 42.4,
+            "dE": 13.7
+          },
+          "check": {
+            "cl": 47.2,
+            "cd": 55.1,
+            "dE": 10.9
+          },
+          "hint": {
+            "cl": 26.3,
+            "cd": 24.3,
+            "dE": 11.4
+          },
+          "arrow": {
+            "cl": 26.3,
+            "cd": 24.3,
+            "dE": 11.4
+          }
+        },
+        "night": {
+          "last": {
+            "cl": 45.2,
+            "cd": 51.3,
+            "dE": 13.7
+          },
+          "sel": {
+            "cl": 34.7,
+            "cd": 38.4,
+            "dE": 11.6
+          },
+          "check": {
+            "cl": 46.5,
+            "cd": 45.8,
+            "dE": 12.8
+          },
+          "hint": {
+            "cl": 42.6,
+            "cd": 42.9,
+            "dE": 12.7
+          },
+          "arrow": {
+            "cl": 42.6,
+            "cd": 42.9,
+            "dE": 12.7
+          }
+        },
+        "day": {
+          "last": {
+            "cl": 46.5,
+            "cd": 51.6,
+            "dE": 12.5
+          },
+          "sel": {
+            "cl": 44.8,
+            "cd": 48.1,
+            "dE": 10.8
+          },
+          "check": {
+            "cl": 49.9,
+            "cd": 60.6,
+            "dE": 9.2
+          },
+          "hint": {
+            "cl": 33.2,
+            "cd": 28.5,
+            "dE": 10.2
+          },
+          "arrow": {
+            "cl": 33.2,
+            "cd": 28.5,
+            "dE": 10.2
+          }
+        },
+        "notebook": {
+          "last": {
+            "cl": 26.4,
+            "cd": 33.7,
+            "dE": 14.6
+          },
+          "sel": {
+            "cl": 30,
+            "cd": 35.3,
+            "dE": 12.1
+          },
+          "check": {
+            "cl": 49.7,
+            "cd": 48.3,
+            "dE": 10.9
+          },
+          "hint": {
+            "cl": 49.9,
+            "cd": 49.5,
+            "dE": 8
+          },
+          "arrow": {
+            "cl": 49.9,
+            "cd": 49.5,
+            "dE": 8
+          }
+        }
+      },
+      "distinct": {
+        "min": 6.4,
+        "pair": "wood/day",
+        "pairs": {
+          "wood/night": 30.3,
+          "wood/day": 6.4,
+          "wood/notebook": 28.7,
+          "night/day": 29.1,
+          "night/notebook": 22.6,
+          "day/notebook": 28.8
+        }
+      }
+    },
+    "after": {
+      "marks": {
+        "wood": {
+          "last": {
+            "cl": 43.9,
+            "cd": 44.7,
+            "dE": 16
+          },
+          "sel": {
+            "cl": 42.3,
+            "cd": 42.4,
+            "dE": 13.7
+          },
+          "check": {
+            "cl": 43.8,
+            "cd": 51.8,
+            "dE": 11.6
+          },
+          "hint": {
+            "cl": 26.3,
+            "cd": 24.3,
+            "dE": 11.4
+          },
+          "arrow": {
+            "cl": 26.3,
+            "cd": 24.3,
+            "dE": 11.4
+          }
+        },
+        "green": {
+          "last": {
+            "cl": 31.2,
+            "cd": 35.5,
+            "dE": 14.9
+          },
+          "sel": {
+            "cl": 37.4,
+            "cd": 39.5,
+            "dE": 12.3
+          },
+          "check": {
+            "cl": 41.1,
+            "cd": 39.7,
+            "dE": 12.1
+          },
+          "hint": {
+            "cl": 34.9,
+            "cd": 35.6,
+            "dE": 12.2
+          },
+          "arrow": {
+            "cl": 34.9,
+            "cd": 35.6,
+            "dE": 12.2
+          }
+        },
+        "blue": {
+          "last": {
+            "cl": 24.7,
+            "cd": 24.3,
+            "dE": 13.6
+          },
+          "sel": {
+            "cl": 33,
+            "cd": 33.5,
+            "dE": 11.5
+          },
+          "check": {
+            "cl": 40.4,
+            "cd": 37.9,
+            "dE": 11.2
+          },
+          "hint": {
+            "cl": 46.6,
+            "cd": 43.9,
+            "dE": 9.3
+          },
+          "arrow": {
+            "cl": 46.6,
+            "cd": 43.9,
+            "dE": 9.3
+          }
+        },
+        "paper": {
+          "last": {
+            "cl": 12.3,
+            "cd": 8.2,
+            "dE": 10.9
+          },
+          "sel": {
+            "cl": 23.4,
+            "cd": 21,
+            "dE": 9.3
+          },
+          "check": {
+            "cl": 37.3,
+            "cd": 41.4,
+            "dE": 8.3
+          },
+          "hint": {
+            "cl": 28.1,
+            "cd": 30.1,
+            "dE": 7.9
+          },
+          "arrow": {
+            "cl": 28.1,
+            "cd": 30.1,
+            "dE": 7.9
+          }
+        },
+        "marble": {
+          "last": {
+            "cl": 14,
+            "cd": 14.2,
+            "dE": 15.9
+          },
+          "sel": {
+            "cl": 19,
+            "cd": 19.4,
+            "dE": 14
+          },
+          "check": {
+            "cl": 42,
+            "cd": 44.1,
+            "dE": 12.6
+          },
+          "hint": {
+            "cl": 37.1,
+            "cd": 39.4,
+            "dE": 12.4
+          },
+          "arrow": {
+            "cl": 37.1,
+            "cd": 39.4,
+            "dE": 12.4
+          }
+        }
+      },
+      "distinct": {
+        "min": 10.8,
+        "pair": "blue/marble",
+        "pairs": {
+          "wood/green": 28.5,
+          "wood/blue": 28.6,
+          "wood/paper": 17.4,
+          "wood/marble": 18.1,
+          "green/blue": 17.9,
+          "green/paper": 19,
+          "green/marble": 16.9,
+          "blue/paper": 20.7,
+          "blue/marble": 10.8,
+          "paper/marble": 13.9
+        }
+      }
+    }
+  },
+  "layoutA2": {
+    "what": "v8-0-plan §2 A2：下棋视图在五档窗口下的几何。band 为最宽的非内容空带（整条横向或纵向都没有内容的带），share 为棋盘格子占下棋视图的面积比，gutter 为棋谱白列最宽着法文字右缘到黑列文字左缘，nav 为最后一行棋谱底到翻谱栏顶，first 为竖窗第一屏不滚动就看得见的着法格数",
+    "script": "scripts/measure-layout.mjs --record=after",
+    "position": "双人对局，意大利开局 10 个半回合（5 行棋谱），面板开在「对局」页",
+    "sizes": [
+      "1024x768",
+      "1280x800",
+      "1440x900",
+      "1920x1080",
+      "600x900"
+    ],
+    "before": {
+      "1024x768": {
+        "view": {
+          "w": 1024,
+          "h": 768
+        },
+        "band": 32.4,
+        "xBand": 32.4,
+        "yBand": 0,
+        "board": 618,
+        "share": 0.486,
+        "frame": [
+          32.4,
+          72,
+          652,
+          652
+        ],
+        "side": 307.2,
+        "rows": 5,
+        "gutter": 81.8,
+        "pitch": 111.1,
+        "nav": 248.2,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1280x800": {
+        "view": {
+          "w": 1280,
+          "h": 800
+        },
+        "band": 106,
+        "xBand": 106,
+        "yBand": 0,
+        "board": 650,
+        "share": 0.413,
+        "frame": [
+          106,
+          72,
+          684,
+          684
+        ],
+        "side": 384,
+        "rows": 5,
+        "gutter": 120.3,
+        "pitch": 149.5,
+        "nav": 280.2,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1440x900": {
+        "view": {
+          "w": 1440,
+          "h": 900
+        },
+        "band": 112,
+        "xBand": 112,
+        "yBand": 0,
+        "board": 750,
+        "share": 0.434,
+        "frame": [
+          112,
+          72,
+          784,
+          784
+        ],
+        "side": 432,
+        "rows": 5,
+        "gutter": 144.3,
+        "pitch": 173.5,
+        "nav": 380.2,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1920x1080": {
+        "view": {
+          "w": 1920,
+          "h": 1080
+        },
+        "band": 258,
+        "xBand": 258,
+        "yBand": 0,
+        "board": 930,
+        "share": 0.417,
+        "frame": [
+          258,
+          72,
+          964,
+          964
+        ],
+        "side": 440,
+        "rows": 5,
+        "gutter": 148.3,
+        "pitch": 177.5,
+        "nav": 560.2,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "600x900": {
+        "view": {
+          "w": 600,
+          "h": 900
+        },
+        "band": 4,
+        "xBand": 0,
+        "yBand": 4,
+        "board": 510,
+        "share": 0.482,
+        "frame": [
+          28,
+          72,
+          544,
+          544
+        ],
+        "side": 600,
+        "rows": 5,
+        "gutter": 232.8,
+        "pitch": 262,
+        "nav": 62,
+        "first": 6,
+        "moves": 10,
+        "wide": false
+      }
+    },
+    "after": {
+      "1024x768": {
+        "view": {
+          "w": 960,
+          "h": 768
+        },
+        "band": 6,
+        "xBand": 6,
+        "yBand": 0,
+        "board": 652,
+        "share": 0.577,
+        "shareWin": 0.541,
+        "frame": [
+          70,
+          72,
+          652,
+          652
+        ],
+        "side": 296,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1280x800": {
+        "view": {
+          "w": 1216,
+          "h": 800
+        },
+        "band": 6,
+        "xBand": 6,
+        "yBand": 0,
+        "board": 684,
+        "share": 0.481,
+        "shareWin": 0.457,
+        "frame": [
+          70,
+          72,
+          684,
+          684
+        ],
+        "side": 520,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1440x900": {
+        "view": {
+          "w": 1376,
+          "h": 900
+        },
+        "band": 36,
+        "xBand": 36,
+        "yBand": 0,
+        "board": 784,
+        "share": 0.496,
+        "shareWin": 0.474,
+        "frame": [
+          100,
+          72,
+          784,
+          784
+        ],
+        "side": 520,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1920x1080": {
+        "view": {
+          "w": 1856,
+          "h": 1080
+        },
+        "band": 8,
+        "xBand": 8,
+        "yBand": 0,
+        "board": 1040,
+        "share": 0.54,
+        "shareWin": 0.522,
+        "frame": [
+          354,
+          36,
+          1040,
+          1040
+        ],
+        "side": 520,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 10,
+        "moves": 10,
+        "wide": true
+      },
+      "600x900": {
+        "view": {
+          "w": 600,
+          "h": 900
+        },
+        "band": 4,
+        "xBand": 0,
+        "yBand": 4,
+        "board": 544,
+        "share": 0.548,
+        "shareWin": 0.548,
+        "frame": [
+          28,
+          72,
+          544,
+          544
+        ],
+        "side": 600,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 14,
+        "moves": 10,
+        "wide": false
+      }
+    }
+  },
   "libRevision": {
     "what": "快扫铸的错题，精析怎么看：还是 ?? 吗、最佳着变了吗、精析另外还发现了几处 ??",
     "script": "scripts/test-mines.mjs --record --quick=200 --deep=400 --key=libRevision --only=revision --repeat=5",
@@ -82,31 +656,37 @@
       "wood": {
         "last": 43.9,
         "sel": 42.3,
-        "check": 47.2,
+        "check": 43.8,
         "hint": 26.3
       },
-      "night": {
-        "last": 45.2,
-        "sel": 34.7,
-        "check": 46.5,
-        "hint": 42.6
+      "green": {
+        "last": 31.2,
+        "sel": 37.4,
+        "check": 41.1,
+        "hint": 34.9
       },
-      "day": {
-        "last": 46.5,
-        "sel": 44.8,
-        "check": 49.9,
-        "hint": 33.2
+      "blue": {
+        "last": 24.7,
+        "sel": 33,
+        "check": 40.4,
+        "hint": 46.6
       },
-      "notebook": {
-        "last": 26.4,
-        "sel": 30,
-        "check": 49.7,
-        "hint": 49.9
+      "paper": {
+        "last": 12.3,
+        "sel": 23.4,
+        "check": 37.3,
+        "hint": 28.1
+      },
+      "marble": {
+        "last": 14,
+        "sel": 19,
+        "check": 42,
+        "hint": 37.1
       }
     }
   },
   "markHue": {
-    "what": "每种棋盘标记叠在浅格与深格上的 CIEDE2000：dE 为整体色差（大半是明度，本就该不同），dH 为其中的色相项 ΔH'/(kH·SH)（要小）；sep 为同一格上两种不同标记之间的最小 ΔE00（要大；7.9 §3：不得低于 7.8.0 的值，见 sepFloor）",
+    "what": "每种棋盘标记叠在浅格与深格上的 CIEDE2000：dE 为整体色差（大半是明度，本就该不同），dH 为其中的色相项 ΔH'/(kH·SH)（要小）；sep 为同一格上两种不同标记之间的最小 ΔE00（要大；7.9 §3：不得低于 7.8.0 的值，见 sepFloor）。8.0 A3 起棋盘按 js/look.js 的五块计（before 仍是 7.8.0 的四套主题）",
     "script": "scripts/measure-marks.mjs --record",
     "metric": "CIEDE2000, sRGB → CIELAB D65, kL = kC = kH = 1",
     "marks": [
@@ -117,9 +697,10 @@
     ],
     "sepFloor": {
       "wood": 10.9,
-      "night": 13,
-      "day": 10.1,
-      "notebook": 11
+      "green": 10,
+      "blue": 10,
+      "paper": 10,
+      "marble": 10
     },
     "beforeRef": "e94abfe",
     "before": {
@@ -224,7 +805,7 @@
             "dH": 2.8
           },
           "check": {
-            "dE": 10.9,
+            "dE": 11.6,
             "dH": 0
           },
           "hint": {
@@ -235,70 +816,92 @@
         "sep": 12.2,
         "sepPair": "last/sel on dark"
       },
-      "night": {
+      "green": {
         "marks": {
           "last": {
-            "dE": 13.7,
-            "dH": 0
-          },
-          "sel": {
-            "dE": 11.6,
-            "dH": 0.5
-          },
-          "check": {
-            "dE": 12.8,
-            "dH": 1.8
-          },
-          "hint": {
-            "dE": 12.7,
-            "dH": 0
-          }
-        },
-        "sep": 13,
-        "sepPair": "last/sel on dark"
-      },
-      "day": {
-        "marks": {
-          "last": {
-            "dE": 12.5,
+            "dE": 14.9,
             "dH": 4.6
           },
           "sel": {
-            "dE": 10.8,
-            "dH": 3.3
+            "dE": 12.3,
+            "dH": 3.4
           },
           "check": {
-            "dE": 9.2,
-            "dH": 1.9
+            "dE": 12.1,
+            "dH": 2.5
           },
           "hint": {
-            "dE": 10.2,
-            "dH": 0.4
+            "dE": 12.2,
+            "dH": 1
           }
         },
-        "sep": 13.9,
+        "sep": 12.2,
         "sepPair": "last/sel on dark"
       },
-      "notebook": {
+      "blue": {
         "marks": {
           "last": {
-            "dE": 14.6,
-            "dH": 0
+            "dE": 13.6,
+            "dH": 4.1
           },
           "sel": {
-            "dE": 12.1,
+            "dE": 11.5,
+            "dH": 2.4
+          },
+          "check": {
+            "dE": 11.2,
+            "dH": 1.4
+          },
+          "hint": {
+            "dE": 9.3,
+            "dH": 1.1
+          }
+        },
+        "sep": 14,
+        "sepPair": "last/sel on dark"
+      },
+      "paper": {
+        "marks": {
+          "last": {
+            "dE": 10.9,
+            "dH": 0.2
+          },
+          "sel": {
+            "dE": 9.3,
+            "dH": 0.5
+          },
+          "check": {
+            "dE": 8.3,
+            "dH": 2
+          },
+          "hint": {
+            "dE": 7.9,
+            "dH": 1.8
+          }
+        },
+        "sep": 15.3,
+        "sepPair": "last/sel on dark"
+      },
+      "marble": {
+        "marks": {
+          "last": {
+            "dE": 15.9,
+            "dH": 0.7
+          },
+          "sel": {
+            "dE": 14,
             "dH": 0.3
           },
           "check": {
-            "dE": 10.9,
-            "dH": 1.5
+            "dE": 12.6,
+            "dH": 0.2
           },
           "hint": {
-            "dE": 8,
-            "dH": 1.4
+            "dE": 12.4,
+            "dH": 1.2
           }
         },
-        "sep": 11,
+        "sep": 14,
         "sepPair": "last/sel on dark"
       }
     }

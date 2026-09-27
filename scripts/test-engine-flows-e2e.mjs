@@ -241,7 +241,7 @@ const minesOf = (page) => page.evaluate(() =>
 
 /** Import LIB_PGN into the library, claim hxddh's games and run the pass to the end. */
 async function libraryPass(page, file) {
-  await page.click("#tab-record");
+  await page.click('#rail button[data-view="library"]');
   await importVia(page, "#lib-import", LIB_PGN, file);
   await page.click("#lib-names");
   await page.keyboard.type("hxddh");
@@ -384,7 +384,7 @@ await scenario("持续分析", async () => {
 // --- 5. 棋谱库 ----------------------------------------------------------------
 await scenario("棋谱库", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" });
-  await page.click("#tab-record").catch(() => {});
+  await page.click('#rail button[data-view="library"]').catch(() => {});
   await importVia(page, "#lib-import", LIB_PGN, "flows-lib.pgn");
   // the real path (v7-6-plan §6): type the name and go straight for 分析 —
   // the field's `change` fires on the way, as focus leaves it for the button
@@ -510,7 +510,7 @@ await scenario("持续分析+棋谱库", async () => {
     return !!el && !el.hidden && el.querySelectorAll(".pv-chip").length > 0;
   });
   assert(!!(await until(livePv, 6000, 100)), "持续分析+棋谱库：持续分析先跑起来了");
-  await page.click("#tab-record");
+  await page.click('#rail button[data-view="library"]');
   await importVia(page, "#lib-import", LIB_PGN, "flows-lib-live.pgn");
   await page.click("#lib-names");
   await page.keyboard.type("hxddh");
@@ -628,7 +628,7 @@ await scenario("分析存盘", async () => {
   // search 7.5 already made and cancelled) — that is not what is measured here
   const p2 = await openPage({ mode: "pvp", sideTab: "record" },
     { "chess.v1.analyses": kept, "chess.v1.stats": JSON.stringify(stats) });
-  await p2.page.click("#tab-record").catch(() => {});
+  await p2.page.click('#rail button[data-view="me"]').catch(() => {});   // v8-0-plan A1: history is on 我的
   const row = await until(() => p2.page.isVisible('#hist-body button[data-hist="0"]'), 3000, 100);
   if (row) await p2.page.click('#hist-body button[data-hist="0"]');
   const r2 = await until(() => readAn(p2.page).then((r) => (r.acc && r.tags.length ? r : null)), 3000, 100);

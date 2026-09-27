@@ -8,7 +8,8 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
 import { compileModuleSync, CHUNKS, build, BUNDLE_BUDGET, BUNDLE_BYTES_BEFORE_F5 } from "./bundle.mjs";
-import { measureMarks, markChroma, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
+import { measureMarks, markChroma, markLook, boardDistinct, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR_BOARD as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS,
+  LOOK_MARKS, LOOK_CHROMA_CEILING, LOOK_DE_CEILING, BOARD_DISTINCT_FLOOR } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -135,7 +136,7 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js"];
+const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -2023,7 +2024,9 @@ for (const lang of CONTENT_LANGS) {
   // longer underneath it. It rode 6px below the chrome's centre line and 2.5px
   // past its bottom edge for a whole release, and no rule in this file could
   // notice, because it was the only user of every declaration it carried.
-  // Mode is a plain `.theme-row.wrap` segment on the settings page now.
+  // Mode is a plain `.theme-row.wrap` segment — on the settings page until
+  // v8-0-plan A1, in the new-game dialog since (人机 / 双人; the rail has
+  // 谜题 and 学习).
   {
     const markup = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
     assert(!/mode-nav/.test(stripped), "no `.mode-nav` idiom is left in the stylesheet");
@@ -2043,19 +2046,29 @@ for (const lang of CONTENT_LANGS) {
     const i18nSrc = ["i18n.js", "i18n-en.js", "i18n-ja.js"]
       .map((f) => fs.readFileSync(path.join(root, "src/web/js", f), "utf8")).join("\n");
     const headings = [...pane.matchAll(/data-i18n="(side\.[a-z]+)"[^>]*>/g)]
-      .map((m) => m[1]).filter((k) => ["side.mode", "side.game", "side.look", "side.danger"].includes(k));
-    // 2.1 had the three irreversible deletions in the middle of the page, and
-    // they were the only red on it. A destructive group goes last.
-    assert(headings[headings.length - 1] === "side.danger",
-      "the deletions are the last group on the settings page (" + headings.join(" → ") + ")");
-    assert(headings[0] === "side.mode",
-      "…and mode is the first, because it decides what the rest of the page holds");
+      .map((m) => m[1]).filter((k) => ["side.mode", "side.game", "side.display", "side.engine", "side.danger", "side.language", "side.sound"].includes(k));
+    // v8-0-plan A1: the settings page is the game's. The mode went to the
+    // new-game dialog and the rail; the window's look, language, sound and
+    // data went to 偏好设置. What is left opens on the game and ends on the
+    // engine, and none of the app-level groups is on it.
+    assert(headings[0] === "side.game" && headings[headings.length - 1] === "side.engine",
+      "A1: the settings page runs 对局 → … → 引擎 (" + headings.join(" → ") + ")");
+    assert(!headings.some((k) => ["side.mode", "side.danger", "side.language", "side.sound"].includes(k)),
+      "A1: no mode, language, sound or deletion group on the settings page");
+    // …and in the preferences window, the deletions are still the last
+    // group: 2.1 had them in the middle of a page, the only red on it
+    const prefs = markup.slice(markup.indexOf('id="prefs-modal"'), markup.indexOf('id="prefs-close"'));
+    const pHeads = [...prefs.matchAll(/data-i18n="((?:side|prefs)\.[a-zA-Z]+)"[^>]*>/g)].map((m) => m[1])
+      .filter((k) => ["prefs.look", "side.language", "side.sound", "side.learning", "side.allData", "side.danger"].includes(k));
+    assert(pHeads[0] === "prefs.look" && pHeads[pHeads.length - 1] === "side.danger",
+      "A1: 偏好设置 runs 外观 → … → 清除数据 (" + pHeads.join(" → ") + ")");
 
-    // The heading is a promise about what is inside. 「外观」 held the language
-    // and the sound, neither of which is an appearance.
-    for (const [lang, want] of [["zh-CN", "界面"], ["en", "Interface"], ["ja", "インターフェース"]])
-      assert(new RegExp('"side\\.look":\\s*"' + want + '"').test(i18nSrc),
-        lang + ": the group that holds theme, orientation, language and sound is named for all four (" + want + ")");
+    // The heading is a promise about what is inside. 「外观」 once held the
+    // language and the sound; since A1 each has its own group, and the rows
+    // left on the settings page are about the board in front of you.
+    for (const [lang, look, disp] of [["zh-CN", "外观", "显示"], ["en", "Appearance", "Display"], ["ja", "外観", "表示"]])
+      assert(new RegExp('"prefs\\.look":\\s*"' + look + '"').test(i18nSrc) && new RegExp('"side\\.display":\\s*"' + disp + '"').test(i18nSrc),
+        lang + ": the appearance group and the board-view group are named for what they hold (" + look + " / " + disp + ")");
 
     // A hint that counts the controls above it is a hint that goes wrong the
     // first time one of them is not rendered — and 「清除统计与历史」 is not,
@@ -2236,7 +2249,7 @@ for (const lang of CONTENT_LANGS) {
     // …nor any square colour
     assert(!/--sq-/.test(blk[1]), theme + " leaves the board to the board palette");
   }
-  for (const board of ["wood", "night", "day", "notebook"]) {
+  for (const board of MARK_BOARDS) {
     const sel = board === "wood" ? ":root, \\[data-board=\"wood\"\\]" : "\\[data-board=\"" + board + "\"\\]";
     const blk = new RegExp(sel + "\\s*\\{([\\s\\S]*?)\\n    \\}").exec(stripped);
     assert(blk, board + " board palette found");
@@ -2312,7 +2325,7 @@ for (const lang of CONTENT_LANGS) {
   // the square colours moved to the board palettes in 1.25 — the question is
   // still "can you see a black outline on this square", which is a property of
   // the board, not of the interface around it
-  for (const theme of ["wood", "night", "day", "notebook"]) {
+  for (const theme of MARK_BOARDS) {
     const sel = theme === "wood" ? /:root, \[data-board="wood"\]\s*\{([\s\S]*?)\n    \}/
       : new RegExp('\\[data-board="' + theme + '"\\]\\s*\\{([\\s\\S]*?)\\n    \\}');
     const blk = sel.exec(css2)[1];
@@ -2377,6 +2390,39 @@ for (const lang of CONTENT_LANGS) {
     assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now) &&
       JSON.stringify(recorded.ceiling) === JSON.stringify(CHROMA_CEILING),
       "docs/measured.json markChroma.after is these palettes (re-run scripts/measure-marks.mjs --record)");
+  }
+  // v8-0-plan A3: the same mark on both squares, on every board. The two
+  // checks above look at the light square (chroma) and at the hue term;
+  // this one looks at the whole mark on both: its chroma over the light AND
+  // the dark square under one ceiling, and the ΔE00 between the two
+  // composites under another — a mark that is a tint on one square and a
+  // stain on the other fails here. 7.9.0's wood check was C* 55.1 over the
+  // dark square (ceiling 52), which the light-square check never saw. The
+  // engine arrow is measured with them. And the boards must be boards: the
+  // closest two dark squares ΔE00 ≥ 10 (7.9.0: 木 and 日, 6.4).
+  {
+    const look = markLook(css2);
+    for (const b of MARK_BOARDS) {
+      for (const k of Object.keys(LOOK_MARKS)) {
+        const v = look[b][k];
+        assert(!!v && Math.max(v.cl, v.cd) <= LOOK_CHROMA_CEILING[k],
+          b + " " + k + ": under its chroma ceiling over both squares (C* " + (v && v.cl) + " / " + (v && v.cd) + " ≤ " + LOOK_CHROMA_CEILING[k] + ")");
+        assert(!!v && v.dE <= LOOK_DE_CEILING,
+          b + " " + k + ": the same mark on the light and the dark square (ΔE00 " + (v && v.dE) + " ≤ " + LOOK_DE_CEILING + ")");
+      }
+    }
+    const apart = boardDistinct(css2);
+    assert(apart.min >= BOARD_DISTINCT_FLOOR,
+      "every two boards are two boards (closest dark squares ΔE00 " + apart.min + ", " + apart.pair + " ≥ " + BOARD_DISTINCT_FLOOR + ")");
+    // the list measured is the list offered
+    const lookSrc = fs.readFileSync(path.join(root, "src/web/js/look.js"), "utf8");
+    const offered = [...lookSrc.matchAll(/\{ id: "(\w+)", warm: (?:true|false) \}/g)].map((m) => m[1]);
+    assert(offered.join(",") === MARK_BOARDS.join(","),
+      "the boards measured are the boards look.js offers (" + offered.join(",") + ")");
+    const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).boardLook;
+    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify({ marks: look, distinct: apart }) &&
+      JSON.stringify(recorded.ceiling) === JSON.stringify({ chroma: LOOK_CHROMA_CEILING, dE: LOOK_DE_CEILING, distinct: BOARD_DISTINCT_FLOOR }),
+      "docs/measured.json boardLook.after is these palettes (re-run scripts/measure-marks.mjs --record)");
   }
 }
 
@@ -4009,8 +4055,8 @@ for (const lang of CONTENT_LANGS) {
     "教练用的是诊断页同一个门槛 —— 两个门槛就是两张嘴");
   assert(/Progress\.accSeries\(loadStats\(\)\.games\.concat\(libPoints\), 30\)/.test(appSrc),
     "准确率走势把棋谱库里的棋并进同一条轴");
-  assert(/function dailyJump\(step\) \{[\s\S]{0,400}#mode-seg button\[data-mode=/.test(appSrc),
-    "跳步走的是模式段自己的点击路径,不是旁路");
+  assert(/function dailyJump\(step\) \{[\s\S]{0,400}switchMode\("learn"\)/.test(appSrc),
+    "跳步走的是换模式的那一个函数(导航栏也走它),不是旁路");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
   assert(/id="daily-btn"/.test(html) && /id="trend-head" hidden/.test(html) && /id="trend-acc" hidden/.test(html),
     "训练入口在,进步区默认不画,有数据才出现(P3)");
@@ -4304,22 +4350,28 @@ for (const lang of CONTENT_LANGS) {
     // 7.7 (v7-7-plan §1g): the panel is clamp(floor, Nvw, cap) — a function
     // of the window — and the board's height also pays for the two player
     // strips, so both enter the sum
-    const sw = /--side-w:\s*clamp\((\d+)px,\s*(\d+)vw,\s*(\d+)px\)/.exec(css);
-    const side = sw ? Math.min(Number(sw[3]), Math.max(Number(sw[1]), w * Number(sw[2]) / 100)) : NaN;
+    // M2 (v8-0-plan A1 × A2): of the play view — the window less the rail,
+    // which a window this wide has (≥ 821px) — and the rail comes out of
+    // the board's free width too
+    const sw = /--side-w:\s*clamp\((\d+)px,\s*([\d.]+) \* var\(--pv-w\),\s*(\d+)px\)/.exec(css);
+    const rail = w >= 821 ? num(/@media \(min-width: 821px\) \{\s*:root \{ --rail-w: (\d+)px/, css) : 0;
+    const pv = w - rail;
+    const side = sw ? Math.min(Number(sw[3]), Math.max(Number(sw[1]), pv * Number(sw[2]))) : NaN;
     const chrome = num(/--chrome-h:\s*(\d+)px/, css) + 2 * num(/--strip-h:\s*(\d+)px/, css);
-    assert([w, h, side, chrome].every(Number.isFinite),
-      "read the default window (" + w + "x" + h + ") and the panel metrics (" + side + "/" + chrome + ")");
-    assert(w - side >= h - chrome,
-      "the default window fits the panel without shrinking the board (" +
-      (w - side) + "px of width vs " + (h - chrome) + "px of height)");
+    assert([w, h, rail, side, chrome].every(Number.isFinite),
+      "read the default window (" + w + "x" + h + ") and the panel metrics (" + side + "/" + chrome + ", rail " + rail + ")");
+    assert(pv - side >= h - chrome,
+      "the default window fits the rail and the panel without shrinking the board (" +
+      (pv - side) + "px of width vs " + (h - chrome) + "px of height)");
   }
 
-  // The panel is split into three tabs. A section that ends up outside a pane
-  // is invisible in every tab — the failure mode is silent, so it gets a check.
+  // The panel is split into tabs — two since v8-0-plan A1, when 记录 became
+  // the 我的 and 棋谱库 pages. A section that ends up outside a pane is
+  // invisible in every tab — the failure mode is silent, so it gets a check.
   const paneIds = [...html.matchAll(/<div class="side-pane" id="(pane-[a-z]+)"/g)].map((m) => m[1]);
-  assert(paneIds.length === 3, "found the three panel panes (" + paneIds.join(", ") + ")");
+  assert(paneIds.length === 2, "found the two panel panes (" + paneIds.join(", ") + ")");
   const tabControls = [...html.matchAll(/role="tab"[^>]*aria-controls="([^"]+)"/g)].map((m) => m[1]);
-  assert(tabControls.length === 3 && tabControls.every((c) => paneIds.includes(c)),
+  assert(tabControls.length === 2 && tabControls.every((c) => paneIds.includes(c)),
     "every tab points at a pane that exists");
   const aside = /<aside class="side"[\s\S]*?<\/aside>/.exec(html)[0];
   let orphan = 0;
@@ -4946,7 +4998,7 @@ for (const lang of CONTENT_LANGS) {
     // contrast check reads the palette blocks rather than the cascade.
     for (const v of ["--sq-light", "--sq-dark", "--sq-sel", "--sq-check", "--coord-ink", "--board-frame"]) {
       const n = (cssM.match(new RegExp("\\n *" + v + ":", "g")) || []).length;
-      assert(n === 4, v + " is declared once per board and nowhere else (" + n + ")");
+      assert(n === MARK_BOARDS.length, v + " is declared once per board and nowhere else (" + n + ")");
     }
     for (const step of ["--mark-strong", "--mark-mid", "--mark-soft"]) {
       assert(new RegExp(step + ":").test(cssM), step + " is declared once");
@@ -4993,7 +5045,7 @@ for (const lang of CONTENT_LANGS) {
     const cssJ = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     for (const v of ["--judge-soft", "--judge-mid", "--judge-bad", "--side-white", "--side-black"]) {
       const n = (cssJ.match(new RegExp(v + ":", "g")) || []).length;
-      assert(n === 4, "all four board palettes answer for " + v + " (" + n + ")");
+      assert(n === 4, "all four shells answer for " + v + " (" + n + ")");
     }
     assert(/\.mvtag\.t-soft \{ color: var\(--judge-soft\)/.test(cssJ), "the move list reads the scale");
     assert(/background: var\(--side-black\)/.test(cssJ) && /background: var\(--side-white\)/.test(cssJ),
@@ -6350,6 +6402,13 @@ for (const lang of CONTENT_LANGS) {
       [null, { languages: ["ja-JP", "en"] }, "chunk-lang-en.js chunk-lang-ja.js"],
       [null, { languages: ["zh-TW"] }, ""],
       [{ langId: "en", mode: "puzzle", pieceSet: "merida" }, null, "chunk-lang-en.js chunk-mined.js chunk-merida.js"],
+      // v8-0-plan A3: every set outside the bundle is fetched ahead of the
+      // bundle for the player who chose it; the two inside it need nothing
+      [{ pieceSet: "fantasy" }, null, "chunk-pieces-fantasy.js"],
+      [{ pieceSet: "chessnut" }, null, "chunk-pieces-chessnut.js"],
+      [{ pieceSet: "cburnett" }, null, ""],
+      [{ pieceSet: "classic" }, null, ""],
+      [{ pieceSet: "toString" }, null, ""],
       [{ langId: "xx" }, null, ""],
     ];
     for (const [settings, nav, want] of cases) {
@@ -6360,7 +6419,38 @@ for (const lang of CONTENT_LANGS) {
       "unreadable settings are treated as none");
     // every chunk the plan or the app can ask for is one the bundler builds,
     // under the global it promises
-    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, lctx.MERIDA_CHUNK];
+    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, ...Object.values(lctx.PIECE_CHUNKS)];
+    assert(lctx.PIECE_CHUNKS.merida === lctx.MERIDA_CHUNK, "Merida is one of the piece chunks, under its M1 file name");
+    // v8-0-plan A3: every set offered is licence-cleared where it lives and
+    // where the user reads it. The module header names the author, the
+    // source it was taken from and the licence relied on; the About panel
+    // (all three languages) and README's 许可 section name it too. Only
+    // GPL-compatible licences: GPL, Apache 2.0, MIT, CC BY(-SA) 4.0.
+    {
+      const lookSrc = fs.readFileSync(path.join(root, "src/web/js/look.js"), "utf8");
+      const ids = JSON.parse(/PIECE_SET_IDS = (\[[^\]]*\])/.exec(lookSrc)[1]);
+      const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+      const credits = ["i18n.js", "i18n-en.js", "i18n-ja.js"].map((f) =>
+        /"about\.creditsText": "([^"]*)"/.exec(fs.readFileSync(path.join(root, "src/web/js", f), "utf8"))[1]);
+      const LICENCE = /\b(GPLv[23]\+?|GPL|Apache (License )?2\.0|MIT|CC BY(-SA)? 4\.0)\b/;
+      const AUTHOR = { cburnett: "Burnett", classic: "Cburnett", merida: "Armando Hernandez Marroquin",
+        chessnut: "Alexis Luengas", fantasy: "Maurizio Monge", celtic: "Maurizio Monge", spatial: "Maurizio Monge" };
+      assert(ids.length >= 7 && ids[0] === "cburnett", "seven sets, the default first (" + ids.join(", ") + ")");
+      for (const id of ids) {
+        const file = id === "classic" ? "pieces.js" : "pieces-" + id + ".js";
+        const src = fs.existsSync(path.join(root, "src/web/js", file)) ? fs.readFileSync(path.join(root, "src/web/js", file), "utf8") : "";
+        const head = (/^\/\*\*([\s\S]*?)\*\//.exec(src) || ["", ""])[1];
+        assert(!!src && LICENCE.test(head) && head.includes(AUTHOR[id]),
+          "piece set " + id + ": " + file + " names its author and a GPL-compatible licence in its header");
+        assert(readme.includes(file), "README 许可 names " + file);
+        const name = id === "classic" ? null : AUTHOR[id];
+        if (name) assert(credits.every((c) => c.includes(name)), "the About panel credits " + name + " in all three languages");
+        // in the bundle, or a chunk that is built
+        const inBundle = id === "cburnett" || id === "classic";
+        assert(inBundle || (lctx.PIECE_CHUNKS[id] && CHUNKS.some((c) => c.entry === "src/web/js/" + file && path.basename(c.out) === lctx.PIECE_CHUNKS[id].file)),
+          "piece set " + id + " is " + (inBundle ? "in the bundle" : "its own chunk, built from " + file));
+      }
+    }
     for (const a of asked) {
       assert(CHUNKS.some((c) => path.basename(c.out) === a.file && c.global === a.global),
         a.file + " (" + a.global + ") is in CHUNKS, so it is built and packaged");
@@ -6666,6 +6756,49 @@ for (const lang of CONTENT_LANGS) {
     "定义它、并且真的有人用它 —— 常量本身不是护栏");
 }
 
+// --- v8-0-plan A2: when the wide layout is used, as a rule ------------------
+// play-layout.js decides `pv-wide` from the play view's size and the
+// stylesheet's lengths. The rule is "≥ 1280 wide, landscape, and the board no
+// smaller than in the two-column layout" — so here: the five acceptance sizes
+// land where A2 says, a tall 1280 window keeps the old layout (the wide one
+// would shrink its board), and the lengths the function reads are the ones
+// the stylesheet declares.
+{
+  const { boardEdges, isWide, WIDE_MIN } = await import("../src/web/js/play-layout.js");
+  const cssSrc = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+  const tok = (n) => { const m = new RegExp(n + ":\\s*(\\d+)px").exec(cssSrc); return m ? Number(m[1]) : NaN; };
+  const k = { chrome: tok("--chrome-h"), strip: tok("--strip-h"), pad: tok("--stage-pad"), padY: tok("--stage-pad-y"),
+              info: tok("--info-w"), gap: tok("--info-gap"), sideMax: tok("--side-max-wide") };
+  assert(Object.values(k).every(Number.isFinite), "A2：宽布局用到的长度样式表里都有（" + JSON.stringify(k) + "）");
+  assert(WIDE_MIN === 1280, "A2：宽布局从 1280 起算");
+  // M2 (A1 × A2): 30% of the play view, which is the window less the rail
+  assert(cssSrc.includes("--side-w: clamp(284px, 0.3 * var(--pv-w), 440px);") && cssSrc.includes("--pv-w: calc(100vw - var(--rail-w));"),
+    "A2：两栏布局的面板宽度是 clamp(284px, 30% 下棋视图, 440px)，下棋视图 = 窗口 − 导航栏，boardEdges 按同一条算");
+  const at = (w, h) => isWide(w, h, k);
+  assert(!at(1024, 768) && at(1280, 800) && at(1440, 900) && at(1920, 1080) && !at(600, 900) && !at(1400, 900),
+    "A2：1280 / 1440 / 1920 用宽布局，1024、600 与 1400×900 不用（1400 那里宽布局的棋盘比两栏小）");
+  assert(!at(1280, 1024), "A2：1280×1024 不用 —— 那里宽布局会让棋盘变小");
+  for (const [w, h] of [[1280, 800], [1366, 768], [1440, 900], [1920, 1080], [2560, 1440]]) {
+    const e = boardEdges(w, h, k);
+    const two = Math.min(440, Math.max(284, 0.3 * w));
+    assert(!at(w, h) || (e.wide >= e.two && e.right >= two && e.right <= Math.max(two, k.sideMax)),
+      `A2：${w}×${h} 棋盘 ${e.two} → ${e.wide}，右栏 ${two} → ${e.right}（不窄于两栏布局，至多 ${k.sideMax}）`);
+  }
+  // M2 (A2 × A1): the two-column panel stretches into what the height-bound
+  // board leaves, up to --side-max-wide — one formula, written twice: here in
+  // boardEdges (sideTwo) and in styles.css (#app --side-w, ≥ 821px)
+  const flat = cssSrc.replace(/\s+/g, " ");
+  assert(flat.includes("--side-w: clamp(clamp(284px, 0.3 * var(--pv-w), 440px), var(--pv-w) - 2 * var(--stage-pad) - (var(--pv-h) - var(--chrome-h) - 2 * var(--strip-h) - var(--stage-pad-y)), var(--side-max-wide));"),
+    "M2：两栏面板 = clamp(两栏下限, 视图宽 − 边距 − 棋盘, --side-max-wide)，样式表里就是这一条");
+  for (const [w, h] of [[960, 768], [1216, 800], [1376, 900], [1136, 900], [1336, 900], [1856, 1080]]) {
+    const e = boardEdges(w, h, k);
+    const high = h - k.chrome - 2 * k.strip - k.padY;
+    const want = Math.min(k.sideMax, Math.max(e.side, w - 2 * k.pad - high));
+    assert(e.sideTwo === want && e.two === Math.min(high, w - e.side - 2 * k.pad) && (e.sideTwo === k.sideMax || e.two < high || w - e.sideTwo - 2 * k.pad === e.two),
+      `M2：视图 ${w}×${h} 两栏面板 ${e.side} → ${e.sideTwo}，棋盘仍是 ${e.two}（面板只拿棋盘留下的宽度，至多 ${k.sideMax}）`);
+  }
+}
+
 // --- v8-0-plan F4: the lookup survives the move it exists for --------------
 //
 // The point of srcOf() and allAppSource is that cutting a function out of
@@ -6714,10 +6847,28 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 11808; // 11764 when drawn; +44 from §5 (the M1 small fixes), which landed alongside
+  const APP_JS_LINE_CEILING = 11425; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
+}
+
+// --- v8-0-plan F4 (M2): the settings page lives in settings-ui.js ----------
+// The panel's settings code — the view that paints every segment and switch,
+// the theme, and the handlers behind them — is one module with its
+// dependencies handed in (createLibraryUI's shape). app.js keeps a one-line
+// door for each of the names the rest of it calls.
+{
+  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
+  assert(WEB_MODULES.has("settings-ui.js") && WEB_MODULES.get("settings-ui.js").includes("export function createSettingsUI(d)"),
+    "F4: settings-ui.js exports createSettingsUI(d)");
+  for (const name of ["paintSettings", "applyLook", "wireSettings", "draftPick"]) {
+    assert(owner(name) === "settings-ui.js", "F4: " + name + " is declared in settings-ui.js (found in " + owner(name) + ")");
+  }
+  assert(APP_MODULES.includes("settings-ui.js"), "F4: settings-ui.js follows app.js's house rules (APP_MODULES)");
+  const app = WEB_MODULES.get("app.js");
+  assert(!["theme-seg", "multipv-seg", "opt-blind"].some((id) => app.includes('getElementById("' + id + '")')),
+    "F4: app.js no longer wires the settings page's controls");
 }
 
 // --- 6.0: the register of source-text assertions in this file.

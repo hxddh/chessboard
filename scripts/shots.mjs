@@ -55,6 +55,8 @@ const PORT = server.address().port;
 const WIDE = { width: 1440, height: 900 };
 const MID = { width: 1024, height: 700 };
 const TALL = { width: 600, height: 900 };
+// v8-0-plan A1: a narrow landscape window, where the rail is the top bar
+const NARROW = { width: 760, height: 600 };
 
 /** The centre of a square on the page, board orientation included. */
 async function sqXY(page, sq) {
@@ -128,7 +130,15 @@ const SHOTS = [
   // the three pages of the panel, the default look
   { name: "play-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", tab: "play" },
   { name: "setup-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", tab: "setup" },
-  { name: "record-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "ai", tab: "record" },
+  // v8-0-plan A1: the top level — home, the two pages, the preferences
+  { name: "me-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "ai", tab: "play", view: "me" },
+  { name: "home-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", tab: "play", view: "home" },
+  { name: "library-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", tab: "play", view: "library" },
+  { name: "prefs-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", tab: "play",
+    at: async (page) => { await page.click("#prefs-open"); await page.waitForTimeout(300); } },
+  { name: "home-760-wood-zh", vp: NARROW, lang: "zh-CN", theme: "wood", mode: "ai", tab: "play", view: "home" },
+  { name: "play-760-wood-en", vp: NARROW, lang: "en", theme: "wood", mode: "ai", tab: "play" },
+  { name: "home-600-day-zh", vp: TALL, lang: "zh-CN", theme: "day", mode: "ai", tab: "play", view: "home" },
   { name: "play-1440-notebook-en", vp: WIDE, lang: "en", theme: "notebook", mode: "ai", tab: "play" },
   // reading modes: a wider panel, prose in it
   { name: "learn-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "learn", tab: "play" },
@@ -176,12 +186,12 @@ const SHOTS = [
     } },
   // 1024×700: a short landscape window
   { name: "play-1024-night-en", vp: MID, lang: "en", theme: "night", mode: "ai", tab: "play" },
-  { name: "record-1024-wood-zh", vp: MID, lang: "zh-CN", theme: "wood", mode: "ai", tab: "record" },
+  { name: "me-1024-wood-zh", vp: MID, lang: "zh-CN", theme: "wood", mode: "ai", tab: "play", view: "me" },
   { name: "gameover-1024-night-en", vp: MID, lang: "en", theme: "night", mode: "ai", tab: "play",
     at: async (page) => { await scholarVsEngine(page); await waitToast(page); } },
   // 600×900: portrait, the bottom sheet
   { name: "play-600-day-zh", vp: TALL, lang: "zh-CN", theme: "day", mode: "ai", tab: "play" },
-  { name: "record-600-notebook-en", vp: TALL, lang: "en", theme: "notebook", mode: "ai", tab: "record" },
+  { name: "me-600-notebook-en", vp: TALL, lang: "en", theme: "notebook", mode: "ai", tab: "play", view: "me" },
   { name: "gameover-600-wood-zh", vp: TALL, lang: "zh-CN", theme: "wood", mode: "ai", tab: "play",
     at: async (page) => { await scholarVsEngine(page); await waitToast(page); } },
   { name: "learn-600-wood-en", vp: TALL, lang: "en", theme: "wood", mode: "learn", tab: "play" },
@@ -197,11 +207,11 @@ let n = 0, errors = 0;
 for (const [i, s] of SHOTS.entries()) {
   if (ONLY && !ONLY.test(s.name)) continue;
   const ctx = await browser.newContext({ viewport: s.vp, locale: s.lang, deviceScaleFactor: Number(process.env.DPR) || 1 });
-  await ctx.addInitScript(([l, m, tb, th, po]) => {
+  await ctx.addInitScript(([l, m, tb, th, po, v]) => {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th }));
+      mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th, view: v }));
     localStorage.setItem("chess.panelOpen", po);
-  }, [s.lang, s.mode, s.tab, s.theme, s.panel || "1"]);
+  }, [s.lang, s.mode, s.tab, s.theme, s.panel || "1", s.view || "play"]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
