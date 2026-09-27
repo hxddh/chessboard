@@ -431,6 +431,7 @@
       "msg.analysis.stopped": "解析を中止しました",
       "msg.analysis.keptPrefix": "解析を中止しました · 最初の ",
       "msg.analysis.keptSuffix": " 手分を残しました",
+      "msg.analysis.deepStopped": "深掘りは中止、一部の手はクイックスキャンで評価",
       "msg.draw.offerOnYourTurn": "引き分けの提案は自分の手番でのみできます",
       "msg.draw.offerTooEarly": "この段階ではエンジンは引き分けに応じません",
       "msg.draw.offerSent": "引き分けを提案しました —— エンジンが判断中…",

@@ -488,6 +488,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "msg.analysis.stopped": "已停止分析",
       "msg.analysis.keptPrefix": "已停止分析 · 保留前 ",
       "msg.analysis.keptSuffix": " 步结果",
+      "msg.analysis.deepStopped": "加深已停止，部分着法按快速扫描评级",
       "msg.draw.offerOnYourTurn": "轮到你走棋时才能提和",
       "msg.draw.offerTooEarly": "开局阶段引擎不接受提和",
       "msg.draw.offerSent": "已向引擎提和，评估中…",

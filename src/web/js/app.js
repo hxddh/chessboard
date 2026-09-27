@@ -4869,8 +4869,7 @@ import { createStore } from "./store.js";
     // never lets an earlier record (timed, ungraded) stand in for one
     store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, depths, budget: perMove, acc: accuracyFrom(fens, scalars),
       v: 2, seconds: p.seconds, deep: p.deep.flatMap((d, i) => (d ? [i] : [])), grades: Grade.gradeMoves(p, Chess) };
-    store.session.analyzing = false;
-    store.session.analyzeProgress = "";
+    store.session.analyzing = false; store.session.analyzeProgress = "";
     fileAnalysis(fens[0], h, store.session.analysis);
     // a library game on the board: the deeper look goes back to its entry
     // (7.6 §1c). The miner below only runs in ai mode, where the game has a
@@ -4914,6 +4913,7 @@ import { createStore } from "./store.js";
     if (mined) done += " · " + tf("msg.mined", [mined]);
     if (revised) done += " · " + tf("msg.minesRevised", [revised]);
     if (withdrawn) done += " · " + tf("msg.minesWithdrawn", [withdrawn]);
+    if (p.deepCut) done += " · " + t("msg.analysis.deepStopped");   // Stop while deepening: graded and filed all the same (review of PR #87)
     toast(done);
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
