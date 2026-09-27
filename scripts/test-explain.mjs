@@ -17,7 +17,9 @@ const ctx = { console };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const f of ["chess.js", "explain.js", "i18n.js"]) {
+// lang-en/ja first: the dictionaries are chunks the page loads ahead of the
+// bundle (v8-0-plan F5), and i18n.js adopts whatever is already there
+for (const f of ["chess.js", "explain.js", "lang-en.js", "lang-ja.js", "i18n.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", f)), ctx, { filename: f });
 }
 const { Chess, ChessExplain: X, ChessI18n } = ctx;

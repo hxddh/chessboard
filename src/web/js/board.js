@@ -17,7 +17,8 @@
  * @module board
  */
 import { CHESS_PIECE_SVGS } from "./pieces.js";
-import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
+import { loadChunk } from "./chunk.js";
+import { MERIDA_CHUNK } from "./lazy-content.js";
   const FILES = "abcdefgh";
 
   // Solid glyph set for both colors — colored via fill, outlined for contrast.
@@ -190,38 +191,78 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
   /**
    * The piece sets, by id (v7-7-plan §6). Each is licence-cleared in its own
    * module's header; the About panel lists them.
+   *
+   * v8-0-plan F5: Merida is a chunk (js/chunk-merida.js), not part of the
+   * bundle — most players never leave the standard set, and 34 KB of SVG text
+   * was parsed before every first paint for them. It is read off the window
+   * when wanted; chunk-boot.js has already put it there when the saved
+   * settings name it, so a Merida player's first frame is still Merida.
    */
-  const PIECE_SETS = { cburnett: CHESS_PIECE_SVGS, merida: MERIDA_PIECE_SVGS };
+  const PIECE_SETS = {
+    cburnett: () => CHESS_PIECE_SVGS,
+    merida: () => globalThis[MERIDA_CHUNK.global] || null,
+  };
   let _set = "cburnett";
+  /** the set whose twelve images are decoding right now, or null */
+  let _pending = null;
+  /**
+   * How many times a finished decode repainted the board — read by
+   * test-board-e2e through window.__chess (v8-0-plan F5: once per set, not
+   * once per piece).
+   */
+  let _imageRedraws = 0;
 
   function initPieceImages() {
-    const svgs = PIECE_SETS[_set] || CHESS_PIECE_SVGS;
+    const svgs = PIECE_SETS[_set]();
     if (!svgs || typeof Image === "undefined") return;
     const want = _set;
-    // A switch keeps drawing the old set until the whole new one has
-    // decoded, then swaps all twelve at once: swapping piece by piece showed
-    // a board of two sets, and clearing first showed the glyph fallback.
+    if (_pending === want) return;
+    _pending = want;
+    // Every load — the first one and a switch alike — decodes all twelve and
+    // then swaps them in at once and draws once. A switch always worked this
+    // way (piece by piece showed a board of two sets); the first load did not:
+    // each onload threw the sprite cache away and repainted the whole board,
+    // twelve repaints of ~150 ms each in headless Chromium, all of them before
+    // DOMContentLoaded (v8-0-plan F5). Until the swap the glyph fallback in
+    // draw() stands in, exactly as it did for the first frame before.
     const fresh = {};
-    let left = Object.keys(svgs).length;
-    const first = !Object.keys(_imgs).length;
-    for (const key of Object.keys(svgs)) {
+    const waits = Object.keys(svgs).map((key) => {
       const img = new Image();
-      img.onload = () => {
-        if (_set !== want) return; // superseded by a later switch
-        if (first) { _sprites = {}; draw(); return; }
-        if (--left === 0) { Object.assign(_imgs, fresh); _sprites = {}; draw(); }
-      };
+      fresh[key] = img;
+      const loaded = new Promise((res) => { img.onload = res; img.onerror = res; });
       img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]);
-      if (first) _imgs[key] = img; else fresh[key] = img;
-    }
+      // decode() rejects on an undecodable image; the glyph fallback then
+      // covers that one piece (spriteFor checks naturalWidth)
+      return img.decode ? img.decode().catch(() => loaded) : loaded;
+    });
+    Promise.all(waits).then(() => {
+      if (_set !== want) return; // superseded by a later switch
+      if (_pending === want) _pending = null;
+      Object.assign(_imgs, fresh);
+      _sprites = {};
+      _imageRedraws++;
+      draw();
+    });
   }
 
   /** Choose the piece set by id; an unknown id is ignored. */
   function setPieceSet(id) {
     if (!PIECE_SETS[id] || id === _set) return;
     _set = id;
-    if (Object.keys(_imgs).length) initPieceImages();
+    // not attached yet: attach() starts the load for whatever is chosen then
+    if (_canvas) loadSet();
   }
+  /** Decode the chosen set, fetching its chunk first if it is not here. */
+  function loadSet() {
+    if (PIECE_SETS[_set]()) { initPieceImages(); return; }
+    const id = _set;
+    loadChunk(MERIDA_CHUNK.file, MERIDA_CHUNK.global)
+      .then(() => { if (_set === id) initPieceImages(); })
+      .catch(() => { /* the current set keeps drawing */ });
+  }
+
+  /** Counters for the tests (v8-0-plan F5). */
+  function stats() { return { imageRedraws: _imageRedraws }; }
 
   /**
    * Offscreen raster of piece `key` at `size` device pixels, or null while the
@@ -261,7 +302,7 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
    * Unicode glyphs it used to. A data: URL of the SVG the sprites decode.
    */
   function pieceSrc(key) {
-    const svgs = PIECE_SETS[_set] || CHESS_PIECE_SVGS;
+    const svgs = PIECE_SETS[_set]() || CHESS_PIECE_SVGS;
     return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]) : "";
   }
 
@@ -275,7 +316,7 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
   function attach(canvas, modelFn) {
     _canvas = canvas;
     _model = modelFn;
-    if (!Object.keys(_imgs).length) initPieceImages();
+    if (!Object.keys(_imgs).length) loadSet();
   }
 
   /**
@@ -808,4 +849,4 @@ import { MERIDA_PIECE_SVGS } from "./pieces-merida.js";
    *              needs to know the board's geometry at all.
    */
   export const ChessBoardView = { draw, attach, resizeCanvas, invalidatePaint,
-    animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet, pieceSrc, screenCell };
+    animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet, pieceSrc, screenCell, stats };

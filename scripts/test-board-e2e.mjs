@@ -1212,15 +1212,20 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       painted: window.__t.painted,
       wired: window.__t.wired,
       start: nav ? nav.startTime : 0,
-      res: performance.getEntriesByType("resource").map((r) => r.name.split("/").pop()),
+      // v8-0-plan F5: with the time each fetch started, so "before the
+      // first paint" is a question the timeline answers
+      res: performance.getEntriesByType("resource").map((r) => ({ name: r.name.split("/").pop(), at: r.startTime })),
     };
   });
   const interactive = Math.round(Math.max(t.painted, t.wired) - t.start);
   assert(interactive < 1000, `首屏到可交互 ${interactive} ms < 1000 ms(棋盘画好 ${Math.round(t.painted)} ms,pointerdown 挂上 ${Math.round(t.wired)} ms)`);
   // 6.1 把 ECO 表(462 KB)搬出了首屏包,改成用到才取(js/chunk-eco.js)。
   // 它要是又回到首屏里,上面那个数字会慢慢爬回去而没人知道为什么。
-  assert(!t.res.some((n) => /^chunk-/.test(n)),
-    `……而且首屏一个 chunk 都没取(取了:${t.res.join(", ")})`);
+  // v8-0-plan F5 起 index.html 先跑 chunk-boot.js(几百字节,只负责替已存
+  // 的语言写 script 标签);中文用户它什么都不写。挖掘题在首屏之后才取。
+  const early = t.res.filter((r) => /^chunk-/.test(r.name) && r.at < t.painted && r.name !== "chunk-boot.js");
+  assert(early.length === 0,
+    `……而且首屏前除 chunk-boot.js 外一个 chunk 都没取(取了:${early.map((r) => r.name).join(", ")})`);
   // 「可交互」得是真的:这时候点下去,棋真的能走
   await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const c = await page.evaluate(() => {
@@ -1235,6 +1240,53 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     [...document.querySelectorAll(".move-list .mlmove")].map((m) => m.getAttribute("aria-label")).join(" "));
   assert(played === "e4", `……而「可交互」是真的可交互:点下去棋就走了(「${played}」)`);
   assert(errs.length === 0, `首屏:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- v8-0-plan F5:十二张棋子图全部解码完,只重画一次 -------------------------
+//
+// 7.9 之前每张图 onload 都清空精灵缓存、整盘重画:首次加载一共画 12 次,
+// 无 GPU 的环境里每次约 150 ms,全部排在 DOMContentLoaded 之前。现在十二张
+// 一起 decode(),完了换上、画一次。计数来自 board.js 本身
+// (window.__chess.board().imageRedraws);整盘重画的总数另外从 canvas 这边
+// 数一遍(每次 draw() 都从 a8 那一格的 fillRect(0, 0, …) 开始),两边互证。
+// 换 Merida 也只画一次,而 Merida 是按需取的 chunk。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    window.__full = 0;
+    const real = CanvasRenderingContext2D.prototype.fillRect;
+    CanvasRenderingContext2D.prototype.fillRect = function (x, y, ...rest) {
+      if (this.canvas && this.canvas.id === "board" && x === 0 && y === 0) window.__full++;
+      return real.call(this, x, y, ...rest);
+    };
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForFunction(() => window.__chess && window.__chess.board && window.__chess.board().imageRedraws >= 1,
+    null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const r = await page.evaluate(() => ({
+    image: window.__chess && window.__chess.board ? window.__chess.board().imageRedraws : -1,
+    full: window.__full,
+  }));
+  assert(r.image === 1, `首次加载:棋子图解码完只重画了一次(${r.image} 次)`);
+  // 12 张图各画一次时这里是 17;留出启动本身那几次 sync()
+  assert(r.full > 0 && r.full < 12, `首次加载:整盘重画 ${r.full} 次 < 12(每张图一次的时候是 17)`);
+  // 换成 Merida:按需取 chunk-merida.js,解码完再一次画
+  await page.evaluate(() => { const b = document.querySelector('[data-pieces="merida"]'); if (b) b.click(); });
+  await page.waitForFunction(() => window.__chess.board().imageRedraws >= 2, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const m = await page.evaluate(() => ({
+    image: window.__chess.board().imageRedraws,
+    fetched: performance.getEntriesByType("resource").some((e) => /chunk-merida\.js$/.test(e.name)),
+  }));
+  assert(m.fetched && m.image === 2, `换 Merida:取了 chunk-merida.js,解码完只多画一次(共 ${m.image} 次)`);
+  assert(errs.length === 0, `棋子图:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
 

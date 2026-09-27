@@ -28,12 +28,8 @@ import { loadChunk, chunkReady } from "./chunk.js";
 import { ChessFide } from "./fide.js";
 import { ChessTree } from "./game-tree.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
-import { CHESS_OPENINGS_EN } from "./openings-en.js";
-import { CHESS_OPENINGS_JA } from "./openings-ja.js";
 import { OPENING_FAMILIES_ZH } from "./openings-family-zh.js";
-import { OPENING_FAMILIES_JA } from "./openings-family-ja.js";
 import { OPENING_VARIATIONS_ZH } from "./openings-variation-zh.js";
-import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
 
   /** The table's key for the position `chess` is at. */
   function positionKey(chess) {
@@ -191,14 +187,19 @@ import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
     return out;
   }
 
-  const LOCAL = { "zh-CN": CHESS_OPENING_NAMES, ja: CHESS_OPENINGS_JA, en: CHESS_OPENINGS_EN };
+  // v8-0-plan F5: every table but the Chinese one is in a language chunk
+  // (lazy-content.js), so those are read off the window when asked — the
+  // current language's chunk is there before anything names an opening.
+  const onWindow = (name) => () => globalThis[name] || null;
+  const LOCAL = { "zh-CN": () => CHESS_OPENING_NAMES, ja: onWindow("CHESS_OPENINGS_JA"), en: onWindow("CHESS_OPENINGS_EN") };
   // Family names are small (149 per language, a few KB) and ship in the main
   // bundle, not the eco chunk: library-ui names games from their PGN
   // `Opening` header, which needs no table at all.
-  const FAMILY = { "zh-CN": OPENING_FAMILIES_ZH, ja: OPENING_FAMILIES_JA };
+  // (the Japanese ones are in chunk-lang-ja.js since v8-0-plan F5)
+  const FAMILY = { "zh-CN": () => OPENING_FAMILIES_ZH, ja: onWindow("OPENING_FAMILIES_JA") };
   // 7.8 (v7-8-plan §6): the most frequent variation names too, one
   // comma-separated segment at a time, keyed by lichess's English segment
-  const VARIATION = { "zh-CN": OPENING_VARIATIONS_ZH, ja: OPENING_VARIATIONS_JA };
+  const VARIATION = { "zh-CN": () => OPENING_VARIATIONS_ZH, ja: onWindow("OPENING_VARIATIONS_JA") };
   const LIST_SEP = { "zh-CN": "，", ja: "、" };
 
   /**
@@ -209,7 +210,7 @@ import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
    * reads as a proper name.
    */
   function variationName(rest, lang) {
-    const tbl = VARIATION[lang];
+    const tbl = VARIATION[lang] && VARIATION[lang]();
     if (!tbl || !rest) return rest;
     const segs = rest.split(",").map((s) => s.trim());
     if (!segs.every((s) => tbl[s])) return rest;
@@ -225,7 +226,7 @@ import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
    * of their copy does (scripts/cjk-punct.mjs).
    */
   function familyName(name, lang) {
-    const tbl = FAMILY[lang];
+    const tbl = FAMILY[lang] && FAMILY[lang]();
     if (!tbl || !name) return null;
     const i = name.indexOf(":");
     const fam = tbl[i < 0 ? name : name.slice(0, i)];
@@ -249,7 +250,7 @@ import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
     if (lang === "en") return entry.name;
     const book = bookIdByEntry();
     const id = book && book[entry.eco + "|" + entry.name];
-    const tbl = LOCAL[lang];
+    const tbl = LOCAL[lang] && LOCAL[lang]();
     return (id && tbl && tbl[id]) || familyName(entry.name, lang) || entry.name;
   }
 
