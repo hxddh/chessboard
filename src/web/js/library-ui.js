@@ -1212,6 +1212,10 @@ export function createLibraryUI(d) {
   function renderDiagnosis() {
     const el = doc.getElementById("lib-diag");
     if (!el) return;
+    renderDiagnosisInto(el);
+    fitDiagColumn(el);
+  }
+  function renderDiagnosisInto(el) {
     el.replaceChildren();
     const d = Library.diagnose(store.session.library, LIB_MIN_GAMES);
     const para = (text, cls) => {
@@ -1298,6 +1302,27 @@ export function createLibraryUI(d) {
           { kind: "eco", value: e.eco, label: tf("diag.pickEco", [e.eco + (name ? " " + name : "")]) },
           true);
       }
+    }
+  }
+
+  /**
+   * v8-0-plan §5: one value column as wide as the widest value in it, up to
+   * two thirds of the dialog — measured, because the values are sentences
+   * whose length depends on the language and the numbers.
+   */
+  function fitDiagColumn(el) {
+    el.style.removeProperty("--stat-v-w");
+    const vs = [...el.querySelectorAll(".stat-v")];
+    if (!vs.length || !el.clientWidth) return;
+    for (const v of vs) v.style.whiteSpace = "nowrap";
+    // scrollWidth is rounded; the extra pixel keeps a 152.4px value on one line
+    const need = Math.max(...vs.map((v) => v.scrollWidth)) + 1;
+    for (const v of vs) v.style.removeProperty("white-space");
+    const cap = Math.floor(el.clientWidth * 2 / 3);
+    el.style.setProperty("--stat-v-w", Math.min(need, cap) + "px");
+    // a narrow window can cut a fixed label too; it keeps itself on title
+    for (const k of el.querySelectorAll(".stat-k")) {
+      if (k.scrollWidth > k.clientWidth && !k.title) k.title = k.textContent;
     }
   }
 

@@ -3095,11 +3095,11 @@
        「5 厘兵/手 · 失误率 16.7%」 is 153px, 「1 手あたり 5 センチポーン ·
        失着率 16.7%」 258px — and the fixed 114px track cut them off at the
        dialog's edge (39px in Chinese, 70 in English, 144 in Japanese, at
-       every width). Here the value takes the width it needs, right-aligned,
-       and drops under its name when the two do not fit on one line. */
-    #lib-diag .stat-row { display: flex; flex-wrap: wrap; justify-content: space-between; }
-    #lib-diag .stat-k { min-width: 0; }
-    #lib-diag .stat-v { margin-left: auto; white-space: normal; }
+       every width). The dialog sizes its own value track to its widest value
+       (library-ui.js fitDiagColumn), so the figures stay one column and the
+       names truncate onto `title` as before; where even that track is capped
+       (a phone), a value wraps inside it rather than being cut. */
+    #lib-diag .stat-v { white-space: normal; }
     .stats-body .hint { margin: 4px 0 0; }
 
     /* game history: same row shape in the sidebar preview and the full list */
