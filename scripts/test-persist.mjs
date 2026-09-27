@@ -472,5 +472,45 @@ for (const how of ["restore", "clear"]) {
     how + " cut short: the store holds one whole profile, not a mix (" + r + ": " + got + ")");
 }
 
+// 2l. (Codex on #85) a manifest read that fails (the bridge answers null) is
+// not "no store": the boot's defaults must not be flushed over the profile
+// the next launch could still recover
+{
+  const h = withStore(null);
+  h.store.set("save", "good");
+  const meta0 = JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save"] });
+  h.store.set(STORE_META, meta0);
+  const orig = h.appdataReadKey;
+  h.appdataReadKey = async () => null;
+  const P = createPersist(h, () => {});
+  P.load();
+  P.set("settings", "defaults");   // the boot writes before recover() answers
+  const r = await P.recover();
+  h.appdataReadKey = orig;
+  await tick(600);
+  await P.flushMirror();
+  assert(h.store.get(STORE_META) === meta0 && h.store.get("save") === "good" && h.writes.length === 0,
+    "an unreadable manifest leaves the store alone for the session (" + r + "; wrote " + h.writes.join(",") + ")");
+  // and the next launch, with the bridge back, still restores from it
+  h.m.clear();
+  const P2 = createPersist(h, () => {});
+  P2.load();
+  assert((await P2.recover()) === "restored" && P2.get("save") === "good", "…which the next launch restores from");
+}
+// …and the same for chessboard.json while migrating: a failed read of it is
+// not "no profile", or the store would be born holding only the defaults
+{
+  const legacy = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 7000, keys: { save: "old" } });
+  const h = withStore(legacy);
+  h.appdataRead = async () => null;
+  const P = createPersist(h, () => {});
+  P.load();
+  P.set("settings", "defaults");
+  await P.recover();
+  await tick(600);
+  await P.flushMirror();
+  assert(!h.store.has(STORE_META) && h.legacy === legacy, "a failed read of chessboard.json while migrating writes no store (" + h.writes.join(",") + ")");
+}
+
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");

@@ -447,17 +447,17 @@ export function createPersist(host, onWriteFailure) {
 
   /**
    * The manifest on disk's key → file map, for a flush that runs before
-   * recover() read it. A store with no manifest has nothing committed; one
-   * that cannot be read is written the pre-slot way, one file per key.
+   * recover() read it. A store with no manifest has nothing committed.
    */
   async function readCommitted() {
-    try {
-      const r = await host.appdataReadKey(STORE_META);
-      if (r && r.missing) return {};
-      const m = r && typeof r.text === "string" ? JSON.parse(r.text) : null;
-      if (isStoreMeta(m)) return storeFiles(m);
-    } catch (_) { /* below */ }
-    return {};
+    const r = await host.appdataReadKey(STORE_META);
+    if (r && r.missing) return {};
+    let m = null;
+    try { m = r && typeof r.text === "string" ? JSON.parse(r.text) : null; } catch (_) { m = null; }
+    if (isStoreMeta(m)) return storeFiles(m);
+    // not knowing which files the store's profile is in, writing any of them
+    // could break it: the flush fails and its keys stay owed
+    throw new Error("store manifest unreadable");
   }
 
   /** 6.x–7.x: write the whole profile as one document. @returns {Promise<boolean>} */
@@ -510,7 +510,7 @@ export function createPersist(host, onWriteFailure) {
    * The 6.x–7.x one-document file.
    * @returns {Promise<{failed: true}|{none: true}|{damaged: true}|{at: number, load: () => Promise<object>}>}
    */
-  async function readLegacy() {
+  async function readLegacy(strict) {
     if (typeof host.appdataRead !== "function") return { none: true };
     let text = null, empty = false;
     // host.js answers {text,bak} | {missing:true} | {empty:true} | null; a
@@ -520,6 +520,9 @@ export function createPersist(host, onWriteFailure) {
       if (typeof r === "string") text = r;
       else if (r && typeof r.text === "string") text = r.text;
       else if (r && r.empty) empty = true;
+      // migrating, null is a read that did not happen, not a missing file:
+      // the per-key host answers {missing} for that (see readStore)
+      else if (strict && (!r || !r.missing)) return { failed: true };
     } catch (_) { return { failed: true }; }
     // 6.1: a file that exists and holds nothing is damage, not a fresh
     // install — an interrupted write leaves exactly that.
@@ -541,9 +544,13 @@ export function createPersist(host, onWriteFailure) {
     try { r = await host.appdataReadKey(STORE_META); } catch (_) { return { failed: true }; }
     // no manifest: this store has never been written. The profile lives in
     // chessboard.json, if anywhere (the SCHEMA 1 → 2 migration).
-    if (r && r.missing) { committed = {}; return Object.assign({ migrating: true }, await readLegacy()); }
+    if (r && r.missing) { committed = {}; return Object.assign({ migrating: true }, await readLegacy(true)); }
     if (r && r.empty) return { damaged: true };
-    if (!r || typeof r.text !== "string") return { none: true };
+    // (Codex on #85) anything but an explicit "missing" without text is a
+    // read that did not happen — host.js answers null for a bridge error as
+    // much as for no bridge. "No store" here would let the boot's defaults
+    // be flushed over a profile the next launch could still restore.
+    if (!r || typeof r.text !== "string") return { failed: true };
     let meta = null;
     try { meta = JSON.parse(r.text); } catch (_) { meta = null; }
     if (!isStoreMeta(meta)) return { damaged: true };
@@ -568,7 +575,10 @@ export function createPersist(host, onWriteFailure) {
   async function recoverInner() {
     if (!perKey && typeof host.appdataRead !== "function") return "none";
     const src = perKey ? await readStore() : await readLegacy();
-    if (src.failed) return "none";
+    // the file could not be read, so which side is newer is unknown: leave it
+    // alone for this session. The cache keeps everything; the next launch
+    // asks again.
+    if (src.failed) { mirrorEnabled = false; return "none"; }
     // 6.1: damage — an empty file, one that does not parse, one that is not
     // ours. Before 6.1 this returned "none" in silence, left the broken file
     // in place and never told anyone. Report it, and keep the cache:
