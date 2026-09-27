@@ -181,7 +181,8 @@ export async function build({ write = true } = {}) {
 /** Build only when the sources are newer than the bundle. */
 export async function buildIfStale() {
   const dir = path.dirname(ENTRY);
-  const srcs = fs.readdirSync(dir)
+  // recursive: the trainer's modules live in src/web/js/trainer/ (v8-0-plan F4)
+  const srcs = fs.readdirSync(dir, { recursive: true })
     .filter((f) => f.endsWith(".js") && f !== "bundle.js")
     .map((f) => fs.statSync(path.join(dir, f)).mtimeMs);
   let out = 0;

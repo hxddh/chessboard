@@ -65,9 +65,17 @@ function assert(cond, msg) {
 // exported contract — still reads that file by name.
 const WEB_JS = path.join(root, "src/web/js");
 const GENERATED_JS = /^(?:bundle|engine-src|chunk-.+)\.js$/;
+/**
+ * Every .js under src/web/js by its path from there ("app.js",
+ * "trainer/puzzles.js"): F4 puts the modules it carves out in folders, and a
+ * check that walked only the top level would stop seeing them. The puzzle
+ * bands (lichess/) are data, not code.
+ */
+const webJsFiles = (dir) => fs.readdirSync(dir, { recursive: true })
+  .map((f) => f.split(path.sep).join("/")).filter((f) => f.endsWith(".js") && !f.startsWith("lichess/"));
 /** file name → source for every hand-written module in `dir`, app.js first */
 function readWebModules(dir) {
-  const names = fs.readdirSync(dir).filter((f) => f.endsWith(".js") && !GENERATED_JS.test(f)).sort();
+  const names = webJsFiles(dir).filter((f) => !GENERATED_JS.test(f)).sort();
   names.sort((a, b) => (b === "app.js") - (a === "app.js"));
   return new Map(names.map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")]));
 }
@@ -136,7 +144,8 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js"];
+const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js",
+  "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -4152,7 +4161,7 @@ for (const lang of CONTENT_LANGS) {
   // answerable, and this makes it answered: a key nobody reads is either dead
   // weight or a control that lost its label.
   {
-    const sources = ["src/web/index.html", ...fs.readdirSync(path.join(root, "src/web/js"))
+    const sources = ["src/web/index.html", ...webJsFiles(path.join(root, "src/web/js"))
       // the dictionaries define keys rather than read them; so do the chunks
       // built from them (v8-0-plan F5)
       .filter((f) => f.endsWith(".js") && f !== "bundle.js" && !/^i18n(-\w+)?\.js$/.test(f) && !f.startsWith("chunk-"))
@@ -5150,7 +5159,7 @@ for (const lang of CONTENT_LANGS) {
   {
     const dir = path.join(root, "src/web/js");
     const offenders = [];
-    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "bundle.js")) {
+    for (const f of webJsFiles(dir).filter((n) => n !== "bundle.js")) {
       const src = fs.readFileSync(path.join(dir, f), "utf8");
       const n = (src.match(/\.innerHTML\b/g) || []).length;
       if (n) offenders.push(f + " (" + n + ")");
@@ -5571,7 +5580,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const bad = [];
   const dir = path.join(root, "src/web/js");
-  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "bundle.js")) {
+  for (const f of webJsFiles(dir).filter((n) => n !== "bundle.js")) {
     const src = fs.readFileSync(path.join(dir, f), "utf8");
     const imported = new Set();
     for (const m of src.matchAll(/^import \{([^}]+)\} from/gm)) {
@@ -5692,7 +5701,7 @@ for (const lang of CONTENT_LANGS) {
 {
   const KNOWN_EMOJI = new Map([]);
   const web = path.join(root, "src/web");
-  const files = ["index.html", "styles.css", ...fs.readdirSync(path.join(web, "js"))
+  const files = ["index.html", "styles.css", ...webJsFiles(path.join(web, "js"))
     .filter((f) => f.endsWith(".js") && !["bundle.js", "engine-src.js"].includes(f)).map((f) => "js/" + f)];
   const found = new Map();
   for (const f of files) {
@@ -6080,8 +6089,8 @@ for (const lang of CONTENT_LANGS) {
         return maj > cur[0] || (maj === cur[0] && min > cur[1]);
       };
       const files = [
-        ...fs.readdirSync(path.join(root, "src/web/js"))
-          .filter((n) => n.endsWith(".js") && !["bundle.js", "pieces.js", "chess.js"].includes(n))
+        ...webJsFiles(path.join(root, "src/web/js"))
+          .filter((n) => !["bundle.js", "pieces.js", "chess.js"].includes(n))
           .map((n) => "src/web/js/" + n),
         ...fs.readdirSync(path.join(root, "scripts")).filter((n) => n.endsWith(".mjs")).map((n) => "scripts/" + n),
         "README.md", "docs/design-constraints.md", "docs/refactor-plan.md",
@@ -6851,7 +6860,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 11413; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3)
+  const APP_JS_LINE_CEILING = 8660; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −2753 to trainer/ (M3)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -6873,6 +6882,24 @@ for (const lang of CONTENT_LANGS) {
   const app = WEB_MODULES.get("app.js");
   assert(!["theme-seg", "multipv-seg", "opt-blind"].some((id) => app.includes('getElementById("' + id + '")')),
     "F4: app.js no longer wires the settings page's controls");
+}
+
+// --- v8-0-plan F4 (M3): the trainer lives in src/web/js/trainer/ ----------
+// Lessons, puzzles, today's plan and the words they share are four factories
+// with their dependencies handed in (createLibraryUI's shape); app.js keeps
+// one destructuring door per module.
+{
+  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
+  const homes = {
+    "trainer/content.js": ["createTrainerContent", "puzzleName", "lessonText", "motifKeyOf"],
+    "trainer/lessons.js": ["createLessonsUI", "startLesson", "learnMove", "syncLearnUI", "startClassic"],
+    "trainer/puzzles.js": ["createPuzzlesUI", "puzzleMove", "syncPuzzleUI", "ratePuzzleOnce", "bookNow"],
+    "trainer/today.js": ["createTodayUI", "dailySignals", "dailyJump", "renderPuzzleTally"],
+  };
+  for (const [file, names] of Object.entries(homes)) {
+    assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
+    for (const name of names) assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
+  }
 }
 
 // --- 6.0: the register of source-text assertions in this file.
