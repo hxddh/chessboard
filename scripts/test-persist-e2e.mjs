@@ -879,6 +879,9 @@ const PLACEMENT = STUDY.split(" ")[0];
         return new TextDecoder().decode(u);
       };
       let readDone = false;
+      // v8-0-plan F3:带 key 的读写是分键存储里的那一个文件(store/<key>.json),
+      // 不带的是 6.x–7.x 那一整份 chessboard.json —— 迁移就是从后者读、往前者写
+      const slot = (arg) => (arg && arg.key ? "e2e.store." + arg.key : "e2e.file");
       window.zero = {
         on: () => () => {}, off: () => {},
         platform: { supports: () => Promise.resolve(false) },
@@ -887,7 +890,7 @@ const PLACEMENT = STUDY.split(" ")[0];
           if (cmd === "chess.appdataRead") {
             await new Promise((r) => setTimeout(r, readDelay));
             readDone = true;
-            const f = S.getItem("e2e.file");
+            const f = S.getItem(slot(arg));
             if (f == null) return { missing: true };
             if (f === "") return { empty: true };
             return { b64: enc(f) };
@@ -897,7 +900,7 @@ const PLACEMENT = STUDY.split(" ")[0];
             // 记下来 —— 测试进程这边的墙上时钟在慢机器上量不准这个
             if (!readDone) bump("e2e.writesBeforeRead");
             bump("e2e.writes");
-            S.setItem("e2e.file", dec(arg.b64));
+            S.setItem(slot(arg), dec(arg.b64));
             return { ok: true };
           }
           return {};
@@ -955,6 +958,14 @@ const PLACEMENT = STUDY.split(" ")[0];
     assert(/1\. d4/.test(await lsSave(page)), "……localStorage 里也换成了文件里的那份");
     assert(/1\. d4/.test(await probe(page, "e2e.file") || ""),
       "……而文件还是文件:没有被启动时的空档案盖过");
+    // v8-0-plan F3:重新载入之后的那一趟把这份档案迁进了分键存储 —— 每个键一个
+    // 文件,外加一份清单;旧的整份文件原样留着,给降级回 7.x 的人
+    await page.waitForFunction(() => sessionStorage.getItem("e2e.store.meta") != null, null, { timeout: 5000 }).catch(() => {});
+    const meta = JSON.parse(await probe(page, "e2e.store.meta") || "null");
+    assert(!!meta && meta.schema === 2 && meta.keys.includes("save") && meta.keys.includes("settings"),
+      `迁移:分键存储有了清单,schema 2,列着 save 与 settings(${JSON.stringify(meta)})`);
+    assert(/1\. d4/.test(await probe(page, "e2e.store.save") || ""),
+      "迁移:save 这个键单独成了一个文件,内容就是旧文件里那一局");
 
     // (b) 恢复之后到重新载入之间,页面再做什么都不许盖掉刚恢复的东西
     assert((await probe(page, "e2e.probed")) === "1", "恢复与重新载入之间的那一下探针真的按下去了");
@@ -1011,11 +1022,338 @@ const PLACEMENT = STUDY.split(" ")[0];
     const tst = await toastNow(page);
     assert(!/数据文件/.test(tst.text), `文件不存在是新装,不是损坏:没有横幅(「${tst.text}」)`);
     assert((await moves(page)) === "e4 e5", "……缓存里的那局棋照旧");
-    assert(/1\. e4/.test(await probe(page, "e2e.file") || ""),
-      "……而且缓存被镜像到了这台机器的文件里,下一次启动就有得读了");
+    // v8-0-plan F3:镜像是分键的 —— save 自己一个文件
+    await page.waitForFunction(() => sessionStorage.getItem("e2e.store.meta") != null, null, { timeout: 5000 }).catch(() => {});
+    assert(/1\. e4/.test(await probe(page, "e2e.store.save") || ""),
+      "……而且缓存被镜像到了这台机器的分键存储里,下一次启动就有得读了");
     assert(errs.length === 0, `recover (新装):全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
+}
+
+// --- 11. v8-0-plan F3:2 MB 的存档,导出 → 清空 → 导回,逐键相等 ---------------
+//
+// 7.9 之前这条路是断的,而且断得很安静:SDK 的桥一帧最多 1 MiB(0.10.1 的
+// bridge.max_message_bytes / max_result_bytes),原生 readTextFile 又只收
+// 256 KiB。500 局战绩加上棋谱库和分析,「导出全部数据」只能退回剪贴板,
+// 「导入全部数据」直接被拒。每次自动保存还要把**整份**档案逐字节拼成 base64
+// 过桥 —— 2 MB 要 86 ms(计划里的实测),主线程整个卡住,而且照样超过那 1 MiB,写不进去。
+//
+// 这里的假桥照原生的样子做:一帧超过 1 MiB 就拒(SDK 的 PayloadTooLarge),
+// 分块写按 txn/total/offset 暂存、收齐才落盘,分块读每次最多 512 KiB 并告诉
+// 页面还有没有(more)。每次应答都在自己的宏任务里交回,所以「上一次应答交回
+// → 下一次调用发出」之间的时间,正是页面在主线程上连续干活的那一段。
+function fakeNative(opts) {
+  const LIMIT = 1024 * 1024, CHUNK = 512 * 1024, MAX = 16 * 1024 * 1024;
+  const S = sessionStorage;
+  const b64enc = (u8) => {
+    let s = "";
+    for (let i = 0; i < u8.length; i += 24576) s += btoa(String.fromCharCode.apply(null, u8.subarray(i, i + 24576)));
+    return s;
+  };
+  const b64dec = (s) => {
+    const bin = atob(s); const u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u;
+  };
+  // the native store: key → bytes ("" is the 6.x–7.x chessboard.json). With
+  // `persist` it lives in sessionStorage so it survives a reload, like a disk.
+  const store = new Map();
+  if (opts.persist) {
+    for (let i = 0; i < S.length; i++) {
+      const k = S.key(i);
+      if (k.startsWith("f3.store.")) store.set(k.slice(9), b64dec(S.getItem(k)));
+    }
+  }
+  const keep = (k, u8) => { store.set(k, u8); if (opts.persist) S.setItem("f3.store." + k, b64enc(u8)); };
+  const files = new Map();
+  const stages = new Map();
+  window.__files = files;
+  window.__store = store;
+  window.__seg = { at: 0, max: 0 };
+  window.__big = 0;   // bridge frames the fake refused for being over 1 MiB
+  const log = (k, n) => {
+    const l = JSON.parse(S.getItem("f3.log") || "[]");
+    l.push([k, n]);
+    S.setItem("f3.log", JSON.stringify(l));
+  };
+  const receive = (target, a) => {
+    const bytes = b64dec(a.b64 || "");
+    if (a.total == null) return { done: bytes };
+    if (a.total > MAX) return { answer: { tooLarge: true, limit: MAX } };
+    let st = stages.get(a.txn);
+    if (a.offset === 0) { st = { target, data: new Uint8Array(a.total), filled: 0 }; stages.set(a.txn, st); }
+    if (!st || st.target !== target || st.filled !== a.offset || a.offset + bytes.length > a.total) {
+      stages.delete(a.txn);
+      return { answer: { error: "stage_lost" } };
+    }
+    st.data.set(bytes, a.offset);
+    st.filled += bytes.length;
+    if (st.filled < a.total) return { answer: { ok: true, pending: true } };
+    stages.delete(a.txn);
+    return { done: st.data };
+  };
+  const chunkOf = (u8, a, extra) => {
+    const off = a.offset || 0;
+    if (!off && u8.length > MAX) return { tooLarge: true, limit: MAX };
+    return Object.assign({ b64: b64enc(u8.subarray(off, off + CHUNK)), more: off + CHUNK < u8.length }, extra);
+  };
+  const answer = (cmd, a) => {
+    if (cmd === "chess.issuePath") return { ok: true };
+    if (cmd === "chess.selftestMode") return { on: false };
+    if (cmd === "chess.writeTextFile") {
+      const r = receive("path:" + a.path, a);
+      if (r.answer) return r.answer;
+      files.set(a.path, r.done);
+      return true;
+    }
+    if (cmd === "chess.readTextFile") {
+      const f = files.get(a.path);
+      if (!f) throw new Error("HandlerFailed");
+      return chunkOf(f, a);
+    }
+    if (cmd === "chess.appdataWrite") {
+      const k = a.key || "";
+      const r = receive("appdata:" + k, a);
+      if (r.answer) return r.answer;
+      keep(k, r.done);
+      log(k, r.done.length);
+      return { ok: true };
+    }
+    if (cmd === "chess.appdataRead") {
+      const f = store.get(a.key || "");
+      if (!f) return { missing: true };
+      if (!f.length) return { empty: true };
+      return chunkOf(f, a, { bak: false });
+    }
+    return {};
+  };
+  window.zero = {
+    on: () => () => {}, off: () => {},
+    platform: { supports: (o) => Promise.resolve(!!o && o.feature === "dialogs") },
+    dialogs: {
+      saveFile: async () => "/Users/me/all.json",
+      openFile: async () => ["/Users/me/all.json"],
+      showMessage: async () => "primary",
+    },
+    clipboard: { readText: async () => "", writeText: async (t) => { window.__clip = String(t); return true; } },
+    invoke: (cmd, a) => {
+      // the page's continuous work since the last answer came back. An idle
+      // gap (the 400 ms debounce, a person) is far longer than any real slice.
+      const now = performance.now();
+      if (window.__seg.at && now - window.__seg.at < 200) window.__seg.max = Math.max(window.__seg.max, now - window.__seg.at);
+      window.__seg.at = 0;
+      const frame = JSON.stringify({ id: "0123456789abcdef", command: cmd, payload: a || {} }).length;
+      return new Promise((resolve, reject) => setTimeout(() => {
+        let r, err = null;
+        if (frame > LIMIT) { window.__big++; err = new Error("PayloadTooLarge: Bridge request is too large"); }
+        else {
+          try {
+            r = answer(cmd, a || {});
+            if (JSON.stringify(r).length + 64 > LIMIT) { window.__big++; err = new Error("response over the bridge limit"); }
+          } catch (e) { err = e; }
+        }
+        window.__seg.at = performance.now();
+        if (err) reject(err); else resolve(r);
+      }, 0));
+    },
+  };
+}
+
+/** A profile of about `mb` megabytes, in the shapes the app reads (ACCEPT). */
+function seedProfile(mb) {
+  const S = sessionStorage;
+  if (S.getItem("f3.seeded")) return;
+  S.setItem("f3.seeded", "1");
+  const line = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8 10. d4 Nbd7 ";
+  const stats = { v: 2, games: [] };
+  for (let i = 0; i < 500; i++) {
+    stats.games.push({ id: "g" + i, t: 1758000000000 + i * 60000, result: i % 3 ? "1-0" : "0-1", mode: "ai",
+      diff: "normal", color: i % 2 ? "b" : "w", ending: "mate", pgn: line + line + "1-0" });
+  }
+  const library = { v: 1, names: ["hxddh"], games: [] };
+  const target = mb * 1024 * 1024 - JSON.stringify(stats).length;
+  for (let i = 0; JSON.stringify(library).length < target; i++) {
+    const sans = line.replace(/\d+\. /g, "").trim().repeat(3);
+    library.games.push({ id: "lib:" + i.toString(36), sans, plies: 60, added: 1758000000000 + i,
+      headers: [["Event", "Rated blitz"], ["White", "hxddh"], ["Black", "rival" + i], ["Result", "1-0"]],
+      pgn: '[White "hxddh"]\n[Black "rival' + i + '"]\n\n' + line.repeat(8) + "1-0" });
+  }
+  localStorage.setItem("chess.v1.stats", JSON.stringify(stats));
+  localStorage.setItem("chess.v1.library", JSON.stringify(library));
+  localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: '[Event "?"]\n[Result "*"]\n\n1. e4 e5 *' }));
+}
+
+const PROFILE_KEYS = ["save", "settings", "stats", "learn", "puzzles", "mines", "progress", "achv", "slots",
+  "library", "repertoire", "analyses"].map((k) => "chess.v1." + k).concat(["chess.panelOpen"]);
+const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((k) => [k, localStorage.getItem(k)])), PROFILE_KEYS);
+
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  await ctx.addInitScript(seedProfile, 2);
+  await ctx.addInitScript(fakeNative, { persist: false });
+  const { page, errs } = await open(ctx);
+
+  // (a) the first launch writes the whole profile into the per-key store —
+  // the largest mirror write there is. No slice of it may hold the main
+  // thread past a frame.
+  await page.waitForFunction(() => window.__store.has("meta"), null, { timeout: 15000 }).catch(() => {});
+  const full = await page.evaluate(() => ({
+    meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big,
+    lib: window.__store.has("library") ? window.__store.get("library").length : 0,
+  }));
+  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,library ${full.lib} 字节`);
+  assert(full.meta && full.lib > 1024 * 1024, `2 MB 的档案整份进了原生存储,library 自己一个文件(${full.lib} 字节)`);
+  assert(full.big === 0, `……没有一帧超过桥的 1 MiB(被拒 ${full.big} 次)`);
+  assert(full.seg <= 16, `……写的过程中,主线程上最长的一段 ≤ 16 ms(${full.seg.toFixed(1)} ms)`);
+
+  // (b) export: one file, compact, the whole of it
+  await page.evaluate(() => document.getElementById("alldata-export").click());
+  await page.waitForFunction(() => window.__files.has("/Users/me/all.json") || window.__clip != null, null, { timeout: 15000 }).catch(() => {});
+  const exp = await page.evaluate(() => {
+    const f = window.__files.get("/Users/me/all.json");
+    const text = f ? new TextDecoder().decode(f) : "";
+    return { size: f ? f.length : 0, pretty: /\n {2}"/.test(text), clip: window.__clip != null, text };
+  });
+  assert(exp.size >= 2 * 1024 * 1024 && !exp.clip,
+    `「导出全部数据」写成了一个 ≥ 2 MB 的文件,没有退回剪贴板(${exp.size} 字节${exp.clip ? ",进了剪贴板" : ""})`);
+  assert(exp.size > 0 && !exp.pretty, "……而且是紧凑 JSON,不是缩进两格的那种");
+  const doc = exp.text ? JSON.parse(exp.text) : { keys: {} };
+
+  // (c) a typical save — one move's worth, on top of the 2 MB profile. Before
+  // F3 this re-serialised and re-encoded all 2 MB, byte by byte.
+  await page.waitForTimeout(600);   // let the export's own flush settle
+  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; });
+  // one move (2. Nf3), so the save really changed; then flush it at once,
+  // before the 400 ms debounce, from a task this test can time
+  const sq = (n) => page.evaluate((s) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, n);
+  const g1 = await sq("g1"), f3 = await sq("f3");
+  await page.mouse.click(g1.x, g1.y);
+  await page.waitForTimeout(120);
+  await page.mouse.click(f3.x, f3.y);
+  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; });
+  const first = await page.evaluate(() => {
+    const t0 = performance.now();
+    // the first bridge call measures from here too: the flush starts in a
+    // microtask of this same task, after the line below returns
+    window.__seg.at = t0;
+    window.dispatchEvent(new Event("pagehide"));   // saveGame() + flushMirror(), in this one task
+    return performance.now() - t0;
+  });
+  await page.waitForTimeout(800);
+  const typical = Math.max(first, await page.evaluate(() => window.__seg.max));
+  const savedMove = await page.evaluate(() => {
+    const f = window.__store.get("save");
+    return !!f && /Nf3/.test(new TextDecoder().decode(f));
+  });
+  console.log(`  镜像·一次普通保存:主线程最长一段 ${typical.toFixed(1)} ms(其中同步起步 ${first.toFixed(1)} ms)`);
+  assert(savedMove, "走了 2. Nf3 之后,原生存储里的 save 就是这一局");
+  assert(typical <= 16, `一次普通保存的镜像写,主线程上每段 ≤ 16 ms(${typical.toFixed(1)} ms)`);
+
+  // (d) clear → import the file → every key is what was exported
+  await page.evaluate((keys) => { for (const k of keys) localStorage.removeItem(k); }, PROFILE_KEYS);
+  await page.evaluate(() => document.getElementById("alldata-import").click());
+  await page.waitForFunction(() => /已导入全部数据/.test((document.getElementById("toast") || {}).textContent || ""),
+    null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(2500);   // the import reloads the page after 900 ms
+  const after = await snapshot(page);
+  const diff = PROFILE_KEYS.filter((k) => {
+    const name = k.replace(/^chess\.(v1\.)?/, "").replace(/^achv$/, "achievements");
+    const want = doc.keys[name] == null ? null : doc.keys[name];
+    return after[k] !== want;
+  });
+  assert(!!doc.keys.library && diff.length === 0,
+    `导回之后逐键相等(${PROFILE_KEYS.length} 个键${diff.length ? ",不相等:" + diff.join(", ") : ""})`);
+  assert(errs.length === 0, `2 MB 导出导入:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 12. v8-0-plan F3:从 7.x 的整份文件迁到分键存储,之后只写变过的键 ----------
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    const S = sessionStorage;
+    if (S.getItem("f3.armed")) return;
+    S.setItem("f3.armed", "1");
+    // a 7.x profile: schema 1 in the cache, and the one-document mirror file
+    // holding the same revision
+    const settings = JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" });
+    const games = [];
+    for (let i = 0; i < 80; i++) {
+      games.push({ id: "lib:" + i, sans: "e4 e5 Nf3 Nc6 Bb5 a6", plies: 6, added: 1758000000000 + i,
+        headers: [["White", "hxddh"], ["Black", "r" + i]], pgn: "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 *" });
+    }
+    const keys = {
+      settings,
+      save: JSON.stringify({ v: 1, pgn: '[Event "?"]\n[Result "*"]\n\n1. d4 d5 *' }),
+      stats: JSON.stringify({ v: 1, games: [{ t: 1, sig: "e4 e5#mate", result: "1-0" }] }),
+      library: JSON.stringify({ v: 1, names: ["hxddh"], games }),
+      learn: JSON.stringify({ v: 1, done: { a: 1 } }),
+      panelOpen: "1",
+    };
+    const map = { settings: "chess.v1.settings", save: "chess.v1.save", stats: "chess.v1.stats",
+      library: "chess.v1.library", learn: "chess.v1.learn", panelOpen: "chess.panelOpen" };
+    for (const [n, v] of Object.entries(keys)) localStorage.setItem(map[n], v);
+    localStorage.setItem("chess.schema", "1");
+    localStorage.setItem("chess.writtenAt", "5000");
+    const doc = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000, keys });
+    const u8 = new TextEncoder().encode(doc);
+    let bin = ""; for (const b of u8) bin += String.fromCharCode(b);
+    S.setItem("f3.store.", btoa(bin));
+    S.setItem("f3.legacy", doc);
+  });
+  await ctx.addInitScript(fakeNative, { persist: true });
+  const { page, errs } = await open(ctx);
+  await page.waitForFunction(() => window.__store.has("meta"), null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  const got = await page.evaluate(() => {
+    const dec = (u8) => (u8 ? new TextDecoder().decode(u8) : null);
+    const legacy = JSON.parse(sessionStorage.getItem("f3.legacy"));
+    const meta = JSON.parse(dec(window.__store.get("meta")) || "null");
+    const lsKey = (n) => (n === "panelOpen" ? "chess.panelOpen" : "chess.v1." + n);
+    const unequal = Object.keys(legacy.keys).filter((n) => dec(window.__store.get(n)) !== localStorage.getItem(lsKey(n)));
+    return { meta, unequal, legacyKept: dec(window.__store.get("")) === sessionStorage.getItem("f3.legacy"),
+      schema: localStorage.getItem("chess.schema"), libSame: dec(window.__store.get("library")) === legacy.keys.library };
+  });
+  assert(!!got.meta && got.meta.schema === 2 && got.meta.app === "chessboard",
+    `7.x 的档案第一次用分键存储打开:分键存储有了清单,schema 2(${JSON.stringify(got.meta && { schema: got.meta.schema, keys: got.meta.keys })})`);
+  assert(got.unequal.length === 0 && got.libSame, `……旧文件里的每个键都成了自己的文件,内容逐字相等(不等:${got.unequal.join(", ") || "无"})`);
+  assert(got.legacyKept, "……旧的整份 chessboard.json 一个字节没动,留给降级的人");
+  assert(got.schema === "2", `……缓存的 schema 记成了 2(${got.schema})`);
+
+  // second launch: nothing changed, so nothing big is rewritten
+  await page.evaluate(() => sessionStorage.setItem("f3.log", "[]"));
+  await page.reload();
+  await page.waitForTimeout(1800);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const boot2 = await page.evaluate(() => JSON.parse(sessionStorage.getItem("f3.log") || "[]").map((e) => e[0]));
+  assert(!boot2.includes("library") && !boot2.includes("stats"),
+    `第二次启动:没变的大键不重写(这一趟写了:${boot2.join(", ") || "无"})`);
+
+  // one move: the save changes, the library does not
+  await page.evaluate(() => sessionStorage.setItem("f3.log", "[]"));
+  const at = (sq) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  for (const sq of ["c2", "c4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(170); }
+  await page.waitForTimeout(1200);
+  const moved = await page.evaluate(() => JSON.parse(sessionStorage.getItem("f3.log") || "[]").map((e) => e[0]));
+  assert(moved.includes("save") && moved.includes("meta"), `走一步:save 和清单写了(${moved.join(", ")})`);
+  assert(!moved.includes("library") && !moved.includes("stats") && !moved.includes(""),
+    "……棋谱库、战绩和旧的整份文件都没有被重写");
+  assert(errs.length === 0, `迁移:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
 }
 
 await browser.close();

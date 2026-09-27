@@ -349,6 +349,9 @@ import { createStore } from "./store.js";
       /** 7.7 §4: puzzles solved clean in a row, this sitting */
       pzStreak: 0,
       _analysisTick: null,
+      /** v8-0-plan F3: the last save's body without its savedAt, and that
+       *  savedAt — saveGame() moves the stamp only when the body changes */
+      _saveStamp: null,
       /** the newest-first list the rendered rows index into */
       histCache: [],
       achSeen: null,  // filled in below, where it can first be computed
@@ -1542,6 +1545,15 @@ import { createStore } from "./store.js";
       if (store.game.resigned) payload.resigned = store.game.resigned;
       if (store.game.drawAgreed) payload.drawAgreed = true;
       if (store.game.drawClaimed) payload.drawClaimed = store.game.drawClaimed;
+      // v8-0-plan F3: savedAt moves only when the game did. A fresh stamp on
+      // every call made each identical save a change — two of them on every
+      // quit (beforeunload, pagehide) — and a change costs a revision the
+      // native store then has to catch up on at the next launch.
+      payload.savedAt = 0;
+      const body = JSON.stringify(payload);
+      const memo = store.session._saveStamp || (store.session._saveStamp = { body: null, at: 0 });
+      if (body !== memo.body) { memo.body = body; memo.at = Date.now(); }
+      payload.savedAt = memo.at;
       Persist.setJson("save", payload);
     } catch (_) {}
   }
@@ -1725,34 +1737,25 @@ import { createStore } from "./store.js";
     } catch (err) { engine.err = errText(err); }
     engine.ms = Math.round(performance.now() - te);
 
-    // The file is the player's whole profile (persist.js), so the marker rides
-    // on the profile as persist.js would write it, never in place of it, and
-    // the next mirror flush drops it again. A file that is there and
-    // unreadable is left alone, as persist.js leaves it (6.1). One of
-    // persist's own flushes landing between the write and the read replaces
-    // the marker, so a mismatch gets two more tries before it counts.
+    // v8-0-plan F3: the round trip goes through the per-key store the
+    // profile now lives in, under a key of its own ("selftest", which
+    // persist.js never lists), so it can neither disturb the profile nor be
+    // disturbed by persist's own flushes. The payload is the whole profile,
+    // so on a real one it is as large as a real write — past 512 KiB it
+    // crosses the bridge in pieces, which is what this checks.
     const appdata = report.checks.appdata = { pass: false };
     try {
-      const before = await within(Host.appdataRead(), 10000, "appdataRead");
-      if (before == null) throw new Error("no native save file here (appdataRead answered null)");
-      if (before.empty) throw new Error("the save file exists and is empty; left alone");
-      if (typeof before.text === "string") {
-        let doc = null;
-        try { doc = JSON.parse(before.text); } catch (_) { doc = null; }
-        if (!Persist.isProfileDoc(doc)) throw new Error("the save file is not a readable profile; left alone");
+      const text = JSON.stringify(Object.assign(Persist.exportAll(), { selftest: nonce("a") }));
+      const wrote = await within(Host.appdataWriteKey("selftest", text), 10000, "appdataWrite");
+      if (wrote == null) throw new Error("no native save file here (appdataWrite answered null)");
+      if (wrote !== true) throw new Error("appdataWrite answered " + JSON.stringify(wrote));
+      const back = await within(Host.appdataReadKey("selftest"), 10000, "appdataRead");
+      appdata.bytes = text.length;
+      if (!back || back.text !== text) {
+        throw new Error("read back " + (back && typeof back.text === "string"
+          ? back.text.length + " bytes that are not what was written" : JSON.stringify(back)));
       }
-      for (let attempt = 1; attempt <= 3 && !appdata.pass; attempt++) {
-        const text = JSON.stringify(Object.assign(Persist.exportAll(), { selftest: nonce("a") }));
-        const wrote = await within(Host.appdataWrite(text), 10000, "appdataWrite");
-        if (wrote !== true) throw new Error("appdataWrite answered " + JSON.stringify(wrote));
-        const back = await within(Host.appdataRead(), 10000, "appdataRead");
-        appdata.attempts = attempt;
-        if (back && back.text === text) appdata.pass = true;
-        else if (attempt === 3) {
-          throw new Error("read back " + (back && typeof back.text === "string"
-            ? back.text.length + " bytes that are not what was written" : JSON.stringify(back)));
-        }
-      }
+      appdata.pass = true;
     } catch (err) { appdata.err = errText(err); }
 
     // the road renderOpening() takes: eco-lookup.js injects js/chunk-eco.js
@@ -11143,13 +11146,21 @@ import { createStore } from "./store.js";
   async function exportAllData() {
     saveGame();
     saveSettings();
-    await exportText(allDataFileName(), JSON.stringify(Persist.exportAll(), null, 2), "application/json", t("dlg.exportAll"));
+    // compact (v8-0-plan F3): the values are JSON strings already, so the
+    // two-space indent only padded the envelope — and every byte of the file
+    // crosses the bridge
+    await exportText(allDataFileName(), JSON.stringify(Persist.exportAll()), "application/json", t("dlg.exportAll"));
   }
   async function importAllDataText(text) {
     let doc = null;
     try { doc = JSON.parse(text); } catch (_) { doc = null; }
     if (!Persist.isProfileDoc(doc)) { toast(t("msg.allData.badFile"), "fix"); return; }
     Persist.restoreAll(doc);
+    // v8-0-plan F3: the page still stands on the old profile until the reload
+    // below, and the reload's own beforeunload saveGame() wrote that old game
+    // over the imported save — the one key that never came back equal. Freeze
+    // writes as recover() does after a restore; the flush still runs.
+    Persist.freeze();
     await Persist.flushMirror();
     toast(t("msg.allData.imported"));
     // every module holds a copy of what it read at startup; a reload is the

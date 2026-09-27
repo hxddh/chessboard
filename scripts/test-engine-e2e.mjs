@@ -312,15 +312,18 @@ async function selftestPage(prefix, { appdataWrite = "ok", reloads = 0 } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript((writeMode) => {
     window.__report = null;
-    let file = null; // base64 of chessboard.json, or null when there is none
+    // base64 of each native file, by store key ("" is chessboard.json) —
+    // v8-0-plan F3: the profile and the self-test's own key are separate files
+    const files = new Map();
     window.zero = {
       invoke: async (name, args) => {
         if (name === "chess.selftestMode") return { on: true };
         if (name === "chess.selftestReport") { window.__report = args; return {}; }
-        if (name === "chess.appdataRead") return file == null ? { missing: true } : { b64: file };
+        const key = (args && args.key) || "";
+        if (name === "chess.appdataRead") return files.has(key) ? { b64: files.get(key) } : { missing: true };
         if (name === "chess.appdataWrite") {
           if (writeMode === "reject") return { error: "io" };
-          file = args.b64;
+          files.set(key, args.b64);
           return { ok: true };
         }
         throw new Error("not in this stand-in: " + name);
