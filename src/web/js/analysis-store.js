@@ -74,17 +74,34 @@ export function find(list, fen, sans) {
 }
 
 /**
+ * Which way of analysing produced `an`: 1 for every record through 7.9
+ * (`go movetime`, three marks), 2 for v8-0-plan B2's (a node count from a
+ * cleared engine, the ?! moves searched again deeper, every move graded —
+ * app.js analyzeGame writes `v: 2`). The key and the shape did not change,
+ * so a v1 record still loads and still shows what it measured; the version
+ * is what stops it being read as a v2 one: the review shows grades and v2's
+ * accuracy only for `v: 2`.
+ */
+export function methodOf(an) {
+  return an && an.v === 2 ? 2 : 1;
+}
+
+/**
  * File `an` for this line, replacing an earlier one for the same line, and
  * evict the oldest until both caps hold. A shallower result never replaces
  * a deeper one: a 分析 run after a 精析 of the same game would otherwise
- * quietly downgrade what a reload shows.
+ * quietly downgrade what a reload shows. Across methods the newer one wins
+ * whatever its budget — a 7.9 精析 at 400 ms is not deeper than a B2 分析 in
+ * any sense that matters, and keeping it would keep a game ungraded — and an
+ * older method never replaces a newer one.
  * @returns {object[]} the new list (the input is not changed)
  */
 export function put(list, fen, sans, an, now) {
   const k = keyOf(fen, sans);
   const text = (sans || []).join(" ");
   const old = (list || []).find((x) => x.k === k && x.fen === fen && x.sans === text);
-  if (old && (old.an.budget || 0) > (an.budget || 0)) return list;
+  if (old && methodOf(old.an) > methodOf(an)) return list;
+  if (old && methodOf(old.an) === methodOf(an) && (old.an.budget || 0) > (an.budget || 0)) return list;
   const rec = Object.assign({}, an);
   delete rec.sig;
   const out = (list || []).filter((x) => x !== old);
@@ -95,4 +112,4 @@ export function put(list, fen, sans, an, now) {
   return out;
 }
 
-export const ChessAnalysisStore = { MAX_ANALYSES, MAX_CHARS, keyOf, load, dump, find, put };
+export const ChessAnalysisStore = { MAX_ANALYSES, MAX_CHARS, keyOf, load, dump, find, put, methodOf };

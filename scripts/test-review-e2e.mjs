@@ -100,11 +100,14 @@ await page.evaluate(() => {
   // window.__chess is the app's declared test seam (see app.js) — the modules
   // stopped being globals in 1.25, so the hook says so out loud now.
   window.__chess.engine.isReady = () => true;
+  // keyed by position (v8-0-plan B2: the pass asks some positions twice)
+  const seen = new Map();
   window.__chess.engine.analyze = async (fen) => {
     const turn = fen.split(" ")[1];
+    if (!seen.has(fen)) seen.set(fen, i++);
     // level for the opening, then decisively White — the swing makes a tagged
     // move, which is what the best-move arrow keys off
-    const cpWhite = i++ >= 5 ? 900 : 20;
+    const cpWhite = seen.get(fen) >= 5 ? 900 : 20;
     return { cp: turn === "w" ? cpWhite : -cpWhite, mate: null, turn, best: "d1h5", pv: ["d1h5"] };
   };
 });
@@ -221,8 +224,8 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
 // already said both accuracies. Now: the two accuracies as the card's
 // headline, then one small table — a row per mark, a column per side, the
 // counts in the marks' own colours — and the caveats as a footnote. Only the
-// marks the analysis has: no 「妙着 / 好棋」 rows, which this model has no
-// basis for. The exported picture still draws sideRows(), the same numbers.
+// marks the analysis has (v8-0-plan B2 adds the grades, checked below). The
+// exported picture still draws sideRows(), the same numbers.
 {
   const r = await page.evaluate(() => {
     const t = document.querySelector("#review-body .rv-table");
@@ -254,8 +257,12 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
       "every row has a value for both sides");
     const hs = [...new Set(r.rows.map((x) => x.h))];
     assert(hs.every((h) => h < 30), "every row is one line (" + hs.join(", ") + "px)");
-    assert(!r.rows.some((x) => /妙|好棋|最佳|brilliant|best/i.test(x.k)),
-      "no category the model does not have");
+    // v8-0-plan B2: the model now has the finer grades. 妙着 / 仅此一着 / 错失良机
+    // get a row only when one happened (this stub engine gives one line, so
+    // none can); 最佳 · 优秀 · 良好 · 谱着 are one count line a side under the table
+    assert(!r.rows.some((x) => /妙|仅此|错失/.test(x.k)), "no praise row for a grade that did not happen");
+    const fine = r.notes.filter((n) => /最佳 \d+ · 优秀 \d+ · 良好 \d+ · 谱着 \d+/.test(n));
+    assert(fine.length === 2, "one 最佳 · 优秀 · 良好 · 谱着 count line per side (" + fine.join(" | ") + ")");
     // a seven-move game: the sample caveat is one line, said once
     const short = r.notes.filter((n) => /只分析了/.test(n));
     assert(short.length === 1, "「只分析了 N 着」 is one footnote, not one per side (" + short.length + ")");
@@ -283,9 +290,13 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
     // White-relative evals; the engine reports from the side to move, so flip
     // for Black. 300 → -400 across ply 2 is a 700cp loss by White: 「??」.
     const W = [20, 20, 300, -400, -380, -390, -1200, -1210];
+    // v8-0-plan B2: keyed by position, not by call — the pass searches the
+    // positions around a mark a second time, deeper, and must get the same story
+    const seen = new Map();
     window.__chess.engine.analyze = async (fen) => {
       const turn = fen.split(" ")[1];
-      const w = W[Math.min(i++, W.length - 1)];
+      if (!seen.has(fen)) seen.set(fen, i++);
+      const w = W[Math.min(seen.get(fen), W.length - 1)];
       return { cp: turn === "w" ? w : -w, mate: null, turn, best: "d1h5", pv: ["d1h5"] };
     };
   });
@@ -844,9 +855,11 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     // 一份不吃 CPU 的评估:每个局面给一个跟着手数走的分数,曲线就有起伏
     await pgC.evaluate(() => {
       let n = 0;
+      const seen = new Map(); // by position: the pass asks some twice (v8-0-plan B2)
       window.__chess.engine.analyze = async (fen) => {
         const turn = fen.split(" ")[1];
-        const cp = ((n++ % 9) - 4) * 30;
+        if (!seen.has(fen)) seen.set(fen, n++);
+        const cp = ((seen.get(fen) % 9) - 4) * 30;
         return { cp: turn === "w" ? cp : -cp, mate: null, turn, best: "e2e4", pv: ["e2e4"],
           lines: [{ cp, mate: null, pv: ["e2e4"], depth: 12 }] };
       };
@@ -903,9 +916,11 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const { pgC } = await readyPage();
     await pgC.evaluate(() => {
       let n = 0;
+      const seen = new Map(); // by position: the pass asks some twice (v8-0-plan B2)
       window.__chess.engine.analyze = async (fen) => {
         const turn = fen.split(" ")[1];
-        const cp = n++ < 31 ? 150 : -600;
+        if (!seen.has(fen)) seen.set(fen, n++);
+        const cp = seen.get(fen) < 31 ? 150 : -600;
         return { cp: turn === "w" ? cp : -cp, mate: null, turn, best: "e2e4", pv: ["e2e4"] };
       };
     });

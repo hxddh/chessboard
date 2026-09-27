@@ -64,7 +64,10 @@
    */
   const INACCURACY = 50, MISTAKE = 100, BLUNDER = 300;
   /** Win-% accuracy cut-offs for the one-line verdict — see verdictKey (6.1). */
-  const VERDICT_EXCELLENT = 94, VERDICT_SOLID = 86;
+  // v8-0-plan B2: 94 / 86 → 95 / 87. The accuracy became lichess's full
+  // formula, whose "+ 1" bonus lifts a uniform game one point; the lines stay
+  // at the same play (14 and 36 cp a move), which is what they are pinned to.
+  const VERDICT_EXCELLENT = 95, VERDICT_SOLID = 87;
 
   /**
    * How many of a side's own moves have to be measured before the report is
@@ -248,8 +251,8 @@
     // club game, scored 81 on the old scale ("solid") and 90 on the new one,
     // which the unchanged cut-off read as "excellent". The numbers below are
     // where the win-% curve sits at the same play the old ones described:
-    // 90 on the cp curve is 14 cp/move, which is 94 on this one; 75 is
-    // 36 cp/move, which is 86. Measured by scripts/test-review-winpct.mjs.
+    // 90 on the cp curve is 14 cp/move, which is 94 on this one (95 under v8-0-plan B2's lichess formula); 75 is
+    // 36 cp/move, which is 86 (87). Measured by scripts/test-review-winpct.mjs.
     const c = summary.counts[side];
     const enough = !summary.judged || summary.judged[side] >= MIN_JUDGED;
     if (!enough && c.blunder === 0 && c.mistake < 3) return "rv.verdict.tooShort";
@@ -356,30 +359,104 @@
 
   /**
    * One move's accuracy from the win percentage before and after it, both
-   * from the mover's side. lichess: 103.1668 · e^(−0.04354·drop) − 3.1669,
-   * clamped to 0–100; a move that loses nothing is 100.
+   * from the mover's side. lichess (modules/analyse AccuracyPercent.scala,
+   * fromWinPercents): 103.1668… · e^(−0.043544…·drop) − 3.16692… + 1, clamped
+   * to 0–100; a move that loses nothing is 100. The "+ 1" is lichess's own
+   * "uncertainty bonus (due to imperfect analysis)". The formula is taken
+   * whole (v8-0-plan B2); 6.0 had copied it without that term.
    * @param {number} before mover's win % before the move
    * @param {number} after  mover's win % after it
    */
   function accuracyFromWinPct(before, after) {
     if (before == null || after == null) return null;
     if (after >= before) return 100;
-    const raw = 103.1668 * Math.exp(-0.04354 * (before - after)) - 3.1669;
+    const raw = 103.1668100711649 * Math.exp(-0.04354415386753951 * (before - after)) - 3.166924740191411 + 1;
     return Math.max(0, Math.min(100, raw));
   }
 
   /**
-   * summarize(), with the win-percentage measures: `acc` is the plain mean of
-   * per-move accuracies (lichess also weights by volatility; not done here),
-   * `drop` the mean points given away, `counts` and `worst` use the
-   * win-percentage cut-offs. Same shape and the same side rule, so a caller
-   * can swap one for the other.
+   * lichess's win % for the accuracy figure: the same curve as winPct, but on
+   * a centipawn value first clamped to ±1000, mates included (scalachess
+   * WinPercent.fromCentiPawns on `Cp.ceiled`, mates via `forceAsCp`). The
+   * classification keeps winPct — its cut-offs were measured on it.
+   */
+  function accuracyWinPct(cp) {
+    if (cp == null || !Number.isFinite(cp)) return null;
+    const c = Math.max(-1000, Math.min(1000, cp));
+    return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1);
+  }
+
+  /**
+   * Both sides' game accuracy, lichess's full formula (v8-0-plan B2). Up to
+   * 7.9 this module took the plain mean of the per-move figures and said so.
+   *
+   * Ported line for line from AccuracyPercent.gameAccuracy:
+   *   - the win % track is every evaluation, the start position's included;
+   *   - window = ⌊moves / 10⌋ clamped to 2..8; every move is weighted by the
+   *     population standard deviation of the win % over the window ending at
+   *     it (the first few share the first window), clamped to 0.5..12 — so a
+   *     move made while the game was swinging counts more than one in a dead
+   *     position, where any move is "accurate";
+   *   - per side: (volatility-weighted mean + harmonic mean) / 2, the harmonic
+   *     mean taken over max(1, accuracy) — it is what makes one blunder in an
+   *     otherwise perfect game cost far more than a plain mean would;
+   *   - a move whose before/after, or any evaluation in its window, is
+   *     unmeasured is left out, as lichess leaves out a missing eval.
+   * lichess prepends its fixed initial evaluation (15 cp); here `scalars[0]`
+   * is the start position as actually measured, which is also right for a
+   * game that starts from a FEN.
+   *
+   * @param {Array<number|null>} scalars evaluation (cp, White's view) before
+   *   ply 0, then after each ply
+   * @param {"w"|"b"} firstMover
+   * @returns {{w: number|null, b: number|null}} unrounded, 0..100
+   */
+  function gameAccuracy(scalars, firstMover) {
+    const out = { w: null, b: null };
+    if (!scalars || scalars.length < 2) return out;
+    const wins = scalars.map(accuracyWinPct);
+    const moves = wins.length - 1;
+    const size = Math.max(2, Math.min(8, Math.floor(moves / 10)));
+    const windows = [];
+    for (let k = 0; k < Math.min(size, wins.length) - 2; k++) windows.push(wins.slice(0, size));
+    // Scala's sliding: a list shorter than the window is one window
+    if (wins.length <= size) windows.push(wins.slice());
+    else for (let k = 0; k + size <= wins.length; k++) windows.push(wins.slice(k, k + size));
+    const weightOf = (xs) => {
+      if (xs.some((x) => x == null)) return null;
+      const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+      const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) * (x - mean), 0) / xs.length);
+      return Math.max(0.5, Math.min(12, sd));
+    };
+    const per = { w: [], b: [] };
+    for (let i = 0; i < moves && i < windows.length; i++) {
+      const p = wins[i], n = wins[i + 1], w = weightOf(windows[i]);
+      if (p == null || n == null || w == null) continue;
+      const white = (i % 2 === 0) === (firstMover !== "b");
+      per[white ? "w" : "b"].push([white ? accuracyFromWinPct(p, n) : accuracyFromWinPct(n, p), w]);
+    }
+    for (const s of ["w", "b"]) {
+      const xs = per[s];
+      if (!xs.length) continue;
+      const sw = xs.reduce((a, [, w]) => a + w, 0);
+      const weighted = xs.reduce((a, [acc, w]) => a + acc * w, 0) / sw;
+      const harmonic = xs.length / xs.reduce((a, [acc]) => a + 1 / Math.max(1, acc), 0);
+      out[s] = (weighted + harmonic) / 2;
+    }
+    return out;
+  }
+
+  /**
+   * summarize(), with the win-percentage measures: `acc` is lichess's game
+   * accuracy (gameAccuracy above), `drop` the mean points given away,
+   * `counts` and `worst` use the win-percentage cut-offs. Same shape and the
+   * same side rule, so a caller can swap one for the other.
    * @returns {object|null}
    */
   function summarizeWinPct(scalars, history, firstMover) {
     if (!scalars || scalars.length < 2 || !history || !history.length) return null;
     const side = (i) => ((i % 2 === 0) === (firstMover !== "b") ? "w" : "b");
-    const drops = { w: [], b: [] }, accs = { w: [], b: [] };
+    const drops = { w: [], b: [] };
     const counts = { w: { inaccuracy: 0, mistake: 0, blunder: 0 }, b: { inaccuracy: 0, mistake: 0, blunder: 0 } };
     let worst = null;
     for (let i = 0; i < history.length; i++) {
@@ -387,9 +464,7 @@
       if (before == null || after == null) continue;
       const s = side(i);
       const drop = winPctDrop(before, after, s);
-      const wb = winPct(before), wa = winPct(after);
       drops[s].push(drop);
-      accs[s].push(s === "w" ? accuracyFromWinPct(wb, wa) : accuracyFromWinPct(100 - wb, 100 - wa));
       const tag = classifyByWinPct(drop);
       if (tag === "??") counts[s].blunder++;
       else if (tag === "?") counts[s].mistake++;
@@ -400,8 +475,9 @@
     }
     const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
     const acc = {}, drop = {};
+    const ga = gameAccuracy(scalars.slice(0, history.length + 1), firstMover);
     for (const s of ["w", "b"]) {
-      const a = mean(accs[s]), d = mean(drops[s]);
+      const a = ga[s], d = mean(drops[s]);
       acc[s] = a == null ? null : Math.round(a);
       drop[s] = d == null ? null : Math.round(d * 10) / 10;
     }
@@ -426,6 +502,7 @@
     lossOf, accuracyOf, lossesBySide,
     INACCURACY, MISTAKE, BLUNDER, MIN_JUDGED,
     winPct, winPctDrop, classifyByWinPct, accuracyFromWinPct, summarizeWinPct,
+    accuracyWinPct, gameAccuracy,
     WIN_INACCURACY, WIN_MISTAKE, WIN_BLUNDER,
     VERDICT_EXCELLENT, VERDICT_SOLID, EVAL_WINDOW,
   };

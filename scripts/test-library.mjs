@@ -227,6 +227,22 @@ const T0 = 1758000000000;
     "超过大小上限，也是最旧的先出去，最新的一条总在", String(big.length));
   assert(S.load(null).length === 0 && S.load({ v: 1, list: [{ k: "x" }, null] }).length === 0 &&
     S.load(S.dump(list)).length === 1, "读回来时认不出的形状直接丢掉");
+
+  // v8-0-plan B2：7.9 以前的分析（定时搜索、只有三种标记）和新的（定节点、加深、分级）
+  // 用同一个键存。旧的照样读得回来，但不能被当成新的读，也不能挡住新的
+  const v2 = (budget, n) => Object.assign(an(budget, n), { v: 2, grades: new Array(n).fill("best") });
+  let mixed = S.put([], START, ["d4", "d5"], an(400, 2), T0);
+  const legacy = S.find(mixed, START, ["d4", "d5"]);
+  assert(!!legacy && S.methodOf(legacy) === 1, "7.9 的精析仍能按原来的键取回，读出来是旧方法（v1）");
+  mixed = S.put(mixed, START, ["d4", "d5"], v2(200, 2), T0 + 1);
+  const now = S.find(mixed, START, ["d4", "d5"]);
+  assert(S.methodOf(now) === 2 && now.budget === 200 && mixed.length === 1,
+    "新方法的分析（200）替换旧方法的精析（400）：预算只在同一种方法之间比");
+  const back = S.put(mixed, START, ["d4", "d5"], an(400, 2), T0 + 2);
+  assert(back === mixed && S.methodOf(S.find(back, START, ["d4", "d5"])) === 2, "旧方法的结果永远不覆盖新方法的");
+  const deeper = S.put(mixed, START, ["d4", "d5"], v2(400, 2), T0 + 3);
+  assert(S.find(deeper, START, ["d4", "d5"]).budget === 400, "同是新方法，深的仍替换浅的");
+  assert(S.methodOf({ budget: 400 }) === 1 && S.methodOf(null) === 1, "没有 v 的记录一律算旧方法");
 }
 
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

@@ -2971,6 +2971,8 @@
     .rv-kind.t-soft td:not(.is-zero), .rv-mark.t-soft { color: var(--judge-soft); }
     .rv-kind.t-mid td:not(.is-zero), .rv-mark.t-mid { color: var(--judge-mid); }
     .rv-kind.t-bad td:not(.is-zero), .rv-mark.t-bad { color: var(--judge-bad); }
+    /* v8-0-plan B2: the praise grades (!! 妙着, ! 仅此一着) read in the win colour */
+    .rv-mark.t-good, .mvtag.t-good { color: var(--success); }
     .rv-mark { display: inline-block; min-width: 1.75em; font-weight: 600; }
     .rv-loss th, .rv-loss td { border-top: 1px solid var(--card-border); }
     .rv-loss th { color: var(--muted); }

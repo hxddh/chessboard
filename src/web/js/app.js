@@ -42,6 +42,8 @@ import { LOOK_DEFAULT, migrateLook, lookAttrs } from "./look.js";
 import { createRepertoireUI } from "./repertoire-ui.js";
 import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
+import { ChessReviewGrade as Grade } from "./review-grade.js";
+import { ChessReviewPass } from "./review-pass.js";
 import { ChessSrs } from "./srs.js";
 import { ChessPicker } from "./picker.js";
 import { createPersist } from "./persist.js";
@@ -4556,17 +4558,7 @@ import { createStore } from "./store.js";
    */
 
   /** UCI moves → SAN from `fen`, at most `max` of them; stops at the first illegal. */
-  function sansOf(fen, ucis, max) {
-    const out = [];
-    if (!Array.isArray(ucis)) return out;
-    const g = new Chess(fen);
-    for (const u of ucis.slice(0, max || 8)) {
-      const m = g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || "q" });
-      if (!m) break;
-      out.push(m.san);
-    }
-    return out;
-  }
+  function sansOf(fen, ucis, max) { return ChessReviewPass.sansOf(fen, ucis, max); }
   /** "胜率 62%" for a line scored from `turn`'s side. */
   function winLabel(l, turn) {
     const cp = l.mate != null ? (l.mate > 0 ? 100000 : -100000) : l.cp;
@@ -4831,65 +4823,24 @@ import { createStore } from "./store.js";
     store.session.analyzeAbort = false;
     store.session.analyzeProgress = "0/" + fens.length;
     setAnalyzeUI();
-    const scalars = new Array(fens.length).fill(null);
-    const pvs = new Array(fens.length).fill(null);
-    const linesAt = new Array(fens.length).fill(null);
-    // 7.8 §2: how deep the principal line went, for the desk's head
-    const depths = new Array(fens.length).fill(null);
-    // the engine's own choice at each position, UCI — this is what the board
-    // draws an arrow for when the move actually played was a mistake
-    const bests = new Array(fens.length).fill(null);
-    // Repetition count per position as the replay walks forward, so the
-    // terminal test below can tell fivefold (art. 9.6, the game is over) from
-    // threefold (art. 9.2, a player may claim and the game otherwise goes on).
-    const repSeen = new Map();
-    for (let i = 0; i < fens.length; i++) {
-      if (store.session.analyzeAbort) {
-        store.session.analyzing = false; store.session.analyzeAbort = false; store.session.analyzeProgress = "";
-        // keep whatever was already measured — a partial curve still helps
-        if (i > 1) {
-          store.session.analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
-          toast(t("msg.analysis.keptPrefix") + (i - 1) + t("msg.analysis.keptSuffix"));
-        } else toast(t("msg.analysis.stopped"));
-        sync();
-        return;
-      }
-      if (game.pgn() !== sig) { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
-      const probe = new Chess(fens[i]);
-      const repKey = Fide.positionKey(fens[i], probe);
-      const reps = (repSeen.get(repKey) || 0) + 1;
-      repSeen.set(repKey, reps);
-      // NOT probe.game_over(): chess.js ends the game at threefold and at the
-      // 50-move mark, both of which are only claimable under FIDE and which
-      // this app plays through everywhere else. Scoring those plies a flat 0
-      // dropped the curve to the axis mid-game and mis-tagged every move after
-      // it — the accuracy figure included. Same rule as naturalGameOver().
-      if (probe.in_checkmate()) scalars[i] = probe.turn() === "w" ? -10000 : 10000;
-      else if (Fide.positionFinished(probe, reps)) scalars[i] = 0;
-      else {
-        let e = null;
-        try { e = await ChessEngine.analyze(fens[i], perMove, { multipv: store.ui.multipv }); } catch (_) {}
-        if (game.pgn() !== sig) { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
-        scalars[i] = evalScalar(e);
-        // every line the engine gave, in SAN, with its score — the panel
-        // shows them under the principal one (v6-plan Q2.6)
-        if (e && Array.isArray(e.lines) && e.lines.length > 1) linesAt[i] = e.lines.map((l) => ({ cp: l.cp, mate: l.mate, pv: sansOf(fens[i], l.pv, 6) }));
-        if (e && typeof e.best === "string" && e.best.length >= 4) bests[i] = e.best;
-        if (e && Array.isArray(e.lines) && e.lines[0] && e.lines[0].depth) depths[i] = e.lines[0].depth;
-        // principal variation, converted to SAN for display
-        if (e && e.pv && e.pv.length) {
-          const pvProbe = new Chess(fens[i]);
-          const sans = [];
-          for (const uci of e.pv.slice(0, 5)) {
-            const m = pvProbe.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
-            if (!m) break;
-            sans.push(m.san);
-          }
-          if (sans.length) pvs[i] = sans.join(" ");
-        }
-      }
-      store.session.analyzeProgress = (i + 1) + "/" + fens.length;
-      setAnalyzeUI();
+    // v8-0-plan B2: the pass itself — every position at the budget, then the
+    // moves that matter again, deeper — is review-pass.js, so the measurement
+    // of its reproducibility runs this very code
+    const p = await ChessReviewPass.runPass({ fens, sans: h, budget: perMove, lines: store.ui.multipv, evalScalar,
+      analyze: (fen, b, o) => ChessEngine.analyze(fen, b, o),
+      halt: () => (game.pgn() !== sig ? "gone" : store.session.analyzeAbort ? "abort" : null),
+      progress: (d, n) => { store.session.analyzeProgress = d + "/" + n; setAnalyzeUI(); } });
+    const { scalars, pvs, bests, linesAt, depths } = p;
+    if (p.halted === "gone") { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
+    if (p.halted) {
+      store.session.analyzing = false; store.session.analyzeAbort = false; store.session.analyzeProgress = "";
+      // keep whatever was already measured — a partial curve still helps
+      if (p.at > 1) {
+        store.session.analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
+        toast(t("msg.analysis.keptPrefix") + (p.at - 1) + t("msg.analysis.keptSuffix"));
+      } else toast(t("msg.analysis.stopped"));
+      sync();
+      return;
     }
     // centipawn loss from the mover's perspective — the mover of ply i is the
     // side to move in fens[i] (FEN-start games may begin with black)
@@ -4906,7 +4857,14 @@ import { createStore } from "./store.js";
       // the same call (v6-plan Q2.5).
       return Review.classifyByWinPct(Review.winPctDrop(a, b, mover));
     });
-    store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, depths, budget: perMove, acc: accuracyFrom(fens, scalars) };
+    // v8-0-plan B2: the finer grades, 谱着 read off the ECO table (loaded here
+    // if nothing has asked for it yet — without it no move is called book)
+    try { await ChessEco.ready(); } catch (_) { /* graded without book moves */ }
+    p.book = Grade.bookPlies(fens, (f) => !!ChessEco.lookupPosition(new Chess(f)));
+    // `v: 2` marks a node-limited, deepened, graded pass: analysis-store.js
+    // never lets an earlier record (timed, ungraded) stand in for one
+    store.session.analysis = { sig, scalars, tags, pvs, bests, linesAt, depths, budget: perMove, acc: accuracyFrom(fens, scalars),
+      v: 2, seconds: p.seconds, deep: p.deep.flatMap((d, i) => (d ? [i] : [])), grades: Grade.gradeMoves(p, Chess) };
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
     fileAnalysis(fens[0], h, store.session.analysis);
@@ -5254,10 +5212,16 @@ import { createStore } from "./store.js";
     const worstBest = sum.worst && a.bests ? a.bests[sum.worst.ply] : null;
     const cand = sum.worst && worstBest ? worstDrill(sum.worst, worstBest) : null;
     const banked = !!cand && store.session.mines.some((m) => m.id === cand.id);
+    // v8-0-plan B2: grades only where the pass measured them (`v: 2`); an
+    // earlier record keeps its three marks, and its moments come from those
+    const graded = a.v === 2 && Array.isArray(a.grades) ? a.grades : null;
+    const gc = graded && Grade.countGrades(graded, firstMover);
+    const moments = Grade.keyMoments({ sans: sanHistory(), scalars: a.scalars, bests: a.bests, seconds: a.seconds || [] },
+      graded, firstMover, boardMoveNo);
     // 7.6 lesson: this runs on every sync, and rebuilding the card swapped the
     // turning-point button under a pointer that was mid-press. Rebuilt only
     // when something it shows has changed.
-    const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured,
+    const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured, gc, moments,
       sum.worst && [sum.worst.ply, Math.round(sum.worst.drop)], soft, store.ui.langId,
       store.session.mode, store.session.humanColor, !!worstBest, banked, sanHistory().length,
       (a.tags || []).join(","), a.budget || 0]);
@@ -5299,9 +5263,9 @@ import { createStore } from "./store.js";
     // around it, still carries it — report.js.)
 
     // --- the marks, per side: a small table, coloured by the marks' scale --
-    // Only the three marks the analysis has. Other products grade moves as
-    // brilliant / best / good; this model has no basis for any of those, and
-    // a category drawn without one is a misleading number (v7-7-plan §5).
+    // v7-7-plan §5 drew only the three marks: 7.9 had no basis for 妙着 or
+    // 最佳. v8-0-plan B2 grades from a deeper MultiPV search (review-grade.js),
+    // and the grades join the marks below — still only where one happened.
     const table = document.createElement("table");
     table.className = "rv-table";
     const tr = (cells, head) => {
@@ -5332,6 +5296,19 @@ import { createStore } from "./store.js";
       for (const td of row.querySelectorAll("td")) td.classList.toggle("is-zero", td.textContent === "0");
       tbody.appendChild(row);
     }
+    // v8-0-plan B2: the grades an engine confirms, as rows beside the marks —
+    // only when one happened (the rest are the footnote's count line below)
+    for (const [g, mark, cls] of [["brilliant", "!!", "t-good"], ["only", "!", "t-good"], ["miss", "", "t-mid"]]) {
+      if (!gc || !(gc.w[g] + gc.b[g])) continue;
+      const lab = document.createDocumentFragment();
+      const m = document.createElement("span");
+      m.className = "rv-mark " + cls;
+      m.textContent = mark;
+      lab.append(m, document.createTextNode(t(Grade.LABEL[g])));
+      const row = tr([lab, String(gc.w[g]), String(gc.b[g])]);
+      row.className = "rv-grade " + cls;
+      tbody.appendChild(row);
+    }
     const n = (x) => (x == null ? "—" : String(x));
     const lossRow = tr([t("rv.acpl"), n(sum.acpl.w), n(sum.acpl.b)]);
     lossRow.className = "rv-loss";
@@ -5357,22 +5334,29 @@ import { createStore } from "./store.js";
       if (vk) notes.push(sideName(side) + " · " + t(vk));
     }
     if (short) notes.unshift(tf("rv.verdict.tooShort", [sum.measured]));
+    // v8-0-plan B2: the unremarkable grades, one count line a side
+    for (const side of gc ? ["w", "b"] : []) {
+      notes.push(sideName(side) + " · " + ["best", "excellent", "good", "book"].map((g) => t(Grade.LABEL[g]) + " " + gc[side][g]).join(" · "));
+    }
     for (const txt of notes) {
       const note = line("review-note muted");
       note.textContent = txt;
     }
 
-    if (sum.worst) {
+    // v8-0-plan B2: three key moments a side, largest swing first, where the
+    // single turning point was (the review view, A4, lays them out properly)
+    if (moments.w.length + moments.b.length) line("review-note muted").textContent = t("rv.keyMoments");
+    for (const m of moments.w.concat(moments.b)) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "review-jump";
-      btn.textContent = tf("rv.turningPoint",
-        [sum.worst.moveNo, sideName(sum.worst.side), sum.worst.san,
-         Math.round(sum.worst.drop)]);
+      btn.textContent = tf("rv.keyMoment", [m.moveNo, sideName(m.side), m.san, t(Grade.LABEL[m.grade]), Math.round(m.swing)]);
       btn.title = t("rv.jumpTip");
       // land on the position *after* the move, so the damage is on the board
-      btn.onclick = () => setViewIndex(sum.worst.ply + 1);
+      btn.onclick = () => setViewIndex(m.ply + 1);
       el.appendChild(btn);
+    }
+    if (sum.worst) {
       // …and one press away from never repeating it: the same drill the
       // automatic miner would make, banked by hand. Any game qualifies here —
       // the "games with a you" gate is the auto-miner's, not this button's:
@@ -7248,7 +7232,11 @@ import { createStore } from "./store.js";
     // those nodes, on the mainline or off it
     const a = analysisFor();
     const tagOf = new Map();
-    if (a && a.tags) store.game.line.forEach((id, k) => { if (k > 0 && a.tags[k - 1]) tagOf.set(id, a.tags[k - 1]); });
+    // v8-0-plan B2: a graded pass also hangs !! (妙着) and ! (仅此一着) off a move
+    if (a && a.tags) store.game.line.forEach((id, k) => {
+      const mk = k > 0 ? a.tags[k - 1] || (a.v === 2 && a.grades && Grade.GLYPH[a.grades[k - 1]]) : null;
+      if (mk) tagOf.set(id, mk);
+    });
     const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
     // the current move carries the menu handle, whose name is a translated
     // string — so its signature carries the language, or a switch to English
@@ -7318,7 +7306,7 @@ import { createStore } from "./store.js";
       const tag = softFiltered(tagOf.get(n.id));
       if (tag) {
         const span = document.createElement("span");
-        span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : "t-soft");
+        span.className = "mvtag " + (tag === "??" ? "t-bad" : tag === "?" ? "t-mid" : tag[0] === "!" ? "t-good" : "t-soft");
         span.textContent = tag;
         b.appendChild(span);
       }

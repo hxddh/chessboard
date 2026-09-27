@@ -35,6 +35,11 @@
  *   15 为什么          9. a3's reason names 捉双 and 车; 再试一次 marks a3 wrong
  *                      and the engine's move right
  *
+ * v8-0-plan B2 added:
+ *
+ *   16 复盘可复现      the same game analysed twice, the second engine dirtied
+ *                      first: identical scalars and grades, `go nodes`, deepened
+ *
  * Each scenario gets a fresh browser context, so one flow's engine state
  * cannot carry the next. Only key results are asserted: what the engine says
  * varies run to run, the fact that it reaches the page does not.
@@ -1040,6 +1045,42 @@ await scenario("再试一次·重新分析", async () => {
   assert(gone && a === b, "重新分析：练习框收起，棋盘上画的是复盘的局面，不是练习里走的那一步", JSON.stringify({ gone, same: a === b }));
   assert(!errs.length, "再试一次·重新分析：页面没有报错", errs.join(" / "));
   await ctx.close();
+});
+
+// v8-0-plan B2: the same game analysed twice — two fresh pages, the second
+// one's engine first sent through unrelated searches — gives the same
+// numbers and the same grades. Through 7.9 (`go movetime`) it did not.
+await scenario("复盘可复现", async () => {
+  const one = async (dirty) => {
+    const { ctx, page, errs } = await openPage({ mode: "pvp" });
+    if (dirty) {
+      await page.evaluate(async () => {
+        for (const f of ["r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4", "8/5pk1/6p1/8/3R4/6P1/5PKP/2r5 b - - 0 40"]) {
+          await window.__chess.engine.analyze(f, 150, { multipv: 4 });
+        }
+      });
+    }
+    await openPgn(page, TRAP);
+    const ms = await runAn(page, "#an-run", 90000);
+    const an = await page.evaluate(() => {
+      const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+      const e = kept && kept.list && kept.list[kept.list.length - 1];
+      return e ? { v: e.an.v, scalars: e.an.scalars, grades: e.an.grades, tags: e.an.tags, deep: e.an.deep } : null;
+    });
+    const uci = await page.evaluate(() => window.__uci || []);
+    await ctx.close();
+    return { an, ms, errs, uci };
+  };
+  const a = await one(false), b = await one(true);
+  assert(!!a.an && a.an.v === 2 && Array.isArray(a.an.grades) && a.an.grades.every((g) => typeof g === "string"),
+    "复盘可复现：分析存下的是新方法（v 2），每一手都有分级", JSON.stringify(a.an && a.an.grades));
+  assert(!!b.an && JSON.stringify(a.an.scalars) === JSON.stringify(b.an.scalars) && JSON.stringify(a.an.grades) === JSON.stringify(b.an.grades),
+    "复盘可复现：同一局两遍（第二遍前引擎先搜过别的局面），逐点评估与分级完全相同",
+    JSON.stringify({ a: a.an && a.an.grades, b: b.an && b.an.grades }));
+  assert(a.an.deep && a.an.deep.length > 0 && a.uci.some((c) => /^go nodes \d+$/.test(c)) && !a.uci.some((c) => /^go movetime/.test(c)),
+    "复盘可复现：搜索是定节点（go nodes），有着法被加深", JSON.stringify({ deep: a.an.deep }));
+  console.log("  分析 TRAP（13 手）用时 " + (a.ms / 1000).toFixed(1) + " s / " + (b.ms / 1000).toFixed(1) + " s");
+  assert(!a.errs.length && !b.errs.length, "复盘可复现：页面没有报错", a.errs.concat(b.errs).join(" / "));
 });
 
 await browser.close();
