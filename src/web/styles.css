@@ -334,7 +334,11 @@
       --board-edge: rgba(60,34,12,.30);
       --sq-light: #f0d9b5;
       --sq-dark: #b58863;
-      --sq-sel: rgba(0, 150, 0, var(--mark-mid));
+      /* 7.9 §3: darker, not louder — over the light square C* 56.9 → 42.3,
+         L* 67.9 → 62.6; the hue moves onto the last move's (133° → 124°,
+         last 121°) and the two stay apart by lightness: closest ΔE00 on
+         this board 10.9 → 12.2 (docs/measured.json markChroma, markHue) */
+      --sq-sel: rgba(30, 110, 0, var(--mark-mid));
       /* 7.8 §6: a yellower, quieter green — over the light square C* 54.1 →
          43.9 (Lichess's own last move, measured the same way: 52.4), hue
          term 3.1 → 4.2 (ceiling 5), still ΔE00 18 from the bare square
@@ -410,9 +414,12 @@
       --board-edge: rgba(90,66,36,.26);
       --sq-light: #eddcc0;
       --sq-dark: #c39a6b;
-      --sq-sel: rgba(0, 155, 0, var(--mark-mid));
+      /* 7.9 §3: selection C* 57.2 → 44.8 and a step darker (L* 69.1 →
+         64.8), so it parts from the last move by lightness — closest ΔE00
+         10.1 → 13.9; check C* 53.7 → 49.9 at the same hue */
+      --sq-sel: rgba(10, 125, 10, var(--mark-mid));
       --sq-last: rgba(0, 255, 45, var(--mark-soft));
-      --sq-check: rgba(255, 55, 20, var(--mark-mid));
+      --sq-check: rgba(235, 50, 20, var(--mark-mid));
       --sq-hint: rgba(0, 125, 255, var(--mark-mid));
       --sq-star: rgba(255, 227, 89, var(--mark-strong));
       --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
@@ -448,7 +455,9 @@
       --sq-sel: rgba(35, 65, 160, var(--mark-mid));
       --sq-last: rgba(30, 85, 240, var(--mark-soft));
       --sq-check: rgba(255, 35, 0, var(--mark-mid));
-      --sq-hint: rgba(0, 255, 60, var(--mark-mid));
+      /* 7.9 §3: the hint was the loudest colour in the app (C* 68.0); the
+         same green at the same lightness, C* 49.9 */
+      --sq-hint: rgba(70, 245, 100, var(--mark-mid));
       --sq-star: rgba(166, 110, 0, var(--mark-strong));
       --sq-star-edge: rgba(60, 40, 0, var(--mark-mid));
       --sq-flash: rgba(10, 191, 94, var(--mark-mid));
@@ -463,8 +472,8 @@
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
       /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
          (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(0, 255, 60, var(--mark-mid));
-      --engine-arrow-alt: rgba(0, 255, 60, var(--mark-soft));
+      --engine-arrow: rgba(70, 245, 100, var(--mark-mid));
+      --engine-arrow-alt: rgba(70, 245, 100, var(--mark-soft));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
     }
 

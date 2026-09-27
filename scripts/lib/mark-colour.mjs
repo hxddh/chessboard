@@ -182,6 +182,26 @@ export function measureMarks(css) {
 export const LICHESS_LAST = { mark: { r: 155, g: 199, b: 0, a: 0.41 }, light: { r: 240, g: 217, b: 181, a: 1 } };
 export const LAST_CHROMA_CEILING = 47;
 
+/**
+ * 7.9 §3: a ceiling on every mark, not only the last move. On 7.8.0 the
+ * selection ran to C* 56.9 (wood) and 57.2 (day) — louder than the last move
+ * it is meant to sit one step above — the day check to 53.7 and the notebook
+ * hint to 68.0, the most saturated colour in the app. One reference for all
+ * four: the two quiet marks (last move, selection) share the last-move
+ * ceiling; the two that are telling you something (check, hint) get the
+ * Lichess figure itself, rounded down. The selection is set apart from the
+ * last move by lightness, not by more colour — 7.8's markHue rule, small hue
+ * difference, large total difference — which SEP_FLOOR holds.
+ */
+export const CHROMA_CEILING = { last: LAST_CHROMA_CEILING, sel: LAST_CHROMA_CEILING, check: 52, hint: 52 };
+
+/**
+ * 7.9 §3: the smallest ΔE00 between two marks on the same square, per board,
+ * as 7.8.0 shipped it (docs/measured.json markHue, e94abfe). Quieter marks
+ * must not become closer marks: the retune may only hold or widen these.
+ */
+export const SEP_FLOOR = { wood: 10.9, night: 13, day: 10.1, notebook: 11 };
+
 /** C* of a composite, one decimal. */
 export function chroma(c) {
   const l = lab(c);

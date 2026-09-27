@@ -7,30 +7,36 @@
  *
  * Metric: CIEDE2000 (scripts/lib/mark-colour.mjs has the definition and why
  * the hue term is the one that is minimised). "before" is the stylesheet as
- * 7.6.0 shipped it (main 75a3560), read out of git, so the recorded pair is
- * reproducible from the repository alone; "after" is the working tree. The
- * chroma column's "before" is 7.7.0 (721fe05), the palette 7.8 retunes.
+ * 7.8.0 shipped it (main e94abfe), read out of git, so the recorded pair is
+ * reproducible from the repository alone; "after" is the working tree. 7.7
+ * recorded 7.6.0 (75a3560) as "before", 7.8 the chroma against 7.7.0
+ * (721fe05); 7.9 §3 retunes 7.8.0's palette, so both sections compare to it.
+ *
+ * 7.9 §3: the run also asserts — exit 1, and nothing recorded — that every
+ * mark sits under its chroma ceiling (CHROMA_CEILING) and that no board's
+ * closest two marks came closer than 7.8.0 had them (SEP_FLOOR).
+ * scripts/test-chess.mjs asserts the same against the same constants.
  */
 import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
-import { measureMarks, markChroma, chroma, over, BOARDS, MARKS, LICHESS_LAST, LAST_CHROMA_CEILING } from "./lib/mark-colour.mjs";
+import { measureMarks, markChroma, chroma, over, BOARDS, MARKS, LICHESS_LAST, CHROMA_CEILING, SEP_FLOOR } from "./lib/mark-colour.mjs";
 import { record, RECORDING } from "./measurements.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BEFORE_REF = "75a3560";
-const CHROMA_REF = "721fe05";
+const BEFORE_REF = "e94abfe";
+const CHROMA_REF = "e94abfe";
 
 const cssNow = fs.readFileSync(path.join(ROOT, "src/web/styles.css"), "utf8");
 const cssAt = (ref) => execFileSync("git", ["show", ref + ":src/web/styles.css"],
   { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 const after = measureMarks(cssNow);
 let before = null;
-try { before = measureMarks(cssAt(BEFORE_REF)); } catch { /* a shallow clone without 7.6.0: print what there is */ }
+try { before = measureMarks(cssAt(BEFORE_REF)); } catch { /* a shallow clone without 7.8.0: print what there is */ }
 const chromaAfter = markChroma(cssNow);
 let chromaBefore = null;
-try { chromaBefore = markChroma(cssAt(CHROMA_REF)); } catch { /* likewise without 7.7.0 */ }
+try { chromaBefore = markChroma(cssAt(CHROMA_REF)); } catch { /* likewise */ }
 const lichessC = chroma(over(LICHESS_LAST.mark, LICHESS_LAST.light));
 
 for (const b of BOARDS) {
@@ -39,33 +45,51 @@ for (const b of BOARDS) {
     const was = before ? before[b].marks[k] : null;
     console.log("  " + k.padEnd(6) + (was ? "dE " + was.dE + " → " : "dE ") + after[b].marks[k].dE +
       "   dH " + (was ? was.dH + " → " : "") + after[b].marks[k].dH +
-      "   C* on light " + (chromaBefore ? chromaBefore[b][k] + " → " : "") + chromaAfter[b][k]);
+      "   C* on light " + (chromaBefore ? chromaBefore[b][k] + " → " : "") + chromaAfter[b][k] +
+      " (≤ " + CHROMA_CEILING[k] + ")");
   }
   console.log("  closest two marks: ΔE00 " + (before ? before[b].sep + " → " : "") + after[b].sep +
-    " (" + after[b].sepPair + ")");
+    " (" + after[b].sepPair + "; ≥ " + SEP_FLOOR[b] + ")");
 }
 console.log("reference: Lichess's default board, last move over its light square, C* " + lichessC +
-  " — the last-move ceiling here is " + LAST_CHROMA_CEILING);
+  " — the ceilings here are last " + CHROMA_CEILING.last + ", sel " + CHROMA_CEILING.sel +
+  ", check " + CHROMA_CEILING.check + ", hint " + CHROMA_CEILING.hint);
+
+// 7.9 §3: all four ceilings, and the separation 7.8.0 had
+const failures = [];
+for (const b of BOARDS) {
+  for (const k of MARKS) {
+    if (!(chromaAfter[b][k] <= CHROMA_CEILING[k])) failures.push(b + " " + k + ": C* " + chromaAfter[b][k] + " > " + CHROMA_CEILING[k]);
+  }
+  if (!(after[b].sep >= SEP_FLOOR[b])) failures.push(b + ": closest two marks ΔE00 " + after[b].sep + " < " + SEP_FLOOR[b] + " (" + after[b].sepPair + ")");
+}
+if (failures.length) {
+  for (const f of failures) console.error("FAIL " + f);
+  process.exit(1);
+}
+console.log("ok: every mark under its chroma ceiling, every board's marks at least as far apart as 7.8.0");
 
 if (RECORDING) {
   record("markHue", {
     what: "每种棋盘标记叠在浅格与深格上的 CIEDE2000：dE 为整体色差（大半是明度，本就该不同），" +
-      "dH 为其中的色相项 ΔH'/(kH·SH)（要小）；sep 为同一格上两种不同标记之间的最小 ΔE00（要大）",
+      "dH 为其中的色相项 ΔH'/(kH·SH)（要小）；sep 为同一格上两种不同标记之间的最小 ΔE00（要大；7.9 §3：不得低于 7.8.0 的值，见 sepFloor）",
     script: "scripts/measure-marks.mjs --record",
     metric: "CIEDE2000, sRGB → CIELAB D65, kL = kC = kH = 1",
     marks: MARKS,
+    sepFloor: SEP_FLOOR,
     beforeRef: before ? BEFORE_REF : null,
     before,
     after,
   });
   record("markChroma", {
     what: "每种棋盘标记叠在浅格上的 CIELAB 色度 C*（越大越艳）。上一步标记的上限以 Lichess 默认棋盘的上一步高亮" +
-      "（rgba(155,199,0,.41) 叠在 #f0d9b5 上）为参照，取其约九成，不照抄数值",
+      "（rgba(155,199,0,.41) 叠在 #f0d9b5 上）为参照，取其约九成，不照抄数值；7.9 §3 给四种标记都定了上限：" +
+      "上一步、选中 ≤ 47，将军、提示 ≤ 52（参照值本身取整）",
     script: "scripts/measure-marks.mjs --record",
     metric: "C* = √(a*² + b*²)，sRGB → CIELAB D65；标记按 source-over 叠在 --sq-light 上",
     marks: MARKS,
     reference: { lichessLastOnLight: lichessC },
-    ceiling: { last: LAST_CHROMA_CEILING },
+    ceiling: CHROMA_CEILING,
     beforeRef: chromaBefore ? CHROMA_REF : null,
     before: chromaBefore,
     after: chromaAfter,
