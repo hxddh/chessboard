@@ -53,6 +53,23 @@ export const OUT = path.join(root, "src/web/js/bundle.js");
 // loads — ahead of bundle.js, to put the saved language's chunk on the page
 // before the first frame. `min` is sync-dist.mjs's "was it really built"
 // floor, per chunk now that they are not all the ECO table's size.
+/**
+ * v8-0-plan B1: the imported Lichess puzzles, one chunk per 200-point band.
+ * scripts/import-puzzles.mjs writes lichess/band-NNNN.js and an index that
+ * names the same bands; the list is read from the directory so an import
+ * needs no edit here. puzzle-db.js bandChunk() derives the same file and
+ * global names. No bands on disk (the database not imported yet), no chunks.
+ * @param {string} dir
+ */
+export function lichessChunks(dir) {
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => /^band-\d{4}\.js$/.test(f)).sort(); } catch { files = []; }
+  return files.map((f) => {
+    const n = f.slice(5, 9);
+    return { entry: path.relative(root, path.join(dir, f)).split(path.sep).join("/"), out: "src/web/js/chunk-lc-" + n + ".js", global: "LC_BAND_" + n, min: 1000 };
+  });
+}
+
 export const CHUNKS = [
   { entry: "src/web/js/eco.js", out: "src/web/js/chunk-eco.js", global: "ECO_BY_KEY", min: 400000 },
   { entry: "src/web/js/lang-en.js", out: "src/web/js/chunk-lang-en.js", global: "CHESS_I18N_EN", min: 150000 },
@@ -65,6 +82,7 @@ export const CHUNKS = [
   { entry: "src/web/js/pieces-celtic.js", out: "src/web/js/chunk-pieces-celtic.js", global: "CELTIC_PIECE_SVGS", min: 25000 },
   { entry: "src/web/js/pieces-spatial.js", out: "src/web/js/chunk-pieces-spatial.js", global: "SPATIAL_PIECE_SVGS", min: 30000 },
   { entry: "src/web/js/boot.js", out: "src/web/js/chunk-boot.js", global: null, boot: true, min: 500 },
+  ...lichessChunks(path.join(root, "src/web/js/lichess")),
 ];
 
 /**

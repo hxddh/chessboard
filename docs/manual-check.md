@@ -272,6 +272,84 @@
 
 ---
 
+## P. 8.0 B2：「妙着」「仅此一着」人工核对
+
+复盘在 v8-0-plan B2 里加了着法分级（`src/web/js/review-grade.js`，每一档的定义和门槛都写在那个文件的注释里）。其中「妙着」和「仅此一着」没有任何自动化能判断对不对 —— 引擎只能说「这步最好、别的都差很多」，这算不算一个人会叫好的着法，要人来看。
+
+两档的规则，简述（胜率都从走子方看，review.js `winPct`）：
+
+- **仅此一着**：走的是引擎首选；更深一遍的 MultiPV 3 搜索确认，次佳比它差 ≥ 10 个百分点，并且这一差跨过了结果线（首选 ≥ 70 而次佳 < 70，或首选 ≥ 30 而次佳 < 30）；只有一步合法着法、或在对方刚吃子的格子上吃回的，不算。
+- **妙着**：同样是引擎首选、加深确认、次佳差 ≥ 10、不是吃回或唯一合法着；并且沿引擎给的应着线，走子方在对方应着后、以及再下一个应着后，都少了 ≥ 2 个兵的子力（至少一个轻子换一个兵）；走后胜率 ≥ 50。不要求跨结果线（莫菲 16.Qb8+ 是两步杀，次佳只是「仍然 +3.6」）。
+
+**怎么核对**：把 FEN 摆上（本应用「局面编辑」或任意棋盘），看「着法」一栏那一步和右边的引擎线，在最后一栏勾「同意 / 不同意」判定。不同意的，在「记录格式」下写一行原因。「妙着」表的后半是**引擎首选、确实弃了子、但没有判成妙着**的着法，用来查漏判：如果你觉得其中哪一步该是妙着，勾「不同意」。
+
+**数据来源**：28 局测量语料（`scripts/fixtures/corpus.mjs`）加上读棋课里另外的名局（`classics.js`），按「分析」（预算 200，定节点）跑一遍 B2 流程。胜率三列依次是：走之前的局面（即引擎首选）、次佳线、走之后。1300 多手里判出的妙着只有 2 处 —— 规则是刻意严的，漏判比错判好查。
+
+#### 妙着（2 处判为妙着 + 29 处引擎首选的弃子没有判）
+
+| # | 对局 | 着法 | 走之前（FEN） | 胜率 最佳 / 次佳 / 走后 | 引擎给的应着线 | 加深搜索的三条线（MultiPV 3，走子方分值） | 判定 | 人工核对 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Morphy–Duke of Brunswick & Count Isouard | 16. Qb8+（白） | `4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 0 16` | 100 / 79.1 / 100 | Nxb8 Rd8# | 1) #2 Qb8+ Nxb8 Rd8#<br>2) 3.62 Qc3 f6 Qc8+ Ke7 Be3 h5<br>3) 2.88 Qb7 f6 Qc8+ Ke7 Be3 a6 | **妙着** | ☐ 同意 ☐ 不同意 |
+| 2 | Anderssen–Dufresne | 21. Qxd7+（白） | `1r2k1r1/pbppnp1p/1b3P2/8/Q7/B1PB1q2/P4PPP/3R2K1 w - - 0 21` | 100 / 0 / 100 | Kxd7 Bf5+ Ke8 Bd7+ | 1) #4 Qxd7+ Kxd7 Bf5+ Ke8 Bd7+ Kd8<br>2) #-3 Be4 Rxg2+ Kh1 Rg4+ Bxf3 Bxf3#<br>3) #-3 Qe4 Qxf2+ Kh1 Qxg2+ Qxg2 Bxg2# | **妙着** | ☐ 同意 ☐ 不同意 |
+| 3 | Morphy–Duke of Brunswick & Count Isouard | 13. Rxd7（白） | `3rkb1r/p2nqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR3R w k - 3 13` | 92.9 / 87.1 / 93.8 | Rxd7 Rd1 Qb4 Bxf6 | （没有加深，只有快扫：次佳 87.1） | 不是：快扫里次佳只差 5.8，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 4 | Anderssen–Kieseritzky | 22. Qf6+（白） | `r1bk2nr/p2p1pNp/n2B4/1p1NP2P/6P1/3P1Q2/P1P1K3/q5b1 w - - 1 22` | 100 / 100 / 100 | Nxf6 Be7# | （没有加深，只有快扫：次佳 100） | 不是：快扫里次佳只差 0，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 5 | Capablanca–Marshall | 15… Nxf2（黑） | `r1b2rk1/2p2ppp/p2b4/1p6/3P2nq/1BP2Q1P/PP3PP1/RNB1R1K1 b - d3 0 15` | 47 / 42 / 41.2 | Qxf2 Bh2+ Kf1 Bg3 | 1) -0.33 Nxf2 Qxf2 Bh2+ Kf1 Bg3 Qd2<br>2) -0.88 Bh2+ Kf1<br>3) -1.45 c5 Bf4 Bb7 Bg3 Qxg3 Qxg3 | 不是：加深后次佳只差 5（< 10） | ☐ 同意 ☐ 不同意 |
+| 6 | Capablanca–Marshall | 20. Ke2（白） | `r4rk1/2p2ppp/p7/1p6/3P2P1/1BP2Qb1/PP3RP1/RNB2K1q w - - 1 20` | 69.6 / — / 68.6 | Bxf2 | （没有加深，只有快扫：次佳 null） | 不是：快扫里次佳只差 —，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 7 | Capablanca–Marshall | 36. Bxf7+（白） | `5rk1/1P3pp1/R6p/3B4/6P1/2B1rQ2/2K3P1/6q1 w - - 1 36` | 96.8 / 94.3 / 100 | Rxf7 | 1) 9.27 Bxf7+ Rxf7<br>2) 7.64 Ra8 Rxc3+ Qxc3 Qb6 Rc8 Qf2+<br>3) 6.91 Bd4 Re2+ Qxe2 Qxd4 Ra8 Qf4 | 不是：加深后次佳只差 2.5（< 10） | ☐ 同意 ☐ 不同意 |
+| 8 | Capablanca–Marshall | 38. Rxh6+（白） | `1Q6/5rpk/R6p/8/6P1/2B1rQ2/2K3P1/6q1 w - - 1 38` | 100 / 100 / 100 | Kxh6 Qh8+ Kg6 Qh5# | （没有加深，只有快扫：次佳 100） | 不是：快扫里次佳只差 0，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 9 | Kasparov–Topalov | 26. Qxd4+（白） | `b2r3r/4Rp1p/pk1q1np1/Np1P4/3p1Q2/P4PPB/1PP4P/1K6 w - - 2 26` | 34 / 32.5 / 53 | Kxa5 Qc3+ Kb6 Qd4+ | （没有加深，只有快扫：次佳 32.5） | 不是：快扫里次佳只差 1.5，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 10 | Kasparov–Topalov | 29… Bb7（黑） | `b2r3r/R4p1p/p4np1/1p1q4/kP6/P1Q2PPB/2P4P/1K6 b - - 1 29` | 49.1 / 0.1 / 46.5 | Rxb7 | 1) -0.10 Bb7 Rxb7<br>2) -19.86 Rd6 Kb2 Qe5 Qxe5 Ne4 fxe4<br>3) #-5 Qd1+ Kb2 Qa1+ Kxa1 Rd1+ Kb2 | 不是：走后 46.5（< 50） | ☐ 同意 ☐ 不同意 |
+| 11 | Kasparov–Topalov | 36… Rd2（黑） | `3r3r/1R3p1p/6p1/1p6/2q5/5PP1/1Q5P/1K1k1B2 b - - 5 36` | 50.9 / 25.7 / 27.4 | Bxc4 Rxb2+ Kxb2 bxc4 | 1) 0.10 Rd2 Bxc4 Rxb2+ Kxb2 bxc4 Rxf7<br>2) -2.89 Ke1 Bxc4 Rd1+ Ka2 Ra8+ Kb3<br>3) -6.59 Rb8 Bxc4 bxc4 Rxb8 Rxb8 Qxb8 | 不是：走后 27.4（< 50） | ☐ 同意 ☐ 不同意 |
+| 12 | Kasparov–Topalov | 37… Rxd7（黑） | `7r/3R1p1p/6p1/1p6/2q5/5PP1/1Q1r3P/1K1k1B2 b - - 7 37` | 23.7 / 4.8 / 26.7 | Bxc4 | 1) -3.18 Rxd7 Bxc4<br>2) -8.14 Ke1 Rxd2 Rc8 Bxc4 Rxc4 Rc2<br>3) -12.12 Rd6 Rxd6+ Ke1 Bxc4 bxc4 Qxh8 | 不是：走后 26.7（< 50） | ☐ 同意 ☐ 不同意 |
+| 13 | Kasparov–Topalov | 38… bxc4（黑） | `7r/3r1p1p/6p1/1p6/2B5/5PP1/1Q5P/1K1k4 b - - 0 38` | 22.6 / 0 / 25.9 | Qxh8 | 1) -3.35 bxc4 Qxh8<br>2) #-2 Rd3 Bxd3 b4 Qc1#<br>3) #-1 Rd5 Qc1# | 不是：走后 25.9（< 50） | ☐ 同意 ☐ 不同意 |
+| 14 | Fischer–Spassky | 8… Nxd5（黑） | `rnbq1rk1/p1p1bpp1/1p2pn1p/3P4/3P3B/2N1PN2/PP3PPP/R2QKB1R b KQ - 0 8` | 48.7 / 46.2 / 49.6 | Bxe7 Qxe7 Nxd5 exd5 | （没有加深，只有快扫：次佳 46.2） | 不是：快扫里次佳只差 2.5，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 15 | Alekhine–Bogoljubov | 33. Nf2（白） | `5R2/2pb2pk/5n1p/5p2/2PPpP1P/3nP1P1/2pN2R1/3N2KB w - - 1 33` | 15.5 / 14.3 / 13.8 | c1=Q+ Nf1 Ne1 Rh2 | （没有加深，只有快扫：次佳 14.3） | 不是：快扫里次佳只差 1.2，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 16 | Alekhine–Bogoljubov | 37. Rxb5（白） | `1R6/2p3pk/5n1p/1b3p2/2qPpP1P/4P1P1/5N1R/4nNKB w - - 2 37` | 18.6 / 12.5 / 21.3 | Qxb5 g4 Kh8 gxf5 | （没有加深，只有快扫：次佳 12.5） | 不是：快扫里次佳只差 6.1，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 17 | Alekhine–Bogoljubov | 49. Kf2（白） | `8/7k/3p1p1p/7P/5P2/8/4p3/5NK1 w - - 0 49` | 16.3 / 6.9 / 17 | exf1=B Kxf1 Kg7 f5 | （没有加深，只有快扫：次佳 6.9） | 不是：快扫里次佳只差 9.4，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 18 | Reti–Alekhine | 7. Bd2（白） | `rnbqk2r/ppp2ppp/5n2/3p4/1b1N4/3Q2P1/PPP1PPBP/RNB1K2R w KQkq - 3 7` | 52 / 51.9 / 52 | Bxd2+ | （没有加深，只有快扫：次佳 51.9） | 不是：快扫里次佳只差 0.1，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 19 | Spassky–Fischer | 10… b5（黑） | `r1b1k2r/1pqnbppp/p2ppn2/6B1/3NPPP1/2N2Q2/PPP4P/2KR1B1R b kq g3 0 10` | 47.2 / 47.4 / 44.9 | Bxf6 | （没有加深，只有快扫：次佳 47.4） | 不是：快扫里次佳只差 -0.2，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 20 | Kasparov–Karpov | 14… Ne4（黑） | `2rq1rk1/pb2bppp/5n2/2ppB3/8/1PN3P1/P3PPBP/2RQ1RK1 b - - 0 14` | 43.8 / 43 / 43.1 | Nxe4 | （没有加深，只有快扫：次佳 43） | 不是：快扫里次佳只差 0.8，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 21 | Geller–Euwe | 26. Ke1（白） | `4n2Q/pb1p1kp1/5p1B/1p6/3P3R/Pq4N1/6rP/2R2K2 w - - 2 26` | 15.3 / 4.6 / 0 | Rxg3 d5 Bxd5 hxg3 | 1) -4.65 Ke1 Rxg3 d5 Bxd5 hxg3 Qxg3+<br>2) -8.21 Qxe8+ Kxe8 Rc8+ Bxc8 Re4+ Kf7<br>3) #-6 Qf8+ Kxf8 Bxg7+ Kf7 Bh6 Qf3+ | 不是：走后 0（< 50） | ☐ 同意 ☐ 不同意 |
+| 22 | Rotlewi–Rubinstein | 20… Ng4（黑） | `2rr2k1/1b2qppp/pb2pn2/1p2P3/1P3P2/P1NB4/1B2Q1PP/R4R1K b - - 2 20` | 77.7 / 69 / 78.9 | Qxg4 | （没有加深，只有快扫：次佳 69） | 不是：快扫里次佳只差 8.7，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 23 | Botvinnik–Portisch | 16… Bc6（黑） | `rn1qrbk1/1pR2ppp/8/p2bp3/Q7/P2PBNP1/1P2PPBP/2R3K1 b - - 0 16` | 22.4 / 20.9 / 23.1 | R1xc6 | （没有加深，只有快扫：次佳 20.9） | 不是：快扫里次佳只差 1.5，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 24 | Spassky–Petrosian | 6. e4（白） | `rnbqkb1r/pp3ppp/4p3/2pn4/3P4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 0 6` | 53.3 / 52.4 / 53.1 | Nxc3 | （没有加深，只有快扫：次佳 52.4） | 不是：快扫里次佳只差 0.9，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 25 | Bronstein–Keres | 10… b5（黑） | `r1b1k2r/1pqnbppp/p2ppn2/6B1/3NPPP1/2N2Q2/PPP4P/2KR1B1R b kq g3 0 10` | 47.2 / 47.4 / 44.9 | Bxf6 | （没有加深，只有快扫：次佳 47.4） | 不是：快扫里次佳只差 -0.2，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 26 | Tarrasch–Euwe | 11. O-O（白） | `r1b2rk1/pp1nqppp/2p1p3/3n4/2BP4/2N1PN2/PP3PPP/2RQK2R w K - 0 11` | 52.8 / 52.6 / 52.8 | Nxc3 | （没有加深，只有快扫：次佳 52.6） | 不是：快扫里次佳只差 0.2，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 27 | 伊曼纽尔·拉斯克–约翰·鲍尔 | 14. Nh5（白） | `r4rk1/1b2bppp/ppq1pn2/2ppB3/5P2/1P1BP1N1/P1PPQ1PP/R4RK1 w - - 0 14` | 60.4 / 53.8 / 64.6 | Nxh5 | 1) 1.15 Nh5 Nxh5<br>2) 0.41 f5 g6 fxg6 fxg6 Rae1 Nd7<br>3) 0.00 Rf2 Nd7 Bxh7+ Kxh7 Qh5+ Kg8 | 不是：加深后次佳只差 6.6（< 10） | ☐ 同意 ☐ 不同意 |
+| 28 | 伊曼纽尔·拉斯克–约翰·鲍尔 | 33… Kxe6（黑） | `3r4/1r2k1Q1/pp2P3/2pp4/8/1P2P3/P1PP2PP/6K1 b - - 4 33` | 4.8 / 2.4 / 5 | Qxb7 Rd6 h4 c4 | （没有加深，只有快扫：次佳 2.4） | 不是：快扫里次佳只差 2.4，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 29 | 哈里·皮尔斯伯里–西格伯特·塔拉什 | 44. Qg3+（白） | `8/3n2kp/2q2p1N/5P2/1p1Pp2Q/1rp1P2P/8/5RK1 w - - 0 44` | 77.1 / 67.7 / 74.1 | Kxh6 | 1) 3.29 Qg3+ Kxh6<br>2) 2.01 Qg4+ Kxh6 Kh1 Qd5 Rg1 Qf7<br>3) -0.45 Kh1 Kf8 Qg3 Rb2 Qg8+ Ke7 | 不是：加深后次佳只差 9.4（< 10） | ☐ 同意 ☐ 不同意 |
+| 30 | 哈里·皮尔斯伯里–西格伯特·塔拉什 | 48… Qg5（黑） | `8/3n3p/5p1k/7q/1p1PpQ2/1rp1P2P/8/6RK b - - 3 48` | 22.8 / — / 20.4 | Rxg5 | （没有加深，只有快扫：次佳 null） | 不是：快扫里次佳只差 —，没有送去加深 | ☐ 同意 ☐ 不同意 |
+| 31 | 哈里·皮尔斯伯里–西格伯特·塔拉什 | 50… Kh5（黑） | `8/3n3p/3Q3k/6p1/1p1Pp3/1rp1P2P/8/7K b - - 1 50` | 23.4 / 13.9 / 23.9 | Qxd7 | （没有加深，只有快扫：次佳 13.9） | 不是：快扫里次佳只差 9.5，没有送去加深 | ☐ 同意 ☐ 不同意 |
+
+#### 仅此一着（共 71 处，每三处取一处，列 24 处）
+
+| # | 对局 | 着法 | 走之前（FEN） | 胜率 最佳 / 次佳 / 走后 | 引擎给的应着线 | 加深搜索的三条线（MultiPV 3，走子方分值） | 判定 | 人工核对 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Morphy–Duke of Brunswick & Count Isouard | 8… c6（黑） | `rn2kb1r/ppp1qppp/5n2/4p3/2B1P3/1QN5/PPP2PPP/R1B1K2R b KQkq - 5 8` | 31.7 / 21.4 / 30.8 | Bg5 Qc7 Bxf6 gxf6 | 1) -2.08 c6 Bg5 Qc7 Bxf6 gxf6 a4<br>2) -3.54 Qb4 Bxf7+ Kd8 Bg5 Qxb3 O-O-O+<br>3) -3.98 b6 Bg5 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 2 | Steinitz–von Bardeleben | 18… Kf7（黑） | `r3k2r/pp1qn1pp/5p2/3p4/3N4/8/PP2QPPP/2R1R1K1 b kq - 1 18` | 31.1 / 16.6 / 38.3 | Ne6 | 1) -2.16 Kf7 Ne6<br>2) -4.38 Rb8 Nf5 O-O Nxe7+ Kh8 Qh5<br>3) -4.98 a6 Ne6 Kf7 Rc7 Qd6 Qh5+ | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 3 | Anderssen–Kieseritzky | 12… Qg6（黑） | `rnb1kb1r/p2p1ppp/5n2/1p3Nq1/4PpPP/3P4/PPP5/RNBQ1KR1 b kq h3 0 12` | 34.3 / 15.7 / 39.3 | h5 Qg5 Qf3 Bb7 | 1) -1.77 Qg6 h5 Qg5 Qf3 Bb7 Bxf4<br>2) -4.57 h6 hxg5<br>3) -6.11 Qxg4 Rxg4 g6 Bxf4 Nxg4 Qxg4 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 4 | Anderssen–Dufresne | 17… gxf6（黑） | `1r2k2r/pbppnppp/1bn2N2/4P2q/Q7/B1PB1N2/P4PPP/R3R1K1 b k - 2 17` | 40.9 / 1.1 / 41.5 | exf6 | 1) -1.00 gxf6 exf6<br>2) -12.16 Kd8 Nxh5 Nd5 Nxg7 Nxc3 Qh4+<br>3) -13.74 Kf8 Nxh5 g6 Nf6 Kg7 Rad1 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 5 | Anderssen–Dufresne | 22. Bf5+（白） | `1r4r1/pbpknp1p/1b3P2/8/8/B1PB1q2/P4PPP/3R2K1 w - - 0 22` | 100 / 1 / 100 | Ke8 Bd7+ Kd8 Bxe7# | 1) #3 Bf5+ Ke8 Bd7+ Kd8 Bxe7#<br>2) -12.53 Be2+ Qd5<br>3) -33.59 Bb5+ Ke6 Re1+ Be4 Rxe4+ Qxe4 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 6 | Capablanca–Marshall | 7. Bb3（白） | `r1bqk2r/2ppbppp/p1n2n2/1p2p3/B3P3/5N2/PPPP1PPP/RNBQR1K1 w kq b6 0 7` | 53.9 / 22.9 / 53.8 | O-O | 1) 0.42 Bb3 O-O<br>2) -3.29 d4 bxa4 dxe5 Ng4 Qd5 Rb8<br>3) -4.16 Nxe5 bxa4 Nf3 O-O d4 d5 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 7 | Capablanca–Marshall | 27. dxc5（白） | `4rrk1/5ppp/p7/1ppB4/3P2P1/2P2Q2/PPKB1bP1/RN4q1 w - c6 0 27` | 79.2 / 66.6 / 76.9 | Bxc5 b4 Bb6 a4 | 1) 3.63 dxc5 Bxc5 b4 Bb6 a4 Be3<br>2) 1.88 a4 cxd4<br>3) 1.41 Bc6 cxd4 Bxe8 Rxe8 a4 Be3 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 8 | Kasparov–Topalov | 25… Kb6（黑） | `b2r3r/k3Rp1p/p2q1np1/Np1P4/3p1Q2/P4PPB/1PP4P/1K6 b - - 1 25` | 54.6 / 16.1 / 66 | Qxd4+ Kxa5 Qc3+ Kb6 | 1) 0.50 Kb6 Qxd4+ Kxa5 Qc3+ Kb6 Qd4+<br>2) -4.49 Kb8 Qxd4 Nd7 Bxd7 Rxd7 Rxd7<br>3) -13.36 Qd7 Rxd7+ | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 9 | Kasparov–Topalov | 29… Bb7（黑） | `b2r3r/R4p1p/p4np1/1p1q4/kP6/P1Q2PPB/2P4P/1K6 b - - 1 29` | 49.1 / 0.1 / 46.5 | Rxb7 | 1) -0.10 Bb7 Rxb7<br>2) -19.86 Rd6 Kb2 Qe5 Qxe5 Ne4 fxe4<br>3) #-5 Qd1+ Kb2 Qa1+ Kxa1 Rd1+ Kb2 | **仅此一着**（弃子，但走后 < 50，不够妙着） | ☐ 同意 ☐ 不同意 |
+| 10 | Kasparov–Topalov | 34… Kd2（黑） | `3r3r/1R3p1p/6p1/1p6/2q5/2k2PPB/7P/QK6 b - - 1 34` | 50.2 / 16.8 / 52.1 | Qb2+ Kd1 Bf1 Rd2 | 1) 0.02 Kd2 Qb2+ Kd1 Bf1 Rd2 Bxc4<br>2) -4.35 Kb4 Qb2+<br>3) -6.90 Kd3 Bf1+ Ke3 Qe5+ Kf2 Bxc4 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 11 | Kasparov–Topalov | 36… Rd2（黑） | `3r3r/1R3p1p/6p1/1p6/2q5/5PP1/1Q5P/1K1k1B2 b - - 5 36` | 50.9 / 25.7 / 27.4 | Bxc4 Rxb2+ Kxb2 bxc4 | 1) 0.10 Rd2 Bxc4 Rxb2+ Kxb2 bxc4 Rxf7<br>2) -2.89 Ke1 Bxc4 Rd1+ Ka2 Ra8+ Kb3<br>3) -6.59 Rb8 Bxc4 bxc4 Rxb8 Rxb8 Qxb8 | **仅此一着**（弃子，但走后 < 50，不够妙着） | ☐ 同意 ☐ 不同意 |
+| 12 | Alekhine–Bogoljubov | 31. Rxe8（白） | `R3qr1k/2pb2p1/5n1p/5p2/2PPpP1P/2pnP1P1/3N2R1/3N2KB w - - 0 31` | 41.1 / 8 / 40.3 | Rxe8 Nxc3 Rb8 Nf1 | 1) -0.98 Rxe8 Rxe8 Nxc3 Rb8 Nf1 Be6<br>2) -6.64 Nxe4<br>3) -7.95 Ra2 c2 Rxc2 Qh5 Nf2 Ra8 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 13 | Spassky–Fischer | 12… Nd7（黑） | `r1b1k2r/2q1bppp/p2ppn2/1p4P1/3NPP2/2N2Q2/PPP4P/2KR1B1R b kq - 0 12` | 47.8 / 29.6 / 48.3 | h4 | 1) -0.24 Nd7 h4<br>2) -2.35 Ng8 Kb1 b4 Nce2 Bd8 h4<br>3) -3.54 Ng4 Qxg4 b4 Nce2 e5 Nf5 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 14 | Geller–Euwe | 21. Qxh7+（白） | `2r1nrk1/pb1p2pp/4qp2/1p6/3P3R/P2Q2N1/6PP/R1B3K1 w - - 0 21` | 49.4 / 25.2 / 52.9 | Kf7 | 1) -0.07 Qxh7+ Kf7<br>2) -2.96 Nf5 Qe1+ Qf1 Qxf1+ Kxf1 Rc2<br>3) -3.56 Bd2 f5 Rf4 Qd5 Rf2 g6 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 15 | Rotlewi–Rubinstein | 24… Bxe4+（黑） | `6k1/1b3ppp/pb2p3/1p2P3/1P2BPnP/P1r5/1B1Q3P/R4R1K b - - 0 24` | 100 / 36.1 / 100 | Qg2 Rc2 Rf2 Nxf2+ | 1) 22.26 Bxe4+ Qg2 Rc2 Rf2 Nxf2+ Kg1<br>2) -1.55 Rc6 Bxc6<br>3) -3.62 Nf2+ Qxf2 Bxe4+ Qg2 Bxg2+ Kxg2 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 16 | Short–Timman | 21… b6（黑） | `r1b1r1k1/1pp2pbp/4p1p1/p1q1P3/P1P4Q/5N1P/2P2PP1/R1BR2K1 b - - 4 21` | 40.1 / 28.6 / 40 | Be3 Qf8 Ng5 h5 | 1) -1.09 b6 Be3 Qf8 Ng5 h5 Qf4<br>2) -2.48 h5 Ba3 Qc6 Be7 b6 Bf6<br>3) -2.57 Ra6 Ba3 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 17 | Karpov–Unzicker | 7. Bb3（白） | `r1bqk2r/2ppbppp/p1n2n2/1p2p3/B3P3/5N2/PPPP1PPP/RNBQR1K1 w kq b6 0 7` | 53.9 / 22.9 / 53.8 | O-O | 1) 0.42 Bb3 O-O<br>2) -3.29 d4 bxa4 dxe5 Ng4 Qd5 Rb8<br>3) -4.16 Nxe5 bxa4 Nf3 O-O d4 d5 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 18 | Botvinnik–Portisch | 18. Rxf7（白） | `rn1qrbk1/2R2ppp/2p5/p3p3/Q7/P2PBNP1/1P2PPBP/6K1 w - - 0 18` | 87.4 / 64.7 / 87.4 | h6 Rb7 Nd7 Nh4 | 1) 5.26 Rxf7 h6 Rb7 Nd7 Nh4 Nf6<br>2) 1.64 Rb7 h6 Nd2 Qc8 Rb6 Ra6<br>3) 0.98 Ra7 Rxa7 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 19 | 伊曼纽尔·拉斯克–约翰·鲍尔 | 16. Qxh5+（白） | `r4r2/1b2bppk/ppq1p3/2ppB2n/5P2/1P2P3/P1PPQ1PP/R4RK1 w - - 0 16` | 87.7 / 15.7 / 89.6 | Kg8 Bxg7 Kxg7 Qg4+ | 1) 5.33 Qxh5+ Kg8 Bxg7 Kxg7 Qg4+ Kh7<br>2) -4.57 f5 g6 fxg6+ fxg6 d4 Qd7<br>3) -4.70 Rf3 Rh8 Rh3 Kg8 Rxh5 Rxh5 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 20 | 伊曼纽尔·拉斯克–约翰·鲍尔 | 20. Rh3+（白） | `r4r2/1b2bp1k/ppq5/2ppp3/5PQ1/1P2PR2/P1PP2PP/R5K1 w - - 0 20` | 87.2 / 55.5 / 87.1 | Qh6 Rxh6+ Kxh6 Qd7 | 1) 5.21 Rh3+ Qh6 Rxh6+ Kxh6 Qd7 Rae8<br>2) 0.60 Qf5+ Qg6 Rh3+ Kg7 Rg3 Bf6<br>3) 0.00 f5 Qh6 Rh3 Bf6 Rxh6+ Kxh6 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 21 | 哈里·皮尔斯伯里–西格伯特·塔拉什 | 45. Kh1（白） | `8/3n3p/2q2p1k/5P2/1p1Pp3/1rp1P1QP/8/5RK1 w - - 0 45` | 73.6 / 50 / 70.9 | Qb5 Rg1 Qxf5 Qh4+ | 1) 2.78 Kh1 Qb5 Rg1 Qxf5 Qh4+ Qh5<br>2) 0.00 Rf4 Rb1+ Kg2 Rb2+ Kh1 Rb1+<br>3) -3.01 Kh2 Qa6 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 22 | 哈里·皮尔斯伯里–西格伯特·塔拉什 | 48. Qf4+（白） | `8/3n3p/5p1k/7q/1p1Pp2Q/1rp1P2P/8/6RK w - - 2 48` | 80.7 / 5.3 / 77.2 | Qg5 Rxg5 fxg5 Qd6+ | 1) 3.89 Qf4+ Qg5 Rxg5 fxg5 Qd6+ Kh5<br>2) -7.81 Qxh5+ Kxh5 Rg7 Rb2 Rxh7+ Kg6<br>3) -6.72 Qg4 | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 23 | 理查德·雷蒂–叶菲姆·博戈柳博夫 | 19… Re5（黑） | `3rrbk1/ppqb2pp/2p5/2P2P1B/3p4/1P4P1/PBQ4P/R4RK1 b - - 2 19` | 42.9 / 28.6 / 44.7 | Bxd4 Rd5 Qc4 Kh8 | 1) -0.78 Re5 Bxd4 Rd5 Qc4 Kh8 Bf3<br>2) -2.49 d3 Qc4+ Kh8 Bxe8 Bxe8 Rad1<br>3) -3.62 Qe5 Qc4+ | **仅此一着** | ☐ 同意 ☐ 不同意 |
+| 24 | 理查德·雷蒂–叶菲姆·博戈柳博夫 | 24… Kh8（黑） | `3r1bk1/ppq2Bpp/2p5/2P2Q2/8/1P4P1/P6P/5RK1 b - - 3 24` | 49.9 / 0 / 49.4 | b4 g6 Qe6 Qe7 | 1) -0.01 Kh8 b4 g6 Qe6 Qe7 Qxe7<br>2) #-3 Qxf7 Qxf7+ Kh8 Qxf8+ Rxf8 Rxf8# | **仅此一着** | ☐ 同意 ☐ 不同意 |
+
 ## 记录格式
 
 发现对不上的地方，按这个格式写，不用加判断：

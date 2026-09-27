@@ -100,11 +100,14 @@ await page.evaluate(() => {
   // window.__chess is the app's declared test seam (see app.js) — the modules
   // stopped being globals in 1.25, so the hook says so out loud now.
   window.__chess.engine.isReady = () => true;
+  // keyed by position (v8-0-plan B2: the pass asks some positions twice)
+  const seen = new Map();
   window.__chess.engine.analyze = async (fen) => {
     const turn = fen.split(" ")[1];
+    if (!seen.has(fen)) seen.set(fen, i++);
     // level for the opening, then decisively White — the swing makes a tagged
     // move, which is what the best-move arrow keys off
-    const cpWhite = i++ >= 5 ? 900 : 20;
+    const cpWhite = seen.get(fen) >= 5 ? 900 : 20;
     return { cp: turn === "w" ? cpWhite : -cpWhite, mate: null, turn, best: "d1h5", pv: ["d1h5"] };
   };
 });
@@ -221,8 +224,8 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
 // already said both accuracies. Now: the two accuracies as the card's
 // headline, then one small table — a row per mark, a column per side, the
 // counts in the marks' own colours — and the caveats as a footnote. Only the
-// marks the analysis has: no 「妙着 / 好棋」 rows, which this model has no
-// basis for. The exported picture still draws sideRows(), the same numbers.
+// marks the analysis has (v8-0-plan B2 adds the grades, checked below). The
+// exported picture still draws sideRows(), the same numbers.
 {
   const r = await page.evaluate(() => {
     const t = document.querySelector("#review-body .rv-table");
@@ -254,8 +257,12 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
       "every row has a value for both sides");
     const hs = [...new Set(r.rows.map((x) => x.h))];
     assert(hs.every((h) => h < 30), "every row is one line (" + hs.join(", ") + "px)");
-    assert(!r.rows.some((x) => /妙|好棋|最佳|brilliant|best/i.test(x.k)),
-      "no category the model does not have");
+    // v8-0-plan B2: the model now has the finer grades. 妙着 / 仅此一着 / 错失良机
+    // get a row only when one happened (this stub engine gives one line, so
+    // none can); 最佳 · 优秀 · 良好 · 谱着 are one count line a side under the table
+    assert(!r.rows.some((x) => /妙|仅此|错失/.test(x.k)), "no praise row for a grade that did not happen");
+    const fine = r.notes.filter((n) => /最佳 \d+ · 优秀 \d+ · 良好 \d+ · 谱着 \d+/.test(n));
+    assert(fine.length === 2, "one 最佳 · 优秀 · 良好 · 谱着 count line per side (" + fine.join(" | ") + ")");
     // a seven-move game: the sample caveat is one line, said once
     const short = r.notes.filter((n) => /只分析了/.test(n));
     assert(short.length === 1, "「只分析了 N 着」 is one footnote, not one per side (" + short.length + ")");
@@ -283,9 +290,13 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
     // White-relative evals; the engine reports from the side to move, so flip
     // for Black. 300 → -400 across ply 2 is a 700cp loss by White: 「??」.
     const W = [20, 20, 300, -400, -380, -390, -1200, -1210];
+    // v8-0-plan B2: keyed by position, not by call — the pass searches the
+    // positions around a mark a second time, deeper, and must get the same story
+    const seen = new Map();
     window.__chess.engine.analyze = async (fen) => {
       const turn = fen.split(" ")[1];
-      const w = W[Math.min(i++, W.length - 1)];
+      if (!seen.has(fen)) seen.set(fen, i++);
+      const w = W[Math.min(seen.get(fen), W.length - 1)];
       return { cp: turn === "w" ? w : -w, mate: null, turn, best: "d1h5", pv: ["d1h5"] };
     };
   });
@@ -844,9 +855,11 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     // 一份不吃 CPU 的评估:每个局面给一个跟着手数走的分数,曲线就有起伏
     await pgC.evaluate(() => {
       let n = 0;
+      const seen = new Map(); // by position: the pass asks some twice (v8-0-plan B2)
       window.__chess.engine.analyze = async (fen) => {
         const turn = fen.split(" ")[1];
-        const cp = ((n++ % 9) - 4) * 30;
+        if (!seen.has(fen)) seen.set(fen, n++);
+        const cp = ((seen.get(fen) % 9) - 4) * 30;
         return { cp: turn === "w" ? cp : -cp, mate: null, turn, best: "e2e4", pv: ["e2e4"],
           lines: [{ cp, mate: null, pv: ["e2e4"], depth: 12 }] };
       };
@@ -903,9 +916,11 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const { pgC } = await readyPage();
     await pgC.evaluate(() => {
       let n = 0;
+      const seen = new Map(); // by position: the pass asks some twice (v8-0-plan B2)
       window.__chess.engine.analyze = async (fen) => {
         const turn = fen.split(" ")[1];
-        const cp = n++ < 31 ? 150 : -600;
+        if (!seen.has(fen)) seen.set(fen, n++);
+        const cp = seen.get(fen) < 31 ? 150 : -600;
         return { cp: turn === "w" ? cp : -cp, mate: null, turn, best: "e2e4", pv: ["e2e4"] };
       };
     });
@@ -1119,6 +1134,69 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pgH.keyboard.press("Escape");
   assert(errsH.length === 0, "按住不挪：全程没有页面异常 — " + errsH.join(" / "));
   await ctxH.close();
+}
+
+// --- 停在加深阶段（评审 #87）：快速扫描已经量完每个局面，停止不该丢掉它 ---
+// Through PR #87 a Stop pressed while the pass searched the marked moves
+// again, deeper, took the partial branch: every tag null, no accuracy, no
+// grades, nothing filed, and 「保留前 N 步」 for a game measured end to end.
+{
+  const ctxS = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctxS.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pgS = await ctxS.newPage();
+  const errsS = [];
+  pgS.on("pageerror", (e) => errsS.push(e.message));
+  await pgS.goto(`http://127.0.0.1:${PORT}/`);
+  await pgS.waitForTimeout(900);
+  await pgS.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  // scholar's mate again, played on the board
+  for (const sq of ["e2", "e4", "e7", "e5", "f1", "c4", "b8", "c6", "d1", "h5", "g8", "f6", "h5", "f7"]) {
+    const c = await pgS.evaluate((s) => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, sq);
+    await pgS.mouse.click(c.x, c.y);
+  }
+  await pgS.waitForTimeout(400);
+  const stopped = await pgS.evaluate(async () => {
+    const W = [20, 20, 300, -400, -380, -390, -1200, -1210];
+    const seen = new Map();
+    let n = 0, deepAsked = 0;
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen, budget) => {
+      const turn = fen.split(" ")[1];
+      if (!seen.has(fen)) seen.set(fen, n++);
+      // the first deeper search: the player presses 停止 while it runs
+      if (budget > 200 && !deepAsked++) document.getElementById("an-run").click();
+      const w = W[Math.min(seen.get(fen), W.length - 1)];
+      return { cp: turn === "w" ? w : -w, mate: null, turn, best: "d1h5", pv: ["d1h5"] };
+    };
+    document.getElementById("an-run").click();
+    await new Promise((r) => setTimeout(r, 2500));
+    const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+    const e = kept && kept.list && kept.list[kept.list.length - 1];
+    return { deepAsked, toast: document.getElementById("toast").textContent,
+      an: e ? { tags: e.an.tags, acc: e.an.acc, grades: e.an.grades, scalars: e.an.scalars, deep: e.an.deep } : null,
+      tags: [...document.querySelectorAll(".move-list .mvtag")].map((t) => t.textContent.trim()) };
+  });
+  console.log("  加深时停止：" + JSON.stringify(stopped));
+  assert(stopped.deepAsked >= 1, "加深时停止：确实停在了加深阶段 (" + stopped.deepAsked + ")");
+  assert(!!stopped.an && stopped.an.scalars.length === 8 && stopped.an.scalars.every((s) => s != null),
+    "加深时停止：快速扫描量过的每个局面都存进了分析记录", JSON.stringify(stopped.an));
+  assert(!!stopped.an && stopped.an.tags.length === 7 && stopped.an.tags.some((t) => t === "??") && stopped.tags.includes("??"),
+    "加深时停止：失着照样标出（记录与着法表）", JSON.stringify(stopped.an && stopped.an.tags) + " " + stopped.tags.join(" "));
+  assert(!!stopped.an && stopped.an.acc && typeof stopped.an.acc === "object"
+    && Array.isArray(stopped.an.grades) && stopped.an.grades.length === 7 && stopped.an.grades.every((x) => typeof x === "string"),
+    "加深时停止：准确率与分级都在", JSON.stringify(stopped.an && { acc: stopped.an.acc, grades: stopped.an.grades }));
+  assert(!/保留前/.test(stopped.toast) && /分析完成/.test(stopped.toast) && /加深/.test(stopped.toast),
+    "加深时停止：提示说分析完成、加深被停，不说「保留前 N 步」 (" + stopped.toast + ")");
+  assert(errsS.length === 0, "加深时停止：没有页面异常 — " + errsS.join(" / "));
+  await ctxS.close();
 }
 
 await browser.close();
