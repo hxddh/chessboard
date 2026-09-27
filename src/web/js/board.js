@@ -17,8 +17,10 @@
  * @module board
  */
 import { CHESS_PIECE_SVGS } from "./pieces.js";
+import { CBURNETT_PIECE_SVGS } from "./pieces-cburnett.js";
 import { loadChunk } from "./chunk.js";
-import { MERIDA_CHUNK } from "./lazy-content.js";
+import { PIECE_CHUNKS } from "./lazy-content.js";
+import { textureTile, parseInk, inkSprite } from "./board-skin.js";
   const FILES = "abcdefgh";
 
   // Solid glyph set for both colors — colored via fill, outlined for contrast.
@@ -78,6 +80,11 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
     judgeBad: ["--judge-bad", "#e05252"],
     sideWhite: ["--side-white", "#f2f2ee"],
     sideBlack: ["--side-black", "#1d1d1b"],
+    // v8-0-plan A3: the board's material (board-skin.js) — a texture laid
+    // over the squares, and the ink and paper the paper board prints its
+    // men in. "none" is flat colour and pieces as drawn.
+    texture: ["--board-texture", "none"],
+    pieceInk: ["--piece-ink", "none"],
   };
   const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad" };
   const SHAPE_PAINT = { G: "shapeG", R: "shapeR", B: "shapeB", Y: "shapeY", E: "engine", e: "engineAlt" };
@@ -100,8 +107,14 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
     _paint = out;
     return out;
   }
-  /** call when the theme changes — the next draw re-reads the variables */
-  function invalidatePaint() { _paint = null; _slideMs = null; }
+  /**
+   * call when the theme changes — the next draw re-reads the variables. The
+   * sprites go too: on the paper board they are printed in its ink
+   * (v8-0-plan A3), so a board switch can change what they look like.
+   */
+  function invalidatePaint() { _paint = null; _slideMs = null; _sprites = {}; _patterns = null; }
+  /** the texture patterns for the current board and size: {key, pats} | null */
+  let _patterns = null;
 
   /**
    * How long a piece takes to slide, read from the same --dur-base the panel
@@ -197,11 +210,18 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
    * was parsed before every first paint for them. It is read off the window
    * when wanted; chunk-boot.js has already put it there when the saved
    * settings name it, so a Merida player's first frame is still Merida.
+   *
+   * v8-0-plan A3: seven sets. `cburnett` is now Colin Burnett's original
+   * drawing (pieces-cburnett.js), the default; the heavier 7.x redrawing it
+   * replaces stays as `classic` (pieces.js, still the move list's figurines).
+   * Both are in the bundle; every other set is a chunk (PIECE_CHUNKS), read
+   * off the window the same way Merida always was.
    */
   const PIECE_SETS = {
-    cburnett: () => CHESS_PIECE_SVGS,
-    merida: () => globalThis[MERIDA_CHUNK.global] || null,
+    cburnett: () => CBURNETT_PIECE_SVGS,
+    classic: () => CHESS_PIECE_SVGS,
   };
+  for (const id of Object.keys(PIECE_CHUNKS)) PIECE_SETS[id] = () => globalThis[PIECE_CHUNKS[id].global] || null;
   let _set = "cburnett";
   /** the set whose twelve images are decoding right now, or null */
   let _pending = null;
@@ -259,9 +279,21 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
   function loadSet() {
     if (PIECE_SETS[_set]()) { initPieceImages(); return; }
     const id = _set;
-    loadChunk(MERIDA_CHUNK.file, MERIDA_CHUNK.global)
+    setSvgs(id)
       .then(() => { if (_set === id) initPieceImages(); })
       .catch(() => { /* the current set keeps drawing */ });
+  }
+  /**
+   * The twelve SVGs of set `id`, fetching its chunk if need be — for the
+   * board, and for the piece picker's previews (appearance-ui.js), which
+   * show a set before it is chosen. Rejects for an unknown id.
+   * @returns {Promise<object>}
+   */
+  function setSvgs(id) {
+    if (!PIECE_SETS[id]) return Promise.reject(new Error("no piece set " + id));
+    const have = PIECE_SETS[id]();
+    if (have) return Promise.resolve(have);
+    return loadChunk(PIECE_CHUNKS[id].file, PIECE_CHUNKS[id].global);
   }
 
   /** Counters for the tests (v8-0-plan F5). */
@@ -294,6 +326,9 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
       c.width = size;
       c.height = size;
       c.getContext("2d").drawImage(img, 0, 0, size, size);
+      // v8-0-plan A3: the paper board prints every set in its ink
+      const ink = parseInk(paint().pieceInk);
+      if (ink) inkSprite(c, img, ink);
       _sprites[ck] = c;
     }
     return c;
@@ -305,7 +340,7 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
    * Unicode glyphs it used to. A data: URL of the SVG the sprites decode.
    */
   function pieceSrc(key) {
-    const svgs = PIECE_SETS[_set]() || CHESS_PIECE_SVGS;
+    const svgs = PIECE_SETS[_set]() || CBURNETT_PIECE_SVGS;
     return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]) : "";
   }
 
@@ -518,6 +553,31 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
       for (let sc = 0; sc < 8; sc++) {
         ctx.fillStyle = (sr + sc) % 2 === 0 ? P.light : P.dark;
         ctx.fillRect(...cellRect(sr, sc));
+      }
+    }
+    // v8-0-plan A3: the material over the colour — paper's fibre and ink
+    // wash, marble's veins. One pattern per square colour, anchored to the
+    // board, so the grain runs on across the squares rather than restarting
+    // in each; scaled with the square so it is the same material at any size.
+    const tiles = [textureTile(P.texture, false), textureTile(P.texture, true)];
+    if (tiles[0] && tiles[1]) {
+      // made once per texture and board size, not once per animation frame
+      const pk = P.texture + "@" + w;
+      if (!_patterns || _patterns.key !== pk) {
+        _patterns = { key: pk, pats: tiles.map((tl) => {
+          const pat = ctx.createPattern(tl, "repeat");
+          try { if (pat && pat.setTransform && typeof DOMMatrix !== "undefined") pat.setTransform(new DOMMatrix().scale(step / 96)); } catch (_) { /* native size */ }
+          return pat;
+        }) };
+      }
+      const pats = _patterns.pats;
+      for (let sr = 0; sr < 8; sr++) {
+        for (let sc = 0; sc < 8; sc++) {
+          const pat = pats[(sr + sc) % 2];
+          if (!pat) continue;
+          ctx.fillStyle = pat;
+          ctx.fillRect(...cellRect(sr, sc));
+        }
       }
     }
     // last-move tint
@@ -852,4 +912,4 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
    *              needs to know the board's geometry at all.
    */
   export const ChessBoardView = { draw, attach, resizeCanvas, invalidatePaint,
-    animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet, pieceSrc, screenCell, stats };
+    animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet, setSvgs, pieceSrc, screenCell, stats };

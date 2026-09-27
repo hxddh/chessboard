@@ -37,6 +37,8 @@ import { CHESS_PUZZLES, HAND_MOTIF_KEY } from "./puzzles.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
+import { mount as mountAppearance } from "./appearance-ui.js";
+import { LOOK_DEFAULT, migrateLook, lookAttrs } from "./look.js";
 import { createRepertoireUI } from "./repertoire-ui.js";
 import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
@@ -382,11 +384,11 @@ import { createStore } from "./store.js";
       engineArrows: true,
       // a pointer is pressed inside #live-line: its rows hold still (paintLive)
       liveHeld: false,
-      /** 6.0 (v6-plan Q3.6): the theme follows the system's light/dark; the text size step */
-      followSystem: false,
+      /** 6.0 (v6-plan Q3.6): the text size step */
       textSize: "m",
-      pieceSet: "cburnett",
-      /** @type {'wood'|'night'|'day'|'notebook'} */
+      /** v8-0-plan A3: the look, four answers (look.js) — first-run values */
+      ...LOOK_DEFAULT,
+      /** the shell palette the look resolves to right now (look.js shellFor) */
       themeId: "wood",
       /** pvp: flip the board to face the side to move after every move */
       autoFlipPvp: false,
@@ -1530,11 +1532,11 @@ import { createStore } from "./store.js";
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
-      if (typeof s.followSystem === "boolean") store.ui.followSystem = s.followSystem;
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
-      if (["cburnett", "merida"].includes(s.pieceSet)) store.ui.pieceSet = s.pieceSet;
+      // v8-0-plan A3: 7.x's themeId / followSystem / pieceSet, or 8.0's four
+      // fields — migrateLook reads either
+      Object.assign(store.ui, migrateLook(s));
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
-      if (["wood", "night", "day", "notebook"].includes(s.themeId)) store.ui.themeId = s.themeId;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
       // DIFF_IDS, not a second copy of it — this list was written out by hand
       // and adding the 1.19 "casual" rung to the ladder without it here would
@@ -1555,7 +1557,11 @@ import { createStore } from "./store.js";
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
-        followSystem: store.ui.followSystem, textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
+        textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
+        // v8-0-plan A3: the look; themeId and followSystem still written, for
+        // a 7.x build opening this profile (it reads those two and not these)
+        appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
+        followSystem: store.ui.appearance === "system",
         soundSet: store.ui.soundSet }));
     } catch (_) {}
   }
@@ -8183,9 +8189,7 @@ import { createStore } from "./store.js";
   }
 
   function syncSettingsUI() {
-    document.querySelectorAll("#theme-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.theme === store.ui.themeId);
-    });
+    if (lookUI) lookUI.sync();
     const sb = document.getElementById("opt-sound");
     if (sb) {
       sb.classList.toggle("active", store.ui.soundOn);
@@ -8200,17 +8204,18 @@ import { createStore } from "./store.js";
     sw("opt-coords", store.ui.coordsOn);
     // where they are printed only matters while they are printed at all
     const rowCoordsAt = document.getElementById("row-coords-at");
-    if (rowCoordsAt) rowCoordsAt.hidden = !store.ui.coordsOn;
+    // …and only on the wooden frame: a flat board has no frame to print on,
+    // so there they are always in the squares (v8-0-plan A3)
+    const framed = store.ui.boardFrame === "frame";
+    if (rowCoordsAt) rowCoordsAt.hidden = !store.ui.coordsOn || !framed;
     document.querySelectorAll("#coords-seg button").forEach((b) => b.classList.toggle("active", (b.dataset.coords === "in") === store.ui.coordsInside));
     // the frame narrows with them (styles.css #app[data-coords="in"]); an
     // attribute on #app because the board rect is the layout's, not the canvas's
-    appEl.setAttribute("data-coords", store.ui.coordsOn && store.ui.coordsInside ? "in" : "out");
+    appEl.setAttribute("data-coords", store.ui.coordsOn && (store.ui.coordsInside || !framed) ? "in" : "out");
     sw("opt-softmark", store.ui.showSoftMark);
     sw("opt-engine-arrows", store.ui.engineArrows);
     sw("opt-blind", store.ui.blindfold);
-    sw("opt-follow", store.ui.followSystem);
     document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
-    document.querySelectorAll("#pieces-seg button").forEach((b) => b.classList.toggle("active", b.dataset.pieces === store.ui.pieceSet));
     const vol = document.getElementById("opt-volume");
     if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
     const rowVol = document.getElementById("row-volume");
@@ -9979,19 +9984,32 @@ import { createStore } from "./store.js";
     sync();
   }
 
-  function applyTheme(id) {
-    store.ui.themeId = id;
-    document.documentElement.setAttribute("data-theme", id);
-    // The board palette is its own axis since 1.25 (styles.css, [data-board]).
-    // Setting it to the theme's id keeps the pairing exactly as it was — what
-    // changed is that it is now a pairing rather than one thing.
-    document.documentElement.setAttribute("data-board", id);
+  /**
+   * Put the look on the page (v8-0-plan A3): the shell, the board and the
+   * frame as three attributes (look.js lookAttrs), the piece set on the
+   * board. `patch` is a change from the pickers, saved; without one this is
+   * the boot pass or the system turning dark, and nothing is written.
+   */
+  function applyLook(patch) {
+    if (patch) Object.assign(store.ui, patch);
+    const dark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const at = lookAttrs(store.ui, dark);
+    const root = document.documentElement;
+    const reframed = root.getAttribute("data-frame") !== at.frame;
+    store.ui.themeId = at.theme;
+    root.setAttribute("data-theme", at.theme);
+    root.setAttribute("data-board", at.board);
+    root.setAttribute("data-frame", at.frame);
+    BoardView.setPieceSet(store.ui.pieceSet);
     // the board reads its square colours from the same variables, and caches
     // them — the cache is only ever stale here
     if (BoardView.invalidatePaint) BoardView.invalidatePaint();
+    if (!patch) return;
     saveSettings();
     syncSettingsUI();
     draw();
+    // the frame's 17px come and go with it: the canvas takes the new size
+    if (reframed) requestAnimationFrame(() => { BoardView.resizeCanvas(); draw(); });
   }
 
   // --- events: pointer-driven board (click-click AND drag-drop both work) ---
@@ -10803,14 +10821,6 @@ import { createStore } from "./store.js";
     },
   });
 
-  document.getElementById("theme-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-theme]");
-    if (b) {
-      // choosing a theme by hand is the answer to "follow the system?"
-      store.ui.followSystem = false;
-      applyTheme(b.dataset.theme);
-    }
-  };
   document.getElementById("mode-seg").onclick = (ev) => {
     const b = ev.target.closest("button[data-mode]");
     if (!b || b.dataset.mode === store.session.mode) return;
@@ -11093,21 +11103,20 @@ import { createStore } from "./store.js";
     syncSettingsUI();
     Audio2.playMove("w");
   };
-  // 6.0 (v6-plan Q3.6): the theme follows the system's scheme while the
-  // switch is on — night for dark, day for light — and reacts live
+  // 6.0 (v6-plan Q3.6): the appearance follows the system's scheme — since
+  // v8-0-plan A3 as its default, 跟随系统 — and reacts live
   const schemeMq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-  function applySystemScheme() {
-    if (!store.ui.followSystem || !schemeMq) return;
-    const want = schemeMq.matches ? "night" : "day";
-    if (store.ui.themeId !== want) applyTheme(want);
+  if (schemeMq && schemeMq.addEventListener) {
+    schemeMq.addEventListener("change", () => {
+      if (store.ui.appearance !== "system") return;
+      applyLook();
+      draw();
+    });
   }
-  if (schemeMq && schemeMq.addEventListener) schemeMq.addEventListener("change", applySystemScheme);
-  document.getElementById("opt-follow").onclick = () => {
-    store.ui.followSystem = !store.ui.followSystem;
-    saveSettings();
-    syncSettingsUI();
-    applySystemScheme();
-  };
+  // v8-0-plan A3: 外观 / 棋盘 / 边框 / 棋子, a module of their own
+  const lookUI = mountAppearance(document.getElementById("appearance-ui"), {
+    t, getLook: () => store.ui, setLook: applyLook, pieceSvgs: BoardView.setSvgs,
+  });
   function applyTextSize() {
     document.documentElement.setAttribute("data-text", store.ui.textSize);
     // the board is sized from its container, which the type size can move
@@ -11120,14 +11129,6 @@ import { createStore } from "./store.js";
     saveSettings();
     syncSettingsUI();
     applyTextSize();
-  };
-  document.getElementById("pieces-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-pieces]");
-    if (!b) return;
-    store.ui.pieceSet = b.dataset.pieces;
-    saveSettings();
-    syncSettingsUI();
-    BoardView.setPieceSet(store.ui.pieceSet);
   };
   document.getElementById("opt-coords").onclick = () => {
     store.ui.coordsOn = !store.ui.coordsOn;
@@ -11716,10 +11717,7 @@ import { createStore } from "./store.js";
   if (firstRun && I18n && I18n.detectLang) store.ui.langId = I18n.setLang(I18n.detectLang());
   loadSettings();
   document.documentElement.setAttribute("data-text", store.ui.textSize);
-  BoardView.setPieceSet(store.ui.pieceSet);
-  if (store.ui.followSystem && schemeMq) store.ui.themeId = schemeMq.matches ? "night" : "day";
-  document.documentElement.setAttribute("data-theme", store.ui.themeId);
-  document.documentElement.setAttribute("data-board", store.ui.themeId);
+  applyLook();
   if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
   // v8-0-plan F5: chunk-boot.js loaded the saved language ahead of this
   // script. Should its guess have missed (a profile restored since, storage

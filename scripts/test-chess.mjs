@@ -8,7 +8,8 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
 import { compileModuleSync, CHUNKS, build, BUNDLE_BUDGET, BUNDLE_BYTES_BEFORE_F5 } from "./bundle.mjs";
-import { measureMarks, markChroma, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
+import { measureMarks, markChroma, markLook, boardDistinct, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR_BOARD as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS,
+  LOOK_MARKS, LOOK_CHROMA_CEILING, LOOK_DE_CEILING, BOARD_DISTINCT_FLOOR } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -135,7 +136,7 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js"];
+const APP_MODULES = ["app.js", "appearance-ui.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -2236,7 +2237,7 @@ for (const lang of CONTENT_LANGS) {
     // …nor any square colour
     assert(!/--sq-/.test(blk[1]), theme + " leaves the board to the board palette");
   }
-  for (const board of ["wood", "night", "day", "notebook"]) {
+  for (const board of MARK_BOARDS) {
     const sel = board === "wood" ? ":root, \\[data-board=\"wood\"\\]" : "\\[data-board=\"" + board + "\"\\]";
     const blk = new RegExp(sel + "\\s*\\{([\\s\\S]*?)\\n    \\}").exec(stripped);
     assert(blk, board + " board palette found");
@@ -2312,7 +2313,7 @@ for (const lang of CONTENT_LANGS) {
   // the square colours moved to the board palettes in 1.25 — the question is
   // still "can you see a black outline on this square", which is a property of
   // the board, not of the interface around it
-  for (const theme of ["wood", "night", "day", "notebook"]) {
+  for (const theme of MARK_BOARDS) {
     const sel = theme === "wood" ? /:root, \[data-board="wood"\]\s*\{([\s\S]*?)\n    \}/
       : new RegExp('\\[data-board="' + theme + '"\\]\\s*\\{([\\s\\S]*?)\\n    \\}');
     const blk = sel.exec(css2)[1];
@@ -2377,6 +2378,39 @@ for (const lang of CONTENT_LANGS) {
     assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now) &&
       JSON.stringify(recorded.ceiling) === JSON.stringify(CHROMA_CEILING),
       "docs/measured.json markChroma.after is these palettes (re-run scripts/measure-marks.mjs --record)");
+  }
+  // v8-0-plan A3: the same mark on both squares, on every board. The two
+  // checks above look at the light square (chroma) and at the hue term;
+  // this one looks at the whole mark on both: its chroma over the light AND
+  // the dark square under one ceiling, and the ΔE00 between the two
+  // composites under another — a mark that is a tint on one square and a
+  // stain on the other fails here. 7.9.0's wood check was C* 55.1 over the
+  // dark square (ceiling 52), which the light-square check never saw. The
+  // engine arrow is measured with them. And the boards must be boards: the
+  // closest two dark squares ΔE00 ≥ 10 (7.9.0: 木 and 日, 6.4).
+  {
+    const look = markLook(css2);
+    for (const b of MARK_BOARDS) {
+      for (const k of Object.keys(LOOK_MARKS)) {
+        const v = look[b][k];
+        assert(!!v && Math.max(v.cl, v.cd) <= LOOK_CHROMA_CEILING[k],
+          b + " " + k + ": under its chroma ceiling over both squares (C* " + (v && v.cl) + " / " + (v && v.cd) + " ≤ " + LOOK_CHROMA_CEILING[k] + ")");
+        assert(!!v && v.dE <= LOOK_DE_CEILING,
+          b + " " + k + ": the same mark on the light and the dark square (ΔE00 " + (v && v.dE) + " ≤ " + LOOK_DE_CEILING + ")");
+      }
+    }
+    const apart = boardDistinct(css2);
+    assert(apart.min >= BOARD_DISTINCT_FLOOR,
+      "every two boards are two boards (closest dark squares ΔE00 " + apart.min + ", " + apart.pair + " ≥ " + BOARD_DISTINCT_FLOOR + ")");
+    // the list measured is the list offered
+    const lookSrc = fs.readFileSync(path.join(root, "src/web/js/look.js"), "utf8");
+    const offered = [...lookSrc.matchAll(/\{ id: "(\w+)", warm: (?:true|false) \}/g)].map((m) => m[1]);
+    assert(offered.join(",") === MARK_BOARDS.join(","),
+      "the boards measured are the boards look.js offers (" + offered.join(",") + ")");
+    const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).boardLook;
+    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify({ marks: look, distinct: apart }) &&
+      JSON.stringify(recorded.ceiling) === JSON.stringify({ chroma: LOOK_CHROMA_CEILING, dE: LOOK_DE_CEILING, distinct: BOARD_DISTINCT_FLOOR }),
+      "docs/measured.json boardLook.after is these palettes (re-run scripts/measure-marks.mjs --record)");
   }
 }
 
@@ -4946,7 +4980,7 @@ for (const lang of CONTENT_LANGS) {
     // contrast check reads the palette blocks rather than the cascade.
     for (const v of ["--sq-light", "--sq-dark", "--sq-sel", "--sq-check", "--coord-ink", "--board-frame"]) {
       const n = (cssM.match(new RegExp("\\n *" + v + ":", "g")) || []).length;
-      assert(n === 4, v + " is declared once per board and nowhere else (" + n + ")");
+      assert(n === MARK_BOARDS.length, v + " is declared once per board and nowhere else (" + n + ")");
     }
     for (const step of ["--mark-strong", "--mark-mid", "--mark-soft"]) {
       assert(new RegExp(step + ":").test(cssM), step + " is declared once");
@@ -4993,7 +5027,7 @@ for (const lang of CONTENT_LANGS) {
     const cssJ = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     for (const v of ["--judge-soft", "--judge-mid", "--judge-bad", "--side-white", "--side-black"]) {
       const n = (cssJ.match(new RegExp(v + ":", "g")) || []).length;
-      assert(n === 4, "all four board palettes answer for " + v + " (" + n + ")");
+      assert(n === 4, "all four shells answer for " + v + " (" + n + ")");
     }
     assert(/\.mvtag\.t-soft \{ color: var\(--judge-soft\)/.test(cssJ), "the move list reads the scale");
     assert(/background: var\(--side-black\)/.test(cssJ) && /background: var\(--side-white\)/.test(cssJ),
@@ -6350,6 +6384,13 @@ for (const lang of CONTENT_LANGS) {
       [null, { languages: ["ja-JP", "en"] }, "chunk-lang-en.js chunk-lang-ja.js"],
       [null, { languages: ["zh-TW"] }, ""],
       [{ langId: "en", mode: "puzzle", pieceSet: "merida" }, null, "chunk-lang-en.js chunk-mined.js chunk-merida.js"],
+      // v8-0-plan A3: every set outside the bundle is fetched ahead of the
+      // bundle for the player who chose it; the two inside it need nothing
+      [{ pieceSet: "fantasy" }, null, "chunk-pieces-fantasy.js"],
+      [{ pieceSet: "chessnut" }, null, "chunk-pieces-chessnut.js"],
+      [{ pieceSet: "cburnett" }, null, ""],
+      [{ pieceSet: "classic" }, null, ""],
+      [{ pieceSet: "toString" }, null, ""],
       [{ langId: "xx" }, null, ""],
     ];
     for (const [settings, nav, want] of cases) {
@@ -6360,7 +6401,38 @@ for (const lang of CONTENT_LANGS) {
       "unreadable settings are treated as none");
     // every chunk the plan or the app can ask for is one the bundler builds,
     // under the global it promises
-    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, lctx.MERIDA_CHUNK];
+    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, ...Object.values(lctx.PIECE_CHUNKS)];
+    assert(lctx.PIECE_CHUNKS.merida === lctx.MERIDA_CHUNK, "Merida is one of the piece chunks, under its M1 file name");
+    // v8-0-plan A3: every set offered is licence-cleared where it lives and
+    // where the user reads it. The module header names the author, the
+    // source it was taken from and the licence relied on; the About panel
+    // (all three languages) and README's 许可 section name it too. Only
+    // GPL-compatible licences: GPL, Apache 2.0, MIT, CC BY(-SA) 4.0.
+    {
+      const lookSrc = fs.readFileSync(path.join(root, "src/web/js/look.js"), "utf8");
+      const ids = JSON.parse(/PIECE_SET_IDS = (\[[^\]]*\])/.exec(lookSrc)[1]);
+      const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+      const credits = ["i18n.js", "i18n-en.js", "i18n-ja.js"].map((f) =>
+        /"about\.creditsText": "([^"]*)"/.exec(fs.readFileSync(path.join(root, "src/web/js", f), "utf8"))[1]);
+      const LICENCE = /\b(GPLv[23]\+?|GPL|Apache (License )?2\.0|MIT|CC BY(-SA)? 4\.0)\b/;
+      const AUTHOR = { cburnett: "Burnett", classic: "Cburnett", merida: "Armando Hernandez Marroquin",
+        chessnut: "Alexis Luengas", fantasy: "Maurizio Monge", celtic: "Maurizio Monge", spatial: "Maurizio Monge" };
+      assert(ids.length >= 7 && ids[0] === "cburnett", "seven sets, the default first (" + ids.join(", ") + ")");
+      for (const id of ids) {
+        const file = id === "classic" ? "pieces.js" : "pieces-" + id + ".js";
+        const src = fs.existsSync(path.join(root, "src/web/js", file)) ? fs.readFileSync(path.join(root, "src/web/js", file), "utf8") : "";
+        const head = (/^\/\*\*([\s\S]*?)\*\//.exec(src) || ["", ""])[1];
+        assert(!!src && LICENCE.test(head) && head.includes(AUTHOR[id]),
+          "piece set " + id + ": " + file + " names its author and a GPL-compatible licence in its header");
+        assert(readme.includes(file), "README 许可 names " + file);
+        const name = id === "classic" ? null : AUTHOR[id];
+        if (name) assert(credits.every((c) => c.includes(name)), "the About panel credits " + name + " in all three languages");
+        // in the bundle, or a chunk that is built
+        const inBundle = id === "cburnett" || id === "classic";
+        assert(inBundle || (lctx.PIECE_CHUNKS[id] && CHUNKS.some((c) => c.entry === "src/web/js/" + file && path.basename(c.out) === lctx.PIECE_CHUNKS[id].file)),
+          "piece set " + id + " is " + (inBundle ? "in the bundle" : "its own chunk, built from " + file));
+      }
+    }
     for (const a of asked) {
       assert(CHUNKS.some((c) => path.basename(c.out) === a.file && c.global === a.global),
         a.file + " (" + a.global + ") is in CHUNKS, so it is built and packaged");
@@ -6714,7 +6786,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 11808; // 11764 when drawn; +44 from §5 (the M1 small fixes), which landed alongside
+  const APP_JS_LINE_CEILING = 11806; // 11764 when drawn; +44 from §5 (the M1 small fixes), which landed alongside; −2 from A3 (the look pickers moved to appearance-ui.js)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");

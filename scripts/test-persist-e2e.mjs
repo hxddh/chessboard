@@ -1356,6 +1356,55 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await ctx.close();
 }
 
+// --- v8-0-plan A3: 7.x 的主题设置,开 8.0 之后还是那个样子 ---------------------
+// themeId used to choose the shell and the board together; it is migrated to
+// appearance × board (js/look.js, every case in test-persist.mjs). Here, in a
+// page: each 7.x profile opens in its own shell, the migrated fields are
+// written back, and the second launch — which reads them, not themeId —
+// lands on the same thing. A first run follows the system, on the flat board.
+{
+  const cases = [
+    [{ themeId: "wood" }, "wood/wood", "dark/wood"],
+    [{ themeId: "night" }, "night/green", "dark/green"],
+    [{ themeId: "day" }, "day/wood", "light/wood"],
+    [{ themeId: "notebook" }, "notebook/blue", "light/blue"],
+    [{ themeId: "night", followSystem: true }, "notebook/green", "system/green"],
+    [{ themeId: "wood", pieceSet: "merida" }, "wood/wood", "dark/wood"],
+    [null, "day/wood", "system/wood"],
+  ];
+  for (const [old, attrs, saved] of cases) {
+    const tag = old ? JSON.stringify(old) : "新用户";
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN", colorScheme: "light" });
+    await ctx.addInitScript((o) => {
+      // seeded once: the reload below must read what the app wrote back
+      if (sessionStorage.getItem("seeded")) return;
+      sessionStorage.setItem("seeded", "1");
+      if (o) localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }, o)));
+    }, old);
+    const { page, errs } = await open(ctx);
+    const read = () => page.evaluate(() => {
+      const root = document.documentElement;
+      const s = JSON.parse(localStorage.getItem("chess.v1.settings") || "{}");
+      return { attrs: root.dataset.theme + "/" + root.dataset.board, frame: root.dataset.frame,
+        saved: s.appearance + "/" + s.boardId, frameSaved: s.boardFrame, pieceSet: s.pieceSet };
+    });
+    // anything that saves settings writes the migrated look back
+    await page.evaluate(() => document.getElementById("opt-coords").click());
+    await page.evaluate(() => document.getElementById("opt-coords").click());
+    await page.waitForTimeout(300);
+    const first = await read();
+    assert(first.attrs === attrs && first.frame === "flat", `A3 ${tag}:打开是 ${attrs}、平盘(实际 ${first.attrs}、${first.frame})`);
+    assert(first.saved === saved && first.frameSaved === "flat" && first.pieceSet === (old && old.pieceSet || "cburnett"),
+      `A3 ${tag}:写回的设置是 ${saved}/flat/${(old && old.pieceSet) || "cburnett"}(实际 ${first.saved}/${first.frameSaved}/${first.pieceSet})`);
+    await page.reload();
+    await page.waitForTimeout(900);
+    const second = await read();
+    assert(second.attrs === attrs && second.saved === saved, `A3 ${tag}:第二次启动读新字段,仍是 ${attrs}(实际 ${second.attrs})`);
+    assert(errs.length === 0, `A3 ${tag}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
