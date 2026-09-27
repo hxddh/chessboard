@@ -124,6 +124,13 @@
           <span class="ps-result num" id="result-b" hidden></span>
           <span class="ps-clock num" id="clock-b" hidden>5:00</span>
         </div>
+        <!-- v8-0-plan A2: the wide layout's info column. The two strips
+             above become its top and bottom cards (styles.css #app.pv-wide);
+             between them, the opening's name, which the panel shows in every
+             other layout (play-layout.js copies it here). -->
+        <div class="info-col" id="info-col">
+          <p class="info-opening" id="info-opening" hidden></p>
+        </div>
         <canvas id="board" width="900" height="900" aria-label="棋盘" data-i18n-aria="aria.board"></canvas>
         <!-- coordinates live on the frame, not on a1/h1 where they sat on top
              of the rooks; the board itself is left to the pieces -->
@@ -163,6 +170,11 @@
            (moves, replay, analysis, this game's actions), what you set once
            (level, clock, theme, language), and what you look back at
            (statistics, history, achievements). -->
+      <!-- v8-0-plan A2: in a portrait window, the mainline in one line that
+           scrolls sideways, above the drawer's tabs — the notation on the
+           drawer's first screen. A mirror of #move-list for the pointer
+           (play-layout.js); the list stays the keyboard's route. -->
+      <div class="move-strip" id="move-strip" aria-hidden="true" hidden></div>
       <div class="side-tabs" role="tablist" aria-label="面板分区" data-i18n-aria="aria.tabs">
         <button type="button" role="tab" id="tab-play" data-tab="play" aria-selected="true" aria-controls="pane-play" data-i18n="tab.play">对局</button>
         <button type="button" role="tab" id="tab-setup" data-tab="setup" aria-selected="false" aria-controls="pane-setup" data-i18n="tab.setup">设置</button>

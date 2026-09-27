@@ -303,6 +303,277 @@
       }
     }
   },
+  "layoutA2": {
+    "what": "v8-0-plan §2 A2：下棋视图在五档窗口下的几何。band 为最宽的非内容空带（整条横向或纵向都没有内容的带），share 为棋盘格子占下棋视图的面积比，gutter 为棋谱白列最宽着法文字右缘到黑列文字左缘，nav 为最后一行棋谱底到翻谱栏顶，first 为竖窗第一屏不滚动就看得见的着法格数",
+    "script": "scripts/measure-layout.mjs --record=after",
+    "position": "双人对局，意大利开局 10 个半回合（5 行棋谱），面板开在「对局」页",
+    "sizes": [
+      "1024x768",
+      "1280x800",
+      "1440x900",
+      "1920x1080",
+      "600x900"
+    ],
+    "before": {
+      "1024x768": {
+        "view": {
+          "w": 1024,
+          "h": 768
+        },
+        "band": 32.4,
+        "xBand": 32.4,
+        "yBand": 0,
+        "board": 618,
+        "share": 0.486,
+        "frame": [
+          32.4,
+          72,
+          652,
+          652
+        ],
+        "side": 307.2,
+        "rows": 5,
+        "gutter": 81.8,
+        "pitch": 111.1,
+        "nav": 248.2,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1280x800": {
+        "view": {
+          "w": 1280,
+          "h": 800
+        },
+        "band": 106,
+        "xBand": 106,
+        "yBand": 0,
+        "board": 650,
+        "share": 0.413,
+        "frame": [
+          106,
+          72,
+          684,
+          684
+        ],
+        "side": 384,
+        "rows": 5,
+        "gutter": 120.3,
+        "pitch": 149.5,
+        "nav": 280.2,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1440x900": {
+        "view": {
+          "w": 1440,
+          "h": 900
+        },
+        "band": 112,
+        "xBand": 112,
+        "yBand": 0,
+        "board": 750,
+        "share": 0.434,
+        "frame": [
+          112,
+          72,
+          784,
+          784
+        ],
+        "side": 432,
+        "rows": 5,
+        "gutter": 144.3,
+        "pitch": 173.5,
+        "nav": 380.2,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1920x1080": {
+        "view": {
+          "w": 1920,
+          "h": 1080
+        },
+        "band": 258,
+        "xBand": 258,
+        "yBand": 0,
+        "board": 930,
+        "share": 0.417,
+        "frame": [
+          258,
+          72,
+          964,
+          964
+        ],
+        "side": 440,
+        "rows": 5,
+        "gutter": 148.3,
+        "pitch": 177.5,
+        "nav": 560.2,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "600x900": {
+        "view": {
+          "w": 600,
+          "h": 900
+        },
+        "band": 4,
+        "xBand": 0,
+        "yBand": 4,
+        "board": 510,
+        "share": 0.482,
+        "frame": [
+          28,
+          72,
+          544,
+          544
+        ],
+        "side": 600,
+        "rows": 5,
+        "gutter": 232.8,
+        "pitch": 262,
+        "nav": 62,
+        "first": 6,
+        "moves": 10,
+        "wide": false
+      }
+    },
+    "after": {
+      "1024x768": {
+        "view": {
+          "w": 960,
+          "h": 768
+        },
+        "band": 10,
+        "xBand": 10,
+        "yBand": 0,
+        "board": 652,
+        "share": 0.577,
+        "shareWin": 0.541,
+        "frame": [
+          74,
+          72,
+          652,
+          652
+        ],
+        "side": 288,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1280x800": {
+        "view": {
+          "w": 1216,
+          "h": 800
+        },
+        "band": 83.6,
+        "xBand": 83.6,
+        "yBand": 0,
+        "board": 684,
+        "share": 0.481,
+        "shareWin": 0.457,
+        "frame": [
+          147.6,
+          72,
+          684,
+          684
+        ],
+        "side": 364.8,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1440x900": {
+        "view": {
+          "w": 1376,
+          "h": 900
+        },
+        "band": 89.6,
+        "xBand": 89.6,
+        "yBand": 0,
+        "board": 784,
+        "share": 0.496,
+        "shareWin": 0.474,
+        "frame": [
+          153.6,
+          72,
+          784,
+          784
+        ],
+        "side": 412.8,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 10,
+        "moves": 10,
+        "wide": false
+      },
+      "1920x1080": {
+        "view": {
+          "w": 1856,
+          "h": 1080
+        },
+        "band": 8,
+        "xBand": 8,
+        "yBand": 0,
+        "board": 1040,
+        "share": 0.54,
+        "shareWin": 0.522,
+        "frame": [
+          354,
+          36,
+          1040,
+          1040
+        ],
+        "side": 520,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 10,
+        "moves": 10,
+        "wide": true
+      },
+      "600x900": {
+        "view": {
+          "w": 600,
+          "h": 900
+        },
+        "band": 4,
+        "xBand": 0,
+        "yBand": 4,
+        "board": 544,
+        "share": 0.548,
+        "shareWin": 0.548,
+        "frame": [
+          28,
+          72,
+          544,
+          544
+        ],
+        "side": 600,
+        "rows": 5,
+        "gutter": 18.8,
+        "pitch": 48,
+        "nav": 12,
+        "first": 14,
+        "moves": 10,
+        "wide": false
+      }
+    }
+  },
   "libRevision": {
     "what": "快扫铸的错题，精析怎么看：还是 ?? 吗、最佳着变了吗、精析另外还发现了几处 ??",
     "script": "scripts/test-mines.mjs --record --quick=200 --deep=400 --key=libRevision --only=revision --repeat=5",

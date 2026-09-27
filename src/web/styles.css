@@ -597,14 +597,27 @@
          284 stays the floor (design-constraints §4), 30vw is what the reading
          pages and the records were each asking for in their own way, and
          440 is where more panel stops buying anything but line length. The
-         board is height-bound in every window where the cap applies. */
-      --side-w: clamp(284px, 30vw, 440px);
+         board is height-bound in every window where the cap applies.
+         M2 (v8-0-plan A1 × A2): 30% of the play view, not of the window —
+         the rail beside it is not the play view's, and play-layout.js
+         (boardEdges) weighs the two layouts with this same rule. */
+      --side-w: clamp(284px, 0.3 * var(--pv-w), 440px);
       /* v8-0-plan A1: the navigation rail's column on a wide window, and how
          far a page starts from the top (the rail is a row in the top bar on
-         a narrow one, see .rail). The board's free width subtracts the rail;
-         the panel's width does not: it is still a function of the window. */
+         a narrow one, see .rail). The play view is what the rail leaves. */
       --rail-w: 0px;
       --page-top: var(--chrome-h);
+      /* v8-0-plan A2: the wide layout (#app.pv-wide, below) — the info
+         column's floor and its gap to the board, and how wide the panel may
+         grow (it never gets narrower than --side-w). play-layout.js reads
+         these three to decide when that layout fits. */
+      --info-w: 188px;
+      --info-gap: 8px;
+      --side-max-wide: 520px;
+      /* the play view's box (.stage: the window less the rail); play-layout.js
+         writes the measured size on #app, and until it has, it is this */
+      --pv-w: calc(100vw - var(--rail-w));
+      --pv-h: 100vh;
       /* 7.7 (v7-7-plan §2): each player strip, above and below the board.
          Taken out of the board's edge like the chrome's height — which is
          why the vertical stage pad is --stage-pad-y and not --stage-pad: the
@@ -857,7 +870,7 @@
     }
     #board-wrap {
       position: relative;
-      --free-w: calc(100vw - var(--rail-w) - 2 * var(--stage-pad));
+      --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
       --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
@@ -876,7 +889,7 @@
       transition: background var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
     }
     #app.panel-open #board-wrap {
-      --free-w: calc(100vw - var(--rail-w) - var(--side-w) - 2 * var(--stage-pad));
+      --free-w: calc(var(--pv-w) - var(--side-w) - 2 * var(--stage-pad));
       --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
       width: min(var(--free-w), var(--free-h));
       height: min(var(--free-w), var(--free-h));
@@ -1572,6 +1585,11 @@
       overflow-y: auto;
       padding: 2px;
       margin-bottom: 8px;
+      /* v8-0-plan A2: the White column's width and the number of blocks,
+         until play-layout.js has measured and counted (see .mlrow and
+         #sec-moves below) */
+      --ml-w: 64px;
+      --ml-rows: 7;
     }
     /* The cap used to be a flat `max-height: 176px` — about seven move pairs,
        the same seven whether the window was 800px tall or 1400px. A 26-ply
@@ -1586,10 +1604,24 @@
        is the flexible item of its section, which is the flexible item of the
        page, so it takes whatever height the rows under it leave — measured
        ≥ 45% of the column at 1440×900 mid-game (test-layout-e2e). The cap is
-       now only a ceiling for the tallest windows; the 176px floor stays. */
+       now only a ceiling for the tallest windows; the 176px floor stays.
+       v8-0-plan A2: taking the height made the list the height, not the
+       notation — five rows at 1440×900 stood 380px above the transport bar
+       under them. The list is as tall as its rows now, and only a long game
+       shrinks it (it then scrolls), so ⏮ ◀ ▶ ⏭ follow the last row down
+       and stay on screen once the rows fill the column: the section is held
+       to the page's height (min-height 0), so a long game shrinks the list
+       rather than pushing the bar out of the pane. The 176px floor stays for
+       what is under the list (a review can be taller than the page), but a
+       floor taller than the rows was the empty band itself, so it is seven
+       rows or all of them, whichever is less — --ml-rows is the count
+       (play-layout.js; CSS cannot count children). */
     .move-list { max-height: max(176px, calc(100vh - 120px)); }
-    #sec-moves { display: flex; flex-direction: column; }
-    #sec-moves > .move-list { flex: 1 1 0; min-height: calc(7 * var(--row-h-sm) + 8px); }
+    #sec-moves { display: flex; flex-direction: column; min-height: 0; }
+    #sec-moves > .move-list {
+      flex: 0 1 auto; margin-bottom: 0;
+      min-height: min(calc(7 * var(--row-h-sm) + 8px), calc(var(--ml-rows) * (var(--row-h-sm) + 2px) + 4px));
+    }
     .move-list:empty { display: none; }
     .move-list button {
       border: 0;
@@ -2267,7 +2299,7 @@
         padding-bottom: calc(min(46vh, 430px) + var(--strip-h) + var(--stage-pad-y));
       }
       #app.panel-open #board-wrap {
-        --free-w: calc(100vw - var(--rail-w) - 2 * var(--stage-pad));
+        --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
         --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - min(46vh, 430px) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
@@ -2298,7 +2330,7 @@
     @media (max-width: 820px) {
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
-        --free-w: calc(100vw - var(--rail-w) - 2 * var(--stage-pad));
+        --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
         --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
@@ -2415,7 +2447,7 @@
         padding-bottom: calc(var(--sheet-h) + var(--strip-h) + var(--stage-pad-y));
       }
       #board-wrap, #app.panel-open #board-wrap {
-        --free-w: calc(100vw - var(--rail-w) - 2 * var(--stage-pad));
+        --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
         --free-h: calc(100vh - var(--chrome-h) - var(--task-h, 0px) - var(--sheet-h) - 2 * var(--strip-h) - var(--stage-pad-y));
         width: min(var(--free-w), var(--free-h));
         height: min(var(--free-w), var(--free-h));
@@ -2575,14 +2607,23 @@
     /* 7.7 (v7-7-plan §3): a notation sheet, not a row of chips — the number
        in a shaded gutter (7.9 §2c: unshaded now), White's and Black's move in two equal columns, the
        menu handle floating at the row's end instead of shoving Black's move
-       sideways when White's is current. */
+       sideways when White's is current.
+       v8-0-plan A2: a compact table. The two 1fr columns put Black's move
+       174px to the right of White's at 1440×900 — 144px of white space
+       between the columns for a five-letter move. Now White's column is as
+       wide as its widest move (--ml-w, measured by play-layout.js; 64px
+       until it has been), Black's is as wide as its move, and the rest of
+       the row is the fourth column, where the menu handle floats. Every
+       other row is shaded, so a line can be followed across. */
     .mlrow {
       position: relative;
-      display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr);
+      display: grid; grid-template-columns: 40px var(--ml-w) minmax(0, max-content) minmax(0, 1fr);
       align-items: stretch; gap: 2px;
       padding: 0;
+      border-radius: var(--radius-sm);
     }
-    .mlrow > .mlmove { min-width: 0; }
+    .move-list > .mlrow:nth-child(even) { background: color-mix(in srgb, var(--text) 5%, transparent); }
+    .mlrow > .mlmove { min-width: 0; justify-self: start; }
     /* One font for the row. The move number was SF Mono 12px and the move
        beside it the interface sans at 13px — two typefaces and two sizes in a
        three-character span. Tabular figures stay, because the numbers are a
@@ -2659,10 +2700,13 @@
        A variation is a paragraph, not a row: indented under the move it
        replaces, one size down and in the muted ink, parentheses nested as
        deep as the line goes. A comment is the same paragraph without the
-       parentheses. The mainline row stays exactly what it was. */
+       parentheses. The mainline row stays exactly what it was.
+       v8-0-plan A2: and it hangs off a rule, so where a side line starts
+       and stops can be seen without reading the parentheses. */
     .mlvar, .mlcomment {
-      margin: 0 0 0 24px;
-      padding: 0 4px;
+      margin: 2px 0 2px 20px;
+      padding: 0 4px 0 8px;
+      border-left: 2px solid var(--line);
       font-size: 0.8125rem; line-height: var(--lh-body); color: var(--muted);
       white-space: normal; overflow-wrap: anywhere;
     }
@@ -3739,3 +3783,117 @@ span[data-icon] { display: inline-grid; place-items: center; }
 
 /* 偏好设置: the settings page's rows, in a window of their own */
 .modal.prefs-modal { width: min(560px, calc(100vw - 32px)); }
+
+/* ------------------------------------------------------------------
+   The play view stretches with its window (v8-0-plan §2 A2).
+
+   Wide — #app.pv-wide, set by play-layout.js from the play view's own box
+   (--pv-w / --pv-h) where it is ≥ 1280 wide, landscape, and the board is no
+   smaller for it. At 1920×1080 the board used to stand in the middle of
+   1480px with 258px of nothing on either side: the panel stopped at 440 and
+   the board is height-bound. Here the two player strips leave the board's
+   top and bottom edges and become the cards of a column on its left — the
+   opponent at the top, you at the bottom, the opening's name between them —
+   so the board takes the 80px of height they gave back, and the panel on
+   the right takes what the board leaves, never less than the two-column
+   panel (the reading pages were sized for it: test-layout-e2e 3u5, 3x) and
+   up to 520. What is left over after that goes to the info column (up to
+   360), not to a margin.
+     1280×800  info 188 · board frame 688 · panel 384   (7.7: 684 · 384)
+     1440×900  info 188 · board frame 800 · panel 432   (7.7: 784 · 432)
+     1920×1080 info 340 · board frame 1040 · panel 520  (7.7: 964 · 440)
+   Every length is one function of the play view's size, so a tab or a mode
+   moves nothing (7.7 §1g, re-proved in test-layout-e2e).
+   ------------------------------------------------------------------ */
+#app.pv-wide {
+  --board-h: calc(var(--pv-h) - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--stage-pad-y));
+  --side-w: clamp(clamp(284px, 0.3 * var(--pv-w), 440px), var(--pv-w) - var(--info-w) - var(--info-gap) - 2 * var(--stage-pad) - var(--board-h), var(--side-max-wide));
+  --info-w-fit: clamp(var(--info-w), var(--pv-w) - var(--side-w) - var(--info-gap) - 2 * var(--stage-pad) - var(--board-h), 360px);
+  --info-lead: calc(var(--stage-pad) + var(--info-w-fit) + var(--info-gap));
+}
+/* shut, the board stands in the middle of the window with its column
+   beside it; open, it stands against the panel */
+#app.pv-wide .stage {
+  padding: calc(var(--chrome-h) + var(--task-h, 0px) + var(--stage-pad-y)) var(--info-lead) var(--stage-pad-y);
+}
+#app.pv-wide.panel-open .stage { padding-right: calc(var(--side-w) + var(--stage-pad)); }
+#app.pv-wide #board-wrap {
+  --free-w: calc(var(--pv-w) - 2 * var(--info-lead));
+  --free-h: var(--board-h);
+}
+#app.pv-wide.panel-open #board-wrap {
+  --free-w: calc(var(--pv-w) - var(--info-lead) - var(--side-w) - var(--stage-pad));
+}
+/* the strips as the column's two cards: who, what they have taken, the
+   opponent's two tools, and the clock as the card's widest line */
+#app.pv-wide .pstrip {
+  left: auto; right: calc(100% + var(--info-gap));
+  width: var(--info-w-fit); height: auto;
+  flex-wrap: wrap; align-items: center; gap: 12px 8px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+}
+#app.pv-wide .pstrip.at-top { top: 0; padding-bottom: 12px; align-items: center; }
+#app.pv-wide .pstrip.at-bottom { bottom: 0; padding-top: 12px; align-items: center; }
+#app.pv-wide .ps-who {
+  flex: 1 1 calc(100% - 40px);
+  flex-direction: column; align-items: flex-start; justify-content: center; gap: 0;
+  height: auto; min-height: var(--ctl-h-sm);
+}
+#app.pv-wide .ps-name, #app.pv-wide .ps-level { max-width: 100%; }
+#app.pv-wide .taken { flex-basis: 100%; }
+#app.pv-wide .ps-tools { flex-basis: 100%; min-width: 0; margin-left: 0; }
+/* two equal halves: a relabelled hint (提示 / 思考中 / 答案) still cannot
+   push take-back along (the reason for the 80px floor on the strip) */
+#app.pv-wide .ps-tools .tool-btn { flex: 1 1 0; min-width: 0; padding: 0 6px; }
+#app.pv-wide .ps-result { margin-left: 0; }
+#app.pv-wide .ps-clock { flex: 1 1 auto; margin-left: 0; height: 48px; font-size: 1.875rem; }
+/* the opening's name, between the two cards; the panel's copy stands down */
+.info-col { display: none; }
+#app.pv-wide .info-col {
+  position: absolute; top: 0; bottom: 0; right: calc(100% + var(--info-gap));
+  width: var(--info-w-fit);
+  display: flex; flex-direction: column; justify-content: center;
+  pointer-events: none;
+}
+.info-opening {
+  margin: 0; padding: 0 4px;
+  font-size: 0.9375rem; font-weight: 600; line-height: var(--lh-body); color: var(--text);
+}
+.info-opening[hidden] { display: none; }
+.info-opening.vacant { visibility: hidden; }
+#app.pv-wide .opening-line { display: none; }
+
+/* Portrait: the notation on the drawer's first screen. At 600×900 the
+   drawer comes up 240px tall and its first screen was the tabs, the
+   opening's name and the list's heading. The strip is the mainline in one
+   line above the tabs, scrolled so the move on the board is in view (a
+   mirror of #move-list; play-layout.js). */
+.move-strip { display: none; }
+@media (max-aspect-ratio: 1/1) {
+  .move-strip:not([hidden]) {
+    display: flex; align-items: center; gap: 2px;
+    flex: none; height: var(--ctl-h-sm);
+    width: 100%; max-width: 620px; margin: 0 auto 4px;
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+    white-space: nowrap;
+  }
+  .move-strip::-webkit-scrollbar { display: none; }
+}
+.ms-num {
+  flex: none; padding: 0 2px 0 8px;
+  font-size: 0.9375rem; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.ms-num:first-child { padding-left: 0; }
+.ms-move {
+  appearance: none; border: 0; background: transparent; color: var(--text);
+  flex: none; height: var(--ctl-h-sm); padding: 0 6px;
+  font: inherit; font-size: 0.9375rem; font-weight: 500; line-height: var(--lh-tight);
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.ms-move:hover { background: var(--btn-ghost); }
+.ms-move.current {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent); font-weight: 600;
+}
