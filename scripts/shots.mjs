@@ -23,6 +23,7 @@
  *   node scripts/shots.mjs                  → shots/<engine>/NN-name.png
  *   OUT=/tmp/before node scripts/shots.mjs  → somewhere else
  *   ONLY=toast node scripts/shots.mjs       → just the shots whose name matches
+ *   DPR=2 node scripts/shots.mjs            → twice the pixels, for the fine detail (v7-9-plan §7)
  * @module shots
  */
 import fs from "fs";
@@ -195,7 +196,7 @@ console.log("引擎:", ENGINE, "→", OUT);
 let n = 0, errors = 0;
 for (const [i, s] of SHOTS.entries()) {
   if (ONLY && !ONLY.test(s.name)) continue;
-  const ctx = await browser.newContext({ viewport: s.vp, locale: s.lang });
+  const ctx = await browser.newContext({ viewport: s.vp, locale: s.lang, deviceScaleFactor: Number(process.env.DPR) || 1 });
   await ctx.addInitScript(([l, m, tb, th, po]) => {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
       mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th }));
