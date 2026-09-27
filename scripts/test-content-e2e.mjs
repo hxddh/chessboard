@@ -1251,7 +1251,7 @@ if (hasTab && REAL.length) {
     pg.on("pageerror", (e) => errs.push(e.message));
     await pg.goto(`http://127.0.0.1:${PORT}/`);
     await pg.waitForTimeout(1000);
-    await pg.click("#tab-record").catch(() => {});
+    await pg.click('#rail button[data-view="me"]').catch(() => {});
     await pg.waitForTimeout(300);
     const meta = await pg.evaluate(() => (document.getElementById("rating-meta") || {}).textContent || "");
     const m = /做题评级 (\S+)/.exec(meta);

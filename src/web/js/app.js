@@ -39,6 +39,8 @@ import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
 import { createRepertoireUI } from "./repertoire-ui.js";
 import { createSettingsUI } from "./settings-ui.js";
+import { createShell } from "./shell.js";
+import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReport } from "./report.js";
 import { ChessReview } from "./review.js";
 import { ChessSrs } from "./srs.js";
@@ -1548,13 +1550,15 @@ import { createStore } from "./store.js";
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
       if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
-      if (["play", "setup", "record"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
+      if (["play", "setup"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
+      // v8-0-plan A1: the view and the last playing mode; shell.js vets both
+      Object.assign(store.ui, { view: s.view, playMode: s.playMode });
       if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
     }
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
         followSystem: store.ui.followSystem, textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         soundSet: store.ui.soundSet }));
@@ -6264,16 +6268,15 @@ import { createStore } from "./store.js";
    *   nothing left unsolved about it), so a caller can fall back
    */
   function dailyJump(step) {
-    const modeBtn = (m) => document.querySelector('#mode-seg button[data-mode="' + m + '"]');
     if (step.kind === "lesson") {
       store.session.learnState.last = step.i;
       saveLearnState();
-      if (store.session.mode !== "learn") modeBtn("learn").click();
+      if (store.session.mode !== "learn") switchMode("learn");
       else { startLesson(step.i); setSideTab("play", { top: true }); sync(); }
       return true;
     }
     if (step.kind === "game") {
-      if (store.session.mode !== "ai") modeBtn("ai").click();
+      if (store.session.mode !== "ai") switchMode("ai");
       else setSideTab("play", { top: true });
       return true;
     }
@@ -6281,7 +6284,7 @@ import { createStore } from "./store.js";
     // show the section and start the pass, which is exactly what the player
     // would have done by hand
     if (step.kind === "lib") {
-      setSideTab("record", { top: false });
+      Shell.go("library");
       const sec = document.getElementById("lib-body");
       if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "center" });
       if (!store.session.libRun) runLibraryPass();
@@ -6301,7 +6304,7 @@ import { createStore } from "./store.js";
         startPuzzleAt(pick.cat, Math.max(0, list.findIndex((p) => p.id === pick.id)));
         setSideTab("play", { top: true });
       };
-      if (store.session.mode !== "puzzle") { modeBtn("puzzle").click(); go(); }
+      if (store.session.mode !== "puzzle") { switchMode("puzzle"); go(); }
       else { go(); saveSettings(); sync(); }
       return true;
     }
@@ -6311,7 +6314,7 @@ import { createStore } from "./store.js";
     savePuzzleState();
     // same contract as 为你出一题: a browse filter must not hide the plan
     store.session.puzzleTierFilter = "all";
-    if (store.session.mode !== "puzzle") modeBtn("puzzle").click();
+    if (store.session.mode !== "puzzle") switchMode("puzzle");
     else { startPuzzles(); setSideTab("play", { top: true }); saveSettings(); sync(); }
     return true;
   }
@@ -7071,14 +7074,9 @@ import { createStore } from "./store.js";
       v.textContent = tf(d.win ? "rec.winUnlocks" : "rec.unlocks", [nm]);
       txt.append(k, v);
       b.append(ic, txt);
-      b.onclick = () => {
-        const seg = document.querySelector('#mode-seg button[data-mode="' + d.mode + '"]');
-        // already in that mode: the mode row's handler returns early on
-        // purpose, so there is nothing for it to do and the door still has to
-        // land somewhere — the board, with the panel showing 对局
-        if (!seg || d.mode === store.session.mode) { setSideTab("play", { top: true }); return; }
-        seg.click();
-      };
+      // already in that mode, the door still lands somewhere: the board,
+      // with the panel showing 对局 (setSideTab leaves the page, A1)
+      b.onclick = () => { if (d.mode !== store.session.mode) switchMode(d.mode); else setSideTab("play", { top: true }); };
       doors.appendChild(b);
     }
   }
@@ -8096,7 +8094,7 @@ import { createStore } from "./store.js";
     for (const b of document.querySelectorAll(".act-btn.primary")) {
       // 7.9 §4a: the record page's empty library spends its own fill, on a
       // tab of its own (library-ui.js renderLibrary) — not this function's
-      if (b.id !== wants && !b.closest("#pane-record")) b.classList.remove("primary");
+      if (b.id !== wants && !b.closest(".page")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
@@ -8142,6 +8140,7 @@ import { createStore } from "./store.js";
     store.subscribe("session", syncDailyUI);
     store.subscribe("game", syncDailyUI);
     store.subscribe("session", syncSettingsUI);
+    store.subscribe("session", Shell.onSession);
 
     // …and the two views that were living inside syncSettingsUI while reading
     // the *game*. The captured-piece strip follows the replay cursor — it shows
@@ -8493,7 +8492,7 @@ import { createStore } from "./store.js";
     const side = pvp ? (store.game.flipped ? "b" : "w") : store.session.humanColor;
     // the last choices, so Enter alone is 「再来一盘同样的」
     store.ui.newGame = {
-      difficulty: store.session.difficulty, personaId: store.session.personaId,
+      mode: pvp ? "pvp" : "ai", difficulty: store.session.difficulty, personaId: store.session.personaId,
       color: store.session.colorRandom ? "random" : side, timeControl: store.game.timeControl,
     };
     const warn = el("ng-warn");
@@ -8519,7 +8518,7 @@ import { createStore } from "./store.js";
   function startFromDialog() {
     const d = store.ui.newGame;
     if (!d) return;
-    const pvp = store.session.mode === "pvp";
+    const pvp = d.mode === "pvp";
     const side = d.color === "random" ? (Math.random() < 0.5 ? "w" : "b") : d.color;
     store.session.colorRandom = d.color === "random";
     if (!pvp) {
@@ -8530,6 +8529,8 @@ import { createStore } from "./store.js";
     store.game.flipped = side === "b";
     store.game.timeControl = d.timeControl;
     closeNewGame();
+    switchMode(d.mode);
+    Shell.toBoard();
     saveSettings();
     startNewGame();
   }
@@ -9740,47 +9741,8 @@ import { createStore } from "./store.js";
     strip(bEl, s.b, "w", -s.diff);
   }
 
-  // --- panel tabs ---
-  //
-  // Until 1.9 the panel was one 1788px scroll in a 900px window, ordered by
-  // when a setting is chosen rather than by how often it is used: theme and
-  // language sat above the fold while the move list, the replay bar and this
-  // game's own actions all started below it. Three tabs split it by what the
-  // player is doing — playing, configuring, or looking back.
-  const TABS = ["play", "setup", "record"];
-
-  function setSideTab(id, opts) {
-    const want = TABS.includes(id) ? id : "play";
-    store.ui.sideTab = want;
-    // which tab is showing is a layout fact, not only a state one: the
-    // reading tab gets a wider panel on a wide window (7.3 §4E), and that is
-    // the stylesheet's decision to make, from an attribute, rather than a
-    // width this function would have to compute and keep in step.
-    appEl.setAttribute("data-tab", want);
-    for (const t of TABS) {
-      const btn = document.getElementById("tab-" + t);
-      const pane = document.getElementById("pane-" + t);
-      if (btn) btn.setAttribute("aria-selected", t === want ? "true" : "false");
-      if (pane) {
-        pane.hidden = t !== want;
-        // a pane left scrolled half-way reads as a broken tab when you return
-        if (t === want && opts && opts.top) pane.scrollTop = 0;
-      }
-    }
-    syncTabRule();
-    saveSettings();
-  }
-
-  /** 7.7 §1e: the rule under the tab row, drawn while the pane is scrolled. */
-  function syncTabRule() {
-    const row = document.querySelector(".side-tabs");
-    const pane = document.getElementById("pane-" + store.ui.sideTab);
-    if (row) row.classList.toggle("is-scrolled", !!pane && pane.scrollTop > 0);
-  }
-  for (const t of TABS) {
-    const pane = document.getElementById("pane-" + t);
-    if (pane) pane.addEventListener("scroll", syncTabRule, { passive: true });
-  }
+  /** The panel's two tabs are shell.js's since v8-0-plan A1 — one door. */
+  function setSideTab(id, opts) { Shell.setSideTab(id, opts); }
 
   function isPanelOpen() { return appEl.classList.contains("panel-open"); }
   /**
@@ -10007,7 +9969,7 @@ import { createStore } from "./store.js";
     statusText: () => statusText(),
     onSquareClick: (sq) => onSquareClick(sq),
     escapeKey: () => escapeKey(),
-    dialogOpen: () => dialogOpen(),
+    dialogOpen: () => dialogOpen(), pageShown: () => Shell.pageShown(),
     promoOpen: () => !!promoModal && promoModal.classList.contains("show"),
     confirmOpen: () => confirmModal.classList.contains("show"),
     keyHelpOpen: () => NativeCmds.keyHelpOpen(),
@@ -10082,23 +10044,6 @@ import { createStore } from "./store.js";
       if (lbl) { lbl.setAttribute("data-i18n", key); lbl.textContent = t(key); }
       moreBtn.setAttribute("data-i18n-aria", key);
       moreBtn.setAttribute("aria-label", t(key));
-    };
-  }
-  const tabRow = document.querySelector(".side-tabs");
-  if (tabRow) {
-    tabRow.onclick = (ev) => {
-      const b = ev.target.closest("button[data-tab]");
-      if (b) setSideTab(b.dataset.tab, { top: true });
-    };
-    // ARIA tablist keyboard contract: arrows move between tabs
-    tabRow.onkeydown = (ev) => {
-      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
-      const cur = TABS.indexOf(store.ui.sideTab);
-      const next = TABS[(cur + (ev.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
-      ev.preventDefault();
-      setSideTab(next, { top: true });
-      const btn = document.getElementById("tab-" + next);
-      if (btn) btn.focus();
     };
   }
   document.getElementById("scrim").onclick = () => setPanelOpen(false);
@@ -10666,15 +10611,30 @@ import { createStore } from "./store.js";
     setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar,
   });
   SettingsUI.wire();
-  document.getElementById("mode-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-mode]");
-    if (!b || b.dataset.mode === store.session.mode) return;
+  // v8-0-plan A1: the rail, the home page and the pages (shell.js); the
+  // preferences window (prefs-ui.js)
+  const PrefsUI = createPrefsUI({ doc: document });
+  PrefsUI.wire();
+  const Shell = createShell({
+    doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
+    requestNewGame: () => requestNewGame(), openPrefs: () => PrefsUI.open(), gameOver: () => appGameOver(),
+    recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps,
+    nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { n: i + 1, title: lessonText(LESSONS[i]).title }; },
+  });
+  Shell.wire();
+  /**
+   * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
+   * now the rail's (shell.js) and the new-game dialog's. It stops the engine,
+   * leaves the editor, gives a clocked mode fresh clocks and shows 对局.
+   */
+  function switchMode(mode) {
+    if (!mode || mode === store.session.mode) return;
     invalidateEngine();
     clearPreview();
     stopEditor(t("msg.editor.exited"));
     const wasLearn = store.session.mode === "learn";
     const wasPuzzle = store.session.mode === "puzzle";
-    store.session.mode = b.dataset.mode;
+    store.session.mode = mode;
     // entering a clocked mode mid-game gets fresh clocks
     store.game.flagFall = null;
     if (store.session.mode === "pvp" || store.session.mode === "ai") resetClocks();
@@ -10690,7 +10650,7 @@ import { createStore } from "./store.js";
     syncAutoFlip();
     sync();
     maybeEngineTurn();
-  };
+  }
   document.getElementById("lesson-restart").onclick = () => {
     if (store.session.learn) { startLearnTask(); toast(t("lm.restarted")); }
   };
@@ -11276,7 +11236,8 @@ import { createStore } from "./store.js";
     if (store.ui.preview) { clearPreview(); return true; }
     // before closing the panel — the panel holds the editor's only exit
     if (store.session.editor) { stopEditor(t("msg.editor.exited")); store.commit("game", "action"); return true; }
-    if (isPanelOpen()) { setPanelOpen(false); return true; }
+    // under a page (v8-0-plan A1) the panel is not on screen to be closed
+    if (isPanelOpen() && !Shell.pageShown()) { setPanelOpen(false); return true; }
     return false;
   }
 
@@ -11349,6 +11310,7 @@ import { createStore } from "./store.js";
     Dlg.register(keysModal, closeKeyHelp);
     Dlg.register(noteModal, closeNoteModal);
     Dlg.register(aboutModal, () => Dlg.close(aboutModal));
+    Dlg.register(document.getElementById("prefs-modal"), () => PrefsUI.close());
   }
   wireDialogs();
   // the markup names its icons (<span data-icon="…">); draw them before the
@@ -11384,6 +11346,7 @@ import { createStore } from "./store.js";
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
   setSideTab(store.ui.sideTab);
+  Shell.restore();
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
   // 7.6 §1c: …and the analysis it had, which used to die with the session

@@ -78,8 +78,10 @@ export function createSettingsUI(d) {
     document.querySelectorAll("#sound-set-seg button").forEach((b) => b.classList.toggle("active", b.dataset.soundSet === store.ui.soundSet));
     document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
     document.querySelectorAll("#multipv-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.multipv) === store.ui.multipv));
+    // v8-0-plan A1: the segment is the new-game dialog's, and shows its draft
+    const ngMode = store.ui.newGame ? store.ui.newGame.mode : store.session.mode;
     document.querySelectorAll("#mode-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.mode === store.session.mode);
+      b.classList.toggle("active", b.dataset.mode === ngMode);
     });
     // the first tab holds the lesson or the puzzle in those modes, so it says
     // so — 「对局」 over a lesson read as a page that had not changed
@@ -117,18 +119,18 @@ export function createSettingsUI(d) {
     const diffRow = document.getElementById("row-difficulty");
     const colorRow = document.getElementById("row-color");
     const clockRow = document.getElementById("row-clock");
-    if (diffRow) diffRow.hidden = store.session.mode !== "ai";
+    if (diffRow) diffRow.hidden = ngMode !== "ai";
     const personaRow = document.getElementById("row-persona");
-    if (personaRow) personaRow.hidden = store.session.mode !== "ai";
+    if (personaRow) personaRow.hidden = ngMode !== "ai";
     // in the dialog a two-player game also chooses a side: which one sits at
     // the bottom of the board (「谁执白」) — unless 自动翻转 is on, which
     // turns the board to White the moment the game starts (Codex, #83)
-    const pvpPick = !!ng && store.session.mode === "pvp" && !store.ui.autoFlipPvp;
+    const pvpPick = !!ng && ngMode === "pvp" && !store.ui.autoFlipPvp;
     if (colorRow) {
-      colorRow.hidden = store.session.mode !== "ai" && !pvpPick;
+      colorRow.hidden = ngMode !== "ai" && !pvpPick;
       setText(colorRow.querySelector(".setting-k"), t(pvpPick ? "ng.pvpColor" : "side.color"));
     }
-    if (clockRow) clockRow.hidden = store.session.mode !== "pvp" && store.session.mode !== "ai";
+    if (clockRow) clockRow.hidden = ngMode !== "pvp" && ngMode !== "ai";
     const coachRow = document.getElementById("row-coach");
     if (coachRow) coachRow.hidden = store.session.mode !== "ai";
     const coachSwitch = document.getElementById("opt-coach");
@@ -209,6 +211,11 @@ export function createSettingsUI(d) {
       store.ui.newGame[field] = value;
       paintSettings();
       return true;
+    };
+    // v8-0-plan A1: 人机 / 双人 is chosen with the next game, in the dialog
+    document.getElementById("mode-seg").onclick = (ev) => {
+      const b = ev.target.closest("button[data-mode]");
+      if (b) draftPick("mode", b.dataset.mode);
     };
     document.getElementById("clock-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-tc]");

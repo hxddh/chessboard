@@ -135,7 +135,7 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js", "settings-ui.js"];
+const APP_MODULES = ["app.js", "settings-ui.js", "shell.js", "prefs-ui.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -2023,7 +2023,9 @@ for (const lang of CONTENT_LANGS) {
   // longer underneath it. It rode 6px below the chrome's centre line and 2.5px
   // past its bottom edge for a whole release, and no rule in this file could
   // notice, because it was the only user of every declaration it carried.
-  // Mode is a plain `.theme-row.wrap` segment on the settings page now.
+  // Mode is a plain `.theme-row.wrap` segment — on the settings page until
+  // v8-0-plan A1, in the new-game dialog since (人机 / 双人; the rail has
+  // 谜题 and 学习).
   {
     const markup = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
     assert(!/mode-nav/.test(stripped), "no `.mode-nav` idiom is left in the stylesheet");
@@ -2043,19 +2045,29 @@ for (const lang of CONTENT_LANGS) {
     const i18nSrc = ["i18n.js", "i18n-en.js", "i18n-ja.js"]
       .map((f) => fs.readFileSync(path.join(root, "src/web/js", f), "utf8")).join("\n");
     const headings = [...pane.matchAll(/data-i18n="(side\.[a-z]+)"[^>]*>/g)]
-      .map((m) => m[1]).filter((k) => ["side.mode", "side.game", "side.look", "side.danger"].includes(k));
-    // 2.1 had the three irreversible deletions in the middle of the page, and
-    // they were the only red on it. A destructive group goes last.
-    assert(headings[headings.length - 1] === "side.danger",
-      "the deletions are the last group on the settings page (" + headings.join(" → ") + ")");
-    assert(headings[0] === "side.mode",
-      "…and mode is the first, because it decides what the rest of the page holds");
+      .map((m) => m[1]).filter((k) => ["side.mode", "side.game", "side.display", "side.engine", "side.danger", "side.language", "side.sound"].includes(k));
+    // v8-0-plan A1: the settings page is the game's. The mode went to the
+    // new-game dialog and the rail; the window's look, language, sound and
+    // data went to 偏好设置. What is left opens on the game and ends on the
+    // engine, and none of the app-level groups is on it.
+    assert(headings[0] === "side.game" && headings[headings.length - 1] === "side.engine",
+      "A1: the settings page runs 对局 → … → 引擎 (" + headings.join(" → ") + ")");
+    assert(!headings.some((k) => ["side.mode", "side.danger", "side.language", "side.sound"].includes(k)),
+      "A1: no mode, language, sound or deletion group on the settings page");
+    // …and in the preferences window, the deletions are still the last
+    // group: 2.1 had them in the middle of a page, the only red on it
+    const prefs = markup.slice(markup.indexOf('id="prefs-modal"'), markup.indexOf('id="prefs-close"'));
+    const pHeads = [...prefs.matchAll(/data-i18n="((?:side|prefs)\.[a-zA-Z]+)"[^>]*>/g)].map((m) => m[1])
+      .filter((k) => ["prefs.look", "side.language", "side.sound", "side.learning", "side.allData", "side.danger"].includes(k));
+    assert(pHeads[0] === "prefs.look" && pHeads[pHeads.length - 1] === "side.danger",
+      "A1: 偏好设置 runs 外观 → … → 清除数据 (" + pHeads.join(" → ") + ")");
 
-    // The heading is a promise about what is inside. 「外观」 held the language
-    // and the sound, neither of which is an appearance.
-    for (const [lang, want] of [["zh-CN", "界面"], ["en", "Interface"], ["ja", "インターフェース"]])
-      assert(new RegExp('"side\\.look":\\s*"' + want + '"').test(i18nSrc),
-        lang + ": the group that holds theme, orientation, language and sound is named for all four (" + want + ")");
+    // The heading is a promise about what is inside. 「外观」 once held the
+    // language and the sound; since A1 each has its own group, and the rows
+    // left on the settings page are about the board in front of you.
+    for (const [lang, look, disp] of [["zh-CN", "外观", "显示"], ["en", "Appearance", "Display"], ["ja", "外観", "表示"]])
+      assert(new RegExp('"prefs\\.look":\\s*"' + look + '"').test(i18nSrc) && new RegExp('"side\\.display":\\s*"' + disp + '"').test(i18nSrc),
+        lang + ": the appearance group and the board-view group are named for what they hold (" + look + " / " + disp + ")");
 
     // A hint that counts the controls above it is a hint that goes wrong the
     // first time one of them is not rendered — and 「清除统计与历史」 is not,
@@ -4009,8 +4021,8 @@ for (const lang of CONTENT_LANGS) {
     "教练用的是诊断页同一个门槛 —— 两个门槛就是两张嘴");
   assert(/Progress\.accSeries\(loadStats\(\)\.games\.concat\(libPoints\), 30\)/.test(appSrc),
     "准确率走势把棋谱库里的棋并进同一条轴");
-  assert(/function dailyJump\(step\) \{[\s\S]{0,400}#mode-seg button\[data-mode=/.test(appSrc),
-    "跳步走的是模式段自己的点击路径,不是旁路");
+  assert(/function dailyJump\(step\) \{[\s\S]{0,400}switchMode\("learn"\)/.test(appSrc),
+    "跳步走的是换模式的那一个函数(导航栏也走它),不是旁路");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
   assert(/id="daily-btn"/.test(html) && /id="trend-head" hidden/.test(html) && /id="trend-acc" hidden/.test(html),
     "训练入口在,进步区默认不画,有数据才出现(P3)");
@@ -4314,12 +4326,13 @@ for (const lang of CONTENT_LANGS) {
       (w - side) + "px of width vs " + (h - chrome) + "px of height)");
   }
 
-  // The panel is split into three tabs. A section that ends up outside a pane
-  // is invisible in every tab — the failure mode is silent, so it gets a check.
+  // The panel is split into tabs — two since v8-0-plan A1, when 记录 became
+  // the 我的 and 棋谱库 pages. A section that ends up outside a pane is
+  // invisible in every tab — the failure mode is silent, so it gets a check.
   const paneIds = [...html.matchAll(/<div class="side-pane" id="(pane-[a-z]+)"/g)].map((m) => m[1]);
-  assert(paneIds.length === 3, "found the three panel panes (" + paneIds.join(", ") + ")");
+  assert(paneIds.length === 2, "found the two panel panes (" + paneIds.join(", ") + ")");
   const tabControls = [...html.matchAll(/role="tab"[^>]*aria-controls="([^"]+)"/g)].map((m) => m[1]);
-  assert(tabControls.length === 3 && tabControls.every((c) => paneIds.includes(c)),
+  assert(tabControls.length === 2 && tabControls.every((c) => paneIds.includes(c)),
     "every tab points at a pane that exists");
   const aside = /<aside class="side"[\s\S]*?<\/aside>/.exec(html)[0];
   let orphan = 0;
@@ -6714,7 +6727,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 11462; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js (M2)
+  const APP_JS_LINE_CEILING = 11425; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
