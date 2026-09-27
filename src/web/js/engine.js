@@ -523,51 +523,86 @@ const global = typeof window !== "undefined" ? window : globalThis;
   function getOptions() { return { ...options }; }
 
   /**
+   * v8-0-plan B2: an analysis search is a fixed number of nodes, not a fixed
+   * time. `go movetime` stops wherever the clock runs out, and where that is
+   * depends on the machine, the page's other work, the GC — the same game
+   * analysed twice told two stories (docs/measured.json `winPctNoise`, 7.9 at
+   * 200 ms: `??` agreed 82%, `?` 64%, `?!` 45%). Stockfish is single-threaded
+   * here, so a node-limited search from a clean state is a pure function of
+   * the position and the options.
+   *
+   * "Clean state" is the other half: `ucinewgame` before every analysis
+   * search clears the history tables as well as the hash. Without it a search
+   * depends on whatever was searched before it — the coach, a hint, the
+   * previous ply — and two passes over one game walk the engine through
+   * different states (scripts/test-mined.mjs learned this first).
+   *
+   * Callers still speak in ms-equivalent budgets (120 / 200 / 400): stored
+   * analyses, drills and the library compare budgets to decide which pass was
+   * deeper, and that ordering keeps its meaning. A budget is converted here,
+   * at the rate this build searches: in node over 110 corpus positions,
+   * `go movetime 200` reached a median 96k nodes (depth 15), and 90k nodes
+   * from a cleared state took a median 185 ms plus ~15 ms for the clear — so
+   * 分析 costs what it did (docs/measured.json `reviewPass` has the wall time
+   * of the whole pipeline).
+   */
+  const NODES_PER_MS = 450;
+  /** The node count one analysis `budget` (ms-equivalent) searches. */
+  function nodesFor(budget) {
+    return Math.max(1000, Math.round((budget || 120) * NODES_PER_MS));
+  }
+
+  /**
    * 6.0: evaluations already paid for.
    *
    * The coach, the hint and the review each searched the same position again
    * from nothing (v6-plan §1.2). A result is keyed by the position — FEN
    * without the fullmove number, which does not change what the engine sees
    * (the halfmove clock stays: it feeds the fifty-move rule, so the same
-   * board at clock 0 and at clock 99 are different positions) — and
-   * is served again to anyone asking for no more than the budget that
-   * produced it. Bounded and LRU: a long session must not keep every position
-   * it ever looked at.
+   * board at clock 0 and at clock 99 are different positions). Bounded and
+   * LRU: a long session must not keep every position it ever looked at.
+   *
+   * v8-0-plan B2: served only to a request for exactly the budget that
+   * produced it. Through 7.9 a deeper result also answered a shallower
+   * request — harmless for a hint, fatal for reproducibility: a position the
+   * review had deepened came back from the cache on the next pass as its
+   * quick scan, so the second pass started from different numbers.
    */
   const EVAL_CACHE_MAX = 512;
   const evalCache = new Map();
-  function cacheKey(fen, multipv) {
+  function cacheKey(fen, budget, multipv) {
     const f = fen.split(" ");
-    return f.slice(0, 5).join(" ") + "|" + (multipv || 1);
+    return f.slice(0, 5).join(" ") + "|" + (multipv || 1) + "|" + nodesFor(budget);
   }
-  function cachedEval(fen, movetime, multipv) {
-    const k = cacheKey(fen, multipv);
+  function cachedEval(fen, budget, multipv) {
+    const k = cacheKey(fen, budget, multipv);
     const hit = evalCache.get(k);
-    if (!hit || hit.movetime < (movetime || 120)) return null;
+    if (!hit) return null;
     evalCache.delete(k); evalCache.set(k, hit); // refresh recency
-    return hit.result;
+    return hit;
   }
-  function rememberEval(fen, movetime, multipv, result) {
+  function rememberEval(fen, budget, multipv, result) {
     if (!result) return;
-    const k = cacheKey(fen, multipv);
+    const k = cacheKey(fen, budget, multipv);
     evalCache.delete(k);
-    evalCache.set(k, { movetime: movetime || 120, result });
+    evalCache.set(k, result);
     while (evalCache.size > EVAL_CACHE_MAX) evalCache.delete(evalCache.keys().next().value);
   }
 
   /**
    * Full-strength eval of `fen` for review analysis.
+   * @param {number} budget ms-equivalent, searched as nodesFor(budget) nodes
    * @param {object} [opts] `{multipv}` asks for that many lines (1–5); the
    *   result then also carries `lines: [{pv, cp, mate}]`, best first
-   * @returns {Promise<{cp,mate,turn,best,pv,lines}|null>} score in
+   * @returns {Promise<{cp,mate,turn,best,pv,lines,nodes}|null>} score in
    *   side-to-move terms (`turn` = that side); null when stale/failed.
    */
-  function analyze(fen, movetime, opts) {
+  function analyze(fen, budget, opts) {
     const multipv = opts && opts.multipv ? Math.max(1, Math.min(5, opts.multipv | 0)) : 1;
-    const hit = cachedEval(fen, movetime, multipv);
+    const hit = cachedEval(fen, budget, multipv);
     if (hit) return Promise.resolve(hit);
-    return exclusive(() => analyzeInner(fen, movetime, multipv)).then((r) => {
-      rememberEval(fen, movetime, multipv, r);
+    return exclusive(() => analyzeInner(fen, budget, multipv)).then((r) => {
+      rememberEval(fen, budget, multipv, r);
       return r;
     });
   }
@@ -599,21 +634,25 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
   }
 
-  async function analyzeInner(fen, movetime, multipv) {
+  async function analyzeInner(fen, budget, multipv) {
     await init();
     const myGen = ++gen;
+    // a clean engine for every analysis search — see NODES_PER_MS
+    send("ucinewgame");
     const drain = waitFor((l) => l === "readyok", 5000, "ready");
     send("isready");
     await drain;
     if (myGen !== gen) return null;
-    const ms = movetime || 120;
+    const nodes = nodesFor(budget);
     fullStrengthOptions(multipv);
     send("position fen " + fen);
     const slots = new Map();
     const collect = (line) => { if (typeof line === "string") readInfo(line, slots); };
     lineHandlers.push(collect);
-    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), ms + 15000, "search");
-    send("go movetime " + ms);
+    // the timeout still reads as time: a slow machine needs longer per node,
+    // and a search is "hung" only well past what any machine would need
+    const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), nodes / 50 + 15000, "search");
+    send("go nodes " + nodes);
     let line;
     try { line = await wait; }
     finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
@@ -628,6 +667,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       best: uci && uci !== "(none)" ? uci : null,
       pv: top.pv || null,
       lines,
+      nodes,
     };
   }
 
@@ -683,4 +723,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, nodesFor, NODES_PER_MS };

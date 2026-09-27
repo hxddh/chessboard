@@ -75,7 +75,7 @@ function makeClock() {
  *
  * cfg.deafSearch  — never answers `go` (a wedged search)
  * cfg.deafReady   — never answers `isready`
- * cfg.goDelay     — ms (virtual) before `go movetime` answers; `stop` cuts it
+ * cfg.goDelay     — ms (virtual) before a `go` answers; `stop` cuts it
  *                   short with a shallower score, exactly like Stockfish
  * cfg.bootFail    — the first N boots fail the way a wasm that will not
  *                   compile does (`__sf_fail__`); later ones succeed
@@ -190,7 +190,7 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   const q = E.analyze(FEN2, 50).then((r) => { after = "result"; }, (e) => { after = e.message; });
   await clock.advance(20000); await q;
   assert(after !== "pending", "…and the next search reaches the queue at all (" + after + ")");
-  assert(state.workers.length === 2 && state.last().cmds.some((c) => /^go movetime/.test(c)),
+  assert(state.workers.length === 2 && state.last().cmds.some((c) => /^go nodes/.test(c)),
     "…on a worker rebuilt for it");
 }
 
@@ -232,9 +232,9 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   const p = E.init(); await clock.advance(1); await p;
   let got = null;
   const busy = E.analyze(FEN, 100).then((r) => { got = r; });
-  await clock.advance(1); // the review search is now in `go movetime`
+  await clock.advance(1); // the review search is now in its `go nodes`
   const w = state.last();
-  assert(w.cmds.some((c) => /^go movetime/.test(c)), "a review search is running");
+  assert(w.cmds.some((c) => /^go nodes/.test(c)), "a review search is running");
   const stop = E.analyzeInfinite(FEN2, {}, () => {}); // queued behind it
   await settle();
   stop(); // the panel is closed before its turn ever comes
@@ -286,6 +286,33 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   E.retry();
   const r = E.init(); await clock.advance(1); await r;
   assert(E.isReady() && state.workers.length === 2, "retry() lets exactly one new boot through, and it can succeed");
+}
+
+// --- v8-0-plan B2: analysis is a node count from a clean engine ------------
+// `go movetime` stopped wherever the clock ran out, so the same game analysed
+// twice told two stories. A node-limited search after `ucinewgame` does not
+// depend on the machine or on what was searched before it.
+{
+  const { E, clock, state } = boot();
+  const p = E.init(); await clock.advance(1); await p;
+  const r = E.analyze(FEN, 200, { multipv: 2 }); await clock.advance(1); const got = await r;
+  const cmds = state.last().cmds;
+  const go = cmds.filter((c) => /^go\b/.test(c));
+  assert(go.length === 1 && go[0] === "go nodes " + E.nodesFor(200) && E.nodesFor(200) === 200 * E.NODES_PER_MS,
+    "an analysis at budget 200 searches a fixed node count (" + go.join(", ") + ")");
+  const fresh = cmds.lastIndexOf("ucinewgame"), goAt = cmds.lastIndexOf(go[0]);
+  assert(fresh >= 0 && fresh < goAt && cmds.slice(fresh, goAt).includes("isready"),
+    "…from a cleared engine: ucinewgame, then isready, then the search");
+  assert(got && got.nodes === E.nodesFor(200), "…and the result says how many nodes it was");
+  // a deeper result no longer answers a shallower request: the review deepens
+  // some positions, and the next pass must see its own quick scan again
+  const deep = E.analyze(FEN2, 800); await clock.advance(1); await deep;
+  const gos = () => state.last().cmds.filter((c) => /^go\b/.test(c)).length;
+  const before = gos();
+  const quick = E.analyze(FEN2, 200); await clock.advance(1); await quick;
+  assert(gos() === before + 1, "a position searched deeper is searched again at the quick budget, not served the deep answer");
+  const again = E.analyze(FEN2, 200); await clock.advance(1); await again;
+  assert(gos() === before + 1, "…while the same budget is still served from the cache");
 }
 
 // v8-0-plan §5: the generated engine-src.js header named Stockfish 18 after

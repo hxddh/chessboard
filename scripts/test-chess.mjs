@@ -136,7 +136,7 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js"];
+const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -2732,7 +2732,8 @@ for (const lang of CONTENT_LANGS) {
     "the arrow is replay-only — never an answer key during a live game");
   assert(!/bestArrow\s*=/.test(appSrc), "the arrow is computed, not held in a variable");
   // and the analysis has to actually carry the engine's choice
-  assert(/bests\[i\] = e\.best/.test(analyze), "the analyser keeps the engine's own move");
+  // v8-0-plan B2: kept by the pass itself (review-pass.js runPass), which analyzeGame files
+  assert(/bests\[i\] = e && typeof e\.best/.test(fnOf("runPass")), "the analyser keeps the engine's own move");
   assert(/analysis = \{ sig, scalars, tags, pvs, bests,/.test(appSrc), "…and files it with the rest");
 }
 
@@ -5490,7 +5491,10 @@ for (const lang of CONTENT_LANGS) {
   // comments stripped: the line explaining why game_over() is wrong here names
   // it, and would otherwise trip the check it exists to document
   const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-  const analyze = code(fn("analyzeGame"));
+  // v8-0-plan B2: the pass's walk over the positions moved to review-pass.js
+  // runPass; analyzeGame calls it, and the rules below hold over both
+  assert(/ChessReviewPass\.runPass\(/.test(fn("analyzeGame")), "analyzeGame runs the pass through review-pass.js");
+  const analyze = code(fn("analyzeGame")) + code(fn("runPass"));
   assert(analyze.length > 0, "analyzeGame is still a named function");
   assert(!/\.game_over\(\)/.test(analyze),
     "the analyser never consults chess.js game_over()");
@@ -6834,7 +6838,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 11425; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js)
+  const APP_JS_LINE_CEILING = 11413; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
