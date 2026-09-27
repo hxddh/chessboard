@@ -7,7 +7,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
-import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
+import { compileModuleSync, CHUNKS, build, BUNDLE_BUDGET, BUNDLE_BYTES_BEFORE_F5 } from "./bundle.mjs";
 import { measureMarks, markChroma, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +26,14 @@ const root = path.join(__dirname, "..");
  */
 function loadModule(context, rel) {
   const abs = path.isAbsolute(rel) ? rel : path.join(root, rel);
+  // v8-0-plan F5: the en/ja dictionaries and content are chunks the page puts
+  // on the window before the bundle runs; the suite does the same, so every
+  // check below still sees all three languages in ChessI18n.DICT.
+  if (path.basename(abs) === "i18n.js") {
+    for (const f of ["lang-en.js", "lang-ja.js"]) {
+      vm.runInContext(compileModuleSync(path.join(root, "src/web/js", f)), context, { filename: f });
+    }
+  }
   vm.runInContext(compileModuleSync(abs), context, { filename: path.basename(abs) });
 }
 const ctx = { console, Date, performance };
@@ -619,17 +627,27 @@ function checkJapanese(label, table, kanaMin, minStrings) {
 // moved with them: not "is there a <script> tag" but "does the bundle contain
 // this translation". Reachability is now a property of the import graph, which
 // is what it should have been all along.
+//
+// v8-0-plan F5 moved it once more: each language is a chunk now, so the
+// question is "does that language's chunk carry this translation, is the
+// chunk built, and is it what the language loads".
 {
-  const bundled = compileModuleSync(path.join(root, "src/web/js/app.js"));
   const missing = [];
   for (const lang of CONTENT_LANGS) {
-    for (const kind of ["lessons", "puzzles", "openings"]) {
+    const entry = "src/web/js/lang-" + lang + ".js";
+    const chunked = fs.existsSync(path.join(root, entry)) ? compileModuleSync(path.join(root, entry)) : "";
+    for (const kind of ["lessons", "puzzles", "openings", "i18n"]) {
       const name = `CHESS_${kind.toUpperCase()}_${sfx(lang)}`;
-      if (!bundled.includes(name)) missing.push(`${kind}-${lang}.js`);
+      if (!chunked.includes(name)) missing.push(`${kind}-${lang}.js`);
     }
+    const file = "chunk-lang-" + lang + ".js";
+    if (!CHUNKS.some((c) => c.entry === entry && path.basename(c.out) === file)) missing.push(file + " (not in CHUNKS)");
+    const lazySrc = fs.readFileSync(path.join(root, "src/web/js/lazy-content.js"), "utf8");
+    const row = new RegExp("\\n\\s*\"?" + lang + "\"?: \\[([^\\n]*)\\]").exec(lazySrc);
+    if (!row || !row[1].includes(file)) missing.push(file + " (not in LANG_CHUNKS." + lang + ")");
   }
   assert(missing.length === 0,
-    "the bundle contains every content translation" + (missing.length ? " — missing " + missing.join(", ") : ""));
+    "every language's chunk carries its content translation" + (missing.length ? " — missing " + missing.join(", ") : ""));
 }
 
 for (const lang of CONTENT_LANGS) {
@@ -1936,7 +1954,9 @@ for (const lang of CONTENT_LANGS) {
   {
     const markup = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
     const pane = markup.slice(markup.indexOf('id="pane-setup"'), markup.indexOf("/pane-setup"));
-    const i18nSrc = fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8");
+    // the three dictionaries, wherever they live (v8-0-plan F5 split them)
+    const i18nSrc = ["i18n.js", "i18n-en.js", "i18n-ja.js"]
+      .map((f) => fs.readFileSync(path.join(root, "src/web/js", f), "utf8")).join("\n");
     const headings = [...pane.matchAll(/data-i18n="(side\.[a-z]+)"[^>]*>/g)]
       .map((m) => m[1]).filter((k) => ["side.mode", "side.game", "side.look", "side.danger"].includes(k));
     // 2.1 had the three irreversible deletions in the middle of the page, and
@@ -3970,7 +3990,9 @@ for (const lang of CONTENT_LANGS) {
   // an object the loser is gone — so this reads the source text.
   {
     const src = fs.readFileSync(path.join(root, "src/web/js/i18n.js"), "utf8");
-    const blocks = src.split(/\n {4}(?:"zh-CN"|en|ja): \{\n/).slice(1);
+    // v8-0-plan F5: English and Japanese are files of their own now
+    const blocks = src.split(/\n {4}(?:"zh-CN"|en|ja): \{\n/).slice(1)
+      .concat(["i18n-en.js", "i18n-ja.js"].map((f) => fs.readFileSync(path.join(root, "src/web/js", f), "utf8")));
     const dups = [];
     blocks.forEach((blk, i) => {
       const lang = ["zh-CN", "en", "ja"][i] || "#" + i;
@@ -3997,7 +4019,9 @@ for (const lang of CONTENT_LANGS) {
   // weight or a control that lost its label.
   {
     const sources = ["src/web/index.html", ...fs.readdirSync(path.join(root, "src/web/js"))
-      .filter((f) => f.endsWith(".js") && f !== "bundle.js" && f !== "i18n.js")
+      // the dictionaries define keys rather than read them; so do the chunks
+      // built from them (v8-0-plan F5)
+      .filter((f) => f.endsWith(".js") && f !== "bundle.js" && !/^i18n(-\w+)?\.js$/.test(f) && !f.startsWith("chunk-"))
       .map((f) => "src/web/js/" + f)]
       .map((f) => fs.readFileSync(path.join(root, f), "utf8")).join("\n");
     //
@@ -6180,9 +6204,102 @@ for (const lang of CONTENT_LANGS) {
     assert(new RegExp("window\\[k\\]").test(chunkSrc) || chunkSrc.includes(c.global),
       c.out + " puts " + c.global + " on the window");
     // the table's own bulk must not be in the bundle: compare a distinctive
-    // slice of the chunk against the bundle rather than trusting a name
+    // slice of the chunk against the bundle rather than trusting a name.
+    // (Not for the boot chunk: it is the plan lazy-content.js also gives the
+    // bundle, and it is a few hundred bytes of code rather than a payload.)
+    if (c.boot) continue;
     const probe = chunkSrc.slice(Math.floor(chunkSrc.length / 2), Math.floor(chunkSrc.length / 2) + 120);
     assert(!bundleSrc.includes(probe), c.out + "'s payload is not also inside bundle.js");
+  }
+
+  // v8-0-plan F5: the first-paint budget. 7.9.0 parsed 1,709,973 bytes of
+  // bundle before the first frame, 46% of it teaching content in the two
+  // languages the reader was not reading in. The acceptance line is 40% off,
+  // and it is a line, not a one-time measurement: one static import of a
+  // chunk's module and esbuild inlines it again without a word.
+  const bundleBytes = Buffer.byteLength(bundleSrc, "utf8");
+  console.log("  bundle.js " + bundleBytes + " bytes (7.9.0: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
+  assert(bundleBytes <= BUNDLE_BUDGET,
+    "bundle.js stays within the first-paint budget (" + bundleBytes + " > " + BUNDLE_BUDGET + " bytes, 60% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + ")");
+
+  // The boot chunk is the one index.html loads, and it loads before the
+  // bundle — that order is the whole reason the first frame is in the right
+  // language. Every other chunk is on demand and must not be named there.
+  {
+    const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+    const boots = CHUNKS.filter((c) => c.boot);
+    assert(boots.length === 1, "exactly one chunk is the boot chunk");
+    const bootAt = html.indexOf('<script src="js/' + path.basename(boots[0].out) + '"></script>');
+    const bundleAt = html.indexOf('<script src="js/bundle.js"></script>');
+    assert(bootAt > 0 && bundleAt > bootAt, "index.html runs " + path.basename(boots[0].out) + " before bundle.js");
+    const named = CHUNKS.filter((c) => !c.boot && html.includes(path.basename(c.out)));
+    assert(named.length === 0, "index.html names no on-demand chunk (" + named.map((c) => c.out).join(", ") + ")");
+  }
+
+  // …and what it loads: lazy-content.js bootPlan, from the settings as stored
+  {
+    const lctx = { console };
+    lctx.globalThis = lctx;
+    lctx.window = lctx;
+    vm.createContext(lctx);
+    loadModule(lctx, "src/web/js/lazy-content.js");
+    const plan = (settings, nav) => lctx.bootPlan(settings == null ? null : JSON.stringify(settings), nav).join(" ");
+    const cases = [
+      [{ langId: "zh-CN", mode: "ai" }, null, ""],
+      [{ langId: "en" }, null, "chunk-lang-en.js"],
+      // Japanese reads English as its bridge, so it takes both, English first
+      [{ langId: "ja" }, null, "chunk-lang-en.js chunk-lang-ja.js"],
+      // settings without a language are the Chinese default, whatever the OS says
+      [{ mode: "ai" }, { languages: ["en-US"] }, ""],
+      // no settings at all is a first run: the system locale decides
+      [null, { languages: ["ja-JP", "en"] }, "chunk-lang-en.js chunk-lang-ja.js"],
+      [null, { languages: ["zh-TW"] }, ""],
+      [{ langId: "en", mode: "puzzle", pieceSet: "merida" }, null, "chunk-lang-en.js chunk-mined.js chunk-merida.js"],
+      [{ langId: "xx" }, null, ""],
+    ];
+    for (const [settings, nav, want] of cases) {
+      const got = plan(settings, nav);
+      assert(got === want, "bootPlan(" + JSON.stringify(settings) + ", " + JSON.stringify(nav) + ") = [" + got + "], want [" + want + "]");
+    }
+    assert(lctx.bootPlan("{not json", null).join(" ") === lctx.bootPlan(null, null).join(" "),
+      "unreadable settings are treated as none");
+    // every chunk the plan or the app can ask for is one the bundler builds,
+    // under the global it promises
+    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, lctx.MERIDA_CHUNK];
+    for (const a of asked) {
+      assert(CHUNKS.some((c) => path.basename(c.out) === a.file && c.global === a.global),
+        a.file + " (" + a.global + ") is in CHUNKS, so it is built and packaged");
+    }
+    loadModule(lctx, "src/web/js/persist.js");
+    assert(lctx.SETTINGS_KEY === lctx.KEYS.settings, "the boot chunk reads the key persist.js writes the settings under");
+  }
+
+  // i18n.js with only the Chinese dictionary on board — the state of the
+  // page between a language switch and its chunk arriving
+  {
+    const ictx = { console, Intl };
+    ictx.globalThis = ictx;
+    ictx.window = ictx;
+    vm.createContext(ictx);
+    const run = (f) => vm.runInContext(compileModuleSync(path.join(root, "src/web/js", f)), ictx, { filename: f });
+    run("i18n.js");
+    const I = ictx.ChessI18n;
+    assert(Object.keys(I.DICT).join(",") === "zh-CN", "the bundle's i18n.js carries the Chinese dictionary only");
+    assert(I.available().map((l) => l.id).join(",") === "zh-CN,en,ja",
+      "…yet the picker still lists all three languages");
+    // a saved choice read before its chunk must survive, or the next
+    // saveSettings() would write it away
+    assert(I.setLang("en") === "en" && !I.hasLang("en"), "setLang keeps a known language whose dictionary is not here yet");
+    assert(I.t("app.title") === I.DICT["zh-CN"]["app.title"], "…and t() falls back to the Chinese meanwhile");
+    assert(I.setLang("xx") === "zh-CN", "an unknown language is still the fallback");
+    run("lang-en.js");
+    I.setLang("en");
+    assert(I.hasLang("en") && I.t("app.title") !== I.DICT["zh-CN"]["app.title"], "the English chunk, once here, is read without reloading i18n.js");
+    run("lang-ja.js");
+    for (const l of I.available()) {
+      assert(I.hasLang(l.id) && I.DICT[l.id]["lang.name"] === l.name,
+        "lang-ids.js names " + l.id + " as its dictionary does (" + l.name + ")");
+    }
   }
   assert(/CHUNKS\.map/.test(syncSrc), "sync-dist.mjs takes the chunk list from the bundler, not a second copy");
   assert(fs.readFileSync(path.join(root, ".gitignore"), "utf8").includes("chunk-*.js"),

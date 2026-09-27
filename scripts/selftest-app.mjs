@@ -13,7 +13,8 @@
  *
  *   engine   Stockfish starts and gives a legal move (7.5)
  *   appdata  the native save file takes a write and gives it back (7.6)
- *   chunk    js/chunk-eco.js loads over zero:// and names 1.e4 c5 (7.6)
+ *   chunk    js/chunk-eco.js loads over zero:// and names 1.e4 c5 (7.6), and
+ *            the language and mined-puzzle chunks load too (v8-0-plan F5)
  *   restart  a localStorage marker survives a restart (7.6)
  *   sound    the default sound set builds and renders offline, not silent (7.7)
  *

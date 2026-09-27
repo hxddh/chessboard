@@ -1140,6 +1140,60 @@ if (hasTab && REAL.length) {
   await ctx5.close();
 }
 
+// --- v8-0-plan F5:分块之后,首帧仍是存下的语言 ------------------------------
+// 英文、日文(字典 + 课文题名开局名)和挖掘题都搬出了 bundle.js。index.html
+// 先跑 chunk-boot.js,按存下的设置把要用的分块写在 bundle.js 前面。这里在
+// DOMContentLoaded 那一刻读页面 —— bundle 同步跑完、任何「晚到再补」都还没
+// 发生的时刻:那时标题和界面字若还是中文,就是闪了一帧错的语言。
+{
+  const han = /[一-鿿]/;
+  for (const [lang, mode, want] of [
+    ["en", "puzzle", ["chunk-lang-en.js", "chunk-mined.js"]],
+    ["ja", "pvp", ["chunk-lang-en.js", "chunk-lang-ja.js"]],
+    ["zh-CN", "pvp", []],
+  ]) {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+    await c.addInitScript(([l, m]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: m, langId: l, sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      document.addEventListener("DOMContentLoaded", () => {
+        const res = performance.getEntriesByType("resource").map((r) => r.name.split("/").pop());
+        window.__dcl = {
+          title: document.title,
+          lang: document.documentElement.lang,
+          undo: (document.querySelector("[data-i18n]") || {}).textContent || "",
+          chunks: res.filter((n) => /^chunk-/.test(n)),
+          mined: !!window.MINED_PUZZLES,
+          pz: (document.getElementById("puzzle-progress") || {}).textContent || "",
+        };
+      });
+    }, [lang, mode]);
+    const pg = await c.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(1500);
+    const r = await pg.evaluate(() => Object.assign({}, window.__dcl, {
+      later: performance.getEntriesByType("resource").map((e) => e.name.split("/").pop()).filter((n) => /^chunk-/.test(n)),
+      pzLater: (document.getElementById("puzzle-progress") || {}).textContent || "",
+    }));
+    assert(r.lang === lang, `F5 ${lang}:DOMContentLoaded 时 <html lang> 已经是 ${lang}`, r.lang);
+    if (lang === "zh-CN") assert(han.test(r.title), "F5 zh-CN:首帧标题是中文", r.title);
+    else if (lang === "en") assert(!han.test(r.title) && !han.test(r.undo), "F5 en:首帧标题和界面字没有一帧中文", r.title + " / " + r.undo);
+    // 日文也写汉字,看假名
+    else assert(/[぀-ヿ]/.test(r.title) && /[぀-ヿ]/.test(r.undo), "F5 ja:首帧标题和界面字已是日文", r.title + " / " + r.undo);
+    const early = r.chunks.filter((n) => n !== "chunk-boot.js");
+    assert(JSON.stringify(early) === JSON.stringify(want),
+      `F5 ${lang}/${mode}:首帧前取的分块正好是要用的那几个`, early.join(", ") || "(无)");
+    if (mode === "puzzle") {
+      assert(r.mined && r.pz === r.pzLater, "F5:以做题模式启动,挖掘题在首帧前就在,题数不会在首帧后跳一下", r.pz + " → " + r.pzLater);
+    } else {
+      assert(!r.mined && r.later.includes("chunk-mined.js"), "F5:其余模式首帧不带挖掘题,首帧后才取", r.later.join(", "));
+    }
+    await c.close();
+  }
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

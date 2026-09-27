@@ -9,8 +9,6 @@ import { ChessEco } from "./eco-lookup.js";
 import { ChessRating } from "./rating.js";
 import { ChessOpeningTree } from "./opening-tree.js";
 import { CHESS_CLASSICS } from "./classics.js";
-import { CHESS_CLASSICS_EN } from "./classics-en.js";
-import { CHESS_CLASSICS_JA } from "./classics-ja.js";
 import { ChessEditor } from "./editor.js";
 import { ChessEngine } from "./engine.js";
 import { ChessExplain } from "./explain.js";
@@ -19,8 +17,7 @@ import { ChessTree } from "./game-tree.js";
 import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
 import { ChessIcons } from "./icons.js";
-import { CHESS_LESSONS_EN } from "./lessons-en.js";
-import { CHESS_LESSONS_JA } from "./lessons-ja.js";
+import { ChessLazy } from "./lazy-content.js";
 import { CHESS_LESSONS } from "./lessons.js";
 import { ChessMaterial } from "./material.js";
 import { motifOf, puzzleMotifKey } from "./motif.js";
@@ -31,17 +28,12 @@ import { ChessPlanner } from "./planner.js";
 import { ChessLearning } from "./learning.js";
 import { ChessPreview } from "./preview.js";
 import { ChessOpeningCoach } from "./opening-coach.js";
-import { CHESS_OPENINGS_EN, CHESS_OPENING_IDEAS_EN } from "./openings-en.js";
-import { CHESS_OPENINGS_JA, CHESS_OPENING_IDEAS_JA } from "./openings-ja.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 import { ChessPersona } from "./persona.js";
 import { ChessPgn } from "./pgn.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
-import { CHESS_PUZZLES_EN } from "./puzzles-en.js";
-import { CHESS_PUZZLES_JA } from "./puzzles-ja.js";
 import { CHESS_PUZZLES, HAND_MOTIF_KEY } from "./puzzles.js";
-import { MINED_PUZZLES } from "./puzzles-mined.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
@@ -69,7 +61,8 @@ import { createStore } from "./store.js";
    */
   // `shapes`: what the board is drawing as arrows and circles right now —
   // the player's, the premove's and the engine's (7.8 §2)
-  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw() };
+  // `board`: the renderer's counters — how often a piece decode repainted (v8-0-plan F5)
+  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats() };
 
   const Host = ChessHost;
   const Review = ChessReview;
@@ -1762,6 +1755,10 @@ import { createStore } from "./store.js";
       await within(ChessEco.ready(), 15000, "chunk-eco.js");
       const hit = ChessEco.openingForGame(["e4", "c5"]);
       if (!hit || hit.eco !== "B20") throw new Error("1.e4 c5 looked up as " + JSON.stringify(hit));
+      // v8-0-plan F5: the language chunks and the mined puzzles take the same
+      // road; a package without them would be Chinese-only and a short book
+      await within(ChessLazy.ensureLang("ja"), 15000, "chunk-lang-*.js");
+      await within(ChessLazy.ensureMined(), 15000, "chunk-mined.js");
       chunk.pass = true;
       chunk.name = hit.eco + " " + ChessEco.localName(hit, store.ui.langId);
     } catch (err) { chunk.err = errText(err); }
@@ -2124,24 +2121,16 @@ import { createStore } from "./store.js";
    * chain: the active language, then English as a bridge, then the Chinese
    * original. The chain is per *field*, so a half-finished translation
    * degrades sentence by sentence instead of dropping a whole lesson.
+   *
+   * The tables themselves are chunks since v8-0-plan F5 (lazy-content.js),
+   * on the page before the first frame for the language in use.
    */
-  const CONTENT_TABLES = {
-    en: () => ({
-      lessons: CHESS_LESSONS_EN, puzzles: CHESS_PUZZLES_EN,
-      openings: CHESS_OPENINGS_EN, ideas: CHESS_OPENING_IDEAS_EN, classics: CHESS_CLASSICS_EN,
-    }),
-    ja: () => ({
-      lessons: CHESS_LESSONS_JA, puzzles: CHESS_PUZZLES_JA,
-      openings: CHESS_OPENINGS_JA, ideas: CHESS_OPENING_IDEAS_JA, classics: CHESS_CLASSICS_JA,
-    }),
-  };
   /** tables to consult for `kind`, best match first (empty when reading source) */
   function contentTables(kind) {
     const out = [];
     if (store.ui.langId === "zh-CN") return out;
     for (const id of [store.ui.langId, "en"]) {
-      const get = CONTENT_TABLES[id];
-      const tbl = get && get()[kind];
+      const tbl = ChessLazy.langTables(id)[kind];
       if (tbl && out.indexOf(tbl) < 0) out.push(tbl);
     }
     return out;
@@ -2963,11 +2952,31 @@ import { createStore } from "./store.js";
   // the hand-written book plus the engine-mined set (scripts/mine-puzzles.mjs):
   // same categories, same gate, named by category and number rather than by
   // a translated title (v6-plan Q3.2)
-  const PUZZLES = (CHESS_PUZZLES || []).concat(MINED_PUZZLES || []);
+  //
+  // v8-0-plan F5: the mined set is a chunk. It is joined into ALL_PUZZLES
+  // when it is here — before the bundle runs for a session resuming in puzzle
+  // mode, right after the first paint for every other one — and joined right
+  // behind the hand-written book, ahead of the drills. So a category list
+  // only ever grows at its end: an index taken before the join still names
+  // the same puzzle after it.
+  const PUZZLES = CHESS_PUZZLES || [];
   const MINED_ORDINAL = new Map();
-  {
+  /** Join the mined set in, once. @returns {boolean} whether it joined now */
+  function joinMined() {
+    const mined = ChessLazy.mined();
+    if (!mined || MINED_ORDINAL.size) return false;
     const perCat = {};
-    for (const p of MINED_PUZZLES || []) { perCat[p.cat] = (perCat[p.cat] || 0) + 1; MINED_ORDINAL.set(p.id, perCat[p.cat]); }
+    for (const p of mined) { perCat[p.cat] = (perCat[p.cat] || 0) + 1; MINED_ORDINAL.set(p.id, perCat[p.cat]); }
+    ALL_PUZZLES.splice(PUZZLES.length, 0, ...mined);
+    return true;
+  }
+  /** The chunk is here: join it, and repaint whatever counts puzzles. */
+  function onMinedArrived() {
+    if (!joinMined()) return;
+    renderStats();
+    renderAchievements();
+    renderRecordEntry();
+    sync();
   }
   const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "rep", "mine", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
@@ -3030,6 +3039,7 @@ import { createStore } from "./store.js";
    */
   const OPENING_DRILLS_B = OPENING_DRILLS.map((d) => Object.assign({}, d, { id: d.id + ":b", side: "b" }));
   const ALL_PUZZLES = PUZZLES.concat(OPENING_DRILLS, OPENING_DRILLS_B);
+  joinMined();
   /**
    * 错题自炼 — the personal book, mined from this player's own analysed
    * games (mistakes.js). Dynamic where ALL_PUZZLES is frozen, so the two are
@@ -6870,6 +6880,13 @@ import { createStore } from "./store.js";
 
   /** Toast any achievement newly unlocked since last check; persist seen set. */
   function checkNewAchievements() {
+    // v8-0-plan F5: never judged without the mined puzzles — a total short by
+    // a thousand would award a "solved them all" badge, and achSeen keeps a
+    // badge for good. The check waits for the chunk instead.
+    if (!MINED_ORDINAL.size) {
+      ChessLazy.ensureMined().then(() => { onMinedArrived(); checkNewAchievements(); }, () => {});
+      return;
+    }
     const res = evalAch();
     const fresh = res.filter((r) => r.unlocked && !store.session.achSeen.has(r.ach.id));
     for (const r of res) if (r.unlocked) store.session.achSeen.add(r.ach.id);
@@ -10921,13 +10938,20 @@ import { createStore } from "./store.js";
     langSeg.onclick = (ev) => {
       const b = ev.target.closest("button[data-lang]");
       if (!b || !I18n || b.dataset.lang === store.ui.langId) return;
-      store.ui.langId = I18n.setLang(b.dataset.lang);
-      saveSettings();
-      applyLanguage();
-      // the native menu is built at launch from a per-language table; the
-      // shell records the choice and applies it on the next start (Q1.6)
-      Host.setMenuLanguage(store.ui.langId.split("-")[0]).then((r) => {
-        if (r && r.restartRequired) toast(t("msg.menuLang.restart"));
+      const want = b.dataset.lang;
+      // v8-0-plan F5: the language's chunk first, then the switch — switched
+      // before it arrived, the page would repaint in Chinese fallbacks first.
+      // A chunk that cannot load leaves the language as it was.
+      ChessLazy.ensureLang(want).then(() => {
+        if (store.ui.langId === want) return;
+        store.ui.langId = I18n.setLang(want);
+        saveSettings();
+        applyLanguage();
+        // the native menu is built at launch from a per-language table; the
+        // shell records the choice and applies it on the next start (Q1.6)
+        Host.setMenuLanguage(store.ui.langId.split("-")[0]).then((r) => {
+          if (r && r.restartRequired) toast(t("msg.menuLang.restart"));
+        }).catch(() => {});
       }).catch(() => {});
     };
   }
@@ -11591,6 +11615,12 @@ import { createStore } from "./store.js";
   document.documentElement.setAttribute("data-theme", store.ui.themeId);
   document.documentElement.setAttribute("data-board", store.ui.themeId);
   if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
+  // v8-0-plan F5: chunk-boot.js loaded the saved language ahead of this
+  // script. Should its guess have missed (a profile restored since, storage
+  // it could not read), fetch the language now and repaint in it on arrival.
+  if (!ChessLazy.langReady(store.ui.langId)) {
+    ChessLazy.ensureLang(store.ui.langId).then(() => applyLanguage()).catch(() => {});
+  }
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
   setSideTab(store.ui.sideTab);
@@ -11653,6 +11683,13 @@ import { createStore } from "./store.js";
   // the second launch; the platform build pipelines read the report before
   // they package.
   Host.selftestMode().then((on) => { if (on) runSelftest(); });
+  // v8-0-plan F5: the mined puzzles, after the first paint for the same
+  // reason as the engine below; the counts and the badges repaint with them
+  if (!MINED_ORDINAL.size) {
+    requestAnimationFrame(() => setTimeout(() => {
+      ChessLazy.ensureMined().then(onMinedArrived).catch(() => {});
+    }, 0));
+  }
   if (store.session.mode === "ai" && ChessEngine) {
     // after the first paint, not before it: the engine sources are 9.7 MB of
     // text and the board does not need them to appear (v6-plan Q1.3)

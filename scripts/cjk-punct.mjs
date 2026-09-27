@@ -30,7 +30,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Files whose Chinese or Japanese literals are user-facing copy. */
 export const FILES = [
-  "src/web/js/i18n.js",
+  "src/web/js/i18n.js", "src/web/js/i18n-ja.js",
   "src/web/js/lessons.js", "src/web/js/lessons-ja.js",
   "src/web/js/puzzles.js", "src/web/js/puzzles-ja.js",
   "src/web/js/openings.js", "src/web/js/openings-ja.js",

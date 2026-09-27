@@ -1193,7 +1193,13 @@
        engine.js injects the tag itself the first time the engine is wanted.
        It stays a separate file because it is 7 MB of vendored build output.
        Neither file is in git; both are built by package.sh, by the E2E
-       servers and by the unit tests. -->
+       servers and by the unit tests.
+
+       chunk-boot.js (v8-0-plan F5) runs first and only writes script tags:
+       the saved language's chunk, and the mined puzzles or the Merida set
+       when the saved session needs them for its first frame. Everything
+       else not in bundle.js arrives when wanted (js/lazy-content.js). -->
+  <script src="js/chunk-boot.js"></script>
   <script src="js/bundle.js"></script>
 </body>
 </html>
