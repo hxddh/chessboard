@@ -55,20 +55,29 @@ export const WIDE_MIN = 1280;
  * lengths (see readTokens); pure, so scripts/test-chess.mjs checks the rule
  * without a browser.
  *
- *   two   7.7's: the panel clamp(284, 30%, 440) on the right, a player strip
- *         above and below the board
+ *   two   7.7's: a player strip above and below the board, the panel on
+ *         the right — at least 7.7's clamp(284, 30%, 440) (`side`, the floor
+ *         the reading pages were sized for), and since the M2 merge also
+ *         whatever width the height-bound board leaves, up to sideMax
+ *         (`sideTwo`): beside a 64px rail the wide layout no longer fits at
+ *         1280 / 1440, and that leftover stood as an 84–90px empty band
+ *         either side of the board (A2: the right column stretches to ~520)
  *   wide  A2's: the info column on the left, no strips above or below, the
  *         panel what the height-bound board leaves, never narrower than the
- *         two-column one (the reading pages were sized for that) and at
- *         most sideMax
+ *         two-column floor and at most sideMax
+ *
+ * styles.css computes the same two panels (#app --side-w, #app.pv-wide
+ * --side-w); scripts/test-chess.mjs checks the two agree.
  */
 export function boardEdges(w, h, k) {
   const side = Math.min(440, Math.max(284, 0.3 * w));
-  const two = Math.min(w - side - 2 * k.pad, h - k.chrome - 2 * k.strip - k.padY);
+  const high = h - k.chrome - 2 * k.strip - k.padY;
+  const sideTwo = Math.min(k.sideMax, Math.max(side, w - 2 * k.pad - high));
+  const two = Math.min(w - sideTwo - 2 * k.pad, high);
   const tall = h - k.chrome - 2 * k.padY;
   const room = w - k.info - k.gap - 2 * k.pad;
   const right = Math.min(k.sideMax, Math.max(side, room - tall));
-  return { two, wide: Math.min(tall, room - right), right };
+  return { two, wide: Math.min(tall, room - right), right, side, sideTwo };
 }
 
 /**

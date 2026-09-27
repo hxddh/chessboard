@@ -6784,6 +6784,19 @@ for (const lang of CONTENT_LANGS) {
     assert(!at(w, h) || (e.wide >= e.two && e.right >= two && e.right <= Math.max(two, k.sideMax)),
       `A2：${w}×${h} 棋盘 ${e.two} → ${e.wide}，右栏 ${two} → ${e.right}（不窄于两栏布局，至多 ${k.sideMax}）`);
   }
+  // M2 (A2 × A1): the two-column panel stretches into what the height-bound
+  // board leaves, up to --side-max-wide — one formula, written twice: here in
+  // boardEdges (sideTwo) and in styles.css (#app --side-w, ≥ 821px)
+  const flat = cssSrc.replace(/\s+/g, " ");
+  assert(flat.includes("--side-w: clamp(clamp(284px, 0.3 * var(--pv-w), 440px), var(--pv-w) - 2 * var(--stage-pad) - (var(--pv-h) - var(--chrome-h) - 2 * var(--strip-h) - var(--stage-pad-y)), var(--side-max-wide));"),
+    "M2：两栏面板 = clamp(两栏下限, 视图宽 − 边距 − 棋盘, --side-max-wide)，样式表里就是这一条");
+  for (const [w, h] of [[960, 768], [1216, 800], [1376, 900], [1136, 900], [1336, 900], [1856, 1080]]) {
+    const e = boardEdges(w, h, k);
+    const high = h - k.chrome - 2 * k.strip - k.padY;
+    const want = Math.min(k.sideMax, Math.max(e.side, w - 2 * k.pad - high));
+    assert(e.sideTwo === want && e.two === Math.min(high, w - e.side - 2 * k.pad) && (e.sideTwo === k.sideMax || e.two < high || w - e.sideTwo - 2 * k.pad === e.two),
+      `M2：视图 ${w}×${h} 两栏面板 ${e.side} → ${e.sideTwo}，棋盘仍是 ${e.two}（面板只拿棋盘留下的宽度，至多 ${k.sideMax}）`);
+  }
 }
 
 // --- v8-0-plan F4: the lookup survives the move it exists for --------------

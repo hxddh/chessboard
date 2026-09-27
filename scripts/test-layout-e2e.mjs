@@ -2683,20 +2683,15 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   const shape = await page.evaluate(() => {
     const vis = (e) => { const b = e.getBoundingClientRect();
       return e.offsetParent !== null && b.width > 0 && b.height > 0; };
-    // v8-0-plan A3: the board and piece pickers are pictures of what they
-    // choose (a corner of the board, two kings) — a tile, not an action, and
-    // their height is the picture's; they answer to the segment family in
-    // everything else (font, border), measured by the two lines after this
+    // the A3 picker tiles are not the panel's since the M2 merge (they live
+    // in the preferences window, measured below), and are left out here
     const btns = [...document.querySelectorAll("#side .act-btn, #side .theme-row:not(.look-grid) button")].filter(vis);
-    const tiles = [...document.querySelectorAll("#side .look-grid button")].filter(vis);
-    const tileKinds = [...new Set(tiles.map((b) => getComputedStyle(b).fontSize + "|" + getComputedStyle(b).borderStyle))];
     const kind = (e) => { const s = getComputedStyle(e);
       return [s.fontSize, s.fontWeight, s.borderStyle, Math.round(e.getBoundingClientRect().height)].join("|"); };
     const kinds = {};
     for (const b of btns) (kinds[kind(b)] ||= []).push(b.id || b.textContent.trim().slice(0, 6));
     return {
-      n: btns.length, tileKinds,
-      segKind: btns.filter((b) => b.closest(".theme-row")).map((b) => getComputedStyle(b).fontSize + "|" + getComputedStyle(b).borderStyle)[0] || null,
+      n: btns.length,
       heights: [...new Set(btns.map((b) => Math.round(b.getBoundingClientRect().height)))].sort((a, c) => a - c),
       sizes: [...new Set(btns.map((b) => getComputedStyle(b).fontSize))],
       borderless: btns.filter((b) => getComputedStyle(b).borderStyle === "none").map((b) => b.id),
@@ -2713,12 +2708,30 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   assert(shape.sizes.length === 1, `${lang}/${tab}: 所有动作一个字号(${shape.sizes.join(" ")})`);
   assert(shape.heights.length <= 2,
     `${lang}/${tab}: 高度最多两种(一行的和折行的),实际 ${JSON.stringify(shape.heights)}`);
-  if (shape.tileKinds.length) {
-    assert(shape.tileKinds.length === 1 && shape.tileKinds[0] === shape.segKind,
-      `${lang}/${tab}: 棋盘与棋子的图块和分段控件同一字号、同一边框(${shape.tileKinds.join(" ")} vs ${shape.segKind})`);
-  }
   assert(shape.primaries.length <= 1,
     `${lang}/${tab}: 同屏最多一个主按钮(${JSON.stringify(shape.primaries)})`);
+  // v8-0-plan A3: the board and piece pickers are pictures of what they
+  // choose (a corner of the board, two kings) — a tile, not an action, and
+  // their height is the picture's; they answer to the segment family in
+  // everything else (font, border). Since the M2 merge they live in the
+  // preferences window (A1), so they are measured there, against that
+  // window's own segments — and finding none is a failure, not a pass.
+  await page.click("#prefs-open");
+  await page.waitForTimeout(300);
+  const look = await page.evaluate(() => {
+    const m = document.getElementById("prefs-modal");
+    const vis = (e) => { const b = e.getBoundingClientRect(); return e.offsetParent !== null && b.width > 0 && b.height > 0; };
+    const k = (b) => getComputedStyle(b).fontSize + "|" + getComputedStyle(b).borderStyle;
+    const tiles = [...m.querySelectorAll(".look-grid button")].filter(vis);
+    const segs = [...m.querySelectorAll(".theme-row:not(.look-grid) button")].filter(vis);
+    return { open: m.classList.contains("show"), tiles: tiles.length, segs: segs.length,
+             tileKinds: [...new Set(tiles.map(k))], segKinds: [...new Set(segs.map(k))] };
+  });
+  assert(look.open && look.tiles === 12 && look.segs >= 5,
+    `${lang}/${tab}: 偏好设置里量得到棋盘与棋子的图块(${look.tiles} / 12)和分段控件(${look.segs})`);
+  assert(look.tileKinds.length === 1 && look.segKinds.length === 1 && look.tileKinds[0] === look.segKinds[0],
+    `${lang}/${tab}: 棋盘与棋子的图块和分段控件同一字号、同一边框(${look.tileKinds.join(" ")} vs ${look.segKinds.join(" ")})`);
+  await page.keyboard.press("Escape");
   await ctx.close();
 }
 
@@ -4508,22 +4521,10 @@ if (scenario()) {
     const m = await page.evaluate(layoutProbe);
     const was = before[w + "x" + h];
     const at = `A2 ${w}×${h}：`;
-    // M2 (A1 × A2): the play view is the window less the 64px rail. At 1280
-    // and 1440 that leaves 1216 / 1376, where the wide layout cannot keep
-    // both of A2's own conditions (the board no smaller, the panel no
-    // narrower than the two-column one) beside a 188px info column, so the
-    // two-column layout stays and its side slack is the band: 83.6 / 89.6px
-    // when merged (docs/measured.json layoutA2.after). NOT the plan's ≤ 48 —
-    // an open item of the merge, reported, held here to "no worse than
-    // merged, and narrower than before" rather than dropped.
-    const railShort = w >= 1280 && w > h && !m.wide;
-    if (railShort) {
-      const merged = JSON.parse(fs.readFileSync(path.join(HERE, "..", "docs", "measured.json"), "utf8")).layoutA2.after[w + "x" + h];
-      assert(m.band <= merged.band + 1 && m.band < was.band,
-        at + `（导航栏占去 64px，未用宽布局）非内容空带 ${m.band}px ≤ 合并后记录的 ${merged.band}，且 < 之前 ${was.band} —— 未达计划的 ≤ 48，见合并报告`);
-    } else {
-      assert(m.band <= 48, at + `非内容空带 ${m.band}px ≤ 48（之前 ${was.band}）`);
-    }
+    // M2 (A1 × A2): beside the 64px rail the wide layout fits only 1920 of
+    // the five; at 1280 / 1440 the two-column panel takes the board's
+    // leftover instead (styles.css #app --side-w), so the band holds there too
+    assert(m.band <= 48, at + `非内容空带 ${m.band}px ≤ 48（之前 ${was.band}）`);
     assert(m.share >= was.share, at + `棋盘占比 ${m.share} ≥ 之前的 ${was.share}（边长 ${was.board} → ${m.board}）`);
     // …and of the whole window, rail included: the rail is not paid for
     // with board (before, window and play view were the same box)

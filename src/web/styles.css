@@ -602,6 +602,9 @@
          the rail beside it is not the play view's, and play-layout.js
          (boardEdges) weighs the two layouts with this same rule. */
       --side-w: clamp(284px, 0.3 * var(--pv-w), 440px);
+      /* …the floor of the two-column panel. Beside it (≥ 821px, below) the
+         panel also takes what the height-bound board leaves, up to
+         --side-max-wide: the M2 merge (v8-0-plan A2 × A1). */
       /* v8-0-plan A1: the navigation rail's column on a wide window, and how
          far a page starts from the top (the rail is a row in the top bar on
          a narrow one, see .rail). The play view is what the rail leaves. */
@@ -3638,6 +3641,20 @@ span[data-icon] { display: inline-grid; place-items: center; }
    ------------------------------------------------------------------ */
 @media (min-width: 821px) {
   :root { --rail-w: 64px; --page-top: 0px; }
+  /* M2 (v8-0-plan A2 × A1): the two-column panel stretches, as A2's right
+     column does, into what the height-bound board leaves — up to
+     --side-max-wide, never under 7.7's clamp. Beside the 64px rail the wide
+     layout no longer fits a 1280 or 1440 window, and that leftover stood as
+     an 84–90px empty band either side of the board. The board is unchanged:
+     it is height-bound here, and where it is not the panel is its floor.
+     Declared on #app, where play-layout.js writes the measured --pv-w;
+     --task-h is left out on purpose: it is 0 whenever the panel is open.
+     One formula with play-layout.js boardEdges (sideTwo). */
+  #app {
+    --side-w: clamp(clamp(284px, 0.3 * var(--pv-w), 440px),
+      var(--pv-w) - 2 * var(--stage-pad) - (var(--pv-h) - var(--chrome-h) - 2 * var(--strip-h) - var(--stage-pad-y)),
+      var(--side-max-wide));
+  }
 }
 .stage, .chrome, .task-strip { left: var(--rail-w); }
 /* the fault banners stand at the top-left of the board's column: after the
