@@ -105,18 +105,28 @@ function readTokens(el) {
  * rail beside it (v8-0-plan A1), which is #app's but not the play view's.
  */
 function watchShape(app, view) {
-  let k = null;
+  let k = null, last = "", frame = 0;
   const apply = () => {
+    frame = 0;
     const w = view.clientWidth, h = view.clientHeight;
     if (!w || !h) return;
+    // an unchanged size writes nothing: every write re-lays-out the panel
+    if (w + "x" + h === last) return;
+    last = w + "x" + h;
     if (!k) k = readTokens(app);
     app.style.setProperty("--pv-w", w + "px");
     app.style.setProperty("--pv-h", h + "px");
     app.classList.toggle("pv-wide", isWide(w, h, k));
   };
   apply();
-  if (typeof ResizeObserver === "function") new ResizeObserver(apply).observe(view);
-  else window.addEventListener("resize", apply);
+  // From the observer, a frame later, as fit-row.js does: since the two-
+  // column panel takes the width the board leaves (--pv-w, v8-0-plan A2),
+  // writing here resized boxes other observers (the canvas, the move list)
+  // were delivered in the same pass, and WebKit raised "ResizeObserver loop
+  // completed with undelivered notifications" (#86, layout shard 2).
+  const soon = () => { if (!frame) frame = requestAnimationFrame(apply); };
+  if (typeof ResizeObserver === "function") new ResizeObserver(soon).observe(view);
+  else window.addEventListener("resize", soon);
 }
 
 /** The White column: the first cell after each row's number. */
