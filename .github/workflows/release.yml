@@ -11,7 +11,7 @@ name: release
 #   preflight ─┐
 #   static ────┤
 #   engine ×8 ─┤
-#   browser ×10┼──► publish: tag → draft with both packages → verify → publish
+#   browser ×16┼──► publish: tag → draft with both packages → verify → publish
 #   build-macos┤
 #   build-win ─┘
 #
@@ -170,12 +170,34 @@ jobs:
             suites: scripts/test-persist-e2e.mjs
           - name: game library
             suites: scripts/test-library-e2e.mjs
-          - name: panel layout
+          # v8-0-plan F1: the same four shards as checks.yml — together they
+          # are the whole suite, which test-chess.mjs checks for both files
+          - name: panel layout 1/4
             suites: scripts/test-layout-e2e.mjs
+            shard: 1/4
+          - name: panel layout 2/4
+            suites: scripts/test-layout-e2e.mjs
+            shard: 2/4
+          - name: panel layout 3/4
+            suites: scripts/test-layout-e2e.mjs
+            shard: 3/4
+          - name: panel layout 4/4
+            suites: scripts/test-layout-e2e.mjs
+            shard: 4/4
+        # v8-0-plan F2: the per-move cost gate reads a CDP metric, so it is
+        # one Chromium job rather than a group on both engines — `include`
+        # with a group no combination has adds exactly that one job
+        include:
+          - engine: chromium
+            group:
+              name: performance
+              suites: scripts/perf-e2e.mjs
     name: browser (${{ matrix.engine }}, ${{ matrix.group.name }})
     env:
       E2E_REQUIRED: "1"
       E2E_BROWSER: ${{ matrix.engine }}
+      # empty for the unsharded groups, which is "run everything"
+      SHARD: ${{ matrix.group.shard }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
