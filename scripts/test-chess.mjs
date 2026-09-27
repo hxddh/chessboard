@@ -6269,6 +6269,60 @@ for (const lang of CONTENT_LANGS) {
       (tagger.length !== 1 ? "（找到 " + tagger.length + " 个打 tag / 发布的 job）" : "") +
       (unguarded.length ? " —— 没等 " + unguarded.join(", ") : ""));
   }
+  // v8-0-plan F1: PR CI is cut up to be fast, and each cut has a way to
+  // quietly stop checking something. One assertion per cut.
+  {
+    const { parseShard, inShard } = await import("./e2e-shard.mjs");
+    // the partition itself: every scenario in exactly one shard, for every n
+    let partitionOk = true;
+    for (let n = 1; n <= 6; n++) {
+      for (let k = 0; k < 200; k++) {
+        let hits = 0;
+        for (let i = 1; i <= n; i++) if (inShard(k, parseShard(i + "/" + n))) hits++;
+        if (hits !== 1) partitionOk = false;
+      }
+    }
+    const bad = ["0/4", "5/4", "1/0", "a/b", "2", "1/4/2"].filter((s) => { try { parseShard(s); return true; } catch { return false; } });
+    const all = parseShard(""), unset = parseShard(undefined);
+    assert(partitionOk && bad.length === 0 && all.count === 1 && unset.count === 1,
+      "SHARD=i/n 把每个场景恰好分进一片；不设 SHARD 就是全部；写错的 SHARD 直接报错" +
+      (bad.length ? " —— 没拒绝 " + bad.join(", ") : ""));
+    // the suite: every top-level block is gated, and the gate is called
+    // nowhere else — an ungated block runs in every shard, and a gate called
+    // inside a loop shifts every later scenario's index
+    const layoutSrc = fs.readFileSync(path.join(root, "scripts/test-layout-e2e.mjs"), "utf8");
+    const ungated = [...layoutSrc.matchAll(/^(?:\{|for \(|for await \(|while \(|do \{)[^\n]*/gm)].map((m) => m[0].slice(0, 40));
+    const gates = (layoutSrc.match(/^if \(scenario\(\)\) (?:\{|for \()/gm) || []).length;
+    const layoutCode = layoutSrc.split("\n").filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join("\n");
+    const calls = (layoutCode.match(/\bscenario\(\)/g) || []).length;
+    assert(/makeScenarioGate\(process\.env\.SHARD\)/.test(layoutSrc) && gates >= 70 && calls === gates && ungated.length === 0,
+      "test-layout-e2e 顶层每个场景都以 `if (scenario())` 开头（" + gates + " 个）" +
+      (ungated.length ? " —— 没分片的：" + ungated.join(" | ") : "") +
+      (calls !== gates ? " —— scenario() 在门之外还被调了 " + (calls - gates) + " 次" : ""));
+    // both workflows: the layout shards are exactly 1/n..n/n, and wired
+    for (const [where, text] of [["checks.yml", checksWf], ["release.yml", releaseWf]]) {
+      const shards = [...text.matchAll(/suites: scripts\/test-layout-e2e\.mjs\s*\n\s*shard: (\d+)\/(\d+)/g)].map((m) => [+m[1], +m[2]]);
+      const n = shards.length ? shards[0][1] : 0;
+      const idx = shards.map(([i]) => i).sort((a, b) => a - b).join(",");
+      const whole = /suites:[^\n]*test-layout-e2e\.mjs[^\n]*\n(?!\s*shard:)/.test(text);
+      assert(n >= 2 && shards.every(([, m]) => m === n) && idx === Array.from({ length: n }, (_, i) => i + 1).join(",") &&
+        !whole && /SHARD: \$\{\{ matrix\.group\.shard \}\}/.test(text),
+        where + " 把布局套件切成 1/n…n/n 全部的片，并把 SHARD 传进去（" + shards.map((s) => s.join("/")).join(" ") + "）");
+    }
+    // checks.yml: push only for main, stale PR runs cancelled, the sampled
+    // puzzle search on ubuntu only, and Windows native compiled on every PR
+    const zigAt = checksWf.search(/^  zig:\s*$/m);
+    const zigJob = zigAt < 0 ? "" : checksWf.slice(zigAt).split(/\n  [\w-]+:\s*\n/)[0];
+    assert(/^on:\s*\n  push:\s*\n    branches: \[main\]\s*$/m.test(checksWf),
+      "checks.yml 的 push 只在 main 上跑 —— 其余分支有 PR 就够了，不再同一棵树跑两遍");
+    assert(/^concurrency:\s*\n  group: checks-\$\{\{ github\.event_name == 'pull_request' && github\.ref \|\| github\.run_id \}\}\s*\n  cancel-in-progress: true\s*$/m.test(checksWf),
+      "checks.yml 取消同一个 PR 上被新提交顶掉的旧运行");
+    assert(/if: matrix\.os == 'ubuntu-latest'\s*\n\s*run: node scripts\/test-mined\.mjs --sample=150/.test(checksWf),
+      "150 题抽样校验只在 ubuntu 上跑 —— 它和平台无关");
+    assert(/os: windows-latest\s*\n\s*flags: -Dplatform=windows/.test(zigJob) && /os: macos-latest/.test(zigJob) &&
+      /run: zig build test \$\{\{ matrix\.flags \}\}/.test(zigJob) && /runs-on: \$\{\{ matrix\.os \}\}/.test(zigJob),
+      "checks.yml 的 zig job 在 windows-latest 上编译并跑 zig build test —— PR 上也编译 Windows 原生");
+  }
   assert(/run: npm run test:engine$/m.test(nightlyWf),
     "全量那一趟有人跑 —— 抽样只覆盖 15%，剩下的 85% 在 nightly");
   assert(scriptsIn(pkg.scripts["test:engine:sample"]).length === scriptsIn(pkg.scripts["test:engine"]).length,
