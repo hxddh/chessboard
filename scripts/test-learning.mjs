@@ -735,5 +735,67 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   }
 }
 
+// --- v8-0-plan B1: the theme list and the two runs (trainer/themes.js, runs.js)
+{
+  const tctx = loadAppModules(["src/web/js/trainer/themes.js", "src/web/js/trainer/runs.js"]);
+  const Th = tctx.ChessThemes, Ru = tctx.ChessRuns;
+  // the browser lists exactly what the importer verifies, in its order
+  assert(JSON.stringify(Th.THEME_IDS) === JSON.stringify(THEMES.map((x) => x.id)),
+    "trainer/themes.js lists the importer's verifiable themes, same ids, same order (" + Th.THEME_IDS.length + ")");
+  assert(JSON.stringify(Th.themesOf({ id: "lc-x", cat: "tac", themes: ["fork", "nope", "sacrifice"] }, "pin")) === JSON.stringify(["fork", "sacrifice"]),
+    "an imported puzzle keeps its verified themes, unknown ids dropped, the motif ignored");
+  assert(JSON.stringify(Th.themesOf({ id: "h1", cat: "m2" }, null)) === JSON.stringify(["m2"]), "a hand-written mate is its mate length");
+  assert(JSON.stringify(Th.themesOf({ id: "h2", cat: "tac" }, "skewer")) === JSON.stringify(["skewer"]), "…a tactic is its motif");
+  assert(Th.themesOf({ id: "h3", cat: "op" }, null).length === 0, "…an opening drill has no theme");
+  const st = {};
+  Th.themeRecord(st, "fork").solve = 2;
+  Th.themeRecord(st, "fork").miss = 1;
+  assert(Th.attemptsIn(st, "fork") === 3 && Th.attemptsIn(st, "pin") === 0, "first answers per theme add up");
+  const rows = [{ id: "fork", name: "捉双", n: 5, tried: 3 }, { id: "pin", name: "牵制", n: 4, tried: 0 }, { id: "backRank", name: "Back-rank mate", n: 2, tried: 1 }];
+  assert(Th.filterThemes(rows, "", "all").length === 3, "no filter: every theme");
+  assert(Th.filterThemes(rows, "", "new").map((r) => r.id).join() === "pin", "「没练过」: the themes with no answer");
+  assert(Th.filterThemes(rows, "", "started").map((r) => r.id).join() === "fork,backRank", "「练过」: the themes answered in");
+  assert(Th.filterThemes(rows, "牵", "all").map((r) => r.id).join() === "pin", "search reads the shown name");
+  assert(Th.filterThemes(rows, "BACK", "all").map((r) => r.id).join() === "backRank", "…case-blind, and the id too");
+
+  // runs: harder as they go, strikes, the clock, the best score
+  const pool = [];
+  for (let r = 400; r <= 2600; r += 10) pool.push({ id: "p" + r, r });
+  const rate = (p) => p.r;
+  for (const kind of Ru.RUN_KINDS) {
+    const run = Ru.newRun(kind, 0, 42);
+    const got = [];
+    for (let i = 0; i < 12; i++) {
+      const p = Ru.pickNext(run, pool, rate);
+      Ru.served(run, p);
+      got.push(p.r);
+      assert(Math.abs(p.r - Ru.targetOf(run)) <= Ru.SPREAD, kind + ": puzzle " + (i + 1) + " is near the run's target (" + p.r + " vs " + Ru.targetOf(run) + ")");
+      Ru.onSolve(run);
+    }
+    const early = got.slice(0, 4).reduce((a, b) => a + b) / 4, late = got.slice(-4).reduce((a, b) => a + b) / 4;
+    assert(late - early >= 200, kind + ": the run gets harder (" + Math.round(early) + " → " + Math.round(late) + ")");
+    assert(new Set(run.used).size === run.used.length, kind + ": no puzzle twice in a run");
+    assert(run.score === 12, kind + ": each solve scores");
+  }
+  const rush = Ru.newRun("rush", 1000, 1);
+  Ru.onMiss(rush); Ru.onMiss(rush);
+  assert(!rush.over, "rush: two misses and the run goes on");
+  Ru.onMiss(rush);
+  assert(rush.over && rush.why === "strikes", "rush: the third miss ends it");
+  const clocked = Ru.newRun("rush", 1000, 1);
+  assert(Ru.timeLeft(clocked, 1000) === 180000, "rush: three minutes on the clock");
+  assert(!Ru.checkClock(clocked, 180999) && Ru.checkClock(clocked, 181000) && clocked.why === "time", "rush: ends when the clock runs out");
+  const streak = Ru.newRun("streak", 0, 1);
+  assert(Ru.timeLeft(streak, 1e12) === Infinity && !Ru.checkClock(streak, 1e12), "streak: no clock");
+  Ru.onSolve(streak); Ru.onSolve(streak); Ru.onMiss(streak);
+  assert(streak.over && streak.why === "streak" && streak.score === 2, "streak: the first miss ends it, the solves are the score");
+  const pst = {};
+  assert(Ru.recordBest(pst, streak) && Ru.bestOf(pst, "streak") === 2, "a first score is a best");
+  const worse = Ru.newRun("streak", 0, 1); Ru.onSolve(worse);
+  assert(!Ru.recordBest(pst, worse) && Ru.bestOf(pst, "streak") === 2, "a lower score leaves the best alone");
+  assert(Ru.bestOf(pst, "rush") === 0, "…and each kind keeps its own");
+  assert(Ru.pickNext(Ru.newRun("rush", 0, 1), [], rate) === null, "an empty pool serves nothing");
+}
+
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
 console.log("all learning tests passed");

@@ -2179,8 +2179,7 @@ import { createStore } from "./store.js";
     sanHistory, selectSquare, setSideTab, store, sync, t, taskText, tf, toast,
     confirmNative, maybeEngineTurn, puzzleMotif, saveSettings, syncAutoFlip,
     practiceLeft: (L) => practiceLeft(L),
-    puzzlesInCat: (cat) => puzzlesInCat(cat),
-    startPuzzleAt: (cat, idx) => startPuzzleAt(cat, idx),
+    puzzlesInCat: (cat) => puzzlesInCat(cat), startPuzzleAt: (cat, idx) => startPuzzleAt(cat, idx),
   });
   const {
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
@@ -2198,7 +2197,7 @@ import { createStore } from "./store.js";
     loadHistoryRecord, loadStats, maybeEngineTurn, motifKeyOf, moveSound, puzzleIdea, puzzleMotif,
     puzzleName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
     saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName, startLearn,
-    stopLearn, store, sync, t, tf, toast, writeSan,
+    stopLearn, store, sync, t, tf, toast, writeSan, switchMode, setSideTab, drawRatingTrend,
     RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total() },
     renderRepertoire: () => renderRepertoire(),
     loadLibraryEntry: (e) => loadLibraryEntry(e),
@@ -8542,6 +8541,7 @@ import { createStore } from "./store.js";
     Dlg.register(document.getElementById("hist-modal"), closeHistory);
     Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
     Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
+    Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(confirmModal, () => finishConfirm(false));

@@ -119,6 +119,8 @@ export function createTrainerContent(d) {
     // built-in drills carry theirs
     if (p.cat === "rep") return p.name + (p.side === "b" ? " · " + t("color.black") : "");
     if (p.src === "mined") return t("pz.cat." + p.cat) + " #" + (MINED_ORDINAL.get(p.id) || "");
+    // v8-0-plan B1: an imported puzzle is named by its Lichess id
+    if (p.src === "lichess") return t("pz.cat." + p.cat) + " #" + p.id.slice(3);
     return contentField("puzzles", p.id, "name") || p.name;
   }
   /**
@@ -156,6 +158,8 @@ export function createTrainerContent(d) {
     return puzzleMotifKey(p, HAND_MOTIF_KEY, () => derivedMotif(p));
   }
   function puzzleMotif(p) {
+    // an imported puzzle's motif is motif.js's key (puzzle-db.js), not a label
+    if (p.src === "lichess" && p.motif) return t("motif." + p.motif);
     const hand = contentField("puzzles", p.id, "motif") || p.motif;
     if (hand) return hand;
     const d = derivedMotif(p);

@@ -28,6 +28,7 @@ import { ChessProgress } from "../progress.js";
 import { CHESS_PUZZLES } from "../puzzles.js";
 import { ChessRating } from "../rating.js";
 import { ChessSrs } from "../srs.js";
+import { createPuzzleModes, isThemeCat, THEME_CAT } from "./puzzle-modes.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -41,7 +42,7 @@ export function createPuzzlesUI(d) {
     motifKeyOf, moveSound, puzzleIdea, puzzleMotif, puzzleName, renderAchievements,
     renderPuzzleTally, renderRecordEntry, renderRepertoire, renderStats, resetClocks, sanHistory,
     saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName, startLearn,
-    stopLearn, store, sync, t, tf, toast, writeSan,
+    stopLearn, store, sync, t, tf, toast, writeSan, switchMode, setSideTab, drawRatingTrend,
   } = d;
 
   // --- puzzle mode: tactics trainer (data in puzzles.js, pure chess.js) ---
@@ -412,13 +413,15 @@ export function createPuzzlesUI(d) {
   function puzzleRatingOf(p) { return isRatedCat(p.cat) ? Math.round(puzzleRating(p).r) : null; }
   function ratePuzzleOnce(id, score) {
     const pz = store.session.puzzle;
-    if (!pz || pz.p.id !== id || pz.rated) return;
+    if (!pz || pz.p.id !== id || pz.rated || pz.run) return; // a run is not rated (trainer/runs.js)
     if (!isRatedCat(pz.p.cat)) return; // 背谱不是战术水平（7.3 B1）
     if (store.session.puzzleState.solved[id]) return; // not a first attempt
     pz.rated = true;
     const st = store.session.puzzleState;
     const before = Math.round(playerRating().r);
     const r = ChessRating.rate1v1(playerRating(), puzzleRating(pz.p), score);
+    // v8-0-plan B1: each theme the puzzle belongs to has its own rating
+    Modes.rateThemes(pz.p, score, puzzleRating(pz.p));
     // what the answer did to the rating, for the feedback card (7.7 §4)
     pz.rating = { now: Math.round(r.player.r), delta: Math.round(r.player.r) - before,
       provisional: ChessRating.isProvisional(r.player) };
@@ -449,9 +452,14 @@ export function createPuzzlesUI(d) {
     // drill retiring) forgets the ids, but the board keeps the drill — and a
     // wrong move on it then wrote the id straight back into the queue, a
     // review `owedNow()` counts for ever and nothing can hand out.
-    const p = bookNow().find((x) => x.id === id);
+    // v8-0-plan B1: a Lichess puzzle is not in the book — its band is a chunk
+    // that may not be loaded when the queue is read, and a review nothing can
+    // serve is the bug above. It is rated and tallied, not queued.
+    const pz = store.session.puzzle;
+    const lc = pz && pz.p.id === id && pz.p.src === "lichess" ? pz.p : null;
+    const p = lc || bookNow().find((x) => x.id === id);
     if (!p) return;
-    store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
+    if (!lc) store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
     // 6.0 (v6-plan Q3.1): the first answer to a puzzle moves both ratings
     ratePuzzleOnce(id, 0);
     // …and into the lifetime tally, which unlike the queue survives
@@ -497,6 +505,7 @@ export function createPuzzlesUI(d) {
 
   /** "review" is a virtual category: every puzzle currently in the missed set. */
   function puzzlesInCat(cat) {
+    if (isThemeCat(cat)) return Modes.themeList(cat.slice(THEME_CAT.length));
     const base = cat === "review"
       // 6.0 (v6-plan Q3.3): what is due today, most overdue first, at most a
       // day's dose — the rest is scheduled forward by dueQueue() itself so a
@@ -659,8 +668,17 @@ export function createPuzzlesUI(d) {
     idx = ((idx % list.length) + list.length) % list.length;
     store.session.puzzleState.cat = cat;
     savePuzzleState();
-    const p = list[idx];
-    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: isOpeningCat(p.cat) ? [] : null };
+    seatPuzzle(cat, idx, list[idx]);
+  }
+
+  /**
+   * Put puzzle `p` on the board as number `idx` of `cat` — startPuzzleAt's
+   * second half, and a run's way in (`run`: trainer/runs.js's record).
+   */
+  function seatPuzzle(cat, idx, p, run) {
+    if (!p) p = puzzlesInCat(cat)[idx];
+    if (!p) return;
+    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: isOpeningCat(p.cat) ? [] : null, run: run || null };
     // playing Black: the app opens with White's book move, you answer
     if (isOpeningCat(p.cat) && p.side === "b") {
       const first = store.session.puzzle.g.move(p.line[0]);
@@ -693,6 +711,8 @@ export function createPuzzlesUI(d) {
   }
 
   function startPuzzles() {
+    // v8-0-plan B1: a theme resumes as a theme (its bands load first)
+    if (isThemeCat(store.session.puzzleState.cat)) { Modes.startTheme(store.session.puzzleState.cat.slice(THEME_CAT.length)); return; }
     let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) ? store.session.puzzleState.cat : "m1";
     if (cat === "rep") seatRepSide();
     // don't strand the user on an empty review tab — or an emptied personal
@@ -704,7 +724,7 @@ export function createPuzzlesUI(d) {
     if (idx < 0) idx = 0;
     startPuzzleAt(cat, idx);
   }
-  function stopPuzzles() { store.session.puzzle = null; }
+  function stopPuzzles() { Modes.endRun(); store.session.run = null; store.session.puzzle = null; }
 
   function puzzleModel() {
     const g = store.session.puzzle.g;
@@ -790,14 +810,16 @@ export function createPuzzlesUI(d) {
       return tf("pz.goalMine", [p.played]) + cost;
     }
     if (isOpeningCat(p.cat)) return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
-    if (p.cat === "win") return tf("pz.goalWin", [puzzleName(p), p.gain]);
-    if (p.cat === "tac") return tf("pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
+    // v8-0-plan B1: a Lichess puzzle keeps its side, and the goal says which
+    const b = p.side === "b";
+    if (p.cat === "win") return tf(b ? "pz.goalWinB" : "pz.goalWin", [puzzleName(p), p.gain]);
+    if (p.cat === "tac") return tf(b ? "pz.goalTacB" : "pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
     if (p.cat === "real") return tf("pz.goalReal", [puzzleName(p), p.men, p.gain]);
-    if (p.cat === "def") return tf("pz.goalDef", [puzzleName(p)]);
+    if (p.cat === "def") return tf(b ? "pz.goalDefB" : "pz.goalDef", [puzzleName(p)]);
     if (p.cat === "draw") return tf("pz.goalDraw", [puzzleName(p)]);
     // the count is a word in Chinese ("一步"), a numeral in English — so it
     // goes through the dictionary rather than being interpolated raw
-    return tf("pz.goalMate", [puzzleName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
+    return tf(b ? "pz.goalMateB" : "pz.goalMate", [puzzleName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
   }
 
   /** The chair the solver sits in: white everywhere except black op drills. */
@@ -1047,6 +1069,7 @@ export function createPuzzlesUI(d) {
 
   function puzzleWrong(reason) {
     store.session.puzzle.g.undo();
+    if (store.session.puzzle.run) { store.session.puzzle.last = null; Modes.runMissed(reason); return; }
     store.session.puzzle.last = null;
     store.session.puzzle.misses++;
     store.session.pzStreak = 0;
@@ -1100,6 +1123,7 @@ export function createPuzzlesUI(d) {
   /** Arrow for the correct move at the current stage. */
   function showPuzzleAnswer() {
     if (!store.session.puzzle || store.session.puzzle.done) return;
+    if (store.session.puzzle.run) { Modes.runAnswer(); return; }
     const g = store.session.puzzle.g;
     if (g.turn() !== puzzleHumanSide() || g.game_over()) return;
     let from = null, to = null;
@@ -1135,6 +1159,7 @@ export function createPuzzlesUI(d) {
     store.session.puzzle.done = true;
     store.game.selection = null;
     Audio2.playWin();
+    if (store.session.puzzle.run) { Modes.runSolved(); return; } // v8-0-plan B1
     // an opening drill is credited to the line the board is on (7.6)
     const sp = opCurrent(store.session.puzzle);
     // a clean first-try solve retires the puzzle from review; a shaky one keeps it
@@ -1308,14 +1333,14 @@ export function createPuzzlesUI(d) {
     // throw the training in progress away (Codex on #79). Stopping only drops
     // these references (stopLearn also bumps the lesson's token, which just
     // cancels a demo in flight), and a refused load changes nothing else.
-    const kept = { puzzle: store.session.puzzle, learn: store.session.learn, study: store.session.study };
+    const kept = { puzzle: store.session.puzzle, run: store.session.run, learn: store.session.learn, study: store.session.study };
     invalidateEngine();
     clearPreview();
     if (mode === "puzzle") stopPuzzles(); else stopLearn();
     return () => {
       store.session.mode = mode;
       if (mode === "puzzle") {
-        if (kept.puzzle) store.session.puzzle = kept.puzzle; else startPuzzles();
+        if (kept.puzzle) { store.session.puzzle = kept.puzzle; store.session.run = kept.run; } else startPuzzles();
       } else if (kept.study || kept.learn) {
         store.session.learn = kept.learn;
         store.session.study = kept.study;
@@ -1325,7 +1350,7 @@ export function createPuzzlesUI(d) {
   }
 
   function nextPuzzle() {
-    if (!store.session.puzzle) return;
+    if (!store.session.puzzle || store.session.puzzle.run) return;
     // 7.6 §3g: while 今天的训练 is running, 下一题 is the plan's next step.
     // It used to be only "the next one in this category" — so the step that
     // had just been completed was left for whatever the category held, and an
@@ -1426,6 +1451,11 @@ export function createPuzzlesUI(d) {
   }
 
   function syncPuzzleUI() {
+    paintPuzzlePanel();
+    // v8-0-plan B1: the rating, the run card and the theme row, over the rest
+    if (store.session.mode === "puzzle") Modes.render();
+  }
+  function paintPuzzlePanel() {
     const sec = document.getElementById("sec-puzzle");
     if (!sec) return;
     sec.hidden = store.session.mode !== "puzzle";
@@ -1546,6 +1576,7 @@ export function createPuzzlesUI(d) {
 
   /** The puzzle panel's controls — wired from app.js's boot as before (v8-0-plan F4). */
   function wirePuzzlePanel() {
+    Modes.wire();
     document.getElementById("puzzle-cat-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-cat]");
       // `puzzle` is null whenever the tier filter empties the current category —
@@ -1620,12 +1651,19 @@ export function createPuzzlesUI(d) {
       if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));
     };
   }
+  // v8-0-plan B1: 冲刺 / 连胜, the themes, the rating on the view (puzzle-modes.js)
+  const Modes = createPuzzleModes({
+    doc: document, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend,
+    ALL_PUZZLES, isRatedCat, puzzleRating, playerRating, ratingLabel, ratingTip, motifKeyOf,
+    savePuzzleState, saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide,
+  });
+
   return {
     wirePuzzlePanel,
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI,
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(),
   };
 }
