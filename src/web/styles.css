@@ -341,7 +341,11 @@
       --board-edge: rgba(60,34,12,.30);
       --sq-light: #f0d9b5;
       --sq-dark: #b58863;
-      --sq-sel: rgba(0, 150, 0, var(--mark-mid));
+      /* 7.9 §3: darker, not louder — over the light square C* 56.9 → 42.3,
+         L* 67.9 → 62.6; the hue moves onto the last move's (133° → 124°,
+         last 121°) and the two stay apart by lightness: closest ΔE00 on
+         this board 10.9 → 12.2 (docs/measured.json markChroma, markHue) */
+      --sq-sel: rgba(30, 110, 0, var(--mark-mid));
       /* 7.8 §6: a yellower, quieter green — over the light square C* 54.1 →
          43.9 (Lichess's own last move, measured the same way: 52.4), hue
          term 3.1 → 4.2 (ceiling 5), still ΔE00 18 from the bare square
@@ -417,9 +421,12 @@
       --board-edge: rgba(90,66,36,.26);
       --sq-light: #eddcc0;
       --sq-dark: #c39a6b;
-      --sq-sel: rgba(0, 155, 0, var(--mark-mid));
+      /* 7.9 §3: selection C* 57.2 → 44.8 and a step darker (L* 69.1 →
+         64.8), so it parts from the last move by lightness — closest ΔE00
+         10.1 → 13.9; check C* 53.7 → 49.9 at the same hue */
+      --sq-sel: rgba(10, 125, 10, var(--mark-mid));
       --sq-last: rgba(0, 255, 45, var(--mark-soft));
-      --sq-check: rgba(255, 55, 20, var(--mark-mid));
+      --sq-check: rgba(235, 50, 20, var(--mark-mid));
       --sq-hint: rgba(0, 125, 255, var(--mark-mid));
       --sq-star: rgba(255, 227, 89, var(--mark-strong));
       --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
@@ -455,7 +462,9 @@
       --sq-sel: rgba(35, 65, 160, var(--mark-mid));
       --sq-last: rgba(30, 85, 240, var(--mark-soft));
       --sq-check: rgba(255, 35, 0, var(--mark-mid));
-      --sq-hint: rgba(0, 255, 60, var(--mark-mid));
+      /* 7.9 §3: the hint was the loudest colour in the app (C* 68.0); the
+         same green at the same lightness, C* 49.9 */
+      --sq-hint: rgba(70, 245, 100, var(--mark-mid));
       --sq-star: rgba(166, 110, 0, var(--mark-strong));
       --sq-star-edge: rgba(60, 40, 0, var(--mark-mid));
       --sq-flash: rgba(10, 191, 94, var(--mark-mid));
@@ -470,8 +479,8 @@
       --shape-y: rgba(232, 143, 0, var(--mark-strong));
       /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
          (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(0, 255, 60, var(--mark-mid));
-      --engine-arrow-alt: rgba(0, 255, 60, var(--mark-soft));
+      --engine-arrow: rgba(70, 245, 100, var(--mark-mid));
+      --engine-arrow-alt: rgba(70, 245, 100, var(--mark-soft));
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
     }
 
@@ -2955,10 +2964,11 @@
        the worst case, got shorter doing it (673px → 647px). */
     /* The records page before there is anything to record. See
        renderRecordEntry() for what stood here and why it stopped. */
+    /* 7.9 §4a: dashed and unfilled, like every other empty state on the
+       page (.rec-block below) — it was the one solid card among them */
     .rec-entry {
       margin-bottom: 16px; padding: 12px;
-      border: 1px solid var(--card-border); border-radius: var(--radius-md);
-      background: var(--card);
+      border: 1px dashed var(--card-border); border-radius: var(--radius-md);
     }
     .rec-entry[hidden] { display: none; }
     .rec-lead {
@@ -3418,3 +3428,45 @@ span[data-icon] { display: inline-grid; place-items: center; }
 #lib-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m16 6 4 14'/%3E%3Cpath d='M12 6v14'/%3E%3Cpath d='M8 8v12'/%3E%3Cpath d='M4 4v16'/%3E%3C/svg%3E"); }
 #rep-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v16'/%3E%3Cpath d='M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z'/%3E%3C/svg%3E"); }
 #hist-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 22h14'/%3E%3Cpath d='M5 2h14'/%3E%3Cpath d='M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22'/%3E%3Cpath d='M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2'/%3E%3C/svg%3E"); }
+
+/* ------------------------------------------------------------------
+   One empty state on the record page (7.9 §4a). 7.8.0 had three on one
+   page: the solid welcome card, the dashed cards, and 导入棋谱文件 /
+   按白方导入 / 按黑方导入 as bare buttons left-aligned under their cards,
+   each its own width. Now every empty section is the same dashed card —
+   icon, one sentence, and the button that fills it INSIDE the card. The
+   library's is the page's one primary (library-ui.js sets it); the
+   repertoire's two imports are a pair, side by side at equal width, and so
+   neither is the primary. .rec-block wraps the section's body and its
+   buttons in the markup; .empty is set by the section's renderer, and the
+   buttons are never rebuilt — a class, not a re-render (7.6).
+   ------------------------------------------------------------------ */
+.rec-block.empty {
+  display: grid; gap: 12px;
+  margin: 4px 0 0; padding: 12px;
+  border: 1px dashed var(--card-border); border-radius: var(--radius-md);
+}
+.rec-block.empty .hint.empty-note { margin: 0; padding: 0; border: 0; border-radius: 0; }
+.rec-block.empty > .close-row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px;
+  margin: 0;
+}
+.rec-block.empty > .close-row > .btn-pair { display: contents; }
+.rec-block.empty > .stats-body:empty { display: none; }
+
+/* ------------------------------------------------------------------
+   The puzzle page's vertical rhythm (7.9 §4d). Every block brought its own
+   margins — the heading 8 under, .link-row 8 over, .lesson-task 8 over and
+   12 under, the feedback 12 under, the engine line -4 over — so the gaps
+   down the page came out 8 / 0 / 8 / 12 / 12, and 为你出一题 sat 9px over
+   the 题型 label that is not even in its group. Two gaps now, and only two:
+   8px inside a group, 20px between groups. The section lays its blocks out
+   itself; .pz-group (index.html) starts a group. Scoped to this section:
+   the same classes build the learn page and the settings.
+   ------------------------------------------------------------------ */
+#sec-puzzle { display: flex; flex-direction: column; gap: 8px; }
+#sec-puzzle > * { margin-top: 0; margin-bottom: 0; }
+#sec-puzzle > .pz-group { margin-top: 12px; }
+/* the nudge's row with its one button hidden is still a box, and a flex
+   gap is paid for every box — an empty one is not a block of the page */
+#sec-puzzle > .link-row:not(:has(> :not([hidden]))) { display: none; }

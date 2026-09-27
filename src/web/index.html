@@ -561,7 +561,10 @@
         <div class="link-row">
           <button type="button" class="act-btn" id="puzzle-smart" title="按你的复习欠账和错误率挑下一题" data-i18n-title="tip.puzzle.smart" data-i18n="pz.smart">为你出一题</button>
         </div>
-        <div class="setting-row stack">
+        <!-- 7.9 §4d: .pz-group marks where a new group starts — the filters,
+             the puzzle on the board, the list. 8px inside a group, 20px
+             between groups (#sec-puzzle in styles.css). -->
+        <div class="setting-row stack pz-group">
           <span class="setting-k" data-i18n="pz.cat">题型</span>
           <div class="theme-row wrap fit-row" id="puzzle-cat-seg" role="group" aria-label="题型" data-i18n-aria="pz.cat">
             <button type="button" data-cat="m1" class="active" title="一步将死" data-i18n-title="tip.cat.m1" data-i18n="pz.cat.m1">一步杀</button>
@@ -602,7 +605,7 @@
             <button type="button" data-tier="hard" data-i18n="pz.hard">较难</button>
           </div>
         </div>
-        <div class="lesson-task" id="puzzle-task"></div>
+        <div class="lesson-task pz-group" id="puzzle-task"></div>
         <!-- 7.7 (v7-7-plan §4): the answer to the move you just made, in the
              panel beside the board, not in a toast over it. Right: a tick,
              「最佳着」, the run of clean solves and the rating change. Wrong:
@@ -644,7 +647,7 @@
         <div class="link-row">
           <button type="button" class="act-btn" id="puzzle-review-nudge" hidden></button>
         </div>
-        <details class="reading-index">
+        <details class="reading-index pz-group">
           <summary class="setting-summary"><h2 class="side-h" data-i18n="side.puzzleList">题目列表</h2></summary>
           <div class="lesson-list" id="puzzle-list" aria-label="题目列表" data-i18n-aria="aria.puzzleList"></div>
         </details>
@@ -865,6 +868,11 @@
           <h2 class="side-h" data-i18n="lib.title">棋谱库</h2>
           <span class="side-h-meta num" id="lib-meta" hidden></span>
         </div>
+        <!-- 7.9 §4a: the section's body and its buttons in one block, so the
+             empty state can be one dashed card with its button inside it
+             (.rec-block in styles.css). The buttons stay where they are in
+             the markup — a class, not a re-render, is what moves them. -->
+        <div class="rec-block" id="lib-block">
         <div class="stats-body" id="lib-body"></div>
         <!-- Who "you" are in an imported file. Without a name that matches a
              header, library.js refuses to pick a side — every number on the
@@ -893,6 +901,7 @@
              leaves the name field rewrote them between mouse-down and
              mouse-up, and WebKit drops a click whose button moved. -->
         <div class="stats-body" id="lib-status"></div>
+        </div>
         <!-- 我的开局书 (7.2, v7-2-plan §3). The trainer's built-in book
              teaches opening principles through the openings everybody plays;
              this one is the four or five things THIS player intends to play,
@@ -904,6 +913,7 @@
           <h2 class="side-h" data-i18n="rep.title">我的开局书</h2>
           <span class="side-h-meta num" id="rep-meta" hidden></span>
         </div>
+        <div class="rec-block" id="rep-block">
         <div class="stats-body" id="rep-body"></div>
         <div class="close-row split" id="rep-acts">
           <span class="btn-pair">
@@ -914,6 +924,7 @@
             <button type="button" class="act-btn" id="rep-drill" hidden data-i18n="rep.drill">开始背</button>
             <button type="button" class="act-btn" id="rep-clear" hidden data-i18n="rep.clear">清空</button>
           </span>
+        </div>
         </div>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="hist.title">对局历史</h2>

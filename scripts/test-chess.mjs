@@ -8,7 +8,7 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
 import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
-import { measureMarks, markChroma, LAST_CHROMA_CEILING, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
+import { measureMarks, markChroma, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS } from "./lib/mark-colour.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -2232,6 +2232,9 @@ for (const lang of CONTENT_LANGS) {
       }
       assert(now[b].sep >= SEP_FLOOR,
         b + ": every two marks stay apart on the same square (closest ΔE00 " + now[b].sep + ", " + now[b].sepPair + ")");
+      // 7.9 §3: quieter marks, not closer ones — no board below what 7.8.0 had
+      assert(now[b].sep >= SEP_FLOOR_BY_BOARD[b],
+        b + ": the marks at least as far apart as 7.8.0 (closest ΔE00 " + now[b].sep + " ≥ " + SEP_FLOOR_BY_BOARD[b] + ")");
     }
     // …and what docs/measured.json says is what ships: a retune without a
     // re-record is a stale number, and a stale number is worse than none
@@ -2245,14 +2248,22 @@ for (const lang of CONTENT_LANGS) {
   // Lichess's default board measured the same way (C* 52.4 — see
   // LAST_CHROMA_CEILING) and sits under it, so a last move reads as a tint,
   // not as a highlighter pen. Recorded as markChroma beside markHue.
+  // 7.9 §3: every mark has a ceiling — the selection had run to 57, louder
+  // than the last move it sits one step above, and the notebook hint to 68.
+  // Last and selection ≤ 47, check and hint ≤ 52 (CHROMA_CEILING).
   {
     const now = markChroma(css2);
     for (const b of MARK_BOARDS) {
       assert(now[b].last <= LAST_CHROMA_CEILING,
         b + " last move: a soft tint over the light square (C* " + now[b].last + " ≤ " + LAST_CHROMA_CEILING + ")");
+      for (const k of MARKS) {
+        assert(now[b][k] <= CHROMA_CEILING[k],
+          b + " " + k + ": under its chroma ceiling over the light square (C* " + now[b][k] + " ≤ " + CHROMA_CEILING[k] + ")");
+      }
     }
     const recorded = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).markChroma;
-    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now) && recorded.ceiling.last === LAST_CHROMA_CEILING,
+    assert(!!recorded && JSON.stringify(recorded.after) === JSON.stringify(now) &&
+      JSON.stringify(recorded.ceiling) === JSON.stringify(CHROMA_CEILING),
       "docs/measured.json markChroma.after is these palettes (re-run scripts/measure-marks.mjs --record)");
   }
 }
