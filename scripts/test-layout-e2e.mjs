@@ -3638,11 +3638,13 @@ for (const [when, mode, act] of [
   // §1b：「今天的训练」的文字不是等宽字体
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play");
+    // 7.9 §2b: --font-num is the interface face itself now, so "not the
+    // --font-num family" stopped meaning anything; ask the real question
     const r = await page.evaluate(() => {
-      const num = getComputedStyle(document.documentElement).getPropertyValue("--font-num").trim();
-      const first = num.split(",")[0].trim();
+      const first = "等宽字体";
+      const monoRe = /SF Mono|Menlo|Consolas|ui-monospace|monospace/i;
       const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why")];
-      return { n: els.length, first, mono: els.filter((e) => getComputedStyle(e).fontFamily.split(",")[0].trim() === first).map((e) => e.textContent) };
+      return { n: els.length, first, mono: els.filter((e) => monoRe.test(getComputedStyle(e).fontFamily)).map((e) => e.textContent) };
     });
     assert(r.n > 0 && r.mono.length === 0, `§1b ${lang}：今天的训练 ${r.n} 段文字都不用 ${r.first}` + (r.mono.length ? " —— " + r.mono.join(" / ") : ""));
     await ctx.close();
@@ -3811,6 +3813,71 @@ for (const [when, mode, act] of [
     assert(r.bg !== "rgba(0, 0, 0, 0)" && r.bg !== "transparent", `§1e 页签条有自己的底色（${r.bg}）`);
     assert(r.own, "§1e 页签矩形里取到的每一点都是页签自己");
     await ctx.close();
+  }
+}
+
+// --- 7.9 §2a / §2c：棋谱大一号，回合号与着法同一条基线 ----------------------
+// 7.8.0 量到：「标准」下棋谱着法 13px，面板文字只有 12 和 13 两档；回合号装在
+// 一个居中的小方块里，文字下缘比着法高 2.6px。三种语言 × 三种宽度各量一遍。
+// 下缘用 Range.getClientRects 量文字本身，不量盒子：盒子对齐了，字不一定。
+{
+  const sqAt = async (page, sq) => page.evaluate((s) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(120); };
+  // 意大利开局十手：五行，其中有兵种字形（字形是 inline-block，不能把基线带跑）
+  const ITALIAN = ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6", "f1", "c4", "f8", "c5", "c2", "c3", "g8", "f6", "d2", "d4", "e5", "d4"];
+  const SIZES = [{ width: 1440, height: 900 }, { width: 1024, height: 700 }, { width: 600, height: 900 }];
+  for (const lang of LANGS) {
+    for (const vp of SIZES) {
+      const { ctx, page } = await open(lang, "pvp", "play", "wood", vp);
+      for (const sq of ITALIAN) await tap(page, sq);
+      await page.waitForTimeout(300);
+      const r = await page.evaluate(() => {
+        const vis = (e) => { const b = e.getBoundingClientRect(); return e.offsetParent !== null && b.width > 0 && b.height > 0; };
+        // the bottom of the last line box of the element's first text run
+        const textBottom = (el) => {
+          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => n.textContent.trim() ? 1 : 3 });
+          const tn = w.nextNode();
+          if (!tn) return null;
+          const rg = document.createRange(); rg.selectNodeContents(tn);
+          const rs = [...rg.getClientRects()];
+          return rs.length ? rs[rs.length - 1].bottom : null;
+        };
+        const rows = [...document.querySelectorAll(".move-list .mlrow")].filter(vis).map((row) => {
+          const no = row.querySelector(".mlnum");
+          const nb = textBottom(no);
+          const mv = [...row.querySelectorAll(".mlmove:not(.mlgap)")].map(textBottom).filter((x) => x != null);
+          return { no: no.textContent, d: mv.length && nb != null ? Math.max(...mv.map((m) => Math.abs(m - nb))) : null,
+                   bg: getComputedStyle(no).backgroundColor, align: getComputedStyle(no).textAlign };
+        });
+        const texts = [...document.querySelectorAll("#side *")].filter((e) => vis(e) &&
+          [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()));
+        const pane = document.getElementById("pane-play");
+        return {
+          rows,
+          san: [...new Set([...document.querySelectorAll(".move-list .mlmove")].map((e) => getComputedStyle(e).fontSize))],
+          tab: getComputedStyle(document.getElementById("tab-play")).fontSize,
+          twelve: texts.filter((e) => getComputedStyle(e).fontSize === "12px").map((e) => e.id || e.className),
+          hscroll: pane.scrollWidth - pane.clientWidth,
+          docScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      });
+      const tag = `7.9 ${lang} ${vp.width}×${vp.height}`;
+      assert(r.san.length === 1 && r.san[0] === "15px", `§2a ${tag}：棋谱着法 15px（${r.san.join(" ")}）`);
+      assert(r.tab === "14px", `§2a ${tag}：面板正文 14px（页签 ${r.tab}）`);
+      assert(r.twelve.length === 0, `§2a ${tag}：面板里不再有 12px 的字` + (r.twelve.length ? "（" + r.twelve.slice(0, 4).join("，") + "）" : ""));
+      assert(r.hscroll <= 0 && r.docScroll <= 0, `§2a ${tag}：大一号之后没有横向滚动（窗格 ${r.hscroll}，页面 ${r.docScroll}）`);
+      const off = r.rows.filter((x) => x.d == null || x.d > 1);
+      assert(r.rows.length === 5 && off.length === 0,
+        `§2c ${tag}：${r.rows.length} 行里回合号与着法的文字下缘相差 ≤ 1px` +
+        (off.length ? "（" + off.map((x) => x.no + " " + (x.d == null ? "?" : x.d.toFixed(2))).join("，") + "）" : "（最大 " + Math.max(...r.rows.map((x) => x.d)).toFixed(2) + "）"));
+      assert(r.rows.every((x) => x.bg === "rgba(0, 0, 0, 0)" && x.align === "right"),
+        `§2c ${tag}：回合号没有底色、右对齐（${[...new Set(r.rows.map((x) => x.bg + " " + x.align))].join("；")}）`);
+      await ctx.close();
+    }
   }
 }
 

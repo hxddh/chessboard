@@ -1730,7 +1730,9 @@ for (const lang of CONTENT_LANGS) {
   // type: six steps, and no half pixels
   // 6.0: the same seven steps, in rem (16px root) so the text-size setting
   // scales the whole sheet together (v6-plan Q3.6)
-  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.9375rem", "1rem", "1.1875rem", "1.875rem"]);
+  // 7.9 §2a: the panel moved up a step — 12px (0.75rem) left the scale and
+  // 14px (0.875rem) took its place. Still seven.
+  const TYPE = new Set(["0.6875rem", "0.8125rem", "0.875rem", "0.9375rem", "1rem", "1.1875rem", "1.875rem"]);
   const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
@@ -1740,6 +1742,22 @@ for (const lang of CONTENT_LANGS) {
   // The membership sets above are the scale, so widening one is how a step
   // gets added: this makes that edit fail here rather than pass quietly.
   assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
+
+  // 7.9 §2b: numbers are the interface face with tabular figures. The mono
+  // stack made every counter, the accuracy figure and the clock look like
+  // terminal output beside the prose; this keeps it from coming back through
+  // the token, and keeps every user of the token tabular.
+  {
+    const fn = /--font-num:\s*([^;]+);/.exec(stripped);
+    assert(!!fn, "--font-num is declared");
+    const monoNames = /SF Mono|Menlo|Consolas|ui-monospace|monospace/i;
+    const stackOf = (v) => v.replace(/var\(--font-ui\)/, ((/--font-ui:\s*([^;]+);/.exec(stripped)) || [, ""])[1]);
+    assert(fn && !monoNames.test(stackOf(fn[1])),
+      "--font-num names no monospace family (" + (fn ? fn[1].trim() : "") + ")");
+    const users = [...stripped.matchAll(/\{([^{}]*font-family: var\(--font-num\)[^{}]*)\}/g)].map((m) => m[1]);
+    assert(users.length > 0 && users.every((b) => /font-variant-numeric: tabular-nums/.test(b)),
+      "…and every rule that sets it asks for tabular figures (" + users.length + " rules)");
+  }
   assert(SPACE.size === 9, "the spacing scale still has nine steps (" + SPACE.size + ")");
 
   // leading: three steps, declared as tokens. 1.12 collapsed font-size and
@@ -4554,8 +4572,18 @@ for (const lang of CONTENT_LANGS) {
     assert(/san\.slice\(1\)/.test(ws), "…the rest of the move is text");
     const cssM2 = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     const num = /\.mlnum \{([^}]*)\}/.exec(cssM2);
-    assert(num && /font-size: 0\.8125rem/.test(num[1]),
-      "the move number is the same size as the move beside it");
+    const mvRule = /\n\s*\.mlmove \{([^}]*)\}/.exec(cssM2);
+    const sizeOf = (r) => ((r && /font-size: ([\d.]+rem)/.exec(r[1])) || [])[1];
+    // 7.9 §2a: 15px now, both of them
+    assert(num && sizeOf(num) === "0.9375rem" && sizeOf(num) === sizeOf(mvRule),
+      "the move number is the same size as the move beside it (" + sizeOf(num) + " / " + sizeOf(mvRule) + ")");
+    // 7.9 §2c: no chip behind the number, and set like the move so the
+    // baselines agree (the measurement is in test-layout-e2e)
+    assert(num && !/background/.test(num[1]) && !/border-radius/.test(num[1]),
+      "…and it stands on the page, not in a box");
+    assert(num && /padding: 4px /.test(num[1]) && /height: var\(--row-h-sm\)/.test(num[1]) &&
+      /line-height: var\(--lh-tight\)/.test(num[1]),
+      "…set in the move's box and leading, so the two share a baseline");
     assert(num && /tabular-nums/.test(num[1]), "…and still a column of figures");
     assert(!/\.mlnum num/.test(appSrc), "…without borrowing the mono stack for it");
   }

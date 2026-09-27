@@ -276,7 +276,14 @@
        substitution drops the whole outline declaration. */
     /* 6.0 (v6-plan Q3.6): every font-size in this sheet is in rem, so the
        whole type scale follows one root size. Three steps, chosen in
-       Settings; the default is the size everything was designed at. */
+       Settings; the default is the size everything was designed at.
+       7.9 §2a: the panel set in 12 and 13px only, and the notation in 13 —
+       a size smaller than Lichess (list ~15, body ~14) and grey with it. The
+       small end of the scale moved up one step instead of the root: 12 → 13
+       (secondary), 13 → 14 (body), and the moves to 15. 12px left the scale
+       and 14px took its place, so there are still seven steps; 小 and 大
+       scale the new steps as they scaled the old. A root change could not do
+       it — no root puts 13 / 14 / 15 on the old steps at once. */
     html { --root-size: 16px; font-size: var(--root-size); }
     html[data-text="s"] { --root-size: 15px; }
     html[data-text="l"] { --root-size: 18px; }
@@ -577,15 +584,23 @@
       --row-h: 36px;
       --row-h-sm: 24px;
       --label-h: 16px;
-      --font-num: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
+      /* 7.9 §2b: numbers are set in the interface face, with tabular
+         figures. The mono stack (SF Mono / Menlo / Consolas) gave every
+         counter, the accuracy figure and the clock a slashed zero and a
+         narrow, tall digit from another family — terminal output beside the
+         prose. `tabular-nums` (on .num and every rule that uses this) keeps
+         the columns and the ticking clock from shifting, which is all the
+         mono face was for. Lichess's clock is the same: its sans, tabular. */
+      --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      --font-num: var(--font-ui);
     }
     * { box-sizing: border-box; }
     html, body {
       margin: 0; height: 100%;
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
-        "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      font-family: var(--font-ui);
       font-feature-settings: "kern" 1;
       line-height: var(--lh-body);
       -webkit-font-smoothing: antialiased;
@@ -617,9 +632,15 @@
         "Noto Sans JP", "Meiryo", system-ui, sans-serif;
     }
     html:lang(ja) body { line-height: var(--lh-body); }
+    /* 7.9 §2b: the figures follow the language's face like the text does */
+    html:lang(ja) {
+      --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic Medium", "Yu Gothic",
+        "Noto Sans JP", "Meiryo", system-ui, sans-serif;
+    }
 
     #app { position: relative; height: 100%; width: 100%; overflow: hidden; }
-    .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+    .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 
     .chrome {
       position: absolute; top: 0; left: 0; right: 0;
@@ -659,7 +680,7 @@
       width: 32px; height: 32px; display: grid; place-items: center;
       font-size: 0.9375rem; line-height: var(--lh-tight);
     }
-    .tool-btn { height: 32px; padding: 0 12px; font-size: 0.75rem; font-weight: 500; }
+    .tool-btn { height: 32px; padding: 0 12px; font-size: 0.8125rem; font-weight: 500; }
     /* The chrome's own size. Scoped, because .tool-btn is also the panel's
        button and the panel is not on a 32px bar.
 
@@ -733,7 +754,7 @@
       padding: 0 16px;
       align-items: center; justify-content: center;
       text-align: center;
-      font-size: 0.8125rem; font-weight: 600; line-height: var(--lh-body);
+      font-size: 0.875rem; font-weight: 600; line-height: var(--lh-body);
       color: var(--text);
       pointer-events: none;
     }
@@ -788,7 +809,7 @@
          sitting on a floor is not a decision — it is what you get when nobody
          chooses. The frame is 17px of wood; 12px prints on it comfortably and
          13px on a wide one. P4.6. */
-      font-size: 0.75rem;
+      font-size: 0.8125rem;
       font-weight: 600; letter-spacing: 0.5px;
       pointer-events: none; user-select: none;
     }
@@ -820,7 +841,7 @@
        first rank number (top-left: a8 or h1) on a light one, alternating. */
     #app[data-coords="in"] { --wood-pad: 8px; }
     #app[data-coords="in"] .coords { font-size: 0.6875rem; letter-spacing: 0; }
-    @media (min-width: 1100px) { #app[data-coords="in"] .coords { font-size: 0.75rem; } }
+    @media (min-width: 1100px) { #app[data-coords="in"] .coords { font-size: 0.8125rem; } }
     #app[data-coords="in"] .coords.files {
       top: var(--wood-pad); bottom: var(--wood-pad); height: auto;
       align-items: stretch;
@@ -925,7 +946,7 @@
       height: var(--strip-h);
       display: flex; align-items: center; gap: 8px;
       padding: 0 2px;
-      font-size: 0.8125rem; line-height: var(--lh-tight);
+      font-size: 0.875rem; line-height: var(--lh-tight);
       white-space: nowrap;
       pointer-events: none;
     }
@@ -960,7 +981,7 @@
       overflow: hidden; text-overflow: ellipsis; min-width: 0;
     }
     .ps-level {
-      font-size: 0.75rem; color: var(--muted);
+      font-size: 0.8125rem; color: var(--muted);
       overflow: hidden; text-overflow: ellipsis; min-width: 0;
     }
     .ps-level:empty { display: none; }
@@ -983,24 +1004,23 @@
     .taken-p.new-kind { margin-left: 2px; }
     .taken-p svg { width: 100%; height: 100%; display: block; }
     .taken-diff {
-      font-family: var(--font-num);
-      font-size: 0.75rem; font-weight: 600; color: var(--muted);
+      font-family: var(--font-num); font-variant-numeric: tabular-nums;
+      font-size: 0.8125rem; font-weight: 600; color: var(--muted);
       margin-left: 4px;
     }
 
-    /* the result, once there is one: 1 / 0 / ½ beside the clock */
+    /* the result, once there is one: 1 / 0 / ½ beside the clock.
+       7.9 §2d: a figure, not a box. It had the clock's size, fill, border
+       and face, so against the engine a 「1」 at the end of the strip read as
+       one second left. Now it is bare semibold type — nothing a clock is
+       drawn with — and the winner's figure is the accent colour, the loser's
+       and a draw's the muted ink. */
     .ps-result {
       margin-left: auto;
-      min-width: 28px; height: 28px; padding: 0 8px;
-      display: grid; place-items: center;
-      border-radius: var(--radius-sm);
-      font-size: 0.9375rem; font-weight: 600;
+      font-size: 1.1875rem; font-weight: 600; line-height: var(--lh-tight);
       color: var(--muted);
-      border: 1px solid var(--card-border);
     }
-    .ps-result.win {
-      color: var(--on-accent); background: var(--accent); border-color: transparent;
-    }
+    .ps-result.win { color: var(--accent); }
     .ps-result:not([hidden]) + .ps-clock { margin-left: 8px; }
 
     /* the clock is a block, right-aligned: dim while waiting, lit while it
@@ -1032,7 +1052,7 @@
     }
     .opening-line {
       margin-top: 12px;
-      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
+      font-size: 0.8125rem; color: var(--muted); line-height: var(--lh-body);
     }
     .opening-line[hidden] { display: none; }
     /* 7.8 §1b: blank but still taking its line, so the notation does not move */
@@ -1071,7 +1091,7 @@
       flex: 1;
       appearance: none; border: 0; background: transparent;
       color: var(--muted);
-      font: inherit; font-size: 0.8125rem; font-weight: 600;
+      font: inherit; font-size: 0.875rem; font-weight: 600;
       /* same box as the mode row above it: they select a view, they sit one on
          top of the other, and until now one was 37px tall at weight 600 and the
          other 35 at 12px/500 */
@@ -1117,11 +1137,12 @@
          they land on the scale.
          7.7 (v7-7-plan §3): one step up the scale — 11px grey was the
          smallest type in the panel and it was holding the panel's structure.
-         No new step: 0.75rem is the next one on the seven. */
+         No new step: 0.75rem is the next one on the seven.
+         7.9 §2a: and one more with the rest of the panel, to 0.8125rem. */
       margin: 0 0 8px;
       height: var(--label-h);
       display: flex; align-items: center;
-      font-size: 0.75rem; font-weight: 600;
+      font-size: 0.8125rem; font-weight: 600;
       letter-spacing: 0.08em; text-transform: uppercase;
       color: var(--muted);
     }
@@ -1132,7 +1153,7 @@
       gap: 12px;
     }
     .side-h-row .side-h { margin: 0; height: auto; }
-    .side-h-meta { font-size: 0.75rem; color: var(--muted); }
+    .side-h-meta { font-size: 0.8125rem; color: var(--muted); }
     /* A section that holds more than one heading — statistics, which stacks
        统计 / 对局历史 / 成就 — needs air above every heading but its first.
        This was three `style="margin-top:14px"` attributes in the markup, and
@@ -1189,7 +1210,7 @@
        a group that reads as shut. */
     .setting-fold:not([open]) > *:not(summary) { display: none; }
     .setting-sum {
-      font-size: 0.75rem; color: var(--muted);
+      font-size: 0.8125rem; color: var(--muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
@@ -1204,7 +1225,7 @@
       flex-direction: column; align-items: stretch; gap: 8px;
     }
     .setting-k {
-      font-size: 0.8125rem; font-weight: 500; color: var(--text);
+      font-size: 0.875rem; font-weight: 500; color: var(--text);
       flex-shrink: 0;
     }
 
@@ -1315,7 +1336,7 @@
       appearance: none; border: 1px solid var(--card-border);
       background: var(--btn-ghost);
       color: var(--muted);
-      font: inherit; font-size: 0.75rem; font-weight: 500;
+      font: inherit; font-size: 0.8125rem; font-weight: 500;
       padding: 8px 0; border-radius: var(--radius-md);
       cursor: pointer;
       transition: border-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
@@ -1457,9 +1478,9 @@
     }
     .idle-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
     .idle-k { font-size: 0.6875rem; color: var(--muted); }
-    .idle-v { font-size: 0.75rem; color: var(--text); font-weight: 500; }
+    .idle-v { font-size: 0.8125rem; color: var(--text); font-weight: 500; }
     .idle-rec {
-      font-size: 0.75rem; color: var(--accent);
+      font-size: 0.8125rem; color: var(--accent);
       line-height: var(--lh-body);
       padding-top: 8px;
       border-top: 1px solid var(--card-border);
@@ -1588,7 +1609,7 @@
          kind of thing (audit, work package E). One rule, three selectors. */
       display: flex; align-items: center;
       height: var(--label-h); margin-bottom: 8px;
-      font-size: 0.75rem; font-weight: 600;
+      font-size: 0.8125rem; font-weight: 600;
       letter-spacing: 0.08em; text-transform: uppercase;
       color: var(--muted);
     }
@@ -1618,7 +1639,7 @@
     .daily-head:hover { background: var(--btn-ghost); }
     .daily-label {
       flex: 1; min-width: 0;
-      font-size: 0.8125rem; font-weight: 600;
+      font-size: 0.875rem; font-weight: 600;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .daily-go { color: var(--accent); font-size: 1rem; display: grid; }
@@ -1649,7 +1670,7 @@
     button.daily-row:hover { background: var(--btn-ghost); }
     .daily-txt { display: grid; gap: 2px; min-width: 0; }
     .daily-what, .daily-why { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .daily-what { font-size: 0.75rem; color: var(--text); }
+    .daily-what { font-size: 0.8125rem; color: var(--text); }
     .daily-why { font-size: 0.6875rem; color: var(--muted); }
     /* the state, before the words: hollow = to come, ringed = next, filled
        with a tick = done */
@@ -1680,12 +1701,12 @@
 
     /* learn mode: lesson panel */
     .lesson-title {
-      font-size: 0.8125rem; font-weight: 600; color: var(--text);
+      font-size: 0.875rem; font-weight: 600; color: var(--text);
       margin-bottom: 8px; line-height: var(--lh-body);
     }
     .lesson-text p {
       margin: 0 0 8px;
-      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-prose);
+      font-size: 0.8125rem; color: var(--muted); line-height: var(--lh-prose);
     }
     /* The task is not another paragraph: it is the thing to DO, and it sits
        on its own surface so the eye can find it without reading the lesson
@@ -1696,7 +1717,7 @@
       border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
       background: color-mix(in srgb, var(--accent) 10%, transparent);
       border-radius: var(--radius-sm);
-      font-size: 0.8125rem; font-weight: 600; color: var(--text); line-height: var(--lh-body);
+      font-size: 0.875rem; font-weight: 600; color: var(--text); line-height: var(--lh-body);
     }
     .lesson-controls {
       display: flex; gap: 8px; margin-bottom: 12px;
@@ -1763,7 +1784,7 @@
       appearance: none; text-align: left;
       border: 0; background: transparent;
       color: var(--muted);
-      font: inherit; font-size: 0.75rem;
+      font: inherit; font-size: 0.8125rem;
       padding: 6px 8px; border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
@@ -1776,7 +1797,7 @@
 
     /* the only control left under the comfortable 32px minimum */
 
-    .muted { color: var(--muted); font-size: 0.75rem; }
+    .muted { color: var(--muted); font-size: 0.8125rem; }
 
     /* Above every dialog, the confirm included (7.6 §3d): a toast raised from
        inside a dialog — or while one is still closing — used to sit under the
@@ -1791,7 +1812,7 @@
       background: color-mix(in srgb, var(--panel) 94%, #000);
       color: var(--text);
       border: 1px solid var(--panel-border);
-      padding: 8px 16px; border-radius: 999px; font-size: 0.8125rem; font-weight: 500;
+      padding: 8px 16px; border-radius: 999px; font-size: 0.875rem; font-weight: 500;
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
       opacity: 0; pointer-events: none;
       transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
@@ -1801,7 +1822,7 @@
     .toast { display: flex; align-items: center; gap: 8px; }
     .toast-close {
       appearance: none; border: 0; background: transparent;
-      color: inherit; font: inherit; font-size: 0.75rem; line-height: var(--lh-tight);
+      color: inherit; font: inherit; font-size: 0.8125rem; line-height: var(--lh-tight);
       width: 20px; height: 20px; flex: none;
       display: grid; place-items: center;
       border-radius: 999px; cursor: pointer; opacity: 0.75;
@@ -1814,7 +1835,7 @@
     .toast-action {
       appearance: none; background: transparent;
       border: 1px solid currentColor;
-      color: inherit; font: inherit; font-size: 0.75rem; font-weight: 500;
+      color: inherit; font: inherit; font-size: 0.8125rem; font-weight: 500;
       line-height: var(--lh-tight);
       padding: 2px 8px; border-radius: 999px;
       flex: none; cursor: pointer; opacity: 0.85;
@@ -1855,7 +1876,7 @@
       max-width: max(240px, min(560px, calc(100% - var(--side-w) - 240px)));
       background: var(--danger); color: var(--on-danger, #fff);
       border-radius: var(--radius-md);
-      padding: 8px 16px; font-size: 0.8125rem; font-weight: 500;
+      padding: 8px 16px; font-size: 0.875rem; font-weight: 500;
       line-height: var(--lh-body);
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
     }
@@ -1923,11 +1944,11 @@
       to { opacity: 1; transform: none; }
     }
     .modal h3 { margin: 0 0 12px; font-size: 1rem; font-weight: 600; }
-    .modal table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+    .modal table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
     .modal td { padding: 8px 0; border-bottom: 1px solid var(--card-border); }
     .modal td:first-child {
       color: var(--accent); width: 42%;
-      font-family: var(--font-num); font-size: 0.75rem;
+      font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 0.8125rem;
     }
     .modal .close-row { margin-top: 16px; text-align: right; }
     /* Two variants, both of which were inline `style=` on the element until
@@ -1986,7 +2007,7 @@
       appearance: none; text-align: left; cursor: pointer;
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
-      font: inherit; font-size: 0.8125rem; line-height: var(--lh-body);
+      font: inherit; font-size: 0.875rem; line-height: var(--lh-body);
       padding: 8px 12px; border-radius: var(--radius-sm);
       transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
@@ -2005,7 +2026,7 @@
 
     .text-input {
       width: 100%; box-sizing: border-box;
-      font: inherit; font-family: var(--font-num); font-size: 0.75rem;
+      font: inherit; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 0.8125rem;
       padding: 8px 12px; border-radius: var(--radius-sm);
       border: 1px solid var(--card-border);
       background: var(--btn-ghost); color: var(--text);
@@ -2382,12 +2403,12 @@
 
     /* --- chess move list (SAN pairs) --- */
     /* 7.7 (v7-7-plan §3): a notation sheet, not a row of chips — the number
-       in a shaded gutter, White's and Black's move in two equal columns, the
+       in a shaded gutter (7.9 §2c: unshaded now), White's and Black's move in two equal columns, the
        menu handle floating at the row's end instead of shoving Black's move
        sideways when White's is current. */
     .mlrow {
       position: relative;
-      display: grid; grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1fr);
+      display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr);
       align-items: stretch; gap: 2px;
       padding: 0;
     }
@@ -2395,15 +2416,25 @@
     /* One font for the row. The move number was SF Mono 12px and the move
        beside it the interface sans at 13px — two typefaces and two sizes in a
        three-character span. Tabular figures stay, because the numbers are a
-       column; the family and the size are the move's. P4.4. */
+       column; the family and the size are the move's. P4.4.
+       7.9 §2c: no box. The shaded chip read as the same kind of thing as the
+       current-move highlight, so the list looked like a grid of cells rather
+       than lines of moves; and centring it in a flex box put its text 2.6px
+       above the moves' (measured). Now it is set as .mlmove is — same size,
+       leading, height and top padding — so the three share one baseline, and
+       only the colour says it is secondary. The centring stays on purpose: a
+       <button> centres its line in what the padding leaves (both engines),
+       so .mlmove's text sits 1px under its 4px padding, and the number has
+       to be centred the same way to land on the same line.
+       40px, not 36: 「100.」 at 15px is 29px of figures plus the 8px gap. */
     .mlnum {
-      width: 36px; flex: none; text-align: right;
-      font-size: 0.8125rem; color: var(--muted);
+      width: 40px; flex: none; text-align: right;
+      font-size: 0.9375rem; color: var(--muted);
       font-variant-numeric: tabular-nums;
-      padding-right: 8px;
+      padding: 4px 8px 0 0; height: var(--row-h-sm);
       display: flex; align-items: center; justify-content: flex-end;
-      background: var(--card);
-      border-radius: var(--radius-sm);
+      line-height: var(--lh-tight);
+      white-space: nowrap;
     }
     /* The piece, standing on the text's baseline at the size of a capital.
        It was 1.05em with its box centred on the line, which put the figure
@@ -2431,7 +2462,9 @@
          themes, so this was a colour that silently did not apply and inherited
          the right one by luck. Defect 9. */
       color: var(--text);
-      font: inherit; font-size: 0.8125rem; font-weight: 500;
+      /* 7.9 §2a: 15px, two steps above the panel's body text — the notation
+         is what this panel is read for (Lichess sets its list at about 15) */
+      font: inherit; font-size: 0.9375rem; font-weight: 500;
       /* the one deliberate second height: a move-list cell is a dense grid of
          SAN tokens, not a control in the stack of controls, and at --row-h the
          list would be half as long for the same panel. On the scale all the
@@ -2460,7 +2493,7 @@
     .mlvar, .mlcomment {
       margin: 0 0 0 24px;
       padding: 0 4px;
-      font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted);
+      font-size: 0.8125rem; line-height: var(--lh-body); color: var(--muted);
       white-space: normal; overflow-wrap: anywhere;
     }
     .mlvline + .mlvline { margin-top: 2px; }
@@ -2470,7 +2503,7 @@
     .mlv {
       appearance: none; border: 0; background: transparent;
       color: var(--text);
-      font: inherit; font-size: 0.75rem; font-weight: 500;
+      font: inherit; font-size: 0.8125rem; font-weight: 500;
       padding: 0 4px; min-height: var(--row-h-sm); line-height: var(--lh-body);
       display: inline-flex; align-items: center;
       border-radius: var(--radius-sm); cursor: pointer;
@@ -2508,7 +2541,7 @@
     }
     .move-menu button {
       appearance: none; border: 0; background: transparent;
-      color: var(--text); font: inherit; font-size: 0.75rem; font-weight: 500;
+      color: var(--text); font: inherit; font-size: 0.8125rem; font-weight: 500;
       text-align: left; padding: 0 12px; height: var(--row-h);
       border-radius: var(--radius-sm); cursor: pointer;
     }
@@ -2516,7 +2549,7 @@
     .replay-line { margin-top: 6px; }
     .note-input {
       width: 100%; resize: vertical;
-      font: inherit; font-size: 0.8125rem; line-height: var(--lh-body);
+      font: inherit; font-size: 0.875rem; line-height: var(--lh-body);
     }
 
     /* --- review: the evaluation curve, the bar, and the accuracy line --- */
@@ -2524,7 +2557,7 @@
     #eval-wrap { margin: 8px 0 2px; position: relative; }
     .pv-line {
       margin-top: 6px;
-      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
+      font-size: 0.8125rem; color: var(--muted); line-height: var(--lh-body);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     /* The engine line as chips, not prose: each move is a place the pointer
@@ -2550,7 +2583,7 @@
        changed from 1.e4 e5 2.Nf3 to 1.d4 d5 2.c4 moved every chip in the row
        under the pointer (measured, review e2e 7.6 §2 (c)) */
     .pv-row .pv-chip, .pv-eval { display: inline-flex; align-items: center; justify-content: center; height: 1.75em; }
-    .pv-row .pv-chip { font-size: 0.75rem; }
+    .pv-row .pv-chip { font-size: 0.8125rem; }
     .pv-no {
       display: inline-block; width: 12px; margin-right: 2px;
       font-size: 0.6875rem; color: var(--muted);
@@ -2560,7 +2593,7 @@
     .pv-eval {
       display: inline-block; min-width: 42px; margin-right: 4px; padding: 2px 4px;
       border-radius: var(--radius-sm); text-align: center;
-      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.8125rem; font-weight: 600; line-height: var(--lh-tight);
       color: var(--muted); box-shadow: inset 0 0 0 1px var(--line);
     }
     .pv-eval:empty::before { content: "\00a0"; }
@@ -2570,7 +2603,7 @@
        frame may replace (7.6's rule, v7-6-plan §2) */
     .pv-chip > * { pointer-events: none; }
     .pv-chip {
-      font: inherit; font-size: 0.75rem; line-height: var(--lh-tight);
+      font: inherit; font-size: 0.8125rem; line-height: var(--lh-tight);
       color: var(--text); background: transparent;
       border: 1px solid transparent; border-radius: var(--radius-sm);
       padding: 2px 6px; cursor: pointer;
@@ -2604,7 +2637,7 @@
     .review-bank {
       display: block; width: 100%; margin-top: 4px;
       padding: 6px 8px; text-align: left;
-      font: inherit; font-size: 0.75rem; line-height: var(--lh-body);
+      font: inherit; font-size: 0.8125rem; line-height: var(--lh-body);
       color: var(--text); background: transparent;
       border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
       cursor: pointer;
@@ -2631,7 +2664,7 @@
       padding: 2px 6px; border-radius: var(--radius-sm);
       background: var(--panel); color: var(--text);
       border: 1px solid var(--panel-border);
-      font-size: 0.75rem; line-height: var(--lh-tight); white-space: nowrap;
+      font-size: 0.8125rem; line-height: var(--lh-tight); white-space: nowrap;
       pointer-events: none;
     }
     .curve-tip-hint { color: var(--muted); margin-left: 6px; }
@@ -2655,7 +2688,7 @@
       margin-bottom: 8px; padding: 6px 8px;
       background: var(--card); border: 1px solid var(--card-border);
       border-radius: var(--radius-sm);
-      font-size: 0.75rem; line-height: var(--lh-body); color: var(--text);
+      font-size: 0.8125rem; line-height: var(--lh-body); color: var(--text);
     }
     .ach-group {
       margin: 8px 0 4px; font-size: 0.6875rem; font-weight: 600; color: var(--muted);
@@ -2709,7 +2742,7 @@
     /* 7.8 §2: one step up the type scale (11 → 12px) */
     .eval-bar-text {
       position: absolute; right: 0;
-      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.8125rem; font-weight: 600; line-height: var(--lh-tight);
       color: var(--muted); white-space: nowrap;
       bottom: calc(100% + 2px);
     }
@@ -2755,7 +2788,7 @@
     }
     .acc-who {
       display: flex; align-items: center; gap: 6px;
-      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-tight);
+      font-size: 0.8125rem; color: var(--muted); line-height: var(--lh-tight);
     }
     .acc-side.is-you .acc-who { color: var(--text); font-weight: 600; }
     .acc-dot {
@@ -2767,7 +2800,7 @@
     .review { margin-top: 8px; }
     .rv-table {
       width: 100%; border-collapse: collapse;
-      font-size: 0.75rem; line-height: var(--lh-body);
+      font-size: 0.8125rem; line-height: var(--lh-body);
       border-top: 1px solid var(--card-border);
     }
     .rv-table th, .rv-table td { padding: 2px 0; font-weight: 400; }
@@ -2787,7 +2820,7 @@
     .review-jump {
       display: block; width: 100%; margin-top: 6px;
       padding: 6px 8px; text-align: left;
-      font: inherit; font-size: 0.75rem; line-height: var(--lh-body);
+      font: inherit; font-size: 0.8125rem; line-height: var(--lh-body);
       color: var(--text); background: transparent;
       border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
       cursor: pointer;
@@ -2799,7 +2832,7 @@
     .rv-moments-cap { font-size: 0.6875rem; color: var(--muted); margin-bottom: 2px; }
     .rv-moment {
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px;
-      font-size: 0.75rem; line-height: var(--lh-body); padding: 2px 0;
+      font-size: 0.8125rem; line-height: var(--lh-body); padding: 2px 0;
     }
     .rv-mo-jump {
       font: inherit; color: var(--text); background: transparent; border: 0;
@@ -2811,14 +2844,14 @@
     .rv-mo-retry { margin-left: auto; }
     .why-line {
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
-      margin-top: 4px; font-size: 0.75rem; line-height: var(--lh-body); color: var(--text);
+      margin-top: 4px; font-size: 0.8125rem; line-height: var(--lh-body); color: var(--text);
     }
     .why-text { flex: 1 1 10em; }
     .why-san { white-space: nowrap; }
     .retry-box {
       margin-top: 6px; padding: 8px;
       border: 1px solid var(--accent); border-radius: var(--radius-sm);
-      font-size: 0.75rem; line-height: var(--lh-body);
+      font-size: 0.8125rem; line-height: var(--lh-body);
     }
     .retry-box p { margin: 0 0 4px; }
     .rt-ask { font-weight: 600; }
@@ -2868,7 +2901,7 @@
     .rec-entry[hidden] { display: none; }
     .rec-lead {
       margin: 0 0 12px;
-      font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted);
+      font-size: 0.8125rem; line-height: var(--lh-body); color: var(--muted);
     }
     .rec-doors { display: flex; flex-direction: column; gap: 6px; }
     .rec-door {
@@ -2884,7 +2917,7 @@
     .rec-door:active { transform: scale(0.98); }
     .rec-door-ic { font-size: 1rem; line-height: var(--lh-tight); flex-shrink: 0; }
     .rec-door-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .rec-door-k { font-size: 0.8125rem; font-weight: 600; line-height: var(--lh-tight); }
+    .rec-door-k { font-size: 0.875rem; font-weight: 600; line-height: var(--lh-tight); }
     .rec-door-v { font-size: 0.6875rem; color: var(--muted); line-height: var(--lh-tight); }
     /* the fold at the end of the locked list — an .act-btn like every other
        action in the panel, just not stretched across the column */
@@ -2910,7 +2943,7 @@
     }
     .ach-ic { font-size: 1rem; line-height: var(--lh-tight); flex-shrink: 0; }
     .ach-nm {
-      font-size: 0.75rem; color: var(--text); line-height: var(--lh-tight);
+      font-size: 0.8125rem; color: var(--text); line-height: var(--lh-tight);
       /* `overflow-wrap: anywhere` was added in 2.0.1 to stop the name pushing
          its card past the panel edge. It stopped the overflow by breaking the
          word instead: nine of the fifteen badges read 规则通/关, 熟能生/巧,
@@ -2948,7 +2981,7 @@
       grid-template-columns: minmax(0, 1fr) var(--stat-v-w);
       gap: 8px;
       align-items: baseline;
-      font-size: 0.8125rem;
+      font-size: 0.875rem;
       padding: 2px 2px;
     }
     /* 7.1: a statistics row that names a subset of games is a door to those
@@ -2965,7 +2998,7 @@
       border-bottom-color: var(--accent);
     }
     button.stat-row:hover .stat-k, button.stat-row:focus-visible .stat-k { color: var(--accent); }
-    button.hint-link { padding: 2px 2px; font-size: 0.8125rem; color: var(--muted); }
+    button.hint-link { padding: 2px 2px; font-size: 0.875rem; color: var(--muted); }
     button.hint-link:hover, button.hint-link:focus-visible { color: var(--accent); }
     /* 7.1: the diagnosis charts. Width from the dialog, height set per chart
        in JS; the canvas backing store is device-pixel sized there. */
@@ -2978,7 +3011,7 @@
        achievement counters and the history rows were not, so a column of
        figures under 「战绩」 shifted its digits as the values changed. P4.6. */
     .stat-v {
-      color: var(--text); font-size: 0.75rem;
+      color: var(--text); font-size: 0.8125rem;
       font-family: var(--font-num); font-variant-numeric: tabular-nums;
       /* right-aligned in a fixed track, so the figures read as a column */
       text-align: right; white-space: nowrap;
@@ -3005,7 +3038,7 @@
        it is the emphasis that changes, not the affordance. */
     .row-act {
       appearance: none; cursor: pointer; font: inherit;
-      font-size: 0.75rem; line-height: var(--lh-tight);
+      font-size: 0.8125rem; line-height: var(--lh-tight);
       white-space: nowrap; padding: 0 8px;
       color: var(--muted);
       background: var(--btn-ghost);
@@ -3072,15 +3105,15 @@
 .key-list dt { display: flex; gap: 4px; flex-wrap: wrap; }
 /* 6.0: the About sheet reuses the shortcut sheet's two-column list; its
    values are paths and licence lines, which must be allowed to wrap */
-.about-list dd { margin: 0; overflow-wrap: anywhere; font-size: 0.75rem; line-height: var(--lh-body); }
-.about-list dt { font-size: 0.75rem; color: var(--muted); }
+.about-list dd { margin: 0; overflow-wrap: anywhere; font-size: 0.8125rem; line-height: var(--lh-body); }
+.about-list dt { font-size: 0.8125rem; color: var(--muted); }
 .link-btn {
   background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
   color: var(--primary-from); text-decoration: underline; font: inherit;
 }
 /* 6.0: the volume slider — one control, the theme's accent, no third look */
 .range { width: 120px; accent-color: var(--primary-from); }
-.key-list dd { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+.key-list dd { margin: 0; font-size: 0.875rem; color: var(--muted); }
 kbd {
   display: inline-block;
   min-width: 22px; padding: 2px 6px;
@@ -3170,7 +3203,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease);
 }
 .tool-ic { width: var(--row-h); display: grid; place-items: center; font-size: 1.1875rem; }
-.tool-txt { padding: 0 8px; font-size: 0.75rem; font-weight: 500; margin-left: auto; }
+.tool-txt { padding: 0 8px; font-size: 0.8125rem; font-weight: 500; margin-left: auto; }
 .tool-ic:hover, .tool-txt:hover { background: var(--btn-ghost); color: var(--text); }
 .tool-ic[aria-pressed="true"], .tool-ic[aria-expanded="true"] {
   color: var(--text);
@@ -3209,7 +3242,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .go-card.won .go-mark { background: var(--accent); color: var(--on-accent); border-color: transparent; }
 .go-txt { min-width: 0; }
 .go-result { margin: 0; font-size: 1.1875rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
-.go-reason { margin: 4px 0 0; font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body); }
+.go-reason { margin: 4px 0 0; font-size: 0.8125rem; color: var(--muted); line-height: var(--lh-body); }
 .go-close {
   appearance: none; border: 0; background: transparent; color: var(--muted);
   width: 28px; height: 28px; border-radius: var(--radius-sm);
@@ -3245,9 +3278,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-fb.bad .pz-fb-ic { background: var(--danger); color: var(--on-danger); }
 .pz-fb-txt { min-width: 0; }
 .pz-fb-head { margin: 0; font-size: 0.9375rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
-.pz-fb-sub { margin: 4px 0 0; font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted); }
+.pz-fb-sub { margin: 4px 0 0; font-size: 0.8125rem; line-height: var(--lh-body); color: var(--muted); }
 .pz-fb-sub:empty { display: none; }
-.pz-fb-meta { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-align: right; white-space: nowrap; }
+.pz-fb-meta { font-size: 0.8125rem; font-weight: 600; color: var(--muted); text-align: right; white-space: nowrap; }
 .pz-fb-meta.up { color: var(--accent); }
 .pz-fb > .act-btn { grid-column: 1 / -1; }
 
@@ -3280,7 +3313,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; align-items: center;
   margin: 4px 0 0; padding: 12px;
   border: 1px dashed var(--card-border); border-radius: var(--radius-md);
-  font-size: 0.75rem; color: var(--muted); opacity: 1;
+  font-size: 0.8125rem; color: var(--muted); opacity: 1;
 }
 .hint.empty-note::before {
   content: ""; width: 32px; height: 32px; grid-column: 1; grid-row: 1;
