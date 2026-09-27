@@ -51,6 +51,93 @@ function assert(cond, msg) {
   else console.log("ok:", msg);
 }
 
+// --- v8-0-plan F4: a source check names a symbol, not a file ---------------
+//
+// About 150 checks in this file read app.js's source as text (111 of them are
+// in the register at the end), and up to 7.9 each did so by its file name. F4 splits that file into modules, and
+// every function it moves would have turned the checks that mention it red
+// with nothing actually wrong. So they read `allAppSource` instead: every
+// hand-written module in src/web/js, app.js first, the generated ones (the
+// bundle, its chunks, the engine source) left out. `srcOf(name)` returns one
+// declaration's text from whichever module holds it. A check that really is
+// about one file — the markup, the stylesheet, a workflow, a module's own
+// exported contract — still reads that file by name.
+const WEB_JS = path.join(root, "src/web/js");
+const GENERATED_JS = /^(?:bundle|engine-src|chunk-.+)\.js$/;
+/** file name → source for every hand-written module in `dir`, app.js first */
+function readWebModules(dir) {
+  const names = fs.readdirSync(dir).filter((f) => f.endsWith(".js") && !GENERATED_JS.test(f)).sort();
+  names.sort((a, b) => (b === "app.js") - (a === "app.js"));
+  return new Map(names.map((f) => [f, fs.readFileSync(path.join(dir, f), "utf8")]));
+}
+const joinModules = (mods) => [...mods.values()].join("\n");
+/**
+ * The text of `function name(…) {…}` or `const|let|var name = …;` in `text`,
+ * or "" if it is not declared there. Brackets are matched with strings and
+ * comments skipped, so a "}" inside a message does not end the body early.
+ */
+function declarationIn(text, name) {
+  const id = name.replace(/[$]/g, "\\$");
+  const m = new RegExp("(?:^|[^\\w$.])((?:async\\s+)?function\\*?\\s+" + id + "\\s*\\(|(?:const|let|var)\\s+" + id + "\\s*=)").exec(text);
+  if (!m) return "";
+  const start = m.index + m[0].length - m[1].length;
+  const isFn = /function/.test(m[1]);
+  let depth = 0, seenBody = false;
+  for (let k = start + m[1].length - (isFn ? 1 : 0); k < text.length; k++) {
+    const c = text[k];
+    if (c === '"' || c === "'" || c === "`") {
+      for (k++; k < text.length && text[k] !== c; k++) if (text[k] === "\\") k++;
+      continue;
+    }
+    if (c === "/" && text[k + 1] === "/") { k = text.indexOf("\n", k); if (k < 0) break; continue; }
+    if (c === "/" && text[k + 1] === "*") { k = text.indexOf("*/", k) + 1; if (k <= 0) break; continue; }
+    if (c === "/" && /[(,=:[!&|?{};]\s*$|\breturn\s*$/.test(text.slice(Math.max(0, k - 12), k))) {
+      // a regex literal: `/"/` or `/\}/` must not open a string or close a block
+      k++;
+      for (let cls = false; k < text.length && text[k] !== "\n"; k++) {
+        if (text[k] === "\\") k++;
+        else if (text[k] === "[") cls = true;
+        else if (text[k] === "]") cls = false;
+        else if (text[k] === "/" && !cls) break;
+      }
+      continue;
+    }
+    if (c === "(" || c === "[" || c === "{") { depth++; if (c === "{") seenBody = true; }
+    else if (c === ")" || c === "]" || c === "}") {
+      depth--;
+      // a function ends with the brace that closes its body, a binding with
+      // the `;` at its own depth (the house style never leans on ASI)
+      if (isFn && depth === 0 && c === "}" && seenBody) return text.slice(start, k + 1);
+    } else if (!isFn && depth === 0 && c === ";") {
+      return text.slice(start, k + 1);
+    }
+  }
+  return "";
+}
+/** { file, text } of the module that declares `name`, or null */
+function findSymbol(mods, name) {
+  for (const [file, text] of mods) {
+    const hit = declarationIn(text, name);
+    if (hit) return { file, text: hit };
+  }
+  return null;
+}
+const WEB_MODULES = readWebModules(WEB_JS);
+const allAppSource = joinModules(WEB_MODULES);
+const srcOf = (name) => (findSymbol(WEB_MODULES, name) || { text: "" }).text;
+// A negative check — "app.js never spells X, module Y owns it" — becomes "no
+// module but Y spells X": the owner is left out and everything else is read,
+// so the rule still holds wherever app.js's code goes next.
+const allSourceExcept = (...owners) =>
+  joinModules(new Map([...WEB_MODULES].filter(([f]) => !owners.includes(f))));
+// The per-line house rules (no module-level `let`, no Chinese literal reaching
+// the DOM) were written for app.js, and the data modules — lessons, puzzles,
+// the dictionaries — are Chinese by design. A module carved out of app.js
+// joins this list in the same PR, so the rules follow the code they were
+// written for.
+const APP_MODULES = ["app.js"];
+const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
+
 // start position basics
 {
   const g = new Chess();
@@ -206,8 +293,7 @@ for (const p of ["r", "b", "n"]) {
   g.load_pgn('[Event "x"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0', { sloppy: true });
   const body = ChessPgn.stripResult(g.pgn().split("\n\n").pop());
   assert(!/1-0/.test(body), "chess.js's own trailing result is gone from the movetext");
-  assert(/function pgnForExport\(\) \{[\s\S]{0,2200}ChessPgn\.stripResult\(game\.pgn\(\)/.test(
-    fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8")),
+  assert(/ChessPgn\.stripResult\(game\.pgn\(\)/.test(srcOf("pgnForExport")),
     "…and the exporter strips it before appending its own");
 }
 
@@ -300,7 +386,7 @@ for (const p of ["r", "b", "n"]) {
     const b2 = opTier(seq.split(" ").length);
     bands[b2] = (bands[b2] || 0) + 1;
   }
-  const src = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const src = allAppSource;
   assert(/isOpeningCat\(p\.cat\)[\s\S]{0,400}?plies <= 8 \? "easy" : plies <= 16 \? "mid" : "hard"/.test(src),
     "opening drills get their own tier rule rather than the tactic scale");
   assert(Object.keys(bands).length === 3 && Math.min(...Object.values(bands)) >= 15,
@@ -588,8 +674,7 @@ function checkJapanese(label, table, kanaMin, minStrings) {
 
     // app.js needs a DOM to load, so lift the one function out and run it
     // against a stub — the alternative is trusting a renderer nobody checks
-    const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
-    const fnSrc = (appSrc.match(/function lessonParagraph[\s\S]*?\n {2}\}/) || [])[0];
+    const fnSrc = srcOf("lessonParagraph");
     assert(!!fnSrc, "app.js still has lessonParagraph");
     const stubDoc = {
       createElement: (tag) => ({ tag, kids: [], textContent: "", appendChild(k) { this.kids.push(k); } }),
@@ -1253,7 +1338,7 @@ for (const lang of CONTENT_LANGS) {
 // P and nothing anywhere said so — not a tooltip, not a menu, not a help sheet.
 // These lock in both halves of the fix and, more importantly, that they agree.
 {
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   const htmlK = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
   const zon = fs.readFileSync(path.join(root, "app.zon"), "utf8");
 
@@ -1687,7 +1772,7 @@ for (const lang of CONTENT_LANGS) {
     // So the branch never ran. The comment was simply older than the CSS, and
     // this repo's comments are the most valuable thing in it precisely because
     // they record measurements — which makes a stale one expensive. Defect 11.
-    const appSrcT = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const appSrcT = allAppSource;
     const transitioned = new Set();
     for (const m of stripped.matchAll(/#board-wrap[^{}]*\{([^{}]*)\}/g)) {
       for (const t of (m[1].match(/transition:\s*([^;]+);/) || [, ""])[1].split(","))
@@ -1989,7 +2074,7 @@ for (const lang of CONTENT_LANGS) {
   // drifted, in exactly this action: the button announced the new view in a
   // toast, the key and the menu changed it in silence.
   {
-    const app = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const app = allAppSource;
     const writes = [...app.matchAll(/store\.game\.flipped\s*=(?!=)/g)].length;
     // the assignments that remain are: the initial state, two authored-view
     // resets (lesson, puzzle), the loaded-record restore, the editor reset,
@@ -2015,7 +2100,7 @@ for (const lang of CONTENT_LANGS) {
   // swapped, in the one part of this app whose whole purpose is to be handed
   // to somebody else. Nobody had run docs/manual-check.md F6.
   {
-    const app = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const app = allAppSource;
     assert(/const sideName = \(s\) => t\(s === "w" \? "side\.white" : "side\.black"\);/.test(app),
       "sideName is the one place a side is named");
     assert(/const otherSideName = \(s\) => t\(s === "w" \? "side\.black" : "side\.white"\);/.test(app),
@@ -2210,7 +2295,7 @@ for (const lang of CONTENT_LANGS) {
   assert(/function paintContactShadow\(/.test(boardSrc), "pieces have a contact shadow");
   assert(/P\.pieceShadow/.test(boardSrc), "…in a colour the board palette chooses");
   assert(/invalidatePaint/.test(boardSrc) &&
-    /invalidatePaint\(\)/.test(fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8")),
+    /invalidatePaint\(\)/.test(allAppSource),
     "switching theme re-reads them");
 
   // and the pieces have to stay legible on every one of them. The cburnett
@@ -2448,17 +2533,9 @@ for (const lang of CONTENT_LANGS) {
   assert(!R.isMistake(null) && R.isMistake("?!") && R.isMistake("?") && R.isMistake("??"),
     "isMistake covers exactly the tagged moves");
 
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
-  const fnOf = (name) => {
-    const i = appSrc.indexOf("function " + name + "(");
-    if (i < 0) return "";
-    let depth = 0;
-    for (let k = appSrc.indexOf("{", i); k < appSrc.length; k++) {
-      if (appSrc[k] === "{") depth++;
-      else if (appSrc[k] === "}" && --depth === 0) return appSrc.slice(i, k + 1);
-    }
-    return "";
-  };
+  const appSrc = allAppSource;
+  // v8-0-plan F4: one function's text from whichever module declares it
+  const fnOf = srcOf;
   // analysisFor() sits in the render path. `analysis.sig` is a PGN, and
   // game.pgn() costs ~3.3ms on an 80-move game — a fifth of a 60fps frame.
   // 1.22 put the best-move arrow in the board model, which is rebuilt on every
@@ -2480,7 +2557,7 @@ for (const lang of CONTENT_LANGS) {
     // `_recSeq` is not state: it is a monotonic counter that only ever feeds
     // newRecordId(), never read, never rendered, never persisted. Putting it
     // in a slice would say it is something the app is *about*.
-    const strays = [...appSrc.matchAll(/^  let ([A-Za-z_$][\w$]*)/gm)]
+    const strays = appModuleEntries().flatMap(([, text]) => [...text.matchAll(/^  let ([A-Za-z_$][\w$]*)/gm)])
       .map((m) => m[1]).filter((n) => n !== "_recSeq");
     for (const n of strays) console.error("  module-level let: " + n);
     assert(strays.length === 0,
@@ -2712,7 +2789,8 @@ for (const lang of CONTENT_LANGS) {
   assert(D.migrateIds(store, legacy) === 0, "migrating twice is a no-op");
 
   // the app must build the id from the module, not from a loop index again
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  // (v8-0-plan F4: read from every module but the one that owns the id)
+  const appSrc = allSourceExcept("drills.js");
   assert(/Drills\.drillId\(/.test(appSrc), "app.js derives the drill id from drills.js");
   assert(!/"op-"\s*\+\s*eco\s*\+\s*"-"\s*\+\s*i\b/.test(appSrc),
     "app.js never rebuilds a drill id from its position");
@@ -2760,7 +2838,8 @@ for (const lang of CONTENT_LANGS) {
     }
   }
 
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  // every module but the one that derives the advice, and the dictionaries
+  const appSrc = allSourceExcept("drills.js", "i18n.js", "i18n-en.js", "i18n-ja.js");
   // the wiring: the outcome line must actually carry the advice, and the
   // wording must live in the dictionary rather than being pasted into app.js
   assert(/ChessDrills\.drillAdvice\(/.test(appSrc), "drillOutcome asks drills.js for the technique");
@@ -2793,7 +2872,7 @@ for (const lang of CONTENT_LANGS) {
 
   // the runtime must match on the motif, not on a list that stops covering new
   // puzzles the moment one is added
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   assert(/p\.cat === "tac" && p\.motif === L\.practice/.test(appSrc),
     "app.js finds the practice puzzles by motif");
   assert(/id="lesson-practice"/.test(fs.readFileSync(path.join(root, "src/web/index.html"), "utf8")),
@@ -2963,9 +3042,7 @@ for (const lang of CONTENT_LANGS) {
       "…and the same accuracy (" + summary.acc.w + "/" + appAcc.w.acc + ")");
 
     // and app.js does not carry a second copy of the arithmetic any more
-    const appTxt = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
-    const at = appTxt.indexOf("function accuracyFrom(");
-    const accFrom = appTxt.slice(at, appTxt.indexOf("\n  }", at));
+    const accFrom = srcOf("accuracyFrom");
     assert(/Review\.lossesBySide/.test(accFrom) && /Review\.accuracyOf/.test(accFrom),
       "app.js gets its accuracy from review.js");
     assert(!/Math\.exp/.test(accFrom) && !/Math\.min\(1000/.test(accFrom),
@@ -3268,9 +3345,9 @@ for (const lang of CONTENT_LANGS) {
   // the two write points in app.js actually feed the tally — a picker whose
   // memory nobody writes would quietly degrade into the explore rung forever
   {
-    const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
-    const missBody = /function markMissed\(id\) \{([\s\S]*?)\n  \}/.exec(appSrc);
-    assert(missBody && missBody[1].includes("Picker.recordAnswer") && missBody[1].includes("true"),
+    const appSrc = allAppSource;
+    const missBody = srcOf("markMissed");
+    assert(missBody.includes("Picker.recordAnswer") && missBody.includes("true"),
       "markMissed writes the miss into the lifetime tally");
     assert(/misses === 0 && !store\.session\.puzzle\.usedAnswer[\s\S]{0,200}Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false, motifKeyOf\(store\.session\.puzzle\.p\)\)/.test(appSrc),
       "a clean first solve writes the solve — and only a clean one");
@@ -3295,7 +3372,7 @@ for (const lang of CONTENT_LANGS) {
     P.recordAnswer(st, "win", false);
     const w = P.weakest(st, ["m1", "win", "def"]);
     assert(w && w.cat === "def", "weakest() 独立可调,答案与选题一致");
-    const appSrc2 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const appSrc2 = allAppSource;
     assert(/renderPuzzleTally[\s\S]{0,1200}Picker\.weakest\(/.test(appSrc2),
       "记录页的「错得最多」标记读的是同一个 Picker.weakest");
     assert(/puzzle-review-nudge[\s\S]{0,400}store\.session\.puzzle\.done && owed > 0/.test(appSrc2),
@@ -3314,7 +3391,7 @@ for (const lang of CONTENT_LANGS) {
 // rails (solved keys, review queue, picker) under a new `:b` id, and every
 // place that assumed "the solver is White" now reads the puzzle's side.
 {
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   // the sibling set: same lines, `:b` ids (so nobody's White progress moves),
   // and both sets are in the one book every rail iterates
   assert(/OPENING_DRILLS_B = OPENING_DRILLS\.map\(\(d\) => Object\.assign\(\{\}, d, \{ id: d\.id \+ ":b", side: "b" \}\)\)/.test(appSrc),
@@ -3613,7 +3690,7 @@ for (const lang of CONTENT_LANGS) {
   }
 
   // --- the wiring ---------------------------------------------------------
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   // the book every serving rail reads is the live one…
   // 6.0: two more arguments — the rating of a puzzle and the player's band
   assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier, motifKeyOf,\s*puzzleRatingOf/.test(appSrc),
@@ -3731,7 +3808,7 @@ for (const lang of CONTENT_LANGS) {
       "同一个局面再被别的一局挖到，来源仍然是第一局");
   }
 
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   // the preview: held under the pointer, never over a drag, and the trainer
   // modes return before it so it can only ever replace the plain game view
   const modelFn = /BoardView\.attach\(canvas[\s\S]{0,700}store\.ui\.preview && !store\.ui\.dragging/.exec(appSrc);
@@ -3910,7 +3987,7 @@ for (const lang of CONTENT_LANGS) {
 
 // --- the wiring: who writes the buckets, who reads the plan ---------------
 {
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   assert(/Picker\.recordAnswer\(store\.session\.puzzleState, p\.cat, true, motifKeyOf\(p\)\);[\s\S]{0,200}Progress\.recordAnswer\(store\.session\.progress, p\.cat, true, Date\.now\(\)\)/.test(appSrc),
     "每次失手同时写进周桶 — 记忆与总账同一落笔点");
   assert(/Picker\.recordAnswer\(store\.session\.puzzleState, store\.session\.puzzle\.p\.cat, false, motifKeyOf\(store\.session\.puzzle\.p\)\);\s*Progress\.recordAnswer\(store\.session\.progress, store\.session\.puzzle\.p\.cat, false, Date\.now\(\)\)/.test(appSrc),
@@ -4062,7 +4139,7 @@ for (const lang of CONTENT_LANGS) {
 
   // Keyboard access: Tab must reach the controls, and focus must be visible.
   {
-    const appSrc2 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const appSrc2 = allAppSource;
     const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
     // 1.8 bound Tab to the panel and called preventDefault, so focus could not
     // move anywhere by keyboard — the board had a full keyboard cursor and no
@@ -4082,7 +4159,8 @@ for (const lang of CONTENT_LANGS) {
     const dlgPath = path.join(root, "src/web/js/dialog.js");
     assert(fs.existsSync(dlgPath), "the shared dialog module exists");
     const dlg = fs.readFileSync(dlgPath, "utf8");
-    const appSrc3 = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    // v8-0-plan F4: every module but dialog.js, which is the helper itself
+    const appSrc3 = allSourceExcept("dialog.js");
     assert(/aria-modal/.test(dlg), "dialog.js sets aria-modal while a dialog is open");
     assert(/function handleTab/.test(dlg) && /shiftKey/.test(dlg),
       "dialog.js wraps Tab in both directions");
@@ -4140,7 +4218,7 @@ for (const lang of CONTENT_LANGS) {
   // and slid forward again), while three of the four opponent replies appeared
   // instantly. These lock the direction in.
   {
-    const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+    const appSrc = allAppSource;
     assert(/function animateReply\(mv\)/.test(appSrc),
       "opponent replies go through one helper");
     // nothing may call the raw animator except that helper — a direct call is
@@ -4159,7 +4237,7 @@ for (const lang of CONTENT_LANGS) {
 
     // castling moves two men; chess.js reports only the king's
     assert(/function castleRook\(mv\)/.test(appSrc), "the rook's half of a castle is derived");
-    const rook = /function castleRook[\s\S]*?\n  \}/.exec(appSrc)[0];
+    const rook = srcOf("castleRook");
     assert(/"h" \+ rank/.test(rook) && /"f" \+ rank/.test(rook), "king-side rook h→f");
     assert(/"a" \+ rank/.test(rook) && /"d" \+ rank/.test(rook), "queen-side rook a→d");
 
@@ -4377,11 +4455,12 @@ for (const lang of CONTENT_LANGS) {
   // computed fill width, and touch-action. Layout constants belong in the
   // stylesheet with everything that checks them.
   const LAYOUT_PROPS = /\.style\.(cssText|flex|display|padding|margin|gap|fontSize|font|lineHeight|gridTemplate\w*|borderRadius|alignItems|justifyContent)\b\s*=/;
-  const appJs = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
-  const jsInline = appJs.split("\n")
-    .map((l, i) => [i + 1, l])
-    .filter(([, l]) => LAYOUT_PROPS.test(l) && !/^\s*(\/\/|\*)/.test(l));
-  for (const [n, l] of jsInline) console.error("FAIL: layout written inline at app.js:" + n + " — " + l.trim());
+  // v8-0-plan F4: every module, reported by file and line
+  const appJs = allAppSource;
+  const jsInline = [...WEB_MODULES].flatMap(([file, text]) => text.split("\n")
+    .map((l, i) => [file + ":" + (i + 1), l])
+    .filter(([, l]) => LAYOUT_PROPS.test(l) && !/^\s*(\/\/|\*)/.test(l)));
+  for (const [at, l] of jsInline) console.error("FAIL: layout written inline at " + at + " — " + l.trim());
   assert(jsInline.length === 0,
     "no layout constant is set from JavaScript — the stylesheet is where the guards can see it");
 
@@ -4455,20 +4534,28 @@ for (const lang of CONTENT_LANGS) {
   // the static markup and left 169 runtime literals — task prompts, puzzle
   // feedback, every toast — so English mode stayed half Chinese where it
   // mattered most. This is the check that would have caught it.
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  // v8-0-plan F4: the scan runs per module over APP_MODULES; the source checks
+  // after it read every module but the three that own what they forbid here
+  // (persist.js the storage keys, host.js the storage calls, board.js the
+  // coordinate gutters and its colour table), and the two with a sanctioned
+  // copy (lazy-content.js names the settings key for chunk-boot.js, v8-0-plan
+  // F5; analysis-store.js strips its own record's `sig`, not the history's).
+  const appSrc = allSourceExcept("persist.js", "host.js", "board.js", "lazy-content.js", "analysis-store.js");
   let literals = 0;
-  let inBlockComment = false;
-  appSrc.split("\n").forEach((line, i) => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("/*")) inBlockComment = true;
-    if (inBlockComment) { if (trimmed.includes("*/")) inBlockComment = false; return; }
-    if (trimmed.startsWith("//") || trimmed.startsWith("*")) return;
-    for (const m of line.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)) {
-      if (!han.test(m[1])) continue;
-      literals++;
-      console.error("FAIL: app.js:" + (i + 1) + " hard-codes Chinese: " + m[1]);
-    }
-  });
+  for (const [file, text] of appModuleEntries()) {
+    let inBlockComment = false;
+    text.split("\n").forEach((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("/*")) inBlockComment = true;
+      if (inBlockComment) { if (trimmed.includes("*/")) inBlockComment = false; return; }
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) return;
+      for (const m of line.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"/g)) {
+        if (!han.test(m[1])) continue;
+        literals++;
+        console.error("FAIL: " + file + ":" + (i + 1) + " hard-codes Chinese: " + m[1]);
+      }
+    });
+  }
   assert(literals === 0, "app.js routes every user-visible string through t()");
 
   // Every key app.js asks for at runtime must exist. Dynamic lookups
@@ -4488,9 +4575,9 @@ for (const lang of CONTENT_LANGS) {
   // straight off the lesson is how every move/stars/drill prompt in the course
   // stayed Chinese in English mode from 1.6 to 1.8 — the translations were in
   // lessons-en.js the whole time, simply never asked for.
-  const taskTextFn = /function taskText\(lesson, ti\) \{[\s\S]*?\n  \}/.exec(appSrc);
-  assert(!!taskTextFn, "found the lesson-prose accessor");
-  const outside = appSrc.replace(taskTextFn[0], "");
+  const taskTextFn = srcOf("taskText");
+  assert(/^function taskText\(lesson, ti\) \{/.test(taskTextFn), "found the lesson-prose accessor");
+  const outside = appSrc.replace(taskTextFn, "");
   let rawProse = 0;
   for (const m of outside.matchAll(/\btask\.(prompt|retry)\b|\.steps\[[^\]]*\]\.tip\b/g)) {
     rawProse++;
@@ -4504,8 +4591,8 @@ for (const lang of CONTENT_LANGS) {
   // the board as live — and in an engine game that means Stockfish quietly
   // playing on from a game the player finished weeks ago.
   const markers = [...appSrc.matchAll(/recordOutcome\([^)]*"([a-zA-Z]+)"\)/g)].map((m) => m[1]);
-  const restore = /function restoreEnding\(rec\) \{[\s\S]*?\n  \}/.exec(appSrc);
-  const handled = restore ? [...restore[0].matchAll(/end === "([a-zA-Z]+)"/g)].map((m) => m[1]) : [];
+  const restore = srcOf("restoreEnding");
+  const handled = restore ? [...restore.matchAll(/end === "([a-zA-Z]+)"/g)].map((m) => m[1]) : [];
   let unhandled = 0;
   assert(markers.length >= 3 && handled.length >= 3, "found the ending markers and the history reader");
   for (const k of new Set(markers)) {
@@ -4663,8 +4750,7 @@ for (const lang of CONTENT_LANGS) {
     assert(/function writeSan\(node, san, color\)/.test(appSrc), "moves are written through one helper");
     assert(/node\.setAttribute\("aria-label", san\)/.test(appSrc),
       "…and the full SAN stays as the accessible name");
-    const at = appSrc.indexOf("function writeSan(node, san, color)");
-    const ws = appSrc.slice(at, appSrc.indexOf("\n  }", at));
+    const ws = srcOf("writeSan");
     assert(/SAN_PIECE\[san\[0\]\]/.test(ws), "only the leading piece letter becomes a piece");
     assert(/san\.slice\(1\)/.test(ws), "…the rest of the move is text");
     const cssM2 = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
@@ -4739,14 +4825,12 @@ for (const lang of CONTENT_LANGS) {
 
     // and app.js decides by winner, in one place
     assert(/function playEnding\(winner\)/.test(appSrc), "one place decides the ending sound");
-    const outsideEnding = appSrc.slice(0, appSrc.indexOf("function playEnding(winner)")) +
-      appSrc.slice(appSrc.indexOf("\n  }", appSrc.indexOf("function playEnding(winner)")));
+    const ending = srcOf("playEnding");
+    const outsideEnding = appSrc.replace(ending, "");
     const wins = (outsideEnding.match(/Audio2\.playWin\(\)/g) || []).length;
     // the two that remain are the student finishing a lesson and solving a
     // puzzle — those really are wins, and have no loser
     assert(wins === 2, "nothing else reaches for the fanfare directly (" + wins + ")");
-    const endAt = appSrc.indexOf("function playEnding(winner)");
-    const ending = appSrc.slice(endAt, appSrc.indexOf("\n  }", endAt));
     assert(/playLoss\(\)/.test(ending), "…and it can play the losing one");
     // resignation specifically: the case that was most obviously wrong
     const res = appSrc.indexOf("store.game.resigned = side;");
@@ -4779,8 +4863,8 @@ for (const lang of CONTENT_LANGS) {
     // third parameter (a fault that can be retried carries the retry), and a
     // slice keyed to the old one silently matched nothing — this whole block
     // then asserted against an empty string and passed
-    const tAt = appSrc.indexOf("function toast(msg, tier");
-    const t3 = appSrc.slice(tAt, appSrc.indexOf("\n  }", tAt));
+    const t3 = srcOf("toast");
+    assert(/^function toast\(msg, tier/.test(t3), "found toast(msg, tier…)");
     assert(/TOAST_MS/.test(appSrc) && /ok: 2200/.test(appSrc), "the three tiers have three lifetimes");
     assert(/fault: 0/.test(appSrc), "…and the fault tier does not dismiss itself");
     assert(/el\.onclick = ms \? null :/.test(t3),
@@ -4917,8 +5001,9 @@ for (const lang of CONTENT_LANGS) {
     assert(/function judgeColours\(\)/.test(appSrc), "the canvas reads the same tokens");
     // the only literals left are the fallbacks inside that one accessor, for
     // a document that has not applied a stylesheet yet
-    const at = appSrc.indexOf("function judgeColours()");
-    const elsewhere = appSrc.slice(0, at) + appSrc.slice(appSrc.indexOf("\n  }", at));
+    // (board.js keeps its own token table with the same fallbacks — the
+    // board's accessor, not a copy in drawing code — so it is left out)
+    const elsewhere = allSourceExcept("board.js").replace(srcOf("judgeColours"), "");
     assert(!/#e05252|#e0a03c|#c9b458/.test(elsewhere),
       "…and no drawing code holds a copy of them");
   }
@@ -5071,20 +5156,20 @@ for (const lang of CONTENT_LANGS) {
   {
     // 5.2.1: the handler is escapeKey(), reached from the key and from the
     // native shortcut alike
-    const esc = /function escapeKey\(\) \{[\s\S]*?\n  \}/.exec(appSrc);
+    const esc = srcOf("escapeKey");
     assert(!!esc, "found the Escape handler");
     // comments only; the point is that no *code* tests a dialog by hand
-    const code = esc[0].replace(/\/\/.*$/gm, "");
+    const code = esc.replace(/\/\/.*$/gm, "");
     const chain = (code.match(/classList\.contains\("show"\)/g) || []).length;
     assert(chain === 0, "Escape tests no dialog by hand (" + chain + " left)");
-    assert(/Dlg\.closeTop\(\)/.test(esc[0]), "…it asks for the top of the stack");
+    assert(/Dlg\.closeTop\(\)/.test(esc), "…it asks for the top of the stack");
     // dialogOpen() is one answer from one place
     assert(/function dialogOpen\(\) \{\s*return Dlg\.anyOpen\(\);/.test(appSrc),
       "\"is a dialog open\" is answered by the module that opens them");
     // every dialog says how it closes, once, where it is built
-    const wire = /function wireDialogs\(\) \{[\s\S]*?\n  \}/.exec(appSrc);
+    const wire = srcOf("wireDialogs");
     assert(!!wire, "the closers are registered in one block");
-    const registered = (wire[0].match(/Dlg\.register\(/g) || []).length;
+    const registered = (wire.match(/Dlg\.register\(/g) || []).length;
     // the seven that exist today; the assertion is that the count matches the
     // markup, so an eighth dialog cannot be added without registering it
     const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
@@ -5252,7 +5337,7 @@ for (const lang of CONTENT_LANGS) {
   assert(junk !== null, "a malformed bridge result is an error, not undefined text");
 
   // and the app actually calls them, at the places that matter
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   for (const [what, re] of [
     // 6.0: one exportText() serves PGN and the learning file; only a PGN is a document
     ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*if \(recent\) Host\.addRecentDocument\(path\);/],
@@ -5335,7 +5420,7 @@ for (const lang of CONTENT_LANGS) {
 // remembering was dropped on the floor. Source-level guards, because each one
 // lives inside app.js's IIFE where a unit test cannot reach it.
 {
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   const fn = (name) => {
     const i = appSrc.indexOf("function " + name + "(");
     if (i < 0) return "";
@@ -6568,7 +6653,7 @@ for (const lang of CONTENT_LANGS) {
 // of pair that drifts, so app.js asks `matchMedia` with the *same query text*
 // — and this asserts the two strings really are the same one.
 {
-  const appSrc = fs.readFileSync(path.join(root, "src/web/js/app.js"), "utf8");
+  const appSrc = allAppSource;
   const cssSrc = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
   const m = /const SHEET_QUERY = "([^"]+)"/.exec(appSrc);
   assert(!!m, "app.js 把那条媒体查询写成一个具名常量");
@@ -6579,6 +6664,60 @@ for (const lang of CONTENT_LANGS) {
   // 用它的地方只有一处：引导结束时要不要把面板打开
   assert((appSrc.match(/panelCoversBoard\(\)/g) || []).length >= 2,
     "定义它、并且真的有人用它 —— 常量本身不是护栏");
+}
+
+// --- v8-0-plan F4: the lookup survives the move it exists for --------------
+//
+// The point of srcOf() and allAppSource is that cutting a function out of
+// app.js into a module of its own changes no check's answer. So do exactly
+// that, in memory: lift a real helper and a real constant out of the module
+// that holds them (app.js, as of this writing) into a new one, and ask again.
+// (Done for real on disk as well when this landed: castleRook moved to its own
+// file with an import, and this suite stayed green; the 7.9 suite against the
+// same tree failed "the rook's half of a castle is derived" and then threw on
+// the next line, so the 430 checks after it never ran.)
+{
+  const moved = new Map(WEB_MODULES);
+  const from = {};
+  const shipped = [];
+  for (const name of ["castleRook", "SHEET_QUERY"]) {
+    const hit = findSymbol(WEB_MODULES, name);
+    assert(!!hit, name + " is declared somewhere (" + (hit ? hit.file : "nowhere") + ")");
+    if (!hit) continue;
+    from[name] = hit.file;
+    moved.set(hit.file, moved.get(hit.file).replace(hit.text, ""));
+    shipped.push("export " + hit.text);
+  }
+  moved.set("f4-sample.js", shipped.join("\n\n") + "\n");
+  for (const name of Object.keys(from)) {
+    const hit = findSymbol(moved, name);
+    assert(!declarationIn(moved.get(from[name]), name), name + ": after the move " + from[name] + " no longer declares it");
+    assert(hit && hit.file === "f4-sample.js" && hit.text === srcOf(name),
+      name + ": …and the lookup finds the same text in its new module (" + (hit ? hit.file : "nothing") + ")");
+    assert(joinModules(moved).includes(srcOf(name)), name + ": …and so does every check reading allAppSource");
+  }
+  // the scanner's edges: a "}" in a string or a regex, default parameters,
+  // `async`, and a member of the same name that is not the declaration
+  const tricky = 'obj.f = 1;\nasync function f(a = { x: "}" }) {\n  return /"}/.test(a) ? "{" : `}`;\n}\nfunction g() {}\n' +
+    "const K = { a: '}', b: [1, 2] };\nconst L = 2;\n";
+  assert(declarationIn(tricky, "f") === 'async function f(a = { x: "}" }) {\n  return /"}/.test(a) ? "{" : `}`;\n}',
+    "declarationIn skips braces inside strings and regex literals and keeps `async`");
+  assert(declarationIn(tricky, "K") === "const K = { a: '}', b: [1, 2] };", "…and ends a binding at its own `;`");
+  assert(declarationIn(tricky, "h") === "", "…and finds nothing for a name that is not declared");
+}
+
+// --- v8-0-plan F4: app.js may only shrink ---------------------------------
+//
+// 6.1 set "under 4000 lines" and app.js then grew by 2,750. A goal that nothing
+// checks drifts, so this is a register like the others: the ceiling is the
+// line count when the tests stopped depending on file names, and it may only
+// go down — lower it in the PR that moves code out. The target for the end of
+// the 8.0 milestones is ≤ 6000; 4000 remains the aim.
+{
+  const APP_JS_LINE_CEILING = 11764;
+  const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
+  assert(lines <= APP_JS_LINE_CEILING,
+    "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
 }
 
 // --- 6.0: the register of source-text assertions in this file.
