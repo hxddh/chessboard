@@ -1290,6 +1290,38 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
+// Codex on #85: the first decode of the standard set finishing while Merida
+// is picked (its chunk still on the way), then a switch back to standard —
+// red before: the finished decode was dropped as superseded but still marked
+// the standard set as "decoding", so the switch back returned at once and the
+// board stayed on the glyph fallback for good.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    // a slow decode, so the switch can land while it runs
+    const real = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function () {
+      return new Promise((r) => setTimeout(r, 1200)).then(() => real.call(this));
+    };
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.route(/chunk-merida\.js/, async (route) => { await new Promise((r) => setTimeout(r, 5000)); await route.continue(); });
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(200);
+  await page.evaluate(() => document.querySelector('[data-pieces="merida"]').click());
+  await page.waitForTimeout(1800);   // the standard set's decode ends, Merida still loading
+  await page.evaluate(() => document.querySelector('[data-pieces="cburnett"]').click());
+  await page.waitForFunction(() => window.__chess.board().imageRedraws >= 1, null, { timeout: 4000 }).catch(() => {});
+  const n = await page.evaluate(() => window.__chess.board().imageRedraws);
+  assert(n >= 1, `标准→梅里达(还在取)→标准:标准棋子图照样装上(重画 ${n} 次)`);
+  assert(errs.length === 0, `棋子图来回切:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 // --- 7.6:做题时,读屏那一行念的是题板上对方的应着 ---------------------------
 // announceLastMove() 读的是主对局 `game`,而题目下在自己的棋盘上:整段做题
 // 期间 #board-live 停在上一盘棋的最后一着,对方的应着一次也没念过。

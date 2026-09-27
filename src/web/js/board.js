@@ -236,8 +236,11 @@ import { MERIDA_CHUNK } from "./lazy-content.js";
       return img.decode ? img.decode().catch(() => loaded) : loaded;
     });
     Promise.all(waits).then(() => {
-      if (_set !== want) return; // superseded by a later switch
+      // no longer decoding, whether or not it is still wanted: left marked,
+      // a switch back to this set would find it "in flight" and return, and
+      // nothing would ever install it (Codex on #85)
       if (_pending === want) _pending = null;
+      if (_set !== want) return; // superseded by a later switch
       Object.assign(_imgs, fresh);
       _sprites = {};
       _imageRedraws++;
