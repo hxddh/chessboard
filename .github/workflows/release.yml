@@ -172,6 +172,14 @@ jobs:
             suites: scripts/test-library-e2e.mjs
           - name: panel layout
             suites: scripts/test-layout-e2e.mjs
+        # v8-0-plan F2: the per-move cost gate reads a CDP metric, so it is
+        # one Chromium job rather than a group on both engines — `include`
+        # with a group no combination has adds exactly that one job
+        include:
+          - engine: chromium
+            group:
+              name: performance
+              suites: scripts/perf-e2e.mjs
     name: browser (${{ matrix.engine }}, ${{ matrix.group.name }})
     env:
       E2E_REQUIRED: "1"

@@ -20,10 +20,10 @@ const ctx = { console, Date, performance, JSON };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const rel of ["src/web/js/chess.js", "src/web/js/pgn-parser.js", "src/web/js/game-tree.js"]) {
+for (const rel of ["src/web/js/chess.js", "src/web/js/pgn-parser.js", "src/web/js/game-tree.js", "src/web/js/fide.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, rel)), ctx, { filename: path.basename(rel) });
 }
-const { Chess, ChessPgnParser: P, ChessTree: T } = ctx;
+const { Chess, ChessPgnParser: P, ChessTree: T, ChessFide: Fide } = ctx;
 
 let failed = 0;
 function assert(cond, msg) {
@@ -576,6 +576,79 @@ function mainlineSans(root) {
     for (let r = 0; r < 3; r++) { const t0 = now(); P.splitGames(t); best = Math.min(best, now() - t0); } return best; };
   const s1 = time(1500), s4 = time(6000);
   assert(s4 / s1 < 8, `切分是线性的：1500 局 ${s1.toFixed(0)}ms，6000 局 ${s4.toFixed(0)}ms（比值 ${(s4 / s1).toFixed(1)} < 8）`);
+}
+
+// --- v8-0-plan F2: the index and the per-node facts ----------------------------
+// The tree answers nodeAt / pathTo from an index now, and each node knows how
+// many times its position has occurred along its line. Both must agree with
+// the slow answers they replace — a walk of the tree and a replay of the SAN
+// list — through every edit that changes the tree's shape.
+{
+  const walkFind = (tree, id) => {
+    const out = [];
+    const go = (n, path) => { if (n.id === id) out.push(path.concat(n)); n.children.forEach((c) => go(c, path.concat(n))); };
+    go(tree.root, []);
+    return out[0] || null;
+  };
+  const agrees = (tree) => {
+    const ids = [];
+    const go = (n) => { ids.push(n.id); n.children.forEach(go); };
+    go(tree.root);
+    return ids.every((id) => {
+      const want = walkFind(tree, id);
+      const got = [tree.root].concat(T.pathTo(tree, id));
+      return T.nodeAt(tree, id) === want[want.length - 1] && got.length === want.length && got.every((n, k) => n === want[k]);
+    });
+  };
+  const t = T.createTree();
+  let at = 0;
+  for (const san of ["e4", "e5", "Nf3", "Nc6", "Bb5"]) at = T.addMove(t, at, san).id;
+  assert(agrees(t), "F2 index: nodeAt / pathTo agree with a walk after addMove");
+  const e5 = T.mainline(t)[1].id;
+  const alt = T.addMove(t, e5, "Bc4");
+  T.addMove(t, alt.id, "Bc5");
+  T.promote(t, alt.id);
+  assert(agrees(t), "…after a variation and a promote");
+  const gone = T.mainline(t)[2].id; // Bc4, promoted
+  T.deleteNode(t, gone);
+  assert(T.nodeAt(t, gone) === null && agrees(t), "…after deleteNode (the deleted id is gone from the index)");
+  const back = T.deserialize(T.serialize(t));
+  assert(agrees(back), "…on a deserialized tree");
+  T.renumber(back);
+  assert(agrees(back), "…and after renumber changed every id");
+  assert(T.depthOf(t, at) === 5 && T.depthOf(t, 0) === 0, "depthOf counts plies from the root");
+
+  // repetitions() against ChessFide.repetitionCount's replay, ply by ply
+  const reps = (start, sans) => {
+    const tree = T.createTree(start || undefined);
+    let id = 0;
+    const out = [];
+    for (let k = 0; k < sans.length; k++) {
+      id = T.addMove(tree, id, sans[k]).id;
+      out.push([T.repetitions(tree, id), Fide.repetitionCount(start, sans.slice(0, k + 1), Chess)]);
+    }
+    return out;
+  };
+  const same = (rows) => rows.every(([a, b]) => a === b);
+  const knights = "Nf3 Nf6 Ng1 Ng8 Nf3 Nf6 Ng1 Ng8 Nf3 Nf6 Ng1 Ng8 Nf3 Nf6 Ng1 Ng8".split(" ");
+  const kr = reps(null, knights);
+  assert(same(kr) && kr[kr.length - 1][0] === 5, "repetitions: knight shuffle counts to fivefold like the replay");
+  // 1.e4: the ep square is written but no capture exists, so it is the same
+  // position as reaching it without the double step (FIDE 9.2)
+  assert(same(reps(null, "e4 Nf6 Nf3 Ng8 Ng1 Nf6 Nf3 Ng8 Ng1".split(" "))), "…with an unplayable ep square");
+  // a playable ep right makes the first occurrence a different position
+  assert(same(reps(null, "e4 Nf6 e5 d5 Nf3 Ng8 Ng1 Nf6 Nf3 Ng8 Ng1 Nf6".split(" "))), "…with a playable ep right");
+  // castling rights lost: the start array without them is another position
+  const kings = reps(null, "e4 e5 Ke2 Ke7 Ke1 Ke8 Ke2 Ke7 Ke1 Ke8".split(" "));
+  assert(same(kings) && kings[5][0] === 1 && kings[9][0] === 2, "…when castling rights change the key");
+  const fen = "4k3/8/8/8/8/8/8/R3K3 w Q - 0 1";
+  assert(same(reps(fen, "Kd1 Kd8 Ke1 Ke8 Kd1 Kd8 Ke1 Ke8".split(" "))), "…from a FEN start (castling right lost on the first king step)");
+  // a variation counts its own line only
+  const vt = T.createTree();
+  let v = 0;
+  for (const san of knights.slice(0, 4)) v = T.addMove(vt, v, san).id;
+  const side = T.addMove(vt, T.mainline(vt)[1].id, "Nc3");
+  assert(T.repetitions(vt, v) === 2 && T.repetitions(vt, side.id) === 1, "…and a variation counts only the line it is on");
 }
 
 if (failed) {

@@ -284,6 +284,8 @@ import { createStore } from "./store.js";
       _san: null,
       /** chess.js instance for the currently VIEWED position (live or replay). */
       _view: null,
+      /** the last autosave written, {sig, raw} — see saveGame (v8-0-plan F2) */
+      _saved: null,
     },
     session: {
       /** @type {'ai'|'pvp'} */
@@ -494,6 +496,12 @@ import { createStore } from "./store.js";
   function gameMove(m) {
     const r = game.move(m);
     if (r) {
+      // v8-0-plan F2: the history grows by exactly the move chess.js just
+      // described — the same object history({verbose}) would build for it
+      if (store.game._vh) {
+        store.game._vh = store.game._vh.concat(r);
+        store.game._san = store.game._san ? store.game._san.concat(r.san) : null;
+      }
       if (store.game._treeSync) treeFollow(r);
       if (!store.game._batch) store.commit("game", "move");
     }
@@ -502,6 +510,10 @@ import { createStore } from "./store.js";
   function gameUndo() {
     const r = game.undo();
     if (r) {
+      if (store.game._vh) {
+        store.game._vh = store.game._vh.slice(0, -1);
+        store.game._san = store.game._san ? store.game._san.slice(0, -1) : null;
+      }
       if (store.game._treeSync) treeStepBack();
       if (!store.game._batch) store.commit("game", "undo");
     }
@@ -509,6 +521,7 @@ import { createStore } from "./store.js";
   }
   function gameLoad(fen) {
     const r = game.load(fen);
+    forgetHistory();
     if (r && store.game._treeSync) treeRestart(game.fen());
     if (!store.game._batch) store.commit("game", "load");
     return r;
@@ -544,6 +557,7 @@ import { createStore } from "./store.js";
       if (r) restoreHeaders(headers);
     } else {
       r = game.load_pgn(pgn, opts);
+      forgetHistory();
       if (r && store.game._treeSync) treeRebuild();
     }
     if (r) forgetEnding();
@@ -553,6 +567,7 @@ import { createStore } from "./store.js";
   function gameReset() {
     forgetEnding();
     game.reset();
+    forgetHistory();
     if (store.game._treeSync) treeRestart(null);
     if (!store.game._batch) store.commit("game", "reset");
   }
@@ -783,13 +798,21 @@ import { createStore } from "./store.js";
     return "G";
   }
 
-  // The caches those five doors feed. Cleared by the commit rather than
-  // compared against it: "this is stale now" is a thing the store can say, and
-  // saying it is cheaper and harder to get wrong than every reader remembering
-  // to ask.
-  store.subscribe("game", () => {
+  // The caches those five doors feed. Cleared rather than compared against:
+  // "this is stale now" is a thing the mutation can say, and saying it is
+  // cheaper and harder to get wrong than every reader remembering to ask.
+  //
+  // v8-0-plan F2: the histories are expired by the doors themselves, not by
+  // the commit. Every replay step commits the game slice too, and the commit
+  // used to throw the history away — so ← and → each re-walked the whole
+  // game through chess.js (an undo, a SAN and a redo per ply) to learn a
+  // list that had not changed. A move or a take-back now edits the list by
+  // one entry; a load starts it over.
+  function forgetHistory() {
     store.game._vh = null;
     store.game._san = null;
+  }
+  store.subscribe("game", () => {
     store.game._view = null;
     // the analysis is a session fact, but whether it still describes *this*
     // game is a game fact — see analysisFor()
@@ -857,23 +880,39 @@ import { createStore } from "./store.js";
     }
   }
 
+  /**
+   * The tree node for ply `i` of the game on the board, or null when the
+   * line and chess.js are not in step (mid-replay inside a batch) — the
+   * callers then fall back to replaying, which is always right, only slow.
+   * v8-0-plan F2: the node already holds the position; replaying the SAN
+   * list to rebuild it made every replay step cost the length of the game.
+   */
+  function lineNode(i) {
+    const h = sanHistory();
+    const line = store.game.line;
+    if (line.length !== h.length + 1 || i < 0 || i > h.length) return null;
+    const n = ChessTree.nodeAt(store.game.tree, line[i]);
+    return n && (i === 0 || n.san === h[i - 1]) ? n : null;
+  }
+
   function viewGame() {
     if (isLive()) return game;
     // keyed on the cursor and dropped whenever the game itself moves: the two
     // things that can make a replayed position wrong
     if (store.game._view && store.game._view.i === store.game.viewIndex) return store.game._view.g;
-    const g = baseGame();
-    const h = sanHistory();
-    for (let i = 0; i < store.game.viewIndex; i++) g.move(h[i]);
-    // every caller reads (.board/.fen/.turn/.get/.in_check) and none mutates,
-    // so one instance per cursor position can be shared
+    // every caller reads (.board/.fen/.turn/.get/.in_check) and none mutates
+    // or asks for the history, so a board loaded from the node's FEN serves,
+    // and one instance per cursor position can be shared
+    const g = gameAt(store.game.viewIndex);
     store.game._view = { i: store.game.viewIndex, g };
     return g;
   }
 
-  /** The game replayed to ply n — the hover path's viewGame(), uncached
-      because the pointer sweeps many indices and none is the cursor. */
+  /** The position at ply n — the hover path's viewGame(), uncached because
+      the pointer sweeps many indices and none is the cursor. */
   function gameAt(n) {
+    const node = lineNode(n);
+    if (node) return new Chess(node.fen);
     const g = baseGame();
     const h = sanHistory();
     for (let i = 0; i < n; i++) g.move(h[i]);
@@ -957,7 +996,7 @@ import { createStore } from "./store.js";
   function previewNode(id) {
     const node = ChessTree.nodeAt(store.game.tree, id);
     if (!node) return;
-    const depth = ChessTree.pathTo(store.game.tree, id).length;
+    const depth = ChessTree.depthOf(store.game.tree, id);
     setBoardPreview(ChessPreview.plyPreview(new Chess(node.fen), node.from ? { from: node.from, to: node.to } : null, depth));
   }
 
@@ -1542,7 +1581,21 @@ import { createStore } from "./store.js";
       if (store.game.resigned) payload.resigned = store.game.resigned;
       if (store.game.drawAgreed) payload.drawAgreed = true;
       if (store.game.drawClaimed) payload.drawClaimed = store.game.drawClaimed;
-      Persist.setJson("save", payload);
+      // v8-0-plan F2: nothing changed, nothing written. A move, its commit,
+      // blur, hide and quit each asked for a save, and every one rewrote the
+      // whole tree — a few hundred KB of localStorage and a native mirror
+      // flush for the same game. The stamp is left out of the comparison (it
+      // is the one field that always differs); and the skip holds only while
+      // storage still has exactly what was written, so a cleared or
+      // restored profile gets its save back on the next call.
+      const at = payload.savedAt;
+      payload.savedAt = 0;
+      const sig = JSON.stringify(payload);
+      const last = store.game._saved;
+      if (last && last.sig === sig && Persist.get("save") === last.raw) return;
+      payload.savedAt = at;
+      const raw = JSON.stringify(payload);
+      store.game._saved = Persist.set("save", raw) ? { sig, raw } : null;
     } catch (_) {}
   }
   /**
@@ -2083,7 +2136,11 @@ import { createStore } from "./store.js";
     const n = Math.max(0, Math.min(prefixLen, h.length));
     const sf = startFen();
     if (!n && !sf) return null;
-    const hit = ChessEco.openingForGame(h.slice(0, n), sf || undefined);
+    // v8-0-plan F2: off the tree, which keeps each node's deepest hit; the
+    // SAN replay stays for a line that is out of step with chess.js
+    const node = lineNode(n);
+    const hit = node ? ChessEco.openingAt(store.game.tree, node.id)
+      : ChessEco.openingForGame(h.slice(0, n), sf || undefined);
     if (!hit) return null;
     return [hit.eco, ChessEco.localName(hit, store.ui.langId)];
   }
@@ -7264,7 +7321,7 @@ import { createStore } from "./store.js";
       let prev = parent;
       let node = first;
       let force = numbered;
-      let depth = ChessTree.pathTo(tree, first.id).length - 1;
+      let depth = ChessTree.depthOf(tree, first.id) - 1;
       while (node) {
         const white = prev.fen.split(" ")[1] === "w";
         if (white || force) {
@@ -7377,6 +7434,10 @@ import { createStore } from "./store.js";
 
   function repetitionCount() {
     const h = sanHistory();
+    // v8-0-plan F2: each node counts its own position along the path to it,
+    // once; the SAN replay below is the fallback for an out-of-step line
+    const node = lineNode(h.length);
+    if (node) return ChessTree.repetitions(store.game.tree, node.id);
     const sig = h.join(" ");
     if (store.game.repMemo.sig === sig) return store.game.repMemo.count;
     store.game.repMemo = { sig, count: Fide.repetitionCount(startFen(), h, Chess) };

@@ -2537,8 +2537,18 @@ for (const lang of CONTENT_LANGS) {
     assert(/store\.commit\("game", "/.test(fnOf(door)), door + "() commits the game slice");
   }
   assert(!/gameVersion/.test(noComments(appSrc)), "no hand-kept version counter is left");
-  assert(/store\.subscribe\("game",[\s\S]{0,400}?_vh = null[\s\S]{0,200}?_san = null/.test(appSrc),
-    "the game commit is what expires the history caches");
+  // v8-0-plan F2: the doors expire them, not the commit — a replay step
+  // commits too, and must not cost a walk of the whole game
+  assert(/function forgetHistory\(\) \{\s*store\.game\._vh = null;\s*store\.game\._san = null;/.test(appSrc),
+    "one function expires the history caches");
+  for (const door of ["gameLoad", "gameLoadPgn", "gameReset"]) {
+    assert(/forgetHistory\(\)/.test(fnOf(door)), door + "() starts the history over");
+  }
+  assert(/_vh\.concat\(r\)/.test(fnOf("gameMove")) && /_vh\.slice\(0, -1\)/.test(fnOf("gameUndo")),
+    "gameMove() / gameUndo() edit the history by one entry");
+  const gameSub = appSrc.slice(appSrc.indexOf('store.subscribe("game", () => {')).split("});")[0];
+  assert(gameSub.length > 0 && !/_vh = null|forgetHistory/.test(gameSub),
+    "…and the game commit no longer throws it away");
   const vh = fnOf("verboseHistory");
   assert(/if \(!store\.game\._vh\)/.test(vh), "the verbose history is cached");
   assert(/if \(!store\.game\._san\)/.test(fnOf("sanHistory")), "…and so is the SAN list");

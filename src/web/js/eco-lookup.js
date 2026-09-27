@@ -26,6 +26,7 @@
 import { Chess } from "./chess.js";
 import { loadChunk, chunkReady } from "./chunk.js";
 import { ChessFide } from "./fide.js";
+import { ChessTree } from "./game-tree.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 import { CHESS_OPENINGS_EN } from "./openings-en.js";
 import { CHESS_OPENINGS_JA } from "./openings-ja.js";
@@ -119,6 +120,24 @@ import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
       probe(i + 1);
     }
     return best;
+  }
+
+  /**
+   * openingForGame for the line root → `nodeId` of a game tree, without the
+   * replay (v8-0-plan F2). Each node keeps the deepest hit on the path to it,
+   * so a new move costs one table probe and stepping through a finished game
+   * costs none. Cached only once the table is here: before that every answer
+   * is null, and a null remembered then would outlive the table's arrival.
+   * @returns {{eco: string, name: string, ply: number}|null}
+   */
+  function openingAt(tree, nodeId) {
+    const t = table();
+    if (!t) return null;
+    const best = ChessTree.derive(tree, nodeId, "eco", (n, above) => {
+      const hit = t[ChessTree.nodeKey(n)];
+      return hit ? { eco: hit[0], name: hit[1], ply: ChessTree.depthOf(tree, n.id) } : (above || null);
+    });
+    return best ? { eco: best.eco, name: best.name, ply: best.ply } : null;
   }
 
   /**
@@ -235,7 +254,7 @@ import { OPENING_VARIATIONS_JA } from "./openings-variation-ja.js";
   }
 
   export const ChessEco = {
-    positionKey, lookupPosition, openingForGame, ecoName, localName, familyName, ready, loaded, whenReady,
+    positionKey, lookupPosition, openingForGame, openingAt, ecoName, localName, familyName, ready, loaded, whenReady,
     get BOOK_ID_BY_ENTRY() { return bookIdByEntry() || {}; },
     get size() { const t = table(); return t ? Object.keys(t).length : 0; },
   };
