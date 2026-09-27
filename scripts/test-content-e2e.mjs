@@ -797,8 +797,26 @@ if (hasTab && REAL.length) {
   const mirror = (sqs) => sqs.split(",").map((s) =>
     "abcdefgh"[7 - (s.charCodeAt(0) - 97)] + (9 - +s[1])).sort().join(",");
   assert(occ2 === mirror(squaresOf(bFen)), "执黑的错题棋盘翻转,局面就是失着前那一刻");
-  await mv2("c7", "c5", true);
-  assert(/找回了这一手/.test(await toastText()), "执黑错题照样能解", await toastText());
+  // v8-0-plan B1: the hover hint (grabbableAt) admitted White's men only, so
+  // over a black drill — and every black Lichess puzzle to come — the pawn
+  // you are meant to move showed the plain arrow, not the grab hand. Then
+  // solve it by dragging.
+  {
+    const at = (s) => pg.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1], z = r.width / 8;
+      return { x: r.left + (7 - f + .5) * z, y: r.top + (7 - rk + .5) * z };
+    }, s);
+    const a = await at("c7"), b = await at("c5");
+    await pg.mouse.move(a.x - 3, a.y - 3); await pg.mouse.move(a.x, a.y, { steps: 2 });
+    const cursor = await pg.evaluate(() => document.getElementById("board").style.cursor);
+    assert(cursor === "grab", "执黑错题:鼠标移到黑兵上是「抓手」", cursor);
+    await pg.mouse.down();
+    await pg.mouse.move(a.x + 6, a.y + 6, { steps: 3 });
+    await pg.mouse.move(b.x, b.y, { steps: 6 }); await pg.mouse.up();
+    await pg.waitForTimeout(600);
+  }
+  assert(/找回了这一手/.test(await toastText()), "执黑错题照样能解——拖子也行", await toastText());
   await ctx2.close();
 }
 

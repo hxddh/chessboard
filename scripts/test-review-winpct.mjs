@@ -20,6 +20,11 @@ ctx.window = ctx;
 vm.createContext(ctx);
 vm.runInContext(compileModuleSync(path.join(root, "src/web/js/review.js")), ctx, { filename: "review.js" });
 const R = ctx.ChessReview;
+// v8-0-plan B2: the grades and the pass that feeds them
+for (const m of ["chess.js", "review-grade.js", "review-pass.js"]) {
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/" + m)), ctx, { filename: m });
+}
+const G = ctx.ChessReviewGrade, P = ctx.ChessReviewPass, Chess = ctx.Chess;
 
 let failed = 0;
 function assert(cond, msg) {
@@ -56,7 +61,9 @@ assert(R.INACCURACY === 50 && R.MISTAKE === 100 && R.BLUNDER === 300 && R.markFo
 
 // --- accuracy -------------------------------------------------------------
 assert(R.accuracyFromWinPct(50, 50) === 100 && R.accuracyFromWinPct(40, 60) === 100, "no loss is 100%");
-assert(near(R.accuracyFromWinPct(60, 50), 103.1668 * Math.exp(-0.04354 * 10) - 3.1669, 1e-9), "10 points lost is the lichess curve (" + R.accuracyFromWinPct(60, 50).toFixed(1) + "%)");
+// v8-0-plan B2: lichess's current source, including its "+ 1" uncertainty bonus
+assert(near(R.accuracyFromWinPct(60, 50), 103.1668100711649 * Math.exp(-0.04354415386753951 * 10) - 3.166924740191411 + 1, 1e-9),
+  "10 points lost is the lichess curve, uncertainty bonus included (" + R.accuracyFromWinPct(60, 50).toFixed(1) + "%)");
 assert(R.accuracyFromWinPct(100, 0) === 0, "losing everything clamps to 0");
 assert(R.accuracyFromWinPct(null, 50) === null, "unmeasured is null");
 {
@@ -97,14 +104,74 @@ assert(R.accuracyFromWinPct(null, 50) === null, "unmeasured is null");
 assert(R.summarizeWinPct([null, null], ["e4"], "w") === null, "nothing measured → null");
 assert(R.summarizeWinPct([], [], "w") === null, "empty → null");
 {
-  // a mate score does not blow the mean up the way a raw centipawn would
+  // a mate score does not blow the mean up the way a raw centipawn would;
+  // the accuracy track clamps it to ±1000 as lichess does (97.5%, not 100)
   const wp = R.summarizeWinPct([0, 0, 9990], ["Qh5", "g5"], "w");
-  assert(wp.counts.b.blunder === 1 && wp.drop.b === 50 && wp.acc.b < 10 && wp.acc.w === 100,
+  assert(wp.counts.b.blunder === 1 && wp.drop.b === 50 && wp.acc.b === 11 && wp.acc.w === 100,
     "a mate allowed from a level position is a ?? worth exactly 50 points (" + wp.acc.b + "% for that move)");
 }
 
-if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }
-console.log("all passed");
+// --- v8-0-plan B2: lichess's game accuracy, against lichess's own tests -----
+// modules/analyse/src/test/AccuracyPercentTest.scala, case for case: `compute`
+// there is gameAccuracy(startColor, cps) with lichess's initial 15 cp put in
+// front, which is scalars[0] here. isCloseTo(a, b, d) is |a − b| ≤ d.
+{
+  const close = (a, b, d) => a != null && Math.abs(a - b) <= d;
+  const compute = (cps, first = "w") => R.gameAccuracy([15].concat(cps), first);
+  const fill = (n, xs) => Array.from({ length: n }, () => xs).flat();
+  const cases = [
+    ["two good moves", [15, 15], [100, 1], [100, 1]],
+    ["white blunders on first move", [-900, -900], [10, 5], [100, 1]],
+    ["black blunders on first move", [15, 900], [100, 1], [10, 5]],
+    ["both blunder on first move", [-900, 0], [10, 5], [10, 5]],
+    ["20 perfect moves", fill(20, [15]), [100, 1], [100, 1]],
+    ["20 perfect moves and a white blunder", fill(20, [15]).concat([-900]), [50, 5], [100, 1]],
+    ["21 perfect moves and a black blunder", fill(21, [15]).concat([900]), [100, 1], [50, 5]],
+    ["5 average moves (65 cpl) on each side", fill(5, [-50, 15]), [76, 8], [76, 8]],
+    ["50 average moves (65 cpl) on each side", fill(50, [-50, 15]), [76, 8], [76, 8]],
+    ["50 mediocre moves (150 cpl) on each side", fill(50, [-135, 15]), [54, 8], [54, 8]],
+    ["50 terrible moves (500 cpl) on each side", fill(50, [-435, 15]), [20, 8], [20, 8]],
+  ];
+  for (const [name, cps, [w, dw], [b, db]] of cases) {
+    const a = compute(cps);
+    assert(close(a.w, w, dw) && close(a.b, b, db),
+      "lichess: " + name + " → white " + (a.w == null ? "—" : a.w.toFixed(1)) + " (≈" + w + "), black " + (a.b == null ? "—" : a.b.toFixed(1)) + " (≈" + b + ")");
+  }
+  const blackFirst = [
+    ["black moves first, two good moves", [15, 15], [100, 1], [100, 1]],
+    ["black moves first, black blunders on first move", [900, 900], [100, 1], [10, 5]],
+    ["black moves first, white blunders on first move", [15, -900], [10, 5], [100, 1]],
+    ["black moves first, both blunder on first move", [900, 0], [10, 5], [10, 5]],
+  ];
+  for (const [name, cps, [w, dw], [b, db]] of blackFirst) {
+    const a = compute(cps, "b");
+    assert(close(a.w, w, dw) && close(a.b, b, db),
+      "lichess: " + name + " → white " + (a.w == null ? "—" : a.w.toFixed(1)) + ", black " + (a.b == null ? "—" : a.b.toFixed(1)));
+  }
+  const one = compute([15]);
+  assert(one.b === null && close(one.w, 100, 1), "lichess: a single move leaves the other side without a figure");
+  const none = R.gameAccuracy([15], "w");
+  assert(none.w === null && none.b === null, "lichess: an empty game has no accuracy");
+
+  // What the plain mean (≤ 7.9) got wrong: one blunder among twenty perfect
+  // moves. lichess's test puts that at ≈ 50; the plain mean said ≈ 95.
+  const track = [15].concat(fill(20, [15]), [-900]);
+  const plain = (() => {
+    const xs = [];
+    for (let i = 0; i + 1 < track.length; i += 2) xs.push(R.accuracyFromWinPct(R.accuracyWinPct(track[i]), R.accuracyWinPct(track[i + 1])));
+    return xs.reduce((a, b) => a + b, 0) / xs.length;
+  })();
+  assert(plain > 90 && compute(fill(20, [15]).concat([-900])).w < 55,
+    "one blunder in eleven moves: plain mean " + plain.toFixed(1) + " → lichess " + compute(fill(20, [15]).concat([-900])).w.toFixed(1));
+  // the summary reads the full formula, not its own mean
+  const sans = Array.from({ length: 21 }, () => "Nf3");
+  const sw = R.summarizeWinPct(track, sans, "w");
+  assert(sw.acc.w === Math.round(compute(fill(20, [15]).concat([-900])).w), "summarizeWinPct reports gameAccuracy (" + sw.acc.w + ")");
+  // an unmeasured evaluation takes out the moves on either side of it and any
+  // window it falls in, as a missing eval does on lichess — never a zero
+  const holed = R.gameAccuracy([15, 15, null, 15, 15, 15], "w");
+  assert(holed.w != null && holed.b != null && holed.w > 99, "a hole in the track is skipped, not scored (" + (holed.w || 0).toFixed(1) + ")");
+}
 
 // --- 6.1: the verdict cut-offs belong to the curve they are read from -------
 //
@@ -117,7 +184,7 @@ console.log("all passed");
   const track = (L) => { const sc = []; let v = 0; for (let i = 0; i <= 40; i++) { sc.push(v); v += (i % 2 === 0 ? -L : +L); } return sc; };
   const cpAcc = (L) => R.summarize(track(L), sans, "w").acc.w;
   const wpAcc = (L) => R.summarizeWinPct(track(L), sans, "w").acc.w;
-  assert(R.VERDICT_EXCELLENT === 94 && R.VERDICT_SOLID === 86,
+  assert(R.VERDICT_EXCELLENT === 95 && R.VERDICT_SOLID === 87,
     "the verdict cut-offs are the win-% ones (" + R.VERDICT_EXCELLENT + " / " + R.VERDICT_SOLID + ")");
   assert(cpAcc(14) < 90 && cpAcc(13) >= 90, "the old 'excellent' line sat at ~14cp a move on the cp curve");
   assert(Math.abs(wpAcc(14) - R.VERDICT_EXCELLENT) <= 1,
@@ -164,3 +231,181 @@ console.log("all passed");
   assert(row("w", 0) === "1,1,2,2" && row("w", NaN) === "1,1,2,2",
     "起手手数是 0 或读不出来时，回到 1 —— 不是第 0 手");
 }
+
+// --- v8-0-plan B2: move grades, each threshold at its edge -------------------
+// Synthetic passes: real positions (the grader asks chess.js what was played,
+// how many moves were legal, what the reply line does to the material) and
+// hand-set evaluations, so every cut-off is tested on both sides of it.
+{
+  // the White-view centipawn value that puts White at `win` %
+  const cpFor = (win) => -Math.log(2 / ((win - 50) / 50 + 1) - 1) / 0.00368208;
+  const START = new Chess().fen();
+  const fensOf = (sans, from) => {
+    const g = from ? new Chess(from) : new Chess();
+    const out = [g.fen()];
+    for (const s of sans) { if (!g.move(s)) throw new Error("illegal " + s); out.push(g.fen()); }
+    return out;
+  };
+  const pass = (sans, scalars, extra, from) => Object.assign({
+    fens: fensOf(sans, from), sans, scalars,
+    bests: new Array(sans.length + 1).fill(null), seconds: new Array(sans.length + 1).fill(null),
+    pvs: new Array(sans.length + 1).fill(null), deep: new Array(sans.length + 1).fill(false),
+    book: new Array(sans.length).fill(false),
+  }, extra || {});
+  const grade1 = (san, dropPts, extra) => G.gradeMoves(pass([san], [0, cpFor(50 - dropPts)],
+    Object.assign({ bests: ["e2e4", null] }, extra || {})), Chess)[0];
+
+  assert(near(R.winPct(cpFor(63.2)), 63.2, 1e-9), "(the test's own inverse of winPct is exact)");
+  assert(grade1("e4", 0) === "best", "the engine's first choice is 最佳");
+  assert(grade1("e4", 3) === "best", "…even when the search after it reads a little lower (3 points: still 最佳, no mark)");
+  assert(grade1("d4", 0.4) === "best" && grade1("d4", 0.6) === "excellent",
+    "another move within " + G.BEST_EPS + " point of the engine's is 最佳 too; 0.6 is 优秀");
+  assert(grade1("d4", 1.99) === "excellent" && grade1("d4", 2) === "good", "优秀 below " + G.EXCELLENT + " points, 良好 from it");
+  assert(grade1("d4", 4.99) === "good" && grade1("d4", 5) === "inaccuracy", "良好 below 5, 小失误 (?!) from 5 — the ?! line");
+  assert(grade1("d4", 9.99) === "inaccuracy" && grade1("d4", 10) === "mistake" && grade1("d4", 19.99) === "mistake" &&
+    grade1("d4", 20) === "blunder", "失误 (?) from 10, 严重失误 (??) from 20 — review.js's cut-offs, unchanged");
+  assert(grade1("d4", 9.99, { book: [true] }) === "book" && grade1("d4", 10, { book: [true] }) === "mistake",
+    "a book move is 谱着 unless it is a ? or worse");
+  assert(G.gradeMoves(pass(["e4"], [null, 0]), Chess)[0] === null, "an unmeasured move has no grade");
+
+  // 谱着 is a prefix: out of the book once, out for good
+  const inBook = new Set(fensOf(["e4", "e5", "Nf3"]).slice(1, 3).concat(fensOf(["e4", "e5", "Nf3", "Nc6"]).slice(4)));
+  assert(JSON.stringify(G.bookPlies(fensOf(["e4", "e5", "Nf3", "Nc6"]), (f) => inBook.has(f))) === "[true,true,false,false]",
+    "book plies stop at the first position the table does not know, even if a later one is in it");
+
+  // 仅此一着: first choice, confirmed deeper, every other move ≥ 10 points worse
+  const mid = ["e4", "e5", "Nf3", "Nc6", "d4"];
+  const only = (gap, extra, win = 72) => {
+    const p = pass(mid, [0, 0, 0, 0, cpFor(win), cpFor(win)], Object.assign({ bests: [null, null, null, null, "d2d4", null],
+      seconds: [null, null, null, null, cpFor(win - gap), null], deep: [false, false, false, false, true, true] }, extra || {}));
+    return G.gradeMoves(p, Chess)[4];
+  };
+  assert(only(10) === "only" && only(9.99) === "best", "仅此一着 when the second line is ≥ " + G.ONLY_GAP + " points worse, 最佳 below");
+  assert(only(10, {}, 93) === "best" && only(21, {}, 50) === "only" && only(15, {}, 50) === "best",
+    "…and only when that gap crosses a result line (" + G.WINNING + " / " + G.LOST + "): 93 → 83 is two ways to win, 50 → 35 still level, 50 → 29 lost");
+  assert(only(30, { deep: [false, false, false, false, false, true] }) === "best" && only(30, { deep: new Array(6).fill(false) }) === "best",
+    "…and only when the deeper search confirmed the position it was played in — the quick scan alone never says it");
+  {
+    // 3…exd4 4.Nxd4: the knight takes back on the square just captured on
+    const sans = ["e4", "e5", "Nf3", "Nc6", "d4", "exd4", "Nxd4"];
+    const p = pass(sans, new Array(8).fill(0), { bests: [null, null, null, null, null, null, "f3d4", null],
+      seconds: [null, null, null, null, null, null, cpFor(20), null], deep: new Array(8).fill(true) });
+    assert(G.gradeMoves(p, Chess)[6] === "best", "a recapture on the square just taken on is never 仅此一着, however large the gap");
+  }
+  {
+    // the one legal move: forced, not found
+    const f = "7k/8/8/8/8/8/6q1/7K w - - 0 1";
+    const p = pass(["Kxg2"], [0, 0], { bests: ["h1g2", null], seconds: [cpFor(10), null], deep: [true, true] }, f);
+    assert(new Chess(f).moves().length === 1 && G.gradeMoves(p, Chess)[0] === "best", "the only legal move is 最佳, not 仅此一着");
+  }
+
+  // 妙着: an only move that gives up material along the engine's own line
+  {
+    const greek = "r1bq1rk1/pppn1ppp/4p3/3pP3/1b1P4/2NB1N2/PPP2PPP/R1BQK2R w KQ - 0 8";
+    const brill = (scal, pv) => G.gradeMoves(pass(["Bxh7+"], [scal, scal], { bests: ["d3h7", null],
+      seconds: [cpFor(R.winPct(scal) - 20), null], deep: [true, true], pvs: [null, pv] }, greek), Chess)[0];
+    assert(G.sacrificed(greek, "Bxh7+", "Kxh7 Ng5+ Kg8", Chess) === 2, "Bxh7+ Kxh7 Ng5+ Kg8 is a bishop for a pawn, still after the follow-up");
+    assert(brill(300, "Kxh7 Ng5+ Kg8") === "brilliant", "the Greek gift, the only good move and the engine takes it: 妙着");
+    assert(brill(300, "Kh8 Qh5") === "only", "the same move with the sacrifice declined on the engine's line is 仅此一着, not 妙着");
+    assert(brill(-30, "Kxh7 Ng5+ Kg8") === "only", "…and a sacrifice that leaves the mover under " + G.BRILLIANT_MIN_AFTER + "% is not 妙着");
+    const own = G.gradeMoves(pass(["Bxh7+"], [300, 300], { bests: ["d3h7", null], seconds: [cpFor(R.winPct(300) - 20), null],
+      deep: [true, false], pvs: ["Bxh7+ Kxh7 Ng5+ Kg8 Qh5", null] }, greek), Chess)[0];
+    assert(own === "brilliant", "…read off the deep search's own first line when that line is the move played");
+    // a trade is level again by the second check
+    assert(G.sacrificed(START, "e4", "d5 exd5 Qxd5", Chess) === 0, "a pawn trade gives nothing up");
+  }
+
+  // 错失良机: the opponent's ? left a win, and this move gave it back without losing
+  {
+    const sans = ["e4", "e5", "Nf3"];
+    const miss = (after) => G.gradeMoves(pass(sans, [0, 0, cpFor(70), cpFor(after)]), Chess)[2];
+    assert(miss(55) === "miss", "70 → 55 after the opponent's 20-point slip: 错失良机");
+    assert(miss(39) === "blunder", "…70 → 39 is thrown away, not missed: still 严重失误");
+    assert(miss(61) === "inaccuracy", "…70 → 61 gives back 9, under the " + G.MISS_DROP + "-point line: an ordinary ?!");
+    const calm = G.gradeMoves(pass(sans, [0, cpFor(65), cpFor(70), cpFor(55)]), Chess)[2];
+    assert(calm === "mistake", "without the opponent's mistake just before, the same drop is a plain ?");
+  }
+
+  // which positions get the deeper MultiPV 3 search
+  {
+    const sans = ["e4", "e5", "Nf3", "Nc6"];
+    const p = pass(sans, [0, 0, cpFor(56), cpFor(56), cpFor(56)]);
+    assert(JSON.stringify(G.deepTargets(p, Chess)) === "[1,2]", "a ≥ 5-point drop sends both sides of the move deeper (" + JSON.stringify(G.deepTargets(p, Chess)) + ")");
+    p.deep[1] = true;
+    assert(JSON.stringify(G.deepTargets(p, Chess)) === "[2]", "…a position already deepened is not searched again");
+    const q = pass(sans, [0, 0, 0, 0, 0], { bests: [null, null, "g1f3", null, null], seconds: [null, null, cpFor(25), null, null] });
+    assert(JSON.stringify(G.deepTargets(q, Chess)) === "[2]", "an only-move candidate from the quick scan is confirmed deeper — the position it is played in");
+    q.bests[2] = "b1c3";
+    assert(G.deepTargets(q, Chess).length === 0, "…but not when the move played was not the engine's choice");
+  }
+
+  // key moments: three a side, by swing, none under the ?! line
+  {
+    const sans = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6", "d4", "exd4"];
+    // White-view win %: each ply moves the game by a different amount
+    const wins = [50, 44, 51, 39, 71, 68, 60, 52, 54, 25, 31];
+    const p = pass(sans, wins.map(cpFor));
+    const km = G.keyMoments(p, null, "w", (i) => Math.floor(i / 2) + 1);
+    const plies = (xs) => xs.map((m) => m.ply).join(",");
+    assert(plies(km.w) === "8,2,6" && plies(km.b) === "3,1,9" && km.w[0].swing === 29,
+      "moments rank by swing, three at most a side, ≥ " + G.MOMENT_MIN + " points (白 " + plies(km.w) + " · 黑 " + plies(km.b) + ")");
+    assert(km.w[0].grade === "blunder" && km.w[0].tag === "??" && km.w[0].moveNo === 5 && km.w[0].san === "d4" &&
+      km.w[0].before === 54 && km.w[0].after === 25, "each moment carries what A4 draws: the move, its grade, before and after");
+    const graded = G.gradeMoves(Object.assign(p, { bests: new Array(11).fill(null) }), Chess);
+    graded[2] = "only"; p.seconds[2] = cpFor(20);
+    const km2 = G.keyMoments(p, graded, "w", (i) => i);
+    assert(km2.w.some((m) => m.ply === 2 && m.swing === 31), "an only move's swing is what the second line would have cost (51 − 20)");
+    const c = G.countGrades(graded, "w");
+    assert(c.w.only === 1 && Object.values(c.w).reduce((a, b) => a + b, 0) === 5 && Object.values(c.b).reduce((a, b) => a + b, 0) === 5,
+      "the grade counts split by side and add up to the plies");
+  }
+}
+
+// --- v8-0-plan B2: the pass — quick scan, then deeper — and determinism ------
+{
+  // A fake engine whose answer depends only on what it was asked: a stand-in
+  // for Stockfish at a fixed node count from a cleared state. Positions after
+  // an odd number of plies lose Black 8 points at the quick budget; the deep
+  // budget says it was 3.
+  const sans = ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6"];
+  const g = new Chess();
+  const fens = [g.fen()];
+  for (const s of sans) { g.move(s); fens.push(g.fen()); }
+  const calls = [];
+  const analyze = async (fen, budget, opts) => {
+    calls.push([fens.indexOf(fen), budget, opts.multipv]);
+    const k = fens.indexOf(fen), turn = fen.split(" ")[1];
+    const deep = budget > 200;
+    const white = k === 4 ? (deep ? 60 : 110) : 20;
+    const cp = turn === "w" ? white : -white;
+    const best = new Chess(fen).moves({ verbose: true })[0];
+    const uci = best.from + best.to;
+    return { cp, mate: null, turn, best: uci, pv: [uci], lines: [{ cp, mate: null, pv: [uci], depth: deep ? 16 : 13 },
+      { cp: cp - 90, mate: null, pv: [uci], depth: deep ? 16 : 13 }] };
+  };
+  const evalScalar = (e) => (e ? (e.turn === "w" ? e.cp : -e.cp) : null);
+  const run = () => P.runPass({ fens, sans, budget: 200, lines: 1, analyze, evalScalar });
+  const a = await run();
+  const quick = calls.filter((c) => c[1] === 200), deep = calls.filter((c) => c[1] === 200 * G.DEEP_FACTOR);
+  assert(quick.length === fens.length && quick.every((c) => c[2] === 2),
+    "the quick scan asks every position once, MultiPV 2 so the second line is known (" + quick.length + ")");
+  assert(deep.length > 0 && deep.every((c) => c[2] === G.DEEP_MULTIPV) && new Set(deep.map((c) => c[0])).size === deep.length,
+    "the deeper pass is MultiPV " + G.DEEP_MULTIPV + ", at " + G.DEEP_FACTOR + "× the budget, each position once (" + deep.map((c) => c[0]).join(",") + ")");
+  assert(deep.some((c) => c[0] === 3) && deep.some((c) => c[0] === 4) && a.deep[3] && a.deep[4] && a.scalars[4] === 60,
+    "the 4…Nc6 → 5.Bb5 swing sends both positions deeper, and the deep number replaces the quick one");
+  assert(a.linesAt.every((l) => l === null), "with one line on the panel, no extra lines are stored");
+  calls.length = 0;
+  const b = await run();
+  assert(JSON.stringify(a) === JSON.stringify(b), "the same game through the same engine twice: identical pass");
+  const ga = G.gradeMoves(a, Chess), gb = G.gradeMoves(b, Chess);
+  assert(ga.every((x) => x) && JSON.stringify(ga) === JSON.stringify(gb), "…and identical grades (" + ga.join(" ") + ")");
+  // stopped: the quick numbers so far, and where it stopped
+  calls.length = 0;
+  const cut = await P.runPass({ fens, sans, budget: 200, lines: 1, analyze, evalScalar, halt: () => (calls.length >= 3 ? "abort" : null) });
+  assert(cut.halted === "abort" && cut.at === 3 && cut.scalars[2] != null && cut.scalars[3] === null, "a stop keeps the positions already measured and says where");
+}
+
+// v8-0-plan B2: the exit sits at the very end — through 7.9 it sat halfway
+// down, so a failure in any block below it printed FAIL and still exited 0
+if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }
+console.log("all passed");

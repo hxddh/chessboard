@@ -7,6 +7,7 @@
  *
  * Run: node scripts/test-explain.mjs
  */
+import fs from "fs";
 import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
@@ -19,7 +20,7 @@ ctx.window = ctx;
 vm.createContext(ctx);
 // lang-en/ja first: the dictionaries are chunks the page loads ahead of the
 // bundle (v8-0-plan F5), and i18n.js adopts whatever is already there
-for (const f of ["chess.js", "explain.js", "lang-en.js", "lang-ja.js", "i18n.js"]) {
+for (const f of ["chess.js", "motif.js", "explain.js", "lang-en.js", "lang-ja.js", "i18n.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", f)), ctx, { filename: f });
 }
 const { Chess, ChessExplain: X, ChessI18n } = ctx;
@@ -108,19 +109,21 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
   assert(X.lineAfter([], sans, 16).length === 0, "没有线：空");
 }
 
-// --- a plain mistake: a knight for a pawn, no motif ------------------------
+// --- a knight for a pawn ------------------------------------------------------
 // 1.e4 e5 2.Bc4 Nf6 3.d3, and 3…Nxe4? 4.dxe4: the knight is simply gone.
+// 7.x said 「对方 dxe4 之后丢马」; since v8-0-plan B3 the line proves more —
+// nothing could take back on e4 — and that is the hanging-piece sentence.
 {
   const fen = fenAfter("e4 e5 Bc4 Nf6 d3");
   const ex = X.explainMistake({ fen, played: "Nxe4", best: "b8c6", line: "dxe4 Bc5 Nf3 d6" }, Chess);
-  assert(ex && ex.refute && ex.refute.motif === null && ex.lost && ex.lost.piece === "n",
-    "3…Nxe4：应着 dxe4 没有母题，丢马 (" + JSON.stringify(ex) + ")");
+  assert(ex && ex.refute && ex.refute.motif === "hanging" && ex.refute.free && ex.lost && ex.lost.piece === "n",
+    "3…Nxe4：应着 dxe4 吃掉没有保护的马 (" + JSON.stringify(ex) + ")");
   for (const lang of LANGS) {
     const s = X.explainText(ex, tOf(lang));
     console.log("     " + lang + "：" + s);
     assert(!MOTIF_NAMES(lang).some((n) => s.includes(n)), "没有母题的失着（" + lang + "）：说明里不出现任何母题名");
   }
-  assert(X.explainText(ex, tOf("zh-CN")) === "对方 dxe4 之后丢马", "…中文是「对方 dxe4 之后丢马」");
+  assert(X.explainText(ex, tOf("zh-CN")) === "漏看了 dxe4，马没有保护住", "…中文是「漏看了 dxe4，马没有保护住」");
 }
 
 // --- nothing certain: only the better move ---------------------------------
@@ -143,8 +146,13 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
     "漏了一步杀：「有 ♕xf7# 一步杀没走」(" + X.explainText(ex, tOf("zh-CN")) + ")");
   const fen2 = fenAfter("e4 e5 Bc4 Nc6 Qh5");
   const ex2 = X.explainMistake({ fen: fen2, played: "Nf6", best: "g7g6", line: "Qxf7#" }, Chess);
-  assert(ex2 && ex2.refute && ex2.refute.mate === 1 && X.explainKey(ex2) === "ex.allowsMate1",
-    "送了一步杀：说对方 ♕xf7# 一步杀 (" + X.explainText(ex2, tOf("zh-CN")) + ")");
+  // Qxf7# was already on the board before 3…Nf6: the move ignored a threat
+  // (v8-0-plan B3 §4), which says more than 「让对方一步杀」
+  assert(ex2 && ex2.refute && ex2.refute.mate === 1 && X.explainKey(ex2) === "ex.threatMate" &&
+    X.explainText(ex2, tOf("zh-CN")) === "没防住对方 ♕xf7# 一步杀的威胁",
+    "送了一步杀、而那一步杀之前就摆着：没防住威胁 (" + X.explainText(ex2, tOf("zh-CN")) + ")");
+  const ex3 = X.explainMistake({ fen: fenAfter("e4 e5 Bc4 Nc6 d3"), played: "Qh4", best: "g8f6", line: "Qh5 Nf6 Qxf7#" }, Chess);
+  assert(!ex3.threat, "…走之前没有的杀，不说「没防住威胁」");
   // mate in two along the engine's own line: a checkmate on the board, not a score
   // mate in two along the engine's own line: a checkmate on the board, not a score
   const fen3 = "6k1/5ppp/8/8/8/8/5PPP/1R1R2K1 w - - 0 1";
@@ -152,7 +160,7 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
   assert(ex4 && ex4.better && ex4.better.mate === 1, "底线杀：Rd8# 是一步杀");
   const fen5 = "3rr1k1/5ppp/8/8/8/8/3R1PPP/3R2K1 w - - 0 1";
   const ex5 = X.explainMistake({ fen: fen5, played: "h3", best: "d2d8", bestLine: "Rxd8 Rxd8 Rxd8#" }, Chess);
-  assert(ex5 && ex5.better && ex5.better.mate === 2 && X.explainText(ex5, tOf("zh-CN")) === "有 ♖xd8 起的 2 步杀没走",
+  assert(ex5 && ex5.better && ex5.better.mate === 2 && X.explainText(ex5, tOf("zh-CN")) === "有 ♖xd8 起的 2 步杀没走（底线杀）",
     "两步杀，数的是引擎线上真的将死的那一步 (" + X.explainText(ex5, tOf("zh-CN")) + ")");
   const ex7 = X.explainMistake({ fen: fen5, played: "h3", best: "d2d8", bestLine: "Rxd8 h6" }, Chess);
   assert(ex7 && ex7.better && ex7.better.mate === null && !/步杀/.test(X.explainText(ex7, tOf("zh-CN"))),
@@ -170,12 +178,119 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
     "和局面对不上的引擎线：一个字都不从它里面读");
 }
 
+// --- v8-0-plan B3: every motif proved by its line — one position that is,
+// one that only looks like it ------------------------------------------------
+// Positive and negative FENs per detector. A negative is the same geometry
+// (or the same material) without the line cashing it in, which is exactly
+// where 7.x said too much.
+{
+  const LM = (fen, line, opts) => { const r = ctx.lineMotif(fen, line.split(" "), Chess, opts || {}); return r ? r.motif : null; };
+  const cases = [
+    // [name, fen, line, want, opts]
+    ["挂着的子：白吃没有保护的马", "4k3/8/8/3n4/8/8/8/3QK3 w - - 0 1", "Qxd5 Ke7 Qe4+ Kd6", "hanging"],
+    ["…有兵保护、吃了被吃回：不是", "4k3/8/4p3/3n4/8/8/8/3QK3 w - - 0 1", "Qxd5 exd5 Kd2 Kd7", null],
+    ["以小吃大也算（兵吃有保护的马）", "4k3/8/4p3/3n4/4P3/8/8/4K3 w - - 0 1", "exd5 exd5 Kd2 Kd7", "hanging"],
+    ["捉双：马同时打王和车，线上吃了车", "r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1", "Nc7+ Kd7 Nxa8 Kc6", "fork"],
+    ["…马能被后吃掉：不是捉双", "r3k3/2q5/8/1N6/8/8/8/4K3 w - - 0 1", "Nc7+ Qxc7 Kd2 Qd6+", null],
+    ["牵制：钉在王前的马被兵吃掉", "4k3/8/2n5/1B6/3P4/8/8/4K3 w - - 0 1", "d5 Kd8 dxc6 Kc7", "pin"],
+    ["串击：王让开，后面的后被吃", "8/1q6/8/3k4/8/8/4B3/6K1 w - - 0 1", "Bf3+ Kd6 Bxb7 Kc5", "skewer"],
+    ["…同一形状、线上没吃到：不说", "8/1q6/8/3k4/8/8/4B3/6K1 w - - 0 1", "Bf3+ Kd6 Kf2 Qb2+", null],
+    ["闪将：马让开，车将军，再吃后", "4k3/1q6/8/8/4N3/8/8/4R1K1 w - - 0 1", "Nc5+ Kf8 Nxb7 Kg8", "discovered"],
+    ["双将", "4k3/1q6/8/8/4N3/8/8/4R1K1 w - - 0 1", "Nd6+ Kd8 Nxb7+ Kc7", "double"],
+    ["…闪将什么也没赢：不说", "4k3/8/8/8/4N3/8/8/4R1K1 w - - 0 1", "Nc3+ Kd7 Kg2 Kd6", null],
+    ["闪击：马让开，象吃车", "r5k1/8/8/8/4N3/8/8/6KB w - - 0 1", "Ng5 Kf8 Bxa8 Ke7", "discoveredAttack"],
+    ["杀棋威胁：Qh5 威胁 Qxh7#，顺手吃马", "5rk1/5ppp/8/n7/8/3B4/5PPP/3Q2K1 w - - 0 1", "Qh5 h6 Qxa5 Kh8", "mateThreat"],
+    ["困子：马四个去处都丢", "4k3/7p/4p1p1/3b4/7N/8/8/K7 b - - 0 1", "g5 Kb2 gxh4 Kc3", "trapped"],
+    ["…f3 有兵保护：不是困子", "4k3/7p/4p1p1/3b4/7N/8/4P3/K7 b - - 0 1", "g5 Kb2 gxh4 Kc3", null],
+    ["消除保护：吃掉保护象的马，再吃象", "6k1/1p6/2n5/1B2b3/8/8/8/4R1K1 w - - 0 1", "Bxc6 bxc6 Rxe5 Kf8", "removeDefender"],
+    ["…象还有兵保护：不是", "6k1/1p6/2np4/1B2b3/8/8/8/4R1K1 w - - 0 1", "Bxc6 bxc6 Rxe5 dxe5", null],
+    ["过载：后既保护 d5 又保护 b4", "6k1/8/3q4/3b4/1b6/5B2/8/K3Q3 w - - 0 1", "Bxd5+ Qxd5 Qxb4 Kh7", "overload"],
+    ["引离：弃象把后从 b4 的保护上引开", "6k1/8/3q4/8/1r6/5B2/8/K3Q3 w - - 0 1", "Bd5+ Qxd5 Qxb4 Kh7", "deflection"],
+    ["引入：弃车把王引到 h8，再马叉王后", "3q2k1/8/8/4N3/8/8/8/K6R w - - 0 1", "Rh8+ Kxh8 Nf7+ Kg7 Nxd8 Kf6", "decoy"],
+    ["X 光：叠车，第二个车从后面吃回", "3r2k1/3r1ppp/8/8/8/8/3R1PPP/3R2K1 w - - 0 1", "Rxd7 Rxd7 Rxd7 Kf8", "xray"],
+    ["升变", "8/P6k/8/8/8/8/8/K7 w - - 0 1", "a8=Q Kg6 Qb7 Kf5", "promotion"],
+    ["…兵没走：不说升变", "8/P6k/8/8/8/8/8/K7 w - - 0 1", "Kb2 Kg6 Kc3 Kf5", null],
+    ["长将：原本黑优，引擎 0.00，线上步步将军", "6k1/5pp1/8/8/8/8/8/3Q3K w - - 0 1", "Qd8+ Kh7 Qh4+ Kg8 Qd8+ Kh7", "perpetual",
+      { evalBefore: -500, evalAfter: 0 }],
+    ["…评估不是和棋：不是长将", "6k1/5pp1/8/8/8/8/8/3Q3K w - - 0 1", "Qd8+ Kh7 Qh4+ Kg8 Qd8+ Kh7", null,
+      { evalBefore: -500, evalAfter: -300 }],
+  ];
+  for (const [name, fen, line, want, opts] of cases) {
+    const got = LM(fen, line, opts);
+    assert(got === want, "lineMotif " + name + "（" + got + "）");
+  }
+  // 中间着 and 绝望子 read the mistake itself, so they take its move record
+  {
+    const g = new Chess("r5k1/6p1/8/8/6b1/5N2/5PPP/3Q2K1 b - - 0 1");
+    const played = g.move("Bxf3");
+    const opts = { played, credit: 3 };
+    assert(ctx.lineMotif(g.fen(), "Qd5+ Kh7 Qxa8 Kg6 gxf3 Kf6".split(" "), Chess, opts).motif === "zwischenzug",
+      "中间着：黑吃马，白先将军吃车，再吃回");
+    const imm = ctx.lineMotif(g.fen(), "gxf3 Kf8 Qd8+ Ke7".split(" "), Chess, opts);
+    assert(!imm || imm.motif !== "zwischenzug", "…马上吃回：不是中间着");
+  }
+  {
+    // the corpus game low-skill 5, 15…Qc6: the loose c4 bishop takes a knight before it goes
+    const g = new Chess("rn3rk1/1bpq3p/1p1bp1p1/3n1p2/p1BP2PP/P1N1PN2/1PQB1P2/R3K1R1 b Q - 1 15");
+    const played = g.move("Qc6");
+    assert(ctx.lineMotif(g.fen(), "Bxd5 exd5 gxf5 Bc8 fxg6".split(" "), Chess, { played }).motif === "desperado",
+      "绝望子：反正保不住的象先吃一个马");
+    const rt = ctx.lineMotif(g.fen(), "Bd3 Nf6 Kf1 Nd5".split(" "), Chess, { played });
+    assert(!rt || rt.motif !== "desperado", "…象退回去：不是绝望子");
+  }
+  // mates: the back rank is named, other mates are not
+  assert(ctx.mateMotif("3rr1k1/5ppp/8/8/8/8/3R1PPP/3R2K1 w - - 0 1", ["Rxd8", "Rxd8", "Rxd8#"], Chess) === "backRank",
+    "底线杀：车在底线将死，王被自己的兵堵住");
+  assert(ctx.mateMotif(fenAfter("e4 e5 Bc4 Nc6 Qh5 Nf6"), ["Qxf7#"], Chess) === null, "…f7 上的杀不是底线杀");
+  // every key the detectors can return has a name in all three languages
+  for (const lang of LANGS) {
+    const missing = ctx.LINE_MOTIF_KEYS.filter((k) => !ChessI18n.DICT[lang]["motif." + k]);
+    assert(missing.length === 0, lang + "：" + ctx.LINE_MOTIF_KEYS.length + " 个母题都有名字" + (missing.length ? " —— 缺 " + missing.join(", ") : ""));
+  }
+}
+
+// --- v8-0-plan B3: the sentences the 8.0 audit fixed, on the real games -----
+{
+  // 4.Bg5?? Qxg5 — the walk-through's "pin" was a bishop left unprotected
+  const bg5 = X.explainMistake({ fen: "rnbqkbnr/pp3ppp/2p1p3/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 0 4",
+    played: "Bg5", best: "e2e4", line: "Qxg5 cxd5 exd5 e4 dxe4" }, Chess);
+  assert(X.explainText(bg5, tOf("zh-CN")) === "漏看了 ♛xg5，象没有保护住",
+    "4.Bg5?? 是挂着的子，不是牵制 (" + X.explainText(bg5, tOf("zh-CN")) + ")");
+  assert(X.explainMotif(bg5) === "hanging", "…句子说出的母题是 hanging");
+  // 17.Nf6+ gxf6 — the knight WAS guarded (exf6); it went for a pawn
+  const nf6 = X.explainMistake({ fen: "1r2k2r/pbppnppp/1bn5/4P2q/Q3N3/B1PB1N2/P4PPP/R3R1K1 w k - 1 17",
+    played: "Nf6+", best: "a1d1", line: "gxf6 exf6 Rg8 Be4 Qh3 g3 Rxg3+" }, Chess);
+  assert(X.explainText(nf6, tOf("zh-CN")) === "漏看了 gxf6，兵吃马，换不回来",
+    "有保护、被兵吃掉的马：不说「没有保护住」 (" + X.explainText(nf6, tOf("zh-CN")) + ")");
+  // 19…Bd6 Qxd6 Qxd6 Bxd6 — a queen each, and a bishop: the loss is the bishop
+  const bd6 = X.explainMistake({ fen: "2r2rk1/pb2bppp/8/3qB3/1Q2p3/4P1P1/P4PBP/2R2RK1 b - - 0 19",
+    played: "Bd6", best: "e7b4", line: "Qxd6 Qxd6 Bxd6 Rfd8 Rxc8" }, Chess);
+  assert(bd6 && bd6.lost && bd6.lost.piece === "b" && X.explainText(bd6, tOf("zh-CN")) === "对方 ♕xd6 之后丢象",
+    "换掉的后不算丢：丢的是象 (" + X.explainText(bd6, tOf("zh-CN")) + ")");
+  // 18.Bd6? — the a1 rook had been hanging to …Qxa1+ before the move; ignoring a threat
+  const th = X.explainMistake({ fen: "rnb1k1nr/p2p1ppp/8/1pbN1N1P/4PBP1/3P1Q2/PqP5/R4KR1 w kq - 0 18",
+    played: "Bd6", best: "a1e1", line: "Qxa1+ Ke2" }, Chess);
+  assert(X.explainKey(th) === "ex.threatHanging" && X.explainText(th, tOf("zh-CN")) === "没理会对方 ♛xa1+ 的威胁，车没有保护住",
+    "没理会的威胁：走之前 ♛xa1+ 就在那里 (" + X.explainText(th, tOf("zh-CN")) + ")");
+  // …and a move that CREATED the problem is not an ignored threat
+  assert(!bg5.threat, "4.Bg5 自己走进去被吃：不是「没理会威胁」");
+  for (const lang of LANGS) {
+    for (const ex of [bg5, nf6, th]) {
+      const s = X.explainText(ex, tOf(lang));
+      assert(s && !/\{\d\}/.test(s) && !/undefined/.test(s), "B3 句子（" + lang + "）：" + s);
+    }
+  }
+}
+
 // --- every key the sentences use is written in all three languages ---------
 {
-  const keys = ["ex.mate1", "ex.mateN", "ex.allowsMate", "ex.allowsMate1", "ex.motifLoss", "ex.motif", "ex.forkHits", "ex.loss", "ex.betterMotif", "ex.better"];
+  // read off explain.js itself, so a sentence added there cannot miss a language
+  const src = fs.readFileSync(path.join(root, "src/web/js/explain.js"), "utf8");
+  const keys = [...new Set(src.match(/"ex\.[A-Za-z0-9]+"/g).map((k) => k.slice(1, -1)))];
+  assert(keys.length === 22, "explain.js 用到 22 个句型 (" + keys.length + ")");
   for (const lang of LANGS) {
     const missing = keys.filter((k) => !ChessI18n.DICT[lang][k]);
-    assert(missing.length === 0, lang + "：十个句型都在" + (missing.length ? " —— 缺 " + missing.join(", ") : ""));
+    assert(missing.length === 0, lang + "：" + keys.length + " 个句型都在" + (missing.length ? " —— 缺 " + missing.join(", ") : ""));
   }
 }
 

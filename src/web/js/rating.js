@@ -127,6 +127,21 @@ function update(player, results, opt) {
 }
 
 /**
+ * The most one answer may move the player (v8-0-plan B1).
+ *
+ * Glicko-2 moves a rating by rd² × surprise, and a newcomer's rd is 350: one
+ * miss on a 1100 puzzle took 1500 to 1104 (−396), one solve of a 1900 puzzle
+ * the same the other way. That is the maths being honest about knowing
+ * nothing, but the number is what picks the next puzzle, and a single slip
+ * then served a stranger puzzles four hundred points below them. 150 is the
+ * pick band's half-width (pickRange): one answer can move the player to the
+ * edge of the band they were served from, not out of it. The deviation still
+ * shrinks as the full update says, so the rating settles as fast as before;
+ * a settled rating (rd ≲ 150) never moves this far and never meets the cap.
+ */
+const STEP_CAP = 150;
+
+/**
  * One answer to one puzzle, rated as a game: both sides move, the puzzle
  * side on its pinned volatility so a single player's bad day cannot
  * re-price a puzzle rated by thousands.
@@ -137,8 +152,11 @@ function update(player, results, opt) {
  * @returns {{player:object, puzzle:object}}
  */
 function rate1v1(player, puzzle, score) {
+  const next = update(player, [{ r: puzzle.r, rd: puzzle.rd, score }]);
+  const step = next.r - player.r;
+  if (Math.abs(step) > STEP_CAP) next.r = player.r + Math.sign(step) * STEP_CAP;
   return {
-    player: update(player, [{ r: puzzle.r, rd: puzzle.rd, score }]),
+    player: next,
     puzzle: update(puzzle, [{ r: player.r, rd: player.rd, score: 1 - score }],
       { tau: PUZZLE.tau, fixedVol: PUZZLE.vol, rdFloor: PUZZLE.rdFloor }),
   };
@@ -212,4 +230,4 @@ function isProvisional(rating) {
   return !rating || !Number.isFinite(rating.rd) || rating.rd > PROVISIONAL_RD;
 }
 
-export const ChessRating = { DEFAULT, PUZZLE, IDLE_C2, PROVISIONAL_RD, newRating, update, rate1v1, expectedScore, pickRange, decayIdle, isProvisional };
+export const ChessRating = { DEFAULT, PUZZLE, STEP_CAP, IDLE_C2, PROVISIONAL_RD, newRating, update, rate1v1, expectedScore, pickRange, decayIdle, isProvisional };

@@ -282,11 +282,73 @@ export function realGate(Chess, fen, p) {
   return { ok: true };
 }
 
+const swapCase = (ch) => (ch === ch.toUpperCase() ? ch.toLowerCase() : ch.toUpperCase());
+
 /**
- * One entry point for a puzzle in the repo's stored shape (puzzles.js or
- * puzzles-lichess.js): dispatches on `cat`.
+ * Mirror the board top-to-bottom and swap the colours: the same position
+ * seen from the other side. Rank r ↔ 9−r, White ↔ Black, castling rights
+ * swap sides, the en-passant square moves with its pawn.
+ */
+export function mirrorFen(fen) {
+  const p = fen.split(" ");
+  const board = p[0].split("/").reverse()
+    .map((rank) => rank.split("").map((ch) => (/[a-zA-Z]/.test(ch) ? swapCase(ch) : ch)).join(""))
+    .join("/");
+  const turn = p[1] === "w" ? "b" : "w";
+  let castle = "-";
+  if (p[2] && p[2] !== "-") {
+    const sw = p[2].split("").map(swapCase);
+    castle = ["K", "Q", "k", "q"].filter((c) => sw.includes(c)).join("") || "-";
+  }
+  const ep = p[3] && p[3] !== "-" ? p[3][0] + (9 - Number(p[3][1])) : "-";
+  return [board, turn, castle, ep, p[4] || "0", p[5] || "1"].join(" ");
+}
+
+/** e2e4 → e7e5; a7a8q → a2a1q */
+export function mirrorUci(uci) {
+  const m = /^([a-h])([1-8])([a-h])([1-8])([qrbn]?)$/.exec(uci);
+  if (!m) return uci;
+  return m[1] + (9 - Number(m[2])) + m[3] + (9 - Number(m[4])) + m[5];
+}
+
+/**
+ * A black-to-move puzzle as the white-to-move puzzle it mirrors
+ * (v8-0-plan B1). The gates here are written for White, as every puzzle
+ * was until the importer started keeping the side Lichess gave; the mirror
+ * preserves every fact they check (mates, material swings, forced replies,
+ * threats), so a black puzzle is proved on its mirror.
+ * @returns {{fen:string, solution:string[]}|null} null if the line is illegal
+ */
+export function mirrorLine(Chess, fen, solution) {
+  const g = new Chess(fen);
+  const ucis = [];
+  for (const san of solution || []) {
+    const m = g.move(san);
+    if (!m) return null;
+    ucis.push(m.from + m.to + (m.promotion || ""));
+  }
+  const mfen = mirrorFen(fen);
+  const h = new Chess(mfen);
+  const out = [];
+  for (const u of ucis.map(mirrorUci)) {
+    const m = h.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || undefined });
+    if (!m) return null;
+    out.push(m.san);
+  }
+  return { fen: mfen, solution: out };
+}
+
+/**
+ * One entry point for a puzzle in the repo's stored shape (puzzles.js,
+ * puzzles-mined.js, an imported Lichess band): dispatches on `cat`. A
+ * black-to-move puzzle is gated on its mirror (mirrorLine).
  */
 export function gate(Chess, p) {
+  if (p && typeof p.fen === "string" && p.fen.split(" ")[1] === "b" && Array.isArray(p.solution)) {
+    const m = mirrorLine(Chess, p.fen, p.solution);
+    if (!m) return bad("black-to-move line illegal");
+    return gate(Chess, Object.assign({}, p, m));
+  }
   const pos = positionGate(Chess, p.fen);
   if (!pos.ok) return pos;
   switch (p.cat) {
