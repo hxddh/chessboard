@@ -103,17 +103,35 @@ export const MIGRATIONS = [
 ];
 
 /**
- * v8-0-plan F3: the per-key store's manifest — {app, schema, writtenAt, keys}
- * where `keys` lists the key files that hold the profile as of `writtenAt`.
- * Written after the key files of a flush, so it never names a file that the
- * flush it describes did not reach.
+ * v8-0-plan F3: the per-key store's manifest — {app, schema, writtenAt, keys,
+ * files} where `keys` lists the keys that hold the profile as of `writtenAt`
+ * and `files` names the file each one is in. Written after the key files of a
+ * flush, so it never names a file that the flush it describes did not reach.
  */
 export const STORE_META = "meta";
+
+/**
+ * Each key has two files, `<key>` and `<key>-b`, and a flush writes the one
+ * the manifest on disk is not pointing at (Codex on #85). Until the manifest
+ * is replaced the old generation is untouched, so an exit halfway through a
+ * restore or a clear leaves the store holding the old profile whole — never
+ * some keys of each. The manifest write is the commit.
+ */
+export const STORE_ALT = "-b";
 
 /** Is `m` a manifest this app wrote? */
 export function isStoreMeta(m) {
   return !!m && m.app === "chessboard" && Array.isArray(m.keys) &&
-    m.keys.every((k) => typeof k === "string") && Number.isFinite(Number(m.writtenAt));
+    m.keys.every((k) => typeof k === "string") && Number.isFinite(Number(m.writtenAt)) &&
+    (m.files == null || (typeof m.files === "object" &&
+      Object.entries(m.files).every(([k, f]) => f === k || f === k + STORE_ALT)));
+}
+
+/** The file each listed key of manifest `m` is in (a manifest without `files` predates the two slots). */
+export function storeFiles(m) {
+  const files = {};
+  for (const name of m.keys) files[name] = (m.files && m.files[name]) || name;
+  return files;
 }
 
 /**
@@ -291,6 +309,9 @@ export function createPersist(host, onWriteFailure) {
   const dirty = new Set();
   // of those, the ones remove() emptied — their files still hold the old value
   const removed = new Set();
+  // key → file, as the manifest on disk has it; null until this session has
+  // read the manifest (recover) or written one. See STORE_ALT.
+  let committed = null;
   // chessboard.json is cleared too when the profile is cleared: after the
   // migration it still holds the last 7.x copy, and "clear my data" that
   // leaves a whole profile on disk is not a clear
@@ -384,20 +405,34 @@ export function createPersist(host, onWriteFailure) {
     const legacy = clearLegacy;
     clearLegacy = false;
     try {
+      if (!committed) committed = await readCommitted();
+      const files = {};
+      for (const name of meta.keys) files[name] = committed[name] || name;
+      // the new generation: every changed key into the file the manifest on
+      // disk does not name (STORE_ALT). Nothing the old manifest points at
+      // is touched before the new one replaces it.
       for (const [name, value] of values) {
-        // a removed key still has a file from before: overwrite it, so a
-        // cleared profile does not stay on disk. "null" is never read back —
-        // the manifest no longer lists the key. A key that is simply empty
-        // has nothing on disk to clear.
-        if (value == null && !gone.has(name)) continue;
-        const ok = await host.appdataWriteKey(name, value == null ? "null" : value);
+        if (value == null) continue;
+        const file = committed[name] === name ? name + STORE_ALT : name;
+        const ok = await host.appdataWriteKey(file, value);
         if (ok == null) { mirrorEnabled = false; return false; }
+        files[name] = file;
+      }
+      meta.files = files;
+      const ok = await host.appdataWriteKey(STORE_META, JSON.stringify(meta));
+      if (ok == null) { mirrorEnabled = false; return false; }
+      committed = files;
+      // committed: now a removed key's files can go, so a cleared profile
+      // does not stay on disk. "null" is never read back — the manifest no
+      // longer lists the key. A key that is simply empty has nothing to clear.
+      for (const name of gone) {
+        for (const file of [name, name + STORE_ALT]) {
+          if ((await host.appdataWriteKey(file, "null")) == null) { mirrorEnabled = false; return false; }
+        }
       }
       if (legacy && typeof host.appdataWrite === "function") {
         await host.appdataWrite(JSON.stringify({ app: "chessboard", schema: SCHEMA, writtenAt: meta.writtenAt, keys: {} }));
       }
-      const ok = await host.appdataWriteKey(STORE_META, JSON.stringify(meta));
-      if (ok == null) { mirrorEnabled = false; return false; }
       return true;
     } catch (_) {
       // not written: they stay owed to the next flush
@@ -408,6 +443,21 @@ export function createPersist(host, onWriteFailure) {
       else mirrorEnabled = false;
       return false;
     }
+  }
+
+  /**
+   * The manifest on disk's key → file map, for a flush that runs before
+   * recover() read it. A store with no manifest has nothing committed; one
+   * that cannot be read is written the pre-slot way, one file per key.
+   */
+  async function readCommitted() {
+    try {
+      const r = await host.appdataReadKey(STORE_META);
+      if (r && r.missing) return {};
+      const m = r && typeof r.text === "string" ? JSON.parse(r.text) : null;
+      if (isStoreMeta(m)) return storeFiles(m);
+    } catch (_) { /* below */ }
+    return {};
   }
 
   /** 6.x–7.x: write the whole profile as one document. @returns {Promise<boolean>} */
@@ -491,19 +541,21 @@ export function createPersist(host, onWriteFailure) {
     try { r = await host.appdataReadKey(STORE_META); } catch (_) { return { failed: true }; }
     // no manifest: this store has never been written. The profile lives in
     // chessboard.json, if anywhere (the SCHEMA 1 → 2 migration).
-    if (r && r.missing) return Object.assign({ migrating: true }, await readLegacy());
+    if (r && r.missing) { committed = {}; return Object.assign({ migrating: true }, await readLegacy()); }
     if (r && r.empty) return { damaged: true };
     if (!r || typeof r.text !== "string") return { none: true };
     let meta = null;
     try { meta = JSON.parse(r.text); } catch (_) { meta = null; }
     if (!isStoreMeta(meta)) return { damaged: true };
+    const files = storeFiles(meta);
+    committed = files;
     return {
       at: Number(meta.writtenAt) || 0,
       load: async () => {
         const keys = {};
         for (const name of meta.keys) {
           if (!KEYS[name]) continue;   // a key a later version added
-          const v = await host.appdataReadKey(name);
+          const v = await host.appdataReadKey(files[name]);
           // a key the manifest lists and the store cannot produce is damage
           if (!v || typeof v.text !== "string") return null;
           keys[name] = v.text;
@@ -578,6 +630,15 @@ export function createPersist(host, onWriteFailure) {
     if (bag) bag[name] = null;
     dirty.add(name);
     removed.add(name);
+    // (Codex on #85) a removal is a change like set()'s: stamp it and let
+    // the mirror carry it. Unstamped, clearing the statistics on its own
+    // left the store's manifest at the cache's revision, listing the old
+    // statistics — recover() saw the two in sync, and after the cache was
+    // lost the "cleared" history came back from the file.
+    // (Frozen after a restore, the stamp is the restored profile's and stays.)
+    if (frozen) return;
+    if (!host.storageSet(STAMP_KEY, String(Date.now()))) fail(name);
+    scheduleMirror();
   }
 
   /**

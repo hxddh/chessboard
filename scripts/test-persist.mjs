@@ -14,7 +14,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { compileModuleSync } from "./bundle.mjs";
-import { createPersist, KEYS, SCHEMA, STORE_META, isStoreMeta } from "../src/web/js/persist.js";
+import { createPersist, KEYS, SCHEMA, STORE_META, isStoreMeta, storeFiles } from "../src/web/js/persist.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -197,6 +197,8 @@ const withStore = (legacy) => {
 };
 const LS = (name) => KEYS[name];
 const metaOf = (h) => JSON.parse(h.store.get(STORE_META));
+/** A key's value as the store's manifest has it (each key has two files, STORE_ALT). */
+const valOf = (h, name) => h.store.get(storeFiles(metaOf(h))[name]);
 
 assert(SCHEMA === 2, "SCHEMA is 2");
 
@@ -243,7 +245,9 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   // one change: that key and the manifest, nothing else
   P2.set("save", JSON.stringify({ v: 1, pgn: "1. d4 *" }));
   await tick(600);
-  assert(h.writes.join(",") === "save," + STORE_META, "a change writes that key and the manifest only (" + h.writes.join(",") + ")");
+  assert(h.writes.join(",") === "save-b," + STORE_META, "a change writes that key (into its other file) and the manifest only (" + h.writes.join(",") + ")");
+  assert(valOf(h, "save") === JSON.stringify({ v: 1, pgn: "1. d4 *" }) && h.store.get("save") === keys.save,
+    "…the manifest points at the new file; the old one is untouched until the next change");
   assert(metaOf(h).writtenAt === Number(h.m.get("chess.writtenAt")), "…the manifest carries the cache's new revision");
 }
 
@@ -314,7 +318,7 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   P.load();
   assert((await P.recover()) === "kept", "a newer cache is kept");
   await tick(600);
-  assert(h.store.get("save") === "new" && h.store.get("learn") === "L" && metaOf(h).writtenAt === 8000,
+  assert(valOf(h, "save") === "new" && valOf(h, "learn") === "L" && metaOf(h).writtenAt === 8000,
     "…and the whole store is brought up to its revision");
 }
 
@@ -331,8 +335,8 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   P.clearAll();
   await P.flushMirror();
   await tick(10);
-  assert(h.store.get("save") === "null" && h.store.get("library") === "null",
-    "clearing overwrites the removed keys' files (" + h.writes.join(",") + ")");
+  assert(["save", "save-b", "library", "library-b"].every((f) => !h.store.has(f) || h.store.get(f) === "null"),
+    "clearing overwrites both files of every removed key (" + h.writes.join(",") + ")");
   assert(!metaOf(h).keys.includes("save") && JSON.parse(h.legacy).keys.save == null,
     "…the manifest lists none of them, and chessboard.json no longer holds the old profile");
 }
@@ -384,7 +388,7 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   assert(m1.writtenAt !== 99999999999999 && Number(h.m.get("chess.writtenAt")) > m1.writtenAt,
     "a flush's manifest carries the revision it started from, not one set while it ran");
   await P.flushMirror();
-  assert(h.store.get("learn") === "B", "…and the later value is written by the flush after");
+  assert(valOf(h, "learn") === "B", "…and the later value is written by the flush after");
 }
 
 // 2i. writing the value that is already stored is not a change: no new
@@ -415,6 +419,57 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   assert((await P2.recover()) === "kept", "the relaunch keeps the cache");
   await tick(600);
   assert(h.writes.length === 0, "…and rewrites nothing (" + h.writes.join(",") + ")");
+}
+
+// 2j. (Codex on #85) removing one key on its own is a change like any other:
+// it re-stamps the cache and reaches the store without another write's help
+{
+  const h = withStore(null);
+  const P = createPersist(h, () => {});
+  P.load();
+  await P.recover();
+  P.set("stats", JSON.stringify({ v: 2, games: [1] }));
+  P.set("save", "s");
+  await P.flushMirror();
+  const before = Number(h.m.get("chess.writtenAt"));
+  await tick(3);
+  P.remove("stats");
+  assert(Number(h.m.get("chess.writtenAt")) > before, "a lone remove() re-stamps the cache");
+  await tick(600);
+  assert(!metaOf(h).keys.includes("stats") && metaOf(h).writtenAt === Number(h.m.get("chess.writtenAt")),
+    "…and the store's manifest drops the key on its own schedule (" + metaOf(h).keys.join(",") + ")");
+}
+
+// 2k. (Codex on #85) a flush of several keys is one generation: an exit
+// between its key files and its manifest leaves the store exactly as the old
+// manifest describes it, never a mix of the two profiles
+for (const how of ["restore", "clear"]) {
+  const h = withStore(null);
+  const P = createPersist(h, () => {});
+  P.load();
+  await P.recover();
+  P.set("save", "s1");
+  P.set("library", "L1");
+  await P.flushMirror();
+  // the process dies after the first key file of the next flush
+  const orig = h.appdataWriteKey;
+  let n = 0;
+  h.appdataWriteKey = async (k, t) => { if (n++ >= 1) throw new Error("exit"); return orig(k, t); };
+  if (how === "restore") P.restoreAll({ app: "chessboard", schema: 2, writtenAt: Date.now(), keys: { save: "s2", library: "L2" } });
+  else P.clearAll();
+  await P.flushMirror();
+  h.appdataWriteKey = orig;
+  // the next launch has lost the cache: it can only rebuild from the store
+  h.m.clear();
+  const P2 = createPersist(h, () => {});
+  P2.load();
+  const r = await P2.recover();
+  const got = P2.get("save") + ", " + P2.get("library");
+  // a restore dies before its manifest: the old profile, whole. A clear
+  // writes no key files, so its first write is the manifest — it committed,
+  // and its cleanup after the commit is what died: cleared, whole.
+  assert(how === "restore" ? got === "s1, L1" : got === "null, null",
+    how + " cut short: the store holds one whole profile, not a mix (" + r + ": " + got + ")");
 }
 
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
