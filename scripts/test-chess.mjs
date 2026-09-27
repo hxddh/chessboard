@@ -1693,8 +1693,10 @@ for (const lang of CONTENT_LANGS) {
       "every control height comes from a token" + (stray.length ? " — off it: " + [...new Set(stray)].join(", ") : ""));
     for (const tokName of ["--row-h", "--row-h-sm", "--label-h"])
       assert(new RegExp(tokName + ":\\s*\\d+px").test(stripped), tokName + " is defined");
-    const tabH = /\.side-tabs button\[role="tab"\]\s*\{[^}]*min-height:\s*var\(--row-h\)/.test(stripped);
-    assert(tabH, "the tab row's height comes from --row-h");
+    // 7.9 §1e: a tab is a button, so its height is the buttons' token now
+    // (the same 36px, see the two-heights guard below)
+    const tabH = /\.side-tabs button\[role="tab"\]\s*\{[^}]*min-height:\s*var\(--ctl-h\)/.test(stripped);
+    assert(tabH, "the tab row's height comes from --ctl-h");
   }
 
   // The chrome is one strip, so everything standing in it is one height and one
@@ -1704,13 +1706,14 @@ for (const lang of CONTENT_LANGS) {
   // whatever the text measured. Nothing in the bar shared a unit, which is why
   // it could not be aligned, only nudged.
   {
-    assert(/--chrome-ctl-h:\s*\d+px/.test(stripped), "the chrome has one control-height token");
     // 7.7 (v7-7-plan §2): the status pill left the bar — whose move it is is
-    // the lit player strip now, and the sentence is .sr-only — so the bar's
-    // controls are the two tools and the panel key.
-    for (const sel of [/\.chrome \.tool-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/,
-                       /\.chrome \.icon-btn \{[^}]*height:\s*var\(--chrome-ctl-h\)/])
-      assert(sel.test(stripped), "…and every control in it is that height — " + sel.source.slice(0, 22));
+    // the lit player strip now, and the sentence is .sr-only. 7.9 §1a: 悔棋
+    // and 提示 left it too, for the opponent's strip, so the bar holds ☰
+    // alone, at the small control height — which is the bar's own 32px.
+    assert(/\.chrome \.icon-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
+      "the bar's one control is the small control height");
+    assert(/\.ps-tools \.tool-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
+      "…and so are the two tools on the opponent's strip (7.9 §1a)");
     const chrome = /\n    \.chrome \{([\s\S]*?)\n    \}/.exec(stripped);
     assert(chrome, ".chrome is styled");
     const pad = /padding:\s*([^;]+);/.exec(chrome[1]);
@@ -1719,12 +1722,54 @@ for (const lang of CONTENT_LANGS) {
   }
 
   // the replay bar was the heaviest object in a panel of text links: a filled,
-  // bordered slab of 10800px², nine times the area of anything else in it
+  // bordered slab of 10800px², nine times the area of anything else in it.
+  // 7.7 took it down to a hairline and four bare glyphs; 7.9 §1c gave it back
+  // an edge — one outlined bar in four cells, Lichess's shape — but still no
+  // fill: the weight is the outline, not a slab.
   {
     const bar = /\.replay-bar\s*\{([^}]*)\}/.exec(stripped);
     assert(!!bar, ".replay-bar is styled");
     assert(/background:\s*transparent/.test(bar[1]), "the replay bar carries no fill");
-    assert(!/\bborder:\s*1px/.test(bar[1]), "the replay bar is a rule, not a box");
+    assert(/\bborder:\s*1px/.test(bar[1]) && /border-radius:\s*var\(--radius-/.test(bar[1]),
+      "…and is one rounded container (7.9 §1c)");
+    assert(/repeat\(4,\s*minmax\(0,\s*1fr\)\)/.test(bar[1]), "…of four equal cells");
+    const cell = /\.replay-bar button\s*\{([^}]*)\}/.exec(stripped);
+    assert(cell && /transition:[^;]*var\(--dur-quick\) var\(--ease\)/.test(cell[1]),
+      "…whose hover and press use --dur-quick and the one curve");
+    assert(/\.replay-bar button:hover:not\(:disabled\)/.test(stripped),
+      "…and a disabled cell answers no hover");
+  }
+
+  // 7.9 §1e: two control heights, and no third — the same kind of guard as
+  // the type scale and the one easing curve. 7.8.0 measured 36px buttons (18
+  // of them) beside 28px ones (悔棋/提示 over the board, 重来/下一课, 重做/
+  // 下一题), and on the puzzle page the two sat one under the other. Every
+  // rule that sizes a button takes its height from --ctl-h or --ctl-h-sm.
+  // What counts as a button is the selector's last compound: `button`, a
+  // `*-btn` class, or one of the button classes that do not say so in their
+  // name. A pseudo-element is not the button (#theme-seg's swatch), and the
+  // promotion picker is squares of the board, sized as 12.5% of it.
+  {
+    const tok = (n) => new RegExp(n + ":\\s*(\\d+)px").exec(stripped);
+    const big = tok("--ctl-h"), small = tok("--ctl-h-sm");
+    assert(big && big[1] === "36" && small && small[1] === "32",
+      "two control-height tokens: --ctl-h 36px and --ctl-h-sm 32px (" +
+      (big ? big[1] : "?") + " / " + (small ? small[1] : "?") + ")");
+    assert(!/--chrome-ctl-h/.test(stripped), "…and the chrome's 28px token is gone");
+    const BUTTON = /(^|[\s>+~(,])(button|\.[\w-]+-btn|\.tool-ic|\.tool-txt|\.go-close|\.daily-head)(?![\w-])/;
+    const EXEMPT = /\.promo-row|::/;
+    const off = [];
+    for (const m of stripped.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const sels = m[1].split(",").map((x) => x.trim()).filter(Boolean);
+      const last = (sel) => sel.split(/\s*[\s>+~]\s*(?![^(]*\))/).pop();
+      if (!sels.some((sel) => !EXEMPT.test(sel) && BUTTON.test(" " + last(sel)))) continue;
+      for (const d of m[2].matchAll(/(?<![\w-])(height|min-height)\s*:\s*([^;]+);/g)) {
+        const v = d[2].trim();
+        if (!/^(var\(--ctl-h(-sm)?\)|auto)$/.test(v)) off.push(m[1].trim().replace(/\s+/g, " ") + " { " + d[1] + ": " + v + " }");
+      }
+    }
+    assert(off.length === 0,
+      "every button height comes from --ctl-h or --ctl-h-sm" + (off.length ? " — off it: " + off.join(" ;; ") : ""));
   }
 
   // type: six steps, and no half pixels
@@ -4164,7 +4209,7 @@ for (const lang of CONTENT_LANGS) {
     // same three symbols in every chess-playing language. They label the row
     // whose value is 「3 · 2 · 1」, term lining up with term; spelling them out
     // as words is what the row is getting away from.
-    ja: new Set(["act.pgnCopy", "act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
+    ja: new Set(["act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
       "learn.lessonPre", "ed.crK", "ed.crQ", "rv.marks",
       "tip.diffNormal", "tip.diffHard", "lm.tipSep"]),
   };

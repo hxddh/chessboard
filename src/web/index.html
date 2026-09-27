@@ -47,17 +47,11 @@
            「白方走子」 in the order it always did, and the eye reads the lit
            strip instead of a pill in the corner. -->
       <span class="sr-only" id="status">白方走子</span>
+      <!-- 7.9 §1a: 悔棋 and 提示 moved to the opponent's strip (.ps-tools
+           below); what stays is ☰, which opens and shuts the panel, so it
+           stands at the panel's edge — the window's top-right corner while
+           the panel is shut. -->
       <div class="chrome-actions">
-        <!-- Undo before hint, and the order matters: undo is absent until
-             there is a move to take back (P3 — a disabled control is not shown
-             at all), and this group is right-aligned, so whatever appears
-             pushes only what is to its left. With undo in the middle, making
-             the first move slid 提示 56px to the left and dropped 悔棋 into the
-             exact pixels 提示 had just vacated — click twice in one place and
-             the second click took back the move you had just been offered help
-             with. At the head of the group it has nothing to push. -->
-        <button type="button" class="tool-btn" id="undo" title="悔棋 (Z)" data-i18n-title="tip.undo"><span data-icon="undo-2" aria-hidden="true"></span><span class="btn-label" data-i18n="chrome.undo">悔棋</span></button>
-        <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint"><span data-icon="lightbulb" aria-hidden="true"></span><span class="btn-label" id="btn-hint-label" data-i18n="chrome.hint">提示</span></button>
         <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel"><span data-icon="menu" aria-hidden="true"></span></button>
       </div>
     </header>
@@ -95,6 +89,21 @@
             <span class="ps-level" id="black-level"></span>
           </span>
           <span class="taken" id="taken-b" aria-label="黑方已吃掉的子" data-i18n-aria="mat.takenB"></span>
+          <!-- 7.9 §1a: the move's two tools, on the opponent's line at its
+               right end. renderStrips moves this span into whichever strip
+               is at the top when the board turns. -->
+          <span class="ps-tools" id="strip-tools">
+            <!-- Undo before hint, and the order matters: undo is absent until
+                 there is a move to take back (P3 — a disabled control is not shown
+                 at all), and this group is right-aligned, so whatever appears
+                 pushes only what is to its left. With undo in the middle, making
+                 the first move slid 提示 56px to the left and dropped 悔棋 into the
+                 exact pixels 提示 had just vacated — click twice in one place and
+                 the second click took back the move you had just been offered help
+                 with. At the head of the group it has nothing to push. -->
+            <button type="button" class="tool-btn" id="undo" title="悔棋 (Z)" data-i18n-title="tip.undo"><span data-icon="undo-2" aria-hidden="true"></span><span class="btn-label" data-i18n="chrome.undo">悔棋</span></button>
+            <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint"><span data-icon="lightbulb" aria-hidden="true"></span><span class="btn-label" id="btn-hint-label" data-i18n="chrome.hint">提示</span></button>
+          </span>
           <span class="ps-result num" id="result-b" hidden></span>
           <span class="ps-clock num" id="clock-b" hidden>5:00</span>
         </div>
@@ -527,7 +536,7 @@
         <ol class="lesson-dots" id="lesson-dots"></ol>
         <div class="lesson-text" id="lesson-text"></div>
         <div class="lesson-task" id="lesson-task"></div>
-        <div class="lesson-controls">
+        <div class="lesson-controls fit-row fit-fill">
           <button type="button" class="tool-btn" id="lesson-restart" title="重做本课任务 (R)" data-i18n-title="tip.lesson.restart" data-i18n="act.restart">重来</button>
           <button type="button" class="tool-btn" id="lesson-demo" title="重看本任务的走法演示" data-i18n-title="tip.lesson.demo" data-i18n="act.demo">演示</button>
           <button type="button" class="tool-btn" id="lesson-practice" data-i18n="act.practice" title="用同一母题的题目接着练" data-i18n-title="tip.lesson.practice">接着练</button>
@@ -554,7 +563,7 @@
         </div>
         <div class="setting-row stack">
           <span class="setting-k" data-i18n="pz.cat">题型</span>
-          <div class="theme-row wrap" id="puzzle-cat-seg" role="group" aria-label="题型" data-i18n-aria="pz.cat">
+          <div class="theme-row wrap fit-row" id="puzzle-cat-seg" role="group" aria-label="题型" data-i18n-aria="pz.cat">
             <button type="button" data-cat="m1" class="active" title="一步将死" data-i18n-title="tip.cat.m1" data-i18n="pz.cat.m1">一步杀</button>
             <button type="button" data-cat="m2" title="两步将死(含引子与静着)" data-i18n-title="tip.cat.m2" data-i18n="pz.cat.m2">两步杀</button>
             <button type="button" data-cat="m3" title="三步将死(双车赶王)" data-i18n-title="tip.cat.m3" data-i18n="pz.cat.m3">三步杀</button>
@@ -613,7 +622,7 @@
              A real position change, not a preview: the trainer owns the board. -->
         <div class="pv-line num" id="puzzle-line" hidden></div>
         <p class="hint" id="puzzle-idea" hidden></p>
-        <div class="lesson-controls">
+        <div class="lesson-controls fit-row fit-fill">
           <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)" data-i18n-title="tip.puzzle.retry" data-i18n="act.puzzleRetry">重做</button>
           <!-- 7.4 §5: no 「答案」 here. The chrome's hint slot already becomes
                答案 on this page (same handler, same H key), and two buttons
@@ -725,7 +734,7 @@
              the app's own state, not a control: shown in place, not toasted. -->
         <div class="act-group" id="review-actions">
           <span class="act-k" data-i18n="act.groupReview">复盘</span>
-          <div class="link-row">
+          <div class="link-row fit-row">
             <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
             <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
             <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法留作变着" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
@@ -766,7 +775,7 @@
              kind of thing. -->
         <div class="act-group" id="game-actions">
           <span class="act-k" data-i18n="act.groupGame">本局</span>
-          <div class="link-row">
+          <div class="link-row fit-row">
             <button type="button" class="act-btn" id="btn-offerdraw" data-i18n="act.offerDraw" title="提议和棋(双人:双方确认;人机:引擎按局面判断)" data-i18n-title="tip.offerDraw">提和</button>
             <button type="button" class="act-btn" id="btn-claimdraw" title="三次重复或 50 回合无进展时可判和" data-i18n-title="tip.claimDraw" data-i18n="act.claimDraw">判和</button>
             <!-- Was the only gradient-filled button in the app, sitting over
@@ -777,16 +786,21 @@
             <button type="button" class="act-btn danger" id="btn-resign" title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
           </div>
         </div>
+        <!-- 7.9 §1d: each icon carries its name under it once the panel is
+             360px or wider (styles.css .tool-lbl) — 「复制」「导出」「存档槽」
+             「编辑」 were only a hover away, and a first-time player could not
+             tell three of the five apart. The accessible name is the same
+             word as the label, so what is read is what is shown. -->
         <div class="tool-row" id="tool-row" role="toolbar" aria-label="棋谱与局面" data-i18n-aria="act.groupFile">
-          <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：分析、精析、持续分析" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span></button>
-          <button type="button" class="tool-ic" id="pgn-copy" aria-label="PGN" data-i18n-aria="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy"><span data-icon="clipboard-copy" aria-hidden="true"></span></button>
-          <button type="button" class="tool-ic" id="pgn-download" aria-label="导出" data-i18n-aria="act.export" title="导出 PGN 文件" data-i18n-title="tip.pgn.export"><span data-icon="download" aria-hidden="true"></span></button>
-          <button type="button" class="tool-ic" id="slots-open" aria-label="存档槽" data-i18n-aria="act.slots" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots"><span data-icon="archive" aria-hidden="true"></span></button>
-          <button type="button" class="tool-ic" id="editor-open" aria-label="编辑局面" data-i18n-aria="act.editor" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open"><span data-icon="square-pen" aria-hidden="true"></span></button>
-          <button type="button" class="tool-ic" id="more-tools" aria-expanded="false" aria-controls="more-row" aria-label="更多" data-i18n-aria="act.more" title="更多：粘贴、打开、FEN" data-i18n-title="tip.more"><span data-icon="ellipsis" aria-hidden="true"></span></button>
+          <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：分析、精析、持续分析" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.groupReview">复盘</span></button>
+          <button type="button" class="tool-ic" id="pgn-copy" aria-label="复制" data-i18n-aria="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy"><span data-icon="clipboard-copy" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.pgnCopy">复制</span></button>
+          <button type="button" class="tool-ic" id="pgn-download" aria-label="导出" data-i18n-aria="act.export" title="导出 PGN 文件" data-i18n-title="tip.pgn.export"><span data-icon="download" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.export">导出</span></button>
+          <button type="button" class="tool-ic" id="slots-open" aria-label="存档槽" data-i18n-aria="act.slots" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots"><span data-icon="archive" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.slots">存档槽</span></button>
+          <button type="button" class="tool-ic" id="editor-open" aria-label="编辑" data-i18n-aria="act.editor" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open"><span data-icon="square-pen" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.editor">编辑</span></button>
+          <button type="button" class="tool-ic" id="more-tools" aria-expanded="false" aria-controls="more-row" aria-label="更多" data-i18n-aria="act.more" title="更多：粘贴、打开、FEN" data-i18n-title="tip.more"><span data-icon="ellipsis" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.more">更多</span></button>
           <button type="button" class="tool-txt" id="report-export" title="把复盘结论存成一张图" data-i18n-title="tip.reportExport" data-i18n="act.reportExport">导出复盘图</button>
         </div>
-        <div class="link-row" id="more-row" hidden>
+        <div class="link-row fit-row" id="more-row" hidden>
           <button type="button" class="act-btn" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n-title="tip.pgn.paste" data-i18n="act.paste">粘贴</button>
           <button type="button" class="act-btn" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n-title="tip.pgn.open" data-i18n="act.open">打开</button>
           <button type="button" class="act-btn" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.fen.copy">FEN</button>
