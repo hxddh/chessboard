@@ -527,5 +527,33 @@ for (const how of ["restore", "clear"]) {
   assert(valOf(h, "stats") === "fresh", "a key cleared and rewritten in one burst keeps its new value in the store (" + valOf(h, "stats") + ")");
 }
 
+// 2n. (Codex on #85) two windows on one store: one removes a key while the
+// other writes it again and commits between the first one's manifest and its
+// cleanup. The cleanup must not null the files the store's manifest now names.
+{
+  const h = withStore(null);
+  const A = createPersist(h, () => {});
+  A.load();
+  await A.recover();
+  A.set("stats", "old");
+  A.set("save", "s");
+  await A.flushMirror();
+  const B = createPersist(h, () => {});
+  B.load();
+  await B.recover();
+  const orig = h.appdataWriteKey;
+  let hook = async () => { B.set("stats", "again"); await B.flushMirror(); };
+  h.appdataWriteKey = async (k, t) => {
+    const r = await orig(k, t);
+    if (k === STORE_META && hook) { const f = hook; hook = null; await f(); }
+    return r;
+  };
+  A.remove("stats");
+  await A.flushMirror();
+  h.appdataWriteKey = orig;
+  assert(metaOf(h).keys.includes("stats") && valOf(h, "stats") === "again",
+    "a removal's cleanup leaves alone what another window committed meanwhile (" + valOf(h, "stats") + ")");
+}
+
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");

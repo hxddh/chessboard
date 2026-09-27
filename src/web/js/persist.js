@@ -428,7 +428,11 @@ export function createPersist(host, onWriteFailure) {
       // committed: now a removed key's files can go, so a cleared profile
       // does not stay on disk. "null" is never read back — the manifest no
       // longer lists the key. A key that is simply empty has nothing to clear.
+      // Asked of the manifest on disk, not assumed from ours: a second window
+      // may have written the key again and committed since (Codex on #85).
+      const now = gone.size ? await readCommitted() : {};
       for (const name of gone) {
+        if (now[name]) continue;
         for (const file of [name, name + STORE_ALT]) {
           if ((await host.appdataWriteKey(file, "null")) == null) { mirrorEnabled = false; return false; }
         }
