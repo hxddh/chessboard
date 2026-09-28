@@ -4293,8 +4293,8 @@ import { createStore } from "./store.js";
     const id = newRecordId();
     store.game.recordedId = id;
     const rec = { id, t: Date.now(), diff: store.session.difficulty, style: store.session.personaId, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending };
-    // v8-0-plan B4: the engine-game rating moves with every filed game
-    OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) { saveStats(s); store.commit("game", "action"); } });
+    // v8-0-plan B4: every filed game moves the rating; the card repaints once this task is done (an ending move's sync() came first)
+    OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) saveStats(s); if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
     s.games.push(rec);
     if (s.games.length > 500) s.games = s.games.slice(-500);
     saveStats(s);
