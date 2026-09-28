@@ -44,12 +44,4 @@ function customId(minutes, inc) {
   return "c" + m + "+" + i;
 }
 
-/** "15+10", "30", "20+5" — how a control reads on a button or in a PGN. */
-function label(id) {
-  const tc = parse(id);
-  if (!tc) return "";
-  const m = tc.base / 60;
-  return tc.inc ? m + "+" + tc.inc : String(m);
-}
-
-export const TimeControl = { PRESETS, MIN, INC, parse, isCustom, customId, label };
+export const TimeControl = { PRESETS, parse, isCustom, customId };

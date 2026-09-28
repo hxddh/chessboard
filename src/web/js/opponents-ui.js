@@ -166,7 +166,9 @@ export function createOpponentsUI(d) {
   function bye(level, style, facts) {
     const p = Opponents.personaFor(level, style);
     if (!p) return null;
-    const line = tf("op." + p.id + ".bye", [facts.opening || t("op.noOpening"), facts.moves, facts.captures, facts.checks]);
+    // a persona with nothing of its own to count says the shared line
+    const own = "op." + p.id + ".bye";
+    const line = tf(t(own) !== own ? own : "op.bye", [facts.opening || t("op.noOpening"), facts.moves, facts.captures, facts.checks]);
     return tf("op.say", [t("op." + p.id + ".name"), line]);
   }
 

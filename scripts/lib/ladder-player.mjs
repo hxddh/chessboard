@@ -91,7 +91,10 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona }) {
       uci = ChessEngine.pickCandidate(list, tier, rng, lean) || uci;
     } else if (tier.multipv && cands.size > 1) {
       if (tier.worstBias) uci = ChessEngine.pickCandidate(list, tier, rng) || uci;
-      if (styled) uci = ChessPersona.pick(fen, list, style, Chess) || uci;
+      if (styled) {
+        const own = list.find((c) => c.uci === uci);
+        uci = (own && ChessPersona.pick(fen, list, style, Chess, own.score)) || uci;
+      }
       else if (!tier.worstBias) uci = ChessEngine.pickCandidate(list, tier, rng) || uci;
     }
     return uci && uci !== "(none)" ? { uci, score: own } : null;

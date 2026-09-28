@@ -127,9 +127,15 @@
    *   best first, scores in centipawns from the mover's point of view
    * @param {string} id personality id
    * @param {Function} Chess chess.js constructor
+   * @param {number} [ceiling] v8-0-plan B4: the score of the move the rung
+   *   itself chose. A style then picks only among moves no better than that
+   *   one (and within its slack below it). Without it the style chose near
+   *   the *best* line, which undid a UCI_Elo rung's deliberate mistakes: in
+   *   the round-robin, 1450 with the greedy style played ~450 Elo above
+   *   1700 without one. A style may cost a rung strength; it must not add it.
    * @returns {string|null} chosen UCI move, or null to leave the choice alone
    */
-  function pick(fen, cands, id, Chess) {
+  function pick(fen, cands, id, Chess, ceiling) {
     if (!id || id === "off" || !Array.isArray(cands) || cands.length < 2) return null;
     if (!SLACK[id] || typeof Chess !== "function") return null;
     const scored = cands.filter((c) => c && c.uci && c.score != null);
@@ -138,7 +144,8 @@
     // A personality that throws away a mate it has already found reads as a
     // broken engine rather than a characterful one.
     if (best >= 100000 - 50) return null;
-    const allowed = scored.filter((c) => c.score >= best - SLACK[id]);
+    const top = Number.isFinite(ceiling) ? Math.min(best, ceiling) : best;
+    const allowed = scored.filter((c) => c.score >= top - SLACK[id] && c.score <= top + 10);
     if (allowed.length < 2) return null;
     const before = new Chess(fen);
     let bestMove = null, bestScore = -Infinity;

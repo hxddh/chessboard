@@ -37,6 +37,14 @@ const RATING_SE = {
  * i18n keys (`op.<id>.name` / `.hello` / `.bye`); 7.8's rule holds for the
  * lines — they state facts (the style, the opening played), never a
  * judgement of the player or a feeling of the machine.
+ *
+ * Styles sit on the win-chance rungs only. There a style is a lean inside
+ * the rung's own draw and the round-robin kept the rung's step; on a UCI_Elo
+ * rung it has to overrule the engine's pick, and measured both ways it moved
+ * the rung by hundreds of points (~+450 choosing near the best line, ~−500
+ * held to moves no better than the engine's own). A persona's rating has to
+ * be its rung's, so those personas play plain; every style is still one
+ * 自定义 click away on any rung.
  */
 const PERSONAS = [
   { id: "pip", level: "beginner", style: "off", icon: "puzzle" },
@@ -46,10 +54,10 @@ const PERSONAS = [
   { id: "ada", level: "steady", style: "off", icon: "target" },
   { id: "remy", level: "solid", style: "principled", icon: "scale" },
   { id: "ben", level: "easy", style: "off", icon: "graduation-cap" },
-  { id: "nico", level: "easyplus", style: "greedy", icon: "coins" },
-  { id: "vera", level: "normalminus", style: "attacker", icon: "swords" },
+  { id: "nico", level: "easyplus", style: "off", icon: "coins" },
+  { id: "vera", level: "normalminus", style: "off", icon: "swords" },
   { id: "sol", level: "normal", style: "off", icon: "star" },
-  { id: "max", level: "hard", style: "principled", icon: "crown" },
+  { id: "max", level: "hard", style: "off", icon: "crown" },
   { id: "fish", level: "extreme", style: "off", icon: "bot" },
 ];
 
@@ -329,8 +337,7 @@ function neighbour(level, dir) {
 }
 
 export const Opponents = {
-  LEVELS, RATING, RATING_SE, PERSONAS, EN_NAME, PACE_CAP_MS, RESIGN_CP, RESIGN_RUN, DRAW_CP, DRAW_RUN,
-  DRAW_AFTER_PLY, DRAW_QUIET_PLIES, DRAW_AGAIN_PLIES, ACCEPT_CP, ADVICE_GAMES,
+  LEVELS, RATING, RATING_SE, PERSONAS, EN_NAME, PACE_CAP_MS,
   personaById, personaFor, ratingOf, thinkPlan, shouldResign, shouldOfferDraw, acceptsDraw,
   opponentOf, rateGame, rateHistory, fileRating, validRating, ratingOfStats, performance, advice, neighbour,
 };

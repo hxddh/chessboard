@@ -2469,6 +2469,14 @@ for (const lang of CONTENT_LANGS) {
     "a forced mate is never traded away for a capture");
   assert(P.pick(fen, [{ uci: "d2d4", score: 30 }], "greedy", Chess) === null,
     "one candidate is no choice at all");
+  // v8-0-plan B4: given the rung's own choice, a style picks nothing better
+  // than it — red before B4: a styled UCI_Elo rung played far above itself
+  {
+    const own = [{ uci: "d2d4", score: 30 }, { uci: "b1c3", score: 10 }, { uci: "f1c4", score: 5 }, { uci: "d1e2", score: -20 }];
+    const got = P.pick(fen, own, "principled", Chess, -20);
+    assert(got === null || got === "d1e2", "B4: a style never picks a better move than the rung's own (" + got + ")");
+    assert(["b1c3", "f1c4"].includes(P.pick(fen, own, "principled", Chess, 10)), "B4: …and still has a say among moves as good as it");
+  }
 
   // Every personality must be reachable from the panel and named in every
   // language — a style you cannot select is a style that does not exist.
@@ -2548,13 +2556,14 @@ for (const lang of CONTENT_LANGS) {
   loadModule(ctx, "src/web/js/i18n.js");
   for (const lang of Object.keys(ctx.ChessI18n.DICT)) {
     const D = ctx.ChessI18n.DICT[lang];
-    const gaps = O.PERSONAS.flatMap((p) => ["name", "hello", "bye"].map((k) => "op." + p.id + "." + k)).filter((k) => !(k in D));
+    // the end-of-game line is the persona's own or the shared `op.bye`
+    const gaps = O.PERSONAS.flatMap((p) => ["name", "hello"].map((k) => "op." + p.id + "." + k)).concat(["op.bye"]).filter((k) => !(k in D));
     assert(gaps.length === 0, "B4: " + lang + " names every persona and gives it both lines" + (gaps.length ? " — " + gaps.slice(0, 4) : ""));
     // 7.8's rule: facts, not feelings — no line judges the player or has the
     // machine feel something about the game
     const JUDGE = lang === "en" ? /\b(good|great|nice|well played|brilliant|bad|poor|terrible|happy|sad|sorry|enjoy|fun|love|hate|luck)\b/i
       : lang === "ja" ? /(すごい|素晴らし|上手|下手|残念|楽しい|嬉しい|悲しい|ごめん|頑張)/ : /(好棋|漂亮|厉害|精彩|可惜|遗憾|开心|高兴|难过|抱歉|加油|运气|真棒|太好)/;
-    const judged = O.PERSONAS.flatMap((p) => ["hello", "bye"].map((k) => D["op." + p.id + "." + k])).filter((s) => JUDGE.test(s || ""));
+    const judged = O.PERSONAS.flatMap((p) => ["hello", "bye"].map((k) => D["op." + p.id + "." + k])).concat([D["op.bye"]]).filter((s) => JUDGE.test(s || ""));
     assert(judged.length === 0, "B4: " + lang + " persona lines state facts only (7.8)" + (judged.length ? " — " + judged[0] : ""));
   }
 
@@ -2565,8 +2574,8 @@ for (const lang of CONTENT_LANGS) {
     "B4: a custom control is c<minutes>+<increment>");
   assert(TC.parse("c0+5") === null && TC.parse("c181+0") === null && TC.parse("c10+61") === null && TC.parse("off") === null && TC.parse("toString") === null,
     "B4: …inside its bounds, and nothing else parses");
-  assert(TC.customId(999, -3) === "c180+0" && TC.customId("7", "2") === "c7+2" && TC.label("c20+5") === "20+5" && TC.label("30") === "30",
-    "B4: custom ids are clamped, and label as a control reads");
+  assert(TC.customId(999, -3) === "c180+0" && TC.customId("7", "2") === "c7+2",
+    "B4: custom ids are clamped into bounds");
 
   // the engine on a clock: search capped at the rung's calibrated movetime,
   // pace growing with the clock up to its own cap, never past a 20th of it

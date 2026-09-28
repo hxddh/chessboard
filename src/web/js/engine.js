@@ -72,11 +72,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // which is a worse tier bought with a worse mechanism. The plan's own
     // condition for making the change ("若相关性强" — if the candidate count
     // really tracks the phase) is not met, so it is not made.
-    beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.2, minMs: 350 },
+    // v8-0-plan B4: worstBias 0.2 → 0.15. The ladder needs six steps of at
+    // most 75% each from here to 1320, and from 0.2 it was one step too far.
+    beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.15, minMs: 350 },
     // v8-0-plan B4: two candidates more (6 → 8). Played against each other,
     // the 1.19 `casual` scored 91% against `beginner` — not a rung above it
-    // but three. Eight candidates put it one step up (the ladder's 60–75%).
-    casual: { skill: 0, depth: 2, multipv: 8, worstBias: 0.15, minMs: 350 },
+    // but three. Eight candidates (and worstBias 0.12) put it one step up.
+    casual: { skill: 0, depth: 2, multipv: 8, worstBias: 0.12, minMs: 350 },
     // v8-0-plan B4: the rungs between 休闲 and 初级. The step from `casual` to
     // Elo 1320 was a cliff — the careful novice bot scores 29% on one side of
     // it and next to nothing on the other — and nothing in UCI can fill it:
@@ -90,8 +92,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // list's length moves the strength as much as the temperature does
     // (12 candidates at winT 60 played level with `casual`; 8 scored 82%
     // against it). Ratings: docs/measured.json `ladder`.
-    learner: { skill: 1, depth: 2, multipv: 10, winT: 40, minMs: 350 },
-    improver: { skill: 2, depth: 2, multipv: 9, winT: 50, minMs: 350 },
+    learner: { skill: 1, depth: 2, multipv: 10, winT: 37, minMs: 350 },
+    improver: { skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
     steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
     solid: { skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },
@@ -483,7 +485,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
       // it actually likes
       if (tier.worstBias) picked = pickHandicapped(cands, tier) || picked;
       if (styled) {
-        const styledUci = ChessPersona.pick(fen, list, persona.id, persona.Chess);
+        // v8-0-plan B4: no better than the rung's own choice (persona.js)
+        const own = picked && list.find((c) => c.uci === picked.from + picked.to + (picked.promotion || ""));
+        const styledUci = own ? ChessPersona.pick(fen, list, persona.id, persona.Chess, own.score) : null;
         if (styledUci) picked = parseUci(styledUci);
       } else if (!tier.worstBias) {
         picked = pickHandicapped(cands, tier) || picked;
