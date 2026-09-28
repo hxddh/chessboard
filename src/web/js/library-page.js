@@ -130,6 +130,8 @@ async function bootLibrary(d) {
   /** The header: names and counts only, once the games are in IndexedDB. */
   function writeHeader() {
     const names = store.session.libNames;
+    // a profile that never had a library (6.x, a fresh install) is not given one
+    if (Persist.get("library") == null && !store.session.library.length && !names.length && !claimAsked) return true;
     if (mode !== "idb") {
       return Persist.setJson("library", { v: 1, games: store.session.library, names, claimAsked: claimAsked || undefined });
     }
@@ -490,8 +492,13 @@ async function bootLibrary(d) {
     store.ui.libPick = pick || null;
     // a diagnosis pick is about imported games; show them, whatever the
     // source row was left on
+    // …and the pick is the whole question: the page's own search steps aside
     if (opts && opts.src) f.src = opts.src;
-    else if (pick) f.src = "all";
+    else if (pick) Object.assign(f, { src: "all", q: "", from: "", to: "", tc: "all", pos: false });
+    for (const [id, key] of [["lib-from", "from"], ["lib-to", "to"]]) {
+      const el = doc.getElementById(id);
+      if (el && el.value !== f[key]) el.value = f[key];
+    }
     shown = PAGE;
     const q = doc.getElementById("lib-q");
     if (q && q.value !== f.q) q.value = f.q;
