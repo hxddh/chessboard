@@ -1436,7 +1436,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
         aInk: getComputedStyle(span("coord-files", 0)).color, bInk: getComputedStyle(span("coord-files", 1)).color,
         r8Ink: getComputedStyle(span("coord-ranks", 0)).color,
         light: tok("--sq-light"), dark: tok("--sq-dark"),
-        gauge, wrapX: wrap.x,
+        gauge, wrapX: wrap.x, wrapY: wrap.y, wrapB: wrap.bottom,
       };
     });
     await ctx.close();
@@ -1463,8 +1463,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       `${w}×${h} 盘内:1–8 在 a 列格子的左上角`);
     assert(g.aInk === g.light && g.bInk === g.dark && g.r8Ink === g.dark,
       `${w}×${h} 盘内:字色与所在格子反色(a1 深格写浅色 ${g.aInk},b1 浅格写深色 ${g.bInk},a8 浅格写深色 ${g.r8Ink})`);
-    const gaugeOk = g.gauge.r <= B.x + 0.5 && g.gauge.y >= B.y - 0.5 && g.gauge.b <= B.b + 0.5;
-    assert(gaugeOk, `${w}×${h} 盘内:竖评估条仍在棋盘左侧、与格子同高(条 ${g.gauge.x.toFixed(0)}–${g.gauge.r.toFixed(0)},格子从 ${B.x.toFixed(0)} 起)`);
+    // v8-0-plan A4: level with the frame, not with the squares (it ran from
+    // the squares' top edge, 17px under the frame's)
+    const gaugeOk = g.gauge.r <= B.x + 0.5 && Math.abs(g.gauge.y - g.wrapY) <= 1 && Math.abs(g.gauge.b - g.wrapB) <= 1;
+    assert(gaugeOk, `${w}×${h} 盘内:竖评估条仍在棋盘左侧、与外框上下对齐(条 ${g.gauge.x.toFixed(0)}–${g.gauge.r.toFixed(0)} × ${g.gauge.y.toFixed(0)}–${g.gauge.b.toFixed(0)},格子从 ${B.x.toFixed(0)} 起,框 ${g.wrapY.toFixed(0)}–${g.wrapB.toFixed(0)})`);
     assert(!out.errs.length && !inn.errs.length, `${w}×${h} 坐标两种位置:没有页面异常`);
   }
   // a light theme: same rules, its own square colours

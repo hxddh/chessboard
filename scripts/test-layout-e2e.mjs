@@ -38,6 +38,7 @@ const ROOT = path.join(HERE, "..", "src", "web");
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { makeScenarioGate } from "./e2e-shard.mjs";
 import { layoutProbe } from "./lib/layout-probe.mjs";
+import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 
 // v8-0-plan F1: SHARD=i/n runs every n-th scenario; unset runs all of them
 const scenario = makeScenarioGate(process.env.SHARD);
@@ -4776,6 +4777,57 @@ if (scenario()) {
   }
 }
 
+// --- v8-0-plan A4：复盘视图在 M2 的三种布局里 ----------------------------------
+// The health report has to live inside whatever the play view is: the wide
+// three-column layout (1920), the two-column one (1440) and portrait (600).
+// In each, flat and framed: the eval bar is level with the board's frame (it
+// ran from the squares' top edge — frame y=72, bar y=89 at 1440×900 with the
+// wood frame), it lies on nothing else (rail, info column, panel), and the
+// report fits its column — nothing past the panel's edge, no sideways scroll.
+if (scenario()) {
+  for (const vp of [{ width: 1920, height: 1080 }, { width: 1440, height: 900 }, { width: 600, height: 900 }]) {
+    const { ctx, page, errs } = await open("en", "pvp", "play", "wood", vp);
+    await playOpera(page);
+    await analyseOpera(page);
+    await page.evaluate(() => {
+      document.getElementById("rep-start").click();
+      for (let i = 0; i < 18; i++) document.getElementById("rep-next").click();
+    });
+    await page.waitForTimeout(300);
+    for (const frame of ["flat", "frame"]) {
+      await page.evaluate((f) => document.querySelector('#frame-seg button[data-frame="' + f + '"]').click(), frame);
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(() => {
+        const box = (e) => e.getBoundingClientRect();
+        const w = box(document.getElementById("board-wrap")), b = box(document.getElementById("eval-bar"));
+        const hit = (a, c) => !(a.right <= c.left || a.left >= c.right || a.bottom <= c.top || a.top >= c.bottom);
+        const others = [document.getElementById("rail"), document.getElementById("side"),
+          ...document.querySelectorAll("#info-col > *, .pstrip")].filter((e) => e && e.offsetParent && box(e).width > 0);
+        const side = document.getElementById("side");
+        const sr = box(side);
+        const past = [...document.querySelectorAll("#eval-wrap *")].filter((e) => e.offsetParent && box(e).width > 0 && box(e).right > sr.right + 1)
+          .map((e) => e.id || e.className);
+        return { layout: document.getElementById("app").classList.contains("pv-wide") ? "wide" : "two",
+          wt: w.top, wb: w.bottom, bt: b.top, bb: b.bottom, bl: b.left,
+          num: (() => { const n = box(document.getElementById("eval-bar-text")); return { l: n.left, w: n.width, r: n.right }; })(),
+          on: others.filter((e) => hit(b, box(e))).map((e) => e.id || e.className),
+          inset: document.getElementById("eval-bar-row").classList.contains("is-inset"),
+          scroll: side.scrollWidth - side.clientWidth, past,
+          km: !!document.getElementById("rv-km") && !document.getElementById("rv-km").hidden, report: !document.getElementById("report-card").hidden };
+      });
+      const tag = `${vp.width}×${vp.height} ${frame}（${r.layout}${r.inset ? "，贴框内" : ""}）`;
+      assert(Math.abs(r.bt - r.wt) <= 1 && Math.abs(r.bb - r.wb) <= 1,
+        `A4：${tag} 评估条与棋盘外框上下对齐（框 ${Math.round(r.wt)}–${Math.round(r.wb)}，条 ${Math.round(r.bt)}–${Math.round(r.bb)}）`);
+      assert(r.bl >= 0 && r.on.length === 0, `A4：${tag} 评估条不压导航栏、信息栏、面板（${r.on.join(", ") || "无"}）`);
+      assert(r.num.w <= 1 || (r.num.l >= 0 && r.num.r <= vp.width),
+        `A4：${tag} 评估条的分数要么整个在窗口里，要么交给曲线和读屏（${Math.round(r.num.l)}–${Math.round(r.num.r)}）`);
+      assert(r.report && r.km && r.scroll <= 0 && r.past.length === 0,
+        `A4：${tag} 体检报告与关键时刻都在，面板里没有越界、没有横向滚动（${r.scroll}px${r.past.length ? "，越界 " + r.past.join(", ") : ""}）`);
+    }
+    assert(errs.length === 0, `A4：${vp.width}×${vp.height} 没有页面异常 — ` + errs.join(" / "));
+    await ctx.close();
+  }
+}
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

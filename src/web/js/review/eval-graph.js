@@ -19,7 +19,7 @@ import { ChessReview } from "../review.js";
  */
 export function createEvalGraph(d) {
   const {
-    doc, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo,
+    doc, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen,
   } = d;
   const document = doc;
   const Review = ChessReview;
@@ -42,6 +42,7 @@ export function createEvalGraph(d) {
       soft: pick("--judge-soft", "#c9b458"),
       mid: pick("--judge-mid", "#e0a03c"),
       bad: pick("--judge-bad", "#e05252"),
+      good: pick("--judge-good", "#4caf6a"),
     };
   }
 
@@ -75,8 +76,19 @@ export function createEvalGraph(d) {
     row.classList.toggle("is-flipped", !!store.game.flipped);
     // room to the left of the frame: the stage's padding plus whatever the
     // centring leaves. The gauge and its gap need about 20px.
+    // v8-0-plan A4: in the wide layout what stands to the left of the frame
+    // is the info column, 8px off it — the gauge lay across its cards, so
+    // the room is measured to that column where there is one
     const wrap = document.getElementById("board-wrap");
-    if (wrap) row.classList.toggle("is-inset", wrap.getBoundingClientRect().left < 24);
+    const col = document.getElementById("info-col");
+    const edge = col && col.offsetParent ? col.getBoundingClientRect().right : 0;
+    // …and the number beside it needs more than the gauge does: where it
+    // would run off the window's edge (600 wide: 「12.5」 cut to 「2.5」) it
+    // goes the way the inset gauge's number goes, to the curve and the
+    // screen reader
+    const room = wrap ? wrap.getBoundingClientRect().left - edge : 0;
+    row.classList.toggle("is-inset", room < 24);
+    row.classList.toggle("is-tight", room >= 24 && room < 56);
     const cp = a.scalars[store.game.viewIndex];
     const frac = Review.evalBar(cp);
     // the curve is a slider for the keyboard: ← / → (the global replay keys)
@@ -103,6 +115,12 @@ export function createEvalGraph(d) {
     // the number sits at the end of the side that is ahead, like the fill
     row.classList.toggle("white-ahead", frac >= 0.5);
     row.classList.toggle("black-ahead", frac < 0.5);
+  }
+
+  /** Who plays ply 0 of the game on the board. */
+  function gameStartTurn() {
+    const f = startFen();
+    return f && f.split(" ")[1] === "b" ? "b" : "w";
   }
 
   /** "+0.4", "−1.2", or "+#" — a forced mate has no meaningful pawn count. */
@@ -136,48 +154,49 @@ export function createEvalGraph(d) {
     // scale the marks are judged on. It was ±5 pawns linear, where a game
     // decided by a lost rook still drew as a line hugging the axis for its
     // first thirty moves and a mate as the same height as +5.
-    const x = (i) => (n ? (i / n) * (W - 8 * dpr) + 4 * dpr : W / 2);
+    const x = (i) => plotX(i, n, W, dpr);
     const y = (s) => 4 * dpr + (1 - Review.winPct(s) / 100) * (H - 8 * dpr);
     const css = getComputedStyle(document.documentElement);
     const cMuted = css.getPropertyValue("--muted").trim() || "#999";
     const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
     const cPanel = css.getPropertyValue("--panel").trim() || cMuted;
     const JC = judgeColours();
-    // midline
-    ctx.strokeStyle = cMuted;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = dpr;
-    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
-    ctx.globalAlpha = 1;
 
-    // Filled in the two colours the rest of the app already uses for the two
-    // sides: above the midline in White's colour, below in Black's. The curve
-    // was one accent line, so reading "who is ahead" meant remembering that up
-    // is White — while the player cards, the captured strip and the evaluation
-    // bar all say it with black and white directly. P4.5.
+    // v8-0-plan A4: White and Black split, the way Lichess draws it — the
+    // area under the line is White's colour and the area over it Black's, so
+    // the share of the height that is white IS White's win chance. It was
+    // two translucent wedges off the midline over the panel's own colour,
+    // which in the dark shells made "White is winning" a grey smudge. Each
+    // run of measured positions is its own pair of shapes; an unmeasured one
+    // leaves the card showing through — not a guess drawn as level.
     const sideW = css.getPropertyValue("--side-white").trim() || "#f2f2ee";
     const sideB = css.getPropertyValue("--side-black").trim() || "#1d1d1b";
-    for (const [above, fill] of [[true, sideW], [false, sideB]]) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, above ? 0 : H / 2, W, H / 2);
-      ctx.clip();
-      ctx.beginPath();
-      let open = false;
-      for (let i = 0; i <= n; i++) {
-        const sv = a.scalars[i];
-        if (sv == null) {
-          if (open) { ctx.lineTo(x(i - 1), H / 2); ctx.closePath(); open = false; }
-          continue;
-        }
-        if (!open) { ctx.moveTo(x(i), H / 2); open = true; }
-        ctx.lineTo(x(i), y(sv));
-        if (i === n) { ctx.lineTo(x(i), H / 2); ctx.closePath(); }
+    let i0 = 0;
+    while (i0 <= n) {
+      if (a.scalars[i0] == null) { i0++; continue; }
+      let i1 = i0;
+      while (i1 + 1 <= n && a.scalars[i1 + 1] != null) i1++;
+      // a single measured position still owns its column
+      const l = i1 > i0 ? x(i0) : x(i0) - dpr, r = i1 > i0 ? x(i1) : x(i0) + dpr;
+      const edge = (from) => { for (let i = i0; i <= i1; i++) ctx.lineTo(x(i), y(a.scalars[i])); ctx.lineTo(r, from); };
+      for (const [from, fill] of [[H, sideW], [0, sideB]]) {
+        ctx.beginPath();
+        ctx.moveTo(l, from);
+        ctx.lineTo(l, y(a.scalars[i0]));
+        edge(from);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
       }
-      ctx.fillStyle = fill;
-      ctx.globalAlpha = 0.5;
-      ctx.fill();
-      ctx.restore();
+      i0 = i1 + 1;
+    }
+    // the quarter lines and the midline, over both colours: level is a place
+    ctx.strokeStyle = cMuted;
+    ctx.lineWidth = dpr;
+    for (const [f, alpha] of [[0.25, 0.25], [0.5, 0.6], [0.75, 0.25]]) {
+      const yy = Math.round(4 * dpr + f * (H - 8 * dpr)) + 0.5;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke();
     }
     ctx.globalAlpha = 1;
 
@@ -193,19 +212,18 @@ export function createEvalGraph(d) {
       else { ctx.moveTo(x(i), y(s)); pen = true; }
     }
     ctx.stroke();
-    // blunder markers at the position after the tagged move
-    for (let i = 0; i < n; i++) {
-      const tagCh = a.tags[i];
-      if (tagCh !== "?" && tagCh !== "??") continue;
+    // the marked moves, at the position after each: ? and ?? in the marks'
+    // colours, a graded pass's !! and ! in the praise colour (v8-0-plan A4)
+    for (const { i, tag } of curveMarks(a)) {
       const s = a.scalars[i + 1];
       if (s == null) continue;
       // 7.7 §5: a dot you can find — 2.4px was a speck on a 60px curve —
       // ringed in the panel's own colour so it separates from the fill
-      ctx.fillStyle = tagCh === "??" ? JC.bad : JC.mid;
+      ctx.fillStyle = tag === "??" ? JC.bad : tag === "?" ? JC.mid : JC.good;
       ctx.strokeStyle = cPanel;
       ctx.lineWidth = 1.5 * dpr;
       ctx.beginPath();
-      ctx.arc(x(i + 1), y(s), 3.5 * dpr, 0, Math.PI * 2);
+      ctx.arc(x(i + 1), y(s), (tag === "??" ? 4.5 : 3.5) * dpr, 0, Math.PI * 2);
       ctx.stroke();
       ctx.fill();
     }
@@ -215,27 +233,85 @@ export function createEvalGraph(d) {
     ctx.lineWidth = dpr;
     ctx.beginPath(); ctx.moveTo(x(store.game.viewIndex), 2 * dpr); ctx.lineTo(x(store.game.viewIndex), H - 2 * dpr); ctx.stroke();
     ctx.globalAlpha = 1;
+    drawMoveAxis(cv, n);
+  }
+
+  /** x of position `i` of `n` on a plot `W` device pixels wide: a 4px margin each side. */
+  function plotX(i, n, W, dpr) {
+    return n ? (i / n) * (W - 8 * dpr) + 4 * dpr : W / 2;
+  }
+
+  /** The plies the curve marks: ? and ??, and a graded pass's !! and !. */
+  function curveMarks(a) {
+    const out = [];
+    const graded = a.v === 2 && Array.isArray(a.grades) ? a.grades : null;
+    for (let i = 0; i < a.scalars.length - 1; i++) {
+      const tag = a.tags && (a.tags[i] === "?" || a.tags[i] === "??") ? a.tags[i]
+        : graded && (graded[i] === "brilliant" || graded[i] === "only") ? "!" : null;
+      if (tag) out.push({ i, tag });
+    }
+    return out;
+  }
+
+  /**
+   * v8-0-plan A4: the move numbers under the graph — every 1, 2, 5, 10 or
+   * 20 moves, whichever leaves at most six — each at the position where
+   * that move begins. Written only when the count or the width changes.
+   */
+  function drawMoveAxis(cv, n) {
+    const axis = document.getElementById("curve-x");
+    if (!axis) return;
+    const w = cv.clientWidth;
+    const firstMover = gameStartTurn();
+    const moves = n ? boardMoveNo(n - 1) : 0;
+    const every = [1, 2, 5, 10, 20, 50].find((k) => Math.floor(moves / k) <= 6) || 100;
+    const key = [n, w, every, firstMover].join("|");
+    if (axis.dataset.key === key) return;
+    axis.dataset.key = key;
+    axis.replaceChildren();
+    for (let i = 0; i < n; i++) {
+      // the plies White opens: move k begins there
+      if ((i % 2 === 0) !== (firstMover === "w")) continue;
+      const no = boardMoveNo(i);
+      if (no % every) continue;
+      const s = document.createElement("span");
+      s.textContent = String(no);
+      s.style.left = ((plotX(i, n, w, 1)) / Math.max(1, w) * 100).toFixed(2) + "%";
+      axis.appendChild(s);
+    }
   }
 
   /** The curve answers the pointer: a click or a drag walks the replay, a hover says where. */
   function wire() {
     const curveEl = document.getElementById("eval-curve");
     if (curveEl) {
-      const jumpOnCurve = (ev) => {
+      // `snap`: a press lands on a marked move when it is within 10px of its
+      // dot (v8-0-plan A4) — on a long game the positions are 4px apart and
+      // "click the mistake" was a pixel hunt. A drag does not snap: it is a
+      // scrub through every position, and must not stick to the dots.
+      const jumpOnCurve = (ev, snap) => {
         const a = analysisFor();
         if (!a) return;
         const rect = curveEl.getBoundingClientRect();
         const n = a.scalars.length - 1;
         const frac = (ev.clientX - rect.left - 4) / Math.max(1, rect.width - 8);
-        setViewIndex(Math.round(Math.max(0, Math.min(1, frac)) * n));
+        let to = Math.round(Math.max(0, Math.min(1, frac)) * n);
+        if (snap) {
+          let near = 10;
+          for (const { i } of curveMarks(a)) {
+            const d = Math.abs(ev.clientX - rect.left - plotX(i + 1, n, rect.width, 1));
+            if (d <= near) { near = d; to = i + 1; }
+          }
+        }
+        setViewIndex(to);
       };
-      curveEl.onclick = jumpOnCurve;
+      curveEl.onclick = (ev) => jumpOnCurve(ev, true);
       // the time machine: hold the curve and drag — the board scrubs with the
       // pointer, every position on the way is really committed (same call the
       // click makes), and letting go simply stops
       curveEl.onpointerdown = (ev) => {
         curveEl.setPointerCapture(ev.pointerId);
-        jumpOnCurve(ev);
+        jumpOnCurve(ev, true);
       };
       // 7.8 §2: what is under the pointer, as Lichess's graph says it — the
       // move that led to that position and the score after it

@@ -78,6 +78,9 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     judgeSoft: ["--judge-soft", "#c9b458"],
     judgeMid: ["--judge-mid", "#e0a03c"],
     judgeBad: ["--judge-bad", "#e05252"],
+    // v8-0-plan A4/A5: the one colour for "right" on the board — the !! and
+    // ! of a graded review, a solved puzzle's ✓. Never the check's red.
+    judgeGood: ["--judge-good", "#4caf6a"],
     sideWhite: ["--side-white", "#f2f2ee"],
     sideBlack: ["--side-black", "#1d1d1b"],
     // v8-0-plan A3: the board's material (board-skin.js) — a texture laid
@@ -86,7 +89,7 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     texture: ["--board-texture", "none"],
     pieceInk: ["--piece-ink", "none"],
   };
-  const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad" };
+  const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad", "!!": "judgeGood", "!": "judgeGood" };
   const SHAPE_PAINT = { G: "shapeG", R: "shapeR", B: "shapeB", Y: "shapeY", E: "engine", e: "engineAlt" };
   /** resolved once per theme change, not once per square */
   let _paint = null;
@@ -793,8 +796,9 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     // 7.7 §5: the analysis mark of the move that led here, as a badge in the
     // top-right corner of the square it landed on — where Lichess and
     // Chess.com put it, so the eye that follows the last-move tint finds it.
-    // Only the three marks the analysis has (?! ? ??), coloured from the same
-    // --judge-* scale as the move list; the glyph takes whichever side ink
+    // The marks the analysis has (?! ? ??, and since v8-0-plan A4 a graded
+    // pass's !! and !), coloured from the same --judge-* scale as the move
+    // list; the glyph takes whichever side ink
     // reads on that fill. Drawn inside the square, so a1–h8 corners never
     // clip it.
     if (m.annotation && JUDGE_PAINT[m.annotation.tag]) {

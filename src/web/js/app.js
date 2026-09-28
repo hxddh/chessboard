@@ -41,13 +41,13 @@ import { createSettingsUI } from "./settings-ui.js";
 import { createShell } from "./shell.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
-import { ChessReviewGrade as Grade } from "./review-grade.js";
 import { createAnalysis } from "./review/analysis.js";
 import { createBoardMarks } from "./review/board-marks.js";
 import { createEvalGraph } from "./review/eval-graph.js";
 import { createLines } from "./review/lines.js";
 import { createReviewPanel } from "./review/panel.js";
 import { createRetry } from "./review/retry.js";
+import { createMoments } from "./review/moments.js";
 import { createGameEnd } from "./game-end.js";
 import { ChessSrs } from "./srs.js";
 import { ChessPicker } from "./picker.js";
@@ -4476,21 +4476,24 @@ import { createStore } from "./store.js";
   const BoardMarks = createBoardMarks({
     store, viewGame, isLive, appGameOver, analysisFor, reviewLines, softFiltered,
   });
-  const { engineArrows, bestArrowAt, annotationAt } = BoardMarks;
+  const { engineArrows, bestArrowAt, annotationAt, lineMarks } = BoardMarks;
 
   // v8-0-plan F4: why a ? or ?? was a mistake, and 再试一次 (7.8 §3), live
   // in review/retry.js
   const Retry = createRetry({
     doc: document, store, t, tf, sideName, analysisFor, sanHistory, gameAt, startFen, boardMoveNo, writeSan,
     setViewIndex, inModal, sync, draw, kingSquare, cursorSquare, bestArrowAt, choosePromotion,
-    selectSquare, clearSelection, moveSound, evalScalar, SCAN_BUDGET,
+    selectSquare, clearSelection, moveSound, evalScalar, SCAN_BUDGET, toast,
   });
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
+  // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js
+  const Moments = createMoments({ doc: document, store, t, tf, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
+    setViewIndex, writeSan, inModal, Retry });
 
   // v8-0-plan F4: the eval gauge, the curve and the marks' colours live in
   // review/eval-graph.js
   const EvalGraph = createEvalGraph({
-    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo,
+    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen,
   });
   const { judgeColours, drawEvalBar, drawEvalCurve } = EvalGraph;
 
@@ -4501,7 +4504,7 @@ import { createStore } from "./store.js";
     doc: document, store, t, tf, sideName, DIFF_NAMES, analysisFor, sanHistory, startFen, gameAt, viewGame, boardMoveNo,
     statusText, openingFor, avail, inModal, setText, setViewIndex, toast, savedToast, pgnFileName,
     deskHead, lineRows, paintLineRow, reviewLines, savePvAsVariation, lockPgnEdits,
-    drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList,
+    drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList, renderMoments: Moments.render,
     boardDrillSource, saveMines, savePuzzleState,
   });
   const { setAnalyzeUI, renderReview, exportReport } = ReviewPanel;
@@ -5838,18 +5841,13 @@ import { createStore } from "./store.js";
     const curId = curNodeId();
     // the analysis describes the line `game` stands on: its tags belong to
     // those nodes, on the mainline or off it
-    const a = analysisFor();
-    const tagOf = new Map();
-    // v8-0-plan B2: a graded pass also hangs !! (妙着) and ! (仅此一着) off a move
-    if (a && a.tags) store.game.line.forEach((id, k) => {
-      const mk = k > 0 ? a.tags[k - 1] || (a.v === 2 && a.grades && Grade.GLYPH[a.grades[k - 1]]) : null;
-      if (mk) tagOf.set(id, mk);
-    });
+    // v8-0-plan B2: a graded pass also hangs !! and ! off a move; A4: every move carries its grade
+    const { tagOf, gradeOf } = lineMarks(store.game.line);
     const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
     // the current move carries the menu handle, whose name is a translated
     // string — so its signature carries the language, or a switch to English
     // kept the Chinese 「着法操作」 on it until the cursor moved (7.6)
-    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" + store.ui.langId : "");
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (gradeOf.get(n.id) || "") + (n.id === curId ? "*" + store.ui.langId : "");
     // a variation's signature is the whole of what it shows, nested included
     const lineSig = (parent, first) => {
       let out = "";
@@ -5898,7 +5896,7 @@ import { createStore } from "./store.js";
       const b = document.createElement("button");
       b.type = "button";
       b.dataset.node = String(n.id);
-      b.className = cls + (n.id === curId ? " current" : "");
+      b.className = cls + (n.id === curId ? " current" : "") + (gradeOf.has(n.id) ? " g-" + gradeOf.get(n.id) : "");
       // Figurine notation: the piece letter becomes the piece. `Nf3` is
       // English algebraic — the N is short for Knight, which is not a word
       // two of this app's three languages use. The vector set is already
@@ -6478,12 +6476,12 @@ import { createStore } from "./store.js";
     setDisabled(el("rep-prev"), !back);
     setDisabled(el("rep-next"), !fwd);
     setDisabled(el("rep-end"), !fwd);
-    // "resume from here" is a replay action, and it only exists off the live
-    // position — where it used to sit greyed out with a tooltip explaining
-    // that it only exists off the live position
-    avail(el("retry-here"), !isLive());
-    // 「回主线」 exists exactly while the line is a variation (Q2.3)
-    avail(el("line-row"), !inModal() && h.length > 0 && !onMainline());
+    // 从这里续下 is a replay action (v8-0-plan A4 moved it into this row): it
+    // only exists off the live position, behind the 复盘 key where the review
+    // is; 「回主线」 exists exactly while the line is a variation (Q2.3)
+    avail(el("retry-here"), !inModal() && !isLive() && !(reviewOptional() && !store.ui.reviewOpen));
+    avail(el("back-main"), !inModal() && h.length > 0 && !onMainline());
+    avail(el("line-row"), !el("retry-here").hidden || !el("back-main").hidden);
   }
 
   /** Everything you can do to the game in progress. */

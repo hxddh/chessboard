@@ -27,10 +27,10 @@ import { ChessReviewGrade as Grade } from "../review-grade.js";
  */
 export function createReviewPanel(d) {
   const {
-    doc, store, t, tf, sideName, DIFF_NAMES, analysisFor, sanHistory, startFen, gameAt, viewGame, boardMoveNo,
-    statusText, openingFor, avail, inModal, setText, setViewIndex, toast, savedToast, pgnFileName,
+    doc, store, t, tf, sideName, DIFF_NAMES, analysisFor, sanHistory, startFen, gameAt, viewGame,
+    statusText, openingFor, avail, inModal, setText, toast, savedToast, pgnFileName,
     deskHead, lineRows, paintLineRow, reviewLines, savePvAsVariation, lockPgnEdits,
-    drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList,
+    drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList, renderMoments,
     boardDrillSource, saveMines, savePuzzleState,
   } = d;
   const document = doc;
@@ -112,6 +112,7 @@ export function createReviewPanel(d) {
     renderWhyLine();
     renderRetry();
     renderReview();
+    renderMoments();
     lockPgnEdits();
   }
 
@@ -171,7 +172,11 @@ export function createReviewPanel(d) {
     if (card) card.hidden = !sum;
     el.hidden = !sum;
     if (hero) hero.hidden = !sum;
-    if (!sum) { el.replaceChildren(); if (hero) hero.replaceChildren(); el.dataset.key = ""; return; }
+    // v8-0-plan A4: the list of mistakes stands under the key moments, in
+    // a box of its own, rebuilt with the report
+    const list = document.getElementById("rv-mistakes");
+    if (list) list.hidden = !sum;
+    if (!sum) { el.replaceChildren(); if (hero) hero.replaceChildren(); if (list) list.replaceChildren(); el.dataset.key = ""; return; }
 
     // the stored figure where there is one — it is what the statistics filed
     const acc = { w: sum.acc.w, b: sum.acc.b };
@@ -185,12 +190,10 @@ export function createReviewPanel(d) {
     // earlier record keeps its three marks, and its moments come from those
     const graded = a.v === 2 && Array.isArray(a.grades) ? a.grades : null;
     const gc = graded && Grade.countGrades(graded, firstMover);
-    const moments = Grade.keyMoments({ sans: sanHistory(), scalars: a.scalars, bests: a.bests, seconds: a.seconds || [] },
-      graded, firstMover, boardMoveNo);
     // 7.6 lesson: this runs on every sync, and rebuilding the card swapped the
     // turning-point button under a pointer that was mid-press. Rebuilt only
     // when something it shows has changed.
-    const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured, gc, moments,
+    const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured, gc,
       sum.worst && [sum.worst.ply, Math.round(sum.worst.drop)], soft, store.ui.langId,
       store.session.mode, store.session.humanColor, !!worstBest, banked, sanHistory().length,
       (a.tags || []).join(","), a.budget || 0]);
@@ -251,31 +254,34 @@ export function createReviewPanel(d) {
     const thead = document.createElement("thead");
     thead.appendChild(tr(["", sideName("w"), sideName("b")], true));
     const tbody = document.createElement("tbody");
+    // v8-0-plan A4: one table, every grade on one scale — praise at the top,
+    // the marks at the bottom, the grades' own colours. The four quiet grades
+    // (最佳 优秀 良好 谱着) were a footnote line a side under it, where the
+    // two sides could not be read against each other. A grade no move got
+    // has no row; the marks keep theirs, zero or not — "no ?? " is news.
     const KINDS = [["?!", "inaccuracy", "t-soft", "rv.kind.soft"], ["?", "mistake", "t-mid", "rv.kind.mid"],
       ["??", "blunder", "t-bad", "rv.kind.bad"]].filter((k) => soft || k[0] !== "?!");
-    for (const [mark, field, cls, label] of KINDS) {
+    const GRADE_ROWS = [["brilliant", "!!", "t-good"], ["only", "!", "t-good"], ["best", "", "t-plain"],
+      ["excellent", "", "t-plain"], ["good", "", "t-plain"], ["book", "", "t-plain"], ["miss", "", "t-mid"]];
+    const labelled = (mark, cls, label) => {
       const lab = document.createDocumentFragment();
       const m = document.createElement("span");
       m.className = "rv-mark " + cls;
       m.textContent = mark;
       lab.append(m, document.createTextNode(t(label)));
-      const row = tr([lab, String(sum.counts.w[field]), String(sum.counts.b[field])]);
+      return lab;
+    };
+    for (const [g, mark, cls] of GRADE_ROWS) {
+      if (!gc || !(gc.w[g] + gc.b[g])) continue;
+      const row = tr([labelled(mark, cls, Grade.LABEL[g]), String(gc.w[g]), String(gc.b[g])]);
+      row.className = "rv-grade " + cls;
+      tbody.appendChild(row);
+    }
+    for (const [mark, field, cls, label] of KINDS) {
+      const row = tr([labelled(mark, cls, label), String(sum.counts.w[field]), String(sum.counts.b[field])]);
       row.className = "rv-kind " + cls;
       // a zero is not news: only the counts that happened carry the colour
       for (const td of row.querySelectorAll("td")) td.classList.toggle("is-zero", td.textContent === "0");
-      tbody.appendChild(row);
-    }
-    // v8-0-plan B2: the grades an engine confirms, as rows beside the marks —
-    // only when one happened (the rest are the footnote's count line below)
-    for (const [g, mark, cls] of [["brilliant", "!!", "t-good"], ["only", "!", "t-good"], ["miss", "", "t-mid"]]) {
-      if (!gc || !(gc.w[g] + gc.b[g])) continue;
-      const lab = document.createDocumentFragment();
-      const m = document.createElement("span");
-      m.className = "rv-mark " + cls;
-      m.textContent = mark;
-      lab.append(m, document.createTextNode(t(Grade.LABEL[g])));
-      const row = tr([lab, String(gc.w[g]), String(gc.b[g])]);
-      row.className = "rv-grade " + cls;
       tbody.appendChild(row);
     }
     const n = (x) => (x == null ? "—" : String(x));
@@ -303,28 +309,13 @@ export function createReviewPanel(d) {
       if (vk) notes.push(sideName(side) + " · " + t(vk));
     }
     if (short) notes.unshift(tf("rv.verdict.tooShort", [sum.measured]));
-    // v8-0-plan B2: the unremarkable grades, one count line a side
-    for (const side of gc ? ["w", "b"] : []) {
-      notes.push(sideName(side) + " · " + ["best", "excellent", "good", "book"].map((g) => t(Grade.LABEL[g]) + " " + gc[side][g]).join(" · "));
-    }
     for (const txt of notes) {
       const note = line("review-note muted");
       note.textContent = txt;
     }
 
-    // v8-0-plan B2: three key moments a side, largest swing first, where the
-    // single turning point was (the review view, A4, lays them out properly)
-    if (moments.w.length + moments.b.length) line("review-note muted").textContent = t("rv.keyMoments");
-    for (const m of moments.w.concat(moments.b)) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "review-jump";
-      btn.textContent = tf("rv.keyMoment", [m.moveNo, sideName(m.side), m.san, t(Grade.LABEL[m.grade]), Math.round(m.swing)]);
-      btn.title = t("rv.jumpTip");
-      // land on the position *after* the move, so the damage is on the board
-      btn.onclick = () => setViewIndex(m.ply + 1);
-      el.appendChild(btn);
-    }
+    // (v8-0-plan B2's three key moments a side are the stepper under the
+    // graph since A4 — review/moments.js)
     if (sum.worst) {
       // …and one press away from never repeating it: the same drill the
       // automatic miner would make, banked by hand. Any game qualifies here —
@@ -344,7 +335,7 @@ export function createReviewPanel(d) {
         el.appendChild(bank);
       }
     }
-    renderMistakeList(el);
+    if (list) { list.replaceChildren(); renderMistakeList(list); list.hidden = !list.childElementCount; }
   }
 
   /** The drill the review's turning point would bank as, or null. */
