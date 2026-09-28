@@ -303,7 +303,10 @@ function fileRating(stats, rec, now) {
   rec.rb = before ? Math.round(before.r) : null;
   rec.ra = Math.round(after.r);
   rec.perf = perf;
-  return { before, after, perf, advice: advice(recent, rec.diff, after) };
+  // the advice reads this rung's own last games, however many others came between (Codex #89)
+  const rung = (stats.games || []).filter((g) => g !== rec && g.diff === rec.diff).slice(-(ADVICE_GAMES - 1)).concat([rec])
+    .map((g) => ({ level: g.diff, result: g.result }));
+  return { before, after, perf, advice: advice(rung, rec.diff, after) };
 }
 /** How many recent games the performance rating is taken over. */
 const PERF_GAMES = 10;
