@@ -24,9 +24,10 @@ export function createExplorerLazy(d) {
   const s = (d.saved && d.saved.explorer) || {};
   store.ui.explorer = { open: s.open === true, src: s.src === "master" ? "master" : "lib" };
   let ui = null, asked = false;
+  const key = doc.getElementById("explorer-open"), sec = doc.getElementById("explorer");
   function render() {
-    const on = store.ui.explorer.open, sec = doc.getElementById("explorer");
-    doc.getElementById("explorer-open").setAttribute("aria-pressed", on);
+    const on = store.ui.explorer.open;
+    key.setAttribute("aria-pressed", on);
     // the play pane's notation, not a trainer's board, nor the editor's, nor 再试一次's
     const shown = on && /^(ai|pvp)$/.test(store.session.mode) && !store.session.editor && !store.session.retry;
     if (sec.hidden === shown) sec.hidden = !shown;
@@ -35,13 +36,13 @@ export function createExplorerLazy(d) {
     asked = true;
     loadChunk("chunk-explorer.js", "createExplorerUI").then((create) => { ui = create(d, CHESS_OPENINGS); ui.render(); }, () => { asked = false; });
   }
-  /** Open or close the panel (`open` to set it), and remember that. */
+  /** Open or close the panel (`open`: open it), and remember that. */
   function toggle(open) {
-    store.ui.explorer.open = open === true || (open !== false && !store.ui.explorer.open);
+    store.ui.explorer.open = open || !store.ui.explorer.open;
     d.saveSettings();
     render();
   }
-  doc.getElementById("explorer-open").addEventListener("click", () => toggle());
+  key.addEventListener("click", () => toggle());
   // the library page's door: the board, with the panel open on it
   doc.getElementById("lib-explorer").addEventListener("click", () => { d.toBoard(); toggle(true); });
   for (const slice of ["game", "session", "ui"]) store.subscribe(slice, render);
