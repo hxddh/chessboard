@@ -1592,7 +1592,7 @@ import { createStore } from "./store.js";
     has: (_, k) => DIFF_IDS.includes(k),
   });
   // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
-  const OppUI = createOpponentsLazy({ loadStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
+  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
     doc: document, store, t, tf, setText, afterPress, acceptDraw, diffName: (id) => diffName(id),
     repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
     invalidateEngine, forgetFileResult, playEnding, recordOutcome,
@@ -4293,8 +4293,8 @@ import { createStore } from "./store.js";
     const id = newRecordId();
     store.game.recordedId = id;
     const rec = { id, t: Date.now(), diff: store.session.difficulty, style: store.session.personaId, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending };
-    // v8-0-plan B4: every filed game moves the rating; the card repaints once this task is done (an ending move's sync() came first)
-    OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) saveStats(s); if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
+    // v8-0-plan B4: every filed game moves the rating (a late one is saved by OppUI); the card repaints after this task
+    OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
     s.games.push(rec);
     if (s.games.length > 500) s.games = s.games.slice(-500);
     saveStats(s);
