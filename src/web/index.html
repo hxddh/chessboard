@@ -473,7 +473,11 @@
              toast says which of those it was. picker.js holds the rungs. -->
         <div class="link-row">
           <button type="button" class="act-btn" id="puzzle-smart" title="按你的复习欠账和错误率挑下一题" data-i18n-title="tip.puzzle.smart" data-i18n="pz.smart">为你出一题</button>
-          <!-- v8-0-plan B1: the theme browser, a sheet over this view -->
+        </div>
+        <!-- v8-0-plan B1: the theme browser, a sheet over this view. A row of
+             its own: two actions share a .link-row's grid, and at 1440 wide
+             「Practise by theme」 wrapped to two lines beside 为你出一题. -->
+        <div class="link-row">
           <button type="button" class="act-btn" id="pz-themes-open" title="全部主题，各有多少题、你做过几道、你在这个主题上的评级" data-i18n-title="tip.theme.browse" data-i18n="theme.browse">按主题练</button>
         </div>
         <!-- The theme being practised (a theme is a category of its own). -->
