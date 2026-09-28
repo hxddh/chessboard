@@ -2723,7 +2723,7 @@ import { createStore } from "./store.js";
     // record id lets a fresh 分析 file its accuracy back onto the very game it
     // just measured.
     store.session.mode = "ai";
-    if (DIFF_NAMES[rec.diff]) store.session.difficulty = rec.diff;
+    if (DIFF_NAMES[rec.diff]) store.session.difficulty = rec.diff; store.session.personaId = PERSONA_IDS.includes(rec.style) ? rec.style : "off"; // the opponent it was (Codex #89)
     if (rec.color === "w" || rec.color === "b") { store.session.humanColor = rec.color; store.game.flipped = store.session.humanColor === "b"; }
     store.game.recordedId = rec.id;
     restoreEnding(rec);

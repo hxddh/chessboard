@@ -20,7 +20,8 @@ import { ChessReview } from "../review.js";
 /**
  * The plies the curve's move axis labels: where each move begins (White's
  * ply), plus the first ply when the game starts with Black to move — "30…"
- * is move 30, not a move to skip (Codex #89) — every `every` moves.
+ * is move 30, not a move to skip (Codex #89) — every `every` moves; the
+ * first ply is always labelled, whatever its number.
  * @returns {Array<{i:number, no:number}>}
  */
 export function axisTicks(n, firstMover, moveNo, every) {
@@ -28,7 +29,7 @@ export function axisTicks(n, firstMover, moveNo, every) {
   for (let i = 0; i < n; i++) {
     if (i > 0 && (i % 2 === 0) !== (firstMover === "w")) continue;
     const no = moveNo(i);
-    if (!(no % every)) out.push({ i, no });
+    if (i === 0 || !(no % every)) out.push({ i, no });
   }
   return out;
 }
