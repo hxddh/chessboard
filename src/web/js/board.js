@@ -336,7 +336,9 @@ import { easeFromCss } from "./motion.js";
   }
 
   /** Counters for the tests (v8-0-plan F5). */
-  function stats() { return { imageRedraws: _imageRedraws }; }
+  /** the hint arrow the last frame drew ("b3b8"), for the tests — nothing else can see a canvas arrow */
+  let _lastHint = null;
+  function stats() { return { imageRedraws: _imageRedraws, hint: _lastHint }; }
 
   /**
    * Offscreen raster of piece `key` at `size` device pixels, or null while the
@@ -894,6 +896,7 @@ import { easeFromCss } from "./motion.js";
     }
     // engine hint arrow on top of pieces
     if (m.hintMove) paintArrow(m.hintMove.from, m.hintMove.to, P.hint);
+    _lastHint = m.hintMove ? m.hintMove.from + m.hintMove.to : null;
     // 7.7 §5: the analysis mark of the move that led here, as a badge in the
     // top-right corner of the square it landed on — where Lichess and
     // Chess.com put it, so the eye that follows the last-move tint finds it.
