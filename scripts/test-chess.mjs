@@ -7340,8 +7340,8 @@ for (const lang of CONTENT_LANGS) {
   // no page code reaches either site itself (the URLs live in main.zig)
   const remote = /lichess\.org\/api|api\.chess\.com|XMLHttpRequest|\bfetch\(\s*["'`]https?:/.test(allAppSource);
   assert(!remote, "C2: no page module requests Lichess or Chess.com directly");
-  // the dialog is a chunk (the first-paint budget has ~3 KB left): only its
-  // switch and its button's loader are in the bundle
+  // the dialog is a chunk (the first-paint budget had ~3 KB left): only the
+  // switch's paint and the loader are in the bundle (prefs-ui.js)
   assert(CHUNKS.some((c) => c.entry === "src/web/js/sync-ui.js" && c.global === "createSyncUI"),
     "C2: the sync dialog is an on-demand chunk (chunk-sync.js)");
   const callers = [...WEB_MODULES].filter(([file, text]) => /\.fetchGames\(/.test(text) && file !== "host.js").map(([file]) => file);

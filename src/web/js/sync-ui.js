@@ -14,9 +14,10 @@
  * the preferences window).
  *
  * An on-demand chunk (chunk-sync.js): the first-paint bundle has no room for
- * a dialog most people open once. So it imports nothing — a second copy of
- * dialog.js in a chunk would be a second modal stack — and everything it uses
- * arrives in the bag net-sync.js hands it.
+ * a dialog most people open once, so even the switch's turning is here —
+ * prefs-ui.js only paints it and loads this. It imports nothing: a second
+ * copy of dialog.js in a chunk would be a second modal stack, so everything
+ * it uses arrives in the bag prefs-ui.js hands it.
  * @module sync-ui
  */
 
@@ -50,12 +51,18 @@ export function syncMessage(r) {
 }
 
 const SITES = [{ id: "lichess", name: "Lichess" }, { id: "chesscom", name: "Chess.com" }];
-const COUNTS = [20, 50];
+/**
+ * How many recent games one sync asks for. One number rather than a choice:
+ * the first-paint budget could not carry the words for a choice (the
+ * strings live in the bundle), and a sync is repeated, not a one-off — the
+ * library keeps what came before and skips what it already has.
+ */
+const GAMES = 20;
 
 /**
- * The stored "sync" key (net-sync.js), read defensively: off unless `on` is
+ * The stored "sync" key (persist.js), read defensively: off unless `on` is
  * really true, and anything else it does not recognise back to the default.
- * @returns {{on: boolean, site: "lichess"|"chesscom", user: string, n: number}}
+ * @returns {{on: boolean, site: "lichess"|"chesscom", user: string}}
  */
 export function syncPrefs(v) {
   const s = v && typeof v === "object" ? v : {};
@@ -63,18 +70,30 @@ export function syncPrefs(v) {
     on: s.on === true,
     site: s.site === "chesscom" ? "chesscom" : "lichess",
     user: typeof s.user === "string" ? s.user : "",
-    n: COUNTS.includes(s.n) ? s.n : COUNTS[0],
   };
 }
 
 /**
- * @param {object} d net-sync.js's bag: doc, t, tf, Dlg, Host, store, lib
- *   (library-ui.js), stored() and save(patch) for the "sync" key, setOn(on)
+ * Ask the native side, and never hang: raced against 60 s (the request holds
+ * the shell's thread, and a dialog that never answers is worse than "offline").
+ * A refused call is "bridge", a non-object answer "parse".
+ */
+function ask(Host, p) {
+  const call = Host.fetchGames(p).then((r) => (r == null || typeof r === "object" ? r : { error: "parse" }), () => ({ error: "bridge" }));
+  return Promise.race([call, new Promise((ok) => setTimeout(() => ok({ error: "timeout" }), 60000))]);
+}
+
+/**
+ * @param {object} d prefs-ui.js's bag: doc, t, tf, toast, Dlg, Host, store,
+ *   Persist, lib (library-ui.js), paint() for the preferences switch
  */
 export function createSyncUI(d) {
-  const { doc, t, tf, Dlg, Host } = d;
+  const { doc, t, tf, Dlg, Host, Persist } = d;
+  const stored = () => Persist.read("sync").value;
+  const save = (patch) => Persist.setJson("sync", Object.assign({}, stored() || {}, patch, { v: 1 }));
+  function setOn(on) { save({ on }); d.paint(); }
   let modal = null, busy = false;
-  const pick = { site: "lichess", n: 20 };
+  const pick = { site: "lichess" };
   const $ = (id) => doc.getElementById(id);
 
   function el(tag, attrs, kids) {
@@ -83,18 +102,16 @@ export function createSyncUI(d) {
     for (const c of kids || []) n.appendChild(c);
     return n;
   }
-  /** A 网站 / 局数 segment: buttons that say which one is on. */
-  function seg(id, label, items, onPick) {
-    const row = el("div", { class: "theme-row", id, role: "group", "aria-labelledby": id + "-k" });
-    for (const it of items) {
-      const b = el("button", { type: "button", "data-v": String(it.v) });
-      b.textContent = it.label;
-      b.onclick = () => { onPick(it.v); paint(); };
+  /** The two sites, as a segment named by the dialog's title (从网站同步). */
+  function sites() {
+    const row = el("div", { class: "theme-row", id: "sync-site", role: "group", "aria-labelledby": "sync-title" });
+    for (const s of SITES) {
+      const b = el("button", { type: "button", "data-v": s.id });
+      b.textContent = s.name;
+      b.onclick = () => { pick.site = s.id; paint(); };
       row.appendChild(b);
     }
-    const k = el("span", { class: "setting-k", id: id + "-k" });
-    k.dataset.key = label;
-    return el("div", { class: "setting-row stack" }, [k, row]);
+    return el("div", { class: "setting-row stack" }, [row]);
   }
 
   function build() {
@@ -104,16 +121,15 @@ export function createSyncUI(d) {
     const userK = el("label", { class: "setting-k", for: "sync-user" });
     userK.dataset.key = "sync.user";
     const list = el("div", { class: "setting-list" }, [
-      seg("sync-site", "sync.site", SITES.map((s) => ({ v: s.id, label: s.name })), (v) => { pick.site = v; }),
+      sites(),
       el("div", { class: "setting-row stack" }, [userK, user]),
-      seg("sync-n", "sync.count", COUNTS.map((n) => ({ v: n, label: String(n) })), (v) => { pick.n = v; }),
     ]);
     const title = el("h3", { id: "sync-title" });
-    title.dataset.key = "sync.title";
+    title.dataset.key = "lib.sync";
     const note = el("p", { class: "hint", id: "sync-note", role: "status" });
     const allow = el("button", { type: "button", class: "act-btn", id: "sync-allow" });
     allow.dataset.key = "sync.allow";
-    allow.onclick = () => { d.setOn(true); paint(); user.focus(); };
+    allow.onclick = () => { setOn(true); paint(); user.focus(); };
     const close = el("button", { type: "button", class: "tool-btn", id: "sync-close" });
     close.dataset.key = "act.close";
     close.onclick = () => Dlg.close(modal);
@@ -130,18 +146,16 @@ export function createSyncUI(d) {
 
   /** Words, the segments' marks and what may be pressed, from the state. */
   function paint(line) {
-    const p = syncPrefs(d.stored());
+    const p = syncPrefs(stored());
     const host = Host.hasZero();
     // text written only where it differs: an answer can land while a button
     // here is held down, and rewriting it then loses the click (7.6)
     const put = (n, s) => { if (n.textContent !== s) n.textContent = s; };
     for (const n of modal.querySelectorAll("[data-key]")) put(n, t(n.dataset.key));
-    for (const [id, v] of [["sync-site", pick.site], ["sync-n", pick.n]]) {
-      for (const b of $(id).children) {
-        const on = b.dataset.v === String(v);
-        b.classList.toggle("active", on);
-        b.setAttribute("aria-pressed", on ? "true" : "false");
-      }
+    for (const b of $("sync-site").children) {
+      const on = b.dataset.v === pick.site;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
     }
     $("sync-allow").hidden = p.on || !host;
     $("sync-go").disabled = busy || !p.on || !host;
@@ -150,9 +164,8 @@ export function createSyncUI(d) {
 
   function open() {
     if (!modal) build();
-    const p = syncPrefs(d.stored());
+    const p = syncPrefs(stored());
     pick.site = p.site;
-    pick.n = p.n;
     $("sync-user").value = p.user;
     paint();
     Dlg.open(modal, $("sync-user"));
@@ -176,15 +189,15 @@ export function createSyncUI(d) {
   }
 
   async function go() {
-    if (busy || !syncPrefs(d.stored()).on || !Host.hasZero()) return;
+    if (busy || !syncPrefs(stored()).on || !Host.hasZero()) return;
     const site = SITES.find((s) => s.id === pick.site) || SITES[0];
     const user = $("sync-user").value.trim();
     if (!syncNameOk(user)) { paint(t("sync.badName")); $("sync-user").focus(); return; }
-    d.save({ site: site.id, user, n: pick.n });
+    save({ site: site.id, user });
     busy = true;
     paint(tf("sync.fetching", [site.name]));
     let r;
-    try { r = await Host.fetchGames(site.id, user, pick.n); } catch (_) { r = { error: "bridge" }; }
+    try { r = await ask(Host, { site: site.id, user, max: GAMES }); } catch (_) { r = { error: "bridge" }; }
     busy = false;
     const said = syncMessage(r);
     if (said) {
@@ -200,5 +213,5 @@ export function createSyncUI(d) {
     d.lib.importPgnToLibrary(r.pgn, site.name + " · " + user);
   }
 
-  return { open };
+  return { open, toggle: () => setOn(!syncPrefs(stored()).on) };
 }

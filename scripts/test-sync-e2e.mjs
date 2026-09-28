@@ -104,7 +104,7 @@ const dlg = (page) => page.evaluate(() => {
     allow: !document.getElementById("sync-allow").hidden,
     go: !document.getElementById("sync-go").disabled,
     user: document.getElementById("sync-user").value,
-    site: on("sync-site"), n: on("sync-n"),
+    site: on("sync-site"),
     focus: document.activeElement && document.activeElement.id,
     text: m.textContent,
     calls: window.__calls.length,
@@ -123,10 +123,10 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await toLibrary(page);
   await openSync(page);
   let d = await dlg(page);
-  assert(d.shown && d.title.includes("Lichess") && d.title.includes("Chess.com"), "C2: 棋谱库的「从网站同步」打开对话框（" + d.title + "）");
+  assert(d.shown && d.title === "从网站同步" && d.text.includes("Lichess") && d.text.includes("Chess.com"), "C2: 棋谱库的「从网站同步」打开对话框，两个网站可选（" + d.title + "）");
   assert(d.allow && !d.go && d.note.includes("默认关闭"), "C2: 开关关着：同步按钮不可按，给出说明和「允许联网同步」（" + JSON.stringify({ allow: d.allow, go: d.go, note: d.note }) + "）");
   assert(d.focus === "sync-user", "C2: 焦点落在用户名框（" + d.focus + "）");
-  assert(JSON.stringify(d.site) === '["Lichess"]' && JSON.stringify(d.n) === '["20"]', "C2: 默认 Lichess、20 局（" + JSON.stringify([d.site, d.n]) + "）");
+  assert(JSON.stringify(d.site) === '["Lichess"]', "C2: 默认 Lichess（" + JSON.stringify(d.site) + "）");
   await page.fill("#sync-user", "sync_tester");
   await page.press("#sync-user", "Enter");
   await page.waitForTimeout(200);
@@ -188,7 +188,6 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await toLibrary(page);
   await openSync(page);
   await page.click('#sync-site [data-v="chesscom"]');
-  await page.click('#sync-n [data-v="50"]');
   await page.fill("#sync-user", "Sync_Tester");
   await page.evaluate((pgn) => { window.__answer = { pgn, count: 2 }; }, TWO_GAMES);
   // from the keyboard: Enter in the name field is 同步
@@ -196,7 +195,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await page.waitForFunction(() => !document.getElementById("sync-modal").classList.contains("show"), null, { timeout: 5000 });
   await page.waitForTimeout(400);
   const calls = await page.evaluate(() => window.__calls);
-  assert(JSON.stringify(calls) === '[{"site":"chesscom","user":"Sync_Tester","max":50}]', "C2: Chess.com、50 局（" + JSON.stringify(calls) + "）");
+  assert(JSON.stringify(calls) === '[{"site":"chesscom","user":"Sync_Tester","max":20}]', "C2: Chess.com、最近 20 局（" + JSON.stringify(calls) + "）");
   const lib = await stored(page, "chess.v1.library");
   const games = (lib && lib.games) || [];
   assert(games.length === 2, "C2: 两局进了棋谱库（" + games.length + "）");
@@ -213,8 +212,8 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   // the same sync again adds nothing (the library's ids), and says so
   await openSync(page);
   let d = await dlg(page);
-  assert(d.user === "Sync_Tester" && JSON.stringify(d.site) === '["Chess.com"]' && JSON.stringify(d.n) === '["50"]',
-    "C2: 再打开时记得上次的网站、名字和局数（" + JSON.stringify([d.user, d.site, d.n]) + "）");
+  assert(d.user === "Sync_Tester" && JSON.stringify(d.site) === '["Chess.com"]',
+    "C2: 再打开时记得上次的网站和名字（" + JSON.stringify([d.user, d.site]) + "）");
   await page.click("#sync-go");
   await page.waitForFunction(() => !document.getElementById("sync-modal").classList.contains("show"), null, { timeout: 5000 });
   const lib2 = await stored(page, "chess.v1.library");

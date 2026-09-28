@@ -47,7 +47,7 @@ export const KEYS = {
   // failure writing it must not take the save down with it.
   analyses: "chess.v1.analyses",
   // v8-0-plan C2: 允许联网同步 and the last site / user name asked for
-  // (net-sync.js). A key of its own so 清除全部存档 takes the name with it.
+  // (sync-ui.js). A key of its own so 清除全部存档 takes the name with it.
   sync: "chess.v1.sync",
   panelOpen: "chess.panelOpen",
   // 6.0: where a value that failed to parse is kept, instead of being thrown

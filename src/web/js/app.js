@@ -6136,7 +6136,7 @@ import { createStore } from "./store.js";
 
   // v8-0-plan A1: the preferences window (prefs-ui.js), with the A3 look
   // pickers (appearance-ui.js) mounted in it; a pick goes to settings-ui.js
-  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, toast, lib: LibraryUI } });
+  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, lib: LibraryUI } });
   PrefsUI.wire();
   // v8-0-plan F4: the settings page (settings-ui.js) — its view, the look
   // and the handlers behind its controls

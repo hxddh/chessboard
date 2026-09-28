@@ -88,7 +88,7 @@ export const CHUNKS = [
   { entry: "src/web/js/review/moments.js", out: "src/web/js/chunk-moments.js", global: "createMoments", min: 3000 },
   // v8-0-plan B4: the ladder, personas, rating and styles (opponents-lazy.js)
   { entry: "src/web/js/opponents-chunk.js", out: "src/web/js/chunk-opponents.js", global: "CHESS_OPPONENTS", min: 15000 },
-  // v8-0-plan C2: the sync dialog, on its button's first click (net-sync.js)
+  // v8-0-plan C2: the sync dialog, on its button's first click (prefs-ui.js)
   { entry: "src/web/js/sync-ui.js", out: "src/web/js/chunk-sync.js", global: "createSyncUI", min: 2000 },
   ...lichessChunks(path.join(root, "src/web/js/lichess")),
 ];

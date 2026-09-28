@@ -562,7 +562,7 @@
       "aria.tabs": "パネルの区分",
       // 7.0 棋譜ライブラリ
       "lib.title": "棋譜ライブラリ", "lib.import": "棋譜ファイルを読み込む", "lib.diagnose": "診断を見る",
-      "lib.sync": "サイトから同期", "prefs.net": "オンライン同期", "sync.title": "Lichess または Chess.com から同期", "sync.site": "サイト", "sync.user": "ユーザー名", "sync.count": "最近の対局数", "sync.go": "同期", "sync.allow": "オンライン同期を許可", "sync.hint": "初期設定はオフです。オンにしても、「同期」を押したときだけ Lichess または Chess.com に接続し、送るのはユーザー名だけです。", "sync.noHost": "オンライン同期はデスクトップアプリでのみ使えます。", "sync.fetching": "{0} から対局を取得しています…", "sync.offline": "{0} に接続できません。ネットワークを確認してもう一度お試しください。", "sync.rate": "{0} が一時的にリクエストを制限しています。1 分ほどしてからお試しください。", "sync.notFound": "{0} にユーザー {1} は見つかりません。", "sync.empty": "{0} には {1} の対局がまだありません。", "sync.failed": "同期を完了できませんでした（{0}）。", "sync.badName": "ユーザー名は英数字・-・_ の 2〜30 文字です。",
+      "lib.sync": "サイトから同期", "sync.user": "ユーザー名", "sync.go": "同期", "sync.allow": "オンライン同期を許可", "sync.hint": "初期設定はオフです。オンにしても、「同期」を押したときだけ Lichess または Chess.com に接続し、送るのはユーザー名だけです。", "sync.noHost": "オンライン同期はデスクトップアプリでのみ使えます。", "sync.fetching": "{0} から対局を取得しています…", "sync.offline": "{0} に接続できません。ネットワークを確認してもう一度お試しください。", "sync.rate": "{0} が一時的にリクエストを制限しています。1 分ほどしてからお試しください。", "sync.notFound": "{0} にユーザー {1} は見つかりません。", "sync.empty": "{0} には {1} の対局がまだありません。", "sync.failed": "同期を完了できませんでした（{0}）。", "sync.badName": "ユーザー名は英数字・-・_ の 2〜30 文字です。",
       "pz.repBook": "定跡書では {0}",
       "rep.title": "自分の定跡書", "rep.importW": "先手の定跡書を読み込む", "rep.importB": "後手の定跡書を読み込む",
       "rep.drill": "覚える", "rep.clear": "空にする", "rep.count": "{0} 本",

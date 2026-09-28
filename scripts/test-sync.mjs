@@ -56,12 +56,12 @@ const assert = (cond, msg, extra) => {
 {
   const P = (value) => value;
   const p0 = ctx.syncPrefs(P(null));
-  assert(p0.on === false && p0.site === "lichess" && p0.user === "" && p0.n === 20, "没存过：关，Lichess，20 局", JSON.stringify(p0));
+  assert(p0.on === false && p0.site === "lichess" && p0.user === "", "没存过：关，Lichess", JSON.stringify(p0));
   assert(ctx.syncPrefs(P({ v: 1, on: "yes" })).on === false, "on 不是 true 就是关");
-  const p1 = ctx.syncPrefs(P({ v: 1, on: true, site: "chesscom", user: "Hikaru", n: 50 }));
-  assert(p1.on && p1.site === "chesscom" && p1.user === "Hikaru" && p1.n === 50, "存下的都读回来", JSON.stringify(p1));
-  const p2 = ctx.syncPrefs(P({ v: 1, on: true, site: "fics", user: 7, n: 999 }));
-  assert(p2.site === "lichess" && p2.user === "" && p2.n === 20, "认不得的值回到默认", JSON.stringify(p2));
+  const p1 = ctx.syncPrefs(P({ v: 1, on: true, site: "chesscom", user: "Hikaru" }));
+  assert(p1.on && p1.site === "chesscom" && p1.user === "Hikaru", "存下的都读回来", JSON.stringify(p1));
+  const p2 = ctx.syncPrefs(P({ v: 1, on: true, site: "fics", user: 7 }));
+  assert(p2.site === "lichess" && p2.user === "", "认不得的值回到默认", JSON.stringify(p2));
   // 它是档案里的一个键：清除全部存档会连用户名一起清掉
   assert(ctx.KEYS && ctx.KEYS.sync === "chess.v1.sync", "persist.js 的键表里有 sync");
 }
