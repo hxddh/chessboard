@@ -21,6 +21,8 @@ const ctx = loadAppModules([
   "src/web/js/chess.js", "src/web/js/rating.js", "src/web/js/srs.js",
   "src/web/js/opening-tree.js", "src/web/js/openings.js", "src/web/js/puzzles.js",
   "src/web/js/motif.js", "src/web/js/puzzle-db.js",
+  // the index chunk-mined.js puts on the window (mined-chunk.js)
+  "src/web/js/puzzles-lc-index.js",
 ]);
 const Chess = ctx.Chess;
 
@@ -594,9 +596,13 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(decoded === 49 && inRange, "every band decodes to its count, inside its rating range");
   assert(Object.values(idx.themes).every((t) => t.bands.length === idx.bands.length) && idx.themes.m1.n === 8, "per-theme counts per band");
   const idxBytes = fs.statSync(path.join(dir, "puzzles-lc-index.js")).size;
-  assert(idxBytes < 4000, "the index is small (" + idxBytes + " bytes) — it is what the main bundle carries");
+  assert(idxBytes < 4000, "the index is small (" + idxBytes + " bytes) — it rides in chunk-mined.js, fetched right after the first paint");
   fs.rmSync(dir, { recursive: true, force: true });
 
+  // the index is not in the main bundle: it rides in chunk-mined.js
+  const bundled = fs.readFileSync(path.join(ROOT, "src/web/js/bundle.js"), "utf8");
+  const minedChunk = fs.readFileSync(path.join(ROOT, "src/web/js/chunk-mined.js"), "utf8");
+  assert(!/LC_INDEX = \{/.test(bundled) && /LC_INDEX = \{/.test(minedChunk), "the Lichess index is in chunk-mined.js, not in bundle.js");
   // what ships today: the committed index, and chunks exactly for its bands
   assert(ctx.ChessPuzzleDb.index.bands.length === CHUNKS.filter((c) => /chunk-lc-/.test(c.out)).length,
     "CHUNKS carries one Lichess chunk per band of the committed index (" + ctx.ChessPuzzleDb.index.bands.length + ")");

@@ -74,7 +74,8 @@ export const CHUNKS = [
   { entry: "src/web/js/eco.js", out: "src/web/js/chunk-eco.js", global: "ECO_BY_KEY", min: 400000 },
   { entry: "src/web/js/lang-en.js", out: "src/web/js/chunk-lang-en.js", global: "CHESS_I18N_EN", min: 150000 },
   { entry: "src/web/js/lang-ja.js", out: "src/web/js/chunk-lang-ja.js", global: "CHESS_I18N_JA", min: 200000 },
-  { entry: "src/web/js/puzzles-mined.js", out: "src/web/js/chunk-mined.js", global: "MINED_PUZZLES", min: 150000 },
+  // the mined puzzles, and the Lichess index with them (mined-chunk.js)
+  { entry: "src/web/js/mined-chunk.js", out: "src/web/js/chunk-mined.js", global: "MINED_PUZZLES", min: 150000 },
   { entry: "src/web/js/pieces-merida.js", out: "src/web/js/chunk-merida.js", global: "MERIDA_PIECE_SVGS", min: 30000 },
   // v8-0-plan A3: the further piece sets, one chunk each (lazy-content.js PIECE_CHUNKS)
   { entry: "src/web/js/pieces-chessnut.js", out: "src/web/js/chunk-pieces-chessnut.js", global: "CHESSNUT_PIECE_SVGS", min: 25000 },

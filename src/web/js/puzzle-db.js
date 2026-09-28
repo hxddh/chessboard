@@ -2,9 +2,10 @@
  * The imported Lichess puzzles, band by band (v8-0-plan B1).
  *
  * Tens of thousands of puzzles are megabytes of text, and the first paint
- * needs none of them. So the bundle carries only the index (puzzles-lc-
- * index.js: per band a count and a rating range, per theme a count per
- * band) and each 200-point band is a chunk of its own, loaded the first time
+ * needs none of them. The index (puzzles-lc-index.js: per band a count and a
+ * rating range, per theme a count per band) rides in chunk-mined.js with the
+ * mined puzzles (mined-chunk.js) — until it is here the set reads as empty,
+ * and indexReady() says so — and each 200-point band is a chunk of its own, loaded the first time
  * something asks for it — rush mode walks up the bands, a theme page asks
  * for the bands its counts say hold that theme, the rating picker asks for
  * the band around the player.
@@ -16,13 +17,16 @@
  *
  * @module puzzle-db
  */
-import { LC_INDEX } from "./puzzles-lc-index.js";
 import { loadChunk, chunkReady } from "./chunk.js";
 
   /** motif.js's keys: a `tac` puzzle is labelled with the first it carries
       (the importer puts the verified label first; "discoveredAttack", 闪击,
       is a theme, not one of these) */
   const MOTIFS = ["fork", "pin", "skewer", "discovered", "double"];
+
+  const EMPTY_INDEX = { total: 0, sides: { w: 0, b: 0 }, bands: [], themes: {} };
+  /** chunk-mined.js puts LC_INDEX on the window. */
+  const index = () => globalThis.LC_INDEX || EMPTY_INDEX;
 
   const bandName = (band) => String(band).padStart(4, "0");
   /** The chunk that holds a band — scripts/bundle.mjs builds the same names. */
@@ -62,7 +66,7 @@ import { loadChunk, chunkReady } from "./chunk.js";
   }
   /** The band a rating falls in, clamped to the bands there are (null: none). */
   function bandFor(rating) {
-    const bands = LC_INDEX.bands;
+    const bands = index().bands;
     if (!bands.length) return null;
     const b = Math.floor((Number(rating) || 0) / 200) * 200;
     if (b <= bands[0].band) return bands[0].band;
@@ -71,14 +75,15 @@ import { loadChunk, chunkReady } from "./chunk.js";
   }
   /** The bands holding theme `id`, with counts. */
   function bandsWith(id) {
-    const t = LC_INDEX.themes[id];
+    const t = index().themes[id];
     if (!t) return [];
-    return LC_INDEX.bands.map((x, i) => ({ band: x.band, n: t.bands[i] })).filter((x) => x.n > 0);
+    return index().bands.map((x, i) => ({ band: x.band, n: t.bands[i] })).filter((x) => x.n > 0);
   }
 
   export const ChessPuzzleDb = {
-    index: LC_INDEX,
-    total: () => LC_INDEX.total,
-    themeIds: () => Object.keys(LC_INDEX.themes),
+    get index() { return index(); },
+    indexReady: () => !!globalThis.LC_INDEX,
+    total: () => index().total,
+    themeIds: () => Object.keys(index().themes),
     bandFor, bandsWith, band, ensureBand, bandChunk, decodeRow,
   };
