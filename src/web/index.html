@@ -896,6 +896,14 @@
                  leaves the name field rewrote them between mouse-down and
                  mouse-up, and WebKit drops a click whose button moved. -->
             <div class="stats-body" id="lib-status"></div>
+            <!-- v8-0-plan C1: 认领名字 — the name on most games, offered once
+                 (library-page.js renderClaim). Under the buttons, like the
+                 status lines, so its coming and going moves nothing above. -->
+            <div class="lib-claim" id="lib-claim" hidden>
+              <p class="hint" id="lib-claim-text"></p>
+              <button type="button" class="act-btn primary" id="lib-claim-yes" data-i18n="lib.claimYes">是我</button>
+              <button type="button" class="act-btn" id="lib-claim-no" data-i18n="lib.claimNo">不是</button>
+            </div>
             </div>
           </section>
           <section class="side-section page-sec" id="sec-rep">

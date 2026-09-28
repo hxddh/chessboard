@@ -159,7 +159,7 @@ export function createLibraryUI(d) {
       Library, Dlg, reconcile, Chess, PgnParser: ChessPgnParser, Pgn: ChessPgn, Eco: ChessEco,
       idb: typeof indexedDB !== "undefined" ? indexedDB : null, withLock: Host.withStoreLock,
       pause: () => new Promise((r) => setTimeout(r, 0)), LIB_DEEP_BUDGET, fillOpenings, libEcoName, libPickPly,
-      libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary,
+      libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary, rescoreLosses,
     }))).then((c) => {
       libDb = c;
       if (d.onLibraryLoaded) d.onLibraryLoaded();

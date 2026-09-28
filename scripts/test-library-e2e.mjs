@@ -24,6 +24,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
+import { libOf, storedLib } from "./lib/library-view.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -103,7 +104,6 @@ async function importFile(page, text, button) {
 const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   .map((id) => (document.getElementById(id) || {}).textContent || "").join("\n"));
 
-const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
 
 // --- 1. every game in the file, not one of them -----------------------------
 {
@@ -692,8 +692,8 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await page.waitForTimeout(2500);
 
   const after = await page.evaluate(() => ({
-    budget: JSON.parse(localStorage.getItem("chess.v1.library")).games[0].an.budget,
-    tags: JSON.parse(localStorage.getItem("chess.v1.library")).games[0].an.tags,
+    budget: window.__chess.library().games[0].an.budget,
+    tags: window.__chess.library().games[0].an.tags,
     mines: JSON.parse(localStorage.getItem("chess.v1.mines")).list
       .map((m) => ({ id: m.id, sol: m.solution[0], budget: m.rev && m.rev.budget, from: m.from && m.from.id })),
     deepBtn: !!document.querySelector("#lib-list button[data-lib-deep]"),
@@ -1765,7 +1765,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await importFile(page, `[Event "Rated blitz"]\n[Date "${today}"]\n[White "hxddh"]\n[Black "rival"]\n[Result "1-0"]\n\n` +
     "1. e4 { [%clk 0:03:00] } e5 { [%clk 0:03:00] } 2. Qh5 { [%clk 0:02:57] } Nc6 { [%clk 0:02:55.2] } " +
     "3. Bc4 { [%clk 0:02:50] } Nf6 { [%clk 0:02:40] } 4. Qxf7# { [%clk 0:02:49] } 1-0\n");
-  const clk = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library")).games.map((g) => g.clk));
+  const clk = (await libOf(page)).games.map((g) => g.clk);
   assert(JSON.stringify(clk) === "[[180,180,177,175,170,160,169]]", "B5 导入的棋谱带着每手的钟", JSON.stringify(clk));
   await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(400);

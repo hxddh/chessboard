@@ -2481,7 +2481,7 @@ import { createStore } from "./store.js";
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
-    renderRecordEntry, loadStats, copyText, exportText, confirmNative, loadHistoryRecord: (rec) => loadHistoryRecord(rec),
+    renderRecordEntry, loadStats, copyText, exportText, loadHistoryRecord: (rec) => loadHistoryRecord(rec),
     boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); },
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;

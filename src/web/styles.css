@@ -3461,6 +3461,8 @@
 .lib-dates, .lib-pos-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .lib-dates .text-input { flex: 1 1 0; min-width: 0; }
 .lib-pos-row .hint { margin: 0; }
+.lib-claim { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.lib-claim .hint { flex: 1 1 16rem; margin: 0; }
 
 /* v8-0-plan §5: the sheet was a 380px card with the list capped at 52vh
    inside it. Twelve rows of sentences wrapped to two and three lines there,

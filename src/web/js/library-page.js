@@ -99,6 +99,9 @@ async function bootLibrary(d) {
     // been showing since boot is the same games (just migrated), and nothing
     // could change them meanwhile: imports and passes wait for this boot.
     store.session.library = st.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
+    // 7.0's unclamped losses, recomputed from the scalars on every load as
+    // library-ui.js loadLibrary() does — the stored record keeps what it had
+    for (const g of store.session.library) d.rescoreLosses(g);
     for (const g of store.session.library) sigs.set(g.id, sigOf(g));
     if (migrated) {
       // the header changes last, after every game is readable back — until
@@ -133,6 +136,8 @@ async function bootLibrary(d) {
    */
   let chain = Promise.resolve();
   function save() {
+    // a name typed into the field is an answer to the claim too
+    if (store.session.libNames.length && !claimAsked) { claimAsked = true; renderClaim(); }
     if (mode !== "idb") { writeHeader(); return Promise.resolve(true); }
     const list = store.session.library;
     const changed = [];
@@ -536,34 +541,47 @@ async function bootLibrary(d) {
     if (!r.added) toast(tf("lib.addedNone", [r.dup]), "fix");
     else toast(tf("lib.added", [r.added, r.dup]) + (label ? " · " + label : ""));
     if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
-    await maybeClaim();
+    renderClaim();
   }
 
   /**
-   * v8-0-plan C1: 认领名字. Nobody has been named yet and the games agree
-   * on one name (LibraryQuery.inferName): ask once. Yes or no, the question
-   * is not asked again — the name field is still there for a correction.
+   * v8-0-plan C1: 认领名字. Nobody has been named yet and the games agree on
+   * one name (LibraryQuery.inferName): the library section offers it, once —
+   * a line under the buttons, not a dialog, so it neither blocks the page nor
+   * moves 分析 (7.6). Answered either way, or a name typed into the field,
+   * and it is not offered again; the field stays for a correction.
    */
-  async function maybeClaim() {
-    if (claimAsked || store.session.libNames.length) return;
-    const c = LibraryQuery.inferName(store.session.library);
-    if (!c) return;
+  let claim = null;
+  function renderClaim() {
+    const box = doc.getElementById("lib-claim");
+    claim = claimAsked || store.session.libNames.length ? null : LibraryQuery.inferName(store.session.library);
+    if (!box) return;
+    box.hidden = !claim;
+    const text = doc.getElementById("lib-claim-text");
+    if (claim && text) text.textContent = tf("lib.claimAsk", [claim.name, claim.n, claim.of]);
+  }
+  function answerClaim(yes) {
+    const c = claim;
     claimAsked = true;
-    writeHeader();
-    const yes = await d.confirmNative(tf("lib.claimAsk", [c.name, c.n, c.of]), t("lib.claimTitle"),
-      { ok: t("lib.claimYes"), cancel: t("lib.claimNo") });
-    if (yes !== true) return;
-    store.session.libNames = [c.name];
-    const input = doc.getElementById("lib-names");
-    if (input) input.value = c.name;
-    d.reclaimLibrary();
+    if (yes && c) {
+      store.session.libNames = [c.name];
+      const input = doc.getElementById("lib-names");
+      if (input) input.value = c.name;
+      d.reclaimLibrary();
+    }
     save();
+    renderClaim();
     d.renderLibrary();
-    toast(tf("lib.claimDone", [c.name, store.session.library.filter((g) => g.side).length]));
+    if (yes && c) toast(tf("lib.claimDone", [c.name, store.session.library.filter((g) => g.side).length]));
   }
 
   // --- the rest of the seam ------------------------------------------------
   wire();
+  for (const [id, yes] of [["lib-claim-yes", true], ["lib-claim-no", false]]) {
+    const b = doc.getElementById(id);
+    if (b) b.onclick = () => answerClaim(yes);
+  }
+  renderClaim();
   // what is not indexed yet (a migrated or restored library), in the
   // background; the position filter finds more as it goes
   const indexing = st.indexMissing(12, d.pause).then(() => { if (listOpen()) renderList(); });
