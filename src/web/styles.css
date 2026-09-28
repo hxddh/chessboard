@@ -4107,7 +4107,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
 /* not .act-group: collapseEmptyGroups() un-hides every .act-group that holds a
    button, and this section is shown by its key, not by what it holds */
 .xp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.xp-head .act-k { margin-bottom: 0; }
+.xp-head .act-k { margin-bottom: 0; min-width: 0; }
+/* the source switch keeps its words on one line; the heading gives way */
+.xp-head > .theme-row { flex: none; }
+.xp-head > .theme-row > button { white-space: nowrap; }
 .xp-note { margin: 4px 0 8px; }
 .xp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .xp-list:focus { outline: none; }
@@ -4132,5 +4135,5 @@ span[data-icon] { display: inline-grid; place-items: center; }
 }
 .xp-bar > span { display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .xp-w { background: var(--side-white); color: var(--side-black); }
-.xp-d { background: var(--muted); color: var(--side-white); }
+.xp-d { background: var(--muted); color: var(--bg); }
 .xp-b { background: var(--side-black); color: var(--side-white); }

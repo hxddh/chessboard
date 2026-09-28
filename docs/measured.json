@@ -2970,5 +2970,80 @@
         }
       }
     }
+  },
+  "explorer": {
+    "what": "v8-0-plan C3 开局浏览器：棋谱库索引耗时、内置大师树的来源与规模、包体积增量",
+    "script": "scripts/test-explorer.mjs --record",
+    "libIndex": {
+      "games": 500,
+      "plies": 80,
+      "maxPly": 50,
+      "chessJsMsBefore": 3445,
+      "ms": 152,
+      "queryMs": 2
+    },
+    "masters": {
+      "source": "lichess_db_standard_rated_2026-08",
+      "licence": "CC0",
+      "minElo": 2200,
+      "speeds": [
+        "Blitz",
+        "Rapid",
+        "Classical"
+      ],
+      "plies": 16,
+      "minGames": 2,
+      "read": 7096686,
+      "games": 120000,
+      "positions": 82529,
+      "moves": 122279,
+      "buckets": [
+        [
+          0,
+          7
+        ],
+        [
+          8,
+          9
+        ],
+        [
+          10,
+          11
+        ],
+        [
+          12,
+          12
+        ],
+        [
+          13,
+          14
+        ],
+        [
+          15,
+          15
+        ]
+      ],
+      "sourceBytes": 2766889,
+      "audit": {
+        "positions": 40,
+        "exact": 40
+      }
+    },
+    "package": {
+      "bundleBefore": 1202086,
+      "bundleAfter": 1204413,
+      "chunkExplorer": 20618,
+      "masterChunks": [
+        575493,
+        523985,
+        625772,
+        324659,
+        613844,
+        273402
+      ],
+      "masterChunksTotal": 2937155,
+      "bundleDelta": 2327,
+      "installDelta": 2960100
+    }
   }
 }

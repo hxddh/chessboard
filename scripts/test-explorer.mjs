@@ -14,7 +14,7 @@ import fs from "fs";
 import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
-import { compileModuleSync, CHUNKS } from "./bundle.mjs";
+import { compileModuleSync, CHUNKS, build } from "./bundle.mjs";
 import { createCounter, naiveCount, eachGame, qualifies, DEFAULTS } from "./build-explorer.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,6 +31,7 @@ const keyOf = (pos) => ctx.ChessFide.positionKey(pos.fen(), pos);
 const keyAfter = (sans, fen) => { const g = fen ? new Chess(fen) : new Chess(); for (const s of sans) g.move(s); return keyOf(g); };
 
 let failed = 0;
+const REC = {}; // --record: what docs/measured.json `explorer` holds
 const assert = (cond, msg, extra) => {
   if (cond) console.log("ok   " + msg);
   else { failed++; console.error("FAIL " + msg + (extra ? "  " + extra : "")); }
@@ -89,9 +90,11 @@ const assert = (cond, msg, extra) => {
   let t = performance.now();
   const first = bsrc.movesAt(keyAfter([]));
   const tIndex = performance.now() - t;
+  REC.libIndex = { games: 500, plies: 80, maxPly: X.LIB_PLIES, chessJsMsBefore: 3445 };
   t = performance.now();
   for (let i = 0; i < 100; i++) bsrc.movesAt(keyAfter([]));
   const tQuery = (performance.now() - t) / 100;
+  Object.assign(REC.libIndex, { ms: Math.round(tIndex), queryMs: Math.round(tQuery * 100) / 100 });
   console.log("  500 局索引 " + tIndex.toFixed(0) + " ms，每次查询 " + tQuery.toFixed(2) + " ms");
   assert(first.reduce((n, r) => n + r.n, 0) === 500, "500 局都从起始局面计入");
   assert(tIndex < 1000, "500 局 × 80 半回合，一次建索引 < 1 s（" + tIndex.toFixed(0) + " ms；chess.js 上是 3.4 s）");
@@ -224,6 +227,9 @@ const assert = (cond, msg, extra) => {
       .map((r) => [r.san, r.n, r.w, r.d, r.b].join(",")).join(" ");
     if (got === want) exact++; else miss.push(p.key + ": " + got + " ≠ " + want);
   }
+  REC.masters = { source: M.source, licence: M.licence, minElo: M.minElo, speeds: M.speeds, plies: M.plies, minGames: M.minGames,
+    read: M.read, games: M.games, positions: M.positions, moves: M.moves, buckets: M.buckets, sourceBytes: bytes,
+    audit: { positions: audit.positions.length, exact } };
   assert(miss.length === 0, "抽检 " + audit.positions.length + " 个局面，分块里的每一着、每个胜和负都等于原始对局重数（" + exact + " 个一致）", miss.slice(0, 2).join(" | "));
   const start = X.decodeRows(loaded[0][X.hashKey(keyAfter([]))]);
   assert(start.reduce((n, r) => n + r.n, 0) >= M.games * 0.99, "起始局面的着法合计 ≈ 总局数（剪枝只去掉极少数冷门首着）");
@@ -250,4 +256,24 @@ const assert = (cond, msg, extra) => {
 }
 
 if (failed) { console.error("\n" + failed + " failed"); process.exit(1); }
+
+// --record: the package-size delta and the figures above into docs/measured.json
+// (v8-0-plan C3 acceptance: 包体积增量写进落地记录). The main bundle's
+// "before" is dcd0511's, the commit C3 started from.
+if (process.argv.includes("--record")) {
+  const bundleSrc = await build({ write: true });
+  const size = (f) => fs.statSync(path.join(root, f)).size;
+  const xm = CHUNKS.filter((c) => /chunk-xm-\d\d\.js$/.test(c.out)).map((c) => size(c.out));
+  REC.package = {
+    bundleBefore: 1202086, bundleAfter: Buffer.byteLength(bundleSrc, "utf8"),
+    chunkExplorer: size("src/web/js/chunk-explorer.js"), masterChunks: xm, masterChunksTotal: xm.reduce((a, b) => a + b, 0),
+  };
+  REC.package.bundleDelta = REC.package.bundleAfter - REC.package.bundleBefore;
+  REC.package.installDelta = REC.package.bundleDelta + REC.package.chunkExplorer + REC.package.masterChunksTotal;
+  const file = path.join(root, "docs/measured.json");
+  const m = JSON.parse(fs.readFileSync(file, "utf8"));
+  m.explorer = Object.assign({ what: "v8-0-plan C3 开局浏览器：棋谱库索引耗时、内置大师树的来源与规模、包体积增量", script: "scripts/test-explorer.mjs --record" }, REC);
+  fs.writeFileSync(file, JSON.stringify(m, null, 2) + "\n");
+  console.log("recorded docs/measured.json explorer: " + JSON.stringify(REC.package));
+}
 console.log("\nall explorer checks passed");
