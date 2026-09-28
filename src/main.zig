@@ -2292,13 +2292,15 @@ test "offline, rate-limited and no-such-user each have their own answer" {
 }
 
 test "Lichess: the PGN comes back as whole games, newest first, at most N" {
-    const gpa = std.testing.allocator;
+    // read back with an arena, the way the SDK's own feed.zig parses
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
     var out: [8192]u8 = undefined;
     {
-        var parsed = try std.json.parseFromSlice(SyncAnswerJson, gpa, try lichessAnswer(LICHESS_SAMPLE, 20, &out), .{});
-        defer parsed.deinit();
-        try std.testing.expectEqual(@as(usize, 3), parsed.value.count);
-        const pgn = parsed.value.pgn;
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessAnswer(LICHESS_SAMPLE, 20, &out), .{});
+        try std.testing.expectEqual(@as(usize, 3), parsed.count);
+        const pgn = parsed.pgn;
         try std.testing.expect(std.mem.startsWith(u8, pgn, "[Event \"Rated blitz game\"]\n"));
         try std.testing.expect(std.mem.endsWith(u8, pgn, "2... Qh4# { [%clk 0:00:59] } 0-1"));
         // games apart by a blank line, each whole, in the order they came
@@ -2309,10 +2311,9 @@ test "Lichess: the PGN comes back as whole games, newest first, at most N" {
         try std.testing.expect(std.mem.indexOf(u8, pgn, "[White \"Someone \\\"quoted\\\"\"]") != null);
     }
     {
-        var parsed = try std.json.parseFromSlice(SyncAnswerJson, gpa, try lichessAnswer(LICHESS_SAMPLE, 2, &out), .{});
-        defer parsed.deinit();
-        try std.testing.expectEqual(@as(usize, 2), parsed.value.count);
-        try std.testing.expect(std.mem.indexOf(u8, parsed.value.pgn, "Rated bullet game") == null);
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessAnswer(LICHESS_SAMPLE, 2, &out), .{});
+        try std.testing.expectEqual(@as(usize, 2), parsed.count);
+        try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "Rated bullet game") == null);
     }
     // a player with no games: an empty text, not an error
     try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer("", 20, &out));
@@ -2343,17 +2344,15 @@ test "Chess.com: the archive list is read, and only its own API is followed" {
 }
 
 test "Chess.com: a month's games come back newest first, standard chess only" {
-    const gpa = std.testing.allocator;
-    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var out: [8192]u8 = undefined;
     var answer = SyncAnswer.init(&out, 20);
     try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_SAMPLE, &answer));
     try std.testing.expectEqual(@as(usize, 2), answer.count);
-    var parsed = try std.json.parseFromSlice(SyncAnswerJson, gpa, try answer.finish(), .{});
-    defer parsed.deinit();
-    const pgn = parsed.value.pgn;
+    const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try answer.finish(), .{});
+    const pgn = parsed.pgn;
     try std.testing.expect(std.mem.startsWith(u8, pgn, "[Event \"Let's Play!\"]\n"));
     try std.testing.expect(std.mem.indexOf(u8, pgn, "Chess960") == null);
     const older = std.mem.indexOf(u8, pgn, "[Event \"Live Chess\"]").?;
