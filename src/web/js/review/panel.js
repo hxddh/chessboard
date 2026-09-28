@@ -18,7 +18,8 @@
 import { Chess } from "../chess.js";
 import { ChessHost } from "../host.js";
 import { ChessMistakes } from "../mistakes.js";
-import { ChessReport } from "../report.js";
+import { loadChunk } from "../chunk.js";
+import { REVIEW_CHUNKS } from "../lazy-content.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade as Grade } from "../review-grade.js";
 
@@ -376,8 +377,9 @@ export function createReviewPanel(d) {
   // A picture carries the conclusion.
 
   /** Draw the finished review onto an offscreen canvas. @returns {HTMLCanvasElement|null} */
-  // the report image lives in report.js; it reads the app through this bag
-  function renderReportCanvas() {
+  // the report image lives in report.js — a chunk since v8-0-plan A4 (F5's
+  // budget), fetched on the first export; it reads the app through this bag
+  function renderReportCanvas(ChessReport) {
     return ChessReport.render({ t, tf, sideName, statusText, openingFor, sanHistory, startFen,
       analysisFor, judgeColours, sideRows, DIFF_NAMES, store, ChessReview });
   }
@@ -394,7 +396,10 @@ export function createReviewPanel(d) {
   }
 
   async function exportReport() {
-    const cv = renderReportCanvas();
+    let R = null;
+    try { R = await loadChunk(REVIEW_CHUNKS.report.file, REVIEW_CHUNKS.report.global); } catch (_) { R = null; }
+    if (!R) { toast(t("msg.file.readFailed"), "fault"); return; }
+    const cv = renderReportCanvas(R);
     if (!cv) { toast(t("rv.noReport")); return; }
     const name = reportFileName();
     const b64 = canvasPngBase64(cv);

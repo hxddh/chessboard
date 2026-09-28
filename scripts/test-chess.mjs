@@ -6483,7 +6483,7 @@ for (const lang of CONTENT_LANGS) {
       "unreadable settings are treated as none");
     // every chunk the plan or the app can ask for is one the bundler builds,
     // under the global it promises
-    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, ...Object.values(lctx.PIECE_CHUNKS)];
+    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, ...Object.values(lctx.PIECE_CHUNKS), ...Object.values(lctx.REVIEW_CHUNKS || {})];
     assert(lctx.PIECE_CHUNKS.merida === lctx.MERIDA_CHUNK, "Merida is one of the piece chunks, under its M1 file name");
     // v8-0-plan A3: every set offered is licence-cleared where it lives and
     // where the user reads it. The module header names the author, the

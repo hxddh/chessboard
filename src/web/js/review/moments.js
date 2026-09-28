@@ -16,18 +16,18 @@
  *
  * Everything it needs from the app arrives in the bag handed to
  * `createMoments()`, createLibraryUI's shape; nothing here reaches back into
- * app.js.
+ * app.js. It is a chunk (review/moments-lazy.js), so even review-grade.js
+ * arrives in the bag — imported here, it would be a second copy of the
+ * module the bundle already carries.
  * @module review/moments
  */
-import { ChessReviewGrade as Grade } from "../review-grade.js";
-
 /**
  * @param {object} d everything this module borrows from app.js
  */
 export function createMoments(d) {
   const {
     doc, store, t, tf, sideName, analysisFor, sanHistory, startFen, boardMoveNo, setViewIndex, writeSan,
-    inModal, Retry,
+    inModal, Retry, Grade,
   } = d;
   const document = doc;
 

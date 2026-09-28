@@ -39,7 +39,7 @@ import { createEvalGraph } from "./review/eval-graph.js";
 import { createLines } from "./review/lines.js";
 import { createReviewPanel } from "./review/panel.js";
 import { createRetry } from "./review/retry.js";
-import { createMoments } from "./review/moments.js";
+import { createMomentsLazy } from "./review/moments-lazy.js";
 import { createGameEnd } from "./game-end.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
@@ -2189,8 +2189,8 @@ import { createStore } from "./store.js";
     selectSquare, clearSelection, moveSound, evalScalar, SCAN_BUDGET, toast,
   });
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
-  // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js
-  const Moments = createMoments({ doc: document, store, t, tf, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
+  // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js, a chunk
+  const Moments = createMomentsLazy({ doc: document, store, t, tf, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
     setViewIndex, writeSan, inModal, Retry });
 
   // v8-0-plan F4: the eval gauge, the curve and the marks' colours live in
