@@ -9,7 +9,7 @@
  *     turns, the goal says Black, and the three mate-grading sentences
  *     (pz.stillMate / pz.notMateYetMove / pz.refuted) name White
  *   - 冲刺 and 连胜: the card, the strikes, the clock running out, the best
- *     score kept across a reload
+ *     score kept across a reload, a run surviving a cancelled game load
  *
  * The real Lichess index is empty until the database may be downloaded, so
  * this builds its own page: scripts/import-puzzles.mjs runs over the fixture
@@ -103,14 +103,15 @@ const errs = [];
 /** A page in puzzle mode with `puzzles` as the stored puzzle state. */
 async function open(puzzles, opts) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
-  await ctx.addInitScript(([pz, mode]) => {
+  await ctx.addInitScript(([pz, mode, extra]) => {
     if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app wrote
     sessionStorage.setItem("seeded", "1");
     localStorage.setItem("chess.v1.settings", JSON.stringify({
       mode, langId: "zh-CN", sideTab: "play", soundOn: false, view: mode === "puzzle" ? "puzzle" : "play" }));
     localStorage.setItem("chess.panelOpen", "1");
     if (pz) localStorage.setItem("chess.v1.puzzles", JSON.stringify(pz));
-  }, [puzzles || null, (opts && opts.mode) || "puzzle"]);
+    for (const k in extra) localStorage.setItem(k, extra[k]);
+  }, [puzzles || null, (opts && opts.mode) || "puzzle", (opts && opts.extra) || {}]);
   const page = await ctx.newPage();
   if (opts && opts.clock) await page.clock.install();
   page.on("pageerror", (e) => errs.push(e.message));
@@ -405,6 +406,57 @@ async function solveCurrent(page, h) {
     "a: 冲刺里按 R 不会把题弄丢", await h.text("#puzzle-task"));
   for (let i = 0; i < 3; i++) { await page.click("#btn-hint"); await page.waitForTimeout(1200); }
   assert(/失误 3\/3/.test(await h.text("#pz-run-strikes")) && /失误用完了/.test(await h.text("#pz-run-head")), "a: 三次失误出局", await h.text("#pz-run-head"));
+  await ctx.close();
+}
+{
+  // Codex on #88: a library game opened mid-run, and the 「替换当前棋局？」
+  // question answered 取消 — the run goes on as it was: not over, not filed,
+  // its clock still running from where it stood
+  const lib = JSON.stringify({ v: 1, names: ["me"], games: [{ id: "g1", t: 1758000000000, white: "me", black: "rival",
+    date: "2026.09.01", event: "Casual", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win" }] });
+  const { ctx, page } = await open(null, { extra: { "chess.v1.library": lib,
+    "chess.v1.save": JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }) } });
+  const h = helpers(page);
+  const runsOf = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}").runs || {});
+  const secs = async () => { const m = /^(\d):(\d\d)$/.exec(await h.text("#pz-run-clock") || ""); return m ? +m[1] * 60 + +m[2] : null; };
+  await page.click('#pz-mode-seg button[data-run="rush"]');
+  await page.waitForTimeout(600);
+  const answered = await solveCurrent(page, h);
+  await page.waitForTimeout(900);
+  const before = { score: await h.text("#pz-run-score"), left: await secs(), runs: await runsOf() };
+  assert(answered && /得分 1/.test(before.score), "a/#88: 冲刺答对一题", before.score);
+  await page.click('#rail button[data-view="library"]');
+  await page.waitForTimeout(300);
+  await page.click("#lib-open");
+  await page.waitForTimeout(400);
+  await page.click("#lib-list button[data-lib]");
+  await page.waitForTimeout(700);
+  const asked = await page.isVisible("#confirm-cancel");
+  if (asked) await page.click("#confirm-cancel");
+  await page.waitForTimeout(600);
+  await page.click('#rail button[data-view="puzzle"]');
+  await page.waitForTimeout(300);
+  const t1 = await secs();
+  await page.waitForTimeout(2100);
+  const t2 = await secs();
+  const after = { head: await h.text("#pz-run-head"), score: await h.text("#pz-run-score"), runs: await runsOf() };
+  assert(asked, "a/#88: 冲刺里打开库里的一局，先问要不要替换");
+  assert(/3 分钟/.test(after.head) && await h.shown("#pz-run-stop"), "a/#88: 取消之后冲刺还在进行，没有结束", after.head);
+  assert(after.score === before.score, "a/#88: 得分不变", after.score);
+  assert(!after.runs.rush && JSON.stringify(after.runs) === JSON.stringify(before.runs), "a/#88: 成绩没有被记下，最佳不变", JSON.stringify(after.runs));
+  assert(t1 != null && t2 != null && t1 <= before.left && t1 > 150 && t2 < t1, "a/#88: 钟接着原来的时间在走", [before.left, t1, t2].join(" → "));
+  assert(!!(await h.text("#puzzle-task")) && !(await h.shown("#puzzle-cat-seg")), "a/#88: 棋盘上还是这一局冲刺的题");
+  // …and answered 替换, the run ends there and its score is filed
+  await page.click('#rail button[data-view="library"]');
+  await page.waitForTimeout(300);
+  await page.click("#lib-open");
+  await page.waitForTimeout(400);
+  await page.click("#lib-list button[data-lib]");
+  await page.waitForTimeout(700);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(600);
+  const filed = await runsOf();
+  assert(filed.rush && filed.rush.best === 1, "a/#88: 确认替换之后，这一局冲刺的成绩记下", JSON.stringify(filed));
   await ctx.close();
 }
 {

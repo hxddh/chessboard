@@ -1295,8 +1295,8 @@ export function createPuzzlesUI(d) {
    * before it, where the board would look identical to the puzzle just left.
    *
    * The trainer is left before the load, because the load asks whether it may
-   * replace the board and the answer may be no. That is the whole reason the
-   * category and index are kept: a cancelled jump puts the same drill back.
+   * replace the board and the answer may be no. That is why it is left through
+   * leaveTrainer: a cancelled jump puts the same drill (and run) back.
    */
   async function openDrillSource() {
     const pz = store.session.puzzle;
@@ -1304,11 +1304,11 @@ export function createPuzzlesUI(d) {
     const src = drillSourceOf(p);
     if (!src) return;
     const ply = Number.isFinite(p.ply) ? p.ply : null;
-    const cat = pz.cat, idx = pz.idx;
-    stopPuzzles();
+    // a run's drill (a mined one can be served in 冲刺) keeps its run too (Codex on #88)
+    const back = leaveTrainer();
     const ok = src.kind === "lib" ? await loadLibraryEntry(src.entry) : await loadHistoryRecord(src.rec);
     // nothing was loaded and the mode never left 做题 — put the drill back
-    if (!ok) { startPuzzleAt(cat, idx); return; }
+    if (!ok) { back(); return; }
     if (ply != null) setViewIndex(ply + 1);
     saveGame();
     sync();
@@ -1333,14 +1333,17 @@ export function createPuzzlesUI(d) {
     // throw the training in progress away (Codex on #79). Stopping only drops
     // these references (stopLearn also bumps the lesson's token, which just
     // cancels a demo in flight), and a refused load changes nothing else.
-    const kept = { puzzle: store.session.puzzle, run: store.session.run, learn: store.session.learn, study: store.session.study };
+    const kept = { puzzle: store.session.puzzle, learn: store.session.learn, study: store.session.study };
     invalidateEngine();
     clearPreview();
-    if (mode === "puzzle") stopPuzzles(); else stopLearn();
+    // a 冲刺 / 连胜 is parked, not ended: stopPuzzles would file its score
+    // and stop its clock before the answer is in (Codex on #88). A yes
+    // leaves the mode through switchMode, whose stopPuzzles files it then.
+    if (mode === "puzzle") { Modes.parkRun(); store.session.puzzle = null; } else stopLearn();
     return () => {
       store.session.mode = mode;
       if (mode === "puzzle") {
-        if (kept.puzzle) { store.session.puzzle = kept.puzzle; store.session.run = kept.run; } else startPuzzles();
+        if (kept.puzzle) { store.session.puzzle = kept.puzzle; Modes.unparkRun(); } else { Modes.endRun(); startPuzzles(); }
       } else if (kept.study || kept.learn) {
         store.session.learn = kept.learn;
         store.session.study = kept.study;
