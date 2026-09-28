@@ -70,6 +70,7 @@ export function createPuzzlesUI(d) {
   /** The chunk is here: join it, and repaint whatever counts puzzles. */
   function onMinedArrived() {
     if (!joinMined()) return;
+    forgetRetired();
     renderStats();
     renderAchievements();
     renderRecordEntry();
@@ -350,12 +351,35 @@ export function createPuzzlesUI(d) {
   function savePuzzleState() {
     Persist.setJson("puzzles", store.session.puzzleState);
   }
+  /**
+   * Forget the puzzles the book has retired (Codex on #88) — once the mined
+   * set has joined, since before that every mined id is merely not here yet.
+   * Runs at load when the chunk came first, else when it arrives; written
+   * back at once so it does not have to run again.
+   */
+  function forgetRetired() {
+    if (!MINED_ORDINAL.size) return;
+    const ids = new Set(ALL_PUZZLES.map((p) => p.id));
+    if (ChessDrills.forgetRetired(store.session.puzzleState, (id) => ids.has(id))) savePuzzleState();
+  }
+  forgetRetired();
   const Srs = ChessSrs;
   const Picker = ChessPicker;
   /** reviews served per day before the rest is pushed to tomorrow (Q3.3) */
   const REVIEW_CAP = 20;
   /** how many reviews are owed right now — the count every plan reads */
-  function owedNow() { return Srs.dueCount(store.session.puzzleState.missed, Date.now()); }
+  function owedNow() {
+    // only what the 复习 list can serve — it resolves ids against the book —
+    // so every plan's review step can be worked off (Codex on #88). A mined
+    // id counts before its chunk joins: it is not served yet, not retired.
+    const missed = store.session.puzzleState.missed;
+    const book = new Set(bookNow().map((p) => p.id));
+    const servable = {};
+    for (const id of Object.keys(missed)) {
+      if (book.has(id) || (!MINED_ORDINAL.size && id.startsWith("mn-"))) servable[id] = missed[id];
+    }
+    return Srs.dueCount(servable, Date.now());
+  }
 
   // --- 6.0: ratings (v6-plan Q3.1) -------------------------------------------
   // One Glicko-2 rating for the player, one per puzzle, both moved by the FIRST

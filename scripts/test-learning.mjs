@@ -827,5 +827,33 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(Ru.pickNext(Ru.newRun("rush", 0, 1), [], rate) === null, "an empty pool serves nothing");
 }
 
+// --- retired puzzles leave no review debt (Codex on #88) ----------------------
+// caf32fa retired these 22 mined puzzles (verify-puzzles.mjs --retire) with no
+// migration of the puzzle state: a missed one was owed for ever. Every one of
+// them must be out of the book and dropped by the load-time forgetRetired().
+{
+  const RETIRED_CAF32FA = [
+    "mn-201-5-62", "mn-201-60-17", "mn-201-77-37", "mn-201-82-28", "mn-203-26-47", "mn-301-37-33",
+    "mn-301-46-63", "mn-301-82-13", "mn-302-104-71", "mn-302-133-53", "mn-302-39-55", "mn-302-61-64",
+    "mn-303-116-48", "mn-303-13-29", "mn-303-141-10", "mn-201-63-26", "mn-202-18-70", "mn-301-101-54",
+    "mn-301-8-51", "mn-302-1-59", "mn-101-14-80", "mn-202-37-62",
+  ];
+  const rctx = loadAppModules(["src/web/js/puzzles-mined.js", "src/web/js/openings.js", "src/web/js/drills.js"]);
+  const book = new Set(ctx.CHESS_PUZZLES.concat(rctx.MINED_PUZZLES).map((p) => p.id));
+  assert(RETIRED_CAF32FA.length === 22 && RETIRED_CAF32FA.every((id) => !book.has(id)), "#88: the 22 retired ids are out of the book");
+  const live = ["w-hangq", rctx.MINED_PUZZLES[0].id];
+  const keep = ["lc-00008", "mine:abc", "rep-xyz"]; // lazily loaded / their own lifecycle
+  const entry = { s: 0, n: 1 };
+  const st = { missed: {}, solved: {}, pr: {} };
+  for (const id of RETIRED_CAF32FA.concat(live, keep)) { st.missed[id] = entry; st.solved[id] = true; st.pr[id] = { r: 1500 }; }
+  const n = rctx.ChessDrills.forgetRetired(st, (id) => book.has(id));
+  assert(n === 22 * 3, "#88: forgetRetired drops each retired id from missed, solved and pr (" + n + ")");
+  const left = (m) => Object.keys(m).sort().join(",");
+  const want = live.concat(keep).sort().join(",");
+  assert(left(st.missed) === want && left(st.solved) === want && left(st.pr) === want,
+    "#88: …and keeps the live ones, Lichess ids (bands load on demand), mine: and rep- ids");
+  assert(rctx.ChessDrills.forgetRetired(st, (id) => book.has(id)) === 0, "#88: a second pass has nothing left to do");
+}
+
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
 console.log("all learning tests passed");

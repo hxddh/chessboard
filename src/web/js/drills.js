@@ -152,6 +152,42 @@
     return n;
   }
 
+  /**
+   * Ids whose book is not the frozen one, so its absence says nothing:
+   * a Lichess puzzle's band is a chunk loaded on demand (puzzle-db.js), and
+   * the personal book (`mine:`) and the repertoire (`rep-`) retire their own
+   * ids through their own paths (forgetDrills, the library's re-mine).
+   */
+  const NOT_FROZEN = /^(lc-|mine:|rep-)/;
+
+  /**
+   * Drop the puzzle-state entries of puzzles the book no longer has (Codex
+   * on #88). caf32fa retired 22 mined puzzles: a missed one stayed in
+   * `missed`, owedNow() counted it and the review list — which resolves ids
+   * against the book — could never serve it. `solved` and the per-puzzle
+   * ratings (`pr`) go the same way, so a retired puzzle leaves nothing.
+   *
+   * Only run it against a whole book: the mined set is a chunk, and before it
+   * joins every mined id would look retired.
+   * @param {object} st the puzzle state
+   * @param {(id: string) => boolean} has is this id in the frozen book?
+   * @returns {number} how many entries were dropped
+   */
+  function forgetRetired(st, has) {
+    if (!st || typeof st !== "object") return 0;
+    let n = 0;
+    for (const key of ["missed", "solved", "pr"]) {
+      const m = st[key];
+      if (!m || typeof m !== "object") continue;
+      for (const id of Object.keys(m)) {
+        if (NOT_FROZEN.test(id) || has(id)) continue;
+        delete m[id];
+        n++;
+      }
+    }
+    return n;
+  }
+
 
   /**
    * Why the drill went wrong, in terms of the technique — not the result.
@@ -247,4 +283,4 @@
       (a.eco < b.eco ? -1 : a.eco > b.eco ? 1 : nm(a).localeCompare(nm(b), "zh")));
   }
 
-  export const ChessDrills = { MIN_PLIES, COMMON_OPENINGS, hash36, drillId, drillLines, orderDrills, legacyIdMap, migrateIds, drillAdvice };
+  export const ChessDrills = { MIN_PLIES, COMMON_OPENINGS, hash36, drillId, drillLines, orderDrills, legacyIdMap, migrateIds, forgetRetired, drillAdvice };
