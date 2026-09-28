@@ -6867,6 +6867,50 @@ for (const lang of CONTENT_LANGS) {
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
 }
 
+// --- Codex on #88: a module is never handed a binding declared after it ----
+//
+// The F4 modules are created in app.js as createX({ …deps }). A dependency
+// named there but declared further down — a `const { name } = Later` — is read
+// before it exists: a TDZ throw at load under native ES modules, and under the
+// bundle (esbuild turns the top-level consts into vars) a silent `undefined`
+// the module keeps for good. evalScalar reached trainer/puzzles.js that way
+// once review/analysis.js had turned it from a hoisted function into a
+// destructured const. Later bindings go in as forwarders, `(x) => name(x)`.
+{
+  const src = WEB_MODULES.get("app.js");
+  const declAt = new Map();
+  for (const m of src.matchAll(/^  (?:const|let) (\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=/gm)) {
+    const at = m.index;
+    const names = m[1].startsWith("{")
+      ? m[1].slice(1, -1).split(",").map((x) => x.trim().split(":").pop().trim()).filter(Boolean) : [m[1]];
+    for (const n of names) if (!declAt.has(n)) declAt.set(n, at);
+  }
+  const hoisted = new Set([...src.matchAll(/^  (?:async )?function ([\w$]+)/gm)].map((x) => x[1]));
+  const early = [];
+  for (const m of src.matchAll(/^  (?:const [\w${}, ]+ = )?(create[A-Z]\w*)\(\{/gm)) {
+    let i = m.index + m[0].length, depth = 1;
+    const from = i;
+    while (depth && i < src.length) { const c = src[i++]; if (c === "{") depth++; else if (c === "}") depth--; }
+    let d = 0, cur = "";
+    const parts = [];
+    for (const c of src.slice(from, i - 1)) {
+      if ("({[".includes(c)) d++;
+      if (")}]".includes(c)) d--;
+      if (c === "," && d === 0) { parts.push(cur); cur = ""; } else cur += c;
+    }
+    parts.push(cur);
+    for (const part of parts) {
+      const e = part.trim();
+      const val = e.includes(":") ? e.split(":").slice(1).join(":").trim() : e;
+      if (!/^[A-Za-z_$][\w$.]*$/.test(val)) continue;   // a forwarder or an expression
+      const id = val.split(".")[0];
+      if (hoisted.has(id) || !declAt.has(id)) continue;
+      if (declAt.get(id) > m.index) early.push(m[1] + " ← " + id);
+    }
+  }
+  assert(early.length === 0, "no F4 module is handed a binding app.js declares after creating it (" + (early.join(", ") || "none") + ")");
+}
+
 // --- v8-0-plan F4 (M2): the settings page lives in settings-ui.js ----------
 // The panel's settings code — the view that paints every segment and switch,
 // the theme, and the handlers behind them — is one module with its

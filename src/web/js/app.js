@@ -2106,7 +2106,7 @@ import { createStore } from "./store.js";
   const PuzzlesUI = createPuzzlesUI({
     Audio2, BoardView, MINED_ORDINAL, Persist, Review, animateReply, appGameOver, avail,
     checkNewAchievements, choosePromotion, clearPreview, clearSelection, confirmNative,
-    cursorSquare, el, evalScalar, gameLoadPgn, gameReset, invalidateEngine, kingSquare,
+    cursorSquare, el, evalScalar: (e) => evalScalar(e), gameLoadPgn, gameReset, invalidateEngine, kingSquare,
     loadHistoryRecord, loadStats, maybeEngineTurn, motifKeyOf, moveSound, puzzleIdea, puzzleMotif,
     puzzleName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
     saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName, startLearn,
