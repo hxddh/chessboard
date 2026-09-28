@@ -105,6 +105,7 @@ export function createLibraryUI(d) {
   function loadLibrary() {
     const s = Persist.read("library").value;
     if (!s) return { games: [], names: [] };
+    store.session.libComing = s.db === 2 ? Number(s.n) || 0 : 0;
     const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
     for (const g of games) rescoreLosses(g);
     return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
@@ -574,13 +575,17 @@ export function createLibraryUI(d) {
     // 7.9 §4a: empty, the section is one dashed card with 导入棋谱文件
     // inside it, and that button is the page's primary (see .rec-block).
     // Classes only — the button itself is never rebuilt (7.6).
+    // v8-0-plan C1: the games are still on their way from IndexedDB — the
+    // header knows how many; the empty state would be a lie for a second
+    const coming = !libDb && store.session.libComing;
     const block = doc.getElementById("lib-block");
-    if (block) block.classList.toggle("empty", !list.length);
+    if (block) block.classList.toggle("empty", !list.length && !coming);
     const imp = doc.getElementById("lib-import");
-    if (imp) imp.classList.toggle("primary", !list.length);
+    if (imp) imp.classList.toggle("primary", !list.length && !coming);
     // v8-0-plan §5: the page's own empty state counts the library as well
     if (renderRecordEntry) renderRecordEntry();
-    if (!list.length) {
+    if (!list.length && coming) putLines(body, [{ text: tf("lib.loading", [coming]), cls: "hint" }]);
+    else if (!list.length) {
       // 7.7 (v7-7-plan §3): an empty state — icon, one line, and 导入棋谱文件
       // (see .empty-note)
       putLines(body, [{ text: t("lib.empty"), cls: "hint empty-note" }]);

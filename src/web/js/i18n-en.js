@@ -602,6 +602,7 @@
       "lib.exportPgn": "Export PGN", "lib.claimAsk": "“{0}” plays in {1} of these {2} games. Is that you? Once claimed, those games count as yours and later imports will not ask again.",
       "lib.claimYes": "That’s me", "lib.claimNo": "No", "lib.claimDone": "Claimed “{0}”: {1:game counts|games count} as yours",
       "lib.migrateFailed": "The library could not move to the new storage ({0}). It is saved the old way for now and will try again next launch.", "lib.saveFailed": "Some library games could not be saved ({0}). Export a copy before restarting.", "lib.recovered": "The library was missing from the browser storage; {0:game was|games were} recovered from the save file on this device.",
+      "lib.loading": "Loading the library ({0:game|games})…",
       "lib.rowAcc": "{0}% accuracy", "lib.rowBad": "{0:mistake|mistakes}",
       "lib.rowPending": "not analysed yet", "lib.rowUnplayable": "moves do not replay",
       "lib.unknownFoe": "unknown opponent", "lib.loaded": "Opened from the library \u00B7 {0}",

@@ -634,6 +634,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "lib.exportPgn": "导出 PGN", "lib.claimAsk": "「{0}」出现在这 {2} 局里的 {1} 局中。这是你吗？认领之后这些棋算作你下的，以后导入也不再问。",
       "lib.claimYes": "是我", "lib.claimNo": "不是", "lib.claimDone": "已认领「{0}」：{1} 局算作你的",
       "lib.migrateFailed": "棋谱库没能搬进新的存储（{0}），这次仍按旧方式保存，下次启动再试。", "lib.saveFailed": "棋谱库有棋局没能写进存储（{0}），重启之前请先导出一份。", "lib.recovered": "浏览器存储里的棋谱库不见了，已从本机存档文件找回 {0} 局。",
+      "lib.loading": "正在读取棋谱库（{0} 局）……",
       "lib.rowAcc": "精准度 {0}%", "lib.rowBad": "{0} 处失误",
       "lib.rowPending": "还没分析", "lib.rowUnplayable": "着法重放不出来",
       "lib.unknownFoe": "对手不详", "lib.loaded": "已从棋谱库载入 · {0}",

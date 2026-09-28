@@ -1792,8 +1792,8 @@ const DAY = 86400000;
 async function c1Context(keys, init) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN", acceptDownloads: true });
   await ctx.addInitScript((k) => {
-    if (localStorage.getItem("c1.seeded")) return;
-    localStorage.setItem("c1.seeded", "1");
+    if (sessionStorage.getItem("c1.seeded")) return;
+    sessionStorage.setItem("c1.seeded", "1");
     localStorage.setItem("chess.v1.settings", JSON.stringify({
       mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
