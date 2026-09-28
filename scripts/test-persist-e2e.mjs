@@ -359,10 +359,11 @@ const PLACEMENT = STUDY.split(" ")[0];
   });
   assert(ach >= 1, `成就真的落了盘(解锁 ${ach} 个)`);
 
+  // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games
   await page.click("#hist-open");
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(800);
   const rows = await page.evaluate(() =>
-    Array.from(document.querySelectorAll("#hist-list .hist-row")).map((r) => r.textContent.replace(/\s+/g, " ").trim()));
+    Array.from(document.querySelectorAll("#lib-list .hist-row")).map((r) => r.textContent.replace(/\s+/g, " ").trim()));
   assert(rows.length === 1 && /胜/.test(rows[0]) && /新手/.test(rows[0]),
     `对局历史里就是这一行(「${(rows[0] || "").slice(0, 40)}」)`);
   assert(errs.length === 0, `全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
@@ -1201,14 +1202,39 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
 
   // (a) the first launch writes the whole profile into the per-key store —
   // the largest mirror write there is. No slice of it may hold the main
-  // thread past a frame.
-  await page.waitForFunction(() => window.__store.has("meta"), null, { timeout: 15000 }).catch(() => {});
-  const full = await page.evaluate(() => ({
-    meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big,
-    lib: window.__store.has("library") ? window.__store.get("library").length : 0,
-  }));
-  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,library ${full.lib} 字节`);
-  assert(full.meta && full.lib > 1024 * 1024, `2 MB 的档案整份进了原生存储,library 自己一个文件(${full.lib} 字节)`);
+  // thread past a frame. v8-0-plan C1: the library moves into IndexedDB on
+  // this launch, so its games reach the store as the 64 shards (lib00 …
+  // lib3f) under a small header, not as one `library` file.
+  const shardBytes = () => page.evaluate(() => {
+    const dec = (u8) => (u8 ? new TextDecoder().decode(u8) : "");
+    let meta = null;
+    try { meta = JSON.parse(dec(window.__store.get("meta"))); } catch (_) { meta = null; }
+    if (!meta || !/"db":2/.test(dec(window.__store.get((meta.files && meta.files.library) || "library")))) return -1;
+    let n = 0, games = 0;
+    for (const k of meta.keys) {
+      if (!/^lib[0-3][0-9a-f]$/.test(k)) continue;
+      const text = dec(window.__store.get(meta.files[k] || k));
+      n += text.length;
+      games += JSON.parse(text).games.length;
+    }
+    return { n, games };
+  });
+  await page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready, null, { timeout: 30000 }).catch(() => {});
+  const libCount = await page.evaluate(() => window.__chess.library().games.length);
+  await page.waitForFunction(async (want) => {
+    const dec = (u8) => (u8 ? new TextDecoder().decode(u8) : "");
+    try {
+      const meta = JSON.parse(dec(window.__store.get("meta")));
+      let games = 0;
+      for (const k of meta.keys) if (/^lib[0-3][0-9a-f]$/.test(k)) games += JSON.parse(dec(window.__store.get(meta.files[k] || k))).games.length;
+      return games === want;
+    } catch (_) { return false; }
+  }, libCount, { timeout: 30000, polling: 250 }).catch(() => {});
+  const shards = await shardBytes();
+  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big }));
+  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节`);
+  assert(full.meta && shards.n > 1024 * 1024 && shards.games === libCount,
+    `2 MB 的档案整份进了原生存储:棋谱库的 ${libCount} 局都在分片里(${shards.games} 局,${shards.n} 字节)`);
   assert(full.big === 0, `……没有一帧超过桥的 1 MiB(被拒 ${full.big} 次)`);
   assert(full.seg <= 16, `……写的过程中,主线程上最长的一段 ≤ 16 ms(${full.seg.toFixed(1)} ms)`);
 
@@ -1273,6 +1299,13 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   });
   assert(!!doc.keys.library && diff.length === 0,
     `导回之后逐键相等(${PROFILE_KEYS.length} 个键${diff.length ? ",不相等:" + diff.join(", ") : ""})`);
+  // v8-0-plan C1: …and the library's games, which are in the file as shards
+  // and in IndexedDB after the import, not in localStorage
+  const shardsInFile = Object.keys(doc.keys).filter((k) => /^lib[0-3][0-9a-f]$/.test(k));
+  await page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready, null, { timeout: 30000 }).catch(() => {});
+  const back = await page.evaluate(() => window.__chess.library().games.length);
+  assert(shardsInFile.length > 0 && back === libCount,
+    `整份导出里有棋谱库的 ${shardsInFile.length} 个分片;清空再导回,${libCount} 局一局不少(${back})`);
   assert(errs.length === 0, `2 MB 导出导入:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
@@ -1314,19 +1347,34 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await ctx.addInitScript(fakeNative, { persist: true });
   const { page, errs } = await open(ctx);
   await page.waitForFunction(() => window.__store.has("meta"), null, { timeout: 15000 }).catch(() => {});
+  // v8-0-plan C1: …and the library's migration into IndexedDB has reached the store
+  await page.waitForFunction(() => {
+    try {
+      const meta = JSON.parse(new TextDecoder().decode(window.__store.get("meta")));
+      return /"db":2/.test(new TextDecoder().decode(window.__store.get((meta.files && meta.files.library) || "library")));
+    } catch (_) { return false; }
+  }, null, { timeout: 15000, polling: 200 }).catch(() => {});
   await page.waitForTimeout(600);
   const got = await page.evaluate(() => {
     const dec = (u8) => (u8 ? new TextDecoder().decode(u8) : null);
     const legacy = JSON.parse(sessionStorage.getItem("f3.legacy"));
     const meta = JSON.parse(dec(window.__store.get("meta")) || "null");
     const lsKey = (n) => (n === "panelOpen" ? "chess.panelOpen" : "chess.v1." + n);
-    const unequal = Object.keys(legacy.keys).filter((n) => dec(window.__store.get(n)) !== localStorage.getItem(lsKey(n)));
+    const file = (n) => dec(window.__store.get((meta && meta.files && meta.files[n]) || n));
+    const unequal = Object.keys(legacy.keys).filter((n) => file(n) !== localStorage.getItem(lsKey(n)));
+    // v8-0-plan C1: the library's games moved to IndexedDB and reach the
+    // store as shards; the old file's games are all in them, unchanged
+    const want = JSON.parse(legacy.keys.library).games;
+    const got = [];
+    for (const k of (meta && meta.keys) || []) if (/^lib[0-3][0-9a-f]$/.test(k)) got.push(...JSON.parse(file(k)).games);
+    const byId = new Map(got.map((g) => [g.id, JSON.stringify(g)]));
     return { meta, unequal, legacyKept: dec(window.__store.get("")) === sessionStorage.getItem("f3.legacy"),
-      schema: localStorage.getItem("chess.schema"), libSame: dec(window.__store.get("library")) === legacy.keys.library };
+      schema: localStorage.getItem("chess.schema"),
+      libSame: got.length === want.length && want.every((g) => byId.get(g.id) === JSON.stringify(g)) && /"db":2/.test(file("library")) };
   });
   assert(!!got.meta && got.meta.schema === 2 && got.meta.app === "chessboard",
     `7.x 的档案第一次用分键存储打开:分键存储有了清单,schema 2(${JSON.stringify(got.meta && { schema: got.meta.schema, keys: got.meta.keys })})`);
-  assert(got.unequal.length === 0 && got.libSame, `……旧文件里的每个键都成了自己的文件,内容逐字相等(不等:${got.unequal.join(", ") || "无"})`);
+  assert(got.unequal.length === 0 && got.libSame, `……旧文件里的每个键都成了自己的文件,内容逐字相等;棋谱库的 80 局在分片里,一局不差(不等:${got.unequal.join(", ") || "无"})`);
   assert(got.legacyKept, "……旧的整份 chessboard.json 一个字节没动,留给降级的人");
   assert(got.schema === "2", `……缓存的 schema 记成了 2(${got.schema})`);
 
@@ -1353,6 +1401,77 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   assert(!moved.includes("library") && !moved.includes("stats") && !moved.includes(""),
     "……棋谱库、战绩和旧的整份文件都没有被重写");
   assert(errs.length === 0, `迁移:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 13. v8-0-plan C1:IndexedDB 没了,原生存储里的分片把棋谱库找回来 ----------
+// The games live in IndexedDB now, which is the WebView's — "remove website
+// data" takes it, and localStorage with it or not. Either way the store's
+// shards are what a restore comes from.
+{
+  const games = [];
+  for (let i = 0; i < 5; i++) {
+    games.push({ id: "lib:c1" + i, t: 1758000000000 + i, white: "hxddh", black: "r" + i, date: "2026.09.0" + (i + 1),
+      event: "x", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win", an: null });
+  }
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript((lib) => {
+    if (sessionStorage.getItem("c1.seeded")) return;
+    sessionStorage.setItem("c1.seeded", "1");
+    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.v1.library", lib);
+  }, JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  await ctx.addInitScript(fakeNative, { persist: true });
+  const { page, errs } = await open(ctx);
+  const ready = () => page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready,
+    null, { timeout: 30000 }).catch(() => {});
+  const inStore = () => page.evaluate(() => {
+    try {
+      const dec = (u8) => new TextDecoder().decode(u8);
+      const meta = JSON.parse(dec(window.__store.get("meta")));
+      let n = 0;
+      for (const k of meta.keys) if (/^lib[0-3][0-9a-f]$/.test(k)) n += JSON.parse(dec(window.__store.get(meta.files[k] || k))).games.length;
+      return n;
+    } catch (_) { return 0; }
+  });
+  await ready();
+  await page.waitForFunction(() => {
+    try {
+      const meta = JSON.parse(new TextDecoder().decode(window.__store.get("meta")));
+      return meta.keys.some((k) => /^lib[0-3][0-9a-f]$/.test(k));
+    } catch (_) { return false; }
+  }, null, { timeout: 15000, polling: 200 }).catch(() => {});
+  await page.waitForTimeout(800);
+  assert(await inStore() === 5, `C1:迁移之后,五局都在原生存储的分片里(${await inStore()})`);
+
+  // (a) IndexedDB gone, localStorage kept: the header counts five, the store has them
+  await page.evaluate(() => new Promise((res) => {
+    const r = indexedDB.deleteDatabase("chessboard.library");
+    r.onsuccess = r.onerror = r.onblocked = () => res();
+  }));
+  await page.reload();
+  await page.waitForTimeout(900);
+  await ready();
+  await page.waitForTimeout(500);
+  const a = await page.evaluate(() => ({ n: window.__chess.library().games.length, toast: document.getElementById("toast").textContent }));
+  assert(a.n === 5 && /找回 5 局/.test(a.toast), `C1:IndexedDB 被清掉、localStorage 还在:从分片里找回五局,并且说了(${a.n};「${a.toast}」)`);
+
+  // (b) all of the WebView's data gone: the store restores the profile and its games
+  await page.evaluate(() => new Promise((res) => {
+    localStorage.clear();
+    const r = indexedDB.deleteDatabase("chessboard.library");
+    r.onsuccess = r.onerror = r.onblocked = () => res();
+  }));
+  await page.reload();
+  // recover() restores, then the page reloads itself onto the restored profile
+  await page.waitForTimeout(4000);
+  await ready();
+  await page.waitForTimeout(500);
+  const b = await page.evaluate(() => ({ n: window.__chess.library().games.length, mode: window.__chess.library().mode,
+    header: JSON.parse(localStorage.getItem("chess.v1.library") || "null") }));
+  assert(b.n === 5 && b.mode === "idb" && b.header && b.header.db === 2,
+    `C1:网页数据全没了:从原生存储恢复整份档案,棋谱库五局回到 IndexedDB(${b.n}, ${b.mode})`);
+  assert(errs.length === 0, `C1 恢复:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
 
