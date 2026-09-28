@@ -1343,7 +1343,7 @@ export function createLibraryUI(d) {
   return {
     LIB_MIN_GAMES, fillOpenings,
     adoptBoardAnalysis, closeDiagnosis, closeLibList, deepenLibraryGame, importPgnToLibrary,
-    libNamesFrom, loadFromLibrary, loadLibraryEntry, openDiagnosis, openLibList,
+    libEcoName, libNamesFrom, loadFromLibrary, loadLibraryEntry, openDiagnosis, openLibList,
     reclaimLibrary, renderLibList, renderLibrary, runLibraryPass, saveLibrary,
   };
 }
