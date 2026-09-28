@@ -205,8 +205,9 @@ export function bookIndex(lines) {
  * The rows for one position: the source's rows, kept only when legal here
  * (a hash collision in the master tree, or a library game whose SAN no
  * longer parses, cannot put a move on screen), each marked `book` when the
- * book plays it; and the book moves no game played, appended with n = 0 so
- * the book is visible where the games are silent.
+ * book plays it; and where no game reached the position at all, the book's
+ * moves with n = 0, so the book still says something where the games are
+ * silent (not beside real rows: at the start that would be nine empty ones).
  * @param {Array<{san,n,w,d,b}>} rows
  * @param {object} pos chess.js at the position
  * @param {Set<string>|undefined} book
@@ -214,7 +215,7 @@ export function bookIndex(lines) {
 export function rowsAt(rows, pos, book) {
   const legal = new Set(pos.moves());
   const out = (rows || []).filter((r) => legal.has(r.san)).map((r) => Object.assign({}, r, { book: !!(book && book.has(r.san)) }));
-  if (book) for (const san of book) if (legal.has(san) && !out.some((r) => r.san === san)) out.push({ san, n: 0, w: 0, d: 0, b: 0, book: true });
+  if (book && !out.length) for (const san of book) if (legal.has(san)) out.push({ san, n: 0, w: 0, d: 0, b: 0, book: true });
   return out;
 }
 

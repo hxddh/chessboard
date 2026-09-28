@@ -4103,6 +4103,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
    draws in the muted ink between them. A row is one button — the move is
    played by clicking anywhere on it — at the small control height.
    ------------------------------------------------------------------ */
+.xp { margin-top: 16px; }
+/* not .act-group: collapseEmptyGroups() un-hides every .act-group that holds a
+   button, and this section is shown by its key, not by what it holds */
 .xp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .xp-head .act-k { margin-bottom: 0; }
 .xp-note { margin: 4px 0 8px; }

@@ -170,12 +170,15 @@ const assert = (cond, msg, extra) => {
   // 一个换序：1.Nf3 d5 2.d4 与 1.d4 d5 2.Nf3 是同一局面，书着取两条路的并
   const k = keyAfter(["d4", "d5", "Nf3"]);
   assert(keyAfter(["Nf3", "d5", "d4"]) === k && book.has(k), "换序到同一局面，书着按局面查得到");
-  // rowsAt：合法才留、书着标出、没人走过的书着补一行 n = 0
+  // rowsAt：合法才留、书着标出；一局都没有时列出书着（n = 0），有对局时不掺空行
   const pos = new Chess();
   const rows = X.rowsAt([{ san: "e4", n: 5, w: 2, d: 1, b: 2 }, { san: "Ke2", n: 1, w: 0, d: 0, b: 1 }, { san: "a3", n: 2, w: 1, d: 0, b: 1 }], pos, book.get(keyOf(pos)));
   assert(rows.find((r) => r.san === "e4").book && !rows.find((r) => r.san === "a3").book, "e4 是书着、a3 不是");
   assert(!rows.some((r) => r.san === "Ke2"), "不合法的着法（哈希撞车或坏棋谱）不上屏");
-  assert(rows.some((r) => r.san === "d4" && r.n === 0 && r.book), "没人走过的书着补一行，局数 0");
+  assert(!rows.some((r) => r.n === 0), "有对局的局面不掺局数为 0 的书着行");
+  const silent = X.rowsAt([], pos, book.get(keyOf(pos)));
+  assert(silent.length === book.get(keyOf(pos)).size && silent.every((r) => r.n === 0 && r.book) && silent.some((r) => r.san === "d4"),
+    "一局都没有的局面，列出开局书的 " + silent.length + " 个着法，局数 0");
 }
 
 // --- 3. 大师树 -------------------------------------------------------------------
