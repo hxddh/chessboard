@@ -485,6 +485,679 @@
       }
     }
   },
+  "ladder": {
+    "what": "所有档位循环对下（node 里的 Stockfish 19 lite，engine.js 的档位设置与取子规则，opponents.js 的认输与提和），Bradley–Terry 极大似然拟合（相邻两档各加 2 盘虚拟和棋作先验），以初级 = 1320、中级 = 1700 两点定标",
+    "script": "scripts/test-ladder.mjs play --shard=i/n … ; scripts/test-ladder.mjs fit --record",
+    "games": 3362,
+    "engineHours": 3.45,
+    "scale": 1.096,
+    "rating": {
+      "beginner": 70,
+      "casual": 266,
+      "learner": 409,
+      "improver": 608,
+      "steady": 752,
+      "solid": 941,
+      "easy": 1320,
+      "easyplus": 1418,
+      "normalminus": 1662,
+      "normal": 1700,
+      "hard": 1994,
+      "extreme": 2633
+    },
+    "ratingSe": {
+      "beginner": 0,
+      "casual": 23,
+      "learner": 24,
+      "improver": 26,
+      "steady": 28,
+      "solid": 31,
+      "easy": 95,
+      "easyplus": 106,
+      "normalminus": 119,
+      "normal": 126,
+      "hard": 144,
+      "extreme": 238
+    },
+    "raw": {
+      "beginner": 0,
+      "casual": 179,
+      "learner": 310,
+      "improver": 492,
+      "steady": 623,
+      "solid": 795,
+      "easy": 1141,
+      "easyplus": 1230,
+      "normalminus": 1453,
+      "normal": 1488,
+      "hard": 1757,
+      "extreme": 2340
+    },
+    "adjacent": [
+      {
+        "lower": "beginner",
+        "upper": "casual",
+        "games": 200,
+        "h2hPct": 71.3,
+        "fitPct": 73.7
+      },
+      {
+        "lower": "casual",
+        "upper": "learner",
+        "games": 200,
+        "h2hPct": 65.5,
+        "fitPct": 68
+      },
+      {
+        "lower": "learner",
+        "upper": "improver",
+        "games": 200,
+        "h2hPct": 74,
+        "fitPct": 74
+      },
+      {
+        "lower": "improver",
+        "upper": "steady",
+        "games": 200,
+        "h2hPct": 66.3,
+        "fitPct": 68
+      },
+      {
+        "lower": "steady",
+        "upper": "solid",
+        "games": 200,
+        "h2hPct": 74,
+        "fitPct": 72.9
+      },
+      {
+        "lower": "solid",
+        "upper": "easy",
+        "games": 24,
+        "h2hPct": 87.5,
+        "fitPct": 88
+      },
+      {
+        "lower": "easy",
+        "upper": "easyplus",
+        "games": 24,
+        "h2hPct": 58.3,
+        "fitPct": 62.6
+      },
+      {
+        "lower": "easyplus",
+        "upper": "normalminus",
+        "games": 24,
+        "h2hPct": 75,
+        "fitPct": 78.3
+      },
+      {
+        "lower": "normalminus",
+        "upper": "normal",
+        "games": 24,
+        "h2hPct": 58.3,
+        "fitPct": 55
+      },
+      {
+        "lower": "normal",
+        "upper": "hard",
+        "games": 24,
+        "h2hPct": 85.4,
+        "fitPct": 82.4
+      },
+      {
+        "lower": "hard",
+        "upper": "extreme",
+        "games": 24,
+        "h2hPct": 100,
+        "fitPct": 96.6
+      }
+    ],
+    "monotone": true,
+    "pairs": [
+      {
+        "a": "easy",
+        "b": "normal",
+        "games": 4,
+        "scoreA": 1,
+        "draws": 0
+      },
+      {
+        "a": "easy",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "steady",
+        "b": "easy",
+        "games": 10,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "steady",
+        "b": "normal",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "steady",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "solid",
+        "b": "easy",
+        "games": 24,
+        "scoreA": 3,
+        "draws": 0
+      },
+      {
+        "a": "solid",
+        "b": "normal",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "solid",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "normal",
+        "b": "extreme",
+        "games": 12,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "beginner",
+        "b": "solid",
+        "games": 200,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "beginner",
+        "b": "learner",
+        "games": 200,
+        "scoreA": 29,
+        "draws": 2
+      },
+      {
+        "a": "beginner",
+        "b": "steady",
+        "games": 200,
+        "scoreA": 3,
+        "draws": 0
+      },
+      {
+        "a": "learner",
+        "b": "steady",
+        "games": 200,
+        "scoreA": 25.5,
+        "draws": 1
+      },
+      {
+        "a": "beginner",
+        "b": "casual",
+        "games": 200,
+        "scoreA": 57.5,
+        "draws": 3
+      },
+      {
+        "a": "beginner",
+        "b": "improver",
+        "games": 200,
+        "scoreA": 10,
+        "draws": 2
+      },
+      {
+        "a": "casual",
+        "b": "learner",
+        "games": 200,
+        "scoreA": 69,
+        "draws": 2
+      },
+      {
+        "a": "casual",
+        "b": "improver",
+        "games": 200,
+        "scoreA": 30.5,
+        "draws": 1
+      },
+      {
+        "a": "casual",
+        "b": "steady",
+        "games": 200,
+        "scoreA": 13.5,
+        "draws": 1
+      },
+      {
+        "a": "casual",
+        "b": "solid",
+        "games": 200,
+        "scoreA": 4.5,
+        "draws": 1
+      },
+      {
+        "a": "learner",
+        "b": "improver",
+        "games": 200,
+        "scoreA": 52,
+        "draws": 10
+      },
+      {
+        "a": "learner",
+        "b": "solid",
+        "games": 200,
+        "scoreA": 19.5,
+        "draws": 13
+      },
+      {
+        "a": "improver",
+        "b": "steady",
+        "games": 200,
+        "scoreA": 67.5,
+        "draws": 9
+      },
+      {
+        "a": "improver",
+        "b": "solid",
+        "games": 200,
+        "scoreA": 27.5,
+        "draws": 3
+      },
+      {
+        "a": "steady",
+        "b": "solid",
+        "games": 200,
+        "scoreA": 52,
+        "draws": 2
+      },
+      {
+        "a": "beginner",
+        "b": "easyplus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "beginner",
+        "b": "normalminus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "beginner",
+        "b": "hard",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "casual",
+        "b": "easyplus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "casual",
+        "b": "normalminus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "casual",
+        "b": "hard",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "learner",
+        "b": "easyplus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "learner",
+        "b": "normalminus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "learner",
+        "b": "hard",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "improver",
+        "b": "easyplus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "improver",
+        "b": "normalminus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "improver",
+        "b": "hard",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "steady",
+        "b": "easyplus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "steady",
+        "b": "normalminus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "steady",
+        "b": "hard",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "solid",
+        "b": "easyplus",
+        "games": 10,
+        "scoreA": 1,
+        "draws": 0
+      },
+      {
+        "a": "solid",
+        "b": "normalminus",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "solid",
+        "b": "hard",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "easy",
+        "b": "easyplus",
+        "games": 24,
+        "scoreA": 10,
+        "draws": 0
+      },
+      {
+        "a": "easy",
+        "b": "normalminus",
+        "games": 10,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "easy",
+        "b": "hard",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "easyplus",
+        "b": "normalminus",
+        "games": 24,
+        "scoreA": 6,
+        "draws": 0
+      },
+      {
+        "a": "easyplus",
+        "b": "normal",
+        "games": 10,
+        "scoreA": 2,
+        "draws": 0
+      },
+      {
+        "a": "easyplus",
+        "b": "hard",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "easyplus",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "normalminus",
+        "b": "normal",
+        "games": 24,
+        "scoreA": 10,
+        "draws": 2
+      },
+      {
+        "a": "normalminus",
+        "b": "hard",
+        "games": 10,
+        "scoreA": 2,
+        "draws": 0
+      },
+      {
+        "a": "normalminus",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "normal",
+        "b": "hard",
+        "games": 24,
+        "scoreA": 3.5,
+        "draws": 1
+      },
+      {
+        "a": "hard",
+        "b": "extreme",
+        "games": 24,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "beginner",
+        "b": "easy",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "beginner",
+        "b": "normal",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "beginner",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "casual",
+        "b": "easy",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "casual",
+        "b": "normal",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "casual",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "learner",
+        "b": "easy",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "learner",
+        "b": "normal",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "learner",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "improver",
+        "b": "easy",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "improver",
+        "b": "normal",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "improver",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 0,
+        "draws": 0
+      }
+    ],
+    "settings": {
+      "beginner": {
+        "skill": 0,
+        "depth": 2,
+        "multipv": 10,
+        "worstBias": 0.15,
+        "minMs": 350,
+        "style": "off"
+      },
+      "casual": {
+        "skill": 0,
+        "depth": 2,
+        "multipv": 8,
+        "worstBias": 0.12,
+        "minMs": 350,
+        "style": "off"
+      },
+      "learner": {
+        "skill": 1,
+        "depth": 2,
+        "multipv": 10,
+        "winT": 37,
+        "minMs": 350,
+        "style": "principled"
+      },
+      "improver": {
+        "skill": 2,
+        "depth": 2,
+        "multipv": 10,
+        "winT": 24,
+        "minMs": 350,
+        "style": "attacker"
+      },
+      "steady": {
+        "skill": 3,
+        "depth": 3,
+        "multipv": 8,
+        "winT": 19,
+        "minMs": 350,
+        "style": "off"
+      },
+      "solid": {
+        "skill": 4,
+        "depth": 4,
+        "multipv": 8,
+        "winT": 14,
+        "minMs": 350,
+        "style": "principled"
+      },
+      "easy": {
+        "elo": 1320,
+        "movetime": 500,
+        "style": "off"
+      },
+      "easyplus": {
+        "elo": 1450,
+        "movetime": 570,
+        "style": "off"
+      },
+      "normalminus": {
+        "elo": 1575,
+        "movetime": 630,
+        "style": "off"
+      },
+      "normal": {
+        "elo": 1700,
+        "movetime": 700,
+        "style": "off"
+      },
+      "hard": {
+        "elo": 2200,
+        "movetime": 900,
+        "style": "off"
+      },
+      "extreme": {
+        "elo": null,
+        "movetime": 1200,
+        "style": "off"
+      }
+    }
+  },
   "layoutA2": {
     "what": "v8-0-plan §2 A2：下棋视图在五档窗口下的几何。band 为最宽的非内容空带（整条横向或纵向都没有内容的带），share 为棋盘格子占下棋视图的面积比，gutter 为棋谱白列最宽着法文字右缘到黑列文字左缘，nav 为最后一行棋谱底到翻谱栏顶，first 为竖窗第一屏不滚动就看得见的着法格数",
     "script": "scripts/measure-layout.mjs --record=after",
@@ -1713,38 +2386,74 @@
     "tiers": {
       "beginner": {
         "n": 56,
-        "acpl": 106,
-        "median": 42,
+        "acpl": 135,
+        "median": 46,
         "serious": 8
       },
       "casual": {
         "n": 56,
-        "acpl": 92,
+        "acpl": 117,
+        "median": 31,
+        "serious": 8
+      },
+      "learner": {
+        "n": 56,
+        "acpl": 129,
         "median": 43,
+        "serious": 8
+      },
+      "improver": {
+        "n": 56,
+        "acpl": 106,
+        "median": 29,
         "serious": 6
+      },
+      "steady": {
+        "n": 56,
+        "acpl": 89,
+        "median": 23,
+        "serious": 5
+      },
+      "solid": {
+        "n": 56,
+        "acpl": 76,
+        "median": 17,
+        "serious": 4
       },
       "easy": {
         "n": 56,
-        "acpl": 38,
-        "median": 8,
+        "acpl": 34,
+        "median": 0,
         "serious": 2
+      },
+      "easyplus": {
+        "n": 56,
+        "acpl": 12,
+        "median": 0,
+        "serious": 0
+      },
+      "normalminus": {
+        "n": 56,
+        "acpl": 31,
+        "median": 0,
+        "serious": 1
       },
       "normal": {
         "n": 56,
-        "acpl": 17,
-        "median": 4,
+        "acpl": 14,
+        "median": 0,
         "serious": 0
       },
       "hard": {
         "n": 56,
-        "acpl": 12,
-        "median": 6,
+        "acpl": 13,
+        "median": 0,
         "serious": 0
       },
       "extreme": {
         "n": 56,
-        "acpl": 3,
-        "median": 1,
+        "acpl": 2,
+        "median": 0,
         "serious": 0
       }
     }

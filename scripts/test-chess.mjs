@@ -2672,6 +2672,13 @@ for (const lang of CONTENT_LANGS) {
     assert(off.length === 0, "B4: opponents.js's ratings are docs/measured.json's" + (off.length ? " — " + off.join(",") : ""));
     assert(O.LEVELS.every((id, i) => i === 0 || O.RATING[id] > O.RATING[O.LEVELS[i - 1]]), "B4: the ladder is monotone");
     assert(lad.rating.easy === 1320 && lad.rating.normal === 1700, "B4: anchored at 1320 and 1700");
+    // the plan's acceptance, where B4 built the rungs: from 新手 to 扎实 each
+    // step is one the stronger side scores 60–75% on. (The UCI_Elo rungs'
+    // steps are recorded beside them; see docs/measured.json `ladder.adjacent`.)
+    const ramp = lad.adjacent.filter((a) => O.LEVELS.indexOf(a.upper) <= O.LEVELS.indexOf("solid"));
+    const outside = ramp.filter((a) => !(a.fitPct >= 60 && a.fitPct <= 75));
+    assert(ramp.length === 5 && outside.length === 0,
+      "B4: 新手 → 扎实, every step 60–75% (" + ramp.map((a) => a.upper + " " + a.fitPct + "%").join(", ") + ")");
     const stale = O.LEVELS.filter((id) => JSON.stringify(lad.settings[id]) !== JSON.stringify(Object.assign({}, E.TIERS[id],
       { style: (O.PERSONAS.find((p) => p.level === id) || {}).style || "off" })));
     assert(stale.length === 0, "B4: the run measured the rungs that ship (re-run scripts/test-ladder.mjs)" + (stale.length ? " — " + stale.join(",") : ""));

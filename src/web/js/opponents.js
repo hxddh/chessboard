@@ -23,12 +23,12 @@ const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", 
  * the fit; scripts/test-chess.mjs fails if these stop agreeing with it.
  */
 const RATING = {
-  beginner: 0, casual: 0, learner: 0, improver: 0, steady: 0, solid: 0,
-  easy: 1320, easyplus: 0, normalminus: 0, normal: 1700, hard: 0, extreme: 0,
+  beginner: 70, casual: 266, learner: 409, improver: 608, steady: 752, solid: 941,
+  easy: 1320, easyplus: 1418, normalminus: 1662, normal: 1700, hard: 1994, extreme: 2633,
 };
 const RATING_SE = {
-  beginner: 0, casual: 0, learner: 0, improver: 0, steady: 0, solid: 0,
-  easy: 0, easyplus: 0, normalminus: 0, normal: 0, hard: 0, extreme: 0,
+  beginner: 0, casual: 23, learner: 24, improver: 26, steady: 28, solid: 31,
+  easy: 95, easyplus: 106, normalminus: 119, normal: 126, hard: 144, extreme: 238,
 };
 
 /**

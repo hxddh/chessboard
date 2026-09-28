@@ -23,8 +23,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * (measured — see scripts/test-strength.mjs), i.e. still a solid club player.
    * A real beginner opponent needs to hang material sometimes, so the tier
    * runs a shallow MultiPV search and samples among the candidates, often
-   * deliberately taking the worst one. Measured: 106 ACPL, a serious (≥300cp)
-   * mistake in 14% of moves, median loss 42 — so half its moves stay sensible.
+   * deliberately taking the worst one. Measured: 135 ACPL, a serious (≥300cp)
+   * mistake in 14% of moves, median loss 46 — so half its moves stay sensible.
    *
    * Figures from docs/measured.json (scripts/test-strength.mjs --record);
    * test-chess.mjs fails if this comment stops agreeing with the file.

@@ -314,12 +314,19 @@ const beg = stats.beginner, cas = stats.casual, easy = stats.easy, ext = stats.e
 const TOL_RATIO = 1.4, TOL_ABS = 12;
 const ordered = order.map((n) => stats[n]).filter(Boolean);
 const inversions = [];
-for (let i = 1; i < ordered.length; i++) {
-  const above = ordered[i].acpl, below = ordered[i - 1].acpl;
-  if (above > below * TOL_RATIO + TOL_ABS) inversions.push(order[i - 1] + "(" + below + ") → " + order[i] + "(" + above + ")");
+// v8-0-plan B4: twelve rungs, and neighbours ~100–250 rating points apart —
+// finer than 56 moves of ACPL can resolve (easyplus measured 12 and the rung
+// above it 31 in one run; UCI_LimitStrength's own randomness is unseeded).
+// The step between neighbours is measured by the games between them
+// (scripts/test-ladder.mjs, docs/measured.json `ladder`); here each rung is
+// held to be at least as accurate as the rung two below it.
+const GAP = 2;
+for (let i = GAP; i < ordered.length; i++) {
+  const above = ordered[i].acpl, below = ordered[i - GAP].acpl;
+  if (above > below * TOL_RATIO + TOL_ABS) inversions.push(order[i - GAP] + "(" + below + ") → " + order[i] + "(" + above + ")");
 }
 assert(inversions.length === 0,
-  "档位越高失分越低,没有实质倒挂" + (inversions.length ? " —— 倒挂: " + inversions.join(", ") : ""));
+  "隔一档之间,档位越高失分越低,没有实质倒挂" + (inversions.length ? " —— 倒挂: " + inversions.join(", ") : ""));
 // The rungs that must be separable by any sane measurement: the two handicap
 // tiers against the Elo-limited one above them.
 assert(beg && easy && beg.acpl > easy.acpl * 1.5,
