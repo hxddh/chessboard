@@ -2013,8 +2013,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const e1 = await paintAt(page, "e1", false, "badge"), e8 = await paintAt(page, "e8", false, "badge");
     assert(near(e1, bad) && near(e8, good),
       `A5 终局：被将杀的白王角上是 --judge-bad 的徽标，黑王角上是 --judge-good（${e1} / ${e8}）`);
-    const card = await page.evaluate(() => {
+    const card = await page.evaluate(async () => {
       const c = document.getElementById("go-card"), w = document.getElementById("board-wrap");
+      await Promise.all((c.getAnimations ? c.getAnimations() : []).map((a) => a.finished.catch(() => {})));
       const r = c.getBoundingClientRect(), b = w.getBoundingClientRect();
       return { shown: !!c.offsetParent, inBoard: w.contains(c) && r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom,
         centred: Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2) <= 2 && Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2,

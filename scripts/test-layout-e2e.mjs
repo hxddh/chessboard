@@ -2747,7 +2747,8 @@ if (scenario()) {
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, sq);
   const primaries = () => page.evaluate(() =>
-    [...document.querySelectorAll("#side .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
+    // v8-0-plan A5: the result card is over the board now, not in the panel
+    [...document.querySelectorAll("#side .act-btn.primary, #go-card .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
   const play = async (a, b) => {
     for (const sq of [a, b]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(140); }
     await page.waitForTimeout(320);
@@ -3480,8 +3481,10 @@ if (scenario()) {
 // "never lies on the board": the card floats over the board now, so the rule
 // is that it lies wholly inside the board's frame, centred on it.
 if (scenario()) {
-  const cardState = (page) => page.evaluate(() => {
+  const cardState = (page) => page.evaluate(async () => {
     const c = document.getElementById("go-card");
+    // measured where it comes to rest: the reveal (result-in) moves it 4%
+    await Promise.all((c.getAnimations ? c.getAnimations() : []).map((a) => a.finished.catch(() => {})));
     const b = document.getElementById("board-wrap").getBoundingClientRect();
     const r = c.getBoundingClientRect();
     const hit = r.left >= b.left - 0.5 && r.right <= b.right + 0.5 && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5 &&
@@ -3489,7 +3492,8 @@ if (scenario()) {
     const vis = (e) => !!e.offsetParent;
     return { shown: vis(c), hit, result: document.getElementById("go-result").textContent.trim(),
              reason: document.getElementById("go-reason").textContent.trim(),
-             primaries: [...document.querySelectorAll("#side .primary")].filter(vis).map((e) => e.id),
+             primaries: [...document.querySelectorAll("#side .primary, #go-card .primary")].filter(vis).map((e) => e.id),
+             rect: [r.left, r.top, r.right, r.bottom, b.left, b.top, b.right, b.bottom].map(Math.round).join(","),
              toast: document.getElementById("toast").classList.contains("show") ? document.getElementById("toast").textContent : "" };
   });
   const cases = [
@@ -3525,7 +3529,7 @@ if (scenario()) {
     const s = await cardState(page);
     assert(s.shown, what + ":终局卡出现");
     assert(resultRe.test(s.result) && reasonRe.test(s.reason), what + ":写着结果和原因(" + s.result + " · " + s.reason + ")");
-    assert(s.hit, what + ":终局卡浮在棋盘正中,整张在棋盘框里(v8-0-plan A5)");
+    assert(s.hit, what + ":终局卡浮在棋盘正中,整张在棋盘框里(v8-0-plan A5)(卡 / 框 " + s.rect + ")");
     assert(s.primaries.length === 1 && s.primaries[0] === "go-analyse", what + ":唯一的主按钮是「分析这盘」(" + s.primaries.join(", ") + ")");
     assert(!s.toast, what + ":结局不再由 toast 宣布(" + s.toast + ")");
     await ctx.close();
@@ -3625,14 +3629,17 @@ if (scenario()) {
     assert(first && (await cardState(page)).shown, "同一局已完的棋谱再导入一次：终局卡重新出现，上一次的 ✕ 不算数");
     await ctx.close();
   }
-  // Codex on #82: with the panel shut the card is off-screen, and nothing else
-  // on screen said how the game ended
+  // Codex on #82: with the panel shut the card was off-screen, and nothing
+  // else on screen said how the game ended — 7.7 answered with a toast.
+  // v8-0-plan A5: the card is on the board, so with the panel shut it is
+  // still on screen, and says it once — no toast on top of it
   {
     const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 }, "0");
     for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
     await page.waitForTimeout(500);
     const s = await cardState(page);
-    assert(/黑方胜/.test(s.toast) && /将杀/.test(s.toast), "面板收起时终局：棋盘旁说一次结果和原因(" + s.toast + ")");
+    assert(s.shown && s.hit && /黑方胜/.test(s.result) && /将杀/.test(s.reason) && !s.toast,
+      "面板收起时终局：结果卡就在棋盘上,说一次结果和原因(" + s.result + " · " + s.reason + (s.toast ? " · toast " + s.toast : "") + ")");
     await ctx.close();
   }
 }
