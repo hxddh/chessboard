@@ -17,6 +17,22 @@ import { ChessReview } from "../review.js";
 /**
  * @param {object} d everything this module borrows from app.js
  */
+/**
+ * The plies the curve's move axis labels: where each move begins (White's
+ * ply), plus the first ply when the game starts with Black to move — "30…"
+ * is move 30, not a move to skip (Codex #89) — every `every` moves.
+ * @returns {Array<{i:number, no:number}>}
+ */
+export function axisTicks(n, firstMover, moveNo, every) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    if (i > 0 && (i % 2 === 0) !== (firstMover === "w")) continue;
+    const no = moveNo(i);
+    if (!(no % every)) out.push({ i, no });
+  }
+  return out;
+}
+
 export function createEvalGraph(d) {
   const {
     doc, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen,
@@ -269,11 +285,7 @@ export function createEvalGraph(d) {
     if (axis.dataset.key === key) return;
     axis.dataset.key = key;
     axis.replaceChildren();
-    for (let i = 0; i < n; i++) {
-      // the plies White opens: move k begins there
-      if ((i % 2 === 0) !== (firstMover === "w")) continue;
-      const no = boardMoveNo(i);
-      if (no % every) continue;
+    for (const { i, no } of axisTicks(n, firstMover, boardMoveNo, every)) {
       const s = document.createElement("span");
       s.textContent = String(no);
       s.style.left = ((plotX(i, n, w, 1)) / Math.max(1, w) * 100).toFixed(2) + "%";

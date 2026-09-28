@@ -570,6 +570,13 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const r5 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", path.join(dir, "ex"), "--seed", "1", "--exclude", report], { encoding: "utf8" });
   assert(r5.status === 0 && shipped(dir).includes(JSON.stringify(firstId)) && !shipped(path.join(dir, "ex")).includes(JSON.stringify(firstId)) &&
     /accepted 48 /.test(r5.stdout), "--exclude report.json drops the reported id (" + firstId + ", " + r5.stdout.split("\n")[0] + ")");
+  // Codex #89: a pzstd file cut off right after a size header (its frame never
+  // came — a truncated download) fails too, instead of importing what it has
+  const cutPath = path.join(dir, "cut.csv.zst");
+  const firstFrameEnd = 12 + pz.readUInt32LE(8);
+  fs.writeFileSync(cutPath, pz.subarray(0, firstFrameEnd + 12));
+  const r6 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), cutPath, "--out-dir", path.join(dir, "cut"), "--seed", "1"], { encoding: "utf8" });
+  assert(r6.status !== 0, "a pzstd file cut off after a size header exits non-zero (status " + r6.status + ")");
   // a file that is not zstd at all fails the run instead of importing 0 rows
   const junk = path.join(dir, "junk.csv.zst");
   fs.writeFileSync(junk, Buffer.from("this is not zstd at all, not even close"));

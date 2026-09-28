@@ -1108,12 +1108,26 @@ await scenario("复盘可复现", async () => {
 // 走到被将死为止，从不提和；人机对局不计等级分；有棋钟时引擎照样几百毫秒就应。
 
 /** A white move after which Black has nothing to take and the game goes on. */
+/** a position without its move counters: what threefold repetition compares */
+const posKey = (fen) => fen.split(" ").slice(0, 4).join(" ");
+/** the positions `g` has been through, from its set-up position */
+function seenPositions(g) {
+  const h = new Chess(g.header().FEN || undefined);
+  const out = new Set([posKey(h.fen())]);
+  for (const san of g.history()) { h.move(san); out.add(posKey(h.fen())); }
+  return out;
+}
 function quietMove(g) {
-  for (const m of g.moves({ verbose: true })) {
+  // a position not seen yet first: always the first quiet move shuffles one
+  // piece to and fro, and a threefold repetition ends a game the test wants
+  // to keep playing (WebKit's replies got there before the second draw offer)
+  const seen = seenPositions(g);
+  for (const fresh of [true, false]) for (const m of g.moves({ verbose: true })) {
     if (m.captured || m.promotion) continue;
     const h = new Chess(g.fen());
     h.move(m);
     if (h.game_over() || h.moves({ verbose: true }).some((x) => x.captured)) continue;
+    if (fresh && seen.has(posKey(h.fen()))) continue;
     return m;
   }
   // nothing that quiet (a knight loose among the pawns): any move that
@@ -1220,6 +1234,42 @@ await scenario("引擎认输", async () => {
   const card2 = await page.evaluate(() => document.getElementById("go-reason").textContent.trim());
   assert(/黑方认输/.test(card2), "引擎认输：重开之后，结果仍是黑方认输", card2);
   assert(!errs.length, "引擎认输：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("你将死引擎", async () => {
+  // Codex #89: a human move that ends the game files the rating after the
+  // move's own sync(); with the opponents chunk already here that filing is
+  // synchronous, and the result card must still show the rating line
+  const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
+    { "chess.v1.save": setupSave(fen) });
+  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  const ready = await page.evaluate(() => !!window.CHESS_OPPONENTS);
+  await clickMove(page, "a1", "a8");
+  await page.waitForTimeout(600);
+  const after = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+    const last = (st.games || []).slice(-1)[0] || null;
+    return { last: last && { r: last.result, ra: last.ra },
+      rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() };
+  });
+  assert(ready && after.last && after.last.r === "win" && Number.isFinite(after.last.ra),
+    "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
+  assert(/^等级分 \d+\?（(\+\d+|±0)）/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
+  // Codex #89: clearing the statistics takes the filing off the result card too
+  await page.keyboard.press("Control+,");
+  await page.waitForTimeout(300);
+  await page.click("#stats-clear");
+  await page.waitForTimeout(300);
+  await page.click("#confirm-ok").catch(() => {});
+  await page.waitForTimeout(400);
+  await page.click("#prefs-close").catch(() => {});
+  await page.waitForTimeout(300);
+  const cleared = await page.evaluate(() => ({ stats: localStorage.getItem("chess.v1.stats"),
+    rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() }));
+  assert(!cleared.stats && cleared.rate === "", "你将死引擎：清除统计后，结果卡上的分数跟着撤掉", JSON.stringify(cleared));
+  assert(!errs.length, "你将死引擎：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
 

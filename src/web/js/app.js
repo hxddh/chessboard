@@ -1591,7 +1591,7 @@ import { createStore } from "./store.js";
     has: (_, k) => DIFF_IDS.includes(k),
   });
   // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
-  const OppUI = createOpponentsLazy({ loadStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
+  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
     doc: document, store, t, tf, setText, afterPress, acceptDraw, diffName: (id) => diffName(id),
     repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
     invalidateEngine, forgetFileResult, playEnding, recordOutcome,
@@ -4229,8 +4229,8 @@ import { createStore } from "./store.js";
     const id = newRecordId();
     store.game.recordedId = id;
     const rec = { id, t: Date.now(), diff: store.session.difficulty, style: store.session.personaId, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending };
-    // v8-0-plan B4: the engine-game rating moves with every filed game
-    OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) { saveStats(s); store.commit("game", "action"); } });
+    // v8-0-plan B4: every filed game moves the rating (a late one is saved by OppUI); the card repaints after this task
+    OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
     s.games.push(rec);
     if (s.games.length > 500) s.games = s.games.slice(-500);
     saveStats(s);
@@ -5904,10 +5904,9 @@ import { createStore } from "./store.js";
   document.getElementById("stats-clear").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearStats"), t("dlg.clearStatsTitle"),
       { ok: t("act.clear"), cancel: t("act.cancel"), danger: true }))) return;
-    Persist.remove("stats"); statsCache.v = null; // or every page goes on drawing the cached copy (B5)
-    renderStats();
-    renderAchievements();
-    renderRecordEntry();
+    // or every page goes on drawing the cached copy (B5), the result card its rating and advice (Codex #89)
+    Persist.remove("stats"); statsCache.v = null; store.session.filed = null;
+    renderStats(); renderAchievements(); renderRecordEntry(); store.commit("game", "action");
     toast(t("msg.stats.cleared"));
   };
 

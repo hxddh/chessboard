@@ -67,15 +67,16 @@ export function createPuzzleModes(d) {
   /**
    * Ask for a band; `then` runs once it is part of the pool. A band already
    * here answers at once, and a failed load is reported and forgotten (the
-   * next ask tries again — chunk.js does not remember failures).
+   * next ask tries again — chunk.js does not remember failures); `failed`,
+   * if given, runs after that report.
    */
-  function wantBand(b, then) {
+  function wantBand(b, then, failed) {
     if (b == null) return;
     if (arrived.includes(b)) { if (then) then(); return; }
     Db.ensureBand(b).then((list) => {
       if (list && !arrived.includes(b)) arrived.push(b);
       if (then) then();
-    }, () => toast(t("theme.loadFailed"), "fix"));
+    }, () => { toast(t("theme.loadFailed"), "fix"); if (failed) failed(); });
   }
 
   /**
@@ -171,7 +172,11 @@ export function createPuzzleModes(d) {
       const bands = Db.bandsWith(id).map((x) => x.band);
       const r = (themeRating(id) || seenRating()).r;
       bands.sort((a, b) => Math.abs(a + 100 - r) - Math.abs(b + 100 - r));
-      for (const b of bands) wantBand(b, serve);
+      // the nearest band first, the rest once it is here: whichever arrives
+      // first seats the puzzle, so it has to be the near one — and if it
+      // cannot load, the next nearest takes its place (Codex #89)
+      const from = (k) => wantBand(bands[k], () => { serve(); for (const b of bands.slice(k + 1)) wantBand(b, serve); }, () => from(k + 1));
+      from(0);
     });
     store.session.puzzle = null;
     serve();

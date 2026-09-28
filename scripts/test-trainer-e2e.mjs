@@ -83,9 +83,14 @@ const POOL = data.CHESS_PUZZLES.concat(data.MINED_PUZZLES, LC).filter((p) => p.f
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 /** ms to hold chunk-mined.js back — (e) plays a player quicker than the chunk */
 let minedDelay = 0;
+/** ms to hold a band chunk back, by file — (f) makes the nearest band the slow one */
+const chunkDelay = {};
 const server = http.createServer(async (req, res) => {
   let p = req.url.split("?")[0];
   if (p === "/js/chunk-mined.js" && minedDelay) await new Promise((r) => setTimeout(r, minedDelay));
+  const held = chunkDelay[p.replace(/^\/js\//, "")];
+  if (held === "fail") { res.writeHead(404); res.end(); return; }
+  if (held) await new Promise((r) => setTimeout(r, held));
   if (p === "/") p = "/index.html";
   if (p === "/js/engine-src.js") { res.writeHead(200, { "content-type": "text/javascript" }); res.end("// stub"); return; }
   if (p === "/js/bundle.js") { res.writeHead(200, { "content-type": "text/javascript" }); res.end(BUNDLE); return; }
@@ -558,6 +563,53 @@ async function solveCurrent(page, h) {
   assert(runEarly && runAsked.length > 0, "e: 冲刺先开，索引到了照样去要分数段的分块", runAsked.join(",") + " (fork 在 " + forkBands + " 段)");
   await run.ctx.close();
   minedDelay = 0;
+}
+
+// --- (f) a theme with nothing local starts from the nearest band -------------
+// Codex #89: every band of the theme used to load at once and the first to
+// arrive seated its puzzle, near or not. The nearest band loads first now.
+{
+  const { ctx, page } = await open(null, { mode: "ai" });
+  const h = helpers(page);
+  await page.click('#rail button[data-view="puzzle"]');
+  await page.waitForTimeout(500);
+  await page.click("#pz-themes-open");
+  await page.waitForTimeout(300);
+  const rowsF = await page.evaluate(() => [...document.querySelectorAll("#theme-list button[data-theme]")].map((b) => ({ id: b.dataset.theme, text: b.textContent, off: b.disabled })));
+  const bandOf = (r) => Math.floor(r / 200) * 200;
+  const pick = rowsF.find((x) => {
+    const t = LC_INDEX.themes[x.id];
+    return t && !x.off && new RegExp("(^|\\D)" + t.n + " 道").test(x.text) && t.bands.filter((c) => c > 0).length >= 2;
+  });
+  const bands = pick ? LC_INDEX.bands.filter((b, i) => LC_INDEX.themes[pick.id].bands[i] > 0).map((b) => b.band) : [];
+  bands.sort((a, b) => Math.abs(a + 100 - 1500) - Math.abs(b + 100 - 1500));
+  const near = bands[0];
+  if (near != null) chunkDelay["chunk-lc-" + String(near).padStart(4, "0") + ".js"] = 1500;
+  if (pick) await page.click('#theme-list button[data-theme="' + pick.id + '"]');
+  await page.waitForTimeout(3500);
+  const occ = await h.occupied();
+  const seated = LC.filter((p) => pick && p.themes.includes(pick.id)).find((p) => squaresOf(p.fen) === occ || mirror(squaresOf(p.fen)) === occ);
+  assert(!!pick && bands.length >= 2 && !!seated && bandOf(seated.rating) === near,
+    "f: 没有本地题的主题，先摆最近分数段的题（最近段故意慢到）", JSON.stringify({ theme: pick && pick.id, bands, seated: seated && seated.rating, occ, name: await h.text("#pz-theme-name"), n: LC.filter((p) => pick && p.themes.includes(pick.id)).map((p) => p.rating) }));
+  for (const k in chunkDelay) delete chunkDelay[k];
+  await ctx.close();
+  // Codex #89: the nearest band failing to load does not strand the theme —
+  // the next nearest is asked for, and its puzzle seated
+  if (near != null) chunkDelay["chunk-lc-" + String(near).padStart(4, "0") + ".js"] = "fail";
+  const two = await open(null, { mode: "ai" });
+  const h2 = helpers(two.page);
+  await two.page.click('#rail button[data-view="puzzle"]');
+  await two.page.waitForTimeout(500);
+  await two.page.click("#pz-themes-open");
+  await two.page.waitForTimeout(300);
+  if (pick) await two.page.click('#theme-list button[data-theme="' + pick.id + '"]');
+  await two.page.waitForTimeout(2500);
+  const occ2 = await h2.occupied();
+  const seated2 = LC.filter((p) => pick && p.themes.includes(pick.id)).find((p) => squaresOf(p.fen) === occ2 || mirror(squaresOf(p.fen)) === occ2);
+  assert(!!seated2 && bandOf(seated2.rating) === bands[1], "f: 最近段载入失败，接着要下一段，照样摆出题",
+    JSON.stringify({ want: bands[1], seated: seated2 && seated2.rating }));
+  for (const k in chunkDelay) delete chunkDelay[k];
+  await two.ctx.close();
 }
 
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
