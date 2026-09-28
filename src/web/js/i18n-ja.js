@@ -596,7 +596,7 @@
       "lib.srcLocal": "この端末", "lib.srcImport": "取り込み", "lib.byDate": "日付",
       "lib.dateFrom": "開始日", "lib.dateTo": "終了日", "lib.byTc": "持ち時間",
       "lib.tc.bullet": "超早指し", "lib.tc.blitz": "早指し", "lib.tc.rapid": "ラピッド",
-      "lib.tc.classical": "長考", "lib.tc.daily": "通信", "lib.byPos": "局面",
+      "lib.tc.classical": "長考", "lib.tc.daily": "通信", "lib.byPos": "盤面",
       "lib.posHint": "盤上のこの局面を通った対局だけ", "lib.posStat": "この局面を通った対局 {0} 局。次の一手：{1}", "lib.more": "さらに {0} 局表示",
       "lib.exportPgn": "PGN を書き出す", "lib.claimTitle": "名前の確認", "lib.claimAsk": "「{0}」は {2} 局中 {1} 局に登場します。あなたですか？ 確定すると、これらの対局をあなたの対局として数え、以後の取り込みでは聞きません。",
       "lib.claimYes": "私です", "lib.claimNo": "違います", "lib.claimDone": "「{0}」を確定しました：{1} 局をあなたの対局として数えます",

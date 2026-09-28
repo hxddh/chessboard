@@ -27,7 +27,7 @@ import { clocksOf } from "./progress-metrics.js";
 /**
  * How many games the library holds.
  *
- * 500 from 7.0 to 8.0-dev: the whole library was one localStorage value, and
+ * 500 from 7.0 until v8-0-plan C1: the whole library was one localStorage value, and
  * the ~5 MB quota was the real limit. v8-0-plan C1 keeps each game as its own
  * IndexedDB record (library-db.js), so the cap is now the plan's floor for an
  * archive someone actually has — years of online play. Beyond it the oldest

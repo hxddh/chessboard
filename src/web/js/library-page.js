@@ -62,7 +62,7 @@ async function bootLibrary(d) {
   const backend = await LibraryDb.idbBackend(d.idb);
   const st = LibraryDb.createLibraryStore({ backend: backend || LibraryDb.memoryBackend(), Chess: d.Chess, withLock: d.withLock });
   // "idb": games in IndexedDB. "legacy": no IndexedDB here, or the migration
-  // was refused — the 8.0-dev shape (one localStorage value) for this session
+  // was refused — the pre-C1 shape (one localStorage value) for this session
   let mode = backend ? "idb" : "legacy";
   const sigs = new Map();
   let warned = false;

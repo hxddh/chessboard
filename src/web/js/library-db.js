@@ -1,7 +1,7 @@
 /**
  * 棋谱库的存储 — one IndexedDB record per game (v8-0-plan C1).
  *
- * Until 8.0-dev the library was one localStorage value, `chess.v1.library`,
+ * Until v8-0-plan C1 the library was one localStorage value, `chess.v1.library`,
  * `{v: 1, names, games: [...]}`: the whole of it re-serialised on every save,
  * capped at 500 games because ~5 MB of quota was the real ceiling, and
  * mirrored to the native store as one file. Now:
@@ -17,7 +17,7 @@
  *     same two slots and the same Web Lock as every other key — IndexedDB is
  *     the WebView's, and "remove website data" must not take the library;
  *   * `chess.v1.library` stays, as the header: `{v: 1, games: [], names,
- *     db: 2, n}`. Still v1-shaped on purpose — a 7.x or 8.0-dev build that
+ *     db: 2, n}`. Still v1-shaped on purpose — a 7.x build, or one from before C1, that
  *     opens this profile reads an empty library rather than quarantining a
  *     value it does not know, and the games are still here when it is
  *     upgraded again. If that older build imports meanwhile, it writes v1
@@ -62,7 +62,7 @@ function committed(tx) {
 
 /**
  * The IndexedDB backend, or null when this WebView has none (or refuses it:
- * a private window, a policy). The caller then keeps the 8.0-dev shape.
+ * a private window, a policy). The caller then keeps the pre-C1 shape.
  * @param {IDBFactory} idb
  */
 async function idbBackend(idb, name) {
@@ -188,6 +188,8 @@ function createLibraryStore(o) {
   const withLock = o.withLock || ((fn) => fn());
   /** id → Float64Array: the position index */
   const pk = new Map();
+  /** ids whose moves do not replay, so they have no index (kept out of the entry) */
+  const noIndex = new Set();
   let games = [];
   let local = [];
 
@@ -281,14 +283,14 @@ function createLibraryStore(o) {
    * @returns {Promise<number>} games indexed
    */
   async function indexMissing(budgetMs, pause) {
-    const todo = games.concat(local).filter((g) => !pk.has(g.id) && !g.noIndex);
+    const todo = games.concat(local).filter((g) => !pk.has(g.id) && !noIndex.has(g.id));
     let n = 0;
     let t0 = Date.now();
     let batch = [];
     for (const g of todo) {
       const k = LibraryQuery.keysOfGame(g, Chess);
       if (k) pk.set(g.id, k);
-      else g.noIndex = true;   // does not replay; not asked again this session
+      else noIndex.add(g.id);   // does not replay; not asked again this session
       batch.push(g);
       n++;
       if (Date.now() - t0 >= budgetMs) {

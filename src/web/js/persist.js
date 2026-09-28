@@ -131,7 +131,7 @@ export const STORE_ALT = "-b";
  * the library attaches (attachBulk), which serialises a shard when a flush
  * asks for it. The header (`library`) stays a KEY like any other.
  */
-export const BULK = /^lib[0-9a-f]{2}$/;
+export const BULK = /^lib[0-3][0-9a-f]$/;
 
 /** Is `m` a manifest this app wrote? */
 export function isStoreMeta(m) {
