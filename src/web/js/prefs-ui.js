@@ -33,7 +33,7 @@ export function createPrefsUI(d) {
   // and the claim are chunk-sync.js (sync-ui.js) — the first-paint budget
   // has no room for more. The key is persist.js's, off unless `on` is true.
   const net = d.netSync;
-  let sync = null;
+  const loaded = { sync: null };
   function paintSync() {
     const b = doc.getElementById("opt-netsync");
     if (b && net) b.setAttribute("aria-pressed", String((net.Persist.read("sync").value || {}).on === true));
@@ -41,8 +41,8 @@ export function createPrefsUI(d) {
   // the bundle's own dialog stack and bridge go with it: a chunk importing
   // them would get second copies
   const withSync = (fn) => loadChunk("chunk-sync.js", "createSyncUI").then((make) => {
-    sync = sync || make(Object.assign({ doc, t, Dlg, Host: ChessHost, paint: paintSync }, net));
-    fn(sync);
+    loaded.sync = loaded.sync || make(Object.assign({ doc, t, Dlg, Host: ChessHost, paint: paintSync }, net));
+    fn(loaded.sync);
   }, () => {});
 
   /**
