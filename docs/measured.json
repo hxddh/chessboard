@@ -1222,49 +1222,6 @@
           "skill": 0,
           "depth": 2,
           "multipv": 10,
-          "worstBias": 0.2,
-          "minMs": 350
-        },
-        "random": {
-          "games": 100,
-          "matches": 5,
-          "gamesPerMatch": 20,
-          "win": 0,
-          "draw": 0,
-          "loss": 100,
-          "scorePct": 0,
-          "runs": [
-            0,
-            0,
-            0,
-            0,
-            0
-          ],
-          "sdPct": 0
-        },
-        "careful": {
-          "games": 100,
-          "matches": 5,
-          "gamesPerMatch": 20,
-          "win": 44,
-          "draw": 30,
-          "loss": 26,
-          "scorePct": 59,
-          "runs": [
-            68,
-            50,
-            53,
-            60,
-            65
-          ],
-          "sdPct": 7.7
-        }
-      },
-      "casual": {
-        "settings": {
-          "skill": 0,
-          "depth": 2,
-          "multipv": 8,
           "worstBias": 0.15,
           "minMs": 350
         },
@@ -1289,18 +1246,61 @@
           "games": 100,
           "matches": 5,
           "gamesPerMatch": 20,
-          "win": 26,
-          "draw": 27,
-          "loss": 47,
-          "scorePct": 40,
+          "win": 45,
+          "draw": 22,
+          "loss": 33,
+          "scorePct": 56,
           "runs": [
-            30,
-            43,
+            65,
+            63,
             45,
-            50,
-            30
+            65,
+            43
           ],
-          "sdPct": 9.1
+          "sdPct": 11.2
+        }
+      },
+      "casual": {
+        "settings": {
+          "skill": 0,
+          "depth": 2,
+          "multipv": 8,
+          "worstBias": 0.12,
+          "minMs": 350
+        },
+        "random": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 0,
+          "draw": 0,
+          "loss": 100,
+          "scorePct": 0,
+          "runs": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sdPct": 0
+        },
+        "careful": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 28,
+          "draw": 26,
+          "loss": 46,
+          "scorePct": 41,
+          "runs": [
+            40,
+            43,
+            28,
+            55,
+            40
+          ],
+          "sdPct": 9.6
         }
       },
       "learner": {
@@ -1308,7 +1308,7 @@
           "skill": 1,
           "depth": 2,
           "multipv": 10,
-          "winT": 40,
+          "winT": 37,
           "minMs": 350
         },
         "random": {
@@ -1332,26 +1332,26 @@
           "games": 100,
           "matches": 5,
           "gamesPerMatch": 20,
-          "win": 12,
-          "draw": 21,
-          "loss": 67,
-          "scorePct": 23,
+          "win": 20,
+          "draw": 19,
+          "loss": 61,
+          "scorePct": 30,
           "runs": [
-            23,
-            18,
             20,
-            15,
-            38
+            18,
+            43,
+            40,
+            28
           ],
-          "sdPct": 9
+          "sdPct": 11.4
         }
       },
       "improver": {
         "settings": {
           "skill": 2,
           "depth": 2,
-          "multipv": 9,
-          "winT": 50,
+          "multipv": 10,
+          "winT": 24,
           "minMs": 350
         },
         "random": {
@@ -1375,18 +1375,18 @@
           "games": 100,
           "matches": 5,
           "gamesPerMatch": 20,
-          "win": 18,
-          "draw": 19,
-          "loss": 63,
-          "scorePct": 28,
+          "win": 4,
+          "draw": 15,
+          "loss": 81,
+          "scorePct": 12,
           "runs": [
-            30,
-            28,
-            18,
-            33,
-            30
+            0,
+            23,
+            10,
+            10,
+            15
           ],
-          "sdPct": 5.8
+          "sdPct": 8.4
         }
       },
       "steady": {
@@ -1418,18 +1418,18 @@
           "games": 100,
           "matches": 5,
           "gamesPerMatch": 20,
-          "win": 1,
-          "draw": 9,
-          "loss": 90,
-          "scorePct": 6,
+          "win": 2,
+          "draw": 11,
+          "loss": 87,
+          "scorePct": 8,
           "runs": [
-            8,
-            5,
+            18,
             3,
             5,
-            8
+            3,
+            10
           ],
-          "sdPct": 2.2
+          "sdPct": 6.4
         }
       },
       "solid": {
@@ -1461,18 +1461,18 @@
           "games": 100,
           "matches": 5,
           "gamesPerMatch": 20,
-          "win": 0,
-          "draw": 3,
-          "loss": 97,
-          "scorePct": 2,
+          "win": 1,
+          "draw": 5,
+          "loss": 94,
+          "scorePct": 4,
           "runs": [
-            3,
-            3,
+            8,
+            5,
             0,
-            0,
+            3,
             3
           ],
-          "sdPct": 1.6
+          "sdPct": 2.9
         }
       }
     }

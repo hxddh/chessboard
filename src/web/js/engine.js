@@ -58,9 +58,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // self-destructive: a bot playing random legal moves that merely avoided
     // dropping a piece to an immediate recapture scored 81% against it over 24
     // games. Meanwhile the next rung up was Elo 1320, so a learner who beat
-    // this one had nowhere to go. The same bot now scores 59% here and 40% on
-    // `casual` over 100 games (29% until v8-0-plan B4 gave it more
-    // candidates), and less on each of the four rungs B4 put above it, down
+    // this one had nowhere to go. The same bot now scores 56% here and 41% on
+    // `casual` over 100 games (59% and 29% until v8-0-plan B4 retuned
+    // both), and less on each of the four rungs B4 put above it, down
     // to near nothing at 1320 — a ladder with rungs instead of a cliff.
     // (Those were 56% and 27% until 7.1.1: they were
     // measured under Stockfish 18, 7.0 swapped in SF19 lite-single, and

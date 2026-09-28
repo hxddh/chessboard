@@ -234,8 +234,8 @@ if (RECORDING) {
 //
 // A lower bound of 0 is NOT a gate: mean − 3σ below zero is more than a
 // 20-game match can resolve, and only the upper side means anything. Until
-// v8-0-plan B4 that was casual (29 − 3σ); with its eight candidates it scores
-// 40 and both of its sides are real, and it is the new rungs above it whose
+// v8-0-plan B4 that was casual (29 − 3σ); retuned it scores 41 and both of
+// its sides are real, and it is the new rungs above it whose
 // lower bound is 0. The release path runs the beginner tier, where both
 // sides are real.
 //
@@ -245,15 +245,16 @@ if (RECORDING) {
 // says only that: the release gate first applied the careful band to both
 // and failed v6.0.0 on a 0 % that measured.json had always said.
 {
-  // v8-0-plan B4: casual re-measured with its eight candidates, and the four
-  // rungs above it — the ramp that replaced the cliff to 1320
+  // v8-0-plan B4: beginner (worstBias 0.15) and casual (8 candidates,
+  // worstBias 0.12) re-measured, and the four rungs above them — the ramp that
+  // replaced the cliff to 1320
   const BANDS = {
-    beginner: { careful: [35, 83], random: [0, 15] },
-    casual: { careful: [12, 68], random: [0, 15] },
-    learner: { careful: [0, 55], random: [0, 15] },
-    improver: { careful: [2, 58], random: [0, 15] },
-    steady: { careful: [0, 21], random: [0, 15] },
-    solid: { careful: [0, 11], random: [0, 15] },
+    beginner: { careful: [22, 90], random: [0, 15] },
+    casual: { careful: [12, 70], random: [0, 15] },
+    learner: { careful: [0, 65], random: [0, 15] },
+    improver: { careful: [0, 38], random: [0, 15] },
+    steady: { careful: [0, 28], random: [0, 15] },
+    solid: { careful: [0, 13], random: [0, 15] },
   };
   const bands = BANDS[TIER_NAME];
   for (const [label, m] of Object.entries(measured)) {
