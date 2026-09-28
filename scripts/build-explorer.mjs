@@ -114,17 +114,19 @@ export function qualifies(tags, opt) {
 /**
  * The counter: position key → { plies: Set of plies it was reached at,
  * moves: Map san → {n,w,d,b} }. One game counts once per position (the
- * first visit), as the library index does.
+ * first visit), as the library index does. Replayed on explorer/replay.js;
+ * naiveCount below re-counts on chess.js, so the audit also holds the two
+ * boards to the same keys on real games.
  */
 export function createCounter(d, plies) {
   const pos = new Map();
   let games = 0;
   function add(sans, result) {
-    const g = new d.Chess();
+    const g = d.X.createReplay();
     const seen = new Set();
     const k = d.X.resultOf(result);
     for (let ply = 0; ply < plies && ply < sans.length; ply++) {
-      const key = d.keyOf(g);
+      const key = g.key();
       if (!seen.has(key)) {
         seen.add(key);
         let p = pos.get(key);

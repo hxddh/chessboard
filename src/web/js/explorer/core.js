@@ -19,13 +19,14 @@
  * Positions are keyed by ChessFide.positionKey — the key the repetition rule
  * and the ECO table already use (no move counters; an en-passant square only
  * when the capture is playable) — so a transposition finds the same row, the
- * way the ECO name already does. The key function is injected (`deps.keyOf`)
- * along with chess.js, so this module carries neither and stays a few KB in
- * its chunk.
+ * way the ECO name already does. Games and book lines are replayed on
+ * explorer/replay.js, which says that same key without chess.js; the one
+ * chess.js position this module sees is the board's own, given to `rowsAt`.
  *
  * Pure: games, lines and strings in, plain objects out. No DOM, no store.
  * @module explorer/core
  */
+import { createReplay } from "./replay.js";
 
 /**
  * How deep the library index goes, in plies. An opening explorer past move
@@ -87,24 +88,26 @@ export function sortRows(rows) {
  * Index the library by position: key → [[game index, ply], …], one entry per
  * (game, position) pair, the ply being the move played FROM that position.
  * A game that visits a position twice (a repetition) counts once, at its
- * first visit — the explorer counts games, not visits.
+ * first visit — the explorer counts games, not visits. Replayed on
+ * explorer/replay.js, not chess.js: 500 games × 50 plies took 3.4 s on
+ * chess.js, measured, and a small fraction of that here
+ * (scripts/test-explorer.mjs times it).
  *
  * @param {object[]} list library.js entries ({sans, fen, result})
- * @param {{Chess: Function, keyOf: (chess) => string}} deps
  * @param {number} [maxPly] LIB_PLIES
  * @returns {Map<string, Array<[number, number]>>}
  */
-export function indexGames(list, deps, maxPly) {
+export function indexGames(list, maxPly) {
   const cap = maxPly || LIB_PLIES;
   const idx = new Map();
   (list || []).forEach((g, gi) => {
-    if (!g || !g.sans) return;
+    // an entry the analysis pass could not replay is not replayed here either
+    if (!g || !g.sans || g.unplayable) return;
     const sans = String(g.sans).split(" ");
-    let pos;
-    try { pos = g.fen ? new deps.Chess(g.fen) : new deps.Chess(); } catch (_) { return; }
+    const pos = createReplay(g.fen || null);
     const seen = new Set();
     for (let ply = 0; ply < sans.length && ply < cap; ply++) {
-      const key = deps.keyOf(pos);
+      const key = pos.key();
       if (!seen.has(key)) {
         seen.add(key);
         const at = idx.get(key);
@@ -130,13 +133,12 @@ export function indexGames(list, deps, maxPly) {
  * stay as they are.
  *
  * @param {() => object[]} getList the library's entries, as stored
- * @param {{Chess: Function, keyOf: Function}} deps
  */
-export function librarySource(getList, deps) {
-  let memo = { list: null, idx: null };
+export function librarySource(getList) {
+  let memo = { list: null, n: 0, idx: null };
   function hitsAt(key) {
     const list = getList() || [];
-    if (memo.list !== list) memo = { list, idx: indexGames(list, deps) };
+    if (memo.list !== list || memo.n !== list.length) memo = { list, n: list.length, idx: indexGames(list) };
     return (memo.idx.get(key) || []).map(([gi, ply]) => ({ san: String(list[gi].sans).split(" ")[ply], result: list[gi].result }));
   }
   return {
@@ -183,15 +185,14 @@ export function bucketFor(buckets, ply) {
  * same question per move order, and scripts/test-explorer.mjs holds the two
  * to agreeing on every book prefix.
  * @param {Array} lines openings.js rows: [eco, id, "san …", idea?]
- * @param {{Chess: Function, keyOf: Function}} deps
  * @returns {Map<string, Set<string>>}
  */
-export function bookIndex(lines, deps) {
+export function bookIndex(lines) {
   const out = new Map();
   for (const row of lines || []) {
-    const pos = new deps.Chess();
+    const pos = createReplay();
     for (const san of String(row[2] || "").trim().split(/\s+/).filter(Boolean)) {
-      const key = deps.keyOf(pos);
+      const key = pos.key();
       if (!out.has(key)) out.set(key, new Set());
       out.get(key).add(san);
       if (!pos.move(san)) break;
@@ -229,6 +230,6 @@ export function percents(r) {
 }
 
 export const ChessExplorer = {
-  LIB_PLIES, hashKey, resultOf, tally, sortRows, indexGames, librarySource,
+  LIB_PLIES, hashKey, resultOf, tally, sortRows, indexGames, librarySource, createReplay,
   encodeRows, decodeRows, bucketFor, bookIndex, rowsAt, percents,
 };
