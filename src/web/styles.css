@@ -3461,6 +3461,14 @@
 .lib-dates, .lib-pos-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .lib-dates .text-input { flex: 1 1 0; min-width: 0; }
 .lib-pos-row .hint { margin: 0; }
+/* Nine questions stacked in one column put the list itself below the fold of
+   a 900px window. On a sheet this wide they go two to a row; the search box
+   and the six-way speed row keep a row each, so no segment gets narrower
+   than its word. */
+@media (min-width: 1100px) {
+  #lib-list-modal .hist-filters { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); }
+  #lib-list-modal #lib-q, #lib-list-modal #lib-tc-seg { grid-column: span 3; }
+}
 .lib-claim { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
 .lib-claim .hint { flex: 1 1 16rem; margin: 0; }
 
