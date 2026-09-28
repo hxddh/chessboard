@@ -234,6 +234,9 @@ export function createLessonsUI(d) {
       lastMove: store.session.learn.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
+      // v8-0-plan A5: while the success flash is up, or the lesson is done,
+      // a mate that completed the task is not lit in the check's red
+      success: !!(store.session.learn.flash || store.session.learn.done),
       hintMove: store.session.learn.helpArrow,
       flashSquare: store.session.learn.flash,
       stars,

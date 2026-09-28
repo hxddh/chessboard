@@ -15,6 +15,7 @@
  */
 import { Opponents } from "./opponents.js";
 import { ChessRating } from "./rating.js";
+import { OP_LINES } from "./opponents-lines.js";
 
 /**
  * @param {object} d what this module borrows from app.js
@@ -22,6 +23,10 @@ import { ChessRating } from "./rating.js";
 export function createOpponentsUI(d) {
   const { doc, store, t, tf, setText, repaint, saveSettings, diffName } = d;
   const el = (id) => doc.getElementById(id);
+  /** the personas' words (opponents-lines.js), in the interface's language */
+  const L = () => OP_LINES[d.lang()] || OP_LINES["zh-CN"];
+  const fill = (s, v) => s.replace(/\{(\d)\}/g, (_, i) => String(v[i]));
+  const nameOf = (p) => L()[p.id].name;
 
   // --- the dialog's cards -------------------------------------------------
 
@@ -102,10 +107,10 @@ export function createOpponentsUI(d) {
       const active = !!on && on.id === p.id;
       if (b.classList.contains("active") !== active) b.classList.toggle("active", active);
       if (b.getAttribute("aria-pressed") !== String(active)) b.setAttribute("aria-pressed", String(active));
-      setText(b.querySelector(".op-name"), t("op." + p.id + ".name"));
+      setText(b.querySelector(".op-name"), nameOf(p));
       setText(b.querySelector(".op-rating"), String(Opponents.ratingOf(p.level)));
       setText(b.querySelector(".op-style"), p.style === "off" ? diffName(p.level) : styleName(p.style));
-      const tip = t("op." + p.id + ".hello");
+      const tip = L()[p.id].hello;
       if (b.title !== tip) b.title = tip;
     }
     const r = d.rating();
@@ -145,7 +150,7 @@ export function createOpponentsUI(d) {
     if (style && style !== "off") bits.push(styleName(style));
     return {
       icon: p ? p.icon : "bot",
-      name: p ? t("op." + p.id + ".name") : "Stockfish",
+      name: p ? nameOf(p) : "Stockfish",
       level: bits.join(" · "),
     };
   }
@@ -153,7 +158,7 @@ export function createOpponentsUI(d) {
   /** The persona's opening line, or null for a combination of one's own. */
   function hello(level, style) {
     const p = Opponents.personaFor(level, style);
-    return p ? tf("op.say", [t("op." + p.id + ".name"), t("op." + p.id + ".hello")]) : null;
+    return p ? fill(L().say, [nameOf(p), L()[p.id].hello]) : null;
   }
 
   /**
@@ -164,9 +169,8 @@ export function createOpponentsUI(d) {
     const p = Opponents.personaFor(level, style);
     if (!p) return null;
     // a persona with nothing of its own to count says the shared line
-    const own = "op." + p.id + ".bye";
-    const line = tf(t(own) !== own ? own : "op.bye", [facts.opening || t("op.noOpening"), facts.moves, facts.captures, facts.checks]);
-    return tf("op.say", [t("op." + p.id + ".name"), line]);
+    const line = fill(L()[p.id].bye || L().bye, [facts.opening || L().noOpening, facts.moves, facts.captures, facts.checks]);
+    return fill(L().say, [nameOf(p), line]);
   }
 
   // --- the result card's rating line ---------------------------------------
@@ -186,7 +190,7 @@ export function createOpponentsUI(d) {
     const p = Opponents.neighbour(level, filed.advice);
     if (!p) return "";
     return tf(filed.advice === "up" ? "go.up" : "go.down",
-      [t("op." + p.id + ".name"), Opponents.ratingOf(p.level)]);
+      [nameOf(p), Opponents.ratingOf(p.level)]);
   }
 
   // --- the engine's draw offer ---------------------------------------------
@@ -265,8 +269,8 @@ export function createOpponentsUI(d) {
     o.lastOfferPly = n;
     o.offer = { ply: d.plies() };
     const p = Opponents.personaFor(store.session.difficulty, store.session.personaId);
-    showOffer(p ? t("op." + p.id + ".name") : "Stockfish");
-    d.announce(tf("offer.draw", [p ? t("op." + p.id + ".name") : "Stockfish"]));
+    showOffer(p ? nameOf(p) : "Stockfish");
+    d.announce(tf("offer.draw", [p ? nameOf(p) : "Stockfish"]));
   }
 
   /** The offer lapses once the game moves on (a move is a decline) or ends. */

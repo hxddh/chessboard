@@ -28,6 +28,29 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *
    * Figures from docs/measured.json (scripts/test-strength.mjs --record);
    * test-chess.mjs fails if this comment stops agreeing with the file.
+   *
+   * v8-0-plan B4 — the ladder, twelve rungs, each a step (60–75%) above the
+   * last in games between them (docs/measured.json `ladder`, the ratings):
+   *
+   * - `beginner` worstBias 0.2 → 0.15 and `casual` 6 → 8 candidates, worstBias
+   *   0.15 → 0.12. Played against each other the 1.19 `casual` scored 91%
+   *   against `beginner` — three rungs above it, not one.
+   * - `learner` … `solid` fill the cliff between 休闲 and 初级 (the careful
+   *   novice bot scored 29% on one side of it and next to nothing on the
+   *   other; UCI_Elo stops at 1320, so UCI cannot fill it). They are
+   *   handicapped here, but not by playing the worst candidate on purpose:
+   *   each samples its MultiPV list weighted by the win chance a candidate
+   *   gives away (`winT`, in win-percentage points: a move that costs `winT`
+   *   is e^-1 as likely as the best one), a little deeper per rung. A small
+   *   slip is common and a dropped piece rare, which is how a player at that
+   *   level loses. The list's length moves the strength as much as the
+   *   temperature (12 candidates at winT 60 played level with `casual`; 8
+   *   scored 82% against it).
+   * - `easyplus` / `normalminus`: 1700 scored 94% against 1320, three rungs
+   *   apart, not one.
+   *
+   * These notes sit here and not beside the rows: a comment inside the
+   * literal ships in the bundle (esbuild keeps it), and F5's budget is bytes.
    */
   const TIERS = {
     // 1.19 re-calibration. `worstBias` was 0.6 — six moves in ten were the
@@ -71,33 +94,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // which is a worse tier bought with a worse mechanism. The plan's own
     // condition for making the change ("若相关性强" — if the candidate count
     // really tracks the phase) is not met, so it is not made.
-    // v8-0-plan B4: worstBias 0.2 → 0.15. The ladder needs six steps of at
-    // most 75% each from here to 1320, and from 0.2 it was one step too far.
     beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.15, minMs: 350 },
-    // v8-0-plan B4: two candidates more (6 → 8). Played against each other,
-    // the 1.19 `casual` scored 91% against `beginner` — not a rung above it
-    // but three. Eight candidates (and worstBias 0.12) put it one step up.
     casual: { skill: 0, depth: 2, multipv: 8, worstBias: 0.12, minMs: 350 },
-    // v8-0-plan B4: the rungs between 休闲 and 初级. The step from `casual` to
-    // Elo 1320 was a cliff — the careful novice bot scores 29% on one side of
-    // it and next to nothing on the other — and nothing in UCI can fill it:
-    // UCI_Elo stops at 1320. So these are handicapped here too, but not by
-    // playing the worst candidate on purpose. Each samples its MultiPV list
-    // weighted by how much win chance a candidate gives away (`winT`, in
-    // win-percentage points: a move that costs `winT` points is e^-1 as
-    // likely as the best one), and searches a little deeper per rung. A small
-    // slip is common and a dropped piece is rare, which is how a player at
-    // that level actually loses. Measured in games between the rungs, the
-    // list's length moves the strength as much as the temperature does
-    // (12 candidates at winT 60 played level with `casual`; 8 scored 82%
-    // against it). Ratings: docs/measured.json `ladder`.
     learner: { skill: 1, depth: 2, multipv: 10, winT: 37, minMs: 350 },
     improver: { skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
     steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
     solid: { skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },
-    // v8-0-plan B4: and two between 1320 and 1700 — in games against each
-    // other 1700 scored 94% against 1320, three rungs apart, not one
     easyplus: { elo: 1450, movetime: 570 },
     normalminus: { elo: 1575, movetime: 630 },
     normal: { elo: 1700, movetime: 700 },

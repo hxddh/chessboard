@@ -53,6 +53,17 @@ import { LANG_IDS, FALLBACK_LANG, detectLang } from "./lang-ids.js";
     spatial: { file: "chunk-pieces-spatial.js", global: "SPATIAL_PIECE_SVGS" },
   };
 
+  /**
+   * v8-0-plan A4 + F5: two pieces of the review that the first paint never
+   * uses — the exported picture of the report (drawn on 导出复盘图) and the
+   * key-moments card (drawn once a game is analysed). Chunks, so the review
+   * view's new code does not push the bundle past the F5 budget.
+   */
+  export const REVIEW_CHUNKS = {
+    report: { file: "chunk-report.js", global: "ChessReport" },
+    moments: { file: "chunk-moments.js", global: "createMoments" },
+  };
+
   /** Where the settings live — persist.js KEYS.settings, read raw by chunk-boot.js. */
   export const SETTINGS_KEY = "chess.v1.settings";
 

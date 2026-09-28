@@ -62,6 +62,17 @@ const PERSONAS = [
 ];
 
 
+/**
+ * Names for the PGN tag, one per rung. This was a hand-written object that
+ * predated the 1.19 "casual" rung and never grew one, so a casual game
+ * exported as "Stockfish 19 (casual)" — the raw id leaking into a file other
+ * programs read. The self-check requires an entry here for every rung.
+ */
+const EN_NAME = {
+  beginner: "Beginner", casual: "Casual", learner: "Practice", improver: "Improving", steady: "Steady",
+  solid: "Solid", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", hard: "Hard", extreme: "Max",
+};
+
 function personaById(id) { return PERSONAS.find((p) => p.id === id) || null; }
 /** The persona a (rung, style) pair is, or null for a combination of one's own. */
 function personaFor(level, style) {
@@ -325,7 +336,7 @@ function neighbour(level, dir) {
 }
 
 export const Opponents = {
-  LEVELS, RATING, RATING_SE, PERSONAS, PACE_CAP_MS,
+  LEVELS, RATING, RATING_SE, PERSONAS, EN_NAME, PACE_CAP_MS,
   personaById, personaFor, ratingOf, thinkPlan, shouldResign, shouldOfferDraw, acceptsDraw,
   opponentOf, rateGame, rateHistory, fileRating, validRating, ratingOfStats, performance, advice, neighbour,
 };

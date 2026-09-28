@@ -38,6 +38,7 @@ const ROOT = path.join(HERE, "..", "src", "web");
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { makeScenarioGate } from "./e2e-shard.mjs";
 import { layoutProbe } from "./lib/layout-probe.mjs";
+import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 
 // v8-0-plan F1: SHARD=i/n runs every n-th scenario; unset runs all of them
 const scenario = makeScenarioGate(process.env.SHARD);
@@ -2746,7 +2747,8 @@ if (scenario()) {
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, sq);
   const primaries = () => page.evaluate(() =>
-    [...document.querySelectorAll("#side .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
+    // v8-0-plan A5: the result card is over the board now, not in the panel
+    [...document.querySelectorAll("#side .act-btn.primary, #go-card .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
   const play = async (a, b) => {
     for (const sq of [a, b]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(140); }
     await page.waitForTimeout(320);
@@ -3475,17 +3477,23 @@ if (scenario()) {
 
 // --- 7.7 (v7-7-plan §4): every ending gets the result card ------------------
 // Mate, flag, resignation and a draw — the card is there, says the right
-// thing, carries at most one filled button, and never lies on the board.
+// thing and carries at most one filled button. v8-0-plan A5 replaces 7.7's
+// "never lies on the board": the card floats over the board now, so the rule
+// is that it lies wholly inside the board's frame, centred on it.
 if (scenario()) {
-  const cardState = (page) => page.evaluate(() => {
+  const cardState = (page) => page.evaluate(async () => {
     const c = document.getElementById("go-card");
+    // measured where it comes to rest: the reveal (result-in) moves it 4%
+    await Promise.all((c.getAnimations ? c.getAnimations() : []).map((a) => a.finished.catch(() => {})));
     const b = document.getElementById("board-wrap").getBoundingClientRect();
     const r = c.getBoundingClientRect();
-    const hit = !(r.right <= b.left || r.left >= b.right || r.bottom <= b.top || r.top >= b.bottom);
+    const hit = r.left >= b.left - 0.5 && r.right <= b.right + 0.5 && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5 &&
+      Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2) <= 2 && Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2;
     const vis = (e) => !!e.offsetParent;
     return { shown: vis(c), hit, result: document.getElementById("go-result").textContent.trim(),
              reason: document.getElementById("go-reason").textContent.trim(),
-             primaries: [...document.querySelectorAll("#side .primary")].filter(vis).map((e) => e.id),
+             primaries: [...document.querySelectorAll("#side .primary, #go-card .primary")].filter(vis).map((e) => e.id),
+             rect: [r.left, r.top, r.right, r.bottom, b.left, b.top, b.right, b.bottom].map(Math.round).join(","),
              toast: document.getElementById("toast").classList.contains("show") ? document.getElementById("toast").textContent : "" };
   });
   const cases = [
@@ -3521,7 +3529,7 @@ if (scenario()) {
     const s = await cardState(page);
     assert(s.shown, what + ":终局卡出现");
     assert(resultRe.test(s.result) && reasonRe.test(s.reason), what + ":写着结果和原因(" + s.result + " · " + s.reason + ")");
-    assert(!s.hit, what + ":终局卡与棋盘矩形不相交");
+    assert(s.hit, what + ":终局卡浮在棋盘正中,整张在棋盘框里(v8-0-plan A5)(卡 / 框 " + s.rect + ")");
     assert(s.primaries.length === 1 && s.primaries[0] === "go-analyse", what + ":唯一的主按钮是「分析这盘」(" + s.primaries.join(", ") + ")");
     assert(!s.toast, what + ":结局不再由 toast 宣布(" + s.toast + ")");
     await ctx.close();
@@ -3552,7 +3560,7 @@ if (scenario()) {
     await page.waitForTimeout(1500);
     const s = await cardState(page);
     assert(s.shown && /白方胜/.test(s.result) && /超时/.test(s.reason), "超时:终局卡出现(" + s.result + " · " + s.reason + ")");
-    assert(!s.hit, "超时:终局卡与棋盘矩形不相交(1024x700)");
+    assert(s.hit, "超时:终局卡浮在棋盘正中,整张在棋盘框里(1024x700)");
     await ctx.close();
   }
   // ✕ puts it away, and 分析 in the review row takes the fill back
@@ -3621,14 +3629,17 @@ if (scenario()) {
     assert(first && (await cardState(page)).shown, "同一局已完的棋谱再导入一次：终局卡重新出现，上一次的 ✕ 不算数");
     await ctx.close();
   }
-  // Codex on #82: with the panel shut the card is off-screen, and nothing else
-  // on screen said how the game ended
+  // Codex on #82: with the panel shut the card was off-screen, and nothing
+  // else on screen said how the game ended — 7.7 answered with a toast.
+  // v8-0-plan A5: the card is on the board, so with the panel shut it is
+  // still on screen, and says it once — no toast on top of it
   {
     const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 }, "0");
     for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
     await page.waitForTimeout(500);
     const s = await cardState(page);
-    assert(/黑方胜/.test(s.toast) && /将杀/.test(s.toast), "面板收起时终局：棋盘旁说一次结果和原因(" + s.toast + ")");
+    assert(s.shown && s.hit && /黑方胜/.test(s.result) && /将杀/.test(s.reason) && !s.toast,
+      "面板收起时终局：结果卡就在棋盘上,说一次结果和原因(" + s.result + " · " + s.reason + (s.toast ? " · toast " + s.toast : "") + ")");
     await ctx.close();
   }
 }
@@ -4840,6 +4851,57 @@ if (scenario()) {
   }
 }
 
+// --- v8-0-plan A4：复盘视图在 M2 的三种布局里 ----------------------------------
+// The health report has to live inside whatever the play view is: the wide
+// three-column layout (1920), the two-column one (1440) and portrait (600).
+// In each, flat and framed: the eval bar is level with the board's frame (it
+// ran from the squares' top edge — frame y=72, bar y=89 at 1440×900 with the
+// wood frame), it lies on nothing else (rail, info column, panel), and the
+// report fits its column — nothing past the panel's edge, no sideways scroll.
+if (scenario()) {
+  for (const vp of [{ width: 1920, height: 1080 }, { width: 1440, height: 900 }, { width: 600, height: 900 }]) {
+    const { ctx, page, errs } = await open("en", "pvp", "play", "wood", vp);
+    await playOpera(page);
+    await analyseOpera(page);
+    await page.evaluate(() => {
+      document.getElementById("rep-start").click();
+      for (let i = 0; i < 18; i++) document.getElementById("rep-next").click();
+    });
+    await page.waitForTimeout(300);
+    for (const frame of ["flat", "frame"]) {
+      await page.evaluate((f) => document.querySelector('#frame-seg button[data-frame="' + f + '"]').click(), frame);
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(() => {
+        const box = (e) => e.getBoundingClientRect();
+        const w = box(document.getElementById("board-wrap")), b = box(document.getElementById("eval-bar"));
+        const hit = (a, c) => !(a.right <= c.left || a.left >= c.right || a.bottom <= c.top || a.top >= c.bottom);
+        const others = [document.getElementById("rail"), document.getElementById("side"),
+          ...document.querySelectorAll("#info-col > *, .pstrip")].filter((e) => e && e.offsetParent && box(e).width > 0);
+        const side = document.getElementById("side");
+        const sr = box(side);
+        const past = [...document.querySelectorAll("#eval-wrap *")].filter((e) => e.offsetParent && box(e).width > 0 && box(e).right > sr.right + 1)
+          .map((e) => e.id || e.className);
+        return { layout: document.getElementById("app").classList.contains("pv-wide") ? "wide" : "two",
+          wt: w.top, wb: w.bottom, bt: b.top, bb: b.bottom, bl: b.left,
+          num: (() => { const n = box(document.getElementById("eval-bar-text")); return { l: n.left, w: n.width, r: n.right }; })(),
+          on: others.filter((e) => hit(b, box(e))).map((e) => e.id || e.className),
+          inset: document.getElementById("eval-bar-row").classList.contains("is-inset"),
+          scroll: side.scrollWidth - side.clientWidth, past,
+          km: !!document.getElementById("rv-km") && !document.getElementById("rv-km").hidden, report: !document.getElementById("report-card").hidden };
+      });
+      const tag = `${vp.width}×${vp.height} ${frame}（${r.layout}${r.inset ? "，贴框内" : ""}）`;
+      assert(Math.abs(r.bt - r.wt) <= 1 && Math.abs(r.bb - r.wb) <= 1,
+        `A4：${tag} 评估条与棋盘外框上下对齐（框 ${Math.round(r.wt)}–${Math.round(r.wb)}，条 ${Math.round(r.bt)}–${Math.round(r.bb)}）`);
+      assert(r.bl >= 0 && r.on.length === 0, `A4：${tag} 评估条不压导航栏、信息栏、面板（${r.on.join(", ") || "无"}）`);
+      assert(r.num.w <= 1 || (r.num.l >= 0 && r.num.r <= vp.width),
+        `A4：${tag} 评估条的分数要么整个在窗口里，要么交给曲线和读屏（${Math.round(r.num.l)}–${Math.round(r.num.r)}）`);
+      assert(r.report && r.km && r.scroll <= 0 && r.past.length === 0,
+        `A4：${tag} 体检报告与关键时刻都在，面板里没有越界、没有横向滚动（${r.scroll}px${r.past.length ? "，越界 " + r.past.join(", ") : ""}）`);
+    }
+    assert(errs.length === 0, `A4：${vp.width}×${vp.height} 没有页面异常 — ` + errs.join(" / "));
+    await ctx.close();
+  }
+}
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

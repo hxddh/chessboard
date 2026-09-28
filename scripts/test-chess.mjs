@@ -147,7 +147,7 @@ const allSourceExcept = (...owners) =>
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
   "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js",
-  "me-page.js", "opponents-ui.js"];
+  "me-page.js", "game-end.js", "review/moments.js", "opponents-ui.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -2516,9 +2516,7 @@ for (const lang of CONTENT_LANGS) {
     "B4: 3–4 rungs between 休闲 and 初级, each depth-limited and sampling by win-chance loss (" + between.join(",") + ")");
   assert(between.every((id) => E.TIERS[id].skill <= 5), "B4: …at a low Skill Level");
   {
-    const lazy = fs.readFileSync(path.join(root, "src/web/js/opponents-lazy.js"), "utf8");
-    const en = /export const EN_NAME = \{([^}]*)\}/.exec(lazy);
-    assert(en && O.LEVELS.every((id) => new RegExp("\\b" + id + ":").test(en[1])), "B4: every rung has a PGN name");
+    assert(O.LEVELS.every((id) => typeof O.EN_NAME[id] === "string"), "B4: every rung has a PGN name");
   }
 
   // the win-chance draw: the best line most often, a blunder rarely, and a
@@ -2559,16 +2557,31 @@ for (const lang of CONTENT_LANGS) {
   assert(O.personaFor("easy", "off") && O.personaFor("easy", "off").level === "easy" && O.personaFor("easy", "greedy") === null,
     "B4: a (rung, style) pair is a persona or a combination of one's own");
   loadModule(ctx, "src/web/js/i18n.js");
-  for (const lang of Object.keys(ctx.ChessI18n.DICT)) {
-    const D = ctx.ChessI18n.DICT[lang];
-    // the end-of-game line is the persona's own or the shared `op.bye`
-    const gaps = O.PERSONAS.flatMap((p) => ["name", "hello"].map((k) => "op." + p.id + "." + k)).concat(["op.bye"]).filter((k) => !(k in D));
+  // the personas' words are content (opponents-lines.js, in the chunk), held
+  // to what the dictionary checks hold keys to
+  loadModule(ctx, "src/web/js/opponents-lines.js");
+  const LINES = ctx.OP_LINES;
+  assert(JSON.stringify(Object.keys(LINES).sort()) === JSON.stringify(Object.keys(ctx.ChessI18n.DICT).sort()),
+    "B4: the persona lines come in every interface language (" + Object.keys(LINES) + ")");
+  for (const lang of Object.keys(LINES)) {
+    const T = LINES[lang];
+    // the end-of-game line is the persona's own or the shared `bye`
+    const gaps = O.PERSONAS.filter((p) => !T[p.id] || !T[p.id].name || !T[p.id].hello).map((p) => p.id)
+      .concat(["say", "bye", "noOpening"].filter((k) => !T[k]));
     assert(gaps.length === 0, "B4: " + lang + " names every persona and gives it both lines" + (gaps.length ? " — " + gaps.slice(0, 4) : ""));
+    if (lang !== "zh-CN") {
+      const same = O.PERSONAS.filter((p) => p.id !== "fish" && T[p.id].hello === LINES["zh-CN"][p.id].hello);
+      assert(same.length === 0, "B4: " + lang + " persona lines are translated");
+    }
+    if (lang === "zh-CN") {
+      const half = Object.values(T).flatMap((v) => (typeof v === "string" ? [v] : [v.hello, v.bye || ""])).filter((x) => /[\u4e00-\u9fff][,;:?!]|[,;:?!][\u4e00-\u9fff]/.test(x));
+      assert(half.length === 0, "B4: the Chinese persona lines use full-width punctuation" + (half.length ? " — " + half[0] : ""));
+    }
     // 7.8's rule: facts, not feelings — no line judges the player or has the
     // machine feel something about the game
     const JUDGE = lang === "en" ? /\b(good|great|nice|well played|brilliant|bad|poor|terrible|happy|sad|sorry|enjoy|fun|love|hate|luck)\b/i
       : lang === "ja" ? /(すごい|素晴らし|上手|下手|残念|楽しい|嬉しい|悲しい|ごめん|頑張)/ : /(好棋|漂亮|厉害|精彩|可惜|遗憾|开心|高兴|难过|抱歉|加油|运气|真棒|太好)/;
-    const judged = O.PERSONAS.flatMap((p) => ["hello", "bye"].map((k) => D["op." + p.id + "." + k])).concat([D["op.bye"]]).filter((s) => JUDGE.test(s || ""));
+    const judged = O.PERSONAS.flatMap((p) => [T[p.id].hello, T[p.id].bye]).concat([T.bye]).filter((s) => JUDGE.test(s || ""));
     assert(judged.length === 0, "B4: " + lang + " persona lines state facts only (7.8)" + (judged.length ? " — " + judged[0] : ""));
   }
 
@@ -4423,6 +4436,55 @@ for (const lang of CONTENT_LANGS) {
     assert(fenGuard.test(appSrc3), "the FEN field lets Escape and Tab through");
   }
 
+  // v8-0-plan A5: the one curve reaches the canvas. board.js eased its slide
+  // with a quadratic of its own (1 − (1 − t)²) beside the stylesheet's
+  // cubic-bezier, so a piece and the panel next to it moved on two curves.
+  // Now the canvas reads --ease and eases through motion.js's lookup table:
+  // no easing formula in board.js, every timed effect through ease(), and
+  // the table is the stylesheet's curve — checked against an independent
+  // solve of the same Bézier.
+  {
+    const board = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(!/const easeOut|1 - \(1 - t\) \* \(1 - t\)|t \* \(2 - t\)/.test(board),
+      "the canvas has no easing curve of its own (no quadratic easeOut)");
+    assert(/from "\.\/motion\.js"/.test(board) && /getPropertyValue\("--ease"\)/.test(board),
+      "…it reads --ease and eases through motion.js");
+    // every animation's progress — (now − x.start) / its length — goes through ease()
+    const timed = board.split("\n").filter((l) => /\(now - _?\w+(\.\w+)?\.start\) \//.test(l) && !/function fxAt/.test(l));
+    const bare = timed.filter((l) => !/ease\(/.test(l));
+    assert(timed.length >= 2 && bare.length === 0,
+      "every timed canvas effect is eased on that curve (" + timed.length + " sites" + (bare.length ? "; bare: " + bare.map((l) => l.trim()).join(" | ") : "") + ")");
+    const fx = /function fxAt\(f, ms, now\) \{([^}]*)\}/.exec(board);
+    assert(!!fx && !/ease/.test(fx[1]), "fxAt is the linear progress; its callers ease it");
+    const fxUses = [...board.matchAll(/fxAt\(/g)].length - 1;
+    const fxEased = [...board.matchAll(/ease\(fxAt\(/g)].length + [...board.matchAll(/Math\.sin\(Math\.PI \* ease\(pp\)\)/g)].length;
+    assert(fxUses >= 4 && fxEased === fxUses, "…and every fxAt() progress is eased too (" + fxEased + " of " + fxUses + ")");
+    // the table is the curve
+    loadModule(ctx, "src/web/js/motion.js");
+    const M = ctx.ChessMotion;
+    const cssE = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const decl = /--ease:\s*([^;]+);/.exec(cssE);
+    const v = M && decl ? M.parseBezier(decl[1]) : null;
+    assert(!!v && v.length === 4, "--ease is a cubic-bezier the canvas can read (" + (decl && decl[1]) + ")");
+    if (v) {
+      const e = M.easeFromCss(decl[1]);
+      const bz = (a, b, u) => 3 * a * u * (1 - u) * (1 - u) + 3 * b * u * u * (1 - u) + u * u * u;
+      let worst = 0;
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40;
+        let lo = 0, hi = 1;
+        for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (bz(v[0], v[2], mid) < t) lo = mid; else hi = mid; }
+        worst = Math.max(worst, Math.abs(e(t) - bz(v[1], v[3], (lo + hi) / 2)));
+      }
+      assert(worst < 0.003, "the canvas curve is the stylesheet's curve (max error " + worst.toFixed(5) + " < 0.003)");
+      assert(e(0) === 0 && e(1) === 1, "…and it starts and ends exactly");
+    }
+    // reduced motion stops every one of them: no effect starts, so no frame is drawn for it
+    const notes = /function noteChanges\(m, now\) \{([\s\S]*?)\n  \}/.exec(board);
+    assert(!!notes && (notes[1].match(/!_reduceMotion \?/g) || []).length === 3,
+      "reduced motion: none of the three board effects (lift, check pulse, badge) starts");
+  }
+
   // "Reduce motion" is an accessibility setting, and it says *reduce*.
   // 1.9 honoured it with one rule against 25 animated declarations; 1.10
   // over-corrected and flattened all 25, including twelve that only cross-fade
@@ -4595,9 +4657,7 @@ for (const lang of CONTENT_LANGS) {
     // an engine setting, its floor of 1320 is already above a real beginner.
     // v8-0-plan B4 gave the player a rating, and the ratings shown beside it
     // are the measured ones on the persona cards, not these.) The two rungs
-    // B4 added between 1320 and 1700 are the same kind of tooltip, and the
-    // full-strength persona's name is the engine's name. `op.say` is
-    // 「{0}：{1}」 — a name and its line, the same full-width colon in both.
+    // B4 added between 1320 and 1700 are the same kind of tooltip.
     // `lm.tipSep` is the punctuation between a drill's outcome and the
     // technique it teaches. Japanese and Chinese both end a sentence with 。 —
     // it is translated, and the translation is the same mark.
@@ -4608,7 +4668,7 @@ for (const lang of CONTENT_LANGS) {
     ja: new Set(["act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
       "learn.lessonPre", "ed.crK", "ed.crQ", "rv.marks",
       "tip.diffNormal", "tip.diffHard", "lm.tipSep",
-      "tip.diff.easyplus", "tip.diff.normalminus", "op.fish.name", "op.say"]),
+      "tip.diff.easyplus", "tip.diff.normalminus"]),
   };
   let untranslated = 0;
   for (const id of langs) {
@@ -6619,7 +6679,7 @@ for (const lang of CONTENT_LANGS) {
       "unreadable settings are treated as none");
     // every chunk the plan or the app can ask for is one the bundler builds,
     // under the global it promises
-    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, ...Object.values(lctx.PIECE_CHUNKS)];
+    const asked = [...Object.values(lctx.LANG_CHUNKS).flat(), lctx.MINED_CHUNK, ...Object.values(lctx.PIECE_CHUNKS), ...Object.values(lctx.REVIEW_CHUNKS || {})];
     assert(lctx.PIECE_CHUNKS.merida === lctx.MERIDA_CHUNK, "Merida is one of the piece chunks, under its M1 file name");
     // v8-0-plan A3: every set offered is licence-cleared where it lives and
     // where the user reads it. The module header names the author, the
@@ -7047,7 +7107,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 6890; // −6 net for B4 (the ladder table, PGN names and filing moved to opponents.js; M4); 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card)
+  const APP_JS_LINE_CEILING = 6815; // −11 net for B4 (ladder names, filing and the persona hooks moved to opponents*.js; M4); 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");

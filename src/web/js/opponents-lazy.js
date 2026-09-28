@@ -15,16 +15,6 @@ import { loadChunk } from "./chunk.js";
 
 const CHUNK = { file: "chunk-opponents.js", global: "CHESS_OPPONENTS" };
 
-/**
- * Names for the PGN tag, one per rung. This was a hand-written object that
- * predated the 1.19 "casual" rung and never grew one, so a casual game
- * exported as "Stockfish 19 (casual)" — the raw id leaking into a file other
- * programs read. The self-check requires an entry here for every rung.
- */
-export const EN_NAME = {
-  beginner: "Beginner", casual: "Casual", learner: "Practice", improver: "Improving", steady: "Steady",
-  solid: "Solid", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", hard: "Hard", extreme: "Max",
-};
 
 /** @param {object} d opponents-ui.js's bag, plus loadStats and onReady */
 export function createOpponentsLazy(d) {
@@ -45,6 +35,8 @@ export function createOpponentsLazy(d) {
       if (mod) run(false); else late.push(() => run(true));
     },
     ready: () => !!mod,
+    /** the rung's name in a PGN tag (the raw id until the chunk is in) */
+    enName: (id) => (mod && mod.Opponents.EN_NAME[id]) || id,
   };
   // after the first frame, not before it: F5's first paint fetches no chunk
   // but the boot one (test-board-e2e holds it to that)
