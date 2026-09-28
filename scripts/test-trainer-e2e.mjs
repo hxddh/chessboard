@@ -356,6 +356,8 @@ async function solveCurrent(page, h) {
     const m = g.move(p.solution[k]);
     if (!m) return false;
     await h.move(m.from, m.to);
+    // a promotion opens the picker, as it does for a player: choose the solution's piece
+    if (m.promotion) { await page.click(`#promo-modal button[data-p="${m.promotion}"]`); await page.waitForTimeout(350); }
     if (p.cat === "real") break;
     await page.waitForTimeout(250);
     if (k + 1 < p.solution.length) g.move(p.solution[k + 1]);
@@ -365,8 +367,19 @@ async function solveCurrent(page, h) {
 {
   const { ctx, page } = await open(null);
   const h = helpers(page);
+  // A run is seeded by Date.now(), so without this every CI run drew its own
+  // puzzles — and one draw in a few dozen opened with a promotion (CI on
+  // 045dd84: the picker stayed open and the streak scored 0). Pinned to a
+  // seed whose first puzzle is exactly that one, mn-203-137-66 (…fxe8=Q+):
+  // the first pick is made before any Lichess band has arrived, so it
+  // depends on the seed and the local book only, and the promotion path is
+  // taken on every run, not by luck.
+  await page.clock.setFixedTime(1790596830270);
   await page.click('#pz-mode-seg button[data-run="streak"]');
   await page.waitForTimeout(600);
+  const occ0 = await h.occupied();
+  const first = POOL.find((q) => squaresOf(q.fen) === occ0 || mirror(squaresOf(q.fen)) === occ0);
+  assert(first && first.id === "mn-203-137-66", "a: 固定种子，第一题是要升变的那道", first && first.id);
   assert(await h.shown("#pz-run"), "a: 连胜的卡片出现");
   assert(/答错一题即结束/.test(await h.text("#pz-run-head")), "a: 卡片写着连胜的规则", await h.text("#pz-run-head"));
   assert(!(await h.shown("#puzzle-cat-seg")), "a: 练习的题型行让位");
