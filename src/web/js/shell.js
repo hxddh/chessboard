@@ -39,7 +39,7 @@ const PAGES = { home: "page-home", library: "page-library", me: "page-me" };
 export function createShell(d) {
   const {
     doc, store, appEl, t, tf, switchMode, saveSettings, requestNewGame, openPrefs,
-    sanHistory, gameOver, recommendation, nextLesson, owed, dailyPlan, dailyStepLabel, dailyJump,
+    sanHistory, gameOver, recommendation, nextLesson, owed, dailyPlan, dailyStepLabel, dailyJump, onMe,
   } = d;
   const Dlg = ChessDialog;
   const rail = doc.getElementById("rail");
@@ -92,6 +92,8 @@ export function createShell(d) {
       else if (sel !== "#side" || appEl.classList.contains("panel-open")) n.removeAttribute("inert");
     }
     if (want === "home") renderHome();
+    // 我的 draws its charts at the width it opens at (me-page.js, v8-0-plan B5)
+    else if (want === "me" && onMe) onMe();
   }
 
   /**

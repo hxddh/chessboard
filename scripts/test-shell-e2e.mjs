@@ -604,6 +604,126 @@ for (const v of ["home", "library", "me"]) {
   await ctx.close();
 }
 
+// --- v8-0-plan B5: the 我的 page puts everything on one page ---------------
+// The engine-game rating curve, the practice calendar, strengths and
+// weaknesses and the three cross-game figures, each drawn only when it has
+// data (7.1: a chart that cannot be drawn does not exist) and each figure
+// naming the games it needs. Three profiles: nothing; one wrong first answer
+// to a puzzle; a full record. Then the record is cleared under the page.
+{
+  const DAY = 86400000;
+  const now = Date.now();
+  const tagsOf = (n, at) => Array.from({ length: n }, (_, i) => (at.includes(i) ? "??" : null));
+  const libGame = (i, extra) => Object.assign({
+    id: "L" + i, t: now - i * DAY, white: "hxddh", black: "rival" + i, date: "", event: "", result: "1-0",
+    plies: 40, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win",
+  }, extra);
+  // ten clocked, analysed games — the time-pressure floor — five of them
+  // reached +2 (the conversion floor) and five −2 (the resilience one)
+  const lib = Array.from({ length: 10 }, (_, i) => {
+    const clk = [];
+    for (let j = 0; j < 20; j++) clk.push(j < 16 ? 170 - 10 * j : [15, 12, 8, 4][j - 16], 180);
+    const peak = i < 5 ? 300 : -300;
+    const scalars = Array.from({ length: 41 }, (_, k) => (k === 20 ? peak : 0));
+    return libGame(i, { clk, outcome: i < 3 ? "win" : i < 7 ? "draw" : "loss", result: i < 3 ? "1-0" : i < 7 ? "1/2-1/2" : "0-1",
+      an: { acc: { w: 80, b: 70 }, acpl: { w: 30, b: 40 }, tags: tagsOf(40, [36]), scalars, bests: [], budget: 200 } });
+  });
+  const stats = { v: 2, games: Array.from({ length: 6 }, (_, i) => ({ id: "s" + i, t: now - (6 - i) * DAY, diff: "normal", color: "w",
+    result: i % 2 ? "win" : "loss", moves: 40, pgn: "", ending: "", ra: 1450 + i * 12 })) };
+  const th = (r, solve, miss) => ({ solve, miss, rating: { r, rd: 80, vol: 0.06 } });
+  const puzzles = { v: 1, solved: {}, tally: { tac: { miss: 3, solve: 9 } }, rhist: [{ t: now - DAY, r: 1500 }, { t: now, r: 1520 }],
+    themes: { fork: th(1700, 6, 1), pin: th(1350, 2, 4), skewer: th(1550, 4, 2) } };
+  const seeded = async (keys, viewport) => {
+    const ctx = await browser.newContext({ viewport: viewport || WIDE, locale: "zh-CN" });
+    await ctx.addInitScript((ks) => {
+      if (sessionStorage.getItem("seeded")) return;
+      sessionStorage.setItem("seeded", "1");
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", view: "me", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      // the profile keys, spelled out by the callers (persist.js KEYS)
+      for (const [k, v] of Object.entries(ks)) localStorage.setItem(k, JSON.stringify(v));
+    }, keys);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    return { ctx, page, errs };
+  };
+  const meState = (page) => page.evaluate(() => {
+    const vis = (id) => { const e = document.getElementById(id); return !!e && !e.hidden && e.getClientRects().length > 0; };
+    const m = document.getElementById("me-metrics");
+    return {
+      view: document.getElementById("app").getAttribute("data-view"),
+      empty: vis("record-empty"), growth: vis("sec-growth"), rating: vis("me-rating"), cal: vis("me-cal"),
+      sw: vis("me-sw"), metrics: vis("me-metrics"),
+      calMeta: (document.getElementById("me-cal-meta") || {}).textContent || "",
+      ratingMeta: (document.getElementById("me-rating-meta") || {}).textContent || "",
+      calLabel: (document.getElementById("me-cal") || { getAttribute: () => "" }).getAttribute("aria-label") || "",
+      swText: vis("me-sw") ? document.getElementById("me-sw").textContent : "",
+      rows: m ? [...m.querySelectorAll(".me-metric")].map((r) => r.textContent) : [],
+      calW: (document.getElementById("me-cal") || {}).width || 0,
+    };
+  });
+  {
+    const { ctx, page, errs } = await seeded({});
+    const s = await meState(page);
+    assert(s.view === "me" && s.empty && !s.growth && !s.rating && !s.cal && !s.sw && !s.metrics,
+      "B5 什么都没有:入口卡片在,成长一节整个不存在(" + JSON.stringify(s) + ")");
+    assert(errs.length === 0, "B5 空档案:没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+  {
+    // one first answer, and it was wrong: a tally row and a rating on the
+    // page — which is a record, and the entry card said 「现在还空着」 over it
+    const { ctx, page, errs } = await seeded({ "chess.v1.puzzles": { v: 1, solved: {}, tally: { tac: { miss: 1, solve: 0 } }, rhist: [{ t: now, r: 1480 }] } });
+    const s = await meState(page);
+    const tally = await page.evaluate(() => !document.getElementById("puzzle-tally-body").hidden);
+    assert(tally && !s.empty, "B5 答错过一道题:战绩里有这一行,入口卡片不再说「现在还空着」(" + JSON.stringify({ tally, empty: s.empty }) + ")");
+    assert(s.growth && s.cal && !s.rating && !s.sw && !s.metrics,
+      "B5 只有一次作答:日历画出今天,评级曲线、强弱项、跨局指标都不在(" + JSON.stringify(s) + ")");
+    assert(/1/.test(s.calLabel), "B5 日历有读屏说明(" + s.calLabel + ")");
+    assert(errs.length === 0, "B5 一次作答:没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+  {
+    // too few games for any figure: the block is there, says what it needs,
+    // and prints no percentage
+    const few = lib.slice(0, 3).map((g) => Object.assign({}, g, { clk: undefined }));
+    const { ctx, page, errs } = await seeded({ "chess.v1.library": { v: 1, names: ["hxddh"], games: few } });
+    const s = await meState(page);
+    assert(s.metrics && s.rows.length === 3 && s.rows.every((r) => !/%/.test(r)) && s.rows.every((r) => /5|10/.test(r)),
+      "B5 三局:三项指标都写明要几局,一个百分比也不给(" + JSON.stringify(s.rows) + ")");
+    assert(errs.length === 0, "B5 三局:没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+  {
+    const { ctx, page, errs } = await seeded({ "chess.v1.library": { v: 1, names: ["hxddh"], games: lib },
+      "chess.v1.stats": stats, "chess.v1.puzzles": puzzles, "chess.v1.progress": { v: 1, weeks: {}, days: {} } });
+    const s = await meState(page);
+    assert(!s.empty && s.growth && s.rating && s.cal && s.sw && s.metrics, "B5 满档案:评级曲线、日历、强弱项、跨局指标都在(" + JSON.stringify(s) + ")");
+    assert(/1510/.test(s.ratingMeta), "B5 对局评级读的是每局存下的评级(" + s.ratingMeta + ")");
+    assert(s.calW > 1, "B5 日历按显示宽度画(" + s.calW + ")");
+    assert(/10/.test(s.calMeta), "B5 连续 10 天写在日历上(" + s.calMeta + ")");
+    assert(/捉双/.test(s.swText) && /牵制/.test(s.swText), "B5 强弱项读的是主题评级(" + s.swText + ")");
+    assert(s.rows.length === 3 && /60%/.test(s.rows[0]) && /40%/.test(s.rows[1]) && /33%/.test(s.rows[2]),
+      "B5 化优为胜 3/5、逆境求生 2/5、时间紧 10/30 步(" + JSON.stringify(s.rows) + ")");
+    // cleared under the page: the curve goes with the games it was drawn from
+    await page.keyboard.press("Control+,");
+    await page.waitForTimeout(300);
+    await page.click("#stats-clear");
+    await page.waitForTimeout(300);
+    await page.click("#confirm-ok").catch(() => {});
+    await page.waitForTimeout(400);
+    await page.click("#prefs-close").catch(() => {});
+    await page.waitForTimeout(300);
+    const after = await meState(page);
+    assert(!after.rating && after.cal, "B5 清除统计之后:评级曲线跟着消失,日历还有棋谱库和做题(" + JSON.stringify({ rating: after.rating, cal: after.cal }) + ")");
+    assert(errs.length === 0, "B5 满档案:没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }

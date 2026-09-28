@@ -2846,7 +2846,7 @@ import { createStore } from "./store.js";
   }
 
   // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
-  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf });
+  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n) });
   function renderTrends() { MePage.renderTrends(); }
   function renderAchievements() { MePage.renderAchievements(); }
   function renderRecordEntry() { MePage.renderRecordEntry(); }
@@ -6049,7 +6049,7 @@ import { createStore } from "./store.js";
   document.getElementById("stats-clear").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearStats"), t("dlg.clearStatsTitle"),
       { ok: t("act.clear"), cancel: t("act.cancel"), danger: true }))) return;
-    Persist.remove("stats");
+    Persist.remove("stats"); statsCache.v = null; // or every page goes on drawing the cached copy (B5)
     renderStats();
     renderAchievements();
     renderRecordEntry();
@@ -6233,7 +6233,7 @@ import { createStore } from "./store.js";
   const Shell = createShell({
     doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
     requestNewGame: () => requestNewGame(), openPrefs: () => PrefsUI.open(), gameOver: () => appGameOver(),
-    recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
+    onMe: () => MePage.onShow(), recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
     nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
   });
   Shell.wire();

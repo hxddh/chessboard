@@ -9,8 +9,14 @@
  * Everything it needs from the app arrives in the bag handed to
  * `createMePage()` (createLibraryUI's shape); nothing here reaches back into
  * app.js.
+ *
+ * B5 adds 成长 (#sec-growth): the engine-game rating curve, the practice
+ * calendar with its streak, strengths and weaknesses by theme, and three
+ * cross-game figures. The arithmetic is progress-metrics.js; this is the
+ * drawing, and the rule that a block with nothing to show is not there.
  * @module me-page
  */
+import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -18,6 +24,7 @@
 export function createMePage(d) {
   const {
     ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf,
+    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName,
   } = d;
 
   /**
@@ -26,6 +33,7 @@ export function createMePage(d) {
    * two analysed games, the rows need a week with answers in it.
    */
   function renderTrends() {
+    invalidate();
     const head = document.getElementById("trend-head");
     const body = document.getElementById("trend-body");
     const cv = document.getElementById("trend-acc");
@@ -198,14 +206,11 @@ export function createMePage(d) {
   ];
 
   function renderRecordEntry() {
+    invalidate();
     const box = document.getElementById("record-empty");
     const doors = document.getElementById("record-doors");
     if (!box || !doors) return;
-    const stats = loadStats();
-    // v8-0-plan §5: a library of imported games is a record too — with 500
-    // of them on this page it still opened on 「现在还空着」
-    const fresh = !(store.session.library || []).length && !stats.games.length &&
-      !evalAch().some((r) => r.unlocked);
+    const fresh = !hasRecord();
     box.hidden = !fresh;
     if (!fresh) return;
     doors.replaceChildren();
@@ -264,5 +269,203 @@ export function createMePage(d) {
     }
   }
 
-  return { renderTrends, renderAchievements, renderRecordEntry };
+  /**
+   * Is anything recorded that this page shows?
+   *
+   * v8-0-plan §5 taught the entry card about the library — with 500 imported
+   * games on this page it still opened on 「现在还空着」. It still counted
+   * only three things (the library, the engine games, a badge), and the page
+   * draws more than that: one wrong first answer to a puzzle puts a tally
+   * row, a rating and a calendar day on it, under a card saying nothing had
+   * happened yet (B5). Everything the page draws from, then.
+   */
+  function hasRecord() {
+    const st = store.session.puzzleState || {};
+    const prog = store.session.progress || {};
+    return (store.session.library || []).length > 0 || loadStats().games.length > 0 ||
+      Object.values(st.tally || {}).some((r) => r && (r.miss || 0) + (r.solve || 0) > 0) ||
+      (Array.isArray(st.rhist) && st.rhist.length > 0) ||
+      Object.keys(prog.weeks || {}).length > 0 || Object.keys(prog.days || {}).length > 0 ||
+      evalAch().some((r) => r.unlocked);
+  }
+
+  // --- 成长 (v8-0-plan B5) ----------------------------------------------------
+  //
+  // Drawn while the page shows, and then at most every 250 ms: a library
+  // pass re-renders the record once a ply, and the diagnosis read here walks
+  // every game. Hidden, the canvases have no width to draw at, so nothing is
+  // drawn until the page opens (shell.js show → onShow).
+  const growth = { timer: null };
+  const shownNow = () => store.ui.view === "me";
+  function invalidate(now) {
+    if (!shownNow()) return;
+    if (now) { clearTimeout(growth.timer); growth.timer = null; renderGrowth(); return; }
+    if (growth.timer) return;
+    growth.timer = setTimeout(() => { growth.timer = null; if (shownNow()) renderGrowth(); }, 250);
+  }
+
+  /** Every claimed, analysed library game and every analysed engine game, as the metrics read them. */
+  function gameFacts(stats) {
+    const out = [];
+    for (const g of store.session.library || []) {
+      if (!g.side || !g.an) continue;
+      out.push(Metrics.factsOf({ side: g.side, outcome: g.outcome, fen: g.fen, clk: g.clk,
+        scalars: g.an.scalars, tags: g.an.tags }));
+    }
+    // an engine game files its extremes when it is analysed (review/analysis.js)
+    for (const g of stats.games) {
+      if (Number.isFinite(g.hi)) out.push(Metrics.factsOf({ side: g.color, outcome: g.result, hi: g.hi, lo: g.lo }));
+    }
+    return out;
+  }
+
+  /** The days something happened: games (here and imported), first answers, daily sessions. */
+  function activity(stats) {
+    const st = store.session.puzzleState || {};
+    const prog = store.session.progress || {};
+    const stamps = stats.games.map((g) => g.t)
+      .concat((store.session.library || []).filter((g) => g.side).map(libPlayedAt))
+      .concat((Array.isArray(st.rhist) ? st.rhist : []).map((h) => Number(h.t)))
+      .concat(Object.keys(prog.days || {}).map((k) => new Date(k + "T12:00:00").getTime()));
+    return Metrics.dayCounts(stamps);
+  }
+
+  const byId = (id) => document.getElementById(id);
+  const setTxt = (node, s) => { if (node && node.textContent !== s) node.textContent = s; };
+  const pct = (x) => Math.round(x * 100) + "%";
+
+  function renderGrowth() {
+    const sec = byId("sec-growth");
+    if (!sec) return;
+    const stats = loadStats();
+    // the engine-game rating: v8-0-plan B4 files one per game (Metrics.ratingAfter)
+    const series = Metrics.gameRatingSeries(stats.games, 60);
+    const showRating = series.length >= 2;
+    // shown before drawn: a hidden canvas has no width to draw at
+    sec.hidden = false;
+    byId("me-rating-head").hidden = byId("me-rating").hidden = !showRating;
+    if (showRating) {
+      setTxt(byId("me-rating-meta"), String(series[series.length - 1].r));
+      drawRatingTrend(byId("me-rating"), series.map((p) => p.r));
+    }
+    // the calendar and its streak
+    const grid = Metrics.heatGrid(activity(stats), Date.now(), Metrics.HEAT_WEEKS);
+    const cal = byId("me-cal");
+    byId("me-cal-head").hidden = cal.hidden = grid.active === 0;
+    if (grid.active) {
+      setTxt(byId("me-cal-meta"), tf("me.calMeta", [grid.cur, grid.best]));
+      cal.setAttribute("aria-label", tf("aria.cal", [grid.weeks, grid.active]));
+      drawHeat(cal, grid);
+    }
+    // strengths and weaknesses, at the diagnosis page's own floor
+    const sw = Metrics.strengths((store.session.puzzleState || {}).themes,
+      Library.diagnose(store.session.library, LIB_MIN_GAMES));
+    const swEl = byId("me-sw");
+    swEl.hidden = !(sw.strong.length || sw.weak.length);
+    if (!swEl.hidden) renderStrengths(swEl, sw);
+    // the three figures across games, once any game counts towards one
+    const m = Metrics.crossGame(gameFacts(stats));
+    const any = m.convert.n + m.resil.n + m.clock.n > 0;
+    byId("me-metrics-head").hidden = byId("me-metrics").hidden = !any;
+    if (any) renderMetrics(byId("me-metrics"), m);
+    sec.hidden = !showRating && !grid.active && swEl.hidden && !any;
+  }
+
+  /**
+   * The calendar: a column per week, Monday on top, one square a day. The
+   * squares take the canvas's height, or less where the width runs out.
+   */
+  function drawHeat(cv, grid) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
+    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
+    if (cv.width !== W) cv.width = W;
+    if (cv.height !== H) cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement);
+    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
+    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const gap = 3 * dpr;
+    const cell = Math.max(2 * dpr, Math.min((H - 6 * gap) / 7, (W - (grid.weeks - 1) * gap) / grid.weeks));
+    const max = Math.max(1, ...grid.cells.map((c) => c.n));
+    for (const c of grid.cells) {
+      // three steps of the accent over a faint empty square
+      ctx.fillStyle = c.n ? cAccent : cMuted;
+      ctx.globalAlpha = c.n ? 0.35 + 0.65 * Math.ceil((c.n / max) * 3) / 3 : 0.15;
+      ctx.fillRect(c.col * (cell + gap), c.row * (cell + gap), cell, cell);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function renderStrengths(el, sw) {
+    const eco = (x) => { const n = libEcoName(x.id, x.name); return n ? x.id + " " + n : x.id; };
+    const name = (x) => (x.kind === "theme" ? t("pzt." + x.id) : x.kind === "motif" ? t("motif." + x.id) : eco(x));
+    const val = (x) => (x.kind === "theme" ? tf("me.sw.theme", [x.r]) : x.kind === "motif" ? tf("me.sw.motif", [x.n])
+      : tf("me.sw.eco", [Math.round(x.score * 100), x.n]));
+    el.replaceChildren();
+    for (const [key, rows] of [["me.strong", sw.strong], ["me.weak", sw.weak]]) {
+      if (!rows.length) continue;
+      const col = document.createElement("div");
+      const h = document.createElement("h3");
+      h.className = "me-sw-h";
+      h.textContent = t(key);
+      col.appendChild(h);
+      for (const x of rows) col.appendChild(meRow(name(x), val(x)));
+      el.appendChild(col);
+    }
+  }
+
+  /** A label and its value that wrap rather than cut — three languages. */
+  function meRow(k, v) {
+    const row = document.createElement("div");
+    row.className = "me-row";
+    const a = document.createElement("span");
+    a.className = "me-k";
+    a.textContent = k;
+    const b = document.createElement("span");
+    b.className = "me-v num";
+    b.textContent = v;
+    row.append(a, b);
+    return row;
+  }
+
+  /**
+   * The three figures. Below its floor a figure has no number, only how
+   * many games it needs and how many it has (the acceptance: 每项指标都标明
+   * 最少需要多少局).
+   */
+  function renderMetrics(el, m) {
+    el.replaceChildren();
+    const rows = [
+      ["convert", m.convert, () => tf("me.m.convertV", [m.convert.n, m.convert.won])],
+      ["resil", m.resil, () => tf("me.m.resilV", [m.resil.n, m.resil.won + m.resil.drawn, m.resil.won])],
+      ["clock", m.clock, () => (m.clock.press.n
+        ? tf("me.m.clockV", [m.clock.press.n, m.clock.press.b, pct(m.clock.calmRate || 0)])
+        : tf("me.m.clockNone", [m.clock.n]))],
+    ];
+    for (const [id, f, detail] of rows) {
+      const box = document.createElement("div");
+      box.className = "me-metric";
+      box.dataset.metric = id;
+      // what counts, on the row itself
+      box.title = tf("me.m." + id + "D", [f.need]);
+      const ready = f.n >= f.need;
+      box.appendChild(meRow(t("me.m." + id), ready ? (f.rate != null ? pct(f.rate) : "—") : ""));
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = ready ? detail() : tf("me.m.need", [f.need, f.n]);
+      box.appendChild(p);
+      el.appendChild(box);
+    }
+  }
+
+  // a canvas drawn at one width and shown at another is blurred or cut
+  window.addEventListener("resize", () => invalidate());
+
+  return {
+    renderTrends, renderAchievements, renderRecordEntry,
+    /** The page is opening (shell.js): draw it at the size it opens at. */
+    onShow: () => invalidate(true),
+  };
 }

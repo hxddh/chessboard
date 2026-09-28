@@ -3366,7 +3366,7 @@ kbd.accel {
 
 /* 进步 — the accuracy sparkline on the record page. Same dress as the eval
    curve: a card, not a chrome element, because it is content you read. */
-#trend-acc, #trend-rating, #pz-rating-curve {
+#trend-acc, #trend-rating, #pz-rating-curve, #me-rating {
   display: block;
   width: 100%;
   height: 56px;
@@ -3374,6 +3374,25 @@ kbd.accel {
   background: var(--card);
   border: 1px solid var(--card-border);
 }
+
+/* v8-0-plan B5: 成长 on 我的. The calendar is seven squares high whatever
+   the width; its rows and columns are drawn in me-page.js. The rows below
+   it wrap instead of cutting — a label and its value in three languages
+   have no one width to be measured for. */
+#me-cal { display: block; width: 100%; height: 96px; }
+.me-sw {
+  display: grid; gap: 8px 16px; margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+}
+.me-sw-h { margin: 0 0 4px; font-size: 0.8125rem; font-weight: 600; color: var(--muted); }
+.me-row {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px;
+  padding: 2px; font-size: 0.875rem;
+}
+.me-k { min-width: 0; color: var(--muted); overflow-wrap: anywhere; }
+.me-v { margin-left: auto; color: var(--text); font-size: 0.8125rem; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.me-metric + .me-metric { margin-top: 8px; }
+.me-metric .hint { margin: 0 2px; }
 
 
 /* 6.0 (v6-plan Q3.6): a higher-contrast variant, from the same tokens. Muted
