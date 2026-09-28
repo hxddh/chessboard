@@ -89,6 +89,7 @@ const server = http.createServer(async (req, res) => {
   let p = req.url.split("?")[0];
   if (p === "/js/chunk-mined.js" && minedDelay) await new Promise((r) => setTimeout(r, minedDelay));
   const held = chunkDelay[p.replace(/^\/js\//, "")];
+  if (held === "fail") { res.writeHead(404); res.end(); return; }
   if (held) await new Promise((r) => setTimeout(r, held));
   if (p === "/") p = "/index.html";
   if (p === "/js/engine-src.js") { res.writeHead(200, { "content-type": "text/javascript" }); res.end("// stub"); return; }
@@ -592,6 +593,23 @@ async function solveCurrent(page, h) {
     "f: 没有本地题的主题，先摆最近分数段的题（最近段故意慢到）", JSON.stringify({ theme: pick && pick.id, bands, seated: seated && seated.rating, occ, name: await h.text("#pz-theme-name"), n: LC.filter((p) => pick && p.themes.includes(pick.id)).map((p) => p.rating) }));
   for (const k in chunkDelay) delete chunkDelay[k];
   await ctx.close();
+  // Codex #89: the nearest band failing to load does not strand the theme —
+  // the next nearest is asked for, and its puzzle seated
+  if (near != null) chunkDelay["chunk-lc-" + String(near).padStart(4, "0") + ".js"] = "fail";
+  const two = await open(null, { mode: "ai" });
+  const h2 = helpers(two.page);
+  await two.page.click('#rail button[data-view="puzzle"]');
+  await two.page.waitForTimeout(500);
+  await two.page.click("#pz-themes-open");
+  await two.page.waitForTimeout(300);
+  if (pick) await two.page.click('#theme-list button[data-theme="' + pick.id + '"]');
+  await two.page.waitForTimeout(2500);
+  const occ2 = await h2.occupied();
+  const seated2 = LC.filter((p) => pick && p.themes.includes(pick.id)).find((p) => squaresOf(p.fen) === occ2 || mirror(squaresOf(p.fen)) === occ2);
+  assert(!!seated2 && bandOf(seated2.rating) === bands[1], "f: 最近段载入失败，接着要下一段，照样摆出题",
+    JSON.stringify({ want: bands[1], seated: seated2 && seated2.rating }));
+  for (const k in chunkDelay) delete chunkDelay[k];
+  await two.ctx.close();
 }
 
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
