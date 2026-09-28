@@ -28,6 +28,7 @@ import { ChessPreview } from "./preview.js";
 import { ChessOpeningCoach } from "./opening-coach.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 import { ChessPersona } from "./persona.js";
+import { TimeControl } from "./time-control.js";
 import { ChessPgn } from "./pgn.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
@@ -262,7 +263,7 @@ import { createStore } from "./store.js";
        * the save file and its id is not to hand.
        */
       recordedId: null,
-      /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
+      /** clock: 'off' | a time-control.js id (e.g. '5', '3+2', 'c20+5') */
       timeControl: "off",
       /** remaining ms per side; null when no clock */
       clock: null,
@@ -1462,7 +1463,7 @@ import { createStore } from "./store.js";
       if (DIFF_IDS.includes(s.difficulty)) store.session.difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) store.session.humanColor = s.humanColor;
       if (typeof s.colorRandom === "boolean") store.session.colorRandom = s.colorRandom;
-      if (s.timeControl === "off" || TCS[s.timeControl]) store.game.timeControl = s.timeControl;
+      if (s.timeControl === "off" || parseTc(s.timeControl)) store.game.timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
@@ -1573,7 +1574,7 @@ import { createStore } from "./store.js";
       }
       store.game.viewIndex = sanHistory().length;
       restoreTree(s);
-      if (s.clock && TCS[s.clock.tc] &&
+      if (s.clock && parseTc(s.clock.tc) &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
         store.game.timeControl = s.clock.tc;
         store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
@@ -1883,14 +1884,8 @@ import { createStore } from "./store.js";
   }
 
   // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
-  /** time control id → base seconds + increment seconds credited per move */
-  const TCS = {
-    "3": { base: 180, inc: 0 }, "3+2": { base: 180, inc: 2 },
-    "5": { base: 300, inc: 0 }, "5+3": { base: 300, inc: 3 },
-    "10": { base: 600, inc: 0 },
-  };
-  const TC_IDS = Object.keys(TCS);
-  function parseTc(tc) { return TCS[tc] || null; }
+  /** time control id → {base, inc} seconds or null: presets and c<min>+<inc> (time-control.js) */
+  const parseTc = TimeControl.parse;
 
   function resetClocks() {
     const tc = parseTc(store.game.timeControl);
@@ -9075,7 +9070,7 @@ import { createStore } from "./store.js";
   // and the handlers behind its controls
   const SettingsUI = createSettingsUI({
     doc: document, store, appEl, t, el, setText, DIFF_NAMES,
-    saveSettings, saveGame, toast, sync, draw, resetClocks, parseTc,
+    saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
     setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook,
   });

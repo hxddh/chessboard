@@ -71,8 +71,32 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // condition for making the change ("若相关性强" — if the candidate count
     // really tracks the phase) is not met, so it is not made.
     beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.2, minMs: 350 },
-    casual: { skill: 0, depth: 2, multipv: 6, worstBias: 0.15, minMs: 350 },
+    // v8-0-plan B4: one candidate more (6 → 9). Played against each other,
+    // the 1.19 `casual` scored 91% against `beginner` — not a rung above it
+    // but four. Nine candidates put it one step up (the ladder's 60–75%).
+    casual: { skill: 0, depth: 2, multipv: 8, worstBias: 0.15, minMs: 350 },
+    // v8-0-plan B4: the rungs between 休闲 and 初级. The step from `casual` to
+    // Elo 1320 was a cliff — the careful novice bot scores 29% on one side of
+    // it and next to nothing on the other — and nothing in UCI can fill it:
+    // UCI_Elo stops at 1320. So these are handicapped here too, but not by
+    // playing the worst candidate on purpose. Each samples its MultiPV list
+    // weighted by how much win chance a candidate gives away (`winT`, in
+    // win-percentage points: a move that costs `winT` points is e^-1 as
+    // likely as the best one), and searches a little deeper per rung. A small
+    // slip is common and a dropped piece is rare, which is how a player at
+    // that level actually loses. Measured in games between the rungs, the
+    // list's length moves the strength as much as the temperature does
+    // (12 candidates at winT 60 played level with `casual`; 8 scored 82%
+    // against it). Ratings: docs/measured.json `ladder`.
+    learner: { skill: 1, depth: 2, multipv: 10, winT: 55, minMs: 350 },
+    improver: { skill: 2, depth: 2, multipv: 10, winT: 60, minMs: 350 },
+    steady: { skill: 3, depth: 3, multipv: 8, winT: 24, minMs: 350 },
+    solid: { skill: 4, depth: 4, multipv: 8, winT: 18, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },
+    // v8-0-plan B4: and two between 1320 and 1700 — in games against each
+    // other 1700 scored 94% against 1320, three rungs apart, not one
+    easyplus: { elo: 1450, movetime: 570 },
+    normalminus: { elo: 1575, movetime: 630 },
     normal: { elo: 1700, movetime: 700 },
     hard: { elo: 2200, movetime: 900 },
     extreme: { elo: null, movetime: 1200 },
@@ -383,11 +407,18 @@ const global = typeof window !== "undefined" ? window : globalThis;
     await init();
     const styled = persona && persona.id && persona.id !== "off" && ChessPersona;
     let base = TIERS[diff] || TIERS.normal;
-    if (styled) base = Object.assign({}, base, { multipv: Math.max(base.multipv || 0, 14) });
+    // (a win-chance rung keeps its own list: its size is part of its strength)
+    if (styled && !base.winT) base = Object.assign({}, base, { multipv: Math.max(base.multipv || 0, 14) });
     // Clock pressure only shortens time-based tiers; depth-based ones are
     // already near-instant and have nothing to trim.
-    const tier = maxMs && base.movetime && !base.depth
-      ? Object.assign({}, base, { movetime: Math.max(120, Math.min(base.movetime, Math.floor(maxMs))) })
+    // v8-0-plan B4: `maxMs` may be a plan {search, pace} from opponents.js —
+    // search time capped at the rung's calibrated movetime, pace the wall
+    // time the reply takes. A bare number is the old cap.
+    const plan = maxMs && typeof maxMs === "object" ? maxMs : null;
+    const cap = plan ? plan.search : maxMs;
+    const pace = plan && Number.isFinite(plan.pace) ? plan.pace : null;
+    const tier = cap && base.movetime && !base.depth
+      ? Object.assign({}, base, { movetime: Math.max(120, Math.min(base.movetime, Math.floor(cap))) })
       : base;
     const startedAt = Date.now();
     const myGen = ++gen;
@@ -414,23 +445,36 @@ const global = typeof window !== "undefined" ? window : globalThis;
     send("position fen " + fen);
     // MultiPV tiers need every candidate line, not just the final bestmove
     const cands = new Map(); // multipv index → {uci, score}
+    // v8-0-plan B4: what the engine thinks of its own position, for the
+    // resign and draw-offer rules (opponents.js): the first line's score, on
+    // every tier — a MultiPV tier's best candidate is its first line.
+    let ownScore = null;
     const collect = (line) => {
-      if (typeof line !== "string" || !tier.multipv) return;
+      if (typeof line !== "string" || !/^info\b/.test(line)) return;
       const mv = line.match(/\bmultipv (\d+)\b/);
+      const sc = infoScore(line);
+      if (sc != null && (!mv || mv[1] === "1") && !/\b(lower|upper)bound\b/.test(line)) ownScore = sc;
+      if (!tier.multipv) return;
       const pv = line.match(/\bpv\s+([a-h][1-8][a-h][1-8][qrbn]?)/);
       if (!mv || !pv) return;
-      cands.set(Number(mv[1]), { uci: pv[1], score: infoScore(line) });
+      cands.set(Number(mv[1]), { uci: pv[1], score: sc });
     };
-    if (tier.multipv) lineHandlers.push(collect);
+    lineHandlers.push(collect);
     const budget = (tier.movetime || 2000) + 15000;
     const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), budget, "search");
     send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
     let line;
     try { line = await wait; }
-    finally { if (tier.multipv) lineHandlers = lineHandlers.filter((h) => h !== collect); }
+    finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
     if (myGen !== gen) return null; // game moved on (undo/new/import)
     let picked = parseUci(line.split(/\s+/)[1]);
-    if (tier.multipv && cands.size > 1) {
+    if (tier.multipv && cands.size > 1 && tier.winT) {
+      // the win-chance rungs weigh a style into the same draw instead of
+      // letting it overrule the draw: the strength stays the rung's
+      const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+      const lean = styled ? ChessPersona.lean(fen, list, persona.id, persona.Chess) : null;
+      picked = parseUci(pickCandidate(list, tier, Math.random, lean)) || picked;
+    } else if (tier.multipv && cands.size > 1) {
       const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
       // strength first, then style: the tier decides how good the move is
       // allowed to be, the personality decides which of the moves that good
@@ -445,11 +489,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
     }
     // depth-limited searches return almost instantly — hold the move briefly so
     // the opponent still reads as "thinking" instead of snapping back.
-    if (picked && tier.minMs) {
-      const left = tier.minMs - (Date.now() - startedAt);
+    // v8-0-plan B4: a clocked game paces the reply to the clock instead
+    // (opponents.js thinkPlan) — longer in a long game, never past the cap.
+    const hold = pace != null ? pace : tier.minMs;
+    if (picked && hold) {
+      const left = hold - (Date.now() - startedAt);
       if (left > 0) await new Promise((r) => setTimeout(r, left));
       if (myGen !== gen) return null;
     }
+    if (picked) picked.score = ownScore;
     return picked;
   }
 
@@ -490,17 +538,62 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * @param {Function} rng  () => [0,1)
    * @returns {string|null} the chosen UCI move
    */
-  function pickCandidate(list, tier, rng) {
+  function pickCandidate(list, tier, rng, lean) {
     if (!list || !list.length) return null;
     const scored = list.filter((c) => c.score != null);
     // never throw away a forced mate the tier already found — losing on
     // purpose from a winning position reads as a broken engine, not a weak one
     if (scored.length && scored[0].score >= 100000 - 50) return list[0].uci;
+    if (tier.winT && scored.length) return pickByWinLoss(list, tier.winT, rng, lean);
     if (tier.worstBias && rng() < tier.worstBias && scored.length) {
       const worst = scored.reduce((a, b) => (b.score < a.score ? b : a));
       return worst.uci;
     }
     return list[Math.floor(rng() * list.length)].uci;
+  }
+
+  /**
+   * Lichess's win chance for a centipawn score, 0–100 (the curve the
+   * review's accuracy uses too). Mate scores sit at the two ends.
+   */
+  function winPct(cp) {
+    const c = Math.max(-10000, Math.min(10000, cp));
+    return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1);
+  }
+
+  /**
+   * v8-0-plan B4: the win-chance rungs' draw. Each candidate weighs
+   * e^(−loss / winT), the loss being the win percentage it gives away against
+   * the best line. Win percentage and not centipawns because a pawn matters
+   * far more at 0.0 than at +6: the same 100cp slip is a real mistake in a
+   * level game and noise in a won one, so a sampler in centipawns throws its
+   * won games away and plays its level ones like a club player.
+   *
+   * `lean` (persona.js) is a style, and it chooses only *among moves as good
+   * as the one drawn*: the draw fixes how much win chance this move gives
+   * away, and the style then takes, of the candidates within a fifth of
+   * `winT` of that loss, the one it likes best. Weighting the draw by the
+   * style instead was tried and measured: at these depths the capture a
+   * greedy style reaches for is usually the good move, and the round-robin
+   * put the greedy rung 260–750 Elo above its own plain self.
+   */
+  function pickByWinLoss(list, winT, rng, lean) {
+    const top = winPct(Math.max(...list.filter((c) => c.score != null).map((c) => c.score)));
+    const loss = list.map((c) => (c.score == null ? null : top - winPct(c.score)));
+    const w = loss.map((l) => (l == null ? 0 : Math.exp(-l / winT)));
+    const sum = w.reduce((a, b) => a + b, 0);
+    if (!(sum > 0)) return list[0].uci;
+    let x = rng() * sum;
+    let k = list.length - 1;
+    for (let i = 0; i < list.length; i++) { x -= w[i]; if (x < 0) { k = i; break; } }
+    const drawn = k;
+    if (lean && lean[drawn] != null) {
+      const band = Math.max(1, winT / 5);
+      for (let i = 0; i < list.length; i++) {
+        if (lean[i] != null && loss[i] != null && Math.abs(loss[i] - loss[drawn]) <= band && lean[i] > lean[k]) k = i;
+      }
+    }
+    return list[k].uci;
   }
 
   /**
@@ -723,4 +816,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, nodesFor, NODES_PER_MS };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, winPct, nodesFor, NODES_PER_MS };

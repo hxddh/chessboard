@@ -158,4 +158,34 @@
     return bestMove;
   }
 
-  export const ChessPersona = { IDS, SLACK, pick, score };
+  /**
+   * v8-0-plan B4: a style as a lean rather than a choice — the style score of
+   * each candidate, aligned with `cands`, or null where the style has no say
+   * (outside its slack, or an illegal line). engine.js multiplies a
+   * win-chance rung's sampling weights by it, so the rung still decides how
+   * good the move is and the style only which of the likely ones it prefers.
+   * `pick` above overrules the draw instead, which is right for the Elo
+   * rungs (they have no draw) and would make a weak rung strong.
+   *
+   * @returns {Array<number|null>|null} null when the style says nothing
+   */
+  function lean(fen, cands, id, Chess) {
+    if (!id || id === "off" || !SLACK[id] || typeof Chess !== "function") return null;
+    if (!Array.isArray(cands) || cands.length < 2) return null;
+    const scored = cands.filter((c) => c && c.score != null);
+    if (!scored.length) return null;
+    const best = Math.max(...scored.map((c) => c.score));
+    if (best >= 100000 - 50) return null;
+    const before = new Chess(fen);
+    return cands.map((c) => {
+      if (!c || !c.uci || c.score == null || c.score < best - SLACK[id]) return null;
+      const g = new Chess(fen);
+      const mv = g.move({
+        from: c.uci.slice(0, 2), to: c.uci.slice(2, 4),
+        promotion: c.uci.length > 4 ? c.uci[4] : undefined,
+      });
+      return mv ? score(id, mv, g, before) : null;
+    });
+  }
+
+  export const ChessPersona = { IDS, SLACK, pick, lean, score };
