@@ -27,6 +27,7 @@ const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { CBURNETT_PIECE_SVGS } from "../src/web/js/pieces-cburnett.js";
+import { Chess } from "../src/web/js/chess.js";
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 const server = http.createServer((req, res) => {
@@ -895,6 +896,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.waitForTimeout(400);
   assert(/黑方认输.*白方胜/.test(await status()), `第三颗键把胜负判给了对的一方(「${await status()}」)`);
   const afterResign = await rows();
+  // v8-0-plan A5: the result card floats over the board's middle now; put it
+  // away, so the taps below land on the squares and not on its buttons
+  await page.click("#go-close"); await page.waitForTimeout(200);
   await mv("f1", "c4");
   assert((await rows()) === afterResign, "认输之后棋盘冻住,走不动");
 
@@ -1940,6 +1944,205 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(errs.length === 0, `A3 选择器:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
+}
+
+// --- v8-0-plan A5：关键时刻与动效 --------------------------------------------
+// The ending on the board (a badge on each king, the result card floating
+// over the squares), a puzzle move's ✓ / ✗ on its square — green for right,
+// and no red anywhere on the board for a solve, even a solve by mate —, the
+// achievement toast with its badge and a longer life, the selected piece
+// lifted with its legal squares fading in, and all of it still under reduced
+// motion. Paint is read off the canvas; the colours off the theme tokens.
+{
+  const A5 = "/tmp/claude-0/-home-user-chessboard/b4147711-97e5-5ada-9636-d97168cd9145/scratchpad/M4-view/shots-a5";
+  const SHOTS = process.env.A5_SHOTS ? A5 : null;
+  if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+  const openA5 = async (settings, opts = {}) => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: "zh-CN" });
+    await ctx.addInitScript(([st, pz]) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false,
+        appearance: "dark", boardId: "wood", boardFrame: "flat" }, st)));
+      localStorage.setItem("chess.panelOpen", "1");
+      if (pz) localStorage.setItem("chess.v1.puzzles", JSON.stringify(pz));
+    }, [settings, opts.puzzles || null]);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    if (opts.reduce) await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1000);
+    await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+    return { ctx, page, errs };
+  };
+  // a square's centre on the page, and the corner badge's pixel on the canvas
+  const at = (page, sq, flip) => page.evaluate(([s, fl]) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    let f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    if (fl) { f = 7 - f; rk = 7 - rk; }
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, [sq, flip]);
+  const tap = async (page, sq, flip) => { const p = await at(page, sq, flip); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); };
+  const paintAt = (page, sq, flip, where) => page.evaluate(([s, fl, w]) => {
+    const cv = document.getElementById("board");
+    const step = cv.width / 8;
+    let f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    if (fl) { f = 7 - f; rk = 7 - rk; }
+    // the reveal badges' corner (board.js): centre 0.24 of a square in,
+    // radius 0.21 — read near its top, clear of the glyph or the tick
+    const x = w === "badge" ? (f + 1) * step - step * 0.24 : f * step + step * (w === "edge" ? 0.12 : 0.5);
+    const y = w === "badge" ? rk * step + step * 0.24 - step * 0.21 * 0.7 : rk * step + step * (w === "edge" ? 0.88 : 0.5);
+    const d = cv.getContext("2d").getImageData(Math.round(x), Math.round(y), 1, 1).data;
+    return [d[0], d[1], d[2]];
+  }, [sq, flip, where]);
+  const token = (page, name) => page.evaluate((n) => {
+    const s = document.createElement("span");
+    s.style.color = getComputedStyle(document.documentElement).getPropertyValue(n);
+    document.body.appendChild(s);
+    const c = (getComputedStyle(s).color.match(/\d+/g) || []).map(Number).slice(0, 3);
+    s.remove();
+    return c;
+  }, name);
+  const near = (a, b, tol = 14) => a.length === 3 && b.length === 3 && a.every((v, i) => Math.abs(v - b[i]) <= tol);
+
+  // (1) the end of a game: the kings carry the result, the card floats over the board
+  {
+    const { ctx, page, errs } = await openA5({ mode: "pvp" });
+    for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(page, a); await tap(page, b); await page.waitForTimeout(200); }
+    await page.waitForTimeout(700);
+    const good = await token(page, "--judge-good"), bad = await token(page, "--judge-bad");
+    const e1 = await paintAt(page, "e1", false, "badge"), e8 = await paintAt(page, "e8", false, "badge");
+    assert(near(e1, bad) && near(e8, good),
+      `A5 终局：被将杀的白王角上是 --judge-bad 的徽标，黑王角上是 --judge-good（${e1} / ${e8}）`);
+    const card = await page.evaluate(() => {
+      const c = document.getElementById("go-card"), w = document.getElementById("board-wrap");
+      const r = c.getBoundingClientRect(), b = w.getBoundingClientRect();
+      return { shown: !!c.offsetParent, inBoard: w.contains(c) && r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom,
+        centred: Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2) <= 2 && Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2,
+        result: document.getElementById("go-result").textContent };
+    });
+    assert(card.shown && card.inBoard && card.centred, `A5 终局：结果卡浮在棋盘正中（${JSON.stringify(card)}）`);
+    if (SHOTS) await page.screenshot({ path: SHOTS + "/end-of-game.png" });
+    // stepping back into the game: the card and the badges step aside
+    await page.click("#rep-prev");
+    await page.waitForTimeout(600);
+    const back = await page.evaluate(() => !document.getElementById("go-card").hidden);
+    const e1b = await paintAt(page, "e1", false, "badge");
+    assert(!back && !near(e1b, bad), `A5 终局：退回一步，结果卡和王上的徽标都让开（卡 ${back}，${e1b}）`);
+    await page.click("#rep-end");
+    await page.waitForTimeout(600);
+    await page.click("#go-close");
+    await page.waitForTimeout(300);
+    const closed = await page.evaluate(() => document.getElementById("go-card").hidden);
+    assert(closed && near(await paintAt(page, "e1", false, "badge"), bad), "A5 终局：✕ 收起结果卡，王上的徽标还在");
+    assert(errs.length === 0, `A5 终局：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (2) a puzzle: ✗ in red for a wrong move, ✓ in green for the right one, no red for the solve
+  {
+    const { ctx, page, errs } = await openA5({ mode: "puzzle" }, { puzzles: { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" } });
+    await page.waitForTimeout(600);
+    const fen = await page.evaluate(() => (window.__chess.puzzle ? window.__chess.puzzle() : null));
+    const g = new Chess(fen || undefined);
+    const flip = g.turn() === "b";
+    const moves = g.moves({ verbose: true });
+    const mate = moves.find((m) => { const p = new Chess(fen); p.move(m); return p.in_checkmate(); });
+    const miss = moves.find((m) => { const p = new Chess(fen); p.move(m); return !p.in_checkmate() && !p.in_check(); }) ||
+      moves.find((m) => m !== mate);
+    assert(!!fen && !!mate && !!miss, `A5 做题：一道一步杀（${fen}）`);
+    const good = await token(page, "--judge-good"), bad = await token(page, "--judge-bad");
+    await tap(page, miss.from, flip); await tap(page, miss.to, flip);
+    await page.waitForTimeout(700);
+    const x = await paintAt(page, miss.to, flip, "badge");
+    const fb = await page.evaluate(() => document.getElementById("puzzle-feedback").className);
+    assert(/bad/.test(fb) && near(x, bad), `A5 做题：走错，${miss.san} 的目标格角上是红色 ✗（${x} vs ${bad}）`);
+    if (SHOTS) await page.screenshot({ path: SHOTS + "/puzzle-wrong.png" });
+    await tap(page, mate.from, flip); await tap(page, mate.to, flip);
+    await page.waitForTimeout(900);
+    const ok = await paintAt(page, mate.to, flip, "badge");
+    assert(near(ok, good), `A5 做题：走对，${mate.san} 的目标格角上是绿色 ✓（${ok} vs ${good}）`);
+    // the mated king: the solve is not signalled in the check's red
+    const after = new Chess(fen); after.move(mate);
+    let kingSq = null;
+    after.board().forEach((row, r) => row.forEach((pc, c) => { if (pc && pc.type === "k" && pc.color === after.turn()) kingSq = "abcdefgh"[c] + (8 - r); }));
+    // red, measured as how much redder than its own square colour a point is:
+    // the check's glow and ring sit round the king, off the piece
+    const redShift = () => page.evaluate(() => {
+      const cv = document.getElementById("board");
+      const step = cv.width / 8, ctx2 = cv.getContext("2d");
+      const css = getComputedStyle(document.documentElement);
+      const rgb = (v) => { const e = document.createElement("span"); e.style.color = v; document.body.appendChild(e);
+        const c = getComputedStyle(e).color.match(/\d+/g).map(Number); e.remove(); return c; };
+      const light = rgb(css.getPropertyValue("--sq-light")), dark = rgb(css.getPropertyValue("--sq-dark"));
+      const out = [];
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const base = (r + c) % 2 === 0 ? light : dark;
+        let worst = 0;
+        for (const [fx, fy] of [[0.1, 0.5], [0.9, 0.5], [0.5, 0.92]]) {
+          const d = ctx2.getImageData(Math.round(c * step + step * fx), Math.round(r * step + step * fy), 1, 1).data;
+          worst = Math.max(worst, (d[0] - d[1]) - (base[0] - base[1]), (d[0] - d[2]) - (base[0] - base[2]) - 20);
+        }
+        out.push(worst);
+      }
+      return out;
+    });
+    const shifts = await redShift();
+    const f = kingSq.charCodeAt(0) - 97, rk = 8 - Number(kingSq[1]);
+    const ki = (flip ? 7 - rk : rk) * 8 + (flip ? 7 - f : f);
+    assert(shifts[ki] < 20, `A5 做题：解出（将杀）之后，被杀的王格上没有将军的红光 —— 成功不用红色（红移 ${shifts[ki]}）`);
+    // nowhere on the board, in fact
+    const red = shifts.filter((x) => x >= 20).length;
+    assert(red === 0, `A5 做题：解出时整块棋盘上没有一格发红（${red} 格）`);
+    if (SHOTS) await page.screenshot({ path: SHOTS + "/puzzle-right.png" });
+    // (3) the achievement the first solve unlocks: its badge's icon, and it stays
+    await page.waitForFunction(() => /成就/.test(document.getElementById("toast").textContent), null, { timeout: 6000 }).catch(() => {});
+    const t0 = await page.evaluate(() => {
+      const t = document.getElementById("toast");
+      return { text: t.textContent, cls: t.className, icon: !!t.querySelector("svg.toast-ic") };
+    });
+    assert(/成就/.test(t0.text) && t0.icon && /t-ach/.test(t0.cls), `A5 成就：toast 带徽章图标（${t0.text} · ${t0.cls}）`);
+    if (SHOTS) await page.screenshot({ path: SHOTS + "/achievement.png" });
+    await page.waitForTimeout(4500);
+    const t1 = await page.evaluate(() => ({ show: document.getElementById("toast").classList.contains("show"), text: document.getElementById("toast").textContent }));
+    assert(t1.show && /成就/.test(t1.text), `A5 成就：4.5 秒后还在（旧的只留 2.2 秒）（${t1.show}）`);
+    assert(errs.length === 0, `A5 做题：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (4) selection: the piece lifts, the legal squares fade in — and under
+  // reduced motion both are simply there, drawn once
+  const foot = (page) => page.evaluate(() => {
+    // the e2 pawn's foot: the lowest of its lightest pixels down the square's middle
+    const cv = document.getElementById("board");
+    const step = cv.width / 8, c2 = cv.getContext("2d");
+    const col = (y) => { const d = c2.getImageData(Math.round(4 * step + step / 2), Math.round(6 * step + y), 1, 1).data; return d[0] + d[1] + d[2]; };
+    let lowest = 0;
+    for (let y = 0; y < step; y++) if (col(y) > 720) lowest = y;
+    return lowest;
+  });
+  const counts = {};
+  for (const reduce of [false, true]) {
+    const { ctx, page, errs } = await openA5({ mode: "pvp" }, { reduce });
+    const down = await foot(page);
+    const dotBefore = await paintAt(page, "e4", false, "centre");
+    await page.evaluate(() => { window.__paints = 0; const real = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (...a) { if (this.id === "board") window.__paints++; return real.apply(this, a); }; });
+    const p = await at(page, "e2");
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(500);
+    // counted before this test reads the canvas itself (a read is a getContext too)
+    const paints = await page.evaluate(() => window.__paints);
+    const late = await paintAt(page, "e4", false, "centre");
+    const lifted = await foot(page);
+    counts[reduce ? "reduce" : "normal"] = paints;
+    const tag = reduce ? "减少动态效果" : "正常";
+    assert(late.some((v, i) => Math.abs(v - dotBefore[i]) > 8), `A5 选子（${tag}）：合法着点画出来了（${dotBefore} → ${late}）`);
+    assert(lifted > 0 && down - lifted >= 2, `A5 选子（${tag}）：选中的兵抬起来一点（脚底 ${down} → ${lifted}px）`);
+    assert(errs.length === 0, `A5 选子（${tag}）：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+  assert(counts.normal - counts.reduce >= 2,
+    `A5 选子：正常时抬起与淡入要画几帧，减少动态效果时一帧不多画（${counts.normal} 帧 / ${counts.reduce} 帧）`);
 }
 
 await browser.close();

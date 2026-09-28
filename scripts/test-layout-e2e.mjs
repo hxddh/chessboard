@@ -3476,13 +3476,16 @@ if (scenario()) {
 
 // --- 7.7 (v7-7-plan §4): every ending gets the result card ------------------
 // Mate, flag, resignation and a draw — the card is there, says the right
-// thing, carries at most one filled button, and never lies on the board.
+// thing and carries at most one filled button. v8-0-plan A5 replaces 7.7's
+// "never lies on the board": the card floats over the board now, so the rule
+// is that it lies wholly inside the board's frame, centred on it.
 if (scenario()) {
   const cardState = (page) => page.evaluate(() => {
     const c = document.getElementById("go-card");
     const b = document.getElementById("board-wrap").getBoundingClientRect();
     const r = c.getBoundingClientRect();
-    const hit = !(r.right <= b.left || r.left >= b.right || r.bottom <= b.top || r.top >= b.bottom);
+    const hit = r.left >= b.left - 0.5 && r.right <= b.right + 0.5 && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5 &&
+      Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2) <= 2 && Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2;
     const vis = (e) => !!e.offsetParent;
     return { shown: vis(c), hit, result: document.getElementById("go-result").textContent.trim(),
              reason: document.getElementById("go-reason").textContent.trim(),
@@ -3522,7 +3525,7 @@ if (scenario()) {
     const s = await cardState(page);
     assert(s.shown, what + ":终局卡出现");
     assert(resultRe.test(s.result) && reasonRe.test(s.reason), what + ":写着结果和原因(" + s.result + " · " + s.reason + ")");
-    assert(!s.hit, what + ":终局卡与棋盘矩形不相交");
+    assert(s.hit, what + ":终局卡浮在棋盘正中,整张在棋盘框里(v8-0-plan A5)");
     assert(s.primaries.length === 1 && s.primaries[0] === "go-analyse", what + ":唯一的主按钮是「分析这盘」(" + s.primaries.join(", ") + ")");
     assert(!s.toast, what + ":结局不再由 toast 宣布(" + s.toast + ")");
     await ctx.close();
@@ -3553,7 +3556,7 @@ if (scenario()) {
     await page.waitForTimeout(1500);
     const s = await cardState(page);
     assert(s.shown && /白方胜/.test(s.result) && /超时/.test(s.reason), "超时:终局卡出现(" + s.result + " · " + s.reason + ")");
-    assert(!s.hit, "超时:终局卡与棋盘矩形不相交(1024x700)");
+    assert(s.hit, "超时:终局卡浮在棋盘正中,整张在棋盘框里(1024x700)");
     await ctx.close();
   }
   // ✕ puts it away, and 分析 in the review row takes the fill back

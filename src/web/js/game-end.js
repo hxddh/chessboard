@@ -19,8 +19,8 @@ import { ChessEngine } from "./engine.js";
  */
 export function createGameEnd(d) {
   const {
-    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
-    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isPanelOpen,
+    store, t, tf, sideName, game, el, setText, avail, sanHistory, analysisFor,
+    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare,
   } = d;
 
   /**
@@ -51,8 +51,13 @@ export function createGameEnd(d) {
    * The result card (7.7, v7-7-plan §4): the result in large type, how it
    * came about, and what to do next — 分析这盘 filled while the game is not
    * analysed, 再来一盘 and 换个对手 beside it. It replaces the toast that
-   * used to be the whole of the ending. Non-modal and in the panel, so it can
-   * never cover the board; ✕ puts it away for this ending.
+   * used to be the whole of the ending; ✕ puts it away for this ending.
+   *
+   * v8-0-plan A5: it floats over the board, on the final position — the
+   * ending was a card at the top of the panel and a pill, and the board
+   * itself said nothing. Not a dialog: nothing is blocked, and it steps
+   * aside while the replay stands anywhere but the end (it covers the
+   * middle of the board, which is where the game being read is).
    */
   function renderGameOverCard() {
     const card = el("go-card");
@@ -64,7 +69,7 @@ export function createGameEnd(d) {
     // not over — every new game, undo, or load of an unfinished one passes
     // through that — both are forgotten.
     if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; }
-    const show = !!end && store.session.goDismissed !== end.sig;
+    const show = !!end && store.session.goDismissed !== end.sig && isLive();
     card.hidden = !show;
     if (!show) return;
     const mode = store.session.mode;
@@ -72,15 +77,9 @@ export function createGameEnd(d) {
     const result = !end.winner ? t("go.draw")
       : mine ? t(end.winner === mine ? "go.youWin" : "go.youLose")
       : t(end.winner === "w" ? "go.whiteWins" : "go.blackWins");
-    // The card lives in the panel. With the panel shut it is off-screen, the
-    // ending no longer toasts, and #status is for screen readers only — so a
-    // mate would pass with nothing on screen but the strips' 1 / 0 (Codex on
-    // #82). Say it once, beside the board (§1d keeps toasts off it), for a
-    // game that ended here rather than one opened already finished.
-    if (store.session.goAnnounced !== end.sig) {
-      store.session.goAnnounced = end.sig;
-      if (!isPanelOpen() && !resultFromFile()) toast(result + " · " + end.reason, "fix");
-    }
+    // (7.7 said the ending in a toast when the panel was shut, the card
+    // being off-screen with it — Codex on #82. On the board since A5, the
+    // card is on screen whenever the board is.)
     setText(el("go-result"), result);
     setText(el("go-reason"), end.reason);
     setText(el("go-mark"), end.token === "1/2-1/2" ? "½–½" : end.token.replace("-", "–"));
@@ -100,5 +99,20 @@ export function createGameEnd(d) {
     if (acts) acts.hidden = ![...acts.children].some((b) => !b.hidden);
   }
 
-  return { gameEnding, renderGameOverCard };
+  /**
+   * v8-0-plan A5: the ending on the board — each king's square carries the
+   * result in its corner (1 and 0, # for the mated king, ½ for a draw), on
+   * the final position only: the replay standing anywhere else is a
+   * position of the game, not its end.
+   */
+  function resultBadges() {
+    const end = gameEnding();
+    if (!end || !isLive()) return null;
+    return ["w", "b"].map((side) => ({
+      sq: kingSquare(game, side),
+      kind: !end.winner ? "draw" : end.winner === side ? "win" : game.in_checkmate() ? "mate" : "loss",
+    })).filter((b) => !!b.sq);
+  }
+
+  return { gameEnding, renderGameOverCard, resultBadges };
 }

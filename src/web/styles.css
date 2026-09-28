@@ -2062,6 +2062,14 @@
       border-radius: var(--radius-md);
       line-height: var(--lh-body);
     }
+    /* v8-0-plan A5: an achievement is news, not a receipt — its badge's
+       picture in the win colour, and it stays long enough to read (toast()
+       "ach"). No confetti: 7.7 §11. */
+    .toast.t-ach {
+      border-color: color-mix(in srgb, var(--success) 55%, var(--panel-border));
+      border-radius: var(--radius-md);
+    }
+    .toast > .toast-ic { flex: none; width: 20px; height: 20px; color: var(--success); }
     .toast.t-fault {
       background: var(--danger);
       color: var(--on-danger);
@@ -3558,16 +3566,27 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .tool-btn.danger:hover { background: color-mix(in srgb, var(--danger) 88%, var(--text)); }
 
 /* ------------------------------------------------------------------
-   The result card (7.7, v7-7-plan §4). In the panel, never on the board.
+   The result card (7.7, v7-7-plan §4). v8-0-plan A5: over the board, in
+   its middle — 7.7 kept it in the panel, "never on the board", and the
+   board said nothing at all about how the game had ended. It is revealed
+   (result-in: up into place and in), not stamped; reduced motion stops the
+   keyframe like every other.
    ------------------------------------------------------------------ */
 .go-card {
-  margin-top: 12px;
-  padding: 12px;
+  position: absolute; left: 50%; top: 50%; z-index: 4;
+  width: min(360px, calc(100% - 32px));
+  transform: translate(-50%, -50%);
+  padding: 16px;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(0,0,0,.45);
   display: grid; gap: 12px;
-  animation: reveal-in var(--dur-base) var(--ease);
+  animation: result-in var(--dur-slow) var(--ease);
+}
+@keyframes result-in {
+  from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
 }
 .go-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
 .go-mark {
@@ -3835,6 +3854,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   scrollbar-width: thin;
 }
 .page[hidden] { display: none; }
+.page:not([hidden]) { animation: pane-in var(--dur-base) var(--ease); }
 #app.page-on .chrome, #app.page-on .side, #app.page-on .scrim { visibility: hidden; }
 .page-inner {
   max-width: 1120px; margin: 0 auto;
@@ -3883,7 +3903,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
   border: 0; border-radius: 0; box-shadow: none;
   background: var(--bg);
   padding: 24px 24px 16px;
-  animation: none;
+  /* v8-0-plan A5: a page replaces the view, like a tab replaces a pane —
+     it fades in, it does not fly in as a dialog does */
+  animation: pane-in var(--dur-base) var(--ease);
 }
 .modal-bg.page-sheet > .modal > .close-row:last-child { background: var(--bg); }
 

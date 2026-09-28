@@ -4243,6 +4243,55 @@ for (const lang of CONTENT_LANGS) {
     assert(fenGuard.test(appSrc3), "the FEN field lets Escape and Tab through");
   }
 
+  // v8-0-plan A5: the one curve reaches the canvas. board.js eased its slide
+  // with a quadratic of its own (1 − (1 − t)²) beside the stylesheet's
+  // cubic-bezier, so a piece and the panel next to it moved on two curves.
+  // Now the canvas reads --ease and eases through motion.js's lookup table:
+  // no easing formula in board.js, every timed effect through ease(), and
+  // the table is the stylesheet's curve — checked against an independent
+  // solve of the same Bézier.
+  {
+    const board = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(!/const easeOut|1 - \(1 - t\) \* \(1 - t\)|t \* \(2 - t\)/.test(board),
+      "the canvas has no easing curve of its own (no quadratic easeOut)");
+    assert(/from "\.\/motion\.js"/.test(board) && /getPropertyValue\("--ease"\)/.test(board),
+      "…it reads --ease and eases through motion.js");
+    // every animation's progress — (now − x.start) / its length — goes through ease()
+    const timed = board.split("\n").filter((l) => /\(now - _?\w+(\.\w+)?\.start\) \//.test(l) && !/function fxAt/.test(l));
+    const bare = timed.filter((l) => !/ease\(/.test(l));
+    assert(timed.length >= 2 && bare.length === 0,
+      "every timed canvas effect is eased on that curve (" + timed.length + " sites" + (bare.length ? "; bare: " + bare.map((l) => l.trim()).join(" | ") : "") + ")");
+    const fx = /function fxAt\(f, ms, now\) \{([^}]*)\}/.exec(board);
+    assert(!!fx && !/ease/.test(fx[1]), "fxAt is the linear progress; its callers ease it");
+    const fxUses = [...board.matchAll(/fxAt\(/g)].length - 1;
+    const fxEased = [...board.matchAll(/ease\(fxAt\(/g)].length + [...board.matchAll(/Math\.sin\(Math\.PI \* ease\(pp\)\)/g)].length;
+    assert(fxUses >= 4 && fxEased === fxUses, "…and every fxAt() progress is eased too (" + fxEased + " of " + fxUses + ")");
+    // the table is the curve
+    loadModule(ctx, "src/web/js/motion.js");
+    const M = ctx.ChessMotion;
+    const cssE = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+    const decl = /--ease:\s*([^;]+);/.exec(cssE);
+    const v = M && decl ? M.parseBezier(decl[1]) : null;
+    assert(!!v && v.length === 4, "--ease is a cubic-bezier the canvas can read (" + (decl && decl[1]) + ")");
+    if (v) {
+      const e = M.easeFromCss(decl[1]);
+      const bz = (a, b, u) => 3 * a * u * (1 - u) * (1 - u) + 3 * b * u * u * (1 - u) + u * u * u;
+      let worst = 0;
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40;
+        let lo = 0, hi = 1;
+        for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (bz(v[0], v[2], mid) < t) lo = mid; else hi = mid; }
+        worst = Math.max(worst, Math.abs(e(t) - bz(v[1], v[3], (lo + hi) / 2)));
+      }
+      assert(worst < 0.003, "the canvas curve is the stylesheet's curve (max error " + worst.toFixed(5) + " < 0.003)");
+      assert(e(0) === 0 && e(1) === 1, "…and it starts and ends exactly");
+    }
+    // reduced motion stops every one of them: no effect starts, so no frame is drawn for it
+    const notes = /function noteChanges\(m, now\) \{([\s\S]*?)\n  \}/.exec(board);
+    assert(!!notes && (notes[1].match(/!_reduceMotion \?/g) || []).length === 3,
+      "reduced motion: none of the three board effects (lift, check pulse, badge) starts");
+  }
+
   // "Reduce motion" is an accessibility setting, and it says *reduce*.
   // 1.9 honoured it with one rule against 25 animated declarations; 1.10
   // over-corrected and flattened all 25, including twelve that only cross-fade

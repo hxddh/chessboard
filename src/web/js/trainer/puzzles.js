@@ -728,7 +728,11 @@ export function createPuzzlesUI(d) {
 
   function puzzleModel() {
     const g = store.session.puzzle.g;
+    const mark = store.session.puzzle.mark || null;
     return {
+      // v8-0-plan A5: a move's ✓ or ✗ on its square, and once solved no
+      // check glow — a mate that solved the puzzle was lit in the check's red
+      mark, success: !!(store.session.puzzle.done && mark && mark.ok),
       position: g.board(),
       flipped: store.session.puzzle.p.side === "b", // face the chair you sit in
       selected: store.game.selection ? store.game.selection.sq : null,
@@ -911,6 +915,8 @@ export function createPuzzlesUI(d) {
     store.game.selection = null;
     store.session.puzzle.helpArrow = null;
     store.session.puzzle.last = { from: mv.from, to: mv.to };
+    // v8-0-plan A5: where the solver's move landed, for its ✓ / ✗
+    Object.assign(store.session.puzzle, { mark: null, solverTo: mv.to });
     BoardView.cancelAnim(); // the solver's own move — see animateReply
     moveSound(mv, g);
     // A real-game tactic grades the key move and nothing else. The two plies
@@ -1068,7 +1074,9 @@ export function createPuzzlesUI(d) {
   }
 
   function puzzleWrong(reason) {
-    store.session.puzzle.g.undo();
+    // the move is taken back; its ✗ stays on the square it went to (A5)
+    const bad = store.session.puzzle.g.undo();
+    store.session.puzzle.mark = bad ? { sq: bad.to, ok: false } : null;
     if (store.session.puzzle.run) { store.session.puzzle.last = null; Modes.runMissed(reason); return; }
     store.session.puzzle.last = null;
     store.session.puzzle.misses++;
@@ -1085,6 +1093,7 @@ export function createPuzzlesUI(d) {
 
   /** A right move that is not yet the end of the puzzle: say so (7.7 §4). */
   function puzzleGoodMove() {
+    store.session.puzzle.mark = markRight();
     store.session.puzzle.fb = { ok: true, head: t("pz.fb.best"), sub: t("pz.fb.keepGoing") };
   }
 
@@ -1155,8 +1164,15 @@ export function createPuzzlesUI(d) {
     }
   }
 
+  /** A right move's ✓, on the square the solver's move landed on (v8-0-plan A5). */
+  function markRight() {
+    const sq = store.session.puzzle.solverTo;
+    return sq ? { sq, ok: true } : null;
+  }
+
   function puzzleSolved() {
     store.session.puzzle.done = true;
+    store.session.puzzle.mark = markRight();
     store.game.selection = null;
     Audio2.playWin();
     if (store.session.puzzle.run) { Modes.runSolved(); return; } // v8-0-plan B1

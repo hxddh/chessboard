@@ -57,10 +57,10 @@ import { createStore } from "./store.js";
    * purpose, and the modules on it are the object identities the app itself
    * holds, so patching a method here is patching the app's engine.
    */
-  // `shapes`: what the board is drawing as arrows and circles right now —
-  // the player's, the premove's and the engine's (7.8 §2)
-  // `board`: the renderer's counters — how often a piece decode repainted (v8-0-plan F5)
-  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats() };
+  // `shapes`: the arrows and circles the board draws now — the player's, the premove's, the engine's (7.8 §2);
+  // `board`: the renderer's counters (v8-0-plan F5); `puzzle`: the FEN of the puzzle on the board (A5)
+  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(),
+    puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null) };
 
   const Host = ChessHost;
   const Review = ChessReview;
@@ -1052,7 +1052,7 @@ import { createStore } from "./store.js";
       annotation: annotationAt(store.game.viewIndex, last),
       // the node's own arrows and circles, plus the one being drawn
       shapes: shapesToDraw(),
-      stars: [],
+      stars: [], result: resultBadges(), // v8-0-plan A5: the ending on the kings
       cursor: cursorSquare(),
       // the drag is part of the picture, not a thing pushed in beforehand
       drag: store.ui.dragging,
@@ -1228,7 +1228,7 @@ import { createStore } from "./store.js";
    * @param {string} msg
    * @param {"ok"|"fix"|"fault"} [tier]
    */
-  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0, ach: 6500 }; // ach: an unlocked badge, with its picture (v8-0-plan A5)
 
   /**
    * Where a toast stands: never on the board (7.7 §1d).
@@ -1317,7 +1317,7 @@ import { createStore } from "./store.js";
     el.replaceChildren();
     const text = document.createElement("span");
     text.textContent = msg;
-    el.appendChild(text);
+    el.append(...(action && action.icon ? [Icons.icon(action.icon, "toast-ic")] : []), text);
     // A fault does not leave on its own, which is right — a fault that
     // disappears is a fault nobody was told about. What was wrong is the way
     // out: the docblock above says it "gets a close button", and it never had
@@ -1344,7 +1344,7 @@ import { createStore } from "./store.js";
       close.onclick = dismissToast;
       el.appendChild(close);
     }
-    el.classList.remove("t-ok", "t-fix", "t-fault");
+    el.classList.remove("t-ok", "t-fix", "t-fault", "t-ach");
     el.classList.add("t-" + kind);
     placeToast(el);
     el.classList.add("show");
@@ -2215,9 +2215,9 @@ import { createStore } from "./store.js";
   // game-end.js
   const GameEnd = createGameEnd({
     store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
-    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isPanelOpen,
+    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare,
   });
-  const { gameEnding, renderGameOverCard } = GameEnd;
+  const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;
 
   // --- stats (AI-mode finished games) ---
   /**
@@ -2948,9 +2948,9 @@ import { createStore } from "./store.js";
     for (const r of res) if (r.unlocked) store.session.achSeen.add(r.ach.id);
     if (fresh.length) {
       Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
-      // one toast per unlock, staggered so several don't collide
-      // (the badge's picture is on the record page; a toast is words — 7.7 §7)
-      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
+      // one toast per unlock, each shown for its whole life before the next
+      // (v8-0-plan A5: with the badge's picture, and long enough to read)
+      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
     }
     renderAchievements();
     renderRecordEntry();
@@ -4000,7 +4000,7 @@ import { createStore } from "./store.js";
     const over = isLive() && appGameOver();
     const unanalysed = !analysisFor() && !store.session.analyzing;
     const end = gameEnding();
-    const card = !!end && store.session.goDismissed !== end.sig;
+    const card = !!end && store.session.goDismissed !== end.sig && isLive();
     const engineDown = !ChessEngine || !!store.session.engineDown;
     const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
       : over && unanalysed ? "an-run" : null;
