@@ -645,6 +645,22 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
+   * v8-0-plan C2: a player's recent games from Lichess or Chess.com, fetched
+   * by the native side (main.zig fetchGames) — the page's CSP stays
+   * connect-src 'self'. Called only from the sync dialog's 同步 button.
+   * Raced against 60 s like checkUpdate against 5: the request holds the
+   * native side, and a dialog that never answers is worse than "offline".
+   * @returns {Promise<{pgn: string, count: number}|{error: string, status?: number}|null>}
+   *   null when there is no bridge
+   */
+  async function fetchGames(site, user, max) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return null;
+    const call = global.zero.invoke("chess.fetchGames", { site: String(site), user: String(user), max: max | 0 }).then(
+      (r) => (r && typeof r === "object" ? r : { error: "parse" }), () => ({ error: "bridge" }));
+    return Promise.race([call, new Promise((resolve) => setTimeout(() => resolve({ error: "timeout" }), 60000))]);
+  }
+
+  /**
    * 7.5 — whether the packaged app was launched with CHESS_SELFTEST=1 (see
    * main.zig). false everywhere else, including every browser and every
    * build without the command.
@@ -731,6 +747,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     appdataPath,
     setMenuLanguage,
     checkUpdate,
+    fetchGames,
     selftestMode,
     selftestReport,
   };

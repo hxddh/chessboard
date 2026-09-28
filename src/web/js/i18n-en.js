@@ -562,6 +562,7 @@
       "aria.tabs": "Panel sections",
       // 7.0 game library
       "lib.title": "Game library", "lib.import": "Import a PGN file", "lib.diagnose": "See the diagnosis",
+      "lib.sync": "Sync from a site", "prefs.net": "Online sync", "sync.title": "Sync from Lichess or Chess.com", "sync.site": "Site", "sync.user": "User name", "sync.count": "Recent games", "sync.go": "Sync", "sync.allow": "Allow online sync", "sync.hint": "Off by default. When on, the app contacts Lichess or Chess.com only when you press Sync, and sends only the user name.", "sync.noHost": "Online sync is available in the desktop app only.", "sync.fetching": "Fetching games from {0}…", "sync.offline": "Can't reach {0}. Check the connection and try again.", "sync.rate": "{0} is limiting requests for now. Try again in a minute.", "sync.notFound": "{0} has no user {1}.", "sync.empty": "{1} has no games on {0} yet.", "sync.failed": "The sync did not finish ({0}).", "sync.badName": "A user name is 2 to 30 letters, digits, - or _.",
       "pz.repBook": "the book plays {0}",
       "rep.title": "My repertoire", "rep.importW": "Import as White", "rep.importB": "Import as Black",
       "rep.drill": "Start drilling", "rep.clear": "Clear", "rep.count": "{0:line|lines}",

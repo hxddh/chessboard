@@ -15,6 +15,7 @@
  */
 import { ChessDialog } from "./dialog.js";
 import { mount as mountLook } from "./appearance-ui.js";
+import { createNetSync } from "./net-sync.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -25,6 +26,9 @@ export function createPrefsUI(d) {
   const modal = doc.getElementById("prefs-modal");
   // the pickers once mounted: a handle, not app state (their state is store.ui)
   const mounted = { look: null };
+  // v8-0-plan C2: 允许联网同步 is this window's switch; the library page's
+  // 从网站同步 button is wired by the same module
+  const net = d.netSync ? createNetSync(Object.assign({ doc, t }, d.netSync)) : null;
 
   /**
    * The appearance half of the window, behind one call: 外观 / 棋盘 / 边框 /
@@ -41,6 +45,7 @@ export function createPrefsUI(d) {
 
   function open() {
     if (!modal || modal.classList.contains("show")) return;
+    if (net) net.paint();
     Dlg.open(modal);
     // the board previews were drawn while the window was hidden, at their
     // fallback size; now that the row has a box, draw them at it
@@ -52,6 +57,7 @@ export function createPrefsUI(d) {
 
   function wire() {
     mountAppearance(doc.getElementById("prefs-look"));
+    if (net) net.wire();
     if (!modal) return;
     const x = doc.getElementById("prefs-close");
     if (x) x.onclick = close;

@@ -5451,8 +5451,9 @@ for (const lang of CONTENT_LANGS) {
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
     // 6.0 added the quarantine key (v6-plan D2); 7.0 the games library;
-    // 7.2 the player's own opening book; 7.6 the board's finished analyses
-    assert(keys.length === 14, "all fourteen keys are declared in one place (" + keys.length + ")");
+    // 7.2 the player's own opening book; 7.6 the board's finished analyses;
+    // v8-0-plan C2 the online-sync switch and the name it last asked for
+    assert(keys.length === 15, "all fifteen keys are declared in one place (" + keys.length + ")");
     for (const k of keys) {
       assert(!appSrc.includes('"' + k + '"'), "app.js no longer names " + k + " itself");
     }
@@ -7278,6 +7279,32 @@ for (const lang of CONTENT_LANGS) {
   const REGISTERED = 111;
   assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
   assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
+}
+
+// --- v8-0-plan C2: online sync goes through the native layer, never the page --
+//
+// The page holds a bridge that writes files (index.html's CSP comment), and
+// C2 is the first feature that talks to another host. It does so from
+// main.zig (chess.fetchGames), so the page's policy stays exactly what it
+// was: a connect-src that grew a lichess.org would be a page that can send
+// anything it reads to it. Held to the letter, not to "still has 'self'".
+{
+  const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+  const metas = html.match(/<meta http-equiv="Content-Security-Policy" content="[^"]*"/g) || [];
+  assert(metas.length === 1 && metas[0].endsWith("content=\"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; " +
+    "style-src 'self'; img-src 'self' data:; worker-src blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'\""),
+  "C2: the page's CSP is unchanged — one policy, connect-src 'self' (" + metas.join(" | ") + ")");
+  const hostJs = fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8");
+  assert(hostJs.includes('zero.invoke("chess.fetchGames"'), "C2: host.js asks the native side for the games");
+  // no page code reaches either site itself (the URLs live in main.zig)
+  const remote = /lichess\.org\/api|api\.chess\.com|XMLHttpRequest|\bfetch\(\s*["'`]https?:/.test(allAppSource);
+  assert(!remote, "C2: no page module requests Lichess or Chess.com directly");
+  // the dialog is a chunk (the first-paint budget has ~3 KB left): only its
+  // switch and its button's loader are in the bundle
+  assert(CHUNKS.some((c) => c.entry === "src/web/js/sync-ui.js" && c.global === "createSyncUI"),
+    "C2: the sync dialog is an on-demand chunk (chunk-sync.js)");
+  const callers = [...WEB_MODULES].filter(([file, text]) => /\.fetchGames\(/.test(text) && file !== "host.js").map(([file]) => file);
+  assert(callers.length === 1 && callers[0] === "sync-ui.js", "C2: only the sync dialog calls fetchGames (" + callers.join(", ") + ")");
 }
 
 if (failed) {

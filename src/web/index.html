@@ -882,6 +882,9 @@
             </div>
             <div class="close-row split" id="lib-acts">
               <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入棋谱文件</button>
+              <!-- v8-0-plan C2: the games from Lichess / Chess.com in one step
+                   instead of five (net-sync.js; the dialog is sync-ui.js, a chunk) -->
+              <button type="button" class="act-btn" id="lib-sync" data-i18n="lib.sync">从网站同步</button>
               <span class="btn-pair">
                 <!-- label is 「全部 N 局」, filled by renderLibrary() in the
                      interface language, so the markup carries no text -->
@@ -1320,6 +1323,21 @@
                 <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
               </div>
             </div>
+          </div>
+        </section>
+        <!-- v8-0-plan C2: the one setting that lets this app talk to another
+             host. Off by default; on, it still sends nothing until 同步 is
+             pressed on the library page (net-sync.js). -->
+        <section class="side-section" id="prefs-net-sec">
+          <h2 class="side-h" data-i18n="prefs.net">联网同步</h2>
+          <div class="setting-list">
+            <div class="setting-row">
+              <span class="setting-k" id="opt-netsync-k" data-i18n="sync.allow">允许联网同步</span>
+              <button type="button" class="switch" id="opt-netsync" aria-pressed="false" aria-labelledby="opt-netsync-k" aria-describedby="opt-netsync-hint">
+                <span class="switch-knob"></span>
+              </button>
+            </div>
+            <p class="hint" id="opt-netsync-hint" data-i18n="sync.hint">默认关闭。打开后，只在你点「同步」时连接 Lichess 或 Chess.com，只发送用户名。</p>
           </div>
         </section>
         <!-- Every irreversible action, in one place, with one naming pattern.
