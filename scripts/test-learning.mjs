@@ -543,6 +543,36 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const r2 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", path.join(dir, "plain"), "--seed", "1"], { encoding: "utf8" });
   assert(r2.status === 0 && fs.readFileSync(path.join(dir, "plain/puzzles-lc-index.js"), "utf8") === fs.readFileSync(path.join(dir, "puzzles-lc-index.js"), "utf8"),
     "…and the plain .csv gives the identical output");
+  // the real export is written by pzstd: a skippable frame holding the next
+  // frame's size before every frame, which Node's zstd stream rejects. Two
+  // frames, each with that header, must read as the one file.
+  const csvBuf = fs.readFileSync(csvPath);
+  const cut = csvBuf.indexOf(10, csvBuf.length >> 1) + 1;
+  const pz = Buffer.concat([csvBuf.subarray(0, cut), csvBuf.subarray(cut)].map((part) => {
+    const frame = zlib.zstdCompressSync(part);
+    const head = Buffer.alloc(12);
+    head.writeUInt32LE(0x184d2a50, 0); head.writeUInt32LE(4, 4); head.writeUInt32LE(frame.length, 8);
+    return Buffer.concat([head, frame]);
+  }));
+  const pzPath = path.join(dir, "pzstd.csv.zst");
+  fs.writeFileSync(pzPath, pz);
+  const r3 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), pzPath, "--out-dir", path.join(dir, "pz"), "--seed", "1"], { encoding: "utf8" });
+  assert(r3.status === 0 && fs.readFileSync(path.join(dir, "pz/puzzles-lc-index.js"), "utf8") === fs.readFileSync(path.join(dir, "puzzles-lc-index.js"), "utf8"),
+    "…and so does a pzstd file (skippable frames before each frame) (" + (r3.stderr || r3.stdout || "").trim().split("\n")[0] + ")");
+  // --exclude: a verify-puzzles report's worse ids are never imported
+  const firstId = JSON.parse(fs.readFileSync(path.join(dir, "puzzles-lc-index.js"), "utf8").match(/LC_INDEX = (.*);/)[1]).total > 0 &&
+    fs.readFileSync(csvPath, "utf8").split("\n")[1].split(",")[0];
+  const shipped = (d) => fs.readdirSync(path.join(d, "lichess")).map((f) => fs.readFileSync(path.join(d, "lichess", f), "utf8")).join("");
+  const report = path.join(dir, "worse.json");
+  fs.writeFileSync(report, JSON.stringify({ worseAny: [{ id: firstId, ply: 0 }] }));
+  const r5 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", path.join(dir, "ex"), "--seed", "1", "--exclude", report], { encoding: "utf8" });
+  assert(r5.status === 0 && shipped(dir).includes(JSON.stringify(firstId)) && !shipped(path.join(dir, "ex")).includes(JSON.stringify(firstId)) &&
+    /accepted 48 /.test(r5.stdout), "--exclude report.json drops the reported id (" + firstId + ", " + r5.stdout.split("\n")[0] + ")");
+  // a file that is not zstd at all fails the run instead of importing 0 rows
+  const junk = path.join(dir, "junk.csv.zst");
+  fs.writeFileSync(junk, Buffer.from("this is not zstd at all, not even close"));
+  const r4 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), junk, "--out-dir", path.join(dir, "junk"), "--seed", "1"], { encoding: "utf8" });
+  assert(r4.status !== 0, "a corrupt .zst exits non-zero (status " + r4.status + ")");
   const lctx = loadAppModules([path.join(dir, "puzzles-lc-index.js")]);
   const idx = lctx.LC_INDEX;
   const bandFiles = fs.readdirSync(path.join(dir, "lichess")).sort();
