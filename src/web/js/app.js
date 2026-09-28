@@ -4061,13 +4061,12 @@ import { createStore } from "./store.js";
    * board and the explorer's rows (v8-0-plan C3) both ask.
    */
   function movePath(onEngineTurn) {
-    const branching = !isLive(), over = !branching && (store.game.flagFall ? "flagged" : store.game.resigned ? "resigned"
-      : store.game.drawAgreed ? "drawAgreed" : store.game.drawClaimed ? "drawClaimed" : null);
-    if (branching && !canBranchHere()) { toast(t("mm.goLiveFirst"), "fix"); return null; }
-    if (!branching && naturalGameOver()) return null;
-    if (over) { toast(t("msg.over." + over), "fix"); return null; }
-    if (!branching && store.session.mode === "ai" && game.turn() !== store.session.humanColor) { if (onEngineTurn) onEngineTurn(); return null; }
-    return branching ? playVariationMove : playHumanMove;
+    const g = store.game, over = ["flagged", "resigned", "drawAgreed", "drawClaimed"][[g.flagFall, g.resigned, g.drawAgreed, g.drawClaimed].findIndex(Boolean)];
+    if (!isLive()) return canBranchHere() ? playVariationMove : void toast(t("mm.goLiveFirst"), "fix");
+    if (naturalGameOver()) return null;
+    if (over) return void toast(t("msg.over." + over), "fix");
+    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return void (onEngineTurn && onEngineTurn());
+    return playHumanMove;
   }
 
   /**

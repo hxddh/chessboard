@@ -2979,8 +2979,8 @@
       "plies": 80,
       "maxPly": 50,
       "chessJsMsBefore": 3445,
-      "ms": 152,
-      "queryMs": 2
+      "ms": 327,
+      "queryMs": 3.21
     },
     "masters": {
       "source": "lichess_db_standard_rated_2026-08",
@@ -3031,8 +3031,8 @@
     },
     "package": {
       "bundleBefore": 1202086,
-      "bundleAfter": 1204413,
-      "chunkExplorer": 20618,
+      "bundleAfter": 1205462,
+      "chunkExplorer": 20653,
       "masterChunks": [
         575493,
         523985,
@@ -3042,8 +3042,8 @@
         273402
       ],
       "masterChunksTotal": 2937155,
-      "bundleDelta": 2327,
-      "installDelta": 2960100
+      "bundleDelta": 3376,
+      "installDelta": 2961184
     }
   }
 }

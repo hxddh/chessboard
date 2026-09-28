@@ -114,8 +114,9 @@ export function createExplorerUI(d, bookLines) {
     if (src === "master") {
       const m = masterRows(key, ply);
       out = m.rows || [];
-      msg = m.deep ? tf("xp.deep", [M.plies]) : m.wait ? t("xp.loading") : !out.length ? t("xp.none")
-        : tf("xp.masterNote", [M.source.slice(-7), M.minElo, M.games]);
+      msg = m.deep ? tf("xp.deep", [M.plies]) : m.wait ? "…" : !out.length ? t("xp.none")
+        // the source, the rating floor and the licence are the same words in every language
+        : "Lichess " + M.source.slice(-7) + " · ≥ " + M.minElo + " · " + tf("lib.count", [M.games]) + " · CC0";
     } else {
       out = lib.movesAt(key);
       const here = out.reduce((s, r) => s + r.n, 0);

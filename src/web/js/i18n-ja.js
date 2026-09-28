@@ -70,10 +70,10 @@
       "aria.lessonDots": "レッスンの進み具合",
       "tip.reviewOpen": "振り返り：解析・精密解析・継続解析",
       // v8-0-plan C3: 定跡エクスプローラー
-      "act.explorer": "定跡", "tip.explorer": "定跡エクスプローラー：この局面で指された手と、その局数と勝ち・引き分け・負け", "xp.title": "定跡エクスプローラー", "xp.source": "出典", "xp.master": "強豪",
+      "act.explorer": "定跡", "xp.title": "定跡エクスプローラー", "xp.master": "強豪",
       "xp.book": "定跡", "xp.row": "{0}：{1} 局、白勝ち {2}%、引き分け {3}%、黒勝ち {4}%", "xp.rowBook": "{0}：定跡書の手、まだ対局なし",
-      "xp.libEmpty": "棋譜ライブラリは空です。先にライブラリのページで棋譜を読み込んでください", "xp.none": "この局面に至った対局はありません",
-      "xp.deep": "最初の {0} 手（半手）までを数えています", "xp.loading": "読み込み中…", "xp.masterNote": "Lichess {0} · 双方レーティング ≥ {1} · {2} 局（CC0）",
+      "xp.libEmpty": "棋譜ライブラリは空です", "xp.none": "この局面に至った対局はありません",
+      "xp.deep": "最初の {0} 手（半手）までを数えています",
       "tip.pgn.export": "この対局を PGN ファイルに保存",
       "tip.more": "その他：貼り付け・開く・FEN",
       "about.dataUnknown": "ブラウザ保存（ネイティブのデータファイルなし）", "act.checkUpdate": "更新を確認", "msg.update.latest": "最新バージョンです", "msg.update.available": "新しいバージョン {0} があります。リンクをクリップボードにコピーしました", "msg.update.failed": "いまは更新を確認できません", "msg.link.copied": "リンクをクリップボードにコピーしました",

@@ -164,7 +164,7 @@ const waitRows = async (page, pred, ms = 3000) => {
   assert(r.length === want.length && r.every((x, i) => x.san === want[i].san && x.n === String(want[i].n)),
     "1.d4 d5 之后：大师行逐行等于分块里的着法与局数（" + want.slice(0, 3).map((w) => w.san + " " + w.n).join("、") + "…）",
     JSON.stringify(r.slice(0, 3)));
-  assert(/^Lichess 2026-08 · 双方 ≥ 2200 · 120000 局（CC0）$/.test(await note(page)), "说明行写明来源、门槛、局数与许可", await note(page));
+  assert(/^Lichess 2026-08 · ≥ 2200 · 120000 局 · CC0$/.test(await note(page)), "说明行写明来源、门槛、局数与许可", await note(page));
   assert(r.find((x) => x.san === "c4").book, "c4（后翼弃兵）标「书」");
 
   // 重启：面板还开着，还是大师

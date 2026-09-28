@@ -70,10 +70,10 @@
       "aria.lessonDots": "Lesson progress",
       "tip.reviewOpen": "Review: analyse, deep analysis, live engine",
       // v8-0-plan C3: the opening explorer
-      "act.explorer": "Explorer", "tip.explorer": "Opening explorer: the moves played from this position, how many games, and how they ended", "xp.title": "Opening explorer", "xp.source": "Source", "xp.master": "Masters",
+      "act.explorer": "Explorer", "xp.title": "Opening explorer", "xp.master": "Masters",
       "xp.book": "Book", "xp.row": "{0}: {1} games, White wins {2}%, draws {3}%, Black wins {4}%", "xp.rowBook": "{0}: a book move, no games yet",
-      "xp.libEmpty": "Your library is empty: import games on the library page first", "xp.none": "No game reached this position",
-      "xp.deep": "Counted for the first {0} plies only", "xp.loading": "Loading…", "xp.masterNote": "Lichess {0} · both players rated ≥ {1} · {2} games (CC0)",
+      "xp.libEmpty": "Your library is empty", "xp.none": "No game reached this position",
+      "xp.deep": "Counted for the first {0} plies only",
       "tip.pgn.export": "Save this game as a PGN file",
       "tip.more": "More: paste, open, FEN",
       "about.dataUnknown": "Browser storage (no native data file)", "act.checkUpdate": "Check for updates", "msg.update.latest": "You have the latest version", "msg.update.available": "Version {0} is available — link copied to the clipboard", "msg.update.failed": "Could not check for updates right now", "msg.link.copied": "Link copied to the clipboard",
