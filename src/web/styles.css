@@ -4106,9 +4106,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .xp { margin-top: 16px; }
 /* not .act-group: collapseEmptyGroups() un-hides every .act-group that holds a
    button, and this section is shown by its key, not by what it holds */
-.xp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.xp-head .act-k { margin-bottom: 0; min-width: 0; }
-/* the source switch keeps its words on one line; the heading gives way */
+.xp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.xp-head .act-k { margin-bottom: 0; }
+/* the source switch keeps its words on one line; where heading and switch
+   do not fit side by side (English at 1024) the switch drops under it */
 .xp-head > .theme-row { flex: none; }
 .xp-head > .theme-row > button { white-space: nowrap; }
 .xp-note { margin: 4px 0 8px; }
