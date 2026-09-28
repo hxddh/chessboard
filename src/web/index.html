@@ -822,7 +822,9 @@
          coach's recommendation(); nothing here is new data. -->
     <main class="page" id="page-home" aria-labelledby="home-h" hidden>
       <div class="page-inner">
-        <h1 class="page-h" id="home-h" data-i18n="nav.home">首页</h1>
+        <!-- v8-0-plan A6: the home page's heading is the wordmark — the rail
+             already says 首页; the page is the app's own front door -->
+        <h1 class="page-h wordmark" id="home-h"><span class="wordmark-mark" aria-hidden="true"></span><span data-i18n="app.title">国际象棋</span></h1>
         <div class="home-cards">
           <section class="home-card" id="home-continue" aria-labelledby="home-continue-h">
             <h2 class="side-h" id="home-continue-h" data-i18n="home.continue">继续上次</h2>
@@ -1194,9 +1196,10 @@
     <!-- 6.0 (v6-plan Q1.6): what this is, what it is made of, where the data
          lives, and whether there is a newer one. GPLv3 §5(d) wants the notice
          reachable from the program itself, not only from the repository. -->
-    <div class="modal-bg" id="about-modal" role="dialog" aria-labelledby="about-title">
+    <div class="modal-bg" id="about-modal" role="dialog" aria-label="关于国际象棋" data-i18n-aria="about.title">
       <div class="modal">
-        <h3 id="about-title" data-i18n="about.title">关于</h3>
+        <!-- v8-0-plan A6: the wordmark; the window's name stays 关于… (aria-label) -->
+        <h3 class="wordmark" id="about-title"><span class="wordmark-mark" aria-hidden="true"></span><span data-i18n="app.title">国际象棋</span></h3>
         <dl class="key-list about-list">
           <dt data-i18n="about.version">版本</dt><dd class="num" id="about-version"></dd>
           <dt data-i18n="about.license">许可</dt><dd id="about-license"></dd>

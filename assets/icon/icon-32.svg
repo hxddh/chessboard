@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- v8-0-plan A6: 32 px, the master's knight redrawn on the pixel grid —
+       the ears widened to 1.5 px with square tips (scaled, they are half a
+       pixel and vanish), the eye a 2×2 block, the plinth three full rows. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4bd6a"/>
+      <stop offset="1" stop-color="#c5721c"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="url(#tile)"/>
+  <path fill="#281809" d="M 9.5 25 C 10.75 23 14.75 21.5 16.25 19 C 16.5 20.75 15.25 21.75 13.25 21.5 C 12.25 21.25 11.25 21 10.5 20.5 L 10 19.75 L 9 20.25 C 7.5 20.25 6.25 19.5 6 18.25 C 5.75 17 6 16 6.5 15.25 C 8.25 13 11 10.25 13.5 8.5 C 14.5 8 15.25 7.5 15.75 7.25 L 16 3 H 17.5 L 18.5 6 L 19.5 3 H 21 L 21 7.75 C 23.25 9.75 25.25 13 25.5 16.75 C 25.75 20 25.25 23 25 25 Z"/>
+  <path fill="#281809" shape-rendering="crispEdges" d="M9 25H26V28H9Z"/>
+  <path fill="#f4bd6a" shape-rendering="crispEdges" d="M14 10H16V12H14Z"/>
+</svg>
