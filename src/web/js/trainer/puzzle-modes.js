@@ -27,6 +27,7 @@
  */
 import { ChessDialog } from "../dialog.js";
 import { ChessPuzzleDb } from "../puzzle-db.js";
+import { ChessLazy } from "../lazy-content.js";
 import { ChessRating } from "../rating.js";
 import { THEME_IDS, themesOf, themeRecord, attemptsIn, filterThemes } from "./themes.js";
 import { ChessRuns as Runs } from "./runs.js";
@@ -75,6 +76,17 @@ export function createPuzzleModes(d) {
       if (list && !arrived.includes(b)) arrived.push(b);
       if (then) then();
     }, () => toast(t("theme.loadFailed"), "fix"));
+  }
+
+  /**
+   * Run `fn` once the Lichess index is here. It rides in chunk-mined.js
+   * (mined-chunk.js), which every session fetches right after the first
+   * paint; a player quicker than that waits for it instead of getting a
+   * theme or a run without the Lichess set.
+   */
+  function withIndex(fn) {
+    if (Db.indexReady()) { fn(); return; }
+    ChessLazy.ensureMined().then(fn, () => toast(t("theme.loadFailed"), "fix"));
   }
 
   // --- 主题 ---------------------------------------------------------------------
@@ -147,9 +159,6 @@ export function createPuzzleModes(d) {
    */
   function startTheme(id) {
     const cat = THEME_CAT + id;
-    const bands = Db.bandsWith(id).map((x) => x.band);
-    const r = (themeRating(id) || seenRating()).r;
-    bands.sort((a, b) => Math.abs(a + 100 - r) - Math.abs(b + 100 - r));
     const serve = () => {
       // the player may have gone elsewhere while the chunk loaded
       if (store.session.mode !== "puzzle" || store.session.puzzleState.cat !== cat || store.session.run) return;
@@ -158,7 +167,12 @@ export function createPuzzleModes(d) {
       if (list.length) seatPuzzle(cat, themeStartIdx(id, list));
       else sync();
     };
-    for (const b of bands) wantBand(b, serve);
+    withIndex(() => {
+      const bands = Db.bandsWith(id).map((x) => x.band);
+      const r = (themeRating(id) || seenRating()).r;
+      bands.sort((a, b) => Math.abs(a + 100 - r) - Math.abs(b + 100 - r));
+      for (const b of bands) wantBand(b, serve);
+    });
     store.session.puzzle = null;
     serve();
   }
@@ -207,6 +221,8 @@ export function createPuzzleModes(d) {
   }
   function openThemes() {
     renderThemes();
+    // the counts include the Lichess set: redraw them once its index is here
+    if (!Db.indexReady()) withIndex(renderThemes);
     Dlg.open(el("theme-modal"), el("theme-search"));
   }
   function closeThemes() { Dlg.close(el("theme-modal")); }
@@ -221,8 +237,10 @@ export function createPuzzleModes(d) {
   /** The band the run is heading into, and the one after it, asked for early. */
   function wantRunBands(run) {
     const aim = Runs.targetOf(run);
-    wantBand(Db.bandFor(aim));
-    wantBand(Db.bandFor(aim + 200));
+    withIndex(() => {
+      wantBand(Db.bandFor(aim));
+      wantBand(Db.bandFor(aim + 200));
+    });
   }
 
   function startRun(kind) {
