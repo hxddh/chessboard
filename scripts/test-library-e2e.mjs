@@ -2211,6 +2211,16 @@ function tenThousand() {
     note: document.getElementById("lib-pos-note").textContent, pressed: document.getElementById("lib-pos").getAttribute("aria-pressed") }));
   assert(pos.pressed === "true" && pos.rows === 1 && /有 1 局/.test(pos.note),
     `C1 「局面」开关：只留下经过棋盘上这个局面的棋(棋盘上是那盘 4. Qxf7# 之后；${pos.rows} 行，${pos.note})`);
+  // a diagnosis row opens the list on imported games, even when the source
+  // row was last left on 本机 (red before: an empty list)
+  await page.click("#lib-list-close");
+  const eco = (await libOf(page)).games.find((g) => g.id === "lib:80b").eco;
+  await page.evaluate((e) => window.__chess.libDb().openList({ kind: "eco", value: e, label: e }), eco);
+  await page.waitForTimeout(300);
+  const picked = await page.evaluate(() => ({ src: document.querySelector("#lib-src-seg .active").dataset.lsrc,
+    ids: [...document.querySelectorAll("#lib-list [data-lib]")].map((b) => b.dataset.lib) }));
+  assert(!!eco && picked.src === "all" && picked.ids.join() === "lib:80b",
+    `C1 诊断里点一个开局：列表回到「全部」来源，筛出那一局(${eco}; ${JSON.stringify(picked)})`);
   assert(errs.length === 0, "C1 本机：没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }

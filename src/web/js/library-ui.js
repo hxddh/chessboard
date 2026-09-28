@@ -447,6 +447,9 @@ export function createLibraryUI(d) {
    */
   function adoptBoardAnalysis(p, mine) {
     if (!p || !Array.isArray(p.sans) || !p.sans.length || store.session.libRun) return false;
+    // v8-0-plan C1: before the library has loaded, its entries are about to
+    // be replaced by the stored ones; file into those
+    if (!libDb) { libDbReady.then((c) => { if (c) adoptBoardAnalysis(p, mine); }); return false; }
     // a hole is a search that did not answer; the library never files those
     if (p.scalars.some((x) => x == null)) return false;
     const text = p.sans.join(" ");
@@ -657,7 +660,8 @@ export function createLibraryUI(d) {
   function fillOpenings() {
     let n = 0;
     for (const g of store.session.library) {
-      if (g.eco || !g.side || typeof g.sans !== "string") continue;
+      // v8-0-plan C1: "" is "the table has nothing" (library-page.js), not "not asked yet"
+      if (typeof g.eco === "string" || !g.side || typeof g.sans !== "string") continue;
       const sans = g.sans.split(" ").filter(Boolean);
       if (!sans.length) continue;
       let hit = null;

@@ -116,6 +116,10 @@ async function bootLibrary(d) {
       writeHeader();
     }
   }
+  // a name typed while the games were still loading claimed the list the
+  // page had then; claim the stored one too
+  const namesThen = JSON.stringify(Array.isArray(header.names) ? header.names : []);
+  const renamed = mode === "idb" && JSON.stringify(store.session.libNames) !== namesThen;
 
   function shardMap() {
     const m = {};
@@ -229,6 +233,8 @@ async function bootLibrary(d) {
     e.plies = sans.length;
     if (game.root.fen !== new d.Chess().fen()) e.fen = game.root.fen;
     st.indexFens(e.id, fens);
+    const eco = ecoOfFens(fens);
+    if (eco !== undefined) { e.eco = eco ? eco.eco : ""; e.ecoName = eco ? eco.name : ""; }
     return e;
   }
   /**
@@ -442,31 +448,59 @@ async function bootLibrary(d) {
     last.n = rows.length;
   }
 
+  /** LibraryQuery.ecoOfFens over the ECO table, once it has arrived (undefined before). */
+  const ecoOfFens = (fens) => {
+    const tab = typeof window !== "undefined" ? window.ECO_BY_KEY : null;
+    return tab ? LibraryQuery.ecoOfFens(fens, tab) : undefined;
+  };
+  /**
+   * Every game's opening, filled in where it is missing — imported and 本机,
+   * claimed or not, so the search can find them by opening. A slice at a
+   * time: at ten thousand games the synchronous fill (library-ui.js
+   * fillOpenings, 7.1) replays up to 24 plies of each and would hold the
+   * window for seconds. A game the table has nothing for is marked "" and
+   * not asked again.
+   */
+  let filling = null;
+  function fillOpenings() {
+    if (filling) return filling;
+    if (!allGames().some((g) => typeof g.eco !== "string" && g.sans)) return Promise.resolve();
+    filling = (async () => {
+      try { await d.Eco.ready(); } catch (_) { /* no table: nothing to fill */ }
+      let n = 0;
+      if (d.Eco.loaded()) {
+        let t0 = Date.now();
+        for (const g of allGames()) {
+          if (typeof g.eco === "string" || !g.sans) continue;
+          let hit = null;
+          try { hit = d.Eco.openingForGame(g.sans.split(" ").slice(0, 24), g.fen || undefined); } catch (_) { hit = null; }
+          g.eco = hit ? hit.eco : "";
+          g.ecoName = hit ? hit.name || "" : "";
+          n++;
+          if (Date.now() - t0 > 12) { await d.pause(); t0 = Date.now(); }
+        }
+      }
+      filling = null;
+      if (n) { save(); if (listOpen()) renderList(); }
+    })();
+    return filling;
+  }
+
   function openList(pick, opts) {
     store.ui.libPick = pick || null;
+    // a diagnosis pick is about imported games; show them, whatever the
+    // source row was left on
     if (opts && opts.src) f.src = opts.src;
+    else if (pick) f.src = "all";
     shown = PAGE;
     const q = doc.getElementById("lib-q");
     if (q && q.value !== f.q) q.value = f.q;
-    // an opening name needs the ECO chunk; ask for it and redraw when it lands
-    const fill = () => { if (d.fillOpenings()) save(); fillLocalOpenings(); };
-    if (!d.Eco.loaded()) d.Eco.whenReady(() => { fill(); renderList(); });
-    else fill();
+    // an opening name needs the ECO chunk; the fill asks for it, and redraws
+    fillOpenings();
     renderList();
     Dlg.open(listModal());
     syncLocal();
   }
-  /** 本机 games get their opening the way imported ones do (fillOpenings). */
-  function fillLocalOpenings() {
-    for (const g of st.local) {
-      if (typeof g.eco === "string" || !g.sans) continue;
-      let hit = null;
-      try { hit = d.Eco.openingForGame(g.sans.split(" ").slice(0, 24), g.fen || undefined); } catch (_) { hit = null; }
-      g.eco = hit ? hit.eco : "";
-      g.ecoName = hit ? hit.name || "" : "";
-    }
-  }
-
   /** Every control on the list page, wired once. */
   function wire() {
     const list = doc.getElementById("lib-list");
@@ -551,6 +585,9 @@ async function bootLibrary(d) {
     // read game by game, handing the thread back every ~16 ms (7.5)
     let games;
     importing = true;
+    // the openings come from the parse's own positions, so the ECO table
+    // is wanted now rather than replayed for later (fillOpenings)
+    try { await d.Eco.ready(); } catch (_) { /* no table: filled later */ }
     try { games = await d.PgnParser.parseGamesAsync(chunks); } finally { importing = false; }
     if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
     const now = Date.now();
@@ -566,6 +603,8 @@ async function bootLibrary(d) {
       if (!sans.length) continue;
       const e = Library.entryFrom(parsed, sans, store.session.libNames, now);
       if (!st.pk.has(e.id)) st.indexFens(e.id, fens);
+      const eco = ecoOfFens(fens);
+      if (eco !== undefined) { e.eco = eco ? eco.eco : ""; e.ecoName = eco ? eco.name : ""; }
       fresh.push(e);
     }
     if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
@@ -578,6 +617,7 @@ async function bootLibrary(d) {
     else toast(tf("lib.added", [r.added, r.dup]) + (label ? " · " + label : ""));
     if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
     renderClaim();
+    fillOpenings();
   }
 
   /**
@@ -617,6 +657,9 @@ async function bootLibrary(d) {
     if (b) b.onclick = () => answerClaim(yes);
   }
   renderClaim();
+  if (renamed) { d.reclaimLibrary(); save(); }
+  // a migrated library's openings, in the background (see fillOpenings)
+  setTimeout(() => { fillOpenings(); }, 0);
   // what is not indexed yet (a migrated or restored library), in the
   // background; the position filter finds more as it goes
   if (mode !== "idb") st.games = store.session.library;

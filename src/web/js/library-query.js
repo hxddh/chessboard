@@ -281,6 +281,27 @@ function inferName(games) {
   return { name, n: best.n, of };
 }
 
+/**
+ * The deepest ECO entry along a game's positions — what eco-lookup.js
+ * openingForGame answers for its first 24 plies, without the replay: an
+ * import (and a 本机 game) has every position from the parse already. The
+ * table's keys keep the en-passant square only when a capture is possible
+ * (fide.js positionKey), and chess.js writes it after every double step, so
+ * a position is looked up both ways.
+ * @param {string[]} fens the start and the position after each ply
+ * @param {object} table eco.js ECO_BY_KEY
+ * @returns {{eco: string, name: string}|null}
+ */
+function ecoOfFens(fens, table) {
+  let best = null;
+  for (let i = 0; i < fens.length && i <= 24; i++) {
+    const p = String(fens[i]).split(" ");
+    const hit = table[p.slice(0, 4).join(" ")] || table[p.slice(0, 3).join(" ") + " -"];
+    if (hit) best = hit;
+  }
+  return best ? { eco: best[0], name: best[1] || "" } : null;
+}
+
 /** How many native shards the library is mirrored in (persist.js BULK). */
 const SHARDS = 64;
 /** The native shard an entry is mirrored in: "lib00" … "lib3f". */
@@ -343,5 +364,5 @@ const PGN_FIELDS = ["id", "white", "black", "date", "event", "site", "round", "r
 export const LibraryQuery = {
   SHARDS, TC_CLASSES, PGN_FIELDS,
   positionKey, hashKey, keysOfFens, keysOfGame, tcClass, dateKey, query, gamesWithPosition,
-  inferName, shardOf, entryPgn,
+  inferName, shardOf, entryPgn, ecoOfFens,
 };

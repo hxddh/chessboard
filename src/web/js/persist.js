@@ -337,7 +337,7 @@ export function createPersist(host, onWriteFailure) {
   let flushChain = Promise.resolve(true);
   // v8-0-plan C1: the library's port — {names() → shard names holding games
   // (null until the library has loaded), read(name) → a shard's text or null,
-  // restore(texts) → Promise, clear(), ready() → Promise}. See BULK.
+  // restore(texts) → Promise, clear()}. See BULK.
   let bulk = null;
   // "every shard is owed", waiting for a port that can say which shards exist
   let bulkAll = false;

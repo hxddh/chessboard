@@ -181,6 +181,47 @@ const ids = (q) => Q.query(all, q, pkOf).map((g) => g.event || g.id).join(",");
     "a black-to-move [FEN] game is numbered from its own move (40… Kd5)");
 }
 
+// --- 5b. the opening from the parse's positions = openingForGame's replay ----
+{
+  const { ECO_BY_KEY } = await import("../src/web/js/eco.js");
+  globalThis.ECO_BY_KEY = ECO_BY_KEY;
+  const { ChessEco } = await import("../src/web/js/eco-lookup.js");
+  const g = new Chess();
+  let seed = 11, same = 0, n = 0, hits = 0;
+  const rnd = (k) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed % k; };
+  const diffs = [];
+  for (let i = 0; i < 1500; i++) {
+    g.reset();
+    const fens = [g.fen()], sans = [];
+    for (let p = 0; p < 30; p++) {
+      // mostly book moves early (the table's first choice), then anything
+      const ms = g.moves();
+      if (!ms.length) break;
+      const m = p < 10 && rnd(3) ? ms[0] : ms[rnd(ms.length)];
+      g.move(m);
+      sans.push(m);
+      fens.push(g.fen());
+    }
+    const a = Q.ecoOfFens(fens, ECO_BY_KEY);
+    const b = ChessEco.openingForGame(sans.slice(0, 24), null);
+    n++;
+    if (b) hits++;
+    if (JSON.stringify(a && [a.eco, a.name]) === JSON.stringify(b && [b.eco, b.name])) same++;
+    else if (diffs.length < 3) diffs.push(sans.slice(0, 8).join(" ") + ": " + JSON.stringify(a) + " vs " + JSON.stringify(b));
+  }
+  // the book's own lines too, where en passant and transpositions live
+  for (const pgn of PGNS) {
+    const gm = ChessPgnParser.parsePgn(pgn).games[0];
+    const fens = [gm.root.fen], sans = [];
+    for (let x = gm.root; x.children.length; x = x.children[0]) { sans.push(x.children[0].san); fens.push(x.children[0].fen); }
+    const a = Q.ecoOfFens(fens, ECO_BY_KEY);
+    const b = ChessEco.openingForGame(sans.slice(0, 24), gm.root.fen === START ? null : gm.root.fen);
+    n++;
+    if (JSON.stringify(a && [a.eco, a.name]) === JSON.stringify(b && [b.eco, b.name])) same++;
+  }
+  assert(same === n && hits > 100, `the opening read off the parse's positions is openingForGame's, game for game (${same}/${n}, ${hits} with a hit)` + (diffs.length ? " — " + diffs.join("; ") : ""));
+}
+
 // --- 6. library.js: the cap, and re-importing an archive ---------------------
 {
   assert(L.MAX_GAMES === 10000, "the library holds 10,000 games (was 500)");
