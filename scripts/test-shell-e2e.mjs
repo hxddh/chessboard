@@ -429,7 +429,7 @@ for (const lang of ["en", "ja"]) {
   const { ctx, page, errs } = await open();
   await page.evaluate(() => {
     localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games: [
-      { id: "h1", t: Date.now() - 864e5, diff: "normal", color: "w", result: "win", moves: 3,
+      { id: "h1", t: Date.now() - 864e5, diff: "learner", style: "principled", color: "w", result: "win", moves: 3,
         pgn: '[Event "?"]\n\n1. e4 e5 2. Nf3 *', ending: "", acc: 70 },
     ] }));
   });
@@ -449,6 +449,13 @@ for (const lang of ["en", "ja"]) {
   assert(rows === 2, "从对局历史打开的一局载入了棋盘(" + rows + " 行)");
   assert(!st.me && st.current === "play" && !st.stageInert,
     "……载入之后看见的是棋盘,不是还盖着的「我的」(" + JSON.stringify({ me: st.me, current: st.current, inert: st.stageInert }) + ")");
+  // Codex #89: the opponent comes back with the game — 练习档 × 重原则 is 莉娜 —
+  // not whoever is chosen today (the default: no persona)
+  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  const who = await page.evaluate(() => ({ role: document.getElementById("black-role").textContent.trim(),
+    persona: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").personaId }));
+  assert(who.role === "莉娜" && who.persona === "principled", "对局历史载入:对手是那盘棋的角色(" + JSON.stringify(who) + ")");
   assert(errs.length === 0, "对局历史载入:没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
