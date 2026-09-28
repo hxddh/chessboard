@@ -291,19 +291,27 @@ function rateHistory(games) {
  */
 function fileRating(stats, rec, now) {
   if (!stats || !rec) return null;
-  const before = validRating(stats.rating) ? stats.rating : rateHistory((stats.games || []).filter((g) => g !== rec));
+  // only the games before this one: a game filed late (the chunk was still
+  // loading) may already have later games after it in the list (Codex #89)
+  const games = stats.games || [];
+  const at = games.indexOf(rec);
+  const prior = at >= 0 ? games.slice(0, at) : games;
+  const before = validRating(stats.rating) ? stats.rating : rateHistory(prior);
   const after = rateGame(before, rec.diff, rec.result, now);
   if (!after) return null;
   stats.rating = after;
   // the rating series 「我的」 draws: each engine game carries the rating it
   // left the player on and the performance of the ten games up to it
-  const recent = (stats.games || []).filter((g) => g !== rec).slice(-(PERF_GAMES - 1)).concat([rec])
+  const recent = prior.slice(-(PERF_GAMES - 1)).concat([rec])
     .map((g) => ({ level: g.diff, result: g.result }));
   const perf = performance(recent);
   rec.rb = before ? Math.round(before.r) : null;
   rec.ra = Math.round(after.r);
   rec.perf = perf;
-  return { before, after, perf, advice: advice(recent, rec.diff, after) };
+  // the advice reads this rung's own last games, however many others came between (Codex #89)
+  const rung = prior.filter((g) => g.diff === rec.diff).slice(-(ADVICE_GAMES - 1)).concat([rec])
+    .map((g) => ({ level: g.diff, result: g.result }));
+  return { before, after, perf, advice: advice(rung, rec.diff, after) };
 }
 /** How many recent games the performance rating is taken over. */
 const PERF_GAMES = 10;

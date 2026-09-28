@@ -2644,6 +2644,35 @@ for (const lang of CONTENT_LANGS) {
       O.advice(five("win", "normal").slice(1), "normal", null) === null,
       "B4: move up after 70%+ over five, down after 25% or less — when the rating agrees");
     assert(O.neighbour("normal", "up").level === O.LEVELS[O.LEVELS.indexOf("normal") + 1], "B4: …to the persona one rung over");
+    // Codex #89: five wins at one rung, each separated by two games at others,
+    // still earn the move-up advice — the rung's own history, not the last ten overall
+    {
+      const other = O.LEVELS.find((l) => l !== "normal");
+      const mix = { v: 2, games: [] };
+      let t = now, last = null;
+      for (let k = 0; k < 5; k++) {
+        for (let j = 0; j < 2 && k > 0; j++) { const g = { id: "o" + k + j, t: ++t, diff: other, result: "draw" }; O.fileRating(mix, g, t); mix.games.push(g); }
+        const g = { id: "n" + k, t: ++t, diff: "normal", result: "win" };
+        mix.rating = { r: 1900, rd: 60, vol: 0.06, at: t, n: 20 };
+        last = O.fileRating(mix, g, t);
+        mix.games.push(g);
+      }
+      assert(last && last.advice === "up", "B4: five wins at a rung spread among other games still earn 「升一档」 (" + (last && last.advice) + ")");
+    }
+    // Codex #89: two games filed before the chunk landed are both in stats.games
+    // when they are rated — each is rated from what came before it, in order
+    {
+      const g1 = { id: "q1", t: now, diff: "normal", result: "win" }, g2 = { id: "q2", t: now + 1000, diff: "normal", result: "loss" };
+      const queued = { v: 2, games: [g1, g2] };
+      O.fileRating(queued, g1, g1.t);
+      O.fileRating(queued, g2, g2.t);
+      const seq = { v: 2, games: [] };
+      O.fileRating(seq, g1, g1.t); seq.games.push(g1);
+      const g2b = Object.assign({}, g2);
+      O.fileRating(seq, g2b, g2.t);
+      assert(queued.rating.n === 2 && Math.round(queued.rating.r) === Math.round(seq.rating.r) && g1.ra > g2.ra,
+        "B4: games rated late, in order, come out as if rated on time (n " + queued.rating.n + ")");
+    }
   }
 
   // the app's hooks — few lines, each where the thing happens

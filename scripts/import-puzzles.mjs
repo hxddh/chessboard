@@ -212,7 +212,10 @@ export function pzstdFrames(params) {
       } catch (e) { return cb(e); }
       cb();
     },
-    flush(cb) { cb(buf.length ? new Error("pzstd: " + buf.length + " bytes left after the last frame") : null); },
+    flush(cb) {
+      if (next >= 0) return cb(new Error("pzstd: the file ends before a frame its header announced (" + next + " bytes)"));
+      cb(buf.length ? new Error("pzstd: " + buf.length + " bytes left after the last frame") : null);
+    },
   });
 }
 
