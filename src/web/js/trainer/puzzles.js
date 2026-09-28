@@ -440,6 +440,11 @@ export function createPuzzlesUI(d) {
     if (!pz || pz.p.id !== id || pz.rated || pz.run) return; // a run is not rated (trainer/runs.js)
     if (!isRatedCat(pz.p.cat)) return; // 背谱不是战术水平（7.3 B1）
     if (store.session.puzzleState.solved[id]) return; // not a first attempt
+    // …nor is a restart of a missed one (R / 再试一次 builds a new puzzle object,
+    // so pz.rated alone forgot it): st.pr[id] is written by the first answer
+    // and is what persists it (Codex on #88)
+    const pr = store.session.puzzleState.pr;
+    if (pr && pr[id]) { pz.rated = true; return; }
     pz.rated = true;
     const st = store.session.puzzleState;
     const before = Math.round(playerRating().r);

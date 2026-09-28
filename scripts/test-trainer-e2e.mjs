@@ -290,6 +290,18 @@ const hasMateIn = (g, n) => {
   let st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
   assert(st.themes && st.themes.m1 && st.themes.m1.rating && st.themes.m1.miss === 1, "b: 主题有自己的评级，和总评级存在一起", JSON.stringify(st.themes));
   assert(st.rhist && st.rhist.length === 1, "b: 题库的题也算进总评级", st.rhist && st.rhist.length);
+  // Codex on #88: a missed puzzle restarted (R / 再试一次) is the same puzzle —
+  // only its first answer moves the ratings. Red before: every restart and miss
+  // counted again, for the theme and for the overall rating.
+  await page.keyboard.press("r");
+  await page.waitForTimeout(500);
+  await h.move(notMate.from, notMate.to);
+  await h.feedback();
+  st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  assert(st.themes.m1.miss === 1 && !(st.themes.m1.solve > 0) && st.rhist.length === 1,
+    "b: 重开再答错，主题和总评级都不再算第二次", JSON.stringify({ theme: st.themes.m1, rhist: st.rhist.length }));
+  await page.keyboard.press("r");
+  await page.waitForTimeout(500);
   const [a1, b1] = fromTo(p1.fen, p1.solution[0]);
   await h.move(a1, b1);
   fb = await h.feedback();
