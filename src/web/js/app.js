@@ -5965,10 +5965,9 @@ import { createStore } from "./store.js";
   document.getElementById("stats-clear").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearStats"), t("dlg.clearStatsTitle"),
       { ok: t("act.clear"), cancel: t("act.cancel"), danger: true }))) return;
-    Persist.remove("stats"); statsCache.v = null; // or every page goes on drawing the cached copy (B5)
-    renderStats();
-    renderAchievements();
-    renderRecordEntry();
+    // or every page goes on drawing the cached copy (B5), the result card its rating and advice (Codex #89)
+    Persist.remove("stats"); statsCache.v = null; store.session.filed = null;
+    renderStats(); renderAchievements(); renderRecordEntry(); store.commit("game", "action");
     toast(t("msg.stats.cleared"));
   };
 

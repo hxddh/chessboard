@@ -1257,6 +1257,18 @@ await scenario("你将死引擎", async () => {
   assert(ready && after.last && after.last.r === "win" && Number.isFinite(after.last.ra),
     "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
   assert(/^等级分 \d+\?（(\+\d+|±0)）/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
+  // Codex #89: clearing the statistics takes the filing off the result card too
+  await page.keyboard.press("Control+,");
+  await page.waitForTimeout(300);
+  await page.click("#stats-clear");
+  await page.waitForTimeout(300);
+  await page.click("#confirm-ok").catch(() => {});
+  await page.waitForTimeout(400);
+  await page.click("#prefs-close").catch(() => {});
+  await page.waitForTimeout(300);
+  const cleared = await page.evaluate(() => ({ stats: localStorage.getItem("chess.v1.stats"),
+    rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() }));
+  assert(!cleared.stats && cleared.rate === "", "你将死引擎：清除统计后，结果卡上的分数跟着撤掉", JSON.stringify(cleared));
   assert(!errs.length, "你将死引擎：页面没有报错", errs.join(" / "));
   await ctx.close();
 });

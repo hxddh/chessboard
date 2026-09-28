@@ -2795,6 +2795,18 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// The review curve's move axis (A4): where each move begins, and the first
+// ply of a game that starts with Black to move (Codex #89: "30…" is move 30)
+{
+  loadModule(ctx, "src/web/js/review/eval-graph.js");
+  const ticks = ctx.axisTicks;
+  const w = ticks(6, "w", (i) => 1 + Math.floor(i / 2), 1).map((x) => x.no);
+  const b = ticks(6, "b", (i) => 30 + Math.floor((i + 1) / 2), 1);
+  assert(JSON.stringify(w) === "[1,2,3]", "A4: a game from the start labels moves 1, 2, 3 (" + w + ")");
+  assert(b[0] && b[0].i === 0 && b[0].no === 30 && JSON.stringify(b.map((x) => x.no)) === "[30,31,32,33]",
+    "A4: a game starting 30… labels move 30 on its first ply, then 31 on White's (" + JSON.stringify(b) + ")");
+}
+
 // The eval bar and the one set of mistake thresholds behind it.
 {
   loadModule(ctx, "src/web/js/review.js");
