@@ -25,6 +25,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
+import { OPERA, playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 import { Chess } from "../src/web/js/chess.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -259,10 +260,12 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
     assert(hs.every((h) => h < 30), "every row is one line (" + hs.join(", ") + "px)");
     // v8-0-plan B2: the model now has the finer grades. 妙着 / 仅此一着 / 错失良机
     // get a row only when one happened (this stub engine gives one line, so
-    // none can); 最佳 · 优秀 · 良好 · 谱着 are one count line a side under the table
+    // none can). A4: 最佳 · 优秀 · 良好 · 谱着 are rows of the same table, above
+    // the marks, not a footnote line a side
     assert(!r.rows.some((x) => /妙|仅此|错失/.test(x.k)), "no praise row for a grade that did not happen");
-    const fine = r.notes.filter((n) => /最佳 \d+ · 优秀 \d+ · 良好 \d+ · 谱着 \d+/.test(n));
-    assert(fine.length === 2, "one 最佳 · 优秀 · 良好 · 谱着 count line per side (" + fine.join(" | ") + ")");
+    const fine = r.rows.filter((x) => /rv-grade/.test(x.cls) && /最佳|优秀|良好|谱着/.test(x.k));
+    assert(fine.length >= 1 && !r.notes.some((n) => /最佳 \d+/.test(n)),
+      "最佳 · 优秀 · 良好 · 谱着 are rows in the table, one column per side (" + fine.map((x) => x.k + " " + x.v.join("/")).join(" | ") + ")");
     // a seven-move game: the sample caveat is one line, said once
     const short = r.notes.filter((n) => /只分析了/.test(n));
     assert(short.length === 1, "「只分析了 N 着」 is one footnote, not one per side (" + short.length + ")");
@@ -474,7 +477,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     vars: [...document.querySelectorAll("#move-list .mlv")].map((b) => b.getAttribute("aria-label")),
     varComments: [...document.querySelectorAll("#move-list .mlvcomment")].map((c) => c.textContent),
     comments: [...document.querySelectorAll("#move-list .mlcomment")].map((c) => c.textContent),
-    lineRow: !document.getElementById("line-row").hidden,
+    // v8-0-plan A4: the row also holds 从这里续下 now; this asks about 回主线
+    lineRow: !document.getElementById("line-row").hidden && !document.getElementById("back-main").hidden,
   }));
   const fenAfter = (...sans) => { const g = new Chess(); for (const m of sans) g.move(m); return g.fen(); };
 
@@ -871,6 +875,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const box = await pgC.evaluate(() => {
       const el = document.getElementById("eval-curve");
       if (!el || el.hidden || !el.offsetParent) return null;
+      // v8-0-plan A4: the report heads the review now, the curve under it
+      el.scrollIntoView({ block: "center" });
       const r = el.getBoundingClientRect();
       return { x: r.left, y: r.top + r.height / 2, w: r.width };
     });
@@ -909,9 +915,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     }
     await pgC.close();
   }
-  // 7.8 §2:120px 高、以 50% 胜率为中线、上白下黑两块面积、悬停说「第 N 回合
-  // 着法 分值」。换一份评估:前半盘白方 +1.5,第 30 手之后黑方 −6 —— 中间
-  // 那一步是 ??,上下两块面积都得有东西。面积按画布上的像素数,不看代码。
+  // 7.8 §2:120px 高、以 50% 胜率为中线、悬停说「第 N 回合 着法 分值」。
+  // v8-0-plan A4 把两块面积改成白黑分色:曲线下是白方的颜色,曲线上是黑方的。
+  // 换一份评估:前半盘白方 +1.5,第 30 手之后黑方 −6 —— 中间那一步是 ??,
+  // 两种颜色都得有。面积按画布上的像素数,不看代码。
   {
     const { pgC } = await readyPage();
     await pgC.evaluate(() => {
@@ -931,12 +938,17 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const ctx = el.getContext("2d");
       const { width: W, height: H } = el;
       const d = ctx.getImageData(0, 0, W, H).data;
+      const css = getComputedStyle(document.documentElement);
+      const rgb = (v) => { const s = document.createElement("span"); s.style.color = v; document.body.appendChild(s);
+        const c = getComputedStyle(s).color.match(/\d+/g).map(Number); s.remove(); return c; };
+      const sw = rgb(css.getPropertyValue("--side-white")), sb = rgb(css.getPropertyValue("--side-black"));
+      const is = (k, c) => Math.abs(d[k] - c[0]) + Math.abs(d[k + 1] - c[1]) + Math.abs(d[k + 2] - c[2]) < 12;
       let white = 0, black = 0;
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        const k = (y * W + x) * 4;
-        if (Math.abs(d[k + 3] - 128) > 3) continue; // the half-alpha area fill only
-        if (y < H / 2 - 2 && d[k] > 200) white++;
-        if (y > H / 2 + 2 && d[k] < 60) black++;
+      // the opaque fills only: White's colour under the line, Black's over it
+      for (let k = 0; k < d.length; k += 4) {
+        if (d[k + 3] < 250) continue;
+        if (is(k, sw)) white++;
+        else if (is(k, sb)) black++;
       }
       const marks = [...document.querySelectorAll(".move-list .mvtag")].map((a) => a.textContent.trim());
       return { h: el.getBoundingClientRect().height, white, black, marks };
@@ -944,8 +956,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     assert(g.marks.includes("??"), "这一盘棋里有一步 ?? (" + g.marks.join(" ") + ")");
     assert(g.h >= 120, "局势曲线至少 120px 高 (" + g.h + ")");
     assert(g.white > 0 && g.black > 0,
-      "……中线上方白方一块、下方黑方一块,都不是空的 (白 " + g.white + " px / 黑 " + g.black + " px)");
+      "……白方的颜色、黑方的颜色都有一块,都不是空的 (白 " + g.white + " px / 黑 " + g.black + " px)");
     const box = await pgC.evaluate(() => {
+      document.getElementById("eval-curve").scrollIntoView({ block: "center" });
       const r = document.getElementById("eval-curve").getBoundingClientRect();
       return { x: r.left, y: r.top + r.height / 2, w: r.width };
     });
@@ -1197,6 +1210,324 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     "加深时停止：提示说分析完成、加深被停，不说「保留前 N 步」 (" + stopped.toast + ")");
   assert(errsS.length === 0, "加深时停止：没有页面异常 — " + errsS.join(" / "));
   await ctxS.close();
+}
+
+// --- v8-0-plan A4：复盘做成一张「对局体检报告」 -----------------------------
+// Morphy's Opera game with a fixed engine story (scripts/lib/opera-fixture.mjs):
+// marks on both sides, and 16.Qb8+ graded 妙着. Top: both accuracies and the
+// grade counts; then the win-rate graph, large, White and Black split, with
+// axes, its mistake points snapping a click; the mark on the board; the move
+// list coloured by grade; three key moments a side to step through, each with
+// 为什么 / 再试一次 / 看引擎线; 从错误中学 chaining every ? / ?? through
+// 再试一次; 重下 renamed and moved away from 再试一次; no dashed placeholder
+// cards; the eval bar level with the board's frame; nothing cut off in three
+// languages.
+{
+  const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await ctxA.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false,
+      appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett", view: "play" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await ctxA.newPage();
+  const errsA = [];
+  pg.on("pageerror", (e) => errsA.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await playOpera(pg);
+  await analyseOpera(pg);
+  const goto = async (n) => {
+    await pg.evaluate((k) => {
+      document.getElementById("rep-start").click();
+      for (let i = 0; i < k; i++) document.getElementById("rep-next").click();
+    }, n);
+    await pg.waitForTimeout(250);
+  };
+  const vi = () => pg.evaluate(() => Number(document.getElementById("eval-curve").getAttribute("aria-valuenow")));
+  const rec = await pg.evaluate(() => {
+    const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+    const e = kept && kept.list && kept.list[kept.list.length - 1];
+    return e ? { tags: e.an.tags, grades: e.an.grades } : null;
+  });
+  assert(!!rec && rec.grades.length === OPERA.length && rec.grades.includes("brilliant") && rec.tags.includes("??"),
+    "A4 夹具：整盘分级，里面有妙着和 ??（" + (rec && rec.grades.join(",")) + "）");
+  const G = rec ? rec.grades : [];
+  const T = rec ? rec.tags : [];
+
+  // (1) the report heads the review: accuracies, then every grade counted
+  const top = await pg.evaluate(() => {
+    const wrap = document.getElementById("eval-wrap");
+    const first = [...wrap.children].find((c) => !c.hidden && c.offsetParent);
+    const rows = [...document.querySelectorAll("#review-body .rv-table tbody tr")].map((tr) => ({
+      cls: tr.className, k: tr.querySelector("th").textContent, v: [...tr.querySelectorAll("td")].map((td) => td.textContent) }));
+    return { first: first && first.id, card: document.getElementById("report-card").getBoundingClientRect().top,
+      curve: document.getElementById("eval-curve").getBoundingClientRect().top,
+      nums: [...document.querySelectorAll("#acc-line .acc-num")].map((e) => e.textContent), rows };
+  });
+  assert(top.first === "report-card" && top.card < top.curve,
+    "A4：报告在复盘区最上面 —— 精准度与分级计数在胜率图之上（首块 " + top.first + "）");
+  assert(top.nums.length === 2 && top.nums.every((n) => /^\d+%$/.test(n)), "A4：顶部是双方精准度（" + top.nums.join(" / ") + "）");
+  {
+    const count = (side, g) => G.filter((x, i) => x === g && (i % 2 === 0) === (side === "w")).length;
+    const byLabel = { "最佳": "best", "优秀": "excellent", "良好": "good", "谱着": "book", "妙着": "brilliant" };
+    const bad = [];
+    for (const [lab, g] of Object.entries(byLabel)) {
+      const row = top.rows.find((r) => r.k.includes(lab));
+      const want = [count("w", g), count("b", g)];
+      if (!(want[0] + want[1])) continue;
+      if (!row || row.v[0] !== String(want[0]) || row.v[1] !== String(want[1])) bad.push(lab + " " + JSON.stringify(row && row.v) + "≠" + want);
+    }
+    assert(bad.length === 0, "A4：分级计数是表里的行，每方一列，数目与分析记录一致" + (bad.length ? " — " + bad.join("; ") : ""));
+  }
+
+  // (2) the graph: large, axes, White below the line and Black above it
+  const graph = await pg.evaluate(() => {
+    const cv = document.getElementById("eval-curve");
+    cv.scrollIntoView({ block: "center" });
+    const n = Number(cv.getAttribute("aria-valuemax"));
+    // White is winning by position 26 (under the line: White's colour);
+    // position 2 is level, and a quarter down from the top is over the line
+    const fx = (i) => (4 + (i / n) * (cv.clientWidth - 8)) / cv.clientWidth;
+    const ys = [...document.querySelectorAll("#curve-y span")].map((e) => e.textContent.trim());
+    const xs = [...document.querySelectorAll("#curve-x span")].map((e) => e.textContent.trim());
+    const ctx = cv.getContext("2d");
+    const px = (fx, fy) => [...ctx.getImageData(Math.round(cv.width * fx), Math.round(cv.height * fy), 1, 1).data].slice(0, 3);
+    const rgb = (v) => { const d = document.createElement("span"); d.style.color = v; document.body.appendChild(d);
+      const c = getComputedStyle(d).color.match(/\d+/g).map(Number); d.remove(); return c; };
+    const css = getComputedStyle(document.documentElement);
+    return { h: cv.clientHeight, ys, xs, low: px(fx(26), 0.9), high: px(fx(2), 0.25),
+      white: rgb(css.getPropertyValue("--side-white")), black: rgb(css.getPropertyValue("--side-black")) };
+  });
+  const close = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
+  assert(graph.h >= 160, "A4：胜率图够大（" + graph.h + "px ≥ 160）");
+  assert(graph.ys.join("|") === "100%|50%|0%" && graph.xs.length >= 3 && graph.xs.every((x) => /^\d+$/.test(x)),
+    "A4：有纵轴（" + graph.ys.join(" ") + "）和回合数横轴（" + graph.xs.join(" ") + "）");
+  assert(close(graph.low, graph.white, 40) && close(graph.high, graph.black, 40),
+    "A4：白黑分色 —— 曲线下是白方的颜色，上面是黑方的（" + graph.low + " / " + graph.high + "）");
+
+  // (3) a click near a mistake point lands on that move, not on a neighbour
+  {
+    const worst = T.indexOf("??");
+    const p = await pg.evaluate((i) => {
+      const cv = document.getElementById("eval-curve");
+      cv.scrollIntoView({ block: "center" });
+      const r = cv.getBoundingClientRect();
+      const n = Number(cv.getAttribute("aria-valuemax"));
+      const step = (r.width - 8) / n;
+      // the dot is at position i + 1; 0.6 of a step to the right rounds to i + 2
+      return { x: r.left + 4 + (i + 1 + 0.6) * step, y: r.top + r.height * 0.1, step };
+    }, worst);
+    await pg.mouse.click(p.x, p.y);
+    await pg.waitForTimeout(250);
+    const at = await vi();
+    assert(p.step * 0.6 < 10 && at === worst + 1,
+      "A4：点在失着点旁边 " + Math.round(p.step * 0.6) + "px，也跳到那一步之后（" + at + " = " + (worst + 1) + "）");
+  }
+
+  // (4) the mark on the board: !! for the brilliancy, in the praise colour
+  {
+    const bril = G.indexOf("brilliant");
+    await goto(bril + 1);
+    const b = await pg.evaluate((sq) => {
+      const cv = document.getElementById("board");
+      const step = cv.width / 8;
+      const f = sq.charCodeAt(0) - 97, rk = 8 - Number(sq[1]);
+      const r = step * 0.19;
+      const cx = (f + 1) * step - r - step * 0.03, cy = rk * step + r + step * 0.03;
+      const d = cv.getContext("2d").getImageData(Math.round(cx - r * 0.78), Math.round(cy), 1, 1).data;
+      const s = document.createElement("span");
+      s.style.color = getComputedStyle(document.documentElement).getPropertyValue("--judge-good");
+      document.body.appendChild(s);
+      const want = (getComputedStyle(s).color.match(/\d+/g) || []).map(Number);
+      s.remove();
+      return { got: [d[0], d[1], d[2]], want, token: getComputedStyle(document.documentElement).getPropertyValue("--judge-good").trim() };
+    }, "b8");
+    assert(!!b.token && close(b.got, b.want, 12), "A4：妙着的 !! 画在目标格角上，用 --judge-good（" + b.got + " vs " + b.want + "）");
+  }
+
+  // (5) the move list, coloured by grade
+  {
+    const ml = await pg.evaluate(() => {
+      const css = getComputedStyle(document.documentElement);
+      const rgb = (v) => { const d = document.createElement("span"); d.style.color = v; document.body.appendChild(d);
+        const c = getComputedStyle(d).color; d.remove(); return c; };
+      const one = (g) => { const e = document.querySelector("#move-list .mlmove.g-" + g); return e ? getComputedStyle(e).color : null; };
+      return { bad: one("blunder"), good: one("brilliant"), best: one("best"),
+        wantBad: rgb(css.getPropertyValue("--judge-bad")), wantGood: rgb(css.getPropertyValue("--judge-good")),
+        n: document.querySelectorAll("#move-list .mlmove[class*=' g-']").length };
+    });
+    assert(ml.n === OPERA.length, "A4：棋谱里每一着都带分级（" + ml.n + " / " + OPERA.length + "）");
+    assert(!!ml.bad && ml.bad === ml.wantBad && ml.good === ml.wantGood && ml.best !== ml.wantBad,
+      "A4：棋谱按分级着色 —— ?? 是 --judge-bad，!! 是 --judge-good（" + [ml.bad, ml.good, ml.best].join(" / ") + "）");
+  }
+
+  // (6) key moments: three a side, stepped through, each with its three actions
+  {
+    const km = () => pg.evaluate(() => {
+      const box = document.getElementById("rv-km");
+      if (!box || box.hidden) return null;
+      return { pos: (box.querySelector(".km-pos") || {}).textContent, ply: Number((box.querySelector(".km-card") || { dataset: {} }).dataset.ply),
+        acts: [...box.querySelectorAll(".km-acts button")].filter((b) => !b.hidden).map((b) => b.dataset.act),
+        why: (box.querySelector(".km-why:not([hidden])") || {}).textContent || "" };
+    });
+    // back to the first moment with the card's own key
+    for (let i = 0; i < 6 && await pg.evaluate(() => { const b = document.querySelector("#rv-km .km-prev"); return !!b && !b.disabled; }); i++) {
+      await pg.click("#rv-km .km-prev");
+      await pg.waitForTimeout(150);
+    }
+    const k0 = await km();
+    assert(!!k0 && /^1 \/ [2-6]$/.test(k0.pos || ""), "A4：关键时刻可以翻看（" + (k0 && k0.pos) + "）");
+    const total = k0 ? Number(k0.pos.split("/")[1]) : 0;
+    const seen = [];
+    for (let i = 0; i < total; i++) {
+      if (i > 0) { await pg.click("#rv-km .km-next"); await pg.waitForTimeout(250); }
+      const k = await km();
+      seen.push(k.ply);
+      const at = await vi();
+      assert(at === k.ply + 1, "A4：翻到第 " + (i + 1) + " 个关键时刻，棋盘停在那一步之后（" + at + " = " + (k.ply + 1) + "）");
+    }
+    // (without the card there is nothing further to step through)
+    if (k0) {
+      const wSide = seen.filter((p) => p % 2 === 0).length, bSide = seen.filter((p) => p % 2 === 1).length;
+      assert(wSide <= 3 && bSide <= 3 && wSide >= 1 && bSide >= 1 && new Set(seen).size === seen.length,
+        "A4：每方最多 3 个，两方都有（白 " + wSide + " · 黑 " + bSide + "）");
+      const worst = T.indexOf("??");
+      for (let i = 0; i < total && (await km()).ply !== worst; i++) { await pg.click("#rv-km .km-prev"); await pg.waitForTimeout(150); }
+      const k = await km();
+      assert(k.ply === worst && ["why", "retry", "lines"].every((a) => k.acts.includes(a)),
+        "A4：每个关键时刻都有「为什么」「再试一次」「看引擎线」（" + k.acts.join(", ") + "）");
+      await pg.click('#rv-km button[data-act="why"]');
+      await pg.waitForTimeout(200);
+      const why = (await km()).why;
+      assert(/\d+%/.test(why) && why.length > 16, "A4：「为什么」说清这一着让胜率掉了多少，再给出教练的解释（" + why + "）");
+      await pg.click('#rv-km button[data-act="lines"]');
+      await pg.waitForTimeout(300);
+      const lines = await pg.evaluate(() => ({ pv: !document.getElementById("pv-line").hidden,
+        rows: document.querySelectorAll("#pv-line .pv-row").length }));
+      const at = await vi();
+      assert(at === worst && lines.pv && lines.rows >= 1,
+        "A4：「看引擎线」停在失着之前的局面，引擎线就在眼前（" + at + "，" + lines.rows + " 行）");
+      await goto(worst + 1);
+      await pg.click('#rv-km button[data-act="retry"]');
+      await pg.waitForTimeout(300);
+      const rt = await pg.evaluate(() => ({ shown: !document.getElementById("retry-box").hidden, ask: (document.querySelector("#retry-box .rt-ask") || {}).textContent }));
+      assert(rt.shown && /再试一次/.test(rt.ask || ""), "A4：「再试一次」从这个关键时刻开始（" + rt.ask + "）");
+      await pg.click("#rt-back").catch(() => {});
+      await pg.waitForTimeout(250);
+    }
+  }
+
+  // (7) 从错误中学: every ? and ?? of this game, one after another, through 再试一次
+  {
+    const plies = T.map((t, i) => (t === "?" || t === "??" ? i : -1)).filter((i) => i >= 0);
+    const learn = await pg.evaluate(() => { const b = document.getElementById("rv-learn"); return b && b.offsetParent ? b.textContent : null; });
+    assert(!!learn && learn.includes(String(plies.length)), "A4：「从错误中学」写着本局有几处可练（" + learn + " · " + plies.length + "）");
+    if (learn) {
+      await pg.click("#rv-learn");
+      await pg.waitForTimeout(300);
+    }
+    const visited = [];
+    for (let k = 0; learn && k < plies.length; k++) {
+      const st = await pg.evaluate(() => ({ prog: (document.querySelector("#retry-box .rt-prog") || {}).textContent || "",
+        at: Number(document.getElementById("eval-curve").getAttribute("aria-valuenow")) }));
+      visited.push(st.at);
+      assert(st.prog.includes((k + 1) + " / " + plies.length), "A4：从错误中学第 " + (k + 1) + " 题，进度写着（" + st.prog + "）");
+      // the same mistake again: judged at once, no engine needed
+      const again = new Chess();
+      for (const s of OPERA.slice(0, st.at)) again.move(s);
+      const m = again.move(OPERA[st.at]);
+      if (!m) break;
+      for (const sq of [m.from, m.to]) {
+        const c = await pg.evaluate((s) => { const r = document.getElementById("board").getBoundingClientRect();
+          return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) }; }, sq);
+        await pg.mouse.click(c.x, c.y);
+        await pg.waitForTimeout(80);
+      }
+      await pg.waitForTimeout(200);
+      const v = await pg.evaluate(() => (document.querySelector("#retry-box .rt-verdict") || {}).className || "");
+      assert(/is-wrong/.test(v), "A4：又走了一遍原来的失着，判「不对」（" + v + "）");
+      const next = await pg.evaluate(() => { const b = document.getElementById("rt-next"); return b ? b.textContent : null; });
+      assert(!!next, "A4：判完有「下一个」（" + next + "）");
+      if (!next) break;
+      await pg.click("#rt-next");
+      await pg.waitForTimeout(300);
+    }
+    assert(JSON.stringify(visited) === JSON.stringify(plies), "A4：按顺序走遍本局每一处 ? 与 ??（" + visited + " = " + plies + "）");
+    const end = await pg.evaluate(() => ({ retry: !document.getElementById("retry-box").hidden, toast: document.getElementById("toast").textContent }));
+    assert(!end.retry && /0 \/ \d/.test(end.toast), "A4：练完收尾，说清找对了几处（" + end.toast + "）");
+  }
+
+  // (8) 重下 is renamed and stands apart from 再试一次
+  {
+    await goto(10);
+    const r = await pg.evaluate(() => {
+      const b = document.getElementById("retry-here");
+      const tries = [...document.querySelectorAll("button")].filter((x) => x.offsetParent && /再试一次/.test(x.textContent));
+      const rb = b.getBoundingClientRect();
+      const gap = Math.min(...tries.map((x) => Math.abs(x.getBoundingClientRect().top - rb.top)));
+      return { text: b.textContent.trim(), shown: !!b.offsetParent, inReview: !!b.closest("#review-actions"),
+        sibling: [...b.parentElement.children].some((x) => /再试一次/.test(x.textContent)), gap, tries: tries.length };
+    });
+    assert(r.shown && r.text !== "重下" && !/再|重/.test(r.text), "A4：「重下」改了名（「" + r.text + "」）");
+    assert(!r.inReview && !r.sibling && (r.tries === 0 || r.gap > 40),
+      "A4：它不在复盘那排，也不和「再试一次」挨着（相距 " + r.gap + "px）");
+  }
+
+  // (9) no dashed placeholder cards in the review
+  {
+    const dashed = await pg.evaluate(() => [...document.querySelectorAll("#eval-wrap *, #review-actions *")]
+      .filter((e) => e.offsetParent && /dashed/.test(getComputedStyle(e).borderTopStyle + getComputedStyle(e).borderLeftStyle))
+      .map((e) => e.className || e.tagName));
+    assert(dashed.length === 0, "A4：复盘里没有虚线占位卡片" + (dashed.length ? " — " + dashed.join(", ") : ""));
+  }
+
+  // (10) the eval bar sits level with the board's frame, flat and framed
+  for (const frame of ["flat", "frame"]) {
+    await pg.evaluate((f) => { const b = document.querySelector('#frame-seg button[data-frame="' + f + '"]'); if (b) b.click(); }, frame);
+    await pg.waitForTimeout(400);
+    const g = await pg.evaluate(() => {
+      const r = (id) => document.getElementById(id).getBoundingClientRect();
+      const w = r("board-wrap"), b = r("eval-bar"), c = r("board");
+      return { wt: w.top, wb: w.bottom, bt: b.top, bb: b.bottom, br: b.right, cl: c.left };
+    });
+    assert(Math.abs(g.bt - g.wt) <= 1 && Math.abs(g.bb - g.wb) <= 1 && g.br <= g.cl + 1,
+      "A4：评估条与棋盘外框对齐（" + frame + "：框 " + Math.round(g.wt) + "–" + Math.round(g.wb) + "，条 " + Math.round(g.bt) + "–" + Math.round(g.bb) + "），不压在格子上");
+  }
+  await pg.evaluate(() => { const b = document.querySelector('#frame-seg button[data-frame="flat"]'); if (b) b.click(); });
+
+  // (11) nothing in the report cut off, in any of the three languages
+  for (const lang of ["zh-CN", "en", "ja"]) {
+    await pg.evaluate((l) => document.querySelector('#lang-seg button[data-lang="' + l + '"]').click(), lang);
+    await pg.waitForTimeout(700);
+    await goto(T.indexOf("??") + 1);
+    await pg.click('#rv-km button[data-act="why"]').catch(() => {});
+    await pg.waitForTimeout(200);
+    const cut = await pg.evaluate(() => {
+      const side = document.getElementById("side").getBoundingClientRect();
+      const out = [];
+      for (const e of document.querySelectorAll("#eval-wrap *, #line-row *, #review-actions *")) {
+        if (!e.offsetParent || e.tagName === "CANVAS") continue;
+        const r = e.getBoundingClientRect();
+        const cs = getComputedStyle(e);
+        if (r.right > side.right + 1) out.push("past:" + (e.id || e.className) + ":" + e.textContent.slice(0, 20));
+        else if (e.scrollWidth > e.clientWidth + 1 && cs.overflowX !== "visible" && cs.overflowX !== "auto" && !e.closest(".pv-row")) {
+          out.push("clip:" + (e.id || e.className) + ":" + e.textContent.slice(0, 20));
+        }
+        // a button is one line: the label is the thing, never half of it
+        if (e.tagName === "BUTTON" && !e.childElementCount && e.closest("#rv-km, #line-row, #review-actions, #rv-learn-row")) {
+          const range = document.createRange();
+          range.selectNodeContents(e);
+          const lines = new Set([...range.getClientRects()].map((x) => Math.round(x.top))).size;
+          if (lines > 1) out.push("wrap:" + e.textContent.trim());
+        }
+      }
+      return out;
+    });
+    assert(cut.length === 0, "A4：" + lang + " 下复盘报告没有截断或折行" + (cut.length ? " — " + cut.slice(0, 5).join(" / ") : ""));
+  }
+  assert(errsA.length === 0, "A4：全程没有页面异常 — " + errsA.join(" / "));
+  await ctxA.close();
 }
 
 await browser.close();

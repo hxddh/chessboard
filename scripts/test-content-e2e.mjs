@@ -96,6 +96,10 @@ const occupied = () => page.evaluate(() => {
     const d = g.getImageData(x, y, w, w).data;
     let lo = 255, hi = 0;
     for (let i = 0; i < d.length; i += 4) {
+      // v8-0-plan A5: the top-right corner carries a move's ✓ / ✗ badge — a
+      // mark on the square, not a man on it
+      const px = (i / 4) % w, py = Math.floor(i / 4 / w);
+      if (px > w * 0.5 && py < w * 0.5) continue;
       const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
       if (l < lo) lo = l; if (l > hi) hi = l;
     }
@@ -536,6 +540,9 @@ if (hasTab && REAL.length) {
       const d = g.getImageData(x, y, w, w).data;
       let lo = 255, hi = 0;
       for (let i = 0; i < d.length; i += 4) {
+        // v8-0-plan A5: the top-right corner is a move's ✓ / ✗ badge, not a man
+        const px = (i / 4) % w, py = Math.floor(i / 4 / w);
+        if (px > w * 0.5 && py < w * 0.5) continue;
         const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
         if (l < lo) lo = l; if (l > hi) hi = l;
       }
@@ -787,6 +794,9 @@ if (hasTab && REAL.length) {
       const d = g.getImageData(x, y, w, w).data;
       let lo = 255, hi = 0;
       for (let i = 0; i < d.length; i += 4) {
+        // v8-0-plan A5: the top-right corner is a move's ✓ / ✗ badge, not a man
+        const px = (i / 4) % w, py = Math.floor(i / 4 / w);
+        if (px > w * 0.5 && py < w * 0.5) continue;
         const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
         if (l < lo) lo = l; if (l > hi) hi = l;
       }
@@ -969,6 +979,9 @@ if (hasTab && REAL.length) {
       const d = g.getImageData(x, y, w, w).data;
       let lo = 255, hi = 0;
       for (let i = 0; i < d.length; i += 4) {
+        // v8-0-plan A5: the top-right corner is a move's ✓ / ✗ badge, not a man
+        const px = (i / 4) % w, py = Math.floor(i / 4 / w);
+        if (px > w * 0.5 && py < w * 0.5) continue;
         const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
         if (l < lo) lo = l; if (l > hi) hi = l;
       }
@@ -1024,6 +1037,9 @@ if (hasTab && REAL.length) {
       const d = g.getImageData(x, y, w, w).data;
       let lo = 255, hi = 0;
       for (let i = 0; i < d.length; i += 4) {
+        // v8-0-plan A5: the top-right corner is a move's ✓ / ✗ badge, not a man
+        const px = (i / 4) % w, py = Math.floor(i / 4 / w);
+        if (px > w * 0.5 && py < w * 0.5) continue;
         const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
         if (l < lo) lo = l; if (l > hi) hi = l;
       }

@@ -33,13 +33,14 @@ import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
-import { ChessReviewGrade as Grade } from "./review-grade.js";
 import { createAnalysis } from "./review/analysis.js";
 import { createBoardMarks } from "./review/board-marks.js";
 import { createEvalGraph } from "./review/eval-graph.js";
 import { createLines } from "./review/lines.js";
 import { createReviewPanel } from "./review/panel.js";
 import { createRetry } from "./review/retry.js";
+import { createMomentsLazy } from "./review/moments-lazy.js";
+import { createGameEnd } from "./game-end.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
 import { watchPlayLayout } from "./play-layout.js";
@@ -57,10 +58,10 @@ import { createStore } from "./store.js";
    * purpose, and the modules on it are the object identities the app itself
    * holds, so patching a method here is patching the app's engine.
    */
-  // `shapes`: what the board is drawing as arrows and circles right now —
-  // the player's, the premove's and the engine's (7.8 §2)
-  // `board`: the renderer's counters — how often a piece decode repainted (v8-0-plan F5)
-  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats() };
+  // `shapes`: the arrows and circles the board draws now — the player's, the premove's, the engine's (7.8 §2);
+  // `board`: the renderer's counters (v8-0-plan F5); `puzzle`: the FEN of the puzzle on the board (A5)
+  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(),
+    puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null) };
 
   const Host = ChessHost;
   const Review = ChessReview;
@@ -1052,7 +1053,7 @@ import { createStore } from "./store.js";
       annotation: annotationAt(store.game.viewIndex, last),
       // the node's own arrows and circles, plus the one being drawn
       shapes: shapesToDraw(),
-      stars: [],
+      stars: [], result: resultBadges(), // v8-0-plan A5: the ending on the kings
       cursor: cursorSquare(),
       // the drag is part of the picture, not a thing pushed in beforehand
       drag: store.ui.dragging,
@@ -1228,7 +1229,7 @@ import { createStore } from "./store.js";
    * @param {string} msg
    * @param {"ok"|"fix"|"fault"} [tier]
    */
-  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0, ach: 6500 }; // ach: an unlocked badge, with its picture (v8-0-plan A5)
 
   /**
    * Where a toast stands: never on the board (7.7 §1d).
@@ -1317,7 +1318,7 @@ import { createStore } from "./store.js";
     el.replaceChildren();
     const text = document.createElement("span");
     text.textContent = msg;
-    el.appendChild(text);
+    el.append(...(action && action.icon ? [Icons.icon(action.icon, "toast-ic")] : []), text);
     // A fault does not leave on its own, which is right — a fault that
     // disappears is a fault nobody was told about. What was wrong is the way
     // out: the docblock above says it "gets a close button", and it never had
@@ -1344,7 +1345,7 @@ import { createStore } from "./store.js";
       close.onclick = dismissToast;
       el.appendChild(close);
     }
-    el.classList.remove("t-ok", "t-fix", "t-fault");
+    el.classList.remove("t-ok", "t-fix", "t-fault", "t-ach");
     el.classList.add("t-" + kind);
     placeToast(el);
     el.classList.add("show");
@@ -2178,21 +2179,24 @@ import { createStore } from "./store.js";
   const BoardMarks = createBoardMarks({
     store, viewGame, isLive, appGameOver, analysisFor, reviewLines, softFiltered,
   });
-  const { engineArrows, bestArrowAt, annotationAt } = BoardMarks;
+  const { engineArrows, bestArrowAt, annotationAt, lineMarks } = BoardMarks;
 
   // v8-0-plan F4: why a ? or ?? was a mistake, and 再试一次 (7.8 §3), live
   // in review/retry.js
   const Retry = createRetry({
     doc: document, store, t, tf, sideName, analysisFor, sanHistory, gameAt, startFen, boardMoveNo, writeSan,
     setViewIndex, inModal, sync, draw, kingSquare, cursorSquare, bestArrowAt, choosePromotion,
-    selectSquare, clearSelection, moveSound, evalScalar, SCAN_BUDGET,
+    selectSquare, clearSelection, moveSound, evalScalar, SCAN_BUDGET, toast,
   });
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
+  // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js, a chunk
+  const Moments = createMomentsLazy({ doc: document, store, t, tf, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
+    setViewIndex, writeSan, inModal, Retry });
 
   // v8-0-plan F4: the eval gauge, the curve and the marks' colours live in
   // review/eval-graph.js
   const EvalGraph = createEvalGraph({
-    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo,
+    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen,
   });
   const { judgeColours, drawEvalBar, drawEvalCurve } = EvalGraph;
 
@@ -2203,10 +2207,18 @@ import { createStore } from "./store.js";
     doc: document, store, t, tf, sideName, DIFF_NAMES, analysisFor, sanHistory, startFen, gameAt, viewGame, boardMoveNo,
     statusText, openingFor, avail, inModal, setText, setViewIndex, toast, savedToast, pgnFileName,
     deskHead, lineRows, paintLineRow, reviewLines, savePvAsVariation, lockPgnEdits,
-    drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList,
+    drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList, renderMoments: Moments.render,
     boardDrillSource, saveMines, savePuzzleState,
   });
   const { setAnalyzeUI, renderReview, exportReport } = ReviewPanel;
+
+  // v8-0-plan F4 (M4): how the game ended and the result card live in
+  // game-end.js
+  const GameEnd = createGameEnd({
+    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
+    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare,
+  });
+  const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;
 
   // --- stats (AI-mode finished games) ---
   /**
@@ -2837,9 +2849,9 @@ import { createStore } from "./store.js";
     for (const r of res) if (r.unlocked) store.session.achSeen.add(r.ach.id);
     if (fresh.length) {
       Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
-      // one toast per unlock, staggered so several don't collide
-      // (the badge's picture is on the record page; a toast is words — 7.7 §7)
-      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
+      // one toast per unlock, each shown for its whole life before the next
+      // (v8-0-plan A5: with the badge's picture, and long enough to read)
+      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
     }
     renderAchievements();
     renderRecordEntry();
@@ -2981,18 +2993,13 @@ import { createStore } from "./store.js";
     const curId = curNodeId();
     // the analysis describes the line `game` stands on: its tags belong to
     // those nodes, on the mainline or off it
-    const a = analysisFor();
-    const tagOf = new Map();
-    // v8-0-plan B2: a graded pass also hangs !! (妙着) and ! (仅此一着) off a move
-    if (a && a.tags) store.game.line.forEach((id, k) => {
-      const mk = k > 0 ? a.tags[k - 1] || (a.v === 2 && a.grades && Grade.GLYPH[a.grades[k - 1]]) : null;
-      if (mk) tagOf.set(id, mk);
-    });
+    // v8-0-plan B2: a graded pass also hangs !! and ! off a move; A4: every move carries its grade
+    const { tagOf, gradeOf } = lineMarks(store.game.line);
     const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
     // the current move carries the menu handle, whose name is a translated
     // string — so its signature carries the language, or a switch to English
     // kept the Chinese 「着法操作」 on it until the cursor moved (7.6)
-    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" + store.ui.langId : "");
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (gradeOf.get(n.id) || "") + (n.id === curId ? "*" + store.ui.langId : "");
     // a variation's signature is the whole of what it shows, nested included
     const lineSig = (parent, first) => {
       let out = "";
@@ -3041,7 +3048,7 @@ import { createStore } from "./store.js";
       const b = document.createElement("button");
       b.type = "button";
       b.dataset.node = String(n.id);
-      b.className = cls + (n.id === curId ? " current" : "");
+      b.className = cls + (n.id === curId ? " current" : "") + (gradeOf.has(n.id) ? " g-" + gradeOf.get(n.id) : "");
       // Figurine notation: the piece letter becomes the piece. `Nf3` is
       // English algebraic — the N is short for Knight, which is not a word
       // two of this app's three languages use. The vector set is already
@@ -3410,83 +3417,6 @@ import { createStore } from "./store.js";
   }
 
   /**
-   * How the live game ended, or null while it is still going (7.7 §4).
-   * Only the two game modes have an ending to report; the trainers have
-   * their own cards.
-   */
-  function gameEnding() {
-    const mode = store.session.mode;
-    if ((mode !== "ai" && mode !== "pvp") || store.session.editor) return null;
-    if (!appGameOver() && !resultFromFile()) return null;
-    const token = gameResultToken();
-    const winner = token === "1-0" ? "w" : token === "0-1" ? "b" : null;
-    let reason;
-    if (resultFromFile()) reason = t("go.r.file");
-    else if (game.in_checkmate()) reason = t("go.r.mate");
-    else if (store.game.flagFall) reason = timeoutIsDraw() ? t("go.r.flagDraw") : tf("go.r.flag", [sideName(store.game.flagFall)]);
-    else if (store.game.resigned) reason = tf("go.r.resign", [sideName(store.game.resigned)]);
-    else if (store.game.drawAgreed) reason = t("go.r.agreed");
-    else if (store.game.drawClaimed) reason = t(store.game.drawClaimed === "threefold" ? "go.r.threefold" : "go.r.fifty");
-    else if (game.in_stalemate()) reason = t("go.r.stalemate");
-    else if (game.insufficient_material()) reason = t("go.r.insufficient");
-    else reason = t(autoDrawReason() === "fivefold" ? "go.r.fivefold" : "go.r.seventyfive");
-    return { token, winner, reason, sig: sanHistory().length + "|" + game.fen() + "|" + token };
-  }
-
-  /**
-   * The result card (7.7, v7-7-plan §4): the result in large type, how it
-   * came about, and what to do next — 分析这盘 filled while the game is not
-   * analysed, 再来一盘 and 换个对手 beside it. It replaces the toast that
-   * used to be the whole of the ending. Non-modal and in the panel, so it can
-   * never cover the board; ✕ puts it away for this ending.
-   */
-  function renderGameOverCard() {
-    const card = el("go-card");
-    if (!card) return;
-    const end = gameEnding();
-    // An ending's ✕ and its announcement belong to that ending. The signature
-    // (plies, final FEN, result) cannot tell a replay of the same short mate
-    // from the one already put away (Codex on #82), so whenever the game is
-    // not over — every new game, undo, or load of an unfinished one passes
-    // through that — both are forgotten.
-    if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; }
-    const show = !!end && store.session.goDismissed !== end.sig;
-    card.hidden = !show;
-    if (!show) return;
-    const mode = store.session.mode;
-    const mine = mode === "ai" ? store.session.humanColor : null;
-    const result = !end.winner ? t("go.draw")
-      : mine ? t(end.winner === mine ? "go.youWin" : "go.youLose")
-      : t(end.winner === "w" ? "go.whiteWins" : "go.blackWins");
-    // The card lives in the panel. With the panel shut it is off-screen, the
-    // ending no longer toasts, and #status is for screen readers only — so a
-    // mate would pass with nothing on screen but the strips' 1 / 0 (Codex on
-    // #82). Say it once, beside the board (§1d keeps toasts off it), for a
-    // game that ended here rather than one opened already finished.
-    if (store.session.goAnnounced !== end.sig) {
-      store.session.goAnnounced = end.sig;
-      if (!isPanelOpen() && !resultFromFile()) toast(result + " · " + end.reason, "fix");
-    }
-    setText(el("go-result"), result);
-    setText(el("go-reason"), end.reason);
-    setText(el("go-mark"), end.token === "1/2-1/2" ? "½–½" : end.token.replace("-", "–"));
-    card.classList.toggle("won", !!end.winner && (!mine || end.winner === mine));
-    const engineDown = !ChessEngine || !!store.session.engineDown;
-    // A position loaded already over (a mated FEN, a result-only PGN) has an
-    // ending but no moves, and analyzeGame() refuses an empty history — the
-    // review row's 分析 already asks for one (Codex on #82)
-    const canAnalyse = !engineDown && sanHistory().length > 0 && !analysisFor() && !store.session.analyzing;
-    avail(el("go-analyse"), canAnalyse);
-    avail(el("go-switch"), mode === "ai");
-    // v8-0-plan §5: a finished game from the library or a file is a record,
-    // and 再来一盘 of a game you did not play is not a rematch
-    avail(el("go-again"), !store.game.imported);
-    // …which can leave the row empty (an analysed library game)
-    const acts = card.querySelector(".go-acts");
-    if (acts) acts.hidden = ![...acts.children].some((b) => !b.hidden);
-  }
-
-  /**
    * The sound one move makes.
    *
    * Castling and promotion are not ordinary placements: castling moves two
@@ -3698,12 +3628,12 @@ import { createStore } from "./store.js";
     setDisabled(el("rep-prev"), !back);
     setDisabled(el("rep-next"), !fwd);
     setDisabled(el("rep-end"), !fwd);
-    // "resume from here" is a replay action, and it only exists off the live
-    // position — where it used to sit greyed out with a tooltip explaining
-    // that it only exists off the live position
-    avail(el("retry-here"), !isLive());
-    // 「回主线」 exists exactly while the line is a variation (Q2.3)
-    avail(el("line-row"), !inModal() && h.length > 0 && !onMainline());
+    // 从这里续下 is a replay action (v8-0-plan A4 moved it into this row): it
+    // only exists off the live position, behind the 复盘 key where the review
+    // is; 「回主线」 exists exactly while the line is a variation (Q2.3)
+    avail(el("retry-here"), !inModal() && !isLive() && !(reviewOptional() && !store.ui.reviewOpen));
+    avail(el("back-main"), !inModal() && h.length > 0 && !onMainline());
+    avail(el("line-row"), !el("retry-here").hidden || !el("back-main").hidden);
   }
 
   /** Everything you can do to the game in progress. */
@@ -3833,7 +3763,7 @@ import { createStore } from "./store.js";
     const over = isLive() && appGameOver();
     const unanalysed = !analysisFor() && !store.session.analyzing;
     const end = gameEnding();
-    const card = !!end && store.session.goDismissed !== end.sig;
+    const card = !!end && store.session.goDismissed !== end.sig && isLive();
     const engineDown = !ChessEngine || !!store.session.engineDown;
     const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
       : over && unanalysed ? "an-run" : null;

@@ -156,6 +156,29 @@
              child: the badge is a live region, and a button inside one is
              read out as a status change. -->
         <button type="button" class="preview-try" id="preview-try" data-i18n="act.tryHere" hidden>从这里试走</button>
+        <!-- 7.7 (v7-7-plan §4): how the game ended — the result in large
+             type, the reason under it, and what to do next. Not a dialog:
+             nothing is blocked and ✕ puts it away. v8-0-plan A5: it floats
+             over the board (it was a card at the top of the panel, and the
+             board said nothing about the ending), on the final position
+             only; the kings carry the result in their corners. One filled
+             button: 分析这盘 while the game is unanalysed, 再来一盘 once it
+             has been. -->
+        <section class="go-card" id="go-card" aria-labelledby="go-result" hidden>
+          <div class="go-head">
+            <span class="go-mark num" id="go-mark"></span>
+            <div class="go-txt">
+              <p class="go-result" id="go-result"></p>
+              <p class="go-reason" id="go-reason"></p>
+            </div>
+            <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
+          </div>
+          <div class="go-acts">
+            <button type="button" class="act-btn" id="go-analyse" data-i18n="go.analyse">分析这盘</button>
+            <button type="button" class="act-btn" id="go-again" data-i18n="go.again">再来一盘</button>
+            <button type="button" class="act-btn" id="go-switch" data-i18n="go.switch">换个对手</button>
+          </div>
+        </section>
       </div>
     </div>
     <!-- The spine used to live here: whose move, the clocks, the last move and
@@ -355,30 +378,6 @@
            that used to stand above it is in the top bar now, and the panel
            starts on its tab row — 60px of the narrowest column on screen,
            returned to its content. -->
-      <!-- 7.7 (v7-7-plan §4): how the game ended, said once, at the top of
-           the page you are already on — the result in large type, the reason
-           under it, and what to do next. It used to be a pill in the corner
-           and a toast over rank 1 that left after four seconds. Not a dialog:
-           nothing is blocked, the board and the notation stay live, and ✕
-           puts it away. It sits in the panel so it can never lie on the
-           board (asserted in test-layout-e2e). One filled button: 分析这盘
-           while the game is unanalysed, 再来一盘 once it has been. -->
-      <section class="go-card" id="go-card" aria-labelledby="go-result" hidden>
-        <div class="go-head">
-          <span class="go-mark num" id="go-mark"></span>
-          <div class="go-txt">
-            <p class="go-result" id="go-result"></p>
-            <p class="go-reason" id="go-reason"></p>
-          </div>
-          <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
-        </div>
-        <div class="go-acts">
-          <button type="button" class="act-btn" id="go-analyse" data-i18n="go.analyse">分析这盘</button>
-          <button type="button" class="act-btn" id="go-again" data-i18n="go.again">再来一盘</button>
-          <button type="button" class="act-btn" id="go-switch" data-i18n="go.switch">换个对手</button>
-        </div>
-      </section>
-
       <div class="opening-line" id="opening-line" hidden></div>
 
       <!-- 今天的训练 — the coach's plan for one sitting (planner.js). One
@@ -654,7 +653,13 @@
         <!-- 6.0: the line the notation is following is a variation. Shown
              only then — on the mainline there is nothing to go back to
              (v6-plan Q2.3). -->
-        <div class="link-row replay-line" id="line-row" hidden>
+        <!-- v8-0-plan A4: 「从这里续下」 (it was 「重下」) stands here, with the
+             replay it acts on — it sat in the review row beside 分析, one
+             panel-width from 「再试一次」, and the two names read alike: the
+             walk-through pressed the wrong one and got a question it did not
+             expect. It only exists off the live position. -->
+        <div class="link-row fit-row replay-line" id="line-row" hidden>
+          <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法留作变着" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">从这里续下</button>
           <button type="button" class="act-btn" id="back-main" data-i18n="act.backMain" title="回到本局主线，光标停在同一深度" data-i18n-title="tip.backMain">回主线</button>
         </div>
         <!-- 7.7 (v7-7-plan §3): the review is something you open, not
@@ -672,7 +677,6 @@
           <div class="link-row fit-row">
             <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
             <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
-            <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法留作变着" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">重下</button>
             <button type="button" class="act-btn" id="an-live" aria-pressed="false" title="引擎持续分析棋盘上的局面，跟随复盘游标" data-i18n-title="tip.live" data-i18n="act.live">持续分析</button>
           </div>
           <p class="hint" id="engine-state" role="status" hidden></p>
@@ -680,26 +684,56 @@
                board — depth, and one row per line with its win chance. -->
           <div class="pv-line num" id="live-line" hidden></div>
         </div>
+        <!-- v8-0-plan A4: the review as a game health report, top to bottom —
+             the two accuracies and every grade counted, the win-rate graph,
+             the key moments to step through, 从错误中学, then the engine's
+             lines and 再试一次 for the position on the board. -->
         <div id="eval-wrap" hidden>
-          <!-- Focusable and a slider: the pointer already scrubs it, and the
-               global ← / → / Home / End replay keys move it once it has focus,
-               so the keyboard gets the same time machine (5.1, work package D). -->
-          <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve"></canvas>
-          <!-- 7.8 §2: the move and score under the pointer; it replaces the
-               canvas's own title, which would stack a second, stale label
-               on top of this one after a second's rest -->
-          <div class="curve-tip num" id="curve-tip" aria-hidden="true" hidden></div>
-          <div class="pv-line num" id="pv-line" hidden></div>
-          <!-- 7.8 §3: on a ? / ??, why it was one; and 再试一次 from the
-               position before it (built by renderWhyLine / renderRetry). -->
-          <div class="why-line" id="why-line" hidden></div>
-          <div class="retry-box" id="retry-box" hidden></div>
           <!-- 7.7 §5: one card. The two accuracies are the headline, once —
                they used to be a line above the report and a row inside it. -->
           <div class="report-card" id="report-card" hidden>
             <div class="acc-hero" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级" data-i18n-title="tip.accuracy"></div>
             <div class="review" id="review-body" hidden></div>
           </div>
+          <!-- v8-0-plan A4: the graph, large, with its axes: White's win
+               chance up the side, the move numbers along the bottom -->
+          <div class="curve-box">
+            <div class="curve-cap" data-i18n="rv.curveCap">白方胜率</div>
+            <div class="curve-plot">
+              <div class="curve-y num" id="curve-y" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div>
+              <!-- Focusable and a slider: the pointer already scrubs it, and the
+                   global ← / → / Home / End replay keys move it once it has focus,
+                   so the keyboard gets the same time machine (5.1, work package D). -->
+              <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve"></canvas>
+            </div>
+            <div class="curve-x num" id="curve-x" aria-hidden="true"></div>
+          </div>
+          <!-- 7.8 §2: the move and score under the pointer; it replaces the
+               canvas's own title, which would stack a second, stale label
+               on top of this one after a second's rest -->
+          <div class="curve-tip num" id="curve-tip" aria-hidden="true" hidden></div>
+          <!-- v8-0-plan A4: three key moments a side, one card at a time
+               (review/moments.js builds the card; the step keys are written
+               here once and never rebuilt) -->
+          <section class="rv-km" id="rv-km" aria-labelledby="rv-km-h" hidden>
+            <div class="km-head">
+              <h3 class="km-h" id="rv-km-h" data-i18n="rv.keyMoments">关键时刻</h3>
+              <span class="km-pos num" aria-live="polite"></span>
+              <button type="button" class="km-step km-prev" aria-label="上一个关键时刻" data-i18n-aria="rv.km.prev" title="上一个关键时刻" data-i18n-title="rv.km.prev"><span data-icon="chevron-left" aria-hidden="true"></span></button>
+              <button type="button" class="km-step km-next" aria-label="下一个关键时刻" data-i18n-aria="rv.km.next" title="下一个关键时刻" data-i18n-title="rv.km.next"><span data-icon="chevron-right" aria-hidden="true"></span></button>
+            </div>
+            <div class="km-body"></div>
+          </section>
+          <div class="link-row fit-row" id="rv-learn-row" hidden>
+            <button type="button" class="act-btn" id="rv-learn" title="把本局所有 ? 与 ?? 串成一组「再试一次」，一处接一处练" data-i18n-title="tip.learn"></button>
+          </div>
+          <!-- 7.8 §3: every ? and ?? with its reason and 再试一次 (retry.js) -->
+          <div class="rv-mistakes" id="rv-mistakes" hidden></div>
+          <div class="pv-line num" id="pv-line" hidden></div>
+          <!-- 7.8 §3: on a ? / ??, why it was one; and 再试一次 from the
+               position before it (built by renderWhyLine / renderRetry). -->
+          <div class="why-line" id="why-line" hidden></div>
+          <div class="retry-box" id="retry-box" hidden></div>
         </div>
         <!-- 7.7 (v7-7-plan §3): three weights. The game's own actions are
              the outlined buttons (secondary). The file and position tools are

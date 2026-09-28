@@ -101,6 +101,9 @@
       --judge-soft: #c9b458;
       --judge-mid: #e0a03c;
       --judge-bad: #e05252;
+      /* v8-0-plan A4/A5: the praise grades and a solved puzzle — right is
+         green on the board, never the check's red */
+      --judge-good: #5fbf73;
       --side-white: #f2f2ee;
       --side-black: #1d1d1b;
     }
@@ -158,6 +161,7 @@
       --judge-soft: #d8c46a;
       --judge-mid: #eaa94a;
       --judge-bad: #e8705c;
+      --judge-good: #66c78a;
       --side-white: #dfeae4;
       --side-black: #0e1613;
     }
@@ -218,6 +222,7 @@
       --judge-soft: #9a7b12;
       --judge-mid: #b7690c;
       --judge-bad: #c0392b;
+      --judge-good: #23813d;
       --side-white: #fbfbf8;
       --side-black: #23231f;
     }
@@ -272,6 +277,7 @@
       --judge-soft: #8a6d0f;
       --judge-mid: #a85c08;
       --judge-bad: #b3372a;
+      --judge-good: #257a44;
       --side-white: #fdfdfa;
       --side-black: #26261f;
     }
@@ -2056,6 +2062,14 @@
       border-radius: var(--radius-md);
       line-height: var(--lh-body);
     }
+    /* v8-0-plan A5: an achievement is news, not a receipt — its badge's
+       picture in the win colour, and it stays long enough to read (toast()
+       "ach"). No confetti: 7.7 §11. */
+    .toast.t-ach {
+      border-color: color-mix(in srgb, var(--success) 55%, var(--panel-border));
+      border-radius: var(--radius-md);
+    }
+    .toast > .toast-ic { flex: none; width: 20px; height: 20px; color: var(--success); }
     .toast.t-fault {
       background: var(--danger);
       color: var(--on-danger);
@@ -2839,25 +2853,29 @@
     }
     .pv-act:hover { color: var(--text); border-color: var(--accent); }
     #puzzle-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; white-space: normal; margin: -4px 0 12px; overflow: visible; }
-    /* 拿去练 — the turning point's second half: same quiet dashed voice as
-       the jump row above it, because they are two verbs on one fact. */
+    /* 拿去练 — the turning point into the mistakes book. v8-0-plan A4: a
+       button that looks like one; the dashed box read as a placeholder
+       waiting for content (the walk-through took it for one). */
     .review-bank {
-      display: block; width: 100%; margin-top: 4px;
+      display: block; width: 100%; margin-top: 8px;
       padding: 6px 8px; text-align: left;
       font: inherit; font-size: 0.8125rem; line-height: var(--lh-body);
-      color: var(--text); background: transparent;
-      border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
+      color: var(--text); background: var(--btn-ghost);
+      border: 1px solid var(--line); border-radius: var(--radius-sm);
       cursor: pointer;
+      transition: border-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
     }
-    .review-bank:hover:not(:disabled) { border-style: solid; border-color: var(--accent); color: var(--accent); }
+    .review-bank:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
     /* already banked: a statement, not an offer */
-    .review-bank:disabled { cursor: default; color: var(--muted); border-style: solid; }
+    .review-bank:disabled { cursor: default; color: var(--muted); background: transparent; }
     /* 7.8 §2: 120px, Lichess's is about 150. At 60 a game with a lost rook
-       in it was a line two pixels off the axis for most of its length. */
+       in it was a line two pixels off the axis for most of its length.
+       v8-0-plan A4: 180, the picture of the game in the health report, with
+       its axes beside and under it (.curve-box). */
     #eval-curve {
       display: block;
       width: 100%;
-      height: 120px;
+      height: 180px;
       border-radius: var(--radius-sm);
       background: var(--card);
       border: 1px solid var(--card-border);
@@ -2875,6 +2893,65 @@
       pointer-events: none;
     }
     .curve-tip-hint { color: var(--muted); margin-left: 6px; }
+    /* v8-0-plan A4: the graph's frame — a caption, White's win chance up the
+       left (100 / 50 / 0), the move numbers along the bottom under the
+       positions where those moves begin (eval-graph.js drawMoveAxis) */
+    .curve-box {
+      display: grid; grid-template-columns: max-content minmax(0, 1fr);
+      column-gap: 6px; margin-top: 12px;
+    }
+    .curve-plot { display: contents; }
+    .curve-cap {
+      grid-column: 1 / -1; margin-bottom: 4px;
+      font-size: 0.6875rem; font-weight: 600; color: var(--muted); line-height: var(--lh-tight);
+    }
+    .curve-y {
+      display: flex; flex-direction: column; justify-content: space-between;
+      text-align: right; font-size: 0.6875rem; line-height: var(--lh-tight); color: var(--muted);
+    }
+    .curve-x {
+      grid-column: 2; position: relative; height: 16px; margin-top: 2px;
+      font-size: 0.6875rem; line-height: var(--lh-tight); color: var(--muted);
+    }
+    .curve-x > span { position: absolute; top: 0; transform: translateX(-50%); }
+
+    /* v8-0-plan A4: the key moments, one card at a time — the step keys in
+       the head, the move and what it did, and the three things to do about
+       it. A solid card like the report's: the dashed boxes it replaces
+       read as placeholders. */
+    .rv-km {
+      margin-top: 12px; padding: 8px 12px 12px;
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+    }
+    .km-head { display: flex; align-items: center; gap: 6px; }
+    .km-h { margin: 0; font-size: 0.8125rem; font-weight: 600; color: var(--text); }
+    .km-pos { margin-left: auto; font-size: 0.8125rem; color: var(--muted); }
+    .km-step {
+      appearance: none; display: inline-flex; align-items: center; justify-content: center;
+      width: var(--ctl-h-sm); height: var(--ctl-h-sm); padding: 0;
+      color: var(--text); background: transparent;
+      border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
+      transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
+    }
+    .km-step:hover:not(:disabled) { border-color: var(--accent); background: var(--btn-ghost); }
+    .km-step:disabled { opacity: 0.4; cursor: default; }
+    .km-card { margin-top: 8px; font-size: 0.8125rem; line-height: var(--lh-body); }
+    .km-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+    .km-move {
+      font: inherit; font-size: 0.9375rem; font-weight: 600; color: var(--text);
+      background: transparent; border: 0; padding: 0; cursor: pointer; white-space: nowrap;
+    }
+    .km-move:hover { color: var(--accent); }
+    .km-move .rv-mark { min-width: 0; margin-left: 4px; }
+    .km-what { color: var(--muted); }
+    .km-win { margin: 2px 0 0; color: var(--muted); }
+    .km-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .km-acts .pv-act { margin-left: 0; white-space: nowrap; }
+    .km-why { margin: 8px 0 0; color: var(--muted); }
+    .km-coach { color: var(--text); }
+    #rv-learn-row { margin-top: 8px; }
+    .rt-prog { font-size: 0.6875rem; font-weight: 600; color: var(--muted); }
     /* The difficulty row is two scales, so it is labelled as two. v8-0-plan
        §5: those two labels stand in for the row's own (see index.html), so
        they are dressed as one — 11px muted caps beside 陪练风格 / 执子 / 棋钟
@@ -2919,9 +2996,14 @@
        returns null for it, and the gauge greys out). It used to be a
        horizontal bar in the panel, which said "this position" from 600px away
        and was gone with the panel shut. */
+    /* v8-0-plan A4: level with the board's frame, top and bottom — it ran
+       from the squares' top edge, 17px under the frame's (y 89 against 72
+       at 1440×900 with 木框), so the gauge and the frame beside it were
+       two boxes that did not line up. On the flat board the frame is the
+       squares' own edge, and nothing changes. */
     .eval-gauge {
       position: absolute; z-index: 2;
-      top: var(--wood-pad); bottom: var(--wood-pad);
+      top: 0; bottom: 0;
       right: calc(100% + 6px);
       width: 12px;
       pointer-events: none;
@@ -2963,7 +3045,7 @@
        the gauge moves onto the frame's own left edge, over the rank letters,
        and the number is left to the curve and the screen reader. */
     .eval-gauge.is-inset { right: auto; left: 3px; width: 11px; }
-    .eval-gauge.is-inset .eval-bar-text {
+    .eval-gauge.is-inset .eval-bar-text, .eval-gauge.is-tight .eval-bar-text {
       position: absolute; width: 1px; height: 1px; overflow: hidden;
       clip: rect(0 0 0 0); white-space: nowrap;
     }
@@ -3025,23 +3107,32 @@
     .rv-kind.t-mid td:not(.is-zero), .rv-mark.t-mid { color: var(--judge-mid); }
     .rv-kind.t-bad td:not(.is-zero), .rv-mark.t-bad { color: var(--judge-bad); }
     /* v8-0-plan B2: the praise grades (!! 妙着, ! 仅此一着) read in the win colour */
-    .rv-mark.t-good, .mvtag.t-good { color: var(--success); }
+    .rv-mark.t-good, .mvtag.t-good { color: var(--judge-good); }
+    .rv-grade.t-good td:not(.is-zero) { color: var(--judge-good); }
+    .rv-grade.t-mid td:not(.is-zero) { color: var(--judge-mid); }
+    .rv-grade.t-plain td { font-weight: 400; }
+    /* v8-0-plan A4: the notation coloured by grade — the praise green, the
+       marks in their own colours, book moves muted, the rest as ink. More
+       specific than .mlmove.current, so the move the board stands on keeps
+       its grade's colour inside the highlight. */
+    .move-list .mlmove.g-brilliant, .move-list .mlmove.g-only { color: var(--judge-good); }
+    .move-list .mlmove.g-miss, .move-list .mlmove.g-mistake { color: var(--judge-mid); }
+    .move-list .mlmove.g-inaccuracy { color: var(--judge-soft); }
+    .move-list .mlmove.g-blunder { color: var(--judge-bad); }
+    .move-list .mlmove.g-book { color: var(--muted); }
     .rv-mark { display: inline-block; min-width: 1.75em; font-weight: 600; }
     .rv-loss th, .rv-loss td { border-top: 1px solid var(--card-border); }
     .rv-loss th { color: var(--muted); }
     .review-note { font-size: 0.6875rem; line-height: var(--lh-body); margin-top: 6px; }
-    .review-jump {
-      display: block; width: 100%; margin-top: 6px;
-      padding: 6px 8px; text-align: left;
-      font: inherit; font-size: 0.8125rem; line-height: var(--lh-body);
-      color: var(--text); background: transparent;
-      border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
-      cursor: pointer;
-    }
-    .review-jump:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
     /* 7.8 §3: why each ? / ?? was one — a row per mistake, the move, the
        reason in the muted voice, and 再试一次 as the one action on the row */
     .rv-moments { margin-top: 12px; border-top: 1px solid var(--card-border); padding-top: 6px; }
+    /* v8-0-plan A4: the list as a card of its own under the key moments */
+    .rv-mistakes {
+      margin-top: 12px; padding: 8px 12px;
+      background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius-sm);
+    }
+    .rv-mistakes > .rv-moments { margin-top: 0; border-top: 0; padding-top: 0; }
     .rv-moments-cap { font-size: 0.6875rem; color: var(--muted); margin-bottom: 2px; }
     .rv-moment {
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px;
@@ -3494,16 +3585,27 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .tool-btn.danger:hover { background: color-mix(in srgb, var(--danger) 88%, var(--text)); }
 
 /* ------------------------------------------------------------------
-   The result card (7.7, v7-7-plan §4). In the panel, never on the board.
+   The result card (7.7, v7-7-plan §4). v8-0-plan A5: over the board, in
+   its middle — 7.7 kept it in the panel, "never on the board", and the
+   board said nothing at all about how the game had ended. It is revealed
+   (result-in: up into place and in), not stamped; reduced motion stops the
+   keyframe like every other.
    ------------------------------------------------------------------ */
 .go-card {
-  margin-top: 12px;
-  padding: 12px;
+  position: absolute; left: 50%; top: 50%; z-index: 4;
+  width: min(360px, calc(100% - 32px));
+  transform: translate(-50%, -50%);
+  padding: 16px;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--card-border));
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(0,0,0,.45);
   display: grid; gap: 12px;
-  animation: reveal-in var(--dur-base) var(--ease);
+  animation: result-in var(--dur-slow) var(--ease);
+}
+@keyframes result-in {
+  from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
 }
 .go-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
 .go-mark {
@@ -3771,6 +3873,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   scrollbar-width: thin;
 }
 .page[hidden] { display: none; }
+.page:not([hidden]) { animation: pane-in var(--dur-base) var(--ease); }
 #app.page-on .chrome, #app.page-on .side, #app.page-on .scrim { visibility: hidden; }
 .page-inner {
   max-width: 1120px; margin: 0 auto;
@@ -3819,7 +3922,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
   border: 0; border-radius: 0; box-shadow: none;
   background: var(--bg);
   padding: 24px 24px 16px;
-  animation: none;
+  /* v8-0-plan A5: a page replaces the view, like a tab replaces a pane —
+     it fades in, it does not fly in as a dialog does */
+  animation: pane-in var(--dur-base) var(--ease);
 }
 .modal-bg.page-sheet > .modal > .close-row:last-child { background: var(--bg); }
 
