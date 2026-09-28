@@ -71,6 +71,9 @@ export function createGameEnd(d) {
     if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; }
     const show = !!end && store.session.goDismissed !== end.sig && isLive();
     card.hidden = !show;
+    // v8-0-plan B4: the engine's draw offer lapses at an ending; the persona's
+    // line and the rating line are the card's (opponents-ui.js)
+    if (d.onEnding) d.onEnding(end, show);
     if (!show) return;
     const mode = store.session.mode;
     const mine = mode === "ai" ? store.session.humanColor : null;

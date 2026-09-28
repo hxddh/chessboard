@@ -724,6 +724,55 @@ for (const v of ["home", "library", "me"]) {
   }
 }
 
+// --- v8-0-plan B4 → B5: rated engine games draw the 我的 curve -------------
+// Three engine games, each resigned after one move, on a fresh profile: each
+// is filed and rated (opponents.js fileRating writes `ra`), and the rating
+// curve B5 draws from `ra` appears with the rating after the last one. Red
+// before B4 wired the filing: nothing wrote `ra`, and the curve never showed.
+{
+  const ctx = await browser.newContext({ viewport: WIDE, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", difficulty: "casual", humanColor: "w",
+      langId: "zh-CN", sideTab: "play", view: "play", soundOn: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1200);
+  await page.click("#pick-cancel", { timeout: 800 }).catch(() => {});
+  const tap = async (sq) => {
+    const p = await page.evaluate((q) => {
+      const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+      return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * z, y: r.top + (8 - Number(q[1]) + 0.5) * z };
+    }, sq);
+    await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+  };
+  for (let i = 0; i < 3; i++) {
+    if (i) { await page.keyboard.press("n"); await page.waitForTimeout(300); await page.click("#ng-start"); await page.waitForTimeout(400); }
+    await tap("e2"); await tap("e4"); await page.waitForTimeout(300);
+    await page.evaluate(() => document.getElementById("btn-resign").click());
+    await page.waitForTimeout(300);
+    await page.click("#confirm-ok"); await page.waitForTimeout(500);
+  }
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.stats") || "{}"));
+  const ras = (st.games || []).map((g) => g.ra);
+  assert(ras.length === 3 && ras.every(Number.isFinite) && ras[2] < ras[0] && !!st.rating,
+    "B4→B5 三盘人机（都认输）各自计了等级分，存下 ra（" + JSON.stringify(ras) + "）");
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(600);
+  const me = await page.evaluate(() => ({
+    shown: !document.getElementById("me-rating").hidden && document.getElementById("me-rating").getClientRects().length > 0,
+    meta: (document.getElementById("me-rating-meta") || {}).textContent || "",
+  }));
+  assert(me.shown && me.meta.trim() === String(ras[2]), "B4→B5 「我的」页的评级曲线出现，末点就是最后一盘之后的分数（" + JSON.stringify(me) + "）");
+  assert(errs.length === 0, "B4→B5:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }

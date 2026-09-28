@@ -753,7 +753,7 @@ export function createPersist(host, onWriteFailure) {
     mines: (v) => (v && v.v === 1 && Array.isArray(v.list) ? v : null),
     progress: (v) => (v && typeof v === "object" ? v : null),
     puzzles: (v) => (v && v.v === 1 && v.solved ? v : null),
-    stats: (v) => (v && (v.v === 2 || v.v === 1) && Array.isArray(v.games) ? migrateStats(v) : null),
+    stats: (v) => (v && (v.v === 2 || v.v === 1) && Array.isArray(v.games) ? vetStatsRating(migrateStats(v)) : null),
     achievements: (v) => (v && Array.isArray(v.seen) ? v : null),
     slots: (v) => (v && Array.isArray(v.slots) ? v : null),
     library: (v) => (v && v.v === 1 && Array.isArray(v.games) ? v : null),
@@ -780,6 +780,23 @@ export function createPersist(host, onWriteFailure) {
         });
       }),
     };
+  }
+  /**
+   * v8-0-plan B4: stats v2 may carry the engine-game rating, `{r, rd, vol,
+   * at, n}` (opponents.js fileRating). Optional, so no version bump: a 7.x
+   * build reads v2 and writes back the object it read, `rating` included. A
+   * rating that is not one is dropped rather than failing the whole record —
+   * the games are the valuable part, and the rating is rebuilt from them.
+   */
+  function vetStatsRating(s) {
+    const r = s.rating;
+    if (r === undefined) return s;
+    const ok = r && typeof r === "object" && [r.r, r.rd, r.vol].every((x) => typeof x === "number" && Number.isFinite(x)) &&
+      r.rd > 0 && r.vol > 0;
+    if (ok) return s;
+    const out = Object.assign({}, s);
+    delete out.rating;
+    return out;
   }
   function read(name, accept) {
     if (!accept) accept = ACCEPT[name];

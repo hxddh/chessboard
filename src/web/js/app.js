@@ -15,7 +15,8 @@ import { ChessLazy } from "./lazy-content.js";
 import { ChessMaterial } from "./material.js";
 import { ChessLearning } from "./learning.js";
 import { ChessPreview } from "./preview.js";
-import { ChessPersona } from "./persona.js";
+import { TimeControl } from "./time-control.js";
+import { createOpponentsLazy } from "./opponents-lazy.js";
 import { ChessPgn } from "./pgn.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
@@ -253,7 +254,7 @@ import { createStore } from "./store.js";
        * the save file and its id is not to hand.
        */
       recordedId: null,
-      /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
+      /** clock: 'off' | a time-control.js id (e.g. '5', '3+2', 'c20+5') */
       timeControl: "off",
       /** remaining ms per side; null when no clock */
       clock: null,
@@ -446,9 +447,8 @@ import { createStore } from "./store.js";
       noteFor: null,
     },
   });
-  /** sparring personality — see persona.js; "off" is plain engine play */
-  const PERSONA_IDS = (ChessPersona && ChessPersona.IDS) ||
-    ["off", "greedy", "principled", "attacker"];
+  /** sparring personality — persona.js IDS (in the opponents chunk); "off" is plain engine play */
+  const PERSONA_IDS = ["off", "greedy", "principled", "attacker"];
   store.ui.langId = I18n.getLang();
 
   Audio2.init(() => store.ui.soundOn);
@@ -529,6 +529,7 @@ import { createStore } from "./store.js";
   function forgetEnding() {
     store.session.goDismissed = null;
     store.session.goAnnounced = null;
+    OppUI.reset();
   }
   function gameLoadPgn(pgn, opts) {
     // the parser first: it keeps variations, comments, NAGs and shapes that
@@ -1453,7 +1454,7 @@ import { createStore } from "./store.js";
       if (DIFF_IDS.includes(s.difficulty)) store.session.difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) store.session.humanColor = s.humanColor;
       if (typeof s.colorRandom === "boolean") store.session.colorRandom = s.colorRandom;
-      if (s.timeControl === "off" || TCS[s.timeControl]) store.game.timeControl = s.timeControl;
+      if (s.timeControl === "off" || parseTc(s.timeControl)) store.game.timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
@@ -1564,7 +1565,7 @@ import { createStore } from "./store.js";
       }
       store.game.viewIndex = sanHistory().length;
       restoreTree(s);
-      if (s.clock && TCS[s.clock.tc] &&
+      if (s.clock && parseTc(s.clock.tc) &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
         store.game.timeControl = s.clock.tc;
         store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
@@ -1583,12 +1584,20 @@ import { createStore } from "./store.js";
   }
 
   // --- engine (AI mode) ---
-  const DIFF_IDS = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+  const DIFF_IDS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "hard", "extreme"];
   const diffName = (id) => t("diff." + id);
   /** legacy alias kept for the many call sites that read it like a map */
   const DIFF_NAMES = new Proxy({}, {
     get: (_, k) => (DIFF_IDS.includes(k) ? diffName(k) : undefined),
     has: (_, k) => DIFF_IDS.includes(k),
+  });
+  // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
+  const OppUI = createOpponentsLazy({ loadStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
+    doc: document, store, t, tf, setText, afterPress, acceptDraw, diffName: (id) => diffName(id),
+    repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
+    invalidateEngine, forgetFileResult, playEnding, recordOutcome,
+    plies: () => sanHistory().length, fen: () => game.fen(), verboseHistory: () => game.history({ verbose: true }),
+    openingName: () => (openingFor(Infinity) || [])[1] || "",
   });
 
   /** Drop any in-flight engine search; call before every game mutation. */
@@ -1801,7 +1810,7 @@ import { createStore } from "./store.js";
     }
     // clocked AI games: the engine budgets its think time from its clock
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
-    const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
+    const budget = OppUI.plan(engineSide); // v8-0-plan B4: scales with the clock, capped at the rung's own
     let mv = null;
     // Twice, because an engine that fails once has usually just lost its
     // worker, and the second ask is free. Measured on the shipped 2.1.5: one
@@ -1813,7 +1822,7 @@ import { createStore } from "./store.js";
       if (attempt) await new Promise((r) => setTimeout(r, 250));
       // the personality only ever colours a real game against the engine; the
       // lesson drills need the engine defending honestly or the drill is a lie
-      try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess }); }
+      try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess, style: OppUI.style() }); }
       catch (_) { mv = null; }
       if (token !== store.game.engineToken) return; // game changed while thinking
     }
@@ -1827,6 +1836,7 @@ import { createStore } from "./store.js";
         { label: t("act.retry"), onClick: () => maybeEngineTurn() });
       return;
     }
+    if (OppUI.resigns(mv)) return; // v8-0-plan B4: lost for three moves running
     const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
       store.game.viewIndex = sanHistory().length;
@@ -1839,6 +1849,7 @@ import { createStore } from "./store.js";
       else if (naturalGameOver()) playEnding(null);
       saveGame();
       recordGameIfOver();
+      if (!appGameOver()) OppUI.maybeOffer();
       coachAfterEngineReply();
       runPremove();
     }
@@ -1874,14 +1885,8 @@ import { createStore } from "./store.js";
   }
 
   // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
-  /** time control id → base seconds + increment seconds credited per move */
-  const TCS = {
-    "3": { base: 180, inc: 0 }, "3+2": { base: 180, inc: 2 },
-    "5": { base: 300, inc: 0 }, "5+3": { base: 300, inc: 3 },
-    "10": { base: 600, inc: 0 },
-  };
-  const TC_IDS = Object.keys(TCS);
-  function parseTc(tc) { return TCS[tc] || null; }
+  /** time control id → {base, inc} seconds or null: presets and c<min>+<inc> (time-control.js) */
+  const parseTc = TimeControl.parse;
 
   function resetClocks() {
     const tc = parseTc(store.game.timeControl);
@@ -2217,6 +2222,7 @@ import { createStore } from "./store.js";
   const GameEnd = createGameEnd({
     store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
     appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare,
+    onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); },
   });
   const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;
 
@@ -2279,16 +2285,7 @@ import { createStore } from "./store.js";
     if (store.game.recordedId) return; // this game is already filed
     let result = "draw";
     if (game.in_checkmate()) result = game.turn() === store.session.humanColor ? "loss" : "win";
-    const s = loadStats();
-    // the id ties the record to the exact game it came from, so a later
-    // analysis can only annotate the game it actually measured
-    const id = newRecordId();
-    store.game.recordedId = id;
-    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending: "" });
-    if (s.games.length > 500) s.games = s.games.slice(-500);
-    saveStats(s);
-    renderStats();
-    checkNewAchievements();
+    recordOutcome(result, "");
   }
 
   // offerReview() lived here: a toast, 2.2s after the ending, saying
@@ -2690,7 +2687,7 @@ import { createStore } from "./store.js";
     const end = historyEnding(rec);
     if (!end) return;
     if (end === "resigned") {
-      store.game.resigned = rec.color; // in an engine game only the human can resign
+      store.game.resigned = rec.result === "win" ? (rec.color === "w" ? "b" : "w") : rec.color; // v8-0-plan B4: the engine resigns too
     } else if (end === "drawAgreed") {
       store.game.drawAgreed = true;
     } else if (end === "claimed") {
@@ -3298,9 +3295,6 @@ import { createStore } from "./store.js";
     slot.replaceChildren(Icons.icon(name));
   }
 
-  /** The sparring style's picture, for the engine's strip (7.5 persona). */
-  const PERSONA_ICON = { off: "bot", greedy: "coins", principled: "scale", attacker: "swords" };
-
   /**
    * Who sits on each side, as the strips say it: an icon, a name and a
    * second, quieter line. `null` for a side nobody is playing — a lesson
@@ -3310,12 +3304,7 @@ import { createStore } from "./store.js";
   function stripPeople() {
     const mode = store.session.mode;
     if (mode === "ai") {
-      const engine = {
-        icon: PERSONA_ICON[store.session.personaId] || "bot",
-        name: "Stockfish",
-        level: [DIFF_NAMES[store.session.difficulty] || store.session.difficulty]
-          .concat(store.session.personaId !== "off" ? [t("persona." + store.session.personaId)] : []).join(" · "),
-      };
+      const engine = OppUI.strip(store.session.difficulty, store.session.personaId); // v8-0-plan B4: the persona
       const you = { icon: "user", name: t("vs.player"), level: "" };
       return store.session.humanColor === "w" ? { w: you, b: engine } : { w: engine, b: you };
     }
@@ -4153,7 +4142,9 @@ import { createStore } from "./store.js";
     for (const id of NG_ROWS) {
       const row = el(id);
       if (!row) continue;
-      if (inDialog) { if (row.parentNode !== host) host.appendChild(row); }
+      // v8-0-plan B4: rung and style sit in the dialog's 自定义 fold, under the personas
+      const dest = id === "row-difficulty" || id === "row-persona" ? el("ng-custom-body") || host : host;
+      if (inDialog) { if (row.parentNode !== dest) dest.appendChild(row); }
       else if (row.parentNode !== home.parentNode) home.parentNode.insertBefore(row, home);
     }
   }
@@ -4170,11 +4161,13 @@ import { createStore } from "./store.js";
     };
     const warn = el("ng-warn");
     if (warn) warn.hidden = !(sanHistory().length && !appGameOver());
+    if (opts && opts.switchOpponent) OppUI.applyAdvice();
     hostNewGameRows(true);
     syncSettingsUI();
-    // 换个对手 lands on the opponent; everything else on 开始
+    // 换个对手 lands on the opponent (its persona card); everything else on 开始
+    const card = OppUI.onOpen();
     const first = opts && opts.switchOpponent && !pvp
-      ? modal.querySelector("#row-difficulty button.active") : el("ng-start");
+      ? card || modal.querySelector("#row-difficulty button.active") : el("ng-start");
     Dlg.open(modal, first || undefined);
   }
 
@@ -4295,9 +4288,14 @@ import { createStore } from "./store.js";
   function recordOutcome(result, ending) {
     if (store.game.recordedId) return; // this game is already filed
     const s = loadStats();
+    // the id ties the record to the exact game it came from, so a later
+    // analysis can only annotate the game it actually measured
     const id = newRecordId();
     store.game.recordedId = id;
-    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending });
+    const rec = { id, t: Date.now(), diff: store.session.difficulty, style: store.session.personaId, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending };
+    // v8-0-plan B4: the engine-game rating moves with every filed game
+    OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) { saveStats(s); store.commit("game", "action"); } });
+    s.games.push(rec);
     if (s.games.length > 500) s.games = s.games.slice(-500);
     saveStats(s);
     renderStats();
@@ -4470,21 +4468,11 @@ import { createStore } from "./store.js";
     else if (r === "1/2-1/2") store.game.drawAgreed = true;
   }
 
-  // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
-  // object that predated the 1.19 "casual" rung and never grew one, so a
-  // casual game exported as "Stockfish 19 (casual)" — the raw id leaking into
-  // a file other programs read. The self-check now requires an entry here for
-  // every rung, so the next tier cannot slip through the same way.
-  const DIFF_EN = {
-    beginner: "Beginner", casual: "Casual", easy: "Easy",
-    normal: "Normal", hard: "Hard", extreme: "Max",
-  };
-
   /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
   function pgnForExport() {
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    const engineName = "Stockfish 19 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
+    const engineName = "Stockfish 19 (" + OppUI.enName(store.session.difficulty) + ")";
     const white = store.session.mode === "ai" ? (store.session.humanColor === "w" ? "Player" : engineName) : "Player 1";
     const black = store.session.mode === "ai" ? (store.session.humanColor === "b" ? "Player" : engineName) : "Player 2";
     const result = gameResultToken();
@@ -5261,6 +5249,7 @@ import { createStore } from "./store.js";
     const show = (store.session.mode === "ai" || store.session.mode === "pvp") && !sanHistory().length && !store.session.editor;
     el.hidden = !show;
     if (!show) return;
+    OppUI.paintHello();
     // v8-0-plan §5: the way to the new-game dialog before the first move —
     // the opponent in an engine game, the side and clock between two players
     const ng = document.getElementById("idle-new");
@@ -6154,9 +6143,9 @@ import { createStore } from "./store.js";
   // and the handlers behind its controls
   const SettingsUI = createSettingsUI({
     doc: document, store, appEl, t, el, setText, DIFF_NAMES,
-    saveSettings, saveGame, toast, sync, draw, resetClocks, parseTc,
+    saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
-    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook,
+    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook, onPaint: () => OppUI.paint(),
   });
   SettingsUI.wire();
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)

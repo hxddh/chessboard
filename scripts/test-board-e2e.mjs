@@ -1546,7 +1546,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       diffActive: (document.querySelector("#diff-seg-engine button.active, #diff-seg button.active") || {}).dataset?.diff,
       level: document.getElementById("black-level").textContent.trim(),
       settings: s,
-      focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
+      focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.op || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
       rowsHome: ["row-difficulty", "row-persona", "row-color", "row-clock"].every((id) => document.getElementById(id).closest("#fold-game")),
     };
   });
@@ -1559,8 +1559,11 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   let s = await state();
   assert(s.open && !s.confirm, `「新局」打开新对局对话框,不再先弹确认框(对话框 ${s.open} / 确认框 ${s.confirm})`);
   assert(s.warn, "……对局进行中,对话框顶上写着「会结束当前这盘」");
-  assert(JSON.stringify(s.rows) === JSON.stringify(["row-difficulty", "row-persona", "row-color", "row-clock"]),
-    `……里面就是设置页那几组控件,同一批节点(${s.rows.join(",")})`);
+  // v8-0-plan B4: the opponent is a persona card first; the settings page's
+  // rung and style rows are the same nodes, folded under 自定义
+  const inFold = await page.evaluate(() => ["row-difficulty", "row-persona"].every((id) => document.getElementById(id).closest("#ng-custom")));
+  assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "ng-custom", "row-color", "row-clock"]) && inFold,
+    `……里面是角色卡，再是设置页那几组控件,同一批节点(档位与风格收在「自定义」里)(${s.rows.join(",")})`);
   assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
   // the draft is not the game: choosing 执黑 here changes nothing until 开始
   await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(200);
@@ -1573,16 +1576,16 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.click("#btn-new"); await page.waitForTimeout(300);
   const order = await page.evaluate(() => {
     const m = document.getElementById("newgame-modal");
-    return [...m.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.id || b.dataset.mode || b.dataset.diff || b.dataset.persona || b.dataset.color || b.dataset.tc);
+    return [...m.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.id || b.dataset.mode || b.dataset.op || b.dataset.diff || b.dataset.persona || b.dataset.color || b.dataset.tc);
   });
   await page.keyboard.press("Tab"); await page.waitForTimeout(80);
   const wrapped = (await state()).focus;
   await page.keyboard.press("Shift+Tab"); await page.waitForTimeout(80);
   const back = (await state()).focus;
-  assert(order[0] === "ai" && order[2] === "beginner" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
-    `Tab 顺序:对手(人机 / 双人) → 陪练档 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order[0]}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
-  // change the level and start: one step, the strip and the settings page agree
-  await page.click('#ng-host #diff-seg-engine button[data-diff="hard"]'); await page.waitForTimeout(150);
+  assert(order[0] === "ai" && order[2] === "pip" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
+    `Tab 顺序:对手(人机 / 双人) → 角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order[0]}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
+  // change the opponent and start: one step, the strip and the settings page agree
+  await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await page.waitForTimeout(150);
   await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   s = await state();
   assert(!s.open && !s.confirm && s.plies === 0, `回车 = 开始:一步就开了新局(${s.plies} 着,没有第二个确认框)`);
@@ -1621,7 +1624,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
   await page.evaluate(() => document.getElementById("go-switch").click()); await page.waitForTimeout(300);
   s = await state();
-  assert(s.open && s.tab === "play" && s.focus === "hard", `「换个对手」也是它,不再跳去设置页,焦点落在当前档位上(${s.tab} / ${s.focus})`);
+  assert(s.open && s.tab === "play" && s.focus === "max", `「换个对手」也是它,不再跳去设置页,焦点落在当前的角色上(${s.tab} / ${s.focus})`);
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 
   // two players: only who plays White (the bottom side) and the clock.
@@ -1676,12 +1679,12 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   };
   const ngState = (page) => page.evaluate(() => ({
     open: document.getElementById("newgame-modal").classList.contains("show"),
-    focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.diff || ""),
+    focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.op || document.activeElement.dataset.diff || ""),
     plies: document.querySelectorAll(".mlmove").length,
   }));
 
   // (a) move 0: a visible way in, in both playing modes
-  for (const [mode, label, focus] of [["ai", "换个对手", "normal"], ["pvp", "新局", "ng-start"]]) {
+  for (const [mode, label, focus] of [["ai", "换个对手", "sol"], ["pvp", "新局", "ng-start"]]) {
     const { ctx, page, errs } = await seeded(mode);
     const b = await page.evaluate(() => {
       const e = document.getElementById("idle-new");
@@ -1731,7 +1734,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       diff: (document.querySelector("#ng-host #diff-seg-engine button.active, #ng-host #diff-seg button.active") || {}).dataset?.diff,
     }));
     assert(!pick.guide && s.open, `§5 选「我会下棋」:引导关掉,新对局对话框打开(${JSON.stringify(s)})`);
-    assert(pick.diff === "easy" && s.focus === "easy", `§5 …预选初级,焦点在对手那一行上(${pick.diff} / ${s.focus})`);
+    assert(pick.diff === "easy" && s.focus === "ben", `§5 …预选初级,焦点在它的角色卡上(${pick.diff} / ${s.focus})`);
     await page.keyboard.press("Enter"); await page.waitForTimeout(500);
     s = await ngState(page);
     const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));

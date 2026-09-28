@@ -127,9 +127,15 @@
    *   best first, scores in centipawns from the mover's point of view
    * @param {string} id personality id
    * @param {Function} Chess chess.js constructor
+   * @param {number} [ceiling] v8-0-plan B4: the score of the move the rung
+   *   itself chose. A style then picks only among moves no better than that
+   *   one (and within its slack below it). Without it the style chose near
+   *   the *best* line, which undid a UCI_Elo rung's deliberate mistakes: in
+   *   the round-robin, 1450 with the greedy style played ~450 Elo above
+   *   1700 without one. A style may cost a rung strength; it must not add it.
    * @returns {string|null} chosen UCI move, or null to leave the choice alone
    */
-  function pick(fen, cands, id, Chess) {
+  function pick(fen, cands, id, Chess, ceiling) {
     if (!id || id === "off" || !Array.isArray(cands) || cands.length < 2) return null;
     if (!SLACK[id] || typeof Chess !== "function") return null;
     const scored = cands.filter((c) => c && c.uci && c.score != null);
@@ -138,7 +144,8 @@
     // A personality that throws away a mate it has already found reads as a
     // broken engine rather than a characterful one.
     if (best >= 100000 - 50) return null;
-    const allowed = scored.filter((c) => c.score >= best - SLACK[id]);
+    const top = Number.isFinite(ceiling) ? Math.min(best, ceiling) : best;
+    const allowed = scored.filter((c) => c.score >= top - SLACK[id] && c.score <= top + 10);
     if (allowed.length < 2) return null;
     const before = new Chess(fen);
     let bestMove = null, bestScore = -Infinity;
@@ -158,4 +165,34 @@
     return bestMove;
   }
 
-  export const ChessPersona = { IDS, SLACK, pick, score };
+  /**
+   * v8-0-plan B4: a style as a lean rather than a choice — the style score of
+   * each candidate, aligned with `cands`, or null where the style has no say
+   * (outside its slack, or an illegal line). engine.js multiplies a
+   * win-chance rung's sampling weights by it, so the rung still decides how
+   * good the move is and the style only which of the likely ones it prefers.
+   * `pick` above overrules the draw instead, which is right for the Elo
+   * rungs (they have no draw) and would make a weak rung strong.
+   *
+   * @returns {Array<number|null>|null} null when the style says nothing
+   */
+  function lean(fen, cands, id, Chess) {
+    if (!id || id === "off" || !SLACK[id] || typeof Chess !== "function") return null;
+    if (!Array.isArray(cands) || cands.length < 2) return null;
+    const scored = cands.filter((c) => c && c.score != null);
+    if (!scored.length) return null;
+    const best = Math.max(...scored.map((c) => c.score));
+    if (best >= 100000 - 50) return null;
+    const before = new Chess(fen);
+    return cands.map((c) => {
+      if (!c || !c.uci || c.score == null || c.score < best - SLACK[id]) return null;
+      const g = new Chess(fen);
+      const mv = g.move({
+        from: c.uci.slice(0, 2), to: c.uci.slice(2, 4),
+        promotion: c.uci.length > 4 ? c.uci[4] : undefined,
+      });
+      return mv ? score(id, mv, g, before) : null;
+    });
+  }
+
+  export const ChessPersona = { IDS, SLACK, pick, lean, score };

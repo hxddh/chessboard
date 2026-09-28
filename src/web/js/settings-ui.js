@@ -24,6 +24,7 @@ import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
 import { ChessLazy } from "./lazy-content.js";
 import { lookAttrs } from "./look.js";
+import { TimeControl } from "./time-control.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -31,9 +32,9 @@ import { lookAttrs } from "./look.js";
 export function createSettingsUI(d) {
   const {
     doc, store, appEl, t, el, setText, DIFF_NAMES,
-    saveSettings, saveGame, toast, sync, draw, resetClocks, parseTc,
+    saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
-    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook,
+    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook, onPaint,
   } = d;
   const document = doc;
   const Audio2 = ChessAudio;
@@ -46,6 +47,8 @@ export function createSettingsUI(d) {
 
   function paintSettings() {
     if (syncLook) syncLook();
+    // v8-0-plan B4: the persona cards beside these rows (opponents-ui.js) repaint with them
+    if (onPaint) onPaint();
     const sb = document.getElementById("opt-sound");
     if (sb) {
       sb.classList.toggle("active", store.ui.soundOn);
@@ -116,9 +119,21 @@ export function createSettingsUI(d) {
     document.querySelectorAll("#orient-seg button").forEach((b) => {
       b.classList.toggle("active", (b.dataset.orient === "b") === !!store.game.flipped);
     });
+    // v8-0-plan B4: 自定义 is lit by any c<min>+<inc> id, and shows its numbers
+    const custom = TimeControl.isCustom(pick.timeControl);
     document.querySelectorAll("#clock-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tc === pick.timeControl);
+      b.classList.toggle("active", b.dataset.tc === pick.timeControl || (custom && b.dataset.tc === "custom"));
     });
+    const customRow = document.getElementById("clock-custom");
+    if (customRow && customRow.hidden === custom) customRow.hidden = !custom;
+    if (custom) {
+      const tc = TimeControl.parse(pick.timeControl);
+      for (const [id, v] of [["tc-min", tc.base / 60], ["tc-inc", tc.inc]]) {
+        const inp = document.getElementById(id);
+        // never under the caret: a value rewritten while it is being typed
+        if (inp && document.activeElement !== inp && Number(inp.value) !== v) inp.value = String(v);
+      }
+    }
     const diffRow = document.getElementById("row-difficulty");
     const colorRow = document.getElementById("row-color");
     const clockRow = document.getElementById("row-clock");
@@ -225,16 +240,25 @@ export function createSettingsUI(d) {
       const b = ev.target.closest("button[data-mode]");
       if (b) draftPick("mode", b.dataset.mode);
     };
-    document.getElementById("clock-seg").onclick = (ev) => {
-      const b = ev.target.closest("button[data-tc]");
-      if (!b || draftPick("timeControl", b.dataset.tc) || b.dataset.tc === store.game.timeControl) return;
-      store.game.timeControl = b.dataset.tc;
+    const pickTc = (tc) => {
+      if (draftPick("timeControl", tc) || tc === store.game.timeControl) return;
+      store.game.timeControl = tc;
       resetClocks();
       saveSettings();
       saveGame();
       store.commit("game", "action");
-      const tcSet = parseTc(store.game.timeControl);
     };
+    // v8-0-plan B4: 自定义 is the control the two numbers beside it say
+    const customTc = () => TimeControl.customId(document.getElementById("tc-min").value,
+      document.getElementById("tc-inc").value);
+    document.getElementById("clock-seg").onclick = (ev) => {
+      const b = ev.target.closest("button[data-tc]");
+      if (b) pickTc(b.dataset.tc === "custom" ? customTc() : b.dataset.tc);
+    };
+    for (const id of ["tc-min", "tc-inc"]) {
+      const inp = document.getElementById(id);
+      if (inp) inp.onchange = () => { pickTc(customTc()); paintSettings(); };
+    }
     const onDiffClick = (ev) => {
       const b = ev.target.closest("button[data-diff]");
       if (!b || draftPick("difficulty", b.dataset.diff) || b.dataset.diff === store.session.difficulty) return;

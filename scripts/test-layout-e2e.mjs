@@ -182,10 +182,12 @@ if (scenario()) {
   // The top rung is 不限档 / Unrated / 無制限 since P5.8: 「满强度」 promised
   // unlimited strength and read as unlimited time, while the search is still
   // 1.2 seconds a move like every other tier. 缺陷 31.
+  // v8-0-plan B4: six sparring rungs (the four new win-chance rungs join the
+  // handicapped pair) and six Elo rungs (1450 and 1575 between 初级 and 中级)
   const EXPECT = {
-    "zh-CN": { spar: ["新手", "休闲"], engine: ["初级", "中级", "高级", "不限档"] },
-    en: { spar: ["Gentle", "Casual"], engine: ["Novice", "Intermediate", "Advanced", "Unrated"] },
-    ja: { spar: ["やさしい", "お気軽"], engine: ["初級", "中級", "上級", "無制限"] },
+    "zh-CN": { spar: ["新手", "休闲", "练习", "进步", "稳健", "扎实"], engine: ["初级", "初级+", "中级−", "中级", "高级", "不限档"] },
+    en: { spar: ["Gentle", "Casual", "Practice", "Improving", "Steady", "Solid"], engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Advanced", "Unrated"] },
+    ja: { spar: ["やさしい", "お気軽", "練習", "上達", "堅実", "手堅い"], engine: ["初級", "初級+", "中級−", "中級", "上級", "無制限"] },
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");
@@ -196,11 +198,11 @@ if (scenario()) {
       // there must be no third heading above the two group labels
       keys: [...document.querySelectorAll("#row-difficulty .setting-k")].length,
     }));
-    assert(labels.spar.length === 2 && labels.engine.length === 4, lang + ": 2 sparring tiers, 4 engine tiers");
+    assert(labels.spar.length === 6 && labels.engine.length === 6, lang + ": 6 sparring tiers, 6 engine tiers");
     assert(labels.groups.length === 2, lang + ": both groups are labelled");
     assert(labels.keys === 0, lang + ": no redundant 难度 heading above the group labels");
     const all = labels.spar.concat(labels.engine);
-    assert(new Set(all).size === all.length, lang + ": all six labels are distinct — " + all.join(" / "));
+    assert(new Set(all).size === all.length, lang + ": all twelve labels are distinct — " + all.join(" / "));
     assert(JSON.stringify(labels.spar) === JSON.stringify(EXPECT[lang].spar),
       lang + ": the sparring pair is the reviewed one — " + labels.spar.join(" / "));
     assert(JSON.stringify(labels.engine) === JSON.stringify(EXPECT[lang].engine),
@@ -445,8 +447,9 @@ if (scenario()) {
     wIcon: (document.querySelector("#av-w svg") || {}).dataset?.icon,
     wName: document.getElementById("white-role").textContent.trim(),
   }));
-  assert(r.bName === "Stockfish" && r.bLevel.length > 0, "the engine's strip names it and its level (" + r.bName + " · " + r.bLevel + ")");
-  assert(r.bIcon === "bot" && r.wIcon === "user", "…with the sparring style's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
+  // v8-0-plan B4: the persona of the rung (中级, no style: 索尔, a star), with its rating
+  assert(r.bName === "索尔" && /中级 1700/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
+  assert(r.bIcon === "star" && r.wIcon === "user", "…with the persona's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
   await ctx.close();
 }
 

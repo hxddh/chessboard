@@ -1539,6 +1539,53 @@
     .look-board { display: block; width: 100%; height: 100%; }
     .look-kings { display: flex; gap: 2px; }
     .look-king { display: block; width: 24px; height: 24px; }
+    /* v8-0-plan B4: the personas in the new-game dialog — a card per rung,
+       two columns, each an avatar (an icons.js shape on the card's own
+       ground), the name, and the rating with the style under it. The same
+       box and active state as the segments above; only the stacking is its
+       own. The dialog grows to hold two columns in every language. */
+    .newgame-modal { width: min(560px, calc(100vw - 32px)); }
+    .op-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .op-card {
+      appearance: none; display: flex; align-items: center; gap: 8px;
+      min-height: var(--ctl-h); padding: 6px 8px; text-align: left;
+      border: 1px solid var(--card-border); border-radius: var(--radius-md);
+      background: var(--btn-ghost); color: var(--muted); font: inherit; cursor: pointer;
+      transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
+    }
+    .op-card:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--card-border)); }
+    .op-card.active {
+      color: var(--text);
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border));
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+    .op-av {
+      flex: none; width: 32px; height: 32px; border-radius: 50%;
+      display: grid; place-items: center; font-size: 1rem;
+      color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    .op-txt { display: flex; flex-direction: column; min-width: 0; }
+    .op-name { font-size: 0.8125rem; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+    .op-meta { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: 0.6875rem; line-height: var(--lh-tight); }
+    .op-rating { font-variant-numeric: tabular-nums; }
+    .op-style { color: var(--muted); }
+    .ng-custom { margin: 4px 0 8px; }
+    .ng-custom-sum { cursor: pointer; font-size: 0.8125rem; color: var(--muted); padding: 4px 0; }
+    /* the custom clock's two numbers, beside their units */
+    .clock-custom { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+    .clock-field { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: var(--muted); }
+    .clock-field .text-input { width: 72px; min-height: var(--ctl-h-sm); padding: 0 8px; }
+    /* the persona's opening line on the empty board's card, and its end-of-game line */
+    .op-hello { margin: 0; font-size: 0.8125rem; line-height: var(--lh-body); color: var(--text); }
+    /* the engine's draw offer: a quiet bar in the panel, never over the board */
+    .offer-bar {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      margin: 4px 0 12px; padding: 8px 12px;
+      border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--card-border));
+      border-radius: var(--radius-md); background: var(--card);
+    }
+    .offer-text { flex: 1 1 12em; font-size: 0.8125rem; color: var(--text); }
+    .offer-bar .act-btn { flex: none; }
     /* seven sets: 4 + 3, not the 3 + 3 + 1 the five-or-more rule above
        would give — no segment alone on a line (test-layout 3m3) */
     #piece-pick-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -3619,6 +3666,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .go-txt { min-width: 0; }
 .go-result { margin: 0; font-size: 1.1875rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
 .go-reason { margin: 4px 0 0; font-size: 0.8125rem; color: var(--muted); line-height: var(--lh-body); }
+/* v8-0-plan B4: the persona's end-of-game line and your rating, under the reason */
+.go-say, .go-rating { margin: 4px 0 0; font-size: 0.8125rem; line-height: var(--lh-body); }
+.go-say { color: var(--text); }
+.go-rating { color: var(--muted); }
 .go-close {
   appearance: none; border: 0; background: transparent; color: var(--muted);
   /* 7.9 §1e: the small size, not a third one (was 28) */

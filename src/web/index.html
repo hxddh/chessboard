@@ -170,6 +170,9 @@
             <div class="go-txt">
               <p class="go-result" id="go-result"></p>
               <p class="go-reason" id="go-reason"></p>
+              <!-- v8-0-plan B4: the persona's line, and your engine-game rating -->
+              <p class="go-say" id="go-say" hidden></p>
+              <p class="go-rating num" id="go-rating" hidden></p>
             </div>
             <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
           </div>
@@ -239,10 +242,17 @@
             <div class="theme-row wrap" id="diff-seg" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
               <button type="button" data-diff="beginner" title="会主动犯错的陪练,适合教学毕业第一局" data-i18n-title="tip.diff.beginner" data-i18n="diff.beginner">新手</button>
               <button type="button" data-diff="casual" title="比新手准一些,但还会犯错 —— 打赢新手之后的下一格" data-i18n-title="tip.casual" data-i18n="diff.casual">休闲</button>
+              <!-- v8-0-plan B4: four rungs between 休闲 and 初级 (engine.js) -->
+              <button type="button" data-diff="learner" title="按胜率损失抽样、只算两步的陪练" data-i18n-title="tip.diff.learner" data-i18n="diff.learner">练习</button>
+              <button type="button" data-diff="improver" title="比练习档少犯一些错" data-i18n-title="tip.diff.improver" data-i18n="diff.improver">进步</button>
+              <button type="button" data-diff="steady" title="算三步，大失误少见" data-i18n-title="tip.diff.steady" data-i18n="diff.steady">稳健</button>
+              <button type="button" data-diff="solid" title="算四步，初级之前的最后一档" data-i18n-title="tip.diff.solid" data-i18n="diff.solid">扎实</button>
             </div>
             <span class="diff-group" data-i18n="diff.groupEngine">棋力档</span>
             <div class="theme-row wrap" id="diff-seg-engine" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
               <button type="button" data-diff="easy" title="Stockfish UCI_Elo 1320(该选项的下限)" data-i18n-title="tip.diffEasy" data-i18n="diff.easy">初级</button>
+              <button type="button" data-diff="easyplus" title="Stockfish UCI_Elo 1450" data-i18n-title="tip.diff.easyplus" data-i18n="diff.easyplus">初级+</button>
+              <button type="button" data-diff="normalminus" title="Stockfish UCI_Elo 1575" data-i18n-title="tip.diff.normalminus" data-i18n="diff.normalminus">中级−</button>
               <button type="button" data-diff="normal" class="active" title="Stockfish UCI_Elo 1700" data-i18n-title="tip.diffNormal" data-i18n="diff.normal">中级</button>
               <button type="button" data-diff="hard" title="Stockfish UCI_Elo 2200" data-i18n-title="tip.diffHard" data-i18n="diff.hard">高级</button>
               <button type="button" data-diff="extreme" title="Stockfish 满强度" data-i18n-title="tip.diff.extreme" data-i18n="diff.extreme">满强度</button>
@@ -276,6 +286,17 @@
               <button type="button" data-tc="5" title="每方 5 分钟" data-i18n-title="tip.clock.5">5</button>
               <button type="button" data-tc="5+3" title="每方 5 分钟,每步加 3 秒" data-i18n-title="tip.clock.5plus3">5+3</button>
               <button type="button" data-tc="10" title="每方 10 分钟" data-i18n-title="tip.clock.10">10</button>
+              <!-- v8-0-plan B4: two rapid controls and one of your own -->
+              <button type="button" data-tc="15+10" title="每方 15 分钟，每步加 10 秒" data-i18n-title="tip.clock.15plus10">15+10</button>
+              <button type="button" data-tc="30" title="每方 30 分钟" data-i18n-title="tip.clock.30">30</button>
+              <button type="button" data-tc="custom" title="自己定每方几分钟、每步加几秒" data-i18n-title="tip.clock.custom" data-i18n="clock.custom">自定义</button>
+            </div>
+            <!-- the custom control's two numbers; shown while 自定义 is the
+                 choice. Inputs, not a dialog: the new-game dialog is already
+                 the one dialog on screen. -->
+            <div class="clock-custom" id="clock-custom" hidden>
+              <label class="clock-field"><input type="number" class="text-input" id="tc-min" min="1" max="180" step="1" value="15" inputmode="numeric" /><span data-i18n="clock.minutes">分钟</span></label>
+              <label class="clock-field"><span>+</span><input type="number" class="text-input" id="tc-inc" min="0" max="60" step="1" value="10" inputmode="numeric" /><span data-i18n="clock.incSec">秒/步</span></label>
             </div>
           </div>
           <div class="setting-row" id="row-coach">
@@ -378,6 +399,15 @@
            that used to stand above it is in the top bar now, and the panel
            starts on its tab row — 60px of the narrowest column on screen,
            returned to its content. -->
+      <!-- v8-0-plan B4: the engine's draw offer. Non-modal and static: the
+           game goes on under it, a move on the board declines it, and it is
+           only ever shown or hidden, never rebuilt (7.6). -->
+      <div class="offer-bar" id="draw-offer" role="group" aria-labelledby="draw-offer-text" hidden>
+        <span class="offer-text" id="draw-offer-text"></span>
+        <button type="button" class="act-btn" id="draw-accept" data-i18n="act.accept">接受</button>
+        <button type="button" class="act-btn" id="draw-decline" data-i18n="act.decline">拒绝</button>
+      </div>
+
       <div class="opening-line" id="opening-line" hidden></div>
 
       <!-- 今天的训练 — the coach's plan for one sitting (planner.js). One
@@ -632,6 +662,8 @@
              result, the running record, and the one suggestion the statistics
              page was keeping to itself. -->
         <div class="idle-card" id="idle-card" hidden>
+          <!-- v8-0-plan B4: the persona's opening line -->
+          <p class="op-hello" id="op-hello" hidden></p>
           <div id="idle-body"></div>
           <!-- v8-0-plan §5: at move 0 新局 is not in 本局 (there is no game
                to end), and that left no way to the opponent / side / clock
@@ -1354,6 +1386,20 @@
               <button type="button" data-mode="pvp" title="双人同屏对弈" data-i18n-title="tip.mode.pvp" data-i18n="mode.pvp">双人</button>
             </div>
           </div>
+          <!-- v8-0-plan B4: the opponent is a persona — a rung and a style
+               with a name, a face and a measured rating — chosen here, first.
+               The cards are built once by opponents-ui.js and only relabelled
+               afterwards (7.6). Rung × style as two segments is still there,
+               folded under 自定义, for a pairing no persona is. -->
+          <div class="setting-row stack" id="row-opponent">
+            <span class="setting-k" data-i18n="ng.opponent">对手是谁</span>
+            <div class="op-grid" id="op-grid" role="group" aria-label="对手是谁" data-i18n-aria="ng.opponent"></div>
+            <span class="setting-note" id="op-you"></span>
+          </div>
+          <details class="ng-custom" id="ng-custom">
+            <summary class="ng-custom-sum" data-i18n="ng.custom">自定义档位与风格</summary>
+            <div id="ng-custom-body"></div>
+          </details>
         </div>
         <div class="close-row end">
           <button type="button" class="tool-btn" id="ng-cancel" data-i18n="act.cancel">取消</button>
