@@ -2644,6 +2644,21 @@ for (const lang of CONTENT_LANGS) {
       O.advice(five("win", "normal").slice(1), "normal", null) === null,
       "B4: move up after 70%+ over five, down after 25% or less — when the rating agrees");
     assert(O.neighbour("normal", "up").level === O.LEVELS[O.LEVELS.indexOf("normal") + 1], "B4: …to the persona one rung over");
+    // Codex #89: five wins at one rung, each separated by two games at others,
+    // still earn the move-up advice — the rung's own history, not the last ten overall
+    {
+      const other = O.LEVELS.find((l) => l !== "normal");
+      const mix = { v: 2, games: [] };
+      let t = now, last = null;
+      for (let k = 0; k < 5; k++) {
+        for (let j = 0; j < 2 && k > 0; j++) { const g = { id: "o" + k + j, t: ++t, diff: other, result: "draw" }; O.fileRating(mix, g, t); mix.games.push(g); }
+        const g = { id: "n" + k, t: ++t, diff: "normal", result: "win" };
+        mix.rating = { r: 1900, rd: 60, vol: 0.06, at: t, n: 20 };
+        last = O.fileRating(mix, g, t);
+        mix.games.push(g);
+      }
+      assert(last && last.advice === "up", "B4: five wins at a rung spread among other games still earn 「升一档」 (" + (last && last.advice) + ")");
+    }
   }
 
   // the app's hooks — few lines, each where the thing happens

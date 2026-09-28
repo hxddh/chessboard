@@ -171,7 +171,9 @@ export function createPuzzleModes(d) {
       const bands = Db.bandsWith(id).map((x) => x.band);
       const r = (themeRating(id) || seenRating()).r;
       bands.sort((a, b) => Math.abs(a + 100 - r) - Math.abs(b + 100 - r));
-      for (const b of bands) wantBand(b, serve);
+      // the nearest band first, the rest once it is here: whichever arrives
+      // first seats the puzzle, so it has to be the near one (Codex #89)
+      wantBand(bands[0], () => { serve(); for (const b of bands.slice(1)) wantBand(b, serve); });
     });
     store.session.puzzle = null;
     serve();

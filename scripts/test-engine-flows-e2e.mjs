@@ -1223,6 +1223,30 @@ await scenario("引擎认输", async () => {
   await ctx.close();
 });
 
+await scenario("你将死引擎", async () => {
+  // Codex #89: a human move that ends the game files the rating after the
+  // move's own sync(); with the opponents chunk already here that filing is
+  // synchronous, and the result card must still show the rating line
+  const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
+    { "chess.v1.save": setupSave(fen) });
+  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  const ready = await page.evaluate(() => !!window.CHESS_OPPONENTS);
+  await clickMove(page, "a1", "a8");
+  await page.waitForTimeout(600);
+  const after = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+    const last = (st.games || []).slice(-1)[0] || null;
+    return { last: last && { r: last.result, ra: last.ra },
+      rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() };
+  });
+  assert(ready && after.last && after.last.r === "win" && Number.isFinite(after.last.ra),
+    "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
+  assert(/^等级分 \d+\?（(\+\d+|±0)）/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
+  assert(!errs.length, "你将死引擎：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
 await scenario("引擎提和", async () => {
   // opposite bishops and nothing else, move 50, the clock at 40: a dead draw
   // that the rules do not end. After eight level evaluations the engine offers.
