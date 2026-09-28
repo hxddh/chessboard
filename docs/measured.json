@@ -303,6 +303,188 @@
       }
     }
   },
+  "coachCoverage": {
+    "what": "复盘里 ? / ?? 的一句说明说出了战术母题的比例（explain.js，按 app.js mistakeFacts() 的调用方式）",
+    "script": "scripts/test-coach.mjs --record=before|after --audit=docs/coach-audit-8.0.md",
+    "movetimeMs": 200,
+    "oracleMs": 1500,
+    "corpora": {
+      "corpus": "scripts/fixtures/corpus.mjs（28 局）",
+      "low": "scripts/fixtures/coach-games.mjs（低档引擎对局）"
+    },
+    "before": {
+      "corpus": {
+        "mistakes": 99,
+        "explained": 28,
+        "explainedPct": 28.3,
+        "blunders": 45,
+        "blundersExplained": 18,
+        "blundersExplainedPct": 40,
+        "blundersMotifOrMate": 19,
+        "blundersMotifOrMatePct": 42.2,
+        "byKey": {
+          "ex.motifLoss": 14,
+          "ex.better": 52,
+          "ex.loss": 15,
+          "ex.allowsMate": 1,
+          "ex.forkHits": 6,
+          "ex.betterMotif": 8
+        },
+        "byMotif": {
+          "pin": 12,
+          "fork": 16
+        }
+      },
+      "low": {
+        "mistakes": 112,
+        "explained": 25,
+        "explainedPct": 22.3,
+        "blunders": 38,
+        "blundersExplained": 9,
+        "blundersExplainedPct": 23.7,
+        "blundersMotifOrMate": 9,
+        "blundersMotifOrMatePct": 23.7,
+        "byKey": {
+          "ex.better": 69,
+          "ex.loss": 17,
+          "ex.forkHits": 8,
+          "ex.motifLoss": 9,
+          "ex.betterMotif": 8
+        },
+        "byMotif": {
+          "fork": 18,
+          "pin": 5,
+          "skewer": 2
+        }
+      },
+      "all": {
+        "mistakes": 211,
+        "explained": 53,
+        "explainedPct": 25.1,
+        "blunders": 83,
+        "blundersExplained": 27,
+        "blundersExplainedPct": 32.5,
+        "blundersMotifOrMate": 28,
+        "blundersMotifOrMatePct": 33.7,
+        "byKey": {
+          "ex.motifLoss": 23,
+          "ex.better": 121,
+          "ex.loss": 32,
+          "ex.allowsMate": 1,
+          "ex.forkHits": 14,
+          "ex.betterMotif": 16
+        },
+        "byMotif": {
+          "pin": 17,
+          "fork": 34,
+          "skewer": 2
+        }
+      },
+      "audit": {
+        "n": 100,
+        "wrong": 26,
+        "wrongPct": 26,
+        "claims": 50,
+        "wrongClaims": 26,
+        "wrongClaimsPct": 52
+      }
+    },
+    "after": {
+      "corpus": {
+        "mistakes": 99,
+        "explained": 37,
+        "explainedPct": 37.4,
+        "blunders": 45,
+        "blundersExplained": 35,
+        "blundersExplainedPct": 77.8,
+        "blundersMotifOrMate": 36,
+        "blundersMotifOrMatePct": 80,
+        "byKey": {
+          "ex.loss": 9,
+          "ex.better": 49,
+          "ex.threatHanging": 7,
+          "ex.betterHanging": 14,
+          "ex.allowsMate": 1,
+          "ex.hangingCheap": 2,
+          "ex.hanging": 9,
+          "ex.threatCheap": 2,
+          "ex.betterCheap": 1,
+          "ex.motifLoss": 1,
+          "ex.betterMotif": 1
+        },
+        "byMotif": {
+          "hanging": 35,
+          "fork": 2
+        }
+      },
+      "low": {
+        "mistakes": 112,
+        "explained": 30,
+        "explainedPct": 26.8,
+        "blunders": 38,
+        "blundersExplained": 14,
+        "blundersExplainedPct": 36.8,
+        "blundersMotifOrMate": 14,
+        "blundersMotifOrMatePct": 36.8,
+        "byKey": {
+          "ex.better": 65,
+          "ex.threatCheap": 3,
+          "ex.hangingCheap": 3,
+          "ex.betterCheap": 8,
+          "ex.forkHits": 1,
+          "ex.loss": 16,
+          "ex.motifLoss": 4,
+          "ex.betterMotif": 1,
+          "ex.betterHanging": 8,
+          "ex.threatHanging": 2
+        },
+        "byMotif": {
+          "hanging": 24,
+          "fork": 3,
+          "discoveredAttack": 2,
+          "desperado": 1
+        }
+      },
+      "all": {
+        "mistakes": 211,
+        "explained": 67,
+        "explainedPct": 31.8,
+        "blunders": 83,
+        "blundersExplained": 49,
+        "blundersExplainedPct": 59,
+        "blundersMotifOrMate": 50,
+        "blundersMotifOrMatePct": 60.2,
+        "byKey": {
+          "ex.loss": 25,
+          "ex.better": 114,
+          "ex.threatHanging": 9,
+          "ex.betterHanging": 22,
+          "ex.allowsMate": 1,
+          "ex.hangingCheap": 5,
+          "ex.hanging": 9,
+          "ex.threatCheap": 5,
+          "ex.betterCheap": 9,
+          "ex.motifLoss": 5,
+          "ex.betterMotif": 2,
+          "ex.forkHits": 1
+        },
+        "byMotif": {
+          "hanging": 59,
+          "fork": 5,
+          "discoveredAttack": 2,
+          "desperado": 1
+        }
+      },
+      "audit": {
+        "n": 100,
+        "wrong": 1,
+        "wrongPct": 1,
+        "claims": 63,
+        "wrongClaims": 1,
+        "wrongClaimsPct": 1.6
+      }
+    }
+  },
   "layoutA2": {
     "what": "v8-0-plan §2 A2：下棋视图在五档窗口下的几何。band 为最宽的非内容空带（整条横向或纵向都没有内容的带），share 为棋盘格子占下棋视图的面积比，gutter 为棋谱白列最宽着法文字右缘到黑列文字左缘，nav 为最后一行棋谱底到翻谱栏顶，first 为竖窗第一屏不滚动就看得见的着法格数",
     "script": "scripts/measure-layout.mjs --record=after",
@@ -571,188 +753,6 @@
         "first": 14,
         "moves": 10,
         "wide": false
-      }
-    }
-  },
-  "coachCoverage": {
-    "what": "复盘里 ? / ?? 的一句说明说出了战术母题的比例（explain.js，按 app.js mistakeFacts() 的调用方式）",
-    "script": "scripts/test-coach.mjs --record=before|after --audit=docs/coach-audit-8.0.md",
-    "movetimeMs": 200,
-    "oracleMs": 1500,
-    "corpora": {
-      "corpus": "scripts/fixtures/corpus.mjs（28 局）",
-      "low": "scripts/fixtures/coach-games.mjs（低档引擎对局）"
-    },
-    "before": {
-      "corpus": {
-        "mistakes": 99,
-        "explained": 28,
-        "explainedPct": 28.3,
-        "blunders": 45,
-        "blundersExplained": 18,
-        "blundersExplainedPct": 40,
-        "blundersMotifOrMate": 19,
-        "blundersMotifOrMatePct": 42.2,
-        "byKey": {
-          "ex.motifLoss": 14,
-          "ex.better": 52,
-          "ex.loss": 15,
-          "ex.allowsMate": 1,
-          "ex.forkHits": 6,
-          "ex.betterMotif": 8
-        },
-        "byMotif": {
-          "pin": 12,
-          "fork": 16
-        }
-      },
-      "low": {
-        "mistakes": 112,
-        "explained": 25,
-        "explainedPct": 22.3,
-        "blunders": 38,
-        "blundersExplained": 9,
-        "blundersExplainedPct": 23.7,
-        "blundersMotifOrMate": 9,
-        "blundersMotifOrMatePct": 23.7,
-        "byKey": {
-          "ex.better": 69,
-          "ex.loss": 17,
-          "ex.forkHits": 8,
-          "ex.motifLoss": 9,
-          "ex.betterMotif": 8
-        },
-        "byMotif": {
-          "fork": 18,
-          "pin": 5,
-          "skewer": 2
-        }
-      },
-      "all": {
-        "mistakes": 211,
-        "explained": 53,
-        "explainedPct": 25.1,
-        "blunders": 83,
-        "blundersExplained": 27,
-        "blundersExplainedPct": 32.5,
-        "blundersMotifOrMate": 28,
-        "blundersMotifOrMatePct": 33.7,
-        "byKey": {
-          "ex.motifLoss": 23,
-          "ex.better": 121,
-          "ex.loss": 32,
-          "ex.allowsMate": 1,
-          "ex.forkHits": 14,
-          "ex.betterMotif": 16
-        },
-        "byMotif": {
-          "pin": 17,
-          "fork": 34,
-          "skewer": 2
-        }
-      },
-      "audit": {
-        "n": 100,
-        "wrong": 26,
-        "wrongPct": 26,
-        "claims": 50,
-        "wrongClaims": 26,
-        "wrongClaimsPct": 52
-      }
-    },
-    "after": {
-      "corpus": {
-        "mistakes": 99,
-        "explained": 37,
-        "explainedPct": 37.4,
-        "blunders": 45,
-        "blundersExplained": 35,
-        "blundersExplainedPct": 77.8,
-        "blundersMotifOrMate": 36,
-        "blundersMotifOrMatePct": 80,
-        "byKey": {
-          "ex.loss": 9,
-          "ex.better": 49,
-          "ex.threatHanging": 7,
-          "ex.betterHanging": 14,
-          "ex.allowsMate": 1,
-          "ex.hangingCheap": 2,
-          "ex.hanging": 9,
-          "ex.threatCheap": 2,
-          "ex.betterCheap": 1,
-          "ex.motifLoss": 1,
-          "ex.betterMotif": 1
-        },
-        "byMotif": {
-          "hanging": 35,
-          "fork": 2
-        }
-      },
-      "low": {
-        "mistakes": 112,
-        "explained": 30,
-        "explainedPct": 26.8,
-        "blunders": 38,
-        "blundersExplained": 14,
-        "blundersExplainedPct": 36.8,
-        "blundersMotifOrMate": 14,
-        "blundersMotifOrMatePct": 36.8,
-        "byKey": {
-          "ex.better": 65,
-          "ex.threatCheap": 3,
-          "ex.hangingCheap": 3,
-          "ex.betterCheap": 8,
-          "ex.forkHits": 1,
-          "ex.loss": 16,
-          "ex.motifLoss": 4,
-          "ex.betterMotif": 1,
-          "ex.betterHanging": 8,
-          "ex.threatHanging": 2
-        },
-        "byMotif": {
-          "hanging": 24,
-          "fork": 3,
-          "discoveredAttack": 2,
-          "desperado": 1
-        }
-      },
-      "all": {
-        "mistakes": 211,
-        "explained": 67,
-        "explainedPct": 31.8,
-        "blunders": 83,
-        "blundersExplained": 49,
-        "blundersExplainedPct": 59,
-        "blundersMotifOrMate": 50,
-        "blundersMotifOrMatePct": 60.2,
-        "byKey": {
-          "ex.loss": 25,
-          "ex.better": 114,
-          "ex.threatHanging": 9,
-          "ex.betterHanging": 22,
-          "ex.allowsMate": 1,
-          "ex.hangingCheap": 5,
-          "ex.hanging": 9,
-          "ex.threatCheap": 5,
-          "ex.betterCheap": 9,
-          "ex.motifLoss": 5,
-          "ex.betterMotif": 2,
-          "ex.forkHits": 1
-        },
-        "byMotif": {
-          "hanging": 59,
-          "fork": 5,
-          "discoveredAttack": 2,
-          "desperado": 1
-        }
-      },
-      "audit": {
-        "n": 100,
-        "wrong": 1,
-        "wrongPct": 1,
-        "claims": 63,
-        "wrongClaims": 1,
-        "wrongClaimsPct": 1.6
       }
     }
   },
@@ -1264,7 +1264,7 @@
         "settings": {
           "skill": 0,
           "depth": 2,
-          "multipv": 6,
+          "multipv": 8,
           "worstBias": 0.15,
           "minMs": 350
         },
@@ -1289,18 +1289,190 @@
           "games": 100,
           "matches": 5,
           "gamesPerMatch": 20,
-          "win": 19,
-          "draw": 20,
-          "loss": 61,
-          "scorePct": 29,
+          "win": 26,
+          "draw": 27,
+          "loss": 47,
+          "scorePct": 40,
           "runs": [
-            33,
-            40,
-            15,
-            35,
-            23
+            30,
+            43,
+            45,
+            50,
+            30
           ],
-          "sdPct": 10.1
+          "sdPct": 9.1
+        }
+      },
+      "learner": {
+        "settings": {
+          "skill": 1,
+          "depth": 2,
+          "multipv": 10,
+          "winT": 40,
+          "minMs": 350
+        },
+        "random": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 0,
+          "draw": 0,
+          "loss": 100,
+          "scorePct": 0,
+          "runs": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sdPct": 0
+        },
+        "careful": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 12,
+          "draw": 21,
+          "loss": 67,
+          "scorePct": 23,
+          "runs": [
+            23,
+            18,
+            20,
+            15,
+            38
+          ],
+          "sdPct": 9
+        }
+      },
+      "improver": {
+        "settings": {
+          "skill": 2,
+          "depth": 2,
+          "multipv": 9,
+          "winT": 50,
+          "minMs": 350
+        },
+        "random": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 0,
+          "draw": 0,
+          "loss": 100,
+          "scorePct": 0,
+          "runs": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sdPct": 0
+        },
+        "careful": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 18,
+          "draw": 19,
+          "loss": 63,
+          "scorePct": 28,
+          "runs": [
+            30,
+            28,
+            18,
+            33,
+            30
+          ],
+          "sdPct": 5.8
+        }
+      },
+      "steady": {
+        "settings": {
+          "skill": 3,
+          "depth": 3,
+          "multipv": 8,
+          "winT": 19,
+          "minMs": 350
+        },
+        "random": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 0,
+          "draw": 0,
+          "loss": 100,
+          "scorePct": 0,
+          "runs": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sdPct": 0
+        },
+        "careful": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 1,
+          "draw": 9,
+          "loss": 90,
+          "scorePct": 6,
+          "runs": [
+            8,
+            5,
+            3,
+            5,
+            8
+          ],
+          "sdPct": 2.2
+        }
+      },
+      "solid": {
+        "settings": {
+          "skill": 4,
+          "depth": 4,
+          "multipv": 8,
+          "winT": 14,
+          "minMs": 350
+        },
+        "random": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 0,
+          "draw": 0,
+          "loss": 100,
+          "scorePct": 0,
+          "runs": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sdPct": 0
+        },
+        "careful": {
+          "games": 100,
+          "matches": 5,
+          "gamesPerMatch": 20,
+          "win": 0,
+          "draw": 3,
+          "loss": 97,
+          "scorePct": 2,
+          "runs": [
+            3,
+            3,
+            0,
+            0,
+            3
+          ],
+          "sdPct": 1.6
         }
       }
     }

@@ -13,8 +13,11 @@
  * the bag handed to createOpponentsUI(), as settings-ui.js does it.
  * @module opponents-ui
  */
+import { ChessEngine } from "./engine.js";
 import { ChessIcons } from "./icons.js";
 import { Opponents } from "./opponents.js";
+import { ChessRating } from "./rating.js";
+import { TimeControl } from "./time-control.js";
 
 /**
  * @param {object} d what this module borrows from app.js
@@ -87,6 +90,13 @@ export function createOpponentsUI(d) {
   function paint() {
     const grid = el("op-grid");
     if (!grid) return;
+    // the personas are an engine game's; 双人 in the dialog hides them
+    const ai = (store.ui.newGame ? store.ui.newGame.mode : store.session.mode) === "ai";
+    for (const id of ["row-opponent", "ng-custom"]) {
+      const node = el(id);
+      if (node && node.hidden === ai) node.hidden = !ai;
+    }
+    if (!store.ui.newGame) return;
     const pick = pickNow();
     const on = Opponents.personaFor(pick.difficulty, pick.personaId);
     for (const b of grid.children) {
@@ -129,7 +139,7 @@ export function createOpponentsUI(d) {
   /**
    * The engine's strip: the persona's avatar and name, and the rung with its
    * rating (and the style, when it has one). A combination of one's own is
-   * Stockfish with the rung and style, as before 8.0.
+   * Stockfish with the rung and style, as through 7.9.
    */
   function strip(level, style) {
     const p = Opponents.personaFor(level, style);
@@ -166,9 +176,9 @@ export function createOpponentsUI(d) {
   function ratingLine(filed) {
     if (!filed || !filed.after) return "";
     const now = Math.round(filed.after.r);
-    const was = filed.before ? Math.round(filed.before.r) : null;
-    const delta = was == null ? "" : now - was;
-    const parts = [tf("go.rating", [fmtRating(filed.after), delta === "" ? "—" : delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
+    // a first game moves the newcomer's 1500 (rating.js), and says by how much
+    const delta = now - Math.round(filed.before ? filed.before.r : ChessRating.DEFAULT.r);
+    const parts = [tf("go.rating", [fmtRating(filed.after), delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
     if (filed.perf != null) parts.push(tf("go.perf", [filed.perf]));
     return parts.join(" · ");
   }
@@ -195,5 +205,148 @@ export function createOpponentsUI(d) {
     if (bar.hidden !== want) bar.hidden = want;
   }
 
-  return { mount, paint, onOpen, strip, hello, bye, ratingLine, adviceLine, showOffer, fmtRating };
+  // --- the engine's side of a game ------------------------------------------
+
+  /**
+   * The engine's own evaluations after each of its moves in this game, by
+   * ply, and the ply of its last draw offer. Session state: a restart starts
+   * the count again, which only means three more moves before a resignation.
+   * Entries past the current ply are ignored (a take-back undoes them), and
+   * a different game on the board forgets them all (reset, from forgetEnding).
+   */
+  // in the store's session slice, like every other piece of state (it is
+  // never persisted): {evals: [{ply, score}], offer: {ply}|null, lastOfferPly}
+  const opp = () => store.session.opp || (store.session.opp = { evals: [], offer: null, lastOfferPly: null });
+  function reset() { store.session.opp = null; showOffer(null); }
+  function ownScores() {
+    const n = d.plies();
+    const o = opp();
+    o.evals = o.evals.filter((e) => e.ply <= n);
+    return o.evals.map((e) => e.score);
+  }
+
+  /** Search time and pace for the engine's move, on a clock; null without one. */
+  function plan(side) {
+    const tc = TimeControl.parse(store.game.timeControl);
+    if (!tc || !store.game.clock) return null;
+    return Opponents.thinkPlan(ChessEngine.TIERS[store.session.difficulty] || {}, store.game.clock[side], tc.inc * 1000);
+  }
+
+  /**
+   * The engine has chosen `mv`: note what it thinks of the position, and if
+   * it has thought the game lost long enough (opponents.js shouldResign),
+   * resign instead of playing it. @returns {boolean} true when it resigned
+   */
+  function resigns(mv) {
+    if (!mv || !Number.isFinite(mv.score)) return false;
+    const scores = ownScores().concat([mv.score]);
+    opp().evals.push({ ply: d.plies() + 1, score: mv.score });
+    if (!Opponents.shouldResign(scores)) return false;
+    // the engine's side resigns: terminal, like the player's own resignation
+    d.invalidateEngine();
+    store.game.resigned = store.session.humanColor === "w" ? "b" : "w";
+    d.forgetFileResult();
+    d.playEnding(store.session.humanColor);
+    d.recordOutcome("win", "resigned");
+    d.saveGame();
+    store.commit("game", "action");
+    return true;
+  }
+
+  /** After the engine's move: offer a draw if the position is dead level. */
+  function maybeOffer() {
+    const scores = ownScores();
+    // the game's own ply, from the FEN: a game set up from a position at
+    // move 50 is an ending, however few moves were played here
+    const f = d.fen().split(" ");
+    const n = (Number(f[5]) - 1) * 2 + (f[1] === "b" ? 1 : 0);
+    const half = Number(f[4]) || 0;
+    const o = opp();
+    if (!Opponents.shouldOfferDraw(scores, n, half, o.lastOfferPly)) return;
+    o.lastOfferPly = n;
+    o.offer = { ply: d.plies() };
+    const p = Opponents.personaFor(store.session.difficulty, store.session.personaId);
+    showOffer(p ? t("op." + p.id + ".name") : "Stockfish");
+    d.announce(tf("offer.draw", [p ? t("op." + p.id + ".name") : "Stockfish"]));
+  }
+
+  /** The offer lapses once the game moves on (a move is a decline) or ends. */
+  function syncOffer(over) {
+    const o = store.session.opp;
+    if (o && o.offer && (over || d.plies() !== o.offer.ply || store.session.mode !== "ai")) {
+      o.offer = null;
+      d.afterPress(() => { if (!(store.session.opp && store.session.opp.offer)) showOffer(null); });
+    }
+  }
+
+  function wireOffer() {
+    const answer = (yes) => {
+      const o = store.session.opp;
+      if (!o || !o.offer) return;
+      o.offer = null;
+      showOffer(null);
+      if (yes) d.acceptDraw();
+    };
+    const yes = el("draw-accept"), no = el("draw-decline");
+    if (yes) yes.onclick = () => answer(true);
+    if (no) no.onclick = () => answer(false);
+  }
+
+  // --- the two lines, on screen ---------------------------------------------
+
+  /** The persona's opening line, on the empty-board card. */
+  function paintHello() {
+    const node = el("op-hello");
+    if (!node) return;
+    const line = store.session.mode === "ai" ? hello(store.session.difficulty, store.session.personaId) : null;
+    if (line) setText(node, line);
+    if (node.hidden !== !line) node.hidden = !line;
+  }
+
+  /**
+   * The result card's persona line and rating line, for an engine game that
+   * was filed this session (store.session.filed is the filing of the game on
+   * the board — fileRating's result, tagged with the record's id).
+   */
+  function paintCard(end) {
+    const say = el("go-say"), rate = el("go-rating");
+    const ai = !!end && store.session.mode === "ai";
+    const f = store.session.filed;
+    const mine = ai && f && f.id && f.id === store.game.recordedId ? f : null;
+    let line = "";
+    if (ai) {
+      const hist = d.verboseHistory();
+      const engine = store.session.humanColor === "w" ? "b" : "w";
+      const theirs = hist.filter((m) => m.color === engine);
+      const op = d.openingName();
+      line = bye(store.session.difficulty, store.session.personaId, {
+        opening: op, moves: Math.ceil(hist.length / 2),
+        captures: theirs.filter((m) => m.captured).length,
+        checks: theirs.filter((m) => /[+#]/.test(m.san)).length,
+      }) || "";
+    }
+    const rl = mine ? [ratingLine(mine), adviceLine(mine, mine.level)].filter(Boolean).join(" · ") : "";
+    for (const [node, text] of [[say, line], [rate, rl]]) {
+      if (!node) continue;
+      if (text) setText(node, text);
+      if (node.hidden !== !text) node.hidden = !text;
+    }
+  }
+
+  /**
+   * 换个对手 after an advice: the dialog opens on the persona one rung up
+   * (or down), so the suggestion is one Enter away.
+   */
+  function applyAdvice() {
+    const f = store.session.filed;
+    const ng = store.ui.newGame;
+    if (!ng || !f || !f.advice || f.id !== store.game.recordedId) return;
+    const p = Opponents.neighbour(f.level, f.advice);
+    if (p) { ng.difficulty = p.level; ng.personaId = p.style; }
+  }
+
+  return {
+    mount, paint, onOpen, strip, hello, bye, ratingLine, adviceLine, showOffer, fmtRating,
+    reset, plan, resigns, maybeOffer, syncOffer, wireOffer, paintHello, paintCard, applyAdvice,
+  };
 }

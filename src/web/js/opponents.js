@@ -53,6 +53,19 @@ const PERSONAS = [
   { id: "fish", level: "extreme", style: "off", icon: "bot" },
 ];
 
+/**
+ * Names for the PGN tag, one per rung (moved here from app.js with the
+ * ladder, v8-0-plan B4). This was a hand-written object that predated the
+ * 1.19 "casual" rung and never grew one, so a casual game exported as
+ * "Stockfish 19 (casual)" — the raw id leaking into a file other programs
+ * read. The self-check requires an entry here for every rung, so the next
+ * tier cannot slip through the same way.
+ */
+const EN_NAME = {
+  beginner: "Beginner", casual: "Casual", learner: "Practice", improver: "Improving", steady: "Steady",
+  solid: "Solid", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", hard: "Hard", extreme: "Max",
+};
+
 function personaById(id) { return PERSONAS.find((p) => p.id === id) || null; }
 /** The persona a (rung, style) pair is, or null for a combination of one's own. */
 function personaFor(level, style) {
@@ -75,7 +88,7 @@ const PACE_CAP_MS = 3000;
 /**
  * How long the engine searches and how long its reply takes, on a clock.
  *
- * Until 8.0 the budget was `clock / 30` and it only ever shortened a search,
+ * Through 7.9 the budget was `clock / 30` and it only ever shortened a search,
  * so the engine answered a 10-minute game as fast as a 3-minute one and
  * spent almost none of its clock. Now the allocation is the remaining time
  * over 40 plus three quarters of the increment; the search takes the
@@ -245,7 +258,7 @@ function advice(recent, level, rating) {
 
 /**
  * The rating a history of engine games adds up to, oldest first — how a
- * profile that played before 8.0 gets its number: its own games, replayed.
+ * profile that played before v8-0-plan B4 gets its number: its own games, replayed.
  * A stored rating is not derived again; this runs only when there is none.
  *
  * @param {Array<{t:number, diff:string, result:string}>} games stats records
@@ -264,7 +277,8 @@ function rateHistory(games) {
  * File one finished game into the stats record's rating (v8-0-plan B4):
  * the rating before and after, what the last ten games perform at, and the
  * move-up / move-down advice for the rung just played. `stats` is changed
- * in place — its `rating` — and the game record gains the two numbers.
+ * in place — its `rating` — and the game record gains `ratingBefore`,
+ * `ratingAfter` and `perf` (the shape the progress page reads).
  *
  * @returns {{before: ?object, after: object, perf: ?number, advice: ?string}|null}
  */
@@ -274,16 +288,37 @@ function fileRating(stats, rec, now) {
   const after = rateGame(before, rec.diff, rec.result, now);
   if (!after) return null;
   stats.rating = after;
-  rec.rb = before ? Math.round(before.r) : null;
-  rec.ra = Math.round(after.r);
-  const recent = (stats.games || []).slice(-10).map((g) => ({ level: g.diff, result: g.result }));
-  return { before, after, perf: performance(recent), advice: advice(recent, rec.diff, after) };
+  // the rating series 「我的」 draws: each engine game carries the rating it
+  // left the player on and the performance of the ten games up to it
+  const recent = (stats.games || []).filter((g) => g !== rec).slice(-(PERF_GAMES - 1)).concat([rec])
+    .map((g) => ({ level: g.diff, result: g.result }));
+  const perf = performance(recent);
+  rec.ratingBefore = before ? Math.round(before.r) : null;
+  rec.ratingAfter = Math.round(after.r);
+  rec.perf = perf;
+  return { before, after, perf, advice: advice(recent, rec.diff, after) };
 }
+/** How many recent games the performance rating is taken over. */
+const PERF_GAMES = 10;
 
 /** A stored rating that can be used as one (persist.js vets the same shape). */
 function validRating(r) {
   return !!r && typeof r === "object" && [r.r, r.rd, r.vol].every((x) => Number.isFinite(x)) &&
     r.rd > 0 && r.vol > 0;
+}
+
+/**
+ * The player's engine-game rating from a stats record: the stored one, or —
+ * for a profile from before v8-0-plan B4 that has games and no rating yet — its games
+ * replayed (remembered, so a repaint does not replay 500 games).
+ */
+let memo = { games: null, n: -1, r: null };
+function ratingOfStats(stats) {
+  if (!stats) return null;
+  if (validRating(stats.rating)) return stats.rating;
+  const g = Array.isArray(stats.games) ? stats.games : [];
+  if (memo.games !== g || memo.n !== g.length) memo = { games: g, n: g.length, r: rateHistory(g) };
+  return memo.r;
 }
 
 /** The persona one rung up or down from `level`. */
@@ -294,8 +329,8 @@ function neighbour(level, dir) {
 }
 
 export const Opponents = {
-  LEVELS, RATING, RATING_SE, PERSONAS, PACE_CAP_MS, RESIGN_CP, RESIGN_RUN, DRAW_CP, DRAW_RUN,
+  LEVELS, RATING, RATING_SE, PERSONAS, EN_NAME, PACE_CAP_MS, RESIGN_CP, RESIGN_RUN, DRAW_CP, DRAW_RUN,
   DRAW_AFTER_PLY, DRAW_QUIET_PLIES, DRAW_AGAIN_PLIES, ACCEPT_CP, ADVICE_GAMES,
   personaById, personaFor, ratingOf, thinkPlan, shouldResign, shouldOfferDraw, acceptsDraw,
-  opponentOf, rateGame, rateHistory, fileRating, validRating, performance, advice, neighbour,
+  opponentOf, rateGame, rateHistory, fileRating, validRating, ratingOfStats, performance, advice, neighbour,
 };

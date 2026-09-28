@@ -193,7 +193,13 @@ async function evalAfter(fen, uci) {
 // recorded spread, the same fix 7.1.1 made for the novice score rate.
 const argRepeat = Number((process.argv.find((a) => a.startsWith("--repeat=")) || "").slice(9));
 const REPEAT = Number.isFinite(argRepeat) && argRepeat > 1 ? Math.floor(argRepeat) : 1;
-const order = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+// v8-0-plan B4: the whole ladder, in opponents.js's order — the six rungs
+// through 7.9 plus the four win-chance rungs and the two Elo rungs B4 added
+const order = (() => {
+  const c = { console }; c.globalThis = c; c.window = c; vm.createContext(c);
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/opponents.js")), c, { filename: "module" });
+  return c.Opponents.LEVELS;
+})();
 const runs = Object.fromEntries(order.map((n) => [n, []]));
 let stats = {};
 for (let rep = 0; rep < REPEAT; rep++) {

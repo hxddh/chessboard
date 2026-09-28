@@ -146,7 +146,7 @@ const allSourceExcept = (...owners) =>
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
-  "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js"];
+  "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js", "opponents-ui.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -2484,6 +2484,173 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// v8-0-plan B4: the opponents — the ladder, the personas, the engine's clock
+// plan, when it resigns and offers a draw, and the player's engine-game
+// rating. opponents.js and time-control.js are pure, so all of it is checked
+// here without an engine; scripts/test-ladder.mjs is the measurement.
+{
+  loadModule(ctx, "src/web/js/engine.js");
+  loadModule(ctx, "src/web/js/opponents.js");
+  loadModule(ctx, "src/web/js/time-control.js");
+  loadModule(ctx, "src/web/js/icons.js");
+  const O = ctx.Opponents, TC = ctx.TimeControl, E = ctx.ChessEngine;
+  assert(O && TC && E, "B4: opponents.js and time-control.js load");
+
+  // the ladder: one list, and it is the app's
+  const appIds = /const DIFF_IDS = \[([^\]]*)\]/.exec(allAppSource);
+  const appList = appIds ? [...appIds[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]) : [];
+  assert(JSON.stringify(appList) === JSON.stringify(O.LEVELS),
+    "B4: the ladder in opponents.js is app.js's DIFF_IDS, rung for rung (" + O.LEVELS.join(",") + ")");
+  assert(O.LEVELS.every((id) => E.TIERS[id]), "B4: every rung has engine settings");
+  const between = O.LEVELS.slice(O.LEVELS.indexOf("casual") + 1, O.LEVELS.indexOf("easy"));
+  assert(between.length >= 3 && between.length <= 4 && between.every((id) => E.TIERS[id].winT > 0 && E.TIERS[id].depth),
+    "B4: 3–4 rungs between 休闲 and 初级, each depth-limited and sampling by win-chance loss (" + between.join(",") + ")");
+  assert(between.every((id) => E.TIERS[id].skill <= 5), "B4: …at a low Skill Level");
+  assert(O.LEVELS.every((id) => id in O.EN_NAME), "B4: every rung has a PGN name");
+
+  // the win-chance draw: the best line most often, a blunder rarely, and a
+  // forced mate never thrown away
+  {
+    let seed = 7;
+    const rng = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const list = [{ uci: "a2a3", score: 20 }, { uci: "b2b3", score: 0 }, { uci: "c2c3", score: -40 }, { uci: "d2d4", score: -600 }];
+    const tier = { winT: 8 };
+    const tally = {};
+    for (let i = 0; i < 2000; i++) { const u = E.pickCandidate(list, tier, rng); tally[u] = (tally[u] || 0) + 1; }
+    assert(tally.a2a3 > tally.b2b3 && tally.b2b3 > (tally.c2c3 || 0) && (tally.d2d4 || 0) < 20,
+      "B4: winT sampling favours the best, and a piece-losing move is rare (" + JSON.stringify(tally) + ")");
+    assert(E.pickCandidate([{ uci: "a2a3", score: 99990 }, { uci: "b2b3", score: 0 }], tier, rng) === "a2a3",
+      "B4: …and never trades a found mate away");
+    // a style chooses only among moves as good as the one drawn
+    const lean = [0, 0, 500, 900];
+    const styled = {};
+    for (let i = 0; i < 2000; i++) { const u = E.pickCandidate(list, tier, rng, lean); styled[u] = (styled[u] || 0) + 1; }
+    assert((styled.d2d4 || 0) < 20,
+      "B4: a style's lean does not reach a move far worse than the one drawn (" + JSON.stringify(styled) + ")");
+    assert(Math.abs(E.winPct(0) - 50) < 1e-9 && E.winPct(300) > 70 && E.winPct(-300) < 30, "B4: win chance is Lichess's curve");
+  }
+
+  // personas: 8–12, one per rung, a style persona.js knows, an icon icons.js draws
+  assert(O.PERSONAS.length >= 8 && O.PERSONAS.length <= 12, "B4: 8–12 personas (" + O.PERSONAS.length + ")");
+  assert(new Set(O.PERSONAS.map((p) => p.level)).size === O.PERSONAS.length && O.PERSONAS.every((p) => O.LEVELS.includes(p.level)),
+    "B4: each persona is its own rung of the ladder");
+  assert(O.PERSONAS.every((p) => ctx.ChessPersona.IDS.includes(p.style)), "B4: each persona's style is one persona.js plays");
+  assert(new Set(O.PERSONAS.map((p) => p.icon)).size === O.PERSONAS.length &&
+    O.PERSONAS.every((p) => ctx.ChessIcons.NAMES ? ctx.ChessIcons.NAMES.includes(p.icon) : /\S/.test(p.icon)),
+    "B4: every persona has its own avatar icon");
+  {
+    const icons = fs.readFileSync(path.join(root, "src/web/js/icons.js"), "utf8");
+    const missing = O.PERSONAS.filter((p) => !icons.includes('"' + p.icon + '": ['));
+    assert(missing.length === 0, "B4: …drawn from icons.js's own shapes" + (missing.length ? " — missing " + missing.map((p) => p.icon) : ""));
+  }
+  assert(O.personaFor("easy", "off") && O.personaFor("easy", "off").level === "easy" && O.personaFor("easy", "greedy") === null,
+    "B4: a (rung, style) pair is a persona or a combination of one's own");
+  loadModule(ctx, "src/web/js/i18n.js");
+  for (const lang of Object.keys(ctx.ChessI18n.DICT)) {
+    const D = ctx.ChessI18n.DICT[lang];
+    const gaps = O.PERSONAS.flatMap((p) => ["name", "hello", "bye"].map((k) => "op." + p.id + "." + k)).filter((k) => !(k in D));
+    assert(gaps.length === 0, "B4: " + lang + " names every persona and gives it both lines" + (gaps.length ? " — " + gaps.slice(0, 4) : ""));
+    // 7.8's rule: facts, not feelings — no line judges the player or has the
+    // machine feel something about the game
+    const JUDGE = lang === "en" ? /\b(good|great|nice|well played|brilliant|bad|poor|terrible|happy|sad|sorry|enjoy|fun|love|hate|luck)\b/i
+      : lang === "ja" ? /(すごい|素晴らし|上手|下手|残念|楽しい|嬉しい|悲しい|ごめん|頑張)/ : /(好棋|漂亮|厉害|精彩|可惜|遗憾|开心|高兴|难过|抱歉|加油|运气|真棒|太好)/;
+    const judged = O.PERSONAS.flatMap((p) => ["hello", "bye"].map((k) => D["op." + p.id + "." + k])).filter((s) => JUDGE.test(s || ""));
+    assert(judged.length === 0, "B4: " + lang + " persona lines state facts only (7.8)" + (judged.length ? " — " + judged[0] : ""));
+  }
+
+  // the clock: presets, a custom control in its own id, and nothing else
+  assert(TC.parse("15+10").base === 900 && TC.parse("15+10").inc === 10 && TC.parse("30").base === 1800 && TC.parse("30").inc === 0,
+    "B4: 15+10 and 30+0 are presets");
+  assert(TC.parse("c20+5").base === 1200 && TC.parse("c20+5").inc === 5 && TC.isCustom("c20+5") && !TC.isCustom("5+3"),
+    "B4: a custom control is c<minutes>+<increment>");
+  assert(TC.parse("c0+5") === null && TC.parse("c181+0") === null && TC.parse("c10+61") === null && TC.parse("off") === null && TC.parse("toString") === null,
+    "B4: …inside its bounds, and nothing else parses");
+  assert(TC.customId(999, -3) === "c180+0" && TC.customId("7", "2") === "c7+2" && TC.label("c20+5") === "20+5" && TC.label("30") === "30",
+    "B4: custom ids are clamped, and label as a control reads");
+
+  // the engine on a clock: search capped at the rung's calibrated movetime,
+  // pace growing with the clock up to its own cap, never past a 20th of it
+  {
+    const easy = E.TIERS.easy;
+    const blitz = O.thinkPlan(easy, 180000, 0), rapid = O.thinkPlan(easy, 1800000, 0), low = O.thinkPlan(easy, 4000, 0);
+    assert(blitz.search <= easy.movetime && rapid.search === easy.movetime,
+      "B4: a long control does not search past the rung's calibrated movetime (" + blitz.search + " / " + rapid.search + ")");
+    assert(rapid.pace > blitz.pace && rapid.pace <= O.PACE_CAP_MS, "B4: …but its pace grows with the clock, up to the cap (" + blitz.pace + " → " + rapid.pace + ")");
+    assert(low.search < easy.movetime && low.pace <= 4000 / 20, "B4: short of time it searches less and does not stall (" + low.search + " / " + low.pace + ")");
+    assert(O.thinkPlan(easy, 10000, 10000).search > O.thinkPlan(easy, 10000, 0).search, "B4: the increment counts");
+    const d = O.thinkPlan(E.TIERS.beginner, 600000, 0);
+    assert(d.search === 0 && d.pace > 0, "B4: a depth rung is not given a movetime, only a pace");
+  }
+
+  // resigning and offering a draw
+  assert(!O.shouldResign([-1200, -1200, -1200]), "B4: no resignation in the first moves");
+  const quiet = new Array(10).fill(30);
+  assert(O.shouldResign(quiet.concat([-1100, -1500, -2000])), "B4: resigns after three moves at −10 or worse");
+  assert(!O.shouldResign(quiet.concat([-1100, -300, -2000])), "B4: …sustained, not a single dip");
+  assert(O.shouldResign(quiet.concat([-99990, -99992])), "B4: …or two moves into a mate against it");
+  const level = new Array(12).fill(5);
+  assert(O.shouldOfferDraw(level, 80, 12, null), "B4: offers a draw in a dead-level, quiet ending");
+  assert(!O.shouldOfferDraw(level, 40, 12, null) && !O.shouldOfferDraw(level, 80, 2, null) && !O.shouldOfferDraw(level.concat([90]), 80, 12, null),
+    "B4: …not in the opening, not while things still change, not when it is ahead");
+  assert(!O.shouldOfferDraw(level, 80, 12, 70) && O.shouldOfferDraw(level, 100, 12, 70), "B4: …and not again straight after a decline");
+
+  // your rating: Glicko-2 against the rungs, apart from the puzzle one
+  {
+    const stats = { v: 2, games: [] };
+    const now = Date.UTC(2026, 8, 1);
+    const f1 = O.fileRating(stats, { id: "a", t: now, diff: "normal", result: "win" }, now);
+    assert(f1 && f1.before === null && f1.after.r > 1500 && stats.rating === f1.after, "B4: a first win moves a newcomer up, stored on the stats record");
+    const rec = { id: "b", t: now + 1000, diff: "normal", result: "loss" };
+    const f2 = O.fileRating(stats, rec, now + 1000);
+    assert(f2.after.r < f1.after.r && rec.ratingBefore === Math.round(f1.after.r) && rec.ratingAfter === Math.round(f2.after.r) && Number.isFinite(rec.perf),
+      "B4: each game carries ratingBefore / ratingAfter / perf (the series 「我的」 draws)");
+    const replay = O.rateHistory([{ t: now, diff: "normal", result: "win" }, { t: now + 1000, diff: "normal", result: "loss" }]);
+    assert(Math.round(replay.r) === Math.round(f2.after.r), "B4: a profile from before B4 gets its rating by replaying its games");
+    assert(O.ratingOfStats({ v: 2, games: [{ t: now, diff: "normal", result: "win" }] }).r > 1500, "B4: …when it has none stored");
+    const s1700 = O.ratingOf("normal");
+    assert(O.performance([{ level: "normal", result: "draw" }]) === s1700, "B4: performance of a draw is the opponent's rating");
+    assert(O.performance([{ level: "normal", result: "win" }]) === s1700 + 400, "B4: …and a perfect score is capped at +400");
+    const five = (r, level) => new Array(5).fill({ level, result: r });
+    assert(O.advice(five("win", "normal"), "normal", { r: 1800, rd: 60 }) === "up" &&
+      O.advice(five("loss", "normal"), "normal", { r: 1500, rd: 60 }) === "down" &&
+      O.advice(five("win", "normal"), "normal", { r: 1400, rd: 60 }) === null &&
+      O.advice(five("win", "normal").slice(1), "normal", null) === null,
+      "B4: move up after 70%+ over five, down after 25% or less — when the rating agrees");
+    assert(O.neighbour("normal", "up").level === O.LEVELS[O.LEVELS.indexOf("normal") + 1], "B4: …to the persona one rung over");
+  }
+
+  // the app's hooks — few lines, each where the thing happens
+  const mt = srcOf("maybeEngineTurn");
+  assert(/OppUI\.plan\(engineSide\)/.test(mt), "B4: the engine's budget is opponents.js's clock plan");
+  assert(/if \(OppUI\.resigns\(mv\)\) return;[\s\S]*gameMove\(/.test(mt), "B4: the engine resigns before it would play its move");
+  assert(/OppUI\.maybeOffer\(\)/.test(mt), "B4: …and offers a draw after one");
+  assert(/Opponents\.fileRating\(s, rec/.test(srcOf("recordOutcome")) && /recordOutcome\(result, ""\)/.test(srcOf("recordGameIfOver")),
+    "B4: every filed engine game goes through one door, which rates it");
+  {
+    const ui = fs.readFileSync(path.join(root, "src/web/js/opponents-ui.js"), "utf8");
+    const paintBody = /function paint\(\) \{([\s\S]*?)\n  \}/.exec(ui);
+    assert(paintBody && !/replaceChildren|innerHTML|appendChild|createElement/.test(paintBody[1]),
+      "B4: the persona cards are relabelled in place, never rebuilt (7.6)");
+    const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+    assert(/id="draw-offer"[^>]*hidden[\s\S]{0,300}id="draw-accept"[\s\S]{0,200}id="draw-decline"/.test(html),
+      "B4: the draw offer is static markup, shown and hidden, not built");
+    for (const tc of ["15+10", "30", "custom"]) assert(html.includes('data-tc="' + tc + '"'), "B4: the clock row offers " + tc);
+  }
+
+  // the ratings are the measured ones
+  const lad = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).ladder;
+  assert(!!lad && lad.rating, "B4: docs/measured.json holds the ladder run");
+  if (lad && lad.rating) {
+    const off = O.LEVELS.filter((id) => O.RATING[id] !== lad.rating[id] || O.RATING_SE[id] !== lad.ratingSe[id]);
+    assert(off.length === 0, "B4: opponents.js's ratings are docs/measured.json's" + (off.length ? " — " + off.join(",") : ""));
+    assert(O.LEVELS.every((id, i) => i === 0 || O.RATING[id] > O.RATING[O.LEVELS[i - 1]]), "B4: the ladder is monotone");
+    assert(lad.rating.easy === 1320 && lad.rating.normal === 1700, "B4: anchored at 1320 and 1700");
+    const stale = O.LEVELS.filter((id) => JSON.stringify(lad.settings[id]) !== JSON.stringify(Object.assign({}, E.TIERS[id],
+      { style: (O.PERSONAS.find((p) => p.level === id) || {}).style || "off" })));
+    assert(stale.length === 0, "B4: the run measured the rungs that ship (re-run scripts/test-ladder.mjs)" + (stale.length ? " — " + stale.join(",") : ""));
+  }
+}
+
 // FIDE draw arithmetic: repetition counting and the 6.9 material test decide
 // real game results, so they get their own checks
 {
@@ -4411,8 +4578,12 @@ for (const lang of CONTENT_LANGS) {
     // The two plain Elo tooltips are a product name and a number — there is
     // nothing in them to translate. (The labels themselves are words: 1.24
     // briefly put the Elo values ON the buttons, which was wrong. UCI_Elo is
-    // an engine setting, its floor of 1320 is already above a real beginner,
-    // and this app never gives the player a rating to compare against.)
+    // an engine setting, its floor of 1320 is already above a real beginner.
+    // v8-0-plan B4 gave the player a rating, and the ratings shown beside it
+    // are the measured ones on the persona cards, not these.) The two rungs
+    // B4 added between 1320 and 1700 are the same kind of tooltip, and the
+    // full-strength persona's name is the engine's name. `op.say` is
+    // 「{0}：{1}」 — a name and its line, the same full-width colon in both.
     // `lm.tipSep` is the punctuation between a drill's outcome and the
     // technique it teaches. Japanese and Chinese both end a sentence with 。 —
     // it is translated, and the translation is the same mark.
@@ -4422,7 +4593,8 @@ for (const lang of CONTENT_LANGS) {
     // as words is what the row is getting away from.
     ja: new Set(["act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
       "learn.lessonPre", "ed.crK", "ed.crQ", "rv.marks",
-      "tip.diffNormal", "tip.diffHard", "lm.tipSep"]),
+      "tip.diffNormal", "tip.diffHard", "lm.tipSep",
+      "tip.diff.easyplus", "tip.diff.normalminus", "op.fish.name", "op.say"]),
   };
   let untranslated = 0;
   for (const id of langs) {

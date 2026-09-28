@@ -117,21 +117,23 @@ async function play() {
   fs.mkdirSync(outDir, { recursive: true });
   const [si, sn] = arg("shard", "1/1").split("/").map(Number);
   const file = path.join(outDir, "shard-" + si + "-of-" + sn + ".jsonl");
+  // a game already in ANY file of the directory is not played again: a run
+  // stopped part-way resumes with other counts or another sharding and the
+  // games it has are kept, once each (fit() drops duplicates too)
   const done = new Set();
-  if (fs.existsSync(file)) {
-    for (const line of fs.readFileSync(file, "utf8").split("\n").filter(Boolean)) {
-      const g = JSON.parse(line);
-      done.add(g.key);
+  for (const f of fs.readdirSync(outDir).filter((x) => x.endsWith(".jsonl"))) {
+    for (const line of fs.readFileSync(path.join(outDir, f), "utf8").split("\n").filter(Boolean)) {
+      done.add(JSON.parse(line).key);
     }
   }
-  const all = schedule().filter((_, i) => i % sn === si - 1);
+  const keyOf = (job) => job.a + ":" + JSON.stringify(tierOf(job.a)) + "|" + job.b + ":" + JSON.stringify(tierOf(job.b)) + "|" + job.k;
+  const todo = schedule().filter((_, i) => i % sn === si - 1).filter((job) => !done.has(keyOf(job)));
   const player = await startPlayer({ Chess, ChessEngine, ChessPersona });
   const started = Date.now();
   let n = 0;
-  for (const job of all) {
+  for (const job of todo) {
     const ta = tierOf(job.a), tb = tierOf(job.b);
-    const key = job.a + ":" + JSON.stringify(ta) + "|" + job.b + ":" + JSON.stringify(tb) + "|" + job.k;
-    if (done.has(key)) continue;
+    const key = keyOf(job);
     const aWhite = job.k % 2 === 0;
     const opening = OPENINGS[Math.floor(job.k / 2) % OPENINGS.length];
     const t0 = Date.now();
@@ -142,7 +144,7 @@ async function play() {
       how: res.how, plies: res.plies, ms: Date.now() - t0 };
     fs.appendFileSync(file, JSON.stringify(rec) + "\n");
     n++;
-    process.stdout.write(`\r  ${n}/${all.length - done.size}  ${job.a}–${job.b} #${job.k}: ${res.result} (${res.how}, ${res.plies} 半着)          `);
+    process.stdout.write(`\r  ${n}/${todo.length}  ${job.a}–${job.b} #${job.k}: ${res.result} (${res.how}, ${res.plies} 半着)          `);
   }
   console.log(`\n分片 ${si}/${sn}：${n} 盘，墙钟 ${((Date.now() - started) / 60000).toFixed(1)} 分钟 → ${file}`);
 }
@@ -251,9 +253,12 @@ function fit() {
   if (!dir) { console.error("--in=DIR"); process.exit(2); }
   const games = [];
   let stale = 0;
+  const seen = new Set();
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".jsonl")).sort()) {
     for (const line of fs.readFileSync(path.join(dir, f), "utf8").split("\n").filter(Boolean)) {
       const g = JSON.parse(line);
+      if (seen.has(g.key)) continue;
+      seen.add(g.key);
       // a game played with settings that are not the ones engine.js ships
       // describes some other rung
       // (--loose: fit whatever was played — tuning runs with --override)

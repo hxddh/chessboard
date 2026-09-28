@@ -11,7 +11,7 @@
  * who cannot play, and report the score. Seeded, so a run is repeatable.
  *
  * Opt-in — slow and needs the vendored engine:
- *   node scripts/test-novice.mjs [--tier beginner|casual] [--games N]
+ *   node scripts/test-novice.mjs [--tier=beginner|casual|learner|improver|steady|solid] [--games N]
  */
 //
 // All we had was an indirect argument from ACPL (150–180 for the tier, versus
@@ -232,9 +232,12 @@ if (RECORDING) {
 // nobody carried into this table is now a failing test rather than a gate
 // that quietly describes an engine the app no longer ships.
 //
-// casual's lower bound is 0 and is NOT a gate: 29 − 3σ is below zero, which
-// a 20-game match cannot resolve. Only its upper side means anything. The
-// release path runs the beginner tier, where both sides are real.
+// A lower bound of 0 is NOT a gate: mean − 3σ below zero is more than a
+// 20-game match can resolve, and only the upper side means anything. Until
+// v8-0-plan B4 that was casual (29 − 3σ); with its eight candidates it scores
+// 40 and both of its sides are real, and it is the new rungs above it whose
+// lower bound is 0. The release path runs the beginner tier, where both
+// sides are real.
 //
 // Two bots, two bands. The careful bot is the one the README describes and
 // the one the tiers were calibrated against. The pure-random bot is recorded
@@ -242,9 +245,15 @@ if (RECORDING) {
 // says only that: the release gate first applied the careful band to both
 // and failed v6.0.0 on a 0 % that measured.json had always said.
 {
+  // v8-0-plan B4: casual re-measured with its eight candidates, and the four
+  // rungs above it — the ramp that replaced the cliff to 1320
   const BANDS = {
     beginner: { careful: [35, 83], random: [0, 15] },
-    casual: { careful: [0, 60], random: [0, 15] },
+    casual: { careful: [12, 68], random: [0, 15] },
+    learner: { careful: [0, 55], random: [0, 15] },
+    improver: { careful: [2, 58], random: [0, 15] },
+    steady: { careful: [0, 21], random: [0, 15] },
+    solid: { careful: [0, 11], random: [0, 15] },
   };
   const bands = BANDS[TIER_NAME];
   for (const [label, m] of Object.entries(measured)) {

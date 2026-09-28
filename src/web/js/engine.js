@@ -36,9 +36,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // self-destructive: a bot playing random legal moves that merely avoided
     // dropping a piece to an immediate recapture scored 81% against it over 24
     // games. Meanwhile the next rung up was Elo 1320, so a learner who beat
-    // this one had nowhere to go. The same bot now scores 59% here and 29% on
-    // `casual` over 100 games, and near nothing at 1320 — a ladder with rungs
-    // instead of a cliff. (Those were 56% and 27% until 7.1.1: they were
+    // this one had nowhere to go. The same bot now scores 59% here and 40% on
+    // `casual` over 100 games (29% until v8-0-plan B4 gave it more
+    // candidates), and less on each of the four rungs B4 put above it, down
+    // to near nothing at 1320 — a ladder with rungs instead of a cliff.
+    // (Those were 56% and 27% until 7.1.1: they were
     // measured under Stockfish 18, 7.0 swapped in SF19 lite-single, and
     // nobody re-ran the match. Re-measured at 5×20 games per tier, the
     // figures moved up ~3 points — a weaker engine makes a weaker tier.)
@@ -71,9 +73,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // condition for making the change ("若相关性强" — if the candidate count
     // really tracks the phase) is not met, so it is not made.
     beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.2, minMs: 350 },
-    // v8-0-plan B4: one candidate more (6 → 9). Played against each other,
+    // v8-0-plan B4: two candidates more (6 → 8). Played against each other,
     // the 1.19 `casual` scored 91% against `beginner` — not a rung above it
-    // but four. Nine candidates put it one step up (the ladder's 60–75%).
+    // but three. Eight candidates put it one step up (the ladder's 60–75%).
     casual: { skill: 0, depth: 2, multipv: 8, worstBias: 0.15, minMs: 350 },
     // v8-0-plan B4: the rungs between 休闲 and 初级. The step from `casual` to
     // Elo 1320 was a cliff — the careful novice bot scores 29% on one side of
@@ -88,10 +90,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // list's length moves the strength as much as the temperature does
     // (12 candidates at winT 60 played level with `casual`; 8 scored 82%
     // against it). Ratings: docs/measured.json `ladder`.
-    learner: { skill: 1, depth: 2, multipv: 10, winT: 55, minMs: 350 },
-    improver: { skill: 2, depth: 2, multipv: 10, winT: 60, minMs: 350 },
-    steady: { skill: 3, depth: 3, multipv: 8, winT: 24, minMs: 350 },
-    solid: { skill: 4, depth: 4, multipv: 8, winT: 18, minMs: 350 },
+    learner: { skill: 1, depth: 2, multipv: 10, winT: 40, minMs: 350 },
+    improver: { skill: 2, depth: 2, multipv: 9, winT: 50, minMs: 350 },
+    steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
+    solid: { skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
     easy: { elo: 1320, movetime: 500 },
     // v8-0-plan B4: and two between 1320 and 1700 — in games against each
     // other 1700 scored 94% against 1320, three rungs apart, not one

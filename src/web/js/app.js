@@ -17,6 +17,8 @@ import { ChessLearning } from "./learning.js";
 import { ChessPreview } from "./preview.js";
 import { ChessPersona } from "./persona.js";
 import { TimeControl } from "./time-control.js";
+import { Opponents } from "./opponents.js";
+import { createOpponentsUI } from "./opponents-ui.js";
 import { ChessPgn } from "./pgn.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
@@ -528,6 +530,7 @@ import { createStore } from "./store.js";
   function forgetEnding() {
     store.session.goDismissed = null;
     store.session.goAnnounced = null;
+    OppUI.reset();
   }
   function gameLoadPgn(pgn, opts) {
     // the parser first: it keeps variations, comments, NAGs and shapes that
@@ -1582,12 +1585,20 @@ import { createStore } from "./store.js";
   }
 
   // --- engine (AI mode) ---
-  const DIFF_IDS = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+  const DIFF_IDS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "hard", "extreme"];
   const diffName = (id) => t("diff." + id);
   /** legacy alias kept for the many call sites that read it like a map */
   const DIFF_NAMES = new Proxy({}, {
     get: (_, k) => (DIFF_IDS.includes(k) ? diffName(k) : undefined),
     has: (_, k) => DIFF_IDS.includes(k),
+  });
+  // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
+  const OppUI = createOpponentsUI({
+    doc: document, store, t, tf, setText, afterPress, acceptDraw, diffName: (id) => diffName(id),
+    repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
+    invalidateEngine, forgetFileResult, playEnding, recordOutcome,
+    plies: () => sanHistory().length, fen: () => game.fen(), verboseHistory: () => game.history({ verbose: true }),
+    openingName: () => (openingFor(Infinity) || [])[1] || "", rating: () => Opponents.ratingOfStats(loadStats()),
   });
 
   /** Drop any in-flight engine search; call before every game mutation. */
@@ -1800,7 +1811,7 @@ import { createStore } from "./store.js";
     }
     // clocked AI games: the engine budgets its think time from its clock
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
-    const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
+    const budget = OppUI.plan(engineSide); // v8-0-plan B4: scales with the clock, capped at the rung's own
     let mv = null;
     // Twice, because an engine that fails once has usually just lost its
     // worker, and the second ask is free. Measured on the shipped 2.1.5: one
@@ -1826,6 +1837,7 @@ import { createStore } from "./store.js";
         { label: t("act.retry"), onClick: () => maybeEngineTurn() });
       return;
     }
+    if (OppUI.resigns(mv)) return; // v8-0-plan B4: lost for three moves running
     const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
       store.game.viewIndex = sanHistory().length;
@@ -1838,6 +1850,7 @@ import { createStore } from "./store.js";
       else if (naturalGameOver()) playEnding(null);
       saveGame();
       recordGameIfOver();
+      if (!appGameOver()) OppUI.maybeOffer();
       coachAfterEngineReply();
       runPremove();
     }
@@ -2261,16 +2274,7 @@ import { createStore } from "./store.js";
     if (store.game.recordedId) return; // this game is already filed
     let result = "draw";
     if (game.in_checkmate()) result = game.turn() === store.session.humanColor ? "loss" : "win";
-    const s = loadStats();
-    // the id ties the record to the exact game it came from, so a later
-    // analysis can only annotate the game it actually measured
-    const id = newRecordId();
-    store.game.recordedId = id;
-    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending: "" });
-    if (s.games.length > 500) s.games = s.games.slice(-500);
-    saveStats(s);
-    renderStats();
-    checkNewAchievements();
+    recordOutcome(result, "");
   }
 
   // offerReview() lived here: a toast, 2.2s after the ending, saying
@@ -2772,7 +2776,7 @@ import { createStore } from "./store.js";
     const end = historyEnding(rec);
     if (!end) return;
     if (end === "resigned") {
-      store.game.resigned = rec.color; // in an engine game only the human can resign
+      store.game.resigned = rec.result === "win" ? (rec.color === "w" ? "b" : "w") : rec.color; // v8-0-plan B4: the engine resigns too
     } else if (end === "drawAgreed") {
       store.game.drawAgreed = true;
     } else if (end === "claimed") {
@@ -3523,9 +3527,6 @@ import { createStore } from "./store.js";
     slot.replaceChildren(Icons.icon(name));
   }
 
-  /** The sparring style's picture, for the engine's strip (7.5 persona). */
-  const PERSONA_ICON = { off: "bot", greedy: "coins", principled: "scale", attacker: "swords" };
-
   /**
    * Who sits on each side, as the strips say it: an icon, a name and a
    * second, quieter line. `null` for a side nobody is playing — a lesson
@@ -3535,12 +3536,7 @@ import { createStore } from "./store.js";
   function stripPeople() {
     const mode = store.session.mode;
     if (mode === "ai") {
-      const engine = {
-        icon: PERSONA_ICON[store.session.personaId] || "bot",
-        name: "Stockfish",
-        level: [DIFF_NAMES[store.session.difficulty] || store.session.difficulty]
-          .concat(store.session.personaId !== "off" ? [t("persona." + store.session.personaId)] : []).join(" · "),
-      };
+      const engine = OppUI.strip(store.session.difficulty, store.session.personaId); // v8-0-plan B4: the persona
       const you = { icon: "user", name: t("vs.player"), level: "" };
       return store.session.humanColor === "w" ? { w: you, b: engine } : { w: engine, b: you };
     }
@@ -3683,8 +3679,10 @@ import { createStore } from "./store.js";
     // through that — both are forgotten.
     if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; }
     const show = !!end && store.session.goDismissed !== end.sig;
+    OppUI.syncOffer(!!end);
     card.hidden = !show;
     if (!show) return;
+    OppUI.paintCard(end);
     const mode = store.session.mode;
     const mine = mode === "ai" ? store.session.humanColor : null;
     const result = !end.winner ? t("go.draw")
@@ -4455,7 +4453,9 @@ import { createStore } from "./store.js";
     for (const id of NG_ROWS) {
       const row = el(id);
       if (!row) continue;
-      if (inDialog) { if (row.parentNode !== host) host.appendChild(row); }
+      // v8-0-plan B4: rung and style sit in the dialog's 自定义 fold, under the personas
+      const dest = id === "row-difficulty" || id === "row-persona" ? el("ng-custom-body") || host : host;
+      if (inDialog) { if (row.parentNode !== dest) dest.appendChild(row); }
       else if (row.parentNode !== home.parentNode) home.parentNode.insertBefore(row, home);
     }
   }
@@ -4472,11 +4472,13 @@ import { createStore } from "./store.js";
     };
     const warn = el("ng-warn");
     if (warn) warn.hidden = !(sanHistory().length && !appGameOver());
+    if (opts && opts.switchOpponent) OppUI.applyAdvice();
     hostNewGameRows(true);
     syncSettingsUI();
-    // 换个对手 lands on the opponent; everything else on 开始
+    // 换个对手 lands on the opponent (its persona card); everything else on 开始
+    const card = OppUI.onOpen();
     const first = opts && opts.switchOpponent && !pvp
-      ? modal.querySelector("#row-difficulty button.active") : el("ng-start");
+      ? card || modal.querySelector("#row-difficulty button.active") : el("ng-start");
     Dlg.open(modal, first || undefined);
   }
 
@@ -4597,9 +4599,14 @@ import { createStore } from "./store.js";
   function recordOutcome(result, ending) {
     if (store.game.recordedId) return; // this game is already filed
     const s = loadStats();
+    // the id ties the record to the exact game it came from, so a later
+    // analysis can only annotate the game it actually measured
     const id = newRecordId();
     store.game.recordedId = id;
-    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending });
+    const rec = { id, t: Date.now(), diff: store.session.difficulty, style: store.session.personaId, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending };
+    // v8-0-plan B4: the engine-game rating moves with every filed game
+    store.session.filed = Object.assign({ id, level: rec.diff }, Opponents.fileRating(s, rec, rec.t));
+    s.games.push(rec);
     if (s.games.length > 500) s.games = s.games.slice(-500);
     saveStats(s);
     renderStats();
@@ -4772,21 +4779,11 @@ import { createStore } from "./store.js";
     else if (r === "1/2-1/2") store.game.drawAgreed = true;
   }
 
-  // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
-  // object that predated the 1.19 "casual" rung and never grew one, so a
-  // casual game exported as "Stockfish 19 (casual)" — the raw id leaking into
-  // a file other programs read. The self-check now requires an entry here for
-  // every rung, so the next tier cannot slip through the same way.
-  const DIFF_EN = {
-    beginner: "Beginner", casual: "Casual", easy: "Easy",
-    normal: "Normal", hard: "Hard", extreme: "Max",
-  };
-
   /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
   function pgnForExport() {
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    const engineName = "Stockfish 19 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
+    const engineName = "Stockfish 19 (" + (Opponents.EN_NAME[store.session.difficulty] || store.session.difficulty) + ")";
     const white = store.session.mode === "ai" ? (store.session.humanColor === "w" ? "Player" : engineName) : "Player 1";
     const black = store.session.mode === "ai" ? (store.session.humanColor === "b" ? "Player" : engineName) : "Player 2";
     const result = gameResultToken();
@@ -5563,6 +5560,7 @@ import { createStore } from "./store.js";
     const show = (store.session.mode === "ai" || store.session.mode === "pvp") && !sanHistory().length && !store.session.editor;
     el.hidden = !show;
     if (!show) return;
+    OppUI.paintHello();
     // v8-0-plan §5: the way to the new-game dialog before the first move —
     // the opponent in an engine game, the side and clock between two players
     const ng = document.getElementById("idle-new");
@@ -6458,9 +6456,10 @@ import { createStore } from "./store.js";
     doc: document, store, appEl, t, el, setText, DIFF_NAMES,
     saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
-    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook,
+    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook, onPaint: () => OppUI.paint(),
   });
   SettingsUI.wire();
+  OppUI.mount(); OppUI.wireOffer();
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)
   const Shell = createShell({
     doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,

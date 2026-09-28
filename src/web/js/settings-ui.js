@@ -34,7 +34,7 @@ export function createSettingsUI(d) {
     doc, store, appEl, t, el, setText, DIFF_NAMES,
     saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
-    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook,
+    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook, onPaint,
   } = d;
   const document = doc;
   const Audio2 = ChessAudio;
@@ -47,6 +47,8 @@ export function createSettingsUI(d) {
 
   function paintSettings() {
     if (syncLook) syncLook();
+    // v8-0-plan B4: the persona cards beside these rows (opponents-ui.js) repaint with them
+    if (onPaint) onPaint();
     const sb = document.getElementById("opt-sound");
     if (sb) {
       sb.classList.toggle("active", store.ui.soundOn);
