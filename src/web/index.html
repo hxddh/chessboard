@@ -435,6 +435,37 @@
           <h2 class="side-h" data-i18n="side.puzzle">做题</h2>
           <span class="side-h-meta num" id="puzzle-progress">0/0</span>
         </div>
+        <!-- v8-0-plan B1: the rating is on this view at all times, with its
+             curve — the number the whole page is working on. -->
+        <div class="setting-row" id="pz-rating">
+          <span class="setting-k" data-i18n="rec.rating">做题评级</span>
+          <span class="num" id="pz-rating-v"></span>
+        </div>
+        <canvas id="pz-rating-curve" aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
+        <!-- v8-0-plan B1: practice, or one of the two runs (trainer/runs.js) -->
+        <div class="setting-row stack" id="row-pz-mode">
+          <span class="setting-k" data-i18n="run.mode">玩法</span>
+          <div class="theme-row wrap" id="pz-mode-seg" role="group" aria-label="玩法" data-i18n-aria="run.mode">
+            <button type="button" data-run="practice" class="active" title="按题型、主题或复习做题，不计时" data-i18n-title="tip.run.practice" data-i18n="run.practice">练习</button>
+            <button type="button" data-run="rush" title="3 分钟内尽量多做，错 3 题出局，题目越来越难" data-i18n-title="tip.run.rush" data-i18n="run.rush">冲刺</button>
+            <button type="button" data-run="streak" title="一直做到第一次答错，题目越来越难" data-i18n-title="tip.run.streak" data-i18n="run.streak">连胜</button>
+          </div>
+        </div>
+        <!-- The run's card: its rule (or how it ended), the score, the misses
+             and the clock, the best score kept with the puzzle state. -->
+        <div class="lesson-task" id="pz-run" hidden>
+          <p id="pz-run-head"></p>
+          <p class="pz-run-stats num">
+            <span id="pz-run-score"></span>
+            <span id="pz-run-strikes"></span>
+            <span id="pz-run-clock" aria-label="剩余时间" data-i18n-aria="aria.runClock"></span>
+          </p>
+          <p class="hint" id="pz-run-best"></p>
+          <div class="lesson-controls">
+            <button type="button" class="tool-btn" id="pz-run-stop" data-i18n="run.stop">结束</button>
+            <button type="button" class="tool-btn primary" id="pz-run-again" hidden data-i18n="run.again">再来一局</button>
+          </div>
+        </div>
         <!-- The book's one opinion. Everything else on this pane is the player
              choosing; this is the app answering "what should I do next" from
              what it actually knows — the review queue, then the category with
@@ -442,6 +473,18 @@
              toast says which of those it was. picker.js holds the rungs. -->
         <div class="link-row">
           <button type="button" class="act-btn" id="puzzle-smart" title="按你的复习欠账和错误率挑下一题" data-i18n-title="tip.puzzle.smart" data-i18n="pz.smart">为你出一题</button>
+        </div>
+        <!-- v8-0-plan B1: the theme browser, a sheet over this view. A row of
+             its own: two actions share a .link-row's grid, and at 1440 wide
+             「Practise by theme」 wrapped to two lines beside 为你出一题. -->
+        <div class="link-row">
+          <button type="button" class="act-btn" id="pz-themes-open" title="全部主题，各有多少题、你做过几道、你在这个主题上的评级" data-i18n-title="tip.theme.browse" data-i18n="theme.browse">按主题练</button>
+        </div>
+        <!-- The theme being practised (a theme is a category of its own). -->
+        <div class="setting-row" id="row-pz-theme" hidden>
+          <span class="setting-k" data-i18n="theme.cur">主题</span>
+          <span id="pz-theme-name"></span>
+          <button type="button" class="act-btn" id="pz-theme-change" data-i18n="theme.change">换主题</button>
         </div>
         <!-- 7.9 §4d: .pz-group marks where a new group starts — the filters,
              the puzzle on the board, the list. 8px inside a group, 20px
@@ -968,6 +1011,28 @@
          back to the board, and the diagnosis rows filter it — which is what
          v7-plan §6.2 asked for in the first place ("每一条都必须点到一个可
          执行的下一步"). Built on the same parts as 对局历史 above it. -->
+    <!-- v8-0-plan B1: every theme the importer can verify, its count, the
+         player's first answers in it and its own rating. A sheet over 谜题;
+         starting a theme closes it onto the board. -->
+    <div class="modal-bg page-sheet" id="theme-modal" role="dialog" aria-labelledby="theme-modal-title">
+      <div class="modal wide">
+        <h3 id="theme-modal-title" data-i18n="theme.title">题目主题</h3>
+        <div class="hist-filters">
+          <input type="search" id="theme-search" class="text-input" spellcheck="false" placeholder="搜索主题" data-i18n-placeholder="theme.search" aria-label="搜索主题" data-i18n-aria="theme.search" />
+          <span class="setting-k" id="theme-prog-k" data-i18n="theme.byProgress">按进度筛选</span>
+          <div class="theme-row" id="theme-prog-seg" role="group" aria-labelledby="theme-prog-k">
+            <button type="button" data-tprog="all" class="active" data-i18n="hist.any">全部</button>
+            <button type="button" data-tprog="new" data-i18n="theme.prog.new">没练过</button>
+            <button type="button" data-tprog="started" data-i18n="theme.prog.started">练过</button>
+          </div>
+        </div>
+        <div class="pick-list" id="theme-list"></div>
+        <p class="hint" id="theme-list-count"></p>
+        <div class="close-row">
+          <button type="button" class="tool-btn" id="theme-close" data-i18n="act.close">关闭</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-bg page-sheet" id="lib-list-modal" role="dialog" aria-labelledby="lib-list-title">
       <div class="modal wide">
         <h3 id="lib-list-title" data-i18n="lib.listTitle">棋谱库</h3>

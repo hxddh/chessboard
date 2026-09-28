@@ -580,7 +580,10 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 {
   const mctx = loadAppModules(["src/web/js/puzzles-mined.js"]);
   const mined = mctx.MINED_PUZZLES;
-  assert(Array.isArray(mined) && mined.length >= 1002, "mined set loaded (" + (mined ? mined.length : 0) + ")");
+  // 980 since v8-0-plan B1: the whole set re-checked at depth 18 and the 22
+  // lines with any solver move ≥ 50cp below the engine's best retired
+  // (verify-puzzles.mjs --retire)
+  assert(Array.isArray(mined) && mined.length >= 980, "mined set loaded (" + (mined ? mined.length : 0) + ")");
   // v8-0-plan §5: the header said 1023 while the array held 1002 — the
   // count a reader sees first must be the count that ships
   const headN = (/\* (\d+) puzzles/.exec(fs.readFileSync(path.join(ROOT, "src/web/js/puzzles-mined.js"), "utf8")) || [])[1];
@@ -637,8 +640,8 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   //
   // A floor that kept the pre-gate number would have had exactly one way to be
   // satisfied: putting wrong puzzles back.
-  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 573, win: 300 };
-  const MOTIF_FLOOR = { fork: 134, pin: 111, skewer: 50, discovered: 5, double: 9 };
+  const FLOOR = { m1: 42, m2: 33, m3: 54, tac: 551, win: 300 };
+  const MOTIF_FLOOR = { fork: 131, pin: 109, skewer: 50, discovered: 5, double: 9 };
   // 6.1: §5 of docs/v6-plan.md wants ≥ 50 puzzles in every 200-point rating
   // band. 6.0 shipped three bands short and did not say so; 6.1 re-rated the
   // set from measured difficulty and topped up the thin bands from fresh
@@ -653,7 +656,10 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // half. Pinned at what they actually are rather than at what §5 wants:
   // topping them up would mean regenerating ids, and a changed id orphans a
   // player's progress (6.0 → 6.1 kept all 958 for exactly that reason).
-  const BAND_FLOOR = 50, BAND_SHORT = { 1200: 49, 1600: 48, 2000: 48, 2200: 27, 2400: 46 };
+  // v8-0-plan B1 re-checked all of it at depth 18 and retired the 22 lines with a
+  // solver move ≥ 50cp below the engine's best (verify-puzzles.mjs --retire):
+  // the floors above and the short bands below are what is left, 1800 among them.
+  const BAND_FLOOR = 50, BAND_SHORT = { 1200: 47, 1600: 45, 1800: 49, 2000: 46, 2200: 24, 2400: 44 };
   for (const [c, n] of Object.entries(FLOOR)) assert((byCat[c] || 0) >= n, "mined " + c + " ≥ " + n + " (" + (byCat[c] || 0) + ")");
   for (const [m, n] of Object.entries(MOTIF_FLOOR)) assert((byMotif[m] || 0) >= n, "mined motif " + m + " ≥ " + n + " (" + (byMotif[m] || 0) + ")");
   {
@@ -757,6 +763,96 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
     assert(ordered.slice(0, 10).some((d) => d.eco[0] === "B") && ordered.slice(0, 10).some((d) => d.eco[0] === "C"),
       "the first ten include 1.e4 e5 and the Sicilian");
   }
+}
+
+// --- v8-0-plan B1: the theme list and the two runs (trainer/themes.js, runs.js)
+{
+  const tctx = loadAppModules(["src/web/js/trainer/themes.js", "src/web/js/trainer/runs.js"]);
+  const Th = tctx.ChessThemes, Ru = tctx.ChessRuns;
+  // the browser lists exactly what the importer verifies, in its order
+  assert(JSON.stringify(Th.THEME_IDS) === JSON.stringify(THEMES.flatMap((x) => (x.alt ? [x.id, x.alt] : [x.id]))),
+    "trainer/themes.js lists the importer's verifiable themes, same ids, same order (" + Th.THEME_IDS.length + ")");
+  assert(JSON.stringify(Th.themesOf({ id: "lc-x", cat: "tac", themes: ["fork", "nope", "sacrifice"] }, "pin")) === JSON.stringify(["fork", "sacrifice"]),
+    "an imported puzzle keeps its verified themes, unknown ids dropped, the motif ignored");
+  assert(JSON.stringify(Th.themesOf({ id: "h1", cat: "m2" }, null)) === JSON.stringify(["m2"]), "a hand-written mate is its mate length");
+  assert(JSON.stringify(Th.themesOf({ id: "h2", cat: "tac" }, "skewer")) === JSON.stringify(["skewer"]), "…a tactic is its motif");
+  assert(Th.themesOf({ id: "h3", cat: "op" }, null).length === 0, "…an opening drill has no theme");
+  const st = {};
+  Th.themeRecord(st, "fork").solve = 2;
+  Th.themeRecord(st, "fork").miss = 1;
+  assert(Th.attemptsIn(st, "fork") === 3 && Th.attemptsIn(st, "pin") === 0, "first answers per theme add up");
+  const rows = [{ id: "fork", name: "捉双", n: 5, tried: 3 }, { id: "pin", name: "牵制", n: 4, tried: 0 }, { id: "backRank", name: "Back-rank mate", n: 2, tried: 1 }];
+  assert(Th.filterThemes(rows, "", "all").length === 3, "no filter: every theme");
+  assert(Th.filterThemes(rows, "", "new").map((r) => r.id).join() === "pin", "「没练过」: the themes with no answer");
+  assert(Th.filterThemes(rows, "", "started").map((r) => r.id).join() === "fork,backRank", "「练过」: the themes answered in");
+  assert(Th.filterThemes(rows, "牵", "all").map((r) => r.id).join() === "pin", "search reads the shown name");
+  assert(Th.filterThemes(rows, "BACK", "all").map((r) => r.id).join() === "backRank", "…case-blind, and the id too");
+
+  // runs: harder as they go, strikes, the clock, the best score
+  const pool = [];
+  for (let r = 400; r <= 2600; r += 10) pool.push({ id: "p" + r, r });
+  const rate = (p) => p.r;
+  for (const kind of Ru.RUN_KINDS) {
+    const run = Ru.newRun(kind, 0, 42);
+    const got = [];
+    for (let i = 0; i < 12; i++) {
+      const p = Ru.pickNext(run, pool, rate);
+      Ru.served(run, p);
+      got.push(p.r);
+      assert(Math.abs(p.r - Ru.targetOf(run)) <= Ru.SPREAD, kind + ": puzzle " + (i + 1) + " is near the run's target (" + p.r + " vs " + Ru.targetOf(run) + ")");
+      Ru.onSolve(run);
+    }
+    const early = got.slice(0, 4).reduce((a, b) => a + b) / 4, late = got.slice(-4).reduce((a, b) => a + b) / 4;
+    assert(late - early >= 200, kind + ": the run gets harder (" + Math.round(early) + " → " + Math.round(late) + ")");
+    assert(new Set(run.used).size === run.used.length, kind + ": no puzzle twice in a run");
+    assert(run.score === 12, kind + ": each solve scores");
+  }
+  const rush = Ru.newRun("rush", 1000, 1);
+  Ru.onMiss(rush); Ru.onMiss(rush);
+  assert(!rush.over, "rush: two misses and the run goes on");
+  Ru.onMiss(rush);
+  assert(rush.over && rush.why === "strikes", "rush: the third miss ends it");
+  const clocked = Ru.newRun("rush", 1000, 1);
+  assert(Ru.timeLeft(clocked, 1000) === 180000, "rush: three minutes on the clock");
+  assert(!Ru.checkClock(clocked, 180999) && Ru.checkClock(clocked, 181000) && clocked.why === "time", "rush: ends when the clock runs out");
+  const streak = Ru.newRun("streak", 0, 1);
+  assert(Ru.timeLeft(streak, 1e12) === Infinity && !Ru.checkClock(streak, 1e12), "streak: no clock");
+  Ru.onSolve(streak); Ru.onSolve(streak); Ru.onMiss(streak);
+  assert(streak.over && streak.why === "streak" && streak.score === 2, "streak: the first miss ends it, the solves are the score");
+  const pst = {};
+  assert(Ru.recordBest(pst, streak) && Ru.bestOf(pst, "streak") === 2, "a first score is a best");
+  const worse = Ru.newRun("streak", 0, 1); Ru.onSolve(worse);
+  assert(!Ru.recordBest(pst, worse) && Ru.bestOf(pst, "streak") === 2, "a lower score leaves the best alone");
+  assert(Ru.bestOf(pst, "rush") === 0, "…and each kind keeps its own");
+  assert(Ru.pickNext(Ru.newRun("rush", 0, 1), [], rate) === null, "an empty pool serves nothing");
+}
+
+// --- retired puzzles leave no review debt (Codex on #88) ----------------------
+// caf32fa retired these 22 mined puzzles (verify-puzzles.mjs --retire) with no
+// migration of the puzzle state: a missed one was owed for ever. Every one of
+// them must be out of the book and dropped by the load-time forgetRetired().
+{
+  const RETIRED_CAF32FA = [
+    "mn-201-5-62", "mn-201-60-17", "mn-201-77-37", "mn-201-82-28", "mn-203-26-47", "mn-301-37-33",
+    "mn-301-46-63", "mn-301-82-13", "mn-302-104-71", "mn-302-133-53", "mn-302-39-55", "mn-302-61-64",
+    "mn-303-116-48", "mn-303-13-29", "mn-303-141-10", "mn-201-63-26", "mn-202-18-70", "mn-301-101-54",
+    "mn-301-8-51", "mn-302-1-59", "mn-101-14-80", "mn-202-37-62",
+  ];
+  const rctx = loadAppModules(["src/web/js/puzzles-mined.js", "src/web/js/openings.js", "src/web/js/drills.js"]);
+  const book = new Set(ctx.CHESS_PUZZLES.concat(rctx.MINED_PUZZLES).map((p) => p.id));
+  assert(RETIRED_CAF32FA.length === 22 && RETIRED_CAF32FA.every((id) => !book.has(id)), "#88: the 22 retired ids are out of the book");
+  const live = ["w-hangq", rctx.MINED_PUZZLES[0].id];
+  const keep = ["lc-00008", "mine:abc", "rep-xyz"]; // lazily loaded / their own lifecycle
+  const entry = { s: 0, n: 1 };
+  const st = { missed: {}, solved: {}, pr: {} };
+  for (const id of RETIRED_CAF32FA.concat(live, keep)) { st.missed[id] = entry; st.solved[id] = true; st.pr[id] = { r: 1500 }; }
+  const n = rctx.ChessDrills.forgetRetired(st, (id) => book.has(id));
+  assert(n === 22 * 3, "#88: forgetRetired drops each retired id from missed, solved and pr (" + n + ")");
+  const left = (m) => Object.keys(m).sort().join(",");
+  const want = live.concat(keep).sort().join(",");
+  assert(left(st.missed) === want && left(st.solved) === want && left(st.pr) === want,
+    "#88: …and keeps the live ones, Lichess ids (bands load on demand), mine: and rep- ids");
+  assert(rctx.ChessDrills.forgetRetired(st, (id) => book.has(id)) === 0, "#88: a second pass has nothing left to do");
 }
 
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }

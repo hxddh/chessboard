@@ -16,9 +16,12 @@
  * come from a fresh hash per position, and a stored move outside the top
  * lines is scored with `searchmoves` (lib/sf-node.mjs, from test-mined.mjs).
  *
- *   node scripts/verify-puzzles.mjs --set=mined   [--sample=500] [--depth=18] [--seed=1] [--shard=1/3] [--out=f.json]
+ *   node scripts/verify-puzzles.mjs --set=mined   [--sample=500] [--depth=18] [--seed=1] [--shard=1/3] [--tie=50] [--out=f.json]
  *   node scripts/verify-puzzles.mjs --set=lichess [--dir=src/web/js] …
- *   node scripts/verify-puzzles.mjs --merge=a.json,b.json,c.json
+ *   node scripts/verify-puzzles.mjs --merge=a.json,b.json,c.json [--retire]
+ *
+ * --retire (a complete mined run only) takes every `worse` puzzle out of
+ * puzzles-mined.js — see retire() below.
  *
  * --shard runs one slice of the same seeded sample, so three processes cover
  * the 500 in a third of the time; --merge adds their JSON reports up. The
@@ -35,7 +38,9 @@ const arg = (name, dflt) => {
   const a = process.argv.find((x) => x.startsWith("--" + name + "="));
   return a ? a.slice(name.length + 3) : dflt;
 };
-const TIE = 50;
+// --tie=49 drops every move 50cp or more below the best (cp are integers);
+// the default keeps the acceptance line's "more than 50cp"
+const TIE = Number(arg("tie", 50));
 const LINES = 4;
 
 /** Add up shard reports. */
@@ -57,10 +62,37 @@ function report(r) {
   for (const w of r.worseAny.slice(0, 30)) console.log(`    ${w.id.padEnd(20)} ply ${w.ply}  stored ${String(w.stored).padEnd(8)} engine ${String(w.best).padEnd(8)} by ${w.margin == null ? "?" : w.margin}cp`);
 }
 
+/**
+ * Retire every mined puzzle a report calls worse (v8-0-plan B1: the whole set
+ * at depth 18, --tie=49). The same edit test-mined --fix makes: one entry per
+ * line in the generated file, ids never rewritten, the header's count kept
+ * equal to what is left. Retired, not truncated: a line whose second or third
+ * solver move is worse teaches that move, and cutting it short would ship a
+ * puzzle the gate never saw.
+ */
+function retire(r) {
+  const file = path.join(ROOT, "src/web/js/puzzles-mined.js");
+  const gone = new Set(r.worseAny.map((w) => w.id));
+  let dropped = 0;
+  let src = fs.readFileSync(file, "utf8").split("\n").filter((line) => {
+    const m = /^\s*\{id: "([^"]+)"/.exec(line);
+    if (m && gone.has(m[1])) { dropped++; return false; }
+    return true;
+  }).join("\n");
+  src = src.replace(/^( \* )(\d+) puzzles \(([^)]*)\)/m, (all0, lead, n, notes) =>
+    lead + (Number(n) - dropped) + " puzzles (" + notes + ", " + dropped + " by verify-puzzles at depth " + r.depth + ")");
+  fs.writeFileSync(file, src);
+  console.log(`retired ${dropped} mined puzzles`);
+}
+
 if (arg("merge")) {
   const r = merge(arg("merge").split(","));
   report(r);
   if (arg("out")) fs.writeFileSync(arg("out"), JSON.stringify(r, null, 1));
+  if (process.argv.includes("--retire")) {
+    if (r.set !== "mined" || r.checked < r.sample) { console.error("--retire needs a complete mined run"); process.exit(1); }
+    retire(r);
+  }
   process.exit(0);
 }
 
