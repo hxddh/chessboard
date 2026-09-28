@@ -39,7 +39,7 @@
       "dlg.exportAll": "Export all data", "dlg.importAll": "Import all data: the game, slots, settings, record and learning data on this device will be replaced by the file's.", "msg.allData.badFile": "That is not a data file this app exported", "msg.allData.imported": "All data imported — reloading…",
       "msg.profile.restored": "Profile restored from the local data file — reloading…", "msg.profile.fileBad": "The local data file could not be read; this session uses the cached profile and the file is left untouched",
       "about.title": "About Chessboard", "about.version": "Version", "about.license": "Licence", "about.source": "Source", "about.credits": "Credits", "about.dataPath": "Data location",
-      "about.licenseText": "GPLv3 — free software; the source ships with every release", "about.creditsText": "Stockfish 19 (GPLv3) · chess.js (BSD-2) · cburnett piece set (Colin M.L. Burnett, GPLv2+; the Classic set is its Wikimedia redrawing, multi-licensed GFDL / BSD / GPL / CC BY-SA 3.0) · Merida piece set (Armando Hernandez Marroquin, GPLv2+) · Chessnut piece set (Alexis Luengas, Apache 2.0) · Fantasy / Celtic / Spatial piece sets (Maurizio Monge, MIT) · lichess chess-openings (CC0) · wooden sound set made for this project (rendered from a physical model, GPLv3) · Lucide icons (ISC; ten derived from Feather, MIT)",
+      "about.licenseText": "GPLv3 — free software; the source ships with every release", "about.creditsText": "Stockfish 19 (GPLv3) · chess.js (BSD-2) · cburnett piece set (Colin M.L. Burnett, GPLv2+; the Classic set is its Wikimedia redrawing, multi-licensed GFDL / BSD / GPL / CC BY-SA 3.0) · Merida piece set (Armando Hernandez Marroquin, GPLv2+) · Chessnut piece set (Alexis Luengas, Apache 2.0) · Fantasy / Celtic / Spatial piece sets (Maurizio Monge, MIT) · lichess chess-openings (CC0) · Lichess game database (CC0, the built-in master move tree) · wooden sound set made for this project (rendered from a physical model, GPLv3) · Lucide icons (ISC; ten derived from Feather, MIT)",
       // 7.7 (v7-7-plan §2–§4, §7): the result card, the puzzle feedback card,
       // the lesson dots and the tool row's tooltips
       "go.analyse": "Analyse this game",
@@ -69,6 +69,11 @@
       "pz.fb.showHint": "Show a hint",
       "aria.lessonDots": "Lesson progress",
       "tip.reviewOpen": "Review: analyse, deep analysis, live engine",
+      // v8-0-plan C3: the opening explorer
+      "act.explorer": "Explorer", "tip.explorer": "Opening explorer: the moves played from this position, how many games, and how they ended", "xp.title": "Opening explorer", "xp.source": "Source", "xp.master": "Masters",
+      "xp.book": "Book", "xp.row": "{0}: {1} games, White wins {2}%, draws {3}%, Black wins {4}%", "xp.rowBook": "{0}: a book move, no games yet",
+      "xp.libEmpty": "Your library is empty: import games on the library page first", "xp.none": "No game reached this position",
+      "xp.deep": "Counted for the first {0} plies only", "xp.loading": "Loading…", "xp.masterNote": "Lichess {0} · both players rated ≥ {1} · {2} games (CC0)",
       "tip.pgn.export": "Save this game as a PGN file",
       "tip.more": "More: paste, open, FEN",
       "about.dataUnknown": "Browser storage (no native data file)", "act.checkUpdate": "Check for updates", "msg.update.latest": "You have the latest version", "msg.update.available": "Version {0} is available — link copied to the clipboard", "msg.update.failed": "Could not check for updates right now", "msg.link.copied": "Link copied to the clipboard",

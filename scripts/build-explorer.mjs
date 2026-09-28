@@ -193,12 +193,15 @@ function rng(seed) {
  */
 export function naiveCount(Chess, keyOf, games, keys, plies) {
   const out = new Map([...keys].map((k) => [k, {}]));
+  // the key's en-passant test is the slow part of keyOf; a position whose
+  // placement, side and castling match no audited key cannot match one
+  const heads = new Set([...keys].map((k) => k.split(" ").slice(0, 3).join(" ")));
   for (const g of games) {
     const pos = new Chess();
     const seen = new Set();
     for (let ply = 0; ply < plies && ply < g.sans.length; ply++) {
-      const key = keyOf(pos);
-      if (out.has(key) && !seen.has(key)) {
+      const key = heads.has(pos.fen().split(" ").slice(0, 3).join(" ")) ? keyOf(pos) : null;
+      if (key && out.has(key) && !seen.has(key)) {
         seen.add(key);
         const by = out.get(key);
         const r = (by[g.sans[ply]] = by[g.sans[ply]] || { n: 0, w: 0, d: 0, b: 0 });
@@ -323,7 +326,9 @@ export async function main(argv) {
   fs.writeFileSync(path.join(opt.outDir, "masters-index.js"), head + "export const EXPLORER_MASTERS = " + JSON.stringify(index) + ";\n");
   // the raw sample, and the audit re-counted from every kept game
   fs.mkdirSync(opt.fixtures, { recursive: true });
-  const pgn = kept.slice(0, opt.sample).map((g) => g.header.join("\n") + "\n\n" +
+  // the tags the filter reads, and Site to find the game again; the rest is weight
+  const KEEP = /^\[(Event|Site|Result|WhiteElo|BlackElo|Termination) /;
+  const pgn = kept.slice(0, opt.sample).map((g) => g.header.filter((l) => KEEP.test(l)).join("\n") + "\n\n" +
     g.sans.map((s, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + s).join(" ") + " " + g.result + "\n").join("\n");
   fs.writeFileSync(path.join(opt.fixtures, "explorer-sample.pgn"), pgn);
   const keys = [...counter.pos.keys()].filter((k) => [...counter.pos.get(k).moves.values()].some((r) => r.n >= opt.minGames));

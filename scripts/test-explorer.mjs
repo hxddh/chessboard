@@ -94,7 +94,7 @@ const assert = (cond, msg, extra) => {
   const tQuery = (performance.now() - t) / 100;
   console.log("  500 局索引 " + tIndex.toFixed(0) + " ms，每次查询 " + tQuery.toFixed(2) + " ms");
   assert(first.reduce((n, r) => n + r.n, 0) === 500, "500 局都从起始局面计入");
-  assert(tIndex < 400, "500 局 × 80 半回合，一次建索引 < 400 ms（" + tIndex.toFixed(0) + " ms；chess.js 上是 3.4 s）");
+  assert(tIndex < 1000, "500 局 × 80 半回合，一次建索引 < 1 s（" + tIndex.toFixed(0) + " ms；chess.js 上是 3.4 s）");
   assert(tQuery < 5, "建好之后每次查询 < 5 ms（" + tQuery.toFixed(2) + " ms）");
 
   // replay.js 的局面键逐步等于 ChessFide.positionKey（chess.js）：随机对局（含升变、

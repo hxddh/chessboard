@@ -694,6 +694,22 @@
           <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法留作变着" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">从这里续下</button>
           <button type="button" class="act-btn" id="back-main" data-i18n="act.backMain" title="回到本局主线，光标停在同一深度" data-i18n-title="tip.backMain">回主线</button>
         </div>
+        <!-- v8-0-plan C3: 开局浏览器 — the moves played from the position
+             under the cursor, how many games and how they ended, from your
+             library or the built-in master tree; 「书」 marks the book's
+             moves. Opened by the 开局 key in the tool row; the rows are the
+             chunk's (explorer/ui.js), the frame is written once here. -->
+        <section class="act-group" id="explorer" aria-labelledby="xp-h" hidden>
+          <div class="xp-head">
+            <h3 class="act-k" id="xp-h" data-i18n="xp.title">开局浏览器</h3>
+            <div class="theme-row" id="xp-src" role="group" aria-label="来源" data-i18n-aria="xp.source">
+              <button type="button" data-src="lib" class="active" aria-pressed="true" data-i18n="lib.title">棋谱库</button>
+              <button type="button" data-src="master" aria-pressed="false" data-i18n="xp.master">大师</button>
+            </div>
+          </div>
+          <p class="hint xp-note" id="xp-note"></p>
+          <ol class="xp-list" id="xp-list" tabindex="-1" aria-labelledby="xp-h"></ol>
+        </section>
         <!-- 7.7 (v7-7-plan §3): the review is something you open, not
              furniture. In an engine game still being played these four sit
              behind the 复盘 key in the tool row; they come out by themselves
@@ -794,6 +810,7 @@
              word as the label, so what is read is what is shown. -->
         <div class="tool-row" id="tool-row" role="toolbar" aria-label="棋谱与局面" data-i18n-aria="act.groupFile">
           <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：分析、精析、持续分析" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.groupReview">复盘</span></button>
+          <button type="button" class="tool-ic" id="explorer-open" aria-pressed="false" aria-controls="explorer" title="开局浏览器：各着法的局数与胜负" data-i18n-title="tip.explorer" aria-label="开局" data-i18n-aria="act.explorer"><span data-icon="chart-column" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.explorer">开局</span></button>
           <button type="button" class="tool-ic" id="pgn-copy" aria-label="复制" data-i18n-aria="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy"><span data-icon="clipboard-copy" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.pgnCopy">复制</span></button>
           <button type="button" class="tool-ic" id="pgn-download" aria-label="导出" data-i18n-aria="act.export" title="导出 PGN 文件" data-i18n-title="tip.pgn.export"><span data-icon="download" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.export">导出</span></button>
           <button type="button" class="tool-ic" id="slots-open" aria-label="存档槽" data-i18n-aria="act.slots" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots"><span data-icon="archive" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.slots">存档槽</span></button>
@@ -922,6 +939,11 @@
                 <button type="button" class="act-btn" id="rep-clear" hidden data-i18n="rep.clear">清空</button>
               </span>
             </div>
+            </div>
+            <!-- v8-0-plan C3: the opening explorer, from the page the book and
+                 the library live on: the board, with the explorer open -->
+            <div class="link-row">
+              <button type="button" class="act-btn" id="lib-explorer" title="开局浏览器：各着法的局数与胜负" data-i18n-title="tip.explorer" data-i18n="xp.title">开局浏览器</button>
             </div>
           </section>
         </div>
