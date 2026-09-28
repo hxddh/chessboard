@@ -1962,12 +1962,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
   const openA5 = async (settings, opts = {}) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: "zh-CN" });
-    await ctx.addInitScript(([st, pz]) => {
+    await ctx.addInitScript(([st, pz, sv]) => {
       localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false,
         appearance: "dark", boardId: "wood", boardFrame: "flat" }, st)));
       localStorage.setItem("chess.panelOpen", "1");
       if (pz) localStorage.setItem("chess.v1.puzzles", JSON.stringify(pz));
-    }, [settings, opts.puzzles || null]);
+      if (sv && !sessionStorage.getItem("a5-seeded")) { sessionStorage.setItem("a5-seeded", "1"); localStorage.setItem("chess.v1.save", JSON.stringify(sv)); }
+    }, [settings, opts.puzzles || null, opts.save || null]);
     const page = await ctx.newPage();
     const errs = [];
     page.on("pageerror", (e) => errs.push(e.message));
@@ -2039,6 +2040,27 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const closed = await page.evaluate(() => document.getElementById("go-card").hidden);
     assert(closed && near(await paintAt(page, "e1", false, "badge"), bad), "A5 终局：✕ 收起结果卡，王上的徽标还在");
     assert(errs.length === 0, `A5 终局：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (1b) Codex #89: a finished game branched from an earlier move — the leaf of
+  // the variation is not the game's end, and its kings carry no result
+  {
+    const { ctx, page, errs } = await openA5({ mode: "pvp" },
+      { save: { v: 1, savedAt: Date.now(), pgn: '[Event "a5"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 1-0' } });
+    await page.click("#go-close").catch(() => {});
+    await page.waitForTimeout(300);
+    const good = await token(page, "--judge-good"), bad = await token(page, "--judge-bad");
+    const endW = await paintAt(page, "e1", false, "badge"), endB = await paintAt(page, "e8", false, "badge");
+    await page.click("#rep-prev");
+    await page.waitForTimeout(400);
+    await tap(page, "g8"); await tap(page, "f6");
+    await page.waitForTimeout(700);
+    const vW = await paintAt(page, "e1", false, "badge"), vB = await paintAt(page, "e8", false, "badge");
+    const line = await page.evaluate(() => [...document.querySelectorAll(".mlrow")].map((r) => r.textContent).join(" "));
+    assert(near(endW, good) && near(endB, bad), `A5 终局：棋谱写着 1-0，最后局面的王上有徽标（${endW} / ${endB}）`);
+    assert(/Nf6/.test(line) && !near(vW, good) && !near(vB, bad), `A5 终局：从中途走出的变着，末端的王上没有这盘棋的结果（${vW} / ${vB}）`);
+    assert(errs.length === 0, `A5 变着：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
 

@@ -20,7 +20,7 @@ import { ChessEngine } from "./engine.js";
 export function createGameEnd(d) {
   const {
     store, t, tf, sideName, game, el, setText, avail, sanHistory, analysisFor,
-    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare,
+    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
   } = d;
 
   /**
@@ -111,6 +111,10 @@ export function createGameEnd(d) {
   function resultBadges() {
     const end = gameEnding();
     if (!end || !isLive()) return null;
+    // a variation's leaf is not where the game ended, unless the rules end it
+    // there too (mate, stalemate): a resignation, a flag, an agreed draw or a
+    // file's result belong to the mainline's last position (Codex #89)
+    if (!game.game_over() && !onMainline()) return null;
     return ["w", "b"].map((side) => ({
       sq: kingSquare(game, side),
       kind: !end.winner ? "draw" : end.winner === side ? "win" : game.in_checkmate() ? "mate" : "loss",
