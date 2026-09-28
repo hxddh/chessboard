@@ -699,12 +699,12 @@ for (const how of ["restore", "clear"]) {
   const P = createPersist(h, () => {});
   P.load();
   const games = [{ id: "g1", t: 1, diff: "normal", color: "w", result: "win", moves: 30, pgn: "", ending: "",
-    ratingBefore: null, ratingAfter: 1662, perf: 2100 }];
+    rb: null, ra: 1662, perf: 2100 }];
   const good = { v: 2, games, rating: { r: 1662.4, rd: 290.3, vol: 0.06, at: 1, n: 1 } };
   P.setJson("stats", good);
   let r = P.read("stats");
   assert(r.state === "ok" && JSON.stringify(r.value) === JSON.stringify(good),
-    "B4: a stats record with a rating reads back as written, games carrying ratingBefore / ratingAfter / perf");
+    "B4: a stats record with a rating reads back as written, games carrying rb / ra / perf");
   for (const bad of [{ r: "1662" , rd: 290, vol: 0.06 }, { r: 1662, rd: 0, vol: 0.06 }, { r: 1662, rd: 290 }, null, 7]) {
     P.setJson("stats", { v: 2, games, rating: bad });
     r = P.read("stats");

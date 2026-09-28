@@ -10,7 +10,6 @@
  *    then inject wasmBinary directly — zero URL resolution anywhere.
  * @module engine
  */
-import { ChessPersona } from "./persona.js";
 // `global` here means the real global object, and exactly two names on it:
 // CHESS_SF_LOADER and CHESS_SF_WASM_B64, written by the separate classic
 // script scripts/gen-engine-src.mjs generates. Everything else this module
@@ -409,7 +408,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
 
   async function bestMoveInner(fen, diff, maxMs, persona) {
     await init();
-    const styled = persona && persona.id && persona.id !== "off" && ChessPersona;
+    // persona.js arrives with the opponents chunk (opponents-lazy.js), as `style`
+    const P = persona && persona.style;
+    const styled = persona && persona.id && persona.id !== "off" && P;
     let base = TIERS[diff] || TIERS.normal;
     // (a win-chance rung keeps its own list: its size is part of its strength)
     if (styled && !base.winT) base = Object.assign({}, base, { multipv: Math.max(base.multipv || 0, 14) });
@@ -476,7 +477,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       // the win-chance rungs weigh a style into the same draw instead of
       // letting it overrule the draw: the strength stays the rung's
       const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
-      const lean = styled ? ChessPersona.lean(fen, list, persona.id, persona.Chess) : null;
+      const lean = styled ? P.lean(fen, list, persona.id, persona.Chess) : null;
       picked = parseUci(pickCandidate(list, tier, Math.random, lean)) || picked;
     } else if (tier.multipv && cands.size > 1) {
       const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
@@ -487,7 +488,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       if (styled) {
         // v8-0-plan B4: no better than the rung's own choice (persona.js)
         const own = picked && list.find((c) => c.uci === picked.from + picked.to + (picked.promotion || ""));
-        const styledUci = own ? ChessPersona.pick(fen, list, persona.id, persona.Chess, own.score) : null;
+        const styledUci = own ? P.pick(fen, list, persona.id, persona.Chess, own.score) : null;
         if (styledUci) picked = parseUci(styledUci);
       } else if (!tier.worstBias) {
         picked = pickHandicapped(cands, tier) || picked;

@@ -82,6 +82,8 @@ export const CHUNKS = [
   { entry: "src/web/js/pieces-celtic.js", out: "src/web/js/chunk-pieces-celtic.js", global: "CELTIC_PIECE_SVGS", min: 25000 },
   { entry: "src/web/js/pieces-spatial.js", out: "src/web/js/chunk-pieces-spatial.js", global: "SPATIAL_PIECE_SVGS", min: 30000 },
   { entry: "src/web/js/boot.js", out: "src/web/js/chunk-boot.js", global: null, boot: true, min: 500 },
+  // v8-0-plan B4: the ladder, personas, rating and styles (opponents-lazy.js)
+  { entry: "src/web/js/opponents-chunk.js", out: "src/web/js/chunk-opponents.js", global: "CHESS_OPPONENTS", min: 15000 },
   ...lichessChunks(path.join(root, "src/web/js/lichess")),
 ];
 

@@ -1747,6 +1747,36 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   }
 }
 
+// --- v8-0-plan B5: an import keeps the clock, and 我的 follows it ----------
+// The time-pressure figure reads `[%clk]` from the games you import; until
+// B5 the library kept the moves and dropped every comment. And the page is
+// live: a game played today, imported while 我的 was shut, is a day on the
+// calendar the moment the page opens.
+{
+  const d = new Date();
+  const today = d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0");
+  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games: [] }));
+  const { page, errs } = await open(ctx);
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(300);
+  const before = await page.evaluate(() => !document.getElementById("me-cal").hidden);
+  await page.click('#rail button[data-view="library"]');
+  await page.waitForTimeout(200);
+  await importFile(page, `[Event "Rated blitz"]\n[Date "${today}"]\n[White "hxddh"]\n[Black "rival"]\n[Result "1-0"]\n\n` +
+    "1. e4 { [%clk 0:03:00] } e5 { [%clk 0:03:00] } 2. Qh5 { [%clk 0:02:57] } Nc6 { [%clk 0:02:55.2] } " +
+    "3. Bc4 { [%clk 0:02:50] } Nf6 { [%clk 0:02:40] } 4. Qxf7# { [%clk 0:02:49] } 1-0\n");
+  const clk = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library")).games.map((g) => g.clk));
+  assert(JSON.stringify(clk) === "[[180,180,177,175,170,160,169]]", "B5 导入的棋谱带着每手的钟", JSON.stringify(clk));
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => ({ cal: !document.getElementById("me-cal").hidden,
+    meta: document.getElementById("me-cal-meta").textContent, w: document.getElementById("me-cal").width }));
+  assert(!before && after.cal && /1/.test(after.meta) && after.w > 1,
+    "B5 今天下的一局导进来:「我的」打开时日历上有今天(" + JSON.stringify({ before, after }) + ")");
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

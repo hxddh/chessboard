@@ -942,6 +942,28 @@
             <canvas id="trend-acc" hidden aria-label="准确率走势" data-i18n-aria="aria.trendAcc" title="最近分析过的对局的准确率,按时间排列" data-i18n-title="tip.trendAcc"></canvas>
             <div class="stats-body" id="trend-body" hidden></div>
           </section>
+          <!-- v8-0-plan B5: what the record adds up to — the engine-game
+               rating, the practice calendar, strengths and weaknesses, and
+               three figures only many games can give. Each block exists only
+               with data (7.1: a chart that cannot be drawn does not exist),
+               and the section with none of them is not there (me-page.js). -->
+          <section class="side-section page-sec" id="sec-growth" hidden>
+            <div class="side-h-row" id="me-cal-head" hidden>
+              <h2 class="side-h" data-i18n="me.cal">练习日历</h2>
+              <span class="side-h-meta num" id="me-cal-meta"></span>
+            </div>
+            <canvas id="me-cal" role="img" hidden></canvas>
+            <div class="side-h-row" id="me-rating-head" hidden>
+              <h2 class="side-h" data-i18n="me.gameRating">对局评级</h2>
+              <span class="side-h-meta num" id="me-rating-meta"></span>
+            </div>
+            <canvas id="me-rating" hidden aria-label="对局评级走势" data-i18n-aria="aria.gameRating"></canvas>
+            <div class="me-sw" id="me-sw" hidden></div>
+            <div class="side-h-row" id="me-metrics-head" hidden>
+              <h2 class="side-h" data-i18n="me.metrics">跨局指标</h2>
+            </div>
+            <div id="me-metrics" hidden></div>
+          </section>
           <section class="side-section page-sec" id="sec-history">
             <div class="side-h-row">
               <h2 class="side-h" data-i18n="hist.title">对局历史</h2>

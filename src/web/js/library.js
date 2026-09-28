@@ -22,6 +22,7 @@
  * reads. That split is what lets the whole of it be tested without a browser.
  * @module library
  */
+import { clocksOf } from "./progress-metrics.js";
 
 /**
  * How many games the library holds.
@@ -103,7 +104,7 @@ function entryFrom(game, sans, names, now) {
     const row = headers.find(([key]) => key === k);
     return row ? row[1] : "";
   };
-  return {
+  const entry = {
     id: gameId(headers, sans),
     t: now,
     white: tag("White"),
@@ -136,6 +137,12 @@ function entryFrom(game, sans, names, now) {
     /** set by the app once the analysis pass has run over this game */
     an: null,
   };
+  // v8-0-plan B5: the `[%clk]` readings, one per ply, for the time-pressure
+  // figure on 我的 — only when the file has them, so a game without a clock
+  // weighs what it did
+  const clk = game && game.root ? clocksOf(game.root) : null;
+  if (clk) entry.clk = clk;
+  return entry;
 }
 
 /**
@@ -151,7 +158,14 @@ function addGames(list, fresh) {
   const out = (list || []).slice();
   let added = 0, dup = 0;
   for (const g of fresh || []) {
-    if (have.has(g.id)) { dup++; continue; }
+    if (have.has(g.id)) {
+      dup++;
+      // a game imported before its clock was kept gets it now; nothing else
+      // of the stored entry changes (v8-0-plan B5)
+      const i = g.clk ? out.findIndex((x) => x.id === g.id && !x.clk) : -1;
+      if (i >= 0) out[i] = Object.assign({}, out[i], { clk: g.clk });
+      continue;
+    }
     have.add(g.id);
     out.push(g);
     added++;

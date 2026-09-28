@@ -13,11 +13,8 @@
  * the bag handed to createOpponentsUI(), as settings-ui.js does it.
  * @module opponents-ui
  */
-import { ChessEngine } from "./engine.js";
-import { ChessIcons } from "./icons.js";
 import { Opponents } from "./opponents.js";
 import { ChessRating } from "./rating.js";
-import { TimeControl } from "./time-control.js";
 
 /**
  * @param {object} d what this module borrows from app.js
@@ -47,7 +44,7 @@ export function createOpponentsUI(d) {
       const av = doc.createElement("span");
       av.className = "op-av";
       av.setAttribute("aria-hidden", "true");
-      av.appendChild(ChessIcons.icon(p.icon));
+      av.appendChild(d.icon(p.icon));
       const txt = doc.createElement("span");
       txt.className = "op-txt";
       const name = doc.createElement("span");
@@ -229,9 +226,9 @@ export function createOpponentsUI(d) {
 
   /** Search time and pace for the engine's move, on a clock; null without one. */
   function plan(side) {
-    const tc = TimeControl.parse(store.game.timeControl);
+    const tc = d.parseTc(store.game.timeControl);
     if (!tc || !store.game.clock) return null;
-    return Opponents.thinkPlan(ChessEngine.TIERS[store.session.difficulty] || {}, store.game.clock[side], tc.inc * 1000);
+    return Opponents.thinkPlan(d.tiers[store.session.difficulty] || {}, store.game.clock[side], tc.inc * 1000);
   }
 
   /**

@@ -1203,9 +1203,9 @@ await scenario("引擎认输", async () => {
   assert(ok && (await resigned()) === "b", "引擎认输：输定了的一方（黑，引擎）认输，不再拖到被将死", JSON.stringify({ ok }));
   assert(!!after.last && after.last.result === "win" && after.last.ending === "resigned" && /认输/.test(after.card),
     "引擎认输：记为你赢、对方认输，结果卡上写着", JSON.stringify({ last: after.last && { r: after.last.result, e: after.last.ending }, card: after.card }));
-  assert(!!after.rating && Number.isFinite(after.last.ratingAfter) && after.last.ratingAfter >= 1500 && Number.isFinite(after.last.perf) &&
+  assert(!!after.rating && Number.isFinite(after.last.ra) && after.last.ra >= 1500 && Number.isFinite(after.last.perf) &&
     /^等级分 \d+\?（(\+\d+|±0)）/.test(after.rate),
-    "引擎认输：这盘计入人机等级分（和做题的分开），结果卡上写着新分数和涨了多少", JSON.stringify({ rate: after.rate, ra: after.last && after.last.ratingAfter }));
+    "引擎认输：这盘计入人机等级分（和做题的分开），结果卡上写着新分数和涨了多少", JSON.stringify({ rate: after.rate, ra: after.last && after.last.ra }));
   assert(/^皮普：本局开局/.test(after.say), "引擎认输：角色的终局一句只说事实", after.say);
   // restart: the ending is still the engine's resignation
   await page.reload();
@@ -1244,7 +1244,7 @@ await scenario("引擎提和", async () => {
     return { agreed: !!JSON.parse(localStorage.getItem("chess.v1.save") || "{}").drawAgreed, last,
       bar: !document.getElementById("draw-offer").hidden, reason: document.getElementById("go-reason").textContent.trim() };
   });
-  assert(after.agreed && !after.bar && after.last.result === "draw" && after.last.ending === "drawAgreed" && Number.isFinite(after.last.ratingAfter),
+  assert(after.agreed && !after.bar && after.last.result === "draw" && after.last.ending === "drawAgreed" && Number.isFinite(after.last.ra),
     "引擎提和：点「接受」—— 和棋成立、计入战绩与等级分，提示条收起", JSON.stringify({ a: after.agreed, r: after.last.result, e: after.last.ending, reason: after.reason }));
   assert(!errs.length, "引擎提和：页面没有报错", errs.join(" / "));
   await ctx.close();
