@@ -4495,6 +4495,70 @@ if (scenario()) {
   }
 }
 
+// --- v8-0-plan B5: 我的 with everything on it, in three languages -----------
+// The progress page filled: the rating curve, the calendar, strengths and
+// weaknesses and the three cross-game figures, whose sentences are the
+// longest things on it (「saved 8 of 12 games after being 2 pawns down, 4 of
+// them won」). At the five widths A2 measures and in all three languages: no
+// horizontal scroll, nothing past the page's right edge, no heading running
+// into its figure, and no text cut — the rows wrap rather than truncate.
+if (scenario()) {
+  const DAY = 864e5, now = Date.now();
+  const games = Array.from({ length: 24 }, (_, i) => {
+    const clk = [];
+    for (let j = 0; j < 20; j++) clk.push(j < 16 ? 170 - 10 * j : [15, 12, 8, 4][j - 16], 180);
+    return { id: "g" + i, t: now - (i % 12) * 2 * DAY, white: "hxddh", black: "rival" + i, date: "", event: "", result: "1-0",
+      plies: 40, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: ["win", "draw", "loss"][i % 3], clk,
+      eco: i % 2 ? "C50" : "B01", ecoName: i % 2 ? "Italian Game" : "Scandinavian Defense", motifs: { 36: "fork" },
+      an: { acc: { w: 80, b: 70 }, acpl: { w: 30, b: 40 }, tags: Array.from({ length: 40 }, (_, k) => (k === 36 ? "??" : null)),
+        scalars: Array.from({ length: 41 }, (_, k) => (k === 20 ? (i % 2 ? 300 : -300) : 0)), losses: new Array(40).fill(10), bests: [], budget: 200 } };
+  });
+  const th = (r, s, m) => ({ solve: s, miss: m, rating: { r, rd: 80, vol: 0.06 } });
+  const seed = {
+    "chess.v1.library": { v: 1, names: ["hxddh"], games },
+    "chess.v1.stats": { v: 2, games: Array.from({ length: 12 }, (_, i) => ({ id: "s" + i, t: now - (12 - i) * DAY, diff: "normal",
+      color: "w", result: i % 2 ? "win" : "loss", moves: 40, pgn: "", ending: "", ra: 1450 + i * 9 })) },
+    "chess.v1.puzzles": { v: 1, solved: {}, tally: { tac: { miss: 3, solve: 9 } }, rhist: [{ t: now - DAY, r: 1500 }, { t: now, r: 1520 }],
+      themes: { fork: th(1700, 6, 1), pin: th(1350, 2, 4), skewer: th(1550, 4, 2), discoveredAttack: th(1600, 5, 2), backRank: th(1420, 3, 3), m1: th(1800, 9, 0) } },
+  };
+  for (const [w, h] of [[1024, 768], [1280, 800], [1440, 900], [1920, 1080], [600, 900]]) {
+    for (const lang of LANGS) {
+      const tag = "B5 " + w + "x" + h + "/" + lang;
+      const { ctx, page, errs } = await open(lang, "ai", "me", "wood", { width: w, height: h });
+      await page.evaluate((ks) => { for (const [k, v] of Object.entries(ks)) localStorage.setItem(k, JSON.stringify(v)); }, seed);
+      await page.reload();
+      await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => {
+        const root = document.getElementById("page-me");
+        const sec = document.getElementById("sec-growth");
+        const shown = (e) => e.getClientRects().length > 0;
+        const edge = root.getBoundingClientRect().right;
+        const past = [...root.querySelectorAll("*")].filter(shown)
+          .filter((e) => e.getBoundingClientRect().right > edge + 1)
+          .map((e) => (e.id || e.className || e.tagName) + "@" + Math.round(e.getBoundingClientRect().right));
+        const cut = [...sec.querySelectorAll(".me-k, .me-v, .me-sw-h, .hint, .side-h, .side-h-meta")].filter(shown)
+          .filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > sec.getBoundingClientRect().right + 0.5)
+          .map((e) => e.textContent.trim().slice(0, 24) + " " + e.scrollWidth + ">" + e.clientWidth);
+        // a heading and its figure share a row: neither may run into the other
+        const clash = [...sec.querySelectorAll(".side-h-row")].filter(shown).filter((row) => {
+          const [a, b] = [row.querySelector(".side-h"), row.querySelector(".side-h-meta")];
+          return a && b && shown(b) && a.getBoundingClientRect().right > b.getBoundingClientRect().left + 0.5;
+        }).map((row) => row.id);
+        return {
+          on: shown(sec), blocks: ["me-cal", "me-rating", "me-sw", "me-metrics"].filter((id) => shown(document.getElementById(id))).length,
+          doc: document.scrollingElement.scrollWidth - innerWidth, own: root.scrollWidth - root.clientWidth,
+          past: past.slice(0, 4), cut: cut.slice(0, 4), clash,
+        };
+      });
+      assert(r.on && r.blocks === 4, tag + ": 成长一节四块都在(" + r.blocks + ")");
+      assert(r.doc <= 0 && r.own <= 0 && r.past.length === 0, tag + ": 「我的」没有横向滚动,也没有东西伸出右缘(" + JSON.stringify(r) + ")");
+      assert(r.cut.length === 0 && r.clash.length === 0, tag + ": 成长一节没有被截断的字,标题不压着数字(" + JSON.stringify({ cut: r.cut, clash: r.clash }) + ")");
+      assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+
 // --- v8-0-plan §2 A2: the play view stretches with its window ---------------
 // The acceptance, at the five sizes the plan names, measured by the same probe
 // scripts/measure-layout.mjs records with (scripts/lib/layout-probe.mjs has

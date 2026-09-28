@@ -147,7 +147,7 @@ const allSourceExcept = (...owners) =>
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
   "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js",
-  "game-end.js", "review/moments.js"];
+  "me-page.js", "game-end.js", "review/moments.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -6911,10 +6911,54 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 7063; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js)
+  const APP_JS_LINE_CEILING = 6826; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
+}
+
+// --- Codex on #88: a module is never handed a binding declared after it ----
+//
+// The F4 modules are created in app.js as createX({ …deps }). A dependency
+// named there but declared further down — a `const { name } = Later` — is read
+// before it exists: a TDZ throw at load under native ES modules, and under the
+// bundle (esbuild turns the top-level consts into vars) a silent `undefined`
+// the module keeps for good. evalScalar reached trainer/puzzles.js that way
+// once review/analysis.js had turned it from a hoisted function into a
+// destructured const. Later bindings go in as forwarders, `(x) => name(x)`.
+{
+  const src = WEB_MODULES.get("app.js");
+  const declAt = new Map();
+  for (const m of src.matchAll(/^  (?:const|let) (\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=/gm)) {
+    const at = m.index;
+    const names = m[1].startsWith("{")
+      ? m[1].slice(1, -1).split(",").map((x) => x.trim().split(":").pop().trim()).filter(Boolean) : [m[1]];
+    for (const n of names) if (!declAt.has(n)) declAt.set(n, at);
+  }
+  const hoisted = new Set([...src.matchAll(/^  (?:async )?function ([\w$]+)/gm)].map((x) => x[1]));
+  const early = [];
+  for (const m of src.matchAll(/^  (?:const [\w${}, ]+ = )?(create[A-Z]\w*)\(\{/gm)) {
+    let i = m.index + m[0].length, depth = 1;
+    const from = i;
+    while (depth && i < src.length) { const c = src[i++]; if (c === "{") depth++; else if (c === "}") depth--; }
+    let d = 0, cur = "";
+    const parts = [];
+    for (const c of src.slice(from, i - 1)) {
+      if ("({[".includes(c)) d++;
+      if (")}]".includes(c)) d--;
+      if (c === "," && d === 0) { parts.push(cur); cur = ""; } else cur += c;
+    }
+    parts.push(cur);
+    for (const part of parts) {
+      const e = part.trim();
+      const val = e.includes(":") ? e.split(":").slice(1).join(":").trim() : e;
+      if (!/^[A-Za-z_$][\w$.]*$/.test(val)) continue;   // a forwarder or an expression
+      const id = val.split(".")[0];
+      if (hoisted.has(id) || !declAt.has(id)) continue;
+      if (declAt.get(id) > m.index) early.push(m[1] + " ← " + id);
+    }
+  }
+  assert(early.length === 0, "no F4 module is handed a binding app.js declares after creating it (" + (early.join(", ") || "none") + ")");
 }
 
 // --- v8-0-plan F4 (M2): the settings page lives in settings-ui.js ----------
@@ -6968,6 +7012,8 @@ for (const lang of CONTENT_LANGS) {
     "trainer/lessons.js": ["createLessonsUI", "startLesson", "learnMove", "syncLearnUI", "startClassic"],
     "trainer/puzzles.js": ["createPuzzlesUI", "puzzleMove", "syncPuzzleUI", "ratePuzzleOnce", "bookNow"],
     "trainer/today.js": ["createTodayUI", "dailySignals", "dailyJump", "renderPuzzleTally"],
+    // v8-0-plan B5 (M4): the 我的 page grows in its own module
+    "me-page.js": ["createMePage", "drawAccTrend", "renderAchRows", "REC_DOORS"],
   };
   for (const [file, names] of Object.entries(homes)) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");

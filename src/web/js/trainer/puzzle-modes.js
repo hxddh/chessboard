@@ -49,6 +49,8 @@ export function createPuzzleModes(d) {
   // the run in progress (or just finished): trainer/runs.js's record, plus
   // the clock that drives it. Session state, never saved: a run is a sitting.
   if (!("run" in store.session)) store.session.run = null;
+  // …and one set aside while a load asks first (parkRun)
+  if (!("parkedRun" in store.session)) store.session.parkedRun = null;
   if (!("themeUi" in store.ui)) store.ui.themeUi = { q: "", prog: "all" };
 
   // --- the Lichess bands ------------------------------------------------------
@@ -293,8 +295,7 @@ export function createPuzzleModes(d) {
   }
 
   /** The run is over: its score is filed, the board keeps the last puzzle. */
-  function finishRun() {
-    const run = store.session.run;
+  function finishRun(run = store.session.run) {
     if (!run || run.filed) return;
     run.over = true;
     run.filed = true;
@@ -308,10 +309,41 @@ export function createPuzzleModes(d) {
   }
   /** Stop the run in progress (leaving the mode, 结束, another run). */
   function endRun() {
-    const run = store.session.run;
+    // a parked run ends here too: the load it was parked for went ahead
+    const run = store.session.run || store.session.parkedRun;
+    store.session.parkedRun = null;
     if (!run) return;
     if (!run.why) run.why = "stopped";
-    finishRun();
+    finishRun(run);
+  }
+
+  /**
+   * Set the run aside while a load asks 「替换当前棋局？」 (the trainer's
+   * leaveTrainer). The answer may be no, and then the same run goes on — so
+   * nothing is ended or filed here, only its clock stopped; a yes leaves the
+   * mode, and stopPuzzles' endRun files the parked run then (Codex on #88).
+   */
+  function parkRun() {
+    const run = store.session.run;
+    store.session.run = null;
+    if (!run) return;
+    stopClock(run);
+    store.session.parkedRun = run;
+  }
+  /** The load was refused: the parked run is back, its puzzle already seated. */
+  function unparkRun() {
+    const run = store.session.parkedRun;
+    store.session.parkedRun = null;
+    if (!run) return;
+    store.session.run = run;
+    // an ending (the last strike, the clock) that was waiting on the board
+    if (run.over || Runs.checkClock(run, Date.now())) { finishRun(run); return; }
+    // endsAt is wall-clock time, so the clock resumes where it stands now
+    if (run.endsAt) run.timer = setInterval(tick, 250);
+    // an answered puzzle whose hand-off fell while the run was parked
+    // (advanceLater found another board) moves on now
+    const pz = store.session.puzzle;
+    if (pz && pz.run === run && pz.done) serveNext();
   }
   /** Back to practice: the run's card goes, the practice puzzle comes back. */
   function toPractice() {
@@ -429,5 +461,5 @@ export function createPuzzleModes(d) {
     };
   }
 
-  return { lcPool, themeList, startTheme, rateThemes, runSolved, runMissed, runAnswer, endRun, render, wire, closeThemes };
+  return { lcPool, themeList, startTheme, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes };
 }

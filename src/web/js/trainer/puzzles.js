@@ -70,6 +70,7 @@ export function createPuzzlesUI(d) {
   /** The chunk is here: join it, and repaint whatever counts puzzles. */
   function onMinedArrived() {
     if (!joinMined()) return;
+    forgetRetired();
     renderStats();
     renderAchievements();
     renderRecordEntry();
@@ -350,12 +351,35 @@ export function createPuzzlesUI(d) {
   function savePuzzleState() {
     Persist.setJson("puzzles", store.session.puzzleState);
   }
+  /**
+   * Forget the puzzles the book has retired (Codex on #88) — once the mined
+   * set has joined, since before that every mined id is merely not here yet.
+   * Runs at load when the chunk came first, else when it arrives; written
+   * back at once so it does not have to run again.
+   */
+  function forgetRetired() {
+    if (!MINED_ORDINAL.size) return;
+    const ids = new Set(ALL_PUZZLES.map((p) => p.id));
+    if (ChessDrills.forgetRetired(store.session.puzzleState, (id) => ids.has(id))) savePuzzleState();
+  }
+  forgetRetired();
   const Srs = ChessSrs;
   const Picker = ChessPicker;
   /** reviews served per day before the rest is pushed to tomorrow (Q3.3) */
   const REVIEW_CAP = 20;
   /** how many reviews are owed right now — the count every plan reads */
-  function owedNow() { return Srs.dueCount(store.session.puzzleState.missed, Date.now()); }
+  function owedNow() {
+    // only what the 复习 list can serve — it resolves ids against the book —
+    // so every plan's review step can be worked off (Codex on #88). A mined
+    // id counts before its chunk joins: it is not served yet, not retired.
+    const missed = store.session.puzzleState.missed;
+    const book = new Set(bookNow().map((p) => p.id));
+    const servable = {};
+    for (const id of Object.keys(missed)) {
+      if (book.has(id) || (!MINED_ORDINAL.size && id.startsWith("mn-"))) servable[id] = missed[id];
+    }
+    return Srs.dueCount(servable, Date.now());
+  }
 
   // --- 6.0: ratings (v6-plan Q3.1) -------------------------------------------
   // One Glicko-2 rating for the player, one per puzzle, both moved by the FIRST
@@ -416,6 +440,11 @@ export function createPuzzlesUI(d) {
     if (!pz || pz.p.id !== id || pz.rated || pz.run) return; // a run is not rated (trainer/runs.js)
     if (!isRatedCat(pz.p.cat)) return; // 背谱不是战术水平（7.3 B1）
     if (store.session.puzzleState.solved[id]) return; // not a first attempt
+    // …nor is a restart of a missed one (R / 再试一次 builds a new puzzle object,
+    // so pz.rated alone forgot it): st.pr[id] is written by the first answer
+    // and is what persists it (Codex on #88)
+    const pr = store.session.puzzleState.pr;
+    if (pr && pr[id]) { pz.rated = true; return; }
     pz.rated = true;
     const st = store.session.puzzleState;
     const before = Math.round(playerRating().r);
@@ -1311,8 +1340,8 @@ export function createPuzzlesUI(d) {
    * before it, where the board would look identical to the puzzle just left.
    *
    * The trainer is left before the load, because the load asks whether it may
-   * replace the board and the answer may be no. That is the whole reason the
-   * category and index are kept: a cancelled jump puts the same drill back.
+   * replace the board and the answer may be no. That is why it is left through
+   * leaveTrainer: a cancelled jump puts the same drill (and run) back.
    */
   async function openDrillSource() {
     const pz = store.session.puzzle;
@@ -1320,11 +1349,11 @@ export function createPuzzlesUI(d) {
     const src = drillSourceOf(p);
     if (!src) return;
     const ply = Number.isFinite(p.ply) ? p.ply : null;
-    const cat = pz.cat, idx = pz.idx;
-    stopPuzzles();
+    // a run's drill (a mined one can be served in 冲刺) keeps its run too (Codex on #88)
+    const back = leaveTrainer();
     const ok = src.kind === "lib" ? await loadLibraryEntry(src.entry) : await loadHistoryRecord(src.rec);
     // nothing was loaded and the mode never left 做题 — put the drill back
-    if (!ok) { startPuzzleAt(cat, idx); return; }
+    if (!ok) { back(); return; }
     if (ply != null) setViewIndex(ply + 1);
     saveGame();
     sync();
@@ -1349,14 +1378,17 @@ export function createPuzzlesUI(d) {
     // throw the training in progress away (Codex on #79). Stopping only drops
     // these references (stopLearn also bumps the lesson's token, which just
     // cancels a demo in flight), and a refused load changes nothing else.
-    const kept = { puzzle: store.session.puzzle, run: store.session.run, learn: store.session.learn, study: store.session.study };
+    const kept = { puzzle: store.session.puzzle, learn: store.session.learn, study: store.session.study };
     invalidateEngine();
     clearPreview();
-    if (mode === "puzzle") stopPuzzles(); else stopLearn();
+    // a 冲刺 / 连胜 is parked, not ended: stopPuzzles would file its score
+    // and stop its clock before the answer is in (Codex on #88). A yes
+    // leaves the mode through switchMode, whose stopPuzzles files it then.
+    if (mode === "puzzle") { Modes.parkRun(); store.session.puzzle = null; } else stopLearn();
     return () => {
       store.session.mode = mode;
       if (mode === "puzzle") {
-        if (kept.puzzle) { store.session.puzzle = kept.puzzle; store.session.run = kept.run; } else startPuzzles();
+        if (kept.puzzle) { store.session.puzzle = kept.puzzle; Modes.unparkRun(); } else { Modes.endRun(); startPuzzles(); }
       } else if (kept.study || kept.learn) {
         store.session.learn = kept.learn;
         store.session.study = kept.study;

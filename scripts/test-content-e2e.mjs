@@ -1343,6 +1343,67 @@ if (hasTab && REAL.length) {
   await c.close();
 }
 
+// --- Codex on #88: a retired puzzle's review is not a debt for ever ----------
+// caf32fa retired 22 mined puzzles with no migration: a profile that had
+// missed one kept it in `missed`, owedNow() counted it and the 复习 list
+// (which resolves ids against the book) dropped it — a review step in
+// today's plan nothing could serve. Red before: 「先清复习 2 题」, and after
+// the one live review was solved the plan still sat on the review step.
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx2.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, cat: "m1",
+      solved: { "mn-201-60-17": true, "m1-smother": true, "lc-00008": true },
+      missed: { "mn-201-5-62": { s: 0, n: 1 }, "w-hangq": { s: 0, n: 1 } },
+      pr: { "mn-201-5-62": { r: 1300, rd: 90, vol: 0.06 } } }));
+  });
+  const pg = await ctx2.newPage();
+  pg.on("pageerror", (e) => errs.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1200);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const stored = () => pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  const st0 = await stored();
+  assert(!st0.missed["mn-201-5-62"] && !st0.solved["mn-201-60-17"] && !(st0.pr || {})["mn-201-5-62"],
+    "#88: 退役题的复习、已解、评级记录在载入时清掉并存回", JSON.stringify(st0.missed));
+  assert(!!st0.missed["w-hangq"] && st0.solved["m1-smother"] && st0.solved["lc-00008"],
+    "#88: 还在书里的题、Lichess 题（分段按需加载）不动", JSON.stringify(st0.solved));
+  const btnText = () => pg.evaluate(() => document.getElementById("daily-btn").textContent.trim());
+  await pg.click("#daily-btn");
+  await pg.waitForTimeout(700);
+  const step1 = await btnText();
+  assert(/先清复习 1 题/.test(step1), "#88: 今天的训练只欠还在书里的那 1 题", step1);
+  const task = await pg.evaluate(() => ({
+    cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat,
+    list: [...document.querySelectorAll("#puzzle-list .lesson-item")].length,
+  }));
+  assert(task.cat === "review" && task.list === 1, "#88: 复习类别端上来的就是那 1 题", JSON.stringify(task));
+  const tapP = async (s) => {
+    const p = await pg.evaluate((x) => {
+      const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+      const f = x.charCodeAt(0) - 97, rk = 8 - +x[1], z = r.width / 8;
+      return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+    }, s);
+    await pg.mouse.click(p.x, p.y);
+    await pg.waitForTimeout(240);
+  };
+  await tapP("d2"); await tapP("d6"); // w-hangq: Rxd6
+  await pg.waitForTimeout(600);
+  const step2 = await btnText();
+  assert(/第 2\/\d 步/.test(step2) && !/复习/.test(step2), "#88: 解掉那 1 题，课表离开复习这一步", step2);
+  // a reload does not bring the retired ids back
+  await pg.reload();
+  await pg.waitForTimeout(1200);
+  const st1 = await stored();
+  assert(!st1.missed["mn-201-5-62"] && !st1.solved["mn-201-60-17"], "#88: 重开之后退役题也没回来");
+  await ctx2.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

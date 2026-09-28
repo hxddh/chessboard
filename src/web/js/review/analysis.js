@@ -25,6 +25,7 @@ import { ChessEngine } from "../engine.js";
 import { ChessHost } from "../host.js";
 import { ChessMistakes } from "../mistakes.js";
 import { ChessProgress } from "../progress.js";
+import { factsOf } from "../progress-metrics.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade as Grade } from "../review-grade.js";
 import { ChessReviewPass } from "../review-pass.js";
@@ -344,6 +345,10 @@ export function createAnalysis(d) {
     if (!rec) return;
     rec.acc = mine;
     rec.acpl = acpl;
+    // v8-0-plan B5: the game's best and worst moment from the player's chair,
+    // for 化优为胜 / 逆境求生 on 我的 — two numbers, not the curve
+    const f = factsOf({ side: store.session.humanColor, outcome: rec.result, scalars: store.session.analysis.scalars });
+    if (f && f.hi != null) { rec.hi = f.hi; rec.lo = f.lo; }
     saveStats(s);
     renderStats();
   }
