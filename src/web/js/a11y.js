@@ -228,7 +228,8 @@ export function createA11y(d) {
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle || ev.metaKey || ev.ctrlKey) return;
-      if (k === "r") { d.startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); d.toast(t("pz.restarted")); }
+      // a run's puzzle is not restarted: the run serves the next (v8-0-plan B1)
+      if (k === "r" && !store.session.puzzle.run) { d.startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx); d.toast(t("pz.restarted")); }
       else if (k === "n") d.nextPuzzle();
       else if (k === "h") d.showPuzzleAnswer();
       return;
