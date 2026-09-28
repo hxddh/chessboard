@@ -59,6 +59,7 @@ async function bootLibrary(d) {
   const { doc, store, Persist, t, tf, toast, Library, Dlg, reconcile } = d;
   const header = readHeader(Persist.get("library")) || {};
   let claimAsked = !!header.claimAsked;
+  let claim = null;   // the offer on screen (renderClaim)
   const backend = await LibraryDb.idbBackend(d.idb);
   const st = LibraryDb.createLibraryStore({ backend: backend || LibraryDb.memoryBackend(), Chess: d.Chess, withLock: d.withLock });
   // "idb": games in IndexedDB. "legacy": no IndexedDB here, or the migration
@@ -90,8 +91,12 @@ async function bootLibrary(d) {
       if (v && Array.isArray(v.games)) back.push(...v.games);
     }
     if (back.length) {
+      const had = st.games.length;
       const r = await st.migrate(JSON.stringify({ v: 1, games: back }));
-      if (r.ok) { await st.load(); toast(tf("lib.recovered", [st.games.length])); }
+      if (r.ok) {
+        await st.load();
+        if (st.games.length > had) toast(tf("lib.recovered", [st.games.length - had]));
+      }
     }
   }
   if (mode === "idb") {
@@ -159,6 +164,7 @@ async function bootLibrary(d) {
       try {
         if (gone.length) await st.drop(gone);
         await st.save(changed);
+        if (peers) peers.postMessage({ put: changed.map((g) => g.id), gone });
       } catch (e) {
         // not written: owed again, and said once
         for (const g of changed) sigs.delete(g.id);
@@ -166,6 +172,35 @@ async function bootLibrary(d) {
       }
     });
     return chain;
+  }
+
+  /**
+   * Two windows of the app share one IndexedDB but each holds its own list.
+   * Every window writes only the games it changed, so neither can take the
+   * other's games out of the store — but a window that never heard of a game
+   * would leave it out of the native shards it writes, and out of an
+   * export. So a commit is announced, and the other windows read those
+   * records back into their lists. (No BroadcastChannel before Safari 15.4:
+   * there the next launch is when a window learns.)
+   */
+  const peers = typeof BroadcastChannel === "function" && mode === "idb" ? new BroadcastChannel("chessboard.library") : null;
+  if (peers) {
+    peers.onmessage = async (ev) => {
+      const m = ev.data || {};
+      const ids = Array.isArray(m.put) ? m.put : [];
+      const goneIds = new Set(Array.isArray(m.gone) ? m.gone : []);
+      let got = [];
+      try { got = ids.length ? await st.read(ids) : []; } catch (_) { got = []; }
+      const byId = new Map(got.filter((g) => g && g.src !== "local").map((g) => [g.id, g]));
+      const list = store.session.library.filter((g) => !goneIds.has(g.id) && !byId.has(g.id));
+      for (const g of byId.values()) { d.rescoreLosses(g); list.push(g); sigs.set(g.id, sigOf(g)); }
+      for (const id of goneIds) sigs.delete(id);
+      list.sort((a, b) => (b.t || 0) - (a.t || 0));
+      store.session.library = list;
+      st.games = list;
+      d.renderLibrary();
+      if (listOpen()) renderList();
+    };
   }
 
   // --- 本机: the play history as library entries ---------------------------
@@ -212,12 +247,11 @@ async function bootLibrary(d) {
         try { recs = (d.loadStats().games || []).filter((g) => g && g.id && typeof g.pgn === "string" && g.pgn.trim()); }
         catch (_) { recs = []; }
         const have = new Map(st.local.map((g) => [g.id, g]));
-        const next = [], put = [];
+        const next = [], put = [], recOf = new Map();
         let t0 = Date.now();
-        localRec.clear();
         for (const rec of recs) {
           const id = "loc:" + rec.id;
-          localRec.set(id, rec);
+          recOf.set(id, rec);
           let e = have.get(id);
           if (!e || e.pgnLen !== rec.pgn.length || e.acc !== (typeof rec.acc === "number" ? rec.acc : undefined)) {
             e = localEntry(rec);
@@ -226,8 +260,10 @@ async function bootLibrary(d) {
           next.push(e);
           if (Date.now() - t0 > 12) { await d.pause(); t0 = Date.now(); }
         }
-        const gone = [...have.keys()].filter((id) => !localRec.has(id));
+        const gone = [...have.keys()].filter((id) => !recOf.has(id));
         st.local = next;
+        localRec.clear();
+        for (const [id, rec] of recOf) localRec.set(id, rec);
         if (mode === "idb") {
           try { if (gone.length) await st.drop(gone); await st.save(put); } catch (_) { /* derived: rebuilt next launch */ }
         }
@@ -551,7 +587,6 @@ async function bootLibrary(d) {
    * moves 分析 (7.6). Answered either way, or a name typed into the field,
    * and it is not offered again; the field stays for a correction.
    */
-  let claim = null;
   function renderClaim() {
     const box = doc.getElementById("lib-claim");
     claim = claimAsked || store.session.libNames.length ? null : LibraryQuery.inferName(store.session.library);
@@ -584,6 +619,7 @@ async function bootLibrary(d) {
   renderClaim();
   // what is not indexed yet (a migrated or restored library), in the
   // background; the position filter finds more as it goes
+  if (mode !== "idb") st.games = store.session.library;
   const indexing = st.indexMissing(12, d.pause).then(() => { if (listOpen()) renderList(); });
   syncLocal();
 

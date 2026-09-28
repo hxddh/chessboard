@@ -26,6 +26,7 @@ import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
 import { libOf, storedLib } from "./lib/library-view.mjs";
 import { Chess } from "../src/web/js/chess.js";
+import { record, RECORDING } from "./measurements.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -1989,6 +1990,10 @@ for (const [ver, v1] of Object.entries(V1)) {
     `C1 两个窗口同时迁移：两边都是 2 局，库里也是 2 局(${la.games.length}/${lb.games.length}/${imported.length})`);
   // one window imports; the other's next save does not take it away
   await importFile(a.page, '[Event "w"]\n[White "hxddh"]\n[Black "z"]\n[Result "0-1"]\n\n1. g4 e5 2. f3 Qh4# 0-1\n');
+  await b.page.waitForTimeout(500);
+  const heard = (await libOf(b.page)).games.map((g) => g.event);
+  assert(heard.length === 3 && heard.includes("w"),
+    `C1 一个窗口导入，另一个窗口的列表也有了这一局(BroadcastChannel；${heard.length} 局)`);
   await b.page.evaluate(() => { document.getElementById("lib-names").value = "hxddh, other"; document.getElementById("lib-names").dispatchEvent(new Event("change")); });
   await b.page.waitForTimeout(600);
   const after = (await storedLib(a.page)).games.filter((g) => g.src !== "local");
@@ -2247,12 +2252,22 @@ function tenThousand() {
   await ctx.close();
 }
 
-// the numbers, for docs/measured.json (libraryDb)
-console.log("C1 measured: " + JSON.stringify({
-  importMs: C1.importMs, loadMs: C1.loadMs,
-  api: C1.api && Object.fromEntries(Object.entries(C1.api).map(([k, r]) => [k, Math.round(r.ms * 10) / 10])),
-  ui: C1.ui && { typed: Math.round(C1.ui.typed * 10) / 10, pos: Math.round(C1.ui.pos * 10) / 10, seg: Math.round(C1.ui.seg * 10) / 10 },
-}));
+// the numbers, for docs/measured.json (libraryDb) — written with --record
+{
+  const r1 = (x) => Math.round(x * 10) / 10;
+  const figures = {
+    what: "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms",
+    script: "node scripts/test-library-e2e.mjs --record",
+    games: 10000,
+    importMs: C1.importMs, loadMs: C1.loadMs,
+    queryMs: C1.api && Object.fromEntries(Object.entries(C1.api).map(([k, r]) => [k, r1(r.ms)])),
+    queryHits: C1.api && Object.fromEntries(Object.entries(C1.api).map(([k, r]) => [k, r.n])),
+    pageMs: C1.ui && { typed: r1(C1.ui.typed), position: r1(C1.ui.pos), speed: r1(C1.ui.seg) },
+    limitMs: 200,
+  };
+  console.log("C1 measured: " + JSON.stringify(figures));
+  if (RECORDING && C1.api && C1.ui) record("libraryDb", figures);
+}
 
 await browser.close();
 server.close();

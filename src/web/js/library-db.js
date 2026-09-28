@@ -86,6 +86,10 @@ async function idbBackend(idb, name) {
     kind: "idb",
     async all() { return done(tx(["games"], "readonly").objectStore("games").getAll()); },
     async count() { return done(tx(["games"], "readonly").objectStore("games").count()); },
+    async get(ids) {
+      const s = tx(["games"], "readonly").objectStore("games");
+      return Promise.all(ids.map((id) => done(s.get(id))));
+    },
     async put(records) {
       if (!records.length) return true;
       const t = tx(["games"], "readwrite");
@@ -134,6 +138,7 @@ function memoryBackend() {
     kind: "memory", games, meta, fail,
     async all() { check("all"); return [...games.values()].map(clone); },
     async count() { return games.size; },
+    async get(ids) { check("all"); return ids.map((id) => clone(games.get(id))); },
     async put(records) {
       check("put");
       // all or nothing, like a transaction
@@ -267,6 +272,10 @@ function createLibraryStore(o) {
     if (!entries.length) return true;
     return backend.put(entries.map(recordOf));
   }
+  /** These records, as entries (a second window wrote them). */
+  async function read(ids) {
+    return (await backend.get(ids)).filter((r) => r && typeof r.id === "string").map(take);
+  }
   async function drop(ids) {
     for (const id of ids) pk.delete(id);
     return backend.remove(ids);
@@ -353,7 +362,7 @@ function createLibraryStore(o) {
   }
 
   return {
-    backend, pk, load, migrate, save, drop, indexFens, indexMissing, shards, shardText, restoreShards, shardOf,
+    backend, pk, load, migrate, save, drop, read, indexFens, indexMissing, shards, shardText, restoreShards, shardOf,
     get games() { return games; }, set games(v) { games = v; },
     get local() { return local; }, set local(v) { local = v; },
     pkOf: (g) => (g ? pk.get(g.id) || null : null),
