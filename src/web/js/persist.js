@@ -119,6 +119,20 @@ export const STORE_META = "meta";
  */
 export const STORE_ALT = "-b";
 
+/**
+ * v8-0-plan C1: the library's games, as store keys that are not KEYS.
+ *
+ * The games moved from one localStorage value to one IndexedDB record each
+ * (library-db.js), and IndexedDB is the WebView's, exactly like localStorage:
+ * "remove website data" takes it. So they are mirrored here as well — in 64
+ * shards, "lib00" … "lib3f", each a key of the per-key store with its two
+ * slots, listed in the same manifest, written under the same lock. What is
+ * different is only where the value comes from: not the bag, but the port
+ * the library attaches (attachBulk), which serialises a shard when a flush
+ * asks for it. The header (`library`) stays a KEY like any other.
+ */
+export const BULK = /^lib[0-9a-f]{2}$/;
+
 /** Is `m` a manifest this app wrote? */
 export function isStoreMeta(m) {
   return !!m && m.app === "chessboard" && Array.isArray(m.keys) &&
@@ -321,7 +335,33 @@ export function createPersist(host, onWriteFailure) {
   let clearLegacy = false;
   // one flush at a time: flushMirror() queues behind the one in flight
   let flushChain = Promise.resolve(true);
-  function markAllDirty() { for (const name of Object.keys(KEYS)) dirty.add(name); }
+  // v8-0-plan C1: the library's port — {names() → shard names holding games
+  // (null until the library has loaded), read(name) → a shard's text or null,
+  // restore(texts) → Promise, clear(), ready() → Promise}. See BULK.
+  let bulk = null;
+  // "every shard is owed", waiting for a port that can say which shards exist
+  let bulkAll = false;
+  // shard texts a restore brought, until the reload: what a flush writes for
+  // them, instead of the library the page is still holding
+  let bulkOverride = null;
+  // the restore's write into IndexedDB, which the reload must not outrun
+  let bulkRestoring = null;
+  function markAllDirty() { for (const name of Object.keys(KEYS)) dirty.add(name); bulkAll = true; }
+  /** A dirty name's value for the store: undefined = not known yet (keep it owed). */
+  function valueOf(name) {
+    if (!BULK.test(name)) return bag ? bag[name] : null;
+    if (bulkOverride && bulkOverride.has(name)) return bulkOverride.get(name);
+    return bulk && bulk.names() ? bulk.read(name) : undefined;
+  }
+  /** Expand "every shard is owed" once the port can name them. */
+  function expandBulk() {
+    if (!bulkAll || !bulk || !bulk.names()) return;
+    bulkAll = false;
+    for (const name of bulk.names()) dirty.add(name);
+    // a shard the store still lists and the library no longer fills is
+    // owed too — as a removal
+    for (const name of Object.keys(committed || {})) if (BULK.test(name)) dirty.add(name);
+  }
   /** The revision stamp the cache carries, made if it has none. */
   function stamp() {
     // the same revision stamp the cache carries (set() wrote it before
@@ -335,6 +375,9 @@ export function createPersist(host, onWriteFailure) {
   function mirrorDoc() {
     const keys = {};
     for (const name of Object.keys(KEYS)) if (bag && bag[name] != null) keys[name] = bag[name];
+    // v8-0-plan C1: the library's games are part of the profile
+    const shards = bulk && bulk.names();
+    if (shards) for (const name of shards) { const v = bulk.read(name); if (v != null) keys[name] = v; }
     return { app: "chessboard", schema: SCHEMA, writtenAt: stamp(), keys };
   }
   function scheduleMirror() {
@@ -383,7 +426,10 @@ export function createPersist(host, onWriteFailure) {
     // one flush at a time on this page, and — with the store's lock — across
     // every window sharing the store (host.js withStoreLock, Codex on #85)
     const locked = () => (typeof host.withStoreLock === "function" ? host.withStoreLock(flushKeys) : flushKeys());
-    const run = flushChain.then(locked, locked);
+    // v8-0-plan C1: a restore's games reach IndexedDB before anything else
+    // happens — the callers reload once this settles
+    const before = bulkRestoring ? flushChain.then(() => bulkRestoring).catch(() => {}) : flushChain;
+    const run = before.then(locked, locked);
     flushChain = run;
     return run;
   }
@@ -400,12 +446,23 @@ export function createPersist(host, onWriteFailure) {
    */
   async function flushKeys() {
     if (!mirrorEnabled || mirrorBlocked) return false;
+    expandBulk();
     if (!dirty.size && !clearLegacy) return true;
-    const names = [...dirty];
     const gone = new Set(removed);
-    dirty.clear();
+    const values = [];
+    for (const name of dirty) {
+      const v = valueOf(name);
+      // a shard the library cannot serialise yet (not loaded) stays owed,
+      // and the manifest keeps whatever file it already names
+      if (v === undefined) continue;
+      // a shard the library emptied is a removal, like remove()'s
+      if (v == null && BULK.test(name)) gone.add(name);
+      values.push([name, v]);
+    }
+    const names = values.map(([name]) => name);
+    if (!names.length && !gone.size && !clearLegacy) return true;
+    for (const name of names) dirty.delete(name);
     removed.clear();
-    const values = names.map((name) => [name, bag ? bag[name] : null]);
     const meta = { app: "chessboard", schema: SCHEMA, writtenAt: stamp(), keys: [] };
     const legacy = clearLegacy;
     clearLegacy = false;
@@ -435,7 +492,10 @@ export function createPersist(host, onWriteFailure) {
       const cur = now.missing ? base : now.files;
       const flushed = new Set(names);
       const files = {};
-      for (const name of Object.keys(KEYS)) {
+      // the library's shards (BULK) ride along: this flush's, and every
+      // other one the manifest on disk lists
+      const shardNames = Object.keys(written).concat(Object.keys(cur)).filter((n) => BULK.test(n));
+      for (const name of new Set(Object.keys(KEYS).concat(shardNames))) {
         if (written[name]) files[name] = written[name];
         else if (!flushed.has(name) && cur[name]) files[name] = cur[name];
       }
@@ -594,7 +654,7 @@ export function createPersist(host, onWriteFailure) {
           const files = storeFiles(m);
           const keys = {};
           for (const name of m.keys) {
-            if (!KEYS[name]) continue;   // a key a later version added
+            if (!KEYS[name] && !BULK.test(name)) continue;   // a key a later version added
             const v = await host.appdataReadKey(files[name]);
             // a key the manifest lists and the store cannot produce is damage
             if (!v || typeof v.text !== "string") return null;
@@ -641,7 +701,60 @@ export function createPersist(host, onWriteFailure) {
     // 6.1: storage now holds the file's profile but the page still holds the
     // old one. Freeze until the caller reloads onto it.
     freeze();
+    // v8-0-plan C1: …and the library's games are in IndexedDB before the
+    // caller is told to reload. A refused write is not the end of them: the
+    // store still holds the shards, and the library pulls them back when it
+    // finds fewer games than its header counts (library-ui.js).
+    await bulkSettled();
     return "restored";
+  }
+
+  /** v8-0-plan C1: resolves once a restore's games have reached IndexedDB. */
+  function bulkSettled() { return Promise.resolve(bulkRestoring).then(() => true, () => false); }
+
+  /** v8-0-plan C1: the library attaches its port (see BULK). */
+  function attachBulk(port) { bulk = port; }
+
+  /**
+   * v8-0-plan C1: these shards changed. Stamped and mirrored like set(): the
+   * values themselves are read from the port when the flush runs.
+   */
+  function touchBulk(names) {
+    if (frozen) return true;
+    for (const name of names) { if (BULK.test(name)) { dirty.add(name); removed.delete(name); } }
+    if (!host.storageSet(STAMP_KEY, String(Date.now()))) { fail("library"); return false; }
+    scheduleMirror();
+    return true;
+  }
+
+  /**
+   * v8-0-plan C1: the library's shards as the native store holds them now
+   * ({name: text}), for a library that finds IndexedDB emptier than its
+   * header says — the WebView's data went, the store's did not.
+   * @returns {Promise<object|null>} null when there is no store to ask
+   */
+  function readBulk() {
+    if (!perKey) return Promise.resolve(null);
+    // under the store's lock, so no other window's commit lands between the
+    // manifest and the files it names
+    return typeof host.withStoreLock === "function" ? host.withStoreLock(readBulkInner) : readBulkInner();
+  }
+  async function readBulkInner() {
+    try {
+      const r = await host.appdataReadKey(STORE_META);
+      let m = null;
+      try { m = r && typeof r.text === "string" ? JSON.parse(r.text) : null; } catch (_) { m = null; }
+      if (!isStoreMeta(m)) return null;
+      const files = storeFiles(m);
+      const out = {};
+      for (const name of m.keys) {
+        if (!BULK.test(name)) continue;
+        const v = await host.appdataReadKey(files[name]);
+        if (!v || typeof v.text !== "string") return null;
+        out[name] = v.text;
+      }
+      return out;
+    } catch (_) { return null; }
   }
 
   /** Every key, as one document — the whole profile, for export. */
@@ -665,6 +778,16 @@ export function createPersist(host, onWriteFailure) {
       // v8-0-plan F3: the whole profile changed, so the whole store is owed
       dirty.add(name);
     }
+    // v8-0-plan C1: the library's games — into IndexedDB (the port), and into
+    // the store from the document itself, not from the library the page is
+    // still holding. A shard the document does not have is emptied.
+    const texts = {};
+    for (const [name, v] of Object.entries(doc.keys)) if (BULK.test(name) && typeof v === "string") texts[name] = v;
+    bulkOverride = new Map(Object.entries(texts));
+    const stale = Object.keys(committed || {}).concat((bulk && bulk.names()) || []);
+    for (const name of stale) if (BULK.test(name) && !bulkOverride.has(name)) bulkOverride.set(name, null);
+    for (const name of bulkOverride.keys()) dirty.add(name);
+    bulkRestoring = bulk && bulk.restore ? Promise.resolve().then(() => bulk.restore(texts)) : null;
     if (!host.storageSet(SCHEMA_KEY, String(doc.schema || SCHEMA))) ok = false;
     if (!host.storageSet(STAMP_KEY, String(Number(doc.writtenAt) || Date.now()))) ok = false;
     bag = null;
@@ -707,6 +830,12 @@ export function createPersist(host, onWriteFailure) {
     host.storageRemove(SCHEMA_KEY);
     host.storageRemove(STAMP_KEY);
     if (perKey) clearLegacy = true;
+    // v8-0-plan C1: the library's games are in IndexedDB and in the shards
+    // the store lists; "clear my data" takes both
+    if (bulk && bulk.clear) bulk.clear();
+    for (const name of Object.keys(committed || {}).concat((bulk && bulk.names()) || [])) {
+      if (BULK.test(name)) { dirty.add(name); removed.add(name); }
+    }
     scheduleMirror();
   }
 
@@ -849,5 +978,5 @@ export function createPersist(host, onWriteFailure) {
 
   return { load, get, read, set, setJson, remove, clearAll, isBroken, swapSelftestMarker, wasEmpty, corruptKeys,
     recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, freeze, releaseMirror,
-    ACCEPT, KEYS, SCHEMA };
+    attachBulk, touchBulk, readBulk, bulkSettled, ACCEPT, KEYS, SCHEMA };
 }

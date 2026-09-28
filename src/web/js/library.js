@@ -27,13 +27,14 @@ import { clocksOf } from "./progress-metrics.js";
 /**
  * How many games the library holds.
  *
- * A season of online play, not an archive: the value of this feature is in
- * "what am I doing wrong lately", and a diagnosis averaged over five years of
- * play answers a question nobody asked. Beyond it, the oldest go first — and
- * the *imported* date is what orders them, not the date in the PGN, because a
- * batch someone imports today is what they came here to look at.
+ * 500 from 7.0 to 8.0-dev: the whole library was one localStorage value, and
+ * the ~5 MB quota was the real limit. v8-0-plan C1 keeps each game as its own
+ * IndexedDB record (library-db.js), so the cap is now the plan's floor for an
+ * archive someone actually has — years of online play. Beyond it the oldest
+ * go first, by the *imported* date, not the date in the PGN: a batch someone
+ * imports today is what they came here to look at.
  */
-const MAX_GAMES = 500;
+const MAX_GAMES = 10000;
 
 /** Phase boundaries by full-move number, for the per-phase accuracy split. */
 const OPENING_UNTIL = 12;
@@ -104,8 +105,11 @@ function entryFrom(game, sans, names, now) {
     const row = headers.find(([key]) => key === k);
     return row ? row[1] : "";
   };
+  // v8-0-plan C1: the whole-library export writes the id it had (LibraryQuery
+  // entryPgn), so a round trip files every game under its own id again
+  const libId = /^lib:[0-9a-z]{1,8}$/.test(tag("LibId")) ? tag("LibId") : "";
   const entry = {
-    id: gameId(headers, sans),
+    id: libId || gameId(headers, sans),
     t: now,
     white: tag("White"),
     black: tag("Black"),
@@ -137,6 +141,9 @@ function entryFrom(game, sans, names, now) {
     /** set by the app once the analysis pass has run over this game */
     an: null,
   };
+  // v8-0-plan C1: what the search filters on and the export writes back —
+  // only when the file has them, so a game without them weighs what it did
+  for (const [k, f] of [["Site", "site"], ["Round", "round"], ["TimeControl", "tc"]]) if (tag(k)) entry[f] = tag(k);
   // v8-0-plan B5: the `[%clk]` readings, one per ply, for the time-pressure
   // figure on 我的 — only when the file has them, so a game without a clock
   // weighs what it did
@@ -154,20 +161,21 @@ function entryFrom(game, sans, names, now) {
  * @returns {{list: object[], added: number, dup: number, dropped: string[]}}
  */
 function addGames(list, fresh) {
-  const have = new Set((list || []).map((g) => g.id));
   const out = (list || []).slice();
+  // id → index: at v8-0-plan C1's 10,000 games, a findIndex per duplicate
+  // made re-importing an archive quadratic
+  const have = new Map(out.map((g, i) => [g.id, i]));
   let added = 0, dup = 0;
   for (const g of fresh || []) {
     if (have.has(g.id)) {
       dup++;
       // a game imported before its clock was kept gets it now; nothing else
       // of the stored entry changes (v8-0-plan B5)
-      const i = g.clk ? out.findIndex((x) => x.id === g.id && !x.clk) : -1;
-      if (i >= 0) out[i] = Object.assign({}, out[i], { clk: g.clk });
+      const i = have.get(g.id);
+      if (g.clk && !out[i].clk) out[i] = Object.assign({}, out[i], { clk: g.clk });
       continue;
     }
-    have.add(g.id);
-    out.push(g);
+    have.set(g.id, out.push(g) - 1);
     added++;
   }
   const dropped = [];

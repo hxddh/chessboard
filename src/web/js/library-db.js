@@ -1,0 +1,361 @@
+/**
+ * 棋谱库的存储 — one IndexedDB record per game (v8-0-plan C1).
+ *
+ * Until 8.0-dev the library was one localStorage value, `chess.v1.library`,
+ * `{v: 1, names, games: [...]}`: the whole of it re-serialised on every save,
+ * capped at 500 games because ~5 MB of quota was the real ceiling, and
+ * mirrored to the native store as one file. Now:
+ *
+ *   * the games live in IndexedDB, database "chessboard.library", store
+ *     "games", keyed by the entry's id — one record per game, so a save
+ *     writes the games that changed and nothing else, and the quota is the
+ *     disk's, not 5 MB;
+ *   * each record carries the game's position index (`pk`, library-query.js)
+ *     beside the entry, so "contains this position" is a scan, not a replay;
+ *   * the native mirror (persist.js) keeps the games too, in 64 shard files
+ *     ("lib00" … "lib3f", LibraryQuery.shardOf) under the same manifest, the
+ *     same two slots and the same Web Lock as every other key — IndexedDB is
+ *     the WebView's, and "remove website data" must not take the library;
+ *   * `chess.v1.library` stays, as the header: `{v: 1, games: [], names,
+ *     db: 2, n}`. Still v1-shaped on purpose — a 7.x or 8.0-dev build that
+ *     opens this profile reads an empty library rather than quarantining a
+ *     value it does not know, and the games are still here when it is
+ *     upgraded again. If that older build imports meanwhile, it writes v1
+ *     games into the header, and the next launch migrates them in too.
+ *
+ * Why IndexedDB and not a native file per game: the native store is reached
+ * over the bridge, one async round trip per file. Loading ten thousand files
+ * at every launch is minutes; one getAll() is well under a second. The
+ * native store is kept for what it is for — surviving the WebView's data —
+ * at a granularity (64 shards) its bridge can carry.
+ *
+ * The migration (`migrate`) is written for 7.0's history: that release lost
+ * PGNs moving data between shapes. So it copies every game object verbatim,
+ * keeps the whole v1 value as it was in the "meta" store before anything
+ * else, reads back every id before the header is allowed to change, and runs
+ * under the store's Web Lock so a second window cannot interleave with it. A
+ * migration cut short anywhere leaves the v1 header in localStorage, and the
+ * next launch simply does it again: every step is an idempotent upsert.
+ * @module library-db
+ */
+import { LibraryQuery } from "./library-query.js";
+
+const DB_NAME = "chessboard.library";
+const DB_VERSION = 1;
+
+/** A request as a promise. */
+function done(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("indexedDB request failed"));
+  });
+}
+
+/** A transaction's completion as a promise — the only moment a write is durable. */
+function committed(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve(true);
+    tx.onabort = () => reject(tx.error || new Error("indexedDB transaction aborted"));
+    tx.onerror = () => reject(tx.error || new Error("indexedDB transaction failed"));
+  });
+}
+
+/**
+ * The IndexedDB backend, or null when this WebView has none (or refuses it:
+ * a private window, a policy). The caller then keeps the 8.0-dev shape.
+ * @param {IDBFactory} idb
+ */
+async function idbBackend(idb, name) {
+  if (!idb || typeof idb.open !== "function") return null;
+  let db;
+  try {
+    const req = idb.open(name || DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains("games")) d.createObjectStore("games", { keyPath: "id" });
+      if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
+    };
+    // another window holding an older version open: it is told to let go
+    req.onblocked = () => {};
+    db = await done(req);
+  } catch (_) { return null; }
+  // a later version opened elsewhere: close, so it is not blocked by us
+  db.onversionchange = () => { try { db.close(); } catch (_) { /* already */ } };
+  const tx = (stores, mode) => db.transaction(stores, mode);
+  return {
+    kind: "idb",
+    async all() { return done(tx(["games"], "readonly").objectStore("games").getAll()); },
+    async count() { return done(tx(["games"], "readonly").objectStore("games").count()); },
+    async put(records) {
+      if (!records.length) return true;
+      const t = tx(["games"], "readwrite");
+      const s = t.objectStore("games");
+      for (const r of records) s.put(r);
+      return committed(t);
+    },
+    async remove(ids) {
+      if (!ids.length) return true;
+      const t = tx(["games"], "readwrite");
+      const s = t.objectStore("games");
+      for (const id of ids) s.delete(id);
+      return committed(t);
+    },
+    async replace(ids, records) {
+      const t = tx(["games"], "readwrite");
+      const s = t.objectStore("games");
+      for (const id of ids) s.delete(id);
+      for (const r of records) s.put(r);
+      return committed(t);
+    },
+    async clear() {
+      const t = tx(["games"], "readwrite");
+      t.objectStore("games").clear();
+      return committed(t);
+    },
+    async getMeta(k) { return done(tx(["meta"], "readonly").objectStore("meta").get(k)); },
+    async setMeta(k, v) {
+      const t = tx(["meta"], "readwrite");
+      t.objectStore("meta").put(v, k);
+      return committed(t);
+    },
+  };
+}
+
+/**
+ * The same interface over a Map — for node tests, which inject failures into
+ * it (`fail.put = "QuotaExceededError"`), and nothing else.
+ */
+function memoryBackend() {
+  const games = new Map(), meta = new Map();
+  const fail = {};
+  const clone = (v) => (v && typeof v === "object" ? structuredClone(v) : v);
+  const check = (op) => { if (fail[op]) { const e = new Error(fail[op]); e.name = fail[op]; throw e; } };
+  return {
+    kind: "memory", games, meta, fail,
+    async all() { check("all"); return [...games.values()].map(clone); },
+    async count() { return games.size; },
+    async put(records) {
+      check("put");
+      // all or nothing, like a transaction
+      const next = records.map((r) => [r.id, clone(r)]);
+      for (const [id, r] of next) games.set(id, r);
+      return true;
+    },
+    async remove(ids) { check("remove"); for (const id of ids) games.delete(id); return true; },
+    async replace(ids, records) {
+      check("put");
+      for (const id of ids) games.delete(id);
+      for (const r of records) games.set(r.id, clone(r));
+      return true;
+    },
+    async clear() { check("clear"); games.clear(); return true; },
+    async getMeta(k) { return clone(meta.get(k)); },
+    async setMeta(k, v) { check("setMeta"); meta.set(k, clone(v)); return true; },
+  };
+}
+
+/** How deep an entry's analysis went: 0 = none. */
+const depthOf = (g) => (g && g.an ? Number(g.an.budget) || 1 : 0);
+
+/**
+ * Two copies of one game (the same id): which one stays.
+ *
+ * `addGames`' rule — what is stored stays — with one exception the two-store
+ * world needs: an older build may have analysed the game in its v1 header
+ * after this build migrated it. The deeper analysis wins; a clock either side
+ * has is kept. Nothing else of either copy is merged: a half of each is a
+ * record neither build wrote.
+ */
+function mergeEntry(have, incoming) {
+  if (!have) return incoming;
+  const keep = depthOf(incoming) > depthOf(have) ? incoming : have;
+  const other = keep === have ? incoming : have;
+  if (!keep.clk && other.clk) return Object.assign({}, keep, { clk: other.clk });
+  return keep;
+}
+
+/**
+ * The library's store: the entries in memory, their index beside them, and
+ * the one door to IndexedDB. Imported games and 本机 games (`src: "local"`,
+ * derived from the play history, see `syncLocal`) are kept apart: the
+ * analysis pass and the diagnosis read the imported ones only, as they
+ * always have; the list, the search and the explorer read both.
+ * @param {{backend: object, Chess: Function, withLock?: (fn) => Promise}} o
+ */
+function createLibraryStore(o) {
+  const backend = o.backend;
+  const Chess = o.Chess;
+  const withLock = o.withLock || ((fn) => fn());
+  /** id → Float64Array: the position index */
+  const pk = new Map();
+  let games = [];
+  let local = [];
+
+  /** The record for an entry: the entry, plus its index when it has one. */
+  function recordOf(g) {
+    const r = Object.assign({}, g);
+    const k = pk.get(g.id);
+    if (k) r.pk = k;
+    return r;
+  }
+  /** An entry from a record: the index goes beside it, never inside it. */
+  function take(r) {
+    const g = Object.assign({}, r);
+    if (g.pk) {
+      pk.set(g.id, g.pk instanceof Float64Array ? g.pk : Float64Array.from(g.pk));
+      delete g.pk;
+    }
+    return g;
+  }
+
+  /** Everything stored, split into the two lists. */
+  async function load() {
+    const rows = await backend.all();
+    const a = [], b = [];
+    for (const r of rows) {
+      if (!r || typeof r.id !== "string") continue;
+      (r.src === "local" ? b : a).push(take(r));
+    }
+    a.sort((x, y) => (y.t || 0) - (x.t || 0));
+    games = a;
+    local = b;
+    return { games, local };
+  }
+
+  /**
+   * v1 → IndexedDB. `raw` is the header's value exactly as localStorage
+   * holds it. Resolves {ok, moved} once every game is readable back from
+   * the store — and only then may the caller replace the header.
+   */
+  async function migrate(raw) {
+    let v1 = null;
+    try { v1 = JSON.parse(raw); } catch (_) { return { ok: false, error: "parse" }; }
+    const list = v1 && Array.isArray(v1.games) ? v1.games : [];
+    return withLock(async () => {
+      try {
+        // the value as found, before anything is written — whatever the
+        // conversion below gets wrong, this can be read back by hand
+        await backend.setMeta("v1:" + Date.now(), { raw });
+        const have = new Map((await backend.all()).map((r) => [r.id, r]));
+        const put = [];
+        for (const g of list) {
+          if (!g || typeof g.id !== "string" || !g.id) continue;
+          const cur = have.get(g.id);
+          if (!cur) { put.push(g); continue; }
+          // a second window, or a migration cut short, got here first
+          const { pk: k, ...stored } = cur;
+          const rec = Object.assign({}, mergeEntry(stored, g));
+          if (k) rec.pk = k;
+          put.push(rec);
+        }
+        await backend.put(put);
+        // read back: every id the v1 value held is in the store
+        const back = new Set((await backend.all()).map((r) => r.id));
+        const missing = list.filter((g) => g && typeof g.id === "string" && g.id && !back.has(g.id));
+        if (missing.length) return { ok: false, error: "readback", missing: missing.length };
+        return { ok: true, moved: list.length };
+      } catch (e) {
+        return { ok: false, error: (e && e.name) || "write" };
+      }
+    });
+  }
+
+  /** Write these entries (with their index). Rejects when the store refuses. */
+  async function save(entries) {
+    if (!entries.length) return true;
+    return backend.put(entries.map(recordOf));
+  }
+  async function drop(ids) {
+    for (const id of ids) pk.delete(id);
+    return backend.remove(ids);
+  }
+
+  /** The index of a game whose positions the caller already has (an import). */
+  function indexFens(id, fens) { pk.set(id, LibraryQuery.keysOfFens(fens)); }
+
+  /**
+   * Index what is not indexed yet, a slice at a time: a migrated or
+   * restored library arrives without its index, and replaying ten thousand
+   * games is tens of seconds of chess.js. `budgetMs` per slice, then the
+   * thread goes back; the games indexed are written back so it happens once.
+   * @returns {Promise<number>} games indexed
+   */
+  async function indexMissing(budgetMs, pause) {
+    const todo = games.concat(local).filter((g) => !pk.has(g.id) && !g.noIndex);
+    let n = 0;
+    let t0 = Date.now();
+    let batch = [];
+    for (const g of todo) {
+      const k = LibraryQuery.keysOfGame(g, Chess);
+      if (k) pk.set(g.id, k);
+      else g.noIndex = true;   // does not replay; not asked again this session
+      batch.push(g);
+      n++;
+      if (Date.now() - t0 >= budgetMs) {
+        await save(batch.filter((x) => pk.has(x.id))).catch(() => {});
+        batch = [];
+        await pause();
+        t0 = Date.now();
+      }
+    }
+    await save(batch.filter((x) => pk.has(x.id))).catch(() => {});
+    return n;
+  }
+
+  /** id → shard name, so a flush of all 64 does not hash every id 64 times */
+  const shardMemo = new Map();
+  const shardOf = (id) => {
+    let s = shardMemo.get(id);
+    if (!s) shardMemo.set(id, (s = LibraryQuery.shardOf(id)));
+    return s;
+  };
+  /** The shards this library's games are mirrored in, with their games. */
+  function shards() {
+    const m = new Map();
+    for (const g of games) {
+      const s = shardOf(g.id);
+      let list = m.get(s);
+      if (!list) m.set(s, (list = []));
+      list.push(g);
+    }
+    return m;
+  }
+  /** One shard's text for the native store: the entries, never the index. */
+  function shardText(name) {
+    const list = games.filter((g) => shardOf(g.id) === name);
+    return list.length ? JSON.stringify({ v: 1, games: list }) : null;
+  }
+
+  /**
+   * Replace every imported game with the ones in `texts` (shard name → the
+   * text shardText wrote) — a restore from the native store or from an
+   * exported profile. The 本机 games are left: they are derived from the
+   * play history, which the restore brings back on its own key.
+   */
+  async function restoreShards(texts) {
+    const incoming = [];
+    for (const text of Object.values(texts || {})) {
+      let v = null;
+      try { v = JSON.parse(text); } catch (_) { v = null; }
+      if (v && Array.isArray(v.games)) for (const g of v.games) if (g && typeof g.id === "string") incoming.push(g);
+    }
+    return withLock(async () => {
+      const old = games.map((g) => g.id);
+      // one transaction: never a moment with the old games gone and the new
+      // ones not yet in
+      await backend.replace(old, incoming);
+      for (const id of old) pk.delete(id);
+      games = incoming.slice().sort((x, y) => (y.t || 0) - (x.t || 0));
+      return incoming.length;
+    });
+  }
+
+  return {
+    backend, pk, load, migrate, save, drop, indexFens, indexMissing, shards, shardText, restoreShards, shardOf,
+    get games() { return games; }, set games(v) { games = v; },
+    get local() { return local; }, set local(v) { local = v; },
+    pkOf: (g) => (g ? pk.get(g.id) || null : null),
+  };
+}
+
+export const LibraryDb = { DB_NAME, idbBackend, memoryBackend, createLibraryStore, mergeEntry };
