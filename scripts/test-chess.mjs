@@ -145,7 +145,7 @@ const allSourceExcept = (...owners) =>
 // the dictionaries — are Chinese by design. A module carved out of app.js
 // joins this list in the same PR, so the rules follow the code they were
 // written for.
-const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js"];
+const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js", "game-end.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -6860,7 +6860,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 9887; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js
+  const APP_JS_LINE_CEILING = 9819; // 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −68 to game-end.js (M4)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
