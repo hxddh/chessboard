@@ -75,6 +75,13 @@ export function createRetry(d) {
    * engine's choice (then there is nothing wrong to play again), and the
    * engine's move as the answer. Memoised beside the reasons.
    */
+  /** The best move at ply `i` as an arrow, whatever the move's grade. */
+  function retryArrow(i) {
+    const a = analysisFor();
+    const uci = a && a.bests ? a.bests[i] : null;
+    return uci && uci.length >= 4 ? { from: uci.slice(0, 2), to: uci.slice(2, 4) } : null;
+  }
+
   function retryFacts(i) {
     const ex = mistakeFacts(i);
     if (ex) return ex;
@@ -287,8 +294,10 @@ export function createRetry(d) {
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
       // after a verdict, the engine's choice as the arrow — "either way, show
-      // the best move" — drawn from the position before the move tried
-      hintMove: r.verdict && r.verdict !== "checking" ? bestArrowAt(r.ply) : null,
+      // the best move" — drawn from the position before the move tried; read
+      // off the analysis itself, since a graded moment that is no mistake
+      // (!!, 仅此一着, 错失良机) has a retry too and bestArrowAt keeps to mistakes (Codex #89)
+      hintMove: r.verdict && r.verdict !== "checking" ? retryArrow(r.ply) : null,
       stars: [], cursor: cursorSquare(), drag: store.ui.dragging,
       coords: store.ui.coordsOn, blind: store.ui.blindfold,
     };
