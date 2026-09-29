@@ -69,7 +69,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "dlg.exportAll": "导出全部数据", "dlg.importAll": "导入全部数据：本机现有的对局、存档槽、设置、战绩与学习数据将被文件里的整个替换。", "msg.allData.badFile": "这不是本应用导出的数据文件", "msg.allData.imported": "已导入全部数据，正在重新载入…",
       "msg.profile.restored": "已从本机数据文件恢复档案，正在重新载入…", "msg.profile.fileBad": "本机数据文件读不出来，本次用浏览器缓存里的档案；原文件未被覆盖",
       "about.title": "关于国际象棋", "about.version": "版本", "about.license": "许可", "about.source": "源码", "about.credits": "致谢", "about.dataPath": "数据位置",
-      "about.licenseText": "GPLv3 —— 自由软件，源码随发布提供", "about.creditsText": "Stockfish 19（GPLv3）· chess.js（BSD-2）· cburnett 棋子（Colin M.L. Burnett，GPLv2+；「经典」一套为其 Wikimedia 重绘版，GFDL / BSD / GPL / CC BY-SA 3.0 多重许可）· Merida 棋子（Armando Hernandez Marroquin，GPLv2+）· Chessnut 棋子（Alexis Luengas，Apache 2.0）· Fantasy / Celtic / Spatial 棋子（Maurizio Monge，MIT）· lichess chess-openings（CC0）· 木质音效为本项目自制（物理模型实时合成，GPLv3）· Lucide 图标（ISC；其中 10 个源自 Feather，MIT）",
+      "about.licenseText": "GPLv3 —— 自由软件，源码随发布提供", "about.creditsText": "Stockfish 19（GPLv3）· chess.js（BSD-2）· cburnett 棋子（Colin M.L. Burnett，GPLv2+；「经典」一套为其 Wikimedia 重绘版，GFDL / BSD / GPL / CC BY-SA 3.0 多重许可）· Merida 棋子（Armando Hernandez Marroquin，GPLv2+）· Chessnut 棋子（Alexis Luengas，Apache 2.0）· Fantasy / Celtic / Spatial 棋子（Maurizio Monge，MIT）· lichess chess-openings（CC0）· Lichess 对局库（CC0，内置的大师着法树）· 木质音效为本项目自制（物理模型实时合成，GPLv3）· Lucide 图标（ISC；其中 10 个源自 Feather，MIT）",
       // 7.7 (v7-7-plan §2–§4, §7): the result card, the puzzle feedback card,
       // the lesson dots and the tool row's tooltips
       "go.analyse": "分析这盘",
@@ -99,6 +99,10 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "pz.fb.showHint": "看提示",
       "aria.lessonDots": "本课进度",
       "tip.reviewOpen": "复盘：分析、精析、持续分析",
+      // v8-0-plan C3: 开局浏览器
+      "act.explorer": "开局", "xp.title": "开局浏览器", "xp.master": "大师",
+      "xp.book": "书", "xp.row": "{0}：{1} 局，白胜 {2}%，和 {3}%，黑胜 {4}%",
+      "xp.libEmpty": "棋谱库是空的", "xp.none": "没有对局",
       "tip.pgn.export": "把这盘存成 PGN 文件",
       "tip.more": "更多：粘贴、打开、FEN",
       "about.dataUnknown": "浏览器存储（无原生数据文件）", "act.checkUpdate": "检查更新", "msg.update.latest": "已是最新版本", "msg.update.available": "有新版本 {0} —— 链接已复制到剪贴板", "msg.update.failed": "暂时无法检查更新", "msg.link.copied": "链接已复制到剪贴板",

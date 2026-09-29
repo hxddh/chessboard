@@ -4110,3 +4110,46 @@ span[data-icon] { display: inline-grid; place-items: center; }
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent); font-weight: 600;
 }
+
+/* ------------------------------------------------------------------
+   v8-0-plan C3: 开局浏览器. One row a move: the move (and 「书」 when the
+   opening book plays it), the games, and a bar of White wins / draws /
+   Black wins in the two side colours the player strips already use, the
+   draws in the muted ink between them. A row is one button — the move is
+   played by clicking anywhere on it — at the small control height.
+   ------------------------------------------------------------------ */
+.xp { margin-top: 16px; }
+/* not .act-group: collapseEmptyGroups() un-hides every .act-group that holds a
+   button, and this section is shown by its key, not by what it holds */
+.xp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.xp-head .act-k { margin-bottom: 0; }
+/* the source switch keeps its words on one line; where heading and switch
+   do not fit side by side (English at 1024) the switch drops under it */
+.xp-head > .theme-row { flex: none; }
+.xp-head > .theme-row > button { white-space: nowrap; }
+.xp-note { margin: 4px 0 8px; }
+.xp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.xp-list:focus { outline: none; }
+.xp-row {
+  appearance: none; border: 0; background: transparent; color: var(--text);
+  display: grid; grid-template-columns: minmax(64px, auto) 48px minmax(0, 1fr); align-items: center; gap: 8px;
+  width: 100%; min-height: var(--ctl-h-sm); padding: 0 8px;
+  font: inherit; font-size: 0.875rem; text-align: left;
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.xp-row:hover { background: var(--btn-ghost); }
+.xp-san { display: flex; align-items: center; gap: 4px; font-weight: 600; white-space: nowrap; }
+.xp-book {
+  padding: 0 4px; border: 1px solid currentColor; border-radius: var(--radius-sm);
+  font-size: 0.6875rem; font-weight: 600; color: var(--accent);
+}
+.xp-n { text-align: right; color: var(--muted); font-size: 0.8125rem; }
+.xp-bar {
+  display: flex; height: 16px; overflow: hidden;
+  border: 1px solid var(--card-border); border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+}
+.xp-bar > span { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.xp-w { background: var(--side-white); color: var(--side-black); }
+.xp-d { background: var(--muted); color: var(--bg); }
+.xp-b { background: var(--side-black); color: var(--side-white); }

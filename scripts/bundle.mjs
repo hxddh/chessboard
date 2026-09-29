@@ -70,6 +70,22 @@ export function lichessChunks(dir) {
   });
 }
 
+/**
+ * v8-0-plan C3: the master move tree, one chunk per ply bucket.
+ * scripts/build-explorer.mjs writes explorer/masters-NN.js and an index
+ * naming the buckets; explorer/ui.js masterChunk() derives the same file and
+ * global names. Read from the directory, as the puzzle bands are.
+ * @param {string} dir
+ */
+export function explorerChunks(dir) {
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => /^masters-\d\d\.js$/.test(f)).sort(); } catch { files = []; }
+  return files.map((f) => {
+    const n = f.slice(8, 10);
+    return { entry: path.relative(root, path.join(dir, f)).split(path.sep).join("/"), out: "src/web/js/chunk-xm-" + n + ".js", global: "EXPLORER_MB_" + n, min: 1000 };
+  });
+}
+
 export const CHUNKS = [
   { entry: "src/web/js/eco.js", out: "src/web/js/chunk-eco.js", global: "ECO_BY_KEY", min: 400000 },
   { entry: "src/web/js/lang-en.js", out: "src/web/js/chunk-lang-en.js", global: "CHESS_I18N_EN", min: 150000 },
@@ -91,6 +107,9 @@ export const CHUNKS = [
   // v8-0-plan C1: the library as a database — IndexedDB, search, 本机 games (library-ui.js)
   { entry: "src/web/js/library-page.js", out: "src/web/js/chunk-libdb.js", global: "CHESS_LIBDB", min: 15000 },
   ...lichessChunks(path.join(root, "src/web/js/lichess")),
+  // v8-0-plan C3: the opening explorer's panel (explorer/lazy.js), then the master tree's buckets
+  { entry: "src/web/js/explorer/ui.js", out: "src/web/js/chunk-explorer.js", global: "createExplorerUI", min: 5000 },
+  ...explorerChunks(path.join(root, "src/web/js/explorer")),
 ];
 
 /**

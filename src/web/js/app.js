@@ -41,6 +41,7 @@ import { createLines } from "./review/lines.js";
 import { createReviewPanel } from "./review/panel.js";
 import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
+import { createExplorerLazy } from "./explorer/lazy.js";
 import { createGameEnd } from "./game-end.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
@@ -1473,7 +1474,7 @@ import { createStore } from "./store.js";
         // a 7.x build opening this profile (it reads those two and not these)
         appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
         followSystem: store.ui.appearance === "system",
-        soundSet: store.ui.soundSet }));
+        soundSet: store.ui.soundSet, explorer: store.ui.explorer }));
     } catch (_) {}
   }
   function saveGame() {
@@ -3730,9 +3731,7 @@ import { createStore } from "./store.js";
     store.subscribe("session", renderReplayBar);
     store.subscribe("session", renderGameActions);
     store.subscribe("session", setAnalyzeUI);
-    store.subscribe("game", syncLiveAnalysis);
-    store.subscribe("session", syncLiveAnalysis);
-    store.subscribe("ui", syncLiveAnalysis);
+    for (const slice of ["game", "session", "ui"]) store.subscribe(slice, syncLiveAnalysis);
     store.subscribe("session", syncLearnUI);
     store.subscribe("session", syncStudyUI);
     store.subscribe("game", syncStudyUI);
@@ -3749,17 +3748,13 @@ import { createStore } from "./store.js";
     // now — so it belongs to the game slice, and filing it under settings is
     // exactly the mis-slotting that makes narrowing a call site dangerous:
     // commit("game") would have moved the board and left the strip behind.
-    store.subscribe("game", renderMaterial);
-    store.subscribe("session", renderMaterial);
-    store.subscribe("game", renderIdleCard);
-    store.subscribe("session", renderIdleCard);
+    for (const slice of ["game", "session"]) store.subscribe(slice, renderMaterial);
+    for (const slice of ["game", "session"]) store.subscribe(slice, renderIdleCard);
 
     // the settings panel reads the game too (the clock preset is a game fact),
     // so it hears about all three
     // the strips read the position, the mode and the orientation — all three
-    store.subscribe("game", renderStrips);
-    store.subscribe("session", renderStrips);
-    store.subscribe("ui", renderStrips);
+    for (const slice of ["game", "session", "ui"]) store.subscribe(slice, renderStrips);
     store.subscribe("game", syncSettingsUI);
     store.subscribe("ui", syncSettingsUI);
     store.subscribe("ui", draw);
@@ -3971,25 +3966,11 @@ import { createStore } from "./store.js";
       setNodeShapes({ arrows: [], circles: [] });
       return;
     }
-    // Off the live position a move is a variation, wherever variations may
-    // be opened (Q2.3); in a live engine game the replay stays read-only.
-    const branching = !isLive();
-    if (branching && !canBranchHere()) { toast(t("mm.goLiveFirst"), "fix"); return; }
-    if (!branching) {
-      if (naturalGameOver()) return;
-      if (store.game.flagFall) { toast(t("msg.over.flagged"), "fix"); return; }
-      if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
-      if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
-      if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
-      if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) {
-        // engine's move: a click now is a premove, played the instant the
-        // reply lands if it is still legal then (v6-plan Q2.8)
-        if (store.session.engineThinking) premoveClick(sq);
-        return;
-      }
-    }
-    const g = branching ? viewGame() : game;
-    const play = branching ? playVariationMove : playHumanMove;
+    // engine's move: a click now is a premove, played the instant the reply
+    // lands if it is still legal then (v6-plan Q2.8)
+    const play = movePath(() => { if (store.session.engineThinking) premoveClick(sq); });
+    if (!play) return;
+    const g = isLive() ? game : viewGame();
     const piece = g.get(sq);
     if (store.game.selection && store.game.selection.targets.includes(sq)) {
       const from = store.game.selection.sq;
@@ -4007,6 +3988,21 @@ import { createStore } from "./store.js";
       return;
     }
     clearSelection();
+  }
+
+  /**
+   * Where a move made now goes, or null (said in a toast) when none may be.
+   * Off the live position a move is a variation, wherever variations may be
+   * opened (Q2.3); in a live engine game the replay stays read-only. The
+   * board and the explorer's rows (v8-0-plan C3) both ask.
+   */
+  function movePath(onEngineTurn) {
+    const g = store.game, over = ["flagged", "resigned", "drawAgreed", "drawClaimed"][[g.flagFall, g.resigned, g.drawAgreed, g.drawClaimed].findIndex(Boolean)];
+    if (!isLive()) return canBranchHere() ? playVariationMove : void toast(t("mm.goLiveFirst"), "fix");
+    if (naturalGameOver()) return null;
+    if (over) return void toast(t("msg.over." + over), "fix");
+    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return void (onEngineTurn && onEngineTurn());
+    return playHumanMove;
   }
 
   /**
@@ -6071,6 +6067,9 @@ import { createStore } from "./store.js";
     nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
   });
   Shell.wire();
+  // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
+  createExplorerLazy({ store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, saved: Persist.read("settings").value,
+    toBoard: () => { Shell.go("play"); setSideTab("play"); } });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
    * now the rail's (shell.js) and the new-game dialog's. It stops the engine,

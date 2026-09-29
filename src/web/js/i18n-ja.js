@@ -39,7 +39,7 @@
       "dlg.exportAll": "すべてのデータを書き出す", "dlg.importAll": "すべてのデータを読み込む：この端末の対局・保存スロット・設定・成績・学習データはファイルの内容で丸ごと置き換わります。", "msg.allData.badFile": "このアプリが書き出したデータファイルではありません", "msg.allData.imported": "すべてのデータを読み込みました。再読み込みします…",
       "msg.profile.restored": "端末のデータファイルからプロファイルを復元しました。再読み込みします…", "msg.profile.fileBad": "端末のデータファイルを読めませんでした。今回はキャッシュのプロファイルを使い、ファイルは上書きしません",
       "about.title": "このアプリについて", "about.version": "バージョン", "about.license": "ライセンス", "about.source": "ソースコード", "about.credits": "謝辞", "about.dataPath": "データの場所",
-      "about.licenseText": "GPLv3 —— 自由ソフトウェア。ソースコードは各リリースに付属", "about.creditsText": "Stockfish 19（GPLv3）· chess.js（BSD-2）· cburnett 駒セット（Colin M.L. Burnett、GPLv2+。「クラシック」はその Wikimedia 版の描き直しで GFDL / BSD / GPL / CC BY-SA 3.0 の複数ライセンス）· Merida 駒セット（Armando Hernandez Marroquin、GPLv2+）· Chessnut 駒セット（Alexis Luengas、Apache 2.0）· Fantasy / Celtic / Spatial 駒セット（Maurizio Monge、MIT）· lichess chess-openings（CC0）· 木製の効果音は本プロジェクト製（物理モデルで実時間合成、GPLv3）· Lucide アイコン（ISC。うち 10 個は Feather 由来で MIT）",
+      "about.licenseText": "GPLv3 —— 自由ソフトウェア。ソースコードは各リリースに付属", "about.creditsText": "Stockfish 19（GPLv3）· chess.js（BSD-2）· cburnett 駒セット（Colin M.L. Burnett、GPLv2+。「クラシック」はその Wikimedia 版の描き直しで GFDL / BSD / GPL / CC BY-SA 3.0 の複数ライセンス）· Merida 駒セット（Armando Hernandez Marroquin、GPLv2+）· Chessnut 駒セット（Alexis Luengas、Apache 2.0）· Fantasy / Celtic / Spatial 駒セット（Maurizio Monge、MIT）· lichess chess-openings（CC0）· Lichess 対局データベース（CC0、内蔵の強豪着手ツリー）· 木製の効果音は本プロジェクト製（物理モデルで実時間合成、GPLv3）· Lucide アイコン（ISC。うち 10 個は Feather 由来で MIT）",
       // 7.7 (v7-7-plan §2–§4, §7): the result card, the puzzle feedback card,
       // the lesson dots and the tool row's tooltips
       "go.analyse": "この対局を解析",
@@ -69,6 +69,10 @@
       "pz.fb.showHint": "ヒントを見る",
       "aria.lessonDots": "レッスンの進み具合",
       "tip.reviewOpen": "振り返り：解析・精密解析・継続解析",
+      // v8-0-plan C3: 定跡エクスプローラー
+      "act.explorer": "定跡", "xp.title": "定跡エクスプローラー", "xp.master": "強豪",
+      "xp.book": "定跡", "xp.row": "{0}：{1} 局、白勝ち {2}%、引き分け {3}%、黒勝ち {4}%",
+      "xp.libEmpty": "棋譜ライブラリは空です", "xp.none": "対局なし",
       "tip.pgn.export": "この対局を PGN ファイルに保存",
       "tip.more": "その他：貼り付け・開く・FEN",
       "about.dataUnknown": "ブラウザ保存（ネイティブのデータファイルなし）", "act.checkUpdate": "更新を確認", "msg.update.latest": "最新バージョンです", "msg.update.available": "新しいバージョン {0} があります。リンクをクリップボードにコピーしました", "msg.update.failed": "いまは更新を確認できません", "msg.link.copied": "リンクをクリップボードにコピーしました",
