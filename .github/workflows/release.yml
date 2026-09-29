@@ -244,17 +244,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v7
+      # v8 (v8-1-plan F1) decides whether to unzip by the blob's content-type
+      # instead of always unzipping, and fails on a digest mismatch by
+      # default. Both artifacts are uploaded archived (upload-artifact's
+      # default), so they are still zip containers and still unpacked; the
+      # inputs below spell out what the layout depends on rather than
+      # inheriting it: every Chessboard-* artifact unpacked, flat, into dist/.
+      - uses: actions/download-artifact@v8
         with:
           pattern: Chessboard-*
           path: dist
           merge-multiple: true
+          skip-decompress: false
+          digest-mismatch: error
+      # Flat, and unwrapped: a package that arrives in a folder named after
+      # its artifact (merge off) or still inside the artifact's own zip
+      # (decompression skipped) fails here, not on the release page.
       - name: both packages are here
         run: |
-          ls -l dist
+          ls -lR dist
           for f in Chessboard-macOS-arm64.zip Chessboard-macOS-arm64.dmg Chessboard-Windows-x64.zip; do
             test -f "dist/$f" || { echo "missing $f"; exit 1; }
           done
+          for f in Chessboard-macOS-arm64.zip Chessboard-Windows-x64.zip; do
+            if unzip -Z1 "dist/$f" | grep -qiE '^Chessboard-.*\.(zip|dmg)$'; then
+              echo "dist/$f is the artifact wrapper, not the package"; exit 1
+            fi
+          done
+          if find dist -mindepth 1 -type d -name 'Chessboard-*' | grep -q .; then
+            echo "artifacts were not merged into dist/"; exit 1
+          fi
       # The tag names the commit every job above checked out and tested.
       #
       # And it has to be retryable. Until 2.0 a failure after this point left

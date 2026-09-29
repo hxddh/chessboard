@@ -115,13 +115,13 @@
     {
       "name": "actions/download-artifact",
       "kind": "GitHub Action",
-      "current": "@v7",
+      "current": "@v8",
       "pinnedIn": [".github/workflows/release.yml"],
       "latest": "v8.0.1",
-      "source": ["git ls-remote --tags https://github.com/actions/download-artifact", "README（用法里 pattern / merge-multiple 仍在）"],
+      "source": ["git ls-remote --tags https://github.com/actions/download-artifact", "raw.githubusercontent.com/actions/download-artifact/v8/README.md（「v8 - What's new」）", "raw.githubusercontent.com/actions/download-artifact/v8.0.1/action.yml"],
       "checkedAt": "2026-09-29",
-      "recommendation": "upgrade-8.1",
-      "note": "大版本。v8 的变更说明在 releases 页，本会话的 GitHub API 不可用，未能核实；升级时用一次 release 演练（workflow_dispatch）证明两个包都下载到 dist。"
+      "recommendation": "done-8.1",
+      "note": "大版本。v8 的变化（README「v8 - What's new」）：改为 ESM；按下载内容的 content-type 决定是否解压（新输入 skip-decompress，默认 false）；摘要不符默认报错（新输入 digest-mismatch，默认 error）；v8.0.1 支持文件名里的中日韩字符。我们的两个制品都是 upload-artifact 默认的归档上传，仍按 zip 解开；release.yml 把 pattern / path / merge-multiple / skip-decompress / digest-mismatch 全部写明，并在「both packages are here」里加查：包平铺在 dist/、不是制品外层的 zip。仍需一次 workflow_dispatch 的 release 演练证明（本地无法运行 Actions）。"
     },
     {
       "name": "mlugg/setup-zig",
