@@ -739,6 +739,23 @@ export function createPersist(host, onWriteFailure) {
   }
 
   /**
+   * M5 review P3-1: of these shards (the ones the library fills), those the
+   * manifest on disk does not list are owed. A build from before the shards
+   * (8.0 dev) commits a manifest of KEYS alone; the next launch here can be
+   * at that manifest's revision, and then nothing was owed and the games
+   * stayed out of the native backup until each shard next changed.
+   * @returns {Promise<number>} how many were owed
+   */
+  async function touchUnlisted(names) {
+    if (!perKey || !Array.isArray(names) || !names.length) return 0;
+    let files;
+    try { files = (await readDisk()).files; } catch (_) { return 0; }   // unreadable: recover() handles that
+    const owed = names.filter((n) => BULK.test(n) && !files[n]);
+    if (owed.length) touchBulk(owed);
+    return owed.length;
+  }
+
+  /**
    * v8-0-plan C1: the library's shards as the native store holds them now
    * ({name: text}), for a library that finds IndexedDB emptier than its
    * header says — the WebView's data went, the store's did not.
@@ -990,5 +1007,5 @@ export function createPersist(host, onWriteFailure) {
 
   return { load, get, read, set, setJson, remove, clearAll, isBroken, swapSelftestMarker, wasEmpty, corruptKeys,
     recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, freeze, releaseMirror,
-    attachBulk, touchBulk, readBulk, bulkSettled, ACCEPT, KEYS, SCHEMA };
+    attachBulk, touchBulk, touchUnlisted, readBulk, bulkSettled, ACCEPT, KEYS, SCHEMA };
 }

@@ -638,7 +638,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "lib.posHint": "只看经过棋盘上这个局面的棋", "lib.posStat": "经过这个局面的有 {0} 局，接着下的是：{1}", "lib.more": "再显示 {0} 局",
       "lib.exportPgn": "导出 PGN", "lib.claimAsk": "「{0}」出现在这 {2} 局里的 {1} 局中。这是你吗？认领之后这些棋算作你下的，以后导入也不再问。",
       "lib.claimYes": "是我", "lib.claimNo": "不是", "lib.claimDone": "已认领「{0}」：{1} 局算作你的",
-      "lib.migrateFailed": "棋谱库没能搬进新的存储（{0}），这次仍按旧方式保存，下次启动再试。", "lib.saveFailed": "棋谱库有棋局没能写进存储（{0}），重启之前请先导出一份。", "lib.recovered": "浏览器存储里的棋谱库不见了，已从本机存档文件找回 {0} 局。",
+      "lib.unreadable": "棋谱库暂时读不出来：这台机器的浏览器存储打不开。棋局还在本机的存档文件里，没有丢；这次只能看，导入和分析等下次启动再做。", "lib.migrateFailed": "棋谱库没能搬进新的存储（{0}），这次仍按旧方式保存，下次启动再试。", "lib.saveFailed": "棋谱库有棋局没能写进存储（{0}），重启之前请先导出一份。", "lib.recovered": "浏览器存储里的棋谱库不见了，已从本机存档文件找回 {0} 局。",
       "lib.loading": "正在读取棋谱库（{0} 局）……",
       "lib.rowAcc": "精准度 {0}%", "lib.rowBad": "{0} 处失误",
       "lib.rowPending": "还没分析", "lib.rowUnplayable": "着法重放不出来",

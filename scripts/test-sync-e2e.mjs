@@ -275,6 +275,37 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await ctx.close();
 }
 
+// --- 3b. M5 review P3-2: a pass running — said in the dialog, nothing fetched --
+// The import refuses games while the engine is on the library; the sync used
+// to fetch them anyway, close the dialog and leave only a toast behind.
+{
+  const { ctx, page, errs } = await open({ seedSync: { v: 1, on: true } });
+  await page.evaluate(() => localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["me"], games: [
+    { id: "lib:p1", t: 1, white: "me", black: "x", date: "?", event: "", result: "1-0", plies: 2, sans: "e4 e5", fen: "", side: "w", outcome: "win", an: null }] })));
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  await toLibrary(page);
+  await libView(page);
+  // an engine that never answers: the pass stays on its first game
+  await page.evaluate(() => {
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = () => new Promise(() => {});
+  });
+  await page.click("#lib-analyse");
+  await page.waitForTimeout(300);
+  await openSync(page);
+  await page.fill("#sync-user", "sync_tester");
+  await page.evaluate((pgn) => { window.__answer = { pgn, count: 2 }; }, TWO_GAMES);
+  await page.click("#sync-go");
+  await page.waitForTimeout(400);
+  const d = await dlg(page);
+  assert(d.shown && d.calls === 0 && d.note.includes("引擎正忙"),
+    "P3-2: 分析进行中按同步：对话框留着说引擎正忙，不去取棋（" + JSON.stringify({ shown: d.shown, calls: d.calls, note: d.note }) + "）");
+  assert(errs.length === 0, "busy: 没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. no bridge (a browser): it says so and asks nothing ---------------------
 {
   const { ctx, page, errs } = await open({ bridge: false, seedSync: { v: 1, on: true } });

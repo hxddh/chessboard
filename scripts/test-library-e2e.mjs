@@ -2026,6 +2026,38 @@ for (const [ver, v1] of Object.entries(V1)) {
   await ctx.close();
 }
 
+// --- M5 review P3-2 / P3-4: two imports at once; nothing written after a restore --
+{
+  const ctx = await c1Context({ "chess.v1.library": V1["7.0"] });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  // a sync landing while a file is still being read: the second import used
+  // to return in silence, its games fetched and gone
+  const events = await page.evaluate(async (texts) => {
+    const c = window.__chess.libDb();
+    await Promise.all(texts.map((x) => c.importPgn(x)));
+    return window.__chess.library().games.map((g) => g.event);
+  }, ['[Event "qa"]\n[White "hxddh"]\n[Black "a"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 Nc6 1-0\n',
+    '[Event "qb"]\n[White "hxddh"]\n[Black "b"]\n[Result "1-0"]\n\n1. d4 d5 2. Bf4 Nf6 1-0\n']);
+  assert(events.includes("qa") && events.includes("qb"), `P3-2 两次导入同时来：两个文件的棋都进了库(${events.join(",")})`);
+  // 导入全部数据 has replaced the games: until the reload, what the page still
+  // holds (a pass filing its result, an adoption) must not be written back
+  await page.evaluate(async () => {
+    const c = window.__chess.libDb();
+    await c.restoreShards({ lib00: JSON.stringify({ v: 1, games: [{ id: "lib:rs", t: 9, white: "a", black: "b", date: "?", event: "restored",
+      result: "*", plies: 1, sans: "e4", fen: "" }] }) });
+    const g = window.__chess.library().games.find((x) => x.id === "lib:70b");
+    g.an = { acc: { w: 70, b: 70 }, acpl: { w: 1, b: 1 }, tags: [null, null], losses: [0, 0], scalars: [0, 0, 0], budget: 200 };
+    await c.save();
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  const st = await storedLib(page);
+  const ids = st.games.filter((g) => g.src !== "local").map((g) => g.id).sort().join(",");
+  assert(ids === "lib:rs", `P3-4 导入全部数据之后、重新载入之前：页面手里的旧棋不再写回(${ids})`);
+  assert(errs.length === 0, "P3-2/P3-4：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 // --- C1.5 10,000 games: import, search ≤ 200 ms, restart, export → import ---------
 /** Ten thousand short games, deterministic, in the shapes an archive has. */
 function tenThousand() {

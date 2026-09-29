@@ -71,7 +71,7 @@
       "tip.reviewOpen": "Review: analyse, deep analysis, live engine",
       // v8-0-plan C3: the opening explorer
       "act.explorer": "Explorer", "xp.title": "Opening explorer", "xp.master": "Masters",
-      "xp.book": "Book", "xp.row": "{0}: {1} games, White wins {2}%, draws {3}%, Black wins {4}%",
+      "xp.book": "Book", "xp.row": "{0}: {1:game|games}, White wins {2}%, draws {3}%, Black wins {4}%",
       "xp.libEmpty": "Your library is empty", "xp.none": "No games",
       "tip.pgn.export": "Save this game as a PGN file",
       "tip.more": "More: paste, open, FEN",
@@ -606,7 +606,7 @@
       "lib.posHint": "Only games that pass through the position on the board", "lib.posStat": "{0:game reaches|games reach} this position. Played next: {1}", "lib.more": "Show {0} more",
       "lib.exportPgn": "Export PGN", "lib.claimAsk": "“{0}” plays in {1} of these {2} games. Is that you? Once claimed, those games count as yours and later imports will not ask again.",
       "lib.claimYes": "That’s me", "lib.claimNo": "No", "lib.claimDone": "Claimed “{0}”: {1:game counts|games count} as yours",
-      "lib.migrateFailed": "The library could not move to the new storage ({0}). It is saved the old way for now and will try again next launch.", "lib.saveFailed": "Some library games could not be saved ({0}). Export a copy before restarting.", "lib.recovered": "The library was missing from the browser storage; {0:game was|games were} recovered from the save file on this device.",
+      "lib.unreadable": "The library can't be read right now: this device's browser storage will not open. Your games are still in the save file on this device; for now you can look, and importing and analysis wait for the next launch.", "lib.migrateFailed": "The library could not move to the new storage ({0}). It is saved the old way for now and will try again next launch.", "lib.saveFailed": "Some library games could not be saved ({0}). Export a copy before restarting.", "lib.recovered": "The library was missing from the browser storage; {0:game was|games were} recovered from the save file on this device.",
       "lib.loading": "Loading the library ({0:game|games})…",
       "lib.rowAcc": "{0}% accuracy", "lib.rowBad": "{0:mistake|mistakes}",
       "lib.rowPending": "not analysed yet", "lib.rowUnplayable": "moves do not replay",

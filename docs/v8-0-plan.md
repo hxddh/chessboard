@@ -881,7 +881,7 @@ M3 分两部分合入。第一部分（PR #87）是 B2、B3 和 B1 的数据半�
   - IndexedDB 丢了、localStorage 还在：头里记的局数比库里多，就从分片读回（`readBulk`）；
   - 网页数据全没了：`recover()` 照 F3 的路子恢复整份档案，分片先写进 IndexedDB，页面才重载。
 - `chess.v1.library` 保留，改作头：`{v: 1, games: [], names, db: 2, n}`。故意仍是 v1 的形状：降级到旧版本时读到的是一个空库，不会被当成坏值隔离；旧版本在这期间导入的棋写回 v1，下次用新版打开时照样搬进来。
-- 整份导出（「导出全部数据」）带上分片；导回时分片写进 IndexedDB。
+- 整份导出（「导出全部数据」）带上分片；导回时分片写进 IndexedDB。玩家选的文件（导出、导入全部数据）上限 64 MiB（`main.zig USER_FILE_MAX_BYTES` / `host.js ALL_DATA_MAX`），原生存储的文件仍是 16 MiB；一万局分析过的棋导出约 28.5 MB（见下「M5 评审修正」）。
 
 **迁移：6.x–7.x 与 8.0 开发版的棋谱库**
 - 这一步有前科（7.0 丢过 PGN），所以按下面的顺序做：
@@ -1033,3 +1033,15 @@ M3 分两部分合入。第一部分（PR #87）是 B2、B3 和 B1 的数据半�
 - **C2 × C1**：同步走的 `importPgnToLibrary` 就是 C1 的导入（library-page.js `importPgn`）：解析时的局面直接进索引。列表上导入的棋按 PGN 的 `Site` 标出「Lichess」/「Chess.com」（`LibraryQuery.siteOf`，与「本机」同一个标签样式；网站名三种语言相同，不加界面键）。sync-e2e 原来读 `chess.v1.library` 里的对局，C1 之后那里只是头，改读应用内的视图；另加三项：两局进了局面索引、列表标着 Chess.com、开局浏览器在起始局面数到 e4 / f3 各 1 局。
 
 **主包**：三条合并后 1,204,878 字节，接上接缝后 1,204,902，再合 b375fcb 后 1,205,016；再合 21d9655（按对手计分等四项）后 1,205,940，超出上限 1,205,530 共 410 字节。没有动预算，而是把诊断的三张图（`drawPhaseChart` / `drawPeakChart` / `drawEcoChart` 与它们的画布工具，约 230 行）从 library-ui.js 搬进 `diag-charts.js`，放在已有的按需分块 chunk-libdb.js 里：主包 1,199,367 字节（−6,573，剩 6,163），chunk-libdb.js 48.4 → 55.4 KB。图只在诊断对话框里画；分块到之前打开诊断，先出文字，分块一到再把图补上（library-e2e 第 6 节把分块扣住再放行来测：去掉补画那一行，图是 0 张）。
+
+#### M5 评审修正（#91，分支 m5-fixes）
+
+八条评审意见，每条先写一个失败的测试，再改：
+- **P2-1 IndexedDB 打不开时清空了原生镜像**：以前退回「legacy」后 `shardNames()` 返回空表、`shardText` 返回 null，刷盘把 64 个分片写成 "null" 并从清单里删掉，头也被改写成没有 db / n 的空库。现在：头写着 db 2 而 IndexedDB 打不开时，棋谱库从原生分片**只读**地读出来给人看，分片按读到的原样交还给存储，头保持原样（只更新名字），导入、分析、「再深一遍」和同步都拒绝，并说「棋谱库暂时读不出来……」（新键 `lib.unreadable`，三种语言；界面键 1224 → 1225）；分片也读不到时，棋谱库那一段显示这句话而不是空状态。普通的 legacy（头不是 db 2）`shardNames()` 返回 null：不知道，分片留着欠账，清单照旧列着。测试：persist-e2e 第 13 节 (c)（改之前：原生存储里 0 局、头没有 db）；test-persist 的端口契约。
+- **P2-2 后台补索引把清掉的棋写回来**：`library-db.js` 加一个代数（clear、restoreShards 加一），`indexMissing` 每片写之前只留仍在列表里的 id，代数变了就停；清除全部存档先 `halt()` 再排队清库。测试：test-library-db（清除、超上限挤掉、恢复三种，改之前分别剩 50 / 50 / 51 条）。
+- **P2-3 导出 / 导入全部数据在一万局之前就坏**：分析过的 80 步一局约 2,571 字节，一万局导出 28.5 MB，超过 16 MiB（约 5,500 局就超）。传输本来就是 512 KiB 分块，单帧 1 MiB 不是问题，卡的是总长上限。现在玩家选的文件上限 64 MiB（`main.zig USER_FILE_MAX_BYTES`，暂存写入按目标区分：`appdata:` 仍是 16 MiB；`host.js ALL_DATA_MAX` 只给「导入全部数据」用，读 PGN 仍停在 16 MiB）。Zig 新增一个测试块（本机没有 zig，CI 编译）。测试：test-persist 用 64 片共一万局 × 2,571 字节，经 host.js 和仿 main.zig 的桥导出、读回、`restoreAll`，逐片相等（改之前：读回时 FileTooLargeError）。
+- **P3-1 降级到 8.0 开发版之后分片不回镜像**：`Persist.touchUnlisted(names)` 读一次磁盘上的清单，把库里有棋、清单没列的分片记为欠账；启动载入之后调用。测试：test-persist 单元；persist-e2e 第 13 节 (d)（改之前 0 局）。
+- **P3-2 同步取回来的棋被丢掉**：同步在取之前、取之后都检查「分析进行中 / 只读」，对话框留着说原因，不去取；两个导入同时来时第二个排队等第一个读完，不再静默返回。测试：sync-e2e 3b（改之前对话框关了、请求发了）；library-e2e「两次导入同时来」。
+- **P3-3 从分片找回时多存一整份备份**：找回路径 `migrate(raw, {backup: false})`。测试：test-library-db；persist-e2e 第 13 节 (a) 查 meta 表为 0 份。
+- **P3-4 导入全部数据之后、重新载入之前写回旧棋**：`restoreShards` 先把棋谱库冻住（`save()`、本机对局写入都不做）、停补索引、停分析，并等已排队的保存落地。测试：library-e2e（改之前 IndexedDB 里多出旧的一局）。
+- **P3-5**：英文 `xp.row` 改用复数形式 `{1:game|games}`；中文、日文不变形，不用改。测试：test-chess。

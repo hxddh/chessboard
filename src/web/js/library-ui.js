@@ -401,6 +401,7 @@ export function createLibraryUI(d) {
   async function deepenLibraryGame(id) {
     const entry = libEntryById(id);
     if (!entry || !entry.an || entry.unplayable) return;
+    if (store.session.libUnreadable) { toast(t("lib.unreadable"), "fault"); return; }
     if (store.session.libRun) { toast(t("lib.busy"), "fix"); return; }
     if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
     if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
@@ -472,6 +473,8 @@ export function createLibraryUI(d) {
 
   async function runLibraryPass() {
     if (store.session.libRun) { store.session.libRun.abort = true; return; }
+    // read-only this session (library-page.js, M5 review P2-1): a result could not be kept
+    if (store.session.libUnreadable) { toast(t("lib.unreadable"), "fault"); return; }
     if (!ChessEngine) { toast(t("msg.analysis.noGame"), "fault"); return; }
     if (store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
     // The run token goes up BEFORE the first await. It used to go up after
@@ -592,6 +595,8 @@ export function createLibraryUI(d) {
     // v8-0-plan §5: the page's own empty state counts the library as well
     if (renderRecordEntry) renderRecordEntry();
     if (!list.length && coming) putLines(body, [{ text: tf("lib.loading", [coming]), cls: "hint" }]);
+    // M5 review P2-1: out of reach this session is not "empty"
+    else if (!list.length && store.session.libUnreadable) putLines(body, [{ text: t("lib.unreadable"), cls: "hint warn" }]);
     else if (!list.length) {
       // 7.7 (v7-7-plan §3): an empty state — icon, one line, and 导入棋谱文件
       // (see .empty-note)

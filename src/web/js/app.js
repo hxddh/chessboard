@@ -6217,7 +6217,7 @@ import { createStore } from "./store.js";
         const picked = await Host.openFileDialog({ title: t("dlg.importAll") });
         const paths = Host.normalizePaths(picked);
         if (!paths.length) return;
-        const text = await Host.readTextFile(paths[0]);
+        const text = await Host.readTextFile(paths[0], Host.ALL_DATA_MAX);
         await importAllDataText(text);
         return;
       } catch (err) {
