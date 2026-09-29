@@ -640,6 +640,8 @@
       "diag.pickMotif": "Only the games where \u201C{0}\u201D caught you",
       "diag.pickEco": "Only the {0} games",
       "diag.pickPeak": "Only the games that went wrong at move {0}",
+      "diag.srcImport": "Imported",
+      "diag.localNote": "Games on this device count with their result, accuracy and opening; the phases and mistake moves use only the {0:game|games} whose move-by-move analysis is still kept.",
       "hist.title": "Game history", "hist.all": "All {0:game|games}", "hist.open": "Browse every recorded game",
       "hist.empty": "No finished engine games yet.",
       "hist.win": "Win", "hist.loss": "Loss", "hist.draw": "Draw",

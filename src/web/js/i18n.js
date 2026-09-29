@@ -672,6 +672,8 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "diag.pickMotif": "只看被「{0}」打中的那些局",
       "diag.pickEco": "只看 {0} 的那些局",
       "diag.pickPeak": "只看在第 {0} 回合栽过的那些局",
+      "diag.srcImport": "导入的",
+      "diag.localNote": "本机的棋按每局的结果、精准度和开局计入；分阶段和失误回合只看还存着逐手分析的 {0} 局。",
       "hist.title": "对局历史", "hist.all": "全部 {0} 局", "hist.open": "查看全部对局历史",
       "hist.empty": "还没有下完的人机对局。",
       "hist.win": "胜", "hist.loss": "负", "hist.draw": "和",

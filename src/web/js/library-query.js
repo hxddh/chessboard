@@ -331,14 +331,16 @@ function clockText(s) {
  * re-import files the game under the id it had, even for an entry imported
  * before Site and Round were kept (its id was made from tags this record no
  * longer has). A tag entryFrom stored empty is left out, so it is read back
- * empty rather than as "?".
+ * empty rather than as "?". `extra`, tag pairs written after LibId, is how a
+ * 本机 game carries its record (library-local.js localPgn, v8-1-plan T5).
  */
-function entryPgn(g) {
+function entryPgn(g, extra) {
   const tags = [["Event", g.event], ["Site", g.site], ["Date", g.date], ["Round", g.round],
     ["White", g.white], ["Black", g.black], ["Result", g.result || "*"]];
   if (g.fen) tags.push(["SetUp", "1"], ["FEN", g.fen]);
   if (g.tc) tags.push(["TimeControl", g.tc]);
   tags.push(["LibId", g.id]);
+  if (Array.isArray(extra)) tags.push(...extra);
   let head = "";
   for (const [k, v] of tags) if (v != null && v !== "") head += "[" + k + " \"" + tagValue(v) + "\"]\n";
   const sans = String(g.sans || "").split(" ").filter(Boolean);

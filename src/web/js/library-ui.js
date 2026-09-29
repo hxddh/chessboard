@@ -164,7 +164,7 @@ export function createLibraryUI(d) {
       Library, Dlg, reconcile, Chess, PgnParser: ChessPgnParser, Pgn: ChessPgn, Eco: ChessEco,
       idb: typeof indexedDB !== "undefined" ? indexedDB : null, withLock: Host.withStoreLock,
       pause: () => new Promise((r) => setTimeout(r, 8)), LIB_DEEP_BUDGET, fillOpenings, libEcoName, libPickPly,
-      libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary, rescoreLosses,
+      libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary, rescoreLosses, renderDiagnosis,
     }))).then((c) => {
       libDb = c;
       if (d.onLibraryLoaded) d.onLibraryLoaded();
@@ -643,7 +643,8 @@ export function createLibraryUI(d) {
         : queued ? tf("lib.analyseEta", [queued, libEta(queuedGames)]) : tf("lib.analyse", [queued]));
     }
     const dg = doc.getElementById("lib-diagnose");
-    if (dg) dg.hidden = analysed.length < LIB_MIN_GAMES;
+    // v8-1-plan T5: any source with enough (the dialog's row picks which)
+    if (dg) dg.hidden = analysed.length + (libDb ? libDb.localAnalysed() : 0) < LIB_MIN_GAMES;
     const op = doc.getElementById("lib-open");
     if (op) {
       op.hidden = !list.length;
@@ -862,7 +863,9 @@ export function createLibraryUI(d) {
   }
   function renderDiagnosisInto(el) {
     el.replaceChildren();
-    const d = Library.diagnose(store.session.library, LIB_MIN_GAMES);
+    // v8-1-plan T5: the games of the source row (导入的 until the chunk is in)
+    const view = libDb ? libDb.diagView() : { games: store.session.library, note: "" };
+    const d = Library.diagnose(view.games, LIB_MIN_GAMES);
     const para = (text, cls) => {
       const p = doc.createElement("p");
       p.className = cls || "hint";
@@ -900,6 +903,7 @@ export function createLibraryUI(d) {
       p.textContent = text;
       el.appendChild(p);
     };
+    if (view.note) para(view.note);
     if (!d.enough) { para(tf("lib.needMore", [d.need - d.have, d.have, d.need])); return; }
     para(tf("diag.from", [d.games]));
     row(t("diag.record"), tf("diag.wld", [d.outcome.win, d.outcome.loss, d.outcome.draw]));
@@ -923,7 +927,7 @@ export function createLibraryUI(d) {
     } else {
       para(t("diag.noWeakest"));
     }
-    const peakAxes = charts && charts.drawPeakChart(el, store.session.library);
+    const peakAxes = charts && charts.drawPeakChart(el, view.games);
     // the chart is not the only place its numbers appear (v7-3-plan §4B)
     if (peakAxes) para(tf("diag.peakRange", [1, peakAxes.last, peakAxes.max]));
     if (d.peak) {
