@@ -607,10 +607,13 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(idxBytes < 4000, "the index is small (" + idxBytes + " bytes) — it rides in chunk-mined.js, fetched right after the first paint");
   fs.rmSync(dir, { recursive: true, force: true });
 
-  // the index is not in the main bundle: it rides in chunk-mined.js
+  // the index is not in the main bundle: it rides in chunk-mined.js. Located
+  // by its binding, not by how esbuild spaces it: the output is minified
+  // (v8-1-plan F2), identifiers kept, and a renamed copy (LC_INDEX2) counts.
   const bundled = fs.readFileSync(path.join(ROOT, "src/web/js/bundle.js"), "utf8");
   const minedChunk = fs.readFileSync(path.join(ROOT, "src/web/js/chunk-mined.js"), "utf8");
-  assert(!/LC_INDEX = \{/.test(bundled) && /LC_INDEX = \{/.test(minedChunk), "the Lichess index is in chunk-mined.js, not in bundle.js");
+  const LC_INDEX_DECL = /\bLC_INDEX\d*\s*=\s*\{/;
+  assert(!LC_INDEX_DECL.test(bundled) && LC_INDEX_DECL.test(minedChunk), "the Lichess index is in chunk-mined.js, not in bundle.js");
   // what ships today: the committed index, and chunks exactly for its bands
   assert(ctx.ChessPuzzleDb.index.bands.length === CHUNKS.filter((c) => /chunk-lc-/.test(c.out)).length,
     "CHUNKS carries one Lichess chunk per band of the committed index (" + ctx.ChessPuzzleDb.index.bands.length + ")");

@@ -133,9 +133,37 @@ export const CHUNKS = [
  * in engine.js, the custom clock, and the dialog's labels — 4.7 KB past a
  * line M4-view had left 963 bytes under. Still two orders of magnitude below
  * what the line is for.
+ *
+ * v8-1-plan F2 (option a): the output is minified now (MINIFY below), so the
+ * line is measured in minified bytes too, against 7.9.0 minified the same
+ * way — not against the readable 1,709,973, which would have handed the
+ * bundle ~340 KB of room for nothing but deleted whitespace. The figure is
+ * reproducible, not estimated: 7.9.0's tree (3e902a8, esbuild 0.28.1, which
+ * builds byte-identically to 0.28.2) built by its own bundle.mjs gives
+ * exactly 1,709,973 readable, and 1,349,847 with MINIFY and nothing else
+ * changed. The 70.5% stays. At v8.0.0 the bundle was 1,200,498 readable
+ * against a line of 1,205,530 (5 KB of room); minified it is 862,140 against
+ * 951,642 (87 KB of room): layout no longer counts against features.
  */
-export const BUNDLE_BYTES_BEFORE_F5 = 1709973;
+export const BUNDLE_BYTES_BEFORE_F5_READABLE = 1709973;
+export const BUNDLE_BYTES_BEFORE_F5 = 1349847;
 export const BUNDLE_BUDGET = Math.floor(BUNDLE_BYTES_BEFORE_F5 * 0.705);
+
+/**
+ * v8-1-plan F2 (option a): whitespace and syntax, never identifiers. A stack
+ * trace from a player's machine still names app.js's functions, the tests
+ * that find a binding by name in the output (test-learning.mjs's LC_INDEX)
+ * still find it. `legalComments: "inline"` is unchanged and so is what it
+ * keeps: esbuild drops ordinary block comments with or without minify (the
+ * readable bundle carried no licence header either — chess.js's is a plain
+ * `/*` comment; the licences live in the vendored sources and README's 许可),
+ * and a `/*!` or @license comment would still be kept. So what goes is not
+ * the comments (esbuild never emitted the source's comments) but layout:
+ * 174 KB of indentation alone at v8.0.0, the line breaks, esbuild's
+ * `// src/…` file markers, and what minifySyntax folds (`var a, b` merged,
+ * `void 0`, shorter conditionals).
+ */
+export const MINIFY = { minifyWhitespace: true, minifySyntax: true, minifyIdentifiers: false };
 
 /**
  * Load esbuild, or explain how to get it.
@@ -173,8 +201,13 @@ function versionDefine() {
   } catch (_) { return { __CHESS_VERSION__: JSON.stringify("") }; }
 }
 
-export async function build({ write = true } = {}) {
+export async function build({ write = true, minify = true } = {}) {
   const esbuild = await loadEsbuild();
+  // Until 8.0 this was `minify: false`: a desktop app loading from disk, and
+  // a stack trace that points at real source. MINIFY keeps the second (the
+  // names survive) and drops what the first never needed. `minify: false` is
+  // still here for scripts/measure-boot.mjs's before/after (v8-1-plan F2).
+  const min = minify ? MINIFY : {};
   const r = await esbuild.build({
     entryPoints: [ENTRY],
     bundle: true,
@@ -183,10 +216,7 @@ export async function build({ write = true } = {}) {
     target: ["chrome100", "safari15"],
     charset: "utf8",
     legalComments: "inline",
-    // Readable output: this is a desktop app loading from disk, not a page
-    // over a network, and a stack trace that points at real source beats a
-    // few hundred kilobytes.
-    minify: false,
+    ...min,
     write: false,
     logLevel: "silent",
   });
@@ -202,7 +232,7 @@ export async function build({ write = true } = {}) {
       target: ["chrome100", "safari15"],
       charset: "utf8",
       legalComments: "inline",
-      minify: false,
+      ...min,
       write: false,
       logLevel: "silent",
     });
@@ -222,7 +252,10 @@ export async function buildIfStale() {
   const srcs = fs.readdirSync(dir, { recursive: true })
     .map(String)
     .filter((f) => f.endsWith(".js") && f !== "bundle.js")
-    .map((f) => fs.statSync(path.join(dir, f)).mtimeMs);
+    .map((f) => fs.statSync(path.join(dir, f)).mtimeMs)
+    // and this file: a change to how the bundle is built (v8-1-plan F2's
+    // MINIFY) is as much a reason to rebuild as a change to what goes in
+    .concat(fs.statSync(fileURLToPath(import.meta.url)).mtimeMs);
   let out = 0;
   try { out = fs.statSync(OUT).mtimeMs; } catch { /* not built yet */ }
   if (out > Math.max(...srcs)) return false;
