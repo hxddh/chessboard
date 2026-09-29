@@ -43,6 +43,16 @@ on:
         description: "@native-sdk/cli version both platform builds install"
         required: false
         default: "0.10.1"
+      # v8-1-plan F1: a major bump of download-artifact changes how the
+      # packages reach dist/, and the only way to see that is to run this
+      # workflow. A rehearsal runs every gate and both builds, downloads and
+      # checks the packages exactly as a release does, and stops there: no
+      # tag, no draft, nothing published, and no notes file needed.
+      rehearse:
+        description: "Rehearse only: run every gate and check dist/, publish nothing"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -61,8 +71,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
+          REHEARSE: ${{ inputs.rehearse }}
         run: |
           set -euo pipefail
+          if [ "$REHEARSE" = "true" ]; then echo "rehearsal: nothing will be tagged or published"; exit 0; fi
           test -f ".github/release-notes/${TAG}.md" || { echo "missing .github/release-notes/${TAG}.md"; exit 1; }
           published=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
             --jq "[.[] | select(.tag_name==\"${TAG}\") | select(.draft==false)] | .[0].id // empty")
@@ -288,6 +300,7 @@ jobs:
       # Retrying is allowed only while nothing has been published: a draft for
       # this tag is deleted, a *published* release for it stops the run.
       - name: tag the commit under test
+        if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -312,6 +325,7 @@ jobs:
           git tag -f "$TAG" "$GITHUB_SHA"
           git push -f origin "refs/tags/${TAG}"
       - name: draft the release with both packages
+        if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -323,6 +337,7 @@ jobs:
             --notes-file ".github/release-notes/${TAG}.md" \
             dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip
       - name: the release must actually have both downloads
+        if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -332,6 +347,7 @@ jobs:
           case "$assets" in *macOS-arm64.zip*) ;; *) echo "missing the macOS zip"; exit 1;; esac
           case "$assets" in *Windows-x64.zip*) ;; *) echo "missing the Windows zip"; exit 1;; esac
       - name: publish
+        if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
