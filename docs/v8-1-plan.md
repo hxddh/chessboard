@@ -579,7 +579,21 @@
 
 ---
 
-## 8 · 需要你拍板的
+## 8 · 需要你拍板的（2026-09-29 已定）
+
+**决定**：
+
+1. 版本号定为 **8.1**。
+2. SDK 策略同意：先用 0.10.1 现成的能力，0.10.2 发布后单独升级。两个上游功能请求的正文写在附录，由你转交；本会话只能访问本仓库。
+3. 主包预算选 **(a)**：开压缩、保留标识符，预算基数重算。
+4. macOS 自动更新**暂时不做**。N4 移到 §6「这一版不做的」。
+5. 真实样本：用只能手动触发的 CI 工作流取（`sync-samples.yml`，PR #90）。取回后先用来核对 8.0 的 C2 解析测试，再作为 T4 的测试夹具。
+6. 进阶课程第三部推到 **8.2**，同意。
+7. 引擎第二个工作进程**默认关**，同意。
+8. chess.js、Node、Stockfish **维持现状**，同意。
+
+以下是当时列出的问题原文。
+
 
 1. **版本号**：叫 8.1（本计划的建议：没有破坏性升级，范围是 8.0 收尾加原生能力），还是按「8.0 之后下一个大版本」叫 9.0？
 2. **SDK 升级策略**：
@@ -608,3 +622,29 @@
 ## 9 · 落地记录
 
 （发布前补。）
+
+---
+
+## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）
+
+### 请求一：WebView 内容声明窗口拖动区
+
+> **Feature request: let WebView content define window drag regions (for `titlebar = "hidden_inset"`)**
+>
+> We ship a desktop chess app on native 0.10.1 (Zig shell + a single WebView). We would like the macOS transparent title bar (`titlebar = "hidden_inset"`) with our own toolbar drawn in the page. Today that leaves the window impossible to drag: `window-drag` is only wired to canvas controls, and on macOS a drag has to be started from the live pointer gesture with `performWindowDragWithEvent:` (per the comment in `types.zig`). A page cannot declare a draggable region, and it cannot start a drag either.
+>
+> Either of these would unblock it:
+> 1. **Declarative regions**: honour CSS `app-region: drag` / `no-drag` (or `-webkit-app-region`) in the WebView, as Electron and WebView2 do, or accept a list of rectangles from the page over the bridge. On Windows the WebView2 host already keeps per-view drag regions and answers `WM_NCHITTEST` with `HTCAPTION`.
+> 2. **Imperative start**: a bridge command such as `window.startDrag()` that, when called synchronously from a `mousedown` handler, calls `performWindowDragWithEvent:` with the current event on macOS, and sends `WM_NCLBUTTONDOWN` / `HTCAPTION` on Windows.
+>
+> Without this, `hidden_inset` cannot be used by apps whose UI is all web content.
+
+### 请求二：zero:// 可配置响应头（跨源隔离）
+
+> **Feature request: configurable response headers for the app scheme (enable cross-origin isolation)**
+>
+> The asset scheme handler (`zero://`, e.g. `appkit_host.m` around the asset handler) serves app files without `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy`. Pages therefore never become cross-origin isolated, `SharedArrayBuffer` is unavailable, and multi-threaded WebAssembly (for us: the threaded Stockfish build) cannot run.
+>
+> A small option would do, e.g. in `app.zon`:
+> `.scheme_headers = .{ .{ "Cross-Origin-Opener-Policy", "same-origin" }, .{ "Cross-Origin-Embedder-Policy", "require-corp" } }`
+> applied to every response of the app scheme on macOS (WKURLSchemeHandler) and Windows (WebView2 `WebResourceRequested`).
