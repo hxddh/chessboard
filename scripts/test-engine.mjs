@@ -79,6 +79,8 @@ function makeClock() {
  *                   short with a shallower score, exactly like Stockfish
  * cfg.bootFail    — the first N boots fail the way a wasm that will not
  *                   compile does (`__sf_fail__`); later ones succeed
+ * cfg.deafInitFrom — workers from this index on never answer the wasm
+ *                   (a second worker that does not boot, v8-1-plan F4)
  */
 function boot(cfg = {}) {
   const clock = makeClock();
@@ -113,15 +115,17 @@ function boot(cfg = {}) {
       this.say("bestmove e2e4");
     }
     postMessage(m) {
+      if (m && m.type === "init" && cfg.deafInitFrom != null && state.workers.indexOf(this) >= cfg.deafInitFrom) return;
       if (m && m.type === "init") { this.say(cfg.bootFail && state.failBoots-- > 0 ? "__sf_fail__ CompileError" : "__sf_ready__"); return; }
       this.cmds.push(m);
       if (m === "uci") { this.say("uciok"); return; }
       if (m === "isready") { if (!cfg.deafReady) this.say("readyok"); return; }
       if (/^go\b/.test(m)) {
         this.searching = true;
+        const id = this.searchId = (this.searchId || 0) + 1; // a timer ends its own search only
         if (cfg.deafSearch) return;
         if (/infinite/.test(m)) return; // only `stop` ends an infinite search
-        if (cfg.goDelay) { clock.setTimeout(() => { if (this.searching) this.finish(20, 30); }, cfg.goDelay); return; }
+        if (cfg.goDelay) { clock.setTimeout(() => { if (this.searching && this.searchId === id) this.finish(20, 30); }, cfg.goDelay); return; }
         this.finish(20, 30);
         return;
       }
@@ -313,6 +317,149 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   assert(gos() === before + 1, "a position searched deeper is searched again at the quick budget, not served the deep answer");
   const again = E.analyze(FEN2, 200); await clock.advance(1); await again;
   assert(gos() === before + 1, "…while the same budget is still served from the cache");
+}
+
+// --- v8-1-plan F4: three levels, and a higher one preempts a lower one ------
+// Through 8.0 every search waited its turn on one chain, so the game's reply
+// queued behind whatever library-pass search was running. Now a game move
+// stops a background search, runs, and the background search is run again —
+// its cut result never reaches the pass.
+const FEN3 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2";
+const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.test(c));
+{
+  const { E, clock, state, ctx } = boot({ goDelay: 400 });
+  const p = E.init(); await clock.advance(1); await p;
+  const waits = [];
+  ctx.__engineProbe = (e) => waits.push(e);
+  const got = [];
+  const pass = [FEN, FEN2, FEN3].map((f) => E.analyze(f, 100, { bg: true }).then((r) => { got.push([f, r && r.cp]); return r; }));
+  await clock.advance(450); // the first position is done, the second is searching
+  const w = state.last();
+  assert(w.searching && w.cmds.filter((c) => /^go nodes/.test(c)).length === 2, "a background pass is on its second position");
+  let mv = null;
+  const move = E.bestMove(FEN3, "normal").then((m) => { mv = m; });
+  await settle();
+  const stopAt = w.cmds.lastIndexOf("stop");
+  assert(stopAt > w.cmds.lastIndexOf("go nodes " + E.nodesFor(100)), "a game move arriving mid-pass stops the running background search at once");
+  await clock.advance(800); await move;
+  const seq = gosOf(w).filter((c) => /^(go|position)/.test(c)).map((c) => c.startsWith("position") ? c.slice(13) : c.split(" ").slice(0, 2).join(" "));
+  const moveGo = seq.indexOf("go movetime");
+  assert(mv && moveGo > 0 && seq[moveGo - 1] === FEN3, "…the move searches next, ahead of the rest of the pass");
+  await clock.advance(2000); await Promise.all(pass);
+  const nodesGos = w.cmds.filter((c) => /^go nodes/.test(c)).length;
+  assert(nodesGos === 4, "…and the cut position is searched again afterwards — once, the finished one not at all (" + nodesGos + " searches for 3 positions)");
+  assert(got.length === 3 && got.every(([, cp]) => cp === 30), "…every position of the pass gets a whole search's result, none the truncated one", JSON.stringify(got));
+  assert(got.map(([f]) => f).join("|") === [FEN, FEN2, FEN3].join("|"), "…in the order the pass asked for them");
+  const mw = waits.find((e) => e.kind === "move");
+  assert(mw && mw.wait <= 5, "the move waited for the engine no longer than a `stop` takes (" + (mw && mw.wait) + " ms virtual)");
+  const again = waits.filter((e) => e.kind === "batch" && e.runs === 2);
+  assert(again.length === 1, "exactly one background search ran twice");
+}
+
+// cancel() — a board change — does not cut a background search short: its
+// result would be filed as a whole one. newGame()'s ucinewgame waits too.
+{
+  const { E, clock, state } = boot({ goDelay: 400 });
+  const p = E.init(); await clock.advance(1); await p;
+  let r = null;
+  const a = E.analyze(FEN, 100, { bg: true }).then((x) => { r = x; });
+  await clock.advance(50);
+  const w = state.last();
+  const before = w.cmds.length;
+  E.cancel();
+  E.newGame();
+  assert(!w.cmds.slice(before).includes("stop") && !w.cmds.slice(before).includes("ucinewgame"),
+    "cancel() and newGame() send neither stop nor ucinewgame into a running background search");
+  await clock.advance(500); await a;
+  assert(r && r.cp === 30, "…which delivers its whole result (cp=" + (r && r.cp) + ")");
+  const m = E.bestMove(FEN2, "beginner"); await clock.advance(1000); await m;
+  const tail = w.cmds.slice(w.cmds.lastIndexOf("go nodes " + E.nodesFor(100)) + 1);
+  assert(tail.indexOf("ucinewgame") >= 0 && tail.indexOf("ucinewgame") < tail.findIndex((c) => /^go depth/.test(c)),
+    "…and the next game search starts with the ucinewgame the new game asked for");
+  // a foreground search is still cancelled exactly as before
+  let fg = "pending";
+  const f = E.analyze(FEN3, 100).then((x) => { fg = x; });
+  await clock.advance(50);
+  E.cancel();
+  await clock.advance(10); await f;
+  assert(fg === null && w.cmds[w.cmds.length - 1] === "stop", "cancel() still stops and discards a foreground search");
+}
+
+// the levels: 持续分析 yields to a game move and comes back; a background
+// pass yields to 持续分析; searches at one level keep their order
+{
+  const { E, clock, state } = boot({ goDelay: 400 });
+  const p = E.init(); await clock.advance(1); await p;
+  const updates = [];
+  const stop = E.analyzeInfinite(FEN, {}, (u) => updates.push(u));
+  await clock.advance(10);
+  const w = state.last();
+  const move = E.bestMove(FEN2, "normal");
+  await clock.advance(1000); await move;
+  const gos = w.cmds.filter((c) => /^go\b/.test(c));
+  assert(gos.join(",") === "go infinite,go movetime 700,go infinite", "a game move preempts 持续分析, which re-arms on its position afterwards (" + gos.join(", ") + ")");
+  await stop();
+  assert(w.cmds[w.cmds.length - 1] === "stop", "…and stop() still ends it");
+  // a background pass under 持续分析
+  const b = E.analyze(FEN3, 100, { bg: true });
+  await clock.advance(50);
+  const stop2 = E.analyzeInfinite(FEN2, {}, () => {});
+  await clock.advance(10);
+  const cut = w.cmds.lastIndexOf("stop");
+  assert(cut > w.cmds.lastIndexOf("go nodes " + E.nodesFor(100)) && w.cmds[w.cmds.length - 1] === "go infinite",
+    "持续分析 preempts a background search");
+  let br = null; b.then((x) => { br = x; });
+  await clock.advance(1000);
+  assert(br === null, "…which waits while 持续分析 runs");
+  await stop2(); await clock.advance(1000);
+  assert(br && br.cp === 30, "…and completes, whole, once it stops");
+  // two foreground requests: no preemption between them, arrival order
+  const x1 = E.analyze(FEN, 150);
+  await clock.advance(10);
+  const n0 = w.cmds.length;
+  const x2 = E.bestMove(FEN2, "normal");
+  await clock.advance(10);
+  assert(!w.cmds.slice(n0).includes("stop"), "a game move does not preempt a hint or coach search — same level, arrival order");
+  await clock.advance(2000); await Promise.all([x1, x2]);
+}
+
+// part 3: the second worker, off by default; on, a pass runs beside the game
+{
+  const { E, clock, state } = boot({ goDelay: 400 });
+  const p = E.init(); await clock.advance(1); await p;
+  assert(E.getOptions().bgWorker === false, "the second worker is off by default (v8-1-plan §8.7)");
+  const a = E.analyze(FEN, 100, { bg: true }); await clock.advance(500); await a;
+  assert(state.workers.length === 1, "…so a pass runs on the one worker");
+  E.setOptions({ bgWorker: true });
+  let r = null;
+  const b = E.analyze(FEN2, 100, { bg: true }).then((x) => { r = x; });
+  await clock.advance(50);
+  assert(state.workers.length === 2 && state.last().cmds.some((c) => /^go nodes/.test(c)), "on: a pass boots a second worker and searches there");
+  const m = E.bestMove(FEN3, "normal");
+  await clock.advance(10);
+  assert(!state.workers[0].cmds.includes("stop") && !state.workers[1].cmds.includes("stop") && state.workers[0].searching,
+    "…a game move runs on the first at the same time, nobody stopped");
+  await clock.advance(1000); await Promise.all([b, m]);
+  assert(r && r.cp === 30 && r.nodes === E.nodesFor(100), "…and the pass gets the same whole result");
+  const lane = state.last();
+  assert(lane.cmds.slice(lane.cmds.indexOf("ucinewgame")).join("|").includes("setoption name Hash value 32"),
+    "…searched the way the first worker would: ucinewgame, full strength, the player's Hash");
+  E.setOptions({ bgWorker: false });
+  assert(!lane.alive, "turning it off terminates the second worker");
+}
+{
+  // a second worker that never boots: the pass carries on on the first
+  const { E, clock, state } = boot({ goDelay: 100, deafInitFrom: 1 });
+  const p = E.init(); await clock.advance(1); await p;
+  E.setOptions({ bgWorker: true });
+  let r = null;
+  const b = E.analyze(FEN2, 100, { bg: true }).then((x) => { r = x; });
+  await clock.advance(31000); await b;
+  assert(state.workers.length === 2 && !state.workers[1].alive, "a second worker that does not boot is terminated");
+  assert(r && r.cp === 30 && state.workers[0].cmds.some((c) => /^go nodes/.test(c)),
+    "…and the search falls back to the first worker", JSON.stringify(r));
+  const c = E.analyze(FEN3, 100, { bg: true }); await clock.advance(500); await c;
+  assert(state.workers.length === 2, "…which the rest of the pass keeps using, no second try per search");
 }
 
 // v8-0-plan §5: the generated engine-src.js header named Stockfish 18 after

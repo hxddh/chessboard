@@ -1444,6 +1444,7 @@ import { loadChunk } from "./chunk.js";
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
+      store.ui.bgWorker = s.bgWorker === true; // v8-1-plan F4: a second engine for passes, off unless set (§8.7)
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
       // v8-0-plan A3: 7.x's themeId / followSystem / pieceSet, or 8.0's four
       // fields — migrateLook reads either
@@ -1470,7 +1471,7 @@ import { loadChunk } from "./chunk.js";
   function saveSettings() {
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look; themeId and followSystem still written, for
         // a 7.x build opening this profile (it reads those two and not these)
@@ -2301,7 +2302,6 @@ import { loadChunk } from "./chunk.js";
   // thing the app can tell a learner (that was the whole argument for the
   // nudge in 1.7) — so 7.7 gives it the result card's filled button instead
   // of a message that leaves after four seconds (v7-7-plan §4).
-
 
   /** The rating sparkline: the accuracy one's dress, on the rating's own scale. */
   function drawRatingTrend(cv, ys) {

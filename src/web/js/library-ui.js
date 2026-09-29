@@ -289,7 +289,9 @@ export function createLibraryUI(d) {
         let e = null;
         for (let tries = 0; tries < 2 && evalScalar(e) == null; tries++) {
           if (run.abort) return null;
-          try { e = await ChessEngine.analyze(fens[i], budget, {}); } catch (_) { e = null; }
+          // v8-1-plan F4: the lowest level — a game move preempts it, and
+          // this ply is searched again afterwards, not the whole game
+          try { e = await ChessEngine.analyze(fens[i], budget, { bg: true }); } catch (_) { e = null; }
         }
         if (evalScalar(e) == null) { run.failed = true; return null; }
         scalars[i] = evalScalar(e);

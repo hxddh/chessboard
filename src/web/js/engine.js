@@ -14,6 +14,8 @@
 // CHESS_SF_LOADER and CHESS_SF_WASM_B64, written by the separate classic
 // script scripts/gen-engine-src.mjs generates. Everything else this module
 // needs is imported.
+import { PRIO, createScheduler } from "./engine-sched.js";
+import { createBgLane } from "./engine-bg.js";
 const global = typeof window !== "undefined" ? window : globalThis;
   /**
    * difficulty id → search settings; elo:null = full strength.
@@ -113,14 +115,32 @@ const global = typeof window !== "undefined" ? window : globalThis;
   let readyPromise = null;
   let lineHandlers = [];
   let gen = 0;
-  let chain = Promise.resolve();
 
-  /** Serialize searches on the single worker (game moves vs analysis). */
-  function exclusive(fn) {
-    const run = chain.then(fn, fn);
-    chain = run.then(() => {}, () => {});
-    return run;
+  /**
+   * Serialize searches on the single worker (game moves vs analysis).
+   *
+   * v8-1-plan F4: by priority now (engine-sched.js). PLAY is what 8.0's
+   * one-chain `exclusive()` was for every caller, so a caller that names no
+   * level is still served in arrival order behind the others that named none.
+   * A lower level that is running when a higher one arrives is stopped and
+   * run again later, its cut result thrown away.
+   */
+  const sched = createScheduler({
+    // only this job's own search: while it is still draining there is none
+    // on the worker, and a `stop` then would land in whatever came next
+    preempt(job) { if (job.searching && worker) send("stop"); },
+    // test seam, like persist's __persistProbe: how long each search queued
+    started(job) {
+      const pr = global.__engineProbe;
+      if (typeof pr !== "function") return;
+      try { pr({ kind: job.kind, prio: job.prio, wait: Date.now() - job.asked, runs: job.runs }); } catch (_) { /* a probe must not break the engine */ }
+    },
+  });
+  function exclusive(fn, prio, kind) {
+    return sched.submit(prio == null ? PRIO.PLAY : prio, fn, kind);
   }
+  /** a background search is running on the shared worker */
+  const batchRunning = () => { const r = sched.running(); return !!r && r.prio === PRIO.BATCH; };
 
   function workerSource(loaderText) {
     return [
@@ -363,15 +383,28 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return !!worker && booted;
   }
 
-  /** Abandon any in-flight search results (game changed under it). */
+  /**
+   * Abandon any in-flight search results (game changed under it).
+   *
+   * v8-1-plan F4: except a background pass's. It is not about the game that
+   * changed, and a `stop` would cut its fixed-node search short — a result
+   * the pass would then file as if it were whole (it is only ever discarded
+   * when the scheduler itself stopped it). The pass sees the change, if it
+   * cares, through its own halt check after this search.
+   */
   function cancel() {
     gen++;
-    if (worker) send("stop");
+    if (worker && !batchRunning()) send("stop");
   }
 
+  // v8-1-plan F4: a `ucinewgame` in the middle of a background search clears
+  // its hash under it; the next game search sends it instead
+  let freshGame = false;
   function newGame() {
     gen++;
-    if (worker) send("ucinewgame");
+    if (!worker) return;
+    if (batchRunning()) freshGame = true;
+    else send("ucinewgame");
   }
 
   /**
@@ -389,7 +422,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *   has nothing to choose between without candidates.
    */
   function bestMove(fen, diff, maxMs, persona) {
-    return exclusive(() => bestMoveInner(fen, diff, maxMs, persona));
+    return exclusive(() => bestMoveInner(fen, diff, maxMs, persona), PRIO.PLAY, "move");
   }
 
   function parseUci(uci) {
@@ -430,6 +463,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       : base;
     const startedAt = Date.now();
     const myGen = ++gen;
+    if (freshGame) { freshGame = false; send("ucinewgame"); }
     // drain any stray bestmove from a cancelled search: the engine processes
     // commands in order, so its readyok arrives after that bestmove.
     const drain = waitFor((l) => l === "readyok", 5000, "ready");
@@ -612,8 +646,14 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * SharedArrayBuffer to run more on. Applied before every full-strength
    * search, like every other sticky option.
    */
-  const options = { hash: 32 };
+  const options = { hash: 32, bgWorker: false };
   function setOptions(o) {
+    // v8-1-plan F4: the second worker (engine-bg.js), off unless asked for
+    if (o && typeof o.bgWorker === "boolean" && o.bgWorker !== options.bgWorker) {
+      options.bgWorker = o.bgWorker;
+      laneDown = false;
+      if (!o.bgWorker && lane) { lane.close(); lane = null; }
+    }
     if (o && Number.isFinite(o.hash)) {
       const hash = Math.max(1, Math.min(512, Math.round(o.hash)));
       // 6.1: Hash changes what the search finds, so everything already in the
@@ -704,10 +744,47 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const multipv = opts && opts.multipv ? Math.max(1, Math.min(5, opts.multipv | 0)) : 1;
     const hit = cachedEval(fen, budget, multipv);
     if (hit) return Promise.resolve(hit);
-    return exclusive(() => analyzeInner(fen, budget, multipv)).then((r) => {
+    // v8-1-plan F4: `{bg: true}` is a pass over many positions — the lowest
+    // level, preempted by anything else, and on the second worker when that
+    // is turned on
+    const run = opts && opts.bg ? analyzeBatch(fen, budget, multipv)
+      : exclusive((job) => analyzeInner(fen, budget, multipv, job), PRIO.PLAY, "eval");
+    return run.then((r) => {
       rememberEval(fen, budget, multipv, r);
       return r;
     });
+  }
+
+  /**
+   * v8-1-plan F4 part 3: the second worker, when the `bgWorker` option is on.
+   * A lane that failed once (did not boot, a search did not come back) is not
+   * tried again until the option is set again; its searches go back to the
+   * shared worker, so a pass never stops over it.
+   */
+  let lane = null;
+  let laneDown = false;
+  async function analyzeBatch(fen, budget, multipv) {
+    if (options.bgWorker && !laneDown) {
+      await init(); // the sources the lane is built from, and the worker it falls back on
+      if (!lane) {
+        lane = createBgLane({
+          spawn: () => new Worker(URL.createObjectURL(new Blob([workerSource(loaderSrc)], { type: "text/javascript" }))),
+          wasm: () => wasmBytes.slice(0),
+          optionCmds: fullStrengthCmds,
+          readInfo,
+        });
+      }
+      const mine = lane;
+      const nodes = nodesFor(budget);
+      try {
+        const r = await mine.analyze(fen, nodes, multipv);
+        return resultOf(fen, r.uci, r.slots, nodes);
+      } catch (_) {
+        // turned off under it, or it failed: either way the shared worker
+        if (options.bgWorker && lane === mine) { laneDown = true; mine.close(); lane = null; }
+      }
+    }
+    return exclusive((job) => analyzeInner(fen, budget, multipv, job), PRIO.BATCH, "batch");
   }
 
   /** Parse one `info` line into what the review keeps of it. */
@@ -725,27 +802,34 @@ const global = typeof window !== "undefined" ? window : globalThis;
     into.set(idx, slot);
   }
 
-  function fullStrengthOptions(multipv) {
+  function fullStrengthCmds(multipv) {
     // all sticky from a handicap game — analysis is always full strength
-    send("setoption name MultiPV value " + (multipv || 1));
-    send("setoption name Skill Level value 20");
-    send("setoption name UCI_LimitStrength value false");
-    send("setoption name Hash value " + options.hash);
+    return ["setoption name MultiPV value " + (multipv || 1), "setoption name Skill Level value 20",
+      "setoption name UCI_LimitStrength value false", "setoption name Hash value " + options.hash];
+  }
+  function fullStrengthOptions(multipv) {
+    for (const c of fullStrengthCmds(multipv)) send(c);
   }
 
   function linesOf(slots) {
     return [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
   }
 
-  async function analyzeInner(fen, budget, multipv) {
+  async function analyzeInner(fen, budget, multipv, job) {
     await init();
     const myGen = ++gen;
-    // a clean engine for every analysis search — see NODES_PER_MS
+    // v8-1-plan F4: a background search does not answer to cancel(); only
+    // the scheduler stops it, and then its result is not delivered at all
+    const batch = job.prio === PRIO.BATCH;
+    const stale = () => job.preempted || (!batch && myGen !== gen);
+    // a clean engine for every analysis search — see NODES_PER_MS. It is
+    // also what makes a preempted search's rerun the same search.
     send("ucinewgame");
+    freshGame = false;
     const drain = waitFor((l) => l === "readyok", 5000, "ready");
     send("isready");
     await drain;
-    if (myGen !== gen) return null;
+    if (stale()) return null;
     const nodes = nodesFor(budget);
     fullStrengthOptions(multipv);
     send("position fen " + fen);
@@ -755,12 +839,17 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // the timeout still reads as time: a slow machine needs longer per node,
     // and a search is "hung" only well past what any machine would need
     const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), nodes / 50 + 15000, "search");
+    job.searching = true;
     send("go nodes " + nodes);
     let line;
     try { line = await wait; }
-    finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
-    if (myGen !== gen) return null;
-    const uci = line.split(/\s+/)[1];
+    finally { job.searching = false; lineHandlers = lineHandlers.filter((h) => h !== collect); }
+    if (stale()) return null;
+    return resultOf(fen, line.split(/\s+/)[1], slots, nodes);
+  }
+
+  /** What analyze() answers, from a finished search's bestmove and lines. */
+  function resultOf(fen, uci, slots, nodes) {
     const lines = linesOf(slots);
     const top = lines[0] || { cp: null, mate: null, pv: null };
     return {
@@ -778,9 +867,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * 6.0: continuous analysis — `go infinite` on one position, reporting every
    * improvement until told to stop.
    *
-   * Holds the exclusive lock for as long as it runs, so a game move queued
+   * Holds the engine for as long as it runs, so a background pass queued
    * behind it waits; the caller is expected to stop it before the game
-   * resumes. Returns the stop function; `onUpdate` receives
+   * resumes (v8-1-plan F4: a game move or a hint that comes first anyway
+   * preempts it, and it resumes after). Returns the stop function; `onUpdate` receives
    * `{depth, lines: [{pv, cp, mate, depth}], turn}` on each new info line.
    */
   function analyzeInfinite(fen, opts, onUpdate) {
@@ -789,14 +879,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
     let started = false; // our own `go infinite` is on the worker
     let release = null;
     const done = new Promise((r) => { release = r; });
-    exclusive(async () => {
+    exclusive(async (job) => {
       if (stopped) return;
       await init();
       const myGen = ++gen;
+      if (freshGame) { freshGame = false; send("ucinewgame"); }
       const drain = waitFor((l) => l === "readyok", 5000, "ready");
       send("isready");
       await drain;
-      if (myGen !== gen || stopped) return;
+      if (myGen !== gen || stopped || job.preempted) return;
       fullStrengthOptions(multipv);
       send("position fen " + fen);
       const slots = new Map();
@@ -810,10 +901,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
       lineHandlers.push(collect);
       const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), 24 * 3600 * 1000, "search");
       started = true;
+      job.searching = true;
       send("go infinite");
       try { await wait; } catch (_) { /* stopped or torn down */ }
-      finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
-    }).then(release, release);
+      finally { started = false; job.searching = false; lineHandlers = lineHandlers.filter((h) => h !== collect); }
+      // v8-1-plan F4: a game move or a hint preempted it — the scheduler runs
+      // this body again afterwards, on the same position
+    }, PRIO.LIVE, "live").then(release, release);
     return function stop() {
       if (stopped) return done;
       stopped = true;
