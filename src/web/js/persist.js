@@ -136,6 +136,18 @@ export const STORE_ALT = "-b";
  */
 export const BULK = /^lib[0-3][0-9a-f]$/;
 
+/**
+ * v8-1-plan F3: `fn()`, timed for a test's `__persistProbe(name, ms)` when one
+ * is installed (host.js has the same) — the breakdown of a long slice after
+ * a bridge answer on an engine CI runs and this machine cannot profile.
+ */
+function timed(name, fn) {
+  const probe = globalThis.__persistProbe;
+  if (typeof probe !== "function") return fn();
+  const t = performance.now();
+  try { return fn(); } finally { probe(name, performance.now() - t); }
+}
+
 /** Is `m` a manifest this app wrote? */
 export function isStoreMeta(m) {
   return !!m && m.app === "chessboard" && Array.isArray(m.keys) &&
@@ -354,7 +366,7 @@ export function createPersist(host, onWriteFailure) {
   function valueOf(name) {
     if (!BULK.test(name)) return bag ? bag[name] : null;
     if (bulkOverride && bulkOverride.has(name)) return bulkOverride.get(name);
-    return bulk && bulk.names() ? bulk.read(name) : undefined;
+    return bulk && timed("shardNames", () => bulk.names()) ? timed("shardText", () => bulk.read(name)) : undefined;
   }
   /** Expand "every shard is owed" once the port can name them. */
   function expandBulk() {
@@ -512,7 +524,7 @@ export function createPersist(host, onWriteFailure) {
       }
       meta.keys = Object.keys(files);
       meta.files = files;
-      const ok = await host.appdataWriteKey(STORE_META, JSON.stringify(meta));
+      const ok = await host.appdataWriteKey(STORE_META, timed("manifest", () => JSON.stringify(meta)));
       if (ok == null) { mirrorEnabled = false; return false; }
       committed = files;
       // committed: now a removed key's files can go, so a cleared profile
@@ -551,7 +563,7 @@ export function createPersist(host, onWriteFailure) {
     const r = await host.appdataReadKey(STORE_META);
     if (r && r.missing) return { files: {}, missing: true };
     let m = null;
-    try { m = r && typeof r.text === "string" ? JSON.parse(r.text) : null; } catch (_) { m = null; }
+    try { m = r && typeof r.text === "string" ? timed("readMeta", () => JSON.parse(r.text)) : null; } catch (_) { m = null; }
     if (isStoreMeta(m)) return { files: storeFiles(m), missing: false };
     // not knowing which files the store's profile is in, writing any of them
     // could break it: the flush fails and its keys stay owed

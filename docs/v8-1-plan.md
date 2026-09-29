@@ -635,6 +635,11 @@
   - `library-db.js putSliced`：每个任务最多 put 6 ms，下一片从上一片最后一个请求的 success 里接着排，仍是同一个事务，要么全进、要么全不进。
   - `host.js textSource`：长文本先数 UTF-8 长度，再按 256 KiB 一段用 encodeInto 边编边发。原来要先把 2 MB 整个 encode（7–10 ms），再在同一个任务里算第一段的 base64。协议和盘上格式都没变，main.zig 本来就接受任意长度的段。
   - 本机 Chromium 实测（`measured.json persistFirstWrite`）：旧量法下 155–199 ms。新量法、旧代码：最长一段 11.5 ms，一个任务里连着 put 35.6 ms。修正后连续 5 次：最长一段 3.6–8.9 ms，连着 put 6.0–6.1 ms，全部通过。
+  - CI 的 WebKit 在 a85c271 上仍读到 42 ms 和 47 ms（put 6.0 ms），本机跑不了 WebKit。
+    - persist-e2e 现在每次都打印最长那一段是什么：跟在哪次应答之后（命令、键、offset / total、第几段、字节数），被什么收口（下一次调桥、定时器、帧、IndexedDB 事件、消息），以及段内各阶段的耗时（utf8Length、encode / encodeInto、base64、unbase64、decode、shardNames / shardText / shardGroups、manifest、readMeta）。
+    - 这些阶段由 `host.js` / `persist.js` / `library-page.js` 报给 `window.__persistProbe`，只有测试定义了它才计时。
+    - 文本分段从 256 KiB 再减到 128 KiB，每次调桥的编码量减半。
+    - 本机 Chromium 连续 5 次：最长一段 3.0–4.6 ms，都在 `stats` 写完的应答之后（utf8Length 1.2–1.5、base64 1.0–2.7）。WebKit 的那一段要看下一次 CI 打印。
   - 新增两项断言：persist-e2e 的「一个任务里连着 put ≤ 16 ms」，改之前是 27–36 ms；test-persist 的「从不一次编码超过一段」，改之前一次编码 2,097,169 字符。
 - N2 评审 P3-4：分段打开的大文件，第一段记下大小和修改时间，之后每段先比对，变了就答 `open_lost`（页面显示「无法读取文件」）；后续段答超限时显示「文件超过…」，不再笼统说读不了。
 

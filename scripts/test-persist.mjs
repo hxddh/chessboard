@@ -196,9 +196,9 @@ function loadHost(zero, over) {
     encode(s) { widest = Math.max(widest, String(s).length); return super.encode(s); }
   }
   const HS = loadHost(zero, { TextEncoder: Spy });
-  // a four-byte character on each side of every 256 Ki-char cut, and one
+  // a four-byte character on each side of every 128 Ki-char cut, and one
   // astride it; a lone surrogate, which TextEncoder writes as U+FFFD
-  const cut = 256 * 1024;
+  const cut = 128 * 1024;
   let wide = "";
   for (let k = 1; k <= 8; k++) wide += "a".repeat(cut - 3) + "😀" + "b" + (k % 2 ? "😀" : "国");
   wide += "\ud800 end";
@@ -206,8 +206,8 @@ function loadHost(zero, over) {
   assert((await HS.appdataWriteKey("wide", wide)) === true, `a ${wide.length}-char key with 4-byte characters at the piece cuts is written`);
   const pieces = zero.frames.filter((f) => f.cmd === "chess.appdataWrite");
   assert(widest <= 512 * 1024, `…never encoding more than one piece's worth at once (widest encode ${widest} chars)`);
-  assert(pieces.length > 1 && pieces.every((f) => Buffer.from(f.a.b64, "base64").length <= 256 * 1024 && f.a.total === Buffer.byteLength(wide)),
-    `…in ${pieces.length} pieces of ≤ 256 KiB, each naming the whole length`);
+  assert(pieces.length > 1 && pieces.every((f) => Buffer.from(f.a.b64, "base64").length <= 128 * 1024 && f.a.total === Buffer.byteLength(wide)),
+    `…in ${pieces.length} pieces of ≤ 128 KiB, each naming the whole length`);
   assert(zero.files.get("appdata:wide").equals(Buffer.from(new TextEncoder().encode(wide))), "…and the bytes on disk are exactly TextEncoder's");
   lose = 1;
   zero.invoke = async (cmd, a) => {

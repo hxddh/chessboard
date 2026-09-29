@@ -40,6 +40,19 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * last is a whole number of 3-byte groups, so the pieces join without
    * padding in between.
    */
+  /**
+   * v8-1-plan F3: `fn()`, and when a test has installed
+   * `__persistProbe(name, ms)`, how long it took — so a long main-thread
+   * slice after a bridge answer can be broken down on an engine that cannot
+   * be profiled from here (WebKit in CI). Without the probe it is one call.
+   */
+  function timed(name, fn) {
+    const probe = global.__persistProbe;
+    if (typeof probe !== "function") return fn();
+    const t = performance.now();
+    try { return fn(); } finally { probe(name, performance.now() - t); }
+  }
+
   function b64FromBytes(bytes) {
     let out = "";
     for (let i = 0; i < bytes.length; i += 24576) {
@@ -102,13 +115,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * turn comes, TEXT_PIECE bytes at most. A piece may end a few bytes short,
    * where a character does not fit; main.zig stages any length at the offset
    * it has filled to, so the protocol is the one sendBytes always spoke.
+   * 128 KiB rather than CHUNK: WebKit in CI read a 42 ms slice where
+   * Chromium reads 4–9, and a piece is the unit one round trip holds.
    */
-  const TEXT_PIECE = 256 * 1024;
+  const TEXT_PIECE = 128 * 1024;
   function textSource(text) {
     const s = String(text);
-    const total = s.length * 3 <= CHUNK ? -1 : utf8Length(s);
+    const total = s.length * 3 <= CHUNK ? -1 : timed("utf8Length", () => utf8Length(s));
     // small enough for one frame: encoded whole, as before
-    if (total <= CHUNK) return new TextEncoder().encode(s);
+    if (total <= CHUNK) return timed("encode", () => new TextEncoder().encode(s));
     const enc = new TextEncoder();
     const buf = new Uint8Array(TEXT_PIECE);
     let at = 0;   // chars consumed
@@ -119,7 +134,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
         // cut before a high surrogate, so encodeInto never sees half a pair
         let end = Math.min(s.length, at + TEXT_PIECE);
         if (end < s.length && (s.charCodeAt(end - 1) & 0xfc00) === 0xd800) end--;
-        const r = enc.encodeInto(s.substring(at, end), buf);
+        const r = timed("encodeInto", () => enc.encodeInto(s.substring(at, end), buf));
         at += r.read;
         return buf.subarray(0, r.written);
       },
@@ -137,7 +152,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *   that was not "go on" (a refusal, or a shell that does not stage)
    */
   async function sendBytes(call, fields, bytes) {
-    if (bytes.length <= CHUNK) return call(Object.assign({}, fields, { b64: b64FromBytes(bytes) }));
+    if (bytes.length <= CHUNK) return call(Object.assign({}, fields, { b64: timed("base64", () => b64FromBytes(bytes)) }));
     const pieceAt = typeof bytes.piece === "function" ? bytes.piece : (offset) => bytes.subarray(offset, offset + CHUNK);
     for (let attempt = 0; ; attempt++) {
       const txn = newTxn();
@@ -148,7 +163,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
         const piece = pieceAt(offset);
         n = piece.length;
         if (!n) return { error: "encode" };   // cannot happen; never loop on it
-        const b64 = b64FromBytes(piece);
+        const b64 = timed("base64", () => b64FromBytes(piece));
         r = await call(Object.assign({}, fields, { txn, total: bytes.length, offset, b64 }));
         const last = offset + n >= bytes.length;
         if (last || (r && typeof r === "object" && r.ok === true && r.pending === true)) continue;
@@ -175,7 +190,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const limit = max || FILE_MAX;
     const first = await call(fields);
     if (!first || typeof first !== "object" || typeof first.b64 !== "string") return first;
-    const parts = [bytesFromB64(first.b64)];
+    const parts = [timed("unbase64", () => bytesFromB64(first.b64))];
     let size = parts[0].length;
     let r = first;
     while (r.more === true) {
@@ -188,7 +203,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       if (!r || typeof r !== "object" || typeof r.b64 !== "string") {
         throw new Error("chunked read broke off" + (r && typeof r.error === "string" ? ": " + r.error : ""));
       }
-      const piece = bytesFromB64(r.b64);
+      const piece = timed("unbase64", () => bytesFromB64(r.b64));
       if (!piece.length && r.more === true) throw new Error("chunked read made no progress");
       parts.push(piece);
       size += piece.length;
@@ -635,7 +650,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (r.empty) return { empty: true };
     if (r.tooLarge) throw fileTooLargeError(r.limit);
     if (r.error || !r.bytes) return null;
-    return { text: new TextDecoder().decode(r.bytes), bak: r.bak === true };
+    return { text: timed("decode", () => new TextDecoder().decode(r.bytes)), bak: r.bak === true };
   }
 
   /**

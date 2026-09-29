@@ -1163,27 +1163,52 @@ function fakeNative(opts) {
   // a timer, a frame, an IndexedDB event (the page's other work), or failing
   // those a message posted with the answer — closes it. Waiting is not
   // counted; everything the answer's task did still is.
-  const close = () => {
-    const seg = window.__seg;
+  //
+  // Each slice also carries what it is (the answer it follows: command, key,
+  // offset / total / piece of a staged write), what closed it, and the
+  // page's own timings inside it: host.js / persist.js / library-page.js
+  // report their phases to window.__persistProbe (utf8Length, encodeInto,
+  // base64, shardText …) when a test defines it. The longest slice keeps
+  // its breakdown (seg.worst), so a CI engine we cannot profile says where
+  // the time went.
+  const seg = window.__seg;
+  seg.parts = {};
+  seg.ans = null;
+  seg.worst = null;
+  window.__persistProbe = (name, ms) => { if (seg.at) seg.parts[name] = (seg.parts[name] || 0) + ms; };
+  const close = (by) => {
     if (!seg.at) return;
     const d = performance.now() - seg.at;
+    if (d < 200 && d > seg.max) {
+      const parts = {};
+      for (const [k, v] of Object.entries(seg.parts)) parts[k] = +v.toFixed(1);
+      seg.worst = { ms: +d.toFixed(1), after: seg.ans, closedBy: by, parts };
+    }
     if (d < 200) seg.max = Math.max(seg.max, d);
     seg.at = 0;
   };
   const ends = new MessageChannel();
-  ends.port1.onmessage = (e) => { if (e.data === window.__seg.tok) close(); };
-  const first = (fn) => (typeof fn === "function" ? function () { close(); return fn.apply(this, arguments); } : fn);
-  for (const n of ["setTimeout", "requestAnimationFrame"]) {
+  ends.port1.onmessage = (e) => { if (e.data === seg.tok) close("end-message"); };
+  const first = (fn, by) => (typeof fn === "function" ? function () { close(by); return fn.apply(this, arguments); } : fn);
+  for (const [n, by] of [["setTimeout", "timer"], ["requestAnimationFrame", "frame"]]) {
     const real = window[n];
-    window[n] = function (fn, ...rest) { return real.call(window, first(fn), ...rest); };
+    window[n] = function (fn, ...rest) { return real.call(window, first(fn, by), ...rest); };
   }
-  for (const [C, names] of [["IDBRequest", ["onsuccess", "onerror"]], ["IDBTransaction", ["oncomplete", "onabort", "onerror"]]]) {
+  // events that only ever arrive as a task of their own (the page sets
+  // on<event> for all of these: library-db.js, library-page.js, engine.js)
+  const async = [["IDBRequest", ["success", "error"]], ["IDBTransaction", ["complete", "abort", "error"]],
+    ["MessagePort", ["message"]], ["Worker", ["message"]], ["BroadcastChannel", ["message"]]];
+  for (const [C, names] of async) {
     const proto = window[C] && window[C].prototype;
+    if (!proto) continue;
+    const by = C.startsWith("IDB") ? "idb" : "message:" + C;
     for (const n of names) {
-      const d = proto && Object.getOwnPropertyDescriptor(proto, n);
-      if (d && d.set) Object.defineProperty(proto, n, { configurable: true, enumerable: d.enumerable, get: d.get, set(fn) { d.set.call(this, first(fn)); } });
+      const d = Object.getOwnPropertyDescriptor(proto, "on" + n);
+      if (d && d.set) Object.defineProperty(proto, "on" + n, { configurable: true, enumerable: d.enumerable, get: d.get, set(fn) { d.set.call(this, first(fn, by)); } });
     }
   }
+  // which piece of its staged transfer a write is
+  const pieceOf = new Map();
   window.zero = {
     on: () => () => {}, off: () => {},
     platform: { supports: (o) => Promise.resolve(!!o && o.feature === "dialogs") },
@@ -1192,9 +1217,12 @@ function fakeNative(opts) {
     invoke: (cmd, a) => {
       // the page's continuous work since the last answer came back. An idle
       // gap (the 400 ms debounce, a person) is far longer than any real slice.
-      const now = performance.now();
-      if (window.__seg.at && now - window.__seg.at < 200) window.__seg.max = Math.max(window.__seg.max, now - window.__seg.at);
-      window.__seg.at = 0;
+      close("call " + cmd + (a && a.key != null ? " " + a.key : ""));
+      const p = a || {};
+      let piece;
+      if (p.txn) { piece = p.offset ? (pieceOf.get(p.txn) || 0) + 1 : 0; pieceOf.set(p.txn, piece); }
+      const what = { cmd, key: p.key, offset: p.offset, total: p.total, piece,
+        bytes: typeof p.b64 === "string" ? Math.floor(p.b64.length * 3 / 4) : undefined };
       const frame = JSON.stringify({ id: "0123456789abcdef", command: cmd, payload: a || {} }).length;
       return new Promise((resolve, reject) => setTimeout(() => {
         let r, err = null;
@@ -1205,8 +1233,10 @@ function fakeNative(opts) {
             if (JSON.stringify(r).length + 64 > LIMIT) { window.__big++; err = new Error("response over the bridge limit"); }
           } catch (e) { err = e; }
         }
-        window.__seg.at = performance.now();
-        ends.port2.postMessage(window.__seg.tok = (window.__seg.tok || 0) + 1);
+        seg.at = performance.now();
+        seg.parts = {};
+        seg.ans = what;
+        ends.port2.postMessage(seg.tok = (seg.tok || 0) + 1);
         if (err) reject(err); else resolve(r);
       }, 0));
     },
@@ -1308,13 +1338,15 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     } catch (_) { return false; }
   }, libCount, { timeout: 90000, polling: 250 }).catch(() => {});
   const shards = await shardBytes();
-  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big, puts: window.__puts }));
+  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big, puts: window.__puts, worst: window.__seg.worst }));
   console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节;` +
     `搬进 IndexedDB 一口气 put 最长 ${full.puts.max.toFixed(1)} ms(共 ${full.puts.n} 次)`);
   assert(full.meta && shards.n > 1024 * 1024 && shards.games === libCount,
     `2 MB 的档案整份进了原生存储:棋谱库的 ${libCount} 局都在分片里(${shards.games} 局,${shards.n} 字节)`);
   assert(full.big === 0, `……没有一帧超过桥的 1 MiB(被拒 ${full.big} 次)`);
-  Object.assign(firstWrite, { sliceMs: +full.seg.toFixed(1), putRunMs: +full.puts.max.toFixed(1), games: libCount, shardBytes: shards.n });
+  Object.assign(firstWrite, { sliceMs: +full.seg.toFixed(1), putRunMs: +full.puts.max.toFixed(1), games: libCount, shardBytes: shards.n, longest: full.worst });
+  // always printed: on an engine CI runs and this machine cannot, this line is the profile
+  console.log(`  ……最长那一段是什么:${JSON.stringify(full.worst)}`);
   assert(full.seg <= 16, `……写的过程中,主线程上最长的一段 ≤ 16 ms(${full.seg.toFixed(1)} ms)`);
   assert(full.puts.n >= libCount && full.puts.max <= 16,
     `……同一次启动把棋谱库搬进 IndexedDB,一个任务里连着 put 最长 ≤ 16 ms(${full.puts.max.toFixed(1)} ms,${full.puts.n} 次)`);
@@ -1335,7 +1367,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   // (c) a typical save — one move's worth, on top of the 2 MB profile. Before
   // F3 this re-serialised and re-encoded all 2 MB, byte by byte.
   await page.waitForTimeout(600);   // let the export's own flush settle
-  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; });
+  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; window.__seg.worst = null; });
   // one move (2. Nf3), so the save really changed; then flush it at once,
   // before the 400 ms debounce, from a task this test can time
   const sq = (n) => page.evaluate((s) => {
@@ -1347,12 +1379,14 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await page.mouse.click(g1.x, g1.y);
   await page.waitForTimeout(120);
   await page.mouse.click(f3.x, f3.y);
-  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; });
+  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; window.__seg.worst = null; });
   const first = await page.evaluate(() => {
     const t0 = performance.now();
     // the first bridge call measures from here too: the flush starts in a
     // microtask of this same task, after the line below returns
     window.__seg.at = t0;
+    window.__seg.ans = { cmd: "pagehide" };
+    window.__seg.parts = {};
     window.dispatchEvent(new Event("pagehide"));   // saveGame() + flushMirror(), in this one task
     return performance.now() - t0;
   });
@@ -1363,6 +1397,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     return !!f && /Nf3/.test(new TextDecoder().decode(f));
   });
   console.log(`  镜像·一次普通保存:主线程最长一段 ${typical.toFixed(1)} ms(其中同步起步 ${first.toFixed(1)} ms)`);
+  console.log(`  ……最长那一段是什么:${JSON.stringify(await page.evaluate(() => window.__seg.worst))}`);
   assert(savedMove, "走了 2. Nf3 之后,原生存储里的 save 就是这一局");
   firstWrite.typicalSaveMs = +typical.toFixed(1);
   assert(typical <= 16, `一次普通保存的镜像写,主线程上每段 ≤ 16 ms(${typical.toFixed(1)} ms)`);

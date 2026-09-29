@@ -3223,47 +3223,117 @@
         {
           "engine": "chromium",
           "passed": true,
-          "sliceMs": 5.7,
-          "putRunMs": 6,
+          "sliceMs": 3,
+          "putRunMs": 6.8,
           "games": 1543,
           "shardBytes": 1937087,
-          "typicalSaveMs": 0.5
+          "longest": {
+            "ms": 3,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.2,
+              "base64": 1
+            }
+          },
+          "typicalSaveMs": 0.7
         },
         {
           "engine": "chromium",
           "passed": true,
-          "sliceMs": 4.1,
+          "sliceMs": 4.5,
           "putRunMs": 6,
           "games": 1543,
           "shardBytes": 1937087,
-          "typicalSaveMs": 3.7
+          "longest": {
+            "ms": 4.5,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.3,
+              "base64": 2.6
+            }
+          },
+          "typicalSaveMs": 0.4
         },
         {
           "engine": "chromium",
           "passed": true,
-          "sliceMs": 5.1,
+          "sliceMs": 4,
           "putRunMs": 6,
           "games": 1543,
           "shardBytes": 1937087,
-          "typicalSaveMs": 0.3
+          "longest": {
+            "ms": 4,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.2,
+              "encodeInto": 0.1,
+              "base64": 2.3
+            }
+          },
+          "typicalSaveMs": 3.2
         },
         {
           "engine": "chromium",
           "passed": true,
-          "sliceMs": 3.6,
-          "putRunMs": 6.1,
+          "sliceMs": 4.6,
+          "putRunMs": 6,
           "games": 1543,
           "shardBytes": 1937087,
-          "typicalSaveMs": 0.9
+          "longest": {
+            "ms": 4.6,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.3,
+              "base64": 2.7
+            }
+          },
+          "typicalSaveMs": 0.7
         },
         {
           "engine": "chromium",
           "passed": true,
-          "sliceMs": 8.9,
-          "putRunMs": 6,
+          "sliceMs": 3,
+          "putRunMs": 6.2,
           "games": 1543,
           "shardBytes": 1937087,
-          "typicalSaveMs": 0.5
+          "longest": {
+            "ms": 3,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.5,
+              "encodeInto": 0.2,
+              "base64": 1
+            }
+          },
+          "typicalSaveMs": 0.6
         }
       ]
     }
