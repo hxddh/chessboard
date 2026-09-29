@@ -262,6 +262,24 @@ function loadHost(zero) {
   const all = await H.openPgn({ max: H.ALL_DATA_MAX });
   assert(all && all.text.length === huge.length, "…while an open asking for ALL_DATA_MAX reads the 17 MiB file whole");
 
+  // review P3-4: a later piece the native side refuses — the file was saved
+  // over (open_lost) or is past the limit (tooLarge) — is that refusal, not
+  // "the transfer broke off": too large still gets its own words on screen
+  const real = zero.invoke;
+  zero.files.set("path:/Users/me/big.pgn", Buffer.alloc(600 * 1024, 0x61));
+  zero.pick = "/Users/me/big.pgn";
+  const refusals = [
+    [{ tooLarge: true, limit: 16777216 }, (e) => e.name === H.FILE_TOO_LARGE && e.limit === 16777216, "FileTooLargeError"],
+    [{ error: "open_lost" }, (e) => e.name !== H.FILE_TOO_LARGE && /open_lost/.test(e.message), "an error naming open_lost"],
+  ];
+  for (const [later, ok, what] of refusals) {
+    zero.invoke = async (cmd, a) => (cmd === "chess.openPgn" && a.token != null ? later : real(cmd, a));
+    let e = null;
+    try { await H.openPgn({}); } catch (x) { e = x; }
+    assert(e && ok(e), `a later piece answered ${JSON.stringify(later)} is ${what} (${e && e.name}: ${e && e.message})`);
+  }
+  zero.invoke = real;
+
   // the self-test probe: both commands answer without a dialog
   zero.frames.length = 0;
   const probe = await H.probeFileCommands();

@@ -121,7 +121,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
       if (size > limit) throw fileTooLargeError(limit);
       // the .bak the first piece came from, if it did: the rest must too
       r = await call(Object.assign({}, fields, { offset: size }, first.bak === true ? { bak: true } : null));
-      if (!r || typeof r !== "object" || typeof r.b64 !== "string") throw new Error("chunked read broke off");
+      // a later piece refused is that refusal, as on the first: too large
+      // keeps its own words, open_lost (the file changed underneath) is named
+      if (r && typeof r === "object" && r.tooLarge) throw fileTooLargeError(r.limit);
+      if (!r || typeof r !== "object" || typeof r.b64 !== "string") {
+        throw new Error("chunked read broke off" + (r && typeof r.error === "string" ? ": " + r.error : ""));
+      }
       const piece = bytesFromB64(r.b64);
       if (!piece.length && r.more === true) throw new Error("chunked read made no progress");
       parts.push(piece);
