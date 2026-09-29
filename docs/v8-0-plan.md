@@ -1018,3 +1018,18 @@ M3 分两部分合入。第一部分（PR #87）是 B2、B3 和 B1 的数据半�
 - **品牌色与字标**：品牌色 `--brand` 是四套主题各自的 token（深色两套 #eaa954、浅色两套 #95560f），在各自的底色和面板上 4.55–9.33:1。字标是图标里那匹马（CSS 遮罩，跟着 `--brand` 着色）加应用名，用作首页标题；「关于」的标题「关于国际象棋」也用字标的样式（马加品牌色），对话框仍由这行可见标题命名；空状态的图标换成品牌色。
 - **透明标题栏**：调研后**没有实现**。SDK 0.10.1 有 `titlebar = "hidden_inset"`，但拖动区域只接给了画布控件，WebView 页面没有办法声明可拖区域或开始拖窗；同一个键在 Windows 上会让窗口拖不动。详细结论与真机上要确认的三件事写进 `docs/manual-check.md` A0 第 4 条。
 - **没做到**：Dock / 任务栏真机截图（A0 第 1–3 条）。
+
+#### M5 合并（分支 m5）
+
+三条分支按 C1 → C3 → C2 / A6 的顺序合进开发分支（M4 评审 #89 的修正合到 b375fcb），冲突都按「两边的行为都留」解：
+- **档案键**：persist.js 的 `KEYS` 同时有 C1 的棋谱库分片（`BULK`，不是 KEYS）和 C2 的 `sync`；test-chess 的键数与归属表取合并后的。
+- **界面键**：1178 → 1224（C1 +26、C3 +7、C2 +13），README 两处跟着改，静态测试按三份字典核对。
+- **app.js**：6,707 行，`APP_JS_LINE_CEILING` 定为 6,707（C1 设的 6,708 再减 1：C3 那边合并订阅省下的一行）。
+- **测试清单**：package.json 的 test:static 加 test-explorer / test-sync / test-brand，test:e2e 加 test-explorer-e2e / test-sync-e2e；checks.yml / release.yml 的 game library 组同时跑 library、explorer、sync 三个 e2e。bundle.mjs 的 `CHUNKS` 三个分块都在（chunk-libdb、chunk-sync、chunk-explorer 与大师树分块）。
+- shell-e2e 里「从对局历史载入恢复对手角色」（M4 #89）与 C1 的两个入口合在一个循环里：两个入口都核对角色。
+
+**接缝接上**
+- **C3 × C1**：`explorer/core.js librarySource().hitsAt` 有 LibraryUI 时问 `gamesWithPosition(fen)`（IndexedDB 里每局带的局面索引），按局面和库数组缓存一次答案；答案是 Promise，到之前面板保持屏上内容，到了再画。没有数据库（分块没载入成）时退回原来的重放。于是开局浏览器也数得到本机对局，也不再只看前 50 个半回合。迁移后第一次启动在后台补索引，补完后面板重问一次。explorer-e2e 第 6 节：导入 6 局加 1 局本机对局，起始局面 e4 改前 4 局、改后 5 局。
+- **C2 × C1**：同步走的 `importPgnToLibrary` 就是 C1 的导入（library-page.js `importPgn`）：解析时的局面直接进索引。列表上导入的棋按 PGN 的 `Site` 标出「Lichess」/「Chess.com」（`LibraryQuery.siteOf`，与「本机」同一个标签样式；网站名三种语言相同，不加界面键）。sync-e2e 原来读 `chess.v1.library` 里的对局，C1 之后那里只是头，改读应用内的视图；另加三项：两局进了局面索引、列表标着 Chess.com、开局浏览器在起始局面数到 e4 / f3 各 1 局。
+
+**主包**：三条合并后 1,204,878 字节，接上接缝后 1,204,902，再合 b375fcb 后 1,205,016；上限 1,205,530，没有动预算，剩 514 字节。
