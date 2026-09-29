@@ -1035,3 +1035,10 @@ M3 分两部分合入。第一部分（PR #87）是 B2、B3 和 B1 的数据半�
 - **C2 × C1**：同步走的 `importPgnToLibrary` 就是 C1 的导入（library-page.js `importPgn`）：解析时的局面直接进索引。列表上导入的棋按 PGN 的 `Site` 标出「Lichess」/「Chess.com」（`LibraryQuery.siteOf`，与「本机」同一个标签样式；网站名三种语言相同，不加界面键）。sync-e2e 原来读 `chess.v1.library` 里的对局，C1 之后那里只是头，改读应用内的视图；另加三项：两局进了局面索引、列表标着 Chess.com、开局浏览器在起始局面数到 e4 / f3 各 1 局。
 
 **主包**：三条合并后 1,204,878 字节，接上接缝后 1,204,902，再合 b375fcb 后 1,205,016；再合 21d9655（按对手计分等四项）后 1,205,940，超出上限 1,205,530 共 410 字节。没有动预算，而是把诊断的三张图（`drawPhaseChart` / `drawPeakChart` / `drawEcoChart` 与它们的画布工具，约 230 行）从 library-ui.js 搬进 `diag-charts.js`，放在已有的按需分块 chunk-libdb.js 里：主包 1,199,367 字节（−6,573，剩 6,163），chunk-libdb.js 48.4 → 55.4 KB。图只在诊断对话框里画；分块到之前打开诊断，先出文字，分块一到再把图补上（library-e2e 第 6 节把分块扣住再放行来测：去掉补画那一行，图是 0 张）。
+
+### 发布
+
+- **版本**：8.0.0（app.zon、build.zig.zon、package.json、package-lock.json 一致）。
+- **日期**：YYYY-MM-DD。
+- M1–M5 全部合入后发布，按 §7。发布说明在 `.github/release-notes/v8.0.0.md`，README 的「8.0.0 改了什么」与「怎么玩（v8.0）」已更新，7.8.0 一节移进 `docs/CHANGELOG.md`。
+- **随版带出的遗留**（照实写进了 README 与发布说明）：阶梯「初级」往上的台阶不均匀（B4）；macOS 透明标题栏没有做（A6）；`docs/manual-check.md` A0 第 1–11 条（图标、标题栏、联网同步）与打包后 WKWebView 上的 IndexedDB（C1）都还没有真机走查；签名、公证与自动更新仍缺证书。
