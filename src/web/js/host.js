@@ -725,8 +725,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * deciding whether to say anything — is the page's job. Never called at
    * startup on its own; only from an explicit "check for updates".
    *
-   * Races the bridge call against 5 s: the native fetch has no timeout of
-   * its own, and a check that hangs the About panel is worse than none.
+   * Races the bridge call against 10 s. Since v8-1-plan N1 the native side
+   * keeps its own 8 s deadline (main.zig UPDATE_DEADLINE_MS) and answers
+   * "timeout" itself; this is the backstop for a shell that never answers.
    * @returns {Promise<{tag: string, url: string}|{error: string}|null>} null
    *   when there is no bridge
    */
@@ -736,7 +737,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       (r) => (r && typeof r === "object" ? r : { error: "bad_result" }),
       () => ({ error: "network" }),
     );
-    const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: "timeout" }), 5000));
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: "timeout" }), 10000));
     return Promise.race([call, timeout]);
   }
 
@@ -750,6 +751,17 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   function fetchGames(p) {
     return hasZero() && typeof global.zero.invoke === "function" ? global.zero.invoke("chess.fetchGames", p) : Promise.resolve(null);
+  }
+
+  /**
+   * v8-1-plan T4: how far the sync in flight has got — 已取到 k 局 (main.zig
+   * fetchProgress; since N1 the fetch runs off the shell's loop, so this is
+   * answered while it is out). null when the shell cannot say.
+   * @returns {Promise<{busy: boolean, count: number}|null>}
+   */
+  function fetchProgress() {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return Promise.resolve(null);
+    return global.zero.invoke("chess.fetchProgress", {}).then((r) => (r && typeof r === "object" ? r : null), () => null);
   }
 
   /**
@@ -839,6 +851,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     setMenuLanguage,
     checkUpdate,
     fetchGames,
+    fetchProgress,
     selftestMode,
     selftestReport,
   };

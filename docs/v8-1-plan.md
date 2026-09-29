@@ -656,6 +656,37 @@
 - `idb` / `chunkSync` / `nativeIo` 在 zero:// 上的 WKWebView 与 WebView2：`build-macos.yml` / `build-windows.yml` 的打包自检。
 - 打包自检两次启动共用一个临时 HOME（Windows 另加 APPDATA）：应用自己的数据目录跟着走；WKWebView 的 localStorage / IndexedDB（在真实用户的 ~/Library 下）和 WebView2 的数据目录（SDK 不指定，在 exe 旁边）不跟着走，本地运行仍会在那里留下自检标记和英文界面设置。CI runner 起始为空，不受影响。
 
+### M2
+
+#### N1 异步桥与 T4 同步 2.0（分支 m82-sync）
+
+**N1 的路径**（SDK API 都在 `scratchpad/sdk0101` = v0.10.1 里逐个对过）：
+
+- `chess.fetchGames`、`chess.checkUpdate` 注册成 `bridge.AsyncHandler`（`src/bridge/root.zig`）。`APP_COMMANDS` 每行是 `.invoke_fn` 或 `.async_fn` 之一，同一个循环分别填 `registry` 和 `async_registry`，策略表共用；runtime 先查异步表，并在那里同样检查策略（`runtime/flow.zig handleAsyncBridgeMessage`，为每个请求保留一个 `AsyncBridgeResponseSlot`，上限 64）。
+- 处理器在循环线程上只校验参数、占这一类的槽（同步一个、检查更新一个；同类第二个立即答 `{"error":"busy"}`），然后起一个工作线程做 HTTP、一个看守线程管截止时间，立刻返回。
+- 两者谁先完成谁「认领」这个任务：把结果放进带锁的完成队列（`std.atomic.Mutex` 自旋锁，和 SDK `effects.zig` 的 `SpinMutex` 同一做法——0.16 在 Io 之外没有阻塞互斥），并在锁内调用 `PlatformServices.wake_fn`（`platform/types.zig`：唯一允许跨线程调用的服务，macOS `dispatch_async`、Win32 `PostMessageW`，约定为有界、只入队）。
+- 平台在循环线程上投递 `.wake`，runtime 把它转成应用事件 `.effects_wake`（`runtime/flow.zig` `dispatchPlatformEvent`）；`main.zig onEvent` 在这里排空队列，用保存下来的 `AsyncResponder` 应答。应答帧用 `bridge.writeSuccessResponse` 写进堆上的缓冲再 `respond`，不用 `AsyncResponder.success`（它在栈上开 1 MiB）。`runner.zig` 不需要改：`.wake` 的分发在 SDK 的 Runtime 里，fork 只是 `runtime.run(app)`。
+- 截止时间是看守线程的（同步 60 s、检查更新 8 s），不是 `std.http` 的：到点就答 `{"error":"timeout"}` 并放开槽位，工作线程自己跑完、结果丢弃。页面上的计时改为兜底（同步 75 s、检查更新 10 s）。还在外面的任务（含超时后没回来的）最多 4 个，再多答 busy。
+- 退出：SDK 的 stop 钩子（`App.stop_fn` → `Pending.close`，在平台释放之前、只跑一次）关掉队列，之后没有线程再调 `wake_fn`；`main()` 在还有工作线程时用 `std.process.exit` 离开——正常返回会走进 `std.start` 的 `Io.Threaded.deinit`，而它会等那个线程。
+- 页面协议不变：`zero.invoke` 仍是一个 Promise。
+
+**T4**：
+
+- 真实夹具（`src/sync-fixtures/`）上的解析测试保留；新增的增量测试也用它们（Chess.com 那个月里的 4 局 Chess960 仍被过滤，第二次同步里更新的一局 Chess960 同样不进来）。
+- 增量：原生应答多一个 `last`（这批里最新一局的时间，ms）。页面把它按「网站:小写用户名」记在 `sync` 键的 `last` 里，下次发 `since = last + 1`。Lichess 带 `since=`；PGN 的 `UTCTime` 只到秒，上次最新那一局会再被送回来一次，原生侧按 `since` 再滤一遍。Chess.com 只取 `since` 所在月份及以后的归档（最多 24 个月），并按 `end_time` 滤掉旧局。没有新局时应答里没有 `last`，记号不动；记号在导入跑完之后才写。
+- 选项：最多 20 / 50 / 100 局（`SYNC_GAMES_MAX` 50 → 100）；「同步完就开始分析」默认关，开着时进库后调棋谱库的批量分析入口 `runLibraryPass`（F4 的调度器把它排在最低一级）。
+- 进度：轮询。新命令 `chess.fetchProgress`（同步处理器，读一个原子量：高 32 位是任务代号、低 32 位是局数），对话框在取棋期间每 400 ms 问一次，数变了才重写那一行。Lichess 的 PGN 流按到达的字节数局（`GameCounter`，每读 16 KiB 数一次 `[Event` 行首）；Chess.com 每取完一个月报一次。选轮询而不是推事件：丢一次无妨，不需要再唤醒循环，打桩也简单。
+- 界面键 1225 → 1229（`sync.limit`、`sync.analyse`、`sync.progress`、`sync.none`，三语）。读它们的代码只在 `sync-ui.js`（chunk-sync.js，5.8 → 8.2 KB）；中文字典本身在主包里，四条约 130 字节（主包 844.6 → 845.0 KB，预算内）。
+
+**测试**：
+
+- Zig（null 平台本地 60 项，全过；x86_64-windows 与 aarch64-macos 交叉编译通过）新增：同类第三个并发请求立即被拒；结果只在 wake 之后、由 drain 应答；截止时间自己答 timeout、放开槽位、迟到的结果丢弃；stop 之后不再 wake、不等工作线程；`fetchProgress`；检查更新的应答；时间换算；Lichess、Chess.com 两次同步逐次断言请求 URL；进度（Lichess 边收边数 1→5，Chess.com 按月）。
+- `test-sync.mjs` +21 项（旧存档读成默认、since 的计算、记号只进不退、零新局的提示、四个新键只在 sync-ui.js 里读）。
+- `test-sync-e2e.mjs` +20 项：桥打桩延迟 3 s 应答，其间关对话框、在棋盘上走一步、滚动着法列表，页面各自记下时间，都早于应答（本机：走子落进列表于 2.0 s、滚动于 2.6 s、应答于 3.3 s）；「已取到 k 局」跟着进度走、应答后停止询问；第二次请求带 since、局数跟选项；没有新局的提示；同步后分析；重启后选项还在；英日两语的新选项文字、不截断。
+- manifest-check：两个联网命令必须是 `.async_fn`，异步处理器进了 `async_registry`。
+
+**只有 CI 或真机能确认的**：真实网络上的流式读取与解压（`httpGet` 按 `std.http.Client.fetch` 的步骤手写，改成分段读）；macOS / Windows 的 `wake_fn` 真的把结果送回循环（CI 的 zig 作业只跑单元测试）；退出时有请求在外面，进程确实立即结束；manual-check A0 第 6、6a 条。
+
 ---
 
 ## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）

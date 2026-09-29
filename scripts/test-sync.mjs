@@ -67,6 +67,49 @@ const assert = (cond, msg, extra) => {
   assert(ctx.KEYS && ctx.KEYS.sync === "chess.v1.sync", "persist.js 的键表里有 sync");
 }
 
+// --- v8-1-plan T4：增量、局数上限、同步后分析，都记在同一个 sync 键里 ---------
+{
+  // 8.0 存下的 {v, on, site, user}：新的几项读成默认，一个字也不丢
+  const old = ctx.syncPrefs({ v: 1, on: true, site: "chesscom", user: "Hikaru" });
+  assert(old.on && old.site === "chesscom" && old.user === "Hikaru" && old.max === 20 && old.analyse === false &&
+    JSON.stringify(old.last) === "{}", "8.0 的存档：开关、网站、名字照旧，最多 20 局、不自动分析、没有上次", JSON.stringify(old));
+  assert(JSON.stringify(ctx.LIMITS) === "[20,50,100]", "局数只有 20 / 50 / 100 三档", JSON.stringify(ctx.LIMITS));
+  for (const n of [20, 50, 100]) assert(ctx.syncPrefs({ max: n }).max === n, "存下的 " + n + " 读回来");
+  for (const n of [0, 30, 1000, "50", null]) assert(ctx.syncPrefs({ max: n }).max === 20, "不认得的局数回到 20：" + JSON.stringify(n));
+  assert(ctx.syncPrefs({ analyse: true }).analyse === true && ctx.syncPrefs({ analyse: "yes" }).analyse === false, "同步后分析：只认真的 true，默认关");
+  const marks = ctx.syncPrefs({ last: { "lichess:thibault": 1790617958000, "chesscom:erik": -1, "x": "1", "y": 1.5 } }).last;
+  assert(JSON.stringify(marks) === '{"lichess:thibault":1790617958000}', "上次的时间：只留正整数", JSON.stringify(marks));
+  assert(JSON.stringify(ctx.syncPrefs({ last: [1] }).last) === "{}", "上次的时间不是对象：当作没有");
+
+  // 发给原生层的：第一次没有 since；同一网站、同一名字（不分大小写）的第二次，since = 上次 + 1 ms
+  const p0 = ctx.syncPrefs({ v: 1, on: true });
+  assert(JSON.stringify(ctx.syncRequest(p0, "lichess", "thibault", 20)) === '{"site":"lichess","user":"thibault","max":20}',
+    "第一次：网站、名字、局数，没有 since", JSON.stringify(ctx.syncRequest(p0, "lichess", "thibault", 20)));
+  const s1 = ctx.withLast({ v: 1, on: true }, "lichess", "Thibault", 1790617958000);
+  const p1 = ctx.syncPrefs(s1);
+  assert(JSON.stringify(ctx.syncRequest(p1, "lichess", "thibault", 50)) === '{"site":"lichess","user":"thibault","max":50,"since":1790617958001}',
+    "第二次：since 是上次最新一局的时间 + 1 ms（名字不分大小写）", JSON.stringify(ctx.syncRequest(p1, "lichess", "thibault", 50)));
+  assert(ctx.syncRequest(p1, "chesscom", "thibault", 20).since === undefined && ctx.syncRequest(p1, "lichess", "erik", 20).since === undefined,
+    "别的网站、别的名字各记各的");
+  // 记号只往前走：没有新棋（应答里没有 last）或更早的时间都不动它
+  assert(ctx.syncPrefs(ctx.withLast(s1, "lichess", "thibault", undefined)).last["lichess:thibault"] === 1790617958000, "没有新棋：记号不动");
+  assert(ctx.syncPrefs(ctx.withLast(s1, "lichess", "thibault", 1700000000000)).last["lichess:thibault"] === 1790617958000, "更早的时间：记号不往回走");
+  const s2 = ctx.withLast(s1, "chesscom", "erik", 1790355872000);
+  assert(s2.on === true && s2.v === 1 && Object.keys(ctx.syncPrefs(s2).last).length === 2, "记下一处不丢别的键、别的记号", JSON.stringify(s2));
+
+  // 增量时零局说「没有新对局」，第一次零局仍说「还没有对局」
+  assert(JSON.stringify(ctx.syncMessage({ pgn: "", count: 0 }, true)) === '{"key":"sync.none"}', "增量同步零局：没有新对局");
+  assert(JSON.stringify(ctx.syncMessage({ pgn: "", count: 0 }, false)) === '{"key":"sync.empty"}', "第一次零局：还没有对局");
+  assert(JSON.stringify(ctx.syncMessage({ error: "busy" }, true)) === '{"key":"sync.failed","arg":"?"}', "原生层忙（另一个窗口在同步）：同步没有完成");
+
+  // 选项的字只由分块读（sync-ui.js → chunk-sync.js），首屏包里没有读它们的代码
+  const fs = await import("fs");
+  const readers = fs.readdirSync(path.join(root, "src/web/js"))
+    .filter((f) => f.endsWith(".js") && !/^(chunk-|bundle\.js|i18n)/.test(f))
+    .filter((f) => /sync\.(limit|analyse|progress|none)\b/.test(fs.readFileSync(path.join(root, "src/web/js", f), "utf8")));
+  assert(JSON.stringify(readers) === '["sync-ui.js"]', "T4 的四个新键只在 sync-ui.js 里读", JSON.stringify(readers));
+}
+
 // --- 两家网站的 PGN 进得了棋谱库，并认出是谁下的 ----------------------------
 // 形状与 main.zig 的样本一致：Lichess 的时钟注释带空格，Chess.com 的不带，
 // 且带小数秒；原生层交回来的是「一局一段、空行相隔」的一整段文本。

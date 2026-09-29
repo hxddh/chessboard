@@ -644,8 +644,21 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   }
   // and the table really is what the runner gets — a handler with no policy
   // is refused by the SDK, so both come from the one loop
-  check(/self\.handlers\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(mainSrc) && /self\.policies\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(mainSrc),
-    "应用桥: handler 与 policy 都从 APP_COMMANDS 同一个循环里来");
+  // v8-1-plan N1: a command is a plain handler or an async one (the SDK's
+  // async registry), from the same loop and under the same policy table
+  const loop = /fn bridge\(self: \*@This\(\)\) native_sdk\.BridgeDispatcher \{([\s\S]*?)\n {4}\}/.exec(mainSrc);
+  const loopSrc = loop ? loop[1] : "";
+  check(/for \(APP_COMMANDS, 0\.\.\) \|cmd, index\|/.test(loopSrc) &&
+    /self\.handlers\[\w+\] = \.\{ \.name = cmd\.name/.test(loopSrc) &&
+    /self\.async_handlers\[\w+\] = \.\{ \.name = cmd\.name/.test(loopSrc) &&
+    /self\.policies\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(loopSrc) &&
+    /\.async_registry = \.\{ \.handlers = self\.async_handlers/.test(loopSrc),
+  "应用桥: handler(同步与异步)与 policy 都从 APP_COMMANDS 同一个循环里来,异步的进了 async_registry");
+  // v8-1-plan N1: the two that go to the network never run on the loop thread
+  for (const name of ["chess.fetchGames", "chess.checkUpdate"]) {
+    const row = block ? new RegExp(`\\.name = "${name.replace(".", "\\.")}", \\.(\\w+) =`).exec(block[1]) : null;
+    check(!!row && row[1] === "async_fn", `应用桥: ${name} 要是异步处理器(.async_fn)—— 联网不能占住平台循环的线程(v8-1-plan N1)`);
+  }
   // Q1.2: the two file commands consult the issued-path table
   for (const fn of ["writeTextFile", "readTextFile"]) {
     const body = new RegExp(`fn ${fn}\\([\\s\\S]*?\\n\\}`).exec(mainSrc);
