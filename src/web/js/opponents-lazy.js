@@ -36,11 +36,29 @@ export function createOpponentsLazy(d) {
     d.saveStats(stats);
     for (const [fn, f] of done) if (f) fn(f, true);
   }
+  /**
+   * The game's opponent, {diff, style[, unrated]} (#89 review): bound at the
+   * engine's first search (or the filing), saved with the game, forgotten
+   * with it (reset). Settings changed since → "changed"; a set-up position →
+   * "setup": both recorded, not rated. In the bundle: a game can end first.
+   */
+  function opponent() {
+    const g = d.store.game, s = d.store.session;
+    const now = { diff: s.difficulty, style: s.personaId || "off" };
+    if (!g.opp) g.opp = d.setUp() ? Object.assign(now, { unrated: "setup" }) : now;
+    else if (!g.opp.unrated && (g.opp.diff !== now.diff || g.opp.style !== now.style)) g.opp.unrated = "changed";
+    return g.opp;
+  }
   const call = (name, dflt) => (...a) => (ui ? ui[name](...a) : dflt);
   const facade = {
     strip: (level, style) => (ui ? ui.strip(level, style) : { icon: "bot", name: "Stockfish", level: d.diffName(level) }),
-    plan: call("plan", null), resigns: call("resigns", false), onOpen: call("onOpen", null),
-    mount: call("mount"), paint: call("paint"), reset: call("reset"), maybeOffer: call("maybeOffer"),
+    plan: (side) => { if (d.store.session.mode === "ai") opponent(); return ui ? ui.plan(side) : null; }, // an engine search binds it
+    resigns: call("resigns", false), onOpen: call("onOpen", null),
+    mount: call("mount"), paint: call("paint"), maybeOffer: call("maybeOffer"),
+    reset: () => { d.store.game.opp = null; if (ui) ui.reset(); },
+    opponent,
+    /** a saved game's opponent, vetted (null: bound again at the next search) */
+    savedOpponent: (o) => (o && typeof o.diff === "string" && typeof o.style === "string" ? o : null),
     syncOffer: call("syncOffer"), wireOffer: call("wireOffer"), paintHello: call("paintHello"),
     paintCard: call("paintCard"), applyAdvice: call("applyAdvice"),
     /** persona.js, for engine.js's styled pick — null until the chunk is in */

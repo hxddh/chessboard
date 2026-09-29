@@ -401,7 +401,9 @@ export function createRetry(d) {
       bs.className = "why-san";
       writeSan(bs, r.ex.better.san, r.side);
       best.append(document.createTextNode(tpl[0]), bs, document.createTextNode(tpl[1] || ""));
-      writeWhy(p("rt-why"), r.ex);
+      // a move that was the engine's own choice (a !! or ! key moment) has no
+      // reason: explain.js would only say 「更好的是」 the move itself (#89 review)
+      if (r.ex.played != null) writeWhy(p("rt-why"), r.ex);
     }
     const row = document.createElement("div");
     row.className = "rt-acts";

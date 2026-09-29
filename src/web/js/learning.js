@@ -122,14 +122,19 @@ function mergeMines(cur, inc, maxMines) {
 function mergeStats(cur, inc) {
   const c = obj(cur), i = obj(inc);
   const byId = new Map();
+  let added = false;
   for (const g of arr(c.games)) if (g && g.id) byId.set(g.id, g);
   for (const g of arr(i.games)) {
     if (!g || !g.id) continue;
     const have = byId.get(g.id);
-    if (!have || num(g.t) > num(have.t)) byId.set(g.id, g);
+    if (!have || num(g.t) > num(have.t)) { byId.set(g.id, g); added = true; }
   }
   const games = [...byId.values()].sort((a, b) => num(a.t) - num(b.t));
-  return Object.assign({}, c, { v: Math.max(num(c.v), num(i.v)) || 1, games });
+  const out = Object.assign({}, c, { v: Math.max(num(c.v), num(i.v)) || 1, games });
+  // #89 review: this machine's stored rating does not add up the games that
+  // came in — dropped, so opponents.js ratingOfStats replays the merged list
+  if (added) delete out.rating;
+  return out;
 }
 
 function mergeAchievements(cur, inc) {

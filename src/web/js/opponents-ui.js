@@ -322,7 +322,10 @@ export function createOpponentsUI(d) {
       const engine = store.session.humanColor === "w" ? "b" : "w";
       const theirs = hist.filter((m) => m.color === engine);
       const op = d.openingName();
-      line = bye(store.session.difficulty, store.session.personaId, {
+      // the game's own opponent (opponents-lazy.js opponent), not whatever
+      // the settings say by the ending (#89 review)
+      const who = store.game.opp || { diff: store.session.difficulty, style: store.session.personaId };
+      line = bye(who.diff, who.style, {
         opening: op, moves: Math.ceil(hist.length / 2),
         captures: theirs.filter((m) => m.captured).length,
         checks: theirs.filter((m) => /[+#]/.test(m.san)).length,

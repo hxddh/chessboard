@@ -49,6 +49,13 @@
  *   引擎提和  a dead draw gets a non-modal offer; a move declines it, 接受 takes it
  *   棋钟节奏  on a 30-minute clock the reply is paced to the clock
  *
+ * The #89 review added:
+ *
+ *   续下后结果卡  从这里续下 of a rated game: the card drops the old rating line
+ *   中途换档      a game is rated against the opponent it was played against,
+ *                through a restart; a rung changed mid-game leaves it unrated
+ *   (and a position set up by hand is recorded unrated: 引擎认输, 你将死引擎)
+ *
  * Each scenario gets a fresh browser context, so one flow's engine state
  * cannot carry the next. Only key results are asserted: what the engine says
  * varies run to run, the fact that it reaches the page does not.
@@ -1224,9 +1231,9 @@ await scenario("引擎认输", async () => {
   assert(ok && (await resigned()) === "b", "引擎认输：输定了的一方（黑，引擎）认输，不再拖到被将死", JSON.stringify({ ok }));
   assert(!!after.last && after.last.result === "win" && after.last.ending === "resigned" && /认输/.test(after.card),
     "引擎认输：记为你赢、对方认输，结果卡上写着", JSON.stringify({ last: after.last && { r: after.last.result, e: after.last.ending }, card: after.card }));
-  assert(!!after.rating && Number.isFinite(after.last.ra) && after.last.ra >= 1500 && Number.isFinite(after.last.perf) &&
-    /^等级分 \d+\?（(\+\d+|±0)）/.test(after.rate),
-    "引擎认输：这盘计入人机等级分（和做题的分开），结果卡上写着新分数和涨了多少", JSON.stringify({ rate: after.rate, ra: after.last && after.last.ra }));
+  // a position set up by hand is not a rated game (#89 review): recorded, not rated
+  assert(!after.rating && after.last.unrated === "setup" && !Number.isFinite(after.last.ra) && after.rate === "",
+    "引擎认输：摆出来的局面，记战绩但不计等级分，结果卡上也没有分数行", JSON.stringify({ rate: after.rate, ra: after.last && after.last.ra, u: after.last && after.last.unrated }));
   assert(/^皮普：本局开局/.test(after.say), "引擎认输：角色的终局一句只说事实", after.say);
   // restart: the ending is still the engine's resignation
   await page.reload();
@@ -1237,24 +1244,51 @@ await scenario("引擎认输", async () => {
   await ctx.close();
 });
 
+/** The last stats record, the stored rating and the result card's two lines. */
+const filedOf = (page) => page.evaluate(() => {
+  const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+  const last = (st.games || []).slice(-1)[0] || null;
+  const shown = (id) => (document.getElementById(id).hidden ? "" : document.getElementById(id).textContent.trim());
+  return { n: (st.games || []).length, rating: st.rating || null, rate: shown("go-rating"), say: shown("go-say"),
+    last: last && { r: last.result, diff: last.diff, style: last.style, ra: last.ra, unrated: last.unrated || null } };
+});
+
+/** A game from the standard start, one move short of Scholar's mate (Qxf7#). */
+const scholarSave = () => JSON.stringify({ v: 1, savedAt: Date.now(),
+  pgn: '[Event "flows"]\n[Result "*"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 *' });
+
+/** Resign the game on the board, through the confirmation. */
+async function resign(page) {
+  await page.evaluate(() => document.getElementById("btn-resign").click());
+  await page.waitForTimeout(300);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(600);
+}
+
 await scenario("你将死引擎", async () => {
+  // #89 review: a position set up by hand (FEN, the editor) is recorded
+  // but not rated — mating from it says nothing about the player's level
+  const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
+  const one = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" }, { "chess.v1.save": setupSave(fen) });
+  await one.page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  await clickMove(one.page, "a1", "a8");
+  await one.page.waitForTimeout(600);
+  const set = await filedOf(one.page);
+  assert(set.last && set.last.r === "win" && set.last.unrated === "setup" && !Number.isFinite(set.last.ra) && !set.rating && set.rate === "",
+    "你将死引擎：摆出来的局面将死它，记为你赢，但不计等级分", JSON.stringify(set));
+  assert(!one.errs.length, "你将死引擎（摆局）：页面没有报错", one.errs.join(" / "));
+  await one.ctx.close();
   // Codex #89: a human move that ends the game files the rating after the
   // move's own sync(); with the opponents chunk already here that filing is
   // synchronous, and the result card must still show the rating line
-  const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
   const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
-    { "chess.v1.save": setupSave(fen) });
+    { "chess.v1.save": scholarSave() });
   await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
   const ready = await page.evaluate(() => !!window.CHESS_OPPONENTS);
-  await clickMove(page, "a1", "a8");
+  await clickMove(page, "h5", "f7");
   await page.waitForTimeout(600);
-  const after = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
-    const last = (st.games || []).slice(-1)[0] || null;
-    return { last: last && { r: last.result, ra: last.ra },
-      rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() };
-  });
-  assert(ready && after.last && after.last.r === "win" && Number.isFinite(after.last.ra),
+  const after = await filedOf(page);
+  assert(ready && after.last && after.last.r === "win" && after.last.diff === "beginner" && Number.isFinite(after.last.ra),
     "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
   assert(/^等级分 \d+\?（(\+\d+|±0)）/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
   // Codex #89: clearing the statistics takes the filing off the result card too
@@ -1270,6 +1304,90 @@ await scenario("你将死引擎", async () => {
     rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() }));
   assert(!cleared.stats && cleared.rate === "", "你将死引擎：清除统计后，结果卡上的分数跟着撤掉", JSON.stringify(cleared));
   assert(!errs.length, "你将死引擎：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("续下后结果卡", async () => {
+  // #89 review: 从这里续下 keeps the game's record (it is the same game, filed
+  // once, at its first ending), so the continuation's ending is not rated —
+  // and the card must not show the first ending's rating line
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
+    { "chess.v1.save": scholarSave() });
+  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  await clickMove(page, "h5", "f7");
+  await page.waitForTimeout(600);
+  const first = await filedOf(page);
+  await page.evaluate(() => document.getElementById("board").focus());
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.getElementById("retry-here").click());
+  await page.waitForTimeout(300);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(500);
+  await clickMove(page, "h5", "f7");
+  await page.waitForTimeout(600);
+  const again = await filedOf(page);
+  const card = await page.evaluate(() => !document.getElementById("go-card").hidden);
+  assert(/^等级分 /.test(first.rate) && card && again.n === first.n && again.rate === "",
+    "续下后结果卡：续下再将死，结果卡在，但不再挂着上一个结局的等级分行", JSON.stringify({ first: first.rate, again: again.rate, n: [first.n, again.n], card }));
+  assert(!errs.length, "续下后结果卡：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("中途换档", async () => {
+  // #89 review: the game is rated against the opponent it was played
+  // against — bound when the engine first plays, kept in the save — and a
+  // rung changed mid-game leaves it recorded but unrated
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" });
+  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  const replied = (n) => until(() => plies(page).then((p) => (p >= n ? p : 0)), 20000, 150);
+  const toRung = (id) => page.evaluate((x) => document.querySelector('#diff-seg button[data-diff="' + x + '"], #diff-seg-engine button[data-diff="' + x + '"]').click(), id);
+  const restart = async () => {
+    await page.reload();
+    await page.waitForTimeout(1200);
+    await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  };
+  const newGame = async () => {
+    await page.keyboard.press("n");
+    await page.waitForTimeout(300);
+    await page.click("#ng-start");
+    await page.waitForTimeout(400);
+  };
+  // one: 新手 all the way, through a restart → rated against 新手
+  await clickMove(page, "e2", "e4");
+  await replied(2);
+  await page.waitForTimeout(300);
+  await restart();
+  await resign(page);
+  const one = await filedOf(page);
+  assert(!!one.last && one.last.diff === "beginner" && Number.isFinite(one.last.ra) && /^等级分 /.test(one.rate),
+    "中途换档：同一档下完（中间重开过），按这一档计分", JSON.stringify(one));
+  // two: 新手 for the engine's reply, then 满强度 before resigning → unrated
+  await newGame();
+  await clickMove(page, "e2", "e4");
+  await replied(2);
+  await toRung("extreme");
+  await page.waitForTimeout(200);
+  await resign(page);
+  const two = await filedOf(page);
+  assert(two.n === one.n + 1 && two.last.r === "loss" && two.last.diff === "beginner" && two.last.unrated === "changed" &&
+    !Number.isFinite(two.last.ra) && !!two.rating && Math.round(two.rating.r) === Math.round(one.rating.r) && two.rate === "",
+    "中途换档：下到一半换成满强度再认输 —— 记下这盘，但不计分（等级分不动，卡上没有分数行）", JSON.stringify(two));
+  assert(/^皮普：/.test(two.say), "中途换档：终局那句仍是这盘的对手（皮普）说的", two.say);
+  // three: the binding survives a restart — 新手's reply, restart, 满强度, resign
+  await toRung("beginner");
+  await newGame();
+  await clickMove(page, "e2", "e4");
+  await replied(2);
+  await page.waitForTimeout(300);
+  await restart();
+  await toRung("extreme");
+  await page.waitForTimeout(200);
+  await resign(page);
+  const three = await filedOf(page);
+  assert(three.n === two.n + 1 && three.last.diff === "beginner" && three.last.unrated === "changed" && !Number.isFinite(three.last.ra),
+    "中途换档：对手随存档一起重开 —— 重开后再换档，照样不计分", JSON.stringify(three));
+  assert(!errs.length, "中途换档：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
 
@@ -1301,8 +1419,8 @@ await scenario("引擎提和", async () => {
     return { agreed: !!JSON.parse(localStorage.getItem("chess.v1.save") || "{}").drawAgreed, last,
       bar: !document.getElementById("draw-offer").hidden, reason: document.getElementById("go-reason").textContent.trim() };
   });
-  assert(after.agreed && !after.bar && after.last.result === "draw" && after.last.ending === "drawAgreed" && Number.isFinite(after.last.ra),
-    "引擎提和：点「接受」—— 和棋成立、计入战绩与等级分，提示条收起", JSON.stringify({ a: after.agreed, r: after.last.result, e: after.last.ending, reason: after.reason }));
+  assert(after.agreed && !after.bar && after.last.result === "draw" && after.last.ending === "drawAgreed" && after.last.unrated === "setup" && !Number.isFinite(after.last.ra),
+    "引擎提和：点「接受」—— 和棋成立、计入战绩（摆出来的局面，不计等级分），提示条收起", JSON.stringify({ a: after.agreed, r: after.last.result, e: after.last.ending, reason: after.reason }));
   assert(!errs.length, "引擎提和：页面没有报错", errs.join(" / "));
   await ctx.close();
 });

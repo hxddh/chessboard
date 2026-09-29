@@ -37,7 +37,7 @@ export function createMoments(d) {
    * persisted: a view of the report, not a fact about the game.
    */
   function view() {
-    if (!store.session._km) store.session._km = { at: 0, whyOpen: false, forA: null };
+    if (!store.session._km) store.session._km = { at: 0, whyOpen: false, forA: null, lines: null };
     return store.session._km;
   }
 
@@ -64,6 +64,7 @@ export function createMoments(d) {
     const v = view();
     v.at = Math.max(0, Math.min(list.length - 1, k));
     v.whyOpen = false;
+    v.lines = null;
     setViewIndex(list[v.at].ply + 1);
   }
 
@@ -73,10 +74,14 @@ export function createMoments(d) {
     const a = analysisFor();
     const list = a && !inModal() ? momentsOf(a) : [];
     const v = view();
-    if (a !== v.forA) Object.assign(v, { forA: a, at: 0, whyOpen: false });
+    if (a !== v.forA) Object.assign(v, { forA: a, at: 0, whyOpen: false, lines: null });
+    // 看引擎线 stood the board before this moment's move — after the move
+    // before it, which may be a moment too: while the board stays there, the
+    // card stays on the moment whose lines these are (#89 review)
+    if (v.lines !== store.game.viewIndex) v.lines = null;
     // the board standing on a moment (a click on the curve, the move list,
     // the keys) turns the card to it: the card follows the board
-    const here = list.findIndex((m) => m.ply + 1 === store.game.viewIndex);
+    const here = v.lines == null ? list.findIndex((m) => m.ply + 1 === store.game.viewIndex) : -1;
     if (here >= 0 && here !== v.at) Object.assign(v, { at: here, whyOpen: false });
     if (v.at >= list.length) v.at = 0;
     const at = v.at, whyOpen = v.whyOpen;
@@ -145,6 +150,7 @@ export function createMoments(d) {
     act("lines", "rv.km.lines", () => {
       // the position before the move: the review's lines and their arrows
       // are the engine's answer there (setAnalyzeUI draws them on the sync)
+      v.lines = m.ply;
       setViewIndex(m.ply);
       const pv = document.getElementById("pv-line");
       if (pv && !pv.hidden && pv.scrollIntoView) pv.scrollIntoView({ block: "nearest" });
