@@ -340,8 +340,19 @@ assert(beg && beg.serious / beg.n >= 0.08,
 // ...but not random flailing: half its moves should still be reasonable
 assert(beg && beg.median <= 200, "新手档中位失分 ≤ 200,仍像在下棋 (实测 " + (beg && beg.median) + ")");
 assert(cas && cas.acpl >= 25, "休闲档仍会犯错 (ACPL 实测 " + (cas && cas.acpl) + ", 需 ≥25)");
-assert(cas && beg && cas.acpl < beg.acpl,
-  "休闲档比新手档准 (" + (cas && cas.acpl) + " < " + (beg && beg.acpl) + ")");
+// v8-0-plan B4 moved these two closer on purpose (beginner a little stronger,
+// casual a little weaker, so that casual beats beginner ~70%, not 91%): their
+// ACPL over 56 sharp moves now overlaps run to run (B4's record 135/117, the
+// 8.0.0 release run 120/134). The ordering is held where it can be resolved —
+// the 200 games between them (docs/measured.json `ladder`, test-ladder.mjs) —
+// and here only as the tolerant ordering the other neighbours get.
+assert(cas && beg && cas.acpl <= beg.acpl * TOL_RATIO + TOL_ABS,
+  "休闲档不比新手档明显不准 (" + (cas && cas.acpl) + " ≤ " + (beg && Math.round(beg.acpl * TOL_RATIO + TOL_ABS)) + ")");
+{
+  const adj = ((read().ladder || {}).adjacent || []).find((a) => a.lower === "beginner" && a.upper === "casual");
+  assert(!!adj && adj.games >= 100 && adj.h2hPct >= 60,
+    "休闲档下赢新手档：docs/measured.json 的阶梯对局里 ≥ 60%（实测 " + (adj ? adj.h2hPct + "%，" + adj.games + " 盘" : "无记录") + "）");
+}
 assert(ext && ext.acpl <= 30, "极限档 ACPL ≤ 30 (实测 " + (ext && ext.acpl) + ")");
 // The easy tier's ceiling is the recorded mean + 3σ, not a number picked from
 // one run (see --repeat above). A missing record is a failure, not a pass.
