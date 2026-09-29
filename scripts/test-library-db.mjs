@@ -392,6 +392,7 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
   const st = D.createLibraryStore({ backend: be, Chess });
   await st.migrate(JSON.stringify(FIXTURES["7.2"]));
   assert(be.meta.size === 1, "(a real v1 migration keeps its backup)");
+  await new Promise((r) => setTimeout(r, 5));   // the backup is keyed by the millisecond
   const r = await st.migrate(JSON.stringify({ v: 1, games: FIXTURES["8.0-dev"].games }), { backup: false });
   assert(r.ok && be.meta.size === 1 && be.games.has("lib:80a"), "P3-3: recovery from the shards writes the games and no second copy (" + be.meta.size + " in meta)");
 }
