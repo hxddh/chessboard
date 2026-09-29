@@ -1051,6 +1051,6 @@ M3 分两部分合入。第一部分（PR #87）是 B2、B3 和 B1 的数据半�
 ### 发布
 
 - **版本**：8.0.0（app.zon、build.zig.zon、package.json、package-lock.json 一致）。
-- **日期**：YYYY-MM-DD。
+- **日期**：2026-09-29。
 - M1–M5 全部合入后发布，按 §7。发布说明在 `.github/release-notes/v8.0.0.md`，README 的「8.0.0 改了什么」与「怎么玩（v8.0）」已更新，7.8.0 一节移进 `docs/CHANGELOG.md`。
 - **随版带出的遗留**（照实写进了 README 与发布说明）：阶梯「初级」往上的台阶不均匀（B4）；macOS 透明标题栏没有做（A6）；`docs/manual-check.md` A0 第 1–11 条（图标、标题栏、联网同步）与打包后 WKWebView 上的 IndexedDB（C1）都还没有真机走查；签名、公证与自动更新仍缺证书。
