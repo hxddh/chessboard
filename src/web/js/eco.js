@@ -3,8 +3,8 @@
  * and committed so the app builds offline. Do not edit by hand; re-run the
  * generator instead.
  *
- * Upstream: lichess-org/chess-openings@4b8622759e7ae6f93f011cc6c83a3823401ab45e (fetched 2026-09-18), licence CC0-1.0
- * (public domain). 3810 positions from 3810 TSV rows
+ * Upstream: lichess-org/chess-openings@c67912be581f0793dbaa776be5ccf111e01f88d9 (fetched 2026-09-29), licence CC0-1.0
+ * (public domain). 3815 positions from 3815 TSV rows
  * (0 duplicate positions dropped).
  *
  * Key = board, side to move, castling, en-passant (ep kept only when a
@@ -3582,6 +3582,11 @@
   "rn1qkb1r/pbpp1ppp/1p2pn2/8/2PP4/5NP1/PP2PP1P/RNBQKB1R w KQkq -": ["E15","Queen's Indian Defense: Fianchetto Variation, Traditional Line"],
   "rn2k2r/p1ppqppp/bp2pn2/8/1bPP4/1P3NP1/P2BPP1P/RN1QKB1R w KQkq -": ["E15","Queen's Indian Defense: Fianchetto Variation, Check Variation, Modern Line"],
   "rnbqkb1r/p1pp1ppp/1p2pn2/8/2PP4/5NP1/PP2PP1P/RNBQKB1R b KQkq -": ["E15","Queen's Indian Defense: Fianchetto Variation"],
+  "rn1q1rk1/1bpp1ppp/1p2pn2/p7/1bPP4/5NP1/PP1NPPBP/R1BQ1RK1 w - -": ["E16","Queen's Indian Defense: Capablanca Variation"],
+  "rn1q1rk1/pbp1bppp/1p2pn2/3p4/2PP4/2N2NP1/PP1BPPBP/R2Q1RK1 w - -": ["E16","Queen's Indian Defense: Riumin Variation"],
+  "rn1q1rk1/pbp2ppp/1p2pn2/3p4/1bPP4/5NP1/PP1NPPBP/R1BQ1RK1 w - -": ["E16","Queen's Indian Defense: Capablanca Variation"],
+  "rn1q1rk1/pbpp1ppp/1p2pn2/8/1bPP4/5NP1/PP1NPPBP/R1BQ1RK1 b - -": ["E16","Queen's Indian Defense: Capablanca Variation"],
+  "rn1q1rk1/pbppbppp/1p2pn2/8/2PP4/2N2NP1/PP1BPPBP/R2Q1RK1 b - -": ["E16","Queen's Indian Defense: Riumin Variation"],
   "rn1qk2r/1bpp1ppp/1p2pn2/p7/1bPP4/5NP1/PP1BPPBP/RN1QK2R w KQkq -": ["E16","Queen's Indian Defense: Yates Variation"],
   "rn1qk2r/pbpp1ppp/1p2pn2/8/1bPP4/5NP1/PP2PPBP/RNBQK2R w KQkq -": ["E16","Queen's Indian Defense: Capablanca Variation"],
   "rn1qk2r/pbppbppp/1p2pn2/8/2PP4/5NP1/PP1BPPBP/RN1QK2R w KQkq -": ["E16","Queen's Indian Defense: Riumin Variation"],

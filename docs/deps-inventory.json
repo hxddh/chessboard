@@ -159,13 +159,13 @@
     {
       "name": "lichess-org/chess-openings（ECO 表）",
       "kind": "data (CC0)",
-      "current": "4b8622759e7ae6f93f011cc6c83a3823401ab45e（2026-08-04 的提交，2026-09-18 取），3810 个局面",
+      "current": "c67912be581f0793dbaa776be5ccf111e01f88d9（2026-09-20 的提交，2026-09-29 取），3815 个局面",
       "pinnedIn": ["src/web/js/eco.js 文件头", "scripts/gen-eco.mjs"],
       "latest": "c67912be（2026-09-20，#399：补了几条 E16 线）",
-      "source": ["git clone https://github.com/lichess-org/chess-openings"],
+      "source": ["git clone https://github.com/lichess-org/chess-openings", "git ls-remote … HEAD + raw.githubusercontent.com/…/master/{a..e}.tsv（gen-eco --refresh）"],
       "checkedAt": "2026-09-29",
-      "recommendation": "refresh-data",
-      "note": "只多一个 PR。重跑 gen-eco，ECO 分块会变，同一个 PR 里跑 test-eco 与开局浏览器的「书」核对。"
+      "recommendation": "done-8.1",
+      "note": "8.1 F1 已刷新：gen-eco --refresh，4b86227 → c67912be，3810 → 3815 个局面（新增 5 个 E16：Capablanca ×3、Riumin ×2），0 个重复。chunk-eco.js 485,191 → 485,817 字节（+626），主包不变。test-eco 通过；开局浏览器「书」核对：1011 个分支点（1005 个局面）一致。"
     },
     {
       "name": "棋子图（cburnett / Chessnut / Fantasy / Celtic / Spatial / Merida）",
