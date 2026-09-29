@@ -458,6 +458,18 @@ const CHUNK_BYTES: usize = 512 * 1024;
 const WRITE_B64_MAX: usize = (CHUNK_BYTES + 2) / 3 * 4;
 /// The largest file a read or a write carries, and the largest appdata file.
 const FILE_MAX_BYTES: usize = 16 * 1024 * 1024;
+/// M5 review P2-3: the largest file a player picked (an issued path) may be.
+/// 导出全部数据 carries every library shard: an analysed 80-ply game is
+/// ~2.6 KB of JSON, 10,000 of them (library.js MAX_GAMES) ~28 MB escaped into
+/// the export, which 16 MiB stopped at ~5,500. Twice that with the other keys.
+/// The appdata files stay at FILE_MAX_BYTES: a shard is 1/64 of the library.
+const USER_FILE_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// The most a staged write toward `target` may total: an appdata file, or a
+/// file the player picked.
+fn stageLimit(target: []const u8) usize {
+    return if (std.mem.startsWith(u8, target, "appdata:")) FILE_MAX_BYTES else USER_FILE_MAX_BYTES;
+}
 /// Chunked writes in flight at once. Two is the realistic most (a mirror
 /// flush and an export, or two windows); a new one past the last evicts the
 /// oldest, which then answers stage_lost and starts over (host.js).
@@ -582,7 +594,7 @@ const Stages = struct {
     /// that does not is refused and the transfer dropped, never patched
     /// into a file with a hole in it.
     fn claim(self: *Stages, gpa: std.mem.Allocator, txn: []const u8, target: []const u8, total: usize, offset: usize, len: usize) StageError!Claim {
-        if (total == 0 or total > FILE_MAX_BYTES) return error.TooLarge;
+        if (total == 0 or total > stageLimit(target)) return error.TooLarge;
         if (!tokenValid(txn, TXN_MAX) or target.len == 0 or target.len > ISSUED_PATH_MAX) return error.BadChunk;
         var found: ?*Stage = null;
         for (&self.slots) |*s| {
@@ -663,7 +675,7 @@ fn receive(self: *App, payload: []const u8, target: []const u8, output: []u8, in
 
     const got = self.stages.claim(gpa, txn, target, total, offset, len) catch |err| switch (err) {
         error.TooLarge => {
-            answer.* = try tooLargeAnswer(output);
+            answer.* = try tooLargeAnswerFor(output, stageLimit(target));
             return .answered;
         },
         error.StageLost => {
@@ -693,7 +705,11 @@ fn pendingAnswer(output: []u8) anyerror![]const u8 {
 }
 
 fn tooLargeAnswer(output: []u8) anyerror![]const u8 {
-    return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{FILE_MAX_BYTES}) catch return error.HandlerFailed;
+    return tooLargeAnswerFor(output, FILE_MAX_BYTES);
+}
+
+fn tooLargeAnswerFor(output: []u8, limit: usize) anyerror![]const u8 {
+    return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{limit}) catch return error.HandlerFailed;
 }
 
 /// One piece of a file as the page gets it: {"b64":…,"more":…[,"bak":…]}.
@@ -721,12 +737,13 @@ const ChunkRead = struct { n: usize, more: bool };
 /// Up to CHUNK_BYTES of `path` from `offset`, into `buf` (CHUNK_BYTES + 1
 /// long: the spare byte says whether more follows). null: no such file.
 ///
-/// A first read (offset 0) also refuses a file over FILE_MAX_BYTES, by
+/// A first read (offset 0) also refuses a file over `limit` (FILE_MAX_BYTES,
+/// or USER_FILE_MAX_BYTES for a picked file), by
 /// reading the one byte past the limit — the same spare-byte idea the 256 KiB
 /// read used, without a stat: readPositionalAll reports how much it read, so
 /// a byte there means the file is too long.
-fn readChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8) error{ FileTooLarge, HandlerFailed }!?ChunkRead {
-    if (offset > FILE_MAX_BYTES) return error.FileTooLarge;
+fn readChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8, limit: usize) error{ FileTooLarge, HandlerFailed }!?ChunkRead {
+    if (offset > limit) return error.FileTooLarge;
     var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
         error.FileNotFound => return null,
         else => return error.HandlerFailed,
@@ -734,7 +751,7 @@ fn readChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8) error{ File
     defer file.close(io);
     if (offset == 0) {
         var probe: [1]u8 = undefined;
-        const past = file.readPositionalAll(io, &probe, FILE_MAX_BYTES) catch return error.HandlerFailed;
+        const past = file.readPositionalAll(io, &probe, limit) catch return error.HandlerFailed;
         if (past > 0) return error.FileTooLarge;
     }
     const n = file.readPositionalAll(io, buf[0 .. CHUNK_BYTES + 1], offset) catch return error.HandlerFailed;
@@ -1058,8 +1075,8 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
     // came back as its first 256 KiB, and a PGN library lost every game past
     // the cut while the one straddling it read as a syntax error. readChunk's
     // probe keeps "too big" something the caller can be told about.
-    const got = (readChunk(self.io, path, offset, buf) catch |err| switch (err) {
-        error.FileTooLarge => return tooLargeAnswer(output),
+    const got = (readChunk(self.io, path, offset, buf, USER_FILE_MAX_BYTES) catch |err| switch (err) {
+        error.FileTooLarge => return tooLargeAnswerFor(output, USER_FILE_MAX_BYTES),
         error.HandlerFailed => return error.HandlerFailed,
     }) orelse return error.HandlerFailed;
     if (offset == 0 and got.n == 0) return error.InvalidRequest;
@@ -1172,7 +1189,7 @@ fn appdataRead(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     // says (`bak`) — deciding again could splice the .bak onto the main file
     if (offset > 0) {
         const from_bak = jsonBoolField(payload, "bak") orelse false;
-        const later = (readChunk(self.io, if (from_bak) bak_path else path, offset, buf) catch |err| switch (err) {
+        const later = (readChunk(self.io, if (from_bak) bak_path else path, offset, buf, FILE_MAX_BYTES) catch |err| switch (err) {
             error.FileTooLarge => return tooLargeAnswer(output),
             error.HandlerFailed => return error.HandlerFailed,
         }) orelse return error.HandlerFailed;
@@ -1183,14 +1200,14 @@ fn appdataRead(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     // holds bytes; only when it holds none does the previous copy answer.
     // A zero-length file is not a fresh install — an interrupted write leaves
     // one — so it falls through to the .bak rather than reading as missing.
-    const main_got = readChunk(self.io, path, 0, buf) catch |err| switch (err) {
+    const main_got = readChunk(self.io, path, 0, buf, FILE_MAX_BYTES) catch |err| switch (err) {
         error.FileTooLarge => return tooLargeAnswer(output),
         error.HandlerFailed => return error.HandlerFailed,
     };
     if (main_got) |got| {
         if (got.n > 0) return chunkAnswer(output, buf[0..got.n], got.more, false);
     }
-    const bak_got = readChunk(self.io, bak_path, 0, buf) catch |err| switch (err) {
+    const bak_got = readChunk(self.io, bak_path, 0, buf, FILE_MAX_BYTES) catch |err| switch (err) {
         error.FileTooLarge => return tooLargeAnswer(output),
         error.HandlerFailed => return error.HandlerFailed,
     };
@@ -1874,6 +1891,23 @@ test "an oversized file answers with a refusal naming the limit, not a truncated
     // the answer they write is exactly what host.js keys on.
     var out: [64]u8 = undefined;
     try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":16777216}", try tooLargeAnswer(&out));
+}
+
+test "a file the player picked may be 64 MiB (export all data), an appdata file stays at 16 MiB" {
+    try std.testing.expectEqual(@as(usize, 0), USER_FILE_MAX_BYTES % CHUNK_BYTES);
+    try std.testing.expect(USER_FILE_MAX_BYTES >= 4 * FILE_MAX_BYTES);
+    try std.testing.expectEqual(FILE_MAX_BYTES, stageLimit("appdata:lib00"));
+    try std.testing.expectEqual(USER_FILE_MAX_BYTES, stageLimit("/Users/me/chessboard-all.json"));
+    var out: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":67108864}", try tooLargeAnswerFor(&out, USER_FILE_MAX_BYTES));
+    const gpa = std.testing.allocator;
+    var stages: Stages = .{};
+    defer stages.releaseAll(gpa);
+    // past 16 MiB: refused toward the store, taken toward a picked file
+    try std.testing.expectError(error.TooLarge, stages.claim(gpa, "t", "appdata:x", FILE_MAX_BYTES + 1, 0, 1));
+    const got = try stages.claim(gpa, "u", "/Users/me/all.json", FILE_MAX_BYTES + 1, 0, 1);
+    try std.testing.expectEqual(FILE_MAX_BYTES + 1, got.stage.data.len);
+    try std.testing.expectError(error.TooLarge, stages.claim(gpa, "v", "/Users/me/all.json", USER_FILE_MAX_BYTES + 1, 0, 1));
 }
 
 test "a 2 MB file crosses the bridge in pieces and comes back byte for byte" {

@@ -1456,6 +1456,66 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await page.waitForTimeout(500);
   const a = await page.evaluate(() => ({ n: window.__chess.library().games.length, toast: document.getElementById("toast").textContent }));
   assert(a.n === 5 && /找回 5 局/.test(a.toast), `C1:IndexedDB 被清掉、localStorage 还在:从分片里找回五局,并且说了(${a.n};「${a.toast}」)`);
+  // M5 review P3-3: the shards read back are the native copy already — no
+  // second full library kept in IndexedDB's meta store for them
+  const metaCopies = await page.evaluate(() => new Promise((res) => {
+    const r = indexedDB.open("chessboard.library");
+    r.onsuccess = () => {
+      const all = r.result.transaction(["meta"], "readonly").objectStore("meta").count();
+      all.onsuccess = () => { res(all.result); r.result.close(); };
+    };
+  }));
+  assert(metaCopies === 0, `P3-3:从分片找回不另存一份整库备份(meta 里 ${metaCopies} 份)`);
+
+  // (d) M5 review P3-1: an 8.0 dev build ran in between and committed a
+  // manifest without the shards, at the cache's revision. The games are in
+  // IndexedDB; nothing is owed by the stamps — they must still reach the store.
+  await page.waitForTimeout(800);
+  await page.evaluate(() => {
+    const meta = JSON.parse(new TextDecoder().decode(window.__store.get("meta")));
+    meta.keys = meta.keys.filter((k) => !/^lib[0-3][0-9a-f]$/.test(k));
+    for (const k of Object.keys(meta.files || {})) if (/^lib[0-3][0-9a-f]$/.test(k)) delete meta.files[k];
+    meta.writtenAt = Number(localStorage.getItem("chess.writtenAt"));   // in step with the cache
+    const u8 = new TextEncoder().encode(JSON.stringify(meta));
+    let s = "";
+    for (const b of u8) s += String.fromCharCode(b);
+    sessionStorage.setItem("f3.store.meta", btoa(s));
+  });
+  await page.reload();
+  await page.waitForTimeout(900);
+  await ready();
+  await page.waitForTimeout(1500);
+  assert(await inStore() === 5, `P3-1:降级版本写掉了清单里的分片,回到新版后五局重新进了原生存储(${await inStore()})`);
+
+  // (c) M5 review P2-1: IndexedDB will not open this session. The header says
+  // the games moved there; they are shown from the shards, read-only, and the
+  // shards, the manifest and the header all come through the session whole —
+  // even after a launch that owes the store every key.
+  await page.evaluate(() => {
+    sessionStorage.setItem("c1.noidb", "1");
+    localStorage.setItem("chess.writtenAt", String(Date.now() + 5));
+  });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("c1.noidb") !== "1") return;
+    IDBFactory.prototype.open = function () { throw new DOMException("blocked", "SecurityError"); };
+  });
+  await page.reload();
+  await page.waitForTimeout(900);
+  await ready();
+  await page.waitForTimeout(500);
+  const c = await page.evaluate(() => ({ n: window.__chess.library().games.length, mode: window.__chess.library().mode,
+    toast: document.getElementById("toast").textContent, header: JSON.parse(localStorage.getItem("chess.v1.library") || "null") }));
+  assert(c.n === 5 && c.mode === "legacy" && /读不出来/.test(c.toast),
+    `P2-1:IndexedDB 打不开:五局从分片读出来给你看,并且说了(${c.n}, ${c.mode};「${c.toast}」)`);
+  // an import is refused rather than kept nowhere
+  await page.evaluate(() => window.__chess.libDb().importPgn('[Event "x"]\n[White "hxddh"]\n[Black "q"]\n[Result "1-0"]\n\n1. c4 e5 1-0\n'));
+  await page.evaluate(() => { document.getElementById("lib-names").value = "hxddh, alt"; document.getElementById("lib-names").dispatchEvent(new Event("change")); });
+  await page.waitForTimeout(1500);
+  const c2 = await page.evaluate(() => ({ n: window.__chess.library().games.length, header: JSON.parse(localStorage.getItem("chess.v1.library") || "null") }));
+  assert(await inStore() === 5 && c2.n === 5, `P2-1:……这一轮下来原生存储里还是五局,分片和清单都没被清空(${await inStore()};列表 ${c2.n})`);
+  assert(c2.header && c2.header.db === 2 && c2.header.n === 5 && c2.header.names.includes("alt"),
+    `P2-1:……头还写着 db 2、5 局,改的名字照样存了(${JSON.stringify(c2.header && { db: c2.header.db, n: c2.header.n, names: c2.header.names })})`);
+  await page.evaluate(() => sessionStorage.removeItem("c1.noidb"));
 
   // (b) all of the WebView's data gone: the store restores the profile and its games
   await page.evaluate(() => new Promise((res) => {

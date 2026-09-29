@@ -78,6 +78,12 @@ async function bootLibrary(d) {
   const sigs = new Map();
   let warned = false;
   const warnOnce = (key, arg) => { if (warned) return; warned = true; toast(tf(key, [arg || ""]), "fault"); };
+  // the games had moved to IndexedDB (the header says db 2): without it they
+  // are not "saved the old way" — they are out of reach (M5 review P2-1)
+  const refused = header.db === 2 ? "lib.unreadable" : "lib.migrateFailed";
+  // set once restoreShards has replaced the games: the page reloads onto
+  // them, and nothing it still holds may be written back first (M5 review P3-4)
+  let frozen = false;
 
   // --- migrate, recover, load ---------------------------------------------
   const v1Games = Array.isArray(header.games) ? header.games : [];
@@ -85,10 +91,10 @@ async function bootLibrary(d) {
   if (mode === "idb" && v1Games.length) {
     const r = await st.migrate(Persist.get("library"));
     if (r.ok) migrated = true;
-    else { mode = "legacy"; warnOnce("lib.migrateFailed", r.error); }
+    else { mode = "legacy"; warnOnce(refused, r.error); }
   }
   if (mode === "idb") {
-    try { await st.load(); } catch (_) { mode = "legacy"; warnOnce("lib.migrateFailed", "load"); }
+    try { await st.load(); } catch (_) { mode = "legacy"; warnOnce(refused, "load"); }
   }
   if (mode === "idb" && header.db === 2 && Number(header.n) > st.games.length) {
     // IndexedDB holds fewer games than the header counted: the WebView's
@@ -102,12 +108,37 @@ async function bootLibrary(d) {
     }
     if (back.length) {
       const had = st.games.length;
-      const r = await st.migrate(JSON.stringify({ v: 1, games: back }));
+      // no backup copy: this is the native store's copy already (P3-3)
+      const r = await st.migrate(JSON.stringify({ v: 1, games: back }), { backup: false });
       if (r.ok) {
         await st.load();
         if (st.games.length > had) toast(tf("lib.recovered", [st.games.length - had]));
       }
     }
+  }
+  /**
+   * M5 review P2-1: no IndexedDB this session, and the header says the games
+   * went there. They are not in localStorage, so "the pre-C1 shape" would be
+   * an empty library, and its save a header without db / n and 64 emptied
+   * shards. Instead the games are read from the native shards and shown
+   * read-only: the shards are served back to the store exactly as read, the
+   * header keeps what it said, and imports and passes are refused.
+   */
+  const readOnly = mode === "legacy" && header.db === 2;
+  let roTexts = null;
+  if (readOnly) {
+    warnOnce("lib.unreadable");
+    roTexts = await Persist.readBulk();
+    const byId = new Map();
+    for (const text of Object.values(roTexts || {})) {
+      const v = readHeader(text);
+      if (v && Array.isArray(v.games)) for (const g of v.games) if (g && g.id) byId.set(g.id, g);
+    }
+    for (const g of v1Games) if (g && g.id && !byId.has(g.id)) byId.set(g.id, g);
+    store.session.library = [...byId.values()].filter((g) => typeof g.sans === "string" && g.plies > 0)
+      .sort((a, b) => (b.t || 0) - (a.t || 0));
+    for (const g of store.session.library) d.rescoreLosses(g);
+    store.session.libUnreadable = true;
   }
   if (mode === "idb") {
     // the session's list becomes the stored one. A v1 library the page has
@@ -154,6 +185,8 @@ async function bootLibrary(d) {
     const names = store.session.libNames;
     // a profile that never had a library (6.x, a fresh install) is not given one
     if (Persist.get("library") == null && !store.session.library.length && !names.length && !claimAsked) return true;
+    // read-only (P2-1): the header as found — its db, n and any v1 games — with the names
+    if (readOnly) return Persist.setJson("library", Object.assign({}, header, { names, claimAsked: claimAsked || undefined }));
     if (mode !== "idb") {
       return Persist.setJson("library", { v: 1, games: store.session.library, names, claimAsked: claimAsked || undefined });
     }
@@ -171,6 +204,7 @@ async function bootLibrary(d) {
   function save() {
     // a name typed into the field is an answer to the claim too
     if (store.session.libNames.length && !claimAsked) { claimAsked = true; renderClaim(); }
+    if (frozen) return chain;
     if (mode !== "idb") { writeHeader(); return Promise.resolve(true); }
     const list = store.session.library;
     const changed = [];
@@ -295,7 +329,7 @@ async function bootLibrary(d) {
         st.local = next;
         localRec.clear();
         for (const [id, rec] of recOf) localRec.set(id, rec);
-        if (mode === "idb") {
+        if (mode === "idb" && !frozen) {
           try { if (gone.length) await st.drop(gone); await st.save(put); } catch (_) { /* derived: rebuilt next launch */ }
         }
       } while (run.again);
@@ -608,7 +642,8 @@ async function bootLibrary(d) {
   }
 
   // --- import and claim ----------------------------------------------------
-  let importing = false;
+  /** The file being read, as a promise; the next import waits for it. */
+  let importing = null;
   /**
    * Take every game in a PGN file into the library (7.0), with its position
    * index made from the parse — the parser already walked every position.
@@ -616,17 +651,22 @@ async function bootLibrary(d) {
   async function importPgn(text, label) {
     const text0 = (text || "").trim();
     if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
+    // a second file (or a sync) while one is being read waits its turn: it
+    // used to return here in silence, games fetched and gone (M5 review P3-2)
+    while (importing) await importing;
+    if (store.session.libUnreadable) { toast(t("lib.unreadable"), "fault"); return; }
+    // 导入全部数据 is reloading the page (P3-4): say that, rather than import into what goes
+    if (frozen) { toast(t("msg.allData.imported")); return; }
     if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
-    if (importing) return;
     let chunks;
     try { chunks = d.PgnParser.splitGames(text0); } catch (_) { chunks = d.Pgn.splitGames(text0); }
     // read game by game, handing the thread back every ~16 ms (7.5)
-    let games;
-    importing = true;
+    let games, release;
+    importing = new Promise((r) => { release = r; });
     // the openings come from the parse's own positions, so the ECO table
     // is wanted now rather than replayed for later (fillOpenings)
     try { await d.Eco.ready(); } catch (_) { /* no table: filled later */ }
-    try { games = await d.PgnParser.parseGamesAsync(chunks); } finally { importing = false; }
+    try { games = await d.PgnParser.parseGamesAsync(chunks); } finally { importing = null; release(); }
     if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
     const now = Date.now();
     const fresh = [];
@@ -701,6 +741,11 @@ async function bootLibrary(d) {
   if (mode !== "idb") st.games = store.session.library;
   const indexing = st.indexMissing(SLICE, d.pause).then(() => { if (listOpen()) renderList(); });
   syncLocal();
+  // M5 review P3-1: a build from before the shards (8.0 dev) rewrites the
+  // store's manifest without them, and a later launch in step with that
+  // manifest owes it nothing — so the shards holding games and not listed
+  // there are owed now
+  if (mode === "idb" && Persist.touchUnlisted) Persist.touchUnlisted(Object.keys(shardMap()));
 
   return {
     mode: () => mode,
@@ -719,19 +764,34 @@ async function bootLibrary(d) {
     all: allGames,
     pkOf: st.pkOf,
     // persist.js's port (BULK)
-    shardNames: () => (mode === "idb" ? Object.keys(shardMap()) : []),
+    // not in IndexedDB: the shards read at boot (read-only), or null —
+    // unknown, so they stay owed and the manifest keeps them (M5 review P2-1)
+    shardNames: () => (mode === "idb" ? Object.keys(shardMap()) : roTexts ? Object.keys(roTexts) : null),
     shardText: (name) => {
-      if (mode !== "idb") return null;
+      if (mode !== "idb") return roTexts && typeof roTexts[name] === "string" ? roTexts[name] : null;
       // grouped once per library state, not once per shard asked for
       if (!groups || groups.list !== store.session.library) groups = { list: store.session.library, m: shardGroups() };
       const g = groups.m.get(name);
       return g ? JSON.stringify({ v: 1, games: g }) : null;
     },
-    restoreShards: async (texts) => { if (mode === "idb") await st.restoreShards(texts); },
+    // 导入全部数据 (M5 review P3-4): the page reloads onto the restored games;
+    // until then the pass stops, the index stops and nothing is saved
+    restoreShards: async (texts) => {
+      frozen = true;
+      st.halt();
+      if (store.session.libRun) store.session.libRun.abort = true;
+      // a save already queued lands before the replace, not after it
+      await chain.catch(() => {});
+      if (mode === "idb") await st.restoreShards(texts);
+    },
     clear: () => {
       store.session.library = [];
       sigs.clear();
-      if (mode === "idb") chain = chain.then(() => st.backend.clear()).catch(() => {});
+      // the read-only shards go too: known empty, so the store empties them
+      if (roTexts) roTexts = {};
+      // the index stops now, not when the chain reaches the clear (P2-2)
+      st.halt();
+      if (mode === "idb") chain = chain.then(() => st.clear()).catch(() => {});
     },
   };
 }

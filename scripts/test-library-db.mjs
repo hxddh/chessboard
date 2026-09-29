@@ -354,5 +354,48 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
     "restoreShards: the document's games replace the imported ones; the 本机 cache stays");
 }
 
+// M5 review P2-2: the background index writes its records outside the save
+// chain. A clear, a drop or a restore landing between two of its slices must
+// not see the games it took away written back by the slice after.
+{
+  const seed = () => {
+    const be = D.memoryBackend();
+    for (let i = 0; i < 50; i++) be.games.set("lib:" + i, { id: "lib:" + i, t: i, sans: "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7", plies: 10 });
+    return be;
+  };
+  const during = async (act) => {
+    const be = seed();
+    const st = D.createLibraryStore({ backend: be, Chess });
+    await st.load();
+    let paused = 0;
+    await st.indexMissing(0, async () => { if (++paused === 1) await act(st, be); });
+    return { be, st, paused };
+  };
+  let r = await during(async (st) => { if (typeof st.clear === "function") { st.halt(); await st.clear(); } });
+  assert(typeof r.st.clear === "function" && r.be.games.size === 0,
+    "P2-2: 清除全部存档 while the index is being built leaves no record behind (" + r.be.games.size + ")");
+  r = await during(async (st) => { st.games = st.games.filter((g) => g.id !== "lib:7" && g.id !== "lib:30"); await st.drop(["lib:7", "lib:30"]); });
+  assert(!r.be.games.has("lib:7") && !r.be.games.has("lib:30") && r.be.games.size === 48,
+    "P2-2: a game dropped (library over its cap) while indexing is not written back (" + r.be.games.size + ")");
+  r = await during(async (st) => { await st.restoreShards({ lib00: JSON.stringify({ v: 1, games: [{ id: "lib:new", sans: "d4", plies: 1 }] }) }); });
+  assert(r.be.games.size === 1 && r.be.games.has("lib:new"),
+    "P2-2: a restore while indexing is not followed by the old games coming back (" + [...r.be.games.keys()].slice(0, 4).join(",") + "…)");
+  r = await during(async () => {});
+  assert(r.be.games.size === 50 && [...r.be.games.values()].every((g) => g.pk), "P2-2: …left alone, every game is indexed and written");
+}
+
+// M5 review P3-3: pulling the games back from the native shards is not a
+// migration of a value found in localStorage — keeping it in "meta" was a
+// second full copy of the library, a new one on every recovery
+{
+  const be = D.memoryBackend();
+  const st = D.createLibraryStore({ backend: be, Chess });
+  await st.migrate(JSON.stringify(FIXTURES["7.2"]));
+  assert(be.meta.size === 1, "(a real v1 migration keeps its backup)");
+  await new Promise((r) => setTimeout(r, 5));   // the backup is keyed by the millisecond
+  const r = await st.migrate(JSON.stringify({ v: 1, games: FIXTURES["8.0-dev"].games }), { backup: false });
+  assert(r.ok && be.meta.size === 1 && be.games.has("lib:80a"), "P3-3: recovery from the shards writes the games and no second copy (" + be.meta.size + " in meta)");
+}
+
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }
 console.log("\nall library-db tests passed");

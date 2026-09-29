@@ -4399,6 +4399,9 @@ for (const lang of CONTENT_LANGS) {
   assert(missing === 0, "every language covers all " + baseKeys.length + " UI keys");
   I.setLang("en");
   assert(I.t("chrome.hint") === "Hint", "lookup follows the active language");
+  // M5 review P3-5: the explorer row's count takes the plural form, as lib.count does
+  assert(I.tf("xp.row", ["e4", 1, 100, 0, 0]).startsWith("e4: 1 game, ") && I.tf("xp.row", ["d4", 2, 50, 0, 50]).startsWith("d4: 2 games, "),
+    "en xp.row says 1 game / 2 games (" + I.tf("xp.row", ["e4", 1, 100, 0, 0]) + ")");
 
   // First-run language detection. Until 1.7 the app always booted in Chinese,
   // so an English-locale newcomer met a Chinese first-run dialog and never saw

@@ -211,6 +211,20 @@ function createLibraryStore(o) {
   const noIndex = new Set();
   let games = [];
   let local = [];
+  /**
+   * Bumped by whatever takes games away wholesale — clear, restore (M5 review
+   * P2-2). indexMissing writes its records outside the page's save chain,
+   * a slice at a time; a slice that finds the generation moved stops there.
+   */
+  let gen = 0;
+  /** ids of the lists as they are now, rebuilt only when a list is replaced */
+  let liveOf = null;
+  function live() {
+    if (!liveOf || liveOf.games !== games || liveOf.local !== local) {
+      liveOf = { games, local, ids: new Set(games.concat(local).map((g) => g.id)) };
+    }
+    return liveOf.ids;
+  }
 
   /** The record for an entry: the entry, plus its index when it has one. */
   function recordOf(g) {
@@ -247,8 +261,11 @@ function createLibraryStore(o) {
    * v1 → IndexedDB. `raw` is the header's value exactly as localStorage
    * holds it. Resolves {ok, moved} once every game is readable back from
    * the store — and only then may the caller replace the header.
+   * `opts.backup === false`: the value is not one found in localStorage but
+   * the native shards read back (library-page.js), already a copy — keeping
+   * it too stored a second full library per recovery (M5 review P3-3).
    */
-  async function migrate(raw) {
+  async function migrate(raw, opts) {
     let v1 = null;
     try { v1 = JSON.parse(raw); } catch (_) { return { ok: false, error: "parse" }; }
     const list = v1 && Array.isArray(v1.games) ? v1.games : [];
@@ -256,7 +273,7 @@ function createLibraryStore(o) {
       try {
         // the value as found, before anything is written — whatever the
         // conversion below gets wrong, this can be read back by hand
-        await backend.setMeta("v1:" + Date.now(), { raw });
+        if (!opts || opts.backup !== false) await backend.setMeta("v1:" + Date.now(), { raw });
         // only the games both copies have are read whole
         const stored = new Set(await backend.keys());
         const both = list.filter((g) => g && typeof g.id === "string" && stored.has(g.id)).map((g) => g.id);
@@ -310,24 +327,43 @@ function createLibraryStore(o) {
    */
   async function indexMissing(budgetMs, pause) {
     const todo = games.concat(local).filter((g) => !pk.has(g.id) && !noIndex.has(g.id));
+    const at = gen;
     let n = 0;
     let t0 = Date.now();
     let batch = [];
+    // only games still in a list: one dropped (over the cap, gone from the
+    // play history) or cleared since the list was taken is not written back
+    const flush = () => {
+      const ids = live();
+      return save(batch.filter((x) => pk.has(x.id) && ids.has(x.id))).catch(() => {});
+    };
     for (const g of todo) {
+      if (gen !== at) return n;
       const k = LibraryQuery.keysOfGame(g, Chess);
       if (k) pk.set(g.id, k);
       else noIndex.add(g.id);   // does not replay; not asked again this session
       batch.push(g);
       n++;
       if (Date.now() - t0 >= budgetMs) {
-        await save(batch.filter((x) => pk.has(x.id))).catch(() => {});
+        await flush();
         batch = [];
         await pause();
         t0 = Date.now();
       }
     }
-    await save(batch.filter((x) => pk.has(x.id))).catch(() => {});
+    if (gen === at) await flush();
     return n;
+  }
+
+  /** Stop the background index now (M5 review P2-2): what follows takes games away. */
+  function halt() { gen++; }
+  /** Every game gone, from memory and the store (清除全部存档). */
+  async function clear() {
+    halt();
+    games = [];
+    local = [];
+    pk.clear();
+    return backend.clear();
   }
 
   /** id → shard name, so a flush of all 64 does not hash every id 64 times */
@@ -367,6 +403,7 @@ function createLibraryStore(o) {
       try { v = JSON.parse(text); } catch (_) { v = null; }
       if (v && Array.isArray(v.games)) for (const g of v.games) if (g && typeof g.id === "string") incoming.push(g);
     }
+    halt();
     return withLock(async () => {
       const old = games.map((g) => g.id);
       // one transaction: never a moment with the old games gone and the new
@@ -379,7 +416,7 @@ function createLibraryStore(o) {
   }
 
   return {
-    backend, pk, load, migrate, save, drop, read, indexFens, indexMissing, shards, shardText, restoreShards, shardOf,
+    backend, pk, load, migrate, save, drop, read, indexFens, indexMissing, halt, clear, shards, shardText, restoreShards, shardOf,
     get games() { return games; }, set games(v) { games = v; },
     get local() { return local; }, set local(v) { local = v; },
     pkOf: (g) => (g ? pk.get(g.id) || null : null),

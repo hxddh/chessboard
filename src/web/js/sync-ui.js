@@ -193,6 +193,12 @@ export function createSyncUI(d) {
     const site = SITES.find((s) => s.id === pick.site) || SITES[0];
     const user = $("sync-user").value.trim();
     if (!syncNameOk(user)) { paint(t("sync.badName")); $("sync-user").focus(); return; }
+    // M5 review P3-2: the import would refuse these games once they were
+    // fetched (a pass running, the library read-only) — said here, before
+    // the fetch and again after it, with the dialog left open
+    const s = d.store.session;
+    const refusal = () => (s.libUnreadable ? "lib.unreadable" : s.libRun || s.analyzing ? "lib.busy" : "");
+    if (refusal()) { paint(t(refusal())); return; }
     save({ site: site.id, user });
     busy = true;
     paint(tf("sync.fetching", [site.name]));
@@ -204,6 +210,7 @@ export function createSyncUI(d) {
       paint(said.key === "sync.failed" ? tf(said.key, [said.arg]) : tf(said.key, [site.name, user]));
       return;
     }
+    if (refusal()) { paint(t(refusal())); return; }
     // v8-0-plan C2: the name is claimed before the import, so the games come
     // in already knowing which side was this player's — no field to fill in
     claim(user);
