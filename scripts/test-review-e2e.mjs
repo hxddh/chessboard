@@ -1461,6 +1461,31 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         await pg.click("#rt-back").catch(() => {});
         await pg.waitForTimeout(250);
       } else assert(false, "A4：妙着是一个关键时刻，而且能「再试一次」", JSON.stringify({ kb, bril }));
+      // #89 review: two moments on consecutive plies (the fixture has one:
+      // plies 11 and 12). 看引擎线 on the later one stands the board after the
+      // earlier one's move, which is where the card follows the board to the
+      // earlier moment: the card stays on its own moment, 为什么 still open
+      const later = seen.find((p) => seen.includes(p - 1));
+      if (later != null) {
+        while (await can("#rv-km .km-prev")) { await pg.click("#rv-km .km-prev"); await pg.waitForTimeout(150); }
+        while ((await km()).ply !== later && await can("#rv-km .km-next")) { await pg.click("#rv-km .km-next"); await pg.waitForTimeout(150); }
+        await pg.click('#rv-km button[data-act="why"]');
+        await pg.waitForTimeout(200);
+        await pg.click('#rv-km button[data-act="lines"]');
+        await pg.waitForTimeout(300);
+        const kl = await km();
+        const atL = await vi();
+        assert(atL === later && kl.ply === later && kl.why !== "",
+          "A4：相邻两步都是关键时刻，在后一个上点「看引擎线」，卡片不跳到前一个、「为什么」还开着（" + JSON.stringify({ at: atL, ply: kl.ply, later, why: !!kl.why }) + "）");
+        // …and the board moving on by itself turns the card again
+        await goto(later);
+        await pg.evaluate(() => document.getElementById("rep-prev").click());
+        await pg.waitForTimeout(150);
+        await pg.evaluate(() => document.getElementById("rep-next").click());
+        await pg.waitForTimeout(250);
+        const kf = await km();
+        assert(kf.ply === later - 1, "A4：之后棋盘自己走到前一个关键时刻之后，卡片照样跟过去（" + kf.ply + "）");
+      } else assert(false, "A4：夹具里有相邻两步的关键时刻", JSON.stringify(seen));
     }
   }
 
