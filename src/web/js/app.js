@@ -6152,7 +6152,7 @@ import { createStore } from "./store.js";
   });
   Shell.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
-  createExplorerLazy({ doc: document, store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, saved: Persist.read("settings").value,
+  createExplorerLazy({ store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,

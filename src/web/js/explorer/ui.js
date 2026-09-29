@@ -33,7 +33,7 @@ export function masterChunk(i) {
  * @param {Array} bookLines openings.js's lines, from the bundle
  */
 export function createExplorerUI(d, bookLines) {
-  const { doc, store, t, tf } = d;
+  const doc = document, { store, t, tf } = d;
   const M = EXPLORER_MASTERS;
   const lib = X.librarySource(() => store.session.library);
   let book = null; // built on first use: 195 lines, a few ms
@@ -69,7 +69,9 @@ export function createExplorerUI(d, bookLines) {
     btn.className = "xp-row";
     btn.dataset.san = r.san;
     const [w, dr, b] = X.percents(r);
-    btn.setAttribute("aria-label", r.n ? tf("xp.row", [r.san + (r.book ? " · " + t("xp.book") : ""), r.n, w, dr, b]) : tf("xp.rowBook", [r.san]));
+    const name = r.san + (r.book ? " · " + t("xp.book") : "");
+    // a book move no game played is read as just that: the move, 书
+    btn.setAttribute("aria-label", r.n ? tf("xp.row", [name, r.n, w, dr, b]) : name);
     const san = doc.createElement("span");
     san.className = "xp-san";
     san.textContent = r.san;
@@ -102,7 +104,8 @@ export function createExplorerUI(d, bookLines) {
   function render() {
     if (!list) return;
     if (held) { pending = true; return; }
-    const src = store.ui.explorer.src;
+    // anything but "master" in a stored setting is the library
+    const src = store.ui.explorer.src === "master" ? "master" : "lib";
     for (const b of seg.querySelectorAll("button")) {
       const on = b.dataset.src === src;
       b.classList.toggle("active", on);
@@ -114,14 +117,14 @@ export function createExplorerUI(d, bookLines) {
     if (src === "master") {
       const m = masterRows(key, ply);
       out = m.rows || [];
-      msg = m.deep ? tf("xp.deep", [M.plies]) : m.wait ? "…" : !out.length ? t("xp.none")
+      // past the tree's depth (M.plies) there is simply nothing, and it says so
+      msg = m.wait ? "…" : !out.length ? t("xp.none")
         // the source, the rating floor and the licence are the same words in every language
         : "Lichess " + M.source.slice(-7) + " · ≥ " + M.minElo + " · " + tf("lib.count", [M.games]) + " · CC0";
     } else {
       out = lib.movesAt(key);
       const here = out.reduce((s, r) => s + r.n, 0);
-      msg = !lib.size() ? t("xp.libEmpty") : here ? tf("lib.count", [here])
-        : ply >= X.LIB_PLIES ? tf("xp.deep", [X.LIB_PLIES]) : t("xp.none");
+      msg = !lib.size() ? t("xp.libEmpty") : here ? tf("lib.count", [here]) : t("xp.none");
     }
     if (!book) book = X.bookIndex(bookLines);
     const rows = X.rowsAt(out, pos, book.get(key));

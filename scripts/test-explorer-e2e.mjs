@@ -209,7 +209,7 @@ const waitRows = async (page, pred, ms = 3000) => {
   assert(/棋谱库是空的/.test(await note(page)), "空库时说清楚", await note(page));
   assert(r.length >= 10 && r.every((x) => x.book && x.n === ""), "……并列出开局书的首着（" + r.length + " 个，局数空着）");
   const e4 = r.find((x) => x.san === "e4");
-  assert(e4 && e4.label === "e4：书着", "书着行读出来是「书着」", e4 && e4.label);
+  assert(e4 && e4.label === "e4 · 书", "书着行读出来是「e4 · 书」", e4 && e4.label);
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }

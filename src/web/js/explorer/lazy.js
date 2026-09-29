@@ -16,13 +16,12 @@ import { loadChunk } from "../chunk.js";
 import { CHESS_OPENINGS } from "../openings.js";
 
 /**
- * @param {object} d from app.js: doc, store, t, tf, viewGame, movePath,
+ * @param {object} d from app.js: store, t, tf, viewGame, movePath,
  *   startClockIfIdle, toBoard, saveSettings, saved (the stored settings)
  */
 export function createExplorerLazy(d) {
-  const { doc, store } = d;
-  const s = (d.saved && d.saved.explorer) || {};
-  store.ui.explorer = { open: s.open === true, src: s.src === "master" ? "master" : "lib" };
+  const doc = document, { store } = d;
+  store.ui.explorer = Object.assign({ open: false }, d.saved && d.saved.explorer);
   let ui = null, asked = false;
   const key = doc.getElementById("explorer-open"), sec = doc.getElementById("explorer");
   function render() {
@@ -34,7 +33,7 @@ export function createExplorerLazy(d) {
     if (!shown || ui) return ui && shown && ui.render();
     if (asked) return;
     asked = true;
-    loadChunk("chunk-explorer.js", "createExplorerUI").then((create) => { ui = create(d, CHESS_OPENINGS); ui.render(); }, () => { asked = false; });
+    loadChunk("chunk-explorer.js", "createExplorerUI").then((create) => { ui = create(d, CHESS_OPENINGS); ui.render(); }, () => (asked = false));
   }
   /** Open or close the panel (`open`: open it), and remember that. */
   function toggle(open) {
@@ -45,5 +44,7 @@ export function createExplorerLazy(d) {
   key.addEventListener("click", () => toggle());
   // the library page's door: the board, with the panel open on it
   doc.getElementById("lib-explorer").addEventListener("click", () => { d.toBoard(); toggle(true); });
-  for (const slice of ["game", "session", "ui"]) store.subscribe(slice, render);
+  // the position (game) and the mode (session); the panel's own state renders itself
+  store.subscribe("game", render);
+  store.subscribe("session", render);
 }

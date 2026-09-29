@@ -101,9 +101,8 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "tip.reviewOpen": "复盘：分析、精析、持续分析",
       // v8-0-plan C3: 开局浏览器
       "act.explorer": "开局", "xp.title": "开局浏览器", "xp.master": "大师",
-      "xp.book": "书", "xp.row": "{0}：{1} 局，白胜 {2}%，和 {3}%，黑胜 {4}%", "xp.rowBook": "{0}：书着",
+      "xp.book": "书", "xp.row": "{0}：{1} 局，白胜 {2}%，和 {3}%，黑胜 {4}%",
       "xp.libEmpty": "棋谱库是空的", "xp.none": "没有对局",
-      "xp.deep": "只算前 {0} 个半回合",
       "tip.pgn.export": "把这盘存成 PGN 文件",
       "tip.more": "更多：粘贴、打开、FEN",
       "about.dataUnknown": "浏览器存储（无原生数据文件）", "act.checkUpdate": "检查更新", "msg.update.latest": "已是最新版本", "msg.update.available": "有新版本 {0} —— 链接已复制到剪贴板", "msg.update.failed": "暂时无法检查更新", "msg.link.copied": "链接已复制到剪贴板",

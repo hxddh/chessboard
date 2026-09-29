@@ -71,9 +71,8 @@
       "tip.reviewOpen": "振り返り：解析・精密解析・継続解析",
       // v8-0-plan C3: 定跡エクスプローラー
       "act.explorer": "定跡", "xp.title": "定跡エクスプローラー", "xp.master": "強豪",
-      "xp.book": "定跡", "xp.row": "{0}：{1} 局、白勝ち {2}%、引き分け {3}%、黒勝ち {4}%", "xp.rowBook": "{0}：定跡の手",
+      "xp.book": "定跡", "xp.row": "{0}：{1} 局、白勝ち {2}%、引き分け {3}%、黒勝ち {4}%",
       "xp.libEmpty": "棋譜ライブラリは空です", "xp.none": "対局なし",
-      "xp.deep": "最初の {0} 手（半手）までを数えています",
       "tip.pgn.export": "この対局を PGN ファイルに保存",
       "tip.more": "その他：貼り付け・開く・FEN",
       "about.dataUnknown": "ブラウザ保存（ネイティブのデータファイルなし）", "act.checkUpdate": "更新を確認", "msg.update.latest": "最新バージョンです", "msg.update.available": "新しいバージョン {0} があります。リンクをクリップボードにコピーしました", "msg.update.failed": "いまは更新を確認できません", "msg.link.copied": "リンクをクリップボードにコピーしました",
