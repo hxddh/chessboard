@@ -155,8 +155,8 @@
 | J1 | 启动一次，退出，看 **[M]** `~/Library/Application Support/Chessboard/` · **[W]** `%APPDATA%\Chessboard\` | 目录存在；页面接上 `appdataWrite` 之后应有 `chessboard.json`，第二次写入后多出 `chessboard.json.bak`，且任何时刻都**不该**留下 `chessboard.json.tmp` |
 | J2 | 关于面板（接上 `appdataPath` 之后） | 显示 J1 那条路径，和磁盘上一致 |
 | J3 | 把 `chessboard.json` 改坏（随便删几个字符）再启动 | 出横幅「档案损坏，已保留副本」，`.bak` 仍是上一份好的；**不允许**回退成空档再覆盖 |
-| J4 | 「导出」保存 PGN 到桌面；「打开」导入一个普通 PGN；把 `.pgn` 拖进窗口 | 三条路都和 C1/C4/C7 一样成功 —— 路径先经 `chess.issuePath` 签发再读写，用户不该察觉任何区别 |
-| J5 | 在文件对话框里挑 `~/.ssh/` 或 `~/Library/…` 下的文件 **[M]** / `%APPDATA%\…` **[W]** | 打开失败，提示的是「文件被拒绝」一类，而不是导入了 |
+| J4 | 「导出」保存 PGN 到桌面；「打开」导入一个普通 PGN；把 `.pgn` 拖进窗口 | 三条路都和 C1/C4/C7 一样成功 —— 对话框由原生侧弹出并读写（`chess.openPgn` / `chess.saveText`，v8-1-plan N2），拖进来的路径由原生侧签发，页面从不经手路径，用户不该察觉任何区别 |
+| J5 | 把 `~/.ssh/` 或 `~/Library/…` 下的文件 **[M]** / `%APPDATA%\…` **[W]** 拖进窗口 | 读不到，提示读取失败，而不是导入了（`pathAllowed`；在对话框里亲手挑的文件是玩家自己的选择，自 v8-1-plan N2 起照读） |
 | J6 | 从 devtools（或临时在页面里）直接 `Host.readTextFile("/etc/passwd")` | 抛 `UnissuedPathError`，不返回内容 |
 | J7 | 用 `zig build -Doptimize=ReleaseFast` 的 exe 跑 `native dev`（页面从 `http://127.0.0.1:5173` 来）| 导航被拒 / 桥命令 `permission_denied` —— 发布二进制不信任开发 origin（runner.zig 按 `http://` 过滤）；同一命令加 `-Ddev-origins=true` 或 Debug 构建则正常 |
 | J8 | 产物里 `index.html` 旁边 | 有 `licenses/LICENSE.txt` 和 `licenses/stockfish-COPYING.txt` |

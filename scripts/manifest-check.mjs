@@ -601,20 +601,21 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   const block = /const APP_COMMANDS = \[_\]AppCommand\{([\s\S]*?)\n\};/.exec(mainSrc);
   check(!!block, "应用桥: main.zig 里有 APP_COMMANDS 表");
   const registered = new Set(block ? [...block[1].matchAll(/\.name = "(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]) : []);
-  // v8-1-plan N2: a command kept only for older pages (main.zig
-  // COMPAT_COMMANDS) is registered and must NOT be called by this page
-  const compatBlock = /const COMPAT_COMMANDS = \[_\]\[\]const u8\{([^}]*)\};/.exec(mainSrc);
-  const compat = new Set(compatBlock ? [...compatBlock[1].matchAll(/"(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]) : []);
-  check(compat.has("chess.issuePath"), "应用桥: main.zig 的 COMPAT_COMMANDS 列着 chess.issuePath(只留给 v8-1-plan N2 之前的旧页面)");
   for (const u of used) check(registered.has(u), `应用桥: host.js 调用了 ${u},但 main.zig 的 APP_COMMANDS 没有它 —— 原生构建里它会被拒绝`);
-  for (const r of registered) {
-    if (compat.has(r)) continue;
-    check(used.has(r), `应用桥: main.zig 注册了 ${r},但页面从不调用它`);
-  }
-  for (const c of compat) check(registered.has(c), `应用桥: 兼容命令 ${c} 不在 APP_COMMANDS 里 —— 旧页面会被拒绝`);
-  // …and no page source calls a compat command or opens a file dialog itself:
-  // the dialogs run in main.zig (chess.openPgn / chess.saveText), so the path
-  // the player picks never reaches the page
+  for (const r of registered) check(used.has(r), `应用桥: main.zig 注册了 ${r},但页面从不调用它`);
+  // v8-1-plan N2: chess.issuePath — the page asking the native side to trust a
+  // path the page named — is gone for good, not kept "for older pages": the
+  // page is always the frontend bundled into the same binary. Neither the
+  // command nor a compatibility list for it may come back.
+  // Comments may tell the story, and the test blocks at the bottom name it on
+  // purpose (to assert it is gone); the code above them may not.
+  const firstTest = mainSrc.indexOf('\ntest "');
+  const mainCode = (firstTest < 0 ? mainSrc : mainSrc.slice(0, firstTest)).replace(/\/\/[^\n]*/g, "");
+  check(!/issuePath/.test(mainCode), "应用桥: main.zig 的代码里又出现了 issuePath(命令、处理函数或兼容列表)—— v8-1-plan N2 已把它删掉");
+  check(!/COMPAT_COMMANDS/.test(mainCode), "应用桥: main.zig 又有了 COMPAT_COMMANDS —— 页面总是同一个二进制里打包的前端,没有「旧页面」要兼容");
+  // …and no page source names it or opens a file dialog itself: the dialogs
+  // run in main.zig (chess.openPgn / chess.saveText), so the path the player
+  // picks never reaches the page
   const webJs = path.join(ROOT, "src/web/js");
   const pageFiles = [];
   const walk = (dir) => {
@@ -629,7 +630,8 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   for (const f of pageFiles) {
     const src = fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
     const rel = path.relative(ROOT, f);
-    for (const c of compat) check(!src.includes('"' + c + '"'), `应用桥: ${rel} 调用了兼容命令 ${c} —— 新页面不该再用它(v8-1-plan N2)`);
+    // any spelling — "…", '…', `…`, "chess." + "issuePath" — so the bare word
+    check(!/issuePath/.test(src), `应用桥: ${rel} 的代码里提到了 issuePath —— 这个命令已删除,页面不该再请求签发路径(v8-1-plan N2)`);
     check(!/zero\.dialogs\.(openFile|saveFile)\b/.test(src), `应用桥: ${rel} 自己打开文件对话框(zero.dialogs.openFile / saveFile)—— 应走 chess.openPgn / chess.saveText`);
     check(!/zero\.os\.revealPath\b/.test(src), `应用桥: ${rel} 调用 zero.os.revealPath —— 保存后显示文件由 chess.saveText 在原生侧做`);
   }

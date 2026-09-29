@@ -152,10 +152,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * the native side handed out in this process — one that was dropped on the
    * window, or one the OS opened; main.zig issues both itself (v8-0-plan F3).
    * The file dialogs no longer hand the page a path at all: they run in
-   * main.zig (openPgn / saveText below, v8-1-plan N2), and chess.issuePath,
-   * which the page once called on what they returned, is left for older
-   * pages only. A call site that names a path from anywhere else gets this
-   * error, which is the point.
+   * main.zig (openPgn / saveText below, v8-1-plan N2), and the command the
+   * page once used to have what they returned trusted is gone. A call site
+   * that names a path from anywhere else gets this error, which is the point.
    */
   const UNISSUED_PATH = "UnissuedPathError";
 
@@ -247,7 +246,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * v8-1-plan N2: the open dialog and the read, both in the native layer.
    *
    * Before v8-1-plan N2 the page opened the SDK's dialog, got a path, asked
-   * chess.issuePath to trust it and then read it; now main.zig opens the
+   * the native side to trust it and then read it; now main.zig opens the
    * dialog and reads the file itself, and the page gets the text and the
    * file's name — never the path. A file past one bridge piece comes in
    * pieces asked for by the token the first answer carries.
@@ -499,8 +498,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (!hasZero() || typeof global.zero.on !== "function") return function () {};
     try {
       // v8-0-plan F3 (§6): main.zig issues a dropped path itself, from the
-      // SDK's files_dropped event, before the page hears "drop:files" — so a
-      // drop no longer goes through chess.issuePath (see UNISSUED_PATH)
+      // SDK's files_dropped event, before the page hears "drop:files" — the
+      // page never asks for a path to be trusted (see UNISSUED_PATH)
       return global.zero.on("drop:files", function (payload) {
         return handler(payload);
       });

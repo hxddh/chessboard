@@ -73,11 +73,16 @@ const AppCommand = struct {
 /// SDK answers with permission_denied) or the other way round.
 /// scripts/manifest-check.mjs (section 6) holds this list to host.js the same
 /// way BUILTIN_COMMANDS is held: every `chess.X` the page invokes is here, and
-/// nothing is here the page never invokes — COMPAT_COMMANDS aside.
+/// nothing is here the page never invokes.
+///
+/// chess.issuePath is gone (v8-1-plan N2): it let the page ask the native side
+/// to trust a path the page named — the widest door from the page to the file
+/// system — and since the dialogs run here nothing needs it. It is not kept
+/// "for older pages" either: the page is always the frontend bundled into
+/// this same binary, so no older page can reach this shell.
 const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.writeTextFile", .invoke_fn = writeTextFile },
     .{ .name = "chess.readTextFile", .invoke_fn = readTextFile },
-    .{ .name = "chess.issuePath", .invoke_fn = issuePath },
     .{ .name = "chess.openPgn", .invoke_fn = openPgn },
     .{ .name = "chess.saveText", .invoke_fn = saveText },
     .{ .name = "chess.appdataRead", .invoke_fn = appdataRead },
@@ -89,13 +94,6 @@ const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.selftestMode", .invoke_fn = selftestMode },
     .{ .name = "chess.selftestReport", .invoke_fn = selftestReport },
 };
-
-/// v8-1-plan N2: registered for pages older than this change only. The page as
-/// shipped never calls these, and scripts/manifest-check.mjs fails the build
-/// if it starts to again: chess.issuePath is the widest door from the page to
-/// the file system (it asks the native side to trust a path the page names),
-/// and since the dialogs run here it has nothing left to do.
-const COMPAT_COMMANDS = [_][]const u8{"chess.issuePath"};
 
 /// The platform path separator, as the strings this file builds need it.
 const SEP: []const u8 = if (builtin.os.tag == .windows) "\\" else "/";
@@ -308,15 +306,14 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
 
 // -------------------------------------------------------------- drop:files
 //
-// v8-0-plan F3 (§6: narrow what chess.issuePath is for). The SDK hands a drop
-// to the app as Event.files_dropped BEFORE it emits "drop:files" to the page
-// (runtime flow.zig: dispatchEvent, then emitFileDropEvent), so the paths can
-// be issued here, on the native side's own word, instead of the page
-// forwarding them to chess.issuePath. They get the same pathAllowed rule the
-// page's call used to get — a drop is the player's choice, but no wider than
-// a dialog's. The file dialogs were the last road through chess.issuePath
-// until v8-1-plan N2 moved them here (chess.openPgn / chess.saveText, with the
-// Runtime runner.zig hands over); the command stays for older pages only.
+// v8-0-plan F3 (§6). The SDK hands a drop to the app as Event.files_dropped
+// BEFORE it emits "drop:files" to the page (runtime flow.zig: dispatchEvent,
+// then emitFileDropEvent), so the paths are issued here, on the native side's
+// own word, never on the page's. They get the pathAllowed rule — a drop is
+// the player's choice, but no wider than a dialog's. The file dialogs run
+// here too since v8-1-plan N2 (chess.openPgn / chess.saveText, with the
+// Runtime runner.zig hands over), and chess.issuePath, the page's old way of
+// asking for either, is gone.
 //
 // Probed by name at comptime like OPEN_FILE_VARIANTS: an SDK without the
 // variant compiles this to nothing, and a drop is then simply not issued.
@@ -888,22 +885,21 @@ fn jsonStringField(payload: []const u8, key: []const u8, out: []u8) ?[]const u8 
 // the bridge would read ~/.ssh/id_ed25519 for it.
 //
 // Now a path is readable/writable only if the NATIVE side issued it in this
-// process. Issuing happens in exactly three places:
+// process, and only the native side's own events issue one:
 //
-//   * the SDK's file dialogs (host.js wraps zero.dialogs.openFile/saveFile and
-//     calls chess.issuePath on what they returned — the dialog is an SDK
-//     builtin, so the result is only visible to main.zig through that call);
-//   * drop:files, wrapped the same way in host.js onDropFiles;
-//   * the OS's open-document event (forwardOpenFiles above), registered
-//     directly because the OS, not the page, chose those paths.
+//   * a drop (issueDroppedPaths above, v8-0-plan F3: the SDK's files_dropped
+//     event, before the page hears "drop:files");
+//   * the OS's open-document event (forwardOpenFiles above), because the OS,
+//     not the page, chose those paths.
 //
-// Since then drops are issued natively (issueDroppedPaths, v8-0-plan F3) and
-// the dialogs run natively (chess.openPgn / chess.saveText, v8-1-plan N2),
-// which never issue anything: the page as shipped no longer calls
-// chess.issuePath at all (COMPAT_COMMANDS).
+// The file dialogs issue nothing: they run natively (chess.openPgn /
+// chess.saveText, v8-1-plan N2) and their path never reaches the page. Until
+// then the page wrapped the SDK's dialogs and asked chess.issuePath to trust
+// what they returned; that command is gone, so no path the page names is
+// ever issued.
 //
-// The first two go through the page, so issuePath cannot take the page's word
-// that a dialog ran: it VALIDATES instead. A path is accepted only if it is
+// A drop is still checked rather than taken whole (pathAllowed): a path is
+// accepted only if it is
 // absolute, contains no `.`/`..`/dot-prefixed component (that is ~/.ssh,
 // ~/.config, ~/.zshrc and every other dotfile in one rule; `..` is refused
 // rather than resolved because no dialog ever returns one), no `.app` bundle
@@ -915,8 +911,8 @@ fn jsonStringField(payload: []const u8, key: []const u8, out: []u8) ?[]const u8 
 // has to have asked for a dialog first for anything to be issued at all.
 //
 // The table is small and FIFO (ISSUED_MAX entries): a session that opens
-// hundreds of files just forgets the oldest, and the page re-issues on the
-// next dialog anyway. Reads/writes of an unissued path answer
+// hundreds of files just forgets the oldest, and a new drop or open issues
+// it again. Reads/writes of an unissued path answer
 // {"error":"unissued_path"}, which host.js turns into UnissuedPathError.
 const ISSUED_MAX: usize = 64;
 const ISSUED_PATH_MAX: usize = 2048;
@@ -943,8 +939,8 @@ const IssuedPaths = struct {
     }
 };
 
-/// What issuePath validates against — plain strings, so the rule is unit
-/// testable without an environment.
+/// What pathAllowed checks a dropped or OS-opened path against — plain
+/// strings, so the rule is unit testable without an environment.
 const PathPolicy = struct {
     /// $HOME (macOS) / %USERPROFILE% (Windows); "" when unknown, which leaves
     /// only removable volumes.
@@ -1040,17 +1036,6 @@ fn pathAllowed(policy: PathPolicy, path: []const u8) bool {
     return true;
 }
 
-fn issuePath(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
-    const self: *App = @ptrCast(@alignCast(context));
-    var path_buf: [ISSUED_PATH_MAX]u8 = undefined;
-    const path = jsonStringField(invocation.request.payload, "path", &path_buf) orelse return error.InvalidRequest;
-    if (!pathAllowed(self.pathPolicy(), path)) {
-        return std.fmt.bufPrint(output, "{{\"ok\":false,\"error\":\"path_refused\"}}", .{}) catch return error.HandlerFailed;
-    }
-    self.issued.add(path);
-    return std.fmt.bufPrint(output, "{{\"ok\":true}}", .{}) catch return error.HandlerFailed;
-}
-
 fn unissuedPath(output: []u8) anyerror![]const u8 {
     return std.fmt.bufPrint(output, "{{\"error\":\"unissued_path\"}}", .{}) catch return error.HandlerFailed;
 }
@@ -1118,9 +1103,9 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
 // ------------------------------------------- native file dialogs (v8-1-plan N2)
 //
 // Before this, the page opened the SDK's builtin dialogs (zero.dialogs.openFile /
-// saveFile), got the path back, and asked chess.issuePath to trust it before
-// reading or writing: the dialog's answer reached this side only through the
-// page. SDK 0.10.1 lets the native side open them itself —
+// saveFile), got the path back, and asked chess.issuePath (removed since) to
+// trust it before reading or writing: the dialog's answer reached this side
+// only through the page. SDK 0.10.1 lets the native side open them itself —
 // PlatformServices.showOpenDialog / showSaveDialog (platform/types.zig), which
 // Runtime.showOpenDialog / showSaveDialog validate and forward
 // (runtime/system_services.zig) — so these two commands do the whole thing
@@ -1140,7 +1125,7 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
 //     extension as the filter; then the write, the folder shown with the file
 //     in it, and {ok, name, revealed[, path]}. The path comes back only when
 //     the folder could not be shown, so the toast can say where the file went;
-//     no command takes a path from the page any more (COMPAT_COMMANDS aside).
+//     no command takes a path from the page to issue.
 //
 // Both answer {probe:true, dialogs} to {probe:true} without opening anything —
 // the packaged self-test's `nativeIo` check (v8-1-plan N3). {error:"no_dialog"}
@@ -2203,7 +2188,7 @@ test "every app command has a chess. name and no two share one" {
             try std.testing.expect(!std.mem.eql(u8, cmd.name, other.name));
         }
     }
-    try std.testing.expectEqual(@as(usize, 13), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 12), APP_COMMANDS.len);
 }
 
 test "one piece each way fits the SDK's bridge frame" {
@@ -2464,11 +2449,11 @@ test "the file dialogs are the native side's: the page is granted neither, nor t
         try std.testing.expect(!std.mem.eql(u8, name, "native-sdk.dialog.saveFile"));
         try std.testing.expect(!std.mem.eql(u8, name, "native-sdk.os.revealPath"));
     }
-    // and every compatibility command is still registered, with its policy
-    for (COMPAT_COMMANDS) |compat| {
-        var found = false;
-        for (APP_COMMANDS) |cmd| found = found or std.mem.eql(u8, cmd.name, compat);
-        try std.testing.expect(found);
+    // and no command is left that asks for a page-named path to be trusted:
+    // chess.issuePath is gone, not kept for older pages (there are none — the
+    // page is the one bundled into this binary)
+    for (APP_COMMANDS) |cmd| {
+        try std.testing.expect(!std.mem.eql(u8, cmd.name, "chess.issuePath"));
     }
 }
 
@@ -2620,7 +2605,7 @@ test "the issued-path table remembers what it was given, FIFO, bounded" {
     try std.testing.expect(!table.contains(""));
 }
 
-test "issuePath accepts a user-picked file and refuses the system's" {
+test "a dropped or OS-opened path is issued only when it is a user's file, not the system's" {
     const mac: PathPolicy = .{ .home = "/Users/me", .appdata_dir = "/Users/me/Library/Application Support/Chessboard", .windows = false };
     // the ordinary case, spaces and CJK included
     try std.testing.expect(pathAllowed(mac, "/Users/me/Documents/我的 棋谱/game.pgn"));
