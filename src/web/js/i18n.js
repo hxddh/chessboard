@@ -598,6 +598,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "aria.tabs": "面板分区",
       // 7.0 棋谱库
       "lib.title": "棋谱库", "lib.import": "导入棋谱文件", "lib.diagnose": "看诊断",
+      "lib.sync": "从网站同步", "sync.user": "用户名", "sync.go": "同步", "sync.allow": "允许联网同步", "sync.hint": "默认关闭。打开后只在你点「同步」时联网，只发送用户名。", "sync.noHost": "只有桌面应用能联网同步。", "sync.fetching": "正在从 {0} 取棋…", "sync.offline": "连不上 {0}，请检查网络。", "sync.rate": "{0} 暂时限制了请求，请一分钟后再试。", "sync.notFound": "{0} 上没有用户 {1}", "sync.empty": "{0} 上还没有 {1} 的对局", "sync.failed": "同步没有完成（{0}）", "sync.badName": "用户名是 2 到 30 个字母、数字、- 或 _",
       "pz.repBook": "书上走的是 {0}",
       "rep.title": "我的开局书", "rep.importW": "导入执白开局书", "rep.importB": "导入执黑开局书",
       "rep.drill": "开始背", "rep.clear": "清空", "rep.count": "{0} 条",

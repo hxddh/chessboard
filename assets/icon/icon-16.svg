@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- v8-0-plan A6: 16 px, drawn pixel by pixel rather than scaled down —
+       scaled, the two ears melt into one bump and the muzzle into the neck.
+       Every edge is on the pixel grid: two one-pixel ears with a gap, the
+       eye as one lit pixel, the muzzle a step out to the left, the plinth
+       two full rows. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4bd6a"/>
+      <stop offset="1" stop-color="#c5721c"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#tile)" d="M3 0H13V1H14V2H15V3H16V13H15V14H14V15H13V16H3V15H2V14H1V13H0V3H1V2H2V1H3Z"/>
+  <path fill="#281809" d="M4 14H13V12H12V5H11V3H10V2H9V3H8V2H7V3H6V4H5V5H4V6H3V7H2V8H3V9H7V10H6V11H5V12H4Z"/>
+  <path fill="#f4bd6a" d="M7 5H8V6H7Z"/>
+</svg>

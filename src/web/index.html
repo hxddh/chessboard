@@ -839,7 +839,9 @@
          coach's recommendation(); nothing here is new data. -->
     <main class="page" id="page-home" aria-labelledby="home-h" hidden>
       <div class="page-inner">
-        <h1 class="page-h" id="home-h" data-i18n="nav.home">首页</h1>
+        <!-- v8-0-plan A6: the home page's heading is the wordmark — the rail
+             already says 首页; the page is the app's own front door -->
+        <h1 class="page-h wordmark" id="home-h"><span class="wordmark-mark" aria-hidden="true"></span><span data-i18n="app.title">国际象棋</span></h1>
         <div class="home-cards">
           <section class="home-card" id="home-continue" aria-labelledby="home-continue-h">
             <h2 class="side-h" id="home-continue-h" data-i18n="home.continue">继续上次</h2>
@@ -899,6 +901,9 @@
             </div>
             <div class="close-row split" id="lib-acts">
               <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入棋谱文件</button>
+              <!-- v8-0-plan C2: the games from Lichess / Chess.com in one step
+                   instead of five (prefs-ui.js loads the dialog, sync-ui.js, a chunk) -->
+              <button type="button" class="act-btn" id="lib-sync" data-i18n="lib.sync">从网站同步</button>
               <span class="btn-pair">
                 <!-- label is 「全部 N 局」, filled by renderLibrary() in the
                      interface language, so the markup carries no text -->
@@ -1233,7 +1238,9 @@
          reachable from the program itself, not only from the repository. -->
     <div class="modal-bg" id="about-modal" role="dialog" aria-labelledby="about-title">
       <div class="modal">
-        <h3 id="about-title" data-i18n="about.title">关于</h3>
+        <!-- v8-0-plan A6: the heading in the wordmark's form — the knight and
+             the brand colour — so the dialog is still named by what it shows -->
+        <h3 class="wordmark" id="about-title"><span class="wordmark-mark" aria-hidden="true"></span><span data-i18n="about.title">关于国际象棋</span></h3>
         <dl class="key-list about-list">
           <dt data-i18n="about.version">版本</dt><dd class="num" id="about-version"></dd>
           <dt data-i18n="about.license">许可</dt><dd id="about-license"></dd>
@@ -1360,6 +1367,21 @@
                 <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
               </div>
             </div>
+          </div>
+        </section>
+        <!-- v8-0-plan C2: the one setting that lets this app talk to another
+             host. Off by default; on, it still sends nothing until 同步 is
+             pressed on the library page (prefs-ui.js, sync-ui.js). -->
+        <section class="side-section" id="prefs-net-sec">
+          <h2 class="side-h" data-i18n="lib.sync">从网站同步</h2>
+          <div class="setting-list">
+            <div class="setting-row">
+              <span class="setting-k" id="opt-netsync-k" data-i18n="sync.allow">允许联网同步</span>
+              <button type="button" class="switch" id="opt-netsync" aria-pressed="false" aria-labelledby="opt-netsync-k" aria-describedby="opt-netsync-hint">
+                <span class="switch-knob"></span>
+              </button>
+            </div>
+            <p class="hint" id="opt-netsync-hint" data-i18n="sync.hint">默认关闭。打开后只在你点「同步」时联网，只发送用户名。</p>
           </div>
         </section>
         <!-- Every irreversible action, in one place, with one naming pattern.

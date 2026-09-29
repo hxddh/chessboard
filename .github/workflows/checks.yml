@@ -111,7 +111,7 @@ jobs:
           - name: persistence
             suites: scripts/test-persist-e2e.mjs
           - name: game library
-            suites: scripts/test-library-e2e.mjs scripts/test-explorer-e2e.mjs
+            suites: scripts/test-library-e2e.mjs scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs
           # v8-0-plan F1: the layout suite in four shards. As one job it was
           # 31m51s on Chromium, the critical path of every PR by 18 minutes;
           # SHARD=i/4 runs every fourth scenario (scripts/e2e-shard.mjs).

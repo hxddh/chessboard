@@ -4,7 +4,7 @@
     .display_name = "国际象棋",
     .description = "Chess for macOS & Windows — Native SDK WebView + Canvas, GPLv3.",
     .version = "7.9.0",
-    .icons = .{"assets/icon.png"},
+    .icons = .{ "assets/icon.icns", "assets/icon.ico", "assets/icon.png" },
     .platforms = .{ "macos", "windows" },
     .permissions = .{},
     .capabilities = .{"webview"},

@@ -15,6 +15,8 @@
  */
 import { ChessDialog } from "./dialog.js";
 import { mount as mountLook } from "./appearance-ui.js";
+import { ChessHost } from "./host.js";
+import { loadChunk } from "./chunk.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -25,6 +27,23 @@ export function createPrefsUI(d) {
   const modal = doc.getElementById("prefs-modal");
   // the pickers once mounted: a handle, not app state (their state is store.ui)
   const mounted = { look: null };
+  // v8-0-plan C2: 允许联网同步 is this window's switch, and 从网站同步 on the
+  // library page the button behind it. All the bundle holds is the switch's
+  // look and a loader: turning it, the dialog, the stored "sync" key's rules
+  // and the claim are chunk-sync.js (sync-ui.js) — the first-paint budget
+  // has no room for more. The key is persist.js's, off unless `on` is true.
+  const net = d.netSync;
+  const loaded = { sync: null };
+  function paintSync() {
+    const b = doc.getElementById("opt-netsync");
+    if (b && net) b.setAttribute("aria-pressed", String((net.Persist.read("sync").value || {}).on === true));
+  }
+  // the bundle's own dialog stack and bridge go with it: a chunk importing
+  // them would get second copies
+  const withSync = (fn) => loadChunk("chunk-sync.js", "createSyncUI").then((make) => {
+    loaded.sync = loaded.sync || make(Object.assign({ doc, t, Dlg, Host: ChessHost, paint: paintSync }, net));
+    fn(loaded.sync);
+  }, () => {});
 
   /**
    * The appearance half of the window, behind one call: 外观 / 棋盘 / 边框 /
@@ -41,6 +60,7 @@ export function createPrefsUI(d) {
 
   function open() {
     if (!modal || modal.classList.contains("show")) return;
+    paintSync();
     Dlg.open(modal);
     // the board previews were drawn while the window was hidden, at their
     // fallback size; now that the row has a box, draw them at it
@@ -52,6 +72,10 @@ export function createPrefsUI(d) {
 
   function wire() {
     mountAppearance(doc.getElementById("prefs-look"));
+    paintSync();
+    const sw = doc.getElementById("opt-netsync"), go = doc.getElementById("lib-sync");
+    if (net && sw) sw.onclick = () => withSync((s) => s.toggle());
+    if (net && go) go.onclick = () => withSync((s) => s.open());
     if (!modal) return;
     const x = doc.getElementById("prefs-close");
     if (x) x.onclick = close;
