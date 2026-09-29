@@ -126,6 +126,9 @@ jobs:
       # 7.6: it also round trips the native save file, loads the eco chunk
       # over zero://, and launches twice to see localStorage survive a restart;
       # a red run names the check that failed.
+      # v8-1-plan N3: and IndexedDB on zero:// (kept across the restart), the
+      # language chunks document.write()n before bundle.js, and the native
+      # file commands chess.openPgn / chess.saveText (probed, no dialog).
       - name: self-test the packaged app
         run: |
           exe="$(find dist/Chessboard.app/Contents/MacOS -type f -perm -u+x | head -n1)"

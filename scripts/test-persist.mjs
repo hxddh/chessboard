@@ -262,6 +262,25 @@ function loadHost(zero) {
   const all = await H.openPgn({ max: H.ALL_DATA_MAX });
   assert(all && all.text.length === huge.length, "…while an open asking for ALL_DATA_MAX reads the 17 MiB file whole");
 
+  // the self-test probe: both commands answer without a dialog
+  zero.frames.length = 0;
+  const probe = await H.probeFileCommands();
+  assert(probe.openPgn.probe === true && probe.saveText.dialogs === true && zero.frames.every((f) => f.a.probe === true),
+    "probeFileCommands asks both commands with probe and nothing else");
+}
+
+// v8-1-plan N3: the self-test opens the library's database before the library
+// may have — same name, same version, same stores, or it could leave the
+// library a database without its stores
+{
+  const fs = await import("fs");
+  const lib = fs.readFileSync(path.join(root, "src/web/js/library-db.js"), "utf8");
+  const st = fs.readFileSync(path.join(root, "src/web/js/selftest-native.js"), "utf8");
+  const val = (src, name) => (new RegExp("const " + name + " = ([^;]+);").exec(src) || [])[1];
+  const stores = (src) => [...src.matchAll(/createObjectStore\(([^)]*)\)/g)].map((m) => m[1]).join("|");
+  assert(val(lib, "DB_NAME") === val(st, "IDB_NAME") && val(lib, "DB_VERSION") === val(st, "IDB_VERSION") &&
+    stores(lib) === stores(st) && stores(st).length > 0,
+    `selftest-native.js opens ${val(st, "IDB_NAME")} v${val(st, "IDB_VERSION")} exactly as library-db.js does (${stores(st)})`);
 }
 
 // --- 2. persist.js: the per-key store -----------------------------------------

@@ -302,6 +302,18 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return { name: String(r.name || opts.name || ""), revealed: r.revealed === true, path: String(r.path || "") };
   }
 
+  /**
+   * The self-test's `nativeIo` check (v8-1-plan N3): are chess.openPgn and
+   * chess.saveText registered and callable here? `probe` answers at once,
+   * without a dialog — nobody is there to close one.
+   * @returns {Promise<{openPgn: any, saveText: any}>} each command's answer
+   */
+  async function probeFileCommands() {
+    if (!hasZero() || typeof global.zero.invoke !== "function") throw new Error("no bridge");
+    const ask = (cmd) => global.zero.invoke(cmd, { probe: true }).catch((err) => ({ error: String((err && err.message) || err) }));
+    return { openPgn: await ask("chess.openPgn"), saveText: await ask("chess.saveText") };
+  }
+
   // Deliberately NOT gated on supports(): the clipboard and the file dialogs
   // below have real browser fallbacks, and the call sites in app.js choose
   // between native and browser by asking hasZero(). Returning null from here
@@ -722,6 +734,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     UNISSUED_PATH,
     openPgn,
     saveText,
+    probeFileCommands,
     showMessage,
     supports,
     addRecentDocument,
