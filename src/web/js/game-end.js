@@ -113,11 +113,14 @@ export function createGameEnd(d) {
     if (!end || !isLive()) return null;
     // a variation's leaf is not where the game ended, unless the rules end it
     // there too (mate, stalemate): a resignation, a flag, an agreed draw or a
-    // file's result belong to the mainline's last position (Codex #89)
-    if (!game.game_over() && !onMainline()) return null;
+    // file's result belong to the mainline's last position — and a variation
+    // the rules end carries its own result, not the mainline's (Codex #89)
+    const off = !onMainline();
+    if (off && !game.game_over()) return null;
+    const winner = !off ? end.winner : game.in_checkmate() ? (game.turn() === "w" ? "b" : "w") : null;
     return ["w", "b"].map((side) => ({
       sq: kingSquare(game, side),
-      kind: !end.winner ? "draw" : end.winner === side ? "win" : game.in_checkmate() ? "mate" : "loss",
+      kind: !winner ? "draw" : winner === side ? "win" : game.in_checkmate() ? "mate" : "loss",
     })).filter((b) => !!b.sq);
   }
 
