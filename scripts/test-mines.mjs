@@ -135,7 +135,11 @@ function evalScalar(score, turn) {
 
 /** One probe, the UCI sequence analyzeInner() sends; returns {cp, best} or,
     with multipv > 1, {lines: [{cp, move}]} sorted by the engine. */
-async function probe(fen, ms, multipv = 1) {
+async function probe(fen, ms, multipv = 1, nodes = 0) {
+  // nodes: the app's own search since v8-0-plan B2 (engine.js analyzeInner) —
+  // a fresh `ucinewgame` and `go nodes`, so the same position gives the same
+  // lines on any machine. Without it: `go movetime`, section 1's subject.
+  if (nodes) send("ucinewgame");
   await ready();
   send("setoption name MultiPV value " + multipv);
   send("setoption name Skill Level value 20");
@@ -155,7 +159,7 @@ async function probe(fen, ms, multipv = 1) {
   };
   listeners.push(collect);
   const w = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), ms + 20000);
-  send("go movetime " + ms);
+  send(nodes ? "go nodes " + nodes : "go movetime " + ms);
   try { await w; } finally { listeners.splice(listeners.indexOf(collect), 1); }
   const arr = [...lines.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]);
   return { cp: arr[0] ? arr[0].cp : null, best, lines: arr };
@@ -263,9 +267,27 @@ if (REVISION_ONLY) {
 // =========================================================================
 // 2 · at a ?? position, how many moves sit within MISTAKE of the best?
 // =========================================================================
+// v8-1-plan M1: the ?? positions and their MultiPV lines both come from a
+// fixed-node search, the one the app itself runs (NODES_PER_MS × DEEP). With
+// `go movetime` the six positions a round happened to mint, and each one's
+// lines, moved with the runner: the median read 116 / 86 / 78 / 33 / 25 and
+// then 9 on unchanged code, and the floor was lowered once already (7.6). A
+// fixed-node pass answers the same question the same way on every machine.
+const DEEP_NODES = Math.max(1000, Math.round(DEEP * 450));
+const fixedBlunders = [];
+for (const game of GAMES) {
+  const fens = fensOf(game.san);
+  const d = [];
+  for (const fen of fens) d.push(await probe(fen, DEEP, 1, DEEP_NODES));
+  for (let i = 0; i < game.san.length; i++) {
+    const side = fens[i].split(" ")[1];
+    const loss = d[i].cp == null || d[i + 1].cp == null ? null : Review.lossOf(d[i].cp, d[i + 1].cp, side);
+    if (loss != null && Review.markFor(loss) === "??") fixedBlunders.push({ fen: fens[i], side });
+  }
+}
 const gaps = [], within = { 50: [], 100: [], 200: [] };
-for (const bp of blunderPositions) {
-  const r = await probe(bp.fen, DEEP, 5);
+for (const bp of fixedBlunders) {
+  const r = await probe(bp.fen, DEEP, 5, DEEP_NODES);
   const lines = r.lines.filter((l) => l.cp != null && Math.abs(l.cp) < 9000);
   if (lines.length < 2) continue;
   const best = lines[0].cp;
@@ -274,7 +296,8 @@ for (const bp of blunderPositions) {
   for (const k of Object.keys(within)) within[k].push(lines.slice(1).filter((l) => loss(l.cp) < Number(k)).length);
 }
 const alternatives = {
-  what: "?? 局面上（精析 MultiPV 5），次佳着离最佳着多少分；离最佳不到 50/100/200 分的替代着各有几个",
+  what: "?? 局面上（精析 MultiPV 5，定节点搜索，与应用相同），次佳着离最佳着多少分；离最佳不到 50/100/200 分的替代着各有几个",
+  nodes: DEEP_NODES,
   positions: gaps.length,
   secondBestGapMedian: quantile(gaps, 0.5), secondBestGapP25: quantile(gaps, 0.25), secondBestGapP75: quantile(gaps, 0.75),
   acceptedAltsMean: { 50: mean(within[50]), 100: mean(within[100]), 200: mean(within[200]) },
