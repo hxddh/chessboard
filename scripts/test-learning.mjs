@@ -566,7 +566,8 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
     fs.readFileSync(csvPath, "utf8").split("\n")[1].split(",")[0];
   const shipped = (d) => fs.readdirSync(path.join(d, "lichess")).map((f) => fs.readFileSync(path.join(d, "lichess", f), "utf8")).join("");
   const report = path.join(dir, "worse.json");
-  fs.writeFileSync(report, JSON.stringify({ worseAny: [{ id: firstId, ply: 0 }] }));
+  // the ids as verify-puzzles.mjs writes them: the app's, "lc-" + the Lichess id (Codex #89)
+  fs.writeFileSync(report, JSON.stringify({ worseAny: [{ id: "lc-" + firstId, ply: 0 }] }));
   const r5 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", path.join(dir, "ex"), "--seed", "1", "--exclude", report], { encoding: "utf8" });
   assert(r5.status === 0 && shipped(dir).includes(JSON.stringify(firstId)) && !shipped(path.join(dir, "ex")).includes(JSON.stringify(firstId)) &&
     /accepted 48 /.test(r5.stdout), "--exclude report.json drops the reported id (" + firstId + ", " + r5.stdout.split("\n")[0] + ")");

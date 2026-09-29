@@ -2809,6 +2809,25 @@ for (const lang of CONTENT_LANGS) {
   assert(b10.length && b10[0].i === 0 && b10[0].no === 31, "A4: …and the first ply is labelled even off the interval (31… at every 10: " + JSON.stringify(b10) + ")");
 }
 
+// A5: the result badges of a variation that the rules end are that
+// variation's result, not the mainline's resignation (Codex #89)
+{
+  loadModule(ctx, "src/web/js/game-end.js");
+  const staleGame = new Chess("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"); // Black to move, stalemated
+  const kingAt = (g, side) => { for (const row of g.board()) for (const x of row) if (x && x.type === "k" && x.color === side) return x.square; return null; };
+  const ge = (onMain) => ctx.createGameEnd({
+    store: { session: { mode: "pvp" }, game: { resigned: "b" } }, t: (k) => k, tf: (k) => k, sideName: (s) => s, game: staleGame,
+    el: () => null, setText() {}, avail() {}, toast() {}, sanHistory: () => ["x"], analysisFor: () => null,
+    appGameOver: () => true, resultFromFile: () => false, gameResultToken: () => "1-0", timeoutIsDraw: () => false,
+    autoDrawReason: () => null, isLive: () => true, kingSquare: kingAt, onMainline: () => onMain, onEnding() {},
+  });
+  const off = ge(false).resultBadges();
+  assert(off && off.length === 2 && off.every((b) => b.kind === "draw"),
+    "A5: a stalemated variation of a resigned game carries ½ on both kings (" + JSON.stringify(off) + ")");
+  const main = ge(true).resultBadges();
+  assert(main && main.find((b) => b.sq === "g6").kind === "win", "A5: …the mainline keeps the game's own result (" + JSON.stringify(main) + ")");
+}
+
 // The eval bar and the one set of mistake thresholds behind it.
 {
   loadModule(ctx, "src/web/js/review.js");

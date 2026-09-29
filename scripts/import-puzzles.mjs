@@ -604,8 +604,10 @@ export function writeOutput(outDir, puzzles, meta) {
  * @returns {Set<string>}
  */
 export function readExclude(v) {
-  if (v && fs.existsSync(v)) return new Set(JSON.parse(fs.readFileSync(v, "utf8")).worseAny.map((w) => w.id));
-  return new Set(String(v || "").split(",").map((x) => x.trim()).filter(Boolean));
+  // the report names puzzles as the app does, "lc-" + the Lichess id; the CSV has the bare id
+  const bare = (id) => String(id).replace(/^lc-/, "");
+  if (v && fs.existsSync(v)) return new Set(JSON.parse(fs.readFileSync(v, "utf8")).worseAny.map((w) => bare(w.id)));
+  return new Set(String(v || "").split(",").map((x) => bare(x.trim())).filter(Boolean));
 }
 
 function parseArgs(argv) {

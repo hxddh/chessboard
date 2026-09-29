@@ -2222,7 +2222,7 @@ import { createStore } from "./store.js";
   // game-end.js
   const GameEnd = createGameEnd({
     store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
-    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare,
+    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
     onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); },
   });
   const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;

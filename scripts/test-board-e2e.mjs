@@ -2042,6 +2042,33 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await ctx.close();
   }
 
+  // (1b) Codex #89: a finished game branched from an earlier move — the leaf of
+  // the variation is not the game's end, and its kings carry no result
+  {
+    const { ctx, page, errs } = await openA5({ mode: "pvp" });
+    for (const [a, b] of [["e2", "e4"], ["e7", "e5"], ["g1", "f3"], ["b8", "c6"]]) { await tap(page, a); await tap(page, b); await page.waitForTimeout(200); }
+    // Black resigns: an ending the rules do not make, on the mainline's last position
+    await page.click("#btn-resign");
+    await page.waitForTimeout(300);
+    await page.click("#confirm-alt");
+    await page.waitForTimeout(600);
+    await page.click("#go-close").catch(() => {});
+    await page.waitForTimeout(300);
+    const good = await token(page, "--judge-good"), bad = await token(page, "--judge-bad");
+    const endW = await paintAt(page, "e1", false, "badge"), endB = await paintAt(page, "e8", false, "badge");
+    // stand before 2…Nc6 and play 2…Nf6 instead: a variation, its leaf on the board
+    await page.click('#move-list .mlmove[data-i="3"]');
+    await page.waitForTimeout(400);
+    await tap(page, "g8"); await tap(page, "f6");
+    await page.waitForTimeout(700);
+    const vW = await paintAt(page, "e1", false, "badge"), vB = await paintAt(page, "e8", false, "badge");
+    const line = await page.evaluate(() => !!document.querySelector('#move-list .mlv[aria-label="Nf6"]') ? "Nf6" : document.getElementById("move-list").innerText);
+    assert(near(endW, good) && near(endB, bad), `A5 终局：黑方认输，最后局面的王上有徽标（${endW} / ${endB}）`);
+    assert(line === "Nf6" && !near(vW, good) && !near(vB, bad), `A5 终局：从中途走出的变着，末端的王上没有这盘棋的结果（${vW} / ${vB} · ${line}）`);
+    assert(errs.length === 0, `A5 变着：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
   // (2) a puzzle: ✗ in red for a wrong move, ✓ in green for the right one, no red for the solve
   {
     const { ctx, page, errs } = await openA5({ mode: "puzzle" }, { puzzles: { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" } });
