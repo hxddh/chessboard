@@ -149,15 +149,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * `err.name` on the rejection for a path the native side never issued.
    *
    * v6-plan Q1.2: chess.readTextFile / chess.writeTextFile accept only a path
-   * the native side handed out in this process — one a file dialog returned,
-   * one that was dropped on the window, or one the OS opened. The dialogs are
-   * SDK builtins whose answer main.zig never sees, so the wrappers below call
-   * chess.issuePath on every path they return; main.zig validates it (home or
-   * a removable volume, no dotfiles, no ~/Library / AppData, no .app bundle)
-   * and only then remembers it. Drops and OS opens are issued by main.zig
-   * itself (v8-0-plan F3), so the dialogs are the one road left through
-   * chess.issuePath. A call site that names a path from anywhere else gets
-   * this error, which is the point.
+   * the native side handed out in this process — one that was dropped on the
+   * window, or one the OS opened; main.zig issues both itself (v8-0-plan F3).
+   * The file dialogs no longer hand the page a path at all: they run in
+   * main.zig (openPgn / saveText below, v8-1-plan N2), and chess.issuePath,
+   * which the page once called on what they returned, is left for older
+   * pages only. A call site that names a path from anywhere else gets this
+   * error, which is the point.
    */
   const UNISSUED_PATH = "UnissuedPathError";
 
@@ -173,48 +171,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (r && typeof r === "object" && r.error === "unissued_path") throw unissuedPathError(path);
   }
 
-  /**
-   * Register `path` with the native side as one the player picked.
-   *
-   * Best-effort and silent: on a build without chess.issuePath (or in a
-   * browser) the read/write that follows either works as before or fails
-   * with its own error, and nothing here can add information to that.
-   * @returns {Promise<boolean>} whether the native side accepted it
-   */
-  async function issuePath(path) {
-    if (!path || !hasZero() || typeof global.zero.invoke !== "function") return false;
-    try {
-      const r = await global.zero.invoke("chess.issuePath", { path: path });
-      return !!(r && r.ok);
-    } catch (_) { return false; }
-  }
-
-  async function issuePaths(input) {
-    const paths = normalizePaths(input);
-    for (let i = 0; i < paths.length; i++) await issuePath(paths[i]);
-    return paths;
-  }
-
   async function writeTextFile(path, text) {
     if (!hasZero()) throw new Error("no bridge");
     const r = await sendBytes((f) => global.zero.invoke("chess.writeTextFile", f),
       { path: path }, new TextEncoder().encode(String(text)));
-    throwIfWriteRefused(r, path);
-  }
-
-  /**
-   * Write raw bytes, given as base64.
-   *
-   * Same bridge command as writeTextFile — the native side has always just
-   * base64-decoded and written the result, so it was binary-capable all along.
-   * Only this façade assumed text, because bytesToBase64 runs its argument
-   * through a UTF-8 encoder first, and a PNG does not survive that.
-   *
-   * @param {string} b64 base64 of the bytes to write, with no data: prefix
-   */
-  async function writeBinaryFile(path, b64) {
-    if (!hasZero()) throw new Error("no bridge");
-    const r = await sendBytes((f) => global.zero.invoke("chess.writeTextFile", f), { path: path }, bytesFromB64(b64));
     throwIfWriteRefused(r, path);
   }
 
@@ -271,40 +231,87 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return e;
   }
 
-  // Both dialogs hand their answer to chess.issuePath before returning it
-  // (see UNISSUED_PATH): the dialog is the native side's word that the player
-  // chose this path, and the read/write that follows is refused without it.
-  async function saveFileDialog(options) {
-    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.saveFile) throw noFileDialogError();
-    const picked = await global.zero.dialogs.saveFile(options || {});
-    await issuePaths(picked);
-    return picked;
-  }
-
-  async function openFileDialog(options) {
-    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.openFile) throw noFileDialogError();
-    const picked = await global.zero.dialogs.openFile(options || {});
-    await issuePaths(picked);
-    return picked;
+  /**
+   * An answer from chess.openPgn / chess.saveText that is not the file: the
+   * platform has no dialog (the call site takes the browser's picker), or the
+   * native side could not do it.
+   */
+  function throwIfDialogRefused(r, what) {
+    if (!r || typeof r !== "object") throw new Error(what + ": bad result " + JSON.stringify(r));
+    if (r.error === "no_dialog") throw noFileDialogError();
+    if (r.tooLarge) throw fileTooLargeError(r.limit);
+    if (typeof r.error === "string") throw new Error(what + " failed: " + r.error);
   }
 
   /**
-   * Show the saved file in the OS file manager.
+   * v8-1-plan N2: the open dialog and the read, both in the native layer.
    *
-   * Returns whether that actually happened. It used to return nothing and
-   * swallow every failure, and the caller then said 「已导出 report.png」 —
-   * a file name and no path, for a file the app had just put somewhere the
-   * player never saw. When the folder does not open, the path is the only
-   * thing left that answers "where did it go", so the caller needs to know.
-   * @returns {Promise<boolean>}
+   * Before v8-1-plan N2 the page opened the SDK's dialog, got a path, asked
+   * chess.issuePath to trust it and then read it; now main.zig opens the
+   * dialog and reads the file itself, and the page gets the text and the
+   * file's name — never the path. A file past one bridge piece comes in
+   * pieces asked for by the token the first answer carries.
+   *
+   * @param {{title?: string, max?: number, recent?: boolean}} [opts] `max`:
+   *   FILE_MAX unless 导入全部数据 asks for ALL_DATA_MAX; `recent`: put the
+   *   file on the OS's recent-documents list (a PGN, not a data file)
+   * @returns {Promise<{name: string, text: string}|null>} null: cancelled
    */
-  async function revealPath(path) {
-    if (!hasZero() || !global.zero.os || !global.zero.os.revealPath) return false;
-    if (!(await supports("reveal_path", true))) return false;
-    try {
-      await global.zero.os.revealPath(path);
-      return true;
-    } catch (_) { return false; }
+  async function openPgn(opts) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") throw noFileDialogError();
+    const o = opts || {};
+    const max = o.max || FILE_MAX;
+    const first = { title: String(o.title || ""), max, recent: !!o.recent };
+    let token = 0;
+    const r = await readBytes(async (f) => {
+      if (!f.offset) {
+        const a = await global.zero.invoke("chess.openPgn", first);
+        if (a && typeof a.token === "number") token = a.token;
+        return a;
+      }
+      return global.zero.invoke("chess.openPgn", { token, offset: f.offset });
+    }, {}, max);
+    if (r && r.cancelled === true) return null;
+    throwIfDialogRefused(r, "open");
+    if (!r.bytes) throw new Error("open: bad result");
+    // decoded once, whole: a piece boundary can fall inside a UTF-8 sequence
+    return { name: String(r.name || ""), text: new TextDecoder().decode(r.bytes) };
+  }
+
+  /**
+   * v8-1-plan N2: the save dialog, the write and the reveal, in the native
+   * layer. The bytes cross first (in pieces past CHUNK, like any write) and
+   * main.zig shows the dialog once they are all there, suggesting `name`;
+   * then it writes the file and shows it in its folder.
+   *
+   * @param {{title?: string, name: string, text?: string, b64?: string,
+   *          recent?: boolean}} opts `b64` for bytes that are not text (the
+   *   report PNG); `recent`: put the file on the recent-documents list
+   * @returns {Promise<{name: string, revealed: boolean, path: string}|null>}
+   *   null: cancelled. `path` is set only when the folder did not open — it
+   *   is for the toast to say where the file went, and no command takes it.
+   */
+  async function saveText(opts) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") throw noFileDialogError();
+    const bytes = typeof opts.b64 === "string" ? bytesFromB64(opts.b64) : new TextEncoder().encode(String(opts.text));
+    const r = await sendBytes((f) => global.zero.invoke("chess.saveText", f),
+      { title: String(opts.title || ""), name: String(opts.name || ""), recent: !!opts.recent }, bytes);
+    if (r && r.cancelled === true) return null;
+    throwIfDialogRefused(r, "save");
+    if (r.ok !== true) throw new Error("save: bad result " + JSON.stringify(r));
+    return { name: String(r.name || opts.name || ""), revealed: r.revealed === true, path: String(r.path || "") };
+  }
+
+  /**
+   * The self-test's `nativeIo` check (v8-1-plan N3): are chess.openPgn and
+   * chess.saveText registered and callable here? `probe` answers at once,
+   * without a dialog — nobody is there to close one.
+   * @returns {Promise<{openPgn: any, saveText: any}>} each command's answer
+   */
+  async function probeFileCommands() {
+    if (!hasZero() || typeof global.zero.invoke !== "function") throw new Error("no bridge");
+    const ask = (cmd) => global.zero.invoke(cmd, { probe: true }).catch((err) => ({ error: String((err && err.message) || err) }));
+    return { openPgn: await ask("chess.openPgn"), saveText: await ask("chess.saveText") };
   }
 
   // Deliberately NOT gated on supports(): the clipboard and the file dialogs
@@ -493,8 +500,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     try {
       // v8-0-plan F3 (§6): main.zig issues a dropped path itself, from the
       // SDK's files_dropped event, before the page hears "drop:files" — so a
-      // drop no longer goes through chess.issuePath, which is left for what
-      // the file dialogs return (see UNISSUED_PATH)
+      // drop no longer goes through chess.issuePath (see UNISSUED_PATH)
       return global.zero.on("drop:files", function (payload) {
         return handler(payload);
       });
@@ -700,7 +706,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     } catch (_) {}
   }
 
-  /** Normalize openFile / drop path lists to string paths. */
+  /** Normalize drop / open:files path lists to string paths. */
   function normalizePaths(input) {
     if (!input) return [];
     const arr = Array.isArray(input) ? input : [input];
@@ -721,17 +727,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
     hasZero,
     bytesToBase64,
     writeTextFile,
-    writeBinaryFile,
     readTextFile,
     ALL_DATA_MAX,
     FILE_TOO_LARGE,
     NO_FILE_DIALOG,
     UNISSUED_PATH,
-    issuePath,
-    saveFileDialog,
-    openFileDialog,
+    openPgn,
+    saveText,
+    probeFileCommands,
     showMessage,
-    revealPath,
     supports,
     addRecentDocument,
     clearRecentDocuments,

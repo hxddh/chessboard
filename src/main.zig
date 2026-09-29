@@ -41,12 +41,15 @@ pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 /// scripts/manifest-check.mjs holds this list to host.js: every `zero.X.Y`
 /// the page calls has to be granted here, and nothing is granted that the
 /// page does not call.
+///
+/// v8-1-plan N2: the file dialogs, and the reveal after a save, are no longer
+/// the page's to call. chess.openPgn / chess.saveText open them here, on the
+/// native side, so the path the player picked never reaches the page —
+/// `native-sdk.dialog.openFile`, `.saveFile` and `native-sdk.os.revealPath`
+/// are not granted any more.
 const BUILTIN_COMMANDS = [_][]const u8{
     "native-sdk.platform.supports",
-    "native-sdk.dialog.openFile",
-    "native-sdk.dialog.saveFile",
     "native-sdk.dialog.showMessage",
-    "native-sdk.os.revealPath",
     "native-sdk.os.addRecentDocument",
     "native-sdk.os.clearRecentDocuments",
     "native-sdk.os.showNotification",
@@ -70,11 +73,13 @@ const AppCommand = struct {
 /// SDK answers with permission_denied) or the other way round.
 /// scripts/manifest-check.mjs (section 6) holds this list to host.js the same
 /// way BUILTIN_COMMANDS is held: every `chess.X` the page invokes is here, and
-/// nothing is here the page never invokes.
+/// nothing is here the page never invokes — COMPAT_COMMANDS aside.
 const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.writeTextFile", .invoke_fn = writeTextFile },
     .{ .name = "chess.readTextFile", .invoke_fn = readTextFile },
     .{ .name = "chess.issuePath", .invoke_fn = issuePath },
+    .{ .name = "chess.openPgn", .invoke_fn = openPgn },
+    .{ .name = "chess.saveText", .invoke_fn = saveText },
     .{ .name = "chess.appdataRead", .invoke_fn = appdataRead },
     .{ .name = "chess.appdataWrite", .invoke_fn = appdataWrite },
     .{ .name = "chess.appdataPath", .invoke_fn = appdataPath },
@@ -84,6 +89,13 @@ const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.selftestMode", .invoke_fn = selftestMode },
     .{ .name = "chess.selftestReport", .invoke_fn = selftestReport },
 };
+
+/// v8-1-plan N2: registered for pages older than this change only. The page as
+/// shipped never calls these, and scripts/manifest-check.mjs fails the build
+/// if it starts to again: chess.issuePath is the widest door from the page to
+/// the file system (it asks the native side to trust a path the page names),
+/// and since the dialogs run here it has nothing left to do.
+const COMPAT_COMMANDS = [_][]const u8{"chess.issuePath"};
 
 /// The platform path separator, as the strings this file builds need it.
 const SEP: []const u8 = if (builtin.os.tag == .windows) "\\" else "/";
@@ -118,6 +130,13 @@ const App = struct {
     appdata_seq: u32 = 0,
     /// Q1.2 — the paths the native side has issued to the page this process.
     issued: IssuedPaths = .{},
+    /// v8-1-plan N2 — the Runtime, for the file dialogs chess.openPgn /
+    /// chess.saveText open. A bridge handler is handed no Runtime, so
+    /// runner.zig fills this in (RunOptions.runtime_slot) before the loop
+    /// starts; null outside the runner (tests), which answers "no dialogs".
+    runtime: ?*native_sdk.Runtime = null,
+    /// v8-1-plan N2 — the file chess.openPgn is handing over in pieces.
+    opened: Opened = .{},
     /// v8-0-plan F3 — writes arriving in pieces, until their last piece.
     stages: Stages = .{},
     /// Q1.6 — localized copies of the manifest menus, when the launch
@@ -295,9 +314,9 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
 // be issued here, on the native side's own word, instead of the page
 // forwarding them to chess.issuePath. They get the same pathAllowed rule the
 // page's call used to get — a drop is the player's choice, but no wider than
-// a dialog's. What still goes through chess.issuePath is the file dialogs:
-// they are SDK builtins whose answer only the page sees (a bridge handler
-// holds no Runtime to open one itself), so that door stays, validated.
+// a dialog's. The file dialogs were the last road through chess.issuePath
+// until v8-1-plan N2 moved them here (chess.openPgn / chess.saveText, with the
+// Runtime runner.zig hands over); the command stays for older pages only.
 //
 // Probed by name at comptime like OPEN_FILE_VARIANTS: an SDK without the
 // variant compiles this to nothing, and a drop is then simply not issued.
@@ -878,6 +897,11 @@ fn jsonStringField(payload: []const u8, key: []const u8, out: []u8) ?[]const u8 
 //   * the OS's open-document event (forwardOpenFiles above), registered
 //     directly because the OS, not the page, chose those paths.
 //
+// Since then drops are issued natively (issueDroppedPaths, v8-0-plan F3) and
+// the dialogs run natively (chess.openPgn / chess.saveText, v8-1-plan N2),
+// which never issue anything: the page as shipped no longer calls
+// chess.issuePath at all (COMPAT_COMMANDS).
+//
 // The first two go through the page, so issuePath cannot take the page's word
 // that a dialog ran: it VALIDATES instead. A path is accepted only if it is
 // absolute, contains no `.`/`..`/dot-prefixed component (that is ~/.ssh,
@@ -1089,6 +1113,323 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
     // it is the whole file. base64 never contains a character JSON escapes, so
     // it can be quoted as-is.
     return chunkAnswer(output, buf[0..got.n], got.more, null);
+}
+
+// ------------------------------------------- native file dialogs (v8-1-plan N2)
+//
+// Before this, the page opened the SDK's builtin dialogs (zero.dialogs.openFile /
+// saveFile), got the path back, and asked chess.issuePath to trust it before
+// reading or writing: the dialog's answer reached this side only through the
+// page. SDK 0.10.1 lets the native side open them itself —
+// PlatformServices.showOpenDialog / showSaveDialog (platform/types.zig), which
+// Runtime.showOpenDialog / showSaveDialog validate and forward
+// (runtime/system_services.zig) — so these two commands do the whole thing
+// here and the path never leaves this file:
+//
+//   * chess.openPgn {title, max?, recent?} — the open dialog, then the file,
+//     read the way chess.readTextFile reads it (pieces of CHUNK_BYTES, refused
+//     whole past its limit). Answers {cancelled:true}, or {name, b64, more
+//     [, token]}: `name` is the file's name for the screen, and a file past
+//     one piece is continued by {token, offset}. The limit is FILE_MAX_BYTES
+//     unless `max` asks for more (导入全部数据), and never past
+//     USER_FILE_MAX_BYTES. `recent` puts the file on the OS's recent-documents
+//     list once it was read.
+//   * chess.saveText {title, name, recent?, b64…} — the bytes first, in the
+//     pieces writeTextFile takes (staged, up to USER_FILE_MAX_BYTES), and only
+//     when the last one is in, the save dialog with `name` suggested and its
+//     extension as the filter; then the write, the folder shown with the file
+//     in it, and {ok, name, revealed[, path]}. The path comes back only when
+//     the folder could not be shown, so the toast can say where the file went;
+//     no command takes a path from the page any more (COMPAT_COMMANDS aside).
+//
+// Both answer {probe:true, dialogs} to {probe:true} without opening anything —
+// the packaged self-test's `nativeIo` check (v8-1-plan N3). {error:"no_dialog"}
+// means this platform has none, and the page takes the browser's picker.
+
+/// What a staged chess.saveText is filed under while it has no path yet. Not
+/// "appdata:", so stageLimit gives it USER_FILE_MAX_BYTES (导出全部数据).
+const SAVE_TARGET = "dialog:save";
+
+/// The file chess.openPgn picked, for the pieces after the first. One at a
+/// time: a second open replaces it, and the first then answers open_lost.
+const Opened = struct {
+    path_buf: [native_sdk.platform.max_dialog_path_bytes]u8 = undefined,
+    path_len: usize = 0,
+    limit: usize = 0,
+    token: u32 = 0,
+    seq: u32 = 0,
+
+    /// Remember `path`; the token its later pieces ask by, or null when the
+    /// path does not fit.
+    fn remember(self: *Opened, path: []const u8, limit: usize) ?u32 {
+        if (path.len == 0 or path.len > self.path_buf.len) return null;
+        self.seq +%= 1;
+        if (self.seq == 0) self.seq = 1;
+        @memcpy(self.path_buf[0..path.len], path);
+        self.path_len = path.len;
+        self.limit = limit;
+        self.token = self.seq;
+        return self.token;
+    }
+
+    fn pathOf(self: *const Opened, token: usize) ?[]const u8 {
+        if (self.path_len == 0 or token == 0 or token != self.token) return null;
+        return self.path_buf[0..self.path_len];
+    }
+
+    fn forget(self: *Opened) void {
+        self.path_len = 0;
+        self.token = 0;
+    }
+};
+
+/// The first path of an open dialog's answer (the SDK joins several with
+/// '\n'), or null for Cancel — which the SDK reports as a count of 0.
+fn dialogPick(count: usize, paths: []const u8) ?[]const u8 {
+    if (count == 0) return null;
+    const end = std.mem.indexOfScalar(u8, paths, '\n') orelse paths.len;
+    if (end == 0) return null;
+    return paths[0..end];
+}
+
+/// How much chess.openPgn reads: a PGN's FILE_MAX_BYTES unless the page asks
+/// for more, and never past USER_FILE_MAX_BYTES.
+fn openLimit(requested: ?usize) usize {
+    const want = requested orelse return FILE_MAX_BYTES;
+    if (want == 0) return FILE_MAX_BYTES;
+    return @min(want, USER_FILE_MAX_BYTES);
+}
+
+/// The last component of `path`: what the toast and the imported game's
+/// label show instead of the path.
+fn baseName(path: []const u8, windows: bool) []const u8 {
+    var i = path.len;
+    while (i > 0 and !isSep(path[i - 1], windows)) : (i -= 1) {}
+    return path[i..];
+}
+
+/// The extension of the suggested name, as the save dialog's one filter
+/// ("pgn", "json", "png"), or null when there is none worth filtering by.
+fn saveExt(name: []const u8) ?[]const u8 {
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+    const ext = name[dot + 1 ..];
+    if (dot == 0 or ext.len == 0 or ext.len > 8) return null;
+    for (ext) |c| {
+        if (!std.ascii.isAlphanumeric(c)) return null;
+    }
+    return ext;
+}
+
+/// Length of the valid UTF-8 sequence `s` starts with (its first byte is 0x80
+/// or above), or 0 when it is not one: a stray continuation byte, a truncated
+/// or overlong sequence, a surrogate, or past U+10FFFF.
+fn utf8SeqLen(s: []const u8) usize {
+    const c = s[0];
+    const len: usize = if (c >= 0xC2 and c <= 0xDF) 2 else if (c >= 0xE0 and c <= 0xEF) 3 else if (c >= 0xF0 and c <= 0xF4) 4 else return 0;
+    if (s.len < len) return 0;
+    for (s[1..len]) |b| {
+        if ((b & 0xC0) != 0x80) return 0;
+    }
+    // the second byte's range is what rules out overlongs, surrogates and
+    // anything past U+10FFFF (RFC 3629 §4)
+    const b1 = s[1];
+    if (c == 0xE0 and b1 < 0xA0) return 0;
+    if (c == 0xED and b1 > 0x9F) return 0;
+    if (c == 0xF0 and b1 < 0x90) return 0;
+    if (c == 0xF4 and b1 > 0x8F) return 0;
+    return len;
+}
+
+/// A JSON string literal of a file name, quotes included: every valid UTF-8
+/// sequence as it is, every byte outside one as U+FFFD, control characters
+/// escaped. A name is bytes on macOS and UTF-16 narrowed by the SDK on Windows
+/// (lone surrogates and all); neither promises UTF-8, and one stray byte in a
+/// JSON string is enough for the page's JSON.parse to throw the whole answer
+/// away. jsonAppendString, which paths used, refuses control bytes instead.
+fn jsonAppendName(buf: []u8, n: *usize, s: []const u8) bool {
+    const hex = "0123456789abcdef";
+    if (!jsonAppend(buf, n, "\"")) return false;
+    var i: usize = 0;
+    while (i < s.len) {
+        const c = s[i];
+        if (c >= 0x80) {
+            const len = utf8SeqLen(s[i..]);
+            if (len == 0) {
+                if (!jsonAppend(buf, n, "\xEF\xBF\xBD")) return false;
+                i += 1;
+            } else {
+                if (!jsonAppend(buf, n, s[i .. i + len])) return false;
+                i += len;
+            }
+            continue;
+        }
+        const ok = if (c == '"')
+            jsonAppend(buf, n, "\\\"")
+        else if (c == '\\')
+            jsonAppend(buf, n, "\\\\")
+        else if (c < 0x20)
+            jsonAppend(buf, n, &[_]u8{ '\\', 'u', '0', '0', hex[c >> 4], hex[c & 15] })
+        else
+            jsonAppend(buf, n, s[i .. i + 1]);
+        if (!ok) return false;
+        i += 1;
+    }
+    return jsonAppend(buf, n, "\"");
+}
+
+fn cancelledAnswer(output: []u8) anyerror![]const u8 {
+    return std.fmt.bufPrint(output, "{{\"cancelled\":true}}", .{}) catch return error.HandlerFailed;
+}
+
+/// {"error":code}: no_dialog, dialog_failed, read_failed, write_failed,
+/// open_lost — host.js turns each into something the player can be told.
+fn fileErrorAnswer(output: []u8, code: []const u8) anyerror![]const u8 {
+    return std.fmt.bufPrint(output, "{{\"error\":\"{s}\"}}", .{code}) catch return error.HandlerFailed;
+}
+
+/// A dialog that could not be shown: none on this platform (the SDK's
+/// UnsupportedService — the page falls back to the browser), or one that
+/// failed.
+fn dialogErrorCode(err: anyerror) []const u8 {
+    return if (err == error.UnsupportedService) "no_dialog" else "dialog_failed";
+}
+
+fn probeAnswer(output: []u8, dialogs: bool) anyerror![]const u8 {
+    return std.fmt.bufPrint(output, "{{\"probe\":true,\"dialogs\":{s}}}", .{if (dialogs) "true" else "false"}) catch return error.HandlerFailed;
+}
+
+/// Does this platform give the native side both dialogs? (the probe's answer)
+fn dialogsAvailable(self: *const App) bool {
+    const rt = self.runtime orelse return false;
+    const services = rt.options.platform.services;
+    return services.show_open_dialog_fn != null and services.show_save_dialog_fn != null;
+}
+
+/// chess.openPgn's first piece: chunkAnswer's {b64, more}, with the file's
+/// name in front and, when more pieces follow, the token they ask by.
+fn openAnswer(output: []u8, name: []const u8, token: ?u32, bytes: []const u8, more: bool) anyerror![]const u8 {
+    const enc = std.base64.standard.Encoder;
+    var n: usize = 0;
+    if (!jsonAppend(output, &n, "{\"name\":")) return error.HandlerFailed;
+    if (!jsonAppendName(output, &n, name)) return error.HandlerFailed;
+    if (token) |t| {
+        var token_buf: [32]u8 = undefined;
+        const field = std.fmt.bufPrint(&token_buf, ",\"token\":{d}", .{t}) catch return error.HandlerFailed;
+        if (!jsonAppend(output, &n, field)) return error.HandlerFailed;
+    }
+    if (!jsonAppend(output, &n, ",\"b64\":\"")) return error.HandlerFailed;
+    const enc_len = enc.calcSize(bytes.len);
+    if (n + enc_len + 32 > output.len) return error.HandlerFailed;
+    _ = enc.encode(output[n..][0..enc_len], bytes);
+    n += enc_len;
+    if (!jsonAppend(output, &n, if (more) "\",\"more\":true}" else "\",\"more\":false}")) return error.HandlerFailed;
+    return output[0..n];
+}
+
+/// chess.saveText's answer. `path` is for a toast to show, when the folder
+/// did not open to show the file itself.
+fn savedAnswer(output: []u8, name: []const u8, revealed: bool, path: ?[]const u8) anyerror![]const u8 {
+    var n: usize = 0;
+    if (!jsonAppend(output, &n, "{\"ok\":true,\"name\":")) return error.HandlerFailed;
+    if (!jsonAppendName(output, &n, name)) return error.HandlerFailed;
+    if (!jsonAppend(output, &n, if (revealed) ",\"revealed\":true" else ",\"revealed\":false")) return error.HandlerFailed;
+    if (path) |p| {
+        if (!jsonAppend(output, &n, ",\"path\":")) return error.HandlerFailed;
+        if (!jsonAppendName(output, &n, p)) return error.HandlerFailed;
+    }
+    if (!jsonAppend(output, &n, "}")) return error.HandlerFailed;
+    return output[0..n];
+}
+
+/// The same two std.Io calls writeTextFile makes.
+fn writeWhole(io: std.Io, path: []const u8, bytes: []const u8) !void {
+    var file = try std.Io.Dir.createFileAbsolute(io, path, .{ .truncate = true });
+    defer file.close(io);
+    try file.writeStreamingAll(io, bytes);
+}
+
+fn openPgn(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    const payload = invocation.request.payload;
+    if (jsonBoolField(payload, "probe") orelse false) return probeAnswer(output, dialogsAvailable(self));
+
+    const gpa = std.heap.page_allocator;
+    const buf = gpa.alloc(u8, CHUNK_BYTES + 1) catch return error.HandlerFailed;
+    defer gpa.free(buf);
+
+    // a later piece of the file the dialog picked: asked for by its token,
+    // never by a path
+    if (jsonUintField(payload, "token")) |token| {
+        const offset = jsonUintField(payload, "offset") orelse return error.InvalidRequest;
+        const path = self.opened.pathOf(token) orelse return fileErrorAnswer(output, "open_lost");
+        const got = (readChunk(self.io, path, offset, buf, self.opened.limit) catch |err| switch (err) {
+            error.FileTooLarge => return tooLargeAnswerFor(output, self.opened.limit),
+            error.HandlerFailed => return fileErrorAnswer(output, "read_failed"),
+        }) orelse return fileErrorAnswer(output, "read_failed");
+        if (!got.more) self.opened.forget();
+        return chunkAnswer(output, buf[0..got.n], got.more, null);
+    }
+
+    const runtime = self.runtime orelse return fileErrorAnswer(output, "no_dialog");
+    var title_buf: [512]u8 = undefined;
+    const title = jsonStringField(payload, "title", &title_buf) orelse "";
+    const limit = openLimit(jsonUintField(payload, "max"));
+    const paths_buf = gpa.alloc(u8, native_sdk.platform.max_dialog_paths_bytes) catch return error.HandlerFailed;
+    defer gpa.free(paths_buf);
+    const picked = runtime.showOpenDialog(.{ .title = title }, paths_buf) catch |err| return fileErrorAnswer(output, dialogErrorCode(err));
+    const path = dialogPick(picked.count, picked.paths) orelse return cancelledAnswer(output);
+
+    // too big is refused whole, as readTextFile refuses it (readChunk's probe)
+    const got = (readChunk(self.io, path, 0, buf, limit) catch |err| switch (err) {
+        error.FileTooLarge => return tooLargeAnswerFor(output, limit),
+        error.HandlerFailed => return fileErrorAnswer(output, "read_failed"),
+    }) orelse return fileErrorAnswer(output, "read_failed");
+    var token: ?u32 = null;
+    if (got.more) token = self.opened.remember(path, limit) orelse return fileErrorAnswer(output, "read_failed");
+    // the recent-documents list (Dock, jump list) is filled from here now:
+    // the page never holds the path to hand to native-sdk.os.addRecentDocument
+    if (jsonBoolField(payload, "recent") orelse false) runtime.addRecentDocument(path) catch {};
+    return openAnswer(output, baseName(path, builtin.os.tag == .windows), token, buf[0..got.n], got.more);
+}
+
+fn saveText(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    const payload = invocation.request.payload;
+    if (jsonBoolField(payload, "probe") orelse false) return probeAnswer(output, dialogsAvailable(self));
+
+    // the bytes first, in the pieces writeTextFile takes; the dialog only
+    // once they are all here, so a Cancel leaves nothing half-sent behind
+    var incoming: Incoming = undefined;
+    var answer: []const u8 = "";
+    switch (try receive(self, payload, SAVE_TARGET, output, &incoming, &answer)) {
+        .answered => return answer,
+        .pending => return pendingAnswer(output),
+        .ready => {},
+    }
+    defer finishReceive(self, incoming);
+
+    const runtime = self.runtime orelse return fileErrorAnswer(output, "no_dialog");
+    var title_buf: [512]u8 = undefined;
+    const title = jsonStringField(payload, "title", &title_buf) orelse "";
+    var name_buf: [1024]u8 = undefined;
+    const name = jsonStringField(payload, "name", &name_buf) orelse "";
+    const exts = [_][]const u8{saveExt(name) orelse ""};
+    const one_filter = [_]native_sdk.FileFilter{.{ .name = exts[0], .extensions = exts[0..] }};
+    const filters: []const native_sdk.FileFilter = if (exts[0].len > 0) one_filter[0..] else &.{};
+    var path_buf: [native_sdk.platform.max_dialog_path_bytes]u8 = undefined;
+    const picked = runtime.showSaveDialog(.{
+        .title = title,
+        .default_name = name,
+        .filters = filters,
+    }, &path_buf) catch |err| return fileErrorAnswer(output, dialogErrorCode(err));
+    const path = picked orelse return cancelledAnswer(output);
+    if (path.len == 0) return cancelledAnswer(output);
+
+    writeWhole(self.io, path, incoming.bytes) catch return fileErrorAnswer(output, "write_failed");
+    if (jsonBoolField(payload, "recent") orelse false) runtime.addRecentDocument(path) catch {};
+    // the folder, with the file in it: "where did it go" answered on screen
+    const revealed = if (runtime.revealPath(path)) |_| true else |_| false;
+    return savedAnswer(output, baseName(path, builtin.os.tag == .windows), revealed, if (revealed) null else path);
 }
 
 // ------------------------------------------------------------ app data (Q1.1)
@@ -1824,6 +2165,7 @@ pub fn main(init: std.process.Init) !void {
         .bridge = app_state.bridge(),
         .builtin_bridge = app_state.builtinBridge(),
         .menus = app_state.localizedMenus(lang),
+        .runtime_slot = &app_state.runtime,
     }, init);
 }
 
@@ -1834,7 +2176,7 @@ test "the builtin bridge grants exactly the SDK commands the page calls" {
         try std.testing.expect(std.mem.startsWith(u8, name, "native-sdk."));
         try std.testing.expect(std.mem.indexOfScalar(u8, name[11..], '.') != null);
     }
-    try std.testing.expectEqual(@as(usize, 10), BUILTIN_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 7), BUILTIN_COMMANDS.len);
 }
 
 test "the self-test report decides the exit code by its ok field" {
@@ -1861,7 +2203,7 @@ test "every app command has a chess. name and no two share one" {
             try std.testing.expect(!std.mem.eql(u8, cmd.name, other.name));
         }
     }
-    try std.testing.expectEqual(@as(usize, 11), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 13), APP_COMMANDS.len);
 }
 
 test "one piece each way fits the SDK's bridge frame" {
@@ -2113,6 +2455,144 @@ test "jsonAppendString escapes what a path can carry" {
     var tiny: [4]u8 = undefined;
     var m: usize = 0;
     try std.testing.expect(!jsonAppendString(&tiny, &m, "abcdef"));
+}
+
+test "the file dialogs are the native side's: the page is granted neither, nor the reveal" {
+    // v8-1-plan N2 — chess.openPgn / chess.saveText open them in main.zig
+    for (BUILTIN_COMMANDS) |name| {
+        try std.testing.expect(!std.mem.eql(u8, name, "native-sdk.dialog.openFile"));
+        try std.testing.expect(!std.mem.eql(u8, name, "native-sdk.dialog.saveFile"));
+        try std.testing.expect(!std.mem.eql(u8, name, "native-sdk.os.revealPath"));
+    }
+    // and every compatibility command is still registered, with its policy
+    for (COMPAT_COMMANDS) |compat| {
+        var found = false;
+        for (APP_COMMANDS) |cmd| found = found or std.mem.eql(u8, cmd.name, compat);
+        try std.testing.expect(found);
+    }
+}
+
+test "a cancelled open dialog is a cancel, not an empty file" {
+    // the SDK reports Cancel as a count of 0 (macOS, Windows, null platform)
+    try std.testing.expect(dialogPick(0, "") == null);
+    try std.testing.expect(dialogPick(0, "/Users/me/a.pgn") == null);
+    try std.testing.expect(dialogPick(1, "") == null);
+    try std.testing.expectEqualStrings("/Users/me/a.pgn", dialogPick(1, "/Users/me/a.pgn").?);
+    // several, joined by '\n': the first (the dialog is single-choice anyway)
+    try std.testing.expectEqualStrings("C:\\a.pgn", dialogPick(2, "C:\\a.pgn\nC:\\b.pgn").?);
+    var out: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"cancelled\":true}", try cancelledAnswer(&out));
+}
+
+test "an open reads to 16 MiB, to 64 MiB when 导入全部数据 asks, and never past that" {
+    try std.testing.expectEqual(FILE_MAX_BYTES, openLimit(null));
+    try std.testing.expectEqual(FILE_MAX_BYTES, openLimit(0));
+    try std.testing.expectEqual(USER_FILE_MAX_BYTES, openLimit(USER_FILE_MAX_BYTES));
+    try std.testing.expectEqual(USER_FILE_MAX_BYTES, openLimit(1 << 40));
+    // too large is the same refusal readTextFile gives, naming the limit
+    var out: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":16777216}", try tooLargeAnswerFor(&out, openLimit(null)));
+    try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":67108864}", try tooLargeAnswerFor(&out, openLimit(64 * 1024 * 1024)));
+    // and a save is staged to the 64 MiB a picked file may be (导出全部数据)
+    try std.testing.expectEqual(USER_FILE_MAX_BYTES, stageLimit(SAVE_TARGET));
+}
+
+test "a file name that is not UTF-8 still makes a JSON string the page can parse" {
+    var buf: [128]u8 = undefined;
+    var n: usize = 0;
+    // valid UTF-8 as it is, quotes and backslashes escaped
+    try std.testing.expect(jsonAppendName(&buf, &n, "王 \"x\"\\.pgn"));
+    try std.testing.expectEqualStrings("\"王 \\\"x\\\"\\\\.pgn\"", buf[0..n]);
+    // a stray byte, an overlong '/', a surrogate, a truncated tail: U+FFFD each byte
+    n = 0;
+    try std.testing.expect(jsonAppendName(&buf, &n, "a\xffb\xc0\xafc\xed\xa0\x80d\xe7\x8e"));
+    try std.testing.expectEqualStrings("\"a\xEF\xBF\xBDb\xEF\xBF\xBD\xEF\xBF\xBDc\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBDd\xEF\xBF\xBD\xEF\xBF\xBD\"", buf[0..n]);
+    // control bytes escaped rather than refused
+    n = 0;
+    try std.testing.expect(jsonAppendName(&buf, &n, "a\x01\n"));
+    try std.testing.expectEqualStrings("\"a\\u0001\\u000a\"", buf[0..n]);
+    // four-byte sequences are kept; no room is refused, never cut
+    n = 0;
+    try std.testing.expect(jsonAppendName(&buf, &n, "\xf0\x9f\x98\x80"));
+    try std.testing.expectEqualStrings("\"\xf0\x9f\x98\x80\"", buf[0..n]);
+    var tiny: [4]u8 = undefined;
+    var m: usize = 0;
+    try std.testing.expect(!jsonAppendName(&tiny, &m, "\xff\xff"));
+}
+
+test "a picked file is shown by its name, and saved with its extension as the filter" {
+    try std.testing.expectEqualStrings("a.pgn", baseName("/Users/me/games/a.pgn", false));
+    try std.testing.expectEqualStrings("b.pgn", baseName("C:\\Users\\me\\b.pgn", true));
+    try std.testing.expectEqualStrings("c\\d.pgn", baseName("/tmp/c\\d.pgn", false));
+    try std.testing.expectEqualStrings("e.pgn", baseName("e.pgn", false));
+    try std.testing.expectEqualStrings("pgn", saveExt("chess-20260929.pgn").?);
+    try std.testing.expectEqualStrings("json", saveExt("chessboard-all-20260929.json").?);
+    try std.testing.expect(saveExt("noext") == null);
+    try std.testing.expect(saveExt(".hidden") == null);
+    try std.testing.expect(saveExt("a.") == null);
+    try std.testing.expect(saveExt("a.p;g") == null);
+}
+
+test "a later piece of an opened file is asked for by its token, never by a path" {
+    var opened: Opened = .{};
+    try std.testing.expect(opened.pathOf(0) == null);
+    const t1 = opened.remember("/Users/me/big.pgn", FILE_MAX_BYTES).?;
+    try std.testing.expectEqualStrings("/Users/me/big.pgn", opened.pathOf(t1).?);
+    try std.testing.expectEqual(FILE_MAX_BYTES, opened.limit);
+    try std.testing.expect(opened.pathOf(t1 + 1) == null);
+    // a second open replaces the first, whose token then goes nowhere
+    const t2 = opened.remember("/Users/me/all.json", USER_FILE_MAX_BYTES).?;
+    try std.testing.expect(t2 != t1);
+    try std.testing.expect(opened.pathOf(t1) == null);
+    opened.forget();
+    try std.testing.expect(opened.pathOf(t2) == null);
+    try std.testing.expect(opened.remember("", FILE_MAX_BYTES) == null);
+}
+
+test "an open's first piece carries the name and the token, and fits the frame at worst" {
+    const gpa = std.testing.allocator;
+    const out = try gpa.alloc(u8, BRIDGE_FRAME_MAX);
+    defer gpa.free(out);
+    const piece = try gpa.alloc(u8, CHUNK_BYTES);
+    defer gpa.free(piece);
+    for (piece, 0..) |*b, i| b.* = @truncate(i *% 31);
+    // the longest name a dialog returns, every byte escaped six-fold
+    var name: [native_sdk.platform.max_dialog_path_bytes]u8 = undefined;
+    @memset(&name, 0x01);
+    const answer = try openAnswer(out, &name, 7, piece, true);
+    // the SDK's {"id":…,"ok":true,"result":…} around it, with its 64-byte id
+    try std.testing.expect(answer.len + 64 + 32 <= BRIDGE_FRAME_MAX);
+    try std.testing.expectEqual(@as(usize, 7), jsonUintField(answer, "token").?);
+    try std.testing.expectEqual(true, jsonBoolField(answer, "more").?);
+    const b64 = jsonStringFieldRaw(answer, "b64").?;
+    const dec = std.base64.standard.Decoder;
+    const back = try gpa.alloc(u8, try dec.calcSizeForSlice(b64));
+    defer gpa.free(back);
+    try dec.decode(back, b64);
+    try std.testing.expectEqualSlices(u8, piece, back);
+    // a whole file in one piece: no token to continue by
+    const small = try openAnswer(out, "a.pgn", null, "1. e4", false);
+    try std.testing.expect(jsonUintField(small, "token") == null);
+    try std.testing.expectEqualStrings("{\"name\":\"a.pgn\",\"b64\":\"MS4gZTQ=\",\"more\":false}", small);
+}
+
+test "a save answers with the name, and with the path only when the folder did not open" {
+    var out: [128]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"ok\":true,\"name\":\"a.pgn\",\"revealed\":true}", try savedAnswer(&out, "a.pgn", true, null));
+    try std.testing.expectEqualStrings("{\"ok\":true,\"name\":\"a.pgn\",\"revealed\":false,\"path\":\"C:\\\\x\\\\a.pgn\"}", try savedAnswer(&out, "a.pgn", false, "C:\\x\\a.pgn"));
+}
+
+test "the self-test probe answers without a dialog, and says whether there is one" {
+    var out: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"probe\":true,\"dialogs\":true}", try probeAnswer(&out, true));
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    const app_state = App{ .env_map = &env, .io = undefined };
+    // no Runtime handed over (outside the runner): no dialogs, said so
+    try std.testing.expect(!dialogsAvailable(&app_state));
+    try std.testing.expectEqualStrings("no_dialog", dialogErrorCode(error.UnsupportedService));
+    try std.testing.expectEqualStrings("dialog_failed", dialogErrorCode(error.OutOfMemory));
+    try std.testing.expectEqualStrings("{\"error\":\"no_dialog\"}", try fileErrorAnswer(&out, "no_dialog"));
 }
 
 test "the issued-path table remembers what it was given, FIFO, bounded" {

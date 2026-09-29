@@ -17,11 +17,21 @@
  *            the language and mined-puzzle chunks load too (v8-0-plan F5)
  *   restart  a localStorage marker survives a restart (7.6)
  *   sound    the default sound set builds and renders offline, not silent (7.7)
+ *   idb      IndexedDB on the zero:// origin: the library's database takes a
+ *            marker and gives it back, and keeps it across the restart
+ *            (v8-1-plan N3 — Playwright's WebKit only ever saw http(s))
+ *   chunkSync the language chunks chunk-boot.js document.write()s had run
+ *            before bundle.js (v8-1-plan N3, v8-0-plan F5)
+ *   nativeIo chess.openPgn / chess.saveText answer a probe, and the platform
+ *            gives the native side both file dialogs (v8-1-plan N2 / N3)
  *
- * All but `restart` the page judges for itself, on each launch. `restart` needs
- * two launches: every launch reports the marker it found and writes a fresh
- * one, and the second launch must have found the one the first wrote. That
- * comparison happens here, which is why the app is launched twice.
+ * All but `restart` and `idb` the page judges for itself, on each launch.
+ * Those two need two launches: every launch reports the marker it found and
+ * writes a fresh one, and the second launch must have found the one the
+ * first wrote. That comparison happens here, which is why the app is
+ * launched twice. `chunkSync` also needs both: a launch in Chinese plans no
+ * language chunk and so shows nothing (it switches the next launch to
+ * English), and one of the two launches must have planned one and passed.
  *
  * The step fails unless every check passed on both launches, and the failure
  * names the checks that did not.
@@ -40,7 +50,7 @@ if (!exe || !fs.existsSync(exe)) {
 }
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "chess-selftest-"));
 const LIMIT_MS = 120000;
-const CHECKS = ["engine", "appdata", "chunk", "restart", "sound"];
+const CHECKS = ["engine", "appdata", "chunk", "restart", "sound", "idb", "chunkSync", "nativeIo"];
 
 /** One launch. @returns {Promise<{report: object|null, code: number|null, why: string|null}>} */
 async function launch(n) {
@@ -96,6 +106,18 @@ if (a && b && a.pass && b.pass && b.found !== a.wrote) {
     "，第 1 次写的是 " + JSON.stringify(a.wrote) + " —— 重启之后状态没留下来");
 }
 
+// v8-1-plan N3: the same restart comparison, for IndexedDB on zero://
+const [ia, ib] = runs.map((r) => r.report && r.report.checks && r.report.checks.idb);
+if (ia && ib && ia.pass && ib.pass && ib.found !== ia.wrote) {
+  fail("idb", "第 2 次启动在 IndexedDB（chessboard.library 的 meta 表）里读到的标记是 " + JSON.stringify(ib.found ?? null) +
+    "，第 1 次写的是 " + JSON.stringify(ia.wrote) + " —— zero:// 上的 IndexedDB 重启后没留下来，棋谱库只能退回 localStorage");
+}
+const synced = runs.map((r) => r.report && r.report.checks && r.report.checks.chunkSync)
+  .filter((c) => c && c.pass && Array.isArray(c.planned) && c.planned.length);
+if (runs.every((r) => r.report) && !synced.length && !failures.has("chunkSync")) {
+  fail("chunkSync", "两次启动都没有要加载的语言块（都是中文），document.write 的同步加载一次也没验证到");
+}
+
 console.log("各项：" + CHECKS.map((k) => k + " " + (failures.has(k) ? "FAIL" : "ok")).join("，"));
 if (failures.size) {
   for (const [check, whys] of failures) for (const why of whys) console.error("FAIL: " + check + " —— " + why);
@@ -105,5 +127,6 @@ if (failures.size) {
 const r1 = runs[0].report;
 console.log("ok: 打包好的应用启动了引擎（第一步 " + r1.move + "，" + r1.checks.engine.ms + " ms），存档读写来回一致，" +
   "eco 分块查到「" + r1.checks.chunk.name + "」，重启后 localStorage 标记还在，" +
-  r1.checks.sound.sounds + " 种音效离线渲染都有声");
+  r1.checks.sound.sounds + " 种音效离线渲染都有声；IndexedDB 标记重启后还在，" +
+  synced[0].planned.join("、") + " 在首帧前已经执行，chess.openPgn / chess.saveText 都在");
 process.exit(0);

@@ -31,6 +31,7 @@
 import { LibraryQuery } from "./library-query.js";
 import { LibraryDb } from "./library-db.js";
 import { createDiagCharts } from "./diag-charts.js";
+import { runNativeSelftest } from "./selftest-native.js";
 
 /**
  * Background work (the 本机 games, the index, the openings) runs in slices of
@@ -796,4 +797,5 @@ async function bootLibrary(d) {
   };
 }
 
-export const CHESS_LIBDB = { bootLibrary, LibraryQuery, LibraryDb, createDiagCharts };
+// v8-1-plan N3: the packaged self-test's idb / chunkSync / nativeIo checks ride here too
+export const CHESS_LIBDB = { bootLibrary, LibraryQuery, LibraryDb, createDiagCharts, runNativeSelftest };

@@ -5768,10 +5768,10 @@ for (const lang of CONTENT_LANGS) {
   const appSrc = allAppSource;
   for (const [what, re] of [
     // 6.0: one exportText() serves PGN and the learning file; only a PGN is a document
-    ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*if \(recent\) Host\.addRecentDocument\(path\);/],
+    ["the export dialog", /Host\.saveText\(\{ title, name, text, recent \}\)/], // v8-1-plan N2: main.zig adds it
     // 7.0: the picker takes a sink (the library import reuses it), so what
     // this looks for is the call, not the one destination it used to have
-    ["the open dialog", /take\(text, paths\[0\]\);\s*\n\s*Host\.addRecentDocument\(paths\[0\]\);/],
+    ["the open dialog", /Host\.openPgn\(\{ title: t\("dlg\.openPgn"\), recent: true \}\)/],
     ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
     ["clearing the save", /Persist\.clearAll\(\);[\s\S]{0,320}?Host\.clearRecentDocuments\(\);/],
   ]) assert(re.test(appSrc), "recent documents is recorded from " + what);

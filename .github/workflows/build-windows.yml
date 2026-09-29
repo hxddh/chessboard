@@ -115,7 +115,8 @@ jobs:
           fi
           ls -R dist
       # 7.5: launch the packaged app once before shipping it — see the same
-      # step in build-macos.yml and scripts/selftest-app.mjs.
+      # step in build-macos.yml and scripts/selftest-app.mjs (v8-1-plan N3 adds
+      # IndexedDB, the synchronous language chunks and the native file commands).
       - name: self-test the packaged app
         shell: bash
         run: |

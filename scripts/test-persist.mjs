@@ -63,6 +63,8 @@ function nativeStandIn() {
   };
   const zero = {
     files, stages, frames,
+    // what the next dialog answers: a path, null (Cancel) or "no_dialog"
+    pick: null, opened: null, seq: 0,
     invoke: async (cmd, a) => {
       const size = JSON.stringify({ id: "0123456789abcdef", command: cmd, payload: a }).length;
       frames.push({ cmd, size, a });
@@ -78,6 +80,30 @@ function nativeStandIn() {
         const f = files.get(target);
         if (!f) r = cmd === "chess.appdataRead" ? { missing: true } : null;
         else r = cmd === "chess.appdataRead" ? piece(f, a, { bak: false }, MAX) : piece(f, a, null, USER_MAX);
+      } else if ((cmd === "chess.saveText" || cmd === "chess.openPgn") && a.probe === true) {
+        r = { probe: true, dialogs: true };
+      } else if (cmd === "chess.saveText") {
+        // v8-1-plan N2: staged like any write; the dialog (zero.pick) only
+        // once the last piece is in
+        const got = receive("dialog:save", a);
+        if (got.answer) r = got.answer;
+        else if (zero.pick === "no_dialog") r = { error: "no_dialog" };
+        else if (zero.pick == null) r = { cancelled: true };
+        else { files.set("path:" + zero.pick, got.done); r = { ok: true, name: zero.pick.split("/").pop(), revealed: true }; }
+      } else if (cmd === "chess.openPgn") {
+        // the dialog, then the file, the first piece carrying its name; the
+        // rest asked for by token
+        if (a.token != null) {
+          const o = zero.opened;
+          r = !o || o.token !== a.token ? { error: "open_lost" } : piece(files.get("path:" + o.path), a, null, o.limit);
+        } else if (zero.pick === "no_dialog") r = { error: "no_dialog" };
+        else if (zero.pick == null) r = { cancelled: true };
+        else {
+          const limit = Math.min(a.max || MAX, USER_MAX);
+          r = piece(files.get("path:" + zero.pick), { offset: 0 }, null, limit);
+          if (r.more) zero.opened = { path: zero.pick, token: ++zero.seq, limit };
+          if (r.b64 != null) r = Object.assign({ name: zero.pick.split("/").pop() }, r.more ? { token: zero.seq } : null, r);
+        }
       } else r = {};
       if (JSON.stringify(r).length + 64 > LIMIT) throw new Error("result over the frame");
       return r;
@@ -174,6 +200,87 @@ function loadHost(zero) {
   let tl = null;
   try { await H3.readTextFile("/x.json"); } catch (e) { tl = e; }
   assert(tl && tl.name === H3.FILE_TOO_LARGE && tl.limit === 16777216, "an oversized file is FileTooLargeError with the 16 MiB limit");
+}
+
+// --- 1b. v8-1-plan N2: the file dialogs run in main.zig ----------------------
+// chess.saveText takes the bytes (in pieces) and opens the save dialog itself;
+// chess.openPgn opens the dialog and hands the file over (in pieces, by token).
+// The page never sees, sends or names a path.
+{
+  const zero = nativeStandIn();
+  const H = loadHost(zero);
+  const big = Array.from({ length: 70000 }, (_, i) => (i % 97 ? "e4 e5 Nf3 Nc6 Bb5 a6 " : "😀 国际象棋 ")).join("").slice(0, 2 * 1024 * 1024);
+  zero.pick = "/Users/me/games/export.pgn";
+  const saved = await H.saveText({ title: "导出", name: "chess.pgn", text: big, recent: true });
+  const saves = zero.frames.filter((f) => f.cmd === "chess.saveText");
+  assert(saved && saved.name === "export.pgn" && saved.revealed === true && saved.path === "",
+    "saveText answers with the name the player gave it, and no path when the folder opened");
+  assert(zero.files.get("path:/Users/me/games/export.pgn").toString("utf8") === big &&
+    saves.length === Math.ceil(Buffer.byteLength(big) / (512 * 1024)) && saves.every((f) => f.size <= 1024 * 1024),
+    `…a 2 MB export crosses in ${saves.length} pieces under the 1 MiB frame and lands whole`);
+  assert(saves.every((f) => f.a.name === "chess.pgn" && f.a.recent === true && !("path" in f.a)),
+    "…every piece names the suggested file, none names a path");
+  zero.frames.length = 0;
+  const opened = await H.openPgn({ title: "打开", recent: true });
+  const opens = zero.frames.filter((f) => f.cmd === "chess.openPgn");
+  assert(opened && opened.text === big && opened.name === "export.pgn",
+    `openPgn reads it back equal, with its name (${opens.length} pieces)`);
+  assert(opens[0].a.recent === true && opens.slice(1).every((f) => typeof f.a.token === "number" && f.a.offset > 0 &&
+    Object.keys(f.a).sort().join() === "offset,token"), "…the later pieces ask by token and offset, nothing else");
+  assert(opens.every((f) => !JSON.stringify(f.a).includes("/Users/")), "…and no frame carries the path");
+
+  // a picture: bytes that are not UTF-8 survive
+  const png = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+  zero.pick = "/Users/me/report.png";
+  await H.saveText({ name: "report.png", b64: png.toString("base64") });
+  assert(Buffer.compare(zero.files.get("path:/Users/me/report.png"), png) === 0, "saveText writes b64 bytes verbatim (the report PNG)");
+
+  // Cancel is null, not an error and not an empty file
+  zero.pick = null;
+  const before = zero.files.size;
+  assert((await H.saveText({ name: "x.pgn", text: "1. e4" })) === null && zero.files.size === before, "a cancelled save is null and writes nothing");
+  assert((await H.openPgn({})) === null, "a cancelled open is null");
+  // no dialog on this platform → the browser's picker (NoFileDialogError)
+  zero.pick = "no_dialog";
+  let nd1 = null, nd2 = null;
+  try { await H.saveText({ name: "x.pgn", text: "1. e4" }); } catch (e) { nd1 = e; }
+  try { await H.openPgn({}); } catch (e) { nd2 = e; }
+  assert(nd1 && nd1.name === H.NO_FILE_DIALOG && nd2 && nd2.name === H.NO_FILE_DIALOG, "no dialog here is NoFileDialogError, both ways");
+  // a shell that refuses the command is an error the call site reports, not a missing dialog
+  const H2 = loadHost({ invoke: async () => { throw new Error("permission_denied"); } });
+  let pd = null;
+  try { await H2.openPgn({}); } catch (e) { pd = e; }
+  assert(pd && pd.name !== H.NO_FILE_DIALOG, "a refused command is not mistaken for a platform without dialogs");
+
+  // too large: a PGN stops at 16 MiB, 导入全部数据 reads to 64 MiB
+  const huge = Buffer.alloc(17 * 1024 * 1024, 0x61);
+  zero.files.set("path:/Users/me/huge.json", huge);
+  zero.pick = "/Users/me/huge.json";
+  let tl = null;
+  try { await H.openPgn({}); } catch (e) { tl = e; }
+  assert(tl && tl.name === H.FILE_TOO_LARGE && tl.limit === 16 * 1024 * 1024, "an open past 16 MiB is FileTooLargeError naming 16 MiB");
+  const all = await H.openPgn({ max: H.ALL_DATA_MAX });
+  assert(all && all.text.length === huge.length, "…while an open asking for ALL_DATA_MAX reads the 17 MiB file whole");
+
+  // the self-test probe: both commands answer without a dialog
+  zero.frames.length = 0;
+  const probe = await H.probeFileCommands();
+  assert(probe.openPgn.probe === true && probe.saveText.dialogs === true && zero.frames.every((f) => f.a.probe === true),
+    "probeFileCommands asks both commands with probe and nothing else");
+}
+
+// v8-1-plan N3: the self-test opens the library's database before the library
+// may have — same name, same version, same stores, or it could leave the
+// library a database without its stores
+{
+  const fs = await import("fs");
+  const lib = fs.readFileSync(path.join(root, "src/web/js/library-db.js"), "utf8");
+  const st = fs.readFileSync(path.join(root, "src/web/js/selftest-native.js"), "utf8");
+  const val = (src, name) => (new RegExp("const " + name + " = ([^;]+);").exec(src) || [])[1];
+  const stores = (src) => [...src.matchAll(/createObjectStore\(([^)]*)\)/g)].map((m) => m[1]).join("|");
+  assert(val(lib, "DB_NAME") === val(st, "IDB_NAME") && val(lib, "DB_VERSION") === val(st, "IDB_VERSION") &&
+    stores(lib) === stores(st) && stores(st).length > 0,
+    `selftest-native.js opens ${val(st, "IDB_NAME")} v${val(st, "IDB_VERSION")} exactly as library-db.js does (${stores(st)})`);
 }
 
 // --- 2. persist.js: the per-key store -----------------------------------------
@@ -835,8 +942,10 @@ for (const how of ["restore", "clear"]) {
   const zero = nativeStandIn();
   const H = loadHost(zero);
   let wrote = null, read = null, back = "";
-  try { await H.writeTextFile("/Users/me/chessboard-all.json", out); wrote = true; } catch (e) { wrote = e; }
-  try { back = await H.readTextFile("/Users/me/chessboard-all.json", H.ALL_DATA_MAX); read = true; } catch (e) { read = e; }
+  // v8-1-plan N2: the road 导出 / 导入全部数据 takes — the native dialogs
+  zero.pick = "/Users/me/chessboard-all.json";
+  try { await H.saveText({ name: "chessboard-all.json", text: out }); wrote = true; } catch (e) { wrote = e; }
+  try { back = (await H.openPgn({ max: H.ALL_DATA_MAX })).text; read = true; } catch (e) { read = e; }
   assert(per >= 2500 && out.length > 16 * 1024 * 1024 && wrote === true && read === true && back === out,
     `P2-3: 10,000 analysed games (${per} B each) export as ${(out.length / 1048576).toFixed(1)} MB and read back whole (write ${wrote === true ? "ok" : wrote && wrote.name}, read ${read === true ? "ok" : read && read.name})`);
   const h2 = withStore(null);
@@ -850,7 +959,7 @@ for (const how of ["restore", "clear"]) {
   assert(n === 10000 && [...texts].every(([k, v]) => restored[k] === v), `P2-3: …and 导入全部数据 hands the library all ${n} games, every shard byte for byte`);
   // a PGN is still read to 16 MiB, as before
   let pgn = null;
-  try { await H.readTextFile("/Users/me/chessboard-all.json"); } catch (e) { pgn = e; }
+  try { await H.openPgn({}); } catch (e) { pgn = e; }
   assert(pgn && pgn.name === H.FILE_TOO_LARGE && pgn.limit === 16 * 1024 * 1024, "P2-3: …while any other file read stops at 16 MiB");
 }
 
