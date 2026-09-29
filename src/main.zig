@@ -441,9 +441,13 @@ fn jsonAppendString(buf: []u8, n: *usize, s: []const u8) bool {
 // 256 KiB, writeTextFile past 384 KiB, and the appdata pair was nominally 8 MiB
 // — but the SDK caps one bridge frame at 1 MiB each way (0.10.1:
 // bridge.max_message_bytes for the request, max_result_bytes for what a
-// handler may answer), so anything whose base64 passed ~1 MiB never arrived
-// at all. That is how "export all data" fell back to the clipboard and
-// "import all data" was refused once a player had a few hundred games.
+// handler may answer; both `1024 * 1024` in the SDK's src/bridge/root.zig,
+// and the test below holds BRIDGE_FRAME_MAX to them. The SDK's bridge
+// documentation says 16 KiB per frame; the source is what runs, so the
+// source is what this cites — v8-1-plan §1.2, §5), so anything whose base64
+// passed ~1 MiB never arrived at all. That is how "export all data" fell back
+// to the clipboard and "import all data" was refused once a player had a few
+// hundred games.
 //
 // Now a transfer is cut into pieces of CHUNK_BYTES, whose base64 plus the
 // envelope fits a frame with room to spare. A read names an `offset` and is

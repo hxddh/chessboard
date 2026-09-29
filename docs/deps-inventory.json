@@ -1,10 +1,11 @@
 {
-  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成。改版本时连同这份文件一起改。",
+  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成；done-8.1 = 8.1 已升（current 已是新版本，note 里写验收结果）。改版本时连同这份文件一起改：scripts/test-deps.mjs（test:static）核对每项 current 与仓库里实际钉的版本；带 npm 字段的几项由 scripts/deps-check.mjs 在 nightly 里对 npm latest 查一遍，有新版只进摘要、不算失败（v8-1-plan §1.7）。",
   "checkedAt": "2026-09-29",
   "deps": [
     {
       "name": "@native-sdk/cli（Native SDK，原 zero-native，vercel-labs/native）",
       "kind": "desktop-sdk",
+      "npm": "@native-sdk/cli",
       "current": "0.10.1",
       "pinnedIn": [".github/workflows/checks.yml (zig job SDK_VERSION)", ".github/workflows/build-macos.yml (sdk_version 默认值)", ".github/workflows/build-windows.yml (sdk_version 默认值)", ".github/workflows/release.yml (sdk_version 默认值)", "src/runner.zig（SDK app_runner 的分叉，随 SDK 手动同步）", "build.zig（SDK build/app.zig 的手抄本）"],
       "latest": "0.10.1（npm latest，2026-08-24）；main 上另有 22 个未发版提交，HEAD 96943d4a（2026-09-28）",
@@ -13,7 +14,7 @@
       "unusedCapabilitiesAlreadyIn0101": ["bridge.AsyncHandler + PlatformServices.wake_fn（异步桥应答，同步不再占住桥线程）", "PlatformServices.showOpenDialog/showSaveDialog（原生侧拿到对话框结果，可去掉对话框路径的 issuePath）", "签名更新器（0.10.0，仅 macOS system host；runner.zig 已接好，app.zon 缺 .updates）", "notarytool 公证与 DMG 装订（0.10.1，需要 Developer ID 证书）", "native-sdk.os.addRecentDocument（最近打开的 PGN）", "native-sdk.os.showNotification（可选的训练提醒）"],
       "stillMissing": ["WebView 页面声明可拖区域 / 开始拖窗（macOS 只接给画布控件；Windows 的 WM_NCHITTEST 拖动区按 view label 存，是否对 WebView2 主视图生效要实验）", "zero:// 响应头（COOP/COEP）——多线程 wasm 引擎的前提", "Windows / Linux 的自动更新"],
       "recommendation": "upgrade-when-released",
-      "note": "当前钉的就是最新正式版。main 上的 #465（优化构建的 macOS 链接保留更新器导出）与开启更新器直接相关：本仓库 release 用 ReleaseFast。0.10.2 发布后升，并用一次双平台构建证明；runner.zig / build.zig 要对照上游 diff 同步。"
+      "note": "当前钉的就是最新正式版。main 上的 #465（优化构建的 macOS 链接保留更新器导出）与开启更新器直接相关：本仓库 release 用 ReleaseFast。0.10.2 发布后升，并用一次双平台构建证明；runner.zig / build.zig 要对照上游 diff 同步。最低 macOS：0.10.1 的 Info.plist 模板写 LSMinimumSystemVersion 11.0（src/tooling/package.zig），build/app.zig 以 -mmacosx-version-min=11.0 链接；Big Sur 出厂 Safari 14，15 / 16 只是可选更新，所以不能保证 Safari 16+ 的 WebKit，bundle target 留在 safari15（v8-1-plan §5，见 scripts/bundle.mjs）。"
     },
     {
       "name": "Zig",
@@ -29,6 +30,7 @@
     {
       "name": "Stockfish.js（nmrugg/stockfish.js，Stockfish 19 lite-single）",
       "kind": "engine",
+      "npm": "stockfish",
       "current": "19.0.0 lite-single（wasm 1,787,571 字节，网络 nn-61e7af4bb97d），vendored 在 third_party/stockfish/",
       "pinnedIn": ["third_party/stockfish/stockfish-19-lite-single.{js,wasm}", "scripts/gen-engine-src.mjs"],
       "latest": "npm stockfish 19.0.0（2026-09-15）；官方 Stockfish sf_19（2026-09-05）；之后只有 dev 构建（stockfish-dev-20260922-0a215d6c）",
@@ -51,24 +53,26 @@
     {
       "name": "esbuild",
       "kind": "npm devDependency",
-      "current": "0.28.1",
+      "npm": "esbuild",
+      "current": "0.28.2",
       "pinnedIn": ["package.json devDependencies", "package-lock.json"],
       "latest": "0.28.2（2026-08-08）",
       "source": ["npm view esbuild time", "raw.githubusercontent.com/evanw/esbuild/main/CHANGELOG.md"],
       "checkedAt": "2026-09-29",
-      "recommendation": "upgrade-8.1",
-      "note": "补丁版：TS import 别名的 tree-shaking 修正、CSS 压缩里 & 的修正。本仓库 minify:false、不走 TS，预期产物逐字节不变——这本身就是升级的验收。"
+      "recommendation": "done-8.1",
+      "note": "补丁版：TS import 别名的 tree-shaking 修正、CSS 压缩里 & 的修正。本仓库 minify:false、不走 TS，预期产物逐字节不变——这本身就是升级的验收。8.1 F1 已升：0.28.1 → 0.28.2 前后 bundle.js 与 33 个分块的 sha256 全部相同（minify 仍关）。"
     },
     {
       "name": "playwright",
       "kind": "CI tool（npm install --no-save）",
-      "current": "1.62.1（Chromium 151.0.7922.34 / WebKit 26.5）",
+      "npm": "playwright",
+      "current": "1.63.0（Chromium 153.0.8010.12 / WebKit 26.6）",
       "pinnedIn": [".github/workflows/checks.yml", ".github/workflows/release.yml"],
       "latest": "1.63.0（2026-09-04；Chromium 153.0.8010.12 / WebKit 26.6）",
       "source": ["npm view playwright dist-tags/time", "raw.githubusercontent.com/microsoft/playwright/main/docs/src/release-notes-js.md"],
       "checkedAt": "2026-09-29",
-      "recommendation": "upgrade-8.1",
-      "note": "对这个仓库有用的：更新的 WebKit（离 WKWebView 更近）；Locator.visible()；ariaSnapshotJSON（可替代部分手写的无障碍断言）；新的 reducedMotion 选项。本仓库用的是库 API 不是 test runner，test locks / 报告器新特性用不上。布局基线可能随浏览器版本移动，要单独一个 PR。"
+      "recommendation": "done-8.1",
+      "note": "对这个仓库有用的：更新的 WebKit（离 WKWebView 更近）；Locator.visible()；ariaSnapshotJSON（可替代部分手写的无障碍断言）；新的 reducedMotion 选项。本仓库用的是库 API 不是 test runner，test locks / 报告器新特性用不上。布局基线可能随浏览器版本移动，要单独一个 PR。8.1 F1 已升（checks.yml 两处、release.yml 一处与注释）。本地只能用 1.63.0 的库驱动本机的 Chromium 141（executablePath），浏览器 153 / WebKit 26.6 本身只在 CI 里装、在 CI 里验。"
     },
     {
       "name": "Node.js（CI 与 package.json engines）",
@@ -84,13 +88,13 @@
     {
       "name": "actions/checkout",
       "kind": "GitHub Action",
-      "current": "@v7（10 处）；nightly.yml 仍是 @v5（1 处）",
-      "pinnedIn": [".github/workflows/*.yml", ".github/workflows/nightly.yml:31"],
+      "current": "@v7（全部 12 处）",
+      "pinnedIn": [".github/workflows/*.yml"],
       "latest": "v7.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/checkout"],
       "checkedAt": "2026-09-29",
-      "recommendation": "upgrade-8.1",
-      "note": "只改 nightly.yml 那一处 @v5 → @v7。"
+      "recommendation": "done-8.1",
+      "note": "8.1 F1 已把 nightly.yml 那一处遗漏的 @v5 改成 @v7。"
     },
     {
       "name": "actions/setup-node",
@@ -115,13 +119,13 @@
     {
       "name": "actions/download-artifact",
       "kind": "GitHub Action",
-      "current": "@v7",
+      "current": "@v8",
       "pinnedIn": [".github/workflows/release.yml"],
       "latest": "v8.0.1",
-      "source": ["git ls-remote --tags https://github.com/actions/download-artifact", "README（用法里 pattern / merge-multiple 仍在）"],
+      "source": ["git ls-remote --tags https://github.com/actions/download-artifact", "raw.githubusercontent.com/actions/download-artifact/v8/README.md（「v8 - What's new」）", "raw.githubusercontent.com/actions/download-artifact/v8.0.1/action.yml"],
       "checkedAt": "2026-09-29",
-      "recommendation": "upgrade-8.1",
-      "note": "大版本。v8 的变更说明在 releases 页，本会话的 GitHub API 不可用，未能核实；升级时用一次 release 演练（workflow_dispatch）证明两个包都下载到 dist。"
+      "recommendation": "done-8.1",
+      "note": "大版本。v8 的变化（README「v8 - What's new」）：改为 ESM；按下载内容的 content-type 决定是否解压（新输入 skip-decompress，默认 false）；摘要不符默认报错（新输入 digest-mismatch，默认 error）；v8.0.1 支持文件名里的中日韩字符。我们的两个制品都是 upload-artifact 默认的归档上传，仍按 zip 解开；release.yml 把 pattern / path / merge-multiple / skip-decompress / digest-mismatch 全部写明，并在「both packages are here」里加查：包平铺在 dist/、不是制品外层的 zip。仍需一次 workflow_dispatch 的 release 演练证明（本地无法运行 Actions）。"
     },
     {
       "name": "mlugg/setup-zig",
@@ -159,13 +163,13 @@
     {
       "name": "lichess-org/chess-openings（ECO 表）",
       "kind": "data (CC0)",
-      "current": "4b8622759e7ae6f93f011cc6c83a3823401ab45e（2026-08-04 的提交，2026-09-18 取），3810 个局面",
+      "current": "c67912be581f0793dbaa776be5ccf111e01f88d9（2026-09-20 的提交，2026-09-29 取），3815 个局面",
       "pinnedIn": ["src/web/js/eco.js 文件头", "scripts/gen-eco.mjs"],
       "latest": "c67912be（2026-09-20，#399：补了几条 E16 线）",
-      "source": ["git clone https://github.com/lichess-org/chess-openings"],
+      "source": ["git clone https://github.com/lichess-org/chess-openings", "git ls-remote … HEAD + raw.githubusercontent.com/…/master/{a..e}.tsv（gen-eco --refresh）"],
       "checkedAt": "2026-09-29",
-      "recommendation": "refresh-data",
-      "note": "只多一个 PR。重跑 gen-eco，ECO 分块会变，同一个 PR 里跑 test-eco 与开局浏览器的「书」核对。"
+      "recommendation": "done-8.1",
+      "note": "8.1 F1 已刷新：gen-eco --refresh，4b86227 → c67912be，3810 → 3815 个局面（新增 5 个 E16：Capablanca ×3、Riumin ×2），0 个重复。chunk-eco.js 485,191 → 485,817 字节（+626），主包不变。test-eco 通过；开局浏览器「书」核对：1011 个分支点（1005 个局面）一致。"
     },
     {
       "name": "棋子图（cburnett / Chessnut / Fantasy / Celtic / Spatial / Merida）",
