@@ -10,13 +10,14 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { compileModuleSync } from "./bundle.mjs";
+import { lichessAnswer, chesscomAnswer } from "./sync-fixtures.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ctx = { console, Date, Math, JSON };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const f of ["sync-ui.js", "persist.js", "pgn-parser.js", "library.js", "library-query.js"]) {
+for (const f of ["sync-ui.js", "persist.js", "pgn-parser.js", "library.js", "library-query.js", "progress-metrics.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", f)), ctx, { filename: f });
 }
 
@@ -105,6 +106,47 @@ const assert = (cond, msg, extra) => {
   }));
   const at = Q.gamesWithPosition(entries, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", (g) => pk.get(g.id));
   assert(at.total === 2 && at.moves.map((m) => m.san + m.n).join() === "e41,f31", "两局按解析时的局面进了索引：起始局面 e4 / f3 各 1 局", JSON.stringify(at.moves));
+}
+
+// --- 真实应答（src/sync-fixtures/，2026-09-29 由 sync-samples.yml 取回）---------
+// 原生层交给页面的正是这样的文本（scripts/sync-fixtures.mjs 照 main.zig 的分局
+// 规则拼，Zig 测试在同几份文件上钉住了）：Lichess thibault 的 5 局快棋；Chess.com
+// erik 最近一个月的 13 局里 9 局标准棋（其中 8 局每日棋、1 局 10 分钟），
+// Chess960 的 4 局原生层就不给
+{
+  const P = ctx.ChessPgnParser, L = ctx.ChessLibrary, Q = ctx.LibraryQuery, M = ctx.ChessProgressMetrics;
+  const importAs = (text, names) => {
+    const games = P.splitGames(text).map((c) => P.parsePgn(c).games[0]).filter(Boolean);
+    return games.map((g) => {
+      const sans = [], fens = [g.root.fen];
+      for (let n = g.root; n && n.children.length; n = n.children[0]) { sans.push(n.children[0].san); fens.push(n.children[0].fen); }
+      return { e: L.entryFrom(g, sans, names, 1), keys: Q.keysOfFens(fens) };
+    });
+  };
+  const li = lichessAnswer(), cc = chesscomAnswer();
+  assert(li.count === 5 && cc.count === 9, "真实应答：Lichess 5 局、Chess.com 9 局", JSON.stringify([li.count, cc.count]));
+  const a = importAs(li.pgn, ["thibault"]);
+  const b = importAs(cc.pgn, ["Erik"]);
+  const ea = a.map((x) => x.e), eb = b.map((x) => x.e);
+  assert(ea.length === 5 && eb.length === 9, "每一局都解析得出来", JSON.stringify([ea.length, eb.length]));
+  const brief = (e) => [e.plies, e.side, e.outcome].join(" ");
+  assert(ea.map(brief).join() === "78 b win,15 b loss,136 w loss,197 b draw,18 w loss",
+    "Lichess：步数、执哪方、胜负都对得上", ea.map(brief).join());
+  assert(eb.map(brief).join() === "68 w draw,74 b draw,20 w loss,34 b win,72 w win,61 w win,92 w win,82 b win,107 b win",
+    "Chess.com：名字不分大小写认出 erik，最新的在前，步数、执哪方、胜负都对得上", eb.map(brief).join());
+  assert(ea.every((e) => Q.siteOf(e) === "Lichess") && eb.every((e) => Q.siteOf(e) === "Chess.com"),
+    "来源标签：Site 是对局 URL / \"Chess.com\"", JSON.stringify(ea.concat(eb).map((e) => e.site)));
+  assert(new Set(ea.concat(eb).map((e) => e.id)).size === 14, "14 局 14 个 id，没有撞在一起");
+  assert(ea.concat(eb).every((e) => Array.isArray(e.clk) && e.clk.length === e.plies), "每一手的钟都读到了（两家的写法：带不带空格、小时位、十分之一秒）");
+  const pk = new Map(a.concat(b).map((x) => [x.e.id, x.keys]));
+  const at = Q.gamesWithPosition(ea.concat(eb), "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", (g) => pk.get(g.id));
+  assert(at.total === 14 && at.moves.map((m) => m.san + ":" + m.n).join() === "e4:10,d4:4",
+    "局面索引：起始局面 e4 10 局、d4 4 局", JSON.stringify(at.moves.map((m) => m.san + ":" + m.n)));
+  // B5 的时间紧失误率：每日棋的 [%clk] 是这一步的时限，不算（progress-metrics.js factsOf）
+  const facts = (e) => M.factsOf({ side: e.side, outcome: e.outcome, fen: e.fen, clk: e.clk, tc: e.tc, tags: e.clk.map(() => null) });
+  const daily = eb.filter((e) => /^1\//.test(e.tc)), live = eb.filter((e) => e.tc === "600");
+  assert(daily.length === 8 && live.length === 1 && daily.every((e) => !facts(e).clocked) && live.every((e) => facts(e).clocked) && ea.every((e) => facts(e).clocked),
+    "每日棋的钟不进时间紧，限时棋照算", JSON.stringify(eb.map((e) => [e.tc, facts(e).clocked])));
 }
 
 if (failed) {
