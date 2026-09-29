@@ -31,18 +31,24 @@ export function createGameEnd(d) {
   function gameEnding() {
     const mode = store.session.mode;
     if ((mode !== "ai" && mode !== "pvp") || store.session.editor) return null;
-    if (!appGameOver() && !resultFromFile()) return null;
-    const token = gameResultToken();
+    // Off the mainline (a variation branched from a finished game), the
+    // stored ending — a resignation, a flag, an agreed draw, the file's
+    // result — is not this line's: only the rules can end it, and the result
+    // is the position's own (Codex #89).
+    const off = !onMainline();
+    if (off ? !game.game_over() : !appGameOver() && !resultFromFile()) return null;
+    const token = !off ? gameResultToken() : game.in_checkmate() ? (game.turn() === "w" ? "0-1" : "1-0") : "1/2-1/2";
     const winner = token === "1-0" ? "w" : token === "0-1" ? "b" : null;
     let reason;
-    if (resultFromFile()) reason = t("go.r.file");
+    if (!off && resultFromFile()) reason = t("go.r.file");
     else if (game.in_checkmate()) reason = t("go.r.mate");
-    else if (store.game.flagFall) reason = timeoutIsDraw() ? t("go.r.flagDraw") : tf("go.r.flag", [sideName(store.game.flagFall)]);
-    else if (store.game.resigned) reason = tf("go.r.resign", [sideName(store.game.resigned)]);
-    else if (store.game.drawAgreed) reason = t("go.r.agreed");
-    else if (store.game.drawClaimed) reason = t(store.game.drawClaimed === "threefold" ? "go.r.threefold" : "go.r.fifty");
+    else if (!off && store.game.flagFall) reason = timeoutIsDraw() ? t("go.r.flagDraw") : tf("go.r.flag", [sideName(store.game.flagFall)]);
+    else if (!off && store.game.resigned) reason = tf("go.r.resign", [sideName(store.game.resigned)]);
+    else if (!off && store.game.drawAgreed) reason = t("go.r.agreed");
+    else if (!off && store.game.drawClaimed) reason = t(store.game.drawClaimed === "threefold" ? "go.r.threefold" : "go.r.fifty");
     else if (game.in_stalemate()) reason = t("go.r.stalemate");
     else if (game.insufficient_material()) reason = t("go.r.insufficient");
+    else if (off) reason = t(game.in_threefold_repetition() ? "go.r.threefold" : "go.r.fifty");
     else reason = t(autoDrawReason() === "fivefold" ? "go.r.fivefold" : "go.r.seventyfive");
     return { token, winner, reason, sig: sanHistory().length + "|" + game.fen() + "|" + token };
   }
@@ -111,16 +117,10 @@ export function createGameEnd(d) {
   function resultBadges() {
     const end = gameEnding();
     if (!end || !isLive()) return null;
-    // a variation's leaf is not where the game ended, unless the rules end it
-    // there too (mate, stalemate): a resignation, a flag, an agreed draw or a
-    // file's result belong to the mainline's last position — and a variation
-    // the rules end carries its own result, not the mainline's (Codex #89)
-    const off = !onMainline();
-    if (off && !game.game_over()) return null;
-    const winner = !off ? end.winner : game.in_checkmate() ? (game.turn() === "w" ? "b" : "w") : null;
+    // gameEnding() already answers for a variation's leaf (Codex #89)
     return ["w", "b"].map((side) => ({
       sq: kingSquare(game, side),
-      kind: !winner ? "draw" : winner === side ? "win" : game.in_checkmate() ? "mate" : "loss",
+      kind: !end.winner ? "draw" : end.winner === side ? "win" : game.in_checkmate() ? "mate" : "loss",
     })).filter((b) => !!b.sq);
   }
 

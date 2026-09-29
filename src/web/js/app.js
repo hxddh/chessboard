@@ -5948,6 +5948,7 @@ import { createStore } from "./store.js";
       if (ev.key !== "Enter" || ev.isComposing || ev.target === el("ng-cancel")) return;
       ev.preventDefault();
       ev.stopPropagation();
+      if (ev.target.matches("input")) ev.target.dispatchEvent(new Event("change")); // a number just typed is the choice (Codex #89)
       startFromDialog();
     });
   }

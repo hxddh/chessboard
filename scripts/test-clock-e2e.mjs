@@ -345,6 +345,46 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await c4.close();
 }
 
+// Codex #89: in the new-game dialog, a minute count typed into 自定义 and
+// Enter pressed at once (no change event yet) starts the game on that count
+{
+  const c5 = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
+  await c5.addInitScript(() => {
+    if (!sessionStorage.getItem('seeded')) {
+      sessionStorage.setItem('seeded', '1');
+      localStorage.setItem('chess.v1.settings', JSON.stringify({ mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: 'off' }));
+      localStorage.setItem('chess.panelOpen', '1');
+    }
+  });
+  const p5 = await c5.newPage();
+  const errs5 = [];
+  p5.on('pageerror', (e) => errs5.push('ng-tc: ' + e.message));
+  await p5.goto(`http://127.0.0.1:${PORT}/index.html`);
+  await p5.waitForSelector('#board');
+  await p5.waitForTimeout(600);
+  await p5.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await p5.click('#idle-new').catch(() => {});
+  await p5.waitForTimeout(400);
+  await p5.evaluate(() => { const d = document.getElementById('ng-custom'); if (d) d.open = true; });
+  await p5.waitForTimeout(200);
+  await p5.click('#newgame-modal #clock-seg button[data-tc="custom"]').catch(() => {});
+  await p5.waitForTimeout(250);
+  // the value typed, and Enter's keydown reaching the dialog before any change
+  // event (Chromium fires one on Enter by itself; not every engine does)
+  await p5.evaluate(() => {
+    const i = document.getElementById('tc-min');
+    i.focus(); i.value = '25';
+    i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  });
+  await p5.waitForTimeout(500);
+  const got = await p5.evaluate(() => ({ open: document.getElementById('newgame-modal').classList.contains('show'),
+    clocks: [...document.querySelectorAll('#clock-w, #clock-b')].map((x) => x.textContent.trim()),
+    tc: JSON.parse(localStorage.getItem('chess.v1.settings') || '{}').timeControl }));
+  chk(!got.open && got.clocks.every((x) => x === '25:00'), '新对局里自定义填 25 直接回车：这盘两只钟都是 25:00', JSON.stringify(got));
+  if (errs5.length) errs.push(...errs5);
+  await c5.close();
+}
+
 console.log('\nJS 异常:', errs.length ? errs : '无');
 console.log(bad ? `\n${bad} 项不对` : '\n全部通过');
 await b.close(); sv.close();

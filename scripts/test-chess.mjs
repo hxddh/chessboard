@@ -2824,6 +2824,17 @@ for (const lang of CONTENT_LANGS) {
   const off = ge(false).resultBadges();
   assert(off && off.length === 2 && off.every((b) => b.kind === "draw"),
     "A5: a stalemated variation of a resigned game carries ½ on both kings (" + JSON.stringify(off) + ")");
+  // …and a variation that is not over has no ending at all: no card, no badges
+  const openGame = new Chess("7k/8/6K1/8/8/8/5Q2/8 b - - 0 1");
+  const geOpen = ctx.createGameEnd({
+    store: { session: { mode: "pvp" }, game: { resigned: "b" } }, t: (k) => k, tf: (k) => k, sideName: (s) => s, game: openGame,
+    el: () => null, setText() {}, avail() {}, toast() {}, sanHistory: () => ["x"], analysisFor: () => null,
+    appGameOver: () => true, resultFromFile: () => false, gameResultToken: () => "1-0", timeoutIsDraw: () => false,
+    autoDrawReason: () => null, isLive: () => true, kingSquare: kingAt, onMainline: () => false, onEnding() {},
+  });
+  assert(geOpen.gameEnding() === null && geOpen.resultBadges() === null,
+    "A5: an unfinished variation of a resigned game has no ending — the result card and the badges stay away");
+  assert(ge(false).gameEnding().token === "1/2-1/2", "A5: …a stalemated one ends in a draw, whatever the mainline did");
   const main = ge(true).resultBadges();
   assert(main && main.find((b) => b.sq === "g6").kind === "win", "A5: …the mainline keeps the game's own result (" + JSON.stringify(main) + ")");
 }

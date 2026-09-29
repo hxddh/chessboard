@@ -2062,6 +2062,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await tap(page, "g8"); await tap(page, "f6");
     await page.waitForTimeout(700);
     const vW = await paintAt(page, "e1", false, "badge"), vB = await paintAt(page, "e8", false, "badge");
+    const cardOnVar = await page.evaluate(() => !document.getElementById("go-card").hidden);
+    assert(!cardOnVar, "A5 终局：变着上没有结果卡（这盘棋的结局不在这条线上）");
     const line = await page.evaluate(() => !!document.querySelector('#move-list .mlv[aria-label="Nf6"]') ? "Nf6" : document.getElementById("move-list").innerText);
     assert(near(endW, good) && near(endB, bad), `A5 终局：黑方认输，最后局面的王上有徽标（${endW} / ${endB}）`);
     assert(line === "Nf6" && !near(vW, good) && !near(vB, bad), `A5 终局：从中途走出的变着，末端的王上没有这盘棋的结果（${vW} / ${vB} · ${line}）`);
