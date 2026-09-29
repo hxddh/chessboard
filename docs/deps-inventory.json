@@ -84,13 +84,13 @@
     {
       "name": "actions/checkout",
       "kind": "GitHub Action",
-      "current": "@v7（10 处）；nightly.yml 仍是 @v5（1 处）",
-      "pinnedIn": [".github/workflows/*.yml", ".github/workflows/nightly.yml:31"],
+      "current": "@v7（全部 12 处）",
+      "pinnedIn": [".github/workflows/*.yml"],
       "latest": "v7.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/checkout"],
       "checkedAt": "2026-09-29",
-      "recommendation": "upgrade-8.1",
-      "note": "只改 nightly.yml 那一处 @v5 → @v7。"
+      "recommendation": "done-8.1",
+      "note": "8.1 F1 已把 nightly.yml 那一处遗漏的 @v5 改成 @v7。"
     },
     {
       "name": "actions/setup-node",
