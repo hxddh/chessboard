@@ -189,9 +189,21 @@ async function loadEsbuild() {
  *
  * `format: "iife"` is the whole point — the modules keep their own scope and
  * the page gets one classic script. `target` is the two engines the app ships
- * on: WebView2 (Chromium) on Windows, WKWebView on macOS. Both are far newer
- * than these, but naming a floor keeps a future syntax feature from silently
- * becoming a runtime error on the older of the two.
+ * on: WebView2 (Chromium) on Windows, WKWebView on macOS. Naming a floor
+ * keeps a future syntax feature from silently becoming a runtime error on
+ * the older of the two.
+ *
+ * Why the WebKit floor stays safari15 (v8-1-plan §5). WKWebView is the
+ * system's WebKit, so the floor is set by the oldest macOS the app runs on,
+ * and SDK 0.10.1 says 11.0: its Info.plist template writes
+ * LSMinimumSystemVersion 11.0 (src/tooling/package.zig) and build/app.zig
+ * links with -mmacosx-version-min=11.0, as build.zig here does. Big Sur
+ * shipped Safari 14 and was offered 15 and 16 as updates, none of them
+ * guaranteed — so nothing promises Safari 16's WebKit, and C1's gap stays
+ * (no BroadcastChannel before Safari 15.4: another window learns of a
+ * library commit at its next launch, library-page.js). safari15 is already
+ * a step above what the plist allows; raising it waits for the SDK's
+ * minimum to rise.
  */
 /** The app's version, from package.json — the About panel reads it (6.0). */
 function versionDefine() {
