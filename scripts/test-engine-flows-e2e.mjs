@@ -40,6 +40,22 @@
  *   16 复盘可复现      the same game analysed twice, the second engine dirtied
  *                      first: identical scalars and grades, `go nodes`, deepened
  *
+ * v8-0-plan B4 added:
+ *
+ *   对手角色  the persona cards in the new-game dialog; a persona is a rung ×
+ *             a style, on the strip and in its opening line, searched as its rung
+ *   引擎认输  a lost engine resigns after sustained lost evaluations; the game
+ *             is filed as a win and rated; the ending survives a restart
+ *   引擎提和  a dead draw gets a non-modal offer; a move declines it, 接受 takes it
+ *   棋钟节奏  on a 30-minute clock the reply is paced to the clock
+ *
+ * The #89 review added:
+ *
+ *   续下后结果卡  从这里续下 of a rated game: the card drops the old rating line
+ *   中途换档      a game is rated against the opponent it was played against,
+ *                through a restart; a rung changed mid-game leaves it unrated
+ *   (and a position set up by hand is recorded unrated: 引擎认输, 你将死引擎)
+ *
  * Each scenario gets a fresh browser context, so one flow's engine state
  * cannot carry the next. Only key results are asserted: what the engine says
  * varies run to run, the fact that it reaches the page does not.
@@ -141,8 +157,18 @@ async function openPage(settings, seed) {
     const W = window.Worker;
     window.__go = 0;
     window.__uci = [];
+    window.__scores = [];
     window.Worker = function (...a) {
       const w = new W(...a);
+      // what each search ended on: its last reported score (B4's resign and
+      // draw rules read the same number)
+      let lastScore = null;
+      w.addEventListener("message", (ev) => {
+        const d = typeof ev.data === "string" ? ev.data : "";
+        const sc = / score (cp|mate) (-?\d+)/.exec(d);
+        if (sc && !/ multipv [2-9]/.test(d)) lastScore = sc[1] + " " + sc[2];
+        if (/^bestmove/.test(d)) window.__scores.push(lastScore);
+      });
       const pm = w.postMessage.bind(w);
       w.postMessage = (m, ...r) => {
         if (typeof m === "string" && /^go\b/.test(m)) window.__go++;
@@ -706,11 +732,12 @@ await scenario("再深一遍", async () => {
 
 // --- 12. 人机·高档 + 棋钟 (v7-6-plan §6.3) ---------------------------------------
 // hard is UCI_Elo 2200 at 900 ms and normal 1700 at 700 ms; a clock caps the
-// think time at a thirtieth of what is left on it (never below 150).
+// think time — since v8-0-plan B4 at a fortieth of what is left plus most of
+// the increment (opponents.js thinkPlan), never past the rung's own.
 await scenario("人机高档棋钟", async () => {
   // Black's clock stands at 20 s with White to move, so it does not tick while
   // the engine boots (~10 s from a cold page here); the budget is then
-  // 20000 / 30 ≈ 666 ms, under hard's own 900
+  // 20000 / 40 = 500 ms, under hard's own 900 (through 7.9: / 30 ≈ 666)
   const save = { v: 1, pgn: '[Event "flows"]\n[Result "*"]\n\n1. e4 e5 *', savedAt: Date.now(),
     clock: { tc: "3", w: 170000, b: 20000, started: true } };
   const hard = await openPage({ mode: "ai", difficulty: "hard", humanColor: "w", timeControl: "3" },
@@ -725,7 +752,7 @@ await scenario("人机高档棋钟", async () => {
   const g = await savedAt(hard.page, 4, 3000);
   const clk = await hard.page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.save") || "{}").clock) || null);
   const ms = uci.filter((m) => /^go movetime/.test(m)).map((m) => Number(m.split(" ")[2]));
-  assert(!!ready && n >= 4 && uci.includes("setoption name UCI_Elo value 2200") && ms.length === 1 && ms[0] >= 600 && ms[0] < 667,
+  assert(!!ready && n >= 4 && uci.includes("setoption name UCI_Elo value 2200") && ms.length === 1 && ms[0] >= 450 && ms[0] <= 500,
     "人机高档棋钟：hard 档、黑方钟上 20 秒，引擎按 UCI_Elo 2200、压到 " + ms[0] + "ms(不是 900)应着(" + (Date.now() - t0) + "ms)", JSON.stringify({ ready, n, uci }));
   assert(!!g && !!clk && clk.b < 20000 && clk.b > 15000 && clk.w <= 170000, "人机高档棋钟：引擎那一侧的钟在走", JSON.stringify(clk));
   assert(!hard.errs.length, "人机高档棋钟：页面没有报错", hard.errs.join(" / "));
@@ -1081,6 +1108,341 @@ await scenario("复盘可复现", async () => {
     "复盘可复现：搜索是定节点（go nodes），有着法被加深", JSON.stringify({ deep: a.an.deep }));
   console.log("  分析 TRAP（13 手）用时 " + (a.ms / 1000).toFixed(1) + " s / " + (b.ms / 1000).toFixed(1) + " s");
   assert(!a.errs.length && !b.errs.length, "复盘可复现：页面没有报错", a.errs.concat(b.errs).join(" / "));
+});
+
+// --- v8-0-plan B4：对手阶梯、角色、认输与提和、你的等级分、棋钟节奏 --------------
+// 红（7.9）：新对局对话框里没有角色卡，对阵条上是「Stockfish」；引擎输定了也
+// 走到被将死为止，从不提和；人机对局不计等级分；有棋钟时引擎照样几百毫秒就应。
+
+/** A white move after which Black has nothing to take and the game goes on. */
+/** a position without its move counters: what threefold repetition compares */
+const posKey = (fen) => fen.split(" ").slice(0, 4).join(" ");
+/** the positions `g` has been through, from its set-up position */
+function seenPositions(g) {
+  const h = new Chess(g.header().FEN || undefined);
+  const out = new Set([posKey(h.fen())]);
+  for (const san of g.history()) { h.move(san); out.add(posKey(h.fen())); }
+  return out;
+}
+function quietMove(g) {
+  // a position not seen yet first: always the first quiet move shuffles one
+  // piece to and fro, and a threefold repetition ends a game the test wants
+  // to keep playing (WebKit's replies got there before the second draw offer)
+  const seen = seenPositions(g);
+  for (const fresh of [true, false]) for (const m of g.moves({ verbose: true })) {
+    if (m.captured || m.promotion) continue;
+    const h = new Chess(g.fen());
+    h.move(m);
+    if (h.game_over() || h.moves({ verbose: true }).some((x) => x.captured)) continue;
+    if (fresh && seen.has(posKey(h.fen()))) continue;
+    return m;
+  }
+  // nothing that quiet (a knight loose among the pawns): any move that
+  // neither captures nor ends the game — White is a queen and more ahead
+  const ok = (m) => { const h = new Chess(g.fen()); h.move(m); return !h.game_over(); };
+  return g.moves({ verbose: true }).find((m) => !m.captured && !m.promotion && ok(m)) ||
+    // in check with only captures to answer it (a knight checking a boxed-in
+    // king): take — the game has to go on for the scenario to reach its point
+    g.moves({ verbose: true }).find((m) => !m.promotion && ok(m)) || null;
+}
+
+/** Play quiet white moves against the engine until `stop()` says so. */
+async function playQuietly(page, stop, maxMoves) {
+  for (let i = 0; i < maxMoves; i++) {
+    if (await stop()) return true;
+    // the engine may still be on its move: wait for White's turn (or the end)
+    const g = await until(async () => {
+      const x = await savedGame(page);
+      return x.turn() === "w" || x.game_over() || (await stop()) ? x : null;
+    }, 15000, 150) || await savedGame(page);
+    if (await stop()) return true;
+    // why a run gives up is printed always: CI is where it happens (#89)
+    if (g.turn() !== "w" || g.game_over()) { console.log("  playQuietly stops at move " + i + ": turn " + g.turn() + ", over " + g.game_over() + ", " + g.fen()); return false; }
+    const m = quietMove(g);
+    if (!m) { console.log("  no quiet move:", g.fen()); return !!(await stop()); }
+    const n0 = g.history().length;
+    await clickMove(page, m.from, m.to);
+    await until(async () => (await stop()) || (await savedGame(page)).history().length >= n0 + 2, 15000, 150);
+  }
+  return !!(await stop());
+}
+
+const setupSave = (fen) => JSON.stringify({ v: 1, savedAt: Date.now(),
+  pgn: '[Event "flows"]\n[SetUp "1"]\n[FEN "' + fen + '"]\n[Result "*"]\n\n*' });
+
+await scenario("对手角色", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "normal", humanColor: "w" });
+  await page.click("#idle-new");
+  await page.waitForTimeout(400);
+  const dlg = await page.evaluate(() => ({
+    open: document.getElementById("newgame-modal").classList.contains("show"),
+    cards: [...document.querySelectorAll("#op-grid .op-card")].map((b) => ({
+      id: b.dataset.op, shown: !!b.offsetParent, name: b.querySelector(".op-name").textContent.trim(),
+      rating: Number(b.querySelector(".op-rating").textContent), style: b.querySelector(".op-style").textContent.trim(),
+      av: !!b.querySelector(".op-av svg"), on: b.classList.contains("active") })),
+    focus: document.activeElement && document.activeElement.dataset.op,
+  }));
+  assert(dlg.open && dlg.cards.length >= 8 && dlg.cards.length <= 12 && dlg.cards.every((c) => c.shown && c.name && c.av && c.rating > 0 && c.style),
+    "对手角色：新对局对话框里一排角色卡，每张有头像、名字、等级分和风格", JSON.stringify(dlg.cards.slice(0, 3)));
+  assert(dlg.cards.every((c, i) => i === 0 || c.rating > dlg.cards[i - 1].rating), "对手角色：等级分从弱到强排",
+    dlg.cards.map((c) => c.rating).join(","));
+  assert(dlg.cards.filter((c) => c.on).length === 1 && dlg.focus === dlg.cards.find((c) => c.on).id,
+    "对手角色：「换个对手」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
+  await page.click('#op-grid .op-card[data-op="lina"]');
+  await page.waitForTimeout(150);
+  await page.click("#ng-start");
+  await page.waitForTimeout(600);
+  const st = await page.evaluate(() => ({
+    s: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"),
+    role: document.getElementById("black-role").textContent.trim(),
+    level: document.getElementById("black-level").textContent.trim(),
+    hello: document.getElementById("op-hello").hidden ? "" : document.getElementById("op-hello").textContent.trim(),
+  }));
+  assert(st.s.difficulty === "learner" && st.s.personaId === "principled" && st.role === "莉娜" && /练习 \d+ · 重原则/.test(st.level),
+    "对手角色：选莉娜 = 练习档 × 重原则，对阵条写着名字、档位、等级分和风格", JSON.stringify(st));
+  assert(/^莉娜：/.test(st.hello), "对手角色：开局前，空棋盘的卡片上是她的开场白", st.hello);
+  await page.evaluate(() => { window.__uci = []; });
+  await clickMove(page, "e2", "e4");
+  const n = await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 20000, 150);
+  const uci = await page.evaluate(() => window.__uci);
+  assert(n >= 2 && uci.includes("setoption name MultiPV value 10") && uci.includes("go depth 2"),
+    "对手角色：练习档按自己的设置搜（MultiPV 10、depth 2）并应着", JSON.stringify(uci.filter((c) => /^go|MultiPV/.test(c))));
+  assert(!errs.length, "对手角色：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("引擎认输", async () => {
+  // White's whole army against a king, a knight and two pawns: the engine's
+  // own search says lost from the first move, and after ten of its moves
+  // (opponents.js: sustained, not a first-move verdict) it resigns
+  const fen = "1n2k3/pp6/8/8/8/8/PPPPPPPP/RNBQKBNR w KQ - 0 1";
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
+    { "chess.v1.save": setupSave(fen) });
+  const resigned = () => page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.save") || "{}").resigned) || null);
+  const ok = await playQuietly(page, resigned, 16);
+  const after = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+    const last = (st.games || []).slice(-1)[0] || null;
+    const card = document.getElementById("go-card");
+    return { last, rating: st.rating || null, card: card && !card.hidden ? card.textContent.replace(/\s+/g, " ").trim() : "",
+      say: document.getElementById("go-say").hidden ? "" : document.getElementById("go-say").textContent.trim(),
+      rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() };
+  });
+  assert(ok && (await resigned()) === "b", "引擎认输：输定了的一方（黑，引擎）认输，不再拖到被将死", JSON.stringify({ ok }));
+  assert(!!after.last && after.last.result === "win" && after.last.ending === "resigned" && /认输/.test(after.card),
+    "引擎认输：记为你赢、对方认输，结果卡上写着", JSON.stringify({ last: after.last && { r: after.last.result, e: after.last.ending }, card: after.card }));
+  // a position set up by hand is not a rated game (#89 review): recorded, not rated
+  assert(!after.rating && after.last.unrated === "setup" && !Number.isFinite(after.last.ra) && after.rate === "",
+    "引擎认输：摆出来的局面，记战绩但不计等级分，结果卡上也没有分数行", JSON.stringify({ rate: after.rate, ra: after.last && after.last.ra, u: after.last && after.last.unrated }));
+  assert(/^皮普：本局开局/.test(after.say), "引擎认输：角色的终局一句只说事实", after.say);
+  // restart: the ending is still the engine's resignation
+  await page.reload();
+  await page.waitForTimeout(1200);
+  const card2 = await page.evaluate(() => document.getElementById("go-reason").textContent.trim());
+  assert(/黑方认输/.test(card2), "引擎认输：重开之后，结果仍是黑方认输", card2);
+  assert(!errs.length, "引擎认输：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+/** The last stats record, the stored rating and the result card's two lines. */
+const filedOf = (page) => page.evaluate(() => {
+  const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+  const last = (st.games || []).slice(-1)[0] || null;
+  const shown = (id) => (document.getElementById(id).hidden ? "" : document.getElementById(id).textContent.trim());
+  return { n: (st.games || []).length, rating: st.rating || null, rate: shown("go-rating"), say: shown("go-say"),
+    last: last && { r: last.result, diff: last.diff, style: last.style, ra: last.ra, unrated: last.unrated || null } };
+});
+
+/** A game from the standard start, one move short of Scholar's mate (Qxf7#). */
+const scholarSave = () => JSON.stringify({ v: 1, savedAt: Date.now(),
+  pgn: '[Event "flows"]\n[Result "*"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 *' });
+
+/** Resign the game on the board, through the confirmation. */
+async function resign(page) {
+  await page.evaluate(() => document.getElementById("btn-resign").click());
+  await page.waitForTimeout(300);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(600);
+}
+
+await scenario("你将死引擎", async () => {
+  // #89 review: a position set up by hand (FEN, the editor) is recorded
+  // but not rated — mating from it says nothing about the player's level
+  const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
+  const one = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" }, { "chess.v1.save": setupSave(fen) });
+  await one.page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  await clickMove(one.page, "a1", "a8");
+  await one.page.waitForTimeout(600);
+  const set = await filedOf(one.page);
+  assert(set.last && set.last.r === "win" && set.last.unrated === "setup" && !Number.isFinite(set.last.ra) && !set.rating && set.rate === "",
+    "你将死引擎：摆出来的局面将死它，记为你赢，但不计等级分", JSON.stringify(set));
+  assert(!one.errs.length, "你将死引擎（摆局）：页面没有报错", one.errs.join(" / "));
+  await one.ctx.close();
+  // Codex #89: a human move that ends the game files the rating after the
+  // move's own sync(); with the opponents chunk already here that filing is
+  // synchronous, and the result card must still show the rating line
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
+    { "chess.v1.save": scholarSave() });
+  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  const ready = await page.evaluate(() => !!window.CHESS_OPPONENTS);
+  await clickMove(page, "h5", "f7");
+  await page.waitForTimeout(600);
+  const after = await filedOf(page);
+  assert(ready && after.last && after.last.r === "win" && after.last.diff === "beginner" && Number.isFinite(after.last.ra),
+    "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
+  assert(/^等级分 \d+\?（(\+\d+|±0)）/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
+  // Codex #89: clearing the statistics takes the filing off the result card too
+  await page.keyboard.press("Control+,");
+  await page.waitForTimeout(300);
+  await page.click("#stats-clear");
+  await page.waitForTimeout(300);
+  await page.click("#confirm-ok").catch(() => {});
+  await page.waitForTimeout(400);
+  await page.click("#prefs-close").catch(() => {});
+  await page.waitForTimeout(300);
+  const cleared = await page.evaluate(() => ({ stats: localStorage.getItem("chess.v1.stats"),
+    rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() }));
+  assert(!cleared.stats && cleared.rate === "", "你将死引擎：清除统计后，结果卡上的分数跟着撤掉", JSON.stringify(cleared));
+  assert(!errs.length, "你将死引擎：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("续下后结果卡", async () => {
+  // #89 review: 从这里续下 keeps the game's record (it is the same game, filed
+  // once, at its first ending), so the continuation's ending is not rated —
+  // and the card must not show the first ending's rating line
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
+    { "chess.v1.save": scholarSave() });
+  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  await clickMove(page, "h5", "f7");
+  await page.waitForTimeout(600);
+  const first = await filedOf(page);
+  await page.evaluate(() => document.getElementById("board").focus());
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.getElementById("retry-here").click());
+  await page.waitForTimeout(300);
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(500);
+  await clickMove(page, "h5", "f7");
+  await page.waitForTimeout(600);
+  const again = await filedOf(page);
+  const card = await page.evaluate(() => !document.getElementById("go-card").hidden);
+  assert(/^等级分 /.test(first.rate) && card && again.n === first.n && again.rate === "",
+    "续下后结果卡：续下再将死，结果卡在，但不再挂着上一个结局的等级分行", JSON.stringify({ first: first.rate, again: again.rate, n: [first.n, again.n], card }));
+  assert(!errs.length, "续下后结果卡：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("中途换档", async () => {
+  // #89 review: the game is rated against the opponent it was played
+  // against — bound when the engine first plays, kept in the save — and a
+  // rung changed mid-game leaves it recorded but unrated
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" });
+  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  const replied = (n) => until(() => plies(page).then((p) => (p >= n ? p : 0)), 20000, 150);
+  const toRung = (id) => page.evaluate((x) => document.querySelector('#diff-seg button[data-diff="' + x + '"], #diff-seg-engine button[data-diff="' + x + '"]').click(), id);
+  const restart = async () => {
+    await page.reload();
+    await page.waitForTimeout(1200);
+    await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  };
+  const newGame = async () => {
+    await page.keyboard.press("n");
+    await page.waitForTimeout(300);
+    await page.click("#ng-start");
+    await page.waitForTimeout(400);
+  };
+  // one: 新手 all the way, through a restart → rated against 新手
+  await clickMove(page, "e2", "e4");
+  await replied(2);
+  await page.waitForTimeout(300);
+  await restart();
+  await resign(page);
+  const one = await filedOf(page);
+  assert(!!one.last && one.last.diff === "beginner" && Number.isFinite(one.last.ra) && /^等级分 /.test(one.rate),
+    "中途换档：同一档下完（中间重开过），按这一档计分", JSON.stringify(one));
+  // two: 新手 for the engine's reply, then 满强度 before resigning → unrated
+  await newGame();
+  await clickMove(page, "e2", "e4");
+  await replied(2);
+  await toRung("extreme");
+  await page.waitForTimeout(200);
+  await resign(page);
+  const two = await filedOf(page);
+  assert(two.n === one.n + 1 && two.last.r === "loss" && two.last.diff === "beginner" && two.last.unrated === "changed" &&
+    !Number.isFinite(two.last.ra) && !!two.rating && Math.round(two.rating.r) === Math.round(one.rating.r) && two.rate === "",
+    "中途换档：下到一半换成满强度再认输 —— 记下这盘，但不计分（等级分不动，卡上没有分数行）", JSON.stringify(two));
+  assert(/^皮普：/.test(two.say), "中途换档：终局那句仍是这盘的对手（皮普）说的", two.say);
+  // three: the binding survives a restart — 新手's reply, restart, 满强度, resign
+  await toRung("beginner");
+  await newGame();
+  await clickMove(page, "e2", "e4");
+  await replied(2);
+  await page.waitForTimeout(300);
+  await restart();
+  await toRung("extreme");
+  await page.waitForTimeout(200);
+  await resign(page);
+  const three = await filedOf(page);
+  assert(three.n === two.n + 1 && three.last.diff === "beginner" && three.last.unrated === "changed" && !Number.isFinite(three.last.ra),
+    "中途换档：对手随存档一起重开 —— 重开后再换档，照样不计分", JSON.stringify(three));
+  assert(!errs.length, "中途换档：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("引擎提和", async () => {
+  // opposite bishops and nothing else, move 50, the clock at 40: a dead draw
+  // that the rules do not end. After eight level evaluations the engine offers.
+  const fen = "8/8/4k3/8/4b3/8/3B4/4K3 w - - 40 50";
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "easy", humanColor: "w" },
+    { "chess.v1.save": setupSave(fen) });
+  const offered = () => page.evaluate(() => !document.getElementById("draw-offer").hidden);
+  let ok = await playQuietly(page, offered, 14);
+  const bar = await page.evaluate(() => document.getElementById("draw-offer").textContent.replace(/\s+/g, " ").trim());
+  assert(ok && /本 提议和棋/.test(bar), "引擎提和：死和局面里引擎提和，一条不挡棋盘的提示条", bar);
+  // a move on the board is a decline: the bar goes once the press is over
+  const g = await savedGame(page);
+  const m = quietMove(g);
+  await clickMove(page, m.from, m.to);
+  await page.waitForTimeout(600);
+  assert(!(await offered()) && !(await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.save") || "{}").drawAgreed)),
+    "引擎提和：走一步棋 = 不接受，提示条收起，棋照下");
+  ok = await playQuietly(page, offered, 14);
+  if (process.env.FLOWS_DEBUG) console.log("  scores:", JSON.stringify(await page.evaluate(() => window.__scores)));
+  assert(ok, "引擎提和：再过十手，它又提了一次", JSON.stringify(await page.evaluate(() => window.__scores)));
+  await page.click("#draw-accept");
+  await page.waitForTimeout(600);
+  const after = await page.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+    const last = (st.games || []).slice(-1)[0] || {};
+    return { agreed: !!JSON.parse(localStorage.getItem("chess.v1.save") || "{}").drawAgreed, last,
+      bar: !document.getElementById("draw-offer").hidden, reason: document.getElementById("go-reason").textContent.trim() };
+  });
+  assert(after.agreed && !after.bar && after.last.result === "draw" && after.last.ending === "drawAgreed" && after.last.unrated === "setup" && !Number.isFinite(after.last.ra),
+    "引擎提和：点「接受」—— 和棋成立、计入战绩（摆出来的局面，不计等级分），提示条收起", JSON.stringify({ a: after.agreed, r: after.last.result, e: after.last.ending, reason: after.reason }));
+  assert(!errs.length, "引擎提和：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("棋钟节奏", async () => {
+  // 30+0 at the beginner rung: the reply is paced to the clock (opponents.js
+  // thinkPlan: a 40th of it, halved, up to 3 s) — its own clock pays for it
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w", timeControl: "30" });
+  await clickMove(page, "e2", "e4");
+  await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 30000, 150);   // the boot
+  const g = await savedGame(page);
+  const m = quietMove(g) || g.moves({ verbose: true })[0];
+  const clk0 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.save") || "{}").clock);
+  await clickMove(page, m.from, m.to);
+  const t0 = Date.now();
+  await until(() => plies(page).then((p) => (p >= 4 ? p : 0)), 15000, 50);
+  const dt = Date.now() - t0;
+  const clk1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.save") || "{}").clock);
+  assert(dt >= 2600 && dt < 6000, "棋钟节奏：30 分钟的棋，新手档也按钟上的时间想 3 秒左右，不是 0.35 秒（" + dt + "ms）");
+  assert(!!clk0 && !!clk1 && clk0.b - clk1.b >= 2500, "棋钟节奏：想的时间记在它自己的钟上", JSON.stringify({ clk0, clk1 }));
+  assert(!errs.length, "棋钟节奏：页面没有报错", errs.join(" / "));
+  await ctx.close();
 });
 
 await browser.close();

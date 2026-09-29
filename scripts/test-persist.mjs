@@ -691,5 +691,35 @@ for (const how of ["restore", "clear"]) {
   }
 }
 
+// v8-0-plan B4: stats v2 may carry the engine-game rating. Optional — no
+// version bump, a 7.x build reads v2 and writes back what it read — and
+// vetted: a malformed rating is dropped, never the games with it.
+{
+  const h = withStore(null);
+  const P = createPersist(h, () => {});
+  P.load();
+  const games = [{ id: "g1", t: 1, diff: "normal", color: "w", result: "win", moves: 30, pgn: "", ending: "",
+    rb: null, ra: 1662, perf: 2100 }];
+  const good = { v: 2, games, rating: { r: 1662.4, rd: 290.3, vol: 0.06, at: 1, n: 1 } };
+  P.setJson("stats", good);
+  let r = P.read("stats");
+  assert(r.state === "ok" && JSON.stringify(r.value) === JSON.stringify(good),
+    "B4: a stats record with a rating reads back as written, games carrying rb / ra / perf");
+  for (const bad of [{ r: "1662" , rd: 290, vol: 0.06 }, { r: 1662, rd: 0, vol: 0.06 }, { r: 1662, rd: 290 }, null, 7]) {
+    P.setJson("stats", { v: 2, games, rating: bad });
+    r = P.read("stats");
+    assert(r.state === "ok" && !("rating" in r.value) && r.value.games.length === 1,
+      "B4: a malformed rating (" + JSON.stringify(bad) + ") is dropped and the games are kept");
+  }
+  P.setJson("stats", { v: 2, games });
+  r = P.read("stats");
+  assert(r.state === "ok" && !("rating" in r.value), "B4: a 7.x record without a rating reads as it is");
+  // a v1 record still migrates, and a rating on it survives the unpacking
+  P.setJson("stats", { v: 1, games: [{ t: 1, sig: "e4 e5#resigned", result: "win" }], rating: good.rating });
+  r = P.read("stats");
+  assert(r.state === "ok" && r.value.v === 2 && r.value.games[0].ending === "resigned",
+    "B4: …and a v1 record still comes forward");
+}
+
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");

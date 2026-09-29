@@ -11,12 +11,13 @@
  *   - 冲刺 and 连胜: the card, the strikes, the clock running out, the best
  *     score kept across a reload, a run surviving a cancelled game load
  *
- * The real Lichess index is empty until the database may be downloaded, so
- * this builds its own page: scripts/import-puzzles.mjs runs over the fixture
+ * The real Lichess index changes with every import, so this builds its own
+ * page, where the answers are known: scripts/import-puzzles.mjs runs over the fixture
  * CSV (scripts/fixtures/lichess-sample.csv, 49 puzzles, 24 of them Black to
  * move) into a temporary directory, and the bundle is built with that index
  * in place of src/web/js/puzzles-lc-index.js — the same esbuild options as
- * scripts/bundle.mjs, the band chunks built the same way. Nothing in the app
+ * scripts/bundle.mjs, the band chunks and chunk-mined.js (which carries the
+ * index) built the same way. Nothing in the app
  * knows it is being tested.
  *
  *   node scripts/test-trainer-e2e.mjs
@@ -52,6 +53,12 @@ const fixtureIndex = {
 };
 const BUNDLE = (await esbuild.build(Object.assign({ entryPoints: [ENTRY], plugins: [fixtureIndex] }, OPTS))).outputFiles[0].text;
 const CHUNKS = new Map();
+// the index rides in chunk-mined.js (mined-chunk.js): that chunk, with the fixture index
+{
+  const r = await esbuild.build(Object.assign({ entryPoints: [path.join(ROOT, "js", "mined-chunk.js")], globalName: "__chunk", plugins: [fixtureIndex] }, OPTS));
+  CHUNKS.set("chunk-mined.js", r.outputFiles[0].text +
+    "\n;for (var k in __chunk) if (Object.prototype.hasOwnProperty.call(__chunk, k)) window[k] = __chunk[k];\n");
+}
 for (const f of bandFiles) {
   const r = await esbuild.build(Object.assign({ entryPoints: [path.join(BAND_DIR, f)], globalName: "__chunk" }, OPTS));
   CHUNKS.set("chunk-lc-" + f.slice(5, 9) + ".js", r.outputFiles[0].text +
@@ -74,8 +81,16 @@ const lcById = (id) => LC.find((p) => p.id === "lc-" + id);
 const POOL = data.CHESS_PUZZLES.concat(data.MINED_PUZZLES, LC).filter((p) => p.fen && p.cat !== "op" && p.cat !== "rep");
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
-const server = http.createServer((req, res) => {
+/** ms to hold chunk-mined.js back — (e) plays a player quicker than the chunk */
+let minedDelay = 0;
+/** ms to hold a band chunk back, by file — (f) makes the nearest band the slow one */
+const chunkDelay = {};
+const server = http.createServer(async (req, res) => {
   let p = req.url.split("?")[0];
+  if (p === "/js/chunk-mined.js" && minedDelay) await new Promise((r) => setTimeout(r, minedDelay));
+  const held = chunkDelay[p.replace(/^\/js\//, "")];
+  if (held === "fail") { res.writeHead(404); res.end(); return; }
+  if (held) await new Promise((r) => setTimeout(r, held));
   if (p === "/") p = "/index.html";
   if (p === "/js/engine-src.js") { res.writeHead(200, { "content-type": "text/javascript" }); res.end("// stub"); return; }
   if (p === "/js/bundle.js") { res.writeHead(200, { "content-type": "text/javascript" }); res.end(BUNDLE); return; }
@@ -115,7 +130,8 @@ async function open(puzzles, opts) {
   const page = await ctx.newPage();
   if (opts && opts.clock) await page.clock.install();
   page.on("pageerror", (e) => errs.push(e.message));
-  await page.goto(`http://127.0.0.1:${PORT}/`);
+  // (e) holds a chunk back: the load event would wait for it
+  await page.goto(`http://127.0.0.1:${PORT}/`, opts && opts.early ? { waitUntil: "domcontentloaded" } : undefined);
   await page.waitForTimeout(1000);
   await page.click("#pick-cancel", { timeout: 800 }).catch(() => {});
   return { ctx, page };
@@ -494,6 +510,106 @@ async function solveCurrent(page, h) {
   await page.clock.runFor(181000);
   assert(/时间到/.test(await h.text("#pz-run-head")), "a: 3 分钟到，冲刺结束", await h.text("#pz-run-head"));
   await ctx.close();
+}
+
+// --- (e) quicker than the index ------------------------------------------------
+// The Lichess index rides in chunk-mined.js (mined-chunk.js), fetched after the
+// first paint. A theme page opened, a theme started or a run begun before it
+// is here waits for it: the counts are redrawn, the bands are still asked for.
+{
+  minedDelay = 5000;
+  const { ctx, page } = await open(null, { mode: "ai", early: true });
+  const lcAsked = [];
+  page.on("request", (q) => { if (/chunk-lc-\d{4}\.js/.test(q.url())) lcAsked.push(q.url().split("/").pop()); });
+  const early = await page.evaluate(() => !window.LC_INDEX);
+  await page.click('#rail button[data-view="puzzle"]');
+  await page.waitForTimeout(200);
+  await page.click("#pz-themes-open");
+  await page.waitForTimeout(200);
+  await page.click('#theme-list button[data-theme="fork"]').catch(() => {});
+  await page.waitForTimeout(200);
+  const askedBefore = lcAsked.length;
+  await page.waitForFunction(() => !!window.LC_INDEX, null, { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const forkBands = Object.keys(LC_INDEX.themes.fork ? LC_INDEX.themes.fork.bands : []).length;
+  assert(early && askedBefore === 0, "e: 题库索引还没到（chunk-mined.js 压着）", "早 " + early + "，已要分块 " + askedBefore);
+  assert(lcAsked.length > 0, "e: 索引到了，先点的主题照样去要它的分块", lcAsked.join(","));
+  await ctx.close();
+  // a theme page left open while the index arrives redraws its counts
+  const sheet = await open(null, { mode: "ai", early: true });
+  await sheet.page.click('#rail button[data-view="puzzle"]');
+  await sheet.page.waitForTimeout(200);
+  await sheet.page.click("#pz-themes-open");
+  await sheet.page.waitForTimeout(200);
+  const sheetM1 = () => sheet.page.evaluate(() => (document.querySelector('#theme-list button[data-theme="m1"]') || {}).textContent || "");
+  const sheetBefore = await sheetM1();
+  const sheetEarly = await sheet.page.evaluate(() => !window.LC_INDEX);
+  await sheet.page.waitForFunction(() => !!window.LC_INDEX, null, { timeout: 10000 }).catch(() => {});
+  await sheet.page.waitForTimeout(500);
+  const localM1 = data.CHESS_PUZZLES.concat(data.MINED_PUZZLES).filter((p) => p.cat === "m1" && p.fen).length;
+  assert(sheetEarly && (await sheetM1()).includes((localM1 + LC_INDEX.themes.m1.n) + " 道"), "e: 开着的主题页，索引一到题数就补上题库",
+    sheetBefore + " → " + (await sheetM1()));
+  await sheet.ctx.close();
+  // a run begun before the index: its bands are asked for once the index is here
+  const run = await open(null, { mode: "ai", early: true });
+  const runAsked = [];
+  run.page.on("request", (q) => { if (/chunk-lc-\d{4}\.js/.test(q.url())) runAsked.push(q.url().split("/").pop()); });
+  await run.page.click('#rail button[data-view="puzzle"]');
+  await run.page.waitForTimeout(200);
+  await run.page.click('#pz-mode-seg button[data-run="rush"]');
+  const runEarly = await run.page.evaluate(() => !window.LC_INDEX) && runAsked.length === 0;
+  await run.page.waitForFunction(() => !!window.LC_INDEX, null, { timeout: 10000 }).catch(() => {});
+  await run.page.waitForTimeout(800);
+  assert(runEarly && runAsked.length > 0, "e: 冲刺先开，索引到了照样去要分数段的分块", runAsked.join(",") + " (fork 在 " + forkBands + " 段)");
+  await run.ctx.close();
+  minedDelay = 0;
+}
+
+// --- (f) a theme with nothing local starts from the nearest band -------------
+// Codex #89: every band of the theme used to load at once and the first to
+// arrive seated its puzzle, near or not. The nearest band loads first now.
+{
+  const { ctx, page } = await open(null, { mode: "ai" });
+  const h = helpers(page);
+  await page.click('#rail button[data-view="puzzle"]');
+  await page.waitForTimeout(500);
+  await page.click("#pz-themes-open");
+  await page.waitForTimeout(300);
+  const rowsF = await page.evaluate(() => [...document.querySelectorAll("#theme-list button[data-theme]")].map((b) => ({ id: b.dataset.theme, text: b.textContent, off: b.disabled })));
+  const bandOf = (r) => Math.floor(r / 200) * 200;
+  const pick = rowsF.find((x) => {
+    const t = LC_INDEX.themes[x.id];
+    return t && !x.off && new RegExp("(^|\\D)" + t.n + " 道").test(x.text) && t.bands.filter((c) => c > 0).length >= 2;
+  });
+  const bands = pick ? LC_INDEX.bands.filter((b, i) => LC_INDEX.themes[pick.id].bands[i] > 0).map((b) => b.band) : [];
+  bands.sort((a, b) => Math.abs(a + 100 - 1500) - Math.abs(b + 100 - 1500));
+  const near = bands[0];
+  if (near != null) chunkDelay["chunk-lc-" + String(near).padStart(4, "0") + ".js"] = 1500;
+  if (pick) await page.click('#theme-list button[data-theme="' + pick.id + '"]');
+  await page.waitForTimeout(3500);
+  const occ = await h.occupied();
+  const seated = LC.filter((p) => pick && p.themes.includes(pick.id)).find((p) => squaresOf(p.fen) === occ || mirror(squaresOf(p.fen)) === occ);
+  assert(!!pick && bands.length >= 2 && !!seated && bandOf(seated.rating) === near,
+    "f: 没有本地题的主题，先摆最近分数段的题（最近段故意慢到）", JSON.stringify({ theme: pick && pick.id, bands, seated: seated && seated.rating, occ, name: await h.text("#pz-theme-name"), n: LC.filter((p) => pick && p.themes.includes(pick.id)).map((p) => p.rating) }));
+  for (const k in chunkDelay) delete chunkDelay[k];
+  await ctx.close();
+  // Codex #89: the nearest band failing to load does not strand the theme —
+  // the next nearest is asked for, and its puzzle seated
+  if (near != null) chunkDelay["chunk-lc-" + String(near).padStart(4, "0") + ".js"] = "fail";
+  const two = await open(null, { mode: "ai" });
+  const h2 = helpers(two.page);
+  await two.page.click('#rail button[data-view="puzzle"]');
+  await two.page.waitForTimeout(500);
+  await two.page.click("#pz-themes-open");
+  await two.page.waitForTimeout(300);
+  if (pick) await two.page.click('#theme-list button[data-theme="' + pick.id + '"]');
+  await two.page.waitForTimeout(2500);
+  const occ2 = await h2.occupied();
+  const seated2 = LC.filter((p) => pick && p.themes.includes(pick.id)).find((p) => squaresOf(p.fen) === occ2 || mirror(squaresOf(p.fen)) === occ2);
+  assert(!!seated2 && bandOf(seated2.rating) === bands[1], "f: 最近段载入失败，接着要下一段，照样摆出题",
+    JSON.stringify({ want: bands[1], seated: seated2 && seated2.rating }));
+  for (const k in chunkDelay) delete chunkDelay[k];
+  await two.ctx.close();
 }
 
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));

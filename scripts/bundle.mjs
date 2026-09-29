@@ -74,7 +74,8 @@ export const CHUNKS = [
   { entry: "src/web/js/eco.js", out: "src/web/js/chunk-eco.js", global: "ECO_BY_KEY", min: 400000 },
   { entry: "src/web/js/lang-en.js", out: "src/web/js/chunk-lang-en.js", global: "CHESS_I18N_EN", min: 150000 },
   { entry: "src/web/js/lang-ja.js", out: "src/web/js/chunk-lang-ja.js", global: "CHESS_I18N_JA", min: 200000 },
-  { entry: "src/web/js/puzzles-mined.js", out: "src/web/js/chunk-mined.js", global: "MINED_PUZZLES", min: 150000 },
+  // the mined puzzles, and the Lichess index with them (mined-chunk.js)
+  { entry: "src/web/js/mined-chunk.js", out: "src/web/js/chunk-mined.js", global: "MINED_PUZZLES", min: 150000 },
   { entry: "src/web/js/pieces-merida.js", out: "src/web/js/chunk-merida.js", global: "MERIDA_PIECE_SVGS", min: 30000 },
   // v8-0-plan A3: the further piece sets, one chunk each (lazy-content.js PIECE_CHUNKS)
   { entry: "src/web/js/pieces-chessnut.js", out: "src/web/js/chunk-pieces-chessnut.js", global: "CHESSNUT_PIECE_SVGS", min: 25000 },
@@ -82,6 +83,11 @@ export const CHUNKS = [
   { entry: "src/web/js/pieces-celtic.js", out: "src/web/js/chunk-pieces-celtic.js", global: "CELTIC_PIECE_SVGS", min: 25000 },
   { entry: "src/web/js/pieces-spatial.js", out: "src/web/js/chunk-pieces-spatial.js", global: "SPATIAL_PIECE_SVGS", min: 30000 },
   { entry: "src/web/js/boot.js", out: "src/web/js/chunk-boot.js", global: null, boot: true, min: 500 },
+  // v8-0-plan A4 + F5: the review's picture and its key-moments card (lazy-content.js REVIEW_CHUNKS)
+  { entry: "src/web/js/report.js", out: "src/web/js/chunk-report.js", global: "ChessReport", min: 3000 },
+  { entry: "src/web/js/review/moments.js", out: "src/web/js/chunk-moments.js", global: "createMoments", min: 3000 },
+  // v8-0-plan B4: the ladder, personas, rating and styles (opponents-lazy.js)
+  { entry: "src/web/js/opponents-chunk.js", out: "src/web/js/chunk-opponents.js", global: "CHESS_OPPONENTS", min: 15000 },
   ...lichessChunks(path.join(root, "src/web/js/lichess")),
 ];
 
@@ -96,9 +102,17 @@ export const CHUNKS = [
  * to catch — a chunk's payload inlined again by a stray static import — is
  * caught per chunk by the probe checks beside it in test-chess.mjs; this line
  * is the backstop for a whole language's content coming back (~200 KB each).
+ *
+ * 70% → 70.5% (+8.5 KB) with v8-0-plan B4. The opponents went into a chunk
+ * (chunk-opponents.js: the ladder, the persona cards and their lines, the
+ * rating maths and the styles, ~32 KB), but what the first frame and the
+ * engine's first move need stayed: the twelve rungs and the win-chance draw
+ * in engine.js, the custom clock, and the dialog's labels — 4.7 KB past a
+ * line M4-view had left 963 bytes under. Still two orders of magnitude below
+ * what the line is for.
  */
 export const BUNDLE_BYTES_BEFORE_F5 = 1709973;
-export const BUNDLE_BUDGET = Math.floor(BUNDLE_BYTES_BEFORE_F5 * 0.7);
+export const BUNDLE_BUDGET = Math.floor(BUNDLE_BYTES_BEFORE_F5 * 0.705);
 
 /**
  * Load esbuild, or explain how to get it.

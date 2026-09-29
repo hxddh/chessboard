@@ -16,6 +16,7 @@
  */
 import { Chess } from "../chess.js";
 import { ChessReview } from "../review.js";
+import { ChessReviewGrade as Grade } from "../review-grade.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -106,9 +107,34 @@ export function createBoardMarks(d) {
     const a = analysisFor();
     if (!a || !a.tags) return null;
     const tag = softFiltered(a.tags[i - 1]);
-    if (!Review.isMistake(tag)) return null;
-    return { sq: last.to, tag };
+    if (Review.isMistake(tag)) return { sq: last.to, tag };
+    // v8-0-plan A4: the praise a graded pass gives (!! 妙着, ! 仅此一着) on
+    // the same corner, the glyph the move list already prints
+    const glyph = a.v === 2 && Array.isArray(a.grades) ? Grade.GLYPH[a.grades[i - 1]] : null;
+    return glyph ? { sq: last.to, tag: glyph } : null;
   }
 
-  return { engineArrows, bestArrowAt, annotationAt };
+  /**
+   * The marks of the line the notation shows, per node: `tagOf` the glyph a
+   * move carries (?! ? ?? from the pass, !! and ! from a graded one, B2) and
+   * `gradeOf` its grade, which colours the move (v8-0-plan A4). A `?!` the
+   * list does not print (存疑标注 off) is not coloured either — it is
+   * "quiet", so the colour and the mark never disagree.
+   */
+  function lineMarks(line) {
+    const a = analysisFor();
+    const tagOf = new Map(), gradeOf = new Map();
+    if (!a || !a.tags) return { tagOf, gradeOf };
+    const graded = a.v === 2 && Array.isArray(a.grades) ? a.grades : null;
+    line.forEach((id, k) => {
+      if (k < 1) return;
+      const mk = a.tags[k - 1] || (graded && Grade.GLYPH[graded[k - 1]]);
+      if (mk) tagOf.set(id, mk);
+      const g = graded ? graded[k - 1] : null;
+      if (g) gradeOf.set(id, g === "inaccuracy" && !softFiltered("?!") ? "quiet" : g);
+    });
+    return { tagOf, gradeOf };
+  }
+
+  return { engineArrows, bestArrowAt, annotationAt, lineMarks };
 }

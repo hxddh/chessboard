@@ -14,6 +14,11 @@
  *   shapes: {arrows: [{from,to,color}], circles: [{sq,color}]} | undefined —
  *     the player's own annotations on this position, colour letters G/R/B/Y
  *     (lichess's), painted from the --shape-* tokens (v6-plan Q2.4)
+ *   success: true while the position is a solved puzzle or lesson — no
+ *     check glow then: the red says danger, never "right" (v8-0-plan A5)
+ *   mark: {sq, ok} | null — a puzzle move's ✓ or ✗ on its square's corner
+ *   result: [{sq, kind: "win"|"loss"|"mate"|"draw"}] | null — the ending, on
+ *     the kings' squares (v8-0-plan A5)
  * @module board
  */
 import { CHESS_PIECE_SVGS } from "./pieces.js";
@@ -21,6 +26,7 @@ import { CBURNETT_PIECE_SVGS } from "./pieces-cburnett.js";
 import { loadChunk } from "./chunk.js";
 import { PIECE_CHUNKS } from "./lazy-content.js";
 import { textureTile, parseInk, inkSprite } from "./board-skin.js";
+import { easeFromCss } from "./motion.js";
   const FILES = "abcdefgh";
 
   // Solid glyph set for both colors — colored via fill, outlined for contrast.
@@ -78,6 +84,11 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     judgeSoft: ["--judge-soft", "#c9b458"],
     judgeMid: ["--judge-mid", "#e0a03c"],
     judgeBad: ["--judge-bad", "#e05252"],
+    // v8-0-plan A4/A5: the one colour for "right" on the board — the !! and
+    // ! of a graded review, a solved puzzle's ✓. Never the check's red.
+    judgeGood: ["--judge-good", "#4caf6a"],
+    // a drawn game's badge: neither side's colour, the interface's quiet ink
+    judgeDraw: ["--muted", "#8f8a84"],
     sideWhite: ["--side-white", "#f2f2ee"],
     sideBlack: ["--side-black", "#1d1d1b"],
     // v8-0-plan A3: the board's material (board-skin.js) — a texture laid
@@ -86,7 +97,7 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     texture: ["--board-texture", "none"],
     pieceInk: ["--piece-ink", "none"],
   };
-  const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad" };
+  const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad", "!!": "judgeGood", "!": "judgeGood" };
   const SHAPE_PAINT = { G: "shapeG", R: "shapeR", B: "shapeB", Y: "shapeY", E: "engine", e: "engineAlt" };
   /** resolved once per theme change, not once per square */
   let _paint = null;
@@ -112,7 +123,7 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
    * sprites go too: on the paper board they are printed in its ink
    * (v8-0-plan A3), so a board switch can change what they look like.
    */
-  function invalidatePaint() { _paint = null; _slideMs = null; _sprites = {}; _patterns = null; }
+  function invalidatePaint() { _paint = null; _slideMs = null; _durs = {}; _ease = null; _sprites = {}; _patterns = null; }
   /** the texture patterns for the current board and size: {key, pats} | null */
   let _patterns = null;
 
@@ -132,6 +143,34 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     const m = /^(\.?\d*\.?\d+)(m?s)$/.exec(v);
     _slideMs = m ? Number(m[1]) * (m[2] === "s" ? 1000 : 1) : 200;
     return _slideMs;
+  }
+
+  /** The other two durations (--dur-quick, --dur-slow), read the same way. */
+  let _durs = {};
+  function durMs(name) {
+    if (_durs[name] != null) return _durs[name];
+    let v = "";
+    try { v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+    catch (_) { v = ""; }
+    const m = /^(\.?\d*\.?\d+)(m?s)$/.exec(v);
+    _durs[name] = m ? Number(m[1]) * (m[2] === "s" ? 1000 : 1) : 200;
+    return _durs[name];
+  }
+
+  /**
+   * v8-0-plan A5: every canvas motion on the stylesheet's own curve, --ease,
+   * through motion.js's lookup table. It was a quadratic easeOut written
+   * here, a second curve beside the one test-chess allows the CSS: a piece's
+   * slide and the panel's slide next to it started and settled differently.
+   */
+  let _ease = null;
+  function ease(t) {
+    if (!_ease) {
+      let v = "";
+      try { v = getComputedStyle(document.documentElement).getPropertyValue("--ease"); } catch (_) { v = ""; }
+      _ease = easeFromCss(v);
+    }
+    return _ease(t);
   }
 
   /**
@@ -297,7 +336,9 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
   }
 
   /** Counters for the tests (v8-0-plan F5). */
-  function stats() { return { imageRedraws: _imageRedraws }; }
+  /** the hint arrow the last frame drew ("b3b8"), for the tests — nothing else can see a canvas arrow */
+  let _lastHint = null;
+  function stats() { return { imageRedraws: _imageRedraws, hint: _lastHint }; }
 
   /**
    * Offscreen raster of piece `key` at `size` device pixels, or null while the
@@ -384,8 +425,6 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     arrow: 0.13,
   };
 
-  const easeOut = (t) => 1 - (1 - t) * (1 - t);
-
   /** Slide the piece now sitting on `to` in from→to over ~150ms (live moves). */
   /**
    * The OS "reduce motion" setting, watched live.
@@ -453,6 +492,52 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     requestAnimationFrame(step);
   }
   function cancelAnim() { _anim = null; _rebound = null; }
+
+  /**
+   * v8-0-plan A5: the board's small semantic motions — what changed, said
+   * once, on the one curve:
+   *   sel     a piece picked up lifts a little, and its legal squares fade in
+   *           (--dur-quick);
+   *   pulse   a new check swells the glow under the king once (twice
+   *           --dur-slow) — the moment of danger, not a standing alarm;
+   *   badge   a result or a puzzle's ✓ / ✗ grows onto its corner (--dur-slow).
+   * Each starts from the draw that first sees its state and runs its own few
+   * frames; none starts under reduced motion, where the state is simply
+   * drawn — and no frame is drawn that a state change did not ask for (the
+   * board suite counts draws with reduced motion on).
+   */
+  const _fx = { sel: null, pulse: null, badge: null, keys: { sel: "", check: "", badge: "" } };
+  let _fxFrame = 0;
+  const pulseMs = () => 2 * durMs("--dur-slow");
+  function fxAt(f, ms, now) { return f ? Math.max(0, Math.min(1, (now - f.start) / ms)) : 1; }
+  function noteChanges(m, now) {
+    const k = _fx.keys;
+    const sel = m.selected ? m.selected + ":" + (m.legalTargets || []).join(",") : "";
+    if (sel !== k.sel) { k.sel = sel; _fx.sel = sel && !_reduceMotion ? { start: now } : null; }
+    const check = m.checkSquare && !m.success ? m.checkSquare + ":" + (m.lastMove ? m.lastMove.from + m.lastMove.to : "") : "";
+    if (check !== k.check) { k.check = check; _fx.pulse = check && !_reduceMotion ? { start: now } : null; }
+    const badge = badgesOf(m).filter((b) => b.reveal).map((b) => b.sq + b.kind).join(",");
+    if (badge !== k.badge) { k.badge = badge; _fx.badge = badge && !_reduceMotion ? { start: now } : null; }
+  }
+  function fxRunning(now) {
+    return (!!_fx.sel && now - _fx.sel.start < durMs("--dur-quick")) ||
+      (!!_fx.pulse && now - _fx.pulse.start < pulseMs()) ||
+      (!!_fx.badge && now - _fx.badge.start < durMs("--dur-slow"));
+  }
+
+  /**
+   * The corner badges of a model: the analysis mark (annotation), a
+   * puzzle move's ✓ / ✗ (mark) and the result on the kings (result). One
+   * per square — the result wins over a mark on the same square.
+   */
+  const RESULT_PAINT = { win: ["judgeGood", "1"], loss: ["judgeBad", "0"], mate: ["judgeBad", "#"], draw: ["judgeDraw", "½"] };
+  function badgesOf(m) {
+    const out = [];
+    for (const r of m.result || []) if (r && r.sq && RESULT_PAINT[r.kind]) out.push({ sq: r.sq, kind: r.kind, fill: RESULT_PAINT[r.kind][0], glyph: RESULT_PAINT[r.kind][1], reveal: true });
+    if (m.mark && m.mark.sq) out.push({ sq: m.mark.sq, kind: m.mark.ok ? "ok" : "no", fill: m.mark.ok ? "judgeGood" : "judgeBad", shape: m.mark.ok ? "tick" : "cross", reveal: true });
+    if (m.annotation && JUDGE_PAINT[m.annotation.tag]) out.push({ sq: m.annotation.sq, kind: m.annotation.tag, fill: JUDGE_PAINT[m.annotation.tag], glyph: m.annotation.tag, reveal: false });
+    return out.filter((b, i) => out.findIndex((o) => o.sq === b.sq) === i);
+  }
 
   /**
    * Send a refused piece home from where the pointer let it go.
@@ -540,6 +625,8 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     if (!_canvas || !_model) return;
     const m = _model();
     const _drag = m.drag || null;
+    const now = typeof performance !== "undefined" ? performance.now() : 0;
+    noteChanges(m, now);
     const P = paint();
     const ctx = _canvas.getContext("2d");
     const w = _canvas.width;
@@ -606,12 +693,18 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     // strength by a third of the way out, gone before the corners. Still one
     // square, still through cellRect(): the glow is clipped to the king's
     // square by the fill, so it never bleeds onto a neighbour.
-    if (m.checkSquare) {
+    // v8-0-plan A5: not on a solved position (`success`) — a puzzle solved
+    // by mate lit the mated king in the check's red, and that was the only
+    // thing on the board saying "right". The ✓ says it now.
+    if (m.checkSquare && !m.success) {
       const { sr, sc } = screenPos(m.checkSquare, m.flipped);
       const cx = sc * step + step / 2, cy = sr * step + step / 2;
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, step * 0.7);
+      // the pulse: the hot core swells once and settles (see _fx)
+      const pp = fxAt(_fx.pulse, pulseMs(), now);
+      const swell = _fx.pulse && pp < 1 ? Math.sin(Math.PI * ease(pp)) : 0;
       g.addColorStop(0, fade(P.check, 0.95));
-      g.addColorStop(0.3, P.check);
+      g.addColorStop(0.3 + 0.35 * swell, P.check);
       g.addColorStop(1, fade(P.check));
       ctx.fillStyle = g;
       ctx.fillRect(...cellRect(sr, sc));
@@ -680,22 +773,35 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
       ctx.strokeText(glyph, x, y + step * 0.04);
       ctx.fillText(glyph, x, y + step * 0.04);
     }
-    let dragPiece = null;
+    let dragPiece = null, lifted = null;
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = m.position[r][c];
         if (!piece) continue;
         const sq = FILES[c] + (8 - r);
         if (_drag && _drag.from === sq) { dragPiece = piece; continue; } // ghost drawn last
+        if (m.selected === sq && !_drag) { lifted = { piece, sq }; continue; } // lifted, drawn over its neighbours
         if (_anim && _anim.segs.some((sg) => sg.to === sq)) continue; // drawn interpolated below
         const { sr, sc } = screenPos(sq, m.flipped);
         paintPiece(piece, sc * step + step / 2, sr * step + step / 2);
       }
     }
+    // v8-0-plan A5: the piece picked up stands a little proud of the board —
+    // raised by 5% of a square with its shadow let out under it, over
+    // --dur-quick (at once under reduced motion: a lift is a state)
+    if (lifted) {
+      const e = ease(fxAt(_fx.sel, durMs("--dur-quick"), now));
+      const { sr, sc } = screenPos(lifted.sq, m.flipped);
+      ctx.save();
+      ctx.shadowColor = P.pieceShadow;
+      ctx.shadowBlur = step * 0.1 * e;
+      ctx.shadowOffsetY = step * 0.05 * e;
+      paintPiece(lifted.piece, sc * step + step / 2, sr * step + step / 2 - step * 0.05 * e);
+      ctx.restore();
+    }
     // sliding pieces: interpolate each from→to over the animation window
     if (_anim) {
-      const now = typeof performance !== "undefined" ? performance.now() : _anim.start + _anim.dur;
-      const t = easeOut(Math.max(0, Math.min(1, (now - _anim.start) / _anim.dur)));
+      const t = ease(Math.max(0, Math.min(1, (now - _anim.start) / _anim.dur)));
       // the captured man, fading under whoever is arriving — drawn first so
       // the mover passes over him (animateMove's `taken`)
       const lands = (sq) => { const r = m.position[8 - Number(sq[1])]; return !!(r && r[FILES.indexOf(sq[0])]); };
@@ -790,19 +896,26 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     }
     // engine hint arrow on top of pieces
     if (m.hintMove) paintArrow(m.hintMove.from, m.hintMove.to, P.hint);
+    _lastHint = m.hintMove ? m.hintMove.from + m.hintMove.to : null;
     // 7.7 §5: the analysis mark of the move that led here, as a badge in the
     // top-right corner of the square it landed on — where Lichess and
     // Chess.com put it, so the eye that follows the last-move tint finds it.
-    // Only the three marks the analysis has (?! ? ??), coloured from the same
-    // --judge-* scale as the move list; the glyph takes whichever side ink
-    // reads on that fill. Drawn inside the square, so a1–h8 corners never
-    // clip it.
-    if (m.annotation && JUDGE_PAINT[m.annotation.tag]) {
-      const { sr, sc } = screenPos(m.annotation.sq, m.flipped);
-      const r = step * 0.19;
-      const cx = (sc + 1) * step - r - step * 0.03, cy = sr * step + r + step * 0.03;
-      const fill = P[JUDGE_PAINT[m.annotation.tag]];
+    // The marks the analysis has (?! ? ??, and since v8-0-plan A4 a graded
+    // pass's !! and !), coloured from the same --judge-* scale as the move
+    // list; the glyph takes whichever side ink reads on that fill. Drawn
+    // inside the square, so a1–h8 corners never clip it.
+    // v8-0-plan A5: the same corner carries a puzzle move's ✓ (green) or
+    // ✗ (red), and at the end of a game the result on each king — 1 / 0,
+    // # for the mated one, ½ for a draw. Those two grow onto the corner.
+    const grow = ease(fxAt(_fx.badge, durMs("--dur-slow"), now));
+    for (const b of badgesOf(m)) {
+      const { sr, sc } = screenPos(b.sq, m.flipped);
+      const k = b.reveal ? 0.6 + 0.4 * grow : 1;
+      const r = step * (b.reveal ? 0.21 : 0.19) * k;
+      const cx = (sc + 1) * step - step * (b.reveal ? 0.24 : 0.22), cy = sr * step + step * (b.reveal ? 0.24 : 0.22);
+      const fill = P[b.fill];
       ctx.save();
+      if (b.reveal) ctx.globalAlpha = grow;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fillStyle = fill;
@@ -810,12 +923,30 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
       ctx.lineWidth = Math.max(1, step * MARK.hair);
       ctx.strokeStyle = P.cursorEdge;
       ctx.stroke();
-      ctx.fillStyle = luminance(fill) > 0.4 ? P.sideBlack : P.sideWhite;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const tag = m.annotation.tag;
-      ctx.font = "600 " + Math.round(r * (tag.length > 1 ? 0.95 : 1.25)) + "px " + P.font;
-      ctx.fillText(tag, cx, cy + r * 0.04);
+      const ink = luminance(fill) > 0.4 ? P.sideBlack : P.sideWhite;
+      if (b.shape) {
+        // drawn, not typed: ✓ and ✗ are not in every face the page may fall back to
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = r * 0.28;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        if (b.shape === "tick") {
+          ctx.moveTo(cx - r * 0.45, cy + r * 0.02);
+          ctx.lineTo(cx - r * 0.12, cy + r * 0.36);
+          ctx.lineTo(cx + r * 0.48, cy - r * 0.34);
+        } else {
+          ctx.moveTo(cx - r * 0.36, cy - r * 0.36); ctx.lineTo(cx + r * 0.36, cy + r * 0.36);
+          ctx.moveTo(cx + r * 0.36, cy - r * 0.36); ctx.lineTo(cx - r * 0.36, cy + r * 0.36);
+        }
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = ink;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "600 " + Math.round(r * (b.glyph.length > 1 ? 0.95 : 1.25)) + "px " + P.font;
+        ctx.fillText(b.glyph, cx, cy + r * 0.04);
+      }
       ctx.restore();
     }
     // The dragged piece follows the pointer above everything else, lifted:
@@ -833,8 +964,7 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
     // used to vanish from under the pointer and reappear on its old square,
     // which reads as a glitch rather than as "no".
     if (_rebound) {
-      const now = typeof performance !== "undefined" ? performance.now() : _rebound.start + _rebound.dur;
-      const t = easeOut(Math.max(0, Math.min(1, (now - _rebound.start) / _rebound.dur)));
+      const t = ease(Math.max(0, Math.min(1, (now - _rebound.start) / _rebound.dur)));
       const { sr, sc } = screenPos(_rebound.to, m.flipped);
       const tx = sc * step + step / 2, ty = sr * step + step / 2;
       ctx.save();
@@ -871,8 +1001,11 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    // legal-move markers on top of pieces (capture ring / empty dot)
+    // legal-move markers on top of pieces (capture ring / empty dot) —
+    // v8-0-plan A5: faded in with the lift, not stamped on
     if (m.legalTargets && m.legalTargets.length) {
+      ctx.save();
+      ctx.globalAlpha = ease(fxAt(_fx.sel, durMs("--dur-quick"), now));
       for (const sq of m.legalTargets) {
         const { sr, sc } = screenPos(sq, m.flipped);
         const c = FILES.indexOf(sq[0]);
@@ -891,6 +1024,11 @@ import { textureTile, parseInk, inkSprite } from "./board-skin.js";
           ctx.fill();
         }
       }
+      ctx.restore();
+    }
+    // a motion under way asks for its next frame (one at a time)
+    if (!_fxFrame && fxRunning(now) && typeof requestAnimationFrame === "function") {
+      _fxFrame = requestAnimationFrame(() => { _fxFrame = 0; draw(); });
     }
   }
 

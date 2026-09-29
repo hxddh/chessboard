@@ -15,7 +15,8 @@ import { ChessLazy } from "./lazy-content.js";
 import { ChessMaterial } from "./material.js";
 import { ChessLearning } from "./learning.js";
 import { ChessPreview } from "./preview.js";
-import { ChessPersona } from "./persona.js";
+import { TimeControl } from "./time-control.js";
+import { createOpponentsLazy } from "./opponents-lazy.js";
 import { ChessPgn } from "./pgn.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { CHESS_PIECE_SVGS } from "./pieces.js";
@@ -29,16 +30,18 @@ import { createTrainerContent } from "./trainer/content.js";
 import { createLessonsUI } from "./trainer/lessons.js";
 import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
+import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
-import { ChessReviewGrade as Grade } from "./review-grade.js";
 import { createAnalysis } from "./review/analysis.js";
 import { createBoardMarks } from "./review/board-marks.js";
 import { createEvalGraph } from "./review/eval-graph.js";
 import { createLines } from "./review/lines.js";
 import { createReviewPanel } from "./review/panel.js";
 import { createRetry } from "./review/retry.js";
+import { createMomentsLazy } from "./review/moments-lazy.js";
+import { createGameEnd } from "./game-end.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
 import { watchPlayLayout } from "./play-layout.js";
@@ -56,10 +59,10 @@ import { createStore } from "./store.js";
    * purpose, and the modules on it are the object identities the app itself
    * holds, so patching a method here is patching the app's engine.
    */
-  // `shapes`: what the board is drawing as arrows and circles right now —
-  // the player's, the premove's and the engine's (7.8 §2)
-  // `board`: the renderer's counters — how often a piece decode repainted (v8-0-plan F5)
-  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats() };
+  // `shapes`: the arrows and circles the board draws now — the player's, the premove's, the engine's (7.8 §2);
+  // `board`: the renderer's counters (v8-0-plan F5); `puzzle`: the FEN of the puzzle on the board (A5)
+  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(),
+    puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null) };
 
   const Host = ChessHost;
   const Review = ChessReview;
@@ -251,7 +254,7 @@ import { createStore } from "./store.js";
        * the save file and its id is not to hand.
        */
       recordedId: null,
-      /** clock preset: 'off' | a key of TCS (e.g. '5', '3+2') */
+      /** clock: 'off' | a time-control.js id (e.g. '5', '3+2', 'c20+5') */
       timeControl: "off",
       /** remaining ms per side; null when no clock */
       clock: null,
@@ -444,9 +447,8 @@ import { createStore } from "./store.js";
       noteFor: null,
     },
   });
-  /** sparring personality — see persona.js; "off" is plain engine play */
-  const PERSONA_IDS = (ChessPersona && ChessPersona.IDS) ||
-    ["off", "greedy", "principled", "attacker"];
+  /** sparring personality — persona.js IDS (in the opponents chunk); "off" is plain engine play */
+  const PERSONA_IDS = ["off", "greedy", "principled", "attacker"];
   store.ui.langId = I18n.getLang();
 
   Audio2.init(() => store.ui.soundOn);
@@ -527,6 +529,7 @@ import { createStore } from "./store.js";
   function forgetEnding() {
     store.session.goDismissed = null;
     store.session.goAnnounced = null;
+    OppUI.reset();
   }
   function gameLoadPgn(pgn, opts) {
     // the parser first: it keeps variations, comments, NAGs and shapes that
@@ -1051,7 +1054,7 @@ import { createStore } from "./store.js";
       annotation: annotationAt(store.game.viewIndex, last),
       // the node's own arrows and circles, plus the one being drawn
       shapes: shapesToDraw(),
-      stars: [],
+      stars: [], result: resultBadges(), // v8-0-plan A5: the ending on the kings
       cursor: cursorSquare(),
       // the drag is part of the picture, not a thing pushed in beforehand
       drag: store.ui.dragging,
@@ -1227,7 +1230,7 @@ import { createStore } from "./store.js";
    * @param {string} msg
    * @param {"ok"|"fix"|"fault"} [tier]
    */
-  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0 };
+  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0, ach: 6500 }; // ach: an unlocked badge, with its picture (v8-0-plan A5)
 
   /**
    * Where a toast stands: never on the board (7.7 §1d).
@@ -1316,7 +1319,7 @@ import { createStore } from "./store.js";
     el.replaceChildren();
     const text = document.createElement("span");
     text.textContent = msg;
-    el.appendChild(text);
+    el.append(...(action && action.icon ? [Icons.icon(action.icon, "toast-ic")] : []), text);
     // A fault does not leave on its own, which is right — a fault that
     // disappears is a fault nobody was told about. What was wrong is the way
     // out: the docblock above says it "gets a close button", and it never had
@@ -1343,7 +1346,7 @@ import { createStore } from "./store.js";
       close.onclick = dismissToast;
       el.appendChild(close);
     }
-    el.classList.remove("t-ok", "t-fix", "t-fault");
+    el.classList.remove("t-ok", "t-fix", "t-fault", "t-ach");
     el.classList.add("t-" + kind);
     placeToast(el);
     el.classList.add("show");
@@ -1451,7 +1454,7 @@ import { createStore } from "./store.js";
       if (DIFF_IDS.includes(s.difficulty)) store.session.difficulty = s.difficulty;
       if (["w", "b"].includes(s.humanColor)) store.session.humanColor = s.humanColor;
       if (typeof s.colorRandom === "boolean") store.session.colorRandom = s.colorRandom;
-      if (s.timeControl === "off" || TCS[s.timeControl]) store.game.timeControl = s.timeControl;
+      if (s.timeControl === "off" || parseTc(s.timeControl)) store.game.timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
@@ -1489,6 +1492,7 @@ import { createStore } from "./store.js";
       if (store.game.resigned) payload.resigned = store.game.resigned;
       if (store.game.drawAgreed) payload.drawAgreed = true;
       if (store.game.drawClaimed) payload.drawClaimed = store.game.drawClaimed;
+      if (store.game.opp) payload.opp = store.game.opp; // the game's opponent (#89 review, opponents-lazy.js)
       // v8-0-plan F2: nothing changed, nothing written. A move, its commit,
       // blur, hide and quit each asked for a save, and every one rewrote the
       // whole tree — a few hundred KB of localStorage and a native mirror
@@ -1562,7 +1566,7 @@ import { createStore } from "./store.js";
       }
       store.game.viewIndex = sanHistory().length;
       restoreTree(s);
-      if (s.clock && TCS[s.clock.tc] &&
+      if (s.clock && parseTc(s.clock.tc) &&
           typeof s.clock.w === "number" && typeof s.clock.b === "number") {
         store.game.timeControl = s.clock.tc;
         store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
@@ -1574,6 +1578,7 @@ import { createStore } from "./store.js";
       if (s.resigned === "w" || s.resigned === "b") store.game.resigned = s.resigned;
       if (s.drawAgreed === true) store.game.drawAgreed = true;
       if (s.drawClaimed === "threefold" || s.drawClaimed === "fifty") store.game.drawClaimed = s.drawClaimed;
+      store.game.opp = OppUI.savedOpponent(s.opp); // rated against it, not the settings (#89 review)
       // a custom starting position is worth resuming on its own, with or
       // without moves played into it
       return sanHistory().length > 0 || !!startFen();
@@ -1581,12 +1586,20 @@ import { createStore } from "./store.js";
   }
 
   // --- engine (AI mode) ---
-  const DIFF_IDS = ["beginner", "casual", "easy", "normal", "hard", "extreme"];
+  const DIFF_IDS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "hard", "extreme"];
   const diffName = (id) => t("diff." + id);
   /** legacy alias kept for the many call sites that read it like a map */
   const DIFF_NAMES = new Proxy({}, {
     get: (_, k) => (DIFF_IDS.includes(k) ? diffName(k) : undefined),
     has: (_, k) => DIFF_IDS.includes(k),
+  });
+  // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
+  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
+    doc: document, store, t, tf, setText, afterPress, acceptDraw, diffName: (id) => diffName(id),
+    repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
+    invalidateEngine, forgetFileResult, playEnding, recordOutcome,
+    plies: () => sanHistory().length, fen: () => game.fen(), verboseHistory: () => game.history({ verbose: true }), setUp: () => !!startFen(),
+    openingName: () => (openingFor(Infinity) || [])[1] || "",
   });
 
   /** Drop any in-flight engine search; call before every game mutation. */
@@ -1799,7 +1812,7 @@ import { createStore } from "./store.js";
     }
     // clocked AI games: the engine budgets its think time from its clock
     const engineSide = store.session.humanColor === "w" ? "b" : "w";
-    const budget = store.game.clock && store.game.timeControl !== "off" ? Math.max(150, store.game.clock[engineSide] / 30) : null;
+    const budget = OppUI.plan(engineSide); // v8-0-plan B4: scales with the clock, capped at the rung's own
     let mv = null;
     // Twice, because an engine that fails once has usually just lost its
     // worker, and the second ask is free. Measured on the shipped 2.1.5: one
@@ -1811,7 +1824,7 @@ import { createStore } from "./store.js";
       if (attempt) await new Promise((r) => setTimeout(r, 250));
       // the personality only ever colours a real game against the engine; the
       // lesson drills need the engine defending honestly or the drill is a lie
-      try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess }); }
+      try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess, style: OppUI.style() }); }
       catch (_) { mv = null; }
       if (token !== store.game.engineToken) return; // game changed while thinking
     }
@@ -1825,6 +1838,7 @@ import { createStore } from "./store.js";
         { label: t("act.retry"), onClick: () => maybeEngineTurn() });
       return;
     }
+    if (OppUI.resigns(mv)) return; // v8-0-plan B4: lost for three moves running
     const played = gameMove({ from: mv.from, to: mv.to, promotion: mv.promotion || "q" });
     if (played) {
       store.game.viewIndex = sanHistory().length;
@@ -1837,6 +1851,7 @@ import { createStore } from "./store.js";
       else if (naturalGameOver()) playEnding(null);
       saveGame();
       recordGameIfOver();
+      if (!appGameOver()) OppUI.maybeOffer();
       coachAfterEngineReply();
       runPremove();
     }
@@ -1872,14 +1887,8 @@ import { createStore } from "./store.js";
   }
 
   // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
-  /** time control id → base seconds + increment seconds credited per move */
-  const TCS = {
-    "3": { base: 180, inc: 0 }, "3+2": { base: 180, inc: 2 },
-    "5": { base: 300, inc: 0 }, "5+3": { base: 300, inc: 3 },
-    "10": { base: 600, inc: 0 },
-  };
-  const TC_IDS = Object.keys(TCS);
-  function parseTc(tc) { return TCS[tc] || null; }
+  /** time control id → {base, inc} seconds or null: presets and c<min>+<inc> (time-control.js) */
+  const parseTc = TimeControl.parse;
 
   function resetClocks() {
     const tc = parseTc(store.game.timeControl);
@@ -2177,21 +2186,24 @@ import { createStore } from "./store.js";
   const BoardMarks = createBoardMarks({
     store, viewGame, isLive, appGameOver, analysisFor, reviewLines, softFiltered,
   });
-  const { engineArrows, bestArrowAt, annotationAt } = BoardMarks;
+  const { engineArrows, bestArrowAt, annotationAt, lineMarks } = BoardMarks;
 
   // v8-0-plan F4: why a ? or ?? was a mistake, and 再试一次 (7.8 §3), live
   // in review/retry.js
   const Retry = createRetry({
     doc: document, store, t, tf, sideName, analysisFor, sanHistory, gameAt, startFen, boardMoveNo, writeSan,
     setViewIndex, inModal, sync, draw, kingSquare, cursorSquare, bestArrowAt, choosePromotion,
-    selectSquare, clearSelection, moveSound, evalScalar, SCAN_BUDGET,
+    selectSquare, clearSelection, moveSound, evalScalar, SCAN_BUDGET, toast,
   });
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
+  // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js, a chunk
+  const Moments = createMomentsLazy({ doc: document, store, t, tf, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
+    setViewIndex, writeSan, inModal, Retry });
 
   // v8-0-plan F4: the eval gauge, the curve and the marks' colours live in
   // review/eval-graph.js
   const EvalGraph = createEvalGraph({
-    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo,
+    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen,
   });
   const { judgeColours, drawEvalBar, drawEvalCurve } = EvalGraph;
 
@@ -2202,10 +2214,19 @@ import { createStore } from "./store.js";
     doc: document, store, t, tf, sideName, DIFF_NAMES, analysisFor, sanHistory, startFen, gameAt, viewGame, boardMoveNo,
     statusText, openingFor, avail, inModal, setText, setViewIndex, toast, savedToast, pgnFileName,
     deskHead, lineRows, paintLineRow, reviewLines, savePvAsVariation, lockPgnEdits,
-    drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList,
+    drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList, renderMoments: Moments.render,
     boardDrillSource, saveMines, savePuzzleState,
   });
   const { setAnalyzeUI, renderReview, exportReport } = ReviewPanel;
+
+  // v8-0-plan F4 (M4): how the game ended and the result card live in
+  // game-end.js
+  const GameEnd = createGameEnd({
+    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
+    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
+    onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); },
+  });
+  const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;
 
   // --- stats (AI-mode finished games) ---
   /**
@@ -2266,16 +2287,7 @@ import { createStore } from "./store.js";
     if (store.game.recordedId) return; // this game is already filed
     let result = "draw";
     if (game.in_checkmate()) result = game.turn() === store.session.humanColor ? "loss" : "win";
-    const s = loadStats();
-    // the id ties the record to the exact game it came from, so a later
-    // analysis can only annotate the game it actually measured
-    const id = newRecordId();
-    store.game.recordedId = id;
-    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending: "" });
-    if (s.games.length > 500) s.games = s.games.slice(-500);
-    saveStats(s);
-    renderStats();
-    checkNewAchievements();
+    recordOutcome(result, "");
   }
 
   // offerReview() lived here: a toast, 2.2s after the ending, saying
@@ -2284,72 +2296,6 @@ import { createStore } from "./store.js";
   // nudge in 1.7) — so 7.7 gives it the result card's filled button instead
   // of a message that leaves after four seconds (v7-7-plan §4).
 
-
-  /**
-   * 进步 — change over time, on the record page (progress.js).
-   * Everything here draws only when it has data (P3): the sparkline needs
-   * two analysed games, the rows need a week with answers in it.
-   */
-  function renderTrends() {
-    const head = document.getElementById("trend-head");
-    const body = document.getElementById("trend-body");
-    const cv = document.getElementById("trend-acc");
-    const streakEl = document.getElementById("trend-streak");
-    if (!head || !body || !cv) return;
-    const prog = store.session.progress;
-    // 7.1: the games you played elsewhere are games you played. The library
-    // stores an accuracy per side once a game is analysed, which is the same
-    // measure `stats` records, so the two go on one axis in play order.
-    const libPoints = store.session.library
-      .filter((g) => g.side && g.an && g.an.acc && Number.isFinite(g.an.acc[g.side]))
-      .map((g) => ({ t: libPlayedAt(g), acc: g.an.acc[g.side] }));
-    const series = Progress.accSeries(loadStats().games.concat(libPoints), 30);
-    const rows = Progress.weekOverWeek(prog, Date.now())
-      .filter((r) => r.now != null || r.prev != null)
-      .sort((a, b) => (a.now ?? a.prev) - (b.now ?? b.prev)); // weakest first
-    const wk = prog.weeks[Progress.weekKey(Date.now())];
-    const showCurve = series.length >= 2;
-    const showRows = rows.length > 0 || !!wk;
-    head.hidden = !(showCurve || showRows);
-    cv.hidden = !showCurve;
-    body.hidden = !showRows;
-    const run = Progress.streak(prog, Date.now());
-    if (streakEl) {
-      streakEl.hidden = run < 2;
-      if (run >= 2) streakEl.textContent = tf("daily.streak", [run]);
-    }
-    if (showRows) {
-      body.replaceChildren();
-      for (const r of rows) {
-        const row = document.createElement("div");
-        row.className = "stat-row";
-        const name = document.createElement("span");
-        name.className = "stat-k";
-        name.textContent = t("pz.cat." + r.cat);
-        const val = document.createElement("span");
-        val.className = "stat-v num";
-        const pc = (x) => Math.round(x * 100) + "%";
-        val.textContent = r.now != null && r.prev != null ? tf("trend.row", [pc(r.now), pc(r.prev)])
-          : r.now != null ? tf("trend.rowNew", [pc(r.now)])
-          : tf("trend.rowPrev", [pc(r.prev)]);
-        row.append(name, val);
-        body.appendChild(row);
-      }
-      if (wk && (wk.mined || wk.red)) {
-        const row = document.createElement("div");
-        row.className = "stat-row";
-        const name = document.createElement("span");
-        name.className = "stat-k";
-        name.textContent = t("pz.cat.mine");
-        const val = document.createElement("span");
-        val.className = "stat-v num";
-        val.textContent = tf("trend.mines", [wk.mined, wk.red]);
-        row.append(name, val);
-        body.appendChild(row);
-      }
-    }
-    if (showCurve) drawAccTrend(cv, series);
-  }
 
   /** The rating sparkline: the accuracy one's dress, on the rating's own scale. */
   function drawRatingTrend(cv, ys) {
@@ -2383,40 +2329,6 @@ import { createStore } from "./store.js";
     ctx.stroke();
     ctx.fillStyle = cAccent;
     ctx.beginPath(); ctx.arc(x(n), y(ys[n]), 1.8 * dpr, 0, Math.PI * 2); ctx.fill();
-  }
-
-  /** The accuracy sparkline — the eval curve's dress, the record's data. */
-  function drawAccTrend(cv, series) {
-    const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
-    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
-    if (cv.width !== W) cv.width = W;
-    if (cv.height !== H) cv.height = H;
-    const ctx = cv.getContext("2d");
-    ctx.clearRect(0, 0, W, H);
-    const css = getComputedStyle(document.documentElement);
-    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
-    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
-    const n = series.length - 1;
-    const pad = 4 * dpr;
-    // 50–100%: the honest floor for a metric that rarely dips below it, and
-    // a fixed scale so two visits to this page are comparable
-    const x = (i) => (n ? (i / n) * (W - 2 * pad) + pad : W / 2);
-    const y = (a) => H - pad - (Math.max(50, Math.min(100, a)) - 50) / 50 * (H - 2 * pad);
-    ctx.strokeStyle = cMuted;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = dpr;
-    ctx.beginPath(); ctx.moveTo(0, y(75)); ctx.lineTo(W, y(75)); ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = cAccent;
-    ctx.lineWidth = 1.6 * dpr;
-    ctx.beginPath();
-    series.forEach((g, i) => { if (i) ctx.lineTo(x(i), y(g.acc)); else ctx.moveTo(x(i), y(g.acc)); });
-    ctx.stroke();
-    ctx.fillStyle = cAccent;
-    series.forEach((g, i) => {
-      ctx.beginPath(); ctx.arc(x(i), y(g.acc), 1.8 * dpr, 0, Math.PI * 2); ctx.fill();
-    });
   }
 
   function renderStats() {
@@ -2777,7 +2689,7 @@ import { createStore } from "./store.js";
     const end = historyEnding(rec);
     if (!end) return;
     if (end === "resigned") {
-      store.game.resigned = rec.color; // in an engine game only the human can resign
+      store.game.resigned = rec.result === "win" ? (rec.color === "w" ? "b" : "w") : rec.color; // v8-0-plan B4: the engine resigns too
     } else if (end === "drawAgreed") {
       store.game.drawAgreed = true;
     } else if (end === "claimed") {
@@ -2813,9 +2725,9 @@ import { createStore } from "./store.js";
     // record id lets a fresh 分析 file its accuracy back onto the very game it
     // just measured.
     store.session.mode = "ai";
-    if (DIFF_NAMES[rec.diff]) store.session.difficulty = rec.diff;
+    if (DIFF_NAMES[rec.diff]) store.session.difficulty = rec.diff; store.session.personaId = PERSONA_IDS.includes(rec.style) ? rec.style : "off"; // the opponent it was (Codex #89)
     if (rec.color === "w" || rec.color === "b") { store.session.humanColor = rec.color; store.game.flipped = store.session.humanColor === "b"; }
-    store.game.recordedId = rec.id;
+    store.game.recordedId = rec.id; store.game.opp = { diff: store.session.difficulty, style: store.session.personaId }; // its opponent too (#89 review)
     restoreEnding(rec);
     // the import ends by offering the position to the engine; a game that ended
     // in resignation is not over by its moves, so call off that search now that
@@ -2936,157 +2848,19 @@ import { createStore } from "./store.js";
     for (const r of res) if (r.unlocked) store.session.achSeen.add(r.ach.id);
     if (fresh.length) {
       Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
-      // one toast per unlock, staggered so several don't collide
-      // (the badge's picture is on the record page; a toast is words — 7.7 §7)
-      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name)), i * 1600));
+      // one toast per unlock, each shown for its whole life before the next
+      // (v8-0-plan A5: with the badge's picture, and long enough to read)
+      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
     }
     renderAchievements();
     renderRecordEntry();
   }
 
-  function renderAchievements() {
-    const el = document.getElementById("ach-body");
-    if (!el) return;
-    const res = evalAch();
-    const got = res.filter((r) => r.unlocked).length;
-    el.replaceChildren();
-    const head = document.getElementById("ach-count");
-    if (head) head.textContent = got + "/" + res.length;
-
-    // A new player used to open this and see fourteen padlocks in a row: no
-    // grouping, and nothing to say which one is one game away versus seventy
-    // puzzles away. Unlocked ones come first, then the locked ones ordered by
-    // how close they are, and the closest gets called out by name.
-    const frac = (r) => {
-      if (!r.ach.progress) return 0.5; // no counter: neither near nor far
-      const [done, total] = r.ach.progress(res.summary);
-      return total > 0 ? Math.min(1, done / total) : 0;
-    };
-    const unlocked = res.filter((r) => r.unlocked);
-    const locked = res.filter((r) => !r.unlocked).sort((a, b) => frac(b) - frac(a));
-    const next = locked[0];
-    if (next) {
-      const tip = document.createElement("div");
-      tip.className = "ach-next";
-      const nm = next.ach.nameKey ? t(next.ach.nameKey) : next.ach.name;
-      const desc = next.ach.descKey ? t(next.ach.descKey) : next.ach.desc;
-      tip.textContent = t("ach.next") + nm + " · " + desc;
-      el.appendChild(tip);
-    }
-    const groups = [];
-    if (unlocked.length) groups.push(["ach.got", unlocked, false]);
-    // The locked group is the long one and it only ever gets longer at the far
-    // end: on a new install it is all fifteen, sorted by how close they are, so
-    // rows four to fifteen are a list of things that are not close. Three, and
-    // the rest behind a count you can press. The 展开 state is session-only —
-    // it is a way of looking at the list, not a setting.
-    if (locked.length) groups.push(["ach.locked", locked, true]);
-    for (const [key, rows, foldable] of groups) {
-      const h = document.createElement("div");
-      h.className = "ach-group";
-      h.textContent = t(key) + " " + rows.length;
-      el.appendChild(h);
-      const fold = foldable && rows.length > ACH_FOLD_AT && !store.session.achAll;
-      renderAchRows(fold ? rows.slice(0, ACH_FOLD_AT) : rows, res, el);
-      if (foldable && rows.length > ACH_FOLD_AT) {
-        const more = document.createElement("button");
-        more.type = "button";
-        more.className = "act-btn ach-more";
-        more.id = "ach-more";
-        more.textContent = fold ? tf("ach.more", [rows.length - ACH_FOLD_AT]) : t("ach.less");
-        more.onclick = () => { store.session.achAll = !store.session.achAll; renderAchievements(); };
-        el.appendChild(more);
-      }
-    }
-  }
-
-  /** How many locked badges stand open before the rest fold away. */
-  const ACH_FOLD_AT = 3;
-
-  /**
-   * The records page, before there is anything to record.
-   *
-   * It used to open on two sentences saying nothing had happened yet and
-   * fifteen padlocks — a wall with 0/15 written on it. Three doors instead,
-   * each labelled with the badge behind it, and each one *pressing the real
-   * control*: the mode row on the settings page. Going through
-   * `#mode-seg` rather than setting `store.session.mode` here is deliberate —
-   * that handler stops the engine, leaves the editor, resets the clocks,
-   * switches to the 对局 tab and says what happened, and a second copy of that
-   * list is a second copy that can drift.
-   */
-  const REC_DOORS = [
-    { mode: "learn", label: "rec.goLearn", ach: "first-lesson", win: false },
-    { mode: "puzzle", label: "rec.goPuzzle", ach: "first-puzzle", win: false },
-    { mode: "ai", label: "rec.goPlay", ach: "first-win", win: true },
-  ];
-
-  function renderRecordEntry() {
-    const box = document.getElementById("record-empty");
-    const doors = document.getElementById("record-doors");
-    if (!box || !doors) return;
-    const stats = loadStats();
-    // v8-0-plan §5: a library of imported games is a record too — with 500
-    // of them on this page it still opened on 「现在还空着」
-    const fresh = !(store.session.library || []).length && !stats.games.length &&
-      !evalAch().some((r) => r.unlocked);
-    box.hidden = !fresh;
-    if (!fresh) return;
-    doors.replaceChildren();
-    for (const d of REC_DOORS) {
-      const a = ACH.find((x) => x.id === d.ach);
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "rec-door";
-      b.dataset.mode = d.mode;
-      const ic = document.createElement("span");
-      ic.className = "rec-door-ic";
-      if (a) ic.appendChild(Icons.icon(a.icon));
-      const txt = document.createElement("span");
-      txt.className = "rec-door-t";
-      const k = document.createElement("span");
-      k.className = "rec-door-k";
-      k.textContent = t(d.label);
-      const v = document.createElement("span");
-      v.className = "rec-door-v";
-      const nm = a ? (a.nameKey ? t(a.nameKey) : a.name) : "";
-      v.textContent = tf(d.win ? "rec.winUnlocks" : "rec.unlocks", [nm]);
-      txt.append(k, v);
-      b.append(ic, txt);
-      // already in that mode, the door still lands somewhere: the board,
-      // with the panel showing 对局 (setSideTab leaves the page, A1)
-      b.onclick = () => { if (d.mode !== store.session.mode) switchMode(d.mode); else setSideTab("play", { top: true }); };
-      doors.appendChild(b);
-    }
-  }
-
-  function renderAchRows(rows, res, el) {
-    for (const r of rows) {
-      const b = document.createElement("div");
-      b.className = "ach-item" + (r.unlocked ? " got" : "");
-      b.title = r.ach.descKey ? t(r.ach.descKey) : r.ach.desc;
-      const ic = document.createElement("span");
-      ic.className = "ach-ic";
-      ic.appendChild(Icons.icon(r.unlocked ? r.ach.icon : "lock"));
-      const nm = document.createElement("span");
-      nm.className = "ach-nm";
-      nm.textContent = r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name;
-      b.append(ic, nm);
-      // "12/53" on a locked counting badge — the puzzle set nearly doubled in
-      // 1.6, so "solve every mate" silently got much longer with nothing on
-      // screen to say how far along you were
-      if (!r.unlocked && r.ach.progress) {
-        const [done, total] = r.ach.progress(res.summary);
-        if (total > 0 && done < total) {
-          const pg = document.createElement("span");
-          pg.className = "ach-pg num";
-          pg.textContent = done + "/" + total;
-          b.appendChild(pg);
-        }
-      }
-      el.appendChild(b);
-    }
-  }
+  // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
+  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n) });
+  function renderTrends() { MePage.renderTrends(); }
+  function renderAchievements() { MePage.renderAchievements(); }
+  function renderRecordEntry() { MePage.renderRecordEntry(); }
 
   // --- game flow ---
 
@@ -3218,18 +2992,13 @@ import { createStore } from "./store.js";
     const curId = curNodeId();
     // the analysis describes the line `game` stands on: its tags belong to
     // those nodes, on the mainline or off it
-    const a = analysisFor();
-    const tagOf = new Map();
-    // v8-0-plan B2: a graded pass also hangs !! (妙着) and ! (仅此一着) off a move
-    if (a && a.tags) store.game.line.forEach((id, k) => {
-      const mk = k > 0 ? a.tags[k - 1] || (a.v === 2 && a.grades && Grade.GLYPH[a.grades[k - 1]]) : null;
-      if (mk) tagOf.set(id, mk);
-    });
+    // v8-0-plan B2: a graded pass also hangs !! and ! off a move; A4: every move carries its grade
+    const { tagOf, gradeOf } = lineMarks(store.game.line);
     const moverOf = (node) => (node.fen.split(" ")[1] === "w" ? "b" : "w");
     // the current move carries the menu handle, whose name is a translated
     // string — so its signature carries the language, or a switch to English
     // kept the Chinese 「着法操作」 on it until the cursor moved (7.6)
-    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (n.id === curId ? "*" + store.ui.langId : "");
+    const nodeSig = (n) => n.id + ":" + n.san + nagText(n.nags) + "/" + (softFiltered(tagOf.get(n.id)) || "") + "/" + (gradeOf.get(n.id) || "") + (n.id === curId ? "*" + store.ui.langId : "");
     // a variation's signature is the whole of what it shows, nested included
     const lineSig = (parent, first) => {
       let out = "";
@@ -3278,7 +3047,7 @@ import { createStore } from "./store.js";
       const b = document.createElement("button");
       b.type = "button";
       b.dataset.node = String(n.id);
-      b.className = cls + (n.id === curId ? " current" : "");
+      b.className = cls + (n.id === curId ? " current" : "") + (gradeOf.has(n.id) ? " g-" + gradeOf.get(n.id) : "");
       // Figurine notation: the piece letter becomes the piece. `Nf3` is
       // English algebraic — the N is short for Knight, which is not a word
       // two of this app's three languages use. The vector set is already
@@ -3528,9 +3297,6 @@ import { createStore } from "./store.js";
     slot.replaceChildren(Icons.icon(name));
   }
 
-  /** The sparring style's picture, for the engine's strip (7.5 persona). */
-  const PERSONA_ICON = { off: "bot", greedy: "coins", principled: "scale", attacker: "swords" };
-
   /**
    * Who sits on each side, as the strips say it: an icon, a name and a
    * second, quieter line. `null` for a side nobody is playing — a lesson
@@ -3540,12 +3306,7 @@ import { createStore } from "./store.js";
   function stripPeople() {
     const mode = store.session.mode;
     if (mode === "ai") {
-      const engine = {
-        icon: PERSONA_ICON[store.session.personaId] || "bot",
-        name: "Stockfish",
-        level: [DIFF_NAMES[store.session.difficulty] || store.session.difficulty]
-          .concat(store.session.personaId !== "off" ? [t("persona." + store.session.personaId)] : []).join(" · "),
-      };
+      const engine = OppUI.strip(store.session.difficulty, store.session.personaId); // v8-0-plan B4: the persona
       const you = { icon: "user", name: t("vs.player"), level: "" };
       return store.session.humanColor === "w" ? { w: you, b: engine } : { w: engine, b: you };
     }
@@ -3644,83 +3405,6 @@ import { createStore } from "./store.js";
       }
     }
     renderGameOverCard();
-  }
-
-  /**
-   * How the live game ended, or null while it is still going (7.7 §4).
-   * Only the two game modes have an ending to report; the trainers have
-   * their own cards.
-   */
-  function gameEnding() {
-    const mode = store.session.mode;
-    if ((mode !== "ai" && mode !== "pvp") || store.session.editor) return null;
-    if (!appGameOver() && !resultFromFile()) return null;
-    const token = gameResultToken();
-    const winner = token === "1-0" ? "w" : token === "0-1" ? "b" : null;
-    let reason;
-    if (resultFromFile()) reason = t("go.r.file");
-    else if (game.in_checkmate()) reason = t("go.r.mate");
-    else if (store.game.flagFall) reason = timeoutIsDraw() ? t("go.r.flagDraw") : tf("go.r.flag", [sideName(store.game.flagFall)]);
-    else if (store.game.resigned) reason = tf("go.r.resign", [sideName(store.game.resigned)]);
-    else if (store.game.drawAgreed) reason = t("go.r.agreed");
-    else if (store.game.drawClaimed) reason = t(store.game.drawClaimed === "threefold" ? "go.r.threefold" : "go.r.fifty");
-    else if (game.in_stalemate()) reason = t("go.r.stalemate");
-    else if (game.insufficient_material()) reason = t("go.r.insufficient");
-    else reason = t(autoDrawReason() === "fivefold" ? "go.r.fivefold" : "go.r.seventyfive");
-    return { token, winner, reason, sig: sanHistory().length + "|" + game.fen() + "|" + token };
-  }
-
-  /**
-   * The result card (7.7, v7-7-plan §4): the result in large type, how it
-   * came about, and what to do next — 分析这盘 filled while the game is not
-   * analysed, 再来一盘 and 换个对手 beside it. It replaces the toast that
-   * used to be the whole of the ending. Non-modal and in the panel, so it can
-   * never cover the board; ✕ puts it away for this ending.
-   */
-  function renderGameOverCard() {
-    const card = el("go-card");
-    if (!card) return;
-    const end = gameEnding();
-    // An ending's ✕ and its announcement belong to that ending. The signature
-    // (plies, final FEN, result) cannot tell a replay of the same short mate
-    // from the one already put away (Codex on #82), so whenever the game is
-    // not over — every new game, undo, or load of an unfinished one passes
-    // through that — both are forgotten.
-    if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; }
-    const show = !!end && store.session.goDismissed !== end.sig;
-    card.hidden = !show;
-    if (!show) return;
-    const mode = store.session.mode;
-    const mine = mode === "ai" ? store.session.humanColor : null;
-    const result = !end.winner ? t("go.draw")
-      : mine ? t(end.winner === mine ? "go.youWin" : "go.youLose")
-      : t(end.winner === "w" ? "go.whiteWins" : "go.blackWins");
-    // The card lives in the panel. With the panel shut it is off-screen, the
-    // ending no longer toasts, and #status is for screen readers only — so a
-    // mate would pass with nothing on screen but the strips' 1 / 0 (Codex on
-    // #82). Say it once, beside the board (§1d keeps toasts off it), for a
-    // game that ended here rather than one opened already finished.
-    if (store.session.goAnnounced !== end.sig) {
-      store.session.goAnnounced = end.sig;
-      if (!isPanelOpen() && !resultFromFile()) toast(result + " · " + end.reason, "fix");
-    }
-    setText(el("go-result"), result);
-    setText(el("go-reason"), end.reason);
-    setText(el("go-mark"), end.token === "1/2-1/2" ? "½–½" : end.token.replace("-", "–"));
-    card.classList.toggle("won", !!end.winner && (!mine || end.winner === mine));
-    const engineDown = !ChessEngine || !!store.session.engineDown;
-    // A position loaded already over (a mated FEN, a result-only PGN) has an
-    // ending but no moves, and analyzeGame() refuses an empty history — the
-    // review row's 分析 already asks for one (Codex on #82)
-    const canAnalyse = !engineDown && sanHistory().length > 0 && !analysisFor() && !store.session.analyzing;
-    avail(el("go-analyse"), canAnalyse);
-    avail(el("go-switch"), mode === "ai");
-    // v8-0-plan §5: a finished game from the library or a file is a record,
-    // and 再来一盘 of a game you did not play is not a rematch
-    avail(el("go-again"), !store.game.imported);
-    // …which can leave the row empty (an analysed library game)
-    const acts = card.querySelector(".go-acts");
-    if (acts) acts.hidden = ![...acts.children].some((b) => !b.hidden);
   }
 
   /**
@@ -3935,12 +3619,12 @@ import { createStore } from "./store.js";
     setDisabled(el("rep-prev"), !back);
     setDisabled(el("rep-next"), !fwd);
     setDisabled(el("rep-end"), !fwd);
-    // "resume from here" is a replay action, and it only exists off the live
-    // position — where it used to sit greyed out with a tooltip explaining
-    // that it only exists off the live position
-    avail(el("retry-here"), !isLive());
-    // 「回主线」 exists exactly while the line is a variation (Q2.3)
-    avail(el("line-row"), !inModal() && h.length > 0 && !onMainline());
+    // 从这里续下 is a replay action (v8-0-plan A4 moved it into this row): it
+    // only exists off the live position, behind the 复盘 key where the review
+    // is; 「回主线」 exists exactly while the line is a variation (Q2.3)
+    avail(el("retry-here"), !inModal() && !isLive() && !(reviewOptional() && !store.ui.reviewOpen));
+    avail(el("back-main"), !inModal() && h.length > 0 && !onMainline());
+    avail(el("line-row"), !el("retry-here").hidden || !el("back-main").hidden);
   }
 
   /** Everything you can do to the game in progress. */
@@ -4070,7 +3754,7 @@ import { createStore } from "./store.js";
     const over = isLive() && appGameOver();
     const unanalysed = !analysisFor() && !store.session.analyzing;
     const end = gameEnding();
-    const card = !!end && store.session.goDismissed !== end.sig;
+    const card = !!end && store.session.goDismissed !== end.sig && isLive();
     const engineDown = !ChessEngine || !!store.session.engineDown;
     const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
       : over && unanalysed ? "an-run" : null;
@@ -4460,7 +4144,9 @@ import { createStore } from "./store.js";
     for (const id of NG_ROWS) {
       const row = el(id);
       if (!row) continue;
-      if (inDialog) { if (row.parentNode !== host) host.appendChild(row); }
+      // v8-0-plan B4: rung and style sit in the dialog's 自定义 fold, under the personas
+      const dest = id === "row-difficulty" || id === "row-persona" ? el("ng-custom-body") || host : host;
+      if (inDialog) { if (row.parentNode !== dest) dest.appendChild(row); }
       else if (row.parentNode !== home.parentNode) home.parentNode.insertBefore(row, home);
     }
   }
@@ -4477,11 +4163,13 @@ import { createStore } from "./store.js";
     };
     const warn = el("ng-warn");
     if (warn) warn.hidden = !(sanHistory().length && !appGameOver());
+    if (opts && opts.switchOpponent) OppUI.applyAdvice();
     hostNewGameRows(true);
     syncSettingsUI();
-    // 换个对手 lands on the opponent; everything else on 开始
+    // 换个对手 lands on the opponent (its persona card); everything else on 开始
+    const card = OppUI.onOpen();
     const first = opts && opts.switchOpponent && !pvp
-      ? modal.querySelector("#row-difficulty button.active") : el("ng-start");
+      ? card || modal.querySelector("#row-difficulty button.active") : el("ng-start");
     Dlg.open(modal, first || undefined);
   }
 
@@ -4526,9 +4214,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     store.game.viewIndex = 0;
     store.game.imported = false;
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
     // Both of these key off the PGN, and a PGN does not identify a game — play
     // the same seven moves twice in one session and the second game carried
     // the first one's signature. It was then read as "already recorded" and
@@ -4563,9 +4249,11 @@ import { createStore } from "./store.js";
     store.game.viewIndex = keep;
     // continuing a finished game (flag / resignation) gets fresh clocks
     if (ruleTerminated()) resetClocks();
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
+    // the continuation is the same game under the same record (recordedId),
+    // filed once, at its first ending: its own ending is not filed, and the
+    // card must not show the first one's rating line and advice (#89 review)
+    store.session.filed = null;
     syncAutoFlip();
     store.commit("game", "action");
     saveGame();
@@ -4602,9 +4290,15 @@ import { createStore } from "./store.js";
   function recordOutcome(result, ending) {
     if (store.game.recordedId) return; // this game is already filed
     const s = loadStats();
+    // the id ties the record to the exact game it came from, so a later
+    // analysis can only annotate the game it actually measured
     const id = newRecordId();
     store.game.recordedId = id;
-    s.games.push({ id, t: Date.now(), diff: store.session.difficulty, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending });
+    // #89 review: diff and style are the game's own opponent; an `unrated` one is recorded, not rated
+    const rec = Object.assign({ id, t: Date.now(), color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending }, OppUI.opponent());
+    // v8-0-plan B4: every rated game moves the rating (a late one is saved by OppUI); the card repaints after this task
+    if (!rec.unrated) OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
+    s.games.push(rec);
     if (s.games.length > 500) s.games = s.games.slice(-500);
     saveStats(s);
     renderStats();
@@ -4763,6 +4457,9 @@ import { createStore } from "./store.js";
     return (r === "1-0" || r === "0-1" || r === "1/2-1/2") && r === gameResultToken();
   }
 
+  /** None of the three app-level endings: resigned, agreed, claimed. */
+  function clearEndingFlags() { store.game.resigned = null; store.game.drawAgreed = false; store.game.drawClaimed = null; }
+
   /** An ending played out here replaces whatever the file's tag said. */
   function forgetFileResult() {
     const r = (game.header() || {}).Result;
@@ -4777,21 +4474,11 @@ import { createStore } from "./store.js";
     else if (r === "1/2-1/2") store.game.drawAgreed = true;
   }
 
-  // Names for the PGN tag, one per DIFF_IDS rung. This was a hand-written
-  // object that predated the 1.19 "casual" rung and never grew one, so a
-  // casual game exported as "Stockfish 19 (casual)" — the raw id leaking into
-  // a file other programs read. The self-check now requires an entry here for
-  // every rung, so the next tier cannot slip through the same way.
-  const DIFF_EN = {
-    beginner: "Beginner", casual: "Casual", easy: "Easy",
-    normal: "Normal", hard: "Hard", extreme: "Max",
-  };
-
   /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
   function pgnForExport() {
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    const engineName = "Stockfish 19 (" + (DIFF_EN[store.session.difficulty] || store.session.difficulty) + ")";
+    const engineName = "Stockfish 19 (" + OppUI.enName(store.session.difficulty) + ")";
     const white = store.session.mode === "ai" ? (store.session.humanColor === "w" ? "Player" : engineName) : "Player 1";
     const black = store.session.mode === "ai" ? (store.session.humanColor === "b" ? "Player" : engineName) : "Player 2";
     const result = gameResultToken();
@@ -5101,9 +4788,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     store.game.viewIndex = sanHistory().length;
     store.game.imported = true;
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
     // the file's [Result] survives the import as a terminal state: a decisive
     // result that the board does not explain is a resignation, a draw that
     // the rules do not explain is an agreed one. Before 6.0 the result was
@@ -5339,9 +5024,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     store.game.viewIndex = 0;
     store.game.imported = false; // a set-up position is a new live game
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
     store.session.analysis = null;
     store.game.recordedId = null;
     resetClocks();
@@ -5568,6 +5251,7 @@ import { createStore } from "./store.js";
     const show = (store.session.mode === "ai" || store.session.mode === "pvp") && !sanHistory().length && !store.session.editor;
     el.hidden = !show;
     if (!show) return;
+    OppUI.paintHello();
     // v8-0-plan §5: the way to the new-game dialog before the first move —
     // the opponent in an engine game, the side and clock between two players
     const ng = document.getElementById("idle-new");
@@ -6266,6 +5950,7 @@ import { createStore } from "./store.js";
       if (ev.key !== "Enter" || ev.isComposing || ev.target === el("ng-cancel")) return;
       ev.preventDefault();
       ev.stopPropagation();
+      if (ev.target.matches("input")) ev.target.dispatchEvent(new Event("change")); // a number just typed is the choice (Codex #89)
       startFromDialog();
     });
   }
@@ -6286,10 +5971,9 @@ import { createStore } from "./store.js";
   document.getElementById("stats-clear").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearStats"), t("dlg.clearStatsTitle"),
       { ok: t("act.clear"), cancel: t("act.cancel"), danger: true }))) return;
-    Persist.remove("stats");
-    renderStats();
-    renderAchievements();
-    renderRecordEntry();
+    // or every page goes on drawing the cached copy (B5), the result card its rating and advice (Codex #89)
+    Persist.remove("stats"); statsCache.v = null; store.session.filed = null;
+    renderStats(); renderAchievements(); renderRecordEntry(); store.commit("game", "action");
     toast(t("msg.stats.cleared"));
   };
 
@@ -6461,16 +6145,16 @@ import { createStore } from "./store.js";
   // and the handlers behind its controls
   const SettingsUI = createSettingsUI({
     doc: document, store, appEl, t, el, setText, DIFF_NAMES,
-    saveSettings, saveGame, toast, sync, draw, resetClocks, parseTc,
+    saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
-    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook,
+    setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook, onPaint: () => OppUI.paint(),
   });
   SettingsUI.wire();
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)
   const Shell = createShell({
     doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
     requestNewGame: () => requestNewGame(), openPrefs: () => PrefsUI.open(), gameOver: () => appGameOver(),
-    recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
+    onMe: () => MePage.onShow(), recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
     nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
   });
   Shell.wire();
@@ -6711,9 +6395,7 @@ import { createStore } from "./store.js";
     gameReset();
     store.game.selection = null;
     store.game.viewIndex = 0;
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
     store.session.analysis = null;
     store.game.recordedId = null;
     resetClocks();

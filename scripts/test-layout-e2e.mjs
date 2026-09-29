@@ -38,6 +38,7 @@ const ROOT = path.join(HERE, "..", "src", "web");
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { makeScenarioGate } from "./e2e-shard.mjs";
 import { layoutProbe } from "./lib/layout-probe.mjs";
+import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 
 // v8-0-plan F1: SHARD=i/n runs every n-th scenario; unset runs all of them
 const scenario = makeScenarioGate(process.env.SHARD);
@@ -181,10 +182,12 @@ if (scenario()) {
   // The top rung is 不限档 / Unrated / 無制限 since P5.8: 「满强度」 promised
   // unlimited strength and read as unlimited time, while the search is still
   // 1.2 seconds a move like every other tier. 缺陷 31.
+  // v8-0-plan B4: six sparring rungs (the four new win-chance rungs join the
+  // handicapped pair) and six Elo rungs (1450 and 1575 between 初级 and 中级)
   const EXPECT = {
-    "zh-CN": { spar: ["新手", "休闲"], engine: ["初级", "中级", "高级", "不限档"] },
-    en: { spar: ["Gentle", "Casual"], engine: ["Novice", "Intermediate", "Advanced", "Unrated"] },
-    ja: { spar: ["やさしい", "お気軽"], engine: ["初級", "中級", "上級", "無制限"] },
+    "zh-CN": { spar: ["新手", "休闲", "练习", "进步", "稳健", "扎实"], engine: ["初级", "初级+", "中级−", "中级", "高级", "不限档"] },
+    en: { spar: ["Gentle", "Casual", "Practice", "Improving", "Steady", "Solid"], engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Advanced", "Unrated"] },
+    ja: { spar: ["やさしい", "お気軽", "練習", "上達", "堅実", "手堅い"], engine: ["初級", "初級+", "中級−", "中級", "上級", "無制限"] },
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");
@@ -195,11 +198,11 @@ if (scenario()) {
       // there must be no third heading above the two group labels
       keys: [...document.querySelectorAll("#row-difficulty .setting-k")].length,
     }));
-    assert(labels.spar.length === 2 && labels.engine.length === 4, lang + ": 2 sparring tiers, 4 engine tiers");
+    assert(labels.spar.length === 6 && labels.engine.length === 6, lang + ": 6 sparring tiers, 6 engine tiers");
     assert(labels.groups.length === 2, lang + ": both groups are labelled");
     assert(labels.keys === 0, lang + ": no redundant 难度 heading above the group labels");
     const all = labels.spar.concat(labels.engine);
-    assert(new Set(all).size === all.length, lang + ": all six labels are distinct — " + all.join(" / "));
+    assert(new Set(all).size === all.length, lang + ": all twelve labels are distinct — " + all.join(" / "));
     assert(JSON.stringify(labels.spar) === JSON.stringify(EXPECT[lang].spar),
       lang + ": the sparring pair is the reviewed one — " + labels.spar.join(" / "));
     assert(JSON.stringify(labels.engine) === JSON.stringify(EXPECT[lang].engine),
@@ -444,8 +447,9 @@ if (scenario()) {
     wIcon: (document.querySelector("#av-w svg") || {}).dataset?.icon,
     wName: document.getElementById("white-role").textContent.trim(),
   }));
-  assert(r.bName === "Stockfish" && r.bLevel.length > 0, "the engine's strip names it and its level (" + r.bName + " · " + r.bLevel + ")");
-  assert(r.bIcon === "bot" && r.wIcon === "user", "…with the sparring style's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
+  // v8-0-plan B4: the persona of the rung (中级, no style: 索尔, a star), with its rating
+  assert(r.bName === "索尔" && /中级 1700/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
+  assert(r.bIcon === "star" && r.wIcon === "user", "…with the persona's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
   await ctx.close();
 }
 
@@ -2746,7 +2750,8 @@ if (scenario()) {
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, sq);
   const primaries = () => page.evaluate(() =>
-    [...document.querySelectorAll("#side .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
+    // v8-0-plan A5: the result card is over the board now, not in the panel
+    [...document.querySelectorAll("#side .act-btn.primary, #go-card .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
   const play = async (a, b) => {
     for (const sq of [a, b]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(140); }
     await page.waitForTimeout(320);
@@ -3475,17 +3480,23 @@ if (scenario()) {
 
 // --- 7.7 (v7-7-plan §4): every ending gets the result card ------------------
 // Mate, flag, resignation and a draw — the card is there, says the right
-// thing, carries at most one filled button, and never lies on the board.
+// thing and carries at most one filled button. v8-0-plan A5 replaces 7.7's
+// "never lies on the board": the card floats over the board now, so the rule
+// is that it lies wholly inside the board's frame, centred on it.
 if (scenario()) {
-  const cardState = (page) => page.evaluate(() => {
+  const cardState = (page) => page.evaluate(async () => {
     const c = document.getElementById("go-card");
+    // measured where it comes to rest: the reveal (result-in) moves it 4%
+    await Promise.all((c.getAnimations ? c.getAnimations() : []).map((a) => a.finished.catch(() => {})));
     const b = document.getElementById("board-wrap").getBoundingClientRect();
     const r = c.getBoundingClientRect();
-    const hit = !(r.right <= b.left || r.left >= b.right || r.bottom <= b.top || r.top >= b.bottom);
+    const hit = r.left >= b.left - 0.5 && r.right <= b.right + 0.5 && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5 &&
+      Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2) <= 2 && Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2;
     const vis = (e) => !!e.offsetParent;
     return { shown: vis(c), hit, result: document.getElementById("go-result").textContent.trim(),
              reason: document.getElementById("go-reason").textContent.trim(),
-             primaries: [...document.querySelectorAll("#side .primary")].filter(vis).map((e) => e.id),
+             primaries: [...document.querySelectorAll("#side .primary, #go-card .primary")].filter(vis).map((e) => e.id),
+             rect: [r.left, r.top, r.right, r.bottom, b.left, b.top, b.right, b.bottom].map(Math.round).join(","),
              toast: document.getElementById("toast").classList.contains("show") ? document.getElementById("toast").textContent : "" };
   });
   const cases = [
@@ -3521,7 +3532,7 @@ if (scenario()) {
     const s = await cardState(page);
     assert(s.shown, what + ":终局卡出现");
     assert(resultRe.test(s.result) && reasonRe.test(s.reason), what + ":写着结果和原因(" + s.result + " · " + s.reason + ")");
-    assert(!s.hit, what + ":终局卡与棋盘矩形不相交");
+    assert(s.hit, what + ":终局卡浮在棋盘正中,整张在棋盘框里(v8-0-plan A5)(卡 / 框 " + s.rect + ")");
     assert(s.primaries.length === 1 && s.primaries[0] === "go-analyse", what + ":唯一的主按钮是「分析这盘」(" + s.primaries.join(", ") + ")");
     assert(!s.toast, what + ":结局不再由 toast 宣布(" + s.toast + ")");
     await ctx.close();
@@ -3552,7 +3563,7 @@ if (scenario()) {
     await page.waitForTimeout(1500);
     const s = await cardState(page);
     assert(s.shown && /白方胜/.test(s.result) && /超时/.test(s.reason), "超时:终局卡出现(" + s.result + " · " + s.reason + ")");
-    assert(!s.hit, "超时:终局卡与棋盘矩形不相交(1024x700)");
+    assert(s.hit, "超时:终局卡浮在棋盘正中,整张在棋盘框里(1024x700)");
     await ctx.close();
   }
   // ✕ puts it away, and 分析 in the review row takes the fill back
@@ -3621,14 +3632,17 @@ if (scenario()) {
     assert(first && (await cardState(page)).shown, "同一局已完的棋谱再导入一次：终局卡重新出现，上一次的 ✕ 不算数");
     await ctx.close();
   }
-  // Codex on #82: with the panel shut the card is off-screen, and nothing else
-  // on screen said how the game ended
+  // Codex on #82: with the panel shut the card was off-screen, and nothing
+  // else on screen said how the game ended — 7.7 answered with a toast.
+  // v8-0-plan A5: the card is on the board, so with the panel shut it is
+  // still on screen, and says it once — no toast on top of it
   {
     const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 }, "0");
     for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
     await page.waitForTimeout(500);
     const s = await cardState(page);
-    assert(/黑方胜/.test(s.toast) && /将杀/.test(s.toast), "面板收起时终局：棋盘旁说一次结果和原因(" + s.toast + ")");
+    assert(s.shown && s.hit && /黑方胜/.test(s.result) && /将杀/.test(s.reason) && !s.toast,
+      "面板收起时终局：结果卡就在棋盘上,说一次结果和原因(" + s.result + " · " + s.reason + (s.toast ? " · toast " + s.toast : "") + ")");
     await ctx.close();
   }
 }
@@ -4484,6 +4498,70 @@ if (scenario()) {
   }
 }
 
+// --- v8-0-plan B5: 我的 with everything on it, in three languages -----------
+// The progress page filled: the rating curve, the calendar, strengths and
+// weaknesses and the three cross-game figures, whose sentences are the
+// longest things on it (「saved 8 of 12 games after being 2 pawns down, 4 of
+// them won」). At the five widths A2 measures and in all three languages: no
+// horizontal scroll, nothing past the page's right edge, no heading running
+// into its figure, and no text cut — the rows wrap rather than truncate.
+if (scenario()) {
+  const DAY = 864e5, now = Date.now();
+  const games = Array.from({ length: 24 }, (_, i) => {
+    const clk = [];
+    for (let j = 0; j < 20; j++) clk.push(j < 16 ? 170 - 10 * j : [15, 12, 8, 4][j - 16], 180);
+    return { id: "g" + i, t: now - (i % 12) * 2 * DAY, white: "hxddh", black: "rival" + i, date: "", event: "", result: "1-0",
+      plies: 40, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: ["win", "draw", "loss"][i % 3], clk,
+      eco: i % 2 ? "C50" : "B01", ecoName: i % 2 ? "Italian Game" : "Scandinavian Defense", motifs: { 36: "fork" },
+      an: { acc: { w: 80, b: 70 }, acpl: { w: 30, b: 40 }, tags: Array.from({ length: 40 }, (_, k) => (k === 36 ? "??" : null)),
+        scalars: Array.from({ length: 41 }, (_, k) => (k === 20 ? (i % 2 ? 300 : -300) : 0)), losses: new Array(40).fill(10), bests: [], budget: 200 } };
+  });
+  const th = (r, s, m) => ({ solve: s, miss: m, rating: { r, rd: 80, vol: 0.06 } });
+  const seed = {
+    "chess.v1.library": { v: 1, names: ["hxddh"], games },
+    "chess.v1.stats": { v: 2, games: Array.from({ length: 12 }, (_, i) => ({ id: "s" + i, t: now - (12 - i) * DAY, diff: "normal",
+      color: "w", result: i % 2 ? "win" : "loss", moves: 40, pgn: "", ending: "", ra: 1450 + i * 9 })) },
+    "chess.v1.puzzles": { v: 1, solved: {}, tally: { tac: { miss: 3, solve: 9 } }, rhist: [{ t: now - DAY, r: 1500 }, { t: now, r: 1520 }],
+      themes: { fork: th(1700, 6, 1), pin: th(1350, 2, 4), skewer: th(1550, 4, 2), discoveredAttack: th(1600, 5, 2), backRank: th(1420, 3, 3), m1: th(1800, 9, 0) } },
+  };
+  for (const [w, h] of [[1024, 768], [1280, 800], [1440, 900], [1920, 1080], [600, 900]]) {
+    for (const lang of LANGS) {
+      const tag = "B5 " + w + "x" + h + "/" + lang;
+      const { ctx, page, errs } = await open(lang, "ai", "me", "wood", { width: w, height: h });
+      await page.evaluate((ks) => { for (const [k, v] of Object.entries(ks)) localStorage.setItem(k, JSON.stringify(v)); }, seed);
+      await page.reload();
+      await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => {
+        const root = document.getElementById("page-me");
+        const sec = document.getElementById("sec-growth");
+        const shown = (e) => e.getClientRects().length > 0;
+        const edge = root.getBoundingClientRect().right;
+        const past = [...root.querySelectorAll("*")].filter(shown)
+          .filter((e) => e.getBoundingClientRect().right > edge + 1)
+          .map((e) => (e.id || e.className || e.tagName) + "@" + Math.round(e.getBoundingClientRect().right));
+        const cut = [...sec.querySelectorAll(".me-k, .me-v, .me-sw-h, .hint, .side-h, .side-h-meta")].filter(shown)
+          .filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > sec.getBoundingClientRect().right + 0.5)
+          .map((e) => e.textContent.trim().slice(0, 24) + " " + e.scrollWidth + ">" + e.clientWidth);
+        // a heading and its figure share a row: neither may run into the other
+        const clash = [...sec.querySelectorAll(".side-h-row")].filter(shown).filter((row) => {
+          const [a, b] = [row.querySelector(".side-h"), row.querySelector(".side-h-meta")];
+          return a && b && shown(b) && a.getBoundingClientRect().right > b.getBoundingClientRect().left + 0.5;
+        }).map((row) => row.id);
+        return {
+          on: shown(sec), blocks: ["me-cal", "me-rating", "me-sw", "me-metrics"].filter((id) => shown(document.getElementById(id))).length,
+          doc: document.scrollingElement.scrollWidth - innerWidth, own: root.scrollWidth - root.clientWidth,
+          past: past.slice(0, 4), cut: cut.slice(0, 4), clash,
+        };
+      });
+      assert(r.on && r.blocks === 4, tag + ": 成长一节四块都在(" + r.blocks + ")");
+      assert(r.doc <= 0 && r.own <= 0 && r.past.length === 0, tag + ": 「我的」没有横向滚动,也没有东西伸出右缘(" + JSON.stringify(r) + ")");
+      assert(r.cut.length === 0 && r.clash.length === 0, tag + ": 成长一节没有被截断的字,标题不压着数字(" + JSON.stringify({ cut: r.cut, clash: r.clash }) + ")");
+      assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+
 // --- v8-0-plan §2 A2: the play view stretches with its window ---------------
 // The acceptance, at the five sizes the plan names, measured by the same probe
 // scripts/measure-layout.mjs records with (scripts/lib/layout-probe.mjs has
@@ -4776,6 +4854,57 @@ if (scenario()) {
   }
 }
 
+// --- v8-0-plan A4：复盘视图在 M2 的三种布局里 ----------------------------------
+// The health report has to live inside whatever the play view is: the wide
+// three-column layout (1920), the two-column one (1440) and portrait (600).
+// In each, flat and framed: the eval bar is level with the board's frame (it
+// ran from the squares' top edge — frame y=72, bar y=89 at 1440×900 with the
+// wood frame), it lies on nothing else (rail, info column, panel), and the
+// report fits its column — nothing past the panel's edge, no sideways scroll.
+if (scenario()) {
+  for (const vp of [{ width: 1920, height: 1080 }, { width: 1440, height: 900 }, { width: 600, height: 900 }]) {
+    const { ctx, page, errs } = await open("en", "pvp", "play", "wood", vp);
+    await playOpera(page);
+    await analyseOpera(page);
+    await page.evaluate(() => {
+      document.getElementById("rep-start").click();
+      for (let i = 0; i < 18; i++) document.getElementById("rep-next").click();
+    });
+    await page.waitForTimeout(300);
+    for (const frame of ["flat", "frame"]) {
+      await page.evaluate((f) => document.querySelector('#frame-seg button[data-frame="' + f + '"]').click(), frame);
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(() => {
+        const box = (e) => e.getBoundingClientRect();
+        const w = box(document.getElementById("board-wrap")), b = box(document.getElementById("eval-bar"));
+        const hit = (a, c) => !(a.right <= c.left || a.left >= c.right || a.bottom <= c.top || a.top >= c.bottom);
+        const others = [document.getElementById("rail"), document.getElementById("side"),
+          ...document.querySelectorAll("#info-col > *, .pstrip")].filter((e) => e && e.offsetParent && box(e).width > 0);
+        const side = document.getElementById("side");
+        const sr = box(side);
+        const past = [...document.querySelectorAll("#eval-wrap *")].filter((e) => e.offsetParent && box(e).width > 0 && box(e).right > sr.right + 1)
+          .map((e) => e.id || e.className);
+        return { layout: document.getElementById("app").classList.contains("pv-wide") ? "wide" : "two",
+          wt: w.top, wb: w.bottom, bt: b.top, bb: b.bottom, bl: b.left,
+          num: (() => { const n = box(document.getElementById("eval-bar-text")); return { l: n.left, w: n.width, r: n.right }; })(),
+          on: others.filter((e) => hit(b, box(e))).map((e) => e.id || e.className),
+          inset: document.getElementById("eval-bar-row").classList.contains("is-inset"),
+          scroll: side.scrollWidth - side.clientWidth, past,
+          km: !!document.getElementById("rv-km") && !document.getElementById("rv-km").hidden, report: !document.getElementById("report-card").hidden };
+      });
+      const tag = `${vp.width}×${vp.height} ${frame}（${r.layout}${r.inset ? "，贴框内" : ""}）`;
+      assert(Math.abs(r.bt - r.wt) <= 1 && Math.abs(r.bb - r.wb) <= 1,
+        `A4：${tag} 评估条与棋盘外框上下对齐（框 ${Math.round(r.wt)}–${Math.round(r.wb)}，条 ${Math.round(r.bt)}–${Math.round(r.bb)}）`);
+      assert(r.bl >= 0 && r.on.length === 0, `A4：${tag} 评估条不压导航栏、信息栏、面板（${r.on.join(", ") || "无"}）`);
+      assert(r.num.w <= 1 || (r.num.l >= 0 && r.num.r <= vp.width),
+        `A4：${tag} 评估条的分数要么整个在窗口里，要么交给曲线和读屏（${Math.round(r.num.l)}–${Math.round(r.num.r)}）`);
+      assert(r.report && r.km && r.scroll <= 0 && r.past.length === 0,
+        `A4：${tag} 体检报告与关键时刻都在，面板里没有越界、没有横向滚动（${r.scroll}px${r.past.length ? "，越界 " + r.past.join(", ") : ""}）`);
+    }
+    assert(errs.length === 0, `A4：${vp.width}×${vp.height} 没有页面异常 — ` + errs.join(" / "));
+    await ctx.close();
+  }
+}
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

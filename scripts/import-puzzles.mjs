@@ -55,6 +55,7 @@
 import fs from "fs";
 import path from "path";
 import readline from "readline";
+import { Transform } from "stream";
 import zlib from "zlib";
 import { fileURLToPath } from "url";
 import { loadAppModules, ROOT } from "./lib/app-module.mjs";
@@ -150,8 +151,19 @@ export async function streamRows(file, onRow) {
     if (typeof zlib.createZstdDecompress !== "function") throw new Error("this Node has no zstd — decompress with `zstd -d` and pass the .csv");
     const params = {};
     if (zlib.constants.ZSTD_d_windowLogMax != null) params[zlib.constants.ZSTD_d_windowLogMax] = 31;
-    input = input.pipe(zlib.createZstdDecompress({ params }));
+    const head = Buffer.alloc(4);
+    const fd = fs.openSync(file, "r");
+    const got = fs.readSync(fd, head, 0, 4, 0);
+    fs.closeSync(fd);
+    const dec = got === 4 && isSkippable(head.readUInt32LE(0)) ? pzstdFrames(params) : zlib.createZstdDecompress({ params });
+    const raw = input;
+    raw.on("error", (e) => dec.destroy(e));
+    input = raw.pipe(dec);
   }
+  // A decompression error must fail the run, not end it early as if the file
+  // were short (readline alone would just see the end of input).
+  let failed = null;
+  input.on("error", (e) => { failed = e; });
   const rl = readline.createInterface({ input, crlfDelay: Infinity });
   let n = 0;
   for await (const line of rl) {
@@ -159,7 +171,52 @@ export async function streamRows(file, onRow) {
     const r = parseLine(line);
     if (r) onRow(r);
   }
+  if (failed) throw failed;
   return n;
+}
+
+const isSkippable = (magic) => (magic & 0xfffffff0) === 0x184d2a50;
+
+/**
+ * Decompress a pzstd file. The Lichess exports are written by pzstd, which
+ * puts a 4-byte skippable frame (magic 0x184D2A50–5F) holding the next frame's
+ * compressed size in front of every frame. Node's zstd stream cannot read
+ * that: it rejects a skippable frame ("Unknown frame descriptor"), and when
+ * one chunk holds the end of a frame and the start of the next it drops the
+ * rest of the chunk. So the sizes are used to cut the file into whole frames,
+ * each decompressed on its own (a frame is a few MB). A plain `zstd` file does
+ * not start with a skippable frame and takes Node's stream as before.
+ */
+export function pzstdFrames(params) {
+  let buf = Buffer.alloc(0);
+  let next = -1; // compressed size of the data frame that comes next, once known
+  return new Transform({
+    transform(chunk, _enc, cb) {
+      buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
+      try {
+        for (;;) {
+          if (next >= 0) {
+            if (buf.length < next) break;
+            this.push(zlib.zstdDecompressSync(buf.subarray(0, next), { params }));
+            buf = buf.subarray(next);
+            next = -1;
+            continue;
+          }
+          if (buf.length < 8) break;
+          if (!isSkippable(buf.readUInt32LE(0))) throw new Error("pzstd: a data frame without its size header at a frame boundary");
+          const size = buf.readUInt32LE(4);
+          if (buf.length < 8 + size) break;
+          if (size === 4) next = buf.readUInt32LE(8);
+          buf = buf.subarray(8 + size);
+        }
+      } catch (e) { return cb(e); }
+      cb();
+    },
+    flush(cb) {
+      if (next >= 0) return cb(new Error("pzstd: the file ends before a frame its header announced (" + next + " bytes)"));
+      cb(buf.length ? new Error("pzstd: " + buf.length + " bytes left after the last frame") : null);
+    },
+  });
 }
 
 function uciMove(uci) {
@@ -380,7 +437,7 @@ export function createPools(opt) {
   let admitted = 0;
   return {
     add(row) {
-      if (!admissible(row, o) || seen.has(row.id)) return;
+      if (!admissible(row, o) || seen.has(row.id) || (o.exclude && o.exclude.has(row.id))) return;
       seen.add(row.id);
       admitted++;
       const k = cellOf(row);
@@ -541,6 +598,18 @@ export function writeOutput(outDir, puzzles, meta) {
   return { index, files: files.concat([idx]) };
 }
 
+/**
+ * --exclude: ids never to import — a verify-puzzles.mjs report (its `worseAny`
+ * ids; see there) or a comma-separated list.
+ * @returns {Set<string>}
+ */
+export function readExclude(v) {
+  // the report names puzzles as the app does, "lc-" + the Lichess id; the CSV has the bare id
+  const bare = (id) => String(id).replace(/^lc-/, "");
+  if (v && fs.existsSync(v)) return new Set(JSON.parse(fs.readFileSync(v, "utf8")).worseAny.map((w) => bare(w.id)));
+  return new Set(String(v || "").split(",").map((x) => bare(x.trim())).filter(Boolean));
+}
+
 function parseArgs(argv) {
   const opt = Object.assign({}, DEFAULTS, { outDir: path.join(ROOT, "src/web/js"), input: null });
   const num = { "--max": "max", "--per-cell": "perCell", "--pool": "pool", "--seed": "seed", "--min-rating": "minRating",
@@ -548,6 +617,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--out-dir") opt.outDir = argv[++i];
+    else if (a === "--exclude") opt.exclude = readExclude(argv[++i]);
     else if (num[a]) opt[num[a]] = Number(argv[++i]);
     else if (!a.startsWith("--")) opt.input = a;
     else { console.error("unknown flag " + a); process.exit(2); }
@@ -560,7 +630,8 @@ export async function main(argv) {
   const opt = parseArgs(argv);
   if (!opt.input) {
     console.error("usage: node scripts/import-puzzles.mjs <lichess_db_puzzle.csv[.zst]> [--out-dir d] [--max n] [--per-cell n]\n" +
-      "       [--pool n] [--seed n] [--min-rating n] [--max-rating n] [--min-popularity n] [--min-plays n] [--max-rd n]");
+      "       [--pool n] [--seed n] [--min-rating n] [--max-rating n] [--min-popularity n] [--min-plays n] [--max-rd n]\n" +
+      "       [--exclude report.json|id,id,…]");
     process.exit(2);
   }
   const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/motif.js"]);
@@ -573,7 +644,8 @@ export async function main(argv) {
   const t2 = Date.now();
   const meta = "Selected " + puzzles.length + " of " + lines + " rows (" + pools.admitted + " admissible): --max " + opt.max +
     " --pool " + opt.pool + " --seed " + opt.seed + " --min-rating " + opt.minRating + " --max-rating " + opt.maxRating +
-    " --min-popularity " + opt.minPopularity + " --min-plays " + opt.minPlays + " --max-rd " + opt.maxRd + ".";
+    " --min-popularity " + opt.minPopularity + " --min-plays " + opt.minPlays + " --max-rd " + opt.maxRd +
+    (opt.exclude && opt.exclude.size ? " --exclude " + opt.exclude.size + " ids" : "") + ".";
   const out = writeOutput(opt.outDir, puzzles, meta);
   const bytes = out.files.reduce((n, f) => n + fs.statSync(f).size, 0);
   console.log("lines " + lines + ", admissible " + pools.admitted + ", pooled " + stats.candidates + ", gated " + stats.tried +
