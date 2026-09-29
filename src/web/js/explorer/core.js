@@ -6,10 +6,11 @@
  * rows of `{san, n, w, d, b}` (White wins, draws, Black wins), most played
  * first:
  *
- *   - **your library** (step 1): the games imported into 棋谱库, indexed by
- *     position the first time they are asked about. The index is the one
- *     seam M5-db's `gamesWithPosition(fenKey)` replaces: `hitsAt` is the only
- *     function that knows where the games come from.
+ *   - **your library** (step 1): C1's position index (LibraryUI
+ *     `gamesWithPosition`) over imported and 本机 games, or, without it, the
+ *     games imported into 棋谱库, indexed by position the first time they
+ *     are asked about. `hitsAt` is the only function that knows where the
+ *     games come from.
  *   - **the master tree** (step 2): counted offline from CC0 Lichess games by
  *     scripts/build-explorer.mjs and stored per position, keyed by a hash of
  *     the position (`hashKey`), encoded by `encodeRows`.
@@ -122,28 +123,50 @@ export function indexGames(list, maxPly) {
 /**
  * Your library as an explorer source (step 1).
  *
- * The index is built on the first question and kept until the list itself
- * is a different array (library-ui.js replaces the array on every import,
- * delete and analysis write, never edits it in place).
- *
  * THE SEAM (v8-0-plan C3 × C1): `hitsAt` is the whole of "which games reach
- * this position, and what was played next". When the library becomes a
- * database with `gamesWithPosition(fenKey)`, this function's body becomes
- * that query plus the next-move lookup; `movesAt` and everything above it
- * stay as they are.
+ * this position, and what was played next". With C1's database (`db`:
+ * LibraryUI, whose `gamesWithPosition(fen)` answers from the position index
+ * each game carries in IndexedDB — imported and 本机 games alike, every ply
+ * rather than LIB_PLIES) it asks that once per position and library array,
+ * and says null until the Promise lands, when `onChange` redraws. Without a
+ * database (`db` absent, or it answers null: the chunk did not load) it is
+ * the plain list, indexed here by replaying it on the first question and
+ * kept until the list itself is a different array (library-ui.js replaces
+ * the array on every import, delete and analysis write, never edits it in
+ * place).
  *
  * @param {() => object[]} getList the library's entries, as stored
+ * @param {{gamesWithPosition: (fen: string) => Promise<object|null>}} [db]
+ * @param {() => void} [onChange] an indexed answer arrived
  */
-export function librarySource(getList) {
+export function librarySource(getList, db, onChange) {
   let memo = { list: null, n: 0, idx: null };
-  function hitsAt(key) {
+  let asked = null, answer = null, plain = !db;
+  const same = (a, key, list) => a && a.key === key && a.list === list && a.n === list.length;
+  function hitsAt(key, fen) {
     const list = getList() || [];
-    if (memo.list !== list || memo.n !== list.length) memo = { list, n: list.length, idx: indexGames(list) };
-    return (memo.idx.get(key) || []).map(([gi, ply]) => ({ san: String(list[gi].sans).split(" ")[ply], result: list[gi].result }));
+    if (plain || !fen) {
+      if (memo.list !== list || memo.n !== list.length) memo = { list, n: list.length, idx: indexGames(list) };
+      return tally((memo.idx.get(key) || []).map(([gi, ply]) => ({ san: String(list[gi].sans).split(" ")[ply], result: list[gi].result })));
+    }
+    if (same(answer, key, list)) return answer.rows;
+    if (!same(asked, key, list)) {
+      const q = (asked = { key, list, n: list.length });
+      Promise.resolve(db.gamesWithPosition(fen)).catch(() => null).then((r) => {
+        if (asked !== q) return;
+        if (!r) plain = true;
+        // the board's results, the way `tally` counts them
+        else answer = Object.assign({}, q, { rows: sortRows((r.moves || []).map((m) => ({ san: m.san, n: m.n, w: m.white, d: m.draws, b: m.black }))) });
+        if (onChange) onChange();
+      });
+    }
+    return null;
   }
   return {
-    /** @returns {Array<{san,n,w,d,b}>} */
-    movesAt: (key) => tally(hitsAt(key)),
+    /** @returns {Array<{san,n,w,d,b}>|null} null: the database has not answered yet */
+    movesAt: (key, fen) => hitsAt(key, fen),
+    /** forget the database's last answer: its index grew under the same list */
+    refresh: () => { asked = answer = null; },
     /** how many games the source holds — the empty state says so */
     size: () => (getList() || []).length,
   };

@@ -16,7 +16,7 @@ import { loadChunk } from "../chunk.js";
 import { CHESS_OPENINGS } from "../openings.js";
 
 /**
- * @param {object} d from app.js: store, t, tf, viewGame, movePath,
+ * @param {object} d from app.js: store, t, tf, viewGame, movePath, library (LibraryUI),
  *   startClockIfIdle, toBoard, saveSettings, saved (the stored settings)
  */
 export function createExplorerLazy(d) {

@@ -265,18 +265,49 @@ for (const [lang, key, label, row] of [
   });
   console.log("  500 局 × 80 半回合：按「开局」到第一行出现 " + ms.toFixed(0) + " ms");
   assert(ms > 0 && ms < 1000, "500 局的棋谱库，第一次打开 < 1 s（" + ms.toFixed(0) + " ms）");
-  // synchronous: a move commits, the panel's render runs inside that commit
-  // (the next frame is the browser's to schedule, not this panel's cost)
-  const step = await page.evaluate(() => {
-    const before = document.querySelector("#xp-list .xp-row").dataset.san;
+  // a move commits, the panel asks C1's position index (a Promise that lands
+  // within the same task: microtasks, no timer) and redraws — counted up to
+  // the new rows (the next frame is the browser's to schedule, not this panel's cost)
+  const step = await page.evaluate(async () => {
+    const first = () => document.querySelector("#xp-list .xp-row");
+    const before = first().dataset.san;
     const t0 = performance.now();
-    document.querySelector("#xp-list .xp-row").click();
-    return { ms: performance.now() - t0, moved: document.querySelector("#xp-list .xp-row") && document.querySelector("#xp-list .xp-row").dataset.san !== before };
+    first().click();
+    let spins = 0;
+    while (!(first() && first().dataset.san !== before) && spins < 5000) { spins++; await null; }
+    return { ms: performance.now() - t0, moved: !!first() && first().dataset.san !== before, spins };
   });
   const t1 = step.ms;
   console.log("  建好之后走一步（整个提交，面板在其中）" + t1.toFixed(0) + " ms");
   assert(step.moved, "走了一步，面板已经换成下一个局面");
   assert(t1 < 200, "建好之后每走一步，连同面板 < 200 ms（" + t1.toFixed(0) + " ms）");
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 6. M5 合并：面板读的是 C1 的局面索引 —— 本机对局（对局历史）也算进来 -------------
+// 本机对局不在导入的列表（store.session.library）里，只在 C1 的索引里：重放列表
+// 的老路径数不到它。改前起始局面 e4 是 4 局，改后 5 局
+{
+  const ctx = await context();
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("seeded2")) return;
+    sessionStorage.setItem("seeded2", "1");
+    localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games: [
+      { id: "h1", t: Date.now() - 864e5, diff: "learner", color: "w", result: "win", moves: 3,
+        pgn: '[Event "?"]\n\n1. e4 e5 2. Nf3 *', ending: "", acc: 70 },
+    ] }));
+  });
+  const { page, errs } = await open(ctx);
+  await page.waitForTimeout(600);
+  await page.click("#explorer-open");
+  let r = await waitRows(page, (x) => x.some((y) => y.san === "e4" && y.n === "5"), 5000);
+  const e4 = r.find((x) => x.san === "e4");
+  assert(e4 && e4.n === "5", "起始局面 e4 5 局：导入的 4 局加 1 局本机对局（从 C1 的索引来）", JSON.stringify(r));
+  assert(/7 局/.test(await note(page)), "说明行：7 局走到这里", await note(page));
+  await page.click('#xp-list .xp-row[data-san="e4"]');
+  r = await waitRows(page, (x) => x.some((y) => y.san === "e5" && y.n === "4"));
+  assert(r.some((x) => x.san === "e5" && x.n === "4"), "1.e4 之后 e5 4 局（含本机那局）", JSON.stringify(r));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }

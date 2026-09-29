@@ -74,6 +74,38 @@ const assert = (cond, msg, extra) => {
   list = list.concat([{ sans: "e4", result: "1-0" }]);
   assert(at([]).startsWith("e4,4,2,1,1"), "库换了一个新数组，索引跟着重建");
 
+  // M5 合并（v8-0-plan C3 × C1）：有 C1 的数据库时，hitsAt 问的是它的局面索引
+  // （LibraryUI.gamesWithPosition，返回 Promise），不再逐局重放；数据库说没有
+  // （分块没载入成）时退回重放这份列表
+  const fenAfter = (sans) => { const g = new Chess(); for (const s of sans) g.move(s); return g.fen(); };
+  const asked = [];
+  let changed = 0;
+  const db = { gamesWithPosition: (fen) => { asked.push(fen); return Promise.resolve({ total: 3, white: 1, draws: 1, black: 1,
+    moves: [{ san: "d4", n: 2, white: 1, draws: 0, black: 1 }, { san: "c4", n: 1, white: 0, draws: 1, black: 0 }] }); } };
+  let dlist = lib.slice();
+  const dsrc = X.librarySource(() => dlist, db, () => changed++);
+  const dat = (sans) => { const r = dsrc.movesAt(keyAfter(sans), fenAfter(sans)); return r && r.map((x) => [x.san, x.n, x.w, x.d, x.b].join(",")).join(" "); };
+  assert(dat([]) === null && asked.length === 1 && asked[0] === fenAfter([]), "有数据库：第一次问局面时向 gamesWithPosition 要（带棋盘的 FEN），答案到之前是 null", JSON.stringify(asked));
+  await new Promise((r) => setTimeout(r, 0));
+  assert(changed === 1, "答案到了通知面板重画一次", String(changed));
+  assert(dat([]) === "d4,2,1,0,1 c4,1,0,1,0", "行来自索引（d4 / c4），不是重放列表得到的 e4 / Nf3 / d4", dat([]));
+  dat([]);
+  assert(asked.length === 1, "同一局面、同一份库：不再问第二次", String(asked.length));
+  dlist = dlist.concat([{ sans: "e4", result: "1-0" }]);
+  dat([]);
+  assert(asked.length === 2, "库换了新数组：重新问", String(asked.length));
+  await new Promise((r) => setTimeout(r, 0));
+  dsrc.refresh();
+  dat([]);
+  assert(asked.length === 3, "refresh()（后台索引补完）之后同一局面也重新问", String(asked.length));
+  const psrc = X.librarySource(() => lib, { gamesWithPosition: (fen) => { asked.push(fen); return Promise.resolve(null); } }, () => changed++);
+  const pat = (sans) => { const r = psrc.movesAt(keyAfter(sans), fenAfter(sans)); return r && r.map((x) => [x.san, x.n, x.w, x.d, x.b].join(",")).join(" "); };
+  pat([]);
+  await new Promise((r) => setTimeout(r, 0));
+  const n0 = asked.length;
+  assert(pat([]) === "e4,3,1,1,1 Nf3,1,1,0,0 d4,1,0,0,0" && pat(["e4", "e5"]) === "Bc4,1,0,0,1 Nf3,1,1,0,0" && asked.length === n0,
+    "数据库答 null（分块不在）：退回重放这份列表，之后也不再问", pat([]));
+
   // 500 局、每局 80 个半回合的随机棋谱：一次建索引、此后每次查询
   const rand = ((s) => () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296))(7);
   const big = [];

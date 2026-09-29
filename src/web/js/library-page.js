@@ -380,6 +380,14 @@ async function bootLibrary(d) {
     } else {
       load.dataset.lib = g.id;
       load.textContent = d.libraryLabel(g);
+      // v8-0-plan C2: a game from Lichess / Chess.com (synced or downloaded) says so, as 本机 does
+      const site = LibraryQuery.siteOf(g);
+      if (site) {
+        const tag = doc.createElement("span");
+        tag.className = "pick-tag";
+        tag.textContent = site;
+        load.appendChild(tag);
+      }
     }
     const sub = doc.createElement("span");
     sub.className = "pick-sub";

@@ -110,6 +110,11 @@ const dlg = (page) => page.evaluate(() => {
     calls: window.__calls.length,
   };
 });
+/** The library as the app holds it (library-ui.js's e2e view), once C1's chunk is in. */
+const libView = async (page) => {
+  await page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready, null, { timeout: 5000 }).catch(() => {});
+  return page.evaluate(() => { const l = window.__chess.library(); return { names: l.names, games: l.games }; });
+};
 const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) || "null"), key);
 
 // --- 1. off by default: the switch says so, and nothing is asked of the shell --
@@ -196,7 +201,8 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await page.waitForTimeout(400);
   const calls = await page.evaluate(() => window.__calls);
   assert(JSON.stringify(calls) === '[{"site":"chesscom","user":"Sync_Tester","max":20}]', "C2: Chess.com、最近 20 局（" + JSON.stringify(calls) + "）");
-  const lib = await stored(page, "chess.v1.library");
+  // v8-0-plan C1: the games live in IndexedDB now; chess.v1.library is a header
+  const lib = await libView(page);
   const games = (lib && lib.games) || [];
   assert(games.length === 2, "C2: 两局进了棋谱库（" + games.length + "）");
   assert(lib && lib.names.includes("Sync_Tester"), "C2: 名字自动认领（" + JSON.stringify(lib && lib.names) + "）");
@@ -209,6 +215,31 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   }));
   assert(ui.names.includes("Sync_Tester"), "C2: 名字框里也写上了（" + ui.names + "）");
   assert(/2/.test(ui.analyse), "C2: 「分析」按钮数到了这两局（" + ui.analyse + "）");
+  // M5 合并（C2 × C1）：同步进来的棋走 C1 的导入 —— 列表上标着来源，进了局面
+  // 索引，开局浏览器数得到它们
+  const idx = await page.evaluate(() => {
+    const c = window.__chess.libDb();
+    const at = c && c.gamesWithPosition("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    return at && { total: at.total, moves: at.moves.map((m) => m.san + ":" + m.n).join(" ") };
+  });
+  assert(idx && idx.total === 2 && idx.moves === "e4:1 f3:1", "C2 × C1: 两局进了局面索引（起始局面 e4、f3 各 1 局）（" + JSON.stringify(idx) + "）");
+  await page.click("#lib-open");
+  await page.waitForSelector("#lib-list-modal.show", { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  const tags = await page.evaluate(() => [...document.querySelectorAll("#lib-list button[data-lib] .pick-tag")].map((x) => x.textContent));
+  assert(tags.length === 2 && tags.every((x) => x === "Chess.com"), "C2 × C1: 列表上两局都标着 Chess.com（" + JSON.stringify(tags) + "）");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  await page.click("#lib-explorer");
+  await page.waitForTimeout(300);
+  let xp = [];
+  for (let i = 0; i < 60; i++) {
+    xp = await page.evaluate(() => [...document.querySelectorAll("#xp-list .xp-row")].map((b) => b.dataset.san + ":" + b.querySelector(".xp-n").textContent));
+    if (xp.length === 2) break;
+    await page.waitForTimeout(50);
+  }
+  assert(xp.join(" ") === "e4:1 f3:1", "C2 × C3: 开局浏览器在起始局面数到这两局（" + xp.join(" ") + "）");
+  await toLibrary(page);
   // the same sync again adds nothing (the library's ids), and says so
   await openSync(page);
   let d = await dlg(page);
@@ -216,7 +247,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
     "C2: 再打开时记得上次的网站和名字（" + JSON.stringify([d.user, d.site]) + "）");
   await page.click("#sync-go");
   await page.waitForFunction(() => !document.getElementById("sync-modal").classList.contains("show"), null, { timeout: 5000 });
-  const lib2 = await stored(page, "chess.v1.library");
+  const lib2 = await libView(page);
   assert(lib2.games.length === 2 && lib2.names.filter((n) => n.toLowerCase() === "sync_tester").length === 1,
     "C2: 再同步一次不重复进库、不重复认领（" + lib2.games.length + " 局，" + JSON.stringify(lib2.names) + "）");
   // reload: the switch and the last choice come back

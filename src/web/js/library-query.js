@@ -358,11 +358,25 @@ function entryPgn(g) {
   return head + "\n" + out.join(" ") + "\n";
 }
 
+/**
+ * v8-0-plan C2 × C1: which site an imported game came from, by its PGN
+ * `Site` — the list's source tag. A synced game (sync-ui.js) and the same
+ * site's download imported by hand say the same thing; both sites write
+ * `Site` into every game (Lichess its game URL, Chess.com "Chess.com").
+ * The names are the sites' own, the same in every language.
+ * @returns {"Lichess"|"Chess.com"|""}
+ */
+function siteOf(g) {
+  const s = g && g.src !== "local" ? String(g.site || "") : "";
+  return /^(https?:\/\/)?([\w-]+\.)?lichess\.org(\/|$)/i.test(s) ? "Lichess"
+    : /^(https?:\/\/)?(www\.)?chess\.com(\/|$)/i.test(s) ? "Chess.com" : "";
+}
+
 /** The fields a PGN round trip carries — what "逐局相等" compares. */
 const PGN_FIELDS = ["id", "white", "black", "date", "event", "site", "round", "result", "plies", "sans", "fen", "tc", "clk"];
 
 export const LibraryQuery = {
   SHARDS, TC_CLASSES, PGN_FIELDS,
   positionKey, hashKey, keysOfFens, keysOfGame, tcClass, dateKey, query, gamesWithPosition,
-  inferName, shardOf, entryPgn, ecoOfFens,
+  inferName, shardOf, entryPgn, ecoOfFens, siteOf,
 };

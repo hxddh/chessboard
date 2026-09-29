@@ -16,7 +16,7 @@ const ctx = { console, Date, Math, JSON };
 ctx.globalThis = ctx;
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const f of ["sync-ui.js", "persist.js", "pgn-parser.js", "library.js"]) {
+for (const f of ["sync-ui.js", "persist.js", "pgn-parser.js", "library.js", "library-query.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", f)), ctx, { filename: f });
 }
 
@@ -90,6 +90,21 @@ const assert = (cond, msg, extra) => {
   assert(entries[1].plies === 4 && entries[1].side === "b" && entries[1].outcome === "win", "Chess.com 那局：4 步，执黑，赢", JSON.stringify(entries[1]));
   assert(Array.isArray(entries[0].clk) && entries[0].clk.length === 7 && Array.isArray(entries[1].clk),
     "两家的时钟都带进了棋谱库（B5 的时间压力要用）", JSON.stringify([entries[0].clk, entries[1].clk]));
+
+  // M5 合并（C2 × C1）：同步进来的棋走 C1 的导入（library-page.js importPgn），
+  // 带着来源、带着局面索引 —— 列表上标出是哪家网站的，开局浏览器按局面数得到
+  const Q = ctx.LibraryQuery;
+  assert(Q && typeof Q.siteOf === "function" && Q.siteOf(entries[0]) === "Lichess" && Q.siteOf(entries[1]) === "Chess.com",
+    "来源标签：Lichess / Chess.com（从 PGN 的 Site 认）", Q && Q.siteOf && JSON.stringify(entries.map(Q.siteOf)));
+  assert(Q && Q.siteOf && Q.siteOf({ site: "" }) === "" && Q.siteOf({ site: "https://example.org/lichess.org" }) === "" && Q.siteOf({ src: "local" }) === "",
+    "别处的棋、本机的棋不标");
+  const pk = new Map(games.map((g, i) => {
+    const fens = [g.root.fen];
+    for (let n = g.root; n && n.children.length; n = n.children[0]) fens.push(n.children[0].fen);
+    return [entries[i].id, Q.keysOfFens(fens)];
+  }));
+  const at = Q.gamesWithPosition(entries, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", (g) => pk.get(g.id));
+  assert(at.total === 2 && at.moves.map((m) => m.san + m.n).join() === "e41,f31", "两局按解析时的局面进了索引：起始局面 e4 / f3 各 1 局", JSON.stringify(at.moves));
 }
 
 if (failed) {

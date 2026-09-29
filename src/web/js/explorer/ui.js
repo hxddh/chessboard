@@ -35,7 +35,11 @@ export function masterChunk(i) {
 export function createExplorerUI(d, bookLines) {
   const doc = document, { store, t, tf } = d;
   const M = EXPLORER_MASTERS;
-  const lib = X.librarySource(() => store.session.library);
+  // M5: C1's position index (d.library = LibraryUI) answers, the replay only without it
+  const lib = X.librarySource(() => store.session.library, d.library, () => render());
+  // the first launch after a migration indexes the old games in the
+  // background (library-db.js indexMissing): ask again once that is done
+  if (d.library && d.library.ready) d.library.ready().then((c) => c && c.indexing).then(() => { lib.refresh(); render(); }, () => {});
   let book = null; // built on first use: 195 lines, a few ms
   const tables = []; // master buckets that have arrived
   let shownSig = "", held = false, pending = false;
@@ -122,9 +126,13 @@ export function createExplorerUI(d, bookLines) {
         // the source, the rating floor and the licence are the same words in every language
         : "Lichess " + M.source.slice(-7) + " · ≥ " + M.minElo + " · " + tf("lib.count", [M.games]) + " · CC0";
     } else {
-      out = lib.movesAt(key);
-      const here = out.reduce((s, r) => s + r.n, 0);
-      msg = !lib.size() ? t("xp.libEmpty") : here ? tf("lib.count", [here]) : t("xp.none");
+      out = lib.movesAt(key, pos.fen());
+      // the index answers within the task; what is on screen stays until then
+      if (!out && shownSig.startsWith("lib|")) return;
+      const here = (out || []).reduce((s, r) => s + r.n, 0);
+      // 本机 games are in the index but not in the imported list: rows first
+      msg = !out ? "…" : here ? tf("lib.count", [here]) : !lib.size() ? t("xp.libEmpty") : t("xp.none");
+      out = out || [];
     }
     if (!book) book = X.bookIndex(bookLines);
     const rows = X.rowsAt(out, pos, book.get(key));
