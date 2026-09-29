@@ -1132,12 +1132,11 @@ function quietMove(g) {
   }
   // nothing that quiet (a knight loose among the pawns): any move that
   // neither captures nor ends the game — White is a queen and more ahead
-  return g.moves({ verbose: true }).find((m) => {
-    if (m.captured || m.promotion) return false;
-    const h = new Chess(g.fen());
-    h.move(m);
-    return !h.game_over();
-  }) || null;
+  const ok = (m) => { const h = new Chess(g.fen()); h.move(m); return !h.game_over(); };
+  return g.moves({ verbose: true }).find((m) => !m.captured && !m.promotion && ok(m)) ||
+    // in check with only captures to answer it (a knight checking a boxed-in
+    // king): take — the game has to go on for the scenario to reach its point
+    g.moves({ verbose: true }).find((m) => !m.promotion && ok(m)) || null;
 }
 
 /** Play quiet white moves against the engine until `stop()` says so. */
