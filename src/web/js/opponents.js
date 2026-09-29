@@ -274,6 +274,7 @@ function advice(recent, level, rating) {
 function rateHistory(games) {
   let r = null;
   for (const g of (games || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0))) {
+    if (g.unrated) continue; // recorded, not rated (#89 review: opponents-lazy.js opponent)
     const next = rateGame(r, g.diff, g.result, g.t || 0);
     if (next) r = next;
   }
@@ -293,9 +294,11 @@ function fileRating(stats, rec, now) {
   if (!stats || !rec) return null;
   // only the games before this one: a game filed late (the chunk was still
   // loading) may already have later games after it in the list (Codex #89)
+  if (rec.unrated) return null; // recorded, not rated (#89 review)
   const games = stats.games || [];
   const at = games.indexOf(rec);
-  const prior = at >= 0 ? games.slice(0, at) : games;
+  // …and the unrated ones before it are no part of its performance or advice
+  const prior = (at >= 0 ? games.slice(0, at) : games).filter((g) => !g.unrated);
   const before = validRating(stats.rating) ? stats.rating : rateHistory(prior);
   const after = rateGame(before, rec.diff, rec.result, now);
   if (!after) return null;

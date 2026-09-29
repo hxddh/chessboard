@@ -2673,6 +2673,20 @@ for (const lang of CONTENT_LANGS) {
       assert(queued.rating.n === 2 && Math.round(queued.rating.r) === Math.round(seq.rating.r) && g1.ra > g2.ra,
         "B4: games rated late, in order, come out as if rated on time (n " + queued.rating.n + ")");
     }
+    // #89 review: a game recorded unrated (its rung changed mid-game, or a
+    // position set up by hand) moves nothing, filed or replayed
+    {
+      const st = { v: 2, games: [] };
+      const file = (g) => { const f = O.fileRating(st, g, g.t); st.games.push(g); return f; };
+      file({ id: "u1", t: now, diff: "normal", result: "win" });
+      const kept = st.rating;
+      const u = { id: "u2", t: now + 1000, diff: "extreme", result: "win", unrated: "changed" };
+      const fu = file(u);
+      file({ id: "u3", t: now + 2000, diff: "normal", result: "win" });
+      const replay = O.rateHistory(st.games);
+      assert(fu === null && u.ra === undefined && st.rating.n === 2 && kept.n === 1 && Math.round(replay.r) === Math.round(st.rating.r) && replay.n === 2,
+        "B4: an unrated game is recorded but neither filed nor replayed into the rating (" + JSON.stringify({ fu: !!fu, n: st.rating.n, replay: replay.n }) + ")");
+    }
   }
 
   // the app's hooks — few lines, each where the thing happens

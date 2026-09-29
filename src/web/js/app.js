@@ -1492,6 +1492,7 @@ import { createStore } from "./store.js";
       if (store.game.resigned) payload.resigned = store.game.resigned;
       if (store.game.drawAgreed) payload.drawAgreed = true;
       if (store.game.drawClaimed) payload.drawClaimed = store.game.drawClaimed;
+      if (store.game.opp) payload.opp = store.game.opp; // the game's opponent (#89 review, opponents-lazy.js)
       // v8-0-plan F2: nothing changed, nothing written. A move, its commit,
       // blur, hide and quit each asked for a save, and every one rewrote the
       // whole tree — a few hundred KB of localStorage and a native mirror
@@ -1577,6 +1578,7 @@ import { createStore } from "./store.js";
       if (s.resigned === "w" || s.resigned === "b") store.game.resigned = s.resigned;
       if (s.drawAgreed === true) store.game.drawAgreed = true;
       if (s.drawClaimed === "threefold" || s.drawClaimed === "fifty") store.game.drawClaimed = s.drawClaimed;
+      store.game.opp = OppUI.savedOpponent(s.opp); // rated against it, not the settings (#89 review)
       // a custom starting position is worth resuming on its own, with or
       // without moves played into it
       return sanHistory().length > 0 || !!startFen();
@@ -1596,7 +1598,7 @@ import { createStore } from "./store.js";
     doc: document, store, t, tf, setText, afterPress, acceptDraw, diffName: (id) => diffName(id),
     repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
     invalidateEngine, forgetFileResult, playEnding, recordOutcome,
-    plies: () => sanHistory().length, fen: () => game.fen(), verboseHistory: () => game.history({ verbose: true }),
+    plies: () => sanHistory().length, fen: () => game.fen(), verboseHistory: () => game.history({ verbose: true }), setUp: () => !!startFen(),
     openingName: () => (openingFor(Infinity) || [])[1] || "",
   });
 
@@ -2725,7 +2727,7 @@ import { createStore } from "./store.js";
     store.session.mode = "ai";
     if (DIFF_NAMES[rec.diff]) store.session.difficulty = rec.diff; store.session.personaId = PERSONA_IDS.includes(rec.style) ? rec.style : "off"; // the opponent it was (Codex #89)
     if (rec.color === "w" || rec.color === "b") { store.session.humanColor = rec.color; store.game.flipped = store.session.humanColor === "b"; }
-    store.game.recordedId = rec.id;
+    store.game.recordedId = rec.id; store.game.opp = { diff: store.session.difficulty, style: store.session.personaId }; // its opponent too (#89 review)
     restoreEnding(rec);
     // the import ends by offering the position to the engine; a game that ended
     // in resignation is not over by its moves, so call off that search now that
@@ -4212,9 +4214,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     store.game.viewIndex = 0;
     store.game.imported = false;
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
     // Both of these key off the PGN, and a PGN does not identify a game — play
     // the same seven moves twice in one session and the second game carried
     // the first one's signature. It was then read as "already recorded" and
@@ -4249,9 +4249,11 @@ import { createStore } from "./store.js";
     store.game.viewIndex = keep;
     // continuing a finished game (flag / resignation) gets fresh clocks
     if (ruleTerminated()) resetClocks();
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
+    // the continuation is the same game under the same record (recordedId),
+    // filed once, at its first ending: its own ending is not filed, and the
+    // card must not show the first one's rating line and advice (#89 review)
+    store.session.filed = null;
     syncAutoFlip();
     store.commit("game", "action");
     saveGame();
@@ -4292,9 +4294,10 @@ import { createStore } from "./store.js";
     // analysis can only annotate the game it actually measured
     const id = newRecordId();
     store.game.recordedId = id;
-    const rec = { id, t: Date.now(), diff: store.session.difficulty, style: store.session.personaId, color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending };
-    // v8-0-plan B4: every filed game moves the rating (a late one is saved by OppUI); the card repaints after this task
-    OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
+    // #89 review: diff and style are the game's own opponent; an `unrated` one is recorded, not rated
+    const rec = Object.assign({ id, t: Date.now(), color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending }, OppUI.opponent());
+    // v8-0-plan B4: every rated game moves the rating (a late one is saved by OppUI); the card repaints after this task
+    if (!rec.unrated) OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
     s.games.push(rec);
     if (s.games.length > 500) s.games = s.games.slice(-500);
     saveStats(s);
@@ -4453,6 +4456,9 @@ import { createStore } from "./store.js";
     const r = (game.header() || {}).Result;
     return (r === "1-0" || r === "0-1" || r === "1/2-1/2") && r === gameResultToken();
   }
+
+  /** None of the three app-level endings: resigned, agreed, claimed. */
+  function clearEndingFlags() { store.game.resigned = null; store.game.drawAgreed = false; store.game.drawClaimed = null; }
 
   /** An ending played out here replaces whatever the file's tag said. */
   function forgetFileResult() {
@@ -4782,9 +4788,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     store.game.viewIndex = sanHistory().length;
     store.game.imported = true;
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
     // the file's [Result] survives the import as a terminal state: a decisive
     // result that the board does not explain is a resignation, a draw that
     // the rules do not explain is an agreed one. Before 6.0 the result was
@@ -5020,9 +5024,7 @@ import { createStore } from "./store.js";
     store.game.selection = null;
     store.game.viewIndex = 0;
     store.game.imported = false; // a set-up position is a new live game
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
     store.session.analysis = null;
     store.game.recordedId = null;
     resetClocks();
@@ -6393,9 +6395,7 @@ import { createStore } from "./store.js";
     gameReset();
     store.game.selection = null;
     store.game.viewIndex = 0;
-    store.game.resigned = null;
-    store.game.drawAgreed = false;
-    store.game.drawClaimed = null;
+    clearEndingFlags();
     store.session.analysis = null;
     store.game.recordedId = null;
     resetClocks();
