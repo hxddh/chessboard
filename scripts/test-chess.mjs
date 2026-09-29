@@ -2805,6 +2805,8 @@ for (const lang of CONTENT_LANGS) {
   assert(JSON.stringify(w) === "[1,2,3]", "A4: a game from the start labels moves 1, 2, 3 (" + w + ")");
   assert(b[0] && b[0].i === 0 && b[0].no === 30 && JSON.stringify(b.map((x) => x.no)) === "[30,31,32,33]",
     "A4: a game starting 30… labels move 30 on its first ply, then 31 on White's (" + JSON.stringify(b) + ")");
+  assert(ctx.tickEvery(50, 52) === 1 && ctx.tickEvery(1, 3) === 1 && ctx.tickEvery(1, 60) === 10,
+    "A4: the label interval follows the moves plotted — a three-move study from move 50 labels every move (" + ctx.tickEvery(50, 52) + ")");
   const b10 = ticks(6, "b", (i) => 31 + Math.floor((i + 1) / 2), 10);
   assert(b10.length && b10[0].i === 0 && b10[0].no === 31, "A4: …and the first ply is labelled even off the interval (31… at every 10: " + JSON.stringify(b10) + ")");
 }

@@ -24,6 +24,15 @@ import { ChessReview } from "../review.js";
  * first ply is always labelled, whatever its number.
  * @returns {Array<{i:number, no:number}>}
  */
+/**
+ * The label interval: at most about six labels over the moves plotted — a
+ * three-move study from move 50 is three moves, not fifty (Codex #89).
+ */
+export function tickEvery(firstNo, lastNo) {
+  const span = Math.max(0, lastNo - firstNo + 1);
+  return [1, 2, 5, 10, 20, 50].find((k) => Math.floor(span / k) <= 6) || 100;
+}
+
 export function axisTicks(n, firstMover, moveNo, every) {
   const out = [];
   for (let i = 0; i < n; i++) {
@@ -280,8 +289,7 @@ export function createEvalGraph(d) {
     if (!axis) return;
     const w = cv.clientWidth;
     const firstMover = gameStartTurn();
-    const moves = n ? boardMoveNo(n - 1) : 0;
-    const every = [1, 2, 5, 10, 20, 50].find((k) => Math.floor(moves / k) <= 6) || 100;
+    const every = n ? tickEvery(boardMoveNo(0), boardMoveNo(n - 1)) : 1;
     const key = [n, w, every, firstMover].join("|");
     if (axis.dataset.key === key) return;
     axis.dataset.key = key;
