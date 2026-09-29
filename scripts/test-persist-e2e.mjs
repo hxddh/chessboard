@@ -29,6 +29,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { read as readMeasured, record } from "./measurements.mjs";
 // the app's own rules engine, for reading an export back the way a reader would
 import { Chess } from "../src/web/js/chess.js";
 
@@ -229,13 +230,16 @@ const PLACEMENT = STUDY.split(" ")[0];
 //   · no `zero.os.revealPath` — the write succeeded, the folder never opened,
 //     and the toast named the file and not the place.
 // The rule this pins: pressing export either produces a file or says why, and
-// when nothing opens to show you, the toast carries the path.
+// when nothing opens to show you, the toast carries the path. v8-1-plan N2:
+// the dialog, the write and the reveal are all chess.saveText's (main.zig),
+// which says {error:"no_dialog"} when the platform has no dialog, and hands
+// back the path only when the folder did not open.
 {
   const SHAPES = [
-    { id: "无 zero", zero: false, dialogs: false, reveal: false },
-    { id: "有 zero 无 dialogs", zero: true, dialogs: false, reveal: false },
-    { id: "有 dialogs 无 revealPath", zero: true, dialogs: true, reveal: false },
-    { id: "桥接齐全", zero: true, dialogs: true, reveal: true },
+    { id: "无 zero", zero: false },
+    { id: "有 zero、平台没有对话框", zero: true, save: "no_dialog" },
+    { id: "写成了、文件夹没打开", zero: true, save: "unrevealed" },
+    { id: "桥接齐全", zero: true, save: "revealed" },
   ];
   for (const shape of SHAPES) {
     const ctx = await browser.newContext({ acceptDownloads: true });
@@ -247,15 +251,18 @@ const PLACEMENT = STUDY.split(" ")[0];
         mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       if (!sh.zero) return;
-      const z = {
-        invoke: (cmd, args) => { window.__wrote.push(args && args.path); return Promise.resolve({}); },
+      window.zero = {
+        invoke: (cmd, args) => {
+          if (cmd !== "chess.saveText") return Promise.resolve({});
+          if (sh.save === "no_dialog") return Promise.resolve({ error: "no_dialog" });
+          window.__wrote.push(args.name);
+          return Promise.resolve(sh.save === "revealed" ? { ok: true, name: args.name, revealed: true }
+            : { ok: true, name: args.name, revealed: false, path: "/tmp/exported/" + args.name });
+        },
         on: () => () => {},
         platform: { supports: () => Promise.resolve(true) },
         os: {},
       };
-      if (sh.dialogs) z.dialogs = { saveFile: (o) => Promise.resolve("/tmp/exported/" + o.defaultName) };
-      if (sh.reveal) z.os.revealPath = () => Promise.resolve();
-      window.zero = z;
     }, shape);
     const { page } = await open(ctx);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
@@ -278,7 +285,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     assert(landed, shape.id + ": 导出真的产生了一个文件 — 提示是「" + said + "」");
     assert(!/取消|Cancel|中止/.test(said),
       shape.id + ": 没有把「这个版本没有文件对话框」说成玩家取消 — 「" + said + "」");
-    if (shape.zero && shape.dialogs && !shape.reveal)
+    if (shape.save === "unrevealed")
       assert(said.includes("/tmp/exported/"),
         shape.id + ": 文件夹没打开时,提示里得有路径 — 「" + said + "」");
     await ctx.close();
@@ -390,7 +397,8 @@ const PLACEMENT = STUDY.split(" ")[0];
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
-      invoke: () => Promise.resolve(true),
+      // v8-1-plan N2: the file dialogs are chess.openPgn / chess.saveText now
+      invoke: (cmd) => Promise.resolve(cmd === "chess.openPgn" || cmd === "chess.saveText" ? { cancelled: true } : true),
       on: () => () => {},
       off: () => {},
       platform: { supports: () => Promise.resolve(true) },
@@ -400,7 +408,6 @@ const PLACEMENT = STUDY.split(" ")[0];
         readText: () => Promise.resolve(window.__clip),
         writeText: (t) => { window.__clip = String(t); return Promise.resolve(true); },
       },
-      dialogs: { openFile: () => Promise.resolve(null), saveFile: () => Promise.resolve(null) },
     };
   });
   const { page, errs } = await open(ctx);
@@ -616,6 +623,7 @@ const PLACEMENT = STUDY.split(" ")[0];
 // 「粘贴棋谱」在上面走过了;还有两扇门从没被驱动过。「打开」是真机清单里
 // 两桩旧案的案发地 —— 256 KiB 截断和 Windows 路径的 \\ —— 它们都发生在
 // openFile → readTextFile 这一段桥上,而这段桥从没在测试里走通过一次。
+// v8-1-plan N2 起这一段整个在 main.zig 里(chess.openPgn)。
 // 「从剪贴板粘贴」是 FEN 对话框里唯一碰桥的按钮。
 {
   const PGN_TEXT = '[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 *\n';
@@ -630,17 +638,20 @@ const PLACEMENT = STUDY.split(" ")[0];
       window.zero = {
         on: () => () => {}, off: () => {},
         platform: { supports: () => Promise.resolve(false) },
-        dialogs: { openFile: async () => { window.__calls.push("openFile"); return opts.pick; } },
         clipboard: {
           readText: async () => { if (opts.clipFail) throw new Error("nope"); return opts.clip || ""; },
           writeText: async () => true,
         },
-        invoke: async (cmd) => {
+        // v8-1-plan N2: main.zig opens the dialog and reads the file; the
+        // page gets the text and the name, never the path
+        invoke: async (cmd, args) => {
           window.__calls.push(cmd);
-          if (cmd === "chess.readTextFile") {
+          if (cmd === "chess.openPgn") {
+            window.__openArgs = args;
+            if (!opts.pick) return { cancelled: true };
             const bytes = new TextEncoder().encode(pgn);
             let bin = ""; for (const b of bytes) bin += String.fromCharCode(b);
-            return { b64: btoa(bin) };
+            return { name: opts.pick.split("/").pop(), b64: btoa(bin), more: false };
           }
           return {};
         },
@@ -654,9 +665,9 @@ const PLACEMENT = STUDY.split(" ")[0];
     if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) await page.click("#more-tools");
   };
 
-  // 打开:选了文件 → 桥上走 openFile 然后 readTextFile → 对局被换成文件里的
+  // 打开:选了文件 → 桥上走 chess.openPgn → 对局被换成文件里的
   {
-    const { ctx, page, errs } = await openBridged({ pick: ["/tmp/game.pgn"] });
+    const { ctx, page, errs } = await openBridged({ pick: "/tmp/game.pgn" });
     await moreOpen(page);
     await page.click("#pgn-open");
     await page.waitForTimeout(700);
@@ -666,8 +677,11 @@ const PLACEMENT = STUDY.split(" ")[0];
     // 7.5: nor is the one self-test probe every page load makes
     const calls = (await page.evaluate(() => window.__calls))
       .filter((c) => c !== "chess.appdataWrite" && c !== "chess.appdataRead" && c !== "chess.selftestMode");
-    assert(calls.join("→") === "openFile→chess.issuePath→chess.readTextFile",
-      `……走的是文件对话框 → 桥上读文件这一条,别无他路(${calls.join("→")})`);
+    assert(calls.join("→") === "chess.openPgn",
+      `……走的是原生侧的「对话框 + 读文件」这一条命令,别无他路,也不再签发路径(${calls.join("→")})`);
+    const openArgs = await page.evaluate(() => window.__openArgs);
+    assert(openArgs && openArgs.recent === true && !("path" in openArgs),
+      `……请原生侧把它记进最近文档,而页面手里没有路径(${JSON.stringify(openArgs)})`);
     assert(await page.evaluate(() => document.getElementById("status").textContent.trim()) === "白方走子",
       "……装完轮到白方(1.e4 e5 2.Nf3 Nc6 之后)");
     assert(errs.length === 0, `打开:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
@@ -1045,7 +1059,8 @@ const PLACEMENT = STUDY.split(" ")[0];
 // 页面还有没有(more)。每次应答都在自己的宏任务里交回,所以「上一次应答交回
 // → 下一次调用发出」之间的时间,正是页面在主线程上连续干活的那一段。
 function fakeNative(opts) {
-  const LIMIT = 1024 * 1024, CHUNK = 512 * 1024, MAX = 16 * 1024 * 1024;
+  const LIMIT = 1024 * 1024, CHUNK = 512 * 1024, MAX = 16 * 1024 * 1024, USER_MAX = 64 * 1024 * 1024;
+  const PICKED = "/Users/me/all.json";
   const S = sessionStorage;
   const b64enc = (u8) => {
     let s = "";
@@ -1081,7 +1096,8 @@ function fakeNative(opts) {
   const receive = (target, a) => {
     const bytes = b64dec(a.b64 || "");
     if (a.total == null) return { done: bytes };
-    if (a.total > MAX) return { answer: { tooLarge: true, limit: MAX } };
+    const cap = target.startsWith("appdata:") ? MAX : USER_MAX;
+    if (a.total > cap) return { answer: { tooLarge: true, limit: cap } };
     let st = stages.get(a.txn);
     if (a.offset === 0) { st = { target, data: new Uint8Array(a.total), filled: 0 }; stages.set(a.txn, st); }
     if (!st || st.target !== target || st.filled !== a.offset || a.offset + bytes.length > a.total) {
@@ -1100,18 +1116,25 @@ function fakeNative(opts) {
     return Object.assign({ b64: b64enc(u8.subarray(off, off + CHUNK)), more: off + CHUNK < u8.length }, extra);
   };
   const answer = (cmd, a) => {
-    if (cmd === "chess.issuePath") return { ok: true };
     if (cmd === "chess.selftestMode") return { on: false };
-    if (cmd === "chess.writeTextFile") {
-      const r = receive("path:" + a.path, a);
+    // v8-1-plan N2: the dialogs run natively and always pick PICKED; a save
+    // is staged like any write and lands once the last piece is in, an open
+    // hands the file over piece by piece, later pieces asked for by token
+    if (cmd === "chess.saveText") {
+      const r = receive("dialog:save", a);
       if (r.answer) return r.answer;
-      files.set(a.path, r.done);
-      return true;
+      files.set(PICKED, r.done);
+      return { ok: true, name: "all.json", revealed: true };
     }
-    if (cmd === "chess.readTextFile") {
-      const f = files.get(a.path);
+    if (cmd === "chess.openPgn") {
+      const f = files.get(PICKED);
       if (!f) throw new Error("HandlerFailed");
-      return chunkOf(f, a);
+      if (a.token != null && a.token !== 1) return { error: "open_lost" };
+      const limit = Math.min(a.max || MAX, USER_MAX);
+      const off = a.offset || 0;
+      if (!off && f.length > limit) return { tooLarge: true, limit };
+      const r = { b64: b64enc(f.subarray(off, off + CHUNK)), more: off + CHUNK < f.length };
+      return a.token != null ? r : Object.assign({ name: "all.json" }, r.more ? { token: 1 } : null, r);
     }
     if (cmd === "chess.appdataWrite") {
       const k = a.key || "";
@@ -1129,21 +1152,89 @@ function fakeNative(opts) {
     }
     return {};
   };
+  // v8-1-plan F3: where the page's run after an answer ends when it does not
+  // end in another bridge call. The measure below used to run from an answer
+  // to whatever call came next, so a flush that finished and then another
+  // flow that awaited IndexedDB for 150 ms before its own first call
+  // (library-page.js bootLibrary → Persist.touchUnlisted) read as one 150 ms
+  // slice of main thread — a Chromium trace of that gap shows two tasks
+  // (7 ms and a 34–45 ms library-db put, since sliced) and idle. Now the
+  // slice also ends where the answer's task does: the next task to start —
+  // a timer, a frame, an IndexedDB event (the page's other work), or failing
+  // those a message posted with the answer — closes it. Waiting is not
+  // counted; everything the answer's task did still is.
+  //
+  // Each slice also carries what it is (the answer it follows: command, key,
+  // offset / total / piece of a staged write), what closed it, and the
+  // page's own timings inside it: host.js / persist.js / library-page.js
+  // report their phases to window.__persistProbe (utf8Length, encodeInto,
+  // base64, shardText …) when a test defines it. The longest slice keeps
+  // its breakdown (seg.worst), so a CI engine we cannot profile says where
+  // the time went.
+  const seg = window.__seg;
+  seg.parts = {};
+  seg.ans = null;
+  seg.worst = null;
+  window.__persistProbe = (name, ms) => { if (seg.at) seg.parts[name] = (seg.parts[name] || 0) + ms; };
+  const close = (by) => {
+    if (!seg.at) return;
+    const d = performance.now() - seg.at;
+    // v8-1-plan F3: the write starts at the first appdataWrite. Slices
+    // before it follow the boot's own reads (an empty native store answers
+    // at once) and are the app starting, not the mirror writing: on WebKit
+    // the diagnostics read 37 ms after an appdataRead with no persistence
+    // phase in it, the same work Chromium runs as one ~600 ms slice that the
+    // 200 ms cap below already leaves out. Kept, not asserted: seg.boot.
+    if (!seg.writing) {
+      if (d < 200) seg.boot = Math.max(seg.boot || 0, d);
+      seg.at = 0;
+      return;
+    }
+    if (d < 200 && d > seg.max) {
+      const parts = {};
+      for (const [k, v] of Object.entries(seg.parts)) parts[k] = +v.toFixed(1);
+      seg.worst = { ms: +d.toFixed(1), after: seg.ans, closedBy: by, parts };
+    }
+    if (d < 200) seg.max = Math.max(seg.max, d);
+    seg.at = 0;
+  };
+  const ends = new MessageChannel();
+  ends.port1.onmessage = (e) => { if (e.data === seg.tok) close("end-message"); };
+  const first = (fn, by) => (typeof fn === "function" ? function () { close(by); return fn.apply(this, arguments); } : fn);
+  for (const [n, by] of [["setTimeout", "timer"], ["requestAnimationFrame", "frame"]]) {
+    const real = window[n];
+    window[n] = function (fn, ...rest) { return real.call(window, first(fn, by), ...rest); };
+  }
+  // events that only ever arrive as a task of their own (the page sets
+  // on<event> for all of these: library-db.js, library-page.js, engine.js)
+  const async = [["IDBRequest", ["success", "error"]], ["IDBTransaction", ["complete", "abort", "error"]],
+    ["MessagePort", ["message"]], ["Worker", ["message"]], ["BroadcastChannel", ["message"]]];
+  for (const [C, names] of async) {
+    const proto = window[C] && window[C].prototype;
+    if (!proto) continue;
+    const by = C.startsWith("IDB") ? "idb" : "message:" + C;
+    for (const n of names) {
+      const d = Object.getOwnPropertyDescriptor(proto, "on" + n);
+      if (d && d.set) Object.defineProperty(proto, "on" + n, { configurable: true, enumerable: d.enumerable, get: d.get, set(fn) { d.set.call(this, first(fn, by)); } });
+    }
+  }
+  // which piece of its staged transfer a write is
+  const pieceOf = new Map();
   window.zero = {
     on: () => () => {}, off: () => {},
     platform: { supports: (o) => Promise.resolve(!!o && o.feature === "dialogs") },
-    dialogs: {
-      saveFile: async () => "/Users/me/all.json",
-      openFile: async () => ["/Users/me/all.json"],
-      showMessage: async () => "primary",
-    },
+    dialogs: { showMessage: async () => "primary" },
     clipboard: { readText: async () => "", writeText: async (t) => { window.__clip = String(t); return true; } },
     invoke: (cmd, a) => {
       // the page's continuous work since the last answer came back. An idle
       // gap (the 400 ms debounce, a person) is far longer than any real slice.
-      const now = performance.now();
-      if (window.__seg.at && now - window.__seg.at < 200) window.__seg.max = Math.max(window.__seg.max, now - window.__seg.at);
-      window.__seg.at = 0;
+      close("call " + cmd + (a && a.key != null ? " " + a.key : ""));
+      if (cmd === "chess.appdataWrite") seg.writing = true;
+      const p = a || {};
+      let piece;
+      if (p.txn) { piece = p.offset ? (pieceOf.get(p.txn) || 0) + 1 : 0; pieceOf.set(p.txn, piece); }
+      const what = { cmd, key: p.key, offset: p.offset, total: p.total, piece,
+        bytes: typeof p.b64 === "string" ? Math.floor(p.b64.length * 3 / 4) : undefined };
       const frame = JSON.stringify({ id: "0123456789abcdef", command: cmd, payload: a || {} }).length;
       return new Promise((resolve, reject) => setTimeout(() => {
         let r, err = null;
@@ -1154,12 +1245,20 @@ function fakeNative(opts) {
             if (JSON.stringify(r).length + 64 > LIMIT) { window.__big++; err = new Error("response over the bridge limit"); }
           } catch (e) { err = e; }
         }
-        window.__seg.at = performance.now();
+        seg.at = performance.now();
+        seg.parts = {};
+        seg.ans = what;
+        ends.port2.postMessage(seg.tok = (seg.tok || 0) + 1);
         if (err) reject(err); else resolve(r);
       }, 0));
     },
   };
 }
+
+// v8-1-plan F3: `--record=before|after` keeps this run's first-launch
+// figures in docs/measured.json persistFirstWrite (the last five of each)
+const RECORD = (process.argv.find((a) => /^--record=(before|after)$/.test(a)) || "").slice(9);
+const firstWrite = {};
 
 /** A profile of about `mb` megabytes, in the shapes the app reads (ACCEPT). */
 function seedProfile(mb) {
@@ -1198,6 +1297,25 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   });
   await ctx.addInitScript(seedProfile, 2);
   await ctx.addInitScript(fakeNative, { persist: false });
+  // v8-1-plan F3: the same launch moves the 1,543 games into IndexedDB, and
+  // each put() clones its record on the spot. A run of puts with no gap
+  // between them is one task's worth; the whole library in one run was a
+  // 34–45 ms task in the middle of the mirror's write.
+  await ctx.addInitScript(() => {
+    const p = window.__puts = { last: -1e9, start: 0, max: 0, n: 0 };
+    const S = window.IDBObjectStore && window.IDBObjectStore.prototype;
+    if (!S) return;
+    const put = S.put;
+    S.put = function () {
+      const t = performance.now();
+      if (t - p.last > 1) p.start = t;
+      try { return put.apply(this, arguments); } finally {
+        p.last = performance.now();
+        p.n++;
+        p.max = Math.max(p.max, p.last - p.start);
+      }
+    };
+  });
   const { page, errs } = await open(ctx);
 
   // (a) the first launch writes the whole profile into the per-key store —
@@ -1232,12 +1350,19 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     } catch (_) { return false; }
   }, libCount, { timeout: 90000, polling: 250 }).catch(() => {});
   const shards = await shardBytes();
-  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big }));
-  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节`);
+  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big, puts: window.__puts, worst: window.__seg.worst, boot: window.__seg.boot || 0 }));
+  console.log(`  ……写之前（启动读档之后）最长一段 ${full.boot.toFixed(1)} ms —— 只记录，不计入写入（v8-1-plan F3 冷启动一条）`);
+  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节;` +
+    `搬进 IndexedDB 一口气 put 最长 ${full.puts.max.toFixed(1)} ms(共 ${full.puts.n} 次)`);
   assert(full.meta && shards.n > 1024 * 1024 && shards.games === libCount,
     `2 MB 的档案整份进了原生存储:棋谱库的 ${libCount} 局都在分片里(${shards.games} 局,${shards.n} 字节)`);
   assert(full.big === 0, `……没有一帧超过桥的 1 MiB(被拒 ${full.big} 次)`);
+  Object.assign(firstWrite, { sliceMs: +full.seg.toFixed(1), putRunMs: +full.puts.max.toFixed(1), games: libCount, shardBytes: shards.n, longest: full.worst, bootSliceMs: +full.boot.toFixed(1) });
+  // always printed: on an engine CI runs and this machine cannot, this line is the profile
+  console.log(`  ……最长那一段是什么:${JSON.stringify(full.worst)}`);
   assert(full.seg <= 16, `……写的过程中,主线程上最长的一段 ≤ 16 ms(${full.seg.toFixed(1)} ms)`);
+  assert(full.puts.n >= libCount && full.puts.max <= 16,
+    `……同一次启动把棋谱库搬进 IndexedDB,一个任务里连着 put 最长 ≤ 16 ms(${full.puts.max.toFixed(1)} ms,${full.puts.n} 次)`);
 
   // (b) export: one file, compact, the whole of it
   await page.evaluate(() => document.getElementById("alldata-export").click());
@@ -1255,7 +1380,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   // (c) a typical save — one move's worth, on top of the 2 MB profile. Before
   // F3 this re-serialised and re-encoded all 2 MB, byte by byte.
   await page.waitForTimeout(600);   // let the export's own flush settle
-  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; });
+  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; window.__seg.worst = null; });
   // one move (2. Nf3), so the save really changed; then flush it at once,
   // before the 400 ms debounce, from a task this test can time
   const sq = (n) => page.evaluate((s) => {
@@ -1267,12 +1392,14 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await page.mouse.click(g1.x, g1.y);
   await page.waitForTimeout(120);
   await page.mouse.click(f3.x, f3.y);
-  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; });
+  await page.evaluate(() => { window.__seg.max = 0; window.__seg.at = 0; window.__seg.worst = null; });
   const first = await page.evaluate(() => {
     const t0 = performance.now();
     // the first bridge call measures from here too: the flush starts in a
     // microtask of this same task, after the line below returns
     window.__seg.at = t0;
+    window.__seg.ans = { cmd: "pagehide" };
+    window.__seg.parts = {};
     window.dispatchEvent(new Event("pagehide"));   // saveGame() + flushMirror(), in this one task
     return performance.now() - t0;
   });
@@ -1283,7 +1410,9 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     return !!f && /Nf3/.test(new TextDecoder().decode(f));
   });
   console.log(`  镜像·一次普通保存:主线程最长一段 ${typical.toFixed(1)} ms(其中同步起步 ${first.toFixed(1)} ms)`);
+  console.log(`  ……最长那一段是什么:${JSON.stringify(await page.evaluate(() => window.__seg.worst))}`);
   assert(savedMove, "走了 2. Nf3 之后,原生存储里的 save 就是这一局");
+  firstWrite.typicalSaveMs = +typical.toFixed(1);
   assert(typical <= 16, `一次普通保存的镜像写,主线程上每段 ≤ 16 ms(${typical.toFixed(1)} ms)`);
 
   // (d) clear → import the file → every key is what was exported
@@ -1587,5 +1716,14 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
 
 await browser.close();
 server.close();
+if (RECORD) {
+  const prev = readMeasured().persistFirstWrite || {};
+  const runs = ((prev[RECORD] && prev[RECORD].runs) || []).concat([Object.assign({ engine: ENGINE, passed: !failed }, firstWrite)]).slice(-5);
+  record("persistFirstWrite", Object.assign({}, prev, {
+    what: "v8-1-plan F3：2 MB 档案（棋谱库 1,543 局）第一次启动整份写进原生分键存储。sliceMs：桥上一次应答之后，页面到再调桥或这个任务结束为止连着干的最长一段；putRunMs：同一次启动把棋谱库搬进 IndexedDB，一个任务里连着 put 的最长一段；typicalSaveMs：其后一次普通保存。验收线都是 16 ms。before 是修正前的 host.js / library-db.js，量法已是修正后的",
+    script: "node scripts/test-persist-e2e.mjs --record=before|after",
+    [RECORD]: { runs },
+  }));
+}
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");

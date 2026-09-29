@@ -34,7 +34,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
-import { compileModuleSync, ENTRY } from "./bundle.mjs";
+import { compileModuleSync, ENTRY, MINIFY } from "./bundle.mjs";
 
 // --- the fixture index -----------------------------------------------------
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "trainer-e2e-"));
@@ -46,7 +46,9 @@ const bandFiles = fs.readdirSync(BAND_DIR).filter((f) => /^band-\d{4}\.js$/.test
 
 const esbuild = await import("esbuild");
 const OPTS = { bundle: true, format: "iife", target: ["chrome100", "safari15"], charset: "utf8", write: false, logLevel: "silent",
-  define: { __CHESS_VERSION__: JSON.stringify("0.0.0-test") } };
+  define: { __CHESS_VERSION__: JSON.stringify("0.0.0-test") },
+  // the shipped form (v8-1-plan F2), so this page is the one the app loads
+  ...MINIFY };
 const fixtureIndex = {
   name: "lc-fixture-index",
   setup(b) { b.onResolve({ filter: /puzzles-lc-index\.js$/ }, () => ({ path: path.join(TMP, "puzzles-lc-index.js") })); },

@@ -31,6 +31,7 @@
 import { LibraryQuery } from "./library-query.js";
 import { LibraryDb } from "./library-db.js";
 import { createDiagCharts } from "./diag-charts.js";
+import { runNativeSelftest } from "./selftest-native.js";
 
 /**
  * Background work (the 本机 games, the index, the openings) runs in slices of
@@ -770,7 +771,12 @@ async function bootLibrary(d) {
     shardText: (name) => {
       if (mode !== "idb") return roTexts && typeof roTexts[name] === "string" ? roTexts[name] : null;
       // grouped once per library state, not once per shard asked for
-      if (!groups || groups.list !== store.session.library) groups = { list: store.session.library, m: shardGroups() };
+      if (!groups || groups.list !== store.session.library) {
+        // v8-1-plan F3: timed for a test's probe (persist.js timed); part of its "shardText"
+        const probe = globalThis.__persistProbe, t = probe ? performance.now() : 0;
+        groups = { list: store.session.library, m: shardGroups() };
+        if (probe) probe("shardGroups", performance.now() - t);
+      }
       const g = groups.m.get(name);
       return g ? JSON.stringify({ v: 1, games: g }) : null;
     },
@@ -796,4 +802,5 @@ async function bootLibrary(d) {
   };
 }
 
-export const CHESS_LIBDB = { bootLibrary, LibraryQuery, LibraryDb, createDiagCharts };
+// v8-1-plan N3: the packaged self-test's idb / chunkSync / nativeIo checks ride here too
+export const CHESS_LIBDB = { bootLibrary, LibraryQuery, LibraryDb, createDiagCharts, runNativeSelftest };

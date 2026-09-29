@@ -155,8 +155,8 @@
 | J1 | 启动一次，退出，看 **[M]** `~/Library/Application Support/Chessboard/` · **[W]** `%APPDATA%\Chessboard\` | 目录存在；页面接上 `appdataWrite` 之后应有 `chessboard.json`，第二次写入后多出 `chessboard.json.bak`，且任何时刻都**不该**留下 `chessboard.json.tmp` |
 | J2 | 关于面板（接上 `appdataPath` 之后） | 显示 J1 那条路径，和磁盘上一致 |
 | J3 | 把 `chessboard.json` 改坏（随便删几个字符）再启动 | 出横幅「档案损坏，已保留副本」，`.bak` 仍是上一份好的；**不允许**回退成空档再覆盖 |
-| J4 | 「导出」保存 PGN 到桌面；「打开」导入一个普通 PGN；把 `.pgn` 拖进窗口 | 三条路都和 C1/C4/C7 一样成功 —— 路径先经 `chess.issuePath` 签发再读写，用户不该察觉任何区别 |
-| J5 | 在文件对话框里挑 `~/.ssh/` 或 `~/Library/…` 下的文件 **[M]** / `%APPDATA%\…` **[W]** | 打开失败，提示的是「文件被拒绝」一类，而不是导入了 |
+| J4 | 「导出」保存 PGN 到桌面；「打开」导入一个普通 PGN；把 `.pgn` 拖进窗口 | 三条路都和 C1/C4/C7 一样成功 —— 对话框由原生侧弹出并读写（`chess.openPgn` / `chess.saveText`，v8-1-plan N2），拖进来的路径由原生侧签发，页面从不经手路径，用户不该察觉任何区别 |
+| J5 | 把 `~/.ssh/` 或 `~/Library/…` 下的文件 **[M]** / `%APPDATA%\…` **[W]** 拖进窗口 | 读不到，提示读取失败，而不是导入了（`pathAllowed`；在对话框里亲手挑的文件是玩家自己的选择，自 v8-1-plan N2 起照读） |
 | J6 | 从 devtools（或临时在页面里）直接 `Host.readTextFile("/etc/passwd")` | 抛 `UnissuedPathError`，不返回内容 |
 | J7 | 用 `zig build -Doptimize=ReleaseFast` 的 exe 跑 `native dev`（页面从 `http://127.0.0.1:5173` 来）| 导航被拒 / 桥命令 `permission_denied` —— 发布二进制不信任开发 origin（runner.zig 按 `http://` 过滤）；同一命令加 `-Ddev-origins=true` 或 Debug 构建则正常 |
 | J8 | 产物里 `index.html` 旁边 | 有 `licenses/LICENSE.txt` 和 `licenses/stockfish-COPYING.txt` |
@@ -373,6 +373,16 @@
 9. 填一个不存在的名字（如 `nobody_zz_2026x`）。**应该看到**：「Lichess 上没有用户 …。」Chess.com 同样。
 10. **[W]** 第 6 条在 Windows 上再做一次：HTTPS 走 Zig 标准库的客户端，证书来自系统证书库，这一条只有 Windows 真机能证明。
 11. 限速（429）很难人为触发；若在第 6–9 条里遇到，确认提示是「暂时限制了请求」。
+
+## A1. 原生文件对话框（v8-1-plan N2）
+
+文件对话框改由原生侧打开（`chess.openPgn` / `chess.saveText`），页面拿不到路径，`native-sdk.dialog.openFile / saveFile` 与 `native-sdk.os.revealPath` 不再放行。自动化覆盖的：取消、超限、非 UTF-8 文件名、分块往返、应答不超过桥的一帧（`src/main.zig` 的 Zig 单元测试）；页面流程（`scripts/test-persist.mjs`、`test-persist-e2e.mjs`，原生桥打桩）；打包自检的 `nativeIo` 只确认两个命令在、平台有对话框，**不弹框**。真的弹框、真的读写只有真机能证明：
+
+1. **[M]** 「更多」→「打开」，选一个 .pgn（最好是文件名带中文的，如 `王者对局.pgn`）。**应该看到**：系统的「打开」面板，标题是「打开 PGN」；选中后棋谱装进来；再选一次按「取消」，局面一步不动、没有提示。Dock 图标右键 →「最近使用」里有这个文件。
+2. **[M]** 走两步，「导出 PGN」。**应该看到**：系统的「存储」面板，文件名预填 `chess-日期时间.pgn`，格式限定 pgn；存下后 Finder 打开并选中这个文件，提示「已导出 …」。按「取消」时提示「已取消导出」，不生成文件。
+3. **[W]** 第 1 条在 Windows 上做一次。**应该看到**：系统的打开对话框；选中后装进来；任务栏图标右键的跳转列表里有这个文件（若没有，记下 —— Windows 的最近文档需要文件关联，`register-pgn.reg`）。
+4. **[W]** 第 2 条在 Windows 上做一次。**应该看到**：系统的另存为对话框，文件名预填、类型为 pgn；存下后资源管理器打开并选中它。
+5. **[M] [W]** 「导出全部数据」再「导入全部数据」各一次（导入会整份替换，先在测试用户下做）。**应该看到**：导出的 .json 存到所选位置；导入读回后提示并重新载入，棋谱库局数不变。
 
 ## 记录格式
 

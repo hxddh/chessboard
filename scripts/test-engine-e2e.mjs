@@ -308,9 +308,15 @@ assert(drill.after.replied && !drill.after.notice,
 // says ok with a legal move; with one piece broken it says not ok and names
 // that check, instead of hanging. `reloads` relaunches the page in the same
 // context, which is what the restart check needs: localStorage survives it.
-async function selftestPage(prefix, { appdataWrite = "ok", reloads = 0 } = {}) {
+async function selftestPage(prefix, { appdataWrite = "ok", reloads = 0, fileCommands = true, lateLang = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  await ctx.addInitScript((writeMode) => {
+  // v8-1-plan N3: English saved, but chunk-boot.js never runs — the language
+  // then arrives only after bundle.js, the failure chunkSync is there to see
+  if (lateLang) {
+    await ctx.route("**/js/chunk-boot.js", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: "" }));
+    await ctx.addInitScript(() => localStorage.setItem("chess.v1.settings", JSON.stringify({ langId: "en", mode: "pvp" })));
+  }
+  await ctx.addInitScript(([writeMode, fileCmds]) => {
     window.__report = null;
     // base64 of each native file, by store key ("" is chessboard.json) —
     // v8-0-plan F3: the profile and the self-test's own key are separate files
@@ -319,6 +325,10 @@ async function selftestPage(prefix, { appdataWrite = "ok", reloads = 0 } = {}) {
       invoke: async (name, args) => {
         if (name === "chess.selftestMode") return { on: true };
         if (name === "chess.selftestReport") { window.__report = args; return {}; }
+        // v8-1-plan N3: the native file commands answer a probe without a dialog
+        if (fileCmds && (name === "chess.openPgn" || name === "chess.saveText") && args && args.probe === true) {
+          return { probe: true, dialogs: true };
+        }
         const key = (args && args.key) || "";
         if (name === "chess.appdataRead") return files.has(key) ? { b64: files.get(key) } : { missing: true };
         if (name === "chess.appdataWrite") {
@@ -330,7 +340,7 @@ async function selftestPage(prefix, { appdataWrite = "ok", reloads = 0 } = {}) {
       },
       on() {},
     };
-  }, appdataWrite);
+  }, [appdataWrite, fileCommands]);
   const page = await ctx.newPage();
   const reports = [];
   for (let run = 0; run <= reloads; run++) {
@@ -349,15 +359,32 @@ const [selfOk, selfOk2] = await selftestPage("", { reloads: 1 });
 const selfBad = await selftestPage("/broken");
 const selfNoWrite = await selftestPage("", { appdataWrite: "reject" });
 const selfNoChunk = await selftestPage("/nochunk");
+const selfNoFileCmds = await selftestPage("", { fileCommands: false });
+const selfLateLang = await selftestPage("", { lateLang: true });
 console.log("自检 · 原样:", JSON.stringify(brief(selfOk)));
 console.log("自检 · 原样，重启后:", JSON.stringify(brief(selfOk2)));
 console.log("自检 · 坏引擎:", JSON.stringify(brief(selfBad)));
 console.log("自检 · 存档写入被拒:", JSON.stringify(brief(selfNoWrite)));
 console.log("自检 · eco 分块缺失:", JSON.stringify(brief(selfNoChunk)));
+console.log("自检 · 没有原生文件命令:", JSON.stringify(brief(selfNoFileCmds)));
+console.log("自检 · 语言块没有同步加载:", JSON.stringify(brief(selfLateLang)));
 assert(!!selfOk && selfOk.ok === true && typeof selfOk.move === "string" && selfOk.move.length >= 2,
   "自检（页面这一半）：原样页面报告 ok，并给出一步合法着法");
-assert(["engine", "appdata", "chunk", "restart", "sound"].every((k) => passed(selfOk, k)) && !selfOk.err,
-  "自检：原样页面五项（engine、appdata、chunk、restart、sound）分别报告通过");
+assert(["engine", "appdata", "chunk", "restart", "sound", "idb", "chunkSync", "nativeIo"].every((k) => passed(selfOk, k)) && !selfOk.err,
+  "自检：原样页面八项（engine、appdata、chunk、restart、sound、idb、chunkSync、nativeIo）分别报告通过");
+// v8-1-plan N3 — the page half of the three new checks
+assert(!!selfOk && !!selfOk2 && selfOk.checks.idb.found == null && selfOk2.checks.idb.found === selfOk.checks.idb.wrote,
+  "自检：idb 第二次启动读回了第一次写进 chessboard.library 的标记(" + (selfOk2 && selfOk2.checks.idb.found) + ")");
+assert(!!selfOk && !!selfOk2 && selfOk.checks.chunkSync.planned.length === 0 && selfOk.checks.chunkSync.next === "en" &&
+  selfOk2.checks.chunkSync.planned.join() === "chunk-lang-en.js" && passed(selfOk2, "chunkSync"),
+  "自检：chunkSync 中文的第一次启动把下一次换成英文，第二次启动时英文块在首帧前已经执行(" +
+  JSON.stringify(selfOk2 && selfOk2.checks.chunkSync) + ")");
+assert(!!selfLateLang && selfLateLang.ok === false && !passed(selfLateLang, "chunkSync") && passed(selfLateLang, "engine") &&
+  /^chunkSync: .*chunk-lang-en\.js/.test(selfLateLang.err || ""),
+  "自检：存的是英文、语言块却没在首帧前执行时 ok:false，err 点名 chunkSync 和那个文件(" + (selfLateLang && selfLateLang.err) + ")");
+assert(!!selfNoFileCmds && selfNoFileCmds.ok === false && !passed(selfNoFileCmds, "nativeIo") && passed(selfNoFileCmds, "engine") &&
+  /^nativeIo: .*chess\.openPgn.*chess\.saveText/.test(selfNoFileCmds.err || ""),
+  "自检：chess.openPgn / chess.saveText 不在时 ok:false，err 点名 nativeIo 和两个命令(" + (selfNoFileCmds && selfNoFileCmds.err) + ")");
 assert(!!selfOk && selfOk.checks.sound.sounds >= 14,
   "自检：sound 一项把默认音效逐个离线渲染过（" + (selfOk && selfOk.checks.sound.sounds) + " 种）");
 assert(/^B20 /.test(String(selfOk && selfOk.checks.chunk.name)),

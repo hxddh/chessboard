@@ -40,6 +40,19 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * last is a whole number of 3-byte groups, so the pieces join without
    * padding in between.
    */
+  /**
+   * v8-1-plan F3: `fn()`, and when a test has installed
+   * `__persistProbe(name, ms)`, how long it took — so a long main-thread
+   * slice after a bridge answer can be broken down on an engine that cannot
+   * be profiled from here (WebKit in CI). Without the probe it is one call.
+   */
+  function timed(name, fn) {
+    const probe = global.__persistProbe;
+    if (typeof probe !== "function") return fn();
+    const t = performance.now();
+    try { return fn(); } finally { probe(name, performance.now() - t); }
+  }
+
   function b64FromBytes(bytes) {
     let out = "";
     for (let i = 0; i < bytes.length; i += 24576) {
@@ -71,25 +84,88 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
+   * UTF-8 length of `s`, exactly what TextEncoder would produce (a lone
+   * surrogate is U+FFFD, three bytes), without encoding it. The regex skips
+   * the ASCII runs in native code: 1–2 ms for 2 MB of JSON, where a charCodeAt
+   * loop over all of it is 5–10 ms.
+   */
+  function utf8Length(s) {
+    let n = s.length;
+    const wide = /[\u0080-\uffff]+/g;
+    for (let m; (m = wide.exec(s));) {
+      const u = m[0];
+      for (let i = 0; i < u.length; i++) {
+        const c = u.charCodeAt(i);
+        if (c < 0x800) n += 1;
+        else if (c >= 0xd800 && c <= 0xdbff && (u.charCodeAt(i + 1) & 0xfc00) === 0xdc00) { n += 2; i++; }
+        else n += 2;
+      }
+    }
+    return n;
+  }
+
+  /**
+   * v8-1-plan F3: text for sendBytes, encoded a piece at a time.
+   *
+   * `new TextEncoder().encode(text)` of the whole 2 MB library header was
+   * 7–10 ms on the main thread before the first piece could go, and that
+   * piece's base64 came on top in the same task: 10–31 ms, the longest bridge
+   * round trip of the first launch's mirror write (the F3 line is 16). Now
+   * `total` is counted (utf8Length) and each piece is encodeInto'd when its
+   * turn comes, TEXT_PIECE bytes at most. A piece may end a few bytes short,
+   * where a character does not fit; main.zig stages any length at the offset
+   * it has filled to, so the protocol is the one sendBytes always spoke.
+   * 128 KiB rather than CHUNK: WebKit in CI read a 42 ms slice where
+   * Chromium reads 4–9, and a piece is the unit one round trip holds.
+   */
+  const TEXT_PIECE = 128 * 1024;
+  function textSource(text) {
+    const s = String(text);
+    const total = s.length * 3 <= CHUNK ? -1 : timed("utf8Length", () => utf8Length(s));
+    // small enough for one frame: encoded whole, as before
+    if (total <= CHUNK) return timed("encode", () => new TextEncoder().encode(s));
+    const enc = new TextEncoder();
+    const buf = new Uint8Array(TEXT_PIECE);
+    let at = 0;   // chars consumed
+    return {
+      length: total,
+      piece(offset) {
+        if (offset === 0) at = 0;   // a retry starts over
+        // cut before a high surrogate, so encodeInto never sees half a pair
+        let end = Math.min(s.length, at + TEXT_PIECE);
+        if (end < s.length && (s.charCodeAt(end - 1) & 0xfc00) === 0xd800) end--;
+        const r = timed("encodeInto", () => enc.encodeInto(s.substring(at, end), buf));
+        at += r.read;
+        return buf.subarray(0, r.written);
+      },
+    };
+  }
+
+  /**
    * Send `bytes` through `call` (one bridge command), in pieces when they
    * would not fit one frame.
    * @param {(fields: object) => Promise<any>} call the invoke, command fixed
    * @param {object} fields what every piece carries besides the bytes
-   * @param {Uint8Array} bytes
+   * @param {Uint8Array|{length: number, piece: (offset: number) => Uint8Array}} bytes
+   *   the bytes, or a textSource that encodes them piece by piece
    * @returns {Promise<any>} the answer to the last piece, or the first answer
    *   that was not "go on" (a refusal, or a shell that does not stage)
    */
   async function sendBytes(call, fields, bytes) {
-    if (bytes.length <= CHUNK) return call(Object.assign({}, fields, { b64: b64FromBytes(bytes) }));
+    if (bytes.length <= CHUNK) return call(Object.assign({}, fields, { b64: timed("base64", () => b64FromBytes(bytes)) }));
+    const pieceAt = typeof bytes.piece === "function" ? bytes.piece : (offset) => bytes.subarray(offset, offset + CHUNK);
     for (let attempt = 0; ; attempt++) {
       const txn = newTxn();
       let r = null;
-      for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+      for (let offset = 0, n = 0; offset < bytes.length; offset += n) {
         // one slice encoded per bridge round trip, so no single task on the
         // main thread holds more than CHUNK bytes' worth of this
-        const b64 = b64FromBytes(bytes.subarray(offset, offset + CHUNK));
+        const piece = pieceAt(offset);
+        n = piece.length;
+        if (!n) return { error: "encode" };   // cannot happen; never loop on it
+        const b64 = timed("base64", () => b64FromBytes(piece));
         r = await call(Object.assign({}, fields, { txn, total: bytes.length, offset, b64 }));
-        const last = offset + CHUNK >= bytes.length;
+        const last = offset + n >= bytes.length;
         if (last || (r && typeof r === "object" && r.ok === true && r.pending === true)) continue;
         // "done" before the last piece is a shell that ignored the staging
         // fields and wrote this one piece as the whole file: not saved
@@ -114,15 +190,20 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const limit = max || FILE_MAX;
     const first = await call(fields);
     if (!first || typeof first !== "object" || typeof first.b64 !== "string") return first;
-    const parts = [bytesFromB64(first.b64)];
+    const parts = [timed("unbase64", () => bytesFromB64(first.b64))];
     let size = parts[0].length;
     let r = first;
     while (r.more === true) {
       if (size > limit) throw fileTooLargeError(limit);
       // the .bak the first piece came from, if it did: the rest must too
       r = await call(Object.assign({}, fields, { offset: size }, first.bak === true ? { bak: true } : null));
-      if (!r || typeof r !== "object" || typeof r.b64 !== "string") throw new Error("chunked read broke off");
-      const piece = bytesFromB64(r.b64);
+      // a later piece refused is that refusal, as on the first: too large
+      // keeps its own words, open_lost (the file changed underneath) is named
+      if (r && typeof r === "object" && r.tooLarge) throw fileTooLargeError(r.limit);
+      if (!r || typeof r !== "object" || typeof r.b64 !== "string") {
+        throw new Error("chunked read broke off" + (r && typeof r.error === "string" ? ": " + r.error : ""));
+      }
+      const piece = timed("unbase64", () => bytesFromB64(r.b64));
       if (!piece.length && r.more === true) throw new Error("chunked read made no progress");
       parts.push(piece);
       size += piece.length;
@@ -149,15 +230,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * `err.name` on the rejection for a path the native side never issued.
    *
    * v6-plan Q1.2: chess.readTextFile / chess.writeTextFile accept only a path
-   * the native side handed out in this process — one a file dialog returned,
-   * one that was dropped on the window, or one the OS opened. The dialogs are
-   * SDK builtins whose answer main.zig never sees, so the wrappers below call
-   * chess.issuePath on every path they return; main.zig validates it (home or
-   * a removable volume, no dotfiles, no ~/Library / AppData, no .app bundle)
-   * and only then remembers it. Drops and OS opens are issued by main.zig
-   * itself (v8-0-plan F3), so the dialogs are the one road left through
-   * chess.issuePath. A call site that names a path from anywhere else gets
-   * this error, which is the point.
+   * the native side handed out in this process — one that was dropped on the
+   * window, or one the OS opened; main.zig issues both itself (v8-0-plan F3).
+   * The file dialogs no longer hand the page a path at all: they run in
+   * main.zig (openPgn / saveText below, v8-1-plan N2), and the command the
+   * page once used to have what they returned trusted is gone. A call site
+   * that names a path from anywhere else gets this error, which is the point.
    */
   const UNISSUED_PATH = "UnissuedPathError";
 
@@ -173,48 +251,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (r && typeof r === "object" && r.error === "unissued_path") throw unissuedPathError(path);
   }
 
-  /**
-   * Register `path` with the native side as one the player picked.
-   *
-   * Best-effort and silent: on a build without chess.issuePath (or in a
-   * browser) the read/write that follows either works as before or fails
-   * with its own error, and nothing here can add information to that.
-   * @returns {Promise<boolean>} whether the native side accepted it
-   */
-  async function issuePath(path) {
-    if (!path || !hasZero() || typeof global.zero.invoke !== "function") return false;
-    try {
-      const r = await global.zero.invoke("chess.issuePath", { path: path });
-      return !!(r && r.ok);
-    } catch (_) { return false; }
-  }
-
-  async function issuePaths(input) {
-    const paths = normalizePaths(input);
-    for (let i = 0; i < paths.length; i++) await issuePath(paths[i]);
-    return paths;
-  }
-
   async function writeTextFile(path, text) {
     if (!hasZero()) throw new Error("no bridge");
     const r = await sendBytes((f) => global.zero.invoke("chess.writeTextFile", f),
-      { path: path }, new TextEncoder().encode(String(text)));
-    throwIfWriteRefused(r, path);
-  }
-
-  /**
-   * Write raw bytes, given as base64.
-   *
-   * Same bridge command as writeTextFile — the native side has always just
-   * base64-decoded and written the result, so it was binary-capable all along.
-   * Only this façade assumed text, because bytesToBase64 runs its argument
-   * through a UTF-8 encoder first, and a PNG does not survive that.
-   *
-   * @param {string} b64 base64 of the bytes to write, with no data: prefix
-   */
-  async function writeBinaryFile(path, b64) {
-    if (!hasZero()) throw new Error("no bridge");
-    const r = await sendBytes((f) => global.zero.invoke("chess.writeTextFile", f), { path: path }, bytesFromB64(b64));
+      { path: path }, textSource(text));
     throwIfWriteRefused(r, path);
   }
 
@@ -271,40 +311,87 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return e;
   }
 
-  // Both dialogs hand their answer to chess.issuePath before returning it
-  // (see UNISSUED_PATH): the dialog is the native side's word that the player
-  // chose this path, and the read/write that follows is refused without it.
-  async function saveFileDialog(options) {
-    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.saveFile) throw noFileDialogError();
-    const picked = await global.zero.dialogs.saveFile(options || {});
-    await issuePaths(picked);
-    return picked;
-  }
-
-  async function openFileDialog(options) {
-    if (!hasZero() || !global.zero.dialogs || !global.zero.dialogs.openFile) throw noFileDialogError();
-    const picked = await global.zero.dialogs.openFile(options || {});
-    await issuePaths(picked);
-    return picked;
+  /**
+   * An answer from chess.openPgn / chess.saveText that is not the file: the
+   * platform has no dialog (the call site takes the browser's picker), or the
+   * native side could not do it.
+   */
+  function throwIfDialogRefused(r, what) {
+    if (!r || typeof r !== "object") throw new Error(what + ": bad result " + JSON.stringify(r));
+    if (r.error === "no_dialog") throw noFileDialogError();
+    if (r.tooLarge) throw fileTooLargeError(r.limit);
+    if (typeof r.error === "string") throw new Error(what + " failed: " + r.error);
   }
 
   /**
-   * Show the saved file in the OS file manager.
+   * v8-1-plan N2: the open dialog and the read, both in the native layer.
    *
-   * Returns whether that actually happened. It used to return nothing and
-   * swallow every failure, and the caller then said 「已导出 report.png」 —
-   * a file name and no path, for a file the app had just put somewhere the
-   * player never saw. When the folder does not open, the path is the only
-   * thing left that answers "where did it go", so the caller needs to know.
-   * @returns {Promise<boolean>}
+   * Before v8-1-plan N2 the page opened the SDK's dialog, got a path, asked
+   * the native side to trust it and then read it; now main.zig opens the
+   * dialog and reads the file itself, and the page gets the text and the
+   * file's name — never the path. A file past one bridge piece comes in
+   * pieces asked for by the token the first answer carries.
+   *
+   * @param {{title?: string, max?: number, recent?: boolean}} [opts] `max`:
+   *   FILE_MAX unless 导入全部数据 asks for ALL_DATA_MAX; `recent`: put the
+   *   file on the OS's recent-documents list (a PGN, not a data file)
+   * @returns {Promise<{name: string, text: string}|null>} null: cancelled
    */
-  async function revealPath(path) {
-    if (!hasZero() || !global.zero.os || !global.zero.os.revealPath) return false;
-    if (!(await supports("reveal_path", true))) return false;
-    try {
-      await global.zero.os.revealPath(path);
-      return true;
-    } catch (_) { return false; }
+  async function openPgn(opts) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") throw noFileDialogError();
+    const o = opts || {};
+    const max = o.max || FILE_MAX;
+    const first = { title: String(o.title || ""), max, recent: !!o.recent };
+    let token = 0;
+    const r = await readBytes(async (f) => {
+      if (!f.offset) {
+        const a = await global.zero.invoke("chess.openPgn", first);
+        if (a && typeof a.token === "number") token = a.token;
+        return a;
+      }
+      return global.zero.invoke("chess.openPgn", { token, offset: f.offset });
+    }, {}, max);
+    if (r && r.cancelled === true) return null;
+    throwIfDialogRefused(r, "open");
+    if (!r.bytes) throw new Error("open: bad result");
+    // decoded once, whole: a piece boundary can fall inside a UTF-8 sequence
+    return { name: String(r.name || ""), text: new TextDecoder().decode(r.bytes) };
+  }
+
+  /**
+   * v8-1-plan N2: the save dialog, the write and the reveal, in the native
+   * layer. The bytes cross first (in pieces past CHUNK, like any write) and
+   * main.zig shows the dialog once they are all there, suggesting `name`;
+   * then it writes the file and shows it in its folder.
+   *
+   * @param {{title?: string, name: string, text?: string, b64?: string,
+   *          recent?: boolean}} opts `b64` for bytes that are not text (the
+   *   report PNG); `recent`: put the file on the recent-documents list
+   * @returns {Promise<{name: string, revealed: boolean, path: string}|null>}
+   *   null: cancelled. `path` is set only when the folder did not open — it
+   *   is for the toast to say where the file went, and no command takes it.
+   */
+  async function saveText(opts) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") throw noFileDialogError();
+    const bytes = typeof opts.b64 === "string" ? bytesFromB64(opts.b64) : textSource(opts.text);
+    const r = await sendBytes((f) => global.zero.invoke("chess.saveText", f),
+      { title: String(opts.title || ""), name: String(opts.name || ""), recent: !!opts.recent }, bytes);
+    if (r && r.cancelled === true) return null;
+    throwIfDialogRefused(r, "save");
+    if (r.ok !== true) throw new Error("save: bad result " + JSON.stringify(r));
+    return { name: String(r.name || opts.name || ""), revealed: r.revealed === true, path: String(r.path || "") };
+  }
+
+  /**
+   * The self-test's `nativeIo` check (v8-1-plan N3): are chess.openPgn and
+   * chess.saveText registered and callable here? `probe` answers at once,
+   * without a dialog — nobody is there to close one.
+   * @returns {Promise<{openPgn: any, saveText: any}>} each command's answer
+   */
+  async function probeFileCommands() {
+    if (!hasZero() || typeof global.zero.invoke !== "function") throw new Error("no bridge");
+    const ask = (cmd) => global.zero.invoke(cmd, { probe: true }).catch((err) => ({ error: String((err && err.message) || err) }));
+    return { openPgn: await ask("chess.openPgn"), saveText: await ask("chess.saveText") };
   }
 
   // Deliberately NOT gated on supports(): the clipboard and the file dialogs
@@ -492,9 +579,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (!hasZero() || typeof global.zero.on !== "function") return function () {};
     try {
       // v8-0-plan F3 (§6): main.zig issues a dropped path itself, from the
-      // SDK's files_dropped event, before the page hears "drop:files" — so a
-      // drop no longer goes through chess.issuePath, which is left for what
-      // the file dialogs return (see UNISSUED_PATH)
+      // SDK's files_dropped event, before the page hears "drop:files" — the
+      // page never asks for a path to be trusted (see UNISSUED_PATH)
       return global.zero.on("drop:files", function (payload) {
         return handler(payload);
       });
@@ -564,7 +650,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (r.empty) return { empty: true };
     if (r.tooLarge) throw fileTooLargeError(r.limit);
     if (r.error || !r.bytes) return null;
-    return { text: new TextDecoder().decode(r.bytes), bak: r.bak === true };
+    return { text: timed("decode", () => new TextDecoder().decode(r.bytes)), bak: r.bak === true };
   }
 
   /**
@@ -577,7 +663,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   async function appdataWrite(text, key) {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
     const r = await sendBytes((f) => global.zero.invoke("chess.appdataWrite", f),
-      key == null ? {} : { key: String(key) }, new TextEncoder().encode(String(text)));
+      key == null ? {} : { key: String(key) }, textSource(text));
     if (r && typeof r === "object") {
       if (r.ok) return true;
       if (r.tooLarge) throw fileTooLargeError(r.limit);
@@ -700,7 +786,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     } catch (_) {}
   }
 
-  /** Normalize openFile / drop path lists to string paths. */
+  /** Normalize drop / open:files path lists to string paths. */
   function normalizePaths(input) {
     if (!input) return [];
     const arr = Array.isArray(input) ? input : [input];
@@ -721,17 +807,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
     hasZero,
     bytesToBase64,
     writeTextFile,
-    writeBinaryFile,
     readTextFile,
     ALL_DATA_MAX,
     FILE_TOO_LARGE,
     NO_FILE_DIALOG,
     UNISSUED_PATH,
-    issuePath,
-    saveFileDialog,
-    openFileDialog,
+    openPgn,
+    saveText,
+    probeFileCommands,
     showMessage,
-    revealPath,
     supports,
     addRecentDocument,
     clearRecentDocuments,

@@ -60,6 +60,42 @@ function committed(tx) {
   });
 }
 
+/** How long one task may spend handing records to IndexedDB (ms). */
+const PUT_SLICE = 6;
+const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+/**
+ * `records` into store `s` of transaction `t`, PUT_SLICE ms of them per task.
+ *
+ * v8-1-plan F3: every put() structured-clones its record on the spot, and the
+ * first launch moves the whole v1 library in with one put() call — 1,543
+ * games of a 2 MB profile were one 34–45 ms task, in the middle of the
+ * mirror's first write. The next slice is queued from the last request's
+ * success, when the transaction is active again, so it is still one
+ * transaction: all of the records or (abort) none of them.
+ * @returns {Promise<true>} the transaction's commit
+ */
+function putSliced(t, s, records) {
+  let i = 0, refused = null;
+  const slice = () => {
+    const t0 = now();
+    let req = null;
+    try {
+      do req = s.put(records[i++]); while (i < records.length && now() - t0 < PUT_SLICE);
+    } catch (e) {
+      // a record the store refuses (DataError, DataCloneError): nothing of
+      // this call lands, and the caller hears that error, not "aborted"
+      refused = e;
+      try { t.abort(); } catch (_) { /* already finished */ }
+      return;
+    }
+    if (i < records.length) req.onsuccess = slice;
+  };
+  const done = committed(t).catch((e) => { throw refused || e; });
+  if (records.length) slice();
+  return done;
+}
+
 /**
  * The IndexedDB backend, or null when this WebView has none (or refuses it:
  * a private window, a policy). The caller then keeps the pre-C1 shape.
@@ -106,9 +142,7 @@ async function idbBackend(idb, name) {
     async put(records) {
       if (!records.length) return true;
       const t = tx(["games"], "readwrite");
-      const s = t.objectStore("games");
-      for (const r of records) s.put(r);
-      return committed(t);
+      return putSliced(t, t.objectStore("games"), records);
     },
     async remove(ids) {
       if (!ids.length) return true;
@@ -121,8 +155,7 @@ async function idbBackend(idb, name) {
       const t = tx(["games"], "readwrite");
       const s = t.objectStore("games");
       for (const id of ids) s.delete(id);
-      for (const r of records) s.put(r);
-      return committed(t);
+      return putSliced(t, s, records);
     },
     async clear() {
       const t = tx(["games"], "readwrite");

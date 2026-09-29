@@ -407,11 +407,10 @@ export function createReviewPanel(d) {
     // near it, but falling back beats failing
     if (Host.hasZero() && b64 && b64.length < 512 * 1024) {
       try {
-        const path = await Host.saveFileDialog({ title: t("rv.exportTitle"), defaultName: name });
-        if (path == null) { toast(t("msg.export.cancelled")); return; }
-        await Host.writeBinaryFile(path, b64);
-        const revealed = await Host.revealPath(path);
-        savedToast(name, path, revealed);
+        // v8-1-plan N2: the dialog, the write and the reveal happen in main.zig
+        const saved = await Host.saveText({ title: t("rv.exportTitle"), name, b64 });
+        if (!saved) { toast(t("msg.export.cancelled")); return; }
+        savedToast(saved.name, saved.path, saved.revealed);
         return;
       } catch (err) {
         // the dialog exists and refused (5.2.1): a picture has no clipboard

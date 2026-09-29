@@ -5768,10 +5768,10 @@ for (const lang of CONTENT_LANGS) {
   const appSrc = allAppSource;
   for (const [what, re] of [
     // 6.0: one exportText() serves PGN and the learning file; only a PGN is a document
-    ["the export dialog", /Host\.revealPath\(path\);\s*\n\s*if \(recent\) Host\.addRecentDocument\(path\);/],
+    ["the export dialog", /Host\.saveText\(\{ title, name, text, recent \}\)/], // v8-1-plan N2: main.zig adds it
     // 7.0: the picker takes a sink (the library import reuses it), so what
     // this looks for is the call, not the one destination it used to have
-    ["the open dialog", /take\(text, paths\[0\]\);\s*\n\s*Host\.addRecentDocument\(paths\[0\]\);/],
+    ["the open dialog", /Host\.openPgn\(\{ title: t\("dlg\.openPgn"\), recent: true \}\)/],
     ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
     ["clearing the save", /Persist\.clearAll\(\);[\s\S]{0,320}?Host\.clearRecentDocuments\(\);/],
   ]) assert(re.test(appSrc), "recent documents is recorded from " + what);
@@ -6736,6 +6736,15 @@ for (const lang of CONTENT_LANGS) {
     if (c.boot) continue;
     const probe = chunkSrc.slice(Math.floor(chunkSrc.length / 2), Math.floor(chunkSrc.length / 2) + 120);
     assert(!bundleSrc.includes(probe), c.out + "'s payload is not also inside bundle.js");
+    // …and by symbol (v8-1-plan F2): the chunk's global is never declared or
+    // assigned in the bundle. Identifiers survive the minifier, so this holds
+    // where a slice of code does not — chunk-report.js and chunk-sync.js
+    // pulled back in by a static import were caught by this line only: their
+    // middle 120 bytes do not reappear verbatim once bundled with the rest.
+    if (c.global) {
+      const decl = new RegExp("\\b(?:function|class)\\s+" + c.global + "\\d*\\b|(?<![.\\w$])" + c.global + "\\d*\\s*=(?!=)");
+      assert(!decl.test(bundleSrc), c.out + ": bundle.js does not declare " + c.global);
+    }
   }
 
   // v8-0-plan F5: the first-paint budget. 7.9.0 parsed 1,709,973 bytes of
@@ -6744,9 +6753,13 @@ for (const lang of CONTENT_LANGS) {
   // and it is a line, not a one-time measurement: one static import of a
   // chunk's module and esbuild inlines it again without a word.
   const bundleBytes = Buffer.byteLength(bundleSrc, "utf8");
-  console.log("  bundle.js " + bundleBytes + " bytes (7.9.0: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
+  // v8-1-plan F2: both sides of the comparison are minified bytes.
+  console.log("  bundle.js " + bundleBytes + " bytes minified (7.9.0 minified: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
-    "bundle.js stays within the first-paint budget (" + bundleBytes + " > " + BUNDLE_BUDGET + " bytes, 70% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + ")");
+    "bundle.js stays within the first-paint budget (" + bundleBytes + " > " + BUNDLE_BUDGET + " bytes, 70.5% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + " minified)");
+  // …minified without renaming: a player's stack trace still names the code
+  assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
+    "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
 
   // The boot chunk is the one index.html loads, and it loads before the
   // bundle — that order is the whole reason the first frame is in the right

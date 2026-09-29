@@ -47,6 +47,8 @@ import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
 import { watchPlayLayout } from "./play-layout.js";
 import { createStore } from "./store.js";
+import { SELFTEST_BOOT } from "./selftest-boot.js";
+import { loadChunk } from "./chunk.js";
 
   /**
    * The one deliberate global: the seam the browser tests reach through.
@@ -1654,6 +1656,7 @@ import { createStore } from "./store.js";
    *            launches the app twice and checks that the second run found
    *            the first run's (7.6)
    *   sound    the default sound set's buffers build and render, offline (7.7)
+   *   idb, chunkSync, nativeIo — selftest-native.js (v8-1-plan N3)
    *
    * `ok` is true only when every check passes, and `err` names the ones that
    * did not. The checks say `pass`, never `ok`: main.zig decides the exit
@@ -1685,6 +1688,9 @@ import { createStore } from "./store.js";
       if (!swap.stored) throw new Error("localStorage did not keep the marker");
       restart.pass = true;
     } catch (err) { restart.err = errText(err); }
+    // v8-1-plan N3: idb, chunkSync, nativeIo (selftest-native.js, in chunk-libdb.js)
+    Object.assign(report.checks, await within(loadChunk("chunk-libdb.js", "CHESS_LIBDB"), 15000, "chunk-libdb.js").then((m) => m.runNativeSelftest({ Host, within, errText, nonce, atBoot: SELFTEST_BOOT,
+      useLang: (id) => { store.ui.langId = I18n.setLang(id); saveSettings(); } })).catch((err) => ({ idb: { pass: false, err: errText(err) }, chunkSync: { pass: false, err: errText(err) }, nativeIo: { pass: false, err: errText(err) } })));
 
     const engine = report.checks.engine = { pass: false };
     const te = performance.now();
@@ -4524,12 +4530,10 @@ import { createStore } from "./store.js";
   async function exportText(name, text, mime, title, recent) {
     if (Host.hasZero()) {
       try {
-        const path = await Host.saveFileDialog({ title, defaultName: name });
-        if (path == null) { toast(t("msg.export.cancelled")); return; }
-        await Host.writeTextFile(path, text);
-        const revealed = await Host.revealPath(path);
-        if (recent) Host.addRecentDocument(path);
-        savedToast(name, path, revealed);
+        // v8-1-plan N2: dialog, write, reveal and recent list all in main.zig
+        const saved = await Host.saveText({ title, name, text, recent });
+        if (!saved) { toast(t("msg.export.cancelled")); return; }
+        savedToast(saved.name, saved.path, saved.revealed);
         return;
       } catch (err) { if (await exportTextFallback(err, text)) return; }
     }
@@ -4776,12 +4780,9 @@ import { createStore } from "./store.js";
     const take = typeof sink === "function" ? sink : importPgnText;
     if (Host.hasZero()) {
       try {
-        const picked = await Host.openFileDialog({ title: t("dlg.openPgn") });
-        const paths = Host.normalizePaths(picked);
-        if (!paths.length) return; // cancelled
-        const text = await Host.readTextFile(paths[0]);
-        take(text, paths[0]);
-        Host.addRecentDocument(paths[0]);
+        // v8-1-plan N2: main.zig opens, reads and lists it as recent; no path
+        const picked = await Host.openPgn({ title: t("dlg.openPgn"), recent: true });
+        if (picked) take(picked.text, picked.name); // null: cancelled
         return;
       } catch (err) {
         // "there is no file dialog on this build" is not a read failure — it
@@ -6149,11 +6150,8 @@ import { createStore } from "./store.js";
       { ok: t("act.learningImport"), cancel: t("act.cancel") }))) return;
     if (Host.hasZero()) {
       try {
-        const picked = await Host.openFileDialog({ title: t("dlg.importLearning") });
-        const paths = Host.normalizePaths(picked);
-        if (!paths.length) return;
-        const text = await Host.readTextFile(paths[0]);
-        await importLearningText(text);
+        const picked = await Host.openPgn({ title: t("dlg.importLearning") });
+        if (picked) await importLearningText(picked.text);
         return;
       } catch (err) {
         if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
@@ -6214,11 +6212,8 @@ import { createStore } from "./store.js";
       { ok: t("act.allImport"), cancel: t("act.cancel"), danger: true }))) return;
     if (Host.hasZero()) {
       try {
-        const picked = await Host.openFileDialog({ title: t("dlg.importAll") });
-        const paths = Host.normalizePaths(picked);
-        if (!paths.length) return;
-        const text = await Host.readTextFile(paths[0], Host.ALL_DATA_MAX);
-        await importAllDataText(text);
+        const picked = await Host.openPgn({ title: t("dlg.importAll"), max: Host.ALL_DATA_MAX });
+        if (picked) await importAllDataText(picked.text);
         return;
       } catch (err) {
         if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }

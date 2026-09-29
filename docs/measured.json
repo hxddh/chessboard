@@ -3082,5 +3082,260 @@
       "bundleDelta": 1777,
       "installDelta": 2959523
     }
+  },
+  "bundleMinify": {
+    "what": "v8-1-plan F2 (a)：bundle.js 与分块开 minifyWhitespace + minifySyntax、保留标识符。前后字节数、新预算，以及同一棵树两种构建交替加载的 DOMContentLoaded / 首屏到可交互（Chromium，页面自己的时间轴，中位数）",
+    "script": "scripts/measure-boot.mjs --record",
+    "engine": "chromium",
+    "runs": 15,
+    "budget": {
+      "base790Readable": 1709973,
+      "base790Minified": 1349847,
+      "ratio": 0.705,
+      "budget": 951642,
+      "budgetBefore": 1205530,
+      "headroomBefore": 5032,
+      "headroomAfter": 89502
+    },
+    "bytes": {
+      "before": {
+        "bundle.js": 1200498,
+        "chunk-eco.js": 485817,
+        "chunk-lang-en.js": 225143,
+        "chunk-lang-ja.js": 291547,
+        "chunk-mined.js": 176026,
+        "chunk-merida.js": 35050,
+        "chunk-pieces-chessnut.js": 29312,
+        "chunk-pieces-fantasy.js": 73309,
+        "chunk-pieces-celtic.js": 27921,
+        "chunk-pieces-spatial.js": 33587,
+        "chunk-boot.js": 2502,
+        "chunk-report.js": 6845,
+        "chunk-moments.js": 7305,
+        "chunk-opponents.js": 33124,
+        "chunk-libdb.js": 58089,
+        "chunk-sync.js": 8387,
+        "chunk-lc-0600.js": 419694,
+        "chunk-lc-0800.js": 442024,
+        "chunk-lc-1000.js": 453745,
+        "chunk-lc-1200.js": 474309,
+        "chunk-lc-1400.js": 496019,
+        "chunk-lc-1600.js": 504282,
+        "chunk-lc-1800.js": 519379,
+        "chunk-lc-2000.js": 510848,
+        "chunk-lc-2200.js": 466738,
+        "chunk-lc-2400.js": 410278,
+        "chunk-lc-2600.js": 301362,
+        "chunk-explorer.js": 21828,
+        "chunk-xm-00.js": 575493,
+        "chunk-xm-01.js": 523985,
+        "chunk-xm-02.js": 625772,
+        "chunk-xm-03.js": 324659,
+        "chunk-xm-04.js": 613844,
+        "chunk-xm-05.js": 273402
+      },
+      "after": {
+        "bundle.js": 862140,
+        "chunk-eco.js": 458884,
+        "chunk-lang-en.js": 194827,
+        "chunk-lang-ja.js": 259846,
+        "chunk-mined.js": 154072,
+        "chunk-merida.js": 34740,
+        "chunk-pieces-chessnut.js": 29000,
+        "chunk-pieces-fantasy.js": 72998,
+        "chunk-pieces-celtic.js": 27611,
+        "chunk-pieces-spatial.js": 33276,
+        "chunk-boot.js": 1891,
+        "chunk-report.js": 4517,
+        "chunk-moments.js": 5268,
+        "chunk-opponents.js": 24346,
+        "chunk-libdb.js": 38271,
+        "chunk-sync.js": 5963,
+        "chunk-lc-0600.js": 379115,
+        "chunk-lc-0800.js": 400059,
+        "chunk-lc-1000.js": 411593,
+        "chunk-lc-1200.js": 431233,
+        "chunk-lc-1400.js": 451700,
+        "chunk-lc-1600.js": 459919,
+        "chunk-lc-1800.js": 474455,
+        "chunk-lc-2000.js": 467244,
+        "chunk-lc-2200.js": 427468,
+        "chunk-lc-2400.js": 376343,
+        "chunk-lc-2600.js": 276887,
+        "chunk-explorer.js": 14647,
+        "chunk-xm-00.js": 539431,
+        "chunk-xm-01.js": 486093,
+        "chunk-xm-02.js": 578520,
+        "chunk-xm-03.js": 299313,
+        "chunk-xm-04.js": 565026,
+        "chunk-xm-05.js": 251154
+      },
+      "chunksTotalBefore": 9451625,
+      "chunksTotalAfter": 8635710
+    },
+    "before": {
+      "zh-CN": {
+        "dclMs": 1808.9,
+        "interactiveMs": 253.5
+      },
+      "en": {
+        "dclMs": 1733.1,
+        "interactiveMs": 271.5
+      },
+      "ja": {
+        "dclMs": 1864.4,
+        "interactiveMs": 267.2
+      }
+    },
+    "after": {
+      "zh-CN": {
+        "dclMs": 1724.4,
+        "interactiveMs": 254.6
+      },
+      "en": {
+        "dclMs": 1747.5,
+        "interactiveMs": 268.5
+      },
+      "ja": {
+        "dclMs": 1847.9,
+        "interactiveMs": 257.7
+      }
+    }
+  },
+  "persistFirstWrite": {
+    "what": "v8-1-plan F3：2 MB 档案（棋谱库 1,543 局）第一次启动整份写进原生分键存储。sliceMs：桥上一次应答之后，页面到再调桥或这个任务结束为止连着干的最长一段；putRunMs：同一次启动把棋谱库搬进 IndexedDB，一个任务里连着 put 的最长一段；typicalSaveMs：其后一次普通保存。验收线都是 16 ms。before 是修正前的 host.js / library-db.js，量法已是修正后的",
+    "script": "node scripts/test-persist-e2e.mjs --record=before|after",
+    "before": {
+      "runs": [
+        {
+          "engine": "chromium",
+          "passed": false,
+          "sliceMs": 11.5,
+          "putRunMs": 35.6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "typicalSaveMs": 0.4
+        }
+      ]
+    },
+    "after": {
+      "runs": [
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 3,
+          "putRunMs": 6.8,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 3,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.2,
+              "base64": 1
+            }
+          },
+          "typicalSaveMs": 0.7
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 4.5,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 4.5,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.3,
+              "base64": 2.6
+            }
+          },
+          "typicalSaveMs": 0.4
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 4,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 4,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.2,
+              "encodeInto": 0.1,
+              "base64": 2.3
+            }
+          },
+          "typicalSaveMs": 3.2
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 4.6,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 4.6,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.3,
+              "base64": 2.7
+            }
+          },
+          "typicalSaveMs": 0.7
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 3,
+          "putRunMs": 6.2,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 3,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.5,
+              "encodeInto": 0.2,
+              "base64": 1
+            }
+          },
+          "typicalSaveMs": 0.6
+        }
+      ]
+    }
   }
 }

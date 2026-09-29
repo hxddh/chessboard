@@ -36,13 +36,23 @@ on:
         # upstream, not upstream breaking. Fixed in build.zig (the file plus
         # d2d1/dwrite, matching the SDK's own list), so the pin now moves to
         # 0.10.1. It stays a pin because everything else this gate depends on
-        # is pinned too (playwright 1.62.1, zig 0.16.0): the SDK was the one
+        # is pinned too (playwright 1.63.0, zig 0.16.0): the SDK was the one
         # dependency that could change under a release with nobody changing
         # anything. Raise it deliberately, with a run that proves both
         # platforms still build.
         description: "@native-sdk/cli version both platform builds install"
         required: false
         default: "0.10.1"
+      # v8-1-plan F1: a major bump of download-artifact changes how the
+      # packages reach dist/, and the only way to see that is to run this
+      # workflow. A rehearsal runs every gate and both builds, downloads and
+      # checks the packages exactly as a release does, and stops there: no
+      # tag, no draft, nothing published, and no notes file needed.
+      rehearse:
+        description: "Rehearse only: run every gate and check dist/, publish nothing"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -61,8 +71,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
+          REHEARSE: ${{ inputs.rehearse }}
         run: |
           set -euo pipefail
+          if [ "$REHEARSE" = "true" ]; then echo "rehearsal: nothing will be tagged or published"; exit 0; fi
           test -f ".github/release-notes/${TAG}.md" || { echo "missing .github/release-notes/${TAG}.md"; exit 1; }
           published=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
             --jq "[.[] | select(.tag_name==\"${TAG}\") | select(.draft==false)] | .[0].id // empty")
@@ -209,8 +221,8 @@ jobs:
       # commit comes out different on different days.
       - name: install playwright + ${{ matrix.engine }}
         run: |
-          npm install --no-save playwright@1.62.1
-          npx --yes playwright@1.62.1 install --with-deps ${{ matrix.engine }}
+          npm install --no-save playwright@1.63.0
+          npx --yes playwright@1.63.0 install --with-deps ${{ matrix.engine }}
           path="$(node -e "console.log(require('playwright')['${{ matrix.engine }}'].executablePath())")"
           if [ "${{ matrix.engine }}" = chromium ]; then echo "CHROME_PATH=$path"; else echo "WEBKIT_PATH=$path"; fi >> "$GITHUB_ENV"
       # every suite in the group runs even when an earlier one fails, so one
@@ -244,17 +256,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v7
+      # v8 (v8-1-plan F1) decides whether to unzip by the blob's content-type
+      # instead of always unzipping, and fails on a digest mismatch by
+      # default. Both artifacts are uploaded archived (upload-artifact's
+      # default), so they are still zip containers and still unpacked; the
+      # inputs below spell out what the layout depends on rather than
+      # inheriting it: every Chessboard-* artifact unpacked, flat, into dist/.
+      - uses: actions/download-artifact@v8
         with:
           pattern: Chessboard-*
           path: dist
           merge-multiple: true
+          skip-decompress: false
+          digest-mismatch: error
+      # Flat, and unwrapped: a package that arrives in a folder named after
+      # its artifact (merge off) or still inside the artifact's own zip
+      # (decompression skipped) fails here, not on the release page.
       - name: both packages are here
         run: |
-          ls -l dist
+          ls -lR dist
           for f in Chessboard-macOS-arm64.zip Chessboard-macOS-arm64.dmg Chessboard-Windows-x64.zip; do
             test -f "dist/$f" || { echo "missing $f"; exit 1; }
           done
+          for f in Chessboard-macOS-arm64.zip Chessboard-Windows-x64.zip; do
+            if unzip -Z1 "dist/$f" | grep -qiE '^Chessboard-.*\.(zip|dmg)$'; then
+              echo "dist/$f is the artifact wrapper, not the package"; exit 1
+            fi
+          done
+          if find dist -mindepth 1 -type d -name 'Chessboard-*' | grep -q .; then
+            echo "artifacts were not merged into dist/"; exit 1
+          fi
       # The tag names the commit every job above checked out and tested.
       #
       # And it has to be retryable. Until 2.0 a failure after this point left
@@ -269,6 +300,7 @@ jobs:
       # Retrying is allowed only while nothing has been published: a draft for
       # this tag is deleted, a *published* release for it stops the run.
       - name: tag the commit under test
+        if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -293,6 +325,7 @@ jobs:
           git tag -f "$TAG" "$GITHUB_SHA"
           git push -f origin "refs/tags/${TAG}"
       - name: draft the release with both packages
+        if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -304,6 +337,7 @@ jobs:
             --notes-file ".github/release-notes/${TAG}.md" \
             dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip
       - name: the release must actually have both downloads
+        if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -313,6 +347,7 @@ jobs:
           case "$assets" in *macOS-arm64.zip*) ;; *) echo "missing the macOS zip"; exit 1;; esac
           case "$assets" in *Windows-x64.zip*) ;; *) echo "missing the Windows zip"; exit 1;; esac
       - name: publish
+        if: ${{ !inputs.rehearse }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}

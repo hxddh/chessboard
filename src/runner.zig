@@ -39,6 +39,13 @@ pub const RunOptions = struct {
     commands: ?[]const native_sdk.Command = null,
     menus: ?[]const native_sdk.Menu = null,
     shortcuts: ?[]const native_sdk.Shortcut = null,
+    /// v8-1-plan N2 (not in the SDK's app_runner): where to put the Runtime
+    /// once it is built, and null again once it is gone. A bridge handler is
+    /// handed no Runtime, and main.zig's chess.openPgn / chess.saveText need
+    /// one to open the file dialogs natively (Runtime.showOpenDialog /
+    /// showSaveDialog, SDK 0.10.1 runtime/core.zig). Set before `run`, so no
+    /// bridge call can arrive first.
+    runtime_slot: ?*?*native_sdk.Runtime = null,
 
     fn appInfo(self: RunOptions, buffers: *StateBuffers) native_sdk.AppInfo {
         var info: native_sdk.AppInfo = .{
@@ -574,6 +581,8 @@ fn runNull(app: native_sdk.App, options: RunOptions, init: std.process.Init) !vo
         .environ = init.minimal.environ,
     });
 
+    publishRuntime(options, runtime);
+    defer publishRuntime(options, null);
     try runtime.run(app);
 }
 
@@ -624,6 +633,8 @@ fn runMacos(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
         .environ = init.minimal.environ,
     });
 
+    publishRuntime(options, runtime);
+    defer publishRuntime(options, null);
     try runtime.run(app);
 }
 
@@ -674,6 +685,8 @@ fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
         .environ = init.minimal.environ,
     });
 
+    publishRuntime(options, runtime);
+    defer publishRuntime(options, null);
     try runtime.run(app);
 }
 
@@ -724,7 +737,16 @@ fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init) 
         .environ = init.minimal.environ,
     });
 
+    publishRuntime(options, runtime);
+    defer publishRuntime(options, null);
     try runtime.run(app);
+}
+
+/// RunOptions.runtime_slot: hand the Runtime to the app, or take it back. The
+/// `defer` that takes it back is declared after the one that frees it, so it
+/// runs first — the slot never points at a freed Runtime.
+fn publishRuntime(options: RunOptions, runtime: ?*native_sdk.Runtime) void {
+    if (options.runtime_slot) |slot| slot.* = runtime;
 }
 
 fn shouldTrace(record: native_sdk.trace.Record) bool {

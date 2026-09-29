@@ -621,7 +621,40 @@
 
 ## 9 · 落地记录
 
-（发布前补。）
+（发布前补全。）
+
+### M1（F1、F2、§5、N2、N3 及其评审修正）
+
+**与计划的偏离**
+
+- N2：计划写「`issuePath` 只留给旧页面」。评审（P2-1）改为整个删掉：页面总是同一个二进制里打包的前端，没有能连到这个壳的「旧页面」，留着它只是留着页面到文件系统最宽的口子。`APP_COMMANDS` 12 个，没有 `COMPAT_COMMANDS`；`manifest-check` 在 `main.zig` 代码里、页面源码里（任何引号、模板字符串、拼接）见到 `issuePath` 都报红。`pathAllowed` 只剩一个用处：拖进窗口的路径。
+- N2：保存命令叫 `chess.saveText`（计划写 `chess.savePgn`）：学习数据、全部数据和复盘图 PNG 也走它。对话框里亲手挑的文件是玩家自己的选择，不再过 `pathAllowed`（manual-check J5 相应改成拖放）。
+- N2 评审 P3-5：玩家在保存框里输入的名字没有扩展名时，原生侧按建议文件名补上（Windows 的对话框不设默认扩展名）；补出来的名字只作为新文件创建，已有同名文件时照玩家输入的原名写，不替换对话框没问过的文件。
+- F3「首启整份写入」提前到 M1。先剖析（Chromium 跟踪 + 采样）：`test-persist-e2e` 读到的 150–200 ms 大半不是主线程在干活。这一段从第一次刷盘写完清单的应答算起，到 `bootLibrary → Persist.touchUnlisted` 的第一次调桥为止；中间是两个任务（7 ms，和棋谱库搬进 IndexedDB 的一次 `put` 循环 34–45 ms），其余时间都在空等 IndexedDB。修了三处。
+  - 量法：应答所在的任务一结束就收口，下一个定时器、帧、IndexedDB 事件开始，或者随应答投递的一条消息先到，都算结束。
+  - `library-db.js putSliced`：每个任务最多 put 6 ms，下一片从上一片最后一个请求的 success 里接着排，仍是同一个事务，要么全进、要么全不进。
+  - `host.js textSource`：长文本先数 UTF-8 长度，再按 256 KiB 一段用 encodeInto 边编边发。原来要先把 2 MB 整个 encode（7–10 ms），再在同一个任务里算第一段的 base64。协议和盘上格式都没变，main.zig 本来就接受任意长度的段。
+  - 本机 Chromium 实测（`measured.json persistFirstWrite`）：旧量法下 155–199 ms。新量法、旧代码：最长一段 11.5 ms，一个任务里连着 put 35.6 ms。修正后连续 5 次：最长一段 3.6–8.9 ms，连着 put 6.0–6.1 ms，全部通过。
+  - CI 的 WebKit 在 a85c271 上仍读到 42 ms 和 47 ms（put 6.0 ms），本机跑不了 WebKit。
+    - persist-e2e 现在每次都打印最长那一段是什么：跟在哪次应答之后（命令、键、offset / total、第几段、字节数），被什么收口（下一次调桥、定时器、帧、IndexedDB 事件、消息），以及段内各阶段的耗时（utf8Length、encode / encodeInto、base64、unbase64、decode、shardNames / shardText / shardGroups、manifest、readMeta）。
+    - 这些阶段由 `host.js` / `persist.js` / `library-page.js` 报给 `window.__persistProbe`，只有测试定义了它才计时。
+    - 文本分段从 256 KiB 再减到 128 KiB，每次调桥的编码量减半。
+    - 本机 Chromium 连续 5 次：最长一段 3.0–4.6 ms，都在 `stats` 写完的应答之后（utf8Length 1.2–1.5、base64 1.0–2.7）。WebKit 的那一段要看下一次 CI 打印。
+    - ae36edf 上 CI 的 WebKit 打印：最长一段 37 ms，跟在 `chess.appdataRead` 的应答之后，段内没有任何持久化阶段（`parts` 为空），收口于随应答投递的消息。这是第一次写之前、启动读档返回后应用继续启动的代码，Chromium 上同一段约 600 ms，本来就被 200 ms 上限排除。断言说的是「写的过程中」，于是计时从第一次 `appdataWrite` 开始；写之前的那一段照样量、照样打印（`bootSliceMs`），不计入写入，归到 F3「棋谱库冷启动」一条。
+  - 新增两项断言：persist-e2e 的「一个任务里连着 put ≤ 16 ms」，改之前是 27–36 ms；test-persist 的「从不一次编码超过一段」，改之前一次编码 2,097,169 字符。
+- N2 评审 P3-4：分段打开的大文件，第一段记下大小和修改时间，之后每段先比对，变了就答 `open_lost`（页面显示「无法读取文件」）；后续段答超限时显示「文件超过…」，不再笼统说读不了。
+
+**已知限制**
+
+- 导出（P3-2）：`chess.saveText` 先把全部字节分段送到原生侧，收齐才弹保存框。导出全部数据时一万局约 28 MB，要先传完约 56 段才看到对话框，这几秒里没有「正在准备」之类的提示——现有界面键里没有合适的一条，这一版不为它加键。协议不改：先弹框再传，取消就得丢掉已经传了一半的状态，反而更复杂。
+- 修改时间的精度取决于文件系统：FAT/exFAT 的 U 盘是 2 秒，同样大小、2 秒内被改写的文件认不出来。
+
+**只有 CI 或真机能确认的**
+
+- Zig：本地用 0.16.0 在 null 平台上跑通 `zig build test`（49 项），并为 x86_64-windows、aarch64-macos 交叉编译过测试；真正在 macOS / Windows 上跑是 `checks.yml` 的 zig 作业。
+- 原生对话框真的弹出、取消、导入导出一次 PGN、保存后在文件夹里显示、进 Dock / 跳转列表：manual-check A1、J4。Windows 保存框补扩展名只有真机看得到。
+- `idb` / `chunkSync` / `nativeIo` 在 zero:// 上的 WKWebView 与 WebView2：`build-macos.yml` / `build-windows.yml` 的打包自检。
+- 打包自检两次启动共用一个临时 HOME（Windows 另加 APPDATA）：应用自己的数据目录跟着走；WKWebView 的 localStorage / IndexedDB（在真实用户的 ~/Library 下）和 WebView2 的数据目录（SDK 不指定，在 exe 旁边）不跟着走，本地运行仍会在那里留下自检标记和英文界面设置。CI runner 起始为空，不受影响。
 
 ---
 

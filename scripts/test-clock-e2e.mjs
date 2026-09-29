@@ -43,14 +43,14 @@ await c.addInitScript(() => {
   localStorage.setItem('chess.panelOpen', '1');
   const listeners = {};
   window.zero = {
-    invoke: () => Promise.resolve(true),
+    // v8-1-plan N2: the file dialogs are chess.openPgn / chess.saveText now
+    invoke: (cmd) => Promise.resolve(cmd === 'chess.openPgn' || cmd === 'chess.saveText' ? { cancelled: true } : true),
     on: (n, cb) => { (listeners[n] ||= []).push(cb); return () => {}; },
     off: () => {},
     platform: { supports: () => Promise.resolve(true) },
     os: { addRecentDocument: () => Promise.resolve(true), clearRecentDocuments: () => Promise.resolve(true),
           showNotification: () => Promise.resolve(true), revealPath: () => Promise.resolve(true) },
     clipboard: { readText: () => Promise.resolve(''), writeText: () => Promise.resolve(true) },
-    dialogs: { openFile: () => Promise.resolve(null), saveFile: () => Promise.resolve(null) },
   };
   window.__fire = (n, d) => { for (const cb of (listeners[n] || [])) cb(d); };
 });
