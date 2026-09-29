@@ -1690,7 +1690,7 @@ import { loadChunk } from "./chunk.js";
     } catch (err) { restart.err = errText(err); }
     // v8-1-plan N3: idb, chunkSync, nativeIo (selftest-native.js, in chunk-libdb.js)
     Object.assign(report.checks, await within(loadChunk("chunk-libdb.js", "CHESS_LIBDB"), 15000, "chunk-libdb.js").then((m) => m.runNativeSelftest({ Host, within, errText, nonce, atBoot: SELFTEST_BOOT,
-      useLang: (id) => { store.ui.langId = I18n.setLang(id); saveSettings(); } }), (err) => ({ idb: { pass: false, err: errText(err) }, chunkSync: { pass: false, err: errText(err) }, nativeIo: { pass: false, err: errText(err) } })));
+      useLang: (id) => { store.ui.langId = I18n.setLang(id); saveSettings(); } })).catch((err) => ({ idb: { pass: false, err: errText(err) }, chunkSync: { pass: false, err: errText(err) }, nativeIo: { pass: false, err: errText(err) } })));
 
     const engine = report.checks.engine = { pass: false };
     const te = performance.now();

@@ -36,6 +36,19 @@
  * The step fails unless every check passed on both launches, and the failure
  * names the checks that did not.
  *
+ * Both launches run with one temporary profile (review P3-7): HOME, and
+ * APPDATA on Windows, point into this run's temp folder, so the app's own
+ * data directory — the store/ mirror, the `lang` file the menus are picked
+ * by, the self-test's appdata round trip — is a fresh one that the second
+ * launch shares with the first, and a local run leaves nothing of it in the
+ * developer's real profile. The WebView's own storage does not follow:
+ * WKWebView keeps localStorage and IndexedDB under the real user's
+ * ~/Library (it asks the system for the home folder, not $HOME), and the
+ * SDK starts WebView2 with no user-data folder, which puts it beside the
+ * exe. So a local run still leaves the restart / idb markers, and the
+ * English the first launch switches to (chunkSync), in that storage; on a
+ * CI runner, which starts empty, the two are one and the same fresh state.
+ *
  *   node scripts/selftest-app.mjs <path to the packaged executable>
  */
 import fs from "fs";
@@ -49,6 +62,12 @@ if (!exe || !fs.existsSync(exe)) {
   process.exit(1);
 }
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "chess-selftest-"));
+// the one profile both launches share (see above): made once, here, never per launch
+const home = path.join(dir, "home");
+const profile = process.platform === "win32"
+  ? { HOME: home, APPDATA: path.join(home, "AppData", "Roaming") }
+  : { HOME: home };
+for (const d of Object.values(profile)) fs.mkdirSync(d, { recursive: true });
 const LIMIT_MS = 120000;
 const CHECKS = ["engine", "appdata", "chunk", "restart", "sound", "idb", "chunkSync", "nativeIo"];
 
@@ -57,7 +76,7 @@ async function launch(n) {
   const out = path.join(dir, "report-" + n + ".json");
   const t0 = Date.now();
   const child = spawn(exe, [], {
-    env: { ...process.env, CHESS_SELFTEST: "1", CHESS_SELFTEST_OUT: out },
+    env: { ...process.env, ...profile, CHESS_SELFTEST: "1", CHESS_SELFTEST_OUT: out },
     stdio: "inherit",
   });
   const exited = new Promise((resolve) => child.on("exit", (code, signal) => resolve({ code, signal })));
