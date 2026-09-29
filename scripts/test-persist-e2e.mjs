@@ -229,13 +229,16 @@ const PLACEMENT = STUDY.split(" ")[0];
 //   · no `zero.os.revealPath` — the write succeeded, the folder never opened,
 //     and the toast named the file and not the place.
 // The rule this pins: pressing export either produces a file or says why, and
-// when nothing opens to show you, the toast carries the path.
+// when nothing opens to show you, the toast carries the path. v8-1-plan N2:
+// the dialog, the write and the reveal are all chess.saveText's (main.zig),
+// which says {error:"no_dialog"} when the platform has no dialog, and hands
+// back the path only when the folder did not open.
 {
   const SHAPES = [
-    { id: "无 zero", zero: false, dialogs: false, reveal: false },
-    { id: "有 zero 无 dialogs", zero: true, dialogs: false, reveal: false },
-    { id: "有 dialogs 无 revealPath", zero: true, dialogs: true, reveal: false },
-    { id: "桥接齐全", zero: true, dialogs: true, reveal: true },
+    { id: "无 zero", zero: false },
+    { id: "有 zero、平台没有对话框", zero: true, save: "no_dialog" },
+    { id: "写成了、文件夹没打开", zero: true, save: "unrevealed" },
+    { id: "桥接齐全", zero: true, save: "revealed" },
   ];
   for (const shape of SHAPES) {
     const ctx = await browser.newContext({ acceptDownloads: true });
@@ -247,15 +250,18 @@ const PLACEMENT = STUDY.split(" ")[0];
         mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       if (!sh.zero) return;
-      const z = {
-        invoke: (cmd, args) => { window.__wrote.push(args && args.path); return Promise.resolve({}); },
+      window.zero = {
+        invoke: (cmd, args) => {
+          if (cmd !== "chess.saveText") return Promise.resolve({});
+          if (sh.save === "no_dialog") return Promise.resolve({ error: "no_dialog" });
+          window.__wrote.push(args.name);
+          return Promise.resolve(sh.save === "revealed" ? { ok: true, name: args.name, revealed: true }
+            : { ok: true, name: args.name, revealed: false, path: "/tmp/exported/" + args.name });
+        },
         on: () => () => {},
         platform: { supports: () => Promise.resolve(true) },
         os: {},
       };
-      if (sh.dialogs) z.dialogs = { saveFile: (o) => Promise.resolve("/tmp/exported/" + o.defaultName) };
-      if (sh.reveal) z.os.revealPath = () => Promise.resolve();
-      window.zero = z;
     }, shape);
     const { page } = await open(ctx);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
@@ -278,7 +284,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     assert(landed, shape.id + ": 导出真的产生了一个文件 — 提示是「" + said + "」");
     assert(!/取消|Cancel|中止/.test(said),
       shape.id + ": 没有把「这个版本没有文件对话框」说成玩家取消 — 「" + said + "」");
-    if (shape.zero && shape.dialogs && !shape.reveal)
+    if (shape.save === "unrevealed")
       assert(said.includes("/tmp/exported/"),
         shape.id + ": 文件夹没打开时,提示里得有路径 — 「" + said + "」");
     await ctx.close();
@@ -390,7 +396,8 @@ const PLACEMENT = STUDY.split(" ")[0];
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
-      invoke: () => Promise.resolve(true),
+      // v8-1-plan N2: the file dialogs are chess.openPgn / chess.saveText now
+      invoke: (cmd) => Promise.resolve(cmd === "chess.openPgn" || cmd === "chess.saveText" ? { cancelled: true } : true),
       on: () => () => {},
       off: () => {},
       platform: { supports: () => Promise.resolve(true) },
@@ -400,7 +407,6 @@ const PLACEMENT = STUDY.split(" ")[0];
         readText: () => Promise.resolve(window.__clip),
         writeText: (t) => { window.__clip = String(t); return Promise.resolve(true); },
       },
-      dialogs: { openFile: () => Promise.resolve(null), saveFile: () => Promise.resolve(null) },
     };
   });
   const { page, errs } = await open(ctx);
@@ -616,6 +622,7 @@ const PLACEMENT = STUDY.split(" ")[0];
 // 「粘贴棋谱」在上面走过了;还有两扇门从没被驱动过。「打开」是真机清单里
 // 两桩旧案的案发地 —— 256 KiB 截断和 Windows 路径的 \\ —— 它们都发生在
 // openFile → readTextFile 这一段桥上,而这段桥从没在测试里走通过一次。
+// v8-1-plan N2 起这一段整个在 main.zig 里(chess.openPgn)。
 // 「从剪贴板粘贴」是 FEN 对话框里唯一碰桥的按钮。
 {
   const PGN_TEXT = '[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 *\n';
@@ -630,17 +637,20 @@ const PLACEMENT = STUDY.split(" ")[0];
       window.zero = {
         on: () => () => {}, off: () => {},
         platform: { supports: () => Promise.resolve(false) },
-        dialogs: { openFile: async () => { window.__calls.push("openFile"); return opts.pick; } },
         clipboard: {
           readText: async () => { if (opts.clipFail) throw new Error("nope"); return opts.clip || ""; },
           writeText: async () => true,
         },
-        invoke: async (cmd) => {
+        // v8-1-plan N2: main.zig opens the dialog and reads the file; the
+        // page gets the text and the name, never the path
+        invoke: async (cmd, args) => {
           window.__calls.push(cmd);
-          if (cmd === "chess.readTextFile") {
+          if (cmd === "chess.openPgn") {
+            window.__openArgs = args;
+            if (!opts.pick) return { cancelled: true };
             const bytes = new TextEncoder().encode(pgn);
             let bin = ""; for (const b of bytes) bin += String.fromCharCode(b);
-            return { b64: btoa(bin) };
+            return { name: opts.pick.split("/").pop(), b64: btoa(bin), more: false };
           }
           return {};
         },
@@ -654,9 +664,9 @@ const PLACEMENT = STUDY.split(" ")[0];
     if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) await page.click("#more-tools");
   };
 
-  // 打开:选了文件 → 桥上走 openFile 然后 readTextFile → 对局被换成文件里的
+  // 打开:选了文件 → 桥上走 chess.openPgn → 对局被换成文件里的
   {
-    const { ctx, page, errs } = await openBridged({ pick: ["/tmp/game.pgn"] });
+    const { ctx, page, errs } = await openBridged({ pick: "/tmp/game.pgn" });
     await moreOpen(page);
     await page.click("#pgn-open");
     await page.waitForTimeout(700);
@@ -666,8 +676,11 @@ const PLACEMENT = STUDY.split(" ")[0];
     // 7.5: nor is the one self-test probe every page load makes
     const calls = (await page.evaluate(() => window.__calls))
       .filter((c) => c !== "chess.appdataWrite" && c !== "chess.appdataRead" && c !== "chess.selftestMode");
-    assert(calls.join("→") === "openFile→chess.issuePath→chess.readTextFile",
-      `……走的是文件对话框 → 桥上读文件这一条,别无他路(${calls.join("→")})`);
+    assert(calls.join("→") === "chess.openPgn",
+      `……走的是原生侧的「对话框 + 读文件」这一条命令,别无他路,也不再签发路径(${calls.join("→")})`);
+    const openArgs = await page.evaluate(() => window.__openArgs);
+    assert(openArgs && openArgs.recent === true && !("path" in openArgs),
+      `……请原生侧把它记进最近文档,而页面手里没有路径(${JSON.stringify(openArgs)})`);
     assert(await page.evaluate(() => document.getElementById("status").textContent.trim()) === "白方走子",
       "……装完轮到白方(1.e4 e5 2.Nf3 Nc6 之后)");
     assert(errs.length === 0, `打开:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
@@ -1045,7 +1058,8 @@ const PLACEMENT = STUDY.split(" ")[0];
 // 页面还有没有(more)。每次应答都在自己的宏任务里交回,所以「上一次应答交回
 // → 下一次调用发出」之间的时间,正是页面在主线程上连续干活的那一段。
 function fakeNative(opts) {
-  const LIMIT = 1024 * 1024, CHUNK = 512 * 1024, MAX = 16 * 1024 * 1024;
+  const LIMIT = 1024 * 1024, CHUNK = 512 * 1024, MAX = 16 * 1024 * 1024, USER_MAX = 64 * 1024 * 1024;
+  const PICKED = "/Users/me/all.json";
   const S = sessionStorage;
   const b64enc = (u8) => {
     let s = "";
@@ -1081,7 +1095,8 @@ function fakeNative(opts) {
   const receive = (target, a) => {
     const bytes = b64dec(a.b64 || "");
     if (a.total == null) return { done: bytes };
-    if (a.total > MAX) return { answer: { tooLarge: true, limit: MAX } };
+    const cap = target.startsWith("appdata:") ? MAX : USER_MAX;
+    if (a.total > cap) return { answer: { tooLarge: true, limit: cap } };
     let st = stages.get(a.txn);
     if (a.offset === 0) { st = { target, data: new Uint8Array(a.total), filled: 0 }; stages.set(a.txn, st); }
     if (!st || st.target !== target || st.filled !== a.offset || a.offset + bytes.length > a.total) {
@@ -1100,18 +1115,25 @@ function fakeNative(opts) {
     return Object.assign({ b64: b64enc(u8.subarray(off, off + CHUNK)), more: off + CHUNK < u8.length }, extra);
   };
   const answer = (cmd, a) => {
-    if (cmd === "chess.issuePath") return { ok: true };
     if (cmd === "chess.selftestMode") return { on: false };
-    if (cmd === "chess.writeTextFile") {
-      const r = receive("path:" + a.path, a);
+    // v8-1-plan N2: the dialogs run natively and always pick PICKED; a save
+    // is staged like any write and lands once the last piece is in, an open
+    // hands the file over piece by piece, later pieces asked for by token
+    if (cmd === "chess.saveText") {
+      const r = receive("dialog:save", a);
       if (r.answer) return r.answer;
-      files.set(a.path, r.done);
-      return true;
+      files.set(PICKED, r.done);
+      return { ok: true, name: "all.json", revealed: true };
     }
-    if (cmd === "chess.readTextFile") {
-      const f = files.get(a.path);
+    if (cmd === "chess.openPgn") {
+      const f = files.get(PICKED);
       if (!f) throw new Error("HandlerFailed");
-      return chunkOf(f, a);
+      if (a.token != null && a.token !== 1) return { error: "open_lost" };
+      const limit = Math.min(a.max || MAX, USER_MAX);
+      const off = a.offset || 0;
+      if (!off && f.length > limit) return { tooLarge: true, limit };
+      const r = { b64: b64enc(f.subarray(off, off + CHUNK)), more: off + CHUNK < f.length };
+      return a.token != null ? r : Object.assign({ name: "all.json" }, r.more ? { token: 1 } : null, r);
     }
     if (cmd === "chess.appdataWrite") {
       const k = a.key || "";
@@ -1132,11 +1154,7 @@ function fakeNative(opts) {
   window.zero = {
     on: () => () => {}, off: () => {},
     platform: { supports: (o) => Promise.resolve(!!o && o.feature === "dialogs") },
-    dialogs: {
-      saveFile: async () => "/Users/me/all.json",
-      openFile: async () => ["/Users/me/all.json"],
-      showMessage: async () => "primary",
-    },
+    dialogs: { showMessage: async () => "primary" },
     clipboard: { readText: async () => "", writeText: async (t) => { window.__clip = String(t); return true; } },
     invoke: (cmd, a) => {
       // the page's continuous work since the last answer came back. An idle

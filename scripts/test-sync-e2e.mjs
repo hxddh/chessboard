@@ -71,6 +71,8 @@ async function open({ bridge = true, lang = "zh-CN", seedSync = null } = {}) {
     if (!bridge) return;
     window.zero = {
       invoke: (cmd, payload) => {
+        // v8-1-plan N2: the file dialogs are chess.openPgn / chess.saveText now
+        if (cmd === "chess.openPgn" || cmd === "chess.saveText") return Promise.resolve({ cancelled: true });
         if (cmd !== "chess.fetchGames") return Promise.resolve(true);
         window.__calls.push(payload);
         const a = window.__answer;
@@ -82,7 +84,6 @@ async function open({ bridge = true, lang = "zh-CN", seedSync = null } = {}) {
       os: { addRecentDocument: () => Promise.resolve(true), clearRecentDocuments: () => Promise.resolve(true),
         showNotification: () => Promise.resolve(true), revealPath: () => Promise.resolve(true) },
       clipboard: { readText: () => Promise.resolve(""), writeText: () => Promise.resolve(true) },
-      dialogs: { openFile: () => Promise.resolve(null), saveFile: () => Promise.resolve(null) },
     };
   }, { bridge, lang, seedSync });
   const page = await ctx.newPage();

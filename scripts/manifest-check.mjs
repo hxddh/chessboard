@@ -601,8 +601,45 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   const block = /const APP_COMMANDS = \[_\]AppCommand\{([\s\S]*?)\n\};/.exec(mainSrc);
   check(!!block, "应用桥: main.zig 里有 APP_COMMANDS 表");
   const registered = new Set(block ? [...block[1].matchAll(/\.name = "(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]) : []);
+  // v8-1-plan N2: a command kept only for older pages (main.zig
+  // COMPAT_COMMANDS) is registered and must NOT be called by this page
+  const compatBlock = /const COMPAT_COMMANDS = \[_\]\[\]const u8\{([^}]*)\};/.exec(mainSrc);
+  const compat = new Set(compatBlock ? [...compatBlock[1].matchAll(/"(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]) : []);
+  check(compat.has("chess.issuePath"), "应用桥: main.zig 的 COMPAT_COMMANDS 列着 chess.issuePath(只留给 v8-1-plan N2 之前的旧页面)");
   for (const u of used) check(registered.has(u), `应用桥: host.js 调用了 ${u},但 main.zig 的 APP_COMMANDS 没有它 —— 原生构建里它会被拒绝`);
-  for (const r of registered) check(used.has(r), `应用桥: main.zig 注册了 ${r},但页面从不调用它`);
+  for (const r of registered) {
+    if (compat.has(r)) continue;
+    check(used.has(r), `应用桥: main.zig 注册了 ${r},但页面从不调用它`);
+  }
+  for (const c of compat) check(registered.has(c), `应用桥: 兼容命令 ${c} 不在 APP_COMMANDS 里 —— 旧页面会被拒绝`);
+  // …and no page source calls a compat command or opens a file dialog itself:
+  // the dialogs run in main.zig (chess.openPgn / chess.saveText), so the path
+  // the player picks never reaches the page
+  const webJs = path.join(ROOT, "src/web/js");
+  const pageFiles = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      // chunk-*.js and bundle.js are build output, made of these same sources
+      else if (/\.js$/.test(e.name) && !/^chunk-/.test(e.name) && e.name !== "bundle.js") pageFiles.push(p);
+    }
+  };
+  walk(webJs);
+  for (const f of pageFiles) {
+    const src = fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
+    const rel = path.relative(ROOT, f);
+    for (const c of compat) check(!src.includes('"' + c + '"'), `应用桥: ${rel} 调用了兼容命令 ${c} —— 新页面不该再用它(v8-1-plan N2)`);
+    check(!/zero\.dialogs\.(openFile|saveFile)\b/.test(src), `应用桥: ${rel} 自己打开文件对话框(zero.dialogs.openFile / saveFile)—— 应走 chess.openPgn / chess.saveText`);
+    check(!/zero\.os\.revealPath\b/.test(src), `应用桥: ${rel} 调用 zero.os.revealPath —— 保存后显示文件由 chess.saveText 在原生侧做`);
+  }
+  check(pageFiles.length > 50, `应用桥: 页面源码扫描到 ${pageFiles.length} 个文件`);
+  // the two dialog commands never issue a path: what they pick stays native
+  for (const fn of ["openPgn", "saveText"]) {
+    const body = new RegExp(`fn ${fn}\\([\\s\\S]*?\\n\\}`).exec(mainSrc);
+    check(!!body && !/issued\.add/.test(body[0]) && /runtime\.show(Open|Save)Dialog\(/.test(body[0]),
+      `应用桥: ${fn} 要在原生侧弹框(runtime.show…Dialog),且不签发路径(issued.add)`);
+  }
   // and the table really is what the runner gets — a handler with no policy
   // is refused by the SDK, so both come from the one loop
   check(/self\.handlers\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(mainSrc) && /self\.policies\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(mainSrc),
