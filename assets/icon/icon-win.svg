@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- v8-0-plan A6: the Windows sizes from 24 px up (the .ico). Windows draws
+       icons full-bleed, so the tile fills the canvas — the same tile, knight
+       and colours as icon.svg, at the proportions of icon-16 / icon-32. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4bd6a"/>
+      <stop offset="1" stop-color="#c5721c"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34210f"/>
+      <stop offset="1" stop-color="#1f1309"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="48" fill="url(#tile)"/>
+  <g transform="translate(22.4 16.6) scale(2.16)">
+    <path fill="url(#ink)" d="M 25 87 C 29 79 44 72 50 63 C 51 69 46 73 39 71.5 C 35 71 31 70 28.5 68.5 L 26.5 65.5 L 22.5 67.5 C 17 67.5 13 64.5 12 59.5 C 11 55.5 12 52 14 49 C 20 40 30 30 40 24 C 43 22 46 20 48 19 L 51 7 C 51.5 5 53.5 5 54.5 6.5 L 58 15 L 63 6 C 64 4.5 66 5 66 7 L 67 21 C 76 28 83 40 84 54 C 85 66 83 78 81 87 Z M 26 86 L 84 86 C 85.7 86 87 87.3 87 89 L 87 93 C 87 94.7 85.7 96 84 96 L 26 96 C 24.3 96 23 94.7 23 93 L 23 89 C 23 87.3 24.3 86 26 86 Z"/>
+    <circle cx="43" cy="32" r="2.8" fill="#f4bd6a"/>
+  </g>
+</svg>

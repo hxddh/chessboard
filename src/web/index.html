@@ -694,6 +694,22 @@
           <button type="button" class="act-btn" id="retry-here" title="回到复盘所在的一着继续下,其后着法留作变着" data-i18n-title="tip.retryHere" data-i18n="act.retryHere">从这里续下</button>
           <button type="button" class="act-btn" id="back-main" data-i18n="act.backMain" title="回到本局主线，光标停在同一深度" data-i18n-title="tip.backMain">回主线</button>
         </div>
+        <!-- v8-0-plan C3: 开局浏览器 — the moves played from the position
+             under the cursor, how many games and how they ended, from your
+             library or the built-in master tree; 「书」 marks the book's
+             moves. Opened by the 开局 key in the tool row; the rows are the
+             chunk's (explorer/ui.js), the frame is written once here. -->
+        <section class="xp" id="explorer" aria-labelledby="xp-h" hidden>
+          <div class="xp-head">
+            <h3 class="act-k" id="xp-h" data-i18n="xp.title">开局浏览器</h3>
+            <div class="theme-row" id="xp-src" role="group" aria-labelledby="xp-h">
+              <button type="button" data-src="lib" class="active" aria-pressed="true" data-i18n="lib.title">棋谱库</button>
+              <button type="button" data-src="master" aria-pressed="false" data-i18n="xp.master">大师</button>
+            </div>
+          </div>
+          <p class="hint xp-note" id="xp-note"></p>
+          <ol class="xp-list" id="xp-list" tabindex="-1" aria-labelledby="xp-h"></ol>
+        </section>
         <!-- 7.7 (v7-7-plan §3): the review is something you open, not
              furniture. In an engine game still being played these four sit
              behind the 复盘 key in the tool row; they come out by themselves
@@ -794,6 +810,7 @@
              word as the label, so what is read is what is shown. -->
         <div class="tool-row" id="tool-row" role="toolbar" aria-label="棋谱与局面" data-i18n-aria="act.groupFile">
           <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：分析、精析、持续分析" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.groupReview">复盘</span></button>
+          <button type="button" class="tool-ic" id="explorer-open" aria-pressed="false" aria-controls="explorer" title="开局浏览器" data-i18n-title="xp.title" aria-label="开局" data-i18n-aria="act.explorer"><span data-icon="chart-column" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.explorer">开局</span></button>
           <button type="button" class="tool-ic" id="pgn-copy" aria-label="复制" data-i18n-aria="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy"><span data-icon="clipboard-copy" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.pgnCopy">复制</span></button>
           <button type="button" class="tool-ic" id="pgn-download" aria-label="导出" data-i18n-aria="act.export" title="导出 PGN 文件" data-i18n-title="tip.pgn.export"><span data-icon="download" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.export">导出</span></button>
           <button type="button" class="tool-ic" id="slots-open" aria-label="存档槽" data-i18n-aria="act.slots" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots"><span data-icon="archive" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.slots">存档槽</span></button>
@@ -822,7 +839,9 @@
          coach's recommendation(); nothing here is new data. -->
     <main class="page" id="page-home" aria-labelledby="home-h" hidden>
       <div class="page-inner">
-        <h1 class="page-h" id="home-h" data-i18n="nav.home">首页</h1>
+        <!-- v8-0-plan A6: the home page's heading is the wordmark — the rail
+             already says 首页; the page is the app's own front door -->
+        <h1 class="page-h wordmark" id="home-h"><span class="wordmark-mark" aria-hidden="true"></span><span data-i18n="app.title">国际象棋</span></h1>
         <div class="home-cards">
           <section class="home-card" id="home-continue" aria-labelledby="home-continue-h">
             <h2 class="side-h" id="home-continue-h" data-i18n="home.continue">继续上次</h2>
@@ -882,6 +901,9 @@
             </div>
             <div class="close-row split" id="lib-acts">
               <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入棋谱文件</button>
+              <!-- v8-0-plan C2: the games from Lichess / Chess.com in one step
+                   instead of five (prefs-ui.js loads the dialog, sync-ui.js, a chunk) -->
+              <button type="button" class="act-btn" id="lib-sync" data-i18n="lib.sync">从网站同步</button>
               <span class="btn-pair">
                 <!-- label is 「全部 N 局」, filled by renderLibrary() in the
                      interface language, so the markup carries no text -->
@@ -896,6 +918,14 @@
                  leaves the name field rewrote them between mouse-down and
                  mouse-up, and WebKit drops a click whose button moved. -->
             <div class="stats-body" id="lib-status"></div>
+            <!-- v8-0-plan C1: 认领名字 — the name on most games, offered once
+                 (library-page.js renderClaim). Under the buttons, like the
+                 status lines, so its coming and going moves nothing above. -->
+            <div class="lib-claim" id="lib-claim" hidden>
+              <p class="hint" id="lib-claim-text"></p>
+              <button type="button" class="act-btn primary" id="lib-claim-yes" data-i18n="lib.claimYes">是我</button>
+              <button type="button" class="act-btn" id="lib-claim-no" data-i18n="lib.claimNo">不是</button>
+            </div>
             </div>
           </section>
           <section class="side-section page-sec" id="sec-rep">
@@ -922,6 +952,11 @@
                 <button type="button" class="act-btn" id="rep-clear" hidden data-i18n="rep.clear">清空</button>
               </span>
             </div>
+            </div>
+            <!-- v8-0-plan C3: the opening explorer, from the page the book and
+                 the library live on: the board, with the explorer open -->
+            <div class="link-row">
+              <button type="button" class="act-btn" id="lib-explorer" data-i18n="xp.title">开局浏览器</button>
             </div>
           </section>
         </div>
@@ -1065,33 +1100,6 @@
       </div>
     </div>
 
-    <div class="modal-bg page-sheet" id="hist-modal" role="dialog" aria-labelledby="hist-modal-title">
-      <div class="modal wide">
-        <h3 id="hist-modal-title" data-i18n="hist.title">对局历史</h3>
-        <!-- a few hundred games with no filter is a list you scroll, not a
-             record you consult; "the ones I lost" is the reason to open it -->
-        <div class="hist-filters">
-          <span class="setting-k" id="hist-result-k" data-i18n="hist.byResult">按结果筛选</span>
-          <div class="theme-row" id="hist-result-seg" role="group" aria-labelledby="hist-result-k">
-            <button type="button" data-hres="all" class="active" data-i18n="hist.any">全部</button>
-            <button type="button" data-hres="win" data-i18n="hist.win">胜</button>
-            <button type="button" data-hres="loss" data-i18n="hist.loss">负</button>
-            <button type="button" data-hres="draw" data-i18n="hist.draw">和</button>
-          </div>
-          <span class="setting-k" id="hist-color-k" data-i18n="hist.byColor">按执子筛选</span>
-          <div class="theme-row" id="hist-color-seg" role="group" aria-labelledby="hist-color-k">
-            <button type="button" data-hcol="all" class="active" data-i18n="hist.any">全部</button>
-            <button type="button" data-hcol="w" data-i18n="hist.white">执白</button>
-            <button type="button" data-hcol="b" data-i18n="hist.black">执黑</button>
-          </div>
-        </div>
-        <div class="pick-list" id="hist-list"></div>
-        <p class="hint" id="hist-count" hidden></p>
-        <p class="hint" data-i18n="hist.hint">点一局载入棋盘复盘:可跑「分析」看回顾报告、导出 PGN、另存到存档槽</p>
-        <div class="close-row"><button type="button" class="tool-btn" id="hist-close" data-i18n="act.close">关闭</button></div>
-      </div>
-    </div>
-
     <!-- 7.1 (v7-1-plan B2/A1): the games themselves.
          7.0 stored every game's moves and its whole analysis and then had no
          screen that could open one: the library was a counter and a statistics
@@ -1125,7 +1133,39 @@
       <div class="modal wide">
         <h3 id="lib-list-title" data-i18n="lib.listTitle">棋谱库</h3>
         <p class="hint" id="lib-pick-note" hidden></p>
+        <!-- v8-0-plan C1: the library is searched, not scrolled — and 对局历史
+             is in it, as the 本机 games (the source row). library-page.js
+             wires all of it. -->
         <div class="hist-filters">
+          <label class="setting-k" for="lib-q" data-i18n="lib.search">搜索</label>
+          <input type="search" id="lib-q" class="text-input" spellcheck="false" placeholder="对手、开局、ECO 或赛事" data-i18n-placeholder="lib.searchPh" />
+          <span class="setting-k" id="lib-src-k" data-i18n="lib.bySrc">来源</span>
+          <div class="theme-row" id="lib-src-seg" role="group" aria-labelledby="lib-src-k">
+            <button type="button" data-lsrc="all" class="active" data-i18n="hist.any">全部</button>
+            <button type="button" data-lsrc="local" data-i18n="lib.srcLocal">本机</button>
+            <button type="button" data-lsrc="import" data-i18n="lib.srcImport">导入</button>
+          </div>
+          <span class="setting-k" id="lib-date-k" data-i18n="lib.byDate">日期</span>
+          <div class="lib-dates" role="group" aria-labelledby="lib-date-k">
+            <input type="date" id="lib-from" class="text-input" aria-label="从" data-i18n-aria="lib.dateFrom" />
+            <input type="date" id="lib-to" class="text-input" aria-label="到" data-i18n-aria="lib.dateTo" />
+          </div>
+          <span class="setting-k" id="lib-tc-k" data-i18n="lib.byTc">用时</span>
+          <div class="theme-row" id="lib-tc-seg" role="group" aria-labelledby="lib-tc-k">
+            <button type="button" data-ltc="all" class="active" data-i18n="hist.any">全部</button>
+            <button type="button" data-ltc="bullet" data-i18n="lib.tc.bullet">超快棋</button>
+            <button type="button" data-ltc="blitz" data-i18n="lib.tc.blitz">快棋</button>
+            <button type="button" data-ltc="rapid" data-i18n="lib.tc.rapid">中速</button>
+            <button type="button" data-ltc="classical" data-i18n="lib.tc.classical">慢棋</button>
+            <button type="button" data-ltc="daily" data-i18n="lib.tc.daily">通讯</button>
+          </div>
+          <span class="setting-k" id="lib-pos-k" data-i18n="lib.byPos">局面</span>
+          <div class="lib-pos-row">
+            <button type="button" class="switch" id="lib-pos" aria-pressed="false" aria-labelledby="lib-pos-k lib-pos-hint">
+              <span class="switch-knob"></span>
+            </button>
+            <span class="hint" id="lib-pos-hint" data-i18n="lib.posHint">只看经过棋盘上这个局面的棋</span>
+          </div>
           <span class="setting-k" id="lib-result-k" data-i18n="hist.byResult">按结果筛选</span>
           <div class="theme-row" id="lib-result-seg" role="group" aria-labelledby="lib-result-k">
             <button type="button" data-lres="all" class="active" data-i18n="hist.any">全部</button>
@@ -1145,11 +1185,16 @@
             <button type="button" data-lsort="acc" data-i18n="lib.sortWorst">我下得最差</button>
           </div>
         </div>
+        <p class="hint" id="lib-pos-note" hidden></p>
         <div class="pick-list" id="lib-list"></div>
+        <button type="button" class="act-btn" id="lib-more" hidden></button>
         <p class="hint" id="lib-list-count" hidden></p>
         <p class="hint" data-i18n="lib.listHint">点一局载入棋盘 —— 分析结果一起带过去，引擎不会重跑一遍。</p>
         <div class="close-row split">
-          <button type="button" class="act-btn" id="lib-pick-clear" hidden data-i18n="lib.clearPick">清除筛选</button>
+          <span class="btn-pair">
+            <button type="button" class="act-btn" id="lib-export" data-i18n="lib.exportPgn">导出 PGN</button>
+            <button type="button" class="act-btn" id="lib-pick-clear" hidden data-i18n="lib.clearPick">清除筛选</button>
+          </span>
           <button type="button" class="tool-btn" id="lib-list-close" data-i18n="act.close">关闭</button>
         </div>
       </div>
@@ -1193,7 +1238,9 @@
          reachable from the program itself, not only from the repository. -->
     <div class="modal-bg" id="about-modal" role="dialog" aria-labelledby="about-title">
       <div class="modal">
-        <h3 id="about-title" data-i18n="about.title">关于</h3>
+        <!-- v8-0-plan A6: the heading in the wordmark's form — the knight and
+             the brand colour — so the dialog is still named by what it shows -->
+        <h3 class="wordmark" id="about-title"><span class="wordmark-mark" aria-hidden="true"></span><span data-i18n="about.title">关于国际象棋</span></h3>
         <dl class="key-list about-list">
           <dt data-i18n="about.version">版本</dt><dd class="num" id="about-version"></dd>
           <dt data-i18n="about.license">许可</dt><dd id="about-license"></dd>
@@ -1320,6 +1367,21 @@
                 <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
               </div>
             </div>
+          </div>
+        </section>
+        <!-- v8-0-plan C2: the one setting that lets this app talk to another
+             host. Off by default; on, it still sends nothing until 同步 is
+             pressed on the library page (prefs-ui.js, sync-ui.js). -->
+        <section class="side-section" id="prefs-net-sec">
+          <h2 class="side-h" data-i18n="lib.sync">从网站同步</h2>
+          <div class="setting-list">
+            <div class="setting-row">
+              <span class="setting-k" id="opt-netsync-k" data-i18n="sync.allow">允许联网同步</span>
+              <button type="button" class="switch" id="opt-netsync" aria-pressed="false" aria-labelledby="opt-netsync-k" aria-describedby="opt-netsync-hint">
+                <span class="switch-knob"></span>
+              </button>
+            </div>
+            <p class="hint" id="opt-netsync-hint" data-i18n="sync.hint">默认关闭。打开后只在你点「同步」时联网，只发送用户名。</p>
           </div>
         </section>
         <!-- Every irreversible action, in one place, with one naming pattern.

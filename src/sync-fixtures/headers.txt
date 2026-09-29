@@ -1,0 +1,108 @@
+=== chesscom-archives.body
+HTTP/2 200
+date: Tue, 29 Sep 2026 05:21:39 GMT
+content-type: application/json; charset=utf-8
+content-length: 12488
+etag: W/"d43b13de6c4018f910335ec4b3a345be"
+last-modified: Tuesday, 01-Sep-2026 22:54:08 GMT+0000
+x-chesscom-matched: pubapi_player_games_archives
+access-control-allow-origin: *
+cache-control: public, max-age=60
+expires: Tue, 29 Sep 2026 05:22:39
+x-chesscom-meta: lean=cached
+x-chesscom-request-id-lb: e898a6922831febd8e425ad76296ec1e
+x-chesscom-request-id-cdn: a348761efdc9ac10-IAD
+strict-transport-security: max-age=31536000; includeSubDomains
+x-chesscom-ingress-pool: k8s-prod-fpm-catch-all
+accept-ranges: bytes
+cf-cache-status: REVALIDATED
+link: <https://api.chess.com/context/GameArchives.jsonld>; rel="http://www.w3.org/ns/json-ld#context"; type="application/ld+json"
+vary: accept-encoding
+set-cookie: (Cloudflare __cf_bm bot cookie, removed)
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=4F7H%2B9Z1K1ZrfzgOmgbudBHbOiSBaUU78H5tSSwnLnIbVKeTaiJVnhgA%2FYnMyQkwuMyxZqNPGKLpFQpDmd2r%2B7Wo63dWYHNtm9WbEx8mupPvdNA0VTEUDatRCTdXWY1Ny6o6B08oroxJnY%2FOsxzlpVgJzKZTgQ7pBeZGq4FePtDRHZmoPoyYOL4iym7bJaHhYQ%3D%3D"}]}
+nel: {"report_to":"cf-nel","success_fraction":1.0,"max_age":604800}
+server: cloudflare
+cf-ray: a4288babfdef2902-IAD
+alt-svc: h3=":443"; ma=86400
+
+=== chesscom-missing.body
+HTTP/2 404
+date: Tue, 29 Sep 2026 05:21:43 GMT
+content-type: application/json; charset=utf-8
+content-length: 77
+etag: W/"77cbf5ba536d51310adbe76412381731"
+last-modified: Tuesday, 29-Sep-2026 05:21:43 GMT+0000
+x-chesscom-matched: pubapi_player_games_archives_UserNotFound
+access-control-allow-origin: *
+cache-control: public, max-age=30
+expires: Tue, 29 Sep 2026 05:22:13
+x-chesscom-meta: lean=published
+x-chesscom-request-id-lb: 2cbcaba37398e1ceb2eb4b00731b8c1e
+x-chesscom-request-id-cdn: a4288bc81c0488d0-IAD
+strict-transport-security: max-age=31536000; includeSubDomains
+x-chesscom-ingress-pool: k8s-prod-fpm-catch-all
+cf-cache-status: MISS
+link: <https://api.chess.com/context/DisplayableException.jsonld>; rel="http://www.w3.org/ns/json-ld#context"; type="application/ld+json"
+vary: accept-encoding
+set-cookie: (Cloudflare __cf_bm bot cookie, removed)
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=4QyiaOMl2tOgujxrM1G6xmhM5JjDqktL4tLqkS5y7eNI3ndwBx6%2FcGWYGaaZTLuEJaM0lBYWsT94vLWbwyxFzBMKMK0VBCnkrrAt0ufdx4YOxRN7r4pcUquLDxGaQfAnLHPjq8A5ftIdiNOqiuiqU9RDlKuHhJLihBspN9St5qfZe4ZKNidKpUR%2FzfBRGhZIqQ%3D%3D"}]}
+nel: {"report_to":"cf-nel","success_fraction":1.0,"max_age":604800}
+server: cloudflare
+cf-ray: a4288bc81c0488d0-IAD
+alt-svc: h3=":443"; ma=86400
+
+=== chesscom-month.body
+HTTP/2 200
+date: Tue, 29 Sep 2026 05:21:41 GMT
+content-type: application/json; charset=utf-8
+content-length: 44140
+etag: W/"d3f5572c1ac53e4954ca18b67fef7ea2"
+last-modified: Tuesday, 29-Sep-2026 02:45:41 GMT+0000
+x-chesscom-matched: pubapi_player_games_archive
+access-control-allow-origin: *
+cache-control: public, max-age=5
+expires: Tue, 29 Sep 2026 05:21:46
+x-chesscom-meta: lean=published
+x-chesscom-request-id-lb: f0d2b5b2493191a410166c57e3ba131b
+x-chesscom-request-id-cdn: a427a7332bb11afa-IAD
+strict-transport-security: max-age=31536000; includeSubDomains
+x-chesscom-ingress-pool: k8s-prod-fpm-catch-all
+accept-ranges: bytes
+cf-cache-status: REVALIDATED
+link: <https://api.chess.com/context/Games.jsonld>; rel="http://www.w3.org/ns/json-ld#context"; type="application/ld+json"
+vary: accept-encoding
+set-cookie: (Cloudflare __cf_bm bot cookie, removed)
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=mW52zARvkqRB2rRkBKDywzWMZcxf49FHNWzFQUsTXKgXC2aI7YE%2F52xkhL4g3T3JSkV%2BzjmdF2TImc%2F%2F83j%2BYyTTGf7Hq9NCSbhiESwc26MWS1%2Fx4i6E%2F%2F0mtjd%2BRvderGM6%2FWDpOvroz9epFMxHnnLz8hImxRjoeJpCGfK3uqEe%2F0u4D3vgdqaHire2K8U1sA%3D%3D"}]}
+nel: {"report_to":"cf-nel","success_fraction":1.0,"max_age":604800}
+server: cloudflare
+cf-ray: a4288bbadd1996cf-IAD
+alt-svc: h3=":443"; ma=86400
+
+=== lichess-missing.body
+HTTP/2 404
+server: nginx
+date: Tue, 29 Sep 2026 05:21:36 GMT
+content-type: text/html; charset=utf-8
+content-length: 13567
+vary: Origin
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+
+=== lichess.body
+HTTP/2 200
+server: nginx
+date: Tue, 29 Sep 2026 05:21:34 GMT
+content-type: application/x-chess-pgn
+vary: Origin
+content-disposition: attachment; filename=lichess_thibault_2026-09-29.pgn
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+

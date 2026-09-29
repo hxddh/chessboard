@@ -70,6 +70,11 @@
       --wood-card: rgba(255,255,255,.04);
       --wood-card-border: rgba(255,255,255,.06);
       --wood-btn-ghost: rgba(255,255,255,.06);
+      /* v8-0-plan A6: the brand colour — the app icon's amber. One hue
+         in every theme, its lightness set per theme so the wordmark
+         clears 3:1 (large text) on both the surface and the panel
+         (scripts/test-brand.mjs measures it). */
+      --wood-brand: #eaa954;
 
       /* 2 · semantic roles — what the colour is FOR. This is the whole
          of what a theme declares, and the whole of what a new theme has
@@ -93,6 +98,7 @@
       --card-fill: var(--wood-card);
       --card-line: var(--wood-card-border);
       --control-ghost: var(--wood-btn-ghost);
+      --brand: var(--wood-brand);
       /* one scale for "how bad was that move", read by the stylesheet AND
          by the canvas (app.js judgeColours), and the two sides for anything
          that draws White against Black. v8-0-plan A3: here, not on the
@@ -135,6 +141,7 @@
       --night-card: rgba(255,255,255,.03);
       --night-card-border: rgba(255,255,255,.05);
       --night-btn-ghost: rgba(255,255,255,.05);
+      --night-brand: #eaa954;
 
       /* 2 · semantic roles — what the colour is FOR. This is the whole
          of what a theme declares, and the whole of what a new theme has
@@ -158,6 +165,7 @@
       --card-fill: var(--night-card);
       --card-line: var(--night-card-border);
       --control-ghost: var(--night-btn-ghost);
+      --brand: var(--night-brand);
       --judge-soft: #d8c46a;
       --judge-mid: #eaa94a;
       --judge-bad: #e8705c;
@@ -196,6 +204,7 @@
       --day-card: rgba(0,0,0,.03);
       --day-card-border: rgba(0,0,0,.06);
       --day-btn-ghost: rgba(0,0,0,.04);
+      --day-brand: #95560f;
 
       /* 2 · semantic roles — what the colour is FOR. This is the whole
          of what a theme declares, and the whole of what a new theme has
@@ -219,6 +228,7 @@
       --card-fill: var(--day-card);
       --card-line: var(--day-card-border);
       --control-ghost: var(--day-btn-ghost);
+      --brand: var(--day-brand);
       --judge-soft: #9a7b12;
       --judge-mid: #b7690c;
       --judge-bad: #c0392b;
@@ -251,6 +261,7 @@
       --notebook-card: rgba(0,0,0,.03);
       --notebook-card-border: rgba(0,0,0,.06);
       --notebook-btn-ghost: rgba(0,0,0,.04);
+      --notebook-brand: #95560f;
 
       /* 2 · semantic roles — what the colour is FOR. This is the whole
          of what a theme declares, and the whole of what a new theme has
@@ -274,6 +285,7 @@
       --card-fill: var(--notebook-card);
       --card-line: var(--notebook-card-border);
       --control-ghost: var(--notebook-btn-ghost);
+      --brand: var(--notebook-brand);
       --judge-soft: #8a6d0f;
       --judge-mid: #a85c08;
       --judge-bad: #b3372a;
@@ -3456,6 +3468,21 @@
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
 }
+/* v8-0-plan C1: the library's search — the two ends of a date range side by
+   side, and the position switch with the sentence saying what it keeps */
+.lib-dates, .lib-pos-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.lib-dates .text-input { flex: 1 1 0; min-width: 0; }
+.lib-pos-row .hint { margin: 0; }
+/* Nine questions stacked in one column put the list itself below the fold of
+   a 900px window. On a sheet this wide they go two to a row; the search box
+   and the six-way speed row keep a row each, so no segment gets narrower
+   than its word. */
+@media (min-width: 1100px) {
+  #lib-list-modal .hist-filters { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); }
+  #lib-list-modal #lib-q, #lib-list-modal #lib-tc-seg { grid-column: span 3; }
+}
+.lib-claim { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.lib-claim .hint { flex: 1 1 16rem; margin: 0; }
 
 /* v8-0-plan §5: the sheet was a 380px card with the list capped at 52vh
    inside it. Twelve rows of sentences wrapped to two and three lines there,
@@ -3754,6 +3781,27 @@ span[data-icon] { display: inline-grid; place-items: center; }
   width: 18px; height: 18px; background: currentColor;
   -webkit-mask: var(--empty-ic) center / contain no-repeat;
   mask: var(--empty-ic) center / contain no-repeat;
+}
+/* v8-0-plan A6: the empty state's icon in the brand colour — the one place
+   a fresh install sees most, and the one that says "this is the app's" */
+.hint.empty-note::after { background: var(--brand); }
+
+/* ------------------------------------------------------------------
+   The wordmark (v8-0-plan A6): the app icon's knight and the app's name,
+   in the brand colour — the home page's heading and the About window's.
+   The knight is the icon's own outline (assets/icon/icon.svg) as a mask
+   painted in currentColor, so each theme's --brand colours it; the eye is
+   cut out of it, as in the icon.
+   ------------------------------------------------------------------ */
+.wordmark {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--brand);
+}
+.wordmark-mark {
+  flex: none; width: 1.2em; height: 1.2em;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='10 3 80 94'%3E%3Cpath fill='black' d='M25 87C29 79 44 72 50 63C51 69 46 73 39 71.5C35 71 31 70 28.5 68.5L26.5 65.5L22.5 67.5C17 67.5 13 64.5 12 59.5C11 55.5 12 52 14 49C20 40 30 30 40 24C43 22 46 20 48 19L51 7C51.5 5 53.5 5 54.5 6.5L58 15L63 6C64 4.5 66 5 66 7L67 21C76 28 83 40 84 54C85 66 83 78 81 87ZM26 86H84C85.7 86 87 87.3 87 89V93C87 94.7 85.7 96 84 96H26C24.3 96 23 94.7 23 93V89C23 87.3 24.3 86 26 86ZM43 29.6A2.4 2.4 0 1 0 43 34.4A2.4 2.4 0 1 0 43 29.6Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='10 3 80 94'%3E%3Cpath fill='black' d='M25 87C29 79 44 72 50 63C51 69 46 73 39 71.5C35 71 31 70 28.5 68.5L26.5 65.5L22.5 67.5C17 67.5 13 64.5 12 59.5C11 55.5 12 52 14 49C20 40 30 30 40 24C43 22 46 20 48 19L51 7C51.5 5 53.5 5 54.5 6.5L58 15L63 6C64 4.5 66 5 66 7L67 21C76 28 83 40 84 54C85 66 83 78 81 87ZM26 86H84C85.7 86 87 87.3 87 89V93C87 94.7 85.7 96 84 96H26C24.3 96 23 94.7 23 93V89C23 87.3 24.3 86 26 86ZM43 29.6A2.4 2.4 0 1 0 43 34.4A2.4 2.4 0 1 0 43 29.6Z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 #stats-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v16a2 2 0 0 0 2 2h16'/%3E%3Cpath d='M18 17V9'/%3E%3Cpath d='M13 17V5'/%3E%3Cpath d='M8 17v-3'/%3E%3C/svg%3E"); }
 #lib-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m16 6 4 14'/%3E%3Cpath d='M12 6v14'/%3E%3Cpath d='M8 8v12'/%3E%3Cpath d='M4 4v16'/%3E%3C/svg%3E"); }
@@ -4095,3 +4143,46 @@ span[data-icon] { display: inline-grid; place-items: center; }
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent); font-weight: 600;
 }
+
+/* ------------------------------------------------------------------
+   v8-0-plan C3: 开局浏览器. One row a move: the move (and 「书」 when the
+   opening book plays it), the games, and a bar of White wins / draws /
+   Black wins in the two side colours the player strips already use, the
+   draws in the muted ink between them. A row is one button — the move is
+   played by clicking anywhere on it — at the small control height.
+   ------------------------------------------------------------------ */
+.xp { margin-top: 16px; }
+/* not .act-group: collapseEmptyGroups() un-hides every .act-group that holds a
+   button, and this section is shown by its key, not by what it holds */
+.xp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.xp-head .act-k { margin-bottom: 0; }
+/* the source switch keeps its words on one line; where heading and switch
+   do not fit side by side (English at 1024) the switch drops under it */
+.xp-head > .theme-row { flex: none; }
+.xp-head > .theme-row > button { white-space: nowrap; }
+.xp-note { margin: 4px 0 8px; }
+.xp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.xp-list:focus { outline: none; }
+.xp-row {
+  appearance: none; border: 0; background: transparent; color: var(--text);
+  display: grid; grid-template-columns: minmax(64px, auto) 48px minmax(0, 1fr); align-items: center; gap: 8px;
+  width: 100%; min-height: var(--ctl-h-sm); padding: 0 8px;
+  font: inherit; font-size: 0.875rem; text-align: left;
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.xp-row:hover { background: var(--btn-ghost); }
+.xp-san { display: flex; align-items: center; gap: 4px; font-weight: 600; white-space: nowrap; }
+.xp-book {
+  padding: 0 4px; border: 1px solid currentColor; border-radius: var(--radius-sm);
+  font-size: 0.6875rem; font-weight: 600; color: var(--accent);
+}
+.xp-n { text-align: right; color: var(--muted); font-size: 0.8125rem; }
+.xp-bar {
+  display: flex; height: 16px; overflow: hidden;
+  border: 1px solid var(--card-border); border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+}
+.xp-bar > span { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.xp-w { background: var(--side-white); color: var(--side-black); }
+.xp-d { background: var(--muted); color: var(--bg); }
+.xp-b { background: var(--side-black); color: var(--side-white); }

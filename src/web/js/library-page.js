@@ -1,0 +1,799 @@
+/**
+ * 棋谱库的数据库一半：存储、搜索、本机对局、认领名字、整库导出
+ * (v8-0-plan C1). Loaded as chunk-libdb.js after the first frame.
+ *
+ * library-ui.js keeps what it always had — the analysis pass, the section on
+ * the library page, the diagnosis (whose three charts, diag-charts.js, ride
+ * in this chunk since the M5 merge) — and hands this module its bag, the way
+ * every carved-out region of app.js does. Everything stateful arrives in
+ * that bag (the dialog stack, chess.js, the parser, the ECO table): a second
+ * copy of any of them bundled into this chunk would be a second stack, a
+ * second table, and focus that goes nowhere.
+ *
+ * What it adds:
+ *   * boot: open IndexedDB (library-db.js), migrate a v1 library into it,
+ *     pull games back from the native store when IndexedDB lost them, load,
+ *     index what is not indexed — then hand the lists to library-ui;
+ *   * save: the games that changed (a cheap signature per entry), their
+ *     shards touched for the native mirror, the header kept current;
+ *   * 本机: the play history (stats.games) as library entries, `src:
+ *     "local"`, so the list, the search and the explorer see one library.
+ *     The analysis pass and the diagnosis still read the imported games only
+ *     — a 本机 game already has its own review, and counting it twice in a
+ *     statement about "your games elsewhere" would change what 7.x's numbers
+ *     meant;
+ *   * the list page: search by opponent / opening / ECO / event, date range,
+ *     result, colour, speed, source and "passes through the position on the
+ *     board", with what was played next from there;
+ *   * claim: after an import, the name on most games is offered once.
+ * @module library-page
+ */
+import { LibraryQuery } from "./library-query.js";
+import { LibraryDb } from "./library-db.js";
+import { createDiagCharts } from "./diag-charts.js";
+
+/**
+ * Background work (the 本机 games, the index, the openings) runs in slices of
+ * this many ms with a pause between: the native mirror's own writes are held
+ * to 16 ms of main thread (v8-0-plan F3), and a slice that lands between two
+ * of its bridge calls counts against that.
+ */
+const SLICE = 6;
+
+/** Rows the list draws at a time; 「再显示」 adds this many more. */
+const PAGE = 100;
+
+/** The header as read from localStorage (`chess.v1.library`), or null. */
+function readHeader(raw) {
+  if (raw == null || raw === "") return null;
+  try { const v = JSON.parse(raw); return v && typeof v === "object" ? v : null; } catch (_) { return null; }
+}
+
+/**
+ * The fields a save cares about, as one string: an entry whose signature is
+ * unchanged since it was last written is not written again. Everything the
+ * app mutates on a stored entry is here — claim, analysis, opening, clock.
+ */
+function sigOf(g) {
+  const an = g.an;
+  return [g.side, g.outcome, g.eco, g.ecoName, g.unplayable ? 1 : 0,
+    an ? (an.budget || 0) + ":" + (Array.isArray(an.tags) ? an.tags.length : 0) + ":" + (an.acc ? an.acc.w + "/" + an.acc.b : "") : "",
+    g.clk ? g.clk.length : 0, g.motifs ? Object.keys(g.motifs).length : 0].join("|");
+}
+
+/**
+ * @param {object} d the bag library-ui.js hands over (see its libDbBag)
+ * @returns {Promise<object>} the controller
+ */
+async function bootLibrary(d) {
+  const { doc, store, Persist, t, tf, toast, Library, Dlg, reconcile } = d;
+  const header = readHeader(Persist.get("library")) || {};
+  let claimAsked = !!header.claimAsked;
+  let claim = null;   // the offer on screen (renderClaim)
+  const backend = await LibraryDb.idbBackend(d.idb);
+  const st = LibraryDb.createLibraryStore({ backend: backend || LibraryDb.memoryBackend(), Chess: d.Chess, withLock: d.withLock });
+  // "idb": games in IndexedDB. "legacy": no IndexedDB here, or the migration
+  // was refused — the pre-C1 shape (one localStorage value) for this session
+  let mode = backend ? "idb" : "legacy";
+  const sigs = new Map();
+  let warned = false;
+  const warnOnce = (key, arg) => { if (warned) return; warned = true; toast(tf(key, [arg || ""]), "fault"); };
+  // the games had moved to IndexedDB (the header says db 2): without it they
+  // are not "saved the old way" — they are out of reach (M5 review P2-1)
+  const refused = header.db === 2 ? "lib.unreadable" : "lib.migrateFailed";
+  // set once restoreShards has replaced the games: the page reloads onto
+  // them, and nothing it still holds may be written back first (M5 review P3-4)
+  let frozen = false;
+
+  // --- migrate, recover, load ---------------------------------------------
+  const v1Games = Array.isArray(header.games) ? header.games : [];
+  let migrated = false;
+  if (mode === "idb" && v1Games.length) {
+    const r = await st.migrate(Persist.get("library"));
+    if (r.ok) migrated = true;
+    else { mode = "legacy"; warnOnce(refused, r.error); }
+  }
+  if (mode === "idb") {
+    try { await st.load(); } catch (_) { mode = "legacy"; warnOnce(refused, "load"); }
+  }
+  if (mode === "idb" && header.db === 2 && Number(header.n) > st.games.length) {
+    // IndexedDB holds fewer games than the header counted: the WebView's
+    // data went and localStorage's did not (or a restore could not write).
+    // The native store has the shards.
+    const texts = await Persist.readBulk();
+    const back = [];
+    for (const text of Object.values(texts || {})) {
+      const v = readHeader(text);
+      if (v && Array.isArray(v.games)) back.push(...v.games);
+    }
+    if (back.length) {
+      const had = st.games.length;
+      // no backup copy: this is the native store's copy already (P3-3)
+      const r = await st.migrate(JSON.stringify({ v: 1, games: back }), { backup: false });
+      if (r.ok) {
+        await st.load();
+        if (st.games.length > had) toast(tf("lib.recovered", [st.games.length - had]));
+      }
+    }
+  }
+  /**
+   * M5 review P2-1: no IndexedDB this session, and the header says the games
+   * went there. They are not in localStorage, so "the pre-C1 shape" would be
+   * an empty library, and its save a header without db / n and 64 emptied
+   * shards. Instead the games are read from the native shards and shown
+   * read-only: the shards are served back to the store exactly as read, the
+   * header keeps what it said, and imports and passes are refused.
+   */
+  const readOnly = mode === "legacy" && header.db === 2;
+  let roTexts = null;
+  if (readOnly) {
+    warnOnce("lib.unreadable");
+    roTexts = await Persist.readBulk();
+    const byId = new Map();
+    for (const text of Object.values(roTexts || {})) {
+      const v = readHeader(text);
+      if (v && Array.isArray(v.games)) for (const g of v.games) if (g && g.id) byId.set(g.id, g);
+    }
+    for (const g of v1Games) if (g && g.id && !byId.has(g.id)) byId.set(g.id, g);
+    store.session.library = [...byId.values()].filter((g) => typeof g.sans === "string" && g.plies > 0)
+      .sort((a, b) => (b.t || 0) - (a.t || 0));
+    for (const g of store.session.library) d.rescoreLosses(g);
+    store.session.libUnreadable = true;
+  }
+  if (mode === "idb") {
+    // the session's list becomes the stored one. A v1 library the page has
+    // been showing since boot is the same games (just migrated), and nothing
+    // could change them meanwhile: imports and passes wait for this boot.
+    store.session.library = st.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
+    // 7.0's unclamped losses, recomputed from the scalars on every load as
+    // library-ui.js loadLibrary() does — the stored record keeps what it had
+    for (const g of store.session.library) d.rescoreLosses(g);
+    for (const g of store.session.library) sigs.set(g.id, sigOf(g));
+    if (migrated) {
+      // the header changes last, after every game is readable back — until
+      // then a crash anywhere leaves the v1 value, and the next launch
+      // migrates again
+      Persist.touchBulk(Object.keys(shardMap()));
+      writeHeader();
+    }
+  }
+  // a name typed while the games were still loading claimed the list the
+  // page had then; claim the stored one too
+  const namesThen = JSON.stringify(Array.isArray(header.names) ? header.names : []);
+  const renamed = mode === "idb" && JSON.stringify(store.session.libNames) !== namesThen;
+
+  /** shard name → its games, for the current list (see shardText) */
+  let groups = null;
+  function shardGroups() {
+    const m = new Map();
+    for (const g of store.session.library) {
+      const k = st.shardOf(g.id);
+      let a = m.get(k);
+      if (!a) m.set(k, (a = []));
+      a.push(g);
+    }
+    return m;
+  }
+  function shardMap() {
+    const m = {};
+    for (const g of store.session.library) m[st.shardOf(g.id)] = true;
+    return m;
+  }
+
+  /** The header: names and counts only, once the games are in IndexedDB. */
+  function writeHeader() {
+    const names = store.session.libNames;
+    // a profile that never had a library (6.x, a fresh install) is not given one
+    if (Persist.get("library") == null && !store.session.library.length && !names.length && !claimAsked) return true;
+    // read-only (P2-1): the header as found — its db, n and any v1 games — with the names
+    if (readOnly) return Persist.setJson("library", Object.assign({}, header, { names, claimAsked: claimAsked || undefined }));
+    if (mode !== "idb") {
+      return Persist.setJson("library", { v: 1, games: store.session.library, names, claimAsked: claimAsked || undefined });
+    }
+    return Persist.setJson("library", { v: 1, games: [], names, db: 2, n: store.session.library.length,
+      claimAsked: claimAsked || undefined });
+  }
+
+  /**
+   * Write what changed: new or changed entries (by signature), removed ones,
+   * the header. The native shards are touched first — the stamp goes up
+   * before IndexedDB is written, so a crash in between leaves the mirror
+   * owed rather than claiming a revision it lacks (persist.js recover).
+   */
+  let chain = Promise.resolve();
+  function save() {
+    // a name typed into the field is an answer to the claim too
+    if (store.session.libNames.length && !claimAsked) { claimAsked = true; renderClaim(); }
+    if (frozen) return chain;
+    if (mode !== "idb") { writeHeader(); return Promise.resolve(true); }
+    const list = store.session.library;
+    const changed = [];
+    const live = new Set();
+    for (const g of list) {
+      live.add(g.id);
+      const s = sigOf(g);
+      if (sigs.get(g.id) !== s) { changed.push(g); sigs.set(g.id, s); }
+    }
+    const gone = [];
+    for (const id of sigs.keys()) if (!live.has(id)) gone.push(id);
+    for (const id of gone) sigs.delete(id);
+    st.games = list;
+    groups = null;
+    const touched = new Set(changed.concat(gone.map((id) => ({ id }))).map((g) => st.shardOf(g.id)));
+    if (touched.size) Persist.touchBulk([...touched]);
+    writeHeader();
+    if (!changed.length && !gone.length) return chain;
+    chain = chain.then(async () => {
+      try {
+        if (gone.length) await st.drop(gone);
+        await st.save(changed);
+        if (peers) peers.postMessage({ put: changed.map((g) => g.id), gone });
+      } catch (e) {
+        // not written: owed again, and said once
+        for (const g of changed) sigs.delete(g.id);
+        warnOnce("lib.saveFailed", (e && e.name) || "");
+      }
+    });
+    return chain;
+  }
+
+  /**
+   * Two windows of the app share one IndexedDB but each holds its own list.
+   * Every window writes only the games it changed, so neither can take the
+   * other's games out of the store — but a window that never heard of a game
+   * would leave it out of the native shards it writes, and out of an
+   * export. So a commit is announced, and the other windows read those
+   * records back into their lists. (No BroadcastChannel before Safari 15.4:
+   * there the next launch is when a window learns.)
+   */
+  const peers = typeof BroadcastChannel === "function" && mode === "idb" ? new BroadcastChannel("chessboard.library") : null;
+  if (peers) {
+    peers.onmessage = async (ev) => {
+      const m = ev.data || {};
+      const ids = Array.isArray(m.put) ? m.put : [];
+      const goneIds = new Set(Array.isArray(m.gone) ? m.gone : []);
+      let got = [];
+      try { got = ids.length ? await st.read(ids) : []; } catch (_) { got = []; }
+      const byId = new Map(got.filter((g) => g && g.src !== "local").map((g) => [g.id, g]));
+      const list = store.session.library.filter((g) => !goneIds.has(g.id) && !byId.has(g.id));
+      for (const g of byId.values()) { d.rescoreLosses(g); list.push(g); sigs.set(g.id, sigOf(g)); }
+      for (const id of goneIds) sigs.delete(id);
+      list.sort((a, b) => (b.t || 0) - (a.t || 0));
+      store.session.library = list;
+      st.games = list;
+      d.renderLibrary();
+      if (listOpen()) renderList();
+    };
+  }
+
+  // --- 本机: the play history as library entries ---------------------------
+  const localRec = new Map();   // entry id → the stats record it stands for
+  /** "1-0" etc. from the player's colour and outcome. */
+  const boardResult = (rec) => (rec.result === "draw" ? "1/2-1/2"
+    : (rec.result === "win") === (rec.color !== "b") ? "1-0" : "0-1");
+  function localEntry(rec) {
+    const e = { id: "loc:" + rec.id, src: "local", ref: rec.id, t: rec.t || 0, diff: rec.diff || "",
+      side: rec.color === "b" ? "b" : "w", outcome: rec.result, result: boardResult(rec),
+      white: "", black: "", date: "", sans: "", plies: 0, fen: "", pgnLen: rec.pgn.length };
+    if (rec.t) {
+      const dt = new Date(rec.t), two = (n) => String(n).padStart(2, "0");
+      e.date = dt.getFullYear() + "." + two(dt.getMonth() + 1) + "." + two(dt.getDate());
+    }
+    if (typeof rec.acc === "number") e.acc = rec.acc;
+    let game = null;
+    try { game = d.PgnParser.parsePgn(rec.pgn).games[0] || null; } catch (_) { game = null; }
+    if (!game) return e;
+    const sans = [], fens = [game.root.fen];
+    for (let n = game.root; n && n.children.length; n = n.children[0]) {
+      sans.push(n.children[0].san);
+      fens.push(n.children[0].fen);
+    }
+    e.sans = sans.join(" ");
+    e.plies = sans.length;
+    if (game.root.fen !== new d.Chess().fen()) e.fen = game.root.fen;
+    st.indexFens(e.id, fens);
+    const eco = ecoOfFens(fens);
+    if (eco !== undefined) { e.eco = eco ? eco.eco : ""; e.ecoName = eco ? eco.name : ""; }
+    return e;
+  }
+  /**
+   * Bring the 本机 entries in step with the play history: new games added
+   * (parsed and indexed once, then stored), finished analyses picked up,
+   * games the history no longer has dropped. A slice at a time.
+   */
+  let localBusy = null;
+  function syncLocal() {
+    if (localBusy) { localBusy.again = true; return localBusy.p; }
+    const run = { again: false };
+    run.p = (async () => {
+      do {
+        run.again = false;
+        let recs = [];
+        try { recs = (d.loadStats().games || []).filter((g) => g && g.id && typeof g.pgn === "string" && g.pgn.trim()); }
+        catch (_) { recs = []; }
+        const have = new Map(st.local.map((g) => [g.id, g]));
+        const next = [], put = [], recOf = new Map();
+        let t0 = Date.now();
+        for (const rec of recs) {
+          const id = "loc:" + rec.id;
+          recOf.set(id, rec);
+          let e = have.get(id);
+          if (!e || e.pgnLen !== rec.pgn.length || e.acc !== (typeof rec.acc === "number" ? rec.acc : undefined)) {
+            e = localEntry(rec);
+            put.push(e);
+          }
+          next.push(e);
+          if (Date.now() - t0 > SLICE) { await d.pause(); t0 = Date.now(); }
+        }
+        const gone = [...have.keys()].filter((id) => !recOf.has(id));
+        st.local = next;
+        localRec.clear();
+        for (const [id, rec] of recOf) localRec.set(id, rec);
+        if (mode === "idb" && !frozen) {
+          try { if (gone.length) await st.drop(gone); await st.save(put); } catch (_) { /* derived: rebuilt next launch */ }
+        }
+      } while (run.again);
+      localBusy = null;
+      if (listOpen()) renderList();
+    })();
+    localBusy = run;
+    return run.p;
+  }
+
+  // --- the list page -------------------------------------------------------
+  const listModal = () => doc.getElementById("lib-list-modal");
+  const listOpen = () => { const m = listModal(); return !!m && m.classList.contains("show"); };
+  const f = store.ui.libFilter = Object.assign({ result: "all", color: "all", sort: "t", src: "all", tc: "all",
+    q: "", from: "", to: "", pos: false }, store.ui.libFilter);
+  let shown = PAGE;
+
+  /** Every game the list can show: imported first, then 本机. */
+  const allGames = () => store.session.library.concat(st.local);
+  /** The query the page's controls describe. */
+  function pageQuery() {
+    return { text: f.q, from: f.from, to: f.to, result: f.result, color: f.color, tc: f.tc, src: f.src,
+      position: f.pos ? d.boardFen() : "" };
+  }
+  /** A diagnosis pick (7.1) narrows the imported games further. */
+  function pickMatches(g) {
+    const pick = store.ui.libPick;
+    if (!pick) return true;
+    if (g.src === "local") return false;
+    if (pick.kind === "eco") return g.eco === pick.value;
+    return d.libPickPly(g) != null;
+  }
+
+  /** How many of this player's own plies in a game were `?` or `??`. */
+  function badCount(g) {
+    const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
+    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
+    const first = start[1] === "b" ? "b" : "w";
+    const other = first === "w" ? "b" : "w";
+    let n = 0;
+    for (let i = 0; i < tags.length; i++) {
+      if ((i % 2 === 0 ? first : other) !== g.side) continue;
+      if (tags[i] === "?" || tags[i] === "??") n++;
+    }
+    return n;
+  }
+  /** The second line: when, how well, how many mistakes, which opening. */
+  function subOf(g) {
+    const bits = [];
+    if (g.src === "local") {
+      if (g.date) bits.push(g.date);
+      if (g.plies) bits.push(tf(Math.ceil(g.plies / 2) === 1 ? "mm.moveCount.one" : "mm.moveCount.other", [Math.ceil(g.plies / 2)]));
+      if (typeof g.acc === "number") bits.push(tf("hist.acc", [g.acc]));
+    } else {
+      if (g.date && g.date !== "?") bits.push(g.date);
+      const acc = g.an && g.an.acc && g.side ? g.an.acc[g.side] : null;
+      if (Number.isFinite(acc)) bits.push(tf("lib.rowAcc", [Math.round(acc * 10) / 10]));
+      if (g.an) bits.push(tf("lib.rowBad", [badCount(g)]));
+      else bits.push(t(g.unplayable ? "lib.rowUnplayable" : "lib.rowPending"));
+      if (LibraryQuery.tcClass(g.tc)) bits.push(t("lib.tc." + LibraryQuery.tcClass(g.tc)));
+    }
+    if (g.eco) bits.push(g.eco + " " + d.libEcoName(g.eco, g.ecoName));
+    return bits.join(" · ");
+  }
+  /** A 本机 game's headline: the history's own words (result · level · colour). */
+  function localLabel(g) {
+    const res = t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw");
+    return [res, t("diff." + g.diff), t(g.side === "b" ? "hist.black" : "hist.white")].join(" · ");
+  }
+  function rowOf(g) {
+    const row = doc.createElement("div");
+    row.className = "hist-row";
+    const load = doc.createElement("button");
+    load.type = "button";
+    load.className = "pick-item";
+    if (g.src === "local") {
+      load.dataset.loc = g.ref;
+      load.textContent = localLabel(g);
+      // v8-0-plan C1: 对局历史 is part of the library now, and says where it came from
+      const tag = doc.createElement("span");
+      tag.className = "pick-tag";
+      tag.textContent = t("lib.srcLocal");
+      load.appendChild(tag);
+    } else {
+      load.dataset.lib = g.id;
+      load.textContent = d.libraryLabel(g);
+      // v8-0-plan C2: a game from Lichess / Chess.com (synced or downloaded) says so, as 本机 does
+      const site = LibraryQuery.siteOf(g);
+      if (site) {
+        const tag = doc.createElement("span");
+        tag.className = "pick-tag";
+        tag.textContent = site;
+        load.appendChild(tag);
+      }
+    }
+    const sub = doc.createElement("span");
+    sub.className = "pick-sub";
+    sub.textContent = subOf(g);
+    load.appendChild(sub);
+    row.appendChild(load);
+    const act = doc.createElement("button");
+    act.type = "button";
+    act.className = "row-act";
+    if (g.src === "local") {
+      act.dataset.locPgn = g.ref;
+      act.textContent = t("hist.pgn");
+      row.appendChild(act);
+    } else if (g.an && !g.unplayable && (Number(g.an.budget) || 0) < d.LIB_DEEP_BUDGET) {
+      // 「再深一遍」 only where there is something to deepen (7.2 A1, P3)
+      act.dataset.libDeep = g.id;
+      act.textContent = t("lib.deepen");
+      act.title = t("tip.libDeepen");
+      row.appendChild(act);
+    }
+    return row;
+  }
+
+  /** The measured cost of the last search, for docs/measured.json. */
+  const last = { ms: 0, n: 0 };
+  function renderList() {
+    const list = doc.getElementById("lib-list");
+    if (!list) return;
+    const t0 = performance.now();
+    const all = allGames();
+    for (const g of st.local) if (!g.opp || g.oppLang !== store.ui.langId) { g.opp = t("diff." + g.diff); g.oppLang = store.ui.langId; }
+    let rows = LibraryQuery.query(all, pageQuery(), st.pkOf);
+    if (store.ui.libPick) rows = rows.filter(pickMatches);
+    if (f.sort === "acc") {
+      // worst first; a game with no accuracy to rank goes last
+      const accOf = (g) => (g.src === "local" ? (typeof g.acc === "number" ? g.acc : Infinity)
+        : g.an && g.an.acc && g.side && g.an.acc[g.side] != null ? g.an.acc[g.side] : Infinity);
+      rows.sort((a, b) => accOf(a) - accOf(b));
+    } else {
+      rows.sort((a, b) => (b.t || 0) - (a.t || 0));
+    }
+    const page = rows.slice(0, shown);
+    // rows carry the game's id, never an index (7.4 D1)
+    reconcile(list, page, (g) => g.id,
+      (g) => [store.ui.langId, g.outcome, g.side, g.eco, g.an ? "a" + (g.an.budget || 0) : "-", g.unplayable ? "u" : "-", g.acc].join("|"),
+      (g) => rowOf(g));
+    if (!rows.length) {
+      const p = doc.createElement("p");
+      p.className = "hint";
+      p.textContent = t("hist.noneMatch");
+      list.appendChild(p);
+    }
+    const more = doc.getElementById("lib-more");
+    if (more) {
+      more.hidden = rows.length <= page.length;
+      more.textContent = tf("lib.more", [Math.min(PAGE, rows.length - page.length)]);
+    }
+    const count = doc.getElementById("lib-list-count");
+    if (count) {
+      const filtered = rows.length !== all.length || !!store.ui.libPick;
+      count.hidden = !filtered;
+      count.textContent = tf("hist.showing", [rows.length, all.length]);
+    }
+    const note = doc.getElementById("lib-pick-note");
+    if (note) {
+      note.hidden = !store.ui.libPick;
+      note.textContent = store.ui.libPick ? store.ui.libPick.label : "";
+    }
+    const clear = doc.getElementById("lib-pick-clear");
+    if (clear) clear.hidden = !store.ui.libPick;
+    const pos = doc.getElementById("lib-pos-note");
+    if (pos) {
+      // what was played next from the position on the board — the
+      // explorer's question (C3), asked of the games this list is showing
+      const s = f.pos ? LibraryQuery.gamesWithPosition(rows, d.boardFen(), st.pkOf) : null;
+      pos.hidden = !s;
+      if (s) {
+        const top = s.moves.slice(0, 5).map((m) => m.san + " " + m.n).join(" · ");
+        pos.textContent = tf("lib.posStat", [s.total, top || "—"]);
+      }
+    }
+    for (const [seg, key, attr] of [["lib-result-seg", "result", "lres"], ["lib-color-seg", "color", "lcol"],
+      ["lib-sort-seg", "sort", "lsort"], ["lib-src-seg", "src", "lsrc"], ["lib-tc-seg", "tc", "ltc"]]) {
+      doc.querySelectorAll("#" + seg + " button").forEach((b) => b.classList.toggle("active", b.dataset[attr] === f[key]));
+    }
+    const posBtn = doc.getElementById("lib-pos");
+    if (posBtn) posBtn.setAttribute("aria-pressed", f.pos ? "true" : "false");
+    last.ms = performance.now() - t0;
+    last.n = rows.length;
+  }
+
+  /** LibraryQuery.ecoOfFens over the ECO table, once it has arrived (undefined before). */
+  const ecoOfFens = (fens) => {
+    const tab = typeof window !== "undefined" ? window.ECO_BY_KEY : null;
+    return tab ? LibraryQuery.ecoOfFens(fens, tab) : undefined;
+  };
+  /**
+   * Every game's opening, filled in where it is missing — imported and 本机,
+   * claimed or not, so the search can find them by opening. A slice at a
+   * time: at ten thousand games the synchronous fill (library-ui.js
+   * fillOpenings, 7.1) replays up to 24 plies of each and would hold the
+   * window for seconds. A game the table has nothing for is marked "" and
+   * not asked again.
+   */
+  let filling = null;
+  function fillOpenings() {
+    if (filling) return filling;
+    if (!allGames().some((g) => typeof g.eco !== "string" && g.sans)) return Promise.resolve();
+    filling = (async () => {
+      try { await d.Eco.ready(); } catch (_) { /* no table: nothing to fill */ }
+      let n = 0;
+      if (d.Eco.loaded()) {
+        let t0 = Date.now();
+        for (const g of allGames()) {
+          if (typeof g.eco === "string" || !g.sans) continue;
+          let hit = null;
+          try { hit = d.Eco.openingForGame(g.sans.split(" ").slice(0, 24), g.fen || undefined); } catch (_) { hit = null; }
+          g.eco = hit ? hit.eco : "";
+          g.ecoName = hit ? hit.name || "" : "";
+          n++;
+          if (Date.now() - t0 > SLICE) { await d.pause(); t0 = Date.now(); }
+        }
+      }
+      filling = null;
+      if (n) { save(); if (listOpen()) renderList(); }
+    })();
+    return filling;
+  }
+
+  function openList(pick, opts) {
+    store.ui.libPick = pick || null;
+    // a diagnosis pick is about imported games; show them, whatever the
+    // source row was left on
+    // …and the pick is the whole question: the page's own search steps aside
+    if (opts && opts.src) f.src = opts.src;
+    else if (pick) Object.assign(f, { src: "all", q: "", from: "", to: "", tc: "all", pos: false });
+    for (const [id, key] of [["lib-from", "from"], ["lib-to", "to"]]) {
+      const el = doc.getElementById(id);
+      if (el && el.value !== f[key]) el.value = f[key];
+    }
+    shown = PAGE;
+    const q = doc.getElementById("lib-q");
+    if (q && q.value !== f.q) q.value = f.q;
+    // an opening name needs the ECO chunk; the fill asks for it, and redraws
+    fillOpenings();
+    renderList();
+    Dlg.open(listModal());
+    syncLocal();
+  }
+  /** Every control on the list page, wired once. */
+  function wire() {
+    const list = doc.getElementById("lib-list");
+    if (list) {
+      list.onclick = (ev) => {
+        const deep = ev.target.closest("button[data-lib-deep]");
+        if (deep) { d.deepenLibraryGame(deep.dataset.libDeep); return; }
+        const pgn = ev.target.closest("button[data-loc-pgn]");
+        if (pgn) {
+          const rec = localRec.get("loc:" + pgn.dataset.locPgn);
+          if (rec) d.copyText(rec.pgn, t("hist.pgnCopied"));
+          return;
+        }
+        const loc = ev.target.closest("button[data-loc]");
+        if (loc) {
+          const rec = localRec.get("loc:" + loc.dataset.loc);
+          if (!rec) return;
+          if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
+          Dlg.close(listModal());
+          d.loadHistoryRecord(rec);
+          return;
+        }
+        const b = ev.target.closest("button[data-lib]");
+        if (b) d.loadFromLibrary(b.dataset.lib);
+      };
+    }
+    const segs = [["lib-result-seg", "result", "lres"], ["lib-color-seg", "color", "lcol"], ["lib-sort-seg", "sort", "lsort"],
+      ["lib-src-seg", "src", "lsrc"], ["lib-tc-seg", "tc", "ltc"]];
+    for (const [id, key, attr] of segs) {
+      const seg = doc.getElementById(id);
+      if (seg) seg.onclick = (ev) => {
+        const b = ev.target.closest("button");
+        if (!b || b.dataset[attr] == null || f[key] === b.dataset[attr]) return;
+        f[key] = b.dataset[attr];
+        shown = PAGE;
+        renderList();
+      };
+    }
+    const q = doc.getElementById("lib-q");
+    if (q) q.oninput = () => { f.q = q.value; shown = PAGE; renderList(); };
+    for (const [id, key] of [["lib-from", "from"], ["lib-to", "to"]]) {
+      const el = doc.getElementById(id);
+      if (el) el.onchange = () => { f[key] = el.value; shown = PAGE; renderList(); };
+    }
+    const pos = doc.getElementById("lib-pos");
+    if (pos) pos.onclick = () => { f.pos = !f.pos; shown = PAGE; renderList(); };
+    const more = doc.getElementById("lib-more");
+    if (more) more.onclick = () => { shown += PAGE; renderList(); };
+    const clearPick = doc.getElementById("lib-pick-clear");
+    if (clearPick) clearPick.onclick = () => { store.ui.libPick = null; renderList(); };
+    const exp = doc.getElementById("lib-export");
+    if (exp) exp.onclick = () => { exportPgn(); };
+  }
+
+  /**
+   * The imported games the page is showing, as one PGN file — the whole
+   * library when nothing is filtered (v8-0-plan C1: 整库导出和导回逐局相等).
+   * 本机 games are not in it: the history keeps their own PGN, and a
+   * re-import would turn each into an imported copy of itself.
+   */
+  async function exportPgn() {
+    let rows = LibraryQuery.query(store.session.library, pageQuery(), st.pkOf);
+    if (store.ui.libPick) rows = rows.filter(pickMatches);
+    if (!rows.length) { toast(t("hist.noneMatch"), "fix"); return; }
+    const text = rows.map(LibraryQuery.entryPgn).join("\n");
+    await d.exportText("chessboard-library.pgn", text, "application/x-chess-pgn", t("lib.exportPgn"));
+  }
+
+  // --- import and claim ----------------------------------------------------
+  /** The file being read, as a promise; the next import waits for it. */
+  let importing = null;
+  /**
+   * Take every game in a PGN file into the library (7.0), with its position
+   * index made from the parse — the parser already walked every position.
+   */
+  async function importPgn(text, label) {
+    const text0 = (text || "").trim();
+    if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
+    // a second file (or a sync) while one is being read waits its turn: it
+    // used to return here in silence, games fetched and gone (M5 review P3-2)
+    while (importing) await importing;
+    if (store.session.libUnreadable) { toast(t("lib.unreadable"), "fault"); return; }
+    // 导入全部数据 is reloading the page (P3-4): say that, rather than import into what goes
+    if (frozen) { toast(t("msg.allData.imported")); return; }
+    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    let chunks;
+    try { chunks = d.PgnParser.splitGames(text0); } catch (_) { chunks = d.Pgn.splitGames(text0); }
+    // read game by game, handing the thread back every ~16 ms (7.5)
+    let games, release;
+    importing = new Promise((r) => { release = r; });
+    // the openings come from the parse's own positions, so the ECO table
+    // is wanted now rather than replayed for later (fillOpenings)
+    try { await d.Eco.ready(); } catch (_) { /* no table: filled later */ }
+    try { games = await d.PgnParser.parseGamesAsync(chunks); } finally { importing = null; release(); }
+    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    const now = Date.now();
+    const fresh = [];
+    for (const parsed of games) {
+      if (!parsed) continue;
+      // mainline SAN only: variations are the annotator's opinion
+      const sans = [], fens = [parsed.root.fen];
+      for (let n = parsed.root; n && n.children.length; n = n.children[0]) {
+        sans.push(n.children[0].san);
+        fens.push(n.children[0].fen);
+      }
+      if (!sans.length) continue;
+      const e = Library.entryFrom(parsed, sans, store.session.libNames, now);
+      if (!st.pk.has(e.id)) st.indexFens(e.id, fens);
+      const eco = ecoOfFens(fens);
+      if (eco !== undefined) { e.eco = eco ? eco.eco : ""; e.ecoName = eco ? eco.name : ""; }
+      fresh.push(e);
+    }
+    if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
+    const r = Library.addGames(store.session.library, fresh);
+    store.session.library = r.list;
+    for (const id of r.dropped) st.pk.delete(id);
+    save();
+    d.renderLibrary();
+    if (!r.added) toast(tf("lib.addedNone", [r.dup]), "fix");
+    else toast(tf("lib.added", [r.added, r.dup]) + (label ? " · " + label : ""));
+    if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
+    renderClaim();
+    fillOpenings();
+  }
+
+  /**
+   * v8-0-plan C1: 认领名字. Nobody has been named yet and the games agree on
+   * one name (LibraryQuery.inferName): the library section offers it, once —
+   * a line under the buttons, not a dialog, so it neither blocks the page nor
+   * moves 分析 (7.6). Answered either way, or a name typed into the field,
+   * and it is not offered again; the field stays for a correction.
+   */
+  function renderClaim() {
+    const box = doc.getElementById("lib-claim");
+    claim = claimAsked || store.session.libNames.length ? null : LibraryQuery.inferName(store.session.library);
+    if (!box) return;
+    box.hidden = !claim;
+    const text = doc.getElementById("lib-claim-text");
+    if (claim && text) text.textContent = tf("lib.claimAsk", [claim.name, claim.n, claim.of]);
+  }
+  function answerClaim(yes) {
+    const c = claim;
+    claimAsked = true;
+    if (yes && c) {
+      store.session.libNames = [c.name];
+      const input = doc.getElementById("lib-names");
+      if (input) input.value = c.name;
+      d.reclaimLibrary();
+    }
+    save();
+    renderClaim();
+    d.renderLibrary();
+    if (yes && c) toast(tf("lib.claimDone", [c.name, store.session.library.filter((g) => g.side).length]));
+  }
+
+  // --- the rest of the seam ------------------------------------------------
+  wire();
+  for (const [id, yes] of [["lib-claim-yes", true], ["lib-claim-no", false]]) {
+    const b = doc.getElementById(id);
+    if (b) b.onclick = () => answerClaim(yes);
+  }
+  renderClaim();
+  if (renamed) { d.reclaimLibrary(); save(); }
+  // what is not indexed yet (a migrated or restored library), in the
+  // background; the position filter finds more as it goes
+  if (mode !== "idb") st.games = store.session.library;
+  const indexing = st.indexMissing(SLICE, d.pause).then(() => { if (listOpen()) renderList(); });
+  syncLocal();
+  // M5 review P3-1: a build from before the shards (8.0 dev) rewrites the
+  // store's manifest without them, and a later launch in step with that
+  // manifest owes it nothing — so the shards holding games and not listed
+  // there are owed now
+  if (mode === "idb" && Persist.touchUnlisted) Persist.touchUnlisted(Object.keys(shardMap()));
+
+  return {
+    mode: () => mode,
+    save,
+    writeHeader,
+    importPgn,
+    openList,
+    renderList,
+    syncLocal,
+    exportPgn,
+    last,
+    indexing,
+    /** v8-0-plan C1 query API (see library-query.js), over imported + 本机 */
+    query: (q) => LibraryQuery.query(allGames(), q, st.pkOf),
+    gamesWithPosition: (fen) => LibraryQuery.gamesWithPosition(allGames(), fen, st.pkOf),
+    all: allGames,
+    pkOf: st.pkOf,
+    // persist.js's port (BULK)
+    // not in IndexedDB: the shards read at boot (read-only), or null —
+    // unknown, so they stay owed and the manifest keeps them (M5 review P2-1)
+    shardNames: () => (mode === "idb" ? Object.keys(shardMap()) : roTexts ? Object.keys(roTexts) : null),
+    shardText: (name) => {
+      if (mode !== "idb") return roTexts && typeof roTexts[name] === "string" ? roTexts[name] : null;
+      // grouped once per library state, not once per shard asked for
+      if (!groups || groups.list !== store.session.library) groups = { list: store.session.library, m: shardGroups() };
+      const g = groups.m.get(name);
+      return g ? JSON.stringify({ v: 1, games: g }) : null;
+    },
+    // 导入全部数据 (M5 review P3-4): the page reloads onto the restored games;
+    // until then the pass stops, the index stops and nothing is saved
+    restoreShards: async (texts) => {
+      frozen = true;
+      st.halt();
+      if (store.session.libRun) store.session.libRun.abort = true;
+      // a save already queued lands before the replace, not after it
+      await chain.catch(() => {});
+      if (mode === "idb") await st.restoreShards(texts);
+    },
+    clear: () => {
+      store.session.library = [];
+      sigs.clear();
+      // the read-only shards go too: known empty, so the store empties them
+      if (roTexts) roTexts = {};
+      // the index stops now, not when the chain reaches the clear (P2-2)
+      st.halt();
+      if (mode === "idb") chain = chain.then(() => st.clear()).catch(() => {});
+    },
+  };
+}
+
+export const CHESS_LIBDB = { bootLibrary, LibraryQuery, LibraryDb, createDiagCharts };

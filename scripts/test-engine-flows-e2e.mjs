@@ -71,6 +71,7 @@ import path from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { Chess } from "../src/web/js/chess.js";
+import { libOf } from "./lib/library-view.mjs";
 import { ChessMistakes } from "../src/web/js/mistakes.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -266,7 +267,6 @@ const readAn = (page) => page.evaluate(() => {
   };
 });
 
-const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
 const minesOf = (page) => page.evaluate(() =>
   (JSON.parse(localStorage.getItem("chess.v1.mines") || "null") || { list: [] }).list);
 
@@ -421,7 +421,7 @@ await scenario("棋谱库", async () => {
   // the field's `change` fires on the way, as focus leaves it for the button
   await page.click("#lib-names");
   await page.keyboard.type("hxddh");
-  const lib = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
+  const lib = () => libOf(page);
   let l = await lib();
   assert(l && l.games.length === 3, "棋谱库：三局进库", l && l.games.length);
   const t0 = Date.now();
@@ -463,7 +463,7 @@ await scenario("棋谱库", async () => {
       const b = document.getElementById("lib-analyse");
       const st = document.getElementById("lib-body");
       let x = null;
-      try { x = JSON.parse(localStorage.getItem("chess.v1.library") || "null"); } catch (_) { /* shown as null */ }
+      try { x = window.__chess.library(); } catch (_) { /* shown as null */ }
       return {
         button: b ? { hidden: b.hidden, text: b.textContent.trim() } : null,
         status: st ? st.textContent.trim().slice(0, 300) : null,
@@ -546,7 +546,7 @@ await scenario("持续分析+棋谱库", async () => {
   await page.click("#lib-names");
   await page.keyboard.type("hxddh");
   await page.click("#lib-analyse");
-  const lib = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
+  const lib = () => libOf(page);
   // mid-pass: wait for the first game to be filed, then step back one move
   const first = await until(async () => {
     const x = await lib();

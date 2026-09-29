@@ -1,0 +1,196 @@
+{
+  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成。改版本时连同这份文件一起改。",
+  "checkedAt": "2026-09-29",
+  "deps": [
+    {
+      "name": "@native-sdk/cli（Native SDK，原 zero-native，vercel-labs/native）",
+      "kind": "desktop-sdk",
+      "current": "0.10.1",
+      "pinnedIn": [".github/workflows/checks.yml (zig job SDK_VERSION)", ".github/workflows/build-macos.yml (sdk_version 默认值)", ".github/workflows/build-windows.yml (sdk_version 默认值)", ".github/workflows/release.yml (sdk_version 默认值)", "src/runner.zig（SDK app_runner 的分叉，随 SDK 手动同步）", "build.zig（SDK build/app.zig 的手抄本）"],
+      "latest": "0.10.1（npm latest，2026-08-24）；main 上另有 22 个未发版提交，HEAD 96943d4a（2026-09-28）",
+      "source": ["npm view @native-sdk/cli dist-tags/time", "git ls-remote + clone https://github.com/vercel-labs/native（CHANGELOG.md、docs、src）"],
+      "checkedAt": "2026-09-29",
+      "unusedCapabilitiesAlreadyIn0101": ["bridge.AsyncHandler + PlatformServices.wake_fn（异步桥应答，同步不再占住桥线程）", "PlatformServices.showOpenDialog/showSaveDialog（原生侧拿到对话框结果，可去掉对话框路径的 issuePath）", "签名更新器（0.10.0，仅 macOS system host；runner.zig 已接好，app.zon 缺 .updates）", "notarytool 公证与 DMG 装订（0.10.1，需要 Developer ID 证书）", "native-sdk.os.addRecentDocument（最近打开的 PGN）", "native-sdk.os.showNotification（可选的训练提醒）"],
+      "stillMissing": ["WebView 页面声明可拖区域 / 开始拖窗（macOS 只接给画布控件；Windows 的 WM_NCHITTEST 拖动区按 view label 存，是否对 WebView2 主视图生效要实验）", "zero:// 响应头（COOP/COEP）——多线程 wasm 引擎的前提", "Windows / Linux 的自动更新"],
+      "recommendation": "upgrade-when-released",
+      "note": "当前钉的就是最新正式版。main 上的 #465（优化构建的 macOS 链接保留更新器导出）与开启更新器直接相关：本仓库 release 用 ReleaseFast。0.10.2 发布后升，并用一次双平台构建证明；runner.zig / build.zig 要对照上游 diff 同步。"
+    },
+    {
+      "name": "Zig",
+      "kind": "toolchain",
+      "current": "0.16.0",
+      "pinnedIn": ["build.zig.zon (.minimum_zig_version)", ".github/workflows/checks.yml / build-macos.yml / build-windows.yml (mlugg/setup-zig version)"],
+      "latest": "0.16.0（PyPI ziglang 镜像，2026-04-15）",
+      "source": ["https://pypi.org/pypi/ziglang/json", "https://ziglang.org/download/index.json（代理 403，未能核实）", "codeberg.org/ziglang/zig（代理 403，未能核实）"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed",
+      "note": "SDK main 的 minimum_zig_version 仍是 0.16.0；0.17 未见发布。官方索引被网络策略拦截，结论以 PyPI 镜像为准。"
+    },
+    {
+      "name": "Stockfish.js（nmrugg/stockfish.js，Stockfish 19 lite-single）",
+      "kind": "engine",
+      "current": "19.0.0 lite-single（wasm 1,787,571 字节，网络 nn-61e7af4bb97d），vendored 在 third_party/stockfish/",
+      "pinnedIn": ["third_party/stockfish/stockfish-19-lite-single.{js,wasm}", "scripts/gen-engine-src.mjs"],
+      "latest": "npm stockfish 19.0.0（2026-09-15）；官方 Stockfish sf_19（2026-09-05）；之后只有 dev 构建（stockfish-dev-20260922-0a215d6c）",
+      "source": ["npm view stockfish time", "npm tarball stockfish-19.0.0.tgz：lite-single 两个文件 sha256 与仓库逐字节相同", "git ls-remote/clone official-stockfish/Stockfish tag sf_19（发布说明）"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed",
+      "note": "已是最新。另外四种构建：lite 多线程（1.6 MB，需要 SharedArrayBuffer / 跨源隔离，SDK 的 zero:// 不发 COOP/COEP）；完整 NNUE 单线程 / 多线程（约 99 MB，安装包要涨一个数量级）；asm.js（更慢）。都不换。"
+    },
+    {
+      "name": "chess.js",
+      "kind": "js-library (vendored)",
+      "current": "0.13.4（src/web/js/chess.js，BSD-2-Clause，无逻辑改动）",
+      "pinnedIn": ["src/web/js/chess.js 文件头"],
+      "latest": "1.4.0（npm，2025-06-14）",
+      "source": ["npm view chess.js dist-tags/time"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed",
+      "note": "1.x 是破坏性大改（API 改名为 camelCase、非法着法抛异常、TypeScript 重写）。13 个模块直接引用；局面键、ECO、开局浏览器已经有自己的 fide.js / explorer/replay.js。升级收益小、回归面大。1.x 各小版本的具体新增未能逐条核实（仓库 CHANGELOG 已移除，GitHub releases API 本会话不可用）。"
+    },
+    {
+      "name": "esbuild",
+      "kind": "npm devDependency",
+      "current": "0.28.1",
+      "pinnedIn": ["package.json devDependencies", "package-lock.json"],
+      "latest": "0.28.2（2026-08-08）",
+      "source": ["npm view esbuild time", "raw.githubusercontent.com/evanw/esbuild/main/CHANGELOG.md"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "upgrade-8.1",
+      "note": "补丁版：TS import 别名的 tree-shaking 修正、CSS 压缩里 & 的修正。本仓库 minify:false、不走 TS，预期产物逐字节不变——这本身就是升级的验收。"
+    },
+    {
+      "name": "playwright",
+      "kind": "CI tool（npm install --no-save）",
+      "current": "1.62.1（Chromium 151.0.7922.34 / WebKit 26.5）",
+      "pinnedIn": [".github/workflows/checks.yml", ".github/workflows/release.yml"],
+      "latest": "1.63.0（2026-09-04；Chromium 153.0.8010.12 / WebKit 26.6）",
+      "source": ["npm view playwright dist-tags/time", "raw.githubusercontent.com/microsoft/playwright/main/docs/src/release-notes-js.md"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "upgrade-8.1",
+      "note": "对这个仓库有用的：更新的 WebKit（离 WKWebView 更近）；Locator.visible()；ariaSnapshotJSON（可替代部分手写的无障碍断言）；新的 reducedMotion 选项。本仓库用的是库 API 不是 test runner，test locks / 报告器新特性用不上。布局基线可能随浏览器版本移动，要单独一个 PR。"
+    },
+    {
+      "name": "Node.js（CI 与 package.json engines）",
+      "kind": "runtime",
+      "current": "24（setup-node node-version: 24；engines >=24）",
+      "pinnedIn": [".github/workflows/*.yml", "package.json engines"],
+      "latest": "v24.21.0 LTS Krypton（2026-09-07）；Current v26.10.0（2026-09-21，尚未进入 LTS）",
+      "source": ["https://nodejs.org/dist/index.json"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed",
+      "note": "24 仍是 LTS。26 进入 LTS 之后（按惯例 10 月下旬）再评估；import-puzzles 依赖 Node 的 zstd，跨大版本要重跑导入核对。"
+    },
+    {
+      "name": "actions/checkout",
+      "kind": "GitHub Action",
+      "current": "@v7（10 处）；nightly.yml 仍是 @v5（1 处）",
+      "pinnedIn": [".github/workflows/*.yml", ".github/workflows/nightly.yml:31"],
+      "latest": "v7.0.1",
+      "source": ["git ls-remote --tags https://github.com/actions/checkout"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "upgrade-8.1",
+      "note": "只改 nightly.yml 那一处 @v5 → @v7。"
+    },
+    {
+      "name": "actions/setup-node",
+      "kind": "GitHub Action",
+      "current": "@v7",
+      "pinnedIn": [".github/workflows/*.yml"],
+      "latest": "v7.0.0",
+      "source": ["git ls-remote --tags https://github.com/actions/setup-node"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed"
+    },
+    {
+      "name": "actions/upload-artifact",
+      "kind": "GitHub Action",
+      "current": "@v7",
+      "pinnedIn": [".github/workflows/*.yml"],
+      "latest": "v7.0.1",
+      "source": ["git ls-remote --tags https://github.com/actions/upload-artifact"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed"
+    },
+    {
+      "name": "actions/download-artifact",
+      "kind": "GitHub Action",
+      "current": "@v7",
+      "pinnedIn": [".github/workflows/release.yml"],
+      "latest": "v8.0.1",
+      "source": ["git ls-remote --tags https://github.com/actions/download-artifact", "README（用法里 pattern / merge-multiple 仍在）"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "upgrade-8.1",
+      "note": "大版本。v8 的变更说明在 releases 页，本会话的 GitHub API 不可用，未能核实；升级时用一次 release 演练（workflow_dispatch）证明两个包都下载到 dist。"
+    },
+    {
+      "name": "mlugg/setup-zig",
+      "kind": "GitHub Action",
+      "current": "@v2（浮动主版本）",
+      "pinnedIn": [".github/workflows/checks.yml / build-macos.yml / build-windows.yml"],
+      "latest": "v2.2.1",
+      "source": ["git ls-remote --tags https://github.com/mlugg/setup-zig"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed",
+      "note": "@v2 已自动跟到 v2.2.1。SDK 0.7.2 起自己的 CI 改用 vercel-labs/setup-zig（校验签名与校验和），可作为以后的备选。"
+    },
+    {
+      "name": "Lichess 题库（lichess_db_puzzle.csv.zst）",
+      "kind": "data (CC0)",
+      "current": "2026-09-09 的版本，导入 40,000 道（src/web/js/lichess/band-*.js）",
+      "pinnedIn": ["src/web/js/lichess/*.js 文件头", "scripts/import-puzzles.mjs"],
+      "latest": "Last-Modified 2026-09-09 17:40 GMT（304,429,328 字节）",
+      "source": ["curl -I https://database.lichess.org/lichess_db_puzzle.csv.zst"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed",
+      "note": "已是最新一份。"
+    },
+    {
+      "name": "Lichess 标准对局库（大师着法树的来源）",
+      "kind": "data (CC0)",
+      "current": "lichess_db_standard_rated_2026-08，≥2200，120,000 局，前 16 个半回合（m5 分支 src/web/js/explorer/masters-*.js）",
+      "pinnedIn": ["scripts/build-explorer.mjs 参数", "masters-*.js 文件头"],
+      "latest": "2026-08（database.lichess.org/standard/list.txt 第一行）",
+      "source": ["https://database.lichess.org/standard/list.txt"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed",
+      "note": "已是最新月份。每月刷新没有意义：前 16 个半回合的分布一个月内几乎不动，刷新只会让安装包无谓变化。"
+    },
+    {
+      "name": "lichess-org/chess-openings（ECO 表）",
+      "kind": "data (CC0)",
+      "current": "4b8622759e7ae6f93f011cc6c83a3823401ab45e（2026-08-04 的提交，2026-09-18 取），3810 个局面",
+      "pinnedIn": ["src/web/js/eco.js 文件头", "scripts/gen-eco.mjs"],
+      "latest": "c67912be（2026-09-20，#399：补了几条 E16 线）",
+      "source": ["git clone https://github.com/lichess-org/chess-openings"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "refresh-data",
+      "note": "只多一个 PR。重跑 gen-eco，ECO 分块会变，同一个 PR 里跑 test-eco 与开局浏览器的「书」核对。"
+    },
+    {
+      "name": "棋子图（cburnett / Chessnut / Fantasy / Celtic / Spatial / Merida）",
+      "kind": "assets",
+      "current": "M2 时逐套核过许可后 vendored（src/web/js/pieces-*.js）",
+      "pinnedIn": ["src/web/js/pieces-*.js 文件头", "README 许可段"],
+      "latest": "无版本号",
+      "source": ["仓库内文件头"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed"
+    },
+    {
+      "name": "界面字体",
+      "kind": "assets",
+      "current": "系统字体栈（styles.css --font-ui / --font-num），不打包字体",
+      "pinnedIn": ["src/web/styles.css"],
+      "latest": "n/a",
+      "source": ["仓库内 styles.css"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed"
+    }
+  ],
+  "unverified": [
+    {"what": "ziglang.org 官方下载索引、codeberg.org/ziglang/zig 标签", "why": "未能核实（网络策略拦截，代理 403）；Zig 最新版改以 PyPI 镜像为准"},
+    {"what": "lichess.org / api.chess.com 的真实应答（C2 同步的样本）", "why": "未能核实（网络策略拦截，代理 403）"},
+    {"what": "api.github.com releases（actions/download-artifact v8、chess.js 1.x、Stockfish.js 的发布说明）", "why": "未能核实（本会话 GitHub API 只开放本仓库）；标签用 git ls-remote 核过"}
+  ]
+}

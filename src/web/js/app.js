@@ -41,6 +41,7 @@ import { createLines } from "./review/lines.js";
 import { createReviewPanel } from "./review/panel.js";
 import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
+import { createExplorerLazy } from "./explorer/lazy.js";
 import { createGameEnd } from "./game-end.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
@@ -411,7 +412,6 @@ import { createStore } from "./store.js";
       newGame: null,
       /** 7.7 §3: the review group, opened by hand during an engine game */
       reviewOpen: false,
-      histFilter: { result: "all", color: "all" },
       // 7.1: the library list's own filters, plus the one the diagnosis sets
       // when a row there is clicked (`libPick`). Kept apart so that clearing
       // the diagnosis's filter does not also undo "losses only".
@@ -1474,7 +1474,7 @@ import { createStore } from "./store.js";
         // a 7.x build opening this profile (it reads those two and not these)
         appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
         followSystem: store.ui.appearance === "system",
-        soundSet: store.ui.soundSet }));
+        soundSet: store.ui.soundSet, explorer: store.ui.explorer }));
     } catch (_) {}
   }
   function saveGame() {
@@ -2458,7 +2458,7 @@ import { createStore } from "./store.js";
     return parts.filter(Boolean).join(" · ");
   }
 
-  function historyRow(rec, i, withPgn) {
+  function historyRow(rec, i) {
     const row = document.createElement("div");
     row.className = "hist-row";
     const load = document.createElement("button");
@@ -2471,31 +2471,7 @@ import { createStore } from "./store.js";
     sub.textContent = historySub(rec);
     load.appendChild(sub);
     row.appendChild(load);
-    if (withPgn) {
-      const copy = document.createElement("button");
-      copy.type = "button";
-      copy.className = "row-act";
-      copy.dataset.histPgn = String(i);
-      copy.textContent = t("hist.pgn");
-      row.appendChild(copy);
-    }
     return row;
-  }
-
-  /**
-   * Which slice of the history the modal is showing.
-   *
-   * Kept out of `histCache`: the row buttons carry their index into the full
-   * list, and re-indexing a filtered array would make "load this game" load a
-   * different one the moment a filter was on.
-   */
-  function histMatches(rec) {
-    if (store.ui.histFilter.result !== "all" && rec.result !== store.ui.histFilter.result) return false;
-    if (store.ui.histFilter.color !== "all") {
-      const col = rec.color === "b" ? "b" : "w";
-      if (col !== store.ui.histFilter.color) return false;
-    }
-    return true;
   }
 
   // --- 棋谱库 ---------------------------------------------------------------
@@ -2508,7 +2484,8 @@ import { createStore } from "./store.js";
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
-    renderRecordEntry,
+    renderRecordEntry, loadStats, copyText, exportText, loadHistoryRecord: (rec) => loadHistoryRecord(rec),
+    boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); },
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
@@ -2519,9 +2496,8 @@ import { createStore } from "./store.js";
   const loadFromLibrary = (id) => LibraryUI.loadFromLibrary(id);
   const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
   const openDiagnosis = () => LibraryUI.openDiagnosis();
-  const openLibList = (pick) => LibraryUI.openLibList(pick);
+  const openLibList = (pick, opts) => LibraryUI.openLibList(pick, opts);
   const reclaimLibrary = () => LibraryUI.reclaimLibrary();
-  const renderLibList = () => LibraryUI.renderLibList();
   const renderLibrary = () => LibraryUI.renderLibrary();
   const runLibraryPass = () => LibraryUI.runLibraryPass();
   const saveLibrary = () => LibraryUI.saveLibrary();
@@ -2626,7 +2602,7 @@ import { createStore } from "./store.js";
         p.textContent = t("hist.empty");
         body.appendChild(p);
       } else {
-        store.session.histCache.slice(0, HIST_PREVIEW).forEach((rec, i) => body.appendChild(historyRow(rec, i, false)));
+        store.session.histCache.slice(0, HIST_PREVIEW).forEach((rec, i) => body.appendChild(historyRow(rec, i)));
       }
     }
     const btn = document.getElementById("hist-open");
@@ -2634,47 +2610,9 @@ import { createStore } from "./store.js";
       btn.hidden = !store.session.histCache.length;
       btn.textContent = tf("hist.all", [store.session.histCache.length]);
     }
-    const list = document.getElementById("hist-list");
-    if (list) {
-      // Up to 500 rows, re-rendered whenever a filter changes or a game ends.
-      // Keyed by the record id, so flipping "wins only" on and off keeps the
-      // rows that were already on screen — and with them the scroll position
-      // and any focus inside the list. See keyed.js.
-      const rows = store.session.histCache
-        .map((rec, i) => ({ rec, i }))
-        .filter(({ rec }) => histMatches(rec));
-      const shown = rows.length;
-      reconcile(list, rows,
-        ({ rec, i }) => rec.id || ("i" + i),
-        ({ rec }) => [rec.result, rec.diff, rec.color, rec.moves, rec.acc, rec.t].join("|"),
-        ({ rec, i }) => historyRow(rec, i, true));
-      if (!shown) {
-        const p = document.createElement("p");
-        p.className = "hint";
-        p.textContent = t("hist.noneMatch");
-        list.appendChild(p);
-      }
-      const count = document.getElementById("hist-count");
-      if (count) {
-        const filtered = store.ui.histFilter.result !== "all" || store.ui.histFilter.color !== "all";
-        count.hidden = !filtered;
-        count.textContent = tf("hist.showing", [shown, store.session.histCache.length]);
-      }
-    }
-    document.querySelectorAll("#hist-result-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.hres === store.ui.histFilter.result);
-    });
-    document.querySelectorAll("#hist-color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.hcol === store.ui.histFilter.color);
-    });
-  }
-
-  function openHistory() {
-    renderHistory();
-    Dlg.open(document.getElementById("hist-modal"));
-  }
-  function closeHistory() {
-    Dlg.close(document.getElementById("hist-modal"));
+    // v8-0-plan C1: the full list is the library's, where these games are
+    // the 本机 ones — kept in step here, as a game is filed
+    LibraryUI.syncLocal();
   }
 
   /**
@@ -2710,7 +2648,6 @@ import { createStore } from "./store.js";
   async function loadFromHistory(i) {
     const rec = store.session.histCache[i];
     if (!rec) return;
-    closeHistory();
     return loadHistoryRecord(rec);
   }
 
@@ -3796,9 +3733,7 @@ import { createStore } from "./store.js";
     store.subscribe("session", renderReplayBar);
     store.subscribe("session", renderGameActions);
     store.subscribe("session", setAnalyzeUI);
-    store.subscribe("game", syncLiveAnalysis);
-    store.subscribe("session", syncLiveAnalysis);
-    store.subscribe("ui", syncLiveAnalysis);
+    for (const slice of ["game", "session", "ui"]) store.subscribe(slice, syncLiveAnalysis);
     store.subscribe("session", syncLearnUI);
     store.subscribe("session", syncStudyUI);
     store.subscribe("game", syncStudyUI);
@@ -3815,17 +3750,13 @@ import { createStore } from "./store.js";
     // now — so it belongs to the game slice, and filing it under settings is
     // exactly the mis-slotting that makes narrowing a call site dangerous:
     // commit("game") would have moved the board and left the strip behind.
-    store.subscribe("game", renderMaterial);
-    store.subscribe("session", renderMaterial);
-    store.subscribe("game", renderIdleCard);
-    store.subscribe("session", renderIdleCard);
+    for (const slice of ["game", "session"]) store.subscribe(slice, renderMaterial);
+    for (const slice of ["game", "session"]) store.subscribe(slice, renderIdleCard);
 
     // the settings panel reads the game too (the clock preset is a game fact),
     // so it hears about all three
     // the strips read the position, the mode and the orientation — all three
-    store.subscribe("game", renderStrips);
-    store.subscribe("session", renderStrips);
-    store.subscribe("ui", renderStrips);
+    for (const slice of ["game", "session", "ui"]) store.subscribe(slice, renderStrips);
     store.subscribe("game", syncSettingsUI);
     store.subscribe("ui", syncSettingsUI);
     store.subscribe("ui", draw);
@@ -4037,25 +3968,11 @@ import { createStore } from "./store.js";
       setNodeShapes({ arrows: [], circles: [] });
       return;
     }
-    // Off the live position a move is a variation, wherever variations may
-    // be opened (Q2.3); in a live engine game the replay stays read-only.
-    const branching = !isLive();
-    if (branching && !canBranchHere()) { toast(t("mm.goLiveFirst"), "fix"); return; }
-    if (!branching) {
-      if (naturalGameOver()) return;
-      if (store.game.flagFall) { toast(t("msg.over.flagged"), "fix"); return; }
-      if (store.game.resigned) { toast(t("msg.over.resigned"), "fix"); return; }
-      if (store.game.drawAgreed) { toast(t("msg.over.drawAgreed"), "fix"); return; }
-      if (store.game.drawClaimed) { toast(t("msg.over.drawClaimed"), "fix"); return; }
-      if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) {
-        // engine's move: a click now is a premove, played the instant the
-        // reply lands if it is still legal then (v6-plan Q2.8)
-        if (store.session.engineThinking) premoveClick(sq);
-        return;
-      }
-    }
-    const g = branching ? viewGame() : game;
-    const play = branching ? playVariationMove : playHumanMove;
+    // engine's move: a click now is a premove, played the instant the reply
+    // lands if it is still legal then (v6-plan Q2.8)
+    const play = movePath(() => { if (store.session.engineThinking) premoveClick(sq); });
+    if (!play) return;
+    const g = isLive() ? game : viewGame();
     const piece = g.get(sq);
     if (store.game.selection && store.game.selection.targets.includes(sq)) {
       const from = store.game.selection.sq;
@@ -4073,6 +3990,21 @@ import { createStore } from "./store.js";
       return;
     }
     clearSelection();
+  }
+
+  /**
+   * Where a move made now goes, or null (said in a toast) when none may be.
+   * Off the live position a move is a variation, wherever variations may be
+   * opened (Q2.3); in a live engine game the replay stays read-only. The
+   * board and the explorer's rows (v8-0-plan C3) both ask.
+   */
+  function movePath(onEngineTurn) {
+    const g = store.game, over = ["flagged", "resigned", "drawAgreed", "drawClaimed"][[g.flagFall, g.resigned, g.drawAgreed, g.drawClaimed].findIndex(Boolean)];
+    if (!isLive()) return canBranchHere() ? playVariationMove : void toast(t("mm.goLiveFirst"), "fix");
+    if (naturalGameOver()) return null;
+    if (over) return void toast(t("msg.over." + over), "fix");
+    if (store.session.mode === "ai" && game.turn() !== store.session.humanColor) return void (onEngineTurn && onEngineTurn());
+    return playHumanMove;
   }
 
   /**
@@ -6005,30 +5937,9 @@ import { createStore } from "./store.js";
     if (closeBtn) closeBtn.onclick = closeDiagnosis;
     // 7.1: the list, and the three diagnosis rows that open a slice of it
     const openBtn = document.getElementById("lib-open");
-    if (openBtn) openBtn.onclick = () => { openLibList(null); };
+    if (openBtn) openBtn.onclick = () => { openLibList(null, { src: "all" }); };
     const listClose = document.getElementById("lib-list-close");
     if (listClose) listClose.onclick = closeLibList;
-    const listEl = document.getElementById("lib-list");
-    if (listEl) {
-      listEl.onclick = (ev) => {
-        const deep = ev.target.closest("button[data-lib-deep]");
-        // rows carry the game's id, never an index (7.4 D1, library-ui.js)
-        if (deep) { deepenLibraryGame(deep.dataset.libDeep); return; }
-        const b = ev.target.closest("button[data-lib]");
-        if (b) loadFromLibrary(b.dataset.lib);
-      };
-    }
-    const clearPick = document.getElementById("lib-pick-clear");
-    if (clearPick) clearPick.onclick = () => { store.ui.libPick = null; renderLibList(); };
-    document.querySelectorAll("#lib-result-seg button").forEach((b) => {
-      b.onclick = () => { store.ui.libFilter.result = b.dataset.lres; renderLibList(); };
-    });
-    document.querySelectorAll("#lib-color-seg button").forEach((b) => {
-      b.onclick = () => { store.ui.libFilter.color = b.dataset.lcol; renderLibList(); };
-    });
-    document.querySelectorAll("#lib-sort-seg button").forEach((b) => {
-      b.onclick = () => { store.ui.libFilter.sort = b.dataset.lsort; renderLibList(); };
-    });
     const diagEl = document.getElementById("lib-diag");
     if (diagEl) {
       diagEl.onclick = (ev) => {
@@ -6139,7 +6050,7 @@ import { createStore } from "./store.js";
 
   // v8-0-plan A1: the preferences window (prefs-ui.js), with the A3 look
   // pickers (appearance-ui.js) mounted in it; a pick goes to settings-ui.js
-  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs });
+  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, lib: LibraryUI } });
   PrefsUI.wire();
   // v8-0-plan F4: the settings page (settings-ui.js) — its view, the look
   // and the handlers behind its controls
@@ -6158,6 +6069,9 @@ import { createStore } from "./store.js";
     nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
   });
   Shell.wire();
+  // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
+  createExplorerLazy({ store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, saved: Persist.read("settings").value,
+    toBoard: () => { Shell.go("play"); setSideTab("play"); } });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
    * now the rail's (shell.js) and the new-game dialog's. It stops the engine,
@@ -6273,6 +6187,7 @@ import { createStore } from "./store.js";
   async function exportAllData() {
     saveGame();
     saveSettings();
+    await LibraryUI.ready();   // v8-0-plan C1: the games are in the export once the library is loaded
     // compact (v8-0-plan F3): the values are JSON strings already, so the
     // two-space indent only padded the envelope — and every byte of the file
     // crosses the bridge
@@ -6302,7 +6217,7 @@ import { createStore } from "./store.js";
         const picked = await Host.openFileDialog({ title: t("dlg.importAll") });
         const paths = Host.normalizePaths(picked);
         if (!paths.length) return;
-        const text = await Host.readTextFile(paths[0]);
+        const text = await Host.readTextFile(paths[0], Host.ALL_DATA_MAX);
         await importAllDataText(text);
         return;
       } catch (err) {
@@ -6501,40 +6416,18 @@ import { createStore } from "./store.js";
     slotsModal.onclick = (ev) => { if (ev.target === slotsModal) closeSlots(); };
   }
 
-  const histModal = document.getElementById("hist-modal");
-  if (histModal) {
+  {
+    // v8-0-plan C1: 「全部 N 局」 opens the library on its 本机 games — the
+    // history's own dialog is the library's list now
     const openBtn = document.getElementById("hist-open");
-    if (openBtn) openBtn.onclick = openHistory;
-    document.getElementById("hist-close").onclick = closeHistory;
-    const hres = document.getElementById("hist-result-seg");
-    if (hres) hres.onclick = (ev) => {
-      const b = ev.target.closest("button[data-hres]");
-      if (!b || b.dataset.hres === store.ui.histFilter.result) return;
-      store.ui.histFilter.result = b.dataset.hres;
-      renderHistory();
-    };
-    const hcol = document.getElementById("hist-color-seg");
-    if (hcol) hcol.onclick = (ev) => {
-      const b = ev.target.closest("button[data-hcol]");
-      if (!b || b.dataset.hcol === store.ui.histFilter.color) return;
-      store.ui.histFilter.color = b.dataset.hcol;
-      renderHistory();
-    };
-    const onHistClick = (ev) => {
-      const b = ev.target.closest("button");
-      if (!b) return;
-      if (b.dataset.histPgn != null) {
-        const rec = store.session.histCache[Number(b.dataset.histPgn)];
-        if (rec) copyText(historyPgn(rec), t("hist.pgnCopied"));
-      } else if (b.dataset.hist != null) {
-        if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
-        loadFromHistory(Number(b.dataset.hist));
-      }
-    };
-    document.getElementById("hist-list").onclick = onHistClick;
+    if (openBtn) openBtn.onclick = () => { openLibList(null, { src: "local" }); };
     const histBody = document.getElementById("hist-body");
-    if (histBody) histBody.onclick = onHistClick;
-    histModal.onclick = (ev) => { if (ev.target === histModal) closeHistory(); };
+    if (histBody) histBody.onclick = (ev) => {
+      const b = ev.target.closest("button[data-hist]");
+      if (!b) return;
+      if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
+      loadFromHistory(Number(b.dataset.hist));
+    };
   }
 
   /**
@@ -6693,7 +6586,6 @@ import { createStore } from "./store.js";
   function wireDialogs() {
     Dlg.register(promoModal, () => finishPromotion(null));
     Dlg.register(document.getElementById("slots-modal"), closeSlots);
-    Dlg.register(document.getElementById("hist-modal"), closeHistory);
     Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
     Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());

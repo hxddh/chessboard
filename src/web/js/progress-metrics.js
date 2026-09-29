@@ -71,7 +71,10 @@ export function clocksOf(root) {
  * arrays (`scalars`, white's view in centipawns, one per position; `tags`,
  * one per ply) or the already-reduced `hi` / `lo` an engine game files.
  * `clk` is one reading per ply, `fen` the start (a black-to-move start shifts
- * whose ply is whose).
+ * whose ply is whose), `tc` the PGN's TimeControl: a daily one ("1/259200",
+ * Chess.com) writes [%clk] as each move's own allowance, not a game clock
+ * running down, so it never counts as clocked (v8-0-plan C2, seen in the real
+ * answers in src/sync-fixtures/).
  */
 export function factsOf(g) {
   if (!g || (g.side !== "w" && g.side !== "b") || !["win", "loss", "draw"].includes(g.outcome)) return null;
@@ -89,7 +92,7 @@ export function factsOf(g) {
   const f = { outcome: g.outcome, hi, lo, clocked: false, press: { n: 0, b: 0 }, calm: { n: 0, b: 0 } };
   const clk = Array.isArray(g.clk) ? g.clk : null;
   const tags = Array.isArray(g.tags) ? g.tags : null;
-  if (!clk || !tags) return f;
+  if (!clk || !tags || String(g.tc || "").includes("/")) return f;
   const first = String(g.fen || "").trim().split(/\s+/)[1] === "b" ? "b" : "w";
   const mine = (i) => (i % 2 === 0) === (first === g.side);
   let base = null;

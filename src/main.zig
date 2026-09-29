@@ -80,6 +80,7 @@ const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.appdataPath", .invoke_fn = appdataPath },
     .{ .name = "chess.setMenuLanguage", .invoke_fn = setMenuLanguage },
     .{ .name = "chess.checkUpdate", .invoke_fn = checkUpdate },
+    .{ .name = "chess.fetchGames", .invoke_fn = fetchGames },
     .{ .name = "chess.selftestMode", .invoke_fn = selftestMode },
     .{ .name = "chess.selftestReport", .invoke_fn = selftestReport },
 };
@@ -457,6 +458,18 @@ const CHUNK_BYTES: usize = 512 * 1024;
 const WRITE_B64_MAX: usize = (CHUNK_BYTES + 2) / 3 * 4;
 /// The largest file a read or a write carries, and the largest appdata file.
 const FILE_MAX_BYTES: usize = 16 * 1024 * 1024;
+/// M5 review P2-3: the largest file a player picked (an issued path) may be.
+/// 导出全部数据 carries every library shard: an analysed 80-ply game is
+/// ~2.6 KB of JSON, 10,000 of them (library.js MAX_GAMES) ~28 MB escaped into
+/// the export, which 16 MiB stopped at ~5,500. Twice that with the other keys.
+/// The appdata files stay at FILE_MAX_BYTES: a shard is 1/64 of the library.
+const USER_FILE_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// The most a staged write toward `target` may total: an appdata file, or a
+/// file the player picked.
+fn stageLimit(target: []const u8) usize {
+    return if (std.mem.startsWith(u8, target, "appdata:")) FILE_MAX_BYTES else USER_FILE_MAX_BYTES;
+}
 /// Chunked writes in flight at once. Two is the realistic most (a mirror
 /// flush and an export, or two windows); a new one past the last evicts the
 /// oldest, which then answers stage_lost and starts over (host.js).
@@ -581,7 +594,7 @@ const Stages = struct {
     /// that does not is refused and the transfer dropped, never patched
     /// into a file with a hole in it.
     fn claim(self: *Stages, gpa: std.mem.Allocator, txn: []const u8, target: []const u8, total: usize, offset: usize, len: usize) StageError!Claim {
-        if (total == 0 or total > FILE_MAX_BYTES) return error.TooLarge;
+        if (total == 0 or total > stageLimit(target)) return error.TooLarge;
         if (!tokenValid(txn, TXN_MAX) or target.len == 0 or target.len > ISSUED_PATH_MAX) return error.BadChunk;
         var found: ?*Stage = null;
         for (&self.slots) |*s| {
@@ -662,7 +675,7 @@ fn receive(self: *App, payload: []const u8, target: []const u8, output: []u8, in
 
     const got = self.stages.claim(gpa, txn, target, total, offset, len) catch |err| switch (err) {
         error.TooLarge => {
-            answer.* = try tooLargeAnswer(output);
+            answer.* = try tooLargeAnswerFor(output, stageLimit(target));
             return .answered;
         },
         error.StageLost => {
@@ -692,7 +705,11 @@ fn pendingAnswer(output: []u8) anyerror![]const u8 {
 }
 
 fn tooLargeAnswer(output: []u8) anyerror![]const u8 {
-    return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{FILE_MAX_BYTES}) catch return error.HandlerFailed;
+    return tooLargeAnswerFor(output, FILE_MAX_BYTES);
+}
+
+fn tooLargeAnswerFor(output: []u8, limit: usize) anyerror![]const u8 {
+    return std.fmt.bufPrint(output, "{{\"tooLarge\":true,\"limit\":{d}}}", .{limit}) catch return error.HandlerFailed;
 }
 
 /// One piece of a file as the page gets it: {"b64":…,"more":…[,"bak":…]}.
@@ -720,12 +737,13 @@ const ChunkRead = struct { n: usize, more: bool };
 /// Up to CHUNK_BYTES of `path` from `offset`, into `buf` (CHUNK_BYTES + 1
 /// long: the spare byte says whether more follows). null: no such file.
 ///
-/// A first read (offset 0) also refuses a file over FILE_MAX_BYTES, by
+/// A first read (offset 0) also refuses a file over `limit` (FILE_MAX_BYTES,
+/// or USER_FILE_MAX_BYTES for a picked file), by
 /// reading the one byte past the limit — the same spare-byte idea the 256 KiB
 /// read used, without a stat: readPositionalAll reports how much it read, so
 /// a byte there means the file is too long.
-fn readChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8) error{ FileTooLarge, HandlerFailed }!?ChunkRead {
-    if (offset > FILE_MAX_BYTES) return error.FileTooLarge;
+fn readChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8, limit: usize) error{ FileTooLarge, HandlerFailed }!?ChunkRead {
+    if (offset > limit) return error.FileTooLarge;
     var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
         error.FileNotFound => return null,
         else => return error.HandlerFailed,
@@ -733,7 +751,7 @@ fn readChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8) error{ File
     defer file.close(io);
     if (offset == 0) {
         var probe: [1]u8 = undefined;
-        const past = file.readPositionalAll(io, &probe, FILE_MAX_BYTES) catch return error.HandlerFailed;
+        const past = file.readPositionalAll(io, &probe, limit) catch return error.HandlerFailed;
         if (past > 0) return error.FileTooLarge;
     }
     const n = file.readPositionalAll(io, buf[0 .. CHUNK_BYTES + 1], offset) catch return error.HandlerFailed;
@@ -1057,8 +1075,8 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
     // came back as its first 256 KiB, and a PGN library lost every game past
     // the cut while the one straddling it read as a syntax error. readChunk's
     // probe keeps "too big" something the caller can be told about.
-    const got = (readChunk(self.io, path, offset, buf) catch |err| switch (err) {
-        error.FileTooLarge => return tooLargeAnswer(output),
+    const got = (readChunk(self.io, path, offset, buf, USER_FILE_MAX_BYTES) catch |err| switch (err) {
+        error.FileTooLarge => return tooLargeAnswerFor(output, USER_FILE_MAX_BYTES),
         error.HandlerFailed => return error.HandlerFailed,
     }) orelse return error.HandlerFailed;
     if (offset == 0 and got.n == 0) return error.InvalidRequest;
@@ -1171,7 +1189,7 @@ fn appdataRead(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     // says (`bak`) — deciding again could splice the .bak onto the main file
     if (offset > 0) {
         const from_bak = jsonBoolField(payload, "bak") orelse false;
-        const later = (readChunk(self.io, if (from_bak) bak_path else path, offset, buf) catch |err| switch (err) {
+        const later = (readChunk(self.io, if (from_bak) bak_path else path, offset, buf, FILE_MAX_BYTES) catch |err| switch (err) {
             error.FileTooLarge => return tooLargeAnswer(output),
             error.HandlerFailed => return error.HandlerFailed,
         }) orelse return error.HandlerFailed;
@@ -1182,14 +1200,14 @@ fn appdataRead(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     // holds bytes; only when it holds none does the previous copy answer.
     // A zero-length file is not a fresh install — an interrupted write leaves
     // one — so it falls through to the .bak rather than reading as missing.
-    const main_got = readChunk(self.io, path, 0, buf) catch |err| switch (err) {
+    const main_got = readChunk(self.io, path, 0, buf, FILE_MAX_BYTES) catch |err| switch (err) {
         error.FileTooLarge => return tooLargeAnswer(output),
         error.HandlerFailed => return error.HandlerFailed,
     };
     if (main_got) |got| {
         if (got.n > 0) return chunkAnswer(output, buf[0..got.n], got.more, false);
     }
-    const bak_got = readChunk(self.io, bak_path, 0, buf) catch |err| switch (err) {
+    const bak_got = readChunk(self.io, bak_path, 0, buf, FILE_MAX_BYTES) catch |err| switch (err) {
         error.FileTooLarge => return tooLargeAnswer(output),
         error.HandlerFailed => return error.HandlerFailed,
     };
@@ -1408,6 +1426,335 @@ fn safeUrl(s: []const u8) bool {
     return true;
 }
 
+// ------------------------------------------------ online sync (v8-0-plan C2)
+//
+// The player's recent games from Lichess or Chess.com, fetched here because
+// the page cannot: its CSP is connect-src 'self' (index.html), and it stays
+// that way — scripts/test-chess.mjs holds it. The page asks only from its
+// 同步 button, and only once 允许联网同步 is on (off by default); nothing in
+// this file calls it on its own.
+//
+// Public endpoints, no account, no token. A request carries the user name in
+// the URL and a User-Agent naming the app (both sites ask callers to say what
+// software they are) — nothing else about the person.
+//
+// The answer is {"pgn":"…","count":N}: the games as one PGN text, newest
+// first, whole games only, at most SYNC_ANSWER_MAX bytes. Or {"error":code},
+// code being one the page words for the player — offline, rate_limited,
+// not_found, bad_request, parse — or "http" with the "status".
+//
+// Like checkUpdate this holds the calling thread for the length of the
+// requests, and host.js races it against a timer. Everything but the
+// requests themselves is a function the tests below run on canned answers.
+
+const SYNC_GAMES_DEFAULT: usize = 20;
+const SYNC_GAMES_MAX: usize = 50;
+/// Lichess names are 2–30 characters and Chess.com's 3–25, both of
+/// [A-Za-z0-9_-] — so a name is also safe in a URL path as it stands.
+const SYNC_NAME_MIN: usize = 2;
+const SYNC_NAME_MAX: usize = 30;
+/// A full piece's base64 is what the frame is proven to carry (see the test).
+const SYNC_ANSWER_MAX: usize = WRITE_B64_MAX;
+/// Chess.com files games by month: this many months back, at most, to find N.
+const SYNC_MONTHS_MAX: usize = 3;
+const SYNC_USER_AGENT = "chessboard (+https://github.com/hxddh/chessboard)";
+
+const SyncSite = enum { lichess, chesscom };
+
+const SyncRequest = struct {
+    site: SyncSite,
+    name_buf: [SYNC_NAME_MAX]u8 = undefined,
+    name_len: usize = 0,
+    max: usize = SYNC_GAMES_DEFAULT,
+
+    fn user(self: *const SyncRequest) []const u8 {
+        return self.name_buf[0..self.name_len];
+    }
+};
+
+/// {site, user, max} from the page, or null when any of it is not usable.
+fn syncRequest(payload: []const u8) ?SyncRequest {
+    var site_buf: [16]u8 = undefined;
+    const site_name = jsonStringField(payload, "site", &site_buf) orelse return null;
+    const site: SyncSite = if (std.mem.eql(u8, site_name, "lichess"))
+        .lichess
+    else if (std.mem.eql(u8, site_name, "chesscom"))
+        .chesscom
+    else
+        return null;
+    var req: SyncRequest = .{ .site = site };
+    const given = jsonStringField(payload, "user", &req.name_buf) orelse return null;
+    if (given.len < SYNC_NAME_MIN or !tokenValid(given, SYNC_NAME_MAX)) return null;
+    req.name_len = given.len;
+    if (jsonUintField(payload, "max")) |m| req.max = std.math.clamp(m, 1, SYNC_GAMES_MAX);
+    return req;
+}
+
+/// Standard chess only (the perf types are Lichess's names for its speeds;
+/// a variant would not replay in the library), with the clock comments B5's
+/// time-pressure figure reads, and no engine evaluations.
+fn lichessUrl(buf: []u8, name: []const u8, max: usize) ?[]const u8 {
+    return std.fmt.bufPrint(buf, "https://lichess.org/api/games/user/{s}?max={d}&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false", .{ name, max }) catch null;
+}
+
+/// Chess.com's paths take the name in lower case.
+fn chesscomArchivesUrl(buf: []u8, name: []const u8) ?[]const u8 {
+    const prefix = "https://api.chess.com/pub/player/";
+    const suffix = "/games/archives";
+    const len = prefix.len + name.len + suffix.len;
+    if (len > buf.len) return null;
+    @memcpy(buf[0..prefix.len], prefix);
+    for (name, 0..) |c, i| buf[prefix.len + i] = std.ascii.toLower(c);
+    @memcpy(buf[prefix.len + name.len ..][0..suffix.len], suffix);
+    return buf[0..len];
+}
+
+/// What the page is told for an HTTP status (0: no answer came back at all),
+/// or null for a 200. 410 is Chess.com's "never anything here".
+fn syncStatusError(status: u32) ?[]const u8 {
+    return switch (status) {
+        0 => "offline",
+        200 => null,
+        404, 410 => "not_found",
+        429 => "rate_limited",
+        else => "http",
+    };
+}
+
+fn syncErrorAnswer(output: []u8, code: []const u8, status: u32) anyerror![]const u8 {
+    if (std.mem.eql(u8, code, "http")) {
+        return std.fmt.bufPrint(output, "{{\"error\":\"http\",\"status\":{d}}}", .{status}) catch return error.HandlerFailed;
+    }
+    return std.fmt.bufPrint(output, "{{\"error\":\"{s}\"}}", .{code}) catch return error.HandlerFailed;
+}
+
+/// The length of `s` once JSON-escaped (see jsonEscapeInto).
+fn jsonEscapedLen(s: []const u8) usize {
+    var len: usize = 0;
+    for (s) |c| {
+        len += switch (c) {
+            '"', '\\', '\n', '\r', '\t' => 2,
+            else => if (c < 0x20) @as(usize, 6) else @as(usize, 1),
+        };
+    }
+    return len;
+}
+
+/// `s` JSON-escaped into `buf` at `n`. The caller has made the room
+/// (jsonEscapedLen). Unlike jsonAppendString, any control byte is taken —
+/// as \u00XX — because a PGN from elsewhere is not ours to refuse.
+fn jsonEscapeInto(buf: []u8, n: *usize, s: []const u8) void {
+    const hex = "0123456789abcdef";
+    for (s) |c| {
+        const short: ?u8 = switch (c) {
+            '"' => '"',
+            '\\' => '\\',
+            '\n' => 'n',
+            '\r' => 'r',
+            '\t' => 't',
+            else => null,
+        };
+        if (short) |e| {
+            buf[n.*] = '\\';
+            buf[n.* + 1] = e;
+            n.* += 2;
+        } else if (c < 0x20) {
+            buf[n.*] = '\\';
+            buf[n.* + 1] = 'u';
+            buf[n.* + 2] = '0';
+            buf[n.* + 3] = '0';
+            buf[n.* + 4] = hex[c >> 4];
+            buf[n.* + 5] = hex[c & 0x0f];
+            n.* += 6;
+        } else {
+            buf[n.*] = c;
+            n.* += 1;
+        }
+    }
+}
+
+/// The answer as it is written: {"pgn":"<game>\n\n<game>…","count":N}.
+/// Games arrive newest first; the first that does not fit ends it, since
+/// everything after it is older still.
+const SyncAnswer = struct {
+    out: []u8,
+    n: usize = 0,
+    count: usize = 0,
+    max: usize,
+    full: bool = false,
+
+    const HEAD = "{\"pgn\":\"";
+    /// `","count":` and the number and `}`, with room to spare
+    const TAIL_MAX: usize = 32;
+
+    fn init(output: []u8, max: usize) SyncAnswer {
+        var a: SyncAnswer = .{ .out = output[0..@min(output.len, SYNC_ANSWER_MAX)], .max = max };
+        if (!jsonAppend(a.out, &a.n, HEAD)) a.full = true;
+        return a;
+    }
+
+    fn done(self: *const SyncAnswer) bool {
+        return self.full or self.count >= self.max;
+    }
+
+    /// One game's PGN text; skipped when blank, refused whole when too big.
+    fn add(self: *SyncAnswer, game: []const u8) void {
+        if (self.done()) return;
+        const pgn = std.mem.trim(u8, game, " \t\r\n");
+        if (pgn.len == 0) return;
+        const sep: []const u8 = if (self.count > 0) "\\n\\n" else "";
+        if (self.n + sep.len + jsonEscapedLen(pgn) + TAIL_MAX > self.out.len) {
+            self.full = true;
+            return;
+        }
+        @memcpy(self.out[self.n..][0..sep.len], sep);
+        self.n += sep.len;
+        jsonEscapeInto(self.out, &self.n, pgn);
+        self.count += 1;
+    }
+
+    fn finish(self: *SyncAnswer) anyerror![]const u8 {
+        const tail = std.fmt.bufPrint(self.out[self.n..], "\",\"count\":{d}}}", .{self.count}) catch return error.HandlerFailed;
+        return self.out[0 .. self.n + tail.len];
+    }
+};
+
+/// Where the next game starts at or after `from`: an [Event tag opening a line.
+fn pgnGameStart(body: []const u8, from: usize) ?usize {
+    var i = from;
+    while (std.mem.indexOfPos(u8, body, i, "[Event ")) |at| {
+        if (at == 0 or body[at - 1] == '\n') return at;
+        i = at + 1;
+    }
+    return null;
+}
+
+/// Lichess answers with the games as one PGN text, newest first.
+fn lichessAnswer(body: []const u8, max: usize, output: []u8) anyerror![]const u8 {
+    var answer = SyncAnswer.init(output, max);
+    var at = pgnGameStart(body, 0);
+    while (at) |start| {
+        const next = pgnGameStart(body, start + 1);
+        answer.add(body[start..(next orelse body.len)]);
+        if (answer.done()) break;
+        at = next;
+    }
+    return answer.finish();
+}
+
+/// What the page gets for Lichess's answer: the status decides first. A
+/// missing player is a 404 with Lichess's HTML error page as the body
+/// (src/sync-fixtures/lichess-missing.body), which read as PGN would be
+/// "no games" rather than "no such user".
+fn lichessReply(status: u32, body: []const u8, max: usize, output: []u8) anyerror![]const u8 {
+    if (syncStatusError(status)) |code| return syncErrorAnswer(output, code, status);
+    return lichessAnswer(body, max, output);
+}
+
+const ChesscomArchives = struct { archives: []const []const u8 };
+const ChesscomGame = struct { pgn: []const u8 = "", rules: []const u8 = "chess" };
+const ChesscomMonth = struct { games: []const ChesscomGame };
+
+/// The monthly archive URLs, oldest first as Chess.com lists them, or null
+/// when the body is not that list. Every one has to be under the same API
+/// path, so an answer cannot send the next request anywhere else.
+fn chesscomArchives(arena: std.mem.Allocator, body: []const u8) ?[]const []const u8 {
+    const parsed = std.json.parseFromSliceLeaky(ChesscomArchives, arena, body, .{ .ignore_unknown_fields = true }) catch return null;
+    for (parsed.archives) |url| {
+        if (!std.mem.startsWith(u8, url, "https://api.chess.com/pub/player/") or url.len > 256 or !safeUrl(url)) return null;
+    }
+    return parsed.archives;
+}
+
+/// The archive list's answer: the months to walk, or what the page is told
+/// instead — the status first (a missing player is a 404 whose JSON body,
+/// src/sync-fixtures/chesscom-missing.body, is not a list), then the body.
+const ChesscomList = union(enum) {
+    months: []const []const u8,
+    reply: []const u8,
+};
+
+fn chesscomList(arena: std.mem.Allocator, status: u32, body: []const u8, output: []u8) anyerror!ChesscomList {
+    if (syncStatusError(status)) |code| return .{ .reply = try syncErrorAnswer(output, code, status) };
+    const months = chesscomArchives(arena, body) orelse return .{ .reply = try syncErrorAnswer(output, "parse", 0) };
+    return .{ .months = months };
+}
+
+/// One month's games into the answer, newest first (the month lists them
+/// oldest first). Other rules — Chess960, bughouse… — are skipped: the
+/// library replays standard chess. false when the body is not a month.
+fn chesscomMonth(arena: std.mem.Allocator, body: []const u8, answer: *SyncAnswer) bool {
+    const parsed = std.json.parseFromSliceLeaky(ChesscomMonth, arena, body, .{ .ignore_unknown_fields = true }) catch return false;
+    var i = parsed.games.len;
+    while (i > 0 and !answer.done()) {
+        i -= 1;
+        if (std.mem.eql(u8, parsed.games[i].rules, "chess")) answer.add(parsed.games[i].pgn);
+    }
+    return true;
+}
+
+/// One GET into `body`: the HTTP status, or 0 when nothing came back.
+fn syncGet(client: *std.http.Client, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating) u32 {
+    const result = client.fetch(.{
+        .location = .{ .url = url },
+        .method = .GET,
+        .headers = .{ .user_agent = .{ .override = SYNC_USER_AGENT } },
+        .extra_headers = &.{.{ .name = "accept", .value = accept }},
+        .response_writer = &body.writer,
+    }) catch return 0;
+    return @intFromEnum(result.status);
+}
+
+fn fetchGames(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    const req = syncRequest(invocation.request.payload) orelse return syncErrorAnswer(output, "bad_request", 0);
+    const gpa = std.heap.page_allocator;
+    var client: std.http.Client = .{ .allocator = gpa, .io = self.io };
+    defer client.deinit();
+    var url_buf: [512]u8 = undefined;
+    switch (req.site) {
+        .lichess => {
+            const url = lichessUrl(&url_buf, req.user(), req.max) orelse return syncErrorAnswer(output, "bad_request", 0);
+            var body: std.Io.Writer.Allocating = .init(gpa);
+            defer body.deinit();
+            const status = syncGet(&client, url, "application/x-chess-pgn", &body);
+            return lichessReply(status, body.written(), req.max, output);
+        },
+        .chesscom => {
+            var arena_state = std.heap.ArenaAllocator.init(gpa);
+            defer arena_state.deinit();
+            const arena = arena_state.allocator();
+            const url = chesscomArchivesUrl(&url_buf, req.user()) orelse return syncErrorAnswer(output, "bad_request", 0);
+            var list_body: std.Io.Writer.Allocating = .init(gpa);
+            defer list_body.deinit();
+            const status = syncGet(&client, url, "application/json", &list_body);
+            const months = switch (try chesscomList(arena, status, list_body.written(), output)) {
+                .months => |m| m,
+                .reply => |r| return r,
+            };
+            var answer = SyncAnswer.init(output, req.max);
+            var i = months.len;
+            var walked: usize = 0;
+            while (i > 0 and walked < SYNC_MONTHS_MAX and !answer.done()) : (walked += 1) {
+                i -= 1;
+                var month_body: std.Io.Writer.Allocating = .init(gpa);
+                defer month_body.deinit();
+                const month_status = syncGet(&client, months[i], "application/json", &month_body);
+                // games already in hand are worth more than an error about the rest
+                if (syncStatusError(month_status)) |code| {
+                    if (answer.count > 0) break;
+                    return syncErrorAnswer(output, code, month_status);
+                }
+                if (!chesscomMonth(arena, month_body.written(), &answer)) {
+                    if (answer.count > 0) break;
+                    return syncErrorAnswer(output, "parse", 0);
+                }
+            }
+            return answer.finish();
+        },
+    }
+}
+
 // ------------------------------------------------------------ self-test (7.5)
 //
 // 6.0 to 7.3 shipped an app whose engine never started, and every check the
@@ -1510,7 +1857,7 @@ test "every app command has a chess. name and no two share one" {
             try std.testing.expect(!std.mem.eql(u8, cmd.name, other.name));
         }
     }
-    try std.testing.expectEqual(@as(usize, 10), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 11), APP_COMMANDS.len);
 }
 
 test "one piece each way fits the SDK's bridge frame" {
@@ -1544,6 +1891,23 @@ test "an oversized file answers with a refusal naming the limit, not a truncated
     // the answer they write is exactly what host.js keys on.
     var out: [64]u8 = undefined;
     try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":16777216}", try tooLargeAnswer(&out));
+}
+
+test "a file the player picked may be 64 MiB (export all data), an appdata file stays at 16 MiB" {
+    try std.testing.expectEqual(@as(usize, 0), USER_FILE_MAX_BYTES % CHUNK_BYTES);
+    try std.testing.expect(USER_FILE_MAX_BYTES >= 4 * FILE_MAX_BYTES);
+    try std.testing.expectEqual(FILE_MAX_BYTES, stageLimit("appdata:lib00"));
+    try std.testing.expectEqual(USER_FILE_MAX_BYTES, stageLimit("/Users/me/chessboard-all.json"));
+    var out: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":67108864}", try tooLargeAnswerFor(&out, USER_FILE_MAX_BYTES));
+    const gpa = std.testing.allocator;
+    var stages: Stages = .{};
+    defer stages.releaseAll(gpa);
+    // past 16 MiB: refused toward the store, taken toward a picked file
+    try std.testing.expectError(error.TooLarge, stages.claim(gpa, "t", "appdata:x", FILE_MAX_BYTES + 1, 0, 1));
+    const got = try stages.claim(gpa, "u", "/Users/me/all.json", FILE_MAX_BYTES + 1, 0, 1);
+    try std.testing.expectEqual(FILE_MAX_BYTES + 1, got.stage.data.len);
+    try std.testing.expectError(error.TooLarge, stages.claim(gpa, "v", "/Users/me/all.json", USER_FILE_MAX_BYTES + 1, 0, 1));
 }
 
 test "a 2 MB file crosses the bridge in pieces and comes back byte for byte" {
@@ -1875,6 +2239,339 @@ test "the update answer carries the tag and URL, and nothing it cannot vouch for
     // a tag or URL that would need escaping is refused rather than re-quoted
     try std.testing.expectEqualStrings("{\"error\":\"parse\"}", try formatLatestRelease("{\"html_url\":\"https://github.com/x\",\"tag_name\":\"v1\\\"\"}", &out));
     try std.testing.expectEqualStrings("{\"error\":\"parse\"}", try formatLatestRelease("{\"html_url\":\"https://evil.example/x\",\"tag_name\":\"v1\"}", &out));
+}
+
+// ---- v8-0-plan C2: the two sites' answers, as they come back ----------------
+
+/// What /api/games/user/{name}?clocks=true answers: PGN, newest first, a
+/// blank line between the tags and the moves and two between games.
+const LICHESS_SAMPLE =
+    \\[Event "Rated blitz game"]
+    \\[Site "https://lichess.org/Ab3dEf7h"]
+    \\[Date "2026.09.21"]
+    \\[White "sync_tester"]
+    \\[Black "Opponent-2"]
+    \\[Result "1-0"]
+    \\[WhiteElo "1712"]
+    \\[BlackElo "1698"]
+    \\[TimeControl "180+2"]
+    \\[Termination "Normal"]
+    \\
+    \\1. e4 { [%clk 0:03:00] } 1... e5 { [%clk 0:03:00] } 2. Qh5 { [%clk 0:03:01] } 2... Nc6 { [%clk 0:02:59] } 3. Bc4 { [%clk 0:03:00] } 3... Nf6 { [%clk 0:02:57] } 4. Qxf7# { [%clk 0:03:00] } 1-0
+    \\
+    \\
+    \\[Event "Casual rapid game"]
+    \\[Site "https://lichess.org/Zz9yXw8v"]
+    \\[Date "2026.09.20"]
+    \\[White "Someone \"quoted\""]
+    \\[Black "sync_tester"]
+    \\[Result "1/2-1/2"]
+    \\[TimeControl "600+0"]
+    \\
+    \\1. d4 { [%clk 0:10:00] } 1... d5 { [%clk 0:10:00] } 2. c4 { [%clk 0:09:58] } 2... c6 { [%clk 0:09:55] } 1/2-1/2
+    \\
+    \\
+    \\[Event "Rated bullet game"]
+    \\[Site "https://lichess.org/Qq1wEe2r"]
+    \\[Date "2026.09.19"]
+    \\[White "sync_tester"]
+    \\[Black "third"]
+    \\[Result "0-1"]
+    \\
+    \\1. f3 { [%clk 0:01:00] } 1... e5 { [%clk 0:01:00] } 2. g4 { [%clk 0:00:59] } 2... Qh4# { [%clk 0:00:59] } 0-1
+    \\
+    \\
+;
+
+/// /pub/player/{u}/games/archives: every month with games, oldest first.
+const CHESSCOM_ARCHIVES_SAMPLE =
+    \\{"archives":["https://api.chess.com/pub/player/sync_tester/games/2026/07","https://api.chess.com/pub/player/sync_tester/games/2026/08","https://api.chess.com/pub/player/sync_tester/games/2026/09"]}
+;
+
+/// One month, oldest first, with the fields a real month carries around the
+/// PGN (nested objects, numbers, a field starting with @) and a Chess960
+/// game in the middle.
+const CHESSCOM_MONTH_SAMPLE =
+    \\{"games":[
+    \\{"url":"https://www.chess.com/game/live/101","pgn":"[Event \"Live Chess\"]\n[Site \"Chess.com\"]\n[Date \"2026.09.02\"]\n[White \"sync_tester\"]\n[Black \"first_opp\"]\n[Result \"1-0\"]\n[TimeControl \"180\"]\n\n1. e4 {[%clk 0:02:59.9]} 1... e5 {[%clk 0:02:58.1]} 2. Qh5 {[%clk 0:02:57]} 2... Nc6 {[%clk 0:02:55]} 3. Bc4 {[%clk 0:02:56]} 3... Nf6 {[%clk 0:02:50]} 4. Qxf7# {[%clk 0:02:55]} 1-0\n","time_control":"180","end_time":1788300000,"rated":true,"accuracies":{"white":91.5,"black":38.25},"tcn":"mC0Kgv5Q","uuid":"a1","initial_setup":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","fen":"r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4","time_class":"blitz","rules":"chess","white":{"rating":1650,"result":"win","@id":"https://api.chess.com/pub/player/sync_tester","username":"sync_tester","uuid":"w1"},"black":{"rating":1600,"result":"checkmated","@id":"https://api.chess.com/pub/player/first_opp","username":"first_opp","uuid":"b1"},"eco":"https://www.chess.com/openings/Kings-Pawn-Opening"},
+    \\{"url":"https://www.chess.com/game/live/102","pgn":"[Event \"Live Chess - Chess960\"]\n[SetUp \"1\"]\n[FEN \"bbrknnqr/pppppppp/8/8/8/8/PPPPPPPP/BBRKNNQR w HChc - 0 1\"]\n[Result \"0-1\"]\n\n1. e4 e5 0-1\n","time_control":"300","end_time":1788400000,"rated":false,"rules":"chess960","white":{"rating":1500,"result":"resigned","username":"sync_tester"},"black":{"rating":1500,"result":"win","username":"x960"}},
+    \\{"url":"https://www.chess.com/game/daily/103","pgn":"[Event \"Let's Play!\"]\n[Site \"Chess.com\"]\n[Date \"2026.09.20\"]\n[White \"last_opp\"]\n[Black \"sync_tester\"]\n[Result \"0-1\"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n","time_control":"1/86400","end_time":1789000000,"rated":true,"rules":"chess","white":{"rating":1200,"result":"checkmated","username":"last_opp"},"black":{"rating":1210,"result":"win","username":"sync_tester"}}
+    \\]}
+;
+
+/// The answer as the page reads it.
+const SyncAnswerJson = struct { pgn: []const u8, count: usize };
+
+test "a sync request is a site, a plain user name and a bounded count" {
+    const a = syncRequest("{\"site\":\"lichess\",\"user\":\"sync_tester\",\"max\":20}").?;
+    try std.testing.expectEqual(SyncSite.lichess, a.site);
+    try std.testing.expectEqualStrings("sync_tester", a.user());
+    try std.testing.expectEqual(@as(usize, 20), a.max);
+    const b = syncRequest("{\"site\":\"chesscom\",\"user\":\"Hikaru\"}").?;
+    try std.testing.expectEqual(SyncSite.chesscom, b.site);
+    try std.testing.expectEqual(SYNC_GAMES_DEFAULT, b.max);
+    // the count is clamped, never refused
+    try std.testing.expectEqual(SYNC_GAMES_MAX, syncRequest("{\"site\":\"lichess\",\"user\":\"ab\",\"max\":5000}").?.max);
+    try std.testing.expectEqual(@as(usize, 1), syncRequest("{\"site\":\"lichess\",\"user\":\"ab\",\"max\":0}").?.max);
+    // a name is what both sites allow, and so cannot climb out of the URL path
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"user\":\"a\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"user\":\"../api\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"user\":\"a b\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"user\":\"x?max=1\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"user\":\"abcdefghijklmnopqrstuvwxyz01234\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"fics\",\"user\":\"sync_tester\"}") == null);
+}
+
+test "the sync URLs carry the name and nothing else about the person" {
+    var buf: [512]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "https://lichess.org/api/games/user/Sync_Tester?max=20&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false",
+        lichessUrl(&buf, "Sync_Tester", 20).?,
+    );
+    try std.testing.expectEqualStrings("https://api.chess.com/pub/player/sync_tester/games/archives", chesscomArchivesUrl(&buf, "Sync_Tester").?);
+    var tiny: [16]u8 = undefined;
+    try std.testing.expect(chesscomArchivesUrl(&tiny, "sync_tester") == null);
+    try std.testing.expect(lichessUrl(&tiny, "sync_tester", 20) == null);
+}
+
+test "offline, rate-limited and no-such-user each have their own answer" {
+    var out: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("offline", syncStatusError(0).?);
+    try std.testing.expect(syncStatusError(200) == null);
+    try std.testing.expectEqualStrings("not_found", syncStatusError(404).?);
+    try std.testing.expectEqualStrings("not_found", syncStatusError(410).?);
+    try std.testing.expectEqualStrings("rate_limited", syncStatusError(429).?);
+    try std.testing.expectEqualStrings("http", syncStatusError(503).?);
+    try std.testing.expectEqualStrings("{\"error\":\"offline\"}", try syncErrorAnswer(&out, "offline", 0));
+    try std.testing.expectEqualStrings("{\"error\":\"rate_limited\"}", try syncErrorAnswer(&out, "rate_limited", 429));
+    try std.testing.expectEqualStrings("{\"error\":\"not_found\"}", try syncErrorAnswer(&out, "not_found", 404));
+    try std.testing.expectEqualStrings("{\"error\":\"http\",\"status\":503}", try syncErrorAnswer(&out, "http", 503));
+}
+
+test "Lichess: the PGN comes back as whole games, newest first, at most N" {
+    // read back with an arena, the way the SDK's own feed.zig parses
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var out: [8192]u8 = undefined;
+    {
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessAnswer(LICHESS_SAMPLE, 20, &out), .{});
+        try std.testing.expectEqual(@as(usize, 3), parsed.count);
+        const pgn = parsed.pgn;
+        try std.testing.expect(std.mem.startsWith(u8, pgn, "[Event \"Rated blitz game\"]\n"));
+        try std.testing.expect(std.mem.endsWith(u8, pgn, "2... Qh4# { [%clk 0:00:59] } 0-1"));
+        // games apart by a blank line, each whole, in the order they came
+        const second = std.mem.indexOf(u8, pgn, "[Event \"Casual rapid game\"]").?;
+        try std.testing.expect(std.mem.endsWith(u8, pgn[0..second], "Qxf7# { [%clk 0:03:00] } 1-0\n\n"));
+        try std.testing.expect(second < std.mem.indexOf(u8, pgn, "[Event \"Rated bullet game\"]").?);
+        // a tag's escaped quotes survive both escapings
+        try std.testing.expect(std.mem.indexOf(u8, pgn, "[White \"Someone \\\"quoted\\\"\"]") != null);
+    }
+    {
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessAnswer(LICHESS_SAMPLE, 2, &out), .{});
+        try std.testing.expectEqual(@as(usize, 2), parsed.count);
+        try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "Rated bullet game") == null);
+    }
+    // a player with no games: an empty text, not an error
+    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer("", 20, &out));
+}
+
+test "Lichess: a game that does not fit is dropped whole, with everything older" {
+    const body = "[Event \"a\"]\n\n1. e4 *\n\n\n[Event \"b\"]\n\n1. d4 *\n";
+    const first = "[Event \"a\"]\n\n1. e4 *";
+    var buf: [256]u8 = undefined;
+    const room = SyncAnswer.HEAD.len + jsonEscapedLen(first) + SyncAnswer.TAIL_MAX;
+    try std.testing.expectEqualStrings("{\"pgn\":\"[Event \\\"a\\\"]\\n\\n1. e4 *\",\"count\":1}", try lichessAnswer(body, 20, buf[0..room]));
+    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer(body, 20, buf[0 .. room - 1]));
+}
+
+test "Chess.com: the archive list is read, and only its own API is followed" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const months = chesscomArchives(arena, CHESSCOM_ARCHIVES_SAMPLE).?;
+    try std.testing.expectEqual(@as(usize, 3), months.len);
+    try std.testing.expectEqualStrings("https://api.chess.com/pub/player/sync_tester/games/2026/09", months[2]);
+    try std.testing.expectEqual(@as(usize, 0), chesscomArchives(arena, "{\"archives\":[]}").?.len);
+    try std.testing.expect(chesscomArchives(arena, "{\"archives\":[\"https://evil.example/pub/player/x/games/2026/09\"]}") == null);
+    try std.testing.expect(chesscomArchives(arena, "{\"archives\":[\"https://api.chess.com/pub/player/x/games/2026/09?a=\\\"b\\\"\"]}") == null);
+    // what a missing player's 404 carries is not a list
+    try std.testing.expect(chesscomArchives(arena, "{\"code\":0,\"message\":\"User \\\"nobody\\\" not found.\"}") == null);
+    try std.testing.expect(chesscomArchives(arena, "<html>") == null);
+}
+
+test "Chess.com: a month's games come back newest first, standard chess only" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var out: [8192]u8 = undefined;
+    var answer = SyncAnswer.init(&out, 20);
+    try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_SAMPLE, &answer));
+    try std.testing.expectEqual(@as(usize, 2), answer.count);
+    const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try answer.finish(), .{});
+    const pgn = parsed.pgn;
+    try std.testing.expect(std.mem.startsWith(u8, pgn, "[Event \"Let's Play!\"]\n"));
+    try std.testing.expect(std.mem.indexOf(u8, pgn, "Chess960") == null);
+    const older = std.mem.indexOf(u8, pgn, "[Event \"Live Chess\"]").?;
+    try std.testing.expect(std.mem.endsWith(u8, pgn[0..older], "2. g4 Qh4# 0-1\n\n"));
+    try std.testing.expect(std.mem.endsWith(u8, pgn, "4. Qxf7# {[%clk 0:02:55]} 1-0"));
+    // N stops the walk inside a month: the newest one only
+    var one = SyncAnswer.init(&out, 1);
+    try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_SAMPLE, &one));
+    try std.testing.expectEqual(@as(usize, 1), one.count);
+    try std.testing.expect(one.done());
+    var other = SyncAnswer.init(&out, 20);
+    try std.testing.expect(!chesscomMonth(arena, CHESSCOM_ARCHIVES_SAMPLE, &other));
+}
+
+test "a PGN's control bytes cross the bridge escaped" {
+    var buf: [64]u8 = undefined;
+    var n: usize = 0;
+    const s = "a\"b\\c\nd\te\x01";
+    jsonEscapeInto(&buf, &n, s);
+    try std.testing.expectEqualStrings("a\\\"b\\\\c\\nd\\te\\u0001", buf[0..n]);
+    try std.testing.expectEqual(n, jsonEscapedLen(s));
+}
+
+test "a full sync answer fits the SDK's bridge frame" {
+    // the answer, inside {"id":…,"ok":true,"result":…} with its 64-byte id
+    try std.testing.expect(SYNC_ANSWER_MAX + 64 + 32 <= BRIDGE_FRAME_MAX);
+    // …and never past it, however big the buffer it is handed (on the heap:
+    // Windows gives a test 1 MiB of stack)
+    const big = try std.testing.allocator.alloc(u8, SYNC_ANSWER_MAX + 1024);
+    defer std.testing.allocator.free(big);
+    const a = SyncAnswer.init(big, 20);
+    try std.testing.expectEqual(SYNC_ANSWER_MAX, a.out.len);
+}
+
+// ---- v8-0-plan C2: the same parsers on what the sites really sent -----------
+//
+// src/sync-fixtures/ (its README says where from): the answers the manual
+// workflow sync-samples.yml fetched on 2026-09-29 with fetchGames's own URLs
+// and User-Agent. The hand-written samples above stay — they pin cases these
+// happen not to carry (escaped quotes in a tag, a game past the answer's room).
+
+const LICHESS_REAL = @embedFile("sync-fixtures/lichess.body");
+const LICHESS_MISSING_REAL = @embedFile("sync-fixtures/lichess-missing.body");
+const CHESSCOM_ARCHIVES_REAL = @embedFile("sync-fixtures/chesscom-archives.body");
+const CHESSCOM_MONTH_REAL = @embedFile("sync-fixtures/chesscom-month.body");
+const CHESSCOM_MISSING_REAL = @embedFile("sync-fixtures/chesscom-missing.body");
+
+/// Every one of `needles` found in `hay`, in this order.
+fn inOrder(hay: []const u8, needles: []const []const u8) bool {
+    var from: usize = 0;
+    for (needles) |needle| {
+        const at = std.mem.indexOfPos(u8, hay, from, needle) orelse return false;
+        from = at + needle.len;
+    }
+    return true;
+}
+
+test "real Lichess answer: five whole games, newest first, as the site sent them" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // on the heap: Windows gives a test 1 MiB of stack
+    const out = try std.testing.allocator.alloc(u8, SYNC_ANSWER_MAX);
+    defer std.testing.allocator.free(out);
+    {
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_REAL, 20, out), .{});
+        try std.testing.expectEqual(@as(usize, 5), parsed.count);
+        const pgn = parsed.pgn;
+        try std.testing.expectEqual(@as(usize, 5), std.mem.count(u8, pgn, "[Event "));
+        // perfType kept it to standard chess
+        try std.testing.expectEqual(@as(usize, 5), std.mem.count(u8, pgn, "[Variant \"Standard\"]"));
+        // whole games apart by one blank line; the site's two become one
+        try std.testing.expectEqual(@as(usize, 4), std.mem.count(u8, pgn, "\n\n[Event "));
+        try std.testing.expectEqual(std.mem.trim(u8, LICHESS_REAL, "\n").len - 4, pgn.len);
+        try std.testing.expect(std.mem.startsWith(u8, pgn, "[Event \"rated blitz game\"]\n[Site \"https://lichess.org/JNUpaHZT\"]\n"));
+        try std.testing.expect(inOrder(pgn, &.{ "/JNUpaHZT\"]", "a3 { [%clk 0:01:42] } 0-1\n\n[Event ", "/uZNKbd2M\"]", "/CzvAH3q1\"]", "/drjc6AEK\"]", "/ISnAuvzx\"]" }));
+        try std.testing.expect(std.mem.endsWith(u8, pgn, "h5 { [%clk 0:04:49] } 0-1"));
+    }
+    {
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_REAL, 2, out), .{});
+        try std.testing.expectEqual(@as(usize, 2), parsed.count);
+        try std.testing.expect(std.mem.endsWith(u8, parsed.pgn, "b5 { [%clk 0:05:08] } 1-0"));
+        try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "CzvAH3q1") == null);
+    }
+}
+
+test "real Lichess 404: its HTML page means no such user, not an empty list" {
+    var out: [256]u8 = undefined;
+    try std.testing.expect(std.mem.startsWith(u8, LICHESS_MISSING_REAL, "<!DOCTYPE html>"));
+    try std.testing.expectEqualStrings("{\"error\":\"not_found\"}", try lichessReply(404, LICHESS_MISSING_REAL, 20, &out));
+    // what the status going first saves the player from: the page read as PGN is "no games yet"
+    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer(LICHESS_MISSING_REAL, 20, &out));
+}
+
+test "real Chess.com archives: every month passes the URL checks, the last is walked first" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var out: [64]u8 = undefined;
+    const months = switch (try chesscomList(arena, 200, CHESSCOM_ARCHIVES_REAL, &out)) {
+        .months => |m| m,
+        .reply => return error.TestUnexpectedResult,
+    };
+    try std.testing.expectEqual(@as(usize, 231), months.len);
+    try std.testing.expectEqualStrings("https://api.chess.com/pub/player/erik/games/2007/07", months[0]);
+    const last = months[months.len - 1];
+    try std.testing.expectEqualStrings("https://api.chess.com/pub/player/erik/games/2026/09", last);
+    // the checks chesscomArchives holds every entry to, spelled out for the one fetched first
+    try std.testing.expect(std.mem.startsWith(u8, last, "https://api.chess.com/pub/player/"));
+    try std.testing.expect(last.len <= 256 and safeUrl(last));
+}
+
+test "real Chess.com 404: no such user, from the status before the body" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var out: [64]u8 = undefined;
+    switch (try chesscomList(arena, 404, CHESSCOM_MISSING_REAL, &out)) {
+        .reply => |r| try std.testing.expectEqualStrings("{\"error\":\"not_found\"}", r),
+        .months => return error.TestUnexpectedResult,
+    }
+    // the body is not a list: under a 200 it would be a parse error
+    switch (try chesscomList(arena, 200, CHESSCOM_MISSING_REAL, &out)) {
+        .reply => |r| try std.testing.expectEqualStrings("{\"error\":\"parse\"}", r),
+        .months => return error.TestUnexpectedResult,
+    }
+}
+
+test "real Chess.com month: nine standard games newest first, the four Chess960 left out" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const out = try std.testing.allocator.alloc(u8, SYNC_ANSWER_MAX);
+    defer std.testing.allocator.free(out);
+    {
+        var answer = SyncAnswer.init(out, 20);
+        try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_REAL, &answer));
+        try std.testing.expectEqual(@as(usize, 9), answer.count);
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try answer.finish(), .{});
+        const pgn = parsed.pgn;
+        try std.testing.expectEqual(@as(usize, 9), parsed.count);
+        try std.testing.expectEqual(@as(usize, 9), std.mem.count(u8, pgn, "[Event "));
+        try std.testing.expectEqual(@as(usize, 8), std.mem.count(u8, pgn, "\n\n[Event "));
+        try std.testing.expect(std.mem.indexOf(u8, pgn, "Chess960") == null);
+        try std.testing.expect(std.mem.startsWith(u8, pgn, "[Event \"Let's Play!\"]\n[Site \"Chess.com\"]\n"));
+        // the month lists them oldest first (a live game among the daily ones)
+        try std.testing.expect(inOrder(pgn, &.{
+            "/daily/1029050366\"]", "/daily/1027848498\"]", "/live/184169696662\"]",
+            "/daily/1027004758\"]", "/daily/1022858278\"]", "/daily/1022304040\"]",
+            "/daily/1014147690\"]", "/daily/1014147686\"]", "/daily/1016260528\"]",
+        }));
+        try std.testing.expect(std.mem.endsWith(u8, pgn, "Kxa7 {[%clk 0:22:48.2]} 0-1"));
+    }
+    {
+        // N stops inside the month: past the two newest (Chess960) to the newest standard game
+        var one = SyncAnswer.init(out, 1);
+        try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_REAL, &one));
+        try std.testing.expectEqual(@as(usize, 1), one.count);
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try one.finish(), .{});
+        try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "/daily/1029050366\"]") != null);
+    }
 }
 
 // `zig build test` roots the test binary at this file, and a test build never

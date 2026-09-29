@@ -1461,6 +1461,43 @@
     ],
     "changedBestPctSd": 16.5
   },
+  "libraryDb": {
+    "what": "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms",
+    "script": "node scripts/test-library-e2e.mjs --record",
+    "games": 10000,
+    "importMs": 28094,
+    "loadMs": 4294,
+    "queryMs": {
+      "opponent": 7.5,
+      "text": 16.6,
+      "date": 12.6,
+      "result": 1.2,
+      "tc": 6.2,
+      "eco": 1.4,
+      "position": 4.6,
+      "combined": 5.7,
+      "explorer": 9.1,
+      "start": 25.4
+    },
+    "queryHits": {
+      "opponent": 1170,
+      "text": 7,
+      "date": 1379,
+      "result": 1133,
+      "tc": 3331,
+      "eco": 2149,
+      "position": 2375,
+      "combined": 7,
+      "explorer": 2375,
+      "start": 10000
+    },
+    "pageMs": {
+      "typed": 18.6,
+      "position": 18.3,
+      "speed": 15.6
+    },
+    "limitMs": 200
+  },
   "markChroma": {
     "what": "每种棋盘标记叠在浅格上的 CIELAB 色度 C*（越大越艳）。上一步标记的上限以 Lichess 默认棋盘的上一步高亮（rgba(155,199,0,.41) 叠在 #f0d9b5 上）为参照，取其约九成，不照抄数值；7.9 §3 给四种标记都定了上限：上一步、选中 ≤ 47，将军、提示 ≤ 52（参照值本身取整）",
     "script": "scripts/measure-marks.mjs --record",
@@ -2969,6 +3006,81 @@
           }
         }
       }
+    }
+  },
+  "explorer": {
+    "what": "v8-0-plan C3 开局浏览器：棋谱库索引耗时、内置大师树的来源与规模、包体积增量",
+    "script": "scripts/test-explorer.mjs --record",
+    "libIndex": {
+      "games": 500,
+      "plies": 80,
+      "maxPly": 50,
+      "chessJsMsBefore": 3445,
+      "ms": 279,
+      "queryMs": 3.3
+    },
+    "masters": {
+      "source": "lichess_db_standard_rated_2026-08",
+      "licence": "CC0",
+      "minElo": 2200,
+      "speeds": [
+        "Blitz",
+        "Rapid",
+        "Classical"
+      ],
+      "plies": 16,
+      "minGames": 2,
+      "read": 7096686,
+      "games": 120000,
+      "positions": 82529,
+      "moves": 122279,
+      "buckets": [
+        [
+          0,
+          7
+        ],
+        [
+          8,
+          9
+        ],
+        [
+          10,
+          11
+        ],
+        [
+          12,
+          12
+        ],
+        [
+          13,
+          14
+        ],
+        [
+          15,
+          15
+        ]
+      ],
+      "sourceBytes": 2766889,
+      "audit": {
+        "positions": 40,
+        "exact": 40
+      }
+    },
+    "package": {
+      "bundleBefore": 1203749,
+      "bundleAfter": 1205526,
+      "chunkExplorer": 20591,
+      "masterChunks": [
+        575493,
+        523985,
+        625772,
+        324659,
+        613844,
+        273402
+      ],
+      "masterChunksTotal": 2937155,
+      "bundleDelta": 1777,
+      "installDelta": 2959523
     }
   }
 }

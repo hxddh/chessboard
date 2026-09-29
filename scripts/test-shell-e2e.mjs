@@ -436,26 +436,33 @@ for (const lang of ["en", "ja"]) {
   await page.reload();
   await page.waitForTimeout(900);
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
-  await page.click('#rail button[data-view="me"]');
-  await page.waitForTimeout(400);
-  await page.click("#hist-open");
-  await page.waitForTimeout(400);
-  await page.click("#hist-list [data-hist]");
-  await page.waitForTimeout(600);
-  await page.click("#confirm-ok", { timeout: 800 }).catch(() => {});
-  await page.waitForTimeout(800);
-  const st = await state(page);
-  const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
-  assert(rows === 2, "从对局历史打开的一局载入了棋盘(" + rows + " 行)");
-  assert(!st.me && st.current === "play" && !st.stageInert,
-    "……载入之后看见的是棋盘,不是还盖着的「我的」(" + JSON.stringify({ me: st.me, current: st.current, inert: st.stageInert }) + ")");
-  // Codex #89: the opponent comes back with the game — 练习档 × 重原则 is 莉娜 —
-  // not whoever is chosen today (the default: no persona)
-  await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 8000 }).catch(() => {});
-  await page.waitForTimeout(300);
-  const who = await page.evaluate(() => ({ role: document.getElementById("black-role").textContent.trim(),
-    persona: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").personaId }));
-  assert(who.role === "莉娜" && who.persona === "principled", "对局历史载入:对手是那盘棋的角色(" + JSON.stringify(who) + ")");
+  // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games,
+  // and a row there loads the same way the history's own rows did; the
+  // preview rows on 我的 are the second door
+  for (const door of ["#lib-list [data-loc]", "#hist-body [data-hist]"]) {
+    await page.click('#rail button[data-view="me"]');
+    await page.waitForTimeout(400);
+    if (door.startsWith("#lib-list")) {
+      await page.click("#hist-open");
+      await page.waitForTimeout(600);
+    }
+    await page.click(door);
+    await page.waitForTimeout(600);
+    await page.click("#confirm-ok", { timeout: 800 }).catch(() => {});
+    await page.waitForTimeout(800);
+    const st = await state(page);
+    const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
+    assert(rows === 2, door + ":从对局历史打开的一局载入了棋盘(" + rows + " 行)");
+    assert(!st.me && st.current === "play" && !st.stageInert,
+      door + ":……载入之后看见的是棋盘,不是还盖着的「我的」(" + JSON.stringify({ me: st.me, current: st.current, inert: st.stageInert }) + ")");
+    // Codex #89: the opponent comes back with the game — 练习档 × 重原则 is 莉娜 —
+    // not whoever is chosen today (the default: no persona); both doors
+    await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const who = await page.evaluate(() => ({ role: document.getElementById("black-role").textContent.trim(),
+      persona: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").personaId }));
+    assert(who.role === "莉娜" && who.persona === "principled", door + ":对局历史载入:对手是那盘棋的角色(" + JSON.stringify(who) + ")");
+  }
   assert(errs.length === 0, "对局历史载入:没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }

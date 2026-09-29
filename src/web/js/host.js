@@ -22,6 +22,14 @@ const global = typeof window !== "undefined" ? window : globalThis;
   const CHUNK = 512 * 1024;
   /** main.zig FILE_MAX_BYTES: the largest file either direction carries. */
   const FILE_MAX = 16 * 1024 * 1024;
+  /**
+   * main.zig USER_FILE_MAX_BYTES: what 导入全部数据 may read (M5 review P2-3).
+   * The export carries every library shard, and an analysed 80-ply game is
+   * ~2.6 KB of JSON: 10,000 of them (library.js MAX_GAMES) are ~28 MB once
+   * escaped into the export, past 16 MiB at ~5,500 games. 64 MiB is twice
+   * the full library plus every other key. A PGN is still read to FILE_MAX.
+   */
+  const ALL_DATA_MAX = 64 * 1024 * 1024;
 
   /**
    * base64 of raw bytes, a slice at a time.
@@ -102,14 +110,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *   the whole content when it carried any; any other shape ({missing},
    *   {tooLarge}, an error, an older shell's bare string) exactly as it came
    */
-  async function readBytes(call, fields) {
+  async function readBytes(call, fields, max) {
+    const limit = max || FILE_MAX;
     const first = await call(fields);
     if (!first || typeof first !== "object" || typeof first.b64 !== "string") return first;
     const parts = [bytesFromB64(first.b64)];
     let size = parts[0].length;
     let r = first;
     while (r.more === true) {
-      if (size > FILE_MAX) throw fileTooLargeError(FILE_MAX);
+      if (size > limit) throw fileTooLargeError(limit);
       // the .bak the first piece came from, if it did: the rest must too
       r = await call(Object.assign({}, fields, { offset: size }, first.bak === true ? { bak: true } : null));
       if (!r || typeof r !== "object" || typeof r.b64 !== "string") throw new Error("chunked read broke off");
@@ -225,9 +234,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return e;
   }
 
-  async function readTextFile(path) {
+  /** @param {number} [max] the most to read: FILE_MAX, or ALL_DATA_MAX for 导入全部数据 */
+  async function readTextFile(path, max) {
     if (!hasZero()) throw new Error("no bridge");
-    const r = await readBytes((f) => global.zero.invoke("chess.readTextFile", f), { path: path });
+    const r = await readBytes((f) => global.zero.invoke("chess.readTextFile", f), { path: path }, max);
     // this used to be a bare base64 string, which had nowhere to put the
     // refusal; the old shape still reads fine.
     if (typeof r === "string") return base64ToString(r);
@@ -645,6 +655,18 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
+   * v8-0-plan C2: a player's recent games from Lichess or Chess.com, fetched
+   * by the native side (main.zig fetchGames) — the page's CSP stays
+   * connect-src 'self'. Called only from the sync dialog's 同步 button,
+   * which races it and reads the answer (sync-ui.js ask).
+   * @param {{site: string, user: string, max: number}} p
+   * @returns {Promise<any>} null when there is no bridge
+   */
+  function fetchGames(p) {
+    return hasZero() && typeof global.zero.invoke === "function" ? global.zero.invoke("chess.fetchGames", p) : Promise.resolve(null);
+  }
+
+  /**
    * 7.5 — whether the packaged app was launched with CHESS_SELFTEST=1 (see
    * main.zig). false everywhere else, including every browser and every
    * build without the command.
@@ -701,6 +723,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     writeTextFile,
     writeBinaryFile,
     readTextFile,
+    ALL_DATA_MAX,
     FILE_TOO_LARGE,
     NO_FILE_DIALOG,
     UNISSUED_PATH,
@@ -731,6 +754,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     appdataPath,
     setMenuLanguage,
     checkUpdate,
+    fetchGames,
     selftestMode,
     selftestReport,
   };

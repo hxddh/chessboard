@@ -2280,10 +2280,12 @@ if (scenario()) {
     await page.reload();
     await page.waitForTimeout(900);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
+    // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games —
+    // the history's own dialog is gone, and the same ruler applies to this one
     await page.click("#hist-open", { timeout: 2500 }).catch(() => {});
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
     const r = await page.evaluate(() => {
-      const rows = [...document.querySelectorAll("#hist-modal .hist-row")].filter((e) => e.offsetParent);
+      const rows = [...document.querySelectorAll("#lib-list .hist-row")].filter((e) => e.offsetParent);
       // 7.1: scoped to the dialog under test. Unscoped, this also swept up the
       // three filter rows of 棋谱库's own list dialog — which is CLOSED here,
       // so their labels measure as invisible and their buttons as zero-sized,
@@ -2291,7 +2293,7 @@ if (scenario()) {
       // label". The library's rows get the same scrutiny in their own block
       // below, with the dialog open, which is the only state the question
       // means anything in.
-      const segs = [...document.querySelectorAll("#hist-modal .hist-filters .theme-row")].map((seg) => {
+      const segs = [...document.querySelectorAll("#lib-list-modal .hist-filters .theme-row")].map((seg) => {
         const by = seg.getAttribute("aria-labelledby");
         const label = by ? document.getElementById(by) : null;
         const bs = [...seg.querySelectorAll("button")];
@@ -2308,7 +2310,7 @@ if (scenario()) {
     assert(r.n >= 20, lang + ": the history dialog is showing the games (" + r.n + ")");
     assert(r.rowH.length === 1,
       lang + ": every game in the list is the same height (" + r.rowH.join(", ") + ")");
-    assert(r.segs.length === 2, lang + ": both filters are there (" + r.segs.length + ")");
+    assert(r.segs.length === 5, lang + ": every filter is there — result, colour, sort, source, speed (" + r.segs.length + ")");
     for (const s of r.segs) {
       assert(s.label, s.id + " (" + lang + "): carries a label you can see, not only one you can hear");
       assert(!s.stray, s.id + " (" + lang + "): and not a second copy of it as an aria-label");
@@ -2367,7 +2369,7 @@ if (scenario()) {
     assert(r.n >= 20, lang + ": 棋谱库列表摆出了那些棋 (" + r.n + ")");
     assert(r.rowH.length === 1,
       lang + ": 每一行一样高 (" + r.rowH.join(", ") + ")");
-    assert(r.segs.length === 3, lang + ": 三排筛选/排序都在 (" + r.segs.length + ")");
+    assert(r.segs.length === 5, lang + ": 五排筛选/排序都在 —— 结果、执子、排序、来源、用时 (" + r.segs.length + ")");
     for (const s of r.segs) {
       assert(s.label, s.id + " (" + lang + "): 有一个看得见的标签，不是只有读屏听得见的那种");
       assert(!s.stray, s.id + " (" + lang + "): 而且没有第二份 aria-label");
