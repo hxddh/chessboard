@@ -3201,5 +3201,71 @@
         "interactiveMs": 257.7
       }
     }
+  },
+  "persistFirstWrite": {
+    "what": "v8-1-plan F3：2 MB 档案（棋谱库 1,543 局）第一次启动整份写进原生分键存储。sliceMs：桥上一次应答之后，页面到再调桥或这个任务结束为止连着干的最长一段；putRunMs：同一次启动把棋谱库搬进 IndexedDB，一个任务里连着 put 的最长一段；typicalSaveMs：其后一次普通保存。验收线都是 16 ms。before 是修正前的 host.js / library-db.js，量法已是修正后的",
+    "script": "node scripts/test-persist-e2e.mjs --record=before|after",
+    "before": {
+      "runs": [
+        {
+          "engine": "chromium",
+          "passed": false,
+          "sliceMs": 11.5,
+          "putRunMs": 35.6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "typicalSaveMs": 0.4
+        }
+      ]
+    },
+    "after": {
+      "runs": [
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 5.7,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "typicalSaveMs": 0.5
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 4.1,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "typicalSaveMs": 3.7
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 5.1,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "typicalSaveMs": 0.3
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 3.6,
+          "putRunMs": 6.1,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "typicalSaveMs": 0.9
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 8.9,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "typicalSaveMs": 0.5
+        }
+      ]
+    }
   }
 }

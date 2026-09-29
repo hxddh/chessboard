@@ -29,6 +29,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { read as readMeasured, record } from "./measurements.mjs";
 // the app's own rules engine, for reading an export back the way a reader would
 import { Chess } from "../src/web/js/chess.js";
 
@@ -1151,6 +1152,38 @@ function fakeNative(opts) {
     }
     return {};
   };
+  // v8-1-plan F3: where the page's run after an answer ends when it does not
+  // end in another bridge call. The measure below used to run from an answer
+  // to whatever call came next, so a flush that finished and then another
+  // flow that awaited IndexedDB for 150 ms before its own first call
+  // (library-page.js bootLibrary → Persist.touchUnlisted) read as one 150 ms
+  // slice of main thread — a Chromium trace of that gap shows two tasks
+  // (7 ms and a 34–45 ms library-db put, since sliced) and idle. Now the
+  // slice also ends where the answer's task does: the next task to start —
+  // a timer, a frame, an IndexedDB event (the page's other work), or failing
+  // those a message posted with the answer — closes it. Waiting is not
+  // counted; everything the answer's task did still is.
+  const close = () => {
+    const seg = window.__seg;
+    if (!seg.at) return;
+    const d = performance.now() - seg.at;
+    if (d < 200) seg.max = Math.max(seg.max, d);
+    seg.at = 0;
+  };
+  const ends = new MessageChannel();
+  ends.port1.onmessage = (e) => { if (e.data === window.__seg.tok) close(); };
+  const first = (fn) => (typeof fn === "function" ? function () { close(); return fn.apply(this, arguments); } : fn);
+  for (const n of ["setTimeout", "requestAnimationFrame"]) {
+    const real = window[n];
+    window[n] = function (fn, ...rest) { return real.call(window, first(fn), ...rest); };
+  }
+  for (const [C, names] of [["IDBRequest", ["onsuccess", "onerror"]], ["IDBTransaction", ["oncomplete", "onabort", "onerror"]]]) {
+    const proto = window[C] && window[C].prototype;
+    for (const n of names) {
+      const d = proto && Object.getOwnPropertyDescriptor(proto, n);
+      if (d && d.set) Object.defineProperty(proto, n, { configurable: true, enumerable: d.enumerable, get: d.get, set(fn) { d.set.call(this, first(fn)); } });
+    }
+  }
   window.zero = {
     on: () => () => {}, off: () => {},
     platform: { supports: (o) => Promise.resolve(!!o && o.feature === "dialogs") },
@@ -1173,11 +1206,17 @@ function fakeNative(opts) {
           } catch (e) { err = e; }
         }
         window.__seg.at = performance.now();
+        ends.port2.postMessage(window.__seg.tok = (window.__seg.tok || 0) + 1);
         if (err) reject(err); else resolve(r);
       }, 0));
     },
   };
 }
+
+// v8-1-plan F3: `--record=before|after` keeps this run's first-launch
+// figures in docs/measured.json persistFirstWrite (the last five of each)
+const RECORD = (process.argv.find((a) => /^--record=(before|after)$/.test(a)) || "").slice(9);
+const firstWrite = {};
 
 /** A profile of about `mb` megabytes, in the shapes the app reads (ACCEPT). */
 function seedProfile(mb) {
@@ -1216,6 +1255,25 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   });
   await ctx.addInitScript(seedProfile, 2);
   await ctx.addInitScript(fakeNative, { persist: false });
+  // v8-1-plan F3: the same launch moves the 1,543 games into IndexedDB, and
+  // each put() clones its record on the spot. A run of puts with no gap
+  // between them is one task's worth; the whole library in one run was a
+  // 34–45 ms task in the middle of the mirror's write.
+  await ctx.addInitScript(() => {
+    const p = window.__puts = { last: -1e9, start: 0, max: 0, n: 0 };
+    const S = window.IDBObjectStore && window.IDBObjectStore.prototype;
+    if (!S) return;
+    const put = S.put;
+    S.put = function () {
+      const t = performance.now();
+      if (t - p.last > 1) p.start = t;
+      try { return put.apply(this, arguments); } finally {
+        p.last = performance.now();
+        p.n++;
+        p.max = Math.max(p.max, p.last - p.start);
+      }
+    };
+  });
   const { page, errs } = await open(ctx);
 
   // (a) the first launch writes the whole profile into the per-key store —
@@ -1250,12 +1308,16 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     } catch (_) { return false; }
   }, libCount, { timeout: 90000, polling: 250 }).catch(() => {});
   const shards = await shardBytes();
-  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big }));
-  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节`);
+  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big, puts: window.__puts }));
+  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节;` +
+    `搬进 IndexedDB 一口气 put 最长 ${full.puts.max.toFixed(1)} ms(共 ${full.puts.n} 次)`);
   assert(full.meta && shards.n > 1024 * 1024 && shards.games === libCount,
     `2 MB 的档案整份进了原生存储:棋谱库的 ${libCount} 局都在分片里(${shards.games} 局,${shards.n} 字节)`);
   assert(full.big === 0, `……没有一帧超过桥的 1 MiB(被拒 ${full.big} 次)`);
+  Object.assign(firstWrite, { sliceMs: +full.seg.toFixed(1), putRunMs: +full.puts.max.toFixed(1), games: libCount, shardBytes: shards.n });
   assert(full.seg <= 16, `……写的过程中,主线程上最长的一段 ≤ 16 ms(${full.seg.toFixed(1)} ms)`);
+  assert(full.puts.n >= libCount && full.puts.max <= 16,
+    `……同一次启动把棋谱库搬进 IndexedDB,一个任务里连着 put 最长 ≤ 16 ms(${full.puts.max.toFixed(1)} ms,${full.puts.n} 次)`);
 
   // (b) export: one file, compact, the whole of it
   await page.evaluate(() => document.getElementById("alldata-export").click());
@@ -1302,6 +1364,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   });
   console.log(`  镜像·一次普通保存:主线程最长一段 ${typical.toFixed(1)} ms(其中同步起步 ${first.toFixed(1)} ms)`);
   assert(savedMove, "走了 2. Nf3 之后,原生存储里的 save 就是这一局");
+  firstWrite.typicalSaveMs = +typical.toFixed(1);
   assert(typical <= 16, `一次普通保存的镜像写,主线程上每段 ≤ 16 ms(${typical.toFixed(1)} ms)`);
 
   // (d) clear → import the file → every key is what was exported
@@ -1605,5 +1668,14 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
 
 await browser.close();
 server.close();
+if (RECORD) {
+  const prev = readMeasured().persistFirstWrite || {};
+  const runs = ((prev[RECORD] && prev[RECORD].runs) || []).concat([Object.assign({ engine: ENGINE, passed: !failed }, firstWrite)]).slice(-5);
+  record("persistFirstWrite", Object.assign({}, prev, {
+    what: "v8-1-plan F3：2 MB 档案（棋谱库 1,543 局）第一次启动整份写进原生分键存储。sliceMs：桥上一次应答之后，页面到再调桥或这个任务结束为止连着干的最长一段；putRunMs：同一次启动把棋谱库搬进 IndexedDB，一个任务里连着 put 的最长一段；typicalSaveMs：其后一次普通保存。验收线都是 16 ms。before 是修正前的 host.js / library-db.js，量法已是修正后的",
+    script: "node scripts/test-persist-e2e.mjs --record=before|after",
+    [RECORD]: { runs },
+  }));
+}
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");

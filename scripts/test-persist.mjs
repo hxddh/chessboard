@@ -112,8 +112,8 @@ function nativeStandIn() {
   return zero;
 }
 
-function loadHost(zero) {
-  const c = { console, TextEncoder, TextDecoder, btoa, atob, Date, Math, setTimeout, navigator: {}, document: {} };
+function loadHost(zero, over) {
+  const c = Object.assign({ console, TextEncoder, TextDecoder, btoa, atob, Date, Math, setTimeout, navigator: {}, document: {} }, over);
   c.globalThis = c;
   c.window = c;
   if (zero) c.zero = zero;
@@ -143,7 +143,8 @@ function loadHost(zero) {
   const big = Array.from({ length: 70000 }, (_, i) => (i % 97 ? "e4 e5 Nf3 Nc6 Bb5 a6 " : "😀 国际象棋 ")).join("").slice(0, 2 * 1024 * 1024);
   await H.writeTextFile("/Users/me/all.json", big);
   const writes = zero.frames.filter((f) => f.cmd === "chess.writeTextFile");
-  assert(writes.length === Math.ceil(Buffer.byteLength(big) / (512 * 1024)),
+  assert(writes.length >= Math.ceil(Buffer.byteLength(big) / (512 * 1024)) &&
+    writes.every((f) => Buffer.from(f.a.b64, "base64").length <= 512 * 1024),
     `a 2 MB export goes as ${writes.length} pieces of ≤ 512 KiB (not one ${Buffer.byteLength(big)}-byte frame)`);
   assert(writes.every((f) => f.size <= 1024 * 1024), "…every frame under the SDK's 1 MiB");
   assert(new Set(writes.map((f) => f.a.txn)).size === 1 && writes.every((f) => f.a.total === Buffer.byteLength(big)),
@@ -188,6 +189,35 @@ function loadHost(zero) {
   assert(threw && /stage_lost/.test(threw.message), "…and a second loss is a failed write, not a quiet one");
   zero.invoke = real;
 
+  // v8-1-plan F3: a big text is encoded a piece at a time. encode() of the
+  // whole 2 MB header was 7–10 ms in the first launch's first round trip.
+  let widest = 0;
+  class Spy extends TextEncoder {
+    encode(s) { widest = Math.max(widest, String(s).length); return super.encode(s); }
+  }
+  const HS = loadHost(zero, { TextEncoder: Spy });
+  // a four-byte character on each side of every 256 Ki-char cut, and one
+  // astride it; a lone surrogate, which TextEncoder writes as U+FFFD
+  const cut = 256 * 1024;
+  let wide = "";
+  for (let k = 1; k <= 8; k++) wide += "a".repeat(cut - 3) + "😀" + "b" + (k % 2 ? "😀" : "国");
+  wide += "\ud800 end";
+  zero.frames.length = 0;
+  assert((await HS.appdataWriteKey("wide", wide)) === true, `a ${wide.length}-char key with 4-byte characters at the piece cuts is written`);
+  const pieces = zero.frames.filter((f) => f.cmd === "chess.appdataWrite");
+  assert(widest <= 512 * 1024, `…never encoding more than one piece's worth at once (widest encode ${widest} chars)`);
+  assert(pieces.length > 1 && pieces.every((f) => Buffer.from(f.a.b64, "base64").length <= 256 * 1024 && f.a.total === Buffer.byteLength(wide)),
+    `…in ${pieces.length} pieces of ≤ 256 KiB, each naming the whole length`);
+  assert(zero.files.get("appdata:wide").equals(Buffer.from(new TextEncoder().encode(wide))), "…and the bytes on disk are exactly TextEncoder's");
+  lose = 1;
+  zero.invoke = async (cmd, a) => {
+    if (cmd === "chess.appdataWrite" && a.offset > 600000 && lose-- > 0) zero.stages.clear();
+    return real(cmd, a);
+  };
+  assert((await HS.appdataWriteKey("wide", wide + "!")) === true &&
+    zero.files.get("appdata:wide").equals(Buffer.from(new TextEncoder().encode(wide + "!"))), "…and a retry from the top encodes it again from the start");
+  zero.invoke = real;
+
   // a shell that ignores the staging fields writes each piece as the whole
   // file and says "done" — that must not read as saved
   const H2 = loadHost({ invoke: async () => ({ ok: true }) });
@@ -216,7 +246,7 @@ function loadHost(zero) {
   assert(saved && saved.name === "export.pgn" && saved.revealed === true && saved.path === "",
     "saveText answers with the name the player gave it, and no path when the folder opened");
   assert(zero.files.get("path:/Users/me/games/export.pgn").toString("utf8") === big &&
-    saves.length === Math.ceil(Buffer.byteLength(big) / (512 * 1024)) && saves.every((f) => f.size <= 1024 * 1024),
+    saves.length >= Math.ceil(Buffer.byteLength(big) / (512 * 1024)) && saves.every((f) => f.size <= 1024 * 1024),
     `…a 2 MB export crosses in ${saves.length} pieces under the 1 MiB frame and lands whole`);
   assert(saves.every((f) => f.a.name === "chess.pgn" && f.a.recent === true && !("path" in f.a)),
     "…every piece names the suggested file, none names a path");

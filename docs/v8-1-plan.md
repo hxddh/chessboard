@@ -630,6 +630,12 @@
 - N2：计划写「`issuePath` 只留给旧页面」。评审（P2-1）改为整个删掉：页面总是同一个二进制里打包的前端，没有能连到这个壳的「旧页面」，留着它只是留着页面到文件系统最宽的口子。`APP_COMMANDS` 12 个，没有 `COMPAT_COMMANDS`；`manifest-check` 在 `main.zig` 代码里、页面源码里（任何引号、模板字符串、拼接）见到 `issuePath` 都报红。`pathAllowed` 只剩一个用处：拖进窗口的路径。
 - N2：保存命令叫 `chess.saveText`（计划写 `chess.savePgn`）：学习数据、全部数据和复盘图 PNG 也走它。对话框里亲手挑的文件是玩家自己的选择，不再过 `pathAllowed`（manual-check J5 相应改成拖放）。
 - N2 评审 P3-5：玩家在保存框里输入的名字没有扩展名时，原生侧按建议文件名补上（Windows 的对话框不设默认扩展名）；补出来的名字只作为新文件创建，已有同名文件时照玩家输入的原名写，不替换对话框没问过的文件。
+- F3「首启整份写入」提前到 M1。先剖析（Chromium 跟踪 + 采样）：`test-persist-e2e` 读到的 150–200 ms 大半不是主线程在干活。这一段从第一次刷盘写完清单的应答算起，到 `bootLibrary → Persist.touchUnlisted` 的第一次调桥为止；中间是两个任务（7 ms，和棋谱库搬进 IndexedDB 的一次 `put` 循环 34–45 ms），其余时间都在空等 IndexedDB。修了三处。
+  - 量法：应答所在的任务一结束就收口，下一个定时器、帧、IndexedDB 事件开始，或者随应答投递的一条消息先到，都算结束。
+  - `library-db.js putSliced`：每个任务最多 put 6 ms，下一片从上一片最后一个请求的 success 里接着排，仍是同一个事务，要么全进、要么全不进。
+  - `host.js textSource`：长文本先数 UTF-8 长度，再按 256 KiB 一段用 encodeInto 边编边发。原来要先把 2 MB 整个 encode（7–10 ms），再在同一个任务里算第一段的 base64。协议和盘上格式都没变，main.zig 本来就接受任意长度的段。
+  - 本机 Chromium 实测（`measured.json persistFirstWrite`）：旧量法下 155–199 ms。新量法、旧代码：最长一段 11.5 ms，一个任务里连着 put 35.6 ms。修正后连续 5 次：最长一段 3.6–8.9 ms，连着 put 6.0–6.1 ms，全部通过。
+  - 新增两项断言：persist-e2e 的「一个任务里连着 put ≤ 16 ms」，改之前是 27–36 ms；test-persist 的「从不一次编码超过一段」，改之前一次编码 2,097,169 字符。
 - N2 评审 P3-4：分段打开的大文件，第一段记下大小和修改时间，之后每段先比对，变了就答 `open_lost`（页面显示「无法读取文件」）；后续段答超限时显示「文件超过…」，不再笼统说读不了。
 
 **已知限制**

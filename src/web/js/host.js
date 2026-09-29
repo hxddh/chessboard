@@ -71,25 +71,86 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
+   * UTF-8 length of `s`, exactly what TextEncoder would produce (a lone
+   * surrogate is U+FFFD, three bytes), without encoding it. The regex skips
+   * the ASCII runs in native code: 1–2 ms for 2 MB of JSON, where a charCodeAt
+   * loop over all of it is 5–10 ms.
+   */
+  function utf8Length(s) {
+    let n = s.length;
+    const wide = /[\u0080-\uffff]+/g;
+    for (let m; (m = wide.exec(s));) {
+      const u = m[0];
+      for (let i = 0; i < u.length; i++) {
+        const c = u.charCodeAt(i);
+        if (c < 0x800) n += 1;
+        else if (c >= 0xd800 && c <= 0xdbff && (u.charCodeAt(i + 1) & 0xfc00) === 0xdc00) { n += 2; i++; }
+        else n += 2;
+      }
+    }
+    return n;
+  }
+
+  /**
+   * v8-1-plan F3: text for sendBytes, encoded a piece at a time.
+   *
+   * `new TextEncoder().encode(text)` of the whole 2 MB library header was
+   * 7–10 ms on the main thread before the first piece could go, and that
+   * piece's base64 came on top in the same task: 10–31 ms, the longest bridge
+   * round trip of the first launch's mirror write (the F3 line is 16). Now
+   * `total` is counted (utf8Length) and each piece is encodeInto'd when its
+   * turn comes, TEXT_PIECE bytes at most. A piece may end a few bytes short,
+   * where a character does not fit; main.zig stages any length at the offset
+   * it has filled to, so the protocol is the one sendBytes always spoke.
+   */
+  const TEXT_PIECE = 256 * 1024;
+  function textSource(text) {
+    const s = String(text);
+    const total = s.length * 3 <= CHUNK ? -1 : utf8Length(s);
+    // small enough for one frame: encoded whole, as before
+    if (total <= CHUNK) return new TextEncoder().encode(s);
+    const enc = new TextEncoder();
+    const buf = new Uint8Array(TEXT_PIECE);
+    let at = 0;   // chars consumed
+    return {
+      length: total,
+      piece(offset) {
+        if (offset === 0) at = 0;   // a retry starts over
+        // cut before a high surrogate, so encodeInto never sees half a pair
+        let end = Math.min(s.length, at + TEXT_PIECE);
+        if (end < s.length && (s.charCodeAt(end - 1) & 0xfc00) === 0xd800) end--;
+        const r = enc.encodeInto(s.substring(at, end), buf);
+        at += r.read;
+        return buf.subarray(0, r.written);
+      },
+    };
+  }
+
+  /**
    * Send `bytes` through `call` (one bridge command), in pieces when they
    * would not fit one frame.
    * @param {(fields: object) => Promise<any>} call the invoke, command fixed
    * @param {object} fields what every piece carries besides the bytes
-   * @param {Uint8Array} bytes
+   * @param {Uint8Array|{length: number, piece: (offset: number) => Uint8Array}} bytes
+   *   the bytes, or a textSource that encodes them piece by piece
    * @returns {Promise<any>} the answer to the last piece, or the first answer
    *   that was not "go on" (a refusal, or a shell that does not stage)
    */
   async function sendBytes(call, fields, bytes) {
     if (bytes.length <= CHUNK) return call(Object.assign({}, fields, { b64: b64FromBytes(bytes) }));
+    const pieceAt = typeof bytes.piece === "function" ? bytes.piece : (offset) => bytes.subarray(offset, offset + CHUNK);
     for (let attempt = 0; ; attempt++) {
       const txn = newTxn();
       let r = null;
-      for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+      for (let offset = 0, n = 0; offset < bytes.length; offset += n) {
         // one slice encoded per bridge round trip, so no single task on the
         // main thread holds more than CHUNK bytes' worth of this
-        const b64 = b64FromBytes(bytes.subarray(offset, offset + CHUNK));
+        const piece = pieceAt(offset);
+        n = piece.length;
+        if (!n) return { error: "encode" };   // cannot happen; never loop on it
+        const b64 = b64FromBytes(piece);
         r = await call(Object.assign({}, fields, { txn, total: bytes.length, offset, b64 }));
-        const last = offset + CHUNK >= bytes.length;
+        const last = offset + n >= bytes.length;
         if (last || (r && typeof r === "object" && r.ok === true && r.pending === true)) continue;
         // "done" before the last piece is a shell that ignored the staging
         // fields and wrote this one piece as the whole file: not saved
@@ -178,7 +239,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   async function writeTextFile(path, text) {
     if (!hasZero()) throw new Error("no bridge");
     const r = await sendBytes((f) => global.zero.invoke("chess.writeTextFile", f),
-      { path: path }, new TextEncoder().encode(String(text)));
+      { path: path }, textSource(text));
     throwIfWriteRefused(r, path);
   }
 
@@ -297,7 +358,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   async function saveText(opts) {
     if (!hasZero() || typeof global.zero.invoke !== "function") throw noFileDialogError();
-    const bytes = typeof opts.b64 === "string" ? bytesFromB64(opts.b64) : new TextEncoder().encode(String(opts.text));
+    const bytes = typeof opts.b64 === "string" ? bytesFromB64(opts.b64) : textSource(opts.text);
     const r = await sendBytes((f) => global.zero.invoke("chess.saveText", f),
       { title: String(opts.title || ""), name: String(opts.name || ""), recent: !!opts.recent }, bytes);
     if (r && r.cancelled === true) return null;
@@ -587,7 +648,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   async function appdataWrite(text, key) {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
     const r = await sendBytes((f) => global.zero.invoke("chess.appdataWrite", f),
-      key == null ? {} : { key: String(key) }, new TextEncoder().encode(String(text)));
+      key == null ? {} : { key: String(key) }, textSource(text));
     if (r && typeof r === "object") {
       if (r.ok) return true;
       if (r.tooLarge) throw fileTooLargeError(r.limit);
