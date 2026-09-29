@@ -1179,6 +1179,17 @@ function fakeNative(opts) {
   const close = (by) => {
     if (!seg.at) return;
     const d = performance.now() - seg.at;
+    // v8-1-plan F3: the write starts at the first appdataWrite. Slices
+    // before it follow the boot's own reads (an empty native store answers
+    // at once) and are the app starting, not the mirror writing: on WebKit
+    // the diagnostics read 37 ms after an appdataRead with no persistence
+    // phase in it, the same work Chromium runs as one ~600 ms slice that the
+    // 200 ms cap below already leaves out. Kept, not asserted: seg.boot.
+    if (!seg.writing) {
+      if (d < 200) seg.boot = Math.max(seg.boot || 0, d);
+      seg.at = 0;
+      return;
+    }
     if (d < 200 && d > seg.max) {
       const parts = {};
       for (const [k, v] of Object.entries(seg.parts)) parts[k] = +v.toFixed(1);
@@ -1218,6 +1229,7 @@ function fakeNative(opts) {
       // the page's continuous work since the last answer came back. An idle
       // gap (the 400 ms debounce, a person) is far longer than any real slice.
       close("call " + cmd + (a && a.key != null ? " " + a.key : ""));
+      if (cmd === "chess.appdataWrite") seg.writing = true;
       const p = a || {};
       let piece;
       if (p.txn) { piece = p.offset ? (pieceOf.get(p.txn) || 0) + 1 : 0; pieceOf.set(p.txn, piece); }
@@ -1338,13 +1350,14 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     } catch (_) { return false; }
   }, libCount, { timeout: 90000, polling: 250 }).catch(() => {});
   const shards = await shardBytes();
-  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big, puts: window.__puts, worst: window.__seg.worst }));
+  const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big, puts: window.__puts, worst: window.__seg.worst, boot: window.__seg.boot || 0 }));
+  console.log(`  ……写之前（启动读档之后）最长一段 ${full.boot.toFixed(1)} ms —— 只记录，不计入写入（v8-1-plan F3 冷启动一条）`);
   console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节;` +
     `搬进 IndexedDB 一口气 put 最长 ${full.puts.max.toFixed(1)} ms(共 ${full.puts.n} 次)`);
   assert(full.meta && shards.n > 1024 * 1024 && shards.games === libCount,
     `2 MB 的档案整份进了原生存储:棋谱库的 ${libCount} 局都在分片里(${shards.games} 局,${shards.n} 字节)`);
   assert(full.big === 0, `……没有一帧超过桥的 1 MiB(被拒 ${full.big} 次)`);
-  Object.assign(firstWrite, { sliceMs: +full.seg.toFixed(1), putRunMs: +full.puts.max.toFixed(1), games: libCount, shardBytes: shards.n, longest: full.worst });
+  Object.assign(firstWrite, { sliceMs: +full.seg.toFixed(1), putRunMs: +full.puts.max.toFixed(1), games: libCount, shardBytes: shards.n, longest: full.worst, bootSliceMs: +full.boot.toFixed(1) });
   // always printed: on an engine CI runs and this machine cannot, this line is the profile
   console.log(`  ……最长那一段是什么:${JSON.stringify(full.worst)}`);
   assert(full.seg <= 16, `……写的过程中,主线程上最长的一段 ≤ 16 ms(${full.seg.toFixed(1)} ms)`);
