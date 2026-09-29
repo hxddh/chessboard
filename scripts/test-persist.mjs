@@ -14,7 +14,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { compileModuleSync } from "./bundle.mjs";
-import { createPersist, KEYS, SCHEMA, STORE_META, isStoreMeta, storeFiles } from "../src/web/js/persist.js";
+import { createPersist, KEYS, SCHEMA, STORE_META, BULK, isStoreMeta, storeFiles } from "../src/web/js/persist.js";
 import { migrateLook, lookAttrs, LEGACY_THEMES, LOOK_DEFAULT, PIECE_SET_IDS, BOARD_IDS } from "../src/web/js/look.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -633,6 +633,127 @@ for (const how of ["restore", "clear"]) {
   const got = ["save", "settings", "stats"].map((n) => n + "=" + valOf(h, n)).join(" ");
   assert(valOf(h, "save") === "s2" && valOf(h, "settings") === "t2",
     "two windows flushing at once under the store lock keep both keys (" + got + ")");
+}
+
+// --- 2x. v8-0-plan C1: the library's games as shard keys (BULK) ------------
+// The games left localStorage for IndexedDB, which is the WebView's too, so
+// the store mirrors them as "lib00" … "lib3f" beside the other keys: the same
+// manifest, the same two slots, the same lock. The values come from a port the
+// library attaches, not from the bag.
+{
+  /** A library port over a Map of shard → text, the way library-page.js serves it. */
+  const port = (shards) => {
+    const p = { shards: new Map(Object.entries(shards || {})), restored: null, cleared: 0, ready: true };
+    p.names = () => (p.ready ? [...p.shards.keys()] : null);
+    p.read = (n) => (p.shards.has(n) ? p.shards.get(n) : null);
+    p.restore = async (texts) => { await tick(5); p.restored = texts; p.shards = new Map(Object.entries(texts)); };
+    p.clear = () => { p.cleared++; p.shards.clear(); };
+    return p;
+  };
+  const libText = (ids) => JSON.stringify({ v: 1, games: ids.map((id) => ({ id, sans: "e4 e5", plies: 2 })) });
+
+  // a flush writes the touched shards, into their other slot, and lists them
+  const h = withStore(null);
+  h.m.set(LS("library"), JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 2 }));
+  const P = createPersist(h, () => {});
+  P.load();
+  const lib = port({ lib00: libText(["lib:a"]), lib3f: libText(["lib:b"]) });
+  P.attachBulk(lib);
+  await P.recover();
+  await tick(600);
+  let meta = metaOf(h);
+  assert(meta.keys.includes("lib00") && meta.keys.includes("lib3f") && valOf(h, "lib00") === libText(["lib:a"]),
+    "C1: the first flush mirrors every shard the library names (" + meta.keys.filter((k) => BULK.test(k)).join(",") + ")");
+  h.writes.length = 0;
+  lib.shards.set("lib00", libText(["lib:a", "lib:c"]));
+  assert(P.touchBulk(["lib00"]) === true, "C1: touchBulk stamps like set()");
+  await tick(600);
+  assert(h.writes.join(",") === "lib00-b," + STORE_META, "C1: a touched shard is written alone, into its other slot, then the manifest (" + h.writes.join(",") + ")");
+  assert(valOf(h, "lib00") === libText(["lib:a", "lib:c"]) && valOf(h, "lib3f") === libText(["lib:b"]),
+    "C1: …the manifest points at the new copy and keeps the untouched shard");
+  assert(Number(h.m.get("chess.writtenAt")) === metaOf(h).writtenAt, "C1: …at the cache's revision");
+
+  // a shard the library emptied goes from the manifest, and its files are cleared
+  h.writes.length = 0;
+  lib.shards.delete("lib3f");
+  P.touchBulk(["lib3f"]);
+  await tick(600);
+  meta = metaOf(h);
+  assert(!meta.keys.includes("lib3f") && h.store.get("lib3f") === "null", "C1: an emptied shard leaves the manifest and its files are cleared");
+
+  // the export carries the games
+  const doc = P.exportAll();
+  assert(doc.keys.lib00 === libText(["lib:a", "lib:c"]) && !("lib3f" in doc.keys), "C1: exportAll has the library's shards");
+
+  // a port that is not ready (the chunk still loading) leaves shards owed and
+  // the manifest's files alone
+  lib.ready = false;
+  h.writes.length = 0;
+  P.touchBulk(["lib00"]);
+  P.set("save", JSON.stringify({ v: 1, pgn: "1. e4 *" }));
+  await tick(600);
+  assert(!h.writes.some((w) => BULK.test(w.replace(/-b$/, ""))) && valOf(h, "lib00") === libText(["lib:a", "lib:c"]),
+    "C1: before the library has loaded, its shards stay owed and the store keeps the copy it has");
+  lib.ready = true;
+  P.set("save", JSON.stringify({ v: 1, pgn: "1. d4 *" }));
+  await tick(600);
+  assert(h.writes.some((w) => w.startsWith("lib00")), "C1: …and go out with the next flush once it has");
+
+  // restoreAll (导入全部数据): the document's games go to IndexedDB (the port)
+  // and to the store — not the library the page is still holding
+  h.writes.length = 0;
+  const incoming = { lib01: libText(["lib:x"]) };
+  P.restoreAll({ app: "chessboard", schema: 2, writtenAt: 99, keys: Object.assign({ save: JSON.stringify({ v: 1, pgn: "1. c4 *" }) }, incoming) });
+  P.freeze();
+  await P.flushMirror();
+  assert(lib.restored && lib.restored.lib01 === incoming.lib01, "C1: a restored profile's shards reach the library's store before the flush");
+  meta = metaOf(h);
+  assert(valOf(h, "lib01") === incoming.lib01 && !meta.keys.includes("lib00"),
+    "C1: …the store holds the document's shards, and a shard the document lacks is gone (" + meta.keys.filter((k) => BULK.test(k)).join(",") + ")");
+
+  // readBulk: the shards as the store holds them, for a library that lost IndexedDB
+  const back = await P.readBulk();
+  assert(back && back.lib01 === incoming.lib01 && Object.keys(back).length === 1, "C1: readBulk returns the store's shards");
+}
+
+// 2y. recover(): a cleared cache is restored with its games, and the reload
+// waits for them to be in IndexedDB
+{
+  const h = withStore(null);
+  const t1 = JSON.stringify({ v: 1, games: [{ id: "lib:q", sans: "d4", plies: 1 }] });
+  h.store.set("save", JSON.stringify({ v: 1, pgn: "1. Nf3 *" }));
+  h.store.set("lib07", t1);
+  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save", "lib07"] }));
+  const P = createPersist(h, () => {});
+  P.load();
+  let got = null, at = 0;
+  P.attachBulk({ names: () => [], read: () => null, restore: async (texts) => { await tick(30); got = texts; at = Date.now(); } });
+  const r = await P.recover();
+  assert(r === "restored" && got && got.lib07 === t1 && at > 0, "C1: recover() hands the store's shards to the library before it answers \"restored\"");
+
+  // clearAll: the library is told, and the shard files go
+  const h2 = withStore(null);
+  h2.m.set(LS("library"), JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 1 }));
+  const P2 = createPersist(h2, () => {});
+  P2.load();
+  let cleared = 0;
+  const shards = new Map([["lib05", t1]]);
+  P2.attachBulk({ names: () => [...shards.keys()], read: (n) => shards.get(n) || null, restore: async () => {}, clear: () => { cleared++; shards.clear(); } });
+  await P2.recover();
+  await tick(600);
+  assert(metaOf(h2).keys.includes("lib05"), "C1: (a shard in the store)");
+  P2.clearAll();
+  await P2.flushMirror();
+  assert(cleared === 1 && !metaOf(h2).keys.includes("lib05") && h2.store.get("lib05") === "null" && h2.store.get("lib05-b") === "null",
+    "C1: 清除全部存档 clears the library's store and its shard files");
+}
+
+// 2z. the shard keys are tokens the native store accepts (main.zig
+// storeKeyValid: [A-Za-z0-9_-], ≤ STORE_KEY_MAX), with room for the "-b" slot
+{
+  const all = Array.from({ length: 64 }, (_, i) => "lib" + i.toString(16).padStart(2, "0"));
+  assert(all.every((k) => BULK.test(k) && /^[A-Za-z0-9_-]+$/.test(k + "-b")) && !BULK.test("library") && !BULK.test("lib40"),
+    "C1: 64 shard names, all plain tokens; `library` (the header) is an ordinary key");
 }
 
 // --- 3. v8-0-plan A3: the look, migrated from 7.x settings ------------------

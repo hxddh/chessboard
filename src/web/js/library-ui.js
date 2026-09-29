@@ -20,6 +20,7 @@
  */
 import { Chess } from "./chess.js";
 import { ChessDialog } from "./dialog.js";
+import { loadChunk } from "./chunk.js";
 import { ChessEco } from "./eco-lookup.js";
 import { ChessEngine } from "./engine.js";
 import { ChessFide } from "./fide.js";
@@ -104,6 +105,7 @@ export function createLibraryUI(d) {
   function loadLibrary() {
     const s = Persist.read("library").value;
     if (!s) return { games: [], names: [] };
+    store.session.libComing = s.db === 2 ? Number(s.n) || 0 : 0;
     const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
     for (const g of games) rescoreLosses(g);
     return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
@@ -144,8 +146,46 @@ export function createLibraryUI(d) {
   }
   /** Set while the background pass is running; the pause button clears it. */
   store.session.libRun = null;
+
+  // v8-0-plan C1: the games are in IndexedDB now, and the code that keeps
+  // them there — storage, search, 本机 games, the list page — is the chunk
+  // chunk-libdb.js (library-page.js), loaded after the first frame. Until it
+  // is in, the library shows what the header held (a v1 library's games, or
+  // none), and anything that would change the games waits for it.
+  let libDb = null;
+  const libDbReady = new Promise((resolve) => {
+    const later = (fn) => (typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame(() => setTimeout(fn, 0)) : setTimeout(fn, 0));
+    later(() => loadChunk("chunk-libdb.js", "CHESS_LIBDB").then((m) => m.bootLibrary(Object.assign({}, d, {
+      Library, Dlg, reconcile, Chess, PgnParser: ChessPgnParser, Pgn: ChessPgn, Eco: ChessEco,
+      idb: typeof indexedDB !== "undefined" ? indexedDB : null, withLock: Host.withStoreLock,
+      pause: () => new Promise((r) => setTimeout(r, 8)), LIB_DEEP_BUDGET, fillOpenings, libEcoName, libPickPly,
+      libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary, rescoreLosses,
+    }))).then((c) => {
+      libDb = c;
+      if (d.onLibraryLoaded) d.onLibraryLoaded();
+      renderLibrary();
+      resolve(c);
+    }, () => resolve(null)));
+  });
+  Persist.attachBulk({
+    names: () => (libDb ? libDb.shardNames() : null),
+    read: (name) => (libDb ? libDb.shardText(name) : null),
+    restore: (texts) => libDbReady.then((c) => c && c.restoreShards(texts)),
+    clear: () => { store.session.library = []; if (libDb) libDb.clear(); },
+  });
+  if (typeof window !== "undefined" && window.__chess) {
+    // the e2e's view of the library (the games are no longer in localStorage)
+    window.__chess.library = () => ({ v: 1, names: store.session.libNames, games: store.session.library,
+      ready: !!libDb, mode: libDb ? libDb.mode() : null });
+    window.__chess.libDb = () => libDb;
+  }
   function saveLibrary() {
-    Persist.setJson("library", { v: 1, games: store.session.library, names: store.session.libNames });
+    if (libDb) return libDb.save();
+    // before the chunk: nothing has changed a game yet (imports and passes
+    // wait for it), so the one thing to keep is the names
+    libDbReady.then((c) => (c ? c.save() : Persist.setJson("library",
+      { v: 1, games: store.session.library, names: store.session.libNames })));
   }
 
   /** A library game by its id — what the list's rows carry (D1). */
@@ -176,52 +216,18 @@ export function createLibraryUI(d) {
     }
   }
 
-  // a file being read (7.5: that is no longer instant); a second import
-  // meanwhile is turned away rather than interleaved with it
-  let importing = false;
-
   /**
-   * Take every game in a PGN file into the library.
+   * Take every game in a PGN file into the library. The work is the chunk's
+   * (library-page.js importPgn): parse, index, store, and the name claim.
    *
    * Deliberately not the same path as 导入棋谱: that one asks which single
    * game you meant, because it is about to put one on the board. Here the
    * whole file is the point.
    */
   async function importPgnToLibrary(text, label) {
-    const text0 = (text || "").trim();
-    if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
-    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
-    if (importing) return;
-    let chunks;
-    try { chunks = ChessPgnParser.splitGames(text0); }
-    catch (_) { chunks = ChessPgn.splitGames(text0); }
-    // 7.5: read game by game, handing the thread back every ~16 ms — a big
-    // archive used to freeze the window for seconds (see parseGamesAsync)
-    let games;
-    importing = true;
-    try { games = await ChessPgnParser.parseGamesAsync(chunks); }
-    finally { importing = false; }
-    // a pass may have started while the file was being read
-    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
-    const now = Date.now();
-    const fresh = [];
-    for (const parsed of games) {
-      if (!parsed) continue;
-      // mainline SAN only: a game's variations are the annotator's opinion,
-      // and what this library measures is what the player actually played
-      const sans = [];
-      for (let n = parsed.root; n && n.children.length; n = n.children[0]) sans.push(n.children[0].san);
-      if (!sans.length) continue;
-      fresh.push(Library.entryFrom(parsed, sans, store.session.libNames, now));
-    }
-    if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
-    const r = Library.addGames(store.session.library, fresh);
-    store.session.library = r.list;
-    saveLibrary();
-    renderLibrary();
-    if (!r.added) toast(tf("lib.addedNone", [r.dup]), "fix");
-    else toast(tf("lib.added", [r.added, r.dup]) + (label ? " · " + label : ""));
-    if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
+    const c = await libDbReady;
+    if (!c) { toast(t("msg.import.badPgn"), "fault"); return; }
+    return c.importPgn(text, label);
   }
 
   /**
@@ -402,6 +408,8 @@ export function createLibraryUI(d) {
     renderLibList();
     let r = null;
     try {
+      // v8-0-plan C1: what the pass writes goes to IndexedDB, so the store is up first
+      await libDbReady;
       await stopLiveAnalysis();
       r = await analyseLibraryGame(entry, run, LIB_DEEP_BUDGET);
     } finally {
@@ -439,6 +447,9 @@ export function createLibraryUI(d) {
    */
   function adoptBoardAnalysis(p, mine) {
     if (!p || !Array.isArray(p.sans) || !p.sans.length || store.session.libRun) return false;
+    // v8-0-plan C1: before the library has loaded, its entries are about to
+    // be replaced by the stored ones; file into those
+    if (!libDb) { libDbReady.then((c) => { if (c) adoptBoardAnalysis(p, mine); }); return false; }
     // a hole is a search that did not answer; the library never files those
     if (p.scalars.some((x) => x == null)) return false;
     const text = p.sans.join(" ");
@@ -466,6 +477,8 @@ export function createLibraryUI(d) {
     store.session.libRun = run;
     renderLibrary();
     try {
+      // v8-0-plan C1: what the pass writes goes to IndexedDB, so the store is up first
+      await libDbReady;
       await stopLiveAnalysis();
       for (;;) {
         if (run.abort) break;
@@ -565,13 +578,17 @@ export function createLibraryUI(d) {
     // 7.9 §4a: empty, the section is one dashed card with 导入棋谱文件
     // inside it, and that button is the page's primary (see .rec-block).
     // Classes only — the button itself is never rebuilt (7.6).
+    // v8-0-plan C1: the games are still on their way from IndexedDB — the
+    // header knows how many; the empty state would be a lie for a second
+    const coming = !libDb && store.session.libComing;
     const block = doc.getElementById("lib-block");
-    if (block) block.classList.toggle("empty", !list.length);
+    if (block) block.classList.toggle("empty", !list.length && !coming);
     const imp = doc.getElementById("lib-import");
-    if (imp) imp.classList.toggle("primary", !list.length);
+    if (imp) imp.classList.toggle("primary", !list.length && !coming);
     // v8-0-plan §5: the page's own empty state counts the library as well
     if (renderRecordEntry) renderRecordEntry();
-    if (!list.length) {
+    if (!list.length && coming) putLines(body, [{ text: tf("lib.loading", [coming]), cls: "hint" }]);
+    else if (!list.length) {
       // 7.7 (v7-7-plan §3): an empty state — icon, one line, and 导入棋谱文件
       // (see .empty-note)
       putLines(body, [{ text: t("lib.empty"), cls: "hint empty-note" }]);
@@ -643,7 +660,8 @@ export function createLibraryUI(d) {
   function fillOpenings() {
     let n = 0;
     for (const g of store.session.library) {
-      if (g.eco || !g.side || typeof g.sans !== "string") continue;
+      // v8-0-plan C1: "" is "the table has nothing" (library-page.js), not "not asked yet"
+      if (typeof g.eco === "string" || !g.side || typeof g.sans !== "string") continue;
       const sans = g.sans.split(" ").filter(Boolean);
       if (!sans.length) continue;
       let hit = null;
@@ -695,42 +713,12 @@ export function createLibraryUI(d) {
     return head + "\n" + out.join(" ") + "\n";
   }
 
-  /** How many of this player's own plies in a game were `?` or `??`. */
-  function libBadCount(g) {
-    const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
-    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
-    const first = start[1] === "b" ? "b" : "w";
-    const other = first === "w" ? "b" : "w";
-    let n = 0;
-    for (let i = 0; i < tags.length; i++) {
-      if ((i % 2 === 0 ? first : other) !== g.side) continue;
-      if (tags[i] === "?" || tags[i] === "??") n++;
-    }
-    return n;
-  }
-
   /** The move number of ply `i` in a library entry — startOf's rule, again. */
   function libMoveNo(g, i) {
     const start = g.fen ? g.fen.trim().split(/\s+/) : [];
     const first = start[1] === "b" ? "b" : "w";
     const startNo = Number(start[5]) >= 1 ? Math.floor(Number(start[5])) : 1;
     return startNo + Math.floor((i + (first === "b" ? 1 : 0)) / 2);
-  }
-
-  /**
-   * Does this game answer the filter the diagnosis set?
-   *
-   * The three kinds mirror the three things `diagnose()` reports that name a
-   * subset of games: a motif that keeps catching you, an opening, and the
-   * move number your mistakes cluster on. Each is answered from the same
-   * arrays `foldGame` counted, so the list can never disagree with the number
-   * that sent the player to it.
-   */
-  function libPickMatches(g) {
-    const pick = store.ui.libPick;
-    if (!pick) return true;
-    if (pick.kind === "eco") return g.eco === pick.value;
-    return libPickPly(g) != null;
   }
 
   /**
@@ -759,14 +747,6 @@ export function createLibraryUI(d) {
     return null;
   }
 
-  /** Which slice of the library the list is showing. */
-  function libMatches(g) {
-    const f = store.ui.libFilter;
-    if (f.result !== "all" && g.outcome !== f.result) return false;
-    if (f.color !== "all" && g.side !== f.color) return false;
-    return libPickMatches(g);
-  }
-
   /** "2026.09.01 · rival" — the row's headline, localised at render time. */
   function libraryLabel(g) {
     const res = g.outcome ? t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw")
@@ -776,125 +756,15 @@ export function createLibraryUI(d) {
     return res + " · " + (foe || t("lib.unknownFoe")) + (g.side ? "" : " · " + (me || ""));
   }
 
-  /** The second line: when, how well, how many mistakes, which opening. */
-  function librarySub(g) {
-    const bits = [];
-    if (g.date && g.date !== "?") bits.push(g.date);
-    const acc = g.an && g.an.acc && g.side ? g.an.acc[g.side] : null;
-    if (Number.isFinite(acc)) bits.push(tf("lib.rowAcc", [Math.round(acc * 10) / 10]));
-    if (g.an) bits.push(tf("lib.rowBad", [libBadCount(g)]));
-    else bits.push(t(g.unplayable ? "lib.rowUnplayable" : "lib.rowPending"));
-    if (g.eco) bits.push(g.eco + " " + libEcoName(g.eco, g.ecoName));
-    return bits.join(" · ");
-  }
-
-  function libraryRow(g) {
-    const row = doc.createElement("div");
-    row.className = "hist-row";
-    const load = doc.createElement("button");
-    load.type = "button";
-    load.className = "pick-item";
-    load.dataset.lib = g.id;
-    load.textContent = libraryLabel(g);
-    const sub = doc.createElement("span");
-    sub.className = "pick-sub";
-    sub.textContent = librarySub(g);
-    load.appendChild(sub);
-    row.appendChild(load);
-    // 「再深一遍」 only where there is something to deepen: an analysed game
-    // whose pass was shallower than LIB_DEEP_BUDGET. An already-deep game
-    // does not get a greyed button, it gets none (P3).
-    if (entryDeepenable(g)) {
-      const deep = doc.createElement("button");
-      deep.type = "button";
-      deep.className = "row-act";
-      deep.dataset.libDeep = g.id;
-      deep.textContent = t("lib.deepen");
-      deep.title = t("tip.libDeepen");
-      row.appendChild(deep);
-    }
-    return row;
-  }
-
-  /** one game's half of Library.deepenable — the row button reads this */
-  function entryDeepenable(g) {
-    return !!g && !!g.an && !g.unplayable && (Number(g.an.budget) || 0) < LIB_DEEP_BUDGET;
-  }
-
   /**
-   * The list dialog.
-   *
-   * Rows carry the game's id — not its index into the filtered array (the
-   * history list learned that the hard way: re-indexing a filtered list makes
-   * "open this game" open a different one whenever a filter is on), and not
-   * its index into `store.session.library` either (7.4 D1). `addGames` re-sorts
-   * the library newest first on every import, so every index moves, while
-   * `reconcile` keeps a row whose signature has not changed — and the index
-   * is not in the signature. An old row then pointed at whichever game had
-   * moved into its slot: 「打开」 opened another game, and 「再深一遍」
-   * rewrote another game's analysis and drills. An id does not move.
+   * The list page (v8-0-plan C1: search, and 对局历史 merged in as 本机) is
+   * the chunk's; `opts.src` opens it on one source.
    */
-  function renderLibList() {
-    const list = doc.getElementById("lib-list");
-    if (!list) return;
-    const all = store.session.library;
-    const rows = all.filter((g) => libMatches(g)).map((g) => ({ g }));
-    if (store.ui.libFilter.sort === "acc") {
-      // worst first: this list exists to find the games worth reopening, and
-      // an unanalysed game has no accuracy to rank, so it goes last
-      rows.sort((a, b) => {
-        const av = a.g.an && a.g.an.acc && a.g.side ? a.g.an.acc[a.g.side] : Infinity;
-        const bv = b.g.an && b.g.an.acc && b.g.side ? b.g.an.acc[b.g.side] : Infinity;
-        return (av == null ? Infinity : av) - (bv == null ? Infinity : bv);
-      });
-    } else {
-      rows.sort((a, b) => (b.g.t || 0) - (a.g.t || 0));
-    }
-    reconcile(list, rows,
-      ({ g }) => g.id,
-      // the budget is in the signature: without it a game that just got
-      // deepened would keep the 「再深一遍」 button it no longer needs — and so
-      // is the language, or the rows keep the old one's words after a switch
-      ({ g }) => [store.ui.langId, g.outcome, g.side, g.eco, g.an ? "a" + (g.an.budget || 0) : "-", g.unplayable ? "u" : "-"].join("|"),
-      ({ g }) => libraryRow(g));
-    if (!rows.length) {
-      const p = doc.createElement("p");
-      p.className = "hint";
-      p.textContent = t("hist.noneMatch");
-      list.appendChild(p);
-    }
-    const count = doc.getElementById("lib-list-count");
-    if (count) {
-      const filtered = store.ui.libFilter.result !== "all" || store.ui.libFilter.color !== "all" || store.ui.libPick;
-      count.hidden = !filtered;
-      count.textContent = tf("hist.showing", [rows.length, all.length]);
-    }
-    const note = doc.getElementById("lib-pick-note");
-    if (note) {
-      note.hidden = !store.ui.libPick;
-      note.textContent = store.ui.libPick ? store.ui.libPick.label : "";
-    }
-    const clear = doc.getElementById("lib-pick-clear");
-    if (clear) clear.hidden = !store.ui.libPick;
-    doc.querySelectorAll("#lib-result-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.lres === store.ui.libFilter.result);
-    });
-    doc.querySelectorAll("#lib-color-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.lcol === store.ui.libFilter.color);
-    });
-    doc.querySelectorAll("#lib-sort-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.lsort === store.ui.libFilter.sort);
-    });
+  async function openLibList(pick, opts) {
+    const c = await libDbReady;
+    if (c) c.openList(pick, opts);
   }
-
-  function openLibList(pick) {
-    store.ui.libPick = pick || null;
-    // an opening name needs the ECO chunk; ask for it and redraw when it lands
-    if (!ChessEco.loaded()) ChessEco.whenReady(() => { if (fillOpenings()) saveLibrary(); renderLibList(); });
-    else if (fillOpenings()) saveLibrary();
-    renderLibList();
-    Dlg.open(doc.getElementById("lib-list-modal"));
-  }
+  function renderLibList() { if (libDb) libDb.renderList(); }
   function closeLibList() { Dlg.close(doc.getElementById("lib-list-modal")); }
 
   /**
@@ -1345,5 +1215,11 @@ export function createLibraryUI(d) {
     adoptBoardAnalysis, closeDiagnosis, closeLibList, deepenLibraryGame, importPgnToLibrary,
     libEcoName, libNamesFrom, loadFromLibrary, loadLibraryEntry, openDiagnosis, openLibList,
     reclaimLibrary, renderLibList, renderLibrary, runLibraryPass, saveLibrary,
+    // v8-0-plan C1: the query API (library-query.js), over imported + 本机
+    // games, once the chunk is in — the seam C3's explorer reads
+    ready: () => libDbReady,
+    syncLocal: () => { if (libDb) libDb.syncLocal(); },
+    query: (q) => libDbReady.then((c) => (c ? c.query(q) : [])),
+    gamesWithPosition: (fen) => libDbReady.then((c) => (c ? c.gamesWithPosition(fen) : null)),
   };
 }

@@ -24,6 +24,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
+import { libOf, storedLib } from "./lib/library-view.mjs";
+import { Chess } from "../src/web/js/chess.js";
+import { record, RECORDING } from "./measurements.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -103,7 +106,6 @@ async function importFile(page, text, button) {
 const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   .map((id) => (document.getElementById(id) || {}).textContent || "").join("\n"));
 
-const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library") || "null"));
 
 // --- 1. every game in the file, not one of them -----------------------------
 {
@@ -692,8 +694,8 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await page.waitForTimeout(2500);
 
   const after = await page.evaluate(() => ({
-    budget: JSON.parse(localStorage.getItem("chess.v1.library")).games[0].an.budget,
-    tags: JSON.parse(localStorage.getItem("chess.v1.library")).games[0].an.tags,
+    budget: window.__chess.library().games[0].an.budget,
+    tags: window.__chess.library().games[0].an.tags,
     mines: JSON.parse(localStorage.getItem("chess.v1.mines")).list
       .map((m) => ({ id: m.id, sol: m.solution[0], budget: m.rev && m.rev.budget, from: m.from && m.from.id })),
     deepBtn: !!document.querySelector("#lib-list button[data-lib-deep]"),
@@ -1765,7 +1767,7 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
   await importFile(page, `[Event "Rated blitz"]\n[Date "${today}"]\n[White "hxddh"]\n[Black "rival"]\n[Result "1-0"]\n\n` +
     "1. e4 { [%clk 0:03:00] } e5 { [%clk 0:03:00] } 2. Qh5 { [%clk 0:02:57] } Nc6 { [%clk 0:02:55.2] } " +
     "3. Bc4 { [%clk 0:02:50] } Nf6 { [%clk 0:02:40] } 4. Qxf7# { [%clk 0:02:49] } 1-0\n");
-  const clk = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library")).games.map((g) => g.clk));
+  const clk = (await libOf(page)).games.map((g) => g.clk);
   assert(JSON.stringify(clk) === "[[180,180,177,175,170,160,169]]", "B5 导入的棋谱带着每手的钟", JSON.stringify(clk));
   await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(400);
@@ -1775,6 +1777,506 @@ const libOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("che
     "B5 今天下的一局导进来:「我的」打开时日历上有今天(" + JSON.stringify({ before, after }) + ")");
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
+}
+
+// ============================================================================
+// v8-0-plan C1: 棋谱库数据库化 — storage, migration, search, 本机, claim.
+// The games moved from one localStorage value (500 at most) to one IndexedDB
+// record each (library-db.js); everything below is a claim the plan's
+// acceptance makes, measured in a real page. Numbers go to docs/measured.json
+// (libraryDb) — this suite prints them.
+// ============================================================================
+const C1 = {};
+const DAY = 86400000;
+
+/** A context with settings, and `keys` written into localStorage once. */
+async function c1Context(keys, init) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN", acceptDownloads: true });
+  await ctx.addInitScript((k) => {
+    if (sessionStorage.getItem("c1.seeded")) return;
+    sessionStorage.setItem("c1.seeded", "1");
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    for (const [key, v] of Object.entries(k || {})) localStorage.setItem(key, v);
+  }, Object.fromEntries(Object.entries(keys || {}).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)])));
+  if (init) await ctx.addInitScript(init);
+  return ctx;
+}
+const c1Ready = (page) => page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready,
+  null, { timeout: 60000 }).catch(() => {});
+
+/** The shapes each release wrote (library.js entryFrom, then the pass). 6.x had no library. */
+const T = 1758000000000;
+const V1 = {
+  "7.0": { v: 1, names: ["hxddh"], games: [
+    { id: "lib:70a", t: T, white: "hxddh", black: "r1", date: "2026.01.01", event: "e", result: "1-0", plies: 4,
+      sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win",
+      an: { acc: { w: 81.2, b: 60 }, acpl: { w: 30, b: 90 }, tags: [null, "?", null, "??"], losses: [0, 120, 5, 400], scalars: [20, 25, -100, -90, -500] } },
+    { id: "lib:70b", t: T + 1, white: "x", black: "y", date: "?", event: "", result: "*", plies: 2, sans: "d4 d5", fen: "", side: null, outcome: null, an: null },
+  ] },
+  "7.2": { v: 1, names: ["hxddh", "alt"], games: [
+    { id: "lib:72a", t: T + 2, white: "alt", black: "r2", date: "2026.02.02", event: "e", result: "0-1", plies: 2, sans: "f3 e5",
+      fen: "", side: "w", outcome: "loss", eco: "A00", ecoName: "Barnes Opening",
+      an: { acc: { w: 20, b: 90 }, acpl: { w: 200, b: 10 }, tags: ["?", null], losses: [150, 0], scalars: [20, -130, -120], bests: ["e2e4", null], budget: 200 },
+      motifs: { 0: "hanging" } },
+    { id: "lib:72b", t: T + 3, white: "hxddh", black: "r3", date: "2026.02.03", event: "e", result: "1-0", plies: 3, sans: "e4 Ke7 Qh5",
+      fen: "", side: "w", outcome: "win", an: null, unplayable: true },
+  ] },
+  "8.0-dev": { v: 1, names: ["hxddh"], games: [
+    { id: "lib:80a", t: T + 4, white: "hxddh", black: "coach", date: "2026.09.04", event: "Study", result: "1-0", plies: 3,
+      sans: "Kd5 Kd2 Ke4", fen: "8/8/4k3/8/8/8/4P3/4K3 b - - 3 40", side: "w", outcome: "win", clk: [30, 29, 28],
+      an: { acc: { w: 99, b: 99 }, acpl: { w: 0, b: 0 }, tags: [null, null, null], losses: [0, 0, 0], scalars: [0, 0, 0, 0], budget: 400 } },
+    { id: "lib:80b", t: T + 5, white: "rival", black: "hxddh", date: "2026.09.05", event: "Rated blitz", result: "0-1", plies: 6,
+      sans: "d4 Nf6 c4 e6 Nc3 Bb4", fen: "", side: "b", outcome: "win", clk: [180, 180, 178, 179, 170, 175], an: null },
+  ] },
+};
+/** The play history as 6.x (v1, `sig`) and 7.x (v2, `pgn`) wrote it. */
+const STATS_6X = { v: 1, games: [
+  { t: T - 3 * DAY, sig: "e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7##mate", result: "win", diff: "casual", color: "w" },
+  { t: T - 2 * DAY, sig: "d4 d5 c4 dxc4#resigned", result: "loss", diff: "normal", color: "b" },
+] };
+const STATS_7X = { v: 2, games: [
+  { id: "g1", t: T - DAY, diff: "normal", color: "w", result: "win", moves: 7, acc: 88,
+    pgn: '[Event "?"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0', ending: "" },
+  { id: "g2", t: T, diff: "hard", color: "b", result: "draw", moves: 4,
+    pgn: '[Event "?"]\n[Result "1/2-1/2"]\n\n1. d4 d5 2. c4 e6 1/2-1/2', ending: "drawAgreed" },
+] };
+
+// --- C1.1 every earlier library, migrated without losing a byte ----------------
+for (const [ver, v1] of Object.entries(V1)) {
+  const raw = JSON.stringify(v1);
+  const ctx = await c1Context({ "chess.v1.library": raw, "chess.v1.stats": STATS_7X });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  await page.waitForTimeout(300);
+  const lib = await libOf(page);
+  const st = await storedLib(page);
+  const byId = new Map((st.games || []).map((g) => [g.id, g]));
+  // every field the old entry had, unchanged — apart from what the app has
+  // always rewritten on load (7.0's unclamped losses, recomputed from the
+  // scalars beside them) and the opening it fills in once (7.1 fillOpenings).
+  // The byte-for-byte copy is the backup, checked below.
+  const lost = v1.games.filter((g) => {
+    const s = byId.get(g.id);
+    if (!s) return true;
+    return Object.keys(g).some((k) => {
+      if (k === "an" && g.an && s.an) {
+        const a = Object.assign({}, g.an), b = Object.assign({}, s.an);
+        delete a.losses; delete b.losses;
+        return JSON.stringify(a) !== JSON.stringify(b) || (s.an.losses || []).length !== (g.an.losses || []).length;
+      }
+      return JSON.stringify(g[k]) !== JSON.stringify(s[k]);
+    }) || Object.keys(s).some((k) => !(k in g) && !["eco", "ecoName", "__pk"].includes(k));
+  }).map((g) => g.id);
+  assert(lost.length === 0, `C1 ${ver}：旧棋谱库的每一局都进了 IndexedDB，每个字段都在(不等：${lost.join(",") || "无"})`);
+  assert(st.header && st.header.db === 2 && st.header.games.length === 0 && JSON.stringify(st.header.names) === JSON.stringify(v1.names) &&
+    st.header.n === v1.games.length,
+    `C1 ${ver}：localStorage 里只剩一个头(db 2、名字、局数 ${st.header && st.header.n})`);
+  assert(lib.mode === "idb" && lib.games.length === v1.games.length, `C1 ${ver}：应用里还是这 ${v1.games.length} 局(${lib.games.length}, ${lib.mode})`);
+  const local = (st.games || []).filter((g) => g.src === "local").map((g) => g.id).sort().join(",");
+  assert(local === "loc:g1,loc:g2", `C1 ${ver}：对局历史的两局作为「本机」进了库(${local})`);
+  await page.reload();
+  await c1Ready(page);
+  const again = await libOf(page);
+  const st2 = await storedLib(page);
+  assert(again.games.length === v1.games.length && st2.games.filter((g) => g.src !== "local").length === v1.games.length,
+    `C1 ${ver}：再启动一次：还是 ${v1.games.length} 局，没有重复`);
+  // the v1 value as found, kept in IndexedDB's meta store
+  const backup = await page.evaluate(() => new Promise((res) => {
+    const r = indexedDB.open("chessboard.library");
+    r.onsuccess = () => {
+      const all = r.result.transaction(["meta"], "readonly").objectStore("meta").getAll();
+      all.onsuccess = () => { res(all.result.map((x) => x.raw)); r.result.close(); };
+    };
+  }));
+  assert(backup.includes(raw), `C1 ${ver}：迁移前的整份 v1 原样留了一份在 IndexedDB 里`);
+  assert(errs.length === 0, `C1 ${ver}：没有 JS 异常`, errs.join(" / "));
+  await ctx.close();
+}
+
+// 6.x: no library at all, and the history in both of its shapes
+{
+  const ctx = await c1Context({ "chess.v1.stats": STATS_6X });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  await page.waitForTimeout(600);
+  const st = await storedLib(page);
+  const local = (st.games || []).filter((g) => g.src === "local");
+  assert(local.length === 2 && local.every((g) => g.__pk && g.plies > 0),
+    `C1 6.x：没有棋谱库的老档案，对局历史照样成了「本机」棋局，带局面索引(${local.map((g) => g.plies).join(",")})`);
+  assert(st.header == null, "C1 6.x：没有棋谱库就不凭空写一个头");
+  assert(errs.length === 0, "C1 6.x：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- C1.2 the quota refuses the migration: nothing moves, nothing is lost ---------
+{
+  const v1 = V1["7.2"];
+  const raw = JSON.stringify(v1);
+  const ctx = await c1Context({ "chess.v1.library": raw }, () => {
+    if (sessionStorage.getItem("c1.quota") === "off") return;
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (v, k) {
+      if (this.name === "games") throw new DOMException("the disk is full", "QuotaExceededError");
+      return put.call(this, v, k);
+    };
+  });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  const toastText = await page.textContent("#toast").catch(() => "");
+  const lib = await libOf(page);
+  const kept = await page.evaluate(() => localStorage.getItem("chess.v1.library"));
+  assert(/没能搬进新的存储/.test(toastText) && /QuotaExceededError/.test(toastText), `C1 配额满：迁移失败说出来(${toastText})`);
+  const keptV1 = JSON.parse(kept);
+  assert(keptV1.v === 1 && !keptV1.db && v1.games.every((g) => keptV1.games.some((x) => x.id === g.id && x.sans === g.sans)),
+    "C1 配额满：localStorage 里的旧棋谱库原样留着(v1，每一局都在)");
+  assert(lib.mode === "legacy" && lib.games.length === v1.games.length, `C1 配额满：这一次照旧方式用，${v1.games.length} 局都在(${lib.mode})`);
+  // a game imported meanwhile is kept the old way…
+  await importFile(page, '[Event "x"]\n[White "hxddh"]\n[Black "q"]\n[Result "1-0"]\n\n1. c4 e5 1-0\n');
+  const legacy = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library")));
+  assert(legacy.games.length === 3 && !legacy.db, "C1 配额满：这期间导入的棋按旧方式存进了 localStorage");
+  // …and the next launch, with room again, moves all of it
+  await page.evaluate(() => sessionStorage.setItem("c1.quota", "off"));
+  await page.reload();
+  await c1Ready(page);
+  const st = await storedLib(page);
+  assert(st.header.db === 2 && st.games.filter((g) => g.src !== "local").length === 3,
+    `C1 配额满之后：下一次启动把三局都搬了进去(${st.games.length})`);
+  assert(errs.length === 0, "C1 配额满：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- C1.3 interrupted: the store holds part of it, the header still says v1 -------
+{
+  const v1 = V1["8.0-dev"];
+  const half = { v: 1, names: v1.names, games: v1.games.slice(0, 1) };
+  const ctx = await c1Context({ "chess.v1.library": half });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  // deepen the stored copy meanwhile (a later analysis), then put the full v1
+  // header back — a migration cut short before the header changed
+  await page.evaluate((full) => new Promise((res) => {
+    const r = indexedDB.open("chessboard.library");
+    r.onsuccess = () => {
+      const tx = r.result.transaction(["games"], "readwrite");
+      const s = tx.objectStore("games");
+      const g = s.get("lib:80a");
+      g.onsuccess = () => { const x = g.result; x.an = Object.assign({}, x.an, { budget: 800 }); s.put(x); };
+      tx.oncomplete = () => { r.result.close(); localStorage.setItem("chess.v1.library", full); res(); };
+    };
+  }), JSON.stringify(v1));
+  await page.reload();
+  await c1Ready(page);
+  const st = await storedLib(page);
+  const imported = st.games.filter((g) => g.src !== "local");
+  assert(imported.length === 2 && imported.find((g) => g.id === "lib:80a").an.budget === 800,
+    `C1 中断的迁移再跑一遍：两局，不重复；已存的更深的分析(800)没被旧副本盖掉(${imported.map((g) => g.id + ":" + (g.an && g.an.budget)).join(",")})`);
+  assert(st.header.db === 2, "C1 中断的迁移：这次头换成了 db 2");
+  assert(errs.length === 0, "C1 中断：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- C1.4 a second window open during the migration ----------------------------
+{
+  const v1 = V1["7.0"];
+  const ctx = await c1Context({ "chess.v1.library": v1 });
+  const [a, b] = await Promise.all([open(ctx), open(ctx)]);
+  await Promise.all([c1Ready(a.page), c1Ready(b.page)]);
+  const [la, lb] = [await libOf(a.page), await libOf(b.page)];
+  const st = await storedLib(a.page);
+  const imported = st.games.filter((g) => g.src !== "local");
+  assert(la.games.length === 2 && lb.games.length === 2 && imported.length === 2 && st.header.db === 2,
+    `C1 两个窗口同时迁移：两边都是 2 局，库里也是 2 局(${la.games.length}/${lb.games.length}/${imported.length})`);
+  // one window imports; the other's next save does not take it away
+  await importFile(a.page, '[Event "w"]\n[White "hxddh"]\n[Black "z"]\n[Result "0-1"]\n\n1. g4 e5 2. f3 Qh4# 0-1\n');
+  await b.page.waitForTimeout(500);
+  const heard = (await libOf(b.page)).games.map((g) => g.event);
+  assert(heard.length === 3 && heard.includes("w"),
+    `C1 一个窗口导入，另一个窗口的列表也有了这一局(BroadcastChannel；${heard.length} 局)`);
+  await b.page.evaluate(() => { document.getElementById("lib-names").value = "hxddh, other"; document.getElementById("lib-names").dispatchEvent(new Event("change")); });
+  await b.page.waitForTimeout(600);
+  const after = (await storedLib(a.page)).games.filter((g) => g.src !== "local");
+  assert(after.length === 3, `C1 一个窗口导入、另一个窗口改名字保存：库里还是 3 局，没被旧窗口的列表盖掉(${after.length})`);
+  assert(a.errs.length === 0 && b.errs.length === 0, "C1 两个窗口：没有 JS 异常", a.errs.concat(b.errs).join(" / "));
+  await ctx.close();
+}
+
+// --- C1.5 10,000 games: import, search ≤ 200 ms, restart, export → import ---------
+/** Ten thousand short games, deterministic, in the shapes an archive has. */
+function tenThousand() {
+  const names = ["rival", "magnus", "hikaru", "alireza", "bot", "friend", "coach", "anna", "li", "sato"];
+  const tcs = ["60+0", "180+2", "300+0", "600+5", "1800+20", "1/86400"];
+  // mulberry32: a generator whose period is not the question under test
+  let seed = 7;
+  const rnd = (n) => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let x = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+    return (((x ^ (x >>> 14)) >>> 0) % n);
+  };
+  // 1,000 distinct move sequences (chess.js at ~0.5 ms a ply is the slow
+  // part), each played in about ten games with different tags
+  const g = new Chess();
+  const lines = [];
+  for (let i = 0; i < 1000; i++) {
+    g.reset();
+    const plies = 8 + rnd(12);
+    const sans = [];
+    for (let p = 0; p < plies; p++) {
+      const ms = g.moves();
+      if (!ms.length) break;
+      // the first move from four, so openings are shared the way they are
+      // in a real archive
+      const m = p === 0 ? ["e4", "d4", "c4", "Nf3"][rnd(4)] : ms[rnd(ms.length)];
+      g.move(m);
+      sans.push(m);
+    }
+    lines.push(sans);
+  }
+  const out = [];
+  for (let i = 0; i < 10000; i++) {
+    const sans = lines[rnd(lines.length)];
+    const me = rnd(10) < 7;
+    const foe = names[rnd(names.length)] + (rnd(3) ? "" : String(rnd(50)));
+    const white = rnd(2) ? "hxddh" : foe, black = white === "hxddh" ? foe : (me ? "hxddh" : names[rnd(names.length)]);
+    const y = 2016 + rnd(11), mo = 1 + rnd(12), d = 1 + rnd(28);
+    const res = ["1-0", "0-1", "1/2-1/2"][rnd(3)];
+    let mv = "";
+    sans.forEach((s, k) => { mv += (k % 2 ? "" : (k / 2 + 1) + ". ") + s + " "; });
+    out.push(`[Event "Rated game ${i}"]\n[Site "https://lichess.org/g${i}"]\n[Date "${y}.${String(mo).padStart(2, "0")}.${String(d).padStart(2, "0")}"]\n` +
+      `[Round "-"]\n[White "${white}"]\n[Black "${black}"]\n[Result "${res}"]\n[TimeControl "${tcs[rnd(tcs.length)]}"]\n\n${mv}${res}\n`);
+  }
+  return out.join("\n");
+}
+{
+  const t0 = Date.now();
+  const big = tenThousand();
+  console.log(`  C1：生成 1 万局 PGN ${(big.length / 1048576).toFixed(1)} MB（${Date.now() - t0} ms）`);
+  const ctx = await c1Context({ "chess.v1.library": { v: 1, names: ["hxddh"], games: [] } });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  const ti = Date.now();
+  await importFile(page, big);
+  await page.waitForFunction(() => window.__chess.library().games.length >= 10000, null, { timeout: 240000 }).catch(() => {});
+  C1.importMs = Date.now() - ti;
+  const n = (await libOf(page)).games.length;
+  assert(n === 10000, `C1 一次导入 1 万局，全部进库(${n}，${(C1.importMs / 1000).toFixed(1)} s)`);
+  // the store has written them all before the restart
+  await page.waitForFunction(() => new Promise((res) => {
+    const r = indexedDB.open("chessboard.library");
+    r.onsuccess = () => { const c = r.result.transaction(["games"], "readonly").objectStore("games").count(); c.onsuccess = () => { res(c.result >= 10000); r.result.close(); }; };
+  }), null, { timeout: 120000, polling: 500 }).catch(() => {});
+
+  // the openings are filled in when the list opens (7.1 fillOpenings)
+  await page.click("#lib-open");
+  await page.waitForTimeout(1500);
+  await page.click("#lib-list-close");
+  // the API: every filter the plan names, and the position question
+  const api = await page.evaluate(() => {
+    const db = window.__chess.libDb();
+    const time = (fn) => { const t = performance.now(); const r = fn(); return { ms: performance.now() - t, n: Array.isArray(r) ? r.length : r.total }; };
+    const e4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+    return {
+      opponent: time(() => db.query({ opponent: "magnus" })),
+      text: time(() => db.query({ text: "hikaru7" })),
+      date: time(() => db.query({ from: "2020-01-01", to: "2021-06-30" })),
+      result: time(() => db.query({ result: "win", color: "b" })),
+      tc: time(() => db.query({ tc: "blitz" })),
+      eco: time(() => db.query({ eco: "B" })),
+      position: time(() => db.query({ position: e4 })),
+      combined: time(() => db.query({ opponent: "rival", tc: "rapid", from: "2018-01-01", result: "loss", position: e4 })),
+      explorer: time(() => db.gamesWithPosition(e4)),
+      start: time(() => db.gamesWithPosition("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")),
+    };
+  });
+  C1.api = api;
+  const worst = Math.max(...Object.values(api).map((r) => r.ms));
+  console.log("  C1：1 万局查询(ms) " + Object.entries(api).map(([k, r]) => `${k} ${r.ms.toFixed(1)}/${r.n}`).join(" · "));
+  assert(worst <= 200, `C1 1 万局：每一种查询都 ≤ 200 ms(最慢 ${worst.toFixed(1)} ms)`);
+  assert(api.position.n > 1000 && api.explorer.n === api.position.n && api.start.n === 10000,
+    `C1 「包含这个局面」和开局浏览器的问法数得一致(1. e4 后 ${api.position.n} 局；开局局面 ${api.start.n} 局)`);
+
+  // the page: typing into the search box, the position switch, a segment
+  await page.click("#lib-open");
+  await page.waitForTimeout(400);
+  const ui = await page.evaluate(() => {
+    const q = document.getElementById("lib-q");
+    const t0 = performance.now();
+    q.value = "magnus";
+    q.dispatchEvent(new Event("input"));
+    const typed = performance.now() - t0;
+    const rows = document.querySelectorAll("#lib-list .hist-row").length;
+    const t1 = performance.now();
+    document.getElementById("lib-pos").click();
+    const pos = performance.now() - t1;
+    const note = document.getElementById("lib-pos-note").textContent;
+    const t2 = performance.now();
+    document.querySelector('#lib-tc-seg [data-ltc="blitz"]').click();
+    const seg = performance.now() - t2;
+    const count = document.getElementById("lib-list-count").textContent;
+    return { typed, pos, seg, rows, note, count, more: !document.getElementById("lib-more").hidden };
+  });
+  C1.ui = ui;
+  console.log(`  C1：页面上搜索 ${ui.typed.toFixed(1)} ms · 局面开关 ${ui.pos.toFixed(1)} ms · 用时分段 ${ui.seg.toFixed(1)} ms · ${ui.count}`);
+  assert(Math.max(ui.typed, ui.pos, ui.seg) <= 200, `C1 1 万局：页面上的搜索（查询 + 画出列表）≤ 200 ms(${Math.max(ui.typed, ui.pos, ui.seg).toFixed(1)} ms)`);
+  assert(ui.rows > 0 && ui.rows <= 100 && /经过这个局面的有 \d+ 局，接着下的是：/.test(ui.note),
+    `C1 列表一次最多画 100 行，局面开关说出下一步的分布(${ui.rows} 行；${ui.note})`);
+
+  // restart: ten thousand games come back from IndexedDB
+  const tr = Date.now();
+  await page.reload();
+  await c1Ready(page);
+  C1.loadMs = Date.now() - tr;
+  const back = await libOf(page);
+  assert(back.games.length === 10000 && back.mode === "idb", `C1 重启：1 万局从 IndexedDB 读回(${back.games.length}，${C1.loadMs} ms 到可用)`);
+
+  // the whole library out as PGN, into an empty profile, game for game
+  await page.click("#lib-open");
+  await page.waitForTimeout(300);
+  const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.click("#lib-export")]);
+  const file = await dl.path();
+  const text = fs.readFileSync(file, "utf8");
+  const ctx2 = await c1Context({ "chess.v1.library": { v: 1, names: ["hxddh"], games: [] } });
+  const second = await open(ctx2);
+  await c1Ready(second.page);
+  await importFile(second.page, text);
+  await second.page.waitForFunction(() => window.__chess.library().games.length >= 10000, null, { timeout: 240000 }).catch(() => {});
+  const b2 = await libOf(second.page);
+  const want = new Map(back.games.map((g) => [g.id, g]));
+  const fields = ["id", "white", "black", "date", "event", "site", "round", "result", "plies", "sans", "fen", "tc", "clk", "side", "outcome"];
+  const diff = [];
+  for (const g of b2.games) {
+    const o = want.get(g.id);
+    if (!o) { diff.push(g.id + " 多出来"); continue; }
+    for (const f of fields) if (JSON.stringify(o[f]) !== JSON.stringify(g[f])) diff.push(g.id + "." + f);
+  }
+  assert(b2.games.length === 10000 && diff.length === 0,
+    `C1 整库导出(${(text.length / 1048576).toFixed(1)} MB PGN)再导进空库：1 万局逐局相等(${fields.length} 个字段${diff.length ? "；不等 " + diff.slice(0, 5).join(", ") : ""})`);
+  assert(errs.length === 0 && second.errs.length === 0, "C1 1 万局：没有 JS 异常", errs.concat(second.errs).join(" / "));
+  await ctx2.close();
+  await ctx.close();
+}
+
+// --- C1.6 对局历史 is the library's 本机 games; its doors still open -------------
+{
+  const ctx = await c1Context({ "chess.v1.stats": STATS_7X, "chess.v1.library": V1["8.0-dev"] });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(300);
+  const label = (await page.textContent("#hist-open")).trim();
+  await page.click("#hist-open");
+  await page.waitForTimeout(500);
+  const r = await page.evaluate(() => ({
+    open: document.getElementById("lib-list-modal").classList.contains("show"),
+    src: document.querySelector("#lib-src-seg .active") && document.querySelector("#lib-src-seg .active").dataset.lsrc,
+    rows: [...document.querySelectorAll("#lib-list .hist-row")].map((row) => ({
+      loc: !!row.querySelector("[data-loc]"), tag: (row.querySelector(".pick-tag") || {}).textContent || "",
+      pgn: !!row.querySelector("[data-loc-pgn]"), text: row.textContent })),
+  }));
+  assert(label === "全部 2 局" && r.open && r.src === "local" && r.rows.length === 2 && r.rows.every((x) => x.loc && x.tag === "本机" && x.pgn),
+    `C1 「我的」→ 对局历史「全部 N 局」打开的是棋谱库，只看本机，每行标「本机」、能复制 PGN(${label}; ${JSON.stringify(r.rows.map((x) => x.tag))})`);
+  // all sources: the two imported games and the two local ones, one list
+  await page.click('#lib-src-seg [data-lsrc="all"]');
+  const all = await page.$$eval("#lib-list .hist-row", (rows) => rows.length);
+  assert(all === 4, `C1 来源选「全部」：导入的 2 局和本机的 2 局在同一张列表里(${all})`);
+  // opening a 本机 game: onto the board, as the history's rows did
+  await page.click('#lib-src-seg [data-lsrc="local"]');
+  await page.click('#lib-list [data-loc="g1"]');
+  await page.waitForTimeout(900);
+  const board = await page.evaluate(() => ({
+    list: document.getElementById("lib-list-modal").classList.contains("show"),
+    page: !document.getElementById("page-me").hidden && document.getElementById("page-me").offsetParent !== null,
+    view: JSON.parse(localStorage.getItem("chess.v1.settings")).view,
+    mode: JSON.parse(localStorage.getItem("chess.v1.settings")).mode,
+    pgn: JSON.parse(localStorage.getItem("chess.v1.save")).pgn,
+  }));
+  assert(!board.list && !board.page && board.mode === "ai" && /Qxf7#/.test(board.pgn) && board.view !== "me",
+    `C1 点本机那一局：列表关掉、离开「我的」回到棋盘、人机模式、就是那一局，而且记下了(${JSON.stringify({ view: board.view, mode: board.mode })})`);
+  // the preview rows on 我的 still load a game
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(300);
+  assert(await page.$$eval("#hist-body [data-hist]", (b) => b.length) === 2, "C1 「我的」上的对局历史预览还在(2 行)");
+  // search the merged list: by the engine level, and by the position on the board
+  await page.click("#hist-open");
+  await page.waitForTimeout(300);
+  await page.click('#lib-src-seg [data-lsrc="all"]');
+  await page.fill("#lib-q", "高级");
+  const hard = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
+  assert(hard.join() === "g2", `C1 搜索本机棋局的对手（引擎级别）(${hard.join()})`);
+  await page.fill("#lib-q", "");
+  await page.click("#lib-pos");
+  const pos = await page.evaluate(() => ({ rows: document.querySelectorAll("#lib-list .hist-row").length,
+    note: document.getElementById("lib-pos-note").textContent, pressed: document.getElementById("lib-pos").getAttribute("aria-pressed") }));
+  assert(pos.pressed === "true" && pos.rows === 1 && /有 1 局/.test(pos.note),
+    `C1 「局面」开关：只留下经过棋盘上这个局面的棋(棋盘上是那盘 4. Qxf7# 之后；${pos.rows} 行，${pos.note})`);
+  // a diagnosis row opens the list on imported games, even when the source
+  // row was last left on 本机 (red before: an empty list)
+  await page.click("#lib-list-close");
+  const eco = (await libOf(page)).games.find((g) => g.id === "lib:80b").eco;
+  await page.evaluate((e) => window.__chess.libDb().openList({ kind: "eco", value: e, label: e }), eco);
+  await page.waitForTimeout(300);
+  const picked = await page.evaluate(() => ({ src: document.querySelector("#lib-src-seg .active").dataset.lsrc,
+    ids: [...document.querySelectorAll("#lib-list [data-lib]")].map((b) => b.dataset.lib) }));
+  assert(!!eco && picked.src === "all" && picked.ids.join() === "lib:80b",
+    `C1 诊断里点一个开局：列表回到「全部」来源，筛出那一局(${eco}; ${JSON.stringify(picked)})`);
+  assert(errs.length === 0, "C1 本机：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- C1.7 认领名字: the name on most games, offered once ---------------------------
+{
+  const ctx = await c1Context({});
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  assert(await page.isHidden("#lib-claim"), "C1 空库不提认领");
+  await importFile(page, PGN);
+  const offer = await page.evaluate(() => ({ shown: !document.getElementById("lib-claim").hidden,
+    text: document.getElementById("lib-claim-text").textContent }));
+  assert(offer.shown && /「hxddh」出现在这 4 局里的 3 局中/.test(offer.text), `C1 导入之后，按最常出现的名字问一次(${offer.text})`);
+  await page.click("#lib-claim-yes");
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => ({ names: document.getElementById("lib-names").value, hidden: document.getElementById("lib-claim").hidden,
+    header: JSON.parse(localStorage.getItem("chess.v1.library")) }));
+  const lib = await libOf(page);
+  assert(after.names === "hxddh" && after.hidden && lib.games.filter((g) => g.side).length === 3 && after.header.claimAsked === true,
+    `C1 点「是我」：名字填上，三局认成你的，提示收起(${after.names}; ${lib.games.filter((g) => g.side).length})`);
+  // it is not asked again: not after a reload, not after another import
+  await page.evaluate(() => { const i = document.getElementById("lib-names"); i.value = ""; i.dispatchEvent(new Event("change")); });
+  await page.reload();
+  await c1Ready(page);
+  await importFile(page, PGN.replace(/2026\.09/g, "2026.10"));
+  assert(await page.isHidden("#lib-claim"), "C1 问过一次就不再问 —— 重启、再导入都不问");
+  // "不是": also asked once
+  const ctx2 = await c1Context({});
+  const second = await open(ctx2);
+  await c1Ready(second.page);
+  await importFile(second.page, PGN);
+  await second.page.click("#lib-claim-no");
+  await importFile(second.page, PGN.replace(/2026\.09/g, "2026.11"));
+  const no = await second.page.evaluate(() => ({ hidden: document.getElementById("lib-claim").hidden, names: document.getElementById("lib-names").value }));
+  assert(no.hidden && no.names === "", "C1 点「不是」：不填名字，之后也不再问");
+  assert(errs.length === 0 && second.errs.length === 0, "C1 认领：没有 JS 异常", errs.concat(second.errs).join(" / "));
+  await ctx2.close();
+  await ctx.close();
+}
+
+// the numbers, for docs/measured.json (libraryDb) — written with --record
+{
+  const r1 = (x) => Math.round(x * 10) / 10;
+  const figures = {
+    what: "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms",
+    script: "node scripts/test-library-e2e.mjs --record",
+    games: 10000,
+    importMs: C1.importMs, loadMs: C1.loadMs,
+    queryMs: C1.api && Object.fromEntries(Object.entries(C1.api).map(([k, r]) => [k, r1(r.ms)])),
+    queryHits: C1.api && Object.fromEntries(Object.entries(C1.api).map(([k, r]) => [k, r.n])),
+    pageMs: C1.ui && { typed: r1(C1.ui.typed), position: r1(C1.ui.pos), speed: r1(C1.ui.seg) },
+    limitMs: 200,
+  };
+  console.log("C1 measured: " + JSON.stringify(figures));
+  if (RECORDING && C1.api && C1.ui) record("libraryDb", figures);
 }
 
 await browser.close();
