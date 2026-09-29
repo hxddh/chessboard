@@ -39,3 +39,21 @@ jobs:
       # so a stripped checkout reports "skipped" rather than a false green.
       - name: engine checks (full)
         run: npm run test:engine
+
+  # v8-1-plan §1.7: is anything in docs/deps-inventory.json behind npm's
+  # `latest` (SDK, esbuild, Playwright, Stockfish.js)? Its own job, and one
+  # that cannot go red: the script exits 0 on "newer exists" and on an
+  # unreachable registry alike, continue-on-error covers anything else, and
+  # the answer lands in the run's summary. So the header's rule still holds —
+  # a red nightly is still only ever about the engine sweep.
+  deps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: newer upstream versions (report only)
+        run: node scripts/deps-check.mjs

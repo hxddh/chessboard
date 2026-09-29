@@ -1,10 +1,11 @@
 {
-  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成；done-8.1 = 8.1 已升（current 已是新版本，note 里写验收结果）。改版本时连同这份文件一起改。",
+  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成；done-8.1 = 8.1 已升（current 已是新版本，note 里写验收结果）。改版本时连同这份文件一起改：scripts/test-deps.mjs（test:static）核对每项 current 与仓库里实际钉的版本；带 npm 字段的几项由 scripts/deps-check.mjs 在 nightly 里对 npm latest 查一遍，有新版只进摘要、不算失败（v8-1-plan §1.7）。",
   "checkedAt": "2026-09-29",
   "deps": [
     {
       "name": "@native-sdk/cli（Native SDK，原 zero-native，vercel-labs/native）",
       "kind": "desktop-sdk",
+      "npm": "@native-sdk/cli",
       "current": "0.10.1",
       "pinnedIn": [".github/workflows/checks.yml (zig job SDK_VERSION)", ".github/workflows/build-macos.yml (sdk_version 默认值)", ".github/workflows/build-windows.yml (sdk_version 默认值)", ".github/workflows/release.yml (sdk_version 默认值)", "src/runner.zig（SDK app_runner 的分叉，随 SDK 手动同步）", "build.zig（SDK build/app.zig 的手抄本）"],
       "latest": "0.10.1（npm latest，2026-08-24）；main 上另有 22 个未发版提交，HEAD 96943d4a（2026-09-28）",
@@ -29,6 +30,7 @@
     {
       "name": "Stockfish.js（nmrugg/stockfish.js，Stockfish 19 lite-single）",
       "kind": "engine",
+      "npm": "stockfish",
       "current": "19.0.0 lite-single（wasm 1,787,571 字节，网络 nn-61e7af4bb97d），vendored 在 third_party/stockfish/",
       "pinnedIn": ["third_party/stockfish/stockfish-19-lite-single.{js,wasm}", "scripts/gen-engine-src.mjs"],
       "latest": "npm stockfish 19.0.0（2026-09-15）；官方 Stockfish sf_19（2026-09-05）；之后只有 dev 构建（stockfish-dev-20260922-0a215d6c）",
@@ -51,6 +53,7 @@
     {
       "name": "esbuild",
       "kind": "npm devDependency",
+      "npm": "esbuild",
       "current": "0.28.2",
       "pinnedIn": ["package.json devDependencies", "package-lock.json"],
       "latest": "0.28.2（2026-08-08）",
@@ -62,6 +65,7 @@
     {
       "name": "playwright",
       "kind": "CI tool（npm install --no-save）",
+      "npm": "playwright",
       "current": "1.63.0（Chromium 153.0.8010.12 / WebKit 26.6）",
       "pinnedIn": [".github/workflows/checks.yml", ".github/workflows/release.yml"],
       "latest": "1.63.0（2026-09-04；Chromium 153.0.8010.12 / WebKit 26.6）",
