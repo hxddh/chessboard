@@ -656,6 +656,26 @@
 - `idb` / `chunkSync` / `nativeIo` 在 zero:// 上的 WKWebView 与 WebView2：`build-macos.yml` / `build-windows.yml` 的打包自检。
 - 打包自检两次启动共用一个临时 HOME（Windows 另加 APPDATA）：应用自己的数据目录跟着走；WKWebView 的 localStorage / IndexedDB（在真实用户的 ~/Library 下）和 WebView2 的数据目录（SDK 不指定，在 exe 旁边）不跟着走，本地运行仍会在那里留下自检标记和英文界面设置。CI runner 起始为空，不受影响。
 
+### M2
+
+**F4 引擎调度器**
+
+- **先量**（`test-engine-flows-e2e`「后台分析中应着」，数字在 `measured.json engineScheduler`）：棋谱库后台分析（200，每步 90k 节点）进行中，和 normal 档下 12 手。三个数：reply（你的着法进着法表→应着进着法表，含 700 ms 思考）、wait（你的着法进着法表→应着的 `go` 发出，验收看它）、queued（`bestMove()` 调用→它的搜索拿到引擎）。
+  - 8.0 上：没有后台时 wait p50/p90 363/481 ms，有后台时 503/600 ms（reply 1220/1316）。早先两次同法测得 p90 651、676 ms。多出来的是正在跑的那一步库分析的剩余时间：8.0 的单链 `exclusive()` 先到先得，应着排在它后面。
+  - 所以 8.0 在 200 预算下其实已经在 1 s 以内；排队的长度随后台那一步的预算、MultiPV 走（精析 400、多主变都更长），调度器要去掉的是这一项本身。
+  - 本机量法的偏差：headless Chromium 在这里用软件栅格化棋盘 canvas，每走一步主线程卡一帧（跟踪：`CanvasRenderingContext2D::FinalizeFrame` + `ProduceCanvasResource`），1400×1000 时约 1.1 s，900×700 时约 0.4 s。有没有后台都一样卡，但有 GPU 的 WebView 不花这段时间，所以这一段用 900×700。
+- **调度器**（`engine-sched.js`，engine.js 的 `exclusive()` 改走它）：三级 PLAY（对局、提示、教练、提和）> LIVE（持续分析）> BATCH（`analyze(…, {bg: true})`：棋谱库分析、再深一遍、分析/精析）。同级仍先到先得，没标级别的调用照旧是 PLAY、照旧串行。高一级到来时，低一级若正在搜就发 `stop`（只在它自己的 `go` 在 worker 上时发），结果丢掉，任务回到本级队首再跑一次；调用方的 promise 只在一次没被打断的运行后兑现。库分析本来就是一步一请求，所以「从断点接着做」就是同一请求的下一次运行，已答的步不重算。
+  - 调度器上（after）：wait p90 428 ms，没有后台时 378 ms；queued p90 422 ms（这 400 ms 是上面那一帧卡顿把 `bestmove` 的投递压后了，引擎侧只是一个 `stop`）；12 手里抢占 16 次，库分析没断。
+  - **确定性**：被抢占过的那 2 局 78 步，与另开页面、没人下棋时分析的逐步相同（分数与最佳着）。依据是每次分析搜索都从 `ucinewgame` 开始、固定节点数（B2），而被 `stop` 截断的结果从不交出。
+  - `cancel()`（棋盘上一变就调）不再对后台搜索发 `stop`：截断的固定节点结果会被当成完整的归档。以前人机下棋时 `cancel()` 会让库那一步返回空，重试一次再空就整个断掉（`lib.passCut`）。分析/精析的「停」因此要等手上那一步做完（≤ 一步的时间）再停。
+  - `newGame()` 的 `ucinewgame` 在后台搜索进行中时不发（会在搜索中途清掉它的置换表），留给下一次对局搜索先发。
+  - 持续分析被对局或提示抢占后，由调度器在原局面上重新挂上；应用里 `liveAllowed()` 仍在库分析期间让开持续分析，这一条没改。
+  - 单元测试（`test-engine.mjs`，假 worker）：抢占即发 `stop`、被截的一步重跑且只重跑一次、三步结果都是完整结果且顺序不变；`cancel` / `newGame` 不碰后台搜索；持续分析让位与恢复；同级不抢占；第二个 worker 默认关、打开后并行、起不来就退回。改之前第一条就红。假 worker 的 `goDelay` 计时器原来会结束「当时正在跑的任何搜索」，改成只结束它自己那一次。
+- **第二个 worker**（`engine-bg.js`，默认关，§8.7）：设置文件里的 `bgWorker: true`（没有界面控件、没有界面键）打开后，BATCH 的分析改在第二个 Stockfish 上跑，和对局互不抢占；UCI 顺序与主 worker 上完全相同，逐步结果相同（3 局 124 步）。起不来或一次搜索没回来就关掉它，这一轮会话退回共享 worker，不重试。
+  - 内存（进程树 RSS 增量，Hash 32）：第一个引擎 +91 MB（含页面里解码的 wasm），第二个 +61 MB。8 GB 机器上可以接受，但本机收益只在「有后台分析时」那一小段：wait p90 353 ms 对单 worker 的 428 ms。维持默认关。
+- **顺带修的**：`settings-ui.js` 在 `wire` 时把 Hash 交给引擎，而 `wire` 早于 `loadSettings()`，存着的 Hash 直到再点一次那一段才生效。改为在 `paintSettings` 里交（`setOptions` 对不变的值是空操作）；flows-e2e「第二个引擎」验证存着的 Hash 64 启动即生效。
+- 主包 869,452 字节（+约 4.5 KB）；app.js 行数不变（6,702：加一行读 `bgWorker`，删掉一处多余空行）。
+
 ---
 
 ## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）
