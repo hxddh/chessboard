@@ -309,7 +309,7 @@ export function createMePage(d) {
     const out = [];
     for (const g of store.session.library || []) {
       if (!g.side || !g.an) continue;
-      out.push(Metrics.factsOf({ side: g.side, outcome: g.outcome, fen: g.fen, clk: g.clk,
+      out.push(Metrics.factsOf({ side: g.side, outcome: g.outcome, fen: g.fen, clk: g.clk, tc: g.tc,
         scalars: g.an.scalars, tags: g.an.tags }));
     }
     // an engine game files its extremes when it is analysed (review/analysis.js)

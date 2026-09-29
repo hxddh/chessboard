@@ -103,6 +103,16 @@ const pc = (x) => (x == null ? "null" : (Math.round(x * 1000) / 10) + "%");
   assert(mixed.clock.n === 10, "没有钟的对局不进这一项");
   const unanalysed = CLOCK_GAMES.map((g) => Object.assign(flat(g), { tags: null }));
   assert(M.crossGame(unanalysed.map(M.factsOf)).clock.n === 0, "没分析过（没有 tags）的也不算");
+  // v8-0-plan C2 with real data (src/sync-fixtures/chesscom-month.body): a
+  // Chess.com daily game ("1/259200", days a move) writes [%clk] too, but it
+  // is that move's own allowance, not a game clock running down — its first
+  // reading was 0:01:49 or 1:53:00 — so "below a tenth of the first reading"
+  // says nothing about time trouble
+  const daily = CLOCK_GAMES.map((g) => Object.assign(flat(g), { tc: "1/259200" }));
+  assert(M.crossGame(daily.map(M.factsOf)).clock.n === 0 && daily.every((g) => !M.factsOf(g).clocked),
+    "Chess.com 的每日棋（TimeControl 1/N）的钟不算时间紧");
+  const timed = CLOCK_GAMES.map((g) => Object.assign(flat(g), { tc: "600" }));
+  assert(M.crossGame(timed.map(M.factsOf)).clock.n === 10, "有 TimeControl 的限时棋照算");
   const bf = M.factsOf(flat(BLACK_FIRST));
   assert(bf.clocked && bf.press.n === 1 && bf.press.b === 1 && bf.calm.n === 2 && bf.calm.b === 1,
     "黑方先走的局面：第 0 手是我们的，按自己的钟读", JSON.stringify(bf));
