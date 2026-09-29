@@ -1442,6 +1442,22 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         const want = bests[bril].slice(0, 2) + bests[bril].slice(2, 4);
         const hint = await pg.evaluate(() => window.__chess.board().hint);
         assert(hint === want, "A4：妙着这个关键时刻「再试一次」走错判完之后，棋盘上画出最佳着的箭头（" + want + "）", String(hint));
+        // #89 review: the brilliancy itself, found again — judged right, and
+        // the panel does not go on to say 「更好的是」 the move just played
+        await pg.click("#rt-again");
+        await pg.waitForTimeout(250);
+        for (const sq of [want.slice(0, 2), want.slice(2, 4)]) {
+          const c = await pg.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect();
+            return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(q[1]) + 0.5) * (r.height / 8) }; }, sq);
+          await pg.mouse.click(c.x, c.y);
+          await pg.waitForTimeout(80);
+        }
+        await pg.waitForFunction(() => { const v = document.querySelector("#retry-box .rt-verdict"); return v && /is-right/.test(v.className); }, null, { timeout: 20000 }).catch(() => {});
+        const found = await pg.evaluate(() => ({ verdict: (document.querySelector("#retry-box .rt-verdict") || {}).className || "",
+          best: (document.querySelector("#retry-box .rt-best") || {}).textContent || "",
+          why: (document.querySelector("#retry-box .rt-why") || {}).textContent || "" }));
+        assert(/is-right/.test(found.verdict) && /引擎的最佳/.test(found.best) && found.why === "",
+          "A4：妙着「再试一次」走对了，面板不再说「更好的是」刚走的这步（" + JSON.stringify(found) + "）");
         await pg.click("#rt-back").catch(() => {});
         await pg.waitForTimeout(250);
       } else assert(false, "A4：妙着是一个关键时刻，而且能「再试一次」", JSON.stringify({ kb, bril }));
