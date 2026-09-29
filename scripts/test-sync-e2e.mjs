@@ -19,6 +19,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { lichessAnswer, chesscomAnswer } from "./sync-fixtures.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -275,7 +276,54 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await ctx.close();
 }
 
-// --- 3b. M5 review P3-2: a pass running — said in the dialog, nothing fetched --
+// --- 3b. what the sites really sent (src/sync-fixtures/, scripts/sync-fixtures.mjs)
+// The bridge answers with the text main.zig makes of the real responses:
+// Lichess thibault's 5 blitz games, then Chess.com erik's last month — 9
+// standard games (8 daily, 1 rapid; its 4 Chess960 games never reach the page).
+{
+  const { ctx, page, errs } = await open({ seedSync: { v: 1, on: true } });
+  await toLibrary(page);
+  const syncAs = async (site, user, answer) => {
+    await openSync(page);
+    await page.click(`#sync-site [data-v="${site}"]`);
+    await page.fill("#sync-user", user);
+    await page.evaluate((a) => { window.__answer = a; }, answer);
+    await page.click("#sync-go");
+    await page.waitForFunction(() => !document.getElementById("sync-modal").classList.contains("show"), null, { timeout: 8000 });
+    await page.waitForTimeout(400);
+  };
+  const li = lichessAnswer(), cc = chesscomAnswer();
+  await syncAs("lichess", "thibault", li);
+  let lib = await libView(page);
+  assert(lib.games.length === 5 && lib.names.includes("thibault"), "C2 real: Lichess 的 5 局进库，thibault 认领了（" + lib.games.length + "，" + JSON.stringify(lib.names) + "）");
+  await syncAs("chesscom", "erik", cc);
+  lib = await libView(page);
+  const games = lib.games;
+  assert(games.length === 14 && lib.names.includes("thibault") && lib.names.includes("erik"),
+    "C2 real: 再加 Chess.com 的 9 局共 14 局，两个名字都认领（" + games.length + "，" + JSON.stringify(lib.names) + "）");
+  assert(games.every((g) => (g.side === "w" || g.side === "b") && g.outcome && g.an == null),
+    "C2 real: 14 局都认出执哪方、胜负，都在分析队列里（" + JSON.stringify(games.map((g) => [g.side, g.outcome])) + "）");
+  assert(games.every((g) => Array.isArray(g.clk) && g.clk.length === g.plies), "C2 real: 每一手的钟都带进了棋谱库");
+  const idx = await page.evaluate(() => {
+    const at = window.__chess.libDb().gamesWithPosition("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    return at && { total: at.total, moves: at.moves.map((m) => m.san + ":" + m.n).join(" ") };
+  });
+  assert(idx && idx.total === 14 && idx.moves === "e4:10 d4:4", "C2 real: 局面索引数到 14 局，起始局面 e4 10、d4 4（" + JSON.stringify(idx) + "）");
+  await page.click("#lib-open");
+  await page.waitForSelector("#lib-list-modal.show", { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  const tags = await page.evaluate(() => [...document.querySelectorAll("#lib-list button[data-lib] .pick-tag")].map((x) => x.textContent));
+  const n = (s) => tags.filter((x) => x === s).length;
+  assert(tags.length === 14 && n("Lichess") === 5 && n("Chess.com") === 9, "C2 real: 列表上 5 局标 Lichess、9 局标 Chess.com（" + JSON.stringify(tags) + "）");
+  await page.keyboard.press("Escape");
+  const calls = await page.evaluate(() => window.__calls);
+  assert(JSON.stringify(calls) === '[{"site":"lichess","user":"thibault","max":20},{"site":"chesscom","user":"erik","max":20}]',
+    "C2 real: 两次请求各带网站、名字、局数（" + JSON.stringify(calls) + "）");
+  assert(errs.length === 0, "real: 没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 3c. M5 review P3-2: a pass running — said in the dialog, nothing fetched --
 // The import refuses games while the engine is on the library; the sync used
 // to fetch them anyway, close the dialog and leave only a toast behind.
 {
