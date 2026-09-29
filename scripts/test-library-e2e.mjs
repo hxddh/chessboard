@@ -502,6 +502,30 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     "而且真的画了东西上去 —— 不是三张空画布", JSON.stringify(charts.map((c) => c.painted)));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
+
+  // M5 合并：三张图（diag-charts.js）随 chunk-libdb.js 来。分块到之前就打开诊断，
+  // 先是文字；分块一到，图补上
+  const ctx2 = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await ctx2.route("**/chunk-libdb.js", async (route) => { await gate; await route.continue(); });
+  // the held chunk would hold the load event too: wait for the DOM only
+  const o2 = { page: await ctx2.newPage(), errs: [] };
+  o2.page.on("pageerror", (e) => o2.errs.push(e.message));
+  await o2.page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
+  await o2.page.waitForTimeout(900);
+  await o2.page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await o2.page.click('#rail button[data-view="library"]').catch(() => {});
+  await o2.page.waitForTimeout(200);
+  await o2.page.click("#lib-diagnose");
+  await o2.page.waitForTimeout(300);
+  const rows = await o2.page.evaluate(() => document.querySelectorAll("#lib-diag .stat-row").length);
+  release();
+  await o2.page.waitForFunction(() => document.querySelectorAll("#lib-diag canvas.diag-chart").length === 3, null, { timeout: 8000 }).catch(() => {});
+  const late = await o2.page.evaluate(() => document.querySelectorAll("#lib-diag canvas.diag-chart").length);
+  assert(rows > 0 && late === 3, "分块到之前打开诊断：先有文字（" + rows + " 行），分块一到三张图补上（" + late + " 张）");
+  assert(o2.errs.length === 0, "没有 JS 异常", o2.errs.join(" / "));
+  await ctx2.close();
 }
 
 // --- 7. 黑方先走、从第 30 手开始的那种局，也要开得出来 ----------------------

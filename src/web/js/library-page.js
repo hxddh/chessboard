@@ -3,7 +3,8 @@
  * (v8-0-plan C1). Loaded as chunk-libdb.js after the first frame.
  *
  * library-ui.js keeps what it always had — the analysis pass, the section on
- * the library page, the diagnosis — and hands this module its bag, the way
+ * the library page, the diagnosis (whose three charts, diag-charts.js, ride
+ * in this chunk since the M5 merge) — and hands this module its bag, the way
  * every carved-out region of app.js does. Everything stateful arrives in
  * that bag (the dialog stack, chess.js, the parser, the ECO table): a second
  * copy of any of them bundled into this chunk would be a second stack, a
@@ -29,6 +30,7 @@
  */
 import { LibraryQuery } from "./library-query.js";
 import { LibraryDb } from "./library-db.js";
+import { createDiagCharts } from "./diag-charts.js";
 
 /**
  * Background work (the 本机 games, the index, the openings) runs in slices of
@@ -734,4 +736,4 @@ async function bootLibrary(d) {
   };
 }
 
-export const CHESS_LIBDB = { bootLibrary, LibraryQuery, LibraryDb };
+export const CHESS_LIBDB = { bootLibrary, LibraryQuery, LibraryDb, createDiagCharts };
