@@ -19,6 +19,6 @@
     "test:engine:sample": "node scripts/test-openings.mjs && node scripts/test-tactics.mjs && node scripts/test-novice.mjs && node scripts/test-strength.mjs && node scripts/test-analysis.mjs && node scripts/test-mines.mjs && node scripts/test-mined.mjs --sample=150 && node scripts/test-motif.mjs --games=6 && node scripts/test-coach.mjs"
   },
   "devDependencies": {
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.2"
   }
 }

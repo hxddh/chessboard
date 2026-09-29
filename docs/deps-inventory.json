@@ -1,5 +1,5 @@
 {
-  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成。改版本时连同这份文件一起改。",
+  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成；done-8.1 = 8.1 已升（current 已是新版本，note 里写验收结果）。改版本时连同这份文件一起改。",
   "checkedAt": "2026-09-29",
   "deps": [
     {
@@ -51,13 +51,13 @@
     {
       "name": "esbuild",
       "kind": "npm devDependency",
-      "current": "0.28.1",
+      "current": "0.28.2",
       "pinnedIn": ["package.json devDependencies", "package-lock.json"],
       "latest": "0.28.2（2026-08-08）",
       "source": ["npm view esbuild time", "raw.githubusercontent.com/evanw/esbuild/main/CHANGELOG.md"],
       "checkedAt": "2026-09-29",
-      "recommendation": "upgrade-8.1",
-      "note": "补丁版：TS import 别名的 tree-shaking 修正、CSS 压缩里 & 的修正。本仓库 minify:false、不走 TS，预期产物逐字节不变——这本身就是升级的验收。"
+      "recommendation": "done-8.1",
+      "note": "补丁版：TS import 别名的 tree-shaking 修正、CSS 压缩里 & 的修正。本仓库 minify:false、不走 TS，预期产物逐字节不变——这本身就是升级的验收。8.1 F1 已升：0.28.1 → 0.28.2 前后 bundle.js 与 33 个分块的 sha256 全部相同（minify 仍关）。"
     },
     {
       "name": "playwright",
