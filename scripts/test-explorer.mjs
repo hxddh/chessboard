@@ -259,14 +259,14 @@ if (failed) { console.error("\n" + failed + " failed"); process.exit(1); }
 
 // --record: the package-size delta and the figures above into docs/measured.json
 // (v8-0-plan C3 acceptance: 包体积增量写进落地记录). The main bundle's
-// "before" is the dev branch C3 was last merged with (4d75749) built without C3:
+// "before" is the dev branch C3 was last merged with (6fa2501) built without C3:
 // the M4 review fixes merged meanwhile grew the bundle too, and are not C3's.
 if (process.argv.includes("--record")) {
   const bundleSrc = await build({ write: true });
   const size = (f) => fs.statSync(path.join(root, f)).size;
   const xm = CHUNKS.filter((c) => /chunk-xm-\d\d\.js$/.test(c.out)).map((c) => size(c.out));
   REC.package = {
-    bundleBefore: 1203521, bundleAfter: Buffer.byteLength(bundleSrc, "utf8"),
+    bundleBefore: 1203749, bundleAfter: Buffer.byteLength(bundleSrc, "utf8"),
     chunkExplorer: size("src/web/js/chunk-explorer.js"), masterChunks: xm, masterChunksTotal: xm.reduce((a, b) => a + b, 0),
   };
   REC.package.bundleDelta = REC.package.bundleAfter - REC.package.bundleBefore;
