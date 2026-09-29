@@ -3972,6 +3972,25 @@ for (const lang of CONTENT_LANGS) {
     const bag2 = {}; for (const k of Object.keys(m1)) bag2[k] = JSON.stringify(m1[k]);
     const m2 = L.merge(bag2, other, 50);
     assert(JSON.stringify(m2) === JSON.stringify(m1), "importing the same file again is a no-op");
+    // #89 review: imported games count. Machine A: forty wins against 中级,
+    // filed one by one; machine B (a new install): one loss against 新手.
+    // B's stored rating (798) was kept, and the forty never counted.
+    const O = ctx.Opponents, day = 86400000, t0 = Date.parse("2026-06-01");
+    const filed = (games) => {
+      const st = { v: 2, games: [] };
+      for (const g of games) { O.fileRating(st, g, g.t); st.games.push(g); }
+      return st;
+    };
+    const sA = filed(Array.from({ length: 40 }, (_, i) => ({ id: "a" + i, t: t0 + i * day, diff: "normal", result: "win" })));
+    const sB = filed([{ id: "b0", t: t0 + 41 * day, diff: "beginner", result: "loss" }]);
+    const ms = L.merge({ stats: JSON.stringify(sB) }, L.pack({ stats: JSON.stringify(sA) }, 5), 50).stats;
+    const all = O.rateHistory(ms.games);
+    assert(ms.games.length === 41 && Math.round(O.ratingOfStats(ms).r) === Math.round(all.r) && all.n === 41 &&
+      Math.round(all.r) !== Math.round(sB.rating.r),
+      "#89: games imported from another machine count — the merged rating replays all 41, not B's stored " +
+      Math.round(sB.rating.r) + " (" + Math.round(O.ratingOfStats(ms).r) + " vs " + Math.round(all.r) + ")");
+    const again = L.merge({ stats: JSON.stringify(sB) }, L.pack({ stats: JSON.stringify(sB) }, 6), 50).stats;
+    assert(again.rating && Math.round(again.rating.r) === Math.round(sB.rating.r), "#89: …and an import that adds nothing keeps the stored rating");
   }
   // --- 7.4 D6: the repertoire travels with the reviews it is owed ----------
   {
