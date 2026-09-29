@@ -1,6 +1,6 @@
 # Real sync responses (v8-0-plan C2)
 
-Fetched on 2026-09-29 (05:21 UTC) by the manual workflow `.github/workflows/sync-samples.yml`
+Fetched on 2026-09-29 (05:21 UTC) by the manual workflow `.github/workflows/sync-samples.yml` (run 36525450431)
 (defaults: Lichess `thibault`, Chess.com `erik`, max 5), with the URLs and the User-Agent
 `chessboard (+https://github.com/hxddh/chessboard)` that `src/main.zig` `chess.fetchGames` uses,
 and copied here byte for byte from the run's log. They are public games of public accounts.
