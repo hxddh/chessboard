@@ -1150,9 +1150,10 @@ async function playQuietly(page, stop, maxMoves) {
       return x.turn() === "w" || x.game_over() || (await stop()) ? x : null;
     }, 15000, 150) || await savedGame(page);
     if (await stop()) return true;
-    if (g.turn() !== "w" || g.game_over()) return false;
+    // why a run gives up is printed always: CI is where it happens (#89)
+    if (g.turn() !== "w" || g.game_over()) { console.log("  playQuietly stops at move " + i + ": turn " + g.turn() + ", over " + g.game_over() + ", " + g.fen()); return false; }
     const m = quietMove(g);
-    if (!m) { if (process.env.FLOWS_DEBUG) console.log("  no quiet move:", g.fen()); return !!(await stop()); }
+    if (!m) { console.log("  no quiet move:", g.fen()); return !!(await stop()); }
     const n0 = g.history().length;
     await clickMove(page, m.from, m.to);
     await until(async () => (await stop()) || (await savedGame(page)).history().length >= n0 + 2, 15000, 150);
