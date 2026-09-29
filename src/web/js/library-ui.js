@@ -159,7 +159,7 @@ export function createLibraryUI(d) {
     later(() => loadChunk("chunk-libdb.js", "CHESS_LIBDB").then((m) => m.bootLibrary(Object.assign({}, d, {
       Library, Dlg, reconcile, Chess, PgnParser: ChessPgnParser, Pgn: ChessPgn, Eco: ChessEco,
       idb: typeof indexedDB !== "undefined" ? indexedDB : null, withLock: Host.withStoreLock,
-      pause: () => new Promise((r) => setTimeout(r, 0)), LIB_DEEP_BUDGET, fillOpenings, libEcoName, libPickPly,
+      pause: () => new Promise((r) => setTimeout(r, 8)), LIB_DEEP_BUDGET, fillOpenings, libEcoName, libPickPly,
       libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary, rescoreLosses,
     }))).then((c) => {
       libDb = c;

@@ -450,14 +450,20 @@ export function createPersist(host, onWriteFailure) {
     if (!dirty.size && !clearLegacy) return true;
     const gone = new Set(removed);
     const values = [];
+    const shardsKnown = !!(bulk && bulk.names());
     for (const name of dirty) {
-      const v = valueOf(name);
-      // a shard the library cannot serialise yet (not loaded) stays owed,
-      // and the manifest keeps whatever file it already names
-      if (v === undefined) continue;
-      // a shard the library emptied is a removal, like remove()'s
-      if (v == null && BULK.test(name)) gone.add(name);
-      values.push([name, v]);
+      // a shard is serialised when its turn to be written comes, not here:
+      // sixty-four of them at once held the main thread for 30 ms at 2 MB
+      // (the F3 line is 16). Newer than the stamp at worst, never older —
+      // a change after this point marks it dirty again anyway.
+      if (BULK.test(name)) {
+        // a shard the library cannot serialise yet (not loaded) stays owed,
+        // and the manifest keeps whatever file it already names
+        if (!shardsKnown && !(bulkOverride && bulkOverride.has(name))) continue;
+        values.push([name, undefined]);
+        continue;
+      }
+      values.push([name, valueOf(name)]);
     }
     const names = values.map(([name]) => name);
     if (!names.length && !gone.size && !clearLegacy) return true;
@@ -477,8 +483,10 @@ export function createPersist(host, onWriteFailure) {
       // disk does not name (STORE_ALT). Nothing the old manifest points at
       // is touched before the new one replaces it.
       const written = {};
-      for (const [name, value] of values) {
-        if (value == null) continue;
+      for (const [name, v0] of values) {
+        const value = v0 === undefined ? valueOf(name) : v0;
+        // a shard the library emptied is a removal, like remove()'s
+        if (value == null) { if (BULK.test(name)) gone.add(name); continue; }
         const file = base[name] === name ? name + STORE_ALT : name;
         const ok = await host.appdataWriteKey(file, value);
         if (ok == null) { mirrorEnabled = false; return false; }

@@ -30,6 +30,14 @@
 import { LibraryQuery } from "./library-query.js";
 import { LibraryDb } from "./library-db.js";
 
+/**
+ * Background work (the 本机 games, the index, the openings) runs in slices of
+ * this many ms with a pause between: the native mirror's own writes are held
+ * to 16 ms of main thread (v8-0-plan F3), and a slice that lands between two
+ * of its bridge calls counts against that.
+ */
+const SLICE = 6;
+
 /** Rows the list draws at a time; 「再显示」 adds this many more. */
 const PAGE = 100;
 
@@ -121,6 +129,18 @@ async function bootLibrary(d) {
   const namesThen = JSON.stringify(Array.isArray(header.names) ? header.names : []);
   const renamed = mode === "idb" && JSON.stringify(store.session.libNames) !== namesThen;
 
+  /** shard name → its games, for the current list (see shardText) */
+  let groups = null;
+  function shardGroups() {
+    const m = new Map();
+    for (const g of store.session.library) {
+      const k = st.shardOf(g.id);
+      let a = m.get(k);
+      if (!a) m.set(k, (a = []));
+      a.push(g);
+    }
+    return m;
+  }
   function shardMap() {
     const m = {};
     for (const g of store.session.library) m[st.shardOf(g.id)] = true;
@@ -162,6 +182,7 @@ async function bootLibrary(d) {
     for (const id of sigs.keys()) if (!live.has(id)) gone.push(id);
     for (const id of gone) sigs.delete(id);
     st.games = list;
+    groups = null;
     const touched = new Set(changed.concat(gone.map((id) => ({ id }))).map((g) => st.shardOf(g.id)));
     if (touched.size) Persist.touchBulk([...touched]);
     writeHeader();
@@ -266,7 +287,7 @@ async function bootLibrary(d) {
             put.push(e);
           }
           next.push(e);
-          if (Date.now() - t0 > 12) { await d.pause(); t0 = Date.now(); }
+          if (Date.now() - t0 > SLICE) { await d.pause(); t0 = Date.now(); }
         }
         const gone = [...have.keys()].filter((id) => !recOf.has(id));
         st.local = next;
@@ -479,7 +500,7 @@ async function bootLibrary(d) {
           g.eco = hit ? hit.eco : "";
           g.ecoName = hit ? hit.name || "" : "";
           n++;
-          if (Date.now() - t0 > 12) { await d.pause(); t0 = Date.now(); }
+          if (Date.now() - t0 > SLICE) { await d.pause(); t0 = Date.now(); }
         }
       }
       filling = null;
@@ -665,12 +686,10 @@ async function bootLibrary(d) {
   }
   renderClaim();
   if (renamed) { d.reclaimLibrary(); save(); }
-  // a migrated library's openings, in the background (see fillOpenings)
-  setTimeout(() => { fillOpenings(); }, 0);
   // what is not indexed yet (a migrated or restored library), in the
   // background; the position filter finds more as it goes
   if (mode !== "idb") st.games = store.session.library;
-  const indexing = st.indexMissing(12, d.pause).then(() => { if (listOpen()) renderList(); });
+  const indexing = st.indexMissing(SLICE, d.pause).then(() => { if (listOpen()) renderList(); });
   syncLocal();
 
   return {
@@ -691,7 +710,13 @@ async function bootLibrary(d) {
     pkOf: st.pkOf,
     // persist.js's port (BULK)
     shardNames: () => (mode === "idb" ? Object.keys(shardMap()) : []),
-    shardText: (name) => { st.games = store.session.library; return mode === "idb" ? st.shardText(name) : null; },
+    shardText: (name) => {
+      if (mode !== "idb") return null;
+      // grouped once per library state, not once per shard asked for
+      if (!groups || groups.list !== store.session.library) groups = { list: store.session.library, m: shardGroups() };
+      const g = groups.m.get(name);
+      return g ? JSON.stringify({ v: 1, games: g }) : null;
+    },
     restoreShards: async (texts) => { if (mode === "idb") await st.restoreShards(texts); },
     clear: () => {
       store.session.library = [];

@@ -1221,15 +1221,16 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   });
   await page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready, null, { timeout: 30000 }).catch(() => {});
   const libCount = await page.evaluate(() => window.__chess.library().games.length);
-  await page.waitForFunction(async (want) => {
+  await page.waitForFunction((want) => {
     const dec = (u8) => (u8 ? new TextDecoder().decode(u8) : "");
     try {
       const meta = JSON.parse(dec(window.__store.get("meta")));
+      if (!/"db":2/.test(dec(window.__store.get((meta.files && meta.files.library) || "library")))) return false;
       let games = 0;
       for (const k of meta.keys) if (/^lib[0-3][0-9a-f]$/.test(k)) games += JSON.parse(dec(window.__store.get(meta.files[k] || k))).games.length;
       return games === want;
     } catch (_) { return false; }
-  }, libCount, { timeout: 30000, polling: 250 }).catch(() => {});
+  }, libCount, { timeout: 90000, polling: 250 }).catch(() => {});
   const shards = await shardBytes();
   const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big }));
   console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节`);

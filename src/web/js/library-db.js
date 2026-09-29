@@ -84,7 +84,20 @@ async function idbBackend(idb, name) {
   const tx = (stores, mode) => db.transaction(stores, mode);
   return {
     kind: "idb",
-    async all() { return done(tx(["games"], "readonly").objectStore("games").getAll()); },
+    // a page at a time: one getAll() of a big library is one long structured
+    // clone on the main thread (tens of ms at 2 MB — v8-0-plan F3's 16 ms line)
+    async all() {
+      const out = [];
+      let from = null;
+      for (;;) {
+        const range = from == null ? null : IDBKeyRange.lowerBound(from, true);
+        const page = await done(tx(["games"], "readonly").objectStore("games").getAll(range, 400));
+        out.push(...page);
+        if (page.length < 400) return out;
+        from = page[page.length - 1].id;
+      }
+    },
+    async keys() { return done(tx(["games"], "readonly").objectStore("games").getAllKeys()); },
     async count() { return done(tx(["games"], "readonly").objectStore("games").count()); },
     async get(ids) {
       const s = tx(["games"], "readonly").objectStore("games");
@@ -137,6 +150,7 @@ function memoryBackend() {
   return {
     kind: "memory", games, meta, fail,
     async all() { check("all"); return [...games.values()].map(clone); },
+    async keys() { check("all"); return [...games.keys()]; },
     async count() { return games.size; },
     async get(ids) { check("all"); return ids.map((id) => clone(games.get(id))); },
     async put(records) {
@@ -243,7 +257,10 @@ function createLibraryStore(o) {
         // the value as found, before anything is written — whatever the
         // conversion below gets wrong, this can be read back by hand
         await backend.setMeta("v1:" + Date.now(), { raw });
-        const have = new Map((await backend.all()).map((r) => [r.id, r]));
+        // only the games both copies have are read whole
+        const stored = new Set(await backend.keys());
+        const both = list.filter((g) => g && typeof g.id === "string" && stored.has(g.id)).map((g) => g.id);
+        const have = new Map((both.length ? await backend.get(both) : []).filter(Boolean).map((r) => [r.id, r]));
         const put = [];
         for (const g of list) {
           if (!g || typeof g.id !== "string" || !g.id) continue;
@@ -257,7 +274,7 @@ function createLibraryStore(o) {
         }
         await backend.put(put);
         // read back: every id the v1 value held is in the store
-        const back = new Set((await backend.all()).map((r) => r.id));
+        const back = new Set(await backend.keys());
         const missing = list.filter((g) => g && typeof g.id === "string" && g.id && !back.has(g.id));
         if (missing.length) return { ok: false, error: "readback", missing: missing.length };
         return { ok: true, moved: list.length };
