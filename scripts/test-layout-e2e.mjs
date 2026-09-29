@@ -2300,7 +2300,10 @@ if (scenario()) {
         return { id: seg.id, label: label && label.offsetParent ? label.textContent.trim() : null,
                  stray: seg.getAttribute("aria-label"),
                  heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
-                 widths: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().width)))],
+                 // equal-width segments come from minmax(0, 1fr) columns; a fractional
+                 // share is snapped to 1/64 px per column, so two equal segments can
+                 // round to 204 and 205 — compare the raw widths instead
+                 widths: bs.map((b) => b.getBoundingClientRect().width),
                  spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent.trim()) };
       });
       return { n: rows.length,
@@ -2316,8 +2319,8 @@ if (scenario()) {
       assert(!s.stray, s.id + " (" + lang + "): and not a second copy of it as an aria-label");
       assert(s.heights.length === 1 && s.heights[0] < 40,
         s.id + " (" + lang + "): every segment is one line tall (" + s.heights.join(", ") + ")");
-      assert(s.widths.length === 1,
-        s.id + " (" + lang + "): every segment is the same width (" + s.widths.join(", ") + ")");
+      assert(Math.max(...s.widths) - Math.min(...s.widths) < 0.1,
+        s.id + " (" + lang + "): every segment is the same width (" + s.widths.map((w) => w.toFixed(2)).join(", ") + ")");
       assert(s.spill.length === 0,
         s.id + " (" + lang + "): no filter label breaks out of its button" +
         (s.spill.length ? " — " + s.spill.join(", ") : ""));
@@ -2359,7 +2362,10 @@ if (scenario()) {
         return { id: seg.id, label: label && label.offsetParent ? label.textContent.trim() : null,
                  stray: seg.getAttribute("aria-label"),
                  heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
-                 widths: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().width)))],
+                 // equal-width segments come from minmax(0, 1fr) columns; a fractional
+                 // share is snapped to 1/64 px per column, so two equal segments can
+                 // round to 204 and 205 — compare the raw widths instead
+                 widths: bs.map((b) => b.getBoundingClientRect().width),
                  spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent.trim()) };
       });
       return { n: rows.length,
@@ -2375,8 +2381,8 @@ if (scenario()) {
       assert(!s.stray, s.id + " (" + lang + "): 而且没有第二份 aria-label");
       assert(s.heights.length === 1 && s.heights[0] < 40,
         s.id + " (" + lang + "): 每一段都是一行高 (" + s.heights.join(", ") + ")");
-      assert(s.widths.length === 1,
-        s.id + " (" + lang + "): 每一段等宽 (" + s.widths.join(", ") + ")");
+      assert(Math.max(...s.widths) - Math.min(...s.widths) < 0.1,
+        s.id + " (" + lang + "): 每一段等宽 (" + s.widths.map((w) => w.toFixed(2)).join(", ") + ")");
       assert(s.spill.length === 0,
         s.id + " (" + lang + "): 文字没有从按钮里挤出来" +
         (s.spill.length ? " —— " + s.spill.join(", ") : ""));
