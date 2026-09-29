@@ -121,7 +121,11 @@ function entry(pred, what) {
 for (const d of inv.deps.filter((x) => /^[\w-]+\/[\w-]+$/.test(x.name))) {
   const want = "v" + leadingVersion(d.current);
   const re = new RegExp("uses:\\s*" + d.name.replace("/", "\\/") + "@(\\S+)", "g");
-  allEqual(inWorkflows(re), want, d.name, 1);
+  const found = inWorkflows(re);
+  allEqual(found, want, d.name, 1);
+  // "（全部 N 处）" is a claim too: 8.1 F1 wrote 12 for actions/checkout's 13
+  const said = /全部 (\d+) 处/.exec(d.current);
+  if (said) assert(found.length === Number(said[1]), `${d.name}：清单说全部 ${said[1]} 处，workflow 里正好 ${found.length} 处`);
 }
 
 // --- Stockfish: the vendored loader's own header --------------------------------
