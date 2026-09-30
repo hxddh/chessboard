@@ -772,6 +772,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "diff.easyplus": "初级+",
       "diff.normalminus": "中级−",
       "diff.skilled": "老练", "diff.normalplus": "中级+", "diff.hardplus": "高级+", "diff.expert": "专家",
+      "diff.expertplus": "专家+", "diff.master": "大师", "diff.masterplus": "大师+", "diff.strong": "强力", "diff.strongplus": "强力+", "diff.top": "顶级",
       "tip.diff.learner": "只算两步，按胜率损失抽样选着 —— 休闲之上的第一档",
       "tip.diff.improver": "只算两步，比练习档少犯错",
       "tip.diff.steady": "算三步，大失误少见",

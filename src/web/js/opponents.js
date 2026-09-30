@@ -12,7 +12,7 @@
 import { ChessRating } from "./rating.js";
 
 /** The rungs, weakest first. Every id has a row in engine.js TIERS. */
-const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "hard", "extreme"];
+const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "skilled", "easy", "easyplus", "normalminus", "normal", "normalplus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "top", "extreme"];
 
 /**
  * Each rung's rating, and how sure the fit is about it (±, one standard
@@ -80,6 +80,12 @@ const PERSONAS = [
   { id: "max", level: "hard", style: "off", icon: "crown" },
   { id: "iris", level: "hardplus", style: "off", icon: "eye" },
   { id: "otto", level: "expert", style: "off", icon: "medal" },
+  { id: "hugo", level: "expertplus", style: "off", icon: "award" },
+  { id: "zoe", level: "master", style: "off", icon: "trophy" },
+  { id: "lars", level: "masterplus", style: "off", icon: "flag" },
+  { id: "nora", level: "strong", style: "off", icon: "handshake" },
+  { id: "kit", level: "strongplus", style: "off", icon: "chart-line" },
+  { id: "vik", level: "top", style: "off", icon: "library" },
   { id: "fish", level: "extreme", style: "off", icon: "bot" },
 ];
 
@@ -92,7 +98,9 @@ const PERSONAS = [
  */
 const EN_NAME = {
   beginner: "Beginner", casual: "Casual", learner: "Practice", improver: "Improving", steady: "Steady",
-  solid: "Solid", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", hard: "Hard", extreme: "Max",
+  solid: "Solid", skilled: "Seasoned", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", normalplus: "Normal+",
+  hard: "Hard", hardplus: "Hard+", expert: "Expert", expertplus: "Expert+", master: "Master", masterplus: "Master+",
+  strong: "Strong", strongplus: "Strong+", top: "Top", extreme: "Max",
 };
 
 function personaById(id) { return PERSONAS.find((p) => p.id === id) || null; }
@@ -375,7 +383,7 @@ function ratingOfStats(stats) {
  * segment's first. 入门 is the hand-weakened rungs (they play a step below
  * UCI_Elo's floor); 进阶 starts at 初级, the first Stockfish-limited rung.
  */
-const SEGMENTS = [null, "easy", "hard"]; // where each starts (the first at the bottom)
+const SEGMENTS = [null, "easy", "expert"]; // where each starts (the first at the bottom)
 function segmentOf(level) {
   const i = LEVELS.indexOf(level);
   let seg = 0;

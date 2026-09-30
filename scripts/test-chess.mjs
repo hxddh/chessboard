@@ -2521,8 +2521,11 @@ for (const lang of CONTENT_LANGS) {
     const up = O.LEVELS.slice(O.LEVELS.indexOf("easy"), O.LEVELS.indexOf("extreme"));
     const lvl = (elo) => { const e = (elo - 1320) / 1870; return Math.min(19, Math.max(0, ((37.2473 * e - 40.8525) * e + 22.2944) * e - 0.311438)); };
     const elo = up.filter((id) => E.TIERS[id].elo != null), nodes = up.filter((id) => E.TIERS[id].nodes);
-    assert(up.length >= 8 && up.length <= 12 && elo.length + nodes.length === up.length && nodes.length >= 1 && nodes.length <= 2 &&
-      up.indexOf(nodes[0]) === elo.length, "T1: 8–12 rungs from 初级 below 不限档, UCI_Elo ones then 1–2 node-limited (" + up.join(",") + ")");
+    // (the plan expected 8–10 between 初级 and 不限档 and 1–2 by nodes; the
+    // games asked for 13, four by nodes — docs/v8-1-plan.md §9 M3)
+    assert(up.length >= 8 && elo.length + nodes.length === up.length && nodes.length >= 1 &&
+      up.indexOf(nodes[0]) === elo.length && nodes.every((id, i) => i === 0 || E.TIERS[id].nodes > E.TIERS[nodes[i - 1]].nodes),
+      "T1: from 初级 up to 不限档, UCI_Elo rungs, then node-limited ones in growing counts (" + up.join(",") + ")");
     const off = elo.filter((id) => E.TIERS[id].depth !== 1 + Math.floor(lvl(E.TIERS[id].elo)) || !E.TIERS[id].minMs);
     assert(off.length === 0, "T1: each UCI_Elo rung searches to its pick depth, and holds its reply like a depth rung" + (off.length ? " — " + off : ""));
     assert(E.searchCmd({ depth: 3 }, Math.random) === "go depth 3" && E.searchCmd({ movetime: 700 }, Math.random) === "go movetime 700" &&
@@ -2618,7 +2621,7 @@ for (const lang of CONTENT_LANGS) {
   // the engine on a clock: search capped at the rung's calibrated movetime,
   // pace growing with the clock up to its own cap, never past a 20th of it
   {
-    const easy = E.TIERS.easy;
+    const easy = E.TIERS.extreme; // (v8-1-plan T1: the one movetime rung left)
     const blitz = O.thinkPlan(easy, 180000, 0), rapid = O.thinkPlan(easy, 1800000, 0), low = O.thinkPlan(easy, 4000, 0);
     assert(blitz.search <= easy.movetime && rapid.search === easy.movetime,
       "B4: a long control does not search past the rung's calibrated movetime (" + blitz.search + " / " + rapid.search + ")");

@@ -51,6 +51,23 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * - `easyplus` / `normalminus`: 1700 scored 94% against 1320, three rungs
    *   apart, not one.
    *
+   * v8-1-plan T1 — the upper half re-stepped by what the games measured, not
+   * by the UCI_Elo numbers (docs/measured.json `ladder`; §9 M3 has the runs):
+   *
+   * - UCI_Elo is Stockfish's Skill Level (a cubic in the Elo, 0–19), and
+   *   Stockfish picks its move once, at depth 1 + ⌊level⌋, from its top
+   *   MultiPV lines (at least 4) with noise; searching on refines only the
+   *   score it reports. So strength moves in whole depths: 1450 and 1575
+   *   were a depth apart, 1575 and 1700 the same depth — 8.0's 78% and 55%.
+   *   Each Elo rung now searches exactly to its pick depth (the same move
+   *   distribution as a movetime search, in milliseconds, and the same on
+   *   every machine) and holds its reply for `minMs`. Where one depth is too
+   *   big a step, a longer MultiPV list is the finer knob (`easyplus`).
+   * - Past depth 9 the handicap stops paying: 1,000 nodes of full-strength
+   *   search beat depth 10's pick every game. The top rungs are full strength
+   *   by node count (`nodes`, drawn ±15% a move — searchCmd).
+   * - `skilled` is one more win-chance rung: 扎实 → 初级 was 88%.
+   *
    * These notes sit here and not beside the rows: a comment inside the
    * literal ships in the bundle (esbuild keeps it), and F5's budget is bytes.
    */
@@ -111,6 +128,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
     hard: { elo: 2290, depth: 6, minMs: 800 },
     hardplus: { elo: 2450, depth: 7, minMs: 850 },
     expert: { elo: 2570, depth: 8, minMs: 900 },
+    expertplus: { elo: 2670, depth: 9, minMs: 950 },
+    master: { elo: 2750, depth: 10, minMs: 1000 },
+    masterplus: { nodes: 400, minMs: 1000 },
+    strong: { nodes: 2000, minMs: 1000 },
+    strongplus: { nodes: 10000, minMs: 1100 },
+    top: { nodes: 50000, minMs: 1100 },
     extreme: { elo: null, movetime: 1200 },
   };
 
