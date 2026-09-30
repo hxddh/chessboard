@@ -917,7 +917,7 @@
   - `startLesson` 和 `startEndgame` 一样接着上一轮的令牌（停下时也记着 `lastLearnToken`），从残局回到一课，上一轮还在路上的引擎回复不会对上新一轮。
   - 守和的「新后」按整盘算：开局的后被吃掉以后，对方再变出来的后算新后（`lowQueens` 从着法记录里数：被白方吃掉的减、黑方升变的加，取最少的时候）。test-endgames 2 项（改前红）。
   - 学习文件合并：这里已经毕业的残局（做过、复习项已离开队列）不被旧文件的复习项复活；题目复习队列按 srs.js 的 `{s, n}` 比较（原来比较一个不存在的 `streak`，本地条目总是赢）。
-- **测试**（本机 Chromium，一次一个）：`test:static` 全过；test-repertoire-e2e、test-trainer-e2e、test-explorer-e2e、test-library-e2e、test-endgames-e2e、test-persist-e2e、test-engine.mjs 见最终报告。
+- **测试**（本机 Chromium，一次一个）：`test:static` 全过（含 test-engine.mjs）；test-trainer-e2e、test-repertoire-e2e、test-explorer-e2e、test-library-e2e、test-endgames-e2e、test-persist-e2e 全过（persist-e2e 这次一遍过，没有碰到计时项）。app.js 行数不变（6,702）；主包 869.1 → 872.4 KB（预算内），chunk-rep.js 18.3 → 21.3 KB（带上 rep-db.js 与 srs.js），chunk-libdb.js 少了开局书的子接口。
 - **已知限制**：
   - 撤销只在提示还在时方便点到（普通提示停约 9 秒）；之后要撤就只能重新加。
   - 「一时读不出分片」那一次会话里的评分不写（为了不盖掉分片里真正的卡片）；下次启动读得出就接着用分片里的。
