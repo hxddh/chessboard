@@ -26,7 +26,7 @@ import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
 import { libOf, storedLib } from "./lib/library-view.mjs";
 import { Chess } from "../src/web/js/chess.js";
-import { record, RECORDING } from "./measurements.mjs";
+import { record, RECORDING, read as readMeasured } from "./measurements.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -1827,6 +1827,38 @@ async function c1Context(keys, init) {
   if (init) await ctx.addInitScript(init);
   return ctx;
 }
+/**
+ * v8-1-plan F3: in the page, from its first script on (when the session says
+ * so): the moment 全部 N 局 shows it is pressed, the moment the list has rows
+ * the search box is typed into, and each moment is taken then — a
+ * MutationObserver's callback, not a poll that waits behind a frame.
+ * `fromSummary`: the rows were there before the entries were.
+ */
+function coldProbe() {
+  if (!sessionStorage.getItem("f3.cold")) return;
+  const out = window.__cold = {};
+  const libReady = () => !!(window.__chess && window.__chess.library && window.__chess.library().ready);
+  const look = () => {
+    const b = document.getElementById("lib-open");
+    if (out.pressed == null && b && !b.hidden) { out.pressed = performance.now(); b.click(); }
+    const modal = document.getElementById("lib-list-modal");
+    if (out.rows == null && modal && modal.classList.contains("show") && document.querySelector("#lib-list .hist-row")) {
+      out.rows = performance.now();
+      out.fromSummary = !libReady();
+      const q = document.getElementById("lib-q");
+      q.value = "magnus";
+      q.dispatchEvent(new Event("input"));
+      out.search = performance.now();
+      out.searchCount = document.getElementById("lib-list-count").textContent;
+    }
+    if (out.ready == null && libReady()) out.ready = performance.now();
+    if (out.rows != null && out.ready != null) { mo.disconnect(); clearInterval(tick); }
+  };
+  const mo = new MutationObserver(look);
+  const tick = setInterval(look, 50);
+  mo.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+}
+
 const c1Ready = (page) => page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready,
   null, { timeout: 60000 }).catch(() => {});
 
@@ -2109,7 +2141,7 @@ function tenThousand() {
   const t0 = Date.now();
   const big = tenThousand();
   console.log(`  C1：生成 1 万局 PGN ${(big.length / 1048576).toFixed(1)} MB（${Date.now() - t0} ms）`);
-  const ctx = await c1Context({ "chess.v1.library": { v: 1, names: ["hxddh"], games: [] } });
+  const ctx = await c1Context({ "chess.v1.library": { v: 1, names: ["hxddh"], games: [] } }, coldProbe);
   const { page, errs } = await open(ctx);
   await c1Ready(page);
   const ti = Date.now();
@@ -2186,6 +2218,50 @@ function tenThousand() {
   C1.loadMs = Date.now() - tr;
   const back = await libOf(page);
   assert(back.games.length === 10000 && back.mode === "idb", `C1 重启：1 万局从 IndexedDB 读回(${back.games.length}，${C1.loadMs} ms 到可用)`);
+
+  // v8-1-plan F3: 冷启动. The page opens the list the moment 全部 N 局 is
+  // there and types into its search at once (coldProbe, in the page, so no
+  // poll of ours waits behind a frame); times are from the navigation's
+  // start. The plan's lines: list visible ≤ 1.5 s, search usable ≤ 4.5 s —
+  // the search on the summary at once, "passes through this position" when
+  // the index has arrived (ready). Best of three for the list (a regression
+  // moves every run; one slow frame on a CI runner moves one), worst of
+  // three for ready.
+  await page.evaluate(() => { sessionStorage.setItem("f3.cold", "1"); });
+  const cold = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = Date.now();
+    await page.reload();
+    await c1Ready(page);
+    await page.waitForFunction(() => window.__cold && window.__cold.rows != null && window.__cold.ready != null, null, { timeout: 30000 }).catch(() => {});
+    const r = await page.evaluate(() => Object.assign({ origin: performance.timeOrigin }, window.__cold));
+    r.reloadReady = Date.now() - t0;
+    r.posHits = await page.evaluate(() => window.__chess.libDb().query({ position: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1" }).length);
+    r.fullText = await page.evaluate(() => window.__chess.libDb().query({ text: "magnus" }).length);
+    cold.push(r);
+    await page.evaluate(() => { const q = document.getElementById("lib-q"); q.value = ""; q.dispatchEvent(new Event("input")); });
+    await page.click("#lib-list-close").catch(() => {});
+  }
+  await page.evaluate(() => { sessionStorage.removeItem("f3.cold"); });
+  const r0 = (x) => Math.round(x);
+  console.log("  F3 冷启动(ms，从导航开始)：" + cold.map((r) => `列表 ${r0(r.rows)} · 搜索 ${r0(r.search)} · 局面索引 ${r0(r.ready)}`).join(" | "));
+  C1.cold = {
+    listVisibleMs: r0(Math.min(...cold.map((r) => r.rows))),
+    searchUsableMs: r0(Math.min(...cold.map((r) => r.search))),
+    readyMs: r0(Math.max(...cold.map((r) => r.ready))),
+    runs: cold.map((r) => ({ list: r0(r.rows), search: r0(r.search), ready: r0(r.ready), reload: r.reloadReady })),
+  };
+  assert(cold.every((r) => r.rows != null && r.fromSummary),
+    "F3 重启：列表先按摘要画出来，那时整局还没读完(" + cold.map((r) => r.fromSummary).join(",") + ")");
+  assert(cold.every((r) => r.searchCount && r.searchCount.includes(String(r.fullText)) && r.fullText > 100),
+    "F3 重启：摘要上的搜索和整局读完后的搜索数得一样(" + cold.map((r) => r.searchCount + " / " + r.fullText).join("；") + ")");
+  assert(cold.every((r) => r.posHits === api.position.n),
+    "F3 重启：索引到了之后「包含这个局面」照常(" + cold.map((r) => r.posHits).join(",") + " = " + api.position.n + ")");
+  if (ENGINE === "chromium") {
+    assert(C1.cold.listVisibleMs <= 1500, `F3 1 万局重启到列表可见 ≤ 1.5 s(${C1.cold.listVisibleMs} ms，三次里最快)`);
+    assert(C1.cold.searchUsableMs <= 4500 && C1.cold.readyMs <= 4500,
+      `F3 1 万局重启到搜索可用 ≤ 4.5 s(按摘要 ${C1.cold.searchUsableMs} ms；局面索引 ${C1.cold.readyMs} ms，三次里最慢)`);
+  }
 
   // the whole library out as PGN, into an empty profile, game for game
   await page.click("#lib-open");
@@ -2533,7 +2609,7 @@ let t5Export = "";
 {
   const r1 = (x) => Math.round(x * 10) / 10;
   const figures = {
-    what: "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms",
+    what: "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms。coldStart（v8-1-plan F3）：重启后从导航开始到列表可见、按摘要搜索可用、局面索引到达（ready），列表与搜索取三次最快、索引取三次最慢；验收线 1.5 s / 4.5 s",
     script: "node scripts/test-library-e2e.mjs --record",
     games: 10000,
     importMs: C1.importMs, loadMs: C1.loadMs,
@@ -2541,7 +2617,13 @@ let t5Export = "";
     queryHits: C1.api && Object.fromEntries(Object.entries(C1.api).map(([k, r]) => [k, r.n])),
     pageMs: C1.ui && { typed: r1(C1.ui.typed), position: r1(C1.ui.pos), speed: r1(C1.ui.seg) },
     limitMs: 200,
+    // v8-1-plan F3: from the navigation's start; list and search best of three, index worst of three
+    coldStart: C1.cold && Object.assign({ limitMs: { list: 1500, search: 4500 } }, C1.cold),
   };
+  // the same measurement on the code before F3 (this suite run over 17334e1's
+  // src/web), kept across re-recordings
+  const had = (readMeasured().libraryDb || {}).coldStartBefore;
+  if (had) figures.coldStartBefore = had;
   console.log("C1 measured: " + JSON.stringify(figures));
   if (RECORDING && C1.api && C1.ui) record("libraryDb", figures);
 }

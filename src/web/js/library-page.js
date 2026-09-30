@@ -45,6 +45,9 @@ const SLICE = 6;
 /** Rows the list draws at a time; 「再显示」 adds this many more. */
 const PAGE = 100;
 
+/** How long the boot waits for the start-up's summary read (ms, v8-1-plan F3). */
+const PREFETCH_WAIT = 3000;
+
 /** The header as read from localStorage (`chess.v1.library`), or null. */
 function readHeader(raw) {
   if (raw == null || raw === "") return null;
@@ -72,7 +75,16 @@ async function bootLibrary(d) {
   const header = readHeader(Persist.get("library")) || {};
   let claimAsked = !!header.claimAsked;
   let claim = null;   // the offer on screen (renderClaim)
-  const backend = await LibraryDb.idbBackend(d.idb);
+  // v8-1-plan F3: the connection and the summary asked for at start-up
+  // (library-sum.js), if they were. Not waited for past PREFETCH_WAIT: an
+  // open that never answers (WebKit has had those) must not hold the
+  // library; the library opens its own then, and a late one is closed.
+  let pre = null;
+  if (d.summary) {
+    pre = await Promise.race([d.summary, new Promise((r) => setTimeout(() => r(null), PREFETCH_WAIT))]);
+    if (!pre) d.summary.then((late) => { if (late) try { late.db.close(); } catch (_) { /* already */ } });
+  }
+  const backend = await LibraryDb.idbBackend(d.idb, undefined, pre && pre.db);
   const st = LibraryDb.createLibraryStore({ backend: backend || LibraryDb.memoryBackend(), Chess: d.Chess, withLock: d.withLock });
   // "idb": games in IndexedDB. "legacy": no IndexedDB here, or the migration
   // was refused — the pre-C1 shape (one localStorage value) for this session
@@ -86,6 +98,305 @@ async function bootLibrary(d) {
   // set once restoreShards has replaced the games: the page reloads onto
   // them, and nothing it still holds may be written back first (M5 review P3-4)
   let frozen = false;
+
+  // --- the list page -------------------------------------------------------
+  // Above the load on purpose (v8-1-plan F3): with a summary on file, the
+  // page opens on it while the entries are still being read.
+  const localRec = new Map();   // entry id → the stats record it stands for
+  const listModal = () => doc.getElementById("lib-list-modal");
+  const listOpen = () => { const m = listModal(); return !!m && m.classList.contains("show"); };
+  const diagOpen = () => { const m = doc.getElementById("lib-modal"); return !!m && m.classList.contains("show"); };
+  const f = store.ui.libFilter = Object.assign({ result: "all", color: "all", sort: "t", src: "all", tc: "all",
+    q: "", from: "", to: "", pos: false }, store.ui.libFilter);
+  let shown = PAGE;
+  /**
+   * v8-1-plan F3: the summary's stand-ins (LibraryDb.stubOf) until the
+   * entries are loaded, then null. The page draws and searches them like
+   * entries; what needs a whole game (open it, deepen it, export, "passes
+   * through this position") waits for `loaded`.
+   */
+  let stubs = null;
+  let loadedNow = null;
+  const loaded = new Promise((r) => { loadedNow = r; });
+
+  /** Every game the list can show: imported first, then 本机. */
+  const allGames = () => stubs || store.session.library.concat(st.local);
+  /** A row's own accuracy, mistakes and depth — from the entry, or from its summary row. */
+  const accOf = (g) => (g.stub ? (typeof g.stub.acc === "number" ? g.stub.acc : null)
+    : g.an && g.an.acc && g.side ? g.an.acc[g.side] : null);
+  const depthOf = (g) => (g.stub ? g.stub.an : g.an ? Number(g.an.budget) || 0 : 0);
+  const analysed = (g) => (g.stub ? g.stub.an > 0 : !!g.an);
+  /** The query the page's controls describe. */
+  function pageQuery() {
+    return { text: f.q, from: f.from, to: f.to, result: f.result, color: f.color, tc: f.tc, src: f.src,
+      position: f.pos ? d.boardFen() : "" };
+  }
+  /**
+   * A diagnosis pick (7.1) narrows the games further — the imported ones, or
+   * those of the source the diagnosis was read from (v8-1-plan T5: `src`).
+   */
+  function pickMatches(g) {
+    const pick = store.ui.libPick;
+    if (!pick) return true;
+    const src = pick.src || "import";
+    if (src !== "all" && (g.src === "local") !== (src === "local")) return false;
+    if (pick.kind === "eco") return g.eco === pick.value;
+    return d.libPickPly(g) != null;
+  }
+
+  /** The second line: when, how well, how many mistakes, which opening. */
+  function subOf(g) {
+    const bits = [];
+    if (g.src === "local") {
+      if (g.date) bits.push(g.date);
+      if (g.plies) bits.push(tf(Math.ceil(g.plies / 2) === 1 ? "mm.moveCount.one" : "mm.moveCount.other", [Math.ceil(g.plies / 2)]));
+      if (typeof g.acc === "number") bits.push(tf("hist.acc", [g.acc]));
+    } else {
+      if (g.date && g.date !== "?") bits.push(g.date);
+      const acc = accOf(g);
+      if (Number.isFinite(acc)) bits.push(tf("lib.rowAcc", [Math.round(acc * 10) / 10]));
+      if (analysed(g)) bits.push(tf("lib.rowBad", [g.stub ? g.stub.bad : LibraryDb.badCount(g)]));
+      else bits.push(t(g.unplayable ? "lib.rowUnplayable" : "lib.rowPending"));
+      if (LibraryQuery.tcClass(g.tc)) bits.push(t("lib.tc." + LibraryQuery.tcClass(g.tc)));
+    }
+    if (g.eco) bits.push(g.eco + " " + d.libEcoName(g.eco, g.ecoName));
+    return bits.join(" · ");
+  }
+  /** A 本机 game's headline: the history's own words (result · level · colour). */
+  function localLabel(g) {
+    const res = t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw");
+    return [res, t("diff." + g.diff), t(g.side === "b" ? "hist.black" : "hist.white")].join(" · ");
+  }
+  function rowOf(g) {
+    const row = doc.createElement("div");
+    row.className = "hist-row";
+    const load = doc.createElement("button");
+    load.type = "button";
+    load.className = "pick-item";
+    if (g.src === "local") {
+      load.dataset.loc = g.ref;
+      load.textContent = localLabel(g);
+      // v8-0-plan C1: 对局历史 is part of the library now, and says where it came from
+      const tag = doc.createElement("span");
+      tag.className = "pick-tag";
+      tag.textContent = t("lib.srcLocal");
+      load.appendChild(tag);
+    } else {
+      load.dataset.lib = g.id;
+      load.textContent = d.libraryLabel(g);
+      // v8-0-plan C2: a game from Lichess / Chess.com (synced or downloaded) says so, as 本机 does
+      const site = LibraryQuery.siteOf(g);
+      if (site) {
+        const tag = doc.createElement("span");
+        tag.className = "pick-tag";
+        tag.textContent = site;
+        load.appendChild(tag);
+      }
+    }
+    const sub = doc.createElement("span");
+    sub.className = "pick-sub";
+    sub.textContent = subOf(g);
+    load.appendChild(sub);
+    row.appendChild(load);
+    const act = doc.createElement("button");
+    act.type = "button";
+    act.className = "row-act";
+    if (g.src === "local") {
+      act.dataset.locPgn = g.ref;
+      act.textContent = t("hist.pgn");
+      row.appendChild(act);
+    } else if (analysed(g) && !g.unplayable && depthOf(g) < d.LIB_DEEP_BUDGET) {
+      // 「再深一遍」 only where there is something to deepen (7.2 A1, P3)
+      act.dataset.libDeep = g.id;
+      act.textContent = t("lib.deepen");
+      act.title = t("tip.libDeepen");
+      row.appendChild(act);
+    }
+    return row;
+  }
+
+  /** The measured cost of the last search, for docs/measured.json. */
+  const last = { ms: 0, n: 0 };
+  function renderList() {
+    const list = doc.getElementById("lib-list");
+    if (!list) return;
+    const t0 = performance.now();
+    const all = allGames();
+    for (const g of all) {
+      if (g.src === "local" && (!g.opp || g.oppLang !== store.ui.langId)) { g.opp = t("diff." + g.diff); g.oppLang = store.ui.langId; }
+    }
+    // v8-1-plan F3: "passes through this position" needs the index, which
+    // comes with the entries — until then it finds nothing and says so
+    const waiting = f.pos && !!stubs;
+    let rows = waiting ? [] : LibraryQuery.query(all, pageQuery(), st.pkOf);
+    if (store.ui.libPick) rows = rows.filter(pickMatches);
+    if (f.sort === "acc") {
+      // worst first; a game with no accuracy to rank goes last
+      const rank = (g) => {
+        const a = g.src === "local" ? g.acc : accOf(g);
+        return typeof a === "number" ? a : Infinity;
+      };
+      rows.sort((a, b) => rank(a) - rank(b));
+    } else {
+      rows.sort((a, b) => (b.t || 0) - (a.t || 0));
+    }
+    const page = rows.slice(0, shown);
+    // rows carry the game's id, never an index (7.4 D1). A summary row draws
+    // the row its entry does (v8-1-plan F3), so the entries arriving leave
+    // the rows in place — none is rebuilt under a press (7.6)
+    reconcile(list, page, (g) => g.id,
+      (g) => [store.ui.langId, g.outcome, g.side, g.eco, analysed(g) ? "a" + depthOf(g) : "-", g.unplayable ? "u" : "-", g.acc].join("|"),
+      (g) => rowOf(g));
+    if (!rows.length && !waiting) {
+      const p = doc.createElement("p");
+      p.className = "hint";
+      p.textContent = t("hist.noneMatch");
+      list.appendChild(p);
+    }
+    const more = doc.getElementById("lib-more");
+    if (more) {
+      more.hidden = rows.length <= page.length;
+      more.textContent = tf("lib.more", [Math.min(PAGE, rows.length - page.length)]);
+    }
+    const count = doc.getElementById("lib-list-count");
+    if (count) {
+      const filtered = rows.length !== all.length || !!store.ui.libPick;
+      count.hidden = !filtered;
+      count.textContent = tf("hist.showing", [rows.length, all.length]);
+    }
+    const note = doc.getElementById("lib-pick-note");
+    if (note) {
+      note.hidden = !store.ui.libPick;
+      note.textContent = store.ui.libPick ? store.ui.libPick.label : "";
+    }
+    const clear = doc.getElementById("lib-pick-clear");
+    if (clear) clear.hidden = !store.ui.libPick;
+    const pos = doc.getElementById("lib-pos-note");
+    if (pos) {
+      // what was played next from the position on the board — the
+      // explorer's question (C3), asked of the games this list is showing
+      const s = f.pos && !waiting ? LibraryQuery.gamesWithPosition(rows, d.boardFen(), st.pkOf) : null;
+      pos.hidden = !s && !waiting;
+      if (waiting) pos.textContent = tf("lib.loading", [all.length]);
+      else if (s) {
+        const top = s.moves.slice(0, 5).map((m) => m.san + " " + m.n).join(" · ");
+        pos.textContent = tf("lib.posStat", [s.total, top || "—"]);
+      }
+    }
+    for (const [seg, key, attr] of [["lib-result-seg", "result", "lres"], ["lib-color-seg", "color", "lcol"],
+      ["lib-sort-seg", "sort", "lsort"], ["lib-src-seg", "src", "lsrc"], ["lib-tc-seg", "tc", "ltc"]]) {
+      doc.querySelectorAll("#" + seg + " button").forEach((b) => b.classList.toggle("active", b.dataset[attr] === f[key]));
+    }
+    const posBtn = doc.getElementById("lib-pos");
+    if (posBtn) posBtn.setAttribute("aria-pressed", f.pos ? "true" : "false");
+    last.ms = performance.now() - t0;
+    last.n = rows.length;
+  }
+
+
+  function openList(pick, opts) {
+    // a pick comes from a diagnosis row, read from the source on its row (T5)
+    if (pick && !pick.src) pick.src = diagSrc();
+    store.ui.libPick = pick || null;
+    // a diagnosis pick is about imported games; show them, whatever the
+    // source row was left on
+    // …and the pick is the whole question: the page's own search steps aside
+    if (opts && opts.src) f.src = opts.src;
+    else if (pick) Object.assign(f, { src: "all", q: "", from: "", to: "", tc: "all", pos: false });
+    for (const [id, key] of [["lib-from", "from"], ["lib-to", "to"]]) {
+      const el = doc.getElementById(id);
+      if (el && el.value !== f[key]) el.value = f[key];
+    }
+    shown = PAGE;
+    const q = doc.getElementById("lib-q");
+    if (q && q.value !== f.q) q.value = f.q;
+    // an opening name needs the ECO chunk; the fill asks for it, and redraws.
+    // Opened on the summary (v8-1-plan F3), both wait for the entries: the
+    // end of the boot runs them anyway
+    if (!stubs) fillOpenings();
+    renderList();
+    Dlg.open(listModal());
+    if (!stubs) syncLocal();
+  }
+  /** A press on the list is under way (see the entries' arrival, 7.6). */
+  let pressed = false;
+  /** Every control on the list page, wired once. */
+  function wire() {
+    const list = doc.getElementById("lib-list");
+    if (list) {
+      list.addEventListener("pointerdown", () => { pressed = true; });
+      for (const ev of ["pointerup", "pointercancel"]) doc.addEventListener(ev, () => { pressed = false; }, true);
+      list.onclick = (ev) => {
+        // a row drawn from the summary opens its game once the game is here (v8-1-plan F3)
+        if (stubs) { if (ev.target.closest("button")) loaded.then(() => list.onclick(ev)); return; }
+        const deep = ev.target.closest("button[data-lib-deep]");
+        if (deep) { d.deepenLibraryGame(deep.dataset.libDeep); return; }
+        const pgn = ev.target.closest("button[data-loc-pgn]");
+        if (pgn) {
+          const rec = localRec.get("loc:" + pgn.dataset.locPgn);
+          if (rec) d.copyText(rec.pgn, t("hist.pgnCopied"));
+          return;
+        }
+        const loc = ev.target.closest("button[data-loc]");
+        if (loc) {
+          const rec = localRec.get("loc:" + loc.dataset.loc);
+          if (!rec) return;
+          if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
+          Dlg.close(listModal());
+          d.loadHistoryRecord(rec);
+          return;
+        }
+        const b = ev.target.closest("button[data-lib]");
+        if (b) d.loadFromLibrary(b.dataset.lib);
+      };
+    }
+    const segs = [["lib-result-seg", "result", "lres"], ["lib-color-seg", "color", "lcol"], ["lib-sort-seg", "sort", "lsort"],
+      ["lib-src-seg", "src", "lsrc"], ["lib-tc-seg", "tc", "ltc"]];
+    for (const [id, key, attr] of segs) {
+      const seg = doc.getElementById(id);
+      if (seg) seg.onclick = (ev) => {
+        const b = ev.target.closest("button");
+        if (!b || b.dataset[attr] == null || f[key] === b.dataset[attr]) return;
+        f[key] = b.dataset[attr];
+        shown = PAGE;
+        renderList();
+      };
+    }
+    const q = doc.getElementById("lib-q");
+    if (q) q.oninput = () => { f.q = q.value; shown = PAGE; renderList(); };
+    for (const [id, key] of [["lib-from", "from"], ["lib-to", "to"]]) {
+      const el = doc.getElementById(id);
+      if (el) el.onchange = () => { f[key] = el.value; shown = PAGE; renderList(); };
+    }
+    const pos = doc.getElementById("lib-pos");
+    if (pos) pos.onclick = () => { f.pos = !f.pos; shown = PAGE; renderList(); };
+    const more = doc.getElementById("lib-more");
+    if (more) more.onclick = () => { shown += PAGE; renderList(); };
+    const clearPick = doc.getElementById("lib-pick-clear");
+    if (clearPick) clearPick.onclick = () => { store.ui.libPick = null; renderList(); };
+    const exp = doc.getElementById("lib-export");
+    if (exp) exp.onclick = () => { exportPgn(); };
+  }
+  wire();
+
+  /**
+   * v8-1-plan F3: the list before the games. The store keeps a summary row
+   * per game beside the games (library-db.js summaryOf), and the header
+   * carries its id; when the two agree and the summary covers every record,
+   * the page can be opened on it now — one read of ~1.5 MB at ten thousand
+   * games — while the entries and their index are read after it. Not with a
+   * v1 library still to migrate: its games are not in the store yet.
+   */
+  if (backend && header.db === 2 && typeof header.sum === "string" && !(Array.isArray(header.games) && header.games.length)) {
+    const rows = await st.readSummary(header.sum, pre && pre.stored);
+    if (rows && rows.length) {
+      const imp = [], loc = [];
+      for (const r of rows) (r.src === "local" ? loc : imp).push(LibraryDb.stubOf(r));
+      imp.sort((a, b) => (b.t || 0) - (a.t || 0));
+      stubs = imp.concat(loc);
+      if (d.onSummary) d.onSummary({ count: imp.length, openList, renderList, loaded });
+    }
+  }
 
   // --- migrate, recover, load ---------------------------------------------
   const v1Games = Array.isArray(header.games) ? header.games : [];
@@ -192,8 +503,11 @@ async function bootLibrary(d) {
     if (mode !== "idb") {
       return Persist.setJson("library", { v: 1, games: store.session.library, names, claimAsked: claimAsked || undefined });
     }
+    // `sum` (v8-1-plan F3): the store's summary is this library's. A build
+    // without the summary writes the header without it, and the next launch
+    // then waits for the entries instead of trusting rows it did not keep
     return Persist.setJson("library", { v: 1, games: [], names, db: 2, n: store.session.library.length,
-      claimAsked: claimAsked || undefined });
+      claimAsked: claimAsked || undefined, sum: st.sumId() || undefined });
   }
 
   /**
@@ -260,6 +574,7 @@ async function bootLibrary(d) {
       const list = store.session.library.filter((g) => !goneIds.has(g.id) && !byId.has(g.id));
       for (const g of byId.values()) { d.rescoreLosses(g); list.push(g); sigs.set(g.id, sigOf(g)); }
       for (const id of goneIds) sigs.delete(id);
+      st.forget([...goneIds]);
       list.sort((a, b) => (b.t || 0) - (a.t || 0));
       store.session.library = list;
       st.games = list;
@@ -269,7 +584,6 @@ async function bootLibrary(d) {
   }
 
   // --- 本机: the play history as library entries ---------------------------
-  const localRec = new Map();   // entry id → the stats record it stands for
   /** "1-0" etc. from the player's colour and outcome. */
   const boardResult = (rec) => (rec.result === "draw" ? "1/2-1/2"
     : (rec.result === "win") === (rec.color !== "b") ? "1-0" : "0-1");
@@ -346,186 +660,6 @@ async function bootLibrary(d) {
     return run.p;
   }
 
-  // --- the list page -------------------------------------------------------
-  const listModal = () => doc.getElementById("lib-list-modal");
-  const listOpen = () => { const m = listModal(); return !!m && m.classList.contains("show"); };
-  const diagOpen = () => { const m = doc.getElementById("lib-modal"); return !!m && m.classList.contains("show"); };
-  const f = store.ui.libFilter = Object.assign({ result: "all", color: "all", sort: "t", src: "all", tc: "all",
-    q: "", from: "", to: "", pos: false }, store.ui.libFilter);
-  let shown = PAGE;
-
-  /** Every game the list can show: imported first, then 本机. */
-  const allGames = () => store.session.library.concat(st.local);
-  /** The query the page's controls describe. */
-  function pageQuery() {
-    return { text: f.q, from: f.from, to: f.to, result: f.result, color: f.color, tc: f.tc, src: f.src,
-      position: f.pos ? d.boardFen() : "" };
-  }
-  /**
-   * A diagnosis pick (7.1) narrows the games further — the imported ones, or
-   * those of the source the diagnosis was read from (v8-1-plan T5: `src`).
-   */
-  function pickMatches(g) {
-    const pick = store.ui.libPick;
-    if (!pick) return true;
-    const src = pick.src || "import";
-    if (src !== "all" && (g.src === "local") !== (src === "local")) return false;
-    if (pick.kind === "eco") return g.eco === pick.value;
-    return d.libPickPly(g) != null;
-  }
-
-  /** How many of this player's own plies in a game were `?` or `??`. */
-  function badCount(g) {
-    const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
-    const start = g.fen ? g.fen.trim().split(/\s+/) : [];
-    const first = start[1] === "b" ? "b" : "w";
-    const other = first === "w" ? "b" : "w";
-    let n = 0;
-    for (let i = 0; i < tags.length; i++) {
-      if ((i % 2 === 0 ? first : other) !== g.side) continue;
-      if (tags[i] === "?" || tags[i] === "??") n++;
-    }
-    return n;
-  }
-  /** The second line: when, how well, how many mistakes, which opening. */
-  function subOf(g) {
-    const bits = [];
-    if (g.src === "local") {
-      if (g.date) bits.push(g.date);
-      if (g.plies) bits.push(tf(Math.ceil(g.plies / 2) === 1 ? "mm.moveCount.one" : "mm.moveCount.other", [Math.ceil(g.plies / 2)]));
-      if (typeof g.acc === "number") bits.push(tf("hist.acc", [g.acc]));
-    } else {
-      if (g.date && g.date !== "?") bits.push(g.date);
-      const acc = g.an && g.an.acc && g.side ? g.an.acc[g.side] : null;
-      if (Number.isFinite(acc)) bits.push(tf("lib.rowAcc", [Math.round(acc * 10) / 10]));
-      if (g.an) bits.push(tf("lib.rowBad", [badCount(g)]));
-      else bits.push(t(g.unplayable ? "lib.rowUnplayable" : "lib.rowPending"));
-      if (LibraryQuery.tcClass(g.tc)) bits.push(t("lib.tc." + LibraryQuery.tcClass(g.tc)));
-    }
-    if (g.eco) bits.push(g.eco + " " + d.libEcoName(g.eco, g.ecoName));
-    return bits.join(" · ");
-  }
-  /** A 本机 game's headline: the history's own words (result · level · colour). */
-  function localLabel(g) {
-    const res = t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw");
-    return [res, t("diff." + g.diff), t(g.side === "b" ? "hist.black" : "hist.white")].join(" · ");
-  }
-  function rowOf(g) {
-    const row = doc.createElement("div");
-    row.className = "hist-row";
-    const load = doc.createElement("button");
-    load.type = "button";
-    load.className = "pick-item";
-    if (g.src === "local") {
-      load.dataset.loc = g.ref;
-      load.textContent = localLabel(g);
-      // v8-0-plan C1: 对局历史 is part of the library now, and says where it came from
-      const tag = doc.createElement("span");
-      tag.className = "pick-tag";
-      tag.textContent = t("lib.srcLocal");
-      load.appendChild(tag);
-    } else {
-      load.dataset.lib = g.id;
-      load.textContent = d.libraryLabel(g);
-      // v8-0-plan C2: a game from Lichess / Chess.com (synced or downloaded) says so, as 本机 does
-      const site = LibraryQuery.siteOf(g);
-      if (site) {
-        const tag = doc.createElement("span");
-        tag.className = "pick-tag";
-        tag.textContent = site;
-        load.appendChild(tag);
-      }
-    }
-    const sub = doc.createElement("span");
-    sub.className = "pick-sub";
-    sub.textContent = subOf(g);
-    load.appendChild(sub);
-    row.appendChild(load);
-    const act = doc.createElement("button");
-    act.type = "button";
-    act.className = "row-act";
-    if (g.src === "local") {
-      act.dataset.locPgn = g.ref;
-      act.textContent = t("hist.pgn");
-      row.appendChild(act);
-    } else if (g.an && !g.unplayable && (Number(g.an.budget) || 0) < d.LIB_DEEP_BUDGET) {
-      // 「再深一遍」 only where there is something to deepen (7.2 A1, P3)
-      act.dataset.libDeep = g.id;
-      act.textContent = t("lib.deepen");
-      act.title = t("tip.libDeepen");
-      row.appendChild(act);
-    }
-    return row;
-  }
-
-  /** The measured cost of the last search, for docs/measured.json. */
-  const last = { ms: 0, n: 0 };
-  function renderList() {
-    const list = doc.getElementById("lib-list");
-    if (!list) return;
-    const t0 = performance.now();
-    const all = allGames();
-    for (const g of st.local) if (!g.opp || g.oppLang !== store.ui.langId) { g.opp = t("diff." + g.diff); g.oppLang = store.ui.langId; }
-    let rows = LibraryQuery.query(all, pageQuery(), st.pkOf);
-    if (store.ui.libPick) rows = rows.filter(pickMatches);
-    if (f.sort === "acc") {
-      // worst first; a game with no accuracy to rank goes last
-      const accOf = (g) => (g.src === "local" ? (typeof g.acc === "number" ? g.acc : Infinity)
-        : g.an && g.an.acc && g.side && g.an.acc[g.side] != null ? g.an.acc[g.side] : Infinity);
-      rows.sort((a, b) => accOf(a) - accOf(b));
-    } else {
-      rows.sort((a, b) => (b.t || 0) - (a.t || 0));
-    }
-    const page = rows.slice(0, shown);
-    // rows carry the game's id, never an index (7.4 D1)
-    reconcile(list, page, (g) => g.id,
-      (g) => [store.ui.langId, g.outcome, g.side, g.eco, g.an ? "a" + (g.an.budget || 0) : "-", g.unplayable ? "u" : "-", g.acc].join("|"),
-      (g) => rowOf(g));
-    if (!rows.length) {
-      const p = doc.createElement("p");
-      p.className = "hint";
-      p.textContent = t("hist.noneMatch");
-      list.appendChild(p);
-    }
-    const more = doc.getElementById("lib-more");
-    if (more) {
-      more.hidden = rows.length <= page.length;
-      more.textContent = tf("lib.more", [Math.min(PAGE, rows.length - page.length)]);
-    }
-    const count = doc.getElementById("lib-list-count");
-    if (count) {
-      const filtered = rows.length !== all.length || !!store.ui.libPick;
-      count.hidden = !filtered;
-      count.textContent = tf("hist.showing", [rows.length, all.length]);
-    }
-    const note = doc.getElementById("lib-pick-note");
-    if (note) {
-      note.hidden = !store.ui.libPick;
-      note.textContent = store.ui.libPick ? store.ui.libPick.label : "";
-    }
-    const clear = doc.getElementById("lib-pick-clear");
-    if (clear) clear.hidden = !store.ui.libPick;
-    const pos = doc.getElementById("lib-pos-note");
-    if (pos) {
-      // what was played next from the position on the board — the
-      // explorer's question (C3), asked of the games this list is showing
-      const s = f.pos ? LibraryQuery.gamesWithPosition(rows, d.boardFen(), st.pkOf) : null;
-      pos.hidden = !s;
-      if (s) {
-        const top = s.moves.slice(0, 5).map((m) => m.san + " " + m.n).join(" · ");
-        pos.textContent = tf("lib.posStat", [s.total, top || "—"]);
-      }
-    }
-    for (const [seg, key, attr] of [["lib-result-seg", "result", "lres"], ["lib-color-seg", "color", "lcol"],
-      ["lib-sort-seg", "sort", "lsort"], ["lib-src-seg", "src", "lsrc"], ["lib-tc-seg", "tc", "ltc"]]) {
-      doc.querySelectorAll("#" + seg + " button").forEach((b) => b.classList.toggle("active", b.dataset[attr] === f[key]));
-    }
-    const posBtn = doc.getElementById("lib-pos");
-    if (posBtn) posBtn.setAttribute("aria-pressed", f.pos ? "true" : "false");
-    last.ms = performance.now() - t0;
-    last.n = rows.length;
-  }
-
   /** LibraryQuery.ecoOfFens over the ECO table, once it has arrived (undefined before). */
   const ecoOfFens = (fens) => {
     const tab = typeof window !== "undefined" ? window.ECO_BY_KEY : null;
@@ -566,82 +700,6 @@ async function bootLibrary(d) {
     return filling;
   }
 
-  function openList(pick, opts) {
-    // a pick comes from a diagnosis row, read from the source on its row (T5)
-    if (pick && !pick.src) pick.src = diagSrc();
-    store.ui.libPick = pick || null;
-    // a diagnosis pick is about imported games; show them, whatever the
-    // source row was left on
-    // …and the pick is the whole question: the page's own search steps aside
-    if (opts && opts.src) f.src = opts.src;
-    else if (pick) Object.assign(f, { src: "all", q: "", from: "", to: "", tc: "all", pos: false });
-    for (const [id, key] of [["lib-from", "from"], ["lib-to", "to"]]) {
-      const el = doc.getElementById(id);
-      if (el && el.value !== f[key]) el.value = f[key];
-    }
-    shown = PAGE;
-    const q = doc.getElementById("lib-q");
-    if (q && q.value !== f.q) q.value = f.q;
-    // an opening name needs the ECO chunk; the fill asks for it, and redraws
-    fillOpenings();
-    renderList();
-    Dlg.open(listModal());
-    syncLocal();
-  }
-  /** Every control on the list page, wired once. */
-  function wire() {
-    const list = doc.getElementById("lib-list");
-    if (list) {
-      list.onclick = (ev) => {
-        const deep = ev.target.closest("button[data-lib-deep]");
-        if (deep) { d.deepenLibraryGame(deep.dataset.libDeep); return; }
-        const pgn = ev.target.closest("button[data-loc-pgn]");
-        if (pgn) {
-          const rec = localRec.get("loc:" + pgn.dataset.locPgn);
-          if (rec) d.copyText(rec.pgn, t("hist.pgnCopied"));
-          return;
-        }
-        const loc = ev.target.closest("button[data-loc]");
-        if (loc) {
-          const rec = localRec.get("loc:" + loc.dataset.loc);
-          if (!rec) return;
-          if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
-          Dlg.close(listModal());
-          d.loadHistoryRecord(rec);
-          return;
-        }
-        const b = ev.target.closest("button[data-lib]");
-        if (b) d.loadFromLibrary(b.dataset.lib);
-      };
-    }
-    const segs = [["lib-result-seg", "result", "lres"], ["lib-color-seg", "color", "lcol"], ["lib-sort-seg", "sort", "lsort"],
-      ["lib-src-seg", "src", "lsrc"], ["lib-tc-seg", "tc", "ltc"]];
-    for (const [id, key, attr] of segs) {
-      const seg = doc.getElementById(id);
-      if (seg) seg.onclick = (ev) => {
-        const b = ev.target.closest("button");
-        if (!b || b.dataset[attr] == null || f[key] === b.dataset[attr]) return;
-        f[key] = b.dataset[attr];
-        shown = PAGE;
-        renderList();
-      };
-    }
-    const q = doc.getElementById("lib-q");
-    if (q) q.oninput = () => { f.q = q.value; shown = PAGE; renderList(); };
-    for (const [id, key] of [["lib-from", "from"], ["lib-to", "to"]]) {
-      const el = doc.getElementById(id);
-      if (el) el.onchange = () => { f[key] = el.value; shown = PAGE; renderList(); };
-    }
-    const pos = doc.getElementById("lib-pos");
-    if (pos) pos.onclick = () => { f.pos = !f.pos; shown = PAGE; renderList(); };
-    const more = doc.getElementById("lib-more");
-    if (more) more.onclick = () => { shown += PAGE; renderList(); };
-    const clearPick = doc.getElementById("lib-pick-clear");
-    if (clearPick) clearPick.onclick = () => { store.ui.libPick = null; renderList(); };
-    const exp = doc.getElementById("lib-export");
-    if (exp) exp.onclick = () => { exportPgn(); };
-  }
-
   /**
    * The games the page is showing, as one PGN file — the whole library when
    * nothing is filtered (v8-0-plan C1: 整库导出和导回逐局相等). The source row
@@ -651,6 +709,7 @@ async function bootLibrary(d) {
    * imported copy.
    */
   async function exportPgn() {
+    await loaded;   // the summary's rows have no moves (v8-1-plan F3)
     let rows = LibraryQuery.query(allGames(), pageQuery(), st.pkOf);
     if (store.ui.libPick) rows = rows.filter(pickMatches);
     if (!rows.length) { toast(t("hist.noneMatch"), "fix"); return; }
@@ -874,7 +933,24 @@ async function bootLibrary(d) {
   }
 
   // --- the rest of the seam ------------------------------------------------
-  wire();
+  // v8-1-plan F3: the entries are in — the list draws them in place of the
+  // summary's rows, and what waited on them (a click, 导出) goes ahead
+  if (stubs) {
+    stubs = null;
+    // a row whose summary was out of date is redrawn: not while it is pressed (7.6)
+    const redraw = () => { if (listOpen()) { fillOpenings(); renderList(); } };
+    if (!pressed) redraw();
+    else {
+      const after = () => {
+        doc.removeEventListener("pointerup", after, true);
+        doc.removeEventListener("pointercancel", after, true);
+        setTimeout(redraw, 0);   // after the click the release makes
+      };
+      doc.addEventListener("pointerup", after, true);
+      doc.addEventListener("pointercancel", after, true);
+    }
+  }
+  loadedNow();
   for (const [id, yes] of [["lib-claim-yes", true], ["lib-claim-no", false]]) {
     const b = doc.getElementById(id);
     if (b) b.onclick = () => answerClaim(yes);
@@ -892,6 +968,12 @@ async function bootLibrary(d) {
   // manifest owes it nothing — so the shards holding games and not listed
   // there are owed now
   if (mode === "idb" && Persist.touchUnlisted) Persist.touchUnlisted(Object.keys(shardMap()));
+  // v8-1-plan F3: the stored summary made to agree with the entries just
+  // read, in the background; the header learns its id once (and again after
+  // a build without the summary dropped it)
+  const summarised = mode === "idb" && !readOnly
+    ? st.syncSummary(SLICE, d.pause).then((id) => { if (id && header.sum !== id && !frozen) writeHeader(); return id; })
+    : Promise.resolve(null);
 
   return {
     mode: () => mode,
@@ -907,6 +989,8 @@ async function bootLibrary(d) {
     localAnalysed: () => st.local.filter((g) => typeof g.acc === "number").length,
     last,
     indexing,
+    // v8-1-plan F3: the stored summary agrees with the entries (its id), for the e2e
+    summarised,
     /** v8-0-plan C1 query API (see library-query.js), over imported + 本机 */
     query: (q) => LibraryQuery.query(allGames(), q, st.pkOf),
     gamesWithPosition: (fen) => LibraryQuery.gamesWithPosition(allGames(), fen, st.pkOf),

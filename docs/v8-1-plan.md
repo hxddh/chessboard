@@ -924,6 +924,22 @@
   - 毕业判断只看本地：别的机器在本地毕业之后又答错过的，合并时不带过来。
 
 
+### M4
+
+- **F3 棋谱库冷启动**（m84-coldstart）：
+  - 先量清楚慢在哪。8.0 记的「一万局重启到可用约 4.3 s，大部分花在 `getAll()`」在今天的代码上已经不成立：本机 headless Chromium 读完一万局只要 120–350 ms（M1 起已经分页读）。重启到可用约 2.3 s（从导航开始），时间几乎都在等主线程：没有 GPU 的 Chromium 里棋盘那块 884×884 画布每出一帧要 0.4–0.7 s（`CanvasRenderingContext2D::FinalizeFrame`、首帧的 `ProduceCanvasResource`），启动时它出四五帧；分块 `chunk-libdb.js` 要等到 DOMContentLoaded（约 1.3 s）才运行，它发出的每个 IndexedDB 请求的回复又各要等一个帧间空隙。所以只把 `getAll` 换成读摘要，列表也只会早 100–150 ms。
+  - 做法：
+    - **摘要**：每局一行（id、对手两边、日期、赛事、网站、结果、执子、胜负、ECO 与开局名、用时、来源、本机的难度和记录 id、半回合数，外加分析深度、自己一方的准确率和 ?/?? 数；`library-db.js summaryOf`），按原生镜像的 64 片分组，存在 `chessboard.library` 已有的 `meta` 表里（`sum:lib00` …，外加 `sumId`）。**库版本仍是 1**，8.0 照常打开，看不见这些键。一万局约 1.5 MB JSON。
+    - **和棋局同一个事务写**：`save / drop / migrate / restoreShards / clear` 写棋局时，把改了行的那几片摘要一起写进去（`withSum`）；写被拒时这几片记为欠着，下一次写入带上（先写同一局不会再改行，不记欠就永远写不进去——单元测试先红过）。后台建索引只写 `pk`，行没变，不写摘要。
+    - **什么时候信摘要**：头（`chess.v1.library`）多了 `sum: <摘要 id>`。8.0 重写头时不认识这个字段、会丢掉，下次启动就不信摘要、等整局；摘要行数和 `games` 表的记录数不等（8.0 在后台加了本机棋、另一个窗口没听说某一局）也不信。每次整局读完后在后台逐片比对（`syncSummary`，6 ms 一片），不一致的片重写，头缺 id 就补上。所以摘要最坏是某一局的准确率或开局旧一次启动，不会多局、少局。
+    - **尽早读**：`chunk-boot.js` 在 bundle.js 运行前就打开数据库、读摘要（`library-sum.js bootPrefetch`，只对 `db: 2` 且有 `sum` 的小头），连接留给分块用，省掉分块自己开库那一趟；存档里保存的视图是棋谱库页时，再把 `chunk-libdb.js` 也写在 bundle.js 前面（和语言分块一样），这样 bootLibrary 在 bundle 运行完的那个任务里就能拿摘要画出「全部 N 局」和列表，赶在第一帧之前。别的视图照旧首帧之后才载入分块。预读 3 s 没回音（WebKit 有过 open 不回的时候）就不等它，自己开库，迟到的连接关掉。
+    - **列表页**（library-page.js）：列表那一段挪到读档之前。整局到来之前列表画摘要的替身（`stubOf`，行和整局画出来的一模一样，所以整局到了不重建任何一行——7.6，按着的行也不会被换掉），搜索、日期、结果、执子、用时、来源都在摘要上筛；「局面」开关先说「正在读取棋谱库（N 局）……」，索引到了再列；点一行、再深一遍、导出 PGN 都等整局到了再做。没有新界面键。
+  - 实测（`docs/measured.json libraryDb.coldStart`，headless Chromium，一万局，从导航开始，列表 / 搜索取三次最快，索引取三次最慢；`coldStartBefore` 是同一套测量跑在 17334e1 的 src/web 上）：
+    - 列表可见 2,335 → **213** ms；按摘要搜索可用 2,354 → **224** ms；「包含这个局面」可用（整局和索引到齐）2,435 → 2,596（没有变快：整局仍分页读，回复仍排在画布帧后面；多出的约 150 ms 在读摘要、比对摘要上，三次之间本来也差 100 ms 以上） ms。验收线 1.5 s / 4.5 s。
+    - 旧口径（`page.reload()` 前起算到整局可用，含上一页卸载约 0.45 s）：`loadMs` 2,856 → 2,883 ms。
+  - 测试：test-library-db 加摘要维护 23 项（导入、分析、认领、删除、本机同步、migrate 合并、restoreShards、清除、写入被拒后重试、两个窗口、8.0 只写棋局、替身的每种查询和整局相同、chunk-boot 的判断）；test-library-e2e 在一万局重启三次：列表先于整局画出、摘要搜索和整局搜索同数、局面查询照常，Chromium 上断言列表 ≤ 1.5 s、搜索 ≤ 4.5 s（在 17334e1 上跑这两条和「先于整局」都红）。test-persist 的「自检和 library-db 开同一个库」改为连同 library-sum.js 一起读 DB_NAME；test-chess 的「只有 persist.js 写键名」例外表加上 library-sum.js（它为 chunk-boot.js 念头的键名，和 lazy-content.js 念设置键一样）；test-persist-e2e 的 P3-3「找回不另存整库备份」改为只数 `v1:` 备份键（摘要也在 meta 表里）。本机 Chromium 一次一个：test:static、test-library-e2e、test-persist-e2e、test-explorer-e2e、test-sync-e2e、test-repertoire-e2e 全过。
+  - 没做的：整局读取本身没有变快（仍是分页 `getAll`，回复排在画布帧后面）；真正的大头是启动时棋盘重复出帧，那在 app.js / board.js，不属于这一条。chunk-boot.js 1.8 → 3.9 KB（多了 library-sum.js），主包 873.1 → 874.7 KB，chunk-libdb.js 48.5 → 54.2 KB。
+
 ## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）
 
 ### 请求一：WebView 内容声明窗口拖动区

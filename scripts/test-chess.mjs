@@ -5046,10 +5046,11 @@ for (const lang of CONTENT_LANGS) {
   // v8-0-plan F4: the scan runs per module over APP_MODULES; the source checks
   // after it read every module but the three that own what they forbid here
   // (persist.js the storage keys, host.js the storage calls, board.js the
-  // coordinate gutters and its colour table), and the two with a sanctioned
+  // coordinate gutters and its colour table), and the three with a sanctioned
   // copy (lazy-content.js names the settings key for chunk-boot.js, v8-0-plan
-  // F5; analysis-store.js strips its own record's `sig`, not the history's).
-  const appSrc = allSourceExcept("persist.js", "host.js", "board.js", "lazy-content.js", "analysis-store.js");
+  // F5; library-sum.js the library header's for it, v8-1-plan F3;
+  // analysis-store.js strips its own record's `sig`, not the history's).
+  const appSrc = allSourceExcept("persist.js", "host.js", "board.js", "lazy-content.js", "library-sum.js", "analysis-store.js");
   let literals = 0;
   for (const [file, text] of appModuleEntries()) {
     let inBlockComment = false;

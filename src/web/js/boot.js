@@ -16,9 +16,17 @@
  * @module boot
  */
 import { bootPlan, SETTINGS_KEY } from "./lazy-content.js";
+import { bootPrefetch, opensOnLibrary, LIBDB_CHUNK } from "./library-sum.js";
 
 let raw = null;
 try { raw = localStorage.getItem(SETTINGS_KEY); } catch (_) { raw = null; }
 for (const file of bootPlan(raw, typeof navigator !== "undefined" ? navigator : null)) {
   document.write('<script src="js/' + file + '"></script>');
 }
+
+// v8-1-plan F3: the library's summary, asked of IndexedDB before the bundle
+// draws anything (library-sum.js bootPrefetch; library-ui.js takes it) —
+// and when the app opens on the library page, the chunk that draws the list
+let summarised = false;
+try { summarised = bootPrefetch(localStorage, typeof indexedDB !== "undefined" ? indexedDB : null); } catch (_) { summarised = false; }
+if (summarised && opensOnLibrary(raw)) document.write('<script src="js/' + LIBDB_CHUNK.file + '"></script>');

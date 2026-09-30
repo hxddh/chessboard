@@ -34,6 +34,7 @@ import { ChessProgress } from "./progress.js";
 import { ChessReview } from "./review.js";
 import { motifOf } from "./motif.js";
 import { reconcile } from "./keyed.js";
+import { prefetchSummary, LIBDB_CHUNK } from "./library-sum.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -103,10 +104,23 @@ export function createLibraryUI(d) {
     return min < 100 ? tf("lib.etaMin", [min]) : tf("lib.etaHour", [Math.round(min / 6) / 10]);
   }
 
+  /**
+   * v8-1-plan F3: the library's summary, read from IndexedDB while the app
+   * is still starting — by chunk-boot.js before this bundle ran, or from
+   * here (library-sum.js prefetchSummary takes whichever came first). The
+   * reply waits in memory for the chunk, which would otherwise ask only once
+   * it runs, and then wait behind every frame the start-up draws. Null:
+   * nothing to ask for.
+   */
+  let libSumPre = null;
   function loadLibrary() {
     const s = Persist.read("library").value;
     if (!s) return { games: [], names: [] };
     store.session.libComing = s.db === 2 ? Number(s.n) || 0 : 0;
+    // v8-1-plan F3: games in IndexedDB with a summary beside them — asked for now (see libSumPre)
+    if (s.db === 2 && typeof s.sum === "string" && s.sum && !s.games.length) {
+      libSumPre = prefetchSummary(typeof indexedDB !== "undefined" ? indexedDB : null);
+    }
     const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
     for (const g of games) rescoreLosses(g);
     return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
@@ -154,19 +168,29 @@ export function createLibraryUI(d) {
   // is in, the library shows what the header held (a v1 library's games, or
   // none), and anything that would change the games waits for it.
   let libDb = null;
+  // v8-1-plan F3: the list page on the library's summary, before the games
+  // are loaded ({count, openList, renderList}; library-page.js)
+  let libEarly = null;
   // the diagnosis charts (diag-charts.js) came with the chunk, at the M5 merge
   let charts = null;
   const libDbReady = new Promise((resolve) => {
     const later = (fn) => (typeof requestAnimationFrame === "function"
       ? requestAnimationFrame(() => setTimeout(fn, 0)) : setTimeout(fn, 0));
-    later(() => loadChunk("chunk-libdb.js", "CHESS_LIBDB").then((m) => (charts = m.createDiagCharts({ doc, t, tf, judgeColours, libMoveNo }))
+    // v8-1-plan F3: opening on the library page, chunk-boot.js has put the
+    // chunk ahead of the bundle (library-sum.js opensOnLibrary) — then the
+    // boot goes now, and the list from the summary is in the first frame
+    const start = typeof globalThis !== "undefined" && globalThis[LIBDB_CHUNK.global] ? (fn) => fn() : later;
+    start(() => loadChunk(LIBDB_CHUNK.file, LIBDB_CHUNK.global).then((m) => (charts = m.createDiagCharts({ doc, t, tf, judgeColours, libMoveNo }))
       && m.bootLibrary(Object.assign({}, d, {
+      summary: libSumPre,
+      onSummary: (c) => { libEarly = c; renderLibrary(); },
       Library, Dlg, reconcile, Chess, PgnParser: ChessPgnParser, Pgn: ChessPgn, Eco: ChessEco,
       idb: typeof indexedDB !== "undefined" ? indexedDB : null, withLock: Host.withStoreLock,
       pause: () => new Promise((r) => setTimeout(r, 8)), LIB_DEEP_BUDGET, fillOpenings, libEcoName, libPickPly,
       libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary, rescoreLosses, renderDiagnosis,
     }))).then((c) => {
       libDb = c;
+      libEarly = null;
       if (d.onLibraryLoaded) d.onLibraryLoaded();
       renderLibrary();
       resolve(c);
@@ -576,7 +600,9 @@ export function createLibraryUI(d) {
     const queuedGames = Library.pending(list).filter((g) => !g.unplayable);
     const queued = queuedGames.length;
     const meta = doc.getElementById("lib-meta");
-    if (meta) { meta.hidden = !list.length; meta.textContent = tf("lib.count", [list.length]); }
+    // v8-1-plan F3: before the games, the summary knows how many there are
+    const shown = list.length || (!libDb && libEarly ? libEarly.count : 0);
+    if (meta) { meta.hidden = !shown; meta.textContent = tf("lib.count", [shown]); }
     const namesRow = doc.getElementById("lib-names-row");
     if (namesRow) namesRow.hidden = !list.length;
     // 7.6 (v7-6-plan §2): the counts stay above the buttons and are updated
@@ -652,8 +678,8 @@ export function createLibraryUI(d) {
     if (dg) dg.hidden = analysed.length + (libDb ? libDb.localAnalysed() : 0) < LIB_MIN_GAMES;
     const op = doc.getElementById("lib-open");
     if (op) {
-      op.hidden = !list.length;
-      setText(op, tf("lib.all", [list.length]));
+      op.hidden = !shown;
+      setText(op, tf("lib.all", [shown]));
     }
   }
 
@@ -776,10 +802,11 @@ export function createLibraryUI(d) {
    * the chunk's; `opts.src` opens it on one source.
    */
   async function openLibList(pick, opts) {
-    const c = await libDbReady;
+    // v8-1-plan F3: on the summary while the games load (a diagnosis pick needs the games)
+    const c = libDb || (!pick && libEarly) || await libDbReady;
     if (c) c.openList(pick, opts);
   }
-  function renderLibList() { if (libDb) libDb.renderList(); }
+  function renderLibList() { const c = libDb || libEarly; if (c) c.renderList(); }
   function closeLibList() { Dlg.close(doc.getElementById("lib-list-modal")); }
 
   /**
