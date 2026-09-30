@@ -491,10 +491,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const plan = maxMs && typeof maxMs === "object" ? maxMs : null;
     const cap = plan ? plan.search : maxMs;
     const pace = plan && Number.isFinite(plan.pace) ? plan.pace : null;
+    const ceil = plan && Number.isFinite(plan.ceil) && plan.ceil > 0 ? plan.ceil : 0;
     const tier = cap && base.movetime && !base.depth
       ? Object.assign({}, base, { movetime: Math.max(120, Math.min(base.movetime, Math.floor(cap))) })
       // v8-1-plan T1: a node rung short of time searches what the time buys
       : cap && base.nodes ? Object.assign({}, base, { nodes: Math.min(base.nodes, nodesFor(cap)) })
+      // M3 评审: a depth rung stops at its depth or at the clock's ceiling, whichever is first
+      : ceil && base.depth ? Object.assign({}, base, { movetime: Math.max(20, Math.floor(ceil)) })
       : base;
     const startedAt = Date.now();
     const myGen = ++gen;
@@ -603,7 +606,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * a copy of it.
    */
   function searchCmd(tier, rng) {
-    if (tier.depth) return "go depth " + tier.depth;
+    if (tier.depth) return "go depth " + tier.depth + (tier.movetime ? " movetime " + tier.movetime : "");
     if (tier.nodes) return "go nodes " + Math.max(1, Math.round(tier.nodes * (0.85 + 0.3 * rng())));
     return "go movetime " + tier.movetime;
   }

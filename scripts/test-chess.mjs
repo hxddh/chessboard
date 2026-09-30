@@ -2632,6 +2632,10 @@ for (const lang of CONTENT_LANGS) {
     assert(O.thinkPlan(easy, 10000, 10000).search > O.thinkPlan(easy, 10000, 0).search, "B4: the increment counts");
     const d = O.thinkPlan(E.TIERS.beginner, 600000, 0);
     assert(d.search === 0 && d.pace > 0, "B4: a depth rung is not given a movetime, only a pace");
+    // M3 评审: …but a ceiling from the clock, so a deep rung on a nearly flagged 1+0 cannot outlast it
+    const flag = O.thinkPlan(E.TIERS.master, 2000, 0);
+    assert(flag.ceil > 0 && flag.ceil <= 2000 / 40 + 1 && flag.pace <= 2000 / 20 && O.thinkPlan(E.TIERS.extreme, 2000, 0).ceil === 0,
+      "M3: a depth rung with 2 s left is bounded by the clock (" + JSON.stringify(flag) + ")");
     // v8-1-plan T1: a node rung's count is its calibrated search, in engine.js's own nodes per ms
     const nr = { nodes: 90000 };
     assert(O.NODES_PER_MS === E.NODES_PER_MS && O.thinkPlan(nr, 1800000, 0).search === 200 && O.thinkPlan(nr, 4000, 0).search < 200,

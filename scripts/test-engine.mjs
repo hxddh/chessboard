@@ -125,7 +125,10 @@ function boot(cfg = {}) {
         const id = this.searchId = (this.searchId || 0) + 1; // a timer ends its own search only
         if (cfg.deafSearch) return;
         if (/infinite/.test(m)) return; // only `stop` ends an infinite search
-        if (cfg.goDelay) { clock.setTimeout(() => { if (this.searching && this.searchId === id) this.finish(20, 30); }, cfg.goDelay); return; }
+        // honorMovetime: a slow search (goDelay) still stops at its `movetime`
+        const mt = cfg.honorMovetime ? /\bmovetime (\d+)/.exec(m) : null;
+        const ms = mt ? Math.min(cfg.goDelay || Infinity, Number(mt[1])) : cfg.goDelay;
+        if (ms) { clock.setTimeout(() => { if (this.searching && this.searchId === id) this.finish(20, 30); }, ms); return; }
         this.finish(20, 30);
         return;
       }
@@ -518,6 +521,25 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
     "T1: 强力+ searches about 2,500 nodes, a different count each move (" + seen.join(", ") + ")");
   const short = E.bestMove(FEN, "strongplus", { search: 2, pace: 0 }); await clock.advance(10); await short;
   assert(nodesOf() <= E.nodesFor(2) * 1.15, "T1: …and on a nearly flagged clock only what the time buys (" + nodesOf() + ")");
+}
+
+// --- M3 评审: a depth rung on a nearly flagged clock ----------------------------
+// 大师 searches to depth 10 — ~100 ms in a middlegame on this machine, more on
+// a slow one. With 2 s left of a 1+0 game (thinkPlan: ~50 ms a move) the
+// reply must come inside what the clock allots, not when depth 10 is done.
+{
+  const { E, clock, state } = boot({ goDelay: 5000, honorMovetime: true });
+  const p = E.init(); await clock.advance(1); await p;
+  const w = state.last();
+  let mv;
+  const m = E.bestMove(FEN, "master", { search: 0, pace: 50, ceil: 50 }).then((x) => { mv = x; });
+  for (let i = 0; i < 12 && !mv; i++) await clock.advance(10);
+  const go = w.cmds.filter((c) => /^go\b/.test(c)).pop();
+  assert(go === "go depth 10 movetime 50" && mv && mv.from === "e2", "M3: a depth rung under a tight clock stops at the clock's ceiling and replies in time (" + go + ")");
+  await m;
+  const n = E.bestMove(FEN, "master"); await clock.advance(10);
+  assert(w.cmds.filter((c) => /^go\b/.test(c)).pop() === "go depth 10", "M3: …and with no clock it searches its depth as before");
+  await clock.advance(6000); await n;
 }
 
 if (failed) {

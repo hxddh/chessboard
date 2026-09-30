@@ -7,9 +7,10 @@
  * (rep-book.js) and everything that needs it:
  *
  *   * storage: one IndexedDB record per (side, position) in the "repertoire"
- *     store of chessboard.library, through the library's own connection
- *     (library-db.js `rep`), mirrored into the native per-key store as four
- *     shards "rep0" … "rep3" (persist.js BULK, port kind "rep");
+ *     store of its own database, chessboard.repertoire (rep-db.js — not the
+ *     library's, whose version bump would lock 8.0 out of it: M3 评审),
+ *     mirrored into the native per-key store as four shards "rep0" … "rep3"
+ *     (persist.js BULK, port kind "rep");
  *   * boot: migrate a 7.2–8.0 book, take back what IndexedDB lost from the
  *     native shards, index again whatever the header does not vouch for
  *     (rep-book.js reconcile);
@@ -26,6 +27,7 @@
  */
 import { ChessRepBook as B } from "./rep-book.js";
 import { createReplay } from "./explorer/replay.js";
+import { openRepDb } from "./rep-db.js";
 import { ChessSrs } from "./srs.js";
 
 /** The due list the trainer holds at a time (it is recomputed after every answer). */
@@ -63,7 +65,8 @@ function memoryRep() {
 
 /**
  * @param {object} d from repertoire-ui.js: store, Persist, t, tf, toast, doc,
- *   R (ChessRepertoire), libDb (library-page.js's controller, or null),
+ *   R (ChessRepertoire), libDb (library-page.js's controller, or null: the cross-check),
+ *   repBackend (tests: a backend instead of rep-db.js),
  *   LibraryQuery (or null), cardName(side, sans), onChange() (the section again)
  * @returns {Promise<object>} the controller
  */
@@ -71,7 +74,8 @@ async function bootRepertoire(d) {
   const { store, Persist, t, tf, toast, R } = d;
   const c = d.libDb || null;
   const LQ = d.LibraryQuery || null;
-  let backend = (c && c.repBackend) || memoryRep();
+  // its own database (rep-db.js): the library's stays at version 1, which 8.0 opens (M3 评审)
+  let backend = d.repBackend || (await openRepDb(typeof indexedDB !== "undefined" ? indexedDB : null)) || memoryRep();
   const raw = Persist.get("repertoire");
   const header = readHeader(raw);
   const book = () => ({ w: store.session.repertoire.w || [], b: store.session.repertoire.b || [] });

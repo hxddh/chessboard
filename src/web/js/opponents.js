@@ -149,7 +149,11 @@ function thinkPlan(tier, clockMs, incMs) {
   // never pace a reply past what the clock can afford: under ten seconds the
   // allocation is already small, and a flag lost to a pause would be absurd
   const pace = Math.round(Math.max(tier && tier.depth ? 120 : 0, Math.min(PACE_CAP_MS, alloc / 2)));
-  return { search: Math.round(search), pace: Math.min(pace, Math.max(0, clockMs / 20)) };
+  // M3 评审: a depth rung's search is not a movetime, but on a nearly flagged
+  // clock even depth 10 (大师, ~100 ms in a middlegame here, more on a slow
+  // machine) must not outlast what the clock allots it — `ceil` bounds it
+  const ceil = tier && tier.depth ? Math.max(20, Math.round(alloc)) : 0;
+  return { search: Math.round(search), pace: Math.min(pace, Math.max(0, clockMs / 20)), ceil };
 }
 
 // --- resigning and offering a draw ---------------------------------------

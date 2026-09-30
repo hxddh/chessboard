@@ -309,7 +309,7 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
     const Persist = { get: () => JSON.stringify(Object.assign({ v: 1 }, bk, header)), readBulk: async () => texts,
       hasStore: () => true, touchBulk: (n) => touched.push(...n), touchUnlisted: (n) => touched.push(...n) };
     const store = { session: { repertoire: { w: bk.w, b: bk.b }, puzzleState: { solved: {}, missed: {} } } };
-    const c = await boot({ store, Persist, t: (k) => k, tf: (k) => k, toast: () => {}, doc: null, R, libDb: { repBackend: backend },
+    const c = await boot({ store, Persist, t: (k) => k, tf: (k) => k, toast: () => {}, doc: null, R, libDb: null, repBackend: backend,
       LibraryQuery: null, cardName: () => "", onChange: () => {} });
     return { c, touched };
   };

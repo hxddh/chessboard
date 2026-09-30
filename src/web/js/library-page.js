@@ -912,8 +912,6 @@ async function bootLibrary(d) {
     gamesWithPosition: (fen) => LibraryQuery.gamesWithPosition(allGames(), fen, st.pkOf),
     all: allGames,
     pkOf: st.pkOf,
-    // v8-1-plan T3: the repertoire's store in the same database (rep-page.js), null without IndexedDB
-    repBackend: backend ? backend.rep : null,
     // persist.js's port (BULK)
     // not in IndexedDB: the shards read at boot (read-only), or null —
     // unknown, so they stay owed and the manifest keeps them (M5 review P2-1)

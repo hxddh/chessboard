@@ -42,14 +42,11 @@ import { LibraryQuery } from "./library-query.js";
 
 const DB_NAME = "chessboard.library";
 /**
- * v8-1-plan T3: 2 adds the "repertoire" store (your opening book by position,
- * rep-book.js) beside "games" and "meta". The upgrade only creates what is
- * missing — the games and the meta backups a v1 database holds are not
- * touched. An 8.0 build asking for version 1 of a version-2 database gets a
- * VersionError, which it already treats as "no IndexedDB": its library opens
- * read-only from the native shards (M5 review P2-1), nothing is lost.
+ * Still 1 as of 8.1 (M3 评审): the repertoire's records have a database of
+ * their own (rep-db.js), because a version 2 here would make every 8.0
+ * launch hit a VersionError and open its library read-only for good.
  */
-const DB_VERSION = 2;
+const DB_VERSION = 1;
 
 /** A request as a promise. */
 function done(req) {
@@ -118,7 +115,6 @@ async function idbBackend(idb, name) {
       const d = req.result;
       if (!d.objectStoreNames.contains("games")) d.createObjectStore("games", { keyPath: "id" });
       if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
-      if (!d.objectStoreNames.contains("repertoire")) d.createObjectStore("repertoire", { keyPath: "id" });
     };
     // another window holding an older version open: it is told to let go
     req.onblocked = () => {};
@@ -177,34 +173,6 @@ async function idbBackend(idb, name) {
       t.objectStore("meta").put(v, k);
       return committed(t);
     },
-    // v8-1-plan T3: the repertoire's records (rep-page.js), over this same
-    // connection — one opener, one upgrade path for both
-    rep: {
-      async all() { return done(tx(["repertoire"], "readonly").objectStore("repertoire").getAll()); },
-      async put(records) {
-        if (!records.length) return true;
-        const t = tx(["repertoire"], "readwrite");
-        return putSliced(t, t.objectStore("repertoire"), records);
-      },
-      async remove(ids) {
-        if (!ids.length) return true;
-        const t = tx(["repertoire"], "readwrite");
-        const s = t.objectStore("repertoire");
-        for (const id of ids) s.delete(id);
-        return committed(t);
-      },
-      async clear() {
-        const t = tx(["repertoire"], "readwrite");
-        t.objectStore("repertoire").clear();
-        return committed(t);
-      },
-      getMeta: (k) => done(tx(["meta"], "readonly").objectStore("meta").get(k)),
-      async setMeta(k, v) {
-        const t = tx(["meta"], "readwrite");
-        t.objectStore("meta").put(v, k);
-        return committed(t);
-      },
-    },
   };
 }
 
@@ -213,20 +181,12 @@ async function idbBackend(idb, name) {
  * it (`fail.put = "QuotaExceededError"`), and nothing else.
  */
 function memoryBackend() {
-  const games = new Map(), meta = new Map(), reps = new Map();
+  const games = new Map(), meta = new Map();
   const fail = {};
   const clone = (v) => (v && typeof v === "object" ? structuredClone(v) : v);
   const check = (op) => { if (fail[op]) { const e = new Error(fail[op]); e.name = fail[op]; throw e; } };
   return {
-    kind: "memory", games, meta, fail, reps,
-    rep: {
-      async all() { check("repAll"); return [...reps.values()].map(clone); },
-      async put(records) { check("repPut"); for (const r of records) reps.set(r.id, clone(r)); return true; },
-      async remove(ids) { check("repPut"); for (const id of ids) reps.delete(id); return true; },
-      async clear() { reps.clear(); return true; },
-      async getMeta(k) { return clone(meta.get(k)); },
-      async setMeta(k, v) { check("setMeta"); meta.set(k, clone(v)); return true; },
-    },
+    kind: "memory", games, meta, fail,
     async all() { check("all"); return [...games.values()].map(clone); },
     async keys() { check("all"); return [...games.keys()]; },
     async count() { return games.size; },

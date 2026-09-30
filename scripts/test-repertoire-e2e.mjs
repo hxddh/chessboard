@@ -5,7 +5,8 @@
  * scripts/test-rep-book.mjs 在 Node 里核对；这里证明的是它接到了应用上：
  *
  *   1. 8.0 形状的老开局书在真的 IndexedDB 里迁移：线一字不动，按局面的记录
- *      写进 chessboard.library 的 repertoire 表，原值备份，背过的线带着进度；
+ *      写进它自己的数据库 chessboard.repertoire（棋谱库的 chessboard.library
+ *      留在版本 1，8.0 照常打开），原值备份，背过的线带着进度；
  *      重启之后照原样读回。
  *   2. 开局浏览器的「我的」与开局书的记录逐局面逐着一致，和「书」分开标；
  *      执白 / 执黑两本书切换。
@@ -108,16 +109,17 @@ const records = (page) => page.evaluate(() => {
   for (const [id, r] of all) out[id] = { moves: r.moves.map((m) => m.san), card: r.card || null, path: r.path };
   return out;
 });
-/** The records as IndexedDB holds them (the library's database, store "repertoire"). */
+/** The records as IndexedDB holds them (their own database, store "repertoire"); `lib`: the library's version. */
 const idbRecords = (page) => page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open("chessboard.library");
+  const libVersion = () => new Promise((r) => { const q = indexedDB.open("chessboard.library"); q.onsuccess = () => { const v = q.result.version; q.result.close(); r(v); }; q.onerror = () => r(null); });
+  const req = indexedDB.open("chessboard.repertoire");
   req.onsuccess = () => {
     const db = req.result;
     if (!db.objectStoreNames.contains("repertoire")) { resolve({ version: db.version, rows: null }); db.close(); return; }
     const tx = db.transaction(["repertoire", "meta"], "readonly");
     const all = tx.objectStore("repertoire").getAll();
     const keys = tx.objectStore("meta").getAllKeys();
-    tx.oncomplete = () => { resolve({ version: db.version, rows: all.result, meta: keys.result.map(String) }); db.close(); };
+    tx.oncomplete = () => { const out = { version: db.version, rows: all.result, meta: keys.result.map(String) }; db.close(); libVersion().then((lib) => resolve(Object.assign(out, { lib }))); };
   };
   req.onerror = () => resolve(null);
 }));
@@ -162,8 +164,9 @@ let migratedRecords = null;
   assert(JSON.stringify(h.w) === JSON.stringify(BOOK80.w) && JSON.stringify(h.b) === JSON.stringify(BOOK80.b),
     "线一字不动：7.2–8.0 照读，按线练的进度照挂");
   const idb = await idbRecords(page);
-  assert(idb && idb.version === 2 && Array.isArray(idb.rows) && idb.rows.length === h.n,
-    `棋谱库的数据库升到 2，repertoire 表里 ${idb && idb.rows && idb.rows.length} 条，与头上的数一致`, JSON.stringify(idb && { v: idb.version, n: idb.rows && idb.rows.length }));
+  assert(idb && idb.version === 1 && Array.isArray(idb.rows) && idb.rows.length === h.n,
+    `开局书自己的数据库 chessboard.repertoire（版本 1），repertoire 表里 ${idb && idb.rows && idb.rows.length} 条，与头上的数一致`, JSON.stringify(idb && { v: idb.version, n: idb.rows && idb.rows.length }));
+  assert(idb.lib === 1, "M3 评审：棋谱库的数据库还是版本 1——8.0 打开它不会 VersionError", String(idb.lib));
   assert(idb.meta.some((k) => k.startsWith("rep-v1:")), "迁移前的原值备份在 meta 表里", JSON.stringify(idb.meta));
   const recs = await records(page);
   migratedRecords = recs;

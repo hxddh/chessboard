@@ -811,16 +811,14 @@ export function createPuzzlesUI(d) {
     savePuzzleState();
   }
 
-  /** startPuzzles has waited once for the repertoire's chunk (M3 评审) */
-  let repWaited = false;
   function startPuzzles() {
     // v8-0-plan B1: a theme resumes as a theme (its bands load first)
     if (isThemeCat(store.session.puzzleState.cat)) { Modes.startTheme(store.session.puzzleState.cat.slice(THEME_CAT.length)); return; }
     let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) || store.session.puzzleState.cat === "repdue" ? store.session.puzzleState.cat : "m1";
     // the due list is chunk-rep.js's: at launch it may still be booting — wait
     // for it once rather than read "nothing due" off a list not there yet (M3 评审)
-    if (cat === "repdue" && !RepUI.booted() && !repWaited) {
-      repWaited = true;
+    if (cat === "repdue" && !RepUI.booted() && !store.session.repWaited) {
+      store.session.repWaited = true;   // once a session: a chunk that failed is not waited for again
       const was = store.session.puzzleState.cat;
       RepUI.ready().then(() => {
         if (store.session.mode === "puzzle" && !store.session.run && store.session.puzzleState.cat === was) startPuzzles();
