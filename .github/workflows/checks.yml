@@ -36,12 +36,12 @@ permissions:
 # v8-2-plan V4: every job has a timeout. Without one a hung job waits out
 # GitHub's default of six hours; on 2026-09-30 a layout shard sat silent for
 # 57 minutes and only release.yml's own 60 stopped it. Each limit is about
-# twice the job's longest time in the last four PR runs before 8.2
+# twice the job's longest time in the last four PR runs of 8.1
 # (36708776605, 36711052317, 36721696259, 36732131710), rounded up to five
 # minutes — generous enough not to fire on a slow runner, short enough that
 # a hang costs minutes. A browser group carries its own (`timeout` below),
 # because one number for all of them would be the slowest group's; for the
-# four groups split in 8.2 the base is their suites' time in the job logs
+# four groups split by V4 the base is their suites' time in the job logs
 # plus the job's setup.
 jobs:
   static:
