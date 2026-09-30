@@ -486,7 +486,9 @@ export function createIO(d) {
       // two-space indent only padded the envelope — and every byte of the file
       // crosses the bridge
       await exportText(allDataFileName(), JSON.stringify(RepUI.forExport(Persist.exportAll())), "application/json", t("dlg.exportAll"),
-        false, () => allDataStatus(""));   // the last piece opens the dialog: the dialog is the answer from there
+        // the last piece opens the dialog: the dialog is the answer from there
+        // — unless its stage was lost and it all goes again (M1 评审)
+        false, (last) => allDataStatus(last ? "" : t("msg.allData.preparing")));
     } finally { allDataStatus(""); }
   }
   async function importAllDataText(text) {

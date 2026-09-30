@@ -1125,8 +1125,17 @@ function fakeNative(opts) {
       // 「正在准备…」 while pieces are still to come, nothing once the last
       // one (the one that opens the dialog) is on its way
       const st = document.getElementById("alldata-status");
-      const seen = { offset: a.offset || 0, text: st ? st.textContent : null, live: st ? st.getAttribute("aria-live") : null };
+      const seen = { txn: a.txn, offset: a.offset || 0, text: st ? st.textContent : null, live: st ? st.getAttribute("aria-live") : null };
       (window.__prep = window.__prep || []).push(seen);
+      // v8-2-plan F5 (M1 评审): another window's transfer takes this one's
+      // staging slot just as its last piece arrives, once — host.js starts
+      // the whole transfer over, and the line must say 「正在准备…」 again
+      if (window.__loseLastSave > 0 && a.total != null && (a.offset || 0) + b64dec(a.b64 || "").length >= a.total) {
+        window.__loseLastSave--;
+        stages.delete(a.txn);
+        seen.lost = true;
+        return { error: "stage_lost" };
+      }
       const r = receive("dialog:save", a);
       seen.last = !r.answer || r.answer.pending !== true;
       if (r.answer) return r.answer;
@@ -1371,8 +1380,9 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   assert(full.puts.n >= libCount && full.puts.max <= 16,
     `……同一次启动把棋谱库搬进 IndexedDB,一个任务里连着 put 最长 ≤ 16 ms(${full.puts.max.toFixed(1)} ms,${full.puts.n} 次)`);
 
-  // (b) export: one file, compact, the whole of it
-  await page.evaluate(() => document.getElementById("alldata-export").click());
+  // (b) export: one file, compact, the whole of it — through one stage_lost
+  // on the last piece (the fake above), so the retry is on the way too
+  await page.evaluate(() => { window.__loseLastSave = 1; document.getElementById("alldata-export").click(); });
   await page.waitForFunction(() => window.__files.has("/Users/me/all.json") || window.__clip != null, null, { timeout: 15000 }).catch(() => {});
   const exp = await page.evaluate(() => {
     const f = window.__files.get("/Users/me/all.json");
@@ -1391,11 +1401,15 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     const st = document.getElementById("alldata-status");
     return { seen: window.__prep || [], after: st ? st.textContent : null };
   });
-  const pending = prep.seen.filter((p) => !p.last);
-  const lastPiece = prep.seen.find((p) => p.last);
-  console.log(`  导出全部数据:${prep.seen.length} 块过桥,前 ${pending.length} 块时那一行是 ${JSON.stringify([...new Set(pending.map((p) => p.text))])},最后一块 ${JSON.stringify(lastPiece && lastPiece.text)},之后 ${JSON.stringify(prep.after)}`);
+  const pending = prep.seen.filter((p) => !p.last && !p.lost);
+  const lost = prep.seen.find((p) => p.lost);
+  const lastPiece = prep.seen.find((p) => p.last && !p.lost);
+  const retried = lost ? prep.seen.filter((p) => !p.last && !p.lost && p.txn !== lost.txn) : [];
+  console.log(`  导出全部数据:${prep.seen.length} 块过桥(${new Set(prep.seen.map((p) => p.txn)).size} 轮),前 ${pending.length} 块时那一行是 ${JSON.stringify([...new Set(pending.map((p) => p.text))])},丢了暂存的那一块 ${JSON.stringify(lost && lost.text)},最后一块 ${JSON.stringify(lastPiece && lastPiece.text)},之后 ${JSON.stringify(prep.after)}`);
   assert(pending.length >= 2 && pending.every((p) => p.text && /准备/.test(p.text) && p.live === "polite"),
     `导出全部数据:块还在过桥时,按钮下一行写着「正在准备…」,而且是 aria-live 区(${pending.length} 块)`);
+  assert(!!lost && lost.text === "" && retried.length >= 1 && retried.every((p) => /准备/.test(p.text || "")),
+    `……最后一块丢了暂存(stage_lost)、整份从头重发时,那一行又写回「正在准备…」(重发 ${retried.length} 块,那时写着 ${JSON.stringify([...new Set(retried.map((p) => p.text))])})`);
   assert(!!lastPiece && lastPiece.text === "" && prep.after === "",
     "……最后一块(它打开保存框)发出之前这一行就清空了,导出完也是空的");
 

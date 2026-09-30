@@ -148,15 +148,17 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * @param {object} fields what every piece carries besides the bytes
    * @param {Uint8Array|{length: number, piece: (offset: number) => Uint8Array}} bytes
    *   the bytes, or a textSource that encodes them piece by piece
-   * @param {() => void} [onLast] called just before the last piece goes out —
-   *   the call whose answer waits on whatever the native side does with the
-   *   whole (chess.saveText: the dialog, v8-2-plan F5)
+   * @param {(last: boolean) => void} [onLast] called with true just before
+   *   the last piece goes out — the call whose answer waits on whatever the
+   *   native side does with the whole (chess.saveText: the dialog, v8-2-plan
+   *   F5) — and with false when a lost stage sends it all again: the dialog
+   *   is not coming yet after all (M1 评审)
    * @returns {Promise<any>} the answer to the last piece, or the first answer
    *   that was not "go on" (a refusal, or a shell that does not stage)
    */
   async function sendBytes(call, fields, bytes, onLast) {
     const beforeLast = onLast || (() => {});
-    if (bytes.length <= CHUNK) { beforeLast(); return call(Object.assign({}, fields, { b64: timed("base64", () => b64FromBytes(bytes)) })); }
+    if (bytes.length <= CHUNK) { beforeLast(true); return call(Object.assign({}, fields, { b64: timed("base64", () => b64FromBytes(bytes)) })); }
     const pieceAt = typeof bytes.piece === "function" ? bytes.piece : (offset) => bytes.subarray(offset, offset + CHUNK);
     for (let attempt = 0; ; attempt++) {
       const txn = newTxn();
@@ -169,7 +171,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
         if (!n) return { error: "encode" };   // cannot happen; never loop on it
         const b64 = timed("base64", () => b64FromBytes(piece));
         const last = offset + n >= bytes.length;
-        if (last) beforeLast();
+        if (last) beforeLast(true);
         r = await call(Object.assign({}, fields, { txn, total: bytes.length, offset, b64 }));
         if (last || (r && typeof r === "object" && r.ok === true && r.pending === true)) continue;
         // "done" before the last piece is a shell that ignored the staging
@@ -180,7 +182,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       // Another transfer took this one's staging slot (main.zig keeps a few
       // at once; two windows saving together can use them up). Once more
       // from the top is enough — the other writer is not a loop.
-      if (r && r.error === "stage_lost" && attempt === 0) continue;
+      if (r && r.error === "stage_lost" && attempt === 0) { beforeLast(false); continue; }
       return r;
     }
   }
@@ -370,10 +372,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * then it writes the file and shows it in its folder.
    *
    * @param {{title?: string, name: string, text?: string, b64?: string,
-   *          recent?: boolean, onStaged?: () => void}} opts `b64` for bytes
+   *          recent?: boolean, onStaged?: (last: boolean) => void}} opts `b64` for bytes
    *   that are not text (the report PNG); `recent`: put the file on the
-   *   recent-documents list; `onStaged`: the bytes are all but across and the
-   *   next call opens the dialog (v8-2-plan F5: 「正在准备…」 ends there)
+   *   recent-documents list; `onStaged(true)`: the bytes are all but across
+   *   and the next call opens the dialog (v8-2-plan F5: 「正在准备…」 ends
+   *   there); `onStaged(false)`: they are being sent again from the top
    * @returns {Promise<{name: string, revealed: boolean, path: string}|null>}
    *   null: cancelled. `path` is set only when the folder did not open — it
    *   is for the toast to say where the file went, and no command takes it.
