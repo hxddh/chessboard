@@ -2426,25 +2426,43 @@ const NetGetter = struct {
 // software they are) — nothing else about the person.
 //
 // The answer is {"pgn":"…","count":N,"last":ms}: the games as one PGN text,
-// newest first, whole games only, at most SYNC_ANSWER_MAX bytes, and the time
-// of the newest (absent with no games). Or {"error":code}, code being one the
+// whole games only, at most SYNC_ANSWER_MAX bytes, and the time of the newest
+// (absent with no games). A first sync's are the newest N, newest first; an
+// incremental one's run oldest first (below). Or {"error":code}, code being one the
 // page words for the player — offline, rate_limited, not_found, bad_request,
 // parse, timeout, busy — or "http" with the "status".
 //
-// v8-1-plan T4, incremental: the page sends back `since` = the last sync's
-// `last` + 1 ms (its "sync" key, per site and name). Lichess is asked with
-// since= and anything the page already has is dropped here too (a PGN's
-// UTCTime is whole seconds, so the newest game comes back once more); Chess.com
-// walks only the archive months from the one `since` falls in, and keeps the
-// games that ended after it.
+// v8-1-plan T4, incremental: the page sends `since`, worked out from its own
+// library — the newest game it already has from this site and name, less an
+// overlap (sync-ui.js syncSince) — and asks for N plus the games it already
+// has in that overlap, which its duplicate check skips. 8.1 M2 review
+// P2-2/P2-3: the first cut kept a separate mark (the newest game fetched)
+// and asked newest-first for N, which lost games three ways — a
+// correspondence game created before the mark but finished after it; more
+// than N new games, whose older ones were never asked for again; and games
+// fetched but never imported. So an incremental sync now reads oldest first
+// from `since`, and whatever cuts it short (N, the answer's size, the
+// deadline) leaves no hole behind it: the next sync starts inside the part
+// already in the library.
+//   - Lichess: since= with sort=dateAsc and max= (the public API's
+//     parameters for /api/games/user: `since` is the creation time in ms,
+//     `sort` is dateAsc | dateDesc, dateDesc by default). Only games still
+//     created before `since` are dropped here (UTCTime is whole seconds).
+//   - Chess.com has no such parameters: its archives are months, oldest first
+//     in the list. The walk starts one month before the one `since` falls in
+//     (an archive's month is not certain to be UTC's — P3), goes forward, and
+//     each month's games are read in the order listed; games that ended
+//     before `since` are dropped.
 //
 // Asynchronous since v8-1-plan N1 (see "async bridge" above). Everything but
 // the requests themselves is a function the tests below run on canned
 // answers, the requests included — through a Getter.
 
 const SYNC_GAMES_DEFAULT: usize = 20;
-/// T4: the dialog offers 20 / 50 / 100.
-const SYNC_GAMES_MAX: usize = 100;
+/// T4: the dialog offers 20 / 50 / 100 new games; an incremental sync also
+/// asks again for the games in its overlap that the library already has, at
+/// most 50 of them (sync-ui.js OVERLAP_GAMES).
+const SYNC_GAMES_MAX: usize = 150;
 /// Lichess names are 2–30 characters and Chess.com's 3–25, both of
 /// [A-Za-z0-9_-] — so a name is also safe in a URL path as it stands.
 const SYNC_NAME_MIN: usize = 2;
@@ -2454,8 +2472,9 @@ const SYNC_ANSWER_MAX: usize = WRITE_B64_MAX;
 /// Chess.com files games by month: this many months back, at most, to find N
 /// on a first sync…
 const SYNC_MONTHS_MAX: usize = 3;
-/// …and on a later one, the months since the last (a player back after two
-/// years gets the newest N of them, not 24 requests' worth past the deadline).
+/// …and on a later one, the months from the one before `since`, oldest first
+/// (a player back after years gets the oldest N of these 24; the next sync
+/// goes on from there — not 30 requests' worth past the deadline).
 const SYNC_MONTHS_SINCE_MAX: usize = 24;
 const SYNC_USER_AGENT = "chessboard (+https://github.com/hxddh/chessboard)";
 
@@ -2506,11 +2525,13 @@ fn syncRequest(payload: []const u8) ?SyncRequest {
 /// Standard chess only (the perf types are Lichess's names for its speeds;
 /// a variant would not replay in the library), with the clock comments B5's
 /// time-pressure figure reads, and no engine evaluations. `since` (T4) is
-/// Lichess's own parameter: games created at or after it.
+/// Lichess's own parameter — games created at or after it — and with it the
+/// games come oldest first (sort=dateAsc), so `max` cuts off the newest
+/// rather than the ones right after `since` (review P2-3).
 fn lichessUrl(buf: []u8, name: []const u8, max: usize, since: u64) ?[]const u8 {
     const base = std.fmt.bufPrint(buf, "https://lichess.org/api/games/user/{s}?max={d}&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false", .{ name, max }) catch return null;
     if (since == 0) return base;
-    const tail = std.fmt.bufPrint(buf[base.len..], "&since={d}", .{since}) catch return null;
+    const tail = std.fmt.bufPrint(buf[base.len..], "&since={d}&sort=dateAsc", .{since}) catch return null;
     return buf[0 .. base.len + tail.len];
 }
 
@@ -2663,8 +2684,10 @@ fn jsonEscapeInto(buf: []u8, n: *usize, s: []const u8) void {
 }
 
 /// The answer as it is written: {"pgn":"<game>\n\n<game>…","count":N}, and
-/// ,"last":ms when a game's time was known. Games arrive newest first; the
-/// first that does not fit ends it, since everything after it is older still.
+/// ,"last":ms when a game's time was known. The first game that does not fit
+/// ends it, so what goes out is always a run of the order the games came in:
+/// the newest N on a first sync, and on an incremental one (oldest first) a
+/// run from `since` with no hole in it.
 const SyncAnswer = struct {
     out: []u8,
     n: usize = 0,
@@ -2729,8 +2752,9 @@ fn pgnGameStart(body: []const u8, from: usize) ?usize {
     return null;
 }
 
-/// Lichess answers with the games as one PGN text, newest first. With a
-/// `since`, a game that started before it is one the page has (T4).
+/// Lichess answers with the games as one PGN text — newest first, or oldest
+/// first with a `since` (sort=dateAsc). A game that started before `since`
+/// is not wanted (T4).
 fn lichessAnswer(body: []const u8, max: usize, since: u64, output: []u8) anyerror![]const u8 {
     var answer = SyncAnswer.init(output, max);
     var at = pgnGameStart(body, 0);
@@ -2809,16 +2833,17 @@ fn chesscomList(arena: std.mem.Allocator, status: u32, body: []const u8, output:
     return .{ .months = months };
 }
 
-/// One month's games into the answer, newest first (the month lists them
-/// oldest first). Other rules — Chess960, bughouse… — are skipped: the
-/// library replays standard chess. So is a game that ended before `since`
-/// (T4). false when the body is not a month.
+/// One month's games into the answer: newest first on a first sync (the
+/// month lists them oldest first), in the listed order on an incremental one
+/// (`since` > 0, review P2-3). Other rules — Chess960, bughouse… — are
+/// skipped: the library replays standard chess. So is a game that ended
+/// before `since` (T4). false when the body is not a month.
 fn chesscomMonth(arena: std.mem.Allocator, body: []const u8, since: u64, answer: *SyncAnswer) bool {
     const parsed = std.json.parseFromSliceLeaky(ChesscomMonth, arena, body, .{ .ignore_unknown_fields = true }) catch return false;
-    var i = parsed.games.len;
-    while (i > 0 and !answer.done()) {
-        i -= 1;
-        const g = parsed.games[i];
+    const n = parsed.games.len;
+    var k: usize = 0;
+    while (k < n and !answer.done()) : (k += 1) {
+        const g = parsed.games[if (since > 0) k else n - 1 - k];
         if (!std.mem.eql(u8, g.rules, "chess")) continue;
         const ended = g.end_time *| 1000;
         if (since > 0 and ended < since) continue;
@@ -2852,17 +2877,22 @@ fn syncFetch(gpa: std.mem.Allocator, getter: Getter, req: SyncRequest, output: [
                 .months => |m| m,
                 .reply => |r| return r,
             };
-            const since_month: ?u32 = if (req.since > 0) monthOfMs(req.since) else null;
-            const months_max = if (since_month != null) SYNC_MONTHS_SINCE_MAX else SYNC_MONTHS_MAX;
             var answer = SyncAnswer.init(output, req.max);
-            var i = months.len;
-            var walked: usize = 0;
-            while (i > 0 and walked < months_max and !answer.done()) : (walked += 1) {
-                i -= 1;
-                // T4: nothing before the month of the last sync
-                if (since_month) |from| {
-                    if (archiveMonth(months[i])) |m| if (m < from) break;
+            // a first sync walks back from the newest month; an incremental
+            // one forward, from the month before `since`'s (review P2-3, P3)
+            var at: usize = months.len;
+            if (req.since > 0) {
+                const from = monthOfMs(req.since) -| 1;
+                at = 0;
+                while (at < months.len) : (at += 1) {
+                    if (archiveMonth(months[at])) |m| if (m >= from) break;
                 }
+            }
+            const months_max = if (req.since > 0) SYNC_MONTHS_SINCE_MAX else SYNC_MONTHS_MAX;
+            var walked: usize = 0;
+            while (walked < months_max and !answer.done()) : (walked += 1) {
+                const i = if (req.since > 0) at + walked else months.len -% (walked + 1);
+                if (i >= months.len) break;
                 var month_body: std.Io.Writer.Allocating = .init(gpa);
                 defer month_body.deinit();
                 const month_status = getter.get(months[i], "application/json", &month_body, null);
@@ -4436,41 +4466,102 @@ test "T4: times — a PGN's UTC tags, a month, an archive's month" {
     try std.testing.expectEqual(@as(u64, 0), syncRequest("{\"site\":\"lichess\",\"user\":\"thibault\"}").?.since);
 }
 
-test "T4: Lichess, second sync asks since the last game and brings only the new one" {
+/// A correspondence game thibault started before the fixture's games and
+/// finished after them — what a mark on the newest game fetched never asked
+/// for again (review P2-2).
+const LICHESS_CORR_GAME =
+    \\[Event "rated correspondence game"]
+    \\[Site "https://lichess.org/CorrGam1"]
+    \\[Date "2026.09.20"]
+    \\[White "corr_opp"]
+    \\[Black "thibault"]
+    \\[Result "0-1"]
+    \\[UTCDate "2026.09.20"]
+    \\[UTCTime "09:00:00"]
+    \\[Variant "Standard"]
+    \\
+    \\1. f3 e5 2. g4 Qh4# 0-1
+    \\
+    \\
+    \\
+;
+
+/// The fixture's games oldest first, as Lichess sends them with sort=dateAsc.
+fn oldestFirst(alloc: std.mem.Allocator, body: []const u8) ![]u8 {
+    var starts: [16]usize = undefined;
+    var n: usize = 0;
+    var at = pgnGameStart(body, 0);
+    while (at) |s| : (at = pgnGameStart(body, s + 1)) {
+        starts[n] = s;
+        n += 1;
+    }
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var i = n;
+    while (i > 0) {
+        i -= 1;
+        const end = if (i + 1 < n) starts[i + 1] else body.len;
+        try out.appendSlice(alloc, body[starts[i]..end]);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+/// The request an incremental sync sends: `since` is the newest game the
+/// library has (the fixture's, 2026.09.28) at the start of its day, less
+/// sync-ui.js's 14-day overlap; `max` is N plus the 5 games the library
+/// already has in that overlap.
+const LICHESS_SINCE = "1789344000000";
+const LICHESS_URL_SINCE = "https://lichess.org/api/games/user/thibault?max=25&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false&since=" ++ LICHESS_SINCE ++ "&sort=dateAsc";
+
+test "T4 (review P2-2/P2-3): Lichess, an incremental sync asks oldest first from the library's overlap and misses nothing" {
     const alloc = std.testing.allocator;
     const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
     defer alloc.free(out);
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    // the site answers the second request with the new game on top, and — as
-    // since= reads milliseconds and a PGN's time only seconds — the old ones
-    const second_body = try std.mem.concat(alloc, u8, &.{ LICHESS_NEW_GAME, LICHESS_REAL });
+    // 2026-09-28T00:00Z less 14 days, as sync-ui.js syncSince works it out
+    try std.testing.expectEqual(@as(i64, 1789344000000), (daysFromCivil(2026, 9, 28) - 14) * 86_400_000);
+    // the site's answer to the second request: oldest first, the known five
+    // back again, a correspondence game begun before them and finished since,
+    // and a newer one
+    const asc = try oldestFirst(alloc, LICHESS_REAL);
+    defer alloc.free(asc);
+    const second_body = try std.mem.concat(alloc, u8, &.{ LICHESS_CORR_GAME, asc, LICHESS_NEW_GAME });
     defer alloc.free(second_body);
     var stub: StubGetter = .{ .routes = &.{
         .{ .url = LICHESS_URL_THIBAULT, .body = LICHESS_REAL },
-        .{ .url = LICHESS_URL_THIBAULT ++ "&since=1790617958001", .body = second_body },
+        .{ .url = LICHESS_URL_SINCE, .body = second_body },
     } };
     const first = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20}", out, null), .{});
     try std.testing.expectEqual(@as(usize, 5), first.count);
-    try std.testing.expectEqual(@as(u64, 1790617958000), first.last);
-    // the page keeps `last` and sends it back + 1 ms (sync-ui.js)
-    var payload_buf: [128]u8 = undefined;
-    const payload = try std.fmt.bufPrint(&payload_buf, "{{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20,\"since\":{d}}}", .{first.last + 1});
-    const second = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub.getter(), payload, out, null), .{});
-    try std.testing.expectEqual(@as(usize, 1), second.count);
-    try std.testing.expect(has(second.pgn, "NewGame1") and !has(second.pgn, "JNUpaHZT"));
+    const second = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":25,\"since\":" ++ LICHESS_SINCE ++ "}", out, null), .{});
+    // all seven, oldest first: the library's duplicate check skips the five
+    try std.testing.expectEqual(@as(usize, 7), second.count);
+    try std.testing.expect(inOrder(second.pgn, &.{ "CorrGam1", "ISnAuvzx", "JNUpaHZT", "NewGame1" }));
     try std.testing.expectEqual(@as(u64, 1790668800000), second.last);
     // exactly these requests, in this order
     try std.testing.expectEqual(@as(usize, 2), stub.asked);
     try std.testing.expectEqualStrings(LICHESS_URL_THIBAULT, stub.url(0));
-    try std.testing.expectEqualStrings(LICHESS_URL_THIBAULT ++ "&since=1790617958001", stub.url(1));
-    // nothing new: an empty answer, and no `last` to move the mark
-    var stub2: StubGetter = .{ .routes = &.{.{ .url = LICHESS_URL_THIBAULT ++ "&since=1790668800001", .body = second_body }} };
-    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try syncOnce(stub2.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20,\"since\":1790668800001}", out, null));
+    try std.testing.expectEqualStrings(LICHESS_URL_SINCE, stub.url(1));
+    // more new games than asked for: the oldest go, the newest wait for the
+    // next sync — which starts inside what this one brought, so no hole
+    var stub2: StubGetter = .{ .routes = &.{.{
+        .url = "https://lichess.org/api/games/user/thibault?max=2&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false&since=" ++ LICHESS_SINCE ++ "&sort=dateAsc",
+        .body = second_body,
+    }} };
+    const cut = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub2.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":2,\"since\":" ++ LICHESS_SINCE ++ "}", out, null), .{});
+    try std.testing.expectEqual(@as(usize, 2), cut.count);
+    try std.testing.expect(has(cut.pgn, "CorrGam1") and has(cut.pgn, "ISnAuvzx") and !has(cut.pgn, "NewGame1"));
+    // a game still created before `since` is not passed on (the site's
+    // since= reads ms, and a caller's `since` may fall inside a second)
+    var stub4: StubGetter = .{ .routes = &.{.{ .url = "https://lichess.org/api/games/user/thibault?max=25&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false&since=1790617958001&sort=dateAsc", .body = second_body }} };
+    const newer = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub4.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":25,\"since\":1790617958001}", out, null), .{});
+    try std.testing.expectEqual(@as(usize, 1), newer.count);
+    try std.testing.expect(has(newer.pgn, "NewGame1"));
 }
 
-test "T4: Chess.com, second sync walks only the months since, and keeps only newer standard games" {
+test "T4 (review P2-2/P2-3): Chess.com, an incremental sync walks forward from the month before `since`, oldest first" {
     const alloc = std.testing.allocator;
     const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
     defer alloc.free(out);
@@ -4488,6 +4579,10 @@ test "T4: Chess.com, second sync walks only the months since, and keeps only new
     });
     defer alloc.free(later);
     const base = "https://api.chess.com/pub/player/erik/games/";
+    // a game filed under August that ended 100 s into September UTC (an
+    // archive's month is not certain to be UTC's): the walk starts a month
+    // early. The other one ended in August and stays out.
+    const august = "{\"games\":[{\"url\":\"https://www.chess.com/game/live/8001\",\"pgn\":\"[Event \\\"Live Chess\\\"]\\n[Site \\\"Chess.com\\\"]\\n[White \\\"aug_opp\\\"]\\n[Black \\\"erik\\\"]\\n[Result \\\"0-1\\\"]\\n\\n1. f3 e5 2. g4 Qh4# 0-1\\n\",\"end_time\":1788220900,\"rules\":\"chess\"},{\"url\":\"https://www.chess.com/game/live/8000\",\"pgn\":\"[Event \\\"Live Chess\\\"]\\n[White \\\"old_opp\\\"]\\n[Black \\\"erik\\\"]\\n[Result \\\"0-1\\\"]\\n\\n1. f3 e5 2. g4 Qh4# 0-1\\n\",\"end_time\":1786000000,\"rules\":\"chess\"}]}";
     var stub: StubGetter = .{ .routes = &.{
         .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
         .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
@@ -4498,23 +4593,41 @@ test "T4: Chess.com, second sync walks only the months since, and keeps only new
     try std.testing.expectEqual(@as(usize, 9), first.count);
     // the newest standard game's end (the two Chess960 games after it are not the mark)
     try std.testing.expectEqual(@as(u64, 1790355872000), first.last);
-    // a first sync: the last three months
+    // a first sync: the last three months, newest first
     try std.testing.expectEqual(@as(usize, 4), stub.asked);
     stub.routes = &.{
         .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = base ++ "2026/08", .body = august },
         .{ .url = base ++ "2026/09", .body = later },
     };
+    // the library's newest game began 2026.09.15; less 14 days: 2026-09-01
+    // (sync-ui.js syncSince), with the 9 it has asked for again
+    const since_ms: u64 = @intCast((daysFromCivil(2026, 9, 15) - 14) * 86_400_000);
+    try std.testing.expectEqual(@as(u64, 1788220800000), since_ms);
     var payload_buf: [128]u8 = undefined;
-    const payload = try std.fmt.bufPrint(&payload_buf, "{{\"site\":\"chesscom\",\"user\":\"Erik\",\"max\":20,\"since\":{d}}}", .{first.last + 1});
+    const payload = try std.fmt.bufPrint(&payload_buf, "{{\"site\":\"chesscom\",\"user\":\"Erik\",\"max\":29,\"since\":{d}}}", .{since_ms});
     const second = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub.getter(), payload, out, null), .{});
-    try std.testing.expectEqual(@as(usize, 1), second.count);
-    try std.testing.expect(has(second.pgn, "newer_opp") and !has(second.pgn, "Chess960"));
+    // the August game, the nine the library has, the new one — oldest first,
+    // and still no Chess960
+    try std.testing.expectEqual(@as(usize, 11), second.count);
+    try std.testing.expect(inOrder(second.pgn, &.{ "aug_opp", "newer_opp" }));
+    try std.testing.expect(!has(second.pgn, "old_opp") and !has(second.pgn, "Chess960"));
     try std.testing.expectEqual(@as(u64, 1790668800000), second.last);
-    // every request of both syncs, in order: the second one stops at the
-    // month the last sync fell in
-    const want = [_][]const u8{ base ++ "archives", base ++ "2026/09", base ++ "2026/08", base ++ "2026/07", base ++ "archives", base ++ "2026/09" };
+    // every request of both syncs, in order: the second walks forward from
+    // the month before `since`'s
+    const want = [_][]const u8{ base ++ "archives", base ++ "2026/09", base ++ "2026/08", base ++ "2026/07", base ++ "archives", base ++ "2026/08", base ++ "2026/09" };
     try std.testing.expectEqual(want.len, stub.asked);
     for (want, 0..) |w, i| try std.testing.expectEqualStrings(w, stub.url(i));
+    // more new games than asked for: the oldest go first
+    var stub2: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = base ++ "2026/08", .body = august },
+        .{ .url = base ++ "2026/09", .body = later },
+    } };
+    const payload2 = try std.fmt.bufPrint(&payload_buf, "{{\"site\":\"chesscom\",\"user\":\"Erik\",\"max\":2,\"since\":{d}}}", .{since_ms});
+    const cut = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub2.getter(), payload2, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 2), cut.count);
+    try std.testing.expect(has(cut.pgn, "aug_opp") and !has(cut.pgn, "newer_opp"));
 }
 
 test "T4: progress — Lichess counts games as the stream arrives, Chess.com month by month" {
