@@ -39,18 +39,31 @@ export const inShard = (k, { index, count }) => k % count === index - 1;
  * with the wall time of the previous one, so a CI log shows where a shard's
  * minutes went and a lopsided split can be rebalanced from data.
  */
-export function makeScenarioGate(spec, log = console.log) {
+export function makeScenarioGate(spec, log = console.log, limitMs = Number(process.env.SCENARIO_TIMEOUT_MS) || 600000) {
   const shard = parseShard(spec);
-  let k = -1, t0 = 0, last = -1;
+  let k = -1, t0 = 0, last = -1, dog = null;
   const lap = () => {
+    if (dog) { clearTimeout(dog); dog = null; }
     if (last >= 0) log(`[shard ${shard.index}/${shard.count}] scenario #${last} ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     last = -1;
+  };
+  // A scenario that awaits something that never settles (a rAF chain inside
+  // page.evaluate has no timeout) used to sit silently until the job's own
+  // cancel, an hour later, naming nothing. The slowest one runs ~4 minutes on
+  // a runner; past the limit, say which one and fail the process.
+  const watch = (n) => {
+    dog = setTimeout(() => {
+      console.error(`FAIL: [shard ${shard.index}/${shard.count}] scenario #${n} still running after ${limitMs / 1000}s — hung`);
+      process.exit(1);
+    }, limitMs);
+    dog.unref?.();
   };
   const scenario = () => {
     lap();
     k++;
     if (!inShard(k, shard)) return false;
     last = k; t0 = Date.now();
+    watch(k);
     return true;
   };
   scenario.done = () => { lap(); return { shard, total: k + 1 }; };

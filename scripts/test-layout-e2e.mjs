@@ -3197,25 +3197,38 @@ if (scenario()) {
   await page.waitForTimeout(900);
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
 
-  const probe = () => page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
-    const de = document.documentElement;
-    const app = document.getElementById("app");
-    const side = document.getElementById("side");
-    const b = document.getElementById("board").getBoundingClientRect();
-    const open = app.classList.contains("panel-open");
-    const over = [...document.querySelectorAll("body *")].filter((el) => {
-      if (!el.offsetParent) return false;
-      if (!open && (el === side || side.contains(el))) return false;
-      const r = el.getBoundingClientRect();
-      return r.width > 0 && (r.right > de.clientWidth + 1 || r.left < -1);
-    }).map((el) => el.id || el.className);
-    const s = side.getBoundingClientRect();
-    // 底部抽屉（它的上沿在棋盘上沿之下）让出的是高度：棋盘不该被它压住
-    const sheet = open && s.top > b.top;
-    res({ open, board: Math.round(b.width), over,
-          inView: b.bottom <= de.clientHeight + 1 && b.right <= de.clientWidth + 1,
-          underSheet: sheet && b.bottom > s.top + 1 });
-  }))));
+  // Two frames, or 400ms if the compositor skips one after a resize: a bare
+  // rAF chain inside page.evaluate has no timeout, and one headless run
+  // (release rehearsal 36721702122) sat on it until the 60-minute cancel.
+  let frameMisses = 0;
+  const probe = () => page.evaluate(() => new Promise((done) => {
+    let fired = false;
+    const t = setTimeout(() => { if (!fired) { fired = true; measure(true); } }, 400);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (fired) return;
+      fired = true; clearTimeout(t); measure(false);
+    }));
+    function measure(miss) {
+      const res = (r) => done({ ...r, miss });
+      const de = document.documentElement;
+      const app = document.getElementById("app");
+      const side = document.getElementById("side");
+      const b = document.getElementById("board").getBoundingClientRect();
+      const open = app.classList.contains("panel-open");
+      const over = [...document.querySelectorAll("body *")].filter((el) => {
+        if (!el.offsetParent) return false;
+        if (!open && (el === side || side.contains(el))) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && (r.right > de.clientWidth + 1 || r.left < -1);
+      }).map((el) => el.id || el.className);
+      const s = side.getBoundingClientRect();
+      // 底部抽屉（它的上沿在棋盘上沿之下）让出的是高度：棋盘不该被它压住
+      const sheet = open && s.top > b.top;
+      res({ open, board: Math.round(b.width), over,
+            inView: b.bottom <= de.clientHeight + 1 && b.right <= de.clientWidth + 1,
+            underSheet: sheet && b.bottom > s.top + 1 });
+    }
+  })).then((r) => { if (r.miss) frameMisses++; return r; });
   const setOpen = (want) => page.evaluate((w) => {
     if (document.getElementById("app").classList.contains("panel-open") !== w)
       document.getElementById("toggle-panel").click();
@@ -3251,6 +3264,7 @@ if (scenario()) {
   assert(bad.out.length === 0, "棋盘整块在视口里；有富余高度时也不压在底部抽屉下面" +
     (bad.out.length ? " —— " + bad.out.slice(0, 12).join("；") : ""));
   assert(errs.length === 0, "改窗口尺寸、开合面板，没有 JS 异常" + (errs.length ? " —— " + errs[0] : ""));
+  if (frameMisses) console.log(`5b: ${frameMisses} 次量取没等到两帧，按 400ms 兜底量的`);
   await ctx.close();
 }
 
