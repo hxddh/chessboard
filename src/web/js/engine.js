@@ -125,6 +125,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     normalminus: { elo: 1500, depth: 2, minMs: 600 },
     normal: { elo: 1700, depth: 3, minMs: 700 },
     normalplus: { elo: 1840, depth: 4, minMs: 750 },
+    hardminus: { elo: 2080, depth: 5, minMs: 800 },
     hard: { elo: 2290, depth: 6, minMs: 800 },
     hardplus: { elo: 2450, depth: 7, minMs: 850 },
     expert: { elo: 2570, depth: 8, minMs: 900 },
@@ -598,7 +599,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   function searchCmd(tier, rng) {
     if (tier.depth) return "go depth " + tier.depth;
-    if (tier.nodes) return "go nodes " + Math.max(1000, Math.round(tier.nodes * (0.85 + 0.3 * rng())));
+    if (tier.nodes) return "go nodes " + Math.max(1, Math.round(tier.nodes * (0.85 + 0.3 * rng())));
     return "go movetime " + tier.movetime;
   }
 

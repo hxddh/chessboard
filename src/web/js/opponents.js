@@ -12,7 +12,7 @@
 import { ChessRating } from "./rating.js";
 
 /** The rungs, weakest first. Every id has a row in engine.js TIERS. */
-const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "skilled", "easy", "easyplus", "normalminus", "normal", "normalplus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "top", "extreme"];
+const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "skilled", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "top", "extreme"];
 
 /**
  * Each rung's rating, and how sure the fit is about it (±, one standard
@@ -77,6 +77,7 @@ const PERSONAS = [
   { id: "vera", level: "normalminus", style: "off", icon: "swords" },
   { id: "sol", level: "normal", style: "off", icon: "star" },
   { id: "leo", level: "normalplus", style: "off", icon: "zap" },
+  { id: "ivy", level: "hardminus", style: "off", icon: "user" },
   { id: "max", level: "hard", style: "off", icon: "crown" },
   { id: "iris", level: "hardplus", style: "off", icon: "eye" },
   { id: "otto", level: "expert", style: "off", icon: "medal" },
@@ -99,7 +100,7 @@ const PERSONAS = [
 const EN_NAME = {
   beginner: "Beginner", casual: "Casual", learner: "Practice", improver: "Improving", steady: "Steady",
   solid: "Solid", skilled: "Seasoned", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", normalplus: "Normal+",
-  hard: "Hard", hardplus: "Hard+", expert: "Expert", expertplus: "Expert+", master: "Master", masterplus: "Master+",
+  hardminus: "Hard-", hard: "Hard", hardplus: "Hard+", expert: "Expert", expertplus: "Expert+", master: "Master", masterplus: "Master+",
   strong: "Strong", strongplus: "Strong+", top: "Top", extreme: "Max",
 };
 

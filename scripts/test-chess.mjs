@@ -2529,7 +2529,9 @@ for (const lang of CONTENT_LANGS) {
     const off = elo.filter((id) => E.TIERS[id].depth !== 1 + Math.floor(lvl(E.TIERS[id].elo)) || !E.TIERS[id].minMs);
     assert(off.length === 0, "T1: each UCI_Elo rung searches to its pick depth, and holds its reply like a depth rung" + (off.length ? " — " + off : ""));
     assert(E.searchCmd({ depth: 3 }, Math.random) === "go depth 3" && E.searchCmd({ movetime: 700 }, Math.random) === "go movetime 700" &&
-      E.searchCmd({ nodes: 10000 }, () => 0) === "go nodes 8500" && E.searchCmd({ nodes: 10000 }, () => 1) === "go nodes 11500",
+      E.searchCmd({ nodes: 10000 }, () => 0) === "go nodes 8500" && E.searchCmd({ nodes: 10000 }, () => 1) === "go nodes 11500" &&
+      // (no floor: analysis's nodesFor floor of 1000 once turned a 400-node rung into a fixed 1000)
+      E.searchCmd({ nodes: 400 }, () => 0.5) === "go nodes 400",
       "T1: a node rung's count is drawn ±15% a move, so the same moves do not get the same game");
   }
   assert(between.every((id) => E.TIERS[id].skill <= 5), "B4: …at a low Skill Level");

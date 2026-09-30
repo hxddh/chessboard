@@ -184,14 +184,14 @@ if (scenario()) {
   // 1.2 seconds a move like every other tier. 缺陷 31.
   // v8-0-plan B4: six sparring rungs (the four new win-chance rungs join the
   // handicapped pair) and six Elo rungs (1450 and 1575 between 初级 and 中级);
-  // v8-1-plan T1: seven and fifteen, the ladder re-stepped
+  // v8-1-plan T1: seven and sixteen, the ladder re-stepped
   const EXPECT = {
     "zh-CN": { spar: ["新手", "休闲", "练习", "进步", "稳健", "扎实", "老练"],
-      engine: ["初级", "初级+", "中级−", "中级", "中级+", "高级", "高级+", "专家", "专家+", "大师", "大师+", "强力", "强力+", "顶级", "不限档"] },
+      engine: ["初级", "初级+", "中级−", "中级", "中级+", "高级−", "高级", "高级+", "专家", "专家+", "大师", "大师+", "强力", "强力+", "顶级", "不限档"] },
     en: { spar: ["Gentle", "Casual", "Practice", "Improving", "Steady", "Solid", "Seasoned"],
-      engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Intermediate+", "Advanced", "Advanced+", "Expert", "Expert+", "Master", "Master+", "Strong", "Strong+", "Top", "Unrated"] },
+      engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Intermediate+", "Advanced−", "Advanced", "Advanced+", "Expert", "Expert+", "Master", "Master+", "Strong", "Strong+", "Top", "Unrated"] },
     ja: { spar: ["やさしい", "お気軽", "練習", "上達", "堅実", "手堅い", "熟練"],
-      engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "トップ", "無制限"] },
+      engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "トップ", "無制限"] },
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");
@@ -202,11 +202,11 @@ if (scenario()) {
       // there must be no third heading above the two group labels
       keys: [...document.querySelectorAll("#row-difficulty .setting-k")].length,
     }));
-    assert(labels.spar.length === 7 && labels.engine.length === 15, lang + ": 7 sparring tiers, 15 engine tiers");
+    assert(labels.spar.length === 7 && labels.engine.length === 16, lang + ": 7 sparring tiers, 16 engine tiers");
     assert(labels.groups.length === 2, lang + ": both groups are labelled");
     assert(labels.keys === 0, lang + ": no redundant 难度 heading above the group labels");
     const all = labels.spar.concat(labels.engine);
-    assert(new Set(all).size === all.length, lang + ": all twenty-two labels are distinct — " + all.join(" / "));
+    assert(new Set(all).size === all.length, lang + ": all twenty-three labels are distinct — " + all.join(" / "));
     assert(JSON.stringify(labels.spar) === JSON.stringify(EXPECT[lang].spar),
       lang + ": the sparring pair is the reviewed one — " + labels.spar.join(" / "));
     assert(JSON.stringify(labels.engine) === JSON.stringify(EXPECT[lang].engine),

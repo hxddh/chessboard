@@ -737,7 +737,7 @@
       "diff.steady": "Steady",
       "diff.solid": "Solid",
       "diff.easyplus": "Novice+",
-      "diff.skilled": "Seasoned", "diff.normalplus": "Intermediate+", "diff.hardplus": "Advanced+", "diff.expert": "Expert",
+      "diff.skilled": "Seasoned", "diff.normalplus": "Intermediate+", "diff.hardminus": "Advanced−", "diff.hardplus": "Advanced+", "diff.expert": "Expert",
       "diff.expertplus": "Expert+", "diff.master": "Master", "diff.masterplus": "Master+", "diff.strong": "Strong", "diff.strongplus": "Strong+", "diff.top": "Top",
       "diff.normalminus": "Intermediate−",
       "tip.diff.learner": "Looks two moves ahead and picks by how much win chance a move gives away — the first rung above Casual",

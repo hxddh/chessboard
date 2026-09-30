@@ -228,7 +228,9 @@ function fitBT(ids, pairs, prior) {
     const A = Array.from({ length: m }, (_, r) => H[r + 1].slice(1).concat([grad[r + 1]]));
     const step = solve(A);
     let moved = 0;
-    for (let r = 0; r < m; r++) { R[r + 1] += step[r]; moved = Math.max(moved, Math.abs(step[r])); }
+    // (a step at most 200 at a time: a 24–0 pairing far from the start overshoots)
+    const cut = Math.min(1, 200 / Math.max(...step.map(Math.abs), 1e-9));
+    for (let r = 0; r < m; r++) { R[r + 1] += cut * step[r]; moved = Math.max(moved, Math.abs(cut * step[r])); }
     if (moved < 1e-6) {
       const inv = invert(H.slice(1).map((row) => row.slice(1)));
       const se = [0].concat(inv.map((row, r) => Math.sqrt(Math.max(0, row[r]))));
