@@ -53,8 +53,8 @@ const STAGE = process.argv[2];
 
 /** the review's budget for a mistake's positions: 600 ms-equivalent × 450 nodes/ms */
 const APP_NODES = 600 * 450;
-/** the judge's budget: 2M nodes, 7.4 × the app's — B3's oracle searched 7.5 × the pass (1500 ms against 200) */
-const DEEP_NODES = Number(arg("deep", 2000000));
+/** the judge's budget: 1M nodes, 3.7 × the app's deepened search (B3's oracle: 7.5 × the 200 ms pass; this box is shared, and 19 × 25 cases at 2M did not fit) */
+const DEEP_NODES = Number(arg("deep", 1000000));
 /** motifs sampled at least this often; at most PER_MOTIF are judged */
 export const MIN_PER_MOTIF = 20;
 const PER_MOTIF = Number(arg("per", 25));
@@ -177,7 +177,7 @@ export const ENRICH = {
  */
 function shapesOf(r) {
   if (/\bmate\b/.test(r.themes)) return [];
-  const u = String(r.moves).split(" ");
+  const u = Array.isArray(r.moves) ? r.moves : String(r.moves).split(" ");
   const g = new Chess(r.fen);
   const ms = [];
   for (const x of u.slice(0, 4)) {
@@ -226,6 +226,9 @@ async function scanShapes(file, out) {
   await streamRows(file, (r) => {
     n++;
     if (tried.has(r.id)) return;
+    // the themes the shapes mostly live in are read in full; a quarter of
+    // the rest is enough for the shapes without a theme (desperado, overload)
+    if (!/doubleCheck|discoveredCheck|equality|deflection|attraction|xRayAttack|capturingDefender|intermezzo|\bpin\b/.test(r.themes) && rnd() > 0.25) return;
     let shapes = [];
     try { shapes = shapesOf(r); } catch (_) { shapes = []; }
     const row = { id: r.id, fen: r.fen, moves: r.moves, rating: r.rating, themes: r.themes, url: r.url };
@@ -436,16 +439,41 @@ async function judge() {
     const g = new Chess(r.fen); g.move(r.played);
     const ex = X.explainMistake({ fen: r.fen, played: r.played, best: r.best, bestLine: r.bestLine, line: r.line,
       evalBefore: r.evalBefore, evalAfter: r.evalAfter }, Chess);
-    const d = { after: await deepOf(g.fen()), before: await deepOf(r.fen), reply: null, best: null };
+    // the position before the mistake is searched only where a claim reads
+    // it: the better move (its motif, or a mate it gives) and a perpetual
+    const needBefore = /^ex\.(better|mate)/.test(r.key || "") || r.motif === "perpetual";
+    const d = { after: await deepOf(g.fen()), before: needBefore ? await deepOf(r.fen) : { scalar: null, pv: [] }, reply: null, best: null };
     const claim = ex && ex.refute ? ex.refute.san : null;
     if (claim) { const h = new Chess(g.fen()); if (h.move(claim)) d.reply = await deepOf(h.fen()); }
     if (ex && ex.threat) { /* same reply as the refutation: d.reply covers it */ }
     if (ex && ex.better) { const h = new Chess(r.fen); if (h.move(ex.better.san)) d.best = await deepOf(h.fen()); }
     const v = judgeCase(Object.assign({}, r, { ex }), d, Chess);
-    fs.writeSync(fd, JSON.stringify(Object.assign({}, r, { deep: d, verdict: v.verdict, reason: v.reason, sentence: v.sentence })) + "\n");
+    fs.writeSync(fd, JSON.stringify(Object.assign({}, r, { ex, deep: d, verdict: v.verdict, reason: v.reason, sentence: v.sentence })) + "\n");
     if (++i % 10 === 0) process.stdout.write(`[${k}/${n}] judged ${i}/${sample.length}\n`);
   }
   fs.closeSync(fd);
+}
+
+/**
+ * The verdicts again from the stored deep searches — no engine: a rubric
+ * refined after reading cases is applied to every case alike. The sentence
+ * record is the one judged (`ex`, kept from the app's run), so a motif that
+ * has since fallen back is still judged as what the app said then.
+ */
+async function rejudge() {
+  const { judgeCase } = await import("./lib/motif-oracle.mjs");
+  const out = [];
+  const seen = new Set();
+  for (const r of readJsonl(arg("in"))) {
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    const ex = r.ex || X.explainMistake({ fen: r.fen, played: r.played, best: r.best, bestLine: r.bestLine, line: r.line,
+      evalBefore: r.evalBefore, evalAfter: r.evalAfter }, Chess);
+    const v = judgeCase(Object.assign({}, r, { ex }), r.deep, Chess);
+    out.push(JSON.stringify(Object.assign({}, r, { ex, verdict: v.verdict, reason: v.reason, sentence: v.sentence })));
+  }
+  fs.writeFileSync(arg("out"), out.join("\n") + "\n");
+  console.log("rejudged " + out.length);
 }
 
 // --- report ---------------------------------------------------------------------------
@@ -522,7 +550,7 @@ function writeDoc(file, all, res, order, rubric) {
   console.log("wrote " + path.relative(ROOT, file));
 }
 
-const STAGES = { scan, app, games, judge, report };
+const STAGES = { scan, app, games, judge, rejudge, report };
 if (!STAGES[STAGE]) {
   console.error("usage: node scripts/sample-motifs.mjs scan|app|games|judge|report …  (see the header)");
   process.exit(2);

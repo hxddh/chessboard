@@ -42,7 +42,7 @@ export const RUBRIC = {
   double: SOUND + "这步之后王同时被两个子将军；深搜线得子 ≥ 1 或将死。",
   discovered: SOUND + "这步之后是将军，将军的子不是走动的那个，而是走动的子让开了线；走动的子本身不将军（否则是双将）；深搜线得子 ≥ 1 或将死。",
   discoveredAttack: SOUND + "走动的子让开了一条线，线后的长兵器由此新打到对方 ≥ 3 分的子；深搜线里攻方随后吃到了被新打到的子或走动的子所打的子，净得 ≥ 1。",
-  fork: SOUND + "走到的子同时打到两个目标（王、或 ≥ 3 分的子），这步本身不是白吃一子；深搜线里这个子随后吃到了其中之一，净得 ≥ 1。只说「同时攻击 X 和 Y」时：确实打到这两个，它自己吃不掉，且至少一个非王目标没有保护或比它值钱。",
+  fork: SOUND + "走到的子同时打到两个目标（王、或 ≥ 3 分的子），这步本身不是白吃一子（吃回失着刚吃掉的不算）；深搜线里随后在原格吃到了被打到的子之一（多半是这个子自己，也可以是捉双让出来的别的子），净得 ≥ 1。只说「同时攻击 X 和 Y」时：确实打到这两个，它自己吃不掉，且至少一个非王目标没有保护或比它值钱。",
   zwischenzug: SOUND + "失着是吃子，对方本可以立刻吃回，却先走一步将军或吃子；深搜线里随后仍在原格吃回，扣掉失着吃到的，净得 ≥ 1。",
   desperado: SOUND + "吃子的子在走之前已经保不住（被攻击且无保护，或被更便宜的子攻击），而正是失着造成的；它吃的不是攻击它的子，随后在那里被吃掉；扣掉失着吃到的，净得 ≥ 1。",
   removeDefender: SOUND + "这步吃掉的子原本保护着另一个 ≥ 3 分的子；对方吃回后那个子已无保护，攻方下一步吃掉它；净得 ≥ 1。",
@@ -236,8 +236,7 @@ const RULES = {
     const m0 = c.ms[0];
     const hits = attacked(c.g1, m0.to).filter((t) => c.g1[t] && c.g1[t].color === c.V && (c.g1[t].type === "k" || VALUE[c.g1[t].type] >= 3));
     if (hits.length < 2) return [false, `${m0.san} 之后只打到 ${hits.length} 个目标`];
-    const firstFree = m0.captured && VALUE[m0.captured] >= 3 && !takes(c.Chess, c.fens[0], m0.to, c.V).length;
-    if (firstFree) return [false, `${m0.san} 本身就是白吃一子，要说的是挂着的子`];
+    if (firstFree(c)) return [false, `${m0.san} 本身就是白吃一子，要说的是挂着的子`];
     if (c.key === "ex.forkHits") {
       const types = hits.map((t) => c.g1[t].type);
       const named = c.ex.refute.hits.slice(0, 2);
@@ -246,13 +245,10 @@ const RULES = {
       const worth = hits.some((t) => c.g1[t].type !== "k" && (VALUE[c.g1[t].type] > VALUE[m0.piece] || !defended(c.Chess, c.fens[0], t, c.V)));
       return worth ? [true, `${m0.san} 同时打到 ${named.join("、")}，吃不掉它，目标值得吃`] : [false, "被打到的子有保护、也不比它值钱"];
     }
-    // follow the forker along the line
-    let at = m0.to, took = false;
-    c.ms.slice(0, 8).forEach((x, i) => {
-      if (i === 0 || x.color !== c.A) return;
-      if (x.from === at) { if (x.captured && hits.includes(x.to)) took = true; at = x.to; }
-    });
-    if (!took) return [false, "深搜线上捉双的子没吃到目标"];
+    // one of the men it hit is taken on its square: by the forker, or by a
+    // man the fork left free to take it (…Kd7 Qd5+ Ke8 Qxd8+ Rxd8 Nxb5)
+    const hitMen = hits.filter((t) => c.g1[t].type !== "k");
+    if (!later(c, (x) => x.captured && hitMen.includes(x.to))) return [false, "深搜线上没吃到被捉双的子"];
     return c.net >= 1 ? [true, `捉双 ${hits.join("、")}，深搜吃到，净得 ${c.net}`] : [false, `捉双吃到了，但深搜只净得 ${c.net}`];
   },
   zwischenzug(c) {
@@ -298,7 +294,7 @@ const RULES = {
   },
   pin(c) {
     const m0 = c.ms[0];
-    if (m0.captured && VALUE[m0.captured] >= 3 && !takes(c.Chess, c.fens[0], m0.to, c.V).length) return [false, `${m0.san} 白吃一子——是挂着的子，不是牵制`];
+    if (firstFree(c)) return [false, `${m0.san} 白吃一子——是挂着的子，不是牵制`];
     // the man the line takes on its own square, standing in front of a bigger one
     let why = "深搜线上没吃到被牵制的子";
     for (let i = 2; i < Math.min(8, c.ms.length); i += 2) {
@@ -413,6 +409,19 @@ const RULES = {
   },
 };
 
+/**
+ * The move itself takes a man nothing can take back, and that capture alone
+ * — net of what the mistake had just taken — wins ≥ 2: then the lesson is
+ * the loose man, not the fork or pin that comes with it (B3's audit rule).
+ * Taking back what the mistake took is not that: 34…Rxc7 Qxf5+ gets the
+ * rook back, and what wins is the knight the check also hits.
+ */
+function firstFree(c) {
+  const m0 = c.ms[0];
+  return !!m0.captured && VALUE[m0.captured] >= 3 && !takes(c.Chess, c.fens[0], m0.to, c.V).length &&
+    VALUE[m0.captured] - (c.credit || 0) >= 2;
+}
+
 function lured(c, name) {
   const [m0, m1, m2] = c.ms;
   if (!m1 || !m2 || m1.to !== m0.to || !m1.captured) return [false, "对方没有在那一格吃回"];
@@ -485,7 +494,7 @@ export function judgeCase(r, d, Chess) {
   const w = walk(Chess, fen, line);
   if (!w.ms.length) return out(false, "线走不通");
   const c = { Chess, fen, ms: w.ms, fens: w.fens, A, V: other(A), mate: !!w.ms.mate && w.ms[w.ms.length - 1].color === A,
-    net: netAlong(w.ms, A) - cr, g0: gridOf(Chess, fen), g1: gridOf(Chess, w.fens[0]), key: r.key, ex, played, d };
+    credit: cr, net: netAlong(w.ms, A) - cr, g0: gridOf(Chess, fen), g1: gridOf(Chess, w.fens[0]), key: r.key, ex, played, d };
   if (at === "threat" && r.motif === "hanging") {
     // …and it was a free (or cheap) capture before, as it is now
     const t0 = new Chess(afterFen).move(ex.threat.san);
