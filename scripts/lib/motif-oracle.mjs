@@ -34,7 +34,7 @@ export const MOTIF_ORDER = ["hanging", "perpetual", "double", "discovered", "dis
   "zwischenzug", "desperado", "removeDefender", "overload", "deflection", "decoy", "pin", "skewer",
   "xray", "trapped", "mateThreat", "promotion", "backRank"];
 
-const SOUND = "所说的那步棋经深搜成立（反击：深搜首选，或与首选差 ≤ 80cp；更好的着：深搜首选，或比所走好 ≥ 50cp）；";
+const SOUND = "所说的那步棋经深搜成立（反击：深搜首选，或与首选差 ≤ 80cp；更好的着：深搜首选，或比所走好 ≥ 50cp）。「净得」数到至少第四步、再数完还在进行的交换和将军；「将死」是线上将死或深搜分数为杀。";
 /** The rule each verdict applies, as the audit prints it. "深搜线" = that move + the deep line after it. */
 export const RUBRIC = {
   hanging: SOUND + "这步吃掉 ≥ 3 分的子，对方合法地吃不回（说「没保护」时）或是以小吃大（说「换不回来」时），且不是背后的闪将让它吃不回；深搜线净得 ≥ 2。「没理会威胁」另要求走之前同一步已能白吃。",
@@ -49,12 +49,12 @@ export const RUBRIC = {
   overload: SOUND + "这步是吃子；对方吃回用的子原本还保护着另一个 ≥ 3 分的子，被引开后那个子无保护，攻方下一步吃掉它；净得 ≥ 1。",
   deflection: SOUND + "这步不是吃子（弃子）；对方吃它用的子原本保护着另一个 ≥ 3 分的子，被引开后那个子无保护，攻方下一步吃掉它；净得 ≥ 1。",
   decoy: SOUND + "这步不是吃子（弃子），对方的王或后吃了它；攻方下一步打到了站在那里的王或后；深搜线得子 ≥ 1 或将死。",
-  pin: SOUND + "深搜线里被吃的子在这步之后站在攻方长兵器与对方更值钱的子（或王）之间的线上，并在原地被吃；这步不是白吃一子；净得 ≥ 1。",
-  skewer: SOUND + "走到的长兵器线上前面是更值钱的子（或王），后面是 ≥ 3 分的子；前面的子让开，长兵器吃掉后面的子；净得 ≥ 1。",
+  pin: SOUND + "这步之后有一个子站在攻方长兵器与它身后更值钱的己方子（或王）之间；深搜线里它被吃掉（原地，或沿着牵制线走开之后），或它离开了线、身后的子被吃；这步本身不是白吃一子；算到那一吃之后，净得 ≥ 1。",
+  skewer: SOUND + "走到的长兵器线上前面是更值钱的子（或王），后面是 ≥ 3 分的子；深搜线里前面的子让开、后面的子被吃；或者前面的子走不开、在原地被吃（这步是将军时不算：那是捉双）；净得 ≥ 1。",
   xray: SOUND + "吃子、被吃回、再由原先被挡在后面的长兵器在同一格吃回（走之前它打不到那一格）；净得 ≥ 1。",
-  trapped: SOUND + "这步是不吃子、不将军的一步；它打到的某个 ≥ 3 分的子原地和每一个去处都会被得子地吃掉；深搜线里吃到了这种子，净得 ≥ 1。",
+  trapped: SOUND + "这步是不吃子、不将军的一步；它打到的某个 ≥ 3 分的子原地和每一个去处都会被得子地吃掉，而且不是因为被钉在王前（那是牵制）；深搜线里吃到了这种子，净得 ≥ 1。",
   mateThreat: SOUND + "这步不将军；这步之后（让攻方再走一步）有一步杀，这步之前没有；深搜线得子 ≥ 1 或将死。「没理会威胁」：走之前同一步就是杀，且失着之后深搜确为杀。",
-  promotion: SOUND + "深搜线前六步内攻方升变，净得 ≥ 3 或将死。",
+  promotion: SOUND + "深搜线前六步内攻方升变，净得 ≥ 3、将死，或深搜评估这步之后攻方 ≥ +300（兵的赛跑不在六步里结账）。",
   backRank: SOUND + "深搜确认是杀，深搜线的最后一步由车或后在对方底线上将死，王在底线，王前面一排的格子都被自己的子占着、其中至少两个兵。",
 };
 
@@ -84,15 +84,18 @@ function walk(Chess, fen, sans) {
   }
   return { ms, fens };
 }
-/** coach-oracle's count: walk at least four plies, then to the end of the exchange */
-function netAlong(ms, side) {
+/** coach-oracle's count: walk at least `min` plies (four), then to the end of the exchange */
+function netAlong(ms, side, min = 4) {
   let s = 0, n = 0;
   for (const m of ms) {
     const sign = m.color === side ? 1 : -1;
     if (m.captured) s += sign * VALUE[m.captured];
     if (m.promotion) s += sign * (VALUE[m.promotion] - 1);
     n++;
-    if (n >= 4 && !m.captured && n % 2 === 0) break;
+    // …and on while the sequence is still forcing: a check, or the answer to
+    // one (…Kd8 Qxe8+ Kxe8 Nxd6+ Kd7 Nxf5 counts the queen the check wins)
+    const prev = ms[n - 2];
+    if (n >= min && !m.captured && n % 2 === 0 && !/\+/.test(m.san) && !(prev && /\+/.test(prev.san))) break;
   }
   if (ms.mate) s += ms[ms.length - 1].color === side ? 100 : -100;
   return s;
@@ -295,55 +298,80 @@ const RULES = {
   pin(c) {
     const m0 = c.ms[0];
     if (firstFree(c)) return [false, `${m0.san} 白吃一子——是挂着的子，不是牵制`];
-    // the man the line takes on its own square, standing in front of a bigger one
-    let why = "深搜线上没吃到被牵制的子";
-    for (let i = 2; i < Math.min(8, c.ms.length); i += 2) {
-      const x = c.ms[i];
-      if (x.color !== c.A || !x.captured) continue;
-      const q = x.to;
-      const P = c.g1[q];
-      if (!P || P.color !== c.V) continue;
-      const [qf, qr] = xy(q);
-      for (const s of Object.keys(c.g1)) {
-        const S = c.g1[s];
-        if (S.color !== c.A || !"brq".includes(S.type) || !attacked(c.g1, s).includes(q)) continue;
-        const [sf, sr] = xy(s);
-        const df = Math.sign(qf - sf), dr = Math.sign(qr - sr);
-        if ((df && dr && S.type === "r") || (!(df && dr) && S.type === "b")) continue;
-        for (let k = 1; k < 8; k++) {
-          const f = qf + df * k, r = qr + dr * k;
+    // every man standing, after the move, between one of the attacker's line
+    // pieces and a man of its own worth more (or the king)
+    const pins = [];
+    for (const s of Object.keys(c.g1)) {
+      const S = c.g1[s];
+      if (S.color !== c.A || !"brq".includes(S.type)) continue;
+      const [sf, sr] = xy(s);
+      for (const [df, dr] of S.type === "q" ? DIRS.b.concat(DIRS.r) : DIRS[S.type]) {
+        const seen = [];
+        for (let k = 1; k < 8 && seen.length < 2; k++) {
+          const f = sf + df * k, r = sr + dr * k;
           if (!on(f, r)) break;
-          const B = c.g1[sqOf(f, r)];
-          if (!B) continue;
-          if (B.color === c.V && rankOf(B.type) > rankOf(P.type)) {
-            return c.net >= 1 ? [true, `${q} 的子被 ${s} 钉在 ${sqOf(f, r)} 前面，深搜线在原地吃掉，净得 ${c.net}`] : [false, `牵制成立，但只净得 ${c.net}`];
-          }
-          break;
+          const q = c.g1[sqOf(f, r)];
+          if (!q) continue;
+          if (q.color !== c.V) break;
+          seen.push(sqOf(f, r));
+        }
+        if (seen.length === 2 && c.g1[seen[0]].type !== "k" && rankOf(c.g1[seen[1]].type) > rankOf(c.g1[seen[0]].type)) {
+          pins.push({ by: s, front: seen[0], back: seen[1] });
         }
       }
-      why = `深搜线吃的 ${q} 并没有被钉住`;
     }
-    return [false, why];
+    if (!pins.length) return [false, "这步之后没有哪个子被钉住"];
+    // realised: the pinned man is taken — where it stands, or wherever it
+    // went along the pin (…Bh4 Qxh4 Rxh4) — or it stepped off the line and
+    // the man behind was taken (…Qxc3 bxc3 Rxb1)
+    for (const p of pins) {
+      let at = p.front, left = false;
+      for (let i = 1; i < Math.min(8, c.ms.length); i++) {
+        const x = c.ms[i];
+        if (x.color === c.V && x.from === at) { at = x.to; left = true; continue; }
+        if (x.color !== c.A || !x.captured) continue;
+        if (x.to === at || (left && x.to === p.back)) {
+          const net = netAlong(c.ms, c.A, i + 2) - c.credit;
+          return net >= 1 ? [true, `${p.front} 的子被 ${p.by} 钉在 ${p.back} 前面，深搜线上吃到，净得 ${net}`] : [false, `牵制成立，但只净得 ${net}`];
+        }
+      }
+    }
+    return [false, "深搜线上没吃到被牵制的子，也没吃到它背后的子"];
   },
   skewer(c) {
-    const [m0, m1, m2] = c.ms;
+    const m0 = c.ms[0];
     const S = c.g1[m0.to];
     if (!S || !"brq".includes(S.type)) return [false, "走到的不是长兵器"];
-    if (!m1 || !m2) return [false, "线太短"];
-    const [sf, sr] = xy(m0.to), [ff, fr] = xy(m1.from);
-    const df = Math.sign(ff - sf), dr = Math.sign(fr - sr);
-    const F = c.g1[m1.from];
-    if (!F || F.color !== c.V || !attacked(c.g1, m0.to).includes(m1.from)) return [false, "对方让开的子不在它的线上"];
-    let back = null;
-    for (let k = 1; k < 8; k++) {
-      const f = ff + df * k, r = fr + dr * k;
-      if (!on(f, r)) break;
-      if (c.g1[sqOf(f, r)]) { back = sqOf(f, r); break; }
+    // the lines from where it stands: a man in front, a cheaper one ≥ 3 behind it
+    const [sf, sr] = xy(m0.to);
+    const lines = [];
+    const dirs = S.type === "q" ? DIRS.b.concat(DIRS.r) : DIRS[S.type];
+    for (const [df, dr] of dirs) {
+      const seen = [];
+      for (let k = 1; k < 8 && seen.length < 2; k++) {
+        const f = sf + df * k, r = sr + dr * k;
+        if (!on(f, r)) break;
+        const q = c.g1[sqOf(f, r)];
+        if (!q) continue;
+        if (q.color !== c.V) break;
+        seen.push(sqOf(f, r));
+      }
+      if (seen.length === 2) {
+        const [F, B] = seen.map((s) => c.g1[s]);
+        if (VALUE[B.type] >= 3 && rankOf(F.type) > rankOf(B.type)) lines.push({ front: seen[0], back: seen[1] });
+      }
     }
-    const B = back && c.g1[back];
-    if (!B || B.color !== c.V || VALUE[B.type] < 3 || !(rankOf(F.type) > rankOf(B.type))) return [false, "线上前面的子不比后面的值钱，或后面没有 ≥ 3 分的子"];
-    if (m2.from !== m0.to || m2.to !== back || !m2.captured) return [false, "长兵器没有吃到后面的子"];
-    return c.net >= 1 ? [true, `串击：${m1.from} 让开，吃 ${back}，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
+    if (!lines.length) return [false, "线上没有「前面更值钱、后面 ≥ 3 分」的两个子"];
+    // realised: the man behind is taken after the front one stepped off the
+    // line; or the front one, with nowhere to go that saves both, is taken
+    // where it stands — unless the move was a check, when the front man
+    // stayed because of the check: that is a fork (…Qb8+ Bf8 Qxc7)
+    const m1 = c.ms[1];
+    const check = /[+#]$/.test(m0.san);
+    const won = lines.find((l) => (m1 && m1.from === l.front && later(c, (x) => x.captured && x.to === l.back)) ||
+      (!check && later(c, (x) => x.captured && x.to === l.front)));
+    if (!won) return [false, "深搜线上没吃到线上的子"];
+    return c.net >= 1 ? [true, `串击 ${won.front}→${won.back}，深搜吃到，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
   },
   xray(c) {
     const [m0, m1, m2] = c.ms;
@@ -367,6 +395,10 @@ const RULES = {
       const g = new c.Chess(withTurn(c.fens[0], c.V));
       const moves = g.moves({ square: t, verbose: true }) || [];
       if (!moves.length) continue;
+      // a man that could go elsewhere but for its king is pinned, not trapped
+      // (…Qxd4 Bc5: the queen stands in front of Kg1)
+      const pseudo = (g.moves({ square: t, verbose: true, legal: false }) || []).length;
+      if (pseudo > moves.length) return [false, `${t} 的子是被钉在王前（牵制），不是困子`];
       const all = moves.every((mv) => {
         if (mv.captured && VALUE[mv.captured] >= VALUE[P.type]) return false;
         g.move(mv); const bad = lost(g.fen(), mv.to, P.type); g.undo();
@@ -387,10 +419,14 @@ const RULES = {
   },
   promotion(c) {
     if (!c.ms.slice(0, 6).some((m, i) => i % 2 === 0 && m.promotion)) return [false, "深搜线前六步里攻方没有升变"];
-    return c.net >= 3 || c.mate ? [true, `升变，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `升变了，但只净得 ${c.net}`];
+    // a pawn race is not settled by a count over six plies (…e1=Q+ Rxe1
+    // Kxe1 Kd5 c1=Q): the deep evaluation after the move may settle it
+    const ev = c.after && c.after.scalar != null ? (c.A === "w" ? c.after.scalar : -c.after.scalar) : null;
+    if (c.net >= 3 || c.mate) return [true, `升变，深搜${c.mate ? "将死" : "净得 " + c.net}`];
+    return ev != null && ev >= 300 ? [true, `升变，深搜评估 +${ev}`] : [false, `升变了，但只净得 ${c.net}（深搜 ${ev}）`];
   },
   backRank(c) {
-    if (!c.mate) return [false, "深搜线不以将死结束"];
+    if (!c.boardMate) return [false, "深搜线不以将死结束"];
     const last = c.ms[c.ms.length - 1];
     if (last.color !== c.A || !"rq".includes(last.piece)) return [false, "将死的不是车或后"];
     const g = gridOf(c.Chess, c.fens[c.fens.length - 1]);
@@ -490,11 +526,26 @@ export function judgeCase(r, d, Chess) {
     }
   }
 
-  // 2 + 3. geometry, and the deep line realising it
-  const w = walk(Chess, fen, line);
-  if (!w.ms.length) return out(false, "线走不通");
-  const c = { Chess, fen, ms: w.ms, fens: w.fens, A, V: other(A), mate: !!w.ms.mate && w.ms[w.ms.length - 1].color === A,
-    credit: cr, net: netAlong(w.ms, A) - cr, g0: gridOf(Chess, fen), g1: gridOf(Chess, w.fens[0]), key: r.key, ex, played, d };
+  // 2 + 3. geometry, and a deep line realising it. Two deep lines start
+  // with the move: the search after it (move + its line), and — when the
+  // deep search from the position before chose the same move — that
+  // search's own line. Either may be cut short by the hash (…Nf3+ Kf1 Qg1+
+  // and nothing more), so the motif stands if either realises it.
+  const own = at === "better" ? d.before : d.after;
+  const claim = line[0];
+  const lines = [line];
+  if (own && own.pv && own.pv[0] === claim && own.pv.length > 1) lines.push(own.pv);
+  // "or mates": on the board, or by the deep search's score after the move
+  const after = at === "better" ? d.best : d.reply;
+  const deepMate = !!after && after.scalar != null && Math.abs(after.scalar) >= 9000 && cpFor(after.scalar, A) > 0;
+  const ctxOf = (ln) => {
+    const w = walk(Chess, fen, ln);
+    if (!w.ms.length) return null;
+    return { Chess, fen, ms: w.ms, fens: w.fens, A, V: other(A), mate: (!!w.ms.mate && w.ms[w.ms.length - 1].color === A) || deepMate,
+      boardMate: !!w.ms.mate && w.ms[w.ms.length - 1].color === A, credit: cr, after, net: netAlong(w.ms, A) - cr, g0: gridOf(Chess, fen), g1: gridOf(Chess, w.fens[0]), key: r.key, ex, played, d };
+  };
+  const cs = lines.map(ctxOf).filter(Boolean);
+  if (!cs.length) return out(false, "线走不通");
   if (at === "threat" && r.motif === "hanging") {
     // …and it was a free (or cheap) capture before, as it is now
     const t0 = new Chess(afterFen).move(ex.threat.san);
@@ -505,6 +556,8 @@ export function judgeCase(r, d, Chess) {
   }
   const rule = RULES[r.motif];
   if (!rule) return out(false, "没有这个母题的规则");
-  const [ok, why] = rule(c);
-  return out(ok, why);
+  const results = cs.map((c) => rule(c));
+  const hit = results.findIndex((x) => x[0]);
+  if (hit < 0) return out(false, results[0][1]);
+  return out(true, results[hit][1] + (hit > 0 ? "（深搜在失着后局面上的主线）" : ""));
 }
