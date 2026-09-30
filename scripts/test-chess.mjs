@@ -147,7 +147,7 @@ const allSourceExcept = (...owners) =>
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
   "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js",
-  "me-page.js", "game-end.js", "review/moments.js", "opponents-ui.js"];
+  "me-page.js", "game-end.js", "review/moments.js", "opponents-ui.js", "io.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
 // start position basics
@@ -7321,7 +7321,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 6707; // −107 for C1 (the history dialog became the library list's 本机 games, its wiring moved to library-page.js; M5); −1 when C3 merged in (its wireViews loop paid for movePath; M5); −11 net for B4 (ladder names, filing and the persona hooks moved to opponents*.js; M4); 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js)
+  const APP_JS_LINE_CEILING = 6249; // −458 to io.js (v8-1-plan F3, M4: PGN and file import / export, the clipboard, the learning file, the whole profile); −107 for C1 (the history dialog became the library list's 本机 games, its wiring moved to library-page.js; M5); −1 when C3 merged in (its wireViews loop paid for movePath; M5); −11 net for B4 (ladder names, filing and the persona hooks moved to opponents*.js; M4); 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js)
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -7428,6 +7428,23 @@ for (const lang of CONTENT_LANGS) {
   for (const [file, names] of Object.entries(homes)) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
     for (const name of names) assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
+  }
+}
+
+// --- v8-1-plan F3 (M4): the rest of app.js's regions, the same way --------
+// Files in and out (io.js) is one factory with its dependencies handed in;
+// app.js names what it still calls with one destructuring. A factory created
+// below a module that borrows from it is handed forwarders (see the Codex
+// on #88 check above).
+{
+  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
+  const homes = {
+    "io.js": ["createIO", "copyText", "pgnForExport", "exportText", "pickFromList", "importPgnText", "openPgnFile",
+      "importLearningText", "exportAllData", "importAllDataText"],
+  };
+  for (const [file, names] of Object.entries(homes)) {
+    assert(APP_MODULES.includes(file), "F3: " + file + " follows app.js's house rules (APP_MODULES)");
+    for (const name of names) assert(owner(name) === file, "F3: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
 }
 
