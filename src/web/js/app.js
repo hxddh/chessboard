@@ -6273,7 +6273,7 @@ import { loadChunk } from "./chunk.js";
     out.textContent = "…";
     let r = null;
     try { r = await Host.checkUpdate(); } catch (_) { r = null; }
-    if (!r || r.error || !r.tag) { out.textContent = t("msg.update.failed"); return; }
+    if (!r || r.error || !r.tag) { out.textContent = t(r && r.error === "busy" ? "msg.update.busy" : "msg.update.failed"); return; }
     if (newerVersion(r.tag, APP_VERSION)) {
       out.textContent = tf("msg.update.available", [r.tag]);
       offerLink(r.url || "https://github.com/hxddh/chessboard/releases/latest");

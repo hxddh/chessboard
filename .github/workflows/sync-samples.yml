@@ -50,6 +50,10 @@ jobs:
           }
           # the exact URL chess.fetchGames builds (src/main.zig lichessUrl)
           get lichess "https://lichess.org/api/games/user/${LI_USER}?max=${MAX}&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false"
+          # an incremental sync's URL (8.1 M2 review P2-3): since= a month ago,
+          # oldest first — the answer should run in ascending UTCDate/UTCTime
+          since=$(node -e 'console.log(Date.now() - 30 * 864e5)')
+          get lichess-since "https://lichess.org/api/games/user/${LI_USER}?max=${MAX}&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false&since=${since}&sort=dateAsc"
           get lichess-missing "https://lichess.org/api/games/user/no-such-user-chessboard-sample-404?max=1"
           lc_user=$(echo "$CC_USER" | tr 'A-Z' 'a-z')
           get chesscom-archives "https://api.chess.com/pub/player/${lc_user}/games/archives"

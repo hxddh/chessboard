@@ -665,20 +665,36 @@ async function bootLibrary(d) {
   // --- import and claim ----------------------------------------------------
   /** The file being read, as a promise; the next import waits for it. */
   let importing = null;
+  /** How often an import waiting on a running pass looks again (review P1-1). */
+  const BUSY_WAIT_MS = 500;
+  /** A pass over the library, or the board's analysis, is running: the import waits or refuses. */
+  const libBusy = () => !!(store.session.libRun || store.session.analyzing);
   /**
    * Take every game in a PGN file into the library (7.0), with its position
    * index made from the parse — the parser already walked every position.
+   *
+   * 8.1 M2 review P1-1: says what came of it — {added, dup} when the games
+   * went in (added may be 0: all duplicates), null when nothing was taken
+   * (refused, or nothing readable; a toast has said which). With
+   * `opts.wait` (a sync's games, fetched and not to be fetched again for
+   * nothing) a running pass is waited out rather than refused.
+   * @returns {Promise<{added: number, dup: number}|null>}
    */
-  async function importPgn(text, label) {
+  async function importPgn(text, label, opts) {
+    const wait = !!(opts && opts.wait);
     const text0 = (text || "").trim();
-    if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
+    if (!text0) { toast(t("msg.import.empty"), "fix"); return null; }
     // a second file (or a sync) while one is being read waits its turn: it
     // used to return here in silence, games fetched and gone (M5 review P3-2)
-    while (importing) await importing;
-    if (store.session.libUnreadable) { toast(t("lib.unreadable"), "fault"); return; }
+    for (;;) {
+      while (importing) await importing;
+      if (!libBusy() || !wait) break;
+      await new Promise((ok) => setTimeout(ok, BUSY_WAIT_MS));
+    }
+    if (store.session.libUnreadable) { toast(t("lib.unreadable"), "fault"); return null; }
     // 导入全部数据 is reloading the page (P3-4): say that, rather than import into what goes
-    if (frozen) { toast(t("msg.allData.imported")); return; }
-    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    if (frozen) { toast(t("msg.allData.imported")); return null; }
+    if (libBusy()) { toast(t("lib.busy"), "fix"); return null; }
     let chunks;
     try { chunks = d.PgnParser.splitGames(text0); } catch (_) { chunks = d.Pgn.splitGames(text0); }
     // read game by game, handing the thread back every ~16 ms (7.5)
@@ -688,7 +704,11 @@ async function bootLibrary(d) {
     // is wanted now rather than replayed for later (fillOpenings)
     try { await d.Eco.ready(); } catch (_) { /* no table: filled later */ }
     try { games = await d.PgnParser.parseGamesAsync(chunks); } finally { importing = null; release(); }
-    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    // a pass begun while the file was read: from here to the end nothing
+    // awaits, so once it is over the games go in whole
+    while (wait && libBusy()) await new Promise((ok) => setTimeout(ok, BUSY_WAIT_MS));
+    if (libBusy()) { toast(t("lib.busy"), "fix"); return null; }
+    if (store.session.libUnreadable || frozen) return null;
     const now = Date.now();
     const fresh = [];
     // v8-1-plan T5: 本机 games exported with their record, back into the history
@@ -710,7 +730,7 @@ async function bootLibrary(d) {
       if (eco !== undefined) { e.eco = eco ? eco.eco : ""; e.ecoName = eco ? eco.name : ""; }
       fresh.push(e);
     }
-    if (!fresh.length && !back.length) { toast(t("msg.import.badPgn"), "fault"); return; }
+    if (!fresh.length && !back.length) { toast(t("msg.import.badPgn"), "fault"); return null; }
     const r = Library.addGames(store.session.library, fresh);
     store.session.library = r.list;
     for (const id of r.dropped) st.pk.delete(id);
@@ -723,6 +743,7 @@ async function bootLibrary(d) {
     if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
     renderClaim();
     fillOpenings();
+    return { added, dup };
   }
 
   /**
@@ -738,13 +759,18 @@ async function bootLibrary(d) {
     const have = new Set((stats.games || []).map((g) => g && g.id));
     const add = [];
     for (const rec of recs) { if (have.has(rec.id)) continue; have.add(rec.id); add.push(rec); }
+    let kept = 0;
     if (add.length) {
       stats.games = (stats.games || []).concat(add).sort((a, b) => (a.t || 0) - (b.t || 0)).slice(-500);
+      // 8.1 M2 review P3: only what the cap left in counts as added — older
+      // records past the 500 are gone again at once
+      const left = new Set(stats.games.map((g) => g && g.id));
+      kept = add.filter((rec) => left.has(rec.id)).length;
       d.saveStats(stats);
       if (d.onLibraryLoaded) d.onLibraryLoaded();
       syncLocal();
     }
-    return { added: add.length, dup: recs.length - add.length };
+    return { added: kept, dup: recs.length - add.length };
   }
 
   /**

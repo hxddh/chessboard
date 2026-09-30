@@ -20,12 +20,13 @@
  * it uses arrives in the bag prefs-ui.js hands it.
  *
  * v8-1-plan T4 (sync 2.0): a sync after the first asks only for what came
- * since — the native side answers with `last`, the newest game's time, kept
- * here per site and name and sent back as `since`; the dialog offers 20 / 50
- * / 100 games at most, says 已取到 k 局 while the fetch is out (it runs off
- * the shell's loop since N1, so chess.fetchProgress is answered meanwhile),
- * and can start the library's analysis once the games are in. The words for
- * all of it are read only here, in the chunk.
+ * since — worked out from the library itself (syncSince: the newest game it
+ * has from that site and name, less an overlap), so what the library holds
+ * is the one record of how far a sync got; the dialog offers 20 / 50 / 100
+ * games at most, says 已取到 k 局 while the fetch is out (it runs off the
+ * shell's loop since N1, so chess.fetchProgress is answered meanwhile), and
+ * can start the library's analysis once the games are in. The words for all
+ * of it are read only here, in the chunk.
  * @module sync-ui
  */
 
@@ -35,8 +36,11 @@ export function syncNameOk(name) {
 }
 
 const SAY = {
-  offline: "sync.offline", timeout: "sync.offline", bridge: "sync.offline",
+  offline: "sync.offline", bridge: "sync.offline",
   rate_limited: "sync.rate", not_found: "sync.notFound", bad_request: "sync.badName",
+  // 8.1 M2 review P2-1: the native side's own deadline, and a sync of its
+  // still out, each in its own words rather than 连不上 / 同步没有完成（?）
+  timeout: "sync.timeout", busy: "sync.busy",
 };
 
 /**
@@ -69,61 +73,100 @@ const SITES = [{ id: "lichess", name: "Lichess" }, { id: "chesscom", name: "Ches
  */
 export const LIMITS = [20, 50, 100];
 
-/** Where the last sync of `user` on `site` is remembered: names are case-blind on both sites. */
-export function lastKey(site, user) {
-  return site + ":" + String(user).toLowerCase();
-}
-
 /**
  * The stored "sync" key (persist.js), read defensively: off unless `on` is
  * really true, and anything else it does not recognise back to the default.
  * 8.0 stored {v, on, site, user}; the rest (T4) reads as its default there.
+ * The first cut of T4 also kept `last` here, a mark per site and name; it is
+ * no longer read (syncSince), and left as it was in a save that has it.
  * @returns {{on: boolean, site: "lichess"|"chesscom", user: string,
- *   max: number, analyse: boolean, last: Object<string, number>}}
+ *   max: number, analyse: boolean}}
  */
 export function syncPrefs(v) {
   const s = v && typeof v === "object" ? v : {};
-  const last = {};
-  if (s.last && typeof s.last === "object" && !Array.isArray(s.last)) {
-    for (const k of Object.keys(s.last)) {
-      const t = s.last[k];
-      if (Number.isSafeInteger(t) && t > 0) last[k] = t;
-    }
-  }
   return {
     on: s.on === true,
     site: s.site === "chesscom" ? "chesscom" : "lichess",
     user: typeof s.user === "string" ? s.user : "",
     max: LIMITS.includes(s.max) ? s.max : LIMITS[0],
     analyse: s.analyse === true,
-    last,
   };
 }
 
 /**
- * What goes to the native side: the site, the name, how many at most, and —
- * once this name has been synced from this site — `since`, 1 ms after the
- * newest game that sync brought (T4). Nothing else about the person.
+ * How far before the newest game the library has an incremental sync starts
+ * (8.1 M2 review P2-2): a game begun before that one and finished since —
+ * Lichess files a game under when it began (since= reads creation time), and
+ * a correspondence game can run for weeks — is still asked for. The library
+ * skips what it already has, so asking again costs only bytes.
  */
-export function syncRequest(prefs, site, user, max) {
-  const p = { site, user, max };
-  const last = prefs.last[lastKey(site, user)];
-  if (last) p.since = last + 1;
-  return p;
+export const OVERLAP_DAYS = 14;
+/**
+ * …but never more than this many games the library already has: each of
+ * them takes a place in the answer (they are asked for as N + known), and a
+ * heavy fortnight must not crowd the new games out.
+ */
+export const OVERLAP_GAMES = 50;
+const DAY_MS = 86400000;
+
+/** A PGN date (YYYY.MM.DD) as the UTC ms its day starts at, or null. */
+function dayOf(date) {
+  const m = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(date || "");
+  if (!m || +m[2] < 1 || +m[2] > 12 || +m[3] < 1 || +m[3] > 31) return null;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+}
+
+/** Whether a library entry came from `site`: its Site tag as each site writes it. */
+function fromSite(g, site) {
+  const s = String(g.site || "").toLowerCase();
+  return site === "lichess" ? /^https:\/\/lichess\.org\//.test(s) : s === "chess.com" || /^https:\/\/www\.chess\.com\//.test(s);
 }
 
 /**
- * The stored value with this sync's mark moved on — never back: an answer
- * without `last` (nothing new) leaves it where it was.
+ * Where an incremental sync of `user` on `site` starts, read off the library
+ * (8.1 M2 review P2-2/P2-3): the start of the day of the newest game it has
+ * from there with that name on either side, less OVERLAP_DAYS — or later,
+ * so that at most OVERLAP_GAMES of its games fall inside. `known` is how many
+ * do: the request asks for N more than that. null when the library has none
+ * of their games — a first sync, the newest N.
+ *
+ * The first cut kept a mark instead (the newest game a sync had fetched), and
+ * it drifted from what the library held: it moved on when the import was
+ * refused, past games still being played, and past the older of more than N
+ * new games. The library cannot drift from itself; a game deleted from it
+ * simply comes back on the next sync, as importing the file again would.
+ * @param {object[]} library the imported games (store.session.library)
+ * @returns {{since: number, known: number}|null}
  */
-export function withLast(stored, site, user, last) {
-  const s = Object.assign({}, stored || {});
-  if (!Number.isSafeInteger(last) || last <= 0) return s;
-  const marks = syncPrefs(s).last;
-  const k = lastKey(site, user);
-  if (!(marks[k] >= last)) marks[k] = last;
-  s.last = marks;
-  return s;
+export function syncSince(library, site, user) {
+  const u = String(user).toLowerCase();
+  const days = [];
+  for (const g of library || []) {
+    if (!g || g.src === "local" || !fromSite(g, site)) continue;
+    if (String(g.white || "").toLowerCase() !== u && String(g.black || "").toLowerCase() !== u) continue;
+    const d = dayOf(g.date);
+    if (d != null) days.push(d);
+  }
+  if (!days.length) return null;
+  days.sort((a, b) => b - a);
+  let since = days[0] - OVERLAP_DAYS * DAY_MS;
+  if (days.length > OVERLAP_GAMES) since = Math.max(since, days[OVERLAP_GAMES - 1]);
+  // a day's games are all in or all out, so a crowded day can pass the cap;
+  // the count stays within it, and so within the native side's ceiling
+  const known = Math.min(days.filter((d) => d >= since).length, OVERLAP_GAMES);
+  return { since, known };
+}
+
+/**
+ * What goes to the native side: the site, the name, how many at most, and —
+ * when the library already has games of this name from this site — `since`
+ * (syncSince), with the games it has in the overlap added to the count so
+ * that N new ones still fit (T4, review P2-3). Nothing else about the person.
+ */
+export function syncRequest(site, user, max, from) {
+  const p = { site, user, max };
+  if (from) { p.since = from.since; p.max = max + from.known; }
+  return p;
 }
 
 /**
@@ -139,6 +182,8 @@ function ask(Host, p) {
 
 /** How often the dialog asks for 已取到 k 局 while a sync is out. */
 const PROGRESS_MS = 400;
+/** How often fetched games waiting on a running pass look again (P1-1). */
+const WAIT_MS = 500;
 
 /**
  * @param {object} d prefs-ui.js's bag: doc, t, tf, toast, Dlg, Host, store,
@@ -309,31 +354,41 @@ export function createSyncUI(d) {
     const refusal = () => (s.libUnreadable ? "lib.unreadable" : s.libRun || s.analyzing ? "lib.busy" : "");
     if (refusal()) { paint(t(refusal())); return; }
     save({ site: site.id, user, max: pick.max, analyse: pick.analyse });
-    const req = syncRequest(syncPrefs(stored()), site.id, user, pick.max);
     busy = true;
     paint(tf("sync.fetching", [site.name]));
+    // 8.1 M2 review P2-2: where an incremental sync starts is read off the
+    // library itself, so C1's chunk has to be in first
+    await d.lib.ready();
+    const req = syncRequest(site.id, user, pick.max, syncSince(s.library, site.id, user));
     const stop = watchProgress(site);
     let r;
     try { r = await ask(Host, req); } catch (_) { r = { error: "bridge" }; }
     stop();
-    busy = false;
     const said = syncMessage(r, req.since != null);
     if (said) {
+      busy = false;
       paint(said.key === "sync.failed" ? tf(said.key, [said.arg]) : tf(said.key, [site.name, user]));
       return;
     }
-    if (refusal()) { paint(t(refusal())); return; }
+    // review P1-1: a pass (or the board's analysis) begun while the games
+    // were on their way no longer turns them away: they wait for it, said
+    // here in the open dialog — closing it does not drop them
+    if (s.libRun || s.analyzing) {
+      paint(t("lib.busy"));
+      while (s.libRun || s.analyzing) await new Promise((ok) => setTimeout(ok, WAIT_MS));
+    }
+    if (s.libUnreadable) { busy = false; paint(t("lib.unreadable")); return; }
     // v8-0-plan C2: the name is claimed before the import, so the games come
     // in already knowing which side was this player's — no field to fill in
     claim(user);
-    Dlg.close(modal);
+    if (modal.classList.contains("show")) Dlg.close(modal);
     // library-ui.js's one import path — the same one 导入棋谱文件 takes, so the
-    // games land pending, which is the library's analysis queue
-    await d.lib.importPgnToLibrary(r.pgn, site.name + " · " + user);
-    // T4: the mark moves after the import has run, not when the answer came
-    // — a page closed in between asks for the same games again next time
-    Persist.setJson("sync", Object.assign(withLast(stored(), site.id, user, r.last), { v: 1 }));
-    if (pick.analyse) analyseSynced();
+    // games land pending, which is the library's analysis queue. It waits
+    // too (`wait`), should a pass start while it reads them; null when it
+    // took nothing in (it has said why).
+    const got = await d.lib.importPgnToLibrary(r.pgn, site.name + " · " + user, { wait: true });
+    busy = false;
+    if (got && pick.analyse) analyseSynced();
   }
 
   return { open, toggle: () => setOn(!syncPrefs(stored()).on) };

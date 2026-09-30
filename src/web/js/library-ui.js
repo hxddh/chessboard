@@ -227,11 +227,14 @@ export function createLibraryUI(d) {
    * Deliberately not the same path as 导入棋谱: that one asks which single
    * game you meant, because it is about to put one on the board. Here the
    * whole file is the point.
+   *
+   * Resolves with what came of it (8.1 M2 review P1-1): {added, dup}, or
+   * null when nothing was taken in. `opts.wait`: see library-page.js.
    */
-  async function importPgnToLibrary(text, label) {
+  async function importPgnToLibrary(text, label, opts) {
     const c = await libDbReady;
-    if (!c) { toast(t("msg.import.badPgn"), "fault"); return; }
-    return c.importPgn(text, label);
+    if (!c) { toast(t("msg.import.badPgn"), "fault"); return null; }
+    return c.importPgn(text, label, opts);
   }
 
   /**
