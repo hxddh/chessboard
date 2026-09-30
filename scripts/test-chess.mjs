@@ -147,6 +147,7 @@ const allSourceExcept = (...owners) =>
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
   "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js",
+  "trainer/puzzle-book.js", "trainer/puzzle-rating.js", "trainer/puzzle-openings.js", "trainer/puzzle-mine.js",
   "me-page.js", "game-end.js", "review/moments.js", "opponents-ui.js", "io.js", "game-controller.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
@@ -5851,7 +5852,7 @@ for (const lang of CONTENT_LANGS) {
   const appSrc = allAppSource;
   for (const [what, re] of [
     // 6.0: one exportText() serves PGN and the learning file; only a PGN is a document
-    ["the export dialog", /Host\.saveText\(\{ title, name, text, recent \}\)/], // v8-1-plan N2: main.zig adds it
+    ["the export dialog", /Host\.saveText\(\{ title, name, text, recent, onStaged \}\)/], // v8-1-plan N2: main.zig adds it; onStaged: v8-2-plan F5
     // 7.0: the picker takes a sink (the library import reuses it), so what
     // this looks for is the call, not the one destination it used to have
     ["the open dialog", /Host\.openPgn\(\{ title: t\("dlg\.openPgn"\), recent: true \}\)/],
@@ -6839,7 +6840,18 @@ for (const lang of CONTENT_LANGS) {
   // v8-1-plan F2: both sides of the comparison are minified bytes.
   console.log("  bundle.js " + bundleBytes + " bytes minified (7.9.0 minified: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
-    "bundle.js stays within the first-paint budget (" + bundleBytes + " > " + BUNDLE_BUDGET + " bytes, 70.5% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + " minified)");
+    "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes, 70.5% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + " minified)");
+  // v8-2-plan F1: a second, tighter line for 8.2 only. 8.1 alone spent ~39 KB
+  // of the budget's room (89,502 left at its M1, 50,670 at 8.1.0), and one
+  // more version like it reaches the line. So new 8.2 training content and
+  // its data go in chunks; the bundle may grow by 10 KB over 8.1.0 for the
+  // doors to them — the entry points, the interface keys, the scheduling.
+  // 8.1.0 (168acc2) built by its own bundle.mjs: exactly 900,972 bytes, and
+  // the plan's line is 910,972 (10,000, not 10,240).
+  const BUNDLE_BYTES_AT_810 = 900972;
+  const BUNDLE_GROWTH_82 = 10000;
+  assert(bundleBytes <= BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82,
+    "v8-2-plan F1: bundle.js grows at most 10 KB over 8.1.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82) + " bytes) — 8.2 content goes in chunks");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -6994,8 +7006,8 @@ for (const lang of CONTENT_LANGS) {
 {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const scriptsIn = (cmd) => [...String(cmd || "").matchAll(/node (scripts\/[\w-]+\.mjs)/g)].map((m) => m[1]);
-  const checksWf = fs.readFileSync(path.join(root, ".github/workflows/checks.yml"), "utf8");
-  const releaseWf = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
+  const checksWf = fs.readFileSync(path.join(root, ".github/workflows/checks.yml"), "utf8").replace(/\r\n/g, "\n");
+  const releaseWf = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8").replace(/\r\n/g, "\n");
   // Only the e2e lists are spelled out: both workflows run `test:static` and
   // `test:engine` through npm, which is the shape that cannot drift. The e2e
   // loop cannot, because each browser engine needs its own env.
@@ -7086,6 +7098,60 @@ for (const lang of CONTENT_LANGS) {
         !whole && /SHARD: \$\{\{ matrix\.group\.shard \}\}/.test(text),
         where + " 把布局套件切成 1/n…n/n 全部的片，并把 SHARD 传进去（" + shards.map((s) => s.join("/")).join(" ") + "）");
     }
+    // v8-2-plan V4: both workflows run the same browser groups (release.yml
+    // is where a group that drifted would first matter), no suite runs in
+    // two groups, and no job in checks.yml can hang for GitHub's six hours
+    const groupBlock = (text) => {
+      const at = text.search(/^        group:\s*$/m);
+      return at < 0 ? "" : text.slice(at, text.indexOf("\n    name: browser", at) + 1);
+    };
+    // [name, suites, shard, timeout]; a group the pattern misses (no timeout)
+    // leaves the count short of the block's `name:` lines
+    const groupsOf = (text) => [...groupBlock(text).matchAll(/name: ([^\n]+)\n\s*suites: ([^\n]+)\n(?:\s*shard: ([^\n]+)\n)?\s*timeout: (\d+)\n/g)]
+      .map((m) => [m[1], m[2], m[3] || "", +m[4]]);
+    const groupCount = (text) => (groupBlock(text).match(/^\s*(?:- )?name: /gm) || []).length;
+    const cg = groupsOf(checksWf), rg = groupsOf(releaseWf);
+    const suiteUse = {};
+    for (const [, suites, shard] of cg) for (const f of suites.split(/\s+/)) if (!shard) suiteUse[f] = (suiteUse[f] || 0) + 1;
+    const twice = Object.keys(suiteUse).filter((f) => suiteUse[f] > 1);
+    assert(cg.length >= 10 && cg.length === groupCount(checksWf) && rg.length === groupCount(releaseWf) &&
+      JSON.stringify(cg) === JSON.stringify(rg) && twice.length === 0 && cg.every((g) => g[3] > 0 && g[3] <= 60),
+      "checks.yml 与 release.yml 的浏览器分组逐条相同、每组有自己的超时（" + cg.map((g) => g[0] + " " + g[3]).join("，") + "）" +
+      (twice.length ? " —— 跑了两遍：" + twice.join(", ") : ""));
+    const cJobsAt = checksWf.search(/^jobs:\s*$/m);
+    const cHeads = [...checksWf.slice(cJobsAt).matchAll(/^  ([\w-]+):\s*$/gm)];
+    const noLimit = cHeads.filter((m, i) => {
+      const body = checksWf.slice(cJobsAt).slice(m.index, i + 1 < cHeads.length ? cHeads[i + 1].index : undefined);
+      return !/^    timeout-minutes: (\d+|\$\{\{ matrix\.group\.timeout \}\})\s*$/m.test(body);
+    }).map((m) => m[1]);
+    assert(cHeads.length >= 4 && noLimit.length === 0,
+      "checks.yml 每个 job 都有 timeout-minutes（" + cHeads.length + " 个）" + (noLimit.length ? " —— 没有：" + noLimit.join(", ") : ""));
+    // the PR wall-clock is computed from the run, not typed in
+    const WC = await import("./ci-wallclock.mjs");
+    const job = (name, c, s, e, concl = "success") => ({ run_id: 7, head_sha: "abcdef12", name, created_at: c, started_at: s, completed_at: e, conclusion: concl });
+    const wc = WC.wallClock([job("a", "2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", "2026-01-01T00:13:00Z"),
+      job("b", "2026-01-01T00:00:05Z", "2026-01-01T00:00:30Z", "2026-01-01T00:14:30Z"),
+      { name: "skipped", conclusion: "skipped", started_at: null }]);
+    let stillRunning = false;
+    try { WC.wallClock([job("a", "2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", null)]); } catch { stillRunning = true; }
+    const runs = WC.merge([{ run: 1, wall: 20, green: true }, { run: 2, wall: 14, green: true }], [{ run: 1, wall: 12, green: true }, { run: 3, wall: 15, green: true }]);
+    assert(wc.wall === 14.5 && wc.critical === "b" && wc.criticalMin === 14 && wc.jobs === 2 && wc.green && stillRunning &&
+      runs.map((r) => r.wall).join() === "12,14,15" && WC.lastThreeOk(runs) && !WC.lastThreeOk(runs.slice(1)) &&
+      !WC.lastThreeOk(runs.concat({ run: 4, wall: 15.1, green: true })),
+      "PR 墙钟从作业的起止时间算（第一个排队 → 最后一个结束），同一 run 重记是替换，最近三次全绿且 ≤ 15 分钟才算达标");
+    // v8-2-plan V4 (M1 评审): the screenshots job is continue-on-error — its
+    // failure leaves the PR green, so it leaves the run green here too
+    const T = ["2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", "2026-01-01T00:05:00Z"];
+    const shotsOnly = [job("unit", ...T), job("screenshots (webkit, not a gate)", ...T, "failure")];
+    const realFail = [job("unit", ...T, "failure"), job("screenshots (webkit, not a gate)", ...T)];
+    assert(WC.wallClock(shotsOnly).green && WC.wallClock(shotsOnly, { conclusion: "success" }).green &&
+      !WC.wallClock(realFail).green && !WC.wallClock(realFail, { conclusion: "failure" }).green &&
+      !WC.wallClock(shotsOnly, { conclusion: "failure" }).green && WC.wallClock(realFail).notGreen.join() === "unit: failure",
+      "PR 墙钟的「全绿」看 run 自己的结论；没有 run 时不算 continue-on-error 的作业（截图）");
+    const coe = cHeads.map((m, i) => checksWf.slice(cJobsAt).slice(m.index, i + 1 < cHeads.length ? cHeads[i + 1].index : undefined))
+      .filter((body) => /^    continue-on-error: true\s*$/m.test(body));
+    assert(coe.length >= 1 && coe.every((body) => /^    name: .*\bnot a gate\b/m.test(body) && WC.notAGate(body.match(/^    name: (.*)$/m)[1])),
+      "checks.yml 里 continue-on-error 的作业名字都写着「not a gate」—— ci-wallclock 没有 run 结论时靠它认（" + coe.length + " 个）");
     // checks.yml: push only for main, stale PR runs cancelled, the sampled
     // puzzle search on ubuntu only, and Windows native compiled on every PR
     const zigAt = checksWf.search(/^  zig:\s*$/m);
@@ -7421,7 +7487,7 @@ for (const lang of CONTENT_LANGS) {
   const homes = {
     "trainer/content.js": ["createTrainerContent", "puzzleName", "lessonText", "motifKeyOf"],
     "trainer/lessons.js": ["createLessonsUI", "startLesson", "learnMove", "syncLearnUI", "startClassic"],
-    "trainer/puzzles.js": ["createPuzzlesUI", "puzzleMove", "syncPuzzleUI", "ratePuzzleOnce", "bookNow"],
+    "trainer/puzzles.js": ["createPuzzlesUI", "puzzleMove", "syncPuzzleUI"],
     "trainer/today.js": ["createTodayUI", "dailySignals", "dailyJump", "renderPuzzleTally"],
     // v8-0-plan B5 (M4): the 我的 page grows in its own module
     "me-page.js": ["createMePage", "drawAccTrend", "renderAchRows", "REC_DOORS"],
@@ -7430,6 +7496,47 @@ for (const lang of CONTENT_LANGS) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
     for (const name of names) assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
+}
+
+// --- v8-2-plan F1: trainer/puzzles.js split by what each part is for -------
+// The book, the ratings, the opening drills, the personal drills and the mate
+// searches are modules of their own; puzzles.js keeps the flow (seat, judge,
+// file, next), the way out into a game and the panel, and creates the parts
+// with their dependencies handed in. A new way to train is one more module
+// beside them (T2), not more lines in the 1,825 this file had.
+{
+  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
+  const homes = {
+    "trainer/puzzle-book.js": ["createPuzzleBook", "bookNow", "puzzlesInCat", "puzzleTier", "owedNow", "loadPuzzleState"],
+    "trainer/puzzle-rating.js": ["createPuzzleRating", "ratePuzzleOnce", "playerRating", "markMissed", "clearMissed"],
+    "trainer/puzzle-openings.js": ["createPuzzleOpenings", "opTreeMove", "opCurrent", "openingWhy"],
+    "trainer/puzzle-mine.js": ["createPuzzleMine", "verifyAlt", "mineWhy", "renderPuzzleLine"],
+    "trainer/puzzle-mate.js": ["whiteHasForcedMate", "blackForcedLost", "bestDefense"],
+    "trainer/puzzles.js": ["createPuzzlesUI", "seatPuzzle", "puzzleMove", "puzzleSolved", "paintPuzzlePanel"],
+  };
+  for (const [file, names] of Object.entries(homes)) {
+    // the mate searches are pure functions of a chess.js game, like runs.js
+    // and themes.js: no factory, no bag, none of app.js's house rules to follow
+    if (file !== "trainer/puzzle-mate.js") assert(APP_MODULES.includes(file), "F1: " + file + " follows app.js's house rules (APP_MODULES)");
+    for (const name of names) assert(owner(name) === file, "F1: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
+  }
+  const lines = WEB_MODULES.get("trainer/puzzles.js").split("\n").length;
+  assert(lines <= 1000, "F1: trainer/puzzles.js is the trainer's middle, not the whole of it (" + lines + " lines)");
+  // M1 评审: what the trainer hands app.js is the list the one file returned,
+  // named one by one — a spread of the book would let app.js reach any of
+  // its insides without anyone deciding it should
+  // Windows checks the tree out with CRLF (the static job runs there too)
+  const pz = WEB_MODULES.get("trainer/puzzles.js").replace(/\r\n/g, "\n");
+  const ret = (pz.match(/\n  return \{\n([\s\S]*?)\n  \};\n\}\s*$/) || [])[1];
+  const handed = (ret || "").replace(/closeThemes: \(\) => Modes\.closeThemes\(\)/, "closeThemes").split(/[\s,]+/).filter(Boolean).sort();
+  const app = WEB_MODULES.get("app.js").replace(/\r\n/g, "\n");
+  const taken = ((app.match(/const \{([^}]*)\} = PuzzlesUI;/) || [])[1] || "").split(/[\s,]+/).filter(Boolean)
+    .concat([...app.matchAll(/PuzzlesUI\.(\w+)/g)].map((m) => m[1]));
+  const spreads = (ret || "").match(/\.\.\.\w+/g) || [];
+  assert(ret != null && !spreads.length && handed.join() === [...new Set(taken)].sort().join(),
+    "F1: createPuzzlesUI returns exactly the names app.js takes from it, one by one (" +
+    (ret == null ? "no return { … } found at the end of the file" : handed.length + " names" +
+      (spreads.length ? ", spreads " + spreads.join(" ") : "")) + ")");
 }
 
 // --- v8-1-plan F3 (M4): the rest of app.js's regions, the same way --------

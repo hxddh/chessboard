@@ -422,6 +422,54 @@
       }
     }
   },
+  "ciWallClock": {
+    "what": "checks.yml 一次 PR 运行的墙钟：第一个作业排队 → 最后一个作业结束（分钟，含排队）；critical 为耗时最长的单个作业。数据取自 GitHub API 的 jobs（started_at / completed_at），不手填",
+    "script": "node scripts/ci-wallclock.mjs RUN_ID… --label=… --record",
+    "targetMin": 15,
+    "lastThreeOk": false,
+    "runs": [
+      {
+        "run": 36708776605,
+        "sha": "5df945f",
+        "wall": 20.4,
+        "critical": "browser (chromium, lessons + review + engine)",
+        "criticalMin": 20.4,
+        "jobs": 24,
+        "green": true,
+        "label": "8.1 PR #97（V4 之前）"
+      },
+      {
+        "run": 36711052317,
+        "sha": "1df4278",
+        "wall": 21.8,
+        "critical": "browser (chromium, lessons + review + engine)",
+        "criticalMin": 21.7,
+        "jobs": 24,
+        "green": true,
+        "label": "8.1 PR #97（V4 之前）"
+      },
+      {
+        "run": 36721696259,
+        "sha": "3217f05",
+        "wall": 20.2,
+        "critical": "browser (chromium, lessons + review + engine)",
+        "criticalMin": 20.1,
+        "jobs": 24,
+        "green": true,
+        "label": "8.1 PR #97（V4 之前）"
+      },
+      {
+        "run": 36732131710,
+        "sha": "51b5962",
+        "wall": 33.8,
+        "critical": "browser (webkit, panel layout 1/4)",
+        "criticalMin": 28.7,
+        "jobs": 24,
+        "green": true,
+        "label": "8.1 PR #97（V4 之前）"
+      }
+    ]
+  },
   "coachCoverage": {
     "what": "复盘里 ? / ?? 的一句说明说出了战术母题的比例（explain.js，按 app.js mistakeFacts() 的调用方式）",
     "script": "scripts/test-coach.mjs --record=before|after --audit=docs/coach-audit-8.0.md",

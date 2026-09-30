@@ -33,6 +33,16 @@ concurrency:
 permissions:
   contents: read
 
+# v8-2-plan V4: every job has a timeout. Without one a hung job waits out
+# GitHub's default of six hours; on 2026-09-30 a layout shard sat silent for
+# 57 minutes and only release.yml's own 60 stopped it. Each limit is about
+# twice the job's longest time in the last four PR runs of 8.1
+# (36708776605, 36711052317, 36721696259, 36732131710), rounded up to five
+# minutes — generous enough not to fire on a slow runner, short enough that
+# a hang costs minutes. A browser group carries its own (`timeout` below),
+# because one number for all of them would be the slowest group's; for the
+# four groups split by V4 the base is their suites' time in the job logs
+# plus the job's setup.
 jobs:
   static:
     # Three platforms, not one. The 5.0.0 lockfile installed only on the Linux
@@ -45,6 +55,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # longest 10.6 min (ubuntu, which also runs the sampled puzzle search)
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -82,6 +94,12 @@ jobs:
       - name: mined-puzzle soundness (sampled)
         if: matrix.os == 'ubuntu-latest'
         run: node scripts/test-mined.mjs --sample=150
+      # v8-2-plan V2: how verify-endgames.py --online reads a tablebase
+      # answer. The online run itself is manual (verify-endgames.yml); its
+      # parsing is checked here, offline, on the runner's own Python.
+      - name: tablebase answer reading
+        if: matrix.os == 'ubuntu-latest'
+        run: python3 scripts/test-verify-endgames.py
       # `free variables: node scripts/scope-check.mjs` used to sit here. The
       # sources are ES modules as of 1.25 and index.html loads one bundle, so
       # an unbound name is a build failure — test-chess.mjs asserts the bundle
@@ -90,6 +108,9 @@ jobs:
 
   browser:
     runs-on: ubuntu-latest
+    # per group: twice the longest of either engine (layout 1/4 on WebKit
+    # once took 28.7 min; its scenarios also have their own 600 s watchdog)
+    timeout-minutes: ${{ matrix.group.timeout }}
     strategy:
       fail-fast: false
       matrix:
@@ -102,16 +123,36 @@ jobs:
         # running every suite in a row (84 minutes on Chromium). A group is
         # one of the long suites, or a few short ones; release.yml uses the
         # same groups. scripts/test-chess.mjs checks that every suite in
-        # `npm run test:e2e` is named here.
+        # `npm run test:e2e` is named here, each in one group only, and
+        # (v8-2-plan V4) that release.yml's list is this one entry for entry.
         group:
-          - name: board + sound + clock
-            suites: scripts/test-board-e2e.mjs scripts/test-audio-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-shell-e2e.mjs scripts/test-trainer-e2e.mjs
-          - name: lessons + review + engine
-            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs scripts/test-endgames-e2e.mjs
+          # v8-2-plan V4: with "lessons + review + engine" split (below), this
+          # was the next job over the 15-minute target — 16.6–19.6 min on
+          # Chromium. Split the same way, by the suites' own times in run
+          # 36732131710: board 7.2 + clock 1.1 / sound 4.4 + shell 2.5 +
+          # trainer 2.1 minutes.
+          - name: board + clock
+            suites: scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs
+            timeout: 30
+          - name: sound + shell + trainer
+            suites: scripts/test-audio-e2e.mjs scripts/test-shell-e2e.mjs scripts/test-trainer-e2e.mjs
+            timeout: 30
+          # v8-2-plan V4: "lessons + review + engine" was one 21.7-minute job,
+          # the critical path of every PR. Split where its time splits: the
+          # lessons and review suites ≈ 10 minutes, the three that start the
+          # real engine ≈ 10.5 (Chromium, run 36732131710).
+          - name: lessons + review
+            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs
+            timeout: 25
+          - name: engine
+            suites: scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs scripts/test-endgames-e2e.mjs
+            timeout: 30
           - name: persistence
             suites: scripts/test-persist-e2e.mjs
+            timeout: 25
           - name: game library
             suites: scripts/test-library-e2e.mjs scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs
+            timeout: 45
           # v8-0-plan F1: the layout suite in four shards. As one job it was
           # 31m51s on Chromium, the critical path of every PR by 18 minutes;
           # SHARD=i/4 runs every fourth scenario (scripts/e2e-shard.mjs).
@@ -119,15 +160,19 @@ jobs:
           - name: panel layout 1/4
             suites: scripts/test-layout-e2e.mjs
             shard: 1/4
+            timeout: 60
           - name: panel layout 2/4
             suites: scripts/test-layout-e2e.mjs
             shard: 2/4
+            timeout: 60
           - name: panel layout 3/4
             suites: scripts/test-layout-e2e.mjs
             shard: 3/4
+            timeout: 60
           - name: panel layout 4/4
             suites: scripts/test-layout-e2e.mjs
             shard: 4/4
+            timeout: 60
         # v8-0-plan F2: the per-move cost gate reads a CDP metric, so it is
         # one Chromium job rather than a group on both engines — `include`
         # with a group no combination has adds exactly that one job
@@ -136,6 +181,7 @@ jobs:
             group:
               name: performance
               suites: scripts/perf-e2e.mjs
+              timeout: 10
     name: browser (${{ matrix.engine }}, ${{ matrix.group.name }})
     env:
       E2E_REQUIRED: "1"
@@ -211,6 +257,8 @@ jobs:
   # be blocked by, a set of pictures.
   shots:
     runs-on: ubuntu-latest
+    # longest 3.5 min
+    timeout-minutes: 10
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -280,6 +328,8 @@ jobs:
           - os: windows-latest
             flags: -Dplatform=windows
     runs-on: ${{ matrix.os }}
+    # longest 5.2 min (windows)
+    timeout-minutes: 15
     name: zig (${{ matrix.os }})
     defaults:
       run:

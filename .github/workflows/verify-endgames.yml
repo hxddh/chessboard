@@ -1,0 +1,65 @@
+name: verify endgames
+
+# The endgame camp's verdicts against the full Syzygy set (v8-2-plan V2).
+#
+# docs/endgames-verified.json checks the 48 positions of 3–4 men against the
+# local Syzygy tables, and the 12 of 5 men or more against a deep Stockfish
+# search only: the 5-piece files could not be fetched where the camp was
+# written, and tablebase.lichess.ovh is refused by that machine's proxy. The
+# CI machines can reach it. This asks it about every recorded position of ≤ 7
+# men — 11 of the 12, and the 48 again as a check on the reading — at one
+# request a second, prints each answer, and uploads the file with the answers
+# written beside the records (`lichess`). The one position of 8 men has no
+# table and is listed as skipped.
+#
+# Manual only, read-only, and it commits nothing: whether a 5-man item is
+# re-labelled from `sf` to `tb`, changed or withdrawn is a person's commit,
+# made after reading the answers. A red run means the table disagrees with an
+# item (or a request failed); the log says which, and the artifact is
+# uploaded either way.
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "only these ids, comma-separated (empty: every position of ≤ 7 men)"
+        default: ""
+      delay:
+        description: seconds between requests
+        default: "1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # ~60 requests a second apart, and a minute's wait on each 429
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # the version docs/endgames-verified.json records, in a venv (the
+      # runner's system Python refuses a global pip install)
+      - name: python-chess
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet chess==1.10.0
+      - name: the reading of an answer (no network)
+        run: .venv/bin/python scripts/test-verify-endgames.py
+      - name: ask the tablebase
+        # explicit bash is `-eo pipefail`: the script's exit code survives tee
+        shell: bash
+        env:
+          ONLY: ${{ inputs.only }}
+          DELAY: ${{ inputs.delay }}
+        run: |
+          [[ "$ONLY" =~ ^[a-z0-9,-]*$ ]] || { echo "only: ids and commas"; exit 2; }
+          [[ "$DELAY" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "delay: a number"; exit 2; }
+          mkdir -p out
+          .venv/bin/python scripts/verify-endgames.py --online --only "$ONLY" --delay "$DELAY" \
+            --out out/endgames-verified.json | tee out/verify-endgames.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: endgames-verified
+          path: out/
+          if-no-files-found: warn

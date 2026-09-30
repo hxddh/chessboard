@@ -36,7 +36,7 @@
       "side.learning": "学習データ", "act.learningExport": "書き出し", "act.learningImport": "読み込み",
       "side.allData": "すべてのデータ", "act.allExport": "書き出し", "act.allImport": "読み込み", "act.about": "このアプリについて",
       "tip.allData.export": "この端末のすべてのデータ（対局・保存スロット・設定・成績・学習データ）をひとつのファイルに保存", "tip.allData.import": "書き出したファイルでこの端末のデータを丸ごと置き換える", "tip.about": "バージョン・ライセンス・謝辞",
-      "dlg.exportAll": "すべてのデータを書き出す", "dlg.importAll": "すべてのデータを読み込む：この端末の対局・保存スロット・設定・成績・学習データはファイルの内容で丸ごと置き換わります。", "msg.allData.badFile": "このアプリが書き出したデータファイルではありません", "msg.allData.imported": "すべてのデータを読み込みました。再読み込みします…",
+      "msg.allData.preparing": "書き出すファイルを準備しています…", "dlg.exportAll": "すべてのデータを書き出す", "dlg.importAll": "すべてのデータを読み込む：この端末の対局・保存スロット・設定・成績・学習データはファイルの内容で丸ごと置き換わります。", "msg.allData.badFile": "このアプリが書き出したデータファイルではありません", "msg.allData.imported": "すべてのデータを読み込みました。再読み込みします…",
       "msg.profile.restored": "端末のデータファイルからプロファイルを復元しました。再読み込みします…", "msg.profile.fileBad": "端末のデータファイルを読めませんでした。今回はキャッシュのプロファイルを使い、ファイルは上書きしません",
       "about.title": "このアプリについて", "about.version": "バージョン", "about.license": "ライセンス", "about.source": "ソースコード", "about.credits": "謝辞", "about.dataPath": "データの場所",
       "about.licenseText": "GPLv3 —— 自由ソフトウェア。ソースコードは各リリースに付属", "about.creditsText": "Stockfish 19（GPLv3）· chess.js（BSD-2）· cburnett 駒セット（Colin M.L. Burnett、GPLv2+。「クラシック」はその Wikimedia 版の描き直しで GFDL / BSD / GPL / CC BY-SA 3.0 の複数ライセンス）· Merida 駒セット（Armando Hernandez Marroquin、GPLv2+）· Chessnut 駒セット（Alexis Luengas、Apache 2.0）· Fantasy / Celtic / Spatial 駒セット（Maurizio Monge、MIT）· lichess chess-openings（CC0）· Lichess 対局データベース（CC0、内蔵の強豪着手ツリー）· 木製の効果音は本プロジェクト製（物理モデルで実時間合成、GPLv3）· Lucide アイコン（ISC。うち 10 個は Feather 由来で MIT）",

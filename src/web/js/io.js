@@ -159,11 +159,11 @@ export function createIO(d) {
    * fallbacks were written out twice, once for PGN and once for the learning
    * file, and differed only in MIME type and title.
    */
-  async function exportText(name, text, mime, title, recent) {
+  async function exportText(name, text, mime, title, recent, onStaged) {
     if (Host.hasZero()) {
       try {
         // v8-1-plan N2: dialog, write, reveal and recent list all in main.zig
-        const saved = await Host.saveText({ title, name, text, recent });
+        const saved = await Host.saveText({ title, name, text, recent, onStaged });
         if (!saved) { toast(t("msg.export.cancelled")); return; }
         savedToast(saved.name, saved.path, saved.revealed);
         return;
@@ -462,14 +462,34 @@ export function createIO(d) {
     const pad = (n) => String(n).padStart(2, "0");
     return "chessboard-all-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
   }
+  /**
+   * v8-2-plan F5: 「正在准备…」 beside the button while the file is built and
+   * crosses the bridge. Ten thousand games are ~28 MB, dozens of pieces sent
+   * before main.zig can show the save dialog, and for those seconds the click
+   * had no answer at all. A live region, so a screen reader hears it too; it
+   * is never hidden, only emptied (an empty one takes no room), because a
+   * region that appears with its text already in it is often not read.
+   */
+  function allDataStatus(msg) {
+    const el = document.getElementById("alldata-status");
+    if (el) el.textContent = msg;
+  }
   async function exportAllData() {
-    saveGame();
-    saveSettings();
-    await LibraryUI.ready(); await RepUI.ready();   // v8-0-plan C1: the games are in the export once the library is loaded; the repertoire's records once its chunk is (M3 评审)
-    // compact (v8-0-plan F3): the values are JSON strings already, so the
-    // two-space indent only padded the envelope — and every byte of the file
-    // crosses the bridge
-    await exportText(allDataFileName(), JSON.stringify(RepUI.forExport(Persist.exportAll())), "application/json", t("dlg.exportAll"));
+    allDataStatus(t("msg.allData.preparing"));
+    try {
+      // a frame for the line to show before the stringify below holds the thread
+      await new Promise((r) => setTimeout(r, 30));
+      saveGame();
+      saveSettings();
+      await LibraryUI.ready(); await RepUI.ready();   // v8-0-plan C1: the games are in the export once the library is loaded; the repertoire's records once its chunk is (M3 评审)
+      // compact (v8-0-plan F3): the values are JSON strings already, so the
+      // two-space indent only padded the envelope — and every byte of the file
+      // crosses the bridge
+      await exportText(allDataFileName(), JSON.stringify(RepUI.forExport(Persist.exportAll())), "application/json", t("dlg.exportAll"),
+        // the last piece opens the dialog: the dialog is the answer from there
+        // — unless its stage was lost and it all goes again (M1 评审)
+        false, (last) => allDataStatus(last ? "" : t("msg.allData.preparing")));
+    } finally { allDataStatus(""); }
   }
   async function importAllDataText(text) {
     let doc = null;

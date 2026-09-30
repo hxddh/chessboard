@@ -18,3 +18,6 @@ scripts/cache/
 
 # 7.7 §12: scripts/shots.mjs writes the screenshot walk-through here
 shots/
+
+# Python bytecode from scripts/verify-endgames.py and its test (they import scripts/lib/tablebase_api.py)
+__pycache__/

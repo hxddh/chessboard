@@ -66,7 +66,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "side.learning": "学习数据", "act.learningExport": "导出", "act.learningImport": "导入",
       "side.allData": "全部数据", "act.allExport": "导出", "act.allImport": "导入", "act.about": "关于",
       "tip.allData.export": "把本机全部数据（对局、存档槽、设置、战绩、学习数据）存成一个文件", "tip.allData.import": "用导出的文件整个替换本机数据", "tip.about": "版本、许可与致谢",
-      "dlg.exportAll": "导出全部数据", "dlg.importAll": "导入全部数据：本机现有的对局、存档槽、设置、战绩与学习数据将被文件里的整个替换。", "msg.allData.badFile": "这不是本应用导出的数据文件", "msg.allData.imported": "已导入全部数据，正在重新载入…",
+      "msg.allData.preparing": "正在准备导出的文件…", "dlg.exportAll": "导出全部数据", "dlg.importAll": "导入全部数据：本机现有的对局、存档槽、设置、战绩与学习数据将被文件里的整个替换。", "msg.allData.badFile": "这不是本应用导出的数据文件", "msg.allData.imported": "已导入全部数据，正在重新载入…",
       "msg.profile.restored": "已从本机数据文件恢复档案，正在重新载入…", "msg.profile.fileBad": "本机数据文件读不出来，本次用浏览器缓存里的档案；原文件未被覆盖",
       "about.title": "关于国际象棋", "about.version": "版本", "about.license": "许可", "about.source": "源码", "about.credits": "致谢", "about.dataPath": "数据位置",
       "about.licenseText": "GPLv3 —— 自由软件，源码随发布提供", "about.creditsText": "Stockfish 19（GPLv3）· chess.js（BSD-2）· cburnett 棋子（Colin M.L. Burnett，GPLv2+；「经典」一套为其 Wikimedia 重绘版，GFDL / BSD / GPL / CC BY-SA 3.0 多重许可）· Merida 棋子（Armando Hernandez Marroquin，GPLv2+）· Chessnut 棋子（Alexis Luengas，Apache 2.0）· Fantasy / Celtic / Spatial 棋子（Maurizio Monge，MIT）· lichess chess-openings（CC0）· Lichess 对局库（CC0，内置的大师着法树）· 木质音效为本项目自制（物理模型实时合成，GPLv3）· Lucide 图标（ISC；其中 10 个源自 Feather，MIT）",

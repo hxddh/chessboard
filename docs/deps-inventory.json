@@ -8,10 +8,10 @@
       "npm": "@native-sdk/cli",
       "current": "0.10.1",
       "pinnedIn": [".github/workflows/checks.yml (zig job SDK_VERSION)", ".github/workflows/build-macos.yml (sdk_version 默认值)", ".github/workflows/build-windows.yml (sdk_version 默认值)", ".github/workflows/release.yml (sdk_version 默认值)", "src/runner.zig（SDK app_runner 的分叉，随 SDK 手动同步）", "build.zig（SDK build/app.zig 的手抄本）"],
-      "latest": "0.10.1（npm latest，2026-08-24；8.1.0 发布当天 2026-09-30 重查，仍无 0.10.2）；main 上另有 22 个未发版提交，HEAD 96943d4a（2026-09-28）",
+      "latest": "0.10.1（npm latest，2026-08-24；8.1.0 发布当天 2026-09-30 重查，仍无 0.10.2）；main 上另有 17 个未发版提交（git rev-list --count v0.10.1..HEAD），HEAD 96943d4a（2026-09-28）；GitHub 已有 v0.10.0、v0.10.1 标签",
       "source": ["npm view @native-sdk/cli dist-tags/time", "git ls-remote + clone https://github.com/vercel-labs/native（CHANGELOG.md、docs、src）"],
       "checkedAt": "2026-09-30",
-      "unusedCapabilitiesAlreadyIn0101": ["bridge.AsyncHandler + PlatformServices.wake_fn（异步桥应答，同步不再占住桥线程）", "PlatformServices.showOpenDialog/showSaveDialog（原生侧拿到对话框结果，可去掉对话框路径的 issuePath）", "签名更新器（0.10.0，仅 macOS system host；runner.zig 已接好，app.zon 缺 .updates）", "notarytool 公证与 DMG 装订（0.10.1，需要 Developer ID 证书）", "native-sdk.os.addRecentDocument（最近打开的 PGN）", "native-sdk.os.showNotification（可选的训练提醒）"],
+      "unusedCapabilitiesAlreadyIn0101": ["bridge.AsyncHandler + PlatformServices.wake_fn（异步桥应答，同步不再占住桥线程）", "PlatformServices.showOpenDialog/showSaveDialog（原生侧拿到对话框结果，可去掉对话框路径的 issuePath）", "签名更新器（0.10.0，仅 macOS system host；runner.zig 已接好，app.zon 缺 .updates）", "notarytool 公证与 DMG 装订（0.10.1，需要 Developer ID 证书）", "automation server（build.zig -Dautomation，runner.zig 已接线，没有 workflow 用过；v8-2-plan V1）"],
       "stillMissing": ["WebView 页面声明可拖区域 / 开始拖窗（macOS 只接给画布控件；Windows 的 WM_NCHITTEST 拖动区按 view label 存，是否对 WebView2 主视图生效要实验）", "zero:// 响应头（COOP/COEP）——多线程 wasm 引擎的前提", "Windows / Linux 的自动更新"],
       "recommendation": "upgrade-when-released",
       "note": "当前钉的就是最新正式版。8.1.0 用到了 0.10.1 里原先没用的异步桥（N1）、原生对话框（N2）；签名更新器按 v8-1-plan §8 第 4 条暂不接。main 上的 #465（优化构建的 macOS 链接保留更新器导出）与开启更新器直接相关：本仓库 release 用 ReleaseFast。0.10.2 发布后升，并用一次双平台构建证明；runner.zig / build.zig 要对照上游 diff 同步。最低 macOS：0.10.1 的 Info.plist 模板写 LSMinimumSystemVersion 11.0（src/tooling/package.zig），build/app.zig 以 -mmacosx-version-min=11.0 链接；Big Sur 出厂 Safari 14，15 / 16 只是可选更新，所以不能保证 Safari 16+ 的 WebKit，bundle target 留在 safari15（v8-1-plan §5，见 scripts/bundle.mjs）。"
@@ -88,7 +88,7 @@
     {
       "name": "actions/checkout",
       "kind": "GitHub Action",
-      "current": "@v7（全部 15 处）",
+      "current": "@v7（全部 16 处）",
       "pinnedIn": [".github/workflows/*.yml"],
       "latest": "v7.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/checkout"],
@@ -195,12 +195,12 @@
       "name": "残局训练营的核对工具（Syzygy 3–4 子表、python-chess、Stockfish 16）",
       "kind": "generation-time (不进安装包)",
       "current": "Syzygy 3–4 子 WDL/DTZ 70 个文件（取自 python-chess 仓库 data/syzygy/regular，md5 逐个记在 docs/endgames-verified.json）；python-chess 1.10.0；Stockfish 16（Ubuntu 包）",
-      "pinnedIn": ["docs/endgames-verified.json tools", "scripts/verify-endgames.py"],
+      "pinnedIn": ["docs/endgames-verified.json tools", "scripts/verify-endgames.py", "verify-endgames.yml（pip install chess==1.10.0）"],
       "latest": "n/a",
       "source": ["raw.githubusercontent.com/niklasf/python-chess/master/data/syzygy/regular", "pypi.org chess 1.10.0 wheel"],
       "checkedAt": "2026-09-30",
       "recommendation": "not-needed",
-      "note": "v8-1-plan T2：只在写 60 个残局时用来核对结论，应用里不带残局库。5 子的表取不到（见 unverified），5 子以上用 Stockfish 深搜代替。"
+      "note": "v8-1-plan T2：只在写 60 个残局时用来核对结论，应用里不带残局库。5 子的表取不到（见 unverified），5 子以上用 Stockfish 深搜代替。v8-2-plan V2：手动触发的 verify-endgames 工作流在 CI 上向 tablebase.lichess.ovh 查询 ≤ 7 子的局面（verify-endgames.py --online）。"
     }
   ],
   "unverified": [
