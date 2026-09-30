@@ -182,7 +182,8 @@ export function createLibraryUI(d) {
     const start = typeof globalThis !== "undefined" && globalThis[LIBDB_CHUNK.global] ? (fn) => fn() : later;
     start(() => loadChunk(LIBDB_CHUNK.file, LIBDB_CHUNK.global).then((m) => (charts = m.createDiagCharts({ doc, t, tf, judgeColours, libMoveNo }))
       && m.bootLibrary(Object.assign({}, d, {
-      summary: libSumPre,
+      // handed over once: its reply holds the whole summary text (M4 评审)
+      summary: ((p) => { libSumPre = null; return p; })(libSumPre),
       onSummary: (c) => { libEarly = c; renderLibrary(); },
       Library, Dlg, reconcile, Chess, PgnParser: ChessPgnParser, Pgn: ChessPgn, Eco: ChessEco,
       idb: typeof indexedDB !== "undefined" ? indexedDB : null, withLock: Host.withStoreLock,

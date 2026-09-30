@@ -126,7 +126,10 @@ async function idbBackend(idb, name, open) {
   if (!idb || typeof idb.open !== "function") return null;
   let db = null;
   if (open) {
-    const fits = open.version === DB_VERSION && open.objectStoreNames.contains("games") && open.objectStoreNames.contains("meta");
+    let fits = open.version === DB_VERSION && open.objectStoreNames.contains("games") && open.objectStoreNames.contains("meta");
+    // closed meanwhile (a version change elsewhere): a transaction says so
+    // (M4 评审) — then a fresh open below
+    if (fits) { try { open.transaction(["games"], "readonly"); } catch (_) { fits = false; } }
     if (fits) db = open;
     else { try { open.close(); } catch (_) { /* already */ } }
   }
@@ -343,6 +346,15 @@ function stubOf(r) {
   return g;
 }
 
+/**
+ * The library's one order: newest first, and by id among games of the same
+ * moment — every game of one import shares its `t` (M4 评审 P2-1: sorted by
+ * `t` alone, the summary's rows, in shard order, and the entries, in id
+ * order, made two different first pages, and the list changed under the
+ * reader when the entries arrived).
+ */
+const newestFirst = (a, b) => (b.t || 0) - (a.t || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
 /** A summary shard's text: its rows in id order, so the same rows are the same text. */
 const sumText = (m) => JSON.stringify([...m.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
 
@@ -474,7 +486,7 @@ function createLibraryStore(o) {
       if (!r || typeof r.id !== "string") continue;
       (r.src === "local" ? b : a).push(take(r));
     }
-    a.sort((x, y) => (y.t || 0) - (x.t || 0));
+    a.sort(newestFirst);
     games = a;
     local = b;
     // every record is in hand: the summary is rebuilt from them, and kept
@@ -701,7 +713,7 @@ function createLibraryStore(o) {
       // ones not yet in
       await withSum(incoming, old, (m) => backend.replace(old, incoming, m));
       for (const id of old) pk.delete(id);
-      games = incoming.slice().sort((x, y) => (y.t || 0) - (x.t || 0));
+      games = incoming.slice().sort(newestFirst);
       return incoming.length;
     });
   }
@@ -717,4 +729,4 @@ function createLibraryStore(o) {
   };
 }
 
-export const LibraryDb = { DB_NAME, idbBackend, memoryBackend, createLibraryStore, mergeEntry, badCount, summaryOf, stubOf };
+export const LibraryDb = { DB_NAME, idbBackend, memoryBackend, createLibraryStore, mergeEntry, badCount, summaryOf, stubOf, newestFirst };

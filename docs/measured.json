@@ -2138,19 +2138,19 @@
     "what": "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms。coldStart（v8-1-plan F3）：重启后从导航开始到列表可见、按摘要搜索可用、局面索引到达（ready），列表与搜索取三次最快、索引取三次最慢；验收线 1.5 s / 4.5 s",
     "script": "node scripts/test-library-e2e.mjs --record",
     "games": 10000,
-    "importMs": 16777,
-    "loadMs": 2883,
+    "importMs": 17439,
+    "loadMs": 3003,
     "queryMs": {
-      "opponent": 5.3,
-      "text": 12,
-      "date": 7.6,
-      "result": 0.8,
-      "tc": 6.1,
-      "eco": 0.8,
-      "position": 1.9,
-      "combined": 3.8,
-      "explorer": 6.1,
-      "start": 13.1
+      "opponent": 5.1,
+      "text": 13.9,
+      "date": 8.9,
+      "result": 0.9,
+      "tc": 5,
+      "eco": 1.1,
+      "position": 2.8,
+      "combined": 4.5,
+      "explorer": 7,
+      "start": 15.4
     },
     "queryHits": {
       "opponent": 1170,
@@ -2165,39 +2165,44 @@
       "start": 10000
     },
     "pageMs": {
-      "typed": 9.7,
-      "position": 15.1,
-      "speed": 12.4
+      "typed": 19,
+      "position": 18.9,
+      "speed": 12.9
     },
     "limitMs": 200,
     "coldStart": {
       "limitMs": {
         "list": 1500,
-        "search": 4500
+        "search": 4500,
+        "ready": "max(4500, 1.25 × noSummary.readyMs)"
       },
-      "listVisibleMs": 213,
-      "searchUsableMs": 224,
-      "readyMs": 2596,
+      "listVisibleMs": 199,
+      "searchUsableMs": 210,
+      "readyMs": 3115,
       "runs": [
         {
-          "list": 222,
-          "search": 230,
-          "ready": 2596,
-          "reload": 3011
+          "list": 286,
+          "search": 297,
+          "ready": 2670,
+          "reload": 3187
         },
         {
-          "list": 213,
-          "search": 224,
-          "ready": 2567,
-          "reload": 3015
+          "list": 199,
+          "search": 210,
+          "ready": 2611,
+          "reload": 3170
         },
         {
-          "list": 233,
-          "search": 243,
-          "ready": 2465,
-          "reload": 2922
+          "list": 1805,
+          "search": 1817,
+          "ready": 3115,
+          "reload": 3526
         }
-      ]
+      ],
+      "noSummary": {
+        "readyMs": 2535,
+        "listMs": 2350
+      }
     },
     "coldStartBefore": {
       "ref": "17334e1",
