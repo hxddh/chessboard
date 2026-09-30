@@ -112,10 +112,13 @@ export function createGuess(d) {
       li: was ? was.li : store.session.learnState.last || 0, ti: 0, g: new Chess(), stars: new Set(), tapStep: 0,
       last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null,
       flash: null, demoing: false, wantDemo: false,
-      gs: { ci, side: s, moves, at: 0, phase: "wait", res: [], arrow: null, mark: null, say: "", view: null,
+      gs: { ci, side: s, moves, at: 0, phase: "wait", res: [], arrow: null, mark: null, said: null, view: null,
         total: moves.filter((m) => m.color === s).length },
     };
     store.game.selection = null;
+    // face the side being guessed, as a puzzle does — the keyboard cursor and
+    // the strips read the same flag
+    store.game.flipped = s === "b";
     BoardView.cancelAnim();
     advance(store.session.learn.gs);
   }
@@ -168,23 +171,22 @@ export function createGuess(d) {
     BoardView.cancelAnim();
     moveSound(mv, L.g);
     if (uci(mv) === uci(master)) {
-      s.res.push({ ply, fen, you: mv, master, same: true, loss: 0, grade: "best" });
+      s.said = { ply, fen, you: mv, master, same: true, loss: 0, grade: "best" };
+      s.res.push(s.said);
       s.arrow = null;
       s.mark = { sq: mv.to, ok: true };
-      s.say = tf("gs.same", [label(mv, ply)]);
       s.at++;
       advance(s);
       return;
     }
     s.phase = "check";
-    s.say = "";
+    s.said = null;
     sync();
     const loss = await lossOf(fen, master, mv, s.side);
     if (run() !== s) return;
     const r = { ply, fen, you: mv, master, same: false, loss, grade: loss == null ? null : gradeOf(loss) };
     s.res.push(r);
-    s.say = loss == null ? tf("gs.noEval", [label(mv, ply), label(master, ply)])
-      : tf("gs.diff", [label(mv, ply), label(master, ply), t(Grade.LABEL[r.grade]), r1(loss)]);
+    s.said = r;
     // the master's move replaces the guess, which stays on the board as the arrow
     L.g.undo();
     const played = L.g.move(master.san);
@@ -232,7 +234,7 @@ export function createGuess(d) {
     const g = v ? new Chess(v.fen) : L.g;
     const guessArrow = v ? { from: v.you.from, to: v.you.to } : s.arrow;
     return {
-      position: g.board(), flipped: s.side === "b", // face the chair you sit in, as a puzzle does
+      position: g.board(), flipped: store.game.flipped,
       selected: store.game.selection ? store.game.selection.sq : null,
       legalTargets: store.game.selection ? store.game.selection.targets : [],
       lastMove: v ? null : L.last,
@@ -293,6 +295,13 @@ export function createGuess(d) {
     row.append(ui.jump, ui.swap, ui.quit);
     ui.root.append(ui.intro, ui.say, ui.sum, ui.worst, row);
   }
+  /** The verdict on one guess, in the language of the moment it is read. */
+  function sayOf(r) {
+    if (!r) return "";
+    const you = label(r.you, r.ply), m = label(r.master, r.ply);
+    return r.same ? tf("gs.same", [you]) : r.loss == null ? tf("gs.noEval", [you, m])
+      : tf("gs.diff", [you, m, t(Grade.LABEL[r.grade]), r1(r.loss)]);
+  }
   const put = (e, text) => { if (e.textContent !== text) e.textContent = text; };
 
   function render(box) {
@@ -308,7 +317,7 @@ export function createGuess(d) {
     ui.root.dataset.at = String(s.at);
     ui.root.dataset.view = s.view == null ? "" : String(s.res[s.view].ply);
     put(ui.intro, t("gs.intro"));
-    put(ui.say, s.say);
+    put(ui.say, sayOf(s.said));
     put(ui.sum, m.n ? tf("gs.sum", [m.same, m.n, r1(m.avg), r1(m.score)]) : "");
     const w = s.phase === "done" ? m.worst : null;
     put(ui.worst, w ? tf("gs.worst", [label(w.you, w.ply), label(w.master, w.ply), r1(w.loss), t(Grade.LABEL[w.grade])]) : "");
