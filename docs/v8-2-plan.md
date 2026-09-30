@@ -430,3 +430,7 @@
 ## 9 · 落地记录
 
 （发布前补。）
+
+### M1
+
+- **V2 Lichess 的时间排序（真站核对）**：`sync-samples.yml` 在 main 上手动跑了一次（2026-09-30 17:27 UTC，run 36751390621，thibault，`max` 20）。`lichess-since` 那条请求（`since=` 当时 − 30 天、`sort=dateAsc`）答 200 `application/x-chess-pgn`，20 局，**按 UTCDate / UTCTime 严格升序**：2026-09-10 06:36:17 → 2026-09-12 20:30:55 UTC，没有一局早于 since（日志里没印 since，按 Fetch 步开始的 17:26:54 推，不早于 2026-08-31 17:26:54 UTC）。增量同步对「从 since 起正序」的依赖在真站上成立，不用改。应答原样（44,075 字节）入库为 `src/sync-fixtures/lichess-since.body`，`headers.txt`、README 记了来源。断言：`src/main.zig` 一条 Zig 测试（逐局升序、不早于 since；`lichessReply` 分出 20 局、N = 5 留下最老 5 局、晚一点的 since 去掉前 6 局；把升序改成降序断言时红）；`scripts/test-sync.mjs` 13 项（升序；N = 5 截下从 since 起的前 5 局，入库后 `syncSince` 推出 09-12 − 14 天、已有 5 局，第二次新 15 重复 5、20 局齐全无缺口，同一份再喂一次 0 新 20 重复；把夹具换成倒序时红）。同一次运行里 Chess.com erik 的 2026/09 月份答了 404，旧夹具没换。

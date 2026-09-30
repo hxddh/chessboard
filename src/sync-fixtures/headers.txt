@@ -92,6 +92,20 @@ strict-transport-security: max-age=63072000; includeSubDomains; preload
 x-frame-options: DENY
 permissions-policy: interest-cohort=()
 
+=== lichess-since.body
+HTTP/2 200
+server: nginx
+date: Wed, 30 Sep 2026 17:27:01 GMT
+content-type: application/x-chess-pgn
+vary: Origin
+content-disposition: attachment; filename=lichess_thibault_2026-09-30.pgn
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+
 === lichess.body
 HTTP/2 200
 server: nginx
