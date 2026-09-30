@@ -7006,8 +7006,8 @@ for (const lang of CONTENT_LANGS) {
 {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const scriptsIn = (cmd) => [...String(cmd || "").matchAll(/node (scripts\/[\w-]+\.mjs)/g)].map((m) => m[1]);
-  const checksWf = fs.readFileSync(path.join(root, ".github/workflows/checks.yml"), "utf8");
-  const releaseWf = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
+  const checksWf = fs.readFileSync(path.join(root, ".github/workflows/checks.yml"), "utf8").replace(/\r\n/g, "\n");
+  const releaseWf = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8").replace(/\r\n/g, "\n");
   // Only the e2e lists are spelled out: both workflows run `test:static` and
   // `test:engine` through npm, which is the shape that cannot drift. The e2e
   // loop cannot, because each browser engine needs its own env.
