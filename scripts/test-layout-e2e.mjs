@@ -5339,14 +5339,14 @@ if (scenario()) {
       const tag = `T1 进阶课程 (${lang}, ${viewport.width}×${viewport.height})`;
       const { ctx, page, errs } = await open(lang, "learn", "play", "wood", viewport);
       await page.waitForFunction(() => !!window.CHESS_LESSONS_ADV &&
-        document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])").length === 120, null, { timeout: 8000 }).catch(() => {});
+        document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])").length === 120, null, { timeout: 8000 }).catch(() => {});
       const list = await page.evaluate((l) => {
         const d = document.querySelector("#sec-learn details.reading-index");
         if (d) d.open = true;
         const A = window.CHESS_LESSONS_ADV;
         if (!A) return { n: 0, titles: [], want: [], parts: [], cut: [], longest: 0 };
         const word = (L) => (l === "zh-CN" ? L : A[l][L.id]);
-        const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])")];
+        const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])")];
         const box = document.getElementById("sec-learn").getBoundingClientRect();
         const adv = items.slice(96);
         let longest = 0;
@@ -5367,7 +5367,7 @@ if (scenario()) {
       assert(list.parts.length === 2 && list.parts.every(Boolean), `${tag}: 「计算」「局面型」两个部分的标题都在目录里`);
       assert(list.cut.length === 0, `${tag}: 目录里进阶课程的行没有被裁掉的字` + (list.cut.length ? " — " + list.cut.join(", ") : ""));
       await page.evaluate((i) => {
-        const items = document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])");
+        const items = document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])");
         if (items[96 + i]) items[96 + i].click();
       }, list.longest);
       await page.waitForTimeout(600);
