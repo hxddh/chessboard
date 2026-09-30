@@ -241,11 +241,11 @@ async function bootLibrary(d) {
       rows.sort((a, b) => (b.t || 0) - (a.t || 0));
     }
     const page = rows.slice(0, shown);
-    // rows carry the game's id, never an index (7.4 D1); a stub's row is
-    // drawn again when its entry arrives ("s")
+    // rows carry the game's id, never an index (7.4 D1). A summary row draws
+    // the row its entry does (v8-1-plan F3), so the entries arriving leave
+    // the rows in place — none is rebuilt under a press (7.6)
     reconcile(list, page, (g) => g.id,
-      (g) => [store.ui.langId, g.outcome, g.side, g.eco, analysed(g) ? "a" + depthOf(g) : "-", g.unplayable ? "u" : "-", g.acc,
-        g.stub ? "s" : ""].join("|"),
+      (g) => [store.ui.langId, g.outcome, g.side, g.eco, analysed(g) ? "a" + depthOf(g) : "-", g.unplayable ? "u" : "-", g.acc].join("|"),
       (g) => rowOf(g));
     if (!rows.length && !waiting) {
       const p = doc.createElement("p");
@@ -318,10 +318,14 @@ async function bootLibrary(d) {
     Dlg.open(listModal());
     if (!stubs) syncLocal();
   }
+  /** A press on the list is under way (see the entries' arrival, 7.6). */
+  let pressed = false;
   /** Every control on the list page, wired once. */
   function wire() {
     const list = doc.getElementById("lib-list");
     if (list) {
+      list.addEventListener("pointerdown", () => { pressed = true; });
+      for (const ev of ["pointerup", "pointercancel"]) doc.addEventListener(ev, () => { pressed = false; }, true);
       list.onclick = (ev) => {
         // a row drawn from the summary opens its game once the game is here (v8-1-plan F3)
         if (stubs) { if (ev.target.closest("button")) loaded.then(() => list.onclick(ev)); return; }
@@ -933,7 +937,18 @@ async function bootLibrary(d) {
   // summary's rows, and what waited on them (a click, 导出) goes ahead
   if (stubs) {
     stubs = null;
-    if (listOpen()) { fillOpenings(); renderList(); }
+    // a row whose summary was out of date is redrawn: not while it is pressed (7.6)
+    const redraw = () => { if (listOpen()) { fillOpenings(); renderList(); } };
+    if (!pressed) redraw();
+    else {
+      const after = () => {
+        doc.removeEventListener("pointerup", after, true);
+        doc.removeEventListener("pointercancel", after, true);
+        setTimeout(redraw, 0);   // after the click the release makes
+      };
+      doc.addEventListener("pointerup", after, true);
+      doc.addEventListener("pointercancel", after, true);
+    }
   }
   loadedNow();
   for (const [id, yes] of [["lib-claim-yes", true], ["lib-claim-no", false]]) {
