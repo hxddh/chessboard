@@ -371,8 +371,8 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
 // --- 3d. v8-1-plan N1: a sync that takes 3 s leaves the board to the player ---
 // The native side answers after its network work, off the shell's loop; the
 // page's side of that is one Promise, and nothing on the page may wait on it.
-// The bridge holds its answer 3 s. Meanwhile the dialog is closed, a move is
-// made on the board and the move list is scrolled — each stamped by the page
+// The bridge holds its answer 3 s. Meanwhile the dialog is closed, the move
+// list is scrolled and a move is made on the board — each stamped by the page
 // when it happened, and every stamp has to come before the answer's.
 {
   // a 48-ply game in progress (two players), White to move: the move list overflows
@@ -408,11 +408,11 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   // straight to the board, no waiting on anything the sync does
   await page.keyboard.press("Escape");
   await page.click('#rail [data-view="play"]');
-  for (const s of ["b2", "b3"]) { const p = await at(s); await page.mouse.click(p.x, p.y); }
   await page.evaluate(() => { document.getElementById("move-list").scrollTop = 0; });
   const box = await page.evaluate(() => { const m = document.getElementById("move-list"); const r = m.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, over: m.scrollHeight > m.clientHeight + 20 }; });
   await page.mouse.move(box.x, box.y);
   await page.mouse.wheel(0, 400);
+  for (const s of ["b2", "b3"]) { const p = await at(s); await page.mouse.click(p.x, p.y); }
   // …then the answer lands: imported, and the mark kept for next time
   await page.waitForFunction(() => window.__answeredAt > 0, null, { timeout: 8000 });
   await page.waitForTimeout(600);
