@@ -951,13 +951,16 @@ export function createPuzzlesUI(d) {
     };
   }
 
-  // the book and the ratings whole: app.js reads onMinedArrived, ALL_PUZZLES,
-  // Library, Mistakes, loadMines, saveMines, Progress, Planner, saveProgress,
-  // bookNow, loadPuzzleState, savePuzzleState, Srs, Picker, owedNow,
-  // practiceLeft and puzzlesInCat of the one, ratingLabel and ratingTip of the other
+  // exactly what the one-file trainer returned (M1 评审): the book's and the
+  // ratings' other names stay inside the trainer. Srs, Picker, Progress and
+  // Mistakes are the same modules the book imports.
+  const { onMinedArrived, ALL_PUZZLES, Library, loadMines, saveMines, Planner, loadPuzzleState, practiceLeft } = Book;
+  const { ratingLabel, ratingTip } = Rating;
   return {
-    ...Book, ...Rating,
     wirePuzzlePanel,
+    onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
+    saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
+    owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
     showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(),
   };

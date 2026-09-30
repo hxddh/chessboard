@@ -7522,6 +7522,18 @@ for (const lang of CONTENT_LANGS) {
   }
   const lines = WEB_MODULES.get("trainer/puzzles.js").split("\n").length;
   assert(lines <= 1000, "F1: trainer/puzzles.js is the trainer's middle, not the whole of it (" + lines + " lines)");
+  // M1 评审: what the trainer hands app.js is the list the one file returned,
+  // named one by one — a spread of the book would let app.js reach any of
+  // its insides without anyone deciding it should
+  const pz = WEB_MODULES.get("trainer/puzzles.js");
+  const ret = (pz.match(/\n  return \{\n([\s\S]*?)\n  \};\n\}\s*$/) || [])[1] || "...";
+  const handed = ret.replace(/closeThemes: \(\) => Modes\.closeThemes\(\)/, "closeThemes").split(/[\s,]+/).filter(Boolean).sort();
+  const app = WEB_MODULES.get("app.js");
+  const taken = ((app.match(/const \{([^}]*)\} = PuzzlesUI;/) || [])[1] || "").split(/[\s,]+/).filter(Boolean)
+    .concat([...app.matchAll(/PuzzlesUI\.(\w+)/g)].map((m) => m[1]));
+  assert(!/\.\.\./.test(ret) && handed.join() === [...new Set(taken)].sort().join(),
+    "F1: createPuzzlesUI returns exactly the names app.js takes from it, one by one (" + handed.length + " names" +
+    (/\.\.\./.test(ret) ? ", spreads " + ret.match(/\.\.\.\w+/g).join(" ") : "") + ")");
 }
 
 // --- v8-1-plan F3 (M4): the rest of app.js's regions, the same way --------
