@@ -487,6 +487,10 @@ async function report() {
     if (h) { r.reason = "人工：" + h.reason + "（oracle：" + r.reason + "）"; r.verdict = h.verdict; }
   }
   const named = arg("named") ? namedRows(arg("named")) : [];
+  // how many real-game moves the app's pass looked at, and how many it tagged ? / ??
+  const tried = new Map();
+  for (const r of readJsonl(arg("named") || "")) for (const x of Array.isArray(r.rows) ? r.rows : [r]) if (x.id) tried.set(x.id, x.tag);
+  const mistakes = [...tried.values()].filter((t) => t === "?" || t === "??").length;
   const res = {};
   for (const m of MOTIF_ORDER) {
     const rs = all.filter((r) => r.motif === m);
@@ -512,10 +516,11 @@ async function report() {
   if (process.argv.includes("--record")) {
     const prev = readMeasured().motifPrecision || {};
     record("motifPrecision", Object.assign(prev, {
-      what: "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用十倍节点的深搜按判定规则逐条核对",
+      what: "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用 3.7 倍节点（1,000,000）的深搜按判定规则逐条核对",
       script: "scripts/sample-motifs.mjs（scan → app / games → judge → report）",
       sources: "Lichess 谜题库（database.lichess.org，每行是真实对局里走出的失着）+ scripts/fixtures/corpus.mjs + coach-games.mjs + src/sync-fixtures",
       appNodes: APP_NODES, deepNodes: DEEP_NODES, minPerMotif: MIN_PER_MOTIF, perMotif: PER_MOTIF, rule: "错误率 > 5% 的母题回退到只说子力得失（explain.js MATERIAL_ONLY）",
+      tried: { rows: tried.size, mistakes, named: named.length },
       byMotif: res,
     }));
   }

@@ -44,11 +44,17 @@ export const LOSS_PLIES = 4;
  * v8-1-plan T6: motifs that are not named. B3's rule — a motif whose sampled
  * error rate is above 5% falls back to saying only what the line wins
  * (「对方 X 之后丢 Y」) or which move was better, exactly as when no motif is
- * proved. The rates, ≥ 20 real-game cases per motif judged against a search
- * ten times deeper, are docs/measured.json `motifPrecision`
+ * proved. The rates, 22–25 real-game cases per motif judged against a
+ * search 3.7 times deeper, are docs/measured.json `motifPrecision`
  * (scripts/sample-motifs.mjs); the cases are docs/motif-audit-8.1.md.
+ *
+ *   - perpetual: 3 of 25 wrong — the drawing line the deep search finds is
+ *     not all checks, or it is not a draw at all;
+ *   - trapped: 3 of 25 wrong — each a queen pinned to its king, not trapped
+ *     (motif.js dTrapped asks whether every square loses the man, and a
+ *     pinned man's few legal moves all do).
  */
-export const MATERIAL_ONLY = [];
+export const MATERIAL_ONLY = ["perpetual", "trapped"];
 /** A motif record the sentence may name, or null. */
 const said = (m) => (m && m.motif && !MATERIAL_ONLY.includes(m.motif) ? m : null);
 

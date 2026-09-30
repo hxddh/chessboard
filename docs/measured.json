@@ -1850,6 +1850,156 @@
       "skewer": 3
     }
   },
+  "motifPrecision": {
+    "what": "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用 3.7 倍节点（1,000,000）的深搜按判定规则逐条核对",
+    "script": "scripts/sample-motifs.mjs（scan → app / games → judge → report）",
+    "sources": "Lichess 谜题库（database.lichess.org，每行是真实对局里走出的失着）+ scripts/fixtures/corpus.mjs + coach-games.mjs + src/sync-fixtures",
+    "appNodes": 270000,
+    "deepNodes": 1000000,
+    "minPerMotif": 20,
+    "perMotif": 25,
+    "rule": "错误率 > 5% 的母题回退到只说子力得失（explain.js MATERIAL_ONLY）",
+    "tried": {
+      "rows": 3970,
+      "mistakes": 3812,
+      "named": 1606
+    },
+    "byMotif": {
+      "hanging": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 310,
+        "fallback": false
+      },
+      "perpetual": {
+        "n": 25,
+        "wrong": 3,
+        "errPct": 12,
+        "found": 42,
+        "fallback": true
+      },
+      "double": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 37,
+        "fallback": false
+      },
+      "discovered": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 50,
+        "fallback": false
+      },
+      "discoveredAttack": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 187,
+        "fallback": false
+      },
+      "fork": {
+        "n": 25,
+        "wrong": 1,
+        "errPct": 4,
+        "found": 174,
+        "fallback": false
+      },
+      "zwischenzug": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 115,
+        "fallback": false
+      },
+      "desperado": {
+        "n": 25,
+        "wrong": 1,
+        "errPct": 4,
+        "found": 42,
+        "fallback": false
+      },
+      "removeDefender": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 76,
+        "fallback": false
+      },
+      "overload": {
+        "n": 22,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 22,
+        "fallback": false
+      },
+      "deflection": {
+        "n": 25,
+        "wrong": 1,
+        "errPct": 4,
+        "found": 74,
+        "fallback": false
+      },
+      "decoy": {
+        "n": 23,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 30,
+        "fallback": false
+      },
+      "pin": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 47,
+        "fallback": false
+      },
+      "skewer": {
+        "n": 25,
+        "wrong": 1,
+        "errPct": 4,
+        "found": 47,
+        "fallback": false
+      },
+      "xray": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 25,
+        "fallback": false
+      },
+      "trapped": {
+        "n": 25,
+        "wrong": 3,
+        "errPct": 12,
+        "found": 100,
+        "fallback": true
+      },
+      "mateThreat": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 85,
+        "fallback": false
+      },
+      "promotion": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 32,
+        "fallback": false
+      },
+      "backRank": {
+        "n": 25,
+        "wrong": 0,
+        "errPct": 0,
+        "found": 111,
+        "fallback": false
+      }
+    }
+  },
   "multipvPhase": {
     "what": "新手档自己的搜索设置下,每个局面实际返回几条候选、候选之间差多少分",
     "script": "scripts/test-analysis.mjs --record",

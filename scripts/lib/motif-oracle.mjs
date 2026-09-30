@@ -3,7 +3,7 @@
  *
  * A motif claim in a coach sentence is correct when, and only when:
  *
- *   1. the move it is about is sound by the DEEP search (ten times the app's
+ *   1. the move it is about is sound by the DEEP search (1M nodes, 3.7 × the app's
  *      nodes): the refutation is the deep best, or within 80 cp of it; a
  *      better move is the deep best, or at least 50 cp better than the move
  *      played (scripts/lib/coach-oracle.mjs, B3's thresholds);
@@ -63,7 +63,13 @@ export const RUBRIC = {
  * it marks wrong and a spot check of the ones it passes (the audit says
  * which). Each: { id, verdict, reason }.
  */
-export const HUMAN = [];
+export const HUMAN = [
+  // the overloaded d7 rook takes back on d4 one exchange later (…Qxf3 Rxf3
+  // Rxd4) and the e7 knight it also guarded falls (Rxe7+): the rule wants the
+  // take-back at once, the chess does not
+  { id: "g:sync-lichess:3:55", verdict: "ok", reason: "对方先换后（…Qxf3 Rxf3）再在 d4 吃回，它保护的 e7 马随即被 Rxe7+ 吃掉：过载成立，只是次序不同" },
+  { id: "g:sync-lichess:3:56", verdict: "ok", reason: "同上一手：Bxd4 之后 …Qxf3 Rxf3 Rxd4 Rxe7+，d7 车过载，e7 马丢掉" },
+];
 
 function play(g, m) {
   let mv = null;
