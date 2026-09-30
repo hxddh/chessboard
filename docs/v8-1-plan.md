@@ -715,6 +715,23 @@
 - **顺带修的**：`settings-ui.js` 在 `wire` 时把 Hash 交给引擎，而 `wire` 早于 `loadSettings()`，存着的 Hash 直到再点一次那一段才生效。改为在 `paintSettings` 里交（`setOptions` 对不变的值是空操作）；flows-e2e「第二个引擎」验证存着的 Hash 64 启动即生效。
 - 主包 869,452 字节（+约 4.5 KB）；app.js 行数不变（6,702：加一行读 `bgWorker`，删掉一处多余空行）。
 
+#### M2 评审修正
+
+- **P1-1 导入被拒但记号照走**：`importPgn` / `importPgnToLibrary` 现在报告结果——`{added, dup}` 或 `null`（被拒、读不出棋；提示照旧）。同步的应答到时棋谱库在分析（或棋盘在分析），不再拒收：对话框说「引擎正忙，等这轮分析完再导」，棋等着，分析一停就进库（`importPgn` 的 `wait`，解析期间才开始的分析同样等）。记号本身已经没有了（下一条），所以「只在成功时前进」由棋谱库自己保证。test-sync-e2e 3c′：应答时分析在跑，库里仍是 1 局、对话框说正忙；暂停分析后 3 局、对话框关上（改之前 1 局，两局丢掉）。
+- **P2-2 / P2-3 增量同步漏棋**：不再另记 `last`。`since` 从棋谱库推：这个网站、这个名字最新一局那天 0 点 − 14 天（`OVERLAP_DAYS`），重叠里已有的棋至多 50 局（`OVERLAP_GAMES`，超了就把 since 收到第 50 新那一局那天）；请求局数 = 选的 N + 重叠里已有的，重复的由棋谱库按 id 跳过。增量同步一律从 since 起**按时间正序**取：Lichess 加 `sort=dateAsc`（公开 API `/api/games/user` 的参数：`since` 是创建时间 ms，`sort` 取 dateAsc / dateDesc，默认 dateDesc——这里被拦截，没能对真站验证；`sync-samples.yml` 加了一条 `lichess-since` 样本，下次手动跑时核对应答是否按 UTCDate/UTCTime 升序），Chess.com 从 since 所在月份的**前一个月**往后走（也盖住了归档月份不一定按 UTC 切的问题），月内按列出的顺序。无论被 N、应答大小还是截止时间截断，截下的都是从 since 起连续的一段，下次从库里接着推，不留缺口；对局中途开始的通信棋只要 14 天内开局就还能取到。`SYNC_GAMES_MAX` 100 → 150。c27fbfa 存下的 `last` 不再读，原样留在 `sync` 键里，其余各项照旧读回。
+  - Zig：Lichess 第二次请求的 URL 逐字断言（`…&since=1789344000000&sort=dateAsc`，max 25），应答里先是 14 天前开局的通信棋、再是已有的 5 局、最后新的一局；max 2 时只取最旧的两局。Chess.com 第二次请求依次是 `archives`、`2026/08`、`2026/09`，8 月档里 9 月 1 日 UTC 才结束的一局被取到、8 月结束的不取。
+  - 已知限制：库里只存日期不存时刻，重叠按天算；同一天超过 50 + N 局（极少见的超快棋量）时，增量同步可能一直取回同一天已有的棋。超过 14 天才结束的 Lichess 通信棋仍会漏。
+- **P2-1 卡住的连接占满 4 个名额**：到截止时间除了答 `timeout`，还取消卡住的读。工作改成 `io.concurrent` 起的 Io 任务，任务所在的线程（原看守线程）到点先认领、答 timeout，再 `Future.cancel`：Io.Threaded 把取消送进阻塞的系统调用（macOS `pthread_kill(SIG.IO)`、Windows `NtCancelSynchronousIoFile`、Linux `tgkill`，`std/Io/Threaded.zig signalCanceledSyscall`），读返回 `error.Canceled`，任务结束后才放掉 job、`live` 减一。Zig 测试在进程内起一个只发头和半截正文就不动的服务器：连着 4 次同步各在 200 ms 答 timeout，之后 `live` 回到 0，第 5 次同步正常开始（改之前 `live` 停在 4、测试超时）。页面：`busy` →「上一次同步还没有结束，请稍后再试。」，`timeout` →「{0} 迟迟没有应答，请稍后再试。」；关于面板检查更新答 `busy` 时说「正在检查更新，请稍候」。界面键 1231 → 1234（`sync.busy`、`sync.timeout`、`msg.update.busy`，三语）。名字解析（getaddrinfo）在 macOS / Windows 上 Io 取消不了，这种情况仍占着名额直到系统超时，所以 `LIVE_MAX` 保留。
+- **P2-4 CI 计时**：test-sync-e2e 的 N1 桩延迟 3 s → 8 s（等待相应放宽），本机走子落进列表于 2.0 s、应答于 8.3 s。引擎调度器的绝对门槛没动：c27fbfa 的 CI 上 `wait`（着法进列表 → 应着的 `go` 发给 worker，本来就是引擎侧的时刻，不含绘制）WebKit p90 33 ms（无后台 17 ms）、Chromium p90 275 ms（263 ms），离 1000 ms 都很远，没有证据要改量法或数字。
+- **P3**：
+  - `Pending.post` 在锁外调用 `wake_fn`（与 SDK `ChannelWake` 同一做法），`waking` 计数在锁内登记，`close()` 有界地等在途的 wake 返回；`wake_fn` 失败写 `std.log.warn`。
+  - `respondNow` 拿不到堆缓冲（或帧放不下）时用栈上小缓冲答这一类的短错误（同步 `offline`、检查更新 `network`），不让页面干等兜底计时（FailingAllocator 测试）。
+  - `engine-bg.js` 加 `closed`：`close()` 之后排在后面的搜索不再起新 worker（test-engine：改之前 3 个 worker，之后 2 个，两次搜索都由第一个 worker 答）。
+  - `library-local.js` 的 `REC_MAX` 按写进标签之后的长度量（引号、反斜杠再转义一次）：45 个带引号的头、JSON 约 3,000 字的记录，改之前写出的 `LibRec` 超过读取的 4096，导回时整个文件解析失败；改之后头太长就不带，记录照样认回。
+  - 导回本机棋并进战绩（`LibraryLocal.mergeRecs`）：只把 500 条上限留下来的算「加入」。
+- 测试：Zig null 平台 62 项全过（新增 3 项、改写 2 项），x86_64-windows 与 aarch64-macos 交叉编译通过；`test:static` 全过（test-sync 新增 since 推算、重叠上限、旧存档）；test-sync-e2e 80 项全过；test-library-local、test-engine 全过。
+- 只有 CI 或真机能确认的：Lichess 真站对 `sort=dateAsc` + `since` + `max` 的应答顺序（样本 workflow）；macOS / Windows 上取消真的打断卡住的 TLS 读（Zig 测试在 CI 的 macOS / Windows 作业上跑同一个卡住服务器）。
+
 ---
 
 ## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）
