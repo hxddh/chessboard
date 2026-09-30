@@ -162,7 +162,7 @@ README 记 56%/27%（32 盘），engine.js 注释记 66%/25% 且没写盘数。7
 每一版的计划、依据与落地记录都在 `docs/` 里，逐条写着做到了什么、没做到什么：
 [v6](docs/v6-plan.md) · [v6.1](docs/v6-1-plan.md) · [v7](docs/v7-plan.md) · [v7.1](docs/v7-1-plan.md) · [v7.2](docs/v7-2-plan.md) · [v7.3](docs/v7-3-plan.md) · [v7.4](docs/v7-4-plan.md) · [v7.5](docs/v7-5-plan.md) · [v7.6](docs/v7-6-plan.md) · [v7.7](docs/v7-7-plan.md) · [v7.8](docs/v7-8-plan.md) · [v7.9](docs/v7-9-plan.md) · [v8.0](docs/v8-0-plan.md) · [v8.1](docs/v8-1-plan.md)。
 
-跨版本还没做的：签名与公证、msix、`.updates` 签名自动更新（都缺证书或密钥）；残局查表；macOS 透明标题栏（等 SDK，见上面 8.1.0 一节）；阶梯最上面一级的精度（见 docs/v8-1-plan.md §9 M3）；Lichess 对 `sort=dateAsc` 的应答顺序还没在真站核对（排在 docs/v8-2-plan.md V2）。
+跨版本还没做的：签名与公证、msix、`.updates` 签名自动更新（都缺证书或密钥）；残局查表；macOS 透明标题栏（等 SDK，见上面 8.1.0 一节）；阶梯最上面一级的精度（见 docs/v8-1-plan.md §9 M3）。
 真机走查的清单在 [docs/manual-check.md](docs/manual-check.md)，最近一次真机记录停在 5.2.0。
 
 ## 开发
