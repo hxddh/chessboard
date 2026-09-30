@@ -428,11 +428,25 @@ function createLibraryStore(o) {
     }
     return meta;
   }
-  /** What a write of these entries (and of `gone`) adds to its transaction, or undefined. */
-  function sumMeta(entries, gone) {
-    if (!sumOn) return undefined;
+  /**
+   * Shards whose rows memory has and the store may not: a write that carried
+   * them was refused, or has not committed yet. Every write carries these
+   * too until one commits — retrying the same entries changes no row, so
+   * without this the row the refused write took would never be written.
+   */
+  const owed = new Set();
+  /**
+   * A write of these entries (and of `gone`): `run(meta)` makes it, with the
+   * summary shards it changes — and the owed ones — in its transaction.
+   */
+  function withSum(entries, gone, run) {
+    if (!sumOn) return run(undefined);
     const touched = sumTouch(entries, gone);
-    return touched.size ? sumWrite(touched) : undefined;
+    for (const s of owed) touched.add(s);
+    if (!touched.size) return run(undefined);
+    for (const s of touched) owed.add(s);
+    return run(sumWrite(touched)).then((v) => { for (const s of touched) owed.delete(s); return v; },
+      (e) => { for (const s of touched) owed.add(s); throw e; });
   }
 
   /** The record for an entry: the entry, plus its index when it has one. */
@@ -564,7 +578,7 @@ function createLibraryStore(o) {
         }
         // before `load` (a v1 library at launch) there is no summary to
         // keep; after it (games pulled back from the native store) there is
-        await backend.put(put, sumMeta(put));
+        await withSum(put, null, (m) => backend.put(put, m));
         // read back: every id the v1 value held is in the store
         const back = new Set(await backend.keys());
         const missing = list.filter((g) => g && typeof g.id === "string" && g.id && !back.has(g.id));
@@ -583,7 +597,7 @@ function createLibraryStore(o) {
    */
   async function save(entries) {
     if (!entries.length) return true;
-    return backend.put(entries.map(recordOf), sumMeta(entries));
+    return withSum(entries, null, (m) => backend.put(entries.map(recordOf), m));
   }
   /** These records, as entries (a second window wrote them — and their rows). */
   async function read(ids) {
@@ -593,7 +607,7 @@ function createLibraryStore(o) {
   }
   async function drop(ids) {
     for (const id of ids) pk.delete(id);
-    return backend.remove(ids, sumMeta(null, ids));
+    return withSum(null, ids, (m) => backend.remove(ids, m));
   }
   /** Another window dropped these: out of this one's summary too, so its next write does not bring them back. */
   function forget(ids) { if (sumOn) sumTouch(null, ids); }
@@ -685,7 +699,7 @@ function createLibraryStore(o) {
       const old = games.map((g) => g.id);
       // one transaction: never a moment with the old games gone and the new
       // ones not yet in
-      await backend.replace(old, incoming, sumMeta(incoming, old));
+      await withSum(incoming, old, (m) => backend.replace(old, incoming, m));
       for (const id of old) pk.delete(id);
       games = incoming.slice().sort((x, y) => (y.t || 0) - (x.t || 0));
       return incoming.length;
