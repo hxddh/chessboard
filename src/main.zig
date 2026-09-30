@@ -1882,23 +1882,31 @@ fn setMenuLanguage(context: *anyopaque, invocation: native_sdk.bridge.Invocation
 //   1. the handler, on the loop thread, checks the request and takes this
 //      kind's slot — one sync and one update check at a time; a second of a
 //      kind still running is answered {"error":"busy"} at once;
-//   2. it starts a worker thread for the HTTP and a watcher thread for the
-//      deadline, and returns — the loop is free again;
+//   2. it starts the job's thread, which runs the HTTP as an Io task
+//      (io.concurrent) and keeps the deadline, and returns — the loop is
+//      free again;
 //   3. whichever finishes first (the answer, or the deadline's "timeout")
 //      claims the job, puts its text on the completion queue under the lock
-//      and calls PlatformServices.wake_fn — the one platform service that
-//      may be called from any thread (platform/types.zig: macOS
-//      dispatch_async, Win32 PostMessageW, bounded and enqueue-only);
+//      and, once the lock is released, calls PlatformServices.wake_fn — the
+//      one platform service that may be called from any thread
+//      (platform/types.zig: macOS dispatch_async, Win32 PostMessageW,
+//      bounded and enqueue-only);
 //   4. the platform delivers `.wake` on the loop thread, the runtime hands
 //      it to onEvent as `.effects_wake`, and drain() answers through the
 //      AsyncResponder the handler kept.
 // The page's side is unchanged: zero.invoke is still one Promise.
 //
-// The deadline is the watcher's, not std.http's: Zig 0.16's client has no
+// The deadline is the job thread's, not std.http's: Zig 0.16's client has no
 // per-request timeout, and a stalled read would otherwise hold the answer
 // forever. At the deadline the page is told "timeout" and the slot is free
-// for the next try; the worker is left to finish on its own and whatever it
-// brings is dropped. Such orphans are bounded (Pending.LIVE_MAX).
+// for the next try; then the HTTP task is canceled (Future.cancel), which
+// Io.Threaded delivers into the blocked syscall itself — SIG.IO through
+// pthread_kill on macOS, NtCancelSynchronousIoFile on Windows, tgkill on
+// Linux (std/Io/Threaded.zig signalCanceledSyscall) — so the read returns
+// error.Canceled, the task ends and the job is gone. 8.1 M2 review P2-1:
+// before, the worker was left to finish on its own, and four stalled
+// connections made every later sync and update check answer busy.
+// Pending.LIVE_MAX still bounds what is out.
 //
 // Exit: the SDK's stop hook (onStop) closes the queue — no wake_fn after it,
 // since the platform is about to be freed — and main() leaves with
@@ -1928,7 +1936,7 @@ const JobSpec = struct {
 const SYNC_DEADLINE_MS: u64 = 60_000;
 /// The About panel's check: host.js gives up at 10 s.
 const UPDATE_DEADLINE_MS: u64 = 8_000;
-/// How often the watcher looks at the clock and at the job.
+/// How often the job thread looks at the clock and at the job.
 const WATCH_POLL_MS: u64 = 20;
 /// Room for a sync answer (SyncAnswer caps it at SYNC_ANSWER_MAX) and more.
 const JOB_OUT_BYTES: usize = SYNC_ANSWER_MAX + 1024;
@@ -1938,13 +1946,11 @@ const Job = struct {
     kind: AsyncKind,
     gen: u32,
     spec: JobSpec,
-    /// the worker has its answer (the watcher may stop looking)
+    /// the task has its answer (the job thread may stop looking)
     done: std.atomic.Value(bool) = .init(false),
-    /// whoever sets this first — the worker's answer or the watcher's
+    /// whoever sets this first — the task's answer or the deadline's
     /// timeout — is the one that goes on the queue
     claimed: std.atomic.Value(bool) = .init(false),
-    /// the worker and the watcher; the last one out frees the job
-    refs: std.atomic.Value(u8) = .init(2),
 
     /// Progress for chess.fetchProgress (sync only): how many games are in.
     fn report(job: *Job, count: usize) void {
@@ -1952,8 +1958,8 @@ const Job = struct {
         job.pending.setProgress(job.gen, count);
     }
 
+    /// The job thread, once the task has returned: nothing else holds it.
     fn release(job: *Job) void {
-        if (job.refs.fetchSub(1, .acq_rel) != 1) return;
         const pending = job.pending;
         std.heap.page_allocator.destroy(job);
         // last: once live is back to 0 nothing of this job touches `pending`
@@ -1989,7 +1995,7 @@ const AsyncSlot = struct {
 
 /// The spin lock the SDK's own effects queue uses (runtime/effects.zig
 /// SpinMutex): Zig 0.16 has no blocking mutex outside Io, and every section
-/// under it is a few words of copying plus the enqueue-only wake_fn.
+/// under it is a few words of copying — wake_fn runs outside it (post).
 const SpinLock = struct {
     inner: std.atomic.Mutex = .unlocked,
 
@@ -2005,8 +2011,10 @@ const SpinLock = struct {
 const Begin = enum { started, busy, failed };
 
 const Pending = struct {
-    /// a timed-out job's worker may still be out: this many jobs at most,
-    /// counting those, so a network that never answers cannot pile threads up
+    /// a timed-out job stays out until its canceled task has returned (a
+    /// syscall Io cannot interrupt, such as a name lookup): this many jobs
+    /// at most, counting those, so a network that never answers cannot pile
+    /// threads up
     const LIVE_MAX: u32 = 4;
     /// every live job posts at most once
     const QUEUE_MAX: usize = LIVE_MAX;
@@ -2020,6 +2028,8 @@ const Pending = struct {
     wake_fn: ?*const fn (context: ?*anyopaque) anyerror!void = null,
     // shared, lock-free
     live: std.atomic.Value(u32) = .init(0),
+    /// posts inside wake_fn right now — close() waits these out (bounded)
+    waking: std.atomic.Value(u32) = .init(0),
     /// the running sync's generation (high half) and games so far (low half)
     progress: std.atomic.Value(u64) = .init(0),
     // the loop thread's alone
@@ -2053,18 +2063,13 @@ const Pending = struct {
         job.* = .{ .pending = self, .kind = kind, .gen = gen, .spec = spec };
         if (kind == .sync) self.progress.store(@as(u64, gen) << 32, .release);
         _ = self.live.fetchAdd(1, .acq_rel);
-        const worker = std.Thread.spawn(.{}, workerMain, .{job}) catch {
-            std.heap.page_allocator.destroy(job);
-            _ = self.live.fetchSub(1, .acq_rel);
+        // the job's thread only waits (the HTTP runs in its Io task), so a
+        // small stack does
+        const thread = std.Thread.spawn(.{ .stack_size = 256 * 1024 }, jobMain, .{job}) catch {
+            job.release();
             return .failed;
         };
-        worker.detach();
-        if (std.Thread.spawn(.{ .stack_size = 256 * 1024 }, watcherMain, .{job})) |watcher| {
-            watcher.detach();
-        } else |_| {
-            // no deadline for this one; the worker alone owns the job
-            job.release();
-        }
+        thread.detach();
         @memcpy(slot.id_buf[0..id.len], id);
         slot.id_len = id.len;
         slot.responder = responder;
@@ -2073,9 +2078,15 @@ const Pending = struct {
         return .started;
     }
 
-    /// Any thread: one finished job for the loop. Under the lock, so that
-    /// once close() has returned no thread is inside wake_fn — the platform
-    /// it points into is freed right after the stop hook.
+    /// Any thread: one finished job for the loop. The wake itself runs with
+    /// the lock free (8.1 M2 review P3): wake_fn is enqueue-only by contract
+    /// (PlatformServices.wake_fn), but drain() takes this lock on the loop
+    /// thread, and a wake that ever waited on the loop would then deadlock
+    /// it — the SDK's own channel wake (runtime/effects.zig ChannelWake)
+    /// makes the same call outside its lock for the same reason. `waking`
+    /// is marked under the lock, before `closed` could be set, so close()
+    /// can wait out every call already inside wake_fn: the platform it
+    /// points into is freed right after the stop hook.
     fn post(self: *Pending, c: Completion) void {
         self.lock.lock();
         if (self.closed or self.queued == QUEUE_MAX) {
@@ -2085,9 +2096,15 @@ const Pending = struct {
         }
         self.queue[self.queued] = c;
         self.queued += 1;
-        // bounded and enqueue-only by contract (PlatformServices.wake_fn)
-        if (self.wake_fn) |wake| wake(self.wake_ctx) catch {};
+        const wake_fn = self.wake_fn;
+        const wake_ctx = self.wake_ctx;
+        if (wake_fn != null) _ = self.waking.fetchAdd(1, .acq_rel);
         self.lock.unlock();
+        const wake = wake_fn orelse return;
+        defer _ = self.waking.fetchSub(1, .acq_rel);
+        // a wake that failed leaves the answer on the queue until the next
+        // one; say so rather than lose why the page waited (P3)
+        wake(wake_ctx) catch |err| std.log.warn("chessboard: wake_fn failed: {s}", .{@errorName(err)});
     }
 
     /// Loop thread (`.effects_wake`): answer what has finished. A result for
@@ -2104,7 +2121,7 @@ const Pending = struct {
             const slot = &self.slots[@intFromEnum(c.kind)];
             if (!slot.busy or slot.gen != c.gen) continue;
             slot.busy = false;
-            respondNow(slot.responder, slot.id(), c.text);
+            respondNow(slot.responder, slot.id(), c.text, failText(c.kind));
         }
     }
 
@@ -2121,6 +2138,12 @@ const Pending = struct {
         self.lock.unlock();
         for (taken[0..n]) |c| c.free();
         for (&self.slots) |*slot| slot.busy = false;
+        // no new wake can start now; one already inside wake_fn returns in
+        // microseconds (enqueue-only). Bounded all the same, as the SDK's
+        // quiesceChannelWake is: a wake that never returns is abandoned
+        // rather than allowed to hold the app's exit.
+        var spins: u32 = 0;
+        while (self.waking.load(.acquire) > 0 and spins < 1_000_000) : (spins += 1) std.atomic.spinLoopHint();
     }
 
     fn isClosed(self: *Pending) bool {
@@ -2155,15 +2178,29 @@ const Pending = struct {
 };
 
 /// The answer as the bridge frames it — built on the heap, not with
-/// AsyncResponder.success, which puts a 1 MiB buffer on the stack.
-fn respondNow(responder: AsyncResponder, id: []const u8, text: []const u8) void {
-    const gpa = std.heap.page_allocator;
+/// AsyncResponder.success, which puts a 1 MiB buffer on the stack. When that
+/// buffer cannot be had (or the frame will not fit it), `fallback` — a short
+/// error the page words — goes instead, from a small buffer here: the slot
+/// is already free, and the page must not be left waiting for its backstop
+/// (8.1 M2 review P3).
+fn respondNow(responder: AsyncResponder, id: []const u8, text: []const u8, fallback: []const u8) void {
+    respondWith(std.heap.page_allocator, responder, id, text, fallback);
+}
+
+fn respondWith(gpa: std.mem.Allocator, responder: AsyncResponder, id: []const u8, text: []const u8, fallback: []const u8) void {
     // the id is at most 64 bytes, and JSON-escaped at most six times longer
-    const buf = gpa.alloc(u8, text.len + native_sdk.bridge.max_id_bytes * 6 + 64) catch return;
-    defer gpa.free(buf);
-    const frame = native_sdk.bridge.writeSuccessResponse(buf, id, text);
-    if (frame.len == 0) return;
-    responder.respond(frame) catch {};
+    const room = native_sdk.bridge.max_id_bytes * 6 + 64;
+    if (gpa.alloc(u8, text.len + room)) |buf| {
+        defer gpa.free(buf);
+        const frame = native_sdk.bridge.writeSuccessResponse(buf, id, text);
+        if (frame.len > 0) {
+            responder.respond(frame) catch {};
+            return;
+        }
+    } else |_| {}
+    var small: [room + 64]u8 = undefined;
+    const frame = native_sdk.bridge.writeSuccessResponse(&small, id, fallback);
+    if (frame.len > 0) responder.respond(frame) catch {};
 }
 
 fn failText(kind: AsyncKind) []const u8 {
@@ -2173,7 +2210,9 @@ fn failText(kind: AsyncKind) []const u8 {
     };
 }
 
-fn workerMain(job: *Job) void {
+/// The job's work, as an Io task: its answer goes on the queue unless the
+/// deadline got there first.
+fn workTask(job: *Job) void {
     const gpa = std.heap.page_allocator;
     const out: ?[]u8 = gpa.alloc(u8, JOB_OUT_BYTES) catch null;
     const text = if (out) |buf| job.spec.work(job, buf) else failText(job.kind);
@@ -2183,10 +2222,25 @@ fn workerMain(job: *Job) void {
     } else if (out) |buf| {
         gpa.free(buf);
     }
-    job.release();
 }
 
-fn watcherMain(job: *Job) void {
+/// The job's own thread: starts the work as an Io task and keeps the
+/// deadline. At the deadline the page is told "timeout" and the task is
+/// canceled — the blocked read is interrupted (see "async bridge" above) —
+/// and this thread waits for it to return before letting the job go, so
+/// `live` counts only work that is really still running (P2-1). The same
+/// when the app is stopping: nobody is left to tell, and nothing should
+/// stay on the network.
+fn jobMain(job: *Job) void {
+    const io = job.spec.io;
+    var task = io.concurrent(workTask, .{job}) catch {
+        // no thread for the task: answer rather than leave the page waiting
+        if (job.claimed.cmpxchgStrong(false, true, .acq_rel, .acquire) == null) {
+            job.pending.post(.{ .kind = job.kind, .gen = job.gen, .text = failText(job.kind) });
+        }
+        job.release();
+        return;
+    };
     var waited: u64 = 0;
     while (!job.done.load(.acquire)) {
         if (waited >= job.spec.deadline_ms) {
@@ -2195,11 +2249,11 @@ fn watcherMain(job: *Job) void {
             }
             break;
         }
-        // the app is leaving: there is no one left to tell
         if (job.pending.isClosed()) break;
-        std.Io.sleep(job.spec.io, std.Io.Duration.fromMilliseconds(WATCH_POLL_MS), .awake) catch {};
+        std.Io.sleep(io, std.Io.Duration.fromMilliseconds(WATCH_POLL_MS), .awake) catch {};
         waited += WATCH_POLL_MS;
     }
+    if (job.done.load(.acquire)) task.await(io) else task.cancel(io);
     job.release();
 }
 
@@ -2207,8 +2261,8 @@ fn watcherMain(job: *Job) void {
 fn beginAnswer(responder: AsyncResponder, id: []const u8, kind: AsyncKind, began: Begin) void {
     switch (began) {
         .started => {},
-        .busy => respondNow(responder, id, "{\"error\":\"busy\"}"),
-        .failed => respondNow(responder, id, failText(kind)),
+        .busy => respondNow(responder, id, "{\"error\":\"busy\"}", failText(kind)),
+        .failed => respondNow(responder, id, failText(kind), failText(kind)),
     }
 }
 
@@ -2840,7 +2894,7 @@ fn syncWork(job: *Job, out: []u8) []const u8 {
 fn fetchGames(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: AsyncResponder) anyerror!void {
     const self: *App = @ptrCast(@alignCast(context));
     const id = invocation.request.id;
-    const req = syncRequest(invocation.request.payload) orelse return respondNow(responder, id, "{\"error\":\"bad_request\"}");
+    const req = syncRequest(invocation.request.payload) orelse return respondNow(responder, id, "{\"error\":\"bad_request\"}", "{\"error\":\"bad_request\"}");
     bindWakeFrom(self);
     beginAnswer(responder, id, .sync, self.pending.begin(.sync, id, responder, .{
         .work = syncWork,
@@ -4151,6 +4205,100 @@ test "N1: stopping with a request out neither waits for it nor wakes the platfor
     try std.testing.expectEqual(woke, wake.count.load(.acquire));
     p.drain();
     try std.testing.expectEqual(@as(usize, 0), answers.n);
+}
+
+/// A server that answers every connection with a head and the first bytes of
+/// a body it never finishes, and holds the connection open: a stalled read.
+const StallServer = struct {
+    const CONNS = Pending.LIVE_MAX + 1;
+    server: std.Io.net.Server,
+    held: [CONNS]?std.Io.net.Stream = .{null} ** CONNS,
+    accepted: std.atomic.Value(u32) = .init(0),
+    url_buf: [64]u8 = undefined,
+    url_len: usize = 0,
+
+    fn url(self: *const StallServer) []const u8 {
+        return self.url_buf[0..self.url_len];
+    }
+
+    fn serve(self: *StallServer) void {
+        const io = std.testing.io;
+        for (&self.held) |*slot| {
+            const stream = self.server.accept(io) catch return;
+            slot.* = stream;
+            var buf: [256]u8 = undefined;
+            var w = stream.writer(io, &buf);
+            w.interface.writeAll("HTTP/1.1 200 OK\r\nContent-Type: application/x-chess-pgn\r\nContent-Length: 100000\r\n\r\n[Event \"x\"]\n") catch {};
+            w.interface.flush() catch {};
+            _ = self.accepted.fetchAdd(1, .acq_rel);
+        }
+    }
+};
+
+fn stallWork(job: *Job, out: []u8) []const u8 {
+    const stall: *StallServer = @ptrCast(@alignCast(job.spec.test_ctx.?));
+    var client: std.http.Client = .{ .allocator = std.heap.page_allocator, .io = job.spec.io };
+    defer client.deinit();
+    var body: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+    defer body.deinit();
+    const status = httpGet(&client, stall.url(), "application/x-chess-pgn", &body, null);
+    return std.fmt.bufPrint(out, "{{\"status\":{d}}}", .{status}) catch "{}";
+}
+
+fn liveIs(p: *Pending, n: u32) bool {
+    return p.live.load(.acquire) == n;
+}
+
+test "N1 (review P2-1): at the deadline a stalled read is canceled, its job ends, and the next sync is not busy" {
+    const io = std.testing.io;
+    const addr = try std.Io.net.IpAddress.parseIp4("127.0.0.1", 0);
+    var stall: StallServer = .{ .server = try addr.listen(io, .{ .reuse_address = true }) };
+    defer stall.server.deinit(io);
+    defer for (stall.held) |s| if (s) |stream| stream.close(io);
+    stall.url_len = (try std.fmt.bufPrint(&stall.url_buf, "http://127.0.0.1:{d}/stall", .{stall.server.socket.address.getPort()})).len;
+    const server_thread = try std.Thread.spawn(.{}, StallServer.serve, .{&stall});
+    defer {
+        // the server's last accept is still waiting: one more connection
+        // lets its thread finish (the held streams are closed after)
+        if (stall.server.socket.address.connect(io, .{ .mode = .stream })) |last| last.close(io) else |_| {}
+        server_thread.join();
+    }
+
+    var wake: TestWake = .{};
+    var p: Pending = .{};
+    p.bindWake(&wake, TestWake.wake);
+    var answers: TestAnswers = .{};
+    const spec: JobSpec = .{ .work = stallWork, .deadline_ms = 200, .io = io, .test_ctx = &stall };
+    // as many stalled syncs as may ever be out at once, one after another
+    var i: u32 = 0;
+    while (i < Pending.LIVE_MAX) : (i += 1) {
+        try std.testing.expectEqual(Begin.started, p.begin(.sync, "s", answers.responder(), spec));
+        try waitUntil(wokenAtLeast, .{ &wake, i + 1 });
+        p.drain();
+        try std.testing.expect(has(answers.frame(i), "\"result\":{\"error\":\"timeout\"}"));
+    }
+    // every one of them really reached the server and stalled there
+    try std.testing.expectEqual(Pending.LIVE_MAX, stall.accepted.load(.acquire));
+    // the canceled reads return: nothing is left out (waitUntil gives up
+    // after ~10 s; before the fix the four stayed out for good)
+    try waitUntil(liveIs, .{ &p, 0 });
+    // and the next sync starts rather than answering busy
+    var gate: TestGate = .{ .open = .init(true) };
+    try std.testing.expectEqual(Begin.started, p.begin(.sync, "n", answers.responder(), gatedSpec(&gate, 60_000)));
+    try waitUntil(allBack, .{&p});
+    p.drain();
+    try std.testing.expect(has(answers.frame(Pending.LIVE_MAX), "{\"id\":\"n\",\"ok\":true,\"result\":{\"done\":"));
+}
+
+test "N1 (review P3): an answer whose buffer cannot be had still answers, with the short error" {
+    var answers: TestAnswers = .{};
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    respondWith(failing.allocator(), answers.responder(), "9", "{\"pgn\":\"…\",\"count\":1}", failText(.sync));
+    try std.testing.expectEqual(@as(usize, 1), answers.n);
+    try std.testing.expect(has(answers.frame(0), "{\"id\":\"9\",\"ok\":true,\"result\":{\"error\":\"offline\"}}"));
+    // with the buffer, the answer itself
+    respondWith(std.testing.allocator, answers.responder(), "10", "{\"count\":1}", failText(.sync));
+    try std.testing.expect(has(answers.frame(1), "{\"id\":\"10\",\"ok\":true,\"result\":{\"count\":1}}"));
 }
 
 test "T4: chess.fetchProgress reads the running sync's count, and nothing once it is answered" {
