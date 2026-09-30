@@ -237,7 +237,8 @@ export function createRepertoireUI(d) {
     }))).then((c) => {
       ctrl = c;
       // what the boot indexed, migrated or recovered: the header says so now
-      if (!c.fresh) saveBook();
+      // (a profile that never had a book is not given one — the library's rule)
+      if (!c.fresh && (total() || Persist.get("repertoire") != null)) saveBook();
       render();
       return c;
     }, () => null);
