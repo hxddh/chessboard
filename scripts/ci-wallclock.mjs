@@ -19,9 +19,9 @@
  *   node scripts/ci-wallclock.mjs RUN_ID [RUN_ID…] [--label=TEXT] [--record]
  *   node scripts/ci-wallclock.mjs --from=jobs.json[,…] [--label=TEXT] [--record]
  *
- * RUN_ID reads https://api.github.com/repos/$REPO/actions/runs/RUN_ID/jobs
- * (REPO defaults to hxddh/chessboard; GH_TOKEN or GITHUB_TOKEN if set);
- * --from reads that endpoint's answer saved to a file. Without --record it
+ * RUN_ID reads https://api.github.com/repos/$REPO/actions/runs/RUN_ID and its
+ * /jobs (REPO defaults to hxddh/chessboard; GH_TOKEN or GITHUB_TOKEN if set);
+ * --from reads the /jobs answer saved to a file, or { run, jobs } with both. Without --record it
  * only prints. Re-recording a run replaces it rather than adding it twice.
  */
 import fs from "fs";
@@ -33,11 +33,22 @@ export const TARGET_MIN = 15;
 const minutes = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 6000) / 10;
 
 /**
+ * A job checks.yml runs with `continue-on-error` (the screenshots): its
+ * failure does not turn the PR red, so it must not make the run "not green"
+ * either. The jobs API does not carry the flag; checks.yml names every such
+ * job "…, not a gate)" and test-chess holds it to that.
+ */
+export const notAGate = (name) => /\bnot a gate\b/.test(String(name || ""));
+
+/**
  * One run's numbers from its jobs (the API's `jobs` array). Skipped jobs
  * (never started) do not count; a run with a job still going is refused —
- * its wall-clock is not known yet.
+ * its wall-clock is not known yet. `run` (the API's run object, optional):
+ * its own `conclusion` decides green when it has one — GitHub already leaves
+ * continue-on-error failures out of it (v8-2-plan V4, M1 评审); without it,
+ * every job but the not-a-gate ones must have succeeded.
  */
-export function wallClock(jobs) {
+export function wallClock(jobs, run) {
   const ran = jobs.filter((j) => j.started_at && j.conclusion !== "skipped");
   if (!ran.length) throw new Error("no job ran");
   const going = ran.filter((j) => !j.completed_at);
@@ -46,11 +57,14 @@ export function wallClock(jobs) {
   const last = ran.map((j) => j.completed_at).sort().at(-1);
   const long = ran.map((j) => ({ name: j.name, min: minutes(j.started_at, j.completed_at) }))
     .sort((a, b) => b.min - a.min)[0];
-  const bad = ran.filter((j) => j.conclusion !== "success").map((j) => j.name + ": " + j.conclusion);
+  const failed = ran.filter((j) => j.conclusion !== "success");
+  const gating = failed.filter((j) => !notAGate(j.name));
+  const green = run && run.conclusion ? run.conclusion === "success" : gating.length === 0;
+  const bad = (green ? failed : gating.length ? gating : failed).map((j) => j.name + ": " + j.conclusion);
   return {
     run: ran[0].run_id, sha: String(ran[0].head_sha || "").slice(0, 7),
     wall: minutes(first, last), critical: long.name, criticalMin: long.min,
-    jobs: ran.length, green: bad.length === 0, ...(bad.length ? { notGreen: bad } : {}),
+    jobs: ran.length, green, ...(bad.length ? { notGreen: bad } : {}),
   };
 }
 
@@ -67,13 +81,16 @@ export function lastThreeOk(runs) {
   return green.length >= 3 && green.slice(-3).every((r) => r.wall <= TARGET_MIN);
 }
 
-async function jobsOf(id) {
+async function runOf(id) {
   const repo = process.env.REPO || "hxddh/chessboard";
   const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
-  const res = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${id}/jobs?per_page=100`,
-    { headers: Object.assign({ accept: "application/vnd.github+json" }, token ? { authorization: "Bearer " + token } : {}) });
-  if (!res.ok) throw new Error(`run ${id}: HTTP ${res.status}`);
-  return (await res.json()).jobs;
+  const get = async (path) => {
+    const res = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${id}${path}`,
+      { headers: Object.assign({ accept: "application/vnd.github+json" }, token ? { authorization: "Bearer " + token } : {}) });
+    if (!res.ok) throw new Error(`run ${id}${path}: HTTP ${res.status}`);
+    return res.json();
+  };
+  return { jobs: (await get("/jobs?per_page=100")).jobs, run: await get("") };
 }
 
 async function main() {
@@ -82,12 +99,13 @@ async function main() {
   const lists = [];
   for (const f of arg("from").split(",").filter(Boolean)) {
     const doc = JSON.parse(fs.readFileSync(f, "utf8"));
-    lists.push(Array.isArray(doc) ? doc : doc.jobs.jobs || doc.jobs);
+    // the jobs answer alone, or { run, jobs } with the run's own answer beside it
+    lists.push(Array.isArray(doc) ? { jobs: doc } : { jobs: doc.jobs.jobs || doc.jobs, run: doc.run });
   }
-  for (const id of ids) lists.push(await jobsOf(id));
+  for (const id of ids) lists.push(await runOf(id));
   if (!lists.length) { console.error("usage: ci-wallclock.mjs RUN_ID… | --from=FILE,…  [--label=TEXT] [--record]"); process.exit(2); }
   const label = arg("label");
-  const rows = lists.map((j) => Object.assign(wallClock(j), label ? { label } : {}));
+  const rows = lists.map((l) => Object.assign(wallClock(l.jobs, l.run), label ? { label } : {}));
   for (const r of rows) {
     console.log(`run ${r.run} (${r.sha})：墙钟 ${r.wall} 分钟，最长 ${r.critical} ${r.criticalMin} 分钟，${r.jobs} 个作业` +
       (r.green ? "" : "，没全绿：" + r.notGreen.join("; ")));

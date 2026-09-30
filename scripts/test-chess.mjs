@@ -7139,6 +7139,19 @@ for (const lang of CONTENT_LANGS) {
       runs.map((r) => r.wall).join() === "12,14,15" && WC.lastThreeOk(runs) && !WC.lastThreeOk(runs.slice(1)) &&
       !WC.lastThreeOk(runs.concat({ run: 4, wall: 15.1, green: true })),
       "PR 墙钟从作业的起止时间算（第一个排队 → 最后一个结束），同一 run 重记是替换，最近三次全绿且 ≤ 15 分钟才算达标");
+    // v8-2-plan V4 (M1 评审): the screenshots job is continue-on-error — its
+    // failure leaves the PR green, so it leaves the run green here too
+    const T = ["2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", "2026-01-01T00:05:00Z"];
+    const shotsOnly = [job("unit", ...T), job("screenshots (webkit, not a gate)", ...T, "failure")];
+    const realFail = [job("unit", ...T, "failure"), job("screenshots (webkit, not a gate)", ...T)];
+    assert(WC.wallClock(shotsOnly).green && WC.wallClock(shotsOnly, { conclusion: "success" }).green &&
+      !WC.wallClock(realFail).green && !WC.wallClock(realFail, { conclusion: "failure" }).green &&
+      !WC.wallClock(shotsOnly, { conclusion: "failure" }).green && WC.wallClock(realFail).notGreen.join() === "unit: failure",
+      "PR 墙钟的「全绿」看 run 自己的结论；没有 run 时不算 continue-on-error 的作业（截图）");
+    const coe = cHeads.map((m, i) => checksWf.slice(cJobsAt).slice(m.index, i + 1 < cHeads.length ? cHeads[i + 1].index : undefined))
+      .filter((body) => /^    continue-on-error: true\s*$/m.test(body));
+    assert(coe.length >= 1 && coe.every((body) => /^    name: .*\bnot a gate\b/m.test(body) && WC.notAGate(body.match(/^    name: (.*)$/m)[1])),
+      "checks.yml 里 continue-on-error 的作业名字都写着「not a gate」—— ci-wallclock 没有 run 结论时靠它认（" + coe.length + " 个）");
     // checks.yml: push only for main, stale PR runs cancelled, the sampled
     // puzzle search on ubuntu only, and Windows native compiled on every PR
     const zigAt = checksWf.search(/^  zig:\s*$/m);
