@@ -6840,6 +6840,15 @@ for (const lang of CONTENT_LANGS) {
   console.log("  bundle.js " + bundleBytes + " bytes minified (7.9.0 minified: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
     "bundle.js stays within the first-paint budget (" + bundleBytes + " > " + BUNDLE_BUDGET + " bytes, 70.5% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + " minified)");
+  // v8-2-plan F1: a second, tighter line for 8.2 only. 8.1 alone spent ~39 KB
+  // of the budget's room (89,502 left at its M1, 50,670 at 8.1.0), and one
+  // more version like it reaches the line. So new 8.2 training content and
+  // its data go in chunks; the bundle may grow by 10 KB over 8.1.0 for the
+  // doors to them — the entry points, the interface keys, the scheduling.
+  // 8.1.0 (168acc2) built by its own bundle.mjs: exactly 900,972 bytes.
+  const BUNDLE_BYTES_AT_810 = 900972;
+  assert(bundleBytes <= BUNDLE_BYTES_AT_810 + 10240,
+    "v8-2-plan F1: bundle.js grows at most 10 KB over 8.1.0 (" + bundleBytes + " > " + BUNDLE_BYTES_AT_810 + " + 10240 bytes) — 8.2 content goes in chunks");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
