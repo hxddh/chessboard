@@ -527,7 +527,10 @@ function checkJapanese(label, table, kanaMin, minStrings) {
 
 {
   loadModule(ctx, "src/web/js/lessons.js");
-  const lessons = ctx.CHESS_LESSONS;
+  // v8-2-plan T1: the advanced part 3 is a chunk of its own, words and all;
+  // every check below holds it to the same rules as the rest of the course
+  for (const f of ["lessons-adv.js", "lessons-adv-en.js", "lessons-adv-ja.js"]) loadModule(ctx, "src/web/js/" + f);
+  const lessons = ctx.CHESS_LESSONS.concat(ctx.CHESS_LESSONS_ADV_ZH);
   assert(Array.isArray(lessons) && lessons.length >= 28, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
   const ids = new Set();
   let bad = 0;
@@ -753,7 +756,7 @@ for (const lang of CONTENT_LANGS) {
   assert(fs.existsSync(path.join(root, file)), file + " exists");
   if (!fs.existsSync(path.join(root, file))) continue;
   loadModule(ctx, file);
-  const en = ctx["CHESS_LESSONS_" + sfx(lang)];
+  const en = Object.assign({}, ctx["CHESS_LESSONS_" + sfx(lang)], ctx["CHESS_LESSONS_ADV_" + sfx(lang)]);
   const uncovered = lessons.filter((L) => !en || !en[L.id]).map((L) => L.id);
   for (const id of uncovered) console.error("FAIL: lesson has no " + lang + " text: " + id);
   assert(uncovered.length === 0, "all " + lessons.length + " lessons have " + lang + " text");
@@ -838,9 +841,9 @@ for (const lang of CONTENT_LANGS) {
     if (Array.isArray(o)) o.forEach((x, i) => walk(x, where + "[" + i + "]"));
     else if (o && typeof o === "object") for (const k of Object.keys(o)) walk(o[k], where + "." + k);
   };
-  for (const L of ctx.CHESS_LESSONS) walk(L, "zh:" + L.id);
+  for (const L of ctx.CHESS_LESSONS.concat(ctx.CHESS_LESSONS_ADV_ZH)) walk(L, "zh:" + L.id);
   for (const lang of CONTENT_LANGS) {
-    for (const [id, tr] of Object.entries(ctx["CHESS_LESSONS_" + sfx(lang)] || {})) walk(tr, lang + ":" + id);
+    for (const [id, tr] of Object.entries(Object.assign({}, ctx["CHESS_LESSONS_" + sfx(lang)], ctx["CHESS_LESSONS_ADV_" + sfx(lang)]))) walk(tr, lang + ":" + id);
   }
   assert(stray.length === 0, "课文里的 ** 只出现在会被渲染成粗体的段落里" +
     (stray.length ? " — " + stray.join(", ") : ""));
@@ -4896,12 +4899,14 @@ for (const lang of CONTENT_LANGS) {
 
   // The first thing a newcomer reads is "N interactive lessons" — in three
   // languages, none of which knows how many there actually are.
+  // v8-2-plan T1: the course is lessons.js and the advanced part 3's chunk
+  const courseSize = ctx.CHESS_LESSONS.length + ctx.CHESS_LESSONS_ADV_ZH.length;
   let miscounted = 0;
   for (const id of langs) {
     const m = /(\d+)/.exec(I.DICT[id]["ob.newSub"] || "");
-    if (!m || Number(m[1]) !== ctx.CHESS_LESSONS.length) {
+    if (!m || Number(m[1]) !== courseSize) {
       miscounted++;
-      console.error("FAIL: " + id + " promises " + (m ? m[1] : "?") + " lessons, there are " + ctx.CHESS_LESSONS.length);
+      console.error("FAIL: " + id + " promises " + (m ? m[1] : "?") + " lessons, there are " + courseSize);
     }
   }
   assert(miscounted === 0, "every language's onboarding blurb counts the lessons correctly");
@@ -6205,7 +6210,9 @@ for (const lang of CONTENT_LANGS) {
     return mctx.MINED_PUZZLES.length;
   })();
   const claims = [
-    [/零基础 (\d+) 课/, lessons, "the course size in the teaching row"],
+    // v8-2-plan T1: the whole course — lessons.js plus the advanced part 3's chunk
+    [/零基础 (\d+) 课/, lessons + ctx.CHESS_LESSONS_ADV_ZH.length, "the course size in the teaching row"],
+    [/lessons-adv\.js\s+# 进阶课程第三部 (\d+) 课/, ctx.CHESS_LESSONS_ADV_ZH.length, "the advanced part 3 in the file map"],
     [/教学课程 (\d+) 课/, lessons, "the course size in the file map"],
     [/英文全译 (\d+) 课/, lessons, "the English course size"],
     [/(\d+) 个界面键三语齐备/, keys, "the interface-key count"],
@@ -7204,7 +7211,7 @@ for (const lang of CONTENT_LANGS) {
     catch (err) { why = "threw: " + err.message; }
     if (why) { bad++; console.error("FAIL: " + where + " 的局面不合法 (" + why + "): " + fen); }
   };
-  for (const L of ctx.CHESS_LESSONS || []) {
+  for (const L of (ctx.CHESS_LESSONS || []).concat(ctx.CHESS_LESSONS_ADV_ZH || [])) {
     for (const t of L.tasks || []) vet(t.fen, "课程 " + L.id);
   }
   for (const p of ctx.CHESS_PUZZLES || []) vet(p.fen, "题目 " + p.id);

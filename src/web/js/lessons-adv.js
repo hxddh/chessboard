@@ -1,0 +1,485 @@
+/**
+ * 进阶课程第三部：计算 12 课、局面型 12 课（v8-2-plan T1）。
+ *
+ * Built into js/chunk-lessons-adv.js (lessons-adv-chunk.js) with its two
+ * translations, and fetched the first time a lesson's words are read — none
+ * of it is in bundle.js; trainer/lessons-adv.js keeps only the ids.
+ *
+ * Same shape as lessons.js, and every task is a `move` task: the course's
+ * earlier parts teach by tapping squares, these teach by choosing a move, and
+ * a move can be checked. scripts/verify-lessons.mjs asks the engine about
+ * every one — each move the runner accepts is as good as the engine's best,
+ * the best move it refuses is clearly worse, and a reply a later task starts
+ * from is the other side's best — and writes docs/lessons-verified.json;
+ * scripts/test-lessons-adv.mjs holds this file to that record.
+ *
+ * Positions are White to move, from the student's chair. Most are real-game
+ * positions from the Lichess puzzle database (CC0; the ids are in the record),
+ * none of them among the puzzles the app ships; the rest were set up for the
+ * lesson.
+ * @module lessons-adv
+ */
+
+  export const CHESS_LESSONS_ADV_ZH = [
+    // —— 进阶 · 计算 ——
+    {
+      id: "cl-cands", part: "计算", title: "候选着：先列三步，再选一步",
+      text: [
+        "看到一步好棋就想马上走，这是最常见的毛病。强手动手之前，先把**值得考虑的几步 —— 候选着 —— 都列出来**，再一步一步比较。",
+        "列的时候照一个固定的顺序问：有没有将军？有没有吃子？有没有威胁？最后才是普通的调动。第一眼看到的那步常常不是最好的，有时还是输棋。",
+        "这一课的三个局面，第一眼的那步都不对。先列出候选着，再选。",
+      ],
+      tasks: [
+        { type: "move", fen: "r1q3k1/ppp2ppp/8/b2N4/8/8/PPP2PPP/R2Q2K1 w - - 0 1", goal: "one-of", accept: ["Ne7+"],
+          prompt: "马可以吃 c7 兵，可以等着，也可以将军 —— 列出来比一比",
+          retry: "Nxc7 会被 a5 象吃回；Ne7+ 同时将军、攻击 c8 的后", solution: ["Ne7+"] },
+        { type: "move", fen: "r4rk1/pp3ppp/2pb1n2/8/3PP3/2N2N2/PP3PPP/R4RK1 w - - 0 1", goal: "one-of", accept: ["e5"],
+          prompt: "中心的兵能走出一步好棋吗？把候选着列出来再选",
+          retry: "e5！兵同时攻击 d6 象和 f6 马，还有 d4 兵保护", solution: ["e5"] },
+        { type: "move", fen: "7k/p5p1/2p3Qp/8/1P5q/2P5/r5PP/R6K w - - 0 1", goal: "one-of", accept: ["Qe8+"],
+          prompt: "a2 的黑车看起来白送 —— 吃之前，先想想吃完以后黑方有什么将军",
+          retry: "Rxa2?? 让出了底线，黑方 Qe1 将死。先 Qe8+，黑王走开以后再吃车", solution: ["Qe8+"] },
+      ],
+    },
+    {
+      id: "cl-order", part: "计算", title: "强制着优先：将军、吃子、威胁",
+      text: [
+        "对方能选的应着越少，你就越容易算清楚。**将军**逼他应将，**吃子**逼他考虑吃回，**威胁**逼他去防守 —— 这三种棋叫**强制着**。",
+        "所以列候选着的顺序是：**先将军，再吃子，最后看威胁**。三种都要看完，不能只看第一种：白白送子的将军不是好棋。",
+        "下面三题，依次是用将军、用吃子、用威胁取胜。",
+      ],
+      tasks: [
+        { type: "move", fen: "5r1k/r1p4p/p5p1/3p4/8/8/PP1Q1PPP/6K1 w - - 0 1", goal: "one-of", accept: ["Qd4+"],
+          prompt: "先看将军：哪一步将军还能顺手拿到别的东西？",
+          retry: "Qd4+：从长斜线将军，同时攻击 a7 的车", solution: ["Qd4+"] },
+        { type: "move", fen: "3q1rk1/pppp1ppp/2n5/2b5/2B5/3N4/PPP2PPP/3Q1RK1 w - - 0 1", goal: "one-of", accept: ["Nxc5"],
+          prompt: "Bxf7+ 是将军，可它送掉了象。再看吃子 —— 哪个黑子没人保护？",
+          retry: "Nxc5：c5 的象没有保护", solution: ["Nxc5"] },
+        { type: "move", fen: "r4rk1/pp3p1p/6pQ/q5B1/8/2P5/PP3PPP/6K1 w - - 0 1", goal: "one-of", accept: ["Bf6"],
+          prompt: "没有好的将军，也没有好的吃子 —— 找一步威胁",
+          retry: "Bf6！下一步 Qg7 将死，黑方挡不住；被 a5 后攻击的象也顺手走开了", solution: ["Bf6"] },
+      ],
+    },
+    {
+      id: "cl-checks", part: "计算", title: "每一步将军都要看，包括送子的",
+      text: [
+        "列将军的时候，别只看安全的那几步。**把后送到对方嘴边的将军也要算**：对方被迫吃掉它，下一步往往就是杀。",
+        "判断方法很简单：对方的应将办法只剩一两种时，就沿着这一两种往下算。只要每条路都走向将死，送掉后也是赚的。",
+        "这一课两个经典杀法：闷杀（后送到 g8，马来收官）和底线杀（后送到 e8，车来收官）。",
+      ],
+      tasks: [
+        { type: "move", fen: "r4r1k/pp4pp/1q5N/8/2Q5/8/PP3PPP/3R2K1 w - - 0 1", goal: "one-of", accept: ["Qg8+"],
+          prompt: "黑王被自己的车和兵围住了 —— 找那步送后的将军",
+          retry: "Qg8+！王吃不了（h6 马守着 g8），只能用 f8 车吃后", solution: ["Qg8+"] },
+        { type: "move", fen: "r5rk/pp4pp/1q5N/8/8/8/PP3PPP/3R2K1 w - - 0 2", goal: "mate",
+          prompt: "车吃掉了后 —— 一步将死",
+          retry: "Nf7#：王四周全是自己的子，这就是闷杀", solution: ["Nf7#"] },
+        { type: "move", fen: "2r3k1/p4ppp/1q6/8/8/8/P3QPPP/4R1K1 w - - 0 1", goal: "one-of", accept: ["Qe8+"],
+          prompt: "c8 车一个人守着底线 —— 把后送过去",
+          retry: "Qe8+！车只能吃后，Rxe8 将死", solution: ["Qe8+"] },
+      ],
+    },
+    {
+      id: "cl-count", part: "计算", title: "吃之前数一数：攻几次，守几次",
+      text: [
+        "一个子被攻击几次、被保护几次，吃之前先数清楚：**攻击的次数多于保护的次数，才赢得下它**。",
+        "数完次数还要看价值：**先用最便宜的子去吃**。用车去换对方的马，就算最后吃到了，也是亏的。",
+        "对方吃回来的时候也在数，所以要一直数到最后一次吃子为止。",
+      ],
+      tasks: [
+        { type: "move", fen: "r4rk1/pppnqppp/8/4n3/3B4/5N2/PPP2PPP/R2QR1K1 w - - 0 1", goal: "one-of", accept: ["Nxe5", "Bxe5"],
+          prompt: "e5 的马：你攻三次（f3 马、d4 象、e1 车），他守两次（d7 马、e7 后）—— 用哪个子先吃？",
+          retry: "先用马或象吃（Nxe5 或 Bxe5）；先用车吃，车就换成了马", solution: ["Nxe5"] },
+        { type: "move", fen: "rnbq1rk1/ppp1bppp/4p3/3n4/2P5/2N1PN2/PP2BPPP/R1BQ1RK1 w - - 0 1", goal: "one-of", accept: ["cxd5"],
+          prompt: "d5 的马被攻三次（c4 兵、c3 马、d1 后），守两次（e6 兵、d8 后）—— 用哪个子吃？",
+          retry: "cxd5：用最便宜的兵吃，被吃回也只是一个兵换一个马", solution: ["cxd5"] },
+        { type: "move", fen: "3r2k1/p4ppp/8/2q5/8/8/P2R1PPP/3R2K1 w - - 0 1", goal: "one-of", accept: ["Rxd8+"],
+          prompt: "d8 车被两个白车攻击，只有一次保护 —— 算清楚吃完以后",
+          retry: "Rxd8+：黑方只能用后挡在 f8，白车再把后吃掉", solution: ["Rxd8+"] },
+      ],
+    },
+    {
+      id: "cl-quiet", part: "计算", title: "安静的一着：不将军、不吃子也能赢",
+      text: [
+        "强制着都看完了，还没找到好棋？再看**安静的一着**：它不将军、不吃子，却留下一个对方挡不住的威胁。",
+        "这种棋最容易漏看，因为它看起来什么都没做。找它的办法是反过来问：**如果我能连走两步，第二步走什么？**然后看第一步能不能为它做好准备。",
+        "下面三题的答案都是一步安静的棋，每一步背后都藏着下一步的致命威胁。",
+      ],
+      tasks: [
+        { type: "move", fen: "6k1/1P3ppp/pr6/4n3/4P3/3P3P/5PP1/5RK1 w - - 0 1", goal: "one-of", accept: ["Rc1"],
+          prompt: "b7 兵离升变只差一步，可 b8 被黑车看着 —— 找一步安静的车调动",
+          retry: "Rc1！威胁 Rc8+，把 b8 腾出来，兵就能升变", solution: ["Rc1"] },
+        { type: "move", fen: "6rk/2R5/p4p1p/4qp1B/4p3/P5P1/5P1P/3R2K1 w - - 0 1", goal: "one-of", accept: ["Rdd7"],
+          prompt: "两个车都上第 7 横线会怎样？",
+          retry: "Rdd7！威胁 Rh7 将死，黑方只能送后来挡", solution: ["Rdd7"] },
+        { type: "move", fen: "4rr1k/pp3pR1/4q2p/3p4/3P1B2/6Q1/PP4PP/6K1 w - - 0 1", goal: "one-of", accept: ["Be5"],
+          prompt: "g7 车身后缺一个子 —— 把象放到它后面的长斜线上",
+          retry: "Be5！g7 车一动就是闪将；黑方只能用后换象", solution: ["Be5"] },
+      ],
+    },
+    {
+      id: "cl-replies", part: "计算", title: "把对方的每一种回答都列出来",
+      text: [
+        "算强制着的时候，要把对方**每一种合法的回答**都列出来，一个都不能漏。漏掉的那一种，往往正是对方唯一的活路。",
+        "这一课是著名的「希腊礼物」：Bxh7+ 送象，Ng5+ 追将，Qh5 上后。每走一步，先数一数黑方能怎么应。",
+        "**将军之后，对方通常只剩两三种应法**；把每一种都算到底，送子才有把握。",
+      ],
+      tasks: [
+        { type: "move", fen: "r1bq1rk1/pppn1ppp/2n1p3/3pP3/1b1P4/2NB1N2/PPP2PPP/R1BQ1RK1 w - - 0 1", goal: "one-of", accept: ["Bxh7+"],
+          prompt: "送出 h7 的象 —— 黑方可以吃，也可以不吃（Kh8）",
+          retry: "Bxh7+：Kxh7 和 Kh8 两种都要算；吃象最顽强", solution: ["Bxh7+"] },
+        { type: "move", fen: "r1bq1r2/pppn1ppk/2n1p3/3pP3/1b1P4/2N2N2/PPP2PPP/R1BQ1RK1 w - - 0 2", goal: "one-of", accept: ["Ng5+"],
+          prompt: "黑王吃了象。马将军以后，黑方有 Kg8、Kh8、Kg6、Kh6 和 Qxg5 五种应法",
+          retry: "Ng5+：Qxg5 会被 c1 象吃掉后，Kg6、Kh6 走进更危险的地方；最顽强的是 Kg8", solution: ["Ng5+"] },
+        { type: "move", fen: "r1bq1rk1/pppn1pp1/2n1p3/3pP1N1/1b1P4/2N5/PPP2PPP/R1BQ1RK1 w - - 2 3", goal: "one-of", accept: ["Qh5"],
+          prompt: "黑王回到 g8。上后，威胁 Qh7 将死",
+          retry: "Qh5：下一步 Qh7#；黑方只能拿后换马", solution: ["Qh5"] },
+      ],
+    },
+    {
+      id: "cl-threat", part: "计算", title: "先问：对方想干什么",
+      text: [
+        "对方刚走完一步，先别急着想自己的计划，**先问一句：他下一步想干什么？**",
+        "这三个局面里，黑方的答案都一样：在 g2 将死。挡住它还不够 —— **最好的防守，同时也在反击**。",
+        "看清威胁以后再列候选着：哪一步能守住 g2，还能顺手打到对方？",
+      ],
+      tasks: [
+        { type: "move", fen: "8/6pk/2q2prp/8/P2R4/3Q3P/6P1/7K w - - 0 1", goal: "one-of", accept: ["Rg4"],
+          prompt: "黑后和 g6 车都盯着 g2 —— 守住它，同时打对方",
+          retry: "Rg4！挡住 g 线，又和 d3 后一起攻击 g6 车", solution: ["Rg4"] },
+        { type: "move", fen: "6k1/5pp1/1p1p2qp/p1p5/8/P1Q2R1P/1P1Br1P1/7K w - - 0 1", goal: "one-of", accept: ["Rg3"],
+          prompt: "黑后和 e2 车一起盯着 g2 —— 怎么守？",
+          retry: "Rg3！挡在后前面，同时捉后", solution: ["Rg3"] },
+        { type: "move", fen: "r5k1/pp3p2/2p4Q/8/2N1pnq1/2P5/PP3PP1/3R2K1 w - - 0 1", goal: "one-of", accept: ["Ne3"],
+          prompt: "g4 的后和 f4 的马要在 g2 将死 —— 用马来守",
+          retry: "Ne3！马守住 g2，同时捉后", solution: ["Ne3"] },
+      ],
+    },
+    {
+      id: "cl-end", part: "计算", title: "算到底：别在半路停下",
+      text: [
+        "算变化最常见的错，是**算到一半就停**：「他吃掉我的后 —— 不行。」可是再往下走两步，结果可能完全相反。",
+        "规则是：**一直算到局面安静下来** —— 没有将军，没有能吃的子，没有悬着的威胁 —— 再数一数谁多谁少。",
+        "这一课是一整条线：你把车放到 d4，黑方吃掉你的后。别停，接着算。",
+      ],
+      tasks: [
+        { type: "move", fen: "3r2k1/6p1/1p5p/p2q4/5R2/1Q2P2P/P5P1/6K1 w - - 0 1", goal: "one-of", accept: ["Rd4"],
+          prompt: "d5 的后和 d8 的车在同一条线上 —— 用车去撞后",
+          retry: "Rd4！后一走开，Rxd8+ 就吃车", solution: ["Rd4"] },
+        { type: "move", fen: "3r2k1/6p1/1p5p/p7/3R4/1q2P2P/P5P1/6K1 w - - 0 2", goal: "one-of", accept: ["Rxd8+"],
+          prompt: "黑方吃了你的后！先别慌，往下算 —— 有没有将军？",
+          retry: "Rxd8+：先吃车将军，王走开以后再把后吃回来", solution: ["Rxd8+"] },
+        { type: "move", fen: "3R4/5kp1/1p5p/p7/8/1q2P2P/P5P1/6K1 w - - 1 3", goal: "one-of", accept: ["axb3"],
+          prompt: "现在把后吃回来，然后数一数子力",
+          retry: "axb3：局面安静了 —— 你多一个车", solution: ["axb3"] },
+      ],
+    },
+    {
+      id: "cl-inter", part: "计算", title: "中间着：吃回之前先插一步",
+      text: [
+        "吃子交换通常是你吃我、我吃你。可在吃回之前，如果有一步对方**非应不可**的棋（将军、捉后），就先插进去 —— 这叫**中间着**。",
+        "算交换的习惯：**每到该吃回的时候，先看看有没有更强的中间着**。它常常把「一换一」变成「白赚一个」。",
+        "这一课前两步是同一个局面：先将军吃车，再把另一个车吃回。最后一个局面，也是先将军再吃。",
+      ],
+      tasks: [
+        { type: "move", fen: "6k1/3b2p1/p4r2/8/6N1/8/P3rPP1/4R1K1 w - - 0 1", goal: "one-of", accept: ["Nxf6+"],
+          prompt: "e 线上两车对峙；可你先 Rxe2，黑方就用象吃掉 g4 的马 —— 有更好的顺序吗？",
+          retry: "Nxf6+！马先吃车，还带将军；黑方应将以后，你再 Rxe2", solution: ["Nxf6+"] },
+        { type: "move", fen: "8/3b1kp1/p4N2/8/8/8/P3rPP1/4R1K1 w - - 1 2", goal: "one-of", accept: ["Rxe2"],
+          prompt: "黑王应将了。现在该做什么？",
+          retry: "Rxe2：把车吃回来 —— 你用一个马换掉了黑方两个车", solution: ["Rxe2"] },
+        { type: "move", fen: "1k6/1p3p2/4p3/4n3/3B4/3P4/6KP/5r2 w - - 0 1", goal: "one-of", accept: ["Bxe5+"],
+          prompt: "黑车在 f1 白送 —— 可在 Kxf1 之前，还有一步更狠的",
+          retry: "Bxe5+！先带将军吃掉马，下一步再 Kxf1", solution: ["Bxe5+"] },
+      ],
+    },
+    {
+      id: "cl-race", part: "计算", title: "数步数：兵的赛跑",
+      text: [
+        "兵的赛跑靠的不是感觉，是**数步数**：你的兵还要几步升变？他的兵还要几步？轮到谁走？",
+        "别忘了王也在跑：**王的一步可以同时做两件事** —— 既追对方的兵，又护送自己的兵。",
+        "第一题是著名的雷蒂习题：看起来追不上的兵，王斜着走也能追上。后两题先数清楚，再走。",
+      ],
+      tasks: [
+        { type: "move", fen: "7K/8/k1P5/7p/8/8/8/8 w - - 0 1", goal: "one-of", accept: ["Kg7"],
+          prompt: "h5 的黑兵看起来追不上，c6 的白兵又被黑王盯着 —— 能守和吗？",
+          retry: "Kg7！王斜着走，一边追 h 兵，一边靠近自己的 c 兵", solution: ["Kg7"] },
+        { type: "move", fen: "8/8/4p3/2p5/3k2KP/8/8/8 w - - 0 1", goal: "one-of", accept: ["h5"],
+          prompt: "数一数：h 兵要几步升变？c 兵呢？谁先走？",
+          retry: "h5：四步升变，而且你先走 —— 马上推", solution: ["h5"] },
+        { type: "move", fen: "8/7p/p7/2K1kp2/1P5P/5P2/8/8 w - - 0 1", goal: "one-of", accept: ["Kb6"],
+          prompt: "两边的王都要去吃兵 —— 数一数谁先升变",
+          retry: "Kb6：先吃 a6，b 兵直奔 b8，你比黑方快一步", solution: ["Kb6"] },
+      ],
+    },
+    {
+      id: "cl-mate", part: "计算", title: "连续将军：一路算到将死",
+      text: [
+        "对方只能动王的时候，**连续将军**是最好算的变化：每一步他只有一两种应法，你可以一直算到将死。",
+        "这一课的杀法要算三步：先弃车把王引到 h8，再用后将军，最后在 g7 将死 —— f6 兵守着 g7。",
+        "**弃子之前先把整条线算完**：只要中途有一步对方能逃掉，弃掉的车就白送了。",
+      ],
+      tasks: [
+        { type: "move", fen: "q1r3k1/pp3p2/5Pp1/8/8/8/PP1Q2P1/6KR w - - 0 1", goal: "one-of", accept: ["Rh8+"],
+          prompt: "三步将死，第一步是弃车",
+          retry: "Rh8+！王只能吃车：f8、h7 被车看着，g7 被 f6 兵看着", solution: ["Rh8+"] },
+        { type: "move", fen: "q1r4k/pp3p2/5Pp1/8/8/8/PP1Q2P1/6K1 w - - 0 2", goal: "one-of", accept: ["Qh6+"],
+          prompt: "王到了 h8。后从哪里将军？",
+          retry: "Qh6+：王只能回 g8", solution: ["Qh6+"] },
+        { type: "move", fen: "q1r3k1/pp3p2/5PpQ/8/8/8/PP4P1/6K1 w - - 2 3", goal: "mate",
+          prompt: "一步将死",
+          retry: "Qg7#：f6 兵保护着后", solution: ["Qg7#"] },
+      ],
+    },
+    {
+      id: "cl-guard", part: "计算", title: "谁在守？先吃掉守卫",
+      text: [
+        "对方的子被保护着，吃不动？先看**是谁在保护它** —— 把那个守卫吃掉（或引开），原来的目标就没人管了。",
+        "算的顺序：找到目标，数它的保护者，再看能不能**先吃保护者**。常常是先吃一个，再吃一个。",
+        "前两步是同一个局面的两步；最后一个局面，要找那个守着 d8 车的马。",
+      ],
+      tasks: [
+        { type: "move", fen: "r5k1/5pp1/7p/3b4/1PBpnR2/2n4P/P1P3P1/5RK1 w - - 0 1", goal: "one-of", accept: ["Bxd5"],
+          prompt: "e4 的马有 d5 象保护 —— 先对付谁？",
+          retry: "Bxd5：吃掉守卫；黑方用马吃回以后，e4 马就没人保护了", solution: ["Bxd5"] },
+        { type: "move", fen: "r5k1/5pp1/7p/3n4/1P1pnR2/7P/P1P3P1/5RK1 w - - 0 2", goal: "one-of", accept: ["Rxe4"],
+          prompt: "黑方用马吃回了象。现在呢？",
+          retry: "Rxe4：守卫没了，马白送", solution: ["Rxe4"] },
+        { type: "move", fen: "3r2k1/1p3p1p/p1n3q1/8/7Q/1P1p1N2/P4PPP/2R3K1 w - - 0 1", goal: "one-of", accept: ["Rxc6"],
+          prompt: "你的后盯着 d8 车，可 c6 马守着它 —— 怎么办？",
+          retry: "Rxc6！吃掉守卫；黑方如果吃回，Qxd8+ 就拿车", solution: ["Rxc6"] },
+      ],
+    },
+    // —— 进阶 · 局面型 ——
+    {
+      id: "po-badb", part: "局面型", title: "坏象：被自己的兵挡住的象",
+      text: [
+        "象一辈子只走一种颜色的格子。如果自己的兵大多站在**和象同色的格子上**，象就被自己人挡住了 —— 这叫**坏象**。",
+        "对付坏象的原则：**换掉对方的好子，留下他的坏象**；然后让你的王和马走另一种颜色的格子，坏象永远够不着。",
+        "最后一个局面里，黑象的退路被它自己的兵堵死了 —— 坏象甚至会被捉死。",
+      ],
+      tasks: [
+        { type: "move", fen: "8/8/4kbpp/1p1bBp2/p1p2P2/P1P1K1P1/1P1N3P/8 w - - 0 1", goal: "one-of", accept: ["Bxf6"],
+          prompt: "黑方有两个象：d5 象被 a4、b5、c4、f5、g6 五个浅格兵挡着 —— 该换掉哪一个？",
+          retry: "Bxf6：换掉黑方的好象（深格象），只留下那个坏象", solution: ["Bxf6"] },
+        { type: "move", fen: "8/8/5kpp/1p1b1p2/p1p2P2/P1P1K1P1/1P1N3P/8 w - - 0 2", goal: "one-of", accept: ["Kd4"],
+          prompt: "只剩你的马对他的坏象。王往哪里走？",
+          retry: "Kd4：王走深格，浅格象碰不到它，接着去 c5 吃兵", solution: ["Kd4"] },
+        { type: "move", fen: "r5k1/ppp4b/1b3p1p/4nP2/2P4N/PP5P/2R3P1/5R1K w - - 0 1", goal: "one-of", accept: ["c5"],
+          prompt: "黑方 b6 象身后是 a7、c7 两个自己的兵 —— 它还有几条退路？",
+          retry: "c5！象只能去 a5，接着 b4 就把它捉死", solution: ["c5"] },
+      ],
+    },
+    {
+      id: "po-trap", part: "局面型", title: "没有退路的子会被捉死",
+      text: [
+        "一个子站得再凶，**没有退路**也危险：只要用一个兵去攻击它，它就只能送掉。",
+        "找被困的子：看它能去的每一个格子 —— 被兵看着的、被自己人占着的，一个个划掉。**剩下零个格子，就找一个兵去捉它。**",
+        "下面三个局面，被困的都是象。",
+      ],
+      tasks: [
+        { type: "move", fen: "8/6kp/p3p1pb/1p2P3/1PpP2P1/P3BK1P/8/8 w - - 0 1", goal: "one-of", accept: ["g5"],
+          prompt: "h6 象的斜线上，只剩 g5 一格 —— 用兵去占它",
+          retry: "g5！象无路可退：g7 有自己的王，Bxg5 又会被 e3 象吃回", solution: ["g5"] },
+        { type: "move", fen: "8/1p3p1k/p3rBp1/2p1Pb1p/2P5/P2PRK1P/6P1/8 w - - 0 1", goal: "one-of", accept: ["g4"],
+          prompt: "f5 象的退路：e6 有自己的车，g6、h7 被自己人占着 —— 找一个兵去捉它",
+          retry: "g4！象无处可去，只能换一个兵", solution: ["g4"] },
+        { type: "move", fen: "r5k1/p6p/5ppb/8/1R1P4/2P5/b1K2PPP/7R w - - 0 1", goal: "one-of", accept: ["c4"],
+          prompt: "a2 象钻进了角落 —— 把它最后的出路堵上",
+          retry: "c4！b1、b3 有王看着，斜线又被兵挡住；接着 Ra4 吃象", solution: ["c4"] },
+      ],
+    },
+    {
+      id: "po-color", part: "局面型", title: "弱色格：少了一个象以后",
+      text: [
+        "黑方走了 …g6 以后，f6、g7、h6 这些深格要靠深格象来守。**深格象一旦不在，王身边的深格就成了空洞**。",
+        "进攻的办法：让你的后、马、兵去占这些深格。f6 的兵、h6 的马、g7 的后，都是经典的杀法。",
+        "下面两个局面，黑方都没有深格象，各用两步杀王。",
+      ],
+      tasks: [
+        { type: "move", fen: "4r1k1/p3q2p/2p3p1/2p2p2/2P2PN1/1PQ1p3/P1P3PP/7K w - - 0 1", goal: "one-of", accept: ["Nh6+"],
+          prompt: "黑方一个象都没有 —— g7、h8 这些深格谁来守？先用马将军",
+          retry: "Nh6+：王只能去 f8，因为 g7、h8 都被 c3 的后盯着", solution: ["Nh6+"] },
+        { type: "move", fen: "4rk2/p3q2p/2p3pN/2p2p2/2P2P2/1PQ1p3/P1P3PP/7K w - - 2 2", goal: "mate",
+          prompt: "一步将死",
+          retry: "Qh8#：后沿长斜线直达 h8", solution: ["Qh8#"] },
+        { type: "move", fen: "4rr1k/p2NQp1p/1p2p1pP/4P3/3q1PK1/3n1PR1/P7/8 w - - 0 1", goal: "one-of", accept: ["Qf6+"],
+          prompt: "h6 兵已经顶到黑王面前，f6、g7 两个深格空着 —— 上后",
+          retry: "Qf6+：王只能回 g8，下一步 Qg7 杀", solution: ["Qf6+"] },
+        { type: "move", fen: "4rrk1/p2N1p1p/1p2pQpP/4P3/3q1PK1/3n1PR1/P7/8 w - - 2 2", goal: "mate",
+          prompt: "一步将死",
+          retry: "Qg7#：h6 兵保护着后", solution: ["Qg7#"] },
+      ],
+    },
+    {
+      id: "po-hole", part: "局面型", title: "弱格：兵再也守不到的格子",
+      text: [
+        "兵只能往前走，所以它身后的格子一旦没有兵能守，就永远守不回来了 —— 这样的格子叫**弱格**，也叫空洞。",
+        "黑方的 g 兵推到 g6 以后，f6 再也没有黑兵能守；你的兵站在 g5，还能把马稳稳托在 f6。**把马放进对方的空洞，它就赶不走了。**",
+        "三个局面都是同一个空洞 f6，看看马站上去以后能打到什么。",
+      ],
+      tasks: [
+        { type: "move", fen: "4R3/5pk1/6p1/6P1/4N3/r3PK2/8/6b1 w - - 0 1", goal: "one-of", accept: ["Nf6"],
+          prompt: "f6 没有黑兵能守 —— 把马放进去",
+          retry: "Nf6！下一步 Rg8 将死，黑方不丢子就解不了", solution: ["Nf6"] },
+        { type: "move", fen: "3R4/5pk1/4r1pp/p2N2P1/1p5P/3n1PK1/8/8 w - - 0 1", goal: "one-of", accept: ["Nf6"],
+          prompt: "马跳进 f6 空洞，看看它威胁什么",
+          retry: "Nf6！威胁 Rg8 将死；黑方只能用车换马，你再吃掉 d3 的马", solution: ["Nf6"] },
+        { type: "move", fen: "3rr3/1p4kp/p3p1p1/4n1P1/2P1N2P/1P6/P4PB1/4R1K1 w - - 0 1", goal: "one-of", accept: ["Nf6"],
+          prompt: "又是 f6 —— 马跳进去，能同时打到谁？",
+          retry: "Nf6！马捉 e8 车，同时让开 e 线，e1 车攻击 e5 马 —— 黑方保不住两个", solution: ["Nf6"] },
+      ],
+    },
+    {
+      id: "po-outpost", part: "局面型", title: "前哨：马站上去就赶不走",
+      text: [
+        "**前哨**是对方的兵永远赶不走、你的兵又能保护的格子。马最喜欢前哨：从那里，它同时攻击好几个方向。",
+        "判断一个格子是不是前哨：看它两侧的线上，对方还有没有能走上来攻击它的兵。没有了，这个格子就是你的。",
+        "三个局面里，马跳上前哨以后都有立刻的收获。",
+      ],
+      tasks: [
+        { type: "move", fen: "4r1k1/1p3Npp/p1n5/1r2P3/8/8/6PP/4RRK1 w - - 0 1", goal: "one-of", accept: ["Nd6"],
+          prompt: "d6 有 e5 兵保护，黑方没有 c、e 线的兵能赶它 —— 马跳上去",
+          retry: "Nd6！同时捉 b5 车和 e8 车", solution: ["Nd6"] },
+        { type: "move", fen: "r7/1R6/3kp3/p2p4/3P4/Pp2PN2/1r6/3K4 w - - 0 1", goal: "one-of", accept: ["Ne5"],
+          prompt: "e5 有 d4 兵保护，黑方没有 f 兵 —— 马跳上去以后威胁什么？",
+          retry: "Ne5！威胁 Rd7 将死；黑方用 Rd8 守，Nf7+ 又能捉双", solution: ["Ne5"] },
+        { type: "move", fen: "5rk1/2p1n2p/p1q1p1p1/6P1/P1P2PN1/3r1R2/8/5RQK w - - 0 1", goal: "one-of", accept: ["Ne5"],
+          prompt: "e5 有 f4 兵托着，黑方没有 d、f 线的兵 —— 马跳过去看看能打谁",
+          retry: "Ne5！同时捉 c6 的后和 d3 的车", solution: ["Ne5"] },
+      ],
+    },
+    {
+      id: "po-chain", part: "局面型", title: "兵链指向哪一翼，就在哪一翼进攻",
+      text: [
+        "斜着连在一起的兵叫**兵链**。链头指向哪一边，你在那一边的空间就更多 —— **就在链头指向的那一翼进攻**，常常是用兵冲上去。",
+        "白方的兵链 d4–e5 或 e3–f4–e5，链头指向王翼，也就是黑王那一边。推 f 兵撞上去，打开黑王前面的线，让后和车进来。",
+        "三个局面都是这个方向：链头在 e5，f 兵往前冲。",
+      ],
+      tasks: [
+        { type: "move", fen: "r5k1/pp2q1r1/4b2Q/3pP3/2p2P2/P1P1P1p1/2P3P1/3R1RK1 w - - 0 1", goal: "one-of", accept: ["f5"],
+          prompt: "你的兵链 e3–f4–e5 指向黑王 —— 往前冲",
+          retry: "f5！撞开 e6 象，打开 f 线", solution: ["f5"] },
+        { type: "move", fen: "3r2k1/q4ppp/4p3/b2pPPQ1/2pP4/1p6/4B1PP/5RK1 w - - 0 1", goal: "one-of", accept: ["f6"],
+          prompt: "兵链 d4–e5 再加上 f5 兵 —— 再冲一步，g7 就守不住了",
+          retry: "f6！威胁 fxg7，也威胁 Qxg7 杀", solution: ["f6"] },
+        { type: "move", fen: "1r4k1/3pnp2/b1p1p1pQ/p1q1PP2/P3r1B1/8/1B3RP1/R5K1 w - - 0 1", goal: "one-of", accept: ["f6"],
+          prompt: "e5 兵在前面顶着 —— 再推 f 兵",
+          retry: "f6！同时攻击 e7 马，还威胁 Qg7 将死", solution: ["f6"] },
+      ],
+    },
+    {
+      id: "po-major", part: "局面型", title: "多兵的一翼：造出通路兵",
+      text: [
+        "一翼上你的兵比对方多，这一翼就能造出**通路兵** —— 前面和两旁都没有对方的兵能挡、能吃的兵。",
+        "办法是**让兵去撞兵**：多的一方推兵，逼对方兑换，兑到最后，多出来的那个兵就通了。**先推前面没有对手挡着的那个兵。**",
+        "残局里，一个远方的通路兵常常就是一整盘棋。",
+      ],
+      tasks: [
+        { type: "move", fen: "6k1/6p1/p7/5p1p/1Pp5/7P/P4P2/5K2 w - - 0 1", goal: "one-of", accept: ["a4"],
+          prompt: "后翼你有 a、b 两个兵，黑方只有 a6 一个 —— 怎么造通路兵？",
+          retry: "a4！下一步 b5，兑掉以后 a 兵就通了", solution: ["a4"] },
+        { type: "move", fen: "7k/1p6/p7/2Pp2p1/1P1Pp3/P4p2/5P2/6K1 w - - 0 1", goal: "one-of", accept: ["a4"],
+          prompt: "后翼白兵多一个 —— 先推哪个？",
+          retry: "a4！准备 b5，把 a6、b7 撞开", solution: ["a4"] },
+        { type: "move", fen: "8/3k4/4p1p1/3pP1P1/pP6/P1K5/8/8 w - - 0 1", goal: "one-of", accept: ["b5"],
+          prompt: "黑兵 a4 挡在前面 —— 先把 b 兵推过去",
+          retry: "b5！接着王去 b4 吃掉 a4，b 兵就是通路兵", solution: ["b5"] },
+      ],
+    },
+    {
+      id: "po-file", part: "局面型", title: "车占开放线，再把车叠起来",
+      text: [
+        "一条线上一个兵都没有，叫**开放线**。车在开放线上能一直走到对方的底线或第 7 横线。",
+        "**先占线，再叠车**：两个车叠在同一条开放线上，力量加倍，对方很难同时挡住两个。",
+        "三个局面：b 线、c 线、g 线各一条开放线，都是叠车。",
+      ],
+      tasks: [
+        { type: "move", fen: "3q2k1/2p2ppp/8/p2p4/5n2/2R5/P4PPP/1R3K2 w - - 0 1", goal: "one-of", accept: ["Rcb3"],
+          prompt: "b 线开着，一个车已经在 b1 —— 把另一个车叠上去",
+          retry: "Rcb3！下一步 Rb8 牵制黑后", solution: ["Rcb3"] },
+        { type: "move", fen: "7r/2k2ppp/p1n1p3/8/PpR5/3r4/1P2NPPP/4R1K1 w - - 0 1", goal: "one-of", accept: ["Rec1"],
+          prompt: "c 线上黑马挡在自己的王前面 —— 叠车",
+          retry: "Rec1！马被钉在王前，下一步 Rxc6+", solution: ["Rec1"] },
+        { type: "move", fen: "r6k/ppp2p1P/3p4/6R1/8/8/PPP2r2/2K4R w - - 0 1", goal: "one-of", accept: ["Rhg1"],
+          prompt: "g 线空着，h7 兵顶在黑王身边 —— 叠车",
+          retry: "Rhg1！两个车一起压 g 线，Rg8+ 之后黑方挡不住", solution: ["Rhg1"] },
+      ],
+    },
+    {
+      id: "po-behind", part: "局面型", title: "车在通路兵的后面",
+      text: [
+        "通路兵往前走的时候，车放在哪里最好？**放在它后面。**车在兵后面，兵每前进一步，车管的线就长一步。",
+        "车放在兵前面，兵越走车越被挤；你的车在兵后面推，对方的车挡在前面，兵照样推得动。",
+        "这条规则叫**塔拉什规则**：车在通路兵后面 —— 自己的通路兵是这样，对方的也是这样。",
+      ],
+      tasks: [
+        { type: "move", fen: "8/p5p1/2p1P1k1/3p4/2p5/2P4P/2r5/1R4K1 w - - 0 1", goal: "one-of", accept: ["Re1"],
+          prompt: "e6 兵离升变还有两步 —— 你的车该去哪里？",
+          retry: "Re1：车到兵后面，e7、e8 一路护送", solution: ["Re1"] },
+        { type: "move", fen: "6k1/2p2pp1/Pp6/2p5/8/8/1r4P1/2R3K1 w - - 0 1", goal: "one-of", accept: ["Ra1"],
+          prompt: "a 兵已经到了 a6 —— 车放到它后面",
+          retry: "Ra1：a7、a8 一路都有车撑着", solution: ["Ra1"] },
+        { type: "move", fen: "8/6p1/3Pk3/1p2P2p/1P4p1/1r6/5PK1/4R3 w - - 0 1", goal: "one-of", accept: ["Rd1"],
+          prompt: "d6 兵是通路兵，e1 车在它旁边 —— 放到后面去",
+          retry: "Rd1：车在 d 兵后面，d7 就推得动", solution: ["Rd1"] },
+      ],
+    },
+    {
+      id: "po-kpend", part: "局面型", title: "何时换子：换成必胜的兵残局",
+      text: [
+        "**兵残局是算得最清楚的残局**：没有子力，只剩王和兵，谁赢谁和，常常能一步一步数出来。",
+        "所以换子之前先问：换完以后的兵残局，是不是**我能数出来的赢棋**？看两样：谁的王更靠前，谁有**远方通路兵** —— 离对方王很远的通路兵。",
+        "三个局面：换车、换后、再换车，都换成了赢的兵残局。",
+      ],
+      tasks: [
+        { type: "move", fen: "8/8/1kr4R/p7/K7/1P6/8/8 w - - 0 1", goal: "one-of", accept: ["Rxc6+"],
+          prompt: "车换车以后只剩王和兵 —— 数一数谁赢",
+          retry: "Rxc6+！王吃回以后 Kxa5，你的 b 兵带着王一起走", solution: ["Rxc6+"] },
+        { type: "move", fen: "8/5p1p/6pk/8/2pQP3/2P2P2/Pq6/3K4 w - - 0 1", goal: "one-of", accept: ["Qd2+"],
+          prompt: "双方都有后，你还有一个远方的 a 兵 —— 用将军逼他换后",
+          retry: "Qd2+！黑方只能换后，不换就丢后；换完以后 a 兵是远方通路兵", solution: ["Qd2+"] },
+        { type: "move", fen: "8/p7/6p1/P1KRrk1p/1P6/8/8/8 w - - 0 1", goal: "one-of", accept: ["Rxe5+"],
+          prompt: "黑车挡在你的车前面 —— 换掉它，然后数步数",
+          retry: "Rxe5+！王吃回以后推 b5，两个兵比黑王快", solution: ["Rxe5+"] },
+      ],
+    },
+    {
+      id: "po-trade", part: "局面型", title: "何时换子：象换掉以后，王先冲进去",
+      text: [
+        "小子换小子也一样，先算换完的兵残局：**换完以后谁的王先冲进对方的兵里，谁就赢。**",
+        "另一个换子的理由：对方的象正在保护或护送一个危险的兵 —— 换掉它，那个兵就没人管了。",
+        "三个局面都是象换象，换完就是赢的王兵残局。",
+      ],
+      tasks: [
+        { type: "move", fen: "8/4kpp1/4b2p/2PB4/1K6/p5P1/5PP1/8 w - - 0 1", goal: "one-of", accept: ["Bxe6"],
+          prompt: "黑方 a3 兵快升变了，e6 象想来帮忙 —— 怎么办？",
+          retry: "Bxe6！换掉象，王回去 Kxa3，剩下的兵残局你赢", solution: ["Bxe6"] },
+        { type: "move", fen: "8/p7/2p5/P1p1kb2/5p2/2PB1P2/4K3/8 w - - 0 1", goal: "one-of", accept: ["Bxf5"],
+          prompt: "象换象以后，你的王能不能先吃到黑兵？",
+          retry: "Bxf5！王吃回以后走 Kd3、Kc4，黑方后翼的兵一个个掉", solution: ["Bxf5"] },
+        { type: "move", fen: "8/5k2/1p1p3K/1P1Pb3/5B2/8/8/8 w - - 0 1", goal: "one-of", accept: ["Bxe5"],
+          prompt: "黑象守着 d6 —— 用你的象去换它",
+          retry: "Bxe5！兵吃回以后，你的王先到 e4，吃掉 e5 兵", solution: ["Bxe5"] },
+      ],
+    },
+    {
+      id: "po-prophy", part: "局面型", title: "预防：先堵住对方的计划",
+      text: [
+        "**预防**是一种想法：走自己的棋之前，先想想**对方下一步最想干什么**，然后让他干不成。",
+        "残局里最常见的预防：固定对方的兵，不让它前进或兑换；或者抢先占住对方的王想去的格子。",
+        "三个王兵残局，每一题都是「先不让他」的一步。",
+      ],
+      tasks: [
+        { type: "move", fen: "8/8/1p5p/p7/P5Pp/1P5P/k1K5/8 w - - 0 1", goal: "one-of", accept: ["Kc3"],
+          prompt: "黑王想吃掉 b3 兵 —— 你的王往哪里走？",
+          retry: "Kc3：王继续守着 b3，黑王吃不到兵；Kd3 就被 Kxb3", solution: ["Kc3"] },
+        { type: "move", fen: "8/p7/8/1p3k1p/1P6/6P1/6KP/8 w - - 0 1", goal: "one-of", accept: ["Kf3"],
+          prompt: "黑王想走到 g4 去 —— 挡住它",
+          retry: "Kf3！g4 被你的王看着，黑王进不来", solution: ["Kf3"] },
+        { type: "move", fen: "8/8/p1k5/P4p1p/2K5/5PP1/8/8 w - - 0 1", goal: "one-of", accept: ["f4"],
+          prompt: "黑方想推 f4 换掉你的兵 —— 先不让他",
+          retry: "f4！把 f5 兵钉在原地，你的王从 e5 进去吃兵", solution: ["f4"] },
+      ],
+    },
+  ];

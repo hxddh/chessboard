@@ -93,7 +93,7 @@
       // first-run onboarding (ob.*)
       "ob.title": "Where would you like to start?",
       "ob.newLabel": "I'm new — teach me from scratch",
-      "ob.newSub": "96 interactive lessons, from the board to intermediate tactics and endgames, one task each",
+      "ob.newSub": "120 interactive lessons, from the board to calculation and positional play, one task each",
       "ob.knowLabel": "I can play — just start a game",
       "ob.knowSub": "Play Stockfish; the difficulty row in the side panel changes it any time",
       "ob.later": "Just show me the board", "ob.recommended": "Recommended",
