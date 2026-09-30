@@ -146,8 +146,14 @@ function backfillTc(games, cands, lineOf) {
 const KEY_RE = /^[a-zA-Z][a-zA-Z0-9]{0,15}$/;
 /** The ids a record can have: newRecordId's, and persist.js migrateStats's "v1-…". */
 const ID_RE = /^[\w.-]{1,64}$/;
-/** PGN readers take a tag of ~4 KB (pgn-parser.js reads 4096 characters). */
+/**
+ * PGN readers take a tag of ~4 KB (pgn-parser.js reads 4096 characters), and
+ * this is the value as the tag writes it — every " and \ of the JSON escaped
+ * again (library-query.js tagValue), which doubles a quote-heavy record.
+ */
 const REC_MAX = 3500;
+/** The length of `s` once written as a PGN tag value (LibraryQuery tagValue). */
+const tagLen = (s) => s.length + (s.match(/["\\]/g) || []).length;
 
 /**
  * A 本机 game as one PGN game for 导出 PGN (v8-1-plan T5). The Seven Tag
@@ -172,7 +178,9 @@ function localPgn(e, rec, headers, engine, entryPgn) {
   }
   if (headers && headers.length) meta.h = headers;
   let json = JSON.stringify(meta);
-  if (json.length > REC_MAX) { delete meta.h; json = JSON.stringify(meta); }
+  // 8.1 M2 review P3: measured as written, escapes and all — the JSON's own
+  // length let a record of quote-heavy headers past the reader's 4096
+  if (tagLen(json) > REC_MAX) { delete meta.h; json = JSON.stringify(meta); }
   const me = "Player";
   const g = { id: e.id, event: "Casual game", site: "Chessboard", date: e.date || "????.??.??", round: "-",
     white: e.side === "b" ? engine : me, black: e.side === "b" ? me : engine, result: e.result,
@@ -214,4 +222,24 @@ function recFromGame(game, serialize) {
   return rec;
 }
 
-export const LibraryLocal = { START_FEN, diagGames, localAnalysis, tcTagOf, saveClock, backfillTc, localPgn, recFromGame };
+/**
+ * Records read back from an export, merged into the play history: one whose
+ * id the history has is a duplicate and left alone; the rest go in by their
+ * time, and the history keeps its newest `cap` (app.js recordOutcome).
+ * `added` counts only the records the cap left in — 8.1 M2 review P3: a
+ * record older than the 500 kept is gone again at once, and was reported
+ * added.
+ * @returns {{games: object[], added: number, dup: number, changed: boolean}}
+ */
+function mergeRecs(games, recs, cap) {
+  const have = new Set((games || []).map((g) => g && g.id));
+  const add = [];
+  for (const rec of recs) { if (have.has(rec.id)) continue; have.add(rec.id); add.push(rec); }
+  const dup = recs.length - add.length;
+  if (!add.length) return { games: games || [], added: 0, dup, changed: false };
+  const out = (games || []).concat(add).sort((a, b) => (a.t || 0) - (b.t || 0)).slice(-cap);
+  const left = new Set(out.map((g) => g && g.id));
+  return { games: out, added: add.filter((rec) => left.has(rec.id)).length, dup, changed: true };
+}
+
+export const LibraryLocal = { START_FEN, diagGames, localAnalysis, tcTagOf, saveClock, backfillTc, localPgn, recFromGame, mergeRecs };

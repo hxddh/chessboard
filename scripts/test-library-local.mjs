@@ -119,6 +119,29 @@ const mainline = (g) => { const s = []; for (let n = g.root; n.children.length; 
   const fb2 = fb && parse(fb.pgn);
   assert(fb && fb2.root.fen === fg.root.fen && same(mainline(fb2), ["Kd5", "Kd2"]) && same(strip(fb), strip(fenRec)),
     "从摆好的局面开始的本机棋：起始局面和记录都回来");
+  // 8.1 M2 评审 P3：LibRec 按写进标签之后的长度量（引号和反斜杠再转义一次）。
+  // 引号多的头：JSON 本身约 3,000 字，写成标签超过读取的 4096，整局就认不回来
+  const quoted = Array.from({ length: 45 }, (_, i) => ["Annotator" + i, '"q" "u" "o" "t" "e" "s" \\ x' + i]);
+  const qRec = Object.assign({}, rec, { id: "q-3", pgn: quoted.map(([k, v]) => "[" + k + ' "' + v.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]').join("\n") + "\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6" });
+  const qJson = JSON.stringify(Object.assign({}, rec, { h: quoted }));
+  assert(qJson.length < 3500 && qJson.length + (qJson.match(/["\\]/g) || []).length > 4096,
+    "样本：JSON 在 3500 以内，转义后超过 4096（" + qJson.length + "）");
+  const qText = LL.localPgn(Object.assign({}, e, { id: "loc:q-3" }), qRec, quoted, "Stockfish", Q.entryPgn);
+  const qLine = qText.split("\n").find((l) => l.startsWith("[LibRec "));
+  const qBack = LL.recFromGame(parse(qText), ChessPgnParser.serializePgn);
+  assert(qLine.length <= 4096 && qBack && qBack.id === "q-3" && same(strip(qBack), strip(qRec)),
+    "引号多的本机棋：LibRec 那一行在 4096 以内（" + qLine.length + "），记录照样认得回来（头太长就不带）");
+  // 8.1 M2 评审 P3：导回的记录按时间并进战绩，战绩只留最新 500 条——被挤掉的不算「加入」
+  {
+    const hist = Array.from({ length: 499 }, (_, i) => ({ id: "h" + i, t: T0 + 1000 + i }));
+    const recs = [{ id: "old1", t: T0 - 2 }, { id: "old2", t: T0 - 1 }, { id: "new1", t: T0 + 5000 }, { id: "h3", t: T0 + 1003 }];
+    const mm = LL.mergeRecs(hist, recs, 500);
+    assert(mm.games.length === 500 && mm.added === 1 && mm.dup === 1 && mm.changed && mm.games[mm.games.length - 1].id === "new1" &&
+      !mm.games.some((g) => g.id === "old1" || g.id === "old2"),
+      "战绩快满时导回：只留下的 1 条算加入，重复 1 条，比留下的都旧的 2 条不算（" + JSON.stringify({ added: mm.added, dup: mm.dup, n: mm.games.length }) + "）");
+    const none = LL.mergeRecs(hist, [{ id: "h1", t: 1 }], 500);
+    assert(!none.changed && none.added === 0 && none.dup === 1 && none.games === hist, "全是重复：什么也不动");
+  }
   // what a file may not do
   const forge = (tags) => parse(tags + '\n\n1. e4 *');
   assert(LL.recFromGame(forge('[LibId "loc:a"]'), ChessPgnParser.serializePgn) === null, "只有 LibId、没有 LibRec：不是本机棋，照普通导入");

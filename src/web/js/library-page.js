@@ -753,24 +753,19 @@ async function bootLibrary(d) {
    * time, under the history's own cap (app.js recordOutcome keeps 500).
    * Then they become 本机 entries the usual way (syncLocal).
    */
+  /** app.js recordOutcome keeps this many records of play. */
+  const HISTORY_MAX = 500;
   function restoreLocal(recs) {
     if (!recs.length) return { added: 0, dup: 0 };
     const stats = d.loadStats();
-    const have = new Set((stats.games || []).map((g) => g && g.id));
-    const add = [];
-    for (const rec of recs) { if (have.has(rec.id)) continue; have.add(rec.id); add.push(rec); }
-    let kept = 0;
-    if (add.length) {
-      stats.games = (stats.games || []).concat(add).sort((a, b) => (a.t || 0) - (b.t || 0)).slice(-500);
-      // 8.1 M2 review P3: only what the cap left in counts as added — older
-      // records past the 500 are gone again at once
-      const left = new Set(stats.games.map((g) => g && g.id));
-      kept = add.filter((rec) => left.has(rec.id)).length;
+    const m = LibraryLocal.mergeRecs(stats.games, recs, HISTORY_MAX);
+    if (m.changed) {
+      stats.games = m.games;
       d.saveStats(stats);
       if (d.onLibraryLoaded) d.onLibraryLoaded();
       syncLocal();
     }
-    return { added: kept, dup: recs.length - add.length };
+    return { added: m.added, dup: m.dup };
   }
 
   /**
