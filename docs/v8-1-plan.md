@@ -789,6 +789,8 @@
     - 导出再导进空档案逐节点相等；
     - 英日两语在 1400 / 1024 宽不截断。
   - test-layout-e2e 新场景：「我的开局书」分段在三语、1400 与 520 宽下一行高、等宽到 0.1 px，开关 32 px，不出面板。
+  - 本机（Chromium）：`test:static` 全过；test-repertoire / explorer / library / board / trainer / shell / sync / content / engine / review 各 e2e 全过；test-layout-e2e 90 个场景全过（分两次跑完）。
+  - test-persist-e2e 第一次有两条计时项红（一口气 put 34.7 ms、走一步没等到写入），同一构建再跑全过；main 的基线同样全过。最长那一段是 persist 的 base64，不是开局书的代码。
 - **体积**：主包 870,549 → 876,944 字节（+6,395：repertoire-ui.js 的编辑、导出与分块接线，做题页的 repdue，persist 的分端口，16 个键的中文；预算 951,642）；新分块 `chunk-rep.js` 18.5 KB（rep-page、rep-book、replay 与 srs 各带一份）；chunk-explorer.js 14.6 → 17.2 KB，chunk-libdb.js 49.7 → 51.0 KB；app.js 6,702 行不变（几处接线都写在原来的行上）。界面键 1234 → 1250（+16，三语）。
 - **偏离**：
   - 计划写「存进 IndexedDB，新表 `repertoire`」。记录确实在那里，但线仍留在 localStorage 的头里（400 条上限，约几十 KB）：书的结构和兼容旧版本都靠它。
