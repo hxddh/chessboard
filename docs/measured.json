@@ -467,6 +467,16 @@
         "jobs": 24,
         "green": true,
         "label": "8.1 PR #97（V4 之前）"
+      },
+      {
+        "run": 36767532525,
+        "sha": "e2d8e09",
+        "wall": 29,
+        "critical": "browser (chromium, lessons + review)",
+        "criticalMin": 18.8,
+        "jobs": 28,
+        "green": true,
+        "label": "8.2 PR #97（V4 拆分后）；queue-bound: rehearsal concurrent（同时跑着发布演练，排队最长 18.7 分钟）"
       }
     ]
   },

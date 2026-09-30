@@ -654,3 +654,23 @@
   - trainer-e2e 两边都是 74 条 ok。
   - content-e2e 两边都是 515 条 ok，library-e2e 两边都是 312 条 ok。
   - repertoire-e2e 覆盖开局书背谱、到期卡片和背完接着下，拆分后 83 条 ok，全部通过。
+
+### M2
+
+**V4 墙钟补记与 game library 拆分**
+
+- 补记了 M1 拆分后的第一次运行：PR #97 最后一次 checks，36767532525（e2d8e09，2026-09-30 19:43–20:12Z）。用 `scripts/ci-wallclock.mjs --from=<jobs.json> --record` 写进 `measured.json ciWallClock`，jobs 是用 GitHub 的 MCP 工具取的（本机 api.github.com 不通）。
+  - 墙钟 29.0 分钟，28 个作业全绿，最长的是 browser (chromium, lessons + review) 18.8 分钟。
+  - **这次不能当作拆分的效果看**：同一时间在跑发布演练，作业排队 0.2–18.7 分钟，墙钟主要是排队。记录的 label 写明了「queue-bound: rehearsal concurrent」。
+  - `lastThreeOk` 仍是否。
+- **lessons + review 没有再拆**。18.8 分钟里，`playwright install --with-deps` 用了 8.9 分钟，是 apt 从 azure.archive.ubuntu.com 下字体和 mesa 包慢，单个包之间最长停了 150 s。
+  - 看过的另外四个作业里，同一步只要 0.4–1.3 分钟。
+  - 套件本身 content 5.1 + review 4.7 分钟，与 M1 用的 36732131710 相同，WebKit 上 4.8 + 2.4。
+  - 不停顿时这个作业约 11 分钟，在 12 分钟以内。再拆只会多两个作业去排队，停顿落在哪个作业上都照样超时。
+- **game library 拆成两组**。它在 Chromium 上 13.0 分钟，其中安装 0.4 分钟，是真的慢：library 7.8、explorer 1.4、sync 1.3、repertoire 1.9。WebKit 上 5.3 + 0.9 + 1.0 + 1.3，8.1 时 WebKit 有过一次整组 21.5。
+  - 「game library」只剩 library 一个套件，预计 Chromium 约 8.5、WebKit 约 6 分钟，超时 30。按 21.5 那次的比例折算约 13.5 分钟，30 是它的两倍再取整。
+  - 新组「explorer + sync + repertoire」预计 Chromium 约 5.5、WebKit 约 4 分钟，超时 20（同样折算约 8 分钟）。
+  - `release.yml` 用同一份分组。test-chess 的分组逐条相同守卫是绿的，列出 12 组。浏览器作业 21 → 23 个。
+- 其余作业这次的时间（Chromium，含安装）：engine 11.2（套件 10.5）、static ubuntu 10.0、布局四片 8.8–9.9、sound + shell + trainer 9.5，都在 13 分钟以内，没动。
+- **建议：量墙钟时不要同时派发发布演练**（release.yml 的浏览器组和 PR checks 抢同一批 runner），或者只记没有演练同时在跑的运行。V4 的验收（连续三个 PR ≤ 15 分钟）只看这种运行。
+- 还没验收：拆分后的实际墙钟要等下一次没有演练同时在跑的 PR 运行。安装那一步的 apt 停顿这次没处理，要是再出现，可以考虑缓存 Playwright 的系统依赖。
