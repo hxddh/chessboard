@@ -654,3 +654,12 @@
   - trainer-e2e 两边都是 74 条 ok。
   - content-e2e 两边都是 515 条 ok，library-e2e 两边都是 312 条 ok。
   - repertoire-e2e 覆盖开局书背谱、到期卡片和背完接着下，拆分后 83 条 ok，全部通过。
+
+### M2
+
+- **V2 5 子残局查表（落地）**：`verify-endgames.yml` 在 main 上手动跑了第一次（run 36771239680，2026-09-30 20:19–20:20 UTC，head 1875072，`only` 空、`delay` 1.0），绿。日志逐条印出每个局面的查表结果：**59 个查询、1 个超过 7 子跳过（kp-breakthrough，8 子）、0 个不一致**。48 个 3–4 子的局面，在线表给出的保住结论的着法和本地表逐条相同；11 个 5 子的局面（kp-outside、kp-protected、kp-majority、rp-lucena、rp-lucena2、rp-cutoff、rp-skewer、rp-pawns、dr-philidor、dr-apawn、dr-vancura）结论都与目标相同（8 胜 3 和，全是 `win` / `draw`，没有 cursed、maybe 或 unknown），和原来两次深搜的结论也一致。
+  - artifact 在这里下不来（blob 主机被代理 403），tablebase.lichess.ovh 本机也是 403，所以没有重跑。`docs/endgames-verified.json` 里 59 个 `lichess` 字段按日志行逐条写回：`category`、`dtz`、`good` 取自日志，`verdict` 由 category 按 `tablebase_api.verdict()` 推出；日志不印 `precise_dtz` 和 `dtm`，这两项没写，没有编造。`tools.lichessTablebase` 记了 run 和这一点（`fromLog`）；下次 `--online` 会整块覆盖。写回脚本核对过：3–4 子的 `good` 与本地表逐条相同；11 个 5 子的着法用 chess.js 查过都合法。
+  - 顺带看到：9 个 3–4 子局面在线表的 DTZ 比本地 python-chess 读出的大 1（如 rp-pin 2 → 3、mi-bn 58 → 59），全是同号、差 1，属于 Syzygy DTZ 的取整差别；两边都不拿 DTZ 判对错，没有处理。
+  - **改标**：这 11 个在 `endgames.js` 从 `v: "sf"` 改成 `v: "tb"`，出处一行随之写「查 Syzygy 残局库核对」。记录里的 `method` 仍是离线那次实际做的（5 子为 `sf`，深搜那两行留作第二意见），5–7 子标 `tb` 的依据是 `lichess`。kp-breakthrough 8 子，没有任何表，仍标 `sf`，出处一行改为「超过七子、没有残局库可查，结论已用 Stockfish 深度搜索核对」（三语；原来写「五子以上」）。
+  - **规则**（先红后绿）：`test-endgames` 原来是「≤ 4 子 ⇔ tb」，改标后 11 条红（「5 子却标 tb」「方法 tb ≠ 记录 sf」）。现在是：≤ 4 子必须 `tb` 且记录方法是本地表；超过 7 子必须 `sf`；5–7 子标 `tb` 时必须有 `lichess` 应答且结论等于目标（提示点名唯一着的，按在线表的着法核）——规则先改、应答未写入时这 11 条红在「没有在线表（lichess）的应答」，写入后绿。凡有 `lichess` 的记录，不管标的是什么，都要与目标一致、category 与 verdict 对得上、3–4 子的与本地表着法相同、出处块不是 `partial` 也不在 `over7` 里。`verify-endgames.py` 离线模式的判定抽成 `on_file()`，同样接受「5–7 子 tb + 在线应答」；`test-verify-endgames.py` 12 → 14 条（`on_file` 的各种情形 + 盘上的文件逐条通过，先红后绿），原有的「边查边写」一条改为从去掉 `lichess` 的副本起跑，否则它会把已入库的应答当成这次写的。
+  - README：「怎么玩」表里残局训练营的核对方法、「路线」的「跨版本还没做的」（原来写「残局查表」）更新；8.1.0 一节是历史，没动。

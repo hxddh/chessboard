@@ -4,10 +4,13 @@
  *   - the content: sixty positions, twelve per theme, legal, White to move,
  *     a goal each, words in all three languages;
  *   - the verdicts: each goal is what docs/endgames-verified.json recorded
- *     when the content was written (Syzygy for ≤ 4 men, a deep Stockfish
- *     search for more — scripts/verify-endgames.py), each position's method
- *     is the one its source note names, and a position whose tip names "the
- *     only move" is held to the table's list of moves that keep the result;
+ *     when the content was written (scripts/verify-endgames.py): ≤ 4 men the
+ *     local Syzygy tables; 5–7 men a deep Stockfish search, and — for those
+ *     marked `tb` — the full Syzygy set's answer from tablebase.lichess.ovh
+ *     (`lichess`, v8-2-plan V2); more than 7 men only the search. Each
+ *     position's method is the one its source note names, and a position
+ *     whose tip names "the only move" is held to the table's list of moves
+ *     that keep the result;
  *   - endgame-rules.js: when a run is over and who got what they wanted;
  *   - the progress: a miss, a helped success and a clean one against
  *     srs.js's queue, on a fixed clock; the learning-file merge; a pre-8.1
@@ -49,14 +52,16 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
     else if (g.game_over()) bad.push(x.id + " 已经结束");
     if (x.goal !== "win" && x.goal !== "draw") bad.push(x.id + " goal " + x.goal);
     const men = g.board().flat().filter(Boolean).length;
-    if ((men <= 4) !== (x.v === "tb")) bad.push(x.id + " " + men + " 子却标 " + x.v);
-    if (men > 7 && x.v !== "sf") bad.push(x.id + " 超过 7 子");
+    // v8-2-plan V2: ≤ 4 men is the local table's, so always `tb`; 5–7 men
+    // may be `tb` only on the online table's answer (checked below)
+    if (men <= 4 && x.v !== "tb") bad.push(x.id + " " + men + " 子却标 " + x.v);
+    if (men > 7 && x.v !== "sf") bad.push(x.id + " 超过 7 子却标 " + x.v);
     for (const f of ["n", "tip", "src"]) {
       if (!Array.isArray(x[f]) || x[f].length !== 3 || x[f].some((s) => typeof s !== "string" || !s.trim())) bad.push(x.id + " " + f + " 缺语言");
     }
   }
   for (const b of bad) console.error("  " + b);
-  assert(bad.length === 0, "每个局面合法、白先、有目标，名字 / 提示 / 出处三语齐备，≤ 4 子的标 tb");
+  assert(bad.length === 0, "每个局面合法、白先、有目标，名字 / 提示 / 出处三语齐备，≤ 4 子的标 tb，超过 7 子的标 sf");
   const goals = { win: ITEMS.filter((x) => x.goal === "win").length, draw: ITEMS.filter((x) => x.goal === "draw").length };
   assert(goals.win > 0 && goals.draw >= 12, "有取胜也有守和（" + goals.win + " 胜 / " + goals.draw + " 和）");
   assert(GROUPS.every((g) => Array.isArray(g.n) && g.n.length === 3 && g.n.every(Boolean)), "主题名三语齐备");
@@ -69,12 +74,32 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   const rec = new Map(doc.items.map((r) => [r.id, r]));
   assert(doc.items.length === ITEMS.length && ITEMS.every((x) => rec.has(x.id)), "核对记录覆盖全部 60 个（" + doc.items.length + "）");
   const bad = [];
+  const online = doc.tools.lichessTablebase;
+  // tablebase_api.py verdict(): cursed / blessed are draws, maybe-* and unknown settle nothing
+  const SIDE = { win: "win", "syzygy-win": "win", draw: "draw", "cursed-win": "draw", "blessed-loss": "draw", loss: "loss", "syzygy-loss": "loss" };
+  const byOnline = [];
   for (const x of ITEMS) {
     const r = rec.get(x.id);
     if (!r) continue;
+    const men = new Chess(x.fen).board().flat().filter(Boolean).length;
     if (r.fen !== x.fen) bad.push(x.id + " 记录里的 FEN 不同：" + r.fen);
-    if (r.method !== x.v) bad.push(x.id + " 方法 " + x.v + " ≠ 记录 " + r.method);
+    // `method` is what the offline run did (verify-endgames.py): the local
+    // table up to 4 men, the search above; a 5–7-man `tb` rests on `lichess`
+    if (r.method !== (men <= 4 ? "tb" : "sf")) bad.push(x.id + " " + men + " 子，记录的方法却是 " + r.method);
     if (r.verdict !== x.goal) bad.push(x.id + " 目标 " + x.goal + " ≠ 记录 " + r.verdict);
+    const L = r.lichess;
+    if (L) {
+      // an answer on file must agree, whichever basis the item names
+      if (L.verdict !== SIDE[L.category] || L.verdict !== x.goal) bad.push(x.id + " 在线表 " + L.category + " / " + L.verdict + "，目标 " + x.goal);
+      if (!Array.isArray(L.good) || !L.good.length) bad.push(x.id + " 在线表没有保住结论的着法");
+      if (r.method === "tb" && JSON.stringify(L.good) !== JSON.stringify(r.good)) bad.push(x.id + " 在线表的着法 ≠ 本地表");
+      if (!online || online.partial || online.over7.includes(x.id)) bad.push(x.id + " 在线表的应答没有出处或不完整");
+    }
+    if (x.v === "tb" && men > 4) {
+      byOnline.push(x.id);
+      if (!L) bad.push(x.id + " " + men + " 子标 tb，却没有在线表（lichess）的应答");
+      else if (x.key && JSON.stringify([...x.key].sort()) !== JSON.stringify(L.good)) bad.push(x.id + " 提示说的唯一着 " + x.key + " ≠ 在线表 " + L.good);
+    }
     if (r.method === "tb") {
       if ((x.goal === "win") !== (r.wdl === 2) || (x.goal === "draw") !== (r.wdl === 0)) bad.push(x.id + " WDL " + r.wdl);
       if (!Array.isArray(r.good) || !r.good.length) bad.push(x.id + " 没有保住结论的着法");
@@ -89,7 +114,8 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   }
   for (const b of bad) console.error("  " + b);
   assert(bad.length === 0, "60 个结论与生成时的核对记录一致（Syzygy " + ITEMS.filter((x) => x.v === "tb").length +
-    "，Stockfish " + ITEMS.filter((x) => x.v === "sf").length + "）；点名「唯一正解」的与表一致");
+    "，其中 " + byOnline.length + " 个 5–7 子查的在线表；Stockfish " + ITEMS.filter((x) => x.v === "sf").length +
+    "）；点名「唯一正解」的与表一致");
   assert(/Stockfish/.test(doc.tools.stockfish || "") && Object.keys(doc.tools.syzygyMd5 || {}).length >= 30,
     "记录写明了用的工具：" + doc.tools.stockfish + "，" + Object.keys(doc.tools.syzygyMd5 || {}).length + " 个 Syzygy 文件的 md5");
 }
@@ -185,9 +211,10 @@ function camp(learnState) {
   assert(L && L.id === "eg:dr-reti" && L.tasks.length === 1 && L.tasks[0].type === "drill" && L.tasks[0].engine === "extreme",
     "一个残局 = 一课一题：和引擎对下，引擎满强度（extreme）");
   assert(L.tasks[0].winOn === "draw" && L.tasks[0].goal === "draw", "守和的残局按守和判");
-  const tbL = E.lesson("kp-keysq"), sfL = E.lesson("rp-lucena");
-  assert(tbL.text[1].includes("Syzygy") && sfL.text[1].includes("Stockfish"), "每个残局的出处一行写明核对方法：" + tbL.text[1] + " / " + sfL.text[1]);
-  assert(tbL.text[1].includes("标准残局理论") && sfL.text[1].includes("Salvio"), "……以及局面的来源");
+  const tbL = E.lesson("kp-keysq"), onL = E.lesson("rp-lucena"), sfL = E.lesson("kp-breakthrough");
+  assert(tbL.text[1].includes("Syzygy") && onL.text[1].includes("Syzygy") && sfL.text[1].includes("Stockfish"),
+    "每个残局的出处一行写明核对方法：" + tbL.text[1] + " / " + onL.text[1] + " / " + sfL.text[1]);
+  assert(tbL.text[1].includes("标准残局理论") && onL.text[1].includes("Salvio"), "……以及局面的来源");
 
   E.record("kp-keysq", false, false, T0);
   const s1 = store.session.learnState.eg.srs["kp-keysq"];
