@@ -795,8 +795,12 @@ await scenario("人机高档棋钟", async () => {
   await clickMove(normal.page, "e2", "e4");
   const n2 = await until(() => plies(normal.page).then((p) => (p >= 2 ? p : 0)), 15000, 100);
   const uci2 = await normal.page.evaluate(() => window.__uci);
-  assert(n2 >= 2 && uci2.includes("setoption name UCI_Elo value 1700") && uci2.includes("go depth 3") && !uci2.some((c) => /^go movetime/.test(c)),
-    "人机高档棋钟：normal 档、5+3 钟上时间充足，按 UCI_Elo 1700、搜到选着的第 3 层应着（v8-1-plan T1）", JSON.stringify(uci2));
+  // M3 review: a depth rung also carries the clock's ceiling (`go depth D movetime ceil`) so a
+  // tight clock caps it; with 5+3 and a full clock that ceiling is seconds, never the binding limit
+  const go2 = uci2.map((c) => /^go depth 3(?: movetime (\d+))?$/.exec(c)).find(Boolean);
+  assert(n2 >= 2 && uci2.includes("setoption name UCI_Elo value 1700") && !!go2 && (go2[1] == null || Number(go2[1]) >= 2000) &&
+    !uci2.some((c) => /^go movetime/.test(c)),
+    "人机高档棋钟：normal 档、5+3 钟上时间充足，按 UCI_Elo 1700、搜到选着的第 3 层应着，钟给的上限不卡它（v8-1-plan T1）", JSON.stringify(uci2));
   assert(!normal.errs.length, "人机高档棋钟：normal 档页面没有报错", normal.errs.join(" / "));
   await normal.ctx.close();
 });
