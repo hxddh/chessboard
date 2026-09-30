@@ -4023,7 +4023,7 @@ for (const lang of CONTENT_LANGS) {
     const L = ctx.ChessLearning;
     const bag = {
       learn: JSON.stringify({ v: 1, done: { l1: true }, last: 3 }),
-      puzzles: JSON.stringify({ v: 1, idv: 2, solved: { a: true }, missed: { b: { streak: 1 } }, tally: { m1: 4 } }),
+      puzzles: JSON.stringify({ v: 1, idv: 2, solved: { a: true }, missed: { b: { s: 1, n: 1, due: 5, ivl: 1 } }, tally: { m1: 4 } }),
       mines: JSON.stringify({ v: 1, list: [{ id: "mine:1", cat: "mine", fen: "f", solution: ["a"], t: 1, rev: { budget: 120 } }] }),
       progress: null, achievements: JSON.stringify({ seen: ["first"] }),
       stats: JSON.stringify({ v: 2, games: [{ id: "g1", t: 10 }] }),
@@ -4035,7 +4035,7 @@ for (const lang of CONTENT_LANGS) {
     const other = {
       kind: doc.kind, v: 1, exportedAt: 6, data: {
         learn: { v: 1, done: { l2: true }, last: 1 },
-        puzzles: { v: 1, solved: { c: true }, missed: { b: { streak: 2 } }, tally: { m1: 2, m2: 9 } },
+        puzzles: { v: 1, solved: { c: true }, missed: { b: { s: 2, n: 2, due: 9, ivl: 3 } }, tally: { m1: 2, m2: 9 } },
         mines: { v: 1, list: [{ id: "mine:1", cat: "mine", fen: "f", solution: ["z"], t: 1, rev: { budget: 400 } },
                              { id: "mine:2", cat: "mine", fen: "f2", solution: ["b"], t: 2 }] },
         achievements: { seen: ["second"] },
@@ -4043,7 +4043,7 @@ for (const lang of CONTENT_LANGS) {
       } };
     const m1 = L.merge(bag, other, 50);
     assert(m1.learn.done.l1 && m1.learn.done.l2 && m1.learn.last === 3, "lessons done are unioned, the bookmark keeps the further one");
-    assert(m1.puzzles.solved.a && m1.puzzles.solved.c && m1.puzzles.missed.b.streak === 2 &&
+    assert(m1.puzzles.solved.a && m1.puzzles.solved.c && m1.puzzles.missed.b.s === 2 &&   // srs.js entries (M3 评审: this fixture used to carry a `streak` no entry has)
            m1.puzzles.tally.m1 === 4 && m1.puzzles.tally.m2 === 9,
       "solves union, the review entry further along wins, counters take the max and never the sum");
     assert(m1.mines.list.length === 2 && m1.mines.list.find((x) => x.id === "mine:1").solution[0] === "z",
