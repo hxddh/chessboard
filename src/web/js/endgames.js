@@ -18,8 +18,10 @@
  *     tables attached, the verdict (mate / tablebase score for a win, 0.00
  *     for a draw) the same at two depths.
  * scripts/verify-endgames.py writes docs/endgames-verified.json from this
- * file; test-chess.mjs holds each `goal` and `v` to that record, and
- * test-endgames.mjs plays each one out to its goal.
+ * file; test-endgames.mjs holds each `goal` and `v` to that record — and
+ * `key`, where a tip names the moves that work, to the table's list of the
+ * moves that keep the result — and test-endgames-play.mjs plays each one
+ * out to its goal.
  *
  * Words are [zh-CN, en, ja] — the chunk carries all three so a language
  * switch needs no second fetch. `n` name, `tip` the idea, `src` where the

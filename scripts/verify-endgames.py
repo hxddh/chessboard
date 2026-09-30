@@ -16,7 +16,7 @@ The 5-piece Syzygy set (~1 GB with the 3–4-piece files) could not be fetched
 here — tablebase.lichess.ovh is refused by this machine's proxy — so 5+ men
 are the Stockfish rows. v8-1-plan §9 M3 has the whole story.
 
-Writes docs/endgames-verified.json; scripts/test-chess.mjs holds endgames.js
+Writes docs/endgames-verified.json; scripts/test-endgames.mjs holds endgames.js
 to it (goal, method, FEN, the only moves).
 
 Needs: python-chess (pip install chess), a native Stockfish, and a folder of
@@ -111,7 +111,7 @@ def main():
     eng.quit()
     files = sorted(f for f in os.listdir(a.tb) if f.endswith((".rtbw", ".rtbz")))
     doc = {
-        "about": "v8-1-plan T2: each endgame's verdict, from White's side (the student's), as checked when the content was written. Written by scripts/verify-endgames.py; read by scripts/test-chess.mjs.",
+        "about": "v8-1-plan T2: each endgame's verdict, from White's side (the student's), as checked when the content was written. Written by scripts/verify-endgames.py; read by scripts/test-endgames.mjs.",
         "tools": {
             "python-chess": chess.__version__,
             "stockfish": sf_name,
