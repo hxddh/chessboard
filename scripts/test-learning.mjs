@@ -902,5 +902,87 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(rctx.ChessDrills.forgetRetired(st, (id) => book.has(id)) === 0, "#88: a second pass has nothing left to do");
 }
 
+// ---------------------------------------------------------------- v8-1-plan T6: bank puzzles in the review queue
+{
+  const bctx = loadAppModules(["src/web/js/srs.js", "src/web/js/trainer/bank-review.js", "src/web/js/learning.js"]);
+  const S = bctx.ChessSrs;
+  // a fake bank: two bands, loaded only when asked (puzzle-db.js's contract)
+  const bands = { 1200: [{ id: "lc-aaa", rating: 1234 }, { id: "lc-bbb", rating: 1301 }], 1400: [{ id: "lc-ccc", rating: 1450 }] };
+  const loaded = new Set();
+  const asked = [];
+  let fail = false;
+  const Db = {
+    band: (b) => (loaded.has(b) ? bands[b] || [] : null),
+    ensureBand: (b) => { asked.push(b); if (fail) return Promise.reject(new Error("x")); loaded.add(b); return Promise.resolve(bands[b] || []); },
+  };
+  const B = bctx.createBankReview({ Db, Srs: S });
+  const now = Date.now();
+  // a 8.0 queue: no bank ids, no `bank` table — nothing to wait for, nothing changes
+  const old = { missed: { "w-hangq": S.onMiss(null, now - 1000), "mn-00012": { s: 0, n: 1 } }, solved: {} };
+  const before = JSON.stringify(old);
+  assert(!B.wait(old, now, () => {}) && B.pending(old, now).length === 0 && B.prune(old) === 0 && JSON.stringify(old) === before,
+    "T6: an 8.0 queue (no bank ids) loads as it was: no wait, no change");
+  assert(bctx.isBankId("lc-aaa") && !bctx.isBankId("mn-00012") && !bctx.isBankId(null), "T6: bank ids are the lc- ones");
+
+  // missed: queued by id, its band noted beside the entry
+  const st = { missed: {}, solved: {}, pr: {} };
+  st.missed["lc-bbb"] = S.onMiss(st.missed["lc-bbb"], now - 5000);
+  B.note(st, { id: "lc-bbb", rating: 1301 });
+  assert(st.bank["lc-bbb"] === 1200 && Object.keys(st.missed["lc-bbb"]).sort().join() === "due,ivl,n,s",
+    "T6: a missed bank puzzle is queued by id (the SRS entry unchanged) and its band noted beside it");
+  assert(B.resolve(st, "lc-bbb") === null, "T6: …and cannot be served before its band is here");
+  assert(B.pending(st, now).join() === "1200", "T6: the due bank puzzle needs band 1200");
+  // not due yet: nothing to wait for
+  const later = { missed: { "lc-bbb": { s: 1, n: 2, due: now + 86400000, ivl: 1 } }, bank: { "lc-bbb": 1200 } };
+  assert(B.pending(later, now).length === 0, "T6: a bank puzzle not due today asks for no band");
+
+  // the wait: the band loads, then the review goes on
+  let ran = 0;
+  const waited = B.wait(st, now, () => { ran++; });
+  await new Promise((r) => setTimeout(r, 0));
+  assert(waited && ran === 1 && asked.join() === "1200", "T6: the review waits for the band, then runs once");
+  assert(B.resolve(st, "lc-bbb") && B.resolve(st, "lc-bbb").id === "lc-bbb", "T6: …after which the queued id resolves to its puzzle");
+  assert(!B.wait(st, now, () => { ran++; }) && ran === 1, "T6: a second wait finds the band here and does not wait");
+
+  // an entry with no band noted (merged from elsewhere): its puzzle rating is the guess, bands either side too
+  const guess = { missed: { "lc-ccc": S.onMiss(null, now - 1) }, pr: { "lc-ccc": { r: 1390 } } };
+  assert(B.bandsOf(guess, "lc-ccc").join() === "1200,1000,1400", "T6: without a noted band, the rated band and its neighbours");
+  assert(B.pending(guess, now).join() === "1000", "T6: band 1200 is here and lacks it, so the next guess is asked");
+  const g2 = B.wait(guess, now, () => {});
+  await new Promise((r) => setTimeout(r, 0));
+  const g3 = B.wait(guess, now, () => {});
+  await new Promise((r) => setTimeout(r, 0));
+  assert(g2 && g3 && B.resolve(guess, "lc-ccc") && B.resolve(guess, "lc-ccc").id === "lc-ccc", "T6: …and found in the band it really is in");
+
+  // a bank id no band it could be in holds is retired once those bands are here
+  const gone = { missed: { "lc-zzz": S.onMiss(null, now - 1), "lc-bbb": S.onMiss(null, now - 1) }, bank: { "lc-zzz": 1400, "lc-bbb": 1200 } };
+  assert(B.prune(gone) === 1 && !("lc-zzz" in gone.missed) && !("lc-zzz" in gone.bank) && "lc-bbb" in gone.missed,
+    "T6: an id its band does not hold leaves the queue (and the band table); the others stay");
+  const unknown = { missed: { "lc-yyy": S.onMiss(null, now - 1) } };
+  assert(B.bandsOf(unknown, "lc-yyy").length === 0 && B.prune(unknown) === 1, "T6: an id with no band at all is not owed for ever");
+
+  // a band that fails to load: reported, and the review goes on with what is here
+  fail = true;
+  const f = { missed: { "lc-qqq": S.onMiss(null, now - 1) }, bank: { "lc-qqq": 2000 } };
+  let failedN = 0, thenN = 0;
+  assert(B.wait(f, now, () => { thenN++; }, () => { failedN++; }), "T6: a band not here is waited for");
+  await new Promise((r) => setTimeout(r, 0));
+  assert(failedN === 1 && thenN === 1 && "lc-qqq" in f.missed, "T6: a failed band is reported, the review goes on, the entry is kept");
+  assert(!B.wait(f, now, () => {}), "T6: …and the same band is not asked again this session (no loop)");
+
+  // a graduation takes the band note with it
+  B.forget(st, "lc-bbb");
+  assert(!("lc-bbb" in st.bank), "T6: forget drops the band note");
+
+  // learning import: the band table travels with the queue
+  const L = bctx.ChessLearning;
+  const cur = { puzzles: JSON.stringify({ solved: {}, missed: { "lc-bbb": { s: 0, n: 1 } }, bank: { "lc-bbb": 1200 } }) };
+  const inc = { kind: L.LEARNING_KIND, v: 1, data: { puzzles: { solved: {}, missed: { "lc-ccc": { s: 0, n: 1 } }, bank: { "lc-ccc": 1400 } } } };
+  const merged = L.merge(cur, inc, 100).puzzles;
+  assert(merged.bank && merged.bank["lc-bbb"] === 1200 && merged.bank["lc-ccc"] === 1400, "T6: importing learning data keeps both sides' band notes");
+  const plain = L.merge({ puzzles: JSON.stringify({ solved: {}, missed: {} }) }, { kind: L.LEARNING_KIND, v: 1, data: { puzzles: { solved: {}, missed: {} } } }, 100).puzzles;
+  assert(!("bank" in plain), "T6: …and adds no table to a state that had none");
+}
+
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
 console.log("all learning tests passed");

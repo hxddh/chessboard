@@ -25,9 +25,11 @@ import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "../openings.js";
 import { ChessPicker } from "../picker.js";
 import { ChessPlanner } from "../planner.js";
 import { ChessProgress } from "../progress.js";
+import { ChessPuzzleDb } from "../puzzle-db.js";
 import { CHESS_PUZZLES } from "../puzzles.js";
 import { ChessRating } from "../rating.js";
 import { ChessSrs } from "../srs.js";
+import { createBankReview, isBankId } from "./bank-review.js";
 import { createPuzzleModes, isThemeCat, THEME_CAT } from "./puzzle-modes.js";
 
 /**
@@ -364,6 +366,8 @@ export function createPuzzlesUI(d) {
   }
   forgetRetired();
   const Srs = ChessSrs;
+  // v8-1-plan T6: bank puzzles in the review queue, their bands loaded when due
+  const Bank = createBankReview({ Db: ChessPuzzleDb, Srs });
   const Picker = ChessPicker;
   /** reviews served per day before the rest is pushed to tomorrow (Q3.3) */
   const REVIEW_CAP = 20;
@@ -372,11 +376,14 @@ export function createPuzzlesUI(d) {
     // only what the 复习 list can serve — it resolves ids against the book —
     // so every plan's review step can be worked off (Codex on #88). A mined
     // id counts before its chunk joins: it is not served yet, not retired.
+    // So does a bank id before its band is here (v8-1-plan T6): the review
+    // waits for the band (reviewWaits), and bank-review.js prune() drops an
+    // id no band holds.
     const missed = store.session.puzzleState.missed;
     const book = new Set(bookNow().map((p) => p.id));
     const servable = {};
     for (const id of Object.keys(missed)) {
-      if (book.has(id) || (!MINED_ORDINAL.size && id.startsWith("mn-"))) servable[id] = missed[id];
+      if (book.has(id) || isBankId(id) || (!MINED_ORDINAL.size && id.startsWith("mn-"))) servable[id] = missed[id];
     }
     return Srs.dueCount(servable, Date.now());
   }
@@ -481,14 +488,15 @@ export function createPuzzlesUI(d) {
     // drill retiring) forgets the ids, but the board keeps the drill — and a
     // wrong move on it then wrote the id straight back into the queue, a
     // review `owedNow()` counts for ever and nothing can hand out.
-    // v8-0-plan B1: a Lichess puzzle is not in the book — its band is a chunk
-    // that may not be loaded when the queue is read, and a review nothing can
-    // serve is the bug above. It is rated and tallied, not queued.
+    // A Lichess puzzle is not in the book: v8-0-plan B1 left it out of the
+    // queue for that reason. v8-1-plan T6 queues its id and notes its band,
+    // and the review waits for the band when it is due (bank-review.js).
     const pz = store.session.puzzle;
     const lc = pz && pz.p.id === id && pz.p.src === "lichess" ? pz.p : null;
     const p = lc || bookNow().find((x) => x.id === id);
     if (!p) return;
-    if (!lc) store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
+    store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
+    if (lc) Bank.note(store.session.puzzleState, lc);
     // 6.0 (v6-plan Q3.1): the first answer to a puzzle moves both ratings
     ratePuzzleOnce(id, 0);
     // …and into the lifetime tally, which unlike the queue survives
@@ -511,7 +519,8 @@ export function createPuzzlesUI(d) {
     const cur = store.session.puzzleState.missed[id];
     if (!Srs.isDue(cur) && !Srs.dueBy(cur, Date.now())) return;
     const next = Srs.onSolve(store.session.puzzleState.missed[id], Date.now());
-    if (next) store.session.puzzleState.missed[id] = next; else delete store.session.puzzleState.missed[id];
+    if (next) store.session.puzzleState.missed[id] = next;
+    else { delete store.session.puzzleState.missed[id]; Bank.forget(store.session.puzzleState, id); }
     savePuzzleState();
   }
 
@@ -532,6 +541,23 @@ export function createPuzzlesUI(d) {
     return { all, total: all.length, left: all.filter((p) => !store.session.puzzleState.solved[p.id]).length };
   }
 
+  /**
+   * v8-1-plan T6: run `then` once the bands of the due bank puzzles are here
+   * — the review's withIndex. True when it waits; false, go on now.
+   */
+  function reviewWaits(then) {
+    // the player may have gone elsewhere while the band loaded (startTheme's rule)
+    const was = store.session.puzzleState.cat;
+    const still = () => store.session.mode === "puzzle" && !store.session.run && store.session.puzzleState.cat === was;
+    return Bank.wait(store.session.puzzleState, Date.now(), () => { if (still()) then(); }, () => toast(t("theme.loadFailed"), "fix"));
+  }
+  /** The book plus the queued bank puzzles whose bands are here: what the picker's review rung reads. */
+  function reviewBook() {
+    const st = store.session.puzzleState;
+    const bank = Object.keys(st.missed).filter(isBankId).map((id) => Bank.resolve(st, id)).filter(Boolean);
+    return bank.length ? bookNow().concat(bank) : bookNow();
+  }
+
   /** "review" is a virtual category: every puzzle currently in the missed set. */
   function puzzlesInCat(cat) {
     if (isThemeCat(cat)) return Modes.themeList(cat.slice(THEME_CAT.length));
@@ -540,7 +566,7 @@ export function createPuzzlesUI(d) {
       // day's dose — the rest is scheduled forward by dueQueue() itself so a
       // fortnight away does not arrive as one afternoon
       ? Srs.dueQueue(store.session.puzzleState.missed, Date.now(), REVIEW_CAP)
-        .map((id) => bookNow().find((p) => p.id === id)).filter(Boolean)
+        .map((id) => (isBankId(id) ? Bank.resolve(store.session.puzzleState, id) : bookNow().find((p) => p.id === id))).filter(Boolean)
       // the op list shows one chair at a time — the side segment picks which
       : cat === "op" ? ALL_PUZZLES.filter((p) => p.cat === "op" && (p.side === "b") === (store.session.puzzleState.opSide === "b"))
       // the repertoire tab shows one chair at a time too, and for the same
@@ -714,6 +740,7 @@ export function createPuzzlesUI(d) {
   }
 
   function startPuzzleAt(cat, idx) {
+    if (cat === "review" && reviewWaits(() => startPuzzleAt(cat, idx))) return;
     const list = puzzlesInCat(cat);
     if (!list.length) {
       // no puzzle survives the filter: clear the board and the counters too,
@@ -784,6 +811,7 @@ export function createPuzzlesUI(d) {
     // v8-1-plan T3: nothing due any more — the book's lines, as 「开始背」 does
     if (cat === "repdue" && !puzzlesInCat(cat).length) cat = "rep";
     if (cat === "rep") seatRepSide();
+    if (cat === "review" && reviewWaits(startPuzzles)) return;
     // don't strand the user on an empty review tab — or an emptied personal
     // book, which retires drills on its own (mistakes.js cap)
     // …or an emptied repertoire, which is a file the player can delete
@@ -1450,6 +1478,7 @@ export function createPuzzlesUI(d) {
     const d = store.session.daily;
     const step = d && d.steps[d.i];
     if (step && !dailyStepIsHere(step) && dailyJump(step)) { store.commit("session", "sync"); return; }
+    if (store.session.puzzle.cat === "review" && reviewWaits(nextPuzzle)) return;
     let list = puzzlesInCat(store.session.puzzle.cat);
     // v8-1-plan T3: the card just answered has left the due list (or, missed,
     // gone to its end), so the one now at this index is the next
@@ -1687,13 +1716,17 @@ export function createPuzzlesUI(d) {
       // exactly the moment the user needs these tabs to change category, so this
       // must not bail out on a missing puzzle
       if (!b || (store.session.puzzle && b.dataset.cat === store.session.puzzle.cat)) return;
-      if (b.dataset.cat === "review" && !puzzlesInCat("review").length) {
-        toast(t("pz.noMissed"));
-        return;
-      }
-      store.session.puzzleState.cat = b.dataset.cat;
-      savePuzzleState();
-      startPuzzles();
+      const go = () => {
+        if (b.dataset.cat === "review" && !puzzlesInCat("review").length) {
+          toast(t("pz.noMissed"));
+          return;
+        }
+        store.session.puzzleState.cat = b.dataset.cat;
+        savePuzzleState();
+        startPuzzles();
+      };
+      // v8-1-plan T6: a queue of bank puzzles only is empty until their bands are here
+      if (b.dataset.cat !== "review" || !reviewWaits(go)) go();
     };
     document.getElementById("op-side-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-side]");
@@ -1719,11 +1752,13 @@ export function createPuzzlesUI(d) {
     document.getElementById("puzzle-fb-hint").onclick = () => { showPuzzleAnswer(); };
     document.getElementById("puzzle-review-nudge").onclick = () =>
       document.getElementById("puzzle-smart").click();
-    document.getElementById("puzzle-smart").onclick = () => {
+    document.getElementById("puzzle-smart").onclick = function smart() {
+      // the review rung reads the queue: a due bank puzzle's band first (v8-1-plan T6)
+      if (reviewWaits(smart)) return;
       // the rating rung only once a first answer has moved the rating — a fresh
       // profile is still sent exploring
       const rated = Array.isArray(store.session.puzzleState.rhist) && store.session.puzzleState.rhist.length > 0;
-      const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf,
+      const pick = Picker.pickNext(store.session.puzzleState, reviewBook(), Srs, puzzleTier, motifKeyOf,
         puzzleRatingOf, rated ? ChessRating.pickRange(playerRating()) : null);
       if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
       store.session.puzzleState.cat = pick.cat;

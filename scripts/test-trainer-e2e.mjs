@@ -614,6 +614,91 @@ async function solveCurrent(page, h) {
   await two.ctx.close();
 }
 
+// --- (g) a missed bank puzzle comes back in 复习 (v8-1-plan T6) ------------------
+// B1 rated a Lichess puzzle but left it out of the review queue (its band may
+// not be loaded when the queue is read). Now the queue keeps its id and the
+// band it lives in; after a restart the review waits for that band — held
+// back here — before it shows anything, and does not give up on 复习.
+{
+  const p1 = lcById("F0001");
+  const band = "chunk-lc-" + String(Math.floor(p1.rating / 200) * 200).padStart(4, "0") + ".js";
+  const { ctx, page } = await open(null, { mode: "ai" });
+  const h = helpers(page);
+  await page.click('#rail button[data-view="puzzle"]');
+  await page.waitForTimeout(500);
+  await page.click("#pz-themes-open");
+  await page.waitForTimeout(300);
+  await page.click('#theme-list button[data-theme="m1"]');
+  await page.waitForTimeout(800);
+  await page.evaluate(() => { const d = document.querySelector("#puzzle-list")?.closest("details"); if (d) d.open = true; });
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("#puzzle-list button[data-i]")].find((x) => x.textContent.includes("#F0001"));
+    if (b) b.click();
+  });
+  await page.waitForTimeout(500);
+  h.view.flipped = true;
+  const wrong = new Chess(p1.fen).moves({ verbose: true }).find((m) => m.from === "g8" && m.san.includes("+") && !m.san.includes("#"));
+  await h.move(wrong.from, wrong.to);
+  await h.feedback();
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  assert(st.missed && st.missed["lc-F0001"] && st.bank && st.bank["lc-F0001"] === Math.floor(p1.rating / 200) * 200,
+    "g: 答错的题库题进了复习队列（只存 id），旁边记下它所在的分块", JSON.stringify({ missed: st.missed, bank: st.bank }));
+  assert(st.rhist && st.rhist.length === 1, "g: …照样计入评级", st.rhist && st.rhist.length);
+  await ctx.close();
+
+  // restart on 复习, the band slow to arrive
+  chunkDelay[band] = 1500;
+  const again = await open(Object.assign({}, st, { cat: "review" }), { early: true });
+  const ha = helpers(again.page);
+  ha.view.flipped = true;
+  await again.page.waitForTimeout(3000);
+  const tab = await again.page.evaluate(() => (document.querySelector('#puzzle-cat-seg button[data-cat="review"]') || {}).textContent || "");
+  const stored = await again.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat);
+  assert(await ha.faces(p1.fen) === true && stored === "review",
+    "g: 重开之后，复习先等分块到了再摆出这道题（没有退回一步杀）", JSON.stringify({ occ: await ha.occupied(), stored }));
+  assert(await again.page.evaluate((g) => !!window[g], "LC_BAND_" + band.slice(9, 13)), "g: …它等的正是这道题所在的分块", band);
+  assert(/·1/.test(tab) && /黑先/.test(await ha.text("#puzzle-task") || ""), "g: 复习标签数到它，题面照旧是黑先", tab);
+  // solved cleanly: it advances along the ladder, due tomorrow, its band note kept
+  const [a1, b1] = fromTo(p1.fen, p1.solution[0]);
+  await ha.move(a1, b1);
+  await ha.feedback();
+  const st2 = await again.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  const e = st2.missed["lc-F0001"];
+  assert(e && e.s === 1 && e.due > Date.now() + 3600000 && st2.bank["lc-F0001"] === st.bank["lc-F0001"],
+    "g: 复习里做对，排到明天，分块记录还在", JSON.stringify({ e, bank: st2.bank }));
+  await again.ctx.close();
+  for (const k in chunkDelay) delete chunkDelay[k];
+
+  // gone elsewhere while the band loads: 复习 does not pull the player back
+  chunkDelay[band] = 1500;
+  const away = await open(Object.assign({}, st, { cat: "m1" }));
+  await away.page.click('#puzzle-cat-seg button[data-cat="review"]');
+  await away.page.click('#rail button[data-view="play"]');
+  await away.page.waitForTimeout(2500);
+  const awayView = await away.page.evaluate(() => document.getElementById("app").getAttribute("data-view"));
+  const awayCat = await away.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat);
+  assert(awayView === "play" && awayCat === "m1", "g: 等分块时去了对局页，分块到了也不把人拉回复习", JSON.stringify({ awayView, awayCat }));
+  await away.ctx.close();
+  for (const k in chunkDelay) delete chunkDelay[k];
+
+  // not due today: 复习 has nothing and asks for no band
+  const later = await open(Object.assign({}, st2, { cat: "m1" }));
+  const asked2 = [];
+  later.page.on("request", (q) => { if (q.url().includes(band)) asked2.push(q.url()); });
+  await later.page.click('#puzzle-cat-seg button[data-cat="review"]').catch(() => {});
+  await later.page.waitForTimeout(800);
+  const cat2 = await later.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat);
+  assert(cat2 === "m1" && asked2.length === 0, "g: 还没到期的题库题不进今天的复习，也不去要分块", JSON.stringify({ cat2, asked2 }));
+  await later.ctx.close();
+
+  // a queue from 8.0 (no bank ids, no band table) opens on 复习 as before
+  const old = await open({ v: 1, idv: 2, solved: {}, missed: { "m1-backrank-r": { s: 0, n: 1, due: 0, ivl: 0 } }, cat: "review" });
+  const ho = helpers(old.page);
+  const m101 = data.CHESS_PUZZLES.find((p) => p.id === "m1-backrank-r");
+  assert(!!m101 && await ho.faces(m101.fen) === false, "g: 8.0 的复习队列照常打开", await ho.occupied());
+  await old.ctx.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();
