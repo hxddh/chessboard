@@ -44,7 +44,7 @@ export function createGuess(d) {
   const {
     store, t, tf, Chess, Engine, Review, Grade, CLASSICS, classicText, carryToken, saveLearnState,
     startClassic, sync, BoardView, animateReply, moveSound, selectSquare, clearSelection, choosePromotion,
-    kingSquare, cursorSquare, evalScalar, scanBudget, sideName, Audio2,
+    kingSquare, cursorSquare, evalScalar, scanBudget, sideName,
   } = d;
   /** White-view scalar per position after a move (fen), and loss per (fen, guess) */
   const scalars = new Map();
@@ -116,7 +116,6 @@ export function createGuess(d) {
         total: moves.filter((m) => m.color === s).length },
     };
     store.game.selection = null;
-    store.game.flipped = s === "b";
     BoardView.cancelAnim();
     advance(store.session.learn.gs);
   }
@@ -214,7 +213,6 @@ export function createGuess(d) {
     rec[c.id] = Object.assign(rec[c.id] && typeof rec[c.id] === "object" ? rec[c.id] : {},
       { [s.side]: { same: m.same, n: m.n, avg: Math.round(m.avg * 10) / 10, at: Date.now() } });
     saveLearnState();
-    if (Audio2 && Audio2.playWin) Audio2.playWin();
     sync();
   }
 
@@ -234,7 +232,7 @@ export function createGuess(d) {
     const g = v ? new Chess(v.fen) : L.g;
     const guessArrow = v ? { from: v.you.from, to: v.you.to } : s.arrow;
     return {
-      position: g.board(), flipped: store.game.flipped,
+      position: g.board(), flipped: s.side === "b", // face the chair you sit in, as a puzzle does
       selected: store.game.selection ? store.game.selection.sq : null,
       legalTargets: store.game.selection ? store.game.selection.targets : [],
       lastMove: v ? null : L.last,
