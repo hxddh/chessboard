@@ -16,6 +16,7 @@ import { ChessPgnParser } from "../src/web/js/pgn-parser.js";
 import { ChessLibrary as L } from "../src/web/js/library.js";
 import { LibraryQuery as Q } from "../src/web/js/library-query.js";
 import { LibraryDb as D } from "../src/web/js/library-db.js";
+import * as S from "../src/web/js/library-sum.js";
 
 let failed = 0;
 const assert = (cond, msg, extra) => {
@@ -395,6 +396,211 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
   await new Promise((r) => setTimeout(r, 5));   // the backup is keyed by the millisecond
   const r = await st.migrate(JSON.stringify({ v: 1, games: FIXTURES["8.0-dev"].games }), { backup: false });
   assert(r.ok && be.meta.size === 1 && be.games.has("lib:80a"), "P3-3: recovery from the shards writes the games and no second copy (" + be.meta.size + " in meta)");
+}
+
+// --- 8. v8-1-plan F3: the list's summary, kept beside the games ------------------
+// Every write path keeps the stored summary equal to what summaryOf says of
+// the records the store holds; readSummary hands it out only when the header's
+// id and the record count vouch for it.
+{
+  /** The stored summary, checked against the stored records: {ok, why, rows}. */
+  const check = (be) => {
+    const rows = new Map();
+    let why = "";
+    for (const [k, text] of be.meta) {
+      if (!k.startsWith(S.SUM_KEY)) continue;
+      for (const r of JSON.parse(text)) {
+        if (rows.has(r.id)) why += " twice:" + r.id;
+        if (S.SUM_KEY + Q.shardOf(r.id) !== k) why += " wrong-shard:" + r.id;
+        rows.set(r.id, r);
+      }
+    }
+    for (const [id, rec] of be.games) {
+      const { pk, ...entry } = rec;
+      const want = JSON.stringify(D.summaryOf(entry));
+      if (!rows.has(id)) why += " missing:" + id;
+      else if (JSON.stringify(rows.get(id)) !== want) why += " stale:" + id;
+    }
+    for (const id of rows.keys()) if (!be.games.has(id)) why += " extra:" + id;
+    return { ok: !why, why, rows };
+  };
+  /** A store over a fresh backend, loaded and in step (the page's boot). */
+  const boot = async (be) => {
+    const st = D.createLibraryStore({ backend: be, Chess });
+    await st.load();
+    const id = await st.syncSummary(50, async () => {});
+    return { st, id };
+  };
+  const pk = new Map();
+  const entries = PGNS.map((p) => imported(p, ["hxddh"], pk));
+  const withPk = (g) => { const k = pk.get(g.id); if (k) g.pk = k; return g; };
+
+  // an empty library gets an id, and nothing else
+  const be = D.memoryBackend();
+  let { st, id } = await boot(be);
+  assert(typeof id === "string" && id && be.meta.get(S.SUM_ID) === id && st.sumId() === id,
+    "F3 summary: a library gets an id once it is in step (" + id + ")");
+  // import: the entries and their rows in one write
+  for (const e of entries) st.indexFens(e.id, [START]);
+  await st.save(entries);
+  let c = check(be);
+  assert(c.ok && c.rows.size === entries.length, "F3 summary: an import writes a row for every game (" + c.rows.size + c.why + ")");
+  let rows = await st.readSummary(id);
+  assert(rows && rows.length === entries.length && !rows.some((r) => "sans" in r || "pk" in r || "an" in r && typeof r.an !== "number"),
+    "F3 summary: readSummary hands the rows out — no moves, no index, no analysis arrays");
+  assert((await st.readSummary("other")) === null && (await st.readSummary(null)) === null,
+    "F3 summary: …only under the id the header carries (a build without the summary drops it)");
+  // the pass analyses a game; the player claims another: both rows follow
+  const a = entries[0];
+  a.an = { acc: { w: 71.26, b: 40 }, tags: ["?", null, "??", null, null, "?"], budget: 200 };
+  entries[3].side = "b"; entries[3].outcome = "win";
+  await st.save([a, entries[3]]);
+  c = check(be);
+  const ra = c.rows.get(a.id);
+  assert(c.ok && ra.an === 200 && ra.acc === 71.26 && ra.bad === 2 && c.rows.get(entries[3].id).sd === "b",
+    "F3 summary: analysis and claim reach the row (acc, mistakes, depth, side" + c.why + ")");
+  // remove (over the cap, 清除 of one): the row goes with the record
+  await st.drop([entries[1].id]);
+  c = check(be);
+  assert(c.ok && !c.rows.has(entries[1].id), "F3 summary: a dropped game's row goes in the same write" + c.why);
+  // 本机 (syncLocal): saved and dropped like the imported ones, marked as theirs
+  const loc = { id: "loc:g1", src: "local", ref: "g1", t: T0 + 9, diff: "hard", side: "b", outcome: "draw", result: "1/2-1/2",
+    white: "", black: "", date: "2026.09.20", sans: "d4 d5", plies: 2, fen: "", pgnLen: 40, acc: 88, tc: "300+0" };
+  await st.save([loc]);
+  c = check(be);
+  const rl = c.rows.get("loc:g1");
+  assert(c.ok && rl.src === "local" && rl.acc === 88 && rl.df === "hard" && rl.ref === "g1", "F3 summary: a 本机 game's row carries its level, record and accuracy" + c.why);
+  await st.drop(["loc:g1"]);
+  assert(check(be).ok && !check(be).rows.has("loc:g1"), "F3 summary: …and goes when the play history drops it");
+  // the background index writes records whose rows did not change: no summary write
+  let metaWrites = 0;
+  const put0 = be.put;
+  be.put = async (recs, m) => { if (m) metaWrites++; return put0(recs, m); };
+  await st.save(entries.filter((g) => g.id !== entries[1].id));
+  be.put = put0;
+  assert(metaWrites === 0, "F3 summary: rewriting games whose rows are unchanged writes no shard (" + metaWrites + ")");
+  // a refused write: neither games nor rows land; the next write of that shard brings the row
+  be.fail.put = "QuotaExceededError";
+  entries[2].eco = "D06"; entries[2].ecoName = "Queen's Gambit";
+  let threw = false;
+  try { await st.save([entries[2]]); } catch (_) { threw = true; }
+  delete be.fail.put;
+  c = check(be);
+  assert(threw && c.ok && c.rows.get(entries[2].id).eco !== "D06", "F3 summary: a refused write leaves records and rows as they were" + c.why);
+  await st.save([entries[2]]);
+  c = check(be);
+  assert(c.ok && c.rows.get(entries[2].id).eco === "D06", "F3 summary: …and the retry writes both" + c.why);
+
+  // merge: the recovery path's migrate after load (an older build's copy, deeper)
+  const deeper = Object.assign({}, entries[0], { an: { acc: { w: 90, b: 10 }, tags: [], budget: 800 } });
+  const r = await st.migrate(JSON.stringify({ v: 1, games: [deeper] }), { backup: false });
+  c = check(be);
+  assert(r.ok && c.ok && c.rows.get(entries[0].id).an === 800 && c.rows.get(entries[0].id).acc === 90,
+    "F3 summary: a merge through migrate() leaves the row of the copy that won" + c.why);
+
+  // restore from the native shards: the imported rows replaced, 本机 rows kept
+  await st.save([loc]);
+  // the page keeps the store's list current (library-page.js save: st.games = list)
+  st.games = [...be.games.values()].filter((g) => g.src !== "local").map(({ pk: _k, ...g }) => g);
+  await st.restoreShards({ lib00: JSON.stringify({ v: 1, games: FIXTURES["8.0-dev"].games }) });
+  c = check(be);
+  assert(c.ok && c.rows.size === 2 && c.rows.has("lib:80a") && c.rows.has("loc:g1"),
+    "F3 summary: restoreShards replaces the imported rows in the same transaction, keeps 本机 (" + [...c.rows.keys()] + ")" + c.why);
+
+  // 清除全部存档: the rows go with the games; the id stays
+  await st.clear();
+  c = check(be);
+  assert(c.ok && c.rows.size === 0 && be.meta.get(S.SUM_ID) === id && (await st.readSummary(id)).length === 0,
+    "F3 summary: a clear empties the summary with the store" + c.why);
+}
+
+// the summary written by someone who does not keep it (8.0, a window that
+// never heard of a game) is never handed out wrong, and the next boot mends it
+{
+  const be = D.memoryBackend();
+  const pk = new Map();
+  const es = PGNS.map((p) => imported(p, ["hxddh"], pk));
+  const a = D.createLibraryStore({ backend: be, Chess });
+  await a.load();
+  const id = await a.syncSummary(50, null);
+  await a.save(es.slice(0, 3));
+  // 8.0 imports two games (it writes records only) — its header drops `sum`,
+  // and even under the old id the count gives it away
+  await be.put(es.slice(3).map((g) => Object.assign({}, g)));
+  assert((await a.readSummary(id)) === null, "F3 summary: records the summary does not cover → no summary (the list waits for the games)");
+  // 8.0 re-analyses a game in place (same count): the row is stale until the next boot's sync
+  const stale = Object.assign({}, es[0], { an: { acc: { w: 55, b: 45 }, tags: [], budget: 400 } });
+  await be.put([stale]);
+  const b = D.createLibraryStore({ backend: be, Chess });
+  await b.load();
+  const id2 = await b.syncSummary(0, async () => {});
+  const rows = await b.readSummary(id2);
+  const r0 = rows && rows.find((r) => r.id === es[0].id);
+  assert(id2 === id && rows && rows.length === 5 && r0 && r0.an === 400 && r0.acc === 55,
+    "F3 summary: the boot after it rewrites the shards that disagree, under the same id");
+  // two windows: B loaded before A imported; A's peer message is how B learns
+  const w1 = D.createLibraryStore({ backend: be, Chess });
+  const w2 = D.createLibraryStore({ backend: be, Chess });
+  await w1.load(); await w2.load();
+  const fresh = imported('[White "p"]\n[Black "q"]\n[Result "1-0"]\n\n1. c4 e5 1-0\n', ["p"], pk);
+  const sameShard = Object.assign({}, es[1], { id: es[1].id, eco: "Z99" });
+  await w1.save([fresh]);
+  await w2.read([fresh.id]);   // BroadcastChannel → read(ids)
+  await w2.save([sameShard, Object.assign({}, fresh, { eco: "A10" })]);
+  const n = be.games.size;
+  const all = await w2.readSummary(id);
+  assert(all && all.length === n && all.find((r) => r.id === fresh.id).eco === "A10",
+    "F3 summary: a second window that read the first one's game back keeps its row when it writes (" + (all && all.length) + "/" + n + ")");
+  // …and one that did not hear of it drops the row — which the count catches
+  const late = imported('[White "r"]\n[Black "s"]\n[Result "0-1"]\n\n1. g3 d5 0-1\n', [], pk);
+  let k = 0;
+  while (Q.shardOf("lib:mate" + k) !== Q.shardOf(late.id)) k++;
+  const mate = { id: "lib:mate" + k, t: T0, white: "m", black: "n", date: "2026.01.01", result: "*", plies: 1, sans: "e4", fen: "" };
+  await w1.save([mate]);
+  const w3 = D.createLibraryStore({ backend: be, Chess });
+  await w3.load();
+  await w1.save([late]);   // w3 is not told
+  await w3.save([Object.assign({}, mate, { eco: "Y00" })]);
+  assert((await w3.readSummary(id)) === null,
+    "F3 summary: …and a window that never heard of a game cannot make the summary lie: the count no longer matches");
+  const w4 = D.createLibraryStore({ backend: be, Chess });
+  await w4.load();
+  await w4.syncSummary(0, async () => {});
+  const back = await w4.readSummary(id);
+  assert(back && back.length === be.games.size && back.some((r) => r.id === late.id), "F3 summary: …until the next boot puts it right")
+}
+
+// the list's stand-ins search like the entries (everything but the position)
+{
+  const pk = new Map();
+  const es = PGNS.map((p) => imported(p, ["hxddh"], pk));
+  es[0].an = { acc: { w: 80, b: 20 }, tags: ["?"], budget: 200 };
+  es[1].eco = "C42"; es[1].ecoName = "Petrov's Defense";
+  const stubs = es.map((g) => D.stubOf(JSON.parse(JSON.stringify(D.summaryOf(g)))));
+  const qs = [{ text: "rival" }, { opponent: "friend" }, { eco: "C4" }, { text: "petrov" }, { from: "2026-01-01", to: "2026-08-31" },
+    { result: "win" }, { result: "1-0" }, { color: "b" }, { tc: "blitz" }, { tc: "correspondence" }, { src: "import" }, { text: "lichess" }];
+  const ids = (list, q) => Q.query(list, q, null).map((g) => g.id).join(",");
+  const bad = qs.filter((q) => ids(es, q) !== ids(stubs, q));
+  assert(bad.length === 0 && qs.every((q) => ids(es, q) !== undefined),
+    "F3 stubs: every query but the position answers the same over the summary as over the entries" + (bad.length ? " — " + JSON.stringify(bad) : ""));
+  const s0 = stubs[0];
+  assert(s0.stub && s0.stub.an === 200 && s0.stub.acc === 80 && s0.stub.bad === 1 && !s0.an && !s0.sans && Q.siteOf(s0) === Q.siteOf(es[0]),
+    "F3 stubs: a stand-in carries what its row showed of the analysis, and no moves");
+}
+
+// chunk-boot.js reads the header by its raw key: the one persist.js owns
+{
+  const { KEYS } = await import("../src/web/js/persist.js");
+  assert(S.HEADER_KEY === KEYS.library && S.DB_NAME === D.DB_NAME, "F3: library-sum.js names the header persist.js keeps, and the database library-db.js opens");
+  const store = (v) => ({ getItem: () => v });
+  const g = globalThis;
+  const got = (raw) => { g[S.PREFETCH_GLOBAL] = null; const r = S.bootPrefetch(store(raw), null); const p = g[S.PREFETCH_GLOBAL]; g[S.PREFETCH_GLOBAL] = null; return r && !!p; };
+  assert(got(JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 5, sum: "s1" })) &&
+    !got(JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 5 })) &&
+    !got(JSON.stringify({ v: 1, games: [{ id: "x" }], names: [] })) && !got(null),
+    "F3: chunk-boot.js asks for the summary only for a header with the games in IndexedDB and a summary id");
+  assert(S.opensOnLibrary(JSON.stringify({ view: "library" })) && !S.opensOnLibrary(JSON.stringify({ view: "play" })) && !S.opensOnLibrary("{x"),
+    "F3: …and puts the library's chunk ahead of the bundle only when the app opens on the library page");
 }
 
 if (failed) { console.error("\n" + failed + " failure(s)"); process.exit(1); }

@@ -1586,12 +1586,14 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   const a = await page.evaluate(() => ({ n: window.__chess.library().games.length, toast: document.getElementById("toast").textContent }));
   assert(a.n === 5 && /找回 5 局/.test(a.toast), `C1:IndexedDB 被清掉、localStorage 还在:从分片里找回五局,并且说了(${a.n};「${a.toast}」)`);
   // M5 review P3-3: the shards read back are the native copy already — no
-  // second full library kept in IndexedDB's meta store for them
+  // second full library kept in IndexedDB's meta store for them (the v1
+  // backups are "v1:<time>"; the list's summary shares the store since
+  // v8-1-plan F3, as "sum:<shard>" and "sumId")
   const metaCopies = await page.evaluate(() => new Promise((res) => {
     const r = indexedDB.open("chessboard.library");
     r.onsuccess = () => {
-      const all = r.result.transaction(["meta"], "readonly").objectStore("meta").count();
-      all.onsuccess = () => { res(all.result); r.result.close(); };
+      const all = r.result.transaction(["meta"], "readonly").objectStore("meta").getAllKeys();
+      all.onsuccess = () => { res(all.result.filter((k) => String(k).startsWith("v1:")).length); r.result.close(); };
     };
   }));
   assert(metaCopies === 0, `P3-3:从分片找回不另存一份整库备份(meta 里 ${metaCopies} 份)`);

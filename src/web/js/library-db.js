@@ -39,8 +39,8 @@
  * @module library-db
  */
 import { LibraryQuery } from "./library-query.js";
+import { DB_NAME, SUM_KEY, SUM_ID, readStored } from "./library-sum.js";
 
-const DB_NAME = "chessboard.library";
 /**
  * Still 1 (v8-1-plan T3, M3 评审): the repertoire's records have a database of
  * their own (rep-db.js), because a version 2 here would make every 8.0
@@ -102,14 +102,38 @@ function putSliced(t, s, records) {
 }
 
 /**
+ * v8-1-plan F3: the list's summary lives in the "meta" store beside the v1
+ * backups (library-sum.js says where). In a meta write's `del`: every
+ * summary shard (the id stays).
+ */
+const SUM_ALL = "sum:*";
+
+/** A meta write ({put: [[key, value]], del: [key]}) into store `m` of an open transaction. */
+function applyMeta(m, meta) {
+  for (const k of meta.del || []) m.delete(k === SUM_ALL ? IDBKeyRange.bound(SUM_KEY, SUM_KEY + "\uffff") : k);
+  for (const [k, v] of meta.put || []) m.put(v, k);
+}
+
+/**
  * The IndexedDB backend, or null when this WebView has none (or refuses it:
  * a private window, a policy). The caller then keeps the pre-C1 shape.
  * @param {IDBFactory} idb
+ * @param {string} [name]
+ * @param {IDBDatabase} [open] a connection already open (library-sum.js
+ *   prefetchSummary) — adopted when it is this version with both stores
  */
-async function idbBackend(idb, name) {
+async function idbBackend(idb, name, open) {
   if (!idb || typeof idb.open !== "function") return null;
-  let db;
-  try {
+  let db = null;
+  if (open) {
+    let fits = open.version === DB_VERSION && open.objectStoreNames.contains("games") && open.objectStoreNames.contains("meta");
+    // closed meanwhile (a version change elsewhere): a transaction says so
+    // (M4 评审) — then a fresh open below
+    if (fits) { try { open.transaction(["games"], "readonly"); } catch (_) { fits = false; } }
+    if (fits) db = open;
+    else { try { open.close(); } catch (_) { /* already */ } }
+  }
+  if (!db) try {
     const req = idb.open(name || DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const d = req.result;
@@ -123,6 +147,16 @@ async function idbBackend(idb, name) {
   // a later version opened elsewhere: close, so it is not blocked by us
   db.onversionchange = () => { try { db.close(); } catch (_) { /* already */ } };
   const tx = (stores, mode) => db.transaction(stores, mode);
+  /**
+   * A write to "games", and with it (`meta`, v8-1-plan F3) the summary
+   * shards that describe those games: one transaction, so the list's summary
+   * and the games it summarises commit together or not at all.
+   */
+  const gamesTx = (meta) => {
+    const t = tx(meta ? ["games", "meta"] : ["games"], "readwrite");
+    if (meta) applyMeta(t.objectStore("meta"), meta);
+    return t;
+  };
   return {
     kind: "idb",
     // a page at a time: one getAll() of a big library is one long structured
@@ -144,26 +178,27 @@ async function idbBackend(idb, name) {
       const s = tx(["games"], "readonly").objectStore("games");
       return Promise.all(ids.map((id) => done(s.get(id))));
     },
-    async put(records) {
-      if (!records.length) return true;
-      const t = tx(["games"], "readwrite");
+    async put(records, meta) {
+      if (!records.length && !meta) return true;
+      const t = gamesTx(meta);
       return putSliced(t, t.objectStore("games"), records);
     },
-    async remove(ids) {
-      if (!ids.length) return true;
-      const t = tx(["games"], "readwrite");
+    async remove(ids, meta) {
+      if (!ids.length && !meta) return true;
+      const t = gamesTx(meta);
       const s = t.objectStore("games");
       for (const id of ids) s.delete(id);
       return committed(t);
     },
-    async replace(ids, records) {
-      const t = tx(["games"], "readwrite");
+    async replace(ids, records, meta) {
+      const t = gamesTx(meta);
       const s = t.objectStore("games");
       for (const id of ids) s.delete(id);
       return putSliced(t, s, records);
     },
+    // the summary goes with the games; its id stays (see SUM_ID)
     async clear() {
-      const t = tx(["games"], "readwrite");
+      const t = gamesTx({ del: [SUM_ALL] });
       t.objectStore("games").clear();
       return committed(t);
     },
@@ -171,6 +206,13 @@ async function idbBackend(idb, name) {
     async setMeta(k, v) {
       const t = tx(["meta"], "readwrite");
       t.objectStore("meta").put(v, k);
+      return committed(t);
+    },
+    // v8-1-plan F3: the stored summary (library-sum.js)
+    async summary() { return readStored(db); },
+    async writeMeta(meta) {
+      const t = tx(["meta"], "readwrite");
+      applyMeta(t.objectStore("meta"), meta);
       return committed(t);
     },
   };
@@ -185,29 +227,47 @@ function memoryBackend() {
   const fail = {};
   const clone = (v) => (v && typeof v === "object" ? structuredClone(v) : v);
   const check = (op) => { if (fail[op]) { const e = new Error(fail[op]); e.name = fail[op]; throw e; } };
+  const metaOf = (m) => {
+    if (!m) return;
+    for (const k of m.del || []) {
+      if (k !== SUM_ALL) meta.delete(k);
+      else for (const key of [...meta.keys()]) if (key.startsWith(SUM_KEY)) meta.delete(key);
+    }
+    for (const [k, v] of m.put || []) meta.set(k, clone(v));
+  };
   return {
     kind: "memory", games, meta, fail,
     async all() { check("all"); return [...games.values()].map(clone); },
     async keys() { check("all"); return [...games.keys()]; },
     async count() { return games.size; },
     async get(ids) { check("all"); return ids.map((id) => clone(games.get(id))); },
-    async put(records) {
+    async put(records, m) {
       check("put");
       // all or nothing, like a transaction
       const next = records.map((r) => [r.id, clone(r)]);
       for (const [id, r] of next) games.set(id, r);
+      metaOf(m);
       return true;
     },
-    async remove(ids) { check("remove"); for (const id of ids) games.delete(id); return true; },
-    async replace(ids, records) {
+    async remove(ids, m) { check("remove"); for (const id of ids) games.delete(id); metaOf(m); return true; },
+    async replace(ids, records, m) {
       check("put");
       for (const id of ids) games.delete(id);
       for (const r of records) games.set(r.id, clone(r));
+      metaOf(m);
       return true;
     },
-    async clear() { check("clear"); games.clear(); return true; },
+    async clear() { check("clear"); games.clear(); metaOf({ del: [SUM_ALL] }); return true; },
     async getMeta(k) { return clone(meta.get(k)); },
     async setMeta(k, v) { check("setMeta"); meta.set(k, clone(v)); return true; },
+    async summary() {
+      check("all");
+      const texts = {};
+      for (const [k, v] of meta) if (k.startsWith(SUM_KEY)) texts[k] = v;
+      const id = meta.get(SUM_ID);
+      return { id: typeof id === "string" ? id : null, texts, count: games.size };
+    },
+    async writeMeta(m) { check("setMeta"); metaOf(m); return true; },
   };
 }
 
@@ -230,6 +290,73 @@ function mergeEntry(have, incoming) {
   if (!keep.clk && other.clk) return Object.assign({}, keep, { clk: other.clk });
   return keep;
 }
+
+/** How many of this player's own plies in a game were `?` or `??`. */
+function badCount(g) {
+  const tags = g.an && Array.isArray(g.an.tags) ? g.an.tags : [];
+  const start = g.fen ? g.fen.trim().split(/\s+/) : [];
+  const first = start[1] === "b" ? "b" : "w";
+  const other = first === "w" ? "b" : "w";
+  let n = 0;
+  for (let i = 0; i < tags.length; i++) {
+    if ((i % 2 === 0 ? first : other) !== g.side) continue;
+    if (tags[i] === "?" || tags[i] === "??") n++;
+  }
+  return n;
+}
+
+/**
+ * v8-1-plan F3: a list row's worth of an entry, under short keys — what the
+ * list page draws and searches (everything but "passes through this
+ * position") and nothing it does not: no moves, no analysis arrays, no
+ * index. Ten thousand of these are ~1.5 MB of JSON, read in one transaction
+ * at launch, where the entries themselves are the whole library.
+ */
+const SUM_FIELDS = [["w", "white"], ["b", "black"], ["d", "date"], ["e", "event"], ["s", "site"], ["r", "result"],
+  ["sd", "side"], ["o", "outcome"], ["eco", "eco"], ["en", "ecoName"], ["tc", "tc"], ["src", "src"], ["ref", "ref"],
+  ["df", "diff"], ["p", "plies"]];
+function summaryOf(g) {
+  const r = { id: g.id, t: Number(g.t) || 0 };
+  for (const [k, f] of SUM_FIELDS) {
+    const v = g[f];
+    if (typeof v === "string" || (typeof v === "number" && Number.isFinite(v))) r[k] = v;
+  }
+  if (g.unplayable) r.u = 1;
+  if (g.src === "local") {
+    if (typeof g.acc === "number") r.acc = g.acc;
+  } else if (g.an) {
+    // analysed, how deep (「再深一遍」 needs it), own accuracy, own mistakes
+    r.an = Number(g.an.budget) || 1;
+    const acc = g.an.acc && g.side ? g.an.acc[g.side] : null;
+    if (Number.isFinite(acc)) r.acc = acc;
+    r.bad = badCount(g);
+  }
+  return r;
+}
+/**
+ * An entry-shaped stand-in made from a summary row, marked `stub`: the list
+ * page draws and searches it like an entry until the entries arrive. It has
+ * no moves and no `an`; `stub` holds what the row knew of the analysis.
+ */
+function stubOf(r) {
+  const g = { id: r.id, t: r.t, stub: { an: r.an || 0, acc: r.acc, bad: r.bad || 0 } };
+  for (const [k, f] of SUM_FIELDS) if (r[k] !== undefined) g[f] = r[k];
+  if (r.u) g.unplayable = true;
+  if (r.src === "local" && typeof r.acc === "number") g.acc = r.acc;
+  return g;
+}
+
+/**
+ * The library's one order: newest first, and by id among games of the same
+ * moment — every game of one import shares its `t` (M4 评审 P2-1: sorted by
+ * `t` alone, the summary's rows, in shard order, and the entries, in id
+ * order, made two different first pages, and the list changed under the
+ * reader when the entries arrived).
+ */
+const newestFirst = (a, b) => (b.t || 0) - (a.t || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/** A summary shard's text: its rows in id order, so the same rows are the same text. */
+const sumText = (m) => JSON.stringify([...m.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
 
 /**
  * The library's store: the entries in memory, their index beside them, and
@@ -264,6 +391,76 @@ function createLibraryStore(o) {
     return liveOf.ids;
   }
 
+  /** id → shard name, so a flush of all 64 does not hash every id 64 times */
+  const shardMemo = new Map();
+  const shardOf = (id) => {
+    let s = shardMemo.get(id);
+    if (!s) shardMemo.set(id, (s = LibraryQuery.shardOf(id)));
+    return s;
+  };
+
+  /**
+   * v8-1-plan F3: the summary as this window knows it, shard → id → row.
+   * Kept only once `load` has read every record (sumOn): before that it
+   * would describe part of the library, and a shard written from it would
+   * drop the rest. From then on every write below carries the rows of the
+   * shards it changed, in the same transaction as the games.
+   */
+  const sum = new Map();
+  let sumOn = false;
+  let sumId = null;
+  /** The stored summary as last read (readSummary), for syncSummary to compare against. */
+  let sumSeen = null;
+  /** These entries' rows (and none for `gone`) into memory; the shards that changed. */
+  function sumTouch(entries, gone) {
+    const touched = new Set();
+    for (const id of gone || []) {
+      const s = shardOf(id), m = sum.get(s);
+      if (m && m.delete(id)) touched.add(s);
+    }
+    for (const g of entries || []) {
+      if (!g || typeof g.id !== "string") continue;
+      const r = summaryOf(g), s = shardOf(g.id);
+      let m = sum.get(s);
+      if (!m) sum.set(s, (m = new Map()));
+      const had = m.get(g.id);
+      if (had && JSON.stringify(had) === JSON.stringify(r)) continue;
+      m.set(g.id, r);
+      touched.add(s);
+    }
+    return touched;
+  }
+  /** The meta write for these shards, as memory holds them now. */
+  function sumWrite(touched) {
+    const meta = { put: [], del: [] };
+    for (const s of touched) {
+      const m = sum.get(s);
+      if (m && m.size) meta.put.push([SUM_KEY + s, sumText(m)]);
+      else meta.del.push(SUM_KEY + s);
+    }
+    return meta;
+  }
+  /**
+   * Shards whose rows memory has and the store may not: a write that carried
+   * them was refused, or has not committed yet. Every write carries these
+   * too until one commits — retrying the same entries changes no row, so
+   * without this the row the refused write took would never be written.
+   */
+  const owed = new Set();
+  /**
+   * A write of these entries (and of `gone`): `run(meta)` makes it, with the
+   * summary shards it changes — and the owed ones — in its transaction.
+   */
+  function withSum(entries, gone, run) {
+    if (!sumOn) return run(undefined);
+    const touched = sumTouch(entries, gone);
+    for (const s of owed) touched.add(s);
+    if (!touched.size) return run(undefined);
+    for (const s of touched) owed.add(s);
+    return run(sumWrite(touched)).then((v) => { for (const s of touched) owed.delete(s); return v; },
+      (e) => { for (const s of touched) owed.add(s); throw e; });
+  }
+
   /** The record for an entry: the entry, plus its index when it has one. */
   function recordOf(g) {
     const r = Object.assign({}, g);
@@ -289,10 +486,74 @@ function createLibraryStore(o) {
       if (!r || typeof r.id !== "string") continue;
       (r.src === "local" ? b : a).push(take(r));
     }
-    a.sort((x, y) => (y.t || 0) - (x.t || 0));
+    a.sort(newestFirst);
     games = a;
     local = b;
+    // every record is in hand: the summary is rebuilt from them, and kept
+    // from here on (syncSummary puts the stored one right)
+    sum.clear();
+    sumTouch(a.concat(b));
+    sumOn = true;
     return { games, local };
+  }
+
+  /**
+   * v8-1-plan F3: the stored summary, as rows, when it can stand in for the
+   * library until `load` has read it: its id is the one the header carries
+   * (`id` — a build that does not know the summary rewrites the header
+   * without it), and it has a row for every record the store holds. Null
+   * otherwise; the list then waits for the entries, as before.
+   * `pre`: the same read, made earlier (library-sum.js prefetchSummary).
+   * @returns {Promise<object[]|null>}
+   */
+  async function readSummary(id, pre) {
+    let s = pre || null;
+    if (!s) { try { s = await backend.summary(); } catch (_) { return null; } }
+    sumSeen = s;
+    if (!id || s.id !== id) return null;
+    const rows = [];
+    try {
+      for (const text of Object.values(s.texts)) {
+        const v = JSON.parse(text);
+        if (Array.isArray(v)) for (const r of v) if (r && typeof r.id === "string") rows.push(r);
+      }
+    } catch (_) { return null; }
+    return rows.length === s.count ? rows : null;
+  }
+
+  /**
+   * After `load`: make the stored summary say what the records say — a
+   * shard written by another build, by a window that did not know a game,
+   * or never written (a library from before the summary) is rewritten; one
+   * that already agrees is left. Compared a shard at a time, `budgetMs` a
+   * slice; what differs is serialised again when it is written, so a save
+   * that landed meanwhile is not overwritten with the older text.
+   * @returns {Promise<string>} the summary's id, for the header
+   */
+  async function syncSummary(budgetMs, pause) {
+    if (!sumOn) return null;
+    let stored = sumSeen;
+    if (!stored) { try { stored = await backend.summary(); } catch (_) { return null; } }
+    const texts = stored.texts || {};
+    const stale = new Set();
+    let t0 = Date.now();
+    for (const [s, m] of sum) {
+      if (m.size && texts[SUM_KEY + s] !== sumText(m)) stale.add(s);
+      if (pause && Date.now() - t0 >= budgetMs) { await pause(); t0 = Date.now(); }
+    }
+    for (const k of Object.keys(texts)) {
+      const m = sum.get(k.slice(SUM_KEY.length));
+      if (!m || !m.size) stale.add(k.slice(SUM_KEY.length));
+    }
+    const meta = sumWrite(stale);
+    const id = stored.id || "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    if (!stored.id) meta.put.push([SUM_ID, id]);
+    try {
+      if (meta.put.length || meta.del.length) await backend.writeMeta(meta);
+    } catch (_) { return null; }
+    sumSeen = null;
+    sumId = id;
+    return id;
   }
 
   /**
@@ -327,7 +588,9 @@ function createLibraryStore(o) {
           if (k) rec.pk = k;
           put.push(rec);
         }
-        await backend.put(put);
+        // before `load` (a v1 library at launch) there is no summary to
+        // keep; after it (games pulled back from the native store) there is
+        await withSum(put, null, (m) => backend.put(put, m));
         // read back: every id the v1 value held is in the store
         const back = new Set(await backend.keys());
         const missing = list.filter((g) => g && typeof g.id === "string" && g.id && !back.has(g.id));
@@ -339,19 +602,27 @@ function createLibraryStore(o) {
     });
   }
 
-  /** Write these entries (with their index). Rejects when the store refuses. */
+  /**
+   * Write these entries (with their index), and the summary rows they
+   * change. Rejects when the store refuses — then neither is written, and
+   * the rows in memory are written with the next save of their shard.
+   */
   async function save(entries) {
     if (!entries.length) return true;
-    return backend.put(entries.map(recordOf));
+    return withSum(entries, null, (m) => backend.put(entries.map(recordOf), m));
   }
-  /** These records, as entries (a second window wrote them). */
+  /** These records, as entries (a second window wrote them — and their rows). */
   async function read(ids) {
-    return (await backend.get(ids)).filter((r) => r && typeof r.id === "string").map(take);
+    const out = (await backend.get(ids)).filter((r) => r && typeof r.id === "string").map(take);
+    if (sumOn) sumTouch(out);
+    return out;
   }
   async function drop(ids) {
     for (const id of ids) pk.delete(id);
-    return backend.remove(ids);
+    return withSum(null, ids, (m) => backend.remove(ids, m));
   }
+  /** Another window dropped these: out of this one's summary too, so its next write does not bring them back. */
+  function forget(ids) { if (sumOn) sumTouch(null, ids); }
 
   /** The index of a game whose positions the caller already has (an import). */
   function indexFens(id, fens) { pk.set(id, LibraryQuery.keysOfFens(fens)); }
@@ -401,16 +672,10 @@ function createLibraryStore(o) {
     games = [];
     local = [];
     pk.clear();
+    sum.clear();
     return backend.clear();
   }
 
-  /** id → shard name, so a flush of all 64 does not hash every id 64 times */
-  const shardMemo = new Map();
-  const shardOf = (id) => {
-    let s = shardMemo.get(id);
-    if (!s) shardMemo.set(id, (s = LibraryQuery.shardOf(id)));
-    return s;
-  };
   /** The shards this library's games are mirrored in, with their games. */
   function shards() {
     const m = new Map();
@@ -446,19 +711,22 @@ function createLibraryStore(o) {
       const old = games.map((g) => g.id);
       // one transaction: never a moment with the old games gone and the new
       // ones not yet in
-      await backend.replace(old, incoming);
+      await withSum(incoming, old, (m) => backend.replace(old, incoming, m));
       for (const id of old) pk.delete(id);
-      games = incoming.slice().sort((x, y) => (y.t || 0) - (x.t || 0));
+      games = incoming.slice().sort(newestFirst);
       return incoming.length;
     });
   }
 
   return {
-    backend, pk, load, migrate, save, drop, read, indexFens, indexMissing, halt, clear, shards, shardText, restoreShards, shardOf,
+    backend, pk, load, migrate, save, drop, read, forget, indexFens, indexMissing, halt, clear, shards, shardText, restoreShards, shardOf,
+    readSummary, syncSummary,
+    /** The summary's id once syncSummary has made the stored one right, else null (v8-1-plan F3). */
+    sumId: () => sumId,
     get games() { return games; }, set games(v) { games = v; },
     get local() { return local; }, set local(v) { local = v; },
     pkOf: (g) => (g ? pk.get(g.id) || null : null),
   };
 }
 
-export const LibraryDb = { DB_NAME, idbBackend, memoryBackend, createLibraryStore, mergeEntry };
+export const LibraryDb = { DB_NAME, idbBackend, memoryBackend, createLibraryStore, mergeEntry, badCount, summaryOf, stubOf, newestFirst };

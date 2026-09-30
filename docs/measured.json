@@ -303,6 +303,125 @@
       }
     }
   },
+  "bundleMinify": {
+    "what": "v8-1-plan F2 (a)：bundle.js 与分块开 minifyWhitespace + minifySyntax、保留标识符。前后字节数、新预算，以及同一棵树两种构建交替加载的 DOMContentLoaded / 首屏到可交互（Chromium，页面自己的时间轴，中位数）",
+    "script": "scripts/measure-boot.mjs --record",
+    "engine": "chromium",
+    "runs": 15,
+    "budget": {
+      "base790Readable": 1709973,
+      "base790Minified": 1349847,
+      "ratio": 0.705,
+      "budget": 951642,
+      "budgetBefore": 1205530,
+      "headroomBefore": 5032,
+      "headroomAfter": 89502
+    },
+    "bytes": {
+      "before": {
+        "bundle.js": 1200498,
+        "chunk-eco.js": 485817,
+        "chunk-lang-en.js": 225143,
+        "chunk-lang-ja.js": 291547,
+        "chunk-mined.js": 176026,
+        "chunk-merida.js": 35050,
+        "chunk-pieces-chessnut.js": 29312,
+        "chunk-pieces-fantasy.js": 73309,
+        "chunk-pieces-celtic.js": 27921,
+        "chunk-pieces-spatial.js": 33587,
+        "chunk-boot.js": 2502,
+        "chunk-report.js": 6845,
+        "chunk-moments.js": 7305,
+        "chunk-opponents.js": 33124,
+        "chunk-libdb.js": 58089,
+        "chunk-sync.js": 8387,
+        "chunk-lc-0600.js": 419694,
+        "chunk-lc-0800.js": 442024,
+        "chunk-lc-1000.js": 453745,
+        "chunk-lc-1200.js": 474309,
+        "chunk-lc-1400.js": 496019,
+        "chunk-lc-1600.js": 504282,
+        "chunk-lc-1800.js": 519379,
+        "chunk-lc-2000.js": 510848,
+        "chunk-lc-2200.js": 466738,
+        "chunk-lc-2400.js": 410278,
+        "chunk-lc-2600.js": 301362,
+        "chunk-explorer.js": 21828,
+        "chunk-xm-00.js": 575493,
+        "chunk-xm-01.js": 523985,
+        "chunk-xm-02.js": 625772,
+        "chunk-xm-03.js": 324659,
+        "chunk-xm-04.js": 613844,
+        "chunk-xm-05.js": 273402
+      },
+      "after": {
+        "bundle.js": 862140,
+        "chunk-eco.js": 458884,
+        "chunk-lang-en.js": 194827,
+        "chunk-lang-ja.js": 259846,
+        "chunk-mined.js": 154072,
+        "chunk-merida.js": 34740,
+        "chunk-pieces-chessnut.js": 29000,
+        "chunk-pieces-fantasy.js": 72998,
+        "chunk-pieces-celtic.js": 27611,
+        "chunk-pieces-spatial.js": 33276,
+        "chunk-boot.js": 1891,
+        "chunk-report.js": 4517,
+        "chunk-moments.js": 5268,
+        "chunk-opponents.js": 24346,
+        "chunk-libdb.js": 38271,
+        "chunk-sync.js": 5963,
+        "chunk-lc-0600.js": 379115,
+        "chunk-lc-0800.js": 400059,
+        "chunk-lc-1000.js": 411593,
+        "chunk-lc-1200.js": 431233,
+        "chunk-lc-1400.js": 451700,
+        "chunk-lc-1600.js": 459919,
+        "chunk-lc-1800.js": 474455,
+        "chunk-lc-2000.js": 467244,
+        "chunk-lc-2200.js": 427468,
+        "chunk-lc-2400.js": 376343,
+        "chunk-lc-2600.js": 276887,
+        "chunk-explorer.js": 14647,
+        "chunk-xm-00.js": 539431,
+        "chunk-xm-01.js": 486093,
+        "chunk-xm-02.js": 578520,
+        "chunk-xm-03.js": 299313,
+        "chunk-xm-04.js": 565026,
+        "chunk-xm-05.js": 251154
+      },
+      "chunksTotalBefore": 9451625,
+      "chunksTotalAfter": 8635710
+    },
+    "before": {
+      "zh-CN": {
+        "dclMs": 1808.9,
+        "interactiveMs": 253.5
+      },
+      "en": {
+        "dclMs": 1733.1,
+        "interactiveMs": 271.5
+      },
+      "ja": {
+        "dclMs": 1864.4,
+        "interactiveMs": 267.2
+      }
+    },
+    "after": {
+      "zh-CN": {
+        "dclMs": 1724.4,
+        "interactiveMs": 254.6
+      },
+      "en": {
+        "dclMs": 1747.5,
+        "interactiveMs": 268.5
+      },
+      "ja": {
+        "dclMs": 1847.9,
+        "interactiveMs": 257.7
+      }
+    }
+  },
   "coachCoverage": {
     "what": "复盘里 ? / ?? 的一句说明说出了战术母题的比例（explain.js，按 app.js mistakeFacts() 的调用方式）",
     "script": "scripts/test-coach.mjs --record=before|after --audit=docs/coach-audit-8.0.md",
@@ -483,6 +602,214 @@
         "wrongClaims": 1,
         "wrongClaimsPct": 1.6
       }
+    }
+  },
+  "engineScheduler": {
+    "what": "v8-1-plan F4：棋谱库后台分析进行中，人机对局（normal 档）每一手的等待。reply＝你的着法进着法表→引擎应着进着法表；wait＝你的着法进着法表→应着的 go 发到 worker（验收看它的 p90）；queued＝bestMove() 调用→它的搜索拿到引擎。before 是 8.0 的单链 exclusive()，after 是三级调度；determinism 是被抢占过的那几局与没人下棋时逐步比较；secondWorker 是默认关的第二个 worker（进程树 RSS 的增量，Hash 32）",
+    "script": "scripts/test-engine-flows-e2e.mjs --record（before：8.0 的 engine.js 上 --record-before）",
+    "before": {
+      "env": "Chromium headless, 900×700, 4 cores; library pass at 200 (90k nodes/ply) beside a game at the normal rung",
+      "quiet": {
+        "reply": {
+          "p50": 1077,
+          "p90": 1201,
+          "n": 6
+        },
+        "wait": {
+          "p50": 363,
+          "p90": 481,
+          "n": 6
+        },
+        "queued": {
+          "p50": null,
+          "p90": null,
+          "n": 6
+        }
+      },
+      "busy": {
+        "reply": {
+          "p50": 1220,
+          "p90": 1316,
+          "n": 12
+        },
+        "wait": {
+          "p50": 503,
+          "p90": 600,
+          "n": 12
+        },
+        "queued": {
+          "p50": null,
+          "p90": null,
+          "n": 12
+        }
+      }
+    },
+    "env": "Chromium headless, 900×700, 4 cores; library pass at 200 (90k nodes/ply) beside a game at the normal rung",
+    "after": {
+      "quiet": {
+        "reply": {
+          "p50": 1064,
+          "p90": 1091,
+          "n": 6
+        },
+        "wait": {
+          "p50": 349,
+          "p90": 378,
+          "n": 6
+        },
+        "queued": {
+          "p50": 0,
+          "p90": 0,
+          "n": 6
+        }
+      },
+      "busy": {
+        "reply": {
+          "p50": 1082,
+          "p90": 1146,
+          "n": 12
+        },
+        "wait": {
+          "p50": 362,
+          "p90": 428,
+          "n": 12
+        },
+        "queued": {
+          "p50": 356,
+          "p90": 422,
+          "n": 12
+        }
+      },
+      "preempted": 16
+    },
+    "determinism": {
+      "games": 2,
+      "plies": 78,
+      "differing": 0
+    },
+    "secondWorker": {
+      "res": {
+        "quiet": {
+          "reply": {
+            "p50": 1092,
+            "p90": 1265,
+            "n": 6
+          },
+          "wait": {
+            "p50": 373,
+            "p90": 551,
+            "n": 6
+          },
+          "queued": {
+            "p50": 0,
+            "p90": 1,
+            "n": 6
+          }
+        },
+        "busy": {
+          "reply": {
+            "p50": 1035,
+            "p90": 1076,
+            "n": 12
+          },
+          "wait": {
+            "p50": 317,
+            "p90": 353,
+            "n": 12
+          },
+          "queued": {
+            "p50": 0,
+            "p90": 0,
+            "n": 12
+          }
+        }
+      },
+      "memory": {
+        "rssNoEngineMB": 1050,
+        "firstEngineMB": 91,
+        "secondEngineMB": 61,
+        "hashMB": 32
+      },
+      "compared": {
+        "games": 3,
+        "plies": 124,
+        "differing": 0
+      }
+    }
+  },
+  "explorer": {
+    "what": "v8-0-plan C3 开局浏览器：棋谱库索引耗时、内置大师树的来源与规模、包体积增量",
+    "script": "scripts/test-explorer.mjs --record",
+    "libIndex": {
+      "games": 500,
+      "plies": 80,
+      "maxPly": 50,
+      "chessJsMsBefore": 3445,
+      "ms": 279,
+      "queryMs": 3.3
+    },
+    "masters": {
+      "source": "lichess_db_standard_rated_2026-08",
+      "licence": "CC0",
+      "minElo": 2200,
+      "speeds": [
+        "Blitz",
+        "Rapid",
+        "Classical"
+      ],
+      "plies": 16,
+      "minGames": 2,
+      "read": 7096686,
+      "games": 120000,
+      "positions": 82529,
+      "moves": 122279,
+      "buckets": [
+        [
+          0,
+          7
+        ],
+        [
+          8,
+          9
+        ],
+        [
+          10,
+          11
+        ],
+        [
+          12,
+          12
+        ],
+        [
+          13,
+          14
+        ],
+        [
+          15,
+          15
+        ]
+      ],
+      "sourceBytes": 2766889,
+      "audit": {
+        "positions": 40,
+        "exact": 40
+      }
+    },
+    "package": {
+      "bundleBefore": 1203749,
+      "bundleAfter": 1205526,
+      "chunkExplorer": 20591,
+      "masterChunks": [
+        575493,
+        523985,
+        625772,
+        324659,
+        613844,
+        273402
+      ],
+      "masterChunksTotal": 2937155,
+      "bundleDelta": 1777,
+      "installDelta": 2959523
     }
   },
   "ladder": {
@@ -1808,22 +2135,22 @@
     "changedBestPctSd": 16.5
   },
   "libraryDb": {
-    "what": "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms",
+    "what": "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms。coldStart（v8-1-plan F3）：重启后从导航开始到列表可见、按摘要搜索可用、局面索引到达（ready），列表与搜索取三次最快、索引取三次最慢；验收线 1.5 s / 4.5 s",
     "script": "node scripts/test-library-e2e.mjs --record",
     "games": 10000,
-    "importMs": 28094,
-    "loadMs": 4294,
+    "importMs": 17439,
+    "loadMs": 3003,
     "queryMs": {
-      "opponent": 7.5,
-      "text": 16.6,
-      "date": 12.6,
-      "result": 1.2,
-      "tc": 6.2,
-      "eco": 1.4,
-      "position": 4.6,
-      "combined": 5.7,
-      "explorer": 9.1,
-      "start": 25.4
+      "opponent": 5.1,
+      "text": 13.9,
+      "date": 8.9,
+      "result": 0.9,
+      "tc": 5,
+      "eco": 1.1,
+      "position": 2.8,
+      "combined": 4.5,
+      "explorer": 7,
+      "start": 15.4
     },
     "queryHits": {
       "opponent": 1170,
@@ -1838,11 +2165,76 @@
       "start": 10000
     },
     "pageMs": {
-      "typed": 18.6,
-      "position": 18.3,
-      "speed": 15.6
+      "typed": 19,
+      "position": 18.9,
+      "speed": 12.9
     },
-    "limitMs": 200
+    "limitMs": 200,
+    "coldStart": {
+      "limitMs": {
+        "list": 1500,
+        "search": 4500,
+        "ready": "max(4500, 1.25 × noSummary.readyMs)"
+      },
+      "listVisibleMs": 199,
+      "searchUsableMs": 210,
+      "readyMs": 3115,
+      "runs": [
+        {
+          "list": 286,
+          "search": 297,
+          "ready": 2670,
+          "reload": 3187
+        },
+        {
+          "list": 199,
+          "search": 210,
+          "ready": 2611,
+          "reload": 3170
+        },
+        {
+          "list": 1805,
+          "search": 1817,
+          "ready": 3115,
+          "reload": 3526
+        }
+      ],
+      "noSummary": {
+        "readyMs": 2535,
+        "listMs": 2350
+      }
+    },
+    "coldStartBefore": {
+      "ref": "17334e1",
+      "loadMs": 2856,
+      "limitMs": {
+        "list": 1500,
+        "search": 4500
+      },
+      "listVisibleMs": 2335,
+      "searchUsableMs": 2354,
+      "readyMs": 2435,
+      "runs": [
+        {
+          "list": 2365,
+          "search": 2376,
+          "ready": 2334,
+          "reload": 2850
+        },
+        {
+          "list": 2462,
+          "search": 2472,
+          "ready": 2435,
+          "reload": 2927
+        },
+        {
+          "list": 2335,
+          "search": 2354,
+          "ready": 2304,
+          "reload": 2819
+        }
+      ]
+    }
   },
   "markChroma": {
     "what": "每种棋盘标记叠在浅格上的 CIELAB 色度 C*（越大越艳）。上一步标记的上限以 Lichess 默认棋盘的上一步高亮（rgba(155,199,0,.41) 叠在 #f0d9b5 上）为参照，取其约九成，不照抄数值；7.9 §3 给四种标记都定了上限：上一步、选中 ≤ 47，将军、提示 ≤ 52（参照值本身取整）",
@@ -2683,6 +3075,142 @@
       }
     }
   },
+  "persistFirstWrite": {
+    "what": "v8-1-plan F3：2 MB 档案（棋谱库 1,543 局）第一次启动整份写进原生分键存储。sliceMs：桥上一次应答之后，页面到再调桥或这个任务结束为止连着干的最长一段；putRunMs：同一次启动把棋谱库搬进 IndexedDB，一个任务里连着 put 的最长一段；typicalSaveMs：其后一次普通保存。验收线都是 16 ms。before 是修正前的 host.js / library-db.js，量法已是修正后的",
+    "script": "node scripts/test-persist-e2e.mjs --record=before|after",
+    "before": {
+      "runs": [
+        {
+          "engine": "chromium",
+          "passed": false,
+          "sliceMs": 11.5,
+          "putRunMs": 35.6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "typicalSaveMs": 0.4
+        }
+      ]
+    },
+    "after": {
+      "runs": [
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 3,
+          "putRunMs": 6.8,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 3,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.2,
+              "base64": 1
+            }
+          },
+          "typicalSaveMs": 0.7
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 4.5,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 4.5,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.3,
+              "base64": 2.6
+            }
+          },
+          "typicalSaveMs": 0.4
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 4,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 4,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.2,
+              "encodeInto": 0.1,
+              "base64": 2.3
+            }
+          },
+          "typicalSaveMs": 3.2
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 4.6,
+          "putRunMs": 6,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 4.6,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.4,
+              "encodeInto": 0.3,
+              "base64": 2.7
+            }
+          },
+          "typicalSaveMs": 0.7
+        },
+        {
+          "engine": "chromium",
+          "passed": true,
+          "sliceMs": 3,
+          "putRunMs": 6.2,
+          "games": 1543,
+          "shardBytes": 1937087,
+          "longest": {
+            "ms": 3,
+            "after": {
+              "cmd": "chess.appdataWrite",
+              "key": "stats",
+              "bytes": 161409
+            },
+            "closedBy": "call chess.appdataWrite library",
+            "parts": {
+              "utf8Length": 1.5,
+              "encodeInto": 0.2,
+              "base64": 1
+            }
+          },
+          "typicalSaveMs": 0.6
+        }
+      ]
+    }
+  },
   "reviewPass": {
     "what": "复盘一局的引擎耗时(node 里的 Stockfish 19 lite-single,单线程,同一台机器):分析 = 预算 200,精析 = 400,各分快扫与加深两段;旧 = 7.9 的 go movetime 200 走同样的局面",
     "script": "scripts/test-analysis.mjs --record",
@@ -3501,469 +4029,6 @@
             }
           }
         }
-      }
-    }
-  },
-  "explorer": {
-    "what": "v8-0-plan C3 开局浏览器：棋谱库索引耗时、内置大师树的来源与规模、包体积增量",
-    "script": "scripts/test-explorer.mjs --record",
-    "libIndex": {
-      "games": 500,
-      "plies": 80,
-      "maxPly": 50,
-      "chessJsMsBefore": 3445,
-      "ms": 279,
-      "queryMs": 3.3
-    },
-    "masters": {
-      "source": "lichess_db_standard_rated_2026-08",
-      "licence": "CC0",
-      "minElo": 2200,
-      "speeds": [
-        "Blitz",
-        "Rapid",
-        "Classical"
-      ],
-      "plies": 16,
-      "minGames": 2,
-      "read": 7096686,
-      "games": 120000,
-      "positions": 82529,
-      "moves": 122279,
-      "buckets": [
-        [
-          0,
-          7
-        ],
-        [
-          8,
-          9
-        ],
-        [
-          10,
-          11
-        ],
-        [
-          12,
-          12
-        ],
-        [
-          13,
-          14
-        ],
-        [
-          15,
-          15
-        ]
-      ],
-      "sourceBytes": 2766889,
-      "audit": {
-        "positions": 40,
-        "exact": 40
-      }
-    },
-    "package": {
-      "bundleBefore": 1203749,
-      "bundleAfter": 1205526,
-      "chunkExplorer": 20591,
-      "masterChunks": [
-        575493,
-        523985,
-        625772,
-        324659,
-        613844,
-        273402
-      ],
-      "masterChunksTotal": 2937155,
-      "bundleDelta": 1777,
-      "installDelta": 2959523
-    }
-  },
-  "bundleMinify": {
-    "what": "v8-1-plan F2 (a)：bundle.js 与分块开 minifyWhitespace + minifySyntax、保留标识符。前后字节数、新预算，以及同一棵树两种构建交替加载的 DOMContentLoaded / 首屏到可交互（Chromium，页面自己的时间轴，中位数）",
-    "script": "scripts/measure-boot.mjs --record",
-    "engine": "chromium",
-    "runs": 15,
-    "budget": {
-      "base790Readable": 1709973,
-      "base790Minified": 1349847,
-      "ratio": 0.705,
-      "budget": 951642,
-      "budgetBefore": 1205530,
-      "headroomBefore": 5032,
-      "headroomAfter": 89502
-    },
-    "bytes": {
-      "before": {
-        "bundle.js": 1200498,
-        "chunk-eco.js": 485817,
-        "chunk-lang-en.js": 225143,
-        "chunk-lang-ja.js": 291547,
-        "chunk-mined.js": 176026,
-        "chunk-merida.js": 35050,
-        "chunk-pieces-chessnut.js": 29312,
-        "chunk-pieces-fantasy.js": 73309,
-        "chunk-pieces-celtic.js": 27921,
-        "chunk-pieces-spatial.js": 33587,
-        "chunk-boot.js": 2502,
-        "chunk-report.js": 6845,
-        "chunk-moments.js": 7305,
-        "chunk-opponents.js": 33124,
-        "chunk-libdb.js": 58089,
-        "chunk-sync.js": 8387,
-        "chunk-lc-0600.js": 419694,
-        "chunk-lc-0800.js": 442024,
-        "chunk-lc-1000.js": 453745,
-        "chunk-lc-1200.js": 474309,
-        "chunk-lc-1400.js": 496019,
-        "chunk-lc-1600.js": 504282,
-        "chunk-lc-1800.js": 519379,
-        "chunk-lc-2000.js": 510848,
-        "chunk-lc-2200.js": 466738,
-        "chunk-lc-2400.js": 410278,
-        "chunk-lc-2600.js": 301362,
-        "chunk-explorer.js": 21828,
-        "chunk-xm-00.js": 575493,
-        "chunk-xm-01.js": 523985,
-        "chunk-xm-02.js": 625772,
-        "chunk-xm-03.js": 324659,
-        "chunk-xm-04.js": 613844,
-        "chunk-xm-05.js": 273402
-      },
-      "after": {
-        "bundle.js": 862140,
-        "chunk-eco.js": 458884,
-        "chunk-lang-en.js": 194827,
-        "chunk-lang-ja.js": 259846,
-        "chunk-mined.js": 154072,
-        "chunk-merida.js": 34740,
-        "chunk-pieces-chessnut.js": 29000,
-        "chunk-pieces-fantasy.js": 72998,
-        "chunk-pieces-celtic.js": 27611,
-        "chunk-pieces-spatial.js": 33276,
-        "chunk-boot.js": 1891,
-        "chunk-report.js": 4517,
-        "chunk-moments.js": 5268,
-        "chunk-opponents.js": 24346,
-        "chunk-libdb.js": 38271,
-        "chunk-sync.js": 5963,
-        "chunk-lc-0600.js": 379115,
-        "chunk-lc-0800.js": 400059,
-        "chunk-lc-1000.js": 411593,
-        "chunk-lc-1200.js": 431233,
-        "chunk-lc-1400.js": 451700,
-        "chunk-lc-1600.js": 459919,
-        "chunk-lc-1800.js": 474455,
-        "chunk-lc-2000.js": 467244,
-        "chunk-lc-2200.js": 427468,
-        "chunk-lc-2400.js": 376343,
-        "chunk-lc-2600.js": 276887,
-        "chunk-explorer.js": 14647,
-        "chunk-xm-00.js": 539431,
-        "chunk-xm-01.js": 486093,
-        "chunk-xm-02.js": 578520,
-        "chunk-xm-03.js": 299313,
-        "chunk-xm-04.js": 565026,
-        "chunk-xm-05.js": 251154
-      },
-      "chunksTotalBefore": 9451625,
-      "chunksTotalAfter": 8635710
-    },
-    "before": {
-      "zh-CN": {
-        "dclMs": 1808.9,
-        "interactiveMs": 253.5
-      },
-      "en": {
-        "dclMs": 1733.1,
-        "interactiveMs": 271.5
-      },
-      "ja": {
-        "dclMs": 1864.4,
-        "interactiveMs": 267.2
-      }
-    },
-    "after": {
-      "zh-CN": {
-        "dclMs": 1724.4,
-        "interactiveMs": 254.6
-      },
-      "en": {
-        "dclMs": 1747.5,
-        "interactiveMs": 268.5
-      },
-      "ja": {
-        "dclMs": 1847.9,
-        "interactiveMs": 257.7
-      }
-    }
-  },
-  "persistFirstWrite": {
-    "what": "v8-1-plan F3：2 MB 档案（棋谱库 1,543 局）第一次启动整份写进原生分键存储。sliceMs：桥上一次应答之后，页面到再调桥或这个任务结束为止连着干的最长一段；putRunMs：同一次启动把棋谱库搬进 IndexedDB，一个任务里连着 put 的最长一段；typicalSaveMs：其后一次普通保存。验收线都是 16 ms。before 是修正前的 host.js / library-db.js，量法已是修正后的",
-    "script": "node scripts/test-persist-e2e.mjs --record=before|after",
-    "before": {
-      "runs": [
-        {
-          "engine": "chromium",
-          "passed": false,
-          "sliceMs": 11.5,
-          "putRunMs": 35.6,
-          "games": 1543,
-          "shardBytes": 1937087,
-          "typicalSaveMs": 0.4
-        }
-      ]
-    },
-    "after": {
-      "runs": [
-        {
-          "engine": "chromium",
-          "passed": true,
-          "sliceMs": 3,
-          "putRunMs": 6.8,
-          "games": 1543,
-          "shardBytes": 1937087,
-          "longest": {
-            "ms": 3,
-            "after": {
-              "cmd": "chess.appdataWrite",
-              "key": "stats",
-              "bytes": 161409
-            },
-            "closedBy": "call chess.appdataWrite library",
-            "parts": {
-              "utf8Length": 1.4,
-              "encodeInto": 0.2,
-              "base64": 1
-            }
-          },
-          "typicalSaveMs": 0.7
-        },
-        {
-          "engine": "chromium",
-          "passed": true,
-          "sliceMs": 4.5,
-          "putRunMs": 6,
-          "games": 1543,
-          "shardBytes": 1937087,
-          "longest": {
-            "ms": 4.5,
-            "after": {
-              "cmd": "chess.appdataWrite",
-              "key": "stats",
-              "bytes": 161409
-            },
-            "closedBy": "call chess.appdataWrite library",
-            "parts": {
-              "utf8Length": 1.4,
-              "encodeInto": 0.3,
-              "base64": 2.6
-            }
-          },
-          "typicalSaveMs": 0.4
-        },
-        {
-          "engine": "chromium",
-          "passed": true,
-          "sliceMs": 4,
-          "putRunMs": 6,
-          "games": 1543,
-          "shardBytes": 1937087,
-          "longest": {
-            "ms": 4,
-            "after": {
-              "cmd": "chess.appdataWrite",
-              "key": "stats",
-              "bytes": 161409
-            },
-            "closedBy": "call chess.appdataWrite library",
-            "parts": {
-              "utf8Length": 1.2,
-              "encodeInto": 0.1,
-              "base64": 2.3
-            }
-          },
-          "typicalSaveMs": 3.2
-        },
-        {
-          "engine": "chromium",
-          "passed": true,
-          "sliceMs": 4.6,
-          "putRunMs": 6,
-          "games": 1543,
-          "shardBytes": 1937087,
-          "longest": {
-            "ms": 4.6,
-            "after": {
-              "cmd": "chess.appdataWrite",
-              "key": "stats",
-              "bytes": 161409
-            },
-            "closedBy": "call chess.appdataWrite library",
-            "parts": {
-              "utf8Length": 1.4,
-              "encodeInto": 0.3,
-              "base64": 2.7
-            }
-          },
-          "typicalSaveMs": 0.7
-        },
-        {
-          "engine": "chromium",
-          "passed": true,
-          "sliceMs": 3,
-          "putRunMs": 6.2,
-          "games": 1543,
-          "shardBytes": 1937087,
-          "longest": {
-            "ms": 3,
-            "after": {
-              "cmd": "chess.appdataWrite",
-              "key": "stats",
-              "bytes": 161409
-            },
-            "closedBy": "call chess.appdataWrite library",
-            "parts": {
-              "utf8Length": 1.5,
-              "encodeInto": 0.2,
-              "base64": 1
-            }
-          },
-          "typicalSaveMs": 0.6
-        }
-      ]
-    }
-  },
-  "engineScheduler": {
-    "what": "v8-1-plan F4：棋谱库后台分析进行中，人机对局（normal 档）每一手的等待。reply＝你的着法进着法表→引擎应着进着法表；wait＝你的着法进着法表→应着的 go 发到 worker（验收看它的 p90）；queued＝bestMove() 调用→它的搜索拿到引擎。before 是 8.0 的单链 exclusive()，after 是三级调度；determinism 是被抢占过的那几局与没人下棋时逐步比较；secondWorker 是默认关的第二个 worker（进程树 RSS 的增量，Hash 32）",
-    "script": "scripts/test-engine-flows-e2e.mjs --record（before：8.0 的 engine.js 上 --record-before）",
-    "before": {
-      "env": "Chromium headless, 900×700, 4 cores; library pass at 200 (90k nodes/ply) beside a game at the normal rung",
-      "quiet": {
-        "reply": {
-          "p50": 1077,
-          "p90": 1201,
-          "n": 6
-        },
-        "wait": {
-          "p50": 363,
-          "p90": 481,
-          "n": 6
-        },
-        "queued": {
-          "p50": null,
-          "p90": null,
-          "n": 6
-        }
-      },
-      "busy": {
-        "reply": {
-          "p50": 1220,
-          "p90": 1316,
-          "n": 12
-        },
-        "wait": {
-          "p50": 503,
-          "p90": 600,
-          "n": 12
-        },
-        "queued": {
-          "p50": null,
-          "p90": null,
-          "n": 12
-        }
-      }
-    },
-    "env": "Chromium headless, 900×700, 4 cores; library pass at 200 (90k nodes/ply) beside a game at the normal rung",
-    "after": {
-      "quiet": {
-        "reply": {
-          "p50": 1064,
-          "p90": 1091,
-          "n": 6
-        },
-        "wait": {
-          "p50": 349,
-          "p90": 378,
-          "n": 6
-        },
-        "queued": {
-          "p50": 0,
-          "p90": 0,
-          "n": 6
-        }
-      },
-      "busy": {
-        "reply": {
-          "p50": 1082,
-          "p90": 1146,
-          "n": 12
-        },
-        "wait": {
-          "p50": 362,
-          "p90": 428,
-          "n": 12
-        },
-        "queued": {
-          "p50": 356,
-          "p90": 422,
-          "n": 12
-        }
-      },
-      "preempted": 16
-    },
-    "determinism": {
-      "games": 2,
-      "plies": 78,
-      "differing": 0
-    },
-    "secondWorker": {
-      "res": {
-        "quiet": {
-          "reply": {
-            "p50": 1092,
-            "p90": 1265,
-            "n": 6
-          },
-          "wait": {
-            "p50": 373,
-            "p90": 551,
-            "n": 6
-          },
-          "queued": {
-            "p50": 0,
-            "p90": 1,
-            "n": 6
-          }
-        },
-        "busy": {
-          "reply": {
-            "p50": 1035,
-            "p90": 1076,
-            "n": 12
-          },
-          "wait": {
-            "p50": 317,
-            "p90": 353,
-            "n": 12
-          },
-          "queued": {
-            "p50": 0,
-            "p90": 0,
-            "n": 12
-          }
-        }
-      },
-      "memory": {
-        "rssNoEngineMB": 1050,
-        "firstEngineMB": 91,
-        "secondEngineMB": 61,
-        "hashMB": 32
-      },
-      "compared": {
-        "games": 3,
-        "plies": 124,
-        "differing": 0
       }
     }
   }
