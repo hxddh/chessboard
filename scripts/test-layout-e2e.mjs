@@ -4981,9 +4981,14 @@ if (scenario()) {
       await page.waitForFunction(() => document.querySelectorAll("#op-seg button").length === 3, null, { timeout: 5000 }).catch(() => {});
       await page.evaluate(() => document.getElementById("btn-new").click());
       await page.waitForTimeout(400);
+      // this file stubs the engine, whose fault banner then lands over a
+      // phone-width dialog's top: out of the way, it is not what is measured
+      const unfault = () => page.evaluate(() => { const f = document.getElementById("engine-fault"); if (f) f.style.display = "none"; });
       for (const k of [0, 1, 2]) {
-        await page.click('#op-seg button[data-seg="' + k + '"]', { timeout: 2000 }).catch(() => {});
-        await page.waitForTimeout(150);
+        await unfault();
+        await page.click('#op-seg button[data-seg="' + k + '"]', { timeout: 5000 }).catch((e) => console.log("  click seg " + k + ": " + e.message.split("\n")[0]));
+        await page.waitForFunction((x) => { const b = document.querySelector('#op-seg button[data-seg="' + x + '"]'); return b && b.getAttribute("aria-pressed") === "true"; }, k, { timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(100);
         const r = await page.evaluate(() => {
           const seg = document.getElementById("op-seg");
           const bs = [...seg.querySelectorAll("button")];
