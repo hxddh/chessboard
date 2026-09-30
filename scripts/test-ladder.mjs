@@ -48,13 +48,21 @@ const arg = (name, dflt) => {
 const MODE = process.argv[2];
 const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js"]);
 const { Chess, ChessEngine, ChessPersona, Opponents } = ctx;
-const LEVELS = Opponents.LEVELS;
+/**
+ * v8-1-plan T1: --rungs=FILE plays a ladder of candidate rungs instead of the
+ * shipped one — {id: settings}, weakest first (the settings are engine.js
+ * TIERS rows plus a style). It is how the re-stepped ladder was searched for:
+ * candidates measured against each other before any of them was shipped.
+ */
+const RUNGS = arg("rungs", "") ? JSON.parse(fs.readFileSync(arg("rungs", ""), "utf8")) : null;
+const LEVELS = RUNGS ? Object.keys(RUNGS) : Opponents.LEVELS;
 const override = JSON.parse(arg("override", "{}"));
 /**
  * A rung as it is played: its engine.js row and its persona's style — the
  * ratings the dialog shows are the personas', so the personas are what play.
  */
 const shipped = (id) => {
+  if (RUNGS) return Object.assign({}, RUNGS[id], { style: RUNGS[id].style || "off" });
   const p = Opponents.PERSONAS.find((x) => x.level === id);
   return Object.assign({}, ChessEngine.TIERS[id], { style: p ? p.style : "off" });
 };
@@ -76,12 +84,12 @@ function schedule() {
   const ids = only ? only.split(",") : LEVELS;
   const nAdj = Number(arg("adjacent", 40)), nNear = Number(arg("near", 16)), nFar = Number(arg("far", 6));
   const out = [];
-  // --pairs=a:b,c:d plays just those pairings (tuning)
+  // --pairs=a:b[:n],c:d plays just those pairings (tuning)
   const pairs = arg("pairs", "");
   if (pairs) {
     for (const p of pairs.split(",")) {
-      const [a, b] = p.split(":");
-      for (let k = 0; k < nAdj; k++) out.push({ a, b, k });
+      const [a, b, n] = p.split(":"); // a:b[:games]
+      for (let k = 0; k < (n ? Number(n) : nAdj); k++) out.push({ a, b, k });
     }
     return out;
   }
@@ -92,7 +100,7 @@ function schedule() {
   const slowOnly = process.argv.includes("--slow-only");
   for (let i = 0; i < ids.length; i++) {
     for (let j = i + 1; j < ids.length; j++) {
-      if (slowOnly && !ChessEngine.TIERS[ids[i]].movetime && !ChessEngine.TIERS[ids[j]].movetime) continue;
+      if (slowOnly && !tierOf(ids[i]).movetime && !tierOf(ids[j]).movetime) continue;
       const gap = Math.abs(LEVELS.indexOf(ids[j]) - LEVELS.indexOf(ids[i]));
       const n = only ? nAdj : gap === 1 ? nAdj : gap === 2 ? nNear : nFar;
       for (let k = 0; k < n; k++) out.push({ a: ids[i], b: ids[j], k });
@@ -269,7 +277,10 @@ function fit() {
   }
   const ids = LEVELS.filter((id) => games.some((g) => g.a === id || g.b === id));
   const { R, se } = fitBT(ids, games, 2);
-  const ai = ids.indexOf("easy"), bi = ids.indexOf("normal");
+  // the two anchors: 初级 and 中级 on the shipped ladder; --anchors=a,b names
+  // the candidates that play UCI_Elo 1320 and 1700 in a --rungs run
+  const [anA, anB] = arg("anchors", "easy,normal").split(",");
+  const ai = ids.indexOf(anA), bi = ids.indexOf(anB);
   const scale = ai >= 0 && bi >= 0 ? 380 / (R[bi] - R[ai]) : 1;
   const base = ai >= 0 ? 1320 - scale * R[ai] : 1500;
   const rating = Object.fromEntries(ids.map((id, i) => [id, Math.round(base + scale * R[i])]));

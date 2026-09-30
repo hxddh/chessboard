@@ -81,7 +81,7 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona }) {
     };
     listeners.push(collect);
     const done = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), (tier.movetime || 2000) + 60000);
-    send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
+    send(ChessEngine.searchCmd(tier, rng));
     let line;
     try { line = await done; } finally { listeners.splice(listeners.indexOf(collect), 1); }
     let uci = line.split(/\s+/)[1];
@@ -95,7 +95,7 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona }) {
         const own = list.find((c) => c.uci === uci);
         uci = (own && ChessPersona.pick(fen, list, style, Chess, own.score)) || uci;
       }
-      else if (!tier.worstBias) uci = ChessEngine.pickCandidate(list, tier, rng) || uci;
+      else if (!tier.worstBias && tier.elo == null) uci = ChessEngine.pickCandidate(list, tier, rng) || uci;
     }
     return uci && uci !== "(none)" ? { uci, score: own } : null;
   }

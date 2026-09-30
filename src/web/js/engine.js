@@ -460,6 +460,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const pace = plan && Number.isFinite(plan.pace) ? plan.pace : null;
     const tier = cap && base.movetime && !base.depth
       ? Object.assign({}, base, { movetime: Math.max(120, Math.min(base.movetime, Math.floor(cap))) })
+      // v8-1-plan T1: a node rung short of time searches what the time buys
+      : cap && base.nodes ? Object.assign({}, base, { nodes: Math.min(base.nodes, nodesFor(cap)) })
       : base;
     const startedAt = Date.now();
     const myGen = ++gen;
@@ -504,7 +506,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     lineHandlers.push(collect);
     const budget = (tier.movetime || 2000) + 15000;
     const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), budget, "search");
-    send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
+    send(searchCmd(tier, Math.random));
     let line;
     try { line = await wait; }
     finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
@@ -527,7 +529,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
         const own = picked && list.find((c) => c.uci === picked.from + picked.to + (picked.promotion || ""));
         const styledUci = own ? P.pick(fen, list, persona.id, persona.Chess, own.score) : null;
         if (styledUci) picked = parseUci(styledUci);
-      } else if (!tier.worstBias) {
+      } else if (!tier.worstBias && tier.elo == null) {
+        // (v8-1-plan T1: a UCI_Elo rung's list is Stockfish's to pick from)
         picked = pickHandicapped(cands, tier) || picked;
       }
     }
@@ -556,6 +559,20 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
     const uci = pickCandidate(list, tier, Math.random);
     return uci ? parseUci(uci) : null;
+  }
+
+  /**
+   * v8-1-plan T1: the `go` a rung searches with — depth, node count or
+   * movetime. A node rung's count is drawn ±15% per move: a fixed count is
+   * a fixed game (the same reply to the same moves, every time), and a
+   * player who found one win against it could replay it. Shared with the
+   * calibration scripts, like pickCandidate, so they measure this and not
+   * a copy of it.
+   */
+  function searchCmd(tier, rng) {
+    if (tier.depth) return "go depth " + tier.depth;
+    if (tier.nodes) return "go nodes " + Math.max(1000, Math.round(tier.nodes * (0.85 + 0.3 * rng())));
+    return "go movetime " + tier.movetime;
   }
 
   /**
@@ -920,4 +937,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, winPct, nodesFor, NODES_PER_MS };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, searchCmd, winPct, nodesFor, NODES_PER_MS };
