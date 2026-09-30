@@ -488,61 +488,59 @@
   "ladder": {
     "what": "所有档位循环对下（node 里的 Stockfish 19 lite，engine.js 的档位设置与取子规则，opponents.js 的认输与提和），Bradley–Terry 极大似然拟合（相邻两档各加 2 盘虚拟和棋作先验），以初级 = 1320、中级 = 1700 两点定标；设置没变的档位之间，上一次记录的对局照算（carried）。区间是 95%：直接对局按每盘得分的样本方差，拟合按两档等级分之差的协方差",
     "script": "scripts/test-ladder.mjs play --shard=i/n … ; scripts/test-ladder.mjs fit --record",
-    "games": 4242,
-    "played": 1218,
+    "games": 5505,
+    "played": 2481,
     "carried": 3024,
-    "engineHours": 2.25,
-    "nodesPerMove": {},
-    "scale": 0.764,
+    "engineHours": 4.13,
+    "nodesPerMove": {
+      "extreme": 136762
+    },
+    "scale": 0.875,
     "rating": {
-      "beginner": 595,
-      "casual": 732,
-      "learner": 832,
-      "improver": 971,
-      "steady": 1072,
-      "solid": 1202,
+      "beginner": 514,
+      "casual": 670,
+      "learner": 785,
+      "improver": 944,
+      "steady": 1059,
+      "solid": 1208,
       "easy": 1320,
-      "easyplus": 1433,
-      "normalminus": 1556,
+      "easyplus": 1420,
+      "normalminus": 1542,
       "normal": 1700,
-      "normalplus": 1772,
-      "hardminus": 1828,
-      "hard": 1912,
-      "hardplus": 1997,
-      "expert": 2157,
-      "expertplus": 2242,
-      "master": 2327,
-      "masterplus": 2431,
-      "strong": 2541,
-      "strongplus": 2690,
-      "top": 2775,
-      "topplus": 2775,
-      "extreme": 2775
+      "normalplus": 1797,
+      "hardminus": 1876,
+      "hard": 1982,
+      "hardplus": 2104,
+      "expert": 2239,
+      "expertplus": 2339,
+      "master": 2460,
+      "masterplus": 2574,
+      "strong": 2683,
+      "strongplus": 2807,
+      "extreme": 2877
     },
     "ratingSe": {
       "beginner": 0,
-      "casual": 16,
-      "learner": 17,
-      "improver": 18,
-      "steady": 20,
-      "solid": 22,
-      "easy": 42,
-      "easyplus": 49,
-      "normalminus": 54,
-      "normal": 61,
-      "normalplus": 65,
-      "hardminus": 69,
-      "hard": 71,
-      "hardplus": 75,
-      "expert": 80,
-      "expertplus": 83,
-      "master": 86,
-      "masterplus": 90,
-      "strong": 94,
-      "strongplus": 101,
-      "top": 106,
-      "topplus": 152,
-      "extreme": 241
+      "casual": 18,
+      "learner": 19,
+      "improver": 21,
+      "steady": 22,
+      "solid": 25,
+      "easy": 38,
+      "easyplus": 43,
+      "normalminus": 47,
+      "normal": 53,
+      "normalplus": 57,
+      "hardminus": 60,
+      "hard": 63,
+      "hardplus": 66,
+      "expert": 70,
+      "expertplus": 72,
+      "master": 75,
+      "masterplus": 79,
+      "strong": 82,
+      "strongplus": 85,
+      "extreme": 91
     },
     "raw": {
       "beginner": 0,
@@ -551,23 +549,21 @@
       "improver": 492,
       "steady": 623,
       "solid": 793,
-      "easy": 948,
-      "easyplus": 1096,
-      "normalminus": 1257,
-      "normal": 1445,
-      "normalplus": 1539,
-      "hardminus": 1612,
-      "hard": 1723,
-      "hardplus": 1834,
-      "expert": 2043,
-      "expertplus": 2155,
-      "master": 2266,
-      "masterplus": 2402,
-      "strong": 2545,
-      "strongplus": 2740,
-      "top": 2852,
-      "topplus": 2852,
-      "extreme": 2852
+      "easy": 922,
+      "easyplus": 1036,
+      "normalminus": 1176,
+      "normal": 1356,
+      "normalplus": 1467,
+      "hardminus": 1557,
+      "hard": 1679,
+      "hardplus": 1818,
+      "expert": 1972,
+      "expertplus": 2086,
+      "master": 2225,
+      "masterplus": 2354,
+      "strong": 2480,
+      "strongplus": 2621,
+      "extreme": 2701
     },
     "adjacent": [
       {
@@ -648,253 +644,226 @@
       {
         "lower": "solid",
         "upper": "easy",
-        "games": 56,
-        "h2hPct": 69.6,
+        "games": 120,
+        "h2hPct": 66.3,
         "h2hCi": [
           57.9,
-          81.4
+          74.6
         ],
-        "fitPct": 70.9,
+        "fitPct": 67.7,
         "fitCi": [
-          59.1,
-          80.5
+          59.3,
+          75
         ]
       },
       {
         "lower": "easy",
         "upper": "easyplus",
-        "games": 56,
-        "h2hPct": 67,
+        "games": 136,
+        "h2hPct": 62.5,
         "h2hCi": [
-          55,
-          78.9
+          54.6,
+          70.4
         ],
-        "fitPct": 70.1,
+        "fitPct": 65.9,
         "fitCi": [
-          59.5,
-          78.8
+          58.5,
+          72.5
         ]
       },
       {
         "lower": "easyplus",
         "upper": "normalminus",
-        "games": 56,
-        "h2hPct": 66.1,
+        "games": 160,
+        "h2hPct": 65.6,
         "h2hCi": [
-          53.7,
-          78.5
+          58.3,
+          72.9
         ],
-        "fitPct": 71.7,
+        "fitPct": 69.1,
         "fitCi": [
-          61.5,
-          80.1
+          62.5,
+          75
         ]
       },
       {
         "lower": "normalminus",
         "upper": "normal",
-        "games": 56,
-        "h2hPct": 74.1,
+        "games": 120,
+        "h2hPct": 73.3,
         "h2hCi": [
-          63,
-          85.2
+          65.6,
+          81.1
         ],
-        "fitPct": 74.7,
+        "fitPct": 73.8,
         "fitCi": [
-          64.6,
-          82.6
+          66.6,
+          80
         ]
       },
       {
         "lower": "normal",
         "upper": "normalplus",
-        "games": 56,
-        "h2hPct": 70.5,
+        "games": 120,
+        "h2hPct": 71.3,
         "h2hCi": [
-          59.5,
-          81.5
+          63.6,
+          78.9
         ],
-        "fitPct": 63.2,
+        "fitPct": 65.5,
         "fitCi": [
-          52.5,
-          72.7
+          58,
+          72.3
         ]
       },
       {
         "lower": "normalplus",
         "upper": "hardminus",
-        "games": 56,
-        "h2hPct": 60.7,
+        "games": 160,
+        "h2hPct": 65.3,
         "h2hCi": [
-          48.4,
-          73
+          58.3,
+          72.3
         ],
-        "fitPct": 60.4,
+        "fitPct": 62.6,
         "fitCi": [
-          50.3,
-          69.7
+          56,
+          68.8
         ]
       },
       {
         "lower": "hardminus",
         "upper": "hard",
-        "games": 56,
-        "h2hPct": 60.7,
+        "games": 160,
+        "h2hPct": 66.6,
         "h2hCi": [
-          48.7,
-          72.8
+          59.6,
+          73.5
         ],
-        "fitPct": 65.4,
+        "fitPct": 66.8,
         "fitCi": [
-          55.5,
-          74.2
+          60.1,
+          72.9
         ]
       },
       {
         "lower": "hard",
         "upper": "hardplus",
-        "games": 56,
-        "h2hPct": 61.6,
+        "games": 160,
+        "h2hPct": 67.8,
         "h2hCi": [
-          50.3,
-          72.9
+          61.4,
+          74.3
         ],
-        "fitPct": 65.4,
+        "fitPct": 69,
         "fitCi": [
-          54.6,
-          74.8
+          62.1,
+          75.1
         ]
       },
       {
         "lower": "hardplus",
         "upper": "expert",
-        "games": 57,
-        "h2hPct": 75.4,
+        "games": 160,
+        "h2hPct": 70,
         "h2hCi": [
-          66,
-          84.9
+          63.7,
+          76.3
         ],
-        "fitPct": 76.9,
+        "fitPct": 70.9,
         "fitCi": [
-          67.2,
-          84.5
+          64.3,
+          76.7
         ]
       },
       {
         "lower": "expert",
         "upper": "expertplus",
-        "games": 56,
-        "h2hPct": 63.4,
+        "games": 160,
+        "h2hPct": 65.9,
         "h2hCi": [
-          52.2,
-          74.6
+          59.6,
+          72.3
         ],
-        "fitPct": 65.6,
+        "fitPct": 65.9,
         "fitCi": [
-          55.3,
-          74.6
+          59.2,
+          72
         ]
       },
       {
         "lower": "expertplus",
         "upper": "master",
-        "games": 56,
-        "h2hPct": 67.9,
+        "games": 124,
+        "h2hPct": 70.2,
         "h2hCi": [
-          56.7,
-          79
+          62.9,
+          77.4
         ],
-        "fitPct": 65.4,
+        "fitPct": 69,
         "fitCi": [
-          55.1,
-          74.5
+          61.7,
+          75.5
         ]
       },
       {
         "lower": "master",
         "upper": "masterplus",
-        "games": 56,
-        "h2hPct": 69.6,
+        "games": 100,
+        "h2hPct": 66,
         "h2hCi": [
-          58.7,
-          80.6
+          57.7,
+          74.3
         ],
-        "fitPct": 68.7,
+        "fitPct": 67.8,
         "fitCi": [
-          57.9,
-          77.8
+          59.6,
+          75
         ]
       },
       {
         "lower": "masterplus",
         "upper": "strong",
-        "games": 56,
-        "h2hPct": 66.1,
+        "games": 120,
+        "h2hPct": 65.4,
         "h2hCi": [
-          54.4,
-          77.7
+          57.4,
+          73.4
         ],
-        "fitPct": 69.5,
+        "fitPct": 67.3,
         "fitCi": [
-          57.8,
-          79.1
+          59.7,
+          74
         ]
       },
       {
         "lower": "strong",
         "upper": "strongplus",
-        "games": 56,
-        "h2hPct": 75,
+        "games": 120,
+        "h2hPct": 70.4,
         "h2hCi": [
-          66.4,
-          83.6
+          63.9,
+          76.9
         ],
-        "fitPct": 75.4,
+        "fitPct": 69.3,
         "fitCi": [
-          63.2,
-          84.6
+          61.7,
+          76
         ]
       },
       {
         "lower": "strongplus",
-        "upper": "top",
-        "games": 51,
-        "h2hPct": 64.7,
-        "h2hCi": [
-          55.6,
-          73.8
-        ],
-        "fitPct": 65.6,
-        "fitCi": [
-          52.3,
-          76.8
-        ]
-      },
-      {
-        "lower": "top",
-        "upper": "topplus",
-        "games": 4,
-        "h2hPct": 50,
-        "h2hCi": [
-          50,
-          50
-        ],
-        "fitPct": 50,
-        "fitCi": [
-          16.8,
-          83.2
-        ]
-      },
-      {
-        "lower": "topplus",
         "upper": "extreme",
-        "games": 0,
-        "h2hPct": null,
-        "h2hCi": null,
-        "fitPct": 50,
+        "games": 64,
+        "h2hPct": 62.5,
+        "h2hCi": [
+          56.8,
+          68.2
+        ],
+        "fitPct": 61.3,
         "fitCi": [
-          5.9,
-          94.1
+          50.1,
+          71.4
         ]
       }
     ],
@@ -911,33 +880,33 @@
       {
         "a": "normalplus",
         "b": "hardminus",
-        "games": 56,
-        "scoreA": 22,
-        "draws": 4,
+        "games": 160,
+        "scoreA": 55.5,
+        "draws": 13,
         "carried": 0
       },
       {
         "a": "hardminus",
         "b": "hard",
-        "games": 56,
-        "scoreA": 22,
-        "draws": 6,
+        "games": 160,
+        "scoreA": 53.5,
+        "draws": 13,
         "carried": 0
       },
       {
         "a": "hard",
         "b": "hardplus",
-        "games": 56,
-        "scoreA": 21.5,
-        "draws": 11,
+        "games": 160,
+        "scoreA": 51.5,
+        "draws": 29,
         "carried": 0
       },
       {
         "a": "hardplus",
         "b": "expert",
-        "games": 57,
-        "scoreA": 14,
-        "draws": 12,
+        "games": 160,
+        "scoreA": 48,
+        "draws": 28,
         "carried": 0
       },
       {
@@ -951,57 +920,153 @@
       {
         "a": "easyplus",
         "b": "normalminus",
-        "games": 56,
-        "scoreA": 19,
-        "draws": 0,
+        "games": 160,
+        "scoreA": 55,
+        "draws": 2,
         "carried": 0
       },
       {
         "a": "easy",
         "b": "easyplus",
-        "games": 56,
-        "scoreA": 18.5,
-        "draws": 3,
+        "games": 136,
+        "scoreA": 51,
+        "draws": 8,
         "carried": 0
       },
       {
         "a": "expert",
         "b": "expertplus",
-        "games": 56,
-        "scoreA": 20.5,
-        "draws": 11,
+        "games": 160,
+        "scoreA": 54.5,
+        "draws": 35,
         "carried": 0
       },
       {
         "a": "expertplus",
         "b": "master",
-        "games": 56,
-        "scoreA": 18,
-        "draws": 8,
+        "games": 124,
+        "scoreA": 37,
+        "draws": 20,
         "carried": 0
       },
       {
-        "a": "master",
-        "b": "top",
-        "games": 23,
-        "scoreA": 0,
-        "draws": 0,
+        "a": "strong",
+        "b": "strongplus",
+        "games": 120,
+        "scoreA": 35.5,
+        "draws": 37,
+        "carried": 0
+      },
+      {
+        "a": "solid",
+        "b": "easy",
+        "games": 120,
+        "scoreA": 40.5,
+        "draws": 3,
         "carried": 0
       },
       {
         "a": "normalminus",
         "b": "normal",
-        "games": 56,
-        "scoreA": 14.5,
-        "draws": 3,
+        "games": 120,
+        "scoreA": 32,
+        "draws": 4,
         "carried": 0
       },
       {
         "a": "normal",
         "b": "normalplus",
-        "games": 56,
-        "scoreA": 16.5,
+        "games": 120,
+        "scoreA": 34.5,
+        "draws": 11,
+        "carried": 0
+      },
+      {
+        "a": "masterplus",
+        "b": "strong",
+        "games": 120,
+        "scoreA": 41.5,
+        "draws": 13,
+        "carried": 0
+      },
+      {
+        "a": "easyplus",
+        "b": "normal",
+        "games": 40,
+        "scoreA": 2.5,
+        "draws": 1,
+        "carried": 0
+      },
+      {
+        "a": "normal",
+        "b": "hardminus",
+        "games": 40,
+        "scoreA": 13.5,
+        "draws": 3,
+        "carried": 0
+      },
+      {
+        "a": "hardplus",
+        "b": "expertplus",
+        "games": 40,
+        "scoreA": 6.5,
+        "draws": 5,
+        "carried": 0
+      },
+      {
+        "a": "masterplus",
+        "b": "strongplus",
+        "games": 40,
+        "scoreA": 7.5,
         "draws": 7,
+        "carried": 0
+      },
+      {
+        "a": "master",
+        "b": "masterplus",
+        "games": 100,
+        "scoreA": 34,
+        "draws": 18,
+        "carried": 0
+      },
+      {
+        "a": "expertplus",
+        "b": "masterplus",
+        "games": 30,
+        "scoreA": 6,
+        "draws": 6,
+        "carried": 0
+      },
+      {
+        "a": "master",
+        "b": "strong",
+        "games": 30,
+        "scoreA": 2,
+        "draws": 2,
+        "carried": 0
+      },
+      {
+        "a": "strongplus",
+        "b": "extreme",
+        "games": 64,
+        "scoreA": 24,
+        "draws": 46,
+        "carried": 0
+      },
+      {
+        "a": "strong",
+        "b": "extreme",
+        "games": 16,
+        "scoreA": 3.5,
+        "draws": 7,
+        "carried": 0
+      },
+      {
+        "a": "masterplus",
+        "b": "extreme",
+        "games": 4,
+        "scoreA": 1,
+        "draws": 2,
         "carried": 0
       },
       {
@@ -1013,35 +1078,11 @@
         "carried": 0
       },
       {
-        "a": "solid",
-        "b": "easy",
-        "games": 56,
-        "scoreA": 17,
-        "draws": 2,
-        "carried": 0
-      },
-      {
-        "a": "easyplus",
-        "b": "normal",
-        "games": 26,
-        "scoreA": 0.5,
-        "draws": 1,
-        "carried": 0
-      },
-      {
         "a": "normalminus",
         "b": "normalplus",
         "games": 26,
         "scoreA": 6.5,
         "draws": 1,
-        "carried": 0
-      },
-      {
-        "a": "normal",
-        "b": "hardminus",
-        "games": 16,
-        "scoreA": 6,
-        "draws": 2,
         "carried": 0
       },
       {
@@ -1061,51 +1102,11 @@
         "carried": 0
       },
       {
-        "a": "master",
-        "b": "masterplus",
-        "games": 56,
-        "scoreA": 17,
-        "draws": 8,
-        "carried": 0
-      },
-      {
-        "a": "masterplus",
-        "b": "strong",
-        "games": 56,
-        "scoreA": 19,
-        "draws": 6,
-        "carried": 0
-      },
-      {
         "a": "solid",
         "b": "easyplus",
         "games": 16,
         "scoreA": 1.5,
         "draws": 1,
-        "carried": 0
-      },
-      {
-        "a": "hardplus",
-        "b": "expertplus",
-        "games": 24,
-        "scoreA": 2.5,
-        "draws": 1,
-        "carried": 0
-      },
-      {
-        "a": "expertplus",
-        "b": "masterplus",
-        "games": 16,
-        "scoreA": 5,
-        "draws": 4,
-        "carried": 0
-      },
-      {
-        "a": "master",
-        "b": "strong",
-        "games": 16,
-        "scoreA": 1,
-        "draws": 0,
         "carried": 0
       },
       {
@@ -1178,30 +1179,6 @@
         "games": 4,
         "scoreA": 0.5,
         "draws": 1,
-        "carried": 0
-      },
-      {
-        "a": "strong",
-        "b": "strongplus",
-        "games": 56,
-        "scoreA": 14,
-        "draws": 18,
-        "carried": 0
-      },
-      {
-        "a": "strongplus",
-        "b": "top",
-        "games": 51,
-        "scoreA": 18,
-        "draws": 24,
-        "carried": 0
-      },
-      {
-        "a": "top",
-        "b": "topplus",
-        "games": 4,
-        "scoreA": 2,
-        "draws": 4,
         "carried": 0
       },
       {
@@ -1518,16 +1495,6 @@
       "strongplus": {
         "nodes": 2500,
         "minMs": 1000,
-        "style": "off"
-      },
-      "top": {
-        "nodes": 10000,
-        "minMs": 1100,
-        "style": "off"
-      },
-      "topplus": {
-        "nodes": 40000,
-        "minMs": 1100,
         "style": "off"
       },
       "extreme": {

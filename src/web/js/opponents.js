@@ -23,16 +23,15 @@ const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", 
  * the fit; scripts/test-chess.mjs fails if these stop agreeing with it.
  */
 const RATING = {
-  beginner: 595, casual: 732, learner: 832, improver: 971, steady: 1072, solid: 1202, easy: 1320,
-  easyplus: 1433, normalminus: 1556, normal: 1700, normalplus: 1772, hardminus: 1828, hard: 1912,
-  hardplus: 1997, expert: 2157, expertplus: 2242, master: 2327, masterplus: 2431, strong: 2541,
-  strongplus: 2690, top: 2775, topplus: 2775, extreme: 2775,
+  beginner: 514, casual: 670, learner: 785, improver: 944, steady: 1059, solid: 1208, easy: 1320,
+  easyplus: 1420, normalminus: 1542, normal: 1700, normalplus: 1797, hardminus: 1876, hard: 1982,
+  hardplus: 2104, expert: 2239, expertplus: 2339, master: 2460, masterplus: 2574, strong: 2683,
+  strongplus: 2807, extreme: 2877,
 };
 const RATING_SE = {
-  beginner: 0, casual: 16, learner: 17, improver: 18, steady: 20, solid: 22, easy: 42, easyplus: 49,
-  normalminus: 54, normal: 61, normalplus: 65, hardminus: 69, hard: 71, hardplus: 75, expert: 80,
-  expertplus: 83, master: 86, masterplus: 90, strong: 94, strongplus: 101, top: 106, topplus: 152,
-  extreme: 241,
+  beginner: 0, casual: 18, learner: 19, improver: 21, steady: 22, solid: 25, easy: 38, easyplus: 43,
+  normalminus: 47, normal: 53, normalplus: 57, hardminus: 60, hard: 63, hardplus: 66, expert: 70,
+  expertplus: 72, master: 75, masterplus: 79, strong: 82, strongplus: 85, extreme: 91,
 };
 
 /**

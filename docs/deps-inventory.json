@@ -88,7 +88,7 @@
     {
       "name": "actions/checkout",
       "kind": "GitHub Action",
-      "current": "@v7（全部 13 处）",
+      "current": "@v7（全部 15 处）",
       "pinnedIn": [".github/workflows/*.yml"],
       "latest": "v7.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/checkout"],
@@ -120,7 +120,7 @@
       "name": "actions/download-artifact",
       "kind": "GitHub Action",
       "current": "@v8",
-      "pinnedIn": [".github/workflows/release.yml"],
+      "pinnedIn": [".github/workflows/release.yml", ".github/workflows/ladder.yml"],
       "latest": "v8.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/download-artifact", "raw.githubusercontent.com/actions/download-artifact/v8/README.md（「v8 - What's new」）", "raw.githubusercontent.com/actions/download-artifact/v8.0.1/action.yml"],
       "checkedAt": "2026-09-29",
