@@ -31,6 +31,7 @@ import { ChessLazy } from "../lazy-content.js";
 import { ChessRating } from "../rating.js";
 import { THEME_IDS, themesOf, themeRecord, attemptsIn, filterThemes } from "./themes.js";
 import { ChessRuns as Runs } from "./runs.js";
+import { VIS_KINDS } from "./visual.js";
 
 /** A theme's category id in the puzzle state: "theme:fork". */
 export const THEME_CAT = "theme:";
@@ -43,7 +44,7 @@ export function createPuzzleModes(d) {
   const {
     doc, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend,
     ALL_PUZZLES, isRatedCat, puzzleRating, playerRating, motifKeyOf,
-    savePuzzleState, saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide,
+    savePuzzleState, saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide, makeVis,
   } = d;
   const Db = ChessPuzzleDb;
   const Dlg = ChessDialog;
@@ -248,13 +249,17 @@ export function createPuzzleModes(d) {
     });
   }
 
-  function startRun(kind) {
+  function startRun(kind, made) {
+    // v8-2-plan T2: 看 N 步 / 盲走 — a set made by trainer/visual.js (its
+    // chunk loads first), a run like these two from here on, with `own`
+    // answering for it where the rules below are runs.js's
+    if (!made && VIS_KINDS.includes(kind)) { makeVis(kind).then((r) => r && startRun(kind, r)); return; }
     endRun();
-    const run = Runs.newRun(kind, Date.now(), Date.now());
+    const run = made || Runs.newRun(kind, Date.now(), Date.now());
     if (!run) return;
     store.session.run = run;
     if (store.session.mode !== "puzzle") switchMode("puzzle");
-    wantRunBands(run);
+    if (!run.own) wantRunBands(run);
     serveNext();
     run.timer = run.endsAt ? setInterval(tick, 250) : 0;
     setSideTab("play", { top: true });
@@ -266,6 +271,7 @@ export function createPuzzleModes(d) {
     const run = store.session.run;
     if (!run) return;
     if (Runs.checkClock(run, Date.now())) { finishRun(); return; }
+    if (run.own) { run.own.serve(run); return; }
     const p = Runs.pickNext(run, runPool(), runRating);
     if (!p) { run.over = true; run.why = "spent"; finishRun(); return; }
     Runs.served(run, p);
@@ -286,6 +292,7 @@ export function createPuzzleModes(d) {
   function runSolved() {
     const pz = store.session.puzzle;
     const run = pz.run;
+    if (run.own) { run.own.solved(pz); return; }
     Runs.onSolve(run);
     pz.fb = { ok: true, head: t("pz.fb.best"), sub: tf("run.score", [run.score]) };
     sync();
@@ -297,6 +304,7 @@ export function createPuzzleModes(d) {
     const pz = store.session.puzzle;
     const run = pz.run;
     if (pz.done) return;
+    if (run.own) { run.own.missed(pz, reason); return; }
     pz.done = true;
     store.game.selection = null;
     Audio2.playWrong();
@@ -414,7 +422,7 @@ export function createPuzzleModes(d) {
     const card = el("pz-run");
     avail(card, !!run);
     if (run) {
-      setText(el("pz-run-head"), run.over ? t("run.over." + (run.why || "stopped")) : t("run.rule." + run.kind));
+      if (!run.own) setText(el("pz-run-head"), run.over ? t("run.over." + (run.why || "stopped")) : t("run.rule." + run.kind));
       setText(el("pz-run-score"), tf("run.score", [run.score]));
       const strikes = el("pz-run-strikes");
       avail(strikes, run.kind === "rush");
@@ -435,12 +443,19 @@ export function createPuzzleModes(d) {
       if (box) box.hidden = !!run;
     }
     if (!store.session.puzzle && theme && !run) setText(el("puzzle-task"), t("theme.loading"));
+    // v8-2-plan T2: a set of 看 N 步 / 盲走 asks its question in a card of its own
+    const own = run && run.own;
+    avail(el("pz-vis"), !!own);
+    avail(el("puzzle-task"), !own);
+    if (own) own.render(run);
   }
 
   /** The chrome's 答案 in a run: giving up this puzzle is a miss. */
   function runAnswer() {
     const pz = store.session.puzzle;
-    if (!pz || !pz.run || pz.done || pz.g.turn() !== puzzleHumanSide()) return;
+    if (!pz || !pz.run || pz.done) return;
+    if (pz.run.own) { pz.run.own.answer(pz); return; }
+    if (pz.g.turn() !== puzzleHumanSide()) return;
     runMissed(t("run.gaveUp"));
   }
 
@@ -484,5 +499,5 @@ export function createPuzzleModes(d) {
     };
   }
 
-  return { lcPool, themeList, startTheme, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes };
+  return { lcPool, themeList, startTheme, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun };
 }

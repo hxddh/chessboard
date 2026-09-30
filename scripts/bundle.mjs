@@ -115,6 +115,8 @@ export const CHUNKS = [
   { entry: "src/web/js/explorer/ui.js", out: "src/web/js/chunk-explorer.js", global: "createExplorerUI", min: 5000 },
   // v8-1-plan T2: the endgame camp's sixty positions and their words (trainer/endgames.js)
   { entry: "src/web/js/endgames.js", out: "src/web/js/chunk-endgames.js", global: "CHESS_ENDGAMES", min: 20000 },
+  // v8-2-plan T2: 看 N 步后 / 盲走收官, their questions and their words (trainer/visual.js)
+  { entry: "src/web/js/trainer/visual-modes.js", out: "src/web/js/chunk-visual.js", global: "CHESS_VISUAL", min: 5000 },
   ...explorerChunks(path.join(root, "src/web/js/explorer")),
 ];
 

@@ -772,6 +772,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "tip.editor.reset": "回到初始局面",
       "tip.retryHere": "回到复盘所在的一着继续下，其后着法留作变着",
       "tip.cat.review": "复习：重做答错或看过答案的题，做对即移出",
+      "pz.cat.look": "看 N 步", "pz.cat.blind": "盲走", "tip.cat.look": "局面不动，读完接下来几步再答题", "tip.cat.blind": "杀棋局面只亮 3 秒，凭记忆走出杀着",
       "tip.pgn.copy": "复制 PGN（含标准对局标签）",
       "tip.fen.copy": "复制当前局面 FEN",
       "tip.replay.start": "开局 （Home）",

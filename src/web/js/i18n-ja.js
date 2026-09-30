@@ -739,6 +739,7 @@
       "tip.editor.reset": "開始局面へ",
       "tip.retryHere": "検討中の局面から指し直します。以降の手は変化手順として残ります",
       "tip.cat.review": "復習：間違えた問題を解き直し、きれいに解ければ外れます",
+      "pz.cat.look": "N手先読み", "pz.cat.blind": "目隠し詰め", "tip.cat.look": "盤は動かさず、この後の数手を読んでから質問に答える", "tip.cat.blind": "詰みの局面は 3 秒だけ表示。あとは記憶で詰ます",
       "tip.pgn.copy": "PGN をコピー（標準タグ付き）",
       "tip.fen.copy": "現在の局面を FEN でコピー",
       "tip.replay.start": "開始局面 （Home）",

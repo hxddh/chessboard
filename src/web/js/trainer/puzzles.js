@@ -20,6 +20,8 @@
  *   puzzle-mine.js      错题自炼 — the engine's second look and the line
  *   puzzle-mate.js      杀棋 — the mate searches (pure)
  *   puzzle-modes.js     冲刺 / 连胜 and the theme page (v8-0-plan B1)
+ *   visual.js           看 N 步后 / 盲走收官 (v8-2-plan T2) — the door; the
+ *                       modes are chunk-visual.js (visual-modes.js)
  *
  * Where a new way to train plugs in (v8-2-plan T2): a module of its own,
  * created below beside the modes and handed what it needs the same way; its
@@ -52,6 +54,7 @@ import { createPuzzleMine } from "./puzzle-mine.js";
 import { createPuzzleModes, isThemeCat, THEME_CAT } from "./puzzle-modes.js";
 import { createPuzzleOpenings } from "./puzzle-openings.js";
 import { createPuzzleRating } from "./puzzle-rating.js";
+import { createVisual } from "./visual.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -85,9 +88,14 @@ export function createPuzzlesUI(d) {
   const Modes = createPuzzleModes({
     ...Book, ...Rating,
     doc: document, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend, motifKeyOf,
-    saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide,
+    saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide, makeVis: (k) => Vis.make(k),
   });
-  // v8-2-plan T2: a new mode is created here, beside the modes above
+  // v8-2-plan T2: 看 N 步后 and 盲走收官, beside the modes above — the door
+  // (trainer/visual.js); the modes themselves are chunk-visual.js
+  const Vis = createVisual({
+    ...Book, ...Rating, store, t, tf, el, avail, setText, sync, toast, Audio2, Chess, ChessRating,
+    seatPuzzle, puzzleMove, puzzleHumanSide, startRun: Modes.startRun, finishRun: Modes.finishRun,
+  });
 
   const PUZZLE_CAT_IDS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw", "op", "rep", "mine", "review"];
   const PUZZLE_MOVES = { m1: 1, m2: 2, m3: 3 };
@@ -201,6 +209,7 @@ export function createPuzzlesUI(d) {
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
       hintMove: store.session.puzzle.helpArrow,
+      blind: !!store.session.puzzle.hidden, // 盲走 (v8-2-plan T2): the men are withheld
       stars: [],
       cursor: cursorSquare(),
       // the drag is part of the picture, not a thing pushed in beforehand
@@ -236,6 +245,9 @@ export function createPuzzlesUI(d) {
 
   function puzzleClick(sq) {
     if (!store.session.puzzle || store.session.puzzle.done) return;
+    // 看 N 步 (v8-2-plan T2): a square is an answer, not a move on this board
+    const own = store.session.puzzle.run && store.session.puzzle.run.own;
+    if (own && own.click(sq)) return;
     const g = store.session.puzzle.g;
     if (g.game_over() || g.turn() !== puzzleHumanSide()) return;
     const piece = g.get(sq);
@@ -962,6 +974,6 @@ export function createPuzzlesUI(d) {
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(),
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis,
   };
 }
