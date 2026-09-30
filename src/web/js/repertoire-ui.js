@@ -214,8 +214,15 @@ export function createRepertoireUI(d) {
   }
 
   /** A due card's name: the book line it sits on, as the line drills name it. */
+  const nameMemo = {};
   function cardName(side, line) {
-    const q = drills(side).find((x) => line.every((san, i) => x.line[i] === san));
+    // the due list is rebuilt on every paint of the trainer: the drills are
+    // made once per book and language, not once per card
+    const lines = linesOf(side);
+    let m = nameMemo[side];
+    const lang = (store.ui || {}).langId + (ChessEco.loaded() ? "+" : "");
+    if (!m || m.lines !== lines || m.lang !== lang) m = nameMemo[side] = { lines, lang, list: drills(side) };
+    const q = m.list.find((x) => line.every((san, i) => x.line[i] === san));
     return q ? q.name : t("rep.unnamed");
   }
 
