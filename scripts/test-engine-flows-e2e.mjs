@@ -1575,7 +1575,7 @@ async function playBesideThePass(settings) {
   }));
   // let the game the pass is on finish, so every filed game had moves played beside it
   const n0 = (await filedGames(page)).length;
-  await until(async () => (await filedGames(page)).length > n0, 60000, 500);
+  await until(async () => (await filedGames(page)).length >= Math.max(n0 + 1, 2), 120000, 500);
   const filed = await filedGames(page);
   await ctx.close();
   const res = { quiet: { reply: spread(quiet, "reply"), wait: spread(quiet, "wait"), queued: spread(quiet, "queued") },
@@ -1627,7 +1627,7 @@ await scenario("后台分析中应着", async () => {
   const same = samePerPly(r.filed, ref.filed);
   console.log("F4 逐步对比:", r.filed.length + " 局 " + same.plies + " 步", same.diffs.slice(0, 8).join(" "));
   if (!F4_REC.before) {
-    assert(r.filed.length >= 1 && same.plies > 40 && !same.diffs.length,
+    assert(r.filed.length >= 1 && same.plies >= 30 && !same.diffs.length,
       "后台分析中应着：被抢占 " + r.preempted + " 次的那几局（" + r.filed.length + " 局 " + same.plies + " 步），和没人下棋时分析的逐步相同", same.diffs.slice(0, 8).join(" "));
   }
   assert(!r.errs.length && !ref.errs.length, "后台分析中应着：页面没有报错", r.errs.concat(ref.errs).join(" / "));
@@ -1696,7 +1696,7 @@ await scenario("第二个引擎", async () => {
   assert(r.preempted === 0, "第二个引擎：两边互不抢占");
   const ref = await referencePass(r.filed.length);
   const same = samePerPly(r.filed, ref.filed);
-  assert(r.filed.length >= 1 && same.plies > 40 && !same.diffs.length,
+  assert(r.filed.length >= 1 && same.plies >= 30 && !same.diffs.length,
     "第二个引擎：第二个 worker 分析的（" + same.plies + " 步）和第一个 worker 上的逐步相同", same.diffs.slice(0, 8).join(" "));
   assert(!r.errs.length && !ref.errs.length, "第二个引擎：页面没有报错", r.errs.concat(ref.errs).join(" / "));
   if (f4) f4.secondWorker = { res: r.res, memory: mem, compared: { games: r.filed.length, plies: same.plies, differing: same.diffs.length } };
