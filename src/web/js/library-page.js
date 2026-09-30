@@ -236,16 +236,19 @@ async function bootLibrary(d) {
         const a = g.src === "local" ? g.acc : accOf(g);
         return typeof a === "number" ? a : Infinity;
       };
-      rows.sort((a, b) => rank(a) - rank(b));
+      rows.sort((a, b) => rank(a) - rank(b) || LibraryDb.newestFirst(a, b));
     } else {
-      rows.sort((a, b) => (b.t || 0) - (a.t || 0));
+      rows.sort(LibraryDb.newestFirst);
     }
     const page = rows.slice(0, shown);
     // rows carry the game's id, never an index (7.4 D1). A summary row draws
     // the row its entry does (v8-1-plan F3), so the entries arriving leave
-    // the rows in place — none is rebuilt under a press (7.6)
+    // the rows in place — none is rebuilt under a press (7.6). The key is
+    // what the row says (M4 评审: a summary one launch out of date is
+    // redrawn when the entries arrive, not left saying the old thing)
     reconcile(list, page, (g) => g.id,
-      (g) => [store.ui.langId, g.outcome, g.side, g.eco, analysed(g) ? "a" + depthOf(g) : "-", g.unplayable ? "u" : "-", g.acc].join("|"),
+      (g) => [store.ui.langId, g.src === "local" ? localLabel(g) : d.libraryLabel(g) + LibraryQuery.siteOf(g), subOf(g),
+        analysed(g) && !g.unplayable && depthOf(g) < d.LIB_DEEP_BUDGET ? "d" : "-"].join("|"),
       (g) => rowOf(g));
     if (!rows.length && !waiting) {
       const p = doc.createElement("p");
@@ -320,6 +323,34 @@ async function bootLibrary(d) {
   }
   /** A press on the list is under way (see the entries' arrival, 7.6). */
   let pressed = false;
+  /** The last row pressed while the list showed the summary (its button's data), or null. */
+  let queued = null;
+  /** What a row's button does, from its data (the button itself may be redrawn meanwhile). */
+  function rowAction(ds) {
+    if (ds.libDeep) { d.deepenLibraryGame(ds.libDeep); return; }
+    if (ds.locPgn) {
+      const rec = localRec.get("loc:" + ds.locPgn);
+      if (rec) d.copyText(rec.pgn, t("hist.pgnCopied"));
+      return;
+    }
+    if (ds.loc) {
+      const rec = localRec.get("loc:" + ds.loc);
+      if (!rec) return;
+      if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
+      Dlg.close(listModal());
+      d.loadHistoryRecord(rec);
+      return;
+    }
+    if (ds.lib) d.loadFromLibrary(ds.lib);
+  }
+  /** The queued press, now that its game is here — dropped if the list was closed meanwhile. */
+  function runQueued() {
+    const ds = queued;
+    queued = null;
+    const list = doc.getElementById("lib-list");
+    if (list) list.removeAttribute("aria-busy");
+    if (ds && listOpen()) rowAction(ds);
+  }
   /** Every control on the list page, wired once. */
   function wire() {
     const list = doc.getElementById("lib-list");
@@ -327,27 +358,18 @@ async function bootLibrary(d) {
       list.addEventListener("pointerdown", () => { pressed = true; });
       for (const ev of ["pointerup", "pointercancel"]) doc.addEventListener(ev, () => { pressed = false; }, true);
       list.onclick = (ev) => {
-        // a row drawn from the summary opens its game once the game is here (v8-1-plan F3)
-        if (stubs) { if (ev.target.closest("button")) loaded.then(() => list.onclick(ev)); return; }
-        const deep = ev.target.closest("button[data-lib-deep]");
-        if (deep) { d.deepenLibraryGame(deep.dataset.libDeep); return; }
-        const pgn = ev.target.closest("button[data-loc-pgn]");
-        if (pgn) {
-          const rec = localRec.get("loc:" + pgn.dataset.locPgn);
-          if (rec) d.copyText(rec.pgn, t("hist.pgnCopied"));
+        const b = ev.target.closest("button");
+        if (!b) return;
+        // a row drawn from the summary (v8-1-plan F3): its game is not here
+        // yet. Say so, and keep the last press only — run once the games
+        // (and the 本机 records) are in, if the list is still open
+        if (stubs || queued) {
+          queued = Object.assign({}, b.dataset);
+          list.setAttribute("aria-busy", "true");
+          toast(tf("lib.loading", [allGames().length]));
           return;
         }
-        const loc = ev.target.closest("button[data-loc]");
-        if (loc) {
-          const rec = localRec.get("loc:" + loc.dataset.loc);
-          if (!rec) return;
-          if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
-          Dlg.close(listModal());
-          d.loadHistoryRecord(rec);
-          return;
-        }
-        const b = ev.target.closest("button[data-lib]");
-        if (b) d.loadFromLibrary(b.dataset.lib);
+        rowAction(b.dataset);
       };
     }
     const segs = [["lib-result-seg", "result", "lres"], ["lib-color-seg", "color", "lcol"], ["lib-sort-seg", "sort", "lsort"],
@@ -389,14 +411,20 @@ async function bootLibrary(d) {
    */
   if (backend && header.db === 2 && typeof header.sum === "string" && !(Array.isArray(header.games) && header.games.length)) {
     const rows = await st.readSummary(header.sum, pre && pre.stored);
-    if (rows && rows.length) {
-      const imp = [], loc = [];
-      for (const r of rows) (r.src === "local" ? loc : imp).push(LibraryDb.stubOf(r));
-      imp.sort((a, b) => (b.t || 0) - (a.t || 0));
+    const imp = [], loc = [];
+    for (const r of rows || []) (r.src === "local" ? loc : imp).push(LibraryDb.stubOf(r));
+    // …and it has as many imported games as the header counted (M4 评审: a
+    // second check beside the record count, which the 本机 games share)
+    if (rows && rows.length && imp.length === Number(header.n)) {
+      imp.sort(LibraryDb.newestFirst);
+      loc.sort(LibraryDb.newestFirst);
       stubs = imp.concat(loc);
       if (d.onSummary) d.onSummary({ count: imp.length, openList, renderList, loaded });
     }
   }
+  // the prefetched text is in the rows now, or not wanted: not kept (~1.5 MB at ten thousand games)
+  d.summary = null;
+  pre = null;
 
   // --- migrate, recover, load ---------------------------------------------
   const v1Games = Array.isArray(header.games) ? header.games : [];
@@ -449,7 +477,7 @@ async function bootLibrary(d) {
     }
     for (const g of v1Games) if (g && g.id && !byId.has(g.id)) byId.set(g.id, g);
     store.session.library = [...byId.values()].filter((g) => typeof g.sans === "string" && g.plies > 0)
-      .sort((a, b) => (b.t || 0) - (a.t || 0));
+      .sort(LibraryDb.newestFirst);
     for (const g of store.session.library) d.rescoreLosses(g);
     store.session.libUnreadable = true;
   }
@@ -505,9 +533,12 @@ async function bootLibrary(d) {
     }
     // `sum` (v8-1-plan F3): the store's summary is this library's. A build
     // without the summary writes the header without it, and the next launch
-    // then waits for the entries instead of trusting rows it did not keep
+    // then waits for the entries instead of trusting rows it did not keep.
+    // Until syncSummary has answered, the id the header came with stays
+    // (M4 评审 P2-2: a save in between dropped it, and the next launch
+    // waited for the entries for nothing)
     return Persist.setJson("library", { v: 1, games: [], names, db: 2, n: store.session.library.length,
-      claimAsked: claimAsked || undefined, sum: st.sumId() || undefined });
+      claimAsked: claimAsked || undefined, sum: st.sumId() || (typeof header.sum === "string" ? header.sum : undefined) });
   }
 
   /**
@@ -575,7 +606,7 @@ async function bootLibrary(d) {
       for (const g of byId.values()) { d.rescoreLosses(g); list.push(g); sigs.set(g.id, sigOf(g)); }
       for (const id of goneIds) sigs.delete(id);
       st.forget([...goneIds]);
-      list.sort((a, b) => (b.t || 0) - (a.t || 0));
+      list.sort(LibraryDb.newestFirst);
       store.session.library = list;
       st.games = list;
       d.renderLibrary();
@@ -962,7 +993,8 @@ async function bootLibrary(d) {
   if (mode !== "idb") st.games = store.session.library;
   const indexing = st.indexMissing(SLICE, d.pause).then(() => { if (listOpen()) renderList(); });
   try { backfillLocalTc(); } catch (_) { /* a clock not found is a clock not tagged */ }
-  syncLocal();
+  // a press queued on the summary runs once the 本机 records are in too (M4 评审)
+  Promise.resolve(syncLocal()).then(runQueued, runQueued);
   // M5 review P3-1: a build from before the shards (8.0 dev) rewrites the
   // store's manifest without them, and a later launch in step with that
   // manifest owes it nothing — so the shards holding games and not listed
@@ -972,7 +1004,12 @@ async function bootLibrary(d) {
   // read, in the background; the header learns its id once (and again after
   // a build without the summary dropped it)
   const summarised = mode === "idb" && !readOnly
-    ? st.syncSummary(SLICE, d.pause).then((id) => { if (id && header.sum !== id && !frozen) writeHeader(); return id; })
+    ? st.syncSummary(SLICE, d.pause).then((id) => {
+      // the header as it is now, not as it was at boot (M4 评审 P2-2)
+      const now = readHeader(Persist.get("library")) || {};
+      if (id && now.sum !== id && !frozen) writeHeader();
+      return id;
+    })
     : Promise.resolve(null);
 
   return {
