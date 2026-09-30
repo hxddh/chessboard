@@ -1425,7 +1425,10 @@ if (hasTab && REAL.length) {
   assert(ADV && ADV.lessons.length === 24, "T1:分块里有 24 课");
   const plain = (s) => String(s).replace(/\*\*/g, "");
   const words = (lang, L) => (lang === "zh-CN" ? L : Object.assign({}, ADV[lang][L.id], { tasks: ADV[lang][L.id].tasks }));
-  for (const lang of ["zh-CN", "en", "ja"]) {
+  // The three languages walk side by side, a page each: the time is the
+  // runner's 900 ms between steps, not work, and 219 steps one after another
+  // added seven minutes to a suite CI runs as a single job (v8-2-plan V4).
+  await Promise.all(["zh-CN", "en", "ja"].map(async (lang) => {
     const c3 = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
     await c3.addInitScript((id) => {
       localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "learn", langId: id, sideTab: "play", soundOn: false }));
@@ -1517,7 +1520,7 @@ if (hasTab && REAL.length) {
     const prog = await pg.evaluate(() => document.getElementById("learn-progress").textContent);
     assert(/24\/120/.test(prog), `T1 ${lang}:进度按 120 课算，完成 24`, prog);
     await c3.close();
-  }
+  }));
   // The course's first 96 done: the home page's 下一步建议 names lesson 97 —
   // a placeholder until the chunk is here — and its button opens that lesson,
   // the jump 今天的训练 makes too (dailyJump). The jump asks for a lesson
