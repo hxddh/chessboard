@@ -2106,8 +2106,9 @@ for (const lang of CONTENT_LANGS) {
     const writes = [...app.matchAll(/store\.game\.flipped\s*=(?!=)/g)].length;
     // the assignments that remain are: the initial state, two authored-view
     // resets (lesson, puzzle), the loaded-record restore, the editor reset,
-    // and setFlipped itself — and since v8-2-plan T3 a third authored view,
-    // 名局猜着 facing the side being guessed (trainer/guess.js), as a puzzle does
+    // and setFlipped itself. 名局猜着 (v8-2-plan T3) faces the side being
+    // guessed through its board model, as a puzzle does: writing the flag
+    // turned the play board's saved setting over for good (M2 review)
     assert(/function setFlipped\(/.test(app), "setFlipped is the one place the view turns");
     // Two of the three doors are still spelled in app.js; the third is the
     // native View menu, which moved to native-commands.js in 6.1 and is
@@ -2117,7 +2118,7 @@ for (const lang of CONTENT_LANGS) {
     // are checked by pressing them (see the keyboard blocks above).
     for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/])
       assert(caller.test(app), "…and it is what the three doors call — " + caller.source.slice(0, 26));
-    assert(writes <= 9, "no door writes store.game.flipped for itself (" + writes + " assignments)");
+    assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
   }
 
   // Naming a side, and naming the other one, are one character apart when

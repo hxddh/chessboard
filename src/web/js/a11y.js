@@ -31,6 +31,9 @@ export function createA11y(d) {
   const { t, store, draw, doc } = d;
 
   const FILE_CHARS = "abcdefgh";
+  // which way the board is drawn: a puzzle or 名局猜着 faces its own side
+  // through the board model, not store.game.flipped (the play board's setting)
+  const flipped = () => (d.boardFlipped ? d.boardFlipped() : store.game.flipped);
 
   function announce(msg) {
     const el = doc.getElementById("board-live");
@@ -39,10 +42,14 @@ export function createA11y(d) {
 
   /** describe a square for screen readers: "e4 · 白兵" / "e4 · 空格" */
   function describeSquare(sq) {
+    const L = store.session.mode === "learn" && store.session.learn, pz = store.session.mode === "puzzle" && store.session.puzzle;
+    // 盲走 (v8-2-plan T2): the men are withheld from the eye, so from the ear too
+    if (pz && pz.hidden) return sq;
     // 7.8 §3: during 再试一次 the board shows the retry's own position, not
-    // the replay's — a square has to be described from what is drawn
+    // the replay's — a square has to be described from what is drawn; so is
+    // 名局猜着's 看最大偏差, the position before that guess (trainer/guess.js)
     const g = store.session.editor ? null : store.session.retry ? store.session.retry.g
-      : (store.session.mode === "learn" && store.session.learn ? store.session.learn.g : store.session.mode === "puzzle" && store.session.puzzle ? store.session.puzzle.g : d.viewGame());
+      : L ? (L.gs && L.gs.vg) || L.g : pz ? pz.g : d.viewGame();
     let piece = null;
     if (g) piece = g.get(sq);
     else if (store.session.editor) {
@@ -54,11 +61,11 @@ export function createA11y(d) {
   }
 
   function moveCursor(df, dr) {
-    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
+    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = flipped() ? "e5" : "e4";
     let f = FILE_CHARS.indexOf(store.ui.keyboardCursor[0]);
     let r = Number(store.ui.keyboardCursor[1]);
     // arrows follow what the player sees, so they invert with the board
-    const sign = store.game.flipped ? -1 : 1;
+    const sign = flipped() ? -1 : 1;
     f = Math.max(0, Math.min(7, f + df * sign));
     r = Math.max(1, Math.min(8, r + dr * sign));
     store.ui.keyboardCursor = FILE_CHARS[f] + r;
@@ -84,7 +91,7 @@ export function createA11y(d) {
   function onBoardFocus(ev) {
     store.ui.boardFocused = true;
     store.ui.cursorShown = focusIsVisible(ev && ev.target);
-    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
+    if (!store.ui.keyboardCursor) store.ui.keyboardCursor = flipped() ? "e5" : "e4";
     announce(t("live.focused") + " · " + describeSquare(store.ui.keyboardCursor));
     draw();
   }
@@ -124,7 +131,7 @@ export function createA11y(d) {
       if (ev.key === "Enter" || ev.key === " ") {
         ev.preventDefault(); ev.stopPropagation();
         store.ui.cursorShown = true;
-        if (!store.ui.keyboardCursor) store.ui.keyboardCursor = store.game.flipped ? "e5" : "e4";
+        if (!store.ui.keyboardCursor) store.ui.keyboardCursor = flipped() ? "e5" : "e4";
         announce(describeSquare(store.ui.keyboardCursor));
         draw();
         return;
@@ -145,8 +152,8 @@ export function createA11y(d) {
       case "ArrowRight": ev.preventDefault(); moveCursor(1, 0); return;
       case "ArrowUp": ev.preventDefault(); moveCursor(0, 1); return;
       case "ArrowDown": ev.preventDefault(); moveCursor(0, -1); return;
-      case "Home": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "h1" : "a8"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
-      case "End": ev.preventDefault(); store.ui.keyboardCursor = store.game.flipped ? "a8" : "h1"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
+      case "Home": ev.preventDefault(); store.ui.keyboardCursor = flipped() ? "h1" : "a8"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
+      case "End": ev.preventDefault(); store.ui.keyboardCursor = flipped() ? "a8" : "h1"; announce(describeSquare(store.ui.keyboardCursor)); draw(); return;
       case "Enter":
       case " ": {
         ev.preventDefault();

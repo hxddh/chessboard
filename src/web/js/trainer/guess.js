@@ -116,9 +116,8 @@ export function createGuess(d) {
         total: moves.filter((m) => m.color === s).length },
     };
     store.game.selection = null;
-    // face the side being guessed, as a puzzle does — the keyboard cursor and
-    // the strips read the same flag
-    store.game.flipped = s === "b";
+    // the board faces the side being guessed through the model alone, as a
+    // puzzle's does: store.game.flipped is the play board's saved setting
     BoardView.cancelAnim();
     advance(store.session.learn.gs);
   }
@@ -131,7 +130,7 @@ export function createGuess(d) {
     s.phase = "wait";
     sync();
     setTimeout(() => {
-      if (run() !== s) return;
+      if (run() !== s) { s.stall = "wait"; return; }
       const L = store.session.learn;
       const played = L.g.move(s.moves[s.at].san);
       s.at++;
@@ -182,8 +181,15 @@ export function createGuess(d) {
     s.phase = "check";
     s.said = null;
     sync();
+    judge(s, { ply, fen, mv, master });
+  }
+
+  /** The engine's verdict on guess `p.mv`, then the master's move in its place. */
+  async function judge(s, p) {
+    const { ply, fen, mv, master } = p;
     const loss = await lossOf(fen, master, mv, s.side);
-    if (run() !== s) return;
+    if (run() !== s) { s.stall = p; return; }
+    const L = store.session.learn;
     const r = { ply, fen, you: mv, master, same: false, loss, grade: loss == null ? null : gradeOf(loss) };
     s.res.push(r);
     s.said = r;
@@ -224,6 +230,8 @@ export function createGuess(d) {
     if (!s || s.phase !== "done") return;
     const w = summary(s).worst;
     s.view = w ? s.res.indexOf(w) : null;
+    // the position shown, kept for the board and for what a11y.js reads out
+    s.vg = w ? new Chess(w.fen) : null;
     store.game.selection = null;
     sync();
   }
@@ -231,10 +239,10 @@ export function createGuess(d) {
   function model() {
     const L = store.session.learn, s = L.gs;
     const v = s.view != null ? s.res[s.view] : null;
-    const g = v ? new Chess(v.fen) : L.g;
+    const g = s.vg || L.g;
     const guessArrow = v ? { from: v.you.from, to: v.you.to } : s.arrow;
     return {
-      position: g.board(), flipped: store.game.flipped,
+      position: g.board(), flipped: s.side === "b",
       selected: store.game.selection ? store.game.selection.sq : null,
       legalTargets: store.game.selection ? store.game.selection.targets : [],
       lastMove: v ? null : L.last,
@@ -308,6 +316,14 @@ export function createGuess(d) {
     const s = run();
     if (!s || !box) return;
     if (!ui.root) build();
+    // M2 review: a run set aside while a load asked 「替换当前棋局？」
+    // (puzzles.js leaveTrainer) and brought back on 取消 — the other side's
+    // move or the engine's check that gave up meanwhile is taken up again
+    if (s.stall) {
+      const p = s.stall;
+      s.stall = null;
+      setTimeout(() => { if (run() === s) { if (p === "wait") advance(s); else judge(s, p); } }, 0);
+    }
     // 重来 restarts the game (lessons.js startLearnTask); 读棋 may have hidden it
     const again = document.getElementById("lesson-restart");
     if (again) again.hidden = false;

@@ -3301,7 +3301,7 @@ import { loadChunk } from "./chunk.js";
    */
   function renderStrips() {
     const people = stripPeople();
-    const bottom = store.game.flipped ? "b" : "w";
+    const bottom = BoardView.screenCell("a1").row ? "w" : "b"; // as drawn: a puzzle faces its side
     const mode = store.session.mode;
     // whose move: the trainer's position in the two teaching modes, the
     // position on the board otherwise
@@ -4649,7 +4649,7 @@ import { loadChunk } from "./chunk.js";
       return !!p && p.color === "w" && store.session.learn.g.turn() === "w" && (!task.only || p.type === task.only);
     }
     if (store.session.mode === "puzzle") {
-      if (!store.session.puzzle || store.session.puzzle.done) return false;
+      if (!store.session.puzzle || store.session.puzzle.done || store.session.puzzle.hidden) return false; // 盲走: no hint of the men
       const p = store.session.puzzle.g.get(sq);
       return !!p && p.color === puzzleHumanSide() && store.session.puzzle.g.turn() === p.color; // v8-0-plan B1: a black solver too
     }
@@ -4783,7 +4783,7 @@ import { loadChunk } from "./chunk.js";
   // wrapped so that the ones declared further down this file resolve when
   // they are called rather than when this runs.
   const A11y = createA11y({
-    doc: document, t, store, draw,
+    doc: document, t, store, draw, boardFlipped: () => BoardView.screenCell("a1").row === 0,
     viewGame: () => viewGame(),
     sanHistory: () => sanHistory(),
     statusText: () => statusText(),
