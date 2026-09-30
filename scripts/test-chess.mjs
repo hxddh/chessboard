@@ -147,7 +147,7 @@ const allSourceExcept = (...owners) =>
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
   "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js",
-  "trainer/puzzle-book.js", "trainer/puzzle-rating.js", "trainer/puzzle-openings.js", "trainer/puzzle-mine.js",
+  "trainer/puzzle-book.js", "trainer/puzzle-rating.js", "trainer/puzzle-openings.js", "trainer/puzzle-mine.js", "trainer/guess.js",
   "me-page.js", "game-end.js", "review/moments.js", "opponents-ui.js", "io.js", "game-controller.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
@@ -2103,7 +2103,8 @@ for (const lang of CONTENT_LANGS) {
     const writes = [...app.matchAll(/store\.game\.flipped\s*=(?!=)/g)].length;
     // the assignments that remain are: the initial state, two authored-view
     // resets (lesson, puzzle), the loaded-record restore, the editor reset,
-    // and setFlipped itself
+    // and setFlipped itself — and since v8-2-plan T3 a third authored view,
+    // 名局猜着 facing the side being guessed (trainer/guess.js), as a puzzle does
     assert(/function setFlipped\(/.test(app), "setFlipped is the one place the view turns");
     // Two of the three doors are still spelled in app.js; the third is the
     // native View menu, which moved to native-commands.js in 6.1 and is
@@ -2113,7 +2114,7 @@ for (const lang of CONTENT_LANGS) {
     // are checked by pressing them (see the keyboard blocks above).
     for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/])
       assert(caller.test(app), "…and it is what the three doors call — " + caller.source.slice(0, 26));
-    assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
+    assert(writes <= 9, "no door writes store.game.flipped for itself (" + writes + " assignments)");
   }
 
   // Naming a side, and naming the other one, are one character apart when
@@ -3065,8 +3066,9 @@ for (const lang of CONTENT_LANGS) {
   // checkmate must not render as an ordinary check
   const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
   assert(/m\.mated/.test(boardSrc), "the board draws checkmate differently from check");
-  // four models: the game, the puzzle, the lesson, and 再试一次 (v7-8-plan §3)
-  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 4,
+  // five models: the game, the puzzle, the lesson, 再试一次 (v7-8-plan §3)
+  // and 名局猜着 (v8-2-plan T3, trainer/guess.js)
+  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 5,
     "every board model says whether the check is mate");
 
   // the analyser must not carry a fifth copy of the numbers

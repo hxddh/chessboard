@@ -422,6 +422,28 @@ assert(R.summarizeWinPct([], [], "w") === null, "empty → null");
   assert(gCut.length === sans.length && gCut.every((x) => typeof x === "string"), "…and every move still gets a grade (" + gCut.join(" ") + ")");
 }
 
+// --- v8-2-plan T3: 名局猜着 grades on the review's scale ---------------------
+// A guess's loss against the master's move is graded by trainer/guess.js; a
+// move the review scans with the same drop must get the same grade (the plain
+// branch of gradeMoves: not the engine's first choice, no book, not deepened).
+{
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/trainer/guess.js")), ctx, { filename: "guess.js" });
+  const Gs = ctx.createGuess({ store: {}, Review: R, Grade: G, Chess });
+  const g = new Chess();
+  const fens = [g.fen()];
+  g.move("e4");
+  fens.push(g.fen());
+  const off = [];
+  for (let cp = 0; cp <= 900; cp += 3) {
+    const drop = R.winPctDrop(0, -cp, "w");
+    const review = G.gradeMoves({ fens, sans: ["e4"], scalars: [0, -cp], bests: [null], seconds: [null], pvs: [null, null], deep: [false, false] }, Chess)[0];
+    if (Gs.gradeOf(drop) !== review) off.push(cp + ":" + Gs.gradeOf(drop) + "≠" + review);
+  }
+  assert(off.length === 0, "T3: a guess is graded exactly as the review grades the same drop, 0–900 cp" + (off.length ? " — " + off.slice(0, 5).join(", ") : ""));
+  assert(Gs.gradeOf(0) === "best" && Gs.gradeOf(R.WIN_MISTAKE) === "mistake" && Gs.gradeOf(R.WIN_BLUNDER) === "blunder",
+    "T3: …best at no loss, 失误 from 10 points, 严重失误 from 20");
+}
+
 // v8-0-plan B2: the exit sits at the very end — through 7.9 it sat halfway
 // down, so a failure in any block below it printed FAIL and still exited 0
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

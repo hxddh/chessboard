@@ -2111,7 +2111,7 @@ import { loadChunk } from "./chunk.js";
     draw, el, gameLoadPgn, invalidateEngine, kingSquare, lessonText, moveSound, resetClocks,
     sanHistory, selectSquare, setSideTab, store, sync, t, taskText, tf, toast,
     confirmNative, maybeEngineTurn, puzzleMotif, saveSettings, syncAutoFlip,
-    practiceLeft: (L) => practiceLeft(L),
+    practiceLeft: (L) => practiceLeft(L), evalScalar: (e) => evalScalar(e), scanBudget: () => SCAN_BUDGET, sideName,
     puzzlesInCat: (cat) => puzzlesInCat(cat), startPuzzleAt: (cat, idx) => startPuzzleAt(cat, idx),
   });
   const {
@@ -2843,7 +2843,7 @@ import { loadChunk } from "./chunk.js";
       // wanting 463px of a 418px chip. The title is already spelled out on the
       // lesson card two centimetres away, in full, in a box that wraps. What
       // the chip can say without lying is which lesson you are in.
-      return store.session.learn.eg ? t("eg.camp") : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
+      return store.session.learn.gs ? t("gs.part") : store.session.learn.eg ? t("eg.camp") : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
