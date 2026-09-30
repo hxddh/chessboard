@@ -669,6 +669,18 @@ async function solveCurrent(page, h) {
   await again.ctx.close();
   for (const k in chunkDelay) delete chunkDelay[k];
 
+  // gone elsewhere while the band loads: 复习 does not pull the player back
+  chunkDelay[band] = 1500;
+  const away = await open(Object.assign({}, st, { cat: "m1" }));
+  await away.page.click('#puzzle-cat-seg button[data-cat="review"]');
+  await away.page.click('#rail button[data-view="play"]');
+  await away.page.waitForTimeout(2500);
+  const awayView = await away.page.evaluate(() => document.getElementById("app").getAttribute("data-view"));
+  const awayCat = await away.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat);
+  assert(awayView === "play" && awayCat === "m1", "g: 等分块时去了对局页，分块到了也不把人拉回复习", JSON.stringify({ awayView, awayCat }));
+  await away.ctx.close();
+  for (const k in chunkDelay) delete chunkDelay[k];
+
   // not due today: 复习 has nothing and asks for no band
   const later = await open(Object.assign({}, st2, { cat: "m1" }));
   const asked2 = [];

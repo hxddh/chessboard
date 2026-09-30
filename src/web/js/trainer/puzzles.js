@@ -546,7 +546,10 @@ export function createPuzzlesUI(d) {
    * — the review's withIndex. True when it waits; false, go on now.
    */
   function reviewWaits(then) {
-    return Bank.wait(store.session.puzzleState, Date.now(), then, () => toast(t("theme.loadFailed"), "fix"));
+    // the player may have gone elsewhere while the band loaded (startTheme's rule)
+    const was = store.session.puzzleState.cat;
+    const still = () => store.session.mode === "puzzle" && !store.session.run && store.session.puzzleState.cat === was;
+    return Bank.wait(store.session.puzzleState, Date.now(), () => { if (still()) then(); }, () => toast(t("theme.loadFailed"), "fix"));
   }
   /** The book plus the queued bank puzzles whose bands are here: what the picker's review rung reads. */
   function reviewBook() {
