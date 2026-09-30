@@ -41,6 +41,11 @@
 import { LibraryQuery } from "./library-query.js";
 
 const DB_NAME = "chessboard.library";
+/**
+ * Still 1 (v8-1-plan T3, M3 评审): the repertoire's records have a database of
+ * their own (rep-db.js), because a version 2 here would make every 8.0
+ * launch hit a VersionError and open its library read-only for good.
+ */
 const DB_VERSION = 1;
 
 /** A request as a promise. */

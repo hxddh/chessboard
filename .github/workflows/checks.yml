@@ -107,11 +107,11 @@ jobs:
           - name: board + sound + clock
             suites: scripts/test-board-e2e.mjs scripts/test-audio-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-shell-e2e.mjs scripts/test-trainer-e2e.mjs
           - name: lessons + review + engine
-            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs
+            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs scripts/test-endgames-e2e.mjs
           - name: persistence
             suites: scripts/test-persist-e2e.mjs
           - name: game library
-            suites: scripts/test-library-e2e.mjs scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs
+            suites: scripts/test-library-e2e.mjs scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs
           # v8-0-plan F1: the layout suite in four shards. As one job it was
           # 31m51s on Chromium, the critical path of every PR by 18 minutes;
           # SHARD=i/4 runs every fourth scenario (scripts/e2e-shard.mjs).

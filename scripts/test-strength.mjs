@@ -159,11 +159,13 @@ async function tierMove(fen, tier) {
   };
   if (tier.multipv) listeners.push(collect);
   const w = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), (tier.movetime || 2000) + 20000);
-  send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
+  // v8-1-plan T1: depth, nodes or movetime — engine.js's own choice
+  send(engCtx.ChessEngine.searchCmd(tier, rnd));
   let line;
   try { line = await w; } finally { if (tier.multipv) listeners.splice(listeners.indexOf(collect), 1); }
   let picked = line.split(/\s+/)[1];
-  if (tier.multipv && cands.size > 1) {
+  // (a UCI_Elo rung with a longer list leaves the pick to Stockfish, as engine.js does)
+  if (tier.multipv && cands.size > 1 && tier.elo == null) {
     // engine.js's own rule, called rather than copied — this script used to
     // carry its own transcription of it, which is a measurement of a copy
     const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);

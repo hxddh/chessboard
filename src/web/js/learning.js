@@ -80,13 +80,35 @@ function maxCounters(a, b) {
   return out;
 }
 
+/** Is srs.js entry `a` further up the review ladder than `b`? (rung, then answers) */
+function further(a, b) {
+  const sa = num(a && a.s), sb = num(b && b.s);
+  return sa > sb || (sa === sb && num(a && a.n) > num(b && b.n));
+}
+
 function mergeLearn(cur, inc) {
   const c = obj(cur), i = obj(inc);
-  return Object.assign({}, c, {
+  const out = Object.assign({}, c, {
     v: Math.max(num(c.v), num(i.v)) || 1,
     done: unionKeys(c.done, i.done),
     last: Math.max(num(c.last), num(i.last)),
   });
+  // v8-1-plan T2: the endgame camp rides in the same key. Done is a union;
+  // a review entry further up the srs.js ladder wins, a tie keeps the local
+  // one (as mergePuzzles does with `missed`). M3 评审: an endgame done here
+  // with no review entry left has graduated out of the queue — an older
+  // file's entry for it is not brought back.
+  if (c.eg || i.eg) {
+    const ce = obj(c.eg), ie = obj(i.eg);
+    const srs = Object.assign({}, obj(ce.srs));
+    const graduated = (id) => id in obj(ce.done) && !(id in obj(ce.srs));
+    for (const [id, e] of Object.entries(obj(ie.srs))) {
+      if (graduated(id)) continue;
+      if (!srs[id] || further(e, srs[id])) srs[id] = e;
+    }
+    out.eg = Object.assign({}, ce, { done: unionKeys(ce.done, ie.done), srs });
+  }
+  return out;
 }
 
 function mergePuzzles(cur, inc) {
@@ -94,14 +116,20 @@ function mergePuzzles(cur, inc) {
   const missed = Object.assign({}, obj(c.missed));
   for (const [id, e] of Object.entries(obj(i.missed))) {
     const mine = missed[id];
-    // the entry further along the review ladder wins; a tie keeps the local one
-    if (!mine || num(e && e.streak) > num(mine.streak)) missed[id] = e;
+    // the entry further along the review ladder wins; a tie keeps the local
+    // one. M3 评审: srs.js entries are {s, n, due, ivl} — the old compare read
+    // a `streak` no entry has, so the local entry always won
+    if (!mine || further(e, mine)) missed[id] = e;
   }
-  return Object.assign({}, c, {
+  const out = Object.assign({}, c, {
     solved: unionKeys(c.solved, i.solved),
     missed,
     tally: maxCounters(c.tally, i.tally),
   });
+  // v8-1-plan T6: a queued bank puzzle's band travels with its entry
+  // (trainer/bank-review.js); without it the review can only guess the band
+  if (c.bank || i.bank) out.bank = unionKeys(c.bank, i.bank);
+  return out;
 }
 
 function mergeMines(cur, inc, maxMines) {
@@ -162,6 +190,9 @@ function mergeRepertoire(cur, inc) {
     };
     out[side] = ChessRepertoire.addLines(mine, theirs.map((l) => l.sans), nameOf).lines;
   }
+  // M3 评审: the file's card schedules ride along until the repertoire's
+  // records take them (repertoire-ui.js takeCards)
+  if (i.cards && typeof i.cards === "object" && !Array.isArray(i.cards)) out.cards = i.cards;
   return out;
 }
 

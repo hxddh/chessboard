@@ -18,6 +18,8 @@ import { ChessDrills } from "../drills.js";
 import { ChessEngine } from "../engine.js";
 import { ChessTree } from "../game-tree.js";
 import { CHESS_LESSONS } from "../lessons.js";
+import { ChessEndgameRules } from "../endgame-rules.js";
+import { createEndgames } from "./endgames.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -42,11 +44,20 @@ export function createLessonsUI(d) {
   function saveLearnState() {
     Persist.setJson("learn", store.session.learnState);
   }
+  // v8-1-plan T2: the endgame camp — its content is a chunk, its runs are
+  // one-task drills in this runner (`learn.eg` names the position)
+  const Endgames = createEndgames({ store, t, tf, saveLearnState, onReady: () => sync() });
 
   function startLearn() {
     startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
   }
-  function stopLearn() { if (store.session.learn) store.session.learn.token++; store.session.learn = null; store.session.study = null; }
+  function stopLearn() { if (store.session.learn) store.session.lastLearnToken = ++store.session.learn.token; store.session.learn = null; store.session.study = null; }
+  /**
+   * A new run's first token: past the run being left (or the last one
+   * stopped), so an engine reply still in flight for it can never match —
+   * a lesson started from an endgame used to begin at 0 again (M3 评审).
+   */
+  function carryToken() { return (store.session.learn ? store.session.learn.token : store.session.lastLearnToken || 0) + 1; }
 
   // --- 6.0: reading a classic game (v6-plan Q3.5) ----------------------------
   // A study is learn mode with no lesson: the main board holds the game, the
@@ -126,7 +137,7 @@ export function createLessonsUI(d) {
     document.querySelectorAll("#lesson-list button[data-c]").forEach((b) => b.classList.toggle("current", Number(b.dataset.c) === st.ci));
   }
 
-  function curLesson() { return LESSONS[store.session.learn.li]; }
+  function curLesson() { const l = store.session.learn; return (l.eg && Endgames.lesson(l.eg)) || LESSONS[l.li]; }
   function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
   function startLesson(i) {
@@ -134,7 +145,18 @@ export function createLessonsUI(d) {
     store.session.study = null;
     store.session.learnState.last = i;
     saveLearnState();
-    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
+    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
+    startLearnTask();
+  }
+
+  /** v8-1-plan T2: open endgame `id` of the camp (learn mode must be on) */
+  function startEndgame(id) {
+    if (!Endgames.lesson(id)) return;
+    const li = store.session.learn ? store.session.learn.li : store.session.learnState.last || 0;
+    store.session.study = null;
+    // the token carries on from the run being left: an engine reply still in
+    // flight for it must not match the new run's first token
+    store.session.learn = { li, eg: id, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: false };
     startLearnTask();
   }
 
@@ -153,6 +175,10 @@ export function createLessonsUI(d) {
     store.session.learn.helpArrow = null;
     store.session.learn.flash = null;
     store.session.learn.demoing = false;
+    // T2: what the engine starts with (a new queen is the defence failing),
+    // and whether this try leaned on undo or the hint (→ the review queue)
+    store.session.learn.egStart = task.eg ? ChessEndgameRules.startOf(store.session.learn.g) : null;
+    store.session.learn.egHelped = false;
     store.game.selection = null;
     // first visit to an unfinished lesson: show the solution once, then reset
     if (store.session.learn.wantDemo && task.solution && (task.type === "stars" || task.type === "move")) {
@@ -275,6 +301,7 @@ export function createLessonsUI(d) {
   function learnTaskText() {
     const task = curTask();
     if (store.session.learn.demoing) return t("lm.demoing");
+    if (store.session.learn.done && store.session.learn.eg) return t("lm.taskDone") + t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone");
     if (store.session.learn.done) return t("lm.taskDone") + (store.session.learn.li + 1 < LESSONS.length ? t("lm.tapNext") : t("lm.allDone"));
     const tx = taskText(curLesson(), store.session.learn.ti);
     if (task.type === "tap") return tx.step(store.session.learn.tapStep) + " (" + (store.session.learn.tapStep + 1) + "/" + task.steps.length + ")";
@@ -334,7 +361,10 @@ export function createLessonsUI(d) {
   const PIECE_NAMES = new Proxy({}, { get: (_, k) => t("piece." + String(k)) });
 
   function learnRetryTask(msg) {
-    toast(msg, "fix");
+    // T2: a camp position that went wrong joins the review queue (srs.js)
+    const eg = store.session.learn.eg;
+    if (eg) Endgames.record(eg, false, false);
+    toast(eg ? msg + t("lm.tipSep") + t("eg.queued") : msg, "fix");
     const token = store.session.learn.token;
     setTimeout(() => { if (store.session.learn && store.session.learn.token === token) startLearnTask(); }, 1400);
   }
@@ -416,6 +446,7 @@ export function createLessonsUI(d) {
    * Defensive drills (`winOn: "draw"`) invert the usual verdict: reaching a
    * draw *is* the goal, and being mated is the failure.
    */
+  const EG_FAIL = { mated: "lm.mated", stalemate: "lm.stalemated", draw: "lm.drawn", material: "lm.lostMaterial", queened: "lm.blackQueened" };
   function drillOutcome(g, task) {
     // What happened, then what to do about it: the outcome names the result and
     // `drillAdvice()` reads the technique that was missing off the position.
@@ -424,6 +455,14 @@ export function createLessonsUI(d) {
       const tip = ChessDrills.drillAdvice(g, goal, how);
       return tip ? t(key) + t("lm.tipSep") + t(tip) : t(key);
     };
+    if (task.eg) {
+      // v8-1-plan T2: the camp's own rules (endgame-rules.js), one table for
+      // the app and for test-endgames.mjs
+      const r = ChessEndgameRules.outcome(g, task.goal, store.session.learn.egStart);
+      if (!r) return null;
+      if (r.ok) return "win";
+      return t(EG_FAIL[r.how] || "lm.drawn");
+    }
     if (task.winOn === "draw") {
       if (g.in_checkmate()) return say("lm.mateDefLost", "draw", "mated");
       if (g.game_over()) return "win"; // stalemate / 50-move / insufficient
@@ -477,7 +516,7 @@ export function createLessonsUI(d) {
     if (done) { sync(); learnRetryTask(done); return; }
     // attacking drills need the material that makes the win possible; the
     // defensive one is *expected* to be down material, so skip the check
-    if (task.winOn !== "draw" && !learnHasHeavy(g)) {
+    if (task.winOn !== "draw" && !task.eg && !learnHasHeavy(g)) {
       store.commit("session", "sync");
       learnRetryTask(t("lm.lostMaterial"));
       return;
@@ -492,6 +531,7 @@ export function createLessonsUI(d) {
     if (!g.history().length) return;
     store.session.learn.token++; // drop any in-flight engine reply
     store.session.learn.engineBusy = false;
+    store.session.learn.egHelped = true; // T2: a taken-back try is not a clean one
     if (ChessEngine) ChessEngine.cancel();
     g.undo();
     if (g.history().length && g.turn() !== "w") g.undo();
@@ -517,6 +557,7 @@ export function createLessonsUI(d) {
     store.session.hintPending = false;
     if (!store.session.learn || token !== store.session.learn.token || store.session.learn.g.fen() !== sig) { sync(); return; }
     if (!e || !e.best) { sync(); toast(t("msg.engine.noHint"), "fault"); return; }
+    store.session.learn.egHelped = true;
     store.session.learn.helpArrow = { from: e.best.slice(0, 2), to: e.best.slice(2, 4) };
     store.commit("session", "sync");
   }
@@ -540,6 +581,14 @@ export function createLessonsUI(d) {
     }
     store.session.learn.done = true;
     Audio2.playWin();
+    if (L.eg) {
+      // T2: the camp keeps its own record; a try that used undo or the hint
+      // counts as reached, and comes back for review
+      Endgames.record(L.eg, true, store.session.learn.egHelped);
+      if (store.session.learn.egHelped) toast(t("eg.helped"), "fix");
+      sync();
+      return;
+    }
     if (!store.session.learnState.done[L.id]) {
       store.session.learnState.done[L.id] = true;
       saveLearnState();
@@ -596,10 +645,12 @@ export function createLessonsUI(d) {
     const prog = document.getElementById("learn-progress");
     // "完成 3/72" reads differently from the header chip's "4/72", which is
     // where you ARE. Two bare N/72 on one screen meant two different things.
-    if (prog) prog.textContent = t("learn.donePre") + doneCount + "/" + LESSONS.length;
+    const eg = store.session.learn.eg;
+    if (prog) prog.textContent = eg ? t("learn.donePre") + Endgames.doneCount() + "/" + Endgames.total()
+      : t("learn.donePre") + doneCount + "/" + LESSONS.length;
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
-    if (title) title.textContent = t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · " + loc.part + " · " + loc.title;
+    if (title) title.textContent = (eg ? "" : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · ") + loc.part + " · " + loc.title;
     // 7.7 (v7-7-plan §4): the lesson's tasks as a row of dots — done filled,
     // current ringed; a finished lesson is a full row
     const dots = el("lesson-dots");
@@ -658,7 +709,13 @@ export function createLessonsUI(d) {
       }
     }
     const next = document.getElementById("lesson-next");
-    if (next) {
+    if (next && eg) {
+      // T2: the camp's own 下一个 — the next untried position, then what is due
+      next.textContent = t("eg.next");
+      next.hidden = !Endgames.next(eg);
+      next.disabled = false;
+      next.classList.toggle("primary", !!store.session.learn.done);
+    } else if (next) {
       const isLast = store.session.learn.li + 1 >= LESSONS.length;
       next.textContent = isLast ? t("lm.toBeginnerAi") : t("act.next");
       // `learn.done` only records whether the tasks were finished *this
@@ -693,7 +750,7 @@ export function createLessonsUI(d) {
         }
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "lesson-item" + (i === store.session.learn.li ? " current" : "");
+        b.className = "lesson-item" + (!eg && i === store.session.learn.li ? " current" : "");
         b.dataset.i = String(i);
         const mark = store.session.learnState.done[x.id] ? "✓ " : "";
         b.textContent = mark + (i + 1) + ". " + xl.title;
@@ -715,6 +772,8 @@ export function createLessonsUI(d) {
           list.appendChild(b);
         });
       }
+      // v8-1-plan T2: the endgame camp, after the classics
+      Endgames.renderList(list, eg);
     }
   }
 
@@ -740,6 +799,7 @@ export function createLessonsUI(d) {
     };
     document.getElementById("lesson-next").onclick = () => {
       if (!store.session.learn) return;
+      if (store.session.learn.eg) { const to = Endgames.next(store.session.learn.eg); if (to) startEndgame(to); return; }
       if (store.session.learn.li + 1 < LESSONS.length) { startLesson(store.session.learn.li + 1); return; }
       // graduation: straight into a beginner AI game
       store.session.difficulty = "beginner";
@@ -781,12 +841,14 @@ export function createLessonsUI(d) {
       if (b && (store.session.learn || store.session.study)) startLesson(Number(b.dataset.i));
       const cb = ev.target.closest("button[data-c]");
       if (cb) startClassic(Number(cb.dataset.c));
+      const eb = ev.target.closest("button[data-eg]");
+      if (eb && (store.session.learn || store.session.study)) startEndgame(eb.dataset.eg);
     };
   }
   return {
     wireLessonPanel,
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
-    learnHint, syncLearnUI,
+    learnHint, syncLearnUI, Endgames, startEndgame,
   };
 }

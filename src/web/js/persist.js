@@ -133,8 +133,15 @@ export const STORE_ALT = "-b";
  * different is only where the value comes from: not the bag, but the port
  * the library attaches (attachBulk), which serialises a shard when a flush
  * asks for it. The header (`library`) stays a KEY like any other.
+ *
+ * v8-1-plan T3: the repertoire's records (rep-page.js) went into the same
+ * IndexedDB, and ride here the same way in four shards, "rep0" … "rep3",
+ * behind a port of their own. A shard's first three letters say whose it is
+ * (`bulkKind`); each owner attaches its port under that kind.
  */
-export const BULK = /^lib[0-3][0-9a-f]$/;
+export const BULK = /^(lib[0-3][0-9a-f]|rep[0-3])$/;
+/** Whose port serves shard `name`: "lib" or "rep". */
+const bulkKind = (name) => String(name).slice(0, 3);
 
 /**
  * v8-1-plan F3: `fn()`, timed for a test's `__persistProbe(name, ms)` when one
@@ -352,30 +359,39 @@ export function createPersist(host, onWriteFailure) {
   let flushChain = Promise.resolve(true);
   // v8-0-plan C1: the library's port — {names() → shard names holding games
   // (null until the library has loaded), read(name) → a shard's text or null,
-  // restore(texts) → Promise, clear()}. See BULK.
-  let bulk = null;
-  // "every shard is owed", waiting for a port that can say which shards exist
+  // restore(texts) → Promise, clear()}. See BULK. v8-1-plan T3: one port per
+  // kind ("lib", "rep"), each answering for its own shards only.
+  const ports = {};
+  const portOf = (name) => ports[bulkKind(name)] || null;
+  const portList = () => Object.keys(ports).map((k) => [k, ports[k]]);
+  // "every shard is owed", waiting for each port to say which shards exist;
+  // the kinds already expanded since it was set
   let bulkAll = false;
+  let bulkDone = new Set();
   // shard texts a restore brought, until the reload: what a flush writes for
   // them, instead of the library the page is still holding
   let bulkOverride = null;
   // the restore's write into IndexedDB, which the reload must not outrun
   let bulkRestoring = null;
-  function markAllDirty() { for (const name of Object.keys(KEYS)) dirty.add(name); bulkAll = true; }
+  function markAllDirty() { for (const name of Object.keys(KEYS)) dirty.add(name); bulkAll = true; bulkDone = new Set(); }
   /** A dirty name's value for the store: undefined = not known yet (keep it owed). */
   function valueOf(name) {
     if (!BULK.test(name)) return bag ? bag[name] : null;
     if (bulkOverride && bulkOverride.has(name)) return bulkOverride.get(name);
-    return bulk && timed("shardNames", () => bulk.names()) ? timed("shardText", () => bulk.read(name)) : undefined;
+    const port = portOf(name);
+    return port && timed("shardNames", () => port.names()) ? timed("shardText", () => port.read(name)) : undefined;
   }
-  /** Expand "every shard is owed" once the port can name them. */
+  /** Expand "every shard is owed", port by port, once each can name its shards. */
   function expandBulk() {
-    if (!bulkAll || !bulk || !bulk.names()) return;
-    bulkAll = false;
-    for (const name of bulk.names()) dirty.add(name);
-    // a shard the store still lists and the library no longer fills is
-    // owed too — as a removal
-    for (const name of Object.keys(committed || {})) if (BULK.test(name)) dirty.add(name);
+    if (!bulkAll) return;
+    for (const [kind, port] of portList()) {
+      if (bulkDone.has(kind) || !port.names()) continue;
+      bulkDone.add(kind);
+      for (const name of port.names()) dirty.add(name);
+      // a shard the store still lists and the owner no longer fills is
+      // owed too — as a removal
+      for (const name of Object.keys(committed || {})) if (BULK.test(name) && bulkKind(name) === kind) dirty.add(name);
+    }
   }
   /** The revision stamp the cache carries, made if it has none. */
   function stamp() {
@@ -391,8 +407,10 @@ export function createPersist(host, onWriteFailure) {
     const keys = {};
     for (const name of Object.keys(KEYS)) if (bag && bag[name] != null) keys[name] = bag[name];
     // v8-0-plan C1: the library's games are part of the profile
-    const shards = bulk && bulk.names();
-    if (shards) for (const name of shards) { const v = bulk.read(name); if (v != null) keys[name] = v; }
+    for (const [, port] of portList()) {
+      const shards = port.names();
+      if (shards) for (const name of shards) { const v = port.read(name); if (v != null) keys[name] = v; }
+    }
     return { app: "chessboard", schema: SCHEMA, writtenAt: stamp(), keys };
   }
   function scheduleMirror() {
@@ -465,7 +483,13 @@ export function createPersist(host, onWriteFailure) {
     if (!dirty.size && !clearLegacy) return true;
     const gone = new Set(removed);
     const values = [];
-    const shardsKnown = !!(bulk && bulk.names());
+    // per kind: a port that can name its shards (v8-1-plan T3)
+    const known = {};
+    const shardsKnown = (name) => {
+      const k = bulkKind(name);
+      if (!(k in known)) { const port = portOf(name); known[k] = !!(port && port.names()); }
+      return known[k];
+    };
     for (const name of dirty) {
       // a shard is serialised when its turn to be written comes, not here:
       // sixty-four of them at once held the main thread for 30 ms at 2 MB
@@ -474,7 +498,7 @@ export function createPersist(host, onWriteFailure) {
       if (BULK.test(name)) {
         // a shard the library cannot serialise yet (not loaded) stays owed,
         // and the manifest keeps whatever file it already names
-        if (!shardsKnown && !(bulkOverride && bulkOverride.has(name))) continue;
+        if (!shardsKnown(name) && !(bulkOverride && bulkOverride.has(name))) continue;
         values.push([name, undefined]);
         continue;
       }
@@ -735,8 +759,11 @@ export function createPersist(host, onWriteFailure) {
   /** v8-0-plan C1: resolves once a restore's games have reached IndexedDB. */
   function bulkSettled() { return Promise.resolve(bulkRestoring).then(() => true, () => false); }
 
-  /** v8-0-plan C1: the library attaches its port (see BULK). */
-  function attachBulk(port) { bulk = port; }
+  /**
+   * v8-0-plan C1: the library attaches its port (see BULK); v8-1-plan T3: the
+   * repertoire attaches its own under `kind` "rep".
+   */
+  function attachBulk(port, kind) { ports[kind || "lib"] = port; }
 
   /**
    * v8-0-plan C1: these shards changed. Stamped and mirrored like set(): the
@@ -773,13 +800,15 @@ export function createPersist(host, onWriteFailure) {
    * header says — the WebView's data went, the store's did not.
    * @returns {Promise<object|null>} null when there is no store to ask
    */
-  function readBulk() {
+  function readBulk(kind) {
     if (!perKey) return Promise.resolve(null);
     // under the store's lock, so no other window's commit lands between the
     // manifest and the files it names
-    return typeof host.withStoreLock === "function" ? host.withStoreLock(readBulkInner) : readBulkInner();
+    const inner = () => readBulkInner(kind);
+    return typeof host.withStoreLock === "function" ? host.withStoreLock(inner) : inner();
   }
-  async function readBulkInner() {
+  /** `kind` (v8-1-plan T3): only that owner's shards; omitted, every shard. */
+  async function readBulkInner(kind) {
     try {
       const r = await host.appdataReadKey(STORE_META);
       let m = null;
@@ -788,7 +817,7 @@ export function createPersist(host, onWriteFailure) {
       const files = storeFiles(m);
       const out = {};
       for (const name of m.keys) {
-        if (!BULK.test(name)) continue;
+        if (!BULK.test(name) || (kind && bulkKind(name) !== kind)) continue;
         const v = await host.appdataReadKey(files[name]);
         if (!v || typeof v.text !== "string") return null;
         out[name] = v.text;
@@ -824,10 +853,17 @@ export function createPersist(host, onWriteFailure) {
     const texts = {};
     for (const [name, v] of Object.entries(doc.keys)) if (BULK.test(name) && typeof v === "string") texts[name] = v;
     bulkOverride = new Map(Object.entries(texts));
-    const stale = Object.keys(committed || {}).concat((bulk && bulk.names()) || []);
+    const stale = Object.keys(committed || {});
+    for (const [, port] of portList()) stale.push(...(port.names() || []));
     for (const name of stale) if (BULK.test(name) && !bulkOverride.has(name)) bulkOverride.set(name, null);
     for (const name of bulkOverride.keys()) dirty.add(name);
-    bulkRestoring = bulk && bulk.restore ? Promise.resolve().then(() => bulk.restore(texts)) : null;
+    // each owner is handed its own shards (v8-1-plan T3)
+    const restoring = portList().filter(([, port]) => port.restore).map(([kind, port]) => {
+      const mine = {};
+      for (const name of Object.keys(texts)) if (bulkKind(name) === kind) mine[name] = texts[name];
+      return Promise.resolve().then(() => port.restore(mine));
+    });
+    bulkRestoring = restoring.length ? Promise.all(restoring) : null;
     if (!host.storageSet(SCHEMA_KEY, String(doc.schema || SCHEMA))) ok = false;
     if (!host.storageSet(STAMP_KEY, String(Number(doc.writtenAt) || Date.now()))) ok = false;
     bag = null;
@@ -872,8 +908,12 @@ export function createPersist(host, onWriteFailure) {
     if (perKey) clearLegacy = true;
     // v8-0-plan C1: the library's games are in IndexedDB and in the shards
     // the store lists; "clear my data" takes both
-    if (bulk && bulk.clear) bulk.clear();
-    for (const name of Object.keys(committed || {}).concat((bulk && bulk.names()) || [])) {
+    const names = Object.keys(committed || {});
+    for (const [, port] of portList()) {
+      names.push(...(port.names() || []));
+      if (port.clear) port.clear();
+    }
+    for (const name of names) {
       if (BULK.test(name)) { dirty.add(name); removed.add(name); }
     }
     scheduleMirror();
@@ -1019,5 +1059,7 @@ export function createPersist(host, onWriteFailure) {
 
   return { load, get, read, set, setJson, remove, clearAll, isBroken, swapSelftestMarker, wasEmpty, corruptKeys,
     recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, freeze, releaseMirror,
-    attachBulk, touchBulk, touchUnlisted, readBulk, bulkSettled, ACCEPT, KEYS, SCHEMA };
+    attachBulk, touchBulk, touchUnlisted, readBulk, bulkSettled, ACCEPT, KEYS, SCHEMA,
+    /** is there a native per-key store (readBulk's null then means a failed read, not "none") */
+    hasStore: () => perKey };
 }

@@ -1292,7 +1292,7 @@ import { loadChunk } from "./chunk.js";
     const el = document.getElementById("toast");
     if (!el) return false;
     if (!el.classList.contains("show")) return false;
-    el.classList.remove("show");
+    el.classList.remove("show"); el.style.pointerEvents = "";
     if (store.ui.toastTimer) { clearTimeout(store.ui.toastTimer); store.ui.toastTimer = null; }
     return true;
   }
@@ -1329,7 +1329,7 @@ import { loadChunk } from "./chunk.js";
     // exit was a mouse landing somewhere the pointer shape was the only hint
     // about — and Esc, which closes every other transient thing in this app,
     // did nothing. Meanwhile it sits over the board's back rank.
-    if (!ms) {
+    if (!ms || (action && action.label)) {   // M3 评审 P2-2: an ordinary toast may carry a way back (撤销)
       // The way forward comes before the way out: a fault the app knows how to
       // retry should offer that, not just a ✕.
       if (action && action.label) {
@@ -1354,9 +1354,9 @@ import { loadChunk } from "./chunk.js";
     el.classList.add("show");
     if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
     store.ui.toastTimer = null;
-    if (ms) store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+    if (ms) store.ui.toastTimer = setTimeout(() => { el.classList.remove("show"); el.style.pointerEvents = ""; }, action && action.label ? 4 * ms : ms);
     el.onclick = ms ? null : dismissToast;
-    el.style.cursor = ms ? "" : "pointer";
+    el.style.cursor = ms ? "" : "pointer"; el.style.pointerEvents = ms && action && action.label ? "auto" : "";
   }
 
   /**
@@ -1589,7 +1589,7 @@ import { loadChunk } from "./chunk.js";
   }
 
   // --- engine (AI mode) ---
-  const DIFF_IDS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "hard", "extreme"];
+  const DIFF_IDS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "extreme"];
   const diffName = (id) => t("diff." + id);
   /** legacy alias kept for the many call sites that read it like a map */
   const DIFF_NAMES = new Proxy({}, {
@@ -2128,7 +2128,7 @@ import { loadChunk } from "./chunk.js";
     puzzleName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
     saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName, startLearn,
     stopLearn, store, sync, t, tf, toast, writeSan, switchMode, setSideTab, drawRatingTrend,
-    RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total() },
+    RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total(), due: () => RepUI.dueDrills(), grade: (p, ok) => RepUI.gradeCard(p, ok), ready: () => RepUI.ready(), booted: () => RepUI.booted() },
     renderRepertoire: () => renderRepertoire(),
     loadLibraryEntry: (e) => loadLibraryEntry(e),
     dailyJump: (s) => dailyJump(s),
@@ -2553,7 +2553,7 @@ import { loadChunk } from "./chunk.js";
   // read the library's diagnosis: the openings you actually play and have
   // nothing written down about, worst record first.
   const RepUI = createRepertoireUI({
-    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync,
+    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync, library: LibraryUI, exportText,
     // the gap list compares the book against the openings this player has
     // actually played, and that comparison is only as good as the ECO codes
     // on the library's entries — 7.1 shipped `fillOpenings` for exactly this
@@ -2564,8 +2564,8 @@ import { loadChunk } from "./chunk.js";
     // 复习 list filters it out, so the app advertises work it cannot hand you.
     // Clearing the book, the 400-line cap, and a line replaced by a deeper
     // version all remove ids, so all three come through here.
-    forgetDrills: (ids) => {
-      let hit = false;
+    forgetDrills: (ids, back) => {   // back: entries an undone removal gives back (M3 评审 P2-2)
+      let hit = !!back; if (back) for (const k of ["solved", "missed"]) Object.assign(store.session.puzzleState[k], back[k]);
       for (const id of ids || []) {
         for (const key of [id, id + ":b"]) {
           if (store.session.puzzleState.solved[key] != null) { delete store.session.puzzleState.solved[key]; hit = true; }
@@ -2578,16 +2578,16 @@ import { loadChunk } from "./chunk.js";
       if (LibraryUI.fillOpenings()) LibraryUI.saveLibrary();
       return Library.diagnose(store.session.library, LIB_MIN_GAMES);
     },
-    startDrills: () => startRepDrills(),
+    startDrills: (due) => startRepDrills(due),
   });
   const renderRepertoire = () => RepUI.render();
 
   /** 「开始背」: into the trainer, on the repertoire tab, in the chair with lines. */
-  function startRepDrills() {
+  function startRepDrills(due) {
     if (!RepUI.total()) return;
     // which chair to sit in is `seatRepSide`'s rule, and startPuzzles() below
     // applies it — one rule, one place
-    store.session.puzzleState.cat = "rep";
+    store.session.puzzleState.cat = due ? "repdue" : "rep";   // v8-1-plan T3: 复习到期的着
     store.session.puzzleTierFilter = "all";
     savePuzzleState();
     store.session.mode = "puzzle";
@@ -2801,7 +2801,7 @@ import { loadChunk } from "./chunk.js";
   }
 
   // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
-  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n) });
+  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id) });
   function renderTrends() { MePage.renderTrends(); }
   function renderAchievements() { MePage.renderAchievements(); }
   function renderRecordEntry() { MePage.renderRecordEntry(); }
@@ -2836,7 +2836,7 @@ import { loadChunk } from "./chunk.js";
       // wanting 463px of a 418px chip. The title is already spelled out on the
       // lesson card two centimetres away, in full, in a box that wraps. What
       // the chip can say without lying is which lesson you are in.
-      return t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
+      return store.session.learn.eg ? t("eg.camp") : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
@@ -3260,7 +3260,7 @@ import { loadChunk } from "./chunk.js";
       const drill = !!(store.session.learn && curTask().type === "drill");
       return {
         w: { icon: "graduation-cap", name: t("role.student"), level: "" },
-        b: drill ? { icon: "bot", name: t("role.sparring"), level: "" } : null,
+        b: drill ? { icon: "bot", name: t(store.session.learn.eg ? "eg.engine" : "role.sparring"), level: "" } : null,
       };
     }
     if (mode === "puzzle") {
@@ -6071,7 +6071,7 @@ import { loadChunk } from "./chunk.js";
   });
   Shell.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
-  createExplorerLazy({ store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, saved: Persist.read("settings").value,
+  createExplorerLazy({ store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
@@ -6119,7 +6119,7 @@ import { loadChunk } from "./chunk.js";
     return "chessboard-learning-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
   }
   async function exportLearning() {
-    const doc = Learning.pack(learningBag(), Date.now());
+    const doc = RepUI.withCards(Learning.pack(learningBag(), Date.now()));   // M3 评审: the repertoire's card schedules too
     await exportText(learningFileName(), JSON.stringify(doc, null, 2), "application/json", t("dlg.exportLearning"));
   }
   /** Merge a learning file into this machine's data and rebuild the views. */
@@ -6185,11 +6185,11 @@ import { loadChunk } from "./chunk.js";
   async function exportAllData() {
     saveGame();
     saveSettings();
-    await LibraryUI.ready();   // v8-0-plan C1: the games are in the export once the library is loaded
+    await LibraryUI.ready(); await RepUI.ready();   // v8-0-plan C1: the games are in the export once the library is loaded; the repertoire's records once its chunk is (M3 评审)
     // compact (v8-0-plan F3): the values are JSON strings already, so the
     // two-space indent only padded the envelope — and every byte of the file
     // crosses the bridge
-    await exportText(allDataFileName(), JSON.stringify(Persist.exportAll()), "application/json", t("dlg.exportAll"));
+    await exportText(allDataFileName(), JSON.stringify(RepUI.forExport(Persist.exportAll())), "application/json", t("dlg.exportAll"));
   }
   async function importAllDataText(text) {
     let doc = null;

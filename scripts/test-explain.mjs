@@ -308,5 +308,37 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
   }
 }
 
+// --- v8-1-plan T6: the sampled cases, and the motifs that fell back ---------
+// scripts/fixtures/motif-sample.json holds every case the precision sample
+// judged (scripts/sample-motifs.mjs), with the app's own engine lines. Read
+// again here: a motif above 5% errors (MATERIAL_ONLY) is never named, its
+// sentence says only what the line wins; every other case still names the
+// motif it was judged under — so a change to motif.js that moves a sampled
+// case shows up here, and the rate in docs/measured.json no longer vouches
+// for it until the sample is run again.
+{
+  const cases = JSON.parse(fs.readFileSync(path.join(root, "scripts/fixtures/motif-sample.json"), "utf8"));
+  const measured = JSON.parse(fs.readFileSync(path.join(root, "docs/measured.json"), "utf8")).motifPrecision;
+  const off = new Set(X.MATERIAL_ONLY);
+  const want = Object.keys(measured.byMotif).filter((m) => measured.byMotif[m].fallback);
+  assert(want.length === off.size && want.every((m) => off.has(m)),
+    "T6: MATERIAL_ONLY 就是抽样错误率 > 5% 的母题（" + [...off].join("、") + "）");
+  const counts = {};
+  for (const m of Object.keys(measured.byMotif)) counts[m] = cases.filter((c) => c.motif === m).length;
+  const thin = Object.keys(counts).filter((m) => counts[m] < 20 && !off.has(m));
+  assert(thin.length === 0, "T6: 仍会说出的母题每种至少 20 条样本" + (thin.length ? " —— 不足：" + thin.join(", ") : ""));
+  const moved = [], said = [];
+  for (const c of cases) {
+    const ex = X.explainMistake({ fen: c.fen, played: c.played, best: c.best, bestLine: c.bestLine, line: c.line,
+      evalBefore: c.evalBefore, evalAfter: c.evalAfter }, Chess);
+    const m = X.explainMotif(ex);
+    if (off.has(c.motif)) { if (m === c.motif) said.push(c.id); }
+    else if (m !== c.motif) moved.push(c.id + " " + c.motif + "→" + m);
+  }
+  assert(said.length === 0, "T6: 回退的母题在它们的样本上一次也不说出来" + (said.length ? " —— " + said.slice(0, 5).join(", ") : ""));
+  assert(moved.length === 0, "T6: 其余 " + cases.filter((c) => !off.has(c.motif)).length + " 条样本仍说出判定时的母题" +
+    (moved.length ? " —— " + moved.slice(0, 5).join(", ") : ""));
+}
+
 if (failed) { console.error(failed + " failed"); process.exit(1); }
 console.log("explain: all passed");

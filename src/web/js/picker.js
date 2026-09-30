@@ -109,13 +109,17 @@ function weakestMotif(state, motifs) {
  *        rung's easy-first climb; without it every rung stays in book order
  * @param {function} [motifOf] puzzle → motif key or null; with it, a motif
  *        the player keeps missing outranks a weak shelf (5.2)
+ * @param {object[]} [queued] puzzles only the review rung may serve — the
+ *        queued bank puzzles whose bands are here (v8-1-plan T6). Kept out of
+ *        the other rungs: they are not in any shelf the caller can serve from,
+ *        and "the book is done" is about the book (M3 评审 P2-1)
  * @returns {{kind: "review"|"motif"|"weak"|"explore"|"done", cat?: string,
  *            id?: string, motif?: string, due?: number, rate?: number, attempts?: number}}
  */
-function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range, now = Date.now()) {
+function pickNext(state, all, srs, tierOf, motifOf, ratingOf, range, now = Date.now(), queued) {
   // 1. the queue — owed by count AND due by date (an entry scheduled for
   // tomorrow waits for tomorrow)
-  const due = all.filter((p) => srs.isDue(state.missed[p.id], now));
+  const due = (queued && queued.length ? all.concat(queued) : all).filter((p) => srs.isDue(state.missed[p.id], now));
   if (due.length) {
     const first = srs.order(due.map((p) => p.id), state.missed)[0];
     return { kind: "review", cat: "review", id: first, due: due.length };

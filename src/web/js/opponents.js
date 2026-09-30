@@ -12,7 +12,7 @@
 import { ChessRating } from "./rating.js";
 
 /** The rungs, weakest first. Every id has a row in engine.js TIERS. */
-const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "hard", "extreme"];
+const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "extreme"];
 
 /**
  * Each rung's rating, and how sure the fit is about it (±, one standard
@@ -23,13 +23,33 @@ const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", 
  * the fit; scripts/test-chess.mjs fails if these stop agreeing with it.
  */
 const RATING = {
-  beginner: 70, casual: 266, learner: 409, improver: 608, steady: 752, solid: 941,
-  easy: 1320, easyplus: 1418, normalminus: 1662, normal: 1700, hard: 1994, extreme: 2633,
+  beginner: 514, casual: 670, learner: 785, improver: 944, steady: 1059, solid: 1208, easy: 1320,
+  easyplus: 1420, normalminus: 1542, normal: 1700, normalplus: 1797, hardminus: 1876, hard: 1982,
+  hardplus: 2104, expert: 2239, expertplus: 2339, master: 2460, masterplus: 2574, strong: 2683,
+  strongplus: 2807, extreme: 2877,
 };
 const RATING_SE = {
-  beginner: 0, casual: 23, learner: 24, improver: 26, steady: 28, solid: 31,
-  easy: 95, easyplus: 106, normalminus: 119, normal: 126, hard: 144, extreme: 238,
+  beginner: 0, casual: 18, learner: 19, improver: 21, steady: 22, solid: 25, easy: 38, easyplus: 43,
+  normalminus: 47, normal: 53, normalplus: 57, hardminus: 60, hard: 63, hardplus: 66, expert: 70,
+  expertplus: 72, master: 75, masterplus: 79, strong: 82, strongplus: 85, extreme: 91,
 };
+
+/**
+ * v8-1-plan T1: which ladder a game was rated against. 8.1 re-stepped the
+ * ladder and fitted every rung again, so the same id can stand for another
+ * number now. A game is scored against the ratings of the ladder it was
+ * played on: a record filed from 8.1 on carries `lad`, and one without it
+ * is 8.0's and keeps 8.0's numbers — a profile replayed from its games
+ * (rateHistory) comes out exactly where it stood.
+ */
+const LADDER = 2;
+// (8.0's twelve rungs as a string: a literal naming some of today's rungs
+// would read as a partial copy of the ladder — test-chess holds every such
+// literal to naming all of them)
+const LEVELS_80 = "beginner casual learner improver steady solid easy easyplus normalminus normal hard extreme".split(" ");
+const of80 = (xs) => Object.fromEntries(LEVELS_80.map((id, i) => [id, xs[i]]));
+const RATING_80 = of80([70, 266, 409, 608, 752, 941, 1320, 1418, 1662, 1700, 1994, 2633]);
+const RATING_SE_80 = of80([0, 23, 24, 26, 28, 31, 95, 106, 119, 126, 144, 238]);
 
 /**
  * The personas: one per rung, each with a style from persona.js and an icon
@@ -57,7 +77,16 @@ const PERSONAS = [
   { id: "nico", level: "easyplus", style: "off", icon: "coins" },
   { id: "vera", level: "normalminus", style: "off", icon: "swords" },
   { id: "sol", level: "normal", style: "off", icon: "star" },
+  { id: "leo", level: "normalplus", style: "off", icon: "zap" },
+  { id: "ivy", level: "hardminus", style: "off", icon: "user" },
   { id: "max", level: "hard", style: "off", icon: "crown" },
+  { id: "iris", level: "hardplus", style: "off", icon: "eye" },
+  { id: "otto", level: "expert", style: "off", icon: "medal" },
+  { id: "hugo", level: "expertplus", style: "off", icon: "award" },
+  { id: "zoe", level: "master", style: "off", icon: "trophy" },
+  { id: "lars", level: "masterplus", style: "off", icon: "flag" },
+  { id: "nora", level: "strong", style: "off", icon: "handshake" },
+  { id: "kit", level: "strongplus", style: "off", icon: "chart-line" },
   { id: "fish", level: "extreme", style: "off", icon: "bot" },
 ];
 
@@ -70,7 +99,9 @@ const PERSONAS = [
  */
 const EN_NAME = {
   beginner: "Beginner", casual: "Casual", learner: "Practice", improver: "Improving", steady: "Steady",
-  solid: "Solid", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", hard: "Hard", extreme: "Max",
+  solid: "Solid", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", normalplus: "Normal+",
+  hardminus: "Hard-", hard: "Hard", hardplus: "Hard+", expert: "Expert", expertplus: "Expert+", master: "Master", masterplus: "Master+",
+  strong: "Strong", strongplus: "Strong+", extreme: "Max",
 };
 
 function personaById(id) { return PERSONAS.find((p) => p.id === id) || null; }
@@ -82,6 +113,8 @@ function ratingOf(level) { return Number.isFinite(RATING[level]) ? RATING[level]
 
 // --- the clock -----------------------------------------------------------
 
+/** engine.js NODES_PER_MS (test-chess holds the two equal): node counts as time. */
+const NODES_PER_MS = 450;
 /** Share of the remaining clock one move may use, plus most of the increment. */
 const MOVES_TO_GO = 40;
 /**
@@ -110,12 +143,17 @@ const PACE_CAP_MS = 3000;
  */
 function thinkPlan(tier, clockMs, incMs) {
   const alloc = Math.max(0, clockMs) / MOVES_TO_GO + 0.75 * Math.max(0, incMs || 0);
-  const cap = tier && tier.movetime ? tier.movetime : 0;
+  // (v8-1-plan T1: a node rung's calibrated search is its count, in engine.js's ms)
+  const cap = tier && tier.movetime ? tier.movetime : tier && tier.nodes ? Math.round(tier.nodes / NODES_PER_MS) : 0;
   const search = cap ? Math.max(120, Math.min(cap, alloc)) : 0;
   // never pace a reply past what the clock can afford: under ten seconds the
   // allocation is already small, and a flag lost to a pause would be absurd
   const pace = Math.round(Math.max(tier && tier.depth ? 120 : 0, Math.min(PACE_CAP_MS, alloc / 2)));
-  return { search: Math.round(search), pace: Math.min(pace, Math.max(0, clockMs / 20)) };
+  // M3 评审: a depth rung's search is not a movetime, but on a nearly flagged
+  // clock even depth 10 (大师, ~100 ms in a middlegame here, more on a slow
+  // machine) must not outlast what the clock allots it — `ceil` bounds it
+  const ceil = tier && tier.depth ? Math.max(20, Math.round(alloc)) : 0;
+  return { search: Math.round(search), pace: Math.min(pace, Math.max(0, clockMs / 20)), ceil };
 }
 
 // --- resigning and offering a draw ---------------------------------------
@@ -181,10 +219,12 @@ function acceptsDraw(engineCp) { return engineCp == null || engineCp < ACCEPT_CP
  * deviation no smaller than 30 — the fit's own error, floored so one game is
  * never scored against an opponent the maths treats as exactly known.
  */
-function opponentOf(level) {
-  const r = ratingOf(level);
+function opponentOf(level, lad) {
+  // an 8.0 game (no `lad`) against a rung 8.0 had: 8.0's numbers
+  const old = lad == null && Number.isFinite(RATING_80[level]);
+  const r = old ? RATING_80[level] : ratingOf(level);
   if (r == null) return null;
-  return { r, rd: Math.max(30, RATING_SE[level] || 0) };
+  return { r, rd: Math.max(30, (old ? RATING_SE_80 : RATING_SE)[level] || 0) };
 }
 
 const SCORE = { win: 1, draw: 0.5, loss: 0 };
@@ -199,10 +239,11 @@ const SCORE = { win: 1, draw: 0.5, loss: 0 };
  * @param {string} level the rung played
  * @param {"win"|"draw"|"loss"} result
  * @param {number} now ms
+ * @param {number} [lad] the record's ladder (none: 8.0's)
  * @returns {{r,rd,vol,at,n}|null} null when the game does not count
  */
-function rateGame(rating, level, result, now) {
-  const opp = opponentOf(level);
+function rateGame(rating, level, result, now, lad) {
+  const opp = opponentOf(level, lad);
   if (!opp || !(result in SCORE)) return null;
   let cur = rating && Number.isFinite(rating.r) ? rating : ChessRating.newRating();
   const days = rating && rating.at ? (now - rating.at) / 86400000 : 0;
@@ -217,13 +258,13 @@ function rateGame(rating, level, result, now) {
  * solved rather than read off the table). Clamped 400 above the strongest
  * and below the weakest opponent, so 5/5 is a number and not infinity.
  *
- * @param {Array<{level: string, result: string}>} games
+ * @param {Array<{level: string, result: string, lad?: number}>} games
  * @returns {number|null}
  */
 function performance(games) {
-  const g = (games || []).filter((x) => ratingOf(x.level) != null && x.result in SCORE);
+  const g = (games || []).filter((x) => opponentOf(x.level, x.lad) && x.result in SCORE);
   if (!g.length) return null;
-  const opp = g.map((x) => ratingOf(x.level));
+  const opp = g.map((x) => opponentOf(x.level, x.lad).r);
   const score = g.reduce((a, x) => a + SCORE[x.result], 0);
   const lo = Math.min(...opp) - 400, hi = Math.max(...opp) + 400;
   const expected = (r) => opp.reduce((a, o) => a + 1 / (1 + Math.pow(10, (o - r) / 400)), 0);
@@ -275,7 +316,7 @@ function rateHistory(games) {
   let r = null;
   for (const g of (games || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0))) {
     if (g.unrated) continue; // recorded, not rated (#89 review: opponents-lazy.js opponent)
-    const next = rateGame(r, g.diff, g.result, g.t || 0);
+    const next = rateGame(r, g.diff, g.result, g.t || 0, g.lad);
     if (next) r = next;
   }
   return r;
@@ -300,13 +341,15 @@ function fileRating(stats, rec, now) {
   // …and the unrated ones before it are no part of its performance or advice
   const prior = (at >= 0 ? games.slice(0, at) : games).filter((g) => !g.unrated);
   const before = validRating(stats.rating) ? stats.rating : rateHistory(prior);
-  const after = rateGame(before, rec.diff, rec.result, now);
+  // filed now: against today's ladder, and it says so for any later replay
+  if (rec.lad == null) rec.lad = LADDER;
+  const after = rateGame(before, rec.diff, rec.result, now, rec.lad);
   if (!after) return null;
   stats.rating = after;
   // the rating series 「我的」 draws: each engine game carries the rating it
   // left the player on and the performance of the ten games up to it
   const recent = prior.slice(-(PERF_GAMES - 1)).concat([rec])
-    .map((g) => ({ level: g.diff, result: g.result }));
+    .map((g) => ({ level: g.diff, result: g.result, lad: g.lad }));
   const perf = performance(recent);
   rec.rb = before ? Math.round(before.r) : null;
   rec.ra = Math.round(after.r);
@@ -339,6 +382,20 @@ function ratingOfStats(stats) {
   return memo.r;
 }
 
+/**
+ * v8-1-plan T1: the new-game dialog shows the personas a segment at a time —
+ * 入门 / 进阶 / 高手 — each the rungs from its first one up to the next
+ * segment's first. 入门 is the hand-weakened rungs (they play a step below
+ * UCI_Elo's floor); 进阶 starts at 初级, the first Stockfish-limited rung.
+ */
+const SEGMENTS = [null, "easy", "expert"]; // where each starts (the first at the bottom)
+function segmentOf(level) {
+  const i = LEVELS.indexOf(level);
+  let seg = 0;
+  SEGMENTS.forEach((id, k) => { if (id && i >= LEVELS.indexOf(id)) seg = k; });
+  return seg;
+}
+
 /** The persona one rung up or down from `level`. */
 function neighbour(level, dir) {
   const i = LEVELS.indexOf(level) + (dir === "up" ? 1 : -1);
@@ -347,7 +404,8 @@ function neighbour(level, dir) {
 }
 
 export const Opponents = {
-  LEVELS, RATING, RATING_SE, PERSONAS, EN_NAME, PACE_CAP_MS,
+  LEVELS, RATING, RATING_SE, LADDER, RATING_80, PERSONAS, EN_NAME, PACE_CAP_MS, NODES_PER_MS,
   personaById, personaFor, ratingOf, thinkPlan, shouldResign, shouldOfferDraw, acceptsDraw,
   opponentOf, rateGame, rateHistory, fileRating, validRating, ratingOfStats, performance, advice, neighbour,
+  SEGMENTS, segmentOf,
 };

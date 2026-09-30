@@ -183,11 +183,15 @@ if (scenario()) {
   // unlimited strength and read as unlimited time, while the search is still
   // 1.2 seconds a move like every other tier. 缺陷 31.
   // v8-0-plan B4: six sparring rungs (the four new win-chance rungs join the
-  // handicapped pair) and six Elo rungs (1450 and 1575 between 初级 and 中级)
+  // handicapped pair) and six Elo rungs (1450 and 1575 between 初级 and 中级);
+  // v8-1-plan T1: six and fifteen, the ladder re-stepped
   const EXPECT = {
-    "zh-CN": { spar: ["新手", "休闲", "练习", "进步", "稳健", "扎实"], engine: ["初级", "初级+", "中级−", "中级", "高级", "不限档"] },
-    en: { spar: ["Gentle", "Casual", "Practice", "Improving", "Steady", "Solid"], engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Advanced", "Unrated"] },
-    ja: { spar: ["やさしい", "お気軽", "練習", "上達", "堅実", "手堅い"], engine: ["初級", "初級+", "中級−", "中級", "上級", "無制限"] },
+    "zh-CN": { spar: ["新手", "休闲", "练习", "进步", "稳健", "扎实"],
+      engine: ["初级", "初级+", "中级−", "中级", "中级+", "高级−", "高级", "高级+", "专家", "专家+", "大师", "大师+", "强力", "强力+", "不限档"] },
+    en: { spar: ["Gentle", "Casual", "Practice", "Improving", "Steady", "Solid"],
+      engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Intermediate+", "Advanced−", "Advanced", "Advanced+", "Expert", "Expert+", "Master", "Master+", "Strong", "Strong+", "Unrated"] },
+    ja: { spar: ["やさしい", "お気軽", "練習", "上達", "堅実", "手堅い"],
+      engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "無制限"] },
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");
@@ -198,11 +202,11 @@ if (scenario()) {
       // there must be no third heading above the two group labels
       keys: [...document.querySelectorAll("#row-difficulty .setting-k")].length,
     }));
-    assert(labels.spar.length === 6 && labels.engine.length === 6, lang + ": 6 sparring tiers, 6 engine tiers");
+    assert(labels.spar.length === 6 && labels.engine.length === 15, lang + ": 6 sparring tiers, 15 engine tiers");
     assert(labels.groups.length === 2, lang + ": both groups are labelled");
     assert(labels.keys === 0, lang + ": no redundant 难度 heading above the group labels");
     const all = labels.spar.concat(labels.engine);
-    assert(new Set(all).size === all.length, lang + ": all twelve labels are distinct — " + all.join(" / "));
+    assert(new Set(all).size === all.length, lang + ": all twenty-one labels are distinct — " + all.join(" / "));
     assert(JSON.stringify(labels.spar) === JSON.stringify(EXPECT[lang].spar),
       lang + ": the sparring pair is the reviewed one — " + labels.spar.join(" / "));
     assert(JSON.stringify(labels.engine) === JSON.stringify(EXPECT[lang].engine),
@@ -560,7 +564,7 @@ if (scenario()) for (const [when, mode, setup] of [
   // that it is not offered here; being *drawn* and not offered is the defect.
   ["教学·最后一课(没做过)", "learn", async (page) => {
     await page.evaluate(() => {
-      const items = [...document.querySelectorAll("#lesson-list .lesson-item")];
+      const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])")];
       items[items.length - 1].click();
     });
     await page.waitForTimeout(800);
@@ -2493,9 +2497,10 @@ if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "learn", "play");
     // 6.0: the list ends with the ten classic games (data-c), which are read,
-    // not answered — no button row. The probes stay on the lessons proper, and
+    // not answered — no button row, and v8-1-plan T2 put the endgame camp
+    // (data-eg) after them. The probes stay on the lessons proper, and
     // the last of those is still the one with the graduation button.
-    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c])").length);
+    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])").length);
     assert(n > 60, lang + ": the course is loaded (" + n + " lessons)");
     // the lessons that show all four, plus the last one — its label is the
     // longest in the file and it appears in a two-button row
@@ -4960,6 +4965,172 @@ if (scenario()) {
       assert(Math.max(...r.widths) - Math.min(...r.widths) < 0.1, `${tag}: 每一段等宽 (${r.widths.map((w) => w.toFixed(2)).join(", ")})`);
       assert(r.spill.length === 0 && r.past === 0 && r.sideways <= 0,
         `${tag}: 文字不出按钮，按钮不出对话框，对话框不横向滚动 (${r.spill.join(", ") || "—"}; ${r.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-1-plan T1: the new-game dialog's personas, a segment at a time -------
+// Twenty-odd cards are three segments (入门 / 进阶 / 高手) over the grid: the
+// tabs are equal thirds to the tenth of a pixel in every language, no label
+// is cut, and each segment's cards sit inside the dialog without a sideways
+// scroll — in a wide window and at phone width.
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 390, height: 700 }]) {
+      const { ctx, page, errs } = await open(lang, "ai", "play", "wood", viewport);
+      await page.waitForFunction(() => document.querySelectorAll("#op-seg button").length === 3, null, { timeout: 5000 }).catch(() => {});
+      await page.evaluate(() => document.getElementById("btn-new").click());
+      await page.waitForTimeout(400);
+      // this file stubs the engine, whose fault banner then lands over a
+      // phone-width dialog's top: out of the way, it is not what is measured
+      const unfault = () => page.evaluate(() => { const f = document.getElementById("engine-fault"); if (f) f.style.display = "none"; });
+      for (const k of [0, 1, 2]) {
+        await unfault();
+        await page.click('#op-seg button[data-seg="' + k + '"]', { timeout: 5000 }).catch((e) => console.log("  click seg " + k + ": " + e.message.split("\n")[0]));
+        await page.waitForFunction((x) => { const b = document.querySelector('#op-seg button[data-seg="' + x + '"]'); return b && b.getAttribute("aria-pressed") === "true"; }, k, { timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(100);
+        const r = await page.evaluate(() => {
+          const seg = document.getElementById("op-seg");
+          const bs = [...seg.querySelectorAll("button")];
+          const modal = document.querySelector("#newgame-modal .modal");
+          const mr = modal.getBoundingClientRect();
+          const cards = [...document.querySelectorAll("#op-grid .op-card")].filter((c) => !c.hidden && c.offsetParent);
+          const cut = (e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1;
+          return {
+            shown: !seg.hidden && !!seg.offsetParent, n: bs.length,
+            on: bs.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.seg),
+            widths: bs.map((b) => b.getBoundingClientRect().width),
+            heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+            spill: bs.filter(cut).map((b) => b.textContent.trim()),
+            labels: bs.map((b) => b.textContent.trim()),
+            cards: cards.length,
+            cardSpill: cards.filter((c) => [...c.querySelectorAll(".op-name, .op-meta")].some(cut)).map((c) => c.dataset.op),
+            past: cards.concat(bs).filter((e) => e.getBoundingClientRect().right > mr.right + 0.5 || e.getBoundingClientRect().left < mr.left - 0.5).length,
+            sideways: modal.scrollWidth - modal.clientWidth,
+          };
+        });
+        const tag = `T1 对手分段 (${lang}, ${viewport.width}×${viewport.height}, 第 ${k + 1} 段)`;
+        assert(r.shown && r.n === 3 && r.on.join() === String(k), `${tag}: 三段都在，按下的是这一段 (${r.on.join()})`);
+        assert(Math.max(...r.widths) - Math.min(...r.widths) < 0.1, `${tag}: 三段等宽 (${r.widths.map((w) => w.toFixed(2)).join(", ")})`);
+        assert(r.heights.length === 1 && r.labels.every(Boolean) && r.spill.length === 0,
+          `${tag}: 一样高、字不出按钮 (${r.labels.join(" / ")}; ${r.spill.join(", ") || "—"})`);
+        assert(r.cards >= 4 && r.cardSpill.length === 0 && r.past === 0 && r.sideways <= 0,
+          `${tag}: ${r.cards} 张卡片都在对话框里、名字和分数没被截 (${r.cardSpill.join(", ") || "—"}; ${r.sideways}px)`);
+      }
+      assert(errs.length === 0, `T1 对手分段 (${lang}, ${viewport.width}): 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-1-plan T3: the explorer's 我的开局书 row, the filters' ruler ----------
+// 执白 / 执黑 is a segmented control like the diagnosis's: a label you can see,
+// one line tall, segments equal to the raw pixel, no word out of its button;
+// the 「加进开局书」 key and the rows with their toggles stay inside the panel —
+// in three languages, at the widest window and the narrowest.
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 700 }]) {
+      const { ctx, page, errs } = await open(lang, "pvp", "play", "wood", viewport);
+      await ctx.addInitScript(() => {
+        if (sessionStorage.getItem("t3seed")) return;
+        sessionStorage.setItem("t3seed", "1");
+        localStorage.setItem("chess.v1.repertoire", JSON.stringify({ v: 1, w: [{ id: "rep-t3a", sans: "e4 e5 Nf3 Nc6 Bb5", eco: "", name: "" },
+          { id: "rep-t3b", sans: "d4 d5 c4", eco: "", name: "" }], b: [] }));
+      });
+      await page.reload();
+      await page.waitForFunction(() => window.__chess && window.__chess.rep && window.__chess.rep(), null, { timeout: 20000 }).catch(() => {});
+      await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+      await page.click("#explorer-open", { timeout: 1500 }).catch(() => {});
+      await page.waitForSelector("#xp-list .xp-mine", { timeout: 5000 }).catch(() => {});
+      await page.evaluate(() => document.getElementById("xp-mine-row").scrollIntoView());
+      const r = await page.evaluate(() => {
+        const seg = document.getElementById("xp-rep");
+        const label = document.getElementById(seg.getAttribute("aria-labelledby"));
+        const bs = [...seg.querySelectorAll("button")];
+        const box = document.getElementById("explorer");
+        const inside = [document.getElementById("xp-add"), ...document.querySelectorAll("#xp-list .xp-tog, #xp-list .xp-row")];
+        const right = box.getBoundingClientRect().right;
+        return { shown: !box.hidden && !document.getElementById("xp-mine-row").hidden,
+          mine: document.querySelectorAll("#xp-list .xp-mine").length,
+          label: label && label.offsetParent ? label.textContent.trim() : null, stray: seg.getAttribute("aria-label"),
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          widths: bs.map((b) => b.getBoundingClientRect().width),
+          spill: bs.concat(inside.slice(0, 1)).filter((b) => b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1).map((b) => b.textContent.trim()),
+          past: inside.concat(bs).filter((b) => b.getBoundingClientRect().right > right + 0.5).length,
+          sideways: box.scrollWidth - box.clientWidth,
+          togH: [...new Set([...document.querySelectorAll("#xp-list .xp-tog")].map((b) => Math.round(b.getBoundingClientRect().height)))] };
+      });
+      const tag = `T3 我的开局书 (${lang}, ${viewport.width}×${viewport.height})`;
+      assert(r.shown && r.mine >= 2, `${tag}: 开局浏览器开着，起始局面 e4、d4 标「我的」(${r.mine})`);
+      assert(r.label && !r.stray, `${tag}: 有一个看得见的标签「${r.label}」，没有第二份 aria-label`);
+      assert(r.heights.length === 1 && r.heights[0] < 40, `${tag}: 每一段一行高 (${r.heights.join(", ")})`);
+      assert(Math.max(...r.widths) - Math.min(...r.widths) < 0.1, `${tag}: 每一段等宽 (${r.widths.map((w) => w.toFixed(2)).join(", ")})`);
+      assert(r.togH.length === 1 && r.togH[0] === 32, `${tag}: 每行的开关是小号控件高 (${r.togH.join(", ")})`);
+      assert(r.spill.length === 0 && r.past === 0 && r.sideways <= 0,
+        `${tag}: 文字不出按钮，按钮与行不出面板，面板不横向滚动 (${r.spill.join(", ") || "—"}; ${r.past}; ${r.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-1-plan T2: the endgame camp — its 我的 section, its lesson card -----
+// In three languages, at the widest window and the narrowest: the section's
+// rows one line each, its two buttons one height with their words inside,
+// nothing past the page's edge; in 学习, a camp position's card and the
+// camp's part of 目录 cut nothing off, and 重来 / 下一个残局 stay one row.
+if (scenario()) {
+  const seed = JSON.stringify({ v: 1, done: {}, last: 0,
+    eg: { done: { "kp-keysq": 1, "dr-vancura": 1 }, srs: { "rp-lucena2": { s: 0, n: 1, due: 1, ivl: 0 } } } });
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
+      const tag = `T2 训练营 (${lang}, ${viewport.width}×${viewport.height})`;
+      const { ctx, page, errs } = await open(lang, "learn", "play", "wood", viewport);
+      await page.evaluate((s) => localStorage.setItem("chess.v1.learn", s), seed);
+      await page.reload();
+      await page.waitForTimeout(900);
+      await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-eg]").length === 60, null, { timeout: 8000 }).catch(() => {});
+      await page.evaluate(() => {
+        const d = document.querySelector("#sec-learn details.reading-index");
+        if (d) d.open = true;
+        const b = document.querySelector('#lesson-list button[data-eg="rp-lucena2"]');
+        if (b) b.click();
+      });
+      await page.waitForTimeout(400);
+      const learn = await page.evaluate(() => {
+        const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
+        const out = [];
+        for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
+          if (!e.offsetParent) continue;
+          if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
+        }
+        const row = sec.querySelector(".lesson-controls");
+        const bs = [...row.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        return { cut: out, items: sec.querySelectorAll("#lesson-list button[data-eg]").length,
+          title: document.getElementById("lesson-title").textContent,
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))], n: bs.length };
+      });
+      assert(learn.items === 60 && /·/.test(learn.title), `${tag}: 目录里 60 个，卡片是这个残局（${learn.title}）`);
+      assert(learn.cut.length === 0, `${tag}: 学习卡片与目录没有被裁掉的字` + (learn.cut.length ? " — " + learn.cut.join(", ") : ""));
+      assert(learn.n === 2 && learn.heights.length === 1, `${tag}: 重来 / 下一个残局 一排、一样高 (${learn.n}; ${learn.heights.join(", ")})`);
+      await page.click('#rail button[data-view="me"]', { timeout: 1500 }).catch(() => {});
+      await page.waitForFunction(() => !document.getElementById("sec-endgame").hidden, null, { timeout: 6000 }).catch(() => {});
+      const me = await page.evaluate(() => {
+        const sec = document.getElementById("sec-endgame"), box = sec.getBoundingClientRect();
+        const rows = [...sec.querySelectorAll(".stat-row")];
+        const bs = [...sec.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        const line = (e) => parseFloat(getComputedStyle(e).lineHeight) || 20;
+        return { shown: !sec.hidden, meta: document.getElementById("eg-meta").textContent,
+          tall: rows.filter((r) => r.getBoundingClientRect().height > line(r) * 1.6).map((r) => r.textContent.trim()),
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          spill: bs.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().right > box.right + 1).map((b) => b.textContent.trim()),
+          n: bs.length, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      assert(me.shown && me.meta === "2/60" && me.n === 2, `${tag}: 「我的」有训练营一节，2/60，进训练营 + 复习两个按钮`);
+      assert(me.tall.length === 0, `${tag}: 五个主题各一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
+      assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
+        `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }

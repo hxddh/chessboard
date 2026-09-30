@@ -108,9 +108,13 @@ export const CHUNKS = [
   { entry: "src/web/js/library-page.js", out: "src/web/js/chunk-libdb.js", global: "CHESS_LIBDB", min: 15000 },
   // v8-0-plan C2: the sync dialog, on its button's first click (prefs-ui.js)
   { entry: "src/web/js/sync-ui.js", out: "src/web/js/chunk-sync.js", global: "createSyncUI", min: 2000 },
+  // v8-1-plan T3: the repertoire by position — records, cards, cross-check (repertoire-ui.js)
+  { entry: "src/web/js/rep-page.js", out: "src/web/js/chunk-rep.js", global: "CHESS_REP", min: 3000 },
   ...lichessChunks(path.join(root, "src/web/js/lichess")),
   // v8-0-plan C3: the opening explorer's panel (explorer/lazy.js), then the master tree's buckets
   { entry: "src/web/js/explorer/ui.js", out: "src/web/js/chunk-explorer.js", global: "createExplorerUI", min: 5000 },
+  // v8-1-plan T2: the endgame camp's sixty positions and their words (trainer/endgames.js)
+  { entry: "src/web/js/endgames.js", out: "src/web/js/chunk-endgames.js", global: "CHESS_ENDGAMES", min: 20000 },
   ...explorerChunks(path.join(root, "src/web/js/explorer")),
 ];
 

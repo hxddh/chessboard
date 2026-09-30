@@ -1576,15 +1576,17 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.click("#btn-new"); await page.waitForTimeout(300);
   const order = await page.evaluate(() => {
     const m = document.getElementById("newgame-modal");
-    return [...m.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.id || b.dataset.mode || b.dataset.op || b.dataset.diff || b.dataset.persona || b.dataset.color || b.dataset.tc);
+    return [...m.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.id || b.dataset.mode || (b.dataset.seg && "seg" + b.dataset.seg) || b.dataset.op || b.dataset.diff || b.dataset.persona || b.dataset.color || b.dataset.tc);
   });
   await page.keyboard.press("Tab"); await page.waitForTimeout(80);
   const wrapped = (await state()).focus;
   await page.keyboard.press("Shift+Tab"); await page.waitForTimeout(80);
   const back = (await state()).focus;
-  assert(order[0] === "ai" && order[2] === "pip" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
-    `Tab 顺序:对手(人机 / 双人) → 角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order[0]}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
+  // v8-1-plan T1: the persona cards come a segment at a time, the three tabs first
+  assert(order[0] === "ai" && order.slice(2, 5).join() === "seg0,seg1,seg2" && order[5] === "ben" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
+    `Tab 顺序:对手(人机 / 双人) → 三个分段 → 这一段的角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 6).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
   // change the opponent and start: one step, the strip and the settings page agree
+  await page.click('#ng-host #op-seg button[data-seg="1"]'); await page.waitForTimeout(150);
   await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await page.waitForTimeout(150);
   await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   s = await state();

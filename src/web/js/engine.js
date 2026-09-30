@@ -51,6 +51,30 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * - `easyplus` / `normalminus`: 1700 scored 94% against 1320, three rungs
    *   apart, not one.
    *
+   * v8-1-plan T1 — the upper half re-stepped by what the games measured, not
+   * by the UCI_Elo numbers (docs/measured.json `ladder`; §9 M3 has the runs):
+   *
+   * - UCI_Elo is Stockfish's Skill Level (a cubic in the Elo, 0–19), and
+   *   Stockfish picks its move once, at depth 1 + ⌊level⌋, from its top
+   *   MultiPV lines (at least 4) with noise; searching on refines only the
+   *   score it reports. So strength moves in whole depths: 1450 and 1575
+   *   were a depth apart, 1575 and 1700 the same depth — 8.0's 78% and 55%.
+   *   Each Elo rung now searches exactly to its pick depth (the same move
+   *   distribution as a movetime search, in milliseconds, and the same on
+   *   every machine) and holds its reply for `minMs`. Where one depth is too
+   *   big a step, a longer MultiPV list is the finer knob (`easyplus`).
+   * - Past depth 10 the handicap stops paying: 10,000 nodes of full-strength
+   *   search won all 23 games against depth 10's pick, and depth 12 is
+   *   slower without closing the gap. The top rungs are full strength by
+   *   node count (`nodes`, drawn ±15% a move — searchCmd), each about four
+   *   times the last. Four times 2,500 is where it stops: 10,000 and 40,000
+   *   nodes drew 56 games of 56 with each other, and 不限档 scored 52%
+   *   against 40,000 — at the top, more search buys draws, not wins.
+   * - 扎实 → 初级 was 88% in 8.0 and needs no rung between now: 初级 at its
+   *   pick depth plays on where the movetime search's deep eval resigned, and
+   *   the step measured ~58% (a win-chance rung between them measured
+   *   55% / 52% and was taken out again).
+   *
    * These notes sit here and not beside the rows: a comment inside the
    * literal ships in the bundle (esbuild keeps it), and F5's budget is bytes.
    */
@@ -102,11 +126,20 @@ const global = typeof window !== "undefined" ? window : globalThis;
     improver: { skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
     steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
     solid: { skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
-    easy: { elo: 1320, movetime: 500 },
-    easyplus: { elo: 1450, movetime: 570 },
-    normalminus: { elo: 1575, movetime: 630 },
-    normal: { elo: 1700, movetime: 700 },
-    hard: { elo: 2200, movetime: 900 },
+    easy: { elo: 1320, depth: 1, minMs: 500 },
+    easyplus: { elo: 1500, depth: 2, multipv: 6, minMs: 550 },
+    normalminus: { elo: 1500, depth: 2, minMs: 600 },
+    normal: { elo: 1700, depth: 3, minMs: 700 },
+    normalplus: { elo: 1840, depth: 4, minMs: 750 },
+    hardminus: { elo: 2080, depth: 5, minMs: 800 },
+    hard: { elo: 2290, depth: 6, minMs: 800 },
+    hardplus: { elo: 2450, depth: 7, minMs: 850 },
+    expert: { elo: 2570, depth: 8, minMs: 900 },
+    expertplus: { elo: 2670, depth: 9, minMs: 950 },
+    master: { elo: 2750, depth: 10, minMs: 1000 },
+    masterplus: { nodes: 150, minMs: 1000 },
+    strong: { nodes: 600, minMs: 1000 },
+    strongplus: { nodes: 2500, minMs: 1000 },
     extreme: { elo: null, movetime: 1200 },
   };
 
@@ -458,8 +491,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const plan = maxMs && typeof maxMs === "object" ? maxMs : null;
     const cap = plan ? plan.search : maxMs;
     const pace = plan && Number.isFinite(plan.pace) ? plan.pace : null;
+    const ceil = plan && Number.isFinite(plan.ceil) && plan.ceil > 0 ? plan.ceil : 0;
     const tier = cap && base.movetime && !base.depth
       ? Object.assign({}, base, { movetime: Math.max(120, Math.min(base.movetime, Math.floor(cap))) })
+      // v8-1-plan T1: a node rung short of time searches what the time buys
+      : cap && base.nodes ? Object.assign({}, base, { nodes: Math.min(base.nodes, nodesFor(cap)) })
+      // M3 评审: a depth rung stops at its depth or at the clock's ceiling, whichever is first
+      : ceil && base.depth ? Object.assign({}, base, { movetime: Math.max(20, Math.floor(ceil)) })
       : base;
     const startedAt = Date.now();
     const myGen = ++gen;
@@ -504,7 +542,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     lineHandlers.push(collect);
     const budget = (tier.movetime || 2000) + 15000;
     const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), budget, "search");
-    send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
+    send(searchCmd(tier, Math.random));
     let line;
     try { line = await wait; }
     finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
@@ -527,7 +565,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
         const own = picked && list.find((c) => c.uci === picked.from + picked.to + (picked.promotion || ""));
         const styledUci = own ? P.pick(fen, list, persona.id, persona.Chess, own.score) : null;
         if (styledUci) picked = parseUci(styledUci);
-      } else if (!tier.worstBias) {
+      } else if (!tier.worstBias && tier.elo == null) {
+        // (v8-1-plan T1: a UCI_Elo rung's list is Stockfish's to pick from)
         picked = pickHandicapped(cands, tier) || picked;
       }
     }
@@ -556,6 +595,20 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
     const uci = pickCandidate(list, tier, Math.random);
     return uci ? parseUci(uci) : null;
+  }
+
+  /**
+   * v8-1-plan T1: the `go` a rung searches with — depth, node count or
+   * movetime. A node rung's count is drawn ±15% per move: a fixed count is
+   * a fixed game (the same reply to the same moves, every time), and a
+   * player who found one win against it could replay it. Shared with the
+   * calibration scripts, like pickCandidate, so they measure this and not
+   * a copy of it.
+   */
+  function searchCmd(tier, rng) {
+    if (tier.depth) return "go depth " + tier.depth + (tier.movetime ? " movetime " + tier.movetime : "");
+    if (tier.nodes) return "go nodes " + Math.max(1, Math.round(tier.nodes * (0.85 + 0.3 * rng())));
+    return "go movetime " + tier.movetime;
   }
 
   /**
@@ -920,4 +973,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, winPct, nodesFor, NODES_PER_MS };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, searchCmd, winPct, nodesFor, NODES_PER_MS };

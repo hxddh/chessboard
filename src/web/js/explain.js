@@ -40,6 +40,24 @@ const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
  */
 export const LOSS_PLIES = 4;
 
+/**
+ * v8-1-plan T6: motifs that are not named. B3's rule — a motif whose sampled
+ * error rate is above 5% falls back to saying only what the line wins
+ * (「对方 X 之后丢 Y」) or which move was better, exactly as when no motif is
+ * proved. The rates, 22–25 real-game cases per motif judged against a
+ * search 3.7 times deeper, are docs/measured.json `motifPrecision`
+ * (scripts/sample-motifs.mjs); the cases are docs/motif-audit-8.1.md.
+ *
+ *   - perpetual: 3 of 25 wrong — the drawing line the deep search finds is
+ *     not all checks, or it is not a draw at all;
+ *   - trapped: 3 of 25 wrong — each a queen pinned to its king, not trapped
+ *     (motif.js dTrapped asks whether every square loses the man, and a
+ *     pinned man's few legal moves all do).
+ */
+export const MATERIAL_ONLY = ["perpetual", "trapped"];
+/** A motif record the sentence may name, or null. */
+const said = (m) => (m && m.motif && !MATERIAL_ONLY.includes(m.motif) ? m : null);
+
 /** Material from `side`'s point of view: its men minus the other side's. */
 function balance(g, side) {
   let s = 0;
@@ -175,10 +193,11 @@ export function explainMistake(x, Chess) {
     // v8-0-plan B3: the motif is the one the line proves (motif.js
     // lineMotif), not the geometry of its first move alone
     const credit = (mv.captured ? VALUE[mv.captured] : 0) + (mv.promotion ? VALUE[mv.promotion] - 1 : 0);
-    const lm = lineMotif(afterPlayed, line, Chess, { credit, played: mv, evalBefore: x.evalBefore, evalAfter: x.evalAfter });
+    const lm = said(lineMotif(afterPlayed, line, Chess, { credit, played: mv, evalBefore: x.evalBefore, evalAfter: x.evalAfter }));
     const mate = mateAlong(new Chess(afterPlayed), line);
+    const mm = mate ? said({ motif: mateMotif(afterPlayed, line, Chess) }) : null;
     out.refute = { san: first.san, motif: lm ? lm.motif : null, piece: (lm && lm.piece) || null,
-      by: (lm && lm.by) || null, free: !!(lm && lm.free), shape: !!(lm && lm.shape), mate, mateMotif: mate ? mateMotif(afterPlayed, line, Chess) : null,
+      by: (lm && lm.by) || null, free: !!(lm && lm.free), shape: !!(lm && lm.shape), mate, mateMotif: mm ? mm.motif : null,
       hits: lm && lm.motif === "fork" ? lm.hits || forkHits(Chess, afterPlayed, first) : [] };
   }
 
@@ -189,15 +208,16 @@ export function explainMistake(x, Chess) {
     // the line has to start with the move it explains, or it is some other line
     const head = bl.length ? play(new Chess(x.fen), bl[0]) : null;
     const bLine = head && head.san === b.san ? bl : [b.san];
-    const lm = lineMotif(x.fen, bLine, Chess);
+    const lm = said(lineMotif(x.fen, bLine, Chess));
     const mate = mateAlong(new Chess(x.fen), bLine);
+    const mm = mate ? said({ motif: mateMotif(x.fen, bLine, Chess) }) : null;
     out.better = { san: b.san, motif: lm ? lm.motif : null, piece: (lm && lm.piece) || null,
-      by: (lm && lm.by) || null, free: !!(lm && lm.free), mate, mateMotif: mate ? mateMotif(x.fen, bLine, Chess) : null };
+      by: (lm && lm.by) || null, free: !!(lm && lm.free), mate, mateMotif: mm ? mm.motif : null };
   }
 
   // --- 4: a threat the mistake ignored (v8-0-plan B3 §4) ------------------
   if (first && b && b.san !== mv.san) {
-    const th = threatOf(x.fen, first, b.san, Chess);
+    const th = said(threatOf(x.fen, first, b.san, Chess));
     // the same reply has to be what actually happens after the mistake:
     // a mate it delivers, or the man it takes staying taken
     if (th && ((th.motif === "mateThreat" && out.refute.mate === 1) ||
@@ -375,4 +395,4 @@ export function retryQuick(san, ex) {
   return null;
 }
 
-export const ChessExplain = { explainMistake, explainParts, explainText, explainKey, explainMotif, figurine, retryQuick, lineAfter, LOSS_PLIES };
+export const ChessExplain = { MATERIAL_ONLY, explainMistake, explainParts, explainText, explainKey, explainMotif, figurine, retryQuick, lineAfter, LOSS_PLIES };

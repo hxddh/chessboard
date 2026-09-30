@@ -16,8 +16,15 @@
  * the trainer already has — `opening-tree.js` for the tree, `drills.js` for
  * the ids, `srs.js` for the schedule. This module hands over rows and
  * puzzles; app.js serves them exactly as it serves the built-in book.
+ *
+ * v8-1-plan T3: the book is also kept by position — IndexedDB records with a
+ * review card on every move of yours (rep-page.js, chunk-rep.js, booted once
+ * the library's chunk is in). The lines here stay the book's structure: every
+ * edit is an edit of the lines, and `commit` hands the new lines to the chunk
+ * to index. What the chunk adds reaches this module as `ctrl`.
  * @module repertoire-ui
  */
+import { loadChunk } from "./chunk.js";
 import { ChessEco } from "./eco-lookup.js";
 import { ChessOpeningTree } from "./opening-tree.js";
 import { ChessPgnParser } from "./pgn-parser.js";
@@ -29,12 +36,17 @@ import { ChessRepertoire } from "./repertoire.js";
 export function createRepertoireUI(d) {
   const { doc, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync, forgetDrills } = d;
   const Rep = ChessRepertoire;
+  /** chunk-rep.js's controller once it has booted (rep-page.js), else null. */
+  let ctrl = null;
+  /** v8-1-plan T3: what the stored header said about the records (db, n, sig, gen), kept until the chunk speaks. */
+  let headExtra = {};
 
   /** How many of your games in an opening before its absence is a gap. */
   const GAP_MIN_GAMES = 2;
 
   function loadBook() {
     const s = Persist.read("repertoire").value;
+    headExtra = s && s.db === 2 ? Object.assign({ db: 2, n: s.n, sig: s.sig }, s.gen ? { gen: s.gen } : {}) : {};
     const side = (k) => (s && Array.isArray(s[k])
       ? s[k].filter((l) => l && l.id && typeof l.sans === "string" && l.sans)
       : []);
@@ -42,7 +54,11 @@ export function createRepertoireUI(d) {
   }
   store.session.repertoire = loadBook();
   function saveBook() {
-    Persist.setJson("repertoire", { v: 1, w: store.session.repertoire.w, b: store.session.repertoire.b });
+    // still the 7.2 shape, `{v: 1, w, b}`: an older build reads the whole
+    // book. `db`, `n` and `sig` are the records' (rep-page.js), when the
+    // chunk vouches for them; what the header last said until it has booted
+    Persist.setJson("repertoire", Object.assign({ v: 1, w: store.session.repertoire.w, b: store.session.repertoire.b },
+      ctrl ? ctrl.extra() : headExtra));
   }
 
   const linesOf = (side) => store.session.repertoire[side === "b" ? "b" : "w"] || [];
@@ -110,20 +126,28 @@ export function createRepertoireUI(d) {
     if (store.session.repertoire !== book) return;
     const games = parsed.filter(Boolean);
     const bad = parsed.length - games.length;
-    const read = Rep.linesFrom(games);
+    // v8-1-plan T3: a book this app exported says whose it is ([RepSide]) and
+    // is read exactly as written, into that side whichever button it came by
+    const tagged = (g) => { const h = (g.headers || []).find(([k]) => k === "RepSide"); return h && /^[wb]$/.test(h[1]) ? h[1] : null; };
+    const read = Rep.linesFrom(games.filter((g) => !tagged(g)));
+    const own = { w: [], b: [] };
+    for (const g of games) if (tagged(g)) own[tagged(g)].push(...Rep.linesFrom([g], true).lines);
+    const into = { w: side === "b" ? own.w : read.lines.concat(own.w), b: side === "b" ? read.lines.concat(own.b) : own.b };
     // a file that held nothing but set-up positions is not a broken file —
     // it is the wrong kind of file, and saying which is the whole difference
-    if (!read.lines.length && read.skipped) { toast(tf("rep.skippedSetUp", [read.skipped]), "fix"); return; }
-    if (!read.lines.length) { toast(t("msg.import.badPgn"), "fault"); return; }
-    const r = Rep.addLines(linesOf(side), read.lines, nameOf);
-    store.session.repertoire[side === "b" ? "b" : "w"] = r.lines;
+    if (!into.w.length && !into.b.length && read.skipped) { toast(tf("rep.skippedSetUp", [read.skipped]), "fix"); return; }
+    if (!into.w.length && !into.b.length) { toast(t("msg.import.badPgn"), "fault"); return; }
+    const r = { added: 0, dup: 0, dropped: [], replaced: [] };
+    for (const s of ["w", "b"]) {
+      if (!into[s].length) continue;
+      const one = Rep.addLines(linesOf(s), into[s], nameOf);
+      store.session.repertoire[s] = one.lines;
+      r.added += one.added; r.dup += one.dup;
+      r.dropped.push(...one.dropped); r.replaced.push(...one.replaced);
+    }
     // the ids that left — the cap's casualties and the shorter lines a deeper
     // one replaced — take their solved/missed entries with them
-    const gone = r.dropped.concat(r.replaced);
-    if (gone.length) forgetDrills(gone);
-    saveBook();
-    render();
-    sync();
+    commit(r.dropped.concat(r.replaced));
     if (!r.added) toast(tf("rep.addedNone", [r.dup]), "fix");
     else toast(tf("rep.added", [r.added, r.dup]) + (label ? " · " + label : ""));
     // only the cap is news: a short line a deeper one grew out of did not
@@ -140,13 +164,145 @@ export function createRepertoireUI(d) {
     if (!ok) return;
     // …and so does the whole book: a review owed to a drill that no longer
     // exists is counted for ever and can never be served
-    forgetDrills(linesOf("w").concat(linesOf("b")).map((l) => l.id));
+    const ids = linesOf("w").concat(linesOf("b")).map((l) => l.id);
     store.session.repertoire = { w: [], b: [] };
+    commit(ids);
+    toast(t("rep.cleared"));
+  }
+
+  /**
+   * The lines changed: the ids that left take their queue entries with them,
+   * the chunk indexes the new lines (its records' cards carry over), and
+   * the header is written with what the chunk now vouches for.
+   */
+  function commit(gone) {
+    if (gone && gone.length) forgetDrills(gone);
+    if (ctrl) ctrl.sync();
     saveBook();
     render();
     sync();
-    toast(t("rep.cleared"));
   }
+
+  /**
+   * M3 评审 P2-2: a removal that shortens more than this many lines asks
+   * first; one that deletes a whole line (a cut at the first move always
+   * does) asks whatever the count.
+   */
+  const REMOVE_ASK = 3;
+
+  /**
+   * v8-1-plan T3: 「加进我的开局书」 from the board or the explorer — `sans`,
+   * from the starting position, into `side`'s book; `remove`: the last move
+   * of `sans` out of it, wherever the book plays it from that position.
+   *
+   * A removal is one click on a ✓, and a ✓ at the first move stands for the
+   * whole book behind it (M3 评审 P2-2): a big cut is confirmed first, and
+   * every cut is offered back — the lines, their 按线练 progress and the
+   * cards — from the toast that reports it. `undone` runs after an undo.
+   * @returns {Promise<boolean>|boolean} whether the book changed
+   */
+  async function edit(side, sans, remove, undone) {
+    const s = side === "b" ? "b" : "w";
+    const who = t(s === "b" ? "color.black" : "color.white");
+    // Black's book starts at Black's first move: 1. e4 alone is not a line of it
+    const min = s === "b" ? 2 : 1;
+    // null: the board's game did not begin at the starting position
+    if (!sans) { toast(tf("rep.lineLen", [min, Rep.MAX_PLIES]), "fix"); return false; }
+    const san = sans[sans.length - 1] || "";
+    if (remove) {
+      let r = ctrl ? ctrl.removeAt(s, sans) : null;
+      if (!r) return false;
+      if (r.whole || r.cut > REMOVE_ASK) {
+        const before = linesOf(s);
+        const ok = await confirmNative(tf("rep.removeAsk", [san, who, r.cut, r.whole]), t("rep.title"),
+          { ok: t("rep.removeOk"), cancel: t("act.cancel"), destructive: true });
+        if (!ok) return false;
+        // the book may have moved while the question was up
+        if (linesOf(s) !== before) r = ctrl.removeAt(s, sans);
+        if (!r) return false;
+      }
+      const lines = linesOf(s), cards = ctrl.snapshot();
+      const drillState = { solved: {}, missed: {} };
+      for (const id of r.gone) {
+        for (const key of [id, id + ":b"]) {
+          for (const k of ["solved", "missed"]) {
+            if (store.session.puzzleState[k][key] != null) drillState[k][key] = store.session.puzzleState[k][key];
+          }
+        }
+      }
+      store.session.repertoire[s] = r.lines;
+      commit(r.gone);
+      const now = r.lines;
+      toast(tf("rep.removedFrom", [san, who]), "ok", { label: t("rep.undo"), onClick: () => {
+        // only onto the book it was taken from: a later edit is not undone by this one
+        if (linesOf(s) !== now) return;
+        store.session.repertoire[s] = lines;
+        forgetDrills([], drillState);
+        if (ctrl) ctrl.sync(cards);
+        commit([]);
+        if (undone) undone();
+      } });
+      return true;
+    }
+    if (sans.length < min || sans.length > Rep.MAX_PLIES) { toast(tf("rep.lineLen", [min, Rep.MAX_PLIES]), "fix"); return false; }
+    const r = Rep.addLines(linesOf(s), [Rep.normalize(sans)], nameOf);
+    if (!r.added) { toast(tf("rep.already", [san, who]), "fix"); return false; }
+    store.session.repertoire[s] = r.lines;
+    commit(r.dropped.concat(r.replaced));
+    toast(tf("rep.addedTo", [san, who]));
+    if (r.dropped.length) toast(tf("rep.dropped", [Rep.MAX_LINES, r.dropped.length]), "fix");
+    return true;
+  }
+
+  /** A due card's name: the book line it sits on, as the line drills name it. */
+  const nameMemo = {};
+  function cardName(side, line) {
+    // the due list is rebuilt on every paint of the trainer: the drills are
+    // made once per book and language, not once per card
+    const lines = linesOf(side);
+    let m = nameMemo[side];
+    const lang = (store.ui || {}).langId + (ChessEco.loaded() ? "+" : "");
+    if (!m || m.lines !== lines || m.lang !== lang) m = nameMemo[side] = { lines, lang, list: drills(side) };
+    const q = m.list.find((x) => line.every((san, i) => x.line[i] === san));
+    return q ? q.name : t("rep.unnamed");
+  }
+
+  /** 导出 PGN: both books, one game each, variations and all (rep-book.js toPgn). */
+  async function exportBook() {
+    if (!ctrl || !total()) return;
+    const text = ctrl.exportPgn((s) => t("rep.title") + " · " + t(s === "b" ? "color.black" : "color.white"));
+    if (text) await d.exportText("chessboard-repertoire.pgn", text, "application/x-chess-pgn", t("lib.exportPgn"));
+  }
+
+  // --- the chunk ---------------------------------------------------------------
+  // After the library's chunk: the records live in its database. Without it
+  // (it failed to load, or a test bag with no library) the chunk still boots,
+  // on a Map for the session and the native shards.
+  const ready = !(d.library && d.library.ready) ? Promise.resolve(null)
+    : d.library.ready().then((c) => loadChunk("chunk-rep.js", "CHESS_REP").then((m) => m.bootRepertoire({
+      store, Persist, t, tf, toast, doc, R: Rep, libDb: c, cardName, onChange: () => render(),
+      LibraryQuery: typeof window !== "undefined" && window.CHESS_LIBDB ? window.CHESS_LIBDB.LibraryQuery : null,
+    }))).then((c) => {
+      ctrl = c;
+      // an edit made while the chunk was booting (M3 评审 P2-3): index those lines too;
+      // a learning file merged meanwhile left its cards in the header
+      if (c.stale()) { c.sync(); takeCards(c); saveBook(); render(); return c; }
+      // what the boot indexed, migrated or recovered: the header says so now
+      // (a profile that never had a book is not given one — the library's rule)
+      if (takeCards(c) || (!c.fresh && (total() || Persist.get("repertoire") != null))) saveBook();
+      render();
+      return c;
+    }, () => null);
+  // persist.js's port for the records' shards (BULK "rep0" … "rep3")
+  if (Persist.attachBulk) {
+    Persist.attachBulk({
+      names: () => (ctrl ? ctrl.shardNames() : null),
+      read: (name) => (ctrl ? ctrl.shardText(name) : null),
+      restore: (texts) => ready.then((c) => c && c.restoreShards(texts)),
+      clear: () => { if (ctrl) ctrl.clear(); },
+    }, "rep");
+  }
+  if (typeof window !== "undefined" && window.__chess) window.__chess.rep = () => ctrl;
 
   // --- what the trainer reads ------------------------------------------------
 
@@ -263,6 +419,8 @@ export function createRepertoireUI(d) {
       body.appendChild(row);
       const solved = allDrills().filter((p) => store.session.puzzleState.solved[p.id]).length;
       line(tf("rep.learnt", [solved, total()]));
+      // v8-1-plan T3: what is due, and where your games say otherwise
+      if (ctrl) ctrl.renderInto(body);
     }
     // the gaps, whether or not there is a book: with no book at all, every
     // opening you play is a gap, and that is the most useful thing this
@@ -293,6 +451,10 @@ export function createRepertoireUI(d) {
     if (drill) drill.hidden = !total();
     const clear = doc.getElementById("rep-clear");
     if (clear) clear.hidden = !total();
+    const due = doc.getElementById("rep-due");
+    if (due) due.hidden = !(ctrl && total() && ctrl.dueCount());
+    const exp = doc.getElementById("rep-export");
+    if (exp) exp.hidden = !(ctrl && total());
   }
 
   /** Wire the section's four buttons. Called once, from app.js's boot. */
@@ -305,13 +467,65 @@ export function createRepertoireUI(d) {
     if (drill) drill.onclick = () => d.startDrills();
     const clear = doc.getElementById("rep-clear");
     if (clear) clear.onclick = () => { clearBook(); };
+    const due = doc.getElementById("rep-due");
+    if (due) due.onclick = () => d.startDrills(true);
+    const exp = doc.getElementById("rep-export");
+    if (exp) exp.onclick = () => { exportBook(); };
   }
 
   /** Re-read the book from storage — after a learning file brought one in. */
   function reload() {
     store.session.repertoire = loadBook();
+    // the file's lines are the book now: index them, and say so in the header
+    if (ctrl) { ctrl.sync(); takeCards(ctrl); saveBook(); }
     render();
   }
 
-  return { render, wire, drills, allDrills, treeFor, total, gapRows, importInto, linesOf, reload, localName };
+  /**
+   * M3 评审: a learning file carries the cards' schedules (`cards`, id →
+   * card, withCards below) in its repertoire; the merged header keeps them
+   * until the records have taken them — here, or when the chunk is ready —
+   * and saveBook's header, which has no `cards`, drops them.
+   */
+  function takeCards(c) {
+    const s = Persist.read("repertoire").value;
+    if (!s || !s.cards || typeof s.cards !== "object") return false;
+    c.takeCards(s.cards);
+    return true;   // the header is owed a rewrite without them
+  }
+
+  /** 导出学习数据: the cards' schedules beside the lines (M3 评审). */
+  function withCards(doc) {
+    const rep = doc && doc.data && doc.data.repertoire;
+    if (!rep || !ctrl) return doc;
+    const cards = {};
+    for (const [id, x] of ctrl.records()) if (x.card) cards[id] = x.card;
+    rep.cards = cards;
+    return doc;
+  }
+
+  /**
+   * 导出全部数据 (M3 评审): the header vouches for records the file carries
+   * as shards. With no chunk to serve them (it failed to boot, or held its
+   * shards unread this session) the file says nothing about records, and
+   * importing it indexes the lines afresh instead of clearing the cards.
+   */
+  function forExport(doc) {
+    if (ctrl && !ctrl.held()) return doc;
+    let h = null;
+    try { h = JSON.parse(doc.keys.repertoire); } catch (_) { h = null; }
+    if (h && h.db === 2) {
+      for (const k of ["db", "n", "sig", "gen"]) delete h[k];
+      doc.keys.repertoire = JSON.stringify(h);
+    }
+    return doc;
+  }
+
+  return { render, wire, drills, allDrills, treeFor, total, gapRows, importInto, linesOf, reload, localName,
+    // v8-1-plan T3
+    edit, ready: () => ready, booted: () => !!ctrl, withCards, forExport,
+    dueDrills: () => (ctrl ? ctrl.dueDrills() : []),
+    // the header's `gen` moves with every write (M3 评审: a session with no IndexedDB is then known to be newer)
+    gradeCard: (p, ok) => { if (ctrl) { ctrl.grade(p, ok); saveBook(); render(); } },
+  };
 }
