@@ -939,6 +939,16 @@
     - 旧口径（`page.reload()` 前起算到整局可用，含上一页卸载约 0.45 s）：`loadMs` 2,856 → 2,883 ms。
   - 测试：test-library-db 加摘要维护 23 项（导入、分析、认领、删除、本机同步、migrate 合并、restoreShards、清除、写入被拒后重试、两个窗口、8.0 只写棋局、替身的每种查询和整局相同、chunk-boot 的判断）；test-library-e2e 在一万局重启三次：列表先于整局画出、摘要搜索和整局搜索同数、局面查询照常，Chromium 上断言列表 ≤ 1.5 s、搜索 ≤ 4.5 s（在 17334e1 上跑这两条和「先于整局」都红）。test-persist 的「自检和 library-db 开同一个库」改为连同 library-sum.js 一起读 DB_NAME；test-chess 的「只有 persist.js 写键名」例外表加上 library-sum.js（它为 chunk-boot.js 念头的键名，和 lazy-content.js 念设置键一样）；test-persist-e2e 的 P3-3「找回不另存整库备份」改为只数 `v1:` 备份键（摘要也在 meta 表里）。本机 Chromium 一次一个：test:static、test-library-e2e、test-persist-e2e、test-explorer-e2e、test-sync-e2e、test-repertoire-e2e 全过。
   - 没做的：整局读取本身没有变快（仍是分页 `getAll`，回复排在画布帧后面）；真正的大头是启动时棋盘重复出帧，那在 app.js / board.js，不属于这一条。chunk-boot.js 1.8 → 3.9 KB（多了 library-sum.js），主包 873.1 → 874.7 KB，chunk-libdb.js 48.5 → 54.2 KB。
+**F3 app.js 拆分（分支 m84-split）**
+- `app.js` 6,702 → 5,873 行（≤ 6,000 达标），`APP_JS_LINE_CEILING` 6,707 → 5,873。沿用 8.0 F4 的做法，每次提交只搬一个模块，`createX({...})` 显式传入依赖，行为零改动：
+  - `io.js`（521 行，−453 行）：棋谱导出与导入、剪贴板、文本导出的三层退路（原生对话框、浏览器下载、剪贴板）、多局文件的选局框、学习数据与整份档案的导出导入；
+  - `game-controller.js`（438 行，−376 行）：悔棋、新局与新局对话框、从这里续下、认输与应用层终局的记录、失着提醒、提和与按规则要和、结果标记（导出写的结果、文件带来的 `[Result]`）。
+- 每次搬家都用脚本核对：从 app.js 删掉的每一行都按原顺序出现在新模块里；app.js 新增的只有 create 调用、解构，和几处转发函数。依赖用作用域分析（不是正则）列出，漏传一个名字就是运行时的 ReferenceError。
+- **TDZ**：新模块建在原来那段代码的位置。在它之前建立、又向它借函数的模块（ReviewPanel、LibraryUI、RepUI 借 io.js；OppUI、LessonsUI、GameEnd 借 game-controller.js）改传转发函数 `(x) => fn(x)`；game-controller.js 要的 `Shell` 建得更晚，只传 `{ toBoard: () => Shell.toBoard() }`。test-chess 的「不传晚声明的绑定」检查照旧通过。
+- FIDE 和棋判定（`naturalGameOver`、`appGameOver` 等）留在 app.js：十几个模块在建立时就要它们，搬走要换来一串转发，得不偿失。
+- test-chess：两个模块加入 `APP_MODULES`，属主表逐个断言符号在哪个模块；源码正则登记册仍是 111，没有新增。
+- 主包 893,807 → 899,089 字节（+5.3 KB：两层模块包装、依赖表与转发；预算 951,642 内）。
+- **测试**（本机 Chromium，一次一个）：两次提交各自 `test:static` 全过；io.js 那次另跑 board-e2e 过。最终版：board、clock、content、persist、review、library、engine-flows、trainer、shell、explorer、repertoire、endgames、sync 十三套全过（persist-e2e 一遍过，没有碰到计时项），layout-e2e 92 个场景全过。
 
 ## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）
 

@@ -43,6 +43,8 @@ import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
 import { createExplorerLazy } from "./explorer/lazy.js";
 import { createGameEnd } from "./game-end.js";
+import { createGameController } from "./game-controller.js";
+import { createIO } from "./io.js";
 import { createPersist } from "./persist.js";
 import { reconcile } from "./keyed.js";
 import { watchPlayLayout } from "./play-layout.js";
@@ -1598,9 +1600,10 @@ import { loadChunk } from "./chunk.js";
   });
   // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
   const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
-    doc: document, store, t, tf, setText, afterPress, acceptDraw, diffName: (id) => diffName(id),
+    doc: document, store, t, tf, setText, afterPress, acceptDraw: () => acceptDraw(), diffName: (id) => diffName(id),
     repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
-    invalidateEngine, forgetFileResult, playEnding, recordOutcome,
+    // game-controller.js is created further down (v8-1-plan F3): late bindings go in as forwarders
+    invalidateEngine, forgetFileResult: () => forgetFileResult(), playEnding, recordOutcome: (result, ending) => recordOutcome(result, ending),
     plies: () => sanHistory().length, fen: () => game.fen(), verboseHistory: () => game.history({ verbose: true }), setUp: () => !!startFen(),
     openingName: () => (openingFor(Infinity) || [])[1] || "",
   });
@@ -2103,7 +2106,7 @@ import { loadChunk } from "./chunk.js";
   } = TrainerContent;
   // v8-0-plan F4: 学习 — the lessons and the classic games (trainer/lessons.js)
   const LessonsUI = createLessonsUI({
-    Audio2, BoardView, PROMO_NAMES, Persist, adoptHeaderResult, animateReply, appEl,
+    Audio2, BoardView, PROMO_NAMES, Persist, adoptHeaderResult: () => adoptHeaderResult(), animateReply, appEl,
     checkNewAchievements, choosePromotion, clearPreview, clearSelection, contentField, cursorSquare,
     draw, el, gameLoadPgn, invalidateEngine, kingSquare, lessonText, moveSound, resetClocks,
     sanHistory, selectSquare, setSideTab, store, sync, t, taskText, tf, toast,
@@ -2220,7 +2223,9 @@ import { loadChunk } from "./chunk.js";
   // picture — lives in review/panel.js
   const ReviewPanel = createReviewPanel({
     doc: document, store, t, tf, sideName, DIFF_NAMES, analysisFor, sanHistory, startFen, gameAt, viewGame, boardMoveNo,
-    statusText, openingFor, avail, inModal, setText, setViewIndex, toast, savedToast, pgnFileName,
+    statusText, openingFor, avail, inModal, setText, setViewIndex, toast,
+    // io.js is created further down (v8-1-plan F3): late bindings go in as forwarders
+    savedToast: (name, path, revealed) => savedToast(name, path, revealed), pgnFileName: () => pgnFileName(),
     deskHead, lineRows, paintLineRow, reviewLines, savePvAsVariation, lockPgnEdits,
     drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList, renderMoments: Moments.render,
     boardDrillSource, saveMines, savePuzzleState,
@@ -2231,7 +2236,7 @@ import { loadChunk } from "./chunk.js";
   // game-end.js
   const GameEnd = createGameEnd({
     store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
-    appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
+    appGameOver, resultFromFile: () => resultFromFile(), gameResultToken: () => gameResultToken(), timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
     onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); },
   });
   const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;
@@ -2488,10 +2493,11 @@ import { loadChunk } from "./chunk.js";
   // borrows from this file and the names the rest of this file calls it by.
   const LibraryUI = createLibraryUI({
     doc: document, store, Persist, game, t, tf, toast, sync,
-    SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
+    SCAN_BUDGET, evalScalar, importPgnText: (text, label, prompt) => importPgnText(text, label, prompt), invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
-    renderRecordEntry, loadStats, saveStats, copyText, exportText, loadHistoryRecord: (rec) => loadHistoryRecord(rec),
+    renderRecordEntry, loadStats, saveStats, copyText: (text, okMsg) => copyText(text, okMsg),
+    exportText: (name, text, mime, title, recent) => exportText(name, text, mime, title, recent), loadHistoryRecord: (rec) => loadHistoryRecord(rec),
     boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); },
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
@@ -2553,7 +2559,8 @@ import { loadChunk } from "./chunk.js";
   // read the library's diagnosis: the openings you actually play and have
   // nothing written down about, worst record first.
   const RepUI = createRepertoireUI({
-    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync, library: LibraryUI, exportText,
+    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile: (sink) => openPgnFile(sink), sync, library: LibraryUI,
+    exportText: (name, text, mime, title, recent) => exportText(name, text, mime, title, recent),
     // the gap list compares the book against the openings this player has
     // actually played, and that comparison is only as good as the ECO codes
     // on the library's entries — 7.1 shipped `fillOpenings` for exactly this
@@ -4014,546 +4021,22 @@ import { loadChunk } from "./chunk.js";
     return playHumanMove;
   }
 
-  /**
-   * v8-0-plan §5: 悔棋 is for a game being played here. A game that is over
-   * (mate, stalemate, a flag, a resignation, a draw) has nothing to take back
-   * into — 重下 / 再来一盘 are the ways on — and a game opened from the
-   * library or a file is somebody's record, not a move of yours. The key and
-   * the menu stop at the same rule the button is drawn by.
-   */
-  function canTakeBack() {
-    return sanHistory().length > 0 && isLive() && !appGameOver() && !store.game.imported;
-  }
-
-  function undo() {
-    if (store.session.mode === "learn" && store.session.learn) { learnUndo(); return; }
-    if (!sanHistory().length || appGameOver() || store.game.imported) return;
-    if (!isLive()) { goLive(); return; }
-    if (refusePgnEdit()) return;
-    invalidateEngine();
-    gameUndo();
-    // in AI mode take back the engine reply too, so it's the human's turn again
-    if (store.session.mode === "ai") {
-      while (sanHistory().length && game.turn() !== store.session.humanColor) gameUndo();
-    }
-    store.game.selection = null;
-    store.game.viewIndex = sanHistory().length;
-    syncAutoFlip();
-    store.commit("game", "action");
-    saveGame();
-    maybeEngineTurn();
-  }
-
-  /**
-   * 新局 / N / 再来一盘 / 换个对手 (v7-8-plan §4).
-   *
-   * In the two playing modes this is one dialog: the opponent, the side and
-   * the clock, then 开始. It used to be a bare 「清空当前对局？」 that restarted
-   * with whatever the settings page held, so changing opponent meant three
-   * places — the settings tab, the fold, back to 新局. The question the
-   * confirm asked is now one line at the top of the dialog, and only when
-   * there is something to lose: moves on the board and the game not over
-   * (7.7's 再来一盘 already skipped it for a finished game; that is now the
-   * rule for every entry). One step, not two.
-   *
-   * The teaching modes have no opponent to choose and keep the confirm.
-   */
-  async function requestNewGame(opts) {
-    stopEditor(t("msg.editor.exited"));
-    const mode = store.session.mode;
-    if (mode === "ai" || mode === "pvp") { openNewGame(opts); return; }
-    if (sanHistory().length && !appGameOver() &&
-        !(await confirmNative(t("dlg.newGame"), t("chrome.new"), { ok: t("chrome.new"), cancel: t("act.cancel") }))) {
-      return;
-    }
-    startNewGame();
-  }
-
-  // The dialog hosts the settings page's own rows while it is open — the
-  // same four DOM nodes, moved, not a second copy that could drift from the
-  // first (their handlers, labels, tooltips and i18n all come along). They
-  // go back in front of 失着提醒 when it closes. Moving them is safe with
-  // respect to 7.6's rule because it never happens under a press: opening is
-  // a click (after pointerup) and closing waits for any press to end.
-  const NG_ROWS = ["row-difficulty", "row-persona", "row-color", "row-clock"];
-  function hostNewGameRows(inDialog) {
-    const host = el("ng-host");
-    const home = el("row-coach");
-    if (!host || !home) return;
-    for (const id of NG_ROWS) {
-      const row = el(id);
-      if (!row) continue;
-      // v8-0-plan B4: rung and style sit in the dialog's 自定义 fold, under the personas
-      const dest = id === "row-difficulty" || id === "row-persona" ? el("ng-custom-body") || host : host;
-      if (inDialog) { if (row.parentNode !== dest) dest.appendChild(row); }
-      else if (row.parentNode !== home.parentNode) home.parentNode.insertBefore(row, home);
-    }
-  }
-
-  function openNewGame(opts) {
-    const modal = el("newgame-modal");
-    if (!modal) { startNewGame(); return; }
-    const pvp = store.session.mode === "pvp";
-    const side = pvp ? (store.game.flipped ? "b" : "w") : store.session.humanColor;
-    // the last choices, so Enter alone is 「再来一盘同样的」
-    store.ui.newGame = {
-      mode: pvp ? "pvp" : "ai", difficulty: store.session.difficulty, personaId: store.session.personaId,
-      color: store.session.colorRandom ? "random" : side, timeControl: store.game.timeControl,
-    };
-    const warn = el("ng-warn");
-    if (warn) warn.hidden = !(sanHistory().length && !appGameOver());
-    if (opts && opts.switchOpponent) OppUI.applyAdvice();
-    hostNewGameRows(true);
-    syncSettingsUI();
-    // 换个对手 lands on the opponent (its persona card); everything else on 开始
-    const card = OppUI.onOpen();
-    const first = opts && opts.switchOpponent && !pvp
-      ? card || modal.querySelector("#row-difficulty button.active") : el("ng-start");
-    Dlg.open(modal, first || undefined);
-  }
-
-  function closeNewGame() {
-    const modal = el("newgame-modal");
-    store.ui.newGame = null;
-    Dlg.close(modal);
-    // the seg rows read the store again, and go home once no button is held
-    syncSettingsUI();
-    afterPress(() => { if (!store.ui.newGame) hostNewGameRows(false); });
-  }
-
-  /** 开始: the draft becomes the settings, then the game starts. */
-  function startFromDialog() {
-    const d = store.ui.newGame;
-    if (!d) return;
-    const pvp = d.mode === "pvp";
-    const side = d.color === "random" ? (Math.random() < 0.5 ? "w" : "b") : d.color;
-    store.session.colorRandom = d.color === "random";
-    if (!pvp) {
-      store.session.difficulty = d.difficulty;
-      store.session.personaId = d.personaId;
-      store.session.humanColor = side;
-    }
-    store.game.flipped = side === "b";
-    store.game.timeControl = d.timeControl;
-    closeNewGame();
-    switchMode(d.mode);
-    Shell.toBoard();
-    saveSettings();
-    startNewGame();
-  }
-
-  function startNewGame() {
-    // 7.5: a new game is also the natural moment to try a dead engine again —
-    // once, through retryEngine(), so a second failure is the same notice
-    // again and not a toast per press
-    const wasDown = engineOut();
-    invalidateEngine();
-    if (ChessEngine) ChessEngine.newGame();
-    gameReset();
-    store.game.selection = null;
-    store.game.viewIndex = 0;
-    store.game.imported = false;
-    clearEndingFlags();
-    // Both of these key off the PGN, and a PGN does not identify a game — play
-    // the same seven moves twice in one session and the second game carried
-    // the first one's signature. It was then read as "already recorded" and
-    // never reached the stats, and the first game's analysis would have been
-    // filed against it. A new game is a new game.
-    store.session.analysis = null;
-    store.game.recordedId = null;
-    resetClocks();
-    syncAutoFlip();
-    sync();
-    saveGame();
-    Audio2.playStart();
-    if (wasDown) retryEngine();
-    else maybeEngineTurn();
-  }
-
-  /** Truncate the game to the replay cursor and continue playing from there. */
-  async function retryFromHere() {
-    if (isLive() || refusePgnEdit()) return;
-    const keep = store.game.viewIndex;
-    const drop = sanHistory().length - keep;
-    if (!(await confirmNative(tf("dlg.retryHere", [keep, drop]), t("act.retryHere"),
-        { ok: t("act.retryHere"), cancel: t("act.cancel") }))) {
-      return;
-    }
-    // the line is cut at the cursor, not the tree: what was played from here
-    // stays as a variation, and the next move played becomes the mainline at
-    // this node (treeFollow) — 重下 keeps the game it replaces (Q2.3)
-    if (store.ui.preview) clearPreview();
-    if (!switchLine(store.game.line.slice(0, keep + 1))) return;
-    store.game.selection = null;
-    store.game.viewIndex = keep;
-    // continuing a finished game (flag / resignation) gets fresh clocks
-    if (ruleTerminated()) resetClocks();
-    clearEndingFlags();
-    // the continuation is the same game under the same record (recordedId),
-    // filed once, at its first ending: its own ending is not filed, and the
-    // card must not show the first one's rating line and advice (#89 review)
-    store.session.filed = null;
-    syncAutoFlip();
-    store.commit("game", "action");
-    saveGame();
-    toast(tf("mm.backToMove", [keep]));
-    maybeEngineTurn();
-  }
-
-  // --- resignation (terminal, like mate; AI games count as a loss) ---
-  async function doResign() {
-    if (store.session.mode === "learn" || !isLive() || !sanHistory().length || naturalGameOver() || ruleTerminated()) return;
-    let side;
-    if (store.session.mode === "ai") {
-      side = store.session.humanColor;
-      if (!(await confirmNative(tf("dlg.resign", [sideName(side)]),
-        t("act.resign"), { ok: t("act.resign"), cancel: t("act.cancel"), destructive: true }))) return;
-    } else {
-      // pvp: either player may resign at any time (FIDE) — pick the side
-      const pick = await confirmNative(t("dlg.whoResigns"), t("act.resign"),
-        { ok: t("dlg.whiteResigns"), alt: t("dlg.blackResigns"), cancel: t("act.cancel"), destructive: true });
-      if (!pick) return;
-      side = pick === "alt" ? "b" : "w";
-    }
-    invalidateEngine();
-    store.game.resigned = side;
-    forgetFileResult();
-    // resigning is losing, whatever the previous six years of this file said
-    playEnding(side === "w" ? "b" : "w");
-    if (store.session.mode === "ai") recordResign();
-    saveGame();
-    store.commit("game", "action");
-  }
-
-  /** Record an AI-game outcome decided by an app-level rule (not by mate). */
-  function recordOutcome(result, ending) {
-    if (store.game.recordedId) return; // this game is already filed
-    const s = loadStats();
-    // the id ties the record to the exact game it came from, so a later
-    // analysis can only annotate the game it actually measured
-    const id = newRecordId();
-    store.game.recordedId = id;
-    // #89 review: diff and style are the game's own opponent; an `unrated` one is recorded, not rated
-    const rec = Object.assign({ id, t: Date.now(), color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending, tc: tcTag() }, OppUI.opponent());
-    // v8-0-plan B4: every rated game moves the rating (a late one is saved by OppUI); the card repaints after this task
-    if (!rec.unrated) OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
-    s.games.push(rec);
-    if (s.games.length > 500) s.games = s.games.slice(-500);
-    saveStats(s);
-    renderStats();
-    checkNewAchievements();
-  }
-
-  function recordResign() { recordOutcome("loss", "resigned"); }
-
-  // --- blunder coach (AI mode): after the engine replies, quietly evaluate
-  // the human's last move; a ??-level swing earns a "consider undoing" nudge.
-// {before, after, san, len}
-
-  function coachRemember(mv) {
-    store.session.coachPending = null;
-    if (store.session.mode !== "ai" || !store.session.coachOn || !ChessEngine) return;
-    const h = sanHistory();
-    const g = baseGame();
-    for (let i = 0; i < h.length - 1; i++) g.move(h[i]);
-    store.session.coachPending = { before: g.fen(), after: game.fen(), san: mv.san, len: h.length };
-  }
-
-  const PIECE_VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-
-  /**
-   * Cheap static screen for the coach: did this move plausibly lose material?
-   * Two engine searches per move is real latency on the shared worker, so only
-   * moves that hang something (or that the engine answered with a capture)
-   * are worth checking properly.
-   */
-  function coachWorthChecking(beforeFen, afterFen) {
-    try {
-      const g = new Chess(afterFen);
-      // opponent to move: is there a capture that wins material outright?
-      for (const m of g.moves({ verbose: true })) {
-        if (!m.captured) continue;
-        const probe = new Chess(afterFen);
-        probe.move(m);
-        const recapture = probe.moves({ verbose: true }).some((r) => r.to === m.to);
-        const net = PIECE_VALUE[m.captured] - (recapture ? PIECE_VALUE[m.piece] : 0);
-        if (net >= 2) return true;
-      }
-      // ...or did the move walk into a check that was not there before?
-      return g.in_check() && !new Chess(beforeFen).in_check();
-    } catch (_) {
-      return true; // never suppress the coach because of a probe failure
-    }
-  }
-
-  async function coachAfterEngineReply() {
-    const p = store.session.coachPending;
-    store.session.coachPending = null;
-    if (!p || !store.session.coachOn || store.session.mode !== "ai" || appGameOver()) return;
-    if (!coachWorthChecking(p.before, p.after)) return;
-    let a = null, b = null;
-    try {
-      a = await ChessEngine.analyze(p.before, 120);
-      b = await ChessEngine.analyze(p.after, 120);
-    } catch (_) { return; }
-    const sa = evalScalar(a), sb = evalScalar(b);
-    if (sa == null || sb == null) return;
-    // the move must still be part of the live game (no undo / new game since)
-    const h = sanHistory();
-    if (h.length < p.len || h[p.len - 1] !== p.san) return;
-    const moverIsWhite = p.before.split(" ")[1] === "w";
-    const loss = moverIsWhite ? sa - sb : sb - sa;
-    // "fix", not the default "ok": it is a warning that asks for Z, and 2.2 s
-    // of success-green was gone before it could be read (7.5)
-    if (loss >= 300) toast(tf("mm.blunder", [p.san]), "fix");
-  }
-
-  // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
-  async function doOfferDraw() {
-    if (store.session.mode === "learn" || store.session.mode === "puzzle" || !isLive() || !sanHistory().length ||
-        appGameOver() || store.session.drawOfferPending) return;
-    if (store.session.mode === "pvp") {
-      if (!(await confirmNative(t("dlg.drawBoth"), t("act.offerDraw"),
-        { ok: t("dlg.drawAgree"), cancel: t("dlg.drawPlayOn") }))) return;
-      acceptDraw();
-      return;
-    }
-    // ai mode: offer on your own turn; the engine accepts unless it is winning
-    if (store.session.engineThinking || game.turn() !== store.session.humanColor) { toast(t("msg.draw.offerOnYourTurn"), "fix"); return; }
-    if (sanHistory().length < 20) { toast(t("msg.draw.offerTooEarly"), "fix"); return; }
-    if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
-    if (engineOut()) { engineDownToast(); return; }
-    store.session.drawOfferPending = true;
-    toast(t("msg.draw.offerSent"));
-    let e = null;
-    const sig = game.fen();
-    try { e = await ChessEngine.analyze(sig, 300); } catch (_) {}
-    store.session.drawOfferPending = false;
-    if (game.fen() !== sig || appGameOver()) return;
-    // e.cp is from the side to move (the human here); engine eval = -cp
-    const engineCp = e && e.cp != null ? -e.cp : e && e.mate != null ? (e.mate > 0 ? -10000 : 10000) : null;
-    if (engineCp != null && engineCp < 60) {
-      acceptDraw();
-    } else {
-      store.commit("session", "sync");
-      toast(t("msg.draw.offerDeclined"));
-    }
-  }
-
-  function acceptDraw() {
-    invalidateEngine();
-    store.game.drawAgreed = true;
-    forgetFileResult();
-    Audio2.playDraw();
-    if (store.session.mode === "ai") recordAgreedDraw();
-    saveGame();
-    store.commit("game", "action");
-  }
-
-  function recordAgreedDraw() { recordOutcome("draw", "drawAgreed"); }
-
-  /** FIDE arts. 9.2/9.3: claim the draw at threefold repetition / 50 moves. */
-  function doClaimDraw() {
-    if (store.session.mode === "learn" || store.session.mode === "puzzle" || !isLive() || appGameOver()) return;
-    const reason = claimableDrawReason();
-    if (!reason) { toast(t("msg.draw.claimUnavailable"), "fix"); return; }
-    invalidateEngine();
-    store.game.drawClaimed = reason;
-    Audio2.playDraw();
-    if (store.session.mode === "ai") recordOutcome("draw", "claimed");
-    saveGame();
-    store.commit("game", "action");
-  }
-
-  // --- FEN / PGN I/O ---
-  async function copyText(text, okMsg) {
-    try { await Host.writeClipboard(text); toast(okMsg); }
-    catch (_) { toast(t("msg.copy.failed"), "fault"); }
-  }
-
-  function gameResultToken() {
-    if (game.in_checkmate()) return game.turn() === "w" ? "0-1" : "1-0";
-    if (store.game.resigned) return store.game.resigned === "w" ? "0-1" : "1-0";
-    if (store.game.drawAgreed || store.game.drawClaimed) return "1/2-1/2";
-    if (store.game.flagFall) {
-      if (timeoutIsDraw()) return "1/2-1/2";
-      return store.game.flagFall === "w" ? "0-1" : "1-0";
-    }
-    if (naturalGameOver()) return "1/2-1/2"; // stalemate + the auto draw rules
-    return "*";
-  }
-
-  /**
-   * Is the ending on the board the one adoptHeaderResult() read off the
-   * file's [Result] tag, rather than something played out here? An imported
-   * game's tag names a result and no reason. A resignation or an agreed draw
-   * played here clears the tag (forgetFileResult), so it is never mistaken
-   * for one read off the file.
-   */
-  function resultFromFile() {
-    if (!store.game.imported || !(store.game.resigned || store.game.drawAgreed)) return false;
-    const r = (game.header() || {}).Result;
-    return (r === "1-0" || r === "0-1" || r === "1/2-1/2") && r === gameResultToken();
-  }
-
-  /** None of the three app-level endings: resigned, agreed, claimed. */
-  function clearEndingFlags() { store.game.resigned = null; store.game.drawAgreed = false; store.game.drawClaimed = null; }
-
-  /** An ending played out here replaces whatever the file's tag said. */
-  function forgetFileResult() {
-    const r = (game.header() || {}).Result;
-    if (r && r !== "*") game.header("Result", "*");
-  }
-
-  /** Read the [Result] tag of the loaded game into the terminal flags. */
-  function adoptHeaderResult() {
-    const r = (game.header() || {}).Result;
-    if (!r || r === "*" || naturalGameOver()) return;
-    if (r === "1-0" || r === "0-1") store.game.resigned = r === "1-0" ? "b" : "w";
-    else if (r === "1/2-1/2") store.game.drawAgreed = true;
-  }
-
-  /** Standard-conforming PGN: Seven Tag Roster + result token appended. */
-  function pgnForExport() {
-    const d = new Date();
-    const p = (n) => String(n).padStart(2, "0");
-    const engineName = "Stockfish 19 (" + OppUI.enName(store.session.difficulty) + ")";
-    const white = store.session.mode === "ai" ? (store.session.humanColor === "w" ? "Player" : engineName) : "Player 1";
-    const black = store.session.mode === "ai" ? (store.session.humanColor === "b" ? "Player" : engineName) : "Player 2";
-    const result = gameResultToken();
-    const tagPairs = [
-      ["Event", "Casual game"],
-      ["Site", "Chessboard"],
-      ["Date", d.getFullYear() + "." + p(d.getMonth() + 1) + "." + p(d.getDate())],
-      ["Round", "-"],
-      ["White", white],
-      ["Black", black],
-      ["Result", result],
-    ];
-    tagPairs.push(["TimeControl", tcTag()]);
-    if (result !== "*") {
-      tagPairs.push(["Termination", store.game.flagFall ? "time forfeit" : "normal"]);
-    }
-    const sf = startFen();
-    if (sf) tagPairs.push(["SetUp", "1"], ["FEN", sf]);
-    // the tree writes the file: variations, comments, NAGs and shapes go out
-    // as they came in, and the result token once (v6-plan Q2.2). The chess.js
-    // path below is the fallback for a tree that fell out of step.
-    if (treeInStep()) return ChessPgnParser.serializePgn(ChessTree.toPgnGame(store.game.tree, tagPairs));
-    const tags = tagPairs.map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
-    // game.pgn() may itself carry SetUp/FEN headers — keep only its movetext,
-    // wrapped to the PGN-recommended 80 columns
-    // chess.js already ends the movetext with the result token when the
-    // header carries one (an imported game does) — strip it, so the token is
-    // written exactly once, and by us (v6-plan D1)
-    const movetext = ChessPgn.stripResult(game.pgn().split("\n\n").pop());
-    const tokens = (movetext + " " + result).split(/\s+/).filter(Boolean);
-    const lines = [];
-    let line = "";
-    for (const tk of tokens) {
-      if (line && line.length + 1 + tk.length > 80) { lines.push(line); line = tk; }
-      else line = line ? line + " " + tk : tk;
-    }
-    if (line) lines.push(line);
-    return tags + "\n\n" + lines.join("\n") + "\n";
-  }
-
-  /** Does the tree still hold the line chess.js is standing on? */
-  function treeInStep() {
-    const tree = store.game.tree;
-    if (!tree || tree.startFen !== baseGame().fen()) return false;
-    const line = store.game.line;
-    const h = sanHistory();
-    if (line.length !== h.length + 1) return false;
-    for (let i = 0; i < h.length; i++) {
-      const n = ChessTree.nodeAt(tree, line[i + 1]);
-      if (!n || n.san !== h[i]) return false;
-    }
-    return true;
-  }
-
-  function pgnFileName() {
-    const d = new Date();
-    const p = (n) => String(n).padStart(2, "0");
-    return "chess-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
-      p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + ".pgn";
-  }
-
-  /**
-   * What to say after a file has been written.
-   *
-   * 「已导出 report.png」 was a file name for a file the app had just put
-   * somewhere the player never saw. It was fine only while `revealPath`
-   * worked, and `revealPath` is best-effort: no `os.revealPath` on this build,
-   * or a throw, and it returned quietly. So when the folder did not open, the
-   * app had reported success and said nothing about where.
-   *
-   * The folder opened → the name is enough, you are looking at it.
-   * It did not → the path is the answer to "where did it go", and it goes in
-   * the longer toast tier because it is a sentence to read rather than a
-   * receipt to ignore.
-   */
-  function savedToast(name, path, revealed) {
-    if (revealed) toast(t("msg.export.done") + name);
-    else toast(t("msg.export.doneAt") + path, "fix");
-  }
-
-  /**
-   * 5.2.1: what a text export does when the native dialog REFUSED.
-   *
-   * Two failures look alike from the catch block and mean opposite things.
-   * No dialog API at all (Host.NO_FILE_DIALOG) is a build without dialogs —
-   * a browser, or a test standing in for one — and the browser download path
-   * is the right fallback. A dialog API that is there and rejected the call
-   * is the shell saying no (5.0.0–5.2.0: permission_denied from an unlisted
-   * builtin command), and inside the shell an `<a download>` click does
-   * nothing — after which the toast said 「已导出 … 在下载文件夹里」 about a
-   * file that did not exist. For that case the honest fallback is the
-   * clipboard, and the toast says so.
-   * @returns {boolean} true when the clipboard took it and nothing else should run
-   */
-  async function exportTextFallback(err, text) {
-    if (!Host.hasZero() || !err || err.name === Host.NO_FILE_DIALOG) return false;
-    // the shell refusing a write because the file is too big is not the same
-    // failure as the shell having no dialog, and said so wrongly before this fix
-    const tooBig = err.name === Host.FILE_TOO_LARGE || /InvalidRequest|too ?large/i.test(String(err && err.message));
-    await copyText(text, t(tooBig ? "msg.export.tooLargeCopied" : "msg.export.bridgeCopied"));
-    return true;
-  }
-
-  /**
-   * 6.0: one text export, not two copies of it (v6-plan D9). The native
-   * dialog first, the browser download second, the clipboard last — the three
-   * fallbacks were written out twice, once for PGN and once for the learning
-   * file, and differed only in MIME type and title.
-   */
-  async function exportText(name, text, mime, title, recent) {
-    if (Host.hasZero()) {
-      try {
-        // v8-1-plan N2: dialog, write, reveal and recent list all in main.zig
-        const saved = await Host.saveText({ title, name, text, recent });
-        if (!saved) { toast(t("msg.export.cancelled")); return; }
-        savedToast(saved.name, saved.path, saved.revealed);
-        return;
-      } catch (err) { if (await exportTextFallback(err, text)) return; }
-    }
-    try {
-      const blob = new Blob([text], { type: mime });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
-    } catch (_) {
-      copyText(text, t("msg.export.restrictedCopied"));
-    }
-  }
-
-  async function downloadPgn() {
-    if (!sanHistory().length) { toast(t("msg.export.noGame"), "fix"); return; }
-    await exportText(pgnFileName(), pgnForExport(), "application/x-chess-pgn", t("dlg.exportPgn"), true);
-  }
+  // v8-1-plan F3: the game's flow — 悔棋, 新局 and its dialog, 从这里续下,
+  // resigning, the blunder coach, draw offers and claims, and the result a
+  // file writes and brings — lives in game-controller.js
+  const GameCtl = createGameController({
+    t, tf, sideName, game, store, gameUndo, gameReset, switchLine, sanHistory, isLive, baseGame,
+    clearPreview, toast, confirmNative, saveSettings, saveGame, OppUI, invalidateEngine, retryEngine,
+    engineOut, engineDownToast, maybeEngineTurn, tcTag, resetClocks, learnUndo, evalScalar, newRecordId,
+    saveStats, loadStats, renderStats, afterPress, checkNewAchievements, timeoutIsDraw, ruleTerminated,
+    claimableDrawReason, naturalGameOver, appGameOver, el, playEnding, sync, syncSettingsUI, syncAutoFlip,
+    goLive, stopEditor, refusePgnEdit, Shell: { toBoard: () => Shell.toBoard() }, switchMode,
+  });
+  const {
+    canTakeBack, undo, requestNewGame, openNewGame, closeNewGame, startFromDialog, retryFromHere, doResign,
+    recordOutcome, coachRemember, coachAfterEngineReply, doOfferDraw, acceptDraw, doClaimDraw,
+    gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
+  } = GameCtl;
 
   /**
    * One question, asked once, on a genuinely fresh install.
@@ -4603,205 +4086,6 @@ import { loadChunk } from "./chunk.js";
     // saw being chosen. 「以后再说」 still leaves them on the board.
     if (choice === 1) openNewGame({ switchOpponent: true });
     else if (choice !== 0) maybeEngineTurn();
-  }
-
-  function pickFromList(title, items, opts) {
-    const modal = document.getElementById("pick-modal");
-    const list = document.getElementById("pick-list");
-    const titleEl = document.getElementById("pick-title");
-    if (!modal || !list) return Promise.resolve(items.length ? 0 : null);
-    if (titleEl) titleEl.textContent = title;
-    const cancel = document.getElementById("pick-cancel");
-    if (cancel) cancel.textContent = (opts && opts.cancelLabel) || t("act.cancel");
-    list.replaceChildren();
-    items.forEach((it, i) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "pick-item";
-      b.dataset.i = String(i);
-      b.textContent = it.label;
-      if (it.tag) {
-        const tag = document.createElement("span");
-        tag.className = "pick-tag";
-        tag.textContent = it.tag;
-        b.appendChild(tag);
-      }
-      if (it.sub) {
-        const s = document.createElement("span");
-        s.className = "pick-sub";
-        s.textContent = it.sub;
-        b.appendChild(s);
-      }
-      list.appendChild(b);
-    });
-    Dlg.open(modal, list.querySelector(".pick-item"));
-    return new Promise((resolve) => { store.ui.pickResolver = resolve; });
-  }
-  function finishPick(v) {
-    const modal = document.getElementById("pick-modal");
-    Dlg.close(modal);
-    if (store.ui.pickResolver) { store.ui.pickResolver(v); store.ui.pickResolver = null; }
-  }
-
-  /**
-   * @param {string} text PGN
-   * @param {string} label where it came from (for the toast)
-   * @param {object} [prompt] override the replace-current-game confirmation.
-   * Loading a save slot goes through the same import path, but telling the
-   * user "Import PGN — importing replaces the current game" when they clicked
-   * a save slot describes the plumbing rather than what they did.
-   */
-  async function importPgnText(text, label, prompt) {
-    let text0 = (text || "").trim();
-    if (!text0) { toast(t("msg.import.empty"), "fix"); return false; }
-    // A PGN file may hold a whole database — importing only the last game (the
-    // old behaviour) silently threw away everything before it.
-    let games;
-    try { games = ChessPgnParser.splitGames(text0); }
-    catch (_) { games = ChessPgn.splitGames(text0); }
-    if (games.length > 1) {
-      const items = games.map((g, i) => {
-        const s = ChessPgn.summary(g);
-        return {
-          label: (i + 1) + ". " + s.white + " — " + s.black + "  " + s.result,
-          sub: [s.event, s.date, s.plies ? tf("mm.plies", [s.plies]) : ""].filter(Boolean).join(" · "),
-        };
-      });
-      const pick = await pickFromList(tf("dlg.pickGame", [games.length]), items);
-      if (pick == null) { toast(t("msg.import.cancelled")); return false; }
-      text0 = games[pick];
-    }
-    const ask = prompt || { msg: t("dlg.importPgn"), title: t("dlg.importPgnTitle"), ok: t("dlg.import") };
-    if (sanHistory().length &&
-        !(await confirmNative(ask.msg, ask.title, { ok: ask.ok, cancel: t("act.cancel") }))) {
-      return false;
-    }
-    // the parser is the reader now (v6-plan Q2.2); chess.js's load_pgn only
-    // gets a look at text the parser cannot place
-    let parsed = false;
-    try {
-      const g = ChessPgnParser.parsePgn(text0).games[0];
-      parsed = !!g && g.root.children.length > 0;
-    } catch (_) { parsed = false; }
-    if (!parsed) {
-      const probe = new Chess();
-      parsed = probe.load_pgn(text0, { sloppy: true }) && probe.history().length > 0;
-    }
-    // A game exported before its first move is legal PGN with no movetext, and
-    // it is what a save slot or an export holds for a study position. chess.js
-    // will not parse that shape, so fall back to its [SetUp]/[FEN] tags rather
-    // than call the file malformed.
-    const importFen = parsed ? null : ChessPgn.startFen(text0);
-    if (!parsed && (!importFen || !new Chess().validate_fen(importFen).valid)) {
-      toast(t("msg.import.badPgn"), "fault");
-      return false;
-    }
-    // 6.1 (v6-plan Q2.2 said this and it was only ever wired into the manual
-    // "load FEN" dialog): a [SetUp]/[FEN] game starts wherever its header
-    // says, and chess.js's validate_fen accepts positions no game can reach —
-    // two kings of a colour, a side already in check while its opponent is to
-    // move. Read the header as written, because the parser has already handed
-    // its FEN through chess.js by now and chess.js keeps only one king.
-    {
-      const headerFen = ChessPgn.startFen(text0);
-      if (headerFen && ChessEditor) {
-        // allowTerminal: the editor refuses a position with no legal move
-        // because there would be nothing to play, but a game that starts from
-        // a checkmate or a stalemate is a normal study file. Only the
-        // structural and reachability checks belong on this path.
-        const bad = ChessEditor.validate(ChessEditor.fromFen(headerFen, Chess), Chess, { allowTerminal: true });
-        if (bad) { toast(t(bad), "fault"); return false; }
-      }
-    }
-    invalidateEngine();
-    stopEditor();
-    if (parsed) {
-      gameLoadPgn(text0, { sloppy: true });
-    } else {
-      gameLoad(importFen);
-      game.header("SetUp", "1", "FEN", importFen);
-    }
-    store.game.selection = null;
-    store.game.viewIndex = sanHistory().length;
-    store.game.imported = true;
-    clearEndingFlags();
-    // the file's [Result] survives the import as a terminal state: a decisive
-    // result that the board does not explain is a resignation, a draw that
-    // the rules do not explain is an agreed one. Before 6.0 the result was
-    // dropped and the export wrote `*` under a game the file called 1-0.
-    adoptHeaderResult();
-    // 7.6 §1c: a game analysed before comes back analysed, without a search
-    restoreAnalysis();
-    resetClocks(); syncAutoFlip();
-    // a trainer draws its own board and a page covers it: the game opens in play, on the board (Codex on #86)
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
-    Shell.toBoard(); store.commit("game", "action"); saveGame();
-    toast(sanHistory().length
-      ? t("msg.import.donePrefix") + moveCount(Math.ceil(sanHistory().length / 2))
-      : t("mm.positionLoaded"));
-    maybeEngineTurn();
-    return true;
-  }
-
-  async function pastePgn() {
-    try {
-      // Host bridge first: the packaged WebView may not grant the page
-      // clipboard-read permission, but the native side always can.
-      const text = await Host.readClipboard();
-      importPgnText(text, t("mm.clipboard"));
-    } catch (_) {
-      toast(t("msg.clipboard.readFailed"), "fault");
-    }
-  }
-
-  /**
-   * Toast for a failed host-side read. An oversized file gets its own words:
-   * it is the one failure the player can act on, and lumping it in with
-   * "could not open the file" is what made a truncated PGN library look like
-   * a corrupt one.
-   */
-  function toastReadFailure(err) {
-    if (err && err.name === Host.FILE_TOO_LARGE) {
-      toast(tf("mm.fileTooLarge", [Math.floor((err.limit || 0) / 1024)]));
-      return;
-    }
-    toast(t("msg.file.readFailed"), "fault");
-  }
-
-  /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
-  /**
-   * @param {(text: string, label: string) => any} [sink] where the file goes.
-   * The library import wants the same two pickers — native dialog, browser
-   * fallback, the same recent-documents bookkeeping — and a different
-   * destination; duplicating the picker to change the last line is how the two
-   * quietly drift apart.
-   */
-  async function openPgnFile(sink) {
-    const take = typeof sink === "function" ? sink : importPgnText;
-    if (Host.hasZero()) {
-      try {
-        // v8-1-plan N2: main.zig opens, reads and lists it as recent; no path
-        const picked = await Host.openPgn({ title: t("dlg.openPgn"), recent: true });
-        if (picked) take(picked.text, picked.name); // null: cancelled
-        return;
-      } catch (err) {
-        // "there is no file dialog on this build" is not a read failure — it
-        // is the reason to use the browser's own picker, which is sitting
-        // right below. Anything else really did fail to read.
-        if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
-      }
-    }
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".pgn,.txt";
-    input.onchange = () => {
-      const f = input.files && input.files[0];
-      if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => take(String(reader.result || ""), f.name);
-      reader.readAsText(f);
-    };
-    input.click();
   }
 
   // --- position editor + FEN loading ---
@@ -6106,133 +5390,20 @@ import { loadChunk } from "./chunk.js";
   LessonsUI.wireLessonPanel();
   PuzzlesUI.wirePuzzlePanel();
   TodayUI.wireDaily();
-  // --- learning data: out as one file, back in as a merge (learning.js) ---
-  const Learning = ChessLearning;
-  function learningBag() {
-    const bag = {};
-    for (const k of Learning.LEARNING_KEYS) bag[k] = Persist.get(k);
-    return bag;
-  }
-  function learningFileName() {
-    const d = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    return "chessboard-learning-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
-  }
-  async function exportLearning() {
-    const doc = RepUI.withCards(Learning.pack(learningBag(), Date.now()));   // M3 评审: the repertoire's card schedules too
-    await exportText(learningFileName(), JSON.stringify(doc, null, 2), "application/json", t("dlg.exportLearning"));
-  }
-  /** Merge a learning file into this machine's data and rebuild the views. */
-  async function importLearningText(text) {
-    let doc = null;
-    try { doc = JSON.parse(text); } catch (_) { doc = null; }
-    if (!Learning.isLearningDoc(doc)) { toast(t("msg.learning.badFile"), "fix"); return; }
-    const merged = Learning.merge(learningBag(), doc, Mistakes.MAX_MINES);
-    for (const [k, v] of Object.entries(merged)) Persist.setJson(k, v);
-    // the in-memory copies re-read what was just written — the same loaders
-    // startup uses, so an imported book is served exactly like a saved one
-    if (merged.mines) store.session.mines = loadMines();
-    if (merged.learn) store.session.learnState = loadLearnState();
-    if (merged.puzzles) store.session.puzzleState = loadPuzzleState().state;
-    if (merged.progress) store.session.progress = Progress.coerce(Persist.read("progress", (v) => v).value);
-    if (merged.achievements) store.session.achSeen = loadAchSeen();
-    if (merged.repertoire) RepUI.reload();
-    if (merged.stats) statsCache.v = null;
-    renderStats();
-    store.commit("session", "sync");
-    toast(tf("msg.learning.imported", [store.session.mines.length]));
-  }
-  async function importLearning() {
-    // the question comes before the file picker: what a merge means is worth
-    // reading before choosing a file, and a picker that opens with nothing
-    // said first is a control that appears to do nothing
-    if (!(await confirmNative(t("dlg.importLearning"), t("act.learningImport"),
-      { ok: t("act.learningImport"), cancel: t("act.cancel") }))) return;
-    if (Host.hasZero()) {
-      try {
-        const picked = await Host.openPgn({ title: t("dlg.importLearning") });
-        if (picked) await importLearningText(picked.text);
-        return;
-      } catch (err) {
-        if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
-      }
-    }
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json";
-    input.onchange = () => {
-      const f = input.files && input.files[0];
-      if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => importLearningText(String(reader.result || ""));
-      reader.readAsText(f);
-    };
-    input.click();
-  }
-  document.getElementById("learning-export").onclick = () => { exportLearning(); };
-  document.getElementById("learning-import").onclick = () => { importLearning(); };
-
-  // --- 6.0: the whole profile, out and back in (v6-plan Q1.1) --------------
-  // The learning export is a merge of the things nobody can download again.
-  // This is a copy of everything — the current game, the slots, the settings,
-  // the record — for moving to another machine or for keeping. Import is a
-  // replacement, and says so before the picker opens.
-  function allDataFileName() {
-    const d = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    return "chessboard-all-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
-  }
-  async function exportAllData() {
-    saveGame();
-    saveSettings();
-    await LibraryUI.ready(); await RepUI.ready();   // v8-0-plan C1: the games are in the export once the library is loaded; the repertoire's records once its chunk is (M3 评审)
-    // compact (v8-0-plan F3): the values are JSON strings already, so the
-    // two-space indent only padded the envelope — and every byte of the file
-    // crosses the bridge
-    await exportText(allDataFileName(), JSON.stringify(RepUI.forExport(Persist.exportAll())), "application/json", t("dlg.exportAll"));
-  }
-  async function importAllDataText(text) {
-    let doc = null;
-    try { doc = JSON.parse(text); } catch (_) { doc = null; }
-    if (!Persist.isProfileDoc(doc)) { toast(t("msg.allData.badFile"), "fix"); return; }
-    Persist.restoreAll(doc);
-    // v8-0-plan F3: the page still stands on the old profile until the reload
-    // below, and the reload's own beforeunload saveGame() wrote that old game
-    // over the imported save — the one key that never came back equal. Freeze
-    // writes as recover() does after a restore; the flush still runs.
-    Persist.freeze();
-    await Persist.flushMirror();
-    toast(t("msg.allData.imported"));
-    // every module holds a copy of what it read at startup; a reload is the
-    // one way to make all of them read the new profile
-    setTimeout(() => location.reload(), 900);
-  }
-  async function importAllData() {
-    if (!(await confirmNative(t("dlg.importAll"), t("act.allImport"),
-      { ok: t("act.allImport"), cancel: t("act.cancel"), danger: true }))) return;
-    if (Host.hasZero()) {
-      try {
-        const picked = await Host.openPgn({ title: t("dlg.importAll"), max: Host.ALL_DATA_MAX });
-        if (picked) await importAllDataText(picked.text);
-        return;
-      } catch (err) {
-        if (!err || err.name !== Host.NO_FILE_DIALOG) { toastReadFailure(err); return; }
-      }
-    }
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json";
-    input.onchange = () => {
-      const f = input.files && input.files[0];
-      if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => importAllDataText(String(reader.result || ""));
-      reader.readAsText(f);
-    };
-    input.click();
-  }
-  document.getElementById("alldata-export").onclick = () => { exportAllData(); };
-  document.getElementById("alldata-import").onclick = () => { importAllData(); };
+  // v8-1-plan F3: files in and out — the PGN export and import, the clipboard,
+  // the text-export fallbacks, the game picker, the learning file and the
+  // whole profile — live in io.js
+  const IO = createIO({
+    doc: document, t, tf, Persist, game, store, gameLoad, gameLoadPgn, sanHistory, startFen, baseGame, toast,
+    confirmNative, saveSettings, saveGame, OppUI, invalidateEngine, maybeEngineTurn, tcTag, resetClocks,
+    loadLearnState, Mistakes, loadMines, Progress, loadPuzzleState, restoreAnalysis, statsCache, renderStats,
+    LibraryUI, RepUI, loadAchSeen, syncAutoFlip, gameResultToken, clearEndingFlags, adoptHeaderResult,
+    stopEditor, moveCount, Shell, switchMode,
+  });
+  const {
+    copyText, pgnForExport, pgnFileName, savedToast, exportText, downloadPgn, pickFromList, finishPick,
+    importPgnText, pastePgn, toastReadFailure, openPgnFile,
+  } = IO;
 
   // --- 6.0: about (v6-plan Q1.6) ---------------------------------------------
   /** The version the bundle was built from; empty when run unbundled. */
