@@ -7086,6 +7086,47 @@ for (const lang of CONTENT_LANGS) {
         !whole && /SHARD: \$\{\{ matrix\.group\.shard \}\}/.test(text),
         where + " 把布局套件切成 1/n…n/n 全部的片，并把 SHARD 传进去（" + shards.map((s) => s.join("/")).join(" ") + "）");
     }
+    // v8-2-plan V4: both workflows run the same browser groups (release.yml
+    // is where a group that drifted would first matter), no suite runs in
+    // two groups, and no job in checks.yml can hang for GitHub's six hours
+    const groupBlock = (text) => {
+      const at = text.search(/^        group:\s*$/m);
+      return at < 0 ? "" : text.slice(at, text.indexOf("\n    name: browser", at) + 1);
+    };
+    // [name, suites, shard, timeout]; a group the pattern misses (no timeout)
+    // leaves the count short of the block's `name:` lines
+    const groupsOf = (text) => [...groupBlock(text).matchAll(/name: ([^\n]+)\n\s*suites: ([^\n]+)\n(?:\s*shard: ([^\n]+)\n)?\s*timeout: (\d+)\n/g)]
+      .map((m) => [m[1], m[2], m[3] || "", +m[4]]);
+    const groupCount = (text) => (groupBlock(text).match(/^\s*(?:- )?name: /gm) || []).length;
+    const cg = groupsOf(checksWf), rg = groupsOf(releaseWf);
+    const suiteUse = {};
+    for (const [, suites, shard] of cg) for (const f of suites.split(/\s+/)) if (!shard) suiteUse[f] = (suiteUse[f] || 0) + 1;
+    const twice = Object.keys(suiteUse).filter((f) => suiteUse[f] > 1);
+    assert(cg.length >= 10 && cg.length === groupCount(checksWf) && rg.length === groupCount(releaseWf) &&
+      JSON.stringify(cg) === JSON.stringify(rg) && twice.length === 0 && cg.every((g) => g[3] > 0 && g[3] <= 60),
+      "checks.yml 与 release.yml 的浏览器分组逐条相同、每组有自己的超时（" + cg.map((g) => g[0] + " " + g[3]).join("，") + "）" +
+      (twice.length ? " —— 跑了两遍：" + twice.join(", ") : ""));
+    const cJobsAt = checksWf.search(/^jobs:\s*$/m);
+    const cHeads = [...checksWf.slice(cJobsAt).matchAll(/^  ([\w-]+):\s*$/gm)];
+    const noLimit = cHeads.filter((m, i) => {
+      const body = checksWf.slice(cJobsAt).slice(m.index, i + 1 < cHeads.length ? cHeads[i + 1].index : undefined);
+      return !/^    timeout-minutes: (\d+|\$\{\{ matrix\.group\.timeout \}\})\s*$/m.test(body);
+    }).map((m) => m[1]);
+    assert(cHeads.length >= 4 && noLimit.length === 0,
+      "checks.yml 每个 job 都有 timeout-minutes（" + cHeads.length + " 个）" + (noLimit.length ? " —— 没有：" + noLimit.join(", ") : ""));
+    // the PR wall-clock is computed from the run, not typed in
+    const WC = await import("./ci-wallclock.mjs");
+    const job = (name, c, s, e, concl = "success") => ({ run_id: 7, head_sha: "abcdef12", name, created_at: c, started_at: s, completed_at: e, conclusion: concl });
+    const wc = WC.wallClock([job("a", "2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", "2026-01-01T00:13:00Z"),
+      job("b", "2026-01-01T00:00:05Z", "2026-01-01T00:00:30Z", "2026-01-01T00:14:30Z"),
+      { name: "skipped", conclusion: "skipped", started_at: null }]);
+    let stillRunning = false;
+    try { WC.wallClock([job("a", "2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", null)]); } catch { stillRunning = true; }
+    const runs = WC.merge([{ run: 1, wall: 20, green: true }, { run: 2, wall: 14, green: true }], [{ run: 1, wall: 12, green: true }, { run: 3, wall: 15, green: true }]);
+    assert(wc.wall === 14.5 && wc.critical === "b" && wc.criticalMin === 14 && wc.jobs === 2 && wc.green && stillRunning &&
+      runs.map((r) => r.wall).join() === "12,14,15" && WC.lastThreeOk(runs) && !WC.lastThreeOk(runs.slice(1)) &&
+      !WC.lastThreeOk(runs.concat({ run: 4, wall: 15.1, green: true })),
+      "PR 墙钟从作业的起止时间算（第一个排队 → 最后一个结束），同一 run 重记是替换，最近三次全绿且 ≤ 15 分钟才算达标");
     // checks.yml: push only for main, stale PR runs cancelled, the sampled
     // puzzle search on ubuntu only, and Windows native compiled on every PR
     const zigAt = checksWf.search(/^  zig:\s*$/m);
