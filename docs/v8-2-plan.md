@@ -491,3 +491,131 @@
 - 没有派发工作流。
 - **F5 导出全部数据的「正在准备…」**：侧栏「全部数据」一节的按钮下面多了一行 `#alldata-status`（`role=status`、`aria-live=polite`，读屏会念），点「导出」起写「正在准备导出的文件…」，最后一块过桥之前清空——那一块发出去 main.zig 就弹保存框，从那以后保存框就是回应；取消、失败、退回下载或剪贴板时也在 `finally` 里清空。这一行只清空、不隐藏（空着时 `margin: 0`，不占地方），因为连同文字一起出现的 live region 常常不被念。钩子是 `Host.saveText` 的 `onStaged`（`sendBytes` 在最后一块之前调用），代码在 `io.js`，app.js 没动（5873 行）。新键 `msg.allData.preparing` 三语，界面键 1279 → 1280。test-persist-e2e 第 11 节记下每一块过桥时那一行写着什么：改之前 2 MB 档案 17 块全是空（2 项失败），改之后前 16 块都是「正在准备导出的文件…」、最后一块与导出完都是空。
 - **F5 文档**：README「路线」补上 [v8.1](v8-1-plan.md) 链接，「跨版本还没做的」补一条「Lichess 对 `sort=dateAsc` 的应答顺序还没在真站核对（V2）」；v8-1-plan §9「发布」补上 `v8.1.0` → `168acc2`。
+#### M1 · V1 调研：SDK automation server 能不能在 CI 上驱动打包后的应用
+
+**结论：能用，但只管得到原生那一半。**
+
+- 它**不能**：在 WebView 里执行脚本、读 DOM、截 WebView 的图、应答原生对话框。
+- 页面那一半（开局书数据库、冷启动预读、同步进度）仍然只能靠打包自检（`CHESS_SELFTEST`）。自检已经在两个平台的 runner 上跑绿。
+- 所以第 2 步不是「换成 automation」，而是**两条通道合用**：
+  - automation 从外面驱动：核菜单、注入菜单命令、调 `chess.*`、测主循环是否在转；
+  - 自检场景在页面里做事，交回报告。
+- §8 第 4 条照做，只是范围按下面收窄。
+
+**证据（SDK v0.10.1 源码）**
+
+- **协议是文件投递箱，不是 socket。**
+  - `src/automation/protocol.zig`：`default_dir = ".zig-cache/native-sdk-automation"`，相对 app 的**当前目录**；命令排成 `command-<n>.txt`，最多 8 条，写方独占创建；`Action` 枚举就是全部动词。
+  - `src/automation/server.zig`：`publish` 写 snapshot.txt / accessibility.txt / windows.txt；`takeCommand` 取最小序号并删掉文件，删除即确认；`publishBridgeResponse` 写 bridge-response.txt。
+  - 分派在 `src/runtime/flow.zig` 的 `dispatchAutomationProtocolCommand`。
+- **动词**：reload、wait、resize、screenshot、bridge、menu-command、shortcut、native-command、focus、profile、provenance、tray-action，以及 widget-*。widget-* 和 screenshot 只作用于 `gpu_surface` 画布视图，我们一个都没有。
+- **`bridge <json>`** 以 origin `zero://inline` 走 `handleBridgeMessage`，和页面发起的请求是同一条路。
+  - app.zon 的 `allowed_origins` 含 `zero://inline`，所以 `chess.*` 都能从外面调用。
+  - 应答除了写进 bridge-response.txt，也会交给页面的 `window.zero._complete`。页面按 id 找不到就直接丢弃（`appkit_host.m` 的 `complete()`），没有副作用。
+  - SDK 内置的 `native-sdk.command.*` 对这个 origin 返回 `permission_denied`（实测）。
+- **`menu-command <id>`** 注入的平台事件就是真菜单发出的那个 `.menu_command`。
+  - 路径：`dispatchCommand` → `main.zig` `onEvent` 的 `.command` 分支 → `emitWindowEvent("shortcut")` → 页面。
+  - 唯一绕过的是 NSMenu 的按键匹配（⌘N 这类 key equivalent）。
+- **snapshot 的内容**：
+  - 头行 `ready=true protocol=0x… publisher_pid=…`；
+  - 窗口；
+  - WebView 视图，只有 `role="webview"`，没有 DOM；
+  - app-menu 目录，每项带 command、key、modifiers。
+- **SDK 自己写明做不到的**：`skill-data/automation/SKILL.md`「What automation cannot verify」列了 WebView 截图、任意 DOM 查询与点击、网络断言，并说「Do not use automation for exhaustive UI testing」。
+- **原生对话框**：
+  - macOS 是 `[NSOpenPanel runModal]` / `[NSSavePanel runModal]`（`appkit_host.m`），Windows 是 `IFileDialog::Show`（`webview2_host.cpp`），都是同步模态。
+  - automation 没有对话框动词。面板是在我们的 bridge 处理函数里同步弹出的：就算模态循环里还有帧能重入、命令还能被取走，也没有任何动词能点「打开」或「取消」。
+  - 所以对话框只能测它前后两段：命令注册、路径读写。面板本身留给人。**驱动脚本绝不能经 bridge 调 `chess.openPgn`，否则会把整次运行卡死。**
+- **测「卡不卡」**：
+  - `src/automation/watcher.zig` 起一个线程，每 5 ms 看一次队列；有命令就经平台线程安全的 `request_frame_fn` 要一帧（macOS 和 Windows 的 `root.zig` 都有），命令在这一帧被取走。
+  - 所以**空命令 `wait` 的确认时延，就是主循环有没有在转**。这正是 R6「窗口不卡」从外面的量法。
+- **CI 可行性**：
+  - SDK 自己的 `.github/workflows/ci.yml` 在 `macos-14` 上跑 `zig build test-webview-smoke`（WKWebView + `-Dautomation=true` + bridge），证明 macOS runner 有 GUI 会话，automation 跑得通。
+  - Windows 上 SDK 只在 wine 下跑画布冒烟，WebView2 + automation **没有先例**。不过 automation 是平台无关的 Zig（文件 IO 加 `request_frame_fn`），而我们 build-windows.yml 的自检已经证明 WebView2 窗口能在 windows runner 上起来。
+- **发布包不能带 automation。** `-Dautomation` 是编译期开关，打开后应用会在当前目录建 `.zig-cache/`，并且任何能写这个目录的本地进程都能调 `chess.*`。
+  - 所以 CI 测的是**同一份源码、同一清单、同一打包命令**出来的第二个二进制，不是逐字节的发布件。
+  - 自检不一样，它测的就是发布件本身。
+
+**本地实测（2026-09-30，Linux，Zig 0.16，SDK v0.10.1）**
+
+- **null 平台构建**：`zig build -Dplatform=null -Dautomation=true` 通过。
+  - null 平台只跑一帧就退出（`null_platform.zig` 的 `run`，`requested_frames = 1`），所以只能「启动前排好一条命令，退出后读结果」。
+- **实测结果**：
+
+  | 做了什么 | 结果 |
+  |---|---|
+  | 读 snapshot | `ready=true`，菜单 8 项与 app.zon 一致 |
+  | `bridge chess.selftestMode` | `{"on":true}` |
+  | `bridge chess.appdataPath` | 临时 HOME 下的路径 |
+  | `bridge chess.openPgn` | null 平台没有对话框，返回 `{"error":"read_failed"}` |
+  | `menu-command game.new` | 日志里出现 `platform.event menu_command` |
+  | 连排两条命令 | 只取走一条（一帧一条） |
+
+- **交叉编译**：`-Dautomation=true -Doptimize=ReleaseFast` 下，`aarch64-macos` 和 `x86_64-windows` 的 Zig 部分都编译通过。
+  - 本机没有 macOS SDK，完整链接停在找框架那一步，和 automation 无关。另起了一份只编 object 的构建来验证，产物里有 `native-sdk-automation`。
+  - 完整链接要在 runner 上做。
+- **证明脚本 `scripts/automation-smoke.mjs`**：
+  - `--null` 模式本地是绿的，四项 ready / menus / bridge / ack 都过；用不带 automation 的构建跑是红的（没有 snapshot）。
+  - 活模式已经写好：等 ready、逐条发命令、发 20 次空命令测确认时延。它只能在 macOS / Windows runner 上跑，留给第 2 步。
+  - 本地跑法写在脚本头注释里。
+
+**R1–R19 归属**
+
+| 条目 | 归属 | 怎么做 |
+|---|---|---|
+| R1、R2 | 人 | 看图标 |
+| R3 | 人 | 看图标。可以顺手加一步 CI，只查 exe 里有没有图标资源 |
+| R4、R4w | 人 | 标题栏与拖动区实验 |
+| R5 | CI（部分） | 自检确认「允许联网同步」默认关；automation 驱动期间按 pid 查连接（macOS 用 `lsof -i -a -p`，Windows 用 `Get-NetTCPConnection -OwningProcess`）。WebView 的网络进程不在这个 pid 下，查不到 |
+| R6 | CI | 假服务器慢速吐 100 局。自检场景在页面里发起同步，记下 rAF 最长间隔和「已取到 k」；automation 同时每 50 ms 发一次空命令测主循环。拖窗口这个动作本身不测 |
+| R6a | CI | 假服务器记下请求：第二次要带 since；没有新局时要给出那句提示；Chess.com 只取上次以来的月份 |
+| R7 | CI | 同 R6，换成 Chess.com 形状的假数据，其中放一局 Chess960，它必须被滤掉 |
+| R8 | CI | 基址指到一个没人监听的端口 |
+| R9 | CI | 假服务器回 404 |
+| R10 | CI（真站） | Windows runner 上对 lichess.org 真取 max=3。HTTPS 加系统证书库只有真站能证明；V2 要求 runner 能出站。失败重试一次，仍失败只标黄、不挡发布 |
+| R11 | CI | 假服务器回 429 |
+| R12–R15 | CI 一半，面板留人 | CI 查两个原生文件命令已注册（自检的 `nativeIo` 已经在查）。再在自检模式下用测试缝把面板换成固定路径（中文目录、1 MB 以上、Windows 反斜杠、没写扩展名时补 .pgn），测读写这一半。留给人的是面板标题、取消、在 Finder / 资源管理器里选中、「最近使用」 |
+| R16 | CI（面板除外） | 自检场景导入 1 MB 多局 PGN → 导出全部到固定路径 → 用新 profile 启动并导入 → 比对局数、开局书、残局进度 |
+| R17 | CI | 自检加 repertoire 一项：第一次启动往 `chessboard.repertoire` 写一着，第二次启动读回，并且到期数大于 0。比对方式和现有的 `idb` 一样，靠两次启动 |
+| R18 | CI（先只报数） | 第一次启动灌 300 局，第二次启动报告预读是否命中、列表首帧用了多久。runner 计时会抖，先只记录，连续三次绿之后再设门槛 |
+| R19 | 人 | 60 fps 录屏逐帧看 |
+
+- **CI 覆盖 11 条**：R5（部分）、R6、R6a、R7、R8、R9、R10、R11、R16、R17、R18，满足「至少 8 条」。
+- **留给人的**：R1–R4w、R12–R15 的面板部分、R19，估计 20–25 分钟走完。
+- **B 节菜单**：
+  - automation 能核菜单目录，覆盖 B1 的「不是系统默认那一条」；
+  - 能注入 `menu-command`，看页面有没有反应，覆盖 B2–B4 的命令路径；
+  - 按键匹配（key equivalent）仍要人按一次。
+
+**第 2 步设计**
+
+1. **构建**：在 build-macos.yml / build-windows.yml 现有作业的自检之后加步骤，复用已有的 SDK checkout、node_modules 和 zig 缓存。
+   - `zig build -Doptimize=ReleaseFast -Dautomation=true --prefix zig-out-auto`；
+   - 再 `native package` 到 `dist-auto/`；
+   - 这个产物不上传、不进 release。
+2. **Zig 改动**（都小，都要单测；变量都只在 `CHESS_SELFTEST=1` 时生效，发布件的行为不变）：
+   - **同步基址**：设了 `CHESS_SYNC_BASE=http://127.0.0.1:<port>` 时，`lichessUrl` / `chesscomArchivesUrl` 换掉 host 前缀。
+   - **对话框**：设了 `CHESS_DIALOG_PATH` 时，`openPgn` / `saveText` 跳过面板，直接用这个路径。
+   - **报告不退出**：`selftestReport` 现在写完就 `exit`。改成设了 `CHESS_SELFTEST_SCENARIO` 时写完不退出，由驱动脚本自己结束进程，这样同一次运行里还能继续发命令。
+3. **页面**：新建模块 `selftest-scenarios.js` 跑命名场景。场景名由 `chess.selftestMode` 的应答带过来。app.js 已经到行数上限，只在 `runSelftest` 里留一个钩子。
+   - 场景：`sync-lichess`、`sync-chesscom`、`sync-errors`、`repertoire`、`prefetch-seed` / `prefetch-read`、`data-roundtrip`、`menus`；
+   - `menus` 场景：收到 shortcut 事件后报告局面变化。
+4. **脚本**：`scripts/automation-smoke.mjs` 加 `--scenario`。
+   - 起一个假服务器（node:http，读 `src/sync-fixtures/`，每局间隔 100 ms 慢慢吐；记下收到的请求；能回 404 / 429）；
+   - 每个场景：启动 automation 构建 → 等 ready → 核菜单 → 同步进行时每 50 ms 发一次 `wait` 记确认时延 → 读页面报告 → 杀进程；
+   - 要验证重启的场景，用同一个 profile 再起一次。
+5. **判定**：
+   - 主循环确认时延最长小于 500 ms；
+   - 页面 rAF 最长间隔小于 250 ms；
+   - k 单调增到 100；
+   - 每个错误场景的提示文案都对。
+
+   两个阈值要先拿两次 runner 实测记进本节，再定。
+6. **耗时估计**：每个平台多 6–9 分钟，和 §8 第 4 条估的 10 分钟一致，建议 `timeout-minutes: 20`（V4）。
+   - automation 构建和现有 ReleaseFast 构建同量级；
+   - 打包不到 1 分钟；
+   - 约 8 次启动，每次 10–20 s。
+7. **风险与顺序**：Windows 上 WebView2 + automation 没有先例。第一轮只跑 `automation-smoke.mjs` 活模式，两个平台都绿了再加场景。
+8. **不做**：
+   - WebView 截图或 DOM：SDK 不支持。
+   - 让面板自动应答：macOS 要辅助功能授权；Windows 的 UI Automation 可能可行，但没验证。而且做成了，多测到的也只是面板本身。
