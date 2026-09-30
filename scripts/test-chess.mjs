@@ -147,7 +147,7 @@ const allSourceExcept = (...owners) =>
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
   "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js",
-  "trainer/puzzle-book.js", "trainer/puzzle-rating.js", "trainer/puzzle-openings.js", "trainer/puzzle-mine.js",
+  "trainer/puzzle-book.js", "trainer/puzzle-rating.js", "trainer/puzzle-openings.js", "trainer/puzzle-mine.js", "trainer/guess.js",
   "me-page.js", "game-end.js", "review/moments.js", "opponents-ui.js", "io.js", "game-controller.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 

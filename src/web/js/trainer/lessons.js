@@ -13,6 +13,7 @@
  * @module trainer/lessons
  */
 import { Chess } from "../chess.js";
+import { loadChunk } from "../chunk.js";
 import { CHESS_CLASSICS } from "../classics.js";
 import { ChessDrills } from "../drills.js";
 import { ChessEngine } from "../engine.js";
@@ -20,6 +21,8 @@ import { ChessTree } from "../game-tree.js";
 import { CHESS_LESSONS } from "../lessons.js";
 import { ChessEndgameRules } from "../endgame-rules.js";
 import { createEndgames } from "./endgames.js";
+import { ChessReview } from "../review.js";
+import { ChessReviewGrade } from "../review-grade.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -137,7 +140,18 @@ export function createLessonsUI(d) {
     document.querySelectorAll("#lesson-list button[data-c]").forEach((b) => b.classList.toggle("current", Number(b.dataset.c) === st.ci));
   }
 
-  function curLesson() { const l = store.session.learn; return (l.eg && Endgames.lesson(l.eg)) || LESSONS[l.li]; }
+  // v8-2-plan T3: 名局猜着 — the runner is a chunk (trainer/guess.js), made on
+  // the first start; a run is `learn.gs`, so until then there is none to draw
+  const Gs = { m: null };
+  function startGuess(ci) {
+    if (Gs.m) { Gs.m.start(ci); return; }
+    loadChunk("chunk-guess.js", "createGuess").then((create) => {
+      Gs.m = Gs.m || create(Object.assign({ Chess, Engine: ChessEngine, Review: ChessReview, Grade: ChessReviewGrade, CLASSICS, classicText, carryToken, startClassic, saveLearnState }, d));
+      Gs.m.start(ci);
+    }, () => {}); // a failed load is retried on the next click
+  }
+
+  function curLesson() { const l = store.session.learn; return (l.gs && Gs.m.lesson()) || (l.eg && Endgames.lesson(l.eg)) || LESSONS[l.li]; }
   function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
   function startLesson(i) {
@@ -161,6 +175,7 @@ export function createLessonsUI(d) {
   }
 
   function startLearnTask() {
+    if (store.session.learn.gs) { Gs.m.restart(); return; }
     const task = curTask();
     store.session.learn.token++;
     BoardView.cancelAnim();
@@ -245,6 +260,7 @@ export function createLessonsUI(d) {
   }
 
   function learnModel() {
+    if (store.session.learn.gs) return Gs.m.model();
     const g = store.session.learn.g;
     const task = curTask();
     let stars = Array.from(store.session.learn.stars);
@@ -299,6 +315,7 @@ export function createLessonsUI(d) {
   }
 
   function learnTaskText() {
+    if (store.session.learn.gs) return Gs.m.task();
     const task = curTask();
     if (store.session.learn.demoing) return t("lm.demoing");
     if (store.session.learn.done && store.session.learn.eg) return t("lm.taskDone") + t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone");
@@ -314,6 +331,7 @@ export function createLessonsUI(d) {
   }
 
   function learnClick(sq) {
+    if (store.session.learn && store.session.learn.gs) { Gs.m.click(sq); return; }
     if (!store.session.learn || store.session.learn.done) return;
     if (store.session.learn.demoing) { skipLessonDemo(); return; }
     const task = curTask();
@@ -645,12 +663,12 @@ export function createLessonsUI(d) {
     const prog = document.getElementById("learn-progress");
     // "完成 3/72" reads differently from the header chip's "4/72", which is
     // where you ARE. Two bare N/72 on one screen meant two different things.
-    const eg = store.session.learn.eg;
-    if (prog) prog.textContent = eg ? t("learn.donePre") + Endgames.doneCount() + "/" + Endgames.total()
+    const eg = store.session.learn.eg, gs = store.session.learn.gs;
+    if (prog) prog.textContent = gs ? Gs.m.progress() : eg ? t("learn.donePre") + Endgames.doneCount() + "/" + Endgames.total()
       : t("learn.donePre") + doneCount + "/" + LESSONS.length;
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
-    if (title) title.textContent = (eg ? "" : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · ") + loc.part + " · " + loc.title;
+    if (title) title.textContent = (eg || gs ? "" : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · ") + loc.part + " · " + loc.title;
     // 7.7 (v7-7-plan §4): the lesson's tasks as a row of dots — done filled,
     // current ringed; a finished lesson is a full row
     const dots = el("lesson-dots");
@@ -671,7 +689,8 @@ export function createLessonsUI(d) {
       }
     }
     const textEl = document.getElementById("lesson-text");
-    if (textEl) {
+    if (gs) Gs.m.render(textEl);
+    else if (textEl) {
       textEl.replaceChildren();
       for (const p of loc.text) {
         textEl.appendChild(lessonParagraph(p));
@@ -709,7 +728,8 @@ export function createLessonsUI(d) {
       }
     }
     const next = document.getElementById("lesson-next");
-    if (next && eg) {
+    if (next && gs) next.hidden = true;
+    else if (next && eg) {
       // T2: the camp's own 下一个 — the next untried position, then what is due
       next.textContent = t("eg.next");
       next.hidden = !Endgames.next(eg);
@@ -750,25 +770,27 @@ export function createLessonsUI(d) {
         }
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "lesson-item" + (!eg && i === store.session.learn.li ? " current" : "");
+        b.className = "lesson-item" + (!eg && !gs && i === store.session.learn.li ? " current" : "");
         b.dataset.i = String(i);
         const mark = store.session.learnState.done[x.id] ? "✓ " : "";
         b.textContent = mark + (i + 1) + ". " + xl.title;
         list.appendChild(b);
       });
-      // 6.0: the annotated classics, after the course (v6-plan Q3.5)
-      if (CLASSICS.length) {
+      // 6.0: the annotated classics, after the course (v6-plan Q3.5); and
+      // v8-2-plan T3: the same games again, to guess (✓ once guessed through)
+      const gsDone = store.session.learnState.gs || {};
+      for (const k of CLASSICS.length ? ["c", "gs"] : []) {
         const h = document.createElement("div");
         h.className = "lesson-part";
-        h.textContent = t("study.part");
+        h.textContent = t(k === "c" ? "study.part" : "gs.part");
         list.appendChild(h);
         CLASSICS.forEach((c, i) => {
           const tx = classicText(c);
           const b = document.createElement("button");
           b.type = "button";
-          b.className = "lesson-item";
-          b.dataset.c = String(i);
-          b.textContent = tx.white + " – " + tx.black + " · " + c.year;
+          b.className = "lesson-item" + (k === "gs" && gs && gs.ci === i ? " current" : "");
+          b.dataset[k] = String(i);
+          b.textContent = (k === "gs" && gsDone[c.id] ? "✓ " : "") + tx.white + " – " + tx.black + " · " + c.year;
           list.appendChild(b);
         });
       }
@@ -841,6 +863,8 @@ export function createLessonsUI(d) {
       if (b && (store.session.learn || store.session.study)) startLesson(Number(b.dataset.i));
       const cb = ev.target.closest("button[data-c]");
       if (cb) startClassic(Number(cb.dataset.c));
+      const gb = ev.target.closest("button[data-gs]");
+      if (gb) startGuess(Number(gb.dataset.gs));
       const eb = ev.target.closest("button[data-eg]");
       if (eb && (store.session.learn || store.session.study)) startEndgame(eb.dataset.eg);
     };
