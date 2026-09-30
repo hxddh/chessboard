@@ -82,11 +82,23 @@ function maxCounters(a, b) {
 
 function mergeLearn(cur, inc) {
   const c = obj(cur), i = obj(inc);
-  return Object.assign({}, c, {
+  const out = Object.assign({}, c, {
     v: Math.max(num(c.v), num(i.v)) || 1,
     done: unionKeys(c.done, i.done),
     last: Math.max(num(c.last), num(i.last)),
   });
+  // v8-1-plan T2: the endgame camp rides in the same key. Done is a union;
+  // a review entry further up the srs.js ladder wins, a tie keeps the local
+  // one (as mergePuzzles does with `missed`).
+  if (c.eg || i.eg) {
+    const ce = obj(c.eg), ie = obj(i.eg);
+    const srs = Object.assign({}, obj(ce.srs));
+    for (const [id, e] of Object.entries(obj(ie.srs))) {
+      if (!srs[id] || num(e && e.s) > num(srs[id] && srs[id].s)) srs[id] = e;
+    }
+    out.eg = Object.assign({}, ce, { done: unionKeys(ce.done, ie.done), srs });
+  }
+  return out;
 }
 
 function mergePuzzles(cur, inc) {

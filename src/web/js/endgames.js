@@ -299,7 +299,7 @@
         "Only Qc4 wins: from c4 the queen watches the diagonal through f1, so the pawn cannot queen, and your king walks over.",
         "勝つのは Qc4 だけ。c4 から f1 を通る対角線を押さえて昇格を防ぎ、それからキングが歩いてくる。"],
       src: ONE },
-    { id: "qu-qvr", g: "qu", fen: "8/8/8/3k4/8/8/4r3/K5Q1 w - - 0 1", goal: "win", v: "tb",
+    { id: "qu-qvr", g: "qu", fen: "2Q5/8/3r4/4k3/8/8/8/4K3 w - - 0 1", goal: "win", v: "tb",
       n: ["后对车", "Queen v rook", "クイーン対ルーク"],
       tip: ["先把黑王逼到边上；车一离开王的保护，就用带将军的双击把它赢下来，再用后杀王。",
         "Drive the king to the edge first; the moment the rook strays from its king, win it with a forking check, then mate.",

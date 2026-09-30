@@ -18,7 +18,9 @@
  * - **draw**: any draw by the rules — stalemate, insufficient material,
  *   threefold repetition, the fifty-move rule — or the engine left with a
  *   bare king. Failures: being mated, and the engine making a new queen: a
- *   promotion the defence existed to stop.
+ *   promotion the defence existed to stop — unless the student has a queen
+ *   too, or a pawn on the seventh about to make one (Réti's study ends
+ *   queen against queen, and that is the draw).
  *
  * Pure: scripts/test-endgames.mjs plays every position to its goal through
  * this same function, so the app and the test cannot disagree about what
@@ -68,7 +70,9 @@
       if (g.game_over()) return { ok: true, how: drawHow(g) };
       const bm = material(g, "b");
       if (bare(bm)) return { ok: true, how: "bare" };
-      if (bm.q > ((start && start.bq) || 0)) return { ok: false, how: "queened" };
+      // a new black queen ends it — unless White has a queen of its own or is
+      // one step from one (Réti's study ends queen against queen)
+      if (bm.q > ((start && start.bq) || 0) && !material(g, "w").q && !onSeventh(g)) return { ok: false, how: "queened" };
       return null;
     }
     if (mated) return g.turn() === "b" ? { ok: true, how: "mate" } : { ok: false, how: "mated" };
@@ -76,6 +80,11 @@
     if (!canMate(material(g, "w"))) return { ok: false, how: "material" };
     if (bare(material(g, "b")) && keepsHeavy(g)) return { ok: true, how: "bare" };
     return null;
+  }
+
+  /** a white pawn on the seventh rank */
+  function onSeventh(g) {
+    return g.board()[1].some((p) => p && p.color === "w" && p.type === "p");
   }
 
   /** which draw it was, for the words */

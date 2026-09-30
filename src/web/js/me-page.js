@@ -24,7 +24,7 @@ import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
 export function createMePage(d) {
   const {
     ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf,
-    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName,
+    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, startEndgame,
   } = d;
 
   /**
@@ -463,9 +463,22 @@ export function createMePage(d) {
   // a canvas drawn at one width and shown at another is blurred or cut
   window.addEventListener("resize", () => invalidate());
 
+  /**
+   * v8-1-plan T2: 残局训练营 — progress by theme and the review queue
+   * (trainer/endgames.js draws it); its buttons open the position in 学习.
+   */
+  function renderEndgames() {
+    if (!Endgames) return;
+    Endgames.renderMe((id) => {
+      if (store.session.mode !== "learn") switchMode("learn");
+      startEndgame(id);
+      setSideTab("play", { top: true });
+    });
+  }
+
   return {
-    renderTrends, renderAchievements, renderRecordEntry,
+    renderTrends, renderAchievements, renderRecordEntry, renderEndgames,
     /** The page is opening (shell.js): draw it at the size it opens at. */
-    onShow: () => invalidate(true),
+    onShow: () => { invalidate(true); renderEndgames(); },
   };
 }
