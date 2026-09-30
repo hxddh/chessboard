@@ -195,7 +195,9 @@ export function buildLook(Chess, p, n, qseed) {
   // a mate is asked for more often when there is one — and sometimes when
   // there is none, so that the question itself never gives the answer away
   kinds.push({ t: "mate", w: mates.length ? 4 : 0.6 });
-  const caps = [...new Set(moves.filter((m) => m.captured).map((m) => m.to))].sort();
+  // en passant is left out: its `to` is the empty square behind the pawn it
+  // takes, and 「哪个子能吃掉 X 上的…」 needs a man on X (M2 review)
+  const caps = [...new Set(moves.filter((m) => m.captured && !m.flags.includes("e")).map((m) => m.to))].sort();
   if (caps.length) kinds.push({ t: "cap", w: 2 });
   const checks = [...new Set(moves.filter((m) => /[+#]$/.test(m.san)).map((m) => m.from))].sort();
   if (checks.length) kinds.push({ t: "check", w: 2 });
@@ -245,11 +247,15 @@ export function blindPick(pools, seed, k, lvl, used) {
 
 /**
  * What was typed: a square, 「没有」, or a move legal in `fen` (SAN, or UCI
- * such as e2e4 — chess.js's sloppy parse). `moveFirst` reads "e4" as the
- * pawn move rather than the square (a mate question, a blind move).
+ * such as e2e4 — chess.js's sloppy parse; castling with O or the digit 0).
+ * `moveFirst` wants a move (a mate question, a blind move): "e4" is the pawn
+ * move, and what is no legal move — "b8" or "bxa8" with the promotion piece
+ * left out among them — is null, for the caller's 「走不了」, never a square
+ * that would be judged as an answer.
  */
 export function parseAnswer(Chess, fen, text, moveFirst) {
-  const s = String(text || "").trim();
+  const t0 = String(text || "").trim();
+  const s = /^[0o]-[0o](-[0o])?[+#]?$/i.test(t0) ? t0.toUpperCase().replace(/0/g, "O") : t0;
   if (!s) return null;
   if (/^(none|no|-|0|没有|无|なし|ない)$/i.test(s)) return { none: true };
   const sq = /^[a-h][1-8]$/i.test(s) ? { sq: s.toLowerCase() } : null;
@@ -257,7 +263,7 @@ export function parseAnswer(Chess, fen, text, moveFirst) {
   const g = new Chess(fen);
   const m = g.move(s, { sloppy: true }) || g.move(s.replace(/^([a-h][1-8])-?([a-h][1-8])([qrbn])?$/i, (_, a, b, c) => a.toLowerCase() + b.toLowerCase() + (c || "").toLowerCase()), { sloppy: true });
   if (m) return { move: { from: m.from, to: m.to, promotion: m.promotion }, san: m.san };
-  return sq;
+  return moveFirst ? null : sq;
 }
 
 /** Is `ans` right for look question `q`? */
@@ -364,13 +370,19 @@ export function createVisualModes(d) {
         const [pid, n, qs] = key.split("|");
         const p = pool.find((x) => x.id === pid);
         q = p ? buildLook(Chess, p, Number(n), Number(qs) >>> 0) : null;
-        if (!q) { delete rec("look").q[key]; savePuzzleState(); serve(run); return; }
-      } else q = lookQuestion(Chess, pool, run.seed, k, run.n);
-      if (!q) { run.why = "spent"; finishRun(run); return; }
+      } else {
+        // a question that cannot be put into words is skipped for another,
+        // never seated: the card would be left half drawn (M2 review)
+        for (let i = 0; i < 4 && !(q && asked(q)); i++) q = lookQuestion(Chess, pool, i ? mix(run.seed, i) : run.seed, k, run.n);
+      }
+      if (!q || !asked(q)) {
+        if (key) { delete rec("look").q[key]; savePuzzleState(); serve(run); return; }
+        run.why = "spent"; finishRun(run); return;
+      }
       const p = { id: "look:" + q.key, cat: "look", fen: q.start, solution: [], side: q.start.split(" ")[1], vq: q, review: !!key };
       run.used.push(p.id);
       seatPuzzle("look", k, p, run);
-      say(w("moves", [lineText(q.start, q.sans)]) + " " + question(q));
+      say(w("moves", [lineText(q.start, q.sans)]) + " " + asked(q));
     } else {
       const pools2 = book().blind;
       let p = key ? pools2[0].concat(pools2[1]).find((x) => x.id === key) : blindPick(pools2, run.seed, k, run.lvl, run.used);
@@ -385,8 +397,10 @@ export function createVisualModes(d) {
       // the men stay three seconds; the flag is on the puzzle, so a set parked
       // meanwhile (leaveTrainer) comes back with them hidden as they should be
       setTimeout(() => {
+        // answered inside the three seconds: the answer's board stays shown
+        if (pz.done) return;
         pz.hidden = true;
-        if (store.session.puzzle === pz && !pz.done) { say(w("hidden")); sync(); }
+        if (store.session.puzzle === pz) { say(w("hidden")); sync(); }
       }, SHOW_MS);
       say(blindGoal(p) + " " + w("pos", [menText(pz.g)]) + " " + w("showing"));
     }
@@ -412,6 +426,8 @@ export function createVisualModes(d) {
     if (q.t === "check") return w("qCheck", [s]);
     return w("qMate", [s]);
   }
+  /** The question in words, or "" when it cannot be put (serve skips such a one). */
+  const asked = (q) => { try { return question(q); } catch (_) { return ""; } };
   /** What the right answer was, in words. */
   function explain(q) {
     const g = new Chess(q.fen);
@@ -530,7 +546,7 @@ export function createVisualModes(d) {
     const text = inp.value;
     if (pz.p.vq) {
       const a = parseAnswer(Chess, pz.p.vq.fen, text, pz.p.vq.t === "mate");
-      if (!a) { say(w("bad")); return; }
+      if (!a) { say(pz.p.vq.t === "mate" ? w("illegal", [text.trim()]) : w("bad")); return; }
       inp.value = "";
       answerLook(a);
       return;
@@ -578,7 +594,7 @@ export function createVisualModes(d) {
     const ask = el("pz-vis-q");
     if (q) {
       setText(moves, w("moves", [lineText(q.start, q.sans)]));
-      setText(ask, question(q));
+      setText(ask, asked(q));
     } else if (pz) {
       const h = pz.g.history();
       setText(moves, pz.hidden ? (h.length ? w("played", [lineText(pz.p.fen, h)]) : "") : w("pos", [menText(new Chess(pz.p.fen))]));

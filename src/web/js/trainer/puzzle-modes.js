@@ -372,9 +372,10 @@ export function createPuzzleModes(d) {
     // endsAt is wall-clock time, so the clock resumes where it stands now
     if (run.endsAt) run.timer = setInterval(tick, 250);
     // an answered puzzle whose hand-off fell while the run was parked
-    // (advanceLater found another board) moves on now
+    // (advanceLater found another board) moves on now — not a mode's own
+    // (看 N 步 / 盲走), whose answer card waits for 下一题 (M2 review)
     const pz = store.session.puzzle;
-    if (pz && pz.run === run && pz.done) serveNext();
+    if (pz && pz.run === run && pz.done && !run.own) serveNext();
   }
   /** Back to practice: the run's card goes, the practice puzzle comes back. */
   function toPractice() {
