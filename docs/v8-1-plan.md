@@ -937,7 +937,7 @@
   - 实测（`docs/measured.json libraryDb.coldStart`，headless Chromium，一万局，从导航开始，列表 / 搜索取三次最快，索引取三次最慢；`coldStartBefore` 是同一套测量跑在 17334e1 的 src/web 上）：
     - 列表可见 2,335 → **213** ms；按摘要搜索可用 2,354 → **224** ms；「包含这个局面」可用（整局和索引到齐）2,435 → 2,596（没有变快：整局仍分页读，回复仍排在画布帧后面；多出的约 150 ms 在读摘要、比对摘要上，三次之间本来也差 100 ms 以上） ms。验收线 1.5 s / 4.5 s。
     - 旧口径（`page.reload()` 前起算到整局可用，含上一页卸载约 0.45 s）：`loadMs` 2,856 → 2,883 ms。
-  - 测试：test-library-db 加摘要维护 23 项（导入、分析、认领、删除、本机同步、migrate 合并、restoreShards、清除、写入被拒后重试、两个窗口、8.0 只写棋局、替身的每种查询和整局相同、chunk-boot 的判断）；test-library-e2e 在一万局重启三次：列表先于整局画出、摘要搜索和整局搜索同数、局面查询照常，Chromium 上断言列表 ≤ 1.5 s、搜索 ≤ 4.5 s（在 17334e1 上跑这两条和「先于整局」都红）。test-persist 的「自检和 library-db 开同一个库」改为连同 library-sum.js 一起读 DB_NAME；test-chess 的「只有 persist.js 写键名」例外表加上 library-sum.js（它为 chunk-boot.js 念头的键名，和 lazy-content.js 念设置键一样）。
+  - 测试：test-library-db 加摘要维护 23 项（导入、分析、认领、删除、本机同步、migrate 合并、restoreShards、清除、写入被拒后重试、两个窗口、8.0 只写棋局、替身的每种查询和整局相同、chunk-boot 的判断）；test-library-e2e 在一万局重启三次：列表先于整局画出、摘要搜索和整局搜索同数、局面查询照常，Chromium 上断言列表 ≤ 1.5 s、搜索 ≤ 4.5 s（在 17334e1 上跑这两条和「先于整局」都红）。test-persist 的「自检和 library-db 开同一个库」改为连同 library-sum.js 一起读 DB_NAME；test-chess 的「只有 persist.js 写键名」例外表加上 library-sum.js（它为 chunk-boot.js 念头的键名，和 lazy-content.js 念设置键一样）；test-persist-e2e 的 P3-3「找回不另存整库备份」改为只数 `v1:` 备份键（摘要也在 meta 表里）。本机 Chromium 一次一个：test:static、test-library-e2e、test-persist-e2e、test-explorer-e2e、test-sync-e2e、test-repertoire-e2e 全过。
   - 没做的：整局读取本身没有变快（仍是分页 `getAll`，回复排在画布帧后面）；真正的大头是启动时棋盘重复出帧，那在 app.js / board.js，不属于这一条。chunk-boot.js 1.8 → 3.9 KB（多了 library-sum.js），主包 873.1 → 874.7 KB，chunk-libdb.js 48.5 → 54.2 KB。
 
 ## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）
