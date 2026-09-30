@@ -3337,5 +3337,138 @@
         }
       ]
     }
+  },
+  "engineScheduler": {
+    "what": "v8-1-plan F4：棋谱库后台分析进行中，人机对局（normal 档）每一手的等待。reply＝你的着法进着法表→引擎应着进着法表；wait＝你的着法进着法表→应着的 go 发到 worker（验收看它的 p90）；queued＝bestMove() 调用→它的搜索拿到引擎。before 是 8.0 的单链 exclusive()，after 是三级调度；determinism 是被抢占过的那几局与没人下棋时逐步比较；secondWorker 是默认关的第二个 worker（进程树 RSS 的增量，Hash 32）",
+    "script": "scripts/test-engine-flows-e2e.mjs --record（before：8.0 的 engine.js 上 --record-before）",
+    "before": {
+      "env": "Chromium headless, 900×700, 4 cores; library pass at 200 (90k nodes/ply) beside a game at the normal rung",
+      "quiet": {
+        "reply": {
+          "p50": 1077,
+          "p90": 1201,
+          "n": 6
+        },
+        "wait": {
+          "p50": 363,
+          "p90": 481,
+          "n": 6
+        },
+        "queued": {
+          "p50": null,
+          "p90": null,
+          "n": 6
+        }
+      },
+      "busy": {
+        "reply": {
+          "p50": 1220,
+          "p90": 1316,
+          "n": 12
+        },
+        "wait": {
+          "p50": 503,
+          "p90": 600,
+          "n": 12
+        },
+        "queued": {
+          "p50": null,
+          "p90": null,
+          "n": 12
+        }
+      }
+    },
+    "env": "Chromium headless, 900×700, 4 cores; library pass at 200 (90k nodes/ply) beside a game at the normal rung",
+    "after": {
+      "quiet": {
+        "reply": {
+          "p50": 1064,
+          "p90": 1091,
+          "n": 6
+        },
+        "wait": {
+          "p50": 349,
+          "p90": 378,
+          "n": 6
+        },
+        "queued": {
+          "p50": 0,
+          "p90": 0,
+          "n": 6
+        }
+      },
+      "busy": {
+        "reply": {
+          "p50": 1082,
+          "p90": 1146,
+          "n": 12
+        },
+        "wait": {
+          "p50": 362,
+          "p90": 428,
+          "n": 12
+        },
+        "queued": {
+          "p50": 356,
+          "p90": 422,
+          "n": 12
+        }
+      },
+      "preempted": 16
+    },
+    "determinism": {
+      "games": 2,
+      "plies": 78,
+      "differing": 0
+    },
+    "secondWorker": {
+      "res": {
+        "quiet": {
+          "reply": {
+            "p50": 1092,
+            "p90": 1265,
+            "n": 6
+          },
+          "wait": {
+            "p50": 373,
+            "p90": 551,
+            "n": 6
+          },
+          "queued": {
+            "p50": 0,
+            "p90": 1,
+            "n": 6
+          }
+        },
+        "busy": {
+          "reply": {
+            "p50": 1035,
+            "p90": 1076,
+            "n": 12
+          },
+          "wait": {
+            "p50": 317,
+            "p90": 353,
+            "n": 12
+          },
+          "queued": {
+            "p50": 0,
+            "p90": 0,
+            "n": 12
+          }
+        }
+      },
+      "memory": {
+        "rssNoEngineMB": 1050,
+        "firstEngineMB": 91,
+        "secondEngineMB": 61,
+        "hashMB": 32
+      },
+      "compared": {
+        "games": 3,
+        "plies": 124,
+        "differing": 0
+      }
+    }
   }
 }

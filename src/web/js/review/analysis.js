@@ -128,7 +128,8 @@ export function createAnalysis(d) {
     // moves that matter again, deeper — is review-pass.js, so the measurement
     // of its reproducibility runs this very code
     const p = await ChessReviewPass.runPass({ fens, sans: h, budget: perMove, lines: store.ui.multipv, evalScalar,
-      analyze: (fen, b, o) => ChessEngine.analyze(fen, b, o),
+      // v8-1-plan F4: a pass is background work, below a hint or 持续分析
+      analyze: (fen, b, o) => ChessEngine.analyze(fen, b, Object.assign({ bg: true }, o)),
       halt: () => (game.pgn() !== sig ? "gone" : store.session.analyzeAbort ? "abort" : null),
       progress: (d, n) => { store.session.analyzeProgress = d + "/" + n; setAnalyzeUI(); } });
     const { scalars, pvs, bests, linesAt, depths } = p;
