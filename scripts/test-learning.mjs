@@ -982,6 +982,58 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(merged.bank && merged.bank["lc-bbb"] === 1200 && merged.bank["lc-ccc"] === 1400, "T6: importing learning data keeps both sides' band notes");
   const plain = L.merge({ puzzles: JSON.stringify({ solved: {}, missed: {} }) }, { kind: L.LEARNING_KIND, v: 1, data: { puzzles: { solved: {}, missed: {} } } }, 100).puzzles;
   assert(!("bank" in plain), "T6: …and adds no table to a state that had none");
+
+  // M3 评审 ------------------------------------------------------------------
+  // a guessed band is one the bank has: past either end is the end band
+  {
+    const idxBands = [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600];
+    const Dx = { band: () => null, ensureBand: () => Promise.resolve([]), indexReady: () => true,
+      bandFor: (r) => { const b = Math.floor(r / 200) * 200; return b <= 600 ? 600 : b >= 2600 ? 2600 : b; } };
+    const Bx = bctx.createBankReview({ Db: Dx, Srs: S });
+    const lo = { missed: { "lc-lo": S.onMiss(null, now - 1) }, pr: { "lc-lo": { r: 450 } } };
+    const hi = { missed: { "lc-hi": S.onMiss(null, now - 1) }, pr: { "lc-hi": { r: 2750 } } };
+    assert(Bx.bandsOf(lo, "lc-lo").join() === "600" && Bx.bandsOf(hi, "lc-hi").join() === "2600,2400",
+      "M3: guessed bands are clamped to the bands the bank has (" + Bx.bandsOf(lo, "lc-lo") + " / " + Bx.bandsOf(hi, "lc-hi") + ")");
+    assert(Bx.bandsOf(lo, "lc-lo").every((b) => idxBands.includes(b)), "M3: …never a band with no chunk (200, 400, 2800)");
+  }
+  // a second wait while the band is still on its way waits too (it used to go on without it)
+  {
+    let release; const loadedX = new Set(); let calls = 0;
+    const Dx = { band: (b) => (loadedX.has(b) ? bands[b] : null),
+      ensureBand: (b) => { calls++; return new Promise((r) => { release = () => { loadedX.add(b); r(bands[b]); }; }); } };
+    const Bx = bctx.createBankReview({ Db: Dx, Srs: S });
+    const sx = { missed: { "lc-aaa": S.onMiss(null, now - 1) }, bank: { "lc-aaa": 1200 } };
+    let a = 0, b = 0;
+    const w1 = Bx.wait(sx, now, () => { a++; });
+    const w2 = Bx.wait(sx, now, () => { b++; });
+    await new Promise((r) => setTimeout(r, 0));
+    assert(w1 && w2 && a === 0 && b === 0 && calls === 1, "M3: a second wait while the band loads chains onto the same load", JSON.stringify({ w1, w2, calls }));
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    assert(a === 1 && b === 1 && Bx.resolve(sx, "lc-aaa"), "M3: …and both go on once it is here");
+  }
+  // pending() prunes an id every band of it has come without (another path loaded them)
+  {
+    const Dx = { band: (b) => bands[b] || [], ensureBand: (b) => Promise.resolve(bands[b] || []) };
+    const Bx = bctx.createBankReview({ Db: Dx, Srs: S });
+    const sx = { missed: { "lc-gone": S.onMiss(null, now - 1) }, bank: { "lc-gone": 1400 } };
+    assert(Bx.pending(sx, now).length === 0 && !("lc-gone" in sx.missed) && !("lc-gone" in sx.bank),
+      "M3: pending() drops a queued id its loaded band does not hold");
+  }
+  // the day's dose: an id nothing can serve yet takes no slot, and is not pushed to a later day
+  {
+    const Dx = { band: (b) => (b === 1200 ? bands[1200] : null), ensureBand: () => new Promise(() => {}) };
+    const Bx = bctx.createBankReview({ Db: Dx, Srs: S });
+    const sx = { missed: {}, bank: {} };
+    for (let i = 0; i < 25; i++) { sx.missed["lc-x" + i] = { s: 0, n: 1, due: now - 100000 - i, ivl: 0 }; sx.bank["lc-x" + i] = 1400; }
+    sx.missed["lc-aaa"] = { s: 0, n: 1, due: now - 10, ivl: 0 }; sx.bank["lc-aaa"] = 1200;
+    sx.missed["w-1"] = { s: 0, n: 1, due: now - 20, ivl: 0 };
+    const book = new Map([["w-1", { id: "w-1" }]]);
+    const list = Bx.reviewList(sx, now, 20, (id) => book.get(id) || null);
+    assert(list.map((p) => p.id).sort().join() === "lc-aaa,w-1", "M3: 25 bank ids with no band here do not crowd out the two that can be served", list.map((p) => p.id).join());
+    assert(Object.keys(sx.missed).filter((id) => id.startsWith("lc-x")).every((id) => sx.missed[id].due < now),
+      "M3: …and they stay due today, not pushed to later days for slots they could not use");
+  }
 }
 
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }

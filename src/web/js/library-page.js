@@ -102,7 +102,7 @@ async function bootLibrary(d) {
     // IndexedDB holds fewer games than the header counted: the WebView's
     // data went and localStorage's did not (or a restore could not write).
     // The native store has the shards.
-    const texts = await Persist.readBulk();
+    const texts = await Persist.readBulk("lib");   // its own shards, not the repertoire's (M3 评审)
     const back = [];
     for (const text of Object.values(texts || {})) {
       const v = readHeader(text);
@@ -130,7 +130,7 @@ async function bootLibrary(d) {
   let roTexts = null;
   if (readOnly) {
     warnOnce("lib.unreadable");
-    roTexts = await Persist.readBulk();
+    roTexts = await Persist.readBulk("lib");   // served back as its own: the lib port must not list rep shards (M3 评审)
     const byId = new Map();
     for (const text of Object.values(roTexts || {})) {
       const v = readHeader(text);

@@ -279,7 +279,7 @@ let migratedRecords = null;
   await page.waitForTimeout(300);
   assert(await modalShown(), "起始局面拿掉 e4：先弹确认框");
   const ask = await page.textContent("#confirm-message");
-  assert(/e4/.test(ask) && /2/.test(ask) && /1/.test(ask), "确认框说出拿掉哪一着、几条线受影响、几条整条删掉", ask);
+  assert(/e4/.test(ask) && /1 条线会截短，其中 1 条整条删掉/.test(ask), "确认框说出拿掉哪一着、几条线受影响、几条整条删掉", ask);
   await page.click("#confirm-cancel");
   await page.waitForTimeout(300);
   assert(JSON.stringify((await header(page)).w) === JSON.stringify(h0.w), "取消：书一着不动");
@@ -291,8 +291,8 @@ let migratedRecords = null;
   await page.waitForTimeout(400);
   const h1 = await header(page);
   const st1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
-  assert(h1.w.map((l) => l.sans).join() === "Nf3 Nc6" && !st1.solved[BOOK80.w[0].id],
-    "确认后：经过 e4 的线截短或删掉，背过的进度跟着走", JSON.stringify({ w: h1.w.map((l) => l.sans), solved: Object.keys(st1.solved) }));
+  assert(h1.w.map((l) => l.sans).join() === "Nf3 Nc6 e4 e5 Bc4" && !st1.solved[BOOK80.w[0].id],
+    "确认后：从起始局面走 e4 的线整条删掉（换序那条不经过这一着，不动），背过的进度跟着走", JSON.stringify({ w: h1.w.map((l) => l.sans), solved: Object.keys(st1.solved) }));
   const undo = await page.evaluate(() => { const b = document.querySelector("#toast.show .toast-action"); return b ? b.textContent : null; });
   assert(undo === "撤销", "提示里有「撤销」按钮", String(undo));
   // 键盘也能撤销：焦点给到提示里的按钮、回车
@@ -325,6 +325,39 @@ let migratedRecords = null;
   await page.click('#xp-list .xp-tog[data-san="e4"]').catch(() => {});
   await page.waitForTimeout(300);
   assert((await header(page)).b.length === hb, "执黑的书不收只有 1. e4 的一条线");
+  assert(errs.length === 0, "没有页面异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 3c. 分块还在启动时改了书：头不替旧的记录担保（M3 评审 P2-3） -----------------------
+{
+  const ctx = await context({});
+  // chunk-rep.js 晚到 2.5 秒：这段时间里在浏览器里加一着
+  let slow = true;
+  await ctx.route("**/js/chunk-rep.js", async (route) => { if (slow) await new Promise((r) => setTimeout(r, 2500)); route.continue(); });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.click("#pick-cancel", { timeout: 1000 }).catch(() => {});
+  await page.waitForSelector('#xp-list .xp-row[data-san="d4"]', { timeout: 10000 });
+  const early = await page.evaluate(() => !(window.__chess && window.__chess.rep && window.__chess.rep()));
+  await playRow(page, "d4");
+  await page.click("#xp-add");
+  await page.waitForTimeout(200);
+  assert(early && (await header(page)).w.some((l) => l.sans === "d4"), "分块到之前：d4 进了执白书的线");
+  await ready(page);
+  const start = keyAfter([]);
+  let recs = await records(page);
+  assert(recs["w|" + start] && recs["w|" + start].moves.includes("d4"), "分块到了：按局面的记录也有 d4（启动时的编辑重新索引了）", JSON.stringify(recs["w|" + start]));
+  // 下次启动：头对得上的就是记录本身
+  slow = false;
+  await page.reload();
+  await ready(page);
+  recs = await records(page);
+  const h = await header(page);
+  assert(recs["w|" + start] && recs["w|" + start].moves.includes("d4") && Object.keys(recs).length === h.n,
+    "重启：记录里有 d4，条数与头上一致", JSON.stringify({ n: h.n, recs: Object.keys(recs).length }));
   assert(errs.length === 0, "没有页面异常", errs.join(" / "));
   await ctx.close();
 }

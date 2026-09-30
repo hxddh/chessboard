@@ -284,6 +284,8 @@ export function createRepertoireUI(d) {
       LibraryQuery: typeof window !== "undefined" && window.CHESS_LIBDB ? window.CHESS_LIBDB.LibraryQuery : null,
     }))).then((c) => {
       ctrl = c;
+      // an edit made while the chunk was booting (M3 评审 P2-3): index those lines too
+      if (c.stale()) { c.sync(); saveBook(); render(); return c; }
       // what the boot indexed, migrated or recovered: the header says so now
       // (a profile that never had a book is not given one — the library's rule)
       if (!c.fresh && (total() || Persist.get("repertoire") != null)) saveBook();

@@ -33,21 +33,44 @@ export const bandOfRating = (r) => (Number.isFinite(Number(r)) ? Math.floor(Numb
 
 /**
  * @param {object} d
- * @param {object} d.Db   ChessPuzzleDb: band(b) (null until loaded), ensureBand(b)
+ * @param {object} d.Db   ChessPuzzleDb: band(b) (null until loaded), ensureBand(b),
+ *   and bandFor(rating) (the bands there are; null before the index is here)
  * @param {object} d.Srs  ChessSrs
  */
 export function createBankReview({ Db, Srs }) {
   /** band → Map(id → puzzle), built once per band */
   const byBand = new Map();
-  /** bands a wait has already asked for this session: never asked twice */
-  const asked = new Set();
+  /**
+   * band → {p, done, ok}: each band is asked for once a session. A second
+   * wait while it is still on its way chains onto the same load instead of
+   * going on without it (M3 评审); one that failed is not asked again.
+   */
+  const loads = new Map();
+  function load(b) {
+    let l = loads.get(b);
+    if (!l) {
+      l = { done: false, ok: false };
+      l.p = Promise.resolve().then(() => Db.ensureBand(b))
+        .then((list) => { l.done = true; l.ok = !!list; return list || null; }, () => { l.done = true; return null; });
+      loads.set(b, l);
+    }
+    return l.p;
+  }
+  /** A band the bank has, or null (M3 评审: a guess past either end is the end band). */
+  function clamp(b) {
+    // before the index is here there is nothing to clamp to: the guess stands
+    return typeof Db.bandFor === "function" && Db.indexReady && Db.indexReady() ? Db.bandFor(b) : b;
+  }
 
   /** The bands bank puzzle `id` can be in, most likely first. */
   function bandsOf(st, id) {
     const b = st.bank ? st.bank[id] : undefined;
     if (Number.isFinite(b)) return [b];
     const g = bandOfRating(st.pr && st.pr[id] ? st.pr[id].r : NaN);
-    return g == null ? [] : [g, g - 200, g + 200].filter((x) => x >= 0);
+    if (g == null) return [];
+    const out = [];
+    for (const x of [g, g - 200, g + 200]) { const c = x >= 0 ? clamp(x) : null; if (c != null && !out.includes(c)) out.push(c); }
+    return out;
   }
   function inBand(b, id) {
     let m = byBand.get(b);
@@ -78,14 +101,20 @@ export function createBankReview({ Db, Srs }) {
     if (st.bank && id in st.bank) delete st.bank[id];
   }
 
-  /** Bands the bank puzzles due by `now` need that have not arrived yet. */
+  /**
+   * Bands the bank puzzles due by `now` need that have not arrived yet (a
+   * band on its way counts: a wait chains onto it). Ids that every band they
+   * could be in has come without are pruned first (M3 评审).
+   */
   function pending(st, now) {
+    prune(st);
     const out = new Set();
     for (const id of Object.keys(st.missed || {})) {
       if (!isBankId(id) || !Srs.dueBy(st.missed[id], now)) continue;
       for (const b of bandsOf(st, id)) {
         if (Db.band(b)) { if (inBand(b, id)) break; continue; }
-        if (!asked.has(b)) out.add(b);
+        const l = loads.get(b);
+        if (!l || !l.done) out.add(b);
         break;                              // the likelier band first
       }
     }
@@ -123,8 +152,7 @@ export function createBankReview({ Db, Srs }) {
   function wait(st, now, then, failed) {
     const bands = pending(st, now);
     if (!bands.length) return false;
-    for (const b of bands) asked.add(b);
-    Promise.all(bands.map((b) => Db.ensureBand(b).catch(() => null))).then((lists) => {
+    Promise.all(bands.map(load)).then((lists) => {
       prune(st);
       if (failed && lists.some((l) => !l)) failed();
       then();
@@ -132,5 +160,25 @@ export function createBankReview({ Db, Srs }) {
     return true;
   }
 
-  return { resolve, note, forget, pending, prune, wait, bandsOf };
+  /**
+   * The 复习 list: today's dose (srs.js dueQueue, `cap` a day) of the
+   * entries that can be served now — `find(id)` for the book's, the loaded
+   * bands for bank ids. An id nothing can serve yet (its band not here, a
+   * mined drill before its chunk) does not take one of the day's slots, and
+   * is not pushed to a later day for it either (M3 评审).
+   * @returns {object[]} puzzles
+   */
+  function reviewList(st, now, cap, find) {
+    const servable = {}, got = new Map();
+    for (const id of Object.keys(st.missed || {})) {
+      const p = isBankId(id) ? resolve(st, id) : find(id);
+      if (p) { servable[id] = st.missed[id]; got.set(id, p); }
+    }
+    const today = Srs.dueQueue(servable, now, cap);
+    // dueQueue moved the overflow to later days on the copy: the queue keeps that
+    for (const id of Object.keys(servable)) st.missed[id] = servable[id];
+    return today.map((id) => got.get(id));
+  }
+
+  return { resolve, note, forget, pending, prune, wait, bandsOf, reviewList };
 }

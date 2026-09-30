@@ -379,6 +379,8 @@ export function createPuzzlesUI(d) {
     // So does a bank id before its band is here (v8-1-plan T6): the review
     // waits for the band (reviewWaits), and bank-review.js prune() drops an
     // id no band holds.
+    // an id every band it could be in has come without is not owed (M3 评审)
+    if (Bank.prune(store.session.puzzleState)) savePuzzleState();
     const missed = store.session.puzzleState.missed;
     const book = new Set(bookNow().map((p) => p.id));
     const servable = {};
@@ -557,15 +559,21 @@ export function createPuzzlesUI(d) {
     return Object.keys(st.missed).filter(isBankId).map((id) => Bank.resolve(st, id)).filter(Boolean);
   }
 
+  /** id → puzzle over the live book, one lookup table per read. */
+  function bookFinder() {
+    const m = new Map(bookNow().map((p) => [p.id, p]));
+    return (id) => m.get(id) || null;
+  }
+
   /** "review" is a virtual category: every puzzle currently in the missed set. */
   function puzzlesInCat(cat) {
     if (isThemeCat(cat)) return Modes.themeList(cat.slice(THEME_CAT.length));
     const base = cat === "review"
       // 6.0 (v6-plan Q3.3): what is due today, most overdue first, at most a
       // day's dose — the rest is scheduled forward by dueQueue() itself so a
-      // fortnight away does not arrive as one afternoon
-      ? Srs.dueQueue(store.session.puzzleState.missed, Date.now(), REVIEW_CAP)
-        .map((id) => (isBankId(id) ? Bank.resolve(store.session.puzzleState, id) : bookNow().find((p) => p.id === id))).filter(Boolean)
+      // fortnight away does not arrive as one afternoon. Only what can be served
+      // now takes a slot (M3 评审: a bank id whose band is not here waits its turn)
+      ? Bank.reviewList(store.session.puzzleState, Date.now(), REVIEW_CAP, bookFinder())
       // the op list shows one chair at a time — the side segment picks which
       : cat === "op" ? ALL_PUZZLES.filter((p) => p.cat === "op" && (p.side === "b") === (store.session.puzzleState.opSide === "b"))
       // the repertoire tab shows one chair at a time too, and for the same

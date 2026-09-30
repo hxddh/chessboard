@@ -90,7 +90,13 @@ async function bootRepertoire(d) {
   if (raw && (!header || header.db !== 2) && !stored.length) {
     try { await backend.setMeta("rep-v1:" + Date.now(), { raw }); } catch (_) { /* the header keeps it anyway */ }
   }
-  const r = B.reconcile({ book: book(), header, stored, shards, state: store.session.puzzleState, now: Date.now() });
+  const booted = book();
+  const r = B.reconcile({ book: booted, header, stored, shards, state: store.session.puzzleState, now: Date.now() });
+  // M3 评审 P2-3: the signature of the lines the records were indexed from —
+  // what the header may vouch for. An edit made while this boot was still
+  // awaiting changes book() but not the records, and the header must not
+  // then claim they match (repertoire-ui.js syncs on ready when they differ).
+  let indexedSig = B.sigOf(booted);
   let records = r.records;
   let version = 1;
   let frozen = false;
@@ -127,7 +133,9 @@ async function bootRepertoire(d) {
    * P2-2) — the records here win where both have one.
    */
   function sync(from) {
-    const next = B.indexBook(book(), from ? new Map([...from, ...records]) : records);
+    const now = book();
+    const next = B.indexBook(now, from ? new Map([...from, ...records]) : records);
+    indexedSig = B.sigOf(now);
     const { put, gone } = B.diff(records, next);
     records = next;
     version++;
@@ -251,7 +259,9 @@ async function bootRepertoire(d) {
     recovered: r.recovered,
     mode: () => backend.kind || "idb",
     /** what the header says about the records (repertoire-ui.js saveBook) */
-    extra: () => (vouched ? { db: 2, n: records.size, sig: B.sigOf(book()) } : {}),
+    extra: () => (vouched ? { db: 2, n: records.size, sig: indexedSig } : {}),
+    /** the lines changed since they were last indexed (an edit during boot) */
+    stale: () => indexedSig !== B.sigOf(book()),
     sync,
     records: () => records,
     /** the records as they are now, cards copied: what an undo gives back (M3 评审 P2-2) */

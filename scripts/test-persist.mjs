@@ -905,6 +905,15 @@ for (const how of ["restore", "clear"]) {
   assert(h.writes.join(",") === "rep2-b," + STORE_META && valOf(h, "lib00") === "L0", "T3: a touched rep shard is written alone; the library's stay (" + h.writes.join(",") + ")");
   const onlyRep = await P.readBulk("rep");
   assert(onlyRep && Object.keys(onlyRep).join() === "rep2" && onlyRep.rep2 === "R2'", "T3: readBulk(\"rep\") returns the repertoire's shards only");
+  const onlyLib = await P.readBulk("lib");
+  assert(onlyLib && !Object.keys(onlyLib).some((n) => n.startsWith("rep")), "M3 评审: readBulk(\"lib\") leaves the repertoire's shards out", Object.keys(onlyLib || {}).join());
+  // …and the library reads only its own: in read-only mode what it read is
+  // what its port lists as its shards, and a rep shard there is not its to serve
+  {
+    const src = (await import("fs")).readFileSync(path.join(root, "src/web/js/library-page.js"), "utf8");
+    assert(!/Persist\.readBulk\(\)/.test(src) && (src.match(/Persist\.readBulk\("lib"\)/g) || []).length === 2,
+      "M3 评审: library-page.js reads its shards with readBulk(\"lib\") (recovery and read-only mode)");
+  }
   P.restoreAll({ app: "chessboard", schema: 2, writtenAt: 99, keys: { lib01: "L1", rep1: "R1" } });
   P.freeze();
   await P.flushMirror();
