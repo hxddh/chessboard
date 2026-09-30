@@ -758,9 +758,10 @@
 - **体积**：主包 870,549 → 879,582 字节（+9,033：`trainer/endgames.js` 4.2 KB、`endgame-rules.js` 1.5 KB、17 条中文键、lessons / learning / me-page 的接口），预算 951,642 内；app.js 行数不变（6,702，只改了三行：状态条、对手名、「我的」的接口）。
 - **测试**：
   - `test-endgames.mjs`（进 `test:static`）：内容结构、60 个结论与核对记录一致（含「唯一着」）、`endgame-rules` 的 18 种情形、复习队列用固定时钟逐条核对、学习文件合并、8.0 存档、主包里没有残局内容。
-  - `test-endgames-play.mjs`（进 `test:engine`、`test:engine:sample` 和 release 的引擎矩阵）：两边都用仓库里的 Stockfish 在深度 20 走最佳着，60 个全部达到目标。深度 14 时有 3 个做不到（突破、象马赶错角、后对车的安静一步：学员那一方重复局面），改成 20。
+  - `test-endgames-play.mjs`（进 `test:engine`、`test:engine:sample` 和 release 的引擎矩阵）：两边都用仓库里的 Stockfish 在深度 20 走最佳着，60 个全部达到目标（本机 4 核、别的会话同时在跑时约 18 分钟；26 个吃到光王、18 个将死、9 个三次重复、6 个子力不足、1 个 50 回合）。深度 14 时有 3 个做不到（突破、象马赶错角、后对车的安静一步：学员那一方重复局面），改成 20。
   - `test-endgames-e2e.mjs`（真引擎，进 `test:e2e`、checks / release 的 lessons 组）：不进学习不取分块；走错被判失败并进复习；走对达成、复习往后排；「我的」计数、按钮能回到学习；8.0 存档；三语 × 1400 / 520 不截断。
   - `test-layout-e2e.mjs` 新增一个场景（三语 × 两种宽度：训练营卡片、目录、「我的」一节）；「最后一课」两处探针排除 `data-eg`。
+  - 本机跑过（Chromium）：`test:static` 除 test-pgn 的一条计时断言（「1000 局解析最长一段同步 < 50 ms」，本机 50–57 ms）外全过——同一条在 main 上同样失败，机器负载 14，与本项无关；test-endgames-e2e、board、content、trainer、shell、engine-flows、persist、engine 各 e2e 全过；test-layout-e2e 全量 1,924 项全过。
 - **偏离**：
   - 进度不另开存储键，放在 learn 键里：学习文件、清除教学进度、旧存档都不用改。
   - 学员永远执白：课程的对练本来只支持白方，书上黑方守的局面改为黑白互换。
