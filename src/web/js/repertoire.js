@@ -31,6 +31,8 @@ const MAX_LINES = 400;
 const MIN_PLIES = 2;
 /** Longest path this will follow — a whole annotated game is not a line. */
 const MAX_PLIES = 40;
+/** The same bound for an exported book (`linesFrom` exact): only a guard. */
+const EXACT_PLIES = 400;
 /**
  * Where a line has to begin.
  *
@@ -64,13 +66,15 @@ function normalize(sans) {
  * Depth-first, so the mainline comes out first and the book reads in the
  * order it was written.
  * @param {object} root a pgn-parser node with `children`
+ * @param {number} [maxPlies] MAX_PLIES
  * @returns {string[][]} paths in SAN
  */
-function pathsOf(root) {
+function pathsOf(root, maxPlies) {
+  const cap = maxPlies || MAX_PLIES;
   const out = [];
   const walk = (node, acc) => {
     const kids = (node && node.children) || [];
-    if (!kids.length || acc.length >= MAX_PLIES) {
+    if (!kids.length || acc.length >= cap) {
       if (acc.length) out.push(acc.slice());
       return;
     }
@@ -90,17 +94,24 @@ function pathsOf(root) {
  * Games that start somewhere other than the initial array are skipped and
  * counted, so the caller can say why rather than quietly importing nothing —
  * see START_FEN.
+ * v8-1-plan T3: `exact` reads a file this app exported from a book
+ * (rep-book.js toPgn, tagged `[RepSide]`) exactly as written — its one-move
+ * branches and its deep ones included. By position a book can hold both: a
+ * transposition or a repetition ends a branch early, and continues one past
+ * any single line's depth. MIN_PLIES and MAX_PLIES are rules for a file
+ * someone else wrote; applied to our own they would lose moves.
  * @param {object[]} games parsed games, each with a `root`
+ * @param {boolean} [exact]
  * @returns {{lines: string[], skipped: number}} SAN text per line
  */
-function linesFrom(games) {
+function linesFrom(games, exact) {
   const out = [];
   let skipped = 0;
   for (const g of games || []) {
     if (!g || !g.root) continue;
     if (g.root.fen && g.root.fen !== START_FEN) { skipped++; continue; }
-    for (const path of pathsOf(g.root)) {
-      if (path.length < MIN_PLIES) continue;
+    for (const path of pathsOf(g.root, exact ? EXACT_PLIES : MAX_PLIES)) {
+      if (path.length < (exact ? 1 : MIN_PLIES)) continue;
       out.push(normalize(path));
     }
   }

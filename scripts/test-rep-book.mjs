@@ -1,0 +1,259 @@
+/**
+ * 你的开局书，按局面（v8-1-plan T3）：src/web/js/rep-book.js 的纯函数。
+ *
+ *   1. 按局面存：换序走到同一局面合并成一条记录，局面键 = ChessFide.positionKey。
+ *   2. 开局浏览器的「我的」（explorer/core.js mineIndex）与开局书的记录逐着一致。
+ *   3. 按单着排期：固定时钟，到期和不到期逐条核对。
+ *   4. 导出 / 导入 PGN（带变着）往返逐节点相等。
+ *   5. 老的 repertoire 存档（6.x–8.0 的形状）无损迁移；进度带到新卡片上。
+ *   6. 从开局书里拿掉一着；棋谱库反推。
+ *
+ * 跑：node scripts/test-rep-book.mjs
+ */
+import path from "path";
+import vm from "vm";
+import { fileURLToPath } from "url";
+import { compileModuleSync } from "./bundle.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ctx = { console, Date, Math, JSON, structuredClone };
+ctx.globalThis = ctx;
+ctx.window = ctx;
+vm.createContext(ctx);
+for (const f of ["chess.js", "fide.js", "drills.js", "pgn-parser.js", "repertoire.js", "openings.js", "explorer/core.js", "rep-book.js"]) {
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/" + f)), ctx, { filename: f });
+}
+const B = ctx.ChessRepBook;
+const R = ctx.ChessRepertoire;
+const P = ctx.ChessPgnParser;
+const X = ctx.ChessExplorer;
+const { Chess } = ctx;
+const keyAfter = (sans) => { const g = new Chess(); for (const s of sans.split(" ").filter(Boolean)) g.move(s); return ctx.ChessFide.positionKey(g.fen(), g); };
+
+let failed = 0;
+const assert = (cond, msg, extra) => {
+  if (cond) console.log("ok   " + msg);
+  else { failed++; console.error("FAIL " + msg + (extra ? "  " + extra : "")); }
+};
+const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines([], b || [], null).lines });
+
+// --- 1. 按局面存，换序合并 ----------------------------------------------------
+{
+  const bk = book(["e4 e5 Nf3 Nc6 Bb5 a6", "Nf3 Nc6 e4 e5 Bc4 Bc5"]);
+  const recs = B.indexBook(bk);
+  const at = recs.get("w|" + keyAfter("e4 e5 Nf3 Nc6"));
+  assert(at && at.moves.map((m) => m.san).join() === "Bb5,Bc4", "两种着法顺序走到同一局面，一条记录、两着合并", at && JSON.stringify(at.moves));
+  assert(at.path === "e4 e5 Nf3 Nc6", "记录记下第一条走到它的着法顺序", at.path);
+  assert(at.key === keyAfter("e4 e5 Nf3 Nc6"), "局面键就是 ChessFide.positionKey");
+  const mine = [...recs.values()].filter((r) => r.card);
+  assert(mine.length && mine.every((r) => r.key.split(" ")[1] === "w"), "只有轮到我方（执白）走的局面是卡片");
+  assert([...recs.values()].filter((r) => !r.card).every((r) => r.key.split(" ")[1] === "b"), "对方走的局面是预期应着，不出题");
+  // en passant：只有真能吃的时候键里才带吃过路兵格，所以 1. e4 … 与换序同键
+  const ep = B.indexBook(book(["e4 d5 e5 f5", "e4 f5 e5 d5"]));
+  const k = keyAfter("e4 d5 e5 f5");
+  assert(k.split(" ")[3] === "f6" && ep.get("w|" + k) === undefined && ep.size === 6, "能吃过路兵的局面键带 f6；叶子局面没有着法、不存", String(ep.size));
+  // 7.2 读进来的「从残局出发」那种线：能走的前缀进索引，线本身原样留着
+  const bad = B.indexLines("w", [{ id: "rep-x", sans: "Rd8 Rb1 Rd2" }, { id: "rep-y", sans: "d4 d5 c4" }]);
+  assert(bad.size === 3 && [...bad.values()].every((r) => r.moves.every((m) => m.san !== "Rd8")), "走不通的线不产生记录，别的线照常", String(bad.size));
+}
+
+// --- 2. 开局浏览器的「我的」与开局书逐着一致 ------------------------------------
+{
+  // 内置书的 195 条线当执白书，同一批的前 80 条当执黑书：上千个局面、大量换序
+  const lines = ctx.CHESS_OPENINGS.map((r) => r[2]);
+  const bk = book(lines, lines.slice(0, 80));
+  const recs = B.indexBook(bk);
+  let checked = 0, bad = [];
+  for (const side of ["w", "b"]) {
+    const marks = X.mineIndex(bk[side]);
+    const keys = new Set([...marks.keys()].concat([...recs.values()].filter((r) => r.side === side).map((r) => r.key)));
+    for (const key of keys) {
+      const a = [...(marks.get(key) || [])].sort().join();
+      const b = [...B.movesAt(recs, key, side)].sort().join();
+      checked++;
+      if (a !== b) bad.push(side + " " + key + ": " + a + " / " + b);
+    }
+  }
+  assert(checked > 1000 && !bad.length, `「我的」标记与开局书记录逐局面逐着相同（${checked} 个局面）`, bad.slice(0, 3).join(" | "));
+  // rowsAt：有对局的行标「我的」；一局都没有的我的着法也列出来（n = 0）
+  const g = new Chess();
+  const mine = B.movesAt(recs, keyAfter(""), "w");
+  const rows = X.rowsAt([{ san: "e4", n: 3, w: 1, d: 1, b: 1 }, { san: "a3", n: 1, w: 0, d: 0, b: 1 }], g, new Set(["e4", "d4"]), mine);
+  const e4 = rows.find((r) => r.san === "e4");
+  assert(e4.mine && e4.book && !rows.find((r) => r.san === "a3").mine, "有对局的行：e4 既是书也是我的，a3 两样都不是");
+  const extra = rows.filter((r) => r.n === 0).map((r) => r.san).sort();
+  assert(extra.length === [...mine].filter((s) => s !== "e4").length && extra.every((s) => mine.has(s)),
+    "我的书里有、却一局都没有的着法也列出来", extra.join());
+  assert(rows.every((r) => r.mine === mine.has(r.san)), "每一行的「我的」都等于开局书在这个局面的着法");
+}
+
+// --- 3. 按单着排期：固定时钟 ---------------------------------------------------
+{
+  const T0 = Date.UTC(2026, 8, 1, 8, 0, 0);
+  const D = B.DAY;
+  let c = B.newCard();
+  assert(B.isDue(c, T0), "新卡片立即到期");
+  const want = [1, 3, 7, 21, 60, 180, 180];
+  let now = T0;
+  const got = [];
+  for (let i = 0; i < want.length; i++) {
+    c = B.grade(c, true, now);
+    got.push(c.ivl);
+    assert(!B.isDue(c, now + c.ivl * D - 1), `第 ${i + 1} 次答对后：${c.ivl} 天减 1 ms 还不到期`);
+    assert(B.isDue(c, now + c.ivl * D), `……${c.ivl} 天整到期`);
+    now += c.ivl * D;
+  }
+  assert(got.join() === want.join(), "间隔阶梯 1 → 3 → 7 → 21 → 60 → 180，之后停在 180", got.join());
+  const miss = B.grade(c, false, now);
+  assert(miss.s === 0 && miss.due === now && B.isDue(miss, now), "答错：连对归零、立刻到期");
+  assert(B.grade(miss, true, now).due === now + D, "答错之后再答对，从 1 天重新爬");
+
+  // 一本书、三十天：每天只练到期的，逐条核对哪几张到期
+  const bk = book(["e4 e5 Nf3 Nc6 Bb5", "e4 c5 Nf3 d6 d4"], ["e4 e5 Nf3 Nc6", "d4 d5 c4 e6"]);
+  const recs = B.indexBook(bk);
+  const all = [...recs.values()].filter((r) => r.card);
+  assert(B.dueCards(recs, T0).length === all.length, "开始时每张卡都到期（" + all.length + "）");
+  assert(B.dueCards(recs, T0, "b").every((r) => r.side === "b"), "按执子方筛");
+  const first = B.dueCards(recs, T0);
+  assert(first[0].path === "" && first[1].path.split(" ").length <= first[first.length - 1].path.split(" ").length,
+    "同一天到期：浅的局面先问", first.map((r) => r.path).join(" / "));
+  // 第 0 天：第一张答错，其余答对；之后每天把到期的都答对
+  first.forEach((r, i) => { r.card = B.grade(r.card, i !== 0, T0); });
+  const plan = [0];
+  for (let day = 1; day <= 30; day++) {
+    const t = T0 + day * D;
+    const due = B.dueCards(recs, t).map((r) => r.id);
+    plan.push(due.length);
+    // 手算：每张卡到期 ⇔ card.due ≤ t
+    const expect = all.filter((r) => r.card.due <= t).map((r) => r.id).sort();
+    if (due.slice().sort().join() !== expect.join()) { failed++; console.error("FAIL day " + day, due, expect); }
+    for (const r of B.dueCards(recs, t)) r.card = B.grade(r.card, true, t);
+  }
+  const n = all.length;
+  // 答对的：第 1 天（1）、第 4 天（+3）、第 11 天（+7）；答错的那张晚一天：第 1、2、5、12 天
+  const expect = new Array(31).fill(0);
+  for (const d of [1, 4, 11]) expect[d] += n - 1;
+  for (const d of [1, 2, 5, 12]) expect[d] += 1;
+  assert(plan.join() === expect.join(), "三十天里每天到期几张，和手算的一张不差（答错那张比别的晚一天爬梯）", plan.join() + " / " + expect.join());
+  console.log("     三十天每天到期的张数：" + plan.join(" "));
+}
+
+// --- 4. PGN 往返逐节点相等 ------------------------------------------------------
+{
+  const node = (recs) => [...recs.values()].map((r) => r.id + " " + r.moves.map((m) => m.san + ">" + m.to).join(",")).sort().join("\n");
+  const roundTrip = (bk) => {
+    const recs = B.indexBook(bk);
+    const text = B.toPgn(recs, "w", "White") + "\n" + B.toPgn(recs, "b", "Black");
+    const games = P.parsePgn(text).games;
+    const back = { w: [], b: [] };
+    for (const g of games) {
+      const side = B.taggedSide(g);
+      back[side] = R.addLines(back[side], R.linesFrom([g], true).lines, null).lines;
+    }
+    return { recs, text, again: B.indexBook(back) };
+  };
+  // 变着、换序、重复局面（回到起始局面）、两方的书
+  const bk = book(
+    ["e4 e5 Nf3 Nc6 Bb5 a6 Ba4", "e4 e5 Nf3 Nc6 Bb5 Nf6", "e4 c5 Nf3 d6 d4 cxd4 Nxd4", "Nf3 Nc6 e4 e5 Bc4", "Nf3 Nf6 Ng1 Ng8 d4"],
+    ["e4 e5 Nf3 Nc6 Bb5 a6", "d4 Nf6 c4 e6 Nc3 Bb4", "c4 e5 Nc3 Nf6", "Nf3 d5 d4 Nf6"]);
+  const r1 = roundTrip(bk);
+  assert(/\(/.test(r1.text) && /\[RepSide "b"\]/.test(r1.text), "导出的 PGN 带变着，每方一局，标着是谁的书");
+  assert(node(r1.recs) === node(r1.again), `往返之后逐节点相等（${r1.recs.size} 个节点，每个节点的着法与去向）`,
+    node(r1.recs).split("\n").length + " vs " + node(r1.again).split("\n").length);
+  const order = (recs) => [...recs.values()].map((r) => r.id + ":" + r.moves.map((m) => m.san).join(",")).sort().join("|");
+  assert(order(r1.recs) === order(r1.again), "每个节点里着法的先后也不变（主线在前）");
+  // 大书：内置书 195 条当执白、前 60 条当执黑
+  const lines = ctx.CHESS_OPENINGS.map((r) => r[2]);
+  const r2 = roundTrip(book(lines, lines.slice(0, 60)));
+  assert(node(r2.recs) === node(r2.again) && order(r2.recs) === order(r2.again), `195 条线的大书往返逐节点相等（${r2.recs.size} 个节点）`);
+  // 再导出一次，文字一字不差
+  const text2 = B.toPgn(r2.again, "w", "White") + "\n" + B.toPgn(r2.again, "b", "Black");
+  assert(text2 === r2.text, "导回的书再导出，PGN 一字不差");
+  assert(B.toPgn(B.indexBook(book([], [])), "w") === "", "空书导出空串");
+}
+
+// --- 5. 老存档迁移（6.x–8.0 的形状）----------------------------------------------
+{
+  const T0 = Date.UTC(2026, 8, 30);
+  // 6.x：没有开局书这个键
+  const r6 = B.reconcile({ book: { w: [], b: [] }, header: null, stored: [], state: { solved: {}, missed: {} }, now: T0 });
+  assert(r6.records.size === 0 && !r6.put.length && r6.migrating, "6.x：没有书，迁移不产生任何记录");
+  // 7.2：线没有名字，还混着一条「从残局出发」的线（7.2 当时照收）
+  const v72 = { v: 1, w: [
+    { id: "rep-" + ctx.ChessDrills.hash36("e4 e5 Nf3 Nc6 Bc4"), sans: "e4 e5 Nf3 Nc6 Bc4", eco: "", name: "" },
+    { id: "rep-" + ctx.ChessDrills.hash36("Rd8 Rb1 Rd2"), sans: "Rd8 Rb1 Rd2", eco: "", name: "" },
+  ], b: [] };
+  // 7.4–8.0：有 ECO 名字，两方都有；换序
+  const v80 = { v: 1, w: [
+    { id: "rep-" + ctx.ChessDrills.hash36("e4 e5 Nf3 Nc6 Bb5 a6"), sans: "e4 e5 Nf3 Nc6 Bb5 a6", eco: "C68", name: "Ruy Lopez: Morphy Defense" },
+    { id: "rep-" + ctx.ChessDrills.hash36("Nf3 Nc6 e4 e5 Bc4"), sans: "Nf3 Nc6 e4 e5 Bc4", eco: "C50", name: "Italian Game" },
+  ], b: [
+    { id: "rep-" + ctx.ChessDrills.hash36("d4 Nf6 c4 e6"), sans: "d4 Nf6 c4 e6", eco: "E00", name: "Indian Defense" },
+  ] };
+  for (const [tag, v1, solved] of [["7.2", v72, [v72.w[0].id]], ["8.0", v80, [v80.w[0].id, v80.b[0].id + ":b"]]]) {
+    const before = JSON.stringify(v1);
+    const state = { solved: Object.fromEntries(solved.map((id) => [id, true])), missed: {} };
+    const r = B.reconcile({ book: { w: v1.w, b: v1.b }, header: v1, stored: [], state, now: T0 });
+    assert(JSON.stringify(v1) === before, `${tag}：迁移不改线本身（旧版本照读、按线练的进度照挂）`);
+    // 无损：每条线能走的每一着，都在它那一方的记录里
+    let edges = 0, miss = [];
+    for (const side of ["w", "b"]) for (const l of v1[side]) {
+      const g = new Chess();
+      for (const san of l.sans.split(" ")) {
+        const key = ctx.ChessFide.positionKey(g.fen(), g);
+        if (!g.move(san)) break;
+        edges++;
+        if (!B.movesAt(r.records, key, side).has(san)) miss.push(side + " " + san);
+      }
+    }
+    assert(edges > 0 && !miss.length, `${tag}：${edges} 着全部进了按局面的记录`, miss.join());
+    assert(r.put.length === r.records.size && !r.gone.length, `${tag}：第一次迁移把每条记录都写进去（${r.put.length}）`);
+    const seededCards = [...r.records.values()].filter((x) => x.card && x.card.s === 1);
+    assert(r.seeded > 0 && r.seeded === seededCards.length && seededCards.every((x) => x.card.due === T0 + B.DAY),
+      `${tag}：背下来的线，它上面的卡从第一级开始、一天后到期（${r.seeded} 张）`);
+    // 迁移第二遍（旧版本又写了一次头）：卡片原样带过来，不再重播种
+    const again = B.reconcile({ book: { w: v1.w, b: v1.b }, header: v1, stored: [...r.records.values()], state, now: T0 + 5 * B.DAY });
+    assert(!again.put.length && !again.gone.length && again.seeded === 0, `${tag}：再迁一次什么都不写、不重播种`);
+    // 迁移完的头：db 2、同样的签名与记录数 —— 直接信任
+    const header = Object.assign({}, v1, { db: 2, n: r.records.size, sig: B.sigOf({ w: v1.w, b: v1.b }) });
+    const fast = B.reconcile({ book: { w: v1.w, b: v1.b }, header, stored: [...r.records.values()], state, now: T0 });
+    assert(fast.fresh && fast.records.size === r.records.size, `${tag}：头对得上时直接用存着的记录`);
+    // 浏览器存储丢了记录，本机存档的分片还在：卡片找回来
+    const graded = [...r.records.values()].map((x) => (x.card ? Object.assign({}, x, { card: { s: 3, n: 3, due: T0 + 7 * B.DAY, ivl: 7 } }) : x));
+    const lost = B.reconcile({ book: { w: v1.w, b: v1.b }, header, stored: [], shards: graded, state, now: T0 });
+    assert(lost.recovered === graded.length && [...lost.records.values()].filter((x) => x.card).every((x) => x.card.s === 3),
+      `${tag}：记录丢了，从分片找回 ${lost.recovered} 条，复习进度一张不少`);
+  }
+}
+
+// --- 6. 拿掉一着；棋谱库反推 ----------------------------------------------------
+{
+  const w = book(["e4 e5 Nf3 Nc6 Bb5 a6", "Nf3 Nc6 e4 e5 Bb5 Nf6", "e4 e5 Nf3 Nc6 Bc4", "d4 d5 c4"]).w;
+  const key = keyAfter("e4 e5 Nf3 Nc6");
+  const r = B.removeMove(R, w, key, "Bb5");
+  const sans = r.lines.map((l) => l.sans).sort();
+  assert(JSON.stringify(sans) === JSON.stringify(["Nf3 Nc6 e4 e5", "d4 d5 c4", "e4 e5 Nf3 Nc6 Bc4"]),
+    "拿掉 Bb5：两种着法顺序里的 Bb5 都没了，截下来的前缀被更长的线盖住就不单留", JSON.stringify(sans));
+  const keep = w.find((l) => l.sans === "d4 d5 c4");
+  assert(r.lines.find((l) => l.sans === "d4 d5 c4").id === keep.id && r.gone.length === 2,
+    "没经过这一着的线 id 不变，进度照挂；离开的两条 id 报出来", r.gone.join());
+  const recs = B.indexLines("w", r.lines);
+  assert(!B.movesAt(recs, key, "w").has("Bb5") && B.movesAt(recs, key, "w").has("Bc4"), "按局面看：这个局面只剩 Bc4");
+  assert(B.removeMove(R, w, key, "Qh5") === null, "书里本来就没有的着法，拿不掉，也不动书");
+
+  // 棋谱库反推：你执白走到这个局面 5 局里 4 局走 Bc4，书里写的是 Bb5
+  const bk = book(["e4 e5 Nf3 Nc6 Bb5 a6", "d4 d5 c4 e6 Nc3"]);
+  const all = B.indexBook(bk);
+  const hits = { [keyAfter("e4 e5 Nf3 Nc6")]: [{ san: "Bc4", n: 4 }, { san: "Bb5", n: 1 }],
+    [keyAfter("d4 d5")]: [{ san: "c4", n: 6 }, { san: "Nf3", n: 5 }],
+    [keyAfter("e4 e5")]: [{ san: "Nc3", n: 1 }] };
+  const rows = B.crossCheck(all, (x) => hits[x.key] || null);
+  assert(rows.length === 1 && rows[0].usual === "Bc4" && rows[0].n === 4 && rows[0].of === 5 && rows[0].book.join() === "Bb5",
+    "你常走 Bc4（5 局里 4 局），书写的是 Bb5 —— 只报这一处", JSON.stringify(rows));
+  assert(B.pathText(rows[0].path) === "1. e4 e5 2. Nf3 Nc6", "局面按着法写出来", B.pathText(rows[0].path));
+  const tie = B.crossCheck(all, (x) => (x.key === keyAfter("e4 e5 Nf3 Nc6") ? [{ san: "Bc4", n: 2 }, { san: "Bb5", n: 2 }] : null));
+  assert(!tie.length, "和书上的着一样多，不算「常走」");
+}
+
+if (failed) { console.error(`\n${failed} 项失败`); process.exit(1); }
+console.log("\nall rep-book tests passed");
