@@ -3736,6 +3736,25 @@ for (const lang of CONTENT_LANGS) {
     for (const p of BOOK) st.solved[p.id] = true;
     assert(P.pickNext(st, BOOK, S).kind === "done", "an exhausted book is reported, not papered over");
   }
+  // M3 评审 P2-1: a queued bank puzzle is for the review rung only. Handed to
+  // the other rungs it was picked as "weak"/"rated"/"explore" by its own cat,
+  // then looked up in a list it is not in — a different puzzle was served
+  // and the book never reported done.
+  {
+    const T = Date.parse("2026-09-30T12:00:00Z");
+    const bank = [{ id: "lc-abc", cat: "tac", src: "lichess", rating: 1500 }];
+    const st = fresh();
+    for (const p of BOOK) st.solved[p.id] = true;
+    st.missed["lc-abc"] = { s: 0, n: 1, due: T + S.DAY, ivl: 0 };
+    assert(P.pickNext(st, BOOK, S, null, null, null, null, T, bank).kind === "done",
+      "a whole book solved is still done while a bank puzzle waits for tomorrow");
+    st.missed["lc-abc"].due = T - 1;
+    const r = P.pickNext(st, BOOK, S, null, null, null, null, T, bank);
+    assert(r.kind === "review" && r.id === "lc-abc", "…and a due one is served by the review rung", JSON.stringify(r));
+    const st2 = fresh(); st2.missed["lc-abc"] = { s: 0, n: 1, due: T + S.DAY, ivl: 0 };
+    const rated = P.pickNext(st2, BOOK, S, null, null, (p) => p.rating || null, { lo: 1400, hi: 1600 }, T, bank);
+    assert(rated.id !== "lc-abc", "the rating rung never picks a queued bank puzzle", JSON.stringify(rated));
+  }
   // the tally survives what the queue forgets: graduation deletes the entry,
   // the lifetime record keeps the miss — this is the whole reason it exists
   {
@@ -4116,8 +4135,8 @@ for (const lang of CONTENT_LANGS) {
   const appSrc = allAppSource;
   // the book every serving rail reads is the live one…
   // 6.0: two more arguments — the rating of a puzzle and the player's band
-  // v8-1-plan T6: reviewBook() is bookNow() plus the queued bank puzzles whose bands are here
-  assert(/function reviewBook\(\)[\s\S]{0,300}bookNow\(\)\.concat\(bank\) : bookNow\(\)[\s\S]*const pick = Picker\.pickNext\(store\.session\.puzzleState, reviewBook\(\), Srs, puzzleTier, motifKeyOf,\s*puzzleRatingOf/.test(appSrc),
+  // v8-1-plan T6: the queued bank puzzles whose bands are here go to the review rung only (M3 评审 P2-1)
+  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier, motifKeyOf,\s*puzzleRatingOf[^;]*reviewBank\(\)\)/.test(appSrc),
     "为你出一题 reads the live book — a mined drill can be recommended");
   // 6.0: the queue is what is due today (srs.js dueQueue), each id looked up in the live book
   assert(/\? Srs\.dueQueue\(store\.session\.puzzleState\.missed[\s\S]{0,160}bookNow\(\)\.find/.test(appSrc),

@@ -551,11 +551,10 @@ export function createPuzzlesUI(d) {
     const still = () => store.session.mode === "puzzle" && !store.session.run && store.session.puzzleState.cat === was;
     return Bank.wait(store.session.puzzleState, Date.now(), () => { if (still()) then(); }, () => toast(t("theme.loadFailed"), "fix"));
   }
-  /** The book plus the queued bank puzzles whose bands are here: what the picker's review rung reads. */
-  function reviewBook() {
+  /** The queued bank puzzles whose bands are here: what only the picker's review rung reads (M3 评审 P2-1). */
+  function reviewBank() {
     const st = store.session.puzzleState;
-    const bank = Object.keys(st.missed).filter(isBankId).map((id) => Bank.resolve(st, id)).filter(Boolean);
-    return bank.length ? bookNow().concat(bank) : bookNow();
+    return Object.keys(st.missed).filter(isBankId).map((id) => Bank.resolve(st, id)).filter(Boolean);
   }
 
   /** "review" is a virtual category: every puzzle currently in the missed set. */
@@ -1758,8 +1757,8 @@ export function createPuzzlesUI(d) {
       // the rating rung only once a first answer has moved the rating — a fresh
       // profile is still sent exploring
       const rated = Array.isArray(store.session.puzzleState.rhist) && store.session.puzzleState.rhist.length > 0;
-      const pick = Picker.pickNext(store.session.puzzleState, reviewBook(), Srs, puzzleTier, motifKeyOf,
-        puzzleRatingOf, rated ? ChessRating.pickRange(playerRating()) : null);
+      const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf,
+        puzzleRatingOf, rated ? ChessRating.pickRange(playerRating()) : null, Date.now(), reviewBank());
       if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
       store.session.puzzleState.cat = pick.cat;
       // same contract for the side segment: if the picker chose an opening line
