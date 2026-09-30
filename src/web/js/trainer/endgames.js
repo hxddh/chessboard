@@ -34,15 +34,21 @@ export function createEndgames(d) {
   let asked = null;
   let meLater = null; // 「我的」 asked before the chunk was here
 
-  /** start the fetch once; `onReady` repaints whoever asked */
+  /**
+   * Start the fetch once; `onReady` repaints whoever asked. After the frame
+   * that asked, not during it: F5's first paint fetches no chunk but the boot
+   * one, and a session restored into 学习 draws the list in its first frame.
+   */
   function ensure() {
     if (data || asked) return;
-    asked = loadChunk(EG_CHUNK.file, EG_CHUNK.global).then((m) => {
-      data = m;
-      onReady();
-      if (meLater) { const go = meLater; meLater = null; renderMe(go); }
-    },
-      () => { asked = null; }); // a failed load is retried next time something asks
+    asked = new Promise((r) => (typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame(() => setTimeout(r, 0)) : setTimeout(r, 0)))
+      .then(() => loadChunk(EG_CHUNK.file, EG_CHUNK.global))
+      .then((m) => {
+        data = m;
+        onReady();
+        if (meLater) { const go = meLater; meLater = null; renderMe(go); }
+      }, () => { asked = null; }); // a failed load is retried next time something asks
   }
   const ready = () => !!data;
   const word = (arr) => (arr ? arr[LANG_AT[store.ui.langId] || 0] || arr[0] : "");

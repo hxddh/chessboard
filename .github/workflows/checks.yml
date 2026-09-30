@@ -107,7 +107,7 @@ jobs:
           - name: board + sound + clock
             suites: scripts/test-board-e2e.mjs scripts/test-audio-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-shell-e2e.mjs scripts/test-trainer-e2e.mjs
           - name: lessons + review + engine
-            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs
+            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs scripts/test-endgames-e2e.mjs
           - name: persistence
             suites: scripts/test-persist-e2e.mjs
           - name: game library

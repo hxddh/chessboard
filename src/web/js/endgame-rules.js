@@ -11,16 +11,18 @@
  * - **win**: checkmate. Or the engine is down to a bare king while the
  *   student keeps a queen or rook it cannot take next move — K+Q and K+R
  *   against a lone king are the course's first drills, and playing them out
- *   again after every pawn ending would teach nothing but patience.
+ *   again after every pawn ending would teach nothing but patience. (Not
+ *   when the engine *starts* bare: then the mate is the lesson.)
  *   Failures: stalemate or any draw by the rules, being mated, and material
  *   that can no longer mate (no queen, rook or pawn, and fewer than two
  *   minor pieces).
  * - **draw**: any draw by the rules — stalemate, insufficient material,
  *   threefold repetition, the fifty-move rule — or the engine left with a
  *   bare king. Failures: being mated, and the engine making a new queen: a
- *   promotion the defence existed to stop — unless the student has a queen
- *   too, or a pawn on the seventh about to make one (Réti's study ends
- *   queen against queen, and that is the draw).
+ *   promotion the defence existed to stop — unless the student takes the
+ *   new queen at once (a bishop guarding the square), has a queen too, or a
+ *   pawn on the seventh about to make one (Réti's study ends queen against
+ *   queen, and that is the draw).
  *
  * Pure: scripts/test-endgames.mjs plays every position to its goal through
  * this same function, so the app and the test cannot disagree about what
@@ -59,7 +61,7 @@
   /**
    * @param {object} g chess.js game, after either side's move
    * @param {"win"|"draw"} goal
-   * @param {{bq:number}} start the engine's queens in the starting position
+   * @param {{bq:number, bare:boolean}} start the engine's material at the start (startOf)
    * @returns {null|{ok:true, how:string}|{ok:false, how:string}}
    *   null while play goes on; `how` names what happened, for the words
    */
@@ -70,15 +72,17 @@
       if (g.game_over()) return { ok: true, how: drawHow(g) };
       const bm = material(g, "b");
       if (bare(bm)) return { ok: true, how: "bare" };
-      // a new black queen ends it — unless White has a queen of its own or is
-      // one step from one (Réti's study ends queen against queen)
-      if (bm.q > ((start && start.bq) || 0) && !material(g, "w").q && !onSeventh(g)) return { ok: false, how: "queened" };
+      // a new black queen ends it — unless White takes it at once (the bishop
+      // or knight guarding the square), has a queen of its own, or is one step
+      // from one (Réti's study ends queen against queen)
+      if (bm.q > ((start && start.bq) || 0) && !material(g, "w").q && !onSeventh(g) &&
+        !(g.turn() === "w" && g.moves({ verbose: true }).some((m) => m.captured === "q"))) return { ok: false, how: "queened" };
       return null;
     }
     if (mated) return g.turn() === "b" ? { ok: true, how: "mate" } : { ok: false, how: "mated" };
     if (g.game_over()) return { ok: false, how: g.in_stalemate() ? "stalemate" : "draw" };
     if (!canMate(material(g, "w"))) return { ok: false, how: "material" };
-    if (bare(material(g, "b")) && keepsHeavy(g)) return { ok: true, how: "bare" };
+    if (!(start && start.bare) && bare(material(g, "b")) && keepsHeavy(g)) return { ok: true, how: "bare" };
     return null;
   }
 
@@ -95,9 +99,13 @@
     return "fifty";
   }
 
-  /** the engine's queens at the start, for the "new queen" failure */
+  /**
+   * The engine's material at the start: its queens (for the "new queen"
+   * failure) and whether it was already a bare king (then only mate wins).
+   */
   function startOf(g) {
-    return { bq: material(g, "b").q };
+    const m = material(g, "b");
+    return { bq: m.q, bare: bare(m) };
   }
 
   export const ChessEndgameRules = { outcome, startOf, material, canMate };

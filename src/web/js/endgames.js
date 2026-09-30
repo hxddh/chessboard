@@ -35,8 +35,9 @@
   ];
 
   const THEORY = ["标准残局理论", "Standard endgame theory", "標準的なエンドゲーム理論"];
-  const ONE = ["按主题摆出的教学局面，查表只有这一种正解", "Set up for the theme; the table allows only the move the tip names",
-    "テーマ用に配置した局面。正解はヒントの一手だけ"];
+  const ONE = ["按主题摆出的教学局面；查表确认，只有提示里点到的着法能达到目标",
+    "Set up for the theme; the tablebase confirms that only the moves the tip names reach the goal",
+    "テーマ用に配置した局面。ヒントに挙げた手だけが目標に届くことをテーブルベースで確認済み"];
   const FLIP = (s) => [s[0] + "（黑白互换，你执白）", s[1] + " (colours swapped: you play White)", s[2] + "（白黒を入れ替え、あなたが白）"];
 
   const ITEMS = [
@@ -367,12 +368,12 @@
         "Black's bishop is dark-squared and the queening square h1 is light. Keep your king in the h1 corner and the extra bishop cannot win.",
         "黒のビショップは黒マス、昇格マス h1 は白マス。キングを h1 の隅から出さなければ、ビショップが多くても勝てない。"],
       src: FLIP(THEORY) },
-    { id: "dr-rvb", g: "dr", fen: "8/8/8/4k3/8/8/1r6/4B2K w - - 0 1", goal: "draw", v: "tb",
+    { id: "dr-rvb", g: "dr", fen: "8/8/8/8/3k2r1/6B1/8/6K1 w - - 0 1", goal: "draw", v: "tb", key: ["Kf2", "Kg2", "Kh2"],
       n: ["象对车：对的角落", "Bishop v rook: the right corner", "ビショップ対ルーク：正しい隅"],
-      tip: ["王待在和象不同色的角落里（h1 是白格，你的象走黑格），车就找不到将死。",
-        "Keep your king in the corner opposite in colour to your bishop (h1 is light, your bishop dark) and the rook finds no mate.",
-        "ビショップと違う色の隅（h1 は白マス、ビショップは黒マス）にキングを置けば、ルークはメイトできない。"],
-      src: THEORY },
+      tip: ["车在捉象：王先走到象旁边保护它（Kf2、Kg2、Kh2 都行）。之后守在和象不同色的角落附近（h1 是白格，你的象走黑格），车就找不到将死。",
+        "The rook attacks your bishop: first bring the king next to it (Kf2, Kg2 or Kh2 all hold). Then stay near the corner opposite in colour to your bishop (h1 is light, your bishop dark) and the rook finds no mate.",
+        "ルークがビショップを狙っている。まずキングをそばに寄せて守る（Kf2・Kg2・Kh2 のどれでもよい）。その後はビショップと違う色の隅（h1 は白マス、ビショップは黒マス）の近くにいれば、ルークはメイトできない。"],
+      src: ONE },
     { id: "dr-rvn", g: "dr", fen: "8/8/8/4k3/8/8/1r6/5N1K w - - 0 1", goal: "draw", v: "tb", key: ["Kg1", "Nh2"],
       n: ["马对车：马不离王", "Knight v rook: stay together", "ナイト対ルーク：離れない"],
       tip: ["马要紧贴着王（只有 Kg1 或 Nh2 守得住）。马一离开王，车就会把它捉住或牵制。",

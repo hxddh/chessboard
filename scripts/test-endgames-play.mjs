@@ -11,7 +11,7 @@
  * would never recognise, fails here.
  *
  * Opt-in (engine, several minutes): part of `npm run test:engine`.
- *   node scripts/test-endgames-play.mjs [--depth=14] [--only=id,id] [--plies=400]
+ *   node scripts/test-endgames-play.mjs [--depth=20] [--only=id,id] [--plies=400]
  */
 import fs from "fs";
 import path from "path";
@@ -19,7 +19,7 @@ import { loadAppModules, ROOT } from "./lib/app-module.mjs";
 import { startEngine } from "./lib/sf-node.mjs";
 
 const arg = (k, d) => { const a = process.argv.find((x) => x.startsWith("--" + k + "=")); return a ? a.slice(k.length + 3) : d; };
-const DEPTH = Number(arg("depth", 14));
+const DEPTH = Number(arg("depth", 20));
 const PLIES = Number(arg("plies", 400));
 const ONLY = arg("only", "").split(",").filter(Boolean);
 

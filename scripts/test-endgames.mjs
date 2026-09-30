@@ -103,6 +103,8 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   assert(r2 && !r2.ok && r2.how === "stalemate", "逼和 → 取胜失败");
   const r3 = at("7k/8/8/8/8/8/1Q6/K7 b - - 0 1", "win");
   assert(r3 && r3.ok && r3.how === "bare", "对方只剩光王、你的后吃不掉 → 取胜");
+  const r3b = at("7k/8/8/8/8/8/1Q6/K7 b - - 0 1", "win", { bq: 0, bare: true });
+  assert(r3b === null, "……但对方开局就是光王（后杀王、车杀王）时，要真的将死");
   const r4 = at("8/8/8/8/8/8/1kQ5/7K b - - 0 1", "win");
   assert(r4 === null, "光王下一步能吃掉你唯一的后 → 还没完");
   const r5 = at("4k3/8/8/8/8/8/4p3/4KN2 w - - 0 1", "win");
@@ -111,7 +113,7 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   assert(r6 && !r6.ok && r6.how === "draw", "子力不足的和棋 → 取胜失败");
   const r7 = at("k7/8/1QK5/8/8/8/8/8 b - - 0 1", "draw");
   assert(r7 && r7.ok, "守和：逼和算达成");
-  const r8 = at("7K/8/5k2/8/8/8/6q1/8 w - - 0 1", "draw");
+  const r8 = at("7K/8/5k2/8/8/8/6q1/8 w - - 0 1", "draw", { bq: 1 });
   assert(r8 === null, "守和：还有路走 → 还没完");
   const r10 = at("7K/5kq1/8/8/8/8/8/8 w - - 0 1", "draw");
   assert(r10 && !r10.ok && r10.how === "mated", "守和：被将死 → 失败");
@@ -119,6 +121,8 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   assert(r11 && !r11.ok && r11.how === "queened", "守和：对方新变出一个后 → 失败");
   const r12 = at("8/8/8/8/8/4k3/8/K3q3 w - - 0 1", "draw", { bq: 1 });
   assert(r12 === null, "……开局就有的后不算");
+  const r12c = at("8/8/8/8/8/B2k4/8/2q3K1 w - - 0 1", "draw", { bq: 0 });
+  assert(r12c === null, "……你下一步就能吃掉新后（象守着升变格）时也不算");
   const r12b = at("8/2P5/8/8/8/4k3/8/K3q3 w - - 0 1", "draw", { bq: 0 });
   assert(r12b === null, "……你的兵也在第 7 横线、下一步就变后时也不算（列蒂的名题就是后对后和棋）");
   const r13 = at("8/8/8/8/8/2k5/8/K1R5 b - - 0 1", "draw");
@@ -148,13 +152,14 @@ function camp(learnState) {
 {
   // the chunk's global is already on this context, so the module finds it
   ctx.CHESS_ENDGAMES = CHESS_ENDGAMES;
+  ctx.setTimeout = setTimeout; // the fetch waits a frame (trainer/endgames.js ensure)
   const DAY = Srs.DAY, T0 = Date.UTC(2026, 8, 30);
   const { E, store, saved } = camp({ v: 1, done: { board: true }, last: 7 });
   // a pre-8.1 learn key: nothing of it is lost, and the camp reads as empty
   assert(E.doneCount() === 0 && store.session.learnState.last === 7 && store.session.learnState.done.board === true,
     "8.0 的教学进度（没有 eg）照样读，课程进度一点不丢");
   E.ensure();
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 20));
   assert(E.ready() && E.total() === 60, "分块已在窗口上时直接可用（60）");
   const L = E.lesson("dr-reti");
   assert(L && L.id === "eg:dr-reti" && L.tasks.length === 1 && L.tasks[0].type === "drill" && L.tasks[0].engine === "extreme",
@@ -214,7 +219,7 @@ function camp(learnState) {
     console.log("skip: no build — npm run build first for the chunk checks");
   } else {
     const b = fs.readFileSync(bundle, "utf8"), c = fs.readFileSync(chunk, "utf8");
-    assert(!b.includes("kp-keysq") && !b.includes("1K1k4/1P6") && !b.includes("Vančura"), "主包里没有残局内容（局面、名字）");
+    assert(!b.includes("kp-keysq") && !b.includes("4kb2/8/8/8/7p") && !b.includes("Vančura"), "主包里没有残局内容（局面、名字）");
     assert(c.includes("kp-keysq") && c.includes("CHESS_ENDGAMES"), "内容在 chunk-endgames.js（" + (c.length / 1024).toFixed(1) + " KB）");
     assert(b.includes("chunk-endgames.js"), "主包只知道分块的文件名");
   }

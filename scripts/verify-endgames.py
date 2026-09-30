@@ -107,13 +107,14 @@ def main():
               "%.0fs" % (time.time() - t0), flush=True)
         if not ok: bad.append(it["id"])
         rows.append(rec)
+    sf_name = eng.id.get("name")
     eng.quit()
     files = sorted(f for f in os.listdir(a.tb) if f.endswith((".rtbw", ".rtbz")))
     doc = {
         "about": "v8-1-plan T2: each endgame's verdict, from White's side (the student's), as checked when the content was written. Written by scripts/verify-endgames.py; read by scripts/test-chess.mjs.",
         "tools": {
             "python-chess": chess.__version__,
-            "stockfish": eng.id.get("name"),
+            "stockfish": sf_name,
             "depths": depths,
             "syzygy": "3–4-piece WDL/DTZ (%d files) from the python-chess repository's data/syzygy/regular" % len(files),
             "syzygyMd5": {f: hashlib.md5(open(os.path.join(a.tb, f), "rb").read()).hexdigest() for f in files},

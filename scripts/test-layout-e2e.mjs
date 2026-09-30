@@ -560,7 +560,7 @@ if (scenario()) for (const [when, mode, setup] of [
   // that it is not offered here; being *drawn* and not offered is the defect.
   ["教学·最后一课(没做过)", "learn", async (page) => {
     await page.evaluate(() => {
-      const items = [...document.querySelectorAll("#lesson-list .lesson-item")];
+      const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])")];
       items[items.length - 1].click();
     });
     await page.waitForTimeout(800);
@@ -2493,9 +2493,10 @@ if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "learn", "play");
     // 6.0: the list ends with the ten classic games (data-c), which are read,
-    // not answered — no button row. The probes stay on the lessons proper, and
+    // not answered — no button row, and v8-1-plan T2 put the endgame camp
+    // (data-eg) after them. The probes stay on the lessons proper, and
     // the last of those is still the one with the graduation button.
-    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c])").length);
+    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])").length);
     assert(n > 60, lang + ": the course is loaded (" + n + " lessons)");
     // the lessons that show all four, plus the last one — its label is the
     // longest in the file and it appears in a two-button row

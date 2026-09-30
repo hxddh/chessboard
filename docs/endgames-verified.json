@@ -1,0 +1,1105 @@
+{
+ "about": "v8-1-plan T2: each endgame's verdict, from White's side (the student's), as checked when the content was written. Written by scripts/verify-endgames.py; read by scripts/test-chess.mjs.",
+ "tools": {
+  "python-chess": "1.10.0",
+  "stockfish": "Stockfish 16",
+  "depths": [
+   30,
+   40
+  ],
+  "syzygy": "3–4-piece WDL/DTZ (70 files) from the python-chess repository's data/syzygy/regular",
+  "syzygyMd5": {
+   "KBBvK.rtbw": "fe6032049d634cc7a11ca0a660b680d2",
+   "KBBvK.rtbz": "32d0952579b85763948c1c83cecfc324",
+   "KBNvK.rtbw": "539ce74a5178232af38c5babb0ba897f",
+   "KBNvK.rtbz": "b7354d9a0a22a69d5b19e1545ef4e6b8",
+   "KBPvK.rtbw": "91f36fbfe04a113f057bb62cff382532",
+   "KBPvK.rtbz": "4afb53fc5e0edefd5f842b04431af77e",
+   "KBvK.rtbw": "99bf9b05295781611cdd7c5c3d51bf85",
+   "KBvK.rtbz": "88d5f823e67448b279bb045977a80a39",
+   "KBvKB.rtbw": "2ebcb69aa6056b3aa6850ee361de6068",
+   "KBvKB.rtbz": "9ce5a78c4b4658d9ff491c36120f6132",
+   "KBvKN.rtbw": "153e09e0c2368253105c0b38465b2f43",
+   "KBvKN.rtbz": "b5888d4b3048e2497de862dedbac2f64",
+   "KBvKP.rtbw": "f1c9768b8c1c9246f435114afffabf52",
+   "KBvKP.rtbz": "d18e5006db3ec441b51e51851702b382",
+   "KNNvK.rtbw": "cacb5b44e7caaf278cbfb8b8889e28f5",
+   "KNNvK.rtbz": "a6eda4e7f7a41380692ccee771ad1954",
+   "KNPvK.rtbw": "f7cb347a6718ad8ce0301bcf9aa86d7f",
+   "KNPvK.rtbz": "9eba34d537700260f6f5d127308ef074",
+   "KNvK.rtbw": "b6781a75ffe2ab41507f91151869a418",
+   "KNvK.rtbz": "42893523156bbc5d8c3c7207a7710ad7",
+   "KNvKN.rtbw": "267d1315e295cebd435ecec0098a2a44",
+   "KNvKN.rtbz": "fec4e44f3033ac6b7ded59a3b74e29a5",
+   "KNvKP.rtbw": "5f1246ee6463e850dbbeacc1cd5f50c2",
+   "KNvKP.rtbz": "0bdd9dc0737f0783803d782fe8325b3f",
+   "KPPvK.rtbw": "c5925dc7b607c33fb70d7b4fbca4e1e9",
+   "KPPvK.rtbz": "0f6d692f16facd5e5f6400588f6e0527",
+   "KPvK.rtbw": "f3cce67836b0fff3fb28f72c003d1ba1",
+   "KPvK.rtbz": "7bc6496b47e5f949491e1f0edd256d05",
+   "KPvKP.rtbw": "e9390be76079250caba06f353f758536",
+   "KPvKP.rtbz": "17cec6d51197c92b97b3ad9bc5559ee0",
+   "KQBvK.rtbw": "857572f7b99c5e0be0fb96a57c9cbe6e",
+   "KQBvK.rtbz": "0f45d19517393701b1b33f87039db415",
+   "KQNvK.rtbw": "8ddf2322cdcc3fce831c87351c935196",
+   "KQNvK.rtbz": "a3ad3665457dd33922d3a0cf8980684e",
+   "KQPvK.rtbw": "60d8fa169b5c37b088f3191b70d66429",
+   "KQPvK.rtbz": "05bf4c378944da51d1b6fa117c1deda3",
+   "KQQvK.rtbw": "21070fc6c230cce12f6f6b615c9f1eb4",
+   "KQQvK.rtbz": "fccaac715e6b2d5540db71ebe6284b49",
+   "KQRvK.rtbw": "be9f868b7ce101e1c7532fa7e476d3ab",
+   "KQRvK.rtbz": "87ddd18e9780ffc7a2ad3e99bd6be493",
+   "KQvK.rtbw": "bc91c5d49b48f4dfef1d1485fad8b272",
+   "KQvK.rtbz": "04b8d08bde6d4e004040d05f0aa6d1c9",
+   "KQvKB.rtbw": "b7118e15bcf741db15f2bd09a0c638c9",
+   "KQvKB.rtbz": "4c4e0dbfc725ed89e99196c2a38b8260",
+   "KQvKN.rtbw": "87ec78000e4413e1afeda4838402afbd",
+   "KQvKN.rtbz": "d694bcf4e8c771ed3ab7140e9072ad4d",
+   "KQvKP.rtbw": "063fc377284f3184bff26fa6a6f76cfe",
+   "KQvKP.rtbz": "cf578ef24e623d2f4da087ce72741053",
+   "KQvKQ.rtbw": "71f3830d337c0fc73517de3b8a0b7d70",
+   "KQvKQ.rtbz": "0b33fada9adbf8fb8d64cfa0e9525942",
+   "KQvKR.rtbw": "044b30304aec99aad41ced55994aa2d6",
+   "KQvKR.rtbz": "1a76e02ba0c13c440c33cb95124ad06a",
+   "KRBvK.rtbw": "4221c8a8649cebb409b96abd866a8f4e",
+   "KRBvK.rtbz": "880e485aa1b27fe205e765fdf4bee8d7",
+   "KRNvK.rtbw": "33c74aca8b8b0d0b3204c246d6d72a16",
+   "KRNvK.rtbz": "6ac53c8df77c996488e291ca9f7f5698",
+   "KRPvK.rtbw": "38264a0e71c821357545cad9e1e34087",
+   "KRPvK.rtbz": "fd6704cf9fbb78c0143a1a7eb2280e98",
+   "KRRvK.rtbw": "635435e4e68af0ba562124c052d93089",
+   "KRRvK.rtbz": "f471929cd43839b15b8f764e15a735ba",
+   "KRvK.rtbw": "4117da58cb273d6bfe1153c4a1320d98",
+   "KRvK.rtbz": "715f23e13f4a1dbf2eeaf0f1972f3e8b",
+   "KRvKB.rtbw": "c8add566d88bfbc4328db6de3be5cc4b",
+   "KRvKB.rtbz": "ced507ec717b6031f42ef53cd1df860b",
+   "KRvKN.rtbw": "5f2c91dd8fa2e6fdf2664560d4d02bc2",
+   "KRvKN.rtbz": "f8b6e95250e5f6657e0333a43dc43251",
+   "KRvKP.rtbw": "e2a2840c209739832061042a7496e5ae",
+   "KRvKP.rtbz": "83c8d5a129868fbcfd61ff46c5c10d5a",
+   "KRvKR.rtbw": "88cb37a24802cd708120e91569710667",
+   "KRvKR.rtbz": "1f1e820be4700fcba83b900c231c1098"
+  }
+ },
+ "items": [
+  {
+   "id": "kp-keysq",
+   "fen": "8/8/3k4/8/8/3K4/3P4/8 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 5,
+   "verdict": "win",
+   "good": [
+    "Kc4",
+    "Kd4",
+    "Ke4"
+   ]
+  },
+  {
+   "id": "kp-sixth",
+   "fen": "3k4/8/3K4/3P4/8/8/8/8 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 3,
+   "verdict": "win",
+   "good": [
+    "Kc6",
+    "Ke6"
+   ]
+  },
+  {
+   "id": "kp-tempo",
+   "fen": "8/3k4/8/3K4/8/3P4/8/8 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 1,
+   "verdict": "win",
+   "good": [
+    "Kc5",
+    "Ke5",
+    "d4"
+   ]
+  },
+  {
+   "id": "kp-far",
+   "fen": "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 9,
+   "verdict": "win",
+   "good": [
+    "Kd2",
+    "Kf2"
+   ]
+  },
+  {
+   "id": "kp-square",
+   "fen": "8/8/8/P7/4k3/8/8/7K w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 1,
+   "verdict": "win",
+   "good": [
+    "a6"
+   ]
+  },
+  {
+   "id": "kp-rookpawn",
+   "fen": "8/1K1k4/8/P7/8/8/8/8 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 1,
+   "verdict": "win",
+   "good": [
+    "Kb8",
+    "a6"
+   ]
+  },
+  {
+   "id": "kp-opposition",
+   "fen": "8/4K3/6k1/4p3/4P3/8/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 3,
+   "verdict": "win",
+   "good": [
+    "Ke6"
+   ]
+  },
+  {
+   "id": "kp-race",
+   "fen": "4K3/6k1/8/P7/7p/8/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 1,
+   "verdict": "win",
+   "good": [
+    "a6"
+   ]
+  },
+  {
+   "id": "kp-outside",
+   "fen": "8/8/3k4/6p1/P2K2P1/8/8/8 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19987",
+     "cp": 19987,
+     "mate": null,
+     "pv": "1. Ke4 Ke6 2. a5 Kf6 3. Kd5 Kg7 4. Ke5 Kg6 5. a6 Kg7"
+    },
+    {
+     "depth": 40,
+     "score": "+19993",
+     "cp": 19993,
+     "mate": null,
+     "pv": "1. Ke4 Ke6 2. a5 Kd6 3. Kf5 Kc7 4. Kxg5 Kd6 5. a6 Kc7"
+    }
+   ]
+  },
+  {
+   "id": "kp-protected",
+   "fen": "8/8/3k4/3P3p/4P3/8/6K1/8 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19995",
+     "cp": 19995,
+     "mate": null,
+     "pv": "1. Kg3 Ke7 2. Kh4 Kf8 3. Kxh5 Ke8 4. e5 Ke7 5. e6 Kd6"
+    },
+    {
+     "depth": 40,
+     "score": "+19995",
+     "cp": 19995,
+     "mate": null,
+     "pv": "1. Kg3 Kc7 2. Kh4 Kb8 3. Kxh5 Kc7 4. e5 Kd7 5. d6 Ke6"
+    }
+   ]
+  },
+  {
+   "id": "kp-breakthrough",
+   "fen": "6k1/ppp5/8/PPP5/8/8/8/6K1 w - - 0 1",
+   "men": 8,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19957",
+     "cp": 19957,
+     "mate": null,
+     "pv": "1. b6 axb6 2. c6 bxc6 3. a6 Kf7 4. a7 c5 5. a8=Q Ke7"
+    },
+    {
+     "depth": 40,
+     "score": "+19973",
+     "cp": 19973,
+     "mate": null,
+     "pv": "1. b6 axb6 2. c6 bxc6 3. a6 Kf8 4. a7 Ke7 5. a8=Q Kd7"
+    }
+   ]
+  },
+  {
+   "id": "kp-majority",
+   "fen": "8/8/5kp1/8/5PP1/5K2/8/8 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19981",
+     "cp": 19981,
+     "mate": null,
+     "pv": "1. Ke4 Ke6 2. g5 Kf7 3. Kd5 Ke7 4. Ke5 Kf7 5. Kd6 Kf8"
+    },
+    {
+     "depth": 40,
+     "score": "+19983",
+     "cp": 19983,
+     "mate": null,
+     "pv": "1. Ke4 Ke6 2. g5 Kf7 3. Kd5 Ke7 4. Ke5 Kf7 5. Kd6 Kg8"
+    }
+   ]
+  },
+  {
+   "id": "rp-krk",
+   "fen": "4k3/8/8/8/8/8/8/R3K3 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 23,
+   "verdict": "win",
+   "good": [
+    "Kd1",
+    "Kd2",
+    "Ke2",
+    "Kf1",
+    "Kf2",
+    "Ra2",
+    "Ra3",
+    "Ra4",
+    "Ra5",
+    "Ra6",
+    "Ra7",
+    "Ra8+",
+    "Rb1",
+    "Rc1",
+    "Rd1"
+   ]
+  },
+  {
+   "id": "rp-lucena",
+   "fen": "1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19973",
+     "cp": 19973,
+     "mate": null,
+     "pv": "1. Rd1+ Ke7 2. Rd4 Ra1 3. Kc7 Rc1+ 4. Kb6 Rb1+ 5. Kc6 Ke6"
+    },
+    {
+     "depth": 40,
+     "score": "+19982",
+     "cp": 19982,
+     "mate": null,
+     "pv": "1. Rd1+ Ke7 2. Rd4 Ke6 3. Kc7 Rc2+ 4. Kb6 Rb2+ 5. Kc6 Rb3"
+    }
+   ]
+  },
+  {
+   "id": "rp-lucena2",
+   "fen": "3K4/3P2k1/8/8/8/8/2r5/4R3 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19994",
+     "cp": 19994,
+     "mate": null,
+     "pv": "1. Ke8 Rh2 2. d8=Q Rh8+ 3. Kd7 Rxd8+"
+    },
+    {
+     "depth": 40,
+     "score": "+19996",
+     "cp": 19996,
+     "mate": null,
+     "pv": "1. Ke8 Rd2 2. d8=Q Rxd8+"
+    }
+   ]
+  },
+  {
+   "id": "rp-cutoff",
+   "fen": "r7/8/6k1/3P4/3K4/8/8/4R3 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19927",
+     "cp": 19927,
+     "mate": null,
+     "pv": "1. d6 Kf7 2. Kc5 Ra2 3. Kb6 Rd2 4. Kc7 Rc2+ 5. Kd8 Rc5"
+    },
+    {
+     "depth": 40,
+     "score": "+19963",
+     "cp": 19963,
+     "mate": null,
+     "pv": "1. d6 Kf6 2. Kc5 Ra7 3. Kb6 Rg7 4. Kc6 Rg2 5. Kc7 Rd2"
+    }
+   ]
+  },
+  {
+   "id": "rp-skewer",
+   "fen": "R7/P3k3/8/8/8/8/6K1/r7 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19978",
+     "cp": 19978,
+     "mate": null,
+     "pv": "1. Rh8 Ra2+ 2. Kf3 Ra3+ 3. Ke4 Ra4+ 4. Kd5 Ra5+ 5. Kc6 Ra6+"
+    },
+    {
+     "depth": 40,
+     "score": "+19978",
+     "cp": 19978,
+     "mate": null,
+     "pv": "1. Rh8 Ra2+ 2. Kf3 Ra3+ 3. Ke4 Ra4+ 4. Kd5 Ra5+ 5. Kc6 Ra6+"
+    }
+   ]
+  },
+  {
+   "id": "rp-behind",
+   "fen": "R7/8/K7/8/3p4/8/8/5k2 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 3,
+   "verdict": "win",
+   "good": [
+    "Rd8"
+   ]
+  },
+  {
+   "id": "rp-check",
+   "fen": "8/8/4K3/1R6/3p4/2k5/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 9,
+   "verdict": "win",
+   "good": [
+    "Rc5+"
+   ]
+  },
+  {
+   "id": "rp-front",
+   "fen": "8/1K6/8/8/5p2/1R6/7k/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 3,
+   "verdict": "win",
+   "good": [
+    "Rf3"
+   ]
+  },
+  {
+   "id": "rp-pin",
+   "fen": "8/K7/R7/8/8/8/3n2k1/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 2,
+   "verdict": "win",
+   "good": [
+    "Ra2"
+   ]
+  },
+  {
+   "id": "rp-dominate",
+   "fen": "3k4/8/8/4K3/8/n7/8/2R5 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 20,
+   "verdict": "win",
+   "good": [
+    "Rc5"
+   ]
+  },
+  {
+   "id": "rp-skewer-b",
+   "fen": "3K1k2/8/R7/5b2/8/8/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 2,
+   "verdict": "win",
+   "good": [
+    "Rf6+"
+   ]
+  },
+  {
+   "id": "rp-pawns",
+   "fen": "8/r7/5PP1/8/8/K7/8/2k5 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "win",
+   "search": [
+    {
+     "depth": 30,
+     "score": "+19965",
+     "cp": 19965,
+     "mate": null,
+     "pv": "1. Kb4 Rb7+ 2. Kc5 Rc7+ 3. Kb6 Rc8 4. f7 Rb8+ 5. Kc5 Rc8+"
+    },
+    {
+     "depth": 40,
+     "score": "+19980",
+     "cp": 19980,
+     "mate": null,
+     "pv": "1. Kb4 Rb7+ 2. Kc5 Rc7+ 3. Kd6 Ra7 4. f7 Ra6+ 5. Kc5 Ra5+"
+    }
+   ]
+  },
+  {
+   "id": "mi-bb",
+   "fen": "8/8/8/4k3/8/8/8/KBB5 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 32,
+   "verdict": "win",
+   "good": [
+    "Ba2",
+    "Ba3",
+    "Bb2+",
+    "Bc2",
+    "Bd2",
+    "Bd3",
+    "Be3",
+    "Bg5",
+    "Bg6",
+    "Bh6",
+    "Bh7",
+    "Ka2",
+    "Kb2"
+   ]
+  },
+  {
+   "id": "mi-bn",
+   "fen": "8/8/8/4k3/8/8/8/KBN5 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 58,
+   "verdict": "win",
+   "good": [
+    "Ba2",
+    "Bc2",
+    "Bd3",
+    "Bg6",
+    "Bh7",
+    "Ka2",
+    "Kb2",
+    "Na2",
+    "Nb3",
+    "Nd3+",
+    "Ne2"
+   ]
+  },
+  {
+   "id": "mi-bn-corner",
+   "fen": "7k/8/5K2/8/8/8/8/5BN1 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 42,
+   "verdict": "win",
+   "good": [
+    "Ba6",
+    "Bb5",
+    "Bc4",
+    "Bd3",
+    "Be2",
+    "Bg2",
+    "Bh3",
+    "Ke5",
+    "Ke6",
+    "Ke7",
+    "Kf5",
+    "Kf7",
+    "Kg5",
+    "Kg6",
+    "Ne2",
+    "Nf3",
+    "Nh3"
+   ]
+  },
+  {
+   "id": "mi-bp",
+   "fen": "7k/8/8/7P/8/8/3B4/6K1 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 1,
+   "verdict": "win",
+   "good": [
+    "Ba5",
+    "Bb4",
+    "Bc1",
+    "Bc3+",
+    "Be1",
+    "Be3",
+    "Bf4",
+    "Bg5",
+    "Bh6",
+    "Kf1",
+    "Kf2",
+    "Kg2",
+    "Kh1",
+    "Kh2",
+    "h6"
+   ]
+  },
+  {
+   "id": "mi-bp-run",
+   "fen": "8/8/4K3/8/7P/5B1k/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 1,
+   "verdict": "win",
+   "good": [
+    "h5"
+   ]
+  },
+  {
+   "id": "mi-np",
+   "fen": "4k3/8/8/8/4P3/2N5/8/4K3 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 7,
+   "verdict": "win",
+   "good": [
+    "Kd1",
+    "Kd2",
+    "Ke2",
+    "Kf1",
+    "Kf2",
+    "Na2",
+    "Na4",
+    "Nb1",
+    "Nb5",
+    "Nd1",
+    "Nd5",
+    "Ne2"
+   ]
+  },
+  {
+   "id": "mi-np-guard",
+   "fen": "8/8/8/8/4k1K1/4P3/7N/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 5,
+   "verdict": "win",
+   "good": [
+    "Nf1"
+   ]
+  },
+  {
+   "id": "mi-np-king",
+   "fen": "8/8/5k2/5P2/8/3K4/8/1N6 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 5,
+   "verdict": "win",
+   "good": [
+    "Ke4"
+   ]
+  },
+  {
+   "id": "mi-n-stop",
+   "fen": "8/8/8/8/2k5/8/2p3K1/3N4 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Ne3+"
+   ]
+  },
+  {
+   "id": "mi-n-stop2",
+   "fen": "8/8/8/8/8/1N6/5p1K/3k4 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Kg2"
+   ]
+  },
+  {
+   "id": "mi-b-stop",
+   "fen": "8/8/8/2B5/4k3/8/2p5/6K1 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Ba3"
+   ]
+  },
+  {
+   "id": "mi-b-stop2",
+   "fen": "8/8/6B1/8/8/8/5pK1/4k3 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Bd3"
+   ]
+  },
+  {
+   "id": "qu-kqk",
+   "fen": "4k3/8/8/8/8/8/8/Q3K3 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 13,
+   "verdict": "win",
+   "good": [
+    "Kd1",
+    "Kd2",
+    "Ke2",
+    "Kf1",
+    "Kf2",
+    "Qa2",
+    "Qa3",
+    "Qa4+",
+    "Qa5",
+    "Qa6",
+    "Qa7",
+    "Qa8+",
+    "Qb1",
+    "Qb2",
+    "Qc1",
+    "Qc3",
+    "Qd1",
+    "Qd4",
+    "Qe5+",
+    "Qf6",
+    "Qg7",
+    "Qh8+"
+   ]
+  },
+  {
+   "id": "qu-epawn",
+   "fen": "Q7/8/2K5/8/8/8/4p3/5k2 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 27,
+   "verdict": "win",
+   "good": [
+    "Qa6",
+    "Qf8+"
+   ]
+  },
+  {
+   "id": "qu-dpawn",
+   "fen": "8/2K5/8/8/8/8/2kp4/Q7 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 33,
+   "verdict": "win",
+   "good": [
+    "Qa2+",
+    "Qa4+"
+   ]
+  },
+  {
+   "id": "qu-apawn",
+   "fen": "Q7/8/8/3K4/8/8/p7/1k6 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 9,
+   "verdict": "win",
+   "good": [
+    "Qb7+",
+    "Qb8+"
+   ]
+  },
+  {
+   "id": "qu-cpawn",
+   "fen": "8/8/8/4K3/3Q4/1k6/2p5/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 7,
+   "verdict": "win",
+   "good": [
+    "Qa1"
+   ]
+  },
+  {
+   "id": "qu-fpawn",
+   "fen": "8/8/5K2/8/7Q/4k3/5p2/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 9,
+   "verdict": "win",
+   "good": [
+    "Qc4"
+   ]
+  },
+  {
+   "id": "qu-qvr",
+   "fen": "2Q5/8/3r4/4k3/8/8/8/4K3 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 51,
+   "verdict": "win",
+   "good": [
+    "Ke2",
+    "Kf1",
+    "Kf2",
+    "Qa8",
+    "Qb7",
+    "Qb8",
+    "Qc1",
+    "Qc2",
+    "Qc3+",
+    "Qc4",
+    "Qc5+",
+    "Qc7",
+    "Qe8+",
+    "Qf8",
+    "Qg4",
+    "Qg8",
+    "Qh3",
+    "Qh8+"
+   ]
+  },
+  {
+   "id": "qu-qvr-quiet",
+   "fen": "Q7/K1k5/8/8/1r6/8/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 53,
+   "verdict": "win",
+   "good": [
+    "Qe8"
+   ]
+  },
+  {
+   "id": "qu-qvb",
+   "fen": "8/8/3kb3/8/8/8/8/K5Q1 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 21,
+   "verdict": "win",
+   "good": [
+    "Kb1",
+    "Kb2",
+    "Qa7",
+    "Qb1",
+    "Qb6+",
+    "Qc1",
+    "Qd1+",
+    "Qd4+",
+    "Qe1",
+    "Qe3",
+    "Qf1",
+    "Qf2",
+    "Qg2",
+    "Qg3+",
+    "Qg5",
+    "Qg6",
+    "Qg7",
+    "Qh1",
+    "Qh2+"
+   ]
+  },
+  {
+   "id": "qu-qvn",
+   "fen": "8/8/3kn3/8/8/8/8/K5Q1 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 31,
+   "verdict": "win",
+   "good": [
+    "Ka2",
+    "Kb1",
+    "Kb2",
+    "Qa7",
+    "Qb1",
+    "Qb6+",
+    "Qc1",
+    "Qd1+",
+    "Qe1",
+    "Qe3",
+    "Qf1",
+    "Qf2",
+    "Qg2",
+    "Qg3+",
+    "Qg4",
+    "Qg6",
+    "Qg8",
+    "Qh1",
+    "Qh2+"
+   ]
+  },
+  {
+   "id": "qu-skewer",
+   "fen": "7q/8/8/8/3k4/8/8/1Q4K1 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 3,
+   "verdict": "win",
+   "good": [
+    "Qa1+",
+    "Qb2+"
+   ]
+  },
+  {
+   "id": "qu-skewer2",
+   "fen": "8/4q3/8/2k5/8/5Q2/8/7K w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 2,
+   "dtz": 3,
+   "verdict": "win",
+   "good": [
+    "Qa3+"
+   ]
+  },
+  {
+   "id": "dr-philidor",
+   "fen": "r7/8/8/4k3/4p3/1R6/8/4K3 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "draw",
+   "search": [
+    {
+     "depth": 30,
+     "score": "0",
+     "cp": 0,
+     "mate": null,
+     "pv": "1. Ke2 Kf4 2. Rh3 Ra2+ 3. Kf1 Ra1+ 4. Kf2 e3+ 5. Rxe3"
+    },
+    {
+     "depth": 40,
+     "score": "0",
+     "cp": 0,
+     "mate": null,
+     "pv": "1. Rb7 Kf4 2. Rb3 Ra1+ 3. Kf2 Ra2+ 4. Kf1 Rh2 5. Ke1 Rh1+"
+    }
+   ]
+  },
+  {
+   "id": "dr-reti",
+   "fen": "7K/8/k1P5/7p/8/8/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Kg7"
+   ]
+  },
+  {
+   "id": "dr-opposition",
+   "fen": "8/8/8/3pk3/8/5K2/8/8 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Ke3"
+   ]
+  },
+  {
+   "id": "dr-corner",
+   "fen": "8/8/8/8/p7/1k6/8/3K4 w - - 0 1",
+   "men": 3,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Kc1"
+   ]
+  },
+  {
+   "id": "dr-wrongbishop",
+   "fen": "4kb2/8/8/8/7p/8/8/7K w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Kg1",
+    "Kg2",
+    "Kh2"
+   ]
+  },
+  {
+   "id": "dr-rvb",
+   "fen": "8/8/8/8/3k2r1/6B1/8/6K1 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Kf2",
+    "Kg2",
+    "Kh2"
+   ]
+  },
+  {
+   "id": "dr-rvn",
+   "fen": "8/8/8/4k3/8/8/1r6/5N1K w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Kg1",
+    "Nh2"
+   ]
+  },
+  {
+   "id": "dr-qc",
+   "fen": "6q1/2P5/3K4/8/8/3k4/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Kd7"
+   ]
+  },
+  {
+   "id": "dr-qa",
+   "fen": "8/P7/1K6/8/q7/2k5/8/8 w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "Kb7"
+   ]
+  },
+  {
+   "id": "dr-kpvr",
+   "fen": "8/8/8/3K4/4P3/8/4k3/7r w - - 0 1",
+   "men": 4,
+   "method": "tb",
+   "wdl": 0,
+   "dtz": 0,
+   "verdict": "draw",
+   "good": [
+    "e5"
+   ]
+  },
+  {
+   "id": "dr-apawn",
+   "fen": "R7/6k1/8/8/8/8/p5K1/r7 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "draw",
+   "search": [
+    {
+     "depth": 30,
+     "score": "0",
+     "cp": 0,
+     "mate": null,
+     "pv": "1. Ra7+ Kg8 2. Ra6 Rc1 3. Rxa2"
+    },
+    {
+     "depth": 40,
+     "score": "0",
+     "cp": 0,
+     "mate": null,
+     "pv": "1. Ra6 Kf7 2. Kh2 Ke7 3. Ra8 Kf6 4. Ra6+ Ke5 5. Kg2 Kd5"
+    }
+   ]
+  },
+  {
+   "id": "dr-vancura",
+   "fen": "8/6k1/8/8/8/p4R2/6K1/r7 w - - 0 1",
+   "men": 5,
+   "method": "sf",
+   "verdict": "draw",
+   "search": [
+    {
+     "depth": 30,
+     "score": "0",
+     "cp": 0,
+     "mate": null,
+     "pv": "1. Rh3 Kf6 2. Re3 Kf5 3. Rf3+ Ke4 4. Rg3 Ra2+ 5. Kh3 Ke5"
+    },
+    {
+     "depth": 40,
+     "score": "0",
+     "cp": 0,
+     "mate": null,
+     "pv": "1. Rf5 Kg6 2. Rd5 Kf6 3. Ra5 Ke6 4. Rc5 Kd6 5. Rf5 Kc6"
+    }
+   ]
+  }
+ ]
+}
