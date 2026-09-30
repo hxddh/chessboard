@@ -26,7 +26,7 @@
  *   9  分析存盘        an analysis survives a reload and a 对局历史 load, no search
  *   10 精析回写库      精析 of a library game writes budget/accuracy back, via reviseMines
  *   11 再深一遍        the 400 ms re-pass of one library game, reviseMines included
- *   12 人机高档棋钟    hard / normal send their UCI_Elo; a short clock caps movetime
+ *   12 人机高档棋钟    a short clock caps 不限档's movetime; normal sends UCI_Elo 1700 at its pick depth
  *   13 多主变          multipv=3 in 分析 and in 持续分析
  *   14 FEN黑先         a [SetUp] game with Black to move is numbered and marked right
  *
@@ -762,16 +762,18 @@ await scenario("再深一遍", async () => {
 });
 
 // --- 12. 人机·高档 + 棋钟 (v7-6-plan §6.3) ---------------------------------------
-// hard is UCI_Elo 2200 at 900 ms and normal 1700 at 700 ms; a clock caps the
-// think time — since v8-0-plan B4 at a fortieth of what is left plus most of
-// the increment (opponents.js thinkPlan), never past the rung's own.
+// A clock caps the think time — since v8-0-plan B4 at a fortieth of what is
+// left plus most of the increment (opponents.js thinkPlan), never past the
+// rung's own. v8-1-plan T1: the UCI_Elo rungs search to their pick depth
+// (normal: UCI_Elo 1700, depth 3), so the one movetime rung left to cap is
+// 不限档 (1.2 s); hard was 2200 at 900 ms through 8.0.
 await scenario("人机高档棋钟", async () => {
   // Black's clock stands at 20 s with White to move, so it does not tick while
   // the engine boots (~10 s from a cold page here); the budget is then
-  // 20000 / 40 = 500 ms, under hard's own 900 (through 7.9: / 30 ≈ 666)
+  // 20000 / 40 = 500 ms, under 不限档's own 1200 (through 7.9: / 30 ≈ 666)
   const save = { v: 1, pgn: '[Event "flows"]\n[Result "*"]\n\n1. e4 e5 *', savedAt: Date.now(),
     clock: { tc: "3", w: 170000, b: 20000, started: true } };
-  const hard = await openPage({ mode: "ai", difficulty: "hard", humanColor: "w", timeControl: "3" },
+  const hard = await openPage({ mode: "ai", difficulty: "extreme", humanColor: "w", timeControl: "3" },
     { "chess.v1.save": JSON.stringify(save) });
   // the boot the page starts on its own for an ai game: wait for it to answer
   const ready = await until(() => hard.page.evaluate(() => window.__uci.includes("uci")), 30000, 200);
@@ -783,8 +785,8 @@ await scenario("人机高档棋钟", async () => {
   const g = await savedAt(hard.page, 4, 3000);
   const clk = await hard.page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.save") || "{}").clock) || null);
   const ms = uci.filter((m) => /^go movetime/.test(m)).map((m) => Number(m.split(" ")[2]));
-  assert(!!ready && n >= 4 && uci.includes("setoption name UCI_Elo value 2200") && ms.length === 1 && ms[0] >= 450 && ms[0] <= 500,
-    "人机高档棋钟：hard 档、黑方钟上 20 秒，引擎按 UCI_Elo 2200、压到 " + ms[0] + "ms(不是 900)应着(" + (Date.now() - t0) + "ms)", JSON.stringify({ ready, n, uci }));
+  assert(!!ready && n >= 4 && uci.includes("setoption name UCI_LimitStrength value false") && ms.length === 1 && ms[0] >= 450 && ms[0] <= 500,
+    "人机高档棋钟：不限档、黑方钟上 20 秒，引擎满强度、压到 " + ms[0] + "ms(不是 1200)应着(" + (Date.now() - t0) + "ms)", JSON.stringify({ ready, n, uci }));
   assert(!!g && !!clk && clk.b < 20000 && clk.b > 15000 && clk.w <= 170000, "人机高档棋钟：引擎那一侧的钟在走", JSON.stringify(clk));
   assert(!hard.errs.length, "人机高档棋钟：页面没有报错", hard.errs.join(" / "));
   await hard.ctx.close();
@@ -793,8 +795,8 @@ await scenario("人机高档棋钟", async () => {
   await clickMove(normal.page, "e2", "e4");
   const n2 = await until(() => plies(normal.page).then((p) => (p >= 2 ? p : 0)), 15000, 100);
   const uci2 = await normal.page.evaluate(() => window.__uci);
-  assert(n2 >= 2 && uci2.includes("setoption name UCI_Elo value 1700") && uci2.includes("go movetime 700"),
-    "人机高档棋钟：normal 档、5+3 钟上时间充足，按 UCI_Elo 1700 / 700ms 应着", JSON.stringify(uci2));
+  assert(n2 >= 2 && uci2.includes("setoption name UCI_Elo value 1700") && uci2.includes("go depth 3") && !uci2.some((c) => /^go movetime/.test(c)),
+    "人机高档棋钟：normal 档、5+3 钟上时间充足，按 UCI_Elo 1700、搜到选着的第 3 层应着（v8-1-plan T1）", JSON.stringify(uci2));
   assert(!normal.errs.length, "人机高档棋钟：normal 档页面没有报错", normal.errs.join(" / "));
   await normal.ctx.close();
 });
@@ -1229,12 +1231,13 @@ await scenario("对手角色", async () => {
   assert(dlg.cards.filter((c) => c.on).length === 1 && dlg.focus === dlg.cards.find((c) => c.on).id,
     "对手角色：「换个对手」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
   // a tab by keyboard: focus it, Enter
+  // (Space: Enter in this dialog is 开始)
   await page.focus('#op-seg button[data-seg="2"]');
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
   await page.waitForTimeout(150);
   const top = await dialog();
   assert(top.segs[2].on && shownIds(top).includes("fish") && shownIds(top).includes("otto") && !shownIds(top).includes("max") && top.focus === "seg2",
-    "对手角色（T1）：键盘回车换到「高手」，卡片跟着换，焦点留在分段上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
+    "对手角色（T1）：键盘空格换到「高手」，卡片跟着换，焦点留在分段上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
   await page.click('#op-seg button[data-seg="0"]');
   await page.waitForTimeout(150);
   const low = await dialog();

@@ -35,8 +35,6 @@ export const OP_LINES = {
     lars: { name: "拉尔斯", hello: "大师+ 档，不带风格：满强度的 Stockfish，每步约 150 个节点。" },
     nora: { name: "诺拉", hello: "强力档，不带风格：满强度的 Stockfish，每步约 600 个节点。" },
     kit: { name: "基特", hello: "强力+ 档，不带风格：满强度的 Stockfish，每步约 2,500 个节点。", bye: "本局开局：{0}；基特吃子 {2} 次。" },
-    vik: { name: "维克", hello: "顶级档，不带风格：满强度的 Stockfish，每步约 1 万个节点。" },
-    rex: { name: "雷克斯", hello: "顶级+ 档，不带风格：满强度的 Stockfish，每步约 4 万个节点。" },
     fish: { name: "Stockfish", hello: "不限档：满强度的 Stockfish 19，每步 1.2 秒。" },
   },
   "en": {
@@ -62,8 +60,6 @@ export const OP_LINES = {
     lars: { name: "Lars", hello: "Master+, no style: Stockfish at full strength, about 150 nodes a move." },
     nora: { name: "Nora", hello: "Strong, no style: Stockfish at full strength, about 600 nodes a move." },
     kit: { name: "Kit", hello: "Strong+, no style: Stockfish at full strength, about 2,500 nodes a move.", bye: "Opening: {0}. Kit captured {2} times." },
-    vik: { name: "Vik", hello: "Top, no style: Stockfish at full strength, about 10,000 nodes a move." },
-    rex: { name: "Rex", hello: "Top+, no style: Stockfish at full strength, about 40,000 nodes a move." },
     fish: { name: "Stockfish", hello: "Unrated: Stockfish 19 at full strength, 1.2 seconds a move." },
   },
   "ja": {
@@ -89,8 +85,6 @@ export const OP_LINES = {
     lars: { name: "ラース", hello: "マスター+、スタイルなし：全力の Stockfish、1 手あたり約 150 ノード。" },
     nora: { name: "ノーラ", hello: "強力、スタイルなし：全力の Stockfish、1 手あたり約 600 ノード。" },
     kit: { name: "キット", hello: "強力+、スタイルなし：全力の Stockfish、1 手あたり約 2,500 ノード。", bye: "序盤：{0}。キットが駒を取ったのは {2} 回。" },
-    vik: { name: "ヴィク", hello: "トップ、スタイルなし：全力の Stockfish、1 手あたり約 1 万ノード。" },
-    rex: { name: "レックス", hello: "トップ+、スタイルなし：全力の Stockfish、1 手あたり約 4 万ノード。" },
     fish: { name: "Stockfish", hello: "無制限：全力の Stockfish 19、1 手 1.2 秒。" },
   },
 };

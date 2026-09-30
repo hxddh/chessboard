@@ -513,11 +513,11 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   assert(done && mv1 && mv1.from === "e2" && mv1.to === "e4", "T1: …then it plays Stockfish's own pick");
   const nodesOf = () => Number((/^go nodes (\d+)/.exec(w.cmds.filter((c) => /^go/.test(c)).pop()) || [])[1]);
   const seen = [];
-  for (let i = 0; i < 6; i++) { const m = E.bestMove(FEN, "topplus"); await clock.advance(1200); await m; seen.push(nodesOf()); }
-  assert(seen.every((n) => n >= 34000 && n <= 46000) && new Set(seen).size > 1,
-    "T1: 顶级+ searches about 40,000 nodes, a different count each move (" + seen.join(", ") + ")");
-  const short = E.bestMove(FEN, "topplus", { search: 20, pace: 0 }); await clock.advance(10); await short;
-  assert(nodesOf() <= E.nodesFor(20) * 1.15, "T1: …and on a nearly flagged clock only what the time buys (" + nodesOf() + ")");
+  for (let i = 0; i < 6; i++) { const m = E.bestMove(FEN, "strongplus"); await clock.advance(1200); await m; seen.push(nodesOf()); }
+  assert(seen.every((n) => n >= 2125 && n <= 2875) && new Set(seen).size > 1,
+    "T1: 强力+ searches about 2,500 nodes, a different count each move (" + seen.join(", ") + ")");
+  const short = E.bestMove(FEN, "strongplus", { search: 2, pace: 0 }); await clock.advance(10); await short;
+  assert(nodesOf() <= E.nodesFor(2) * 1.15, "T1: …and on a nearly flagged clock only what the time buys (" + nodesOf() + ")");
 }
 
 if (failed) {

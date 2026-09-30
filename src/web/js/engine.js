@@ -67,7 +67,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *   search won all 23 games against depth 10's pick, and depth 12 is
    *   slower without closing the gap. The top rungs are full strength by
    *   node count (`nodes`, drawn ±15% a move — searchCmd), each about four
-   *   times the last.
+   *   times the last. Four times 2,500 is where it stops: 10,000 and 40,000
+   *   nodes drew 56 games of 56 with each other, and 不限档 scored 52%
+   *   against 40,000 — at the top, more search buys draws, not wins.
    * - 扎实 → 初级 was 88% in 8.0 and needs no rung between now: 初级 at its
    *   pick depth plays on where the movetime search's deep eval resigned, and
    *   the step measured ~58% (a win-chance rung between them measured
@@ -138,8 +140,6 @@ const global = typeof window !== "undefined" ? window : globalThis;
     masterplus: { nodes: 150, minMs: 1000 },
     strong: { nodes: 600, minMs: 1000 },
     strongplus: { nodes: 2500, minMs: 1000 },
-    top: { nodes: 10000, minMs: 1100 },
-    topplus: { nodes: 40000, minMs: 1100 },
     extreme: { elo: null, movetime: 1200 },
   };
 

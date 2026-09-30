@@ -12,7 +12,7 @@
 import { ChessRating } from "./rating.js";
 
 /** The rungs, weakest first. Every id has a row in engine.js TIERS. */
-const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "top", "topplus", "extreme"];
+const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "extreme"];
 
 /**
  * Each rung's rating, and how sure the fit is about it (±, one standard
@@ -23,12 +23,16 @@ const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", 
  * the fit; scripts/test-chess.mjs fails if these stop agreeing with it.
  */
 const RATING = {
-  beginner: 70, casual: 266, learner: 409, improver: 608, steady: 752, solid: 941,
-  easy: 1320, easyplus: 1418, normalminus: 1662, normal: 1700, hard: 1994, extreme: 2633,
+  beginner: 595, casual: 732, learner: 832, improver: 971, steady: 1072, solid: 1202, easy: 1320,
+  easyplus: 1433, normalminus: 1556, normal: 1700, normalplus: 1772, hardminus: 1828, hard: 1912,
+  hardplus: 1997, expert: 2157, expertplus: 2242, master: 2327, masterplus: 2431, strong: 2541,
+  strongplus: 2690, top: 2775, topplus: 2775, extreme: 2775,
 };
 const RATING_SE = {
-  beginner: 0, casual: 23, learner: 24, improver: 26, steady: 28, solid: 31,
-  easy: 95, easyplus: 106, normalminus: 119, normal: 126, hard: 144, extreme: 238,
+  beginner: 0, casual: 16, learner: 17, improver: 18, steady: 20, solid: 22, easy: 42, easyplus: 49,
+  normalminus: 54, normal: 61, normalplus: 65, hardminus: 69, hard: 71, hardplus: 75, expert: 80,
+  expertplus: 83, master: 86, masterplus: 90, strong: 94, strongplus: 101, top: 106, topplus: 152,
+  extreme: 241,
 };
 
 /**
@@ -40,14 +44,13 @@ const RATING_SE = {
  * (rateHistory) comes out exactly where it stood.
  */
 const LADDER = 2;
-const RATING_80 = {
-  beginner: 70, casual: 266, learner: 409, improver: 608, steady: 752, solid: 941,
-  easy: 1320, easyplus: 1418, normalminus: 1662, normal: 1700, hard: 1994, extreme: 2633,
-};
-const RATING_SE_80 = {
-  beginner: 0, casual: 23, learner: 24, improver: 26, steady: 28, solid: 31,
-  easy: 95, easyplus: 106, normalminus: 119, normal: 126, hard: 144, extreme: 238,
-};
+// (8.0's twelve rungs as a string: a literal naming some of today's rungs
+// would read as a partial copy of the ladder — test-chess holds every such
+// literal to naming all of them)
+const LEVELS_80 = "beginner casual learner improver steady solid easy easyplus normalminus normal hard extreme".split(" ");
+const of80 = (xs) => Object.fromEntries(LEVELS_80.map((id, i) => [id, xs[i]]));
+const RATING_80 = of80([70, 266, 409, 608, 752, 941, 1320, 1418, 1662, 1700, 1994, 2633]);
+const RATING_SE_80 = of80([0, 23, 24, 26, 28, 31, 95, 106, 119, 126, 144, 238]);
 
 /**
  * The personas: one per rung, each with a style from persona.js and an icon
@@ -85,8 +88,6 @@ const PERSONAS = [
   { id: "lars", level: "masterplus", style: "off", icon: "flag" },
   { id: "nora", level: "strong", style: "off", icon: "handshake" },
   { id: "kit", level: "strongplus", style: "off", icon: "chart-line" },
-  { id: "vik", level: "top", style: "off", icon: "library" },
-  { id: "rex", level: "topplus", style: "off", icon: "lightbulb" },
   { id: "fish", level: "extreme", style: "off", icon: "bot" },
 ];
 
@@ -101,7 +102,7 @@ const EN_NAME = {
   beginner: "Beginner", casual: "Casual", learner: "Practice", improver: "Improving", steady: "Steady",
   solid: "Solid", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", normalplus: "Normal+",
   hardminus: "Hard-", hard: "Hard", hardplus: "Hard+", expert: "Expert", expertplus: "Expert+", master: "Master", masterplus: "Master+",
-  strong: "Strong", strongplus: "Strong+", top: "Top", topplus: "Top+", extreme: "Max",
+  strong: "Strong", strongplus: "Strong+", extreme: "Max",
 };
 
 function personaById(id) { return PERSONAS.find((p) => p.id === id) || null; }

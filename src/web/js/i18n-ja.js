@@ -738,7 +738,7 @@
       "diff.solid": "手堅い",
       "diff.easyplus": "初級+",
       "diff.normalplus": "中級+", "diff.hardminus": "上級−", "diff.hardplus": "上級+", "diff.expert": "エキスパート",
-      "diff.expertplus": "エキスパート+", "diff.master": "マスター", "diff.masterplus": "マスター+", "diff.strong": "強力", "diff.strongplus": "強力+", "diff.top": "トップ", "diff.topplus": "トップ+",
+      "diff.expertplus": "エキスパート+", "diff.master": "マスター", "diff.masterplus": "マスター+", "diff.strong": "強力", "diff.strongplus": "強力+",
       "diff.normalminus": "中級−",
       "tip.diff.learner": "2 手先まで読み、勝率の損失に応じて手を選ぶ —— お気軽の一つ上",
       "tip.diff.improver": "2 手先まで。練習よりミスが少ない",

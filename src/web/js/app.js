@@ -1589,7 +1589,7 @@ import { loadChunk } from "./chunk.js";
   }
 
   // --- engine (AI mode) ---
-  const DIFF_IDS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "top", "topplus", "extreme"];
+  const DIFF_IDS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "extreme"];
   const diffName = (id) => t("diff." + id);
   /** legacy alias kept for the many call sites that read it like a map */
   const DIFF_NAMES = new Proxy({}, {
