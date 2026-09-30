@@ -33,6 +33,9 @@ export function createBgLane(d) {
   let handlers = [];
   let chain = Promise.resolve();
   const live = new Set(); // waits to fail if the lane is closed under them
+  // 8.1 M2 review P3: once closed, for good — a search chained behind the
+  // one close() cut off would otherwise boot a fresh worker nobody holds
+  let closed = false;
 
   function send(cmd) { if (worker) worker.postMessage(cmd); }
 
@@ -48,6 +51,7 @@ export function createBgLane(d) {
   }
 
   function boot() {
+    if (closed) return Promise.reject(new Error("engine lane closed"));
     if (booting) return booting;
     booting = (async () => {
       worker = d.spawn();
@@ -66,6 +70,7 @@ export function createBgLane(d) {
 
   async function search(fen, nodes, multipv) {
     await boot();
+    if (closed) throw new Error("engine lane closed");
     send("ucinewgame");
     const drain = waitFor((l) => l === "readyok", 5000);
     send("isready");
@@ -92,6 +97,7 @@ export function createBgLane(d) {
 
   /** Terminate the worker; whatever was waiting on it rejects. */
   function close() {
+    closed = true;
     if (worker) { try { worker.terminate(); } catch (_) { /* already gone */ } }
     worker = null;
     booting = null;

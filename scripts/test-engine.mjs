@@ -448,6 +448,23 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   assert(!lane.alive, "turning it off terminates the second worker");
 }
 {
+  // 8.1 M2 review P3: a search queued on the lane behind the one that
+  // close() cut off does not boot a new worker nobody holds
+  const { E, clock, state } = boot({ goDelay: 400 });
+  const p = E.init(); await clock.advance(1); await p;
+  E.setOptions({ bgWorker: true });
+  const res = [];
+  const b1 = E.analyze(FEN2, 100, { bg: true }).then((x) => { res.push(x); });
+  const b2 = E.analyze(FEN3, 100, { bg: true }).then((x) => { res.push(x); });
+  await clock.advance(50);
+  assert(state.workers.length === 2, "two passes queued on the second worker (" + state.workers.length + " workers)");
+  E.setOptions({ bgWorker: false });
+  await clock.advance(3000); await Promise.all([b1, b2]);
+  assert(state.workers.length === 2 && !state.workers[1].alive,
+    "closed with a search queued behind: no third worker is booted, the second stays down (" + state.workers.length + " workers)");
+  assert(res.length === 2 && res.every((r) => r && r.cp === 30), "…and both searches are answered by the first worker");
+}
+{
   // a second worker that never boots: the pass carries on on the first
   const { E, clock, state } = boot({ goDelay: 100, deafInitFrom: 1 });
   const p = E.init(); await clock.advance(1); await p;
