@@ -148,7 +148,9 @@ export function createLessonsUI(d) {
     if (!Endgames.lesson(id)) return;
     const li = store.session.learn ? store.session.learn.li : store.session.learnState.last || 0;
     store.session.study = null;
-    store.session.learn = { li, eg: id, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: false };
+    // the token carries on from the run being left: an engine reply still in
+    // flight for it must not match the new run's first token
+    store.session.learn = { li, eg: id, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: store.session.learn ? store.session.learn.token + 1 : 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: false };
     startLearnTask();
   }
 

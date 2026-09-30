@@ -10,7 +10,11 @@
  * be reached by good play from the student's side, or whose "result" the app
  * would never recognise, fails here.
  *
- * Opt-in (engine, several minutes): part of `npm run test:engine`.
+ * Opt-in (engine; about 18 minutes at depth 20 on a 4-core box): part of
+ * `npm run test:engine`, `test:engine:sample` and release.yml's engine matrix.
+ * At depth 14 three positions were not converted (the student's side
+ * repeated): the breakthrough, bishop+knight from the wrong corner, and the
+ * quiet queen move against the rook.
  *   node scripts/test-endgames-play.mjs [--depth=20] [--only=id,id] [--plies=400]
  */
 import fs from "fs";
