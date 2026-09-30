@@ -935,6 +935,7 @@
 - FIDE 和棋判定（`naturalGameOver`、`appGameOver` 等）留在 app.js：十几个模块在建立时就要它们，搬走要换来一串转发，得不偿失。
 - test-chess：两个模块加入 `APP_MODULES`，属主表逐个断言符号在哪个模块；源码正则登记册仍是 111，没有新增。
 - 主包 893,807 → 899,089 字节（+5.3 KB：两层模块包装、依赖表与转发；预算 951,642 内）。
+- **测试**（本机 Chromium，一次一个）：两次提交各自 `test:static` 全过；io.js 那次另跑 board-e2e 过。最终版：board、clock、content、persist、review、library、engine-flows、trainer、shell、explorer、repertoire、endgames、sync 十三套全过（persist-e2e 一遍过，没有碰到计时项），layout-e2e 92 个场景全过。
 
 ## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）
 
