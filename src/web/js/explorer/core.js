@@ -234,11 +234,41 @@ export function bookIndex(lines) {
  * @param {Array<{san,n,w,d,b}>} rows
  * @param {object} pos chess.js at the position
  * @param {Set<string>|undefined} book
+ * @param {Set<string>} [mine] v8-1-plan T3: your own repertoire's moves here
+ *   (rep-book.js movesAt), marked `mine` — 「我的」, beside and apart from 「书」.
+ *   A move of yours no game played is listed too (n = 0), after the rest:
+ *   it is the one row you can act on (the ± key), so it is never hidden.
  */
-export function rowsAt(rows, pos, book) {
+export function rowsAt(rows, pos, book, mine) {
   const legal = new Set(pos.moves());
-  const out = (rows || []).filter((r) => legal.has(r.san)).map((r) => Object.assign({}, r, { book: !!(book && book.has(r.san)) }));
-  if (book && !out.length) for (const san of book) if (legal.has(san)) out.push({ san, n: 0, w: 0, d: 0, b: 0, book: true });
+  const out = (rows || []).filter((r) => legal.has(r.san))
+    .map((r) => Object.assign({}, r, { book: !!(book && book.has(r.san)), mine: !!(mine && mine.has(r.san)) }));
+  if (book && !out.length) for (const san of book) if (legal.has(san)) out.push({ san, n: 0, w: 0, d: 0, b: 0, book: true, mine: !!(mine && mine.has(san)) });
+  for (const san of mine || []) {
+    if (legal.has(san) && !out.some((r) => r.san === san)) out.push({ san, n: 0, w: 0, d: 0, b: 0, book: !!(book && book.has(san)), mine: true });
+  }
+  return out;
+}
+
+/**
+ * v8-1-plan T3: a repertoire's lines (repertoire.js, `{sans}`) by position —
+ * the same index `bookIndex` makes of the built-in book. Every move of the
+ * book is on one of its lines, so this is rep-book.js `movesAt` read from
+ * the lines the main bundle already holds; scripts/test-rep-book.mjs holds
+ * the two equal move for move.
+ */
+export function mineIndex(lines) {
+  const out = new Map();
+  for (const l of lines || []) {
+    const pos = createReplay();
+    for (const san of String((l && l.sans) || "").split(" ").filter(Boolean)) {
+      const key = pos.key();
+      // a move that does not replay is not the book's (7.2 read set-up games as lines)
+      if (!pos.move(san)) break;
+      if (!out.has(key)) out.set(key, new Set());
+      out.get(key).add(san);
+    }
+  }
   return out;
 }
 
@@ -255,5 +285,5 @@ export function percents(r) {
 
 export const ChessExplorer = {
   LIB_PLIES, hashKey, resultOf, tally, sortRows, indexGames, librarySource, createReplay,
-  encodeRows, decodeRows, bucketFor, bookIndex, rowsAt, percents,
+  encodeRows, decodeRows, bucketFor, bookIndex, mineIndex, rowsAt, percents,
 };

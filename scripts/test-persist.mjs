@@ -874,6 +874,52 @@ for (const how of ["restore", "clear"]) {
   assert(back && back.lib01 === incoming.lib01 && Object.keys(back).length === 1, "C1: readBulk returns the store's shards");
 }
 
+// 2x′. v8-1-plan T3: the repertoire's records ride as "rep0" … "rep3" behind a
+// port of their own — each owner serves, restores and clears only its shards
+{
+  const h = withStore(null);
+  h.m.set(LS("repertoire"), JSON.stringify({ v: 1, w: [], b: [], db: 2, n: 1 }));
+  const P = createPersist(h, () => {});
+  P.load();
+  const mk = (m) => {
+    const p = { m: new Map(Object.entries(m)), restored: null, cleared: 0 };
+    p.names = () => [...p.m.keys()];
+    p.read = (n) => (p.m.has(n) ? p.m.get(n) : null);
+    p.restore = async (texts) => { p.restored = texts; };
+    p.clear = () => { p.cleared++; p.m.clear(); };
+    return p;
+  };
+  const lib = mk({ lib00: "L0" }), rep = mk({ rep2: "R2" });
+  P.attachBulk(lib);
+  P.attachBulk(rep, "rep");
+  await P.recover();
+  await tick(600);
+  const meta = metaOf(h);
+  assert(meta.keys.includes("lib00") && meta.keys.includes("rep2") && valOf(h, "rep2") === "R2",
+    "T3: the first flush mirrors both owners' shards (" + meta.keys.filter((k) => BULK.test(k)).join(",") + ")");
+  assert(BULK.test("rep0") && BULK.test("rep3") && !BULK.test("rep4") && !BULK.test("repertoire"), "T3: rep0–rep3 are shard names, the header key is not");
+  h.writes.length = 0;
+  rep.m.set("rep2", "R2'");
+  P.touchBulk(["rep2"]);
+  await tick(600);
+  assert(h.writes.join(",") === "rep2-b," + STORE_META && valOf(h, "lib00") === "L0", "T3: a touched rep shard is written alone; the library's stay (" + h.writes.join(",") + ")");
+  const onlyRep = await P.readBulk("rep");
+  assert(onlyRep && Object.keys(onlyRep).join() === "rep2" && onlyRep.rep2 === "R2'", "T3: readBulk(\"rep\") returns the repertoire's shards only");
+  P.restoreAll({ app: "chessboard", schema: 2, writtenAt: 99, keys: { lib01: "L1", rep1: "R1" } });
+  P.freeze();
+  await P.flushMirror();
+  assert(JSON.stringify(lib.restored) === JSON.stringify({ lib01: "L1" }) && JSON.stringify(rep.restored) === JSON.stringify({ rep1: "R1" }),
+    "T3: a restore hands each owner its own shards", JSON.stringify([lib.restored, rep.restored]));
+  const h2 = withStore(null);
+  const P2 = createPersist(h2, () => {});
+  P2.load();
+  const lib2 = mk({ lib00: "L0" }), rep2 = mk({ rep0: "R0" });
+  P2.attachBulk(lib2);
+  P2.attachBulk(rep2, "rep");
+  P2.clearAll();
+  assert(lib2.cleared === 1 && rep2.cleared === 1, "T3: 清除全部存档 clears both owners");
+}
+
 // 2y. recover(): a cleared cache is restored with its games, and the reload
 // waits for them to be in IndexedDB
 {

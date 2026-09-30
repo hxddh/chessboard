@@ -5022,6 +5022,57 @@ if (scenario()) {
     }
   }
 }
+// --- v8-1-plan T3: the explorer's 我的开局书 row, the filters' ruler ----------
+// 执白 / 执黑 is a segmented control like the diagnosis's: a label you can see,
+// one line tall, segments equal to the raw pixel, no word out of its button;
+// the 「加进开局书」 key and the rows with their toggles stay inside the panel —
+// in three languages, at the widest window and the narrowest.
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 700 }]) {
+      const { ctx, page, errs } = await open(lang, "pvp", "play", "wood", viewport);
+      await ctx.addInitScript(() => {
+        if (sessionStorage.getItem("t3seed")) return;
+        sessionStorage.setItem("t3seed", "1");
+        localStorage.setItem("chess.v1.repertoire", JSON.stringify({ v: 1, w: [{ id: "rep-t3a", sans: "e4 e5 Nf3 Nc6 Bb5", eco: "", name: "" },
+          { id: "rep-t3b", sans: "d4 d5 c4", eco: "", name: "" }], b: [] }));
+      });
+      await page.reload();
+      await page.waitForFunction(() => window.__chess && window.__chess.rep && window.__chess.rep(), null, { timeout: 20000 }).catch(() => {});
+      await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+      await page.click("#explorer-open", { timeout: 1500 }).catch(() => {});
+      await page.waitForSelector("#xp-list .xp-mine", { timeout: 5000 }).catch(() => {});
+      await page.evaluate(() => document.getElementById("xp-mine-row").scrollIntoView());
+      const r = await page.evaluate(() => {
+        const seg = document.getElementById("xp-rep");
+        const label = document.getElementById(seg.getAttribute("aria-labelledby"));
+        const bs = [...seg.querySelectorAll("button")];
+        const box = document.getElementById("explorer");
+        const inside = [document.getElementById("xp-add"), ...document.querySelectorAll("#xp-list .xp-tog, #xp-list .xp-row")];
+        const right = box.getBoundingClientRect().right;
+        return { shown: !box.hidden && !document.getElementById("xp-mine-row").hidden,
+          mine: document.querySelectorAll("#xp-list .xp-mine").length,
+          label: label && label.offsetParent ? label.textContent.trim() : null, stray: seg.getAttribute("aria-label"),
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          widths: bs.map((b) => b.getBoundingClientRect().width),
+          spill: bs.concat(inside.slice(0, 1)).filter((b) => b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1).map((b) => b.textContent.trim()),
+          past: inside.concat(bs).filter((b) => b.getBoundingClientRect().right > right + 0.5).length,
+          sideways: box.scrollWidth - box.clientWidth,
+          togH: [...new Set([...document.querySelectorAll("#xp-list .xp-tog")].map((b) => Math.round(b.getBoundingClientRect().height)))] };
+      });
+      const tag = `T3 我的开局书 (${lang}, ${viewport.width}×${viewport.height})`;
+      assert(r.shown && r.mine >= 2, `${tag}: 开局浏览器开着，起始局面 e4、d4 标「我的」(${r.mine})`);
+      assert(r.label && !r.stray, `${tag}: 有一个看得见的标签「${r.label}」，没有第二份 aria-label`);
+      assert(r.heights.length === 1 && r.heights[0] < 40, `${tag}: 每一段一行高 (${r.heights.join(", ")})`);
+      assert(Math.max(...r.widths) - Math.min(...r.widths) < 0.1, `${tag}: 每一段等宽 (${r.widths.map((w) => w.toFixed(2)).join(", ")})`);
+      assert(r.togH.length === 1 && r.togH[0] === 32, `${tag}: 每行的开关是小号控件高 (${r.togH.join(", ")})`);
+      assert(r.spill.length === 0 && r.past === 0 && r.sideways <= 0,
+        `${tag}: 文字不出按钮，按钮与行不出面板，面板不横向滚动 (${r.spill.join(", ") || "—"}; ${r.past}; ${r.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

@@ -4188,3 +4188,30 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .xp-w { background: var(--side-white); color: var(--side-black); }
 .xp-d { background: var(--muted); color: var(--bg); }
 .xp-b { background: var(--side-black); color: var(--side-white); }
+/* v8-1-plan T3: 「我的」 is your own repertoire's move — filled where 「书」
+   (the built-in book) is outlined, so the two never read as one mark. The
+   toggle beside a row (a sibling: a button in a button is not a button)
+   puts the move into the book the switch under the list names, or takes it
+   out; that row also adds the moves up to the board's position. */
+.xp-list > li { display: flex; align-items: center; gap: 4px; }
+.xp-list > li > .xp-row { flex: 1 1 auto; min-width: 0; }
+.xp-mine {
+  padding: 0 4px; border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--accent); color: var(--bg);
+  font-size: 0.6875rem; font-weight: 600;
+}
+.xp-tog {
+  appearance: none; flex: none; width: var(--ctl-h-sm); height: var(--ctl-h-sm);
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--card-border); border-radius: var(--radius-sm);
+  background: transparent; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer;
+}
+.xp-tog[aria-pressed="true"] { border-color: var(--accent); }
+.xp-tog:hover { background: var(--btn-ghost); }
+.xp-mine-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.xp-mine-row .act-k { margin-bottom: 0; }
+/* equal segments to the raw pixel, as the library list's filters */
+.xp-mine-row > .theme-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); flex: 1 1 120px; }
+.xp-mine-row > .theme-row > button { white-space: nowrap; }
+/* v8-1-plan T3: where your games and your book disagree (rep-page.js) */
+.rep-cross { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }

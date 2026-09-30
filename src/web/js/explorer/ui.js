@@ -15,6 +15,14 @@
  * the engine's lines and the clock commit several times a second — and never
  * while a pointer is down on them: a rebuild then waits for the pointer to
  * come up, so a click always lands on the button it started on.
+ *
+ * v8-1-plan T3: your own repertoire, too. A move your book (the side the
+ * 我的开局书 switch names) plays from this position is marked 「我的」 —
+ * apart from 「书」, which is the built-in book — and each row has a toggle
+ * beside it that puts the move into that book or takes it out; 「加进开局书」
+ * adds the moves that led to the position on the board. The marks are read
+ * off the lines the main bundle holds (core.js mineIndex), the edits go
+ * through repertoire-ui.js `edit`.
  * @module explorer/ui
  */
 import { loadChunk } from "../chunk.js";
@@ -47,6 +55,30 @@ export function createExplorerUI(d, bookLines) {
   const list = doc.getElementById("xp-list");
   const note = doc.getElementById("xp-note");
   const seg = doc.getElementById("xp-src");
+  // v8-1-plan T3: 我的开局书 — which side's book, and 「加进开局书」
+  const rep = d.repertoire || null;
+  const repRow = doc.getElementById("xp-mine-row");
+  const repSeg = doc.getElementById("xp-rep");
+  const addBtn = doc.getElementById("xp-add");
+  if (repRow) repRow.hidden = !rep;
+  const repSide = () => (store.ui.explorer.rep === "b" ? "b" : "w");
+  const mineMemo = {};
+  /** The moves `side`'s book plays from `key` (re-indexed when its lines are replaced). */
+  function mineAt(key) {
+    const s = repSide();
+    const lines = rep && store.session.repertoire ? store.session.repertoire[s] : null;
+    if (!lines) return undefined;
+    if (!mineMemo[s] || mineMemo[s].lines !== lines) mineMemo[s] = { lines, idx: X.mineIndex(lines) };
+    return mineMemo[s].idx.get(key);
+  }
+  /** The moves from the starting position to the board's, or null when this game began elsewhere. */
+  function pathHere() {
+    const pos = d.viewGame();
+    const sans = pos.history();
+    const r = X.createReplay();
+    for (const san of sans) if (!r.move(san)) return null;
+    return r.key() === ChessFide.positionKey(pos.fen(), pos) ? sans : null;
+  }
 
   /** The ply a position stands at, from its FEN's move number. */
   const plyOf = (pos) => { const f = pos.fen().split(" "); return (Number(f[5]) - 1) * 2 + (f[1] === "b" ? 1 : 0); };
@@ -73,7 +105,7 @@ export function createExplorerUI(d, bookLines) {
     btn.className = "xp-row";
     btn.dataset.san = r.san;
     const [w, dr, b] = X.percents(r);
-    const name = r.san + (r.book ? " · " + t("xp.book") : "");
+    const name = r.san + (r.book ? " · " + t("xp.book") : "") + (r.mine ? " · " + t("xp.mine") : "");
     // a book move no game played is read as just that: the move, 书
     btn.setAttribute("aria-label", r.n ? tf("xp.row", [name, r.n, w, dr, b]) : name);
     const san = doc.createElement("span");
@@ -83,6 +115,12 @@ export function createExplorerUI(d, bookLines) {
       const mark = doc.createElement("span");
       mark.className = "xp-book";
       mark.textContent = t("xp.book");
+      san.appendChild(mark);
+    }
+    if (r.mine) {
+      const mark = doc.createElement("span");
+      mark.className = "xp-mine";
+      mark.textContent = t("xp.mine");
       san.appendChild(mark);
     }
     const n = doc.createElement("span");
@@ -102,6 +140,17 @@ export function createExplorerUI(d, bookLines) {
     for (const el of [san, n, bar]) el.setAttribute("aria-hidden", "true");
     btn.append(san, n, bar);
     li.appendChild(btn);
+    if (rep) {
+      // a sibling of the row, not inside it: a button in a button is not a button
+      const tog = doc.createElement("button");
+      tog.type = "button";
+      tog.className = "xp-tog";
+      tog.dataset.san = r.san;
+      tog.setAttribute("aria-pressed", String(!!r.mine));
+      tog.setAttribute("aria-label", tf("xp.mineToggle", [r.san, t(repSide() === "b" ? "color.black" : "color.white")]));
+      tog.textContent = r.mine ? "✓" : "";
+      li.appendChild(tog);
+    }
     return li;
   }
 
@@ -135,16 +184,31 @@ export function createExplorerUI(d, bookLines) {
       out = out || [];
     }
     if (!book) book = X.bookIndex(bookLines);
-    const rows = X.rowsAt(out, pos, book.get(key));
-    const sig = [src, key, msg, rows.map((r) => [r.san, r.n, r.w, r.d, r.b, r.book].join()).join(";")].join("|");
+    if (repSeg) {
+      for (const b of repSeg.querySelectorAll("button")) {
+        const on = b.dataset.side === repSide();
+        b.classList.toggle("active", on);
+        if (b.getAttribute("aria-pressed") !== String(on)) b.setAttribute("aria-pressed", String(on));
+      }
+    }
+    const rows = X.rowsAt(out, pos, book.get(key), mineAt(key));
+    const sig = [src, key, msg, repSide(), rows.map((r) => [r.san, r.n, r.w, r.d, r.b, r.book, r.mine].join()).join(";")].join("|");
     if (sig === shownSig) return;
     shownSig = sig;
     if (note.textContent !== msg) note.textContent = msg;
-    const refocus = list.contains(doc.activeElement);
+    const at = list.contains(doc.activeElement) ? doc.activeElement : null;
+    const togSan = at && at.classList.contains("xp-tog") ? at.dataset.san : null;
     list.replaceChildren(...rows.map(row));
     // a keyboard player who pressed Enter on a row keeps their place: the
-    // first row of the new position (or the list itself, when it is empty)
-    if (refocus) (list.querySelector("button") || list).focus();
+    // first row of the new position (or the list itself, when it is empty);
+    // on a toggle, the same move's toggle — the position did not change
+    const same = togSan != null ? [...list.querySelectorAll("button.xp-tog")].find((b) => b.dataset.san === togSan) : null;
+    if (at) (same || list.querySelector("button") || list).focus();
+  }
+
+  /** Put `sans` into the chosen book, or its last move out of it (repertoire-ui.js edit). */
+  function editBook(sans, remove) {
+    if (rep.edit(repSide(), sans, remove)) render();
   }
 
   // 7.6: hold the rows still under a pressed pointer
@@ -154,6 +218,12 @@ export function createExplorerUI(d, bookLines) {
   doc.addEventListener("pointercancel", release, true);
 
   list.addEventListener("click", (ev) => {
+    const tog = ev.target.closest("button.xp-tog");
+    if (tog) {
+      const path = pathHere();
+      editBook(path && path.concat(tog.dataset.san), tog.getAttribute("aria-pressed") === "true");
+      return;
+    }
     const btn = ev.target.closest("button.xp-row");
     if (!btn) return;
     const m = d.viewGame().moves({ verbose: true }).find((x) => x.san === btn.dataset.san);
@@ -162,6 +232,14 @@ export function createExplorerUI(d, bookLines) {
     d.startClockIfIdle();
     play(m.from, m.to, m.promotion || "q");
   });
+  if (repSeg) repSeg.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-side]");
+    if (!b || b.dataset.side === repSide()) return;
+    store.ui.explorer.rep = b.dataset.side;
+    d.saveSettings();
+    render();
+  });
+  if (addBtn && rep) addBtn.addEventListener("click", () => editBook(pathHere(), false));
   seg.addEventListener("click", (ev) => {
     const b = ev.target.closest("button[data-src]");
     if (!b || b.dataset.src === store.ui.explorer.src) return;

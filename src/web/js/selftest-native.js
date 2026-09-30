@@ -34,7 +34,7 @@
  */
 /** library-db.js DB_NAME / DB_VERSION and its stores; scripts/test-persist.mjs holds the two together. */
 const IDB_NAME = "chessboard.library";
-const IDB_VERSION = 1;
+const IDB_VERSION = 2;
 /** The key in the library's "meta" store the marker lives under. */
 const IDB_KEY = "selftest";
 
@@ -45,7 +45,7 @@ const done = (req) => new Promise((resolve, reject) => {
 
 /**
  * Open the library's database the way library-db.js does — same name, same
- * version, the same two stores made if they are not there, so opening it
+ * version, the same stores made if they are not there, so opening it
  * here first can never leave the library a database without its stores.
  */
 function openLibraryDb(idb) {
@@ -54,6 +54,7 @@ function openLibraryDb(idb) {
     const d = req.result;
     if (!d.objectStoreNames.contains("games")) d.createObjectStore("games", { keyPath: "id" });
     if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
+    if (!d.objectStoreNames.contains("repertoire")) d.createObjectStore("repertoire", { keyPath: "id" });
   };
   req.onblocked = () => {};
   return done(req);

@@ -546,6 +546,8 @@ export function createPuzzlesUI(d) {
       // the repertoire tab shows one chair at a time too, and for the same
       // reason: a drill is a question asked of the side you are sitting on
       : cat === "rep" ? RepUI.drills(store.session.puzzleState.opSide === "b" ? "b" : "w")
+      // v8-1-plan T3: the repertoire's due moves, one card per position, both chairs
+      : cat === "repdue" ? RepUI.due()
       : cat === "mine" ? store.session.mines.slice()
       : ALL_PUZZLES.filter((p) => p.cat === cat);
     // "Review" is not a difficulty band — it is exactly the set of puzzles this
@@ -558,6 +560,8 @@ export function createPuzzlesUI(d) {
 
   /** the scripted line of the current puzzle (openings: line; win: solution) */
   function puzzleScript(p) {
+    // a due card (v8-1-plan T3) asks one move; its line is the way there and that move
+    if (p.card) return p.line;
     // an opening drill in progress reads its script off the tree: the path so
     // far, then the book's main continuation — the stored line may already
     // have been left by a weighted reply
@@ -588,6 +592,8 @@ export function createPuzzlesUI(d) {
   }
   function opCurrent(pz) {
     const p = pz && pz.p;
+    // a due card is its own position, never a line to be credited (v8-1-plan T3)
+    if (p && p.card) return p;
     if (!p || !isOpeningCat(p.cat) || !Array.isArray(pz.opPath)) return p;
     const path = pz.opPath;
     const onLine = (q) => path.length <= q.line.length && path.every((san, i) => q.line[i] === san);
@@ -614,6 +620,7 @@ export function createPuzzlesUI(d) {
    */
   function opTreeMove(g, mv) {
     const pz = store.session.puzzle;
+    if (pz.p.card) return cardMove(g, mv);
     const path = g.history();
     const before = path.slice(0, -1);
     const tree = openingTreeFor(pz.p);
@@ -681,6 +688,31 @@ export function createPuzzlesUI(d) {
     return true;
   }
 
+  /**
+   * v8-1-plan T3: a due card's one question — the move your book plays here
+   * (any of them, when it plays several). The first answer is the grade;
+   * a retry after a miss, or after 「答案」, does not grade it again.
+   */
+  function gradeCard(ok) {
+    const pz = store.session.puzzle;
+    if (!pz.p.card || pz.graded) return;
+    pz.graded = true;
+    RepUI.grade(pz.p, ok);
+  }
+  function cardMove(g, mv) {
+    const pz = store.session.puzzle;
+    if (!pz.p.answers.includes(mv.san)) {
+      const why = openingWhy(g, mv, pz.p.answers[0]);
+      gradeCard(false);
+      puzzleWrong(why + " · " + tf("pz.repBook", [pz.p.answers.join(" / ")]));
+      return true;
+    }
+    pz.stage++;
+    pz.opPath = g.history();
+    puzzleSolved();
+    return true;
+  }
+
   function startPuzzleAt(cat, idx) {
     const list = puzzlesInCat(cat);
     if (!list.length) {
@@ -708,8 +740,14 @@ export function createPuzzlesUI(d) {
     if (!p) p = puzzlesInCat(cat)[idx];
     if (!p) return;
     store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: isOpeningCat(p.cat) ? [] : null, run: run || null };
-    // playing Black: the app opens with White's book move, you answer
-    if (isOpeningCat(p.cat) && p.side === "b") {
+    // a due card (v8-1-plan T3): the moves that lead to its position are played for you
+    if (p.card) {
+      const pz = store.session.puzzle;
+      for (const san of p.pre) { const m = pz.g.move(san); if (!m) break; pz.last = { from: m.from, to: m.to }; }
+      pz.opPath = pz.g.history();
+      pz.stage = pz.opPath.length;
+    } else if (isOpeningCat(p.cat) && p.side === "b") {
+      // playing Black: the app opens with White's book move, you answer
       const first = store.session.puzzle.g.move(p.line[0]);
       if (first) {
         store.session.puzzle.stage = 1;
@@ -742,7 +780,9 @@ export function createPuzzlesUI(d) {
   function startPuzzles() {
     // v8-0-plan B1: a theme resumes as a theme (its bands load first)
     if (isThemeCat(store.session.puzzleState.cat)) { Modes.startTheme(store.session.puzzleState.cat.slice(THEME_CAT.length)); return; }
-    let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) ? store.session.puzzleState.cat : "m1";
+    let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) || store.session.puzzleState.cat === "repdue" ? store.session.puzzleState.cat : "m1";
+    // v8-1-plan T3: nothing due any more — the book's lines, as 「开始背」 does
+    if (cat === "repdue" && !puzzlesInCat(cat).length) cat = "rep";
     if (cat === "rep") seatRepSide();
     // don't strand the user on an empty review tab — or an emptied personal
     // book, which retires drills on its own (mistakes.js cap)
@@ -842,6 +882,7 @@ export function createPuzzlesUI(d) {
       const cost = p.loss != null ? " · " + tf("pz.mineCost", [(p.loss / 100).toFixed(1)]) : "";
       return tf("pz.goalMine", [p.played]) + cost;
     }
+    if (p.card) return tf("rep.goalCard", [puzzleName(p)]);
     if (isOpeningCat(p.cat)) return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     // v8-0-plan B1: a Lichess puzzle keeps its side, and the goal says which
     const b = p.side === "b";
@@ -1209,7 +1250,9 @@ export function createPuzzlesUI(d) {
     const sp = opCurrent(store.session.puzzle);
     // a clean first-try solve retires the puzzle from review; a shaky one keeps it
     if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(sp.id);
-    if (!store.session.puzzleState.solved[sp.id]) {
+    // a due card is graded on its own schedule, not solved into the tally (v8-1-plan T3)
+    if (sp.card) gradeCard(store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer);
+    else if (!store.session.puzzleState.solved[sp.id]) {
       if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) ratePuzzleOnce(sp.id, 1);
       store.session.puzzleState.solved[sp.id] = true;
       // a clean first solve counts into the lifetime tally; a solve after
@@ -1408,6 +1451,18 @@ export function createPuzzlesUI(d) {
     const step = d && d.steps[d.i];
     if (step && !dailyStepIsHere(step) && dailyJump(step)) { store.commit("session", "sync"); return; }
     let list = puzzlesInCat(store.session.puzzle.cat);
+    // v8-1-plan T3: the card just answered has left the due list (or, missed,
+    // gone to its end), so the one now at this index is the next
+    if (store.session.puzzle.cat === "repdue") {
+      if (!list.length) {
+        toast(t("rep.dueDone"));
+        store.session.puzzleState.cat = "rep"; savePuzzleState();
+        startPuzzles();
+        return;
+      }
+      startPuzzleAt("repdue", store.session.puzzle.idx % list.length);
+      return;
+    }
     if (store.session.puzzle.cat === "review") {
       // a clean re-solve shrinks the queue; graduate to m1 when it empties
       if (!list.length) {
@@ -1539,6 +1594,7 @@ export function createPuzzlesUI(d) {
     if (prog) {
       prog.textContent = store.session.puzzle.cat === "review"
         ? tf("pz.missedCount", [missedCount])
+        : store.session.puzzle.cat === "repdue" ? tf("rep.dueLeft", [list.length])
         : tf("pz.solvedCount", [solvedAll, bookNow().length]);
     }
     // the tier row does nothing in the review queue — grey it out rather than
@@ -1555,7 +1611,7 @@ export function createPuzzlesUI(d) {
       b.disabled = false;
     });
     document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.cat === store.session.puzzle.cat);
+      b.classList.toggle("active", b.dataset.cat === store.session.puzzle.cat || (b.dataset.cat === "rep" && store.session.puzzle.cat === "repdue"));
       // surface how many are queued for review right on the tab
       if (b.dataset.cat === "review") b.textContent = t("pz.cat.review") + (missedCount ? "·" + missedCount : "");
       if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;

@@ -2128,7 +2128,7 @@ import { loadChunk } from "./chunk.js";
     puzzleName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
     saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName, startLearn,
     stopLearn, store, sync, t, tf, toast, writeSan, switchMode, setSideTab, drawRatingTrend,
-    RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total() },
+    RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total(), due: () => RepUI.dueDrills(), grade: (p, ok) => RepUI.gradeCard(p, ok) },
     renderRepertoire: () => renderRepertoire(),
     loadLibraryEntry: (e) => loadLibraryEntry(e),
     dailyJump: (s) => dailyJump(s),
@@ -2553,7 +2553,7 @@ import { loadChunk } from "./chunk.js";
   // read the library's diagnosis: the openings you actually play and have
   // nothing written down about, worst record first.
   const RepUI = createRepertoireUI({
-    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync,
+    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile, sync, library: LibraryUI, exportText,
     // the gap list compares the book against the openings this player has
     // actually played, and that comparison is only as good as the ECO codes
     // on the library's entries — 7.1 shipped `fillOpenings` for exactly this
@@ -2578,16 +2578,16 @@ import { loadChunk } from "./chunk.js";
       if (LibraryUI.fillOpenings()) LibraryUI.saveLibrary();
       return Library.diagnose(store.session.library, LIB_MIN_GAMES);
     },
-    startDrills: () => startRepDrills(),
+    startDrills: (due) => startRepDrills(due),
   });
   const renderRepertoire = () => RepUI.render();
 
   /** 「开始背」: into the trainer, on the repertoire tab, in the chair with lines. */
-  function startRepDrills() {
+  function startRepDrills(due) {
     if (!RepUI.total()) return;
     // which chair to sit in is `seatRepSide`'s rule, and startPuzzles() below
     // applies it — one rule, one place
-    store.session.puzzleState.cat = "rep";
+    store.session.puzzleState.cat = due ? "repdue" : "rep";   // v8-1-plan T3: 复习到期的着
     store.session.puzzleTierFilter = "all";
     savePuzzleState();
     store.session.mode = "puzzle";
@@ -6071,7 +6071,7 @@ import { loadChunk } from "./chunk.js";
   });
   Shell.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
-  createExplorerLazy({ store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, saved: Persist.read("settings").value,
+  createExplorerLazy({ store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
