@@ -245,11 +245,11 @@ export function createPuzzlesUI(d) {
 
   function puzzleClick(sq) {
     if (!store.session.puzzle || store.session.puzzle.done) return;
+    const g = store.session.puzzle.g;
+    if (g.game_over() || g.turn() !== puzzleHumanSide()) return;
     // 看 N 步 (v8-2-plan T2): a square is an answer, not a move on this board
     const own = store.session.puzzle.run && store.session.puzzle.run.own;
     if (own && own.click(sq)) return;
-    const g = store.session.puzzle.g;
-    if (g.game_over() || g.turn() !== puzzleHumanSide()) return;
     const piece = g.get(sq);
     if (store.game.selection && store.game.selection.targets.includes(sq)) {
       const from = store.game.selection.sq;

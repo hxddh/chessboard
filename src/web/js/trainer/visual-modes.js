@@ -439,7 +439,9 @@ export function createVisualModes(d) {
     const sq = ans.move ? ans.move.to : ans.sq;
     pz.mark = sq ? { sq, ok } : null;
     if (q.t === "mate" && q.mates.length) pz.helpArrow = { from: q.mates[0].from, to: q.mates[0].to };
-    if (ok) Audio2.playWin(); else Audio2.playWrong();
+    // a wrong answer sounds as a wrong move does; a right one is not a won
+    // game, and the fanfare is kept for those (test-chess: playEnding)
+    if (!ok) Audio2.playWrong();
     settle(pz, ok, explain(q), q.key, q.r);
   }
 
