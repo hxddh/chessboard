@@ -53,11 +53,11 @@ const STAGE = process.argv[2];
 
 /** the review's budget for a mistake's positions: 600 ms-equivalent × 450 nodes/ms */
 const APP_NODES = 600 * 450;
-/** the judge's budget: ten times the app's */
-const DEEP_NODES = Number(arg("deep", 2700000));
+/** the judge's budget: 2M nodes, 7.4 × the app's — B3's oracle searched 7.5 × the pass (1500 ms against 200) */
+const DEEP_NODES = Number(arg("deep", 2000000));
 /** motifs sampled at least this often; at most PER_MOTIF are judged */
 export const MIN_PER_MOTIF = 20;
-const PER_MOTIF = Number(arg("per", 30));
+const PER_MOTIF = Number(arg("per", 25));
 const SEED = Number(arg("seed", 81));
 
 const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/review.js", "src/web/js/lang-en.js", "src/web/js/lang-ja.js",
@@ -167,9 +167,87 @@ export const ENRICH = {
   deflection: "deflection", attraction: "decoy", pin: "pin", skewer: "skewer", xRayAttack: "xray",
   trappedPiece: "trapped", mateIn1: "mateThreat", promotion: "promotion", backRankMate: "backRank",
 };
+/**
+ * The second pass (--shapes): for the motifs the theme draw rarely gets the
+ * app to name — a mate outranks a double check in the sentence, so most
+ * doubleCheck rows come back as 「让对方…杀」 — rows are picked by the shape
+ * of the Lichess solution, read off the board with chess.js (never with
+ * motif.js): who takes what on which square in its first three moves, and
+ * whether the whole puzzle is a mate. Still only which rows are tried.
+ */
+function shapesOf(r) {
+  if (/\bmate\b/.test(r.themes)) return [];
+  const u = String(r.moves).split(" ");
+  const g = new Chess(r.fen);
+  const ms = [];
+  for (const x of u.slice(0, 4)) {
+    let m = null;
+    try { m = g.move({ from: x.slice(0, 2), to: x.slice(2, 4), promotion: x[4] || "q" }); } catch (_) { m = null; }
+    if (!m) break;
+    ms.push(Object.assign({ check: g.in_check(), fen: g.fen() }, m));
+  }
+  if (ms.length < 2) return [];
+  const [b, s0, s1, s2] = ms;            // the blunder, then the solution
+  const out = [];
+  const th = r.themes;
+  if (s0.check) {
+    const gg = new Chess(s0.fen);
+    const k = gg.board().flat().find((p) => p && p.type === "k" && p.color === gg.turn());
+    void k;
+    const mover = s0.to;
+    // a check by something that did not move: discovered (or double, when the mover checks too)
+    const probe = new Chess(s0.fen);
+    probe.remove(mover);
+    const still = probe.in_check();
+    if (still) out.push(/doubleCheck/.test(th) ? "double" : "discovered");
+  }
+  if (/equality/.test(th)) {
+    const mine = ms.slice(1).filter((m, i) => i % 2 === 0);
+    if (mine.length >= 2 && mine.every((m) => m.check)) out.push("perpetual");
+  }
+  if (s1 && s2 && s1.to === s0.to && s1.captured) {
+    if (s2.captured && s2.to !== s0.to) out.push(s0.captured ? "overload" : "deflection");
+    if (!s0.captured && "kq".includes(s1.piece)) out.push("decoy");
+    if (s0.captured && s2.to === s0.to && s2.captured && "brq".includes(s2.piece)) out.push("xray");
+  }
+  if (s2 && s0.captured && s2.captured && s2.to !== s0.to && /capturingDefender/.test(th)) out.push("removeDefender");
+  if (b.captured && s0.captured && s1 && s1.to === s0.to && s1.captured) out.push("desperado");
+  if (b.captured && s0.to !== b.to && s1 && /intermezzo/.test(th)) out.push("zwischenzug");
+  if (/\bpin\b/.test(th)) out.push("pin");
+  return out;
+}
+async function scanShapes(file, out) {
+  const { streamRows } = await import("./import-puzzles.mjs");
+  const K = Number(arg("k", 400));
+  const tried = new Set(readJsonl(arg("tried")).map((c) => c.id));
+  const rnd = seeded(SEED + 1);
+  const pools = {}, seen = {};
+  let n = 0;
+  await streamRows(file, (r) => {
+    n++;
+    if (tried.has(r.id)) return;
+    let shapes = [];
+    try { shapes = shapesOf(r); } catch (_) { shapes = []; }
+    const row = { id: r.id, fen: r.fen, moves: r.moves, rating: r.rating, themes: r.themes, url: r.url };
+    for (const s of shapes) {
+      const t = "shape:" + s;
+      pools[t] = pools[t] || []; seen[t] = (seen[t] || 0) + 1;
+      if (pools[t].length < K) pools[t].push(row);
+      else { const j = Math.floor(rnd() * seen[t]); if (j < K) pools[t][j] = row; }
+    }
+  });
+  const lines = [];
+  const ids = new Set();
+  for (const [t, list] of Object.entries(pools)) {
+    list.forEach((r, i) => { if (!ids.has(r.id)) { ids.add(r.id); lines.push(JSON.stringify(Object.assign({ group: t, gi: i }, r))); } });
+  }
+  fs.writeFileSync(out, lines.join("\n") + "\n");
+  console.log("rows " + n + " → candidates " + lines.length + " (" + Object.entries(pools).map(([t, l]) => t + " " + l.length + "/" + seen[t]).join(", ") + ")");
+}
 async function scan() {
   const { streamRows } = await import("./import-puzzles.mjs");
   const file = process.argv[3];
+  if (process.argv.includes("--shapes")) { await scanShapes(file, arg("out")); return; }
   const out = arg("out");
   const K = Number(arg("k", 600));          // rows kept per theme (reservoir)
   const U = Number(arg("u", 6000));         // rows kept from the uniform draw
@@ -242,7 +320,11 @@ async function app() {
   const { k, n } = shardOf();
   const lo = Number(arg("from", 0)), hi = Number(arg("to", 1e9));
   const groups = arg("groups") ? new Set(arg("groups").split(",")) : null;
-  let cands = readJsonl(arg("cands")).filter((c) => c.gi >= lo && c.gi < hi && (!groups || groups.has(c.group)));
+  const skip = new Set(String(arg("skip", "")).split(","));
+  // groups interleaved (row gi of every group, then gi + 1), so a partial run
+  // has tried every theme about equally often
+  let cands = readJsonl(arg("cands")).filter((c) => c.gi >= lo && c.gi < hi && (!groups || groups.has(c.group)) && !skip.has(c.group))
+    .sort((a, b) => a.gi - b.gi || (a.group < b.group ? -1 : a.group > b.group ? 1 : 0));
   cands = cands.filter((c, i) => i % n === k && !done.has("pz:" + c.id));
   const fd = fs.openSync(out, "a");
   let i = 0;
@@ -315,12 +397,12 @@ async function games() {
 // --- judge ------------------------------------------------------------------------------
 /** Every app row with a named motif, games' rows unpacked. */
 function namedRows(files) {
-  const out = [];
+  const out = new Map();
   for (const r of readJsonl(files)) {
-    if (Array.isArray(r.rows)) { for (const x of r.rows) if (x.motif) out.push(x); }
-    else if (r.motif) out.push(r);
+    if (Array.isArray(r.rows)) { for (const x of r.rows) if (x.motif) out.set(x.id, x); }
+    else if (r.motif) out.set(r.id, r);
   }
-  return out;
+  return [...out.values()];
 }
 /** The sample: per motif, the repo's games first, then puzzle rows in a seeded order, PER_MOTIF at most. */
 function sampleOf(rows) {
@@ -341,7 +423,9 @@ async function judge() {
   const out = arg("out");
   const done = new Set(readJsonl(out).map((r) => r.id));
   const { k, n } = shardOf();
-  const sample = sampleOf(namedRows(arg("in"))).filter((r, i) => i % n === k && !done.has(r.id));
+  // --motifs: judge only these (a motif's sample is drawn once, when it is judged)
+  const only = arg("motifs") ? new Set(arg("motifs").split(",")) : null;
+  const sample = sampleOf(namedRows(arg("in")).filter((r) => !only || only.has(r.motif))).filter((r, i) => i % n === k && !done.has(r.id));
   const fd = fs.openSync(out, "a");
   const deepOf = async (fen) => {
     const r = await search(fen, DEEP_NODES, 1);

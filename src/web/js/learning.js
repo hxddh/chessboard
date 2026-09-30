@@ -97,11 +97,15 @@ function mergePuzzles(cur, inc) {
     // the entry further along the review ladder wins; a tie keeps the local one
     if (!mine || num(e && e.streak) > num(mine.streak)) missed[id] = e;
   }
-  return Object.assign({}, c, {
+  const out = Object.assign({}, c, {
     solved: unionKeys(c.solved, i.solved),
     missed,
     tally: maxCounters(c.tally, i.tally),
   });
+  // v8-1-plan T6: a queued bank puzzle's band travels with its entry
+  // (trainer/bank-review.js); without it the review can only guess the band
+  if (c.bank || i.bank) out.bank = unionKeys(c.bank, i.bank);
+  return out;
 }
 
 function mergeMines(cur, inc, maxMines) {

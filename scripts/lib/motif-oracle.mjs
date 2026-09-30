@@ -39,21 +39,21 @@ const SOUND = "所说的那步棋经深搜成立（反击：深搜首选，或�
 export const RUBRIC = {
   hanging: SOUND + "这步吃掉 ≥ 3 分的子，对方合法地吃不回（说「没保护」时）或是以小吃大（说「换不回来」时），且不是背后的闪将让它吃不回；深搜线净得 ≥ 2。「没理会威胁」另要求走之前同一步已能白吃。",
   perpetual: SOUND + "失着前深搜对走棋方 ≥ +150，失着后深搜在 ±30 之内；深搜线里攻方每一步都是将军，至少两步。",
-  double: SOUND + "这步之后王同时被两个子将军；深搜线得子 ≥ 2 或将死。",
-  discovered: SOUND + "这步之后是将军，将军的子不是走动的那个，而是走动的子让开了线；走动的子本身不将军（否则是双将）；深搜线得子 ≥ 2 或将死。",
-  discoveredAttack: SOUND + "走动的子让开了一条线，线后的长兵器由此新打到对方 ≥ 3 分的子；深搜线里攻方随后吃到了被新打到的子或走动的子所打的子，净得 ≥ 2。",
-  fork: SOUND + "走到的子同时打到两个目标（王、或 ≥ 3 分的子），这步本身不是白吃一子；深搜线里这个子随后吃到了其中之一，净得 ≥ 2。只说「同时攻击 X 和 Y」时：确实打到这两个，它自己吃不掉，且至少一个非王目标没有保护或比它值钱。",
-  zwischenzug: SOUND + "失着是吃子，对方本可以立刻吃回，却先走一步将军或吃子；深搜线里随后仍在原格吃回，扣掉失着吃到的，净得 ≥ 2。",
+  double: SOUND + "这步之后王同时被两个子将军；深搜线得子 ≥ 1 或将死。",
+  discovered: SOUND + "这步之后是将军，将军的子不是走动的那个，而是走动的子让开了线；走动的子本身不将军（否则是双将）；深搜线得子 ≥ 1 或将死。",
+  discoveredAttack: SOUND + "走动的子让开了一条线，线后的长兵器由此新打到对方 ≥ 3 分的子；深搜线里攻方随后吃到了被新打到的子或走动的子所打的子，净得 ≥ 1。",
+  fork: SOUND + "走到的子同时打到两个目标（王、或 ≥ 3 分的子），这步本身不是白吃一子；深搜线里这个子随后吃到了其中之一，净得 ≥ 1。只说「同时攻击 X 和 Y」时：确实打到这两个，它自己吃不掉，且至少一个非王目标没有保护或比它值钱。",
+  zwischenzug: SOUND + "失着是吃子，对方本可以立刻吃回，却先走一步将军或吃子；深搜线里随后仍在原格吃回，扣掉失着吃到的，净得 ≥ 1。",
   desperado: SOUND + "吃子的子在走之前已经保不住（被攻击且无保护，或被更便宜的子攻击），而正是失着造成的；它吃的不是攻击它的子，随后在那里被吃掉；扣掉失着吃到的，净得 ≥ 1。",
-  removeDefender: SOUND + "这步吃掉的子原本保护着另一个 ≥ 3 分的子；对方吃回后那个子已无保护，攻方下一步吃掉它；净得 ≥ 2。",
-  overload: SOUND + "这步是吃子；对方吃回用的子原本还保护着另一个 ≥ 3 分的子，被引开后那个子无保护，攻方下一步吃掉它；净得 ≥ 2。",
-  deflection: SOUND + "这步不是吃子（弃子）；对方吃它用的子原本保护着另一个 ≥ 3 分的子，被引开后那个子无保护，攻方下一步吃掉它；净得 ≥ 2。",
-  decoy: SOUND + "这步不是吃子（弃子），对方的王或后吃了它；攻方下一步打到了站在那里的王或后；深搜线得子 ≥ 2 或将死。",
-  pin: SOUND + "深搜线里被吃的子在这步之后站在攻方长兵器与对方更值钱的子（或王）之间的线上，并在原地被吃；这步不是白吃一子；净得 ≥ 2。",
-  skewer: SOUND + "走到的长兵器线上前面是更值钱的子（或王），后面是 ≥ 3 分的子；前面的子让开，长兵器吃掉后面的子；净得 ≥ 2。",
-  xray: SOUND + "吃子、被吃回、再由原先被挡在后面的长兵器在同一格吃回（走之前它打不到那一格）；净得 ≥ 2。",
-  trapped: SOUND + "这步是不吃子、不将军的一步；它打到的某个 ≥ 3 分的子原地和每一个去处都会被得子地吃掉；深搜线里吃到了这种子，净得 ≥ 2。",
-  mateThreat: SOUND + "这步不将军；这步之后（让攻方再走一步）有一步杀，这步之前没有；深搜线得子 ≥ 2 或将死。「没理会威胁」：走之前同一步就是杀，且失着之后深搜确为杀。",
+  removeDefender: SOUND + "这步吃掉的子原本保护着另一个 ≥ 3 分的子；对方吃回后那个子已无保护，攻方下一步吃掉它；净得 ≥ 1。",
+  overload: SOUND + "这步是吃子；对方吃回用的子原本还保护着另一个 ≥ 3 分的子，被引开后那个子无保护，攻方下一步吃掉它；净得 ≥ 1。",
+  deflection: SOUND + "这步不是吃子（弃子）；对方吃它用的子原本保护着另一个 ≥ 3 分的子，被引开后那个子无保护，攻方下一步吃掉它；净得 ≥ 1。",
+  decoy: SOUND + "这步不是吃子（弃子），对方的王或后吃了它；攻方下一步打到了站在那里的王或后；深搜线得子 ≥ 1 或将死。",
+  pin: SOUND + "深搜线里被吃的子在这步之后站在攻方长兵器与对方更值钱的子（或王）之间的线上，并在原地被吃；这步不是白吃一子；净得 ≥ 1。",
+  skewer: SOUND + "走到的长兵器线上前面是更值钱的子（或王），后面是 ≥ 3 分的子；前面的子让开，长兵器吃掉后面的子；净得 ≥ 1。",
+  xray: SOUND + "吃子、被吃回、再由原先被挡在后面的长兵器在同一格吃回（走之前它打不到那一格）；净得 ≥ 1。",
+  trapped: SOUND + "这步是不吃子、不将军的一步；它打到的某个 ≥ 3 分的子原地和每一个去处都会被得子地吃掉；深搜线里吃到了这种子，净得 ≥ 1。",
+  mateThreat: SOUND + "这步不将军；这步之后（让攻方再走一步）有一步杀，这步之前没有；深搜线得子 ≥ 1 或将死。「没理会威胁」：走之前同一步就是杀，且失着之后深搜确为杀。",
   promotion: SOUND + "深搜线前六步内攻方升变，净得 ≥ 3 或将死。",
   backRank: SOUND + "深搜确认是杀，深搜线的最后一步由车或后在对方底线上将死，王在底线，王前面一排的格子都被自己的子占着、其中至少两个兵。",
 };
@@ -203,7 +203,7 @@ const RULES = {
     const k = kingSq(c.g1, c.V);
     const n = k ? attackersOf(c.g1, k, c.A).length : 0;
     if (n < 2) return [false, `${c.ms[0].san} 之后只有 ${n} 个子将军`];
-    return c.net >= 2 || c.mate ? [true, `双将，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `双将，但深搜线只净得 ${c.net}`];
+    return c.net >= 1 || c.mate ? [true, `双将，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `双将，但深搜线只净得 ${c.net}`];
   },
   discovered(c) {
     const m0 = c.ms[0];
@@ -212,7 +212,7 @@ const RULES = {
     if (!checkers.length) return [false, "不是将军"];
     if (checkers.includes(m0.to)) return [false, checkers.length > 1 ? "走动的子也在将军：是双将" : "将军的是走动的子本身"];
     if (!checkers.some((s) => between(s, k, m0.from))) return [false, "将军的线不是这步让开的"];
-    return c.net >= 2 || c.mate ? [true, `闪将，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `闪将，但深搜线只净得 ${c.net}`];
+    return c.net >= 1 || c.mate ? [true, `闪将，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `闪将，但深搜线只净得 ${c.net}`];
   },
   discoveredAttack(c) {
     const m0 = c.ms[0];
@@ -230,7 +230,7 @@ const RULES = {
     const direct = attacked(c.g1, m0.to).filter((t) => c.g1[t] && c.g1[t].color === c.V && (c.g1[t].type === "k" || VALUE[c.g1[t].type] >= 3));
     const targets = new Set(uncovered.concat(direct));
     if (!later(c, (x) => x.captured && targets.has(x.to))) return [false, "深搜线没吃到被打到的子"];
-    return c.net >= 2 ? [true, `闪击 ${uncovered.join("、")}，深搜吃到，净得 ${c.net}`] : [false, `闪击成立，但深搜只净得 ${c.net}`];
+    return c.net >= 1 ? [true, `闪击 ${uncovered.join("、")}，深搜吃到，净得 ${c.net}`] : [false, `闪击成立，但深搜只净得 ${c.net}`];
   },
   fork(c) {
     const m0 = c.ms[0];
@@ -253,7 +253,7 @@ const RULES = {
       if (x.from === at) { if (x.captured && hits.includes(x.to)) took = true; at = x.to; }
     });
     if (!took) return [false, "深搜线上捉双的子没吃到目标"];
-    return c.net >= 2 ? [true, `捉双 ${hits.join("、")}，深搜吃到，净得 ${c.net}`] : [false, `捉双吃到了，但深搜只净得 ${c.net}`];
+    return c.net >= 1 ? [true, `捉双 ${hits.join("、")}，深搜吃到，净得 ${c.net}`] : [false, `捉双吃到了，但深搜只净得 ${c.net}`];
   },
   zwischenzug(c) {
     const p = c.played, m0 = c.ms[0];
@@ -262,7 +262,7 @@ const RULES = {
     if (!/[+#]$/.test(m0.san) && !m0.captured) return [false, "这步既不将军也不吃子"];
     if (!takes(c.Chess, c.fen, p.to, c.A).length) return [false, "本来就吃不回，谈不上先走一步"];
     if (!later(c, (x) => x.to === p.to && x.captured)) return [false, "深搜线上没有回头吃回"];
-    return c.net >= 2 || c.mate ? [true, `中间着后吃回，扣掉失着所得净得 ${c.net}`] : [false, `扣掉失着所得只净得 ${c.net}`];
+    return c.net >= 1 || c.mate ? [true, `中间着后吃回，扣掉失着所得净得 ${c.net}`] : [false, `扣掉失着所得只净得 ${c.net}`];
   },
   desperado(c) {
     const p = c.played, m0 = c.ms[0];
@@ -283,7 +283,7 @@ const RULES = {
     if (!attacked(c.g0, m0.to).includes(m2.to)) return [false, `${m0.to} 的子并不保护 ${m2.to}`];
     if (!defended(c.Chess, c.fen, m2.to, c.V)) return [false, `${m2.to} 本来就没保护`];
     if (defended(c.Chess, c.fens[1], m2.to, c.V)) return [false, `${m2.to} 在对方吃回之后仍有保护`];
-    return c.net >= 2 ? [true, `消除 ${m0.to} 的保护者后吃掉 ${m2.to}，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
+    return c.net >= 1 ? [true, `消除 ${m0.to} 的保护者后吃掉 ${m2.to}，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
   },
   overload(c) { return lured(c, "overload"); },
   deflection(c) { return lured(c, "deflection"); },
@@ -294,7 +294,7 @@ const RULES = {
     if (!m2) return [false, "线太短"];
     const g2 = gridOf(c.Chess, c.fens[2]);
     if (!attacked(g2, m2.to).includes(m0.to) && !/[+#]$/.test(m2.san)) return [false, "引过去之后没有打到它"];
-    return c.net >= 2 || c.mate ? [true, `把${m1.piece === "k" ? "王" : "后"}引到 ${m0.to} 后打到它，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `只净得 ${c.net}`];
+    return c.net >= 1 || c.mate ? [true, `把${m1.piece === "k" ? "王" : "后"}引到 ${m0.to} 后打到它，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `只净得 ${c.net}`];
   },
   pin(c) {
     const m0 = c.ms[0];
@@ -320,7 +320,7 @@ const RULES = {
           const B = c.g1[sqOf(f, r)];
           if (!B) continue;
           if (B.color === c.V && rankOf(B.type) > rankOf(P.type)) {
-            return c.net >= 2 ? [true, `${q} 的子被 ${s} 钉在 ${sqOf(f, r)} 前面，深搜线在原地吃掉，净得 ${c.net}`] : [false, `牵制成立，但只净得 ${c.net}`];
+            return c.net >= 1 ? [true, `${q} 的子被 ${s} 钉在 ${sqOf(f, r)} 前面，深搜线在原地吃掉，净得 ${c.net}`] : [false, `牵制成立，但只净得 ${c.net}`];
           }
           break;
         }
@@ -347,14 +347,14 @@ const RULES = {
     const B = back && c.g1[back];
     if (!B || B.color !== c.V || VALUE[B.type] < 3 || !(rankOf(F.type) > rankOf(B.type))) return [false, "线上前面的子不比后面的值钱，或后面没有 ≥ 3 分的子"];
     if (m2.from !== m0.to || m2.to !== back || !m2.captured) return [false, "长兵器没有吃到后面的子"];
-    return c.net >= 2 ? [true, `串击：${m1.from} 让开，吃 ${back}，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
+    return c.net >= 1 ? [true, `串击：${m1.from} 让开，吃 ${back}，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
   },
   xray(c) {
     const [m0, m1, m2] = c.ms;
     if (!m0.captured || !m1 || m1.to !== m0.to || !m1.captured || !m2 || m2.to !== m0.to || !m2.captured) return [false, "深搜线不是同一格上的吃、吃回、再吃回"];
     if (!c.g0[m2.from] || !"brq".includes(c.g0[m2.from].type) || !between(m2.from, m0.to, m0.from)) return [false, "再吃回的子不在它背后的线上"];
     if (attacked(c.g0, m2.from).includes(m0.to)) return [false, "它本来就打得到那一格，不是 X 光"];
-    return c.net >= 2 ? [true, `${m2.from} 隔着 ${m0.from} 支援，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
+    return c.net >= 1 ? [true, `${m2.from} 隔着 ${m0.from} 支援，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
   },
   trapped(c) {
     const m0 = c.ms[0];
@@ -378,7 +378,7 @@ const RULES = {
       });
       if (!all) continue;
       if (!later(c, (x) => x.captured === P.type)) return [false, `${t} 的子被困，但深搜线没吃到它`];
-      return c.net >= 2 ? [true, `${t} 的子无处可逃，深搜吃到，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
+      return c.net >= 1 ? [true, `${t} 的子无处可逃，深搜吃到，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
     }
     return [false, "没有哪个被打到的子是走投无路的"];
   },
@@ -387,7 +387,7 @@ const RULES = {
     if (/[+#]$/.test(m0.san)) return [false, "这步本身将军"];
     if (!mateInOne(c.Chess, withTurn(c.fens[0], c.A))) return [false, "这步之后并没有一步杀的威胁"];
     if (mateInOne(c.Chess, withTurn(c.fen, c.A))) return [false, "威胁在这步之前就有"];
-    return c.net >= 2 || c.mate ? [true, `威胁一步杀，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `只净得 ${c.net}`];
+    return c.net >= 1 || c.mate ? [true, `威胁一步杀，深搜${c.mate ? "将死" : "净得 " + c.net}`] : [false, `只净得 ${c.net}`];
   },
   promotion(c) {
     if (!c.ms.slice(0, 6).some((m, i) => i % 2 === 0 && m.promotion)) return [false, "深搜线前六步里攻方没有升变"];
@@ -422,7 +422,7 @@ function lured(c, name) {
   if (!attacked(c.g0, m1.from).includes(m2.to)) return [false, `${m1.from} 的子原本并不保护 ${m2.to}`];
   if (!defended(c.Chess, c.fen, m2.to, c.V)) return [false, `${m2.to} 本来就没保护`];
   if (defended(c.Chess, c.fens[1], m2.to, c.V)) return [false, `${m2.to} 之后仍有保护`];
-  return c.net >= 2 ? [true, `${m1.from} 的子被引到 ${m0.to}，${m2.to} 失去保护被吃，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
+  return c.net >= 1 ? [true, `${m1.from} 的子被引到 ${m0.to}，${m2.to} 失去保护被吃，净得 ${c.net}`] : [false, `只净得 ${c.net}`];
 }
 
 const mover = (fen) => fen.split(" ")[1];
