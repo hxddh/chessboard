@@ -709,6 +709,17 @@
           </div>
           <p class="hint xp-note" id="xp-note"></p>
           <ol class="xp-list" id="xp-list" tabindex="-1" aria-labelledby="xp-h"></ol>
+          <!-- v8-1-plan T3: your own book — which side's the 「我的」 marks and the
+               row toggles are about, and the moves up to the board's position added
+               to it (explorer/ui.js; repertoire-ui.js edit) -->
+          <div class="xp-mine-row" id="xp-mine-row" hidden>
+            <span class="act-k" id="xp-rep-h" data-i18n="rep.title">我的开局书</span>
+            <div class="theme-row" id="xp-rep" role="group" aria-labelledby="xp-rep-h">
+              <button type="button" data-side="w" class="active" aria-pressed="true" data-i18n="color.white">执白</button>
+              <button type="button" data-side="b" aria-pressed="false" data-i18n="color.black">执黑</button>
+            </div>
+            <button type="button" class="act-btn" id="xp-add" data-i18n="xp.addPath">加进开局书</button>
+          </div>
         </section>
         <!-- 7.7 (v7-7-plan §3): the review is something you open, not
              furniture. In an engine game still being played these four sit
@@ -949,6 +960,9 @@
               </span>
               <span class="btn-pair">
                 <button type="button" class="act-btn" id="rep-drill" hidden data-i18n="rep.drill">开始背</button>
+                <!-- v8-1-plan T3: only the moves whose review is due, one position each -->
+                <button type="button" class="act-btn" id="rep-due" hidden data-i18n="rep.drillDue">复习到期的着</button>
+                <button type="button" class="act-btn" id="rep-export" hidden data-i18n="lib.exportPgn">导出 PGN</button>
                 <button type="button" class="act-btn" id="rep-clear" hidden data-i18n="rep.clear">清空</button>
               </span>
             </div>

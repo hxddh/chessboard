@@ -286,7 +286,7 @@ function removeMove(R, lines, key, san) {
     }
     if (at < 0) { keep.push(l); continue; }
     hit = true;
-    if (at >= R.MIN_PLIES) cut.push(sans.slice(0, at).join(" "));
+    if (at > 0) cut.push(sans.slice(0, at).join(" "));
   }
   if (!hit) return null;
   const r = R.addLines(keep, cut, null);
