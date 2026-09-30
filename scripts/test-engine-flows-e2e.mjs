@@ -1233,7 +1233,7 @@ await scenario("对手角色", async () => {
   await page.keyboard.press("Enter");
   await page.waitForTimeout(150);
   const top = await dialog();
-  assert(top.segs[2].on && shownIds(top).includes("fish") && shownIds(top).includes("max") && !shownIds(top).includes("sol") && top.focus === "seg2",
+  assert(top.segs[2].on && shownIds(top).includes("fish") && shownIds(top).includes("otto") && !shownIds(top).includes("max") && top.focus === "seg2",
     "对手角色（T1）：键盘回车换到「高手」，卡片跟着换，焦点留在分段上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
   await page.click('#op-seg button[data-seg="0"]');
   await page.waitForTimeout(150);

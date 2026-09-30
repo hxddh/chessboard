@@ -11,7 +11,7 @@
  * who cannot play, and report the score. Seeded, so a run is repeatable.
  *
  * Opt-in — slow and needs the vendored engine:
- *   node scripts/test-novice.mjs [--tier=beginner|casual|learner|improver|steady|solid] [--games N]
+ *   node scripts/test-novice.mjs [--tier=beginner|casual|learner|improver|steady|solid|skilled] [--games N]
  */
 //
 // All we had was an indirect argument from ACPL (150–180 for the tier, versus
@@ -255,6 +255,8 @@ if (RECORDING) {
     improver: { careful: [0, 38], random: [0, 15] },
     steady: { careful: [0, 28], random: [0, 15] },
     solid: { careful: [0, 13], random: [0, 15] },
+    // v8-1-plan T1: the rung between 扎实 and 初级
+    skilled: { careful: [0, 13], random: [0, 15] },
   };
   const bands = BANDS[TIER_NAME];
   for (const [label, m] of Object.entries(measured)) {
