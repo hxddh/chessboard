@@ -184,14 +184,14 @@ if (scenario()) {
   // 1.2 seconds a move like every other tier. 缺陷 31.
   // v8-0-plan B4: six sparring rungs (the four new win-chance rungs join the
   // handicapped pair) and six Elo rungs (1450 and 1575 between 初级 and 中级);
-  // v8-1-plan T1: seven and sixteen, the ladder re-stepped
+  // v8-1-plan T1: six and seventeen, the ladder re-stepped
   const EXPECT = {
-    "zh-CN": { spar: ["新手", "休闲", "练习", "进步", "稳健", "扎实", "老练"],
-      engine: ["初级", "初级+", "中级−", "中级", "中级+", "高级−", "高级", "高级+", "专家", "专家+", "大师", "大师+", "强力", "强力+", "顶级", "不限档"] },
-    en: { spar: ["Gentle", "Casual", "Practice", "Improving", "Steady", "Solid", "Seasoned"],
-      engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Intermediate+", "Advanced−", "Advanced", "Advanced+", "Expert", "Expert+", "Master", "Master+", "Strong", "Strong+", "Top", "Unrated"] },
-    ja: { spar: ["やさしい", "お気軽", "練習", "上達", "堅実", "手堅い", "熟練"],
-      engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "トップ", "無制限"] },
+    "zh-CN": { spar: ["新手", "休闲", "练习", "进步", "稳健", "扎实"],
+      engine: ["初级", "初级+", "中级−", "中级", "中级+", "高级−", "高级", "高级+", "专家", "专家+", "大师", "大师+", "强力", "强力+", "顶级", "顶级+", "不限档"] },
+    en: { spar: ["Gentle", "Casual", "Practice", "Improving", "Steady", "Solid"],
+      engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Intermediate+", "Advanced−", "Advanced", "Advanced+", "Expert", "Expert+", "Master", "Master+", "Strong", "Strong+", "Top", "Top+", "Unrated"] },
+    ja: { spar: ["やさしい", "お気軽", "練習", "上達", "堅実", "手堅い"],
+      engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "トップ", "トップ+", "無制限"] },
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");
@@ -202,7 +202,7 @@ if (scenario()) {
       // there must be no third heading above the two group labels
       keys: [...document.querySelectorAll("#row-difficulty .setting-k")].length,
     }));
-    assert(labels.spar.length === 7 && labels.engine.length === 16, lang + ": 7 sparring tiers, 16 engine tiers");
+    assert(labels.spar.length === 6 && labels.engine.length === 17, lang + ": 6 sparring tiers, 17 engine tiers");
     assert(labels.groups.length === 2, lang + ": both groups are labelled");
     assert(labels.keys === 0, lang + ": no redundant 难度 heading above the group labels");
     const all = labels.spar.concat(labels.engine);

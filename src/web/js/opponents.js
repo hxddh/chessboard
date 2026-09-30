@@ -12,7 +12,7 @@
 import { ChessRating } from "./rating.js";
 
 /** The rungs, weakest first. Every id has a row in engine.js TIERS. */
-const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "skilled", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "top", "extreme"];
+const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "top", "topplus", "extreme"];
 
 /**
  * Each rung's rating, and how sure the fit is about it (±, one standard
@@ -71,7 +71,6 @@ const PERSONAS = [
   { id: "kai", level: "improver", style: "attacker", icon: "flame" },
   { id: "ada", level: "steady", style: "off", icon: "target" },
   { id: "remy", level: "solid", style: "principled", icon: "scale" },
-  { id: "juno", level: "skilled", style: "off", icon: "lightbulb" },
   { id: "ben", level: "easy", style: "off", icon: "graduation-cap" },
   { id: "nico", level: "easyplus", style: "off", icon: "coins" },
   { id: "vera", level: "normalminus", style: "off", icon: "swords" },
@@ -87,6 +86,7 @@ const PERSONAS = [
   { id: "nora", level: "strong", style: "off", icon: "handshake" },
   { id: "kit", level: "strongplus", style: "off", icon: "chart-line" },
   { id: "vik", level: "top", style: "off", icon: "library" },
+  { id: "rex", level: "topplus", style: "off", icon: "lightbulb" },
   { id: "fish", level: "extreme", style: "off", icon: "bot" },
 ];
 
@@ -99,9 +99,9 @@ const PERSONAS = [
  */
 const EN_NAME = {
   beginner: "Beginner", casual: "Casual", learner: "Practice", improver: "Improving", steady: "Steady",
-  solid: "Solid", skilled: "Seasoned", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", normalplus: "Normal+",
+  solid: "Solid", easy: "Easy", easyplus: "Easy+", normalminus: "Normal-", normal: "Normal", normalplus: "Normal+",
   hardminus: "Hard-", hard: "Hard", hardplus: "Hard+", expert: "Expert", expertplus: "Expert+", master: "Master", masterplus: "Master+",
-  strong: "Strong", strongplus: "Strong+", top: "Top", extreme: "Max",
+  strong: "Strong", strongplus: "Strong+", top: "Top", topplus: "Top+", extreme: "Max",
 };
 
 function personaById(id) { return PERSONAS.find((p) => p.id === id) || null; }

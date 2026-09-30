@@ -63,10 +63,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *   distribution as a movetime search, in milliseconds, and the same on
    *   every machine) and holds its reply for `minMs`. Where one depth is too
    *   big a step, a longer MultiPV list is the finer knob (`easyplus`).
-   * - Past depth 9 the handicap stops paying: 1,000 nodes of full-strength
-   *   search beat depth 10's pick every game. The top rungs are full strength
-   *   by node count (`nodes`, drawn ±15% a move — searchCmd).
-   * - `skilled` is one more win-chance rung: 扎实 → 初级 was 88%.
+   * - Past depth 10 the handicap stops paying: 10,000 nodes of full-strength
+   *   search won all 23 games against depth 10's pick, and depth 12 is
+   *   slower without closing the gap. The top rungs are full strength by
+   *   node count (`nodes`, drawn ±15% a move — searchCmd), each about four
+   *   times the last.
+   * - 扎实 → 初级 was 88% in 8.0 and needs no rung between now: 初级 at its
+   *   pick depth plays on where the movetime search's deep eval resigned, and
+   *   the step measured ~58% (a win-chance rung between them measured
+   *   55% / 52% and was taken out again).
    *
    * These notes sit here and not beside the rows: a comment inside the
    * literal ships in the bundle (esbuild keeps it), and F5's budget is bytes.
@@ -119,7 +124,6 @@ const global = typeof window !== "undefined" ? window : globalThis;
     improver: { skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
     steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
     solid: { skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
-    skilled: { skill: 5, depth: 5, multipv: 8, winT: 11, minMs: 350 },
     easy: { elo: 1320, depth: 1, minMs: 500 },
     easyplus: { elo: 1500, depth: 2, multipv: 6, minMs: 550 },
     normalminus: { elo: 1500, depth: 2, minMs: 600 },
@@ -131,10 +135,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
     expert: { elo: 2570, depth: 8, minMs: 900 },
     expertplus: { elo: 2670, depth: 9, minMs: 950 },
     master: { elo: 2750, depth: 10, minMs: 1000 },
-    masterplus: { nodes: 400, minMs: 1000 },
-    strong: { nodes: 2000, minMs: 1000 },
-    strongplus: { nodes: 10000, minMs: 1100 },
-    top: { nodes: 50000, minMs: 1100 },
+    masterplus: { nodes: 150, minMs: 1000 },
+    strong: { nodes: 600, minMs: 1000 },
+    strongplus: { nodes: 2500, minMs: 1000 },
+    top: { nodes: 10000, minMs: 1100 },
+    topplus: { nodes: 40000, minMs: 1100 },
     extreme: { elo: null, movetime: 1200 },
   };
 

@@ -2184,49 +2184,6 @@
           ],
           "sdPct": 2.9
         }
-      },
-      "skilled": {
-        "settings": {
-          "skill": 5,
-          "depth": 5,
-          "multipv": 8,
-          "winT": 11,
-          "minMs": 350
-        },
-        "random": {
-          "games": 100,
-          "matches": 5,
-          "gamesPerMatch": 20,
-          "win": 0,
-          "draw": 0,
-          "loss": 100,
-          "scorePct": 0,
-          "runs": [
-            0,
-            0,
-            0,
-            0,
-            0
-          ],
-          "sdPct": 0
-        },
-        "careful": {
-          "games": 100,
-          "matches": 5,
-          "gamesPerMatch": 20,
-          "win": 1,
-          "draw": 1,
-          "loss": 98,
-          "scorePct": 2,
-          "runs": [
-            8,
-            0,
-            0,
-            0,
-            0
-          ],
-          "sdPct": 3.6
-        }
       }
     }
   },
