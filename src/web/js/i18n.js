@@ -233,6 +233,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "lm.nextSubtask": "完成！下一小题",
       "lm.toBeginnerAi": "去人机·新手",
       "lm.restarted": "本课重来",
+      "learn.advFailed": "进阶课程没能载入，先停在上一课，稍后再试",
       "lm.noDemo": "本任务没有演示",
       // v8-1-plan T2: the endgame camp (trainer/endgames.js)
       "eg.camp": "残局训练营",

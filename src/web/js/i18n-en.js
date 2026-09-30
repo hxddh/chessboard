@@ -203,6 +203,7 @@
       "lm.nextSubtask": "Done! Next step",
       "lm.toBeginnerAi": "Play the Beginner engine",
       "lm.restarted": "Lesson restarted",
+      "learn.advFailed": "The advanced lessons did not load — staying on the lesson before; try again later",
       "lm.noDemo": "This task has no demo",
       // v8-1-plan T2: the endgame camp (trainer/endgames.js)
       "eg.camp": "Endgame camp",

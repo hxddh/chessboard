@@ -40,7 +40,7 @@ export function createLessonsUI(d) {
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
   // v8-2-plan T1: the advanced part 3 follows as placeholders over its chunk;
   // one asked for before the chunk is here opens when it arrives
-  const Adv = createAdvLessons((i) => { if (i >= 0 && store.session.mode === "learn") startLesson(i); else sync(); });
+  const Adv = createAdvLessons((i) => { if (i >= 0 && store.session.mode === "learn") startLesson(i); else sync(); }, () => toast(t("learn.advFailed"), "fix"));
   const LESSONS = (CHESS_LESSONS || []).concat(Adv.stubs);
 
   function loadLearnState() {
@@ -158,13 +158,15 @@ export function createLessonsUI(d) {
   function curLesson() { const l = store.session.learn; return (l.gs && Gs.m.lesson()) || (l.eg && Endgames.lesson(l.eg)) || LESSONS[l.li]; }
   function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
-  function startLesson(i) {
+  function startLesson(i, stand) {
     if (!LESSONS[i]) return;
     store.session.study = null;
-    store.session.learnState.last = i;
-    saveLearnState();
-    if (!LESSONS[i].tasks.length) { Adv.want(i); return; }
-    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
+    if (!stand) { store.session.learnState.last = i; saveLearnState(); Adv.want(-1); }
+    // an advanced lesson before its chunk: opened when it arrives; meanwhile,
+    // and if it never does (lessons-adv.js), the nearest lesson before it
+    // stands in, so 学习 is not a blank page — the bookmark stays (M2 review)
+    if (!LESSONS[i].tasks.length) { Adv.want(i); if (!store.session.learn) startLesson((CHESS_LESSONS || []).length - 1, true); return; }
+    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
 

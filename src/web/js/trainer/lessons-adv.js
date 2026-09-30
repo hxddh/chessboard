@@ -28,12 +28,17 @@ export const ADV_IDS = [
   "po-major", "po-file", "po-behind", "po-kpend", "po-trade", "po-prophy",
 ];
 
+/** How long a wanted lesson waits for the chunk before the wait is given up (ms). */
+export const ADV_WAIT_MS = 8000;
+
 /**
  * @param {(wanted: number) => void} onReady the chunk arrived — repaint, or
  *   open lesson `wanted` (a course index, -1 for none) that was asked for early
+ * @param {() => void} onFail a wanted lesson's chunk failed to load, or took
+ *   longer than ADV_WAIT_MS: the lesson standing in stays (M2 review)
  * @returns {{stubs: object[], ensure: () => void, want: (i: number) => void, ready: () => boolean}}
  */
-export function createAdvLessons(onReady) {
+export function createAdvLessons(onReady, onFail) {
   let byId = null;
   let asked = null;
   let wanted = -1;
@@ -53,7 +58,12 @@ export function createAdvLessons(onReady) {
         const i = wanted;
         wanted = -1;
         onReady(i);
-      }, () => { asked = null; }); // a failed load is retried next time something asks
+      }, () => { asked = null; give(); }); // a failed load is retried next time something asks
+  }
+  function give() {
+    if (wanted < 0) return;
+    wanted = -1;
+    if (onFail) onFail();
   }
   const src = (id) => (byId ? byId.get(id) : (ensure(), null));
   const stub = (id) => ({
@@ -63,7 +73,12 @@ export function createAdvLessons(onReady) {
     get text() { const L = src(id); return L ? L.text : []; },
     get tasks() { const L = src(id); return L ? L.tasks : []; },
   });
-  /** open course lesson `i` once the chunk is here */
-  const want = (i) => { wanted = i; ensure(); };
+  /** open course lesson `i` once the chunk is here; -1 forgets one asked for */
+  const want = (i) => {
+    wanted = i;
+    if (i < 0) return;
+    ensure();
+    setTimeout(() => { if (wanted === i && !byId) give(); }, ADV_WAIT_MS);
+  };
   return { stubs: ADV_IDS.map(stub), ensure, want, ready: () => !!byId };
 }

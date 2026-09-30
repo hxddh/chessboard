@@ -203,6 +203,7 @@
       "lm.nextSubtask": "できました！次の小問へ",
       "lm.toBeginnerAi": "エンジン対局・入門へ",
       "lm.restarted": "このレッスンをやり直します",
+      "learn.advFailed": "上級レッスンを読み込めませんでした。前のレッスンのまま、後でもう一度",
       "lm.noDemo": "この課題にお手本はありません",
       // v8-1-plan T2: the endgame camp (trainer/endgames.js)
       "eg.camp": "エンドゲーム道場",

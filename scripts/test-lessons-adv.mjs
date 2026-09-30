@@ -25,7 +25,7 @@ import path from "path";
 import vm from "vm";
 import { ROOT, loadAppModules } from "./lib/app-module.mjs";
 import { CHUNKS, compileModuleSync } from "./bundle.mjs";
-import { acceptedMoves, SOURCES } from "./verify-lessons.mjs";
+import { acceptedMoves, replyBetween, SOURCES } from "./verify-lessons.mjs";
 
 let failed = 0;
 const assert = (cond, msg, extra) => {
@@ -69,7 +69,7 @@ const IDS = shell.ADV_IDS;
     assert(rec.depth >= 18 && rec.tie <= 50, "核对的深度 ≥ 18、容差 ≤ 50 cp", rec.depth + " / " + rec.tie);
     const byId = new Map(rec.lessons.map((l) => [l.id, l]));
     let n = 0;
-    const stale = [], notOk = [], noSrc = [];
+    const stale = [], notOk = [], noSrc = [], badSol = [], badReply = [];
     for (const L of LESSONS) {
       const r = byId.get(L.id);
       if (!r || r.tasks.length !== L.tasks.length) { stale.push(L.id + "（记录里没有或步数不同）"); continue; }
@@ -80,12 +80,20 @@ const IDS = shell.ADV_IDS;
         if (row.fen !== t.fen || row.accept.slice().sort().join(",") !== want) stale.push(L.id + "#" + i);
         if (!row.ok) notOk.push(L.id + "#" + i + " " + (row.why || []).join("; "));
         if (!row.src || row.src !== (SOURCES[L.id] || [])[i]) noSrc.push(L.id + "#" + i);
+        // M2 review: the move the demo plays is one the step accepts, and the
+        // opponent's reply shown between steps is the one that was checked
+        const sol = new Chess(t.fen).move((t.solution || [])[0] || "");
+        if (!sol || !acceptedMoves(Chess, t).includes(sol.san)) badSol.push(L.id + "#" + i + " " + (t.solution || [])[0]);
+        const reply = L.tasks[i + 1] ? replyBetween(Chess, t, L.tasks[i + 1]) : null;
+        if ((row.reply && row.reply.san !== reply) || (reply && !row.reply)) badReply.push(L.id + "#" + i + " " + reply + " / " + (row.reply && row.reply.san));
       });
     }
     assert(n === LESSONS.reduce((a, L) => a + L.tasks.length, 0), "记录覆盖全部 " + n + " 步");
     assert(!stale.length, "每一步的局面和「算对」的着法集合与记录相同（改了课要重跑 verify-lessons）", stale.join(", "));
     assert(!notOk.length, "记录里每一步都通过：接受的着法与引擎最佳同级，拒绝的最佳着法差得更多", notOk.join(" | "));
     assert(!noSrc.length, "每一步都记了局面出处", noSrc.join(", "));
+    assert(!badSol.length, "每一步的 solution[0] 都在「算对」的着法里", badSol.join(", "));
+    assert(!badReply.length, "两步之间对方的应着就是核对记录里的那一步（" + LESSONS.reduce((a, L) => a + L.tasks.filter((t, i) => L.tasks[i + 1] && replyBetween(Chess, t, L.tasks[i + 1])).length, 0) + " 处）", badReply.join(", "));
     assert(rec.summary && rec.summary.failed === 0 && rec.summary.tasks === n, "记录的汇总：0 步失败", JSON.stringify(rec.summary));
   }
 }
@@ -137,6 +145,22 @@ const IDS = shell.ADV_IDS;
     "分块到了以后，占位课的标题、课文和步都来自分块");
   assert(adv.stubs[23].part === "局面型" && adv.stubs[23].tasks.length === LESSONS[23].tasks.length, "最后一课也读得到");
 
+  // M2 review: a wanted lesson whose chunk does not come says so — the lesson
+  // standing in stays, and nothing opens later on its own
+  {
+    let failedN = 0, got = null;
+    const bad = shell.createAdvLessons((i) => { got = i; }, () => { failedN++; });
+    delete shell.CHESS_LESSONS_ADV;
+    bad.want(100);
+    await new Promise((r) => setTimeout(r, 20));
+    assert(failedN === 1 && got === null && !bad.ready(), "要开的进阶课分块取不到：报一次失败，不开课", JSON.stringify({ failedN, got }));
+    shell.CHESS_LESSONS_ADV = ADV;
+    bad.ensure();
+    await new Promise((r) => setTimeout(r, 20));
+    assert(bad.ready() && got === -1 && failedN === 1, "…之后分块到了只重画，不再跳去那一课", got);
+  }
+  assert(typeof shell.ADV_WAIT_MS === "number" && shell.ADV_WAIT_MS >= 3000 && shell.ADV_WAIT_MS <= 15000, "慢的分块等 3–15 秒就不再等（ADV_WAIT_MS " + shell.ADV_WAIT_MS + "）");
+
   // the words other languages read go through lazy-content's tables
   const lz = { console, Math, Date };
   lz.globalThis = lz; lz.window = lz;
@@ -150,3 +174,5 @@ const IDS = shell.ADV_IDS;
 
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
 console.log("all advanced-lesson tests passed");
+// the ADV_WAIT_MS timers of the wants above would hold the process open
+process.exit(0);
