@@ -147,6 +147,7 @@ const allSourceExcept = (...owners) =>
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
   "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js",
+  "trainer/puzzle-book.js", "trainer/puzzle-rating.js", "trainer/puzzle-openings.js", "trainer/puzzle-mine.js",
   "me-page.js", "game-end.js", "review/moments.js", "opponents-ui.js", "io.js", "game-controller.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
@@ -6840,6 +6841,17 @@ for (const lang of CONTENT_LANGS) {
   console.log("  bundle.js " + bundleBytes + " bytes minified (7.9.0 minified: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
     "bundle.js stays within the first-paint budget (" + bundleBytes + " > " + BUNDLE_BUDGET + " bytes, 70.5% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + " minified)");
+  // v8-2-plan F1: a second, tighter line for 8.2 only. 8.1 alone spent ~39 KB
+  // of the budget's room (89,502 left at its M1, 50,670 at 8.1.0), and one
+  // more version like it reaches the line. So new 8.2 training content and
+  // its data go in chunks; the bundle may grow by 10 KB over 8.1.0 for the
+  // doors to them — the entry points, the interface keys, the scheduling.
+  // 8.1.0 (168acc2) built by its own bundle.mjs: exactly 900,972 bytes, and
+  // the plan's line is 910,972 (10,000, not 10,240).
+  const BUNDLE_BYTES_AT_810 = 900972;
+  const BUNDLE_GROWTH_82 = 10000;
+  assert(bundleBytes <= BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82,
+    "v8-2-plan F1: bundle.js grows at most 10 KB over 8.1.0 (" + bundleBytes + " > " + (BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82) + " bytes) — 8.2 content goes in chunks");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -7462,7 +7474,7 @@ for (const lang of CONTENT_LANGS) {
   const homes = {
     "trainer/content.js": ["createTrainerContent", "puzzleName", "lessonText", "motifKeyOf"],
     "trainer/lessons.js": ["createLessonsUI", "startLesson", "learnMove", "syncLearnUI", "startClassic"],
-    "trainer/puzzles.js": ["createPuzzlesUI", "puzzleMove", "syncPuzzleUI", "ratePuzzleOnce", "bookNow"],
+    "trainer/puzzles.js": ["createPuzzlesUI", "puzzleMove", "syncPuzzleUI"],
     "trainer/today.js": ["createTodayUI", "dailySignals", "dailyJump", "renderPuzzleTally"],
     // v8-0-plan B5 (M4): the 我的 page grows in its own module
     "me-page.js": ["createMePage", "drawAccTrend", "renderAchRows", "REC_DOORS"],
@@ -7471,6 +7483,32 @@ for (const lang of CONTENT_LANGS) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
     for (const name of names) assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
+}
+
+// --- v8-2-plan F1: trainer/puzzles.js split by what each part is for -------
+// The book, the ratings, the opening drills, the personal drills and the mate
+// searches are modules of their own; puzzles.js keeps the flow (seat, judge,
+// file, next), the way out into a game and the panel, and creates the parts
+// with their dependencies handed in. A new way to train is one more module
+// beside them (T2), not more lines in the 1,825 this file had.
+{
+  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
+  const homes = {
+    "trainer/puzzle-book.js": ["createPuzzleBook", "bookNow", "puzzlesInCat", "puzzleTier", "owedNow", "loadPuzzleState"],
+    "trainer/puzzle-rating.js": ["createPuzzleRating", "ratePuzzleOnce", "playerRating", "markMissed", "clearMissed"],
+    "trainer/puzzle-openings.js": ["createPuzzleOpenings", "opTreeMove", "opCurrent", "openingWhy"],
+    "trainer/puzzle-mine.js": ["createPuzzleMine", "verifyAlt", "mineWhy", "renderPuzzleLine"],
+    "trainer/puzzle-mate.js": ["whiteHasForcedMate", "blackForcedLost", "bestDefense"],
+    "trainer/puzzles.js": ["createPuzzlesUI", "seatPuzzle", "puzzleMove", "puzzleSolved", "paintPuzzlePanel"],
+  };
+  for (const [file, names] of Object.entries(homes)) {
+    // the mate searches are pure functions of a chess.js game, like runs.js
+    // and themes.js: no factory, no bag, none of app.js's house rules to follow
+    if (file !== "trainer/puzzle-mate.js") assert(APP_MODULES.includes(file), "F1: " + file + " follows app.js's house rules (APP_MODULES)");
+    for (const name of names) assert(owner(name) === file, "F1: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
+  }
+  const lines = WEB_MODULES.get("trainer/puzzles.js").split("\n").length;
+  assert(lines <= 1000, "F1: trainer/puzzles.js is the trainer's middle, not the whole of it (" + lines + " lines)");
 }
 
 // --- v8-1-plan F3 (M4): the rest of app.js's regions, the same way --------

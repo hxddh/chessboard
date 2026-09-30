@@ -620,3 +620,30 @@
    - WebView 截图或 DOM：SDK 不支持。
    - 让面板自动应答：macOS 要辅助功能授权；Windows 的 UI Automation 可能可行，但没验证。而且做成了，多测到的也只是面板本身。
 - **V2 Lichess 的时间排序（真站核对）**：`sync-samples.yml` 在 main 上手动跑了一次（2026-09-30 17:27 UTC，run 36751390621，thibault，`max` 20）。`lichess-since` 那条请求（`since=` 当时 − 30 天、`sort=dateAsc`）答 200 `application/x-chess-pgn`，20 局，**按 UTCDate / UTCTime 严格升序**：2026-09-10 06:36:17 → 2026-09-12 20:30:55 UTC，没有一局早于 since（日志里没印 since，按 Fetch 步开始的 17:26:54 推，不早于 2026-08-31 17:26:54 UTC）。增量同步对「从 since 起正序」的依赖在真站上成立，不用改。应答原样（44,075 字节）入库为 `src/sync-fixtures/lichess-since.body`，`headers.txt`、README 记了来源。断言：`src/main.zig` 一条 Zig 测试（逐局升序、不早于 since；`lichessReply` 分出 20 局、N = 5 留下最老 5 局、晚一点的 since 去掉前 6 局；把升序改成降序断言时红）；`scripts/test-sync.mjs` 13 项（升序；N = 5 截下从 since 起的前 5 局，入库后 `syncSince` 推出 09-12 − 14 天、已有 5 局，第二次新 15 重复 5、20 局齐全无缺口，同一份再喂一次 0 新 20 重复；把夹具换成倒序时红）。同一次运行里 Chess.com erik 的 2026/09 月份答了 404，旧夹具没换。
+- **F1 主包上限**：test-chess 在 `BUNDLE_BUDGET` 那条断言旁边加了 8.2 的线：`BUNDLE_BYTES_AT_810 + 10,000`。
+  - 8.1.0（168acc2）用它自己的 `bundle.mjs` 构建，实测 900,972 字节，与 §2 一致；上限 910,972，就是本节的验收线。
+  - 取 10,000 而不是 10,240：按验收线写。
+  - 先红后绿：常数改小时这条断言报红。
+  - `docs/measured.json` 按约定只由 `--record` 写，没有手填这个数。
+  - `BUNDLE_BUDGET` 没动。
+- **F1 拆分**：`trainer/puzzles.js` 1,825 行拆成六个文件，行为零改动。
+  - 原文件第 50–1825 行，每一行都原样落在新文件里的某一处；新增的只有文件头、依赖解构、创建调用和返回。杀棋搜索从闭包提到模块顶层，所以少缩进一级。
+  - `puzzle-book.js`（442 行）：题库。内置题、挖掘题、开局题、错题自炼、开局书，加上存档与 id 迁移、难度档、复习队列和各分类的列表。它最先创建，因为创建时就读档，和旧文件顶部的顺序一样。
+  - `puzzle-rating.js`（165 行）：评级，以及每次作答记到哪里（`markMissed` / `clearMissed`）。
+  - `puzzle-openings.js`（217 行）：开局题。按整棵树判着、到期卡片、走错时说出道理。
+  - `puzzle-mine.js`（141 行）：错题自炼。引擎复核另一步好棋、答案的道理、引擎主变。
+  - `puzzle-mate.js`（78 行）：杀棋搜索，纯函数，不进 APP_MODULES，和 runs.js、themes.js 一样。
+  - `puzzles.js`（964 行）留下中间的流程：摆题、判着、记账、下一题、离开训练去下棋（背完接着下、看那局棋），以及侧栏。
+  - 冲刺、连胜和主题页在 8.0 B1 已经是 `puzzle-modes.js` / `runs.js` / `themes.js`，这次没有再拆。
+  - 依赖照 `createXxx(d)` 的做法显式传入：各部分拿 `{ ...d, ...Book }` 再加自己要的几项。纯模块（Srs、Picker、Progress、Mistakes、Drills）各自 import，和题库交给 app.js 的是同一个对象。`Modes` 最后创建，所以题库和评级通过转发函数拿到它。`app.js` 一行没改。
+  - T2 的位置：文件头写明新玩法是一个自己的模块，在 `Modes` 旁边创建，内容进分块。它通过 `seatPuzzle(cat, idx, p, run)` 摆题；带 `run` 的题，判定会交给玩法自己处理，不进复习队列和评级。
+  - test-chess 登记了新文件的归属（先红后绿）。另加一条：`puzzles.js` ≤ 1,000 行。
+- **拆分的代价**：主包 900,972 → 902,636（+1,664 字节）。
+  - 标识符保留时，每个跨文件的名字都要在创建处、解构处和返回处各多写一次；与 app.js 顶层重名的还会被 esbuild 改名成 `store:store2`。
+  - 起初的版本把侧栏、背完接着下、看那局棋也拆出去，要 +3,616；收回到 `puzzles.js` 之后是现在的数。
+  - 按部分粗算：题库约 850，开局题约 450，评级约 350，错题自炼约 300，杀棋约 0。
+- **测试**：拆分前后在同一台机器上各跑一遍，结果都一样。
+  - `test:static` 全绿，共 3,966 条 ok。
+  - trainer-e2e 两边都是 74 条 ok。
+  - content-e2e 两边都是 515 条 ok，library-e2e 两边都是 312 条 ok。
+  - repertoire-e2e 覆盖开局书背谱、到期卡片和背完接着下，拆分后 83 条 ok，全部通过。
