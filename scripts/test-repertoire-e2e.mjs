@@ -65,9 +65,9 @@ console.log("引擎:", ENGINE);
 const BOOK80 = { v: 1,
   w: [line("e4 e5 Nf3 Nc6 Bb5 a6", "C68", "Ruy Lopez"), line("Nf3 Nc6 e4 e5 Bc4", "C50", "Italian Game")],
   b: [line("d4 Nf6 c4 e6", "E00", "Indian Defense")] };
-/** Four games you played as White: three times Bc4 where the book says Bb5. */
+/** Four games you played as White: three times Nc3 where the book says Bb5 / Bc4. */
 const GAMES = [
-  ["e4 e5 Nf3 Nc6 Bc4 Bc5", "1-0"], ["e4 e5 Nf3 Nc6 Bc4 Nf6", "0-1"], ["e4 e5 Nf3 Nc6 Bc4 Be7", "1-0"], ["e4 e5 Nf3 Nc6 Bb5 a6", "1/2-1/2"],
+  ["e4 e5 Nf3 Nc6 Nc3 Bc5", "1-0"], ["e4 e5 Nf3 Nc6 Nc3 Nf6", "0-1"], ["e4 e5 Nf3 Nc6 Nc3 Bb4", "1-0"], ["e4 e5 Nf3 Nc6 Bb5 a6", "1/2-1/2"],
 ].map(([sans, result], i) => ({ id: "lib:r" + i, t: 1758000000000 - i, white: "me", black: "x" + i, date: "", event: "",
   result, plies: sans.split(" ").length, sans, fen: "", side: "w", outcome: result === "1-0" ? "win" : result === "0-1" ? "loss" : "draw", an: null }));
 
@@ -104,7 +104,8 @@ async function ready(page) {
 /** The records as the page holds them: {id: "san>to,…"} and the cards. */
 const records = (page) => page.evaluate(() => {
   const out = {};
-  for (const [id, r] of window.__chess.rep().records()) out[id] = { moves: r.moves.map((m) => m.san), card: r.card || null, path: r.path };
+  const all = [...window.__chess.rep().records()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  for (const [id, r] of all) out[id] = { moves: r.moves.map((m) => m.san), card: r.card || null, path: r.path };
   return out;
 });
 /** The records as IndexedDB holds them (the library's database, store "repertoire"). */
@@ -134,15 +135,14 @@ const waitFor = async (page, fn, pred, ms = 3000) => {
   return r;
 };
 
-/** Click on the board: a square's centre. */
-async function tapAt(page, sq) {
-  const p = await page.evaluate((x) => {
+/** Click on the board: a square's centre (`flip`: Black at the bottom — the trainer's Black drills). */
+async function tapAt(page, sq, flip) {
+  const p = await page.evaluate(([x, flip]) => {
     const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
     const f = x.charCodeAt(0) - 97, rk = 8 - +x[1];
-    const flip = document.body.classList.contains("flipped");
     const co = flip ? 7 - f : f, ro = flip ? 7 - rk : rk, z = r.width / 8;
     return { x: r.left + (co + .5) * z, y: r.top + (ro + .5) * z };
-  }, sq);
+  }, [sq, !!flip]);
   await page.mouse.click(p.x, p.y);
   await page.waitForTimeout(200);
 }
@@ -206,7 +206,7 @@ let migratedRecords = null;
   assert(!bad.length, "沿主线五个局面，「我的」与按下的开关都等于开局书在这个局面的着法", bad.join(" | "));
   let rows = await xpRows(page);
   const bb5 = rows.find((r) => r.san === "Bb5");
-  assert(bb5 && bb5.mine && !bb5.book === false || bb5.mine, "Bb5 标「我的」");
+  assert(bb5 && bb5.mine && bb5.book, "Bb5 既标「书」也标「我的」");
   assert(rows.some((r) => r.book && !r.mine) || rows.every((r) => r.mine), "「书」和「我的」是两种标记，各标各的", JSON.stringify(rows.map((r) => [r.san, r.book, r.mine])));
   assert(/我的/.test(bb5.label) && bb5.tlabel === "Bb5 · 我的开局书（执白）", "读屏：行读出「我的」，开关读出着法与哪一本书", bb5.label + " | " + bb5.tlabel);
   // 执黑那本：同一局面，黑方书里没有这些
@@ -301,12 +301,17 @@ let migratedRecords = null;
   // 下一题：另一张到期的卡，前面的着法替你走好了
   await page.click("#puzzle-next");
   await page.waitForTimeout(500);
-  const p2 = await page.evaluate(() => { const pz = window.__chess.rep().dueDrills()[0]; return pz; });
+  // the card on the board, from its position: side to move and key
+  const fen = await page.evaluate(() => window.__chess.puzzle());
+  const g2 = new nctx.Chess(fen);
+  const p2 = { card: g2.turn() + "|" + nctx.ChessFide.positionKey(fen, g2) };
+  p2.answers = (await records(page))[p2.card].moves;
   const hist = await page.evaluate(() => document.getElementById("puzzle-progress").textContent);
-  assert(p2 && p2.pre.length > 0 && /还有 \d+ 着/.test(hist), "下一张到期的卡：走到它的着法已经在棋盘上", JSON.stringify(p2 && p2.pre));
+  assert(g2.history().length === 0 && fen !== new nctx.Chess().fen() && /还有 \d+ 着/.test(hist), "下一张到期的卡：走到它的着法已经在棋盘上", fen);
   // 答错：一步不在书里的棋 —— 这张卡回到最底一级、立刻到期，并告诉你书上走什么
-  const wrongSq = p2.side === "b" ? ["a7", "a6"] : ["a2", "a3"];
-  await tapAt(page, wrongSq[0]); await tapAt(page, wrongSq[1]);
+  const wm = g2.moves({ verbose: true }).find((m) => !p2.answers.includes(m.san) && m.piece === "p");
+  const wrongSq = [wm.from, wm.to];
+  await tapAt(page, wrongSq[0], g2.turn() === "b"); await tapAt(page, wrongSq[1], g2.turn() === "b");
   await page.waitForTimeout(400);
   const fb2 = await page.textContent("#puzzle-feedback");
   recs = await records(page);
@@ -332,8 +337,8 @@ let migratedRecords = null;
   await page.click('#rail button[data-view="library"]').catch(() => {});
   const cross = await waitFor(page, (p) => p.evaluate(() => [...document.querySelectorAll("#rep-cross li")].map((li) => li.textContent)),
     (r) => r && r.length > 0, 8000);
-  assert(cross.length === 1 && cross[0] === "执白 · 1. e4 e5 2. Nf3 Nc6：你常走 Bc4（4 局里 3 局），开局书写的是 Bb5",
-    "棋谱库反推：这个局面你常走 Bc4，开局书写的是 Bb5", JSON.stringify(cross));
+  assert(cross.length === 1 && cross[0] === "执白 · 1. e4 e5 2. Nf3 Nc6：你常走 Nc3（4 局里 3 局），开局书写的是 Bb5 / Bc4",
+    "棋谱库反推：这个局面你常走 Nc3，开局书写的是 Bb5 / Bc4", JSON.stringify(cross));
   assert(errs.length === 0, "没有页面异常", errs.join(" / "));
   await ctx.close();
 }
