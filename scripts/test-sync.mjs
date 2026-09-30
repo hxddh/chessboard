@@ -10,7 +10,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { compileModuleSync } from "./bundle.mjs";
-import { lichessAnswer, chesscomAnswer } from "./sync-fixtures.mjs";
+import { lichessAnswer, chesscomAnswer, lichessSinceAnswer, utcMsOf, LICHESS_SINCE_SENT } from "./sync-fixtures.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ctx = { console, Date, Math, JSON };
@@ -221,6 +221,53 @@ const assert = (cond, msg, extra) => {
   const daily = eb.filter((e) => /^1\//.test(e.tc)), live = eb.filter((e) => e.tc === "600");
   assert(daily.length === 8 && live.length === 1 && daily.every((e) => !facts(e).clocked) && live.every((e) => facts(e).clocked) && ea.every((e) => facts(e).clocked),
     "每日棋的钟不进时间紧，限时棋照算", JSON.stringify(eb.map((e) => [e.tc, facts(e).clocked])));
+}
+
+// --- v8-2-plan V2：增量同步那条请求的真站应答（2026-09-30，thibault，since= 一个月前、
+// sort=dateAsc、max=20）。增量同步靠的是「从 since 起按时间正序」（v8-1-plan M2 评审
+// P2-2 / P2-3）：被 N 截断时截下的是从 since 起连续的一段，下次从库里接着推 ---------
+{
+  const P = ctx.ChessPgnParser, L = ctx.ChessLibrary;
+  const DAY = 86400000;
+  const entriesOf = (text) => P.splitGames(text).map((c) => P.parsePgn(c).games[0]).filter(Boolean).map((g) => {
+    const sans = [];
+    for (let n = g.root; n && n.children.length; n = n.children[0]) sans.push(n.children[0].san);
+    return L.entryFrom(g, sans, ["thibault"], 1);
+  });
+  const all = lichessSinceAnswer();
+  const chunks = P.splitGames(all.pgn);
+  const times = chunks.map(utcMsOf);
+  const iso = (ms) => new Date(ms).toISOString();
+  assert(all.count === 20 && chunks.length === 20, "真站应答：20 局，分得开", JSON.stringify([all.count, chunks.length]));
+  const rising = (ts) => ts.every((ms, i) => ms != null && (i === 0 || ms > ts[i - 1]));
+  assert(rising(times), "按 UTCDate / UTCTime 严格升序（" + iso(times[0]) + " → " + iso(times[19]) + "）", JSON.stringify(times));
+  assert(!rising(times.slice().reverse()), "这条检查不是空的：同样的棋倒过来（dateDesc）就不过");
+  assert(times.every((ms) => ms >= LICHESS_SINCE_SENT), "没有一局早于那次请求的 since（" + iso(LICHESS_SINCE_SENT) + "）");
+  const ids = entriesOf(all.pgn).map((e) => e.id);
+  assert(new Set(ids).size === 20, "20 局 20 个 id", JSON.stringify(ids));
+
+  // 第一次增量只要 5 局：截下的是最老的 5 局 —— 从 since 起连续，不是最新的 5 局
+  const five = entriesOf(lichessSinceAnswer(5).pgn);
+  assert(JSON.stringify(five.map((e) => e.id)) === JSON.stringify(ids.slice(0, 5)), "N = 5：截下从 since 起的前 5 局", JSON.stringify(five.map((e) => e.site)));
+  let r = L.addGames([], five);
+  assert(r.added === 5 && r.dup === 0, "5 局进棋谱库", JSON.stringify([r.added, r.dup]));
+  // 下一次从棋谱库推：最新一局 09-12 那天 0 点 − 14 天，重叠里已有 5 局，要 20 + 5
+  const from = ctx.syncSince(r.list, "lichess", "thibault");
+  assert(from && from.since === Date.UTC(2026, 8, 12) - 14 * DAY && from.known === 5, "since = 2026-09-12 − 14 天，已有 5 局", JSON.stringify(from));
+  const req = ctx.syncRequest("lichess", "thibault", 20, from);
+  assert(req.max === 25 && req.since === from.since, "请求：since 来自棋谱库，局数 20 + 5", JSON.stringify(req));
+  // 网站对这次请求的应答（since 比样本的更早，样本从 08-31 起，所以整份都在里头；
+  // 08-29 到 08-31 之间样本里没有，替身不管）：已有的 5 局按 id 跳过，其余 15 局补上
+  const next = lichessSinceAnswer(req.max, req.since);
+  r = L.addGames(r.list, entriesOf(next.pgn));
+  assert(r.added === 15 && r.dup === 5, "第二次：新 15 局、重复 5 局", JSON.stringify([r.added, r.dup]));
+  const have = new Set(r.list.map((e) => e.id));
+  assert(r.list.length === 20 && ids.every((id) => have.has(id)), "两次之后 20 局都在，中间没有缺口");
+  // 再喂一遍同一份应答：全是重复，库不变
+  const again = L.addGames(r.list, entriesOf(next.pgn));
+  assert(again.added === 0 && again.dup === 20 && again.list.length === 20, "同一份应答再来一次：0 新、20 重复", JSON.stringify([again.added, again.dup]));
+  const f2 = ctx.syncSince(again.list, "lichess", "thibault");
+  assert(f2.since === Date.UTC(2026, 8, 12) - 14 * DAY && f2.known === 20, "再下一次：since 不动，重叠里 20 局", JSON.stringify(f2));
 }
 
 if (failed) {

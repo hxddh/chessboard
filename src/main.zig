@@ -3980,6 +3980,68 @@ test "real Lichess 404: its HTML page means no such user, not an empty list" {
     try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer(LICHESS_MISSING_REAL, 20, 0, &out));
 }
 
+// v8-2-plan V2: an incremental sync's own request, from the 2026-09-30 run
+// (max=20, since= the run's clock less 30 days, sort=dateAsc). The log does
+// not print that since; the Fetch step began at 17:26:54 and the answer is
+// dated 17:27:01, so it was 2026-08-31T17:26:54Z at the earliest.
+const LICHESS_SINCE_REAL = @embedFile("sync-fixtures/lichess-since.body");
+const LICHESS_SINCE_REAL_SENT: u64 = 1788197214000;
+
+test "real Lichess since= answer: twenty games oldest first, none before since (sort=dateAsc holds)" {
+    // what T4's incremental sync relies on (v8-1-plan M2 review P2-2): the
+    // site's own order, game by game, by the UTCDate / UTCTime lichessAnswer reads
+    var n: usize = 0;
+    var prev: u64 = 0;
+    var at = pgnGameStart(LICHESS_SINCE_REAL, 0);
+    while (at) |start| {
+        const next = pgnGameStart(LICHESS_SINCE_REAL, start + 1);
+        const ms = pgnUtcMs(LICHESS_SINCE_REAL[start..(next orelse LICHESS_SINCE_REAL.len)]) orelse return error.TestUnexpectedResult;
+        try std.testing.expect(ms > prev);
+        try std.testing.expect(ms >= LICHESS_SINCE_REAL_SENT);
+        prev = ms;
+        n += 1;
+        at = next;
+    }
+    try std.testing.expectEqual(@as(usize, 20), n);
+    // 2026-09-12T20:30:55Z, the newest
+    try std.testing.expectEqual(@as(u64, 1789245055000), prev);
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const out = try std.testing.allocator.alloc(u8, SYNC_ANSWER_MAX);
+    defer std.testing.allocator.free(out);
+    {
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_SINCE_REAL, 20, LICHESS_SINCE_REAL_SENT, out), .{});
+        try std.testing.expectEqual(@as(usize, 20), parsed.count);
+        const pgn = parsed.pgn;
+        try std.testing.expectEqual(@as(usize, 20), std.mem.count(u8, pgn, "[Event "));
+        try std.testing.expectEqual(@as(usize, 19), std.mem.count(u8, pgn, "\n\n[Event "));
+        try std.testing.expectEqual(std.mem.trim(u8, LICHESS_SINCE_REAL, "\n").len - 19, pgn.len);
+        // kept in the order sent: oldest first
+        try std.testing.expect(std.mem.startsWith(u8, pgn, "[Event \"rated blitz game\"]\n[Site \"https://lichess.org/68JlUEbt\"]\n"));
+        try std.testing.expect(inOrder(pgn, &.{ "/68JlUEbt\"]", "/HD6DflBP\"]", "/U5LXU7K3\"]", "/6j7UgDOl\"]", "/z4UTxoYO\"]" }));
+        try std.testing.expect(std.mem.endsWith(u8, pgn, "68. Qh8# { [%clk 0:00:03] } 1-0"));
+        try std.testing.expectEqual(@as(u64, 1789245055000), parsed.last);
+    }
+    {
+        // N cuts off the newest: the five from since, the next sync goes on from them
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_SINCE_REAL, 5, LICHESS_SINCE_REAL_SENT, out), .{});
+        try std.testing.expectEqual(@as(usize, 5), parsed.count);
+        try std.testing.expect(std.mem.endsWith(u8, parsed.pgn, "31. Nxe7 { [%clk 0:03:31] } 1-0"));
+        try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "jsAg36KZ") == null);
+        // 2026-09-12T14:56:12Z, HD6DflBP
+        try std.testing.expectEqual(@as(u64, 1789224972000), parsed.last);
+    }
+    {
+        // a later since (U5LXU7K3's second) leaves out the six before it
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_SINCE_REAL, 20, 1789229851000, out), .{});
+        try std.testing.expectEqual(@as(usize, 14), parsed.count);
+        try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "/U5LXU7K3\"]") != null);
+        try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "/jsAg36KZ\"]") == null);
+    }
+}
+
 test "real Chess.com archives: every month passes the URL checks, the last is walked first" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
