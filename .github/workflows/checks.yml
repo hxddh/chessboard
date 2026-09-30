@@ -94,6 +94,12 @@ jobs:
       - name: mined-puzzle soundness (sampled)
         if: matrix.os == 'ubuntu-latest'
         run: node scripts/test-mined.mjs --sample=150
+      # v8-2-plan V2: how verify-endgames.py --online reads a tablebase
+      # answer. The online run itself is manual (verify-endgames.yml); its
+      # parsing is checked here, offline, on the runner's own Python.
+      - name: tablebase answer reading
+        if: matrix.os == 'ubuntu-latest'
+        run: python3 scripts/test-verify-endgames.py
       # `free variables: node scripts/scope-check.mjs` used to sit here. The
       # sources are ES modules as of 1.25 and index.html loads one bundle, so
       # an unbound name is a build failure — test-chess.mjs asserts the bundle

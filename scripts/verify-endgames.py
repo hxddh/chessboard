@@ -22,6 +22,17 @@ to it (goal, method, FEN, the only moves).
 Needs: python-chess (pip install chess), a native Stockfish, and a folder of
 3–4-piece Syzygy files (*.rtbw / *.rtbz).
   python3 scripts/verify-endgames.py --tb DIR [--stockfish PATH] [--depths 30,40]
+
+--online (v8-2-plan V2): ask tablebase.lichess.ovh — the full Syzygy set, up
+to 7 men — about every position the file already records, one request a
+second, and write its answer beside the record as `lichess` (category,
+verdict, DTZ, the moves that keep the verdict). Nothing else in the record
+changes: whether a 5-man item's method becomes `tb` is decided by a person,
+after reading the answers. Exits 1 if the table disagrees with an item's goal,
+with a 3–4-man record's moves or with an item's only move; the positions over
+7 men are listed and skipped. Needs no engine and no local tables. Run by
+.github/workflows/verify-endgames.yml; scripts/lib/tablebase_api.py has the API.
+  python3 scripts/verify-endgames.py --online [--only ID,…] [--delay 1.0] [--out FILE]
 """
 import argparse, hashlib, json, os, re, sys, time
 import chess, chess.engine, chess.syzygy
@@ -76,21 +87,72 @@ def by_engine(eng, b, depths):
     return {"method": "sf", "verdict": verdict, "search": rows}
 
 
+def online(a):
+    sys.path.insert(0, os.path.join(ROOT, "scripts", "lib"))
+    import tablebase_api as T
+    doc = json.load(open(OUT, encoding="utf-8"))
+    rec = {r["id"]: r for r in doc["items"]}
+    client = T.Client(delay=a.delay)
+    only = set(filter(None, a.only.split(",")))
+    bad, over, asked = [], [], 0
+    for it in items():
+        if only and it["id"] not in only: continue
+        row = rec.get(it["id"])
+        if row is None or row["fen"] != it["fen"]:
+            print("BAD " + it["id"], "not in", os.path.relpath(OUT, ROOT), "for this FEN: run the offline check first", flush=True)
+            bad.append(it["id"]); continue
+        n = T.men(it["fen"])
+        if n > T.MAX_MEN:
+            print("skip " + it["id"], n, "men: no table", flush=True)
+            over.append(it["id"]); continue
+        asked += 1
+        try:
+            ans = client.probe(it["fen"])
+        except Exception as e:  # one failed request is reported, not the end of the run
+            print("ERR " + it["id"], repr(e)[:200], flush=True)
+            bad.append(it["id"]); continue
+        row["lichess"] = ans
+        why = T.disagreements(it["goal"], it["key"], row, ans)
+        print(("ok  " if not why else "BAD ") + it["id"], n, "men", row["method"], ans["category"], ans.get("dtz"),
+              ans.get("good"), "; ".join(why), flush=True)
+        if why: bad.append(it["id"])
+    doc["tools"]["lichessTablebase"] = {
+        "endpoint": T.ENDPOINT,
+        "checkedAt": time.strftime("%Y-%m-%d", time.gmtime()),
+        "asked": asked,
+        "over7": over,
+        "rule": "category from the side to move; cursed-win and blessed-loss count as draws (fifty-move rule); maybe-* and unknown settle nothing",
+    }
+    with open(a.out, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=1)
+        fh.write("\n")
+    print(asked, "asked,", len(over), "over 7 men", over, ",", len(bad), "bad", bad)
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tb", required=True)
+    ap.add_argument("--tb")
     ap.add_argument("--stockfish", default="stockfish")
     ap.add_argument("--depths", default="30,40")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--only", default="")
+    ap.add_argument("--online", action="store_true")
+    ap.add_argument("--delay", type=float, default=1.0)
+    ap.add_argument("--out", default=OUT)
     a = ap.parse_args()
+    if a.online:
+        sys.exit(online(a))
+    if not a.tb:
+        ap.error("--tb DIR is required (or --online)")
     depths = [int(x) for x in a.depths.split(",")]
     tb = chess.syzygy.open_tablebase(a.tb)
     eng = chess.engine.SimpleEngine.popen_uci(a.stockfish)
     eng.configure({"Threads": a.threads, "Hash": 1024, "SyzygyPath": os.path.abspath(a.tb)})
-    prev = {}
+    prev, prev_tools = {}, {}
     if os.path.exists(OUT):
-        prev = {r["id"]: r for r in json.load(open(OUT, encoding="utf-8"))["items"]}
+        prev_doc = json.load(open(OUT, encoding="utf-8"))
+        prev, prev_tools = {r["id"]: r for r in prev_doc["items"]}, prev_doc.get("tools", {})
     rows, bad = [], []
     for it in items():
         b = chess.Board(it["fen"])
@@ -101,6 +163,9 @@ def main():
         t0 = time.time()
         rec = by_table(tb, b) if men <= 4 else by_engine(eng, b, depths)
         rec = dict({"id": it["id"], "fen": it["fen"], "men": men}, **rec)
+        # v8-2-plan V2: the online table's answer for this same position stays
+        was = prev.get(it["id"])
+        if was and was["fen"] == it["fen"] and "lichess" in was: rec["lichess"] = was["lichess"]
         ok = rec["verdict"] == it["goal"] and rec["method"] == it["v"]
         if it["key"] is not None and rec.get("good") != sorted(it["key"]): ok = False
         print(("ok  " if ok else "BAD ") + it["id"], rec["verdict"], rec.get("good") or [r["score"] for r in rec.get("search", [])],
@@ -121,6 +186,7 @@ def main():
         },
         "items": rows,
     }
+    if "lichessTablebase" in prev_tools: doc["tools"]["lichessTablebase"] = prev_tools["lichessTablebase"]
     with open(OUT, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, ensure_ascii=False, indent=1)
         fh.write("\n")

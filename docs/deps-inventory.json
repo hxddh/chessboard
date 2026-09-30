@@ -88,7 +88,7 @@
     {
       "name": "actions/checkout",
       "kind": "GitHub Action",
-      "current": "@v7（全部 15 处）",
+      "current": "@v7（全部 16 处）",
       "pinnedIn": [".github/workflows/*.yml"],
       "latest": "v7.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/checkout"],
@@ -195,12 +195,12 @@
       "name": "残局训练营的核对工具（Syzygy 3–4 子表、python-chess、Stockfish 16）",
       "kind": "generation-time (不进安装包)",
       "current": "Syzygy 3–4 子 WDL/DTZ 70 个文件（取自 python-chess 仓库 data/syzygy/regular，md5 逐个记在 docs/endgames-verified.json）；python-chess 1.10.0；Stockfish 16（Ubuntu 包）",
-      "pinnedIn": ["docs/endgames-verified.json tools", "scripts/verify-endgames.py"],
+      "pinnedIn": ["docs/endgames-verified.json tools", "scripts/verify-endgames.py", "verify-endgames.yml（pip install chess==1.10.0）"],
       "latest": "n/a",
       "source": ["raw.githubusercontent.com/niklasf/python-chess/master/data/syzygy/regular", "pypi.org chess 1.10.0 wheel"],
       "checkedAt": "2026-09-30",
       "recommendation": "not-needed",
-      "note": "v8-1-plan T2：只在写 60 个残局时用来核对结论，应用里不带残局库。5 子的表取不到（见 unverified），5 子以上用 Stockfish 深搜代替。"
+      "note": "v8-1-plan T2：只在写 60 个残局时用来核对结论，应用里不带残局库。5 子的表取不到（见 unverified），5 子以上用 Stockfish 深搜代替。v8-2-plan V2：手动触发的 verify-endgames 工作流在 CI 上向 tablebase.lichess.ovh 查询 ≤ 7 子的局面（verify-endgames.py --online）。"
     }
   ],
   "unverified": [
