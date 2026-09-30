@@ -430,3 +430,62 @@
 ## 9 · 落地记录
 
 （发布前补。）
+
+### M1
+
+**V4 CI 超时与墙钟**
+
+- 耗时取自 8.2 之前 PR #97 最后四次 checks 运行（36708776605、36711052317、36721696259、36732131710）的作业起止时间；拆分的依据是 36732131710 的作业日志里各套件的起止。
+- `checks.yml` 每个作业都有 `timeout-minutes`，约为四次里最长耗时的两倍，向上取整到 5 分钟：
+  - static 25（最长 10.6）、shots 10（3.5）、zig 15（5.2）；
+  - 浏览器按组取 `matrix.group.timeout`：persistence 25（10.2）、game library 45（21.5）、布局四片各 60（WebKit 1/4 有一次 28.7）、performance 10（4.3）。
+- **拆了两个组，比计划多一个**：
+  - 「lessons + review + engine」（Chromium 20.1–21.7 分钟）拆成「lessons + review」（content 5.2 + review 4.7 分钟）和「engine」（engine 1.7 + engine-flows 8.3 + endgames 0.5），超时 25 / 30。
+  - 拆完以后，「board + sound + clock」（Chromium 16.6–19.6 分钟）成了最长的作业，只拆一个组 15 分钟的目标仍然够不着。所以同样拆成「board + clock」（7.2 + 1.1）和「sound + shell + trainer」（4.4 + 2.5 + 2.1），超时各 30。
+  - 浏览器作业从 17 个变为 21 个。
+- `release.yml` 用同一份分组，包括每组的超时（原来一律 60）。
+- `test-chess` 新增三条守卫，都先红后绿：
+  - 两个 workflow 的分组逐条相同（名字、套件、分片、超时）；
+  - 同一套件不进两个组；
+  - `checks.yml` 每个作业都有 `timeout-minutes`。
+- **墙钟**：`scripts/ci-wallclock.mjs RUN_ID… --record` 按 GitHub API 的 jobs 计算，写进 `measured.json ciWallClock`，不手填。
+  - 算法：从第一个作业排队到最后一个作业结束，含排队时间；同时记下最长的那个作业。
+  - 已记下 V4 之前的四次：20.4、21.8、20.2、33.8 分钟。
+  - `lastThreeOk` 看最近三次全绿的运行是否都 ≤ 15 分钟。
+- **还没验收**：拆分后的实际墙钟要等这个 PR 的运行出来，再用上面的命令补记。
+  - 剩下的风险是 game library：Chromium 12.2–15.6 分钟，WebKit 有一次 21.5。它是下一个该拆的组。
+- 布局分片偶发不出帧的根因这次没查，需要先攒几次 run 里看门狗兜底次数的日志。
+
+**V2 5 子残局查表**
+
+- `.github/workflows/verify-endgames.yml` 只能手动触发，只读，不提交任何东西。
+  - 它跑 `scripts/verify-endgames.py --online`，向 tablebase.lichess.ovh 查询 `endgames-verified.json` 里每个 ≤ 7 子的局面。
+  - 查询每秒一次，遇到 429 等一分钟再试。
+  - 应答写在记录旁的 `lichess` 字段里，上传为 artifact。
+  - 12 个用 Stockfish 核对的局面里，11 个是 5 子；kp-breakthrough 有 8 子，没有表，列为跳过。另外 48 个 3–4 子的局面顺带再查一遍，用来核对这套读法。
+- 什么算不一致（脚本退出 1）：
+  - 查表结论与目标不同；
+  - 3–4 子局面保住结论的着法与本地表不同；
+  - 与「唯一正解」不同。
+- 5 子局面的 `v` 要不要从 `sf` 改成 `tb`，由人看完应答后提交。`test-endgames` 目前的规则是 ≤ 4 子才标 tb，改标时要一起改。
+- 离线模式照旧，只是重跑时保留同一局面已有的 `lichess` 字段。
+- **本机取不到 tablebase.lichess.ovh（代理 403）**，所以真正的第一次查询在 CI 上。本机只验证了读法：
+  - `scripts/lib/tablebase_api.py`（不依赖 python-chess）；
+  - `scripts/test-verify-endgames.py`，9 条单元测试，先红后绿，并进了 `checks.yml` static（ubuntu）。
+- 夹具 `scripts/fixtures/tablebase-answers.json` 不是真实抓取的应答：
+  - 它按 API 文档的形状，用本地 3–4 子表生成（rp-check、mi-n-stop 两个局面）；
+  - 读出的结论、DTZ、着法与已有记录逐一相同。
+- 用同样方法造的假服务端，对全部 60 个局面端到端跑了一遍 `--online`：59 个查询，1 个跳过，0 个不一致。输出的文件 `test-endgames` 照样全过。
+
+**F5 阶梯补盘**
+
+- `ladder.yml` 新增输入 `pairs`，例如 `strongplus:extreme:300,master:masterplus:200`，只下点名的几对。
+  - 写成 `a:b` 不带盘数时，按 `adjacent` 的盘数下。
+  - 其余各对的总数由 fit 从 `measured.json` 沿用。在这里下过的那一对，替换记录里原有的总数，不是累加；所以写的是这一对的总盘数，例如 300，不是「再补 236」。
+- `test-ladder.mjs play --pairs` 现在会校验：档位名不在 `opponents.js LEVELS` 里、同一档自对、盘数不是正整数，都直接退出 2。原来写错的档位会被当成一个没有设置的档，64 个分片里都下一遍。
+- 新增 `--dry-run`：只打印赛程，每对多少盘、这一片分到多少盘。工作流在开下之前把它打进日志。
+- 本机验证过的：
+  - 各种 `pairs` 输入经工作流的 shell 片段处理，只放行 `档位:档位[:盘数]` 的形状；
+  - `--dry-run` 的赛程：`strongplus:extreme:300,master:masterplus:200` 在 1/64 片分到 8 盘；不带 `pairs` 时仍是 210 对、3,198 盘，与原来相同。
+  - 真下了 `--pairs=strongplus:extreme:2`：2 盘，1.2 分钟。再对这个目录跑 `fit`（不带 `--record`）：「2 盘新对局 + 5,441 盘沿用」，也就是 5,505 − 64。这说明这一对原来的 64 盘被替换，其余 19 对照旧沿用。
+- 没有派发工作流。

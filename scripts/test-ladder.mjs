@@ -32,6 +32,8 @@
  *   node scripts/test-ladder.mjs play --shard=1/4 --out=DIR [--adjacent=40] [--near=16] [--far=6]
  *   node scripts/test-ladder.mjs fit --in=DIR [--record]
  *   node scripts/test-ladder.mjs play --only=casual,learner --adjacent=40 --out=DIR   (tuning)
+ *   node scripts/test-ladder.mjs play --pairs=strongplus:extreme:300,master:masterplus:200 --shard=1/64 --out=DIR
+ *   … play … --dry-run   prints the schedule (every pairing, this shard's share) and plays nothing
  *   --override='{"learner":{"winT":10}}' plays a rung with changed settings (tuning only; the
  *   settings are written with each game, and `fit` refuses games whose settings are not engine.js's)
  */
@@ -84,12 +86,20 @@ function schedule() {
   const ids = only ? only.split(",") : LEVELS;
   const nAdj = Number(arg("adjacent", 40)), nNear = Number(arg("near", 16)), nFar = Number(arg("far", 6));
   const out = [];
-  // --pairs=a:b[:n],c:d plays just those pairings (tuning)
+  // --pairs=a:b[:n],c:d plays just those pairings (tuning; v8-2-plan F5:
+  // ladder.yml's `pairs`, to top up the steps the fit is least sure of
+  // without replaying the round-robin). n is the pairing's whole count: fit
+  // replaces a pairing's totals on record with the games played for it.
   const pairs = arg("pairs", "");
   if (pairs) {
     const had = new Set();
     for (const p of pairs.split(",")) {
-      const [a, b, n] = p.split(":"); // a:b[:games]; a pairing named twice is played once
+      const [a, b, n, extra] = p.split(":"); // a:b[:games]; a pairing named twice is played once
+      // a misspelt rung would otherwise be played as a rung with no settings, in every shard
+      if (!LEVELS.includes(a) || !LEVELS.includes(b) || a === b || extra !== undefined || (n !== undefined && !/^[1-9]\d*$/.test(n))) {
+        console.error("--pairs: " + p + " —— 应为 档位:档位[:盘数]，档位是 " + LEVELS.join(" "));
+        process.exit(2);
+      }
       for (let k = 0; k < (n ? Number(n) : nAdj); k++) if (!had.has(a + ":" + b + ":" + k)) { had.add(a + ":" + b + ":" + k); out.push({ a, b, k }); }
     }
     return out;
@@ -121,6 +131,15 @@ function rngFrom(seed) {
 }
 
 async function play() {
+  if (process.argv.includes("--dry-run")) {
+    const [si, sn] = arg("shard", "1/1").split("/").map(Number);
+    const all = schedule();
+    const per = {};
+    for (const job of all) per[job.a + "–" + job.b] = (per[job.a + "–" + job.b] || 0) + 1;
+    for (const [p, n] of Object.entries(per)) console.log("  " + p + "  " + n + " 盘");
+    console.log(`${Object.keys(per).length} 对，共 ${all.length} 盘；分片 ${si}/${sn} 分到 ${all.filter((_, i) => i % sn === si - 1).length} 盘`);
+    return;
+  }
   const outDir = arg("out", null);
   if (!outDir) { console.error("--out=DIR"); process.exit(2); }
   fs.mkdirSync(outDir, { recursive: true });

@@ -30,6 +30,15 @@ on:
       far:
         description: games per pairing further apart
         default: "2"
+      # v8-2-plan F5: top up the steps the fit is least sure of — 强力+ →
+      # 不限档 to 300 games, the other out-of-band steps to 200 — without
+      # replaying all 210 pairings. Each named pairing is played that many
+      # games in all (a:b alone: `adjacent` games); the fit takes every other
+      # pairing's totals from docs/measured.json, and a pairing played here
+      # replaces its totals there. Rung ids are opponents.js LEVELS.
+      pairs:
+        description: "only these pairings, e.g. strongplus:extreme:300,master:masterplus:200 (empty: the whole round-robin)"
+        default: ""
 
 permissions:
   contents: read
@@ -64,14 +73,22 @@ jobs:
           ADJACENT: ${{ inputs.adjacent }}
           NEAR: ${{ inputs.near }}
           FAR: ${{ inputs.far }}
+          PAIRS: ${{ inputs.pairs }}
         run: |
           for v in "$ADJACENT" "$NEAR" "$FAR"; do
             [[ "$v" =~ ^[0-9]+$ ]] || { echo "not a number: $v"; exit 2; }
           done
+          # the shape here; the rung names are checked by the script itself
+          [[ "$PAIRS" =~ ^([a-z]+:[a-z]+(:[0-9]+)?(,[a-z]+:[a-z]+(:[0-9]+)?)*)?$ ]] || { echo "pairs: a:b[:games],…"; exit 2; }
+          only=()
+          [ -z "$PAIRS" ] || only=(--pairs="$PAIRS")
+          # what this job will play, in the log, before an hour of it
+          node scripts/test-ladder.mjs play --dry-run --shard=$(( (JOB - 1) * 4 + 1 ))/64 \
+            --adjacent="$ADJACENT" --near="$NEAR" --far="$FAR" "${only[@]}" | tail -n 1
           pids=()
           for k in 1 2 3 4; do
             node scripts/test-ladder.mjs play --shard=$(( (JOB - 1) * 4 + k ))/64 --out=out \
-              --adjacent="$ADJACENT" --near="$NEAR" --far="$FAR" > /dev/null &
+              --adjacent="$ADJACENT" --near="$NEAR" --far="$FAR" "${only[@]}" > /dev/null &
             pids+=($!)
           done
           bad=0
