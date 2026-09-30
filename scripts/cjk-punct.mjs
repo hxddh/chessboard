@@ -38,6 +38,8 @@ export const FILES = [
   "src/web/js/openings-variation-zh.js", "src/web/js/openings-variation-ja.js",
   // v8-1-plan T2: the endgame camp (all three languages in one file)
   "src/web/js/endgames.js",
+  // v8-2-plan T2: 看 N 步后 / 盲走收官's words (all three languages in the chunk)
+  "src/web/js/trainer/visual-modes.js",
 ];
 
 const CJK = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/;

@@ -754,6 +754,7 @@
       "tip.editor.reset": "Back to the starting position",
       "tip.retryHere": "Resume from the replay position; later moves are kept as a variation",
       "tip.cat.review": "Review: retry missed puzzles; a clean solve retires them",
+      "pz.cat.look": "Look ahead", "pz.cat.blind": "Blind mate", "tip.cat.look": "The board stays still: read the next few moves, then answer a question", "tip.cat.blind": "A mate shows for 3 seconds; then play it from memory",
       "tip.pgn.copy": "Copy PGN (with the standard tag roster)",
       "tip.fen.copy": "Copy the current position as FEN",
       "tip.replay.start": "Start of game (Home)",
