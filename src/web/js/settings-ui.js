@@ -83,6 +83,12 @@ export function createSettingsUI(d) {
     if (rowSet) rowSet.hidden = !store.ui.soundOn;
     document.querySelectorAll("#sound-set-seg button").forEach((b) => b.classList.toggle("active", b.dataset.soundSet === store.ui.soundSet));
     document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
+    // the engine's knobs follow the store here, not at wire time: wiring runs
+    // before loadSettings(), so a saved Hash reached the engine only when its
+    // segment was clicked again (found by v8-1-plan F4, whose `bgWorker` —
+    // no control, a setting in the file, off by default — rides along).
+    // setOptions() is a no-op for unchanged values.
+    if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash, bgWorker: store.ui.bgWorker === true });
     document.querySelectorAll("#multipv-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.multipv) === store.ui.multipv));
     // v8-0-plan A1: the segment is the new-game dialog's, and shows its draft
     const ngMode = store.ui.newGame ? store.ui.newGame.mode : store.session.mode;
@@ -411,8 +417,7 @@ export function createSettingsUI(d) {
       draw();
       toast(store.ui.blindfold ? t("msg.blind.on") : t("msg.blind.off"));
     };
-    // 6.0 (v6-plan Q2.6): the engine knobs
-    if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash });
+    // 6.0 (v6-plan Q2.6): the engine knobs (handed over in paintSettings)
     document.getElementById("hash-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-hash]");
       if (!b) return;

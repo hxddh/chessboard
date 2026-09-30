@@ -56,6 +56,17 @@
  *                through a restart; a rung changed mid-game leaves it unrated
  *   (and a position set up by hand is recorded unrated: 引擎认输, 你将死引擎)
  *
+ * v8-1-plan F4 added:
+ *
+ *   后台分析中应着  a library pass going and a game against the normal rung:
+ *                  the wait before the reply's search ≤ 1 s (p90), not more
+ *                  than 150 ms over the same game with no pass; the pass's
+ *                  preempted plies file what a quiet pass files, ply by ply
+ *   第二个引擎      the default-off second worker, switched on: moves on one
+ *                  worker, the pass on the other, the same results; what the
+ *                  second wasm instance costs in memory (--record writes both
+ *                  to docs/measured.json `engineScheduler`)
+ *
  * Each scenario gets a fresh browser context, so one flow's engine state
  * cannot carry the next. Only key results are asserted: what the engine says
  * varies run to run, the fact that it reaches the page does not.
@@ -73,6 +84,9 @@ import { fileURLToPath } from "url";
 import { Chess } from "../src/web/js/chess.js";
 import { libOf } from "./lib/library-view.mjs";
 import { ChessMistakes } from "../src/web/js/mistakes.js";
+import os from "os";
+import { GAMES } from "./fixtures/corpus.mjs";
+import { read as readMeasured, record, RECORDING } from "./measurements.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -133,8 +147,8 @@ const tmpFile = (name, text) => {
 };
 
 /** A fresh context and page in `mode`, with the side panel on screen. */
-async function openPage(settings, seed) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
+async function openPage(settings, seed, ctxOpts) {
+  const ctx = await browser.newContext(Object.assign({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" }, ctxOpts));
   await ctx.addInitScript(([s, sd]) => {
     localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign(
       { langId: "zh-CN", sideTab: "play", soundOn: false }, s)));
@@ -147,20 +161,36 @@ async function openPage(settings, seed) {
     }
     // every toast the page shows, in order — the next one replaces the text
     window.__toasts = [];
+    window.__plyAt = [];
+    window.__plyN = -1;
     let last = "";
     new MutationObserver(() => {
       const el = document.getElementById("toast");
       const s2 = el ? (el.textContent || "").trim() : "";
       if (s2 && s2 !== last) window.__toasts.push(s2);
       last = s2;
+      // v8-1-plan F4: when the move list grew, for the reply-wait measurement
+      const n = document.querySelectorAll(".move-list .mlmove:not(.mlgap)").length;
+      if (n !== window.__plyN) { window.__plyN = n; window.__plyAt.push([performance.now(), n]); }
     }).observe(document, { subtree: true, childList: true, characterData: true });
     // every search the page asks the engine for
     const W = window.Worker;
     window.__go = 0;
     window.__uci = [];
     window.__scores = [];
+    // v8-1-plan F4: [ms, command or reply, which worker] in order, how long
+    // each game move queued for the engine, and how many background searches
+    // were run again after a preemption (engine.js __engineProbe)
+    window.__at = [];
+    window.__queued = [];
+    window.__reruns = 0;
+    window.__engineProbe = (e) => {
+      if (e.kind === "move") window.__queued.push(e.wait);
+      if (e.kind === "batch" && e.runs > 1) window.__reruns++;
+    };
     window.Worker = function (...a) {
       const w = new W(...a);
+      const wi = (window.__workers = window.__workers || []).push(w) - 1;
       // what each search ended on: its last reported score (B4's resign and
       // draw rules read the same number)
       let lastScore = null;
@@ -168,11 +198,12 @@ async function openPage(settings, seed) {
         const d = typeof ev.data === "string" ? ev.data : "";
         const sc = / score (cp|mate) (-?\d+)/.exec(d);
         if (sc && !/ multipv [2-9]/.test(d)) lastScore = sc[1] + " " + sc[2];
-        if (/^bestmove/.test(d)) window.__scores.push(lastScore);
+        if (/^bestmove/.test(d)) { window.__scores.push(lastScore); window.__at.push([performance.now(), "bestmove", wi]); }
       });
       const pm = w.postMessage.bind(w);
       w.postMessage = (m, ...r) => {
         if (typeof m === "string" && /^go\b/.test(m)) window.__go++;
+        if (typeof m === "string" && /^(go|stop)\b/.test(m)) window.__at.push([performance.now(), m, wi]);
         // what was asked, in order: the tier (UCI_Elo), the budget (movetime)
         if (typeof m === "string" && /^(go|setoption|uci|isready)\b/.test(m)) window.__uci.push(m);
         return pm(m, ...r);
@@ -1444,6 +1475,242 @@ await scenario("棋钟节奏", async () => {
   assert(!errs.length, "棋钟节奏：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
+
+// --- v8-1-plan F4：后台批量分析中走一步，引擎应手要等多久 ------------------------
+// A library pass going (`go nodes`, one ply at a time) and a game against the
+// normal rung on the board. Three numbers per reply:
+//   reply   the player's move in the list → the engine's reply in the list,
+//           the rung's own 700 ms of thought included
+//   wait    the player's move in the list → the reply's `go` on the worker:
+//           the wait before the engine even starts thinking (the acceptance)
+//   queued  bestMove() called → its search holds the engine (engine.js's
+//           __engineProbe)
+// The same game measures them first with nothing in the background, so the
+// two sets differ only by the pass.
+//
+// The page is 900×700, not the suites' 1400×1000: headless Chromium here
+// rasterises the board canvas in software, and after every move the main
+// thread stalls for the frame (a trace: CanvasRenderingContext2D::
+// FinalizeFrame + ProduceCanvasResource, ~1.1 s a move at 1400×1000, ~0.4 s
+// at 900×700). The stall lands on quiet and busy alike, but it is time a
+// WebView with a GPU does not spend, and at the larger size it alone is over
+// the 1 s line.
+const pctl = (xs, p) => {
+  const s = xs.filter((x) => x != null).sort((a, b) => a - b);
+  return s.length ? s[Math.min(s.length - 1, Math.max(0, Math.ceil(p * s.length) - 1))] : null;
+};
+const spread = (xs, k) => ({ p50: pctl(xs.map((x) => x[k]), 0.5), p90: pctl(xs.map((x) => x[k]), 0.9), n: xs.length });
+async function replyWaits(page, moves) {
+  const out = [];
+  for (let k = 0, restarts = 0; k < moves; k++) {
+    let g = await savedGame(page);
+    // quiet moves lose: a mate, or a resignation. A new game (as a player
+    // would) and on — the pass keeps going under it either way
+    const ended = await page.evaluate(() => { try { const s = JSON.parse(localStorage.getItem("chess.v1.save") || "{}"); return !!(s.resigned || s.drawAgreed); } catch { return false; } });
+    if (ended || g.game_over()) {
+      if (++restarts > 3) break;
+      await page.keyboard.press("n");
+      await page.waitForTimeout(300);
+      await page.click("#ng-start");
+      await page.waitForTimeout(600);
+      g = await savedGame(page);
+    }
+    const n = g.history().length;
+    const m = quietMove(g) || g.moves({ verbose: true })[0];
+    const mark = await page.evaluate(() => performance.now());
+    await clickMove(page, m.from, m.to);
+    if (!(await until(() => plies(page).then((p) => p >= n + 2), 20000, 50))) continue; // a resignation instead of a reply
+    await savedAt(page, n + 2, 3000);
+    out.push(await page.evaluate(([c, t0]) => {
+      const at = (i) => (window.__plyAt.find((x) => x[0] >= t0 && x[1] >= i) || [])[0];
+      const t1 = at(c + 1), t2 = at(c + 2);
+      const go = window.__at.find((x) => x[0] >= t1 && /^go (movetime|depth)/.test(x[1]));
+      return { reply: Math.round(t2 - t1), wait: go ? Math.round(go[0] - t1) : null, queued: window.__queued[window.__queued.length - 1] };
+    }, [n, mark]));
+    // land the next move somewhere else inside a background search
+    await page.waitForTimeout(250 + (k * 137) % 400);
+  }
+  return out.filter(Boolean);
+}
+const BG_PGN = GAMES.slice(0, 8).map((x, i) => {
+  const g = new Chess();
+  for (const san of x.san) g.move(san, { sloppy: true });
+  g.header("Event", "bg", "Site", "-", "Date", "2026.09." + String(10 + i), "White", "hxddh", "Black", "rival" + i, "Result", "*");
+  return g.pgn();
+}).join("\n\n") + "\n";
+const F4_VIEW = { viewport: { width: 900, height: 700 } };
+/** Import BG_PGN, claim hxddh, start the pass; back on the board when `back`. */
+async function startBgPass(page, back) {
+  await page.click('#rail button[data-view="library"]');
+  await importVia(page, "#lib-import", BG_PGN, "flows-bg.pgn");
+  await page.click("#lib-names");
+  await page.keyboard.type("hxddh");
+  await page.click("#lib-analyse");
+  const on = await until(() => page.evaluate(() => window.__at.some((x) => x[1] === "go nodes 90000")), 30000, 100);
+  if (back) { await page.click('#rail button[data-view="play"]'); await page.waitForTimeout(400); }
+  return on;
+}
+/** The pass's filed games, oldest first: per ply the scalar and the best move. */
+const filedGames = async (page) => {
+  const l = await libOf(page);
+  return (l ? l.games : []).filter((g) => g.an).sort((a, b) => (a.t || 0) - (b.t || 0))
+    .map((g) => ({ black: g.black, scalars: g.an.scalars, bests: g.an.bests }));
+};
+/** Play against the normal rung with the pass going; the waits and what the pass filed. */
+async function playBesideThePass(settings) {
+  const { ctx, page, errs } = await openPage(Object.assign({ mode: "ai", difficulty: "normal", humanColor: "w" }, settings), null, F4_VIEW);
+  await clickMove(page, "e2", "e4");
+  await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 30000, 150); // the boot
+  const quiet = await replyWaits(page, 6);
+  const bgOn = await startBgPass(page, true);
+  const reruns0 = await page.evaluate(() => window.__reruns);
+  const busy = await replyWaits(page, 12);
+  const after = await page.evaluate(() => ({
+    reruns: window.__reruns,
+    // which worker each kind of search went to
+    moveOn: [...new Set(window.__at.filter((x) => /^go (movetime|depth)/.test(x[1])).map((x) => x[2]))],
+    // (the pass's 200 = 90k nodes; the coach's 120 after each reply is not the pass)
+    passOn: [...new Set(window.__at.filter((x) => x[1] === "go nodes 90000").map((x) => x[2]))],
+    cut: window.__toasts.some((s) => /两次都没给出评估/.test(s)),
+  }));
+  // let the game the pass is on finish, so every filed game had moves played beside it
+  const n0 = (await filedGames(page)).length;
+  await until(async () => (await filedGames(page)).length >= Math.max(n0 + 1, 2), 120000, 500);
+  const filed = await filedGames(page);
+  await ctx.close();
+  const res = { quiet: { reply: spread(quiet, "reply"), wait: spread(quiet, "wait"), queued: spread(quiet, "queued") },
+    busy: { reply: spread(busy, "reply"), wait: spread(busy, "wait"), queued: spread(busy, "queued") } };
+  return { res, busy, bgOn, preempted: after.reruns - reruns0, after, filed, errs };
+}
+/** The same games through the same pass with nobody playing: the reference. */
+async function referencePass(games) {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" }, null, F4_VIEW);
+  await startBgPass(page, false);
+  await until(async () => (await filedGames(page)).length >= games, 240000, 500);
+  const filed = await filedGames(page);
+  await ctx.close();
+  return { filed, errs };
+}
+/** Ply by ply, the positions where a preempted pass and a quiet one disagree. */
+function samePerPly(a, b) {
+  const diffs = [];
+  let plies = 0;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (!y || x.black !== y.black) { diffs.push(i + ":missing"); continue; }
+    for (let k = 0; k < x.scalars.length; k++) {
+      plies++;
+      if (x.scalars[k] !== y.scalars[k] || x.bests[k] !== y.bests[k]) diffs.push(i + "/" + k + ":" + x.scalars[k] + "≠" + y.scalars[k]);
+    }
+  }
+  return { plies, diffs };
+}
+const F4_REC = { before: process.argv.includes("--record-before"), after: RECORDING };
+let f4 = null;
+await scenario("后台分析中应着", async () => {
+  const r = await playBesideThePass({});
+  console.log("F4 应手等待:", JSON.stringify(r.res), "preempted=" + r.preempted);
+  console.log("F4 逐手(后台):", JSON.stringify(r.busy));
+  const ok = r.bgOn && r.busy.length >= 6;
+  assert(ok, "后台分析中应着：棋谱库在后台一步一步分析，人机对局照常走了 " + r.busy.length + " 手", JSON.stringify(r.res));
+  assert(!r.after.cut, "后台分析中应着：棋谱库没有因为下棋断掉（「引擎两次都没给出评估」）");
+  if (!F4_REC.before) {
+    assert(r.res.busy.wait.p90 != null && r.res.busy.wait.p90 <= 1000,
+      "后台分析中应着：引擎开始想应着之前的等待 p90 ≤ 1 s（" + r.res.busy.wait.p90 + " ms；没有后台时 " + r.res.quiet.wait.p90 + " ms）");
+    assert(r.res.busy.wait.p90 <= r.res.quiet.wait.p90 + 150,
+      "后台分析中应着：有后台分析时，这段等待比没有时多不过 150 ms（" + r.res.busy.wait.p90 + " / " + r.res.quiet.wait.p90 + "）");
+    assert(r.preempted >= Math.min(3, r.busy.length) && r.res.busy.queued.p90 <= r.res.quiet.wait.p90 + 150,
+      "后台分析中应着：棋谱库那一步被抢占了 " + r.preempted + " 次，应着排队 p90 " + r.res.busy.queued.p90 + " ms");
+  }
+  // v8-1-plan F4: what a preempted pass files is what a quiet one files
+  const ref = await referencePass(r.filed.length);
+  const same = samePerPly(r.filed, ref.filed);
+  console.log("F4 逐步对比:", r.filed.length + " 局 " + same.plies + " 步", same.diffs.slice(0, 8).join(" "));
+  if (!F4_REC.before) {
+    assert(r.filed.length >= 1 && same.plies >= 30 && !same.diffs.length,
+      "后台分析中应着：被抢占 " + r.preempted + " 次的那几局（" + r.filed.length + " 局 " + same.plies + " 步），和没人下棋时分析的逐步相同", same.diffs.slice(0, 8).join(" "));
+  }
+  assert(!r.errs.length && !ref.errs.length, "后台分析中应着：页面没有报错", r.errs.concat(ref.errs).join(" / "));
+  f4 = { res: r.res, preempted: r.preempted, compared: { games: r.filed.length, plies: same.plies, differing: same.diffs.length } };
+});
+
+// part 3: the second worker, default off (v8-1-plan §8.7) — what it costs in
+// memory and what it changes for the same game and pass
+await scenario("第二个引擎", async () => {
+  if (F4_REC.before) return;
+  // memory: this node's process tree (Chromium and all its children), before
+  // any engine, with one, with two. Linux only; elsewhere just not measured.
+  const treeRss = () => {
+    try {
+      const kids = new Map();
+      for (const d of fs.readdirSync("/proc")) {
+        if (!/^\d+$/.test(d)) continue;
+        try {
+          const st = fs.readFileSync("/proc/" + d + "/stat", "utf8");
+          const ppid = Number(st.slice(st.lastIndexOf(")") + 2).split(" ")[1]);
+          if (!kids.has(ppid)) kids.set(ppid, []);
+          kids.get(ppid).push(Number(d));
+        } catch { /* gone */ }
+      }
+      let kb = 0;
+      const walk = (p) => {
+        for (const c of kids.get(p) || []) {
+          try { kb += Number(/VmRSS:\s+(\d+)/.exec(fs.readFileSync("/proc/" + c + "/status", "utf8"))[1]); } catch { /* gone */ }
+          walk(c);
+        }
+      };
+      walk(process.pid);
+      return Math.round(kb / 1024);
+    } catch { return null; }
+  };
+  // the engine knobs are handed over after the settings are read: through
+  // 8.0 a saved Hash reached the engine only when its segment was clicked
+  {
+    const { ctx, page } = await openPage({ mode: "pvp", hash: 64 }, null, F4_VIEW);
+    await page.evaluate(() => window.__chess.engine.analyze("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1", 120));
+    const uci = await page.evaluate(() => window.__uci.filter((m) => /Hash/.test(m)));
+    assert(uci.length && uci.every((m) => m === "setoption name Hash value 64"), "第二个引擎：存着的 Hash 64 在启动时就交给了引擎（" + uci.join(", ") + "）");
+    await ctx.close();
+  }
+  const mem = {};
+  {
+    const { ctx, page } = await openPage({ mode: "pvp" }, null, F4_VIEW);
+    await page.waitForTimeout(1500);
+    const rss0 = treeRss();
+    await page.evaluate(() => window.__chess.engine.analyze("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", 200));
+    await page.waitForTimeout(1500);
+    const rss1 = treeRss();
+    await page.evaluate(() => { window.__chess.engine.setOptions({ bgWorker: true }); return window.__chess.engine.analyze("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", 200, { bg: true }); });
+    await page.waitForTimeout(1500);
+    const rss2 = treeRss();
+    const workers = await page.evaluate(() => window.__workers.length);
+    if (rss0 != null) Object.assign(mem, { rssNoEngineMB: rss0, firstEngineMB: rss1 - rss0, secondEngineMB: rss2 - rss1, hashMB: 32 });
+    console.log("F4 内存(进程树 RSS):", JSON.stringify(mem), "workers=" + workers);
+    assert(workers === 2, "第二个引擎：打开 bgWorker 之后，后台分析在第二个 worker 上");
+    await ctx.close();
+  }
+  const r = await playBesideThePass({ bgWorker: true });
+  console.log("F4 应手等待(第二个引擎):", JSON.stringify(r.res));
+  assert(r.bgOn && r.busy.length >= 6 && r.after.moveOn.join() === "0" && r.after.passOn.join() === "1",
+    "第二个引擎：设置里打开后，人机的应着在第一个 worker、棋谱库在第二个上（" + JSON.stringify([r.after.moveOn, r.after.passOn]) + "）");
+  assert(r.preempted === 0, "第二个引擎：两边互不抢占");
+  const ref = await referencePass(r.filed.length);
+  const same = samePerPly(r.filed, ref.filed);
+  assert(r.filed.length >= 1 && same.plies >= 30 && !same.diffs.length,
+    "第二个引擎：第二个 worker 分析的（" + same.plies + " 步）和第一个 worker 上的逐步相同", same.diffs.slice(0, 8).join(" "));
+  assert(!r.errs.length && !ref.errs.length, "第二个引擎：页面没有报错", r.errs.concat(ref.errs).join(" / "));
+  if (f4) f4.secondWorker = { res: r.res, memory: mem, compared: { games: r.filed.length, plies: same.plies, differing: same.diffs.length } };
+});
+if (f4 && (F4_REC.before || F4_REC.after) && !failed) {
+  const prev = Object.assign({
+    what: "v8-1-plan F4：棋谱库后台分析进行中，人机对局（normal 档）每一手的等待。reply＝你的着法进着法表→引擎应着进着法表；wait＝你的着法进着法表→应着的 go 发到 worker（验收看它的 p90）；queued＝bestMove() 调用→它的搜索拿到引擎。before 是 8.0 的单链 exclusive()，after 是三级调度；determinism 是被抢占过的那几局与没人下棋时逐步比较；secondWorker 是默认关的第二个 worker（进程树 RSS 的增量，Hash 32）",
+    script: "scripts/test-engine-flows-e2e.mjs --record（before：8.0 的 engine.js 上 --record-before）",
+  }, readMeasured().engineScheduler);
+  const env = "Chromium headless, 900×700, " + os.cpus().length + " cores; library pass at 200 (90k nodes/ply) beside a game at the normal rung";
+  if (F4_REC.before) record("engineScheduler", Object.assign({}, prev, { before: { env, quiet: f4.res.quiet, busy: f4.res.busy } }));
+  else record("engineScheduler", Object.assign({}, prev, { env, after: { quiet: f4.res.quiet, busy: f4.res.busy, preempted: f4.preempted },
+    determinism: f4.compared, secondWorker: f4.secondWorker || null }));
+}
 
 await browser.close();
 server.close();

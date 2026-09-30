@@ -31,9 +31,12 @@ const assert = (cond, msg, extra) => {
 {
   const say = (r) => JSON.stringify(ctx.syncMessage(r));
   assert(say(null) === '{"key":"sync.noHost"}', "没有原生桥：只在桌面应用里可用", say(null));
-  for (const e of ["offline", "timeout", "bridge"]) {
+  for (const e of ["offline", "bridge"]) {
     assert(say({ error: e }) === '{"key":"sync.offline"}', "连不上（" + e + "）", say({ error: e }));
   }
+  // 8.1 M2 评审 P2-1：原生层自己的截止时间、上一次同步还在外面，各有各的话
+  assert(say({ error: "timeout" }) === '{"key":"sync.timeout"}', "超时：说网站迟迟没有应答", say({ error: "timeout" }));
+  assert(say({ error: "busy" }) === '{"key":"sync.busy"}', "忙：说上一次同步还没结束", say({ error: "busy" }));
   assert(say({ error: "rate_limited" }) === '{"key":"sync.rate"}', "429：请过一会儿再试");
   assert(say({ error: "not_found" }) === '{"key":"sync.notFound"}', "404：没有这个用户");
   assert(say({ error: "bad_request" }) === '{"key":"sync.badName"}', "原生层不收的名字：说名字的规矩");
@@ -65,6 +68,77 @@ const assert = (cond, msg, extra) => {
   assert(p2.site === "lichess" && p2.user === "", "认不得的值回到默认", JSON.stringify(p2));
   // 它是档案里的一个键：清除全部存档会连用户名一起清掉
   assert(ctx.KEYS && ctx.KEYS.sync === "chess.v1.sync", "persist.js 的键表里有 sync");
+}
+
+// --- v8-1-plan T4：增量、局数上限、同步后分析，都记在同一个 sync 键里 ---------
+{
+  // 8.0 存下的 {v, on, site, user}：新的几项读成默认，一个字也不丢
+  const old = ctx.syncPrefs({ v: 1, on: true, site: "chesscom", user: "Hikaru" });
+  assert(old.on && old.site === "chesscom" && old.user === "Hikaru" && old.max === 20 && old.analyse === false &&
+    !("last" in old), "8.0 的存档：开关、网站、名字照旧，最多 20 局、不自动分析", JSON.stringify(old));
+  assert(JSON.stringify(ctx.LIMITS) === "[20,50,100]", "局数只有 20 / 50 / 100 三档", JSON.stringify(ctx.LIMITS));
+  for (const n of [20, 50, 100]) assert(ctx.syncPrefs({ max: n }).max === n, "存下的 " + n + " 读回来");
+  for (const n of [0, 30, 1000, "50", null]) assert(ctx.syncPrefs({ max: n }).max === 20, "不认得的局数回到 20：" + JSON.stringify(n));
+  assert(ctx.syncPrefs({ analyse: true }).analyse === true && ctx.syncPrefs({ analyse: "yes" }).analyse === false, "同步后分析：只认真的 true，默认关");
+  // c27fbfa 存下的 last（按网站:名字记的时间）照样读得进来，只是不再用
+  const withMark = ctx.syncPrefs({ v: 1, on: true, site: "lichess", user: "thibault", max: 50, last: { "lichess:thibault": 1790617958000 } });
+  assert(withMark.on && withMark.site === "lichess" && withMark.user === "thibault" && withMark.max === 50 && !("last" in withMark),
+    "c27fbfa 的存档（带 last）：其余各项照旧读回，last 不再读", JSON.stringify(withMark));
+
+  // 8.1 M2 评审 P2-2 / P2-3：从哪里开始，看棋谱库里已经有的
+  const DAY = 86400000;
+  const g = (site, white, black, date, extra) => Object.assign({ site, white, black, date }, extra || {});
+  const LI = (id) => "https://lichess.org/" + id;
+  const lib = [
+    g(LI("a1"), "thibault", "x", "2026.09.28"),
+    g(LI("a2"), "Thibault", "y", "2026.09.20"),
+    g(LI("a3"), "z", "THIBAULT", "2026.09.14"), // 正好在 14 天那一天
+    g(LI("a4"), "thibault", "w", "2026.09.13"), // 早一天：不在重叠里
+    g(LI("a5"), "someone", "else", "2026.09.29"), // 别人的棋
+    g("Chess.com", "thibault", "q", "2026.09.30"), // 别的网站
+    g(LI("a6"), "thibault", "r", "????.??.??"), // 没有日期
+    g(LI("a7"), "thibault", "s", "2026.09.30", { src: "local" }), // 本机棋不算
+  ];
+  const f1 = ctx.syncSince(lib, "lichess", "thibault");
+  assert(f1 && f1.since === Date.UTC(2026, 8, 28) - 14 * DAY && f1.known === 3,
+    "since = 库里这个网站、这个名字最新一局那天的 0 点 − 14 天；重叠里已有 3 局（名字不分大小写、执黑执白都算）", JSON.stringify(f1));
+  assert(f1.since === 1789344000000, "与 main.zig 的 Lichess 增量测试是同一个 since", String(f1.since));
+  const f2 = ctx.syncSince(lib, "chesscom", "thibault");
+  assert(f2 && f2.since === Date.UTC(2026, 8, 30) - 14 * DAY && f2.known === 1, "Chess.com 只看 Site 是 Chess.com 的棋", JSON.stringify(f2));
+  assert(ctx.syncSince(lib, "lichess", "nobody") === null && ctx.syncSince([], "lichess", "thibault") === null,
+    "库里没有这人的棋：第一次同步，不带 since");
+  // 重叠里最多算 50 局：一天 60 局，since 就是那天，已有的只报 50
+  const heavy = [];
+  for (let i = 0; i < 60; i++) heavy.push(g(LI("h" + i), "thibault", "x", "2026.09.28"));
+  for (let i = 0; i < 30; i++) heavy.push(g(LI("k" + i), "thibault", "x", "2026.09.27"));
+  const f3 = ctx.syncSince(heavy, "lichess", "thibault");
+  assert(f3.since === Date.UTC(2026, 8, 28) && f3.known === 50, "重叠最多 50 局：since 收到第 50 新的那一局那天", JSON.stringify(f3));
+  const spread = [];
+  for (let i = 0; i < 80; i++) spread.push(g(LI("s" + i), "thibault", "x", "2026.09." + String(28 - Math.floor(i / 8)).padStart(2, "0")));
+  const f4 = ctx.syncSince(spread, "lichess", "thibault");
+  assert(f4.since === Date.UTC(2026, 8, 22) && f4.known === 50, "重叠最多 50 局：8 局一天，收到 9 月 22 日（那 7 天 56 局，报 50）（" + JSON.stringify(f4) + "）");
+
+  // 发给原生层的：第一次没有 since；之后 since 来自棋谱库，局数 = 选的 N + 重叠里已有的
+  assert(JSON.stringify(ctx.syncRequest("lichess", "thibault", 20, null)) === '{"site":"lichess","user":"thibault","max":20}',
+    "第一次：网站、名字、局数，没有 since", JSON.stringify(ctx.syncRequest("lichess", "thibault", 20, null)));
+  assert(JSON.stringify(ctx.syncRequest("lichess", "thibault", 50, f1)) === '{"site":"lichess","user":"thibault","max":53,"since":1789344000000}',
+    "之后：since 来自棋谱库，局数 50 + 已有的 3", JSON.stringify(ctx.syncRequest("lichess", "thibault", 50, f1)));
+  assert(ctx.OVERLAP_DAYS === 14 && ctx.OVERLAP_GAMES === 50 && 100 + ctx.OVERLAP_GAMES <= 150,
+    "最多 100 + 50 局，不超过 main.zig 的 SYNC_GAMES_MAX（150）");
+  const zig = (await import("fs")).readFileSync(path.join(root, "src/main.zig"), "utf8");
+  assert(/const SYNC_GAMES_MAX: usize = 150;/.test(zig), "main.zig SYNC_GAMES_MAX 仍是 150");
+
+  // 增量时零局说「没有新对局」，第一次零局仍说「还没有对局」
+  assert(JSON.stringify(ctx.syncMessage({ pgn: "", count: 0 }, true)) === '{"key":"sync.none"}', "增量同步零局：没有新对局");
+  assert(JSON.stringify(ctx.syncMessage({ pgn: "", count: 0 }, false)) === '{"key":"sync.empty"}', "第一次零局：还没有对局");
+  assert(JSON.stringify(ctx.syncMessage({ error: "busy" }, true)) === '{"key":"sync.busy"}', "原生层忙（上一次还在外面）：说上一次同步还没结束");
+
+  // 选项的字只由分块读（sync-ui.js → chunk-sync.js），首屏包里没有读它们的代码
+  const fs = await import("fs");
+  const readers = fs.readdirSync(path.join(root, "src/web/js"))
+    .filter((f) => f.endsWith(".js") && !/^(chunk-|bundle\.js|i18n)/.test(f))
+    .filter((f) => /sync\.(limit|analyse|progress|none|timeout|busy)\b/.test(fs.readFileSync(path.join(root, "src/web/js", f), "utf8")));
+  assert(JSON.stringify(readers) === '["sync-ui.js"]', "T4 的四个新键、评审加的两个只在 sync-ui.js 里读", JSON.stringify(readers));
 }
 
 // --- 两家网站的 PGN 进得了棋谱库，并认出是谁下的 ----------------------------

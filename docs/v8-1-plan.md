@@ -656,6 +656,82 @@
 - `idb` / `chunkSync` / `nativeIo` 在 zero:// 上的 WKWebView 与 WebView2：`build-macos.yml` / `build-windows.yml` 的打包自检。
 - 打包自检两次启动共用一个临时 HOME（Windows 另加 APPDATA）：应用自己的数据目录跟着走；WKWebView 的 localStorage / IndexedDB（在真实用户的 ~/Library 下）和 WebView2 的数据目录（SDK 不指定，在 exe 旁边）不跟着走，本地运行仍会在那里留下自检标记和英文界面设置。CI runner 起始为空，不受影响。
 
+### M2
+
+- **T5 诊断、导出算上本机对局**（`library-local.js`，随 chunk-libdb.js 按需载入；主包里只有 library-ui.js 的几处接口）
+  - **诊断来源开关**：诊断对话框顶上一排「导入的 / 本机 / 全部」，默认「导入的」，与 7.x 的数字一致；选择只在本次运行里记着，重启回到默认。本机的棋按「战绩里有精准度」算分析过：每局计结果、精准度和开局；分阶段、失误回合和那张图只用 analysis-store 里还留着逐手分析的那几局（最多 24 局），开关下面一句话说明有几局。「看诊断」按钮改为任一来源够 20 局就出现。从某个来源的诊断行点进列表，只筛那个来源的棋（pick 带 `src`）。单测 `test-library-local.mjs` 用固定对局核对三种来源的手算结果（导入的 2 局 1 胜 1 负、70%、开局 73 厘兵/手；本机 2 局 80%、150；全部 4 局 75%、98、峰值第 2 回合）。
+  - **导出 PGN 带上本机对局**：跟随列表的来源行——「导入」和 8.0 一样只导导入的，「本机」「全部」连本机对局一起导。每局本机棋写 `[LibId "loc:<记录 id>"]` 和 `[LibRec "<记录字段的 JSON，不含 PGN>"]`（记录 PGN 自己的头放在 `h` 里）。导回时 LibId 为 `loc:` 且 LibRec 核对通过（id 相符、结果与执子合法、只收平铺字段）的棋回到战绩，已有同 id 的记为重复；其余照常导入。library-e2e：21 局本机 + 2 局导入导出 → 空档案导回，21 条记录逐字段相等、仍是「本机」、再导一次一局不多。
+  - **用时**：新对局的战绩记录写 `tc`（PGN 形式，如 "300+3"，不计时为 "-"，与「导出当前对局」的 TimeControl 同一个函数）；本机条目带上它，用时筛选对本机棋生效。旧记录（6.x–8.0 从来没记过棋钟）只在存档里还有「对局时的设置」时补标：棋盘上那局的存档钟已经走过（`started` 且不在初始读数），着法与起始局面完全相同，且只给最近的那一条；从历史载入的旧局配的是今天的钟，不算。推不出来的不标。单测用 6.x / 7.x / 8.0 三种记录形状核对：只多出 `tc`，其余字段一个不变。
+  - **偏离**：
+    - 计划写「可以选择带上本机对局」，没有另加开关，而是跟随列表已有的来源行。代价是默认「全部」下的导出比 8.0 多了本机棋；因为导回不再产生副本，这不再有害。
+    - 旧本机棋的补标实际只覆盖存档里那一局：6.x–8.0 的战绩记录里没有任何棋钟信息，存档槽的 PGN 用的是保存时的设置、不能证明是对局时的，也不采用。
+    - 界面键 +2（`diag.srcImport`、`diag.localNote`），1225 → 1227；「本机」「全部」「来源」复用已有键。
+  - **体积**：主包 864,886 → 865,230 字节（+344：两条中文界面键和 library-ui.js 的接口），chunk-libdb.js 41,355 → 48,847；app.js 行数不变（6,702）。
+
+#### N1 异步桥与 T4 同步 2.0（分支 m82-sync）
+
+**N1 的路径**（SDK API 都在 `scratchpad/sdk0101` = v0.10.1 里逐个对过）：
+
+- `chess.fetchGames`、`chess.checkUpdate` 注册成 `bridge.AsyncHandler`（`src/bridge/root.zig`）。`APP_COMMANDS` 每行是 `.invoke_fn` 或 `.async_fn` 之一，同一个循环分别填 `registry` 和 `async_registry`，策略表共用；runtime 先查异步表，并在那里同样检查策略（`runtime/flow.zig handleAsyncBridgeMessage`，为每个请求保留一个 `AsyncBridgeResponseSlot`，上限 64）。
+- 处理器在循环线程上只校验参数、占这一类的槽（同步一个、检查更新一个；同类第二个立即答 `{"error":"busy"}`），然后起一个工作线程做 HTTP、一个看守线程管截止时间，立刻返回。
+- 两者谁先完成谁「认领」这个任务：把结果放进带锁的完成队列（`std.atomic.Mutex` 自旋锁，和 SDK `effects.zig` 的 `SpinMutex` 同一做法——0.16 在 Io 之外没有阻塞互斥），并在锁内调用 `PlatformServices.wake_fn`（`platform/types.zig`：唯一允许跨线程调用的服务，macOS `dispatch_async`、Win32 `PostMessageW`，约定为有界、只入队）。
+- 平台在循环线程上投递 `.wake`，runtime 把它转成应用事件 `.effects_wake`（`runtime/flow.zig` `dispatchPlatformEvent`）；`main.zig onEvent` 在这里排空队列，用保存下来的 `AsyncResponder` 应答。应答帧用 `bridge.writeSuccessResponse` 写进堆上的缓冲再 `respond`，不用 `AsyncResponder.success`（它在栈上开 1 MiB）。`runner.zig` 不需要改：`.wake` 的分发在 SDK 的 Runtime 里，fork 只是 `runtime.run(app)`。
+- 截止时间是看守线程的（同步 60 s、检查更新 8 s），不是 `std.http` 的：到点就答 `{"error":"timeout"}` 并放开槽位，工作线程自己跑完、结果丢弃。页面上的计时改为兜底（同步 75 s、检查更新 10 s）。还在外面的任务（含超时后没回来的）最多 4 个，再多答 busy。
+- 退出：SDK 的 stop 钩子（`App.stop_fn` → `Pending.close`，在平台释放之前、只跑一次）关掉队列，之后没有线程再调 `wake_fn`；`main()` 在还有工作线程时用 `std.process.exit` 离开——正常返回会走进 `std.start` 的 `Io.Threaded.deinit`，而它会等那个线程。
+- 页面协议不变：`zero.invoke` 仍是一个 Promise。
+
+**T4**：
+
+- 真实夹具（`src/sync-fixtures/`）上的解析测试保留；新增的增量测试也用它们（Chess.com 那个月里的 4 局 Chess960 仍被过滤，第二次同步里更新的一局 Chess960 同样不进来）。
+- 增量：原生应答多一个 `last`（这批里最新一局的时间，ms）。页面把它按「网站:小写用户名」记在 `sync` 键的 `last` 里，下次发 `since = last + 1`。Lichess 带 `since=`；PGN 的 `UTCTime` 只到秒，上次最新那一局会再被送回来一次，原生侧按 `since` 再滤一遍。Chess.com 只取 `since` 所在月份及以后的归档（最多 24 个月），并按 `end_time` 滤掉旧局。没有新局时应答里没有 `last`，记号不动；记号在导入跑完之后才写。
+- 选项：最多 20 / 50 / 100 局（`SYNC_GAMES_MAX` 50 → 100）；「同步完就开始分析」默认关，开着时进库后调棋谱库的批量分析入口 `runLibraryPass`（F4 的调度器把它排在最低一级）。
+- 进度：轮询。新命令 `chess.fetchProgress`（同步处理器，读一个原子量：高 32 位是任务代号、低 32 位是局数），对话框在取棋期间每 400 ms 问一次，数变了才重写那一行。Lichess 的 PGN 流按到达的字节数局（`GameCounter`，每读 16 KiB 数一次 `[Event` 行首）；Chess.com 每取完一个月报一次。选轮询而不是推事件：丢一次无妨，不需要再唤醒循环，打桩也简单。
+- 界面键 1225 → 1229（`sync.limit`、`sync.analyse`、`sync.progress`、`sync.none`，三语）。读它们的代码只在 `sync-ui.js`（chunk-sync.js，5.8 → 8.2 KB）；中文字典本身在主包里，四条约 130 字节（主包 844.6 → 845.0 KB，预算内）。
+
+**测试**：
+
+- Zig（null 平台本地 60 项，全过；x86_64-windows 与 aarch64-macos 交叉编译通过）新增：同类第三个并发请求立即被拒；结果只在 wake 之后、由 drain 应答；截止时间自己答 timeout、放开槽位、迟到的结果丢弃；stop 之后不再 wake、不等工作线程；`fetchProgress`；检查更新的应答；时间换算；Lichess、Chess.com 两次同步逐次断言请求 URL；进度（Lichess 边收边数 1→5，Chess.com 按月）。
+- `test-sync.mjs` 46 → 69 项（旧存档读成默认、since 的计算、记号只进不退、零新局的提示、四个新键只在 sync-ui.js 里读）。
+- `test-sync-e2e.mjs` 新增 20 条断言（本机一次跑 76 项全过）：桥打桩延迟 3 s 应答，其间关对话框、滚动着法列表、在棋盘上走一步，页面各自记下时间，都早于应答（本机：滚动于 1.8–2.0 s、走子落进列表于 2.8–3.0 s、应答于 3.6–3.9 s；这台机器上棋盘第一次点子本身就有 0.6–1.6 s 的长任务，与同步无关——不同步时同样出现，剖析是渲染而不是脚本，所以断言只比先后，不设帧间隔上限）；「已取到 k 局」跟着进度走、应答后停止询问；第二次请求带 since、局数跟选项；没有新局的提示；同步后分析；重启后选项还在；英日两语的新选项文字、不截断。
+- manifest-check：两个联网命令必须是 `.async_fn`，异步处理器进了 `async_registry`。
+
+**只有 CI 或真机能确认的**：真实网络上的流式读取与解压（`httpGet` 按 `std.http.Client.fetch` 的步骤手写，改成分段读）；macOS / Windows 的 `wake_fn` 真的把结果送回循环（CI 的 zig 作业只跑单元测试）；退出时有请求在外面，进程确实立即结束；manual-check A0 第 6、6a 条。
+
+**F4 引擎调度器**
+
+- **先量**（`test-engine-flows-e2e`「后台分析中应着」，数字在 `measured.json engineScheduler`）：棋谱库后台分析（200，每步 90k 节点）进行中，和 normal 档下 12 手。三个数：reply（你的着法进着法表→应着进着法表，含 700 ms 思考）、wait（你的着法进着法表→应着的 `go` 发出，验收看它）、queued（`bestMove()` 调用→它的搜索拿到引擎）。
+  - 8.0 上：没有后台时 wait p50/p90 363/481 ms，有后台时 503/600 ms（reply 1220/1316）。早先两次同法测得 p90 651、676 ms。多出来的是正在跑的那一步库分析的剩余时间：8.0 的单链 `exclusive()` 先到先得，应着排在它后面。
+  - 所以 8.0 在 200 预算下其实已经在 1 s 以内；排队的长度随后台那一步的预算、MultiPV 走（精析 400、多主变都更长），调度器要去掉的是这一项本身。
+  - 本机量法的偏差：headless Chromium 在这里用软件栅格化棋盘 canvas，每走一步主线程卡一帧（跟踪：`CanvasRenderingContext2D::FinalizeFrame` + `ProduceCanvasResource`），1400×1000 时约 1.1 s，900×700 时约 0.4 s。有没有后台都一样卡，但有 GPU 的 WebView 不花这段时间，所以这一段用 900×700。
+- **调度器**（`engine-sched.js`，engine.js 的 `exclusive()` 改走它）：三级 PLAY（对局、提示、教练、提和）> LIVE（持续分析）> BATCH（`analyze(…, {bg: true})`：棋谱库分析、再深一遍、分析/精析）。同级仍先到先得，没标级别的调用照旧是 PLAY、照旧串行。高一级到来时，低一级若正在搜就发 `stop`（只在它自己的 `go` 在 worker 上时发），结果丢掉，任务回到本级队首再跑一次；调用方的 promise 只在一次没被打断的运行后兑现。库分析本来就是一步一请求，所以「从断点接着做」就是同一请求的下一次运行，已答的步不重算。
+  - 调度器上（after）：wait p90 428 ms，没有后台时 378 ms；queued p90 422 ms（这 400 ms 是上面那一帧卡顿把 `bestmove` 的投递压后了，引擎侧只是一个 `stop`）；12 手里抢占 16 次，库分析没断。
+  - **确定性**：被抢占过的那 2 局 78 步，与另开页面、没人下棋时分析的逐步相同（分数与最佳着）。依据是每次分析搜索都从 `ucinewgame` 开始、固定节点数（B2），而被 `stop` 截断的结果从不交出。
+  - `cancel()`（棋盘上一变就调）不再对后台搜索发 `stop`：截断的固定节点结果会被当成完整的归档。以前人机下棋时 `cancel()` 会让库那一步返回空，重试一次再空就整个断掉（`lib.passCut`）。分析/精析的「停」因此要等手上那一步做完（≤ 一步的时间）再停。
+  - `newGame()` 的 `ucinewgame` 在后台搜索进行中时不发（会在搜索中途清掉它的置换表），留给下一次对局搜索先发。
+  - 持续分析被对局或提示抢占后，由调度器在原局面上重新挂上；应用里 `liveAllowed()` 仍在库分析期间让开持续分析，这一条没改。
+  - 单元测试（`test-engine.mjs`，假 worker）：抢占即发 `stop`、被截的一步重跑且只重跑一次、三步结果都是完整结果且顺序不变；`cancel` / `newGame` 不碰后台搜索；持续分析让位与恢复；同级不抢占；第二个 worker 默认关、打开后并行、起不来就退回。改之前第一条就红。假 worker 的 `goDelay` 计时器原来会结束「当时正在跑的任何搜索」，改成只结束它自己那一次。
+- **第二个 worker**（`engine-bg.js`，默认关，§8.7）：设置文件里的 `bgWorker: true`（没有界面控件、没有界面键）打开后，BATCH 的分析改在第二个 Stockfish 上跑，和对局互不抢占；UCI 顺序与主 worker 上完全相同，逐步结果相同（3 局 124 步）。起不来或一次搜索没回来就关掉它，这一轮会话退回共享 worker，不重试。
+  - 内存（进程树 RSS 增量，Hash 32）：第一个引擎 +91 MB（含页面里解码的 wasm），第二个 +61 MB。8 GB 机器上可以接受，但本机收益只在「有后台分析时」那一小段：wait p90 353 ms 对单 worker 的 428 ms。维持默认关。
+- **顺带修的**：`settings-ui.js` 在 `wire` 时把 Hash 交给引擎，而 `wire` 早于 `loadSettings()`，存着的 Hash 直到再点一次那一段才生效。改为在 `paintSettings` 里交（`setOptions` 对不变的值是空操作）；flows-e2e「第二个引擎」验证存着的 Hash 64 启动即生效。
+- 主包 869,452 字节（+约 4.5 KB）；app.js 行数不变（6,702：加一行读 `bgWorker`，删掉一处多余空行）。
+
+#### M2 评审修正
+
+- **P1-1 导入被拒但记号照走**：`importPgn` / `importPgnToLibrary` 现在报告结果——`{added, dup}` 或 `null`（被拒、读不出棋；提示照旧）。同步的应答到时棋谱库在分析（或棋盘在分析），不再拒收：对话框说「引擎正忙，等这轮分析完再导」，棋等着，分析一停就进库（`importPgn` 的 `wait`，解析期间才开始的分析同样等）。记号本身已经没有了（下一条），所以「只在成功时前进」由棋谱库自己保证。test-sync-e2e 3c′：应答时分析在跑，库里仍是 1 局、对话框说正忙；暂停分析后 3 局、对话框关上（改之前 1 局，两局丢掉）。
+- **P2-2 / P2-3 增量同步漏棋**：不再另记 `last`。`since` 从棋谱库推：这个网站、这个名字最新一局那天 0 点 − 14 天（`OVERLAP_DAYS`），重叠里已有的棋至多 50 局（`OVERLAP_GAMES`，超了就把 since 收到第 50 新那一局那天）；请求局数 = 选的 N + 重叠里已有的，重复的由棋谱库按 id 跳过。增量同步一律从 since 起**按时间正序**取：Lichess 加 `sort=dateAsc`（公开 API `/api/games/user` 的参数：`since` 是创建时间 ms，`sort` 取 dateAsc / dateDesc，默认 dateDesc——这里被拦截，没能对真站验证；`sync-samples.yml` 加了一条 `lichess-since` 样本，下次手动跑时核对应答是否按 UTCDate/UTCTime 升序），Chess.com 从 since 所在月份的**前一个月**往后走（也盖住了归档月份不一定按 UTC 切的问题），月内按列出的顺序。无论被 N、应答大小还是截止时间截断，截下的都是从 since 起连续的一段，下次从库里接着推，不留缺口；对局中途开始的通信棋只要 14 天内开局就还能取到。`SYNC_GAMES_MAX` 100 → 150。c27fbfa 存下的 `last` 不再读，原样留在 `sync` 键里，其余各项照旧读回。
+  - Zig：Lichess 第二次请求的 URL 逐字断言（`…&since=1789344000000&sort=dateAsc`，max 25），应答里先是 14 天前开局的通信棋、再是已有的 5 局、最后新的一局；max 2 时只取最旧的两局。Chess.com 第二次请求依次是 `archives`、`2026/08`、`2026/09`，8 月档里 9 月 1 日 UTC 才结束的一局被取到、8 月结束的不取。
+  - 已知限制：库里只存日期不存时刻，重叠按天算；同一天超过 50 + N 局（极少见的超快棋量）时，增量同步可能一直取回同一天已有的棋。超过 14 天才结束的 Lichess 通信棋仍会漏。
+- **P2-1 卡住的连接占满 4 个名额**：到截止时间除了答 `timeout`，还取消卡住的读。工作改成 `io.concurrent` 起的 Io 任务，任务所在的线程（原看守线程）到点先认领、答 timeout，再 `Future.cancel`：Io.Threaded 把取消送进阻塞的系统调用（macOS `pthread_kill(SIG.IO)`、Windows `NtCancelSynchronousIoFile`、Linux `tgkill`，`std/Io/Threaded.zig signalCanceledSyscall`），读返回 `error.Canceled`，任务结束后才放掉 job、`live` 减一。Zig 测试在进程内起一个只发头和半截正文就不动的服务器：连着 4 次同步各在 200 ms 答 timeout，之后 `live` 回到 0，第 5 次同步正常开始（改之前 `live` 停在 4、测试超时）。页面：`busy` →「上一次同步还没有结束，请稍后再试。」，`timeout` →「{0} 迟迟没有应答，请稍后再试。」；关于面板检查更新答 `busy` 时说「正在检查更新，请稍候」。界面键 1231 → 1234（`sync.busy`、`sync.timeout`、`msg.update.busy`，三语）。名字解析（getaddrinfo）在 macOS / Windows 上 Io 取消不了，这种情况仍占着名额直到系统超时，所以 `LIVE_MAX` 保留。
+- **P2-4 CI 计时**：test-sync-e2e 的 N1 桩延迟 3 s → 8 s（等待相应放宽），本机走子落进列表于 2.0 s、应答于 8.3 s。引擎调度器的绝对门槛没动：c27fbfa 的 CI 上 `wait`（着法进列表 → 应着的 `go` 发给 worker，本来就是引擎侧的时刻，不含绘制）WebKit p90 33 ms（无后台 17 ms）、Chromium p90 275 ms（263 ms），离 1000 ms 都很远，没有证据要改量法或数字。
+- **P3**：
+  - `Pending.post` 在锁外调用 `wake_fn`（与 SDK `ChannelWake` 同一做法），`waking` 计数在锁内登记，`close()` 有界地等在途的 wake 返回；`wake_fn` 失败写 `std.log.warn`。
+  - `respondNow` 拿不到堆缓冲（或帧放不下）时用栈上小缓冲答这一类的短错误（同步 `offline`、检查更新 `network`），不让页面干等兜底计时（FailingAllocator 测试）。
+  - `engine-bg.js` 加 `closed`：`close()` 之后排在后面的搜索不再起新 worker（test-engine：改之前 3 个 worker，之后 2 个，两次搜索都由第一个 worker 答）。
+  - `library-local.js` 的 `REC_MAX` 按写进标签之后的长度量（引号、反斜杠再转义一次）：45 个带引号的头、JSON 约 3,000 字的记录，改之前写出的 `LibRec` 超过读取的 4096，导回时整个文件解析失败；改之后头太长就不带，记录照样认回。
+  - 导回本机棋并进战绩（`LibraryLocal.mergeRecs`）：只把 500 条上限留下来的算「加入」。
+- 测试：Zig null 平台 62 项全过（新增 3 项、改写 2 项），x86_64-windows 与 aarch64-macos 交叉编译通过；`test:static` 全过（test-sync 新增 since 推算、重叠上限、旧存档）；test-sync-e2e 80 项全过；test-library-local、test-engine 全过。
+- 只有 CI 或真机能确认的：Lichess 真站对 `sort=dateAsc` + `since` + `max` 的应答顺序（样本 workflow）；macOS / Windows 上取消真的打断卡住的 TLS 读（Zig 测试在 CI 的 macOS / Windows 作业上跑同一个卡住服务器）。
+
 ---
 
 ## 附录 · 给 SDK 上游的两个功能请求（由你转交 vercel-labs/native）

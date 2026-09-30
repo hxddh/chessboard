@@ -1444,6 +1444,7 @@ import { loadChunk } from "./chunk.js";
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
+      store.ui.bgWorker = s.bgWorker === true; // v8-1-plan F4: a second engine for passes, off unless set (§8.7)
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
       // v8-0-plan A3: 7.x's themeId / followSystem / pieceSet, or 8.0's four
       // fields — migrateLook reads either
@@ -1470,7 +1471,7 @@ import { loadChunk } from "./chunk.js";
   function saveSettings() {
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look; themeId and followSystem still written, for
         // a 7.x build opening this profile (it reads those two and not these)
@@ -1895,6 +1896,7 @@ import { loadChunk } from "./chunk.js";
   // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
   /** time control id → {base, inc} seconds or null: presets and c<min>+<inc> (time-control.js) */
   const parseTc = TimeControl.parse;
+  const tcTag = () => { const tc = parseTc(store.game.timeControl); return tc ? tc.base + (tc.inc ? "+" + tc.inc : "") : "-"; }; // PGN's TimeControl: the export's tag, a record's `tc` (v8-1-plan T5)
 
   function resetClocks() {
     const tc = parseTc(store.game.timeControl);
@@ -2302,7 +2304,6 @@ import { loadChunk } from "./chunk.js";
   // nudge in 1.7) — so 7.7 gives it the result card's filled button instead
   // of a message that leaves after four seconds (v7-7-plan §4).
 
-
   /** The rating sparkline: the accuracy one's dress, on the rating's own scale. */
   function drawRatingTrend(cv, ys) {
     const dpr = window.devicePixelRatio || 1;
@@ -2490,7 +2491,7 @@ import { loadChunk } from "./chunk.js";
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
-    renderRecordEntry, loadStats, copyText, exportText, loadHistoryRecord: (rec) => loadHistoryRecord(rec),
+    renderRecordEntry, loadStats, saveStats, copyText, exportText, loadHistoryRecord: (rec) => loadHistoryRecord(rec),
     boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); },
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
@@ -4233,7 +4234,7 @@ import { loadChunk } from "./chunk.js";
     const id = newRecordId();
     store.game.recordedId = id;
     // #89 review: diff and style are the game's own opponent; an `unrated` one is recorded, not rated
-    const rec = Object.assign({ id, t: Date.now(), color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending }, OppUI.opponent());
+    const rec = Object.assign({ id, t: Date.now(), color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending, tc: tcTag() }, OppUI.opponent());
     // v8-0-plan B4: every rated game moves the rating (a late one is saved by OppUI); the card repaints after this task
     if (!rec.unrated) OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
     s.games.push(rec);
@@ -4429,8 +4430,7 @@ import { loadChunk } from "./chunk.js";
       ["Black", black],
       ["Result", result],
     ];
-    const tc = parseTc(store.game.timeControl);
-    tagPairs.push(["TimeControl", tc ? tc.base + (tc.inc ? "+" + tc.inc : "") : "-"]);
+    tagPairs.push(["TimeControl", tcTag()]);
     if (result !== "*") {
       tagPairs.push(["Termination", store.game.flagFall ? "time forfeit" : "normal"]);
     }
@@ -6273,7 +6273,7 @@ import { loadChunk } from "./chunk.js";
     out.textContent = "…";
     let r = null;
     try { r = await Host.checkUpdate(); } catch (_) { r = null; }
-    if (!r || r.error || !r.tag) { out.textContent = t("msg.update.failed"); return; }
+    if (!r || r.error || !r.tag) { out.textContent = t(r && r.error === "busy" ? "msg.update.busy" : "msg.update.failed"); return; }
     if (newerVersion(r.tag, APP_VERSION)) {
       out.textContent = tf("msg.update.available", [r.tag]);
       offerLink(r.url || "https://github.com/hxddh/chessboard/releases/latest");

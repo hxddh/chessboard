@@ -2318,6 +2318,217 @@ function tenThousand() {
   await ctx.close();
 }
 
+// ============================================================================
+// v8-1-plan T5: 本机对局 in the diagnosis, the export and the speed filter.
+// library-local.js has the rules and their hand-worked numbers
+// (test-library-local.mjs); what is proved here is the wiring in a page.
+// ============================================================================
+/** Twenty analysed 本机 games (10 won, 10 lost, accuracy 50…69) and one never analysed. */
+const T5_LINES = ["1. e4 e5 2. Nf3 Nc6", "1. d4 d5 2. c4 e6", "1. e4 c5 2. Nf3 d6", "1. c4 e5 2. Nc3 Nf6"];
+const T5_STATS = { v: 2, games: Array.from({ length: 20 }, (_, i) => Object.assign({ id: "t5-" + i, t: T - (30 - i) * DAY,
+  diff: i % 3 ? "normal" : "hard", color: i % 2 ? "b" : "w", result: i % 2 ? "loss" : "win", moves: 4, acc: 50 + i,
+  pgn: T5_LINES[i % 4], ending: "resigned", style: "off" },
+i % 5 === 0 ? { rb: 1400 + i, ra: 1410 + i, perf: 1500 } : {}, i % 4 === 1 ? { tc: "180+2" } : {}))
+  .concat([{ id: "t5-x", t: T - DAY, diff: "normal", color: "w", result: "draw", moves: 2, pgn: "1. g4 e5", ending: "drawAgreed" }]) };
+const statsOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.stats") || "{}"));
+/** Click one square, then another — a move on the board. */
+async function t5Move(page, from, to) {
+  const xy = (sq) => page.evaluate((q) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    const sz = r.width / 8;
+    return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * sz, y: r.top + (8 - Number(q[1]) + 0.5) * sz };
+  }, sq);
+  const a = await xy(from); await page.mouse.click(a.x, a.y); await page.waitForTimeout(150);
+  const b = await xy(to); await page.mouse.click(b.x, b.y);
+}
+const AI_5_3 = { mode: "ai", difficulty: "beginner", humanColor: "w", timeControl: "5+3", langId: "zh-CN", sideTab: "play",
+  view: "play", soundOn: false, themeId: "wood" };
+
+// --- T5.1 a game played now records its clock; the speed filter finds it ------
+{
+  const ctx = await c1Context({ "chess.v1.settings": AI_5_3,
+    "chess.v1.save": { v: 1, savedAt: T, pgn: '[Event "t5"]\n[Result "*"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 *',
+      clock: { tc: "5+3", w: 240000, b: 250000, flag: null, started: true } } });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(400);
+  await t5Move(page, "h5", "f7");
+  await page.waitForTimeout(800);
+  const last = ((await statsOf(page)).games || []).slice(-1)[0] || null;
+  assert(last && last.result === "win" && last.tc === "300+3", `T5 新下完的一局记下棋钟：5+3 → TimeControl 300+3(${JSON.stringify(last && { r: last.result, tc: last.tc })})`);
+  await page.evaluate(() => window.__chess.libDb().openList(null, { src: "local" }));
+  await page.waitForTimeout(600);
+  await page.click('#lib-tc-seg [data-ltc="blitz"]');
+  const blitz = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
+  await page.click('#lib-tc-seg [data-ltc="rapid"]');
+  const rapid = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
+  assert(last && blitz.join() === last.id && rapid.length === 0, `T5 用时筛选对本机棋有效：快棋一档里就是这一局，中速里没有(${blitz.join()} / ${rapid.join()})`);
+  assert(errs.length === 0, "T5 新对局：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- T5.2 an old game gets the clock the save says it was played on -----------
+{
+  const MATE = "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7#";
+  const ctx = await c1Context({ "chess.v1.settings": AI_5_3, "chess.v1.stats": STATS_7X,
+    "chess.v1.save": { v: 1, savedAt: T, pgn: '[Result "1-0"]\n\n' + MATE + " 1-0", clock: { tc: "5+3", w: 281000, b: 290500, flag: null, started: true } } });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  await page.waitForTimeout(400);
+  const st = await statsOf(page);
+  const byId = new Map((st.games || []).map((g) => [g.id, g]));
+  const lost = STATS_7X.games.filter((g) => {
+    const s = byId.get(g.id);
+    return !s || Object.keys(g).some((k) => JSON.stringify(g[k]) !== JSON.stringify(s[k])) || Object.keys(s).some((k) => !(k in g) && k !== "tc");
+  }).map((g) => g.id);
+  assert(byId.get("g1") && byId.get("g1").tc === "300+3" && byId.get("g2") && !("tc" in byId.get("g2")) && lost.length === 0,
+    `T5 旧记录补标：棋盘上那局按存档里走过的钟标 300+3，推不出来的不标，其余字段一个不变(${JSON.stringify([...byId.values()].map((g) => g.tc || "-"))}；不等 ${lost.join(",") || "无"})`);
+  await page.evaluate(() => window.__chess.libDb().openList(null, { src: "local" }));
+  await page.waitForTimeout(600);
+  await page.click('#lib-tc-seg [data-ltc="blitz"]');
+  const blitz = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
+  assert(blitz.join() === "g1", `T5 补标之后，用时筛选找得到它(${blitz.join()})`);
+  assert(errs.length === 0, "T5 补标：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
+// --- T5.3 the diagnosis's source row: 导入的 by default, 本机, 全部 --------------
+let t5Export = "";
+{
+  const ctx = await c1Context({ "chess.v1.stats": T5_STATS, "chess.v1.library": V1["7.0"] });
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  await page.waitForTimeout(600);
+  // one analysed import and twenty analysed 本机 games: the button is there
+  // (red before T5: it counted the one import and stayed hidden)
+  assert(await page.isVisible("#lib-diagnose"), "T5 本机分析过的够数，「看诊断」就出现(导入的只有 1 局)");
+  await page.click("#lib-diagnose");
+  await page.waitForTimeout(500);
+  const read = () => page.evaluate(() => ({
+    on: [...document.querySelectorAll("#diag-src-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.dsrc + ":" + b.getAttribute("aria-pressed")),
+    text: document.getElementById("lib-diag").innerText.replace(/\s+/g, " ") }));
+  const imp = await read();
+  assert(imp.on.join() === "import:true" && /还差 19 局才够给诊断（已分析 1\/20）/.test(imp.text) && !/逐手分析/.test(imp.text),
+    `T5 诊断默认读「导入的」：7.x 的数字，还差 19 局(${imp.on}；${imp.text.slice(0, 60)})`);
+  // by keyboard: Tab to 本机, Enter
+  await page.focus('#diag-src-seg [data-dsrc="local"]');
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(300);
+  const loc = await read();
+  assert(loc.on.join() === "local:true" && /20 局已分析的棋/.test(loc.text) && /10 胜 10 负 0 和/.test(loc.text) && /平均精准度 59\.5%/.test(loc.text) &&
+    /只看还存着逐手分析的 0 局/.test(loc.text),
+    `T5 选「本机」(键盘)：20 局、10 胜 10 负、平均精准度 59.5%，并说明逐手数据只有几局(${loc.text.slice(0, 120)})`);
+  await page.click('#diag-src-seg [data-dsrc="all"]');
+  await page.waitForTimeout(300);
+  const all = await read();
+  assert(all.on.join() === "all:true" && /21 局已分析的棋/.test(all.text) && /11 胜 10 负 0 和/.test(all.text) && /平均精准度 60\.5%/.test(all.text),
+    `T5 选「全部」：21 局、11 胜 10 负、平均精准度 60.5%((1190 + 81.2) / 21)(${all.text.slice(0, 120)})`);
+  // an opening row read from 本机 opens the list on the 本机 games of that opening
+  // (7.x's rule, now for 本机 too: the row's count is the games its pick
+  // opens. Red at the M2 merge on WebKit — the diagnosis was drawn while
+  // three of the five C44 games had no opening yet, said 2, and opened 5.)
+  // CI's WebKit at the M2 merge: the ECO table arrived while the 本机 games
+  // were being made, so some of them had no opening yet (library-page.js
+  // localEntry) — three of the five C44 games, here as there
+  const eco = await page.evaluate(() => {
+    const all = window.__chess.libDb().all();
+    for (const g of all) if (["t5-0", "t5-4", "t5-8"].includes(g.ref)) delete g.eco;
+    return (all.find((g) => g.ref === "t5-16") || {}).eco || "";
+  });
+  await page.click('#diag-src-seg [data-dsrc="local"]');
+  const rowOf = (e) => [...document.querySelectorAll('#lib-diag [data-diag-pick]')].find((b) => JSON.parse(b.dataset.diagPick).value === e) || null;
+  await page.waitForFunction(([e, f]) => window.__chess.libDb().all().every((g) => g.src !== "local" || typeof g.eco === "string") &&
+    !!new Function("return " + f)()(e), [eco, rowOf.toString()], { timeout: 15000 }).catch(() => {});
+  const row = await page.evaluate(([e, f]) => {
+    const b = new Function("return " + f)()(e);
+    if (!b) return null;
+    b.dataset.t5 = "row";
+    return { n: Number((/(\d+) 局/.exec(b.querySelector(".stat-v").textContent) || [])[1]),
+      want: window.__chess.libDb().all().filter((g) => g.src === "local" && g.eco === e && typeof g.acc === "number").map((g) => g.ref).sort().join() };
+  }, [eco, rowOf.toString()]);
+  if (row) await page.click('#lib-diag [data-t5="row"]');
+  await page.waitForFunction(() => document.getElementById("lib-list-modal").classList.contains("show"), null, { timeout: 5000 }).catch(() => {});
+  const picked = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc).sort().join());
+  const libs = await page.$$eval("#lib-list [data-lib]", (b) => b.length);
+  assert(!!eco && !!row && !!row.want && picked === row.want && picked.split(",").length === row.n && libs === 0,
+    `T5 本机诊断里点一个开局：列表里是这个开局的本机棋，和那一行说的局数一样(${picked} = ${row && row.want}；行上 ${row && row.n} 局)`);
+  await page.click("#lib-list-close");
+  // restart: the row is back on 导入的
+  await page.reload();
+  await c1Ready(page);
+  await page.waitForTimeout(400);
+  await page.click("#lib-diagnose");
+  await page.waitForTimeout(400);
+  assert((await read()).on.join() === "import:true", "T5 重启之后，诊断的来源回到默认的「导入的」");
+  await page.click("#lib-modal-close");
+
+  // --- T5.4 导出 PGN with the 本机 games, into an empty profile, and back ---------
+  await page.evaluate(() => window.__chess.libDb().openList(null, { src: "import" }));
+  await page.waitForTimeout(400);
+  const [dl1] = await Promise.all([page.waitForEvent("download"), page.click("#lib-export")]);
+  const onlyImp = fs.readFileSync(await dl1.path(), "utf8");
+  assert(!/\[LibId "loc:/.test(onlyImp) && (onlyImp.match(/\[LibId "lib:/g) || []).length === 2,
+    "T5 来源选「导入」时导出的和 8.0 一样：只有导入的 2 局");
+  await page.click('#lib-src-seg [data-lsrc="all"]');
+  const [dl2] = await Promise.all([page.waitForEvent("download"), page.click("#lib-export")]);
+  t5Export = fs.readFileSync(await dl2.path(), "utf8");
+  assert((t5Export.match(/\[LibId "loc:/g) || []).length === 21 && (t5Export.match(/\[LibRec "/g) || []).length === 21 &&
+    (t5Export.match(/\[LibId "lib:/g) || []).length === 2 && /\[TimeControl "180\+2"\]/.test(t5Export),
+    "T5 来源选「全部」：导出带上 21 局本机棋，每局有 LibId 和记录，有棋钟的带 TimeControl");
+  // the same profile: nothing is added twice
+  const n0 = (await statsOf(page)).games.length;
+  await page.click("#lib-list-close");
+  await importFile(page, t5Export);
+  await page.waitForTimeout(600);
+  const again = await libOf(page);
+  const n1 = (await statsOf(page)).games.length;
+  const locals = await page.evaluate(() => window.__chess.libDb().all().filter((g) => g.src === "local").length);
+  assert(n1 === n0 && again.games.length === 2 && locals === 21, `T5 导回同一个档案：一局不多(战绩 ${n0} → ${n1}，导入的 ${again.games.length}，本机 ${locals})`);
+  assert(errs.length === 0, "T5 诊断与导出：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+{
+  // 清空 → 导回: an empty profile takes the file, and every 本机 game is 本机 again
+  const ctx = await c1Context({});
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  await importFile(page, t5Export);
+  await page.waitForTimeout(1200);
+  const st = await statsOf(page);
+  const byId = new Map((st.games || []).map((g) => [g.id, g]));
+  const moves = (pgn) => pgn.replace(/\[[^\]]*\]/g, "").replace(/\d+\.(\.\.)?/g, "").replace(/\s(1-0|0-1|1\/2-1\/2|\*)\s*$/, "").trim().split(/\s+/).join(" ");
+  const diff = [];
+  for (const g of T5_STATS.games) {
+    const s = byId.get(g.id);
+    if (!s) { diff.push(g.id + " 没回来"); continue; }
+    for (const k of Object.keys(g).concat(Object.keys(s))) {
+      if (k === "pgn") { if (moves(g.pgn) !== moves(s.pgn)) diff.push(g.id + ".pgn"); continue; }
+      if (JSON.stringify(g[k]) !== JSON.stringify(s[k])) diff.push(g.id + "." + k);
+    }
+  }
+  await page.waitForTimeout(600);
+  const view = await page.evaluate(() => {
+    const all = window.__chess.libDb().all();
+    return { local: all.filter((g) => g.src === "local").map((g) => g.ref).sort(), imported: all.filter((g) => g.src !== "local").map((g) => g.id).sort() };
+  });
+  assert(st.games.length === 21 && diff.length === 0, `T5 带本机棋导出 → 空档案 → 导回：21 条战绩记录逐字段相等(${diff.slice(0, 5).join(", ") || "全等"})`);
+  assert(view.local.length === 21 && view.local.every((id) => byId.has(id)) && view.imported.join() === "lib:70a,lib:70b",
+    `T5 …来源仍是「本机」，导入的两局还是导入的，没有一局变成导入的副本(本机 ${view.local.length}，导入 ${view.imported.join()})`);
+  await page.evaluate(() => window.__chess.libDb().openList(null, { src: "local" }));
+  await page.waitForTimeout(500);
+  const tags = await page.$$eval("#lib-list .hist-row", (rows) => rows.map((r) => (r.querySelector(".pick-tag") || {}).textContent || ""));
+  assert(tags.length === 21 && tags.every((x) => x === "本机"), `T5 列表里每一局都标「本机」(${tags.length})`);
+  await page.click("#lib-list-close");
+  await importFile(page, t5Export);
+  await page.waitForTimeout(600);
+  const twice = await statsOf(page);
+  const toast = await page.evaluate(() => document.getElementById("toast").textContent);
+  assert(twice.games.length === 21 && /23 局全都已经在库里了/.test(toast), `T5 再导一次：一局不多，说全都已经在库里(${twice.games.length}；${toast})`);
+  assert(errs.length === 0, "T5 导回：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 // the numbers, for docs/measured.json (libraryDb) — written with --record
 {
   const r1 = (x) => Math.round(x * 10) / 10;

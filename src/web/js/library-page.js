@@ -18,10 +18,10 @@
  *     shards touched for the native mirror, the header kept current;
  *   * 本机: the play history (stats.games) as library entries, `src:
  *     "local"`, so the list, the search and the explorer see one library.
- *     The analysis pass and the diagnosis still read the imported games only
- *     — a 本机 game already has its own review, and counting it twice in a
- *     statement about "your games elsewhere" would change what 7.x's numbers
- *     meant;
+ *     The analysis pass still reads the imported games only — a 本机 game
+ *     already has its own review. The diagnosis reads them when its source
+ *     row asks (v8-1-plan T5, library-local.js), and 导出 PGN takes them out
+ *     and back in as themselves;
  *   * the list page: search by opponent / opening / ECO / event, date range,
  *     result, colour, speed, source and "passes through the position on the
  *     board", with what was played next from there;
@@ -30,6 +30,7 @@
  */
 import { LibraryQuery } from "./library-query.js";
 import { LibraryDb } from "./library-db.js";
+import { LibraryLocal } from "./library-local.js";
 import { createDiagCharts } from "./diag-charts.js";
 import { runNativeSelftest } from "./selftest-native.js";
 
@@ -281,6 +282,8 @@ async function bootLibrary(d) {
       e.date = dt.getFullYear() + "." + two(dt.getMonth() + 1) + "." + two(dt.getDate());
     }
     if (typeof rec.acc === "number") e.acc = rec.acc;
+    // v8-1-plan T5: the clock it was played on, so the speed filter finds it
+    if (typeof rec.tc === "string" && rec.tc) e.tc = rec.tc;
     let game = null;
     try { game = d.PgnParser.parsePgn(rec.pgn).games[0] || null; } catch (_) { game = null; }
     if (!game) return e;
@@ -319,7 +322,7 @@ async function bootLibrary(d) {
           const id = "loc:" + rec.id;
           recOf.set(id, rec);
           let e = have.get(id);
-          if (!e || e.pgnLen !== rec.pgn.length || e.acc !== (typeof rec.acc === "number" ? rec.acc : undefined)) {
+          if (!e || e.pgnLen !== rec.pgn.length || e.acc !== (typeof rec.acc === "number" ? rec.acc : undefined) || (e.tc || "") !== (rec.tc || "")) {
             e = localEntry(rec);
             put.push(e);
           }
@@ -336,6 +339,8 @@ async function bootLibrary(d) {
       } while (run.again);
       localBusy = null;
       if (listOpen()) renderList();
+      // the 诊断 button counts the 本机 games too (v8-1-plan T5)
+      d.renderLibrary();
     })();
     localBusy = run;
     return run.p;
@@ -344,6 +349,7 @@ async function bootLibrary(d) {
   // --- the list page -------------------------------------------------------
   const listModal = () => doc.getElementById("lib-list-modal");
   const listOpen = () => { const m = listModal(); return !!m && m.classList.contains("show"); };
+  const diagOpen = () => { const m = doc.getElementById("lib-modal"); return !!m && m.classList.contains("show"); };
   const f = store.ui.libFilter = Object.assign({ result: "all", color: "all", sort: "t", src: "all", tc: "all",
     q: "", from: "", to: "", pos: false }, store.ui.libFilter);
   let shown = PAGE;
@@ -355,11 +361,15 @@ async function bootLibrary(d) {
     return { text: f.q, from: f.from, to: f.to, result: f.result, color: f.color, tc: f.tc, src: f.src,
       position: f.pos ? d.boardFen() : "" };
   }
-  /** A diagnosis pick (7.1) narrows the imported games further. */
+  /**
+   * A diagnosis pick (7.1) narrows the games further — the imported ones, or
+   * those of the source the diagnosis was read from (v8-1-plan T5: `src`).
+   */
   function pickMatches(g) {
     const pick = store.ui.libPick;
     if (!pick) return true;
-    if (g.src === "local") return false;
+    const src = pick.src || "import";
+    if (src !== "all" && (g.src === "local") !== (src === "local")) return false;
     if (pick.kind === "eco") return g.eco === pick.value;
     return d.libPickPly(g) != null;
   }
@@ -549,12 +559,16 @@ async function bootLibrary(d) {
         }
       }
       filling = null;
-      if (n) { save(); if (listOpen()) renderList(); }
+      // the diagnosis too: its 本机 rows counted only the games that had an
+      // opening when it was drawn (8.1 M2, CI's WebKit — see diagView)
+      if (n) { save(); if (listOpen()) renderList(); if (diagOpen()) d.renderDiagnosis(); }
     })();
     return filling;
   }
 
   function openList(pick, opts) {
+    // a pick comes from a diagnosis row, read from the source on its row (T5)
+    if (pick && !pick.src) pick.src = diagSrc();
     store.ui.libPick = pick || null;
     // a diagnosis pick is about imported games; show them, whatever the
     // source row was left on
@@ -629,36 +643,61 @@ async function bootLibrary(d) {
   }
 
   /**
-   * The imported games the page is showing, as one PGN file — the whole
-   * library when nothing is filtered (v8-0-plan C1: 整库导出和导回逐局相等).
-   * 本机 games are not in it: the history keeps their own PGN, and a
-   * re-import would turn each into an imported copy of itself.
+   * The games the page is showing, as one PGN file — the whole library when
+   * nothing is filtered (v8-0-plan C1: 整库导出和导回逐局相等). The source row
+   * says whether 本机 games go too (v8-1-plan T5): 导入 leaves them out, as
+   * 8.0 did; 本机 and 全部 take them, each with its record (localPgn), so a
+   * re-import puts it back in the history as itself rather than as an
+   * imported copy.
    */
   async function exportPgn() {
-    let rows = LibraryQuery.query(store.session.library, pageQuery(), st.pkOf);
+    let rows = LibraryQuery.query(allGames(), pageQuery(), st.pkOf);
     if (store.ui.libPick) rows = rows.filter(pickMatches);
     if (!rows.length) { toast(t("hist.noneMatch"), "fix"); return; }
-    const text = rows.map(LibraryQuery.entryPgn).join("\n");
+    const text = rows.map((g) => {
+      if (g.src !== "local") return LibraryQuery.entryPgn(g);
+      const rec = localRec.get(g.id);
+      if (!rec) return "";
+      let headers = [];
+      try { headers = d.PgnParser.parsePgn(rec.pgn).games[0].headers; } catch (_) { headers = []; }
+      return LibraryLocal.localPgn(g, rec, headers, "Stockfish (" + t("diff." + g.diff) + ")", LibraryQuery.entryPgn);
+    }).filter(Boolean).join("\n");
     await d.exportText("chessboard-library.pgn", text, "application/x-chess-pgn", t("lib.exportPgn"));
   }
 
   // --- import and claim ----------------------------------------------------
   /** The file being read, as a promise; the next import waits for it. */
   let importing = null;
+  /** How often an import waiting on a running pass looks again (review P1-1). */
+  const BUSY_WAIT_MS = 500;
+  /** A pass over the library, or the board's analysis, is running: the import waits or refuses. */
+  const libBusy = () => !!(store.session.libRun || store.session.analyzing);
   /**
    * Take every game in a PGN file into the library (7.0), with its position
    * index made from the parse — the parser already walked every position.
+   *
+   * 8.1 M2 review P1-1: says what came of it — {added, dup} when the games
+   * went in (added may be 0: all duplicates), null when nothing was taken
+   * (refused, or nothing readable; a toast has said which). With
+   * `opts.wait` (a sync's games, fetched and not to be fetched again for
+   * nothing) a running pass is waited out rather than refused.
+   * @returns {Promise<{added: number, dup: number}|null>}
    */
-  async function importPgn(text, label) {
+  async function importPgn(text, label, opts) {
+    const wait = !!(opts && opts.wait);
     const text0 = (text || "").trim();
-    if (!text0) { toast(t("msg.import.empty"), "fix"); return; }
+    if (!text0) { toast(t("msg.import.empty"), "fix"); return null; }
     // a second file (or a sync) while one is being read waits its turn: it
     // used to return here in silence, games fetched and gone (M5 review P3-2)
-    while (importing) await importing;
-    if (store.session.libUnreadable) { toast(t("lib.unreadable"), "fault"); return; }
+    for (;;) {
+      while (importing) await importing;
+      if (!libBusy() || !wait) break;
+      await new Promise((ok) => setTimeout(ok, BUSY_WAIT_MS));
+    }
+    if (store.session.libUnreadable) { toast(t("lib.unreadable"), "fault"); return null; }
     // 导入全部数据 is reloading the page (P3-4): say that, rather than import into what goes
-    if (frozen) { toast(t("msg.allData.imported")); return; }
-    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    if (frozen) { toast(t("msg.allData.imported")); return null; }
+    if (libBusy()) { toast(t("lib.busy"), "fix"); return null; }
     let chunks;
     try { chunks = d.PgnParser.splitGames(text0); } catch (_) { chunks = d.Pgn.splitGames(text0); }
     // read game by game, handing the thread back every ~16 ms (7.5)
@@ -668,11 +707,19 @@ async function bootLibrary(d) {
     // is wanted now rather than replayed for later (fillOpenings)
     try { await d.Eco.ready(); } catch (_) { /* no table: filled later */ }
     try { games = await d.PgnParser.parseGamesAsync(chunks); } finally { importing = null; release(); }
-    if (store.session.libRun || store.session.analyzing) { toast(t("lib.busy"), "fix"); return; }
+    // a pass begun while the file was read: from here to the end nothing
+    // awaits, so once it is over the games go in whole
+    while (wait && libBusy()) await new Promise((ok) => setTimeout(ok, BUSY_WAIT_MS));
+    if (libBusy()) { toast(t("lib.busy"), "fix"); return null; }
+    if (store.session.libUnreadable || frozen) return null;
     const now = Date.now();
     const fresh = [];
+    // v8-1-plan T5: 本机 games exported with their record, back into the history
+    const back = [];
     for (const parsed of games) {
       if (!parsed) continue;
+      const rec = LibraryLocal.recFromGame(parsed, d.PgnParser.serializePgn);
+      if (rec) { back.push(rec); continue; }
       // mainline SAN only: variations are the annotator's opinion
       const sans = [], fens = [parsed.root.fen];
       for (let n = parsed.root; n && n.children.length; n = n.children[0]) {
@@ -686,17 +733,42 @@ async function bootLibrary(d) {
       if (eco !== undefined) { e.eco = eco ? eco.eco : ""; e.ecoName = eco ? eco.name : ""; }
       fresh.push(e);
     }
-    if (!fresh.length) { toast(t("msg.import.badPgn"), "fault"); return; }
+    if (!fresh.length && !back.length) { toast(t("msg.import.badPgn"), "fault"); return null; }
     const r = Library.addGames(store.session.library, fresh);
     store.session.library = r.list;
     for (const id of r.dropped) st.pk.delete(id);
+    const loc = restoreLocal(back);
     save();
     d.renderLibrary();
-    if (!r.added) toast(tf("lib.addedNone", [r.dup]), "fix");
-    else toast(tf("lib.added", [r.added, r.dup]) + (label ? " · " + label : ""));
+    const added = r.added + loc.added, dup = r.dup + loc.dup;
+    if (!added) toast(tf("lib.addedNone", [dup]), "fix");
+    else toast(tf("lib.added", [added, dup]) + (label ? " · " + label : ""));
     if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
     renderClaim();
     fillOpenings();
+    return { added, dup };
+  }
+
+  /**
+   * Records read back from an export (recFromGame) into the play history:
+   * one whose id the history has is a duplicate and left alone, as a
+   * re-imported archive game is (Library.addGames); the rest go in by their
+   * time, under the history's own cap (app.js recordOutcome keeps 500).
+   * Then they become 本机 entries the usual way (syncLocal).
+   */
+  /** app.js recordOutcome keeps this many records of play. */
+  const HISTORY_MAX = 500;
+  function restoreLocal(recs) {
+    if (!recs.length) return { added: 0, dup: 0 };
+    const stats = d.loadStats();
+    const m = LibraryLocal.mergeRecs(stats.games, recs, HISTORY_MAX);
+    if (m.changed) {
+      stats.games = m.games;
+      d.saveStats(stats);
+      if (d.onLibraryLoaded) d.onLibraryLoaded();
+      syncLocal();
+    }
+    return { added: m.added, dup: m.dup };
   }
 
   /**
@@ -729,6 +801,78 @@ async function bootLibrary(d) {
     if (yes && c) toast(tf("lib.claimDone", [c.name, store.session.library.filter((g) => g.side).length]));
   }
 
+  // --- v8-1-plan T5: the diagnosis's source row, and the clock of old games --
+  const diagSrc = () => (["import", "local", "all"].includes(store.ui.diagSrc) ? store.ui.diagSrc : "import");
+  /**
+   * The 本机 entries the diagnosis can read, each with its `an`
+   * (LibraryLocal.localAnalysis) — hung on the entry itself, so a diagnosis
+   * row's pick finds the same move in it (library-ui.js libPickPly). The
+   * passes on file are the review's (analysis-store.js), by start and moves.
+   */
+  function localDiag() {
+    let kept = store.session.analysesKept;
+    if (!Array.isArray(kept)) {
+      try { const v = JSON.parse(Persist.get("analyses") || "null"); kept = v && Array.isArray(v.list) ? v.list : []; } catch (_) { kept = []; }
+    }
+    const out = [];
+    for (const e of st.local) {
+      const fen = e.fen || LibraryLocal.START_FEN;
+      const k = kept.find((x) => x && x.fen === fen && x.sans === e.sans && x.an);
+      e.an = LibraryLocal.localAnalysis(e, localRec.get(e.id), k ? k.an : null);
+      if (!e.an) continue;
+      if (e.an.scalars) d.rescoreLosses(e);
+      out.push(e);
+    }
+    return out;
+  }
+  /** What the diagnosis reads for the source on its row, and what to say about 本机. */
+  function diagView() {
+    const src = diagSrc();
+    doc.querySelectorAll("#diag-src-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.dsrc === src);
+      b.setAttribute("aria-pressed", b.dataset.dsrc === src ? "true" : "false");
+    });
+    const local = src === "import" ? [] : localDiag();
+    // A 本机 entry made before the ECO table arrived has no opening
+    // (localEntry). Drawn like that, an opening row counted the games that
+    // had one — 2 on CI's WebKit — and its pick opened all 5, the list
+    // having filled the rest (openList → fillOpenings). The same fill, asked
+    // for here; it draws the diagnosis again when it has filled any.
+    if (local.some((g) => typeof g.eco !== "string" && g.sans)) fillOpenings();
+    const deep = local.filter((g) => g.an.tags.length).length;
+    return { games: LibraryLocal.diagGames(src, store.session.library, local),
+      note: src === "import" ? "" : tf("diag.localNote", [deep]) };
+  }
+  const dseg = doc.getElementById("diag-src-seg");
+  if (dseg) dseg.onclick = (ev) => {
+    const b = ev.target.closest("button[data-dsrc]");
+    if (!b || b.dataset.dsrc === diagSrc()) return;
+    store.ui.diagSrc = b.dataset.dsrc;
+    d.renderDiagnosis();
+  };
+  /**
+   * Old 本机 records (6.x–8.0 kept no clock) get the one they were played
+   * on where a setting of that time is still on disk: the save's clock, for
+   * the game on the board (LibraryLocal.saveClock / backfillTc). Written back
+   * only when one was found.
+   */
+  function backfillLocalTc() {
+    const lineOf = (pgn) => {
+      const g = d.PgnParser.parsePgn(pgn).games[0];
+      if (!g) return null;
+      const sans = [];
+      for (let n = g.root; n && n.children.length; n = n.children[0]) sans.push(n.children[0].san);
+      const tc = g.headers.find(([k]) => k === "TimeControl");
+      return { fen: g.root.fen, sans, tc: tc ? tc[1] : "" };
+    };
+    let save = null;
+    try { save = JSON.parse(Persist.get("save") || "null"); } catch (_) { save = null; }
+    let cand = null;
+    try { cand = LibraryLocal.saveClock(save, lineOf); } catch (_) { cand = null; }
+    const stats = d.loadStats();
+    if (LibraryLocal.backfillTc(stats.games, cand ? [cand] : [], lineOf)) d.saveStats(stats);
+  }
+
   // --- the rest of the seam ------------------------------------------------
   wire();
   for (const [id, yes] of [["lib-claim-yes", true], ["lib-claim-no", false]]) {
@@ -741,6 +885,7 @@ async function bootLibrary(d) {
   // background; the position filter finds more as it goes
   if (mode !== "idb") st.games = store.session.library;
   const indexing = st.indexMissing(SLICE, d.pause).then(() => { if (listOpen()) renderList(); });
+  try { backfillLocalTc(); } catch (_) { /* a clock not found is a clock not tagged */ }
   syncLocal();
   // M5 review P3-1: a build from before the shards (8.0 dev) rewrites the
   // store's manifest without them, and a later launch in step with that
@@ -757,6 +902,9 @@ async function bootLibrary(d) {
     renderList,
     syncLocal,
     exportPgn,
+    // v8-1-plan T5: the diagnosis's sources
+    diagView,
+    localAnalysed: () => st.local.filter((g) => typeof g.acc === "number").length,
     last,
     indexing,
     /** v8-0-plan C1 query API (see library-query.js), over imported + 本机 */
