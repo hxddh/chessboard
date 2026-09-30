@@ -2266,6 +2266,7 @@
       background: color-mix(in srgb, var(--accent) 18%, transparent);
     }
     #editor-error:empty { display: none; }
+    #alldata-status:empty { margin: 0; }   /* v8-2-plan F5: emptied, not hidden — it stays a live region */
     #editor-error { color: var(--danger); opacity: 1; }
 
     /* list picker (PGN game chooser) */
