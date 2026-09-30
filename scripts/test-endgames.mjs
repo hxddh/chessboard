@@ -56,12 +56,15 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
     // may be `tb` only on the online table's answer (checked below)
     if (men <= 4 && x.v !== "tb") bad.push(x.id + " " + men + " 子却标 " + x.v);
     if (men > 7 && x.v !== "sf") bad.push(x.id + " 超过 7 子却标 " + x.v);
+    // …and the other way round (M2 review): the card's wording says an `sf`
+    // position is one past every table, so one must have more than 7 men
+    if (x.v === "sf" && men <= 7) bad.push(x.id + " 标 sf 却只有 " + men + " 子");
     for (const f of ["n", "tip", "src"]) {
       if (!Array.isArray(x[f]) || x[f].length !== 3 || x[f].some((s) => typeof s !== "string" || !s.trim())) bad.push(x.id + " " + f + " 缺语言");
     }
   }
   for (const b of bad) console.error("  " + b);
-  assert(bad.length === 0, "每个局面合法、白先、有目标，名字 / 提示 / 出处三语齐备，≤ 4 子的标 tb，超过 7 子的标 sf");
+  assert(bad.length === 0, "每个局面合法、白先、有目标，名字 / 提示 / 出处三语齐备，≤ 4 子的标 tb，超过 7 子的标 sf，标 sf 的都超过 7 子");
   const goals = { win: ITEMS.filter((x) => x.goal === "win").length, draw: ITEMS.filter((x) => x.goal === "draw").length };
   assert(goals.win > 0 && goals.draw >= 12, "有取胜也有守和（" + goals.win + " 胜 / " + goals.draw + " 和）");
   assert(GROUPS.every((g) => Array.isArray(g.n) && g.n.length === 3 && g.n.every(Boolean)), "主题名三语齐备");
