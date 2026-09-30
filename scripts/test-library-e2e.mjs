@@ -2253,6 +2253,30 @@ function tenThousand() {
     r.firstAfter = await page.evaluate(() => [...document.querySelectorAll("#lib-list .hist-row button.pick-item")].map((x) => x.dataset.lib || x.dataset.loc));
     await page.click("#lib-list-close").catch(() => {});
   }
+  // M4 评审 (CI): the same launch without the summary — the header's `sum`
+  // taken out, which is exactly how the page behaved before F3 (and how it
+  // behaves after an 8.0 launch): the list waits for the entries. Its ready
+  // time is this machine's "now", which the index's arrival must not fall
+  // behind by more than a quarter (see the assertion below).
+  const base = [];
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate(() => {
+      const h = JSON.parse(localStorage.getItem("chess.v1.library"));
+      delete h.sum;
+      localStorage.setItem("chess.v1.library", JSON.stringify(h));
+    });
+    await page.reload();
+    await c1Ready(page);
+    await page.waitForFunction(() => window.__cold && window.__cold.rows != null && window.__cold.ready != null, null, { timeout: 30000 }).catch(() => {});
+    base.push(await page.evaluate(() => Object.assign({}, window.__cold)));
+    await page.evaluate(() => { const q = document.getElementById("lib-q"); q.value = ""; q.dispatchEvent(new Event("input")); });
+    await page.click("#lib-list-close").catch(() => {});
+    // the next launch trusts the summary again: the check puts `sum` back
+    await page.waitForFunction(() => !!JSON.parse(localStorage.getItem("chess.v1.library")).sum, null, { timeout: 30000 }).catch(() => {});
+  }
+  C1.coldBase = { readyMs: Math.round(Math.max(...base.map((r) => r.ready))), listMs: Math.round(Math.min(...base.map((r) => r.rows))) };
+  console.log(`  F3 同一台机器上不用摘要(即 F3 之前的路径)：列表 ${C1.coldBase.listMs} ms · 局面索引 ${C1.coldBase.readyMs} ms`);
+  assert(base.every((r) => r.fromSummary === false), "F3 头里没有摘要 id：列表等整局（8.0 之后的第一次启动也是这样）");
   // M4 评审 P2-1: the ten thousand came in one import, so they share one
   // `t` — the page the summary drew is the page the entries draw, row for row
   assert(cold.every((r) => r.first && r.first.length === 100 && JSON.stringify(r.first) === JSON.stringify(r.firstAfter)),
@@ -2276,8 +2300,12 @@ function tenThousand() {
   // M4 评审 P2-2: a save right when the library is in, before the summary's
   // check has answered, keeps the header's summary id
   const sumBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library")).sum);
-  await page.reload();
-  await page.waitForFunction(() => window.__chess && window.__chess.libDb && window.__chess.libDb(), null, { timeout: 30000, polling: 1 });
+  // the check is a few slices of work: on Chromium the CPU is slowed eight
+  // times for this launch, so the save lands before it has answered
+  const cdp = ENGINE === "chromium" ? await ctx.newCDPSession(page) : null;
+  if (cdp) await cdp.send("Emulation.setCPUThrottlingRate", { rate: 8 });
+  await page.reload({ waitUntil: "commit" });
+  await page.waitForFunction(() => window.__chess && window.__chess.libDb && window.__chess.libDb(), null, { timeout: 120000, polling: 1 });
   const early = await page.evaluate(async () => {
     const c = window.__chess.libDb();
     let answered = false;
@@ -2286,6 +2314,7 @@ function tenThousand() {
     c.save();
     return { sum: JSON.parse(localStorage.getItem("chess.v1.library")).sum, answered };
   });
+  if (cdp) { await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 }); await cdp.detach(); }
   assert(typeof sumBefore === "string" && early.sum === sumBefore,
     `F3 重启：摘要核对完之前的一次保存，头里的摘要 id 不丢(${sumBefore} → ${early.sum}；核对${early.answered ? "已" : "未"}答)`);
   await c1Ready(page);
@@ -2307,8 +2336,13 @@ function tenThousand() {
     "F3 重启：索引到了之后「包含这个局面」照常(" + cold.map((r) => r.posHits).join(",") + " = " + api.position.n + ")");
   if (ENGINE === "chromium") {
     assert(C1.cold.listVisibleMs <= 1500, `F3 1 万局重启到列表可见 ≤ 1.5 s(${C1.cold.listVisibleMs} ms，三次里最快)`);
-    assert(C1.cold.searchUsableMs <= 4500 && C1.cold.readyMs <= 4500,
-      `F3 1 万局重启到搜索可用 ≤ 4.5 s(按摘要 ${C1.cold.searchUsableMs} ms；局面索引 ${C1.cold.readyMs} ms，三次里最慢)`);
+    assert(C1.cold.searchUsableMs <= 4500, `F3 1 万局重启到搜索可用 ≤ 4.5 s(按摘要 ${C1.cold.searchUsableMs} ms)`);
+    // 「不比现在差」: 4.5 s, or — on a runner slower than the machines that
+    // number came from — a quarter over the same run's launch without the
+    // summary (v8-1-plan §9 M4 评审修正)
+    const readyLimit = Math.max(4500, Math.round(C1.coldBase.readyMs * 1.25));
+    assert(C1.cold.readyMs <= readyLimit,
+      `F3 1 万局重启到「包含这个局面」可用 ≤ ${readyLimit} ms(${C1.cold.readyMs} ms，三次里最慢；不用摘要 ${C1.coldBase.readyMs} ms)`);
   }
 
   // the whole library out as PGN, into an empty profile, game for game
@@ -2666,7 +2700,7 @@ let t5Export = "";
     pageMs: C1.ui && { typed: r1(C1.ui.typed), position: r1(C1.ui.pos), speed: r1(C1.ui.seg) },
     limitMs: 200,
     // v8-1-plan F3: from the navigation's start; list and search best of three, index worst of three
-    coldStart: C1.cold && Object.assign({ limitMs: { list: 1500, search: 4500 } }, C1.cold),
+    coldStart: C1.cold && Object.assign({ limitMs: { list: 1500, search: 4500, ready: "max(4500, 1.25 × noSummary.readyMs)" } }, C1.cold, { noSummary: C1.coldBase }),
   };
   // the same measurement on the code before F3 (this suite run over 17334e1's
   // src/web), kept across re-recordings

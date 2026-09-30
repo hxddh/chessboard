@@ -35,7 +35,11 @@ export function readStored(db) {
     const m = t.objectStore("meta");
     const range = IDBKeyRange.bound(SUM_KEY, SUM_KEY + "\uffff");
     const id = m.get(SUM_ID), keys = m.getAllKeys(range), texts = m.getAll(range), n = t.objectStore("games").count();
-    t.oncomplete = () => {
+    // the last request's answer, not the transaction's end: requests answer
+    // in the order they were made, and a read-only transaction has nothing
+    // to commit — one event sooner, at start-up where each waits for a gap
+    // between frames (M4 评审)
+    n.onsuccess = () => {
       const out = {};
       keys.result.forEach((k, i) => { out[k] = texts.result[i]; });
       resolve({ id: typeof id.result === "string" ? id.result : null, texts: out, count: n.result });
