@@ -94,7 +94,12 @@ function schedule() {
   if (pairs) {
     const had = new Set();
     for (const p of pairs.split(",")) {
-      const [a, b, n, extra] = p.split(":"); // a:b[:games]; a pairing named twice is played once
+      // a:b[:games]; a pairing named twice is played once — in either order
+      // (M1 评审: fit counts a–b and b–a as one pairing, so b:a was a second
+      // batch of the same games), weaker rung first as the round-robin has it,
+      // and the larger count wins
+      const [x, y, n, extra] = p.split(":");
+      const [a, b] = LEVELS.indexOf(x) > LEVELS.indexOf(y) ? [y, x] : [x, y];
       // a misspelt rung would otherwise be played as a rung with no settings, in every shard
       if (!LEVELS.includes(a) || !LEVELS.includes(b) || a === b || extra !== undefined || (n !== undefined && !/^[1-9]\d*$/.test(n))) {
         console.error("--pairs: " + p + " —— 应为 档位:档位[:盘数]，档位是 " + LEVELS.join(" "));
