@@ -71,11 +71,15 @@ const PERSONAS = [
   { id: "kai", level: "improver", style: "attacker", icon: "flame" },
   { id: "ada", level: "steady", style: "off", icon: "target" },
   { id: "remy", level: "solid", style: "principled", icon: "scale" },
+  { id: "juno", level: "skilled", style: "off", icon: "lightbulb" },
   { id: "ben", level: "easy", style: "off", icon: "graduation-cap" },
   { id: "nico", level: "easyplus", style: "off", icon: "coins" },
   { id: "vera", level: "normalminus", style: "off", icon: "swords" },
   { id: "sol", level: "normal", style: "off", icon: "star" },
+  { id: "leo", level: "normalplus", style: "off", icon: "zap" },
   { id: "max", level: "hard", style: "off", icon: "crown" },
+  { id: "iris", level: "hardplus", style: "off", icon: "eye" },
+  { id: "otto", level: "expert", style: "off", icon: "medal" },
   { id: "fish", level: "extreme", style: "off", icon: "bot" },
 ];
 
@@ -100,6 +104,8 @@ function ratingOf(level) { return Number.isFinite(RATING[level]) ? RATING[level]
 
 // --- the clock -----------------------------------------------------------
 
+/** engine.js NODES_PER_MS (test-chess holds the two equal): node counts as time. */
+const NODES_PER_MS = 450;
 /** Share of the remaining clock one move may use, plus most of the increment. */
 const MOVES_TO_GO = 40;
 /**
@@ -128,7 +134,8 @@ const PACE_CAP_MS = 3000;
  */
 function thinkPlan(tier, clockMs, incMs) {
   const alloc = Math.max(0, clockMs) / MOVES_TO_GO + 0.75 * Math.max(0, incMs || 0);
-  const cap = tier && tier.movetime ? tier.movetime : 0;
+  // (v8-1-plan T1: a node rung's calibrated search is its count, in engine.js's ms)
+  const cap = tier && tier.movetime ? tier.movetime : tier && tier.nodes ? Math.round(tier.nodes / NODES_PER_MS) : 0;
   const search = cap ? Math.max(120, Math.min(cap, alloc)) : 0;
   // never pace a reply past what the clock can afford: under ten seconds the
   // allocation is already small, and a flag lost to a pause would be absurd
@@ -368,11 +375,11 @@ function ratingOfStats(stats) {
  * segment's first. 入门 is the hand-weakened rungs (they play a step below
  * UCI_Elo's floor); 进阶 starts at 初级, the first Stockfish-limited rung.
  */
-const SEGMENTS = ["beginner", "easy", "hard"];
+const SEGMENTS = [null, "easy", "hard"]; // where each starts (the first at the bottom)
 function segmentOf(level) {
   const i = LEVELS.indexOf(level);
   let seg = 0;
-  SEGMENTS.forEach((id, k) => { if (i >= LEVELS.indexOf(id)) seg = k; });
+  SEGMENTS.forEach((id, k) => { if (id && i >= LEVELS.indexOf(id)) seg = k; });
   return seg;
 }
 
@@ -384,7 +391,7 @@ function neighbour(level, dir) {
 }
 
 export const Opponents = {
-  LEVELS, RATING, RATING_SE, LADDER, RATING_80, PERSONAS, EN_NAME, PACE_CAP_MS,
+  LEVELS, RATING, RATING_SE, LADDER, RATING_80, PERSONAS, EN_NAME, PACE_CAP_MS, NODES_PER_MS,
   personaById, personaFor, ratingOf, thinkPlan, shouldResign, shouldOfferDraw, acceptsDraw,
   opponentOf, rateGame, rateHistory, fileRating, validRating, ratingOfStats, performance, advice, neighbour,
   SEGMENTS, segmentOf,

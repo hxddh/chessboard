@@ -2512,8 +2512,23 @@ for (const lang of CONTENT_LANGS) {
     "B4: the ladder in opponents.js is app.js's DIFF_IDS, rung for rung (" + O.LEVELS.join(",") + ")");
   assert(O.LEVELS.every((id) => E.TIERS[id]), "B4: every rung has engine settings");
   const between = O.LEVELS.slice(O.LEVELS.indexOf("casual") + 1, O.LEVELS.indexOf("easy"));
-  assert(between.length >= 3 && between.length <= 4 && between.every((id) => E.TIERS[id].winT > 0 && E.TIERS[id].depth),
-    "B4: 3–4 rungs between 休闲 and 初级, each depth-limited and sampling by win-chance loss (" + between.join(",") + ")");
+  assert(between.length >= 3 && between.length <= 5 && between.every((id) => E.TIERS[id].winT > 0 && E.TIERS[id].depth),
+    "B4: 3–5 rungs between 休闲 and 初级 (v8-1-plan T1 added one), each depth-limited and sampling by win-chance loss (" + between.join(",") + ")");
+  // v8-1-plan T1: from 初级 up, Stockfish's own UCI_Elo searched to the depth
+  // it picks its move at (1 + its Skill level: deeper changes nothing but the
+  // time), then node-limited full strength, then 不限档
+  {
+    const up = O.LEVELS.slice(O.LEVELS.indexOf("easy"), O.LEVELS.indexOf("extreme"));
+    const lvl = (elo) => { const e = (elo - 1320) / 1870; return Math.min(19, Math.max(0, ((37.2473 * e - 40.8525) * e + 22.2944) * e - 0.311438)); };
+    const elo = up.filter((id) => E.TIERS[id].elo != null), nodes = up.filter((id) => E.TIERS[id].nodes);
+    assert(up.length >= 8 && up.length <= 12 && elo.length + nodes.length === up.length && nodes.length >= 1 && nodes.length <= 2 &&
+      up.indexOf(nodes[0]) === elo.length, "T1: 8–12 rungs from 初级 below 不限档, UCI_Elo ones then 1–2 node-limited (" + up.join(",") + ")");
+    const off = elo.filter((id) => E.TIERS[id].depth !== 1 + Math.floor(lvl(E.TIERS[id].elo)) || !E.TIERS[id].minMs);
+    assert(off.length === 0, "T1: each UCI_Elo rung searches to its pick depth, and holds its reply like a depth rung" + (off.length ? " — " + off : ""));
+    assert(E.searchCmd({ depth: 3 }, Math.random) === "go depth 3" && E.searchCmd({ movetime: 700 }, Math.random) === "go movetime 700" &&
+      E.searchCmd({ nodes: 10000 }, () => 0) === "go nodes 8500" && E.searchCmd({ nodes: 10000 }, () => 1) === "go nodes 11500",
+      "T1: a node rung's count is drawn ±15% a move, so the same moves do not get the same game");
+  }
   assert(between.every((id) => E.TIERS[id].skill <= 5), "B4: …at a low Skill Level");
   {
     assert(O.LEVELS.every((id) => typeof O.EN_NAME[id] === "string"), "B4: every rung has a PGN name");
@@ -2541,8 +2556,12 @@ for (const lang of CONTENT_LANGS) {
     assert(Math.abs(E.winPct(0) - 50) < 1e-9 && E.winPct(300) > 70 && E.winPct(-300) < 30, "B4: win chance is Lichess's curve");
   }
 
-  // personas: 8–12, one per rung, a style persona.js knows, an icon icons.js draws
-  assert(O.PERSONAS.length >= 8 && O.PERSONAS.length <= 12, "B4: 8–12 personas (" + O.PERSONAS.length + ")");
+  // personas: one per rung (v8-1-plan T1: 8–12 until the ladder was re-stepped), a style persona.js knows, an icon icons.js draws
+  assert(O.PERSONAS.length === O.LEVELS.length, "B4: a persona for every rung (" + O.PERSONAS.length + ")");
+  // v8-1-plan T1: the dialog's three segments, in ladder order, none empty
+  assert(O.SEGMENTS.length === 3 && O.LEVELS.every((id, i) => i === 0 || O.segmentOf(id) >= O.segmentOf(O.LEVELS[i - 1])) &&
+    [0, 1, 2].every((k) => O.LEVELS.some((id) => O.segmentOf(id) === k)) && O.segmentOf("easy") === 1 && O.segmentOf("solid") === 0,
+    "T1: the rungs fall into 入门 / 进阶 / 高手 in ladder order, 进阶 from 初级 on");
   assert(new Set(O.PERSONAS.map((p) => p.level)).size === O.PERSONAS.length && O.PERSONAS.every((p) => O.LEVELS.includes(p.level)),
     "B4: each persona is its own rung of the ladder");
   assert(O.PERSONAS.every((p) => ctx.ChessPersona.IDS.includes(p.style)), "B4: each persona's style is one persona.js plays");
@@ -2567,7 +2586,8 @@ for (const lang of CONTENT_LANGS) {
     const T = LINES[lang];
     // the end-of-game line is the persona's own or the shared `bye`
     const gaps = O.PERSONAS.filter((p) => !T[p.id] || !T[p.id].name || !T[p.id].hello).map((p) => p.id)
-      .concat(["say", "bye", "noOpening"].filter((k) => !T[k]));
+      .concat(["say", "bye", "noOpening", "segAria"].filter((k) => !T[k]))
+      .concat(Array.isArray(T.seg) && T.seg.length === O.SEGMENTS.length && T.seg.every((x) => /\S/.test(x)) ? [] : ["seg"]);
     assert(gaps.length === 0, "B4: " + lang + " names every persona and gives it both lines" + (gaps.length ? " — " + gaps.slice(0, 4) : ""));
     if (lang !== "zh-CN") {
       const same = O.PERSONAS.filter((p) => p.id !== "fish" && T[p.id].hello === LINES["zh-CN"][p.id].hello);
@@ -2607,6 +2627,10 @@ for (const lang of CONTENT_LANGS) {
     assert(O.thinkPlan(easy, 10000, 10000).search > O.thinkPlan(easy, 10000, 0).search, "B4: the increment counts");
     const d = O.thinkPlan(E.TIERS.beginner, 600000, 0);
     assert(d.search === 0 && d.pace > 0, "B4: a depth rung is not given a movetime, only a pace");
+    // v8-1-plan T1: a node rung's count is its calibrated search, in engine.js's own nodes per ms
+    const nr = { nodes: 90000 };
+    assert(O.NODES_PER_MS === E.NODES_PER_MS && O.thinkPlan(nr, 1800000, 0).search === 200 && O.thinkPlan(nr, 4000, 0).search < 200,
+      "T1: a node rung searches its count on a long clock and fewer nodes short of time");
   }
 
   // resigning and offering a draw
@@ -2739,13 +2763,17 @@ for (const lang of CONTENT_LANGS) {
     assert(off.length === 0, "B4: opponents.js's ratings are docs/measured.json's" + (off.length ? " — " + off.join(",") : ""));
     assert(O.LEVELS.every((id, i) => i === 0 || O.RATING[id] > O.RATING[O.LEVELS[i - 1]]), "B4: the ladder is monotone");
     assert(lad.rating.easy === 1320 && lad.rating.normal === 1700, "B4: anchored at 1320 and 1700");
-    // the plan's acceptance, where B4 built the rungs: from 新手 to 扎实 each
-    // step is one the stronger side scores 60–75% on. (The UCI_Elo rungs'
-    // steps are recorded beside them; see docs/measured.json `ladder.adjacent`.)
-    const ramp = lad.adjacent.filter((a) => O.LEVELS.indexOf(a.upper) <= O.LEVELS.indexOf("solid"));
-    const outside = ramp.filter((a) => !(a.fitPct >= 60 && a.fitPct <= 75));
-    assert(ramp.length === 5 && outside.length === 0,
-      "B4: 新手 → 扎实, every step 60–75% (" + ramp.map((a) => a.upper + " " + a.fitPct + "%").join(", ") + ")");
+    // the plan's acceptance (B4 for 新手 → 扎实, v8-1-plan T1 for the whole
+    // ladder): every step one the stronger side scores 60–75% on, as fitted.
+    // Each step's 95% interval is recorded beside it (`fitCi`, `h2hCi`) —
+    // this holds the point estimate, which is what the games say; the
+    // intervals say how sure (docs/v8-1-plan.md §9 M3).
+    const outside = lad.adjacent.filter((a) => !(a.fitPct >= 60 && a.fitPct <= 75));
+    assert(lad.adjacent.length === O.LEVELS.length - 1 && lad.adjacent.every((a, i) => a.lower === O.LEVELS[i] && a.upper === O.LEVELS[i + 1]) &&
+      outside.length === 0 && lad.adjacent.every((a) => Array.isArray(a.fitCi) && a.fitCi[0] <= a.fitPct && a.fitPct <= a.fitCi[1]),
+      "T1: 新手 → 不限档, every step 60–75%, each with its interval (" + outside.map((a) => a.upper + " " + a.fitPct + "%").join(", ") + ")");
+    assert(Number.isFinite(lad.engineHours) && lad.played > 0 && lad.games === lad.played + lad.carried,
+      "T1: the record says how many games were played for it, how many carried, and the engine time");
     const stale = O.LEVELS.filter((id) => JSON.stringify(lad.settings[id]) !== JSON.stringify(Object.assign({}, E.TIERS[id],
       { style: (O.PERSONAS.find((p) => p.level === id) || {}).style || "off" })));
     assert(stale.length === 0, "B4: the run measured the rungs that ship (re-run scripts/test-ladder.mjs)" + (stale.length ? " — " + stale.join(",") : ""));

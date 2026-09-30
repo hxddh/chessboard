@@ -1205,20 +1205,41 @@ await scenario("对手角色", async () => {
   const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "normal", humanColor: "w" });
   await page.click("#idle-new");
   await page.waitForTimeout(400);
-  const dlg = await page.evaluate(() => ({
+  const dialog = () => page.evaluate(() => ({
     open: document.getElementById("newgame-modal").classList.contains("show"),
+    segs: [...document.querySelectorAll("#op-seg button")].map((b) => ({ label: b.textContent.trim(), on: b.getAttribute("aria-pressed") === "true" })),
     cards: [...document.querySelectorAll("#op-grid .op-card")].map((b) => ({
-      id: b.dataset.op, shown: !!b.offsetParent, name: b.querySelector(".op-name").textContent.trim(),
+      id: b.dataset.op, shown: !b.hidden && !!b.offsetParent, name: b.querySelector(".op-name").textContent.trim(),
       rating: Number(b.querySelector(".op-rating").textContent), style: b.querySelector(".op-style").textContent.trim(),
       av: !!b.querySelector(".op-av svg"), on: b.classList.contains("active") })),
-    focus: document.activeElement && document.activeElement.dataset.op,
+    focus: document.activeElement && (document.activeElement.dataset.op || (document.activeElement.dataset.seg && "seg" + document.activeElement.dataset.seg)),
   }));
-  assert(dlg.open && dlg.cards.length >= 8 && dlg.cards.length <= 12 && dlg.cards.every((c) => c.shown && c.name && c.av && c.rating > 0 && c.style),
-    "对手角色：新对局对话框里一排角色卡，每张有头像、名字、等级分和风格", JSON.stringify(dlg.cards.slice(0, 3)));
+  const dlg = await dialog();
+  const shownIds = (d) => d.cards.filter((c) => c.shown).map((c) => c.id);
+  // v8-1-plan T1: one card per rung, a segment of them at a time
+  assert(dlg.open && dlg.cards.length >= 18 && dlg.cards.every((c) => c.name && c.av && c.rating > 0 && c.style),
+    "对手角色：新对局对话框里每档一张角色卡，每张有头像、名字、等级分和风格", JSON.stringify(dlg.cards.slice(0, 3)));
   assert(dlg.cards.every((c, i) => i === 0 || c.rating > dlg.cards[i - 1].rating), "对手角色：等级分从弱到强排",
     dlg.cards.map((c) => c.rating).join(","));
+  assert(dlg.segs.map((x) => x.label).join("/") === "入门/进阶/高手" && dlg.segs[1].on && !dlg.segs[0].on && !dlg.segs[2].on,
+    "对手角色（T1）：卡片分入门 / 进阶 / 高手三段，打开时停在当前对手（中级）所在的「进阶」", JSON.stringify(dlg.segs));
+  const mid = shownIds(dlg);
+  assert(mid.includes("sol") && mid.includes("ben") && !mid.includes("pip") && !mid.includes("fish") && mid.length >= 4,
+    "对手角色（T1）：只显示这一段的卡片", mid.join(","));
   assert(dlg.cards.filter((c) => c.on).length === 1 && dlg.focus === dlg.cards.find((c) => c.on).id,
     "对手角色：「换个对手」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
+  // a tab by keyboard: focus it, Enter
+  await page.focus('#op-seg button[data-seg="2"]');
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(150);
+  const top = await dialog();
+  assert(top.segs[2].on && shownIds(top).includes("fish") && shownIds(top).includes("max") && !shownIds(top).includes("sol") && top.focus === "seg2",
+    "对手角色（T1）：键盘回车换到「高手」，卡片跟着换，焦点留在分段上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
+  await page.click('#op-seg button[data-seg="0"]');
+  await page.waitForTimeout(150);
+  const low = await dialog();
+  assert(low.segs[0].on && shownIds(low)[0] === "pip" && shownIds(low).includes("lina") && low.cards.find((c) => c.id === "sol").on,
+    "对手角色（T1）：换段只换显示的卡片，选中的对手不变", JSON.stringify(shownIds(low)));
   await page.click('#op-grid .op-card[data-op="lina"]');
   await page.waitForTimeout(150);
   await page.click("#ng-start");

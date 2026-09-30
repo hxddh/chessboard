@@ -4965,6 +4965,54 @@ if (scenario()) {
     }
   }
 }
+// --- v8-1-plan T1: the new-game dialog's personas, a segment at a time -------
+// Twenty-odd cards are three segments (入门 / 进阶 / 高手) over the grid: the
+// tabs are equal thirds to the tenth of a pixel in every language, no label
+// is cut, and each segment's cards sit inside the dialog without a sideways
+// scroll — in a wide window and at phone width.
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 390, height: 700 }]) {
+      const { ctx, page, errs } = await open(lang, "ai", "play", "wood", viewport);
+      await page.waitForFunction(() => document.querySelectorAll("#op-seg button").length === 3, null, { timeout: 5000 }).catch(() => {});
+      await page.evaluate(() => document.getElementById("btn-new").click());
+      await page.waitForTimeout(400);
+      for (const k of [0, 1, 2]) {
+        await page.click('#op-seg button[data-seg="' + k + '"]', { timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(150);
+        const r = await page.evaluate(() => {
+          const seg = document.getElementById("op-seg");
+          const bs = [...seg.querySelectorAll("button")];
+          const modal = document.querySelector("#newgame-modal .modal");
+          const mr = modal.getBoundingClientRect();
+          const cards = [...document.querySelectorAll("#op-grid .op-card")].filter((c) => !c.hidden && c.offsetParent);
+          const cut = (e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1;
+          return {
+            shown: !seg.hidden && !!seg.offsetParent, n: bs.length,
+            on: bs.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.seg),
+            widths: bs.map((b) => b.getBoundingClientRect().width),
+            heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+            spill: bs.filter(cut).map((b) => b.textContent.trim()),
+            labels: bs.map((b) => b.textContent.trim()),
+            cards: cards.length,
+            cardSpill: cards.filter((c) => [...c.querySelectorAll(".op-name, .op-meta")].some(cut)).map((c) => c.dataset.op),
+            past: cards.concat(bs).filter((e) => e.getBoundingClientRect().right > mr.right + 0.5 || e.getBoundingClientRect().left < mr.left - 0.5).length,
+            sideways: modal.scrollWidth - modal.clientWidth,
+          };
+        });
+        const tag = `T1 对手分段 (${lang}, ${viewport.width}×${viewport.height}, 第 ${k + 1} 段)`;
+        assert(r.shown && r.n === 3 && r.on.join() === String(k), `${tag}: 三段都在，按下的是这一段 (${r.on.join()})`);
+        assert(Math.max(...r.widths) - Math.min(...r.widths) < 0.1, `${tag}: 三段等宽 (${r.widths.map((w) => w.toFixed(2)).join(", ")})`);
+        assert(r.heights.length === 1 && r.labels.every(Boolean) && r.spill.length === 0,
+          `${tag}: 一样高、字不出按钮 (${r.labels.join(" / ")}; ${r.spill.join(", ") || "—"})`);
+        assert(r.cards >= 4 && r.cardSpill.length === 0 && r.past === 0 && r.sideways <= 0,
+          `${tag}: ${r.cards} 张卡片都在对话框里、名字和分数没被截 (${r.cardSpill.join(", ") || "—"}; ${r.sideways}px)`);
+      }
+      assert(errs.length === 0, `T1 对手分段 (${lang}, ${viewport.width}): 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

@@ -1,0 +1,94 @@
+name: ladder
+
+# The opponent ladder, measured on machines that do nothing else
+# (v8-1-plan T1).
+#
+# docs/measured.json `ladder` says how far apart the rungs are: the stronger
+# of two neighbours should score 60–75%. Those numbers come from a
+# round-robin of self-play games (scripts/test-ladder.mjs), which is
+# CPU-bound — thousands of games, hours of engine time — and the 8.1 run was
+# made on a shared development machine, so its intervals are wider than the
+# acceptance band in places and the movetime rung (不限档) searched fewer
+# nodes a move than it does on a player's machine. This workflow re-runs it
+# where the numbers can be trusted: 16 jobs × 4 processes, one engine each,
+# then one fit over everything and the fit's own verdict (monotone, every
+# step 60–75%) as the job's result. The fitted table is uploaded; putting it
+# into docs/measured.json and opponents.js is a person's commit.
+#
+# Manual only. It is not a release gate: a gate that takes hours and can
+# fail on sampling noise is one people learn to skip. It is the thing to
+# press after changing a rung in engine.js TIERS.
+on:
+  workflow_dispatch:
+    inputs:
+      adjacent:
+        description: games per pairing of neighbours
+        default: "120"
+      near:
+        description: games per pairing two rungs apart
+        default: "24"
+      far:
+        description: games per pairing further apart
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
+      # four shards per job, one per core: 64 in all. A game already in the
+      # directory is not played again, so a job that hits its timeout still
+      # uploads what it finished.
+      - name: self-play
+        shell: bash
+        run: |
+          for k in 1 2 3 4; do
+            node scripts/test-ladder.mjs play --shard=$(( (${{ matrix.job }} - 1) * 4 + k ))/64 --out=out \
+              --adjacent=${{ inputs.adjacent }} --near=${{ inputs.near }} --far=${{ inputs.far }} > /dev/null &
+          done
+          wait
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ladder-${{ matrix.job }}
+          path: out/*.jsonl
+
+  fit:
+    needs: play
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ladder-*
+          path: out
+          merge-multiple: true
+      # --record writes the fit into this checkout's docs/measured.json,
+      # which is uploaded below; the exit code is the verdict
+      - name: fit
+        run: node scripts/test-ladder.mjs fit --in=out --record
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ladder-fit
+          path: docs/measured.json

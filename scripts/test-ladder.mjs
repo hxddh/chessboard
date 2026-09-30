@@ -87,9 +87,10 @@ function schedule() {
   // --pairs=a:b[:n],c:d plays just those pairings (tuning)
   const pairs = arg("pairs", "");
   if (pairs) {
+    const had = new Set();
     for (const p of pairs.split(",")) {
-      const [a, b, n] = p.split(":"); // a:b[:games]
-      for (let k = 0; k < (n ? Number(n) : nAdj); k++) out.push({ a, b, k });
+      const [a, b, n] = p.split(":"); // a:b[:games]; a pairing named twice is played once
+      for (let k = 0; k < (n ? Number(n) : nAdj); k++) if (!had.has(a + ":" + b + ":" + k)) { had.add(a + ":" + b + ":" + k); out.push({ a, b, k }); }
     }
     return out;
   }
@@ -269,24 +270,37 @@ function invert(M) {
   return A.map((row) => row.slice(m));
 }
 
+/**
+ * v8-1-plan T1: a game belongs to the rungs whose settings it was played
+ * with, whatever they were called then — the candidates searched for with
+ * --rungs had other names than the rungs that shipped. `minMs` is left out
+ * of the comparison: the harness never holds a reply (ladder-player.mjs), so
+ * it cannot change a game.
+ */
+const playKey = (row) => {
+  const o = Object.assign({}, row);
+  delete o.minMs;
+  return JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
+};
+
 function fit() {
-  const dir = arg("in", null);
-  if (!dir) { console.error("--in=DIR"); process.exit(2); }
+  const dirs = arg("in", "").split(",").filter(Boolean);
+  if (!dirs.length) { console.error("--in=DIR[,DIR…]"); process.exit(2); }
+  const byPlay = new Map(LEVELS.map((id) => [playKey(shipped(id)), id]));
+  const loose = process.argv.includes("--loose");
   const games = [];
   let stale = 0;
   const seen = new Set();
-  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".jsonl")).sort()) {
+  for (const dir of dirs) for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".jsonl")).sort()) {
     for (const line of fs.readFileSync(path.join(dir, f), "utf8").split("\n").filter(Boolean)) {
       const g = JSON.parse(line);
       if (seen.has(g.key)) continue;
       seen.add(g.key);
-      // a game played with settings that are not the ones engine.js ships
-      // describes some other rung
-      // (--loose: fit whatever was played — tuning runs with --override)
-      if (!process.argv.includes("--loose") && (JSON.stringify(g.ta) !== JSON.stringify(shipped(g.a)) ||
-          JSON.stringify(g.tb) !== JSON.stringify(shipped(g.b)))) { stale++; continue; }
-      if (!LEVELS.includes(g.a) || !LEVELS.includes(g.b)) { stale++; continue; }
-      games.push(g);
+      // a game played with settings no rung ships describes some other rung
+      // (--loose: fit whatever was played, by name — tuning runs with --override)
+      const a = loose ? g.a : byPlay.get(playKey(g.ta)), b = loose ? g.b : byPlay.get(playKey(g.tb));
+      if (!a || !b || a === b || !LEVELS.includes(a) || !LEVELS.includes(b)) { stale++; continue; }
+      games.push(Object.assign({}, g, { a, b }));
     }
   }
   const pairs = {};
@@ -306,11 +320,11 @@ function fit() {
     const same = (id) => LEVELS.includes(id) && prev.settings[id] && JSON.stringify(prev.settings[id]) === JSON.stringify(shipped(id));
     for (const q of prev.pairs) {
       if (!same(q.a) || !same(q.b)) continue;
-      // a pairing re-played in this directory is not also carried (its new
-      // games are in, and the record it came from is the one being replaced)
-      const own = q.games - (q.carried || 0);
+      // a pairing played in this directory replaces its totals on record
+      // rather than adding to them: fitting the same directory twice must
+      // not count its games twice
       const p = pairOf(q.a, q.b);
-      if (p.games && own) continue;
+      if (p.games) continue;
       add(p, q.a, q.games, q.scoreA, q.draws);
       p.carried += q.games;
       carried += q.games;

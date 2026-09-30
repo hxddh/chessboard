@@ -246,15 +246,23 @@
               <button type="button" data-diff="learner" title="按胜率损失抽样、只算两步的陪练" data-i18n-title="tip.diff.learner" data-i18n="diff.learner">练习</button>
               <button type="button" data-diff="improver" title="比练习档少犯一些错" data-i18n-title="tip.diff.improver" data-i18n="diff.improver">进步</button>
               <button type="button" data-diff="steady" title="算三步，大失误少见" data-i18n-title="tip.diff.steady" data-i18n="diff.steady">稳健</button>
-              <button type="button" data-diff="solid" title="算四步，初级之前的最后一档" data-i18n-title="tip.diff.solid" data-i18n="diff.solid">扎实</button>
+              <button type="button" data-diff="solid" title="算四步，大失误很少" data-i18n-title="tip.diff.solid" data-i18n="diff.solid">扎实</button>
+              <!-- v8-1-plan T1: one more between 扎实 and 初级 -->
+              <button type="button" data-diff="skilled" title="算五步，初级之前的最后一档" data-i18n-title="tip.diff.skilled" data-i18n="diff.skilled">老练</button>
             </div>
             <span class="diff-group" data-i18n="diff.groupEngine">棋力档</span>
             <div class="theme-row wrap" id="diff-seg-engine" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
               <button type="button" data-diff="easy" title="Stockfish UCI_Elo 1320(该选项的下限)" data-i18n-title="tip.diffEasy" data-i18n="diff.easy">初级</button>
-              <button type="button" data-diff="easyplus" title="Stockfish UCI_Elo 1450" data-i18n-title="tip.diff.easyplus" data-i18n="diff.easyplus">初级+</button>
-              <button type="button" data-diff="normalminus" title="Stockfish UCI_Elo 1575" data-i18n-title="tip.diff.normalminus" data-i18n="diff.normalminus">中级−</button>
+              <button type="button" data-diff="easyplus" title="Stockfish UCI_Elo 1500 · MultiPV 6" data-i18n-title="tip.diff.easyplus" data-i18n="diff.easyplus">初级+</button>
+              <button type="button" data-diff="normalminus" title="Stockfish UCI_Elo 1500" data-i18n-title="tip.diff.normalminus" data-i18n="diff.normalminus">中级−</button>
               <button type="button" data-diff="normal" class="active" title="Stockfish UCI_Elo 1700" data-i18n-title="tip.diffNormal" data-i18n="diff.normal">中级</button>
-              <button type="button" data-diff="hard" title="Stockfish UCI_Elo 2200" data-i18n-title="tip.diffHard" data-i18n="diff.hard">高级</button>
+              <!-- v8-1-plan T1: the rungs re-stepped by what the games measured
+                   (engine.js TIERS). An Elo value is not a word: its tooltip
+                   is the same in every language and needs no key. -->
+              <button type="button" data-diff="normalplus" title="Stockfish UCI_Elo 1840" data-i18n="diff.normalplus">中级+</button>
+              <button type="button" data-diff="hard" title="Stockfish UCI_Elo 2290" data-i18n-title="tip.diffHard" data-i18n="diff.hard">高级</button>
+              <button type="button" data-diff="hardplus" title="Stockfish UCI_Elo 2450" data-i18n="diff.hardplus">高级+</button>
+              <button type="button" data-diff="expert" title="Stockfish UCI_Elo 2570" data-i18n="diff.expert">专家</button>
               <button type="button" data-diff="extreme" title="Stockfish 满强度" data-i18n-title="tip.diff.extreme" data-i18n="diff.extreme">满强度</button>
             </div>
           </div>
