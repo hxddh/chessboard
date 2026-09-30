@@ -51,7 +51,13 @@ export function createLessonsUI(d) {
   function startLearn() {
     startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
   }
-  function stopLearn() { if (store.session.learn) store.session.learn.token++; store.session.learn = null; store.session.study = null; }
+  function stopLearn() { if (store.session.learn) store.session.lastLearnToken = ++store.session.learn.token; store.session.learn = null; store.session.study = null; }
+  /**
+   * A new run's first token: past the run being left (or the last one
+   * stopped), so an engine reply still in flight for it can never match —
+   * a lesson started from an endgame used to begin at 0 again (M3 评审).
+   */
+  function carryToken() { return (store.session.learn ? store.session.learn.token : store.session.lastLearnToken || 0) + 1; }
 
   // --- 6.0: reading a classic game (v6-plan Q3.5) ----------------------------
   // A study is learn mode with no lesson: the main board holds the game, the
@@ -139,7 +145,7 @@ export function createLessonsUI(d) {
     store.session.study = null;
     store.session.learnState.last = i;
     saveLearnState();
-    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
+    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
 
@@ -150,7 +156,7 @@ export function createLessonsUI(d) {
     store.session.study = null;
     // the token carries on from the run being left: an engine reply still in
     // flight for it must not match the new run's first token
-    store.session.learn = { li, eg: id, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: store.session.learn ? store.session.learn.token + 1 : 0, misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: false };
+    store.session.learn = { li, eg: id, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: false };
     startLearnTask();
   }
 

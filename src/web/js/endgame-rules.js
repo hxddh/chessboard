@@ -75,7 +75,7 @@
       // a new black queen ends it — unless White takes it at once (the bishop
       // or knight guarding the square), has a queen of its own, or is one step
       // from one (Réti's study ends queen against queen)
-      if (bm.q > ((start && start.bq) || 0) && !material(g, "w").q && !onSeventh(g) &&
+      if (bm.q > lowQueens(g, (start && start.bq) || 0) && !material(g, "w").q && !onSeventh(g) &&
         !(g.turn() === "w" && g.moves({ verbose: true }).some((m) => m.captured === "q"))) return { ok: false, how: "queened" };
       return null;
     }
@@ -84,6 +84,22 @@
     if (!canMate(material(g, "w"))) return { ok: false, how: "material" };
     if (!(start && start.bare) && bare(material(g, "b")) && keepsHeavy(g)) return { ok: true, how: "bare" };
     return null;
+  }
+
+  /**
+   * The fewest queens the engine has had since the start (M3 评审): its
+   * queens at the start, less each one White took, plus each it made. The
+   * start's count alone let a queen made after the original was taken pass
+   * as "the one it began with".
+   */
+  function lowQueens(g, bq) {
+    let live = bq, low = bq;
+    for (const m of g.history({ verbose: true })) {
+      if (m.color === "w" && m.captured === "q") live--;
+      if (m.color === "b" && m.promotion === "q") live++;
+      if (live < low) low = live;
+    }
+    return Math.max(0, low);
   }
 
   /** a white pawn on the seventh rank */

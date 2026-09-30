@@ -125,6 +125,26 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   assert(r12c === null, "……你下一步就能吃掉新后（象守着升变格）时也不算");
   const r12b = at("8/2P5/8/8/8/4k3/8/K3q3 w - - 0 1", "draw", { bq: 0 });
   assert(r12b === null, "……你的兵也在第 7 横线、下一步就变后时也不算（列蒂的名题就是后对后和棋）");
+  // M3 评审：开局就有的后被吃掉以后，对方再变出来的后是新后
+  {
+    const q = new Chess("K4R2/8/8/8/5q2/2k5/p7/8 w - - 0 1");
+    const st = Rules.startOf(q);
+    for (const m of ["Rxf4", "a1=Q+"]) assert(q.move(m), "着法 " + m + " 合法");
+    const rq = Rules.outcome(q, "draw", st);
+    assert(st.bq === 1 && rq && !rq.ok && rq.how === "queened", "守和：原来的后被吃掉之后再变出一个后 → 失败", JSON.stringify(rq));
+    const keep = new Chess("K4R2/8/8/8/5q2/2k5/8/8 w - - 0 1");
+    const st2 = Rules.startOf(keep);
+    keep.move("Rf7");
+    assert(Rules.outcome(keep, "draw", st2) === null, "……原来的后一直在，不算新后");
+  }
+  // M3 评审：从残局回到一课，令牌同样接着走（startEndgame 已经这样做），
+  // 不再从 0 开始——上一轮还在路上的引擎回复不会对上新一轮的第一个令牌
+  {
+    const src = fs.readFileSync(path.join(ROOT, "src/web/js/trainer/lessons.js"), "utf8");
+    const starts = [...src.matchAll(/store\.session\.learn = \{[^\n]*token: ([^,]+),/g)].map((m) => m[1]);
+    assert(starts.length === 2 && starts.every((x) => x === "carryToken()") && /store\.session\.lastLearnToken = \+\+store\.session\.learn\.token/.test(src),
+      "startLesson 与 startEndgame 都接着上一轮（或上次停下的）令牌走", starts.join(" / "));
+  }
   const r13 = at("8/8/8/8/8/2k5/8/K1R5 b - - 0 1", "draw");
   assert(r13 && r13.ok && r13.how === "bare", "守和：对方只剩光王 → 达成");
   // threefold: shuffle the kings twice round
@@ -209,6 +229,10 @@ function camp(learnState) {
   assert(out.eg.srs.x.s === 1 && out.eg.srs.y.s === 2, "……复习取阶梯走得更远的一条");
   const old = ChessLearning.merge({ learn: JSON.stringify({ v: 1, done: {}, last: 0 }) }, { kind: "chessboard-learning", v: 1, data: { learn: { v: 1, done: { a: true }, last: 1 } } }, 100).learn;
   assert(!("eg" in old), "两边都没有 eg（8.0 的文件）就不凭空加一个");
+  // M3 评审：这里已经毕业（做过、复习项已离开队列）的残局，旧文件里的复习项不再带回来
+  const grad = ChessLearning.merge({ learn: JSON.stringify({ v: 1, done: {}, last: 0, eg: { done: { g: 1 }, srs: {} } }) },
+    { kind: "chessboard-learning", v: 1, data: { learn: { v: 1, done: {}, last: 0, eg: { done: { g: 1 }, srs: { g: { s: 2, n: 3, due: 9, ivl: 3 }, h: { s: 0, n: 1, due: 1, ivl: 0 } } } } } }, 100).learn;
+  assert(!("g" in grad.eg.srs) && grad.eg.srs.h && grad.eg.srs.h.s === 0, "……毕业的不复活；这里没做过的照常进来", JSON.stringify(grad.eg.srs));
 }
 
 // ----------------------------------------------------------- the chunk

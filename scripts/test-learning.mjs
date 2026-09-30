@@ -982,6 +982,14 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(merged.bank && merged.bank["lc-bbb"] === 1200 && merged.bank["lc-ccc"] === 1400, "T6: importing learning data keeps both sides' band notes");
   const plain = L.merge({ puzzles: JSON.stringify({ solved: {}, missed: {} }) }, { kind: L.LEARNING_KIND, v: 1, data: { puzzles: { solved: {}, missed: {} } } }, 100).puzzles;
   assert(!("bank" in plain), "T6: …and adds no table to a state that had none");
+  // M3 评审: the review queue merges by the srs.js fields ({s, n, due, ivl}), not a `streak` no entry has
+  {
+    const pc = { puzzles: JSON.stringify({ solved: {}, missed: { p1: { s: 0, n: 1, due: 5, ivl: 0 }, p2: { s: 2, n: 3, due: 9, ivl: 3 } } }) };
+    const pi = { kind: L.LEARNING_KIND, v: 1, data: { puzzles: { solved: {}, missed: { p1: { s: 1, n: 2, due: 7, ivl: 1 }, p2: { s: 1, n: 5, due: 1, ivl: 1 } } } } };
+    const mp = L.merge(pc, pi, 100).puzzles.missed;
+    assert(mp.p1.s === 1 && mp.p1.due === 7 && mp.p2.s === 2 && mp.p2.due === 9,
+      "M3: importing learning data keeps the queue entry further up the ladder, from either side", JSON.stringify(mp));
+  }
   // M3 评审: the repertoire's card schedules ride along in the learning file
   {
     const repCur = { repertoire: JSON.stringify({ v: 1, w: [], b: [], db: 2, n: 0, sig: "x" }) };
