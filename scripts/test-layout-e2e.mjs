@@ -564,7 +564,7 @@ if (scenario()) for (const [when, mode, setup] of [
   // that it is not offered here; being *drawn* and not offered is the defect.
   ["教学·最后一课(没做过)", "learn", async (page) => {
     await page.evaluate(() => {
-      const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])")];
+      const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])")];
       items[items.length - 1].click();
     });
     await page.waitForTimeout(800);
@@ -2498,9 +2498,10 @@ if (scenario()) {
     const { ctx, page } = await open(lang, "learn", "play");
     // 6.0: the list ends with the ten classic games (data-c), which are read,
     // not answered — no button row, and v8-1-plan T2 put the endgame camp
-    // (data-eg) after them. The probes stay on the lessons proper, and
+    // (data-eg) after them — and v8-2-plan T3 the same ten games to guess
+    // (data-gs) between the two. The probes stay on the lessons proper, and
     // the last of those is still the one with the graduation button.
-    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])").length);
+    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])").length);
     assert(n > 60, lang + ": the course is loaded (" + n + " lessons)");
     // the lessons that show all four, plus the last one — its label is the
     // longest in the file and it appears in a two-button row
@@ -5146,6 +5147,99 @@ if (scenario()) {
       assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
         `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-2-plan T3: 名局猜着 — its card mid-game and at the end -------------
+// In three languages, at the widest window and the narrowest (one game per
+// language, the window narrowed and widened again around each look): the card's
+// lines (the verdict, the running figures, the biggest deviation) and the
+// task strip cut nothing off, its three buttons are one row of one height
+// with their words inside, and the page does not scroll sideways. The engine
+// is scripted (engine-src.js is a stub here): 1.d4 for Morphy's 1.e4 costs
+// 200 cp, every other position is level.
+if (scenario()) {
+  const OPERA_UCI = ["e2e4", "e7e5", "g1f3", "d7d6", "d2d4", "c8g4", "d4e5", "g4f3", "d1f3", "d6e5", "f1c4", "g8f6",
+    "f3b3", "d8e7", "b1c3", "c7c6", "c1g5", "b7b5", "c3b5", "c6b5", "c4b5", "b8d7", "e1c1", "a8d8", "d1d7", "d8d7",
+    "h1d1", "e7e6", "b5d7", "f6d7", "b3b8", "d7b8", "d1d8"];
+  const xy = (page, sq) => page.evaluate((q) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    const f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const probe = (page) => page.evaluate(() => {
+    const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
+    const out = [];
+    for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, #gs-panel p")) {
+      if (!e.offsetParent) continue;
+      if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
+    }
+    const strip = document.getElementById("task-strip-text");
+    if (strip && strip.offsetParent && strip.scrollWidth > strip.clientWidth + 1) out.push("strip:" + strip.textContent.slice(0, 18));
+    const bs = [...document.querySelectorAll("#gs-panel .lesson-controls button")].filter((b) => !b.hidden && b.offsetParent);
+    const tops = new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top)));
+    return { cut: out, n: bs.length, rows: tops.size,
+      heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+      spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent.trim()),
+      say: (document.getElementById("gs-say") || {}).textContent || "",
+      worst: (document.getElementById("gs-worst") || {}).textContent || "",
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+  });
+  const WIDE = { width: 1400, height: 900 }, NARROW = { width: 520, height: 800 };
+  /** probe at both sizes, back to the wide one after */
+  const both = async (page) => {
+    const out = [];
+    for (const v of [WIDE, NARROW]) {
+      await page.setViewportSize(v);
+      await page.waitForTimeout(300);
+      out.push([v, await probe(page)]);
+    }
+    await page.setViewportSize(WIDE);
+    await page.waitForTimeout(200);
+    return out;
+  };
+  for (const lang of LANGS) {
+    {
+      const { ctx, page, errs } = await open(lang, "learn", "play", "wood", WIDE);
+      await page.evaluate(() => {
+        window.__chess.engine.isReady = () => true;
+        window.__chess.engine.analyze = async (fen) => {
+          const turn = fen.split(" ")[1];
+          const cpW = fen.startsWith("rnbqkbnr/pppppppp/8/8/3P4/") ? -200 : 0;
+          return { cp: turn === "w" ? cpW : -cpW, mate: null, turn, best: null, pv: [], lines: [] };
+        };
+        document.querySelector("#sec-learn details.reading-index").open = true;
+        document.querySelector('#lesson-list button[data-gs="0"]').click();
+      });
+      const at = (ply, phase = "guess") => page.waitForFunction(([p, ph]) => {
+        const e = document.getElementById("gs-panel");
+        return !!e && e.dataset.at === String(p) && e.dataset.phase === ph;
+      }, [ply, phase], { timeout: 10000 }).then(() => true, () => false);
+      let ok = await at(0);
+      for (let ply = 0; ok && ply < OPERA_UCI.length; ply += 2) {
+        const u = ply === 0 ? "d2d4" : OPERA_UCI[ply];
+        for (const sq of [u.slice(0, 2), u.slice(2, 4)]) { const c = await xy(page, sq); await page.mouse.click(c.x, c.y); }
+        ok = ply + 2 < OPERA_UCI.length ? await at(ply + 2) : await at(OPERA_UCI.length, "done");
+        if (ply === 0 && ok) {
+          for (const [v, mid] of await both(page)) {
+            const tag = `T3 猜着 (${lang}, ${v.width}×${v.height})`;
+            assert(/1\. d4/.test(mid.say), `${tag}: 猜错一步后，判语在卡片上（${mid.say}）`);
+            assert(mid.cut.length === 0 && mid.sideways <= 0, `${tag}: 猜到一半，卡片、任务行与任务条没有被裁掉的字，页面不横向滚动` + (mid.cut.length ? " — " + mid.cut.join(", ") : ""));
+            assert(mid.n === 2 && mid.rows === 1 && mid.heights.length === 1 && mid.spill.length === 0,
+              `${tag}: 猜到一半，换一方 / 读棋 一排、一样高、字在框里 (${mid.n}; ${mid.rows} 行; ${mid.heights.join(", ")})`);
+          }
+        }
+      }
+      assert(ok, `T3 猜着 (${lang}): 一局猜完`);
+      for (const [v, end] of await both(page)) {
+        const tag = `T3 猜着 (${lang}, ${v.width}×${v.height})`;
+        assert(/1\. d4/.test(end.worst), `${tag}: 终局卡有最大偏差（${end.worst}）`);
+        assert(end.cut.length === 0 && end.sideways <= 0, `${tag}: 终局卡没有被裁掉的字，页面不横向滚动` + (end.cut.length ? " — " + end.cut.join(", ") : ""));
+        assert(end.n === 3 && end.rows === 1 && end.heights.length === 1 && end.spill.length === 0,
+          `${tag}: 看这一步 / 换一方 / 读棋 一排、一样高、字在框里 (${end.n}; ${end.rows} 行; ${end.heights.join(", ")}; ${end.spill.join(", ") || "—"})`);
+      }
+      assert(errs.length === 0, `T3 猜着 (${lang}): 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
   }
