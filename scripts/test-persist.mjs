@@ -322,7 +322,8 @@ function loadHost(zero, over) {
 // library a database without its stores
 {
   const fs = await import("fs");
-  const lib = fs.readFileSync(path.join(root, "src/web/js/library-db.js"), "utf8");
+  // DB_NAME lives in library-sum.js since v8-1-plan F3 (chunk-boot.js reads the summary too)
+  const lib = fs.readFileSync(path.join(root, "src/web/js/library-db.js"), "utf8") + fs.readFileSync(path.join(root, "src/web/js/library-sum.js"), "utf8");
   const st = fs.readFileSync(path.join(root, "src/web/js/selftest-native.js"), "utf8");
   const val = (src, name) => (new RegExp("const " + name + " = ([^;]+);").exec(src) || [])[1];
   const stores = (src) => [...src.matchAll(/createObjectStore\(([^)]*)\)/g)].map((m) => m[1]).join("|");
