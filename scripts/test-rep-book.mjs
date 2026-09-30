@@ -240,6 +240,16 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   const recs = B.indexLines("w", r.lines);
   assert(!B.movesAt(recs, key, "w").has("Bb5") && B.movesAt(recs, key, "w").has("Bc4"), "按局面看：这个局面只剩 Bc4");
   assert(B.removeMove(R, w, key, "Qh5") === null, "书里本来就没有的着法，拿不掉，也不动书");
+  // M3 评审 P2-2：拿掉之前说得出这一下有多大——几条线受影响、几条整条删掉
+  assert(r.cut === 2 && r.whole === 0, "拿掉 Bb5：两条线截短，没有整条删掉", JSON.stringify({ cut: r.cut, whole: r.whole }));
+  const root = B.removeMove(R, w, B.START_KEY, "e4");
+  assert(root.whole === 2 && root.cut === 2 && root.lines.length === 2,
+    "在起始局面拿掉 e4：经过它的两条线整条删掉（换序那条从 Nf3 开始，不经过这一着）", JSON.stringify({ cut: root.cut, whole: root.whole, n: root.lines.length }));
+  // 执黑的书截在第一个半着之后只剩白方的一着——那不是一条黑方的线，整条删掉
+  const bl = book([], ["e4 e5 Nf3 Nc6", "d4 d5 c4 e6"]).b;
+  const cutB = B.removeMove(R, bl, keyAfter("e4"), "e5", "b");
+  assert(cutB.lines.map((l) => l.sans).join() === "d4 d5 c4 e6" && cutB.whole === 1,
+    "执黑拿掉 1…e5：不留下只有 1. e4 的一条「线」", JSON.stringify(cutB.lines.map((l) => l.sans)));
 
   // 棋谱库反推：你执白走到这个局面 5 局里 4 局走 Bc4，书里写的是 Bb5
   const bk = book(["e4 e5 Nf3 Nc6 Bb5 a6", "d4 d5 c4 e6 Nc3"]);

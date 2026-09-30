@@ -206,9 +206,13 @@ export function createExplorerUI(d, bookLines) {
     if (at) (same || list.querySelector("button") || list).focus();
   }
 
-  /** Put `sans` into the chosen book, or its last move out of it (repertoire-ui.js edit). */
+  /**
+   * Put `sans` into the chosen book, or its last move out of it (repertoire-ui.js
+   * edit). A big removal asks first and every removal can be undone from its
+   * toast (M3 评审 P2-2), so the answer may come later; the rows follow either.
+   */
   function editBook(sans, remove) {
-    if (rep.edit(repSide(), sans, remove)) render();
+    Promise.resolve(rep.edit(repSide(), sans, remove, () => render())).then((ok) => { if (ok) render(); });
   }
 
   // 7.6: hold the rows still under a pressed pointer

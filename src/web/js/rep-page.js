@@ -121,9 +121,13 @@ async function bootRepertoire(d) {
   // committed a manifest without them: owed now (M5 review P3-1's rule)
   if (Persist.touchUnlisted && records.size) Persist.touchUnlisted(shardsOf([...records.keys()]));
 
-  /** The lines changed (import, edit, clear, learning file): index them again. */
-  function sync() {
-    const next = B.indexBook(book(), records);
+  /**
+   * The lines changed (import, edit, clear, learning file): index them again.
+   * `from`: records to take cards from as well (an undone removal, M3 评审
+   * P2-2) — the records here win where both have one.
+   */
+  function sync(from) {
+    const next = B.indexBook(book(), from ? new Map([...from, ...records]) : records);
     const { put, gone } = B.diff(records, next);
     records = next;
     version++;
@@ -157,7 +161,7 @@ async function bootRepertoire(d) {
   function removeAt(side, sans) {
     const pos = createReplay();
     for (const san of sans.slice(0, -1)) if (!pos.move(san)) return null;
-    return B.removeMove(R, book()[side === "b" ? "b" : "w"], pos.key(), sans[sans.length - 1]);
+    return B.removeMove(R, book()[side === "b" ? "b" : "w"], pos.key(), sans[sans.length - 1], side);
   }
 
   // --- the cross-check -------------------------------------------------------
@@ -250,6 +254,8 @@ async function bootRepertoire(d) {
     extra: () => (vouched ? { db: 2, n: records.size, sig: B.sigOf(book()) } : {}),
     sync,
     records: () => records,
+    /** the records as they are now, cards copied: what an undo gives back (M3 评审 P2-2) */
+    snapshot: () => new Map([...records].map(([id, x]) => [id, Object.assign({}, x, x.card ? { card: Object.assign({}, x.card) } : {})])),
     dueCount: () => B.dueCards(records, Date.now()).length,
     dueDrills,
     grade,

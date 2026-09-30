@@ -1292,7 +1292,7 @@ import { loadChunk } from "./chunk.js";
     const el = document.getElementById("toast");
     if (!el) return false;
     if (!el.classList.contains("show")) return false;
-    el.classList.remove("show");
+    el.classList.remove("show"); el.style.pointerEvents = "";
     if (store.ui.toastTimer) { clearTimeout(store.ui.toastTimer); store.ui.toastTimer = null; }
     return true;
   }
@@ -1329,7 +1329,7 @@ import { loadChunk } from "./chunk.js";
     // exit was a mouse landing somewhere the pointer shape was the only hint
     // about — and Esc, which closes every other transient thing in this app,
     // did nothing. Meanwhile it sits over the board's back rank.
-    if (!ms) {
+    if (!ms || (action && action.label)) {   // M3 评审 P2-2: an ordinary toast may carry a way back (撤销)
       // The way forward comes before the way out: a fault the app knows how to
       // retry should offer that, not just a ✕.
       if (action && action.label) {
@@ -1354,9 +1354,9 @@ import { loadChunk } from "./chunk.js";
     el.classList.add("show");
     if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
     store.ui.toastTimer = null;
-    if (ms) store.ui.toastTimer = setTimeout(() => el.classList.remove("show"), ms);
+    if (ms) store.ui.toastTimer = setTimeout(() => { el.classList.remove("show"); el.style.pointerEvents = ""; }, action && action.label ? 4 * ms : ms);
     el.onclick = ms ? null : dismissToast;
-    el.style.cursor = ms ? "" : "pointer";
+    el.style.cursor = ms ? "" : "pointer"; el.style.pointerEvents = ms && action && action.label ? "auto" : "";
   }
 
   /**
@@ -2564,8 +2564,8 @@ import { loadChunk } from "./chunk.js";
     // 复习 list filters it out, so the app advertises work it cannot hand you.
     // Clearing the book, the 400-line cap, and a line replaced by a deeper
     // version all remove ids, so all three come through here.
-    forgetDrills: (ids) => {
-      let hit = false;
+    forgetDrills: (ids, back) => {   // back: entries an undone removal gives back (M3 评审 P2-2)
+      let hit = !!back; if (back) for (const k of ["solved", "missed"]) Object.assign(store.session.puzzleState[k], back[k]);
       for (const id of ids || []) {
         for (const key of [id, id + ":b"]) {
           if (store.session.puzzleState.solved[key] != null) { delete store.session.puzzleState.solved[key]; hit = true; }

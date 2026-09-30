@@ -266,6 +266,69 @@ let migratedRecords = null;
   await ctx.close();
 }
 
+// --- 3b. 一下拿掉整条线要先问；每次拿掉都能撤销（M3 评审 P2-2） ----------------------
+{
+  const ctx = await context({ solved: { [BOOK80.w[0].id]: true } });
+  const { page, errs } = await open(ctx);
+  const recs0 = await records(page);
+  const h0 = await header(page);
+  const modalShown = () => page.evaluate(() => { const m = document.getElementById("confirm-modal"); return !!m && !m.hidden && getComputedStyle(m).display !== "none"; });
+  // 起始局面点 e4 的 ✓：Ruy Lopez 那条整条没了——先问
+  await waitFor(page, xpRows, (r) => r.some((x) => x.san === "e4" && x.pressed === "true"));
+  await page.click('#xp-list .xp-tog[data-san="e4"]');
+  await page.waitForTimeout(300);
+  assert(await modalShown(), "起始局面拿掉 e4：先弹确认框");
+  const ask = await page.textContent("#confirm-message");
+  assert(/e4/.test(ask) && /2/.test(ask) && /1/.test(ask), "确认框说出拿掉哪一着、几条线受影响、几条整条删掉", ask);
+  await page.click("#confirm-cancel");
+  await page.waitForTimeout(300);
+  assert(JSON.stringify((await header(page)).w) === JSON.stringify(h0.w), "取消：书一着不动");
+  // 键盘：Tab 到开关、空格，确认框里回车
+  await page.focus('#xp-list .xp-tog[data-san="e4"]');
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(400);
+  const h1 = await header(page);
+  const st1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  assert(h1.w.map((l) => l.sans).join() === "Nf3 Nc6" && !st1.solved[BOOK80.w[0].id],
+    "确认后：经过 e4 的线截短或删掉，背过的进度跟着走", JSON.stringify({ w: h1.w.map((l) => l.sans), solved: Object.keys(st1.solved) }));
+  const undo = await page.evaluate(() => { const b = document.querySelector("#toast.show .toast-action"); return b ? b.textContent : null; });
+  assert(undo === "撤销", "提示里有「撤销」按钮", String(undo));
+  // 键盘也能撤销：焦点给到提示里的按钮、回车
+  await page.focus("#toast .toast-action");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(500);
+  const h2 = await header(page);
+  const st2 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  const recs2 = await records(page);
+  assert(JSON.stringify(h2.w) === JSON.stringify(h0.w) && st2.solved[BOOK80.w[0].id],
+    "撤销：线原样回来（id 不变），按线练的进度也回来", JSON.stringify(h2.w.map((l) => l.sans)));
+  assert(JSON.stringify(recs2) === JSON.stringify(recs0), "撤销：按局面的记录和卡片一张不差");
+  const e4 = (await waitFor(page, xpRows, (r) => r.some((x) => x.san === "e4" && x.pressed === "true"))).find((x) => x.san === "e4");
+  assert(e4 && e4.pressed === "true", "撤销之后开关又是按下的");
+  // 只截短一条线：不问，直接拿掉，照样能撤销
+  for (const san of ["e4", "e5", "Nf3", "Nc6"]) await playRow(page, san);
+  await page.click('#xp-list .xp-tog[data-san="Bc4"]');
+  await page.waitForTimeout(300);
+  assert(!(await modalShown()), "截短一条线不弹确认框");
+  assert(!(await header(page)).w.some((l) => /Bc4/.test(l.sans)), "……Bc4 拿掉了");
+  await page.click("#toast .toast-action");
+  await page.waitForTimeout(400);
+  assert(JSON.stringify((await header(page)).w) === JSON.stringify(h0.w), "点「撤销」：Bc4 回来");
+  // 执黑那本不留只有白方一着的「线」：起始局面给执黑书加 e4 被拒
+  await page.click('#xp-rep button[data-side="b"]');
+  await page.waitForTimeout(200);
+  await page.reload();
+  await ready(page);
+  const hb = (await header(page)).b.length;
+  await page.click('#xp-list .xp-tog[data-san="e4"]').catch(() => {});
+  await page.waitForTimeout(300);
+  assert((await header(page)).b.length === hb, "执黑的书不收只有 1. e4 的一条线");
+  assert(errs.length === 0, "没有页面异常", errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. 复习到期的着 ---------------------------------------------------------
 {
   const ctx = await context({ view: "library" });

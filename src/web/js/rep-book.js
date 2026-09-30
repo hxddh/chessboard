@@ -269,13 +269,21 @@ function taggedSide(game) {
  * cut just before it. What is left is merged back by repertoire.js's own
  * rule (a cut line that is now a prefix of another adds nothing), so a line
  * that never went through the move keeps its id and its progress.
+ *
+ * M3 评审 P2-2: it also says how big the cut is — `cut` lines shortened or
+ * gone, `whole` of them gone entirely — so the caller can ask first before a
+ * click takes out whole lines. A cut that would leave no move of `side`'s
+ * own (Black's book cut after 1. e4) is not a line of that book: it goes
+ * whole, rather than staying as an opponent-only line.
  * @param {object} R ChessRepertoire
  * @param {object[]} lines the side's lines
- * @returns {{lines: object[], gone: string[]}|null} null: the book never plays it
+ * @param {"w"|"b"} [side] whose book (default White's)
+ * @returns {{lines: object[], gone: string[], cut: number, whole: number}|null} null: the book never plays it
  */
-function removeMove(R, lines, key, san) {
+function removeMove(R, lines, key, san, side) {
   const keep = [], cut = [];
-  let hit = false;
+  const min = sideOf(side) === "b" ? 2 : 1;
+  let hit = false, n = 0, whole = 0;
   for (const l of lines || []) {
     const sans = String(l.sans).split(" ");
     const pos = createReplay();
@@ -286,12 +294,14 @@ function removeMove(R, lines, key, san) {
     }
     if (at < 0) { keep.push(l); continue; }
     hit = true;
-    if (at > 0) cut.push(sans.slice(0, at).join(" "));
+    n++;
+    if (at >= min) cut.push(sans.slice(0, at).join(" "));
+    else whole++;
   }
   if (!hit) return null;
   const r = R.addLines(keep, cut, null);
   const ids = new Set(r.lines.map((l) => l.id));
-  return { lines: r.lines, gone: (lines || []).map((l) => l.id).filter((id) => !ids.has(id)) };
+  return { lines: r.lines, gone: (lines || []).map((l) => l.id).filter((id) => !ids.has(id)), cut: n, whole };
 }
 
 /**

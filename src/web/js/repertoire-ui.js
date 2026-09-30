@@ -184,26 +184,67 @@ export function createRepertoireUI(d) {
   }
 
   /**
+   * M3 评审 P2-2: a removal that shortens more than this many lines asks
+   * first; one that deletes a whole line (a cut at the first move always
+   * does) asks whatever the count.
+   */
+  const REMOVE_ASK = 3;
+
+  /**
    * v8-1-plan T3: 「加进我的开局书」 from the board or the explorer — `sans`,
    * from the starting position, into `side`'s book; `remove`: the last move
    * of `sans` out of it, wherever the book plays it from that position.
-   * @returns {boolean} whether the book changed
+   *
+   * A removal is one click on a ✓, and a ✓ at the first move stands for the
+   * whole book behind it (M3 评审 P2-2): a big cut is confirmed first, and
+   * every cut is offered back — the lines, their 按线练 progress and the
+   * cards — from the toast that reports it. `undone` runs after an undo.
+   * @returns {Promise<boolean>|boolean} whether the book changed
    */
-  function edit(side, sans, remove) {
+  async function edit(side, sans, remove, undone) {
     const s = side === "b" ? "b" : "w";
     const who = t(s === "b" ? "color.black" : "color.white");
+    // Black's book starts at Black's first move: 1. e4 alone is not a line of it
+    const min = s === "b" ? 2 : 1;
     // null: the board's game did not begin at the starting position
-    if (!sans) { toast(tf("rep.lineLen", [1, Rep.MAX_PLIES]), "fix"); return false; }
+    if (!sans) { toast(tf("rep.lineLen", [min, Rep.MAX_PLIES]), "fix"); return false; }
     const san = sans[sans.length - 1] || "";
     if (remove) {
-      const r = ctrl ? ctrl.removeAt(s, sans) : null;
+      let r = ctrl ? ctrl.removeAt(s, sans) : null;
       if (!r) return false;
+      if (r.whole || r.cut > REMOVE_ASK) {
+        const before = linesOf(s);
+        const ok = await confirmNative(tf("rep.removeAsk", [san, who, r.cut, r.whole]), t("rep.title"),
+          { ok: t("rep.removeOk"), cancel: t("act.cancel"), destructive: true });
+        if (!ok) return false;
+        // the book may have moved while the question was up
+        if (linesOf(s) !== before) r = ctrl.removeAt(s, sans);
+        if (!r) return false;
+      }
+      const lines = linesOf(s), cards = ctrl.snapshot();
+      const drillState = { solved: {}, missed: {} };
+      for (const id of r.gone) {
+        for (const key of [id, id + ":b"]) {
+          for (const k of ["solved", "missed"]) {
+            if (store.session.puzzleState[k][key] != null) drillState[k][key] = store.session.puzzleState[k][key];
+          }
+        }
+      }
       store.session.repertoire[s] = r.lines;
       commit(r.gone);
-      toast(tf("rep.removedFrom", [san, who]));
+      const now = r.lines;
+      toast(tf("rep.removedFrom", [san, who]), "ok", { label: t("rep.undo"), onClick: () => {
+        // only onto the book it was taken from: a later edit is not undone by this one
+        if (linesOf(s) !== now) return;
+        store.session.repertoire[s] = lines;
+        forgetDrills([], drillState);
+        if (ctrl) ctrl.sync(cards);
+        commit([]);
+        if (undone) undone();
+      } });
       return true;
     }
-    if (!sans.length || sans.length > Rep.MAX_PLIES) { toast(tf("rep.lineLen", [1, Rep.MAX_PLIES]), "fix"); return false; }
+    if (sans.length < min || sans.length > Rep.MAX_PLIES) { toast(tf("rep.lineLen", [min, Rep.MAX_PLIES]), "fix"); return false; }
     const r = Rep.addLines(linesOf(s), [Rep.normalize(sans)], nameOf);
     if (!r.added) { toast(tf("rep.already", [san, who]), "fix"); return false; }
     store.session.repertoire[s] = r.lines;
