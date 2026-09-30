@@ -4140,8 +4140,7 @@ for (const lang of CONTENT_LANGS) {
     "为你出一题 reads the live book — a mined drill can be recommended");
   // 6.0: the queue is what is due today (srs.js dueQueue), each id looked up in the live book
   // (M3 评审: through bank-review.js reviewList, which gives slots only to what can be served)
-  assert(/\? Bank\.reviewList\(store\.session\.puzzleState, Date\.now\(\), REVIEW_CAP, bookFinder\(\)\)/.test(appSrc) &&
-    /function bookFinder\(\) \{\s*const m = new Map\(bookNow\(\)\.map/.test(appSrc) && /const today = Srs\.dueQueue\(servable, now, cap\)/.test(appSrc),
+  assert(/function bookFinder\(\) \{\s*const m = new Map\(bookNow\(\)\.map[\s\S]*\? Bank\.reviewList\(store\.session\.puzzleState, Date\.now\(\), REVIEW_CAP, bookFinder\(\)\)/.test(appSrc),
     "the review queue reads the live book — a missed drill comes back due");
   // …and the achievements deliberately do not
   const achBlock = /const solvedIn[\s\S]{0,1400}opTotal:[^\n]*\n/.exec(appSrc);

@@ -982,6 +982,15 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(merged.bank && merged.bank["lc-bbb"] === 1200 && merged.bank["lc-ccc"] === 1400, "T6: importing learning data keeps both sides' band notes");
   const plain = L.merge({ puzzles: JSON.stringify({ solved: {}, missed: {} }) }, { kind: L.LEARNING_KIND, v: 1, data: { puzzles: { solved: {}, missed: {} } } }, 100).puzzles;
   assert(!("bank" in plain), "T6: …and adds no table to a state that had none");
+  // M3 评审: the repertoire's card schedules ride along in the learning file
+  {
+    const repCur = { repertoire: JSON.stringify({ v: 1, w: [], b: [], db: 2, n: 0, sig: "x" }) };
+    const repInc = { kind: L.LEARNING_KIND, v: 1, data: { repertoire: { v: 1, w: [{ id: "rep-a", sans: "e4 e5" }], b: [], cards: { "w|k": { s: 3, n: 3, due: 9, ivl: 7 } } } } };
+    const mr = L.merge(repCur, repInc, 100).repertoire;
+    assert(mr.cards && mr.cards["w|k"].s === 3 && mr.w.length === 1, "M3: a learning file's repertoire cards survive the merge (the records take them after)");
+    const noCards = L.merge(repCur, { kind: L.LEARNING_KIND, v: 1, data: { repertoire: { v: 1, w: [], b: [] } } }, 100).repertoire;
+    assert(!("cards" in noCards), "M3: …and a file without them adds none");
+  }
 
   // M3 评审 ------------------------------------------------------------------
   // a guessed band is one the bank has: past either end is the end band

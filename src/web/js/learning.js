@@ -178,6 +178,9 @@ function mergeRepertoire(cur, inc) {
     };
     out[side] = ChessRepertoire.addLines(mine, theirs.map((l) => l.sans), nameOf).lines;
   }
+  // M3 评审: the file's card schedules ride along until the repertoire's
+  // records take them (repertoire-ui.js takeCards)
+  if (i.cards && typeof i.cards === "object" && !Array.isArray(i.cards)) out.cards = i.cards;
   return out;
 }
 

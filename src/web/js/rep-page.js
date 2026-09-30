@@ -26,6 +26,7 @@
  */
 import { ChessRepBook as B } from "./rep-book.js";
 import { createReplay } from "./explorer/replay.js";
+import { ChessSrs } from "./srs.js";
 
 /** The due list the trainer holds at a time (it is recomputed after every answer). */
 const DUE_LIST = 50;
@@ -161,15 +162,39 @@ async function bootRepertoire(d) {
     save(put, gone);
   }
 
+  /** Today's due cards (rep-book.js dose: DAILY a day, the rest moved on and written). */
+  function today() {
+    const d = B.dose(records, Date.now());
+    if (d.moved.length) { version++; save(d.moved, []); }
+    return d.today;
+  }
+
   /** Due cards as trainer drills (trainer/puzzles.js seats `pre`, then asks for `answers`). */
   function dueDrills() {
-    return B.dueCards(records, Date.now()).slice(0, DUE_LIST).map((x) => {
+    return today().slice(0, DUE_LIST).map((x) => {
       const pre = x.path ? x.path.split(" ") : [];
       const answers = x.moves.map((m) => m.san);
       const line = pre.concat(answers[0]);
       return { id: "repc:" + x.id, cat: "rep", side: x.side === "b" ? "b" : undefined, card: x.id, pre, answers, line,
         eco: "", name: d.cardName(x.side, line) };
     });
+  }
+
+  /**
+   * Cards from a learning file (M3 评审): where both have one, the card
+   * further up the ladder wins (the same rule the endgame reviews merge by);
+   * a position the book no longer has takes nothing.
+   */
+  function takeCards(cards) {
+    const put = [];
+    for (const [id, x] of records) {
+      const inc = x.card && cards[id];
+      if (!inc || typeof inc !== "object") continue;
+      const e = ChessSrs.entry(inc);
+      if (e.s > x.card.s || (e.s === x.card.s && e.n > x.card.n)) { x.card = e; put.push(x); }
+    }
+    if (put.length) { version++; save(put, []); }
+    return put.length;
   }
 
   function grade(p, ok) {
@@ -238,7 +263,7 @@ async function bootRepertoire(d) {
   /** The section's rows: what is due, and where the library disagrees. */
   function renderInto(body) {
     const doc = d.doc;
-    const due = B.dueCards(records, Date.now()).length;
+    const due = today().length;
     const row = doc.createElement("div");
     row.className = "stat-row";
     const k = doc.createElement("span");
@@ -284,10 +309,11 @@ async function bootRepertoire(d) {
     /** the lines changed since they were last indexed (an edit during boot) */
     stale: () => indexedSig !== B.sigOf(book()),
     sync,
+    takeCards,
     records: () => records,
     /** the records as they are now, cards copied: what an undo gives back (M3 评审 P2-2) */
     snapshot: () => new Map([...records].map(([id, x]) => [id, Object.assign({}, x, x.card ? { card: Object.assign({}, x.card) } : {})])),
-    dueCount: () => B.dueCards(records, Date.now()).length,
+    dueCount: () => today().length,
     dueDrills,
     grade,
     removeAt,

@@ -169,11 +169,33 @@ function dueCards(records, now, side) {
     depth(a) - depth(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
+/** Cards a day at most (M3 评审; the puzzles' REVIEW_CAP, v6-plan Q3.3). */
+const DAILY = 20;
+
+/**
+ * Today's dose: the cards due at `now`, at most `cap` of them, and the rest
+ * moved to the following days, `cap` a day, in the same order — srs.js
+ * dueQueue's rule, so a 400-line book imported or migrated in one go does
+ * not arrive as one afternoon of new cards.
+ * @returns {{today: object[], moved: object[]}} `moved`: records whose card changed (to write)
+ */
+function dose(records, now, cap) {
+  const n = Math.max(1, Math.floor(cap) || DAILY);
+  const due = dueCards(records, now);
+  const moved = [];
+  for (let i = n; i < due.length; i++) {
+    const e = ChessSrs.entry(due[i].card);
+    due[i].card = { s: e.s, n: e.n, ivl: e.ivl, due: now + (Math.floor((i - n) / n) + 1) * DAY };
+    moved.push(due[i]);
+  }
+  return { today: due.slice(0, n), moved };
+}
+
 /**
  * The progress an old book already has, carried onto its new cards (the
  * migration from 7.2–8.0's lines). A line drilled to the end (`solved`) has
  * answered every move on it once: those cards start on the first rung, due
- * a day later. A line in the review queue (`missed`) leaves its cards due
+ * a day later — DAILY of them a day, the rest on the days after (M3 评审). A line in the review queue (`missed`) leaves its cards due
  * now, which is what a new card is anyway. Only cards never answered are
  * touched, so running this twice changes nothing the second time.
  * @param {Map<string, object>} records
@@ -192,7 +214,8 @@ function seedCards(records, book, state, now) {
       const pos = createReplay();
       for (const san of sans) {
         const r = records.get(side + "|" + pos.key());
-        if (r && r.card && !r.card.n && !r.card.s) { r.card = { s: 1, n: 1, due: now + DAY, ivl: 1 }; n++; }
+        // spread DAILY a day from tomorrow (M3 评审): not every drilled line back at once
+        if (r && r.card && !r.card.n && !r.card.s) { r.card = { s: 1, n: 1, due: now + (1 + Math.floor(n / DAILY)) * DAY, ivl: 1 }; n++; }
         if (!pos.move(san)) break;
       }
     }
@@ -406,6 +429,6 @@ function reconcile(o) {
 export const ChessRepBook = {
   reconcile,
   LADDER, DAY, START_KEY, SHARDS, CROSS_MIN, shardOf, myTurn, newCard, indexLines, indexBook, movesAt,
-  sameRecord, diff, grade, isDue, dueCards, seedCards, treeOf, toPgn, taggedSide, removeMove, crossCheck,
+  sameRecord, diff, grade, isDue, dueCards, dose, DAILY, seedCards, treeOf, toPgn, taggedSide, removeMove, crossCheck,
   pathText, sigOf,
 };

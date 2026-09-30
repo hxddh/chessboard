@@ -433,6 +433,9 @@ let migratedRecords = null;
   await ready(page);
   const after = await records(page);
   assert(after["w|" + keyAfter([])].card.s === 1 && after[p2.card].card.s === 0, "重启之后卡片的排期原样还在");
+  // M3 评审：启动时分块还没到，也回到「复习到期的着」，不退回按线练
+  const resumed = await page.evaluate(() => ({ cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat, prog: document.getElementById("puzzle-progress").textContent }));
+  assert(resumed.cat === "repdue" && /还有 \d+ 着/.test(resumed.prog), "重启：还在「复习到期的着」", JSON.stringify(resumed));
   assert(errs.length === 0, "没有页面异常", errs.join(" / "));
   void recBefore;
   await ctx.close();
@@ -477,6 +480,46 @@ let migratedRecords = null;
   const shape = (rs) => Object.keys(rs).sort().map((id) => id + ":" + rs[id].moves.join(",")).join("\n");
   assert(shape(got) === shape(want), `导回的书与导出前逐节点相等（${Object.keys(want).length} 个节点，着法与先后）`,
     shape(got).split("\n").length + " vs " + Object.keys(want).length);
+  assert(errs.length === 0, "没有页面异常", errs.join(" / "));
+  await ctx2.close();
+}
+
+// --- 6b. 学习数据带着卡片的排期走；全部数据带着开局书的分片（M3 评审） ------------------------
+{
+  const ctx = await context({ view: "me" });
+  const { page } = await open(ctx);
+  // 答对一张卡：它的排期往后走（学习数据要带着它）
+  const graded = await page.evaluate(() => {
+    const c = window.__chess.rep();
+    const x = [...c.records().values()].find((r) => r.card);
+    c.grade({ card: x.id }, true);
+    return { id: x.id, card: c.records().get(x.id).card };
+  });
+  const clickHidden = (p, id) => p.evaluate((id) => document.getElementById(id).click(), id);
+  const [dl] = await Promise.all([page.waitForEvent("download"), clickHidden(page, "learning-export")]);
+  const doc = JSON.parse(fs.readFileSync(await dl.path(), "utf8"));
+  const cards = doc.data.repertoire && doc.data.repertoire.cards;
+  assert(cards && cards[graded.id] && cards[graded.id].s === graded.card.s && graded.card.s >= 1, "导出学习数据：开局书每张卡的排期都在文件里", JSON.stringify(cards && cards[graded.id]));
+  const [dl2] = await Promise.all([page.waitForEvent("download"), clickHidden(page, "alldata-export")]);
+  const all = JSON.parse(fs.readFileSync(await dl2.path(), "utf8"));
+  const hdr = JSON.parse(all.keys.repertoire);
+  const shardRecs = Object.keys(all.keys).filter((k) => /^rep[0-3]$/.test(k)).reduce((n, k) => n + JSON.parse(all.keys[k]).rep.length, 0);
+  assert(hdr.db === 2 && shardRecs === hdr.n, "导出全部数据：头上说几条记录，文件里的分片就有几条", JSON.stringify({ n: hdr.n, shardRecs }));
+  await ctx.close();
+  // 导进一个同一本书、还没答过的档案：那张卡回到文件里的排期
+  const ctx2 = await context({ view: "me" });
+  const { page: p2, errs } = await open(ctx2);
+  const file = path.join(HERE, "..", "node_modules", ".cache", "rep-e2e-learning.json");
+  fs.writeFileSync(file, JSON.stringify(doc));
+  await clickHidden(p2, "learning-import");
+  await p2.waitForTimeout(300);
+  const [chooser] = await Promise.all([p2.waitForEvent("filechooser"), p2.click("#confirm-ok")]);
+  await chooser.setFiles(file);
+  await p2.waitForTimeout(800);
+  const back = await p2.evaluate((id) => window.__chess.rep().records().get(id).card, graded.id);
+  assert(back && back.s === graded.card.s && back.due === graded.card.due, "导入学习数据：卡片的排期跟着回来", JSON.stringify(back));
+  const h = await header(p2);
+  assert(!("cards" in h) && h.db === 2, "……头上不留 cards，照旧担保记录");
   assert(errs.length === 0, "没有页面异常", errs.join(" / "));
   await ctx2.close();
 }

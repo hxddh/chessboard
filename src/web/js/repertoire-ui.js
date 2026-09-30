@@ -38,7 +38,7 @@ export function createRepertoireUI(d) {
   const Rep = ChessRepertoire;
   /** chunk-rep.js's controller once it has booted (rep-page.js), else null. */
   let ctrl = null;
-  /** v8-1-plan T3: what the stored header said about the records (db, n, sig), kept until the chunk speaks. */
+  /** v8-1-plan T3: what the stored header said about the records (db, n, sig, gen), kept until the chunk speaks. */
   let headExtra = {};
 
   /** How many of your games in an opening before its absence is a gap. */
@@ -46,7 +46,7 @@ export function createRepertoireUI(d) {
 
   function loadBook() {
     const s = Persist.read("repertoire").value;
-    headExtra = s && s.db === 2 ? { db: 2, n: s.n, sig: s.sig } : {};
+    headExtra = s && s.db === 2 ? Object.assign({ db: 2, n: s.n, sig: s.sig }, s.gen ? { gen: s.gen } : {}) : {};
     const side = (k) => (s && Array.isArray(s[k])
       ? s[k].filter((l) => l && l.id && typeof l.sans === "string" && l.sans)
       : []);
@@ -284,11 +284,12 @@ export function createRepertoireUI(d) {
       LibraryQuery: typeof window !== "undefined" && window.CHESS_LIBDB ? window.CHESS_LIBDB.LibraryQuery : null,
     }))).then((c) => {
       ctrl = c;
-      // an edit made while the chunk was booting (M3 评审 P2-3): index those lines too
-      if (c.stale()) { c.sync(); saveBook(); render(); return c; }
+      // an edit made while the chunk was booting (M3 评审 P2-3): index those lines too;
+      // a learning file merged meanwhile left its cards in the header
+      if (c.stale()) { c.sync(); takeCards(c); saveBook(); render(); return c; }
       // what the boot indexed, migrated or recovered: the header says so now
       // (a profile that never had a book is not given one — the library's rule)
-      if (!c.fresh && (total() || Persist.get("repertoire") != null)) saveBook();
+      if (takeCards(c) || (!c.fresh && (total() || Persist.get("repertoire") != null))) saveBook();
       render();
       return c;
     }, () => null);
@@ -476,13 +477,53 @@ export function createRepertoireUI(d) {
   function reload() {
     store.session.repertoire = loadBook();
     // the file's lines are the book now: index them, and say so in the header
-    if (ctrl) { ctrl.sync(); saveBook(); }
+    if (ctrl) { ctrl.sync(); takeCards(ctrl); saveBook(); }
     render();
+  }
+
+  /**
+   * M3 评审: a learning file carries the cards' schedules (`cards`, id →
+   * card, withCards below) in its repertoire; the merged header keeps them
+   * until the records have taken them — here, or when the chunk is ready —
+   * and saveBook's header, which has no `cards`, drops them.
+   */
+  function takeCards(c) {
+    const s = Persist.read("repertoire").value;
+    if (!s || !s.cards || typeof s.cards !== "object") return false;
+    c.takeCards(s.cards);
+    return true;   // the header is owed a rewrite without them
+  }
+
+  /** 导出学习数据: the cards' schedules beside the lines (M3 评审). */
+  function withCards(doc) {
+    const rep = doc && doc.data && doc.data.repertoire;
+    if (!rep || !ctrl) return doc;
+    const cards = {};
+    for (const [id, x] of ctrl.records()) if (x.card) cards[id] = x.card;
+    rep.cards = cards;
+    return doc;
+  }
+
+  /**
+   * 导出全部数据 (M3 评审): the header vouches for records the file carries
+   * as shards. With no chunk to serve them (it failed to boot, or held its
+   * shards unread this session) the file says nothing about records, and
+   * importing it indexes the lines afresh instead of clearing the cards.
+   */
+  function forExport(doc) {
+    if (ctrl && !ctrl.held()) return doc;
+    let h = null;
+    try { h = JSON.parse(doc.keys.repertoire); } catch (_) { h = null; }
+    if (h && h.db === 2) {
+      for (const k of ["db", "n", "sig", "gen"]) delete h[k];
+      doc.keys.repertoire = JSON.stringify(h);
+    }
+    return doc;
   }
 
   return { render, wire, drills, allDrills, treeFor, total, gapRows, importInto, linesOf, reload, localName,
     // v8-1-plan T3
-    edit, ready: () => ready,
+    edit, ready: () => ready, booted: () => !!ctrl, withCards, forExport,
     dueDrills: () => (ctrl ? ctrl.dueDrills() : []),
     // the header's `gen` moves with every write (M3 评审: a session with no IndexedDB is then known to be newer)
     gradeCard: (p, ok) => { if (ctrl) { ctrl.grade(p, ok); saveBook(); render(); } },

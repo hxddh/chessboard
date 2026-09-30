@@ -136,6 +136,24 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   for (const d of [1, 2, 5, 12]) expect[d] += 1;
   assert(plan.join() === expect.join(), "三十天里每天到期几张，和手算的一张不差（答错那张比别的晚一天爬梯）", plan.join() + " / " + expect.join());
   console.log("     三十天每天到期的张数：" + plan.join(" "));
+
+  // M3 评审：一天至多 DAILY 张，其余按原来的先后排到后面几天
+  const many = [];
+  for (let i = 0; i < 45; i++) many.push({ id: "w|k" + i, side: "w", key: "k" + i, path: "", moves: [{ san: "e4", to: "x" }], card: B.newCard() });
+  const d0 = B.dose(many, T0);
+  const dueOn = (k) => many.filter((r) => r.card.due > T0 + (k - 1) * D && r.card.due <= T0 + k * D).length;
+  assert(B.DAILY === 20 && d0.today.length === 20 && d0.moved.length === 25 && dueOn(1) === 20 && dueOn(2) === 5,
+    "45 张新卡：今天 20 张，明天 20 张，后天 5 张", JSON.stringify({ today: d0.today.length, moved: d0.moved.length, d1: dueOn(1), d2: dueOn(2) }));
+  assert(B.dose(many, T0).moved.length === 0 && B.dose(many, T0).today.length === 20, "同一天再算一次：不再挪动，还是那 20 张");
+  // 迁移时背过的线：带进度的卡同样一天 DAILY 张，不是全在明天
+  const wl = R.addLines([], ctx.CHESS_OPENINGS.map((r) => r[2]), null).lines;
+  const srecs = B.indexBook({ w: wl, b: [] });
+  const solvedAll = {}; for (const l of wl) solvedAll[l.id] = 1;
+  const seeded = B.seedCards(srecs, { w: wl, b: [] }, { solved: solvedAll, missed: {} }, T0);
+  const perDay = {};
+  for (const r of srecs.values()) if (r.card && r.card.s === 1) { const k = Math.round((r.card.due - T0) / D); perDay[k] = (perDay[k] || 0) + 1; }
+  assert(seeded > 40 && Object.values(perDay).every((x) => x <= B.DAILY) && perDay[1] === B.DAILY,
+    `迁移播种 ${seeded} 张：从明天起一天至多 ${B.DAILY} 张`, JSON.stringify(perDay).slice(0, 120));
 }
 
 // --- 4. PGN 往返逐节点相等 ------------------------------------------------------
@@ -315,6 +333,13 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   const same = idb([...full.values()], 900);
   const h3 = await run(Object.assign({}, head, { gen: 900 }), same, shardTexts);
   assert(same.puts === 0 && [...h3.c.records().values()].filter((x) => x.card).every((x) => x.card.s === 0), "代数一样：直接用 IndexedDB 的记录，不读分片");
+  // 学习数据带来的卡片：阶梯更远的那张胜出；书里没有的局面不收
+  const withCard = [...h3.c.records().values()].filter((x) => x.card);
+  const incoming = { [withCard[0].id]: { s: 4, n: 4, due: 7, ivl: 21 }, [withCard[1].id]: { s: 0, n: 0, due: 0, ivl: 0 }, "w|nowhere": { s: 5, n: 5, due: 1, ivl: 60 } };
+  withCard[1].card = { s: 2, n: 2, due: 5, ivl: 3 };
+  const took = h3.c.takeCards(incoming);
+  assert(took === 1 && h3.c.records().get(withCard[0].id).card.s === 4 && h3.c.records().get(withCard[1].id).card.s === 2 && !h3.c.records().has("w|nowhere"),
+    "学习数据里的卡片：更远的一张进来，更近的不覆盖，书里没有的局面不收", String(took));
 }
 
 if (failed) { console.error(`\n${failed} 项失败`); process.exit(1); }

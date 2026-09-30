@@ -2128,7 +2128,7 @@ import { loadChunk } from "./chunk.js";
     puzzleName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
     saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName, startLearn,
     stopLearn, store, sync, t, tf, toast, writeSan, switchMode, setSideTab, drawRatingTrend,
-    RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total(), due: () => RepUI.dueDrills(), grade: (p, ok) => RepUI.gradeCard(p, ok) },
+    RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total(), due: () => RepUI.dueDrills(), grade: (p, ok) => RepUI.gradeCard(p, ok), ready: () => RepUI.ready(), booted: () => RepUI.booted() },
     renderRepertoire: () => renderRepertoire(),
     loadLibraryEntry: (e) => loadLibraryEntry(e),
     dailyJump: (s) => dailyJump(s),
@@ -6119,7 +6119,7 @@ import { loadChunk } from "./chunk.js";
     return "chessboard-learning-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
   }
   async function exportLearning() {
-    const doc = Learning.pack(learningBag(), Date.now());
+    const doc = RepUI.withCards(Learning.pack(learningBag(), Date.now()));   // M3 评审: the repertoire's card schedules too
     await exportText(learningFileName(), JSON.stringify(doc, null, 2), "application/json", t("dlg.exportLearning"));
   }
   /** Merge a learning file into this machine's data and rebuild the views. */
@@ -6185,11 +6185,11 @@ import { loadChunk } from "./chunk.js";
   async function exportAllData() {
     saveGame();
     saveSettings();
-    await LibraryUI.ready();   // v8-0-plan C1: the games are in the export once the library is loaded
+    await LibraryUI.ready(); await RepUI.ready();   // v8-0-plan C1: the games are in the export once the library is loaded; the repertoire's records once its chunk is (M3 评审)
     // compact (v8-0-plan F3): the values are JSON strings already, so the
     // two-space indent only padded the envelope — and every byte of the file
     // crosses the bridge
-    await exportText(allDataFileName(), JSON.stringify(Persist.exportAll()), "application/json", t("dlg.exportAll"));
+    await exportText(allDataFileName(), JSON.stringify(RepUI.forExport(Persist.exportAll())), "application/json", t("dlg.exportAll"));
   }
   async function importAllDataText(text) {
     let doc = null;
