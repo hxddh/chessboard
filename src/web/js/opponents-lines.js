@@ -14,6 +14,7 @@
 export const OP_LINES = {
   "zh-CN": {
     say: "{0}：{1}", bye: "本局开局：{0}，共 {1} 回合。", noOpening: "未收录的开局",
+    seg: ["入门", "进阶", "高手"], segAria: "按水平分段",
     pip: { name: "皮普", hello: "新手档，不带风格：会主动犯错，常常丢子。" },
     tomo: { name: "托莫", hello: "休闲档，不带风格：比新手准，仍会丢子。", bye: "本局开局：{0}，共 {1} 回合，托莫吃子 {2} 次。" },
     lina: { name: "莉娜", hello: "练习档，重原则：抢中心、出轻子、早易位。" },
@@ -29,6 +30,7 @@ export const OP_LINES = {
   },
   "en": {
     say: "{0}: {1}", bye: "Opening: {0}. {1} moves.", noOpening: "an opening not in the book",
+    seg: ["Starter", "Club", "Expert"], segAria: "Opponents by level",
     pip: { name: "Pip", hello: "Gentle, no style: makes mistakes on purpose and often drops a piece." },
     tomo: { name: "Tomo", hello: "Casual, no style: sharper than Gentle, still drops pieces.", bye: "Opening: {0}. {1} moves; Tomo captured {2} times." },
     lina: { name: "Lina", hello: "Practice, by the book: centre first, minor pieces out, castle early." },
@@ -44,6 +46,7 @@ export const OP_LINES = {
   },
   "ja": {
     say: "{0}：{1}", bye: "序盤：{0}。{1} 手。", noOpening: "定跡集にない序盤",
+    seg: ["入門", "中堅", "強豪"], segAria: "レベル別の対戦相手",
     pip: { name: "ピップ", hello: "やさしい、スタイルなし：わざとミスをし、よく駒を落とす。" },
     tomo: { name: "トモ", hello: "お気軽、スタイルなし：やさしいより正確だが、まだ駒を落とす。", bye: "序盤：{0}。{1} 手、トモが駒を取ったのは {2} 回。" },
     lina: { name: "リナ", hello: "練習、定跡どおり：中央、小駒の展開、早めのキャスリング。" },

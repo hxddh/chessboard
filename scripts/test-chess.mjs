@@ -2625,14 +2625,38 @@ for (const lang of CONTENT_LANGS) {
   {
     const stats = { v: 2, games: [] };
     const now = Date.UTC(2026, 8, 1);
-    const f1 = O.fileRating(stats, { id: "a", t: now, diff: "normal", result: "win" }, now);
+    const recA = { id: "a", t: now, diff: "normal", result: "win" };
+    const f1 = O.fileRating(stats, recA, now);
     assert(f1 && f1.before === null && f1.after.r > 1500 && stats.rating === f1.after, "B4: a first win moves a newcomer up, stored on the stats record");
     const rec = { id: "b", t: now + 1000, diff: "normal", result: "loss" };
     const f2 = O.fileRating(stats, rec, now + 1000);
     assert(f2.after.r < f1.after.r && rec.rb === Math.round(f1.after.r) && rec.ra === Math.round(f2.after.r) && Number.isFinite(rec.perf),
       "B4: each game carries rb / ra / perf (ra is what 「我的」 draws: progress-metrics.js ratingAfter)");
-    const replay = O.rateHistory([{ t: now, diff: "normal", result: "win" }, { t: now + 1000, diff: "normal", result: "loss" }]);
+    const replay = O.rateHistory([recA, rec]);
     assert(Math.round(replay.r) === Math.round(f2.after.r), "B4: a profile from before B4 gets its rating by replaying its games");
+    assert(recA.lad === O.LADDER && rec.lad === O.LADDER, "T1: a game filed now says which ladder it was rated against");
+    // v8-1-plan T1: an 8.0 profile — records with no `lad`, on the twelve
+    // 8.0 rungs — replays to the rating 8.0's own code gave it (computed on
+    // 1972e19, before the ladder was re-stepped): the new ratings of the
+    // same ids do not reach back into games played against the old ones
+    {
+      const ids80 = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "hard", "extreme"];
+      const res = ["win", "loss", "draw", "win", "loss"];
+      const t0 = Date.UTC(2026, 5, 1);
+      const old = [];
+      for (let i = 0; i < 36; i++) old.push({ id: "g" + i, t: t0 + i * 86400000 * (i % 3 === 0 ? 3 : 1), diff: ids80[(i * 5) % 12], result: res[i % 5] });
+      const r80 = O.rateHistory(old);
+      assert(Math.abs(r80.r - 1228.7012797742468) < 1e-6 && Math.abs(r80.rd - 179.47270731277916) < 1e-6 &&
+        Math.abs(r80.vol - 0.06009909724615745) < 1e-9 && r80.n === 36,
+        "T1: an 8.0 profile's games replay to the same Glicko-2 rating as on 8.0 (" + (r80 && r80.r) + ")");
+      assert(O.performance(old.slice(-10).map((g) => ({ level: g.diff, result: g.result }))) === 1309,
+        "T1: …and the same performance rating over its last ten");
+      assert(ids80.every((id) => O.opponentOf(id).r === O.RATING_80[id]) &&
+        O.LEVELS.every((id) => O.opponentOf(id, O.LADDER).r === O.RATING[id]),
+        "T1: an unmarked record is rated against 8.0's ladder, a marked one against today's");
+      const replayed = O.rateHistory(old.concat([Object.assign({}, old[0], { id: "new", t: t0 + 400 * 86400000, lad: O.LADDER })]));
+      assert(replayed.n === 37, "T1: old and new records replay together");
+    }
     assert(O.ratingOfStats({ v: 2, games: [{ t: now, diff: "normal", result: "win" }] }).r > 1500, "B4: …when it has none stored");
     const s1700 = O.ratingOf("normal");
     assert(O.performance([{ level: "normal", result: "draw" }]) === s1700, "B4: performance of a draw is the opponent's rating");

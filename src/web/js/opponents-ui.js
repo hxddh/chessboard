@@ -40,6 +40,27 @@ export function createOpponentsUI(d) {
   function mount() {
     const grid = el("op-grid");
     if (!grid || grid.childElementCount) return;
+    // v8-1-plan T1: twenty-odd personas are three segments, one shown at a
+    // time — tabs over the grid. Their words are the chunk's (opponents-lines.js),
+    // not the first-paint dictionary's.
+    const seg = el("op-seg");
+    if (seg) {
+      Opponents.SEGMENTS.forEach((_, i) => {
+        const b = doc.createElement("button");
+        b.type = "button";
+        b.dataset.seg = String(i);
+        b.setAttribute("aria-pressed", "false");
+        seg.appendChild(b);
+      });
+      seg.onclick = (ev) => {
+        const b = ev.target.closest("button[data-seg]");
+        const ng = store.ui.newGame;
+        if (!b || !ng) return;
+        ng.opSeg = Number(b.dataset.seg);
+        repaint();
+      };
+      seg.hidden = false;
+    }
     for (const p of Opponents.PERSONAS) {
       const b = doc.createElement("button");
       b.type = "button";
@@ -98,12 +119,30 @@ export function createOpponentsUI(d) {
       const node = el(id);
       if (node && node.hidden === ai) node.hidden = !ai;
     }
-    if (!store.ui.newGame) return;
+    const ng = store.ui.newGame;
+    if (!ng) return;
     const pick = pickNow();
     const on = Opponents.personaFor(pick.difficulty, pick.personaId);
+    // the segment shown is the pick's — a new draft opens on it, and a pick
+    // changed (a card, the custom fold) takes it along — until a tab says otherwise
+    if (ng.opSegFor !== pick.difficulty) { ng.opSegFor = pick.difficulty; ng.opSeg = Opponents.segmentOf(pick.difficulty); }
+    const shown = ng.opSeg;
+    const seg = el("op-seg");
+    if (seg) {
+      if (seg.getAttribute("aria-label") !== L().segAria) seg.setAttribute("aria-label", L().segAria);
+      for (const b of seg.children) {
+        const i = Number(b.dataset.seg);
+        const active = i === shown;
+        if (b.classList.contains("active") !== active) b.classList.toggle("active", active);
+        if (b.getAttribute("aria-pressed") !== String(active)) b.setAttribute("aria-pressed", String(active));
+        setText(b, L().seg[i]);
+      }
+    }
     for (const b of grid.children) {
       const p = Opponents.personaById(b.dataset.op);
       if (!p) continue;
+      const out = Opponents.segmentOf(p.level) !== shown;
+      if (b.hidden !== out) b.hidden = out;
       const active = !!on && on.id === p.id;
       if (b.classList.contains("active") !== active) b.classList.toggle("active", active);
       if (b.getAttribute("aria-pressed") !== String(active)) b.setAttribute("aria-pressed", String(active));

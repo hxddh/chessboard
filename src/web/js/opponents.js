@@ -32,6 +32,24 @@ const RATING_SE = {
 };
 
 /**
+ * v8-1-plan T1: which ladder a game was rated against. 8.1 re-stepped the
+ * ladder and fitted every rung again, so the same id can stand for another
+ * number now. A game is scored against the ratings of the ladder it was
+ * played on: a record filed from 8.1 on carries `lad`, and one without it
+ * is 8.0's and keeps 8.0's numbers — a profile replayed from its games
+ * (rateHistory) comes out exactly where it stood.
+ */
+const LADDER = 2;
+const RATING_80 = {
+  beginner: 70, casual: 266, learner: 409, improver: 608, steady: 752, solid: 941,
+  easy: 1320, easyplus: 1418, normalminus: 1662, normal: 1700, hard: 1994, extreme: 2633,
+};
+const RATING_SE_80 = {
+  beginner: 0, casual: 23, learner: 24, improver: 26, steady: 28, solid: 31,
+  easy: 95, easyplus: 106, normalminus: 119, normal: 126, hard: 144, extreme: 238,
+};
+
+/**
  * The personas: one per rung, each with a style from persona.js and an icon
  * from icons.js. The name, the opening line and the end-of-game line are
  * i18n keys (`op.<id>.name` / `.hello` / `.bye`); 7.8's rule holds for the
@@ -181,10 +199,12 @@ function acceptsDraw(engineCp) { return engineCp == null || engineCp < ACCEPT_CP
  * deviation no smaller than 30 — the fit's own error, floored so one game is
  * never scored against an opponent the maths treats as exactly known.
  */
-function opponentOf(level) {
-  const r = ratingOf(level);
+function opponentOf(level, lad) {
+  // an 8.0 game (no `lad`) against a rung 8.0 had: 8.0's numbers
+  const old = lad == null && Number.isFinite(RATING_80[level]);
+  const r = old ? RATING_80[level] : ratingOf(level);
   if (r == null) return null;
-  return { r, rd: Math.max(30, RATING_SE[level] || 0) };
+  return { r, rd: Math.max(30, (old ? RATING_SE_80 : RATING_SE)[level] || 0) };
 }
 
 const SCORE = { win: 1, draw: 0.5, loss: 0 };
@@ -199,10 +219,11 @@ const SCORE = { win: 1, draw: 0.5, loss: 0 };
  * @param {string} level the rung played
  * @param {"win"|"draw"|"loss"} result
  * @param {number} now ms
+ * @param {number} [lad] the record's ladder (none: 8.0's)
  * @returns {{r,rd,vol,at,n}|null} null when the game does not count
  */
-function rateGame(rating, level, result, now) {
-  const opp = opponentOf(level);
+function rateGame(rating, level, result, now, lad) {
+  const opp = opponentOf(level, lad);
   if (!opp || !(result in SCORE)) return null;
   let cur = rating && Number.isFinite(rating.r) ? rating : ChessRating.newRating();
   const days = rating && rating.at ? (now - rating.at) / 86400000 : 0;
@@ -217,13 +238,13 @@ function rateGame(rating, level, result, now) {
  * solved rather than read off the table). Clamped 400 above the strongest
  * and below the weakest opponent, so 5/5 is a number and not infinity.
  *
- * @param {Array<{level: string, result: string}>} games
+ * @param {Array<{level: string, result: string, lad?: number}>} games
  * @returns {number|null}
  */
 function performance(games) {
-  const g = (games || []).filter((x) => ratingOf(x.level) != null && x.result in SCORE);
+  const g = (games || []).filter((x) => opponentOf(x.level, x.lad) && x.result in SCORE);
   if (!g.length) return null;
-  const opp = g.map((x) => ratingOf(x.level));
+  const opp = g.map((x) => opponentOf(x.level, x.lad).r);
   const score = g.reduce((a, x) => a + SCORE[x.result], 0);
   const lo = Math.min(...opp) - 400, hi = Math.max(...opp) + 400;
   const expected = (r) => opp.reduce((a, o) => a + 1 / (1 + Math.pow(10, (o - r) / 400)), 0);
@@ -275,7 +296,7 @@ function rateHistory(games) {
   let r = null;
   for (const g of (games || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0))) {
     if (g.unrated) continue; // recorded, not rated (#89 review: opponents-lazy.js opponent)
-    const next = rateGame(r, g.diff, g.result, g.t || 0);
+    const next = rateGame(r, g.diff, g.result, g.t || 0, g.lad);
     if (next) r = next;
   }
   return r;
@@ -300,13 +321,15 @@ function fileRating(stats, rec, now) {
   // …and the unrated ones before it are no part of its performance or advice
   const prior = (at >= 0 ? games.slice(0, at) : games).filter((g) => !g.unrated);
   const before = validRating(stats.rating) ? stats.rating : rateHistory(prior);
-  const after = rateGame(before, rec.diff, rec.result, now);
+  // filed now: against today's ladder, and it says so for any later replay
+  if (rec.lad == null) rec.lad = LADDER;
+  const after = rateGame(before, rec.diff, rec.result, now, rec.lad);
   if (!after) return null;
   stats.rating = after;
   // the rating series 「我的」 draws: each engine game carries the rating it
   // left the player on and the performance of the ten games up to it
   const recent = prior.slice(-(PERF_GAMES - 1)).concat([rec])
-    .map((g) => ({ level: g.diff, result: g.result }));
+    .map((g) => ({ level: g.diff, result: g.result, lad: g.lad }));
   const perf = performance(recent);
   rec.rb = before ? Math.round(before.r) : null;
   rec.ra = Math.round(after.r);
@@ -339,6 +362,20 @@ function ratingOfStats(stats) {
   return memo.r;
 }
 
+/**
+ * v8-1-plan T1: the new-game dialog shows the personas a segment at a time —
+ * 入门 / 进阶 / 高手 — each the rungs from its first one up to the next
+ * segment's first. 入门 is the hand-weakened rungs (they play a step below
+ * UCI_Elo's floor); 进阶 starts at 初级, the first Stockfish-limited rung.
+ */
+const SEGMENTS = ["beginner", "easy", "hard"];
+function segmentOf(level) {
+  const i = LEVELS.indexOf(level);
+  let seg = 0;
+  SEGMENTS.forEach((id, k) => { if (i >= LEVELS.indexOf(id)) seg = k; });
+  return seg;
+}
+
 /** The persona one rung up or down from `level`. */
 function neighbour(level, dir) {
   const i = LEVELS.indexOf(level) + (dir === "up" ? 1 : -1);
@@ -347,7 +384,8 @@ function neighbour(level, dir) {
 }
 
 export const Opponents = {
-  LEVELS, RATING, RATING_SE, PERSONAS, EN_NAME, PACE_CAP_MS,
+  LEVELS, RATING, RATING_SE, LADDER, RATING_80, PERSONAS, EN_NAME, PACE_CAP_MS,
   personaById, personaFor, ratingOf, thinkPlan, shouldResign, shouldOfferDraw, acceptsDraw,
   opponentOf, rateGame, rateHistory, fileRating, validRating, ratingOfStats, performance, advice, neighbour,
+  SEGMENTS, segmentOf,
 };
