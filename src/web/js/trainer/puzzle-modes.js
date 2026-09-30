@@ -426,7 +426,7 @@ export function createPuzzleModes(d) {
       setText(el("pz-run-score"), tf("run.score", [run.score]));
       const strikes = el("pz-run-strikes");
       avail(strikes, run.kind === "rush");
-      setText(strikes, tf("run.strikes", [run.strikes, Runs.RUN_RULES[run.kind].strikes]));
+      if (!run.own) setText(strikes, tf("run.strikes", [run.strikes, Runs.RUN_RULES[run.kind].strikes]));
       paintClock(run);
       if (run.over) avail(el("pz-run-clock"), false);
       setText(el("pz-run-best"), run.over && run.newBest ? tf("run.newBest", [run.score]) : tf("run.best", [Runs.bestOf(st, run.kind)]));

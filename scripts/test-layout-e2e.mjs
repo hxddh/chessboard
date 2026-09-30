@@ -5150,6 +5150,84 @@ if (scenario()) {
     }
   }
 }
+// --- v8-2-plan T2: 看 N 步 / 盲走 — the two doors, the card, 「我的」's section ---
+// In three languages, at the widest window and the narrowest: the 玩法 row
+// with its five segments one height and their words inside; the question
+// card's field and buttons inside the panel, the field and 确定 on one line;
+// the block rhythm of 做题 still 8 / 20; 「我的」's 计算专项 one line a mode,
+// its two buttons one height; nothing past the page's edge.
+if (scenario()) {
+  const seed = JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "m1", runs: { look: { best: 6, at: 1 } },
+    vis: { look: { rating: { r: 1310, rd: 120, vol: 0.06 }, solve: 7, miss: 3, q: { "m2-corner-h8|2|12345": { s: 0, n: 1, due: 1, ivl: 0 } } },
+      blind: { rating: { r: 1450, rd: 200, vol: 0.06 }, solve: 2, miss: 1, q: {} } } });
+  const cardFits = (page) => page.evaluate(() => {
+    const sec = document.getElementById("sec-puzzle"), box = sec.getBoundingClientRect();
+    const seg = [...document.querySelectorAll("#pz-mode-seg button")];
+    const card = document.getElementById("pz-vis");
+    const ctl = [...card.querySelectorAll("button, input")].filter((b) => !b.hidden && b.offsetParent);
+    const spill = seg.concat(ctl).filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 ||
+      b.getBoundingClientRect().right > box.right + 1 || b.getBoundingClientRect().left < box.left - 1).map((b) => b.id || b.textContent.trim());
+    const text = [...card.querySelectorAll("p:not(.sr-only)")].filter((p) => p.offsetParent && p.scrollWidth > p.clientWidth + 1).map((p) => p.id);
+    const inp = document.getElementById("pz-vis-in"), go = document.getElementById("pz-vis-go");
+    const row = !inp.offsetParent || Math.abs(inp.getBoundingClientRect().top - go.getBoundingClientRect().top) < 6;
+    const kids = [...sec.children].filter((e) => e.getClientRects().length && e.getBoundingClientRect().height > 0);
+    const gaps = [];
+    for (let i = 1; i < kids.length; i++) gaps.push(Math.round((kids[i].getBoundingClientRect().top - kids[i - 1].getBoundingClientRect().bottom) * 10) / 10);
+    return { shown: !card.hidden && !!card.offsetParent, spill, text, row, gaps,
+      segH: [...new Set(seg.map((b) => Math.round(b.getBoundingClientRect().height)))],
+      ctlH: [...new Set(ctl.filter((b) => b.tagName === "BUTTON").map((b) => Math.round(b.getBoundingClientRect().height)))],
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+  });
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
+      const tag = `T2 看 N 步 / 盲走 (${lang}, ${viewport.width}×${viewport.height})`;
+      const { ctx, page, errs } = await open(lang, "puzzle", "play", "wood", viewport);
+      await page.evaluate((s) => localStorage.setItem("chess.v1.puzzles", s), seed);
+      await page.reload();
+      await page.waitForTimeout(900);
+      await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+      for (const kind of ["look", "blind"]) {
+        await page.click(`#pz-mode-seg button[data-run="${kind}"]`);
+        await page.waitForFunction(() => !document.getElementById("pz-vis").hidden, null, { timeout: 6000 }).catch(() => {});
+        await page.waitForTimeout(300);
+        for (const when of ["asked", "answered"]) {
+          if (when === "answered") {
+            // 答案 (H) gives the question up: the card shows the answer and 下一题
+            await page.evaluate(() => document.activeElement && document.activeElement.blur());
+            await page.keyboard.press("h");
+            await page.waitForTimeout(400);
+          }
+          const r = await cardFits(page);
+          const at = `${tag} ${kind}/${when}`;
+          assert(r.shown, `${at}: 卡片出现`);
+          assert(r.segH.length === 1 && r.ctlH.length <= 1, `${at}: 玩法五段一样高、卡片的按钮一样高 (${r.segH.join(", ")}; ${r.ctlH.join(", ")})`);
+          assert(r.spill.length === 0 && r.text.length === 0 && r.row, `${at}: 字不出框、输入框和「确定」一行 (${r.spill.join(", ") || "—"}; ${r.text.join(", ") || "—"})`);
+          assert(r.gaps.every((g) => Math.abs(g - 8) <= 0.5 || Math.abs(g - 20) <= 0.5), `${at}: 做题页的间距仍只有 8 / 20 (${r.gaps.join(", ")})`);
+          assert(r.sideways <= 0, `${at}: 页面不横向滚动 (${r.sideways}px)`);
+        }
+      }
+      await page.click('#rail button[data-view="me"]', { timeout: 1500 }).catch(() => {});
+      await page.waitForFunction(() => !document.getElementById("sec-vis").hidden, null, { timeout: 6000 }).catch(() => {});
+      const me = await page.evaluate(() => {
+        const sec = document.getElementById("sec-vis"), box = sec.getBoundingClientRect();
+        const rows = [...sec.querySelectorAll(".stat-row")];
+        const bs = [...sec.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        const line = (e) => parseFloat(getComputedStyle(e).lineHeight) || 20;
+        return { shown: !sec.hidden, n: rows.length, h: document.getElementById("vis-h").textContent,
+          tall: rows.filter((r) => r.getBoundingClientRect().height > line(r) * 1.6).map((r) => r.textContent.trim()),
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          spill: bs.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().right > box.right + 1).map((b) => b.textContent.trim()),
+          nb: bs.length, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      assert(me.shown && me.n === 2 && me.nb === 2 && me.h, `${tag}: 「我的」有计算专项一节，两行两个按钮（${me.h}）`);
+      assert(me.tall.length === 0, `${tag}: 每个模式一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
+      assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
+        `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

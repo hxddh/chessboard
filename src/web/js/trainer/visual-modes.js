@@ -111,6 +111,7 @@ const W = {
   p: ["兵", "pawn", "ポーン"], n: ["马", "knight", "ナイト"], b: ["象", "bishop", "ビショップ"],
   r: ["车", "rook", "ルーク"], q: ["后", "queen", "クイーン"], k: ["王", "king", "キング"],
   sep: ["、", ", ", "、"],
+  semi: ["；", "; ", "；"],
 };
 
 /** A seeded generator (runs.js's), so a set can be rebuilt from its seed. */
@@ -193,11 +194,14 @@ export function buildLook(Chess, p, n, qseed) {
   const kinds = [];
   // a mate is asked for more often when there is one — and sometimes when
   // there is none, so that the question itself never gives the answer away
-  kinds.push({ t: "mate", w: mates.length ? 4 : 1 });
+  kinds.push({ t: "mate", w: mates.length ? 4 : 0.6 });
   const caps = [...new Set(moves.filter((m) => m.captured).map((m) => m.to))].sort();
   if (caps.length) kinds.push({ t: "cap", w: 2 });
   const checks = [...new Set(moves.filter((m) => /[+#]$/.test(m.san)).map((m) => m.from))].sort();
   if (checks.length) kinds.push({ t: "check", w: 2 });
+  // a side with no capture, no check and no mate (often one just checked)
+  // could only be asked 「有一步杀吗」 — a set full of 「没有」: another position
+  if (kinds.length === 1 && !mates.length) return null;
   let x = r() * kinds.reduce((a, k) => a + k.w, 0);
   const kind = kinds.find((k) => (x -= k.w) < 0) || kinds[0];
   const q = { key: p.id + "|" + n + "|" + qseed, pid: p.id, n, start, sans, fen: g.fen(), last, t: kind.t, side };
@@ -213,12 +217,20 @@ export function buildLook(Chess, p, n, qseed) {
   return q;
 }
 
-/** Question k of the set with seed `seed`, asked at `n` plies. */
+/**
+ * Question k of the set with seed `seed`, asked at `n` plies. A played-on
+ * position seldom holds a mate in one, so about a third of the draws come
+ * from the mates whose solution is one ply longer than `n` — the n plies
+ * listed, and the mate the last one is left for.
+ */
 export function lookQuestion(Chess, pool, seed, k, n) {
   if (!pool.length) return null;
+  const ready = pool.filter((p) => /^m\d$/.test(p.cat) && Array.isArray(p.solution) && p.solution.length === n + 1);
   for (let tries = 0; tries < 60; tries++) {
     const qseed = mix(seed, k, n, tries);
-    const p = pool[Math.floor(rng(qseed ^ 0x5bd1e995)() * pool.length)];
+    const r = rng(qseed ^ 0x5bd1e995);
+    const from = ready.length && r() < 0.35 ? ready : pool;
+    const p = from[Math.floor(r() * from.length)];
     const q = buildLook(Chess, p, n, qseed);
     if (q) return q;
   }
@@ -389,7 +401,7 @@ export function createVisualModes(d) {
     for (const row of g.board()) for (const x of row) if (x) out[x.color].push(x);
     const fmt = (xs) => xs.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || (a.square < b.square ? -1 : 1))
       .map((x) => (x.type === "p" ? "" : x.type.toUpperCase()) + x.square).join(" ");
-    return sideW("w") + " " + fmt(out.w) + w("sep") + sideW("b") + " " + fmt(out.b);
+    return sideW("w") + " " + fmt(out.w) + w("semi") + sideW("b") + " " + fmt(out.b);
   }
   function blindGoal(p) {
     return w("qBlind", [sideW(new Chess(p.fen).turn()), t("pz.cat." + p.cat)]);
