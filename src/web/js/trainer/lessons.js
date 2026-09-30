@@ -23,6 +23,7 @@ import { ChessEndgameRules } from "../endgame-rules.js";
 import { createEndgames } from "./endgames.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade } from "../review-grade.js";
+import { createAdvLessons } from "./lessons-adv.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -37,7 +38,10 @@ export function createLessonsUI(d) {
   } = d;
 
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
-  const LESSONS = CHESS_LESSONS || [];
+  // v8-2-plan T1: the advanced part 3 follows as placeholders over its chunk;
+  // one asked for before the chunk is here opens when it arrives
+  const Adv = createAdvLessons((i) => { if (i >= 0 && store.session.mode === "learn") startLesson(i); else sync(); });
+  const LESSONS = (CHESS_LESSONS || []).concat(Adv.stubs);
 
   function loadLearnState() {
     const s = Persist.read("learn").value;
@@ -159,6 +163,7 @@ export function createLessonsUI(d) {
     store.session.study = null;
     store.session.learnState.last = i;
     saveLearnState();
+    if (!LESSONS[i].tasks.length) { Adv.want(i); return; }
     store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
@@ -760,6 +765,7 @@ export function createLessonsUI(d) {
       list.replaceChildren();
       let lastPart = null;
       LESSONS.forEach((x, i) => {
+        if (!x.tasks.length) return; // T1: an advanced lesson, its chunk still on the way
         const xl = lessonText(x);
         if (xl.part !== lastPart) {
           lastPart = xl.part;

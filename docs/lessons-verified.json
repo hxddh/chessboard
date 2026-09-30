@@ -1,0 +1,2010 @@
+{
+ "depth": 20,
+ "tie": 50,
+ "engine": "third_party/stockfish/stockfish-19-lite-single (lib/sf-node.mjs)",
+ "lessons": [
+  {
+   "id": "cl-cands",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "r1q3k1/ppp2ppp/8/b2N4/8/8/PPP2PPP/R2Q2K1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Ne7+"
+     ],
+     "best": {
+      "san": "Ne7+",
+      "score": 758
+     },
+     "right": [
+      {
+       "san": "Ne7+",
+       "score": 758
+      }
+     ],
+     "wrong": {
+      "san": "b4",
+      "score": 88
+     },
+     "ok": true,
+     "margin": 670
+    },
+    {
+     "fen": "r4rk1/pp3ppp/2pb1n2/8/3PP3/2N2N2/PP3PPP/R4RK1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "e5"
+     ],
+     "best": {
+      "san": "e5",
+      "score": 539
+     },
+     "right": [
+      {
+       "san": "e5",
+       "score": 539
+      }
+     ],
+     "wrong": {
+      "san": "Rfe1",
+      "score": 171
+     },
+     "ok": true,
+     "margin": 368
+    },
+    {
+     "fen": "7k/p5p1/2p3Qp/8/1P5q/2P5/r5PP/R6K w - - 0 1",
+     "src": "lichess:0IGyd",
+     "goal": "one-of",
+     "accept": [
+      "Qe8+"
+     ],
+     "best": {
+      "san": "Qe8+",
+      "score": 707
+     },
+     "right": [
+      {
+       "san": "Qe8+",
+       "score": 707
+      }
+     ],
+     "wrong": {
+      "san": "Rf1",
+      "score": 4
+     },
+     "ok": true,
+     "margin": 703
+    }
+   ]
+  },
+  {
+   "id": "cl-order",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "5r1k/r1p4p/p5p1/3p4/8/8/PP1Q1PPP/6K1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Qd4+"
+     ],
+     "best": {
+      "san": "Qd4+",
+      "score": 722
+     },
+     "right": [
+      {
+       "san": "Qd4+",
+       "score": 722
+      }
+     ],
+     "wrong": {
+      "san": "Qxd5",
+      "score": 107
+     },
+     "ok": true,
+     "margin": 615
+    },
+    {
+     "fen": "3q1rk1/pppp1ppp/2n5/2b5/2B5/3N4/PPP2PPP/3Q1RK1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Nxc5"
+     ],
+     "best": {
+      "san": "Nxc5",
+      "score": 546
+     },
+     "right": [
+      {
+       "san": "Nxc5",
+       "score": 546
+      }
+     ],
+     "wrong": {
+      "san": "Bxf7+",
+      "score": 19
+     },
+     "ok": true,
+     "margin": 527
+    },
+    {
+     "fen": "r4rk1/pp3p1p/6pQ/q5B1/8/2P5/PP3PPP/6K1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Bf6"
+     ],
+     "best": {
+      "san": "Bf6",
+      "score": 99998
+     },
+     "right": [
+      {
+       "san": "Bf6",
+       "score": 99998
+      }
+     ],
+     "wrong": {
+      "san": "Be3",
+      "score": -614
+     },
+     "ok": true,
+     "margin": 100612
+    }
+   ]
+  },
+  {
+   "id": "cl-checks",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "r4r1k/pp4pp/1q5N/8/2Q5/8/PP3PPP/3R2K1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Qg8+"
+     ],
+     "best": {
+      "san": "Qg8+",
+      "score": 99998
+     },
+     "right": [
+      {
+       "san": "Qg8+",
+       "score": 99998
+      }
+     ],
+     "wrong": {
+      "san": "Nf7+",
+      "score": 8
+     },
+     "ok": true,
+     "margin": 99990,
+     "reply": {
+      "san": "Rxg8",
+      "score": -99999,
+      "best": {
+       "san": "Rxg8",
+       "score": -99999
+      }
+     }
+    },
+    {
+     "fen": "r5rk/pp4pp/1q5N/8/8/8/PP3PPP/3R2K1 w - - 0 2",
+     "src": "set",
+     "goal": "mate",
+     "accept": [
+      "Nf7#"
+     ],
+     "best": {
+      "san": "Nf7#",
+      "score": 99999
+     },
+     "right": [
+      {
+       "san": "Nf7#",
+       "score": 99999
+      }
+     ],
+     "wrong": {
+      "san": "Nxg8",
+      "score": -860
+     },
+     "ok": true,
+     "margin": 100859
+    },
+    {
+     "fen": "2r3k1/p4ppp/1q6/8/8/8/P3QPPP/4R1K1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Qe8+"
+     ],
+     "best": {
+      "san": "Qe8+",
+      "score": 99998
+     },
+     "right": [
+      {
+       "san": "Qe8+",
+       "score": 99998
+      }
+     ],
+     "wrong": {
+      "san": "g3",
+      "score": 2
+     },
+     "ok": true,
+     "margin": 99996
+    }
+   ]
+  },
+  {
+   "id": "cl-count",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "r4rk1/pppnqppp/8/4n3/3B4/5N2/PPP2PPP/R2QR1K1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Bxe5",
+      "Nxe5"
+     ],
+     "best": {
+      "san": "Nxe5",
+      "score": 602
+     },
+     "right": [
+      {
+       "san": "Bxe5",
+       "score": 580
+      },
+      {
+       "san": "Nxe5",
+       "score": 602
+      }
+     ],
+     "wrong": {
+      "san": "Rxe5",
+      "score": 381
+     },
+     "ok": true,
+     "margin": 221
+    },
+    {
+     "fen": "rnbq1rk1/ppp1bppp/4p3/3n4/2P5/2N1PN2/PP2BPPP/R1BQ1RK1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "cxd5"
+     ],
+     "best": {
+      "san": "cxd5",
+      "score": 654
+     },
+     "right": [
+      {
+       "san": "cxd5",
+       "score": 654
+      }
+     ],
+     "wrong": {
+      "san": "Nxd5",
+      "score": 164
+     },
+     "ok": true,
+     "margin": 490
+    },
+    {
+     "fen": "3r2k1/p4ppp/8/2q5/8/8/P2R1PPP/3R2K1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Rxd8+"
+     ],
+     "best": {
+      "san": "Rxd8+",
+      "score": 796
+     },
+     "right": [
+      {
+       "san": "Rxd8+",
+       "score": 796
+      }
+     ],
+     "wrong": {
+      "san": "Rb1",
+      "score": -783
+     },
+     "ok": true,
+     "margin": 1579
+    }
+   ]
+  },
+  {
+   "id": "cl-quiet",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "6k1/1P3ppp/pr6/4n3/4P3/3P3P/5PP1/5RK1 w - - 0 1",
+     "src": "lichess:00gyK·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Rc1"
+     ],
+     "best": {
+      "san": "Rc1",
+      "score": 501
+     },
+     "right": [
+      {
+       "san": "Rc1",
+       "score": 501
+      }
+     ],
+     "wrong": {
+      "san": "f4",
+      "score": -292
+     },
+     "ok": true,
+     "margin": 793
+    },
+    {
+     "fen": "6rk/2R5/p4p1p/4qp1B/4p3/P5P1/5P1P/3R2K1 w - - 0 1",
+     "src": "lichess:09ZOa·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Rdd7"
+     ],
+     "best": {
+      "san": "Rdd7",
+      "score": 472
+     },
+     "right": [
+      {
+       "san": "Rdd7",
+       "score": 472
+      }
+     ],
+     "wrong": {
+      "san": "Rb7",
+      "score": -160
+     },
+     "ok": true,
+     "margin": 632
+    },
+    {
+     "fen": "4rr1k/pp3pR1/4q2p/3p4/3P1B2/6Q1/PP4PP/6K1 w - - 0 1",
+     "src": "lichess:08EVQ",
+     "goal": "one-of",
+     "accept": [
+      "Be5"
+     ],
+     "best": {
+      "san": "Be5",
+      "score": 673
+     },
+     "right": [
+      {
+       "san": "Be5",
+       "score": 673
+      }
+     ],
+     "wrong": {
+      "san": "h3",
+      "score": -401
+     },
+     "ok": true,
+     "margin": 1074
+    }
+   ]
+  },
+  {
+   "id": "cl-replies",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "r1bq1rk1/pppn1ppp/2n1p3/3pP3/1b1P4/2NB1N2/PPP2PPP/R1BQ1RK1 w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Bxh7+"
+     ],
+     "best": {
+      "san": "Bxh7+",
+      "score": 540
+     },
+     "right": [
+      {
+       "san": "Bxh7+",
+       "score": 540
+      }
+     ],
+     "wrong": {
+      "san": "Ne2",
+      "score": 196
+     },
+     "ok": true,
+     "margin": 344,
+     "reply": {
+      "san": "Kxh7",
+      "score": -540,
+      "best": {
+       "san": "Kxh7",
+       "score": -540
+      }
+     }
+    },
+    {
+     "fen": "r1bq1r2/pppn1ppk/2n1p3/3pP3/1b1P4/2N2N2/PPP2PPP/R1BQ1RK1 w - - 0 2",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Ng5+"
+     ],
+     "best": {
+      "san": "Ng5+",
+      "score": 497
+     },
+     "right": [
+      {
+       "san": "Ng5+",
+       "score": 497
+      }
+     ],
+     "wrong": {
+      "san": "Nxd5",
+      "score": -160
+     },
+     "ok": true,
+     "margin": 657,
+     "reply": {
+      "san": "Kg8",
+      "score": -531,
+      "best": {
+       "san": "Kg8",
+       "score": -531
+      }
+     }
+    },
+    {
+     "fen": "r1bq1rk1/pppn1pp1/2n1p3/3pP1N1/1b1P4/2N5/PPP2PPP/R1BQ1RK1 w - - 2 3",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Qh5"
+     ],
+     "best": {
+      "san": "Qh5",
+      "score": 538
+     },
+     "right": [
+      {
+       "san": "Qh5",
+       "score": 538
+      }
+     ],
+     "wrong": {
+      "san": "Qd3",
+      "score": 453
+     },
+     "ok": true,
+     "margin": 85
+    }
+   ]
+  },
+  {
+   "id": "cl-threat",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "8/6pk/2q2prp/8/P2R4/3Q3P/6P1/7K w - - 0 1",
+     "src": "lichess:KzGn8",
+     "goal": "one-of",
+     "accept": [
+      "Rg4"
+     ],
+     "best": {
+      "san": "Rg4",
+      "score": 832
+     },
+     "right": [
+      {
+       "san": "Rg4",
+       "score": 832
+      }
+     ],
+     "wrong": {
+      "san": "Qf1",
+      "score": 9
+     },
+     "ok": true,
+     "margin": 823
+    },
+    {
+     "fen": "6k1/5pp1/1p1p2qp/p1p5/8/P1Q2R1P/1P1Br1P1/7K w - - 0 1",
+     "src": "lichess:6hCcU·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Rg3"
+     ],
+     "best": {
+      "san": "Rg3",
+      "score": 369
+     },
+     "right": [
+      {
+       "san": "Rg3",
+       "score": 369
+      }
+     ],
+     "wrong": {
+      "san": "Bg5",
+      "score": -580
+     },
+     "ok": true,
+     "margin": 949
+    },
+    {
+     "fen": "r5k1/pp3p2/2p4Q/8/2N1pnq1/2P5/PP3PP1/3R2K1 w - - 0 1",
+     "src": "lichess:Wfpah·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Ne3"
+     ],
+     "best": {
+      "san": "Ne3",
+      "score": 545
+     },
+     "right": [
+      {
+       "san": "Ne3",
+       "score": 545
+      }
+     ],
+     "wrong": {
+      "san": "Qxf4",
+      "score": -580
+     },
+     "ok": true,
+     "margin": 1125
+    }
+   ]
+  },
+  {
+   "id": "cl-end",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "3r2k1/6p1/1p5p/p2q4/5R2/1Q2P2P/P5P1/6K1 w - - 0 1",
+     "src": "lichess:0MeQL",
+     "goal": "one-of",
+     "accept": [
+      "Rd4"
+     ],
+     "best": {
+      "san": "Rd4",
+      "score": 687
+     },
+     "right": [
+      {
+       "san": "Rd4",
+       "score": 687
+      }
+     ],
+     "wrong": {
+      "san": "Qxb6",
+      "score": 17
+     },
+     "ok": true,
+     "margin": 670,
+     "reply": {
+      "san": "Qxb3",
+      "score": -851,
+      "best": {
+       "san": "Qxb3",
+       "score": -851
+      }
+     }
+    },
+    {
+     "fen": "3r2k1/6p1/1p5p/p7/3R4/1q2P2P/P5P1/6K1 w - - 0 2",
+     "src": "lichess:0MeQL",
+     "goal": "one-of",
+     "accept": [
+      "Rxd8+"
+     ],
+     "best": {
+      "san": "Rxd8+",
+      "score": 675
+     },
+     "right": [
+      {
+       "san": "Rxd8+",
+       "score": 675
+      }
+     ],
+     "wrong": {
+      "san": "axb3",
+      "score": -820
+     },
+     "ok": true,
+     "margin": 1495,
+     "reply": {
+      "san": "Kf7",
+      "score": -820,
+      "best": {
+       "san": "Kf7",
+       "score": -820
+      }
+     }
+    },
+    {
+     "fen": "3R4/5kp1/1p5p/p7/8/1q2P2P/P5P1/6K1 w - - 1 3",
+     "src": "lichess:0MeQL",
+     "goal": "one-of",
+     "accept": [
+      "axb3"
+     ],
+     "best": {
+      "san": "axb3",
+      "score": 745
+     },
+     "right": [
+      {
+       "san": "axb3",
+       "score": 745
+      }
+     ],
+     "wrong": {
+      "san": "Rd7+",
+      "score": -592
+     },
+     "ok": true,
+     "margin": 1337
+    }
+   ]
+  },
+  {
+   "id": "cl-inter",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "6k1/3b2p1/p4r2/8/6N1/8/P3rPP1/4R1K1 w - - 0 1",
+     "src": "lichess:0ESey",
+     "goal": "one-of",
+     "accept": [
+      "Nxf6+"
+     ],
+     "best": {
+      "san": "Nxf6+",
+      "score": 618
+     },
+     "right": [
+      {
+       "san": "Nxf6+",
+       "score": 618
+      }
+     ],
+     "wrong": {
+      "san": "Rxe2",
+      "score": -436
+     },
+     "ok": true,
+     "margin": 1054,
+     "reply": {
+      "san": "Kf7",
+      "score": -574,
+      "best": {
+       "san": "Kf7",
+       "score": -574
+      }
+     }
+    },
+    {
+     "fen": "8/3b1kp1/p4N2/8/8/8/P3rPP1/4R1K1 w - - 1 2",
+     "src": "lichess:0ESey",
+     "goal": "one-of",
+     "accept": [
+      "Rxe2"
+     ],
+     "best": {
+      "san": "Rxe2",
+      "score": 569
+     },
+     "right": [
+      {
+       "san": "Rxe2",
+       "score": 569
+      }
+     ],
+     "wrong": {
+      "san": "Rd1",
+      "score": 0
+     },
+     "ok": true,
+     "margin": 569
+    },
+    {
+     "fen": "1k6/1p3p2/4p3/4n3/3B4/3P4/6KP/5r2 w - - 0 1",
+     "src": "lichess:0GnOR",
+     "goal": "one-of",
+     "accept": [
+      "Bxe5+"
+     ],
+     "best": {
+      "san": "Bxe5+",
+      "score": 602
+     },
+     "right": [
+      {
+       "san": "Bxe5+",
+       "score": 602
+      }
+     ],
+     "wrong": {
+      "san": "Kxf1",
+      "score": -415
+     },
+     "ok": true,
+     "margin": 1017
+    }
+   ]
+  },
+  {
+   "id": "cl-race",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "7K/8/k1P5/7p/8/8/8/8 w - - 0 1",
+     "src": "Réti 1921",
+     "goal": "one-of",
+     "accept": [
+      "Kg7"
+     ],
+     "best": {
+      "san": "Kg7",
+      "score": 0
+     },
+     "right": [
+      {
+       "san": "Kg7",
+       "score": 0
+      }
+     ],
+     "wrong": {
+      "san": "c7",
+      "score": -900
+     },
+     "ok": true,
+     "margin": 900
+    },
+    {
+     "fen": "8/8/4p3/2p5/3k2KP/8/8/8 w - - 0 1",
+     "src": "lichess:00iQD·flipped",
+     "goal": "one-of",
+     "accept": [
+      "h5"
+     ],
+     "best": {
+      "san": "h5",
+      "score": 653
+     },
+     "right": [
+      {
+       "san": "h5",
+       "score": 653
+      }
+     ],
+     "wrong": {
+      "san": "Kf4",
+      "score": -364
+     },
+     "ok": true,
+     "margin": 1017
+    },
+    {
+     "fen": "8/7p/p7/2K1kp2/1P5P/5P2/8/8 w - - 0 1",
+     "src": "lichess:02TLp·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Kb6"
+     ],
+     "best": {
+      "san": "Kb6",
+      "score": 600
+     },
+     "right": [
+      {
+       "san": "Kb6",
+       "score": 600
+      }
+     ],
+     "wrong": {
+      "san": "h5",
+      "score": -611
+     },
+     "ok": true,
+     "margin": 1211
+    }
+   ]
+  },
+  {
+   "id": "cl-mate",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "q1r3k1/pp3p2/5Pp1/8/8/8/PP1Q2P1/6KR w - - 0 1",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Rh8+"
+     ],
+     "best": {
+      "san": "Rh8+",
+      "score": 99997
+     },
+     "right": [
+      {
+       "san": "Rh8+",
+       "score": 99997
+      }
+     ],
+     "wrong": {
+      "san": "b4",
+      "score": 99992
+     },
+     "ok": true,
+     "margin": 5,
+     "reply": {
+      "san": "Kxh8",
+      "score": -99998,
+      "best": {
+       "san": "Kxh8",
+       "score": -99998
+      }
+     }
+    },
+    {
+     "fen": "q1r4k/pp3p2/5Pp1/8/8/8/PP1Q2P1/6K1 w - - 0 2",
+     "src": "set",
+     "goal": "one-of",
+     "accept": [
+      "Qh6+"
+     ],
+     "best": {
+      "san": "Qh6+",
+      "score": 99998
+     },
+     "right": [
+      {
+       "san": "Qh6+",
+       "score": 99998
+      }
+     ],
+     "wrong": {
+      "san": "Qe3",
+      "score": -3
+     },
+     "ok": true,
+     "margin": 100001,
+     "reply": {
+      "san": "Kg8",
+      "score": -99999,
+      "best": {
+       "san": "Kg8",
+       "score": -99999
+      }
+     }
+    },
+    {
+     "fen": "q1r3k1/pp3p2/5PpQ/8/8/8/PP4P1/6K1 w - - 2 3",
+     "src": "set",
+     "goal": "mate",
+     "accept": [
+      "Qg7#"
+     ],
+     "best": {
+      "san": "Qg7#",
+      "score": 99999
+     },
+     "right": [
+      {
+       "san": "Qg7#",
+       "score": 99999
+      }
+     ],
+     "wrong": {
+      "san": "Kh2",
+      "score": 84
+     },
+     "ok": true,
+     "margin": 99915
+    }
+   ]
+  },
+  {
+   "id": "cl-guard",
+   "part": "计算",
+   "tasks": [
+    {
+     "fen": "r5k1/5pp1/7p/3b4/1PBpnR2/2n4P/P1P3P1/5RK1 w - - 0 1",
+     "src": "lichess:0SiCg·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Bxd5"
+     ],
+     "best": {
+      "san": "Bxd5",
+      "score": 546
+     },
+     "right": [
+      {
+       "san": "Bxd5",
+       "score": 546
+      }
+     ],
+     "wrong": {
+      "san": "Bd3",
+      "score": -239
+     },
+     "ok": true,
+     "margin": 785,
+     "reply": {
+      "san": "Nxd5",
+      "score": -568,
+      "best": {
+       "san": "Nxd5",
+       "score": -568
+      }
+     }
+    },
+    {
+     "fen": "r5k1/5pp1/7p/3n4/1P1pnR2/7P/P1P3P1/5RK1 w - - 0 2",
+     "src": "lichess:0SiCg·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Rxe4"
+     ],
+     "best": {
+      "san": "Rxe4",
+      "score": 517
+     },
+     "right": [
+      {
+       "san": "Rxe4",
+       "score": 517
+      }
+     ],
+     "wrong": {
+      "san": "Rxf7",
+      "score": -243
+     },
+     "ok": true,
+     "margin": 760
+    },
+    {
+     "fen": "3r2k1/1p3p1p/p1n3q1/8/7Q/1P1p1N2/P4PPP/2R3K1 w - - 0 1",
+     "src": "lichess:0iOvg",
+     "goal": "one-of",
+     "accept": [
+      "Rxc6"
+     ],
+     "best": {
+      "san": "Rxc6",
+      "score": 576
+     },
+     "right": [
+      {
+       "san": "Rxc6",
+       "score": 576
+      }
+     ],
+     "wrong": {
+      "san": "h3",
+      "score": 22
+     },
+     "ok": true,
+     "margin": 554
+    }
+   ]
+  },
+  {
+   "id": "po-badb",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "8/8/4kbpp/1p1bBp2/p1p2P2/P1P1K1P1/1P1N3P/8 w - - 0 1",
+     "src": "lichess:0dMiS",
+     "goal": "one-of",
+     "accept": [
+      "Bxf6"
+     ],
+     "best": {
+      "san": "Bxf6",
+      "score": 383
+     },
+     "right": [
+      {
+       "san": "Bxf6",
+       "score": 383
+      }
+     ],
+     "wrong": {
+      "san": "Nf3",
+      "score": 0
+     },
+     "ok": true,
+     "margin": 383,
+     "reply": {
+      "san": "Kxf6",
+      "score": -352,
+      "best": {
+       "san": "Kxf6",
+       "score": -352
+      }
+     }
+    },
+    {
+     "fen": "8/8/5kpp/1p1b1p2/p1p2P2/P1P1K1P1/1P1N3P/8 w - - 0 2",
+     "src": "lichess:0dMiS",
+     "goal": "one-of",
+     "accept": [
+      "Kd4"
+     ],
+     "best": {
+      "san": "Kd4",
+      "score": 325
+     },
+     "right": [
+      {
+       "san": "Kd4",
+       "score": 325
+      }
+     ],
+     "wrong": {
+      "san": "Kf2",
+      "score": 10
+     },
+     "ok": true,
+     "margin": 315
+    },
+    {
+     "fen": "r5k1/ppp4b/1b3p1p/4nP2/2P4N/PP5P/2R3P1/5R1K w - - 0 1",
+     "src": "lichess:02Wga·flipped",
+     "goal": "one-of",
+     "accept": [
+      "c5"
+     ],
+     "best": {
+      "san": "c5",
+      "score": 398
+     },
+     "right": [
+      {
+       "san": "c5",
+       "score": 398
+      }
+     ],
+     "wrong": {
+      "san": "g4",
+      "score": -150
+     },
+     "ok": true,
+     "margin": 548
+    }
+   ]
+  },
+  {
+   "id": "po-trap",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "8/6kp/p3p1pb/1p2P3/1PpP2P1/P3BK1P/8/8 w - - 0 1",
+     "src": "lichess:198eP",
+     "goal": "one-of",
+     "accept": [
+      "g5"
+     ],
+     "best": {
+      "san": "g5",
+      "score": 551
+     },
+     "right": [
+      {
+       "san": "g5",
+       "score": 551
+      }
+     ],
+     "wrong": {
+      "san": "Bxh6+",
+      "score": 0
+     },
+     "ok": true,
+     "margin": 551
+    },
+    {
+     "fen": "8/1p3p1k/p3rBp1/2p1Pb1p/2P5/P2PRK1P/6P1/8 w - - 0 1",
+     "src": "lichess:0pwqn",
+     "goal": "one-of",
+     "accept": [
+      "g4"
+     ],
+     "best": {
+      "san": "g4",
+      "score": 568
+     },
+     "right": [
+      {
+       "san": "g4",
+       "score": 568
+      }
+     ],
+     "wrong": {
+      "san": "Kf4",
+      "score": 48
+     },
+     "ok": true,
+     "margin": 520
+    },
+    {
+     "fen": "r5k1/p6p/5ppb/8/1R1P4/2P5/b1K2PPP/7R w - - 0 1",
+     "src": "lichess:0KyXd·flipped",
+     "goal": "one-of",
+     "accept": [
+      "c4"
+     ],
+     "best": {
+      "san": "c4",
+      "score": 379
+     },
+     "right": [
+      {
+       "san": "c4",
+       "score": 379
+      }
+     ],
+     "wrong": {
+      "san": "Ra1",
+      "score": 13
+     },
+     "ok": true,
+     "margin": 366
+    }
+   ]
+  },
+  {
+   "id": "po-color",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "4r1k1/p3q2p/2p3p1/2p2p2/2P2PN1/1PQ1p3/P1P3PP/7K w - - 0 1",
+     "src": "lichess:0VN8S·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Nh6+"
+     ],
+     "best": {
+      "san": "Nh6+",
+      "score": 99998
+     },
+     "right": [
+      {
+       "san": "Nh6+",
+       "score": 99998
+      }
+     ],
+     "wrong": {
+      "san": "Ne5",
+      "score": -460
+     },
+     "ok": true,
+     "margin": 100458,
+     "reply": {
+      "san": "Kf8",
+      "score": -99999,
+      "best": {
+       "san": "Kf8",
+       "score": -99999
+      }
+     }
+    },
+    {
+     "fen": "4rk2/p3q2p/2p3pN/2p2p2/2P2P2/1PQ1p3/P1P3PP/7K w - - 2 2",
+     "src": "lichess:0VN8S·flipped",
+     "goal": "mate",
+     "accept": [
+      "Qh8#"
+     ],
+     "best": {
+      "san": "Qh8#",
+      "score": 99999
+     },
+     "right": [
+      {
+       "san": "Qh8#",
+       "score": 99999
+      }
+     ],
+     "wrong": {
+      "san": "Nxf5",
+      "score": -586
+     },
+     "ok": true,
+     "margin": 100585
+    },
+    {
+     "fen": "4rr1k/p2NQp1p/1p2p1pP/4P3/3q1PK1/3n1PR1/P7/8 w - - 0 1",
+     "src": "lichess:0zyEv",
+     "goal": "one-of",
+     "accept": [
+      "Qf6+"
+     ],
+     "best": {
+      "san": "Qf6+",
+      "score": 99998
+     },
+     "right": [
+      {
+       "san": "Qf6+",
+       "score": 99998
+      }
+     ],
+     "wrong": {
+      "san": "Qg5",
+      "score": -731
+     },
+     "ok": true,
+     "margin": 100729,
+     "reply": {
+      "san": "Kg8",
+      "score": -99999,
+      "best": {
+       "san": "Kg8",
+       "score": -99999
+      }
+     }
+    },
+    {
+     "fen": "4rrk1/p2N1p1p/1p2pQpP/4P3/3q1PK1/3n1PR1/P7/8 w - - 2 2",
+     "src": "lichess:0zyEv",
+     "goal": "mate",
+     "accept": [
+      "Qg7#"
+     ],
+     "best": {
+      "san": "Qg7#",
+      "score": 99999
+     },
+     "right": [
+      {
+       "san": "Qg7#",
+       "score": 99999
+      }
+     ],
+     "wrong": {
+      "san": "Rg2",
+      "score": -207
+     },
+     "ok": true,
+     "margin": 100206
+    }
+   ]
+  },
+  {
+   "id": "po-hole",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "4R3/5pk1/6p1/6P1/4N3/r3PK2/8/6b1 w - - 0 1",
+     "src": "lichess:0JIDw",
+     "goal": "one-of",
+     "accept": [
+      "Nf6"
+     ],
+     "best": {
+      "san": "Nf6",
+      "score": 866
+     },
+     "right": [
+      {
+       "san": "Nf6",
+       "score": 866
+      }
+     ],
+     "wrong": {
+      "san": "Nc5",
+      "score": 2
+     },
+     "ok": true,
+     "margin": 864
+    },
+    {
+     "fen": "3R4/5pk1/4r1pp/p2N2P1/1p5P/3n1PK1/8/8 w - - 0 1",
+     "src": "lichess:1svGQ",
+     "goal": "one-of",
+     "accept": [
+      "Nf6"
+     ],
+     "best": {
+      "san": "Nf6",
+      "score": 481
+     },
+     "right": [
+      {
+       "san": "Nf6",
+       "score": 481
+      }
+     ],
+     "wrong": {
+      "san": "Nc7",
+      "score": -108
+     },
+     "ok": true,
+     "margin": 589
+    },
+    {
+     "fen": "3rr3/1p4kp/p3p1p1/4n1P1/2P1N2P/1P6/P4PB1/4R1K1 w - - 0 1",
+     "src": "lichess:0yXaT",
+     "goal": "one-of",
+     "accept": [
+      "Nf6"
+     ],
+     "best": {
+      "san": "Nf6",
+      "score": 505
+     },
+     "right": [
+      {
+       "san": "Nf6",
+       "score": 505
+      }
+     ],
+     "wrong": {
+      "san": "h5",
+      "score": 0
+     },
+     "ok": true,
+     "margin": 505
+    }
+   ]
+  },
+  {
+   "id": "po-outpost",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "4r1k1/1p3Npp/p1n5/1r2P3/8/8/6PP/4RRK1 w - - 0 1",
+     "src": "lichess:0pZXS",
+     "goal": "one-of",
+     "accept": [
+      "Nd6"
+     ],
+     "best": {
+      "san": "Nd6",
+      "score": 256
+     },
+     "right": [
+      {
+       "san": "Nd6",
+       "score": 256
+      }
+     ],
+     "wrong": {
+      "san": "Rc1",
+      "score": -100
+     },
+     "ok": true,
+     "margin": 356
+    },
+    {
+     "fen": "r7/1R6/3kp3/p2p4/3P4/Pp2PN2/1r6/3K4 w - - 0 1",
+     "src": "lichess:066tp",
+     "goal": "one-of",
+     "accept": [
+      "Ne5"
+     ],
+     "best": {
+      "san": "Ne5",
+      "score": 443
+     },
+     "right": [
+      {
+       "san": "Ne5",
+       "score": 443
+      }
+     ],
+     "wrong": {
+      "san": "Kc1",
+      "score": -528
+     },
+     "ok": true,
+     "margin": 971
+    },
+    {
+     "fen": "5rk1/2p1n2p/p1q1p1p1/6P1/P1P2PN1/3r1R2/8/5RQK w - - 0 1",
+     "src": "lichess:0RHQx",
+     "goal": "one-of",
+     "accept": [
+      "Ne5"
+     ],
+     "best": {
+      "san": "Ne5",
+      "score": 543
+     },
+     "right": [
+      {
+       "san": "Ne5",
+       "score": 543
+      }
+     ],
+     "wrong": {
+      "san": "Qg2",
+      "score": -123
+     },
+     "ok": true,
+     "margin": 666
+    }
+   ]
+  },
+  {
+   "id": "po-chain",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "r5k1/pp2q1r1/4b2Q/3pP3/2p2P2/P1P1P1p1/2P3P1/3R1RK1 w - - 0 1",
+     "src": "lichess:7PN6u·flipped",
+     "goal": "one-of",
+     "accept": [
+      "f5"
+     ],
+     "best": {
+      "san": "f5",
+      "score": 311
+     },
+     "right": [
+      {
+       "san": "f5",
+       "score": 311
+      }
+     ],
+     "wrong": {
+      "san": "Rf3",
+      "score": -402
+     },
+     "ok": true,
+     "margin": 713
+    },
+    {
+     "fen": "3r2k1/q4ppp/4p3/b2pPPQ1/2pP4/1p6/4B1PP/5RK1 w - - 0 1",
+     "src": "lichess:Bzi4H",
+     "goal": "one-of",
+     "accept": [
+      "f6"
+     ],
+     "best": {
+      "san": "f6",
+      "score": 836
+     },
+     "right": [
+      {
+       "san": "f6",
+       "score": 836
+      }
+     ],
+     "wrong": {
+      "san": "fxe6",
+      "score": -493
+     },
+     "ok": true,
+     "margin": 1329
+    },
+    {
+     "fen": "1r4k1/3pnp2/b1p1p1pQ/p1q1PP2/P3r1B1/8/1B3RP1/R5K1 w - - 0 1",
+     "src": "lichess:CI5lN·flipped",
+     "goal": "one-of",
+     "accept": [
+      "f6"
+     ],
+     "best": {
+      "san": "f6",
+      "score": 724
+     },
+     "right": [
+      {
+       "san": "f6",
+       "score": 724
+      }
+     ],
+     "wrong": {
+      "san": "Ba3",
+      "score": -260
+     },
+     "ok": true,
+     "margin": 984
+    }
+   ]
+  },
+  {
+   "id": "po-major",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "6k1/6p1/p7/5p1p/1Pp5/7P/P4P2/5K2 w - - 0 1",
+     "src": "lichess:073Hj",
+     "goal": "one-of",
+     "accept": [
+      "a4"
+     ],
+     "best": {
+      "san": "a4",
+      "score": 426
+     },
+     "right": [
+      {
+       "san": "a4",
+       "score": 426
+      }
+     ],
+     "wrong": {
+      "san": "Ke2",
+      "score": -3
+     },
+     "ok": true,
+     "margin": 429
+    },
+    {
+     "fen": "7k/1p6/p7/2Pp2p1/1P1Pp3/P4p2/5P2/6K1 w - - 0 1",
+     "src": "lichess:02jSd·flipped",
+     "goal": "one-of",
+     "accept": [
+      "a4"
+     ],
+     "best": {
+      "san": "a4",
+      "score": 595
+     },
+     "right": [
+      {
+       "san": "a4",
+       "score": 595
+      }
+     ],
+     "wrong": {
+      "san": "Kh2",
+      "score": 0
+     },
+     "ok": true,
+     "margin": 595
+    },
+    {
+     "fen": "8/3k4/4p1p1/3pP1P1/pP6/P1K5/8/8 w - - 0 1",
+     "src": "lichess:04jT2·flipped",
+     "goal": "one-of",
+     "accept": [
+      "b5"
+     ],
+     "best": {
+      "san": "b5",
+      "score": 606
+     },
+     "right": [
+      {
+       "san": "b5",
+       "score": 606
+      }
+     ],
+     "wrong": {
+      "san": "Kd4",
+      "score": 0
+     },
+     "ok": true,
+     "margin": 606
+    }
+   ]
+  },
+  {
+   "id": "po-file",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "3q2k1/2p2ppp/8/p2p4/5n2/2R5/P4PPP/1R3K2 w - - 0 1",
+     "src": "lichess:00aG8·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Rcb3"
+     ],
+     "best": {
+      "san": "Rcb3",
+      "score": 220
+     },
+     "right": [
+      {
+       "san": "Rcb3",
+       "score": 220
+      }
+     ],
+     "wrong": {
+      "san": "g3",
+      "score": -526
+     },
+     "ok": true,
+     "margin": 746
+    },
+    {
+     "fen": "7r/2k2ppp/p1n1p3/8/PpR5/3r4/1P2NPPP/4R1K1 w - - 0 1",
+     "src": "lichess:01RxX",
+     "goal": "one-of",
+     "accept": [
+      "Rec1"
+     ],
+     "best": {
+      "san": "Rec1",
+      "score": 441
+     },
+     "right": [
+      {
+       "san": "Rec1",
+       "score": 441
+      }
+     ],
+     "wrong": {
+      "san": "Nc1",
+      "score": -187
+     },
+     "ok": true,
+     "margin": 628
+    },
+    {
+     "fen": "r6k/ppp2p1P/3p4/6R1/8/8/PPP2r2/2K4R w - - 0 1",
+     "src": "lichess:02oHh",
+     "goal": "one-of",
+     "accept": [
+      "Rhg1"
+     ],
+     "best": {
+      "san": "Rhg1",
+      "score": 707
+     },
+     "right": [
+      {
+       "san": "Rhg1",
+       "score": 707
+      }
+     ],
+     "wrong": {
+      "san": "Re1",
+      "score": -4
+     },
+     "ok": true,
+     "margin": 711
+    }
+   ]
+  },
+  {
+   "id": "po-behind",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "8/p5p1/2p1P1k1/3p4/2p5/2P4P/2r5/1R4K1 w - - 0 1",
+     "src": "lichess:31kKI",
+     "goal": "one-of",
+     "accept": [
+      "Re1"
+     ],
+     "best": {
+      "san": "Re1",
+      "score": 624
+     },
+     "right": [
+      {
+       "san": "Re1",
+       "score": 624
+      }
+     ],
+     "wrong": {
+      "san": "h4",
+      "score": -458
+     },
+     "ok": true,
+     "margin": 1082
+    },
+    {
+     "fen": "6k1/2p2pp1/Pp6/2p5/8/8/1r4P1/2R3K1 w - - 0 1",
+     "src": "lichess:3JFKd",
+     "goal": "one-of",
+     "accept": [
+      "Ra1"
+     ],
+     "best": {
+      "san": "Ra1",
+      "score": 584
+     },
+     "right": [
+      {
+       "san": "Ra1",
+       "score": 584
+      }
+     ],
+     "wrong": {
+      "san": "Re1",
+      "score": -591
+     },
+     "ok": true,
+     "margin": 1175
+    },
+    {
+     "fen": "8/6p1/3Pk3/1p2P2p/1P4p1/1r6/5PK1/4R3 w - - 0 1",
+     "src": "lichess:2JBlU",
+     "goal": "one-of",
+     "accept": [
+      "Rd1"
+     ],
+     "best": {
+      "san": "Rd1",
+      "score": 627
+     },
+     "right": [
+      {
+       "san": "Rd1",
+       "score": 627
+      }
+     ],
+     "wrong": {
+      "san": "Rh1",
+      "score": 17
+     },
+     "ok": true,
+     "margin": 610
+    }
+   ]
+  },
+  {
+   "id": "po-kpend",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "8/8/1kr4R/p7/K7/1P6/8/8 w - - 0 1",
+     "src": "lichess:002Uy·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Rxc6+"
+     ],
+     "best": {
+      "san": "Rxc6+",
+      "score": 666
+     },
+     "right": [
+      {
+       "san": "Rxc6+",
+       "score": 666
+      }
+     ],
+     "wrong": {
+      "san": "Rh5",
+      "score": 7
+     },
+     "ok": true,
+     "margin": 659
+    },
+    {
+     "fen": "8/5p1p/6pk/8/2pQP3/2P2P2/Pq6/3K4 w - - 0 1",
+     "src": "lichess:02Mby·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Qd2+"
+     ],
+     "best": {
+      "san": "Qd2+",
+      "score": 661
+     },
+     "right": [
+      {
+       "san": "Qd2+",
+       "score": 661
+      }
+     ],
+     "wrong": {
+      "san": "Qxc4",
+      "score": 35
+     },
+     "ok": true,
+     "margin": 626
+    },
+    {
+     "fen": "8/p7/6p1/P1KRrk1p/1P6/8/8/8 w - - 0 1",
+     "src": "lichess:01NZA",
+     "goal": "one-of",
+     "accept": [
+      "Rxe5+"
+     ],
+     "best": {
+      "san": "Rxe5+",
+      "score": 609
+     },
+     "right": [
+      {
+       "san": "Rxe5+",
+       "score": 609
+      }
+     ],
+     "wrong": {
+      "san": "a6",
+      "score": -666
+     },
+     "ok": true,
+     "margin": 1275
+    }
+   ]
+  },
+  {
+   "id": "po-trade",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "8/4kpp1/4b2p/2PB4/1K6/p5P1/5PP1/8 w - - 0 1",
+     "src": "lichess:01hHF",
+     "goal": "one-of",
+     "accept": [
+      "Bxe6"
+     ],
+     "best": {
+      "san": "Bxe6",
+      "score": 580
+     },
+     "right": [
+      {
+       "san": "Bxe6",
+       "score": 580
+      }
+     ],
+     "wrong": {
+      "san": "Bb3",
+      "score": -647
+     },
+     "ok": true,
+     "margin": 1227
+    },
+    {
+     "fen": "8/p7/2p5/P1p1kb2/5p2/2PB1P2/4K3/8 w - - 0 1",
+     "src": "lichess:05PrB·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Bxf5"
+     ],
+     "best": {
+      "san": "Bxf5",
+      "score": 520
+     },
+     "right": [
+      {
+       "san": "Bxf5",
+       "score": 520
+      }
+     ],
+     "wrong": {
+      "san": "Bc4",
+      "score": -73
+     },
+     "ok": true,
+     "margin": 593
+    },
+    {
+     "fen": "8/5k2/1p1p3K/1P1Pb3/5B2/8/8/8 w - - 0 1",
+     "src": "lichess:06hm4",
+     "goal": "one-of",
+     "accept": [
+      "Bxe5"
+     ],
+     "best": {
+      "san": "Bxe5",
+      "score": 611
+     },
+     "right": [
+      {
+       "san": "Bxe5",
+       "score": 611
+      }
+     ],
+     "wrong": {
+      "san": "Be3",
+      "score": 8
+     },
+     "ok": true,
+     "margin": 603
+    }
+   ]
+  },
+  {
+   "id": "po-prophy",
+   "part": "局面型",
+   "tasks": [
+    {
+     "fen": "8/8/1p5p/p7/P5Pp/1P5P/k1K5/8 w - - 0 1",
+     "src": "lichess:09Mof",
+     "goal": "one-of",
+     "accept": [
+      "Kc3"
+     ],
+     "best": {
+      "san": "Kc3",
+      "score": 596
+     },
+     "right": [
+      {
+       "san": "Kc3",
+       "score": 596
+      }
+     ],
+     "wrong": {
+      "san": "g5",
+      "score": -843
+     },
+     "ok": true,
+     "margin": 1439
+    },
+    {
+     "fen": "8/p7/8/1p3k1p/1P6/6P1/6KP/8 w - - 0 1",
+     "src": "lichess:0AJTV·flipped",
+     "goal": "one-of",
+     "accept": [
+      "Kf3"
+     ],
+     "best": {
+      "san": "Kf3",
+      "score": 603
+     },
+     "right": [
+      {
+       "san": "Kf3",
+       "score": 603
+      }
+     ],
+     "wrong": {
+      "san": "Kf2",
+      "score": 51
+     },
+     "ok": true,
+     "margin": 552
+    },
+    {
+     "fen": "8/8/p1k5/P4p1p/2K5/5PP1/8/8 w - - 0 1",
+     "src": "lichess:08uwv·flipped",
+     "goal": "one-of",
+     "accept": [
+      "f4"
+     ],
+     "best": {
+      "san": "f4",
+      "score": 604
+     },
+     "right": [
+      {
+       "san": "f4",
+       "score": 604
+      }
+     ],
+     "wrong": {
+      "san": "Kd4",
+      "score": 15
+     },
+     "ok": true,
+     "margin": 589
+    }
+   ]
+  }
+ ],
+ "summary": {
+  "lessons": 24,
+  "tasks": 73,
+  "failed": 0,
+  "minutes": 4.4
+ }
+}

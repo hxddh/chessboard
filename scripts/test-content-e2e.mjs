@@ -1404,6 +1404,159 @@ if (hasTab && REAL.length) {
   await ctx2.close();
 }
 
+// --- v8-2-plan T1: 进阶课程第三部 24 课，三种语言各走一遍 --------------------
+// The 24 lessons are a chunk (chunk-lessons-adv.js), so none of them is in the
+// course walk above, which reads lessons.js. Here each language gets a fresh
+// page: wait for the chunk to put the two new parts in the list, then open
+// every lesson by its title in that language, read its words off the page,
+// play every step's answer on the board, and see the lesson marked done. The
+// first lesson also takes a wrong move and must answer with that language's
+// retry hint. zh-CN starts with nothing done, so each lesson opens with its
+// demo — skipped with a click, as a player would.
+{
+  const advData = { console };
+  advData.globalThis = advData; advData.window = advData;
+  vm.createContext(advData);
+  for (const f of ["chess.js", "lessons-adv-chunk.js"]) {
+    vm.runInContext(compileModuleSync(path.join(ROOT, "js", f)), advData, { filename: "module" });
+  }
+  const ADV = advData.CHESS_LESSONS_ADV;
+  const AdvChess = advData.Chess;
+  assert(ADV && ADV.lessons.length === 24, "T1:分块里有 24 课");
+  const plain = (s) => String(s).replace(/\*\*/g, "");
+  const words = (lang, L) => (lang === "zh-CN" ? L : Object.assign({}, ADV[lang][L.id], { tasks: ADV[lang][L.id].tasks }));
+  // The three languages walk side by side, a page each: the time is the
+  // runner's 900 ms between steps, not work, and 219 steps one after another
+  // added seven minutes to a suite CI runs as a single job (v8-2-plan V4).
+  await Promise.all(["zh-CN", "en", "ja"].map(async (lang) => {
+    const c3 = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+    await c3.addInitScript((id) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "learn", langId: id, sideTab: "play", soundOn: false }));
+      localStorage.setItem("chess.panelOpen", "1");
+    }, lang);
+    const pg = await c3.newPage();
+    pg.on("pageerror", (e) => errs.push(lang + ": " + e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(1000);
+    await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+    const tapQ = async (s) => {
+      const p = await pg.evaluate((x) => {
+        const cv = document.getElementById("board"), r = cv.getBoundingClientRect();
+        const f = x.charCodeAt(0) - 97, rk = 8 - +x[1], z = r.width / 8;
+        return { x: r.left + (f + .5) * z, y: r.top + (rk + .5) * z };
+      }, s);
+      await pg.mouse.click(p.x, p.y);
+      await pg.waitForTimeout(200);
+    };
+    /** the entry demo plays on a first visit; a click on the board skips it */
+    const skipDemo = async () => {
+      for (let i = 0; i < 20; i++) {
+        const busy = await pg.evaluate(() => { const b = document.getElementById("lesson-demo"); return !!b && !b.hidden && b.disabled; });
+        if (!busy) return;
+        await tapQ("a1");
+        await pg.waitForTimeout(300);
+      }
+    };
+    const first = words(lang, ADV.lessons[0]).title;
+    let listed = false;
+    for (let i = 0; i < 40 && !listed; i++) {
+      listed = await pg.evaluate((t) => [...document.querySelectorAll("#lesson-list button")].some((b) => b.textContent.endsWith(t)), first);
+      if (!listed) await pg.waitForTimeout(150);
+    }
+    assert(listed, `T1 ${lang}:分块到了以后，目录里出现进阶课程`);
+    const parts = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent));
+    for (const grp of ["cl", "po"]) {
+      const L = ADV.lessons.find((x) => x.id.startsWith(grp));
+      assert(parts.includes(words(lang, L).part), `T1 ${lang}:目录里有「${words(lang, L).part}」这一部分`);
+    }
+    let walked = 0;
+    for (const [li, L] of ADV.lessons.entries()) {
+      const W = words(lang, L);
+      const opened = await pg.evaluate((t) => {
+        const b = [...document.querySelectorAll("#lesson-list button")].find((x) => x.textContent.endsWith(t));
+        if (!b) return false;
+        b.click();
+        return true;
+      }, W.title);
+      if (!opened) { assert(false, `T1 ${lang} ${L.id}:目录里点得开`); continue; }
+      await pg.waitForTimeout(400);
+      const shown = await pg.evaluate(() => ({
+        title: document.getElementById("lesson-title").textContent,
+        body: document.getElementById("lesson-text").textContent,
+        paras: document.querySelectorAll("#lesson-text p").length,
+      }));
+      const textOk = shown.title.includes(W.title) && shown.paras === W.text.length && shown.body.includes(plain(W.text[0]).slice(0, 12));
+      let stepsOk = true, why = "";
+      for (const [ti, t] of L.tasks.entries()) {
+        await skipDemo();
+        const prompt = await pg.evaluate(() => document.getElementById("lesson-task").textContent);
+        if (!prompt.includes(W.tasks[ti].prompt)) { stepsOk = false; why = `第 ${ti + 1} 步提示「${prompt.slice(0, 30)}」`; }
+        const g = new AdvChess(t.fen);
+        if (li === 0 && ti === 0) {
+          // a wrong move first: taken back, with this language's retry hint
+          const wrong = g.moves({ verbose: true }).find((m) => !(t.accept || []).includes(m.san) && !m.promotion);
+          await tapQ(wrong.from); await tapQ(wrong.to);
+          await pg.waitForTimeout(300);
+          const said = await pg.evaluate(() => document.getElementById("toast").textContent);
+          assert(said.includes(W.tasks[0].retry), `T1 ${lang}:走错时提示这一步的「${lang === "zh-CN" ? "再想想" : "retry"}」`, said.slice(0, 60));
+          await skipDemo();
+        }
+        const mv = g.move(t.solution[0]);
+        await tapQ(mv.from); await tapQ(mv.to);
+        await pg.waitForTimeout(ti + 1 < L.tasks.length ? 1100 : 400);
+      }
+      const done = await pg.evaluate((id) => ({
+        dots: document.getElementById("lesson-dots").classList.contains("complete"),
+        saved: !!((JSON.parse(localStorage.getItem("chess.v1.learn") || "{}").done || {})[id]),
+      }), L.id);
+      if (textOk && stepsOk && done.dots && done.saved) walked++;
+      else assert(false, `T1 ${lang} ${L.id}:课文、每一步和完成标记`, JSON.stringify({ textOk, stepsOk, why, done, title: shown.title.slice(0, 40) }));
+    }
+    assert(walked === 24, `T1 ${lang}:24 课逐课走完 —— 课文、每一步的提示与答案、完成标记（${walked}/24）`);
+    const marks = await pg.evaluate((titles) => titles.filter((t) =>
+      [...document.querySelectorAll("#lesson-list button")].some((b) => b.textContent.endsWith(t) && b.textContent.startsWith("✓"))).length,
+    ADV.lessons.map((L) => words(lang, L).title));
+    assert(marks === 24, `T1 ${lang}:目录里 24 课都打上了 ✓`, marks);
+    const prog = await pg.evaluate(() => document.getElementById("learn-progress").textContent);
+    assert(/24\/120/.test(prog), `T1 ${lang}:进度按 120 课算，完成 24`, prog);
+    await c3.close();
+  }));
+  // The course's first 96 done: the home page's 下一步建议 names lesson 97 —
+  // a placeholder until the chunk is here — and its button opens that lesson,
+  // the jump 今天的训练 makes too (dailyJump). The jump asks for a lesson
+  // whose tasks may not have arrived; it has to open once they do.
+  {
+    const c4 = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+    await c4.addInitScript((ids) => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, view: "home" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      const done = {};
+      for (const id of ids) done[id] = true;
+      localStorage.setItem("chess.v1.learn", JSON.stringify({ v: 1, done, last: 95 }));
+    }, LESSONS.map((L) => L.id));
+    const pg = await c4.newPage();
+    pg.on("pageerror", (e) => errs.push("home: " + e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(1000);
+    await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+    const want = "第 97 课 · " + ADV.lessons[0].title;
+    let line = "";
+    for (let i = 0; i < 40 && !line.includes(want); i++) {
+      line = await pg.evaluate(() => (document.querySelector("#home-next .home-body") || {}).textContent || "");
+      if (!line.includes(want)) await pg.waitForTimeout(150);
+    }
+    assert(line.includes(want), "T1:前 96 课都学完，首页的下一步建议是第 97 课，标题读自分块", line.slice(0, 60));
+    await pg.click("#home-next .home-go");
+    let title = "";
+    for (let i = 0; i < 40 && !title.includes(ADV.lessons[0].title); i++) {
+      await pg.waitForTimeout(150);
+      title = await pg.evaluate(() => document.getElementById("lesson-title").textContent);
+    }
+    assert(title.includes("第 97 课") && title.includes(ADV.lessons[0].title), "T1:点「去上课」打开的就是第 97 课", title);
+    await c4.close();
+  }
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

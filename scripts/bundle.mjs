@@ -119,6 +119,8 @@ export const CHUNKS = [
   { entry: "src/web/js/trainer/guess.js", out: "src/web/js/chunk-guess.js", global: "createGuess", min: 3000 },
   // v8-2-plan T2: 看 N 步后 / 盲走收官, their questions and their words (trainer/visual.js)
   { entry: "src/web/js/trainer/visual-modes.js", out: "src/web/js/chunk-visual.js", global: "CHESS_VISUAL", min: 5000 },
+  // v8-2-plan T1: the advanced course part 3 — 24 lessons, three languages (trainer/lessons-adv.js)
+  { entry: "src/web/js/lessons-adv-chunk.js", out: "src/web/js/chunk-lessons-adv.js", global: "CHESS_LESSONS_ADV", min: 20000 },
   ...explorerChunks(path.join(root, "src/web/js/explorer")),
 ];
 

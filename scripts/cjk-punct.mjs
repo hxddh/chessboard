@@ -40,6 +40,8 @@ export const FILES = [
   "src/web/js/endgames.js",
   // v8-2-plan T2: 看 N 步后 / 盲走收官's words (all three languages in the chunk)
   "src/web/js/trainer/visual-modes.js",
+  // v8-2-plan T1: the advanced course part 3
+  "src/web/js/lessons-adv.js", "src/web/js/lessons-adv-ja.js",
 ];
 
 const CJK = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/;
