@@ -12,7 +12,7 @@ camp's records came from gives exactly those records' verdicts and moves
 
 Plain Python, no python-chess: python3 scripts/test-verify-endgames.py
 """
-import io, json, os, sys, unittest, urllib.error, urllib.parse
+import importlib.util, io, json, os, socket, sys, tempfile, types, unittest, urllib.error, urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts", "lib"))
@@ -87,6 +87,8 @@ class Client(unittest.TestCase):
         def opener(req, timeout):
             calls.append(req)
             r = replies.pop(0)
+            if isinstance(r, BaseException):
+                raise r
             if isinstance(r, int):
                 raise urllib.error.HTTPError(req.full_url, r, "status %d" % r, {}, None)
             return Res(json.dumps(r).encode("utf-8"))
@@ -111,12 +113,93 @@ class Client(unittest.TestCase):
         self.assertIn("chessboard", calls[0].get_header("User-agent"))
 
     def test_other_errors_and_too_many_429s_raise(self):
-        opener, _ = self.fake([500])
+        opener, calls = self.fake([404])
         with self.assertRaises(urllib.error.HTTPError):
             T.Client(opener=opener, sleep=lambda s: None).probe("8/8/8/8/8/8/8/K1k5 w - - 0 1")
+        self.assertEqual(len(calls), 1)   # a 4xx is the request: asked once
+        opener, calls = self.fake([500, 502, 503])
+        with self.assertRaises(urllib.error.HTTPError):
+            T.Client(opener=opener, sleep=lambda s: None).probe("8/8/8/8/8/8/8/K1k5 w - - 0 1")
+        self.assertEqual(len(calls), 3)   # a 5xx: twice more, then it is reported
         opener, _ = self.fake([429, 429])
         with self.assertRaises(urllib.error.HTTPError):
             T.Client(retries=1, opener=opener, sleep=lambda s: None).probe("8/8/8/8/8/8/8/K1k5 w - - 0 1")
+
+    def test_transient_failures_are_tried_again(self):
+        # M1 评审: a timeout, a dropped connection or a 5xx is asked again
+        # after a short back-off, not reported as a failed position
+        answer = FIXTURE["rp-check"]["answer"]
+        for first, second in ((socket.timeout("timed out"), 503), (urllib.error.URLError("reset"), ConnectionResetError())):
+            opener, calls = self.fake([first, second, answer])
+            slept = []
+            c = T.Client(delay=0, opener=opener, sleep=slept.append)
+            self.assertEqual(c.probe(FIXTURE["rp-check"]["fen"])["verdict"], "win")
+            self.assertEqual((len(calls), slept), (3, [5.0, 10.0]))
+        opener, calls = self.fake([500, 429, answer])   # the two counts are apart
+        slept = []
+        self.assertEqual(T.Client(delay=0, opener=opener, sleep=slept.append).probe(FIXTURE["rp-check"]["fen"])["verdict"], "win")
+        self.assertEqual(slept, [5.0, 60])
+
+
+class Online(unittest.TestCase):
+    """verify-endgames.py --online keeps what it was told (M1 评审)."""
+
+    def load(self):
+        # python-chess is not needed by --online; checks.yml runs this without it
+        try:
+            import chess, chess.engine, chess.syzygy  # noqa: F401
+        except ImportError:
+            for name in ("chess", "chess.engine", "chess.syzygy"):
+                sys.modules.setdefault(name, types.ModuleType(name))
+        spec = importlib.util.spec_from_file_location("verify_endgames", os.path.join(ROOT, "scripts", "verify-endgames.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_answers_are_written_as_they_come(self):
+        V = self.load()
+        out = os.path.join(tempfile.mkdtemp(), "out.json")
+        seen = []
+
+        class Dies:
+            def probe(self, fen):
+                pid = next(k for k in ("rp-check", "mi-n-stop") if FIXTURE[k]["fen"] == fen)
+                if seen:   # the second position: the first one's answer is on disk already
+                    with open(out, encoding="utf-8") as fh:
+                        doc = json.load(fh)
+                    seen.append({r["id"]: "lichess" in r for r in doc["items"]}[seen[0]])
+                    seen.append(doc["tools"]["lichessTablebase"].get("partial"))
+                    raise KeyboardInterrupt   # the job killed, not a failed request
+                seen.append(pid)
+                return T.read_answer(FIXTURE[pid]["answer"])
+
+        a = types.SimpleNamespace(only="rp-check,mi-n-stop", delay=0, out=out)
+        with self.assertRaises(KeyboardInterrupt):
+            V.online(a, client=Dies())
+        self.assertEqual(seen[1:], [True, True])
+        with open(out, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        got = [r["id"] for r in doc["items"] if "lichess" in r and r["id"] in ("rp-check", "mi-n-stop")]
+        self.assertEqual(got, [seen[0]])
+        self.assertEqual(doc["items"][[r["id"] for r in doc["items"]].index(seen[0])]["lichess"],
+                         T.read_answer(FIXTURE[seen[0]]["answer"]))
+        self.assertTrue(doc["tools"]["lichessTablebase"]["partial"])
+        self.assertFalse(os.path.exists(out + ".tmp"))
+
+    def test_a_whole_run_is_not_partial(self):
+        V = self.load()
+        out = os.path.join(tempfile.mkdtemp(), "out.json")
+
+        class Answers:
+            def probe(self, fen):
+                return T.read_answer(next(FIXTURE[k]["answer"] for k in ("rp-check", "mi-n-stop") if FIXTURE[k]["fen"] == fen))
+
+        a = types.SimpleNamespace(only="rp-check,mi-n-stop", delay=0, out=out)
+        self.assertEqual(V.online(a, client=Answers()), 0)
+        with open(out, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        self.assertEqual(doc["tools"]["lichessTablebase"]["asked"], 2)
+        self.assertNotIn("partial", doc["tools"]["lichessTablebase"])
 
 
 if __name__ == "__main__":

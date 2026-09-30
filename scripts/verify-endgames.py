@@ -44,7 +44,8 @@ ITEM = re.compile(r'\{ id: "([^"]+)", g: "([a-z]+)", fen: "([^"]+)", goal: "(win
 
 
 def items():
-    out = [dict(zip(("id", "g", "fen", "goal", "v", "key"), m.groups())) for m in ITEM.finditer(open(SRC, encoding="utf-8").read())]
+    with open(SRC, encoding="utf-8") as fh:
+        out = [dict(zip(("id", "g", "fen", "goal", "v", "key"), m.groups())) for m in ITEM.finditer(fh.read())]
     for it in out:
         it["key"] = re.findall(r'"([^"]+)"', it["key"]) if it["key"] else None
     return out
@@ -87,45 +88,65 @@ def by_engine(eng, b, depths):
     return {"method": "sf", "verdict": verdict, "search": rows}
 
 
-def online(a):
-    sys.path.insert(0, os.path.join(ROOT, "scripts", "lib"))
-    import tablebase_api as T
-    doc = json.load(open(OUT, encoding="utf-8"))
-    rec = {r["id"]: r for r in doc["items"]}
-    client = T.Client(delay=a.delay)
-    only = set(filter(None, a.only.split(",")))
-    bad, over, asked = [], [], 0
-    for it in items():
-        if only and it["id"] not in only: continue
-        row = rec.get(it["id"])
-        if row is None or row["fen"] != it["fen"]:
-            print("BAD " + it["id"], "not in", os.path.relpath(OUT, ROOT), "for this FEN: run the offline check first", flush=True)
-            bad.append(it["id"]); continue
-        n = T.men(it["fen"])
-        if n > T.MAX_MEN:
-            print("skip " + it["id"], n, "men: no table", flush=True)
-            over.append(it["id"]); continue
-        asked += 1
-        try:
-            ans = client.probe(it["fen"])
-        except Exception as e:  # one failed request is reported, not the end of the run
-            print("ERR " + it["id"], repr(e)[:200], flush=True)
-            bad.append(it["id"]); continue
-        row["lichess"] = ans
-        why = T.disagreements(it["goal"], it["key"], row, ans)
-        print(("ok  " if not why else "BAD ") + it["id"], n, "men", row["method"], ans["category"], ans.get("dtz"),
-              ans.get("good"), "; ".join(why), flush=True)
-        if why: bad.append(it["id"])
-    doc["tools"]["lichessTablebase"] = {
-        "endpoint": T.ENDPOINT,
-        "checkedAt": time.strftime("%Y-%m-%d", time.gmtime()),
-        "asked": asked,
-        "over7": over,
-        "rule": "category from the side to move; cursed-win and blessed-loss count as draws (fifty-move rule); maybe-* and unknown settle nothing",
-    }
-    with open(a.out, "w", encoding="utf-8") as fh:
+def write_doc(doc, path):
+    """Whole or not at all: a run stopped mid-write leaves the last file there was."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, ensure_ascii=False, indent=1)
         fh.write("\n")
+    os.replace(tmp, path)
+
+
+def online(a, client=None):
+    sys.path.insert(0, os.path.join(ROOT, "scripts", "lib"))
+    import tablebase_api as T
+    with open(OUT, encoding="utf-8") as fh:
+        doc = json.load(fh)
+    rec = {r["id"]: r for r in doc["items"]}
+    client = client or T.Client(delay=a.delay)
+    only = set(filter(None, a.only.split(",")))
+    bad, over, asked = [], [], 0
+
+    def save(done):
+        doc["tools"]["lichessTablebase"] = dict({
+            "endpoint": T.ENDPOINT,
+            "checkedAt": time.strftime("%Y-%m-%d", time.gmtime()),
+            "asked": asked,
+            "over7": over,
+            "rule": "category from the side to move; cursed-win and blessed-loss count as draws (fifty-move rule); maybe-* and unknown settle nothing",
+        }, **({} if done else {"partial": True}))
+        write_doc(doc, a.out)
+
+    # M1 评审: the file is written after every answer, and once more however
+    # the run ends — ninety positions at one a second, and a job that times
+    # out or dies on the eightieth used to keep none of the answers it had
+    done = False
+    try:
+        for it in items():
+            if only and it["id"] not in only: continue
+            row = rec.get(it["id"])
+            if row is None or row["fen"] != it["fen"]:
+                print("BAD " + it["id"], "not in", os.path.relpath(OUT, ROOT), "for this FEN: run the offline check first", flush=True)
+                bad.append(it["id"]); continue
+            n = T.men(it["fen"])
+            if n > T.MAX_MEN:
+                print("skip " + it["id"], n, "men: no table", flush=True)
+                over.append(it["id"]); continue
+            asked += 1
+            try:
+                ans = client.probe(it["fen"])
+            except Exception as e:  # one failed request is reported, not the end of the run
+                print("ERR " + it["id"], repr(e)[:200], flush=True)
+                bad.append(it["id"]); continue
+            row["lichess"] = ans
+            save(False)
+            why = T.disagreements(it["goal"], it["key"], row, ans)
+            print(("ok  " if not why else "BAD ") + it["id"], n, "men", row["method"], ans["category"], ans.get("dtz"),
+                  ans.get("good"), "; ".join(why), flush=True)
+            if why: bad.append(it["id"])
+        done = True
+    finally:
+        save(done)
     print(asked, "asked,", len(over), "over 7 men", over, ",", len(bad), "bad", bad)
     return 1 if bad else 0
 

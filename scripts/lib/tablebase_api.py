@@ -34,7 +34,7 @@ draws — the same rule verify-endgames.py applies to the local 3–4-man tables
 Nothing here imports python-chess: the parsing is exercised by
 scripts/test-verify-endgames.py on a plain Python install.
 """
-import json, time, urllib.error, urllib.parse, urllib.request
+import json, socket, time, urllib.error, urllib.parse, urllib.request
 
 ENDPOINT = "https://tablebase.lichess.ovh/standard"
 USER_AGENT = "chessboard-verify-endgames (github.com/hxddh/chessboard; v8-2-plan V2)"
@@ -103,15 +103,31 @@ def disagreements(goal, key, row, ans):
     return out
 
 
+def transient(e):
+    """
+    A failure worth one more try a few seconds later: the network or the
+    service hiccuped (a 5xx, a refused or reset connection, a timeout). A 4xx
+    other than 429 is the request itself and would fail the same way again.
+    """
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code >= 500
+    return isinstance(e, (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError))
+
+
 class Client:
     """
     Sequential and polite: at most one request per `delay` seconds, and on a
     429 (the service's rate limit) wait a minute and try again, a few times.
+    A transient failure (see transient()) is tried again `flaky` more times,
+    after `backoff` seconds and then twice that (M1 评审: one dropped
+    connection used to cost a position its answer in a run of ninety).
     `opener` and `sleep` are replaceable for the tests.
     """
 
-    def __init__(self, delay=1.0, retries=3, timeout=30, opener=None, sleep=time.sleep, clock=time.monotonic):
+    def __init__(self, delay=1.0, retries=3, timeout=30, opener=None, sleep=time.sleep, clock=time.monotonic,
+                 flaky=2, backoff=5.0):
         self.delay, self.retries, self.timeout = delay, retries, timeout
+        self.flaky, self.backoff = flaky, backoff
         self.opener = opener or urllib.request.urlopen
         self.sleep, self.clock = sleep, clock
         self.last = None
@@ -119,7 +135,8 @@ class Client:
 
     def probe(self, fen):
         url = ENDPOINT + "?" + urllib.parse.urlencode({"fen": fen})
-        for attempt in range(self.retries + 1):
+        limited = failed = 0
+        while True:
             if self.last is not None:
                 wait = self.delay - (self.clock() - self.last)
                 if wait > 0:
@@ -131,8 +148,14 @@ class Client:
                 with self.opener(req, timeout=self.timeout) as res:
                     return read_answer(json.loads(res.read().decode("utf-8")))
             except urllib.error.HTTPError as e:
-                if e.code == 429 and attempt < self.retries:
+                if e.code == 429 and limited < self.retries:
+                    limited += 1
                     self.sleep(60)
                     continue
-                raise
-        raise RuntimeError("unreachable")
+                if not transient(e) or failed >= self.flaky:
+                    raise
+            except Exception as e:
+                if not transient(e) or failed >= self.flaky:
+                    raise
+            failed += 1
+            self.sleep(self.backoff * 2 ** (failed - 1))
