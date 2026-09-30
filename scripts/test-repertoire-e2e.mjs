@@ -332,9 +332,22 @@ let migratedRecords = null;
 // --- 3c. 分块还在启动时改了书：头不替旧的记录担保（M3 评审 P2-3） -----------------------
 {
   const ctx = await context({});
-  // chunk-rep.js 晚到 2.5 秒：这段时间里在浏览器里加一着
-  let slow = true;
-  await ctx.route("**/js/chunk-rep.js", async (route) => { if (slow) await new Promise((r) => setTimeout(r, 2500)); route.continue(); });
+  // 迁移写完后读回 repertoire 表（第二次 getAll）晚 2.5 秒回来——启动已经按
+  // 那时的线建好了记录、还在等：这段时间里在浏览器里加一着
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("slowRep")) return;
+    sessionStorage.setItem("slowRep", "1");
+    const orig = IDBObjectStore.prototype.getAll;
+    let n = 0;
+    IDBObjectStore.prototype.getAll = function (...a) {
+      const req = orig.apply(this, a);
+      if (this.name !== "repertoire" || ++n !== 2) return req;
+      const late = { result: undefined, error: null, onsuccess: null, onerror: null };
+      req.onsuccess = () => setTimeout(() => { late.result = req.result; if (late.onsuccess) late.onsuccess(); }, 2500);
+      req.onerror = () => { late.error = req.error; if (late.onerror) late.onerror(); };
+      return late;
+    };
+  });
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -351,7 +364,6 @@ let migratedRecords = null;
   let recs = await records(page);
   assert(recs["w|" + start] && recs["w|" + start].moves.includes("d4"), "分块到了：按局面的记录也有 d4（启动时的编辑重新索引了）", JSON.stringify(recs["w|" + start]));
   // 下次启动：头对得上的就是记录本身
-  slow = false;
   await page.reload();
   await ready(page);
   recs = await records(page);

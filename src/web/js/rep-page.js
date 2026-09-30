@@ -79,11 +79,25 @@ async function bootRepertoire(d) {
 
   let stored = [];
   try { stored = await backend.all(); } catch (e) { backend = memoryRep(); stored = []; }
+  // M3 评审: which write the records in IndexedDB are from. The header's
+  // `gen` is the last write any session made (a session with no IndexedDB
+  // wrote only the native shards); older here means the shards are newer.
+  const headGen = header && header.db === 2 ? Number(header.gen) || 0 : 0;
+  let idbGen = 0;
+  if (backend.kind !== "memory" && headGen) { try { idbGen = Number(await backend.getMeta("rep-gen")) || 0; } catch (_) { idbGen = 0; } }
+  const newer = headGen > idbGen && backend.kind !== "memory";
   // the WebView's storage lost records the header counted, or there is none
-  // this session: the native shards are the copy
+  // this session, or it is behind the shards: the native shards are the copy
   let shards = null;
-  if (header && header.db === 2 && (backend.kind === "memory" || stored.length < Number(header.n))) {
-    shards = recordsOf(await Persist.readBulk("rep"));
+  let hold = false;
+  if (header && header.db === 2 && (backend.kind === "memory" || newer || stored.length < Number(header.n))) {
+    const texts = await Persist.readBulk("rep");
+    // M3 评审: a native store that is there but could not be read this time
+    // (not "there is none"): the cards may be exactly what it holds. Nothing
+    // is written this session — no records, no shards, and the header keeps
+    // what it said — so the next launch reads them again.
+    hold = texts == null && !!(Persist.hasStore && Persist.hasStore());
+    shards = recordsOf(texts);
   }
   // the migration: the value as found, before anything is written (the
   // library's rule — 7.0 lost PGNs moving data between shapes)
@@ -91,7 +105,7 @@ async function bootRepertoire(d) {
     try { await backend.setMeta("rep-v1:" + Date.now(), { raw }); } catch (_) { /* the header keeps it anyway */ }
   }
   const booted = book();
-  const r = B.reconcile({ book: booted, header, stored, shards, state: store.session.puzzleState, now: Date.now() });
+  const r = B.reconcile({ book: booted, header, stored, shards, newer, state: store.session.puzzleState, now: Date.now() });
   // M3 评审 P2-3: the signature of the lines the records were indexed from —
   // what the header may vouch for. An edit made while this boot was still
   // awaiting changes book() but not the records, and the header must not
@@ -99,8 +113,9 @@ async function bootRepertoire(d) {
   let indexedSig = B.sigOf(booted);
   let records = r.records;
   let version = 1;
-  let frozen = false;
+  let frozen = hold;
   let chain = Promise.resolve();
+  let gen = headGen;
 
   /** The shards a set of record ids lives in. */
   const shardsOf = (ids) => [...new Set(ids.map(B.shardOf))];
@@ -108,24 +123,27 @@ async function bootRepertoire(d) {
   function save(put, gone) {
     if (frozen || (!put.length && !gone.length)) return chain;
     Persist.touchBulk(shardsOf(put.map((x) => x.id).concat(gone)));
+    gen = Math.max(gen + 1, Date.now());
+    const g = gen;
     chain = chain.then(async () => {
       try {
         if (gone.length) await backend.remove(gone);
         if (put.length) await backend.put(put);
+        await backend.setMeta("rep-gen", g);
       } catch (e) { warnOnce(e); }
     });
     return chain;
   }
   // the boot's own writes, read back before the header may say db 2
   let vouched = r.fresh;
-  if (!r.fresh) {
+  if (!r.fresh && !hold) {
     save(r.put, r.gone);
     await chain;
     try { vouched = (await backend.all()).length === records.size; } catch (_) { vouched = false; }
   }
   // a build from before the shards (or 8.0, which lists only lib shards)
   // committed a manifest without them: owed now (M5 review P3-1's rule)
-  if (Persist.touchUnlisted && records.size) Persist.touchUnlisted(shardsOf([...records.keys()]));
+  if (Persist.touchUnlisted && records.size && !hold) Persist.touchUnlisted(shardsOf([...records.keys()]));
 
   /**
    * The lines changed (import, edit, clear, learning file): index them again.
@@ -259,7 +277,10 @@ async function bootRepertoire(d) {
     recovered: r.recovered,
     mode: () => backend.kind || "idb",
     /** what the header says about the records (repertoire-ui.js saveBook) */
-    extra: () => (vouched ? { db: 2, n: records.size, sig: indexedSig } : {}),
+    // held (M3 评审): what the header said, until a launch can read the shards
+    extra: () => (hold ? { db: 2, n: header.n, sig: header.sig, gen: headGen }
+      : vouched ? { db: 2, n: records.size, sig: indexedSig, gen } : {}),
+    held: () => hold,
     /** the lines changed since they were last indexed (an edit during boot) */
     stale: () => indexedSig !== B.sigOf(book()),
     sync,
@@ -274,7 +295,8 @@ async function bootRepertoire(d) {
     renderInto,
     exportPgn: (event) => ["w", "b"].map((s) => B.toPgn(records, s, event(s))).filter(Boolean).join("\n"),
     // persist.js's port for the "rep" shards
-    shardNames: () => shardsOf([...records.keys()]),
+    // held: not known — the store keeps the shards it has (persist.js valueOf)
+    shardNames: () => (hold ? null : shardsOf([...records.keys()])),
     shardText: (name) => {
       const list = [...records.values()].filter((x) => B.shardOf(x.id) === name);
       return list.length ? JSON.stringify({ v: 1, rep: list }) : null;

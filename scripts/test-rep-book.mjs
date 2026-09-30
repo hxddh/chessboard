@@ -265,5 +265,57 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   assert(!tie.length, "和书上的着一样多，不算「常走」");
 }
 
+// --- 7. 启动（rep-page.js）：本机分片一时读不出来、只写了分片的会话（M3 评审） ----------------
+{
+  vm.runInContext(compileModuleSync(path.join(root, "src/web/js/rep-page.js")), ctx, { filename: "rep-page.js" });
+  const boot = ctx.CHESS_REP.bootRepertoire;
+  const bk = book(["e4 e5 Nf3 Nc6 Bb5", "d4 d5 c4"], ["e4 c5 Nf3 d6"]);
+  const full = B.indexBook(bk);
+  const graded = [...full.values()].map((x) => (x.card ? Object.assign({}, x, { card: { s: 3, n: 3, due: 1, ivl: 7 } }) : x));
+  const shardTexts = {};
+  for (const x of graded) { const n = B.shardOf(x.id); (shardTexts[n] = shardTexts[n] || []).push(x); }
+  for (const n of Object.keys(shardTexts)) shardTexts[n] = JSON.stringify({ v: 1, rep: shardTexts[n] });
+  const idb = (rows, gen) => {
+    const m = new Map(rows.map((x) => [x.id, JSON.parse(JSON.stringify(x))]));
+    const meta = new Map(gen ? [["rep-gen", gen]] : []);
+    return { m, meta, puts: 0,
+      async all() { return [...m.values()].map((x) => JSON.parse(JSON.stringify(x))); },
+      async put(rs) { this.puts++; for (const x of rs) m.set(x.id, JSON.parse(JSON.stringify(x))); return true; },
+      async remove(ids) { for (const id of ids) m.delete(id); return true; },
+      async clear() { m.clear(); return true; },
+      async getMeta(k) { return meta.get(k); },
+      async setMeta(k, v) { meta.set(k, v); return true; } };
+  };
+  const run = async (header, backend, texts) => {
+    const touched = [];
+    const Persist = { get: () => JSON.stringify(Object.assign({ v: 1 }, bk, header)), readBulk: async () => texts,
+      hasStore: () => true, touchBulk: (n) => touched.push(...n), touchUnlisted: (n) => touched.push(...n) };
+    const store = { session: { repertoire: { w: bk.w, b: bk.b }, puzzleState: { solved: {}, missed: {} } } };
+    const c = await boot({ store, Persist, t: (k) => k, tf: (k) => k, toast: () => {}, doc: null, R, libDb: { repBackend: backend },
+      LibraryQuery: null, cardName: () => "", onChange: () => {} });
+    return { c, touched };
+  };
+  const head = { db: 2, n: full.size, sig: B.sigOf(bk), gen: 500 };
+  // IndexedDB lost the records; the native store is there but this read failed
+  const lost = idb([], 500);
+  const h1 = await run(head, lost, null);
+  const ex = h1.c.extra();
+  assert(h1.c.held() && !h1.touched.length && lost.puts === 0 && h1.c.shardNames() === null,
+    "分片一时读不出来：这次什么也不写（不写记录、不碰分片）", JSON.stringify({ held: h1.c.held(), touched: h1.touched, puts: lost.puts }));
+  assert(ex.db === 2 && ex.n === head.n && ex.sig === head.sig && ex.gen === 500, "……头照原样担保，下次启动再读分片", JSON.stringify(ex));
+  const h1b = await run(head, idb([], 500), shardTexts);
+  assert(!h1b.c.held() && [...h1b.c.records().values()].filter((x) => x.card).every((x) => x.card.s === 3), "下次读得出来：卡片从分片找回");
+  // a session with no IndexedDB graded into the shards only (header gen 900 > IndexedDB's 500)
+  const stale = idb([...full.values()], 500);
+  const h2 = await run(Object.assign({}, head, { gen: 900 }), stale, shardTexts);
+  const cards = [...h2.c.records().values()].filter((x) => x.card);
+  assert(cards.length && cards.every((x) => x.card.s === 3), "只写了分片的那次会话更新：它的卡片胜过 IndexedDB 里旧的", JSON.stringify(cards.map((x) => x.card.s)));
+  assert([...stale.m.values()].filter((x) => x.card).every((x) => x.card.s === 3) && stale.meta.get("rep-gen") > 900,
+    "……写回 IndexedDB，代数跟着往前走");
+  const same = idb([...full.values()], 900);
+  const h3 = await run(Object.assign({}, head, { gen: 900 }), same, shardTexts);
+  assert(same.puts === 0 && [...h3.c.records().values()].filter((x) => x.card).every((x) => x.card.s === 0), "代数一样：直接用 IndexedDB 的记录，不读分片");
+}
+
 if (failed) { console.error(`\n${failed} 项失败`); process.exit(1); }
 console.log("\nall rep-book tests passed");

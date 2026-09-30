@@ -374,7 +374,11 @@ function sigOf(book) {
  *     are the native store's copy (persist.js readBulk "rep"), and their
  *     cards come back.
  *
- * @param {{book: {w, b}, header: object|null, stored: object[], shards?: object[]|null, state?: object, now: number}} o
+ *   - `newer` (the header's `gen` is past the one IndexedDB holds): a
+ *     session without IndexedDB graded cards into the shards only; the
+ *     shards' records win.
+ *
+ * @param {{book: {w, b}, header: object|null, stored: object[], shards?: object[]|null, newer?: boolean, state?: object, now: number}} o
  * @returns {{records: Map, put: object[], gone: string[], seeded: number, migrating: boolean, recovered: number, fresh: boolean}}
  */
 function reconcile(o) {
@@ -382,13 +386,16 @@ function reconcile(o) {
   const stored = new Map();
   for (const r of o.stored || []) if (r && typeof r.id === "string" && Array.isArray(r.moves)) stored.set(r.id, r);
   const migrating = header.db !== 2;
-  if (!migrating && header.sig === sigOf(o.book) && stored.size === Number(header.n)) {
+  if (!migrating && !o.newer && header.sig === sigOf(o.book) && stored.size === Number(header.n)) {
     return { records: stored, put: [], gone: [], seeded: 0, migrating, recovered: 0, fresh: true };
   }
   const prev = new Map(stored);
   let recovered = 0;
   for (const r of o.shards || []) {
-    if (r && typeof r.id === "string" && Array.isArray(r.moves) && !prev.has(r.id)) { prev.set(r.id, r); recovered++; }
+    if (!r || typeof r.id !== "string" || !Array.isArray(r.moves)) continue;
+    // `newer`: a later session wrote only the shards (it had no IndexedDB) —
+    // their cards win over the stored ones (M3 评审)
+    if (!prev.has(r.id) || (o.newer && !sameRecord(prev.get(r.id), r))) { prev.set(r.id, r); recovered++; }
   }
   const records = indexBook(o.book, prev);
   const seeded = migrating ? seedCards(records, o.book, o.state, o.now) : 0;

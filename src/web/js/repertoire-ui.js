@@ -484,6 +484,7 @@ export function createRepertoireUI(d) {
     // v8-1-plan T3
     edit, ready: () => ready,
     dueDrills: () => (ctrl ? ctrl.dueDrills() : []),
-    gradeCard: (p, ok) => { if (ctrl) { ctrl.grade(p, ok); render(); } },
+    // the header's `gen` moves with every write (M3 评审: a session with no IndexedDB is then known to be newer)
+    gradeCard: (p, ok) => { if (ctrl) { ctrl.grade(p, ok); saveBook(); render(); } },
   };
 }
