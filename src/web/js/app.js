@@ -2801,7 +2801,7 @@ import { loadChunk } from "./chunk.js";
   }
 
   // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
-  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n) });
+  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id) });
   function renderTrends() { MePage.renderTrends(); }
   function renderAchievements() { MePage.renderAchievements(); }
   function renderRecordEntry() { MePage.renderRecordEntry(); }
@@ -2836,7 +2836,7 @@ import { loadChunk } from "./chunk.js";
       // wanting 463px of a 418px chip. The title is already spelled out on the
       // lesson card two centimetres away, in full, in a box that wraps. What
       // the chip can say without lying is which lesson you are in.
-      return t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
+      return store.session.learn.eg ? t("eg.camp") : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
@@ -3260,7 +3260,7 @@ import { loadChunk } from "./chunk.js";
       const drill = !!(store.session.learn && curTask().type === "drill");
       return {
         w: { icon: "graduation-cap", name: t("role.student"), level: "" },
-        b: drill ? { icon: "bot", name: t("role.sparring"), level: "" } : null,
+        b: drill ? { icon: "bot", name: t(store.session.learn.eg ? "eg.engine" : "role.sparring"), level: "" } : null,
       };
     }
     if (mode === "puzzle") {

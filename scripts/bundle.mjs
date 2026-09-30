@@ -113,6 +113,8 @@ export const CHUNKS = [
   ...lichessChunks(path.join(root, "src/web/js/lichess")),
   // v8-0-plan C3: the opening explorer's panel (explorer/lazy.js), then the master tree's buckets
   { entry: "src/web/js/explorer/ui.js", out: "src/web/js/chunk-explorer.js", global: "createExplorerUI", min: 5000 },
+  // v8-1-plan T2: the endgame camp's sixty positions and their words (trainer/endgames.js)
+  { entry: "src/web/js/endgames.js", out: "src/web/js/chunk-endgames.js", global: "CHESS_ENDGAMES", min: 20000 },
   ...explorerChunks(path.join(root, "src/web/js/explorer")),
 ];
 

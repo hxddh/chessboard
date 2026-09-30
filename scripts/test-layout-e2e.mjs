@@ -564,7 +564,7 @@ if (scenario()) for (const [when, mode, setup] of [
   // that it is not offered here; being *drawn* and not offered is the defect.
   ["教学·最后一课(没做过)", "learn", async (page) => {
     await page.evaluate(() => {
-      const items = [...document.querySelectorAll("#lesson-list .lesson-item")];
+      const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])")];
       items[items.length - 1].click();
     });
     await page.waitForTimeout(800);
@@ -2497,9 +2497,10 @@ if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "learn", "play");
     // 6.0: the list ends with the ten classic games (data-c), which are read,
-    // not answered — no button row. The probes stay on the lessons proper, and
+    // not answered — no button row, and v8-1-plan T2 put the endgame camp
+    // (data-eg) after them. The probes stay on the lessons proper, and
     // the last of those is still the one with the graduation button.
-    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c])").length);
+    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])").length);
     assert(n > 60, lang + ": the course is loaded (" + n + " lessons)");
     // the lessons that show all four, plus the last one — its label is the
     // longest in the file and it appears in a two-button row
@@ -5068,6 +5069,68 @@ if (scenario()) {
       assert(r.togH.length === 1 && r.togH[0] === 32, `${tag}: 每行的开关是小号控件高 (${r.togH.join(", ")})`);
       assert(r.spill.length === 0 && r.past === 0 && r.sideways <= 0,
         `${tag}: 文字不出按钮，按钮与行不出面板，面板不横向滚动 (${r.spill.join(", ") || "—"}; ${r.past}; ${r.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-1-plan T2: the endgame camp — its 我的 section, its lesson card -----
+// In three languages, at the widest window and the narrowest: the section's
+// rows one line each, its two buttons one height with their words inside,
+// nothing past the page's edge; in 学习, a camp position's card and the
+// camp's part of 目录 cut nothing off, and 重来 / 下一个残局 stay one row.
+if (scenario()) {
+  const seed = JSON.stringify({ v: 1, done: {}, last: 0,
+    eg: { done: { "kp-keysq": 1, "dr-vancura": 1 }, srs: { "rp-lucena2": { s: 0, n: 1, due: 1, ivl: 0 } } } });
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
+      const tag = `T2 训练营 (${lang}, ${viewport.width}×${viewport.height})`;
+      const { ctx, page, errs } = await open(lang, "learn", "play", "wood", viewport);
+      await page.evaluate((s) => localStorage.setItem("chess.v1.learn", s), seed);
+      await page.reload();
+      await page.waitForTimeout(900);
+      await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-eg]").length === 60, null, { timeout: 8000 }).catch(() => {});
+      await page.evaluate(() => {
+        const d = document.querySelector("#sec-learn details.reading-index");
+        if (d) d.open = true;
+        const b = document.querySelector('#lesson-list button[data-eg="rp-lucena2"]');
+        if (b) b.click();
+      });
+      await page.waitForTimeout(400);
+      const learn = await page.evaluate(() => {
+        const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
+        const out = [];
+        for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
+          if (!e.offsetParent) continue;
+          if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
+        }
+        const row = sec.querySelector(".lesson-controls");
+        const bs = [...row.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        return { cut: out, items: sec.querySelectorAll("#lesson-list button[data-eg]").length,
+          title: document.getElementById("lesson-title").textContent,
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))], n: bs.length };
+      });
+      assert(learn.items === 60 && /·/.test(learn.title), `${tag}: 目录里 60 个，卡片是这个残局（${learn.title}）`);
+      assert(learn.cut.length === 0, `${tag}: 学习卡片与目录没有被裁掉的字` + (learn.cut.length ? " — " + learn.cut.join(", ") : ""));
+      assert(learn.n === 2 && learn.heights.length === 1, `${tag}: 重来 / 下一个残局 一排、一样高 (${learn.n}; ${learn.heights.join(", ")})`);
+      await page.click('#rail button[data-view="me"]', { timeout: 1500 }).catch(() => {});
+      await page.waitForFunction(() => !document.getElementById("sec-endgame").hidden, null, { timeout: 6000 }).catch(() => {});
+      const me = await page.evaluate(() => {
+        const sec = document.getElementById("sec-endgame"), box = sec.getBoundingClientRect();
+        const rows = [...sec.querySelectorAll(".stat-row")];
+        const bs = [...sec.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        const line = (e) => parseFloat(getComputedStyle(e).lineHeight) || 20;
+        return { shown: !sec.hidden, meta: document.getElementById("eg-meta").textContent,
+          tall: rows.filter((r) => r.getBoundingClientRect().height > line(r) * 1.6).map((r) => r.textContent.trim()),
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          spill: bs.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().right > box.right + 1).map((b) => b.textContent.trim()),
+          n: bs.length, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      assert(me.shown && me.meta === "2/60" && me.n === 2, `${tag}: 「我的」有训练营一节，2/60，进训练营 + 复习两个按钮`);
+      assert(me.tall.length === 0, `${tag}: 五个主题各一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
+      assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
+        `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
