@@ -4059,7 +4059,8 @@ for (const lang of CONTENT_LANGS) {
   const appSrc = allAppSource;
   // the book every serving rail reads is the live one…
   // 6.0: two more arguments — the rating of a puzzle and the player's band
-  assert(/const pick = Picker\.pickNext\(store\.session\.puzzleState, bookNow\(\), Srs, puzzleTier, motifKeyOf,\s*puzzleRatingOf/.test(appSrc),
+  // v8-1-plan T6: reviewBook() is bookNow() plus the queued bank puzzles whose bands are here
+  assert(/function reviewBook\(\)[\s\S]{0,300}bookNow\(\)\.concat\(bank\) : bookNow\(\)[\s\S]*const pick = Picker\.pickNext\(store\.session\.puzzleState, reviewBook\(\), Srs, puzzleTier, motifKeyOf,\s*puzzleRatingOf/.test(appSrc),
     "为你出一题 reads the live book — a mined drill can be recommended");
   // 6.0: the queue is what is due today (srs.js dueQueue), each id looked up in the live book
   assert(/\? Srs\.dueQueue\(store\.session\.puzzleState\.missed[\s\S]{0,160}bookNow\(\)\.find/.test(appSrc),
